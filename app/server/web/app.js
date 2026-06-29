@@ -1,7 +1,7 @@
 // Manifest — local daily-planner UI over your Obsidian vault.
 // State lives in markdown files; this is a thin editor with autosave.
 
-const state = { date: isoToday(), day: null, cal: null };
+const state = { date: isoToday(), day: null, cal: null, agentsPoll: null };
 
 const els = {
   dateLabel: document.getElementById("dateLabel"),
@@ -17,10 +17,16 @@ const els = {
   dayView: document.getElementById("dayView"),
   goalsView: document.getElementById("goalsView"),
   calendarView: document.getElementById("calendarView"),
+  agentsView: document.getElementById("agentsView"),
   dateNav: document.getElementById("dateNav"),
   goalsNav: document.getElementById("goalsNav"),
   calNav: document.getElementById("calNav"),
+  agentsNav: document.getElementById("agentsNav"),
   dayNav: document.getElementById("dayNav"),
+  agentCounts: document.getElementById("agentCounts"),
+  agentsDisabled: document.getElementById("agentsDisabled"),
+  approvalRows: document.getElementById("approvalRows"),
+  outboxRows: document.getElementById("outboxRows"),
   calGrid: document.getElementById("calGrid"),
   calMonthLabel: document.getElementById("calMonthLabel"),
   calConnect: document.getElementById("calConnect"),
@@ -604,21 +610,118 @@ els.calConnectBtn.addEventListener("click", connectCalendar);
 els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
 els.calNext.addEventListener("click", () => shiftCalMonth(1));
 
+// ================= Agents panel =================
+async function loadAgents() {
+  let s = { enabled: false };
+  try { s = await (await fetch("/api/agents/status")).json(); } catch (e) {}
+  els.agentsDisabled.hidden = !!s.enabled;
+  if (!s.enabled) {
+    els.agentCounts.textContent = "";
+    els.approvalRows.innerHTML = "";
+    els.outboxRows.innerHTML = "";
+    return;
+  }
+  const c = s.counts || {};
+  els.agentCounts.textContent =
+    `INBOX ${c.inbox || 0} · CLAIMED ${c.claimed || 0} · DONE ${c.done || 0} · FAILED ${c.failed || 0}`;
+  renderApprovals(s.approvals || []);
+  renderOutbox(s.outbox || []);
+}
+
+function renderApprovals(list) {
+  els.approvalRows.innerHTML = "";
+  if (!list.length) {
+    const e = document.createElement("div");
+    e.className = "ro-row empty";
+    e.textContent = "No pending approvals";
+    els.approvalRows.appendChild(e);
+    return;
+  }
+  list.forEach((a) => {
+    const row = document.createElement("div");
+    row.className = "approval-row";
+    const info = document.createElement("div");
+    info.className = "approval-info";
+    const action = document.createElement("span");
+    action.className = "approval-action";
+    action.textContent = a.action;
+    const body = document.createElement("span");
+    body.className = "approval-body";
+    body.textContent = a.body || "";
+    info.append(action, body);
+    const ok = document.createElement("button");
+    ok.className = "pill approve";
+    ok.textContent = "Confirm";
+    ok.addEventListener("click", () => agentAction("/api/agents/approvals/confirm", { id: a.id }));
+    const no = document.createElement("button");
+    no.className = "pill reject";
+    no.textContent = "Reject";
+    no.addEventListener("click", () => agentAction("/api/agents/approvals/reject", { id: a.id, reason: "rejected from dashboard" }));
+    row.append(info, ok, no);
+    els.approvalRows.appendChild(row);
+  });
+}
+
+function renderOutbox(list) {
+  els.outboxRows.innerHTML = "";
+  if (!list.length) {
+    const e = document.createElement("div");
+    e.className = "ro-row empty";
+    e.textContent = "Nothing in the outbox yet";
+    els.outboxRows.appendChild(e);
+    return;
+  }
+  list.forEach((it) => {
+    const row = document.createElement("div");
+    row.className = "outbox-row";
+    const t = document.createElement("span");
+    t.className = "outbox-title";
+    t.textContent = it.title || it.name;
+    const when = document.createElement("span");
+    when.className = "outbox-when";
+    when.textContent = (it.modTime || "").slice(0, 16).replace("T", " ");
+    row.append(t, when);
+    els.outboxRows.appendChild(row);
+  });
+}
+
+async function agentAction(path, body) {
+  setSaveState("saving");
+  try {
+    await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  loadAgents();
+}
+
+function startAgentsPoll() {
+  stopAgentsPoll();
+  state.agentsPoll = setInterval(loadAgents, 5000);
+}
+function stopAgentsPoll() {
+  if (state.agentsPoll) { clearInterval(state.agentsPoll); state.agentsPoll = null; }
+}
+
 // ---- router ----
 function route() {
   const h = location.hash;
   const goals = h === "#/goals";
   const cal = h === "#/calendar";
-  const day = !goals && !cal;
+  const ag = h === "#/agents";
+  const day = !goals && !cal && !ag;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
+  els.agentsView.hidden = !ag;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
   els.calNav.hidden = !day;
+  els.agentsNav.hidden = !day;
   els.dayNav.hidden = day;
+  if (!ag) stopAgentsPoll();
   if (goals) loadGoals();
   else if (cal) loadCalendar();
+  else if (ag) { loadAgents(); startAgentsPoll(); }
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);

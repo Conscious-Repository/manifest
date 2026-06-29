@@ -15,6 +15,7 @@
       <span class="brand">◆</span>
       <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
       <a class="pill" href="#/calendar" id="calNav">CAL</a>
+      <a class="pill" href="#/agents" id="agentsNav">AGENTS</a>
       <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
     </div>
     <div class="nav-center" id="dateNav">
@@ -100,6 +101,26 @@
       <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
     </div>
     <div id="calGrid" class="cal-grid"></div>
+  </section>
+
+  <section class="agents-view" id="agentsView" hidden>
+    <div class="panel-head">
+      <span class="panel-title">AGENTS</span>
+      <span id="agentCounts" class="panel-meta"></span>
+    </div>
+    <div id="agentsDisabled" class="cal-connect" hidden>
+      <p>The agent queue isn't available (no writable vault).</p>
+    </div>
+    <div class="agents-cols">
+      <div>
+        <div class="agents-subhead">PENDING APPROVALS</div>
+        <div id="approvalRows" class="approval-rows"></div>
+      </div>
+      <div>
+        <div class="agents-subhead">RECENT OUTBOX</div>
+        <div id="outboxRows" class="outbox-rows"></div>
+      </div>
+    </div>
   </section>
 
   <script src="app.js"></script>
