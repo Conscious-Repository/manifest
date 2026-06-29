@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"manifest/vault"
 )
@@ -107,6 +108,49 @@ func TestObsidianEditIsReadBack(t *testing.T) {
 	}
 	if day.Streak != 1 {
 		t.Fatalf("expected streak 1, got %d", day.Streak)
+	}
+}
+
+func TestUnplannedDetection(t *testing.T) {
+	s, _ := testService(t)
+	future := time.Now().AddDate(0, 0, 5).Format("2006-01-02")
+	if day, _ := s.Load(future); !day.Unplanned {
+		t.Fatal("an empty future day should be unplanned")
+	}
+	if day, _ := s.Load(time.Now().Format("2006-01-02")); day.Unplanned {
+		t.Fatal("today should never be unplanned")
+	}
+	// Plan the future day; it should no longer be unplanned (and not be clobbered).
+	if err := s.SaveDay(future, []ScheduleRow{{Time: "9:00A", Label: "Deep work"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if day, _ := s.Load(future); day.Unplanned {
+		t.Fatal("a planned future day should not be unplanned")
+	}
+}
+
+func TestTaskGoalBacklinkRoundTrip(t *testing.T) {
+	s, dir := testService(t)
+	const date = "2026-06-29"
+	if _, err := s.AddTask(date, Task{Text: "Draft contract", GoalID: "aion/draft-contract"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "Daily", date+".md"))
+	if !strings.Contains(string(raw), "[goal:: aion/draft-contract]") {
+		t.Fatalf("backlink not written to disk:\n%s", raw)
+	}
+	day, err := s.Load(date)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *Task
+	for i := range day.Tasks {
+		if day.Tasks[i].GoalID == "aion/draft-contract" {
+			found = &day.Tasks[i]
+		}
+	}
+	if found == nil || found.Text != "Draft contract" {
+		t.Fatalf("backlink not read back with clean text: %+v", day.Tasks)
 	}
 }
 

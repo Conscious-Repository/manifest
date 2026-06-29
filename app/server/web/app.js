@@ -13,6 +13,7 @@ const els = {
   milestonesRows: document.getElementById("milestonesRows"),
   taskRows: document.getElementById("taskRows"),
   addTask: document.getElementById("addTask"),
+  prepBanner: document.getElementById("prepBanner"),
   dayView: document.getElementById("dayView"),
   goalsView: document.getElementById("goalsView"),
   dateNav: document.getElementById("dateNav"),
@@ -108,6 +109,7 @@ async function load(date) {
 function renderDay() {
   const day = state.day;
   renderStreak(day.streak);
+  renderPrep(day);
   if (day.schedule.length) {
     els.scheduleRange.textContent =
       `${hourLabel(Math.floor(slotMin(day.schedule[0].time) / 60))}–` +
@@ -140,6 +142,47 @@ function renderReadonly(container, items, emptyHint) {
     row.textContent = text;
     container.appendChild(row);
   });
+}
+
+// Prep banner: on an unplanned future day, offer the 30-day owner==me pool as
+// click-to-add chips. Hidden on planned days and on today/past.
+function renderPrep(day) {
+  els.prepBanner.innerHTML = "";
+  if (!day.unplanned || !(day.pool && day.pool.length)) {
+    els.prepBanner.hidden = true;
+    return;
+  }
+  els.prepBanner.hidden = false;
+  const head = document.createElement("div");
+  head.className = "prep-head";
+  head.textContent = `Planning ${prettyDate(day.date)} — pull from your 30-day plate:`;
+  const chips = document.createElement("div");
+  chips.className = "pool-chips";
+  day.pool.forEach((it) => {
+    const chip = document.createElement("button");
+    chip.className = "pool-chip";
+    chip.title = `Add “${it.text}” to ${day.date}`;
+    const area = document.createElement("span");
+    area.className = "pool-area";
+    area.textContent = it.area;
+    chip.append(area, document.createTextNode(" " + it.text));
+    chip.addEventListener("click", () => pullGoal(it.goalId));
+    chips.appendChild(chip);
+  });
+  els.prepBanner.append(head, chips);
+}
+
+async function pullGoal(goalId) {
+  setSaveState("saving");
+  try {
+    await fetch(`/api/day/pull?date=${state.date}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ goalId }),
+    });
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  load(state.date); // reload to show the linked task + updated pool
 }
 
 // Schedule: two input lines per hour (:00 / :30), one focus circle per hour,
@@ -244,6 +287,8 @@ function renderTasks(tasks) {
 function addTaskRow(task, num) {
   const row = document.createElement("div");
   row.className = "trow";
+  if (task.goalId) row.dataset.goalId = task.goalId; // preserve backlink on save
+  if (task.owner) row.dataset.owner = task.owner;
   const n = document.createElement("span");
   n.className = "num";
   n.textContent = `${num}.`;
@@ -269,10 +314,13 @@ function addTaskRow(task, num) {
 }
 function collectTasks() {
   return [...els.taskRows.querySelectorAll(".trow")]
-    .map((row) => ({
-      text: row.querySelector(".ttext").value.trim(),
-      done: row.querySelector(".ttext").classList.contains("done"),
-    }))
+    .map((row) => {
+      const input = row.querySelector(".ttext");
+      const t = { text: input.value.trim(), done: input.classList.contains("done") };
+      if (row.dataset.goalId) t.goalId = row.dataset.goalId;
+      if (row.dataset.owner) t.owner = row.dataset.owner;
+      return t;
+    })
     .filter((t) => t.text.length > 0);
 }
 

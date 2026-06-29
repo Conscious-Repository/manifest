@@ -57,6 +57,31 @@ func (s *Store) HorizonForMe(horizon string) []string {
 	return s.Load().HorizonTextsForMe(Horizon(horizon))
 }
 
+// Pool returns the 30-day owner==me goals available to pull into a day.
+func (s *Store) Pool() []PlateItem {
+	return s.Load().Pool()
+}
+
+// Promote ensures a goal carries a durable [goal:: id] (so a daily-task backlink
+// stays stable across text edits) and returns its text and id. It does not check
+// the goal.
+func (s *Store) Promote(id string) (text, goalID string, ok bool) {
+	doc := s.Load()
+	_, g := doc.FindGoal(id)
+	if g == nil {
+		return "", "", false
+	}
+	pid := g.explicitID()
+	if pid == "" {
+		pid = g.ID // the derived id becomes the durable one
+		g.Fields = append(g.Fields, Field{Key: "goal", Value: pid})
+		if err := s.Save(doc); err != nil {
+			return "", "", false
+		}
+	}
+	return g.Text, pid, true
+}
+
 func seedDoc() *Doc {
 	area := func(name string, horizons bool) *Area {
 		return &Area{Name: name, has90: horizons, has30: horizons}
