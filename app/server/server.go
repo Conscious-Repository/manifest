@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"manifest/agents"
 	"manifest/calendar"
 	"manifest/daily"
 	"manifest/goals"
@@ -16,13 +17,14 @@ import (
 var webFiles embed.FS
 
 type Server struct {
-	svc   *daily.Service
-	goals *goals.Store
-	cal   *calendar.Client
+	svc    *daily.Service
+	goals  *goals.Store
+	cal    *calendar.Client
+	agents *agents.Queue
 }
 
-func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
-	return &Server{svc: svc, goals: gs, cal: cal}
+func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client, q *agents.Queue) *Server {
+	return &Server{svc: svc, goals: gs, cal: cal, agents: q}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -47,6 +49,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calendar/events", s.handleCalEvents)
 	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
 	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
+
+	// Agents (M4).
+	mux.HandleFunc("/api/agents/status", s.handleAgentsStatus)
+	mux.HandleFunc("/api/agents/post", s.handleAgentsPost)
+	mux.HandleFunc("/api/agents/approvals/confirm", s.handleApprovalConfirm)
+	mux.HandleFunc("/api/agents/approvals/reject", s.handleApprovalReject)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {

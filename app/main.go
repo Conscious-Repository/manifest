@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
+	"manifest/agents"
 	"manifest/calendar"
 	"manifest/daily"
 	"manifest/goals"
@@ -64,10 +66,17 @@ func main() {
 	calClient := calendar.NewClient(ctx, cfg.Timezone)
 	calSource := calendar.NewSource(calClient, filepath.Join(cfg.VaultPath, cfg.PeriodNoteDir, "cache"))
 
+	queue, err := agents.NewQueue(filepath.Join(cfg.VaultPath, "Agents"))
+	if err != nil {
+		log.Printf("agents queue disabled: %v", err)
+	} else {
+		go agents.NewSupervisor(queue, 15*time.Minute, 30*time.Second).Run(ctx)
+	}
+
 	svc := daily.NewService(dailyConfig(cfg), idx)
 	svc.UseGoals(goalsStore)
 	svc.UseEvents(calSource)
-	srv := server.New(svc, goalsStore, calClient)
+	srv := server.New(svc, goalsStore, calClient, queue)
 	switch {
 	case calClient.Enabled():
 		log.Printf("google calendar: connected")
