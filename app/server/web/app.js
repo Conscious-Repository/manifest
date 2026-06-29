@@ -5,7 +5,6 @@ const state = { date: isoToday(), day: null, cal: null, agentsPoll: null };
 
 const els = {
   dateLabel: document.getElementById("dateLabel"),
-  streakText: document.getElementById("streakText"),
   saveState: document.getElementById("saveState"),
   scheduleRows: document.getElementById("scheduleRows"),
   scheduleRange: document.getElementById("scheduleRange"),
@@ -92,7 +91,6 @@ function queueSave(endpoint, payloadFn) {
         body: JSON.stringify(payloadFn()),
       });
       setSaveState("saved");
-      refreshStreak();
     } catch (e) { setSaveState("error"); }
   }, 500);
 }
@@ -108,13 +106,6 @@ function saveDay() {
 function scheduleForSave() {
   return state.day.schedule.map((r) => (r.source === "calendar" ? { ...r, label: "" } : r));
 }
-async function refreshStreak() {
-  try {
-    const r = await fetch(`/api/day?date=${state.date}`);
-    renderStreak((await r.json()).streak);
-  } catch (e) {}
-}
-
 // ---- day: load + render ----
 async function load(date) {
   state.date = date;
@@ -127,7 +118,6 @@ async function load(date) {
 
 function renderDay() {
   const day = state.day;
-  renderStreak(day.streak);
   renderPrep(day);
   if (day.schedule.length) {
     els.scheduleRange.textContent =
@@ -138,10 +128,6 @@ function renderDay() {
   renderReadonly(els.goalsRows, day.goals, "No 90-day goals on your plate");
   renderReadonly(els.milestonesRows, day.milestones, "No 30-day goals on your plate");
   renderTasks(day.tasks);
-}
-
-function renderStreak(n) {
-  els.streakText.textContent = `${n} DAY${n === 1 ? "" : "S"} STREAK`;
 }
 
 // Read-only reflection of goals.md (90-/30-day, owner==me). Edited on the
@@ -289,8 +275,9 @@ function drawConnectors() {
     const ya = yOf(a.el), yb = yOf(b.el);
     const line = document.createElement("div");
     line.className = "conn-line";
+    const gap = 13; // keep the arrowhead above the next entry's text
     line.style.top = `${ya}px`;
-    line.style.height = `${yb - ya}px`;
+    line.style.height = `${Math.max(0, yb - ya - gap)}px`;
     overlay.appendChild(line);
 
     const label = document.createElement("span");
