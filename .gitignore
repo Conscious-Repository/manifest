@@ -1,0 +1,14 @@
+# Local runtime config (vault path, port) — machine-specific, not shared
+config.json
+
+# Rebuildable index / cache (never source of truth)
+*.db
+*.db-wal
+*.db-shm
+
+# Compiled binaries (single-binary builds in-tree)
+/app/app
+/app/manifest
+
+# OS cruft
+.DS_Store

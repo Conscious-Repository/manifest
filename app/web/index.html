@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manifest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="nav-left">
+      <span class="brand">◆</span>
+      <a class="pill" href="#" id="settingsBtn">SETTINGS</a>
+    </div>
+    <div class="nav-center">
+      <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
+      <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
+      <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
+    </div>
+    <div class="nav-right">
+      <span id="streak" class="streak-pill"><span class="streak-check">✓</span> <span id="streakText">0 DAY STREAK</span></span>
+      <span id="saveState" class="save-state">saved</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel schedule-panel">
+      <div class="panel-head">
+        <span class="panel-title">SCHEDULE</span>
+        <span id="scheduleRange" class="panel-meta">8A–6P</span>
+      </div>
+      <div id="scheduleRows" class="schedule-rows"></div>
+    </section>
+
+    <div class="right-col">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">GOALS</span>
+          <span id="goalsRange" class="panel-meta">QUARTER</span>
+        </div>
+        <div id="goalsRows" class="slot-rows"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">MILESTONES</span>
+          <span id="milestonesRange" class="panel-meta">MONTH</span>
+        </div>
+        <div id="milestonesRows" class="slot-rows"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">TASKS</span>
+          <span class="panel-meta">TODAY</span>
+        </div>
+        <div id="taskRows" class="task-rows"></div>
+        <button id="addTask" class="add-btn">+ Add new</button>
+      </section>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

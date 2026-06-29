@@ -1,0 +1,631 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+/* Exact VV-manifest design tokens, measured from the original.
+   Content type: Hanken Grotesk. Labels/time/pills: Carbon mono
+   (drop a carbon.woff2 into web/fonts to match 1:1; otherwise the
+   Spline Sans Mono fallback below is loaded from Google Fonts). */
+
+@font-face {
+  font-family: "Carbon";
+  src: url("fonts/carbon.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --bg: #ffffff;
+  --ink: #000000;        /* time labels, section titles */
+  --text: #171717;       /* dark UI text */
+  --blue: #265acc;       /* filled entries / active */
+  --blue-soft: #aebfe8;  /* duration connectors */
+  --line: #e5e5e5;       /* hairlines */
+  --muted: #a3a3a3;      /* meta labels */
+  --icon: #d4d4d4;       /* slot marker icons */
+  --pill-bg: #171717;
+  --pill-bd: #262626;
+  --pill-ink: #a3a3a3;
+  --streak-bg: #f5f5f5;
+  --streak-bd: #e5e5e5;
+  --streak-ink: #404040;
+  --hover: #fafafa;
+  --radius: 4px;
+  --sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "Carbon", "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body { background: var(--bg); }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  letter-spacing: 0.4px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- nav ---- */
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  gap: 12px;
+}
+.nav-left, .nav-center, .nav-right { display: flex; align-items: center; gap: 8px; }
+.brand { font-size: 16px; color: var(--ink); margin-right: 4px; }
+
+.pill {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.325px;
+  color: var(--pill-ink);
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-bd);
+  border-radius: 0;
+  padding: 4px 8px;
+  height: 26px;
+  line-height: 16px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pill.arrow { padding: 4px 9px; }
+.pill:hover { color: #d4d4d4; }
+#dateLabel { min-width: 92px; text-align: center; }
+
+.streak-pill {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.325px;
+  color: var(--streak-ink);
+  background: var(--streak-bg);
+  border: 1px solid var(--streak-bd);
+  border-radius: 16px;
+  padding: 4px 12px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.streak-check { color: #16a34a; }
+.save-state { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 38px; }
+.save-state.saving { color: var(--blue); }
+
+/* ---- grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  max-width: 1180px;
+  margin: 8px auto 64px;
+  padding: 0 28px;
+}
+.right-col { display: flex; flex-direction: column; gap: 34px; }
+@media (max-width: 860px) { .grid { grid-template-columns: 1fr; gap: 30px; } }
+
+/* ---- panel headers ---- */
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.panel-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  letter-spacing: 0.4px;
+}
+.panel-meta {
+  font-family: var(--mono);
+  font-size: 12.8px;
+  color: var(--muted);
+  letter-spacing: 0.32px;
+}
+
+/* ---- schedule ---- */
+.schedule-rows {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+.shour {
+  display: grid;
+  grid-template-columns: 48px 1fr 56px;
+  border-bottom: 1px solid var(--line); /* hour boundary (all columns) */
+}
+.shour:last-child { border-bottom: none; }
+.shour-time {
+  display: flex;
+  align-items: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  padding-left: 16px;
+}
+.shour-body { min-width: 0; }
+.sslot {
+  display: block;
+  width: 100%;
+  height: 24px;
+  border: none;
+  background: transparent;
+  font-family: var(--sans);
+  font-size: 16px;
+  letter-spacing: 0.4px;
+  color: var(--blue);            /* entries render blue, like the original */
+  padding: 0 12px 0 0;
+  outline: none;
+}
+.shour-body .sslot:first-child { border-bottom: 1px solid var(--line); } /* half-hour line */
+.sslot::placeholder { color: transparent; }
+.sslot:focus { background: var(--hover); }
+.shour-focus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--line);
+}
+.focus-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--icon);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, border-color 0.12s;
+}
+.focus-dot.on { background: var(--blue); border-color: var(--blue); }
+
+/* duration connectors (overlay) */
+.connectors { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.conn-line { position: absolute; left: 50px; width: 0; border-left: 1.5px solid var(--blue-soft); }
+.conn-line::after {
+  content: "";
+  position: absolute; left: -3.5px; bottom: -1px;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 5px solid var(--blue-soft);
+}
+.conn-label {
+  position: absolute; left: 60px; transform: translateY(-50%);
+  font-family: var(--sans); font-size: 14px; letter-spacing: 0.3px;
+  color: var(--blue-soft);
+  background: var(--bg); padding: 0 4px;
+}
+
+/* ---- goals / milestones ---- */
+.slot-rows { display: flex; flex-direction: column; gap: 10px; }
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  min-height: 50px;
+}
+.slot .marker { color: var(--icon); display: flex; align-items: center; }
+.slot .marker svg { width: 24px; height: 24px; }
+.slot input {
+  border: none; background: transparent;
+  font-family: var(--sans); font-size: 16px; letter-spacing: 0.4px;
+  color: var(--blue);
+  width: 100%; outline: none; padding: 4px 0;
+}
+.slot input::placeholder { color: transparent; }
+
+/* ---- tasks ---- */
+.task-rows { display: flex; flex-direction: column; gap: 10px; }
+.trow {
+  display: grid;
+  grid-template-columns: 30px 1fr 28px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  min-height: 50px;
+}
+.trow .num { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.trow input.ttext {
+  border: none; background: transparent;
+  font-family: var(--sans); font-size: 16px; letter-spacing: 0.4px;
+  color: var(--text); width: 100%; outline: none; padding: 4px 0;
+}
+.trow input.ttext.done { text-decoration: line-through; color: var(--blue); }
+.check {
+  width: 22px; height: 22px; border: none; background: transparent;
+  cursor: pointer; color: var(--icon); font-size: 16px; line-height: 1;
+  justify-self: end;
+}
+.check.on { color: var(--blue); }
+.add-btn {
+  margin-top: 10px;
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.3px;
+  color: var(--muted); background: transparent;
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 9px 0; width: 100%; cursor: pointer;
+}
+.add-btn:hover { color: var(--text); border-color: var(--muted); }
+</style></head><body>
+  <header class="nav">
+    <div class="nav-left">
+      <span class="brand">◆</span>
+      <a class="pill" href="#" id="settingsBtn">SETTINGS</a>
+    </div>
+    <div class="nav-center">
+      <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
+      <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
+      <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
+    </div>
+    <div class="nav-right">
+      <span id="streak" class="streak-pill"><span class="streak-check">✓</span> <span id="streakText">0 DAY STREAK</span></span>
+      <span id="saveState" class="save-state">saved</span>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel schedule-panel">
+      <div class="panel-head">
+        <span class="panel-title">SCHEDULE</span>
+        <span id="scheduleRange" class="panel-meta">8A–6P</span>
+      </div>
+      <div id="scheduleRows" class="schedule-rows"></div>
+    </section>
+
+    <div class="right-col">
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">GOALS</span>
+          <span id="goalsRange" class="panel-meta">QUARTER</span>
+        </div>
+        <div id="goalsRows" class="slot-rows"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">MILESTONES</span>
+          <span id="milestonesRange" class="panel-meta">MONTH</span>
+        </div>
+        <div id="milestonesRows" class="slot-rows"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="panel-title">TASKS</span>
+          <span class="panel-meta">TODAY</span>
+        </div>
+        <div id="taskRows" class="task-rows"></div>
+        <button id="addTask" class="add-btn">+ Add new</button>
+      </section>
+    </div>
+  </main>
+<script>
+function tok(min){var h=Math.floor(min/60),m=min%60,s=h>=12?"P":"A",h12=h%12||12;return h12+":"+String(m).padStart(2,"0")+s;}
+var sched=[];for(var h=8;h<=18;h++){sched.push({time:tok(h*60),label:"",focused:false});sched.push({time:tok(h*60+30),label:"",focused:false});}
+function setLabel(t,l,f){var s=sched.find(function(x){return x.time===t});if(s){s.label=l;if(f)s.focused=true;}}
+setLabel("9:00A","Deep work on the parser",true);
+setLabel("9:30A","Deep work, continued");
+setLabel("11:00A","Standup meeting",true);
+setLabel("12:30P","Lunch + walk outside");
+setLabel("2:30P","Customer calls");
+var _day={date:"2026-06-29",quarter:"2026 Q2",month:"June 2026",streak:3,schedule:sched,
+tasks:[{text:"Ship manifest v1",done:false},{text:"Review the PR",done:true},{text:"Write the README",done:false}],
+goals:["Launch buildtall manifest","Read three books","Run a 10k"],
+milestones:["Ship the beta","Onboard five users"]};
+window.fetch=function(url,opt){return Promise.resolve({json:function(){return Promise.resolve(_day)}})};
+</script>
+<script>
+// Manifest — local daily-planner UI over your Obsidian vault.
+// State lives in markdown files; this is a thin editor with autosave.
+
+const SLOTS = 3; // goals / milestones slots, matching the vv.xyz layout
+
+// category icons for the goals / milestones slots (mood, image, clock)
+const SLOT_ICONS = [
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/></svg>',
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4 3 2.5L16 12l3 3.5"/></svg>',
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>',
+];
+
+const state = { date: isoToday(), day: null };
+
+const els = {
+  dateLabel: document.getElementById("dateLabel"),
+  streakText: document.getElementById("streakText"),
+  saveState: document.getElementById("saveState"),
+  scheduleRows: document.getElementById("scheduleRows"),
+  scheduleRange: document.getElementById("scheduleRange"),
+  goalsRows: document.getElementById("goalsRows"),
+  goalsRange: document.getElementById("goalsRange"),
+  milestonesRows: document.getElementById("milestonesRows"),
+  milestonesRange: document.getElementById("milestonesRange"),
+  taskRows: document.getElementById("taskRows"),
+  addTask: document.getElementById("addTask"),
+};
+
+// ---- date helpers ----
+function isoToday() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function pad(n) { return String(n).padStart(2, "0"); }
+function shiftDate(iso, days) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+function prettyDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const wd = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][dt.getDay()];
+  const mo = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][m - 1];
+  return `${wd} ${mo} ${pad(d)}`;
+}
+
+// ---- time helpers (must mirror store.go) ----
+const slotRe = /^(\d{1,2})(?::(\d{2}))?\s*([AaPp])$/;
+function slotMin(tok) {
+  const m = slotRe.exec((tok || "").trim());
+  if (!m) return null;
+  let h = +m[1];
+  if (h < 1 || h > 12) return null;
+  let min = m[2] != null ? +m[2] : 0;
+  if (/a/i.test(m[3])) { if (h === 12) h = 0; } else if (h !== 12) h += 12;
+  return h * 60 + min;
+}
+function hourLabel(h24) {
+  const suffix = h24 >= 12 ? "P" : "A";
+  let h = h24 % 12; if (h === 0) h = 12;
+  return `${h}${suffix}`;
+}
+function fmtDur(min) {
+  if (min < 60) return `${min}m`;
+  const h = min / 60;
+  return (Number.isInteger(h) ? String(h) : h.toFixed(1).replace(/\.0$/, "")) + "h";
+}
+
+// ---- save plumbing (debounced per endpoint) ----
+const savers = {};
+function queueSave(endpoint, payloadFn) {
+  setSaveState("saving");
+  clearTimeout(savers[endpoint]);
+  savers[endpoint] = setTimeout(async () => {
+    try {
+      await fetch(`/api/${endpoint}?date=${state.date}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payloadFn()),
+      });
+      setSaveState("saved");
+      refreshStreak();
+    } catch (e) { setSaveState("error"); }
+  }, 500);
+}
+function setSaveState(s) {
+  els.saveState.textContent = s;
+  els.saveState.classList.toggle("saving", s === "saving");
+}
+function saveDay() {
+  queueSave("day", () => ({ schedule: state.day.schedule, tasks: collectTasks() }));
+}
+function saveGoals() { queueSave("goals", () => ({ items: collectSlots(els.goalsRows) })); }
+function saveMilestones() { queueSave("milestones", () => ({ items: collectSlots(els.milestonesRows) })); }
+
+async function refreshStreak() {
+  try {
+    const r = await fetch(`/api/day?date=${state.date}`);
+    renderStreak((await r.json()).streak);
+  } catch (e) {}
+}
+
+// ---- load + render ----
+async function load(date) {
+  state.date = date;
+  const today = date === isoToday();
+  els.dateLabel.textContent = today ? "TODAY" : prettyDate(date);
+  const r = await fetch(`/api/day?date=${date}`);
+  state.day = await r.json();
+  render();
+}
+
+function render() {
+  const day = state.day;
+  renderStreak(day.streak);
+  els.goalsRange.textContent = (day.quarter || "QUARTER").toUpperCase();
+  els.milestonesRange.textContent = (day.month || "MONTH").toUpperCase();
+  if (day.schedule.length) {
+    els.scheduleRange.textContent =
+      `${hourLabel(Math.floor(slotMin(day.schedule[0].time) / 60))}–` +
+      `${hourLabel(Math.floor(slotMin(day.schedule[day.schedule.length - 1].time) / 60))}`;
+  }
+  renderSchedule(day.schedule);
+  renderSlots(els.goalsRows, day.goals, "goal", saveGoals);
+  renderSlots(els.milestonesRows, day.milestones, "milestone", saveMilestones);
+  renderTasks(day.tasks);
+}
+
+function renderStreak(n) {
+  els.streakText.textContent = `${n} DAY${n === 1 ? "" : "S"} STREAK`;
+}
+
+// Schedule: two input lines per hour (:00 / :30), one focus circle per hour,
+// and duration connectors drawn from each filled slot to the next.
+function renderSchedule(slots) {
+  els.scheduleRows.innerHTML = "";
+  const overlay = document.createElement("div");
+  overlay.className = "connectors";
+  overlay.id = "connectors";
+  els.scheduleRows.appendChild(overlay);
+
+  // group slots by hour, preserving order
+  const hours = [];
+  const byHour = new Map();
+  slots.forEach((slot, i) => {
+    const h = Math.floor(slotMin(slot.time) / 60);
+    if (!byHour.has(h)) { byHour.set(h, []); hours.push(h); }
+    byHour.get(h).push({ slot, i });
+  });
+
+  hours.forEach((h) => {
+    const block = document.createElement("div");
+    block.className = "shour";
+
+    const time = document.createElement("span");
+    time.className = "shour-time";
+    time.textContent = hourLabel(h);
+
+    const body = document.createElement("div");
+    body.className = "shour-body";
+    const entries = byHour.get(h);
+    entries.forEach(({ slot, i }) => {
+      const input = document.createElement("input");
+      input.className = "sslot" + (slot.label ? " filled" : "");
+      input.value = slot.label || "";
+      input.dataset.idx = i;
+      input.addEventListener("input", () => {
+        state.day.schedule[i].label = input.value;
+        input.classList.toggle("filled", input.value.trim() !== "");
+        drawConnectors();
+      });
+      input.addEventListener("change", saveDay);
+      body.appendChild(input);
+    });
+
+    const focusCell = document.createElement("div");
+    focusCell.className = "shour-focus";
+    const lead = entries[0].i; // focus tracked on the hour's first slot
+    const dot = document.createElement("button");
+    dot.className = "focus-dot" + (state.day.schedule[lead].focused ? " on" : "");
+    dot.title = "Was I focused?";
+    dot.addEventListener("click", () => {
+      const v = !state.day.schedule[lead].focused;
+      state.day.schedule[lead].focused = v;
+      dot.classList.toggle("on", v);
+      saveDay();
+    });
+    focusCell.appendChild(dot);
+
+    block.append(time, body, focusCell);
+    els.scheduleRows.appendChild(block);
+  });
+
+  drawConnectors();
+}
+
+// Draw a vertical line from each filled slot down to the next filled slot,
+// labelled with the elapsed duration (30m, 1h, 1.5h, ...).
+function drawConnectors() {
+  const overlay = document.getElementById("connectors");
+  if (!overlay) return;
+  overlay.innerHTML = "";
+  const inputs = [...els.scheduleRows.querySelectorAll("input.sslot")];
+  const filled = inputs
+    .map((el) => ({ el, min: slotMin(state.day.schedule[+el.dataset.idx].time) }))
+    .filter((x) => x.el.value.trim() !== "");
+  const crect = els.scheduleRows.getBoundingClientRect();
+  const yOf = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.top - crect.top + r.height / 2;
+  };
+  for (let k = 0; k < filled.length - 1; k++) {
+    const a = filled[k], b = filled[k + 1];
+    const ya = yOf(a.el), yb = yOf(b.el);
+    const line = document.createElement("div");
+    line.className = "conn-line";
+    line.style.top = `${ya}px`;
+    line.style.height = `${yb - ya}px`;
+    overlay.appendChild(line);
+
+    const label = document.createElement("span");
+    label.className = "conn-label";
+    label.style.top = `${(ya + yb) / 2}px`;
+    label.textContent = fmtDur(b.min - a.min);
+    overlay.appendChild(label);
+  }
+}
+window.addEventListener("resize", drawConnectors);
+
+function renderSlots(container, items, kind, onSave) {
+  container.innerHTML = "";
+  for (let i = 0; i < SLOTS; i++) {
+    const slot = document.createElement("div");
+    slot.className = "slot";
+    const marker = document.createElement("span");
+    marker.className = "marker";
+    marker.innerHTML = SLOT_ICONS[i % SLOT_ICONS.length];
+    const input = document.createElement("input");
+    input.className = items[i] ? "filled" : "";
+    input.value = items[i] || "";
+    input.placeholder = `${kind} ${i + 1}`;
+    input.addEventListener("input", () => input.classList.toggle("filled", input.value.trim() !== ""));
+    input.addEventListener("change", onSave);
+    slot.append(marker, input);
+    container.appendChild(slot);
+  }
+}
+function collectSlots(container) {
+  return [...container.querySelectorAll("input")].map((i) => i.value.trim()).filter((v) => v);
+}
+
+function renderTasks(tasks) {
+  els.taskRows.innerHTML = "";
+  const list = tasks.length ? tasks : [{ text: "", done: false }];
+  list.forEach((t, i) => addTaskRow(t, i + 1));
+}
+function addTaskRow(task, num) {
+  const row = document.createElement("div");
+  row.className = "trow";
+  const n = document.createElement("span");
+  n.className = "num";
+  n.textContent = `${num}.`;
+  const input = document.createElement("input");
+  input.className = "ttext" + (task.done ? " done" : "");
+  input.value = task.text || "";
+  input.addEventListener("change", saveDay);
+  const cell = document.createElement("div");
+  cell.className = "check-cell";
+  const check = document.createElement("button");
+  check.className = "check" + (task.done ? " on" : "");
+  check.textContent = task.done ? "✓" : "○";
+  check.addEventListener("click", () => {
+    const done = !input.classList.contains("done");
+    input.classList.toggle("done", done);
+    check.classList.toggle("on", done);
+    check.textContent = done ? "✓" : "○";
+    saveDay();
+  });
+  cell.appendChild(check);
+  row.append(n, input, cell);
+  els.taskRows.appendChild(row);
+}
+function collectTasks() {
+  return [...els.taskRows.querySelectorAll(".trow")]
+    .map((row) => ({
+      text: row.querySelector(".ttext").value.trim(),
+      done: row.querySelector(".ttext").classList.contains("done"),
+    }))
+    .filter((t) => t.text.length > 0);
+}
+
+// ---- events ----
+document.getElementById("prevBtn").addEventListener("click", () => load(shiftDate(state.date, -1)));
+document.getElementById("nextBtn").addEventListener("click", () => load(shiftDate(state.date, 1)));
+document.getElementById("todayBtn").addEventListener("click", () => load(isoToday()));
+els.addTask.addEventListener("click", () => {
+  addTaskRow({ text: "", done: false }, els.taskRows.querySelectorAll(".trow").length + 1);
+});
+
+load(state.date);
+</script>
+</body></html>
