@@ -57,14 +57,25 @@ type Day struct {
 	Streak     int           `json:"streak"`
 }
 
+// GoalsProvider supplies the goals.md-derived data for the read-only daily
+// panels (90-day / 30-day, owner==me). It is optional: when unset, the legacy
+// quarterly/monthly period notes are used instead.
+type GoalsProvider interface {
+	HorizonForMe(horizon string) []string
+}
+
 // Service reads/writes the manifest regions of daily notes, resolving note paths
 // through the vault Index so a YYYY-MM-DD note is found anywhere in the vault.
 type Service struct {
-	cfg Config
-	idx *vault.Index
+	cfg   Config
+	idx   *vault.Index
+	goals GoalsProvider
 }
 
 func NewService(cfg Config, idx *vault.Index) *Service { return &Service{cfg: cfg, idx: idx} }
+
+// UseGoals routes the daily Goals/Milestones panels through goals.md.
+func (s *Service) UseGoals(p GoalsProvider) { s.goals = p }
 
 // ----- period-note path helpers (goals/milestones; superseded in M1) -----
 
@@ -345,8 +356,13 @@ func (s *Service) Load(date string) (Day, error) {
 	day.Schedule = s.mergeSchedule(parsedRows)
 	day.Tasks = tasks
 
-	day.Goals = readList(s.goalsPath(d))
-	day.Milestones = readList(s.milestonesPath(d))
+	if s.goals != nil {
+		day.Goals = s.goals.HorizonForMe("90-day")
+		day.Milestones = s.goals.HorizonForMe("30-day")
+	} else {
+		day.Goals = readList(s.goalsPath(d))
+		day.Milestones = readList(s.milestonesPath(d))
+	}
 	day.Streak = s.streak(d)
 	return day, nil
 }

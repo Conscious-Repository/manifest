@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"manifest/daily"
+	"manifest/goals"
 	"manifest/server"
 	"manifest/vault"
 )
@@ -53,8 +54,14 @@ func main() {
 		defer w.Close()
 	}
 
+	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName)
+	if err := goalsStore.Seed(); err != nil {
+		log.Printf("seeding goals.md: %v", err)
+	}
+
 	svc := daily.NewService(dailyConfig(cfg), idx)
-	srv := server.New(svc)
+	svc.UseGoals(goalsStore)
+	srv := server.New(svc, goalsStore)
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))

@@ -8,20 +8,36 @@ import (
 	"net/http"
 
 	"manifest/daily"
+	"manifest/goals"
 )
 
 //go:embed web
 var webFiles embed.FS
 
-type Server struct{ svc *daily.Service }
+type Server struct {
+	svc   *daily.Service
+	goals *goals.Store
+}
 
-func New(svc *daily.Service) *Server { return &Server{svc: svc} }
+func New(svc *daily.Service, gs *goals.Store) *Server {
+	return &Server{svc: svc, goals: gs}
+}
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+
+	// Daily manifest.
 	mux.HandleFunc("/api/day", s.handleDay)
-	mux.HandleFunc("/api/goals", s.handleGoals)
-	mux.HandleFunc("/api/milestones", s.handleMilestones)
+
+	// Goals system (M1). /api/goals is now the read projection; the old
+	// period-note POST routes are retired in favor of structured editing.
+	mux.HandleFunc("/api/goals", s.handleGoalsGet)
+	mux.HandleFunc("/api/myplate", s.handleMyPlate)
+	mux.HandleFunc("/api/areas", s.handleAreas)
+	mux.HandleFunc("/api/areas/reorder", s.handleAreasReorder)
+	mux.HandleFunc("/api/goals/item", s.handleGoalItem)
+	mux.HandleFunc("/api/goals/check", s.handleGoalCheck)
+	mux.HandleFunc("/api/goals/reorder", s.handleGoalsReorder)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -58,34 +74,6 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *Server) handleGoals(w http.ResponseWriter, r *http.Request) {
-	s.handleList(w, r, s.svc.SaveGoals)
-}
-
-func (s *Server) handleMilestones(w http.ResponseWriter, r *http.Request) {
-	s.handleList(w, r, s.svc.SaveMilestones)
-}
-
-func (s *Server) handleList(w http.ResponseWriter, r *http.Request, save func(string, []string) error) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	date := r.URL.Query().Get("date")
-	var body struct {
-		Items []string `json:"items"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		httpError(w, err)
-		return
-	}
-	if err := save(date, body.Items); err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, map[string]bool{"ok": true})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
