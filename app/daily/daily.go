@@ -36,9 +36,10 @@ type Config struct {
 // ----- data model -----
 
 type ScheduleRow struct {
-	Time    string `json:"time"`    // display token, e.g. "8A"
-	Label   string `json:"label"`   // what you planned / did
-	Focused bool   `json:"focused"` // "was I focused?" toggle
+	Time    string `json:"time"`             // display token, e.g. "8A"
+	Label   string `json:"label"`            // what you planned / did
+	Focused bool   `json:"focused"`          // "was I focused?" toggle
+	Source  string `json:"source,omitempty"` // "" | "calendar" (calendar-sourced, not persisted)
 }
 
 type Task struct {
@@ -69,23 +70,22 @@ type Day struct {
 	Pool       []PoolItem    `json:"pool,omitempty"` // 30-day me goals to pull (when unplanned)
 }
 
-// ScheduleEvent is a normalized timed calendar event (M3 fills these in).
-type ScheduleEvent struct {
-	Start string `json:"start"`
-	End   string `json:"end"`
-	Title string `json:"title"`
-	ID    string `json:"id"`
+// CalSlot is a half-hour schedule slot derived from a timed calendar event.
+type CalSlot struct {
+	Token   string `json:"token"`   // canonical half-hour token, e.g. "9:30A"
+	Title   string `json:"title"`   // event title
+	EventID string `json:"eventId"` // for dedupe / idempotent re-sync
 }
 
-// EventSource supplies timed calendar events for a date. It is the seam the
-// calendar integration (M3) plugs into; until then NopEventSource is used.
+// EventSource supplies a date's calendar-derived schedule slots. The calendar
+// integration (M3) plugs in here; NopEventSource is the disabled default.
 type EventSource interface {
-	TimedEvents(date string) ([]ScheduleEvent, error)
+	Slots(date string) ([]CalSlot, error)
 }
 
 type NopEventSource struct{}
 
-func (NopEventSource) TimedEvents(string) ([]ScheduleEvent, error) { return nil, nil }
+func (NopEventSource) Slots(string) ([]CalSlot, error) { return nil, nil }
 
 // GoalsProvider supplies the goals.md-derived data for the read-only daily
 // panels (90-day / 30-day, owner==me). It is optional: when unset, the legacy
@@ -319,6 +319,35 @@ func (s *Service) mergeSchedule(parsed []ScheduleRow) []ScheduleRow {
 	return out
 }
 
+// mergeCalendar overlays calendar-derived slots onto the schedule without
+// overwriting manual labels: an empty slot is filled and flagged "calendar";
+// events outside the configured range are appended, then rows are re-sorted by
+// time. It does not persist — the UI drops calendar-flagged labels on save, so
+// re-sync is idempotent and manual text is always preserved.
+func (s *Service) mergeCalendar(rows []ScheduleRow, slots []CalSlot) []ScheduleRow {
+	idx := map[string]int{}
+	for i := range rows {
+		idx[rows[i].Time] = i
+	}
+	for _, cs := range slots {
+		if i, ok := idx[cs.Token]; ok {
+			if strings.TrimSpace(rows[i].Label) == "" {
+				rows[i].Label = cs.Title
+				rows[i].Source = "calendar"
+			}
+			continue
+		}
+		rows = append(rows, ScheduleRow{Time: cs.Token, Label: cs.Title, Source: "calendar"})
+		idx[cs.Token] = len(rows) - 1
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, _ := parseSlot(rows[i].Time)
+		b, _ := parseSlot(rows[j].Time)
+		return a < b
+	})
+	return rows
+}
+
 // ----- serialization -----
 
 func serializeBlock(d Day) string {
@@ -427,6 +456,9 @@ func (s *Service) Load(date string) (Day, error) {
 	block, _ := regionBetween(content, dailyStart, dailyEnd)
 	parsedRows, tasks := parseBlock(block)
 	day.Schedule = s.mergeSchedule(parsedRows)
+	if slots, err := s.events.Slots(date); err == nil && len(slots) > 0 {
+		day.Schedule = s.mergeCalendar(day.Schedule, slots)
+	}
 	day.Tasks = tasks
 
 	// A future date with no active manifest is "unplanned": landing on it offers

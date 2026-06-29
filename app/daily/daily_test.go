@@ -154,6 +154,34 @@ func TestTaskGoalBacklinkRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMergeCalendar(t *testing.T) {
+	s, _ := testService(t)
+	rows := []ScheduleRow{
+		{Time: "9:00A", Label: "Standup (manual)"},
+		{Time: "9:30A", Label: ""},
+		{Time: "10:00A", Label: ""},
+	}
+	slots := []CalSlot{
+		{Token: "9:00A", Title: "Cal event"},  // collides with manual -> manual wins
+		{Token: "9:30A", Title: "Meeting"},    // fills empty -> flagged calendar
+		{Token: "7:00A", Title: "Early call"}, // outside range -> appended, sorts first
+	}
+	out := s.mergeCalendar(rows, slots)
+	byTok := map[string]ScheduleRow{}
+	for _, r := range out {
+		byTok[r.Time] = r
+	}
+	if byTok["9:00A"].Label != "Standup (manual)" || byTok["9:00A"].Source == "calendar" {
+		t.Fatalf("manual slot must win: %+v", byTok["9:00A"])
+	}
+	if byTok["9:30A"].Label != "Meeting" || byTok["9:30A"].Source != "calendar" {
+		t.Fatalf("empty slot should be filled + flagged: %+v", byTok["9:30A"])
+	}
+	if byTok["7:00A"].Label != "Early call" || out[0].Time != "7:00A" {
+		t.Fatalf("out-of-range event should be appended and sorted first: %+v", out)
+	}
+}
+
 func TestGoalsAndMilestones(t *testing.T) {
 	s, _ := testService(t)
 	if err := s.SaveGoals("2026-06-29", []string{"Launch v1", "Read more"}); err != nil {

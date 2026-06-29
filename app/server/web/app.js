@@ -1,7 +1,7 @@
 // Manifest — local daily-planner UI over your Obsidian vault.
 // State lives in markdown files; this is a thin editor with autosave.
 
-const state = { date: isoToday(), day: null };
+const state = { date: isoToday(), day: null, cal: null };
 
 const els = {
   dateLabel: document.getElementById("dateLabel"),
@@ -16,9 +16,17 @@ const els = {
   prepBanner: document.getElementById("prepBanner"),
   dayView: document.getElementById("dayView"),
   goalsView: document.getElementById("goalsView"),
+  calendarView: document.getElementById("calendarView"),
   dateNav: document.getElementById("dateNav"),
   goalsNav: document.getElementById("goalsNav"),
+  calNav: document.getElementById("calNav"),
   dayNav: document.getElementById("dayNav"),
+  calGrid: document.getElementById("calGrid"),
+  calMonthLabel: document.getElementById("calMonthLabel"),
+  calConnect: document.getElementById("calConnect"),
+  calConnectBtn: document.getElementById("calConnectBtn"),
+  calPrev: document.getElementById("calPrev"),
+  calNext: document.getElementById("calNext"),
   plateRows: document.getElementById("plateRows"),
   areasRows: document.getElementById("areasRows"),
   addArea: document.getElementById("addArea"),
@@ -87,7 +95,12 @@ function setSaveState(s) {
   els.saveState.classList.toggle("saving", s === "saving");
 }
 function saveDay() {
-  queueSave("day", () => ({ schedule: state.day.schedule, tasks: collectTasks() }));
+  queueSave("day", () => ({ schedule: scheduleForSave(), tasks: collectTasks() }));
+}
+// Pristine calendar-sourced slots are not persisted (sent empty) so they never
+// become manual text; the live overlay re-applies them on the next load.
+function scheduleForSave() {
+  return state.day.schedule.map((r) => (r.source === "calendar" ? { ...r, label: "" } : r));
 }
 async function refreshStreak() {
   try {
@@ -215,11 +228,15 @@ function renderSchedule(slots) {
     const entries = byHour.get(h);
     entries.forEach(({ slot, i }) => {
       const input = document.createElement("input");
-      input.className = "sslot" + (slot.label ? " filled" : "");
+      const isCal = slot.source === "calendar";
+      input.className = "sslot" + (slot.label ? " filled" : "") + (isCal ? " cal" : "");
       input.value = slot.label || "";
       input.dataset.idx = i;
+      if (isCal) input.title = "From your calendar — type to make it your own";
       input.addEventListener("input", () => {
         state.day.schedule[i].label = input.value;
+        state.day.schedule[i].source = ""; // editing makes a calendar slot manual
+        input.classList.remove("cal");
         input.classList.toggle("filled", input.value.trim() !== "");
         drawConnectors();
       });
@@ -492,16 +509,117 @@ els.addArea.addEventListener("click", () => {
   if (name && name.trim()) goalsApi("POST", "/api/areas", { name: name.trim() });
 });
 
+// ================= Calendar (month view) =================
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+function ensureCalState() {
+  if (!state.cal) {
+    const d = new Date();
+    state.cal = { year: d.getFullYear(), month: d.getMonth() };
+  }
+  return state.cal;
+}
+
+async function loadCalendar() {
+  const { year, month } = ensureCalState();
+  els.calMonthLabel.textContent = `${MONTHS[month]} ${year}`.toUpperCase();
+  let status = { configured: false };
+  try { status = await (await fetch("/api/calendar/status")).json(); } catch (e) {}
+  els.calConnect.hidden = !!status.configured;
+
+  let events = [];
+  if (status.configured) {
+    const first = `${year}-${pad(month + 1)}-01`;
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const last = `${year}-${pad(month + 1)}-${pad(lastDay)}`;
+    try {
+      const r = await (await fetch(`/api/calendar/events?start=${first}&end=${last}`)).json();
+      events = r.events || [];
+    } catch (e) {}
+  }
+  renderMonth(year, month, events);
+}
+
+function renderMonth(year, month, events) {
+  const byDay = new Map();
+  events.forEach((e) => {
+    const day = (e.start || "").slice(0, 10);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(e);
+  });
+  els.calGrid.innerHTML = "";
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday = 0
+  const days = new Date(year, month + 1, 0).getDate();
+  for (let i = 0; i < firstDow; i++) {
+    const blank = document.createElement("div");
+    blank.className = "cal-cell blank";
+    els.calGrid.appendChild(blank);
+  }
+  const today = isoToday();
+  for (let d = 1; d <= days; d++) {
+    const iso = `${year}-${pad(month + 1)}-${pad(d)}`;
+    const cell = document.createElement("div");
+    cell.className = "cal-cell" + (iso === today ? " today" : "");
+    const num = document.createElement("div");
+    num.className = "cal-day-num";
+    num.textContent = d;
+    cell.appendChild(num);
+    const evs = byDay.get(iso) || [];
+    evs.slice(0, 3).forEach((e) => {
+      const chip = document.createElement("div");
+      chip.className = "cal-chip" + (e.allDay ? " allday" : "");
+      chip.textContent = e.title || "(busy)";
+      cell.appendChild(chip);
+    });
+    if (evs.length > 3) {
+      const more = document.createElement("div");
+      more.className = "cal-more";
+      more.textContent = `+${evs.length - 3} more`;
+      cell.appendChild(more);
+    }
+    cell.addEventListener("click", () => { state.date = iso; location.hash = "#/"; });
+    els.calGrid.appendChild(cell);
+  }
+}
+
+function shiftCalMonth(delta) {
+  const c = ensureCalState();
+  let m = c.month + delta, y = c.year;
+  if (m < 0) { m = 11; y--; }
+  else if (m > 11) { m = 0; y++; }
+  state.cal = { year: y, month: m };
+  loadCalendar();
+}
+
+async function connectCalendar() {
+  els.calConnectBtn.textContent = "Connecting… (check your browser)";
+  try {
+    const r = await (await fetch("/api/calendar/connect", { method: "POST" })).json();
+    els.calConnectBtn.textContent = "Connect Google Calendar";
+    if (r.configured) loadCalendar();
+  } catch (e) { els.calConnectBtn.textContent = "Connect failed — retry"; }
+}
+
+els.calConnectBtn.addEventListener("click", connectCalendar);
+els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
+els.calNext.addEventListener("click", () => shiftCalMonth(1));
+
 // ---- router ----
 function route() {
-  const goals = location.hash === "#/goals";
-  els.dayView.hidden = goals;
+  const h = location.hash;
+  const goals = h === "#/goals";
+  const cal = h === "#/calendar";
+  const day = !goals && !cal;
+  els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
-  els.dateNav.hidden = goals;
-  els.goalsNav.hidden = goals;
-  els.dayNav.hidden = !goals;
+  els.calendarView.hidden = !cal;
+  els.dateNav.hidden = !day;
+  els.goalsNav.hidden = !day;
+  els.calNav.hidden = !day;
+  els.dayNav.hidden = day;
   if (goals) loadGoals();
-  else load(state.date); // reload so goal edits reflect in the day panels
+  else if (cal) loadCalendar();
+  else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);
 

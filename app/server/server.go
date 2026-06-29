@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 
+	"manifest/calendar"
 	"manifest/daily"
 	"manifest/goals"
 )
@@ -17,10 +18,11 @@ var webFiles embed.FS
 type Server struct {
 	svc   *daily.Service
 	goals *goals.Store
+	cal   *calendar.Client
 }
 
-func New(svc *daily.Service, gs *goals.Store) *Server {
-	return &Server{svc: svc, goals: gs}
+func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
+	return &Server{svc: svc, goals: gs, cal: cal}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -39,6 +41,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/item", s.handleGoalItem)
 	mux.HandleFunc("/api/goals/check", s.handleGoalCheck)
 	mux.HandleFunc("/api/goals/reorder", s.handleGoalsReorder)
+
+	// Google Calendar (M3, read-only).
+	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)
+	mux.HandleFunc("/api/calendar/events", s.handleCalEvents)
+	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
+	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {
