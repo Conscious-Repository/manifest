@@ -13,9 +13,10 @@
   <header class="nav">
     <div class="nav-left">
       <span class="brand">◆</span>
-      <a class="pill" href="#" id="settingsBtn">SETTINGS</a>
+      <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
+      <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
     </div>
-    <div class="nav-center">
+    <div class="nav-center" id="dateNav">
       <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
       <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
       <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
@@ -26,7 +27,7 @@
     </div>
   </header>
 
-  <main class="grid">
+  <main class="grid" id="dayView">
     <section class="panel schedule-panel">
       <div class="panel-head">
         <span class="panel-title">SCHEDULE</span>
@@ -39,17 +40,17 @@
       <section class="panel">
         <div class="panel-head">
           <span class="panel-title">GOALS</span>
-          <span id="goalsRange" class="panel-meta">QUARTER</span>
+          <span id="goalsRange" class="panel-meta">90-DAY · ME</span>
         </div>
-        <div id="goalsRows" class="slot-rows"></div>
+        <div id="goalsRows" class="ro-rows"></div>
       </section>
 
       <section class="panel">
         <div class="panel-head">
           <span class="panel-title">MILESTONES</span>
-          <span id="milestonesRange" class="panel-meta">MONTH</span>
+          <span id="milestonesRange" class="panel-meta">30-DAY · ME</span>
         </div>
-        <div id="milestonesRows" class="slot-rows"></div>
+        <div id="milestonesRows" class="ro-rows"></div>
       </section>
 
       <section class="panel">
@@ -62,6 +63,24 @@
       </section>
     </div>
   </main>
+
+  <section class="goals-page" id="goalsView" hidden>
+    <aside class="plate-col">
+      <div class="panel-head">
+        <span class="panel-title">MY PLATE</span>
+        <span class="panel-meta">OWNER · ME</span>
+      </div>
+      <div id="plateRows" class="plate-rows"></div>
+    </aside>
+    <div class="areas-col">
+      <div class="panel-head">
+        <span class="panel-title">AREAS &amp; GOALS</span>
+        <span class="panel-meta">goals.md</span>
+      </div>
+      <div id="areasRows"></div>
+      <button id="addArea" class="add-btn">+ Add area</button>
+    </div>
+  </section>
 
   <script src="app.js"></script>
 </body>

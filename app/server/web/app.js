@@ -1,15 +1,6 @@
 // Manifest — local daily-planner UI over your Obsidian vault.
 // State lives in markdown files; this is a thin editor with autosave.
 
-const SLOTS = 3; // goals / milestones slots, matching the vv.xyz layout
-
-// category icons for the goals / milestones slots (mood, image, clock)
-const SLOT_ICONS = [
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/></svg>',
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4 3 2.5L16 12l3 3.5"/></svg>',
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>',
-];
-
 const state = { date: isoToday(), day: null };
 
 const els = {
@@ -19,11 +10,17 @@ const els = {
   scheduleRows: document.getElementById("scheduleRows"),
   scheduleRange: document.getElementById("scheduleRange"),
   goalsRows: document.getElementById("goalsRows"),
-  goalsRange: document.getElementById("goalsRange"),
   milestonesRows: document.getElementById("milestonesRows"),
-  milestonesRange: document.getElementById("milestonesRange"),
   taskRows: document.getElementById("taskRows"),
   addTask: document.getElementById("addTask"),
+  dayView: document.getElementById("dayView"),
+  goalsView: document.getElementById("goalsView"),
+  dateNav: document.getElementById("dateNav"),
+  goalsNav: document.getElementById("goalsNav"),
+  dayNav: document.getElementById("dayNav"),
+  plateRows: document.getElementById("plateRows"),
+  areasRows: document.getElementById("areasRows"),
+  addArea: document.getElementById("addArea"),
 };
 
 // ---- date helpers ----
@@ -45,7 +42,7 @@ function prettyDate(iso) {
   return `${wd} ${mo} ${pad(d)}`;
 }
 
-// ---- time helpers (must mirror store.go) ----
+// ---- time helpers (must mirror daily/daily.go) ----
 const slotRe = /^(\d{1,2})(?::(\d{2}))?\s*([AaPp])$/;
 function slotMin(tok) {
   const m = slotRe.exec((tok || "").trim());
@@ -91,9 +88,6 @@ function setSaveState(s) {
 function saveDay() {
   queueSave("day", () => ({ schedule: state.day.schedule, tasks: collectTasks() }));
 }
-function saveGoals() { queueSave("goals", () => ({ items: collectSlots(els.goalsRows) })); }
-function saveMilestones() { queueSave("milestones", () => ({ items: collectSlots(els.milestonesRows) })); }
-
 async function refreshStreak() {
   try {
     const r = await fetch(`/api/day?date=${state.date}`);
@@ -101,34 +95,51 @@ async function refreshStreak() {
   } catch (e) {}
 }
 
-// ---- load + render ----
+// ---- day: load + render ----
 async function load(date) {
   state.date = date;
   const today = date === isoToday();
   els.dateLabel.textContent = today ? "TODAY" : prettyDate(date);
   const r = await fetch(`/api/day?date=${date}`);
   state.day = await r.json();
-  render();
+  renderDay();
 }
 
-function render() {
+function renderDay() {
   const day = state.day;
   renderStreak(day.streak);
-  els.goalsRange.textContent = (day.quarter || "QUARTER").toUpperCase();
-  els.milestonesRange.textContent = (day.month || "MONTH").toUpperCase();
   if (day.schedule.length) {
     els.scheduleRange.textContent =
       `${hourLabel(Math.floor(slotMin(day.schedule[0].time) / 60))}–` +
       `${hourLabel(Math.floor(slotMin(day.schedule[day.schedule.length - 1].time) / 60))}`;
   }
   renderSchedule(day.schedule);
-  renderSlots(els.goalsRows, day.goals, "goal", saveGoals);
-  renderSlots(els.milestonesRows, day.milestones, "milestone", saveMilestones);
+  renderReadonly(els.goalsRows, day.goals, "No 90-day goals on your plate");
+  renderReadonly(els.milestonesRows, day.milestones, "No 30-day goals on your plate");
   renderTasks(day.tasks);
 }
 
 function renderStreak(n) {
   els.streakText.textContent = `${n} DAY${n === 1 ? "" : "S"} STREAK`;
+}
+
+// Read-only reflection of goals.md (90-/30-day, owner==me). Edited on the
+// Goals page, not here.
+function renderReadonly(container, items, emptyHint) {
+  container.innerHTML = "";
+  if (!items || !items.length) {
+    const row = document.createElement("div");
+    row.className = "ro-row empty";
+    row.textContent = emptyHint;
+    container.appendChild(row);
+    return;
+  }
+  items.forEach((text) => {
+    const row = document.createElement("div");
+    row.className = "ro-row";
+    row.textContent = text;
+    container.appendChild(row);
+  });
 }
 
 // Schedule: two input lines per hour (:00 / :30), one focus circle per hour,
@@ -140,7 +151,6 @@ function renderSchedule(slots) {
   overlay.id = "connectors";
   els.scheduleRows.appendChild(overlay);
 
-  // group slots by hour, preserving order
   const hours = [];
   const byHour = new Map();
   slots.forEach((slot, i) => {
@@ -176,7 +186,7 @@ function renderSchedule(slots) {
 
     const focusCell = document.createElement("div");
     focusCell.className = "shour-focus";
-    const lead = entries[0].i; // focus tracked on the hour's first slot
+    const lead = entries[0].i;
     const dot = document.createElement("button");
     dot.className = "focus-dot" + (state.day.schedule[lead].focused ? " on" : "");
     dot.title = "Was I focused?";
@@ -195,8 +205,6 @@ function renderSchedule(slots) {
   drawConnectors();
 }
 
-// Draw a vertical line from each filled slot down to the next filled slot,
-// labelled with the elapsed duration (30m, 1h, 1.5h, ...).
 function drawConnectors() {
   const overlay = document.getElementById("connectors");
   if (!overlay) return;
@@ -227,28 +235,6 @@ function drawConnectors() {
   }
 }
 window.addEventListener("resize", drawConnectors);
-
-function renderSlots(container, items, kind, onSave) {
-  container.innerHTML = "";
-  for (let i = 0; i < SLOTS; i++) {
-    const slot = document.createElement("div");
-    slot.className = "slot";
-    const marker = document.createElement("span");
-    marker.className = "marker";
-    marker.innerHTML = SLOT_ICONS[i % SLOT_ICONS.length];
-    const input = document.createElement("input");
-    input.className = items[i] ? "filled" : "";
-    input.value = items[i] || "";
-    input.placeholder = `${kind} ${i + 1}`;
-    input.addEventListener("input", () => input.classList.toggle("filled", input.value.trim() !== ""));
-    input.addEventListener("change", onSave);
-    slot.append(marker, input);
-    container.appendChild(slot);
-  }
-}
-function collectSlots(container) {
-  return [...container.querySelectorAll("input")].map((i) => i.value.trim()).filter((v) => v);
-}
 
 function renderTasks(tasks) {
   els.taskRows.innerHTML = "";
@@ -290,7 +276,188 @@ function collectTasks() {
     .filter((t) => t.text.length > 0);
 }
 
-// ---- events ----
+// ================= Goals page =================
+
+async function goalsApi(method, path, body) {
+  setSaveState("saving");
+  try {
+    await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  await loadGoals();
+}
+
+async function loadGoals() {
+  const [docR, plateR] = await Promise.all([fetch("/api/goals"), fetch("/api/myplate")]);
+  const doc = await docR.json();
+  const plate = await plateR.json();
+  renderPlate(plate.groups || []);
+  renderAreas(doc.areas || []);
+}
+
+function renderPlate(groups) {
+  els.plateRows.innerHTML = "";
+  if (!groups.length) {
+    const e = document.createElement("div");
+    e.className = "ro-row empty";
+    e.textContent = "Nothing on your plate yet";
+    els.plateRows.appendChild(e);
+    return;
+  }
+  groups.forEach((g) => {
+    const head = document.createElement("div");
+    head.className = "plate-area";
+    head.textContent = g.area;
+    els.plateRows.appendChild(head);
+    g.items.forEach((it) => {
+      const row = document.createElement("div");
+      row.className = "plate-item";
+      const txt = document.createElement("span");
+      txt.className = "plate-text";
+      txt.textContent = it.text;
+      row.appendChild(txt);
+      if (it.due) {
+        const due = document.createElement("span");
+        due.className = "plate-due";
+        due.textContent = it.due;
+        row.appendChild(due);
+      }
+      els.plateRows.appendChild(row);
+    });
+  });
+}
+
+function renderAreas(areas) {
+  els.areasRows.innerHTML = "";
+  areas.forEach((area) => els.areasRows.appendChild(areaCard(area)));
+}
+
+function areaCard(area) {
+  const card = document.createElement("div");
+  card.className = "area-card";
+
+  const head = document.createElement("div");
+  head.className = "area-head";
+  const name = document.createElement("input");
+  name.className = "area-name";
+  name.value = area.name;
+  name.addEventListener("change", () => {
+    const v = name.value.trim();
+    if (v && v !== area.name) goalsApi("PATCH", "/api/areas", { name: area.name, newName: v });
+  });
+  const del = document.createElement("button");
+  del.className = "icon-btn area-del";
+  del.textContent = "✕";
+  del.title = "Delete area";
+  del.addEventListener("click", () => {
+    if (confirm(`Delete area “${area.name}” and its goals?`))
+      goalsApi("DELETE", "/api/areas", { name: area.name });
+  });
+  head.append(name, del);
+
+  const ns = document.createElement("input");
+  ns.className = "area-ns";
+  ns.placeholder = "North Star…";
+  ns.value = area.northStar || "";
+  ns.addEventListener("change", () => {
+    goalsApi("PATCH", "/api/areas", { name: area.name, northStar: ns.value.trim() });
+  });
+
+  card.append(head, ns);
+  card.appendChild(horizonSection(area.name, "90-day", "90-DAY", area.goals90));
+  card.appendChild(horizonSection(area.name, "30-day", "30-DAY", area.goals30));
+  if (area.loose && area.loose.length) {
+    card.appendChild(horizonSection(area.name, "", "OTHER", area.loose));
+  }
+  return card;
+}
+
+function horizonSection(areaName, horizon, label, goals) {
+  const sec = document.createElement("div");
+  sec.className = "horizon";
+  const lbl = document.createElement("div");
+  lbl.className = "horizon-label";
+  lbl.textContent = label;
+  sec.appendChild(lbl);
+  const list = document.createElement("div");
+  list.className = "goal-list";
+  (goals || []).forEach((g) => list.appendChild(goalRow(g)));
+  sec.appendChild(list);
+  const add = document.createElement("button");
+  add.className = "add-btn add-goal";
+  add.textContent = "+ Add goal";
+  add.addEventListener("click", () =>
+    goalsApi("POST", "/api/goals/item", { area: areaName, horizon, text: "New goal", owner: "me", due: "" }));
+  sec.appendChild(add);
+  return sec;
+}
+
+function goalRow(g) {
+  const row = document.createElement("div");
+  row.className = "goal-row";
+
+  const check = document.createElement("button");
+  check.className = "check" + (g.checked ? " on" : "");
+  check.textContent = g.checked ? "✓" : "○";
+  check.addEventListener("click", () =>
+    goalsApi("POST", "/api/goals/check", { id: g.id, checked: !g.checked }));
+
+  const text = document.createElement("input");
+  text.className = "goal-text" + (g.checked ? " done" : "");
+  text.value = g.text;
+  text.addEventListener("change", () => {
+    const v = text.value.trim();
+    if (v && v !== g.text) goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v });
+  });
+
+  const owner = document.createElement("select");
+  owner.className = "owner-chip owner-" + (g.owner === "me" ? "me" : g.owner === "team" ? "team" : "other");
+  ["me", "team"].forEach((o) => owner.appendChild(new Option(o, o)));
+  if (g.owner !== "me" && g.owner !== "team") owner.appendChild(new Option(g.owner, g.owner));
+  owner.value = g.owner;
+  owner.addEventListener("change", () =>
+    goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: owner.value }));
+
+  const due = document.createElement("input");
+  due.type = "date";
+  due.className = "due-pick" + (g.due ? " set" : "");
+  due.value = g.due || "";
+  due.addEventListener("change", () =>
+    goalsApi("PATCH", "/api/goals/item", { id: g.id, due: due.value }));
+
+  const del = document.createElement("button");
+  del.className = "icon-btn goal-del";
+  del.textContent = "✕";
+  del.title = "Delete goal";
+  del.addEventListener("click", () => goalsApi("DELETE", "/api/goals/item", { id: g.id }));
+
+  row.append(check, text, owner, due, del);
+  return row;
+}
+
+els.addArea.addEventListener("click", () => {
+  const name = prompt("New area name:");
+  if (name && name.trim()) goalsApi("POST", "/api/areas", { name: name.trim() });
+});
+
+// ---- router ----
+function route() {
+  const goals = location.hash === "#/goals";
+  els.dayView.hidden = goals;
+  els.goalsView.hidden = !goals;
+  els.dateNav.hidden = goals;
+  els.goalsNav.hidden = goals;
+  els.dayNav.hidden = !goals;
+  if (goals) loadGoals();
+  else load(state.date); // reload so goal edits reflect in the day panels
+}
+window.addEventListener("hashchange", route);
+
+// ---- day events ----
 document.getElementById("prevBtn").addEventListener("click", () => load(shiftDate(state.date, -1)));
 document.getElementById("nextBtn").addEventListener("click", () => load(shiftDate(state.date, 1)));
 document.getElementById("todayBtn").addEventListener("click", () => load(isoToday()));
@@ -298,4 +465,4 @@ els.addTask.addEventListener("click", () => {
   addTaskRow({ text: "", done: false }, els.taskRows.querySelectorAll(".trow").length + 1);
 });
 
-load(state.date);
+route();
