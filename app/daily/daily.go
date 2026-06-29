@@ -42,8 +42,18 @@ type ScheduleRow struct {
 }
 
 type Task struct {
-	Text string `json:"text"`
-	Done bool   `json:"done"`
+	Text   string `json:"text"`
+	Done   bool   `json:"done"`
+	GoalID string `json:"goalId,omitempty"` // [goal:: id] backlink, if pulled from a goal
+	Owner  string `json:"owner,omitempty"`  // [owner:: x], if present
+}
+
+// PoolItem is a 30-day owner==me goal offered for quick-add when planning an
+// unplanned future day.
+type PoolItem struct {
+	GoalID string `json:"goalId"`
+	Text   string `json:"text"`
+	Area   string `json:"area"`
 }
 
 type Day struct {
@@ -55,7 +65,27 @@ type Day struct {
 	Quarter    string        `json:"quarter"` // e.g. "2026 Q2"
 	Month      string        `json:"month"`   // e.g. "June 2026"
 	Streak     int           `json:"streak"`
+	Unplanned  bool          `json:"unplanned"`      // a future date with no active manifest
+	Pool       []PoolItem    `json:"pool,omitempty"` // 30-day me goals to pull (when unplanned)
 }
+
+// ScheduleEvent is a normalized timed calendar event (M3 fills these in).
+type ScheduleEvent struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+	Title string `json:"title"`
+	ID    string `json:"id"`
+}
+
+// EventSource supplies timed calendar events for a date. It is the seam the
+// calendar integration (M3) plugs into; until then NopEventSource is used.
+type EventSource interface {
+	TimedEvents(date string) ([]ScheduleEvent, error)
+}
+
+type NopEventSource struct{}
+
+func (NopEventSource) TimedEvents(string) ([]ScheduleEvent, error) { return nil, nil }
 
 // GoalsProvider supplies the goals.md-derived data for the read-only daily
 // panels (90-day / 30-day, owner==me). It is optional: when unset, the legacy
@@ -67,15 +97,25 @@ type GoalsProvider interface {
 // Service reads/writes the manifest regions of daily notes, resolving note paths
 // through the vault Index so a YYYY-MM-DD note is found anywhere in the vault.
 type Service struct {
-	cfg   Config
-	idx   *vault.Index
-	goals GoalsProvider
+	cfg    Config
+	idx    *vault.Index
+	goals  GoalsProvider
+	events EventSource
 }
 
-func NewService(cfg Config, idx *vault.Index) *Service { return &Service{cfg: cfg, idx: idx} }
+func NewService(cfg Config, idx *vault.Index) *Service {
+	return &Service{cfg: cfg, idx: idx, events: NopEventSource{}}
+}
 
 // UseGoals routes the daily Goals/Milestones panels through goals.md.
 func (s *Service) UseGoals(p GoalsProvider) { s.goals = p }
+
+// UseEvents plugs in a calendar event source for schedule auto-population (M3).
+func (s *Service) UseEvents(e EventSource) {
+	if e != nil {
+		s.events = e
+	}
+}
 
 // ----- period-note path helpers (goals/milestones; superseded in M1) -----
 
@@ -158,9 +198,28 @@ func (s *Service) configuredSlots() []string {
 // ----- parsing -----
 
 var (
-	taskRe = regexp.MustCompile(`^\s*-\s*\[([ xX])\]\s?(.*)$`)
-	rowRe  = regexp.MustCompile(`^\s*\|(.*)\|\s*$`)
+	taskRe        = regexp.MustCompile(`^\s*-\s*\[([ xX])\]\s?(.*)$`)
+	rowRe         = regexp.MustCompile(`^\s*\|(.*)\|\s*$`)
+	inlineFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
 )
+
+type inlineKV struct{ key, val string }
+
+// stripFields pulls [key:: value] fields off a task line, returning the clean
+// text and the fields. (Mirrors goals.parseFields; kept local to avoid a cross
+// dependency on the goals package.)
+func stripFields(text string) (string, []inlineKV) {
+	var fields []inlineKV
+	clean := inlineFieldRe.ReplaceAllStringFunc(text, func(m string) string {
+		sm := inlineFieldRe.FindStringSubmatch(m)
+		fields = append(fields, inlineKV{strings.TrimSpace(sm[1]), strings.TrimSpace(sm[2])})
+		return ""
+	})
+	if len(fields) == 0 {
+		return strings.TrimSpace(text), nil
+	}
+	return strings.Join(strings.Fields(clean), " "), fields
+}
 
 // parseBlock extracts schedule rows and tasks from the text between the daily
 // markers. It is tolerant of edits made by hand in Obsidian.
@@ -169,10 +228,17 @@ func parseBlock(block string) ([]ScheduleRow, []Task) {
 	var tasks []Task
 	for _, line := range strings.Split(block, "\n") {
 		if m := taskRe.FindStringSubmatch(line); m != nil {
-			tasks = append(tasks, Task{
-				Text: strings.TrimSpace(m[2]),
-				Done: strings.EqualFold(strings.TrimSpace(m[1]), "x"),
-			})
+			text, fields := stripFields(m[2])
+			t := Task{Text: text, Done: strings.EqualFold(strings.TrimSpace(m[1]), "x")}
+			for _, f := range fields {
+				switch {
+				case strings.EqualFold(f.key, "goal"):
+					t.GoalID = f.val
+				case strings.EqualFold(f.key, "owner"):
+					t.Owner = f.val
+				}
+			}
+			tasks = append(tasks, t)
 			continue
 		}
 		if m := rowRe.FindStringSubmatch(line); m != nil {
@@ -276,7 +342,14 @@ func serializeBlock(d Day) string {
 		if t.Done {
 			box = "x"
 		}
-		b.WriteString(fmt.Sprintf("- [%s] %s\n", box, t.Text))
+		b.WriteString("- [" + box + "] " + t.Text)
+		if t.Owner != "" {
+			b.WriteString(" [owner:: " + t.Owner + "]")
+		}
+		if t.GoalID != "" {
+			b.WriteString(" [goal:: " + t.GoalID + "]")
+		}
+		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -356,6 +429,11 @@ func (s *Service) Load(date string) (Day, error) {
 	day.Schedule = s.mergeSchedule(parsedRows)
 	day.Tasks = tasks
 
+	// A future date with no active manifest is "unplanned": landing on it offers
+	// the 30-day pool (and, in M3, calendar prefill). Today/past are never marked.
+	today := time.Now().Format(dateLayout)
+	day.Unplanned = date > today && !dayActive(parsedRows, tasks)
+
 	if s.goals != nil {
 		day.Goals = s.goals.HorizonForMe("90-day")
 		day.Milestones = s.goals.HorizonForMe("30-day")
@@ -381,6 +459,20 @@ func (s *Service) SaveDay(date string, schedule []ScheduleRow, tasks []Task) err
 	day := Day{Schedule: s.mergeSchedule(schedule), Tasks: tasks}
 	updated := upsertRegion(content, dailyStart, dailyEnd, serializeBlock(day))
 	return writeFile(path, updated)
+}
+
+// AddTask appends a task to the day's manifest and returns the reloaded day.
+// Used by "pull a goal into the day" — the goal itself is never auto-checked.
+func (s *Service) AddTask(date string, t Task) (Day, error) {
+	day, err := s.Load(date)
+	if err != nil {
+		return Day{}, err
+	}
+	day.Tasks = append(day.Tasks, t)
+	if err := s.SaveDay(date, day.Schedule, day.Tasks); err != nil {
+		return Day{}, err
+	}
+	return s.Load(date)
 }
 
 func (s *Service) SaveGoals(date string, items []string) error {

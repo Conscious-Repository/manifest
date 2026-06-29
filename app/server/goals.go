@@ -102,11 +102,11 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var b struct {
-			Area    string  `json:"area"`
-			Horizon string  `json:"horizon"`
-			Text    string  `json:"text"`
-			Owner   string  `json:"owner"`
-			Due     string  `json:"due"`
+			Area    string `json:"area"`
+			Horizon string `json:"horizon"`
+			Text    string `json:"text"`
+			Owner   string `json:"owner"`
+			Due     string `json:"due"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)

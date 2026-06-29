@@ -367,6 +367,25 @@ func dueLess(a, b string) bool {
 	}
 }
 
+// Pool returns the open, owner==me 30-day goals (with ids) offered for quick-add
+// when planning an unplanned future day.
+func (d *Doc) Pool() []PlateItem {
+	d.assignIDs()
+	var items []PlateItem
+	for _, a := range d.Areas {
+		for _, g := range a.Goals30 {
+			if g.Checked || !g.ownerIsMe() {
+				continue
+			}
+			items = append(items, PlateItem{
+				Source: "goal", Area: a.Name, Horizon: string(H30),
+				GoalID: g.ID, Text: g.Text, Due: g.Due,
+			})
+		}
+	}
+	return items
+}
+
 // HorizonTextsForMe returns the text of open, owner==me goals in a horizon,
 // across all areas — used to fill the read-only daily Goals/Milestones panels.
 func (d *Doc) HorizonTextsForMe(h Horizon) []string {

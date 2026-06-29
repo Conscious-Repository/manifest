@@ -28,6 +28,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Daily manifest.
 	mux.HandleFunc("/api/day", s.handleDay)
+	mux.HandleFunc("/api/day/pull", s.handleDayPull)
 
 	// Goals system (M1). /api/goals is now the read projection; the old
 	// period-note POST routes are retired in favor of structured editing.
@@ -56,6 +57,7 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
+		s.fillPool(&day)
 		writeJSON(w, day)
 	case http.MethodPost:
 		var body struct {
@@ -74,6 +76,46 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// fillPool attaches the 30-day me pool to an unplanned day so the UI can offer
+// quick-add chips. Planned days carry no pool.
+func (s *Server) fillPool(day *daily.Day) {
+	if !day.Unplanned {
+		return
+	}
+	for _, it := range s.goals.Pool() {
+		day.Pool = append(day.Pool, daily.PoolItem{GoalID: it.GoalID, Text: it.Text, Area: it.Area})
+	}
+}
+
+// handleDayPull pulls a 30-day goal into the day as a [goal:: id]-linked task.
+// The goal is promoted (durable id) but never auto-checked.
+func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	var b struct {
+		GoalID string `json:"goalId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		httpError(w, err)
+		return
+	}
+	text, gid, ok := s.goals.Promote(b.GoalID)
+	if !ok {
+		http.Error(w, "goal not found", http.StatusNotFound)
+		return
+	}
+	day, err := s.svc.AddTask(date, daily.Task{Text: text, GoalID: gid})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.fillPool(&day)
+	writeJSON(w, day)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
