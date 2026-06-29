@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
+	"manifest/calendar"
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/server"
@@ -59,9 +61,21 @@ func main() {
 		log.Printf("seeding goals.md: %v", err)
 	}
 
+	calClient := calendar.NewClient(ctx, cfg.Timezone)
+	calSource := calendar.NewSource(calClient, filepath.Join(cfg.VaultPath, cfg.PeriodNoteDir, "cache"))
+
 	svc := daily.NewService(dailyConfig(cfg), idx)
 	svc.UseGoals(goalsStore)
-	srv := server.New(svc, goalsStore)
+	svc.UseEvents(calSource)
+	srv := server.New(svc, goalsStore, calClient)
+	switch {
+	case calClient.Enabled():
+		log.Printf("google calendar: connected")
+	case calClient.NeedsAuth():
+		log.Printf("google calendar: credentials found but not authorized (connect from the dashboard)")
+	default:
+		log.Printf("google calendar: disabled (no credentials in ~/.config/manifest/)")
+	}
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))

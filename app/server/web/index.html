@@ -14,6 +14,7 @@
     <div class="nav-left">
       <span class="brand">◆</span>
       <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
+      <a class="pill" href="#/calendar" id="calNav">CAL</a>
       <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
     </div>
     <div class="nav-center" id="dateNav">
@@ -83,6 +84,22 @@
       <div id="areasRows"></div>
       <button id="addArea" class="add-btn">+ Add area</button>
     </div>
+  </section>
+
+  <section class="calendar-view" id="calendarView" hidden>
+    <div class="cal-head-row">
+      <button id="calPrev" class="pill arrow" aria-label="Previous month">‹</button>
+      <span id="calMonthLabel" class="cal-month-label"></span>
+      <button id="calNext" class="pill arrow" aria-label="Next month">›</button>
+    </div>
+    <div id="calConnect" class="cal-connect" hidden>
+      <p>Connect Google Calendar (read-only) to see your events and auto-fill your schedule.</p>
+      <button id="calConnectBtn" class="pill">Connect Google Calendar</button>
+    </div>
+    <div class="cal-weekdays">
+      <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+    </div>
+    <div id="calGrid" class="cal-grid"></div>
   </section>
 
   <script src="app.js"></script>

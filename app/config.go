@@ -31,6 +31,8 @@ type Config struct {
 	// ScheduleStart and ScheduleEnd are the first/last hours (24h) shown, inclusive.
 	ScheduleStart int `json:"scheduleStart"`
 	ScheduleEnd   int `json:"scheduleEnd"`
+	// Timezone is an IANA name for mapping calendar events to slots ("" = local).
+	Timezone string `json:"timezone"`
 	// Port is the local port the web UI is served on.
 	Port int `json:"port"`
 }
