@@ -32,6 +32,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* beat .pill/.grid/.flex display rules */
 
 html, body { background: var(--bg); }
 body {
@@ -75,21 +76,6 @@ body {
 .pill:hover { color: #d4d4d4; }
 #dateLabel { min-width: 92px; text-align: center; }
 
-.streak-pill {
-  font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing: 0.325px;
-  color: var(--streak-ink);
-  background: var(--streak-bg);
-  border: 1px solid var(--streak-bd);
-  border-radius: 16px;
-  padding: 4px 12px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.streak-check { color: #16a34a; }
 .save-state { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 38px; }
 .save-state.saving { color: var(--blue); }
 
