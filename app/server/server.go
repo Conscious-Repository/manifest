@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"embed"
@@ -6,14 +6,16 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+
+	"manifest/daily"
 )
 
 //go:embed web
 var webFiles embed.FS
 
-type Server struct{ store *Store }
+type Server struct{ svc *daily.Service }
 
-func NewServer(store *Store) *Server { return &Server{store: store} }
+func New(svc *daily.Service) *Server { return &Server{svc: svc} }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -33,7 +35,7 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 	date := r.URL.Query().Get("date")
 	switch r.Method {
 	case http.MethodGet:
-		day, err := s.store.Load(date)
+		day, err := s.svc.Load(date)
 		if err != nil {
 			httpError(w, err)
 			return
@@ -41,14 +43,14 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, day)
 	case http.MethodPost:
 		var body struct {
-			Schedule []ScheduleRow `json:"schedule"`
-			Tasks    []Task        `json:"tasks"`
+			Schedule []daily.ScheduleRow `json:"schedule"`
+			Tasks    []daily.Task        `json:"tasks"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			httpError(w, err)
 			return
 		}
-		if err := s.store.SaveDay(date, body.Schedule, body.Tasks); err != nil {
+		if err := s.svc.SaveDay(date, body.Schedule, body.Tasks); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -59,11 +61,11 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGoals(w http.ResponseWriter, r *http.Request) {
-	s.handleList(w, r, s.store.SaveGoals)
+	s.handleList(w, r, s.svc.SaveGoals)
 }
 
 func (s *Server) handleMilestones(w http.ResponseWriter, r *http.Request) {
-	s.handleList(w, r, s.store.SaveMilestones)
+	s.handleList(w, r, s.svc.SaveMilestones)
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request, save func(string, []string) error) {
