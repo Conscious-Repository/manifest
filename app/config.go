@@ -7,22 +7,28 @@ import (
 	"strings"
 )
 
-// Config controls where notes live and how the schedule is laid out.
-// It is loaded from a JSON file (see config.example.json) and any field
-// left empty falls back to a sensible default.
+// Config controls where the vault is and how the schedule is laid out. It is
+// loaded from a JSON file (see config.example.json); any field left empty falls
+// back to a sensible default.
 type Config struct {
-	// VaultPath is the absolute path to your Obsidian vault.
+	// VaultPath is the absolute path to your Obsidian vault (the whole vault —
+	// notes are found by convention, not by a single folder).
 	VaultPath string `json:"vaultPath"`
-	// DailyNoteDir is the folder (relative to the vault) holding daily notes.
+	// NewDailyDir is the folder (relative to the vault) where new daily notes are
+	// created on save. Existing notes are still resolved anywhere in the vault.
+	NewDailyDir string `json:"newDailyDir"`
+	// DailyNoteDir is the legacy single-folder setting; when set to a custom value
+	// it seeds NewDailyDir for backward compatibility.
 	DailyNoteDir string `json:"dailyNoteDir"`
-	// DailyNoteFormat is a Go time layout used to build the daily note
-	// filename, e.g. "2006-01-02" -> 2026-06-29.md
+	// DailyNoteFormat is the Go time layout for daily filenames (default ISO).
 	DailyNoteFormat string `json:"dailyNoteFormat"`
-	// PeriodNoteDir is the folder (relative to the vault) holding the
-	// quarterly goals and monthly milestone notes.
+	// PeriodNoteDir holds the (legacy) quarterly goals / monthly milestone notes.
 	PeriodNoteDir string `json:"periodNoteDir"`
-	// ScheduleStart and ScheduleEnd are the first and last hours (24h) shown
-	// in the schedule, inclusive. Default 8..18 (8A..6P).
+	// GoalsFileName is the filename convention for the goals master file.
+	GoalsFileName string `json:"goalsFileName"`
+	// SkipDirs are directory base names the scanner ignores (besides dotdirs).
+	SkipDirs []string `json:"skipDirs"`
+	// ScheduleStart and ScheduleEnd are the first/last hours (24h) shown, inclusive.
 	ScheduleStart int `json:"scheduleStart"`
 	ScheduleEnd   int `json:"scheduleEnd"`
 	// Port is the local port the web UI is served on.
@@ -32,38 +38,54 @@ type Config struct {
 func defaultConfig() Config {
 	return Config{
 		VaultPath:       "",
+		NewDailyDir:     "intrinsic",
 		DailyNoteDir:    "Daily",
 		DailyNoteFormat: "2006-01-02",
 		PeriodNoteDir:   "Manifest",
+		GoalsFileName:   "goals.md",
+		SkipDirs:        []string{".git", ".obsidian", ".trash", "attachments", "Agents"},
 		ScheduleStart:   8,
 		ScheduleEnd:     18,
 		Port:            7777,
 	}
 }
 
-// LoadConfig reads the config file, applies defaults for any missing fields
-// and expands a leading ~ in the vault path.
+// LoadConfig reads the config file (a missing file is fine — defaults + flags
+// take over), applies defaults for missing fields and expands a leading ~.
 func LoadConfig(path string) (Config, error) {
 	cfg := defaultConfig()
 	if path != "" {
 		b, err := os.ReadFile(path)
 		if err != nil {
+			if os.IsNotExist(err) {
+				cfg.VaultPath = expandHome(cfg.VaultPath)
+				return cfg, nil
+			}
 			return cfg, err
 		}
 		if err := json.Unmarshal(b, &cfg); err != nil {
 			return cfg, err
 		}
 	}
-	// re-apply defaults for fields that unmarshalled to zero values
 	d := defaultConfig()
-	if cfg.DailyNoteDir == "" {
-		cfg.DailyNoteDir = d.DailyNoteDir
-	}
 	if cfg.DailyNoteFormat == "" {
 		cfg.DailyNoteFormat = d.DailyNoteFormat
 	}
 	if cfg.PeriodNoteDir == "" {
 		cfg.PeriodNoteDir = d.PeriodNoteDir
+	}
+	if cfg.GoalsFileName == "" {
+		cfg.GoalsFileName = d.GoalsFileName
+	}
+	if cfg.NewDailyDir == "" {
+		if cfg.DailyNoteDir != "" && cfg.DailyNoteDir != "Daily" {
+			cfg.NewDailyDir = cfg.DailyNoteDir // honor a legacy custom folder
+		} else {
+			cfg.NewDailyDir = d.NewDailyDir
+		}
+	}
+	if len(cfg.SkipDirs) == 0 {
+		cfg.SkipDirs = d.SkipDirs
 	}
 	if cfg.ScheduleStart == 0 && cfg.ScheduleEnd == 0 {
 		cfg.ScheduleStart = d.ScheduleStart

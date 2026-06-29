@@ -1,18 +1,23 @@
-package main
+package daily
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"manifest/vault"
 )
 
-func testStore(t *testing.T) (*Store, string) {
+func testService(t *testing.T) (*Service, string) {
 	t.Helper()
 	dir := t.TempDir()
-	cfg := defaultConfig()
-	cfg.VaultPath = dir
-	return NewStore(cfg), dir
+	idx, err := vault.NewIndex(vault.Config{Root: dir, NewDailyDir: "Daily", GoalsName: "goals.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{VaultPath: dir, PeriodNoteDir: "Manifest", ScheduleStart: 8, ScheduleEnd: 18}
+	return NewService(cfg, idx), dir
 }
 
 func TestSlotTokenRoundTrip(t *testing.T) {
@@ -23,14 +28,13 @@ func TestSlotTokenRoundTrip(t *testing.T) {
 			t.Fatalf("min %d -> %q -> %d ok=%v", min, tok, got, ok)
 		}
 	}
-	// a bare hour is the :00 slot
 	if m, ok := parseSlot("9A"); !ok || m != 540 {
 		t.Fatalf("bare 9A -> %d ok=%v", m, ok)
 	}
 }
 
 func TestJournalPreserved(t *testing.T) {
-	s, dir := testStore(t)
+	s, dir := testService(t)
 	daily := filepath.Join(dir, "Daily", "2026-06-29.md")
 	journal := "---\ntags: [daily]\n---\n\n# 2026-06-29\n\nWoke up early. Felt good about the day ahead.\n"
 	if err := os.MkdirAll(filepath.Dir(daily), 0o755); err != nil {
@@ -64,7 +68,6 @@ func TestJournalPreserved(t *testing.T) {
 		t.Fatalf("task not written:\n%s", got)
 	}
 
-	// Re-save (simulating a second edit) must not duplicate the block.
 	if err := s.SaveDay("2026-06-29", sched, tasks); err != nil {
 		t.Fatal(err)
 	}
@@ -75,9 +78,8 @@ func TestJournalPreserved(t *testing.T) {
 }
 
 func TestObsidianEditIsReadBack(t *testing.T) {
-	s, dir := testStore(t)
+	s, dir := testService(t)
 	daily := filepath.Join(dir, "Daily", "2026-06-29.md")
-	// Simulate the user editing the schedule by hand in Obsidian.
 	hand := dailyStart + "\n## Schedule\n\n| Time | Focus | Focused |\n| --- | --- | --- |\n| 8A | Gym | x |\n| 9:30A | Email |  |\n\n## Tasks\n\n- [x] Hand-written task\n" + dailyEnd + "\n"
 	if err := os.MkdirAll(filepath.Dir(daily), 0o755); err != nil {
 		t.Fatal(err)
@@ -109,7 +111,7 @@ func TestObsidianEditIsReadBack(t *testing.T) {
 }
 
 func TestGoalsAndMilestones(t *testing.T) {
-	s, _ := testStore(t)
+	s, _ := testService(t)
 	if err := s.SaveGoals("2026-06-29", []string{"Launch v1", "Read more"}); err != nil {
 		t.Fatal(err)
 	}

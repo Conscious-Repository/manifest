@@ -1,4 +1,4 @@
-package main
+package daily
 
 import (
 	"fmt"
@@ -9,10 +9,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"manifest/vault"
 )
 
-// Markers delimit the regions this app owns inside a note. Everything
-// outside them (your journal) is read but never modified.
+// Markers delimit the regions this app owns inside a note. Everything outside
+// them (your journal) is read but never modified.
 const (
 	dailyStart = "<!-- manifest:start -->"
 	dailyEnd   = "<!-- manifest:end -->"
@@ -21,6 +23,15 @@ const (
 )
 
 const dateLayout = "2006-01-02"
+
+// Config holds the settings the Service needs. Daily-note PATH resolution lives
+// in vault.Index; this struct only carries period-note and schedule layout.
+type Config struct {
+	VaultPath     string
+	PeriodNoteDir string
+	ScheduleStart int
+	ScheduleEnd   int
+}
 
 // ----- data model -----
 
@@ -46,17 +57,16 @@ type Day struct {
 	Streak     int           `json:"streak"`
 }
 
-// Store resolves note paths and reads/writes the manifest regions.
-type Store struct{ cfg Config }
-
-func NewStore(cfg Config) *Store { return &Store{cfg: cfg} }
-
-// ----- path helpers -----
-
-func (s *Store) dailyPath(d time.Time) string {
-	name := d.Format(s.cfg.DailyNoteFormat) + ".md"
-	return filepath.Join(s.cfg.VaultPath, s.cfg.DailyNoteDir, name)
+// Service reads/writes the manifest regions of daily notes, resolving note paths
+// through the vault Index so a YYYY-MM-DD note is found anywhere in the vault.
+type Service struct {
+	cfg Config
+	idx *vault.Index
 }
+
+func NewService(cfg Config, idx *vault.Index) *Service { return &Service{cfg: cfg, idx: idx} }
+
+// ----- period-note path helpers (goals/milestones; superseded in M1) -----
 
 func quarterOf(d time.Time) (label, slug string) {
 	q := (int(d.Month())-1)/3 + 1
@@ -67,12 +77,12 @@ func monthOf(d time.Time) (label, slug string) {
 	return fmt.Sprintf("%s %d", d.Month().String(), d.Year()), d.Format("2006-01")
 }
 
-func (s *Store) goalsPath(d time.Time) string {
+func (s *Service) goalsPath(d time.Time) string {
 	_, slug := quarterOf(d)
 	return filepath.Join(s.cfg.VaultPath, s.cfg.PeriodNoteDir, "Goals-"+slug+".md")
 }
 
-func (s *Store) milestonesPath(d time.Time) string {
+func (s *Service) milestonesPath(d time.Time) string {
 	_, slug := monthOf(d)
 	return filepath.Join(s.cfg.VaultPath, s.cfg.PeriodNoteDir, "Milestones-"+slug+".md")
 }
@@ -125,9 +135,8 @@ func parseSlot(tok string) (int, bool) {
 	return h*60 + min, true
 }
 
-// configuredSlots lists every half-hour token from start to end (inclusive),
-// e.g. 8..18 -> 8:00A, 8:30A, ... 6:00P, 6:30P.
-func (s *Store) configuredSlots() []string {
+// configuredSlots lists every half-hour token from start to end (inclusive).
+func (s *Service) configuredSlots() []string {
 	var out []string
 	for h := s.cfg.ScheduleStart; h <= s.cfg.ScheduleEnd; h++ {
 		out = append(out, slotToken(h*60), slotToken(h*60+30))
@@ -142,8 +151,8 @@ var (
 	rowRe  = regexp.MustCompile(`^\s*\|(.*)\|\s*$`)
 )
 
-// parseBlock extracts schedule rows and tasks from the text between the
-// daily markers. It is tolerant of edits made by hand in Obsidian.
+// parseBlock extracts schedule rows and tasks from the text between the daily
+// markers. It is tolerant of edits made by hand in Obsidian.
 func parseBlock(block string) ([]ScheduleRow, []Task) {
 	var rows []ScheduleRow
 	var tasks []Task
@@ -194,13 +203,12 @@ func isCheck(s string) bool {
 	return false
 }
 
-// mergeSchedule combines the configured hours with whatever was parsed from
-// the file, preserving labels/toggles by time token and keeping any extra
-// rows the user added by hand. Result is ordered by hour of day.
-func (s *Store) mergeSchedule(parsed []ScheduleRow) []ScheduleRow {
+// mergeSchedule combines the configured hours with whatever was parsed from the
+// file, preserving labels/toggles by time token and keeping any extra rows the
+// user added by hand. Result is ordered by hour of day.
+func (s *Service) mergeSchedule(parsed []ScheduleRow) []ScheduleRow {
 	byTok := map[string]ScheduleRow{}
 	order := []string{}
-	// canonicalize so "9A" and "9:00A" collapse to the same slot
 	add := func(tok string) string {
 		if min, ok := parseSlot(tok); ok {
 			tok = slotToken(min)
@@ -263,8 +271,8 @@ func serializeBlock(d Day) string {
 }
 
 // upsertRegion replaces the text between start/end markers, preserving
-// everything else. If the markers are absent it inserts a fresh region
-// just after any YAML frontmatter (or at the very top).
+// everything else. If the markers are absent it inserts a fresh region just
+// after any YAML frontmatter (or at the very top).
 func upsertRegion(content, start, end, inner string) string {
 	region := start + "\n" + strings.TrimRight(inner, "\n") + "\n" + end
 	si := strings.Index(content, start)
@@ -272,7 +280,6 @@ func upsertRegion(content, start, end, inner string) string {
 	if si >= 0 && ei > si {
 		return content[:si] + region + content[ei+len(end):]
 	}
-	// insert new region after frontmatter
 	insertAt := frontmatterEnd(content)
 	prefix := content[:insertAt]
 	suffix := content[insertAt:]
@@ -287,8 +294,8 @@ func upsertRegion(content, start, end, inner string) string {
 	return prefix + sep + region + trailing + suffix
 }
 
-// frontmatterEnd returns the byte offset just after a leading YAML
-// frontmatter block, or 0 if there is none.
+// frontmatterEnd returns the byte offset just after a leading YAML frontmatter
+// block, or 0 if there is none.
 func frontmatterEnd(content string) int {
 	if !strings.HasPrefix(content, "---\n") {
 		return 0
@@ -299,7 +306,6 @@ func frontmatterEnd(content string) int {
 		return 0
 	}
 	after := 4 + idx + len("\n---")
-	// consume the rest of that line
 	for after < len(content) && content[after] != '\n' {
 		after++
 	}
@@ -320,7 +326,7 @@ func regionBetween(content, start, end string) (string, bool) {
 
 // ----- public read / write -----
 
-func (s *Store) Load(date string) (Day, error) {
+func (s *Service) Load(date string) (Day, error) {
 	d, err := time.Parse(dateLayout, date)
 	if err != nil {
 		return Day{}, fmt.Errorf("bad date %q: %w", date, err)
@@ -329,7 +335,11 @@ func (s *Store) Load(date string) (Day, error) {
 	day.Quarter, _ = quarterOf(d)
 	day.Month, _ = monthOf(d)
 
-	content := readFile(s.dailyPath(d))
+	path, err := s.idx.DailyNote(date)
+	if err != nil {
+		return Day{}, err
+	}
+	content := readFile(path)
 	block, _ := regionBetween(content, dailyStart, dailyEnd)
 	parsedRows, tasks := parseBlock(block)
 	day.Schedule = s.mergeSchedule(parsedRows)
@@ -343,19 +353,21 @@ func (s *Store) Load(date string) (Day, error) {
 
 // SaveDay writes the schedule + tasks into the daily note, preserving the
 // surrounding journal. The note (and its folder) are created if missing.
-func (s *Store) SaveDay(date string, schedule []ScheduleRow, tasks []Task) error {
-	d, err := time.Parse(dateLayout, date)
+func (s *Service) SaveDay(date string, schedule []ScheduleRow, tasks []Task) error {
+	if _, err := time.Parse(dateLayout, date); err != nil {
+		return err
+	}
+	path, err := s.idx.DailyNote(date)
 	if err != nil {
 		return err
 	}
-	path := s.dailyPath(d)
 	content := readFile(path)
 	day := Day{Schedule: s.mergeSchedule(schedule), Tasks: tasks}
 	updated := upsertRegion(content, dailyStart, dailyEnd, serializeBlock(day))
 	return writeFile(path, updated)
 }
 
-func (s *Store) SaveGoals(date string, items []string) error {
+func (s *Service) SaveGoals(date string, items []string) error {
 	d, err := time.Parse(dateLayout, date)
 	if err != nil {
 		return err
@@ -364,7 +376,7 @@ func (s *Store) SaveGoals(date string, items []string) error {
 	return writeList(s.goalsPath(d), "Goals — "+label, items)
 }
 
-func (s *Store) SaveMilestones(date string, items []string) error {
+func (s *Service) SaveMilestones(date string, items []string) error {
 	d, err := time.Parse(dateLayout, date)
 	if err != nil {
 		return err
@@ -413,12 +425,16 @@ func writeList(path, heading string, items []string) error {
 // ----- streak -----
 
 // streak counts consecutive days, ending at d (inclusive), whose daily note
-// contains a manifest block with at least one focused hour or completed task.
-func (s *Store) streak(d time.Time) int {
+// (resolved anywhere via the Index) has an active manifest block.
+func (s *Service) streak(d time.Time) int {
 	count := 0
 	cur := d
 	for i := 0; i < 366; i++ {
-		content := readFile(s.dailyPath(cur))
+		path, err := s.idx.DailyNote(cur.Format(dateLayout))
+		if err != nil {
+			break
+		}
+		content := readFile(path)
 		block, ok := regionBetween(content, dailyStart, dailyEnd)
 		if !ok {
 			break
