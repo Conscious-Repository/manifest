@@ -20,7 +20,7 @@ type Source struct {
 }
 
 func NewSource(c *Client, cacheDir string) *Source {
-	return &Source{client: c, cacheDir: cacheDir, timeout: 6 * time.Second}
+	return &Source{client: c, cacheDir: cacheDir, timeout: 10 * time.Second}
 }
 
 func (s *Source) Slots(date string) ([]daily.CalSlot, error) {

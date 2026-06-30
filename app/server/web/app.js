@@ -30,6 +30,9 @@ const els = {
   calMonthLabel: document.getElementById("calMonthLabel"),
   calConnect: document.getElementById("calConnect"),
   calConnectBtn: document.getElementById("calConnectBtn"),
+  calAccounts: document.getElementById("calAccounts"),
+  calAccountRows: document.getElementById("calAccountRows"),
+  calAddAccount: document.getElementById("calAddAccount"),
   calPrev: document.getElementById("calPrev"),
   calNext: document.getElementById("calNext"),
   plateRows: document.getElementById("plateRows"),
@@ -516,12 +519,13 @@ function ensureCalState() {
 async function loadCalendar() {
   const { year, month } = ensureCalState();
   els.calMonthLabel.textContent = `${MONTHS[month]} ${year}`.toUpperCase();
-  let status = { configured: false };
+  let status = { accounts: [], hasCreds: false };
   try { status = await (await fetch("/api/calendar/status")).json(); } catch (e) {}
-  els.calConnect.hidden = !!status.configured;
+  const accounts = status.accounts || [];
+  renderCalAccounts(accounts, !!status.hasCreds);
 
   let events = [];
-  if (status.configured) {
+  if (accounts.length) {
     const first = `${year}-${pad(month + 1)}-01`;
     const lastDay = new Date(year, month + 1, 0).getDate();
     const last = `${year}-${pad(month + 1)}-${pad(lastDay)}`;
@@ -531,6 +535,48 @@ async function loadCalendar() {
     } catch (e) {}
   }
   renderMonth(year, month, events);
+}
+
+// Show the accounts list (with per-account Disconnect) when ≥1 account is
+// connected; otherwise the connect prompt (adapted for missing credentials).
+function renderCalAccounts(accounts, hasCreds) {
+  const has = accounts.length > 0;
+  els.calAccounts.hidden = !has;
+  els.calConnect.hidden = has;
+  if (!has) {
+    els.calConnectBtn.hidden = !hasCreds;
+    els.calConnect.querySelector("p").textContent = hasCreds
+      ? "Connect a Google account (read-only) to see your events and auto-fill your schedule."
+      : "Add google_credentials.json to ~/.config/manifest/ to connect Google Calendar.";
+    return;
+  }
+  els.calAccountRows.innerHTML = "";
+  accounts.forEach((email) => {
+    const row = document.createElement("div");
+    row.className = "cal-account";
+    const name = document.createElement("span");
+    name.className = "cal-account-email";
+    name.textContent = email;
+    const dc = document.createElement("button");
+    dc.className = "cal-disconnect";
+    dc.textContent = "Disconnect";
+    dc.addEventListener("click", () => disconnectAccount(email));
+    row.append(name, dc);
+    els.calAccountRows.appendChild(row);
+  });
+}
+
+async function disconnectAccount(email) {
+  setSaveState("saving");
+  try {
+    await fetch("/api/calendar/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account: email }),
+    });
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  loadCalendar();
 }
 
 function renderMonth(year, month, events) {
@@ -584,16 +630,20 @@ function shiftCalMonth(delta) {
   loadCalendar();
 }
 
-async function connectCalendar() {
-  els.calConnectBtn.textContent = "Connecting… (check your browser)";
+// Connect one Google account; safe to call repeatedly (Google shows the account
+// chooser each time so you can pick a different account).
+async function connectCalendar(btn) {
+  const label = btn ? btn.textContent : "";
+  if (btn) btn.textContent = "Connecting… (check your browser)";
   try {
-    const r = await (await fetch("/api/calendar/connect", { method: "POST" })).json();
-    els.calConnectBtn.textContent = "Connect Google Calendar";
-    if (r.configured) loadCalendar();
-  } catch (e) { els.calConnectBtn.textContent = "Connect failed — retry"; }
+    await fetch("/api/calendar/connect", { method: "POST" });
+  } catch (e) {}
+  if (btn) btn.textContent = label;
+  loadCalendar();
 }
 
-els.calConnectBtn.addEventListener("click", connectCalendar);
+els.calConnectBtn.addEventListener("click", () => connectCalendar(els.calConnectBtn));
+els.calAddAccount.addEventListener("click", () => connectCalendar(els.calAddAccount));
 els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
 els.calNext.addEventListener("click", () => shiftCalMonth(1));
 
