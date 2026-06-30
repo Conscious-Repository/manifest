@@ -60,8 +60,18 @@ func (s *Server) Handler() http.Handler {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(sub)))
+	mux.Handle("/", noCache(http.FileServer(http.FS(sub))))
 	return mux
+}
+
+// noCache makes the browser revalidate the embedded assets every load. embed.FS
+// files have a zero modtime (no Last-Modified/ETag), so without this a rebuilt
+// app.js/style.css can stay cached and the UI looks stale after an upgrade.
+func noCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		h.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
