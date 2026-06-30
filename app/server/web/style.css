@@ -375,6 +375,19 @@ body {
   font-family: var(--sans); font-size: 15px;
 }
 .cal-connect .pill { margin-top: 10px; background: var(--blue); border-color: var(--blue); color: #fff; }
+.cal-accounts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.cal-account {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px;
+}
+.cal-account-email { font-family: var(--sans); font-size: 14px; color: var(--text); }
+.cal-disconnect {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
+  color: var(--muted); background: transparent; border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 3px 8px; cursor: pointer;
+}
+.cal-disconnect:hover { color: var(--blue); border-color: var(--blue-soft); }
+.pill.add-account { align-self: flex-start; background: var(--blue); border-color: var(--blue); color: #fff; }
 .cal-weekdays {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px;
   font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.3px;

@@ -12,19 +12,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	gcal "google.golang.org/api/calendar/v3"
 )
 
-// ErrNotConfigured means no Google credentials/token are present; the app runs
+// ErrNotConfigured means no Google credentials/account are present; the app runs
 // fine without calendar.
 var ErrNotConfigured = errors.New("calendar not configured")
 
 // Secrets live OUTSIDE the vault and repo, under ~/.config/manifest/
-// (overridable via MANIFEST_CONFIG_DIR for tests).
+// (overridable via MANIFEST_CONFIG_DIR for tests). The OAuth client credentials
+// are shared across accounts; each connected Google account has its own token
+// file under tokens/.
 func configDir() string {
 	if d := os.Getenv("MANIFEST_CONFIG_DIR"); d != "" {
 		return d
@@ -33,8 +37,9 @@ func configDir() string {
 	return filepath.Join(home, ".config", "manifest")
 }
 
-func credPath() string  { return filepath.Join(configDir(), "google_credentials.json") }
-func tokenPath() string { return filepath.Join(configDir(), "google_token.json") }
+func credPath() string    { return filepath.Join(configDir(), "google_credentials.json") }
+func tokensDir() string   { return filepath.Join(configDir(), "tokens") }
+func legacyToken() string { return filepath.Join(configDir(), "google_token.json") }
 
 func oauthConfig() (*oauth2.Config, error) {
 	b, err := os.ReadFile(credPath())
@@ -44,34 +49,89 @@ func oauthConfig() (*oauth2.Config, error) {
 	return google.ConfigFromJSON(b, gcal.CalendarReadonlyScope)
 }
 
-func loadToken() (*oauth2.Token, error) {
-	b, err := os.ReadFile(tokenPath())
-	if err != nil {
-		return nil, err
-	}
-	var t oauth2.Token
-	if err := json.Unmarshal(b, &t); err != nil {
-		return nil, err
-	}
-	return &t, nil
+// ----- per-account token storage -----
+
+// accountToken is the on-disk wrapper: the email is authoritative (the filename
+// is only a sanitized, filesystem-safe handle).
+type accountToken struct {
+	Email string        `json:"email"`
+	Token *oauth2.Token `json:"token"`
 }
 
-func saveToken(t *oauth2.Token) error {
-	if err := os.MkdirAll(configDir(), 0o700); err != nil {
+var emailUnsafeRe = regexp.MustCompile(`[^a-z0-9._-]`)
+
+func sanitizeEmail(email string) string {
+	return emailUnsafeRe.ReplaceAllString(strings.ToLower(email), "_")
+}
+
+func accountTokenPath(email string) string {
+	return filepath.Join(tokensDir(), sanitizeEmail(email)+".json")
+}
+
+func saveAccountToken(email string, tok *oauth2.Token) error {
+	if err := os.MkdirAll(tokensDir(), 0o700); err != nil {
 		return err
 	}
-	b, err := json.MarshalIndent(t, "", "  ")
+	b, err := json.MarshalIndent(accountToken{Email: email, Token: tok}, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(tokenPath(), b, 0o600) // token file is owner-only
+	return os.WriteFile(accountTokenPath(email), b, 0o600) // owner-only
 }
 
-// savingTokenSource persists refreshed tokens back to disk (the oauth2 library
-// refreshes in memory but won't re-save).
+func removeAccountToken(email string) error {
+	err := os.Remove(accountTokenPath(email))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// loadAllAccounts reads every tokens/*.json (tolerant: a missing dir or a single
+// unparseable file never disables calendar). If no per-account tokens exist but a
+// legacy single google_token.json does, it is surfaced as one empty-email entry
+// (its email is resolved + migrated lazily on first use).
+func loadAllAccounts() []accountToken {
+	var out []accountToken
+	seen := map[string]bool{}
+	entries, _ := os.ReadDir(tokensDir())
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(tokensDir(), e.Name()))
+		if err != nil {
+			continue
+		}
+		var a accountToken
+		if err := json.Unmarshal(b, &a); err != nil || a.Token == nil {
+			continue
+		}
+		if a.Email != "" {
+			if seen[a.Email] {
+				continue
+			}
+			seen[a.Email] = true
+		}
+		out = append(out, a)
+	}
+	if len(out) == 0 {
+		if b, err := os.ReadFile(legacyToken()); err == nil {
+			var t oauth2.Token
+			if json.Unmarshal(b, &t) == nil && t.AccessToken != "" {
+				out = append(out, accountToken{Email: "", Token: &t})
+			}
+		}
+	}
+	return out
+}
+
+// savingTokenSource persists refreshed tokens back to a SPECIFIC account's file
+// (the oauth2 library refreshes in memory but won't re-save).
 type savingTokenSource struct {
-	src  oauth2.TokenSource
-	last *oauth2.Token
+	email string
+	src   oauth2.TokenSource
+	last  *oauth2.Token
 }
 
 func (s *savingTokenSource) Token() (*oauth2.Token, error) {
@@ -79,24 +139,26 @@ func (s *savingTokenSource) Token() (*oauth2.Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.last == nil || t.AccessToken != s.last.AccessToken {
-		_ = saveToken(t)
+	if s.email != "" && (s.last == nil || t.AccessToken != s.last.AccessToken) {
+		_ = saveAccountToken(s.email, t)
 		s.last = t
 	}
 	return t, nil
 }
 
-// Authorize runs the installed-app loopback OAuth flow: it opens the browser,
-// captures the code on a transient 127.0.0.1 listener, exchanges it, and caches
-// the token (with a refresh token).
-func Authorize(ctx context.Context) error {
+// Authorize runs the installed-app loopback OAuth flow and RETURNS the token (the
+// caller resolves the account email and saves it). `select_account` makes Google
+// show the account chooser so each connect can pick a DIFFERENT account;
+// `consent` guarantees a refresh token is issued. NB: oauth2.ApprovalForce is
+// itself prompt=consent, so we must pass a single combined prompt param.
+func Authorize(ctx context.Context) (*oauth2.Token, error) {
 	cfg, err := oauthConfig()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer ln.Close()
 	cfg.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d/oauth/callback", ln.Addr().(*net.TCPAddr).Port)
@@ -111,36 +173,25 @@ func Authorize(ctx context.Context) error {
 			errCh <- errors.New("oauth state mismatch")
 			return
 		}
-		fmt.Fprintln(w, "Manifest is connected to Google Calendar. You can close this tab.")
+		fmt.Fprintln(w, "Manifest is connected to this Google account. You can close this tab.")
 		codeCh <- r.URL.Query().Get("code")
 	})
 	srv := &http.Server{Handler: mux}
 	go srv.Serve(ln)
 	defer srv.Shutdown(context.Background())
 
-	openBrowser(cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce))
+	openBrowser(cfg.AuthCodeURL(state,
+		oauth2.AccessTypeOffline,
+		oauth2.SetAuthURLParam("prompt", "select_account consent")))
 
 	select {
 	case code := <-codeCh:
-		tok, err := cfg.Exchange(ctx, code)
-		if err != nil {
-			return err
-		}
-		return saveToken(tok)
+		return cfg.Exchange(ctx, code)
 	case err := <-errCh:
-		return err
+		return nil, err
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
-}
-
-// Disconnect removes the cached token (credentials are left in place).
-func Disconnect() error {
-	err := os.Remove(tokenPath())
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	return err
 }
 
 func randState() string {
