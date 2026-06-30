@@ -269,23 +269,35 @@ function drawConnectors() {
     .map((el) => ({ el, min: slotMin(state.day.schedule[+el.dataset.idx].time) }))
     .filter((x) => x.el.value.trim() !== "");
   const crect = els.scheduleRows.getBoundingClientRect();
-  const yOf = (el) => {
+  // Anchor on slot *edges*, not centers: the connector spans only the empty rows
+  // between two entries — starting just below the originating text and ending just
+  // above the next — so it never overlaps any text.
+  const edges = (el) => {
     const r = el.getBoundingClientRect();
-    return r.top - crect.top + r.height / 2;
+    return { top: r.top - crect.top, bottom: r.bottom - crect.top };
   };
   for (let k = 0; k < filled.length - 1; k++) {
     const a = filled[k], b = filled[k + 1];
-    const ya = yOf(a.el), yb = yOf(b.el);
+    const ae = edges(a.el), be = edges(b.el);
+    const yStart = ae.bottom;   // dot + line top: just below the originating entry
+    const yEnd = be.top - 3;    // arrowhead: just above the next entry (3px breathing room)
+    if (yEnd <= yStart) continue; // back-to-back entries: no empty gap to span, skip
+
     const line = document.createElement("div");
     line.className = "conn-line";
-    const gap = 13; // keep the arrowhead above the next entry's text
-    line.style.top = `${ya}px`;
-    line.style.height = `${Math.max(0, yb - ya - gap)}px`;
+    line.style.top = `${yStart}px`;
+    line.style.height = `${Math.max(0, yEnd - yStart)}px`;
     overlay.appendChild(line);
+
+    const dot = document.createElement("span");
+    dot.className = "conn-dot";
+    dot.style.top = `${yStart}px`;
+    overlay.appendChild(dot);
 
     const label = document.createElement("span");
     label.className = "conn-label";
-    label.style.top = `${(ya + yb) / 2}px`;
+    // Sit in the gap just under the entry; clamp so short hops don't collide with the next.
+    label.style.top = `${Math.min(yStart + 11, (yStart + yEnd) / 2)}px`;
     label.textContent = fmtDur(b.min - a.min);
     overlay.appendChild(label);
   }
@@ -516,6 +528,20 @@ function ensureCalState() {
   return state.cal;
 }
 
+// monthGridDays returns the 42 cells (6 weeks, Monday-first) covering the month,
+// including the leading/trailing days from adjacent months so the grid is always
+// complete and the columns stay uniform.
+function monthGridDays(year, month) {
+  const offset = (new Date(year, month, 1).getDay() + 6) % 7; // Monday = 0
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const dt = new Date(year, month, 1 - offset + i);
+    const iso = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+    cells.push({ iso, day: dt.getDate(), inMonth: dt.getMonth() === month });
+  }
+  return cells;
+}
+
 async function loadCalendar() {
   const { year, month } = ensureCalState();
   els.calMonthLabel.textContent = `${MONTHS[month]} ${year}`.toUpperCase();
@@ -524,17 +550,15 @@ async function loadCalendar() {
   const accounts = status.accounts || [];
   renderCalAccounts(accounts, !!status.hasCreds);
 
+  const cells = monthGridDays(year, month);
   let events = [];
   if (accounts.length) {
-    const first = `${year}-${pad(month + 1)}-01`;
-    const lastDay = new Date(year, month + 1, 0).getDate();
-    const last = `${year}-${pad(month + 1)}-${pad(lastDay)}`;
     try {
-      const r = await (await fetch(`/api/calendar/events?start=${first}&end=${last}`)).json();
+      const r = await (await fetch(`/api/calendar/events?start=${cells[0].iso}&end=${cells[41].iso}`)).json();
       events = r.events || [];
     } catch (e) {}
   }
-  renderMonth(year, month, events);
+  renderMonth(cells, events);
 }
 
 // Show the accounts list (with per-account Disconnect) when ≥1 account is
@@ -579,46 +603,81 @@ async function disconnectAccount(email) {
   loadCalendar();
 }
 
-function renderMonth(year, month, events) {
+const MAX_PER_DAY = 4;
+
+function renderMonth(cells, events) {
   const byDay = new Map();
   events.forEach((e) => {
     const day = (e.start || "").slice(0, 10);
     if (!byDay.has(day)) byDay.set(day, []);
     byDay.get(day).push(e);
   });
+  // all-day events first, then timed in ascending start order
+  byDay.forEach((list) => list.sort((a, b) => {
+    if (a.allDay !== b.allDay) return a.allDay ? -1 : 1;
+    return (a.start || "").localeCompare(b.start || "");
+  }));
+
   els.calGrid.innerHTML = "";
-  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday = 0
-  const days = new Date(year, month + 1, 0).getDate();
-  for (let i = 0; i < firstDow; i++) {
-    const blank = document.createElement("div");
-    blank.className = "cal-cell blank";
-    els.calGrid.appendChild(blank);
-  }
   const today = isoToday();
-  for (let d = 1; d <= days; d++) {
-    const iso = `${year}-${pad(month + 1)}-${pad(d)}`;
+  cells.forEach(({ iso, day, inMonth }) => {
     const cell = document.createElement("div");
-    cell.className = "cal-cell" + (iso === today ? " today" : "");
+    cell.className = "cal-cell" + (inMonth ? "" : " adjacent") + (iso === today ? " today" : "");
     const num = document.createElement("div");
     num.className = "cal-day-num";
-    num.textContent = d;
+    num.textContent = day;
     cell.appendChild(num);
+
     const evs = byDay.get(iso) || [];
-    evs.slice(0, 3).forEach((e) => {
-      const chip = document.createElement("div");
-      chip.className = "cal-chip" + (e.allDay ? " allday" : "");
-      chip.textContent = e.title || "(busy)";
-      cell.appendChild(chip);
-    });
-    if (evs.length > 3) {
+    // a single overflow item is shown rather than a "1 more" line
+    const cap = evs.length === MAX_PER_DAY + 1 ? evs.length : MAX_PER_DAY;
+    evs.slice(0, cap).forEach((e) => cell.appendChild(eventEl(e)));
+    if (evs.length > cap) {
       const more = document.createElement("div");
       more.className = "cal-more";
-      more.textContent = `+${evs.length - 3} more`;
+      more.textContent = `${evs.length - cap} more`;
       cell.appendChild(more);
     }
     cell.addEventListener("click", () => { state.date = iso; location.hash = "#/"; });
     els.calGrid.appendChild(cell);
+  });
+}
+
+function eventEl(e) {
+  const title = e.title || "(busy)";
+  if (e.allDay) {
+    const bar = document.createElement("div");
+    bar.className = "cal-ev allday";
+    bar.textContent = title;
+    bar.title = title;
+    return bar;
   }
+  const row = document.createElement("div");
+  row.className = "cal-ev";
+  row.title = `${formatTime(e.start)} ${title}`.trim();
+  const dot = document.createElement("span");
+  dot.className = "cal-ev-dot";
+  const time = document.createElement("span");
+  time.className = "cal-ev-time";
+  time.textContent = formatTime(e.start);
+  const label = document.createElement("span");
+  label.className = "cal-ev-title";
+  label.textContent = title;
+  row.append(dot, time, label);
+  return row;
+}
+
+// formatTime reads the clock straight off an RFC3339 string ("…T08:00:00-05:00"
+// -> "8:00am"), so the displayed time matches the event's own timezone (already
+// normalized server-side) without browser-timezone drift.
+function formatTime(rfc3339) {
+  const m = /T(\d{2}):(\d{2})/.exec(rfc3339 || "");
+  if (!m) return "";
+  let h = +m[1];
+  const suffix = h < 12 ? "am" : "pm";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${h}:${m[2]}${suffix}`;
 }
 
 function shiftCalMonth(delta) {

@@ -1,6 +1,11 @@
 # Local runtime config (vault path, port) — machine-specific, not shared
 config.json
 
+# Secrets — credentials/tokens live in ~/.config/manifest/, never in the repo
+client_secret_*.json
+google_credentials.json
+google_token.json
+
 # Rebuildable index / cache (never source of truth)
 *.db
 *.db-wal

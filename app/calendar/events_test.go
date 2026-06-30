@@ -69,3 +69,32 @@ func TestEventsToSlotsFirstWinsCollision(t *testing.T) {
 		t.Fatalf("earliest event should win the 9:00A slot: %+v", slots)
 	}
 }
+
+func titles(slots []Slot) []string {
+	out := make([]string, len(slots))
+	for i, s := range slots {
+		out[i] = s.Title
+	}
+	return out
+}
+
+func TestEventsToSlotsTitleOnLeadSlotOnly(t *testing.T) {
+	day := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	ev := Event{ID: "x", Title: "Mtg", Start: at(9, 0), End: at(10, 30)} // 90 min
+	slots := EventsToSlots([]Event{ev}, day, time.UTC)
+	if got := tokens(slots); !eq(got, []string{"9:00A", "9:30A", "10:00A"}) {
+		t.Fatalf("tokens: got %v", got)
+	}
+	// One item, shown once: the title lands on the lead slot only.
+	if got := titles(slots); !eq(got, []string{"Mtg", "", ""}) {
+		t.Fatalf("title should appear only on the lead slot: got %v", got)
+	}
+}
+
+func TestEventsToSlotsDeclinedSkipped(t *testing.T) {
+	day := time.Date(2026, 6, 29, 0, 0, 0, 0, time.UTC)
+	ev := Event{ID: "x", Title: "Brian <> Travis", Start: at(9, 0), End: at(9, 30), Declined: true}
+	if got := EventsToSlots([]Event{ev}, day, time.UTC); len(got) != 0 {
+		t.Fatalf("declined event should map to no slots, got %v", tokens(got))
+	}
+}

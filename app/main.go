@@ -42,7 +42,11 @@ func main() {
 		log.Fatalf("vault path %q is not a readable directory: %v", cfg.VaultPath, err)
 	}
 
-	idx, err := vault.NewIndex(vaultConfig(cfg))
+	// The Google Calendar offline mirror lives here as <date>.md files; the vault
+	// index must exclude it so those mirrors never shadow real daily notes.
+	calCacheDir := filepath.Join(cfg.VaultPath, cfg.PeriodNoteDir, "cache")
+
+	idx, err := vault.NewIndex(vaultConfig(cfg, calCacheDir))
 	if err != nil {
 		log.Fatalf("scanning vault: %v", err)
 	}
@@ -50,7 +54,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if w, err := vault.NewWatcher(idx, vaultConfig(cfg)); err != nil {
+	if w, err := vault.NewWatcher(idx, vaultConfig(cfg, calCacheDir)); err != nil {
 		log.Printf("file watcher disabled: %v", err)
 	} else if err := w.Start(ctx); err != nil {
 		log.Printf("file watcher start failed: %v", err)
@@ -64,7 +68,7 @@ func main() {
 	}
 
 	calClient := calendar.NewClient(ctx, cfg.Timezone)
-	calSource := calendar.NewSource(calClient, filepath.Join(cfg.VaultPath, cfg.PeriodNoteDir, "cache"))
+	calSource := calendar.NewSource(calClient, calCacheDir)
 
 	queue, err := agents.NewQueue(filepath.Join(cfg.VaultPath, "Agents"))
 	if err != nil {
@@ -97,12 +101,13 @@ func orNone(s string) string {
 	return s
 }
 
-func vaultConfig(c Config) vault.Config {
+func vaultConfig(c Config, cacheDir string) vault.Config {
 	return vault.Config{
 		Root:        c.VaultPath,
 		NewDailyDir: c.NewDailyDir,
 		GoalsName:   c.GoalsFileName,
 		SkipDirs:    c.SkipDirs,
+		CacheDir:    cacheDir,
 	}
 }
 

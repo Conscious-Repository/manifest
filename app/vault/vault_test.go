@@ -97,6 +97,37 @@ func TestResolveAnywhere(t *testing.T) {
 	}
 }
 
+// The Google Calendar offline mirror writes <cacheDir>/<date>.md files. Those must
+// never be classified as daily notes, or they shadow the user's real note (the
+// cache dir is walked after the root note, so last-write-wins picks the cache).
+func TestCalendarCacheNotIndexedAsDaily(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testConfig(dir)
+	cfg.CacheDir = filepath.Join(dir, "Manifest", "cache")
+
+	real := filepath.Join(dir, "2026-06-30.md")
+	write(t, real, "#journal\nreal note\n")
+	write(t, filepath.Join(cfg.CacheDir, "2026-06-30.md"), "---\ntype: calendar-cache\n---\n")
+	write(t, filepath.Join(cfg.CacheDir, "2026-07-01.md"), "---\ntype: calendar-cache\n---\n")
+
+	ix, err := NewIndex(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := ix.DailyNote("2026-06-30"); p != real {
+		t.Fatalf("cache mirror shadowed the real note: got %s want %s", p, real)
+	}
+	if _, ok := ix.Lookup("2026-07-01"); ok {
+		t.Fatal("a cache-only date must not be indexed as a daily note")
+	}
+
+	// Backstop: a live watcher event for a cache write must also be ignored.
+	ix.update(filepath.Join(cfg.CacheDir, "2026-06-30.md"))
+	if p, _ := ix.DailyNote("2026-06-30"); p != real {
+		t.Fatalf("update() let a cache mirror shadow the real note: got %s", p)
+	}
+}
+
 func TestFrontmatterType(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.md")
