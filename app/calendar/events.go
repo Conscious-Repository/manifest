@@ -11,11 +11,12 @@ import (
 
 // Event is a normalized calendar event (Google types are converted to this).
 type Event struct {
-	ID     string
-	Title  string
-	Start  time.Time
-	End    time.Time
-	AllDay bool
+	ID       string
+	Title    string
+	Start    time.Time
+	End      time.Time
+	AllDay   bool
+	Declined bool // self-attendee responseStatus == "declined"
 }
 
 // Slot is a half-hour schedule slot derived from a timed event.
@@ -49,6 +50,9 @@ func EventsToSlots(events []Event, day time.Time, loc *time.Location) []Slot {
 		if e.AllDay {
 			continue
 		}
+		if e.Declined {
+			continue // events I declined don't belong on my schedule
+		}
 		if e.End.Sub(e.Start) >= 24*time.Hour {
 			continue
 		}
@@ -70,13 +74,22 @@ func EventsToSlots(events []Event, day time.Time, loc *time.Location) []Slot {
 			continue // no overlap with this day
 		}
 		startMin -= startMin % 30 // floor to the 30-minute grid
+		// One event is one item: the title goes on its first (lead) slot only;
+		// the slots it spans get an empty title so the UI shows it once, start to
+		// finish (the calendar left-bar still marks the whole span).
+		lead := true
 		for m := startMin; m < endMin; m += 30 {
 			tok := slotToken(m)
 			if seen[tok] {
 				continue
 			}
 			seen[tok] = true
-			slots = append(slots, Slot{Token: tok, Title: e.Title, EventID: e.ID})
+			title := ""
+			if lead {
+				title = e.Title
+				lead = false
+			}
+			slots = append(slots, Slot{Token: tok, Title: title, EventID: e.ID})
 		}
 	}
 	return slots

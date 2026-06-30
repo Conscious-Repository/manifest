@@ -352,7 +352,10 @@ func normalize(items []*gcal.Event, loc *time.Location) []Event {
 		if it.Start == nil {
 			continue
 		}
-		e := Event{ID: it.Id, Title: it.Summary}
+		if it.Status == "cancelled" {
+			continue // cancelled instances (SingleEvents expansion) aren't real events
+		}
+		e := Event{ID: it.Id, Title: it.Summary, Declined: selfDeclined(it)}
 		if it.Start.Date != "" {
 			e.AllDay = true
 			e.Start, _ = time.ParseInLocation("2006-01-02", it.Start.Date, loc)
@@ -372,4 +375,16 @@ func normalize(items []*gcal.Event, loc *time.Location) []Event {
 		out = append(out, e)
 	}
 	return out
+}
+
+// selfDeclined reports whether the authenticated account's own attendee record
+// on this event has a "declined" RSVP. Google marks that record with Self=true,
+// so no email matching is needed.
+func selfDeclined(it *gcal.Event) bool {
+	for _, a := range it.Attendees {
+		if a.Self && a.ResponseStatus == "declined" {
+			return true
+		}
+	}
+	return false
 }

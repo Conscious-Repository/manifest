@@ -3,6 +3,7 @@ package vault
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -86,6 +87,11 @@ func (ix *Index) AgentPaths() []string {
 // update incrementally folds a single created/modified file into the snapshot.
 // Removals and renames go through Rebuild instead (see Watcher).
 func (ix *Index) update(path string) {
+	// Backstop: never let a calendar cache mirror (<cacheDir>/<date>.md) be folded
+	// in as a daily note, even if the watcher picked up the dir at runtime.
+	if ix.cfg.CacheDir != "" && strings.HasPrefix(path, ix.cfg.CacheDir+string(filepath.Separator)) {
+		return
+	}
 	kind, date := classify(filepath.Base(path), path, ix.cfg.GoalsName)
 	ix.mu.Lock()
 	defer ix.mu.Unlock()

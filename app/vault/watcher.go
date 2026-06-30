@@ -56,6 +56,9 @@ func (w *Watcher) addRecursive(root string) error {
 		if !d.IsDir() {
 			return nil
 		}
+		if w.cfg.CacheDir != "" && path == w.cfg.CacheDir {
+			return filepath.SkipDir // calendar cache mirrors are not daily notes
+		}
 		if path != root {
 			name := d.Name()
 			if skip[name] || strings.HasPrefix(name, ".") {
