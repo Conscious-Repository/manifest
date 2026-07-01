@@ -77,6 +77,7 @@ const els = {
   goalsSoft: document.getElementById("goalsSoft"),
   gp_goals: document.getElementById("gp-goals"),
   gp_year: document.getElementById("gp-year"),
+  gp_review: document.getElementById("gp-review"),
   gp_history: document.getElementById("gp-history"),
   pickerModal: document.getElementById("pickerModal"),
   pickerBackdrop: document.getElementById("pickerBackdrop"),
@@ -686,9 +687,10 @@ function renderGoalsTab() {
     els.goalsSoft.hidden = activeRocks <= 5;
     els.goalsSoft.textContent = `${activeRocks} active Rocks — consider deferring some (aim for ~5).`;
   }
-  ["goals", "year", "history"].forEach((t) => { if (els["gp_" + t]) els["gp_" + t].hidden = t !== goalsTab; });
+  ["goals", "year", "review", "history"].forEach((t) => { if (els["gp_" + t]) els["gp_" + t].hidden = t !== goalsTab; });
   document.querySelectorAll(".gtab").forEach((b) => b.classList.toggle("active", b.dataset.gtab === goalsTab));
   if (goalsTab === "year") renderYear(areas);
+  else if (goalsTab === "review") renderReview(areas);
   else if (goalsTab === "history") renderHistory((archivesCache && archivesCache.quarters) || []);
   else renderCommand(areas);
 }
@@ -904,6 +906,78 @@ function renderYear(areas) {
     host.append(card);
   }));
   if (!any) host.appendChild(emptyRow("No 1-year goals yet — add some in the Command view."));
+}
+
+// ---- Quarterly review (§7): Win/Learn/Carry per Rock + retro + next-quarter drafting ----
+function renderReview(areas) {
+  const host = els.gp_review;
+  host.innerHTML = "";
+  const q = (areas.flatMap((a) => a.rocks || []).find((r) => r.quarter) || {}).quarter || "";
+  const activeRocks = areas.reduce((n, a) => n + (a.rocks || []).length, 0);
+  host.append(el("div", "review-head", "Quarterly review" + (q ? " · " + q : "") + " · " + activeRocks + " active Rocks"));
+  if (activeRocks > 5) host.append(el("div", "soft-focus", `${activeRocks} active Rocks — consider deferring some (aim for ~5).`));
+
+  areas.forEach((a) => {
+    if (!(a.rocks || []).length && !(a.annuals || []).length) return;
+    const sec = el("div", "review-area");
+    sec.append(el("div", "review-area-name", a.name));
+    (a.rocks || []).forEach((r) => {
+      const row = el("div", "review-rock");
+      const tip = currentStage(r);
+      row.append(el("span", "review-rock-title", r.text));
+      row.append(el("span", "review-rock-stage", tip ? "@ " + tip.text : "(no stage)"));
+      const acts = el("span", "rock-acts");
+      acts.append(pillLight("Won", () => closeGoal(r.id, "win")));
+      acts.append(pillLight("Learn", () => closeGoal(r.id, "learn", prompt("What did you learn / why drop it? (optional)") || "")));
+      acts.append(pillLight("Carry →", () => carryGoal(r.id)));
+      row.append(acts);
+      sec.append(row);
+    });
+    (a.annuals || []).forEach((an) =>
+      sec.append(addBtn("+ draft Rock for “" + an.text.slice(0, 42) + "”", () => {
+        const title = (prompt("New Rock (serves: " + an.text + "):") || "").trim();
+        if (title) createRockFull(a.name, title, an.id, "");
+      })));
+    host.append(sec);
+  });
+
+  const retro = el("div", "review-retro");
+  retro.append(el("div", "review-area-name", "Retro — Start / Stop / Keep (optional)"));
+  const start = retroField("Start doing…"), stop = retroField("Stop doing…"), keep = retroField("Keep doing…");
+  retro.append(start.wrap, stop.wrap, keep.wrap);
+  retro.append(pill("Save retro", () => saveRetro(start.ta.value, stop.ta.value, keep.ta.value)));
+  host.append(retro);
+}
+
+function retroField(placeholder) {
+  const wrap = el("div", "retro-field");
+  const ta = document.createElement("textarea");
+  ta.className = "retro-ta";
+  ta.placeholder = placeholder;
+  ta.rows = 2;
+  wrap.append(ta);
+  return { wrap, ta };
+}
+
+async function carryGoal(id) {
+  setSaveState("saving");
+  try {
+    const r = await fetch("/api/goals/carry", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    if (!r.ok) throw new Error(await r.text());
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); alert("Carry failed: " + (e.message || e)); }
+  loadGoals();
+}
+
+async function saveRetro(start, stop, keep) {
+  setSaveState("saving");
+  try {
+    const r = await fetch("/api/goals/retro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ start, stop, keep }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error("retro save failed");
+    setSaveState("saved");
+    alert("Retro saved to “goals " + (j.quarter || "") + " review.md”.");
+  } catch (e) { setSaveState("error"); alert("Retro save failed."); }
 }
 
 function renderHistory(quarters) {

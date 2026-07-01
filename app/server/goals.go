@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"manifest/approvals"
+	"manifest/daily"
 	"manifest/goals"
 )
 
@@ -300,4 +302,83 @@ func (s *Server) handleGoalsReorder(w http.ResponseWriter, r *http.Request) {
 
 func decode(r *http.Request, v any) error {
 	return json.NewDecoder(r.Body).Decode(v)
+}
+
+// syncGoalTasks mirrors goal-linked daily-task ticks back into goals.md (§4). Tasks that
+// carry a [goal:: id] are matched by that durable slug; a ticked task whose goal can't be
+// found (moved/removed) lands a note in the approvals inbox for the user to reconcile.
+func (s *Server) syncGoalTasks(tasks []daily.Task) {
+	if s.goals == nil {
+		return
+	}
+	updates := map[string]bool{}
+	for _, t := range tasks {
+		if t.GoalID != "" {
+			updates[t.GoalID] = t.Done
+		}
+	}
+	if len(updates) == 0 {
+		return
+	}
+	missed := s.goals.SyncChecks(updates, time.Now())
+	if s.approvals == nil || len(missed) == 0 {
+		return
+	}
+	for _, t := range tasks {
+		if t.GoalID != "" && t.Done && missed[t.GoalID] {
+			_, _ = s.approvals.Propose(approvals.Proposal{
+				Agent:  "manifest",
+				Action: "Couldn't sync a ticked task to goals",
+				Body: "You ticked \"" + t.Text + "\" ([goal:: " + t.GoalID + "]) in the daily manifest, but no " +
+					"matching goal is in goals.md — it may have been reworded, moved, or removed. Check it there if it's still open.",
+			})
+		}
+	}
+}
+
+// handleGoalCarry carries a Rock into the current quarter at review (§7).
+func (s *Server) handleGoalCarry(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var b struct {
+		ID string `json:"id"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.goals.CarryGoal(b.ID, time.Now()); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, s.goalsViewWithRollup())
+}
+
+// handleGoalRetro saves the optional quarterly retro (Start/Stop/Keep) as a review note.
+func (s *Server) handleGoalRetro(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var b struct {
+		Quarter string `json:"quarter"`
+		Start   string `json:"start"`
+		Stop    string `json:"stop"`
+		Keep    string `json:"keep"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	quarter := strings.TrimSpace(b.Quarter)
+	if quarter == "" {
+		quarter = goals.CurrentQuarter(time.Now())
+	}
+	if err := s.goals.SaveRetro(quarter, b.Start, b.Stop, b.Keep); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "quarter": quarter})
 }

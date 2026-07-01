@@ -162,6 +162,76 @@ func (s *Store) Pool() []PlateItem {
 	return s.Load().Pool()
 }
 
+// SyncChecks writes back checked-state from the daily manifest (§4): each id→done is
+// matched to a goals node by its durable [goal:: id]; found nodes get Checked=done and
+// their enclosing Rock's Moved stamped. Loads/saves goals.md once. Returns the ids that
+// had no match (moved/removed) so the caller can flag them.
+func (s *Store) SyncChecks(updates map[string]bool, now time.Time) map[string]bool {
+	missed := map[string]bool{}
+	if len(updates) == 0 {
+		return missed
+	}
+	doc := s.Load()
+	changed := false
+	stamp := now.Format("2006-01-02")
+	for id, done := range updates {
+		_, g := doc.FindGoal(id)
+		if g == nil {
+			missed[id] = true
+			continue
+		}
+		if g.Checked != done {
+			g.Checked = done
+			changed = true
+		}
+		if rock := doc.RockOf(id); rock != nil && rock.Moved != stamp {
+			rock.Moved = stamp
+			changed = true
+		}
+	}
+	if changed {
+		_ = s.Save(doc)
+	}
+	return missed
+}
+
+// CarryGoal carries a Rock into the current quarter at review (§7): it stays active but
+// records the quarter it rolled from and adopts the new one.
+func (s *Store) CarryGoal(id string, now time.Time) error {
+	doc := s.Load()
+	rock := doc.RockOf(id)
+	if rock == nil || rock.ID != id {
+		return fmt.Errorf("only a Rock can be carried")
+	}
+	q := CurrentQuarter(now)
+	if rock.Quarter != "" && rock.Quarter != q {
+		rock.RolledFrom = rock.Quarter
+	}
+	rock.Quarter = q
+	return s.Save(doc)
+}
+
+// SaveRetro writes the (optional) quarterly retro to "goals <quarter> review.md" at the
+// vault root — Start / Stop / Keep, three short blocks (§7 step 3).
+func (s *Store) SaveRetro(quarter, start, stop, keep string) error {
+	path := filepath.Join(s.vaultRoot, "goals "+quarter+" review.md")
+	var b strings.Builder
+	b.WriteString("# goals " + quarter + " review\n")
+	section := func(title, body string) {
+		b.WriteString("\n## " + title + "\n")
+		if body = strings.TrimSpace(body); body != "" {
+			b.WriteString(body + "\n")
+		}
+	}
+	section("Start", start)
+	section("Stop", stop)
+	section("Keep", keep)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
 // Promote ensures a goal carries a durable [goal:: id] (so a daily-task backlink
 // stays stable across text edits) and returns its text and id. It does not check
 // the goal.

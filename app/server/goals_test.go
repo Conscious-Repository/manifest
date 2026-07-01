@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"manifest/approvals"
+	"manifest/daily"
 	"manifest/goals"
 	"manifest/vault"
 )
@@ -98,5 +100,41 @@ func TestGoalsRollupMovedAndClose(t *testing.T) {
 	s.handleGoalsArchives(rec, httptest.NewRequest(http.MethodGet, "/api/goals/archives", nil))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Series A 15M") || !strings.Contains(rec.Body.String(), `"winRate":1`) {
 		t.Fatalf("archives endpoint wrong: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSyncGoalTasksWriteBackAndMiss(t *testing.T) {
+	md := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock [goal:: aion/rock]\n" +
+		"    - [ ] Stage\n        - [ ] Task [goal:: aion/rock/stage/task]\n"
+	s, _ := goalsServer(t, md)
+	s.UseApprovals(approvals.NewStore(t.TempDir()))
+
+	s.syncGoalTasks([]daily.Task{
+		{Text: "Task", Done: true, GoalID: "aion/rock/stage/task"},
+		{Text: "Ghost task", Done: true, GoalID: "aion/removed"},
+	})
+
+	// The linked task is checked in goals.md.
+	if r := findRock(getView(t, s), "Aion", "aion/rock"); r == nil || !r.Children[0].Children[0].Checked {
+		t.Fatalf("linked task not checked via write-back: %+v", r)
+	}
+	// The stale tick landed an approvals note naming the goal.
+	pend := s.approvals.List("pending")
+	if len(pend) != 1 || !strings.Contains(pend[0].Body, "aion/removed") {
+		t.Fatalf("miss did not produce an inbox note: %+v", pend)
+	}
+}
+
+func TestHandleGoalCarry(t *testing.T) {
+	md := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock [goal:: aion/rock] [quarter:: 2026-Q2]\n"
+	s, _ := goalsServer(t, md)
+	rec := httptest.NewRecorder()
+	s.handleGoalCarry(rec, httptest.NewRequest(http.MethodPost, "/api/goals/carry", strings.NewReader(`{"id":"aion/rock"}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("carry: %d %s", rec.Code, rec.Body.String())
+	}
+	r := findRock(getView(t, s), "Aion", "aion/rock")
+	if r == nil || r.Quarter == "2026-Q2" {
+		t.Fatalf("carry did not update the quarter: %+v", r)
 	}
 }
