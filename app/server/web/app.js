@@ -1241,18 +1241,50 @@ async function saveToVault(id) {
   } catch (e) { setSaveState("error"); alert("Save to vault failed: " + e.message); }
   loadFeed();
 }
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// pollRun waits for an async agent run (feed scan / options-scout / ea-coordinator draft)
+// to finish, polling /api/agents/runs/{id} every ~3s. Agent runs can take many minutes and
+// dozens of tool calls, so the server backgrounds them; this is how the UI tracks one.
+async function pollRun(runId) {
+  for (let i = 0; i < 400; i++) { // ~20 min ceiling at 3s
+    await sleep(3000);
+    let st;
+    try { st = await (await fetch("/api/agents/runs/" + encodeURIComponent(runId))).json(); }
+    catch (e) { continue; } // transient — keep polling
+    if (st && (st.status === "done" || st.status === "error")) return st;
+  }
+  return { status: "error", error: "timed out waiting for the run" };
+}
+
+// startAgentRun POSTs to an async run endpoint, then polls to completion. It surfaces the
+// REAL error: failures return a plain-text body (not JSON), so we read text() and throw it
+// verbatim instead of a generic "failed". Returns the terminal run state.
+async function startAgentRun(url, body) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const raw = await r.text();
+  if (!r.ok) throw new Error(raw.trim() || `HTTP ${r.status}`);
+  let started = {};
+  try { started = JSON.parse(raw); } catch (e) {}
+  if (!started.runId) throw new Error("server did not start a run");
+  const st = await pollRun(started.runId);
+  if (st.status === "error") throw new Error(st.error || "run failed");
+  return st;
+}
+
 async function feedRefresh() {
-  els.feedRefreshBtn.disabled = true;
-  els.feedRefreshBtn.textContent = "Running…";
+  const btn = els.feedRefreshBtn;
+  btn.disabled = true; btn.textContent = "Scanning…";
   setSaveState("saving");
   try {
-    const r = await fetch("/api/feed/refresh", { method: "POST" });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || "refresh failed");
+    await startAgentRun("/api/feed/refresh");
     setSaveState("saved");
   } catch (e) { setSaveState("error"); alert("Refresh failed: " + (e.message || e)); }
-  els.feedRefreshBtn.disabled = false;
-  els.feedRefreshBtn.textContent = "↻ Refresh";
+  btn.disabled = false; btn.textContent = "↻ Refresh";
   loadFeed();
 }
 async function feedBackfill() {
@@ -1276,15 +1308,10 @@ async function askScout() {
     const request = prompt(`Request for "${name}"  (e.g. "buy a 3D printer under $2k — find 5 options")`);
     if (!request || !request.trim()) return;
     const btn = els.feedRunBtn;
-    if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+    if (btn) { btn.disabled = true; btn.textContent = "Scanning…"; }
     setSaveState("saving");
     try {
-      const r = await fetch("/api/feed/run", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: name, request: request.trim() }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || "run failed");
+      await startAgentRun("/api/feed/run", { profile: name, request: request.trim() });
       setSaveState("saved");
     } catch (e) { setSaveState("error"); alert("Scout run failed: " + (e.message || e)); }
     if (btn) { btn.disabled = false; btn.textContent = "Ask a scout"; }
@@ -1408,15 +1435,10 @@ async function draftApproval() {
   const request = prompt('Task for ea-coordinator  (e.g. "draft a reply to Lee proposing 3 times next week")');
   if (!request || !request.trim()) return;
   const btn = els.apprRunBtn;
-  if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+  if (btn) { btn.disabled = true; btn.textContent = "Drafting…"; }
   setSaveState("saving");
   try {
-    const r = await fetch("/api/agents/approvals/run", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ request: request.trim() }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || "draft failed");
+    await startAgentRun("/api/agents/approvals/run", { request: request.trim() });
     setSaveState("saved");
   } catch (e) { setSaveState("error"); alert("Draft failed: " + (e.message || e)); }
   if (btn) { btn.disabled = false; btn.textContent = "+ Draft with ea-coordinator"; }

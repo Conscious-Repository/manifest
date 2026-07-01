@@ -33,9 +33,11 @@ var seeded = []Profile{
 		Permissions: []string{"read-only"},
 		Schedule:    "0 7 * * *",
 		Brief: "Scan for new people, papers, companies, and findings relevant to Benjamin's " +
-			"research domain (read his synced vault to learn the domain — bioelectricity, aging, " +
-			"agentic AI, and adjacent areas). Produce a short feed of candidates, each one line: " +
-			"what it is, why it matters, link, source. Do not write vault notes.\n\n" + feedItemContract,
+			"research domain (bioelectricity, aging, agentic AI, and adjacent areas). Keep it FAST " +
+			"and focused: do at most ~4 searches, prefer results from the last ~30 days, and return " +
+			"up to 8 of the most relevant candidates — do not exhaustively enumerate or deep-dive any " +
+			"one item. Each candidate is one line: what it is, why it matters, link, source. Do not " +
+			"write vault notes.\n\n" + feedItemContract,
 	},
 	{
 		Name:        "options-scout",
