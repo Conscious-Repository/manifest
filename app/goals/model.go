@@ -21,6 +21,7 @@ type Goal struct {
 	Serves     string // annual slug this Rock serves; "" = needs setup
 	Status     string // "" (active) | "blocked" | "at-risk"
 	RolledFrom string // "2026-Q2" when carried across a quarter
+	Moved      string // last-movement date (YYYY-MM-DD); stamped when work lands beneath it
 
 	Fields   []Field
 	Children []*Goal
@@ -107,6 +108,28 @@ func (d *Doc) FindGoal(id string) (*Area, *Goal) {
 		}
 	}
 	return nil, nil
+}
+
+// RockOf returns the top-level Rock whose subtree contains id (or the Rock itself),
+// or nil. Used to stamp last-movement on a Rock when a check/add lands beneath it.
+func (d *Doc) RockOf(id string) *Goal {
+	for _, a := range d.Areas {
+		for _, rock := range a.Rocks {
+			if rock.ID == id || subtreeContains(rock, id) {
+				return rock
+			}
+		}
+	}
+	return nil
+}
+
+func subtreeContains(g *Goal, id string) bool {
+	for _, c := range g.Children {
+		if c.ID == id || subtreeContains(c, id) {
+			return true
+		}
+	}
+	return false
 }
 
 func findIn(parent *Goal, gs []*Goal, id string) (*Goal, *Goal) {
@@ -352,14 +375,20 @@ type AreaView struct {
 // GoalView backs both annuals and Rocks. Rock-only fields (quarter/serves/status)
 // are empty for annuals, stages and tasks and omitted from the JSON.
 type GoalView struct {
-	ID       string     `json:"id"`
-	Text     string     `json:"text"`
-	Checked  bool       `json:"checked"`
-	Owner    string     `json:"owner"`
-	Quarter  string     `json:"quarter,omitempty"`
-	Serves   string     `json:"serves,omitempty"`
-	Status   string     `json:"status,omitempty"`
-	Children []GoalView `json:"children,omitempty"`
+	ID      string `json:"id"`
+	Text    string `json:"text"`
+	Checked bool   `json:"checked"`
+	Owner   string `json:"owner"`
+	Quarter string `json:"quarter,omitempty"`
+	Serves  string `json:"serves,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Moved   string `json:"moved,omitempty"`
+	// Annual roll-up (§2): serving-Rock counts, filled by the server from goals.md +
+	// the current year's archives. Zero on Rocks/stages/tasks.
+	RollupActive int        `json:"rollupActive,omitempty"`
+	RollupWon    int        `json:"rollupWon,omitempty"`
+	RollupLearn  int        `json:"rollupLearn,omitempty"`
+	Children     []GoalView `json:"children,omitempty"`
 }
 
 func (d *Doc) View() DocView {
@@ -383,7 +412,7 @@ func goalViews(gs []*Goal) []GoalView {
 		out = append(out, GoalView{
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
 			Owner: g.ResolvedOwner(),
-			Quarter: g.Quarter, Serves: g.Serves, Status: g.Status,
+			Quarter: g.Quarter, Serves: g.Serves, Status: g.Status, Moved: g.Moved,
 			Children: goalViews(g.Children),
 		})
 	}
