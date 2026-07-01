@@ -195,6 +195,8 @@ func parseGoal(m []string) *Goal {
 			g.Status = strings.TrimSpace(f.Value)
 		case "rolled-from":
 			g.RolledFrom = strings.TrimSpace(f.Value)
+		case "moved":
+			g.Moved = strings.TrimSpace(f.Value)
 			// `due` is intentionally ignored (retired).
 		}
 	}

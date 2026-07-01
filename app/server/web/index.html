@@ -69,21 +69,22 @@
   </main>
 
   <section class="goals-page" id="goalsView" hidden>
-    <aside class="plate-col">
-      <div class="panel-head">
-        <span class="panel-title">MY PLATE</span>
-        <span class="panel-meta">OWNER · ME</span>
-      </div>
-      <div id="plateRows" class="plate-rows"></div>
-    </aside>
-    <div class="areas-col">
-      <div class="panel-head">
-        <span class="panel-title">AREAS &amp; GOALS</span>
-        <span class="panel-meta">goals.md</span>
-      </div>
-      <div id="areasRows"></div>
-      <button id="addArea" class="add-btn">+ Add area</button>
+    <div class="panel-head">
+      <span class="panel-title">GOALS</span>
+      <span class="goals-subnav" id="goalsSubnav">
+        <button class="gtab active" data-gtab="goals">COMMAND</button>
+        <button class="gtab" data-gtab="year">YEAR</button>
+        <button class="gtab" data-gtab="history">HISTORY</button>
+      </span>
+      <span class="subhead-actions">
+        <button id="goalsAddBtn" class="pill light">+ Add goal</button>
+        <button id="addArea" class="pill light">+ Area</button>
+      </span>
     </div>
+    <div id="goalsSoft" class="soft-focus" hidden></div>
+    <div class="goals-panel" id="gp-goals"></div>
+    <div class="goals-panel" id="gp-year" hidden></div>
+    <div class="goals-panel" id="gp-history" hidden></div>
   </section>
 
   <section class="calendar-view" id="calendarView" hidden>

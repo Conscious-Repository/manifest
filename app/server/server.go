@@ -68,6 +68,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/item", s.handleGoalItem)
 	mux.HandleFunc("/api/goals/check", s.handleGoalCheck)
 	mux.HandleFunc("/api/goals/reorder", s.handleGoalsReorder)
+	mux.HandleFunc("/api/goals/close", s.handleGoalClose)     // close a Rock Win/Learn → archive
+	mux.HandleFunc("/api/goals/archives", s.handleGoalsArchives) // History view
 
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)

@@ -70,6 +70,9 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 		if g.RolledFrom != "" {
 			out = append(out, Field{Key: "rolled-from", Value: g.RolledFrom})
 		}
+		if g.Moved != "" {
+			out = append(out, Field{Key: "moved", Value: g.Moved})
+		}
 	}
 
 	if g.Owner != "" && !strings.EqualFold(g.Owner, "me") {
@@ -90,7 +93,7 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 // the next save rather than round-tripped as junk.
 func isRecognizedField(key string) bool {
 	switch strings.ToLower(key) {
-	case "owner", "goal", "quarter", "serves", "status", "rolled-from", "due":
+	case "owner", "goal", "quarter", "serves", "status", "rolled-from", "moved", "due":
 		return true
 	}
 	return false
