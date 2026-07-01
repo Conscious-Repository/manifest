@@ -182,6 +182,49 @@ func TestMergeCalendar(t *testing.T) {
 	}
 }
 
+func TestMergeCalendarCarriesEventID(t *testing.T) {
+	s, _ := testService(t)
+	rows := []ScheduleRow{{Time: "11:00A", Label: ""}}
+	out := s.mergeCalendar(rows, []CalSlot{{Token: "11:00A", Title: "Zoom", EventID: "evtZ"}})
+	byTok := map[string]ScheduleRow{}
+	for _, r := range out {
+		byTok[r.Time] = r
+	}
+	if byTok["11:00A"].Source != "calendar" || byTok["11:00A"].EventID != "evtZ" {
+		t.Fatalf("calendar row should carry its EventID: %+v", byTok["11:00A"])
+	}
+}
+
+// Once the user has hardened (adopted) a calendar event — its lead slot is now a
+// manual entry — re-merging the still-present calendar event must NOT re-overlay
+// any of its slots, so no stale soft bars reappear on reload.
+func TestMergeCalendarSuppressesAdoptedEvent(t *testing.T) {
+	s, _ := testService(t)
+	rows := []ScheduleRow{
+		{Time: "1:30P", Label: "Ben x Isaac Podcast"}, // adopted -> manual lead
+		{Time: "2:00P", Label: ""},
+		{Time: "2:30P", Label: ""},
+	}
+	slots := []CalSlot{
+		{Token: "1:30P", Title: "Ben x Isaac Podcast", EventID: "evt1"},
+		{Token: "2:00P", Title: "", EventID: "evt1"},
+		{Token: "2:30P", Title: "", EventID: "evt1"},
+	}
+	out := s.mergeCalendar(rows, slots)
+	for _, r := range out {
+		if r.Source == "calendar" {
+			t.Fatalf("adopted event must not re-overlay any slot: %+v", r)
+		}
+	}
+	byTok := map[string]ScheduleRow{}
+	for _, r := range out {
+		byTok[r.Time] = r
+	}
+	if byTok["1:30P"].Label != "Ben x Isaac Podcast" || byTok["1:30P"].Source != "" {
+		t.Fatalf("lead must stay a manual entry: %+v", byTok["1:30P"])
+	}
+}
+
 func TestGoalsAndMilestones(t *testing.T) {
 	s, _ := testService(t)
 	if err := s.SaveGoals("2026-06-29", []string{"Launch v1", "Read more"}); err != nil {
@@ -202,5 +245,127 @@ func TestGoalsAndMilestones(t *testing.T) {
 	}
 	if day.Quarter != "2026 Q2" {
 		t.Fatalf("quarter: %s", day.Quarter)
+	}
+}
+
+type fakeMilestone struct {
+	id, text string
+	tasks    []FocusNode
+}
+type fakeGoal struct {
+	text     string
+	children []fakeMilestone
+}
+type fakeGoals struct{ goals map[string]fakeGoal }
+
+// ResolveFocus mirrors the real adapter: it picks the requested milestone (else the
+// first child) and returns that milestone's tasks plus the full child list.
+func (f fakeGoals) ResolveFocus(id, milestoneID string) (FocusResolution, bool) {
+	g, ok := f.goals[id]
+	if !ok {
+		return FocusResolution{}, false
+	}
+	res := FocusResolution{Text: g.text}
+	if len(g.children) == 0 {
+		return res, true
+	}
+	for _, c := range g.children {
+		res.Milestones = append(res.Milestones, FocusNode{GoalID: c.id, Text: c.text})
+	}
+	sel := g.children[0]
+	for _, c := range g.children {
+		if c.id == milestoneID {
+			sel = c
+			break
+		}
+	}
+	res.Milestone = &FocusNode{GoalID: sel.id, Text: sel.text}
+	res.Tasks = sel.tasks
+	return res, true
+}
+
+func TestFocusPersistResolveAndClear(t *testing.T) {
+	s, _ := testService(t)
+	s.UseGoals(fakeGoals{goals: map[string]fakeGoal{
+		"aion/series-a": {text: "Series A 15M", children: []fakeMilestone{
+			{id: "aion/series-a/deck", text: "Draft deck", tasks: []FocusNode{{GoalID: "aion/series-a/deck/ff", Text: "Intro to FF"}}},
+		}},
+	}})
+
+	// Pick a 90-day goal into slot 0 → resolves text + milestone + tasks.
+	day, err := s.SetFocus("2026-06-29", 0, "aion/series-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(day.Focus) != 1 || !day.Focus[0].Resolved || day.Focus[0].Text != "Series A 15M" {
+		t.Fatalf("focus not resolved: %+v", day.Focus)
+	}
+	if day.Focus[0].Milestone == nil || day.Focus[0].Milestone.Text != "Draft deck" || len(day.Focus[0].Tasks) != 1 {
+		t.Fatalf("milestone/tasks not resolved: %+v", day.Focus[0])
+	}
+
+	// The durable slug persists; a reload re-resolves it from the cascade.
+	day2, _ := s.Load("2026-06-29")
+	if len(day2.Focus) != 1 || day2.Focus[0].GoalID != "aion/series-a" || day2.Focus[0].Text != "Series A 15M" {
+		t.Fatalf("focus didn't persist/re-resolve: %+v", day2.Focus)
+	}
+
+	// An unresolved slug keeps its stored text but is flagged.
+	day3, _ := s.SetFocus("2026-06-29", 1, "aion/ghost")
+	var ghostResolved = true
+	for _, p := range day3.Focus {
+		if p.GoalID == "aion/ghost" {
+			ghostResolved = p.Resolved
+		}
+	}
+	if ghostResolved {
+		t.Fatalf("unresolved slug should not be Resolved: %+v", day3.Focus)
+	}
+
+	// Clearing slot 0 removes that pick.
+	day4, _ := s.SetFocus("2026-06-29", 0, "")
+	for _, p := range day4.Focus {
+		if p.GoalID == "aion/series-a" {
+			t.Fatalf("clear failed: %+v", day4.Focus)
+		}
+	}
+}
+
+func TestFocusMilestoneSelectionCascadesTasks(t *testing.T) {
+	s, _ := testService(t)
+	s.UseGoals(fakeGoals{goals: map[string]fakeGoal{
+		"home/backyard": {text: "Backyard", children: []fakeMilestone{
+			{id: "home/backyard/metal-up", text: "Metal up"}, // first child, no tasks
+			{id: "home/backyard/yard-done", text: "Yard done", tasks: []FocusNode{{GoalID: "home/backyard/yard-done/dirt", Text: "Dirt for backyard"}}},
+			{id: "home/backyard/pavers", text: "Pavers"},
+		}},
+	}})
+
+	// Picking the 90-day defaults the milestone to the first child (no tasks) and
+	// surfaces all 3 milestone options for the picker.
+	day, err := s.SetFocus("2026-06-29", 0, "home/backyard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if day.Focus[0].Milestone == nil || day.Focus[0].Milestone.Text != "Metal up" || len(day.Focus[0].Tasks) != 0 {
+		t.Fatalf("default milestone should be first child with no tasks: %+v", day.Focus[0])
+	}
+	if len(day.Focus[0].Milestones) != 3 {
+		t.Fatalf("want 3 milestone options: %+v", day.Focus[0].Milestones)
+	}
+
+	// Selecting "Yard done" switches the milestone and cascades its task.
+	day2, err := s.SetMilestone("2026-06-29", 0, "home/backyard/yard-done")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if day2.Focus[0].Milestone.Text != "Yard done" || len(day2.Focus[0].Tasks) != 1 || day2.Focus[0].Tasks[0].Text != "Dirt for backyard" {
+		t.Fatalf("selected milestone + cascading task not resolved: %+v", day2.Focus[0])
+	}
+
+	// The choice persists (## Focus gains [milestone:: …]) and re-resolves on reload.
+	day3, _ := s.Load("2026-06-29")
+	if day3.Focus[0].MilestoneID != "home/backyard/yard-done" || day3.Focus[0].Milestone.Text != "Yard done" {
+		t.Fatalf("milestone selection didn't persist: %+v", day3.Focus[0])
 	}
 }

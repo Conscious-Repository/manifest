@@ -43,17 +43,17 @@
       <section class="panel">
         <div class="panel-head">
           <span class="panel-title">GOALS</span>
-          <span id="goalsRange" class="panel-meta">90-DAY · ME</span>
+          <span id="goalsRange" class="panel-meta">QUARTER</span>
         </div>
-        <div id="goalsRows" class="ro-rows"></div>
+        <div id="goalsRows" class="focus-rows"></div>
       </section>
 
       <section class="panel">
         <div class="panel-head">
           <span class="panel-title">MILESTONES</span>
-          <span id="milestonesRange" class="panel-meta">30-DAY · ME</span>
+          <span id="milestonesRange" class="panel-meta">MONTH</span>
         </div>
-        <div id="milestonesRows" class="ro-rows"></div>
+        <div id="milestonesRows" class="focus-rows"></div>
       </section>
 
       <section class="panel">
@@ -61,10 +61,10 @@
           <span class="panel-title">TASKS</span>
           <span class="panel-meta">TODAY</span>
         </div>
-        <div id="taskRows" class="task-rows"></div>
-        <button id="addTask" class="add-btn">+ Add new</button>
+        <div id="taskRows" class="task-table"></div>
       </section>
     </div>
+    <div id="focusExtra" class="focus-extra"></div>
     </div>
   </main>
 
@@ -109,22 +109,119 @@
   <section class="agents-view" id="agentsView" hidden>
     <div class="panel-head">
       <span class="panel-title">AGENTS</span>
-      <span id="agentCounts" class="panel-meta"></span>
+      <span id="hermesStatus" class="panel-meta hermes-status"></span>
     </div>
-    <div id="agentsDisabled" class="cal-connect" hidden>
-      <p>The agent queue isn't available (no writable vault).</p>
+
+    <div class="agents-tabs" id="agentsTabs">
+      <a class="atab" data-tab="console" href="#/agents">CONSOLE</a>
+      <a class="atab" data-tab="profiles" href="#/agents/profiles">PROFILES</a>
+      <a class="atab" data-tab="feed" href="#/agents/feed">FEED</a>
+      <a class="atab" data-tab="jobs" href="#/agents/jobs">JOBS</a>
+      <a class="atab" data-tab="approvals" href="#/agents/approvals">APPROVALS<span id="apprBadge" class="atab-badge" hidden></span></a>
     </div>
-    <div class="agents-cols">
-      <div>
-        <div class="agents-subhead">PENDING APPROVALS</div>
-        <div id="approvalRows" class="approval-rows"></div>
+
+    <!-- CONSOLE -->
+    <div class="agent-panel" id="ap-console">
+      <div id="consoleProfileBar" class="console-profile-bar" hidden>
+        <span class="cpb-label">profile</span>
+        <span id="consoleProfileName" class="cpb-name"></span>
+        <button id="consoleProfileClear" class="cpb-clear" title="Clear profile">✕</button>
       </div>
-      <div>
-        <div class="agents-subhead">RECENT OUTBOX</div>
-        <div id="outboxRows" class="outbox-rows"></div>
+      <div class="console">
+        <div id="consoleLog" class="console-log" aria-live="polite"></div>
+        <div class="console-compose">
+          <textarea id="consoleInput" class="console-input" rows="1"
+            placeholder="Message Hermes…  (Enter to send, Shift+Enter for newline)"></textarea>
+          <button id="consoleSend" class="pill console-send">SEND</button>
+        </div>
       </div>
+    </div>
+
+    <!-- PROFILES -->
+    <div class="agent-panel" id="ap-profiles" hidden>
+      <div class="panel-subhead">
+        <span>PROFILES <span class="sub-meta">markdown presets · outside the vault</span></span>
+        <button id="newProfileBtn" class="pill light">+ New profile</button>
+      </div>
+      <div id="profileList" class="profile-list"></div>
+    </div>
+
+    <!-- FEED -->
+    <div class="agent-panel" id="ap-feed" hidden>
+      <div class="panel-subhead">
+        <span id="feedFilters" class="feed-filters"></span>
+        <span class="subhead-actions">
+          <button id="feedRunBtn" class="pill light" title="Ask an on-demand scout to research a request">Ask a scout</button>
+          <button id="feedBackfillBtn" class="pill light" title="Pull items from scheduled cron runs">Backfill</button>
+          <button id="feedRefreshBtn" class="pill">↻ Refresh</button>
+        </span>
+      </div>
+      <div id="feedList" class="feed-list"></div>
+    </div>
+
+    <!-- JOBS + OBSERVABILITY -->
+    <div class="agent-panel" id="ap-jobs" hidden>
+      <div class="panel-subhead">
+        <span>CRONS <span class="sub-meta">schedule + last-run health</span></span>
+        <button id="newJobBtn" class="pill light">+ Schedule a profile</button>
+      </div>
+      <div id="jobsList" class="jobs-list"></div>
+      <div class="panel-subhead"><span>RECENT RUNS <span class="sub-meta">sessions on the box</span></span></div>
+      <div id="sessionsList" class="sessions-list"></div>
+    </div>
+
+    <!-- APPROVALS -->
+    <div class="agent-panel" id="ap-approvals" hidden>
+      <div class="panel-subhead">
+        <span>PENDING APPROVALS <span class="sub-meta">record-only · nothing sends without you</span></span>
+        <button id="apprRunBtn" class="pill light" title="Draft actions with ea-coordinator (proposals only — nothing sends)">+ Draft with ea-coordinator</button>
+      </div>
+      <div id="approvalList" class="approval-rows"></div>
     </div>
   </section>
+
+  <!-- Profile editor modal -->
+  <div id="profileModal" class="modal" hidden>
+    <div class="modal-backdrop" id="profileBackdrop"></div>
+    <div class="modal-card wide">
+      <div class="modal-head">
+        <span id="profileModalTitle" class="modal-title">Profile</span>
+        <button id="profileClose" class="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field"><span class="field-label">Name</span>
+          <input id="pfName" class="field-input" placeholder="domain-scout" /></label>
+        <label class="field"><span class="field-label">Model tier</span>
+          <select id="pfModel" class="field-input">
+            <option value="cheap">cheap</option>
+            <option value="strong">strong</option>
+          </select></label>
+        <label class="field"><span class="field-label">Schedule (cron, or none)</span>
+          <input id="pfSchedule" class="field-input" placeholder="none  ·  or  0 7 * * *" /></label>
+        <label class="field"><span class="field-label">Permissions</span>
+          <input id="pfPerms" class="field-input" placeholder="read-only, propose-only" /></label>
+        <div class="field"><span class="field-label">Tools <span class="sub-meta" id="pfToolCount"></span></span>
+          <div id="pfTools" class="tool-grid"></div></div>
+        <label class="field"><span class="field-label">Brief</span>
+          <textarea id="pfBrief" class="field-input brief" rows="7" placeholder="What this profile does…"></textarea></label>
+      </div>
+      <div class="modal-foot">
+        <button id="pfDelete" class="pill reject">Delete</button>
+        <button id="pfSave" class="pill approve">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="pickerModal" class="modal" hidden>
+    <div class="modal-backdrop" id="pickerBackdrop"></div>
+    <div class="modal-card">
+      <div class="modal-head">
+        <span id="pickerTitle" class="modal-title"></span>
+        <button id="pickerClose" class="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div id="pickerBody" class="modal-body"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

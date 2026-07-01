@@ -9,7 +9,9 @@ import (
 var (
 	areaHeadingRe = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
 	horizonRe     = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
-	goalLineRe    = regexp.MustCompile(`^\s*[-*]\s*\[([ xX])\]\s?(.*)$`)
+	// goalLineRe captures leading indentation (m[1]), the checkbox state (m[2]),
+	// and the rest of the line (m[3]). Indentation drives cascade nesting.
+	goalLineRe = regexp.MustCompile(`^([ \t]*)[-*]\s*\[([ xX])\]\s?(.*)$`)
 )
 
 func isAreaHeading(line string) bool { return areaHeadingRe.MatchString(line) }
@@ -21,21 +23,14 @@ func areaName(line string) string {
 	return ""
 }
 
-// horizonOf returns the recognized horizon for a "### ..." heading. Unknown
-// "###" headings are not horizons (they are preserved as extra prose).
-func horizonOf(line string) (Horizon, bool) {
+// horizonOf returns whether a "### ..." heading is the 90-day cascade section.
+func is90Heading(line string) bool {
 	m := horizonRe.FindStringSubmatch(line)
 	if m == nil {
-		return HNone, false
+		return false
 	}
 	h := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(m[1])), " ", "")
-	switch {
-	case strings.HasPrefix(h, "90"):
-		return H90, true
-	case strings.HasPrefix(h, "30"):
-		return H30, true
-	}
-	return HNone, false
+	return strings.HasPrefix(h, "90")
 }
 
 func isNorthStar(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
@@ -61,8 +56,34 @@ func normalizeDue(s string) string {
 	return s
 }
 
+// indentWidth measures leading whitespace in columns (tab = 4), so 2-space,
+// 4-space, or tab nesting all round-trip predictably.
+func indentWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		switch r {
+		case ' ':
+			w++
+		case '\t':
+			w += 4
+		default:
+			return w
+		}
+	}
+	return w
+}
+
+type frame struct {
+	indent int
+	goal   *Goal
+}
+
 // Parse turns goals.md content into a Doc. It never hard-errors: anything it
-// doesn't recognize is preserved as area "extra" prose or the doc preamble.
+// doesn't recognize is preserved as area "extra" prose or the doc preamble. Under
+// "### 90-day", checkbox lines nest by indentation into the cascade (90-day →
+// 30-day → tasks). Legacy "### 30-day" (and other "###") sections are not part of
+// the cascade — their heading is dropped and any goals beneath are preserved
+// verbatim as "extra" so nothing is lost.
 func Parse(content string) *Doc {
 	doc := &Doc{}
 	var lines []string
@@ -82,9 +103,10 @@ func Parse(content string) *Doc {
 	doc.preamble = strings.Join(pre, "\n")
 
 	for i < len(lines) {
-		a := &Area{Name: areaName(lines[i]), headingRaw: lines[i]}
+		a := &Area{Name: areaName(lines[i])}
 		i++
-		cur := HNone
+		inCascade := false
+		var stack []frame
 		for i < len(lines) && !isAreaHeading(lines[i]) {
 			line := lines[i]
 			i++
@@ -98,21 +120,32 @@ func Parse(content string) *Doc {
 				} else {
 					a.extra = append(a.extra, line)
 				}
-			default:
-				if h, ok := horizonOf(line); ok {
-					cur = h
-					switch h {
-					case H90:
-						a.has90 = true
-					case H30:
-						a.has30 = true
-					}
-					continue
+			case horizonRe.MatchString(line):
+				if is90Heading(line) {
+					inCascade = true
+					a.has90 = true
+					stack = stack[:0]
+				} else {
+					inCascade = false // legacy 30-day / unknown: drop heading, preserve goals as extra
 				}
+			default:
 				if m := goalLineRe.FindStringSubmatch(line); m != nil {
-					g := parseGoal(m, cur)
-					b := a.bucket(cur)
-					*b = append(*b, g)
+					if !inCascade {
+						a.extra = append(a.extra, line)
+						continue
+					}
+					w := indentWidth(m[1])
+					g := parseGoal(m)
+					for len(stack) > 0 && stack[len(stack)-1].indent >= w {
+						stack = stack[:len(stack)-1]
+					}
+					if len(stack) == 0 {
+						a.Goals = append(a.Goals, g)
+					} else {
+						p := stack[len(stack)-1].goal
+						p.Children = append(p.Children, g)
+					}
+					stack = append(stack, frame{indent: w, goal: g})
 					continue
 				}
 				a.extra = append(a.extra, line)
@@ -124,12 +157,11 @@ func Parse(content string) *Doc {
 	return doc
 }
 
-func parseGoal(m []string, h Horizon) *Goal {
-	text, fields := parseFields(m[2])
+func parseGoal(m []string) *Goal {
+	text, fields := parseFields(m[3])
 	g := &Goal{
 		Text:    text,
-		Checked: strings.EqualFold(strings.TrimSpace(m[1]), "x"),
-		Horizon: h,
+		Checked: strings.EqualFold(strings.TrimSpace(m[2]), "x"),
 		Fields:  fields,
 	}
 	for _, f := range fields {

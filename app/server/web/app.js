@@ -1,7 +1,7 @@
 // Manifest — local daily-planner UI over your Obsidian vault.
 // State lives in markdown files; this is a thin editor with autosave.
 
-const state = { date: isoToday(), day: null, cal: null, agentsPoll: null };
+const state = { date: isoToday(), day: null, cal: null, consoleProfile: "", feedType: "" };
 
 const els = {
   dateLabel: document.getElementById("dateLabel"),
@@ -9,9 +9,10 @@ const els = {
   scheduleRows: document.getElementById("scheduleRows"),
   scheduleRange: document.getElementById("scheduleRange"),
   goalsRows: document.getElementById("goalsRows"),
+  goalsRange: document.getElementById("goalsRange"),
   milestonesRows: document.getElementById("milestonesRows"),
+  milestonesRange: document.getElementById("milestonesRange"),
   taskRows: document.getElementById("taskRows"),
-  addTask: document.getElementById("addTask"),
   prepBanner: document.getElementById("prepBanner"),
   dayView: document.getElementById("dayView"),
   goalsView: document.getElementById("goalsView"),
@@ -22,10 +23,45 @@ const els = {
   calNav: document.getElementById("calNav"),
   agentsNav: document.getElementById("agentsNav"),
   dayNav: document.getElementById("dayNav"),
-  agentCounts: document.getElementById("agentCounts"),
-  agentsDisabled: document.getElementById("agentsDisabled"),
-  approvalRows: document.getElementById("approvalRows"),
-  outboxRows: document.getElementById("outboxRows"),
+  hermesStatus: document.getElementById("hermesStatus"),
+  consoleLog: document.getElementById("consoleLog"),
+  consoleInput: document.getElementById("consoleInput"),
+  consoleSend: document.getElementById("consoleSend"),
+  // agents cockpit sub-panels
+  ap_console: document.getElementById("ap-console"),
+  ap_profiles: document.getElementById("ap-profiles"),
+  ap_feed: document.getElementById("ap-feed"),
+  ap_jobs: document.getElementById("ap-jobs"),
+  ap_approvals: document.getElementById("ap-approvals"),
+  apprBadge: document.getElementById("apprBadge"),
+  consoleProfileBar: document.getElementById("consoleProfileBar"),
+  consoleProfileName: document.getElementById("consoleProfileName"),
+  consoleProfileClear: document.getElementById("consoleProfileClear"),
+  profileList: document.getElementById("profileList"),
+  newProfileBtn: document.getElementById("newProfileBtn"),
+  feedFilters: document.getElementById("feedFilters"),
+  feedList: document.getElementById("feedList"),
+  feedRefreshBtn: document.getElementById("feedRefreshBtn"),
+  feedBackfillBtn: document.getElementById("feedBackfillBtn"),
+  feedRunBtn: document.getElementById("feedRunBtn"),
+  jobsList: document.getElementById("jobsList"),
+  sessionsList: document.getElementById("sessionsList"),
+  newJobBtn: document.getElementById("newJobBtn"),
+  approvalList: document.getElementById("approvalList"),
+  apprRunBtn: document.getElementById("apprRunBtn"),
+  profileModal: document.getElementById("profileModal"),
+  profileBackdrop: document.getElementById("profileBackdrop"),
+  profileClose: document.getElementById("profileClose"),
+  profileModalTitle: document.getElementById("profileModalTitle"),
+  pfName: document.getElementById("pfName"),
+  pfModel: document.getElementById("pfModel"),
+  pfSchedule: document.getElementById("pfSchedule"),
+  pfPerms: document.getElementById("pfPerms"),
+  pfTools: document.getElementById("pfTools"),
+  pfToolCount: document.getElementById("pfToolCount"),
+  pfBrief: document.getElementById("pfBrief"),
+  pfSave: document.getElementById("pfSave"),
+  pfDelete: document.getElementById("pfDelete"),
   calGrid: document.getElementById("calGrid"),
   calMonthLabel: document.getElementById("calMonthLabel"),
   calConnect: document.getElementById("calConnect"),
@@ -38,6 +74,11 @@ const els = {
   plateRows: document.getElementById("plateRows"),
   areasRows: document.getElementById("areasRows"),
   addArea: document.getElementById("addArea"),
+  pickerModal: document.getElementById("pickerModal"),
+  pickerBackdrop: document.getElementById("pickerBackdrop"),
+  pickerClose: document.getElementById("pickerClose"),
+  pickerTitle: document.getElementById("pickerTitle"),
+  pickerBody: document.getElementById("pickerBody"),
 };
 
 // ---- date helpers ----
@@ -119,6 +160,15 @@ async function load(date) {
   renderDay();
 }
 
+// Decorative per-row markers for the Goals / Milestones slots (mood, image,
+// clock), ported from the vv.xyz design. Purely cosmetic.
+const SLOT_ICONS = [
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c.9 1.2 2.1 1.8 3.5 1.8s2.6-.6 3.5-1.8"/><circle cx="9" cy="10" r=".6" fill="currentColor"/><circle cx="15" cy="10" r=".6" fill="currentColor"/></svg>',
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17l4.5-4 3 2.5L16 12l3 3.5"/></svg>',
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>',
+];
+const MONTHS_FULL = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+
 function renderDay() {
   const day = state.day;
   renderPrep(day);
@@ -127,10 +177,188 @@ function renderDay() {
       `${hourLabel(Math.floor(slotMin(day.schedule[0].time) / 60))}–` +
       `${hourLabel(Math.floor(slotMin(day.schedule[day.schedule.length - 1].time) / 60))}`;
   }
+  // Rolling windows from the viewed date: 90-day goals = this month → +3 months,
+  // 30-day milestone = next month.
+  const cur = (+(day.date || "0-1").split("-")[1] - 1 + 12) % 12;
+  els.goalsRange.textContent = `${MONTHS_FULL[cur]} – ${MONTHS_FULL[(cur + 3) % 12]}`;
+  els.milestonesRange.textContent = MONTHS_FULL[(cur + 1) % 12];
   renderSchedule(day.schedule);
-  renderReadonly(els.goalsRows, day.goals, "No 90-day goals on your plate");
-  renderReadonly(els.milestonesRows, day.milestones, "No 30-day goals on your plate");
+  renderFocus(day);
   renderTasks(day.tasks);
+  renderCascadeTasks(day);
+}
+
+// ---- Focus: click-to-pick 90-day goals + their auto-filled 30-day milestone.
+// Rendered as a unified bordered box of slot rows (vv.xyz layout). ----
+function renderFocus(day) {
+  const slots = day.focusSlots || 3;
+  const focus = day.focus || [];
+  els.goalsRows.innerHTML = "";
+  els.milestonesRows.innerHTML = "";
+  for (let i = 0; i < slots; i++) {
+    const pick = focus[i];
+    els.goalsRows.appendChild(goalSlot(i, pick));
+    els.milestonesRows.appendChild(milestoneSlot(i, pick));
+  }
+}
+
+function focusRow(i) {
+  const row = document.createElement("div");
+  row.className = "focus-row";
+  const marker = document.createElement("span");
+  marker.className = "marker";
+  marker.innerHTML = SLOT_ICONS[i % SLOT_ICONS.length];
+  row.appendChild(marker);
+  return row;
+}
+
+function goalSlot(i, pick) {
+  const row = focusRow(i);
+  if (pick) {
+    const txt = document.createElement("span");
+    txt.className = "focus-text" + (pick.resolved ? "" : " unresolved");
+    txt.textContent = pick.text || pick.goalId;
+    txt.title = "Change this focus goal";
+    txt.addEventListener("click", () => openGoalPicker(i));
+    row.appendChild(txt);
+    if (!pick.resolved) {
+      const badge = document.createElement("span");
+      badge.className = "focus-badge";
+      badge.textContent = "unresolved";
+      row.appendChild(badge);
+    }
+    const clear = document.createElement("button");
+    clear.className = "icon-btn focus-clear";
+    clear.textContent = "✕";
+    clear.title = "Clear";
+    clear.addEventListener("click", () => setFocus(i, ""));
+    row.appendChild(clear);
+  } else {
+    row.classList.add("empty");
+    const ph = document.createElement("span");
+    ph.className = "focus-placeholder";
+    ph.textContent = "pick a goal";
+    row.appendChild(ph);
+    row.addEventListener("click", () => openGoalPicker(i));
+  }
+  return row;
+}
+
+function milestoneSlot(i, pick) {
+  const row = focusRow(i);
+  row.classList.add("milestone");
+  if (pick && pick.milestone) {
+    const txt = document.createElement("span");
+    txt.className = "focus-text milestone-text";
+    txt.textContent = pick.milestone.text;
+    txt.title = "Change the 30-day milestone";
+    txt.addEventListener("click", () => openMilestonePicker(i, pick));
+    row.appendChild(txt);
+  } else if (pick && pick.resolved) {
+    row.classList.add("empty");
+    const a = document.createElement("a");
+    a.href = "#/goals";
+    a.className = "focus-placeholder";
+    a.textContent = "set a 30-day goal";
+    row.appendChild(a);
+  }
+  return row;
+}
+
+// Pick which 30-day goal is the milestone for a focus slot (its tasks then cascade).
+function openMilestonePicker(i, pick) {
+  const items = (pick.milestones || []).map((m) => ({ id: m.goalId, text: m.text }));
+  if (!items.length) { location.hash = "#/goals"; return; }
+  openPicker("Pick a 30-day milestone", [{ area: pick.text, items }], (id) => setMilestone(i, id));
+}
+
+async function setFocus(slot, goalId) {
+  setSaveState("saving");
+  try {
+    const r = await fetch(`/api/day/focus?date=${state.date}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot, goalId }),
+    });
+    state.day = await r.json();
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  renderDay();
+}
+
+async function setMilestone(slot, milestoneId) {
+  setSaveState("saving");
+  try {
+    const r = await fetch(`/api/day/focus/milestone?date=${state.date}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot, milestoneId }),
+    });
+    state.day = await r.json();
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  renderDay();
+}
+
+// Open the goal picker for a focus slot: all owner==me, open 90-day goals by area.
+async function openGoalPicker(slot) {
+  const doc = await (await fetch("/api/goals")).json();
+  const groups = (doc.areas || [])
+    .map((a) => ({
+      area: a.name,
+      items: (a.goals || [])
+        .filter((g) => !g.checked && g.owner === "me")
+        .map((g) => ({ id: g.id, text: g.text })),
+    }))
+    .filter((grp) => grp.items.length);
+  if (!groups.length) {
+    openPicker("Pick a 90-day goal", [], null, "No open 90-day goals yet — add some on the Goals page.");
+    return;
+  }
+  openPicker("Pick a 90-day goal", groups, (id) => setFocus(slot, id));
+}
+
+// Cascade tasks: surface the chosen 30-day's open tasks (not already pulled) as
+// quick-add chips that promote into ## Tasks with a [goal:: slug] backlink.
+function renderCascadeTasks(day) {
+  const host = document.getElementById("focusExtra");
+  if (host) host.innerHTML = "";
+  const existing = new Set((day.tasks || []).map((t) => t.goalId).filter(Boolean));
+  const suggestions = [];
+  (day.focus || []).forEach((p) => {
+    (p.tasks || []).forEach((t) => {
+      if (!existing.has(t.goalId)) suggestions.push({ goalId: t.goalId, text: t.text, goal: p.text });
+    });
+  });
+  if (!suggestions.length || !host) return;
+  const full = (day.tasks || []).filter((t) => t.text).length >= MAX_TASKS;
+  const row = document.createElement("div");
+  row.id = "cascadeTasks";
+  row.className = "cascade-tasks";
+  const head = document.createElement("div");
+  head.className = "cascade-head";
+  head.textContent = full ? "From your focus (tasks full — remove one to add):" : "From your focus:";
+  row.appendChild(head);
+  const chips = document.createElement("div");
+  chips.className = "pool-chips";
+  suggestions.forEach((s) => {
+    const chip = document.createElement("button");
+    chip.className = "pool-chip" + (full ? " disabled" : "");
+    const tag = document.createElement("span");
+    tag.className = "pool-area";
+    tag.textContent = s.goal;
+    chip.append(tag, document.createTextNode(" " + s.text));
+    if (full) {
+      chip.disabled = true;
+      chip.title = "Tasks are full — remove one to add this";
+    } else {
+      chip.title = `Add “${s.text}” to today`;
+      chip.addEventListener("click", () => pullGoal(s.goalId));
+    }
+    chips.appendChild(chip);
+  });
+  row.appendChild(chips);
+  host.appendChild(row); // #focusExtra — below the even bottom line, under TASKS
 }
 
 // Read-only reflection of goals.md (90-/30-day, owner==me). Edited on the
@@ -181,6 +409,7 @@ function renderPrep(day) {
 }
 
 async function pullGoal(goalId) {
+  if (collectTasks().length >= MAX_TASKS) return; // hard cap of 3 tasks — remove one first
   setSaveState("saving");
   try {
     await fetch(`/api/day/pull?date=${state.date}`, {
@@ -227,7 +456,12 @@ function renderSchedule(slots) {
       input.className = "sslot" + (slot.label ? " filled" : "") + (isCal ? " cal" : "");
       input.value = slot.label || "";
       input.dataset.idx = i;
-      if (isCal) input.title = "From your calendar — type to make it your own";
+      if (isCal) {
+        input.dataset.eventid = slot.eventId || "";
+        input.title = "Click to keep on your schedule; type to edit";
+        // Click anywhere in a calendar block → harden the whole event into the note.
+        input.addEventListener("click", () => adoptEvent(slot.eventId, i));
+      }
       input.addEventListener("input", () => {
         state.day.schedule[i].label = input.value;
         state.day.schedule[i].source = ""; // editing makes a calendar slot manual
@@ -304,10 +538,29 @@ function drawConnectors() {
 }
 window.addEventListener("resize", drawConnectors);
 
+// Harden a calendar event into the day: every slot of the event becomes manual
+// (source ""), so the lead's title darkens to normal and persists to the .md while
+// the soft span bars drop away. The backend then suppresses that event on reload.
+function adoptEvent(eventId, idx) {
+  const sched = state.day.schedule;
+  const members = eventId
+    ? sched.map((r, i) => i).filter((i) => sched[i].source === "calendar" && sched[i].eventId === eventId)
+    : [idx];
+  if (!members.length) return;
+  members.forEach((i) => { sched[i].source = ""; }); // lead keeps its label; continuations stay empty
+  renderSchedule(sched);
+  saveDay();
+}
+
+// Exactly three persistent task rows (vv.xyz layout) — hard cap, never a 4th.
+// Empty rows are blank slots to fill in or pull a cascade option into.
+const MAX_TASKS = 3;
 function renderTasks(tasks) {
   els.taskRows.innerHTML = "";
-  const list = tasks.length ? tasks : [{ text: "", done: false }];
-  list.forEach((t, i) => addTaskRow(t, i + 1));
+  const list = (tasks || []).slice(0, MAX_TASKS);
+  for (let i = 0; i < MAX_TASKS; i++) {
+    addTaskRow(list[i] || { text: "", done: false }, i + 1);
+  }
 }
 function addTaskRow(task, num) {
   const row = document.createElement("div");
@@ -317,25 +570,62 @@ function addTaskRow(task, num) {
   const n = document.createElement("span");
   n.className = "num";
   n.textContent = `${num}.`;
+
+  // Middle column: editable text + a hover-shown remove (✕) on filled rows.
+  const mid = document.createElement("div");
+  mid.className = "ttext-cell";
   const input = document.createElement("input");
   input.className = "ttext" + (task.done ? " done" : "");
   input.value = task.text || "";
-  input.addEventListener("change", saveDay);
+  const remove = document.createElement("button");
+  remove.className = "task-remove";
+  remove.textContent = "✕";
+  remove.title = "Remove task";
+  remove.tabIndex = -1;
+  mid.append(input, remove);
+
   const cell = document.createElement("div");
   cell.className = "check-cell";
   const check = document.createElement("button");
   check.className = "check" + (task.done ? " on" : "");
-  check.textContent = task.done ? "✓" : "○";
+  // ✓ when done, ○ when the row has text, blank when empty (matches the reference).
+  const sym = () => (input.classList.contains("done") ? "✓" : input.value.trim() ? "○" : "");
+  // Keep the row's filled state (drives the ✕ affordance) and check glyph in sync.
+  const refresh = () => {
+    row.classList.toggle("filled", input.value.trim() !== "");
+    check.textContent = sym();
+  };
   check.addEventListener("click", () => {
+    if (!input.value.trim()) return; // can't complete an empty row
     const done = !input.classList.contains("done");
     input.classList.toggle("done", done);
     check.classList.toggle("on", done);
-    check.textContent = done ? "✓" : "○";
+    check.textContent = sym();
     saveDay();
   });
+  input.addEventListener("input", refresh);
+  input.addEventListener("change", () => { saveDay(); syncTasksAndCascade(); });
+  remove.addEventListener("click", () => {
+    input.value = "";
+    input.classList.remove("done");
+    check.classList.remove("on");
+    delete row.dataset.goalId; // dropping the task also drops its cascade backlink
+    delete row.dataset.owner;
+    refresh();
+    saveDay();
+    syncTasksAndCascade(); // frees the slot → its cascade chip reappears
+  });
+  refresh();
   cell.appendChild(check);
-  row.append(n, input, cell);
+  row.append(n, mid, cell);
   els.taskRows.appendChild(row);
+}
+// Mirror the live task rows into state.day and re-offer cascade chips, so the
+// "From your focus" suggestions enable/disable the moment a slot frees or fills.
+function syncTasksAndCascade() {
+  if (!state.day) return;
+  state.day.tasks = collectTasks();
+  renderCascadeTasks(state.day);
 }
 function collectTasks() {
   return [...els.taskRows.querySelectorAll(".trow")]
@@ -441,35 +731,51 @@ function areaCard(area) {
   });
 
   card.append(head, ns);
-  card.appendChild(horizonSection(area.name, "90-day", "90-DAY", area.goals90));
-  card.appendChild(horizonSection(area.name, "30-day", "30-DAY", area.goals30));
-  if (area.loose && area.loose.length) {
-    card.appendChild(horizonSection(area.name, "", "OTHER", area.loose));
-  }
-  return card;
-}
-
-function horizonSection(areaName, horizon, label, goals) {
   const sec = document.createElement("div");
   sec.className = "horizon";
   const lbl = document.createElement("div");
   lbl.className = "horizon-label";
-  lbl.textContent = label;
+  lbl.textContent = "90-DAY → 30-DAY → TASKS";
   sec.appendChild(lbl);
-  const list = document.createElement("div");
-  list.className = "goal-list";
-  (goals || []).forEach((g) => list.appendChild(goalRow(g)));
-  sec.appendChild(list);
+  (area.goals || []).forEach((g) => sec.appendChild(goalNode(g, 0)));
   const add = document.createElement("button");
   add.className = "add-btn add-goal";
-  add.textContent = "+ Add goal";
+  add.textContent = "+ Add 90-day goal";
   add.addEventListener("click", () =>
-    goalsApi("POST", "/api/goals/item", { area: areaName, horizon, text: "New goal", owner: "me", due: "" }));
+    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", text: "New goal", owner: "me", due: "" }));
   sec.appendChild(add);
-  return sec;
+  card.appendChild(sec);
+  return card;
 }
 
-function goalRow(g) {
+// goalNode renders one cascade node and (recursively) its children, with an
+// add-child button: a 90-day (depth 0) gets "+ 30-day goal", a 30-day (depth 1)
+// gets "+ task". Tasks (depth 2) are leaves.
+function goalNode(g, depth) {
+  const wrap = document.createElement("div");
+  wrap.className = "goal-node depth-" + depth;
+  wrap.appendChild(goalRow(g, depth));
+  const kids = document.createElement("div");
+  kids.className = "goal-children";
+  (g.children || []).forEach((c) => kids.appendChild(goalNode(c, depth + 1)));
+  if (depth < 2) {
+    const add = document.createElement("button");
+    add.className = "add-btn add-child";
+    add.textContent = depth === 0 ? "+ 30-day goal" : "+ task";
+    add.addEventListener("click", () =>
+      goalsApi("POST", "/api/goals/item", {
+        parentId: g.id,
+        text: depth === 0 ? "New 30-day goal" : "New task",
+        owner: depth === 0 ? "me" : "",
+        due: "",
+      }));
+    kids.appendChild(add);
+  }
+  wrap.appendChild(kids);
+  return wrap;
+}
+
+function goalRow(g, depth) {
   const row = document.createElement("div");
   row.className = "goal-row";
 
@@ -487,34 +793,77 @@ function goalRow(g) {
     if (v && v !== g.text) goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v });
   });
 
-  const owner = document.createElement("select");
-  owner.className = "owner-chip owner-" + (g.owner === "me" ? "me" : g.owner === "team" ? "team" : "other");
-  ["me", "team"].forEach((o) => owner.appendChild(new Option(o, o)));
-  if (g.owner !== "me" && g.owner !== "team") owner.appendChild(new Option(g.owner, g.owner));
-  owner.value = g.owner;
-  owner.addEventListener("change", () =>
-    goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: owner.value }));
+  row.append(check, text);
 
-  const due = document.createElement("input");
-  due.type = "date";
-  due.className = "due-pick" + (g.due ? " set" : "");
-  due.value = g.due || "";
-  due.addEventListener("change", () =>
-    goalsApi("PATCH", "/api/goals/item", { id: g.id, due: due.value }));
+  // Tasks (leaf tier) stay lightweight: no owner/due controls.
+  if (depth < 2) {
+    const owner = document.createElement("select");
+    owner.className = "owner-chip owner-" + (g.owner === "me" ? "me" : g.owner === "team" ? "team" : "other");
+    ["me", "team"].forEach((o) => owner.appendChild(new Option(o, o)));
+    if (g.owner !== "me" && g.owner !== "team") owner.appendChild(new Option(g.owner, g.owner));
+    owner.value = g.owner;
+    owner.addEventListener("change", () =>
+      goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: owner.value }));
+
+    const due = document.createElement("input");
+    due.type = "date";
+    due.className = "due-pick" + (g.due ? " set" : "");
+    due.value = g.due || "";
+    due.addEventListener("change", () =>
+      goalsApi("PATCH", "/api/goals/item", { id: g.id, due: due.value }));
+
+    row.append(owner, due);
+  }
 
   const del = document.createElement("button");
   del.className = "icon-btn goal-del";
   del.textContent = "✕";
-  del.title = "Delete goal";
+  del.title = "Delete";
   del.addEventListener("click", () => goalsApi("DELETE", "/api/goals/item", { id: g.id }));
-
-  row.append(check, text, owner, due, del);
+  row.append(del);
   return row;
 }
+
+// ---- reusable picker modal ----
+function openPicker(title, groups, onPick, emptyHint) {
+  els.pickerTitle.textContent = title;
+  els.pickerBody.innerHTML = "";
+  if (!groups || !groups.length) {
+    const e = document.createElement("div");
+    e.className = "ro-row empty";
+    e.textContent = emptyHint || "Nothing to pick.";
+    els.pickerBody.appendChild(e);
+  } else {
+    groups.forEach((grp) => {
+      const head = document.createElement("div");
+      head.className = "plate-area";
+      head.textContent = grp.area;
+      els.pickerBody.appendChild(head);
+      grp.items.forEach((it) => {
+        const opt = document.createElement("button");
+        opt.className = "picker-item";
+        opt.textContent = it.text;
+        opt.addEventListener("click", () => {
+          closePicker();
+          if (onPick) onPick(it.id);
+        });
+        els.pickerBody.appendChild(opt);
+      });
+    });
+  }
+  els.pickerModal.hidden = false;
+}
+function closePicker() { els.pickerModal.hidden = true; }
 
 els.addArea.addEventListener("click", () => {
   const name = prompt("New area name:");
   if (name && name.trim()) goalsApi("POST", "/api/areas", { name: name.trim() });
+});
+
+els.pickerClose.addEventListener("click", closePicker);
+els.pickerBackdrop.addEventListener("click", closePicker);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !els.pickerModal.hidden) closePicker();
 });
 
 // ================= Calendar (month view) =================
@@ -707,103 +1056,565 @@ els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
 els.calNext.addEventListener("click", () => shiftCalMonth(1));
 
 // ================= Agents panel =================
-async function loadAgents() {
-  let s = { enabled: false };
-  try { s = await (await fetch("/api/agents/status")).json(); } catch (e) {}
-  els.agentsDisabled.hidden = !!s.enabled;
-  if (!s.enabled) {
-    els.agentCounts.textContent = "";
-    els.approvalRows.innerHTML = "";
-    els.outboxRows.innerHTML = "";
-    return;
+// ---- Agents cockpit: small DOM helpers ----
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function pill(text, onclick) { const b = el("button", "pill", text); b.addEventListener("click", onclick); return b; }
+function pillLight(text, onclick) { const b = el("button", "pill light", text); b.addEventListener("click", onclick); return b; }
+function emptyRow(text) { return el("div", "ro-row empty", text); }
+function splitList(s) { return (s || "").split(",").map((x) => x.trim()).filter(Boolean); }
+function linkEl(text, href) { const a = el("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; }
+function fmtWhen(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso).slice(0, 16).replace("T", " ");
+  const now = new Date();
+  if (Math.abs(d - now) < 86400000 && d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   }
-  const c = s.counts || {};
-  els.agentCounts.textContent =
-    `INBOX ${c.inbox || 0} · CLAIMED ${c.claimed || 0} · DONE ${c.done || 0} · FAILED ${c.failed || 0}`;
-  renderApprovals(s.approvals || []);
-  renderOutbox(s.outbox || []);
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function renderApprovals(list) {
-  els.approvalRows.innerHTML = "";
-  if (!list.length) {
-    const e = document.createElement("div");
-    e.className = "ro-row empty";
-    e.textContent = "No pending approvals";
-    els.approvalRows.appendChild(e);
-    return;
-  }
-  list.forEach((a) => {
-    const row = document.createElement("div");
-    row.className = "approval-row";
-    const info = document.createElement("div");
-    info.className = "approval-info";
-    const action = document.createElement("span");
-    action.className = "approval-action";
-    action.textContent = a.action;
-    const body = document.createElement("span");
-    body.className = "approval-body";
-    body.textContent = a.body || "";
-    info.append(action, body);
-    const ok = document.createElement("button");
-    ok.className = "pill approve";
-    ok.textContent = "Confirm";
-    ok.addEventListener("click", () => agentAction("/api/agents/approvals/confirm", { id: a.id }));
-    const no = document.createElement("button");
-    no.className = "pill reject";
-    no.textContent = "Reject";
-    no.addEventListener("click", () => agentAction("/api/agents/approvals/reject", { id: a.id, reason: "rejected from dashboard" }));
-    row.append(info, ok, no);
-    els.approvalRows.appendChild(row);
+// ---- Agents cockpit: sub-tab routing ----
+const AGENT_TABS = ["console", "profiles", "feed", "jobs", "approvals"];
+function showAgents() {
+  const tab = agentTabFromHash();
+  AGENT_TABS.forEach((t) => { els["ap_" + t].hidden = t !== tab; });
+  document.querySelectorAll(".atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
+  loadHermes(); // status chip is shown on every sub-tab
+  if (tab === "profiles") loadProfiles();
+  else if (tab === "feed") loadFeed();
+  else if (tab === "jobs") loadJobs();
+  else if (tab === "approvals") loadApprovals();
+  refreshApprovalBadge();
+}
+function agentTabFromHash() {
+  const t = (location.hash.split("/")[2] || "console");
+  return AGENT_TABS.includes(t) ? t : "console";
+}
+
+// ---- Profiles (Step 2) ----
+let toolsetsCache = null;
+async function ensureToolsets() {
+  if (toolsetsCache) return toolsetsCache;
+  try { toolsetsCache = (await (await fetch("/api/hermes/toolsets")).json()).data || []; }
+  catch (e) { toolsetsCache = []; }
+  return toolsetsCache;
+}
+async function loadProfiles() {
+  let list = [];
+  try { list = (await (await fetch("/api/agents/profiles")).json()).data || []; } catch (e) {}
+  els.profileList.innerHTML = "";
+  if (!list.length) { els.profileList.appendChild(emptyRow("No profiles yet. Add one — it's a small markdown file outside your vault.")); return; }
+  list.forEach((p) => els.profileList.appendChild(profileCard(p)));
+}
+function profileCard(p) {
+  const card = el("div", "profile-card");
+  const head = el("div", "profile-head");
+  head.append(el("span", "profile-name", p.name), el("span", "profile-tier", p.model || ""));
+  const brief = el("div", "profile-brief", (p.brief || "").split("\n")[0].slice(0, 150));
+  const sched = p.schedule && p.schedule !== "none" ? p.schedule : "on-demand";
+  const meta = el("div", "profile-meta", `${(p.tools || []).length} tools · ${(p.permissions || []).join(", ") || "—"} · ${sched}`);
+  const actions = el("div", "profile-actions");
+  actions.append(pillLight("Use in console", () => useProfile(p.name)), pillLight("Edit", () => openProfileEditor(p)));
+  card.append(head, brief, meta, actions);
+  return card;
+}
+function useProfile(name) {
+  state.consoleProfile = name;
+  updateProfileBar();
+  location.hash = "#/agents";
+}
+function updateProfileBar() {
+  const on = !!state.consoleProfile;
+  els.consoleProfileBar.hidden = !on;
+  if (on) els.consoleProfileName.textContent = state.consoleProfile;
+}
+async function openProfileEditor(p) {
+  p = p || { name: "", model: "cheap", tools: [], permissions: [], schedule: "none", brief: "" };
+  els.profileModalTitle.textContent = p.name ? "Edit profile" : "New profile";
+  els.pfName.value = p.name || "";
+  els.pfName.disabled = !!p.name; // name is the id — don't rename in place
+  els.pfModel.value = p.model || "cheap";
+  els.pfSchedule.value = p.schedule || "none";
+  els.pfPerms.value = (p.permissions || []).join(", ");
+  els.pfBrief.value = p.brief || "";
+  els.pfDelete.hidden = !p.name;
+  els.pfDelete.onclick = () => deleteProfile(p.name);
+  const sets = await ensureToolsets();
+  const selected = new Set(p.tools || []);
+  els.pfTools.innerHTML = "";
+  const countLabel = () => { els.pfToolCount.textContent = selected.size + " selected"; };
+  sets.forEach((ts) => {
+    const b = el("button", "tool-chip" + (selected.has(ts.name) ? " on" : ""), ts.name);
+    b.title = ts.description || ts.label || "";
+    b.onclick = () => { selected.has(ts.name) ? selected.delete(ts.name) : selected.add(ts.name); b.classList.toggle("on"); countLabel(); };
+    els.pfTools.appendChild(b);
   });
-}
-
-function renderOutbox(list) {
-  els.outboxRows.innerHTML = "";
-  if (!list.length) {
-    const e = document.createElement("div");
-    e.className = "ro-row empty";
-    e.textContent = "Nothing in the outbox yet";
-    els.outboxRows.appendChild(e);
-    return;
-  }
-  list.forEach((it) => {
-    const row = document.createElement("div");
-    row.className = "outbox-row";
-    const t = document.createElement("span");
-    t.className = "outbox-title";
-    t.textContent = it.title || it.name;
-    const when = document.createElement("span");
-    when.className = "outbox-when";
-    when.textContent = (it.modTime || "").slice(0, 16).replace("T", " ");
-    row.append(t, when);
-    els.outboxRows.appendChild(row);
+  countLabel();
+  els.pfSave.onclick = () => saveProfile({
+    name: els.pfName.value.trim(), model: els.pfModel.value,
+    schedule: els.pfSchedule.value.trim(), permissions: splitList(els.pfPerms.value),
+    tools: [...selected], brief: els.pfBrief.value,
   });
+  els.profileModal.hidden = false;
+}
+async function saveProfile(p) {
+  if (!p.name) { els.pfName.focus(); return; }
+  setSaveState("saving");
+  try { await fetch("/api/agents/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  els.profileModal.hidden = true;
+  loadProfiles();
+}
+async function deleteProfile(name) {
+  if (!confirm(`Delete profile "${name}"?`)) return;
+  try { await fetch("/api/agents/profiles/" + encodeURIComponent(name), { method: "DELETE" }); } catch (e) {}
+  els.profileModal.hidden = true;
+  loadProfiles();
 }
 
-async function agentAction(path, body) {
+// ---- Feed (Step 3) ----
+let feedCache = [];
+async function loadFeed() {
+  try { feedCache = (await (await fetch("/api/feed")).json()).data || []; } catch (e) { feedCache = []; }
+  renderFeedFilters();
+  renderFeed();
+}
+function renderFeedFilters() {
+  const host = els.feedFilters; host.innerHTML = "";
+  const types = [...new Set(feedCache.map((i) => i.type))];
+  const mk = (label, val) => {
+    const b = el("button", "filter-chip" + ((state.feedType || "") === val ? " on" : ""), label);
+    b.onclick = () => { state.feedType = val; renderFeedFilters(); renderFeed(); };
+    return b;
+  };
+  host.appendChild(mk("all", ""));
+  types.forEach((t) => host.appendChild(mk(t, t)));
+}
+function renderFeed() {
+  const host = els.feedList; host.innerHTML = "";
+  const items = feedCache.filter((i) => !state.feedType || i.type === state.feedType);
+  if (!items.length) { host.appendChild(emptyRow("No items yet — hit Refresh to run domain-scout, or Backfill to pull from scheduled cron runs.")); return; }
+  items.forEach((it) => host.appendChild(feedCard(it)));
+}
+function feedCard(it) {
+  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : ""));
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-" + it.type, it.type));
+  const title = it.link ? linkEl(it.title, it.link) : el("span", null, it.title);
+  title.classList.add("feed-title");
+  top.append(title);
+  if (it.confidence) top.append(el("span", "conf conf-" + it.confidence, it.confidence));
+  card.append(top);
+  if (it.why) card.append(el("div", "feed-why", it.why));
+  const metaBits = [it.source, it.domain, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
+  if (metaBits) card.append(el("div", "feed-meta", metaBits));
+  if (it.type === "artifact" && it.body) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
+  if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
+  const actions = el("div", "feed-actions");
+  actions.append(
+    pillLight("Keep", () => feedAction(it.id, { status: "kept" })),
+    pillLight("Discard", () => feedAction(it.id, { status: "discarded" })),
+    pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })),
+  );
+  if (!it.vaultNote) actions.append(pillLight("Save to vault", () => saveToVault(it.id)));
+  card.append(actions);
+  return card;
+}
+async function feedAction(id, body) {
+  setSaveState("saving");
+  try { await fetch(`/api/feed/${id}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  loadFeed();
+}
+async function saveToVault(id) {
   setSaveState("saving");
   try {
-    await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await fetch(`/api/feed/${id}/save-to-vault`, { method: "POST" });
+    if (!r.ok) throw new Error((await r.text()) || "save failed");
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
-  loadAgents();
+  } catch (e) { setSaveState("error"); alert("Save to vault failed: " + e.message); }
+  loadFeed();
+}
+async function feedRefresh() {
+  els.feedRefreshBtn.disabled = true;
+  els.feedRefreshBtn.textContent = "Running…";
+  setSaveState("saving");
+  try {
+    const r = await fetch("/api/feed/refresh", { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "refresh failed");
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); alert("Refresh failed: " + (e.message || e)); }
+  els.feedRefreshBtn.disabled = false;
+  els.feedRefreshBtn.textContent = "↻ Refresh";
+  loadFeed();
+}
+async function feedBackfill() {
+  els.feedBackfillBtn.disabled = true;
+  setSaveState("saving");
+  try { await fetch("/api/feed/backfill", { method: "POST" }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  els.feedBackfillBtn.disabled = false;
+  loadFeed();
+}
+// askScout runs an on-demand scout (e.g. options-scout) with a free-form request and
+// materializes its output into the feed (§5.3). Read-only scouts only — propose-only
+// profiles (ea-coordinator) draft to Approvals, not the feed.
+async function askScout() {
+  let profs = [];
+  try { profs = (await (await fetch("/api/agents/profiles")).json()).data || []; } catch (e) {}
+  const scouts = profs.filter((p) => !(p.permissions || []).includes("propose-only"));
+  if (!scouts.length) { alert("No scout profiles available. Add a read-only profile first."); return; }
+  const groups = [{ area: "Ask which scout?", items: scouts.map((p) => ({ id: p.name, text: p.name })) }];
+  openPicker("Ask a scout to research a request", groups, async (name) => {
+    const request = prompt(`Request for "${name}"  (e.g. "buy a 3D printer under $2k — find 5 options")`);
+    if (!request || !request.trim()) return;
+    const btn = els.feedRunBtn;
+    if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+    setSaveState("saving");
+    try {
+      const r = await fetch("/api/feed/run", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: name, request: request.trim() }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "run failed");
+      setSaveState("saved");
+    } catch (e) { setSaveState("error"); alert("Scout run failed: " + (e.message || e)); }
+    if (btn) { btn.disabled = false; btn.textContent = "Ask a scout"; }
+    loadFeed();
+  });
 }
 
-function startAgentsPoll() {
-  stopAgentsPoll();
-  state.agentsPoll = setInterval(loadAgents, 5000);
+// ---- Jobs + observability (Step 4) ----
+async function loadJobs() {
+  let list = [];
+  try { list = (await (await fetch("/api/jobs")).json()).data || []; } catch (e) {}
+  els.jobsList.innerHTML = "";
+  if (!list.length) els.jobsList.appendChild(emptyRow("No crons scheduled."));
+  else list.forEach((j) => els.jobsList.appendChild(jobRow(j)));
+  loadSessions();
 }
-function stopAgentsPoll() {
-  if (state.agentsPoll) { clearInterval(state.agentsPoll); state.agentsPoll = null; }
+function jobRow(j) {
+  const row = el("div", "job-row" + (j.enabled ? "" : " paused"));
+  const st = j.last_status === "ok" ? "ok" : (j.last_status ? "err" : "");
+  row.append(el("span", "status-dot " + st));
+  const main = el("div", "job-main");
+  main.append(el("div", "job-name", j.name));
+  const sched = (j.schedule_display || (j.schedule && j.schedule.expr) || "—");
+  const last = j.last_run_at ? `last ${fmtWhen(j.last_run_at)}${j.last_status ? " · " + j.last_status : ""}` : "never run";
+  const next = j.next_run_at && j.enabled ? ` · next ${fmtWhen(j.next_run_at)}` : "";
+  main.append(el("div", "job-sub", `${sched}   ·   ${last}${next}`));
+  if (j.last_error) main.append(el("div", "job-err", j.last_error));
+  row.append(main);
+  const actions = el("div", "job-actions");
+  actions.append(
+    pillLight(j.enabled ? "Pause" : "Resume", () => jobUpdate(j.id, { enabled: !j.enabled })),
+    pillLight("Delete", () => { if (confirm(`Delete cron "${j.name}"?`)) jobDelete(j.id); }),
+  );
+  row.append(actions);
+  return row;
 }
+async function jobUpdate(id, patch) {
+  setSaveState("saving");
+  try { await fetch("/api/jobs/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  loadJobs();
+}
+async function jobDelete(id) {
+  setSaveState("saving");
+  try { await fetch("/api/jobs/" + id, { method: "DELETE" }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  loadJobs();
+}
+async function newJob() {
+  let profs = [];
+  try { profs = (await (await fetch("/api/agents/profiles")).json()).data || []; } catch (e) {}
+  if (!profs.length) { alert("Create a profile first."); return; }
+  const groups = [{ area: "Schedule which profile?", items: profs.map((p) => ({ id: p.name, text: p.name })) }];
+  openPicker("Schedule a profile as a cron", groups, async (name) => {
+    const p = profs.find((x) => x.name === name);
+    const expr = prompt(`Cron expression for "${name}"`, (p && p.schedule && p.schedule !== "none") ? p.schedule : "0 7 * * *");
+    if (!expr) return;
+    setSaveState("saving");
+    try {
+      await fetch("/api/jobs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name, prompt: p ? p.brief : "", schedule: expr, skills: (p && p.tools) || [] }),
+      });
+      setSaveState("saved");
+    } catch (e) { setSaveState("error"); }
+    loadJobs();
+  });
+}
+async function loadSessions() {
+  let list = [];
+  try { list = (await (await fetch("/api/agents/sessions")).json()).data || []; } catch (e) {}
+  els.sessionsList.innerHTML = "";
+  if (!list.length) { els.sessionsList.appendChild(emptyRow("No recent runs.")); return; }
+  list.slice(0, 12).forEach((sx) => {
+    const row = el("div", "session-row");
+    row.append(el("span", "sess-src src-" + sx.source, sx.source));
+    row.append(el("span", "sess-title", sx.title || "(untitled)"));
+    const tok = (sx.input_tokens || 0) + (sx.output_tokens || 0);
+    row.append(el("span", "sess-meta", `${sx.message_count || 0} msgs · ${tok.toLocaleString()} tok`));
+    row.append(el("span", "sess-when", fmtWhen(new Date((sx.started_at || 0) * 1000).toISOString())));
+    els.sessionsList.appendChild(row);
+  });
+}
+
+// ---- Approvals (Step 5, record-only) ----
+async function loadApprovals() {
+  let d = { pending: [], counts: {} };
+  try { d = await (await fetch("/api/agents/approvals")).json(); } catch (e) {}
+  const list = d.pending || [];
+  els.approvalList.innerHTML = "";
+  if (!list.length) { els.approvalList.appendChild(emptyRow("No pending approvals. ea-coordinator's drafts land here for your review — nothing sends without you.")); }
+  else list.forEach((a) => els.approvalList.appendChild(approvalCard(a)));
+  setApprovalBadge((d.counts && d.counts.pending) || 0);
+}
+function approvalCard(a) {
+  const card = el("div", "approval-card");
+  const head = el("div", "appr-head");
+  head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
+  card.append(head);
+  if (a.body) { const b = el("pre", "appr-body"); b.textContent = a.body; card.append(b); }
+  const actions = el("div", "appr-actions");
+  actions.append(pill("Confirm", () => approvalAct(a.id, "confirm")), pillLight("Reject", () => approvalAct(a.id, "reject")));
+  card.append(actions);
+  return card;
+}
+async function approvalAct(id, kind) {
+  setSaveState("saving");
+  const body = kind === "reject" ? { reason: "rejected from dashboard" } : {};
+  try { await fetch(`/api/agents/approvals/${id}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  loadApprovals();
+}
+function setApprovalBadge(n) {
+  if (!els.apprBadge) return;
+  els.apprBadge.hidden = !n;
+  els.apprBadge.textContent = n || "";
+}
+// draftApproval runs ea-coordinator with a task; its DRAFTED actions land in the pending
+// queue (§5.5). Draft-only — confirm/reject stay record-only and nothing ever sends.
+async function draftApproval() {
+  const request = prompt('Task for ea-coordinator  (e.g. "draft a reply to Lee proposing 3 times next week")');
+  if (!request || !request.trim()) return;
+  const btn = els.apprRunBtn;
+  if (btn) { btn.disabled = true; btn.textContent = "Running…"; }
+  setSaveState("saving");
+  try {
+    const r = await fetch("/api/agents/approvals/run", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request: request.trim() }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || "draft failed");
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); alert("Draft failed: " + (e.message || e)); }
+  if (btn) { btn.disabled = false; btn.textContent = "+ Draft with ea-coordinator"; }
+  loadApprovals();
+}
+async function refreshApprovalBadge() {
+  try { const d = await (await fetch("/api/agents/approvals")).json(); setApprovalBadge((d.counts && d.counts.pending) || 0); } catch (e) {}
+}
+
+// ---- Hermes live console (MVP1) ----
+// The browser talks only to same-origin /api/hermes/*; the Go backend holds the
+// API key and proxies to Hermes over Tailscale. Chat is streamed via SSE.
+const consoleMsgs = []; // OpenAI-style {role, content}, the running conversation.
+let consoleStreaming = false;
+
+async function loadHermes() {
+  // Status chip: configured? reachable? model + skill count.
+  let st = { configured: false };
+  try { st = await (await fetch("/api/hermes/status")).json(); } catch (e) {}
+  if (!st.configured) {
+    els.hermesStatus.textContent = "NOT CONFIGURED";
+    els.hermesStatus.title = st.hint || "";
+    els.hermesStatus.classList.remove("ok");
+    if (!els.consoleLog.childElementCount) {
+      consoleHint(st.hint || "Hermes isn't configured yet. Add your API key and restart.");
+    }
+    setComposerEnabled(false);
+    return;
+  }
+  setComposerEnabled(true);
+  let skills = [];
+  try { skills = (await (await fetch("/api/hermes/skills")).json()).data || []; } catch (e) {}
+  const dot = st.reachable ? "●" : "○";
+  els.hermesStatus.classList.toggle("ok", !!st.reachable);
+  els.hermesStatus.textContent = `${dot} ${st.model || "hermes-agent"} · ${skills.length} SKILLS`;
+  els.hermesStatus.title = st.reachable ? `Connected to ${st.baseURL}` : `Configured but unreachable: ${st.baseURL}`;
+}
+
+function setComposerEnabled(on) {
+  els.consoleInput.disabled = !on;
+  els.consoleSend.disabled = !on;
+}
+
+// Append a chat bubble and return its text node holder (for streaming updates).
+function appendBubble(role) {
+  const row = document.createElement("div");
+  row.className = `cmsg ${role}`;
+  const who = document.createElement("span");
+  who.className = "cmsg-role";
+  who.textContent = role === "user" ? "you" : "hermes";
+  const body = document.createElement("div");
+  body.className = "cmsg-body";
+  row.append(who, body);
+  els.consoleLog.appendChild(row);
+  els.consoleLog.scrollTop = els.consoleLog.scrollHeight;
+  return body;
+}
+
+function consoleHint(text) {
+  const e = document.createElement("div");
+  e.className = "console-hint";
+  e.textContent = text;
+  els.consoleLog.appendChild(e);
+}
+
+async function sendConsole() {
+  if (consoleStreaming) return;
+  const text = els.consoleInput.value.trim();
+  if (!text) return;
+  els.consoleInput.value = "";
+  autoGrow(els.consoleInput);
+
+  consoleMsgs.push({ role: "user", content: text });
+  appendBubble("user").textContent = text;
+
+  // The assistant bubble holds a tool-activity strip (§5.1) above the streamed text,
+  // so tool progress and text can update independently without clobbering each other.
+  const bubble = appendBubble("assistant");
+  bubble.classList.add("streaming");
+  const toolsEl = el("div", "cmsg-tools");
+  const textEl = el("span", "cmsg-text");
+  bubble.append(toolsEl, textEl);
+  const toolRows = {}; // toolCallId -> row element
+  consoleStreaming = true;
+  setSaveState("saving");
+  els.consoleSend.disabled = true;
+
+  let acc = "";
+  try {
+    const res = await fetch("/api/hermes/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: consoleMsgs, profile: state.consoleProfile || "" }),
+    });
+    if (!res.ok || !res.body) {
+      const msg = await res.text().catch(() => "");
+      throw new Error(msg || `HTTP ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let done = false;
+    while (!done) {
+      const { value, done: rdone } = await reader.read();
+      done = rdone;
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      // Process complete lines; keep any partial line in the buffer.
+      let nl;
+      while ((nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line.startsWith("data:")) continue; // ignore blanks / comments / event: lines
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") { done = true; break; }
+        let chunk;
+        try { chunk = JSON.parse(payload); } catch (e) { continue; }
+        if (chunk.error) throw new Error(chunk.error);
+        // Hermes tool-progress event (custom SSE, no choices):
+        // {tool, emoji, label, toolCallId, status: "running"|"completed"}.
+        if (chunk.tool && chunk.status) {
+          renderToolProgress(toolsEl, toolRows, chunk);
+          els.consoleLog.scrollTop = els.consoleLog.scrollHeight;
+          continue;
+        }
+        const choice = (chunk.choices || [])[0] || {};
+        const piece = (choice.delta && choice.delta.content) || "";
+        if (piece) {
+          acc += piece;
+          textEl.textContent = acc;
+          els.consoleLog.scrollTop = els.consoleLog.scrollHeight;
+        }
+      }
+    }
+    if (acc) consoleMsgs.push({ role: "assistant", content: acc });
+    else if (!toolsEl.children.length) textEl.textContent = "(no content)";
+    setSaveState("saved");
+  } catch (e) {
+    bubble.classList.add("error");
+    textEl.textContent = acc ? acc + `\n\n[stream error: ${e.message}]` : `[error: ${e.message}]`;
+    setSaveState("error");
+  } finally {
+    bubble.classList.remove("streaming");
+    consoleStreaming = false;
+    els.consoleSend.disabled = false;
+    els.consoleInput.focus();
+  }
+}
+
+// renderToolProgress renders/updates one inline tool-activity row (§5.1). Rows are keyed
+// by toolCallId so a "completed" event (which omits emoji/label) updates the same row the
+// "running" event created. Only fields present in the event overwrite prior values.
+function renderToolProgress(container, rows, ev) {
+  const id = ev.toolCallId || ev.tool || String(container.children.length);
+  let row = rows[id];
+  if (!row) {
+    row = el("div", "cmsg-tool");
+    row.append(el("span", "ct-emoji", ev.emoji || "🔧"), el("span", "ct-name"), el("span", "ct-label"));
+    container.appendChild(row);
+    rows[id] = row;
+  }
+  if (ev.emoji) row.children[0].textContent = ev.emoji;
+  if (ev.tool) row.children[1].textContent = ev.tool;
+  if (ev.label) row.children[2].textContent = ev.label;
+  const done = ev.status === "completed";
+  row.classList.toggle("running", !done);
+  row.classList.toggle("done", done);
+}
+
+function autoGrow(ta) {
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+}
+
+if (els.consoleSend) {
+  els.consoleSend.addEventListener("click", sendConsole);
+  els.consoleInput.addEventListener("input", () => autoGrow(els.consoleInput));
+  els.consoleInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendConsole(); }
+  });
+}
+
+// ---- agents cockpit wiring ----
+if (els.newProfileBtn) els.newProfileBtn.addEventListener("click", () => openProfileEditor(null));
+if (els.feedRefreshBtn) els.feedRefreshBtn.addEventListener("click", feedRefresh);
+if (els.feedBackfillBtn) els.feedBackfillBtn.addEventListener("click", feedBackfill);
+if (els.feedRunBtn) els.feedRunBtn.addEventListener("click", askScout);
+if (els.newJobBtn) els.newJobBtn.addEventListener("click", newJob);
+if (els.apprRunBtn) els.apprRunBtn.addEventListener("click", draftApproval);
+if (els.profileClose) els.profileClose.addEventListener("click", () => { els.profileModal.hidden = true; });
+if (els.profileBackdrop) els.profileBackdrop.addEventListener("click", () => { els.profileModal.hidden = true; });
+if (els.consoleProfileClear) els.consoleProfileClear.addEventListener("click", () => { state.consoleProfile = ""; updateProfileBar(); });
 
 // ---- router ----
 function route() {
   const h = location.hash;
   const goals = h === "#/goals";
   const cal = h === "#/calendar";
-  const ag = h === "#/agents";
+  const ag = h === "#/agents" || h.startsWith("#/agents/");
   const day = !goals && !cal && !ag;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
@@ -814,10 +1625,9 @@ function route() {
   els.calNav.hidden = !day;
   els.agentsNav.hidden = !day;
   els.dayNav.hidden = day;
-  if (!ag) stopAgentsPoll();
   if (goals) loadGoals();
   else if (cal) loadCalendar();
-  else if (ag) { loadAgents(); startAgentsPoll(); }
+  else if (ag) showAgents(); // Hermes cockpit: console / profiles / feed / jobs / approvals
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);
@@ -826,8 +1636,5 @@ window.addEventListener("hashchange", route);
 document.getElementById("prevBtn").addEventListener("click", () => load(shiftDate(state.date, -1)));
 document.getElementById("nextBtn").addEventListener("click", () => load(shiftDate(state.date, 1)));
 document.getElementById("todayBtn").addEventListener("click", () => load(isoToday()));
-els.addTask.addEventListener("click", () => {
-  addTaskRow({ text: "", done: false }, els.taskRows.querySelectorAll(".trow").length + 1);
-});
 
 route();

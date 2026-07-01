@@ -12,7 +12,6 @@ type Config struct {
 	NewDailyDir string   // dir (relative to Root) where notes are created on save
 	GoalsName   string   // filename that marks the goals master file, e.g. "goals.md"
 	SkipDirs    []string // directory base names to skip (in addition to dotdirs)
-	CacheDir    string   // absolute path of the calendar cache; its <date>.md mirrors must never be indexed as daily notes
 }
 
 // Snapshot is an immutable index of where things live, produced by one Scan.
@@ -45,9 +44,6 @@ func (s *Scanner) Scan() (*Snapshot, error) {
 		if d.IsDir() {
 			if path == s.cfg.Root {
 				return nil
-			}
-			if s.cfg.CacheDir != "" && path == s.cfg.CacheDir {
-				return filepath.SkipDir // calendar cache mirrors are not daily notes
 			}
 			name := d.Name()
 			if skip[name] || strings.HasPrefix(name, ".") {

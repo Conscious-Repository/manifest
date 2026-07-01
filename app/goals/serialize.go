@@ -2,10 +2,11 @@ package goals
 
 import "strings"
 
-// Serialize renders a Doc back to canonical goals.md. The output is stable:
-// re-parsing and re-serializing yields identical bytes (a fixpoint), so the app
-// only ever produces minimal diffs. Unknown inline fields and unrecognized prose
-// are preserved; whitespace/field-ordering are normalized to canonical form.
+// Serialize renders a Doc back to canonical goals.md. The output is a fixpoint:
+// re-parsing and re-serializing yields identical bytes, so the app only ever
+// produces minimal diffs. The cascade nests under "### 90-day" with four spaces
+// per level (90-day → 30-day → tasks). Unknown inline fields and unrecognized
+// prose are preserved; whitespace/field-ordering are normalized.
 func Serialize(d *Doc) string {
 	pre := strings.TrimRight(d.preamble, "\n")
 	if strings.TrimSpace(pre) == "" {
@@ -17,24 +18,22 @@ func Serialize(d *Doc) string {
 		if a.NorthStar != "" {
 			out = append(out, "> North Star: "+a.NorthStar)
 		}
-		if a.has90 || len(a.Goals90) > 0 {
+		if a.has90 || len(a.Goals) > 0 {
 			out = append(out, "", "### 90-day")
-			for _, g := range a.Goals90 {
-				out = append(out, goalLine(g))
+			for _, g := range a.Goals {
+				emitGoal(&out, g, 0)
 			}
-		}
-		if a.has30 || len(a.Goals30) > 0 {
-			out = append(out, "", "### 30-day")
-			for _, g := range a.Goals30 {
-				out = append(out, goalLine(g))
-			}
-		}
-		for _, g := range a.Loose {
-			out = append(out, goalLine(g))
 		}
 		out = append(out, a.extra...)
 	}
 	return strings.Join(out, "\n") + "\n"
+}
+
+func emitGoal(out *[]string, g *Goal, depth int) {
+	*out = append(*out, strings.Repeat("    ", depth)+goalLine(g))
+	for _, c := range g.Children {
+		emitGoal(out, c, depth+1)
+	}
 }
 
 func goalLine(g *Goal) string {

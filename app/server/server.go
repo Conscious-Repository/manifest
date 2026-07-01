@@ -7,25 +7,43 @@ import (
 	"log"
 	"net/http"
 
-	"manifest/agents"
+	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/daily"
+	"manifest/feed"
 	"manifest/goals"
+	"manifest/hermes"
+	"manifest/profiles"
+	"manifest/vaultwriter"
 )
 
 //go:embed web
 var webFiles embed.FS
 
 type Server struct {
-	svc    *daily.Service
-	goals  *goals.Store
-	cal    *calendar.Client
-	agents *agents.Queue
+	svc   *daily.Service
+	goals *goals.Store
+	cal   *calendar.Client
+	// Agents cockpit (Hermes). All nilable; unset just disables that surface.
+	hermes    *hermes.Client
+	profiles  *profiles.Store
+	feed      *feed.Store
+	approvals *approvals.Store
+	vault     *vaultwriter.Writer
 }
 
-func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client, q *agents.Queue) *Server {
-	return &Server{svc: svc, goals: gs, cal: cal, agents: q}
+func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
+	return &Server{svc: svc, goals: gs, cal: cal}
 }
+
+// UseHermes wires the Hermes client (console + jobs/sessions proxy + materialization).
+func (s *Server) UseHermes(h *hermes.Client) { s.hermes = h }
+
+// UseProfiles / UseFeed / UseApprovals / UseVault wire the agent stores. All optional.
+func (s *Server) UseProfiles(p *profiles.Store)   { s.profiles = p }
+func (s *Server) UseFeed(f *feed.Store)           { s.feed = f }
+func (s *Server) UseApprovals(a *approvals.Store) { s.approvals = a }
+func (s *Server) UseVault(v *vaultwriter.Writer)  { s.vault = v }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -33,6 +51,8 @@ func (s *Server) Handler() http.Handler {
 	// Daily manifest.
 	mux.HandleFunc("/api/day", s.handleDay)
 	mux.HandleFunc("/api/day/pull", s.handleDayPull)
+	mux.HandleFunc("/api/day/focus", s.handleDayFocus)
+	mux.HandleFunc("/api/day/focus/milestone", s.handleDayFocusMilestone)
 
 	// Goals system (M1). /api/goals is now the read projection; the old
 	// period-note POST routes are retired in favor of structured editing.
@@ -50,11 +70,34 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
 	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
 
-	// Agents (M4).
-	mux.HandleFunc("/api/agents/status", s.handleAgentsStatus)
-	mux.HandleFunc("/api/agents/post", s.handleAgentsPost)
-	mux.HandleFunc("/api/agents/approvals/confirm", s.handleApprovalConfirm)
-	mux.HandleFunc("/api/agents/approvals/reject", s.handleApprovalReject)
+	// Hermes cockpit — everything proxies through here; the API key stays server-side.
+	// Console (Step 1)
+	mux.HandleFunc("/api/hermes/status", s.handleHermesStatus)
+	mux.HandleFunc("/api/hermes/skills", s.handleHermesSkills)
+	mux.HandleFunc("/api/hermes/toolsets", s.handleHermesToolsets)
+	mux.HandleFunc("/api/hermes/chat", s.handleHermesChat)
+	// Profiles (Step 2)
+	mux.HandleFunc("GET /api/agents/profiles", s.handleProfilesList)
+	mux.HandleFunc("POST /api/agents/profiles", s.handleProfileSave)
+	mux.HandleFunc("DELETE /api/agents/profiles/{name}", s.handleProfileDelete)
+	// Feed (Step 3)
+	mux.HandleFunc("GET /api/feed", s.handleFeedList)
+	mux.HandleFunc("POST /api/feed/refresh", s.handleFeedRefresh)
+	mux.HandleFunc("POST /api/feed/run", s.handleFeedRun)
+	mux.HandleFunc("POST /api/feed/backfill", s.handleFeedBackfill)
+	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
+	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
+	// Cron + observability (Step 4)
+	mux.HandleFunc("GET /api/jobs", s.handleJobsList)
+	mux.HandleFunc("POST /api/jobs", s.handleJobCreate)
+	mux.HandleFunc("PATCH /api/jobs/{id}", s.handleJobUpdate)
+	mux.HandleFunc("DELETE /api/jobs/{id}", s.handleJobDelete)
+	mux.HandleFunc("GET /api/agents/sessions", s.handleSessionsList)
+	// Approvals (Step 5) — record-only gate
+	mux.HandleFunc("GET /api/agents/approvals", s.handleApprovalsList)
+	mux.HandleFunc("POST /api/agents/approvals/run", s.handleApprovalRun)
+	mux.HandleFunc("POST /api/agents/approvals/{id}/confirm", s.handleApprovalConfirm)
+	mux.HandleFunc("POST /api/agents/approvals/{id}/reject", s.handleApprovalReject)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {
@@ -136,6 +179,71 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	day, err := s.svc.AddTask(date, daily.Task{Text: text, GoalID: gid})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.fillPool(&day)
+	writeJSON(w, day)
+}
+
+// handleDayFocus sets or clears the day's Focus pick at a slot. Setting persists
+// the picked 90-day goal's stable slug to the note's ## Focus block; the Milestone
+// and tasks are resolved live from the cascade.
+func (s *Server) handleDayFocus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	var b struct {
+		Slot   int    `json:"slot"`
+		GoalID string `json:"goalId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		httpError(w, err)
+		return
+	}
+	// Promote the picked goal to a durable [goal:: id] so the Focus backlink keeps
+	// resolving across later title edits (same pattern as pulling a task).
+	gid := b.GoalID
+	if gid != "" {
+		if _, durable, ok := s.goals.Promote(gid); ok {
+			gid = durable
+		}
+	}
+	day, err := s.svc.SetFocus(date, b.Slot, gid)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.fillPool(&day)
+	writeJSON(w, day)
+}
+
+// handleDayFocusMilestone records the chosen 30-day milestone for a Focus slot, so
+// the milestone and its cascading tasks resolve from that choice (not the first child).
+func (s *Server) handleDayFocusMilestone(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	var b struct {
+		Slot        int    `json:"slot"`
+		MilestoneID string `json:"milestoneId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		httpError(w, err)
+		return
+	}
+	mid := b.MilestoneID
+	if mid != "" {
+		if _, durable, ok := s.goals.Promote(mid); ok {
+			mid = durable
+		}
+	}
+	day, err := s.svc.SetMilestone(date, b.Slot, mid)
 	if err != nil {
 		httpError(w, err)
 		return
