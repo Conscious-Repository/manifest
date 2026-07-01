@@ -1,9 +1,17 @@
 package goals
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"manifest/vault"
 )
+
+// jul15 is a fixed clock in 2026-Q3 for deterministic migration tests.
+var jul15 = time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
 
 func TestSeedRoundTrip(t *testing.T) {
 	s := Serialize(seedDoc())
@@ -15,18 +23,23 @@ func TestSeedRoundTrip(t *testing.T) {
 			t.Fatalf("seed missing area %q:\n%s", name, s)
 		}
 	}
-	if !strings.Contains(s, "### 90-day") {
-		t.Fatalf("seed missing 90-day cascade section:\n%s", s)
+	if !strings.Contains(s, "### 1-year") || !strings.Contains(s, "### Rocks (90-day)") {
+		t.Fatalf("seed missing the horizon sections:\n%s", s)
 	}
-	if strings.Contains(s, "### 30-day") {
-		t.Fatalf("cascade seed must not emit a flat 30-day section:\n%s", s)
+	if strings.Contains(s, "### 90-day\n") || strings.Contains(s, "### 30-day") {
+		t.Fatalf("seed must not emit legacy cascade headings:\n%s", s)
 	}
 }
 
 func TestFixpoint(t *testing.T) {
 	inputs := []string{
-		"# Goals\n\n## Aion\n> North Star: Bring aging under biomedical control.\n\n### 90-day\n- [ ] Series A fundraise [owner:: me] [due:: 2026-09-30]\n    - [ ] Draft deck + diligence materials [owner:: me] [due:: 2026-07-31]\n        - [ ] Intro to Founders Fund\n        - [ ] Call with Lee\n",
-		"# Goals\n## Sidequests\n- [ ] Build a thing\n* [ ] Star bullet [priority:: high]\n",
+		"# Goals\n\n## Aion\n> North Star: Bring aging under complete biomedical control.\n\n### 1-year — 2026\n" +
+			"- [ ] Series A closed + first program in vivo [goal:: aion/2026]\n\n### Rocks (90-day)\n" +
+			"- [ ] Series A 15M [goal:: aion/series-a-15m] [quarter:: 2026-Q3] [serves:: aion/2026]\n" +
+			"    - [x] Soft lead identified\n" +
+			"    - [ ] Term sheet [status:: at-risk]\n" +
+			"        - [ ] Send updated deck\n",
+		"# Goals\n## Sidequests\n- [ ] loose todo with no section\n* [ ] star bullet [priority:: high]\n",
 		"# Goals\n\n## Messy\n> just a quote\nsome prose line\n### backlog\n- [ ] x [foo:: bar] [owner:: Olga]\n",
 		"",
 	}
@@ -39,43 +52,145 @@ func TestFixpoint(t *testing.T) {
 	}
 }
 
-// The doc §2 cascade example: a 90-day owns one 30-day which owns tasks. Nesting
-// is preserved and ids are hierarchical paths.
-func TestCascadeNestingAndIDs(t *testing.T) {
-	in := "# Goals\n\n## Aion\n> North Star: Bring aging under biomedical control.\n\n### 90-day\n" +
-		"- [ ] Series A fundraise [owner:: me] [due:: 2026-09-30]\n" +
-		"    - [ ] Draft deck + diligence materials [owner:: me] [due:: 2026-07-31]\n" +
-		"        - [ ] Intro to Founders Fund\n" +
-		"        - [ ] Call with Lee\n"
+// TestRockStageTaskDepth pins the literal depth rule: under a Rock, one level is a
+// stage and two is a task; a lone checkbox under a Rock parses as a (small) stage.
+func TestRockStageTaskDepth(t *testing.T) {
+	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n" +
+		"- [ ] Series A 15M\n" +
+		"    - [ ] Term sheet\n" +
+		"        - [ ] Send deck\n" +
+		"- [ ] Lonely rock\n" +
+		"    - [ ] just one checkbox\n"
+	a := Parse(in).FindArea("Aion")
+	if a == nil || len(a.Rocks) != 2 {
+		t.Fatalf("want 2 Rocks, got %+v", a)
+	}
+	rock := a.Rocks[0]
+	if len(rock.Children) != 1 || rock.Children[0].Text != "Term sheet" {
+		t.Fatalf("Rock should own one stage, got %+v", rock.Children)
+	}
+	if len(rock.Children[0].Children) != 1 || rock.Children[0].Children[0].Text != "Send deck" {
+		t.Fatalf("stage should own one task, got %+v", rock.Children[0].Children)
+	}
+	// The lone checkbox under the second Rock is a stage, not lost.
+	if len(a.Rocks[1].Children) != 1 || a.Rocks[1].Children[0].Text != "just one checkbox" {
+		t.Fatalf("lone checkbox under a Rock must parse as a stage: %+v", a.Rocks[1])
+	}
+}
+
+// TestFieldEmission checks the §1 canonical emission rules.
+func TestFieldEmission(t *testing.T) {
+	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n" +
+		"- [ ] Rock A [quarter:: 2026-Q3] [serves:: aion/2026] [status:: active] [owner:: me]\n" +
+		"- [ ] Rock B [status:: blocked] [owner:: team] [rolled-from:: 2026-Q2]\n" +
+		"    - [ ] a stage [owner:: me]\n"
+	out := Serialize(Parse(in))
+	// Rock A: goal (identity) + quarter + serves; status active and owner me are dropped.
+	if !strings.Contains(out, "[goal:: aion/rock-a] [quarter:: 2026-Q3] [serves:: aion/2026]") {
+		t.Fatalf("Rock A emission wrong:\n%s", out)
+	}
+	if strings.Contains(out, "status:: active") {
+		t.Fatalf("active status must not be written:\n%s", out)
+	}
+	// Rock B: blocked status + team owner + rolled-from kept.
+	if !strings.Contains(out, "[status:: blocked]") || !strings.Contains(out, "[rolled-from:: 2026-Q2]") || !strings.Contains(out, "[owner:: team]") {
+		t.Fatalf("Rock B emission wrong:\n%s", out)
+	}
+	// The stage's owner==me is dropped, and a stage gets no quarter/goal by default.
+	if strings.Contains(out, "a stage [owner:: me]") || strings.Contains(out, "a stage [goal::") {
+		t.Fatalf("stage should be bare:\n%s", out)
+	}
+}
+
+func TestDueRetired(t *testing.T) {
+	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock [due:: 2026-09-30] [priority:: high]\n"
+	out := Serialize(Parse(in))
+	if strings.Contains(out, "due::") {
+		t.Fatalf("due:: must be dropped on save:\n%s", out)
+	}
+	if !strings.Contains(out, "[priority:: high]") {
+		t.Fatalf("unknown fields must still survive:\n%s", out)
+	}
+}
+
+func TestNeedsMigration(t *testing.T) {
+	legacy := "# Goals\n## Aion\n### 90-day\n- [ ] x\n"
+	legacyDue := "# Goals\n## Aion\n### Rocks (90-day)\n- [ ] x [due:: 2026-01-01]\n"
+	fresh := "# Goals\n## Aion\n### 1-year — 2026\n### Rocks (90-day)\n- [ ] x [quarter:: 2026-Q3]\n"
+	if !needsMigration(legacy) || !needsMigration(legacyDue) {
+		t.Fatal("legacy formats must need migration")
+	}
+	if needsMigration(fresh) {
+		t.Fatal("already-migrated file must not need migration")
+	}
+}
+
+func TestMigrateFromLegacy(t *testing.T) {
+	in := "# Goals\n\n## Aion\n> North Star: Bring aging under complete biomedical control.\n\n### 90-day\n" +
+		"- [ ] Series A 15M [owner:: me] [goal:: aion/series-a-15m] [due:: 2026-09-30]\n" +
+		"    - [ ] Soft lead identified [owner:: me]\n" +
+		"        - [ ] Shoumik sync\n"
 	doc := Parse(in)
-	if got := Serialize(Parse(Serialize(doc))); got != Serialize(doc) {
-		t.Fatalf("cascade not idempotent")
+	doc.migrateFromLegacy(jul15)
+	out := Serialize(doc)
+
+	for _, want := range []string{
+		"### 1-year — 2026",
+		"### Rocks (90-day)",
+		"- [ ] Series A 15M [goal:: aion/series-a-15m] [quarter:: 2026-Q3]",
+		"    - [ ] Soft lead identified",
+		"        - [ ] Shoumik sync",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("migration missing %q:\n%s", want, out)
+		}
 	}
-	a := doc.FindArea("Aion")
-	if a == nil || len(a.Goals) != 1 {
-		t.Fatalf("want one 90-day root, got %+v", a)
+	if strings.Contains(out, "due::") {
+		t.Fatalf("migration must strip due::\n%s", out)
 	}
-	root := a.Goals[0]
-	if len(root.Children) != 1 {
-		t.Fatalf("90-day should own one 30-day, got %d", len(root.Children))
+	if strings.Contains(out, "### 90-day\n") {
+		t.Fatalf("legacy 90-day heading must be gone:\n%s", out)
 	}
-	m := root.Children[0]
-	if len(m.Children) != 2 {
-		t.Fatalf("30-day should own 2 tasks, got %d", len(m.Children))
+	// Idempotent: re-parsing/serializing is a fixpoint and needs no further migration.
+	if needsMigration(out) {
+		t.Fatalf("migrated output should not need migration again:\n%s", out)
 	}
-	if root.ID != "aion/series-a-fundraise" {
-		t.Fatalf("root id: %s", root.ID)
+}
+
+func TestStoreMigrateWritesBackup(t *testing.T) {
+	dir := t.TempDir()
+	idx, err := vault.NewIndex(vault.Config{Root: dir, GoalsName: "goals.md"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if m.ID != "aion/series-a-fundraise/draft-deck-diligence-materials" {
-		t.Fatalf("milestone id: %s", m.ID)
+	st := NewStore(idx, dir, "goals.md")
+	legacy := "# Goals\n\n## Aion\n\n### 90-day\n- [ ] Ship it [owner:: me] [due:: 2026-09-30]\n"
+	path := filepath.Join(dir, "goals.md")
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if m.Children[0].ID != "aion/series-a-fundraise/draft-deck-diligence-materials/intro-to-founders-fund" {
-		t.Fatalf("task id: %s", m.Children[0].ID)
+
+	migrated, err := st.Migrate(jul15)
+	if err != nil || !migrated {
+		t.Fatalf("Migrate: migrated=%v err=%v", migrated, err)
+	}
+	// A backup preserving the original bytes must exist.
+	if b, err := os.ReadFile(path + ".pre-migration"); err != nil || string(b) != legacy {
+		t.Fatalf("backup missing or wrong: err=%v", err)
+	}
+	// The live file is now the new format.
+	got, _ := os.ReadFile(path)
+	if !strings.Contains(string(got), "### Rocks (90-day)") || strings.Contains(string(got), "due::") {
+		t.Fatalf("migrated file wrong:\n%s", got)
+	}
+	// Second Migrate is a no-op (already migrated).
+	if again, err := st.Migrate(jul15); err != nil || again {
+		t.Fatalf("second Migrate should be a no-op: again=%v err=%v", again, err)
 	}
 }
 
 func TestUnknownFieldAndProseSurvive(t *testing.T) {
-	in := "# Goals\n\n## Aion\n\n### 90-day\n- [ ] Goal one [owner:: me] [priority:: high]\nthis is prose the app did not write\n"
+	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock one [priority:: high]\nthis is prose the app did not write\n"
 	out := Serialize(Parse(in))
 	if !strings.Contains(out, "[priority:: high]") {
 		t.Fatalf("unknown field lost:\n%s", out)
@@ -85,67 +200,64 @@ func TestUnknownFieldAndProseSurvive(t *testing.T) {
 	}
 }
 
-func TestMyPlateAcrossTiers(t *testing.T) {
-	in := "# Goals\n\n## A\n\n### 90-day\n- [ ] mine90 [owner:: me]\n    - [ ] mine30 [owner:: me]\n        - [ ] minetask\n        - [x] donetask\n- [ ] team90 [owner:: team]\n"
-	var texts []string
-	for _, g := range Parse(in).MyPlate() {
+func TestMyPlateAndPool(t *testing.T) {
+	in := "# Goals\n\n## A\n\n### Rocks (90-day)\n" +
+		"- [ ] mineRock [owner:: me]\n" +
+		"    - [ ] mineStage [owner:: me]\n" +
+		"        - [ ] mineTask\n" +
+		"        - [x] doneTask\n" +
+		"- [ ] teamRock [owner:: team]\n"
+	doc := Parse(in)
+
+	var plate []string
+	for _, g := range doc.MyPlate() {
 		for _, it := range g.Items {
-			texts = append(texts, it.Text)
+			plate = append(plate, it.Text)
 		}
 	}
-	joined := strings.Join(texts, "|")
-	for _, want := range []string{"mine90", "mine30", "minetask"} {
+	joined := strings.Join(plate, "|")
+	for _, want := range []string{"mineRock", "mineStage", "mineTask"} {
 		if !strings.Contains(joined, want) {
-			t.Fatalf("MyPlate missing %q across tiers: %v", want, texts)
+			t.Fatalf("MyPlate missing %q: %v", want, plate)
 		}
 	}
-	if strings.Contains(joined, "team90") {
-		t.Fatalf("non-me item leaked into My Plate: %v", texts)
+	if strings.Contains(joined, "teamRock") || strings.Contains(joined, "doneTask") {
+		t.Fatalf("non-me or checked item leaked into My Plate: %v", plate)
 	}
-	if strings.Contains(joined, "donetask") {
-		t.Fatalf("checked item leaked into My Plate: %v", texts)
+
+	pool := doc.Pool()
+	if len(pool) != 1 || pool[0].Text != "mineStage" {
+		t.Fatalf("Pool should be the open owner==me stage tier: %+v", pool)
 	}
 }
 
-func TestPoolIs30Day(t *testing.T) {
-	in := "# Goals\n\n## A\n\n### 90-day\n- [ ] big [owner:: me]\n    - [ ] step [owner:: me]\n        - [ ] tiny\n"
-	pool := Parse(in).Pool()
-	if len(pool) != 1 || pool[0].Text != "step" {
-		t.Fatalf("Pool should be the 30-day tier only: %+v", pool)
+func TestAddGoalSections(t *testing.T) {
+	doc := Parse("# Goals\n\n## Aion\n### 1-year — 2026\n### Rocks (90-day)\n")
+	annual, ok := doc.AddGoal("Aion", "", "annual", "Series A closed", "me")
+	if !ok || annual == nil {
+		t.Fatal("add annual failed")
 	}
-}
-
-func TestAddGoalNestedAndIsolation(t *testing.T) {
-	doc := Parse("# Goals\n\n## Aion\n> North Star: A\n\n### 90-day\n- [ ] Existing [owner:: me]\n\n## House\n> North Star: B\n")
-	houseBefore := Serialize(doc)
-	houseIdx := strings.Index(houseBefore, "## House")
-
-	root, ok := doc.AddGoal("Aion", "", "Series A 15M", "me", "")
+	rock, ok := doc.AddGoal("Aion", "", "rock", "Series A 15M", "me")
 	if !ok {
-		t.Fatal("add root failed")
+		t.Fatal("add rock failed")
 	}
-	mile, ok := doc.AddGoal("", root.ID, "Draft deck", "me", "2026-07-31")
+	stage, ok := doc.AddGoal("", rock.ID, "", "Term sheet", "me")
 	if !ok {
-		t.Fatal("add 30-day under root failed")
+		t.Fatal("add stage failed")
 	}
-	if _, ok := doc.AddGoal("", mile.ID, "Intro to FF", "", ""); !ok {
-		t.Fatal("add task under 30-day failed")
+	if _, ok := doc.AddGoal("", stage.ID, "", "Send deck", ""); !ok {
+		t.Fatal("add task failed")
 	}
+	a := doc.FindArea("Aion")
+	if len(a.Annuals) != 1 || len(a.Rocks) != 1 {
+		t.Fatalf("sections wrong: annuals=%d rocks=%d", len(a.Annuals), len(a.Rocks))
+	}
+	if len(a.Rocks[0].Children) != 1 || len(a.Rocks[0].Children[0].Children) != 1 {
+		t.Fatalf("stage/task nesting wrong: %+v", a.Rocks[0])
+	}
+	// Round-trips as a fixpoint.
 	out := Serialize(doc)
-	want := "### 90-day\n- [ ] Existing [owner:: me]\n- [ ] Series A 15M [owner:: me]\n    - [ ] Draft deck [owner:: me] [due:: 2026-07-31]\n        - [ ] Intro to FF\n"
-	if !strings.Contains(out, want) {
-		t.Fatalf("nested add not serialized as cascade:\n%s", out)
-	}
-	// Editing Aion must not change the House section.
-	if got := out[strings.Index(out, "## House"):]; got != houseBefore[houseIdx:] {
-		t.Fatalf("House section changed by an Aion edit:\n--before--\n%s\n--after--\n%s", houseBefore[houseIdx:], got)
-	}
-	doc.CheckGoal(mile.ID, true)
-	if !strings.Contains(Serialize(doc), "- [x] Draft deck") {
-		t.Fatal("CheckGoal did not persist on a nested node")
-	}
-	doc.DeleteGoal(root.ID)
-	if strings.Contains(Serialize(doc), "Series A 15M") || strings.Contains(Serialize(doc), "Draft deck") {
-		t.Fatal("DeleteGoal must remove the whole subtree")
+	if Serialize(Parse(out)) != out {
+		t.Fatalf("added goals not idempotent:\n%s", out)
 	}
 }

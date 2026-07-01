@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"manifest/approvals"
 	"manifest/calendar"
@@ -77,6 +78,13 @@ func main() {
 	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName)
 	if err := goalsStore.Seed(); err != nil {
 		log.Printf("seeding goals.md: %v", err)
+	}
+	// Silent one-time upgrade from the pre-v2 cascade to the horizon ladder; writes a
+	// goals.md.pre-migration backup before its first migrated save (idempotent after).
+	if migrated, err := goalsStore.Migrate(time.Now()); err != nil {
+		log.Printf("migrating goals.md: %v", err)
+	} else if migrated {
+		log.Printf("goals.md migrated to the horizon ladder (backup: goals.md.pre-migration)")
 	}
 
 	calClient := calendar.NewClient(ctx, cfg.Timezone)

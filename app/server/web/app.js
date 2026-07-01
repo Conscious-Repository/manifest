@@ -300,22 +300,23 @@ async function setMilestone(slot, milestoneId) {
   renderDay();
 }
 
-// Open the goal picker for a focus slot: all owner==me, open 90-day goals by area.
+// Open the goal picker for a focus slot: all owner==me, open Rocks by area. The
+// picked Rock resolves to its current stage + tasks (goalsadapter).
 async function openGoalPicker(slot) {
   const doc = await (await fetch("/api/goals")).json();
   const groups = (doc.areas || [])
     .map((a) => ({
       area: a.name,
-      items: (a.goals || [])
+      items: (a.rocks || [])
         .filter((g) => !g.checked && g.owner === "me")
         .map((g) => ({ id: g.id, text: g.text })),
     }))
     .filter((grp) => grp.items.length);
   if (!groups.length) {
-    openPicker("Pick a 90-day goal", [], null, "No open 90-day goals yet — add some on the Goals page.");
+    openPicker("Pick a Rock", [], null, "No open Rocks yet — add some on the Goals page.");
     return;
   }
-  openPicker("Pick a 90-day goal", groups, (id) => setFocus(slot, id));
+  openPicker("Pick a Rock", groups, (id) => setFocus(slot, id));
 }
 
 // Cascade tasks: surface the chosen 30-day's open tasks (not already pulled) as
@@ -683,12 +684,6 @@ function renderPlate(groups) {
       txt.className = "plate-text";
       txt.textContent = it.text;
       row.appendChild(txt);
-      if (it.due) {
-        const due = document.createElement("span");
-        due.className = "plate-due";
-        due.textContent = it.due;
-        row.appendChild(due);
-      }
       els.plateRows.appendChild(row);
     });
   });
@@ -731,97 +726,113 @@ function areaCard(area) {
   });
 
   card.append(head, ns);
-  const sec = document.createElement("div");
-  sec.className = "horizon";
-  const lbl = document.createElement("div");
-  lbl.className = "horizon-label";
-  lbl.textContent = "90-DAY → 30-DAY → TASKS";
-  sec.appendChild(lbl);
-  (area.goals || []).forEach((g) => sec.appendChild(goalNode(g, 0)));
-  const add = document.createElement("button");
-  add.className = "add-btn add-goal";
-  add.textContent = "+ Add 90-day goal";
-  add.addEventListener("click", () =>
-    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", text: "New goal", owner: "me", due: "" }));
-  sec.appendChild(add);
-  card.appendChild(sec);
+
+  // 1-year section: annual objectives the Rocks ladder up to.
+  const annualSec = el("div", "horizon");
+  annualSec.appendChild(el("div", "horizon-label", "1-YEAR" + (area.year ? " · " + area.year : "")));
+  (area.annuals || []).forEach((g) => annualSec.appendChild(annualNode(g)));
+  annualSec.appendChild(addBtn("+ 1-year goal", () =>
+    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "annual", text: "New 1-year goal", owner: "me" })));
+
+  // Rocks section: the 90-day priorities, each a growing stage → task trail.
+  const rockSec = el("div", "horizon");
+  rockSec.appendChild(el("div", "horizon-label", "ROCKS · 90-DAY → STAGE → TASK"));
+  (area.rocks || []).forEach((g) => rockSec.appendChild(goalNode(g, 0)));
+  rockSec.appendChild(addBtn("+ Rock", () =>
+    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "rock", text: "New Rock", owner: "me" })));
+
+  card.append(annualSec, rockSec);
   return card;
 }
 
-// goalNode renders one cascade node and (recursively) its children, with an
-// add-child button: a 90-day (depth 0) gets "+ 30-day goal", a 30-day (depth 1)
-// gets "+ task". Tasks (depth 2) are leaves.
+// addBtn is a small "+ …" add button wired to onClick.
+function addBtn(label, onClick) {
+  const b = el("button", "add-btn add-goal", label);
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// annualNode renders one 1-year goal (a simple checkable row; linking Rocks to it
+// comes with the command-center redesign).
+function annualNode(g) {
+  const wrap = el("div", "goal-node depth-0 annual");
+  const row = el("div", "goal-row");
+  row.append(checkBtn(g), goalText(g), delBtn(g));
+  wrap.appendChild(row);
+  return wrap;
+}
+
+// goalNode renders a Rock (depth 0) and its trail: stages (depth 1) each owning
+// tasks (depth 2). The add-child button is "+ stage" under a Rock, "+ task" under a
+// stage; tasks are leaves (literal depth rule).
 function goalNode(g, depth) {
-  const wrap = document.createElement("div");
-  wrap.className = "goal-node depth-" + depth;
+  const wrap = el("div", "goal-node depth-" + depth);
   wrap.appendChild(goalRow(g, depth));
-  const kids = document.createElement("div");
-  kids.className = "goal-children";
+  const kids = el("div", "goal-children");
   (g.children || []).forEach((c) => kids.appendChild(goalNode(c, depth + 1)));
   if (depth < 2) {
-    const add = document.createElement("button");
-    add.className = "add-btn add-child";
-    add.textContent = depth === 0 ? "+ 30-day goal" : "+ task";
-    add.addEventListener("click", () =>
+    kids.appendChild(addBtn(depth === 0 ? "+ stage" : "+ task", () =>
       goalsApi("POST", "/api/goals/item", {
         parentId: g.id,
-        text: depth === 0 ? "New 30-day goal" : "New task",
+        text: depth === 0 ? "New stage" : "New task",
         owner: depth === 0 ? "me" : "",
-        due: "",
-      }));
-    kids.appendChild(add);
+      })));
   }
   wrap.appendChild(kids);
   return wrap;
 }
 
 function goalRow(g, depth) {
-  const row = document.createElement("div");
-  row.className = "goal-row";
+  const row = el("div", "goal-row");
+  row.append(checkBtn(g), goalText(g));
 
-  const check = document.createElement("button");
-  check.className = "check" + (g.checked ? " on" : "");
-  check.textContent = g.checked ? "✓" : "○";
-  check.addEventListener("click", () =>
-    goalsApi("POST", "/api/goals/check", { id: g.id, checked: !g.checked }));
+  if (depth === 0) { // Rock: quarter / serves / status
+    if (g.quarter) row.append(el("span", "rock-chip quarter", g.quarter));
+    if (g.serves) row.append(el("span", "rock-chip serves", "↑ " + g.serves));
+    const status = document.createElement("select");
+    const cur = g.status || "active";
+    status.className = "rock-chip status status-" + cur;
+    ["active", "blocked", "at-risk"].forEach((o) => status.appendChild(new Option(o, o)));
+    status.value = cur;
+    status.addEventListener("change", () =>
+      goalsApi("PATCH", "/api/goals/item", { id: g.id, status: status.value === "active" ? "" : status.value }));
+    row.append(status);
+  }
+  if (depth < 2) row.append(ownerSelect(g)); // Rock or stage carries an owner
 
-  const text = document.createElement("input");
-  text.className = "goal-text" + (g.checked ? " done" : "");
-  text.value = g.text;
-  text.addEventListener("change", () => {
-    const v = text.value.trim();
+  row.append(delBtn(g));
+  return row;
+}
+
+// ----- shared goal-row cells -----
+function checkBtn(g) {
+  const b = el("button", "check" + (g.checked ? " on" : ""), g.checked ? "✓" : "○");
+  b.addEventListener("click", () => goalsApi("POST", "/api/goals/check", { id: g.id, checked: !g.checked }));
+  return b;
+}
+function goalText(g) {
+  const t = el("input", "goal-text" + (g.checked ? " done" : ""));
+  t.value = g.text;
+  t.addEventListener("change", () => {
+    const v = t.value.trim();
     if (v && v !== g.text) goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v });
   });
-
-  row.append(check, text);
-
-  // Tasks (leaf tier) stay lightweight: no owner/due controls.
-  if (depth < 2) {
-    const owner = document.createElement("select");
-    owner.className = "owner-chip owner-" + (g.owner === "me" ? "me" : g.owner === "team" ? "team" : "other");
-    ["me", "team"].forEach((o) => owner.appendChild(new Option(o, o)));
-    if (g.owner !== "me" && g.owner !== "team") owner.appendChild(new Option(g.owner, g.owner));
-    owner.value = g.owner;
-    owner.addEventListener("change", () =>
-      goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: owner.value }));
-
-    const due = document.createElement("input");
-    due.type = "date";
-    due.className = "due-pick" + (g.due ? " set" : "");
-    due.value = g.due || "";
-    due.addEventListener("change", () =>
-      goalsApi("PATCH", "/api/goals/item", { id: g.id, due: due.value }));
-
-    row.append(owner, due);
-  }
-
-  const del = document.createElement("button");
-  del.className = "icon-btn goal-del";
-  del.textContent = "✕";
+  return t;
+}
+function ownerSelect(g) {
+  const owner = document.createElement("select");
+  owner.className = "owner-chip owner-" + (g.owner === "me" ? "me" : g.owner === "team" ? "team" : "other");
+  ["me", "team"].forEach((o) => owner.appendChild(new Option(o, o)));
+  if (g.owner !== "me" && g.owner !== "team") owner.appendChild(new Option(g.owner, g.owner));
+  owner.value = g.owner;
+  owner.addEventListener("change", () => goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: owner.value }));
+  return owner;
+}
+function delBtn(g) {
+  const del = el("button", "icon-btn goal-del", "✕");
   del.title = "Delete";
   del.addEventListener("click", () => goalsApi("DELETE", "/api/goals/item", { id: g.id }));
-  row.append(del);
-  return row;
+  return del;
 }
 
 // ---- reusable picker modal ----

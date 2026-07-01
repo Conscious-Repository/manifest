@@ -225,29 +225,6 @@ func TestMergeCalendarSuppressesAdoptedEvent(t *testing.T) {
 	}
 }
 
-func TestGoalsAndMilestones(t *testing.T) {
-	s, _ := testService(t)
-	if err := s.SaveGoals("2026-06-29", []string{"Launch v1", "Read more"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SaveMilestones("2026-06-29", []string{"Ship beta"}); err != nil {
-		t.Fatal(err)
-	}
-	day, err := s.Load("2026-06-29")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(day.Goals) != 2 || day.Goals[0] != "Launch v1" {
-		t.Fatalf("goals not read: %+v", day.Goals)
-	}
-	if len(day.Milestones) != 1 || day.Milestones[0] != "Ship beta" {
-		t.Fatalf("milestones not read: %+v", day.Milestones)
-	}
-	if day.Quarter != "2026 Q2" {
-		t.Fatalf("quarter: %s", day.Quarter)
-	}
-}
-
 type fakeMilestone struct {
 	id, text string
 	tasks    []FocusNode

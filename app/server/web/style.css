@@ -376,18 +376,31 @@ body {
 }
 .goal-list { display: flex; flex-direction: column; }
 .goal-row {
-  display: grid;
-  grid-template-columns: 22px 1fr auto auto 22px;
+  display: flex;
   align-items: center;
   gap: 10px;
   padding: 6px 0;
   border-bottom: 1px solid var(--line);
 }
 .goal-text {
+  flex: 1;
   border: none; background: transparent;
   font-family: var(--sans); font-size: 16px; letter-spacing: 0.4px;
   color: var(--text); outline: none; padding: 4px 0; min-width: 0;
 }
+/* Rock metadata chips (quarter · serves · status). */
+.rock-chip {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
+  border: 1px solid var(--line); border-radius: 16px;
+  padding: 3px 8px; background: var(--bg); color: var(--streak-ink);
+  white-space: nowrap; -webkit-appearance: none; appearance: none;
+}
+.rock-chip.quarter { color: var(--muted); }
+.rock-chip.serves { color: var(--blue); border-color: var(--blue-soft); }
+.rock-chip.status { cursor: pointer; }
+.rock-chip.status.status-blocked { color: #b42318; border-color: #f0c9c4; background: #fdf3f2; }
+.rock-chip.status.status-at-risk { color: #a15c00; border-color: #e7c58a; background: #fdf6ea; }
+.goal-node.annual .goal-row { border-bottom-style: dashed; }
 .goal-text.done { text-decoration: line-through; color: var(--blue); }
 .owner-chip {
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;

@@ -3,6 +3,8 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"manifest/goals"
 )
@@ -102,33 +104,39 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var b struct {
-			Area     string `json:"area"`     // for a 90-day root
-			ParentID string `json:"parentId"` // for a 30-day under a 90-day, or a task under a 30-day
+			Area     string `json:"area"`     // for a root (Rock or annual)
+			ParentID string `json:"parentId"` // for a stage under a Rock, or a task under a stage
+			Section  string `json:"section"`  // "annual" | "rock" (root only; default rock)
 			Text     string `json:"text"`
 			Owner    string `json:"owner"`
-			Due      string `json:"due"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
 			return
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
-			_, ok := d.AddGoal(b.Area, b.ParentID, b.Text, b.Owner, b.Due)
+			g, ok := d.AddGoal(b.Area, b.ParentID, b.Section, b.Text, b.Owner)
+			// A new Rock is stamped with the current quarter at creation (§1).
+			if ok && b.ParentID == "" && !strings.EqualFold(b.Section, "annual") {
+				g.Quarter = goals.CurrentQuarter(time.Now())
+			}
 			return ok
 		})
 	case http.MethodPatch:
 		var b struct {
-			ID    string  `json:"id"`
-			Text  *string `json:"text"`
-			Owner *string `json:"owner"`
-			Due   *string `json:"due"`
+			ID      string  `json:"id"`
+			Text    *string `json:"text"`
+			Owner   *string `json:"owner"`
+			Quarter *string `json:"quarter"`
+			Serves  *string `json:"serves"`
+			Status  *string `json:"status"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
 			return
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
-			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Due: b.Due})
+			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Quarter: b.Quarter, Serves: b.Serves, Status: b.Status})
 		})
 	case http.MethodDelete:
 		var b struct {
@@ -166,15 +174,16 @@ func (s *Server) handleGoalsReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Area     string   `json:"area"`     // when reordering an area's 90-day roots
+		Area     string   `json:"area"`     // when reordering an area's roots
 		ParentID string   `json:"parentId"` // when reordering a goal's children
+		Section  string   `json:"section"`  // "annual" | "rock" (root reorder only)
 		IDs      []string `json:"ids"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	s.mutate(w, func(d *goals.Doc) bool { return d.ReorderGoals(b.Area, b.ParentID, b.IDs) })
+	s.mutate(w, func(d *goals.Doc) bool { return d.ReorderGoals(b.Area, b.ParentID, b.Section, b.IDs) })
 }
 
 func decode(r *http.Request, v any) error {

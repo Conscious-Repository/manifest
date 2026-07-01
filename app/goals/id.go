@@ -29,11 +29,19 @@ func (g *Goal) explicitID() string {
 	return ""
 }
 
-// assignIDs gives every goal in the cascade a stable, hierarchical id: an
-// explicit [goal:: id] wins, otherwise the id is the parent's id (the area slug
-// for a 90-day root) plus the goal's own text slug — e.g. "aion/series-a-15m" for
-// a 90-day, "aion/series-a-15m/draft-deck" for its 30-day, and
-// ".../draft-deck/intro-to-ff" for a task. Collisions get -2/-3 suffixes.
+// identity is the durable slug to emit for a Rock or annual: an explicit
+// [goal:: id] wins, otherwise the derived id (assigned by assignIDs).
+func (g *Goal) identity() string {
+	if id := g.explicitID(); id != "" {
+		return id
+	}
+	return g.ID
+}
+
+// assignIDs gives every goal a stable, hierarchical id: an explicit [goal:: id]
+// wins, otherwise the id is the parent's id (the area slug for a Rock/annual root)
+// plus the goal's own text slug — e.g. "aion/series-a-15m" for a Rock,
+// "aion/series-a-15m/term-sheet" for its stage. Collisions get -2/-3 suffixes.
 func (d *Doc) assignIDs() {
 	seen := map[string]bool{}
 	for _, a := range d.Areas {
@@ -41,7 +49,8 @@ func (d *Doc) assignIDs() {
 		if base == "" {
 			base = "area"
 		}
-		assignChildren(base, a.Goals, seen)
+		assignChildren(base, a.Annuals, seen)
+		assignChildren(base, a.Rocks, seen)
 	}
 }
 
