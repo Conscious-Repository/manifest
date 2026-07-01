@@ -30,24 +30,29 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"data": s.feed.List(f, time.Now())})
 }
 
-// handleFeedRefresh runs the domain-scout profile once (on-demand generation) and
-// materializes any new items. Synchronous — an agent run can take ~30–90s.
+// handleFeedRefresh kicks off a domain-scout scan on a background goroutine and returns
+// a runId immediately (202). The scan can run many minutes / dozens of tool calls — far
+// longer than a browser will hold a request — so the frontend polls /api/agents/runs/{id}
+// and re-loads the feed when it finishes.
 func (s *Server) handleFeedRefresh(w http.ResponseWriter, r *http.Request) {
 	if !s.feedRunReady(w) {
 		return
 	}
-	created, err := s.runScout(r.Context(), scoutProfile, "Run your scan now and return the results.")
-	if err != nil {
-		httpError(w, err)
+	if _, ok := s.profiles.Get(scoutProfile); !ok {
+		http.Error(w, "domain-scout profile not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]any{"new": len(created), "items": created})
+	id := s.startRun("feed", func(ctx context.Context) (int, error) {
+		created, err := s.runScout(ctx, scoutProfile, "Run your scan now and return the results.")
+		return len(created), err
+	})
+	writeRunAccepted(w, id)
 }
 
 // handleFeedRun runs an on-demand scout profile (e.g. options-scout) with a free-form
 // request and materializes its structured output into the feed. This is the §5.3 path:
-// "buy X, find 5 options" → options-scout returns a type:artifact card. Same run-and-
-// materialize plumbing as Refresh, but the caller chooses the profile + request.
+// "buy X, find 5 options" → options-scout returns a type:artifact card. Validation is
+// synchronous; the run itself is backgrounded like Refresh (§ async runs, runs.go).
 func (s *Server) handleFeedRun(w http.ResponseWriter, r *http.Request) {
 	if !s.feedRunReady(w) {
 		return
@@ -60,16 +65,20 @@ func (s *Server) handleFeedRun(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	if strings.TrimSpace(b.Profile) == "" || strings.TrimSpace(b.Request) == "" {
+	profile, request := strings.TrimSpace(b.Profile), strings.TrimSpace(b.Request)
+	if profile == "" || request == "" {
 		http.Error(w, "profile and request are required", http.StatusBadRequest)
 		return
 	}
-	created, err := s.runScout(r.Context(), b.Profile, b.Request)
-	if err != nil {
-		httpError(w, err)
+	if _, ok := s.profiles.Get(profile); !ok {
+		http.Error(w, fmt.Sprintf("profile %q not found", profile), http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]any{"new": len(created), "items": created})
+	id := s.startRun("feed", func(ctx context.Context) (int, error) {
+		created, err := s.runScout(ctx, profile, request)
+		return len(created), err
+	})
+	writeRunAccepted(w, id)
 }
 
 // feedRunReady guards the on-demand feed generators: feed store, a configured Hermes,
@@ -88,14 +97,13 @@ func (s *Server) feedRunReady(w http.ResponseWriter) bool {
 
 // runScout runs one profile once (on-demand generation) and materializes its output
 // into the feed store. Shared by Refresh (domain-scout, fixed prompt) and Run (any
-// scout profile + a user request). The 4-minute deadline bounds a slow agent run.
-func (s *Server) runScout(parent context.Context, profileName, userMsg string) ([]feed.Item, error) {
+// scout profile + a user request). The ctx is the caller's deadline authority — callers
+// run this via startRun, which supplies the (generous) standalone timeout.
+func (s *Server) runScout(ctx context.Context, profileName, userMsg string) ([]feed.Item, error) {
 	prof, ok := s.profiles.Get(profileName)
 	if !ok {
 		return nil, fmt.Errorf("profile %q not found", profileName)
 	}
-	ctx, cancel := context.WithTimeout(parent, 4*time.Minute)
-	defer cancel()
 	text, err := s.hermes.RunOnce(ctx, hermes.ChatRequest{
 		System:   prof.Brief,
 		Messages: []hermes.Message{{Role: "user", Content: userMsg}},

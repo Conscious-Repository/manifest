@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sync"
 
 	"manifest/approvals"
 	"manifest/calendar"
@@ -30,6 +31,10 @@ type Server struct {
 	feed      *feed.Store
 	approvals *approvals.Store
 	vault     *vaultwriter.Writer
+	// Async on-demand agent runs (see runs.go). Populated lazily by startRun.
+	runsMu sync.Mutex
+	runs   map[string]*runState
+	runSeq int
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -93,6 +98,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/jobs/{id}", s.handleJobUpdate)
 	mux.HandleFunc("DELETE /api/jobs/{id}", s.handleJobDelete)
 	mux.HandleFunc("GET /api/agents/sessions", s.handleSessionsList)
+	// Async run status — the frontend polls this after kicking off a scan/draft.
+	mux.HandleFunc("GET /api/agents/runs/{id}", s.handleRunStatus)
 	// Approvals (Step 5) — record-only gate
 	mux.HandleFunc("GET /api/agents/approvals", s.handleApprovalsList)
 	mux.HandleFunc("POST /api/agents/approvals/run", s.handleApprovalRun)

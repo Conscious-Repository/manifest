@@ -42,7 +42,8 @@ func (s *Server) handleApprovalRun(w http.ResponseWriter, r *http.Request) {
 	if profileName == "" {
 		profileName = eaProfile
 	}
-	if strings.TrimSpace(b.Request) == "" {
+	request := strings.TrimSpace(b.Request)
+	if request == "" {
 		http.Error(w, "request is required", http.StatusBadRequest)
 		return
 	}
@@ -51,23 +52,20 @@ func (s *Server) handleApprovalRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("profile %q not found", profileName), http.StatusNotFound)
 		return
 	}
-	// Bounded: a coordinator run (calendar/email read + drafting) is slow but finite.
-	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
-	defer cancel()
-	text, err := s.hermes.RunOnce(ctx, hermes.ChatRequest{
-		System:   prof.Brief,
-		Messages: []hermes.Message{{Role: "user", Content: b.Request}},
+	// A coordinator run (calendar/email read + drafting) is slow but finite; run it on a
+	// background goroutine and let the frontend poll, same as the feed scans (runs.go).
+	id := s.startRun("approvals", func(ctx context.Context) (int, error) {
+		text, err := s.hermes.RunOnce(ctx, hermes.ChatRequest{
+			System:   prof.Brief,
+			Messages: []hermes.Message{{Role: "user", Content: request}},
+		})
+		if err != nil {
+			return 0, err
+		}
+		created, err := s.approvals.Materialize(text, profileName, time.Now())
+		return len(created), err
 	})
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	created, err := s.approvals.Materialize(text, profileName, time.Now())
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, map[string]any{"new": len(created), "proposals": created})
+	writeRunAccepted(w, id)
 }
 
 func (s *Server) handleApprovalsList(w http.ResponseWriter, r *http.Request) {
