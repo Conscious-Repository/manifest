@@ -70,6 +70,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/reorder", s.handleGoalsReorder)
 	mux.HandleFunc("/api/goals/close", s.handleGoalClose)     // close a Rock Win/Learn → archive
 	mux.HandleFunc("/api/goals/archives", s.handleGoalsArchives) // History view
+	mux.HandleFunc("/api/goals/carry", s.handleGoalCarry)     // quarterly review: carry a Rock
+	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)     // quarterly review: save the retro
 
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)
@@ -150,6 +152,7 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
+		s.syncGoalTasks(body.Tasks) // §4: mirror goal-linked task ticks back into goals.md
 		writeJSON(w, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
