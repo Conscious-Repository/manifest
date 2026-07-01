@@ -52,11 +52,6 @@ func (s *Store) Seed() error {
 	return s.Save(seedDoc())
 }
 
-// HorizonForMe implements daily.GoalsProvider: open, owner==me goal texts.
-func (s *Store) HorizonForMe(horizon string) []string {
-	return s.Load().HorizonTextsForMe(Horizon(horizon))
-}
-
 // Pool returns the 30-day owner==me goals available to pull into a day.
 func (s *Store) Pool() []PlateItem {
 	return s.Load().Pool()
@@ -83,8 +78,8 @@ func (s *Store) Promote(id string) (text, goalID string, ok bool) {
 }
 
 func seedDoc() *Doc {
-	area := func(name string, horizons bool) *Area {
-		return &Area{Name: name, has90: horizons, has30: horizons}
+	area := func(name string, cascade bool) *Area {
+		return &Area{Name: name, has90: cascade}
 	}
 	return &Doc{
 		preamble: "# Goals",

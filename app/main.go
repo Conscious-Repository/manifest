@@ -1,3 +1,10 @@
+// Command manifest serves the local daily-planner dashboard over an Obsidian vault.
+//
+// Architectural invariant (see obsidian-as-database.md): the app is read-only on the
+// knowledge vault. The ONLY writes into the vault are the user's own note saves through
+// explicit dashboard actions (daily notes, goals) — never AI-authored content, never in
+// the background. All derived/operational state (the calendar cache, and the read-only
+// index to come) lives under cfg.DataDir, OUTSIDE the vault, and is disposable/rebuildable.
 package main
 
 import (
@@ -8,14 +15,17 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
-	"manifest/agents"
+	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/daily"
+	"manifest/feed"
 	"manifest/goals"
+	"manifest/hermes"
+	"manifest/profiles"
 	"manifest/server"
 	"manifest/vault"
+	"manifest/vaultwriter"
 )
 
 func main() {
@@ -41,12 +51,14 @@ func main() {
 	if fi, err := os.Stat(cfg.VaultPath); err != nil || !fi.IsDir() {
 		log.Fatalf("vault path %q is not a readable directory: %v", cfg.VaultPath, err)
 	}
+	// Hard invariant: the app never writes derived data into the vault. All
+	// derived/operational state (the calendar cache, and the read-only index next)
+	// lives under DataDir, which must therefore sit OUTSIDE the vault.
+	if pathIsUnder(cfg.DataDir, cfg.VaultPath) {
+		log.Fatalf("dataDir %q must live outside the vault %q (derived data never goes in the vault)", cfg.DataDir, cfg.VaultPath)
+	}
 
-	// The Google Calendar offline mirror lives here as <date>.md files; the vault
-	// index must exclude it so those mirrors never shadow real daily notes.
-	calCacheDir := filepath.Join(cfg.VaultPath, cfg.PeriodNoteDir, "cache")
-
-	idx, err := vault.NewIndex(vaultConfig(cfg, calCacheDir))
+	idx, err := vault.NewIndex(vaultConfig(cfg))
 	if err != nil {
 		log.Fatalf("scanning vault: %v", err)
 	}
@@ -54,7 +66,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if w, err := vault.NewWatcher(idx, vaultConfig(cfg, calCacheDir)); err != nil {
+	if w, err := vault.NewWatcher(idx, vaultConfig(cfg)); err != nil {
 		log.Printf("file watcher disabled: %v", err)
 	} else if err := w.Start(ctx); err != nil {
 		log.Printf("file watcher start failed: %v", err)
@@ -68,19 +80,33 @@ func main() {
 	}
 
 	calClient := calendar.NewClient(ctx, cfg.Timezone)
-	calSource := calendar.NewSource(calClient, calCacheDir)
-
-	queue, err := agents.NewQueue(filepath.Join(cfg.VaultPath, "Agents"))
-	if err != nil {
-		log.Printf("agents queue disabled: %v", err)
-	} else {
-		go agents.NewSupervisor(queue, 15*time.Minute, 30*time.Second).Run(ctx)
-	}
+	// Offline calendar mirror is derived data → lives under DataDir, never the vault.
+	calSource := calendar.NewSource(calClient, filepath.Join(cfg.DataDir, "calendar-cache"))
 
 	svc := daily.NewService(dailyConfig(cfg), idx)
-	svc.UseGoals(goalsStore)
+	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
 	svc.UseEvents(calSource)
-	srv := server.New(svc, goalsStore, calClient, queue)
+	srv := server.New(svc, goalsStore, calClient)
+
+	// Agents cockpit (Hermes). All operational state lives under DataDir/agents,
+	// OUTSIDE the vault — the vault gets zero agent-written bytes. The key stays
+	// server-side; the browser only ever hits same-origin /api/*.
+	agentsDir := filepath.Join(cfg.DataDir, "agents")
+	hz := hermes.NewClient(hermes.LoadConfig(cfg.DataDir))
+	srv.UseHermes(hz)
+	profileStore := profiles.NewStore(agentsDir)
+	if err := profileStore.Seed(); err != nil {
+		log.Printf("seeding profiles: %v", err)
+	}
+	srv.UseProfiles(profileStore)
+	srv.UseFeed(feed.NewStore(agentsDir))
+	srv.UseApprovals(approvals.NewStore(agentsDir))
+	srv.UseVault(vaultwriter.New(cfg.VaultPath)) // "Save to vault" — the only vault write
+	if hz.Configured() {
+		log.Printf("hermes: configured (%s, model %s)", hz.BaseURL(), hz.Model())
+	} else {
+		log.Printf("hermes: not configured — drop your API key in %s/hermes_key (chmod 600)", agentsDir)
+	}
 	switch {
 	case calClient.Enabled():
 		log.Printf("google calendar: connected")
@@ -101,13 +127,12 @@ func orNone(s string) string {
 	return s
 }
 
-func vaultConfig(c Config, cacheDir string) vault.Config {
+func vaultConfig(c Config) vault.Config {
 	return vault.Config{
 		Root:        c.VaultPath,
 		NewDailyDir: c.NewDailyDir,
 		GoalsName:   c.GoalsFileName,
 		SkipDirs:    c.SkipDirs,
-		CacheDir:    cacheDir,
 	}
 }
 

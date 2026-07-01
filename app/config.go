@@ -35,6 +35,12 @@ type Config struct {
 	Timezone string `json:"timezone"`
 	// Port is the local port the web UI is served on.
 	Port int `json:"port"`
+	// DataDir is where ALL derived/operational state lives — OUTSIDE the vault
+	// (calendar cache today, the read-only index next). Defaults to
+	// $MANIFEST_CONFIG_DIR or ~/.config/manifest (same external root as the
+	// calendar credentials). The vault holds only your hand-authored notes; the
+	// app never writes derived data into it.
+	DataDir string `json:"dataDir"`
 }
 
 func defaultConfig() Config {
@@ -58,15 +64,15 @@ func LoadConfig(path string) (Config, error) {
 	cfg := defaultConfig()
 	if path != "" {
 		b, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				cfg.VaultPath = expandHome(cfg.VaultPath)
-				return cfg, nil
+		switch {
+		case err == nil:
+			if err := json.Unmarshal(b, &cfg); err != nil {
+				return cfg, err
 			}
+		case !os.IsNotExist(err):
 			return cfg, err
-		}
-		if err := json.Unmarshal(b, &cfg); err != nil {
-			return cfg, err
+			// a missing config file is fine — fall through and apply defaults
+			// (incl. DataDir + ~ expansion) just as if every field were empty.
 		}
 	}
 	d := defaultConfig()
@@ -96,8 +102,39 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.Port == 0 {
 		cfg.Port = d.Port
 	}
+	if cfg.DataDir == "" {
+		cfg.DataDir = defaultDataDir()
+	}
 	cfg.VaultPath = expandHome(cfg.VaultPath)
+	cfg.DataDir = expandHome(cfg.DataDir)
 	return cfg, nil
+}
+
+// defaultDataDir is the external home for derived/operational state. It mirrors
+// the calendar package's configDir(): $MANIFEST_CONFIG_DIR if set, else
+// ~/.config/manifest. Kept here (not imported) to avoid a dependency cycle.
+func defaultDataDir() string {
+	if d := os.Getenv("MANIFEST_CONFIG_DIR"); d != "" {
+		return d
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".manifest") // last-resort relative dir
+	}
+	return filepath.Join(home, ".config", "manifest")
+}
+
+// pathIsUnder reports whether path is root or nested inside it (after cleaning).
+// Used to enforce that DataDir is never inside the vault.
+func pathIsUnder(path, root string) bool {
+	if root == "" || path == "" {
+		return false
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (!strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != "..")
 }
 
 func expandHome(p string) string {

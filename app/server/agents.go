@@ -1,76 +1,108 @@
 package server
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
-	"manifest/agents"
+	"manifest/hermes"
 )
 
-func (s *Server) handleAgentsStatus(w http.ResponseWriter, r *http.Request) {
-	if s.agents == nil {
-		writeJSON(w, map[string]any{"enabled": false})
-		return
-	}
-	writeJSON(w, map[string]any{
-		"enabled":   true,
-		"counts":    s.agents.Counts(),
-		"outbox":    s.agents.Outbox(10),
-		"approvals": s.agents.Approvals("pending"),
-	})
-}
+// Approvals (Step 5) — the record-only human-in-the-loop gate. ea-coordinator drafts
+// proposals (materialized into the local store); the user confirms or rejects. The app
+// never sends/executes — Confirm/Reject only move the file between status folders.
 
-// handleAgentsPost enqueues a task from the dashboard (hand-post work to agents).
-func (s *Server) handleAgentsPost(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+// eaProfile is the profile driving the approvals draft path (§5.5).
+const eaProfile = "ea-coordinator"
+
+// handleApprovalRun runs ea-coordinator (or a chosen propose-only profile) once with a
+// free-form request and materializes its DRAFTED actions into the pending queue. This
+// is the §5.5 trigger: the agent only proposes — Confirm/Reject stay record-only, and
+// nothing is ever sent/executed by the app.
+func (s *Server) handleApprovalRun(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil || s.hermes == nil || !s.hermes.Configured() {
+		http.Error(w, "approvals/hermes not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if s.agents == nil {
-		http.Error(w, "agents disabled", http.StatusServiceUnavailable)
+	if s.profiles == nil {
+		http.Error(w, "profiles not configured", http.StatusServiceUnavailable)
 		return
 	}
 	var b struct {
-		Type string `json:"type"`
-		Body string `json:"body"`
+		Profile string `json:"profile"`
+		Request string `json:"request"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	t, err := s.agents.Post(agents.Task{Type: b.Type, Body: b.Body})
+	profileName := strings.TrimSpace(b.Profile)
+	if profileName == "" {
+		profileName = eaProfile
+	}
+	if strings.TrimSpace(b.Request) == "" {
+		http.Error(w, "request is required", http.StatusBadRequest)
+		return
+	}
+	prof, ok := s.profiles.Get(profileName)
+	if !ok {
+		http.Error(w, fmt.Sprintf("profile %q not found", profileName), http.StatusNotFound)
+		return
+	}
+	// Bounded: a coordinator run (calendar/email read + drafting) is slow but finite.
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Minute)
+	defer cancel()
+	text, err := s.hermes.RunOnce(ctx, hermes.ChatRequest{
+		System:   prof.Brief,
+		Messages: []hermes.Message{{Role: "user", Content: b.Request}},
+	})
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]string{"id": t.ID})
-}
-
-func (s *Server) handleApprovalConfirm(w http.ResponseWriter, r *http.Request) {
-	s.approvalAction(w, r, func(id, _ string) error { return s.agents.Confirm(id) })
-}
-
-func (s *Server) handleApprovalReject(w http.ResponseWriter, r *http.Request) {
-	s.approvalAction(w, r, func(id, reason string) error { return s.agents.Reject(id, reason) })
-}
-
-func (s *Server) approvalAction(w http.ResponseWriter, r *http.Request, fn func(id, reason string) error) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if s.agents == nil {
-		http.Error(w, "agents disabled", http.StatusServiceUnavailable)
-		return
-	}
-	var b struct {
-		ID     string `json:"id"`
-		Reason string `json:"reason"`
-	}
-	if err := decode(r, &b); err != nil {
+	created, err := s.approvals.Materialize(text, profileName, time.Now())
+	if err != nil {
 		httpError(w, err)
 		return
 	}
-	if err := fn(b.ID, b.Reason); err != nil {
+	writeJSON(w, map[string]any{"new": len(created), "proposals": created})
+}
+
+func (s *Server) handleApprovalsList(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		writeJSON(w, map[string]any{"pending": []any{}, "counts": map[string]int{}})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"pending": s.approvals.List("pending"),
+		"counts":  s.approvals.Counts(),
+	})
+}
+
+func (s *Server) handleApprovalConfirm(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.approvals.Confirm(r.PathValue("id")); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleApprovalReject(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Reason string `json:"reason"`
+	}
+	_ = decode(r, &b) // reason is optional
+	if err := s.approvals.Reject(r.PathValue("id"), b.Reason); err != nil {
 		httpError(w, err)
 		return
 	}

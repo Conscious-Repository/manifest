@@ -5,24 +5,17 @@ import (
 	"strings"
 )
 
-// Horizon is the time window a goal sits under inside an area.
-type Horizon string
-
-const (
-	H90   Horizon = "90-day"
-	H30   Horizon = "30-day"
-	HNone Horizon = ""
-)
-
-// Goal is a single task line under an area, with parsed inline fields.
+// Goal is one checkbox line in goals.md. In the cascade a goal nests: an area's
+// root goals are 90-day goals; a 90-day's Children are its 30-day goal(s)
+// (exactly one expected); a 30-day's Children are tasks. Depth carries the tier.
 type Goal struct {
-	ID      string
-	Text    string
-	Checked bool
-	Owner   string // "", "me", "team", or a name; "" resolves to "me"
-	Due     string // "" or YYYY-MM-DD
-	Horizon Horizon
-	Fields  []Field // all inline fields in source order (owner/due/goal + unknown)
+	ID       string
+	Text     string
+	Checked  bool
+	Owner    string // "", "me", "team", or a name; "" resolves to "me"
+	Due      string // "" or YYYY-MM-DD
+	Fields   []Field
+	Children []*Goal
 }
 
 // ResolvedOwner returns the effective owner ("me" when unset).
@@ -35,50 +28,30 @@ func (g *Goal) ResolvedOwner() string {
 
 func (g *Goal) ownerIsMe() bool { return strings.EqualFold(g.ResolvedOwner(), "me") }
 
-// Area is a "## " section: a North Star plus 90-day / 30-day / loose goals.
+// Area is a "## " section: a North Star plus the 90-day goal roots (the cascade).
 type Area struct {
 	Name      string
 	NorthStar string // text after "> North Star:"; "" when absent
-	Goals90   []*Goal
-	Goals30   []*Goal
-	Loose     []*Goal // goals directly under the area (no horizon), e.g. Sidequests
 
-	has90      bool     // a "### 90-day" section exists (even if empty)
-	has30      bool     // a "### 30-day" section exists (even if empty)
-	headingRaw string   // original "## ..." line (unused once normalized)
-	nsRaw      string   // original "> ..." line
-	extra      []string // unrecognized lines within the area, preserved verbatim
+	Goals []*Goal // 90-day roots; each owns its 30-day children, which own tasks
+
+	has90 bool     // a "### 90-day" section exists (even if empty)
+	nsRaw string   // original "> ..." line
+	extra []string // unrecognized lines within the area, preserved verbatim
 }
 
+// allGoals returns every goal in the area depth-first (root, its children, …).
 func (a *Area) allGoals() []*Goal {
-	out := make([]*Goal, 0, len(a.Goals90)+len(a.Goals30)+len(a.Loose))
-	out = append(out, a.Goals90...)
-	out = append(out, a.Goals30...)
-	out = append(out, a.Loose...)
-	return out
-}
-
-func (a *Area) bucket(h Horizon) *[]*Goal {
-	switch h {
-	case H90:
-		return &a.Goals90
-	case H30:
-		return &a.Goals30
-	default:
-		return &a.Loose
-	}
-}
-
-func (a *Area) removeGoal(g *Goal) {
-	for _, bp := range []*[]*Goal{&a.Goals90, &a.Goals30, &a.Loose} {
-		b := *bp
-		for i, x := range b {
-			if x == g {
-				*bp = append(b[:i], b[i+1:]...)
-				return
-			}
+	var out []*Goal
+	var rec func(gs []*Goal)
+	rec = func(gs []*Goal) {
+		for _, g := range gs {
+			out = append(out, g)
+			rec(g.Children)
 		}
 	}
+	rec(a.Goals)
+	return out
 }
 
 // Doc is the parsed goals.md: a verbatim preamble (through "# Goals") + areas.
@@ -96,12 +69,47 @@ func (d *Doc) FindArea(name string) *Area {
 	return nil
 }
 
+// FindGoal locates a goal anywhere in the cascade by id, returning its area.
 func (d *Doc) FindGoal(id string) (*Area, *Goal) {
 	for _, a := range d.Areas {
-		for _, g := range a.allGoals() {
-			if g.ID == id {
-				return a, g
-			}
+		if _, g := findIn(nil, a.Goals, id); g != nil {
+			return a, g
+		}
+	}
+	return nil, nil
+}
+
+func findIn(parent *Goal, gs []*Goal, id string) (*Goal, *Goal) {
+	for _, g := range gs {
+		if g.ID == id {
+			return parent, g
+		}
+		if p, found := findIn(g, g.Children, id); found != nil {
+			return p, found
+		}
+	}
+	return nil, nil
+}
+
+// container returns the slice that directly holds the goal with id (and its area),
+// so callers can append/remove/reorder siblings.
+func (d *Doc) container(id string) (*Area, *[]*Goal, *Goal) {
+	for _, a := range d.Areas {
+		if cp, g := containerIn(&a.Goals, id); g != nil {
+			return a, cp, g
+		}
+	}
+	return nil, nil, nil
+}
+
+func containerIn(cp *[]*Goal, id string) (*[]*Goal, *Goal) {
+	for i := range *cp {
+		g := (*cp)[i]
+		if g.ID == id {
+			return cp, g
+		}
+		if c, found := containerIn(&g.Children, id); found != nil {
+			return c, found
 		}
 	}
 	return nil, nil
@@ -114,7 +122,7 @@ func (d *Doc) AddArea(name string) *Area {
 	if a := d.FindArea(name); a != nil {
 		return a
 	}
-	a := &Area{Name: name, has90: true, has30: true}
+	a := &Area{Name: name, has90: true}
 	d.Areas = append(d.Areas, a)
 	return a
 }
@@ -168,33 +176,39 @@ func (d *Doc) ReorderAreas(order []string) {
 	d.Areas = out
 }
 
-func (d *Doc) AddGoal(area string, h Horizon, text, owner, due string) (*Goal, bool) {
-	a := d.FindArea(area)
-	if a == nil {
+// AddGoal adds a goal to the cascade. When parentID is "", the goal becomes a new
+// 90-day root in the named area; otherwise it is appended as a child of parentID
+// (a 30-day under a 90-day, or a task under a 30-day — tier is structural).
+func (d *Doc) AddGoal(area, parentID, text, owner, due string) (*Goal, bool) {
+	g := &Goal{Text: strings.TrimSpace(text), Owner: strings.TrimSpace(owner), Due: normalizeDue(due)}
+	if parentID == "" {
+		a := d.FindArea(area)
+		if a == nil {
+			return nil, false
+		}
+		a.has90 = true
+		a.Goals = append(a.Goals, g)
+		d.assignIDs()
+		return g, true
+	}
+	_, parent := d.FindGoal(parentID)
+	if parent == nil {
 		return nil, false
 	}
-	g := &Goal{Text: strings.TrimSpace(text), Owner: strings.TrimSpace(owner), Due: normalizeDue(due), Horizon: h}
-	switch h {
-	case H90:
-		a.has90 = true
-	case H30:
-		a.has30 = true
-	}
-	b := a.bucket(h)
-	*b = append(*b, g)
+	parent.Children = append(parent.Children, g)
+	d.assignIDs()
 	return g, true
 }
 
 // GoalEdit carries optional field updates; nil fields are left unchanged.
 type GoalEdit struct {
-	Text    *string
-	Owner   *string
-	Due     *string
-	Horizon *Horizon
+	Text  *string
+	Owner *string
+	Due   *string
 }
 
 func (d *Doc) EditGoal(id string, e GoalEdit) bool {
-	a, g := d.FindGoal(id)
+	_, g := d.FindGoal(id)
 	if g == nil {
 		return false
 	}
@@ -207,18 +221,7 @@ func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	if e.Due != nil {
 		g.Due = normalizeDue(*e.Due)
 	}
-	if e.Horizon != nil && *e.Horizon != g.Horizon {
-		a.removeGoal(g)
-		g.Horizon = *e.Horizon
-		switch *e.Horizon {
-		case H90:
-			a.has90 = true
-		case H30:
-			a.has30 = true
-		}
-		b := a.bucket(*e.Horizon)
-		*b = append(*b, g)
-	}
+	d.assignIDs()
 	return true
 }
 
@@ -232,22 +235,38 @@ func (d *Doc) CheckGoal(id string, checked bool) bool {
 }
 
 func (d *Doc) DeleteGoal(id string) bool {
-	a, g := d.FindGoal(id)
+	_, cp, g := d.container(id)
 	if g == nil {
 		return false
 	}
-	a.removeGoal(g)
-	return true
+	for i, x := range *cp {
+		if x == g {
+			*cp = append((*cp)[:i], (*cp)[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
-func (d *Doc) ReorderGoals(area string, h Horizon, ids []string) bool {
-	a := d.FindArea(area)
-	if a == nil {
-		return false
+// ReorderGoals reorders siblings: roots of an area when parentID is "", otherwise
+// the children of parentID.
+func (d *Doc) ReorderGoals(area, parentID string, ids []string) bool {
+	var cp *[]*Goal
+	if parentID == "" {
+		a := d.FindArea(area)
+		if a == nil {
+			return false
+		}
+		cp = &a.Goals
+	} else {
+		_, parent := d.FindGoal(parentID)
+		if parent == nil {
+			return false
+		}
+		cp = &parent.Children
 	}
-	b := a.bucket(h)
 	byID := map[string]*Goal{}
-	for _, g := range *b {
+	for _, g := range *cp {
 		byID[g.ID] = g
 	}
 	var out []*Goal
@@ -258,16 +277,16 @@ func (d *Doc) ReorderGoals(area string, h Horizon, ids []string) bool {
 			seen[id] = true
 		}
 	}
-	for _, g := range *b {
+	for _, g := range *cp {
 		if !seen[g.ID] {
 			out = append(out, g)
 		}
 	}
-	*b = out
+	*cp = out
 	return true
 }
 
-// ----- projections (JSON for the API / daily panels) -----
+// ----- projections (JSON for the API) -----
 
 type DocView struct {
 	Areas []AreaView `json:"areas"`
@@ -276,18 +295,16 @@ type DocView struct {
 type AreaView struct {
 	Name      string     `json:"name"`
 	NorthStar string     `json:"northStar"`
-	Goals90   []GoalView `json:"goals90"`
-	Goals30   []GoalView `json:"goals30"`
-	Loose     []GoalView `json:"loose"`
+	Goals     []GoalView `json:"goals"`
 }
 
 type GoalView struct {
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	Checked bool   `json:"checked"`
-	Owner   string `json:"owner"`
-	Due     string `json:"due"`
-	Horizon string `json:"horizon"`
+	ID       string     `json:"id"`
+	Text     string     `json:"text"`
+	Checked  bool       `json:"checked"`
+	Owner    string     `json:"owner"`
+	Due      string     `json:"due"`
+	Children []GoalView `json:"children,omitempty"`
 }
 
 func (d *Doc) View() DocView {
@@ -297,9 +314,7 @@ func (d *Doc) View() DocView {
 		areas = append(areas, AreaView{
 			Name:      a.Name,
 			NorthStar: a.NorthStar,
-			Goals90:   goalViews(a.Goals90),
-			Goals30:   goalViews(a.Goals30),
-			Loose:     goalViews(a.Loose),
+			Goals:     goalViews(a.Goals),
 		})
 	}
 	return DocView{Areas: areas}
@@ -310,21 +325,21 @@ func goalViews(gs []*Goal) []GoalView {
 	for _, g := range gs {
 		out = append(out, GoalView{
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
-			Owner: g.ResolvedOwner(), Due: g.Due, Horizon: string(g.Horizon),
+			Owner: g.ResolvedOwner(), Due: g.Due,
+			Children: goalViews(g.Children),
 		})
 	}
 	return out
 }
 
-// ----- My Plate -----
+// ----- My Plate (open, owner==me items across the whole cascade) -----
 
 type PlateItem struct {
-	Source  string `json:"source"`
-	Area    string `json:"area"`
-	Horizon string `json:"horizon"`
-	GoalID  string `json:"goalId,omitempty"`
-	Text    string `json:"text"`
-	Due     string `json:"due,omitempty"`
+	Source string `json:"source"`
+	Area   string `json:"area"`
+	GoalID string `json:"goalId,omitempty"`
+	Text   string `json:"text"`
+	Due    string `json:"due,omitempty"`
 }
 
 type PlateGroup struct {
@@ -332,8 +347,8 @@ type PlateGroup struct {
 	Items []PlateItem `json:"items"`
 }
 
-// MyPlate returns all open, owner==me goals grouped by area, sorted by due date
-// (undated items last).
+// MyPlate returns all open, owner==me goals (every tier of the cascade) grouped
+// by area, sorted by due date (undated last).
 func (d *Doc) MyPlate() []PlateGroup {
 	d.assignIDs()
 	var groups []PlateGroup
@@ -344,7 +359,7 @@ func (d *Doc) MyPlate() []PlateGroup {
 				continue
 			}
 			items = append(items, PlateItem{
-				Source: "goal", Area: a.Name, Horizon: string(g.Horizon),
+				Source: "goal", Area: a.Name,
 				GoalID: g.ID, Text: g.Text, Due: g.Due,
 			})
 		}
@@ -367,42 +382,23 @@ func dueLess(a, b string) bool {
 	}
 }
 
-// Pool returns the open, owner==me 30-day goals (with ids) offered for quick-add
-// when planning an unplanned future day.
+// Pool returns the open, owner==me 30-day goals (the cascade's second tier) with
+// ids — offered for quick-add when planning an unplanned future day.
 func (d *Doc) Pool() []PlateItem {
 	d.assignIDs()
 	var items []PlateItem
 	for _, a := range d.Areas {
-		for _, g := range a.Goals30 {
-			if g.Checked || !g.ownerIsMe() {
-				continue
+		for _, root := range a.Goals {
+			for _, m := range root.Children { // 30-day goals
+				if m.Checked || !m.ownerIsMe() {
+					continue
+				}
+				items = append(items, PlateItem{
+					Source: "goal", Area: a.Name,
+					GoalID: m.ID, Text: m.Text, Due: m.Due,
+				})
 			}
-			items = append(items, PlateItem{
-				Source: "goal", Area: a.Name, Horizon: string(H30),
-				GoalID: g.ID, Text: g.Text, Due: g.Due,
-			})
 		}
 	}
 	return items
-}
-
-// HorizonTextsForMe returns the text of open, owner==me goals in a horizon,
-// across all areas — used to fill the read-only daily Goals/Milestones panels.
-func (d *Doc) HorizonTextsForMe(h Horizon) []string {
-	var out []string
-	for _, a := range d.Areas {
-		var gs []*Goal
-		switch h {
-		case H90:
-			gs = a.Goals90
-		case H30:
-			gs = a.Goals30
-		}
-		for _, g := range gs {
-			if !g.Checked && g.ownerIsMe() {
-				out = append(out, g.Text)
-			}
-		}
-	}
-	return out
 }

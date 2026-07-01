@@ -102,39 +102,33 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var b struct {
-			Area    string `json:"area"`
-			Horizon string `json:"horizon"`
-			Text    string `json:"text"`
-			Owner   string `json:"owner"`
-			Due     string `json:"due"`
+			Area     string `json:"area"`     // for a 90-day root
+			ParentID string `json:"parentId"` // for a 30-day under a 90-day, or a task under a 30-day
+			Text     string `json:"text"`
+			Owner    string `json:"owner"`
+			Due      string `json:"due"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
 			return
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
-			_, ok := d.AddGoal(b.Area, goals.Horizon(b.Horizon), b.Text, b.Owner, b.Due)
+			_, ok := d.AddGoal(b.Area, b.ParentID, b.Text, b.Owner, b.Due)
 			return ok
 		})
 	case http.MethodPatch:
 		var b struct {
-			ID      string  `json:"id"`
-			Text    *string `json:"text"`
-			Owner   *string `json:"owner"`
-			Due     *string `json:"due"`
-			Horizon *string `json:"horizon"`
+			ID    string  `json:"id"`
+			Text  *string `json:"text"`
+			Owner *string `json:"owner"`
+			Due   *string `json:"due"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
 			return
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
-			edit := goals.GoalEdit{Text: b.Text, Owner: b.Owner, Due: b.Due}
-			if b.Horizon != nil {
-				h := goals.Horizon(*b.Horizon)
-				edit.Horizon = &h
-			}
-			return d.EditGoal(b.ID, edit)
+			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Due: b.Due})
 		})
 	case http.MethodDelete:
 		var b struct {
@@ -172,15 +166,15 @@ func (s *Server) handleGoalsReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Area    string   `json:"area"`
-		Horizon string   `json:"horizon"`
-		IDs     []string `json:"ids"`
+		Area     string   `json:"area"`     // when reordering an area's 90-day roots
+		ParentID string   `json:"parentId"` // when reordering a goal's children
+		IDs      []string `json:"ids"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	s.mutate(w, func(d *goals.Doc) bool { return d.ReorderGoals(b.Area, goals.Horizon(b.Horizon), b.IDs) })
+	s.mutate(w, func(d *goals.Doc) bool { return d.ReorderGoals(b.Area, b.ParentID, b.IDs) })
 }
 
 func decode(r *http.Request, v any) error {
