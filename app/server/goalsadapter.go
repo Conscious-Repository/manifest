@@ -6,8 +6,9 @@ import (
 )
 
 // goalsAdapter bridges the goals store to daily.GoalsProvider, resolving a picked
-// 90-day goal slug into its text, its 30-day children (to choose among), the selected
-// milestone, and that milestone's open tasks — all live from the cascade.
+// Rock slug into its text, its stages (to choose among), the selected stage
+// (defaulting to the current stage — the first unchecked one), and that stage's open
+// tasks — all live from the ladder.
 type goalsAdapter struct{ store *goals.Store }
 
 // NewGoalsAdapter wires the goals store into the daily service's Focus resolution.
@@ -22,12 +23,19 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 	if len(g.Children) == 0 {
 		return res, true
 	}
-	// The 30-day children the picker offers.
+	// The stages the picker offers.
 	for _, c := range g.Children {
 		res.Milestones = append(res.Milestones, daily.FocusNode{GoalID: c.ID, Text: c.Text, Checked: c.Checked})
 	}
-	// Selected milestone: the requested one, else the first child.
+	// Selected stage: the requested one, else the current stage (first unchecked),
+	// else the first stage.
 	sel := g.Children[0]
+	for _, c := range g.Children {
+		if !c.Checked {
+			sel = c
+			break
+		}
+	}
 	for _, c := range g.Children {
 		if c.ID == milestoneID {
 			sel = c

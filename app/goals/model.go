@@ -5,15 +5,23 @@ import (
 	"strings"
 )
 
-// Goal is one checkbox line in goals.md. In the cascade a goal nests: an area's
-// root goals are 90-day goals; a 90-day's Children are its 30-day goal(s)
-// (exactly one expected); a 30-day's Children are tasks. Depth carries the tier.
+// Goal is one checkbox line in goals.md. Its role comes from where it sits:
+// an area's Annuals are 1-year goals; its Rocks are 90-day priorities; a Rock's
+// Children are stages (the growing trail) and a stage's Children are tasks. Depth
+// under a Rock carries the role — one level under a Rock is a stage, two is a task
+// (§1 literal depth rule).
 type Goal struct {
-	ID       string
-	Text     string
-	Checked  bool
-	Owner    string // "", "me", "team", or a name; "" resolves to "me"
-	Due      string // "" or YYYY-MM-DD
+	ID      string
+	Text    string
+	Checked bool
+	Owner   string // "", "me", "team", or a name; "" resolves to "me"
+
+	// Rock-only metadata (empty on annuals, stages, tasks).
+	Quarter    string // "2026-Q3"; set at creation, updated on carry
+	Serves     string // annual slug this Rock serves; "" = needs setup
+	Status     string // "" (active) | "blocked" | "at-risk"
+	RolledFrom string // "2026-Q2" when carried across a quarter
+
 	Fields   []Field
 	Children []*Goal
 }
@@ -28,19 +36,34 @@ func (g *Goal) ResolvedOwner() string {
 
 func (g *Goal) ownerIsMe() bool { return strings.EqualFold(g.ResolvedOwner(), "me") }
 
-// Area is a "## " section: a North Star plus the 90-day goal roots (the cascade).
+// currentStage returns a Rock's first unchecked stage (the trail's live tip), or
+// nil when every stage is done or there are none.
+func (g *Goal) currentStage() *Goal {
+	for _, st := range g.Children {
+		if !st.Checked {
+			return st
+		}
+	}
+	return nil
+}
+
+// Area is a "## " section: a North Star, a 1-year (annual) section, and the Rocks
+// (90-day) section that ladders up to it.
 type Area struct {
 	Name      string
 	NorthStar string // text after "> North Star:"; "" when absent
 
-	Goals []*Goal // 90-day roots; each owns its 30-day children, which own tasks
+	Annuals []*Goal // under "### 1-year" — annual objectives
+	Rocks   []*Goal // under "### Rocks (90-day)" — each owns stages, which own tasks
 
-	has90 bool     // a "### 90-day" section exists (even if empty)
-	nsRaw string   // original "> ..." line
-	extra []string // unrecognized lines within the area, preserved verbatim
+	yearLabel string   // the "— 2026" suffix on the 1-year heading; "" when absent
+	hasAnnual bool     // a "### 1-year" section exists (even if empty)
+	hasRocks  bool     // a "### Rocks (90-day)" section exists (even if empty)
+	nsRaw     string   // original "> ..." line
+	extra     []string // unrecognized lines within the area, preserved verbatim
 }
 
-// allGoals returns every goal in the area depth-first (root, its children, …).
+// allGoals returns every goal in the area depth-first across both sections.
 func (a *Area) allGoals() []*Goal {
 	var out []*Goal
 	var rec func(gs []*Goal)
@@ -50,9 +73,14 @@ func (a *Area) allGoals() []*Goal {
 			rec(g.Children)
 		}
 	}
-	rec(a.Goals)
+	rec(a.Annuals)
+	rec(a.Rocks)
 	return out
 }
+
+// roots returns pointers to the area's two top-level lists, so tree walks can
+// cover both without duplicating logic.
+func (a *Area) roots() []*[]*Goal { return []*[]*Goal{&a.Annuals, &a.Rocks} }
 
 // Doc is the parsed goals.md: a verbatim preamble (through "# Goals") + areas.
 type Doc struct {
@@ -69,11 +97,13 @@ func (d *Doc) FindArea(name string) *Area {
 	return nil
 }
 
-// FindGoal locates a goal anywhere in the cascade by id, returning its area.
+// FindGoal locates a goal anywhere (annual or rock subtree) by id, with its area.
 func (d *Doc) FindGoal(id string) (*Area, *Goal) {
 	for _, a := range d.Areas {
-		if _, g := findIn(nil, a.Goals, id); g != nil {
-			return a, g
+		for _, root := range a.roots() {
+			if _, g := findIn(nil, *root, id); g != nil {
+				return a, g
+			}
 		}
 	}
 	return nil, nil
@@ -95,8 +125,10 @@ func findIn(parent *Goal, gs []*Goal, id string) (*Goal, *Goal) {
 // so callers can append/remove/reorder siblings.
 func (d *Doc) container(id string) (*Area, *[]*Goal, *Goal) {
 	for _, a := range d.Areas {
-		if cp, g := containerIn(&a.Goals, id); g != nil {
-			return a, cp, g
+		for _, root := range a.roots() {
+			if cp, g := containerIn(root, id); g != nil {
+				return a, cp, g
+			}
 		}
 	}
 	return nil, nil, nil
@@ -122,7 +154,7 @@ func (d *Doc) AddArea(name string) *Area {
 	if a := d.FindArea(name); a != nil {
 		return a
 	}
-	a := &Area{Name: name, has90: true}
+	a := &Area{Name: name, hasAnnual: true, hasRocks: true}
 	d.Areas = append(d.Areas, a)
 	return a
 }
@@ -176,18 +208,23 @@ func (d *Doc) ReorderAreas(order []string) {
 	d.Areas = out
 }
 
-// AddGoal adds a goal to the cascade. When parentID is "", the goal becomes a new
-// 90-day root in the named area; otherwise it is appended as a child of parentID
-// (a 30-day under a 90-day, or a task under a 30-day — tier is structural).
-func (d *Doc) AddGoal(area, parentID, text, owner, due string) (*Goal, bool) {
-	g := &Goal{Text: strings.TrimSpace(text), Owner: strings.TrimSpace(owner), Due: normalizeDue(due)}
+// AddGoal adds a goal. With parentID == "", section decides the root list:
+// "annual" appends a 1-year goal, anything else appends a Rock. With parentID set,
+// the goal is appended as a child (a stage under a Rock, or a task under a stage).
+func (d *Doc) AddGoal(area, parentID, section, text, owner string) (*Goal, bool) {
+	g := &Goal{Text: strings.TrimSpace(text), Owner: strings.TrimSpace(owner)}
 	if parentID == "" {
 		a := d.FindArea(area)
 		if a == nil {
 			return nil, false
 		}
-		a.has90 = true
-		a.Goals = append(a.Goals, g)
+		if strings.EqualFold(section, "annual") {
+			a.hasAnnual = true
+			a.Annuals = append(a.Annuals, g)
+		} else {
+			a.hasRocks = true
+			a.Rocks = append(a.Rocks, g)
+		}
 		d.assignIDs()
 		return g, true
 	}
@@ -202,9 +239,11 @@ func (d *Doc) AddGoal(area, parentID, text, owner, due string) (*Goal, bool) {
 
 // GoalEdit carries optional field updates; nil fields are left unchanged.
 type GoalEdit struct {
-	Text  *string
-	Owner *string
-	Due   *string
+	Text    *string
+	Owner   *string
+	Quarter *string
+	Serves  *string
+	Status  *string
 }
 
 func (d *Doc) EditGoal(id string, e GoalEdit) bool {
@@ -218,8 +257,14 @@ func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	if e.Owner != nil {
 		g.Owner = strings.TrimSpace(*e.Owner)
 	}
-	if e.Due != nil {
-		g.Due = normalizeDue(*e.Due)
+	if e.Quarter != nil {
+		g.Quarter = strings.TrimSpace(*e.Quarter)
+	}
+	if e.Serves != nil {
+		g.Serves = strings.TrimSpace(*e.Serves)
+	}
+	if e.Status != nil {
+		g.Status = strings.TrimSpace(*e.Status)
 	}
 	d.assignIDs()
 	return true
@@ -248,16 +293,20 @@ func (d *Doc) DeleteGoal(id string) bool {
 	return false
 }
 
-// ReorderGoals reorders siblings: roots of an area when parentID is "", otherwise
-// the children of parentID.
-func (d *Doc) ReorderGoals(area, parentID string, ids []string) bool {
+// ReorderGoals reorders siblings: with parentID == "", the area's Rocks (or its
+// Annuals when section == "annual"); otherwise the children of parentID.
+func (d *Doc) ReorderGoals(area, parentID, section string, ids []string) bool {
 	var cp *[]*Goal
 	if parentID == "" {
 		a := d.FindArea(area)
 		if a == nil {
 			return false
 		}
-		cp = &a.Goals
+		if strings.EqualFold(section, "annual") {
+			cp = &a.Annuals
+		} else {
+			cp = &a.Rocks
+		}
 	} else {
 		_, parent := d.FindGoal(parentID)
 		if parent == nil {
@@ -295,15 +344,21 @@ type DocView struct {
 type AreaView struct {
 	Name      string     `json:"name"`
 	NorthStar string     `json:"northStar"`
-	Goals     []GoalView `json:"goals"`
+	Year      string     `json:"year"`
+	Annuals   []GoalView `json:"annuals"`
+	Rocks     []GoalView `json:"rocks"`
 }
 
+// GoalView backs both annuals and Rocks. Rock-only fields (quarter/serves/status)
+// are empty for annuals, stages and tasks and omitted from the JSON.
 type GoalView struct {
 	ID       string     `json:"id"`
 	Text     string     `json:"text"`
 	Checked  bool       `json:"checked"`
 	Owner    string     `json:"owner"`
-	Due      string     `json:"due"`
+	Quarter  string     `json:"quarter,omitempty"`
+	Serves   string     `json:"serves,omitempty"`
+	Status   string     `json:"status,omitempty"`
 	Children []GoalView `json:"children,omitempty"`
 }
 
@@ -314,7 +369,9 @@ func (d *Doc) View() DocView {
 		areas = append(areas, AreaView{
 			Name:      a.Name,
 			NorthStar: a.NorthStar,
-			Goals:     goalViews(a.Goals),
+			Year:      a.yearLabel,
+			Annuals:   goalViews(a.Annuals),
+			Rocks:     goalViews(a.Rocks),
 		})
 	}
 	return DocView{Areas: areas}
@@ -325,21 +382,21 @@ func goalViews(gs []*Goal) []GoalView {
 	for _, g := range gs {
 		out = append(out, GoalView{
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
-			Owner: g.ResolvedOwner(), Due: g.Due,
+			Owner: g.ResolvedOwner(),
+			Quarter: g.Quarter, Serves: g.Serves, Status: g.Status,
 			Children: goalViews(g.Children),
 		})
 	}
 	return out
 }
 
-// ----- My Plate (open, owner==me items across the whole cascade) -----
+// ----- My Plate (open, owner==me items across the whole ladder) -----
 
 type PlateItem struct {
 	Source string `json:"source"`
 	Area   string `json:"area"`
 	GoalID string `json:"goalId,omitempty"`
 	Text   string `json:"text"`
-	Due    string `json:"due,omitempty"`
 }
 
 type PlateGroup struct {
@@ -347,8 +404,8 @@ type PlateGroup struct {
 	Items []PlateItem `json:"items"`
 }
 
-// MyPlate returns all open, owner==me goals (every tier of the cascade) grouped
-// by area, sorted by due date (undated last).
+// MyPlate returns all open, owner==me goals (annuals, Rocks, stages, tasks) grouped
+// by area.
 func (d *Doc) MyPlate() []PlateGroup {
 	d.assignIDs()
 	var groups []PlateGroup
@@ -358,12 +415,8 @@ func (d *Doc) MyPlate() []PlateGroup {
 			if g.Checked || !g.ownerIsMe() {
 				continue
 			}
-			items = append(items, PlateItem{
-				Source: "goal", Area: a.Name,
-				GoalID: g.ID, Text: g.Text, Due: g.Due,
-			})
+			items = append(items, PlateItem{Source: "goal", Area: a.Name, GoalID: g.ID, Text: g.Text})
 		}
-		sort.SliceStable(items, func(i, j int) bool { return dueLess(items[i].Due, items[j].Due) })
 		if len(items) > 0 {
 			groups = append(groups, PlateGroup{Area: a.Name, Items: items})
 		}
@@ -371,34 +424,27 @@ func (d *Doc) MyPlate() []PlateGroup {
 	return groups
 }
 
-func dueLess(a, b string) bool {
-	switch {
-	case a == "":
-		return false
-	case b == "":
-		return true
-	default:
-		return a < b
-	}
-}
-
-// Pool returns the open, owner==me 30-day goals (the cascade's second tier) with
-// ids — offered for quick-add when planning an unplanned future day.
+// Pool returns the open, owner==me stages (each Rock's current tier) with ids —
+// offered for quick-add when planning an unplanned future day.
 func (d *Doc) Pool() []PlateItem {
 	d.assignIDs()
 	var items []PlateItem
 	for _, a := range d.Areas {
-		for _, root := range a.Goals {
-			for _, m := range root.Children { // 30-day goals
-				if m.Checked || !m.ownerIsMe() {
+		for _, rock := range a.Rocks {
+			for _, st := range rock.Children { // stages
+				if st.Checked || !st.ownerIsMe() {
 					continue
 				}
-				items = append(items, PlateItem{
-					Source: "goal", Area: a.Name,
-					GoalID: m.ID, Text: m.Text, Due: m.Due,
-				})
+				items = append(items, PlateItem{Source: "goal", Area: a.Name, GoalID: st.ID, Text: st.Text})
 			}
 		}
 	}
+	items = sortStable(items)
+	return items
+}
+
+// sortStable keeps Pool output deterministic (by area already grouped, then text).
+func sortStable(items []PlateItem) []PlateItem {
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Text < items[j].Text })
 	return items
 }

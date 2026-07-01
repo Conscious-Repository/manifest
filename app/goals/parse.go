@@ -3,15 +3,15 @@ package goals
 import (
 	"regexp"
 	"strings"
-	"time"
 )
 
 var (
 	areaHeadingRe = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
 	horizonRe     = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
 	// goalLineRe captures leading indentation (m[1]), the checkbox state (m[2]),
-	// and the rest of the line (m[3]). Indentation drives cascade nesting.
+	// and the rest of the line (m[3]). Indentation drives nesting depth.
 	goalLineRe = regexp.MustCompile(`^([ \t]*)[-*]\s*\[([ xX])\]\s?(.*)$`)
+	yearRe     = regexp.MustCompile(`\b(\d{4})\b`)
 )
 
 func isAreaHeading(line string) bool { return areaHeadingRe.MatchString(line) }
@@ -23,14 +23,36 @@ func areaName(line string) string {
 	return ""
 }
 
-// horizonOf returns whether a "### ..." heading is the 90-day cascade section.
-func is90Heading(line string) bool {
+type section int
+
+const (
+	sectionNone   section = iota
+	sectionAnnual         // "### 1-year"
+	sectionRocks          // "### Rocks (90-day)" or legacy "### 90-day"
+	sectionOther          // any other "### ..." — not a goals section
+)
+
+// classifyHorizon maps a "### ..." heading to a section, extracting the year label
+// from a "### 1-year — 2026" style heading.
+func classifyHorizon(line string) (section, string) {
 	m := horizonRe.FindStringSubmatch(line)
 	if m == nil {
-		return false
+		return sectionNone, ""
 	}
-	h := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(m[1])), " ", "")
-	return strings.HasPrefix(h, "90")
+	h := strings.TrimSpace(m[1])
+	condensed := strings.ReplaceAll(strings.ToLower(h), " ", "")
+	switch {
+	case strings.HasPrefix(condensed, "1-year") || strings.HasPrefix(condensed, "1year"):
+		year := ""
+		if ym := yearRe.FindStringSubmatch(h); ym != nil {
+			year = ym[1]
+		}
+		return sectionAnnual, year
+	case strings.HasPrefix(condensed, "rocks") || strings.HasPrefix(condensed, "90"):
+		return sectionRocks, ""
+	default:
+		return sectionOther, ""
+	}
 }
 
 func isNorthStar(line string) bool { return strings.HasPrefix(strings.TrimSpace(line), ">") }
@@ -44,17 +66,6 @@ func northStarText(line string) string {
 }
 
 func isBlank(line string) bool { return strings.TrimSpace(line) == "" }
-
-func normalizeDue(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	if _, err := time.Parse("2006-01-02", s); err != nil {
-		return ""
-	}
-	return s
-}
 
 // indentWidth measures leading whitespace in columns (tab = 4), so 2-space,
 // 4-space, or tab nesting all round-trip predictably.
@@ -79,11 +90,11 @@ type frame struct {
 }
 
 // Parse turns goals.md content into a Doc. It never hard-errors: anything it
-// doesn't recognize is preserved as area "extra" prose or the doc preamble. Under
-// "### 90-day", checkbox lines nest by indentation into the cascade (90-day →
-// 30-day → tasks). Legacy "### 30-day" (and other "###") sections are not part of
-// the cascade — their heading is dropped and any goals beneath are preserved
-// verbatim as "extra" so nothing is lost.
+// doesn't recognize is preserved as area "extra" prose or the doc preamble.
+// Checkbox lines under "### 1-year" nest into Annuals; under "### Rocks (90-day)"
+// (or the legacy "### 90-day") they nest into Rocks (Rock → stage → task by
+// indentation). Other "### " sections drop their heading and preserve any goals
+// beneath as "extra" so nothing is lost.
 func Parse(content string) *Doc {
 	doc := &Doc{}
 	var lines []string
@@ -105,8 +116,8 @@ func Parse(content string) *Doc {
 	for i < len(lines) {
 		a := &Area{Name: areaName(lines[i])}
 		i++
-		inCascade := false
 		var stack []frame
+		var root *[]*Goal // nil = not currently in a goals section
 		for i < len(lines) && !isAreaHeading(lines[i]) {
 			line := lines[i]
 			i++
@@ -121,16 +132,24 @@ func Parse(content string) *Doc {
 					a.extra = append(a.extra, line)
 				}
 			case horizonRe.MatchString(line):
-				if is90Heading(line) {
-					inCascade = true
-					a.has90 = true
-					stack = stack[:0]
-				} else {
-					inCascade = false // legacy 30-day / unknown: drop heading, preserve goals as extra
+				sec, year := classifyHorizon(line)
+				stack = stack[:0]
+				switch sec {
+				case sectionAnnual:
+					a.hasAnnual = true
+					if year != "" {
+						a.yearLabel = year
+					}
+					root = &a.Annuals
+				case sectionRocks:
+					a.hasRocks = true
+					root = &a.Rocks
+				default: // other heading: drop it, goals beneath become extra
+					root = nil
 				}
 			default:
 				if m := goalLineRe.FindStringSubmatch(line); m != nil {
-					if !inCascade {
+					if root == nil {
 						a.extra = append(a.extra, line)
 						continue
 					}
@@ -140,7 +159,7 @@ func Parse(content string) *Doc {
 						stack = stack[:len(stack)-1]
 					}
 					if len(stack) == 0 {
-						a.Goals = append(a.Goals, g)
+						*root = append(*root, g)
 					} else {
 						p := stack[len(stack)-1].goal
 						p.Children = append(p.Children, g)
@@ -165,11 +184,18 @@ func parseGoal(m []string) *Goal {
 		Fields:  fields,
 	}
 	for _, f := range fields {
-		switch {
-		case strings.EqualFold(f.Key, "owner"):
+		switch strings.ToLower(f.Key) {
+		case "owner":
 			g.Owner = strings.TrimSpace(f.Value)
-		case strings.EqualFold(f.Key, "due"):
-			g.Due = normalizeDue(f.Value)
+		case "quarter":
+			g.Quarter = strings.TrimSpace(f.Value)
+		case "serves":
+			g.Serves = strings.TrimSpace(f.Value)
+		case "status":
+			g.Status = strings.TrimSpace(f.Value)
+		case "rolled-from":
+			g.RolledFrom = strings.TrimSpace(f.Value)
+			// `due` is intentionally ignored (retired).
 		}
 	}
 	return g

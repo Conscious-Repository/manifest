@@ -15,6 +15,16 @@ type Field struct {
 	Value string `json:"value"`
 }
 
+// fieldRole is the emitting goal's place in the ladder — it decides which
+// canonical fields are written (§1).
+type fieldRole int
+
+const (
+	roleAnnual    fieldRole = iota // a 1-year goal: identity only
+	roleRock                       // a 90-day Rock: identity + quarter/serves/status/rolled-from
+	roleStageTask                  // a stage or task: identity only when explicit
+)
+
 // parseFields strips every [key:: value] field out of text and returns the
 // cleaned text (fields removed, surrounding whitespace collapsed) plus the
 // fields in source order.
@@ -28,21 +38,44 @@ func parseFields(text string) (string, []Field) {
 	return strings.Join(strings.Fields(clean), " "), fields
 }
 
-// canonicalFields returns the fields to emit for a goal, in a deterministic
-// order: owner, due, goal, then any unrecognized fields in their original order.
-// owner/due/goal are rebuilt from the goal's resolved values so edits take
-// effect; the implicit "me" owner is never written out.
-func canonicalFields(g *Goal) []Field {
+// canonicalFields returns the fields to emit for a goal, in a deterministic order:
+// goal (identity), then Rock metadata (quarter, serves, status, rolled-from), then
+// owner (only when not "me"), then any unrecognized fields in original order.
+// Recognized fields are rebuilt from struct state so edits take effect; `due` is
+// recognized-but-never-emitted (retired — §0/§1).
+func canonicalFields(g *Goal, role fieldRole) []Field {
 	var out []Field
-	if g.Owner != "" {
+
+	switch role {
+	case roleRock, roleAnnual:
+		if id := g.identity(); id != "" {
+			out = append(out, Field{Key: "goal", Value: id})
+		}
+	default: // stage / task: only pin identity when explicitly set
+		if id := g.explicitID(); id != "" {
+			out = append(out, Field{Key: "goal", Value: id})
+		}
+	}
+
+	if role == roleRock {
+		if g.Quarter != "" {
+			out = append(out, Field{Key: "quarter", Value: g.Quarter})
+		}
+		if g.Serves != "" {
+			out = append(out, Field{Key: "serves", Value: g.Serves})
+		}
+		if g.Status != "" && !strings.EqualFold(g.Status, "active") {
+			out = append(out, Field{Key: "status", Value: g.Status})
+		}
+		if g.RolledFrom != "" {
+			out = append(out, Field{Key: "rolled-from", Value: g.RolledFrom})
+		}
+	}
+
+	if g.Owner != "" && !strings.EqualFold(g.Owner, "me") {
 		out = append(out, Field{Key: "owner", Value: g.Owner})
 	}
-	if g.Due != "" {
-		out = append(out, Field{Key: "due", Value: g.Due})
-	}
-	if id := g.explicitID(); id != "" {
-		out = append(out, Field{Key: "goal", Value: id})
-	}
+
 	for _, f := range g.Fields {
 		if isRecognizedField(f.Key) {
 			continue
@@ -52,8 +85,13 @@ func canonicalFields(g *Goal) []Field {
 	return out
 }
 
+// isRecognizedField reports keys the model owns (rebuilt from struct state, not
+// passed through as unknown). `due` is included so any legacy dates are dropped on
+// the next save rather than round-tripped as junk.
 func isRecognizedField(key string) bool {
-	return strings.EqualFold(key, "owner") ||
-		strings.EqualFold(key, "due") ||
-		strings.EqualFold(key, "goal")
+	switch strings.ToLower(key) {
+	case "owner", "goal", "quarter", "serves", "status", "rolled-from", "due":
+		return true
+	}
+	return false
 }

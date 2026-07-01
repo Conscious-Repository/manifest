@@ -3,6 +3,7 @@ package goals
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"manifest/vault"
 )
@@ -52,6 +53,34 @@ func (s *Store) Seed() error {
 	return s.Save(seedDoc())
 }
 
+// Migrate performs the silent one-time upgrade from the pre-v2 format (90-day /
+// 30-day cascade with due:: dates) to the horizon ladder (§0). It is idempotent:
+// already-migrated files pass through untouched. Before the first migrated save it
+// writes a one-time "<path>.pre-migration" backup so the change is reversible.
+// Returns whether a migration was applied.
+func (s *Store) Migrate(now time.Time) (bool, error) {
+	path := s.Path()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false, nil // no file yet — Seed handles the fresh case
+	}
+	if !needsMigration(string(b)) {
+		return false, nil
+	}
+	backup := path + ".pre-migration"
+	if _, err := os.Stat(backup); os.IsNotExist(err) {
+		if err := os.WriteFile(backup, b, 0o644); err != nil {
+			return false, err
+		}
+	}
+	doc := Parse(string(b))
+	doc.migrateFromLegacy(now)
+	if err := s.Save(doc); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Pool returns the 30-day owner==me goals available to pull into a day.
 func (s *Store) Pool() []PlateItem {
 	return s.Load().Pool()
@@ -78,17 +107,17 @@ func (s *Store) Promote(id string) (text, goalID string, ok bool) {
 }
 
 func seedDoc() *Doc {
-	area := func(name string, cascade bool) *Area {
-		return &Area{Name: name, has90: cascade}
+	area := func(name string) *Area {
+		return &Area{Name: name, hasAnnual: true, hasRocks: true}
 	}
 	return &Doc{
 		preamble: "# Goals",
 		Areas: []*Area{
-			area("Aion", true),
-			area("OODA Group", true),
-			area("House", true),
-			area("Personal", true),
-			area("Sidequests", false),
+			area("Aion"),
+			area("OODA Group"),
+			area("House"),
+			area("Personal"),
+			area("Sidequests"),
 		},
 	}
 }

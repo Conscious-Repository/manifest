@@ -164,16 +164,6 @@ func monthOf(d time.Time) (label, slug string) {
 	return fmt.Sprintf("%s %d", d.Month().String(), d.Year()), d.Format("2006-01")
 }
 
-func (s *Service) goalsPath(d time.Time) string {
-	_, slug := quarterOf(d)
-	return filepath.Join(s.cfg.VaultPath, s.cfg.PeriodNoteDir, "Goals-"+slug+".md")
-}
-
-func (s *Service) milestonesPath(d time.Time) string {
-	_, slug := monthOf(d)
-	return filepath.Join(s.cfg.VaultPath, s.cfg.PeriodNoteDir, "Milestones-"+slug+".md")
-}
-
 // ----- time token helpers -----
 
 // slotToken renders minutes-from-midnight as a half-hour label, e.g.
@@ -599,15 +589,12 @@ func (s *Service) Load(date string) (Day, error) {
 	today := time.Now().Format(dateLayout)
 	day.Unplanned = date > today && !dayActive(parsedRows, tasks) && len(focus) == 0
 
-	// The Goals/Milestones panels are now an empty scaffold filled by the user's
-	// Focus picks, resolved live from the cascade. The legacy period-note panels
-	// are kept only when no goals provider is wired (older tests / fallback).
+	// Focus picks are resolved live from goals.md through the goals ladder. The
+	// legacy Manifest/Goals-<quarter>.md period notes are retired (§0) — never read
+	// or written; the Day.Goals/Milestones fields stay empty scaffolding.
 	if s.goals != nil {
 		day.Focus = s.resolveFocus(focus)
 		day.FocusSlots = defaultFocusSlots
-	} else {
-		day.Goals = readList(s.goalsPath(d))
-		day.Milestones = readList(s.milestonesPath(d))
 	}
 	day.Streak = s.streak(d)
 	return day, nil
@@ -742,24 +729,6 @@ func (s *Service) AddTask(date string, t Task) (Day, error) {
 		return Day{}, err
 	}
 	return s.Load(date)
-}
-
-func (s *Service) SaveGoals(date string, items []string) error {
-	d, err := time.Parse(dateLayout, date)
-	if err != nil {
-		return err
-	}
-	label, _ := quarterOf(d)
-	return writeList(s.goalsPath(d), "Goals — "+label, items)
-}
-
-func (s *Service) SaveMilestones(date string, items []string) error {
-	d, err := time.Parse(dateLayout, date)
-	if err != nil {
-		return err
-	}
-	label, _ := monthOf(d)
-	return writeList(s.milestonesPath(d), "Milestones — "+label, items)
 }
 
 // ----- list (goals/milestones) notes -----
