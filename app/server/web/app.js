@@ -86,13 +86,7 @@ const els = {
   calPrev: document.getElementById("calPrev"),
   calNext: document.getElementById("calNext"),
   addArea: document.getElementById("addArea"),
-  goalsAddBtn: document.getElementById("goalsAddBtn"),
-  goalsSubnav: document.getElementById("goalsSubnav"),
-  goalsSoft: document.getElementById("goalsSoft"),
-  gp_goals: document.getElementById("gp-goals"),
-  gp_year: document.getElementById("gp-year"),
-  gp_review: document.getElementById("gp-review"),
-  gp_history: document.getElementById("gp-history"),
+  areasRows: document.getElementById("areasRows"),
   pickerModal: document.getElementById("pickerModal"),
   pickerBackdrop: document.getElementById("pickerBackdrop"),
   pickerClose: document.getElementById("pickerClose"),
@@ -674,348 +668,85 @@ async function goalsApi(method, path, body) {
   await loadGoals();
 }
 
-// ---- goals command center (§2/§3): by-area command view + Year + History ----
-let goalsTab = "goals";
-let goalsCache = null;   // last /api/goals view (with roll-up)
-let archivesCache = null; // last /api/goals/archives
+// ---- areas & goals: single column, M1 layout over the ladder model ----
 
 async function loadGoals() {
   try {
-    const [doc, arch] = await Promise.all([
-      fetch("/api/goals").then((r) => r.json()),
-      fetch("/api/goals/archives").then((r) => r.json()).catch(() => ({ quarters: [] })),
-    ]);
-    goalsCache = doc;
-    archivesCache = arch;
+    const doc = await (await fetch("/api/goals")).json();
+    renderAreas(doc.areas || []);
   } catch (e) { setSaveState("error"); }
-  renderGoalsTab();
 }
 
-function setGoalsTab(tab) { goalsTab = tab; renderGoalsTab(); }
-
-function renderGoalsTab() {
-  const areas = (goalsCache && goalsCache.areas) || [];
-  // Soft-focus guidance: >~5 active Rocks total (never blocks).
-  const activeRocks = areas.reduce((n, a) => n + (a.rocks || []).length, 0);
-  if (els.goalsSoft) {
-    els.goalsSoft.hidden = activeRocks <= 5;
-    els.goalsSoft.textContent = `${activeRocks} active Rocks — consider deferring some (aim for ~5).`;
-  }
-  ["goals", "year", "review", "history"].forEach((t) => { if (els["gp_" + t]) els["gp_" + t].hidden = t !== goalsTab; });
-  document.querySelectorAll(".gtab").forEach((b) => b.classList.toggle("active", b.dataset.gtab === goalsTab));
-  if (goalsTab === "year") renderYear(areas);
-  else if (goalsTab === "review") renderReview(areas);
-  else if (goalsTab === "history") renderHistory((archivesCache && archivesCache.quarters) || []);
-  else renderCommand(areas);
+function renderAreas(areas) {
+  els.areasRows.innerHTML = "";
+  if (!areas.length) { els.areasRows.appendChild(emptyRow("No areas yet — add one.")); return; }
+  areas.forEach((area) => els.areasRows.appendChild(areaCard(area)));
 }
 
-function currentStage(rock) { return (rock.children || []).find((s) => !s.checked) || null; }
-function firstOpenTask(stage) { return (stage.children || []).find((t) => !t.checked) || null; }
+function areaCard(area) {
+  const card = el("div", "area-card");
 
-function renderCommand(areas) {
-  const host = els.gp_goals;
-  host.innerHTML = "";
-  if (!areas.length) { host.appendChild(emptyRow("No areas yet — add one.")); return; }
-  areas.forEach((a) => host.appendChild(commandArea(a)));
-}
-
-function commandArea(a) {
-  const card = el("div", "cmd-area");
-  const head = el("div", "cmd-area-head");
+  const head = el("div", "area-head");
   const name = el("input", "area-name");
-  name.value = a.name;
+  name.value = area.name;
   name.addEventListener("change", () => {
     const v = name.value.trim();
-    if (v && v !== a.name) goalsApi("PATCH", "/api/areas", { name: a.name, newName: v });
+    if (v && v !== area.name) goalsApi("PATCH", "/api/areas", { name: area.name, newName: v });
   });
-  head.append(name);
+  const del = el("button", "icon-btn area-del", "✕");
+  del.title = "Delete area";
+  del.addEventListener("click", () => {
+    if (confirm(`Delete area “${area.name}” and its goals?`))
+      goalsApi("DELETE", "/api/areas", { name: area.name });
+  });
+  head.append(name, del);
+
   const ns = el("input", "area-ns");
   ns.placeholder = "North Star…";
-  ns.value = a.northStar || "";
-  ns.addEventListener("change", () => goalsApi("PATCH", "/api/areas", { name: a.name, northStar: ns.value.trim() }));
-  head.append(ns);
-  card.append(head);
+  ns.value = area.northStar || "";
+  ns.addEventListener("change", () => goalsApi("PATCH", "/api/areas", { name: area.name, northStar: ns.value.trim() }));
+  card.append(head, ns);
 
-  // 1-year goals with roll-up badges.
-  (a.annuals || []).forEach((an) => card.append(annualLine(a, an)));
-  card.append(addBtn("+ 1-year goal", () =>
-    goalsApi("POST", "/api/goals/item", { area: a.name, parentId: "", section: "annual", text: "New 1-year goal", owner: "me" })));
+  const annual = el("div", "horizon");
+  annual.appendChild(el("div", "horizon-label", "1-YEAR"));
+  (area.annuals || []).forEach((an) => annual.appendChild(annualNode(an)));
+  annual.appendChild(addBtn("+ Add 1-year goal", () =>
+    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "annual", text: "New 1-year goal", owner: "me" })));
+  card.appendChild(annual);
 
-  const rocks = el("div", "cmd-rocks");
-  (a.rocks || []).forEach((r) => rocks.append(rockCard(a, r)));
-  rocks.append(addBtn("+ Rock", () =>
-    goalsApi("POST", "/api/goals/item", { area: a.name, parentId: "", section: "rock", text: "New Rock", owner: "me" })));
-  card.append(rocks);
+  const sec = el("div", "horizon");
+  sec.appendChild(el("div", "horizon-label", "ROCK → STAGE → TASK"));
+  (area.rocks || []).forEach((g) => sec.appendChild(goalNode(g, 0)));
+  sec.appendChild(addBtn("+ Add rock", () =>
+    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "rock", text: "New rock", owner: "me" })));
+  card.appendChild(sec);
   return card;
 }
 
-function annualLine(area, an) {
-  const row = el("div", "cmd-annual");
-  row.append(el("span", "cmd-annual-label", "1-YR"));
-  row.append(checkBtn(an));
-  const text = el("input", "goal-text" + (an.checked ? " done" : ""));
-  text.value = an.text;
-  text.addEventListener("change", () => {
-    const v = text.value.trim();
-    if (v && v !== an.text) goalsApi("PATCH", "/api/goals/item", { id: an.id, text: v });
-  });
-  row.append(text);
-  const total = (an.rollupActive || 0) + (an.rollupWon || 0) + (an.rollupLearn || 0);
-  row.append(el("span", "cmd-annual-badge", total ? `${total} Rocks · ${an.rollupWon || 0} won` : "no Rocks yet"));
-  row.append(delBtn(an));
-  return row;
-}
-
-function rockCard(area, rock) {
-  const card = el("div", "rock-card" + (rock.status ? " st-" + rock.status : ""));
-  const top = el("div", "rock-top");
-  const title = el("input", "rock-title" + (rock.checked ? " done" : ""));
-  title.value = rock.text;
-  title.addEventListener("change", () => {
-    const v = title.value.trim();
-    if (v && v !== rock.text) goalsApi("PATCH", "/api/goals/item", { id: rock.id, text: v });
-  });
-  top.append(title);
-  if (!rock.serves || !(rock.children || []).length) top.append(el("span", "rock-needs", "needs setup"));
-  top.append(statusChip(rock));
-  if (rock.moved) top.append(el("span", "rock-moved", "moved " + rock.moved.slice(5)));
-  const acts = el("span", "rock-acts");
-  acts.append(pillLight("Won", () => closeGoal(rock.id, "win")));
-  acts.append(pillLight("Drop", () => closeGoal(rock.id, "learn", prompt("Why drop it? (optional)") || "")));
-  top.append(acts);
-  card.append(top);
-
-  card.append(stageStepper(rock));
-
-  const cur = currentStage(rock);
-  const next = cur ? firstOpenTask(cur) : null;
-  const na = el("div", "rock-next");
-  if (next) { na.append(el("span", "na-label", "NEXT"), checkBtn(next), el("span", "na-text", next.text)); }
-  else if (cur) na.append(el("span", "na-muted", "Current stage has no open tasks — add one, or complete the stage."));
-  else na.append(el("span", "na-muted", "No stages yet — name the first stage below."));
-  card.append(na);
-
-  // Expandable editor for the full stage/task trail (reuses the depth renderer).
-  const details = el("details", "rock-details");
-  details.append(el("summary", null, "edit stages & tasks"));
-  const body = el("div", "rock-edit");
-  (rock.children || []).forEach((st) => body.append(goalNode(st, 1)));
-  body.append(addBtn("+ stage", () =>
-    goalsApi("POST", "/api/goals/item", { parentId: rock.id, text: "New stage", owner: "me" })));
-  if (rock.serves) body.append(el("div", "rock-serves-note", "serves " + rock.serves));
-  details.append(body);
-  card.append(details);
-  return card;
-}
-
-function statusChip(rock) {
-  const sel = document.createElement("select");
-  const cur = rock.status || "active";
-  sel.className = "rock-chip status status-" + cur;
-  ["active", "blocked", "at-risk"].forEach((o) => sel.appendChild(new Option(o, o)));
-  sel.value = cur;
-  sel.addEventListener("change", () =>
-    goalsApi("PATCH", "/api/goals/item", { id: rock.id, status: sel.value === "active" ? "" : sel.value }));
-  return sel;
-}
-
-function stageStepper(rock) {
-  const wrap = el("div", "stepper");
-  const stages = rock.children || [];
-  if (!stages.length) { wrap.append(el("span", "step-empty", "(no stages)")); return wrap; }
-  const curId = (currentStage(rock) || {}).id;
-  stages.forEach((s, i) => {
-    if (i) wrap.append(el("span", "step-sep", "→"));
-    let cls = "step " + (s.checked ? "done" : s.id === curId ? "current" : "future");
-    const chip = el("span", cls, (s.checked ? "✓ " : "") + s.text);
-    if (s.id === curId) { chip.title = "Complete this stage"; chip.addEventListener("click", () => completeStage(rock, s)); }
-    wrap.append(chip);
-  });
+// annualNode: one goal row per 1-year goal — no children, no rollups.
+function annualNode(g) {
+  const wrap = el("div", "goal-node depth-0");
+  const row = el("div", "goal-row");
+  row.append(checkBtn(g), goalText(g), ownerSelect(g), delBtn(g));
+  wrap.appendChild(row);
   return wrap;
 }
 
-async function completeStage(rock, stage) {
-  setSaveState("saving");
-  try {
-    await fetch("/api/goals/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: stage.id, checked: true }) });
-    const name = (prompt("Stage complete. Name the next stage (blank to skip):") || "").trim();
-    if (name) await fetch("/api/goals/item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId: rock.id, text: name, owner: "me" }) });
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
-  loadGoals();
-}
-
+// closeGoal moves a Rock to the quarter archive file via the close API.
 async function closeGoal(id, outcome, note) {
   setSaveState("saving");
   try {
     const r = await fetch("/api/goals/close", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, outcome, note: note || "" }) });
     if (!r.ok) throw new Error(await r.text());
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Close failed: " + (e.message || e)); }
+  } catch (e) { setSaveState("error"); alert("Archive failed: " + (e.message || e)); }
   loadGoals();
 }
 
-function pickFrom(title, items, onPick) { openPicker(title, [{ area: "", items }], onPick); }
-
-// addGoalFlow offers Quick capture (title + area) or Full setup (area → annual → stage).
-function addGoalFlow() {
-  const areas = (goalsCache && goalsCache.areas) || [];
-  if (!areas.length) { alert("Add an area first."); return; }
-  pickFrom("Add a goal", [
-    { id: "quick", text: "Quick capture — title + area" },
-    { id: "full", text: "Full setup — annual + first stage" },
-  ], (mode) => (mode === "full" ? fullSetup(areas) : quickCapture(areas)));
-}
-
-function quickCapture(areas) {
-  pickFrom("Quick capture — which area?", areas.map((a) => ({ id: a.name, text: a.name })), (area) => {
-    const title = (prompt("Rock title:") || "").trim();
-    if (title) goalsApi("POST", "/api/goals/item", { area, parentId: "", section: "rock", text: title, owner: "me" });
-  });
-}
-
-function fullSetup(areas) {
-  pickFrom("Full setup — which area?", areas.map((a) => ({ id: a.name, text: a.name })), (areaName) => {
-    const a = areas.find((x) => x.name === areaName);
-    const title = (prompt("Rock title:") || "").trim();
-    if (!title) return;
-    const proceed = (serves) => {
-      const stage = (prompt("First stage name (blank to skip):") || "").trim();
-      createRockFull(areaName, title, serves, stage);
-    };
-    const annuals = a.annuals || [];
-    if (annuals.length) {
-      pickFrom("Which 1-year goal does it serve?",
-        [{ id: "", text: "(none — needs setup)" }].concat(annuals.map((an) => ({ id: an.id, text: an.text }))), proceed);
-    } else proceed("");
-  });
-}
-
-async function createRockFull(area, title, serves, stage) {
-  setSaveState("saving");
-  try {
-    const view = await (await fetch("/api/goals/item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ area, parentId: "", section: "rock", text: title, owner: "me" }) })).json();
-    const av = (view.areas || []).find((x) => x.name === area);
-    const rock = av && av.rocks[av.rocks.length - 1];
-    if (rock) {
-      if (serves) await fetch("/api/goals/item", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: rock.id, serves }) });
-      if (stage) await fetch("/api/goals/item", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parentId: rock.id, text: stage, owner: "me" }) });
-    }
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Setup failed: " + (e.message || e)); }
-  loadGoals();
-}
-
-function renderYear(areas) {
-  const host = els.gp_year;
-  host.innerHTML = "";
-  let any = false;
-  areas.forEach((a) => (a.annuals || []).forEach((an) => {
-    any = true;
-    const card = el("div", "year-card");
-    card.append(el("div", "year-annual", a.name + " · " + an.text));
-    card.append(el("span", "cmd-annual-badge", `${an.rollupActive || 0} active · ${an.rollupWon || 0} won · ${an.rollupLearn || 0} learn`));
-    (a.rocks || []).filter((r) => r.serves === an.id).forEach((r) =>
-      card.append(el("div", "year-rock", "• " + r.text + (r.status ? "  [" + r.status + "]" : ""))));
-    host.append(card);
-  }));
-  if (!any) host.appendChild(emptyRow("No 1-year goals yet — add some in the Command view."));
-}
-
-// ---- Quarterly review (§7): Win/Learn/Carry per Rock + retro + next-quarter drafting ----
-function renderReview(areas) {
-  const host = els.gp_review;
-  host.innerHTML = "";
-  const q = (areas.flatMap((a) => a.rocks || []).find((r) => r.quarter) || {}).quarter || "";
-  const activeRocks = areas.reduce((n, a) => n + (a.rocks || []).length, 0);
-  host.append(el("div", "review-head", "Quarterly review" + (q ? " · " + q : "") + " · " + activeRocks + " active Rocks"));
-  if (activeRocks > 5) host.append(el("div", "soft-focus", `${activeRocks} active Rocks — consider deferring some (aim for ~5).`));
-
-  areas.forEach((a) => {
-    if (!(a.rocks || []).length && !(a.annuals || []).length) return;
-    const sec = el("div", "review-area");
-    sec.append(el("div", "review-area-name", a.name));
-    (a.rocks || []).forEach((r) => {
-      const row = el("div", "review-rock");
-      const tip = currentStage(r);
-      row.append(el("span", "review-rock-title", r.text));
-      row.append(el("span", "review-rock-stage", tip ? "@ " + tip.text : "(no stage)"));
-      const acts = el("span", "rock-acts");
-      acts.append(pillLight("Won", () => closeGoal(r.id, "win")));
-      acts.append(pillLight("Learn", () => closeGoal(r.id, "learn", prompt("What did you learn / why drop it? (optional)") || "")));
-      acts.append(pillLight("Carry →", () => carryGoal(r.id)));
-      row.append(acts);
-      sec.append(row);
-    });
-    (a.annuals || []).forEach((an) =>
-      sec.append(addBtn("+ draft Rock for “" + an.text.slice(0, 42) + "”", () => {
-        const title = (prompt("New Rock (serves: " + an.text + "):") || "").trim();
-        if (title) createRockFull(a.name, title, an.id, "");
-      })));
-    host.append(sec);
-  });
-
-  const retro = el("div", "review-retro");
-  retro.append(el("div", "review-area-name", "Retro — Start / Stop / Keep (optional)"));
-  const start = retroField("Start doing…"), stop = retroField("Stop doing…"), keep = retroField("Keep doing…");
-  retro.append(start.wrap, stop.wrap, keep.wrap);
-  retro.append(pill("Save retro", () => saveRetro(start.ta.value, stop.ta.value, keep.ta.value)));
-  host.append(retro);
-}
-
-function retroField(placeholder) {
-  const wrap = el("div", "retro-field");
-  const ta = document.createElement("textarea");
-  ta.className = "retro-ta";
-  ta.placeholder = placeholder;
-  ta.rows = 2;
-  wrap.append(ta);
-  return { wrap, ta };
-}
-
-async function carryGoal(id) {
-  setSaveState("saving");
-  try {
-    const r = await fetch("/api/goals/carry", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    if (!r.ok) throw new Error(await r.text());
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Carry failed: " + (e.message || e)); }
-  loadGoals();
-}
-
-async function saveRetro(start, stop, keep) {
-  setSaveState("saving");
-  try {
-    const r = await fetch("/api/goals/retro", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ start, stop, keep }) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error("retro save failed");
-    setSaveState("saved");
-    alert("Retro saved to “goals " + (j.quarter || "") + " review.md”.");
-  } catch (e) { setSaveState("error"); alert("Retro save failed."); }
-}
-
-function renderHistory(quarters) {
-  const host = els.gp_history;
-  host.innerHTML = "";
-  if (!quarters.length) { host.appendChild(emptyRow("No closed goals yet — Won/dropped Rocks archive here by quarter.")); return; }
-  quarters.forEach((q) => {
-    const card = el("div", "hist-card");
-    const pct = Math.round((q.winRate || 0) * 100);
-    card.append(el("div", "hist-head", `${q.quarter} — ${q.wins} won · ${q.learns} learned · ${pct}% win`));
-    (q.entries || []).forEach((e) => {
-      const row = el("div", "hist-row " + (e.outcome === "win" ? "win" : "learn"));
-      row.append(el("span", "hist-outcome", e.outcome === "win" ? "WON" : "LEARN"));
-      row.append(el("span", "hist-text", (e.area ? e.area + " · " : "") + e.text));
-      if (e.reached) row.append(el("span", "hist-reached", "reached: " + e.reached));
-      card.append(row);
-    });
-    host.append(card);
-  });
-}
-
-// addBtn is a small "+ …" add button wired to onClick.
-function addBtn(label, onClick) {
-  const b = el("button", "add-btn add-goal", label);
+// addBtn is a small "+ …" add button wired to onClick. Child adds inside the
+// cascade pass "add-child" for the compact inline style.
+function addBtn(label, onClick, cls) {
+  const b = el("button", "add-btn " + (cls || "add-goal"), label);
   b.addEventListener("click", onClick);
   return b;
 }
@@ -1034,7 +765,7 @@ function goalNode(g, depth) {
         parentId: g.id,
         text: depth === 0 ? "New stage" : "New task",
         owner: depth === 0 ? "me" : "",
-      })));
+      }), "add-child"));
   }
   wrap.appendChild(kids);
   return wrap;
@@ -1042,24 +773,35 @@ function goalNode(g, depth) {
 
 function goalRow(g, depth) {
   const row = el("div", "goal-row");
-  row.append(checkBtn(g), goalText(g));
-
-  if (depth === 0) { // Rock: quarter / serves / status
-    if (g.quarter) row.append(el("span", "rock-chip quarter", g.quarter));
-    if (g.serves) row.append(el("span", "rock-chip serves", "↑ " + g.serves));
-    const status = document.createElement("select");
-    const cur = g.status || "active";
-    status.className = "rock-chip status status-" + cur;
-    ["active", "blocked", "at-risk"].forEach((o) => status.appendChild(new Option(o, o)));
-    status.value = cur;
-    status.addEventListener("change", () =>
-      goalsApi("PATCH", "/api/goals/item", { id: g.id, status: status.value === "active" ? "" : status.value }));
-    row.append(status);
-  }
+  row.append(depth === 0 ? rockCheckBtn(g) : checkBtn(g), goalText(g));
   if (depth < 2) row.append(ownerSelect(g)); // Rock or stage carries an owner
-
+  if (depth === 0) row.append(archiveBtn(g));
   row.append(delBtn(g));
   return row;
+}
+
+// Checking a Rock completes it: confirm, then close it out — the server records
+// the outcome and moves it to the quarter archive file. Unchecking stays a plain
+// uncheck (a Rock checked by hand in markdown but not yet closed).
+function rockCheckBtn(g) {
+  const b = el("button", "check" + (g.checked ? " on" : ""), g.checked ? "✓" : "○");
+  b.addEventListener("click", () => {
+    if (g.checked) return goalsApi("POST", "/api/goals/check", { id: g.id, checked: false });
+    if (confirm(`Archive “${g.text}”?`)) closeGoal(g.id, "win", "");
+  });
+  return b;
+}
+
+// archive: close a Rock without completing it (outcome:: learn). The prompt
+// doubles as the confirm — cancel aborts, OK archives; the note is optional.
+function archiveBtn(g) {
+  const b = el("button", "goal-archive", "archive");
+  b.title = "Archive without completing";
+  b.addEventListener("click", () => {
+    const note = prompt(`Archive “${g.text}”? Optional note:`);
+    if (note !== null) closeGoal(g.id, "learn", note.trim());
+  });
+  return b;
 }
 
 // ----- shared goal-row cells -----
@@ -1127,11 +869,6 @@ function closePicker() { els.pickerModal.hidden = true; }
 if (els.addArea) els.addArea.addEventListener("click", () => {
   const name = prompt("New area name:");
   if (name && name.trim()) goalsApi("POST", "/api/areas", { name: name.trim() });
-});
-if (els.goalsAddBtn) els.goalsAddBtn.addEventListener("click", addGoalFlow);
-if (els.goalsSubnav) els.goalsSubnav.addEventListener("click", (e) => {
-  const b = e.target.closest(".gtab");
-  if (b) setGoalsTab(b.dataset.gtab);
 });
 
 els.pickerClose.addEventListener("click", closePicker);

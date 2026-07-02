@@ -317,125 +317,20 @@ body {
 }
 .ro-row.empty { color: var(--muted); font-style: italic; }
 
-/* ---- goals page (command center) ---- */
+/* ---- goals page ---- */
 .goals-page {
   display: block;
   max-width: 1180px;
   margin: 8px auto 64px;
   padding: 0 28px;
 }
-.goals-subnav { display: inline-flex; gap: 4px; margin-left: 18px; }
-.gtab {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; color: var(--muted);
-  background: none; border: none; cursor: pointer; padding: 4px 8px; border-radius: 6px;
-}
-.gtab:hover { color: var(--text); }
-.gtab.active { color: var(--blue); background: var(--streak-bg); }
-.soft-focus {
-  font-family: var(--mono); font-size: 12px; color: #a15c00;
-  background: #fdf6ea; border: 1px solid #e7c58a; border-radius: var(--radius);
-  padding: 7px 12px; margin: 10px 0;
-}
-.goals-panel { animation: fadein 0.12s ease; }
-.cmd-area { margin: 22px 0 26px; }
-.cmd-area-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 8px; flex-wrap: wrap; }
-.cmd-area-head .area-name {
-  border: none; background: transparent; font-family: var(--sans); font-weight: 600;
-  font-size: 19px; color: var(--text); outline: none; padding: 0;
-}
-.cmd-area-head .area-ns {
-  flex: 1; min-width: 160px; border: none; background: transparent; font-style: italic;
-  font-family: var(--sans); font-size: 13.5px; color: var(--muted); outline: none;
-}
-.cmd-annual { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
-.cmd-annual-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; color: var(--muted); }
-.cmd-annual .goal-text { flex: 1; font-size: 15px; }
-.cmd-annual-badge {
-  font-family: var(--mono); font-size: 11px; color: var(--blue);
-  border: 1px solid var(--blue-soft); border-radius: 14px; padding: 2px 9px; white-space: nowrap;
-}
-.cmd-rocks { margin-top: 10px; }
-.rock-card {
-  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 10px 0;
-  background: var(--bg);
-}
-.rock-card.st-blocked { border-color: #f0c9c4; }
-.rock-card.st-at-risk { border-color: #e7c58a; }
-.rock-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.rock-title {
-  flex: 1; min-width: 140px; border: none; background: transparent; font-family: var(--sans);
-  font-size: 16px; font-weight: 550; color: var(--text); outline: none; padding: 2px 0;
-}
-.rock-title.done { text-decoration: line-through; color: var(--muted); }
-.rock-needs {
-  font-family: var(--mono); font-size: 10px; color: #a15c00; background: #fdf6ea;
-  border: 1px solid #e7c58a; border-radius: 10px; padding: 2px 7px;
-}
-.rock-moved { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.rock-acts { display: inline-flex; gap: 6px; }
-.stepper { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 9px 0 4px; }
-.step {
-  font-family: var(--mono); font-size: 11.5px; border-radius: 12px; padding: 3px 9px;
-  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
-}
-.step.done { color: var(--blue); border-color: var(--blue-soft); }
-.step.current { color: #fff; background: var(--blue); border-color: var(--blue); cursor: pointer; }
-.step.future { opacity: 0.7; }
-.step-sep { color: var(--muted); font-size: 11px; }
-.step-empty { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
-.rock-next { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
-.na-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; color: var(--blue); }
-.na-text { font-size: 14.5px; color: var(--text); }
-.na-muted { font-size: 13px; color: var(--muted); font-style: italic; }
-.rock-details { margin-top: 8px; }
-.rock-details summary { font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer; }
-.rock-edit { padding: 6px 0 2px 6px; border-left: 2px solid var(--line); margin-top: 6px; }
-.rock-serves-note { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 4px; }
-.year-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
-.year-annual { font-family: var(--sans); font-weight: 600; font-size: 15px; margin-bottom: 4px; }
-.year-rock { font-size: 14px; color: var(--text); padding: 2px 0 2px 6px; }
-.hist-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 10px 0; }
-.hist-head { font-family: var(--mono); font-size: 12.5px; color: var(--text); margin-bottom: 8px; }
-.hist-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
-.hist-outcome {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; border-radius: 10px;
-  padding: 2px 7px; border: 1px solid var(--line);
-}
-.hist-row.win .hist-outcome { color: var(--blue); border-color: var(--blue-soft); }
-.hist-row.learn .hist-outcome { color: var(--muted); }
-.hist-text { flex: 1; font-size: 14px; }
-.hist-reached { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-/* Quarterly review (§7) */
-.review-head { font-family: var(--mono); font-size: 12.5px; color: var(--text); margin: 6px 0 12px; }
-.review-area { margin: 16px 0; }
-.review-area-name { font-family: var(--sans); font-weight: 600; font-size: 15px; margin-bottom: 6px; }
-.review-rock {
-  display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line);
-}
-.review-rock-title { flex: 1; font-size: 14.5px; color: var(--text); }
-.review-rock-stage { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
-.review-retro { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
-.retro-field { margin: 6px 0; }
-.retro-ta {
-  width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 7px 10px; font-family: var(--sans); font-size: 14px;
-  color: var(--text); background: var(--bg); outline: none;
-}
-.retro-ta:focus { border-color: var(--blue-soft); }
 
-.plate-col { align-self: start; position: sticky; top: 16px; }
-.plate-rows { display: flex; flex-direction: column; gap: 4px; }
+/* group headers inside the picker modal */
 .plate-area {
   font-family: var(--mono); font-size: 12px; letter-spacing: 0.32px;
   color: var(--ink); margin-top: 14px; margin-bottom: 4px;
 }
 .plate-area:first-child { margin-top: 0; }
-.plate-item {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  padding: 7px 0; border-bottom: 1px solid var(--line);
-}
-.plate-text { font-family: var(--sans); font-size: 15px; color: var(--text); }
-.plate-due { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
 
 /* ---- area cards ---- */
 .area-card {
@@ -483,20 +378,13 @@ body {
   font-family: var(--sans); font-size: 16px; letter-spacing: 0.4px;
   color: var(--text); outline: none; padding: 4px 0; min-width: 0;
 }
-/* Rock metadata chips (quarter · serves · status). */
-.rock-chip {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
-  border: 1px solid var(--line); border-radius: 16px;
-  padding: 3px 8px; background: var(--bg); color: var(--streak-ink);
-  white-space: nowrap; -webkit-appearance: none; appearance: none;
-}
-.rock-chip.quarter { color: var(--muted); }
-.rock-chip.serves { color: var(--blue); border-color: var(--blue-soft); }
-.rock-chip.status { cursor: pointer; }
-.rock-chip.status.status-blocked { color: #b42318; border-color: #f0c9c4; background: #fdf3f2; }
-.rock-chip.status.status-at-risk { color: #a15c00; border-color: #e7c58a; background: #fdf6ea; }
-.goal-node.annual .goal-row { border-bottom-style: dashed; }
 .goal-text.done { text-decoration: line-through; color: var(--blue); }
+.goal-archive {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
+  color: var(--muted); background: transparent; border: none;
+  cursor: pointer; padding: 2px 4px; white-space: nowrap;
+}
+.goal-archive:hover { color: var(--blue); }
 .owner-chip {
   font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
   border: 1px solid var(--line); border-radius: 16px;
@@ -505,12 +393,6 @@ body {
 }
 .owner-chip.owner-team { color: var(--muted); background: var(--streak-bg); }
 .owner-chip.owner-other { color: var(--blue); border-color: var(--blue-soft); }
-.due-pick {
-  font-family: var(--mono); font-size: 11.5px; color: var(--muted);
-  border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 3px 6px; background: var(--bg); outline: none; cursor: pointer;
-}
-.due-pick.set { color: var(--blue); border-color: var(--blue-soft); }
 .add-goal { margin-top: 8px; }
 
 /* ---- calendar (month view) ---- */
