@@ -54,7 +54,7 @@ func defaultConfig() Config {
 		DailyNoteFormat: "2006-01-02",
 		PeriodNoteDir:   "Manifest",
 		GoalsFileName:   "goals.md",
-		SkipDirs:        []string{".git", ".obsidian", ".trash", "attachments", "Agents"},
+		SkipDirs:        []string{".git", ".obsidian", ".trash", "attachments", "Agents", "excalibur"},
 		ScheduleStart:   8,
 		ScheduleEnd:     18,
 		Port:            7777,
