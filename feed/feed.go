@@ -97,7 +97,16 @@ func (s *Store) List(f Filter, now time.Time) []Item {
 		}
 		out = append(out, it)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Date > out[j].Date })
+	// digest items pin to the top while new (the EA waiting-on digest), then
+	// everything else newest-first.
+	sort.Slice(out, func(i, j int) bool {
+		pi := out[i].Type == "digest" && out[i].Status == "new"
+		pj := out[j].Type == "digest" && out[j].Status == "new"
+		if pi != pj {
+			return pi
+		}
+		return out[i].Date > out[j].Date
+	})
 	return out
 }
 

@@ -84,6 +84,41 @@ func ExtractJSONArray(raw string) (string, bool) {
 	return "", false
 }
 
+// ExtractFencedBlock returns the content of the FIRST fenced code block whose
+// info string equals lang — e.g. ExtractFencedBlock(body, "proposed") for the
+// ````proposed … ```` payload the write_approval cast emits. Fences may open
+// with 3 or more backticks; a block opened with N backticks is closed only by a
+// line of N-or-more backticks, so ordinary 3-backtick fences nested inside a
+// 4-backtick `proposed` block never close it early. Returns the block's inner
+// text (fence lines excluded) and whether such a block was found.
+func ExtractFencedBlock(raw, lang string) (string, bool) {
+	lines := strings.Split(raw, "\n")
+	for i := 0; i < len(lines); i++ {
+		n := countLeadingBackticks(lines[i])
+		if n < 3 || strings.TrimSpace(lines[i][n:]) != lang {
+			continue
+		}
+		var body []string
+		for j := i + 1; j < len(lines); j++ {
+			m := countLeadingBackticks(lines[j])
+			if m >= n && strings.TrimSpace(lines[j]) == strings.Repeat("`", m) {
+				return strings.Join(body, "\n"), true // matched closing fence
+			}
+			body = append(body, lines[j])
+		}
+		return strings.Join(body, "\n"), true // opener with no closer — tolerate
+	}
+	return "", false
+}
+
+func countLeadingBackticks(s string) int {
+	n := 0
+	for n < len(s) && s[n] == '`' {
+		n++
+	}
+	return n
+}
+
 // Writer builds a `---`-delimited frontmatter document with ordered fields plus a
 // body, mirroring the marshalApproval style. Ordered (not a map) so serialized
 // files are stable and diff-friendly.

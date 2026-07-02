@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"manifest/approvals"
 	"manifest/feed"
 )
 
@@ -154,10 +155,27 @@ func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, map[string]any{"pending": []any{}, "counts": map[string]int{}})
 		return
 	}
-	writeJSON(w, map[string]any{
-		"pending": s.approvals.List("pending"),
-		"counts":  s.approvals.Counts(),
-	})
+	// Actionable proposals (apply-path set) also carry the target's CURRENT
+	// content and whether the path is in the allow-list, so the UI can render a
+	// current-vs-proposed diff and disable Confirm on an out-of-list payload.
+	type row struct {
+		approvals.Proposal
+		Allowed bool   `json:"allowed"`
+		Current string `json:"current"`
+	}
+	pending := s.approvals.List("pending")
+	rows := make([]row, 0, len(pending))
+	for _, p := range pending {
+		rr := row{Proposal: p}
+		if p.ApplyPath != "" {
+			rr.Allowed = approvals.ApplyPathAllowed(p.ApplyPath)
+			if cur, ok := s.approvals.CurrentContent(p); ok {
+				rr.Current = cur
+			}
+		}
+		rows = append(rows, rr)
+	}
+	writeJSON(w, map[string]any{"pending": rows, "counts": s.approvals.Counts()})
 }
 
 func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Request) {

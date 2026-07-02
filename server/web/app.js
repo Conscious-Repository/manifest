@@ -1121,8 +1121,10 @@ function renderSpiritFeed() {
   items.forEach((it) => host.appendChild(spiritFeedCard(it)));
 }
 function spiritFeedCard(it) {
-  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : ""));
+  const pinned = it.type === "digest" && it.status === "new";
+  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") + (pinned ? " pinned" : ""));
   const top = el("div", "feed-top");
+  if (pinned) top.append(el("span", "pin-chip", "📌 pinned"));
   top.append(el("span", "type-chip type-" + it.type, it.type));
   const title = it.link ? linkEl(it.title, it.link) : el("span", null, it.title);
   title.classList.add("feed-title");
@@ -1310,14 +1312,95 @@ function spiritApprovalCard(a) {
   head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
   card.append(head);
   if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
-  if (a.body) { const b = el("pre", "appr-body"); b.textContent = a.body; card.append(b); }
+
+  const actionable = !!a.applyPath;
+  // For an actionable proposal the ````proposed payload is rendered as a diff
+  // below, so strip it from the human-facing evidence body.
+  const bodyText = actionable ? stripProposedFence(a.body) : a.body;
+  if (bodyText && bodyText.trim()) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
+
+  let blocked = false, blockMsg = "";
+  if (actionable) {
+    card.classList.add("actionable");
+    const chip = el("div", "appr-apply");
+    chip.append(el("span", "appr-apply-label", "APPLIES TO"), el("code", "appr-apply-path", a.applyPath));
+    card.append(chip);
+
+    if (!a.allowed) {
+      blocked = true;
+      blockMsg = "apply-path is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md) — Confirm is disabled.";
+    } else if (/\/cornerstone\.md$/.test(a.applyPath) && frontmatterOf(a.current || "") !== frontmatterOf(a.proposed || "")) {
+      // client-side mirror of the server's cornerstone-frontmatter guard
+      blocked = true;
+      blockMsg = "proposed content changes the cornerstone frontmatter — Confirm will refuse (behavior prose only).";
+    }
+
+    card.append(el("div", "appr-diff-label", "Proposed change  ·  current → proposed"));
+    card.append(renderLineDiff(a.current || "", a.proposed || ""));
+  }
+  if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
+
   const actions = el("div", "appr-actions");
-  actions.append(
-    pill("Confirm", () => spiritApprovalAct(a.id, "confirm")),
-    pillLight("Reject", () => spiritApprovalAct(a.id, "reject")),
-  );
+  const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm", () => spiritApprovalAct(a.id, "confirm"));
+  if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
+  actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
   card.append(actions);
   return card;
+}
+
+// stripProposedFence removes the ````proposed … ```` block from an approval body
+// (it is shown as a diff instead). Handles 3+ backtick fences like the server.
+function stripProposedFence(body) {
+  if (!body) return body || "";
+  const lines = body.split("\n"), out = [];
+  let skipping = false, fence = 0;
+  for (const line of lines) {
+    const m = line.match(/^(`{3,})/);
+    if (!skipping) {
+      if (m && line.slice(m[1].length).trim() === "proposed") { skipping = true; fence = m[1].length; continue; }
+      out.push(line);
+    } else if (m && m[1].length >= fence && line.trim() === m[1]) {
+      skipping = false;
+    }
+  }
+  return out.join("\n").trim();
+}
+
+// frontmatterOf returns the raw text between the leading `---` fences (mirrors
+// the server's rawFrontmatter), for the client-side cornerstone guard.
+function frontmatterOf(text) {
+  if (!text.startsWith("---\n")) return "";
+  const idx = text.indexOf("\n---");
+  return idx < 0 ? "" : text.slice(4, idx);
+}
+
+// renderLineDiff builds a compact LCS line diff (full-file replacement) as a
+// scrollable block of +/−/context rows.
+function renderLineDiff(oldText, newText) {
+  const a = oldText.split("\n"), b = newText.split("\n");
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const wrap = el("div", "appr-diff");
+  let i = 0, j = 0, changed = false;
+  const push = (kind, text) => {
+    const row = el("div", "diff-line diff-" + kind);
+    row.append(el("span", "diff-gutter", kind === "add" ? "+" : kind === "del" ? "−" : " "));
+    row.append(el("span", "diff-text", text === "" ? " " : text));
+    wrap.append(row);
+    if (kind !== "ctx") changed = true;
+  };
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { push("ctx", a[i]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { push("del", a[i]); i++; }
+    else { push("add", b[j]); j++; }
+  }
+  while (i < n) push("del", a[i++]);
+  while (j < m) push("add", b[j++]);
+  if (!changed) wrap.append(el("div", "diff-line diff-ctx", "(no textual change)"));
+  return wrap;
 }
 async function spiritApprovalAct(id, kind) {
   let body = {};
