@@ -15,5 +15,10 @@ google_token.json
 /app/app
 /app/manifest
 
+# Local-only working material — repo is public, only /app is shared
+/context/
+/plans/
+/.claude/
+
 # OS cruft
 .DS_Store
