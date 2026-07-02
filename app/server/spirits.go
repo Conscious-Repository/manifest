@@ -188,6 +188,104 @@ func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// RITUALS board — every ritual across spirits with computed next-fire, last
+// outcome, ceiling, and validity (plans/spirits-console-upgrade.md §1).
+func (s *Server) handleSpiritsRituals(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		writeJSON(w, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, map[string]any{"data": s.spirits.Rituals(time.Now())})
+}
+
+// handleSpiritsFileGet / Put — the raw markdown editor over the allow-listed
+// harness config files (§2). Paths off the allow-list 404; PUT lints and blocks
+// hard breakage (422) while letting warnings through.
+func (s *Server) handleSpiritsFileGet(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	content, allowed, err := s.spirits.ReadFile(r.URL.Query().Get("path"))
+	if !allowed {
+		http.Error(w, "path not editable", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]any{"path": r.URL.Query().Get("path"), "content": content})
+}
+
+func (s *Server) handleSpiritsFilePut(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Content string `json:"content"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	res, allowed, err := s.spirits.WriteFile(r.URL.Query().Get("path"), b.Content)
+	if !allowed {
+		http.Error(w, "path not editable", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if !res.OK {
+		w.WriteHeader(http.StatusUnprocessableEntity) // lint blocked the save
+	}
+	writeJSON(w, res)
+}
+
+// handleSpiritsNewRitual / NewSpirit — quick create (§3).
+func (s *Server) handleSpiritsNewRitual(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Spirit string `json:"spirit"`
+		Name   string `json:"name"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	path, err := s.spirits.ScaffoldRitual(b.Spirit, b.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"path": path})
+}
+
+func (s *Server) handleSpiritsNewSpirit(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Name string `json:"name"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.spirits.ScaffoldSpirit(b.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"path": "spirits/" + b.Name + "/cornerstone.md"})
+}
+
 func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 	if s.spirits == nil {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)

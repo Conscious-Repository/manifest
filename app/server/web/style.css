@@ -766,3 +766,33 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .run-report { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
 .run-report.prompt { background: #fbfcff; border: 1px solid var(--blue-soft); }
 .run-prompts { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---- SPIRITS: RITUALS board + markdown editor ---- */
+.ritual-board { display: flex; flex-direction: column; gap: 2px; }
+.ritual-spirit-head { display: flex; align-items: baseline; gap: 10px; margin: 14px 0 4px; }
+.ritual-spirit-name { font-family: var(--mono); font-size: 12px; letter-spacing: 0.3px; color: var(--ink); background: none; border: none; cursor: pointer; padding: 0; text-transform: uppercase; }
+.ritual-spirit-name:hover { color: var(--blue); }
+.ritual-row { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr auto; align-items: baseline; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.ritual-row:hover { background: var(--hover); }
+.ritual-row.invalid { border-color: #eec3c3; background: #fdf6f6; }
+.ritual-name { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+.ritual-cadence { display: flex; flex-direction: column; gap: 1px; }
+.cad-human { font-size: 13px; color: var(--text); }
+.cad-raw { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.ritual-next { font-size: 13px; color: var(--ink); }
+.next-rel { color: var(--muted); font-size: 11.5px; }
+.ritual-outcome .run-outcome { cursor: default; }
+.run-outcome.linky { cursor: pointer; } .run-outcome.linky:hover { border-color: var(--blue); }
+.oc-never, .oc-invalid { color: var(--muted); border-color: var(--line); }
+.oc-invalid { color: #b91c1c; border-color: #eec3c3; }
+.ritual-ceiling { font-family: var(--mono); font-size: 12px; color: var(--text); text-align: right; }
+.ritual-ceiling.muted { color: var(--muted); }
+.ritual-error { grid-column: 1 / -1; font-family: var(--mono); font-size: 11px; color: #b91c1c; margin-top: 2px; }
+.editor-tabs { display: flex; gap: 4px; margin-right: auto; }
+.editor-tab { font-family: var(--mono); font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px; cursor: pointer; }
+.editor-tab.active { color: var(--ink); border-color: var(--blue-soft); background: var(--streak-bg); }
+.editor-dirty { font-family: var(--mono); font-size: 11px; color: #b45309; margin-right: 8px; }
+.editor-area { width: 100%; min-height: 340px; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--text); background: var(--streak-bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; resize: vertical; box-sizing: border-box; white-space: pre; overflow-wrap: normal; }
+.editor-lint { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-family: var(--mono); font-size: 11.5px; }
+.editor-lint.lint-ok { color: #15803d; }
+.lint-err { color: #b91c1c; } .lint-warn { color: #b45309; } .lint-note { color: var(--muted); }

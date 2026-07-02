@@ -83,6 +83,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/confirm", s.handleSpiritsApprovalConfirm)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
+	// RITUALS board + in-app markdown editing (spirits-console-upgrade).
+	mux.HandleFunc("GET /api/spirits/rituals", s.handleSpiritsRituals)
+	mux.HandleFunc("GET /api/spirits/file", s.handleSpiritsFileGet)
+	mux.HandleFunc("PUT /api/spirits/file", s.handleSpiritsFilePut)
+	mux.HandleFunc("POST /api/spirits/ritual", s.handleSpiritsNewRitual)
+	mux.HandleFunc("POST /api/spirits/spirit", s.handleSpiritsNewSpirit)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {

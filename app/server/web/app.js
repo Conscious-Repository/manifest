@@ -36,6 +36,17 @@ const els = {
   sp_approvals: document.getElementById("sp-approvals"),
   spiritApprovalList: document.getElementById("spiritApprovalList"),
   spiritApprBadge: document.getElementById("spiritApprBadge"),
+  sp_rituals: document.getElementById("sp-rituals"),
+  spiritRitualBoard: document.getElementById("spiritRitualBoard"),
+  spiritNewSpirit: document.getElementById("spiritNewSpirit"),
+  spiritEditChargebook: document.getElementById("spiritEditChargebook"),
+  spiritEditor: document.getElementById("spiritEditor"),
+  spiritEditorTabs: document.getElementById("spiritEditorTabs"),
+  spiritEditorDirty: document.getElementById("spiritEditorDirty"),
+  spiritEditorSave: document.getElementById("spiritEditorSave"),
+  spiritEditorClose: document.getElementById("spiritEditorClose"),
+  spiritEditorLint: document.getElementById("spiritEditorLint"),
+  spiritEditorArea: document.getElementById("spiritEditorArea"),
   calGrid: document.getElementById("calGrid"),
   calMonthLabel: document.getElementById("calMonthLabel"),
   calConnect: document.getElementById("calConnect"),
@@ -1054,7 +1065,7 @@ function fmtWhen(iso) {
 // The dashboard reads the sibling excalibur tree (feed, run reports, prompts)
 // and records the user's keep/discard/snooze; the ENGINE owns execution — the
 // only write toward it is a spooled run-now request it picks up on its own.
-const SPIRIT_TABS = ["feed", "runs", "approvals"];
+const SPIRIT_TABS = ["feed", "runs", "rituals", "approvals"];
 let spiritStatusCache = null;
 let spiritFeedCache = [];
 let spiritRunsCache = [];
@@ -1066,6 +1077,7 @@ function showSpirits() {
   loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
   if (tab === "feed") loadSpiritFeed();
   else if (tab === "runs") loadSpiritRuns();
+  else if (tab === "rituals") loadSpiritRituals();
   else if (tab === "approvals") loadSpiritApprovals();
   refreshSpiritApprovalBadge();
 }
@@ -1329,6 +1341,180 @@ async function refreshSpiritApprovalBadge() {
 
 if (els.spiritRunNowBtn) els.spiritRunNowBtn.addEventListener("click", spiritRunNow);
 if (els.spiritAskBtn) els.spiritAskBtn.addEventListener("click", spiritAskScout);
+
+// ---- RITUALS board + in-app markdown editing ----
+// The board reads every ritual (next-fire, last outcome, ceiling, validity);
+// clicking a row opens the raw markdown editor. Edits round-trip to the
+// excalibur tree via /api/spirits/file (allow-listed); the engine hot-reloads.
+async function loadSpiritRituals() {
+  let rows = [];
+  try { rows = (await (await fetch("/api/spirits/rituals")).json()).data || []; } catch (e) {}
+  renderSpiritRituals(rows);
+}
+function renderSpiritRituals(rows) {
+  const host = els.spiritRitualBoard; host.innerHTML = "";
+  if (!rows.length) { host.appendChild(emptyRow("No rituals yet — add a spirit, then a ritual.")); return; }
+  // group by spirit
+  const bySpirit = {};
+  rows.forEach((r) => { (bySpirit[r.spirit] ||= []).push(r); });
+  Object.keys(bySpirit).sort().forEach((sp) => {
+    const head = el("div", "ritual-spirit-head");
+    const name = el("button", "ritual-spirit-name", sp);
+    name.title = "Edit " + sp + "'s identity + cornerstone";
+    name.onclick = () => openSpiritEditor(sp);
+    const addBtn = pillLight("+ ritual", () => newRitual(sp));
+    head.append(name, addBtn);
+    host.append(head);
+    bySpirit[sp].forEach((r) => host.append(ritualRow(r)));
+  });
+}
+function ritualRow(r) {
+  const row = el("div", "ritual-row" + (r.valid ? "" : " invalid"));
+  row.append(el("span", "ritual-name", r.ritual));
+  // cadence: human + raw
+  const cad = el("span", "ritual-cadence");
+  cad.append(el("span", "cad-human", r.cadenceHuman || "—"));
+  if (r.cadence && r.cadenceHuman !== r.cadence) cad.append(el("span", "cad-raw", r.cadence));
+  row.append(cad);
+  // next fire — headline
+  const next = el("span", "ritual-next");
+  if (!r.valid) next.textContent = "—";
+  else if (r.nextFire) { next.textContent = fmtWhen(r.nextFire); next.append(el("span", "next-rel", relFuture(r.nextFire))); }
+  else next.textContent = "—";
+  row.append(next);
+  // last outcome chip → run report
+  const oc = el("span", "ritual-outcome");
+  if (!r.valid) {
+    const chip = el("span", "run-outcome oc-invalid", "invalid");
+    chip.title = r.error || "invalid frontmatter";
+    oc.append(chip);
+  } else if (r.lastOutcome) {
+    const chip = el("span", "run-outcome oc-" + r.lastOutcome.replace(/[^a-z-]/g, ""), r.lastOutcome);
+    if (r.lastRunId) { chip.classList.add("linky"); chip.onclick = (e) => { e.stopPropagation(); location.hash = "#/spirits/runs"; setTimeout(() => openSpiritRun(r.lastRunId), 150); }; }
+    oc.append(chip);
+  } else {
+    oc.append(el("span", "run-outcome oc-never", "never run"));
+  }
+  row.append(oc);
+  // ceiling
+  const ceil = el("span", "ritual-ceiling" + (r.ceilingDefault ? " muted" : ""), "$" + Number(r.ceilingUsd).toFixed(2));
+  ceil.title = r.ceilingDefault ? "chargebook default" : "ritual charge_usd";
+  row.append(ceil);
+  if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
+  row.onclick = () => openEditor([r.path]);
+  return row;
+}
+// relFuture: "in 9h" / "in 3d" / "now"
+function relFuture(iso) {
+  const d = new Date(iso), ms = d - new Date();
+  if (isNaN(d)) return "";
+  if (ms <= 0) return " · due";
+  const m = Math.round(ms / 60000);
+  if (m < 60) return " · in " + m + "m";
+  const h = Math.round(m / 60);
+  if (h < 48) return " · in " + h + "h";
+  return " · in " + Math.round(h / 24) + "d";
+}
+
+// ---- markdown editor drawer (rituals / identity / cornerstone / chargebook) ----
+let editorState = null; // { files:[{path,loaded,content}], active }
+function openSpiritEditor(sp) { openEditor([`spirits/${sp}/identity.md`, `spirits/${sp}/cornerstone.md`], 1); }
+async function openEditor(paths, active = 0) {
+  editorState = { files: paths.map((p) => ({ path: p, loaded: null })), active };
+  els.spiritEditor.hidden = false;
+  await selectEditorFile(active);
+  els.spiritEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+async function selectEditorFile(i) {
+  editorState.active = i;
+  const f = editorState.files[i];
+  renderEditorTabs();
+  els.spiritEditorLint.hidden = true; els.spiritEditorLint.innerHTML = "";
+  if (f.loaded == null) {
+    els.spiritEditorArea.value = "loading…"; els.spiritEditorArea.disabled = true;
+    try { f.loaded = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(f.path))).json()).content || ""; }
+    catch (e) { f.loaded = ""; }
+  }
+  els.spiritEditorArea.disabled = false;
+  els.spiritEditorArea.value = f.loaded;
+  updateEditorDirty();
+}
+function renderEditorTabs() {
+  const host = els.spiritEditorTabs; host.innerHTML = "";
+  editorState.files.forEach((f, i) => {
+    const b = el("button", "editor-tab" + (i === editorState.active ? " active" : ""), f.path.replace(/^spirits\//, ""));
+    b.onclick = () => { if (i !== editorState.active) selectEditorFile(i); };
+    host.append(b);
+  });
+}
+function currentEditorFile() { return editorState && editorState.files[editorState.active]; }
+function updateEditorDirty() {
+  const f = currentEditorFile();
+  const dirty = f && f.loaded != null && els.spiritEditorArea.value !== f.loaded;
+  els.spiritEditorDirty.hidden = !dirty;
+  return dirty;
+}
+async function saveEditor() {
+  const f = currentEditorFile();
+  if (!f) return;
+  setSaveState("saving");
+  els.spiritEditorLint.hidden = true;
+  try {
+    const r = await fetch("/api/spirits/file?path=" + encodeURIComponent(f.path), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: els.spiritEditorArea.value }),
+    });
+    const res = await r.json();
+    if (r.status === 422 || res.ok === false) {
+      setSaveState("error");
+      showEditorLint(res.errors || ["save blocked"], res.warnings || [], false);
+      return; // keep dirty; do not update loaded
+    }
+    f.loaded = els.spiritEditorArea.value; // saved
+    setSaveState("saved");
+    updateEditorDirty();
+    if ((res.warnings || []).length) showEditorLint([], res.warnings, true);
+    loadSpiritRituals(); // refresh board (cadence/ceiling/validity may have changed)
+  } catch (e) { setSaveState("error"); showEditorLint(["save failed: " + (e.message || e)], [], false); }
+}
+function showEditorLint(errors, warnings, savedOK) {
+  const host = els.spiritEditorLint; host.innerHTML = ""; host.hidden = false;
+  host.classList.toggle("lint-ok", savedOK && !errors.length);
+  errors.forEach((m) => host.append(el("div", "lint-err", "✕ " + m)));
+  warnings.forEach((m) => host.append(el("div", "lint-warn", "⚠ " + m)));
+  if (savedOK && warnings.length) host.insertBefore(el("div", "lint-note", "saved with warnings:"), host.firstChild);
+}
+function closeEditor() { els.spiritEditor.hidden = true; editorState = null; }
+
+async function newRitual(sp) {
+  const name = prompt(`New ritual for ${sp} (lowercase name, e.g. "weekly-review"):`);
+  if (!name || !name.trim()) return;
+  try {
+    const r = await fetch("/api/spirits/ritual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: sp, name: name.trim() }) });
+    if (!r.ok) throw new Error(await r.text());
+    const { path } = await r.json();
+    await loadSpiritRituals();
+    openEditor([path]);
+  } catch (e) { alert("Couldn't create ritual: " + (e.message || e)); }
+}
+async function newSpirit() {
+  const name = prompt('New spirit (lowercase name, e.g. "news-scout"):');
+  if (!name || !name.trim()) return;
+  try {
+    const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+    if (!r.ok) throw new Error(await r.text());
+    const { path } = await r.json();
+    await loadSpiritRituals();
+    loadSpiritsStatus();
+    openEditor([`spirits/${name.trim()}/identity.md`, path], 1);
+  } catch (e) { alert("Couldn't create spirit: " + (e.message || e)); }
+}
+
+if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateEditorDirty);
+if (els.spiritEditorSave) els.spiritEditorSave.addEventListener("click", saveEditor);
+if (els.spiritEditorClose) els.spiritEditorClose.addEventListener("click", closeEditor);
+if (els.spiritNewSpirit) els.spiritNewSpirit.addEventListener("click", newSpirit);
+if (els.spiritEditChargebook) els.spiritEditChargebook.addEventListener("click", () => openEditor(["chargebook.md"]));
 
 // ---- router ----
 function route() {
