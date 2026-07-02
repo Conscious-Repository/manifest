@@ -69,10 +69,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/item", s.handleGoalItem)
 	mux.HandleFunc("/api/goals/check", s.handleGoalCheck)
 	mux.HandleFunc("/api/goals/reorder", s.handleGoalsReorder)
-	mux.HandleFunc("/api/goals/close", s.handleGoalClose)     // close a Rock Win/Learn → archive
+	mux.HandleFunc("/api/goals/close", s.handleGoalClose)        // close a Rock Win/Learn → archive
 	mux.HandleFunc("/api/goals/archives", s.handleGoalsArchives) // History view
-	mux.HandleFunc("/api/goals/carry", s.handleGoalCarry)     // quarterly review: carry a Rock
-	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)     // quarterly review: save the retro
+	mux.HandleFunc("/api/goals/carry", s.handleGoalCarry)        // quarterly review: carry a Rock
+	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)        // quarterly review: save the retro
 
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)
@@ -108,9 +108,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/contacts", s.handleContactsList)
 	mux.HandleFunc("GET /api/contacts/triage", s.handleContactsTriage)
 	mux.HandleFunc("GET /api/contacts/page", s.handleContactPage)
+	mux.HandleFunc("GET /api/contacts/card", s.handleContactCard)
 	mux.HandleFunc("GET /api/contacts/search", s.handleContactsSearch)
 	mux.HandleFunc("POST /api/contacts/confirm", s.handleContactsConfirm)
 	mux.HandleFunc("POST /api/contacts/dismiss", s.handleContactsDismiss)
+	mux.HandleFunc("POST /api/contacts/dismiss-bulk", s.handleContactsDismissBulk)
+	mux.HandleFunc("POST /api/contacts/org", s.handleContactsOrg)
 	mux.HandleFunc("POST /api/contacts/bind", s.handleContactsBind)
 	mux.HandleFunc("POST /api/contacts/note", s.handleContactsNote)
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)

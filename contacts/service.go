@@ -225,17 +225,69 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 	return p, true
 }
 
+// ---- quick-lookup card ----
+
+// Card is the compact contact summary the command bar shows instantly.
+type Card struct {
+	Key              string      `json:"key"`
+	Display          string      `json:"display"`
+	HasNote          bool        `json:"hasNote"`
+	LastMet          string      `json:"lastMet"`
+	NextUpcoming     string      `json:"nextUpcoming"` // "date · title", or ""
+	LatestTranscript *Transcript `json:"latestTranscript,omitempty"`
+	RefCount         int         `json:"refCount"`
+}
+
+// Card assembles the quick-lookup card (last met, next upcoming, latest
+// transcript) without building the full page.
+func (s *Service) Card(rawKey string, now time.Time) (Card, bool) {
+	canon := s.canonical(rawKey)
+	e, ok := s.ix.Entity(canon)
+	if !ok {
+		disp, refs := s.displayAndRefs(canon)
+		if refs == 0 && !s.store.IsConfirmed(canon) {
+			return Card{}, false
+		}
+		e = vaultindex.Entity{Key: canon, Display: disp}
+	}
+	c := Card{Key: e.Key, Display: e.Display, HasNote: e.NotePath != ""}
+	keys := s.keysFor(e.Key, e.NotePath)
+	c.LastMet = s.mergedLastMet(keys)
+	tl := s.mergedTimeline(keys)
+	c.RefCount = len(tl)
+	if ts := s.transcripts(keys, tl); len(ts) > 0 {
+		c.LatestTranscript = &ts[0] // timeline is newest-first
+	}
+	// next upcoming: the soonest confirmed-or-candidate event
+	up := s.upcomingFor(Page{Key: e.Key, Display: e.Display, HasNote: e.NotePath != "", Aliases: aliasesOf(s, e.Key)}, now)
+	if len(up) > 0 {
+		c.NextUpcoming = up[0].Date + " · " + up[0].Title
+	}
+	return c, true
+}
+
+func aliasesOf(s *Service, key string) []string {
+	al, _ := s.ix.EntityAliases(key)
+	return al
+}
+
 // ---- triage ----
 
-// TriageItem is a note-less name awaiting an "is this a person?" decision.
+// TriageItem is a note-less name awaiting an "is this a person?" decision, with
+// deterministic signals so the queue ranks likely-people first and flags likely-orgs.
 type TriageItem struct {
-	Key      string `json:"key"`
-	Display  string `json:"display"`
-	RefCount int    `json:"refCount"`
+	Key       string `json:"key"`
+	Display   string `json:"display"`
+	RefCount  int    `json:"refCount"`
+	LikelyOrg bool   `json:"likelyOrg"` // linked FROM people notes → probably a firm they link to
+	score     int
 }
 
 // Triage returns note-less targets seen ONLY outside meeting context, not yet
-// confirmed or dismissed — the quiet "is this a person?" queue (§4).
+// confirmed/dismissed/marked-org (§4). Ranked by person-likelihood using
+// DETERMINISTIC signals only (no guessing, never auto-confirmed):
+//   - a 2+-capitalized-word display looks like a person's name (+)
+//   - being linked FROM people notes looks like a firm those people link to (−)
 func (s *Service) Triage() ([]TriageItem, error) {
 	targets, err := s.ix.NoteLessTargets()
 	if err != nil {
@@ -243,21 +295,71 @@ func (s *Service) Triage() ([]TriageItem, error) {
 	}
 	var out []TriageItem
 	for _, t := range targets {
-		if t.InMeetingContext || s.store.IsConfirmed(t.Key) || s.store.IsDismissed(t.Key) {
+		if t.InMeetingContext || s.store.IsConfirmed(t.Key) || s.store.IsDismissed(t.Key) || s.store.IsOrg(t.Key) {
 			continue
 		}
 		if s.canonical(t.Key) != t.Key {
 			continue // bound to another contact already
 		}
-		out = append(out, TriageItem{Key: t.Key, Display: t.Display, RefCount: t.RefCount})
+		it := TriageItem{Key: t.Key, Display: t.Display, RefCount: t.RefCount, LikelyOrg: t.LinkedFromPeople > 0}
+		if capitalizedWords(t.Display) >= 2 {
+			it.score += 2 // looks like a person's name
+		}
+		if t.LinkedFromPeople > 0 {
+			it.score -= 3 // people link their firms → org signal dominates
+		}
+		out = append(out, it)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].RefCount > out[j].RefCount })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].score != out[j].score {
+			return out[i].score > out[j].score // most person-like first
+		}
+		return out[i].RefCount > out[j].RefCount
+	})
 	return out, nil
 }
 
-// Confirm promotes a note-less target to a contact; Dismiss removes it for good.
-func (s *Service) Confirm(key string) error { return s.store.Confirm(key) }
-func (s *Service) Dismiss(key string) error { return s.store.Dismiss(key) }
+// Confirm promotes a note-less target to a contact AND materializes its note in
+// the vault in the user's format: a LOWERCASE <name>.md with `categories: [people]`
+// (write-once — an existing note is never touched). Hitting "Person" therefore
+// creates the file, matching the existing lowercase person notes. Explicit user write.
+func (s *Service) Confirm(key, display string) error {
+	if err := s.store.Confirm(key); err != nil {
+		return err
+	}
+	canon := s.canonical(key)
+	if e, ok := s.ix.Entity(canon); ok && e.NotePath != "" {
+		return nil // already note-backed — nothing to create
+	}
+	name := strings.TrimSpace(display)
+	if name == "" {
+		name = canon
+	}
+	rel, err := s.vw.CreatePersonNote(name, s.aliasesForNew(canon, name), "")
+	if err != nil {
+		return err
+	}
+	return s.ix.ReindexPaths([]string{rel})
+}
+
+// Dismiss removes a name for good; MarkOrg files it as a firm (remembered
+// separately to seed firm pages later).
+func (s *Service) Dismiss(key string) error        { return s.store.Dismiss(key) }
+func (s *Service) MarkOrg(key string) error        { return s.store.MarkOrg(key) }
+func (s *Service) BulkDismiss(keys []string) error { return s.store.DismissAll(keys) }
+
+// capitalizedWords counts whitespace-separated tokens that start uppercase — a
+// deterministic "looks like a proper name" signal.
+func capitalizedWords(display string) int {
+	n := 0
+	for _, w := range strings.Fields(display) {
+		r := []rune(w)
+		if len(r) > 0 && r[0] >= 'A' && r[0] <= 'Z' {
+			n++
+		}
+	}
+	return n
+}
 
 // ---- create / bind (§5) ----
 

@@ -51,6 +51,7 @@ type NoteLessTarget struct {
 	Key, Display     string
 	RefCount         int  // distinct non-AI notes linking it
 	InMeetingContext bool // linked from ≥1 meeting-context note → auto-contact
+	LinkedFromPeople int  // distinct PEOPLE notes linking it → org/firm signal (people link their firms)
 }
 
 // NoteLessTargets returns every note-less, non-AI link target with its ref count
@@ -62,7 +63,11 @@ func (ix *Index) NoteLessTargets() ([]NoteLessTarget, error) {
 		  (SELECT COUNT(DISTINCT l.src_path) FROM links l JOIN notes n ON n.path=l.src_path
 		     WHERE l.target_key=e.key AND n.ai_authored=0),
 		  EXISTS(SELECT 1 FROM links l JOIN notes n ON n.path=l.src_path
-		     WHERE l.target_key=e.key AND n.ai_authored=0 AND ` + meetingCtxSQL + `)
+		     WHERE l.target_key=e.key AND n.ai_authored=0 AND ` + meetingCtxSQL + `),
+		  (SELECT COUNT(DISTINCT l.src_path) FROM links l
+		     JOIN notes n ON n.path=l.src_path
+		     JOIN note_categories c ON c.path=n.path
+		     WHERE l.target_key=e.key AND n.ai_authored=0 AND c.category='people')
 		FROM entities e
 		WHERE e.note_path='' AND e.ai_authored=0`)
 	if err != nil {
@@ -73,7 +78,7 @@ func (ix *Index) NoteLessTargets() ([]NoteLessTarget, error) {
 	for rows.Next() {
 		var t NoteLessTarget
 		var mc int
-		if err := rows.Scan(&t.Key, &t.Display, &t.RefCount, &mc); err != nil {
+		if err := rows.Scan(&t.Key, &t.Display, &t.RefCount, &mc, &t.LinkedFromPeople); err != nil {
 			return nil, err
 		}
 		t.InMeetingContext = mc == 1

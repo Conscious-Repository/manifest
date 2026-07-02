@@ -21,7 +21,9 @@ func (w *Writer) CreatePersonNote(name string, aliases []string, body string) (s
 	if !w.Enabled() {
 		return "", errors.New("no vault configured")
 	}
-	base := sanitizeName(name)
+	// The vault's person-note convention is a lowercase filename (all 88 existing
+	// people notes are lowercase); Obsidian resolves [[Links]] to it case-insensitively.
+	base := strings.ToLower(sanitizeName(name))
 	if base == "" {
 		return "", errors.New("cannot create a person note with an empty name")
 	}

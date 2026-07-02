@@ -891,3 +891,26 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .cp-note-editor:focus { outline: none; border-color: var(--blue-soft); }
 .cp-note-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .cp-note-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* triage additions (follow-up 1) */
+.triage-head-actions { display: flex; gap: 6px; align-items: center; }
+.triage-hint { font-family: var(--mono); font-size: 10px; color: var(--blue-soft); }
+
+/* ===== quick-lookup command bar (⌘K) ===== */
+.cmdbar { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-start; justify-content: center; }
+.cmdbar-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.28); }
+.cmdbar-card { position: relative; margin-top: 12vh; width: 560px; max-width: 92vw; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.22); overflow: hidden; }
+.cmdbar-input { width: 100%; border: none; border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: 17px; padding: 16px 18px; outline: none; color: var(--text); box-sizing: border-box; }
+.cmdbar-results { max-height: 320px; overflow-y: auto; }
+.cmd-result { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 18px; cursor: pointer; }
+.cmd-result.sel, .cmd-result:hover { background: var(--hover); }
+.cmd-name { font-family: var(--sans); font-size: 14.5px; color: var(--text); }
+.cmd-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.cmdbar-cardview { border-top: 1px solid var(--line); padding: 16px 18px; }
+.cmd-card-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.cmd-card-name { font-family: var(--sans); font-size: 18px; font-weight: 500; color: var(--ink); }
+.cmd-card-nonote { font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.cmd-card-facts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.cmd-fact { display: flex; gap: 12px; }
+.cmd-fact-label { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 0 0 130px; text-transform: uppercase; letter-spacing: 0.04em; }
+.cmd-fact-val { font-family: var(--sans); font-size: 13.5px; color: var(--text); }

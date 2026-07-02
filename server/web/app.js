@@ -33,6 +33,12 @@ const els = {
   contactBackBtn: document.getElementById("contactBackBtn"),
   contactPage: document.getElementById("contactPage"),
   contactPageSaved: document.getElementById("contactPageSaved"),
+  // quick-lookup command bar
+  cmdbar: document.getElementById("cmdbar"),
+  cmdbarBackdrop: document.getElementById("cmdbarBackdrop"),
+  cmdbarInput: document.getElementById("cmdbarInput"),
+  cmdbarResults: document.getElementById("cmdbarResults"),
+  cmdbarCard: document.getElementById("cmdbarCard"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   spiritsNav: document.getElementById("spiritsNav"),
@@ -1671,19 +1677,35 @@ function renderTriage(items) {
   const host = els.contactTriage; host.innerHTML = "";
   if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
-  // Quiet by default (§4): a one-line summary that expands to a review batch.
+  window._triage = items;
+  // Quiet by default (§4): a one-line summary that expands to a review batch,
+  // ranked most-person-like first (deterministic: 2+ caps up, linked-from-people down).
   const head = el("div", "triage-head");
-  const label = el("span", "triage-label", "Review — " + items.length + " note-less name" + (items.length === 1 ? "" : "s") + " to confirm or dismiss");
-  const toggle = pillLight("Review ▾", () => { rows.hidden = !rows.hidden; toggle.textContent = rows.hidden ? "Review ▾" : "Hide ▴"; });
-  head.append(label, toggle);
+  const label = el("span", "triage-label", "Review — " + items.length + " note-less name" + (items.length === 1 ? "" : "s") + " (ranked by person-likelihood)");
+  const headActions = el("span", "triage-head-actions");
+  const bulk = pillLight("Dismiss all " + items.length, async () => {
+    if (!confirm("Dismiss all " + items.length + " queued names? (remembered — they won't return)")) return;
+    await postJSON("/api/contacts/dismiss-bulk", { keys: items.map((t) => t.key) });
+    showContactList();
+  });
+  bulk.hidden = true;
+  const toggle = pillLight("Review ▾", () => {
+    rows.hidden = !rows.hidden; bulk.hidden = rows.hidden;
+    toggle.textContent = rows.hidden ? "Review ▾" : "Hide ▴";
+  });
+  headActions.append(bulk, toggle);
+  head.append(label, headActions);
   const rows = el("div", "triage-rows"); rows.hidden = true;
-  items.slice(0, 25).forEach((t) => {
+  items.slice(0, 30).forEach((t) => {
     const r = el("div", "triage-row");
-    r.append(el("span", "triage-name", t.display), el("span", "triage-refs", t.refCount + " ref" + (t.refCount === 1 ? "" : "s")));
+    const nm = el("span", "triage-name", t.display);
+    if (t.likelyOrg) nm.append(el("span", "triage-hint", " likely org"));
+    r.append(nm, el("span", "triage-refs", t.refCount + " ref" + (t.refCount === 1 ? "" : "s")));
     const act = el("span", "triage-actions");
     act.append(
-      pill("Person", async () => { await postJSON("/api/contacts/confirm", { key: t.key }); showContactList(); }),
-      pillLight("Not a person", async () => { await postJSON("/api/contacts/dismiss", { key: t.key }); showContactList(); }),
+      pill("Person", async () => { await postJSON("/api/contacts/confirm", { key: t.key, display: t.display }); showContactList(); }),
+      pillLight("Org", async () => { await postJSON("/api/contacts/org", { key: t.key }); showContactList(); }),
+      pillLight("Dismiss", async () => { await postJSON("/api/contacts/dismiss", { key: t.key }); showContactList(); }),
     );
     r.append(act);
     rows.append(r);
@@ -1846,6 +1868,88 @@ async function runCreateSearch(q, host) {
 if (els.contactSearch) els.contactSearch.addEventListener("input", () => renderContactList(window._contacts || [], els.contactSearch.value));
 if (els.contactAddBtn) els.contactAddBtn.addEventListener("click", openCreatePanel);
 if (els.contactBackBtn) els.contactBackBtn.addEventListener("click", () => { location.hash = "#/contacts"; });
+
+// ---- quick-lookup command bar (⌘K / Ctrl-K anywhere) ----
+let cmdSel = -1, cmdResults = [];
+function openCmdbar() {
+  els.cmdbar.hidden = false;
+  els.cmdbarInput.value = "";
+  els.cmdbarResults.innerHTML = "";
+  els.cmdbarCard.hidden = true;
+  cmdSel = -1; cmdResults = [];
+  els.cmdbarInput.focus();
+}
+function closeCmdbar() { els.cmdbar.hidden = true; }
+
+let cmdTimer;
+if (els.cmdbarInput) {
+  els.cmdbarInput.addEventListener("input", () => {
+    clearTimeout(cmdTimer);
+    els.cmdbarCard.hidden = true;
+    const q = els.cmdbarInput.value.trim();
+    cmdTimer = setTimeout(() => cmdSearch(q), 150);
+  });
+  els.cmdbarInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); cmdMove(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); cmdMove(-1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (cmdResults[cmdSel]) cmdShowCard(cmdResults[cmdSel].key); }
+    else if (e.key === "Escape") { closeCmdbar(); }
+  });
+}
+if (els.cmdbarBackdrop) els.cmdbarBackdrop.addEventListener("click", closeCmdbar);
+window.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
+  else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }
+});
+
+async function cmdSearch(q) {
+  const host = els.cmdbarResults; host.innerHTML = ""; cmdSel = -1; cmdResults = [];
+  if (!q) return;
+  let d = { results: [] };
+  try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+  cmdResults = (d.results || []).slice(0, 8);
+  cmdResults.forEach((r, i) => {
+    const row = el("div", "cmd-result");
+    row.append(el("span", "cmd-name", r.display), el("span", "cmd-refs", (r.hasNote ? "note" : "no note") + " · " + r.refCount + " ref" + (r.refCount === 1 ? "" : "s")));
+    row.onclick = () => cmdShowCard(r.key);
+    row.onmouseenter = () => { cmdSel = i; paintCmdSel(); };
+    host.append(row);
+  });
+  if (cmdResults.length) { cmdSel = 0; paintCmdSel(); }
+}
+function cmdMove(d) { if (!cmdResults.length) return; cmdSel = (cmdSel + d + cmdResults.length) % cmdResults.length; paintCmdSel(); }
+function paintCmdSel() {
+  [...els.cmdbarResults.children].forEach((c, i) => c.classList.toggle("sel", i === cmdSel));
+}
+
+async function cmdShowCard(key) {
+  let c;
+  try {
+    const res = await fetch("/api/contacts/card?key=" + encodeURIComponent(key));
+    if (!res.ok) return;
+    c = await res.json();
+  } catch (e) { return; }
+  const host = els.cmdbarCard; host.innerHTML = ""; host.hidden = false;
+  const head = el("div", "cmd-card-head");
+  head.append(el("span", "cmd-card-name", c.display));
+  if (!c.hasNote) head.append(el("span", "cmd-card-nonote", "no note"));
+  host.append(head);
+  const facts = el("div", "cmd-card-facts");
+  facts.append(cmdFact("Last met", c.lastMet || "—"));
+  facts.append(cmdFact("Next", c.nextUpcoming || "—"));
+  if (c.latestTranscript) {
+    const f = cmdFact("Latest transcript", c.latestTranscript.date + " · " + c.latestTranscript.title);
+    facts.append(f);
+  }
+  host.append(facts);
+  const jump = pill("Open contact page →", () => { closeCmdbar(); location.hash = "#/contacts/" + encodeURIComponent(c.key); });
+  host.append(jump);
+}
+function cmdFact(label, val) {
+  const f = el("div", "cmd-fact");
+  f.append(el("span", "cmd-fact-label", label), el("span", "cmd-fact-val", val));
+  return f;
+}
 
 function route() {
   const h = location.hash;

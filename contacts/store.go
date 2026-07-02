@@ -25,6 +25,7 @@ type Store struct {
 type state struct {
 	Confirmed map[string]bool   `json:"confirmed"` // note-less keys confirmed as people
 	Dismissed map[string]bool   `json:"dismissed"` // keys dismissed from triage (remembered)
+	Orgs      map[string]bool   `json:"orgs"`      // keys marked as org/firm (kept — seed firm pages later)
 	Bindings  map[string]string `json:"bindings"`  // variant key -> canonical key
 }
 
@@ -49,6 +50,9 @@ func NewStore(dataDir string) (*Store, error) {
 	}
 	if s.st.Dismissed == nil {
 		s.st.Dismissed = map[string]bool{}
+	}
+	if s.st.Orgs == nil {
+		s.st.Orgs = map[string]bool{}
 	}
 	if s.st.Bindings == nil {
 		s.st.Bindings = map[string]string{}
@@ -89,11 +93,36 @@ func (s *Store) Bind(variant, canonical string) error {
 	return s.save()
 }
 
+// MarkOrg records a note-less target as an org/firm — removed from the person
+// triage queue but REMEMBERED (it will seed firm pages later), never discarded.
+func (s *Store) MarkOrg(k string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.Orgs[key(k)] = true
+	delete(s.st.Dismissed, key(k))
+	delete(s.st.Confirmed, key(k))
+	return s.save()
+}
+
+// DismissAll bulk-dismisses the long tail in one write.
+func (s *Store) DismissAll(keys []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, k := range keys {
+		s.st.Dismissed[key(k)] = true
+		delete(s.st.Confirmed, key(k))
+	}
+	return s.save()
+}
+
 func (s *Store) IsConfirmed(k string) bool {
 	return s.read(func() bool { return s.st.Confirmed[key(k)] })
 }
 func (s *Store) IsDismissed(k string) bool {
 	return s.read(func() bool { return s.st.Dismissed[key(k)] })
+}
+func (s *Store) IsOrg(k string) bool {
+	return s.read(func() bool { return s.st.Orgs[key(k)] })
 }
 
 // VariantsOf returns every variant key bound to the given canonical key.

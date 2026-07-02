@@ -66,14 +66,47 @@ func (s *Server) handleContactsSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"results": refs})
 }
 
-func (s *Server) handleContactsConfirm(w http.ResponseWriter, r *http.Request) {
-	s.triageDecision(w, r, false)
-}
-func (s *Server) handleContactsDismiss(w http.ResponseWriter, r *http.Request) {
-	s.triageDecision(w, r, true)
+func (s *Server) handleContactCard(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	key := r.URL.Query().Get("key")
+	if key == "" {
+		httpError(w, errBadRequest("key is required"))
+		return
+	}
+	c, ok := s.contacts.Card(key, time.Now())
+	if !ok {
+		http.Error(w, "no such contact", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, c)
 }
 
-func (s *Server) triageDecision(w http.ResponseWriter, r *http.Request, dismiss bool) {
+// Confirm materializes the person note (lowercase <name>.md, categories: [people]),
+// so it needs the display for the filename.
+func (s *Server) handleContactsConfirm(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Key     string `json:"key"`
+		Display string `json:"display"`
+	}
+	if err := decode(r, &b); err != nil || b.Key == "" {
+		httpError(w, errBadRequest("key is required"))
+		return
+	}
+	if err := s.contacts.Confirm(b.Key, b.Display); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleContactsDismiss(w http.ResponseWriter, r *http.Request) {
 	if s.contacts == nil {
 		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
 		return
@@ -85,13 +118,45 @@ func (s *Server) triageDecision(w http.ResponseWriter, r *http.Request, dismiss 
 		httpError(w, errBadRequest("key is required"))
 		return
 	}
-	var err error
-	if dismiss {
-		err = s.contacts.Dismiss(b.Key)
-	} else {
-		err = s.contacts.Confirm(b.Key)
+	if err := s.contacts.Dismiss(b.Key); err != nil {
+		httpError(w, err)
+		return
 	}
-	if err != nil {
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleContactsOrg(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Key string `json:"key"`
+	}
+	if err := decode(r, &b); err != nil || b.Key == "" {
+		httpError(w, errBadRequest("key is required"))
+		return
+	}
+	if err := s.contacts.MarkOrg(b.Key); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleContactsDismissBulk(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Keys []string `json:"keys"`
+	}
+	if err := decode(r, &b); err != nil || len(b.Keys) == 0 {
+		httpError(w, errBadRequest("keys is required"))
+		return
+	}
+	if err := s.contacts.BulkDismiss(b.Keys); err != nil {
 		httpError(w, err)
 		return
 	}

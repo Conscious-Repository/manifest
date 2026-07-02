@@ -3,6 +3,7 @@ package contacts
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,6 +169,48 @@ func TestTriageQueueAndDecisions(t *testing.T) {
 	tri2, _ := svc.Triage()
 	if hasKeyTri(tri2, "bob jones") {
 		t.Fatal("dismissed name must not reappear")
+	}
+}
+
+func TestConfirmPersonCreatesLowercaseNote(t *testing.T) {
+	svc, _, root := harness(t)
+	// hit "Person" on a triage name with a Capitalized display
+	if err := svc.Confirm("bob jones", "Bob Jones"); err != nil {
+		t.Fatal(err)
+	}
+	// the file is created LOWERCASE with categories: [people] (the vault convention)
+	raw, err := os.ReadFile(filepath.Join(root, "bob jones.md"))
+	if err != nil {
+		t.Fatalf("expected lowercase bob jones.md to be created: %v", err)
+	}
+	if !containsAll(string(raw), "categories: [people]") {
+		t.Fatalf("created note must carry categories: [people]:\n%s", raw)
+	}
+	// the actual on-disk entry name must be lowercase (macOS FS is case-insensitive,
+	// so check the real directory entry, not os.Stat which case-folds)
+	entries, _ := os.ReadDir(root)
+	foundName := ""
+	for _, e := range entries {
+		if strings.EqualFold(e.Name(), "bob jones.md") {
+			foundName = e.Name()
+		}
+	}
+	if foundName != "bob jones.md" {
+		t.Fatalf("filename must be lowercase, got %q", foundName)
+	}
+	// it leaves triage and becomes a note-backed contact
+	if tri, _ := svc.Triage(); hasKeyTri(tri, "bob jones") {
+		t.Fatal("a confirmed person should leave the triage queue")
+	}
+	list, _ := svc.List(now)
+	var bob *Contact
+	for i := range list {
+		if list[i].Key == "bob jones" {
+			bob = &list[i]
+		}
+	}
+	if bob == nil || !bob.HasNote {
+		t.Fatalf("confirmed person should be a note-backed contact: %+v", bob)
 	}
 }
 

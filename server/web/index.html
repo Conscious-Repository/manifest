@@ -192,6 +192,16 @@
     </div>
   </section>
 
+  <!-- Quick-lookup command bar (⌘K / Ctrl-K from anywhere) -->
+  <div id="cmdbar" class="cmdbar" hidden>
+    <div class="cmdbar-backdrop" id="cmdbarBackdrop"></div>
+    <div class="cmdbar-card">
+      <input id="cmdbarInput" class="cmdbar-input" type="text" placeholder="Look up a contact…" autocomplete="off" />
+      <div id="cmdbarResults" class="cmdbar-results"></div>
+      <div id="cmdbarCard" class="cmdbar-cardview" hidden></div>
+    </div>
+  </div>
+
   <div id="pickerModal" class="modal" hidden>
     <div class="modal-backdrop" id="pickerBackdrop"></div>
     <div class="modal-card">
