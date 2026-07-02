@@ -7,5 +7,6 @@
   "skipDirs": [".git", ".obsidian", ".trash", "attachments", "Agents"],
   "scheduleStart": 8,
   "scheduleEnd": 18,
-  "port": 7777
+  "port": 7777,
+  "excaliburPath": "~/excalibur"
 }

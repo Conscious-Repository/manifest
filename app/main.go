@@ -25,6 +25,7 @@ import (
 	"manifest/hermes"
 	"manifest/profiles"
 	"manifest/server"
+	"manifest/spirits"
 	"manifest/vault"
 	"manifest/vaultwriter"
 )
@@ -110,6 +111,13 @@ func main() {
 	srv.UseFeed(feed.NewStore(agentsDir))
 	srv.UseApprovals(approvals.NewStore(agentsDir))
 	srv.UseVault(vaultwriter.New(cfg.VaultPath)) // "Save to vault" — the only vault write
+
+	// SPIRITS — the excalibur harness console. The dashboard renders the
+	// sibling tree; the engine (a separate process) owns all execution.
+	if cfg.ExcaliburPath != "" {
+		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
+		log.Printf("spirits: %s", cfg.ExcaliburPath)
+	}
 	if hz.Configured() {
 		log.Printf("hermes: configured (%s, model %s)", hz.BaseURL(), hz.Model())
 	} else {

@@ -56,6 +56,14 @@ func NewStore(agentsDir string) *Store {
 	return &Store{dir: dir}
 }
 
+// NewStoreDir roots the store at an explicit directory (used by the spirits
+// package to read the excalibur artifacts/feed surface with identical
+// semantics — the on-disk format is the contract between the two trees).
+func NewStoreDir(dir string) *Store {
+	_ = os.MkdirAll(dir, 0o755)
+	return &Store{dir: dir}
+}
+
 // List returns items newest-first, applying the filter. By default (empty status)
 // discarded items and still-snoozed items are hidden.
 func (s *Store) List(f Filter, now time.Time) []Item {

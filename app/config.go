@@ -41,6 +41,9 @@ type Config struct {
 	// calendar credentials). The vault holds only your hand-authored notes; the
 	// app never writes derived data into it.
 	DataDir string `json:"dataDir"`
+	// ExcaliburPath is the root of the sibling excalibur harness tree (spirit
+	// feed, run reports, run-now spool). Empty disables the SPIRITS tab.
+	ExcaliburPath string `json:"excaliburPath"`
 }
 
 func defaultConfig() Config {
@@ -107,6 +110,7 @@ func LoadConfig(path string) (Config, error) {
 	}
 	cfg.VaultPath = expandHome(cfg.VaultPath)
 	cfg.DataDir = expandHome(cfg.DataDir)
+	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	return cfg, nil
 }
 

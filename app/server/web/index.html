@@ -16,6 +16,7 @@
       <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
       <a class="pill" href="#/calendar" id="calNav">CAL</a>
       <a class="pill" href="#/agents" id="agentsNav">AGENTS</a>
+      <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
       <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
     </div>
     <div class="nav-center" id="dateNav">
@@ -180,6 +181,39 @@
         <button id="apprRunBtn" class="pill light" title="Draft actions with ea-coordinator (proposals only — nothing sends)">+ Draft with ea-coordinator</button>
       </div>
       <div id="approvalList" class="approval-rows"></div>
+    </div>
+  </section>
+
+  <!-- SPIRITS — the excalibur harness console (sibling tree; engine owns execution) -->
+  <section class="agents-view" id="spiritsView" hidden>
+    <div class="panel-head">
+      <span class="panel-title">SPIRITS</span>
+      <span id="spiritsStatus" class="panel-meta hermes-status"></span>
+    </div>
+
+    <div class="agents-tabs" id="spiritsTabs">
+      <a class="atab" data-tab="feed" href="#/spirits">FEED</a>
+      <a class="atab" data-tab="runs" href="#/spirits/runs">RUNS</a>
+    </div>
+
+    <!-- FEED (artifacts/feed/ — keep/discard/snooze write back to frontmatter) -->
+    <div class="agent-panel" id="sp-feed" hidden>
+      <div class="panel-subhead">
+        <span id="spiritFeedFilters" class="feed-filters"></span>
+        <span class="subhead-actions">
+          <button id="spiritRunNowBtn" class="pill" title="Ask the engine to run the scout now (spooled request — the engine picks it up)">▶ Run now</button>
+        </span>
+      </div>
+      <div id="spiritFeedList" class="feed-list"></div>
+    </div>
+
+    <!-- RUNS (artifacts/runs/ — the legible decision trail per run) -->
+    <div class="agent-panel" id="sp-runs" hidden>
+      <div class="panel-subhead">
+        <span>RUN REPORTS <span class="sub-meta">every run writes markdown — context, decisions, charge, writes</span></span>
+      </div>
+      <div id="spiritRunsList" class="runs-list"></div>
+      <div id="spiritRunDetail" class="run-detail" hidden></div>
     </div>
   </section>
 

@@ -861,3 +861,26 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
   padding: 9px 8px; border-radius: var(--radius); cursor: pointer;
 }
 .picker-item:hover { background: var(--hover); color: var(--blue); }
+
+/* ---- SPIRITS: run reports + charge bars (excalibur harness console) ---- */
+.runs-list { display: flex; flex-direction: column; gap: 10px; }
+.run-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+.run-card:hover { background: var(--hover); }
+.run-top { display: flex; align-items: baseline; gap: 10px; }
+.run-outcome { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: 2px 9px; }
+.oc-completed { color: #15803d; border-color: #bbe3c8; }
+.oc-stopped-charge, .oc-stopped-steps { color: #b45309; border-color: #ecd4b0; }
+.oc-error, .oc-errorprotocol { color: #b91c1c; border-color: #eec3c3; }
+.run-title { font-family: var(--mono); font-size: 13px; color: var(--ink); letter-spacing: 0.2px; }
+.run-when { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.charge-row { display: flex; align-items: center; gap: 10px; }
+.charge-bar { flex: 1; height: 6px; background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: 3px; overflow: hidden; }
+.charge-fill { height: 100%; background: var(--blue); border-radius: 3px; }
+.charge-fill.over { background: #b45309; }
+.charge-label { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.run-detail { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.run-detail-head { display: flex; align-items: center; gap: 8px; }
+.run-detail-head .run-title { margin-right: auto; }
+.run-report { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
+.run-report.prompt { background: #fbfcff; border: 1px solid var(--blue-soft); }
+.run-prompts { display: flex; flex-direction: column; gap: 8px; }

@@ -15,6 +15,7 @@ import (
 	"manifest/goals"
 	"manifest/hermes"
 	"manifest/profiles"
+	"manifest/spirits"
 	"manifest/vaultwriter"
 )
 
@@ -31,6 +32,8 @@ type Server struct {
 	feed      *feed.Store
 	approvals *approvals.Store
 	vault     *vaultwriter.Writer
+	// Excalibur harness (SPIRITS tab) — read side of the sibling tree; nilable.
+	spirits *spirits.Store
 	// Async on-demand agent runs (see runs.go). Populated lazily by startRun.
 	runsMu sync.Mutex
 	runs   map[string]*runState
@@ -49,6 +52,9 @@ func (s *Server) UseProfiles(p *profiles.Store)   { s.profiles = p }
 func (s *Server) UseFeed(f *feed.Store)           { s.feed = f }
 func (s *Server) UseApprovals(a *approvals.Store) { s.approvals = a }
 func (s *Server) UseVault(v *vaultwriter.Writer)  { s.vault = v }
+
+// UseSpirits wires the excalibur harness tree (SPIRITS tab).
+func (s *Server) UseSpirits(sp *spirits.Store) { s.spirits = sp }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -109,6 +115,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agents/approvals/run", s.handleApprovalRun)
 	mux.HandleFunc("POST /api/agents/approvals/{id}/confirm", s.handleApprovalConfirm)
 	mux.HandleFunc("POST /api/agents/approvals/{id}/reject", s.handleApprovalReject)
+
+	// SPIRITS — excalibur harness console (read-only + user feed actions +
+	// run-now spool; the engine owns all execution).
+	mux.HandleFunc("GET /api/spirits/status", s.handleSpiritsStatus)
+	mux.HandleFunc("GET /api/spirits/feed", s.handleSpiritsFeedList)
+	mux.HandleFunc("POST /api/spirits/feed/{id}/status", s.handleSpiritsFeedStatus)
+	mux.HandleFunc("GET /api/spirits/runs", s.handleSpiritsRuns)
+	mux.HandleFunc("GET /api/spirits/runs/{id}", s.handleSpiritsRun)
+	mux.HandleFunc("GET /api/spirits/runs/{id}/prompt", s.handleSpiritsRunPrompt)
+	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {

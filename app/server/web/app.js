@@ -34,6 +34,17 @@ const els = {
   ap_jobs: document.getElementById("ap-jobs"),
   ap_approvals: document.getElementById("ap-approvals"),
   apprBadge: document.getElementById("apprBadge"),
+  // spirits (excalibur harness) view
+  spiritsView: document.getElementById("spiritsView"),
+  spiritsNav: document.getElementById("spiritsNav"),
+  spiritsStatus: document.getElementById("spiritsStatus"),
+  sp_feed: document.getElementById("sp-feed"),
+  sp_runs: document.getElementById("sp-runs"),
+  spiritFeedFilters: document.getElementById("spiritFeedFilters"),
+  spiritFeedList: document.getElementById("spiritFeedList"),
+  spiritRunNowBtn: document.getElementById("spiritRunNowBtn"),
+  spiritRunsList: document.getElementById("spiritRunsList"),
+  spiritRunDetail: document.getElementById("spiritRunDetail"),
   consoleProfileBar: document.getElementById("consoleProfileBar"),
   consoleProfileName: document.getElementById("consoleProfileName"),
   consoleProfileClear: document.getElementById("consoleProfileClear"),
@@ -1344,7 +1355,7 @@ const AGENT_TABS = ["console", "profiles", "feed", "jobs", "approvals"];
 function showAgents() {
   const tab = agentTabFromHash();
   AGENT_TABS.forEach((t) => { els["ap_" + t].hidden = t !== tab; });
-  document.querySelectorAll(".atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
+  document.querySelectorAll("#agentsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
   loadHermes(); // status chip is shown on every sub-tab
   if (tab === "profiles") loadProfiles();
   else if (tab === "feed") loadFeed();
@@ -1891,25 +1902,224 @@ if (els.profileClose) els.profileClose.addEventListener("click", () => { els.pro
 if (els.profileBackdrop) els.profileBackdrop.addEventListener("click", () => { els.profileModal.hidden = true; });
 if (els.consoleProfileClear) els.consoleProfileClear.addEventListener("click", () => { state.consoleProfile = ""; updateProfileBar(); });
 
+// ---- SPIRITS: the excalibur harness console ----
+// The dashboard reads the sibling excalibur tree (feed, run reports, prompts)
+// and records the user's keep/discard/snooze; the ENGINE owns execution — the
+// only write toward it is a spooled run-now request it picks up on its own.
+const SPIRIT_TABS = ["feed", "runs"];
+let spiritStatusCache = null;
+let spiritFeedCache = [];
+let spiritRunsCache = [];
+
+function showSpirits() {
+  const tab = spiritTabFromHash();
+  SPIRIT_TABS.forEach((t) => { els["sp_" + t].hidden = t !== tab; });
+  document.querySelectorAll("#spiritsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
+  loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
+  if (tab === "feed") loadSpiritFeed();
+  else if (tab === "runs") loadSpiritRuns();
+}
+function spiritTabFromHash() {
+  const t = (location.hash.split("/")[2] || "feed");
+  return SPIRIT_TABS.includes(t) ? t : "feed";
+}
+
+async function loadSpiritsStatus() {
+  try { spiritStatusCache = await (await fetch("/api/spirits/status")).json(); }
+  catch (e) { spiritStatusCache = null; }
+  const st = spiritStatusCache;
+  if (!st || !st.enabled) { els.spiritsStatus.textContent = "not configured — set excaliburPath"; return; }
+  const names = Object.keys(st.spirits || {});
+  els.spiritsStatus.textContent = (st.engineAlive ? "engine alive" : "engine down") +
+    (names.length ? " · " + names.join(", ") : "");
+  els.spiritsStatus.style.color = st.engineAlive ? "" : "#b91c1c";
+}
+
+// ---- spirit feed (artifacts/feed/) ----
+async function loadSpiritFeed() {
+  try { spiritFeedCache = (await (await fetch("/api/spirits/feed")).json()).data || []; } catch (e) { spiritFeedCache = []; }
+  renderSpiritFeedFilters();
+  renderSpiritFeed();
+}
+function renderSpiritFeedFilters() {
+  const host = els.spiritFeedFilters; host.innerHTML = "";
+  const types = [...new Set(spiritFeedCache.map((i) => i.type))];
+  const mk = (label, val) => {
+    const b = el("button", "filter-chip" + ((state.spiritFeedType || "") === val ? " on" : ""), label);
+    b.onclick = () => { state.spiritFeedType = val; renderSpiritFeedFilters(); renderSpiritFeed(); };
+    return b;
+  };
+  host.appendChild(mk("all", ""));
+  types.forEach((t) => host.appendChild(mk(t, t)));
+}
+function renderSpiritFeed() {
+  const host = els.spiritFeedList; host.innerHTML = "";
+  const items = spiritFeedCache.filter((i) => !state.spiritFeedType || i.type === state.spiritFeedType);
+  if (!items.length) { host.appendChild(emptyRow("No items yet — hit Run now, or wait for the daily ritual.")); return; }
+  items.forEach((it) => host.appendChild(spiritFeedCard(it)));
+}
+function spiritFeedCard(it) {
+  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : ""));
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-" + it.type, it.type));
+  const title = it.link ? linkEl(it.title, it.link) : el("span", null, it.title);
+  title.classList.add("feed-title");
+  top.append(title);
+  if (it.confidence) top.append(el("span", "conf conf-" + it.confidence, it.confidence));
+  card.append(top);
+  if (it.why) card.append(el("div", "feed-why", it.why));
+  const metaBits = [it.agent, it.source, it.domain, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
+  if (metaBits) card.append(el("div", "feed-meta", metaBits));
+  if (it.body) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
+  const actions = el("div", "feed-actions");
+  actions.append(
+    pillLight("Keep", () => spiritFeedAction(it.id, { status: "kept" })),
+    pillLight("Discard", () => spiritFeedAction(it.id, { status: "discarded" })),
+    pillLight("Snooze 7d", () => spiritFeedAction(it.id, { status: "snoozed", days: 7 })),
+  );
+  card.append(actions);
+  return card;
+}
+async function spiritFeedAction(id, body) {
+  setSaveState("saving");
+  try { await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  loadSpiritFeed();
+}
+
+// ---- run now (spooled request; engine picks it up within ~5s) ----
+async function spiritRunNow() {
+  const st = spiritStatusCache || {};
+  const spirits = st.spirits || {};
+  const spirit = Object.keys(spirits)[0];
+  const ritual = spirit ? (spirits[spirit] || [])[0] : null;
+  if (!spirit || !ritual) { alert("No spirit/ritual found in the excalibur tree."); return; }
+  const btn = els.spiritRunNowBtn;
+  btn.disabled = true; btn.textContent = "Requested ✓";
+  try {
+    const r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual }) });
+    if (!r.ok) throw new Error(await r.text());
+    watchForNewRun();
+  } catch (e) {
+    alert("Run request failed: " + (e.message || e));
+    btn.disabled = false; btn.textContent = "▶ Run now";
+  }
+}
+// Poll the runs list until a new report lands (runs take a couple of minutes),
+// then refresh whichever sub-tab is open. Light: 5s cadence, ~15 min ceiling.
+async function watchForNewRun() {
+  const before = spiritRunsCache.length ? spiritRunsCache[0].id : (await fetchSpiritRuns())[0]?.id;
+  const btn = els.spiritRunNowBtn;
+  for (let i = 0; i < 180; i++) {
+    await sleep(5000);
+    if (!location.hash.startsWith("#/spirits")) break; // stop polling off-tab
+    const runs = await fetchSpiritRuns();
+    if (runs.length && runs[0].id !== before) {
+      spiritRunsCache = runs;
+      if (spiritTabFromHash() === "runs") renderSpiritRuns(); else loadSpiritFeed();
+      loadSpiritsStatus();
+      break;
+    }
+  }
+  btn.disabled = false; btn.textContent = "▶ Run now";
+}
+async function fetchSpiritRuns() {
+  try { return (await (await fetch("/api/spirits/runs")).json()).data || []; } catch (e) { return []; }
+}
+
+// ---- run reports (artifacts/runs/) ----
+async function loadSpiritRuns() {
+  spiritRunsCache = await fetchSpiritRuns();
+  renderSpiritRuns();
+}
+function renderSpiritRuns() {
+  const host = els.spiritRunsList; host.innerHTML = "";
+  els.spiritRunDetail.hidden = true;
+  if (!spiritRunsCache.length) { host.appendChild(emptyRow("No runs yet — the ritual writes a report here every time it fires.")); return; }
+  spiritRunsCache.forEach((r) => host.appendChild(spiritRunCard(r)));
+}
+function spiritRunCard(r) {
+  const card = el("div", "run-card");
+  const top = el("div", "run-top");
+  top.append(el("span", "run-outcome oc-" + (r.outcome || "").replace(/[^a-z-]/g, ""), r.outcome || "?"));
+  top.append(el("span", "run-title", `${r.spirit} / ${r.ritual}`));
+  top.append(el("span", "run-when", fmtWhen(r.started)));
+  card.append(top);
+  const pct = r.ceilingUsd > 0 ? Math.min(100, Math.round((r.spentUsd / r.ceilingUsd) * 100)) : 0;
+  const bar = el("div", "charge-bar");
+  const fill = el("div", "charge-fill" + (pct >= 100 ? " over" : ""));
+  fill.style.width = pct + "%";
+  bar.appendChild(fill);
+  const row = el("div", "charge-row");
+  row.append(bar, el("span", "charge-label", `$${r.spentUsd.toFixed(4)} / $${r.ceilingUsd.toFixed(2)}`));
+  card.append(row);
+  card.append(el("div", "feed-meta", `${r.steps} steps · ${r.itemsWritten} items · ${r.portal} (${r.model})`));
+  card.onclick = () => openSpiritRun(r.id);
+  return card;
+}
+async function openSpiritRun(id) {
+  let run;
+  try { run = await (await fetch("/api/spirits/runs/" + encodeURIComponent(id))).json(); }
+  catch (e) { return; }
+  const host = els.spiritRunDetail; host.innerHTML = ""; host.hidden = false;
+  const head = el("div", "run-detail-head");
+  head.append(el("span", "run-title", id));
+  const promptBtn = pillLight("Show assembled prompt", () => toggleSpiritPrompts(id, promptBtn));
+  const closeBtn = pillLight("✕ Close", () => { host.hidden = true; });
+  head.append(promptBtn, closeBtn);
+  host.append(head);
+  const body = el("pre", "run-report");
+  body.textContent = run.body || "";
+  host.append(body);
+  const prompts = el("div", "run-prompts"); prompts.id = "runPrompts-" + id; prompts.hidden = true;
+  host.append(prompts);
+  host.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+// The §6.5 affordance: the EXACT model input per turn, preserved verbatim.
+async function toggleSpiritPrompts(id, btn) {
+  const box = document.getElementById("runPrompts-" + id);
+  if (!box) return;
+  if (!box.hidden) { box.hidden = true; btn.textContent = "Show assembled prompt"; return; }
+  if (!box.childElementCount) {
+    let turns = [];
+    try { turns = (await (await fetch("/api/spirits/runs/" + encodeURIComponent(id) + "/prompt")).json()).data || []; }
+    catch (e) {}
+    if (!turns.length) { box.appendChild(emptyRow("No preserved prompts found for this run.")); }
+    turns.forEach((t) => {
+      box.appendChild(el("div", "panel-subhead", `TURN ${t.turn} — SYSTEM`));
+      const s = el("pre", "run-report prompt"); s.textContent = t.system; box.appendChild(s);
+      box.appendChild(el("div", "panel-subhead", `TURN ${t.turn} — USER`));
+      const u = el("pre", "run-report prompt"); u.textContent = t.user; box.appendChild(u);
+    });
+  }
+  box.hidden = false; btn.textContent = "Hide assembled prompt";
+}
+
+if (els.spiritRunNowBtn) els.spiritRunNowBtn.addEventListener("click", spiritRunNow);
+
 // ---- router ----
 function route() {
   const h = location.hash;
   const goals = h === "#/goals";
   const cal = h === "#/calendar";
   const ag = h === "#/agents" || h.startsWith("#/agents/");
-  const day = !goals && !cal && !ag;
+  const sp = h === "#/spirits" || h.startsWith("#/spirits/");
+  const day = !goals && !cal && !ag && !sp;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
   els.agentsView.hidden = !ag;
+  els.spiritsView.hidden = !sp;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
   els.calNav.hidden = !day;
   els.agentsNav.hidden = !day;
+  els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
   if (goals) loadGoals();
   else if (cal) loadCalendar();
   else if (ag) showAgents(); // Hermes cockpit: console / profiles / feed / jobs / approvals
+  else if (sp) showSpirits(); // excalibur harness: feed / runs
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);
