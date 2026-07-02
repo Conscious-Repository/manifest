@@ -119,6 +119,49 @@ func (s *Server) handleSpiritsRunPrompt(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]any{"data": turns})
 }
 
+// Approvals — the ONE inbox (excalibur/artifacts/approvals, plan §2.5).
+// Spirits file proposals via the write_approval cast; Confirm/Reject here only
+// RECORD the human decision (a folder move) — nothing sends or executes.
+
+func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		writeJSON(w, map[string]any{"pending": []any{}, "counts": map[string]int{}})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"pending": s.approvals.List("pending"),
+		"counts":  s.approvals.Counts(),
+	})
+}
+
+func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.approvals.Confirm(r.PathValue("id")); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Reason string `json:"reason"`
+	}
+	_ = decode(r, &b) // reason is optional
+	if err := s.approvals.Reject(r.PathValue("id"), b.Reason); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 	if s.spirits == nil {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)

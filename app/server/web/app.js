@@ -45,6 +45,9 @@ const els = {
   spiritRunNowBtn: document.getElementById("spiritRunNowBtn"),
   spiritRunsList: document.getElementById("spiritRunsList"),
   spiritRunDetail: document.getElementById("spiritRunDetail"),
+  sp_approvals: document.getElementById("sp-approvals"),
+  spiritApprovalList: document.getElementById("spiritApprovalList"),
+  spiritApprBadge: document.getElementById("spiritApprBadge"),
   consoleProfileBar: document.getElementById("consoleProfileBar"),
   consoleProfileName: document.getElementById("consoleProfileName"),
   consoleProfileClear: document.getElementById("consoleProfileClear"),
@@ -1906,7 +1909,7 @@ if (els.consoleProfileClear) els.consoleProfileClear.addEventListener("click", (
 // The dashboard reads the sibling excalibur tree (feed, run reports, prompts)
 // and records the user's keep/discard/snooze; the ENGINE owns execution — the
 // only write toward it is a spooled run-now request it picks up on its own.
-const SPIRIT_TABS = ["feed", "runs"];
+const SPIRIT_TABS = ["feed", "runs", "approvals"];
 let spiritStatusCache = null;
 let spiritFeedCache = [];
 let spiritRunsCache = [];
@@ -1918,6 +1921,8 @@ function showSpirits() {
   loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
   if (tab === "feed") loadSpiritFeed();
   else if (tab === "runs") loadSpiritRuns();
+  else if (tab === "approvals") loadSpiritApprovals();
+  refreshSpiritApprovalBadge();
 }
 function spiritTabFromHash() {
   const t = (location.hash.split("/")[2] || "feed");
@@ -2093,6 +2098,53 @@ async function toggleSpiritPrompts(id, btn) {
     });
   }
   box.hidden = false; btn.textContent = "Hide assembled prompt";
+}
+
+// ---- spirit approvals (artifacts/approvals/ — the ONE inbox) ----
+// Spirits file proposals via the write_approval cast; Confirm/Reject only
+// RECORD the decision (a folder move on the excalibur tree). Nothing sends.
+async function loadSpiritApprovals() {
+  let d = { pending: [], counts: {} };
+  try { d = await (await fetch("/api/spirits/approvals")).json(); } catch (e) {}
+  const host = els.spiritApprovalList; host.innerHTML = "";
+  const pending = d.pending || [];
+  setSpiritApprovalBadge((d.counts && d.counts.pending) || 0);
+  if (!pending.length) { host.appendChild(emptyRow("Nothing pending — warden findings and future EA proposals land here.")); return; }
+  pending.forEach((a) => host.appendChild(spiritApprovalCard(a)));
+}
+function spiritApprovalCard(a) {
+  const card = el("div", "approval-card");
+  const head = el("div", "appr-head");
+  head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
+  card.append(head);
+  if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
+  if (a.body) { const b = el("pre", "appr-body"); b.textContent = a.body; card.append(b); }
+  const actions = el("div", "appr-actions");
+  actions.append(
+    pill("Confirm", () => spiritApprovalAct(a.id, "confirm")),
+    pillLight("Reject", () => spiritApprovalAct(a.id, "reject")),
+  );
+  card.append(actions);
+  return card;
+}
+async function spiritApprovalAct(id, kind) {
+  let body = {};
+  if (kind === "reject") {
+    const reason = prompt("Reason (optional — recorded on the proposal; for warden findings this becomes an accepted exception):") || "";
+    body = { reason: reason.trim() || "rejected from dashboard" };
+  }
+  setSaveState("saving");
+  try { await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  loadSpiritApprovals();
+}
+function setSpiritApprovalBadge(n) {
+  if (!els.spiritApprBadge) return;
+  els.spiritApprBadge.hidden = !n;
+  els.spiritApprBadge.textContent = n || "";
+}
+async function refreshSpiritApprovalBadge() {
+  try { const d = await (await fetch("/api/spirits/approvals")).json(); setSpiritApprovalBadge((d.counts && d.counts.pending) || 0); } catch (e) {}
 }
 
 if (els.spiritRunNowBtn) els.spiritRunNowBtn.addEventListener("click", spiritRunNow);

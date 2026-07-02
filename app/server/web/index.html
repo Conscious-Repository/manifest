@@ -194,6 +194,7 @@
     <div class="agents-tabs" id="spiritsTabs">
       <a class="atab" data-tab="feed" href="#/spirits">FEED</a>
       <a class="atab" data-tab="runs" href="#/spirits/runs">RUNS</a>
+      <a class="atab" data-tab="approvals" href="#/spirits/approvals">APPROVALS<span id="spiritApprBadge" class="atab-badge" hidden></span></a>
     </div>
 
     <!-- FEED (artifacts/feed/ — keep/discard/snooze write back to frontmatter) -->
@@ -214,6 +215,14 @@
       </div>
       <div id="spiritRunsList" class="runs-list"></div>
       <div id="spiritRunDetail" class="run-detail" hidden></div>
+    </div>
+
+    <!-- APPROVALS (artifacts/approvals/ — the ONE inbox; record-only) -->
+    <div class="agent-panel" id="sp-approvals" hidden>
+      <div class="panel-subhead">
+        <span>PENDING APPROVALS <span class="sub-meta">record-only · warden findings land here</span></span>
+      </div>
+      <div id="spiritApprovalList" class="approval-rows"></div>
     </div>
   </section>
 

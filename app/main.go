@@ -109,14 +109,16 @@ func main() {
 	}
 	srv.UseProfiles(profileStore)
 	srv.UseFeed(feed.NewStore(agentsDir))
-	srv.UseApprovals(approvals.NewStore(agentsDir))
 	srv.UseVault(vaultwriter.New(cfg.VaultPath)) // "Save to vault" — the only vault write
 
 	// SPIRITS — the excalibur harness console. The dashboard renders the
-	// sibling tree; the engine (a separate process) owns all execution.
+	// sibling tree; the engine (a separate process) owns all execution. The
+	// approvals inbox is the excalibur surface (plan §2.5: ONE inbox — warden
+	// findings today, the goals-Phase-2 EA later).
 	if cfg.ExcaliburPath != "" {
 		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
-		log.Printf("spirits: %s", cfg.ExcaliburPath)
+		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")))
+		log.Printf("spirits: %s (approvals inbox: artifacts/approvals)", cfg.ExcaliburPath)
 	}
 	if hz.Configured() {
 		log.Printf("hermes: configured (%s, model %s)", hz.BaseURL(), hz.Model())

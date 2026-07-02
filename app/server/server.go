@@ -124,6 +124,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/spirits/runs", s.handleSpiritsRuns)
 	mux.HandleFunc("GET /api/spirits/runs/{id}", s.handleSpiritsRun)
 	mux.HandleFunc("GET /api/spirits/runs/{id}/prompt", s.handleSpiritsRunPrompt)
+	mux.HandleFunc("GET /api/spirits/approvals", s.handleSpiritsApprovals)
+	mux.HandleFunc("POST /api/spirits/approvals/{id}/confirm", s.handleSpiritsApprovalConfirm)
+	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
 
 	sub, err := fs.Sub(webFiles, "web")
