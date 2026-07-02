@@ -43,6 +43,7 @@ const els = {
   spiritFeedFilters: document.getElementById("spiritFeedFilters"),
   spiritFeedList: document.getElementById("spiritFeedList"),
   spiritRunNowBtn: document.getElementById("spiritRunNowBtn"),
+  spiritAskBtn: document.getElementById("spiritAskBtn"),
   spiritRunsList: document.getElementById("spiritRunsList"),
   spiritRunDetail: document.getElementById("spiritRunDetail"),
   sp_approvals: document.getElementById("sp-approvals"),
@@ -1992,23 +1993,46 @@ async function spiritFeedAction(id, body) {
   loadSpiritFeed();
 }
 
-// ---- run now (spooled request; engine picks it up within ~5s) ----
-async function spiritRunNow() {
-  const st = spiritStatusCache || {};
-  const spirits = st.spirits || {};
-  const spirit = Object.keys(spirits)[0];
-  const ritual = spirit ? (spirits[spirit] || [])[0] : null;
-  if (!spirit || !ritual) { alert("No spirit/ritual found in the excalibur tree."); return; }
+// ---- run now / ask a scout (spooled request; engine picks it up within ~5s) ----
+// spiritPick opens the spirit/ritual picker (one area per spirit, its rituals
+// as items) and calls onPick("spirit","ritual"). askRitual, when given, is
+// picked automatically if present so "Ask a scout" lands on options-scout's
+// research ritual without a needless second tap.
+function spiritPick(onPick) {
+  const spirits = (spiritStatusCache || {}).spirits || {};
+  const groups = Object.keys(spirits).sort().map((sp) => ({
+    area: sp,
+    items: (spirits[sp] || []).map((rit) => ({ id: sp + "/" + rit, text: rit })),
+  })).filter((g) => g.items.length);
+  if (!groups.length) { alert("No spirit/ritual found in the excalibur tree."); return; }
+  openPicker("Run a ritual now", groups, (id) => {
+    const [sp, rit] = id.split("/");
+    onPick(sp, rit);
+  }, "No rituals found.");
+}
+async function spiritSpool(spirit, ritual, request) {
   const btn = els.spiritRunNowBtn;
   btn.disabled = true; btn.textContent = "Requested ✓";
   try {
-    const r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual }) });
+    const r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) });
     if (!r.ok) throw new Error(await r.text());
     watchForNewRun();
   } catch (e) {
     alert("Run request failed: " + (e.message || e));
     btn.disabled = false; btn.textContent = "▶ Run now";
   }
+}
+function spiritRunNow() {
+  spiritPick((sp, rit) => spiritSpool(sp, rit, ""));
+}
+// spiritAskScout: pick a spirit/ritual, then prompt for a free-form request
+// (options-scout/research: "buy X under $Y — find 5 options"). The request
+// rides the spool file into the run's prompt.
+function spiritAskScout() {
+  spiritPick((sp, rit) => {
+    const request = prompt(`Request for ${sp}/${rit}  (e.g. "buy a mechanical keyboard under $200 — find 5 options")`);
+    if (request && request.trim()) spiritSpool(sp, rit, request.trim());
+  });
 }
 // Poll the runs list until a new report lands (runs take a couple of minutes),
 // then refresh whichever sub-tab is open. Light: 5s cadence, ~15 min ceiling.
@@ -2058,6 +2082,7 @@ function spiritRunCard(r) {
   const row = el("div", "charge-row");
   row.append(bar, el("span", "charge-label", `$${r.spentUsd.toFixed(4)} / $${r.ceilingUsd.toFixed(2)}`));
   card.append(row);
+  if (r.request) card.append(el("div", "feed-why", "“" + r.request + "”"));
   card.append(el("div", "feed-meta", `${r.steps} steps · ${r.itemsWritten} items · ${r.portal} (${r.model})`));
   card.onclick = () => openSpiritRun(r.id);
   return card;
@@ -2148,6 +2173,7 @@ async function refreshSpiritApprovalBadge() {
 }
 
 if (els.spiritRunNowBtn) els.spiritRunNowBtn.addEventListener("click", spiritRunNow);
+if (els.spiritAskBtn) els.spiritAskBtn.addEventListener("click", spiritAskScout);
 
 // ---- router ----
 function route() {

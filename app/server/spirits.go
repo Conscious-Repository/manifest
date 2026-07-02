@@ -168,14 +168,15 @@ func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Spirit string `json:"spirit"`
-		Ritual string `json:"ritual"`
+		Spirit  string `json:"spirit"`
+		Ritual  string `json:"ritual"`
+		Request string `json:"request"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual); err != nil {
+	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual, b.Request); err != nil {
 		httpError(w, err)
 		return
 	}

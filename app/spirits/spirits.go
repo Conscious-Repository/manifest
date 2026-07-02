@@ -40,6 +40,7 @@ type RunSummary struct {
 	Run          string  `json:"run"`
 	Spirit       string  `json:"spirit"`
 	Ritual       string  `json:"ritual"`
+	Request      string  `json:"request"`
 	Started      string  `json:"started"`
 	Finished     string  `json:"finished"`
 	Outcome      string  `json:"outcome"`
@@ -96,6 +97,7 @@ func (s *Store) parseRun(path string) (RunSummary, string, error) {
 		Run:          fm["run"],
 		Spirit:       fm["spirit"],
 		Ritual:       fm["ritual"],
+		Request:      fm["request"],
 		Started:      fm["started"],
 		Finished:     fm["finished"],
 		Outcome:      fm["outcome"],
@@ -160,22 +162,34 @@ func (s *Store) RunPrompts(spirit, run string) ([]PromptTurn, error) {
 	return out, nil
 }
 
+// maxRequestChars bounds a spooled request (mirrors the engine cap).
+const maxRequestChars = 4000
+
 // SpoolRunNow drops a run request for the engine to pick up (never a direct
-// invocation). Mirrors the engine's scheduler.SpoolRequest shape.
-func (s *Store) SpoolRunNow(spirit, ritual string) error {
+// invocation). Mirrors the engine's scheduler.SpoolRequest shape. request is
+// the summoner's free-form ask for on-demand spirits (options-scout); empty
+// for a plain run-now.
+func (s *Store) SpoolRunNow(spirit, ritual, request string) error {
 	if !validID(spirit) || !validID(ritual) {
 		return fmt.Errorf("bad spirit/ritual name")
+	}
+	if len(request) > maxRequestChars {
+		request = request[:maxRequestChars]
 	}
 	dir := filepath.Join(s.root, "vessel", "spool")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	req, _ := json.Marshal(map[string]string{
+	payload := map[string]string{
 		"spirit":       spirit,
 		"ritual":       ritual,
 		"source":       "dashboard",
 		"requested_at": time.Now().Format(time.RFC3339),
-	})
+	}
+	if strings.TrimSpace(request) != "" {
+		payload["request"] = request
+	}
+	req, _ := json.Marshal(payload)
 	name := fmt.Sprintf("%d-%s-%s.json", time.Now().UnixNano(), spirit, ritual)
 	return os.WriteFile(filepath.Join(dir, name), req, 0o644)
 }
