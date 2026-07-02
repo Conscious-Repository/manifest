@@ -24,6 +24,7 @@ import (
 	"manifest/server"
 	"manifest/spirits"
 	"manifest/vault"
+	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
 
@@ -73,6 +74,35 @@ func main() {
 		defer w.Close()
 	}
 
+	// Read-only headless-Dataview index over the WHOLE vault (the M0 kernel).
+	// Derived/rebuildable → lives under DataDir, never the vault. It cold-builds
+	// on first run and stays live via a background watcher; a build failure only
+	// disables the contacts/query surfaces, never the core dashboard.
+	vix, err := vaultindex.Open(vaultindex.Config{
+		VaultRoot: cfg.VaultPath,
+		DBPath:    filepath.Join(cfg.DataDir, "index.db"),
+	})
+	if err != nil {
+		log.Printf("vault index disabled: %v", err)
+		vix = nil
+	} else {
+		defer vix.Close()
+		if n, err := vix.Rebuild(); err != nil {
+			log.Printf("vault index build failed (contacts/query disabled): %v", err)
+		} else {
+			log.Printf("vault index: %d notes → %s", n, filepath.Join(cfg.DataDir, "index.db"))
+		}
+		go func() {
+			if err := vix.Watch(ctx, 0, func(paths []string, err error) {
+				if err != nil {
+					log.Printf("vault reindex: %v", err)
+				}
+			}); err != nil {
+				log.Printf("vault index watcher stopped: %v", err)
+			}
+		}()
+	}
+
 	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName)
 	if err := goalsStore.Seed(); err != nil {
 		log.Printf("seeding goals.md: %v", err)
@@ -93,6 +123,9 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	if vix != nil {
+		srv.UseIndex(vix)
+	}
 
 	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the
 	// Hermes cockpit). The dashboard renders the sibling tree and records

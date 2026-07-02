@@ -12,6 +12,7 @@ import (
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/spirits"
+	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
 
@@ -26,6 +27,8 @@ type Server struct {
 	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
 	vault     *vaultwriter.Writer
 	spirits   *spirits.Store
+	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
+	index *vaultindex.Index
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -38,6 +41,9 @@ func (s *Server) UseVault(v *vaultwriter.Writer)  { s.vault = v }
 
 // UseSpirits wires the excalibur harness tree (SPIRITS tab).
 func (s *Server) UseSpirits(sp *spirits.Store) { s.spirits = sp }
+
+// UseIndex wires the read-only vault index (contacts + query surfaces).
+func (s *Server) UseIndex(ix *vaultindex.Index) { s.index = ix }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
