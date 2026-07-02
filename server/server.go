@@ -118,6 +118,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/contacts/note", s.handleContactsNote)
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
 
+	// Universal note view + edits (contacts power-pass §1).
+	mux.HandleFunc("GET /api/note", s.handleNoteGet)
+	mux.HandleFunc("PUT /api/note", s.handleNotePut)
+	mux.HandleFunc("POST /api/note/task", s.handleNoteTask)
+	mux.HandleFunc("GET /api/note/resolve", s.handleNoteResolve)
+
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {
 		log.Fatal(err)

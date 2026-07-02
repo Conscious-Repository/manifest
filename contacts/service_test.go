@@ -29,7 +29,7 @@ func harness(t *testing.T) (*Service, *vaultindex.Index, string) {
 	}
 	// Shoumik: NO note; only [[links]] from meeting notes + a daily + an undated note.
 	write("2026-05-19 shoumik sync.md", "---\ncategories:\n  - aion\n  - sync\n---\n"+
-		"[[shoumik dabir]] [[justin mares]]\n\n**shoumik:** hi\n**ben:** yo\n**shoumik:** ok\n")
+		"[[shoumik dabir]] [[justin mares]]\n\n**shoumik:** hi\n**ben:** yo\n**shoumik:** ok\n\n## Next steps\n- [ ] send the deck\n")
 	write("2026-05-20 aion timelines sync.md", "---\ncategories: [sync]\n---\n[[shoumik dabir]] roadmap\n")
 	write("intrinsic/2026-07-01.md", "<!-- manifest:start -->\nmeeting [[shoumik dabir]] today\n")
 	write("random idea.md", "some thought referencing [[shoumik dabir]]\n") // undated → mention
@@ -169,6 +169,46 @@ func TestTriageQueueAndDecisions(t *testing.T) {
 	tri2, _ := svc.Triage()
 	if hasKeyTri(tri2, "bob jones") {
 		t.Fatal("dismissed name must not reappear")
+	}
+}
+
+func TestOpenLoopsAndToggle(t *testing.T) {
+	svc, ix, root := harness(t)
+	// the sync note's unchecked task surfaces as an open loop for BOTH attendees
+	loops := svc.OpenLoops("shoumik dabir")
+	var g *OpenLoopGroup
+	var task *OpenLoopItem
+	for i := range loops {
+		for j := range loops[i].Loops {
+			if loops[i].Loops[j].Kind == "checkbox" {
+				g, task = &loops[i], &loops[i].Loops[j]
+			}
+		}
+	}
+	if task == nil {
+		t.Fatalf("expected an unchecked checkbox loop, got %+v", loops)
+	}
+	if task.Text != "send the deck" {
+		t.Fatalf("loop text = %q", task.Text)
+	}
+	// a loop in a multi-person note appears for each attendee (no dedupe)
+	if len(svc.OpenLoops("justin mares")) == 0 {
+		t.Fatal("the same loop should surface for the other attendee")
+	}
+	// toggling it (the dashboard write) checks it off in the source file
+	vw := vaultwriter.New(root)
+	if err := vw.ToggleTask(g.Path, task.Line, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := ix.ReindexPaths([]string{g.Path}); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(g.Path)))
+	if !strings.Contains(string(raw), "- [x] send the deck") {
+		t.Fatalf("task not checked off in file:\n%s", raw)
+	}
+	if len(svc.OpenLoops("shoumik dabir")) != 0 {
+		t.Fatal("a checked task should no longer be an open loop")
 	}
 }
 

@@ -61,13 +61,19 @@ func New(ix *vaultindex.Index, store *Store, vw *vaultwriter.Writer, cal Calenda
 
 // Contact is one row in the contacts list.
 type Contact struct {
-	Key      string `json:"key"`
-	Display  string `json:"display"`
-	NotePath string `json:"notePath"`
-	HasNote  bool   `json:"hasNote"`
-	LastMet  string `json:"lastMet"` // "" when there is no dated evidence — never a guess
-	RefCount int    `json:"refCount"`
-	Upcoming string `json:"upcoming"` // ISO date of the next CONFIRMED-email match, else ""
+	Key       string `json:"key"`
+	Display   string `json:"display"`
+	NotePath  string `json:"notePath"`
+	HasNote   bool   `json:"hasNote"`
+	LastMet   string `json:"lastMet"` // "" when there is no dated evidence — never a guess
+	RefCount  int    `json:"refCount"`
+	Upcoming  string `json:"upcoming"`  // ISO date of the next CONFIRMED-email match, else ""
+	OpenLoops int    `json:"openLoops"` // unchecked meeting-context loops naming this contact
+	// Neglect lens (pure computation, no writes):
+	Interactions int  `json:"interactions"` // count of DATED interactions
+	MedianGap    int  `json:"medianGap"`    // median days between dated interactions
+	DaysSince    int  `json:"daysSince"`    // days since the last dated interaction, -1 if none
+	Cold         bool `json:"cold"`         // 3+ interactions AND daysSince > max(30, 2×median)
 }
 
 // List returns all contacts, sorted by most-recent dated interaction (dated
@@ -105,8 +111,11 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 		add(Contact{Key: t.Key, Display: t.Display, RefCount: t.RefCount})
 	}
 
-	// confirmed-email upcoming matches, resolved once
+	// confirmed-email upcoming matches, open-loop counts, and interaction-date
+	// histories — each resolved ONCE for the whole list.
 	upcoming := s.confirmedUpcoming(now)
+	loopCounts, _ := s.ix.OpenLoopCounts()
+	dateMap, _ := s.ix.InteractionDatesByKey()
 
 	out := make([]Contact, 0, len(byKey))
 	for _, c := range byKey {
@@ -115,6 +124,12 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 		if u, ok := upcoming[c.Key]; ok {
 			c.Upcoming = u
 		}
+		var dates []string
+		for _, k := range keys {
+			c.OpenLoops += loopCounts[k]
+			dates = append(dates, dateMap[k]...)
+		}
+		c.Interactions, c.MedianGap, c.DaysSince, c.Cold = neglect(dates, now)
 		out = append(out, *c)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -165,18 +180,24 @@ type UpcomingItem struct {
 
 // Page is the full contact page (spec §3).
 type Page struct {
-	Key         string         `json:"key"`
-	Display     string         `json:"display"`
-	NotePath    string         `json:"notePath"`
-	HasNote     bool           `json:"hasNote"`
-	Aliases     []string       `json:"aliases"`
-	Firms       []Ref          `json:"firms"`
-	LastMet     string         `json:"lastMet"`
-	Timeline    []TimelineItem `json:"timeline"`
-	Mentions    []Mention      `json:"mentions"`
-	Transcripts []Transcript   `json:"transcripts"`
-	Upcoming    []UpcomingItem `json:"upcoming"`
-	NoteBody    string         `json:"noteBody"`
+	Key         string          `json:"key"`
+	Display     string          `json:"display"`
+	NotePath    string          `json:"notePath"`
+	HasNote     bool            `json:"hasNote"`
+	Aliases     []string        `json:"aliases"`
+	Firms       []Ref           `json:"firms"`
+	LastMet     string          `json:"lastMet"`
+	Timeline    []TimelineItem  `json:"timeline"`
+	Mentions    []Mention       `json:"mentions"`
+	Transcripts []Transcript    `json:"transcripts"`
+	Upcoming    []UpcomingItem  `json:"upcoming"`
+	Loops       []OpenLoopGroup `json:"loops"`
+	NoteBody    string          `json:"noteBody"`
+	// Neglect lens
+	Interactions int  `json:"interactions"`
+	MedianGap    int  `json:"medianGap"`
+	DaysSince    int  `json:"daysSince"`
+	Cold         bool `json:"cold"`
 }
 
 // Page assembles the contact page for an entity key (or a bound variant).
@@ -204,11 +225,13 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 	}
 
 	tl := s.mergedTimeline(keys)
+	var datedForNeglect []string
 	for _, e := range tl {
 		if e.Date != "" {
 			if p.LastMet == "" {
 				p.LastMet = e.Date // list is newest-first, so the first dated entry is last-met
 			}
+			datedForNeglect = append(datedForNeglect, e.Date)
 			p.Timeline = append(p.Timeline, TimelineItem{
 				Date: e.Date, Name: e.Name, Path: e.Path, SourceType: e.SourceType, IsTranscript: e.IsTranscript,
 			})
@@ -219,6 +242,8 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 
 	p.Transcripts = s.transcripts(keys, tl)
 	p.Upcoming = s.upcomingFor(p, now)
+	p.Loops = s.OpenLoops(e.Key)
+	p.Interactions, p.MedianGap, p.DaysSince, p.Cold = neglect(datedForNeglect, now)
 	if p.HasNote {
 		p.NoteBody = s.noteBody(p.NotePath)
 	}
@@ -452,6 +477,102 @@ func (s *Service) ConfirmEmail(rawKey, display, email string) error {
 		return err
 	}
 	return s.ix.ReindexPaths([]string{notePath})
+}
+
+// ---- open loops (§2) ----
+
+// OpenLoopGroup is the unchecked loops from one source note.
+type OpenLoopGroup struct {
+	Path  string         `json:"path"`
+	Name  string         `json:"name"`
+	Date  string         `json:"date"`
+	Loops []OpenLoopItem `json:"loops"`
+}
+
+// OpenLoopItem is one unchecked task (toggleable) or next-step line.
+type OpenLoopItem struct {
+	Line int    `json:"line"`
+	Text string `json:"text"`
+	Kind string `json:"kind"` // "checkbox" (toggleable) | "nextstep"
+}
+
+// OpenLoops returns the contact's unchecked meeting-context loops, grouped by
+// source note (newest note first).
+func (s *Service) OpenLoops(rawKey string) []OpenLoopGroup {
+	canon := s.canonical(rawKey)
+	e, _ := s.ix.Entity(canon)
+	loops, err := s.ix.OpenLoops(s.keysFor(canon, e.NotePath))
+	if err != nil {
+		return nil
+	}
+	var groups []OpenLoopGroup
+	idx := map[string]int{}
+	for _, l := range loops {
+		i, ok := idx[l.Path]
+		if !ok {
+			i = len(groups)
+			idx[l.Path] = i
+			groups = append(groups, OpenLoopGroup{Path: l.Path, Name: l.Name, Date: l.Date})
+		}
+		groups[i].Loops = append(groups[i].Loops, OpenLoopItem{Line: l.Line, Text: l.Text, Kind: l.Kind})
+	}
+	return groups
+}
+
+// ---- neglect lens (§3) ----
+
+// neglect computes the neglect signals from a contact's dated-interaction dates:
+// the count, the median gap between them, days since the last, and whether they
+// are "going cold" (3+ interactions AND days-since > max(30, 2×median gap)).
+// Pure computation — no writes, no AI. (Seam: a future funder lens can weight
+// the threshold by pipeline stage:: here.)
+func neglect(dates []string, now time.Time) (interactions, medianGap, daysSince int, cold bool) {
+	seen := map[string]bool{}
+	var days []int
+	for _, d := range dates {
+		if d == "" || seen[d] {
+			continue
+		}
+		seen[d] = true
+		if t, err := time.Parse("2006-01-02", d); err == nil {
+			days = append(days, int(t.Unix()/86400))
+		}
+	}
+	sort.Ints(days)
+	interactions = len(days)
+	daysSince = -1
+	if interactions == 0 {
+		return
+	}
+	daysSince = int(now.UTC().Unix()/86400) - days[len(days)-1]
+	if daysSince < 0 {
+		daysSince = 0
+	}
+	if interactions >= 2 {
+		gaps := make([]int, 0, interactions-1)
+		for i := 1; i < len(days); i++ {
+			gaps = append(gaps, days[i]-days[i-1])
+		}
+		sort.Ints(gaps)
+		medianGap = medianInt(gaps)
+	}
+	threshold := 30
+	if 2*medianGap > threshold {
+		threshold = 2 * medianGap
+	}
+	cold = interactions >= 3 && daysSince > threshold
+	return
+}
+
+func medianInt(xs []int) int {
+	n := len(xs)
+	if n == 0 {
+		return 0
+	}
+	if n%2 == 1 {
+		return xs[n/2]
+	}
+	return (xs[n/2-1] + xs[n/2]) / 2
 }
 
 // ---- internals ----

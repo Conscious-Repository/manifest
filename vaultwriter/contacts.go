@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"manifest/mdfm"
@@ -88,6 +89,51 @@ func (w *Writer) AddFrontmatterValue(rel, key, value string) error {
 		return nil
 	}
 	return os.WriteFile(full, []byte(next), 0o644)
+}
+
+// WriteNote overwrites a note with the exact raw content the user typed in the
+// note view's raw-markdown editor (frontmatter + body verbatim). A user write.
+func (w *Writer) WriteNote(rel, raw string) error {
+	full, err := w.resolve(rel)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(full); err != nil {
+		return errors.New("note does not exist") // the note view only edits existing files
+	}
+	if !strings.HasSuffix(raw, "\n") {
+		raw += "\n"
+	}
+	return os.WriteFile(full, []byte(raw), 0o644)
+}
+
+var taskMarkRe = regexp.MustCompile(`^(\s*[-*]\s+\[)[ xX](\].*)$`)
+
+// ToggleTask flips the checkbox on the given 0-based line of a note to `want`
+// (checked/unchecked) — the "check it off from the dashboard" write. It verifies
+// the line is actually a checkbox (optimistic-concurrency guard against drift).
+func (w *Writer) ToggleTask(rel string, line int, want bool) error {
+	full, err := w.resolve(rel)
+	if err != nil {
+		return err
+	}
+	b, err := os.ReadFile(full)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(b), "\n")
+	if line < 0 || line >= len(lines) {
+		return errors.New("line out of range (note changed — reload)")
+	}
+	if !taskMarkRe.MatchString(strings.TrimRight(lines[line], "\r")) {
+		return errors.New("that line is no longer a task (note changed — reload)")
+	}
+	mark := " "
+	if want {
+		mark = "x"
+	}
+	lines[line] = taskMarkRe.ReplaceAllString(strings.TrimRight(lines[line], "\r"), "${1}"+mark+"${2}")
+	return os.WriteFile(full, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
 func (w *Writer) resolve(rel string) (string, error) {

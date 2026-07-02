@@ -2,6 +2,7 @@ package vaultindex
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -254,6 +255,96 @@ func (ix *Index) Search(query string) ([]SearchRef, error) {
 		r.IsPerson = person == 1
 		r.HasNote = r.NotePath != ""
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// OpenLoop is one unchecked task/next-step surfaced from a meeting-context note.
+type OpenLoop struct {
+	Path, Name, Date, Text, Kind string
+	Line                         int
+}
+
+// OpenLoops returns the unchecked tasks + next-step lines from meeting-context
+// notes that link the entity (any of keys), newest note first. A loop in a
+// multi-person note surfaces for each linked person — the caller does not dedupe.
+func (ix *Index) OpenLoops(keys []string) ([]OpenLoop, error) {
+	seen := map[string]bool{}
+	var out []OpenLoop
+	for _, key := range keys {
+		rows, err := ix.db.Query(`
+			SELECT t.path, n.name, n.date, t.line, t.text, t.kind
+			FROM note_tasks t
+			JOIN notes n ON n.path = t.path
+			JOIN links l ON l.src_path = t.path
+			WHERE l.target_key = ? AND t.checked = 0 AND n.ai_authored = 0 AND `+meetingCtxSQL+`
+			ORDER BY n.date DESC, t.line ASC`, strings.ToLower(strings.TrimSpace(key)))
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var l OpenLoop
+			if err := rows.Scan(&l.Path, &l.Name, &l.Date, &l.Line, &l.Text, &l.Kind); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			sig := l.Path + "\x00" + strconv.Itoa(l.Line)
+			if !seen[sig] {
+				seen[sig] = true
+				out = append(out, l)
+			}
+		}
+		rows.Close()
+	}
+	return out, nil
+}
+
+// OpenLoopCounts returns, per link-target key, how many unchecked meeting-context
+// loops reference it — the contacts-list rollup (one query for all contacts).
+func (ix *Index) OpenLoopCounts() (map[string]int, error) {
+	rows, err := ix.db.Query(`
+		SELECT l.target_key, COUNT(*)
+		FROM note_tasks t
+		JOIN notes n ON n.path = t.path
+		JOIN links l ON l.src_path = t.path
+		WHERE t.checked = 0 AND n.ai_authored = 0 AND ` + meetingCtxSQL + `
+		GROUP BY l.target_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var k string
+		var c int
+		if err := rows.Scan(&k, &c); err != nil {
+			return nil, err
+		}
+		out[k] = c
+	}
+	return out, rows.Err()
+}
+
+// InteractionDatesByKey returns, per link-target key, the distinct dates of its
+// non-AI dated interactions (ascending) — the input to the neglect computation.
+func (ix *Index) InteractionDatesByKey() (map[string][]string, error) {
+	rows, err := ix.db.Query(`
+		SELECT l.target_key, n.date
+		FROM links l JOIN notes n ON n.path = l.src_path
+		WHERE n.ai_authored = 0 AND n.date != ''
+		GROUP BY l.target_key, n.date
+		ORDER BY l.target_key, n.date`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var k, d string
+		if err := rows.Scan(&k, &d); err != nil {
+			return nil, err
+		}
+		out[k] = append(out[k], d)
 	}
 	return out, rows.Err()
 }

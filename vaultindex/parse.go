@@ -32,6 +32,7 @@ type Note struct {
 	Emails        []string // union of email: and emails: (confirm-once contact matching)
 	InlineFields  []InlineField
 	Links         []Link
+	Tasks         []Task
 	AIAuthored    bool
 	HasTranscript bool // body carries a speaker-labelled transcript (Granola-export shape)
 	MTime         int64
@@ -49,6 +50,16 @@ type Link struct {
 // InlineField is a Dataview inline field: [key:: value] or a line-level key:: value.
 type InlineField struct{ Key, Value string }
 
+// Task is an open-loop candidate: a checkbox item, or a plain line under a
+// next-step-ish heading. Line is the ABSOLUTE 0-based file line (so a toggle
+// edits the right line). Kind ∈ checkbox|nextstep; only checkboxes toggle.
+type Task struct {
+	Line    int
+	Text    string
+	Checked bool
+	Kind    string
+}
+
 var (
 	datedFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
 	isoDateRe      = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
@@ -57,6 +68,10 @@ var (
 	lineFieldRe    = regexp.MustCompile(`(?m)^([A-Za-z0-9 _/-]+?)::[ \t]*(.+?)\s*$`)
 	// a Granola-export transcript turn: a **speaker:** label at line start
 	speakerLineRe = regexp.MustCompile(`(?m)^\s*\*\*[^*\n]{1,40}:\*\*`)
+	// task + heading extraction (open loops)
+	headingRe  = regexp.MustCompile(`^\s{0,3}#{1,6}\s+(.*\S)\s*$`)
+	checkboxRe = regexp.MustCompile(`^\s*[-*]\s+\[([ xX])\]\s?(.*)$`)
+	nextStepRe = regexp.MustCompile(`(?i)(next[- ]?steps?|action[- ]?items?|to-?dos?|follow[- ]?ups?)`)
 )
 
 // ParseNote parses one note. relPath is vault-relative (forward-slash); content
@@ -89,6 +104,7 @@ func ParseNote(relPath string, content []byte, mtime int64, aiRegions []string) 
 	n.InlineFields = extractInlineFields(body) // fields live in the body, not the YAML block
 	// a speaker-labelled body (≥3 turns) marks a transcript note (funder §4)
 	n.HasTranscript = len(speakerLineRe.FindAllStringIndex(body, 4)) >= 3
+	n.Tasks = extractTasks(whole)
 
 	for _, r := range aiRegions {
 		if r != "" && (relPath == strings.TrimSuffix(r, "/") || strings.HasPrefix(relPath, strings.TrimSuffix(r, "/")+"/")) {
@@ -133,6 +149,36 @@ func extractLinks(s string) []Link {
 		}
 		seen[key] = true
 		out = append(out, Link{Key: key, Display: display})
+	}
+	return out
+}
+
+// extractTasks pulls open-loop candidates with ABSOLUTE file line numbers: every
+// checkbox (`- [ ]` / `- [x]`, toggleable), plus plain content lines under a
+// next-step-ish heading (surfaced but not toggleable). Scanning the whole file
+// keeps line numbers absolute so a toggle edits the right line.
+func extractTasks(content string) []Task {
+	var out []Task
+	inNextStep := false
+	for i, raw := range strings.Split(content, "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if m := headingRe.FindStringSubmatch(line); m != nil {
+			inNextStep = nextStepRe.MatchString(m[1])
+			continue
+		}
+		if m := checkboxRe.FindStringSubmatch(line); m != nil {
+			out = append(out, Task{
+				Line: i, Text: strings.TrimSpace(m[2]),
+				Checked: m[1] == "x" || m[1] == "X", Kind: "checkbox",
+			})
+			continue
+		}
+		if inNextStep {
+			t := strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(line), "-*•"))
+			if t != "" {
+				out = append(out, Task{Line: i, Text: t, Kind: "nextstep"})
+			}
+		}
 	}
 	return out
 }

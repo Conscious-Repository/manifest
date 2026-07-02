@@ -69,6 +69,9 @@ CREATE INDEX IF NOT EXISTS idx_links_src    ON links(src_path);
 CREATE TABLE IF NOT EXISTS inline_fields (path TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_if_key ON inline_fields(key);
 
+CREATE TABLE IF NOT EXISTS note_tasks (path TEXT NOT NULL, line INTEGER NOT NULL, text TEXT NOT NULL, checked INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT 'checkbox');
+CREATE INDEX IF NOT EXISTS idx_task_path ON note_tasks(path);
+
 CREATE TABLE IF NOT EXISTS entities (
   key         TEXT PRIMARY KEY,
   display     TEXT NOT NULL DEFAULT '',
@@ -109,9 +112,9 @@ func Open(cfg Config) (*Index, error) {
 // disposable projection (Rebuild reproduces it from the vault), a version
 // mismatch simply drops every table and recreates — a stale on-disk index from
 // an older build upgrades itself with no migration, losslessly.
-const schemaVersion = 2
+const schemaVersion = 3
 
-var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "entities", "notes_fts"}
+var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "note_tasks", "entities", "notes_fts"}
 
 func ensureSchema(db *sql.DB) error {
 	var v int
@@ -146,7 +149,7 @@ func (ix *Index) Rebuild() (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback()
-	for _, t := range []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "entities", "notes_fts"} {
+	for _, t := range []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "note_tasks", "entities", "notes_fts"} {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return 0, err
 		}
@@ -239,6 +242,11 @@ func insertNote(tx *sql.Tx, n Note) error {
 	}
 	for _, f := range n.InlineFields {
 		if _, err := tx.Exec(`INSERT INTO inline_fields(path,key,value) VALUES(?,?,?)`, n.Path, f.Key, f.Value); err != nil {
+			return err
+		}
+	}
+	for _, t := range n.Tasks {
+		if _, err := tx.Exec(`INSERT INTO note_tasks(path,line,text,checked,kind) VALUES(?,?,?,?,?)`, n.Path, t.Line, t.Text, b2i(t.Checked), t.Kind); err != nil {
 			return err
 		}
 	}

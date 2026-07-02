@@ -29,10 +29,22 @@ const els = {
   contactList: document.getElementById("contactList"),
   contactTriage: document.getElementById("contactTriage"),
   contactSearch: document.getElementById("contactSearch"),
+  contactColdToggle: document.getElementById("contactColdToggle"),
   contactAddBtn: document.getElementById("contactAddBtn"),
   contactBackBtn: document.getElementById("contactBackBtn"),
   contactPage: document.getElementById("contactPage"),
   contactPageSaved: document.getElementById("contactPageSaved"),
+  // universal note view
+  noteView: document.getElementById("noteView"),
+  noteTitle: document.getElementById("noteTitle"),
+  noteBackBtn: document.getElementById("noteBackBtn"),
+  noteObsidian: document.getElementById("noteObsidian"),
+  noteRawToggle: document.getElementById("noteRawToggle"),
+  noteSaveBtn: document.getElementById("noteSaveBtn"),
+  noteSaved: document.getElementById("noteSaved"),
+  noteRendered: document.getElementById("noteRendered"),
+  noteRaw: document.getElementById("noteRaw"),
+  noteBacklinks: document.getElementById("noteBacklinks"),
   // quick-lookup command bar
   cmdbar: document.getElementById("cmdbar"),
   cmdbarBackdrop: document.getElementById("cmdbarBackdrop"),
@@ -1626,8 +1638,9 @@ async function postJSON(url, body) {
 
 function showContacts() {
   const rest = location.hash.replace(/^#\/contacts\/?/, "");
-  if (rest) showContactPage(decodeURIComponent(rest));
-  else showContactList();
+  if (rest === "cold") { _coldOnly = true; showContactList(); } // neglect view (deep-linkable)
+  else if (rest) { _coldOnly = false; showContactPage(decodeURIComponent(rest)); }
+  else { _coldOnly = false; showContactList(); }
 }
 
 function showContactList() {
@@ -1644,25 +1657,38 @@ async function loadContactList() {
   renderContactList(window._contacts, els.contactSearch.value);
 }
 
+let _coldOnly = false;
+
 function renderContactList(list, query) {
   const host = els.contactList; host.innerHTML = "";
   const q = (query || "").trim().toLowerCase();
-  const rows = q ? list.filter((c) => c.display.toLowerCase().includes(q)) : list;
-  if (!rows.length) { host.appendChild(emptyRow(q ? "No contacts match." : "No contacts yet.")); return; }
+  let rows = q ? list.filter((c) => c.display.toLowerCase().includes(q)) : list.slice();
+  const coldCount = list.filter((c) => c.cold).length;
+  if (els.contactColdToggle) {
+    els.contactColdToggle.textContent = "◆ Cold" + (coldCount ? " " + coldCount : "");
+    els.contactColdToggle.classList.toggle("on", _coldOnly);
+  }
+  if (_coldOnly) {
+    rows = rows.filter((c) => c.cold).sort((a, b) => b.daysSince - a.daysSince); // most overdue first
+  }
+  if (!rows.length) { host.appendChild(emptyRow(_coldOnly ? "No contacts going cold." : q ? "No contacts match." : "No contacts yet.")); return; }
   rows.forEach((c) => host.appendChild(contactRow(c)));
 }
 
 function contactRow(c) {
-  const row = el("div", "contact-row");
+  const row = el("div", "contact-row" + (c.cold ? " cold" : ""));
   row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
   const left = el("div", "contact-row-left");
-  const name = el("span", "contact-name", c.display);
-  left.append(name);
+  if (c.cold) left.append(el("span", "contact-cold", "◆")); // quiet going-cold marker
+  left.append(el("span", "contact-name", c.display));
   if (!c.hasNote) left.append(el("span", "contact-dot", "○")); // quiet no-note indicator
+  if (c.openLoops > 0) left.append(el("span", "contact-loops", c.openLoops + " open"));
   const right = el("div", "contact-row-right");
   if (c.upcoming) right.append(el("span", "contact-upcoming", "↑ " + c.upcoming));
   // last-met is BLANK when there is no dated evidence — never a guess
-  right.append(el("span", "contact-meta", c.lastMet ? "last met " + c.lastMet : ""));
+  let meta = c.lastMet ? "last met " + c.lastMet : "";
+  if (c.cold && c.daysSince >= 0) meta = "last met " + c.daysSince + "d ago (usually every " + c.medianGap + "d)";
+  right.append(el("span", "contact-meta", meta));
   row.append(left, right);
   return row;
 }
@@ -1756,8 +1782,44 @@ function renderContactPage(p) {
   }
   host.append(header);
 
-  // last-met line
-  host.append(el("div", "cp-lastmet", p.lastMet ? "Last met " + p.lastMet : "No dated meetings on record"));
+  // last-met line + neglect (§3)
+  let lastLine = p.lastMet ? "Last met " + p.lastMet : "No dated meetings on record";
+  if (p.daysSince >= 0 && p.interactions >= 3) {
+    lastLine = "Last met " + p.daysSince + "d ago" + (p.medianGap ? " (usually every " + p.medianGap + "d)" : "");
+  }
+  const lm = el("div", "cp-lastmet", lastLine);
+  if (p.cold) lm.append(el("span", "cp-cold", "◆ going cold"));
+  host.append(lm);
+
+  // open loops (§2) — unchecked tasks from meeting notes, grouped by source
+  if (p.loops && p.loops.length) {
+    let n = 0; p.loops.forEach((g) => (n += g.loops.length));
+    const sec = cpSection("Open loops", n);
+    p.loops.forEach((g) => {
+      const gh = el("div", "cp-loop-group");
+      const head = el("div", "cp-loop-src");
+      head.append(el("span", "cp-date", g.date), el("span", "cp-loop-note", g.name));
+      head.onclick = () => { _noteReturn = "#/contacts/" + encodeURIComponent(p.key); openNoteByPath(g.path); };
+      gh.append(head);
+      g.loops.forEach((it) => {
+        const row = el("label", "cp-loop-row");
+        if (it.kind === "checkbox") {
+          const box = el("input"); box.type = "checkbox";
+          box.addEventListener("change", async () => {
+            await postJSON("/api/note/task", { path: g.path, line: it.line, want: box.checked });
+            showContactPage(p.key);
+          });
+          row.append(box);
+        } else {
+          row.append(el("span", "cp-loop-dot", "›"));
+        }
+        row.append(el("span", "cp-loop-text", it.text));
+        gh.append(row);
+      });
+      sec.append(gh);
+    });
+    host.append(sec);
+  }
 
   // 2. upcoming (matched calendar events / candidates to confirm)
   if (p.upcoming && p.upcoming.length) {
@@ -1778,13 +1840,16 @@ function renderContactPage(p) {
     host.append(sec);
   }
 
-  // 3. timeline (dated interactions, newest first)
+  const openItem = (path) => { _noteReturn = "#/contacts/" + encodeURIComponent(p.key); openNoteByPath(path); };
+
+  // 3. timeline (dated interactions, newest first) — each opens the note view
   const tl = cpSection("Timeline", p.timeline ? p.timeline.length : 0);
   if (!p.timeline || !p.timeline.length) tl.append(el("div", "cp-empty", "No dated interactions."));
   (p.timeline || []).forEach((t) => {
-    const row = el("div", "cp-tl-row");
+    const row = el("div", "cp-tl-row cp-clickable");
     row.append(el("span", "cp-date", t.date), el("span", "cp-src", t.sourceType), el("span", "cp-tl-name", t.name));
     if (t.isTranscript) row.append(el("span", "cp-badge", "transcript"));
+    row.onclick = () => openItem(t.path);
     tl.append(row);
   });
   host.append(tl);
@@ -1793,8 +1858,9 @@ function renderContactPage(p) {
   if (p.transcripts && p.transcripts.length) {
     const sec = cpSection("Transcripts", p.transcripts.length);
     p.transcripts.forEach((t) => {
-      const row = el("div", "cp-tl-row");
+      const row = el("div", "cp-tl-row cp-clickable");
       row.append(el("span", "cp-date", t.date), el("span", "cp-tl-name", t.title), el("span", "cp-src", t.source));
+      row.onclick = () => openItem(t.path);
       sec.append(row);
     });
     host.append(sec);
@@ -1803,7 +1869,11 @@ function renderContactPage(p) {
   // 5. mentions (undated — never a date claim)
   if (p.mentions && p.mentions.length) {
     const sec = cpSection("Mentions (no date)", p.mentions.length);
-    p.mentions.forEach((m) => sec.append(el("div", "cp-mention", m.name)));
+    p.mentions.forEach((m) => {
+      const row = el("div", "cp-mention cp-clickable", m.name);
+      row.onclick = () => openItem(m.path);
+      sec.append(row);
+    });
     host.append(sec);
   }
 
@@ -1866,8 +1936,183 @@ async function runCreateSearch(q, host) {
 }
 
 if (els.contactSearch) els.contactSearch.addEventListener("input", () => renderContactList(window._contacts || [], els.contactSearch.value));
+if (els.contactColdToggle) els.contactColdToggle.addEventListener("click", () => { location.hash = _coldOnly ? "#/contacts" : "#/contacts/cold"; });
 if (els.contactAddBtn) els.contactAddBtn.addEventListener("click", openCreatePanel);
 if (els.contactBackBtn) els.contactBackBtn.addEventListener("click", () => { location.hash = "#/contacts"; });
+
+// ---- UNIVERSAL NOTE VIEW (contacts power-pass §1) ----
+let _note = null; // {path, name, raw, backlinks, vault}
+let _noteReturn = "#/contacts";
+
+function showNote(path) {
+  els.noteView.hidden = false;
+  els.noteSaved.textContent = "";
+  loadNote(path);
+}
+
+async function loadNote(path) {
+  els.noteRendered.innerHTML = "Loading…";
+  els.noteBacklinks.innerHTML = "";
+  els.noteRaw.hidden = true;
+  els.noteRendered.hidden = false;
+  els.noteSaveBtn.hidden = true;
+  els.noteRawToggle.textContent = "Edit raw";
+  try {
+    const res = await fetch("/api/note?path=" + encodeURIComponent(path));
+    if (!res.ok) { els.noteRendered.textContent = "Note not found."; return; }
+    _note = await res.json();
+  } catch (e) { els.noteRendered.textContent = "Error loading note."; return; }
+  els.noteTitle.textContent = _note.name;
+  els.noteObsidian.href = "obsidian://open?vault=" + encodeURIComponent(_note.vault) +
+    "&file=" + encodeURIComponent(_note.path.replace(/\.md$/, ""));
+  renderNoteBody();
+  renderNoteBacklinks();
+}
+
+function renderNoteBody() {
+  els.noteRendered.innerHTML = "";
+  els.noteRendered.appendChild(renderMarkdown(_note.raw, _note.path));
+}
+
+function renderNoteBacklinks() {
+  const host = els.noteBacklinks; host.innerHTML = "";
+  const bl = _note.backlinks || [];
+  if (!bl.length) return;
+  host.appendChild(el("div", "note-bl-head", "Linked from " + bl.length + " note" + (bl.length === 1 ? "" : "s")));
+  bl.forEach((b) => {
+    const row = el("div", "note-bl-row");
+    row.append(el("span", "note-bl-date", b.date || ""), el("span", "note-bl-name", b.name));
+    row.onclick = () => openNoteByPath(b.path);
+    host.appendChild(row);
+  });
+}
+
+function openNoteByPath(path) {
+  location.hash = "#/note/" + encodeURIComponent(path);
+}
+
+async function resolveWikilink(target) {
+  let r;
+  try { r = await (await fetch("/api/note/resolve?target=" + encodeURIComponent(target))).json(); }
+  catch (e) { return; }
+  if (r.kind === "contact") location.hash = "#/contacts/" + encodeURIComponent(r.key);
+  else if (r.kind === "note") openNoteByPath(r.path);
+  else els.noteSaved.textContent = "no note for [[" + target + "]]";
+}
+
+async function toggleNoteTask(line, want, box) {
+  try {
+    const res = await fetch("/api/note/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: _note.path, line, want }) });
+    if (!res.ok) throw new Error(await res.text());
+    // refresh raw so subsequent toggles use correct line state
+    const g = await (await fetch("/api/note?path=" + encodeURIComponent(_note.path))).json();
+    _note.raw = g.raw; _note.backlinks = g.backlinks;
+  } catch (e) { box.checked = !want; els.noteSaved.textContent = "toggle failed — reload"; }
+}
+
+// raw-edit toggle + save
+if (els.noteRawToggle) els.noteRawToggle.addEventListener("click", () => {
+  const editing = !els.noteRaw.hidden;
+  if (editing) { // back to rendered
+    els.noteRaw.hidden = true; els.noteRendered.hidden = false; els.noteSaveBtn.hidden = true;
+    els.noteRawToggle.textContent = "Edit raw";
+    renderNoteBody();
+  } else {
+    els.noteRaw.value = _note.raw; els.noteRaw.hidden = false; els.noteRendered.hidden = true;
+    els.noteSaveBtn.hidden = false; els.noteRawToggle.textContent = "Preview";
+  }
+});
+if (els.noteSaveBtn) els.noteSaveBtn.addEventListener("click", async () => {
+  els.noteSaved.textContent = "saving…";
+  try {
+    const res = await fetch("/api/note", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: _note.path, body: els.noteRaw.value }) });
+    if (!res.ok) throw new Error(await res.text());
+    els.noteSaved.textContent = "saved";
+    await loadNote(_note.path); // reindex happened server-side; re-render fresh
+  } catch (e) { els.noteSaved.textContent = "save failed"; }
+});
+if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/contacts"; });
+
+// --- a compact markdown renderer that returns DOM (so wikilinks + checkboxes
+// are interactive). Handles the shapes this vault uses. ---
+function renderMarkdown(raw, notePath) {
+  const frag = document.createDocumentFragment();
+  const lines = raw.split("\n");
+  let i = 0;
+  // skip a leading frontmatter block (metadata; editable in raw mode)
+  if (lines[0] === "---") {
+    let j = 1; while (j < lines.length && lines[j] !== "---") j++;
+    if (j < lines.length) i = j + 1;
+  }
+  let para = [];
+  const flushPara = () => {
+    if (!para.length) return;
+    const p = el("p", "md-p");
+    inlineInto(p, para.join(" "), notePath);
+    frag.appendChild(p); para = [];
+  };
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    const t = line.trim();
+    // code fence
+    if (t.startsWith("```")) {
+      flushPara();
+      const code = []; i++;
+      for (; i < lines.length && !lines[i].trim().startsWith("```"); i++) code.push(lines[i]);
+      const pre = el("pre", "md-pre"); pre.textContent = code.join("\n"); frag.appendChild(pre);
+      continue;
+    }
+    // heading
+    let hm = line.match(/^(#{1,6})\s+(.*)$/);
+    if (hm) { flushPara(); const h = el("h" + hm[1].length, "md-h"); inlineInto(h, hm[2], notePath); frag.appendChild(h); continue; }
+    // checkbox
+    let cb = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s?(.*)$/);
+    if (cb) {
+      flushPara();
+      const row = el("label", "md-task");
+      const box = el("input"); box.type = "checkbox"; box.checked = cb[2] !== " ";
+      const lineNo = i;
+      box.addEventListener("change", () => toggleNoteTask(lineNo, box.checked, box));
+      const span = el("span", "md-task-text"); inlineInto(span, cb[3], notePath);
+      row.append(box, span); frag.appendChild(row); continue;
+    }
+    // list item
+    let li = line.match(/^(\s*)[-*]\s+(.*)$/) || line.match(/^(\s*)\d+\.\s+(.*)$/);
+    if (li) { flushPara(); const item = el("div", "md-li"); item.append(el("span", "md-bullet", "•")); const s = el("span"); inlineInto(s, li[2], notePath); item.append(s); frag.appendChild(item); continue; }
+    // blockquote
+    if (t.startsWith(">")) { flushPara(); const bq = el("blockquote", "md-bq"); inlineInto(bq, t.replace(/^>\s?/, ""), notePath); frag.appendChild(bq); continue; }
+    // horizontal rule
+    if (t === "---" || t === "***") { flushPara(); frag.appendChild(el("hr", "md-hr")); continue; }
+    // blank → paragraph break
+    if (t === "") { flushPara(); continue; }
+    para.push(t);
+  }
+  flushPara();
+  return frag;
+}
+
+// inlineInto parses inline markdown (wikilinks, links, bold/italic/code) into DOM.
+function inlineInto(host, text, notePath) {
+  // token regex: [[wikilink]] | [text](url) | **bold** | *italic* | `code`
+  const re = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) host.appendChild(document.createTextNode(text.slice(last, m.index)));
+    if (m[1] != null) { // wikilink
+      const parts = m[1].split("|");
+      const target = parts[0].trim(), disp = (parts[1] || parts[0]).trim();
+      const a = el("span", "wikilink", disp);
+      a.onclick = () => resolveWikilink(target);
+      host.appendChild(a);
+    } else if (m[2] != null) { // [text](url)
+      const a = el("a", "md-link", m[2]); a.href = m[3]; a.target = "_blank"; host.appendChild(a);
+    } else if (m[4] != null) { host.appendChild(el("strong", null, m[4])); }
+    else if (m[5] != null) { host.appendChild(el("em", null, m[5])); }
+    else if (m[6] != null) { host.appendChild(el("code", "md-code", m[6])); }
+    last = re.lastIndex;
+  }
+  if (last < text.length) host.appendChild(document.createTextNode(text.slice(last)));
+}
 
 // ---- quick-lookup command bar (⌘K / Ctrl-K anywhere) ----
 let cmdSel = -1, cmdResults = [];
@@ -1939,6 +2184,8 @@ async function cmdShowCard(key) {
   facts.append(cmdFact("Next", c.nextUpcoming || "—"));
   if (c.latestTranscript) {
     const f = cmdFact("Latest transcript", c.latestTranscript.date + " · " + c.latestTranscript.title);
+    f.classList.add("cmd-fact-link");
+    f.onclick = () => { closeCmdbar(); _noteReturn = "#/contacts/" + encodeURIComponent(c.key); openNoteByPath(c.latestTranscript.path); };
     facts.append(f);
   }
   host.append(facts);
@@ -1957,12 +2204,14 @@ function route() {
   const cal = h === "#/calendar";
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
-  const day = !goals && !cal && !sp && !contacts;
+  const note = h.startsWith("#/note/");
+  const day = !goals && !cal && !sp && !contacts && !note;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
+  els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
   els.calNav.hidden = !day;
@@ -1973,6 +2222,7 @@ function route() {
   else if (cal) loadCalendar();
   else if (sp) showSpirits(); // excalibur harness: feed / runs / approvals
   else if (contacts) showContacts(); // people layer: list / page
+  else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);

@@ -175,6 +175,7 @@
         <span class="agent-title">CONTACTS</span>
         <div class="agent-actions">
           <input id="contactSearch" class="contact-search" type="search" placeholder="Search contacts…" />
+          <button id="contactColdToggle" class="pill light" title="Show only contacts going cold (neglect lens)">◆ Cold</button>
           <button id="contactAddBtn" class="pill" title="Add a contact (binds to existing links first)">+ contact</button>
         </div>
       </div>
@@ -190,6 +191,23 @@
       </div>
       <div id="contactPage" class="contact-page"></div>
     </div>
+  </section>
+
+  <!-- UNIVERSAL NOTE VIEW — any vault note, rendered + raw-editable -->
+  <section class="note-view" id="noteView" hidden>
+    <div class="agent-head">
+      <button id="noteBackBtn" class="pill light">‹ Back</button>
+      <span id="noteTitle" class="note-title"></span>
+      <div class="agent-actions">
+        <a id="noteObsidian" class="pill light" href="#" title="Open in Obsidian" target="_blank">Obsidian ↗</a>
+        <button id="noteRawToggle" class="pill light">Edit raw</button>
+        <button id="noteSaveBtn" class="pill" hidden>Save</button>
+        <span id="noteSaved" class="save-state"></span>
+      </div>
+    </div>
+    <div id="noteRendered" class="note-rendered"></div>
+    <textarea id="noteRaw" class="note-raw" hidden spellcheck="false"></textarea>
+    <div id="noteBacklinks" class="note-backlinks"></div>
   </section>
 
   <!-- Quick-lookup command bar (⌘K / Ctrl-K from anywhere) -->
