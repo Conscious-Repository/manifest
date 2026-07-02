@@ -1,7 +1,7 @@
 // Manifest — local daily-planner UI over your Obsidian vault.
 // State lives in markdown files; this is a thin editor with autosave.
 
-const state = { date: isoToday(), day: null, cal: null, consoleProfile: "", feedType: "" };
+const state = { date: isoToday(), day: null, cal: null, spiritFeedType: "" };
 
 const els = {
   dateLabel: document.getElementById("dateLabel"),
@@ -17,23 +17,10 @@ const els = {
   dayView: document.getElementById("dayView"),
   goalsView: document.getElementById("goalsView"),
   calendarView: document.getElementById("calendarView"),
-  agentsView: document.getElementById("agentsView"),
   dateNav: document.getElementById("dateNav"),
   goalsNav: document.getElementById("goalsNav"),
   calNav: document.getElementById("calNav"),
-  agentsNav: document.getElementById("agentsNav"),
   dayNav: document.getElementById("dayNav"),
-  hermesStatus: document.getElementById("hermesStatus"),
-  consoleLog: document.getElementById("consoleLog"),
-  consoleInput: document.getElementById("consoleInput"),
-  consoleSend: document.getElementById("consoleSend"),
-  // agents cockpit sub-panels
-  ap_console: document.getElementById("ap-console"),
-  ap_profiles: document.getElementById("ap-profiles"),
-  ap_feed: document.getElementById("ap-feed"),
-  ap_jobs: document.getElementById("ap-jobs"),
-  ap_approvals: document.getElementById("ap-approvals"),
-  apprBadge: document.getElementById("apprBadge"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   spiritsNav: document.getElementById("spiritsNav"),
@@ -49,34 +36,6 @@ const els = {
   sp_approvals: document.getElementById("sp-approvals"),
   spiritApprovalList: document.getElementById("spiritApprovalList"),
   spiritApprBadge: document.getElementById("spiritApprBadge"),
-  consoleProfileBar: document.getElementById("consoleProfileBar"),
-  consoleProfileName: document.getElementById("consoleProfileName"),
-  consoleProfileClear: document.getElementById("consoleProfileClear"),
-  profileList: document.getElementById("profileList"),
-  newProfileBtn: document.getElementById("newProfileBtn"),
-  feedFilters: document.getElementById("feedFilters"),
-  feedList: document.getElementById("feedList"),
-  feedRefreshBtn: document.getElementById("feedRefreshBtn"),
-  feedBackfillBtn: document.getElementById("feedBackfillBtn"),
-  feedRunBtn: document.getElementById("feedRunBtn"),
-  jobsList: document.getElementById("jobsList"),
-  sessionsList: document.getElementById("sessionsList"),
-  newJobBtn: document.getElementById("newJobBtn"),
-  approvalList: document.getElementById("approvalList"),
-  apprRunBtn: document.getElementById("apprRunBtn"),
-  profileModal: document.getElementById("profileModal"),
-  profileBackdrop: document.getElementById("profileBackdrop"),
-  profileClose: document.getElementById("profileClose"),
-  profileModalTitle: document.getElementById("profileModalTitle"),
-  pfName: document.getElementById("pfName"),
-  pfModel: document.getElementById("pfModel"),
-  pfSchedule: document.getElementById("pfSchedule"),
-  pfPerms: document.getElementById("pfPerms"),
-  pfTools: document.getElementById("pfTools"),
-  pfToolCount: document.getElementById("pfToolCount"),
-  pfBrief: document.getElementById("pfBrief"),
-  pfSave: document.getElementById("pfSave"),
-  pfDelete: document.getElementById("pfDelete"),
   calGrid: document.getElementById("calGrid"),
   calMonthLabel: document.getElementById("calMonthLabel"),
   calConnect: document.getElementById("calConnect"),
@@ -1091,558 +1050,6 @@ function fmtWhen(iso) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-// ---- Agents cockpit: sub-tab routing ----
-const AGENT_TABS = ["console", "profiles", "feed", "jobs", "approvals"];
-function showAgents() {
-  const tab = agentTabFromHash();
-  AGENT_TABS.forEach((t) => { els["ap_" + t].hidden = t !== tab; });
-  document.querySelectorAll("#agentsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-  loadHermes(); // status chip is shown on every sub-tab
-  if (tab === "profiles") loadProfiles();
-  else if (tab === "feed") loadFeed();
-  else if (tab === "jobs") loadJobs();
-  else if (tab === "approvals") loadApprovals();
-  refreshApprovalBadge();
-}
-function agentTabFromHash() {
-  const t = (location.hash.split("/")[2] || "console");
-  return AGENT_TABS.includes(t) ? t : "console";
-}
-
-// ---- Profiles (Step 2) ----
-let toolsetsCache = null;
-async function ensureToolsets() {
-  if (toolsetsCache) return toolsetsCache;
-  try { toolsetsCache = (await (await fetch("/api/hermes/toolsets")).json()).data || []; }
-  catch (e) { toolsetsCache = []; }
-  return toolsetsCache;
-}
-async function loadProfiles() {
-  let list = [];
-  try { list = (await (await fetch("/api/agents/profiles")).json()).data || []; } catch (e) {}
-  els.profileList.innerHTML = "";
-  if (!list.length) { els.profileList.appendChild(emptyRow("No profiles yet. Add one — it's a small markdown file outside your vault.")); return; }
-  list.forEach((p) => els.profileList.appendChild(profileCard(p)));
-}
-function profileCard(p) {
-  const card = el("div", "profile-card");
-  const head = el("div", "profile-head");
-  head.append(el("span", "profile-name", p.name), el("span", "profile-tier", p.model || ""));
-  const brief = el("div", "profile-brief", (p.brief || "").split("\n")[0].slice(0, 150));
-  const sched = p.schedule && p.schedule !== "none" ? p.schedule : "on-demand";
-  const meta = el("div", "profile-meta", `${(p.tools || []).length} tools · ${(p.permissions || []).join(", ") || "—"} · ${sched}`);
-  const actions = el("div", "profile-actions");
-  actions.append(pillLight("Use in console", () => useProfile(p.name)), pillLight("Edit", () => openProfileEditor(p)));
-  card.append(head, brief, meta, actions);
-  return card;
-}
-function useProfile(name) {
-  state.consoleProfile = name;
-  updateProfileBar();
-  location.hash = "#/agents";
-}
-function updateProfileBar() {
-  const on = !!state.consoleProfile;
-  els.consoleProfileBar.hidden = !on;
-  if (on) els.consoleProfileName.textContent = state.consoleProfile;
-}
-async function openProfileEditor(p) {
-  p = p || { name: "", model: "cheap", tools: [], permissions: [], schedule: "none", brief: "" };
-  els.profileModalTitle.textContent = p.name ? "Edit profile" : "New profile";
-  els.pfName.value = p.name || "";
-  els.pfName.disabled = !!p.name; // name is the id — don't rename in place
-  els.pfModel.value = p.model || "cheap";
-  els.pfSchedule.value = p.schedule || "none";
-  els.pfPerms.value = (p.permissions || []).join(", ");
-  els.pfBrief.value = p.brief || "";
-  els.pfDelete.hidden = !p.name;
-  els.pfDelete.onclick = () => deleteProfile(p.name);
-  const sets = await ensureToolsets();
-  const selected = new Set(p.tools || []);
-  els.pfTools.innerHTML = "";
-  const countLabel = () => { els.pfToolCount.textContent = selected.size + " selected"; };
-  sets.forEach((ts) => {
-    const b = el("button", "tool-chip" + (selected.has(ts.name) ? " on" : ""), ts.name);
-    b.title = ts.description || ts.label || "";
-    b.onclick = () => { selected.has(ts.name) ? selected.delete(ts.name) : selected.add(ts.name); b.classList.toggle("on"); countLabel(); };
-    els.pfTools.appendChild(b);
-  });
-  countLabel();
-  els.pfSave.onclick = () => saveProfile({
-    name: els.pfName.value.trim(), model: els.pfModel.value,
-    schedule: els.pfSchedule.value.trim(), permissions: splitList(els.pfPerms.value),
-    tools: [...selected], brief: els.pfBrief.value,
-  });
-  els.profileModal.hidden = false;
-}
-async function saveProfile(p) {
-  if (!p.name) { els.pfName.focus(); return; }
-  setSaveState("saving");
-  try { await fetch("/api/agents/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p) }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  els.profileModal.hidden = true;
-  loadProfiles();
-}
-async function deleteProfile(name) {
-  if (!confirm(`Delete profile "${name}"?`)) return;
-  try { await fetch("/api/agents/profiles/" + encodeURIComponent(name), { method: "DELETE" }); } catch (e) {}
-  els.profileModal.hidden = true;
-  loadProfiles();
-}
-
-// ---- Feed (Step 3) ----
-let feedCache = [];
-async function loadFeed() {
-  try { feedCache = (await (await fetch("/api/feed")).json()).data || []; } catch (e) { feedCache = []; }
-  renderFeedFilters();
-  renderFeed();
-}
-function renderFeedFilters() {
-  const host = els.feedFilters; host.innerHTML = "";
-  const types = [...new Set(feedCache.map((i) => i.type))];
-  const mk = (label, val) => {
-    const b = el("button", "filter-chip" + ((state.feedType || "") === val ? " on" : ""), label);
-    b.onclick = () => { state.feedType = val; renderFeedFilters(); renderFeed(); };
-    return b;
-  };
-  host.appendChild(mk("all", ""));
-  types.forEach((t) => host.appendChild(mk(t, t)));
-}
-function renderFeed() {
-  const host = els.feedList; host.innerHTML = "";
-  const items = feedCache.filter((i) => !state.feedType || i.type === state.feedType);
-  if (!items.length) { host.appendChild(emptyRow("No items yet — hit Refresh to run domain-scout, or Backfill to pull from scheduled cron runs.")); return; }
-  items.forEach((it) => host.appendChild(feedCard(it)));
-}
-function feedCard(it) {
-  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : ""));
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-" + it.type, it.type));
-  const title = it.link ? linkEl(it.title, it.link) : el("span", null, it.title);
-  title.classList.add("feed-title");
-  top.append(title);
-  if (it.confidence) top.append(el("span", "conf conf-" + it.confidence, it.confidence));
-  card.append(top);
-  if (it.why) card.append(el("div", "feed-why", it.why));
-  const metaBits = [it.source, it.domain, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
-  if (metaBits) card.append(el("div", "feed-meta", metaBits));
-  if (it.type === "artifact" && it.body) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
-  if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
-  const actions = el("div", "feed-actions");
-  actions.append(
-    pillLight("Keep", () => feedAction(it.id, { status: "kept" })),
-    pillLight("Discard", () => feedAction(it.id, { status: "discarded" })),
-    pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })),
-  );
-  if (!it.vaultNote) actions.append(pillLight("Save to vault", () => saveToVault(it.id)));
-  card.append(actions);
-  return card;
-}
-async function feedAction(id, body) {
-  setSaveState("saving");
-  try { await fetch(`/api/feed/${id}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  loadFeed();
-}
-async function saveToVault(id) {
-  setSaveState("saving");
-  try {
-    const r = await fetch(`/api/feed/${id}/save-to-vault`, { method: "POST" });
-    if (!r.ok) throw new Error((await r.text()) || "save failed");
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Save to vault failed: " + e.message); }
-  loadFeed();
-}
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-
-// pollRun waits for an async agent run (feed scan / options-scout / ea-coordinator draft)
-// to finish, polling /api/agents/runs/{id} every ~3s. Agent runs can take many minutes and
-// dozens of tool calls, so the server backgrounds them; this is how the UI tracks one.
-async function pollRun(runId) {
-  for (let i = 0; i < 400; i++) { // ~20 min ceiling at 3s
-    await sleep(3000);
-    let st;
-    try { st = await (await fetch("/api/agents/runs/" + encodeURIComponent(runId))).json(); }
-    catch (e) { continue; } // transient — keep polling
-    if (st && (st.status === "done" || st.status === "error")) return st;
-  }
-  return { status: "error", error: "timed out waiting for the run" };
-}
-
-// startAgentRun POSTs to an async run endpoint, then polls to completion. It surfaces the
-// REAL error: failures return a plain-text body (not JSON), so we read text() and throw it
-// verbatim instead of a generic "failed". Returns the terminal run state.
-async function startAgentRun(url, body) {
-  const r = await fetch(url, {
-    method: "POST",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const raw = await r.text();
-  if (!r.ok) throw new Error(raw.trim() || `HTTP ${r.status}`);
-  let started = {};
-  try { started = JSON.parse(raw); } catch (e) {}
-  if (!started.runId) throw new Error("server did not start a run");
-  const st = await pollRun(started.runId);
-  if (st.status === "error") throw new Error(st.error || "run failed");
-  return st;
-}
-
-async function feedRefresh() {
-  const btn = els.feedRefreshBtn;
-  btn.disabled = true; btn.textContent = "Scanning…";
-  setSaveState("saving");
-  try {
-    await startAgentRun("/api/feed/refresh");
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Refresh failed: " + (e.message || e)); }
-  btn.disabled = false; btn.textContent = "↻ Refresh";
-  loadFeed();
-}
-async function feedBackfill() {
-  els.feedBackfillBtn.disabled = true;
-  setSaveState("saving");
-  try { await fetch("/api/feed/backfill", { method: "POST" }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  els.feedBackfillBtn.disabled = false;
-  loadFeed();
-}
-// askScout runs an on-demand scout (e.g. options-scout) with a free-form request and
-// materializes its output into the feed (§5.3). Read-only scouts only — propose-only
-// profiles (ea-coordinator) draft to Approvals, not the feed.
-async function askScout() {
-  let profs = [];
-  try { profs = (await (await fetch("/api/agents/profiles")).json()).data || []; } catch (e) {}
-  const scouts = profs.filter((p) => !(p.permissions || []).includes("propose-only"));
-  if (!scouts.length) { alert("No scout profiles available. Add a read-only profile first."); return; }
-  const groups = [{ area: "Ask which scout?", items: scouts.map((p) => ({ id: p.name, text: p.name })) }];
-  openPicker("Ask a scout to research a request", groups, async (name) => {
-    const request = prompt(`Request for "${name}"  (e.g. "buy a 3D printer under $2k — find 5 options")`);
-    if (!request || !request.trim()) return;
-    const btn = els.feedRunBtn;
-    if (btn) { btn.disabled = true; btn.textContent = "Scanning…"; }
-    setSaveState("saving");
-    try {
-      await startAgentRun("/api/feed/run", { profile: name, request: request.trim() });
-      setSaveState("saved");
-    } catch (e) { setSaveState("error"); alert("Scout run failed: " + (e.message || e)); }
-    if (btn) { btn.disabled = false; btn.textContent = "Ask a scout"; }
-    loadFeed();
-  });
-}
-
-// ---- Jobs + observability (Step 4) ----
-async function loadJobs() {
-  let list = [];
-  try { list = (await (await fetch("/api/jobs")).json()).data || []; } catch (e) {}
-  els.jobsList.innerHTML = "";
-  if (!list.length) els.jobsList.appendChild(emptyRow("No crons scheduled."));
-  else list.forEach((j) => els.jobsList.appendChild(jobRow(j)));
-  loadSessions();
-}
-function jobRow(j) {
-  const row = el("div", "job-row" + (j.enabled ? "" : " paused"));
-  const st = j.last_status === "ok" ? "ok" : (j.last_status ? "err" : "");
-  row.append(el("span", "status-dot " + st));
-  const main = el("div", "job-main");
-  main.append(el("div", "job-name", j.name));
-  const sched = (j.schedule_display || (j.schedule && j.schedule.expr) || "—");
-  const last = j.last_run_at ? `last ${fmtWhen(j.last_run_at)}${j.last_status ? " · " + j.last_status : ""}` : "never run";
-  const next = j.next_run_at && j.enabled ? ` · next ${fmtWhen(j.next_run_at)}` : "";
-  main.append(el("div", "job-sub", `${sched}   ·   ${last}${next}`));
-  if (j.last_error) main.append(el("div", "job-err", j.last_error));
-  row.append(main);
-  const actions = el("div", "job-actions");
-  actions.append(
-    pillLight(j.enabled ? "Pause" : "Resume", () => jobUpdate(j.id, { enabled: !j.enabled })),
-    pillLight("Delete", () => { if (confirm(`Delete cron "${j.name}"?`)) jobDelete(j.id); }),
-  );
-  row.append(actions);
-  return row;
-}
-async function jobUpdate(id, patch) {
-  setSaveState("saving");
-  try { await fetch("/api/jobs/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  loadJobs();
-}
-async function jobDelete(id) {
-  setSaveState("saving");
-  try { await fetch("/api/jobs/" + id, { method: "DELETE" }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  loadJobs();
-}
-async function newJob() {
-  let profs = [];
-  try { profs = (await (await fetch("/api/agents/profiles")).json()).data || []; } catch (e) {}
-  if (!profs.length) { alert("Create a profile first."); return; }
-  const groups = [{ area: "Schedule which profile?", items: profs.map((p) => ({ id: p.name, text: p.name })) }];
-  openPicker("Schedule a profile as a cron", groups, async (name) => {
-    const p = profs.find((x) => x.name === name);
-    const expr = prompt(`Cron expression for "${name}"`, (p && p.schedule && p.schedule !== "none") ? p.schedule : "0 7 * * *");
-    if (!expr) return;
-    setSaveState("saving");
-    try {
-      await fetch("/api/jobs", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name, prompt: p ? p.brief : "", schedule: expr, skills: (p && p.tools) || [] }),
-      });
-      setSaveState("saved");
-    } catch (e) { setSaveState("error"); }
-    loadJobs();
-  });
-}
-async function loadSessions() {
-  let list = [];
-  try { list = (await (await fetch("/api/agents/sessions")).json()).data || []; } catch (e) {}
-  els.sessionsList.innerHTML = "";
-  if (!list.length) { els.sessionsList.appendChild(emptyRow("No recent runs.")); return; }
-  list.slice(0, 12).forEach((sx) => {
-    const row = el("div", "session-row");
-    row.append(el("span", "sess-src src-" + sx.source, sx.source));
-    row.append(el("span", "sess-title", sx.title || "(untitled)"));
-    const tok = (sx.input_tokens || 0) + (sx.output_tokens || 0);
-    row.append(el("span", "sess-meta", `${sx.message_count || 0} msgs · ${tok.toLocaleString()} tok`));
-    row.append(el("span", "sess-when", fmtWhen(new Date((sx.started_at || 0) * 1000).toISOString())));
-    els.sessionsList.appendChild(row);
-  });
-}
-
-// ---- Approvals (Step 5, record-only) ----
-async function loadApprovals() {
-  let d = { pending: [], counts: {} };
-  try { d = await (await fetch("/api/agents/approvals")).json(); } catch (e) {}
-  const list = d.pending || [];
-  els.approvalList.innerHTML = "";
-  if (!list.length) { els.approvalList.appendChild(emptyRow("No pending approvals. ea-coordinator's drafts land here for your review — nothing sends without you.")); }
-  else list.forEach((a) => els.approvalList.appendChild(approvalCard(a)));
-  setApprovalBadge((d.counts && d.counts.pending) || 0);
-}
-function approvalCard(a) {
-  const card = el("div", "approval-card");
-  const head = el("div", "appr-head");
-  head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
-  card.append(head);
-  if (a.body) { const b = el("pre", "appr-body"); b.textContent = a.body; card.append(b); }
-  const actions = el("div", "appr-actions");
-  actions.append(pill("Confirm", () => approvalAct(a.id, "confirm")), pillLight("Reject", () => approvalAct(a.id, "reject")));
-  card.append(actions);
-  return card;
-}
-async function approvalAct(id, kind) {
-  setSaveState("saving");
-  const body = kind === "reject" ? { reason: "rejected from dashboard" } : {};
-  try { await fetch(`/api/agents/approvals/${id}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  loadApprovals();
-}
-function setApprovalBadge(n) {
-  if (!els.apprBadge) return;
-  els.apprBadge.hidden = !n;
-  els.apprBadge.textContent = n || "";
-}
-// draftApproval runs ea-coordinator with a task; its DRAFTED actions land in the pending
-// queue (§5.5). Draft-only — confirm/reject stay record-only and nothing ever sends.
-async function draftApproval() {
-  const request = prompt('Task for ea-coordinator  (e.g. "draft a reply to Lee proposing 3 times next week")');
-  if (!request || !request.trim()) return;
-  const btn = els.apprRunBtn;
-  if (btn) { btn.disabled = true; btn.textContent = "Drafting…"; }
-  setSaveState("saving");
-  try {
-    await startAgentRun("/api/agents/approvals/run", { request: request.trim() });
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Draft failed: " + (e.message || e)); }
-  if (btn) { btn.disabled = false; btn.textContent = "+ Draft with ea-coordinator"; }
-  loadApprovals();
-}
-async function refreshApprovalBadge() {
-  try { const d = await (await fetch("/api/agents/approvals")).json(); setApprovalBadge((d.counts && d.counts.pending) || 0); } catch (e) {}
-}
-
-// ---- Hermes live console (MVP1) ----
-// The browser talks only to same-origin /api/hermes/*; the Go backend holds the
-// API key and proxies to Hermes over Tailscale. Chat is streamed via SSE.
-const consoleMsgs = []; // OpenAI-style {role, content}, the running conversation.
-let consoleStreaming = false;
-
-async function loadHermes() {
-  // Status chip: configured? reachable? model + skill count.
-  let st = { configured: false };
-  try { st = await (await fetch("/api/hermes/status")).json(); } catch (e) {}
-  if (!st.configured) {
-    els.hermesStatus.textContent = "NOT CONFIGURED";
-    els.hermesStatus.title = st.hint || "";
-    els.hermesStatus.classList.remove("ok");
-    if (!els.consoleLog.childElementCount) {
-      consoleHint(st.hint || "Hermes isn't configured yet. Add your API key and restart.");
-    }
-    setComposerEnabled(false);
-    return;
-  }
-  setComposerEnabled(true);
-  let skills = [];
-  try { skills = (await (await fetch("/api/hermes/skills")).json()).data || []; } catch (e) {}
-  const dot = st.reachable ? "●" : "○";
-  els.hermesStatus.classList.toggle("ok", !!st.reachable);
-  els.hermesStatus.textContent = `${dot} ${st.model || "hermes-agent"} · ${skills.length} SKILLS`;
-  els.hermesStatus.title = st.reachable ? `Connected to ${st.baseURL}` : `Configured but unreachable: ${st.baseURL}`;
-}
-
-function setComposerEnabled(on) {
-  els.consoleInput.disabled = !on;
-  els.consoleSend.disabled = !on;
-}
-
-// Append a chat bubble and return its text node holder (for streaming updates).
-function appendBubble(role) {
-  const row = document.createElement("div");
-  row.className = `cmsg ${role}`;
-  const who = document.createElement("span");
-  who.className = "cmsg-role";
-  who.textContent = role === "user" ? "you" : "hermes";
-  const body = document.createElement("div");
-  body.className = "cmsg-body";
-  row.append(who, body);
-  els.consoleLog.appendChild(row);
-  els.consoleLog.scrollTop = els.consoleLog.scrollHeight;
-  return body;
-}
-
-function consoleHint(text) {
-  const e = document.createElement("div");
-  e.className = "console-hint";
-  e.textContent = text;
-  els.consoleLog.appendChild(e);
-}
-
-async function sendConsole() {
-  if (consoleStreaming) return;
-  const text = els.consoleInput.value.trim();
-  if (!text) return;
-  els.consoleInput.value = "";
-  autoGrow(els.consoleInput);
-
-  consoleMsgs.push({ role: "user", content: text });
-  appendBubble("user").textContent = text;
-
-  // The assistant bubble holds a tool-activity strip (§5.1) above the streamed text,
-  // so tool progress and text can update independently without clobbering each other.
-  const bubble = appendBubble("assistant");
-  bubble.classList.add("streaming");
-  const toolsEl = el("div", "cmsg-tools");
-  const textEl = el("span", "cmsg-text");
-  bubble.append(toolsEl, textEl);
-  const toolRows = {}; // toolCallId -> row element
-  consoleStreaming = true;
-  setSaveState("saving");
-  els.consoleSend.disabled = true;
-
-  let acc = "";
-  try {
-    const res = await fetch("/api/hermes/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: consoleMsgs, profile: state.consoleProfile || "" }),
-    });
-    if (!res.ok || !res.body) {
-      const msg = await res.text().catch(() => "");
-      throw new Error(msg || `HTTP ${res.status}`);
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let done = false;
-    while (!done) {
-      const { value, done: rdone } = await reader.read();
-      done = rdone;
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      // Process complete lines; keep any partial line in the buffer.
-      let nl;
-      while ((nl = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, nl).trim();
-        buffer = buffer.slice(nl + 1);
-        if (!line.startsWith("data:")) continue; // ignore blanks / comments / event: lines
-        const payload = line.slice(5).trim();
-        if (payload === "[DONE]") { done = true; break; }
-        let chunk;
-        try { chunk = JSON.parse(payload); } catch (e) { continue; }
-        if (chunk.error) throw new Error(chunk.error);
-        // Hermes tool-progress event (custom SSE, no choices):
-        // {tool, emoji, label, toolCallId, status: "running"|"completed"}.
-        if (chunk.tool && chunk.status) {
-          renderToolProgress(toolsEl, toolRows, chunk);
-          els.consoleLog.scrollTop = els.consoleLog.scrollHeight;
-          continue;
-        }
-        const choice = (chunk.choices || [])[0] || {};
-        const piece = (choice.delta && choice.delta.content) || "";
-        if (piece) {
-          acc += piece;
-          textEl.textContent = acc;
-          els.consoleLog.scrollTop = els.consoleLog.scrollHeight;
-        }
-      }
-    }
-    if (acc) consoleMsgs.push({ role: "assistant", content: acc });
-    else if (!toolsEl.children.length) textEl.textContent = "(no content)";
-    setSaveState("saved");
-  } catch (e) {
-    bubble.classList.add("error");
-    textEl.textContent = acc ? acc + `\n\n[stream error: ${e.message}]` : `[error: ${e.message}]`;
-    setSaveState("error");
-  } finally {
-    bubble.classList.remove("streaming");
-    consoleStreaming = false;
-    els.consoleSend.disabled = false;
-    els.consoleInput.focus();
-  }
-}
-
-// renderToolProgress renders/updates one inline tool-activity row (§5.1). Rows are keyed
-// by toolCallId so a "completed" event (which omits emoji/label) updates the same row the
-// "running" event created. Only fields present in the event overwrite prior values.
-function renderToolProgress(container, rows, ev) {
-  const id = ev.toolCallId || ev.tool || String(container.children.length);
-  let row = rows[id];
-  if (!row) {
-    row = el("div", "cmsg-tool");
-    row.append(el("span", "ct-emoji", ev.emoji || "🔧"), el("span", "ct-name"), el("span", "ct-label"));
-    container.appendChild(row);
-    rows[id] = row;
-  }
-  if (ev.emoji) row.children[0].textContent = ev.emoji;
-  if (ev.tool) row.children[1].textContent = ev.tool;
-  if (ev.label) row.children[2].textContent = ev.label;
-  const done = ev.status === "completed";
-  row.classList.toggle("running", !done);
-  row.classList.toggle("done", done);
-}
-
-function autoGrow(ta) {
-  ta.style.height = "auto";
-  ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
-}
-
-if (els.consoleSend) {
-  els.consoleSend.addEventListener("click", sendConsole);
-  els.consoleInput.addEventListener("input", () => autoGrow(els.consoleInput));
-  els.consoleInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendConsole(); }
-  });
-}
-
-// ---- agents cockpit wiring ----
-if (els.newProfileBtn) els.newProfileBtn.addEventListener("click", () => openProfileEditor(null));
-if (els.feedRefreshBtn) els.feedRefreshBtn.addEventListener("click", feedRefresh);
-if (els.feedBackfillBtn) els.feedBackfillBtn.addEventListener("click", feedBackfill);
-if (els.feedRunBtn) els.feedRunBtn.addEventListener("click", askScout);
-if (els.newJobBtn) els.newJobBtn.addEventListener("click", newJob);
-if (els.apprRunBtn) els.apprRunBtn.addEventListener("click", draftApproval);
-if (els.profileClose) els.profileClose.addEventListener("click", () => { els.profileModal.hidden = true; });
-if (els.profileBackdrop) els.profileBackdrop.addEventListener("click", () => { els.profileModal.hidden = true; });
-if (els.consoleProfileClear) els.consoleProfileClear.addEventListener("click", () => { state.consoleProfile = ""; updateProfileBar(); });
-
 // ---- SPIRITS: the excalibur harness console ----
 // The dashboard reads the sibling excalibur tree (feed, run reports, prompts)
 // and records the user's keep/discard/snooze; the ENGINE owns execution — the
@@ -1714,12 +1121,14 @@ function spiritFeedCard(it) {
   const metaBits = [it.agent, it.source, it.domain, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
   if (metaBits) card.append(el("div", "feed-meta", metaBits));
   if (it.body) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
+  if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
   const actions = el("div", "feed-actions");
   actions.append(
     pillLight("Keep", () => spiritFeedAction(it.id, { status: "kept" })),
     pillLight("Discard", () => spiritFeedAction(it.id, { status: "discarded" })),
     pillLight("Snooze 7d", () => spiritFeedAction(it.id, { status: "snoozed", days: 7 })),
   );
+  if (!it.vaultNote) actions.append(pillLight("Save to vault", () => spiritSaveToVault(it.id)));
   card.append(actions);
   return card;
 }
@@ -1727,6 +1136,15 @@ async function spiritFeedAction(id, body) {
   setSaveState("saving");
   try { await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
   catch (e) { setSaveState("error"); }
+  loadSpiritFeed();
+}
+async function spiritSaveToVault(id) {
+  setSaveState("saving");
+  try {
+    const r = await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/save-to-vault`, { method: "POST" });
+    if (!r.ok) throw new Error((await r.text()) || "save failed");
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); alert("Save to vault failed: " + e.message); }
   loadSpiritFeed();
 }
 
@@ -1917,24 +1335,20 @@ function route() {
   const h = location.hash;
   const goals = h === "#/goals";
   const cal = h === "#/calendar";
-  const ag = h === "#/agents" || h.startsWith("#/agents/");
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
-  const day = !goals && !cal && !ag && !sp;
+  const day = !goals && !cal && !sp;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
-  els.agentsView.hidden = !ag;
   els.spiritsView.hidden = !sp;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
   els.calNav.hidden = !day;
-  els.agentsNav.hidden = !day;
   els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
   if (goals) loadGoals();
   else if (cal) loadCalendar();
-  else if (ag) showAgents(); // Hermes cockpit: console / profiles / feed / jobs / approvals
-  else if (sp) showSpirits(); // excalibur harness: feed / runs
+  else if (sp) showSpirits(); // excalibur harness: feed / runs / approvals
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);

@@ -211,8 +211,14 @@ Excalibur's security model makes "AI never writes my vault" **structural**:
   (e.g. marduk → `artifacts/feed`, `artifacts/library`, `artifacts/approvals`,
   `artifacts/runs`, `questbook`). A path not listed **fails closed** — the cast
   refuses.
-- The **Obsidian vault is never in any allow-list**; spirits get it read-only.
-  Promotion to a real note is *your* dashboard action.
+- The vault is read-only to spirits **except one designated folder:
+  `vault/Agents/**`** (revised July 2026; see `vault-audit-and-revised-recs.md`
+  §5). That path may appear in a spirit's write allow-list for keepable AI
+  knowledge (briefs, digests, with provenance frontmatter); **no other vault path
+  may ever be allow-listed**, and the warden's audit ritual explicitly checks
+  this. Operational surfaces stay in sibling `artifacts/`. Promotion of content
+  into your own notes remains *your* dashboard action. (Not needed for Slice 1 —
+  domain-scout writes only to `artifacts/feed/` + `artifacts/runs/`.)
 - Spellbooks are opt-in per spirit (`available_spellbooks` → `additional_spellbooks`
   → `open_spellbooks`); widening is a deliberate markdown edit.
 - Authority/transport rules **fail closed if config is missing**. Secrets in env /
@@ -272,13 +278,18 @@ not a headless tool — it launches Obsidian if it isn't running. Consequences:
 - Its value is retrieval: an **`obsidian` spellbook** with read-only casts
   (`vault.search`, `vault.read` — backed by `obsidian search`, note reads, tag and
   property queries) gives spirits Obsidian's own index instead of grep. Warding
-  blocks every write-capable command — the CLI can write to the vault, which is
-  precisely what spirits must never do, so the spellbook whitelists read commands
-  only. The engine falls back to direct file reads when Obsidian isn't running.
-- Secondary, non-spirit use: dashboard conveniences ("open in Obsidian",
-  `daily:append`) as desired.
+  whitelists read commands only (the CLI can write to the vault; only the
+  designated `Agents/` folder is ever writable, per §4). The engine falls back to
+  direct file reads when Obsidian isn't running.
+- **Superseded for retrieval once the index layer ships:** the headless-Dataview
+  index (`obsidian-as-database.md` — the personal-OS kernel: categories, aliases,
+  links, FTS in SQLite) is the better retrieval surface for spirits — headless,
+  works with Obsidian closed, same semantics the dashboard queries. When it
+  exists, spirits get a `vault.query` cast against the index and the Obsidian CLI
+  drops to dashboard conveniences only ("open in Obsidian", `daily:append`).
 
-Sequenced after Slice 1, alongside the warden ritual.
+Sequenced after Slice 1; skip the CLI spellbook entirely if the index layer lands
+first.
 
 ---
 

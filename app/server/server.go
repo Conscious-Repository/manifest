@@ -6,15 +6,11 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"sync"
 
 	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/daily"
-	"manifest/feed"
 	"manifest/goals"
-	"manifest/hermes"
-	"manifest/profiles"
 	"manifest/spirits"
 	"manifest/vaultwriter"
 )
@@ -26,30 +22,17 @@ type Server struct {
 	svc   *daily.Service
 	goals *goals.Store
 	cal   *calendar.Client
-	// Agents cockpit (Hermes). All nilable; unset just disables that surface.
-	hermes    *hermes.Client
-	profiles  *profiles.Store
-	feed      *feed.Store
-	approvals *approvals.Store
+	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
+	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
 	vault     *vaultwriter.Writer
-	// Excalibur harness (SPIRITS tab) — read side of the sibling tree; nilable.
-	spirits *spirits.Store
-	// Async on-demand agent runs (see runs.go). Populated lazily by startRun.
-	runsMu sync.Mutex
-	runs   map[string]*runState
-	runSeq int
+	spirits   *spirits.Store
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
 	return &Server{svc: svc, goals: gs, cal: cal}
 }
 
-// UseHermes wires the Hermes client (console + jobs/sessions proxy + materialization).
-func (s *Server) UseHermes(h *hermes.Client) { s.hermes = h }
-
-// UseProfiles / UseFeed / UseApprovals / UseVault wire the agent stores. All optional.
-func (s *Server) UseProfiles(p *profiles.Store)   { s.profiles = p }
-func (s *Server) UseFeed(f *feed.Store)           { s.feed = f }
+// UseApprovals / UseVault / UseSpirits wire the excalibur surfaces. All optional.
 func (s *Server) UseApprovals(a *approvals.Store) { s.approvals = a }
 func (s *Server) UseVault(v *vaultwriter.Writer)  { s.vault = v }
 
@@ -85,42 +68,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
 	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
 
-	// Hermes cockpit — everything proxies through here; the API key stays server-side.
-	// Console (Step 1)
-	mux.HandleFunc("/api/hermes/status", s.handleHermesStatus)
-	mux.HandleFunc("/api/hermes/skills", s.handleHermesSkills)
-	mux.HandleFunc("/api/hermes/toolsets", s.handleHermesToolsets)
-	mux.HandleFunc("/api/hermes/chat", s.handleHermesChat)
-	// Profiles (Step 2)
-	mux.HandleFunc("GET /api/agents/profiles", s.handleProfilesList)
-	mux.HandleFunc("POST /api/agents/profiles", s.handleProfileSave)
-	mux.HandleFunc("DELETE /api/agents/profiles/{name}", s.handleProfileDelete)
-	// Feed (Step 3)
-	mux.HandleFunc("GET /api/feed", s.handleFeedList)
-	mux.HandleFunc("POST /api/feed/refresh", s.handleFeedRefresh)
-	mux.HandleFunc("POST /api/feed/run", s.handleFeedRun)
-	mux.HandleFunc("POST /api/feed/backfill", s.handleFeedBackfill)
-	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
-	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
-	// Cron + observability (Step 4)
-	mux.HandleFunc("GET /api/jobs", s.handleJobsList)
-	mux.HandleFunc("POST /api/jobs", s.handleJobCreate)
-	mux.HandleFunc("PATCH /api/jobs/{id}", s.handleJobUpdate)
-	mux.HandleFunc("DELETE /api/jobs/{id}", s.handleJobDelete)
-	mux.HandleFunc("GET /api/agents/sessions", s.handleSessionsList)
-	// Async run status — the frontend polls this after kicking off a scan/draft.
-	mux.HandleFunc("GET /api/agents/runs/{id}", s.handleRunStatus)
-	// Approvals (Step 5) — record-only gate
-	mux.HandleFunc("GET /api/agents/approvals", s.handleApprovalsList)
-	mux.HandleFunc("POST /api/agents/approvals/run", s.handleApprovalRun)
-	mux.HandleFunc("POST /api/agents/approvals/{id}/confirm", s.handleApprovalConfirm)
-	mux.HandleFunc("POST /api/agents/approvals/{id}/reject", s.handleApprovalReject)
-
-	// SPIRITS — excalibur harness console (read-only + user feed actions +
-	// run-now spool; the engine owns all execution).
+	// SPIRITS — the excalibur harness console. Read-only over the sibling tree
+	// plus record-only user actions (feed keep/discard/snooze, approvals
+	// confirm/reject, save-to-vault) and the run-now spool. The engine owns all
+	// execution. (This replaces the retired Hermes cockpit — plan §2.5.)
 	mux.HandleFunc("GET /api/spirits/status", s.handleSpiritsStatus)
 	mux.HandleFunc("GET /api/spirits/feed", s.handleSpiritsFeedList)
 	mux.HandleFunc("POST /api/spirits/feed/{id}/status", s.handleSpiritsFeedStatus)
+	mux.HandleFunc("POST /api/spirits/feed/{id}/save-to-vault", s.handleSpiritsFeedSaveToVault)
 	mux.HandleFunc("GET /api/spirits/runs", s.handleSpiritsRuns)
 	mux.HandleFunc("GET /api/spirits/runs/{id}", s.handleSpiritsRun)
 	mux.HandleFunc("GET /api/spirits/runs/{id}/prompt", s.handleSpiritsRunPrompt)

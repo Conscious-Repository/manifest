@@ -20,10 +20,7 @@ import (
 	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/daily"
-	"manifest/feed"
 	"manifest/goals"
-	"manifest/hermes"
-	"manifest/profiles"
 	"manifest/server"
 	"manifest/spirits"
 	"manifest/vault"
@@ -97,33 +94,18 @@ func main() {
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 
-	// Agents cockpit (Hermes). All operational state lives under DataDir/agents,
-	// OUTSIDE the vault — the vault gets zero agent-written bytes. The key stays
-	// server-side; the browser only ever hits same-origin /api/*.
-	agentsDir := filepath.Join(cfg.DataDir, "agents")
-	hz := hermes.NewClient(hermes.LoadConfig(cfg.DataDir))
-	srv.UseHermes(hz)
-	profileStore := profiles.NewStore(agentsDir)
-	if err := profileStore.Seed(); err != nil {
-		log.Printf("seeding profiles: %v", err)
-	}
-	srv.UseProfiles(profileStore)
-	srv.UseFeed(feed.NewStore(agentsDir))
-	srv.UseVault(vaultwriter.New(cfg.VaultPath)) // "Save to vault" — the only vault write
-
-	// SPIRITS — the excalibur harness console. The dashboard renders the
-	// sibling tree; the engine (a separate process) owns all execution. The
-	// approvals inbox is the excalibur surface (plan §2.5: ONE inbox — warden
-	// findings today, the goals-Phase-2 EA later).
+	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the
+	// Hermes cockpit). The dashboard renders the sibling tree and records
+	// user decisions; the engine (a separate process) owns all execution. The
+	// approvals inbox is the excalibur surface (warden findings today, the
+	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
+	srv.UseVault(vaultwriter.New(cfg.VaultPath))
 	if cfg.ExcaliburPath != "" {
 		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
 		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")))
 		log.Printf("spirits: %s (approvals inbox: artifacts/approvals)", cfg.ExcaliburPath)
-	}
-	if hz.Configured() {
-		log.Printf("hermes: configured (%s, model %s)", hz.BaseURL(), hz.Model())
 	} else {
-		log.Printf("hermes: not configured — drop your API key in %s/hermes_key (chmod 600)", agentsDir)
+		log.Printf("spirits: disabled (set excaliburPath in config to enable the SPIRITS tab)")
 	}
 	switch {
 	case calClient.Enabled():

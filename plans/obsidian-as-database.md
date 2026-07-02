@@ -34,18 +34,27 @@ not because it's filed in a particular folder.
 
 ## 2. The write boundary (this is foundational, not a footnote)
 
-- **The vault is written by exactly two actors: you, in Obsidian; and you,
-  through explicit dashboard UI actions.** That's it.
-- **AI is strictly read-only on the vault.** It parses, indexes, queries, and
-  *displays* insights. It never creates, edits, or appends a note.
-- **AI outputs are ephemeral.** Briefs, summaries, suggested links — all live in
-  the UI session and vanish. Nothing the model produces is persisted to `.md`.
+> Revised July 2026 to the **designated-folder** rule (see
+> `vault-audit-and-revised-recs.md` §5, the authoritative statement).
+
+- **Outside the designated folder, the vault is written by exactly two actors:
+  you, in Obsidian; and you, through explicit dashboard UI actions.** That's it.
+- **AI reads the full vault but writes only to the designated folder
+  (`Agents/`, config-renamable).** Enforced by excalibur warding: `Agents/**` is
+  the only vault path in any spirit's write allow-list; everything else fails
+  closed, audited by the warden.
+- **Keepable AI outputs persist to `Agents/` with provenance** (spirit, sources,
+  date) — briefs, digests. Operational machine surfaces (feed, approvals, run
+  reports) stay in the sibling `excalibur/artifacts/` tree, out of the brain log.
 - **The index is a derived projection, not the DB.** The Go app builds a SQLite
   index *from* your markdown to make queries fast. It is rebuildable from the
   vault at any time and is never authoritative. Deleting it changes nothing.
+  It tags `Agents/**` content as AI-authored and excludes it from interaction
+  timelines / "last spoke".
 
-This means the "database" is your hand-authored markdown; the AI is a librarian
-with read-only access and a good memory, not a co-author.
+This means the "database" is your hand-authored markdown plus one clearly-fenced
+AI shelf; the AI is a librarian with read access to everything and write access
+to its own shelf only — never a co-author of your notes.
 
 ---
 

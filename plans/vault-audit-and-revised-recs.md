@@ -109,14 +109,25 @@ existing structure rather than forcing cleanup:
 
 ---
 
-## 5. AI-write rule (resolved)
+## 5. AI-write rule (revised July 2026 — designated folder)
 
 The old `transcript loops/` "granola loop closer" notes were agent-generated; you
-**deleted them**. So the slate is clean and the rule going forward is simple and
-absolute: **AI is read-only on the vault.** Claude Code should enforce this as a
-hard invariant — the index, the funder briefs, and any future agent only ever
-*read* `.md`; writes come exclusively from you (in Obsidian) or from explicit
-dashboard UI actions you take. No background or bulk AI writes, ever.
+**deleted them**. The rule going forward, updated from "absolute read-only":
+
+- **AI reads the full vault.** The index, briefs, and spirits may read everything.
+- **AI writes to exactly one designated vault folder: `Agents/`** (already exists
+  at root; config-renamable). This is warding-enforced (excalibur plan §4):
+  `vault/Agents/**` is the only vault path in any spirit's write allow-list;
+  **every other vault path fails closed**, and the warden ritual audits that the
+  allow-list never widens. What lands there is keepable AI knowledge (funder
+  briefs, research digests) — operational surfaces (feed, approvals, run reports)
+  stay in the sibling `excalibur/artifacts/` tree.
+- All other vault writes come exclusively from you — in Obsidian, or through
+  explicit dashboard UI actions you take (e.g. CRM frontmatter edits). No
+  background or bulk AI writes outside `Agents/`, ever.
+- **Index consequence:** content under `Agents/**` is indexed and searchable but
+  tagged AI-authored, and is **excluded from interaction timelines / "last
+  spoke"** — generated notes about a person must not count as talking to them.
 
 ---
 
@@ -140,7 +151,11 @@ dashboard UI actions you take. No background or bulk AI writes, ever.
    automatically with no code change. (See `obsidian-as-database.md` §3 + §5.)
 2. **Normalization:** surface, don't normalize. Exact category matching + a
    Vocabulary view of near-duplicates for *you* to standardize. (§3 above.)
-3. **Loop-closer:** deleted. AI is read-only on the vault going forward (§5).
+3. **Loop-closer:** deleted. AI writes only to the designated `Agents/` folder
+   going forward; the rest of the vault is read-only to AI (§5).
 
 All three are baked into the companion docs — they're ready to hand to Claude
-Code as-is.
+Code as-is. Note: `obsidian-as-database.md` now lives in `plans/` (it was
+mis-filed in `plans/archive/`, which otherwise holds superseded specs) — it is
+the **index-layer kernel spec** the funder feature and future personal-OS
+surfaces depend on.

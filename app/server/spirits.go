@@ -119,6 +119,32 @@ func (s *Server) handleSpiritsRunPrompt(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]any{"data": turns})
 }
 
+// handleSpiritsFeedSaveToVault promotes a feed item into a real extrinsic/
+// vault note (write-once) and records the note path back on the item. The ONLY
+// vault write, user-triggered — ported from the retired Hermes feed handler.
+func (s *Server) handleSpiritsFeedSaveToVault(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil || s.vault == nil || !s.vault.Enabled() {
+		http.Error(w, "vault save unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "item not found", http.StatusNotFound)
+		return
+	}
+	rel, err := s.vault.SaveExtrinsic(it.Title, it.Type, it.Why, it.Link, it.Source, it.Body)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	updated, err := s.spirits.Feed.SetVaultNote(it.ID, rel)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, updated)
+}
+
 // Approvals — the ONE inbox (excalibur/artifacts/approvals, plan §2.5).
 // Spirits file proposals via the write_approval cast; Confirm/Reject here only
 // RECORD the human decision (a folder move) — nothing sends or executes.
