@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS notes (
   date        TEXT NOT NULL DEFAULT '',
   date_source TEXT NOT NULL DEFAULT '',
   ai_authored INTEGER NOT NULL DEFAULT 0,
+  transcript  INTEGER NOT NULL DEFAULT 0,
   mtime       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_notes_name_lower ON notes(name_lower);
@@ -57,6 +58,9 @@ CREATE INDEX IF NOT EXISTS idx_cat_path  ON note_categories(path);
 
 CREATE TABLE IF NOT EXISTS note_aliases (path TEXT NOT NULL, alias TEXT NOT NULL, alias_lower TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_alias_lower ON note_aliases(alias_lower);
+
+CREATE TABLE IF NOT EXISTS note_emails (path TEXT NOT NULL, email TEXT NOT NULL, email_lower TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_email_lower ON note_emails(email_lower);
 
 CREATE TABLE IF NOT EXISTS links (src_path TEXT NOT NULL, target_key TEXT NOT NULL, display TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_links_target ON links(target_key);
@@ -94,11 +98,38 @@ func Open(cfg Config) (*Index, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1) // one writer; the projection is small and single-process
-	if _, err := db.Exec(schema); err != nil {
+	if err := ensureSchema(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schema: %w", err)
 	}
 	return &Index{db: db, cfg: cfg}, nil
+}
+
+// schemaVersion bumps whenever the table shapes change. Because the index is a
+// disposable projection (Rebuild reproduces it from the vault), a version
+// mismatch simply drops every table and recreates — a stale on-disk index from
+// an older build upgrades itself with no migration, losslessly.
+const schemaVersion = 2
+
+var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "entities", "notes_fts"}
+
+func ensureSchema(db *sql.DB) error {
+	var v int
+	_ = db.QueryRow("PRAGMA user_version").Scan(&v)
+	if v != schemaVersion {
+		for _, t := range allTables {
+			if _, err := db.Exec("DROP TABLE IF EXISTS " + t); err != nil {
+				return err
+			}
+		}
+		if _, err := db.Exec(schema); err != nil {
+			return err
+		}
+		_, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", schemaVersion))
+		return err
+	}
+	_, err := db.Exec(schema) // fresh DB already at the right version
+	return err
 }
 
 // Close releases the database handle.
@@ -115,7 +146,7 @@ func (ix *Index) Rebuild() (int, error) {
 		return 0, err
 	}
 	defer tx.Rollback()
-	for _, t := range []string{"notes", "note_categories", "note_aliases", "links", "inline_fields", "entities", "notes_fts"} {
+	for _, t := range []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "entities", "notes_fts"} {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return 0, err
 		}
@@ -177,8 +208,8 @@ func (ix *Index) Rebuild() (int, error) {
 // notes_fts row.
 func insertNote(tx *sql.Tx, n Note) error {
 	ai := b2i(n.AIAuthored)
-	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,ai_authored,mtime) VALUES(?,?,?,?,?,?,?)`,
-		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, ai, n.MTime)
+	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,ai_authored,transcript,mtime) VALUES(?,?,?,?,?,?,?,?)`,
+		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, ai, b2i(n.HasTranscript), n.MTime)
 	if err != nil {
 		return err
 	}
@@ -193,6 +224,11 @@ func insertNote(tx *sql.Tx, n Note) error {
 	}
 	for _, a := range n.Aliases {
 		if _, err := tx.Exec(`INSERT INTO note_aliases(path,alias,alias_lower) VALUES(?,?,?)`, n.Path, a, strings.ToLower(a)); err != nil {
+			return err
+		}
+	}
+	for _, em := range n.Emails {
+		if _, err := tx.Exec(`INSERT INTO note_emails(path,email,email_lower) VALUES(?,?,?)`, n.Path, em, strings.ToLower(em)); err != nil {
 			return err
 		}
 	}

@@ -11,12 +11,19 @@ import (
 
 // Event is a normalized calendar event (Google types are converted to this).
 type Event struct {
-	ID       string
-	Title    string
-	Start    time.Time
-	End      time.Time
-	AllDay   bool
-	Declined bool // self-attendee responseStatus == "declined"
+	ID        string
+	Title     string
+	Start     time.Time
+	End       time.Time
+	AllDay    bool
+	Declined  bool       // self-attendee responseStatus == "declined"
+	Attendees []Attendee // non-self attendees (for contact matching)
+}
+
+// Attendee is one non-self participant on an event (name + email as Google has them).
+type Attendee struct {
+	Name  string
+	Email string
 }
 
 // Slot is a half-hour schedule slot derived from a timed event.

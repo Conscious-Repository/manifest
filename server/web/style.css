@@ -823,3 +823,71 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .feed-card.pinned { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
 .pin-chip { font-family: var(--mono); font-size: 10px; color: var(--blue); letter-spacing: 0.3px; }
 .feed-card.digest .feed-body { white-space: pre-wrap; font-family: var(--sans); font-size: 13.5px; line-height: 1.5; color: var(--text); }
+
+/* ===== CONTACTS — the people layer ===== */
+.contacts-view { max-width: 1180px; margin: 8px auto 64px; padding: 0 28px; }
+.agent-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.agent-title { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em; color: var(--ink); }
+.agent-actions { display: flex; gap: 8px; align-items: center; }
+.contact-search { font-family: var(--sans); font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; min-width: 220px; color: var(--text); }
+.contact-search:focus { outline: none; border-color: var(--blue-soft); }
+
+/* triage */
+.contact-triage { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; margin-bottom: 16px; }
+.triage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.triage-label { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.triage-rows { margin-top: 10px; }
+.triage-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+.triage-name { font-family: var(--sans); font-size: 14px; color: var(--text); flex: 0 0 auto; }
+.triage-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.triage-actions { margin-left: auto; display: flex; gap: 6px; }
+
+/* list */
+.contact-list { display: flex; flex-direction: column; }
+.contact-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.contact-row:hover { background: var(--hover); }
+.contact-row-left { display: flex; align-items: baseline; gap: 7px; }
+.contact-name { font-family: var(--sans); font-size: 15px; color: var(--text); }
+.contact-dot { color: var(--icon); font-size: 10px; } /* quiet no-note indicator */
+.contact-row-right { display: flex; align-items: baseline; gap: 12px; }
+.contact-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 96px; text-align: right; }
+.contact-upcoming { font-family: var(--mono); font-size: 11px; color: var(--blue); }
+
+/* create flow */
+.contact-create { border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
+.contact-create-head { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+.contact-create-input { width: 100%; font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 10px; margin-bottom: 8px; }
+.contact-create-input:focus { outline: none; border-color: var(--blue-soft); }
+.cc-result { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.cc-name { font-family: var(--sans); font-size: 14px; color: var(--text); }
+.cc-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.cc-actions { margin-left: auto; display: flex; gap: 6px; }
+.cc-create { padding-top: 10px; margin-top: 6px; border-top: 1px solid var(--line); }
+
+/* contact page */
+.contact-page { padding: 8px 0; }
+.cp-header { margin-bottom: 6px; }
+.cp-name-row { display: flex; align-items: baseline; gap: 10px; }
+.cp-name { font-family: var(--sans); font-size: 26px; font-weight: 500; color: var(--ink); margin: 0; }
+.cp-nonote { font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.cp-aliases { font-family: var(--sans); font-size: 13px; color: var(--muted); margin-top: 3px; }
+.cp-firms { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cp-firm { font-family: var(--mono); font-size: 12px; color: var(--blue); background: var(--streak-bg); border-radius: var(--radius); padding: 2px 8px; cursor: pointer; }
+.cp-lastmet { font-family: var(--mono); font-size: 12px; color: var(--streak-ink); margin: 10px 0 18px; }
+.cp-section { margin-bottom: 20px; }
+.cp-section-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 5px; margin-bottom: 8px; }
+.cp-count { color: var(--icon); }
+.cp-empty { font-family: var(--sans); font-size: 13px; color: var(--muted); font-style: italic; }
+.cp-tl-row { display: flex; align-items: baseline; gap: 12px; padding: 4px 0; }
+.cp-date { font-family: var(--mono); font-size: 12px; color: var(--ink); flex: 0 0 88px; }
+.cp-src { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; flex: 0 0 84px; }
+.cp-tl-name { font-family: var(--sans); font-size: 13.5px; color: var(--text); }
+.cp-badge { font-family: var(--mono); font-size: 9px; color: var(--blue); border: 1px solid var(--blue-soft); border-radius: 3px; padding: 1px 5px; }
+.cp-mention { font-family: var(--sans); font-size: 13px; color: var(--streak-ink); padding: 3px 0; }
+.cp-upcoming-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; }
+.cp-title { font-family: var(--sans); font-size: 13.5px; color: var(--text); flex: 1; }
+.cp-confirmed { font-family: var(--mono); font-size: 11px; color: #1a7f37; }
+.cp-note-editor { width: 100%; min-height: 150px; font-family: var(--mono); font-size: 13px; line-height: 1.55; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; resize: vertical; color: var(--text); box-sizing: border-box; }
+.cp-note-editor:focus { outline: none; border-color: var(--blue-soft); }
+.cp-note-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.cp-note-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }

@@ -23,17 +23,19 @@ import (
 
 // Note is one parsed markdown file — the row the indexer projects into SQLite.
 type Note struct {
-	Path         string   // vault-relative, forward-slash
-	Name         string   // basename without .md
-	Date         string   // "YYYY-MM-DD" or ""
-	DateSource   string   // "filename" | "frontmatter" | ""
-	Categories   []string // exact frontmatter values, order preserved, de-duped
-	Aliases      []string // union of alias: and aliases:
-	InlineFields []InlineField
-	Links        []Link
-	AIAuthored   bool
-	MTime        int64
-	Body         string // text after the frontmatter block (FTS source)
+	Path          string   // vault-relative, forward-slash
+	Name          string   // basename without .md
+	Date          string   // "YYYY-MM-DD" or ""
+	DateSource    string   // "filename" | "frontmatter" | ""
+	Categories    []string // exact frontmatter values, order preserved, de-duped
+	Aliases       []string // union of alias: and aliases:
+	Emails        []string // union of email: and emails: (confirm-once contact matching)
+	InlineFields  []InlineField
+	Links         []Link
+	AIAuthored    bool
+	HasTranscript bool // body carries a speaker-labelled transcript (Granola-export shape)
+	MTime         int64
+	Body          string // text after the frontmatter block (FTS source)
 }
 
 // Link is one [[wikilink]] occurrence. Key is the resolution target (lowercased
@@ -53,6 +55,8 @@ var (
 	wikilinkRe     = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 	bracketFieldRe = regexp.MustCompile(`\[([A-Za-z0-9 _/-]+?)::\s*([^\]]*)\]`)
 	lineFieldRe    = regexp.MustCompile(`(?m)^([A-Za-z0-9 _/-]+?)::[ \t]*(.+?)\s*$`)
+	// a Granola-export transcript turn: a **speaker:** label at line start
+	speakerLineRe = regexp.MustCompile(`(?m)^\s*\*\*[^*\n]{1,40}:\*\*`)
 )
 
 // ParseNote parses one note. relPath is vault-relative (forward-slash); content
@@ -67,6 +71,7 @@ func ParseNote(relPath string, content []byte, mtime int64, aiRegions []string) 
 
 	n.Categories = dedupe(fm["categories"])
 	n.Aliases = dedupe(append(append([]string{}, fm["alias"]...), fm["aliases"]...))
+	n.Emails = dedupe(append(append([]string{}, fm["email"]...), fm["emails"]...))
 
 	// date: dated filename wins; else a date: frontmatter field.
 	if m := datedFileRe.FindStringSubmatch(n.Name); m != nil {
@@ -82,6 +87,8 @@ func ParseNote(relPath string, content []byte, mtime int64, aiRegions []string) 
 	whole := string(content)
 	n.Links = extractLinks(whole)
 	n.InlineFields = extractInlineFields(body) // fields live in the body, not the YAML block
+	// a speaker-labelled body (≥3 turns) marks a transcript note (funder §4)
+	n.HasTranscript = len(speakerLineRe.FindAllStringIndex(body, 4)) >= 3
 
 	for _, r := range aiRegions {
 		if r != "" && (relPath == strings.TrimSuffix(r, "/") || strings.HasPrefix(relPath, strings.TrimSuffix(r, "/")+"/")) {

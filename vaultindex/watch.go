@@ -60,7 +60,7 @@ func deletePath(tx *sql.Tx, rel string) error {
 			return fmt.Errorf("fts delete: %w", err)
 		}
 	}
-	for _, t := range []string{"notes", "note_categories", "note_aliases", "inline_fields"} {
+	for _, t := range []string{"notes", "note_categories", "note_aliases", "note_emails", "inline_fields"} {
 		if _, err := tx.Exec("DELETE FROM "+t+" WHERE path = ?", rel); err != nil {
 			return fmt.Errorf("delete %s: %w", t, err)
 		}

@@ -15,6 +15,7 @@
       <span class="brand">◆</span>
       <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
       <a class="pill" href="#/calendar" id="calNav">CAL</a>
+      <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
       <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
       <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
     </div>
@@ -163,6 +164,31 @@
         <span>PENDING APPROVALS <span class="sub-meta">record-only · warden findings land here</span></span>
       </div>
       <div id="spiritApprovalList" class="approval-rows"></div>
+    </div>
+  </section>
+
+  <!-- CONTACTS — the people layer over the vault index -->
+  <section class="contacts-view" id="contactsView" hidden>
+    <!-- list -->
+    <div id="contactsListPane">
+      <div class="agent-head">
+        <span class="agent-title">CONTACTS</span>
+        <div class="agent-actions">
+          <input id="contactSearch" class="contact-search" type="search" placeholder="Search contacts…" />
+          <button id="contactAddBtn" class="pill" title="Add a contact (binds to existing links first)">+ contact</button>
+        </div>
+      </div>
+      <div id="contactTriage" class="contact-triage" hidden></div>
+      <div id="contactList" class="contact-list"></div>
+    </div>
+
+    <!-- page -->
+    <div id="contactPagePane" hidden>
+      <div class="agent-head">
+        <button id="contactBackBtn" class="pill light">‹ Contacts</button>
+        <span id="contactPageSaved" class="save-state"></span>
+      </div>
+      <div id="contactPage" class="contact-page"></div>
     </div>
   </section>
 

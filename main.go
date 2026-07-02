@@ -19,6 +19,7 @@ import (
 
 	"manifest/approvals"
 	"manifest/calendar"
+	"manifest/contacts"
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/server"
@@ -123,8 +124,18 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	vw := vaultwriter.New(cfg.VaultPath)
 	if vix != nil {
 		srv.UseIndex(vix)
+		// CONTACTS — the people layer over the index. Triage state lives under
+		// DataDir (survives index rebuilds); calendar feeds upcoming-match (§6).
+		cstore, err := contacts.NewStore(cfg.DataDir)
+		if err != nil {
+			log.Printf("contacts disabled: %v", err)
+		} else {
+			srv.UseContacts(contacts.New(vix, cstore, vw, calAdapter{calClient}, nil))
+			log.Printf("contacts: enabled (people layer over the vault index)")
+		}
 	}
 
 	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the
@@ -132,7 +143,7 @@ func main() {
 	// user decisions; the engine (a separate process) owns all execution. The
 	// approvals inbox is the excalibur surface (warden findings today, the
 	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
-	srv.UseVault(vaultwriter.New(cfg.VaultPath))
+	srv.UseVault(vw)
 	if cfg.ExcaliburPath != "" {
 		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
 		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")))
@@ -158,6 +169,32 @@ func orNone(s string) string {
 		return "(none yet)"
 	}
 	return s
+}
+
+// calAdapter adapts the calendar client to the contacts CalendarReader interface
+// (future, non-declined events with their non-self attendees).
+type calAdapter struct{ c *calendar.Client }
+
+func (a calAdapter) Upcoming(now time.Time, days int) []contacts.Event {
+	if a.c == nil || !a.c.Enabled() {
+		return nil
+	}
+	evs, err := a.c.Events(context.Background(), now, now.AddDate(0, 0, days))
+	if err != nil {
+		return nil
+	}
+	var out []contacts.Event
+	for _, e := range evs {
+		if e.Declined || e.Start.Before(now) {
+			continue
+		}
+		ce := contacts.Event{Start: e.Start, Title: e.Title}
+		for _, at := range e.Attendees {
+			ce.Attendees = append(ce.Attendees, contacts.Attendee{Name: at.Name, Email: at.Email})
+		}
+		out = append(out, ce)
+	}
+	return out
 }
 
 func vaultConfig(c Config) vault.Config {

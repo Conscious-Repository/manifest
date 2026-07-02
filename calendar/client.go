@@ -355,7 +355,7 @@ func normalize(items []*gcal.Event, loc *time.Location) []Event {
 		if it.Status == "cancelled" {
 			continue // cancelled instances (SingleEvents expansion) aren't real events
 		}
-		e := Event{ID: it.Id, Title: it.Summary, Declined: selfDeclined(it)}
+		e := Event{ID: it.Id, Title: it.Summary, Declined: selfDeclined(it), Attendees: attendeesOf(it)}
 		if it.Start.Date != "" {
 			e.AllDay = true
 			e.Start, _ = time.ParseInLocation("2006-01-02", it.Start.Date, loc)
@@ -373,6 +373,19 @@ func normalize(items []*gcal.Event, loc *time.Location) []Event {
 			}
 		}
 		out = append(out, e)
+	}
+	return out
+}
+
+// attendeesOf returns the non-self participants (name + email) for contact
+// matching. The self record is skipped (it is the summoner, not a counterparty).
+func attendeesOf(it *gcal.Event) []Attendee {
+	var out []Attendee
+	for _, a := range it.Attendees {
+		if a.Self || a.Resource {
+			continue
+		}
+		out = append(out, Attendee{Name: a.DisplayName, Email: a.Email})
 	}
 	return out
 }

@@ -9,6 +9,7 @@ import (
 
 	"manifest/approvals"
 	"manifest/calendar"
+	"manifest/contacts"
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/spirits"
@@ -29,6 +30,8 @@ type Server struct {
 	spirits   *spirits.Store
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
+	// Contacts (people layer) over the index. Nilable.
+	contacts *contacts.Service
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -44,6 +47,9 @@ func (s *Server) UseSpirits(sp *spirits.Store) { s.spirits = sp }
 
 // UseIndex wires the read-only vault index (contacts + query surfaces).
 func (s *Server) UseIndex(ix *vaultindex.Index) { s.index = ix }
+
+// UseContacts wires the people layer (CONTACTS tab).
+func (s *Server) UseContacts(c *contacts.Service) { s.contacts = c }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -95,6 +101,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/spirits/file", s.handleSpiritsFilePut)
 	mux.HandleFunc("POST /api/spirits/ritual", s.handleSpiritsNewRitual)
 	mux.HandleFunc("POST /api/spirits/spirit", s.handleSpiritsNewSpirit)
+
+	// CONTACTS — the people layer over the vault index (plans/contacts-feature.md).
+	// Reads are the graph; the only writes are explicit user actions (create a
+	// person note, bind an alias, confirm an email).
+	mux.HandleFunc("GET /api/contacts", s.handleContactsList)
+	mux.HandleFunc("GET /api/contacts/triage", s.handleContactsTriage)
+	mux.HandleFunc("GET /api/contacts/page", s.handleContactPage)
+	mux.HandleFunc("GET /api/contacts/search", s.handleContactsSearch)
+	mux.HandleFunc("POST /api/contacts/confirm", s.handleContactsConfirm)
+	mux.HandleFunc("POST /api/contacts/dismiss", s.handleContactsDismiss)
+	mux.HandleFunc("POST /api/contacts/bind", s.handleContactsBind)
+	mux.HandleFunc("POST /api/contacts/note", s.handleContactsNote)
+	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
 
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {

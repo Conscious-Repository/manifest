@@ -21,6 +21,18 @@ const els = {
   goalsNav: document.getElementById("goalsNav"),
   calNav: document.getElementById("calNav"),
   dayNav: document.getElementById("dayNav"),
+  // contacts (people layer over the vault index)
+  contactsView: document.getElementById("contactsView"),
+  contactsNav: document.getElementById("contactsNav"),
+  contactsListPane: document.getElementById("contactsListPane"),
+  contactPagePane: document.getElementById("contactPagePane"),
+  contactList: document.getElementById("contactList"),
+  contactTriage: document.getElementById("contactTriage"),
+  contactSearch: document.getElementById("contactSearch"),
+  contactAddBtn: document.getElementById("contactAddBtn"),
+  contactBackBtn: document.getElementById("contactBackBtn"),
+  contactPage: document.getElementById("contactPage"),
+  contactPageSaved: document.getElementById("contactPageSaved"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   spiritsNav: document.getElementById("spiritsNav"),
@@ -1600,24 +1612,263 @@ if (els.spiritNewSpirit) els.spiritNewSpirit.addEventListener("click", newSpirit
 if (els.spiritEditChargebook) els.spiritEditChargebook.addEventListener("click", () => openEditor(["chargebook.md"]));
 
 // ---- router ----
+// ---- CONTACTS (people layer over the vault index) ----
+async function postJSON(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  try { return await res.json(); } catch (e) { return {}; }
+}
+
+function showContacts() {
+  const rest = location.hash.replace(/^#\/contacts\/?/, "");
+  if (rest) showContactPage(decodeURIComponent(rest));
+  else showContactList();
+}
+
+function showContactList() {
+  els.contactsListPane.hidden = false;
+  els.contactPagePane.hidden = true;
+  loadContactList();
+  loadContactTriage();
+}
+
+async function loadContactList() {
+  let d = { contacts: [] };
+  try { d = await (await fetch("/api/contacts")).json(); } catch (e) {}
+  window._contacts = d.contacts || [];
+  renderContactList(window._contacts, els.contactSearch.value);
+}
+
+function renderContactList(list, query) {
+  const host = els.contactList; host.innerHTML = "";
+  const q = (query || "").trim().toLowerCase();
+  const rows = q ? list.filter((c) => c.display.toLowerCase().includes(q)) : list;
+  if (!rows.length) { host.appendChild(emptyRow(q ? "No contacts match." : "No contacts yet.")); return; }
+  rows.forEach((c) => host.appendChild(contactRow(c)));
+}
+
+function contactRow(c) {
+  const row = el("div", "contact-row");
+  row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
+  const left = el("div", "contact-row-left");
+  const name = el("span", "contact-name", c.display);
+  left.append(name);
+  if (!c.hasNote) left.append(el("span", "contact-dot", "○")); // quiet no-note indicator
+  const right = el("div", "contact-row-right");
+  if (c.upcoming) right.append(el("span", "contact-upcoming", "↑ " + c.upcoming));
+  // last-met is BLANK when there is no dated evidence — never a guess
+  right.append(el("span", "contact-meta", c.lastMet ? "last met " + c.lastMet : ""));
+  row.append(left, right);
+  return row;
+}
+
+async function loadContactTriage() {
+  let d = { triage: [] };
+  try { d = await (await fetch("/api/contacts/triage")).json(); } catch (e) {}
+  renderTriage(d.triage || []);
+}
+
+function renderTriage(items) {
+  const host = els.contactTriage; host.innerHTML = "";
+  if (!items.length) { host.hidden = true; return; }
+  host.hidden = false;
+  // Quiet by default (§4): a one-line summary that expands to a review batch.
+  const head = el("div", "triage-head");
+  const label = el("span", "triage-label", "Review — " + items.length + " note-less name" + (items.length === 1 ? "" : "s") + " to confirm or dismiss");
+  const toggle = pillLight("Review ▾", () => { rows.hidden = !rows.hidden; toggle.textContent = rows.hidden ? "Review ▾" : "Hide ▴"; });
+  head.append(label, toggle);
+  const rows = el("div", "triage-rows"); rows.hidden = true;
+  items.slice(0, 25).forEach((t) => {
+    const r = el("div", "triage-row");
+    r.append(el("span", "triage-name", t.display), el("span", "triage-refs", t.refCount + " ref" + (t.refCount === 1 ? "" : "s")));
+    const act = el("span", "triage-actions");
+    act.append(
+      pill("Person", async () => { await postJSON("/api/contacts/confirm", { key: t.key }); showContactList(); }),
+      pillLight("Not a person", async () => { await postJSON("/api/contacts/dismiss", { key: t.key }); showContactList(); }),
+    );
+    r.append(act);
+    rows.append(r);
+  });
+  host.append(head, rows);
+}
+
+async function showContactPage(key) {
+  els.contactsListPane.hidden = true;
+  els.contactPagePane.hidden = false;
+  els.contactPageSaved.textContent = "";
+  els.contactPage.textContent = "Loading…";
+  let p;
+  try {
+    const res = await fetch("/api/contacts/page?key=" + encodeURIComponent(key));
+    if (!res.ok) { els.contactPage.textContent = "No such contact."; return; }
+    p = await res.json();
+  } catch (e) { els.contactPage.textContent = "Error loading contact."; return; }
+  renderContactPage(p);
+}
+
+function cpSection(title, count) {
+  const s = el("div", "cp-section");
+  const h = el("div", "cp-section-head", title);
+  if (count != null) h.append(el("span", "cp-count", " " + count));
+  s.append(h);
+  return s;
+}
+
+function renderContactPage(p) {
+  const host = els.contactPage; host.innerHTML = "";
+
+  // 1. header — name, aliases, linked firms
+  const header = el("div", "cp-header");
+  const nameRow = el("div", "cp-name-row");
+  nameRow.append(el("h1", "cp-name", p.display));
+  if (!p.hasNote) nameRow.append(el("span", "cp-nonote", "no note yet"));
+  header.append(nameRow);
+  if (p.aliases && p.aliases.length) header.append(el("div", "cp-aliases", "aka " + p.aliases.join(" · ")));
+  if (p.firms && p.firms.length) {
+    const f = el("div", "cp-firms");
+    p.firms.forEach((fr) => {
+      const chip = el("span", "cp-firm", fr.display);
+      chip.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(fr.key); };
+      f.append(chip);
+    });
+    header.append(f);
+  }
+  host.append(header);
+
+  // last-met line
+  host.append(el("div", "cp-lastmet", p.lastMet ? "Last met " + p.lastMet : "No dated meetings on record"));
+
+  // 2. upcoming (matched calendar events / candidates to confirm)
+  if (p.upcoming && p.upcoming.length) {
+    const sec = cpSection("Upcoming");
+    p.upcoming.forEach((u) => {
+      const row = el("div", "cp-upcoming-row");
+      row.append(el("span", "cp-date", u.date), el("span", "cp-title", u.title));
+      if (!u.confirmed && u.email) {
+        row.append(pill("This is " + p.display + " (" + u.email + ")", async () => {
+          await postJSON("/api/contacts/email", { key: p.key, display: p.display, email: u.email });
+          showContactPage(p.key);
+        }));
+      } else if (u.confirmed) {
+        row.append(el("span", "cp-confirmed", "✓ matched"));
+      }
+      sec.append(row);
+    });
+    host.append(sec);
+  }
+
+  // 3. timeline (dated interactions, newest first)
+  const tl = cpSection("Timeline", p.timeline ? p.timeline.length : 0);
+  if (!p.timeline || !p.timeline.length) tl.append(el("div", "cp-empty", "No dated interactions."));
+  (p.timeline || []).forEach((t) => {
+    const row = el("div", "cp-tl-row");
+    row.append(el("span", "cp-date", t.date), el("span", "cp-src", t.sourceType), el("span", "cp-tl-name", t.name));
+    if (t.isTranscript) row.append(el("span", "cp-badge", "transcript"));
+    tl.append(row);
+  });
+  host.append(tl);
+
+  // 4. transcripts
+  if (p.transcripts && p.transcripts.length) {
+    const sec = cpSection("Transcripts", p.transcripts.length);
+    p.transcripts.forEach((t) => {
+      const row = el("div", "cp-tl-row");
+      row.append(el("span", "cp-date", t.date), el("span", "cp-tl-name", t.title), el("span", "cp-src", t.source));
+      sec.append(row);
+    });
+    host.append(sec);
+  }
+
+  // 5. mentions (undated — never a date claim)
+  if (p.mentions && p.mentions.length) {
+    const sec = cpSection("Mentions (no date)", p.mentions.length);
+    p.mentions.forEach((m) => sec.append(el("div", "cp-mention", m.name)));
+    host.append(sec);
+  }
+
+  // 6. note pane — raw-markdown editor; blank + placeholder when no note exists
+  const note = cpSection("Note");
+  const ta = el("textarea", "cp-note-editor");
+  ta.value = p.noteBody || "";
+  ta.placeholder = "notes about " + p.display + "…";
+  note.append(ta);
+  const actions = el("div", "cp-note-actions");
+  const saveBtn = pill(p.hasNote ? "Save note" : "Create note", async () => {
+    els.contactPageSaved.textContent = "saving…";
+    const np = await postJSON("/api/contacts/note", { key: p.key, display: p.display, body: ta.value });
+    els.contactPageSaved.textContent = "saved";
+    renderContactPage(np);
+  });
+  actions.append(saveBtn);
+  if (!p.hasNote) actions.append(el("span", "cp-note-hint", "first save creates " + p.display + ".md with categories: [people]"));
+  note.append(actions);
+  host.append(note);
+}
+
+// create flow — bind to existing links before making a new contact (§5)
+function openCreatePanel() {
+  if (document.querySelector(".contact-create")) return;
+  const box = el("div", "contact-create");
+  const head = el("div", "contact-create-head", "Add a contact — existing links are checked first");
+  head.append(pillLight("✕", () => box.remove()));
+  const input = el("input", "contact-create-input"); input.type = "text"; input.placeholder = "Type a name…";
+  const results = el("div", "contact-create-results");
+  box.append(head, input, results);
+  els.contactList.before(box);
+  input.focus();
+  let timer;
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => runCreateSearch(input.value.trim(), results), 200); });
+}
+
+async function runCreateSearch(q, host) {
+  host.innerHTML = "";
+  if (!q) return;
+  let d = { results: [] };
+  try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+  (d.results || []).forEach((r) => {
+    const row = el("div", "cc-result");
+    row.append(el("span", "cc-name", r.display), el("span", "cc-refs", r.refCount + " ref" + (r.refCount === 1 ? "" : "s") + (r.hasNote ? " · has note" : "")));
+    const act = el("span", "cc-actions");
+    act.append(
+      pillLight("Open", () => { location.hash = "#/contacts/" + encodeURIComponent(r.key); }),
+      pill("Bind “" + q + "”", async () => { await postJSON("/api/contacts/bind", { variant: q, canonical: r.key, display: q }); location.hash = "#/contacts/" + encodeURIComponent(r.key); }),
+    );
+    row.append(act);
+    host.append(row);
+  });
+  const create = el("div", "cc-create");
+  create.append(pill("Create new contact “" + q + "”", async () => {
+    const p = await postJSON("/api/contacts/note", { key: q.toLowerCase(), display: q, body: "" });
+    location.hash = "#/contacts/" + encodeURIComponent(p.key || q.toLowerCase());
+  }));
+  host.append(create);
+}
+
+if (els.contactSearch) els.contactSearch.addEventListener("input", () => renderContactList(window._contacts || [], els.contactSearch.value));
+if (els.contactAddBtn) els.contactAddBtn.addEventListener("click", openCreatePanel);
+if (els.contactBackBtn) els.contactBackBtn.addEventListener("click", () => { location.hash = "#/contacts"; });
+
 function route() {
   const h = location.hash;
   const goals = h === "#/goals";
   const cal = h === "#/calendar";
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
-  const day = !goals && !cal && !sp;
+  const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
+  const day = !goals && !cal && !sp && !contacts;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
   els.spiritsView.hidden = !sp;
+  els.contactsView.hidden = !contacts;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
   els.calNav.hidden = !day;
+  els.contactsNav.hidden = !day;
   els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
   if (goals) loadGoals();
   else if (cal) loadCalendar();
   else if (sp) showSpirits(); // excalibur harness: feed / runs / approvals
+  else if (contacts) showContacts(); // people layer: list / page
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);
