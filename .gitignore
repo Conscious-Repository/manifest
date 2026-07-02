@@ -12,8 +12,11 @@ google_token.json
 *.db-shm
 
 # Compiled binaries (single-binary builds in-tree)
-/app/app
-/app/manifest
+/app
+/manifest
+
+# Runtime logs
+*.log
 
 # Local-only working material — repo is public, only /app is shared
 /context/
