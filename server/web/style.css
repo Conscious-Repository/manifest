@@ -62,9 +62,9 @@ body {
   color: var(--pill-ink);
   background: var(--pill-bg);
   border: 1px solid var(--pill-bd);
-  border-radius: 0;
-  padding: 4px 8px;
-  height: 26px;
+  border-radius: 7px;
+  padding: 5px 10px;
+  height: 28px;
   line-height: 16px;
   cursor: pointer;
   text-decoration: none;
@@ -75,6 +75,35 @@ body {
 .pill.arrow { padding: 4px 9px; }
 .pill:hover { color: #d4d4d4; }
 #dateLabel { min-width: 92px; text-align: center; }
+
+/* segmented nav groups — one rounded dark control with internal dividers,
+   matching the source design ([◆ | GOALS | …] and ‹ TODAY ›). */
+.pill-group {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-bd);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.pill-group .pill {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  height: 34px;
+  padding: 0 15px;
+}
+.pill-group .pill.arrow { padding: 0 12px; }
+.pill-group .brand {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0 13px;
+  color: #d4d4d4; /* light on the dark group (was near-black on white) */
+  font-size: 15px;
+}
+.pill-group > * + * { border-left: 1px solid #3a3a3a; } /* visible divider between segments */
 
 .save-state { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 38px; }
 .save-state.saving { color: var(--blue); }

@@ -12,17 +12,21 @@
 <body>
   <header class="nav">
     <div class="nav-left">
-      <span class="brand">◆</span>
-      <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
-      <a class="pill" href="#/calendar" id="calNav">CAL</a>
-      <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
-      <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
-      <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
+      <div class="pill-group">
+        <span class="brand">◆</span>
+        <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
+        <a class="pill" href="#/calendar" id="calNav">CAL</a>
+        <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
+        <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
+        <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
+      </div>
     </div>
     <div class="nav-center" id="dateNav">
-      <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
-      <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
-      <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
+      <div class="pill-group">
+        <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
+        <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
+        <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
+      </div>
     </div>
     <div class="nav-right">
       <span id="saveState" class="save-state">saved</span>
