@@ -485,6 +485,7 @@ function renderSchedule(slots) {
         drawConnectors();
       });
       input.addEventListener("change", saveDay);
+      attachWikilinkAutocomplete(input); // [[name]] autocomplete inline in schedule entries
       body.appendChild(input);
     });
 
@@ -592,6 +593,7 @@ function addTaskRow(task, num) {
   const input = document.createElement("input");
   input.className = "ttext" + (task.done ? " done" : "");
   input.value = task.text || "";
+  attachWikilinkAutocomplete(input); // [[name]] autocomplete inline in task entries
   const remove = document.createElement("button");
   remove.className = "task-remove";
   remove.textContent = "✕";
@@ -2194,6 +2196,7 @@ function wlInsert(it) {
   wlClose();
   ta.focus();
   ta.setSelectionRange(np, np);
+  ta.dispatchEvent(new Event("input", { bubbles: true })); // run the field's own state/save handlers
 }
 
 function wlPosition(ta) {
@@ -2205,7 +2208,9 @@ function wlPosition(ta) {
 }
 
 // caretCoords returns viewport coords just below the caret (mirror-div technique).
+// Textareas wrap; single-line inputs don't, and the popup sits below the field.
 function caretCoords(ta, position) {
+  const isInput = ta.tagName === "INPUT";
   const s = getComputedStyle(ta);
   const div = document.createElement("div");
   const props = ["boxSizing", "width", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
@@ -2214,9 +2219,10 @@ function caretCoords(ta, position) {
   props.forEach((p) => (div.style[p] = s[p]));
   div.style.position = "absolute";
   div.style.visibility = "hidden";
-  div.style.whiteSpace = "pre-wrap";
+  div.style.whiteSpace = isInput ? "pre" : "pre-wrap";
   div.style.wordWrap = "break-word";
   div.style.overflow = "hidden";
+  if (isInput) div.style.width = "auto";
   div.textContent = ta.value.slice(0, position);
   const span = document.createElement("span");
   span.textContent = ta.value.slice(position) || ".";
@@ -2225,7 +2231,7 @@ function caretCoords(ta, position) {
   const rect = ta.getBoundingClientRect();
   const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.4;
   const left = rect.left + (span.offsetLeft - ta.scrollLeft);
-  const top = rect.top + (span.offsetTop - ta.scrollTop) + lh;
+  const top = isInput ? rect.bottom + 2 : rect.top + (span.offsetTop - ta.scrollTop) + lh;
   document.body.removeChild(div);
   return { left, top };
 }
