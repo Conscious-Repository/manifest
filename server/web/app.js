@@ -1881,7 +1881,8 @@ function renderContactPage(p) {
   const note = cpSection("Note");
   const ta = el("textarea", "cp-note-editor");
   ta.value = p.noteBody || "";
-  ta.placeholder = "notes about " + p.display + "…";
+  ta.placeholder = "notes about " + p.display + "…  (type [[ to link a name)";
+  attachWikilinkAutocomplete(ta);
   note.append(ta);
   const actions = el("div", "cp-note-actions");
   const saveBtn = pill(p.hasNote ? "Save note" : "Create note", async () => {
@@ -2113,6 +2114,123 @@ function inlineInto(host, text, notePath) {
   }
   if (last < text.length) host.appendChild(document.createTextNode(text.slice(last)));
 }
+
+// ---- [[wikilink]] autocomplete for markdown editors (Obsidian-style) ----
+// Typing `[[` opens a popup that searches entities and narrows as you type;
+// picking one inserts `[[<lowercase name>]]`. The dropdown shows the plain
+// lowercase name (no brackets).
+let _wlPopup = null, _wlItems = [], _wlSel = -1, _wlStart = -1, _wlTa = null, _wlTimer = null;
+
+function wlClose() {
+  if (_wlPopup) { _wlPopup.remove(); _wlPopup = null; }
+  _wlItems = []; _wlSel = -1; _wlStart = -1; _wlTa = null;
+}
+
+// wlQuery finds an open, unclosed `[[…` immediately before the caret.
+function wlQuery(ta) {
+  const pos = ta.selectionStart;
+  const before = ta.value.slice(0, pos);
+  const open = before.lastIndexOf("[[");
+  if (open < 0) return null;
+  const between = before.slice(open + 2);
+  if (between.includes("]]") || between.includes("\n")) return null;
+  return { start: open, query: between };
+}
+
+function attachWikilinkAutocomplete(ta) {
+  if (!ta || ta._wlBound) return;
+  ta._wlBound = true;
+  ta.addEventListener("input", () => {
+    const q = wlQuery(ta);
+    if (!q) { wlClose(); return; }
+    _wlTa = ta; _wlStart = q.start;
+    clearTimeout(_wlTimer);
+    _wlTimer = setTimeout(() => wlSearch(ta, q.query), 100);
+  });
+  ta.addEventListener("keydown", (e) => {
+    if (!_wlPopup || !_wlItems.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); _wlSel = (_wlSel + 1) % _wlItems.length; wlPaint(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); _wlSel = (_wlSel - 1 + _wlItems.length) % _wlItems.length; wlPaint(); }
+    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); if (_wlItems[_wlSel]) wlInsert(_wlItems[_wlSel]); }
+    else if (e.key === "Escape") { e.preventDefault(); wlClose(); }
+  });
+  ta.addEventListener("blur", () => setTimeout(() => { if (_wlTa === ta) wlClose(); }, 150));
+  ta.addEventListener("scroll", () => { if (_wlPopup && _wlTa === ta) wlPosition(ta); });
+}
+
+async function wlSearch(ta, query) {
+  let results = [];
+  try { results = (await (await fetch("/api/contacts/search?q=" + encodeURIComponent(query || ""))).json()).results || []; } catch (e) {}
+  // drop dated meeting notes (e.g. "2026-05-19 shoumik sync") — you link names, not dates
+  results = results.filter((r) => !/^\d{4}-\d{2}-\d{2}/.test(r.key));
+  _wlItems = results.slice(0, 8);
+  if (!_wlItems.length) { wlClose(); return; }
+  _wlSel = 0;
+  if (!_wlPopup) { _wlPopup = el("div", "wl-popup"); document.body.appendChild(_wlPopup); }
+  _wlPopup.innerHTML = "";
+  _wlItems.forEach((it, i) => {
+    const row = el("div", "wl-item");
+    row.append(el("span", "wl-name", it.key)); // lowercase name, no brackets
+    if (it.refCount) row.append(el("span", "wl-refs", it.refCount + " ref" + (it.refCount === 1 ? "" : "s")));
+    row.addEventListener("mousedown", (e) => { e.preventDefault(); wlInsert(it); }); // mousedown beats blur
+    row.addEventListener("mouseenter", () => { _wlSel = i; wlPaint(); });
+    _wlPopup.appendChild(row);
+  });
+  wlPaint();
+  wlPosition(ta);
+}
+
+function wlPaint() {
+  if (!_wlPopup) return;
+  [..._wlPopup.children].forEach((c, i) => c.classList.toggle("sel", i === _wlSel));
+}
+
+function wlInsert(it) {
+  const ta = _wlTa; if (!ta) return;
+  const pos = ta.selectionStart;
+  const ins = "[[" + it.key + "]]";
+  ta.value = ta.value.slice(0, _wlStart) + ins + ta.value.slice(pos);
+  const np = _wlStart + ins.length;
+  wlClose();
+  ta.focus();
+  ta.setSelectionRange(np, np);
+}
+
+function wlPosition(ta) {
+  if (!_wlPopup) return;
+  const c = caretCoords(ta, ta.selectionStart);
+  const maxLeft = window.innerWidth - _wlPopup.offsetWidth - 12;
+  _wlPopup.style.left = Math.round(Math.min(c.left, Math.max(8, maxLeft))) + "px";
+  _wlPopup.style.top = Math.round(c.top) + "px";
+}
+
+// caretCoords returns viewport coords just below the caret (mirror-div technique).
+function caretCoords(ta, position) {
+  const s = getComputedStyle(ta);
+  const div = document.createElement("div");
+  const props = ["boxSizing", "width", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "fontFamily", "fontSize", "fontWeight",
+    "fontStyle", "lineHeight", "letterSpacing", "textTransform", "wordSpacing", "tabSize"];
+  props.forEach((p) => (div.style[p] = s[p]));
+  div.style.position = "absolute";
+  div.style.visibility = "hidden";
+  div.style.whiteSpace = "pre-wrap";
+  div.style.wordWrap = "break-word";
+  div.style.overflow = "hidden";
+  div.textContent = ta.value.slice(0, position);
+  const span = document.createElement("span");
+  span.textContent = ta.value.slice(position) || ".";
+  div.appendChild(span);
+  document.body.appendChild(div);
+  const rect = ta.getBoundingClientRect();
+  const lh = parseFloat(s.lineHeight) || parseFloat(s.fontSize) * 1.4;
+  const left = rect.left + (span.offsetLeft - ta.scrollLeft);
+  const top = rect.top + (span.offsetTop - ta.scrollTop) + lh;
+  document.body.removeChild(div);
+  return { left, top };
+}
+
+if (els.noteRaw) attachWikilinkAutocomplete(els.noteRaw);
 
 // ---- quick-lookup command bar (⌘K / Ctrl-K anywhere) ----
 let cmdSel = -1, cmdResults = [];

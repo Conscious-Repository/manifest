@@ -991,3 +991,10 @@ h1.md-h { font-size: 24px; } h2.md-h { font-size: 20px; } h3.md-h { font-size: 1
 .pill.light.on { background: var(--streak-bg); color: var(--ink); }
 .cmd-fact-link { cursor: pointer; }
 .cmd-fact-link:hover .cmd-fact-val { color: var(--blue); text-decoration: underline; }
+
+/* [[wikilink]] autocomplete popup */
+.wl-popup { position: fixed; z-index: 300; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,0.16); min-width: 220px; max-width: 360px; max-height: 260px; overflow-y: auto; }
+.wl-item { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 12px; cursor: pointer; }
+.wl-item.sel, .wl-item:hover { background: var(--hover); }
+.wl-name { font-family: var(--sans); font-size: 14px; color: var(--text); }
+.wl-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
