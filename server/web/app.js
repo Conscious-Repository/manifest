@@ -2264,11 +2264,12 @@ function renderInlineLinks(host, text) {
 function attachInlineLinks(input) {
   if (input._inlineBound) return;
   input._inlineBound = true;
-  const parent = input.parentElement;
-  parent.classList.add("has-inline-overlay");
   let overlay = null;
   const hasLinks = () => /\[\[[^\]]+\]\]/.test(input.value);
   function render() {
+    const parent = input.parentElement; // read lazily — may be attached after this call
+    if (!parent) return;
+    parent.classList.add("has-inline-overlay");
     if (!hasLinks() || document.activeElement === input) {
       if (overlay) overlay.style.display = "none";
       input.classList.remove("inline-hidden");
