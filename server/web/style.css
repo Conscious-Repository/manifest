@@ -998,3 +998,10 @@ h1.md-h { font-size: 24px; } h2.md-h { font-size: 20px; } h3.md-h { font-size: 1
 .wl-item.sel, .wl-item:hover { background: var(--hover); }
 .wl-name { font-family: var(--sans); font-size: 14px; color: var(--text); }
 .wl-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* inline [[link]] live-preview overlay (daily entries) */
+.has-inline-overlay { position: relative; }
+.inline-overlay { position: absolute; z-index: 1; pointer-events: none; overflow: hidden; white-space: pre; box-sizing: border-box; }
+.inline-overlay .inline-link { pointer-events: auto; cursor: pointer; color: var(--blue); border-bottom: 1px solid var(--blue-soft); }
+.inline-overlay .inline-link:hover { background: var(--hover); }
+input.inline-hidden { color: transparent !important; }

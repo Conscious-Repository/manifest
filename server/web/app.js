@@ -486,6 +486,7 @@ function renderSchedule(slots) {
       });
       input.addEventListener("change", saveDay);
       attachWikilinkAutocomplete(input); // [[name]] autocomplete inline in schedule entries
+      attachInlineLinks(input);          // [[name]] live-preview + click-to-open
       body.appendChild(input);
     });
 
@@ -594,6 +595,7 @@ function addTaskRow(task, num) {
   input.className = "ttext" + (task.done ? " done" : "");
   input.value = task.text || "";
   attachWikilinkAutocomplete(input); // [[name]] autocomplete inline in task entries
+  attachInlineLinks(input);          // [[name]] live-preview + click-to-open
   const remove = document.createElement("button");
   remove.className = "task-remove";
   remove.textContent = "✕";
@@ -2237,6 +2239,58 @@ function caretCoords(ta, position) {
 }
 
 if (els.noteRaw) attachWikilinkAutocomplete(els.noteRaw);
+
+// ---- inline [[link]] live-preview for single-line fields (Obsidian-style) ----
+// A field with [[links]] shows a rendered overlay (names, no brackets, links
+// clickable) when not focused; clicking into it reveals the raw [[…]] for
+// editing; clicking a link opens the note.
+const wikilinkRe2 = /\[\[([^\]]+)\]\]/g;
+
+function renderInlineLinks(host, text) {
+  let last = 0, m;
+  wikilinkRe2.lastIndex = 0;
+  while ((m = wikilinkRe2.exec(text))) {
+    if (m.index > last) host.appendChild(document.createTextNode(text.slice(last, m.index)));
+    const parts = m[1].split("|");
+    const target = parts[0].trim(), disp = (parts[1] || parts[0]).trim();
+    const a = el("span", "inline-link", disp);
+    a.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); resolveWikilink(target); });
+    host.appendChild(a);
+    last = wikilinkRe2.lastIndex;
+  }
+  if (last < text.length) host.appendChild(document.createTextNode(text.slice(last)));
+}
+
+function attachInlineLinks(input) {
+  if (input._inlineBound) return;
+  input._inlineBound = true;
+  const parent = input.parentElement;
+  parent.classList.add("has-inline-overlay");
+  let overlay = null;
+  const hasLinks = () => /\[\[[^\]]+\]\]/.test(input.value);
+  function render() {
+    if (!hasLinks() || document.activeElement === input) {
+      if (overlay) overlay.style.display = "none";
+      input.classList.remove("inline-hidden");
+      return;
+    }
+    if (!overlay) { overlay = el("div", "inline-overlay"); parent.appendChild(overlay); }
+    overlay.innerHTML = "";
+    renderInlineLinks(overlay, input.value);
+    const cs = getComputedStyle(input); // copy BEFORE hiding the input's text
+    ["fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "color", "paddingLeft", "paddingRight", "textAlign"].forEach((p) => (overlay.style[p] = cs[p]));
+    overlay.style.top = input.offsetTop + "px";
+    overlay.style.left = input.offsetLeft + "px";
+    overlay.style.width = input.offsetWidth + "px";
+    overlay.style.height = input.offsetHeight + "px";
+    overlay.style.lineHeight = input.offsetHeight + "px"; // vertically center the single line
+    overlay.style.display = "block";
+    input.classList.add("inline-hidden");
+  }
+  input.addEventListener("focus", render);
+  input.addEventListener("blur", () => setTimeout(render, 0));
+  setTimeout(render, 0); // defer: the input must be laid out for offset positioning
+}
 
 // ---- quick-lookup command bar (⌘K / Ctrl-K anywhere) ----
 let cmdSel = -1, cmdResults = [];
