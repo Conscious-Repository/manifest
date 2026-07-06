@@ -867,7 +867,7 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .triage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .triage-label { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .triage-rows { margin-top: 10px; }
-.triage-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
+.triage-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
 .triage-name { font-family: var(--sans); font-size: 14px; color: var(--text); flex: 0 0 auto; }
 .triage-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .triage-actions { margin-left: auto; display: flex; gap: 6px; }
@@ -888,6 +888,9 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .er-arrow { font-family: var(--mono); font-size: 12px; color: var(--icon); }
 .er-target { font-family: var(--sans); font-size: 14px; color: var(--text); }
 .er-search { flex-basis: 100%; margin-top: 8px; }
+.er-flash { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: #1a7f4b; margin-top: 4px; } /* "✓ linked …" */
+.er-flash.error { color: #c0304a; }
+.triage-row.er-done { opacity: 0.45; transition: opacity 0.3s ease; } /* fading out after a successful link */
 
 /* create flow */
 .contact-create { border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }

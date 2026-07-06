@@ -1641,6 +1641,14 @@ async function postJSON(url, body) {
   try { return await res.json(); } catch (e) { return {}; }
 }
 
+// postJSONOk throws on a non-2xx response so callers can signal real failures
+// (postJSON swallows them, which hid write errors behind an optimistic UI).
+async function postJSONOk(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
+  return res.json().catch(() => ({}));
+}
+
 function showContacts() {
   const rest = location.hash.replace(/^#\/contacts\/?/, "");
   if (rest === "cold") { _coldOnly = true; showContactList(); } // neglect view (deep-linkable)
@@ -1759,49 +1767,76 @@ async function loadContactEmailReview() {
   renderEmailReview(d.candidates || []);
 }
 
+let _emailReviewOpen = false; // preserve expand/collapse across in-place updates
+
 function renderEmailReview(items) {
   const host = els.contactEmailReview; if (!host) return;
   host.innerHTML = "";
   if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
   const head = el("div", "triage-head");
-  const label = el("span", "triage-label", "Review — " + items.length + " unlinked email" + (items.length === 1 ? "" : "s") + " (link calendar attendees to contacts)");
-  const rows = el("div", "triage-rows"); rows.hidden = true;
-  const toggle = pillLight("Review ▾", () => {
-    rows.hidden = !rows.hidden;
-    toggle.textContent = rows.hidden ? "Review ▾" : "Hide ▴";
-  });
+  const label = el("span", "triage-label", "");
+  const rows = el("div", "triage-rows");
+  const toggle = pillLight("", () => setOpen(!_emailReviewOpen));
+  const setOpen = (open) => {
+    _emailReviewOpen = open;
+    rows.hidden = !open;
+    toggle.textContent = open ? "Hide ▴" : "Review ▾";
+  };
+  const setCount = (n) => {
+    label.textContent = "Review — " + n + " unlinked email" + (n === 1 ? "" : "s") + " (link calendar attendees to contacts)";
+    if (n === 0) host.hidden = true; // last one linked/dismissed → strip disappears
+  };
+  // ctx lets a row remove itself and update the count WITHOUT re-rendering the whole
+  // strip (which would collapse it and lose the user's place).
+  const ctx = { remove: (row) => { row.remove(); setCount(rows.children.length); } };
   const headActions = el("span", "triage-head-actions"); headActions.append(toggle);
   head.append(label, headActions);
-  items.slice(0, 40).forEach((c) => rows.append(emailReviewRow(c)));
+  items.forEach((c) => rows.append(emailReviewRow(c, ctx)));
   host.append(head, rows);
+  setCount(rows.children.length);
+  setOpen(_emailReviewOpen);
 }
 
-function emailReviewRow(c) {
+function emailReviewRow(c, ctx) {
   const r = el("div", "triage-row");
   const who = el("span", "triage-name", c.attendeeName || c.email);
   who.append(el("span", "triage-hint", " " + c.email));
   r.append(who, el("span", "er-arrow", "→"), el("span", "er-target", c.contactDisplay));
   r.lastChild.append(el("span", "triage-hint", c.via === "email" ? " email match" : " name match"));
+  const flash = el("span", "er-flash"); flash.hidden = true;
   const act = el("span", "triage-actions");
-  act.append(
-    pill("Link", async () => {
-      await postJSON("/api/contacts/email", { key: c.contactKey, display: c.contactDisplay, email: c.email });
-      showContactList();
-    }),
-    pillLight("Different contact", () => openEmailReassign(r, c)),
-    pillLight("Dismiss", async () => {
-      await postJSON("/api/contacts/email-dismiss", { email: c.email, key: c.contactKey });
-      showContactList();
-    }),
-  );
-  r.append(act);
+  const link = pill("Link", () => doLink(c.contactKey, c.contactDisplay, c.email));
+  const dismiss = pillLight("Dismiss", async () => {
+    dismiss.disabled = true;
+    try { await postJSONOk("/api/contacts/email-dismiss", { email: c.email, key: c.contactKey }); }
+    catch (e) { dismiss.disabled = false; showFlash(flash, "✕ " + errMsg(e), true); return; }
+    ctx.remove(r);
+  });
+  // link the email to `key`, then signal + fade the row out in place (strip stays open)
+  async function doLink(key, display, email) {
+    link.disabled = true; showFlash(flash, "linking…", false);
+    try { await postJSONOk("/api/contacts/email", { key, display, email }); }
+    catch (e) { link.disabled = false; showFlash(flash, "✕ " + errMsg(e), true); return; }
+    showFlash(flash, "✓ linked " + email + " → " + display, false);
+    r.classList.add("er-done");
+    loadContactList(); // the contact's list row now shows a calendar "met" date
+    setTimeout(() => ctx.remove(r), 1000);
+  }
+  act.append(link, pillLight("Different contact", () => openEmailReassign(r, c, doLink)), dismiss);
+  r.append(act, flash);
   return r;
 }
 
+function showFlash(node, msg, isError) {
+  node.textContent = msg; node.hidden = false;
+  node.classList.toggle("error", !!isError);
+}
+function errMsg(e) { return (e && e.message) ? e.message : "failed"; }
+
 // openEmailReassign lets the user link this email to a DIFFERENT contact than the
 // suggested one (inline search — same shape as the create-contact search).
-function openEmailReassign(row, c) {
+function openEmailReassign(row, c, doLink) {
   if (row.querySelector(".er-search")) return;
   const box = el("div", "er-search");
   const input = el("input", "contact-create-input"); input.type = "text";
@@ -1822,10 +1857,7 @@ function openEmailReassign(row, c) {
       (d.results || []).forEach((rf) => {
         const rr = el("div", "cc-result");
         rr.append(el("span", "cc-name", rf.display));
-        rr.append(pill("Link here", async () => {
-          await postJSON("/api/contacts/email", { key: rf.key, display: rf.display, email: c.email });
-          showContactList();
-        }));
+        rr.append(pill("Link here", () => { box.remove(); doLink(rf.key, rf.display, c.email); }));
         results.append(rr);
       });
     }, 200);
