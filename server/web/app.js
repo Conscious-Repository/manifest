@@ -28,6 +28,7 @@ const els = {
   contactPagePane: document.getElementById("contactPagePane"),
   contactList: document.getElementById("contactList"),
   contactTriage: document.getElementById("contactTriage"),
+  contactEmailReview: document.getElementById("contactEmailReview"),
   contactSearch: document.getElementById("contactSearch"),
   contactColdToggle: document.getElementById("contactColdToggle"),
   contactAddBtn: document.getElementById("contactAddBtn"),
@@ -1652,6 +1653,7 @@ function showContactList() {
   els.contactPagePane.hidden = true;
   loadContactList();
   loadContactTriage();
+  loadContactEmailReview();
 }
 
 async function loadContactList() {
@@ -1689,10 +1691,17 @@ function contactRow(c) {
   if (c.openLoops > 0) left.append(el("span", "contact-loops", c.openLoops + " open"));
   const right = el("div", "contact-row-right");
   if (c.upcoming) right.append(el("span", "contact-upcoming", "↑ " + c.upcoming));
-  // last-met is BLANK when there is no dated evidence — never a guess
-  let meta = c.lastMet ? "last met " + c.lastMet : "";
-  if (c.cold && c.daysSince >= 0) meta = "last met " + c.daysSince + "d ago (usually every " + c.medianGap + "d)";
-  right.append(el("span", "contact-meta", meta));
+  // "met" = calendar-verified (email-matched); "mentioned" = note-based. Distinct
+  // signals: met is headlined when present; the going-cold line names its basis.
+  if (c.cold && c.daysSince >= 0) {
+    const verb = c.neglectBasis === "meetings" ? "met" : "mentioned";
+    right.append(el("span", "contact-meta", verb + " " + c.daysSince + "d ago (usually every " + c.medianGap + "d)"));
+  } else if (c.lastMet) {
+    right.append(el("span", "contact-meta", "met " + c.lastMet));
+    if (c.lastMentioned && c.lastMentioned !== c.lastMet) right.append(el("span", "contact-submeta", "mentioned " + c.lastMentioned));
+  } else if (c.lastMentioned) {
+    right.append(el("span", "contact-meta muted", "mentioned " + c.lastMentioned));
+  }
   row.append(left, right);
   return row;
 }
@@ -1743,6 +1752,86 @@ function renderTriage(items) {
   host.append(head, rows);
 }
 
+// ---- email-linking review queue (§4) — mirrors the triage strip ----
+async function loadContactEmailReview() {
+  let d = { candidates: [] };
+  try { d = await (await fetch("/api/contacts/email-review")).json(); } catch (e) {}
+  renderEmailReview(d.candidates || []);
+}
+
+function renderEmailReview(items) {
+  const host = els.contactEmailReview; if (!host) return;
+  host.innerHTML = "";
+  if (!items.length) { host.hidden = true; return; }
+  host.hidden = false;
+  const head = el("div", "triage-head");
+  const label = el("span", "triage-label", "Review — " + items.length + " unlinked email" + (items.length === 1 ? "" : "s") + " (link calendar attendees to contacts)");
+  const rows = el("div", "triage-rows"); rows.hidden = true;
+  const toggle = pillLight("Review ▾", () => {
+    rows.hidden = !rows.hidden;
+    toggle.textContent = rows.hidden ? "Review ▾" : "Hide ▴";
+  });
+  const headActions = el("span", "triage-head-actions"); headActions.append(toggle);
+  head.append(label, headActions);
+  items.slice(0, 40).forEach((c) => rows.append(emailReviewRow(c)));
+  host.append(head, rows);
+}
+
+function emailReviewRow(c) {
+  const r = el("div", "triage-row");
+  const who = el("span", "triage-name", c.attendeeName || c.email);
+  who.append(el("span", "triage-hint", " " + c.email));
+  r.append(who, el("span", "er-arrow", "→"), el("span", "er-target", c.contactDisplay));
+  r.lastChild.append(el("span", "triage-hint", c.via === "email" ? " email match" : " name match"));
+  const act = el("span", "triage-actions");
+  act.append(
+    pill("Link", async () => {
+      await postJSON("/api/contacts/email", { key: c.contactKey, display: c.contactDisplay, email: c.email });
+      showContactList();
+    }),
+    pillLight("Different contact", () => openEmailReassign(r, c)),
+    pillLight("Dismiss", async () => {
+      await postJSON("/api/contacts/email-dismiss", { email: c.email, key: c.contactKey });
+      showContactList();
+    }),
+  );
+  r.append(act);
+  return r;
+}
+
+// openEmailReassign lets the user link this email to a DIFFERENT contact than the
+// suggested one (inline search — same shape as the create-contact search).
+function openEmailReassign(row, c) {
+  if (row.querySelector(".er-search")) return;
+  const box = el("div", "er-search");
+  const input = el("input", "contact-create-input"); input.type = "text";
+  input.placeholder = "Link " + c.email + " to another contact…";
+  const results = el("div", "contact-create-results");
+  box.append(input, results);
+  row.append(box);
+  input.focus();
+  let timer;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      results.innerHTML = "";
+      const q = input.value.trim();
+      if (!q) return;
+      let d = { results: [] };
+      try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+      (d.results || []).forEach((rf) => {
+        const rr = el("div", "cc-result");
+        rr.append(el("span", "cc-name", rf.display));
+        rr.append(pill("Link here", async () => {
+          await postJSON("/api/contacts/email", { key: rf.key, display: rf.display, email: c.email });
+          showContactList();
+        }));
+        results.append(rr);
+      });
+    }, 200);
+  });
+}
+
 async function showContactPage(key) {
   els.contactsListPane.hidden = true;
   els.contactPagePane.hidden = false;
@@ -1786,14 +1875,23 @@ function renderContactPage(p) {
   }
   host.append(header);
 
-  // last-met line + neglect (§3)
-  let lastLine = p.lastMet ? "Last met " + p.lastMet : "No dated meetings on record";
-  if (p.daysSince >= 0 && p.interactions >= 3) {
-    lastLine = "Last met " + p.daysSince + "d ago" + (p.medianGap ? " (usually every " + p.medianGap + "d)" : "");
+  // "last met" (calendar, email-matched) is DISTINCT from "last mentioned" (notes)
+  const dates = el("div", "cp-dates");
+  const met = el("div", "cp-lastmet", p.lastMet ? "Last met " + p.lastMet : "No calendar meeting on record");
+  met.append(el("span", "cp-date-src", " · calendar"));
+  if (!p.lastMet && !(p.emails && p.emails.length)) met.append(el("span", "cp-date-hint", " — link an email below"));
+  dates.append(met);
+  if (p.lastMentioned) {
+    const men = el("div", "cp-lastmentioned", "last mentioned " + p.lastMentioned);
+    men.append(el("span", "cp-date-src", " · notes"));
+    dates.append(men);
   }
-  const lm = el("div", "cp-lastmet", lastLine);
-  if (p.cold) lm.append(el("span", "cp-cold", "◆ going cold"));
-  host.append(lm);
+  // going-cold marker names its basis (meeting cadence when email-linked, else mentions)
+  if (p.cold && p.daysSince >= 0) {
+    const verb = p.neglectBasis === "meetings" ? "met" : "mentioned";
+    dates.append(el("div", "cp-cold", "◆ going cold — " + verb + " " + p.daysSince + "d ago" + (p.medianGap ? " (usually every " + p.medianGap + "d)" : "")));
+  }
+  host.append(dates);
 
   // open loops (§2) — unchecked tasks from meeting notes, grouped by source
   if (p.loops && p.loops.length) {
@@ -1846,6 +1944,18 @@ function renderContactPage(p) {
 
   const openItem = (path) => { _noteReturn = "#/contacts/" + encodeURIComponent(p.key); openNoteByPath(path); };
 
+  // Meetings (calendar-verified, email-matched) — the true "last met", distinct
+  // from the note Timeline below.
+  if (p.meetings && p.meetings.length) {
+    const sec = cpSection("Meetings", p.meetings.length);
+    p.meetings.forEach((m) => {
+      const row = el("div", "cp-tl-row");
+      row.append(el("span", "cp-date", m.date), el("span", "cp-tl-name", m.title), el("span", "cp-src", "calendar"));
+      sec.append(row);
+    });
+    host.append(sec);
+  }
+
   // 3. timeline (dated interactions, newest first) — each opens the note view
   const tl = cpSection("Timeline", p.timeline ? p.timeline.length : 0);
   if (!p.timeline || !p.timeline.length) tl.append(el("div", "cp-empty", "No dated interactions."));
@@ -1880,6 +1990,36 @@ function renderContactPage(p) {
     });
     host.append(sec);
   }
+
+  // Emails — the contact's linked calendar identities (these drive "last met").
+  // Add more by hand, and act on any pending suggestions for THIS person.
+  const esec = cpSection("Emails", p.emails ? p.emails.length : 0);
+  (p.emails || []).forEach((em) => esec.append(el("div", "cp-email", em)));
+  if (!p.emails || !p.emails.length) esec.append(el("div", "cp-empty", "No linked emails — calendar meetings match once you link one."));
+  const addRow = el("div", "cp-email-add");
+  const einp = el("input", "cp-email-input"); einp.type = "email"; einp.placeholder = "add an email…";
+  const doAdd = async () => {
+    const email = einp.value.trim();
+    if (!email) return;
+    const np = await postJSON("/api/contacts/email", { key: p.key, display: p.display, email });
+    renderContactPage(np);
+  };
+  einp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); doAdd(); } });
+  addRow.append(einp, pill("Link email", doAdd));
+  esec.append(addRow);
+  host.append(esec);
+  // pending suggestions for THIS contact (from the review queue, async)
+  fetch("/api/contacts/email-review").then((r) => r.json()).then((d) => {
+    (d.candidates || []).filter((c) => c.contactKey === p.key).forEach((c) => {
+      const sug = el("div", "cp-email-suggest");
+      sug.append(el("span", "cp-email-suggest-text", "You met " + p.display + " on " + c.metOn + " — link " + c.email + "?"));
+      sug.append(
+        pill("Link", async () => { renderContactPage(await postJSON("/api/contacts/email", { key: p.key, display: p.display, email: c.email })); }),
+        pillLight("Dismiss", async () => { await postJSON("/api/contacts/email-dismiss", { email: c.email, key: p.key }); sug.remove(); }),
+      );
+      esec.append(sug);
+    });
+  }).catch(() => {});
 
   // 6. note pane — raw-markdown editor; blank + placeholder when no note exists
   const note = cpSection("Note");
@@ -2359,7 +2499,8 @@ async function cmdShowCard(key) {
   if (!c.hasNote) head.append(el("span", "cmd-card-nonote", "no note"));
   host.append(head);
   const facts = el("div", "cmd-card-facts");
-  facts.append(cmdFact("Last met", c.lastMet || "—"));
+  facts.append(cmdFact("Last met", c.lastMet ? c.lastMet + " · calendar" : "—"));
+  facts.append(cmdFact("Last mentioned", c.lastMentioned ? c.lastMentioned + " · notes" : "—"));
   facts.append(cmdFact("Next", c.nextUpcoming || "—"));
   if (c.latestTranscript) {
     const f = cmdFact("Latest transcript", c.latestTranscript.date + " · " + c.latestTranscript.title);

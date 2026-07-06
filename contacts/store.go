@@ -23,17 +23,21 @@ type Store struct {
 }
 
 type state struct {
-	Confirmed map[string]bool   `json:"confirmed"` // note-less keys confirmed as people
-	Dismissed map[string]bool   `json:"dismissed"` // keys dismissed from triage (remembered)
-	Orgs      map[string]bool   `json:"orgs"`      // keys marked as org/firm (kept — seed firm pages later)
-	Bindings  map[string]string `json:"bindings"`  // variant key -> canonical key
+	Confirmed       map[string]bool   `json:"confirmed"`       // note-less keys confirmed as people
+	Dismissed       map[string]bool   `json:"dismissed"`       // keys dismissed from triage (remembered)
+	Orgs            map[string]bool   `json:"orgs"`            // keys marked as org/firm (kept — seed firm pages later)
+	Bindings        map[string]string `json:"bindings"`        // variant key -> canonical key
+	EmailsDismissed map[string]bool   `json:"emailsDismissed"` // "email|contactKey" pairs dismissed from the email-review queue
 }
 
 // NewStore loads (or initializes) the triage store at <dataDir>/contacts.json.
 func NewStore(dataDir string) (*Store, error) {
 	s := &Store{
 		path: filepath.Join(dataDir, "contacts.json"),
-		st:   state{Confirmed: map[string]bool{}, Dismissed: map[string]bool{}, Bindings: map[string]string{}},
+		st: state{
+			Confirmed: map[string]bool{}, Dismissed: map[string]bool{}, Orgs: map[string]bool{},
+			Bindings: map[string]string{}, EmailsDismissed: map[string]bool{},
+		},
 	}
 	b, err := os.ReadFile(s.path)
 	if err != nil {
@@ -56,6 +60,9 @@ func NewStore(dataDir string) (*Store, error) {
 	}
 	if s.st.Bindings == nil {
 		s.st.Bindings = map[string]string{}
+	}
+	if s.st.EmailsDismissed == nil {
+		s.st.EmailsDismissed = map[string]bool{}
 	}
 	return s, nil
 }
@@ -113,6 +120,25 @@ func (s *Store) DismissAll(keys []string) error {
 		delete(s.st.Confirmed, key(k))
 	}
 	return s.save()
+}
+
+// emailDismissKey pairs an attendee email with the contact it was proposed for,
+// so dismissing one suggestion never suppresses the same email for someone else.
+func emailDismissKey(email, contactKey string) string {
+	return strings.ToLower(strings.TrimSpace(email)) + "|" + key(contactKey)
+}
+
+// DismissEmail remembers that an attendee email should NOT be linked to a given
+// contact; that pair never returns to the email-review queue.
+func (s *Store) DismissEmail(email, contactKey string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.st.EmailsDismissed[emailDismissKey(email, contactKey)] = true
+	return s.save()
+}
+
+func (s *Store) IsEmailDismissed(email, contactKey string) bool {
+	return s.read(func() bool { return s.st.EmailsDismissed[emailDismissKey(email, contactKey)] })
 }
 
 func (s *Store) IsConfirmed(k string) bool {

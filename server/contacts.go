@@ -230,6 +230,43 @@ func (s *Server) handleContactsEmail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, p)
 }
 
+// handleContactsEmailReview returns the attendee→contact email link suggestions
+// (calendar attendees with an unlinked email that match an existing contact).
+func (s *Server) handleContactsEmailReview(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		writeJSON(w, map[string]any{"candidates": []any{}})
+		return
+	}
+	cands, err := s.contacts.EmailReview(time.Now())
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"candidates": cands})
+}
+
+// handleContactsEmailDismiss remembers that an attendee email should not link to
+// a contact (that pair never returns to the review queue).
+func (s *Server) handleContactsEmailDismiss(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Email string `json:"email"`
+		Key   string `json:"key"`
+	}
+	if err := decode(r, &b); err != nil || b.Email == "" || b.Key == "" {
+		httpError(w, errBadRequest("email and key are required"))
+		return
+	}
+	if err := s.contacts.DismissEmailCandidate(b.Email, b.Key); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 type badRequest string
 
 func (e badRequest) Error() string      { return string(e) }
