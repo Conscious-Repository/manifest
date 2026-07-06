@@ -197,6 +197,33 @@ func (a calAdapter) Upcoming(now time.Time, days int) []contacts.Event {
 	return out
 }
 
+// PastMeetings adapts the calendar client for calendar-verified "last met":
+// timed (non-all-day), non-declined past events that have ≥1 non-self attendee.
+func (a calAdapter) PastMeetings(now time.Time, days int) []contacts.Event {
+	if a.c == nil || !a.c.Enabled() {
+		return nil
+	}
+	evs, err := a.c.Events(context.Background(), now.AddDate(0, 0, -days), now)
+	if err != nil {
+		return nil
+	}
+	var out []contacts.Event
+	for _, e := range evs {
+		if e.Declined || e.AllDay || !e.Start.Before(now) {
+			continue
+		}
+		ce := contacts.Event{Start: e.Start, Title: e.Title}
+		for _, at := range e.Attendees {
+			ce.Attendees = append(ce.Attendees, contacts.Attendee{Name: at.Name, Email: at.Email})
+		}
+		if len(ce.Attendees) == 0 {
+			continue // a real meeting has at least one other person
+		}
+		out = append(out, ce)
+	}
+	return out
+}
+
 func vaultConfig(c Config) vault.Config {
 	return vault.Config{
 		Root:        c.VaultPath,

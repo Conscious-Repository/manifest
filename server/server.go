@@ -117,6 +117,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/contacts/bind", s.handleContactsBind)
 	mux.HandleFunc("POST /api/contacts/note", s.handleContactsNote)
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
+	mux.HandleFunc("GET /api/contacts/email-review", s.handleContactsEmailReview)
+	mux.HandleFunc("POST /api/contacts/email-dismiss", s.handleContactsEmailDismiss)
 
 	// Universal note view + edits (contacts power-pass §1).
 	mux.HandleFunc("GET /api/note", s.handleNoteGet)
