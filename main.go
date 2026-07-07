@@ -146,7 +146,7 @@ func main() {
 	srv.UseVault(vw)
 	if cfg.ExcaliburPath != "" {
 		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
-		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")))
+		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")).WithVaultRoot(cfg.VaultPath))
 		log.Printf("spirits: %s (approvals inbox: artifacts/approvals)", cfg.ExcaliburPath)
 	} else {
 		log.Printf("spirits: disabled (set excaliburPath in config to enable the SPIRITS tab)")

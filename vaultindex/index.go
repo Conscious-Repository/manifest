@@ -47,10 +47,12 @@ CREATE TABLE IF NOT EXISTS notes (
   date_source TEXT NOT NULL DEFAULT '',
   ai_authored INTEGER NOT NULL DEFAULT 0,
   transcript  INTEGER NOT NULL DEFAULT 0,
+  granola_id  TEXT NOT NULL DEFAULT '',
   mtime       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_notes_name_lower ON notes(name_lower);
 CREATE INDEX IF NOT EXISTS idx_notes_date       ON notes(date);
+CREATE INDEX IF NOT EXISTS idx_notes_granola    ON notes(granola_id);
 
 CREATE TABLE IF NOT EXISTS note_categories (path TEXT NOT NULL, category TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_cat_value ON note_categories(category);
@@ -112,7 +114,7 @@ func Open(cfg Config) (*Index, error) {
 // disposable projection (Rebuild reproduces it from the vault), a version
 // mismatch simply drops every table and recreates — a stale on-disk index from
 // an older build upgrades itself with no migration, losslessly.
-const schemaVersion = 3
+const schemaVersion = 4
 
 var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "note_tasks", "entities", "notes_fts"}
 
@@ -211,8 +213,8 @@ func (ix *Index) Rebuild() (int, error) {
 // notes_fts row.
 func insertNote(tx *sql.Tx, n Note) error {
 	ai := b2i(n.AIAuthored)
-	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,ai_authored,transcript,mtime) VALUES(?,?,?,?,?,?,?,?)`,
-		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, ai, b2i(n.HasTranscript), n.MTime)
+	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,ai_authored,transcript,granola_id,mtime) VALUES(?,?,?,?,?,?,?,?,?)`,
+		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, ai, b2i(n.HasTranscript), n.GranolaID, n.MTime)
 	if err != nil {
 		return err
 	}

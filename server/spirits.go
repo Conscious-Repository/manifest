@@ -168,9 +168,15 @@ func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) 
 	for _, p := range pending {
 		rr := row{Proposal: p}
 		if p.ApplyPath != "" {
-			rr.Allowed = approvals.ApplyPathAllowed(p.ApplyPath)
-			if cur, ok := s.approvals.CurrentContent(p); ok {
-				rr.Current = cur
+			if p.Type == approvals.TypeCreateVaultNote {
+				// A new vault-root note: allowed by its own path rule, no current
+				// content (the diff renders as an all-added new file).
+				rr.Allowed = approvals.CreateVaultNotePathAllowed(p.ApplyPath)
+			} else {
+				rr.Allowed = approvals.ApplyPathAllowed(p.ApplyPath)
+				if cur, ok := s.approvals.CurrentContent(p); ok {
+					rr.Current = cur
+				}
 			}
 		}
 		rows = append(rows, rr)
@@ -183,7 +189,22 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.approvals.Confirm(r.PathValue("id")); err != nil {
+	// A create-vault-note may carry an edited attendee list (the user fixed the
+	// auto-linked people before confirming). editAttendees distinguishes "no edit"
+	// (nil) from "cleared to none" ([]).
+	var b struct {
+		Attendees     []string `json:"attendees"`
+		EditAttendees bool     `json:"editAttendees"`
+	}
+	_ = decode(r, &b) // body is optional (plain confirm)
+	id := r.PathValue("id")
+	var err error
+	if b.EditAttendees {
+		err = s.approvals.ConfirmCreateNote(id, b.Attendees)
+	} else {
+		err = s.approvals.Confirm(id)
+	}
+	if err != nil {
 		httpError(w, err)
 		return
 	}
@@ -313,15 +334,26 @@ func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 		Spirit  string `json:"spirit"`
 		Ritual  string `json:"ritual"`
 		Request string `json:"request"`
+		Skill   string `json:"skill"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual, b.Request); err != nil {
+	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual, b.Request, b.Skill); err != nil {
 		httpError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
 	writeJSON(w, map[string]any{"spooled": true})
+}
+
+// handleSpiritsCastables lists what the command bar can cast: the summoner's
+// vault skills (each cast through sage) and the on-demand rituals.
+func (s *Server) handleSpiritsCastables(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		writeJSON(w, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, map[string]any{"data": s.spirits.Castables(time.Now())})
 }

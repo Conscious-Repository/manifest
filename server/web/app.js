@@ -52,6 +52,16 @@ const els = {
   cmdbarInput: document.getElementById("cmdbarInput"),
   cmdbarResults: document.getElementById("cmdbarResults"),
   cmdbarCard: document.getElementById("cmdbarCard"),
+  // cast command bar (press /)
+  castbar: document.getElementById("castbar"),
+  castbarBackdrop: document.getElementById("castbarBackdrop"),
+  castbarInput: document.getElementById("castbarInput"),
+  castbarResults: document.getElementById("castbarResults"),
+  castbarArg: document.getElementById("castbarArg"),
+  castbarArgLabel: document.getElementById("castbarArgLabel"),
+  castbarArgInput: document.getElementById("castbarArgInput"),
+  castbarArgHint: document.getElementById("castbarArgHint"),
+  castbarCast: document.getElementById("castbarCast"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   spiritsNav: document.getElementById("spiritsNav"),
@@ -575,11 +585,53 @@ function adoptEvent(eventId, idx) {
 const MAX_TASKS = 3;
 function renderTasks(tasks) {
   els.taskRows.innerHTML = "";
-  const list = (tasks || []).slice(0, MAX_TASKS);
+  // A task pulled from a focus goal carries that goal's id as its backlink;
+  // render it in the TASKS row that lines up with its 90-/30-day slot above,
+  // rather than the next free row. Goal ids are path-like slugs
+  // (aion/series-a-15m/<milestone>/<task>), so match a task to the slot whose
+  // goal/milestone id is a prefix of the task's id — this still aligns a task
+  // after it's pulled and dropped from the focus's own suggestion list.
+  const focus = (state.day && state.day.focus) || [];
+  const list = (tasks || []).filter((t) => t && (t.text || t.goalId));
+  const rows = new Array(MAX_TASKS).fill(null);
+  const leftover = [];
+  list.forEach((t) => {
+    const si = slotForGoalId(t.goalId, focus);
+    if (si >= 0 && si < MAX_TASKS && rows[si] === null) rows[si] = t; // seat at its goal's slot
+    else leftover.push(t); // manual tasks, or a slot already taken
+  });
+  let li = 0; // fill the gaps with the rest, in order
   for (let i = 0; i < MAX_TASKS; i++) {
-    addTaskRow(list[i] || { text: "", done: false }, i + 1);
+    if (rows[i] === null && li < leftover.length) rows[i] = leftover[li++];
+  }
+  for (let i = 0; i < MAX_TASKS; i++) {
+    addTaskRow(rows[i] || { text: "", done: false }, i + 1);
   }
 }
+// slotForGoalId returns the focus slot index a task belongs under: the slot
+// whose most-specific id (cascade task → milestone → 90-day goal) is a
+// segment-boundary prefix of the task's goal id. -1 when the task isn't linked
+// to any current focus slot (a manually-typed task). Slug ids like
+// "aion/series-a-15m/<milestone>/<task>" make prefix matching exact.
+function slotForGoalId(g, focus) {
+  if (!g) return -1;
+  let best = -1, bestLen = -1;
+  (focus || []).forEach((p, i) => {
+    if (!p) return;
+    const bases = [];
+    (p.tasks || []).forEach((t) => { if (t.goalId) bases.push(t.goalId); });
+    if (p.milestone && p.milestone.goalId) bases.push(p.milestone.goalId);
+    if (p.goalId) bases.push(p.goalId);
+    bases.forEach((base) => {
+      if ((g === base || g.startsWith(base + "/")) && base.length > bestLen) {
+        bestLen = base.length;
+        best = i;
+      }
+    });
+  });
+  return best;
+}
+
 function addTaskRow(task, num) {
   const row = document.createElement("div");
   row.className = "trow";
@@ -1355,6 +1407,8 @@ function spiritApprovalCard(a) {
   if (bodyText && bodyText.trim()) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
 
   let blocked = false, blockMsg = "";
+  const isNewNote = a.type === "create-vault-note";
+  let attendees = null; // create-vault-note: the editable people list sent on Confirm
   if (actionable) {
     card.classList.add("actionable");
     const chip = el("div", "appr-apply");
@@ -1363,24 +1417,105 @@ function spiritApprovalCard(a) {
 
     if (!a.allowed) {
       blocked = true;
-      blockMsg = "apply-path is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md) — Confirm is disabled.";
+      blockMsg = isNewNote
+        ? "apply-path is not a vault-root dated note (YYYY-MM-DD <title>.md) — Confirm is disabled."
+        : "apply-path is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md) — Confirm is disabled.";
     } else if (/\/cornerstone\.md$/.test(a.applyPath) && frontmatterOf(a.current || "") !== frontmatterOf(a.proposed || "")) {
       // client-side mirror of the server's cornerstone-frontmatter guard
       blocked = true;
       blockMsg = "proposed content changes the cornerstone frontmatter — Confirm will refuse (behavior prose only).";
     }
 
-    card.append(el("div", "appr-diff-label", "Proposed change  ·  current → proposed"));
-    card.append(renderLineDiff(a.current || "", a.proposed || ""));
+    // People editor: seed from the auto-linked attendees, let the user fix them.
+    if (isNewNote) {
+      attendees = parseAttendees(a.proposed || "");
+      card.append(buildAttendeeEditor(attendees));
+    }
+
+    card.append(el("div", "appr-diff-label", isNewNote ? "New note — will be created at the vault root" : "Proposed change  ·  current → proposed"));
+    const diff = renderLineDiff(a.current || "", a.proposed || "");
+    card.append(collapsibleBlock(diff, diff.childElementCount));
   }
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 
   const actions = el("div", "appr-actions");
-  const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm", () => spiritApprovalAct(a.id, "confirm"));
+  const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm",
+    () => spiritApprovalAct(a.id, "confirm", isNewNote ? attendees : null));
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
   card.append(actions);
   return card;
+}
+
+// parseAttendees pulls the [[wikilink]] names from a converted note's attendee
+// line (between the frontmatter and "## Transcript").
+function parseAttendees(proposed) {
+  const m = proposed.match(/^---\n[\s\S]*?\n---\n([\s\S]*?)##\s*Transcript/);
+  const head = m ? m[1] : "";
+  const names = [];
+  const re = /\[\[([^\]]+)\]\]/g;
+  let x;
+  while ((x = re.exec(head))) names.push(x[1].trim());
+  return names;
+}
+
+// buildAttendeeEditor renders the people-involved chips + an add box, mutating
+// the shared `attendees` array in place so Confirm sends the edited list.
+function buildAttendeeEditor(attendees) {
+  const wrap = el("div", "appr-attendees");
+  wrap.append(el("div", "appr-attendees-label", "People involved — remove or add before confirming"));
+  const chips = el("div", "attendee-chips");
+  const renderChips = () => {
+    chips.innerHTML = "";
+    attendees.forEach((name, i) => {
+      const c = el("span", "attendee-chip");
+      c.append(el("span", "attendee-name", name));
+      const x = el("button", "attendee-remove", "✕");
+      x.title = "Remove";
+      x.onclick = () => { attendees.splice(i, 1); renderChips(); };
+      c.append(x);
+      chips.append(c);
+    });
+    if (!attendees.length) chips.append(el("span", "attendee-empty", "none linked"));
+  };
+  const addRow = el("div", "attendee-add");
+  const input = el("input", "attendee-input");
+  input.type = "text";
+  input.placeholder = "Add a person…  (type [[ to search your vault)";
+  attachWikilinkAutocomplete(input); // reuse the vault-aware [[name]] autocomplete
+  const commit = () => {
+    const v = input.value.trim().replace(/^\[\[/, "").replace(/\]\]$/, "").trim();
+    if (v && !attendees.some((n) => n.toLowerCase() === v.toLowerCase())) {
+      attendees.push(v);
+      renderChips();
+    }
+    input.value = "";
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+  });
+  const addBtn = el("button", "attendee-add-btn", "+ add");
+  addBtn.onclick = commit;
+  addRow.append(input, addBtn);
+  wrap.append(chips, addRow);
+  renderChips();
+  return wrap;
+}
+
+// collapsibleBlock caps a long proposed-note block to a preview, with a toggle
+// to expand. Short blocks are returned as-is.
+const APPROVAL_COLLAPSE_LINES = 14;
+function collapsibleBlock(inner, lineCount) {
+  if (lineCount <= APPROVAL_COLLAPSE_LINES) return inner;
+  const wrap = el("div", "appr-collapse collapsed");
+  wrap.append(inner);
+  const toggle = el("button", "appr-expand", `Show full note (${lineCount} lines) ▾`);
+  toggle.onclick = () => {
+    const collapsed = wrap.classList.toggle("collapsed");
+    toggle.textContent = collapsed ? `Show full note (${lineCount} lines) ▾` : "Collapse ▴";
+  };
+  wrap.append(toggle);
+  return wrap;
 }
 
 // stripProposedFence removes the ````proposed … ```` block from an approval body
@@ -1437,11 +1572,13 @@ function renderLineDiff(oldText, newText) {
   if (!changed) wrap.append(el("div", "diff-line diff-ctx", "(no textual change)"));
   return wrap;
 }
-async function spiritApprovalAct(id, kind) {
+async function spiritApprovalAct(id, kind, attendees) {
   let body = {};
   if (kind === "reject") {
     const reason = prompt("Reason (optional — recorded on the proposal; for warden findings this becomes an accepted exception):") || "";
     body = { reason: reason.trim() || "rejected from dashboard" };
+  } else if (kind === "confirm" && attendees !== null && attendees !== undefined) {
+    body = { editAttendees: true, attendees }; // create-vault-note with the edited people list
   }
   setSaveState("saving");
   try { await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
@@ -2496,7 +2633,120 @@ if (els.cmdbarBackdrop) els.cmdbarBackdrop.addEventListener("click", closeCmdbar
 window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
   else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }
+  else if (e.key === "/" && els.castbar && els.castbar.hidden && !typingInField(e.target)) { e.preventDefault(); openCastbar(); }
 });
+
+// ---- cast command bar (press / anywhere): run a vault skill or on-demand ritual ----
+// A skill is cast through the sage spirit; a ritual runs on its own spirit. The
+// argument box becomes the summoner's request (skills) or free-form ask (rituals).
+let castItems = [], castFiltered = [], castSel = -1, castChosen = null;
+
+function typingInField(t) {
+  if (!t) return false;
+  const tag = (t.tagName || "").toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || t.isContentEditable;
+}
+
+async function openCastbar() {
+  els.castbar.hidden = false;
+  els.castbarInput.value = "";
+  els.castbarResults.innerHTML = "";
+  els.castbarArg.hidden = true;
+  castSel = -1; castChosen = null; castFiltered = [];
+  els.castbarInput.focus();
+  try {
+    const d = await (await fetch("/api/spirits/castables")).json();
+    castItems = d.data || [];
+  } catch (e) { castItems = []; }
+  renderCastResults("");
+}
+function closeCastbar() { els.castbar.hidden = true; }
+
+function renderCastResults(q) {
+  const host = els.castbarResults; host.innerHTML = ""; castSel = -1;
+  const needle = q.trim().toLowerCase();
+  castFiltered = castItems.filter(c =>
+    !needle || c.label.toLowerCase().includes(needle) || (c.description || "").toLowerCase().includes(needle)
+  ).slice(0, 10);
+  if (!castItems.length) {
+    host.append(el("div", "cmd-empty", "No castable skills or rituals found."));
+    return;
+  }
+  castFiltered.forEach((c, i) => {
+    const row = el("div", "cmd-result");
+    const kind = el("span", "cast-kind cast-kind-" + c.kind, c.kind === "skill" ? "skill" : "ritual");
+    const name = el("span", "cmd-name", c.label);
+    row.append(kind, name);
+    if (c.description) row.append(el("span", "cast-desc", c.description));
+    row.onclick = () => castChoose(c);
+    row.onmouseenter = () => { castSel = i; paintCastSel(); };
+    host.append(row);
+  });
+  if (castFiltered.length) { castSel = 0; paintCastSel(); }
+}
+function paintCastSel() {
+  [...els.castbarResults.children].forEach((c, i) => c.classList.toggle("sel", i === castSel));
+}
+function castMove(d) {
+  if (!castFiltered.length) return;
+  castSel = (castSel + d + castFiltered.length) % castFiltered.length;
+  paintCastSel();
+}
+function castChoose(c) {
+  castChosen = c;
+  els.castbarResults.innerHTML = "";
+  els.castbarArg.hidden = false;
+  els.castbarArgLabel.textContent = (c.kind === "skill" ? "Cast skill: " : "Run ritual: ") + c.label;
+  els.castbarArgInput.value = "";
+  els.castbarArgHint.textContent = c.kind === "skill"
+    ? "sage · skill-cast"
+    : c.spirit + " · " + c.ritual;
+  els.castbarArgInput.focus();
+}
+
+async function castSubmit() {
+  if (!castChosen) return;
+  const body = {
+    spirit: castChosen.spirit,
+    ritual: castChosen.ritual,
+    request: els.castbarArgInput.value.trim(),
+    skill: castChosen.skill || "",
+  };
+  els.castbarCast.disabled = true;
+  try {
+    const res = await fetch("/api/spirits/run-now", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { els.castbarArgHint.textContent = "spool failed — is the engine configured?"; els.castbarCast.disabled = false; return; }
+  } catch (e) { els.castbarArgHint.textContent = "spool failed"; els.castbarCast.disabled = false; return; }
+  els.castbarCast.disabled = false;
+  closeCastbar();
+  // Jump to the runs board and watch for the run the engine picks up.
+  location.hash = "#/spirits/runs";
+  if (typeof watchForNewRun === "function") watchForNewRun();
+}
+
+if (els.castbarInput) {
+  els.castbarInput.addEventListener("input", () => renderCastResults(els.castbarInput.value));
+  els.castbarInput.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); castMove(1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); castMove(-1); }
+    else if (e.key === "Enter") { e.preventDefault(); if (castFiltered[castSel]) castChoose(castFiltered[castSel]); }
+    else if (e.key === "Escape") { e.preventDefault(); closeCastbar(); }
+  });
+}
+if (els.castbarArgInput) {
+  els.castbarArgInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); castSubmit(); }
+    else if (e.key === "Escape") {
+      e.preventDefault(); // back to the list, not all the way out
+      els.castbarArg.hidden = true; castChosen = null;
+      renderCastResults(els.castbarInput.value); els.castbarInput.focus();
+    }
+  });
+}
+if (els.castbarCast) els.castbarCast.addEventListener("click", castSubmit);
+if (els.castbarBackdrop) els.castbarBackdrop.addEventListener("click", closeCastbar);
 
 async function cmdSearch(q) {
   const host = els.cmdbarResults; host.innerHTML = ""; cmdSel = -1; cmdResults = [];

@@ -34,7 +34,8 @@ type Note struct {
 	Links         []Link
 	Tasks         []Task
 	AIAuthored    bool
-	HasTranscript bool // body carries a speaker-labelled transcript (Granola-export shape)
+	HasTranscript bool   // body carries a speaker-labelled transcript (Granola-export shape)
+	GranolaID     string // granola-id frontmatter, "" if none (dedupe key for granola-sync)
 	MTime         int64
 	Body          string // text after the frontmatter block (FTS source)
 }
@@ -87,6 +88,9 @@ func ParseNote(relPath string, content []byte, mtime int64, aiRegions []string) 
 	n.Categories = dedupe(fm["categories"])
 	n.Aliases = dedupe(append(append([]string{}, fm["alias"]...), fm["aliases"]...))
 	n.Emails = dedupe(append(append([]string{}, fm["email"]...), fm["emails"]...))
+	// granola-id (both dash and underscore spellings) is the strongest dedupe
+	// key for granola-sync: a re-listed note is caught even if renamed.
+	n.GranolaID = firstNonEmpty(append(append([]string{}, fm["granola-id"]...), fm["granola_id"]...))
 
 	// date: dated filename wins; else a date: frontmatter field.
 	if m := datedFileRe.FindStringSubmatch(n.Name); m != nil {

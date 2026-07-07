@@ -50,6 +50,20 @@ func TestDateFromFrontmatterWhenFilenameUndated(t *testing.T) {
 	}
 }
 
+func TestGranolaIDFromFrontmatter(t *testing.T) {
+	n := ParseNote("2026-07-02 Aion sync.md", []byte("---\ncategories:\n  - sync\ngranola-id: not_abc123\n---\n[[jane]]\n\n## Transcript\n\n**Benjamin:** hi\n"), 0, aiRegions)
+	if n.GranolaID != "not_abc123" {
+		t.Fatalf("granola-id = %q, want not_abc123", n.GranolaID)
+	}
+	// underscore spelling also works; no field → empty
+	if g := ParseNote("x.md", []byte("---\ngranola_id: not_z\n---\nx"), 0, aiRegions).GranolaID; g != "not_z" {
+		t.Fatalf("granola_id = %q, want not_z", g)
+	}
+	if g := ParseNote("y.md", []byte("---\ntitle: z\n---\nx"), 0, aiRegions).GranolaID; g != "" {
+		t.Fatalf("granola-id = %q, want empty", g)
+	}
+}
+
 func TestDailyInlineFieldsAndDisplayLinks(t *testing.T) {
 	src := "<!-- manifest:start -->\n## Focus\n- Backyard [goal:: home/backyard] [milestone:: home/backyard/yard-done]\n" +
 		"meeting [[shoumik dabir]] and [[olga sobkiv|Olga]] today\n"

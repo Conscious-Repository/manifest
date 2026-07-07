@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/confirm", s.handleSpiritsApprovalConfirm)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
+	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	// RITUALS board + in-app markdown editing (spirits-console-upgrade).
 	mux.HandleFunc("GET /api/spirits/rituals", s.handleSpiritsRituals)
 	mux.HandleFunc("GET /api/spirits/file", s.handleSpiritsFileGet)

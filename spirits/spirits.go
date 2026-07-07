@@ -168,10 +168,15 @@ const maxRequestChars = 4000
 // SpoolRunNow drops a run request for the engine to pick up (never a direct
 // invocation). Mirrors the engine's scheduler.SpoolRequest shape. request is
 // the summoner's free-form ask for on-demand spirits (options-scout); empty
-// for a plain run-now.
-func (s *Store) SpoolRunNow(spirit, ritual, request string) error {
+// for a plain run-now. skill is an optional vault skill ("skills/<name>") the
+// engine loads for this run (the command bar casts skills through sage); empty
+// for none.
+func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
 	if !validID(spirit) || !validID(ritual) {
 		return fmt.Errorf("bad spirit/ritual name")
+	}
+	if skill != "" && !validSkillRef(skill) {
+		return fmt.Errorf("bad skill reference")
 	}
 	if len(request) > maxRequestChars {
 		request = request[:maxRequestChars]
@@ -188,6 +193,9 @@ func (s *Store) SpoolRunNow(spirit, ritual, request string) error {
 	}
 	if strings.TrimSpace(request) != "" {
 		payload["request"] = request
+	}
+	if strings.TrimSpace(skill) != "" {
+		payload["skill"] = skill
 	}
 	req, _ := json.Marshal(payload)
 	name := fmt.Sprintf("%d-%s-%s.json", time.Now().UnixNano(), spirit, ritual)

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -26,22 +27,34 @@ import (
 // before recording the decision. Plain proposals leave both empty.
 type Proposal struct {
 	ID        string `json:"id"`
+	Type      string `json:"type"`   // "approval" (default) | "create-vault-note"
 	Action    string `json:"action"`
 	Agent     string `json:"agent"`
 	Created   string `json:"created"` // RFC3339
 	Status    string `json:"status"`  // pending|approved|rejected (= folder)
 	Body      string `json:"body"`
-	ApplyPath string `json:"applyPath"` // repo-relative target (allow-list only), "" if none
+	ApplyPath string `json:"applyPath"` // target (allow-list only), "" if none
 	Proposed  string `json:"proposed"`  // full new file content, "" if none
 }
 
+// TypeCreateVaultNote is the granola-sync proposal type (plan §4): it writes a
+// brand-new dated note at the VAULT ROOT on Confirm, not a harness config file.
+const TypeCreateVaultNote = "create-vault-note"
+
 var statuses = []string{"pending", "approved", "rejected"}
 
-// Store is the approvals directory. root is the harness tree that apply-paths
-// resolve against (the parent of <agentsDir>); "" disables actionable applies.
+// vaultNoteRe is the ONLY apply-path shape a create-vault-note may write:
+// a vault-root dated note "YYYY-MM-DD <title>.md" with no subfolder.
+var vaultNoteRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} [^/\\]+\.md$`)
+
+// Store is the approvals directory. root is the harness tree that
+// "approval"-type apply-paths resolve against (the parent of <agentsDir>);
+// vaultRoot is where "create-vault-note" proposals write. "" disables the
+// respective applies.
 type Store struct {
-	dir  string
-	root string
+	dir       string
+	root      string
+	vaultRoot string
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -53,6 +66,26 @@ func NewStore(agentsDir string) *Store {
 		_ = os.MkdirAll(filepath.Join(dir, st), 0o700)
 	}
 	return &Store{dir: dir, root: filepath.Dir(agentsDir)}
+}
+
+// WithVaultRoot sets the vault root that create-vault-note proposals write into
+// (the knowledge vault, OUTSIDE the harness). Without it, those applies refuse.
+func (s *Store) WithVaultRoot(vaultRoot string) *Store {
+	s.vaultRoot = vaultRoot
+	return s
+}
+
+// CreateVaultNotePathAllowed is the hard allow-list for create-vault-note
+// apply-paths: a single vault-root dated note, no directory component, no
+// traversal. Anything wider is refused (and is a warden finding).
+func CreateVaultNotePathAllowed(rel string) bool {
+	if rel == "" || filepath.IsAbs(rel) || strings.ContainsAny(rel, "\\") {
+		return false
+	}
+	if strings.Contains(rel, "/") || strings.Contains(rel, "..") {
+		return false
+	}
+	return vaultNoteRe.MatchString(rel)
 }
 
 // ApplyPathAllowed is the hard allow-list for actionable-approval apply-paths.
@@ -159,23 +192,100 @@ func (s *Store) Propose(p Proposal) (Proposal, error) {
 // that alters frontmatter — and only then moves it. If the apply is refused,
 // nothing is written or moved and the error surfaces (the proposal stays
 // actionable in pending/).
-func (s *Store) Confirm(id string) error {
-	p, err := s.parse(filepath.Join(s.dir, "pending", id+".md"))
+func (s *Store) Confirm(id string) error { return s.confirm(id, nil, false) }
+
+// ConfirmCreateNote confirms a create-vault-note after the user edited the
+// attendee list in the dashboard: the note's attendee wikilink line is rewritten
+// to exactly `attendees` (canonical names, no brackets) before the note is
+// written. attendees == nil leaves the proposed attendees untouched.
+func (s *Store) ConfirmCreateNote(id string, attendees []string) error {
+	return s.confirm(id, attendees, true)
+}
+
+func (s *Store) confirm(id string, attendees []string, editAttendees bool) error {
+	src := filepath.Join(s.dir, "pending", id+".md")
+	p, err := s.parse(src)
 	if err != nil {
 		return err
+	}
+	if editAttendees && p.Type == TypeCreateVaultNote {
+		p.Proposed = replaceAttendeeLine(p.Proposed, attendees)
+		p.Body = rebuildProposedBody(p.Body, p.Proposed)
 	}
 	if p.ApplyPath != "" {
 		if err := s.apply(p); err != nil {
 			return err
 		}
 	}
-	return s.move(id, "approved", "")
+	// Record the approval with the (possibly edited) content, then drop pending.
+	p.Status = "approved"
+	if err := os.WriteFile(filepath.Join(s.dir, "approved", id+".md"), []byte(serialize(p)), 0o644); err != nil {
+		return err
+	}
+	return os.Remove(src)
 }
 
-// apply writes an actionable proposal's content to its target file, enforcing
-// the allow-list, the harness-root boundary, and cornerstone-frontmatter
-// immutability. Any violation returns an error and writes nothing.
+// replaceAttendeeLine rewrites a converted note's attendee wikilink line to
+// exactly names (as [[name]] links), keeping the frontmatter and transcript
+// intact. It anchors on "## Transcript" so it works whether or not an attendee
+// line was present. Unexpected shapes are returned unchanged.
+func replaceAttendeeLine(content string, names []string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return content
+	}
+	end := strings.Index(content[4:], "\n---")
+	if end < 0 {
+		return content
+	}
+	fmClose := 4 + end + len("\n---")
+	nl := strings.IndexByte(content[fmClose:], '\n')
+	if nl < 0 {
+		return content
+	}
+	head := content[:fmClose+nl+1] // through the frontmatter's closing "---\n"
+	body := content[fmClose+nl+1:]
+	anchor := strings.Index(body, "## Transcript")
+	if anchor < 0 {
+		return content // no transcript section — leave it alone
+	}
+	rest := body[anchor:]
+
+	var links []string
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n != "" {
+			links = append(links, "[["+n+"]]")
+		}
+	}
+	if len(links) == 0 {
+		return head + "\n" + rest
+	}
+	return head + strings.Join(links, " ") + "\n\n" + rest
+}
+
+// rebuildProposedBody swaps the content inside a proposal body's ````proposed
+// fence for the edited note, preserving the human-facing message above it.
+func rebuildProposedBody(body, proposed string) string {
+	i := strings.Index(body, "````proposed")
+	if i < 0 {
+		return body
+	}
+	head := strings.TrimRight(body[:i], "\n")
+	fence := "````proposed\n" + strings.TrimRight(proposed, "\n") + "\n````"
+	if head == "" {
+		return fence
+	}
+	return head + "\n\n" + fence
+}
+
+// apply writes an actionable proposal's content to its target file. A
+// create-vault-note writes a NEW dated note at the vault root; every other type
+// writes a harness config file within the hard allow-list. Any violation
+// returns an error and writes nothing.
 func (s *Store) apply(p Proposal) error {
+	if p.Type == TypeCreateVaultNote {
+		return s.applyCreateVaultNote(p)
+	}
 	if !ApplyPathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md)", p.ApplyPath)
 	}
@@ -201,6 +311,36 @@ func (s *Store) apply(p Proposal) error {
 		if rawFrontmatter(string(cur)) != rawFrontmatter(p.Proposed) {
 			return fmt.Errorf("apply refused: proposed content changes the cornerstone frontmatter (portal::/writable:/available_spellbooks:) — behavior prose only")
 		}
+	}
+	body := p.Proposed
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return os.WriteFile(target, []byte(body), 0o644)
+}
+
+// applyCreateVaultNote writes a granola-sync proposal as a NEW dated note at the
+// vault root. It refuses anything but a bare vault-root dated filename, refuses
+// when the note already exists (never overwrite), and refuses if no vault root
+// is configured. This is the ONLY way an approval writes outside the harness.
+func (s *Store) applyCreateVaultNote(p Proposal) error {
+	if !CreateVaultNotePathAllowed(p.ApplyPath) {
+		return fmt.Errorf("apply refused: %q is not a vault-root dated note (YYYY-MM-DD <title>.md)", p.ApplyPath)
+	}
+	if strings.TrimSpace(p.Proposed) == "" {
+		return fmt.Errorf("apply refused: create-vault-note %q carries no content", p.ApplyPath)
+	}
+	if s.vaultRoot == "" {
+		return errors.New("apply refused: no vault root configured for create-vault-note")
+	}
+	target := filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))
+	rootAbs, _ := filepath.Abs(s.vaultRoot)
+	tgtAbs, _ := filepath.Abs(target)
+	if filepath.Dir(tgtAbs) != rootAbs {
+		return fmt.Errorf("apply refused: %q escapes the vault root", p.ApplyPath)
+	}
+	if _, err := os.Stat(target); err == nil {
+		return fmt.Errorf("apply refused: %q already exists — not overwriting", p.ApplyPath)
 	}
 	body := p.Proposed
 	if !strings.HasSuffix(body, "\n") {
@@ -301,8 +441,13 @@ func (s *Store) parse(path string) (Proposal, error) {
 	fm, body := mdfm.Split(string(b))
 	body = strings.TrimSpace(body)
 	proposed, _ := mdfm.ExtractFencedBlock(body, "proposed")
+	typ := strings.TrimSpace(fm["type"])
+	if typ == "" {
+		typ = "approval"
+	}
 	return Proposal{
 		ID:        fm["id"],
+		Type:      typ,
 		Action:    fm["action"],
 		Agent:     fm["agent"],
 		Created:   fm["created"],
@@ -313,8 +458,12 @@ func (s *Store) parse(path string) (Proposal, error) {
 }
 
 func serialize(p Proposal) string {
+	typ := p.Type
+	if typ == "" {
+		typ = "approval"
+	}
 	return (&mdfm.Writer{}).
-		SetRaw("type", "approval").
+		SetRaw("type", typ).
 		Set("id", p.ID).
 		Set("action", p.Action).
 		Set("agent", p.Agent).

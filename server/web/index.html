@@ -225,6 +225,23 @@
     </div>
   </div>
 
+  <!-- Cast command bar (press / from anywhere): run a skill or on-demand ritual -->
+  <div id="castbar" class="cmdbar" hidden>
+    <div class="cmdbar-backdrop" id="castbarBackdrop"></div>
+    <div class="cmdbar-card">
+      <input id="castbarInput" class="cmdbar-input" type="text" placeholder="/ cast a skill or ritual…" autocomplete="off" />
+      <div id="castbarResults" class="cmdbar-results"></div>
+      <div id="castbarArg" class="castbar-arg" hidden>
+        <div id="castbarArgLabel" class="castbar-arg-label"></div>
+        <textarea id="castbarArgInput" class="castbar-arg-input" rows="3" placeholder="Context / argument (⌘↵ to cast, esc to go back)"></textarea>
+        <div class="castbar-arg-actions">
+          <span id="castbarArgHint" class="castbar-arg-hint"></span>
+          <button id="castbarCast" class="pill castbar-cast-btn">Cast →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="pickerModal" class="modal" hidden>
     <div class="modal-backdrop" id="pickerBackdrop"></div>
     <div class="modal-card">
