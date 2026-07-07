@@ -9,6 +9,7 @@ package spirits
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,11 @@ import (
 	"manifest/feed"
 	"manifest/mdfm"
 )
+
+// ErrAlreadyActive is returned by SpoolRunNow when the same spirit/ritual is
+// already queued or running — the engine-enforced double-spool guard (plan §2).
+// Different rituals spool freely.
+var ErrAlreadyActive = errors.New("a run for this spirit/ritual is already queued or running")
 
 // heartbeatFresh is how recent the engine.heartbeat mtime must be for the
 // engine to count as alive (engine writes every scheduler tick, 30s).
@@ -50,6 +56,70 @@ type RunSummary struct {
 	CeilingUSD   float64 `json:"ceilingUsd"`
 	Portal       string  `json:"portal"`
 	Model        string  `json:"model"`
+}
+
+// QueuedRun is a spool file the engine hasn't picked up yet — the `queued`
+// state of the file-derived lifecycle (plan §1). It carries no report because
+// the run hasn't started.
+type QueuedRun struct {
+	Spirit      string `json:"spirit"`
+	Ritual      string `json:"ritual"`
+	Request     string `json:"request"`
+	Skill       string `json:"skill"`
+	RequestedAt string `json:"requestedAt"`
+	File        string `json:"file"` // spool filename, a stable key for the UI
+}
+
+// Queued lists spool files awaiting the engine, oldest-first. A spool that the
+// engine has already consumed (deleted) and turned into a running report is no
+// longer queued — state derives purely from which files exist.
+func (s *Store) Queued() []QueuedRun {
+	dir := filepath.Join(s.root, "vessel", "spool")
+	entries, _ := os.ReadDir(dir)
+	var out []QueuedRun
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var q struct {
+			Spirit, Ritual, Request, Skill, RequestedAt string
+		}
+		var raw map[string]string
+		if json.Unmarshal(b, &raw) != nil {
+			continue
+		}
+		q.Spirit, q.Ritual = raw["spirit"], raw["ritual"]
+		q.Request, q.Skill, q.RequestedAt = raw["request"], raw["skill"], raw["requested_at"]
+		if q.Spirit == "" || q.Ritual == "" {
+			continue
+		}
+		out = append(out, QueuedRun{
+			Spirit: q.Spirit, Ritual: q.Ritual, Request: q.Request,
+			Skill: q.Skill, RequestedAt: q.RequestedAt, File: e.Name(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].File < out[j].File })
+	return out
+}
+
+// IsActive reports whether a spirit/ritual is already queued (a spool file) or
+// running (a report with outcome:running) — the guard for double-spooling.
+func (s *Store) IsActive(spirit, ritual string) bool {
+	for _, q := range s.Queued() {
+		if q.Spirit == spirit && q.Ritual == ritual {
+			return true
+		}
+	}
+	for _, r := range s.Runs() {
+		if r.Spirit == spirit && r.Ritual == ritual && r.Outcome == "running" {
+			return true
+		}
+	}
+	return false
 }
 
 // Runs lists run reports newest-first (report filenames sort by date; ties
@@ -177,6 +247,11 @@ func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
 	}
 	if skill != "" && !validSkillRef(skill) {
 		return fmt.Errorf("bad skill reference")
+	}
+	// Double-spool guard: refuse a second run of a spirit/ritual already queued
+	// or running, so no duplicate spool file is written (plan §2).
+	if s.IsActive(spirit, ritual) {
+		return ErrAlreadyActive
 	}
 	if len(request) > maxRequestChars {
 		request = request[:maxRequestChars]

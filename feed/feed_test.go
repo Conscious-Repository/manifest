@@ -77,6 +77,47 @@ func TestStatusAndSnoozeFilter(t *testing.T) {
 	}
 }
 
+func TestInboxAndAllModes(t *testing.T) {
+	s := NewStore(t.TempDir())
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	created, _ := s.Materialize(scoutReply, "domain-scout", "domain-scout", now)
+	a, b := created[0].ID, created[1].ID
+
+	// a: kept (has a verdict — leaves the inbox); b: stays new
+	if _, err := s.SetStatus(a, "kept"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.List(Filter{Status: "inbox"}, now)); n != 1 {
+		t.Fatalf("inbox should show only the 1 new item, got %d", n)
+	}
+	if n := len(s.List(Filter{Status: "kept"}, now)); n != 1 {
+		t.Fatalf("kept filter = %d", n)
+	}
+	// discard b, then ALL must still show both (discarded included)
+	if _, err := s.SetStatus(b, "discarded"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.List(Filter{Status: "inbox"}, now)); n != 0 {
+		t.Fatalf("inbox now empty (one kept, one discarded), got %d", n)
+	}
+	if n := len(s.List(Filter{Status: "all"}, now)); n != 2 {
+		t.Fatalf("ALL must include discarded: got %d", n)
+	}
+	// a lapsed snooze returns to the inbox
+	if _, err := s.SetStatus(b, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Snooze(b, now.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.List(Filter{Status: "inbox"}, now)); n != 0 {
+		t.Fatalf("still-snoozed item must not be in inbox, got %d", n)
+	}
+	if n := len(s.List(Filter{Status: "inbox"}, now.Add(48*time.Hour))); n != 1 {
+		t.Fatalf("lapsed snooze must return to inbox, got %d", n)
+	}
+}
+
 func TestSetVaultNoteMarksKept(t *testing.T) {
 	s := NewStore(t.TempDir())
 	now := time.Now()

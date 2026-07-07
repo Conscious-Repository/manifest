@@ -77,6 +77,8 @@ const els = {
   sp_approvals: document.getElementById("sp-approvals"),
   spiritApprovalList: document.getElementById("spiritApprovalList"),
   spiritApprBadge: document.getElementById("spiritApprBadge"),
+  spiritFeedBadge: document.getElementById("spiritFeedBadge"),
+  toastHost: document.getElementById("toastHost"),
   sp_rituals: document.getElementById("sp-rituals"),
   spiritRitualBoard: document.getElementById("spiritRitualBoard"),
   spiritNewSpirit: document.getElementById("spiritNewSpirit"),
@@ -1155,18 +1157,20 @@ function fmtWhen(iso) {
 const SPIRIT_TABS = ["feed", "runs", "rituals", "approvals"];
 let spiritStatusCache = null;
 let spiritFeedCache = [];
-let spiritRunsCache = [];
+let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
+let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
 function showSpirits() {
   const tab = spiritTabFromHash();
   SPIRIT_TABS.forEach((t) => { els["sp_" + t].hidden = t !== tab; });
   document.querySelectorAll("#spiritsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-  loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
+  loadSpiritsStatus(); // engine-alive chip + inbox/approvals badges show on every sub-tab
   if (tab === "feed") loadSpiritFeed();
   else if (tab === "runs") loadSpiritRuns();
   else if (tab === "rituals") loadSpiritRituals();
   else if (tab === "approvals") loadSpiritApprovals();
   refreshSpiritApprovalBadge();
+  ensureLivePoll(); // resume watching any queued/running runs, derived from files
 }
 function spiritTabFromHash() {
   const t = (location.hash.split("/")[2] || "feed");
@@ -1182,34 +1186,136 @@ async function loadSpiritsStatus() {
   els.spiritsStatus.textContent = (st.engineAlive ? "engine alive" : "engine down") +
     (names.length ? " · " + names.join(", ") : "");
   els.spiritsStatus.style.color = st.engineAlive ? "" : "#b91c1c";
+  setBadge(els.spiritFeedBadge, st.feedInbox || 0); // FEED sub-tab inbox count
+}
+function setBadge(elm, n) {
+  if (!elm) return;
+  elm.hidden = !n;
+  elm.textContent = n || "";
 }
 
-// ---- spirit feed (artifacts/feed/) ----
+// ---- in-app toasts (run finished → report; digest landed → feed). No OS notifications. ----
+function showToast(msg, onClick, kind) {
+  const host = els.toastHost;
+  if (!host) return;
+  const t = el("div", "toast" + (kind ? " toast-" + kind : ""));
+  t.append(el("span", "toast-msg", msg));
+  if (onClick) { t.classList.add("clickable"); t.onclick = () => { onClick(); t.remove(); }; }
+  const x = el("button", "toast-x", "✕");
+  x.onclick = (e) => { e.stopPropagation(); t.remove(); };
+  t.append(x);
+  host.append(t);
+  setTimeout(() => t.remove(), 9000); // dismisses itself
+}
+
+// ---- file-derived live run polling (replaces watchForNewRun) ----
+// A single ~3s poll while the SPIRITS tab is open AND some run is queued/running.
+// Everything shown derives from the runs+queued files, so a refresh mid-run
+// loses nothing. Transitions raise toasts; the open report body refreshes live.
+let livePollTimer = null;
+let runOutcomes = {};       // runId → last-seen outcome (transition detection)
+let liveBaselined = false;  // don't toast runs that were already finished on first look
+let knownDigestIds = null;  // feed digest ids seen, for the digest-landed toast
+
+function activeRuns() {
+  const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
+  return running.length + (spiritRuns.queued || []).length;
+}
+function ensureLivePoll() {
+  if (livePollTimer || !location.hash.startsWith("#/spirits")) return;
+  livePollTimer = setInterval(livePoll, 3000);
+  livePoll(); // immediate tick
+}
+function stopLivePoll() { if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; } }
+
+async function livePoll() {
+  if (!location.hash.startsWith("#/spirits")) { stopLivePoll(); return; }
+  const firstPoll = !liveBaselined;
+  spiritRuns = await fetchSpiritRuns();
+
+  // detect running → terminal transitions for the run-finished toast
+  let anyFinished = false;
+  (spiritRuns.data || []).forEach((r) => {
+    const was = runOutcomes[r.id];
+    if (liveBaselined && r.outcome !== "running" && was === "running") {
+      anyFinished = true;
+      showToast(`${r.spirit}/${r.ritual} — ${r.outcome}` + (r.itemsWritten ? ` · ${r.itemsWritten} item${r.itemsWritten === 1 ? "" : "s"}` : ""),
+        () => { location.hash = "#/spirits/runs"; setTimeout(() => openSpiritRun(r.id), 120); });
+    }
+    runOutcomes[r.id] = r.outcome;
+  });
+  liveBaselined = true;
+
+  // re-render whatever is open, from files alone
+  if (spiritTabFromHash() === "runs") renderSpiritRuns();
+  if (openRunId) refreshOpenRun(); // includes the finishing tick, so the report shows the terminal outcome
+
+  if (anyFinished) {
+    loadSpiritsStatus();                              // refresh inbox/approval badges
+    if (spiritTabFromHash() === "feed") loadSpiritFeed();
+  }
+  if (firstPoll || anyFinished) detectNewDigest();   // baseline on first look; then catch a landed digest
+  if (activeRuns() === 0) stopLivePoll();            // nothing left to watch
+}
+
+async function detectNewDigest() {
+  let items = [];
+  try { items = (await (await fetch("/api/spirits/feed?status=inbox")).json()).data || []; } catch (e) { return; }
+  const digests = items.filter((i) => i.type === "digest").map((i) => i.id);
+  if (knownDigestIds === null) { knownDigestIds = new Set(digests); return; } // baseline
+  digests.forEach((id) => {
+    if (!knownDigestIds.has(id)) {
+      knownDigestIds.add(id);
+      showToast("New digest in the feed", () => { location.hash = "#/spirits"; }, "digest");
+    }
+  });
+}
+
+// ---- spirit feed: a true inbox (artifacts/feed/) ----
+// INBOX (default) = items awaiting a verdict (new + lapsed snoozes). Keep endorses
+// and moves the item to KEPT. Chips are INBOX/KEPT/ALL (plan §4).
+const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"]];
 async function loadSpiritFeed() {
-  try { spiritFeedCache = (await (await fetch("/api/spirits/feed")).json()).data || []; } catch (e) { spiritFeedCache = []; }
+  const view = state.spiritFeedView || "inbox";
+  try { spiritFeedCache = (await (await fetch("/api/spirits/feed?status=" + view)).json()).data || []; }
+  catch (e) { spiritFeedCache = []; }
   renderSpiritFeedFilters();
   renderSpiritFeed();
 }
 function renderSpiritFeedFilters() {
   const host = els.spiritFeedFilters; host.innerHTML = "";
-  const types = [...new Set(spiritFeedCache.map((i) => i.type))];
-  const mk = (label, val) => {
-    const b = el("button", "filter-chip" + ((state.spiritFeedType || "") === val ? " on" : ""), label);
-    b.onclick = () => { state.spiritFeedType = val; renderSpiritFeedFilters(); renderSpiritFeed(); };
-    return b;
-  };
-  host.appendChild(mk("all", ""));
-  types.forEach((t) => host.appendChild(mk(t, t)));
+  const cur = state.spiritFeedView || "inbox";
+  FEED_VIEWS.forEach(([val, label]) => {
+    const b = el("button", "filter-chip" + (cur === val ? " on" : ""), label);
+    b.onclick = () => { state.spiritFeedView = val; loadSpiritFeed(); };
+    host.appendChild(b);
+  });
 }
 function renderSpiritFeed() {
   const host = els.spiritFeedList; host.innerHTML = "";
-  const items = spiritFeedCache.filter((i) => !state.spiritFeedType || i.type === state.spiritFeedType);
-  if (!items.length) { host.appendChild(emptyRow("No items yet — hit Run now, or wait for the daily ritual.")); return; }
-  items.forEach((it) => host.appendChild(spiritFeedCard(it)));
+  const view = state.spiritFeedView || "inbox";
+  if (!spiritFeedCache.length) {
+    host.appendChild(emptyRow(view === "inbox"
+      ? "Inbox zero — nothing awaiting a verdict."
+      : view === "kept" ? "Nothing kept yet." : "No feed items yet."));
+    return;
+  }
+  spiritFeedCache.forEach((it) => host.appendChild(spiritFeedCard(it)));
+}
+function faviconFor(link) {
+  try {
+    const host = new URL(link).hostname;
+    const img = el("img", "feed-favicon");
+    img.src = "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(host) + "&sz=32";
+    img.loading = "lazy";
+    img.onerror = () => img.remove();
+    return img;
+  } catch (e) { return null; }
 }
 function spiritFeedCard(it) {
   const pinned = it.type === "digest" && it.status === "new";
-  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") + (pinned ? " pinned" : ""));
+  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") +
+    (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
   const top = el("div", "feed-top");
   if (pinned) top.append(el("span", "pin-chip", "📌 pinned"));
   top.append(el("span", "type-chip type-" + it.type, it.type));
@@ -1218,18 +1324,25 @@ function spiritFeedCard(it) {
   top.append(title);
   if (it.confidence) top.append(el("span", "conf conf-" + it.confidence, it.confidence));
   card.append(top);
+  // the why line is written to be the reason you care — lead with it, emphasized
   if (it.why) card.append(el("div", "feed-why", it.why));
-  const metaBits = [it.agent, it.source, it.domain, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
-  if (metaBits) card.append(el("div", "feed-meta", metaBits));
-  if (it.body) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
+  const meta = el("div", "feed-meta");
+  const fav = it.link ? faviconFor(it.link) : null;
+  if (fav) meta.append(fav);
+  const bits = [it.source || it.domain, it.agent, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
+  meta.append(el("span", null, bits));
+  card.append(meta);
+  if (it.body && (pinned || it.type === "artifact")) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
   if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
   const actions = el("div", "feed-actions");
-  actions.append(
-    pillLight("Keep", () => spiritFeedAction(it.id, { status: "kept" })),
-    pillLight("Discard", () => spiritFeedAction(it.id, { status: "discarded" })),
-    pillLight("Snooze 7d", () => spiritFeedAction(it.id, { status: "snoozed", days: 7 })),
-  );
-  if (!it.vaultNote) actions.append(pillLight("Save to vault", () => spiritSaveToVault(it.id)));
+  if (it.status !== "discarded") {
+    actions.append(pillLight("Keep", () => spiritFeedAction(it.id, { status: "kept" })));
+    if (it.status !== "kept") actions.append(pillLight("Discard", () => spiritFeedAction(it.id, { status: "discarded" })));
+    actions.append(pillLight("Snooze 7d", () => spiritFeedAction(it.id, { status: "snoozed", days: 7 })));
+    if (!it.vaultNote) actions.append(pillLight("Save to vault", () => spiritSaveToVault(it.id)));
+  } else {
+    actions.append(pillLight("Restore", () => spiritFeedAction(it.id, { status: "new" })));
+  }
   card.append(actions);
   return card;
 }
@@ -1238,6 +1351,7 @@ async function spiritFeedAction(id, body) {
   try { await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
   catch (e) { setSaveState("error"); }
   loadSpiritFeed();
+  loadSpiritsStatus(); // inbox count moved
 }
 async function spiritSaveToVault(id) {
   setSaveState("saving");
@@ -1245,8 +1359,9 @@ async function spiritSaveToVault(id) {
     const r = await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/save-to-vault`, { method: "POST" });
     if (!r.ok) throw new Error((await r.text()) || "save failed");
     setSaveState("saved");
-  } catch (e) { setSaveState("error"); alert("Save to vault failed: " + e.message); }
+  } catch (e) { setSaveState("error"); showToast("Save to vault failed: " + e.message, null, "error"); }
   loadSpiritFeed();
+  loadSpiritsStatus();
 }
 
 // ---- run now / ask a scout (spooled request; engine picks it up within ~5s) ----
@@ -1260,68 +1375,120 @@ function spiritPick(onPick) {
     area: sp,
     items: (spirits[sp] || []).map((rit) => ({ id: sp + "/" + rit, text: rit })),
   })).filter((g) => g.items.length);
-  if (!groups.length) { alert("No spirit/ritual found in the excalibur tree."); return; }
+  if (!groups.length) { showToast("No spirit/ritual found in the excalibur tree.", null, "error"); return; }
   openPicker("Run a ritual now", groups, (id) => {
     const [sp, rit] = id.split("/");
     onPick(sp, rit);
   }, "No rituals found.");
 }
+// spiritSpool drops a run request. It holds NO button state — the run's status
+// lives in the files (queued spool → running report). A 409 means the same
+// spirit/ritual is already active (the double-spool guard), so we jump to its
+// live row instead of writing a second spool (plan §2).
 async function spiritSpool(spirit, ritual, request) {
-  const btn = els.spiritRunNowBtn;
-  btn.disabled = true; btn.textContent = "Requested ✓";
-  try {
-    const r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) });
-    if (!r.ok) throw new Error(await r.text());
-    watchForNewRun();
-  } catch (e) {
-    alert("Run request failed: " + (e.message || e));
-    btn.disabled = false; btn.textContent = "▶ Run now";
+  let r;
+  try { r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) }); }
+  catch (e) { showToast("Run request failed: " + (e.message || e), null, "error"); return; }
+  if (r.status === 409) {
+    showToast(`${spirit}/${ritual} is already running — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+    location.hash = "#/spirits/runs";
+    return;
   }
+  if (!r.ok) { showToast("Run request failed (" + r.status + ")", null, "error"); return; }
+  location.hash = "#/spirits/runs";
+  loadSpiritRuns();   // show the queued row immediately
+  ensureLivePoll();   // and watch it through to done
 }
 function spiritRunNow() {
   spiritPick((sp, rit) => spiritSpool(sp, rit, ""));
 }
-// spiritAskScout: pick a spirit/ritual, then prompt for a free-form request
-// (options-scout/research: "buy X under $Y — find 5 options"). The request
-// rides the spool file into the run's prompt.
+// spiritAskScout: pick a spirit/ritual, then take a free-form request via an
+// inline box (no browser prompt). The request rides the spool into the prompt.
 function spiritAskScout() {
   spiritPick((sp, rit) => {
-    const request = prompt(`Request for ${sp}/${rit}  (e.g. "buy a mechanical keyboard under $200 — find 5 options")`);
-    if (request && request.trim()) spiritSpool(sp, rit, request.trim());
+    askText(`Request for ${sp} / ${rit}`,
+      'e.g. "buy a mechanical keyboard under $200 — find 5 options"',
+      (request) => { if (request.trim()) spiritSpool(sp, rit, request.trim()); });
   });
 }
-// Poll the runs list until a new report lands (runs take a couple of minutes),
-// then refresh whichever sub-tab is open. Light: 5s cadence, ~15 min ceiling.
-async function watchForNewRun() {
-  const before = spiritRunsCache.length ? spiritRunsCache[0].id : (await fetchSpiritRuns())[0]?.id;
-  const btn = els.spiritRunNowBtn;
-  for (let i = 0; i < 180; i++) {
-    await sleep(5000);
-    if (!location.hash.startsWith("#/spirits")) break; // stop polling off-tab
-    const runs = await fetchSpiritRuns();
-    if (runs.length && runs[0].id !== before) {
-      spiritRunsCache = runs;
-      if (spiritTabFromHash() === "runs") renderSpiritRuns(); else loadSpiritFeed();
-      loadSpiritsStatus();
-      break;
-    }
-  }
-  btn.disabled = false; btn.textContent = "▶ Run now";
-}
 async function fetchSpiritRuns() {
-  try { return (await (await fetch("/api/spirits/runs")).json()).data || []; } catch (e) { return []; }
+  try {
+    const d = await (await fetch("/api/spirits/runs")).json();
+    return { data: d.data || [], queued: d.queued || [] };
+  } catch (e) { return { data: [], queued: [] }; }
 }
 
-// ---- run reports (artifacts/runs/) ----
-async function loadSpiritRuns() {
-  spiritRunsCache = await fetchSpiritRuns();
-  renderSpiritRuns();
+// askText — a small inline text dialog (reuses the picker modal chrome), the
+// replacement for prompt() in spirits flows (plan §6).
+function askText(title, placeholder, onSubmit) {
+  els.pickerTitle.textContent = title;
+  const body = els.pickerBody; body.innerHTML = "";
+  const ta = el("textarea", "asktext-area"); ta.placeholder = placeholder; ta.rows = 3;
+  const actions = el("div", "asktext-actions");
+  const submit = pill("Send →", () => { closePicker(); onSubmit(ta.value); });
+  actions.append(el("span", "asktext-hint", "⌘↵ to send"), submit);
+  body.append(ta, actions);
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); closePicker(); onSubmit(ta.value); }
+    else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+  });
+  els.pickerModal.hidden = false;
+  ta.focus();
 }
+
+// ---- run reports (artifacts/runs/) — live strip + finished list ----
+async function loadSpiritRuns() {
+  spiritRuns = await fetchSpiritRuns();
+  renderSpiritRuns();
+  ensureLivePoll();
+}
+// Re-renders the LIST only; never touches the open report detail (so a live
+// re-render doesn't close what you're reading).
 function renderSpiritRuns() {
   const host = els.spiritRunsList; host.innerHTML = "";
-  els.spiritRunDetail.hidden = true;
-  if (!spiritRunsCache.length) { host.appendChild(emptyRow("No runs yet — the ritual writes a report here every time it fires.")); return; }
-  spiritRunsCache.forEach((r) => host.appendChild(spiritRunCard(r)));
+  const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
+  const queued = spiritRuns.queued || [];
+  const finished = (spiritRuns.data || []).filter((r) => r.outcome !== "running");
+
+  if (running.length || queued.length) {
+    const strip = el("div", "live-strip");
+    strip.append(el("div", "live-strip-label", "LIVE"));
+    running.forEach((r) => strip.append(liveRunRow(r, true)));
+    queued.forEach((q) => strip.append(liveRunRow(q, false)));
+    host.append(strip);
+  }
+  if (!finished.length && !running.length && !queued.length) {
+    host.appendChild(emptyRow("No runs yet — cast a skill (press /) or wait for a scheduled ritual."));
+    return;
+  }
+  finished.forEach((r) => host.append(spiritRunCard(r)));
+}
+function liveRunRow(item, running) {
+  const row = el("div", "live-row " + (running ? "running" : "queued"));
+  const head = el("div", "live-head");
+  head.append(el("span", "live-dot " + (running ? "on" : "wait")));
+  head.append(el("span", "run-title", `${item.spirit} / ${item.ritual}`));
+  head.append(el("span", "live-state", running ? "running" : "queued"));
+  if (running) head.append(el("span", "live-elapsed", elapsedSince(item.started)));
+  row.append(head);
+  if (item.request) row.append(el("div", "feed-why", "“" + item.request + "”"));
+  if (running) {
+    const pct = item.ceilingUsd > 0 ? Math.min(100, Math.round((item.spentUsd / item.ceilingUsd) * 100)) : 0;
+    const bar = el("div", "charge-bar"); const fill = el("div", "charge-fill" + (pct >= 100 ? " over" : "")); fill.style.width = pct + "%"; bar.append(fill);
+    const cr = el("div", "charge-row"); cr.append(bar, el("span", "charge-label", `$${(item.spentUsd || 0).toFixed(4)} / $${(item.ceilingUsd || 0).toFixed(2)}`));
+    row.append(cr);
+    row.append(el("div", "feed-meta", `${item.steps || 0} step${item.steps === 1 ? "" : "s"} so far · click to watch the report append`));
+    row.onclick = () => openSpiritRun(item.id);
+  } else {
+    row.append(el("div", "feed-meta", "waiting for the engine to pick it up…"));
+  }
+  return row;
+}
+function elapsedSince(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  let s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+  const m = Math.floor(s / 60); s = s % 60;
+  return m ? `${m}m ${s}s` : `${s}s`;
 }
 function spiritRunCard(r) {
   const card = el("div", "run-card");
@@ -1344,6 +1511,7 @@ function spiritRunCard(r) {
   return card;
 }
 async function openSpiritRun(id) {
+  openRunId = id;
   let run;
   try { run = await (await fetch("/api/spirits/runs/" + encodeURIComponent(id))).json(); }
   catch (e) { return; }
@@ -1351,15 +1519,26 @@ async function openSpiritRun(id) {
   const head = el("div", "run-detail-head");
   head.append(el("span", "run-title", id));
   const promptBtn = pillLight("Show assembled prompt", () => toggleSpiritPrompts(id, promptBtn));
-  const closeBtn = pillLight("✕ Close", () => { host.hidden = true; });
+  const closeBtn = pillLight("✕ Close", () => { host.hidden = true; openRunId = null; });
   head.append(promptBtn, closeBtn);
   host.append(head);
-  const body = el("pre", "run-report");
+  const body = el("pre", "run-report"); body.id = "runReportBody";
   body.textContent = run.body || "";
   host.append(body);
   const prompts = el("div", "run-prompts"); prompts.id = "runPrompts-" + id; prompts.hidden = true;
   host.append(prompts);
   host.scrollIntoView({ behavior: "smooth", block: "start" });
+  ensureLivePoll(); // a running report will keep appending
+}
+// Refresh the open report body in place. Called each poll tick (which only runs
+// while a run is active), so the finishing tick pulls the terminal report too.
+async function refreshOpenRun() {
+  if (!openRunId) return;
+  try {
+    const run = await (await fetch("/api/spirits/runs/" + encodeURIComponent(openRunId))).json();
+    const body = document.getElementById("runReportBody");
+    if (body) body.textContent = run.body || "";
+  } catch (e) {}
 }
 // The §6.5 affordance: the EXACT model input per turn, preserved verbatim.
 async function toggleSpiritPrompts(id, btn) {
@@ -1572,18 +1751,25 @@ function renderLineDiff(oldText, newText) {
   if (!changed) wrap.append(el("div", "diff-line diff-ctx", "(no textual change)"));
   return wrap;
 }
-async function spiritApprovalAct(id, kind, attendees) {
-  let body = {};
+function spiritApprovalAct(id, kind, attendees) {
   if (kind === "reject") {
-    const reason = prompt("Reason (optional — recorded on the proposal; for warden findings this becomes an accepted exception):") || "";
-    body = { reason: reason.trim() || "rejected from dashboard" };
-  } else if (kind === "confirm" && attendees !== null && attendees !== undefined) {
-    body = { editAttendees: true, attendees }; // create-vault-note with the edited people list
+    // inline reason box (no browser prompt); Escape cancels
+    askText("Reject — reason (optional)",
+      "recorded on the proposal; for warden findings this becomes an accepted exception",
+      (reason) => postApprovalDecision(id, "reject", { reason: reason.trim() || "rejected from dashboard" }));
+    return;
   }
+  const body = (kind === "confirm" && attendees !== null && attendees !== undefined)
+    ? { editAttendees: true, attendees } // create-vault-note with the edited people list
+    : {};
+  postApprovalDecision(id, kind, body);
+}
+async function postApprovalDecision(id, kind, body) {
   setSaveState("saving");
   try { await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
   catch (e) { setSaveState("error"); }
   loadSpiritApprovals();
+  loadSpiritsStatus();
 }
 function setSpiritApprovalBadge(n) {
   if (!els.spiritApprBadge) return;
@@ -1626,16 +1812,26 @@ function renderSpiritRituals(rows) {
 function ritualRow(r) {
   const row = el("div", "ritual-row" + (r.valid ? "" : " invalid"));
   row.append(el("span", "ritual-name", r.ritual));
-  // cadence: human + raw
+  // cadence: human phrase primary; raw cron demoted to a tooltip. On-demand
+  // rows say how to run them; "custom" carries the raw string in the tooltip.
   const cad = el("span", "ritual-cadence");
-  cad.append(el("span", "cad-human", r.cadenceHuman || "—"));
-  if (r.cadence && r.cadenceHuman !== r.cadence) cad.append(el("span", "cad-raw", r.cadence));
+  if (r.cadence === "") {
+    cad.append(el("span", "cad-human", "on-demand"));
+    cad.append(el("span", "cad-hint", " · run with /"));
+  } else {
+    const h = el("span", "cad-human", r.cadenceHuman || "custom");
+    if (r.cadence) h.title = r.cadence; // raw cron on hover only
+    cad.append(h);
+  }
   row.append(cad);
-  // next fire — headline
+  // next fire — relative + absolute ("in 2h · 1:00p")
   const next = el("span", "ritual-next");
-  if (!r.valid) next.textContent = "—";
-  else if (r.nextFire) { next.textContent = fmtWhen(r.nextFire); next.append(el("span", "next-rel", relFuture(r.nextFire))); }
-  else next.textContent = "—";
+  if (r.valid && r.nextFire) {
+    next.append(el("span", "next-rel", relPhrase(r.nextFire)));
+    next.append(el("span", "next-abs", " · " + fmtWhen(r.nextFire)));
+  } else {
+    next.textContent = "—";
+  }
   row.append(next);
   // last outcome chip → run report
   const oc = el("span", "ritual-outcome");
@@ -1659,16 +1855,21 @@ function ritualRow(r) {
   row.onclick = () => openEditor([r.path]);
   return row;
 }
-// relFuture: "in 9h" / "in 3d" / "now"
+// relFuture: " · in 9h" / " · in 3d" / " · due"
 function relFuture(iso) {
+  const p = relPhrase(iso);
+  return p ? " · " + p : "";
+}
+// relPhrase: "in 9h" / "in 3d" / "due now"
+function relPhrase(iso) {
   const d = new Date(iso), ms = d - new Date();
   if (isNaN(d)) return "";
-  if (ms <= 0) return " · due";
+  if (ms <= 0) return "due now";
   const m = Math.round(ms / 60000);
-  if (m < 60) return " · in " + m + "m";
+  if (m < 60) return "in " + m + "m";
   const h = Math.round(m / 60);
-  if (h < 48) return " · in " + h + "h";
-  return " · in " + Math.round(h / 24) + "d";
+  if (h < 48) return "in " + h + "h";
+  return "in " + Math.round(h / 24) + "d";
 }
 
 // ---- markdown editor drawer (rituals / identity / cornerstone / chargebook) ----
@@ -1741,28 +1942,30 @@ function showEditorLint(errors, warnings, savedOK) {
 }
 function closeEditor() { els.spiritEditor.hidden = true; editorState = null; }
 
-async function newRitual(sp) {
-  const name = prompt(`New ritual for ${sp} (lowercase name, e.g. "weekly-review"):`);
-  if (!name || !name.trim()) return;
-  try {
-    const r = await fetch("/api/spirits/ritual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: sp, name: name.trim() }) });
-    if (!r.ok) throw new Error(await r.text());
-    const { path } = await r.json();
-    await loadSpiritRituals();
-    openEditor([path]);
-  } catch (e) { alert("Couldn't create ritual: " + (e.message || e)); }
+function newRitual(sp) {
+  askText(`New ritual for ${sp}`, 'lowercase name, e.g. "weekly-review"', async (name) => {
+    if (!name.trim()) return;
+    try {
+      const r = await fetch("/api/spirits/ritual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: sp, name: name.trim() }) });
+      if (!r.ok) throw new Error(await r.text());
+      const { path } = await r.json();
+      await loadSpiritRituals();
+      openEditor([path]);
+    } catch (e) { showToast("Couldn't create ritual: " + (e.message || e), null, "error"); }
+  });
 }
-async function newSpirit() {
-  const name = prompt('New spirit (lowercase name, e.g. "news-scout"):');
-  if (!name || !name.trim()) return;
-  try {
-    const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
-    if (!r.ok) throw new Error(await r.text());
-    const { path } = await r.json();
-    await loadSpiritRituals();
-    loadSpiritsStatus();
-    openEditor([`spirits/${name.trim()}/identity.md`, path], 1);
-  } catch (e) { alert("Couldn't create spirit: " + (e.message || e)); }
+function newSpirit() {
+  askText("New spirit", 'lowercase name, e.g. "news-scout"', async (name) => {
+    if (!name.trim()) return;
+    try {
+      const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
+      if (!r.ok) throw new Error(await r.text());
+      const { path } = await r.json();
+      await loadSpiritRituals();
+      loadSpiritsStatus();
+      openEditor([`spirits/${name.trim()}/identity.md`, path], 1);
+    } catch (e) { showToast("Couldn't create spirit: " + (e.message || e), null, "error"); }
+  });
 }
 
 if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateEditorDirty);
@@ -2713,17 +2916,20 @@ async function castSubmit() {
     skill: castChosen.skill || "",
   };
   els.castbarCast.disabled = true;
+  let res;
   try {
-    const res = await fetch("/api/spirits/run-now", {
+    res = await fetch("/api/spirits/run-now", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
-    if (!res.ok) { els.castbarArgHint.textContent = "spool failed — is the engine configured?"; els.castbarCast.disabled = false; return; }
   } catch (e) { els.castbarArgHint.textContent = "spool failed"; els.castbarCast.disabled = false; return; }
   els.castbarCast.disabled = false;
+  if (res.status === 409) { els.castbarArgHint.textContent = "already running — jumping to its live row"; }
+  else if (!res.ok) { els.castbarArgHint.textContent = "spool failed — is the engine configured?"; return; }
   closeCastbar();
-  // Jump to the runs board and watch for the run the engine picks up.
+  // Jump to the runs board; the file-derived live poll picks it up (no watcher).
   location.hash = "#/spirits/runs";
-  if (typeof watchForNewRun === "function") watchForNewRun();
+  loadSpiritRuns();
+  ensureLivePoll();
 }
 
 if (els.castbarInput) {

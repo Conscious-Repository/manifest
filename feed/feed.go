@@ -64,8 +64,12 @@ func NewStoreDir(dir string) *Store {
 	return &Store{dir: dir}
 }
 
-// List returns items newest-first, applying the filter. By default (empty status)
-// discarded items and still-snoozed items are hidden.
+// List returns items newest-first, applying the filter. Status modes (plan §4):
+//
+//	"inbox" — items awaiting a verdict: new + snoozes whose interval has lapsed
+//	"all"   — everything, including discarded (the UI mutes those)
+//	"kept" / "discarded" / "snoozed" / "new" — exact status
+//	""      — legacy default: everything except discarded + still-snoozed
 func (s *Store) List(f Filter, now time.Time) []Item {
 	entries, _ := os.ReadDir(s.dir)
 	var out []Item
@@ -77,15 +81,23 @@ func (s *Store) List(f Filter, now time.Time) []Item {
 		if err != nil {
 			continue
 		}
-		if f.Status != "" {
-			if it.Status != f.Status {
+		switch f.Status {
+		case "all":
+			// keep everything
+		case "inbox":
+			// awaiting a verdict: new, or a snooze that has since lapsed
+			if !(it.Status == "new" || (it.Status == "snoozed" && !stillSnoozed(it, now))) {
 				continue
 			}
-		} else {
+		case "":
 			if it.Status == "discarded" {
 				continue
 			}
 			if it.Status == "snoozed" && stillSnoozed(it, now) {
+				continue
+			}
+		default:
+			if it.Status != f.Status {
 				continue
 			}
 		}

@@ -1,11 +1,13 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"manifest/approvals"
 	"manifest/feed"
+	"manifest/spirits"
 )
 
 // SPIRITS — the excalibur harness console. The dashboard reads the sibling
@@ -23,6 +25,7 @@ func (s *Server) handleSpiritsStatus(w http.ResponseWriter, r *http.Request) {
 		"enabled":     true,
 		"engineAlive": alive,
 		"spirits":     s.spirits.Spirits(),
+		"feedInbox":   len(s.spirits.Feed.List(feed.Filter{Status: "inbox"}, time.Now())), // FEED sub-tab badge
 	}
 	if !at.IsZero() {
 		resp["heartbeat"] = at.Format(time.RFC3339)
@@ -81,10 +84,13 @@ func (s *Server) handleSpiritsFeedStatus(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleSpiritsRuns(w http.ResponseWriter, r *http.Request) {
 	if s.spirits == nil {
-		writeJSON(w, map[string]any{"data": []any{}})
+		writeJSON(w, map[string]any{"data": []any{}, "queued": []any{}})
 		return
 	}
-	writeJSON(w, map[string]any{"data": s.spirits.Runs()})
+	// data = every run report (running ones included, outcome:running); queued =
+	// spool files not yet picked up. The client derives queued/running/done from
+	// these files alone — no browser-held run state (plan §1).
+	writeJSON(w, map[string]any{"data": s.spirits.Runs(), "queued": s.spirits.Queued()})
 }
 
 func (s *Server) handleSpiritsRun(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +347,11 @@ func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.spirits.SpoolRunNow(b.Spirit, b.Ritual, b.Request, b.Skill); err != nil {
+		if errors.Is(err, spirits.ErrAlreadyActive) {
+			w.WriteHeader(http.StatusConflict) // the ritual is already queued/running
+			writeJSON(w, map[string]any{"active": true, "error": "already queued or running"})
+			return
+		}
 		httpError(w, err)
 		return
 	}

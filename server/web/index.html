@@ -112,7 +112,7 @@
     </div>
 
     <div class="agents-tabs" id="spiritsTabs">
-      <a class="atab" data-tab="feed" href="#/spirits">FEED</a>
+      <a class="atab" data-tab="feed" href="#/spirits">FEED<span id="spiritFeedBadge" class="atab-badge" hidden></span></a>
       <a class="atab" data-tab="runs" href="#/spirits/runs">RUNS</a>
       <a class="atab" data-tab="rituals" href="#/spirits/rituals">RITUALS</a>
       <a class="atab" data-tab="approvals" href="#/spirits/approvals">APPROVALS<span id="spiritApprBadge" class="atab-badge" hidden></span></a>
@@ -252,6 +252,9 @@
       <div id="pickerBody" class="modal-body"></div>
     </div>
   </div>
+
+  <!-- in-app toasts (run finished, digest landed) -->
+  <div id="toastHost" class="toast-host"></div>
 
   <script src="app.js"></script>
 </body>

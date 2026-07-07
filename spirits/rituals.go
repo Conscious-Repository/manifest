@@ -431,31 +431,97 @@ func (s *Store) engineRitualErrors() map[string]string {
 
 var dayNames = []string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
 
-// humanCadence renders common cron shapes ("0 7 * * *" → "daily 7:00a",
-// "30 7 * * 0" → "Sun 7:30a", "0 8 * * 1-5" → "weekdays 8:00a"); anything it
-// doesn't recognize falls back to the raw expression.
+// humanCadence renders the cron vocabulary actually in use into one consistent
+// "<weekday-or-daily prefix> <time list>" phrasing (plan §3):
+//
+//	"0 7 * * *"        → "daily 7:00a"
+//	"0 8,13,18 * * *"  → "daily 8:00a, 1:00p, 6:00p"   (value list)
+//	"30 7 * * 0"       → "Sun 7:30a"                    (weekday name)
+//	"0 8 * * 1-5"      → "weekdays 8:00a"
+//	"0 9 * * 1,3,5"    → "Mon, Wed, Fri 9:00a"
+//	"*/30 * * * *"     → "every 30 min"                 (step value)
+//	"0 */2 * * *"      → "every 2 hours"
+//
+// Anything it can't phrase returns "custom" — the caller shows the raw cron as a
+// tooltip so the raw string is never the primary text.
 func humanCadence(expr string) string {
 	f := strings.Fields(expr)
 	if len(f) != 5 {
-		return expr
+		return "custom"
 	}
-	mn, e1 := strconv.Atoi(f[0])
-	hr, e2 := strconv.Atoi(f[1])
-	if e1 != nil || e2 != nil || f[2] != "*" || f[3] != "*" {
-		return expr
-	}
-	t := clock(hr, mn)
-	switch dow := f[4]; {
-	case dow == "*":
-		return "daily " + t
-	case dow == "1-5":
-		return "weekdays " + t
-	default:
-		if d, err := strconv.Atoi(dow); err == nil && d >= 0 && d <= 6 {
-			return dayNames[d] + " " + t
+	min, hour, dom, mon, dow := f[0], f[1], f[2], f[3], f[4]
+
+	// step values: every-N-minutes / every-N-hours
+	if strings.HasPrefix(min, "*/") && hour == "*" && dom == "*" && mon == "*" && dow == "*" {
+		if n, err := strconv.Atoi(min[2:]); err == nil && n > 0 {
+			return fmt.Sprintf("every %d min", n)
 		}
 	}
-	return expr
+	if min == "0" && strings.HasPrefix(hour, "*/") && dom == "*" && mon == "*" && dow == "*" {
+		if n, err := strconv.Atoi(hour[2:]); err == nil && n > 0 {
+			return fmt.Sprintf("every %d hours", n)
+		}
+	}
+
+	// time-of-day crons: a single minute + one-or-more hours, any day-of-month/month
+	if dom != "*" || mon != "*" {
+		return "custom"
+	}
+	mn, err := strconv.Atoi(min)
+	if err != nil {
+		return "custom"
+	}
+	if hour == "*" {
+		return "hourly at :" + fmt.Sprintf("%02d", mn) // "0 * * * *" → "hourly at :00"
+	}
+	hours, ok := parseValueList(hour, 0, 23)
+	if !ok {
+		return "custom"
+	}
+	prefix := dowPrefix(dow)
+	if prefix == "" {
+		return "custom"
+	}
+	times := make([]string, len(hours))
+	for i, h := range hours {
+		times[i] = clock(h, mn)
+	}
+	return prefix + " " + strings.Join(times, ", ")
+}
+
+// parseValueList parses a comma value list of ints within [lo,hi] ("8,13,18").
+// Ranges/steps inside the field make it "not a plain list" → (nil,false).
+func parseValueList(s string, lo, hi int) ([]int, bool) {
+	var out []int
+	for _, p := range strings.Split(s, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(p))
+		if err != nil || n < lo || n > hi {
+			return nil, false
+		}
+		out = append(out, n)
+	}
+	return out, len(out) > 0
+}
+
+// dowPrefix renders a day-of-week field into a phrase, or "" if it can't.
+func dowPrefix(dow string) string {
+	switch dow {
+	case "*":
+		return "daily"
+	case "1-5":
+		return "weekdays"
+	case "0,6", "6,0":
+		return "weekends"
+	}
+	days, ok := parseValueList(dow, 0, 6)
+	if !ok {
+		return ""
+	}
+	names := make([]string, len(days))
+	for i, d := range days {
+		names[i] = dayNames[d]
+	}
+	return strings.Join(names, ", ")
 }
 
 func clock(hr, mn int) string {

@@ -1063,3 +1063,49 @@ h1.md-h { font-size: 24px; } h2.md-h { font-size: 20px; } h3.md-h { font-size: 1
 .inline-overlay .inline-link { pointer-events: auto; cursor: pointer; color: var(--blue); border-bottom: 1px solid var(--blue-soft); }
 .inline-overlay .inline-link:hover { background: var(--hover); }
 input.inline-hidden { color: transparent !important; }
+
+/* ===== SPIRITS UX pass: live runs, toasts, inbox, timing ===== */
+
+/* in-app toasts (bottom-right, auto-dismiss) */
+.toast-host { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.toast { display: flex; align-items: center; gap: 10px; background: var(--text); color: #fff; border-radius: 8px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); font-family: var(--sans); font-size: 13px; animation: toastIn 0.18s ease-out; }
+@keyframes toastIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast.clickable { cursor: pointer; }
+.toast.clickable:hover { filter: brightness(1.1); }
+.toast-msg { flex: 1; }
+.toast-x { background: none; border: none; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.toast-x:hover { color: #fff; }
+.toast-error { background: #7f1d2b; }
+.toast-digest { background: var(--blue); }
+
+/* live run strip (queued + running) */
+.live-strip { border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 14px; background: var(--hover); display: flex; flex-direction: column; gap: 8px; }
+.live-strip-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--blue); }
+.live-row { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; }
+.live-row.running { cursor: pointer; }
+.live-row.running:hover { border-color: var(--blue-soft); }
+.live-head { display: flex; align-items: center; gap: 8px; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.live-dot.on { background: #1a7f37; animation: pulse 1.3s ease-in-out infinite; }
+.live-dot.wait { background: var(--muted); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+.live-state { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.live-elapsed { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--blue); }
+
+/* feed: inbox polish */
+.feed-favicon { width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; }
+.feed-meta { display: flex; align-items: center; }
+.feed-why { font-weight: 500; }
+.feed-card.discarded { opacity: 0.5; }
+.feed-card.discarded .feed-title { text-decoration: line-through; }
+
+/* rituals board timing */
+.cad-hint { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+.next-rel { color: var(--text); }
+.next-abs { color: var(--muted); }
+
+/* askText inline dialog (reuses picker modal chrome) */
+.asktext-area { width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 14px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
+.asktext-area:focus { border-color: var(--blue); }
+.asktext-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 10px; }
+.asktext-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
