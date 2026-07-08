@@ -595,6 +595,8 @@ body {
 .atab:hover { color: var(--text); }
 .atab.active { color: var(--ink); border-bottom-color: var(--blue); }
 .atab-badge { background: var(--blue); color: #fff; font-size: 10px; border-radius: 8px; padding: 0 5px; min-width: 15px; text-align: center; }
+/* FEED nav-pill inbox count — muted mono number, manifest style (no red dots) */
+.nav-badge { font-family: var(--mono); font-size: 10px; color: var(--pill-muted, #9aa0a6); margin-left: 6px; font-weight: 400; }
 .agent-panel { animation: fadein 0.12s ease; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 .panel-subhead {
@@ -1002,6 +1004,11 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .cmd-fact { display: flex; gap: 12px; }
 .cmd-fact-label { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 0 0 130px; text-transform: uppercase; letter-spacing: 0.04em; }
 .cmd-fact-val { font-family: var(--sans); font-size: 13.5px; color: var(--text); }
+
+/* ===== FEED — manifest's one inbox (top-level tab) ===== */
+.feed-view { max-width: 900px; margin: 8px auto 64px; padding: 0 28px; }
+.feed-view .feed-filters { margin-right: 8px; }
+.feed-signals:empty { display: none; } /* the signals lane never pads when empty */
 
 /* ===== READING — the book shelf over the extrinsic zone ===== */
 .reading-view { max-width: 1180px; margin: 8px auto 64px; padding: 0 28px; }

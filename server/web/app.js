@@ -71,22 +71,25 @@ const els = {
   castbarArgInput: document.getElementById("castbarArgInput"),
   castbarArgHint: document.getElementById("castbarArgHint"),
   castbarCast: document.getElementById("castbarCast"),
+  // feed (manifest's one inbox — top-level surface)
+  feedView: document.getElementById("feedView"),
+  feedNav: document.getElementById("feedNav"),
+  feedNavBadge: document.getElementById("feedNavBadge"),
+  feedFilters: document.getElementById("feedFilters"),
+  feedSignals: document.getElementById("feedSignals"),
+  feedList: document.getElementById("feedList"),
+  feedAskBtn: document.getElementById("feedAskBtn"),
+  feedRunNowBtn: document.getElementById("feedRunNowBtn"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   spiritsNav: document.getElementById("spiritsNav"),
   spiritsStatus: document.getElementById("spiritsStatus"),
-  sp_feed: document.getElementById("sp-feed"),
   sp_runs: document.getElementById("sp-runs"),
-  spiritFeedFilters: document.getElementById("spiritFeedFilters"),
-  spiritFeedList: document.getElementById("spiritFeedList"),
-  spiritRunNowBtn: document.getElementById("spiritRunNowBtn"),
-  spiritAskBtn: document.getElementById("spiritAskBtn"),
   spiritRunsList: document.getElementById("spiritRunsList"),
   spiritRunDetail: document.getElementById("spiritRunDetail"),
   sp_approvals: document.getElementById("sp-approvals"),
   spiritApprovalList: document.getElementById("spiritApprovalList"),
   spiritApprBadge: document.getElementById("spiritApprBadge"),
-  spiritFeedBadge: document.getElementById("spiritFeedBadge"),
   toastHost: document.getElementById("toastHost"),
   sp_rituals: document.getElementById("sp-rituals"),
   spiritRitualBoard: document.getElementById("spiritRitualBoard"),
@@ -1160,12 +1163,11 @@ function fmtWhen(iso) {
 }
 
 // ---- SPIRITS: the excalibur harness console ----
-// The dashboard reads the sibling excalibur tree (feed, run reports, prompts)
-// and records the user's keep/discard/snooze; the ENGINE owns execution — the
+// Purely the engine console since feed-central: RUNS · RITUALS · APPROVALS.
+// The feed lives one level up as its own tab; the ENGINE owns execution — the
 // only write toward it is a spooled run-now request it picks up on its own.
-const SPIRIT_TABS = ["feed", "runs", "rituals", "approvals"];
+const SPIRIT_TABS = ["runs", "rituals", "approvals"];
 let spiritStatusCache = null;
-let spiritFeedCache = [];
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
@@ -1173,17 +1175,16 @@ function showSpirits() {
   const tab = spiritTabFromHash();
   SPIRIT_TABS.forEach((t) => { els["sp_" + t].hidden = t !== tab; });
   document.querySelectorAll("#spiritsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-  loadSpiritsStatus(); // engine-alive chip + inbox/approvals badges show on every sub-tab
-  if (tab === "feed") loadSpiritFeed();
-  else if (tab === "runs") loadSpiritRuns();
+  loadSpiritsStatus(); // engine-alive chip + approvals badge show on every sub-tab
+  if (tab === "runs") loadSpiritRuns();
   else if (tab === "rituals") loadSpiritRituals();
   else if (tab === "approvals") loadSpiritApprovals();
   refreshSpiritApprovalBadge();
   ensureLivePoll(); // resume watching any queued/running runs, derived from files
 }
 function spiritTabFromHash() {
-  const t = (location.hash.split("/")[2] || "feed");
-  return SPIRIT_TABS.includes(t) ? t : "feed";
+  const t = (location.hash.split("/")[2] || "runs");
+  return SPIRIT_TABS.includes(t) ? t : "runs";
 }
 
 async function loadSpiritsStatus() {
@@ -1195,7 +1196,6 @@ async function loadSpiritsStatus() {
   els.spiritsStatus.textContent = (st.engineAlive ? "engine alive" : "engine down") +
     (names.length ? " · " + names.join(", ") : "");
   els.spiritsStatus.style.color = st.engineAlive ? "" : "#b91c1c";
-  setBadge(els.spiritFeedBadge, st.feedInbox || 0); // FEED sub-tab inbox count
 }
 function setBadge(elm, n) {
   if (!elm) return;
@@ -1218,7 +1218,8 @@ function showToast(msg, onClick, kind) {
 }
 
 // ---- file-derived live run polling (replaces watchForNewRun) ----
-// A single ~3s poll while the SPIRITS tab is open AND some run is queued/running.
+// A single ~3s poll while the SPIRITS or FEED tab is open AND some run is
+// queued/running (dig-from-feed needs run-watching without leaving the feed).
 // Everything shown derives from the runs+queued files, so a refresh mid-run
 // loses nothing. Transitions raise toasts; the open report body refreshes live.
 let livePollTimer = null;
@@ -1226,19 +1227,22 @@ let runOutcomes = {};       // runId → last-seen outcome (transition detection
 let liveBaselined = false;  // don't toast runs that were already finished on first look
 let knownDigestIds = null;  // feed digest ids seen, for the digest-landed toast
 
+function pollScopeOpen() {
+  return location.hash.startsWith("#/spirits") || location.hash === "#/feed";
+}
 function activeRuns() {
   const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
   return running.length + (spiritRuns.queued || []).length;
 }
 function ensureLivePoll() {
-  if (livePollTimer || !location.hash.startsWith("#/spirits")) return;
+  if (livePollTimer || !pollScopeOpen()) return;
   livePollTimer = setInterval(livePoll, 3000);
   livePoll(); // immediate tick
 }
 function stopLivePoll() { if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; } }
 
 async function livePoll() {
-  if (!location.hash.startsWith("#/spirits")) { stopLivePoll(); return; }
+  if (!pollScopeOpen()) { stopLivePoll(); return; }
   const firstPoll = !liveBaselined;
   spiritRuns = await fetchSpiritRuns();
 
@@ -1256,12 +1260,13 @@ async function livePoll() {
   liveBaselined = true;
 
   // re-render whatever is open, from files alone
-  if (spiritTabFromHash() === "runs") renderSpiritRuns();
+  if (location.hash.startsWith("#/spirits") && spiritTabFromHash() === "runs") renderSpiritRuns();
   if (openRunId) refreshOpenRun(); // includes the finishing tick, so the report shows the terminal outcome
 
   if (anyFinished) {
-    loadSpiritsStatus();                              // refresh inbox/approval badges
-    if (spiritTabFromHash() === "feed") loadSpiritFeed();
+    refreshFeedBadge();                               // nav-pill inbox count
+    if (location.hash.startsWith("#/spirits")) loadSpiritsStatus();
+    if (location.hash === "#/feed") loadFeed();       // new findings land in place
   }
   if (firstPoll || anyFinished) detectNewDigest();   // baseline on first look; then catch a landed digest
   if (activeRuns() === 0) stopLivePoll();            // nothing left to watch
@@ -1269,47 +1274,75 @@ async function livePoll() {
 
 async function detectNewDigest() {
   let items = [];
-  try { items = (await (await fetch("/api/spirits/feed?status=inbox")).json()).data || []; } catch (e) { return; }
-  const digests = items.filter((i) => i.type === "digest").map((i) => i.id);
+  try { items = (await (await fetch("/api/feed?status=inbox")).json()).items || []; } catch (e) { return; }
+  diffDigests(items);
+}
+
+// diffDigests toasts once per newly-seen digest id. Also called from loadFeed
+// itself, so entering FEED catches a digest that landed while no poll ran.
+function diffDigests(items) {
+  const digests = (items || []).filter((i) => i.type === "digest").map((i) => i.id);
   if (knownDigestIds === null) { knownDigestIds = new Set(digests); return; } // baseline
   digests.forEach((id) => {
     if (!knownDigestIds.has(id)) {
       knownDigestIds.add(id);
-      showToast("New digest in the feed", () => { location.hash = "#/spirits"; }, "digest");
+      showToast("New digest in the feed", () => { location.hash = "#/feed"; }, "digest");
     }
   });
 }
 
-// ---- spirit feed: a true inbox (artifacts/feed/) ----
+// ---- FEED: manifest's one inbox (top-level tab, feed-central §1/§4) ----
 // INBOX (default) = items awaiting a verdict (new + lapsed snoozes). Keep endorses
-// and moves the item to KEPT. Chips are INBOX/KEPT/ALL (plan §4).
+// and moves the item to KEPT. Chips are INBOX/KEPT/ALL.
 const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"]];
-async function loadSpiritFeed() {
-  const view = state.spiritFeedView || "inbox";
-  try { spiritFeedCache = (await (await fetch("/api/spirits/feed?status=" + view)).json()).data || []; }
-  catch (e) { spiritFeedCache = []; }
-  renderSpiritFeedFilters();
-  renderSpiritFeed();
+let feedCache = { items: [], signals: [], proposals: [] };
+
+function showFeed() {
+  loadFeed();
+  ensureLivePoll(); // a dig/ask spooled from here is watched without leaving the tab
 }
-function renderSpiritFeedFilters() {
-  const host = els.spiritFeedFilters; host.innerHTML = "";
-  const cur = state.spiritFeedView || "inbox";
+
+async function loadFeed() {
+  const view = state.feedView || "inbox";
+  try {
+    const d = await (await fetch("/api/feed?status=" + view)).json();
+    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [] };
+    setBadge(els.feedNavBadge, d.badge || 0);
+    if (view === "inbox") diffDigests(feedCache.items); // catch digests landed while unpolled
+  } catch (e) { feedCache = { items: [], signals: [], proposals: [] }; }
+  renderFeedFilters();
+  renderFeed();
+}
+
+// refreshFeedBadge keeps the nav pill honest from anywhere (boot, route, verdicts,
+// run-finish). Always async — the count can touch the contacts calendar cache.
+async function refreshFeedBadge() {
+  try {
+    const d = await (await fetch("/api/feed/badge")).json();
+    setBadge(els.feedNavBadge, d.count || 0);
+  } catch (e) {}
+}
+
+function renderFeedFilters() {
+  const host = els.feedFilters; host.innerHTML = "";
+  const cur = state.feedView || "inbox";
   FEED_VIEWS.forEach(([val, label]) => {
     const b = el("button", "filter-chip" + (cur === val ? " on" : ""), label);
-    b.onclick = () => { state.spiritFeedView = val; loadSpiritFeed(); };
+    b.onclick = () => { state.feedView = val; loadFeed(); };
     host.appendChild(b);
   });
 }
-function renderSpiritFeed() {
-  const host = els.spiritFeedList; host.innerHTML = "";
-  const view = state.spiritFeedView || "inbox";
-  if (!spiritFeedCache.length) {
+function renderFeed() {
+  const host = els.feedList; host.innerHTML = "";
+  els.feedSignals.innerHTML = ""; // signals lane (Phase 3) collapses when empty
+  const view = state.feedView || "inbox";
+  if (!feedCache.items.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."
       : view === "kept" ? "Nothing kept yet." : "No feed items yet."));
     return;
   }
-  spiritFeedCache.forEach((it) => host.appendChild(spiritFeedCard(it)));
+  feedCache.items.forEach((it) => host.appendChild(feedCard(it)));
 }
 function faviconFor(link) {
   try {
@@ -1321,7 +1354,7 @@ function faviconFor(link) {
     return img;
   } catch (e) { return null; }
 }
-function spiritFeedCard(it) {
+function feedCard(it) {
   const pinned = it.type === "digest" && it.status === "new";
   const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") +
     (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
@@ -1345,32 +1378,30 @@ function spiritFeedCard(it) {
   if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
   const actions = el("div", "feed-actions");
   if (it.status !== "discarded") {
-    actions.append(pillLight("Keep", () => spiritFeedAction(it.id, { status: "kept" })));
-    if (it.status !== "kept") actions.append(pillLight("Discard", () => spiritFeedAction(it.id, { status: "discarded" })));
-    actions.append(pillLight("Snooze 7d", () => spiritFeedAction(it.id, { status: "snoozed", days: 7 })));
-    if (!it.vaultNote) actions.append(pillLight("Save to vault", () => spiritSaveToVault(it.id)));
+    actions.append(pillLight("Keep", () => feedAction(it.id, { status: "kept" })));
+    if (it.status !== "kept") actions.append(pillLight("Discard", () => feedAction(it.id, { status: "discarded" })));
+    actions.append(pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })));
+    if (!it.vaultNote) actions.append(pillLight("Save to vault", () => feedSaveToVault(it.id)));
   } else {
-    actions.append(pillLight("Restore", () => spiritFeedAction(it.id, { status: "new" })));
+    actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
   }
   card.append(actions);
   return card;
 }
-async function spiritFeedAction(id, body) {
+async function feedAction(id, body) {
   setSaveState("saving");
-  try { await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
+  try { await fetch(`/api/feed/${encodeURIComponent(id)}/status`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
   catch (e) { setSaveState("error"); }
-  loadSpiritFeed();
-  loadSpiritsStatus(); // inbox count moved
+  loadFeed(); // re-renders + refreshes the badge from the same response
 }
-async function spiritSaveToVault(id) {
+async function feedSaveToVault(id) {
   setSaveState("saving");
   try {
-    const r = await fetch(`/api/spirits/feed/${encodeURIComponent(id)}/save-to-vault`, { method: "POST" });
+    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/save-to-vault`, { method: "POST" });
     if (!r.ok) throw new Error((await r.text()) || "save failed");
     setSaveState("saved");
   } catch (e) { setSaveState("error"); showToast("Save to vault failed: " + e.message, null, "error"); }
-  loadSpiritFeed();
-  loadSpiritsStatus();
+  loadFeed();
 }
 
 // ---- run now / ask a scout (spooled request; engine picks it up within ~5s) ----
@@ -1378,7 +1409,10 @@ async function spiritSaveToVault(id) {
 // as items) and calls onPick("spirit","ritual"). askRitual, when given, is
 // picked automatically if present so "Ask a scout" lands on options-scout's
 // research ritual without a needless second tap.
-function spiritPick(onPick) {
+async function spiritPick(onPick) {
+  // the catalog can be needed before SPIRITS was ever opened (Ask-a-scout lives
+  // in FEED now) — load it lazily.
+  if (!spiritStatusCache) await loadSpiritsStatusCacheOnly();
   const spirits = (spiritStatusCache || {}).spirits || {};
   const groups = Object.keys(spirits).sort().map((sp) => ({
     area: sp,
@@ -1390,22 +1424,31 @@ function spiritPick(onPick) {
     onPick(sp, rit);
   }, "No rituals found.");
 }
+async function loadSpiritsStatusCacheOnly() {
+  try { spiritStatusCache = await (await fetch("/api/spirits/status")).json(); } catch (e) {}
+}
 // spiritSpool drops a run request. It holds NO button state — the run's status
 // lives in the files (queued spool → running report). A 409 means the same
-// spirit/ritual is already active (the double-spool guard), so we jump to its
-// live row instead of writing a second spool (plan §2).
+// spirit/ritual is already active (the double-spool guard). From FEED the user
+// is never yanked away (feed-central §3: the loop closes in the feed) — a toast
+// links to the live row instead; from SPIRITS we jump to RUNS as before.
 async function spiritSpool(spirit, ritual, request) {
+  const onFeed = location.hash === "#/feed";
   let r;
   try { r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) }); }
   catch (e) { showToast("Run request failed: " + (e.message || e), null, "error"); return; }
   if (r.status === 409) {
     showToast(`${spirit}/${ritual} is already running — view`, () => { location.hash = "#/spirits/runs"; }, "info");
-    location.hash = "#/spirits/runs";
+    if (!onFeed) location.hash = "#/spirits/runs";
     return;
   }
   if (!r.ok) { showToast("Run request failed (" + r.status + ")", null, "error"); return; }
-  location.hash = "#/spirits/runs";
-  loadSpiritRuns();   // show the queued row immediately
+  if (onFeed) {
+    showToast(`${spirit}/${ritual} queued — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+  } else {
+    location.hash = "#/spirits/runs";
+    loadSpiritRuns(); // show the queued row immediately
+  }
   ensureLivePoll();   // and watch it through to done
 }
 function spiritRunNow() {
@@ -1789,8 +1832,8 @@ async function refreshSpiritApprovalBadge() {
   try { const d = await (await fetch("/api/spirits/approvals")).json(); setSpiritApprovalBadge((d.counts && d.counts.pending) || 0); } catch (e) {}
 }
 
-if (els.spiritRunNowBtn) els.spiritRunNowBtn.addEventListener("click", spiritRunNow);
-if (els.spiritAskBtn) els.spiritAskBtn.addEventListener("click", spiritAskScout);
+if (els.feedRunNowBtn) els.feedRunNowBtn.addEventListener("click", spiritRunNow);
+if (els.feedAskBtn) els.feedAskBtn.addEventListener("click", spiritAskScout);
 
 // ---- RITUALS board + in-app markdown editing ----
 // The board reads every ritual (next-fire, last outcome, ceiling, validity);
@@ -3144,30 +3187,35 @@ function cmdFact(label, val) {
 
 function route() {
   const h = location.hash;
-  const goals = h === "#/goals";
+  const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const cal = h === "#/calendar";
+  const fd = h === "#/feed";
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const note = h.startsWith("#/note/");
-  const day = !goals && !cal && !sp && !contacts && !reading && !note;
+  const day = !goals && !cal && !fd && !sp && !contacts && !reading && !note;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
+  els.feedView.hidden = !fd;
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
   els.readingView.hidden = !reading;
   els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
+  els.feedNav.hidden = !day;
   els.calNav.hidden = !day;
   els.contactsNav.hidden = !day;
   els.readingNav.hidden = !day;
   els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
+  if (day) refreshFeedBadge(); // pill only shows on the day view — keep it honest
   if (goals) loadGoals();
   else if (cal) loadCalendar();
-  else if (sp) showSpirits(); // excalibur harness: feed / runs / approvals
+  else if (fd) showFeed(); // manifest's one inbox
+  else if (sp) showSpirits(); // engine console: runs / rituals / approvals
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view

@@ -96,9 +96,6 @@ func (s *Server) Handler() http.Handler {
 	// confirm/reject, save-to-vault) and the run-now spool. The engine owns all
 	// execution. (This replaces the retired Hermes cockpit — plan §2.5.)
 	mux.HandleFunc("GET /api/spirits/status", s.handleSpiritsStatus)
-	mux.HandleFunc("GET /api/spirits/feed", s.handleSpiritsFeedList)
-	mux.HandleFunc("POST /api/spirits/feed/{id}/status", s.handleSpiritsFeedStatus)
-	mux.HandleFunc("POST /api/spirits/feed/{id}/save-to-vault", s.handleSpiritsFeedSaveToVault)
 	mux.HandleFunc("GET /api/spirits/runs", s.handleSpiritsRuns)
 	mux.HandleFunc("GET /api/spirits/runs/{id}", s.handleSpiritsRun)
 	mux.HandleFunc("GET /api/spirits/runs/{id}/prompt", s.handleSpiritsRunPrompt)
@@ -131,6 +128,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
 	mux.HandleFunc("GET /api/contacts/email-review", s.handleContactsEmailReview)
 	mux.HandleFunc("POST /api/contacts/email-dismiss", s.handleContactsEmailDismiss)
+
+	// FEED — manifest's one inbox, a first-class surface (feed-central §1).
+	// Spirit items + (later) app signals and virtual proposal cards. The old
+	// /api/spirits/feed* routes are gone — single user, no compat shims.
+	mux.HandleFunc("GET /api/feed", s.handleFeedList)
+	mux.HandleFunc("GET /api/feed/badge", s.handleFeedBadge)
+	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
+	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

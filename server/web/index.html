@@ -15,6 +15,7 @@
       <div class="pill-group">
         <span class="brand">◆</span>
         <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
+        <a class="pill" href="#/feed" id="feedNav">FEED<span id="feedNavBadge" class="nav-badge" hidden></span></a>
         <a class="pill" href="#/calendar" id="calNav">CAL</a>
         <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
         <a class="pill" href="#/reading" id="readingNav">READING</a>
@@ -105,6 +106,22 @@
     <div id="calGrid" class="cal-grid"></div>
   </section>
 
+  <!-- FEED — manifest's one inbox (spirit findings + digests; app signals and
+       tune-proposal pointers join it). Verdicts write back to item frontmatter;
+       the engine contract is untouched. -->
+  <section class="feed-view" id="feedView" hidden>
+    <div class="agent-head">
+      <span class="agent-title">FEED</span>
+      <div class="agent-actions">
+        <span id="feedFilters" class="feed-filters"></span>
+        <button id="feedAskBtn" class="pill light" title="Ask a scout to research a request (e.g. options-scout: buy X, find 5 options)">Ask a scout</button>
+        <button id="feedRunNowBtn" class="pill" title="Ask the engine to run a ritual now (spooled request — the engine picks it up)">▶ Run now</button>
+      </div>
+    </div>
+    <div id="feedSignals" class="feed-signals"></div>
+    <div id="feedList" class="feed-list"></div>
+  </section>
+
   <!-- SPIRITS — the excalibur harness console (sibling tree; engine owns execution) -->
   <section class="agents-view" id="spiritsView" hidden>
     <div class="panel-head">
@@ -113,22 +130,9 @@
     </div>
 
     <div class="agents-tabs" id="spiritsTabs">
-      <a class="atab" data-tab="feed" href="#/spirits">FEED<span id="spiritFeedBadge" class="atab-badge" hidden></span></a>
       <a class="atab" data-tab="runs" href="#/spirits/runs">RUNS</a>
       <a class="atab" data-tab="rituals" href="#/spirits/rituals">RITUALS</a>
       <a class="atab" data-tab="approvals" href="#/spirits/approvals">APPROVALS<span id="spiritApprBadge" class="atab-badge" hidden></span></a>
-    </div>
-
-    <!-- FEED (artifacts/feed/ — keep/discard/snooze write back to frontmatter) -->
-    <div class="agent-panel" id="sp-feed" hidden>
-      <div class="panel-subhead">
-        <span id="spiritFeedFilters" class="feed-filters"></span>
-        <span class="subhead-actions">
-          <button id="spiritAskBtn" class="pill light" title="Ask a scout to research a request (e.g. options-scout: buy X, find 5 options)">Ask a scout</button>
-          <button id="spiritRunNowBtn" class="pill" title="Ask the engine to run a ritual now (spooled request — the engine picks it up)">▶ Run now</button>
-        </span>
-      </div>
-      <div id="spiritFeedList" class="feed-list"></div>
     </div>
 
     <!-- RUNS (artifacts/runs/ — the legible decision trail per run) -->
