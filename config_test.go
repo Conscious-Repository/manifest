@@ -50,6 +50,42 @@ func TestDefaultDataDirHonorsEnv(t *testing.T) {
 	}
 }
 
+// SystemRoot (system-root-plan §3): defaults to "system", must be a plain
+// vault-relative folder name — never empty-after-clean, never escaping the vault,
+// never absolute, and never a dotfolder (Obsidian hides those).
+func TestSystemRootDefaultAndValidation(t *testing.T) {
+	t.Setenv("MANIFEST_CONFIG_DIR", "/home/u/.config/manifest")
+	cfg, err := LoadConfig(filepath.Join(t.TempDir(), "does-not-exist.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SystemRoot != "system" {
+		t.Fatalf("SystemRoot default = %q, want \"system\"", cfg.SystemRoot)
+	}
+	valid := []string{"system", "sys", "system/nested"} // nested is tolerated (cleaned)
+	for _, v := range valid {
+		if err := validateSystemRoot(v); err != nil {
+			t.Errorf("validateSystemRoot(%q) = %v, want ok", v, err)
+		}
+	}
+	invalid := []string{"", ".", "..", "../outside", "/abs/path", "a/../..", ".hidden"}
+	for _, v := range invalid {
+		if err := validateSystemRoot(v); err == nil {
+			t.Errorf("validateSystemRoot(%q) = ok, want error", v)
+		}
+	}
+}
+
+// The zone line only exists if it is WIRED: vaultConfig must carry SystemRoot
+// into the daily scanner (regression: a dropped edit left it "" and date-named
+// engine files under system/excalibur classified as dailies).
+func TestVaultConfigCarriesSystemRoot(t *testing.T) {
+	vc := vaultConfig(Config{VaultPath: "/v", SystemRoot: "system"})
+	if vc.SystemRoot != "system" {
+		t.Fatalf("vaultConfig dropped SystemRoot: %+v", vc)
+	}
+}
+
 // Derived-data home (and everything under it: calendar-cache, index.db) must live
 // OUTSIDE the vault — the invariant the startup guard enforces.
 func TestDerivedDataLivesOutsideVault(t *testing.T) {

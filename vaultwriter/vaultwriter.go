@@ -16,7 +16,10 @@ import (
 )
 
 // Writer targets a single vault root.
-type Writer struct{ vault string }
+type Writer struct {
+	vault      string
+	systemRoot string // vault-relative system-zone folder for the write guard ("" → "system")
+}
 
 // New builds a writer for the given vault path ("" disables saving).
 func New(vaultPath string) *Writer { return &Writer{vault: vaultPath} }
@@ -41,6 +44,9 @@ func (w *Writer) SaveExtrinsic(title, itemType, why, link, source, body string) 
 		return "", errors.New("invalid note path")
 	}
 	rel := filepath.Join("extrinsic", name+".md")
+	if err := w.Guard(filepath.ToSlash(rel), WriteRawUser); err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(full); err == nil {
 		return rel, nil // already exists — write-once, keep the user's note
 	}

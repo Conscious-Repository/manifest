@@ -2480,6 +2480,8 @@ async function loadNote(path) {
     _note = await res.json();
   } catch (e) { els.noteRendered.textContent = "Error loading note."; return; }
   els.noteTitle.textContent = _note.name;
+  // quiet zone badge: system-zone notes are app-managed markdown, still editable
+  if (_note.zone === "system") els.noteTitle.append(el("span", "note-zone-badge", "SYSTEM"));
   els.noteObsidian.href = "obsidian://open?vault=" + encodeURIComponent(_note.vault) +
     "&file=" + encodeURIComponent(_note.path.replace(/\.md$/, ""));
   renderNoteBody();

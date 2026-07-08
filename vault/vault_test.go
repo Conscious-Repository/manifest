@@ -23,22 +23,27 @@ func testConfig(root string) Config {
 		Root:        root,
 		NewDailyDir: "intrinsic",
 		GoalsName:   "goals.md",
-		SkipDirs:    []string{".git", ".obsidian", ".trash", "attachments", "Agents"},
+		SkipDirs:    []string{".git", ".obsidian", ".trash", "attachments"},
+		SystemRoot:  "system",
 	}
 }
 
 // buildVault creates a fixture shaped like the real vault: a root daily, a
 // subfolder daily, a date-PREFIXED note that must not classify as daily, a
-// goals file, a type:agent note, and content inside skipped directories.
+// goals file, content inside skipped directories, and SYSTEM-ZONE files that
+// must never classify (a date-named file under system/excalibur/ is not a
+// daily; a goals-named file under system/ is not the goals master).
 func buildVault(t *testing.T) string {
 	dir := t.TempDir()
 	write(t, filepath.Join(dir, "2026-06-29.md"), "#journal\nhello\n")
 	write(t, filepath.Join(dir, "intrinsic", "2026-06-26.md"), "#journal\nfoo\n")
 	write(t, filepath.Join(dir, "intrinsic", "2026-01-09 meeting.md"), "notes\n")
 	write(t, filepath.Join(dir, "goals.md"), "# Goals\n")
-	write(t, filepath.Join(dir, "categories", "team.md"), "---\ntype: agent\n---\nbrief\n")
 	write(t, filepath.Join(dir, ".obsidian", "workspace.json"), "{}\n")
 	write(t, filepath.Join(dir, "attachments", "note.md"), "should be skipped\n")
+	// system zone: date-named + goals-named files that must NOT classify
+	write(t, filepath.Join(dir, "system", "excalibur", "spirits", "x", "memories", "window", "2026-07-07.md"), "engine memory\n")
+	write(t, filepath.Join(dir, "system", "crm", "fundraising", "goals.md"), "not the goals master\n")
 	return dir
 }
 
@@ -60,11 +65,12 @@ func TestClassifyAndScan(t *testing.T) {
 	if _, ok := snap.Daily["2026-01-09"]; ok {
 		t.Fatal("date-prefixed meeting note must NOT classify as daily")
 	}
-	if snap.GoalsPath == "" {
-		t.Fatal("goals.md not found")
+	// zone short-circuit: daily/goals detection applies ONLY in the knowledge zone
+	if _, ok := snap.Daily["2026-07-07"]; ok {
+		t.Fatal("a date-named file under system/excalibur/ must NOT classify as daily")
 	}
-	if len(snap.Agents) != 1 || filepath.Base(snap.Agents[0]) != "team.md" {
-		t.Fatalf("expected one agent (team.md), got %v", snap.Agents)
+	if snap.GoalsPath != filepath.Join(dir, "goals.md") {
+		t.Fatalf("goals master must be the knowledge-zone goals.md, got %q", snap.GoalsPath)
 	}
 	for _, p := range snap.Daily {
 		if filepath.Base(filepath.Dir(p)) == "attachments" {
@@ -121,7 +127,7 @@ func TestScanIdempotent(t *testing.T) {
 	s := NewScanner(testConfig(dir))
 	a, _ := s.Scan()
 	b, _ := s.Scan()
-	if len(a.Daily) != len(b.Daily) || a.GoalsPath != b.GoalsPath || len(a.Agents) != len(b.Agents) {
+	if len(a.Daily) != len(b.Daily) || a.GoalsPath != b.GoalsPath {
 		t.Fatal("scan not idempotent")
 	}
 	for k, v := range a.Daily {

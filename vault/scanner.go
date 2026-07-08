@@ -12,13 +12,17 @@ type Config struct {
 	NewDailyDir string   // dir (relative to Root) where notes are created on save
 	GoalsName   string   // filename that marks the goals master file, e.g. "goals.md"
 	SkipDirs    []string // directory base names to skip (in addition to dotdirs)
+	// SystemRoot is the vault-relative system-zone folder (system-root-plan §1).
+	// Daily-note and goals classification apply ONLY in the knowledge zone, so the
+	// scanner short-circuits the whole subtree: a date-named file under
+	// system/excalibur/ must never be mistaken for a daily note. "" disables.
+	SystemRoot string
 }
 
 // Snapshot is an immutable index of where things live, produced by one Scan.
 type Snapshot struct {
 	Daily     map[string]string // "2026-06-29" -> absolute path
 	GoalsPath string            // absolute path to goals.md, or ""
-	Agents    []string          // absolute paths of type:agent notes
 }
 
 // Scanner walks the vault and classifies markdown files by convention.
@@ -49,6 +53,9 @@ func (s *Scanner) Scan() (*Snapshot, error) {
 			if skip[name] || strings.HasPrefix(name, ".") {
 				return filepath.SkipDir
 			}
+			if underSystemZone(s.cfg, path) { // zone short-circuit: no dailies/goals there
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(d.Name(), ".md") {
@@ -61,10 +68,9 @@ func (s *Scanner) Scan() (*Snapshot, error) {
 			if snap.GoalsPath == "" {
 				snap.GoalsPath = path
 			}
-		case KindAgent:
-			snap.Agents = append(snap.Agents, path)
 		}
 		return nil
 	})
 	return snap, err
 }
+

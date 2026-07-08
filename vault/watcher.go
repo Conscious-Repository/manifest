@@ -61,6 +61,9 @@ func (w *Watcher) addRecursive(root string) error {
 			if skip[name] || strings.HasPrefix(name, ".") {
 				return filepath.SkipDir
 			}
+			if underSystemZone(w.cfg, path) { // no dailies/goals there; don't watch engine churn
+				return filepath.SkipDir
+			}
 		}
 		_ = w.fsw.Add(path)
 		return nil
@@ -110,8 +113,10 @@ func (w *Watcher) loop(ctx context.Context) {
 				rebuild = true
 			case ev.Op&(fsnotify.Create|fsnotify.Write) != 0:
 				if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-					_ = w.fsw.Add(ev.Name) // watch a newly created directory
-					rebuild = true
+					if !underSystemZone(w.cfg, ev.Name) { // system zone stays unwatched
+						_ = w.fsw.Add(ev.Name) // watch a newly created directory
+						rebuild = true
+					}
 				} else if strings.HasSuffix(ev.Name, ".md") {
 					touched[ev.Name] = true
 				}

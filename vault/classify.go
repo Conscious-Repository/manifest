@@ -12,7 +12,6 @@ const (
 	KindOther Kind = iota
 	KindDaily
 	KindGoals
-	KindAgent
 )
 
 // dailyRe matches a daily-note filename EXACTLY: YYYY-MM-DD.md and nothing more.
@@ -30,11 +29,8 @@ func classify(base, path, goalsName string) (Kind, string) {
 	if strings.EqualFold(base, goalsName) {
 		return KindGoals, ""
 	}
-	switch strings.ToLower(frontmatterType(path)) {
-	case "goals":
+	if strings.EqualFold(frontmatterType(path), "goals") {
 		return KindGoals, ""
-	case "agent":
-		return KindAgent, ""
 	}
 	return KindOther, ""
 }

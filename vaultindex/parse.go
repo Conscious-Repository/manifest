@@ -27,6 +27,7 @@ type Note struct {
 	Name          string   // basename without .md
 	Date          string   // "YYYY-MM-DD" or ""
 	DateSource    string   // "filename" | "frontmatter" | ""
+	Zone          string   // "knowledge" | "system" — set by the indexer from Config.zoneOf
 	Categories    []string // exact frontmatter values, order preserved, de-duped
 	Aliases       []string // union of alias: and aliases:
 	Emails        []string // union of email: and emails: (confirm-once contact matching)

@@ -213,3 +213,153 @@ func counts(t *testing.T, ix *Index) map[string]int {
 	}
 	return out
 }
+
+// ---- zone model (system-root-plan §1/§3) ----
+
+// zoneFixture is fixture plus a SYSTEM ZONE: a CRM record linking a person, a
+// date-named engine file, and an agents brief — all under system/.
+func zoneFixture(t *testing.T) (*Index, string) {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("alice.md", "---\ncategories: [people]\n---\nfriend\n")
+	write("2026-05-01 alice sync.md", "---\ncategories: [sync]\n---\n[[alice]]\n- [ ] send deck\n")
+	// CRM record (system zone, HUMAN-edited): links alice + a person with no note.
+	// Dated FRONTMATTER + an unchecked task to prove none of it leaks into contacts.
+	write("system/crm/fundraising/acme ventures.md",
+		"---\nstage: intro\ndate: 2026-07-07\npeople: [\"[[alice]]\", \"[[carol newperson]]\"]\n---\n[[alice]] intro'd via [[carol newperson]]\n- [ ] follow up\n")
+	// engine regions under system/: excluded from FTS entirely
+	write("system/excalibur/spirits/x/memories/window/2026-07-07.md", "engine memory naming [[alice]]\n")
+	write("system/agents/brief.md", "brief on [[alice]] zebrafish\n")
+	// knowledge-zone note for FTS contrast
+	write("zebra notes.md", "zebrafish research\n")
+
+	ix, err := Open(Config{VaultRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ix.Close() })
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+	return ix, root
+}
+
+// A [[Person]] link inside a system-zone record resolves (both zones indexed)
+// and appears in raw Backlinks (the CRM-strip join), but creates NO contact,
+// timeline entry, triage item, open loop, or interaction date.
+func TestSystemZoneLinksCreateNoContactSignals(t *testing.T) {
+	ix, _ := zoneFixture(t)
+
+	// resolves across the zone line
+	if e, ok := ix.Resolve("acme ventures"); !ok || e.NotePath != "system/crm/fundraising/acme ventures.md" {
+		t.Fatalf("system-zone note must resolve as an entity: %+v ok=%v", e, ok)
+	}
+
+	// carol is linked ONLY from the CRM record → must NOT be a note-less target (no triage)
+	targets, err := ix.NoteLessTargets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tg := range targets {
+		if tg.Key == "carol newperson" {
+			t.Fatalf("a person linked only from a system-zone record must not reach triage: %+v", tg)
+		}
+	}
+
+	// alice's timeline: only the knowledge-zone sync — never the CRM record
+	tl, err := ix.Timeline("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tl) != 1 || tl[0].Path != "2026-05-01 alice sync.md" {
+		t.Fatalf("timeline must be knowledge-only, got %+v", tl)
+	}
+	// last-met unchanged by the CRM record's 2026-07-07 date
+	if d, _, ok := ix.LastMet("alice"); !ok || d != "2026-05-01" {
+		t.Fatalf("last-met = %q, want 2026-05-01 (system-zone dates never count)", d)
+	}
+	// interaction dates exclude the CRM date too
+	dates, _ := ix.InteractionDatesByKey()
+	if got := dates["alice"]; len(got) != 1 || got[0] != "2026-05-01" {
+		t.Fatalf("interaction dates = %v, want [2026-05-01]", got)
+	}
+	// the CRM record's unchecked task is not an open loop for alice
+	loops, _ := ix.OpenLoops([]string{"alice"})
+	for _, l := range loops {
+		if l.Path == "system/crm/fundraising/acme ventures.md" {
+			t.Fatalf("CRM task must not surface as an open loop: %+v", l)
+		}
+	}
+
+	// ...but the link IS visible on raw Backlinks (the CRM strip joins through it)
+	bls, _ := ix.Backlinks("alice")
+	found := false
+	for _, b := range bls {
+		if b.Path == "system/crm/fundraising/acme ventures.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the CRM record must appear among raw backlinks (both zones indexed)")
+	}
+}
+
+// FTS: AI regions (system/agents, system/excalibur) are excluded entirely; other
+// system-zone notes are indexed but Mentions (a contacts surface) stays knowledge-only.
+func TestZoneFTSAndMentions(t *testing.T) {
+	ix, _ := zoneFixture(t)
+	var n int
+	if err := ix.DB().QueryRow(
+		`SELECT COUNT(*) FROM notes_fts JOIN notes n ON n.id=notes_fts.rowid WHERE n.ai_authored=1`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("AI-region notes must not be in FTS, found %d", n)
+	}
+	// CRM record IS in FTS (searchable) …
+	if err := ix.DB().QueryRow(
+		`SELECT COUNT(*) FROM notes_fts JOIN notes n ON n.id=notes_fts.rowid WHERE n.path LIKE 'system/crm/%'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("CRM records must stay searchable in FTS, found %d", n)
+	}
+	// … but Mentions (contact surface) returns knowledge-zone notes only
+	refs, err := ix.Mentions("zebrafish", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 1 || refs[0].Path != "zebra notes.md" {
+		t.Fatalf("mentions must be knowledge-only, got %+v", refs)
+	}
+}
+
+// The zone column reflects the path split; a date-named file under
+// system/excalibur/ keeps its parsed date but its zone keeps it out of every
+// contact query (the vault scanner independently keeps it out of dailies).
+func TestZoneColumnAndNoteZone(t *testing.T) {
+	ix, _ := zoneFixture(t)
+	if z := ix.NoteZone("system/crm/fundraising/acme ventures.md"); z != "system" {
+		t.Fatalf("CRM record zone = %q, want system", z)
+	}
+	if z := ix.NoteZone("alice.md"); z != "knowledge" {
+		t.Fatalf("alice zone = %q, want knowledge", z)
+	}
+	var date, zone string
+	if err := ix.DB().QueryRow(
+		`SELECT date, zone FROM notes WHERE path='system/excalibur/spirits/x/memories/window/2026-07-07.md'`).Scan(&date, &zone); err != nil {
+		t.Fatal(err)
+	}
+	if date != "2026-07-07" || zone != "system" {
+		t.Fatalf("engine file date/zone = %q/%q, want 2026-07-07/system", date, zone)
+	}
+}
