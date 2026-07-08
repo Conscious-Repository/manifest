@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"manifest/approvals"
-	"manifest/feed"
 	"manifest/spirits"
 )
 
@@ -25,7 +24,7 @@ func (s *Server) handleSpiritsStatus(w http.ResponseWriter, r *http.Request) {
 		"enabled":     true,
 		"engineAlive": alive,
 		"spirits":     s.spirits.Spirits(),
-		"feedInbox":   len(s.spirits.Feed.List(feed.Filter{Status: "inbox"}, time.Now())), // FEED sub-tab badge
+		"feedInbox":   s.feedInboxCount(time.Now()), // same compute as /api/feed — counts never drift
 	}
 	if !at.IsZero() {
 		resp["heartbeat"] = at.Format(time.RFC3339)
@@ -33,54 +32,8 @@ func (s *Server) handleSpiritsStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
-func (s *Server) handleSpiritsFeedList(w http.ResponseWriter, r *http.Request) {
-	if s.spirits == nil {
-		writeJSON(w, map[string]any{"data": []any{}})
-		return
-	}
-	f := feed.Filter{
-		Status: r.URL.Query().Get("status"),
-		Type:   r.URL.Query().Get("type"),
-		Domain: r.URL.Query().Get("domain"),
-	}
-	writeJSON(w, map[string]any{"data": s.spirits.Feed.List(f, time.Now())})
-}
-
-// handleSpiritsFeedStatus mirrors handleFeedStatus against the excalibur feed
-// surface — the user's own decision written back to item frontmatter.
-func (s *Server) handleSpiritsFeedStatus(w http.ResponseWriter, r *http.Request) {
-	if s.spirits == nil {
-		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
-		return
-	}
-	var b struct {
-		Status string `json:"status"` // kept | discarded | snoozed | new
-		Days   int    `json:"days"`   // for snooze
-	}
-	if err := decode(r, &b); err != nil {
-		httpError(w, err)
-		return
-	}
-	id := r.PathValue("id")
-	var (
-		it  feed.Item
-		err error
-	)
-	if b.Status == "snoozed" {
-		days := b.Days
-		if days <= 0 {
-			days = 7
-		}
-		it, err = s.spirits.Feed.Snooze(id, time.Now().Add(time.Duration(days)*24*time.Hour))
-	} else {
-		it, err = s.spirits.Feed.SetStatus(id, b.Status)
-	}
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, it)
-}
+// (Feed handlers moved to server/feed.go — FEED is a first-class surface now;
+// SPIRITS keeps only the engine console: runs, rituals, approvals, status.)
 
 func (s *Server) handleSpiritsRuns(w http.ResponseWriter, r *http.Request) {
 	if s.spirits == nil {
@@ -124,32 +77,6 @@ func (s *Server) handleSpiritsRunPrompt(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, map[string]any{"data": turns})
-}
-
-// handleSpiritsFeedSaveToVault promotes a feed item into a real extrinsic/
-// vault note (write-once) and records the note path back on the item. The ONLY
-// vault write, user-triggered — ported from the retired Hermes feed handler.
-func (s *Server) handleSpiritsFeedSaveToVault(w http.ResponseWriter, r *http.Request) {
-	if s.spirits == nil || s.vault == nil || !s.vault.Enabled() {
-		http.Error(w, "vault save unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
-	if !ok {
-		http.Error(w, "item not found", http.StatusNotFound)
-		return
-	}
-	rel, err := s.vault.SaveExtrinsic(it.Title, it.Type, it.Why, it.Link, it.Source, it.Body)
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	updated, err := s.spirits.Feed.SetVaultNote(it.ID, rel)
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, updated)
 }
 
 // Approvals — the ONE inbox (excalibur/artifacts/approvals, plan §2.5).

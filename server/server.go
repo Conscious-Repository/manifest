@@ -13,6 +13,7 @@ import (
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/reading"
+	"manifest/signals"
 	"manifest/spirits"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -36,6 +37,8 @@ type Server struct {
 	// Reading (book shelf) over the extrinsic zone. Nilable.
 	reading           *reading.Service
 	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
+	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
+	signals *signals.Service
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -61,6 +64,9 @@ func (s *Server) UseReading(r *reading.Service, extrinsicRoot string) {
 	s.reading = r
 	s.extrinsicRootName = extrinsicRoot
 }
+
+// UseSignals wires the app-signal emitters (FEED cards).
+func (s *Server) UseSignals(sig *signals.Service) { s.signals = sig }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -96,9 +102,6 @@ func (s *Server) Handler() http.Handler {
 	// confirm/reject, save-to-vault) and the run-now spool. The engine owns all
 	// execution. (This replaces the retired Hermes cockpit — plan §2.5.)
 	mux.HandleFunc("GET /api/spirits/status", s.handleSpiritsStatus)
-	mux.HandleFunc("GET /api/spirits/feed", s.handleSpiritsFeedList)
-	mux.HandleFunc("POST /api/spirits/feed/{id}/status", s.handleSpiritsFeedStatus)
-	mux.HandleFunc("POST /api/spirits/feed/{id}/save-to-vault", s.handleSpiritsFeedSaveToVault)
 	mux.HandleFunc("GET /api/spirits/runs", s.handleSpiritsRuns)
 	mux.HandleFunc("GET /api/spirits/runs/{id}", s.handleSpiritsRun)
 	mux.HandleFunc("GET /api/spirits/runs/{id}/prompt", s.handleSpiritsRunPrompt)
@@ -131,6 +134,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
 	mux.HandleFunc("GET /api/contacts/email-review", s.handleContactsEmailReview)
 	mux.HandleFunc("POST /api/contacts/email-dismiss", s.handleContactsEmailDismiss)
+
+	// FEED — manifest's one inbox, a first-class surface (feed-central §1).
+	// Spirit items + (later) app signals and virtual proposal cards. The old
+	// /api/spirits/feed* routes are gone — single user, no compat shims.
+	mux.HandleFunc("GET /api/feed", s.handleFeedList)
+	mux.HandleFunc("GET /api/feed/badge", s.handleFeedBadge)
+	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
+	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
+	mux.HandleFunc("POST /api/feed/{id}/promote", s.handleFeedPromote) // "→ today"
+	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig)         // "dig →"
+	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
+	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
+	mux.HandleFunc("POST /api/feed/signal/promote", s.handleSignalPromote)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

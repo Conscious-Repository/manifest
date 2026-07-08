@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/mdfm"
@@ -46,8 +47,14 @@ type Filter struct {
 	Domain string
 }
 
-// Store is the feed directory.
-type Store struct{ dir string }
+// Store is the feed directory. The mutex serializes the dashboard's writers
+// (verdicts, promote auto-keep) — mutate is a read-modify-write on the final
+// path, and feed-central adds concurrent write paths. Dashboard-side only; the
+// on-disk contract with the engine is unchanged.
+type Store struct {
+	dir string
+	mu  sync.Mutex
+}
 
 // NewStore roots the store at <agentsDir>/feed and ensures it exists.
 func NewStore(agentsDir string) *Store {
@@ -145,6 +152,8 @@ func (s *Store) Get(id string) (Item, bool) {
 // Upsert writes the item if new; if an item with the same id already exists it is
 // left untouched (dedupe) and returned with created=false.
 func (s *Store) Upsert(it Item) (Item, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if existing, ok := s.Get(it.ID); ok {
 		return existing, false, nil
 	}
@@ -229,6 +238,8 @@ func (s *Store) Materialize(raw, agent, profile string, now time.Time) ([]Item, 
 func (s *Store) path(id string) string { return filepath.Join(s.dir, id+".md") }
 
 func (s *Store) mutate(id string, fn func(*Item)) (Item, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	it, ok := s.Get(id)
 	if !ok {
 		return Item{}, os.ErrNotExist
