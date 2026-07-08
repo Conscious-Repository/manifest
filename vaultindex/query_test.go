@@ -241,6 +241,10 @@ func zoneFixture(t *testing.T) (*Index, string) {
 	write("system/agents/brief.md", "brief on [[alice]] zebrafish\n")
 	// knowledge-zone note for FTS contrast
 	write("zebra notes.md", "zebrafish research\n")
+	// EXTRINSIC zone (reading-plan): a book record linking alice (a real contact)
+	// + a note-less author — searchable, but non-contact like the system zone.
+	write("extrinsic/thinking, fast and slow.md",
+		"---\ncategories: [books]\nauthors: [\"[[alice]]\", \"[[daniel kahneman]]\"]\ndate-read: 2026-07-07\n---\n#book zebrafish decoy\n")
 
 	ix, err := Open(Config{VaultRoot: root})
 	if err != nil {
@@ -251,6 +255,38 @@ func zoneFixture(t *testing.T) (*Index, string) {
 		t.Fatal(err)
 	}
 	return ix, root
+}
+
+// The extrinsic zone (books/articles) is indexed + searchable but non-contact:
+// an author [[link]] in a book record creates no contact, timeline entry, or
+// triage item, and its date never counts as a "last met" (reading-plan §3).
+func TestExtrinsicZoneIsNonContact(t *testing.T) {
+	ix, _ := zoneFixture(t)
+
+	// the book record resolves + is searchable
+	if e, ok := ix.Resolve("thinking, fast and slow"); !ok || ix.NoteZone(e.NotePath) != "extrinsic" {
+		t.Fatalf("book record must resolve in the extrinsic zone: %+v ok=%v", e, ok)
+	}
+	if refs, _ := ix.Category("books", SortNameAsc); len(refs) != 1 {
+		t.Fatalf("Category(books) must include the extrinsic book record, got %d", len(refs))
+	}
+	// alice's timeline/last-met ignore the book's 2026-07-07 date entirely
+	tl, _ := ix.Timeline("alice")
+	for _, e := range tl {
+		if e.Path == "extrinsic/thinking, fast and slow.md" {
+			t.Fatal("a book record must not appear in a person's timeline")
+		}
+	}
+	if d, _, _ := ix.LastMet("alice"); d == "2026-07-07" {
+		t.Fatal("a book's date-read must never become a person's last-met")
+	}
+	// daniel kahneman (linked ONLY from the book) is not a note-less contact target
+	targets, _ := ix.NoteLessTargets()
+	for _, tg := range targets {
+		if tg.Key == "daniel kahneman" {
+			t.Fatalf("a book author must not reach triage: %+v", tg)
+		}
+	}
 }
 
 // A [[Person]] link inside a system-zone record resolves (both zones indexed)

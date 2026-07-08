@@ -98,6 +98,7 @@ except `vaultPath`; anything omitted falls back to the default below.
 | `port` | `7777` | Local port the UI is served on. |
 | `dataDir` | `~/.config/manifest` | Where all derived state lives. **Must be outside the vault.** |
 | `systemRoot` | `system` | Vault-relative folder for the **system zone**: structured, app-managed markdown (agents, excalibur, CRMs). Everything outside it is the knowledge zone — daily/goals classification and contact extraction read only there, and new structured writes may land only inside it. |
+| `extrinsicRoot` | `extrinsic` | Vault-relative folder for the **extrinsic zone**: content you didn't originate (books, articles, papers). Indexed and searchable like any note, but non-contact — an author `[[link]]` in a book record never creates a contact or timeline entry. |
 | `excaliburPath` | *(unset)* | Root of an excalibur harness tree (conventionally `<vault>/system/excalibur`). Unset → the Spirits tab is disabled. |
 
 **Flags** override the config: `-config <path>` (default `config.json`),

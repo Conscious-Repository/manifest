@@ -3,10 +3,16 @@
   "newDailyDir": "intrinsic",
   "dailyNoteFormat": "2006-01-02",
   "goalsFileName": "goals.md",
-  "skipDirs": [".git", ".obsidian", ".trash", "attachments"],
+  "skipDirs": [
+    ".git",
+    ".obsidian",
+    ".trash",
+    "attachments"
+  ],
   "scheduleStart": 8,
   "scheduleEnd": 18,
   "port": 7777,
   "systemRoot": "system",
+  "extrinsicRoot": "extrinsic",
   "excaliburPath": "~/Documents/index.ben/system/excalibur"
 }

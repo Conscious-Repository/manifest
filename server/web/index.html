@@ -17,6 +17,7 @@
         <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
         <a class="pill" href="#/calendar" id="calNav">CAL</a>
         <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
+        <a class="pill" href="#/reading" id="readingNav">READING</a>
         <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
         <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
       </div>
@@ -196,6 +197,30 @@
       </div>
       <div id="contactPage" class="contact-page"></div>
     </div>
+  </section>
+
+  <!-- READING — the book shelf over the extrinsic zone -->
+  <section class="reading-view" id="readingView" hidden>
+    <div class="agent-head">
+      <span class="agent-title">READING</span>
+      <div class="agent-actions">
+        <input id="bookSearch" class="contact-search" type="search" placeholder="Search title / author…" />
+        <select id="bookSort" class="book-select" title="Sort the shelf">
+          <option value="date">date read</option>
+          <option value="rating">rating</option>
+          <option value="title">title</option>
+          <option value="year">year written</option>
+        </select>
+        <select id="bookFilter" class="book-select" title="Filter by status">
+          <option value="all">all</option>
+          <option value="reading">reading</option>
+          <option value="read">read</option>
+        </select>
+        <button id="bookAddBtn" class="pill" title="Add a book you're starting">+ book</button>
+      </div>
+    </div>
+    <div id="readingStrip" class="reading-strip"></div>
+    <div id="bookShelf" class="book-shelf"></div>
   </section>
 
   <!-- UNIVERSAL NOTE VIEW — any vault note, rendered + raw-editable -->

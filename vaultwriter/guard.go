@@ -14,9 +14,9 @@ import (
 //     the legacy vault-root spellings) are never written by the dashboard, under
 //     any class. The excalibur engine owns that subtree; the dashboard's spirits
 //     editor goes through its own allow-listed store, not this writer.
-//   - DATABASE-class writes (the markdown databases: CRMs, home board, aion)
-//     are legal only under <systemRoot>/ — a structured record can never land
-//     in the knowledge zone.
+//   - DATABASE-class writes (the markdown databases: CRMs, home board, aion,
+//     and the book records) are legal only under a STRUCTURED root —
+//     <systemRoot>/ or <extrinsicRoot>/ — never in the knowledge zone.
 //   - RAW-USER-class writes (the note editor, contact-note saves, task toggles
 //     — the user's own hands on a note they are looking at) remain legal in
 //     both zones, exactly as shipped today. Nothing NEW writes knowledge-zone
@@ -34,10 +34,11 @@ const (
 	WriteDatabase
 )
 
-// WithSystemRoot sets the vault-relative system-zone folder the guard uses
-// (default "system"). Returns the writer for chaining at construction.
-func (w *Writer) WithSystemRoot(root string) *Writer {
-	w.systemRoot = strings.Trim(filepath.ToSlash(root), "/")
+// WithZoneRoots sets the vault-relative structured-zone folders the guard uses
+// (defaults "system" / "extrinsic"). Returns the writer for chaining.
+func (w *Writer) WithZoneRoots(system, extrinsic string) *Writer {
+	w.systemRoot = strings.Trim(filepath.ToSlash(system), "/")
+	w.extrinsicRoot = strings.Trim(filepath.ToSlash(extrinsic), "/")
 	return w
 }
 
@@ -46,6 +47,13 @@ func (w *Writer) systemRootOrDefault() string {
 		return "system"
 	}
 	return w.systemRoot
+}
+
+func (w *Writer) extrinsicRootOrDefault() string {
+	if w.extrinsicRoot == "" {
+		return "extrinsic"
+	}
+	return w.extrinsicRoot
 }
 
 // Guard decides whether a vault-relative write is legal for the given class.
@@ -62,8 +70,11 @@ func (w *Writer) Guard(rel string, class WriteClass) error {
 		}
 	}
 	if class == WriteDatabase {
-		if clean != sr && !strings.HasPrefix(clean, sr+"/") {
-			return errors.New("database records live under " + sr + "/ — knowledge-zone writes are refused")
+		er := w.extrinsicRootOrDefault()
+		underSystem := clean == sr || strings.HasPrefix(clean, sr+"/")
+		underExtrinsic := clean == er || strings.HasPrefix(clean, er+"/")
+		if !underSystem && !underExtrinsic {
+			return errors.New("database records live under " + sr + "/ or " + er + "/ — knowledge-zone writes are refused")
 		}
 	}
 	return nil

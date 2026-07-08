@@ -22,17 +22,28 @@ type Config struct {
 	AIRegions []string // vault-relative path prefixes tagged AI-authored (default: agents/excalibur under SystemRoot + legacy roots)
 	SkipDirs  []string // directory base names never walked (default: dotdirs + .trash)
 	// SystemRoot is the vault-relative system-zone folder (system-root-plan §1).
-	// Both zones are indexed (wikilinks resolve across the line), but each note
+	// All zones are indexed (wikilinks resolve across the lines), but each note
 	// carries its zone so contacts extraction can read ONLY knowledge-zone notes.
 	// "" defaults to "system".
 	SystemRoot string
+	// ExtrinsicRoot is the vault-relative extrinsic-zone folder (reading-plan):
+	// content the user did not originate (books, articles, papers). Indexed and
+	// searchable, but non-contact like the system zone. "" defaults to "extrinsic".
+	ExtrinsicRoot string
 }
 
 func (c Config) systemRoot() string {
 	if strings.TrimSpace(c.SystemRoot) == "" {
 		return "system"
 	}
-	return strings.Trim(c.SystemRoot, "/")
+	return strings.Trim(filepath.ToSlash(c.SystemRoot), "/")
+}
+
+func (c Config) extrinsicRoot() string {
+	if strings.TrimSpace(c.ExtrinsicRoot) == "" {
+		return "extrinsic"
+	}
+	return strings.Trim(filepath.ToSlash(c.ExtrinsicRoot), "/")
 }
 
 // aiRegions are the engine-authored subtrees. The default covers both the
@@ -47,12 +58,16 @@ func (c Config) aiRegions() []string {
 	return []string{"Agents/", "excalibur/", sr + "/agents/", sr + "/excalibur/"}
 }
 
-// zoneOf classifies a vault-relative path: under SystemRoot → "system", else
-// "knowledge" (system-root-plan §1). Matched by path prefix, never base name.
+// zoneOf classifies a vault-relative path into its zone: under SystemRoot →
+// "system", under ExtrinsicRoot → "extrinsic", else "knowledge". Only the
+// knowledge zone feeds contacts (system-root-plan §1; reading-plan amendment).
+// Matched by path prefix, never base name.
 func (c Config) zoneOf(rel string) string {
-	sr := c.systemRoot()
-	if rel == sr || strings.HasPrefix(rel, sr+"/") {
+	if sr := c.systemRoot(); rel == sr || strings.HasPrefix(rel, sr+"/") {
 		return "system"
+	}
+	if er := c.extrinsicRoot(); rel == er || strings.HasPrefix(rel, er+"/") {
+		return "extrinsic"
 	}
 	return "knowledge"
 }
