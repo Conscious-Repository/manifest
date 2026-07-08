@@ -11,6 +11,7 @@ import (
 	"manifest/approvals"
 	"manifest/daily"
 	"manifest/feed"
+	"manifest/signals"
 	"manifest/spirits"
 )
 
@@ -33,7 +34,18 @@ func (s *Server) feedInboxCount(now time.Time) int {
 	if s.spirits != nil {
 		n += len(s.spirits.Feed.List(feed.Filter{Status: "inbox"}, now))
 	}
+	if s.signals != nil {
+		n += s.signals.Count(now)
+	}
 	return n
+}
+
+// activeSignals returns the app-signal cards (empty when disabled).
+func (s *Server) activeSignals(now time.Time) []signals.Signal {
+	if s.signals == nil {
+		return []signals.Signal{}
+	}
+	return s.signals.Active(now)
 }
 
 // handleFeedList serves the unified stream: spirit items, virtual proposal
@@ -51,7 +63,7 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"items":     items,
-		"signals":   []any{}, // Phase 3
+		"signals":   s.activeSignals(now),
 		"proposals": s.feedProposals(),
 		"badge":     s.feedInboxCount(now),
 	})
@@ -265,6 +277,88 @@ func (s *Server) onDemandRitual(spirit string) string {
 		return ""
 	}
 	return names[0]
+}
+
+// ---- signal actions (feed-central §2) ----
+// Signals carry namespaced ids ("contact-cold:…" / "rock-stalled:…") and use
+// these dedicated routes, so they can never fall into feed.Store.SetStatus,
+// and Keep/Save-to-vault on a signal is structurally impossible.
+
+func (s *Server) handleSignalDismiss(w http.ResponseWriter, r *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct{ ID, Hash string }
+	if err := decode(r, &b); err != nil || b.ID == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	if err := s.signals.Dismiss(b.ID, b.Hash); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleSignalSnooze(w http.ResponseWriter, r *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		ID   string
+		Days int
+	}
+	if err := decode(r, &b); err != nil || b.ID == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	if b.Days <= 0 {
+		b.Days = 7
+	}
+	if err := s.signals.Snooze(b.ID, time.Now().Add(time.Duration(b.Days)*24*time.Hour)); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleSignalPromote adds a signal's entity to today as a task (a rock signal
+// routes through goals.Promote to mint the durable [goal:: id]), then dismisses
+// the signal — it is now on the plan. date comes from the client.
+func (s *Server) handleSignalPromote(w http.ResponseWriter, r *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		ID     string
+		Hash   string
+		Text   string
+		GoalID string
+		Date   string
+	}
+	if err := decode(r, &b); err != nil || b.ID == "" || b.Date == "" {
+		httpError(w, errBadRequest("id and date are required"))
+		return
+	}
+	task := daily.Task{Text: strings.TrimSpace(b.Text)}
+	if b.GoalID != "" && s.goals != nil {
+		if text, id, ok := s.goals.Promote(b.GoalID); ok { // stamps the durable [goal:: id]
+			task.Text, task.GoalID = text, id
+		}
+	}
+	if task.Text == "" {
+		httpError(w, errBadRequest("nothing to promote"))
+		return
+	}
+	if _, err := s.svc.AddTask(b.Date, task); err != nil {
+		httpError(w, err)
+		return
+	}
+	_ = s.signals.Dismiss(b.ID, b.Hash) // now on the plan
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // handleFeedSaveToVault promotes a feed item into a real extrinsic/ vault note

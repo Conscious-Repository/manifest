@@ -24,6 +24,7 @@ import (
 	"manifest/goals"
 	"manifest/reading"
 	"manifest/server"
+	"manifest/signals"
 	"manifest/spirits"
 	"manifest/vault"
 	"manifest/vaultindex"
@@ -135,6 +136,7 @@ func main() {
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	vw := vaultwriter.New(cfg.VaultPath).WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot)
+	var contactsSvc *contacts.Service // reused by the feed's cold-contact emitter
 	if vix != nil {
 		srv.UseIndex(vix)
 		// CONTACTS — the people layer over the index. Triage state lives under
@@ -143,12 +145,28 @@ func main() {
 		if err != nil {
 			log.Printf("contacts disabled: %v", err)
 		} else {
-			srv.UseContacts(contacts.New(vix, cstore, vw, calAdapter{calClient}, nil))
+			contactsSvc = contacts.New(vix, cstore, vw, calAdapter{calClient}, nil)
+			srv.UseContacts(contactsSvc)
 			log.Printf("contacts: enabled (people layer over the vault index)")
 		}
 		// READING — the book shelf over the extrinsic zone (reading-plan §3).
 		srv.UseReading(reading.New(vix), cfg.ExtrinsicRoot)
 		log.Printf("reading: enabled (book shelf over %s/)", cfg.ExtrinsicRoot)
+	}
+
+	// FEED SIGNALS — app-derived cards (going-cold contacts, stalled Rocks).
+	// Computed at read time from state the dashboard already has; dismissals +
+	// snoozes persist under DataDir (feed-signals.json), outside both trees.
+	if sigStore, err := signals.NewStore(cfg.DataDir); err != nil {
+		log.Printf("feed signals disabled: %v", err)
+	} else {
+		var emitters []signals.Emitter
+		if contactsSvc != nil {
+			emitters = append(emitters, signals.ColdContacts(contactsSvc))
+		}
+		emitters = append(emitters, signals.StalledRocks(goalsStore))
+		srv.UseSignals(signals.New(sigStore, emitters...))
+		log.Printf("feed signals: enabled (%d emitters)", len(emitters))
 	}
 
 	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the

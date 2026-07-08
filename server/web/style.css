@@ -1010,6 +1010,12 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .feed-view .feed-filters { margin-right: 8px; }
 .feed-signals:empty { display: none; } /* the signals lane never pads when empty */
 .type-chip.type-proposal { background: #f3ecff; color: #6b3fd4; } /* tune-proposal pointer card */
+/* signals lane — quiet one-line nudges (conditions, not items) */
+.feed-signals { margin-bottom: 16px; }
+.signal-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.signal-label { font-family: var(--mono); font-size: 12px; color: var(--muted); cursor: pointer; }
+.signal-label:hover { color: var(--blue); }
+.signal-actions { margin-left: auto; display: flex; gap: 6px; }
 /* deep-link flash (goals rock focus + approvals diff focus) */
 .goal-flash { animation: goalflash 2.4s ease; }
 @keyframes goalflash { 0% { background: #fff7d6; } 100% { background: transparent; } }

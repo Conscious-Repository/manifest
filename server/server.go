@@ -13,6 +13,7 @@ import (
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/reading"
+	"manifest/signals"
 	"manifest/spirits"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -36,6 +37,8 @@ type Server struct {
 	// Reading (book shelf) over the extrinsic zone. Nilable.
 	reading           *reading.Service
 	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
+	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
+	signals *signals.Service
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -61,6 +64,9 @@ func (s *Server) UseReading(r *reading.Service, extrinsicRoot string) {
 	s.reading = r
 	s.extrinsicRootName = extrinsicRoot
 }
+
+// UseSignals wires the app-signal emitters (FEED cards).
+func (s *Server) UseSignals(sig *signals.Service) { s.signals = sig }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -138,6 +144,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
 	mux.HandleFunc("POST /api/feed/{id}/promote", s.handleFeedPromote) // "→ today"
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig)         // "dig →"
+	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
+	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
+	mux.HandleFunc("POST /api/feed/signal/promote", s.handleSignalPromote)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

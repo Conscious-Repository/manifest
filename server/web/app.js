@@ -1346,8 +1346,14 @@ function renderFeedFilters() {
 }
 function renderFeed() {
   const host = els.feedList; host.innerHTML = "";
-  els.feedSignals.innerHTML = ""; // signals lane (Phase 3) collapses when empty
+  const sigHost = els.feedSignals; sigHost.innerHTML = ""; // collapses when empty
   const view = state.feedView || "inbox";
+  // signals lane: app-derived nudges, INBOX only, tight one-line chips. Never
+  // under KEPT/ALL (conditions, not items).
+  if (view === "inbox" && feedCache.signals.length) {
+    sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + feedCache.signals.length));
+    feedCache.signals.forEach((sg) => sigHost.appendChild(signalRow(sg)));
+  }
   // pinned lane: virtual tune-proposal cards (pending approvals) lead the inbox;
   // digests pin next via the items sort. Proposals are pointers, not items —
   // they never appear under KEPT/ALL.
@@ -1359,6 +1365,36 @@ function renderFeed() {
     return;
   }
   feedCache.items.forEach((it) => host.appendChild(feedCard(it)));
+}
+
+// signalRow renders one app-signal: a quiet one-line chip (kind · entity · age)
+// with Act (deep link) · Snooze · Dismiss. A rock signal can also go "→ today".
+function signalRow(sg) {
+  const row = el("div", "signal-row");
+  const label = el("span", "signal-label cp-clickable", sg.label);
+  label.onclick = () => { location.hash = sg.actHref; };
+  row.append(label);
+  const act = el("span", "signal-actions");
+  act.append(pillLight("Act", () => { location.hash = sg.actHref; }));
+  if (sg.goalId) act.append(pillLight("→ today", (ev) => signalPromote(sg, ev.currentTarget)));
+  act.append(
+    pillLight("Snooze", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })),
+    pillLight("Dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })),
+  );
+  row.append(act);
+  return row;
+}
+async function signalAction(url, body) {
+  try { await postJSON(url, body); } catch (e) {}
+  loadFeed();
+}
+async function signalPromote(sg, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const r = await postJSON("/api/feed/signal/promote", { id: sg.id, hash: sg.hash, goalId: sg.goalId || "", text: sg.entity, date: isoToday() });
+    if (r && r.ok) showToast("Added to today — view", () => { location.hash = "#/"; }, "info");
+  } catch (e) { if (btn) btn.disabled = false; }
+  loadFeed();
 }
 
 // proposalCardEl renders a virtual tune-proposal card (feed-central §4 lane 1 +
