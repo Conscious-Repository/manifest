@@ -12,6 +12,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/reading"
 	"manifest/spirits"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -32,6 +33,9 @@ type Server struct {
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
 	contacts *contacts.Service
+	// Reading (book shelf) over the extrinsic zone. Nilable.
+	reading           *reading.Service
+	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -50,6 +54,13 @@ func (s *Server) UseIndex(ix *vaultindex.Index) { s.index = ix }
 
 // UseContacts wires the people layer (CONTACTS tab).
 func (s *Server) UseContacts(c *contacts.Service) { s.contacts = c }
+
+// UseReading wires the book shelf (READING tab). extrinsicRoot is where the
+// "+ book" action creates new records.
+func (s *Server) UseReading(r *reading.Service, extrinsicRoot string) {
+	s.reading = r
+	s.extrinsicRootName = extrinsicRoot
+}
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -120,6 +131,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/contacts/email", s.handleContactsEmail)
 	mux.HandleFunc("GET /api/contacts/email-review", s.handleContactsEmailReview)
 	mux.HandleFunc("POST /api/contacts/email-dismiss", s.handleContactsEmailDismiss)
+
+	// READING — the book shelf over the extrinsic zone (reading-plan §3).
+	mux.HandleFunc("GET /api/reading", s.handleReadingList)
+	mux.HandleFunc("POST /api/reading/book", s.handleReadingCreate)
+	mux.HandleFunc("POST /api/reading/finish", s.handleReadingFinish)
+	mux.HandleFunc("POST /api/reading/rating", s.handleReadingRating)
 
 	// Universal note view + edits (contacts power-pass §1).
 	mux.HandleFunc("GET /api/note", s.handleNoteGet)

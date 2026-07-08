@@ -46,6 +46,12 @@ type Config struct {
 	// user's language — where daily/goals classification applies and app writes
 	// stay limited to the existing explicit user actions.
 	SystemRoot string `json:"systemRoot"`
+	// ExtrinsicRoot is the vault-relative folder for the EXTRINSIC ZONE
+	// (reading-plan amendment): content the user did NOT originate — articles,
+	// books, movies, papers — which may carry his commentary. Like the system
+	// zone it is indexed/searchable and writable, but produces no contact/triage
+	// extraction (a `[[name]]` in a book record is a reference, not a meeting).
+	ExtrinsicRoot string `json:"extrinsicRoot"`
 	// ExcaliburPath is the root of the sibling excalibur harness tree (spirit
 	// feed, run reports, run-now spool). Empty disables the SPIRITS tab.
 	ExcaliburPath string `json:"excaliburPath"`
@@ -63,6 +69,7 @@ func defaultConfig() Config {
 		ScheduleEnd:     18,
 		Port:            7777,
 		SystemRoot:      "system",
+		ExtrinsicRoot:   "extrinsic",
 	}
 }
 
@@ -113,30 +120,41 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.SystemRoot == "" {
 		cfg.SystemRoot = d.SystemRoot
 	}
-	if err := validateSystemRoot(cfg.SystemRoot); err != nil {
+	if cfg.ExtrinsicRoot == "" {
+		cfg.ExtrinsicRoot = d.ExtrinsicRoot
+	}
+	if err := validateZoneRoot("systemRoot", cfg.SystemRoot); err != nil {
+		return cfg, err
+	}
+	if err := validateZoneRoot("extrinsicRoot", cfg.ExtrinsicRoot); err != nil {
 		return cfg, err
 	}
 	cfg.SystemRoot = filepath.ToSlash(filepath.Clean(cfg.SystemRoot))
+	cfg.ExtrinsicRoot = filepath.ToSlash(filepath.Clean(cfg.ExtrinsicRoot))
+	if cfg.SystemRoot == cfg.ExtrinsicRoot {
+		return cfg, errors.New("systemRoot and extrinsicRoot must differ")
+	}
 	cfg.VaultPath = expandHome(cfg.VaultPath)
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	return cfg, nil
 }
 
-// validateSystemRoot refuses a system root that is empty, the vault itself,
-// escaping, absolute, or hidden — the zone line must be a real, visible,
-// vault-relative folder (system-root-plan §3).
-func validateSystemRoot(r string) error {
+// validateZoneRoot refuses a zone root that is empty, the vault itself,
+// escaping, absolute, or hidden — a zone line must be a real, visible,
+// vault-relative folder (system-root-plan §3; reading-plan amendment). name is
+// the config key for the error message ("systemRoot" | "extrinsicRoot").
+func validateZoneRoot(name, r string) error {
 	clean := filepath.ToSlash(filepath.Clean(r))
 	switch {
 	case r == "" || clean == "" || clean == ".":
-		return errors.New("systemRoot must name a folder (default \"system\")")
+		return errors.New(name + " must name a folder")
 	case clean == ".." || strings.HasPrefix(clean, "../"):
-		return errors.New("systemRoot must stay inside the vault")
+		return errors.New(name + " must stay inside the vault")
 	case filepath.IsAbs(clean):
-		return errors.New("systemRoot must be vault-relative, not absolute")
+		return errors.New(name + " must be vault-relative, not absolute")
 	case strings.HasPrefix(filepath.Base(clean), "."):
-		return errors.New("systemRoot must not be a dotfolder (Obsidian hides those)")
+		return errors.New(name + " must not be a dotfolder (Obsidian hides those)")
 	}
 	return nil
 }

@@ -22,6 +22,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/reading"
 	"manifest/server"
 	"manifest/spirits"
 	"manifest/vault"
@@ -87,9 +88,10 @@ func main() {
 	// on first run and stays live via a background watcher; a build failure only
 	// disables the contacts/query surfaces, never the core dashboard.
 	vix, err := vaultindex.Open(vaultindex.Config{
-		VaultRoot:  cfg.VaultPath,
-		DBPath:     filepath.Join(cfg.DataDir, "index.db"),
-		SystemRoot: cfg.SystemRoot,
+		VaultRoot:     cfg.VaultPath,
+		DBPath:        filepath.Join(cfg.DataDir, "index.db"),
+		SystemRoot:    cfg.SystemRoot,
+		ExtrinsicRoot: cfg.ExtrinsicRoot,
 	})
 	if err != nil {
 		log.Printf("vault index disabled: %v", err)
@@ -132,7 +134,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
-	vw := vaultwriter.New(cfg.VaultPath).WithSystemRoot(cfg.SystemRoot)
+	vw := vaultwriter.New(cfg.VaultPath).WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot)
 	if vix != nil {
 		srv.UseIndex(vix)
 		// CONTACTS — the people layer over the index. Triage state lives under
@@ -144,6 +146,9 @@ func main() {
 			srv.UseContacts(contacts.New(vix, cstore, vw, calAdapter{calClient}, nil))
 			log.Printf("contacts: enabled (people layer over the vault index)")
 		}
+		// READING — the book shelf over the extrinsic zone (reading-plan §3).
+		srv.UseReading(reading.New(vix), cfg.ExtrinsicRoot)
+		log.Printf("reading: enabled (book shelf over %s/)", cfg.ExtrinsicRoot)
 	}
 
 	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the

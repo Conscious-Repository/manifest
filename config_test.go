@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -62,17 +63,32 @@ func TestSystemRootDefaultAndValidation(t *testing.T) {
 	if cfg.SystemRoot != "system" {
 		t.Fatalf("SystemRoot default = %q, want \"system\"", cfg.SystemRoot)
 	}
+	if cfg.ExtrinsicRoot != "extrinsic" {
+		t.Fatalf("ExtrinsicRoot default = %q, want \"extrinsic\"", cfg.ExtrinsicRoot)
+	}
 	valid := []string{"system", "sys", "system/nested"} // nested is tolerated (cleaned)
 	for _, v := range valid {
-		if err := validateSystemRoot(v); err != nil {
-			t.Errorf("validateSystemRoot(%q) = %v, want ok", v, err)
+		if err := validateZoneRoot("systemRoot", v); err != nil {
+			t.Errorf("validateZoneRoot(%q) = %v, want ok", v, err)
 		}
 	}
 	invalid := []string{"", ".", "..", "../outside", "/abs/path", "a/../..", ".hidden"}
 	for _, v := range invalid {
-		if err := validateSystemRoot(v); err == nil {
-			t.Errorf("validateSystemRoot(%q) = ok, want error", v)
+		if err := validateZoneRoot("systemRoot", v); err == nil {
+			t.Errorf("validateZoneRoot(%q) = ok, want error", v)
 		}
+	}
+}
+
+// system and extrinsic roots must be distinct — a shared folder can't be both
+// the machine zone and the not-mine zone.
+func TestZoneRootsMustDiffer(t *testing.T) {
+	t.Setenv("MANIFEST_CONFIG_DIR", "/home/u/.config/manifest")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "c.json")
+	os.WriteFile(path, []byte(`{"vaultPath":"/v","systemRoot":"shared","extrinsicRoot":"shared"}`), 0o644)
+	if _, err := LoadConfig(path); err == nil {
+		t.Fatal("expected error when systemRoot == extrinsicRoot")
 	}
 }
 

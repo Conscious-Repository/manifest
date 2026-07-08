@@ -15,7 +15,7 @@ import (
 //   - raw-user-class writes (the note editor, contact saves — the user's own
 //     hands) stay legal anywhere else, exactly as shipped today.
 func TestGuardClasses(t *testing.T) {
-	w := New(t.TempDir()).WithSystemRoot("system")
+	w := New(t.TempDir()).WithZoneRoots("system", "extrinsic")
 	cases := []struct {
 		rel   string
 		class WriteClass
@@ -28,12 +28,13 @@ func TestGuardClasses(t *testing.T) {
 		{"Agents/legacy.md", WriteRawUser, false},     // legacy root (pre-reorg)
 		{"excalibur/chargebook.md", WriteRawUser, false},
 
-		// database class: system/ only — an arbitrary knowledge-zone path is refused
+		// database class: structured roots only — system/ AND extrinsic/ (books)
 		{"system/crm/fundraising/acme ventures.md", WriteDatabase, true},
 		{"system/home/board.md", WriteDatabase, true},
-		{"intrinsic/2026-07-08.md", WriteDatabase, false},
+		{"extrinsic/esoterika.md", WriteDatabase, true},    // a book record
+		{"extrinsic/some article.md", WriteDatabase, true}, // extrinsic zone is writable
+		{"intrinsic/2026-07-08.md", WriteDatabase, false},  // knowledge zone refused
 		{"alice.md", WriteDatabase, false},
-		{"extrinsic/some find.md", WriteDatabase, false},
 
 		// raw-user class: the user's own edits stay legal in both zones
 		{"alice.md", WriteRawUser, true},
@@ -60,7 +61,7 @@ func TestGuardClasses(t *testing.T) {
 // path is refused end-to-end, and the shipped user writes still work.
 func TestWriterEntryPointsAreGuarded(t *testing.T) {
 	root := t.TempDir()
-	w := New(root).WithSystemRoot("system")
+	w := New(root).WithZoneRoots("system", "extrinsic")
 
 	// seed an engine-owned file + a knowledge-zone note on disk
 	for _, rel := range []string{"system/excalibur/spirits/x/identity.md", "alice.md"} {

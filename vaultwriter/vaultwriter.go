@@ -17,8 +17,9 @@ import (
 
 // Writer targets a single vault root.
 type Writer struct {
-	vault      string
-	systemRoot string // vault-relative system-zone folder for the write guard ("" → "system")
+	vault         string
+	systemRoot    string // vault-relative system-zone folder for the write guard ("" → "system")
+	extrinsicRoot string // vault-relative extrinsic-zone folder (books/articles) ("" → "extrinsic")
 }
 
 // New builds a writer for the given vault path ("" disables saving).
