@@ -1307,6 +1307,8 @@ function diffDigests(items) {
 // INBOX (default) = items awaiting a verdict (new + lapsed snoozes). Keep endorses
 // and moves the item to KEPT. Chips are INBOX/KEPT/ALL.
 const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"]];
+const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
+let signalsExpanded = false;
 let feedCache = { items: [], signals: [], proposals: [] };
 
 function showFeed() {
@@ -1349,10 +1351,18 @@ function renderFeed() {
   const sigHost = els.feedSignals; sigHost.innerHTML = ""; // collapses when empty
   const view = state.feedView || "inbox";
   // signals lane: app-derived nudges, INBOX only, tight one-line chips. Never
-  // under KEPT/ALL (conditions, not items).
+  // under KEPT/ALL (conditions, not items). Capped so a long neglect backlog
+  // doesn't bury the findings — the most-overdue lead, the rest fold away.
   if (view === "inbox" && feedCache.signals.length) {
-    sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + feedCache.signals.length));
-    feedCache.signals.forEach((sg) => sigHost.appendChild(signalRow(sg)));
+    const total = feedCache.signals.length;
+    sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
+    const shown = signalsExpanded ? total : Math.min(SIGNAL_CAP, total);
+    feedCache.signals.slice(0, shown).forEach((sg) => sigHost.appendChild(signalRow(sg)));
+    if (total > SIGNAL_CAP) {
+      const more = el("button", "signal-more", signalsExpanded ? "▴ show fewer" : `▾ ${total - SIGNAL_CAP} more`);
+      more.onclick = () => { signalsExpanded = !signalsExpanded; renderFeed(); };
+      sigHost.appendChild(more);
+    }
   }
   // pinned lane: virtual tune-proposal cards (pending approvals) lead the inbox;
   // digests pin next via the items sort. Proposals are pointers, not items —
