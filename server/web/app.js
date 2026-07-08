@@ -742,11 +742,22 @@ async function goalsApi(method, path, body) {
 
 // ---- areas & goals: single column, M1 layout over the ladder model ----
 
-async function loadGoals() {
+async function loadGoals(focusId) {
   try {
     const doc = await (await fetch("/api/goals")).json();
     renderAreas(doc.areas || []);
+    if (focusId) focusGoal(focusId);
   } catch (e) { setSaveState("error"); }
+}
+
+// focusGoal scrolls to a goal's node and flashes it — the #/goals/<id> deep
+// link (rock-stalled signals, goal-referencing feed cards).
+function focusGoal(id) {
+  const node = els.areasRows.querySelector(`[data-goal-id="${CSS.escape(id)}"]`);
+  if (!node) return;
+  node.scrollIntoView({ behavior: "smooth", block: "center" });
+  node.classList.add("goal-flash");
+  setTimeout(() => node.classList.remove("goal-flash"), 2400);
 }
 
 function renderAreas(areas) {
@@ -828,6 +839,7 @@ function addBtn(label, onClick, cls) {
 // stage; tasks are leaves (literal depth rule).
 function goalNode(g, depth) {
   const wrap = el("div", "goal-node depth-" + depth);
+  if (g.id) wrap.dataset.goalId = g.id; // #/goals/<id> deep-link anchor
   wrap.appendChild(goalRow(g, depth));
   const kids = el("div", "goal-children");
   (g.children || []).forEach((c) => kids.appendChild(goalNode(c, depth + 1)));
@@ -1336,13 +1348,41 @@ function renderFeed() {
   const host = els.feedList; host.innerHTML = "";
   els.feedSignals.innerHTML = ""; // signals lane (Phase 3) collapses when empty
   const view = state.feedView || "inbox";
-  if (!feedCache.items.length) {
+  // pinned lane: virtual tune-proposal cards (pending approvals) lead the inbox;
+  // digests pin next via the items sort. Proposals are pointers, not items —
+  // they never appear under KEPT/ALL.
+  if (view === "inbox") feedCache.proposals.forEach((p) => host.appendChild(proposalCardEl(p)));
+  if (!feedCache.items.length && !host.children.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."
       : view === "kept" ? "Nothing kept yet." : "No feed items yet."));
     return;
   }
   feedCache.items.forEach((it) => host.appendChild(feedCard(it)));
+}
+
+// proposalCardEl renders a virtual tune-proposal card (feed-central §4 lane 1 +
+// ea-digest Part-2 amendment): summary + evidence, ONE affordance — review the
+// diff in APPROVALS. Confirm/Reject there resolves the card by construction.
+function proposalCardEl(p) {
+  const card = el("div", "feed-card digest pinned proposal");
+  const top = el("div", "feed-top");
+  top.append(el("span", "pin-chip", "📌 pinned"));
+  top.append(el("span", "type-chip type-proposal", "proposal"));
+  top.append(el("span", "feed-title", p.title));
+  card.append(top);
+  card.append(el("div", "feed-why", "proposes a change to " + p.applyPath));
+  if (p.body) { const b = el("pre", "feed-body"); b.textContent = p.body; card.append(b); }
+  const meta = el("div", "feed-meta");
+  meta.append(el("span", null, [p.agent, (p.created || "").slice(0, 10)].filter(Boolean).join("  ·  ")));
+  card.append(meta);
+  const actions = el("div", "feed-actions");
+  actions.append(pillLight("review diff →", () => {
+    pendingApprovalFocus = p.approvalId;
+    location.hash = "#/spirits/approvals";
+  }));
+  card.append(actions);
+  return card;
 }
 function faviconFor(link) {
   try {
@@ -1382,11 +1422,50 @@ function feedCard(it) {
     if (it.status !== "kept") actions.append(pillLight("Discard", () => feedAction(it.id, { status: "discarded" })));
     actions.append(pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })));
     if (!it.vaultNote) actions.append(pillLight("Save to vault", () => feedSaveToVault(it.id)));
+    actions.append(pillLight("→ today", (ev) => feedPromote(it.id, ev.currentTarget))); // task in today's block; auto-Keeps
+    if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
   } else {
     actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
   }
   card.append(actions);
   return card;
+}
+
+// feedPromote: "→ today" — the card becomes a task in today's manifest block
+// (visible in Obsidian) and the item auto-Keeps. Button disables optimistically
+// so a double-click can't race the refresh (the server also guards).
+async function feedPromote(id, btn) {
+  if (btn) btn.disabled = true;
+  setSaveState("saving");
+  try {
+    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/promote?date=${isoToday()}`, { method: "POST" });
+    if (!r.ok) throw new Error((await r.text()) || "promote failed");
+    const d = await r.json();
+    setSaveState("saved");
+    showToast(d.already ? "Already on today's plan" : "Added to today — view", () => { location.hash = "#/"; }, "info");
+  } catch (e) {
+    setSaveState("error");
+    showToast("Promote failed: " + (e.message || e), null, "error");
+    if (btn) btn.disabled = false;
+  }
+  loadFeed();
+}
+
+// feedDig: "dig →" — spool a deeper run for the originating spirit; findings
+// come back as new inbox items. Never navigates away from the feed.
+async function feedDig(id) {
+  let r;
+  try { r = await fetch(`/api/feed/${encodeURIComponent(id)}/dig`, { method: "POST" }); }
+  catch (e) { showToast("Dig failed: " + (e.message || e), null, "error"); return; }
+  if (r.status === 409) {
+    const d = await r.json().catch(() => ({}));
+    showToast(`${d.spirit || "spirit"}/${d.ritual || "ritual"} is already running — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+    return;
+  }
+  if (!r.ok) { showToast("Dig failed: " + ((await r.text()) || r.status), null, "error"); return; }
+  const d = await r.json().catch(() => ({}));
+  showToast(`${d.spirit}/${d.ritual} queued — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+  ensureLivePoll(); // watch it land back in the inbox
 }
 async function feedAction(id, body) {
   setSaveState("saving");
@@ -1615,6 +1694,8 @@ async function toggleSpiritPrompts(id, btn) {
 // ---- spirit approvals (artifacts/approvals/ — the ONE inbox) ----
 // Spirits file proposals via the write_approval cast; Confirm/Reject only
 // RECORD the decision (a folder move on the excalibur tree). Nothing sends.
+let pendingApprovalFocus = null; // approval id to scroll to (set by a proposal card's "review diff →")
+
 async function loadSpiritApprovals() {
   let d = { pending: [], counts: {} };
   try { d = await (await fetch("/api/spirits/approvals")).json(); } catch (e) {}
@@ -1623,9 +1704,19 @@ async function loadSpiritApprovals() {
   setSpiritApprovalBadge((d.counts && d.counts.pending) || 0);
   if (!pending.length) { host.appendChild(emptyRow("Nothing pending — warden findings and future EA proposals land here.")); return; }
   pending.forEach((a) => host.appendChild(spiritApprovalCard(a)));
+  if (pendingApprovalFocus) { // deep-linked from a FEED proposal card
+    const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
+    pendingApprovalFocus = null;
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.classList.add("goal-flash");
+      setTimeout(() => target.classList.remove("goal-flash"), 2400);
+    }
+  }
 }
 function spiritApprovalCard(a) {
   const card = el("div", "approval-card");
+  card.dataset.approvalId = a.id;
   const head = el("div", "appr-head");
   head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
   card.append(head);
@@ -3212,7 +3303,7 @@ function route() {
   els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
   if (day) refreshFeedBadge(); // pill only shows on the day view — keep it honest
-  if (goals) loadGoals();
+  if (goals) loadGoals(h.startsWith("#/goals/") ? decodeURIComponent(h.slice("#/goals/".length)) : "");
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
   else if (sp) showSpirits(); // engine console: runs / rituals / approvals

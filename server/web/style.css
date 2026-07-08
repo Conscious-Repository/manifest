@@ -1009,6 +1009,10 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .feed-view { max-width: 900px; margin: 8px auto 64px; padding: 0 28px; }
 .feed-view .feed-filters { margin-right: 8px; }
 .feed-signals:empty { display: none; } /* the signals lane never pads when empty */
+.type-chip.type-proposal { background: #f3ecff; color: #6b3fd4; } /* tune-proposal pointer card */
+/* deep-link flash (goals rock focus + approvals diff focus) */
+.goal-flash { animation: goalflash 2.4s ease; }
+@keyframes goalflash { 0% { background: #fff7d6; } 100% { background: transparent; } }
 
 /* ===== READING — the book shelf over the extrinsic zone ===== */
 .reading-view { max-width: 1180px; margin: 8px auto 64px; padding: 0 28px; }

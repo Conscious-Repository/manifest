@@ -136,6 +136,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/feed/badge", s.handleFeedBadge)
 	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
 	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
+	mux.HandleFunc("POST /api/feed/{id}/promote", s.handleFeedPromote) // "→ today"
+	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig)         // "dig →"
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)
