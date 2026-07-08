@@ -32,12 +32,21 @@ func main() {
 	csvPath := flag.String("csv", "", "path to goodreads_library_export.csv")
 	vaultPath := flag.String("vault", "", "path to the Obsidian vault")
 	apply := flag.Bool("apply", false, "write files (default: dry-run report only)")
+	repair := flag.Bool("repair", false, "one-time: re-quote malformed full-title frontmatter, then exit")
 	systemRoot := flag.String("system", "system", "system-zone root")
 	extrinsicRoot := flag.String("extrinsic", "extrinsic", "extrinsic-zone root")
 	flag.Parse()
-	if *csvPath == "" || *vaultPath == "" {
-		fmt.Fprintln(os.Stderr, "usage: goodreads-import -csv <export.csv> -vault <path> [-apply]")
+	if *vaultPath == "" || (*csvPath == "" && !*repair) {
+		fmt.Fprintln(os.Stderr, "usage: goodreads-import -csv <export.csv> -vault <path> [-apply]  |  -repair -vault <path>")
 		os.Exit(2)
+	}
+	if *repair {
+		n, err := repairFullTitles(*vaultPath, *extrinsicRoot)
+		if err != nil {
+			fatal("repair: %v", err)
+		}
+		fmt.Printf("repair: re-quoted %d full-title line(s).\n", n)
+		return
 	}
 
 	rows, err := readCSV(*csvPath)
@@ -217,9 +226,60 @@ func (b book) frontmatter() []kv {
 		fs = append(fs, kv{"read-count", strconv.Itoa(b.readCount)})
 	}
 	if b.fullTitle != "" {
-		fs = append(fs, kv{"full-title", b.fullTitle})
+		// ALWAYS quote: full-title is free text and its subtitle colon (": ") or a
+		// series "#" would otherwise be read as a YAML mapping / comment and break
+		// the whole frontmatter block.
+		fs = append(fs, kv{"full-title", yamlQuote(b.fullTitle)})
 	}
 	return fs
+}
+
+// yamlQuote wraps a value in a YAML double-quoted scalar, escaping backslashes
+// and quotes — safe for any free text (colons, #, leading specials).
+func yamlQuote(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `"`, `\"`)
+	return `"` + v + `"`
+}
+
+// repairFullTitles re-quotes any `full-title:` line whose value is not already a
+// double-quoted scalar — fixing records written before yamlQuote (an unquoted
+// subtitle colon / series "#" broke the whole frontmatter). Only the offending
+// line changes; the body and every other line are preserved byte-for-byte.
+func repairFullTitles(vault, extrinsicRoot string) (int, error) {
+	dir := filepath.Join(vault, filepath.FromSlash(extrinsicRoot))
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, err
+	}
+	fixed := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		full := filepath.Join(dir, e.Name())
+		raw, err := os.ReadFile(full)
+		if err != nil {
+			return fixed, err
+		}
+		lines := strings.Split(string(raw), "\n")
+		changed := false
+		for i, l := range lines {
+			rest, ok := strings.CutPrefix(l, "full-title: ")
+			if !ok || (strings.HasPrefix(rest, `"`) && strings.HasSuffix(rest, `"`)) {
+				continue // not a full-title line, or already quoted
+			}
+			lines[i] = "full-title: " + yamlQuote(rest)
+			changed = true
+		}
+		if changed {
+			if err := os.WriteFile(full, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+				return fixed, err
+			}
+			fixed++
+		}
+	}
+	return fixed, nil
 }
 
 type kv struct{ k, v string }

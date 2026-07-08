@@ -24,6 +24,9 @@ func harness(t *testing.T) *Service {
 	write("extrinsic/esoterika.md", "---\ncategories: [books]\nauthors: [\"[[mitch horowitz]]\"]\nstatus: read\nrating: 4\nyear-written: 2026\ndate-read: 2026-07-04\npages: 306\n---\n#book\n")
 	write("extrinsic/thinking, fast and slow.md", "---\ncategories: [books]\nauthor: [[Daniel Kahneman]]\nstatus: read\ndate-read: 2019-11-07\n---\n#book\n\nWritten by [[Daniel Kahneman]]. My notes survive.\n")
 	write("extrinsic/meaning in absurdity.md", "---\ncategories: [books]\nstatus: reading\n---\n#book\n")
+	// a QUOTED full-title whose subtitle carries a ": " — must display unquoted,
+	// with the colon intact (regression: unquoted broke the YAML block)
+	write("extrinsic/the world behind the world.md", "---\ncategories: [books]\nauthors: [\"[[erik hoel]]\"]\nstatus: read\nfull-title: \"The World Behind the World: Consciousness, Free Will, and the Limits of Science\"\n---\n#book\n")
 	write("extrinsic/undated.md", "---\ncategories: [books]\nstatus: read\n---\n#book\n")
 	// a NON-book extrinsic note must not appear on the shelf
 	write("extrinsic/some article.md", "---\ncategories: [papers]\n---\n#paper\n")
@@ -44,8 +47,8 @@ func TestListParsesAndSorts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(books) != 4 {
-		t.Fatalf("want 4 book records (papers excluded), got %d: %+v", len(books), books)
+	if len(books) != 5 {
+		t.Fatalf("want 5 book records (papers excluded), got %d: %+v", len(books), books)
 	}
 	// default sort: reading first, then date-read desc, undated last
 	if books[0].Name != "meaning in absurdity" || books[0].Status != "reading" {
@@ -74,5 +77,10 @@ func TestListParsesAndSorts(t *testing.T) {
 	}
 	if tfs.Rating != 0 { // unrated → 0, never a fake value
 		t.Fatalf("unrated book must have rating 0, got %d", tfs.Rating)
+	}
+	// quoted full-title displays unquoted, subtitle colon intact
+	twbw := byName["the world behind the world"]
+	if twbw.Title != "The World Behind the World: Consciousness, Free Will, and the Limits of Science" {
+		t.Fatalf("quoted full-title must display unquoted with its colon, got %q", twbw.Title)
 	}
 }

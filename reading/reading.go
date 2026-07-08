@@ -69,7 +69,7 @@ func (s *Service) parse(rel, name string) (Book, bool) {
 	}
 	fm, _ := mdfm.Split(string(raw))
 	b := Book{Path: rel, Name: name, Title: name}
-	if ft := strings.TrimSpace(fm["full-title"]); ft != "" {
+	if ft := yamlUnquote(fm["full-title"]); ft != "" {
 		b.Title = ft
 	}
 	b.Status = strings.ToLower(strings.TrimSpace(fm["status"]))
@@ -115,4 +115,20 @@ func lessDefault(a, b Book) bool {
 func atoi(s string) int {
 	n, _ := strconv.Atoi(strings.TrimSpace(s))
 	return n
+}
+
+// yamlUnquote strips a YAML double/single-quoted scalar back to its text (the
+// importer quotes full-title because subtitles carry a ": "). Tolerant: an
+// unquoted value passes through unchanged.
+func yamlUnquote(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+		v = v[1 : len(v)-1]
+		v = strings.ReplaceAll(v, `\"`, `"`)
+		return strings.ReplaceAll(v, `\\`, `\`)
+	}
+	if len(v) >= 2 && v[0] == '\'' && v[len(v)-1] == '\'' {
+		return strings.ReplaceAll(v[1:len(v)-1], "''", "'")
+	}
+	return v
 }
