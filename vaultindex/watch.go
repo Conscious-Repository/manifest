@@ -41,7 +41,9 @@ func (ix *Index) ReindexPaths(relPaths []string) error {
 		if fi, err := os.Stat(abs); err == nil {
 			mtime = fi.ModTime().Unix()
 		}
-		if err := insertNote(tx, ParseNote(rel, content, mtime, regions)); err != nil {
+		n := ParseNote(rel, content, mtime, regions)
+		n.Zone = ix.cfg.zoneOf(n.Path)
+		if err := insertNote(tx, n); err != nil {
 			return fmt.Errorf("insertNote %s: %w", rel, err)
 		}
 	}

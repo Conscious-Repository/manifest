@@ -3,6 +3,7 @@ package vault
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -76,16 +77,14 @@ func (ix *Index) GoalsPath() string {
 	return ix.snap.GoalsPath
 }
 
-// AgentPaths returns a copy of the indexed type:agent note paths.
-func (ix *Index) AgentPaths() []string {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
-	return append([]string(nil), ix.snap.Agents...)
-}
-
 // update incrementally folds a single created/modified file into the snapshot.
-// Removals and renames go through Rebuild instead (see Watcher).
+// Removals and renames go through Rebuild instead (see Watcher). System-zone
+// files short-circuit exactly like the scanner: daily/goals classification
+// applies only in the knowledge zone.
 func (ix *Index) update(path string) {
+	if underSystemZone(ix.cfg, path) {
+		return
+	}
 	kind, date := classify(filepath.Base(path), path, ix.cfg.GoalsName)
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
@@ -96,12 +95,19 @@ func (ix *Index) update(path string) {
 		if ix.snap.GoalsPath == "" {
 			ix.snap.GoalsPath = path
 		}
-	case KindAgent:
-		for _, a := range ix.snap.Agents {
-			if a == path {
-				return
-			}
-		}
-		ix.snap.Agents = append(ix.snap.Agents, path)
 	}
+}
+
+// underSystemZone reports whether an absolute path is the system-zone root or
+// anything inside it, matched by vault-relative path (never by base name).
+func underSystemZone(cfg Config, path string) bool {
+	if cfg.SystemRoot == "" {
+		return false
+	}
+	rel, err := filepath.Rel(cfg.Root, path)
+	if err != nil {
+		return false
+	}
+	r := filepath.ToSlash(rel)
+	return r == cfg.SystemRoot || strings.HasPrefix(r, cfg.SystemRoot+"/")
 }

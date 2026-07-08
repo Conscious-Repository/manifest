@@ -58,6 +58,13 @@ func main() {
 	if pathIsUnder(cfg.DataDir, cfg.VaultPath) {
 		log.Fatalf("dataDir %q must live outside the vault %q (derived data never goes in the vault)", cfg.DataDir, cfg.VaultPath)
 	}
+	// Zone line (system-root-plan §1): warn (not fail) when the system folder is
+	// absent — the zone model still applies; the folder appears with first use.
+	if fi, err := os.Stat(filepath.Join(cfg.VaultPath, filepath.FromSlash(cfg.SystemRoot))); err != nil || !fi.IsDir() {
+		log.Printf("system zone: %s/ not found in the vault yet (knowledge zone = whole vault until it exists)", cfg.SystemRoot)
+	} else {
+		log.Printf("system zone: %s/ (structured, app-managed markdown; knowledge zone = everything else)", cfg.SystemRoot)
+	}
 
 	idx, err := vault.NewIndex(vaultConfig(cfg))
 	if err != nil {
@@ -80,8 +87,9 @@ func main() {
 	// on first run and stays live via a background watcher; a build failure only
 	// disables the contacts/query surfaces, never the core dashboard.
 	vix, err := vaultindex.Open(vaultindex.Config{
-		VaultRoot: cfg.VaultPath,
-		DBPath:    filepath.Join(cfg.DataDir, "index.db"),
+		VaultRoot:  cfg.VaultPath,
+		DBPath:     filepath.Join(cfg.DataDir, "index.db"),
+		SystemRoot: cfg.SystemRoot,
 	})
 	if err != nil {
 		log.Printf("vault index disabled: %v", err)
@@ -124,7 +132,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
-	vw := vaultwriter.New(cfg.VaultPath)
+	vw := vaultwriter.New(cfg.VaultPath).WithSystemRoot(cfg.SystemRoot)
 	if vix != nil {
 		srv.UseIndex(vix)
 		// CONTACTS — the people layer over the index. Triage state lives under
@@ -230,6 +238,7 @@ func vaultConfig(c Config) vault.Config {
 		NewDailyDir: c.NewDailyDir,
 		GoalsName:   c.GoalsFileName,
 		SkipDirs:    c.SkipDirs,
+		SystemRoot:  c.SystemRoot, // zone short-circuit: no dailies/goals under system/
 	}
 }
 

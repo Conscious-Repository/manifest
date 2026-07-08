@@ -122,8 +122,8 @@ func (ix *Index) backlinks(key string, excludeAI bool) ([]Backlink, error) {
 	q := `SELECT DISTINCT n.path, n.name, n.date, n.date_source, n.ai_authored
 	      FROM links l JOIN notes n ON n.path = l.src_path
 	      WHERE l.target_key = ? `
-	if excludeAI {
-		q += `AND n.ai_authored = 0 `
+	if excludeAI { // the human timeline: knowledge-zone sources only
+		q += `AND ` + knowledgeSrcSQL + ` `
 	}
 	q += `ORDER BY (n.date = '') ASC, n.date DESC, n.name ASC`
 	rows, err := ix.db.Query(q, strings.ToLower(strings.TrimSpace(key)))
@@ -152,7 +152,7 @@ func (ix *Index) LastMet(key string) (date, sourcePath string, ok bool) {
 	err := ix.db.QueryRow(
 		`SELECT n.date, n.path
 		 FROM links l JOIN notes n ON n.path = l.src_path
-		 WHERE l.target_key = ? AND n.ai_authored = 0 AND n.date != ''
+		 WHERE l.target_key = ? AND `+knowledgeSrcSQL+` AND n.date != ''
 		 ORDER BY n.date DESC, n.name ASC LIMIT 1`,
 		strings.ToLower(strings.TrimSpace(key))).Scan(&date, &sourcePath)
 	if err != nil {
@@ -175,7 +175,7 @@ func (ix *Index) Mentions(text string, limit int) ([]NoteRef, error) {
 	rows, err := ix.db.Query(
 		`SELECT n.path, n.name, n.date, n.mtime
 		 FROM notes_fts JOIN notes n ON n.id = notes_fts.rowid
-		 WHERE notes_fts MATCH ? AND n.ai_authored = 0
+		 WHERE notes_fts MATCH ? AND `+knowledgeSrcSQL+`
 		 ORDER BY rank LIMIT ?`, match, limit)
 	if err != nil {
 		return nil, err

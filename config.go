@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,12 @@ type Config struct {
 	// calendar credentials). The vault holds only your hand-authored notes; the
 	// app never writes derived data into it.
 	DataDir string `json:"dataDir"`
+	// SystemRoot is the vault-relative folder that holds the SYSTEM ZONE
+	// (system-root-plan §1): structured, app-managed markdown (agents, excalibur,
+	// CRMs, home board). Everything OUTSIDE it is the knowledge zone — 100% the
+	// user's language — where daily/goals classification applies and app writes
+	// stay limited to the existing explicit user actions.
+	SystemRoot string `json:"systemRoot"`
 	// ExcaliburPath is the root of the sibling excalibur harness tree (spirit
 	// feed, run reports, run-now spool). Empty disables the SPIRITS tab.
 	ExcaliburPath string `json:"excaliburPath"`
@@ -58,6 +65,7 @@ func defaultConfig() Config {
 		ScheduleStart:   8,
 		ScheduleEnd:     18,
 		Port:            7777,
+		SystemRoot:      "system",
 	}
 }
 
@@ -108,10 +116,35 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.DataDir == "" {
 		cfg.DataDir = defaultDataDir()
 	}
+	if cfg.SystemRoot == "" {
+		cfg.SystemRoot = d.SystemRoot
+	}
+	if err := validateSystemRoot(cfg.SystemRoot); err != nil {
+		return cfg, err
+	}
+	cfg.SystemRoot = filepath.ToSlash(filepath.Clean(cfg.SystemRoot))
 	cfg.VaultPath = expandHome(cfg.VaultPath)
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	return cfg, nil
+}
+
+// validateSystemRoot refuses a system root that is empty, the vault itself,
+// escaping, absolute, or hidden — the zone line must be a real, visible,
+// vault-relative folder (system-root-plan §3).
+func validateSystemRoot(r string) error {
+	clean := filepath.ToSlash(filepath.Clean(r))
+	switch {
+	case r == "" || clean == "" || clean == ".":
+		return errors.New("systemRoot must name a folder (default \"system\")")
+	case clean == ".." || strings.HasPrefix(clean, "../"):
+		return errors.New("systemRoot must stay inside the vault")
+	case filepath.IsAbs(clean):
+		return errors.New("systemRoot must be vault-relative, not absolute")
+	case strings.HasPrefix(filepath.Base(clean), "."):
+		return errors.New("systemRoot must not be a dotfolder (Obsidian hides those)")
+	}
+	return nil
 }
 
 // defaultDataDir is the external home for derived/operational state. It mirrors

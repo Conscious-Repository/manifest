@@ -33,6 +33,9 @@ func (w *Writer) CreatePersonNote(name string, aliases []string, body string) (s
 		return "", errors.New("invalid note path")
 	}
 	rel := base + ".md"
+	if err := w.Guard(rel, WriteRawUser); err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(full); err == nil {
 		return rel, nil // write-once — keep the user's existing note
 	}
@@ -136,9 +139,14 @@ func (w *Writer) ToggleTask(rel string, line int, want bool) error {
 	return os.WriteFile(full, []byte(strings.Join(lines, "\n")), 0o644)
 }
 
+// resolve maps a vault-relative path to an absolute one, running the write
+// guard (raw-user class — every caller here is an explicit user edit).
 func (w *Writer) resolve(rel string) (string, error) {
 	if !w.Enabled() {
 		return "", errors.New("no vault configured")
+	}
+	if err := w.Guard(rel, WriteRawUser); err != nil {
+		return "", err
 	}
 	full := filepath.Join(w.vault, filepath.FromSlash(rel))
 	if !isUnder(full, w.vault) {

@@ -4,9 +4,10 @@
   "dailyNoteFormat": "2006-01-02",
   "periodNoteDir": "Manifest",
   "goalsFileName": "goals.md",
-  "skipDirs": [".git", ".obsidian", ".trash", "attachments", "Agents", "excalibur"],
+  "skipDirs": [".git", ".obsidian", ".trash", "attachments"],
   "scheduleStart": 8,
   "scheduleEnd": 18,
   "port": 7777,
-  "excaliburPath": "~/Documents/index.ben/excalibur"
+  "systemRoot": "system",
+  "excaliburPath": "~/Documents/index.ben/system/excalibur"
 }

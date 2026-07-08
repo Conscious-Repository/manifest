@@ -24,14 +24,25 @@ const meetingCtxSQL = `(
   OR (n.date_source='filename' AND NOT (n.name GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'))
 )`
 
+// knowledgeSrcSQL is the SQL predicate (over alias n) for "this note can
+// evidence a human interaction" (system-root-plan §3): knowledge zone only —
+// a [[name]] in a system-zone record (CRM, agent file) never creates contacts,
+// timeline entries, or triage items. The ai_authored belt stays for layouts
+// where the AI regions sit at the vault root (pre-reorg).
+const knowledgeSrcSQL = `(n.zone = 'knowledge' AND n.ai_authored = 0)`
+
 // PersonSeed is a note-backed person entity (categories: [people]).
 type PersonSeed struct {
 	Key, Display, NotePath string
 }
 
-// PeopleNotes returns every note-backed person entity.
+// PeopleNotes returns every note-backed person entity. Knowledge zone only:
+// a system-zone record can never be a person (contacts live in your language).
 func (ix *Index) PeopleNotes() ([]PersonSeed, error) {
-	rows, err := ix.db.Query(`SELECT key, display, note_path FROM entities WHERE is_person=1 AND note_path != '' ORDER BY display`)
+	rows, err := ix.db.Query(`
+		SELECT e.key, e.display, e.note_path FROM entities e
+		JOIN notes n ON n.path = e.note_path
+		WHERE e.is_person=1 AND ` + knowledgeSrcSQL + ` ORDER BY e.display`)
 	if err != nil {
 		return nil, err
 	}
@@ -62,13 +73,13 @@ func (ix *Index) NoteLessTargets() ([]NoteLessTarget, error) {
 	rows, err := ix.db.Query(`
 		SELECT e.key, e.display,
 		  (SELECT COUNT(DISTINCT l.src_path) FROM links l JOIN notes n ON n.path=l.src_path
-		     WHERE l.target_key=e.key AND n.ai_authored=0),
+		     WHERE l.target_key=e.key AND ` + knowledgeSrcSQL + `),
 		  EXISTS(SELECT 1 FROM links l JOIN notes n ON n.path=l.src_path
-		     WHERE l.target_key=e.key AND n.ai_authored=0 AND ` + meetingCtxSQL + `),
+		     WHERE l.target_key=e.key AND ` + knowledgeSrcSQL + ` AND ` + meetingCtxSQL + `),
 		  (SELECT COUNT(DISTINCT l.src_path) FROM links l
 		     JOIN notes n ON n.path=l.src_path
 		     JOIN note_categories c ON c.path=n.path
-		     WHERE l.target_key=e.key AND n.ai_authored=0 AND c.category='people')
+		     WHERE l.target_key=e.key AND ` + knowledgeSrcSQL + ` AND c.category='people')
 		FROM entities e
 		WHERE e.note_path='' AND e.ai_authored=0`)
 	if err != nil {
@@ -105,7 +116,7 @@ func (ix *Index) Timeline(key string) ([]TimelineEntry, error) {
 		SELECT n.path, n.name, n.date, n.date_source, n.transcript,
 		  COALESCE((SELECT group_concat(c.category, '|') FROM note_categories c WHERE c.path=n.path), '')
 		FROM links l JOIN notes n ON n.path=l.src_path
-		WHERE l.target_key=? AND n.ai_authored=0
+		WHERE l.target_key=? AND `+knowledgeSrcSQL+`
 		ORDER BY (n.date='') ASC, n.date DESC, n.name ASC`, strings.ToLower(strings.TrimSpace(key)))
 	if err != nil {
 		return nil, err
@@ -235,10 +246,11 @@ func (ix *Index) Search(query string) ([]SearchRef, error) {
 	rows, err := ix.db.Query(`
 		SELECT DISTINCT e.key, e.display, e.note_path, e.is_person,
 		  (SELECT COUNT(DISTINCT l.src_path) FROM links l JOIN notes n ON n.path=l.src_path
-		     WHERE l.target_key=e.key AND n.ai_authored=0)
+		     WHERE l.target_key=e.key AND `+knowledgeSrcSQL+`)
 		FROM entities e
 		LEFT JOIN note_aliases a ON a.path = e.note_path
 		WHERE e.ai_authored=0 AND (e.key LIKE ? OR a.alias_lower LIKE ?)
+		  AND (e.note_path='' OR EXISTS(SELECT 1 FROM notes n WHERE n.path=e.note_path AND `+knowledgeSrcSQL+`))
 		ORDER BY 5 DESC, e.display ASC
 		LIMIT 25`, q, q)
 	if err != nil {
@@ -277,7 +289,7 @@ func (ix *Index) OpenLoops(keys []string) ([]OpenLoop, error) {
 			FROM note_tasks t
 			JOIN notes n ON n.path = t.path
 			JOIN links l ON l.src_path = t.path
-			WHERE l.target_key = ? AND t.checked = 0 AND n.ai_authored = 0 AND `+meetingCtxSQL+`
+			WHERE l.target_key = ? AND t.checked = 0 AND `+knowledgeSrcSQL+` AND `+meetingCtxSQL+`
 			ORDER BY n.date DESC, t.line ASC`, strings.ToLower(strings.TrimSpace(key)))
 		if err != nil {
 			return nil, err
@@ -307,7 +319,7 @@ func (ix *Index) OpenLoopCounts() (map[string]int, error) {
 		FROM note_tasks t
 		JOIN notes n ON n.path = t.path
 		JOIN links l ON l.src_path = t.path
-		WHERE t.checked = 0 AND n.ai_authored = 0 AND ` + meetingCtxSQL + `
+		WHERE t.checked = 0 AND ` + knowledgeSrcSQL + ` AND ` + meetingCtxSQL + `
 		GROUP BY l.target_key`)
 	if err != nil {
 		return nil, err
@@ -331,7 +343,7 @@ func (ix *Index) InteractionDatesByKey() (map[string][]string, error) {
 	rows, err := ix.db.Query(`
 		SELECT l.target_key, n.date
 		FROM links l JOIN notes n ON n.path = l.src_path
-		WHERE n.ai_authored = 0 AND n.date != ''
+		WHERE ` + knowledgeSrcSQL + ` AND n.date != ''
 		GROUP BY l.target_key, n.date
 		ORDER BY l.target_key, n.date`)
 	if err != nil {
@@ -370,15 +382,29 @@ func (ix *Index) Emails(key string) ([]string, error) {
 }
 
 // ResolveEmail returns the entity key whose note carries the given email, or ""
-// — the exact match used once a contact's email is confirmed (§6).
+// — the exact match used once a contact's email is confirmed (§6). Knowledge
+// zone only: an email field on a system-zone record is data, not a contact.
 func (ix *Index) ResolveEmail(email string) string {
 	var k string
 	if err := ix.db.QueryRow(`
-		SELECT e.key FROM note_emails em JOIN entities e ON e.note_path = em.path
-		WHERE em.email_lower = ? LIMIT 1`, strings.ToLower(strings.TrimSpace(email))).Scan(&k); err != nil {
+		SELECT e.key FROM note_emails em
+		JOIN entities e ON e.note_path = em.path
+		JOIN notes n ON n.path = em.path
+		WHERE em.email_lower = ? AND `+knowledgeSrcSQL+` LIMIT 1`,
+		strings.ToLower(strings.TrimSpace(email))).Scan(&k); err != nil {
 		return ""
 	}
 	return k
+}
+
+// NoteZone returns a note's zone ("knowledge" | "system"), defaulting to
+// knowledge for unknown paths — the note view shows a quiet SYSTEM badge.
+func (ix *Index) NoteZone(rel string) string {
+	var z string
+	if err := ix.db.QueryRow(`SELECT zone FROM notes WHERE path = ?`, rel).Scan(&z); err != nil || z == "" {
+		return "knowledge"
+	}
+	return z
 }
 
 // VaultRoot exposes the indexed vault root (the contacts service reads note

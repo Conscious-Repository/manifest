@@ -53,7 +53,8 @@ func (s *Server) handleNoteGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"path": filepath.ToSlash(rel), "name": name, "raw": string(raw),
 		"backlinks": backlinks, "isPerson": isPerson,
-		"vault": filepath.Base(s.index.VaultRoot()), // for the obsidian:// URI
+		"zone":  s.index.NoteZone(filepath.ToSlash(rel)), // "system" → quiet SYSTEM badge
+		"vault": filepath.Base(s.index.VaultRoot()),      // for the obsidian:// URI
 	})
 }
 

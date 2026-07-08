@@ -19,15 +19,42 @@ var memSeq int64
 type Config struct {
 	VaultRoot string   // absolute path to the whole vault
 	DBPath    string   // where the SQLite projection lives (outside the vault; "" = in-memory)
-	AIRegions []string // vault-relative path prefixes tagged AI-authored (default: Agents/, excalibur/)
+	AIRegions []string // vault-relative path prefixes tagged AI-authored (default: agents/excalibur under SystemRoot + legacy roots)
 	SkipDirs  []string // directory base names never walked (default: dotdirs + .trash)
+	// SystemRoot is the vault-relative system-zone folder (system-root-plan §1).
+	// Both zones are indexed (wikilinks resolve across the line), but each note
+	// carries its zone so contacts extraction can read ONLY knowledge-zone notes.
+	// "" defaults to "system".
+	SystemRoot string
 }
 
-func (c Config) aiRegions() []string {
-	if len(c.AIRegions) == 0 {
-		return []string{"Agents/", "excalibur/"}
+func (c Config) systemRoot() string {
+	if strings.TrimSpace(c.SystemRoot) == "" {
+		return "system"
 	}
-	return c.AIRegions
+	return strings.Trim(c.SystemRoot, "/")
+}
+
+// aiRegions are the engine-authored subtrees. The default covers both the
+// system-rooted layout (system/agents/, system/excalibur/) and the legacy
+// vault-root layout (Agents/, excalibur/) so the index stays correct on either
+// side of the reorg.
+func (c Config) aiRegions() []string {
+	if len(c.AIRegions) > 0 {
+		return c.AIRegions
+	}
+	sr := c.systemRoot()
+	return []string{"Agents/", "excalibur/", sr + "/agents/", sr + "/excalibur/"}
+}
+
+// zoneOf classifies a vault-relative path: under SystemRoot → "system", else
+// "knowledge" (system-root-plan §1). Matched by path prefix, never base name.
+func (c Config) zoneOf(rel string) string {
+	sr := c.systemRoot()
+	if rel == sr || strings.HasPrefix(rel, sr+"/") {
+		return "system"
+	}
+	return "knowledge"
 }
 
 // Index is the rebuildable SQLite projection of the vault. It owns only its own
@@ -45,6 +72,7 @@ CREATE TABLE IF NOT EXISTS notes (
   name_lower  TEXT NOT NULL,
   date        TEXT NOT NULL DEFAULT '',
   date_source TEXT NOT NULL DEFAULT '',
+  zone        TEXT NOT NULL DEFAULT 'knowledge',  -- knowledge | system (system-root-plan §1)
   ai_authored INTEGER NOT NULL DEFAULT 0,
   transcript  INTEGER NOT NULL DEFAULT 0,
   granola_id  TEXT NOT NULL DEFAULT '',
@@ -114,7 +142,7 @@ func Open(cfg Config) (*Index, error) {
 // disposable projection (Rebuild reproduces it from the vault), a version
 // mismatch simply drops every table and recreates — a stale on-disk index from
 // an older build upgrades itself with no migration, losslessly.
-const schemaVersion = 4
+const schemaVersion = 5 // v5: notes.zone (knowledge|system) + AI regions out of FTS
 
 var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "note_tasks", "entities", "notes_fts"}
 
@@ -189,7 +217,9 @@ func (ix *Index) Rebuild() (int, error) {
 		if fi, err := d.Info(); err == nil {
 			mtime = fi.ModTime().Unix()
 		}
-		if err := insertNote(tx, ParseNote(filepath.ToSlash(rel), content, mtime, regions)); err != nil {
+		n := ParseNote(filepath.ToSlash(rel), content, mtime, regions)
+		n.Zone = ix.cfg.zoneOf(n.Path)
+		if err := insertNote(tx, n); err != nil {
 			return err
 		}
 		count++
@@ -212,9 +242,13 @@ func (ix *Index) Rebuild() (int, error) {
 // ReindexPaths deletes first), so the note gets a fresh rowid shared with its
 // notes_fts row.
 func insertNote(tx *sql.Tx, n Note) error {
+	zone := n.Zone
+	if zone == "" {
+		zone = "knowledge"
+	}
 	ai := b2i(n.AIAuthored)
-	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,ai_authored,transcript,granola_id,mtime) VALUES(?,?,?,?,?,?,?,?,?)`,
-		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, ai, b2i(n.HasTranscript), n.GranolaID, n.MTime)
+	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,zone,ai_authored,transcript,granola_id,mtime) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, zone, ai, b2i(n.HasTranscript), n.GranolaID, n.MTime)
 	if err != nil {
 		return err
 	}
@@ -252,8 +286,13 @@ func insertNote(tx *sql.Tx, n Note) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`INSERT INTO notes_fts(rowid,name,body) VALUES(?,?,?)`, id, n.Name, n.Body); err != nil {
-		return err
+	// AI-authored regions (system/agents, system/excalibur) are excluded from FTS
+	// entirely (system-root-plan §3); other system-zone notes (CRMs, home) stay
+	// searchable.
+	if !n.AIAuthored {
+		if _, err := tx.Exec(`INSERT INTO notes_fts(rowid,name,body) VALUES(?,?,?)`, id, n.Name, n.Body); err != nil {
+			return err
+		}
 	}
 	return nil
 }
