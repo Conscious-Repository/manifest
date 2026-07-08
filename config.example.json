@@ -2,7 +2,6 @@
   "vaultPath": "~/Documents/index.ben",
   "newDailyDir": "intrinsic",
   "dailyNoteFormat": "2006-01-02",
-  "periodNoteDir": "Manifest",
   "goalsFileName": "goals.md",
   "skipDirs": [".git", ".obsidian", ".trash", "attachments"],
   "scheduleStart": 8,

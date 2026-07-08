@@ -17,7 +17,7 @@ func testService(t *testing.T) (*Service, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{VaultPath: dir, PeriodNoteDir: "Manifest", ScheduleStart: 8, ScheduleEnd: 18}
+	cfg := Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18}
 	return NewService(cfg, idx), dir
 }
 

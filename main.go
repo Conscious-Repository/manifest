@@ -245,7 +245,6 @@ func vaultConfig(c Config) vault.Config {
 func dailyConfig(c Config) daily.Config {
 	return daily.Config{
 		VaultPath:     c.VaultPath,
-		PeriodNoteDir: c.PeriodNoteDir,
 		ScheduleStart: c.ScheduleStart,
 		ScheduleEnd:   c.ScheduleEnd,
 	}

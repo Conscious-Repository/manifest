@@ -23,8 +23,6 @@ type Config struct {
 	DailyNoteDir string `json:"dailyNoteDir"`
 	// DailyNoteFormat is the Go time layout for daily filenames (default ISO).
 	DailyNoteFormat string `json:"dailyNoteFormat"`
-	// PeriodNoteDir holds the (legacy) quarterly goals / monthly milestone notes.
-	PeriodNoteDir string `json:"periodNoteDir"`
 	// GoalsFileName is the filename convention for the goals master file.
 	GoalsFileName string `json:"goalsFileName"`
 	// SkipDirs are directory base names the scanner ignores (besides dotdirs).
@@ -59,7 +57,6 @@ func defaultConfig() Config {
 		NewDailyDir:     "intrinsic",
 		DailyNoteDir:    "Daily",
 		DailyNoteFormat: "2006-01-02",
-		PeriodNoteDir:   "Manifest",
 		GoalsFileName:   "goals.md",
 		SkipDirs:        []string{".git", ".obsidian", ".trash", "attachments", "Agents", "excalibur"},
 		ScheduleStart:   8,
@@ -89,9 +86,6 @@ func LoadConfig(path string) (Config, error) {
 	d := defaultConfig()
 	if cfg.DailyNoteFormat == "" {
 		cfg.DailyNoteFormat = d.DailyNoteFormat
-	}
-	if cfg.PeriodNoteDir == "" {
-		cfg.PeriodNoteDir = d.PeriodNoteDir
 	}
 	if cfg.GoalsFileName == "" {
 		cfg.GoalsFileName = d.GoalsFileName

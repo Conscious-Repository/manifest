@@ -25,10 +25,9 @@ const (
 const dateLayout = "2006-01-02"
 
 // Config holds the settings the Service needs. Daily-note PATH resolution lives
-// in vault.Index; this struct only carries period-note and schedule layout.
+// in vault.Index; this struct only carries the schedule layout.
 type Config struct {
 	VaultPath     string
-	PeriodNoteDir string
 	ScheduleStart int
 	ScheduleEnd   int
 }

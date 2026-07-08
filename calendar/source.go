@@ -15,7 +15,7 @@ import (
 // schedule still shows the last-known events.
 type Source struct {
 	client   *Client
-	cacheDir string // <vault>/<PeriodNoteDir>/cache
+	cacheDir string // <dataDir>/calendar-cache (derived data — outside the vault)
 	timeout  time.Duration
 }
 

@@ -91,14 +91,14 @@ except `vaultPath`; anything omitted falls back to the default below.
 | `vaultPath` | *(required)* | Absolute path to your Obsidian vault. `~` is expanded. |
 | `newDailyDir` | `intrinsic` | Folder (relative to the vault) where *new* daily notes are created. Existing daily notes are found anywhere in the vault. |
 | `dailyNoteFormat` | `2006-01-02` | Go time layout for daily filenames. Match your Obsidian Daily Notes setting — e.g. `2006-01-02` → `2026-07-06.md`, or `2006/01/2006-01-02` for date-foldered notes. |
-| `periodNoteDir` | `Manifest` | Folder for legacy monthly/quarterly period notes. |
 | `goalsFileName` | `goals.md` | The single file that holds your Areas & Goals. |
-| `skipDirs` | `.git, .obsidian, .trash, attachments, Agents, excalibur` | Directory names the scanner ignores (dotfolders are always skipped). |
+| `skipDirs` | `.git, .obsidian, .trash, attachments` | Directory names the scanner ignores (dotfolders are always skipped). |
 | `scheduleStart` / `scheduleEnd` | `8` / `18` | First/last hours shown on the schedule (24-hour, inclusive → 8A–6P). |
 | `timezone` | *(local)* | IANA name (e.g. `America/Chicago`) for mapping calendar events to slots. |
 | `port` | `7777` | Local port the UI is served on. |
 | `dataDir` | `~/.config/manifest` | Where all derived state lives. **Must be outside the vault.** |
-| `excaliburPath` | *(unset)* | Root of an excalibur harness tree. Unset → the Spirits tab is disabled. |
+| `systemRoot` | `system` | Vault-relative folder for the **system zone**: structured, app-managed markdown (agents, excalibur, CRMs). Everything outside it is the knowledge zone — daily/goals classification and contact extraction read only there, and new structured writes may land only inside it. |
+| `excaliburPath` | *(unset)* | Root of an excalibur harness tree (conventionally `<vault>/system/excalibur`). Unset → the Spirits tab is disabled. |
 
 **Flags** override the config: `-config <path>` (default `config.json`),
 `-vault <path>`, `-port <n>`.
