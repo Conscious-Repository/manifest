@@ -50,11 +50,15 @@ func (s *Server) handleNoteGet(w http.ResponseWriter, r *http.Request) {
 	if e, ok := s.index.Entity(strings.ToLower(name)); ok {
 		isPerson = e.IsPerson
 	}
+	// engine-owned notes (system/excalibur, system/agents) are read-only — the
+	// write guard refuses them, so the UI hides the edit affordance.
+	readOnly := s.vault != nil && !s.vault.CanUserWrite(filepath.ToSlash(rel))
 	writeJSON(w, map[string]any{
 		"path": filepath.ToSlash(rel), "name": name, "raw": string(raw),
 		"backlinks": backlinks, "isPerson": isPerson,
-		"zone":  s.index.NoteZone(filepath.ToSlash(rel)), // "system" → quiet SYSTEM badge
-		"vault": filepath.Base(s.index.VaultRoot()),      // for the obsidian:// URI
+		"zone":     s.index.NoteZone(filepath.ToSlash(rel)), // "system" → quiet SYSTEM badge
+		"readOnly": readOnly,
+		"vault":    filepath.Base(s.index.VaultRoot()), // for the obsidian:// URI
 	})
 }
 

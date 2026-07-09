@@ -56,6 +56,11 @@ func (w *Writer) extrinsicRootOrDefault() string {
 	return w.extrinsicRoot
 }
 
+// CanUserWrite reports whether a raw user edit (note-editor save) to rel is
+// permitted — false for engine-owned paths (system/excalibur, system/agents).
+// The note view uses it to hide the edit affordance on read-only notes.
+func (w *Writer) CanUserWrite(rel string) bool { return w.Guard(rel, WriteRawUser) == nil }
+
 // Guard decides whether a vault-relative write is legal for the given class.
 // Every write entry point in this package flows through it.
 func (w *Writer) Guard(rel string, class WriteClass) error {

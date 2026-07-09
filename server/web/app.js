@@ -1438,7 +1438,13 @@ function feedCard(it) {
   const top = el("div", "feed-top");
   if (pinned) top.append(el("span", "pin-chip", "📌 pinned"));
   top.append(el("span", "type-chip type-" + it.type, it.type));
-  const title = it.link ? linkEl(it.title, it.link) : el("span", null, it.title);
+  // only a real external URL makes the title a link; an artifact's local
+  // `artifacts/library/…` reference opens in the note view via "view →" instead.
+  const external = /^https?:\/\//i.test(it.link || "");
+  let title;
+  if (external) title = linkEl(it.title, it.link);
+  else if (it.artifactPath) { title = el("span", "cp-clickable", it.title); title.onclick = () => openArtifact(it.artifactPath); }
+  else title = el("span", null, it.title);
   title.classList.add("feed-title");
   top.append(title);
   if (it.confidence) top.append(el("span", "conf conf-" + it.confidence, it.confidence));
@@ -1446,7 +1452,7 @@ function feedCard(it) {
   // the why line is written to be the reason you care — lead with it, emphasized
   if (it.why) card.append(el("div", "feed-why", it.why));
   const meta = el("div", "feed-meta");
-  const fav = it.link ? faviconFor(it.link) : null;
+  const fav = external ? faviconFor(it.link) : null;
   if (fav) meta.append(fav);
   const bits = [it.source || it.domain, it.agent, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
   meta.append(el("span", null, bits));
@@ -1454,6 +1460,7 @@ function feedCard(it) {
   if (it.body && (pinned || it.type === "artifact")) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
   if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
   const actions = el("div", "feed-actions");
+  if (it.artifactPath) actions.append(pillLight("view →", () => openArtifact(it.artifactPath))); // the full brief
   if (it.status !== "discarded") {
     actions.append(pillLight("Keep", () => feedAction(it.id, { status: "kept" })));
     if (it.status !== "kept") actions.append(pillLight("Discard", () => feedAction(it.id, { status: "discarded" })));
@@ -1465,6 +1472,14 @@ function feedCard(it) {
   }
   card.append(actions);
   return card;
+}
+
+// openArtifact opens an artifact's library file in the universal note view (the
+// excalibur tree is inside the vault, so it renders like any note), returning to
+// the feed on back.
+function openArtifact(path) {
+  _noteReturn = "#/feed";
+  openNoteByPath(path);
 }
 
 // feedDig: "dig →" — spool a deeper run for the originating spirit; findings
@@ -2764,8 +2779,10 @@ async function loadNote(path) {
     _note = await res.json();
   } catch (e) { els.noteRendered.textContent = "Error loading note."; return; }
   els.noteTitle.textContent = _note.name;
-  // quiet zone badge: system-zone notes are app-managed markdown, still editable
+  // quiet zone badge: system-zone notes are app-managed markdown
   if (_note.zone === "system") els.noteTitle.append(el("span", "note-zone-badge", "SYSTEM"));
+  // engine-owned notes are read-only (the write guard refuses them) — hide edit
+  els.noteRawToggle.hidden = !!_note.readOnly;
   els.noteObsidian.href = "obsidian://open?vault=" + encodeURIComponent(_note.vault) +
     "&file=" + encodeURIComponent(_note.path.replace(/\.md$/, ""));
   renderNoteBody();

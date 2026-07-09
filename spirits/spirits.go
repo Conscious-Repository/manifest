@@ -40,6 +40,10 @@ func NewStore(root string) *Store {
 	return &Store{root: root, Feed: feed.NewStoreDir(filepath.Join(root, "artifacts", "feed"))}
 }
 
+// Root is the excalibur tree root (an artifact card's `artifacts/library/…`
+// reference resolves against it).
+func (s *Store) Root() string { return s.root }
+
 // RunSummary is one run report's frontmatter, as the runs list renders it.
 type RunSummary struct {
 	ID           string  `json:"id"` // report filename stem

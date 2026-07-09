@@ -3,6 +3,8 @@ package server
 import (
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -47,25 +49,67 @@ func (s *Server) activeSignals(now time.Time) []signals.Signal {
 	return s.signals.Active(now)
 }
 
+// feedItemView is a feed item enriched for the client: an `artifact` card whose
+// content lives in the excalibur tree (artifacts/library/…) gets a resolved
+// ArtifactPath so the dashboard can open it in the note view (the excalibur tree
+// is inside the vault, so that path is a normal vault note).
+type feedItemView struct {
+	feed.Item
+	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative, when viewable
+}
+
+// libraryRefRe pulls an `artifacts/library/<name>.md` reference out of a card's
+// link or body (the engine puts it in either place).
+var libraryRefRe = regexp.MustCompile(`artifacts/library/[^\s)"']+\.md`)
+
 // handleFeedList serves the unified stream: spirit items, virtual proposal
-// cards (+ signals in Phase 3), plus the badge — one response.
+// cards, app signals, plus the badge — one response.
 func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	items := []feed.Item{}
+	views := []feedItemView{}
 	if s.spirits != nil {
 		f := feed.Filter{
 			Status: r.URL.Query().Get("status"),
 			Type:   r.URL.Query().Get("type"),
 			Domain: r.URL.Query().Get("domain"),
 		}
-		items = s.spirits.Feed.List(f, now)
+		for _, it := range s.spirits.Feed.List(f, now) {
+			views = append(views, feedItemView{Item: it, ArtifactPath: s.artifactPath(it)})
+		}
 	}
 	writeJSON(w, map[string]any{
-		"items":     items,
+		"items":     views,
 		"signals":   s.activeSignals(now),
 		"proposals": s.feedProposals(),
 		"badge":     s.feedInboxCount(now),
 	})
+}
+
+// artifactPath resolves an artifact card's library reference to a vault-relative
+// note path (empty unless the item is an artifact and the file exists). The
+// excalibur tree sits inside the vault, so the result opens in the note view.
+func (s *Server) artifactPath(it feed.Item) string {
+	if it.Type != "artifact" || s.spirits == nil || s.index == nil {
+		return ""
+	}
+	ref := ""
+	if strings.HasPrefix(it.Link, "artifacts/library/") {
+		ref = it.Link
+	} else if m := libraryRefRe.FindString(it.Body); m != "" {
+		ref = m
+	}
+	if ref == "" {
+		return ""
+	}
+	abs := filepath.Join(s.spirits.Root(), filepath.FromSlash(ref))
+	if _, err := os.Stat(abs); err != nil {
+		return "" // referenced file missing — nothing to open
+	}
+	rel, err := filepath.Rel(s.index.VaultRoot(), abs)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "" // artifact lives outside the vault — not a note view target
+	}
+	return filepath.ToSlash(rel)
 }
 
 // proposalCard is a VIRTUAL pinned card derived from a pending actionable
