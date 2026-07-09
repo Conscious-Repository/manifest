@@ -27,7 +27,7 @@ import (
 // before recording the decision. Plain proposals leave both empty.
 type Proposal struct {
 	ID        string `json:"id"`
-	Type      string `json:"type"`   // "approval" (default) | "create-vault-note"
+	Type      string `json:"type"` // "approval" (default) | "create-vault-note"
 	Action    string `json:"action"`
 	Agent     string `json:"agent"`
 	Created   string `json:"created"` // RFC3339
@@ -333,14 +333,18 @@ func (s *Store) applyCreateVaultNote(p Proposal) error {
 	if s.vaultRoot == "" {
 		return errors.New("apply refused: no vault root configured for create-vault-note")
 	}
-	target := filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))
+	// Lowercase the filename to match the vault convention (the engine may
+	// propose a title-cased "2026-07-08 Some Meeting.md"; save it lowercase).
+	// The date digits are unaffected; Obsidian resolves [[links]] case-blind.
+	rel := strings.ToLower(p.ApplyPath)
+	target := filepath.Join(s.vaultRoot, filepath.FromSlash(rel))
 	rootAbs, _ := filepath.Abs(s.vaultRoot)
 	tgtAbs, _ := filepath.Abs(target)
 	if filepath.Dir(tgtAbs) != rootAbs {
-		return fmt.Errorf("apply refused: %q escapes the vault root", p.ApplyPath)
+		return fmt.Errorf("apply refused: %q escapes the vault root", rel)
 	}
 	if _, err := os.Stat(target); err == nil {
-		return fmt.Errorf("apply refused: %q already exists — not overwriting", p.ApplyPath)
+		return fmt.Errorf("apply refused: %q already exists — not overwriting", rel)
 	}
 	body := p.Proposed
 	if !strings.HasSuffix(body, "\n") {

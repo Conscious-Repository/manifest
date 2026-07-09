@@ -1385,9 +1385,8 @@ function signalRow(sg) {
   label.onclick = () => { location.hash = sg.actHref; };
   row.append(label);
   const act = el("span", "signal-actions");
-  act.append(pillLight("Act", () => { location.hash = sg.actHref; }));
-  if (sg.goalId) act.append(pillLight("→ today", (ev) => signalPromote(sg, ev.currentTarget)));
   act.append(
+    pillLight("Act", () => { location.hash = sg.actHref; }),
     pillLight("Snooze", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })),
     pillLight("Dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })),
   );
@@ -1396,14 +1395,6 @@ function signalRow(sg) {
 }
 async function signalAction(url, body) {
   try { await postJSON(url, body); } catch (e) {}
-  loadFeed();
-}
-async function signalPromote(sg, btn) {
-  if (btn) btn.disabled = true;
-  try {
-    const r = await postJSON("/api/feed/signal/promote", { id: sg.id, hash: sg.hash, goalId: sg.goalId || "", text: sg.entity, date: isoToday() });
-    if (r && r.ok) showToast("Added to today — view", () => { location.hash = "#/"; }, "info");
-  } catch (e) { if (btn) btn.disabled = false; }
   loadFeed();
 }
 
@@ -1468,33 +1459,12 @@ function feedCard(it) {
     if (it.status !== "kept") actions.append(pillLight("Discard", () => feedAction(it.id, { status: "discarded" })));
     actions.append(pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })));
     if (!it.vaultNote) actions.append(pillLight("Save to vault", () => feedSaveToVault(it.id)));
-    actions.append(pillLight("→ today", (ev) => feedPromote(it.id, ev.currentTarget))); // task in today's block; auto-Keeps
     if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
   } else {
     actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
   }
   card.append(actions);
   return card;
-}
-
-// feedPromote: "→ today" — the card becomes a task in today's manifest block
-// (visible in Obsidian) and the item auto-Keeps. Button disables optimistically
-// so a double-click can't race the refresh (the server also guards).
-async function feedPromote(id, btn) {
-  if (btn) btn.disabled = true;
-  setSaveState("saving");
-  try {
-    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/promote?date=${isoToday()}`, { method: "POST" });
-    if (!r.ok) throw new Error((await r.text()) || "promote failed");
-    const d = await r.json();
-    setSaveState("saved");
-    showToast(d.already ? "Already on today's plan" : "Added to today — view", () => { location.hash = "#/"; }, "info");
-  } catch (e) {
-    setSaveState("error");
-    showToast("Promote failed: " + (e.message || e), null, "error");
-    if (btn) btn.disabled = false;
-  }
-  loadFeed();
 }
 
 // feedDig: "dig →" — spool a deeper run for the originating spirit; findings

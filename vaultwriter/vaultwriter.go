@@ -31,11 +31,13 @@ func (w *Writer) Enabled() bool { return w.vault != "" }
 // SaveExtrinsic creates <vault>/extrinsic/<title>.md and returns the vault-relative
 // path. If a note with that title already exists it is returned untouched (write-once)
 // — we never clobber the user's notes. The path is guarded to stay under extrinsic/.
+// The filename is lowercased to match the vault's convention (all person/book
+// notes are lowercase; Obsidian resolves [[Links]] case-insensitively).
 func (w *Writer) SaveExtrinsic(title, itemType, why, link, source, body string) (string, error) {
 	if !w.Enabled() {
 		return "", errors.New("no vault configured")
 	}
-	name := sanitizeName(title)
+	name := strings.ToLower(sanitizeName(title))
 	if name == "" {
 		return "", errors.New("cannot save an item with an empty title")
 	}

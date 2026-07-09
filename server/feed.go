@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"manifest/approvals"
-	"manifest/daily"
 	"manifest/feed"
 	"manifest/signals"
 	"manifest/spirits"
@@ -156,72 +155,6 @@ func (s *Server) handleFeedStatus(w http.ResponseWriter, r *http.Request) {
 
 // ---- card actions (feed-central §3) ----
 
-// inlineFieldRe matches [k:: v]-shaped substrings — the day-note parser eats
-// those, so a promoted title must not smuggle any in.
-var inlineFieldRe = regexp.MustCompile(`\[[^\]]*::[^\]]*\]`)
-
-// promoteText builds the task line: sanitized title + the item's link.
-func promoteText(title, link string) string {
-	t := strings.Join(strings.Fields(inlineFieldRe.ReplaceAllString(title, "")), " ")
-	if r := []rune(t); len(r) > 200 {
-		t = string(r[:200]) + "…"
-	}
-	if link != "" {
-		t += " — " + link
-	}
-	return strings.TrimSpace(t)
-}
-
-// handleFeedPromote is the "→ today" action: any card becomes a task in
-// today's manifest block, and the spirit item auto-Keeps (it proved useful).
-// Date comes from the client like /api/day/pull — never computed server-side.
-func (s *Server) handleFeedPromote(w http.ResponseWriter, r *http.Request) {
-	if s.spirits == nil {
-		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
-		return
-	}
-	date := r.URL.Query().Get("date")
-	if date == "" {
-		httpError(w, errBadRequest("date is required"))
-		return
-	}
-	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
-	if !ok {
-		http.Error(w, "item not found", http.StatusNotFound)
-		return
-	}
-	text := promoteText(it.Title, it.Link)
-	if text == "" {
-		httpError(w, errBadRequest("nothing to promote"))
-		return
-	}
-	// double-promote guard: if today's tasks already carry this item, don't
-	// append a duplicate line (fast double-click beats the list refresh).
-	if day, err := s.svc.Load(date); err == nil {
-		marker := it.Link
-		if marker == "" {
-			marker = text
-		}
-		for _, t := range day.Tasks {
-			if strings.Contains(t.Text, marker) {
-				writeJSON(w, map[string]any{"already": true, "item": it})
-				return
-			}
-		}
-	}
-	// AddTask first, verdict second — a failure in between leaves a task plus
-	// an inboxed item (harmless); the reverse order could eat the task.
-	if _, err := s.svc.AddTask(date, daily.Task{Text: text}); err != nil {
-		httpError(w, err)
-		return
-	}
-	updated, err := s.spirits.Feed.SetStatus(it.ID, "kept")
-	if err != nil {
-		updated = it // task landed; report the pre-verdict item rather than failing
-	}
-	writeJSON(w, map[string]any{"item": updated})
-}
-
 // handleFeedDig spools a run-now for the originating spirit with a request
 // line carrying the item — findings arrive as new feed items, closing the
 // loop in the feed itself. The target is the spirit's ON-DEMAND ritual
@@ -321,43 +254,6 @@ func (s *Server) handleSignalSnooze(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]bool{"ok": true})
-}
-
-// handleSignalPromote adds a signal's entity to today as a task (a rock signal
-// routes through goals.Promote to mint the durable [goal:: id]), then dismisses
-// the signal — it is now on the plan. date comes from the client.
-func (s *Server) handleSignalPromote(w http.ResponseWriter, r *http.Request) {
-	if s.signals == nil {
-		http.Error(w, "signals disabled", http.StatusServiceUnavailable)
-		return
-	}
-	var b struct {
-		ID     string
-		Hash   string
-		Text   string
-		GoalID string
-		Date   string
-	}
-	if err := decode(r, &b); err != nil || b.ID == "" || b.Date == "" {
-		httpError(w, errBadRequest("id and date are required"))
-		return
-	}
-	task := daily.Task{Text: strings.TrimSpace(b.Text)}
-	if b.GoalID != "" && s.goals != nil {
-		if text, id, ok := s.goals.Promote(b.GoalID); ok { // stamps the durable [goal:: id]
-			task.Text, task.GoalID = text, id
-		}
-	}
-	if task.Text == "" {
-		httpError(w, errBadRequest("nothing to promote"))
-		return
-	}
-	if _, err := s.svc.AddTask(b.Date, task); err != nil {
-		httpError(w, err)
-		return
-	}
-	_ = s.signals.Dismiss(b.ID, b.Hash) // now on the plan
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

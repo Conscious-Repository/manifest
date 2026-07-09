@@ -58,7 +58,8 @@ func TestConfirmCreatesVaultNote(t *testing.T) {
 	if err := s.Confirm("a1a1a1a1a1a1"); err != nil {
 		t.Fatalf("Confirm should write the note, got %v", err)
 	}
-	got, err := os.ReadFile(filepath.Join(vault, "2026-07-02 Aion sync.md"))
+	// the filename is lowercased to the vault convention on write
+	got, err := os.ReadFile(filepath.Join(vault, "2026-07-02 aion sync.md"))
 	if err != nil {
 		t.Fatalf("note not written: %v", err)
 	}
@@ -72,8 +73,8 @@ func TestConfirmCreatesVaultNote(t *testing.T) {
 
 func TestConfirmCreateNoteRefusesExisting(t *testing.T) {
 	s, vault := createNoteHarness(t)
-	// the note already exists — confirming must refuse, not overwrite
-	existing := filepath.Join(vault, "2026-07-02 Aion sync.md")
+	// the note already exists (at the lowercased target) — confirming must refuse
+	existing := filepath.Join(vault, "2026-07-02 aion sync.md")
 	if err := os.WriteFile(existing, []byte("ORIGINAL"), 0o644); err != nil {
 		t.Fatal(err)
 	}
