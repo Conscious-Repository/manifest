@@ -15,6 +15,7 @@ import (
 	"manifest/reading"
 	"manifest/signals"
 	"manifest/spirits"
+	"manifest/studio"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
@@ -39,6 +40,10 @@ type Server struct {
 	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
+	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
+	studio     *studio.Store
+	corpusPath string // <excalibur>/vessel/corpus/x.db
+	xPostsFile string // vault-relative X-posts file (default "x posts.md")
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -145,6 +150,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig) // "dig →"
 	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
 	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
+
+	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
+	mux.HandleFunc("GET /api/studio", s.handleStudio)
+	mux.HandleFunc("POST /api/studio/draft/{id}/feedback", s.handleStudioFeedback)
+	mux.HandleFunc("POST /api/studio/draft/{id}/edit", s.handleStudioEdit)
+	mux.HandleFunc("POST /api/studio/draft/{id}/mark-posted", s.handleStudioMarkPosted)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

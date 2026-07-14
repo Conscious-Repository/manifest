@@ -26,6 +26,7 @@ import (
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
+	"manifest/studio"
 	"manifest/vault"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -177,8 +178,9 @@ func main() {
 	srv.UseVault(vw)
 	if cfg.ExcaliburPath != "" {
 		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
-		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")).WithVaultRoot(cfg.VaultPath))
-		log.Printf("spirits: %s (approvals inbox: artifacts/approvals)", cfg.ExcaliburPath)
+		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")).WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw))
+		srv.UseStudio(studio.NewStore(cfg.ExcaliburPath), studio.CorpusPath(cfg.ExcaliburPath), cfg.XPostsFile)
+		log.Printf("spirits: %s (approvals inbox: artifacts/approvals · studio board: artifacts/studio)", cfg.ExcaliburPath)
 	} else {
 		log.Printf("spirits: disabled (set excaliburPath in config to enable the SPIRITS tab)")
 	}

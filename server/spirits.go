@@ -101,11 +101,26 @@ func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) 
 	for _, p := range pending {
 		rr := row{Proposal: p}
 		if p.ApplyPath != "" {
-			if p.Type == approvals.TypeCreateVaultNote {
+			switch p.Type {
+			case approvals.TypeCreateVaultNote:
 				// A new vault-root note: allowed by its own path rule, no current
 				// content (the diff renders as an all-added new file).
 				rr.Allowed = approvals.CreateVaultNotePathAllowed(p.ApplyPath)
-			} else {
+			case approvals.TypeAppendXQueue:
+				// The bullet appends to the x-posts file; current content is that
+				// file so the UI can show where it lands.
+				rr.Allowed = approvals.AppendXQueuePathAllowed(p.ApplyPath)
+				if cur, ok := s.approvals.CurrentContent(p); ok {
+					rr.Current = cur
+				}
+			case approvals.TypeUpdateVaultSkill:
+				// A skill-file edit: allowed only when the path is on the tight
+				// allow-list AND the filing ritual is a tune ritual (D15).
+				rr.Allowed = approvals.UpdateVaultSkillPathAllowed(p.ApplyPath) && p.Ritual == "tune"
+				if cur, ok := s.approvals.CurrentContent(p); ok {
+					rr.Current = cur
+				}
+			default:
 				rr.Allowed = approvals.ApplyPathAllowed(p.ApplyPath)
 				if cur, ok := s.approvals.CurrentContent(p); ok {
 					rr.Current = cur

@@ -1158,3 +1158,30 @@ input.inline-hidden { color: transparent !important; }
 .asktext-area:focus { border-color: var(--blue); }
 .asktext-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 10px; }
 .asktext-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* ---- Content Studio (draft cards, board, inspiration) ---- */
+.type-chip.type-draft { color: #0e7490; border-color: #c6e6ee; background: #f0fafc; }
+.feed-card.draft .draft-tweet { font-family: var(--sans); font-size: 16px; line-height: 1.5; color: var(--text); white-space: pre-wrap; padding: 4px 0; }
+.draft-format, .draft-score { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.draft-score { color: #15803d; border-color: #bfe3c9; }
+.draft-quote { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 4px 0; background: #fafafa; }
+.draft-quote-text { font-size: 13px; color: var(--streak-ink); white-space: pre-wrap; }
+.draft-edit { display: flex; flex-direction: column; gap: 6px; }
+.draft-edit-input { width: 100%; min-height: 70px; font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }
+.draft-feedback { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.draft-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.draft-chip { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; background: transparent; cursor: pointer; }
+.draft-chip.on { color: var(--blue); border-color: var(--blue); background: var(--blue-soft); }
+.draft-fb-row { display: flex; gap: 6px; }
+.draft-fb-input { flex: 1; font-family: var(--sans); font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; }
+.draft-feedback-shown { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.draft-fb-tags { font-family: var(--mono); font-size: 11px; color: var(--blue); }
+.draft-fb-text { font-size: 13px; color: var(--streak-ink); font-style: italic; }
+.draft-scorecard summary { font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer; }
+.studio-runs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.studio-run-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+.srun-outcome { text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.srun-outcome.outcome-completed { color: #15803d; }
+.srun-outcome.outcome-stopped-charge, .srun-outcome.outcome-error { color: #b91c1c; }
+.insp-post { border-top: 1px solid var(--line); padding: 8px 0; }
+.insp-post-text { font-size: 13.5px; line-height: 1.45; color: var(--text); white-space: pre-wrap; }

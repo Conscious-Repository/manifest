@@ -55,6 +55,9 @@ type Config struct {
 	// ExcaliburPath is the root of the sibling excalibur harness tree (spirit
 	// feed, run reports, run-now spool). Empty disables the SPIRITS tab.
 	ExcaliburPath string `json:"excaliburPath"`
+	// XPostsFile is the vault-relative X-posts file the Content Studio appends
+	// approved posts to (a `# queue`/`# posted` bullet list). Default "x posts.md".
+	XPostsFile string `json:"xPostsFile"`
 }
 
 func defaultConfig() Config {
@@ -122,6 +125,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if cfg.ExtrinsicRoot == "" {
 		cfg.ExtrinsicRoot = d.ExtrinsicRoot
+	}
+	if cfg.XPostsFile == "" {
+		cfg.XPostsFile = "x posts.md"
 	}
 	if err := validateZoneRoot("systemRoot", cfg.SystemRoot); err != nil {
 		return cfg, err

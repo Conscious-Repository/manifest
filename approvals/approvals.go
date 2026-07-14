@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"manifest/mdfm"
+	"manifest/vaultwriter"
 )
 
 // Proposal is one drafted action awaiting the user's decision. When ApplyPath is
@@ -27,9 +28,10 @@ import (
 // before recording the decision. Plain proposals leave both empty.
 type Proposal struct {
 	ID        string `json:"id"`
-	Type      string `json:"type"` // "approval" (default) | "create-vault-note"
+	Type      string `json:"type"` // "approval" (default) | "create-vault-note" | "append-x-queue" | "update-vault-skill"
 	Action    string `json:"action"`
 	Agent     string `json:"agent"`
+	Ritual    string `json:"ritual"`  // the filing ritual (D15: update-vault-skill is tune-only)
 	Created   string `json:"created"` // RFC3339
 	Status    string `json:"status"`  // pending|approved|rejected (= folder)
 	Body      string `json:"body"`
@@ -40,6 +42,50 @@ type Proposal struct {
 // TypeCreateVaultNote is the granola-sync proposal type (plan §4): it writes a
 // brand-new dated note at the VAULT ROOT on Confirm, not a harness config file.
 const TypeCreateVaultNote = "create-vault-note"
+
+// TypeAppendXQueue (content-studio §4) appends one queued X post bullet under
+// `# queue` in the vault's x-posts file. TypeUpdateVaultSkill (content-studio
+// §6.3, D15) overwrites a skills/x-content file. Both write the VAULT, gated by
+// their own narrow allow-lists, byte-identical to the engine's audit predicates.
+const (
+	TypeAppendXQueue     = "append-x-queue"
+	TypeUpdateVaultSkill = "update-vault-skill"
+)
+
+// XPostsFileName is the one vault-root X-posts file an append-x-queue may target.
+// A fixed convention (matches the engine + config xPostsFile default) so the
+// byte-contract with the engine needs no shared config.
+const XPostsFileName = "x posts.md"
+
+// AppendXQueuePathAllowed is the append-x-queue apply-path allow-list: exactly the
+// vault-root X posts file. Byte-identical to engine audit.AppendXQueuePathAllowed.
+func AppendXQueuePathAllowed(rel string) bool {
+	return rel == XPostsFileName
+}
+
+// UpdateVaultSkillPathAllowed is the update-vault-skill apply-path allow-list
+// (D15): exactly skills/x-content/SKILL.md or skills/x-content/references/<name>.md
+// (plain names, no traversal). Same clean-path discipline as ApplyPathAllowed;
+// byte-identical to engine audit.UpdateVaultSkillPathAllowed.
+func UpdateVaultSkillPathAllowed(rel string) bool {
+	if rel == "" || filepath.IsAbs(rel) || strings.ContainsAny(rel, "\\") {
+		return false
+	}
+	if filepath.ToSlash(filepath.Clean(rel)) != rel {
+		return false
+	}
+	segs := strings.Split(rel, "/")
+	for _, s := range segs {
+		if s == "" || s == "." || s == ".." {
+			return false
+		}
+	}
+	if rel == "skills/x-content/SKILL.md" {
+		return true
+	}
+	return len(segs) == 4 && segs[0] == "skills" && segs[1] == "x-content" &&
+		segs[2] == "references" && strings.HasSuffix(segs[3], ".md")
+}
 
 var statuses = []string{"pending", "approved", "rejected"}
 
@@ -55,6 +101,7 @@ type Store struct {
 	dir       string
 	root      string
 	vaultRoot string
+	vw        *vaultwriter.Writer // for the guarded append-x-queue write; nil disables it
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -72,6 +119,14 @@ func NewStore(agentsDir string) *Store {
 // (the knowledge vault, OUTSIDE the harness). Without it, those applies refuse.
 func (s *Store) WithVaultRoot(vaultRoot string) *Store {
 	s.vaultRoot = vaultRoot
+	return s
+}
+
+// WithVaultWriter wires the guarded vault writer used to append x-queue bullets
+// (the same byte-preserving op the "mark posted" dashboard action uses). Without
+// it, append-x-queue applies refuse.
+func (s *Store) WithVaultWriter(vw *vaultwriter.Writer) *Store {
+	s.vw = vw
 	return s
 }
 
@@ -144,14 +199,37 @@ func (s *Store) List(status string) []Proposal {
 // the allow-list. Plain proposals — or an unreadable/out-of-list path — yield
 // ("", false).
 func (s *Store) CurrentContent(p Proposal) (string, bool) {
-	if p.ApplyPath == "" || s.root == "" || !ApplyPathAllowed(p.ApplyPath) {
-		return "", false
+	switch p.Type {
+	case TypeUpdateVaultSkill:
+		// diff against the current skill file in the vault (read-only)
+		if s.vaultRoot == "" || !UpdateVaultSkillPathAllowed(p.ApplyPath) {
+			return "", false
+		}
+		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
+	case TypeAppendXQueue:
+		// the current x-posts file, so the UI can show where the bullet lands
+		if s.vaultRoot == "" || !AppendXQueuePathAllowed(p.ApplyPath) {
+			return "", false
+		}
+		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
+	default:
+		if p.ApplyPath == "" || s.root == "" || !ApplyPathAllowed(p.ApplyPath) {
+			return "", false
+		}
+		b, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(p.ApplyPath)))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
 	}
-	b, err := os.ReadFile(filepath.Join(s.root, filepath.FromSlash(p.ApplyPath)))
-	if err != nil {
-		return "", false
-	}
-	return string(b), true
 }
 
 // Counts returns the number of proposals per status (for the sub-tab badge).
@@ -283,8 +361,13 @@ func rebuildProposedBody(body, proposed string) string {
 // writes a harness config file within the hard allow-list. Any violation
 // returns an error and writes nothing.
 func (s *Store) apply(p Proposal) error {
-	if p.Type == TypeCreateVaultNote {
+	switch p.Type {
+	case TypeCreateVaultNote:
 		return s.applyCreateVaultNote(p)
+	case TypeAppendXQueue:
+		return s.applyAppendXQueue(p)
+	case TypeUpdateVaultSkill:
+		return s.applyUpdateVaultSkill(p)
 	}
 	if !ApplyPathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md)", p.ApplyPath)
@@ -353,6 +436,57 @@ func (s *Store) applyCreateVaultNote(p Proposal) error {
 	return os.WriteFile(target, []byte(body), 0o644)
 }
 
+// applyAppendXQueue appends the proposed bullet(s) under `# queue` in the vault's
+// x-posts file, via the guarded byte-preserving vaultwriter op (the same one the
+// "mark posted" dashboard action uses). It refuses a path outside the allow-list,
+// an empty payload, or an identical bullet already in `# queue`/`# posted`.
+func (s *Store) applyAppendXQueue(p Proposal) error {
+	if !AppendXQueuePathAllowed(p.ApplyPath) {
+		return fmt.Errorf("apply refused: %q is not the x-posts file", p.ApplyPath)
+	}
+	if strings.TrimSpace(p.Proposed) == "" {
+		return fmt.Errorf("apply refused: append-x-queue %q carries no bullet", p.ApplyPath)
+	}
+	if s.vw == nil || !s.vw.Enabled() {
+		return errors.New("apply refused: no vault writer configured for append-x-queue")
+	}
+	return s.vw.AppendQueueBullet(p.ApplyPath, p.Proposed)
+}
+
+// applyUpdateVaultSkill overwrites a skills/x-content file with the proposed
+// content (D15). Fail-closed: the filing ritual must be a tune ritual, the path
+// must be on the tight skill allow-list, a vault root must be configured, and the
+// target must stay under it. Unlike create-vault-note this is an EDIT (overwrite
+// allowed) — the diff was the human's review.
+func (s *Store) applyUpdateVaultSkill(p Proposal) error {
+	if p.Ritual != "tune" {
+		return fmt.Errorf("apply refused: update-vault-skill filed by ritual %q, not a tune ritual (D15)", p.Ritual)
+	}
+	if !UpdateVaultSkillPathAllowed(p.ApplyPath) {
+		return fmt.Errorf("apply refused: %q is outside skills/x-content/{SKILL.md,references/<name>.md}", p.ApplyPath)
+	}
+	if strings.TrimSpace(p.Proposed) == "" {
+		return fmt.Errorf("apply refused: update-vault-skill %q carries no content", p.ApplyPath)
+	}
+	if s.vaultRoot == "" {
+		return errors.New("apply refused: no vault root configured for update-vault-skill")
+	}
+	target := filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))
+	rootAbs, _ := filepath.Abs(s.vaultRoot)
+	tgtAbs, _ := filepath.Abs(target)
+	if !strings.HasPrefix(tgtAbs, rootAbs+string(filepath.Separator)) {
+		return fmt.Errorf("apply refused: %q escapes the vault root", p.ApplyPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	body := p.Proposed
+	if !strings.HasSuffix(body, "\n") {
+		body += "\n"
+	}
+	return os.WriteFile(target, []byte(body), 0o644)
+}
+
 // rawFrontmatter returns the verbatim text between the leading `---` fences (the
 // same slice mdfm.Split parses), or "" when there is no frontmatter block. Used
 // to compare a cornerstone's frontmatter exactly, without lossy re-parsing.
@@ -365,6 +499,21 @@ func rawFrontmatter(content string) string {
 		return ""
 	}
 	return content[4:idx]
+}
+
+// SetProposed rewrites a PENDING proposal's proposed content (the ````proposed
+// fence) — the Content Studio "edit" flow: the owner edits a draft, so the bullet
+// that lands on approve is the edited one. The id (filename + frontmatter) is
+// unchanged, so the feed card's approval linkage still resolves.
+func (s *Store) SetProposed(id, proposed string) error {
+	src := filepath.Join(s.dir, "pending", id+".md")
+	p, err := s.parse(src)
+	if err != nil {
+		return err
+	}
+	p.Proposed = proposed
+	p.Body = rebuildProposedBody(p.Body, proposed)
+	return os.WriteFile(src, []byte(serialize(p)), 0o644)
 }
 
 // Reject records rejection (with an optional reason appended): pending → rejected.
@@ -454,6 +603,7 @@ func (s *Store) parse(path string) (Proposal, error) {
 		Type:      typ,
 		Action:    fm["action"],
 		Agent:     fm["agent"],
+		Ritual:    strings.TrimSpace(fm["ritual"]),
 		Created:   fm["created"],
 		Body:      body, // keeps the ````proposed fence, so the record round-trips
 		ApplyPath: strings.TrimSpace(fm["apply-path"]),
@@ -471,8 +621,9 @@ func serialize(p Proposal) string {
 		Set("id", p.ID).
 		Set("action", p.Action).
 		Set("agent", p.Agent).
+		Set("ritual", p.Ritual). // omitted when empty (Set skips blanks)
 		Set("created", p.Created).
-		Set("apply-path", p.ApplyPath). // omitted when empty (Set skips blanks)
+		Set("apply-path", p.ApplyPath).
 		String(strings.TrimSpace(p.Body))
 }
 

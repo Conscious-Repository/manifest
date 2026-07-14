@@ -80,6 +80,12 @@ const els = {
   feedList: document.getElementById("feedList"),
   feedAskBtn: document.getElementById("feedAskBtn"),
   feedRunNowBtn: document.getElementById("feedRunNowBtn"),
+  // content studio (draft board + inspiration watchlist)
+  studioView: document.getElementById("studioView"),
+  studioNav: document.getElementById("studioNav"),
+  studioTabs: document.getElementById("studioTabs"),
+  studioRuns: document.getElementById("studioRuns"),
+  studioBody: document.getElementById("studioBody"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   spiritsNav: document.getElementById("spiritsNav"),
@@ -1432,6 +1438,7 @@ function faviconFor(link) {
   } catch (e) { return null; }
 }
 function feedCard(it) {
+  if (it.type === "draft") return draftFeedCard(it);
   const pinned = it.type === "digest" && it.status === "new";
   const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") +
     (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
@@ -1472,6 +1479,214 @@ function feedCard(it) {
   }
   card.append(actions);
   return card;
+}
+
+// draftFeedCard renders a Content Studio draft as a tweet-shaped card: the post
+// text big, the critic's rationale, and inline approve / edit / dismiss plus a
+// feedback field + quick chips. Approve confirms the linked append-x-queue
+// approval; dismiss rejects it; edit rewrites both the draft and the pending
+// bullet so the edited text is what lands.
+const DRAFT_CHIPS = ["voice-off", "weak-hook", "wrong-topic", "ai-tells", "more-like-this"];
+function draftFeedCard(it) {
+  const card = el("div", "feed-card draft" + (it.status === "discarded" ? " discarded" : ""));
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-draft", "draft"));
+  if (it.format && it.format !== "single") top.append(el("span", "draft-format", it.format));
+  top.append(el("span", "feed-title", it.title || "draft"));
+  card.append(top);
+
+  const tweet = el("div", "draft-tweet");
+  tweet.textContent = it.body || "";
+  card.append(tweet);
+  // quote-tweet variant: render the quoted post beneath (like X)
+  if (it.quotedText) {
+    const q = el("div", "draft-quote");
+    q.append(el("div", "draft-quote-text", it.quotedText));
+    if (it.quotedUrl) q.append(linkEl(it.quotedUrl, it.quotedUrl));
+    card.append(q);
+  }
+  if (it.why) card.append(el("div", "feed-why", it.why));
+  const meta = el("div", "feed-meta");
+  meta.append(el("span", null, [it.agent, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ")));
+  card.append(meta);
+
+  if (it.status === "discarded") {
+    const a = el("div", "feed-actions");
+    a.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
+    card.append(a);
+    return card;
+  }
+
+  // edit box (hidden until "Edit")
+  const editWrap = el("div", "draft-edit"); editWrap.hidden = true;
+  const ta = el("textarea", "draft-edit-input"); ta.value = it.body || "";
+  const editActions = el("div", "feed-actions");
+  editActions.append(
+    pill("Save edit", async () => {
+      const t = ta.value.trim(); if (!t) return;
+      await studioPost(`/api/studio/draft/${encodeURIComponent(it.draftId)}/edit`, { text: t, approvalId: it.approvalId });
+      showToast("edit saved — approve to queue the edited version", null, "info");
+      loadFeed();
+    }),
+    pillLight("Cancel", () => { editWrap.hidden = true; }),
+  );
+  editWrap.append(ta, editActions);
+
+  // feedback chips + free text
+  const fb = el("div", "draft-feedback");
+  const chipRow = el("div", "draft-chips");
+  const chosen = new Set(it.tags || []);
+  DRAFT_CHIPS.forEach((c) => {
+    const b = el("button", "draft-chip" + (chosen.has(c) ? " on" : ""), c);
+    b.onclick = () => { if (chosen.has(c)) { chosen.delete(c); b.classList.remove("on"); } else { chosen.add(c); b.classList.add("on"); } };
+    chipRow.append(b);
+  });
+  const fbInput = el("input", "draft-fb-input"); fbInput.type = "text";
+  fbInput.placeholder = "what's off / what to do more of…";
+  const saveFb = pillLight("Save note", async () => {
+    await studioPost(`/api/studio/draft/${encodeURIComponent(it.draftId)}/feedback`, { text: fbInput.value.trim(), tags: [...chosen] });
+    showToast("feedback saved — next scribe run will honor it", null, "info");
+  });
+  fb.append(chipRow, el("div", "draft-fb-row", fbInput, saveFb));
+
+  const actions = el("div", "feed-actions");
+  actions.append(
+    pill("Approve → queue", () => draftApproval(it.approvalId, "confirm")),
+    pillLight("Edit", () => { editWrap.hidden = !editWrap.hidden; }),
+    pillLight("Dismiss", () => draftApproval(it.approvalId, "reject")),
+  );
+  card.append(editWrap, fb, actions);
+  return card;
+}
+
+async function draftApproval(approvalId, kind) {
+  if (!approvalId) { showToast("this draft has no linked approval", null, "error"); return; }
+  setSaveState("saving");
+  const body = kind === "reject" ? { reason: "dismissed from studio" } : {};
+  try { await fetch(`/api/spirits/approvals/${encodeURIComponent(approvalId)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
+  catch (e) { setSaveState("error"); }
+  showToast(kind === "confirm" ? "queued to x posts.md ✓" : "dismissed", null, "info");
+  loadFeed();
+}
+
+async function studioPost(path, body) {
+  setSaveState("saving");
+  try { const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!r.ok) throw new Error(await r.text()); setSaveState("saved"); return await r.json().catch(() => ({})); }
+  catch (e) { setSaveState("error"); showToast("Studio action failed: " + (e.message || e), null, "error"); throw e; }
+}
+
+// ---- CONTENT STUDIO tab (draft board + inspiration watchlist + runs strip) ----
+let studioCache = { board: [], inspiration: [], xPostsFile: "x posts.md" };
+const STUDIO_TABS = [["board", "BOARD"], ["inspiration", "INSPIRATION"]];
+function showStudio() {
+  if (!state.studioTab) state.studioTab = "board";
+  loadStudio();
+}
+async function loadStudio() {
+  try {
+    studioCache = await (await fetch("/api/studio")).json();
+  } catch (e) { studioCache = { board: [], inspiration: [], xPostsFile: "x posts.md" }; }
+  // runs strip: scribe/critic latest outcomes (a quiet "nothing today" ≠ a dead ritual)
+  try {
+    const runs = await (await fetch("/api/spirits/runs")).json();
+    studioCache.runs = (runs.data || runs.runs || runs || []).filter((r) => r.spirit === "scribe" || r.spirit === "critic");
+  } catch (e) { studioCache.runs = []; }
+  renderStudio();
+}
+function renderStudio() {
+  // tabs
+  els.studioTabs.innerHTML = "";
+  STUDIO_TABS.forEach(([val, label]) => {
+    const b = el("button", "filter-chip" + (state.studioTab === val ? " on" : ""), label);
+    b.onclick = () => { state.studioTab = val; renderStudio(); };
+    els.studioTabs.append(b);
+  });
+  // runs strip
+  els.studioRuns.innerHTML = "";
+  (studioCache.runs || []).slice(0, 4).forEach((r) => {
+    const chip = el("span", "studio-run-chip");
+    chip.append(el("span", "srun-name", r.spirit + "/" + r.ritual));
+    chip.append(el("span", "srun-outcome outcome-" + (r.outcome || ""), r.outcome || "—"));
+    chip.title = (r.summary || "") + "  ·  " + (r.started || r.finished || "");
+    els.studioRuns.append(chip);
+  });
+
+  const host = els.studioBody; host.innerHTML = "";
+  if (state.studioTab === "inspiration") return renderStudioInspiration(host);
+  // board: drafts grouped by status
+  const board = studioCache.board || [];
+  if (!board.length) { host.append(emptyRow("No drafts yet — scribe drafts at 6:30, critic audits at 7:30.")); return; }
+  const order = ["pending-audit", "passed", "killed", "posted"];
+  const labels = { "pending-audit": "Pending audit", passed: "Passed — awaiting your approval", killed: "Killed", posted: "Posted" };
+  const byStatus = {};
+  board.forEach((d) => { (byStatus[d.status] = byStatus[d.status] || []).push(d); });
+  order.forEach((st) => {
+    if (!byStatus[st]) return;
+    host.append(el("div", "reading-strip-head", labels[st] + " — " + byStatus[st].length));
+    byStatus[st].forEach((d) => host.append(studioBoardCard(d)));
+  });
+}
+function studioBoardCard(d) {
+  const card = el("div", "feed-card draft status-" + d.status);
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-draft", d.status));
+  if (d.score) top.append(el("span", "draft-score", d.score + "/10"));
+  if (d.format && d.format !== "single") top.append(el("span", "draft-format", d.format));
+  card.append(top);
+  const tweet = el("div", "draft-tweet"); tweet.textContent = d.edited || d.text; card.append(tweet);
+  if (d.edited) card.append(el("div", "feed-meta", "✎ edited (original preserved)"));
+  if (d.feedback || (d.feedbackTags && d.feedbackTags.length)) {
+    const fb = el("div", "draft-feedback-shown");
+    if (d.feedbackTags && d.feedbackTags.length) fb.append(el("span", "draft-fb-tags", d.feedbackTags.join(" · ")));
+    if (d.feedback) fb.append(el("span", "draft-fb-text", d.feedback));
+    card.append(fb);
+  }
+  if (d.scorecard) {
+    const sc = el("details", "draft-scorecard");
+    sc.append(el("summary", null, "scorecard"));
+    const pre = el("pre", "feed-body"); pre.textContent = d.scorecard; sc.append(pre);
+    card.append(sc);
+  }
+  if (d.postedURL) card.append(el("div", "feed-saved", "✓ posted · " + d.postedURL));
+  const actions = el("div", "feed-actions");
+  if (d.status === "passed") {
+    actions.append(pillLight("mark posted", () => {
+      askText("Mark posted", "paste the tweet URL (optional, feeds the metrics loop)", (url) => {
+        studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/mark-posted`, { url: url.trim() }).then(loadStudio);
+      });
+    }));
+  }
+  if (actions.childElementCount) card.append(actions);
+  return card;
+}
+function renderStudioInspiration(host) {
+  const accts = studioCache.inspiration || [];
+  if (!accts.length) { host.append(emptyRow("No watchlist accounts yet — run `excalibur x backfill <handle>`.")); return; }
+  accts.forEach((a) => {
+    const card = el("div", "feed-card");
+    const top = el("div", "feed-top");
+    top.append(el("span", "feed-title", "@" + a.handle));
+    if (a.followers) top.append(el("span", "feed-meta", fmtCount(a.followers) + " followers"));
+    card.append(top);
+    if (a.bio) card.append(el("div", "feed-why", a.bio));
+    if (a.commentary) card.append(el("div", "draft-fb-text", a.commentary));
+    (a.topPosts || []).slice(0, 5).forEach((p) => {
+      const row = el("div", "insp-post");
+      const t = el("div", "insp-post-text"); t.textContent = p.text; row.append(t);
+      const m = el("div", "feed-meta");
+      m.append(el("span", null, fmtCount(p.views) + " views · " + fmtCount(p.likes) + " likes"));
+      if (p.url) m.append(linkEl("open →", p.url));
+      row.append(m);
+      card.append(row);
+    });
+    host.append(card);
+  });
+}
+function fmtCount(n) {
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
 }
 
 // openArtifact opens an artifact's library file in the universal note view (the
@@ -1761,6 +1976,8 @@ function spiritApprovalCard(a) {
 
   let blocked = false, blockMsg = "";
   const isNewNote = a.type === "create-vault-note";
+  const isXQueue = a.type === "append-x-queue";
+  const isSkill = a.type === "update-vault-skill";
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
   if (actionable) {
     card.classList.add("actionable");
@@ -1772,6 +1989,10 @@ function spiritApprovalCard(a) {
       blocked = true;
       blockMsg = isNewNote
         ? "apply-path is not a vault-root dated note (YYYY-MM-DD <title>.md) — Confirm is disabled."
+        : isXQueue
+        ? "apply-path is not the x-posts file — Confirm is disabled."
+        : isSkill
+        ? "update-vault-skill must target skills/x-content/{SKILL.md, references/<name>.md} and be filed by a tune ritual — Confirm is disabled."
         : "apply-path is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md) — Confirm is disabled.";
     } else if (/\/cornerstone\.md$/.test(a.applyPath) && frontmatterOf(a.current || "") !== frontmatterOf(a.proposed || "")) {
       // client-side mirror of the server's cornerstone-frontmatter guard
@@ -1785,9 +2006,16 @@ function spiritApprovalCard(a) {
       card.append(buildAttendeeEditor(attendees));
     }
 
-    card.append(el("div", "appr-diff-label", isNewNote ? "New note — will be created at the vault root" : "Proposed change  ·  current → proposed"));
-    const diff = renderLineDiff(a.current || "", a.proposed || "");
-    card.append(collapsibleBlock(diff, diff.childElementCount));
+    if (isXQueue) {
+      // append-x-queue's proposed is ONLY the bullet — show it, not a whole-file diff
+      card.append(el("div", "appr-diff-label", "Appends under # queue in " + a.applyPath));
+      const pre = el("pre", "appr-body draft-tweet"); pre.textContent = (a.proposed || "").trim(); card.append(pre);
+    } else {
+      card.append(el("div", "appr-diff-label", isNewNote ? "New note — will be created at the vault root"
+        : isSkill ? "Skill change  ·  current → proposed" : "Proposed change  ·  current → proposed"));
+      const diff = renderLineDiff(a.current || "", a.proposed || "");
+      card.append(collapsibleBlock(diff, diff.childElementCount));
+    }
   }
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 
@@ -3314,15 +3542,17 @@ function route() {
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const cal = h === "#/calendar";
   const fd = h === "#/feed";
+  const studio = h === "#/studio" || h.startsWith("#/studio/");
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const note = h.startsWith("#/note/");
-  const day = !goals && !cal && !fd && !sp && !contacts && !reading && !note;
+  const day = !goals && !cal && !fd && !studio && !sp && !contacts && !reading && !note;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
   els.feedView.hidden = !fd;
+  els.studioView.hidden = !studio;
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
   els.readingView.hidden = !reading;
@@ -3330,6 +3560,7 @@ function route() {
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
   els.feedNav.hidden = !day;
+  els.studioNav.hidden = !day;
   els.calNav.hidden = !day;
   els.contactsNav.hidden = !day;
   els.readingNav.hidden = !day;
@@ -3339,6 +3570,7 @@ function route() {
   if (goals) loadGoals(h.startsWith("#/goals/") ? decodeURIComponent(h.slice("#/goals/".length)) : "");
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
+  else if (studio) showStudio(); // content studio: draft board + inspiration
   else if (sp) showSpirits(); // engine console: runs / rituals / approvals
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone

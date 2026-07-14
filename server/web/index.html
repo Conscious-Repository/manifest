@@ -16,6 +16,7 @@
         <span class="brand">◆</span>
         <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
         <a class="pill" href="#/feed" id="feedNav">FEED<span id="feedNavBadge" class="nav-badge" hidden></span></a>
+        <a class="pill" href="#/studio" id="studioNav">STUDIO</a>
         <a class="pill" href="#/calendar" id="calNav">CAL</a>
         <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
         <a class="pill" href="#/reading" id="readingNav">READING</a>
@@ -120,6 +121,18 @@
     </div>
     <div id="feedSignals" class="feed-signals"></div>
     <div id="feedList" class="feed-list"></div>
+  </section>
+
+  <!-- CONTENT STUDIO — the draft board + inspiration watchlist (engine produces; dashboard renders + gates) -->
+  <section class="feed-view" id="studioView" hidden>
+    <div class="agent-head">
+      <span class="agent-title">CONTENT STUDIO</span>
+      <div class="agent-actions">
+        <span id="studioTabs" class="feed-filters"></span>
+      </div>
+    </div>
+    <div id="studioRuns" class="studio-runs"></div>
+    <div id="studioBody" class="feed-list"></div>
   </section>
 
   <!-- SPIRITS — the excalibur harness console (sibling tree; engine owns execution) -->
