@@ -3,8 +3,11 @@ package server
 import (
 	"net/http"
 	"strings"
+	"time"
 
+	"manifest/feed"
 	"manifest/studio"
+	"manifest/vaultwriter"
 )
 
 // CONTENT STUDIO (content-studio §8). The dashboard renders the draft board +
@@ -21,12 +24,50 @@ func (s *Server) UseStudio(st *studio.Store, corpusPath, xPostsFile string) {
 }
 
 // handleStudio serves the board (drafts) + inspiration (watchlist w/ top posts).
-// The runs strip is derived client-side from /api/spirits/runs (scribe/critic).
+// Board drafts are enriched with their real lifecycle status (draft → passed →
+// queued → posted, computed from x posts.md) and the linked approval id (§4).
 func (s *Server) handleStudio(w http.ResponseWriter, r *http.Request) {
 	if s.studio == nil {
 		http.Error(w, "studio disabled", http.StatusServiceUnavailable)
 		return
 	}
+	board := s.studio.List()
+
+	// lifecycle status from the actual file: a draft whose text sits in # queue is
+	// "queued"; in # posted is "posted" — reflecting reality without extra writes.
+	queueSet, postedSet := map[string]bool{}, map[string]bool{}
+	if s.vault != nil && s.vault.Enabled() {
+		if b, err := s.vault.ReadVaultFile(s.xPostsFile); err == nil {
+			doc := vaultwriter.ParseXPosts(string(b))
+			for _, x := range doc.Queue {
+				queueSet[normText(x.Lead)] = true
+			}
+			for _, x := range doc.Posted {
+				postedSet[normText(x.Lead)] = true
+			}
+		}
+	}
+	// link each draft to its append-x-queue approval (via the feed draft cards)
+	approvalByDraft := map[string]string{}
+	if s.spirits != nil {
+		for _, it := range s.spirits.Feed.List(feed.Filter{Type: "draft"}, time.Now()) {
+			if it.DraftID != "" && it.ApprovalID != "" {
+				approvalByDraft[it.DraftID] = it.ApprovalID
+			}
+		}
+	}
+	for i := range board {
+		t := normText(board[i].Effective())
+		if postedSet[t] {
+			board[i].Status = "posted"
+		} else if queueSet[t] {
+			board[i].Status = "queued"
+		}
+		if id, ok := approvalByDraft[board[i].ID]; ok {
+			board[i].ApprovalID = id
+		}
+	}
+
 	inspiration := []studio.Account{}
 	if c, err := studio.OpenCorpus(s.corpusPath); err == nil && c != nil {
 		defer c.Close()
@@ -35,10 +76,38 @@ func (s *Server) handleStudio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{
-		"board":       s.studio.List(),
+		"board":       board,
 		"inspiration": inspiration,
 		"xPostsFile":  s.xPostsFile,
 	})
+}
+
+func normText(s string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimPrefix(strings.TrimSpace(s), "- "))), " ")
+}
+
+// handleStudioOverrule queues a critic-killed draft anyway (§4): appends its text
+// to # queue and records the overrule on the draft (first-class tune evidence).
+func (s *Server) handleStudioOverrule(w http.ResponseWriter, r *http.Request) {
+	if s.studio == nil || s.vault == nil || !s.vault.Enabled() {
+		http.Error(w, "studio/vault unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	d, ok := s.studio.Get(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "draft not found", http.StatusNotFound)
+		return
+	}
+	if err := s.vault.AppendQueueBullet(s.xPostsFile, "- "+d.Effective()); err != nil {
+		httpError(w, err)
+		return
+	}
+	updated, err := s.studio.Overrule(d.ID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, updated)
 }
 
 // handleStudioFeedback records the owner's feedback text + quick chips onto a draft.

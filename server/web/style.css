@@ -1195,3 +1195,12 @@ input.inline-hidden { color: transparent !important; }
 .queue-edit-input { width: 100%; min-height: 54px; font-family: var(--sans); font-size: 14px; border: 1px solid var(--blue); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }
 .queue-add { display: flex; gap: 6px; padding: 8px 0 16px; }
 .queue-add-input { flex: 1; font-family: var(--sans); font-size: 13px; border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; }
+
+/* ---- Content Studio §4: board parity + runs strip ---- */
+.seed-consume { display: block; font-size: 12px; color: var(--muted); margin: 4px 0; }
+.seed-consume input { margin-right: 4px; vertical-align: middle; }
+.srun-up { color: #15803d; border-color: #bfe3c9; }
+.srun-down { color: #b91c1c; border-color: #f0c0c0; background: #fef2f2; }
+.killed-group { margin-top: 4px; }
+.killed-group > summary { cursor: pointer; list-style: revert; }
+.killed-group[open] > summary { margin-bottom: 8px; }

@@ -1592,7 +1592,22 @@ async function loadStudio() {
     const runs = await (await fetch("/api/spirits/runs")).json();
     studioCache.runs = (runs.data || runs.runs || runs || []).filter((r) => r.spirit === "scribe" || r.spirit === "critic");
   } catch (e) { studioCache.runs = []; }
+  // engine health + next-fire times (§4: a dead engine must look different from a quiet morning)
+  try { studioCache.status = await (await fetch("/api/spirits/status")).json(); } catch (e) { studioCache.status = null; }
+  try {
+    const rits = await (await fetch("/api/spirits/rituals")).json();
+    studioCache.nextFire = {};
+    (rits.data || rits || []).forEach((rr) => { if (rr.spirit === "scribe" || rr.spirit === "critic") studioCache.nextFire[rr.spirit + "/" + rr.ritual] = rr.nextFire || rr.next || ""; });
+  } catch (e) { studioCache.nextFire = {}; }
   renderStudio();
+}
+async function studioRunNow(spirit, ritual) {
+  try {
+    const r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual }) });
+    if (r.status === 409) { showToast(`${spirit}/${ritual} already running`, null, "info"); return; }
+    if (!r.ok) throw new Error(await r.text());
+    showToast(`${spirit}/${ritual} queued — the engine runs it within ~5s`, null, "info");
+  } catch (e) { showToast("run-now failed: " + (e.message || e), null, "error"); }
 }
 function renderStudio() {
   // tabs
@@ -1602,9 +1617,19 @@ function renderStudio() {
     b.onclick = () => { state.studioTab = val; if (val === "queue") studioQueueCache = null; renderStudio(); };
     els.studioTabs.append(b);
   });
-  // runs strip
+  // runs strip: engine health + run-now + recent scribe/critic outcomes (§4)
   els.studioRuns.innerHTML = "";
-  (studioCache.runs || []).slice(0, 4).forEach((r) => {
+  const st = studioCache.status;
+  if (st && st.engineAlive === false) els.studioRuns.append(el("span", "studio-run-chip srun-down", "⚠ engine down"));
+  else if (st) els.studioRuns.append(el("span", "studio-run-chip srun-up", "engine live"));
+  [["scribe", "mine-and-draft"], ["critic", "audit-drafts"]].forEach(([sp, rit]) => {
+    const b = el("button", "pill light", "▶ run " + sp);
+    const nf = (studioCache.nextFire || {})[sp + "/" + rit];
+    if (nf) b.title = "next auto-fire: " + nf;
+    b.onclick = () => studioRunNow(sp, rit);
+    els.studioRuns.append(b);
+  });
+  (studioCache.runs || []).slice(0, 3).forEach((r) => {
     const chip = el("span", "studio-run-chip");
     chip.append(el("span", "srun-name", r.spirit + "/" + r.ritual));
     chip.append(el("span", "srun-outcome outcome-" + (r.outcome || ""), r.outcome || "—"));
@@ -1615,51 +1640,116 @@ function renderStudio() {
   const host = els.studioBody; host.innerHTML = "";
   if (state.studioTab === "queue") return renderStudioQueue(host);
   if (state.studioTab === "inspiration") return renderStudioInspiration(host);
-  // board: drafts grouped by status
-  const board = studioCache.board || [];
-  if (!board.length) { host.append(emptyRow("No drafts yet — scribe drafts at 6:30, critic audits at 7:30.")); return; }
-  const order = ["pending-audit", "passed", "killed", "posted"];
-  const labels = { "pending-audit": "Pending audit", passed: "Passed — awaiting your approval", killed: "Killed", posted: "Posted" };
+  // board: drafts grouped by the status vocabulary (draft → passed → queued → posted, + killed)
+  let board = studioCache.board || [];
+  if (!board.length) { host.append(emptyRow("No drafts yet — scribe drafts each morning, critic audits an hour later.")); return; }
+  // §5 format filter chips
+  const fmt = state.studioFormat || "all";
+  const fmtRow = el("div", "draft-chips");
+  [["all", "all"], ["aphorism", "aphorisms"], ["single", "long-form"]].forEach(([v, label]) => {
+    const b = el("button", "draft-chip" + (fmt === v ? " on" : ""), label);
+    b.onclick = () => { state.studioFormat = v; renderStudio(); };
+    fmtRow.append(b);
+  });
+  host.append(fmtRow);
+  if (fmt !== "all") board = board.filter((d) => (d.format || "single") === fmt);
+  // §4 group order + vocabulary
+  const order = ["passed", "pending-audit", "queued", "posted", "killed"];
+  const labels = { passed: "Passed — approve to queue", "pending-audit": "Pending audit", queued: "Queued", posted: "Posted", killed: "Killed" };
   const byStatus = {};
   board.forEach((d) => { (byStatus[d.status] = byStatus[d.status] || []).push(d); });
   order.forEach((st) => {
-    if (!byStatus[st]) return;
-    host.append(el("div", "reading-strip-head", labels[st] + " — " + byStatus[st].length));
-    byStatus[st].forEach((d) => host.append(studioBoardCard(d)));
+    const items = byStatus[st];
+    if (!items || !items.length) return;
+    const ap = items.filter((d) => (d.format || "single") === "aphorism").length;
+    const sg = items.length - ap;
+    const head = labels[st] + "  —  " + items.length + " (" + ap + " aphorism · " + sg + " long-form)";
+    if (st === "killed") {
+      const det = el("details", "killed-group");
+      det.append(el("summary", "reading-strip-head", head));
+      items.forEach((d) => det.append(studioBoardCard(d)));
+      host.append(det);
+    } else {
+      host.append(el("div", "reading-strip-head", head));
+      items.forEach((d) => host.append(studioBoardCard(d)));
+    }
   });
 }
+// statusWord maps a draft's lifecycle status to the §4 vocabulary chip.
+function statusWord(s) { return ({ "pending-audit": "draft" })[s] || s; }
+
+// buildDraftFeedback is the shared feedback capture (chips + note), used on both
+// feed draft cards and board cards (§4 parity).
+function buildDraftFeedback(draftId, tags) {
+  const fb = el("div", "draft-feedback");
+  const chipRow = el("div", "draft-chips");
+  const chosen = new Set(tags || []);
+  DRAFT_CHIPS.forEach((c) => {
+    const b = el("button", "draft-chip" + (chosen.has(c) ? " on" : ""), c);
+    b.onclick = () => { if (chosen.has(c)) { chosen.delete(c); b.classList.remove("on"); } else { chosen.add(c); b.classList.add("on"); } };
+    chipRow.append(b);
+  });
+  const inp = el("input", "draft-fb-input"); inp.type = "text"; inp.placeholder = "what's off / what to do more of…";
+  const save = pillLight("Save note", () => studioPost(`/api/studio/draft/${encodeURIComponent(draftId)}/feedback`, { text: inp.value.trim(), tags: [...chosen] }).then(() => showToast("feedback saved — next scribe run honors it", null, "info")));
+  fb.append(chipRow, el("div", "draft-fb-row", inp, save));
+  return fb;
+}
+
 function studioBoardCard(d) {
   const card = el("div", "feed-card draft status-" + d.status);
   const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-draft", d.status));
+  top.append(el("span", "type-chip type-draft", statusWord(d.status)));
   if (d.score) top.append(el("span", "draft-score", d.score + "/10"));
   if (d.format && d.format !== "single") top.append(el("span", "draft-format", d.format));
+  if (d.commissioned) top.append(el("span", "draft-format", "commissioned"));
+  if (d.overruled) top.append(el("span", "draft-format", "overruled"));
   card.append(top);
   const tweet = el("div", "draft-tweet"); tweet.textContent = d.edited || d.text; card.append(tweet);
   if (d.edited) card.append(el("div", "feed-meta", "✎ edited (original preserved)"));
-  if (d.feedback || (d.feedbackTags && d.feedbackTags.length)) {
-    const fb = el("div", "draft-feedback-shown");
-    if (d.feedbackTags && d.feedbackTags.length) fb.append(el("span", "draft-fb-tags", d.feedbackTags.join(" · ")));
-    if (d.feedback) fb.append(el("span", "draft-fb-text", d.feedback));
-    card.append(fb);
-  }
+  if (d.seed) card.append(el("div", "feed-meta", "from your drafts: " + d.seed));
   if (d.scorecard) {
     const sc = el("details", "draft-scorecard");
     sc.append(el("summary", null, "scorecard"));
     const pre = el("pre", "feed-body"); pre.textContent = d.scorecard; sc.append(pre);
     card.append(sc);
   }
-  if (d.postedURL) card.append(el("div", "feed-saved", "✓ posted · " + d.postedURL));
+  if (d.postedUrl) card.append(el("div", "feed-saved", "✓ posted · " + d.postedUrl));
+
+  // inline edit box (hidden until Edit)
+  const editWrap = el("div", "draft-edit"); editWrap.hidden = true;
+  const ta = el("textarea", "draft-edit-input"); ta.value = d.edited || d.text;
+  const eActs = el("div", "feed-actions");
+  eActs.append(
+    pill("Save edit", async () => { await studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/edit`, { text: ta.value.trim(), approvalId: d.approvalId || "" }); showToast("edit saved", null, "info"); loadStudio(); }),
+    pillLight("Cancel", () => { editWrap.hidden = true; }),
+  );
+  editWrap.append(ta, eActs);
+
   const actions = el("div", "feed-actions");
+  let consumeCb = null;
   if (d.status === "passed") {
-    actions.append(pillLight("mark posted", () => {
-      askText("Mark posted", "paste the tweet URL (optional, feeds the metrics loop)", (url) => {
-        studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/mark-posted`, { url: url.trim() }).then(loadStudio);
-      });
-    }));
+    if (d.seed) { const lbl = el("label", "seed-consume"); consumeCb = el("input"); consumeCb.type = "checkbox"; consumeCb.checked = true; lbl.append(consumeCb, document.createTextNode(" consume the seed from # drafts")); card.append(lbl); }
+    actions.append(
+      pill("Approve → queue", () => boardApprove(d, consumeCb)),
+      pillLight("Edit", () => { editWrap.hidden = !editWrap.hidden; }),
+      pillLight("Dismiss", () => d.approvalId ? draftApproval(d.approvalId, "reject") : showToast("no linked approval", null, "error")),
+    );
+  } else if (d.status === "killed") {
+    actions.append(pillLight("Overrule → queue", () => studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/overrule`, {}).then(() => { showToast("queued (overruled) ✓ — teaches the critic", null, "info"); loadStudio(); })));
+  } else if (d.status === "queued") {
+    actions.append(pillLight("mark posted", () => askText("Mark posted", "paste the tweet URL (optional)", (url) => studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/mark-posted`, { url: url.trim() }).then(loadStudio))));
   }
-  if (actions.childElementCount) card.append(actions);
+  card.append(editWrap, buildDraftFeedback(d.id, d.feedbackTags), actions);
   return card;
+}
+
+async function boardApprove(d, consumeCb) {
+  if (!d.approvalId) { showToast("no linked approval — overrule or queue from the feed", null, "error"); return; }
+  try { await fetch(`/api/spirits/approvals/${encodeURIComponent(d.approvalId)}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); }
+  catch (e) { showToast("approve failed", null, "error"); return; }
+  if (d.seed && consumeCb && consumeCb.checked) { try { await studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/consume-seed`, {}); } catch (e) {} }
+  showToast("queued ✓ — view Queue", () => { state.studioTab = "queue"; studioQueueCache = null; renderStudio(); }, "info");
+  loadStudio();
 }
 function renderStudioInspiration(host) {
   const accts = studioCache.inspiration || [];

@@ -35,6 +35,7 @@ type Draft struct {
 	Overruled    bool     `json:"overruled,omitempty"`    // §4: owner queued a critic-killed draft
 	Commissioned bool     `json:"commissioned,omitempty"` // §7: from a commission run
 	QueuedFinal  string   `json:"queuedFinal,omitempty"`  // §9: the bullet as actually queued (tune signal)
+	ApprovalID   string   `json:"approvalId,omitempty"`   // §4: transient — the linked append-x-queue approval (set at serve time)
 }
 
 // Effective is the text that would be posted: the edit if present, else the draft.

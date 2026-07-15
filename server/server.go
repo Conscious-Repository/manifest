@@ -157,6 +157,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/studio/draft/{id}/edit", s.handleStudioEdit)
 	mux.HandleFunc("POST /api/studio/draft/{id}/mark-posted", s.handleStudioMarkPosted)
 	mux.HandleFunc("POST /api/studio/draft/{id}/consume-seed", s.handleStudioConsumeSeed)
+	mux.HandleFunc("POST /api/studio/draft/{id}/overrule", s.handleStudioOverrule)
 	// Queue tab: live-editable x posts.md (§1/§3)
 	mux.HandleFunc("GET /api/studio/queue", s.handleStudioQueue)
 	mux.HandleFunc("POST /api/studio/migrate", s.handleStudioMigrate)
