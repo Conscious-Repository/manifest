@@ -1209,3 +1209,10 @@ input.inline-hidden { color: transparent !important; }
 .studio-tuning { border: 1px solid var(--blue-soft); background: #fbfcff; border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
 .tuning-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
 .tuning-what { flex: 1; font-size: 13.5px; color: var(--text); }
+
+/* ---- Content Studio §8: inspiration ---- */
+.studio-purpose { font-size: 13.5px; color: var(--streak-ink); line-height: 1.5; margin-bottom: 12px; }
+.insp-add { display: flex; gap: 6px; margin-bottom: 14px; }
+.insp-self { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
+.insp-commentary { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.insp-comment-input { width: 100%; min-height: 48px; font-family: var(--sans); font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }

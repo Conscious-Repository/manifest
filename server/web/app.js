@@ -1770,27 +1770,49 @@ async function boardApprove(d, consumeCb) {
   loadStudio();
 }
 function renderStudioInspiration(host) {
+  host.append(el("div", "studio-purpose", "Accounts you study. Your commentary and saved posts teach the pattern skill what you admire."));
+  // add an account
+  const addWrap = el("div", "insp-add");
+  const inp = el("input", "queue-add-input"); inp.type = "text"; inp.placeholder = "add an account by handle (e.g. paulg)…";
+  const add = () => { const h = inp.value.trim().replace(/^@/, ""); if (!h) return; studioPost("/api/studio/account/add", { handle: h }).then(() => { showToast("@" + h + " queued — the engine backfills it shortly", null, "info"); inp.value = ""; }); };
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+  addWrap.append(inp, pillLight("add account", add));
+  host.append(addWrap);
+
   const accts = studioCache.inspiration || [];
-  if (!accts.length) { host.append(emptyRow("No watchlist accounts yet — run `excalibur x backfill <handle>`.")); return; }
-  accts.forEach((a) => {
-    const card = el("div", "feed-card");
-    const top = el("div", "feed-top");
-    top.append(el("span", "feed-title", "@" + a.handle));
-    if (a.followers) top.append(el("span", "feed-meta", fmtCount(a.followers) + " followers"));
-    card.append(top);
-    if (a.bio) card.append(el("div", "feed-why", a.bio));
-    if (a.commentary) card.append(el("div", "draft-fb-text", a.commentary));
-    (a.topPosts || []).slice(0, 5).forEach((p) => {
-      const row = el("div", "insp-post");
-      const t = el("div", "insp-post-text"); t.textContent = p.text; row.append(t);
-      const m = el("div", "feed-meta");
-      m.append(el("span", null, fmtCount(p.views) + " views · " + fmtCount(p.likes) + " likes"));
-      if (p.url) m.append(linkEl("open →", p.url));
-      row.append(m);
-      card.append(row);
-    });
-    host.append(card);
+  if (!accts.length) { host.append(emptyRow("No accounts yet — add one above.")); return; }
+  accts.filter((a) => a.isSelf).forEach((a) => host.append(inspAccountCard(a, true)));
+  accts.filter((a) => !a.isSelf).forEach((a) => host.append(inspAccountCard(a, false)));
+}
+function inspAccountCard(a, isSelf) {
+  const card = el("div", "feed-card" + (isSelf ? " insp-self" : ""));
+  const top = el("div", "feed-top");
+  top.append(el("span", "feed-title", "@" + a.handle));
+  if (isSelf) top.append(el("span", "type-chip type-draft", "your account"));
+  if (a.followers) top.append(el("span", "feed-meta", fmtCount(a.followers) + " followers"));
+  if (!isSelf) { const b = el("button", "pill light", "this is me"); b.onclick = () => studioPost(`/api/studio/account/${encodeURIComponent(a.handle)}/self`, { on: true }).then(() => { showToast("marked as your account", null, "info"); loadStudio(); }); top.append(b); }
+  card.append(top);
+  if (a.bio) card.append(el("div", "feed-why", a.bio));
+  // editable commentary (not for the self account — it's not a pattern to admire)
+  if (!isSelf) {
+    const cw = el("div", "insp-commentary");
+    cw.append(el("div", "feed-meta", "your commentary — what you admire about this account:"));
+    const ta = el("textarea", "insp-comment-input"); ta.value = a.commentary || ""; ta.placeholder = "e.g. his zoom-out QTs land because…";
+    const save = pillLight("save", () => studioPost(`/api/studio/account/${encodeURIComponent(a.handle)}/commentary`, { text: ta.value }).then(() => showToast("commentary saved", null, "info")));
+    cw.append(ta, save);
+    card.append(cw);
+  }
+  (a.topPosts || []).slice(0, 5).forEach((p) => {
+    const row = el("div", "insp-post");
+    const t = el("div", "insp-post-text"); t.textContent = p.text; row.append(t);
+    const m = el("div", "feed-meta");
+    m.append(el("span", null, fmtCount(p.views) + " views · " + fmtCount(p.likes) + " likes"));
+    if (p.url) m.append(linkEl("open →", p.url));
+    m.append(pillLight("note", () => askText("Annotate", "why this post is worth studying", (note) => studioPost("/api/studio/annotate", { postId: p.id, note: note.trim() }).then(() => showToast("annotated", null, "info")))));
+    row.append(m);
+    card.append(row);
   });
+  return card;
 }
 function fmtCount(n) {
   n = Number(n) || 0;
