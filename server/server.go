@@ -156,6 +156,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/studio/draft/{id}/feedback", s.handleStudioFeedback)
 	mux.HandleFunc("POST /api/studio/draft/{id}/edit", s.handleStudioEdit)
 	mux.HandleFunc("POST /api/studio/draft/{id}/mark-posted", s.handleStudioMarkPosted)
+	mux.HandleFunc("POST /api/studio/draft/{id}/consume-seed", s.handleStudioConsumeSeed)
+	// Queue tab: live-editable x posts.md (§1/§3)
+	mux.HandleFunc("GET /api/studio/queue", s.handleStudioQueue)
+	mux.HandleFunc("POST /api/studio/migrate", s.handleStudioMigrate)
+	mux.HandleFunc("POST /api/studio/bullet/{op}", s.handleStudioBullet)
+	mux.HandleFunc("POST /api/studio/queue/mark-posted", s.handleStudioQueuePosted)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

@@ -1185,3 +1185,13 @@ input.inline-hidden { color: transparent !important; }
 .srun-outcome.outcome-stopped-charge, .srun-outcome.outcome-error { color: #b91c1c; }
 .insp-post { border-top: 1px solid var(--line); padding: 8px 0; }
 .insp-post-text { font-size: 13.5px; line-height: 1.45; color: var(--text); white-space: pre-wrap; }
+
+/* ---- Content Studio: Queue tab (§3) ---- */
+.studio-migrate { border: 1px solid var(--blue-soft); background: #fbfcff; border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+.studio-migrate-msg { font-size: 13.5px; color: var(--text); line-height: 1.5; }
+.queue-bullet { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.queue-bullet-text { flex: 1; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+.queue-bullet-acts { display: flex; gap: 6px; flex-shrink: 0; }
+.queue-edit-input { width: 100%; min-height: 54px; font-family: var(--sans); font-size: 14px; border: 1px solid var(--blue); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }
+.queue-add { display: flex; gap: 6px; padding: 8px 0 16px; }
+.queue-add-input { flex: 1; font-family: var(--sans); font-size: 13px; border: 1px dashed var(--line); border-radius: 8px; padding: 6px 10px; }

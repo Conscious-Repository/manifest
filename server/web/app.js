@@ -1577,7 +1577,8 @@ async function studioPost(path, body) {
 
 // ---- CONTENT STUDIO tab (draft board + inspiration watchlist + runs strip) ----
 let studioCache = { board: [], inspiration: [], xPostsFile: "x posts.md" };
-const STUDIO_TABS = [["board", "BOARD"], ["inspiration", "INSPIRATION"]];
+let studioQueueCache = null;
+const STUDIO_TABS = [["board", "BOARD"], ["queue", "QUEUE"], ["inspiration", "INSPIRATION"]];
 function showStudio() {
   if (!state.studioTab) state.studioTab = "board";
   loadStudio();
@@ -1598,7 +1599,7 @@ function renderStudio() {
   els.studioTabs.innerHTML = "";
   STUDIO_TABS.forEach(([val, label]) => {
     const b = el("button", "filter-chip" + (state.studioTab === val ? " on" : ""), label);
-    b.onclick = () => { state.studioTab = val; renderStudio(); };
+    b.onclick = () => { state.studioTab = val; if (val === "queue") studioQueueCache = null; renderStudio(); };
     els.studioTabs.append(b);
   });
   // runs strip
@@ -1612,6 +1613,7 @@ function renderStudio() {
   });
 
   const host = els.studioBody; host.innerHTML = "";
+  if (state.studioTab === "queue") return renderStudioQueue(host);
   if (state.studioTab === "inspiration") return renderStudioInspiration(host);
   // board: drafts grouped by status
   const board = studioCache.board || [];
@@ -1687,6 +1689,78 @@ function fmtCount(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
   return String(n);
+}
+
+// ---- Queue tab: live-editable x posts.md (§1/§3) ----
+async function loadStudioQueue() {
+  try { studioQueueCache = await (await fetch("/api/studio/queue")).json(); }
+  catch (e) { studioQueueCache = { sections: { drafts: [], queue: [], posted: [] } }; }
+  renderStudio();
+}
+function renderStudioQueue(host) {
+  if (!studioQueueCache) { host.append(emptyRow("loading…")); loadStudioQueue(); return; }
+  const q = studioQueueCache;
+  const sec = q.sections || { drafts: [], queue: [], posted: [] };
+  if (sec.needsMigration) {
+    const banner = el("div", "studio-migrate");
+    banner.append(el("div", "studio-migrate-msg", "Your x posts.md still uses the old single # queue. Restructure it into # drafts (your scratch ideas) / # queue (ready to post) / # posted — your current bullets move to # drafts, nothing is lost."));
+    banner.append(pill("Restructure now", async () => {
+      await studioPost("/api/studio/migrate", {});
+      showToast("x posts.md restructured ✓", null, "info");
+      studioQueueCache = null; loadStudioQueue();
+    }));
+    host.append(banner);
+  }
+  const sections = [["drafts", "# drafts", "scratch ideas — the scribe may develop these"], ["queue", "# queue", "approved, ready to post"], ["posted", "# posted", "posted"]];
+  sections.forEach(([key, label, hint]) => {
+    const bullets = sec[key] || [];
+    host.append(el("div", "reading-strip-head", label + " — " + bullets.length + "  ·  " + hint));
+    bullets.forEach((b) => host.append(studioBulletRow(key, b)));
+    if (key !== "posted") host.append(studioAddRow(key));
+  });
+}
+function studioBulletRow(section, bullet) {
+  const row = el("div", "queue-bullet");
+  const editable = section !== "posted";
+  const textWrap = el("div", "queue-bullet-text");
+  textWrap.textContent = bullet.text.replace(/^- /, "");
+  if (editable) {
+    textWrap.classList.add("cp-clickable");
+    textWrap.onclick = () => beginBulletEdit(row, section, bullet);
+  }
+  row.append(textWrap);
+  const acts = el("div", "queue-bullet-acts");
+  if (section === "queue") acts.append(pillLight("mark posted", () => {
+    askText("Mark posted", "paste the tweet URL (optional)", (url) =>
+      studioPost("/api/studio/queue/mark-posted", { bullet: bullet.text, url: url.trim() }).then(() => { studioQueueCache = null; loadStudioQueue(); }));
+  }));
+  if (editable) acts.append(pillLight("delete", () => {
+    if (!confirm("Delete this bullet?")) return;
+    studioPost("/api/studio/bullet/delete", { section, bullet: bullet.text }).then(() => { studioQueueCache = null; loadStudioQueue(); });
+  }));
+  row.append(acts);
+  return row;
+}
+function beginBulletEdit(row, section, bullet) {
+  row.innerHTML = "";
+  const ta = el("textarea", "queue-edit-input"); ta.value = bullet.text.replace(/^- /, "");
+  const acts = el("div", "feed-actions");
+  acts.append(
+    pill("Save", () => studioPost("/api/studio/bullet/edit", { section, original: bullet.text, replacement: "- " + ta.value.trim() })
+      .then(() => { studioQueueCache = null; loadStudioQueue(); })
+      .catch(() => { studioQueueCache = null; loadStudioQueue(); })),
+    pillLight("Cancel", () => { studioQueueCache = null; loadStudioQueue(); }),
+  );
+  row.append(ta, acts);
+  ta.focus();
+}
+function studioAddRow(section) {
+  const row = el("div", "queue-add");
+  const inp = el("input", "queue-add-input"); inp.type = "text"; inp.placeholder = "+ add a " + section.replace(/s$/, "") + " bullet…";
+  const add = () => { const v = inp.value.trim(); if (!v) return; studioPost("/api/studio/bullet/add", { section, bullet: "- " + v }).then(() => { studioQueueCache = null; loadStudioQueue(); }); };
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } });
+  row.append(inp, pillLight("add", add));
+  return row;
 }
 
 // openArtifact opens an artifact's library file in the universal note view (the

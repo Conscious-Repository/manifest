@@ -28,6 +28,18 @@ func New(vaultPath string) *Writer { return &Writer{vault: vaultPath} }
 // Enabled reports whether a vault is configured.
 func (w *Writer) Enabled() bool { return w.vault != "" }
 
+// VaultRoot returns the configured vault path (for callers that need to read a
+// vault file; writes still go through the guarded methods).
+func (w *Writer) VaultRoot() string { return w.vault }
+
+// ReadVaultFile reads a vault-relative file (read-only, traversal-guarded).
+func (w *Writer) ReadVaultFile(rel string) ([]byte, error) {
+	if err := w.Guard(filepath.ToSlash(rel), WriteRawUser); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filepath.Join(w.vault, filepath.FromSlash(rel)))
+}
+
 // SaveExtrinsic creates <vault>/extrinsic/<title>.md and returns the vault-relative
 // path. If a note with that title already exists it is returned untouched (write-once)
 // — we never clobber the user's notes. The path is guarded to stay under extrinsic/.

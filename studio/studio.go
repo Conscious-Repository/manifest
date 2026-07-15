@@ -31,6 +31,10 @@ type Draft struct {
 	Scorecard    string   `json:"scorecard,omitempty"`
 	Feedback     string   `json:"feedback,omitempty"`
 	FeedbackTags []string `json:"feedbackTags,omitempty"`
+	Seed         string   `json:"seed,omitempty"`         // §1: the # drafts bullet it developed from
+	Overruled    bool     `json:"overruled,omitempty"`    // §4: owner queued a critic-killed draft
+	Commissioned bool     `json:"commissioned,omitempty"` // §7: from a commission run
+	QueuedFinal  string   `json:"queuedFinal,omitempty"`  // §9: the bullet as actually queued (tune signal)
 }
 
 // Effective is the text that would be posted: the edit if present, else the draft.
@@ -88,6 +92,17 @@ func (s *Store) SetFeedback(id, text string, tags []string) (Draft, error) {
 // SetEdited records the owner's edited text (the version that lands on approve).
 func (s *Store) SetEdited(id, text string) (Draft, error) {
 	return s.mutate(id, func(doc *draftDoc) { doc.setSection("edited", text) })
+}
+
+// SetQueuedFinal records the bullet as actually queued (§9) — when it differs
+// from the scribe's draft, that delta is the purest voice signal for tuning.
+func (s *Store) SetQueuedFinal(id, text string) (Draft, error) {
+	return s.mutate(id, func(doc *draftDoc) { doc.setSection("queued-final", text) })
+}
+
+// Overrule marks a critic-killed draft the owner chose to queue anyway (§4).
+func (s *Store) Overrule(id string) (Draft, error) {
+	return s.mutate(id, func(doc *draftDoc) { doc.fm["overruled"] = "true" })
 }
 
 // MarkPosted stamps a draft posted with the (optional) tweet URL.
@@ -171,6 +186,8 @@ func (d draftDoc) toDraft() Draft {
 		QuotedURL: d.fm["quoted-url"], PostedURL: d.fm["posted-url"],
 		Sources: d.sections["sources"], Scorecard: d.sections["scorecard"],
 		Feedback: d.sections["feedback"], FeedbackTags: mdfm.List(d.fm["feedback-tags"]),
+		Seed: d.fm["seed"], Overruled: d.fm["overruled"] == "true", Commissioned: d.fm["commissioned"] == "true",
+		QueuedFinal: d.sections["queued-final"],
 	}
 }
 
