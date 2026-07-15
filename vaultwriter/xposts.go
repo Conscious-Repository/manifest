@@ -157,6 +157,30 @@ func (w *Writer) DeleteBullet(relFile, section, block string) error {
 	})
 }
 
+// AppendSectionBullet appends a bullet block under any section heading (drafts,
+// queue, or posted), guarded and byte-preserving. Used by the append-x-queue
+// apply (queue, or posted for the export-posted import). Dedupes on the lead line.
+func (w *Writer) AppendSectionBullet(relFile, section, block string) error {
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	if err := w.Guard(filepath.ToSlash(relFile), WriteRawUser); err != nil {
+		return err
+	}
+	full := filepath.Join(w.vault, filepath.FromSlash(relFile))
+	content := ""
+	if b, err := os.ReadFile(full); err == nil {
+		content = string(b)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	out, changed := addBulletToSection(content, section, block)
+	if !changed {
+		return errors.New("that bullet is already present in # " + section)
+	}
+	return os.WriteFile(full, []byte(out), 0o644)
+}
+
 // AddBullet appends a bullet to a section (drafts or queue).
 func (w *Writer) AddBullet(relFile, section, block string) error {
 	return w.editBullets(relFile, section, func(content string) (string, error) {

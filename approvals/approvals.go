@@ -32,6 +32,7 @@ type Proposal struct {
 	Action    string `json:"action"`
 	Agent     string `json:"agent"`
 	Ritual    string `json:"ritual"`  // the filing ritual (D15: update-vault-skill is tune-only)
+	Section   string `json:"section"` // append-x-queue target: "queue" (default) | "posted" (export-posted)
 	Created   string `json:"created"` // RFC3339
 	Status    string `json:"status"`  // pending|approved|rejected (= folder)
 	Body      string `json:"body"`
@@ -450,6 +451,10 @@ func (s *Store) applyAppendXQueue(p Proposal) error {
 	if s.vw == nil || !s.vw.Enabled() {
 		return errors.New("apply refused: no vault writer configured for append-x-queue")
 	}
+	if p.Section == "posted" {
+		// export-posted (§2): bulk-append the owner's history under # posted
+		return s.vw.AppendSectionBullet(p.ApplyPath, "posted", p.Proposed)
+	}
 	return s.vw.AppendQueueBullet(p.ApplyPath, p.Proposed)
 }
 
@@ -604,6 +609,7 @@ func (s *Store) parse(path string) (Proposal, error) {
 		Action:    fm["action"],
 		Agent:     fm["agent"],
 		Ritual:    strings.TrimSpace(fm["ritual"]),
+		Section:   strings.TrimSpace(fm["section"]),
 		Created:   fm["created"],
 		Body:      body, // keeps the ````proposed fence, so the record round-trips
 		ApplyPath: strings.TrimSpace(fm["apply-path"]),
@@ -622,6 +628,7 @@ func serialize(p Proposal) string {
 		Set("action", p.Action).
 		Set("agent", p.Agent).
 		Set("ritual", p.Ritual). // omitted when empty (Set skips blanks)
+		Set("section", p.Section).
 		Set("created", p.Created).
 		Set("apply-path", p.ApplyPath).
 		String(strings.TrimSpace(p.Body))
