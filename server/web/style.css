@@ -1220,3 +1220,11 @@ input.inline-hidden { color: transparent !important; }
 /* ---- Content Studio §7: commission ---- */
 .commission-box { border: 1px solid var(--blue-soft); background: #fbfcff; border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
 .commission-input { width: 100%; min-height: 60px; font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }
+
+/* ---- Content Studio: judge note + inspiration declutter (UI fixes) ---- */
+.draft-judge-box { display: flex; gap: 6px; margin-top: 6px; }
+.insp-post-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.insp-posts { margin-top: 8px; }
+.insp-posts-summary { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); cursor: pointer; list-style: revert; }
+.insp-posts[open] > summary { margin-bottom: 8px; }
+.insp-post:first-of-type { border-top: none; }

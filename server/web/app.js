@@ -1483,10 +1483,9 @@ function feedCard(it) {
 
 // draftFeedCard renders a Content Studio draft as a tweet-shaped card: the post
 // text big, the critic's rationale, and inline approve / edit / dismiss plus a
-// feedback field + quick chips. Approve confirms the linked append-x-queue
-// approval; dismiss rejects it; edit rewrites both the draft and the pending
-// bullet so the edited text is what lands.
-const DRAFT_CHIPS = ["voice-off", "weak-hook", "wrong-topic", "ai-tells", "more-like-this"];
+// "judge" note. Approve confirms the linked append-x-queue approval; dismiss
+// rejects it; edit rewrites both the draft and the pending bullet so the edited
+// text is what lands.
 function draftFeedCard(it) {
   const card = el("div", "feed-card draft" + (it.status === "discarded" ? " discarded" : ""));
   const top = el("div", "feed-top");
@@ -1532,22 +1531,8 @@ function draftFeedCard(it) {
   );
   editWrap.append(ta, editActions);
 
-  // feedback chips + free text
-  const fb = el("div", "draft-feedback");
-  const chipRow = el("div", "draft-chips");
-  const chosen = new Set(it.tags || []);
-  DRAFT_CHIPS.forEach((c) => {
-    const b = el("button", "draft-chip" + (chosen.has(c) ? " on" : ""), c);
-    b.onclick = () => { if (chosen.has(c)) { chosen.delete(c); b.classList.remove("on"); } else { chosen.add(c); b.classList.add("on"); } };
-    chipRow.append(b);
-  });
-  const fbInput = el("input", "draft-fb-input"); fbInput.type = "text";
-  fbInput.placeholder = "what's off / what to do more of…";
-  const saveFb = pillLight("Save note", async () => {
-    await studioPost(`/api/studio/draft/${encodeURIComponent(it.draftId)}/feedback`, { text: fbInput.value.trim(), tags: [...chosen] });
-    showToast("feedback saved — next scribe run will honor it", null, "info");
-  });
-  fb.append(chipRow, el("div", "draft-fb-row", fbInput, saveFb));
+  // feedback: a single "judge" affordance (shared with the board cards)
+  const fb = buildDraftFeedback(it.draftId, "");
 
   const actions = el("div", "feed-actions");
   actions.append(
@@ -1732,21 +1717,32 @@ function renderStudio() {
 // statusWord maps a draft's lifecycle status to the §4 vocabulary chip.
 function statusWord(s) { return ({ "pending-audit": "draft" })[s] || s; }
 
-// buildDraftFeedback is the shared feedback capture (chips + note), used on both
-// feed draft cards and board cards (§4 parity).
-function buildDraftFeedback(draftId, tags) {
-  const fb = el("div", "draft-feedback");
-  const chipRow = el("div", "draft-chips");
-  const chosen = new Set(tags || []);
-  DRAFT_CHIPS.forEach((c) => {
-    const b = el("button", "draft-chip" + (chosen.has(c) ? " on" : ""), c);
-    b.onclick = () => { if (chosen.has(c)) { chosen.delete(c); b.classList.remove("on"); } else { chosen.add(c); b.classList.add("on"); } };
-    chipRow.append(b);
+// buildDraftFeedback is the shared feedback capture used on both feed and board
+// cards: a single "judge" affordance that opens a commentary box; the note is
+// written to the draft's feedback (steers the next scribe run + feeds tuning).
+function buildDraftFeedback(draftId, existing) {
+  const wrap = el("div", "draft-feedback");
+  if (existing && existing.trim()) wrap.append(el("div", "draft-fb-text", "your note: " + existing.trim()));
+  const judge = pillLight("judge", () => {
+    if (wrap.querySelector(".draft-judge-box")) return; // toggle guard
+    const box = el("div", "draft-judge-box");
+    const inp = el("input", "draft-fb-input");
+    inp.type = "text";
+    inp.placeholder = "your note on this draft — what's off, or do more of…";
+    const save = () => {
+      const t = inp.value.trim();
+      if (!t) { box.remove(); return; }
+      studioPost(`/api/studio/draft/${encodeURIComponent(draftId)}/feedback`, { text: t, tags: [] })
+        .then(() => { showToast("noted — the next run honors it", null, "info"); box.remove(); });
+    };
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
+    const saveBtn = pillLight("save", save);
+    box.append(inp, saveBtn);
+    wrap.append(box);
+    inp.focus();
   });
-  const inp = el("input", "draft-fb-input"); inp.type = "text"; inp.placeholder = "what's off / what to do more of…";
-  const save = pillLight("Save note", () => studioPost(`/api/studio/draft/${encodeURIComponent(draftId)}/feedback`, { text: inp.value.trim(), tags: [...chosen] }).then(() => showToast("feedback saved — next scribe run honors it", null, "info")));
-  fb.append(chipRow, el("div", "draft-fb-row", inp, save));
-  return fb;
+  wrap.append(judge);
+  return wrap;
 }
 
 function studioBoardCard(d) {
@@ -1793,7 +1789,7 @@ function studioBoardCard(d) {
   } else if (d.status === "queued") {
     actions.append(pillLight("mark posted", () => askText("Mark posted", "paste the tweet URL (optional)", (url) => studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/mark-posted`, { url: url.trim() }).then(loadStudio))));
   }
-  card.append(editWrap, buildDraftFeedback(d.id, d.feedbackTags), actions);
+  card.append(editWrap, buildDraftFeedback(d.id, d.feedback), actions);
   return card;
 }
 
@@ -1838,16 +1834,23 @@ function inspAccountCard(a, isSelf) {
     cw.append(ta, save);
     card.append(cw);
   }
-  (a.topPosts || []).slice(0, 5).forEach((p) => {
-    const row = el("div", "insp-post");
-    const t = el("div", "insp-post-text"); t.textContent = p.text; row.append(t);
-    const m = el("div", "feed-meta");
-    m.append(el("span", null, fmtCount(p.views) + " views · " + fmtCount(p.likes) + " likes"));
-    if (p.url) m.append(linkEl("open →", p.url));
-    m.append(pillLight("note", () => askText("Annotate", "why this post is worth studying", (note) => studioPost("/api/studio/annotate", { postId: p.id, note: note.trim() }).then(() => showToast("annotated", null, "info")))));
-    row.append(m);
-    card.append(row);
-  });
+  // top posts collapsed by default (declutter) — expand to view/annotate
+  const posts = a.topPosts || [];
+  if (posts.length) {
+    const det = el("details", "insp-posts");
+    det.append(el("summary", "insp-posts-summary", "top posts by views (" + posts.length + ")"));
+    posts.forEach((p) => {
+      const row = el("div", "insp-post");
+      row.append(el("div", "insp-post-text", p.text));
+      const m = el("div", "feed-meta insp-post-meta");
+      m.append(el("span", null, fmtCount(p.views) + " views · " + fmtCount(p.likes) + " likes"));
+      if (p.url) m.append(linkEl("open →", p.url));
+      m.append(pillLight("annotate", () => askText("Annotate this post", "why it's worth studying — teaches the pattern skill what you admire", (note) => studioPost("/api/studio/annotate", { postId: p.id, note: note.trim() }).then(() => showToast("annotated", null, "info")))));
+      row.append(m);
+      det.append(row);
+    });
+    card.append(det);
+  }
   return card;
 }
 function fmtCount(n) {
