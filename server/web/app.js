@@ -1599,7 +1599,24 @@ async function loadStudio() {
     studioCache.nextFire = {};
     (rits.data || rits || []).forEach((rr) => { if (rr.spirit === "scribe" || rr.spirit === "critic") studioCache.nextFire[rr.spirit + "/" + rr.ritual] = rr.nextFire || rr.next || ""; });
   } catch (e) { studioCache.nextFire = {}; }
+  // §9: tune proposals — what the system has learned, pending your review
+  try {
+    const ap = await (await fetch("/api/spirits/approvals")).json();
+    studioCache.tuneApprovals = (ap.pending || []).filter((p) => p.ritual === "tune");
+  } catch (e) { studioCache.tuneApprovals = []; }
   renderStudio();
+}
+function renderTuningPanel() {
+  const wrap = el("div", "studio-tuning");
+  wrap.append(el("div", "reading-strip-head", "What the system is learning — " + studioCache.tuneApprovals.length + " tune proposal" + (studioCache.tuneApprovals.length === 1 ? "" : "s") + " pending"));
+  studioCache.tuneApprovals.forEach((p) => {
+    const row = el("div", "tuning-row");
+    row.append(el("span", "tuning-what", p.action));
+    row.append(el("span", "feed-meta", [p.agent, p.applyPath].filter(Boolean).join(" · ")));
+    row.append(pillLight("review →", () => { pendingApprovalFocus = p.id; location.hash = "#/spirits/approvals"; }));
+    wrap.append(row);
+  });
+  return wrap;
 }
 async function studioRunNow(spirit, ritual) {
   try {
@@ -1642,6 +1659,7 @@ function renderStudio() {
   if (state.studioTab === "inspiration") return renderStudioInspiration(host);
   // board: drafts grouped by the status vocabulary (draft → passed → queued → posted, + killed)
   let board = studioCache.board || [];
+  if ((studioCache.tuneApprovals || []).length) host.append(renderTuningPanel());
   if (!board.length) { host.append(emptyRow("No drafts yet — scribe drafts each morning, critic audits an hour later.")); return; }
   // §5 format filter chips
   const fmt = state.studioFormat || "all";

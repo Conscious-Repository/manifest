@@ -1204,3 +1204,8 @@ input.inline-hidden { color: transparent !important; }
 .killed-group { margin-top: 4px; }
 .killed-group > summary { cursor: pointer; list-style: revert; }
 .killed-group[open] > summary { margin-bottom: 8px; }
+
+/* ---- Content Studio §9: tuning panel ---- */
+.studio-tuning { border: 1px solid var(--blue-soft); background: #fbfcff; border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
+.tuning-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.tuning-what { flex: 1; font-size: 13.5px; color: var(--text); }
