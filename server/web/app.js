@@ -1678,21 +1678,11 @@ function renderStudio() {
   if (state.studioTab === "queue") return renderStudioQueue(host);
   if (state.studioTab === "inspiration") return renderStudioInspiration(host);
   // board: drafts grouped by the status vocabulary (draft → passed → queued → posted, + killed)
-  let board = studioCache.board || [];
+  const board = studioCache.board || [];
   if ((studioCache.tuneApprovals || []).length) host.append(renderTuningPanel());
   host.append(renderCommissionBox());
   if (!board.length) { host.append(emptyRow("No drafts yet — commission one above, or scribe drafts each morning.")); return; }
-  // §5 format filter chips
-  const fmt = state.studioFormat || "all";
-  const fmtRow = el("div", "draft-chips");
-  [["all", "all"], ["aphorism", "aphorisms"], ["single", "long-form"]].forEach(([v, label]) => {
-    const b = el("button", "draft-chip" + (fmt === v ? " on" : ""), label);
-    b.onclick = () => { state.studioFormat = v; renderStudio(); };
-    fmtRow.append(b);
-  });
-  host.append(fmtRow);
-  if (fmt !== "all") board = board.filter((d) => (d.format || "single") === fmt);
-  // §4 group order + vocabulary
+  // group by the status vocabulary
   const order = ["passed", "pending-audit", "queued", "posted", "killed"];
   const labels = { passed: "Passed — approve to queue", "pending-audit": "Pending audit", queued: "Queued", posted: "Posted", killed: "Killed" };
   const byStatus = {};
@@ -1700,9 +1690,7 @@ function renderStudio() {
   order.forEach((st) => {
     const items = byStatus[st];
     if (!items || !items.length) return;
-    const ap = items.filter((d) => (d.format || "single") === "aphorism").length;
-    const sg = items.length - ap;
-    const head = labels[st] + "  —  " + items.length + " (" + ap + " aphorism · " + sg + " long-form)";
+    const head = labels[st] + "  —  " + items.length;
     if (st === "killed") {
       const det = el("details", "killed-group");
       det.append(el("summary", "reading-strip-head", head));
