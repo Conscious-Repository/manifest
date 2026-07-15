@@ -168,6 +168,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/studio/account/{handle}/self", s.handleStudioSelf)
 	mux.HandleFunc("POST /api/studio/annotate", s.handleStudioAnnotate)
 	mux.HandleFunc("POST /api/studio/account/add", s.handleStudioAddAccount)
+	mux.HandleFunc("POST /api/studio/commission", s.handleStudioCommission)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

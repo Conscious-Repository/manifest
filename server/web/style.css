@@ -1216,3 +1216,7 @@ input.inline-hidden { color: transparent !important; }
 .insp-self { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
 .insp-commentary { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
 .insp-comment-input { width: 100%; min-height: 48px; font-family: var(--sans); font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }
+
+/* ---- Content Studio §7: commission ---- */
+.commission-box { border: 1px solid var(--blue-soft); background: #fbfcff; border-radius: var(--radius); padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+.commission-input { width: 100%; min-height: 60px; font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; resize: vertical; box-sizing: border-box; }

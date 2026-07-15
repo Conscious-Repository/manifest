@@ -2,14 +2,53 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"manifest/spirits"
 	"manifest/studio"
 )
+
+// handleStudioCommission spools scribe/commission with the owner's request
+// (instruction + inline [[note]] refs + URLs). The scribe reads the references
+// (vault.search / web.fetch), drafts variants, and the critic audits them on its
+// normal path (§7).
+func (s *Server) handleStudioCommission(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "engine spool unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Instruction string `json:"instruction"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	req := strings.TrimSpace(b.Instruction)
+	if req == "" {
+		httpError(w, errBadRequest("an instruction is required"))
+		return
+	}
+	if len(req) > 4000 {
+		req = req[:4000]
+	}
+	err := s.spirits.SpoolRunNow("scribe", "commission", req, "")
+	if errors.Is(err, spirits.ErrAlreadyActive) {
+		w.WriteHeader(http.StatusConflict)
+		writeJSON(w, map[string]any{"active": true})
+		return
+	}
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"spooled": true})
+}
 
 // Content Studio — Inspiration tab writes (iteration-2 §8). The dashboard's
 // corpus contract is widened NARROWLY: it may write only x_accounts.commentary,

@@ -1606,6 +1606,41 @@ async function loadStudio() {
   } catch (e) { studioCache.tuneApprovals = []; }
   renderStudio();
 }
+// §7 commission box — free-text instruction (inline [[note]] refs + URLs); spools
+// scribe/commission, then auto-spools the critic when the run lands.
+function renderCommissionBox() {
+  const wrap = el("div", "commission-box");
+  wrap.append(el("div", "reading-strip-head", "Commission a post"));
+  const ta = el("textarea", "commission-input");
+  ta.placeholder = "reference [[a note]] and https://… — comb for my auxiliary thoughts on the subject and propose a post";
+  const btn = pill("Commission →", () => {
+    const t = ta.value.trim(); if (!t) return;
+    studioPost("/api/studio/commission", { instruction: t }).then(() => {
+      showToast("commissioned — scribe is drafting, the critic will audit", null, "info");
+      ta.value = "";
+      commissionAutoSpool();
+    }).catch(() => {});
+  });
+  wrap.append(ta, btn);
+  return wrap;
+}
+async function commissionAutoSpool() {
+  // poll up to ~90s for the commission run to finish, then run the critic (§7)
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      const runs = await (await fetch("/api/spirits/runs")).json();
+      const list = runs.data || runs.runs || runs || [];
+      const c = list.find((r) => r.spirit === "scribe" && r.ritual === "commission");
+      if (c && c.outcome && c.outcome !== "running") {
+        await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: "critic", ritual: "audit-drafts" }) });
+        showToast("commission drafted — critic auditing now", null, "info");
+        loadStudio();
+        return;
+      }
+    } catch (e) {}
+  }
+}
 function renderTuningPanel() {
   const wrap = el("div", "studio-tuning");
   wrap.append(el("div", "reading-strip-head", "What the system is learning — " + studioCache.tuneApprovals.length + " tune proposal" + (studioCache.tuneApprovals.length === 1 ? "" : "s") + " pending"));
@@ -1660,7 +1695,8 @@ function renderStudio() {
   // board: drafts grouped by the status vocabulary (draft → passed → queued → posted, + killed)
   let board = studioCache.board || [];
   if ((studioCache.tuneApprovals || []).length) host.append(renderTuningPanel());
-  if (!board.length) { host.append(emptyRow("No drafts yet — scribe drafts each morning, critic audits an hour later.")); return; }
+  host.append(renderCommissionBox());
+  if (!board.length) { host.append(emptyRow("No drafts yet — commission one above, or scribe drafts each morning.")); return; }
   // §5 format filter chips
   const fmt = state.studioFormat || "all";
   const fmtRow = el("div", "draft-chips");
