@@ -283,6 +283,12 @@ body {
   color: var(--text); flex: 1; min-width: 0; outline: none; padding: 0;
 }
 .trow input.ttext.done { text-decoration: line-through; color: var(--blue); }
+/* Gated row (goals-orient): no rock+stage on this slot yet — quiet hint, no input. */
+.trow .trow-gate {
+  display: flex; align-items: center;
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em;
+  color: var(--muted); font-style: italic;
+}
 /* Remove (✕): hidden until you hover a filled row, then click to clear the slot. */
 .task-remove {
   opacity: 0; flex: none; border: none; background: transparent;
@@ -362,68 +368,96 @@ body {
 }
 .plate-area:first-child { margin-top: 0; }
 
-/* ---- area cards ---- */
-.area-card {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  margin-bottom: 18px;
-}
-.area-head { display: flex; align-items: center; gap: 8px; }
-.area-name {
-  flex: 1; border: none; background: transparent;
-  font-family: var(--sans); font-size: 20px; font-weight: 500; letter-spacing: 0.3px;
-  color: var(--ink); outline: none; padding: 2px 0;
-}
-.area-ns {
-  width: 100%; border: none; background: transparent;
-  border-bottom: 1px solid var(--line); margin: 4px 0 14px;
-  font-family: var(--sans); font-size: 15px; font-style: italic; letter-spacing: 0.3px;
-  color: var(--muted); outline: none; padding: 4px 0;
-}
-.area-ns:focus { color: var(--text); border-color: var(--muted); }
+/* ---- ORIENT (goals-orient plan; typography from the mockup) ---- */
 .icon-btn {
   border: none; background: transparent; cursor: pointer;
   color: var(--icon); font-size: 13px; line-height: 1; padding: 4px;
 }
 .icon-btn:hover { color: var(--blue); }
-
-/* ---- horizons + goal rows ---- */
-.horizon { margin-top: 10px; }
-.horizon-label {
-  font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.4px;
-  color: var(--muted); margin-bottom: 6px;
+.orient-head {
+  display: flex; align-items: baseline; gap: 16px;
+  border-bottom: 1px solid var(--line); padding-bottom: 10px;
 }
-.goal-list { display: flex; flex-direction: column; }
-.goal-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--line);
+.orient-title {
+  font-family: var(--mono); font-size: 14px; letter-spacing: 0.14em;
+  color: var(--ink); font-weight: 600;
 }
-.goal-text {
-  flex: 1;
-  border: none; background: transparent;
-  font-family: var(--sans); font-size: 16px; letter-spacing: 0.4px;
-  color: var(--text); outline: none; padding: 4px 0; min-width: 0;
+.orient-tab {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+  color: var(--muted); text-decoration: none;
 }
-.goal-text.done { text-decoration: line-through; color: var(--blue); }
-.goal-archive {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
-  color: var(--muted); background: transparent; border: none;
-  cursor: pointer; padding: 2px 4px; white-space: nowrap;
+.orient-tab.on { color: var(--ink); }
+.orient-range {
+  margin-left: auto; font-family: var(--mono); font-size: 11px;
+  letter-spacing: 0.1em; color: var(--muted);
 }
-.goal-archive:hover { color: var(--blue); }
-.owner-chip {
-  font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
-  border: 1px solid var(--line); border-radius: 16px;
-  padding: 3px 8px; background: var(--bg); color: var(--streak-ink);
-  cursor: pointer; -webkit-appearance: none; appearance: none; text-align: center;
+.o-area { margin-top: 34px; }
+.o-area-name {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em;
+  color: var(--ink); font-weight: 600; text-transform: uppercase;
+  display: inline-block;
 }
-.owner-chip.owner-team { color: var(--muted); background: var(--streak-bg); }
-.owner-chip.owner-other { color: var(--blue); border-color: var(--blue-soft); }
-.add-goal { margin-top: 8px; }
+.o-ns { font-size: 15px; color: var(--text); font-weight: 600; margin-top: 8px; }
+.o-yr { font-size: 12.5px; color: var(--muted); margin-top: 12px; padding-left: 2px; }
+.o-yr b { color: var(--streak-ink); font-weight: 600; margin-right: 4px; }
+.o-yr-goal.done { text-decoration: line-through; }
+.o-rocks { margin-top: 8px; }
+.o-rock {
+  padding: 9px 2px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: baseline; gap: 10px; cursor: pointer;
+}
+.o-rock:hover, .o-rock.open { background: var(--hover); }
+.o-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--blue-soft); flex: none; align-self: center;
+}
+.o-rk-name { font-size: 14px; color: var(--text); font-weight: 600; }
+.o-rk-name.done { text-decoration: line-through; color: var(--muted); }
+.o-rk-next {
+  margin-left: auto; font-family: var(--mono); font-size: 11px;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.o-rk-next .cur { color: var(--blue); }
+.o-done-hint { font-style: italic; }
+.o-expand { padding: 2px 0 10px 20px; font-size: 13px; }
+.o-st {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.05em;
+  color: var(--muted); padding: 5px 0 2px;
+}
+.o-st.done::before { content: "✓ "; }
+.o-st.cur { color: var(--blue); font-weight: 600; }
+.o-tk { padding: 2px 0 2px 16px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.o-tk .check { width: auto; height: auto; font-size: 13px; }
+.o-tk.done .o-tk-text { color: var(--muted); text-decoration: line-through; }
+.o-editable { cursor: pointer; }
+.o-editable:hover { color: var(--blue); }
+.o-edit {
+  border: none; border-bottom: 1px solid var(--blue-soft); background: transparent;
+  font-family: var(--sans); font-size: 14px; color: var(--text);
+  outline: none; padding: 1px 0; min-width: 240px;
+}
+.o-ghost, .o-complete {
+  display: block; background: none; border: none; cursor: pointer; text-align: left;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em;
+  color: var(--blue-soft); font-style: italic; padding: 6px 0 0 0;
+}
+.o-ghost:hover, .o-complete:hover { color: var(--blue); }
+.o-complete { font-style: normal; margin-top: 6px; }
+.o-rock-ghost { padding: 8px 2px; }
+/* HISTORY tab — read-only archive list */
+.hist-quarter {
+  font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em;
+  color: var(--ink); font-weight: 600; margin: 30px 0 6px;
+}
+.hist-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 2px; border-bottom: 1px solid var(--line); font-size: 14px;
+}
+.hist-glyph { font-family: var(--mono); color: var(--muted); width: 14px; flex: none; }
+.hist-glyph.win { color: var(--blue); }
+.hist-text { color: var(--text); }
+.hist-meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.hist-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 3px 2px 6px 24px; }
 
 /* ---- calendar (month view) ---- */
 .calendar-view { max-width: 1320px; margin: 8px auto 64px; padding: 0 28px; }
@@ -785,14 +819,6 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .task-tag {
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.3px;
   color: var(--muted); margin-left: 8px; white-space: nowrap;
-}
-
-/* ---- goals authoring: nested cascade outline ---- */
-.goal-node { margin-top: 6px; }
-.goal-children { margin-left: 22px; border-left: 1px solid var(--line); padding-left: 12px; }
-.add-child {
-  margin-top: 6px; width: auto; padding: 4px 10px; font-size: 11px;
-  display: inline-block;
 }
 
 /* ---- reusable picker modal ---- */

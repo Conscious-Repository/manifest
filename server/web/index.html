@@ -78,12 +78,15 @@
 
   <section class="goals-page" id="goalsView" hidden>
     <div class="areas-col">
-      <div class="panel-head">
-        <span class="panel-title">AREAS &amp; GOALS</span>
-        <span class="panel-meta">goals.md</span>
+      <div class="orient-head">
+        <span class="orient-title">GOALS</span>
+        <a class="orient-tab" id="tabOrient" href="#/goals">ORIENT</a>
+        <a class="orient-tab" id="tabHistory" href="#/goals/history">HISTORY</a>
+        <span class="orient-range" id="goalsMeta"></span>
       </div>
       <div id="areasRows"></div>
       <button id="addArea" class="add-btn">+ Add area</button>
+      <div id="historyRows" hidden></div>
     </div>
   </section>
 

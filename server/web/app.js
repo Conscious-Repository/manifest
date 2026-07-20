@@ -454,6 +454,22 @@ function renderPrep(day) {
   els.prepBanner.append(head, chips);
 }
 
+// captureTask (goals-orient): free-typed day task → appended into goals.md under
+// the focus slot's stage with a durable [goal:: id], seated on the day linked.
+async function captureTask(stageId, text) {
+  setSaveState("saving");
+  try {
+    const r = await fetch(`/api/day/capture?date=${state.date}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stageId, text }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  load(state.date); // reload: the task re-seats linked in its slot row
+}
+
 async function pullGoal(goalId) {
   if (collectTasks().length >= MAX_TASKS) return; // hard cap of 3 tasks — remove one first
   setSaveState("saving");
@@ -625,7 +641,7 @@ function renderTasks(tasks) {
     if (rows[i] === null && li < leftover.length) rows[i] = leftover[li++];
   }
   for (let i = 0; i < MAX_TASKS; i++) {
-    addTaskRow(rows[i] || { text: "", done: false }, i + 1);
+    addTaskRow(rows[i] || { text: "", done: false }, i + 1, focus[i]);
   }
 }
 // slotForGoalId returns the focus slot index a task belongs under: the slot
@@ -652,7 +668,7 @@ function slotForGoalId(g, focus) {
   return best;
 }
 
-function addTaskRow(task, num) {
+function addTaskRow(task, num, pick) {
   const row = document.createElement("div");
   row.className = "trow";
   if (task.goalId) row.dataset.goalId = task.goalId; // preserve backlink on save
@@ -660,6 +676,23 @@ function addTaskRow(task, num) {
   const n = document.createElement("span");
   n.className = "num";
   n.textContent = `${num}.`;
+
+  // GATE (goals-orient): an EMPTY row only accepts entry when its focus slot has
+  // both a rock (the pick) and a stage (the milestone) — the owner's rule: "no
+  // task until both the rock and stage are set". A free-typed task then CAPTURES
+  // into goals.md under that stage. Existing tasks (incl. old unlinked ones)
+  // render and edit exactly as before.
+  const stageId = pick && pick.resolved && pick.goalId && pick.milestone && pick.milestone.goalId
+    ? pick.milestone.goalId : "";
+  const empty = !task.text && !task.goalId;
+  if (empty && !stageId) {
+    const hint = document.createElement("span");
+    hint.className = "trow-gate";
+    hint.textContent = "set focus + milestone to add tasks";
+    row.append(n, hint);
+    els.taskRows.appendChild(row);
+    return;
+  }
 
   // Middle column: editable text + a hover-shown remove (✕) on filled rows.
   const mid = document.createElement("div");
@@ -696,7 +729,17 @@ function addTaskRow(task, num) {
     saveDay();
   });
   input.addEventListener("input", refresh);
-  input.addEventListener("change", () => { saveDay(); syncTasksAndCascade(); });
+  input.addEventListener("change", () => {
+    const txt = input.value.trim();
+    // A row that was empty and has no goal link captures its free-typed text into
+    // goals.md under the slot's stage (then reloads, which re-seats it linked).
+    if (empty && !row.dataset.goalId && txt && stageId) {
+      captureTask(stageId, txt);
+      return;
+    }
+    saveDay();
+    syncTasksAndCascade();
+  });
   remove.addEventListener("click", () => {
     input.value = "";
     input.classList.remove("done");
@@ -723,6 +766,7 @@ function collectTasks() {
   return [...els.taskRows.querySelectorAll(".trow")]
     .map((row) => {
       const input = row.querySelector(".ttext");
+      if (!input) return { text: "" }; // gated row (no input) — filtered below
       const t = { text: input.value.trim(), done: input.classList.contains("done") };
       if (row.dataset.goalId) t.goalId = row.dataset.goalId;
       if (row.dataset.owner) t.owner = row.dataset.owner;
@@ -746,14 +790,46 @@ async function goalsApi(method, path, body) {
   await loadGoals();
 }
 
-// ---- areas & goals: single column, M1 layout over the ladder model ----
+// ---- ORIENT: the ladder felt top-to-bottom (goals-orient plan) ----
+// Vision → 1-year → Rocks; each Rock one collapsed row (name · position →
+// next-action), click to expand the stage trail + the CURRENT stage's tasks.
+// Expansion lives in JS (never the DOM) so it survives the refetch-re-render
+// every mutation triggers via goalsApi.
+
+const goalsUI = { expanded: new Set(), tab: "orient" };
 
 async function loadGoals(focusId) {
   try {
     const doc = await (await fetch("/api/goals")).json();
-    renderAreas(doc.areas || []);
+    state.goalsDoc = doc;
+    if (focusId) {
+      // deep-links (#/goals/<id>) auto-expand the rock containing the target
+      const rock = rockContaining(doc.areas || [], focusId);
+      if (rock) goalsUI.expanded.add(rock.id);
+    }
+    setGoalsTab("orient");
+    renderOrient(doc.areas || []);
     if (focusId) focusGoal(focusId);
   } catch (e) { setSaveState("error"); }
+}
+
+function rockContaining(areas, id) {
+  const inTree = (g) => g.id === id || (g.children || []).some(inTree);
+  for (const a of areas) for (const r of a.rocks || []) if (inTree(r)) return r;
+  return null;
+}
+
+// setGoalsTab flips ORIENT ↔ HISTORY visibility + the tab chips.
+function setGoalsTab(tab) {
+  goalsUI.tab = tab;
+  const orient = tab === "orient";
+  els.areasRows.hidden = !orient;
+  const add = document.getElementById("addArea");
+  if (add) add.hidden = !orient;
+  const hist = document.getElementById("historyRows");
+  if (hist) hist.hidden = orient;
+  document.getElementById("tabOrient").classList.toggle("on", orient);
+  document.getElementById("tabHistory").classList.toggle("on", !orient);
 }
 
 // focusGoal scrolls to a goal's node and flashes it — the #/goals/<id> deep
@@ -766,59 +842,217 @@ function focusGoal(id) {
   setTimeout(() => node.classList.remove("goal-flash"), 2400);
 }
 
-function renderAreas(areas) {
+function renderOrient(areas) {
   els.areasRows.innerHTML = "";
+  renderOrientMeta(areas);
   if (!areas.length) { els.areasRows.appendChild(emptyRow("No areas yet — add one.")); return; }
-  areas.forEach((area) => els.areasRows.appendChild(areaCard(area)));
+  areas.forEach((area) => els.areasRows.appendChild(orientArea(area)));
 }
 
-function areaCard(area) {
-  const card = el("div", "area-card");
+// Header meta: "2026 · Q3" plus a faint load line when >5 rocks are active.
+function renderOrientMeta(areas) {
+  const meta = document.getElementById("goalsMeta");
+  if (!meta) return;
+  const now = new Date();
+  const q = Math.floor(now.getMonth() / 3) + 1;
+  let txt = `${now.getFullYear()} · Q${q}`;
+  const n = (areas || []).reduce((s, a) => s + (a.rocks || []).filter((r) => !r.checked).length, 0);
+  if (n > 5) txt += ` · ${n} rocks · heavy`;
+  meta.textContent = txt;
+}
 
-  const head = el("div", "area-head");
-  const name = el("input", "area-name");
-  name.value = area.name;
-  name.addEventListener("change", () => {
-    const v = name.value.trim();
-    if (v && v !== area.name) goalsApi("PATCH", "/api/areas", { name: area.name, newName: v });
-  });
-  const del = el("button", "icon-btn area-del", "✕");
-  del.title = "Delete area";
-  del.addEventListener("click", () => {
-    if (confirm(`Delete area “${area.name}” and its goals?`))
-      goalsApi("DELETE", "/api/areas", { name: area.name });
-  });
-  head.append(name, del);
+function orientArea(area) {
+  const card = el("div", "o-area");
 
-  const ns = el("input", "area-ns");
-  ns.placeholder = "North Star…";
-  ns.value = area.northStar || "";
-  ns.addEventListener("change", () => goalsApi("PATCH", "/api/areas", { name: area.name, northStar: ns.value.trim() }));
-  card.append(head, ns);
+  // area name — mono uppercase; click to rename (PATCH /api/areas)
+  const name = el("div", "o-area-name", area.name);
+  clickToEdit(name, () => area.name, (v) =>
+    goalsApi("PATCH", "/api/areas", { name: area.name, newName: v }));
+  card.appendChild(name);
 
-  const annual = el("div", "horizon");
-  annual.appendChild(el("div", "horizon-label", "1-YEAR"));
-  (area.annuals || []).forEach((an) => annual.appendChild(annualNode(an)));
-  annual.appendChild(addBtn("+ Add 1-year goal", () =>
-    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "annual", text: "New 1-year goal", owner: "me" })));
-  card.appendChild(annual);
+  // North Star — one bold line; ghost when unset
+  if (area.northStar) {
+    const ns = el("div", "o-ns", area.northStar);
+    clickToEdit(ns, () => area.northStar, (v) =>
+      goalsApi("PATCH", "/api/areas", { name: area.name, northStar: v }));
+    card.appendChild(ns);
+  } else {
+    card.appendChild(ghostInput("＋ set a north star", "o-ns-ghost", (v) =>
+      goalsApi("PATCH", "/api/areas", { name: area.name, northStar: v })));
+  }
 
-  const sec = el("div", "horizon");
-  sec.appendChild(el("div", "horizon-label", "ROCK → STAGE → TASK"));
-  (area.rocks || []).forEach((g) => sec.appendChild(goalNode(g, 0)));
-  sec.appendChild(addBtn("+ Add rock", () =>
-    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "rock", text: "New rock", owner: "me" })));
-  card.appendChild(sec);
+  // 1-year rung — muted one-liners; the empty middle rung invites filling
+  const yr = el("div", "o-yr");
+  const yearLabel = el("b", "", (area.year || String(new Date().getFullYear())) + ":");
+  yr.appendChild(yearLabel);
+  const annuals = area.annuals || [];
+  if (annuals.length) {
+    annuals.forEach((an, i) => {
+      if (i > 0) yr.appendChild(document.createTextNode(" · "));
+      const span = el("span", "o-yr-goal" + (an.checked ? " done" : ""), an.text);
+      clickToEdit(span, () => an.text, (v) =>
+        goalsApi("PATCH", "/api/goals/item", { id: an.id, text: v }));
+      yr.appendChild(span);
+    });
+    card.appendChild(yr);
+  } else {
+    yr.appendChild(ghostInput("＋ set a 2026 goal", "o-yr-ghost", (v) =>
+      goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "annual", text: v, owner: "me" })));
+    card.appendChild(yr);
+  }
+
+  // Rocks
+  const rocks = el("div", "o-rocks");
+  (area.rocks || []).forEach((g) => rocks.appendChild(rockNode(g)));
+  rocks.appendChild(ghostInput("＋ rock", "o-rock-ghost", (v) =>
+    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "rock", text: v, owner: "me" })));
+  card.appendChild(rocks);
   return card;
 }
 
-// annualNode: one goal row per 1-year goal — no children, no rollups.
-function annualNode(g) {
-  const wrap = el("div", "goal-node depth-0");
-  const row = el("div", "goal-row");
-  row.append(checkBtn(g), goalText(g), ownerSelect(g), delBtn(g));
+// rockNode: the collapsed row — dot · name · position → next-action — and, when
+// expanded, the stage trail + current-stage tasks.
+function rockNode(g) {
+  const wrap = el("div", "o-rock-wrap");
+  wrap.dataset.goalId = g.id; // #/goals/<id> deep-link anchor
+  const open = goalsUI.expanded.has(g.id);
+
+  const row = el("div", "o-rock" + (open ? " open" : ""));
+  row.append(el("span", "o-dot"));
+  const name = el("span", "o-rk-name" + (g.checked ? " done" : ""), g.text);
+  row.appendChild(name);
+
+  const stages = g.children || [];
+  const cur = stages.find((c) => !c.checked);
+  const next = el("span", "o-rk-next");
+  if (g.checked || (!cur && stages.length)) {
+    next.appendChild(el("span", "o-done-hint", "done — complete it"));
+  } else if (cur) {
+    const t = (cur.children || []).find((c) => !c.checked);
+    if (t) {
+      next.appendChild(document.createTextNode(cur.text + " → "));
+      next.appendChild(el("span", "cur", t.text));
+    } else {
+      next.appendChild(el("span", "cur", cur.text));
+    }
+  }
+  row.appendChild(next);
+  row.addEventListener("click", () => {
+    if (goalsUI.expanded.has(g.id)) goalsUI.expanded.delete(g.id);
+    else goalsUI.expanded.add(g.id);
+    renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
+  });
   wrap.appendChild(row);
+
+  if (open) {
+    // expanded: rename is click-to-edit on the name (don't toggle)
+    name.addEventListener("click", (e) => e.stopPropagation());
+    clickToEdit(name, () => g.text, (v) =>
+      goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v }));
+    wrap.appendChild(rockExpand(g, stages, cur));
+  }
   return wrap;
+}
+
+// rockExpand: the trail (✓ done / → current / plain future) + ONLY the current
+// stage's tasks as checkboxes; quiet complete; + task / + stage ghosts.
+function rockExpand(g, stages, cur) {
+  const box = el("div", "o-expand");
+  stages.forEach((st) => {
+    const line = el("div", "o-st" + (st.checked ? " done" : st === cur ? " cur" : ""));
+    line.dataset.goalId = st.id;
+    const label = el("span", "", (st === cur ? "→ " : "") + st.text);
+    clickToEdit(label, () => st.text, (v) =>
+      goalsApi("PATCH", "/api/goals/item", { id: st.id, text: v }));
+    line.appendChild(label);
+    box.appendChild(line);
+    if (st === cur) {
+      (st.children || []).forEach((tk) => box.appendChild(taskRowEl(tk)));
+      box.appendChild(ghostInput("+ task", "o-tk-ghost", (v) =>
+        goalsApi("POST", "/api/goals/item", { parentId: st.id, text: v, owner: "" })));
+    }
+  });
+  box.appendChild(ghostInput("+ stage", "o-st-ghost", (v) =>
+    goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" })));
+  if (!g.checked) {
+    const done = el("button", "o-complete", "complete");
+    done.title = "Complete this rock — archives it as a win";
+    done.addEventListener("click", () => {
+      if (confirm(`Complete “${g.text}”?`)) closeGoal(g.id, "win", "");
+    });
+    box.appendChild(done);
+  }
+  return box;
+}
+
+function taskRowEl(tk) {
+  const row = el("div", "o-tk" + (tk.checked ? " done" : ""));
+  row.dataset.goalId = tk.id;
+  const check = el("button", "check" + (tk.checked ? " on" : ""), tk.checked ? "✓" : "○");
+  check.addEventListener("click", () =>
+    goalsApi("POST", "/api/goals/check", { id: tk.id, checked: !tk.checked }));
+  const label = el("span", "o-tk-text", tk.text);
+  clickToEdit(label, () => tk.text, (v) =>
+    goalsApi("PATCH", "/api/goals/item", { id: tk.id, text: v }));
+  row.append(check, label);
+  return row;
+}
+
+// clickToEdit: calm editing — a span that swaps to an input on click; Enter/blur
+// saves (→ refetch re-render), Esc restores. No always-on inputs.
+function clickToEdit(span, getValue, save) {
+  span.classList.add("o-editable");
+  span.title = "Click to edit";
+  span.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const orig = getValue();
+    const input = document.createElement("input");
+    input.className = "o-edit";
+    input.value = orig;
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+    let settled = false;
+    const settle = (commit) => {
+      if (settled) return;
+      settled = true;
+      const v = input.value.trim();
+      if (commit && v && v !== orig) save(v);
+      else input.replaceWith(span);
+    };
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") settle(true);
+      else if (ev.key === "Escape") settle(false);
+    });
+    input.addEventListener("blur", () => settle(true));
+  });
+}
+
+// ghostInput: a muted "＋ …" affordance that swaps to an input; Enter commits.
+function ghostInput(label, cls, onSubmit) {
+  const ghost = el("button", "o-ghost " + (cls || ""), label);
+  ghost.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const input = document.createElement("input");
+    input.className = "o-edit";
+    input.placeholder = label.replace(/^[＋+]\s*/, "");
+    ghost.replaceWith(input);
+    input.focus();
+    let settled = false;
+    const settle = (commit) => {
+      if (settled) return;
+      settled = true;
+      const v = input.value.trim();
+      if (commit && v) onSubmit(v);
+      else input.replaceWith(ghost);
+    };
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") settle(true);
+      else if (ev.key === "Escape") settle(false);
+    });
+    input.addEventListener("blur", () => settle(true));
+  });
+  return ghost;
 }
 
 // closeGoal moves a Rock to the quarter archive file via the close API.
@@ -832,97 +1066,38 @@ async function closeGoal(id, outcome, note) {
   loadGoals();
 }
 
-// addBtn is a small "+ …" add button wired to onClick. Child adds inside the
-// cascade pass "add-child" for the compact inline style.
-function addBtn(label, onClick, cls) {
-  const b = el("button", "add-btn " + (cls || "add-goal"), label);
-  b.addEventListener("click", onClick);
-  return b;
-}
-
-// goalNode renders a Rock (depth 0) and its trail: stages (depth 1) each owning
-// tasks (depth 2). The add-child button is "+ stage" under a Rock, "+ task" under a
-// stage; tasks are leaves (literal depth rule).
-function goalNode(g, depth) {
-  const wrap = el("div", "goal-node depth-" + depth);
-  if (g.id) wrap.dataset.goalId = g.id; // #/goals/<id> deep-link anchor
-  wrap.appendChild(goalRow(g, depth));
-  const kids = el("div", "goal-children");
-  (g.children || []).forEach((c) => kids.appendChild(goalNode(c, depth + 1)));
-  if (depth < 2) {
-    kids.appendChild(addBtn(depth === 0 ? "+ stage" : "+ task", () =>
-      goalsApi("POST", "/api/goals/item", {
-        parentId: g.id,
-        text: depth === 0 ? "New stage" : "New task",
-        owner: depth === 0 ? "me" : "",
-      }), "add-child"));
+// ---- HISTORY: the archive view (first consumer of /api/goals/archives) ----
+async function showGoalsHistory() {
+  setGoalsTab("history");
+  const host = document.getElementById("historyRows");
+  if (!host) return;
+  host.innerHTML = "";
+  try {
+    const res = await (await fetch("/api/goals/archives")).json();
+    const quarters = res.quarters || [];
+    if (!quarters.length) {
+      host.appendChild(emptyRow("no closed rocks yet"));
+      return;
+    }
+    quarters.forEach((q) => {
+      const entries = q.entries || [];
+      const head = el("div", "hist-quarter",
+        `${q.quarter} · ${q.wins || 0} won · ${q.learns || 0} learned`);
+      host.appendChild(head);
+      entries.forEach((e) => {
+        const row = el("div", "hist-row");
+        row.appendChild(el("span", "hist-glyph" + (e.outcome === "win" ? " win" : ""),
+          e.outcome === "win" ? "✓" : "·"));
+        row.appendChild(el("span", "hist-text", e.text));
+        row.appendChild(el("span", "hist-meta", `${e.area} · ${e.closed || ""}`));
+        host.appendChild(row);
+        const sub = [e.reached ? "reached: " + e.reached : "", e.note || ""].filter(Boolean).join(" — ");
+        if (sub) host.appendChild(el("div", "hist-note", sub));
+      });
+    });
+  } catch (e) {
+    host.appendChild(emptyRow("could not load the archive"));
   }
-  wrap.appendChild(kids);
-  return wrap;
-}
-
-function goalRow(g, depth) {
-  const row = el("div", "goal-row");
-  row.append(depth === 0 ? rockCheckBtn(g) : checkBtn(g), goalText(g));
-  if (depth < 2) row.append(ownerSelect(g)); // Rock or stage carries an owner
-  if (depth === 0) row.append(archiveBtn(g));
-  row.append(delBtn(g));
-  return row;
-}
-
-// Checking a Rock completes it: confirm, then close it out — the server records
-// the outcome and moves it to the quarter archive file. Unchecking stays a plain
-// uncheck (a Rock checked by hand in markdown but not yet closed).
-function rockCheckBtn(g) {
-  const b = el("button", "check" + (g.checked ? " on" : ""), g.checked ? "✓" : "○");
-  b.addEventListener("click", () => {
-    if (g.checked) return goalsApi("POST", "/api/goals/check", { id: g.id, checked: false });
-    if (confirm(`Archive “${g.text}”?`)) closeGoal(g.id, "win", "");
-  });
-  return b;
-}
-
-// archive: close a Rock without completing it (outcome:: learn). The prompt
-// doubles as the confirm — cancel aborts, OK archives; the note is optional.
-function archiveBtn(g) {
-  const b = el("button", "goal-archive", "archive");
-  b.title = "Archive without completing";
-  b.addEventListener("click", () => {
-    const note = prompt(`Archive “${g.text}”? Optional note:`);
-    if (note !== null) closeGoal(g.id, "learn", note.trim());
-  });
-  return b;
-}
-
-// ----- shared goal-row cells -----
-function checkBtn(g) {
-  const b = el("button", "check" + (g.checked ? " on" : ""), g.checked ? "✓" : "○");
-  b.addEventListener("click", () => goalsApi("POST", "/api/goals/check", { id: g.id, checked: !g.checked }));
-  return b;
-}
-function goalText(g) {
-  const t = el("input", "goal-text" + (g.checked ? " done" : ""));
-  t.value = g.text;
-  t.addEventListener("change", () => {
-    const v = t.value.trim();
-    if (v && v !== g.text) goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v });
-  });
-  return t;
-}
-function ownerSelect(g) {
-  const owner = document.createElement("select");
-  owner.className = "owner-chip owner-" + (g.owner === "me" ? "me" : g.owner === "team" ? "team" : "other");
-  ["me", "team"].forEach((o) => owner.appendChild(new Option(o, o)));
-  if (g.owner !== "me" && g.owner !== "team") owner.appendChild(new Option(g.owner, g.owner));
-  owner.value = g.owner;
-  owner.addEventListener("change", () => goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: owner.value }));
-  return owner;
-}
-function delBtn(g) {
-  const del = el("button", "icon-btn goal-del", "✕");
-  del.title = "Delete";
-  del.addEventListener("click", () => goalsApi("DELETE", "/api/goals/item", { id: g.id }));
-  return del;
 }
 
 // ---- reusable picker modal ----
@@ -3798,7 +3973,13 @@ function route() {
   els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
   if (day) refreshFeedBadge(); // pill only shows on the day view — keep it honest
-  if (goals) loadGoals(h.startsWith("#/goals/") ? decodeURIComponent(h.slice("#/goals/".length)) : "");
+  if (goals) {
+    // "#/goals/history" is the archive tab; any other suffix is a goal-id
+    // deep-link (safe: real ids always contain "/", so "history" can't collide).
+    const suffix = h.startsWith("#/goals/") ? decodeURIComponent(h.slice("#/goals/".length)) : "";
+    if (suffix === "history") showGoalsHistory();
+    else loadGoals(suffix);
+  }
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
   else if (studio) showStudio(); // content studio: draft board + inspiration
