@@ -1135,6 +1135,11 @@ if (els.addArea) els.addArea.addEventListener("click", () => {
   const name = prompt("New area name:");
   if (name && name.trim()) goalsApi("POST", "/api/areas", { name: name.trim() });
 });
+// GOALS tab chips route through the hash (deep-linkable, like every other tab)
+const goalsTabO = document.getElementById("tabOrient");
+const goalsTabH = document.getElementById("tabHistory");
+if (goalsTabO) goalsTabO.addEventListener("click", () => { location.hash = "#/goals"; });
+if (goalsTabH) goalsTabH.addEventListener("click", () => { location.hash = "#/goals/history"; });
 
 els.pickerClose.addEventListener("click", closePicker);
 els.pickerBackdrop.addEventListener("click", closePicker);

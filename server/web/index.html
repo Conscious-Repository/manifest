@@ -78,11 +78,15 @@
 
   <section class="goals-page" id="goalsView" hidden>
     <div class="areas-col">
-      <div class="orient-head">
-        <span class="orient-title">GOALS</span>
-        <a class="orient-tab" id="tabOrient" href="#/goals">ORIENT</a>
-        <a class="orient-tab" id="tabHistory" href="#/goals/history">HISTORY</a>
-        <span class="orient-range" id="goalsMeta"></span>
+      <div class="agent-head">
+        <span class="agent-title">GOALS</span>
+        <div class="agent-actions">
+          <span class="feed-filters">
+            <button id="tabOrient" class="filter-chip">ORIENT</button>
+            <button id="tabHistory" class="filter-chip">HISTORY</button>
+          </span>
+          <span id="goalsMeta" class="panel-meta"></span>
+        </div>
       </div>
       <div id="areasRows"></div>
       <button id="addArea" class="add-btn">+ Add area</button>
