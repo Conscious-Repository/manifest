@@ -156,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)
+	mux.HandleFunc("POST /api/studio/draft/{id}/dismiss", s.handleStudioDismiss)
 	mux.HandleFunc("POST /api/studio/draft/{id}/feedback", s.handleStudioFeedback)
 	mux.HandleFunc("POST /api/studio/draft/{id}/edit", s.handleStudioEdit)
 	mux.HandleFunc("POST /api/studio/draft/{id}/mark-posted", s.handleStudioMarkPosted)

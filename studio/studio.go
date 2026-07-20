@@ -106,6 +106,13 @@ func (s *Store) Overrule(id string) (Draft, error) {
 	return s.mutate(id, func(doc *draftDoc) { doc.fm["overruled"] = "true" })
 }
 
+// Dismiss records the OWNER's rejection of a passed draft (distinct from the
+// critic's "killed") — the board moves it out of "Passed — approve to queue"
+// and the tune loop reads it as owner-rejection evidence.
+func (s *Store) Dismiss(id string) (Draft, error) {
+	return s.mutate(id, func(doc *draftDoc) { doc.fm["status"] = "dismissed" })
+}
+
 // MarkPosted stamps a draft posted with the (optional) tweet URL.
 func (s *Store) MarkPosted(id, url string) (Draft, error) {
 	return s.mutate(id, func(doc *draftDoc) {
@@ -164,7 +171,9 @@ func (d *draftDoc) setSection(name, content string) {
 
 func (d draftDoc) render() string {
 	w := &mdfm.Writer{}
-	for _, k := range []string{"type", "id", "format", "status", "score", "created", "quoted-url", "posted-url"} {
+	// The FULL key set both writers may stamp (engine studiocasts.go mirrors this
+	// list) — a key missing here is silently dropped on the next mutate.
+	for _, k := range []string{"type", "id", "format", "status", "score", "created", "quoted-url", "posted-url", "seed", "commissioned", "overruled"} {
 		if v := d.fm[k]; v != "" {
 			w.SetRaw(k, v)
 		}

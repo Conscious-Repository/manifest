@@ -110,6 +110,46 @@ func (s *Server) handleStudioOverrule(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, updated)
 }
 
+// handleStudioDismiss resolves an owner rejection of a draft ATOMICALLY across
+// its three objects (they share one identity): the pending append-x-queue
+// approval is rejected (tune evidence), the draft file's status flips to
+// "dismissed" (so the board regroups it), and the linked feed card is discarded
+// (so the feed mutes it). Rejecting an approval alone left the draft "passed"
+// forever — the bug this fixes.
+func (s *Server) handleStudioDismiss(w http.ResponseWriter, r *http.Request) {
+	if s.studio == nil {
+		http.Error(w, "studio disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		ApprovalID string `json:"approvalId"`
+		Reason     string `json:"reason"`
+	}
+	_ = decode(r, &b) // both optional
+	id := r.PathValue("id")
+	if b.ApprovalID != "" && s.approvals != nil {
+		reason := strings.TrimSpace(b.Reason)
+		if reason == "" {
+			reason = "dismissed from studio"
+		}
+		// tolerate an already-decided approval — the draft state is the point
+		_ = s.approvals.Reject(b.ApprovalID, reason)
+	}
+	d, err := s.studio.Dismiss(id)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if s.spirits != nil {
+		for _, it := range s.spirits.Feed.List(feed.Filter{Type: "draft"}, time.Now()) {
+			if it.DraftID == id && it.Status != "discarded" {
+				_, _ = s.spirits.Feed.SetStatus(it.ID, "discarded")
+			}
+		}
+	}
+	writeJSON(w, d)
+}
+
 // handleStudioFeedback records the owner's feedback text + quick chips onto a draft.
 func (s *Server) handleStudioFeedback(w http.ResponseWriter, r *http.Request) {
 	if s.studio == nil {

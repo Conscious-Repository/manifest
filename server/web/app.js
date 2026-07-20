@@ -1718,10 +1718,19 @@ function draftFeedCard(it) {
   actions.append(
     pill("Approve → queue", () => draftApproval(it.approvalId, "confirm")),
     pillLight("Edit", () => { editWrap.hidden = !editWrap.hidden; }),
-    pillLight("Dismiss", () => draftApproval(it.approvalId, "reject")),
+    pillLight("Dismiss", () => studioDismiss(it.draftId, it.approvalId, loadFeed)),
   );
   card.append(editWrap, fb, actions);
   return card;
+}
+
+// studioDismiss resolves an owner rejection server-side across all three
+// objects (approval + draft file + feed card) — see handleStudioDismiss.
+async function studioDismiss(draftId, approvalId, refresh) {
+  if (!draftId) { showToast("this card has no draft id", null, "error"); return; }
+  await studioPost(`/api/studio/draft/${encodeURIComponent(draftId)}/dismiss`, { approvalId: approvalId || "" });
+  showToast("dismissed", null, "info");
+  refresh();
 }
 
 async function draftApproval(approvalId, kind) {
@@ -1863,15 +1872,15 @@ function renderStudio() {
   host.append(renderCommissionBox());
   if (!board.length) { host.append(emptyRow("No drafts yet — commission one above, or scribe drafts each morning.")); return; }
   // group by the status vocabulary
-  const order = ["passed", "pending-audit", "queued", "posted", "killed"];
-  const labels = { passed: "Passed — approve to queue", "pending-audit": "Pending audit", queued: "Queued", posted: "Posted", killed: "Killed" };
+  const order = ["passed", "pending-audit", "queued", "posted", "killed", "dismissed"];
+  const labels = { passed: "Passed — approve to queue", "pending-audit": "Pending audit", queued: "Queued", posted: "Posted", killed: "Killed", dismissed: "Dismissed" };
   const byStatus = {};
   board.forEach((d) => { (byStatus[d.status] = byStatus[d.status] || []).push(d); });
   order.forEach((st) => {
     const items = byStatus[st];
     if (!items || !items.length) return;
     const head = labels[st] + "  —  " + items.length;
-    if (st === "killed") {
+    if (st === "killed" || st === "dismissed") {
       const det = el("details", "killed-group");
       det.append(el("summary", "reading-strip-head", head));
       items.forEach((d) => det.append(studioBoardCard(d)));
@@ -1950,7 +1959,7 @@ function studioBoardCard(d) {
     actions.append(
       pill("Approve → queue", () => boardApprove(d, consumeCb)),
       pillLight("Edit", () => { editWrap.hidden = !editWrap.hidden; }),
-      pillLight("Dismiss", () => d.approvalId ? draftApproval(d.approvalId, "reject") : showToast("no linked approval", null, "error")),
+      pillLight("Dismiss", () => studioDismiss(d.id, d.approvalId, loadStudio)),
     );
   } else if (d.status === "killed") {
     actions.append(pillLight("Overrule → queue", () => studioPost(`/api/studio/draft/${encodeURIComponent(d.id)}/overrule`, {}).then(() => { showToast("queued (overruled) ✓ — teaches the critic", null, "info"); loadStudio(); })));
