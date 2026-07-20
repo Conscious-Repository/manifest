@@ -138,3 +138,73 @@ func TestHandleGoalCarry(t *testing.T) {
 		t.Fatalf("carry did not update the quarter: %+v", r)
 	}
 }
+
+// TestDayCapture drives POST /api/day/capture end to end: a free-typed task lands
+// under the focus slot's stage in goals.md (durable id) AND on the day, linked;
+// a repeat POST is idempotent on both sides (goals-orient plan §1).
+func TestDayCapture(t *testing.T) {
+	dir := t.TempDir()
+	idx, err := vault.NewIndex(vault.Config{Root: dir, GoalsName: "goals.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n" +
+		"- [ ] Rock [goal:: aion/rock] [quarter:: 2026-Q3]\n" +
+		"    - [ ] Stage [goal:: aion/rock/stage]\n"
+	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(seed), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	svc := daily.NewService(daily.Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18}, idx)
+	s := New(svc, goals.NewStore(idx, dir, "goals.md"), nil)
+
+	post := func() daily.Day {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/day/capture?date=2026-07-20",
+			strings.NewReader(`{"stageId":"aion/rock/stage","text":"Lee sync"}`))
+		s.handleDayCapture(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("capture: %d %s", rec.Code, rec.Body.String())
+		}
+		var d daily.Day
+		if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+
+	day := post()
+	linked := 0
+	for _, tk := range day.Tasks {
+		if tk.GoalID == "aion/rock/stage/lee-sync" && tk.Text == "Lee sync" {
+			linked++
+		}
+	}
+	if linked != 1 {
+		t.Fatalf("day tasks wrong: %+v", day.Tasks)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "goals.md"))
+	if !strings.Contains(string(b), "- [ ] Lee sync [goal:: aion/rock/stage/lee-sync]") {
+		t.Fatalf("goals.md missing captured task:\n%s", b)
+	}
+
+	// Idempotent: same POST → still one day task, one goals line.
+	day = post()
+	linked = 0
+	for _, tk := range day.Tasks {
+		if tk.GoalID == "aion/rock/stage/lee-sync" {
+			linked++
+		}
+	}
+	b, _ = os.ReadFile(filepath.Join(dir, "goals.md"))
+	if linked != 1 || strings.Count(string(b), "Lee sync") != 1 {
+		t.Fatalf("not idempotent: %d day tasks, %d goals lines", linked, strings.Count(string(b), "Lee sync"))
+	}
+
+	// Bad stage ids are refused.
+	rec := httptest.NewRecorder()
+	s.handleDayCapture(rec, httptest.NewRequest(http.MethodPost, "/api/day/capture?date=2026-07-20",
+		strings.NewReader(`{"stageId":"aion/rock","text":"x"}`)))
+	if rec.Code == http.StatusOK {
+		t.Fatal("capture under a rock id must be refused")
+	}
+}

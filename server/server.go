@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"manifest/approvals"
 	"manifest/calendar"
@@ -79,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	// Daily manifest.
 	mux.HandleFunc("/api/day", s.handleDay)
 	mux.HandleFunc("/api/day/pull", s.handleDayPull)
+	mux.HandleFunc("/api/day/capture", s.handleDayCapture)
 	mux.HandleFunc("/api/day/focus", s.handleDayFocus)
 	mux.HandleFunc("/api/day/focus/milestone", s.handleDayFocusMilestone)
 
@@ -266,6 +269,57 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+	s.fillPool(&day)
+	writeJSON(w, day)
+}
+
+// handleDayCapture is the day-view capture flow (goals-orient plan): a free-typed
+// task under a focus slot is appended into goals.md under that slot's stage (the
+// milestone), gains a durable [goal:: id], and lands on the day linked — so checks
+// sync both ways through the existing syncGoalTasks path. Idempotent on both
+// sides: same text twice is one goals line (CaptureTask dedupe) and one day task.
+func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	date := r.URL.Query().Get("date")
+	var b struct {
+		StageID string `json:"stageId"`
+		Text    string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		httpError(w, err)
+		return
+	}
+	text, gid, err := s.goals.CaptureTask(b.StageID, b.Text, time.Now())
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			httpError(w, err)
+		}
+		return
+	}
+	day, err := s.svc.Load(date)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	seated := false
+	for _, t := range day.Tasks {
+		if t.GoalID == gid {
+			seated = true
+			break
+		}
+	}
+	if !seated {
+		day, err = s.svc.AddTask(date, daily.Task{Text: text, GoalID: gid})
+		if err != nil {
+			httpError(w, err)
+			return
+		}
 	}
 	s.fillPool(&day)
 	writeJSON(w, day)
