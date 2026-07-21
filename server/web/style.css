@@ -420,6 +420,10 @@ body {
 }
 .o-st.done::before { content: "✓ "; }
 .o-st.cur { color: var(--blue); }
+.o-st.toggle { cursor: pointer; display: flex; align-items: baseline; gap: 6px; }
+.o-st.toggle:hover { color: var(--text); }
+.o-st-caret { margin-left: auto; color: var(--icon); font-size: 9px; }
+.o-st.toggle:hover .o-st-caret { color: var(--muted); }
 .o-tk {
   font-family: var(--sans); font-size: 14px; color: var(--text);
   padding: 3px 0 3px 16px; display: flex; align-items: center; gap: 8px;

@@ -802,21 +802,35 @@ async function loadGoals(focusId) {
   try {
     const doc = await (await fetch("/api/goals")).json();
     state.goalsDoc = doc;
-    if (focusId) {
-      // deep-links (#/goals/<id>) auto-expand the rock containing the target
-      const rock = rockContaining(doc.areas || [], focusId);
-      if (rock) goalsUI.expanded.add(rock.id);
-    }
+    // deep-links (#/goals/<id>) auto-expand the rock AND stage containing the target
+    if (focusId) expandAncestors(doc.areas || [], focusId);
     setGoalsTab("orient");
     renderOrient(doc.areas || []);
     if (focusId) focusGoal(focusId);
   } catch (e) { setSaveState("error"); }
 }
 
-function rockContaining(areas, id) {
-  const inTree = (g) => g.id === id || (g.children || []).some(inTree);
-  for (const a of areas) for (const r of a.rocks || []) if (inTree(r)) return r;
-  return null;
+// expandAncestors opens the rock and stage on the path to id, so a deep-linked
+// task under any (even collapsed, non-current) stage still renders + flashes.
+function expandAncestors(areas, id) {
+  const findPath = (node, acc) => {
+    if (node.id === id) return acc;
+    for (const c of node.children || []) {
+      const p = findPath(c, acc.concat(c));
+      if (p) return p;
+    }
+    return null;
+  };
+  for (const a of areas) {
+    for (const rock of a.rocks || []) {
+      const path = findPath(rock, [rock]);
+      if (path) {
+        if (path[0]) goalsUI.expanded.add(path[0].id); // the rock
+        if (path[1]) goalsUI.expanded.add(path[1].id); // the stage
+        return;
+      }
+    }
+  }
 }
 
 // setGoalsTab flips ORIENT ↔ HISTORY visibility + the tab chips.
@@ -954,19 +968,34 @@ function rockNode(g) {
   return wrap;
 }
 
-// rockExpand: the trail (✓ done / → current / plain future) + ONLY the current
-// stage's tasks as checkboxes; quiet complete; + task / + stage ghosts.
+// rockExpand: the trail (✓ done / → current / plain future). The current stage is
+// always open (the active work). Every OTHER stage is click-to-expand, so tasks
+// can be added under any stage — not just the current one. An open stage shows
+// its tasks as checkboxes + a "+ task" ghost.
 function rockExpand(g, stages, cur) {
   const box = el("div", "o-expand");
   stages.forEach((st) => {
-    const line = el("div", "o-st" + (st.checked ? " done" : st === cur ? " cur" : ""));
+    const isCur = st === cur;
+    const open = isCur || goalsUI.expanded.has(st.id);
+    const line = el("div", "o-st" + (st.checked ? " done" : isCur ? " cur" : "") + (isCur ? "" : " toggle"));
     line.dataset.goalId = st.id;
-    const label = el("span", "", (st === cur ? "→ " : "") + st.text);
-    clickToEdit(label, () => st.text, (v) =>
-      goalsApi("PATCH", "/api/goals/item", { id: st.id, text: v }));
+    const label = el("span", "o-st-label", (isCur ? "→ " : "") + st.text);
     line.appendChild(label);
+    if (!isCur) {
+      line.append(el("span", "o-st-caret", open ? "▾" : "▸"));
+      line.title = "click to add or view tasks";
+      line.addEventListener("click", () => {
+        if (goalsUI.expanded.has(st.id)) goalsUI.expanded.delete(st.id);
+        else goalsUI.expanded.add(st.id);
+        renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
+      });
+    }
     box.appendChild(line);
-    if (st === cur) {
+    if (open) {
+      // editing the stage text stops propagation (clickToEdit already does), so
+      // clicking the text edits while clicking the rest of the line toggles.
+      clickToEdit(label, () => st.text, (v) =>
+        goalsApi("PATCH", "/api/goals/item", { id: st.id, text: v }));
       (st.children || []).forEach((tk) => box.appendChild(taskRowEl(tk)));
       box.appendChild(ghostInput("+ task", "o-tk-ghost", (v) =>
         goalsApi("POST", "/api/goals/item", { parentId: st.id, text: v, owner: "" })));
