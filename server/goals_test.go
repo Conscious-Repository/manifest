@@ -81,9 +81,16 @@ func TestGoalsRollupMovedAndClose(t *testing.T) {
 	}
 
 	// Closing the Rock Won archives it → roll-up flips to won.
+	// A win with no evidence is a 400 (§5, UI and API agree).
 	rec = httptest.NewRecorder()
 	s.handleGoalClose(rec, httptest.NewRequest(http.MethodPost, "/api/goals/close",
 		strings.NewReader(`{"id":"aion/series-a-15m","outcome":"win"}`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("win without evidence should 400, got %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	s.handleGoalClose(rec, httptest.NewRequest(http.MethodPost, "/api/goals/close",
+		strings.NewReader(`{"id":"aion/series-a-15m","outcome":"win","evidence":"[[term sheet]]"}`)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("close: %d %s", rec.Code, rec.Body.String())
 	}

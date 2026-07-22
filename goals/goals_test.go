@@ -261,3 +261,47 @@ func TestAddGoalSections(t *testing.T) {
 		t.Fatalf("added goals not idempotent:\n%s", out)
 	}
 }
+
+func TestFinishLineFields(t *testing.T) {
+	// until/verify on annuals + Rocks + stages; kpi on Rocks + stages; canonical
+	// order (goal, quarter, serves, status, rolled-from, moved, until, verify, kpi,
+	// owner). A hand-written file re-emits canonically and is a fixpoint after.
+	in := "# Goals\n\n## Aion\n\n### 1-year — 2026\n" +
+		"- [ ] Big goal [until:: shipped v1] [verify:: users in prod]\n" +
+		"\n### Rocks (90-day)\n" +
+		"- [ ] Series A [kpi:: LOIs 4/10] [goal:: aion/series-a] [until:: countersigned term sheet >= 15M] [quarter:: 2026-Q3] [verify:: PDF in data room]\n" +
+		"    - [ ] LOIs [verify:: 10 signed emails] [kpi:: 4/10]\n"
+	doc := Parse(in)
+	_, rock := doc.FindGoal("aion/series-a")
+	if rock == nil || rock.Until != "countersigned term sheet >= 15M" || rock.Verify != "PDF in data room" || rock.Kpi != "LOIs 4/10" {
+		t.Fatalf("rock finish-line fields not lifted: %+v", rock)
+	}
+	out := Serialize(doc)
+	// canonical order: goal before quarter before until before verify before kpi
+	wantRock := "- [ ] Series A [goal:: aion/series-a] [quarter:: 2026-Q3] [until:: countersigned term sheet >= 15M] [verify:: PDF in data room] [kpi:: LOIs 4/10]"
+	if !strings.Contains(out, wantRock) {
+		t.Fatalf("rock not re-emitted in canonical order:\n%s", out)
+	}
+	if !strings.Contains(out, "- [ ] Big goal [goal:: aion/big-goal] [until:: shipped v1] [verify:: users in prod]") {
+		t.Fatalf("annual until/verify wrong:\n%s", out)
+	}
+	if !strings.Contains(out, "- [ ] LOIs [verify:: 10 signed emails] [kpi:: 4/10]") {
+		t.Fatalf("stage verify/kpi wrong:\n%s", out)
+	}
+	// fixpoint after canonicalization
+	if twice := Serialize(Parse(out)); twice != out {
+		t.Fatalf("not a fixpoint:\n--out--\n%s\n--twice--\n%s", out, twice)
+	}
+	// kpi is dropped on an annual (not a valid role for it)
+	an := "# Goals\n\n## X\n\n### 1-year — 2026\n- [ ] G [kpi:: 3/5]\n"
+	if o := Serialize(Parse(an)); strings.Contains(o, "kpi::") {
+		t.Fatalf("kpi should not emit on an annual:\n%s", o)
+	}
+	// EditGoal strips a `]` from a value so it can't break the field regex
+	doc.EditGoal("aion/series-a", GoalEdit{Until: strptr("has a ] bracket")})
+	if _, g := doc.FindGoal("aion/series-a"); g.Until != "has a  bracket" {
+		t.Fatalf("bracket not stripped: %q", g.Until)
+	}
+}
+
+func strptr(s string) *string { return &s }

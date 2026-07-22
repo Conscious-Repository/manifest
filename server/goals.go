@@ -84,15 +84,21 @@ func (s *Server) handleGoalClose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		ID      string `json:"id"`
-		Outcome string `json:"outcome"` // "win" | "learn"
-		Note    string `json:"note"`
+		ID       string `json:"id"`
+		Outcome  string `json:"outcome"` // "win" | "learn"
+		Note     string `json:"note"`
+		Evidence string `json:"evidence"` // required for a win (§5)
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	if err := s.goals.CloseGoal(b.ID, b.Outcome, b.Note, time.Now()); err != nil {
+	// UI and API agree: a win with no evidence is a 400.
+	if strings.EqualFold(strings.TrimSpace(b.Outcome), "win") && strings.TrimSpace(b.Evidence) == "" {
+		http.Error(w, "a win requires evidence", http.StatusBadRequest)
+		return
+	}
+	if err := s.goals.CloseGoal(b.ID, b.Outcome, b.Note, b.Evidence, time.Now()); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -197,6 +203,15 @@ func (s *Server) handleAreasReorder(w http.ResponseWriter, r *http.Request) {
 	s.mutate(w, func(d *goals.Doc) bool { d.ReorderAreas(b.Order); return true })
 }
 
+// ptrIfSet returns a pointer to s when non-empty, else nil — so an omitted
+// creation field leaves the goal's value untouched rather than blanking it.
+func ptrIfSet(s string) *string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return &s
+}
+
 func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -206,6 +221,8 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			Section  string `json:"section"`  // "annual" | "rock" (root only; default rock)
 			Text     string `json:"text"`
 			Owner    string `json:"owner"`
+			Until    string `json:"until"`  // optional finish line at creation (§2)
+			Verify   string `json:"verify"` // optional check at creation (§2)
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
@@ -216,6 +233,8 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return false
 			}
+			// Finish line / check may be set at creation (composer soft-gate).
+			d.EditGoal(g.ID, goals.GoalEdit{Until: ptrIfSet(b.Until), Verify: ptrIfSet(b.Verify)})
 			if b.ParentID == "" && !strings.EqualFold(b.Section, "annual") {
 				// A new Rock is stamped with the current quarter at creation (§1).
 				g.Quarter = goals.CurrentQuarter(time.Now())
@@ -235,13 +254,17 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			Quarter *string `json:"quarter"`
 			Serves  *string `json:"serves"`
 			Status  *string `json:"status"`
+			Until   *string `json:"until"`
+			Verify  *string `json:"verify"`
+			Kpi     *string `json:"kpi"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
 			return
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
-			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Quarter: b.Quarter, Serves: b.Serves, Status: b.Status})
+			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Quarter: b.Quarter,
+				Serves: b.Serves, Status: b.Status, Until: b.Until, Verify: b.Verify, Kpi: b.Kpi})
 		})
 	case http.MethodDelete:
 		var b struct {

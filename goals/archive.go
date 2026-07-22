@@ -13,9 +13,10 @@ type ArchiveEntry struct {
 	GoalID  string `json:"goalId"`
 	Outcome string `json:"outcome"` // "win" | "learn"
 	Closed  string `json:"closed"`  // YYYY-MM-DD
-	Reached string `json:"reached"` // last stage name in the trail at close
-	Serves  string `json:"serves"`  // annual slug this Rock served ("" if none)
-	Note    string `json:"note"`    // optional (typically why it was a learn)
+	Reached  string `json:"reached"`  // last stage name in the trail at close
+	Evidence string `json:"evidence"` // proof of the win (text or [[wikilink]]); required for a Win (§5)
+	Serves   string `json:"serves"`   // annual slug this Rock served ("" if none)
+	Note     string `json:"note"`     // optional (typically why it was a learn)
 }
 
 // ArchiveQuarter groups a quarter's closed Rocks (newest quarter first when listed).
@@ -43,8 +44,18 @@ func parseArchive(content string) []ArchiveEntry {
 		if m == nil {
 			continue
 		}
-		text, fields := parseFields(m[1])
-		e := ArchiveEntry{Area: area, Text: text}
+		content := m[1]
+		// Pull the trailing [evidence:: …] off first (it's emitted last and may
+		// contain ]] — the standard inline-field scan can't handle that), then
+		// parse the remaining simple fields normally.
+		evidence := ""
+		if i := strings.LastIndex(content, "[evidence:: "); i >= 0 {
+			ev := content[i+len("[evidence:: "):]
+			evidence = strings.TrimSuffix(strings.TrimRight(ev, " "), "]")
+			content = strings.TrimRight(content[:i], " ")
+		}
+		text, fields := parseFields(content)
+		e := ArchiveEntry{Area: area, Text: text, Evidence: evidence}
 		for _, f := range fields {
 			switch strings.ToLower(f.Key) {
 			case "goal":
@@ -102,5 +113,8 @@ func archiveLine(e ArchiveEntry) string {
 	add("reached", e.Reached)
 	add("serves", e.Serves)
 	add("note", e.Note)
+	// Evidence is emitted LAST (§5) because it may be a [[wikilink]] whose ]]
+	// would otherwise break the [^\]]* inline-field scan of a later field.
+	add("evidence", e.Evidence)
 	return b.String()
 }

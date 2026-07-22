@@ -35,10 +35,18 @@ func (s *Store) archivePath(quarter string) string {
 
 // CloseGoal moves a Rock out of goals.md and appends it to the archive for the quarter
 // it closed in (§6). outcome is "win" or "learn"; note is optional (for a learn).
-func (s *Store) CloseGoal(id, outcome, note string, now time.Time) error {
+func (s *Store) CloseGoal(id, outcome, note, evidence string, now time.Time) error {
 	outcome = strings.ToLower(strings.TrimSpace(outcome))
 	if outcome != "win" && outcome != "learn" {
 		return fmt.Errorf("outcome must be win or learn, got %q", outcome)
+	}
+	// A Win must carry proof (§5): every new win is evidence-backed by construction.
+	// A Learn needs none — dropping a Rock requires no artifact. Evidence is NOT
+	// bracket-stripped (unlike until/verify/kpi) — it may be a [[wikilink]]; the
+	// archive line emits it LAST and parses it greedily so the ]] survives.
+	evidence = strings.TrimSpace(evidence)
+	if outcome == "win" && evidence == "" {
+		return fmt.Errorf("a win requires evidence")
 	}
 	doc := s.Load()
 	area, g := doc.FindGoal(id)
@@ -51,7 +59,7 @@ func (s *Store) CloseGoal(id, outcome, note string, now time.Time) error {
 	entry := ArchiveEntry{
 		Area: area.Name, Text: g.Text, GoalID: g.identity(),
 		Outcome: outcome, Closed: now.Format("2006-01-02"),
-		Reached: lastStageName(g), Serves: g.Serves, Note: strings.TrimSpace(note),
+		Reached: lastStageName(g), Evidence: evidence, Serves: g.Serves, Note: strings.TrimSpace(note),
 	}
 	doc.DeleteGoal(id)
 	if err := s.Save(doc); err != nil {

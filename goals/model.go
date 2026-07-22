@@ -23,6 +23,11 @@ type Goal struct {
 	RolledFrom string // "2026-Q2" when carried across a quarter
 	Moved      string // last-movement date (YYYY-MM-DD); stamped when work lands beneath it
 
+	// Finish-line fields (goals-finish-lines spec). Conditions, not metrics.
+	Until  string // the finish line: a binary condition (annuals, Rocks, stages)
+	Verify string // the check: inspectable evidence (annuals, Rocks, stages)
+	Kpi    string // a freeform gauge string, never computed (Rocks, stages)
+
 	Fields   []Field
 	Children []*Goal
 }
@@ -267,7 +272,13 @@ type GoalEdit struct {
 	Quarter *string
 	Serves  *string
 	Status  *string
+	Until   *string
+	Verify  *string
+	Kpi     *string
 }
+
+// stripBracket removes `]` so a value can never break the [key:: value] regex.
+func stripBracket(s string) string { return strings.ReplaceAll(strings.TrimSpace(s), "]", "") }
 
 func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	_, g := d.FindGoal(id)
@@ -288,6 +299,15 @@ func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	}
 	if e.Status != nil {
 		g.Status = strings.TrimSpace(*e.Status)
+	}
+	if e.Until != nil {
+		g.Until = stripBracket(*e.Until)
+	}
+	if e.Verify != nil {
+		g.Verify = stripBracket(*e.Verify)
+	}
+	if e.Kpi != nil {
+		g.Kpi = stripBracket(*e.Kpi)
 	}
 	d.assignIDs()
 	return true
@@ -383,6 +403,9 @@ type GoalView struct {
 	Serves  string `json:"serves,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Moved   string `json:"moved,omitempty"`
+	Until   string `json:"until,omitempty"`
+	Verify  string `json:"verify,omitempty"`
+	Kpi     string `json:"kpi,omitempty"`
 	// Annual roll-up (§2): serving-Rock counts, filled by the server from goals.md +
 	// the current year's archives. Zero on Rocks/stages/tasks.
 	RollupActive int        `json:"rollupActive,omitempty"`
@@ -413,6 +436,7 @@ func goalViews(gs []*Goal) []GoalView {
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
 			Owner: g.ResolvedOwner(),
 			Quarter: g.Quarter, Serves: g.Serves, Status: g.Status, Moved: g.Moved,
+			Until: g.Until, Verify: g.Verify, Kpi: g.Kpi,
 			Children: goalViews(g.Children),
 		})
 	}

@@ -75,6 +75,19 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 		}
 	}
 
+	// Finish-line fields (goals-finish-lines §1): until/verify on every role,
+	// kpi on Rocks + stages (not annuals). Emitted after the Rock metadata,
+	// before owner.
+	if g.Until != "" {
+		out = append(out, Field{Key: "until", Value: g.Until})
+	}
+	if g.Verify != "" {
+		out = append(out, Field{Key: "verify", Value: g.Verify})
+	}
+	if g.Kpi != "" && role != roleAnnual {
+		out = append(out, Field{Key: "kpi", Value: g.Kpi})
+	}
+
 	if g.Owner != "" && !strings.EqualFold(g.Owner, "me") {
 		out = append(out, Field{Key: "owner", Value: g.Owner})
 	}
@@ -93,7 +106,8 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 // the next save rather than round-tripped as junk.
 func isRecognizedField(key string) bool {
 	switch strings.ToLower(key) {
-	case "owner", "goal", "quarter", "serves", "status", "rolled-from", "moved", "due":
+	case "owner", "goal", "quarter", "serves", "status", "rolled-from", "moved", "due",
+		"until", "verify", "kpi":
 		return true
 	}
 	return false

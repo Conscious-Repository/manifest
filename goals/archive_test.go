@@ -45,12 +45,16 @@ func TestCloseGoalArchivesAndRemoves(t *testing.T) {
 	}
 
 	// Only a Rock closes — closing the annual is rejected.
-	if err := st.CloseGoal("aion/2026", "win", "", jul15); err == nil {
+	if err := st.CloseGoal("aion/2026", "win", "", "proof", jul15); err == nil {
 		t.Fatal("closing an annual should fail")
 	}
 
-	if err := st.CloseGoal("aion/series-a-15m", "win", "", jul15); err != nil {
+	if err := st.CloseGoal("aion/series-a-15m", "win", "", "[[series a data room]]", jul15); err != nil {
 		t.Fatal(err)
+	}
+	// a win with no evidence is refused (§5)
+	if err := st.CloseGoal("home/backyard", "win", "", "  ", jul15); err == nil {
+		t.Fatal("a win with empty evidence must be refused")
 	}
 	gm, _ := os.ReadFile(filepath.Join(dir, "goals.md"))
 	if strings.Contains(string(gm), "Series A 15M") {
@@ -82,5 +86,30 @@ func TestMovedEmission(t *testing.T) {
 	}
 	if Serialize(Parse(out)) != out {
 		t.Fatalf("moved not a fixpoint:\n%s", out)
+	}
+}
+
+func TestArchiveEvidenceWikilinkRoundTrip(t *testing.T) {
+	// A win's evidence may be a [[wikilink]] (contains ]]). It must survive the
+	// archive round-trip even alongside a note, and re-serialize as a fixpoint.
+	entries := []ArchiveEntry{
+		{Area: "Aion", Text: "Series A", GoalID: "aion/series-a", Outcome: "win",
+			Closed: "2026-07-22", Reached: "term sheet", Serves: "aion/2026",
+			Note: "closed hot", Evidence: "[[series a data room]]"},
+		{Area: "Aion", Text: "Old rock", Outcome: "learn", Closed: "2026-07-01", Note: "pivoted"},
+	}
+	s := serializeArchive("2026-Q3", entries)
+	if !strings.Contains(s, "[evidence:: [[series a data room]]]") {
+		t.Fatalf("evidence not emitted intact:\n%s", s)
+	}
+	got := parseArchive(s)
+	if got[0].Evidence != "[[series a data room]]" {
+		t.Fatalf("evidence not parsed back: %q\n%s", got[0].Evidence, s)
+	}
+	if got[0].Note != "closed hot" || got[0].Reached != "term sheet" || got[0].Serves != "aion/2026" {
+		t.Fatalf("other fields corrupted by evidence extraction: %+v", got[0])
+	}
+	if twice := serializeArchive("2026-Q3", got); twice != s {
+		t.Fatalf("archive not a fixpoint:\n--s--\n%s\n--twice--\n%s", s, twice)
 	}
 }
