@@ -83,23 +83,29 @@ func (s *Server) handleSpiritsRunPrompt(w http.ResponseWriter, r *http.Request) 
 // Spirits file proposals via the write_approval cast; Confirm/Reject here only
 // RECORD the human decision (a folder move) — nothing sends or executes.
 
-func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) {
+// approvalRow is a pending Proposal enriched for rendering: whether its
+// apply-path is inside the type's allow-list (Confirm disabled otherwise) and
+// the target's CURRENT content for the current-vs-proposed diff.
+type approvalRow struct {
+	approvals.Proposal
+	Allowed bool   `json:"allowed"`
+	Current string `json:"current"`
+}
+
+// approvalRows returns the enriched pending approvals, skipping any types in
+// exclude. Shared by the SPIRITS endpoint (all rows — the Studio tuning panel
+// reads it) and the FEED (which excludes append-x-queue: a draft's tweet-shaped
+// card already carries Approve/Dismiss — one object, one card).
+func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
+	rows := []approvalRow{}
 	if s.approvals == nil {
-		writeJSON(w, map[string]any{"pending": []any{}, "counts": map[string]int{}})
-		return
+		return rows
 	}
-	// Actionable proposals (apply-path set) also carry the target's CURRENT
-	// content and whether the path is in the allow-list, so the UI can render a
-	// current-vs-proposed diff and disable Confirm on an out-of-list payload.
-	type row struct {
-		approvals.Proposal
-		Allowed bool   `json:"allowed"`
-		Current string `json:"current"`
-	}
-	pending := s.approvals.List("pending")
-	rows := make([]row, 0, len(pending))
-	for _, p := range pending {
-		rr := row{Proposal: p}
+	for _, p := range s.approvals.List("pending") {
+		if exclude[p.Type] {
+			continue
+		}
+		rr := approvalRow{Proposal: p}
 		if p.ApplyPath != "" {
 			switch p.Type {
 			case approvals.TypeCreateVaultNote:
@@ -129,7 +135,15 @@ func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) 
 		}
 		rows = append(rows, rr)
 	}
-	writeJSON(w, map[string]any{"pending": rows, "counts": s.approvals.Counts()})
+	return rows
+}
+
+func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		writeJSON(w, map[string]any{"pending": []any{}, "counts": map[string]int{}})
+		return
+	}
+	writeJSON(w, map[string]any{"pending": s.approvalRows(nil), "counts": s.approvals.Counts()})
 }
 
 func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Request) {

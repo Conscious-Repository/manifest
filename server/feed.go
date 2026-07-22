@@ -28,8 +28,9 @@ import (
 
 // feedInboxCount is THE badge compute. The list handler, the badge handler,
 // and /api/spirits/status.feedInbox all call this one function so the counts
-// can never drift (feed-central §1: count = new items + lapsed snoozes; app
-// signals join the sum in Phase 3).
+// can never drift (feed-central §1). Count = new items + lapsed snoozes + app
+// signals + pending approvals (the same filtered set that renders as cards —
+// append-x-queue excluded, so a draft is never counted twice via its approval).
 func (s *Server) feedInboxCount(now time.Time) int {
 	n := 0
 	if s.spirits != nil {
@@ -38,8 +39,13 @@ func (s *Server) feedInboxCount(now time.Time) int {
 	if s.signals != nil {
 		n += s.signals.Count(now)
 	}
+	n += len(s.approvalRows(feedApprovalExclude))
 	return n
 }
+
+// feedApprovalExclude: approval types that already have a native feed card
+// (the tweet-shaped draft card carries Approve/Dismiss for append-x-queue).
+var feedApprovalExclude = map[string]bool{approvals.TypeAppendXQueue: true}
 
 // activeSignals returns the app-signal cards (empty when disabled).
 func (s *Server) activeSignals(now time.Time) []signals.Signal {
@@ -112,48 +118,14 @@ func (s *Server) artifactPath(it feed.Item) string {
 	return filepath.ToSlash(rel)
 }
 
-// proposalCard is a VIRTUAL pinned card derived from a pending actionable
-// approval (ea-digest-and-tuning Part-2 amendment, virtual-cards decision):
-// a pointer, not a control — its single affordance deep-links to the APPROVALS
-// diff, and Confirm/Reject there resolves it atomically because pending/ is
-// the only source of truth. Nothing is written to the engine's feed dir, so
-// the tune ritual's kept/discarded evidence stays byte-identical.
-type proposalCard struct {
-	ID         string `json:"id"` // "prop:"-prefixed — can never collide into feed.Store
-	ApprovalID string `json:"approvalId"`
-	Title      string `json:"title"`
-	Agent      string `json:"agent"`
-	Created    string `json:"created"`
-	Body       string `json:"body"` // evidence summary (the ```proposed fence stripped)
-	ApplyPath  string `json:"applyPath"`
-}
-
-// the proposed block is always the LAST thing in an approval body (evidence
-// first, then the fenced full file). Its content can contain nested code
-// fences, so strip from the ```proposed opener to end-of-text rather than
-// trying to match a same-length closer (RE2 has no backreferences).
-var proposedFenceRe = regexp.MustCompile("(?s)`{3,}proposed.*$")
-
-func (s *Server) feedProposals() []proposalCard {
-	out := []proposalCard{}
-	if s.approvals == nil {
-		return out
-	}
-	for _, p := range s.approvals.List("pending") {
-		if p.ApplyPath == "" || !approvals.ApplyPathAllowed(p.ApplyPath) {
-			continue // only tune-style actionable proposals surface as cards
-		}
-		out = append(out, proposalCard{
-			ID:         "prop:" + p.ID,
-			ApprovalID: p.ID,
-			Title:      "tune: " + p.Agent,
-			Agent:      p.Agent,
-			Created:    p.Created,
-			Body:       strings.TrimSpace(proposedFenceRe.ReplaceAllString(p.Body, "")),
-			ApplyPath:  p.ApplyPath,
-		})
-	}
-	return out
+// feedProposals returns the FULL enriched approval rows for the feed's pinned
+// lane (approvals-move-to-feed plan): every pending approval except types with
+// a native feed card (append-x-queue → the draft card). The card in FEED is now
+// the control itself — diff + Confirm/Reject inline — and it resolves atomically
+// on decision because pending/ is the only source of truth. Nothing is ever
+// written to the engine's feed dir for these.
+func (s *Server) feedProposals() []approvalRow {
+	return s.approvalRows(feedApprovalExclude)
 }
 
 // handleFeedBadge is the thin nav-pill count (same compute as the list).

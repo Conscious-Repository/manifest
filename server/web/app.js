@@ -93,9 +93,6 @@ const els = {
   sp_runs: document.getElementById("sp-runs"),
   spiritRunsList: document.getElementById("spiritRunsList"),
   spiritRunDetail: document.getElementById("spiritRunDetail"),
-  sp_approvals: document.getElementById("sp-approvals"),
-  spiritApprovalList: document.getElementById("spiritApprovalList"),
-  spiritApprBadge: document.getElementById("spiritApprBadge"),
   toastHost: document.getElementById("toastHost"),
   sp_rituals: document.getElementById("sp-rituals"),
   spiritRitualBoard: document.getElementById("spiritRitualBoard"),
@@ -1551,10 +1548,10 @@ function fmtWhen(iso) {
 }
 
 // ---- SPIRITS: the excalibur harness console ----
-// Purely the engine console since feed-central: RUNS · RITUALS · APPROVALS.
-// The feed lives one level up as its own tab; the ENGINE owns execution — the
-// only write toward it is a spooled run-now request it picks up on its own.
-const SPIRIT_TABS = ["runs", "rituals", "approvals"];
+// Purely the engine console: RUNS · RITUALS — checking + instigating runs.
+// The feed (incl. the approvals inbox) lives one level up as its own tab; the
+// ENGINE owns execution — the only write toward it is a spooled run-now request.
+const SPIRIT_TABS = ["runs", "rituals"];
 let spiritStatusCache = null;
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
@@ -1563,11 +1560,9 @@ function showSpirits() {
   const tab = spiritTabFromHash();
   SPIRIT_TABS.forEach((t) => { els["sp_" + t].hidden = t !== tab; });
   document.querySelectorAll("#spiritsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-  loadSpiritsStatus(); // engine-alive chip + approvals badge show on every sub-tab
+  loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
   if (tab === "runs") loadSpiritRuns();
   else if (tab === "rituals") loadSpiritRituals();
-  else if (tab === "approvals") loadSpiritApprovals();
-  refreshSpiritApprovalBadge();
   ensureLivePoll(); // resume watching any queued/running runs, derived from files
 }
 function spiritTabFromHash() {
@@ -1740,10 +1735,11 @@ function renderFeed() {
       sigHost.appendChild(more);
     }
   }
-  // pinned lane: virtual tune-proposal cards (pending approvals) lead the inbox;
-  // digests pin next via the items sort. Proposals are pointers, not items —
-  // they never appear under KEPT/ALL.
-  if (view === "inbox") feedCache.proposals.forEach((p) => host.appendChild(proposalCardEl(p)));
+  // pinned lane: FULL approval cards (diff + Confirm/Reject inline — the
+  // approvals inbox lives HERE now, not in SPIRITS) lead the inbox; digests pin
+  // next via the items sort. Approvals derive from pending/ so a decision
+  // resolves the card atomically; they never appear under KEPT/ALL.
+  if (view === "inbox") feedCache.proposals.forEach((p) => host.appendChild(approvalCardEl(p)));
   if (!feedCache.items.length && !host.children.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."
@@ -1751,6 +1747,15 @@ function renderFeed() {
     return;
   }
   feedCache.items.forEach((it) => host.appendChild(feedCard(it)));
+  if (pendingApprovalFocus) { // deep-linked (Studio tuning panel "review →")
+    const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
+    pendingApprovalFocus = null;
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      target.classList.add("goal-flash");
+      setTimeout(() => target.classList.remove("goal-flash"), 2400);
+    }
+  }
 }
 
 // signalRow renders one app-signal: a quiet one-line chip (kind · entity · age)
@@ -1774,29 +1779,6 @@ async function signalAction(url, body) {
   loadFeed();
 }
 
-// proposalCardEl renders a virtual tune-proposal card (feed-central §4 lane 1 +
-// ea-digest Part-2 amendment): summary + evidence, ONE affordance — review the
-// diff in APPROVALS. Confirm/Reject there resolves the card by construction.
-function proposalCardEl(p) {
-  const card = el("div", "feed-card digest pinned proposal");
-  const top = el("div", "feed-top");
-  top.append(el("span", "pin-chip", "📌 pinned"));
-  top.append(el("span", "type-chip type-proposal", "proposal"));
-  top.append(el("span", "feed-title", p.title));
-  card.append(top);
-  card.append(el("div", "feed-why", "proposes a change to " + p.applyPath));
-  if (p.body) { const b = el("pre", "feed-body"); b.textContent = p.body; card.append(b); }
-  const meta = el("div", "feed-meta");
-  meta.append(el("span", null, [p.agent, (p.created || "").slice(0, 10)].filter(Boolean).join("  ·  ")));
-  card.append(meta);
-  const actions = el("div", "feed-actions");
-  actions.append(pillLight("review diff →", () => {
-    pendingApprovalFocus = p.approvalId;
-    location.hash = "#/spirits/approvals";
-  }));
-  card.append(actions);
-  return card;
-}
 function faviconFor(link) {
   try {
     const host = new URL(link).hostname;
@@ -2012,7 +1994,7 @@ function renderTuningPanel() {
     const row = el("div", "tuning-row");
     row.append(el("span", "tuning-what", p.action));
     row.append(el("span", "feed-meta", [p.agent, p.applyPath].filter(Boolean).join(" · ")));
-    row.append(pillLight("review →", () => { pendingApprovalFocus = p.id; location.hash = "#/spirits/approvals"; }));
+    row.append(pillLight("review →", () => { pendingApprovalFocus = p.id; location.hash = "#/feed"; }));
     wrap.append(row);
   });
   return wrap;
@@ -2550,28 +2532,13 @@ async function toggleSpiritPrompts(id, btn) {
 // ---- spirit approvals (artifacts/approvals/ — the ONE inbox) ----
 // Spirits file proposals via the write_approval cast; Confirm/Reject only
 // RECORD the decision (a folder move on the excalibur tree). Nothing sends.
-let pendingApprovalFocus = null; // approval id to scroll to (set by a proposal card's "review diff →")
+let pendingApprovalFocus = null; // approval id to scroll to in FEED (Studio tuning panel "review →")
 
-async function loadSpiritApprovals() {
-  let d = { pending: [], counts: {} };
-  try { d = await (await fetch("/api/spirits/approvals")).json(); } catch (e) {}
-  const host = els.spiritApprovalList; host.innerHTML = "";
-  const pending = d.pending || [];
-  setSpiritApprovalBadge((d.counts && d.counts.pending) || 0);
-  if (!pending.length) { host.appendChild(emptyRow("Nothing pending — warden findings and future EA proposals land here.")); return; }
-  pending.forEach((a) => host.appendChild(spiritApprovalCard(a)));
-  if (pendingApprovalFocus) { // deep-linked from a FEED proposal card
-    const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
-    pendingApprovalFocus = null;
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      target.classList.add("goal-flash");
-      setTimeout(() => target.classList.remove("goal-flash"), 2400);
-    }
-  }
-}
-function spiritApprovalCard(a) {
-  const card = el("div", "approval-card");
+// approvalCardEl: a pending approval as a first-class FEED card — evidence,
+// per-type guards, current-vs-proposed diff, and Confirm/Reject inline
+// (approvals-move-to-feed plan; formerly the SPIRITS approvals panel card).
+function approvalCardEl(a) {
+  const card = el("div", "approval-card pinned");
   card.dataset.approvalId = a.id;
   const head = el("div", "appr-head");
   head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
@@ -2780,16 +2747,7 @@ async function postApprovalDecision(id, kind, body) {
   setSaveState("saving");
   try { await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
   catch (e) { setSaveState("error"); }
-  loadSpiritApprovals();
-  loadSpiritsStatus();
-}
-function setSpiritApprovalBadge(n) {
-  if (!els.spiritApprBadge) return;
-  els.spiritApprBadge.hidden = !n;
-  els.spiritApprBadge.textContent = n || "";
-}
-async function refreshSpiritApprovalBadge() {
-  try { const d = await (await fetch("/api/spirits/approvals")).json(); setSpiritApprovalBadge((d.counts && d.counts.pending) || 0); } catch (e) {}
+  loadFeed(); // approvals live in FEED — the decided card resolves in place
 }
 
 if (els.feedRunNowBtn) els.feedRunNowBtn.addEventListener("click", spiritRunNow);
@@ -4153,6 +4111,7 @@ function route() {
   const cal = h === "#/calendar";
   const fd = h === "#/feed";
   const studio = h === "#/studio" || h.startsWith("#/studio/");
+  if (h === "#/spirits/approvals") { location.hash = "#/feed"; return; } // approvals live in FEED now
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");

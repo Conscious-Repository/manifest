@@ -767,6 +767,10 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 
 /* ---- Approvals ---- */
 .approval-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; }
+/* approvals live in the FEED pinned lane now — flex gap spaces them, and the
+   pinned accent matches the digest cards' treatment */
+.feed-list .approval-card { margin-bottom: 0; }
+.approval-card.pinned { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
 .appr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .appr-action { font-family: var(--sans); font-size: 15px; color: var(--text); font-weight: 500; }
 .appr-agent { font-family: var(--mono); font-size: 11px; color: var(--muted); }
@@ -1075,7 +1079,6 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .feed-view { max-width: 900px; margin: 8px auto 64px; padding: 0 28px; }
 .feed-view .feed-filters { margin-right: 8px; }
 .feed-signals:empty { display: none; } /* the signals lane never pads when empty */
-.type-chip.type-proposal { background: #f3ecff; color: #6b3fd4; } /* tune-proposal pointer card */
 /* signals lane — quiet one-line nudges (conditions, not items) */
 .feed-signals { margin-bottom: 16px; }
 .signal-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
