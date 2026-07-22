@@ -450,6 +450,36 @@ body {
   color: var(--muted); padding: 2px 4px; margin: 8px 0 0 8px;
 }
 .o-complete:hover { color: var(--blue); }
+/* §3 lint dot — one muted dot after the rock name, hairline gray, reasons on hover */
+.o-lint-dot { color: var(--muted); font-weight: 700; cursor: help; margin-left: 2px; }
+/* §4 UNTIL / PROOF finish-line rows on rock expand */
+.o-fl-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0 3px 20px; font-size: 13px; }
+.o-fl-row.sub { padding-left: 36px; font-size: 12.5px; }
+.o-fl-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--muted); flex: none; width: 46px; }
+.o-fl-val { color: var(--text); }
+.o-fl-row.sub .o-fl-val { color: var(--streak-ink); }
+.o-fl-kpi { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.o-fl-ghost { margin-top: 0; }
+/* §5 complete → inline evidence confirm */
+.o-complete-wrap { margin: 10px 0 2px 8px; }
+.o-confirm { border-left: 2px solid var(--blue-soft); padding: 6px 0 6px 12px; }
+.o-confirm-q { font-family: var(--mono); font-size: 11px; color: var(--ink); letter-spacing: 0.06em; }
+.o-confirm-line { font-family: var(--mono); font-size: 12px; color: var(--streak-ink); margin-top: 3px; white-space: pre; }
+.o-confirm-ev { display: block; width: 100%; max-width: 460px; margin: 8px 0; border: none; border-bottom: 1px solid var(--line); background: transparent; font-family: var(--sans); font-size: 14px; color: var(--text); outline: none; padding: 4px 0; }
+.o-confirm-ev:focus { border-color: var(--blue-soft); }
+.o-confirm-acts { display: flex; gap: 8px; align-items: center; }
+.o-confirm-win, .o-confirm-learn, .o-confirm-cancel { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: 3px 11px; background: var(--bg); cursor: pointer; color: var(--muted); }
+.o-confirm-win { color: var(--blue); border-color: var(--blue-soft); }
+.o-confirm-win:disabled { color: var(--icon); border-color: var(--line); cursor: not-allowed; }
+.o-confirm-learn:hover, .o-confirm-cancel:hover { color: var(--text); border-color: var(--muted); }
+/* §2 rock composer — three stacked fields */
+.o-composer { display: flex; flex-direction: column; gap: 6px; padding: 8px 2px; max-width: 460px; }
+.o-composer .o-edit { min-width: 0; width: 100%; }
+.o-composer-name { font-size: 15px; }
+.o-composer-save { align-self: flex-start; font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: 3px 11px; background: var(--bg); color: var(--blue); cursor: pointer; margin-top: 2px; }
+.o-composer-save:hover { border-color: var(--blue-soft); }
+.hist-evidence .wikilink { color: var(--blue); cursor: pointer; }
+.hist-evidence .wikilink:hover { text-decoration: underline; }
 /* HISTORY tab — read-only archive list, contact-row rhythm */
 .hist-quarter {
   font-family: var(--mono); font-size: 12.8px; letter-spacing: 0.32px;

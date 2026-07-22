@@ -870,9 +870,32 @@ function renderOrientMeta(areas) {
   const now = new Date();
   const q = Math.floor(now.getMonth() / 3) + 1;
   let txt = `${now.getFullYear()} · Q${q}`;
-  const n = (areas || []).reduce((s, a) => s + (a.rocks || []).filter((r) => !r.checked).length, 0);
-  if (n > 5) txt += ` · ${n} rocks · heavy`;
+  const rocks = (areas || []).flatMap((a) => (a.rocks || []).filter((r) => !r.checked));
+  if (rocks.length > 5) txt += ` · ${rocks.length} rocks · heavy`;
+  const noFinish = rocks.filter((r) => !r.until).length;
+  if (noFinish > 0) txt += ` · ${noFinish} without finish lines`;
   meta.textContent = txt;
+}
+
+// rockLint (§3): deterministic conditions computed from the view, no text
+// analysis. Returns the plain reasons a Rock's quiet dot fires (empty = clean).
+function rockLint(g) {
+  const reasons = [];
+  if (!g.until) reasons.push("no finish line");
+  if (!g.verify) reasons.push("no check");
+  if (!g.serves) reasons.push("unlinked");
+  const stages = g.children || [];
+  const cur = stages.find((s) => !s.checked);
+  const hasOpenTask = cur && (cur.children || []).some((t) => !t.checked);
+  let staleDays = 0;
+  if (g.moved) {
+    const d = Math.floor((Date.now() - new Date(g.moved + "T00:00:00").getTime()) / 86400000);
+    if (d >= 14) staleDays = d;
+  }
+  if (!hasOpenTask || staleDays >= 14) {
+    reasons.push(staleDays >= 14 ? `stalled ${staleDays}d` : "stalled");
+  }
+  return reasons;
 }
 
 function orientArea(area) {
@@ -918,10 +941,40 @@ function orientArea(area) {
   // Rocks
   const rocks = el("div", "o-rocks");
   (area.rocks || []).forEach((g) => rocks.appendChild(rockNode(g)));
-  rocks.appendChild(ghostInput("＋ rock", "o-rock-ghost", (v) =>
-    goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "rock", text: v, owner: "me" })));
+  rocks.appendChild(rockComposer(area));
   card.appendChild(rocks);
   return card;
+}
+
+// rockComposer (§2): the soft gate. The ＋ rock ghost opens three fields —
+// name / done when / proven by. Name alone saves (quick capture survives); a
+// skipped finish line just leaves the Rock lint-flagged, nothing blocks.
+function rockComposer(area) {
+  const ghost = el("button", "o-ghost o-rock-ghost", "＋ rock");
+  ghost.addEventListener("click", () => {
+    const box = el("div", "o-composer");
+    const name = el("input", "o-edit o-composer-name"); name.placeholder = "name the rock…";
+    const until = el("input", "o-edit"); until.placeholder = "done when…            (skippable)";
+    const verify = el("input", "o-edit"); verify.placeholder = "proven by…            (skippable)";
+    const done = () => {
+      const t = name.value.trim();
+      if (!t) { box.replaceWith(ghost); return; }
+      goalsApi("POST", "/api/goals/item", {
+        area: area.name, parentId: "", section: "rock", text: t, owner: "me",
+        until: until.value.trim(), verify: verify.value.trim(),
+      });
+    };
+    [name, until, verify].forEach((i) => i.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") done();
+      else if (e.key === "Escape") box.replaceWith(ghost);
+    }));
+    const save = el("button", "o-composer-save", "add rock");
+    save.addEventListener("click", done);
+    box.append(name, until, verify, save);
+    ghost.replaceWith(box);
+    name.focus();
+  });
+  return ghost;
 }
 
 // rockNode: the collapsed row — dot · name · position → next-action — and, when
@@ -935,6 +988,15 @@ function rockNode(g) {
   row.append(el("span", "o-dot"));
   const name = el("span", "o-rk-name" + (g.checked ? " done" : ""), g.text);
   row.appendChild(name);
+  // §3 lint: one muted dot after the name when a condition fires; reasons on hover.
+  if (!g.checked) {
+    const reasons = rockLint(g);
+    if (reasons.length) {
+      const dot = el("span", "o-lint-dot", "·");
+      dot.title = reasons.join(" · ");
+      row.appendChild(dot);
+    }
+  }
 
   const stages = g.children || [];
   const cur = stages.find((c) => !c.checked);
@@ -974,6 +1036,13 @@ function rockNode(g) {
 // its tasks as checkboxes + a "+ task" ghost.
 function rockExpand(g, stages, cur) {
   const box = el("div", "o-expand");
+
+  // §4 finish-line block: UNTIL + PROOF (with kpi right-aligned), above the trail.
+  const patch = (field) => (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, [field]: v });
+  box.appendChild(finishRow("UNTIL", g.until, "＋ done when…", patch("until")));
+  const kpiCell = finishKpi(g.kpi, patch("kpi"));
+  box.appendChild(finishRow("PROOF", g.verify, "＋ proven by…", patch("verify"), kpiCell));
+
   stages.forEach((st) => {
     const isCur = st === cur;
     const open = isCur || goalsUI.expanded.has(st.id);
@@ -996,22 +1065,90 @@ function rockExpand(g, stages, cur) {
       // clicking the text edits while clicking the rest of the line toggles.
       clickToEdit(label, () => st.text, (v) =>
         goalsApi("PATCH", "/api/goals/item", { id: st.id, text: v }));
+      // §4: stages show verify/kpi when non-empty (no ghosts at stage level).
+      const stPatch = (field) => (v) => goalsApi("PATCH", "/api/goals/item", { id: st.id, [field]: v });
+      if (st.verify) box.appendChild(finishRow("PROOF", st.verify, "", stPatch("verify"), finishKpi(st.kpi, stPatch("kpi")), true));
+      else if (st.kpi) box.appendChild(finishRow("", "", "", null, finishKpi(st.kpi, stPatch("kpi")), true));
       (st.children || []).forEach((tk) => box.appendChild(taskRowEl(tk)));
       box.appendChild(ghostInput("+ task", "o-tk-ghost", (v) =>
         goalsApi("POST", "/api/goals/item", { parentId: st.id, text: v, owner: "" })));
     }
   });
   box.appendChild(ghostInput("+ stage", "o-st-ghost", (v) =>
-    goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" })));
-  if (!g.checked) {
-    const done = el("button", "o-complete", "complete");
-    done.title = "Complete this rock — archives it as a win";
-    done.addEventListener("click", () => {
-      if (confirm(`Complete “${g.text}”?`)) closeGoal(g.id, "win", "");
-    });
-    box.appendChild(done);
-  }
+    goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" }),
+    "what state will you have reached?"));
+  if (!g.checked) box.appendChild(completeControl(g));
   return box;
+}
+
+// finishRow: a "LABEL   value" line; empty value renders the ghost (skippable);
+// non-empty value is click-to-edit. `right` is an optional right-aligned cell
+// (kpi). `sub` marks a stage-level (indented, quieter) row.
+function finishRow(label, value, ghostText, onSave, right, sub) {
+  const row = el("div", "o-fl-row" + (sub ? " sub" : ""));
+  if (label) row.append(el("span", "o-fl-label", label));
+  if (value) {
+    const v = el("span", "o-fl-val", value);
+    if (onSave) clickToEdit(v, () => value, onSave);
+    row.append(v);
+  } else if (ghostText && onSave) {
+    row.append(ghostInput(ghostText, "o-fl-ghost", onSave));
+  } else {
+    row.append(el("span", "o-fl-val", "")); // spacer so kpi keeps its column
+  }
+  if (right) row.append(right);
+  return row;
+}
+
+// finishKpi: the right-aligned gauge cell — value click-to-edit, empty a tiny ghost.
+function finishKpi(value, onSave) {
+  if (value) {
+    const v = el("span", "o-fl-kpi", value);
+    clickToEdit(v, () => value, onSave);
+    return v;
+  }
+  return ghostInput("＋ kpi", "o-fl-kpi o-fl-ghost", onSave);
+}
+
+// completeControl: §5 — a quiet "complete" that opens an inline confirm showing
+// the finish line + check verbatim and demanding evidence for a Win.
+function completeControl(g) {
+  const wrap = el("div", "o-complete-wrap");
+  const btn = el("button", "o-complete", "complete");
+  btn.title = "Complete this rock";
+  btn.addEventListener("click", () => {
+    if (wrap.querySelector(".o-confirm")) return;
+    btn.hidden = true;
+    const panel = el("div", "o-confirm");
+    panel.append(el("div", "o-confirm-q", "is this true?"));
+    panel.append(el("div", "o-confirm-line",
+      "UNTIL   " + (g.until || "no finish line was set")));
+    if (g.verify) panel.append(el("div", "o-confirm-line", "PROOF   " + g.verify));
+    const ev = el("input", "o-confirm-ev");
+    ev.type = "text";
+    ev.placeholder = "evidence — a line of proof or a [[wikilink]] (required to win)";
+    attachWikilinkAutocomplete(ev);
+    panel.append(ev);
+    const acts = el("div", "o-confirm-acts");
+    const win = el("button", "o-confirm-win", "win →");
+    win.disabled = true;
+    ev.addEventListener("input", () => { win.disabled = !ev.value.trim(); });
+    win.addEventListener("click", () => closeGoal(g.id, "win", "", ev.value.trim()));
+    const learn = el("button", "o-confirm-learn", "learn");
+    learn.title = "drop it — no proof needed";
+    learn.addEventListener("click", () => {
+      const note = prompt(`Drop “${g.text}”? Optional note:`);
+      if (note !== null) closeGoal(g.id, "learn", note.trim(), "");
+    });
+    const cancel = el("button", "o-confirm-cancel", "cancel");
+    cancel.addEventListener("click", () => { panel.remove(); btn.hidden = false; });
+    acts.append(win, learn, cancel);
+    panel.append(acts);
+    wrap.append(panel);
+    ev.focus();
+  });
+  wrap.append(btn);
+  return wrap;
 }
 
 function taskRowEl(tk) {
@@ -1058,13 +1195,14 @@ function clickToEdit(span, getValue, save) {
 }
 
 // ghostInput: a muted "＋ …" affordance that swaps to an input; Enter commits.
-function ghostInput(label, cls, onSubmit) {
+// `placeholder` overrides the default (label minus its ＋).
+function ghostInput(label, cls, onSubmit, placeholder) {
   const ghost = el("button", "o-ghost " + (cls || ""), label);
   ghost.addEventListener("click", (e) => {
     e.stopPropagation();
     const input = document.createElement("input");
     input.className = "o-edit";
-    input.placeholder = label.replace(/^[＋+]\s*/, "");
+    input.placeholder = placeholder || label.replace(/^[＋+]\s*/, "");
     ghost.replaceWith(input);
     input.focus();
     let settled = false;
@@ -1085,14 +1223,31 @@ function ghostInput(label, cls, onSubmit) {
 }
 
 // closeGoal moves a Rock to the quarter archive file via the close API.
-async function closeGoal(id, outcome, note) {
+async function closeGoal(id, outcome, note, evidence) {
   setSaveState("saving");
   try {
-    const r = await fetch("/api/goals/close", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, outcome, note: note || "" }) });
+    const r = await fetch("/api/goals/close", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, outcome, note: note || "", evidence: evidence || "" }) });
     if (!r.ok) throw new Error(await r.text());
     setSaveState("saved");
   } catch (e) { setSaveState("error"); alert("Archive failed: " + (e.message || e)); }
   loadGoals();
+}
+
+// evidenceEl renders evidence text, turning any [[wikilink]] into a clickable
+// span that opens the note (via the shared resolver). Plain text passes through.
+function evidenceEl(text) {
+  const frag = document.createDocumentFragment();
+  const re = /\[\[([^\]]+)\]\]/g;
+  let last = 0, m;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) frag.append(document.createTextNode(text.slice(last, m.index)));
+    const link = el("span", "wikilink", m[1]);
+    link.addEventListener("click", () => resolveWikilink(m[1]));
+    frag.append(link);
+    last = re.lastIndex;
+  }
+  if (last < text.length) frag.append(document.createTextNode(text.slice(last)));
+  return frag;
 }
 
 // ---- HISTORY: the archive view (first consumer of /api/goals/archives) ----
@@ -1120,6 +1275,12 @@ async function showGoalsHistory() {
         row.appendChild(el("span", "hist-text", e.text));
         row.appendChild(el("span", "hist-meta", `${e.area} · ${e.closed || ""}`));
         host.appendChild(row);
+        if (e.evidence) {
+          const ln = el("div", "hist-note hist-evidence");
+          ln.append(document.createTextNode("proof: "));
+          ln.append(evidenceEl(e.evidence));
+          host.appendChild(ln);
+        }
         const sub = [e.reached ? "reached: " + e.reached : "", e.note || ""].filter(Boolean).join(" — ");
         if (sub) host.appendChild(el("div", "hist-note", sub));
       });
