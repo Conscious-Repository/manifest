@@ -1942,9 +1942,8 @@ async function signalAction(url, body) {
 // portalCardEl renders the third feed card kind: an externally-sourced portal
 // notice, built entirely from the deterministic poll cache (no LLM). A ClickUp
 // day collapses to one digest (assigned-to-you block first, then per-list
-// groups, each line promotable to today); a Benchling change is one item card
-// with a jump link. Dismiss + "→ today" are the only actions — portals are
-// read-only to their source app.
+// groups); a Benchling change is one item card with a jump link. Dismiss (and
+// jump, for items) are the only actions — portals are read-only to their source.
 function portalCardEl(pc) {
   const isDigest = pc.type === "portal-digest";
   const card = el("div", "feed-card portal-card" + (pc.pinned ? " pinned" : ""));
@@ -1957,15 +1956,14 @@ function portalCardEl(pc) {
   card.append(top);
   card.append(el("div", "feed-title", pc.title));
 
-  const promote = (text, link) => portalToday(text, link);
   if (isDigest) {
     if ((pc.forYou || []).length) {
       card.append(el("div", "portal-subhead", "assigned to you / mentions you"));
-      pc.forYou.forEach((ln) => card.append(portalLineRow(ln, promote)));
+      pc.forYou.forEach((ln) => card.append(portalLineRow(ln)));
     }
     (pc.groups || []).forEach((g) => {
       card.append(el("div", "portal-subhead", g.list));
-      (g.lines || []).forEach((ln) => card.append(portalLineRow(ln, promote)));
+      (g.lines || []).forEach((ln) => card.append(portalLineRow(ln)));
     });
   } else {
     if (pc.detail) card.append(el("div", "feed-why", pc.detail));
@@ -1976,33 +1974,24 @@ function portalCardEl(pc) {
 
   const acts = el("div", "feed-actions");
   if (!isDigest && pc.url) acts.append(pillLight("jump →", () => window.open(pc.url, "_blank")));
-  if (!isDigest) acts.append(pillLight("→ today", () => promote(pc.title, pc.url)));
   acts.append(pillLight("Dismiss", () => portalDismiss(pc.id)));
   card.append(acts);
   return card;
 }
 
-// portalLineRow is one promotable digest line: the task (links to the source)
-// plus a "→ today" pill that drops it into the daily manifest block.
-function portalLineRow(ln, promote) {
+// portalLineRow is one digest line: the task, linking to the source app.
+function portalLineRow(ln) {
   const row = el("div", "portal-line");
   const label = ln.url
     ? Object.assign(el("a", "portal-line-text", ln.text), { href: ln.url, target: "_blank" })
     : el("span", "portal-line-text", ln.text);
   row.append(label);
-  row.append(pillLight("→ today", () => promote(ln.text, ln.url)));
   return row;
 }
 
 async function portalDismiss(id) {
   try { await postJSON("/api/portals/item/dismiss", { id }); } catch (e) {}
   loadFeed();
-}
-async function portalToday(text, link) {
-  try {
-    await postJSON("/api/portals/item/today", { text, link: link || "" });
-    showToast("Added to today", () => { location.hash = "#/"; }, "info");
-  } catch (e) { showToast("Couldn't add to today"); }
 }
 function fmtFeedDate(iso) {
   const d = new Date(iso);

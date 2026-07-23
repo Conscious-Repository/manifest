@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"manifest/daily"
 	"manifest/portals"
 )
 
@@ -227,30 +226,6 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svc.Dismiss(b.ID)
-	writeJSON(w, map[string]bool{"ok": true})
-}
-
-// handlePortalToday promotes a portal line into today's manifest block as a plain
-// task (line text + source link). The only write a portal item makes — read-only
-// to the source app, exactly as boundaries require.
-func (s *Server) handlePortalToday(w http.ResponseWriter, r *http.Request) {
-	var b struct {
-		Text string `json:"text"`
-		Link string `json:"link"`
-	}
-	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Text) == "" {
-		httpError(w, errBadRequest("text is required"))
-		return
-	}
-	text := strings.TrimSpace(b.Text)
-	if b.Link != "" {
-		text += " " + b.Link
-	}
-	today := time.Now().Format("2006-01-02")
-	if _, err := s.svc.AddTask(today, daily.Task{Text: text}); err != nil {
-		httpError(w, err)
-		return
-	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

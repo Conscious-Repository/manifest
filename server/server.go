@@ -166,7 +166,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/portals/{id}/poll", s.handlePortalPoll)
 	mux.HandleFunc("POST /api/portals/{id}/disconnect", s.handlePortalDisconnect)
 	mux.HandleFunc("POST /api/portals/item/dismiss", s.handlePortalDismiss)
-	mux.HandleFunc("POST /api/portals/item/today", s.handlePortalToday)
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)
