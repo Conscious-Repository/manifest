@@ -14,6 +14,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/portals"
 	"manifest/reading"
 	"manifest/signals"
 	"manifest/spirits"
@@ -42,6 +43,8 @@ type Server struct {
 	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
+	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
+	portals *portals.Service
 	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
 	studio     *studio.Store
 	corpusPath string // <excalibur>/vessel/corpus/x.db
@@ -153,6 +156,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig) // "dig →"
 	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
 	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
+
+	// PORTALS — external realms (ClickUp, Benchling, calendar, the engine's LLM
+	// conduits, docusign-v2) as one panel: list, (re)connect via pasted key, test,
+	// poll, disconnect; portal feed items dismiss / promote-to-today.
+	mux.HandleFunc("GET /api/portals", s.handlePortals)
+	mux.HandleFunc("POST /api/portals/{id}/key", s.handlePortalKey)
+	mux.HandleFunc("POST /api/portals/{id}/test", s.handlePortalTest)
+	mux.HandleFunc("POST /api/portals/{id}/poll", s.handlePortalPoll)
+	mux.HandleFunc("POST /api/portals/{id}/disconnect", s.handlePortalDisconnect)
+	mux.HandleFunc("POST /api/portals/item/dismiss", s.handlePortalDismiss)
+	mux.HandleFunc("POST /api/portals/item/today", s.handlePortalToday)
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)

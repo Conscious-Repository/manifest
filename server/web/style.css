@@ -1304,3 +1304,34 @@ input.inline-hidden { color: transparent !important; }
 .insp-posts-summary { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); cursor: pointer; list-style: revert; }
 .insp-posts[open] > summary { margin-bottom: 8px; }
 .insp-post:first-of-type { border-top: none; }
+
+/* ---- PORTALS panel (SPIRITS sub-tab): the external-realms table + reconnect form ---- */
+.portal-board { display: flex; flex-direction: column; gap: 2px; }
+.portal-wrap { display: flex; flex-direction: column; }
+.portal-row { display: grid; grid-template-columns: 1.3fr 0.8fr 1.2fr 0.9fr auto; align-items: baseline; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); }
+.portal-head { border: none; padding: 4px 10px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+.portal-name { font-family: var(--sans); font-size: 14px; color: var(--text); font-weight: 500; }
+.portal-state { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.portal-row.state-open .portal-state { color: #15803d; }
+.portal-row.state-degraded .portal-state { color: #b91c1c; }
+.portal-cross { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+.portal-key { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.5px; }
+.portal-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-self: end; }
+.portal-dim { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.portal-err { font-family: var(--mono); font-size: 11.5px; color: #b91c1c; padding: 2px 10px 6px; }
+.portal-note { font-size: 12px; color: var(--muted); padding: 2px 10px 6px; }
+.portal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 10px; margin: 2px 0 6px; border: 1px dashed var(--blue-soft); border-radius: var(--radius); background: var(--hover); }
+.portal-field { display: flex; flex-direction: column; gap: 3px; }
+.portal-field-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); }
+.portal-input { font-family: var(--mono); font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; min-width: 240px; background: var(--bg, #fff); color: var(--text); }
+.portal-input:focus { outline: none; border-color: var(--blue); }
+.pill-solid { font-family: var(--sans); font-size: 12px; padding: 6px 12px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; }
+.pill-solid:disabled { opacity: 0.6; cursor: default; }
+
+/* ---- portal feed cards (the third card kind): digest + itemized notices ---- */
+.type-chip.type-portal { color: #0e7490; border-color: #c6e6ee; }
+.feed-card.portal-card .feed-date { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.portal-subhead { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); margin: 8px 0 2px; }
+.portal-line { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
+.portal-line-text { font-size: 13.5px; color: var(--text); text-decoration: none; flex: 1; }
+a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }

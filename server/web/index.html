@@ -152,6 +152,7 @@
     <div class="agents-tabs" id="spiritsTabs">
       <a class="atab" data-tab="runs" href="#/spirits/runs">RUNS</a>
       <a class="atab" data-tab="rituals" href="#/spirits/rituals">RITUALS</a>
+      <a class="atab" data-tab="portals" href="#/spirits/portals">PORTALS</a>
     </div>
 
     <!-- RUNS (artifacts/runs/ — the legible decision trail per run) -->
@@ -184,6 +185,14 @@
         <div id="spiritEditorLint" class="editor-lint" hidden></div>
         <textarea id="spiritEditorArea" class="editor-area" spellcheck="false"></textarea>
       </div>
+    </div>
+
+    <!-- PORTALS (external realms — ClickUp/Benchling polled to FEED, calendar, LLM conduits) -->
+    <div class="agent-panel" id="sp-portals" hidden>
+      <div class="panel-subhead">
+        <span>PORTALS <span class="sub-meta">every external realm the app touches · connect or repair right here · items land in FEED</span></span>
+      </div>
+      <div id="portalList" class="portal-board"></div>
     </div>
 
   </section>

@@ -22,6 +22,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/portals"
 	"manifest/reading"
 	"manifest/server"
 	"manifest/signals"
@@ -169,6 +170,20 @@ func main() {
 		srv.UseSignals(signals.New(sigStore, emitters...))
 		log.Printf("feed signals: enabled (%d emitters)", len(emitters))
 	}
+
+	// PORTALS — external realms (ClickUp, Benchling) polled deterministically into
+	// the FEED. Credentials live under DataDir/portals (0600), the poll cache under
+	// DataDir/portal-cache — both outside the vault. Pollers run while the app is up.
+	portalLoc := time.Local
+	if cfg.Timezone != "" {
+		if l, err := time.LoadLocation(cfg.Timezone); err == nil {
+			portalLoc = l
+		}
+	}
+	portalSvc := portals.New(cfg.DataDir, portalLoc)
+	portalSvc.Start(ctx)
+	srv.UsePortals(portalSvc)
+	log.Printf("portals: enabled (clickup, benchling → FEED; creds under %s/portals)", cfg.DataDir)
 
 	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the
 	// Hermes cockpit). The dashboard renders the sibling tree and records

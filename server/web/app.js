@@ -96,6 +96,8 @@ const els = {
   toastHost: document.getElementById("toastHost"),
   sp_rituals: document.getElementById("sp-rituals"),
   spiritRitualBoard: document.getElementById("spiritRitualBoard"),
+  sp_portals: document.getElementById("sp-portals"),
+  portalList: document.getElementById("portalList"),
   spiritNewSpirit: document.getElementById("spiritNewSpirit"),
   spiritEditChargebook: document.getElementById("spiritEditChargebook"),
   spiritEditor: document.getElementById("spiritEditor"),
@@ -1560,7 +1562,7 @@ function fmtWhen(iso) {
 // Purely the engine console: RUNS · RITUALS — checking + instigating runs.
 // The feed (incl. the approvals inbox) lives one level up as its own tab; the
 // ENGINE owns execution — the only write toward it is a spooled run-now request.
-const SPIRIT_TABS = ["runs", "rituals"];
+const SPIRIT_TABS = ["runs", "rituals", "portals"];
 let spiritStatusCache = null;
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
@@ -1572,11 +1574,156 @@ function showSpirits() {
   loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
   if (tab === "runs") loadSpiritRuns();
   else if (tab === "rituals") loadSpiritRituals();
+  else if (tab === "portals") loadPortals();
   ensureLivePoll(); // resume watching any queued/running runs, derived from files
 }
 function spiritTabFromHash() {
   const t = (location.hash.split("/")[2] || "runs");
   return SPIRIT_TABS.includes(t) ? t : "runs";
+}
+
+// ---- PORTALS sub-tab: every external realm, (re)connectable in place ----
+// The one place a connection is seen and repaired. Api-key portals (clickup,
+// benchling) take a pasted key → save → auto-test; the oauth portal (calendar)
+// runs its existing sign-in; the engine's LLM conduits are read-only. This is
+// also the seed of app-wide settings — the row renderer is generic over the
+// server's portal definition (fields drive the form), so github/docusign appear
+// later as pure data.
+async function loadPortals() {
+  const host = els.portalList; if (!host) return;
+  if (!host.children.length) host.textContent = "loading…";
+  try {
+    const rows = (await (await fetch("/api/portals")).json()).rows || [];
+    renderPortals(rows);
+  } catch (e) { host.innerHTML = ""; host.append(emptyRow("Portals unavailable.")); }
+}
+
+function renderPortals(rows) {
+  const host = els.portalList; host.innerHTML = "";
+  const head = el("div", "portal-row portal-head");
+  ["PORTAL", "STATE", "LAST CROSSING", "KEY", ""].forEach((h) => head.append(el("span", "", h)));
+  host.append(head);
+  rows.forEach((p) => host.append(portalRowEl(p)));
+}
+
+const PORTAL_STATE_LABEL = { open: "open", degraded: "degraded", sealed: "—", dormant: "—" };
+
+function portalRowEl(p) {
+  const wrap = el("div", "portal-wrap");
+  const row = el("div", "portal-row state-" + p.state);
+  row.dataset.portalId = p.id;
+  row.append(el("span", "portal-name", p.name));
+  const st = el("span", "portal-state", PORTAL_STATE_LABEL[p.state] || p.state);
+  row.append(st);
+  row.append(el("span", "portal-cross", portalCrossing(p)));
+  row.append(el("span", "portal-key", p.masked || (p.kind === "oauth" ? "oauth" : "—")));
+  const acts = el("span", "portal-acts");
+  buildPortalActions(p, acts, wrap);
+  row.append(acts);
+  wrap.append(row);
+  if (p.state === "degraded" && p.err) wrap.append(el("div", "portal-err", p.err));
+  if (p.kind === "oauth" && (p.accounts || []).length) {
+    wrap.append(el("div", "portal-note", "connected: " + p.accounts.join(", ")));
+  } else if (p.note && p.state !== "degraded") {
+    wrap.append(el("div", "portal-note", p.note));
+  }
+  return wrap;
+}
+
+function portalCrossing(p) {
+  if (p.kind === "llm") return "via engine";
+  if (!p.lastCrossing) return p.state === "sealed" ? "not connected" : "—";
+  const d = new Date(p.lastCrossing);
+  if (isNaN(d)) return "—";
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const t = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).replace(" ", "");
+  return sameDay ? t + " today" : d.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
+function buildPortalActions(p, acts, wrap) {
+  if (p.kind === "apikey") {
+    if (p.state === "dormant") { acts.append(el("span", "portal-dim", "(v2)")); return; }
+    if (p.state === "sealed") {
+      acts.append(pillLight("connect", () => togglePortalForm(p, wrap)));
+      return;
+    }
+    acts.append(
+      pillLight("test", () => portalAction("/api/portals/" + p.id + "/test")),
+      pillLight("poll", () => portalAction("/api/portals/" + p.id + "/poll")),
+      pillLight("replace", () => togglePortalForm(p, wrap)),
+      pillLight("disconnect", () => { if (confirm("Disconnect " + p.name + "? Its cached items stay until they age out.")) portalAction("/api/portals/" + p.id + "/disconnect"); }),
+    );
+    return;
+  }
+  if (p.kind === "oauth") {
+    if ((p.accounts || []).length) {
+      acts.append(pillLight("add", () => portalConnectCalendar()));
+      p.accounts.forEach((email) => acts.append(pillLight("disconnect", () => portalDisconnectCalendar(email))));
+    } else {
+      acts.append(pillLight("connect", () => portalConnectCalendar()));
+    }
+    return;
+  }
+  // llm — read-only, managed by the engine
+  acts.append(el("span", "portal-dim", "engine"));
+}
+
+// togglePortalForm reveals the paste-key form inline beneath a row. Secret
+// fields are password inputs; on save the key posts to the server (0600) and the
+// row re-renders from the auto-tested response — the value never comes back.
+function togglePortalForm(p, wrap) {
+  const existing = wrap.querySelector(".portal-form");
+  if (existing) { existing.remove(); return; }
+  const form = el("div", "portal-form");
+  const inputs = {};
+  (p.fields || []).forEach((f) => {
+    const label = el("label", "portal-field");
+    label.append(el("span", "portal-field-label", f.label));
+    const input = el("input", "portal-input");
+    input.type = f.secret ? "password" : "text";
+    input.placeholder = f.hint || "";
+    label.append(input);
+    inputs[f.key] = input;
+    form.append(label);
+  });
+  const save = el("button", "pill-solid", "save & test");
+  save.onclick = async () => {
+    const fields = {};
+    Object.keys(inputs).forEach((k) => { fields[k] = inputs[k].value.trim(); });
+    save.disabled = true; save.textContent = "testing…";
+    try {
+      const row = await postJSON("/api/portals/" + p.id + "/key", { fields });
+      form.remove();
+      const wrapNew = portalRowEl(row);
+      wrap.replaceWith(wrapNew);
+      showToast(row.state === "open" ? p.name + " connected" : p.name + " saved — " + (row.err || row.state), null, row.state === "open" ? "info" : undefined);
+    } catch (e) { save.disabled = false; save.textContent = "save & test"; showToast("Couldn't save " + p.name); }
+  };
+  form.append(save);
+  wrap.append(form);
+  const first = form.querySelector("input"); if (first) first.focus();
+}
+
+async function portalAction(url) {
+  try {
+    const row = await postJSON(url, {});
+    const wrap = els.portalList.querySelector(`[data-portal-id="${CSS.escape(row.id)}"]`)?.closest(".portal-wrap");
+    if (wrap) wrap.replaceWith(portalRowEl(row));
+    refreshFeedBadge();
+  } catch (e) { showToast("Portal action failed"); }
+}
+
+// Calendar keeps its own OAuth endpoints — the portal row just drives them, then
+// reloads the panel so its state reflects the new connection.
+async function portalConnectCalendar() {
+  showToast("Opening Google sign-in… (check your browser)", null, "info");
+  try { await postJSON("/api/calendar/connect", {}); } catch (e) {}
+  loadPortals();
+}
+async function portalDisconnectCalendar(email) {
+  try { await postJSON("/api/calendar/disconnect", { account: email }); } catch (e) {}
+  loadPortals();
 }
 
 async function loadSpiritsStatus() {
@@ -1689,7 +1836,7 @@ function diffDigests(items) {
 const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"]];
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
-let feedCache = { items: [], signals: [], proposals: [] };
+let feedCache = { items: [], signals: [], proposals: [], portalItems: [] };
 
 function showFeed() {
   loadFeed();
@@ -1700,10 +1847,10 @@ async function loadFeed() {
   const view = state.feedView || "inbox";
   try {
     const d = await (await fetch("/api/feed?status=" + view)).json();
-    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [] };
+    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [] };
     setBadge(els.feedNavBadge, d.badge || 0);
     if (view === "inbox") diffDigests(feedCache.items); // catch digests landed while unpolled
-  } catch (e) { feedCache = { items: [], signals: [], proposals: [] }; }
+  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [] }; }
   renderFeedFilters();
   renderFeed();
 }
@@ -1749,6 +1896,10 @@ function renderFeed() {
   // next via the items sort. Approvals derive from pending/ so a decision
   // resolves the card atomically; they never appear under KEPT/ALL.
   if (view === "inbox") feedCache.proposals.forEach((p) => host.appendChild(approvalCardEl(p)));
+  // portal-items lane: externally-sourced notices (clickup digest, benchling
+  // items), deterministic + script-rendered. INBOX only — they're notices, not
+  // kept/discarded items, and never touch the tune loop.
+  if (view === "inbox") feedCache.portalItems.forEach((pc) => host.appendChild(portalCardEl(pc)));
   if (!feedCache.items.length && !host.children.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."
@@ -1786,6 +1937,76 @@ function signalRow(sg) {
 async function signalAction(url, body) {
   try { await postJSON(url, body); } catch (e) {}
   loadFeed();
+}
+
+// portalCardEl renders the third feed card kind: an externally-sourced portal
+// notice, built entirely from the deterministic poll cache (no LLM). A ClickUp
+// day collapses to one digest (assigned-to-you block first, then per-list
+// groups, each line promotable to today); a Benchling change is one item card
+// with a jump link. Dismiss + "→ today" are the only actions — portals are
+// read-only to their source app.
+function portalCardEl(pc) {
+  const isDigest = pc.type === "portal-digest";
+  const card = el("div", "feed-card portal-card" + (pc.pinned ? " pinned" : ""));
+  card.dataset.portalId = pc.id;
+  const top = el("div", "feed-top");
+  if (pc.pinned) top.append(el("span", "pin-chip", "📌 pinned"));
+  top.append(el("span", "type-chip type-portal", pc.portal)); // muted source tag
+  if (pc.date) top.append(el("span", "feed-date", fmtFeedDate(pc.date)));
+  card.append(top);
+  card.append(el("div", "feed-title", pc.title));
+
+  const promote = (text, link) => portalToday(text, link);
+  if (isDigest) {
+    if ((pc.forYou || []).length) {
+      card.append(el("div", "portal-subhead", "assigned to you / mentions you"));
+      pc.forYou.forEach((ln) => card.append(portalLineRow(ln, promote)));
+    }
+    (pc.groups || []).forEach((g) => {
+      card.append(el("div", "portal-subhead", g.list));
+      (g.lines || []).forEach((ln) => card.append(portalLineRow(ln, promote)));
+    });
+  } else {
+    if (pc.detail) card.append(el("div", "feed-why", pc.detail));
+    const meta = el("div", "feed-meta");
+    if (pc.actor) meta.append(el("span", "", pc.actor));
+    card.append(meta);
+  }
+
+  const acts = el("div", "feed-actions");
+  if (!isDigest && pc.url) acts.append(pillLight("jump →", () => window.open(pc.url, "_blank")));
+  if (!isDigest) acts.append(pillLight("→ today", () => promote(pc.title, pc.url)));
+  acts.append(pillLight("Dismiss", () => portalDismiss(pc.id)));
+  card.append(acts);
+  return card;
+}
+
+// portalLineRow is one promotable digest line: the task (links to the source)
+// plus a "→ today" pill that drops it into the daily manifest block.
+function portalLineRow(ln, promote) {
+  const row = el("div", "portal-line");
+  const label = ln.url
+    ? Object.assign(el("a", "portal-line-text", ln.text), { href: ln.url, target: "_blank" })
+    : el("span", "portal-line-text", ln.text);
+  row.append(label);
+  row.append(pillLight("→ today", () => promote(ln.text, ln.url)));
+  return row;
+}
+
+async function portalDismiss(id) {
+  try { await postJSON("/api/portals/item/dismiss", { id }); } catch (e) {}
+  loadFeed();
+}
+async function portalToday(text, link) {
+  try {
+    await postJSON("/api/portals/item/today", { text, link: link || "" });
+    showToast("Added to today", () => { location.hash = "#/"; }, "info");
+  } catch (e) { showToast("Couldn't add to today"); }
+}
+function fmtFeedDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function faviconFor(link) {

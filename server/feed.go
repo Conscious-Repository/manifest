@@ -40,6 +40,7 @@ func (s *Server) feedInboxCount(now time.Time) int {
 		n += s.signals.Count(now)
 	}
 	n += len(s.approvalRows(feedApprovalExclude))
+	n += s.portalInboxCount() // externally-sourced portal items (clickup, benchling)
 	return n
 }
 
@@ -84,10 +85,11 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{
-		"items":     views,
-		"signals":   s.activeSignals(now),
-		"proposals": s.feedProposals(),
-		"badge":     s.feedInboxCount(now),
+		"items":       views,
+		"signals":     s.activeSignals(now),
+		"proposals":   s.feedProposals(),
+		"portalItems": s.portalCards(),
+		"badge":       s.feedInboxCount(now),
 	})
 }
 
