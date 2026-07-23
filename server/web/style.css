@@ -418,12 +418,19 @@ body {
   font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.32px;
   color: var(--muted); padding: 5px 0 2px;
 }
-.o-st.done::before { content: "✓ "; }
+.o-st { display: flex; align-items: baseline; gap: 6px; }
+.o-st.done .o-st-label { text-decoration: line-through; }
 .o-st.cur { color: var(--blue); }
-.o-st.toggle { cursor: pointer; display: flex; align-items: baseline; gap: 6px; }
+.o-st.toggle { cursor: pointer; }
 .o-st.toggle:hover { color: var(--text); }
 .o-st-caret { margin-left: auto; color: var(--icon); font-size: 9px; }
 .o-st.toggle:hover .o-st-caret { color: var(--muted); }
+/* stage checkbox — the completion control (same glyph family as task rows) */
+.o-st-check { width: auto; height: auto; font-size: 12px; flex: none; }
+/* ghosts inside an expanded rock stack on their own lines; an opened ghost
+   input takes a full line too (was cramping beside the + task button) */
+.o-expand .o-ghost { display: block; }
+.o-ghost-edit { display: block; margin: 6px 0 4px; }
 .o-tk {
   font-family: var(--sans); font-size: 14px; color: var(--text);
   padding: 3px 0 3px 16px; display: flex; align-items: center; gap: 8px;

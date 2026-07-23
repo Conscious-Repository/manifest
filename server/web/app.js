@@ -1045,6 +1045,15 @@ function rockExpand(g, stages, cur) {
     const open = isCur || goalsUI.expanded.has(st.id);
     const line = el("div", "o-st" + (st.checked ? " done" : isCur ? " cur" : "") + (isCur ? "" : " toggle"));
     line.dataset.goalId = st.id;
+    // Stage checkbox — the way to mark a stage complete (checking advances the
+    // trail: the next open stage becomes current). Same glyph as task rows.
+    const check = el("button", "check o-st-check" + (st.checked ? " on" : ""), st.checked ? "✓" : "○");
+    check.title = st.checked ? "reopen this stage" : "mark this stage complete";
+    check.addEventListener("click", (e) => {
+      e.stopPropagation(); // never toggle expansion
+      goalsApi("POST", "/api/goals/check", { id: st.id, checked: !st.checked });
+    });
+    line.appendChild(check);
     const label = el("span", "o-st-label", (isCur ? "→ " : "") + st.text);
     line.appendChild(label);
     if (!isCur) {
@@ -1198,7 +1207,7 @@ function ghostInput(label, cls, onSubmit, placeholder) {
   ghost.addEventListener("click", (e) => {
     e.stopPropagation();
     const input = document.createElement("input");
-    input.className = "o-edit";
+    input.className = "o-edit o-ghost-edit"; // block: the open input gets its own line
     input.placeholder = placeholder || label.replace(/^[＋+]\s*/, "");
     ghost.replaceWith(input);
     input.focus();
