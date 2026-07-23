@@ -109,6 +109,7 @@ type Event struct {
 	Kind   string    `json:"kind"`   // task-created | status-changed | result | entity | …
 	Title  string    `json:"title"`  // the object's name
 	Detail string    `json:"detail"` // secondary line (schema, list, status)
+	Change string    `json:"change"` // deterministic "what changed" (snapshot diff): "Backlog → In Progress", "created", "new", "edited"
 	URL    string    `json:"url"`    // web link into the source app
 	Actor  string    `json:"actor"`  // creator / assignee
 	At     time.Time `json:"at"`     // event timestamp (created/modified)

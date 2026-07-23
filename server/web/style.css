@@ -1335,3 +1335,6 @@ input.inline-hidden { color: transparent !important; }
 .portal-line { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
 .portal-line-text { font-size: 13.5px; color: var(--text); text-decoration: none; flex: 1; }
 a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
+.portal-change-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 4px; padding: 1px 6px; }
+.portal-change-chip.change-new { color: #15803d; border: 1px solid #bfe3c9; }
+.portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }

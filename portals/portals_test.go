@@ -134,8 +134,9 @@ func TestClickUpDigest(t *testing.T) {
 	if !c.Pinned {
 		t.Fatal("today's digest should be pinned")
 	}
-	// The assignee (Benjamin, id 42) task appears in the "for you" block.
-	if len(c.ForYou) != 1 || c.ForYou[0].Text != "closed · Close 743 N Euclid" {
+	// The assignee (Benjamin, id 42) task appears in the "for you" block, and a
+	// closed task reads "completed" (deterministic change text, not a bare verb).
+	if len(c.ForYou) != 1 || c.ForYou[0].Text != "completed · Close 743 N Euclid" {
 		t.Fatalf("forYou = %+v", c.ForYou)
 	}
 	// One Bayard group with both lines.
@@ -269,8 +270,41 @@ func TestBenchlingPartialFailure(t *testing.T) {
 	if len(cards) != 1 || cards[0].Title != "Thymus culture" {
 		t.Fatalf("the working resource's card was discarded: %+v", cards)
 	}
-	// A notebook entry (no schema) still gets a non-empty detail label.
-	if cards[0].Detail != "notebook entry" {
-		t.Fatalf("entry detail label = %q, want \"notebook entry\"", cards[0].Detail)
+	// A notebook entry (no schema) gets the kind label as its noun, and the
+	// new/edited signal rides on Change.
+	if cards[0].Detail != "notebook entry" || cards[0].Change != "new" {
+		t.Fatalf("entry card detail=%q change=%q, want \"notebook entry\"/\"new\"", cards[0].Detail, cards[0].Change)
+	}
+}
+
+// TestClickUpChangeDiff pins the snapshot-diff "what changed" text: a status move
+// reads "Backlog → In Progress", an assignee add reads "assigned …" — deterministic,
+// no LLM.
+func TestClickUpChangeDiff(t *testing.T) {
+	loc := chicago(t)
+	now := time.Date(2026, 7, 23, 15, 0, 0, 0, loc)
+	// prior snapshot: task was in Backlog, unassigned.
+	prior := map[string]string{"t9": cuSnap{Status: "Backlog"}.encode()}
+	c := newClickUp("pk_x", "http://unused", nil)
+	task := cuTask{
+		ID: "t9", Name: "Kill curve", URL: "u",
+		DateUpdated: strconv.FormatInt(now.UnixMilli(), 10),
+		DateCreated: strconv.FormatInt(now.Add(-72*time.Hour).UnixMilli(), 10),
+	}
+	task.Status.Status = "In Progress"
+	old, had := decodeSnap(prior["t9"])
+	ev := c.classify(task, 0, now, old, had)
+	if ev.Change != "Backlog → In Progress" {
+		t.Fatalf("status move change = %q, want \"Backlog → In Progress\"", ev.Change)
+	}
+	// Same status, a new assignee → "assigned Ellie".
+	prior2 := cuSnap{Status: "In Progress"}.encode()
+	task.Assignees = append(task.Assignees, struct {
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
+	}{ID: 5, Username: "Ellie"})
+	old2, had2 := decodeSnap(prior2)
+	if ev := c.classify(task, 0, now, old2, had2); ev.Change != "assigned Ellie" {
+		t.Fatalf("assignee-add change = %q, want \"assigned Ellie\"", ev.Change)
 	}
 }

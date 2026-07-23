@@ -1952,6 +1952,7 @@ function portalCardEl(pc) {
   const top = el("div", "feed-top");
   if (pc.pinned) top.append(el("span", "pin-chip", "📌 pinned"));
   top.append(el("span", "type-chip type-portal", pc.portal)); // muted source tag
+  if (pc.change) top.append(el("span", "portal-change-chip change-" + pc.change, pc.change)); // new / edited
   if (pc.date) top.append(el("span", "feed-date", fmtFeedDate(pc.date)));
   card.append(top);
   card.append(el("div", "feed-title", pc.title));
@@ -1969,7 +1970,7 @@ function portalCardEl(pc) {
   } else {
     if (pc.detail) card.append(el("div", "feed-why", pc.detail));
     const meta = el("div", "feed-meta");
-    if (pc.actor) meta.append(el("span", "", pc.actor));
+    if (pc.actor) meta.append(el("span", "", "by " + pc.actor));
     card.append(meta);
   }
 

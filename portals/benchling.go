@@ -106,7 +106,9 @@ func benchTime(s string) time.Time {
 // 400) must never discard the changes the other resources returned. The portal
 // only goes degraded when EVERY resource failed (a real outage/auth problem) —
 // otherwise partial data flows and the cursor advances by what we actually saw.
-func (b *benchling) Poll(ctx context.Context, since time.Time, now time.Time) ([]Event, map[string]string, error) {
+// prior/snaps are unused: Benchling's new-vs-edited signal is self-contained in
+// each object (createdAt vs modifiedAt), so it needs no cross-poll snapshot.
+func (b *benchling) Poll(ctx context.Context, since time.Time, now time.Time, prior map[string]string) ([]Event, map[string]string, map[string]string, error) {
 	if since.IsZero() {
 		since = now.Add(-24 * time.Hour)
 	}
@@ -136,9 +138,9 @@ func (b *benchling) Poll(ctx context.Context, since time.Time, now time.Time) ([
 		}
 	}
 	if ok == 0 { // nothing worked — surface it, keep the old cache
-		return nil, nil, fmt.Errorf("%s", strings.Join(errs, "; "))
+		return nil, nil, nil, fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
-	return events, map[string]string{"modified": high.Format(time.RFC3339)}, nil
+	return events, map[string]string{"modified": high.Format(time.RFC3339)}, nil, nil
 }
 
 // list tries a modifiedAt-desc paged read (fast: stop once past the cursor). If
@@ -217,6 +219,16 @@ func (b *benchling) event(r benchResource, o benchObj, mod time.Time) Event {
 		}
 		title += " " + o.ID
 	}
+	// New vs edited is deterministic: Benchling stamps createdAt == modifiedAt on
+	// creation, so any later modifiedAt means the object was edited.
+	change := "edited"
+	created := benchTime(o.CreatedAt)
+	if created.IsZero() || !mod.After(created.Add(time.Second)) {
+		change = "new"
+	}
+	// Detail is the schema/kind noun (e.g. "Plasmid", "notebook entry"); the
+	// new/edited signal rides on Change as a colored chip so the card says what
+	// happened without a click, no redundancy.
 	detail := o.Schema.Name
 	if detail == "" {
 		detail = kindLabel[r.kind]
@@ -229,6 +241,6 @@ func (b *benchling) event(r benchResource, o benchObj, mod time.Time) Event {
 	id := "benchling:" + r.kind + ":" + o.ID + ":" + strconv.FormatInt(mod.Unix(), 10)
 	return Event{
 		ID: id, Portal: "benchling", Kind: r.kind, Title: title, Detail: detail,
-		URL: url, Actor: o.Creator.Name, At: mod,
+		Change: change, URL: url, Actor: o.Creator.Name, At: mod,
 	}
 }

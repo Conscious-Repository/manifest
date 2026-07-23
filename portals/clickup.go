@@ -78,13 +78,50 @@ type cuTask struct {
 	DateCreated string `json:"date_created"` // ms epoch as string
 	DateUpdated string `json:"date_updated"`
 	DateClosed  string `json:"date_closed"`
+	DueDate     string `json:"due_date"` // ms epoch as string (or null)
 	URL         string `json:"url"`
-	List        struct {
+	Priority    *struct {
+		Priority string `json:"priority"`
+	} `json:"priority"`
+	List struct {
 		Name string `json:"name"`
 	} `json:"list"`
 	Assignees []struct {
-		ID int64 `json:"id"`
+		ID       int64  `json:"id"`
+		Username string `json:"username"`
 	} `json:"assignees"`
+}
+
+// cuSnap is the field snapshot we diff poll-over-poll to say what changed. Kept
+// deliberately small — the fields a human cares about seeing move.
+type cuSnap struct {
+	Status    string   `json:"s"`
+	Assignees []string `json:"a"` // usernames, sorted
+	Due       string   `json:"d"`
+	Priority  string   `json:"p"`
+}
+
+func (t cuTask) snap() cuSnap {
+	s := cuSnap{Status: t.Status.Status, Due: t.DueDate}
+	if t.Priority != nil {
+		s.Priority = t.Priority.Priority
+	}
+	for _, a := range t.Assignees {
+		if a.Username != "" {
+			s.Assignees = append(s.Assignees, a.Username)
+		}
+	}
+	sort.Strings(s.Assignees)
+	return s
+}
+
+func (s cuSnap) encode() string { b, _ := json.Marshal(s); return string(b) }
+func decodeSnap(v string) (cuSnap, bool) {
+	var s cuSnap
+	if v == "" {
+		return s, false
+	}
+	return s, json.Unmarshal([]byte(v), &s) == nil
 }
 
 func cuMillis(s string) time.Time {
@@ -101,20 +138,21 @@ func cuMillis(s string) time.Time {
 // Poll pulls tasks updated since the cursor across every team the token can see.
 // First poll (no cursor) backfills 24h so a freshly-connected portal shows recent
 // activity without dumping the whole history.
-func (c *clickUp) Poll(ctx context.Context, since time.Time, now time.Time) ([]Event, map[string]string, error) {
+func (c *clickUp) Poll(ctx context.Context, since time.Time, now time.Time, prior map[string]string) ([]Event, map[string]string, map[string]string, error) {
 	if since.IsZero() {
 		since = now.Add(-24 * time.Hour)
 	}
 	me, teams, err := c.identity(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var events []Event
+	snaps := map[string]string{}
 	high := since
 	for _, team := range teams {
 		tasks, err := c.teamTasks(ctx, team, since)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		for _, t := range tasks {
 			updated := cuMillis(t.DateUpdated)
@@ -124,10 +162,12 @@ func (c *clickUp) Poll(ctx context.Context, since time.Time, now time.Time) ([]E
 			if updated.After(high) {
 				high = updated
 			}
-			events = append(events, c.classify(t, me, updated))
+			old, hadPrior := decodeSnap(prior[t.ID])
+			events = append(events, c.classify(t, me, updated, old, hadPrior))
+			snaps[t.ID] = t.snap().encode() // remember for next diff
 		}
 	}
-	return events, map[string]string{"task": high.Format(time.RFC3339)}, nil
+	return events, map[string]string{"task": high.Format(time.RFC3339)}, snaps, nil
 }
 
 func (c *clickUp) identity(ctx context.Context) (me int64, teams []string, err error) {
@@ -180,13 +220,14 @@ func (c *clickUp) teamTasks(ctx context.Context, team string, since time.Time) (
 	return out, nil
 }
 
-func (c *clickUp) classify(t cuTask, me int64, updated time.Time) Event {
+func (c *clickUp) classify(t cuTask, me int64, updated time.Time, old cuSnap, hadPrior bool) Event {
 	kind := "task-updated"
 	at := updated
+	created := false
 	if closed := cuMillis(t.DateClosed); !closed.IsZero() {
 		kind, at = "task-closed", closed
-	} else if created := cuMillis(t.DateCreated); created.After(updated.Add(-time.Second)) && !created.IsZero() {
-		kind, at = "task-created", created
+	} else if c := cuMillis(t.DateCreated); c.After(updated.Add(-time.Second)) && !c.IsZero() {
+		kind, at, created = "task-created", c, true
 	}
 	forMe := false
 	for _, a := range t.Assignees {
@@ -198,8 +239,75 @@ func (c *clickUp) classify(t cuTask, me int64, updated time.Time) Event {
 	return Event{
 		ID:     "clickup:" + kind + ":" + t.ID + ":" + strconv.FormatInt(at.UnixMilli(), 10),
 		Portal: "clickup", Kind: kind, Title: t.Name, Detail: t.Status.Status,
-		URL: t.URL, At: at, ForMe: forMe, List: t.List.Name,
+		Change: changeText(t.snap(), old, hadPrior, created, kind == "task-closed"),
+		URL:    t.URL, At: at, ForMe: forMe, List: t.List.Name,
 	}
+}
+
+// changeText is the deterministic "what changed" line — a snapshot diff, no LLM.
+// Priority: completed > created > the single most meaningful field that moved >
+// the current status (so an unfielded bump, like a new comment, still tells you
+// where the task stands).
+func changeText(cur, old cuSnap, hadPrior, created, closed bool) string {
+	switch {
+	case closed:
+		return "completed"
+	case created:
+		return "created"
+	case !hadPrior:
+		return orDash(cur.Status) // first time we've seen it — show where it stands
+	}
+	if old.Status != cur.Status {
+		return orDash(old.Status) + " → " + orDash(cur.Status)
+	}
+	if added, removed := assigneeDelta(old.Assignees, cur.Assignees); len(added) > 0 {
+		return "assigned " + strings.Join(added, ", ")
+	} else if len(removed) > 0 {
+		return "unassigned " + strings.Join(removed, ", ")
+	}
+	if old.Due != cur.Due && cur.Due != "" {
+		return "due " + fmtDue(cur.Due)
+	}
+	if old.Priority != cur.Priority && cur.Priority != "" {
+		return "priority " + cur.Priority
+	}
+	return orDash(cur.Status) // updated (comment / description / subtask) — show status
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+// assigneeDelta returns who was added and who was removed between two sorted sets.
+func assigneeDelta(old, cur []string) (added, removed []string) {
+	o := map[string]bool{}
+	for _, a := range old {
+		o[a] = true
+	}
+	n := map[string]bool{}
+	for _, a := range cur {
+		n[a] = true
+		if !o[a] {
+			added = append(added, a)
+		}
+	}
+	for _, a := range old {
+		if !n[a] {
+			removed = append(removed, a)
+		}
+	}
+	return added, removed
+}
+
+func fmtDue(ms string) string {
+	t := cuMillis(ms)
+	if t.IsZero() {
+		return ms
+	}
+	return t.Format("Jan 2")
 }
 
 // ---- deterministic daily digest (script-rendered, no LLM) ----
@@ -231,8 +339,11 @@ func buildDigest(events []Event, day string, loc *time.Location) (id string, for
 		if e.At.After(at) {
 			at = e.At
 		}
-		verb := map[string]string{"task-created": "created", "task-closed": "closed", "task-updated": "changed"}[e.Kind]
-		line := DigestLine{Text: verb + " · " + e.Title, URL: e.URL, ForMe: e.ForMe}
+		change := e.Change
+		if change == "" {
+			change = "changed"
+		}
+		line := DigestLine{Text: change + " · " + e.Title, URL: e.URL, ForMe: e.ForMe}
 		if e.ForMe {
 			forYou = append(forYou, line)
 		}
@@ -273,5 +384,3 @@ func digestDays(events []Event, loc *time.Location) []string {
 	sort.Sort(sort.Reverse(sort.StringSlice(days)))
 	return days
 }
-
-var _ = strings.TrimSpace

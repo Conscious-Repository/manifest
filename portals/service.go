@@ -145,11 +145,11 @@ func (svc *Service) Test(ctx context.Context, id string) (Row, error) {
 func (svc *Service) test(ctx context.Context, d Def) {
 	client, err := svc.client(d)
 	if err != nil {
-		svc.cache(d.ID).Commit(svc.now(), false, nil, nil, err.Error())
+		svc.cache(d.ID).Commit(svc.now(), false, nil, nil, nil, err.Error())
 		return
 	}
 	err = client.Test(ctx)
-	svc.cache(d.ID).Commit(svc.now(), err == nil, nil, nil, errStr(err))
+	svc.cache(d.ID).Commit(svc.now(), err == nil, nil, nil, nil, errStr(err))
 }
 
 // PollNow runs a full poll immediately (the panel's "poll now").
@@ -166,7 +166,11 @@ func (svc *Service) PollNow(ctx context.Context, id string) (Row, error) {
 
 type poller interface {
 	Test(ctx context.Context) error
-	Poll(ctx context.Context, since, now time.Time) ([]Event, map[string]string, error)
+	// Poll reads changes since the cursor. prior is the last-seen field snapshots
+	// (object id → encoded fields) for the deterministic "what changed" diff; the
+	// returned snaps replace them for next time. Benchling ignores prior / returns
+	// nil snaps (its new-vs-edited signal is self-contained in each object).
+	Poll(ctx context.Context, since, now time.Time, prior map[string]string) (events []Event, cursors, snaps map[string]string, err error)
 }
 
 func (svc *Service) client(d Def) (poller, error) {
@@ -193,8 +197,8 @@ func (svc *Service) pollOne(ctx context.Context, d Def) {
 	}
 	now := svc.now()
 	cache := svc.cache(d.ID)
-	events, cursors, err := client.Poll(ctx, cache.Cursor(cursorKey[d.ID]), now)
-	cache.Commit(now, err == nil, events, cursors, errStr(err))
+	events, cursors, snaps, err := client.Poll(ctx, cache.Cursor(cursorKey[d.ID]), now, cache.Snapshots())
+	cache.Commit(now, err == nil, events, cursors, snaps, errStr(err))
 }
 
 // Start launches one ticker per polled portal; each polls immediately, then on
@@ -232,6 +236,7 @@ type Card struct {
 	Portal string        `json:"portal"` // clickup | benchling (muted source tag)
 	Title  string        `json:"title"`
 	Detail string        `json:"detail"`
+	Change string        `json:"change"` // "new" | "edited" (benchling) — a chip on the card
 	URL    string        `json:"url"`
 	Actor  string        `json:"actor"`
 	Date   string        `json:"date"`   // RFC3339
@@ -272,7 +277,7 @@ func (svc *Service) Cards() []Card {
 			}
 			cards = append(cards, Card{
 				ID: e.ID, Type: "portal-item", Portal: "benchling",
-				Title: e.Title, Detail: e.Detail, URL: e.URL, Actor: e.Actor,
+				Title: e.Title, Detail: e.Detail, Change: e.Change, URL: e.URL, Actor: e.Actor,
 				Date: e.At.Format(time.RFC3339), Pinned: false,
 			})
 		}

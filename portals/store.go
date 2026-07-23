@@ -170,6 +170,7 @@ type Cache struct {
 type cacheState struct {
 	Cursors   map[string]string `json:"cursors"`   // per-object-type: kind → RFC3339 high-water
 	Events    []Event           `json:"events"`    // accumulated, aged out at retention
+	Snapshots map[string]string `json:"snapshots"` // object id → encoded field snapshot (for deterministic "what changed" diffs)
 	Dismissed map[string]string `json:"dismissed"` // card id → RFC3339 dismissed-at
 	LastPoll  string            `json:"lastPoll"`  // RFC3339 of the last poll attempt
 	LastOK    string            `json:"lastOK"`    // RFC3339 of the last successful poll
@@ -183,11 +184,14 @@ func newCache(dataDir, id string) *Cache {
 func (c *Cache) file() string { return filepath.Join(c.dir, "cache.json") }
 
 func (c *Cache) read() cacheState {
-	st := cacheState{Cursors: map[string]string{}, Dismissed: map[string]string{}}
+	st := cacheState{Cursors: map[string]string{}, Snapshots: map[string]string{}, Dismissed: map[string]string{}}
 	if b, err := os.ReadFile(c.file()); err == nil {
 		_ = json.Unmarshal(b, &st)
 		if st.Cursors == nil {
 			st.Cursors = map[string]string{}
+		}
+		if st.Snapshots == nil {
+			st.Snapshots = map[string]string{}
 		}
 		if st.Dismissed == nil {
 			st.Dismissed = map[string]string{}
@@ -222,13 +226,25 @@ func (c *Cache) Cursor(kind string) time.Time {
 	return time.Time{}
 }
 
+// Snapshots returns the last-seen field snapshots (object id → encoded fields),
+// the prior side of the deterministic "what changed" diff.
+func (c *Cache) Snapshots() map[string]string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := map[string]string{}
+	for k, v := range c.read().Snapshots {
+		out[k] = v
+	}
+	return out
+}
+
 const retention = 14 * 24 * time.Hour // portal items are notices, not obligations
 
 // Commit merges a successful poll's events + advanced cursors into the cache,
 // ages out anything past retention, and records the crossing time. Dedupe is by
 // Event.ID (idempotent re-polls). Passing ok=false records the failure and keeps
 // the old cache intact — no data ≠ all-clear (same rule as signal emitters).
-func (c *Cache) Commit(now time.Time, ok bool, events []Event, cursors map[string]string, errMsg string) {
+func (c *Cache) Commit(now time.Time, ok bool, events []Event, cursors, snaps map[string]string, errMsg string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	st := c.read()
@@ -242,6 +258,9 @@ func (c *Cache) Commit(now time.Time, ok bool, events []Event, cursors map[strin
 	st.LastOK = st.LastPoll
 	for k, v := range cursors {
 		st.Cursors[k] = v
+	}
+	for k, v := range snaps { // remember this poll's field snapshots for next diff
+		st.Snapshots[k] = v
 	}
 	seen := map[string]int{}
 	for i, e := range st.Events {
