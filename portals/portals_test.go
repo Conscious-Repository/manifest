@@ -232,3 +232,45 @@ func TestBenchlingItems(t *testing.T) {
 		t.Fatalf("row should be degraded with a reason: %+v", row)
 	}
 }
+
+// TestBenchlingPartialFailure pins the tolerance fix found live: one endpoint
+// 400ing (Benchling's inconsistent sort enum on /requests) must NOT discard the
+// changes the other resources returned — the portal stays open with their data.
+func TestBenchlingPartialFailure(t *testing.T) {
+	loc := chicago(t)
+	now := time.Date(2026, 7, 23, 15, 0, 0, 0, loc)
+	mod := now.Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/requests": // always 400 — even the sortless fallback
+			http.Error(w, "bad sort", http.StatusBadRequest)
+		case "/entries":
+			json.NewEncoder(w).Encode(map[string]any{"entries": []map[string]any{
+				{"id": "ent_e", "name": "Thymus culture", "createdAt": mod, "modifiedAt": mod,
+					"webURL": "https://aion.benchling.com/x", "creator": map[string]any{"name": "Ellie"}},
+			}})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{})
+		}
+	}))
+	defer ts.Close()
+
+	svc := svcFor(t, now, ts, "benchling")
+	if err := svc.store.SetCreds("benchling", mustDef("benchling"),
+		map[string]string{"tenant": "aion", "apiKey": "sk_x"}); err != nil {
+		t.Fatal(err)
+	}
+	svc.pollOne(context.Background(), mustDef("benchling"))
+
+	if row := svc.row(mustDef("benchling")); row.State != StateOpen {
+		t.Fatalf("one bad endpoint must not degrade the portal: state = %s (%s)", row.State, row.Err)
+	}
+	cards := svc.Cards()
+	if len(cards) != 1 || cards[0].Title != "Thymus culture" {
+		t.Fatalf("the working resource's card was discarded: %+v", cards)
+	}
+	// A notebook entry (no schema) still gets a non-empty detail label.
+	if cards[0].Detail != "notebook entry" {
+		t.Fatalf("entry detail label = %q, want \"notebook entry\"", cards[0].Detail)
+	}
+}

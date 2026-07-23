@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -100,18 +101,26 @@ func benchTime(s string) time.Time {
 	return time.Time{}
 }
 
-// Poll walks every resource type. First poll (no cursor) backfills 24h.
+// Poll walks every resource type. First poll (no cursor) backfills 24h. It is
+// per-resource TOLERANT: one endpoint erroring (a scope the key lacks, a finicky
+// 400) must never discard the changes the other resources returned. The portal
+// only goes degraded when EVERY resource failed (a real outage/auth problem) —
+// otherwise partial data flows and the cursor advances by what we actually saw.
 func (b *benchling) Poll(ctx context.Context, since time.Time, now time.Time) ([]Event, map[string]string, error) {
 	if since.IsZero() {
 		since = now.Add(-24 * time.Hour)
 	}
 	var events []Event
 	high := since
+	var errs []string
+	ok := 0
 	for _, r := range benchResources {
 		objs, err := b.list(ctx, r, since)
 		if err != nil {
-			return nil, nil, err
+			errs = append(errs, err.Error())
+			continue
 		}
+		ok++
 		for _, o := range objs {
 			mod := benchTime(o.ModifiedAt)
 			if mod.IsZero() {
@@ -126,16 +135,32 @@ func (b *benchling) Poll(ctx context.Context, since time.Time, now time.Time) ([
 			events = append(events, b.event(r, o, mod))
 		}
 	}
+	if ok == 0 { // nothing worked — surface it, keep the old cache
+		return nil, nil, fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
 	return events, map[string]string{"modified": high.Format(time.RFC3339)}, nil
 }
 
-// list pages modifiedAt-desc and stops once objects fall at/under the cursor.
+// list tries a modifiedAt-desc paged read (fast: stop once past the cursor). If
+// that 400s — Benchling's sort enum is inconsistent across endpoints (/requests
+// rejects modifiedAt:desc) — it falls back to an unsorted full-scan, filtered
+// client-side. The fallback still bounds work at the page cap.
 func (b *benchling) list(ctx context.Context, r benchResource, since time.Time) ([]benchObj, error) {
+	objs, err := b.listPaged(ctx, r, since, true)
+	if err != nil && strings.Contains(err.Error(), "400") {
+		return b.listPaged(ctx, r, since, false)
+	}
+	return objs, err
+}
+
+func (b *benchling) listPaged(ctx context.Context, r benchResource, since time.Time, sorted bool) ([]benchObj, error) {
 	var out []benchObj
 	token := ""
 	for page := 0; page < 50; page++ { // bounded work per poll
 		q := url.Values{}
-		q.Set("sort", "modifiedAt:desc")
+		if sorted {
+			q.Set("sort", "modifiedAt:desc")
+		}
 		q.Set("pageSize", "100")
 		if token != "" {
 			q.Set("nextToken", token)
@@ -155,8 +180,11 @@ func (b *benchling) list(ctx context.Context, r benchResource, since time.Time) 
 				mod = benchTime(o.CreatedAt)
 			}
 			if !mod.After(since) {
-				reachedCursor = true // sorted desc — everything after is older
-				break
+				if sorted {
+					reachedCursor = true // desc order — everything after is older
+					break
+				}
+				continue // unsorted — this one's old, but later pages may be newer
 			}
 			out = append(out, o)
 		}
@@ -173,6 +201,13 @@ func (b *benchling) list(ctx context.Context, r benchResource, since time.Time) 
 	return out, nil
 }
 
+// kindLabel is the human noun shown when an object carries no schema name
+// (notebook entries, requests) — so no card renders a bare detail line.
+var kindLabel = map[string]string{
+	"entity": "registry entity", "sequence": "sequence", "result": "assay result",
+	"entry": "notebook entry", "request": "request",
+}
+
 func (b *benchling) event(r benchResource, o benchObj, mod time.Time) Event {
 	title := o.Name
 	if title == "" { // assay results carry no name — identify by schema + id
@@ -183,6 +218,9 @@ func (b *benchling) event(r benchResource, o benchObj, mod time.Time) Event {
 		title += " " + o.ID
 	}
 	detail := o.Schema.Name
+	if detail == "" {
+		detail = kindLabel[r.kind]
+	}
 	url := o.WebURL
 	if url == "" {
 		url = b.base // fall back to the tenant root rather than a dead link
