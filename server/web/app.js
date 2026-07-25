@@ -4691,7 +4691,7 @@ function propertyComposer() {
   ghost.onclick = () => {
     const form = el("div", "prop-composer");
     const addr = inputEl("address…"); addr.classList.add("pc-addr");
-    const entity = inputEl("entity (optional)");
+    const entityAC = recordAutocomplete("entity", "entity (optional)…");
     const kind = selectEl(PROPERTY_KINDS);
     const tpl = selectEl(["no template", ...templateCache.map((t) => t.slug)]);
     tpl.title = "budget-mix template";
@@ -4703,7 +4703,7 @@ function propertyComposer() {
       create.disabled = true;
       try {
         await postJSONOk("/api/properties", {
-          address: addr.value, entity: entity.value, kind: kind.value,
+          address: addr.value, entity: entityAC.value(), kind: kind.value,
           template: tpl.value === "no template" ? "" : tpl.value,
           deal: dealSel.value === "unattached" ? "" : dealSel.value,
         });
@@ -4712,7 +4712,7 @@ function propertyComposer() {
     };
     const cancel = el("button", "pill light", "✕");
     cancel.onclick = () => form.replaceWith(ghost);
-    form.append(addr, entity, kind, tpl, dealSel, create, cancel);
+    form.append(addr, entityAC.el, kind, tpl, dealSel, create, cancel);
     ghost.replaceWith(form);
     addr.focus();
   };
@@ -6156,7 +6156,7 @@ function renderProp(p, src, geoFeatures) {
   chips.append(editChip(p, "status", p.status, PROPERTY_STATUSES));
   chips.append(el("span", "pp-chip", p.control));
   chips.append(editChip(p, "kind", p.kind, PROPERTY_KINDS));
-  chips.append(editChip(p, "entity", p.entity, null));
+  chips.append(entityChip(p));
   if (p.deal) {
     const dchip = el("a", "pp-chip pp-deal", "▸ " + p.deal);
     dchip.href = "#/properties/deal/" + encodeURIComponent(p.deal);
@@ -6271,6 +6271,39 @@ function parcelThumb(features) {
     });
   });
   return svg;
+}
+
+// entityChip: the property's entity is a HARD LINK to an entity record — the
+// chip swaps to the record autocomplete (pick an existing entity, or create one
+// via the quiet completion, which makes the record first). Never free text.
+function entityChip(p) {
+  const chip = el("span", "pp-chip editable", p.entity || "entity: —");
+  chip.title = "click to link an entity (from SETTINGS records)";
+  chip.onclick = () => {
+    const ac = recordAutocomplete("entity", "entity…", async (rec) => {
+      try {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key: "entity", value: rec.name });
+        renderPropertyPage(p.slug);
+      } catch (err) { showToast((err.message || "Couldn't link entity").slice(0, 80)); ac.el.replaceWith(chip); }
+    });
+    if (p.entity) ac.setValue(p.entity);
+    const clear = el("button", "uw-x", "✕");
+    clear.title = "unlink entity";
+    clear.onclick = async () => {
+      try {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key: "entity", value: "" });
+        renderPropertyPage(p.slug);
+      } catch (err) { showToast("Couldn't clear"); }
+    };
+    const wrap = el("span", "pp-chip-edit-wrap");
+    wrap.append(ac.el, clear);
+    const input = ac.el.querySelector("input");
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Escape") wrap.replaceWith(chip); });
+    input.addEventListener("blur", () => setTimeout(() => { if (wrap.parentNode) wrap.replaceWith(chip); }, 200));
+    chip.replaceWith(wrap);
+    ac.focus();
+  };
+  return chip;
 }
 
 // editChip is a page chip that swaps to a select (enum) or text input (free) and

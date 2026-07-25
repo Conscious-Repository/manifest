@@ -180,27 +180,49 @@ func (s *Server) handlePropertyCreate(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = "rehab"
 	}
-	// Template pick seeds the budget table (spec §3: address·entity·kind·template
-	// is the entire creation form).
-	budget := ""
+	// Template pick seeds the WORK PLAN (pass-5: the work list is the budget —
+	// the legacy budget-table seeding is gone; stage names + default weeks come
+	// from the template record's ## stages).
+	work := ""
 	if tpl := strings.TrimSpace(b.Template); tpl != "" {
 		for _, t := range s.realestate.Templates() {
-			if strings.EqualFold(t.Slug, tpl) {
-				var tb strings.Builder
-				tb.WriteString("| category | budget |\n")
-				for _, l := range t.Budget {
-					tb.WriteString("| " + l.Category + " | " + strconv.FormatFloat(l.Amount, 'f', -1, 64) + " |\n")
+			if strings.EqualFold(t.Slug, tpl) && len(t.Stages) > 0 {
+				var stages []realestate.WorkStage
+				for _, st := range t.Stages {
+					ns := realestate.WorkStage{Text: st.Text}
+					if st.Weeks > 0 {
+						ns.Fields = append(ns.Fields, realestate.WorkField{Key: "weeks",
+							Value: strconv.FormatFloat(st.Weeks, 'f', -1, 64)})
+					}
+					stages = append(stages, ns)
 				}
-				budget = tb.String()
+				work = realestate.EmitWork(stages)
 				break
 			}
 		}
 	}
 
+	// entity is a hard link to a record (same rule as the field editor)
+	entity := strings.TrimSpace(b.Entity)
+	if entity != "" {
+		matched := ""
+		for _, e := range s.realestate.Entities() {
+			if strings.EqualFold(e.Name, entity) || strings.EqualFold(e.Slug, entity) {
+				matched = e.Name
+				break
+			}
+		}
+		if matched == "" {
+			httpError(w, errBadRequest("no entity record named "+entity+" — create it in SETTINGS first"))
+			return
+		}
+		entity = matched
+	}
+
 	var fm strings.Builder
 	fm.WriteString("---\ncategories: [property]\n")
-	if e := strings.TrimSpace(b.Entity); e != "" {
-		fm.WriteString("entity: " + e + "\n")
+	if entity != "" {
+		fm.WriteString("entity: " + entity + "\n")
 	}
 	fm.WriteString("address: " + strings.TrimSpace(b.Address) + "\n")
 	fm.WriteString("status: " + status + "\n")
@@ -210,7 +232,11 @@ func (s *Server) handlePropertyCreate(w http.ResponseWriter, r *http.Request) {
 		fm.WriteString("deal: \"[[" + d + "]]\"\n")
 	}
 	fm.WriteString("hidden: false\n")
-	fm.WriteString("---\n\n# " + strings.TrimSpace(b.Address) + "\n\n## budget\n" + budget + "\n## log\n")
+	fm.WriteString("---\n\n# " + strings.TrimSpace(b.Address) + "\n")
+	if work != "" {
+		fm.WriteString("\n## work\n" + work)
+	}
+	fm.WriteString("\n## log\n")
 
 	rel := path.Join(s.realestateRootOr(), "properties", slug+".md")
 	if _, err := s.vault.CreateRecord(rel, fm.String()); err != nil {
@@ -259,7 +285,23 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("unknown kind"))
 			return
 		}
-	case "entity": // free text ("" clears → back to unassigned)
+	case "entity":
+		// HARD LINK to an entity record — never free text ("" unlinks). The
+		// canonical spelling comes from the record.
+		if val != "" {
+			matched := ""
+			for _, e := range s.realestate.Entities() {
+				if strings.EqualFold(e.Name, val) || strings.EqualFold(e.Slug, val) {
+					matched = e.Name
+					break
+				}
+			}
+			if matched == "" {
+				httpError(w, errBadRequest("no entity record named "+val+" — create it in SETTINGS first"))
+				return
+			}
+			val = matched
+		}
 	case "work-start": // schedule anchor (§3) — ISO date or "" to clear
 		if val != "" {
 			if _, err := time.Parse("2006-01-02", val); err != nil {

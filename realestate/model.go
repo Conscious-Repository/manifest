@@ -86,16 +86,6 @@ categories: [budget-template]
 - [ ] Finishes [weeks:: 4]
 - [ ] Punch & final inspection [weeks:: 1]
 - [ ] Exit [weeks:: 2]
-
-## budget
-| category | budget |
-| demo | 8000 |
-| structural | 20000 |
-| mechanicals | 30000 |
-| exterior | 25000 |
-| interiors | 35000 |
-| finishes | 15000 |
-| contingency | 13000 |
 `
 
 // NewBuildTemplate is the boot-seeded ground-up template (write-once).
