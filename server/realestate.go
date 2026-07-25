@@ -31,6 +31,10 @@ func (s *Server) UseRealestate(svc *realestate.Service, root, dataDir string) {
 	s.statements = realestate.NewStatementStore(dataDir)
 }
 
+// UseRePortal points the deals.json publish at the ooda site checkout
+// (empty disables the feature; the client hides the button).
+func (s *Server) UseRePortal(path string) { s.rePortalPath = path }
+
 func (s *Server) realestateRootOr() string {
 	if s.realestateRoot != "" {
 		return s.realestateRoot
@@ -49,7 +53,151 @@ func (s *Server) handlePropertiesList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deals, _ := s.realestate.Deals()
-	writeJSON(w, map[string]any{"properties": props, "deals": deals, "templates": s.realestate.Templates()})
+	writeJSON(w, map[string]any{"properties": props, "deals": deals,
+		"templates": s.realestate.Templates(), "rePortal": s.rePortalPath != ""})
+}
+
+// handlePublishDeals recomposes the ooda site's deals.json from the vault's
+// source sidecars — the exact inverse of realestate-seed -expand: multi-parcel
+// deals re-nest their members under properties[] in property_slugs order (the
+// key is dropped); single-parcel deals' property sources ARE the full deal
+// object and pass through verbatim. Array order follows the existing
+// deals.json; template deals with no vault record are kept as-is (reported);
+// vault deal records absent from the template append at the end. Writes ONLY
+// <rePortalPath>/src/data/deals.json — the owner reviews/commits that repo.
+func (s *Server) handlePublishDeals(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	if s.rePortalPath == "" {
+		httpError(w, errBadRequest("rePortalPath is not configured"))
+		return
+	}
+	dealsPath := filepath.Join(s.rePortalPath, "src", "data", "deals.json")
+	tmplRaw, err := os.ReadFile(dealsPath)
+	if err != nil {
+		httpError(w, errBadRequest("no deals.json at "+dealsPath+" — is rePortalPath a re-portal checkout?"))
+		return
+	}
+	var template []json.RawMessage
+	if err := json.Unmarshal(tmplRaw, &template); err != nil {
+		httpError(w, errBadRequest("existing deals.json is not a JSON array: "+err.Error()))
+		return
+	}
+
+	props, err := s.realestate.Properties()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	propPath := map[string]string{}
+	for _, p := range props {
+		propPath[p.Slug] = p.Path
+	}
+	deals, _ := s.realestate.Deals()
+	dealPath := map[string]string{}
+	for _, d := range deals {
+		dealPath[d.Slug] = d.Path
+	}
+
+	// recompose one deal from the vault; (nil, false) when no vault record exists
+	recompose := func(slug string) (map[string]any, bool) {
+		if rel, ok := dealPath[slug]; ok { // multi-parcel deal record
+			raw, ok2 := s.realestate.Source(rel)
+			if !ok2 {
+				return nil, false
+			}
+			var m map[string]any
+			if json.Unmarshal(raw, &m) != nil {
+				return nil, false
+			}
+			var members []any
+			if sl, ok3 := m["property_slugs"].([]any); ok3 {
+				for _, v := range sl {
+					ps, _ := v.(string)
+					rel2, ok4 := propPath[ps]
+					if !ok4 {
+						continue
+					}
+					if praw, ok5 := s.realestate.Source(rel2); ok5 {
+						var pm any
+						if json.Unmarshal(praw, &pm) == nil {
+							members = append(members, pm)
+						}
+					}
+				}
+			}
+			if len(members) == 0 {
+				return nil, false
+			}
+			delete(m, "property_slugs")
+			m["properties"] = members
+			return m, true
+		}
+		// single-parcel: the property record keyed by the DEAL slug carries the full object
+		if rel, ok := propPath[slug]; ok {
+			if raw, ok2 := s.realestate.Source(rel); ok2 {
+				var m map[string]any
+				if json.Unmarshal(raw, &m) == nil {
+					if members, ok3 := m["properties"].([]any); ok3 && len(members) > 0 {
+						return m, true
+					}
+				}
+			}
+		}
+		return nil, false
+	}
+
+	countProps := func(m map[string]any) int {
+		if members, ok := m["properties"].([]any); ok {
+			return len(members)
+		}
+		return 0
+	}
+
+	var out []any
+	seen := map[string]bool{}
+	var kept []string
+	nDeals, nProps := 0, 0
+	for _, traw := range template {
+		var t struct {
+			Slug string `json:"slug"`
+		}
+		_ = json.Unmarshal(traw, &t)
+		seen[t.Slug] = true
+		if m, ok := recompose(t.Slug); ok {
+			out = append(out, m)
+			nDeals++
+			nProps += countProps(m)
+			continue
+		}
+		var asIs any
+		_ = json.Unmarshal(traw, &asIs)
+		out = append(out, asIs)
+		kept = append(kept, t.Slug)
+	}
+	for _, d := range deals { // new vault deals → append
+		if seen[d.Slug] {
+			continue
+		}
+		if m, ok := recompose(d.Slug); ok {
+			out = append(out, m)
+			nDeals++
+			nProps += countProps(m)
+		}
+	}
+
+	pretty, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := os.WriteFile(dealsPath, append(pretty, '\n'), 0o644); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"deals": nDeals, "properties": nProps, "kept": kept, "path": dealsPath})
 }
 
 // handlePropertiesGeo feeds the map: every record's parcel Features + the
@@ -578,6 +726,20 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			st := &stages[si]
 			st.Todos = append(st.Todos[:ti], st.Todos[ti+1:]...)
 		}
+		// cascade: BID rows tethered to the deleted node (a stage delete catches
+		// its todos' tethers via the id prefix) die with it — they are artifacts
+		// of the task. Expense rows are REAL transactions and survive untethered.
+		for _, row := range p.Ledger {
+			if !strings.EqualFold(row.Type, "bid") || row.WorkID == "" {
+				continue
+			}
+			if row.WorkID == b.ID || strings.HasPrefix(row.WorkID, b.ID+"/") {
+				if err := s.vault.DeleteLedgerRow(realestate.LedgerRel(p.Path), ledgerRecord(row)); err != nil {
+					httpError(w, err)
+					return
+				}
+			}
+		}
 	default:
 		httpError(w, errBadRequest("unknown op"))
 		return
@@ -586,7 +748,53 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	s.syncHardCosts(slug)
 	s.respondProperty(w, slug)
+}
+
+// syncHardCosts derives hard_costs in the source sidecar from the work plan
+// (Σ stage est totals) — the underwrite number the ooda site's returns run on.
+// Only writes once the plan is actually estimated (Σ > 0) and only on change;
+// unestimated properties keep their hand-entered underwrite figure. Patches at
+// the same nesting sourceMoney reads from (top level, or properties[0] for a
+// single-parcel full-deal shape); unknown fields ride along untouched.
+func (s *Server) syncHardCosts(slug string) {
+	p, ok := s.realestate.Get(slug)
+	if !ok {
+		return
+	}
+	hard := 0.0
+	for _, st := range p.Work {
+		hard += st.EstTotal
+	}
+	if hard <= 0 {
+		return
+	}
+	raw, ok := s.realestate.Source(p.Path)
+	if !ok {
+		return
+	}
+	var src map[string]any
+	if json.Unmarshal(raw, &src) != nil {
+		return
+	}
+	target := src
+	if props, ok := src["properties"].([]any); ok && len(props) > 0 {
+		if first, ok := props[0].(map[string]any); ok {
+			target = first
+		}
+	}
+	if cur, ok := target["hard_costs"].(float64); ok && cur == hard {
+		return
+	}
+	target["hard_costs"] = hard
+	out, err := json.MarshalIndent(src, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := s.vault.WriteSourceJSON(realestate.SourceRel(p.Path), out); err == nil && s.index != nil {
+		_ = s.index.ReindexPaths([]string{p.Path})
+	}
 }
 
 // handleBudgetLock snapshots the CURRENT category plans as the baseline — one

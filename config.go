@@ -58,6 +58,11 @@ type Config struct {
 	// XPostsFile is the vault-relative X-posts file the Content Studio appends
 	// approved posts to (a `# queue`/`# posted` bullet list). Default "x posts.md".
 	XPostsFile string `json:"xPostsFile"`
+	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
+	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
+	// src/data/deals.json from the vault's source sidecars for owner review
+	// (manifest never commits that repo). Empty disables the feature.
+	RePortalPath string `json:"rePortalPath"`
 }
 
 func defaultConfig() Config {
@@ -143,6 +148,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.VaultPath = expandHome(cfg.VaultPath)
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
+	cfg.RePortalPath = expandHome(cfg.RePortalPath)
 	return cfg, nil
 }
 

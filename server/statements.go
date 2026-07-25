@@ -217,7 +217,7 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if c := strings.ToLower(strings.TrimSpace(a.Cat)); c == realestate.CatSoft ||
-				c == realestate.CatCarry || c == realestate.CatAcquisition {
+				c == realestate.CatAcquisition {
 				note = strings.TrimSpace(note + " [cat:: " + c + "]")
 			}
 			if row.Entity != "" {

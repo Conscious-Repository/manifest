@@ -65,7 +65,7 @@ type LedgerRow struct {
 	Doc        string  `json:"doc"`
 	WorkID     string  `json:"workId,omitempty"`  // tether to a `## work` stage/todo
 	PaidBy     string  `json:"paidBy,omitempty"`  // [paid-by:: entity] — the paying entity (statements workbench)
-	Cat        string  `json:"cat,omitempty"`     // [cat:: soft|carry|acquisition] — budget category (blank/tethered = hard)
+	Cat        string  `json:"cat,omitempty"`     // [cat:: soft|acquisition] — budget category (blank/tethered = hard; legacy carry → soft)
 	RawNote    string  `json:"rawNote,omitempty"` // note as stored on disk (token intact) — mutation matching
 }
 

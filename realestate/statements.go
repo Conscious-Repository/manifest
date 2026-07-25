@@ -24,7 +24,7 @@ type Alloc struct {
 	Slug   string  `json:"slug"` // property slug, or "admin:<entity-slug>" for the admin lane
 	Amount float64 `json:"amount"`
 	WorkID string  `json:"workId,omitempty"` // optional stage/todo tether (hard lane only)
-	Cat    string  `json:"cat,omitempty"`    // budget category: soft | carry | acquisition (blank = hard)
+	Cat    string  `json:"cat,omitempty"`    // budget category: soft | acquisition (blank = hard)
 }
 
 type StatementRow struct {

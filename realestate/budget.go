@@ -18,16 +18,18 @@ import (
 
 // Budget category keys (also the `[cat:: x]` ledger note-token values; rows
 // without a cat token — including every work-tethered row — are hard costs).
+// SOFT = construction interest · taxes · insurance · utilities (the pro forma's
+// soft costs). Permits/design/arch are Pre-development task ests — hard.
+// A legacy `carry` token normalizes to soft.
 const (
 	CatAcquisition = "acquisition"
 	CatHard        = "hard"
 	CatSoft        = "soft"
-	CatCarry       = "carry"
 	CatContingency = "contingency"
 )
 
 // BudgetCats is the canonical category order.
-var BudgetCats = []string{CatAcquisition, CatHard, CatSoft, CatCarry, CatContingency}
+var BudgetCats = []string{CatAcquisition, CatHard, CatSoft, CatContingency}
 
 // SourceMoney is the underwriting money peek from the source.json sidecar
 // (property-slice or single-parcel full-deal shape — properties[0]).
@@ -35,9 +37,8 @@ type SourceMoney struct {
 	PurchasePrice  float64
 	ClosingCosts   float64
 	HardCosts      float64 // underwrite hard costs — fallback when the work list has no ests yet
-	CarryCost      float64
+	CarryCost      float64 // carry_cost field: the SOFT budget (interest/taxes/ins/util)
 	ContingencyPct float64
-	SoftTotal      float64 // Σ soft_cost_items values
 }
 
 // BudgetCatRow is one category line of the project budget.
@@ -77,12 +78,11 @@ func sourceMoney(path string) SourceMoney {
 		return SourceMoney{}
 	}
 	type slice struct {
-		PurchasePrice  float64            `json:"purchase_price"`
-		ClosingCosts   float64            `json:"closing_costs"`
-		HardCosts      float64            `json:"hard_costs"`
-		CarryCost      float64            `json:"carry_cost"`
-		ContingencyPct float64            `json:"contingency_pct"`
-		SoftCostItems  map[string]float64 `json:"soft_cost_items"`
+		PurchasePrice  float64 `json:"purchase_price"`
+		ClosingCosts   float64 `json:"closing_costs"`
+		HardCosts      float64 `json:"hard_costs"`
+		CarryCost      float64 `json:"carry_cost"`
+		ContingencyPct float64 `json:"contingency_pct"`
 	}
 	var v struct {
 		slice
@@ -95,14 +95,10 @@ func sourceMoney(path string) SourceMoney {
 	if pick.PurchasePrice == 0 && pick.HardCosts == 0 && len(v.Properties) > 0 {
 		pick = v.Properties[0]
 	}
-	m := SourceMoney{
+	return SourceMoney{
 		PurchasePrice: pick.PurchasePrice, ClosingCosts: pick.ClosingCosts,
 		HardCosts: pick.HardCosts, CarryCost: pick.CarryCost, ContingencyPct: pick.ContingencyPct,
 	}
-	for _, amt := range pick.SoftCostItems {
-		m.SoftTotal += amt
-	}
-	return m
 }
 
 // ComputeProjectBudget derives the category table + totals + variance.
@@ -163,8 +159,7 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 	plan := map[string]float64{
 		CatAcquisition: src.PurchasePrice + src.ClosingCosts,
 		CatHard:        hardPlan,
-		CatSoft:        src.SoftTotal,
-		CatCarry:       src.CarryCost,
+		CatSoft:        src.CarryCost, // carry_cost field = interest/taxes/ins/util total (soft_cost_items is engine-only)
 		CatContingency: src.ContingencyPct * hardPlan,
 	}
 
@@ -219,10 +214,8 @@ func normalizeCat(v string) string {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case CatAcquisition:
 		return CatAcquisition
-	case CatSoft:
+	case CatSoft, "carry": // legacy carry token folds into soft
 		return CatSoft
-	case CatCarry:
-		return CatCarry
 	default:
 		return CatHard
 	}

@@ -4345,6 +4345,7 @@ function cmdFact(label, val) {
 let propertyCache = [];
 let dealCache = [];
 let templateCache = [];
+let rePortalEnabled = false; // deals.json publish configured server-side
 let propMode = "board"; // board | map | statements | page — derived from the hash
 let boardFilter = ""; // search-as-you-type
 let boardStatus = ""; // status dropdown ("" = all)
@@ -4378,6 +4379,7 @@ async function loadProperties() {
     propertyCache = d.properties || [];
     dealCache = d.deals || [];
     templateCache = d.templates || [];
+    rePortalEnabled = !!d.rePortal;
   } catch (e) { propertyCache = []; dealCache = []; templateCache = []; }
   if (propMode === "map") renderPropertyMap();
   else if (propMode === "board") renderBoard();
@@ -4572,6 +4574,16 @@ function renderBoard() {
         window.open("/api/realestate/doc?path=" + encodeURIComponent(res.csv), "_blank"), "info");
     } catch (e) { showToast("Export failed"); }
   }));
+  if (rePortalEnabled) {
+    exports.append(pillLight("publish → ooda site", async () => {
+      try {
+        const res = await postJSONOk("/api/realestate/publish-deals", {});
+        const kept = (res.kept || []).length ? " · kept as-is: " + res.kept.join(", ") : "";
+        showToast("deals.json written — " + res.deals + " deals · " + res.properties + " parcels" + kept +
+          " — review the diff in re-portal", null, "info");
+      } catch (e) { showToast(("Publish failed: " + (e.message || "")).slice(0, 90)); }
+    }));
+  }
   host.append(exports);
 }
 
@@ -5068,19 +5080,30 @@ function documentsSection(host, src, dirty, docSlug, docKind) {
 }
 
 // propertyLevelSections: the per-parcel engine fields.
-function propertyLevelSections(host, prop, dirty) {
+function propertyLevelSections(host, prop, dirty, opts) {
+  opts = opts || {};
   const sec = host;
   uwGrid(sec, prop, [
     ["purchase_price", "purchase price", { suffix: "$" }],
     ["year_built", "year built", { int: true }],
     ["total_units", "total units", { int: true }],
     ["total_sf", "total sf", { int: true }],
-    ["hard_costs", "hard costs", { suffix: "$" }],
     ["contingency_pct", "contingency", { pct: true, suffix: "%" }],
     ["closing_costs", "closing costs", { suffix: "$" }],
-    ["carry_cost", "carry cost", { suffix: "$" }],
+    ["carry_cost", "soft costs", { suffix: "$" }], // interest · taxes · insurance · utilities during construction
     ["construction_period_months", "constr. period", { int: true, suffix: "mo" }],
   ], dirty);
+  // hard_costs: derived from the work plan once stage ests exist (syncHardCosts
+  // rewrites it server-side); editable only while the plan is unestimated.
+  const hardGrid = el("div", "uw-grid");
+  hardGrid.append(el("span", "uw-label", "hard costs"));
+  if (opts.derivedHard) {
+    hardGrid.append(el("span", "uw-derived",
+      "$" + Math.round(prop.hard_costs || 0).toLocaleString() + " · derived from work plan"));
+  } else {
+    uwGrid(sec, prop, [["hard_costs", "hard costs", { suffix: "$" }]], dirty);
+  }
+  if (opts.derivedHard) sec.append(hardGrid);
   sec.append(el("div", "uw-sub", "unit mix"));
   uwRows(sec, prop, "unit_mix", [
     { key: "type", label: "type", opts: { text: true }, init: "1 BR" },
@@ -5094,7 +5117,7 @@ function propertyLevelSections(host, prop, dirty) {
       return "Σ " + u + "u · $" + Math.round(r).toLocaleString() + "/mo";
     },
   });
-  sec.append(el("div", "uw-sub", "soft costs"));
+  sec.append(el("div", "uw-sub", "soft cost items (site engine only — budget these as Pre-development tasks)"));
   uwKV(sec, prop, "soft_cost_items", dirty, { suffixFor: () => "$", addLabel: "item" });
   // construction_phases: retired from the editor (§3 — the stage list IS the
   // schedule); the field itself survives untouched in source.json for the site.
@@ -5577,12 +5600,12 @@ function stmtRowEl(r) {
   propCell.append(propertyTypeahead("property…", (p) => {
     patchStmt(r, { assignments: [{ slug: p.slug, amount: r.amount, workId: (single && single.workId) || "", cat: (single && single.cat) || "" }] });
   }, single && !isAdmin ? single.slug : ""));
-  // budget category lane (pass-6): hard (default, tetherable) | soft | carry | acquisition
+  // budget category lane: hard (default, tetherable) | soft | acquisition
   if (single && !isAdmin) {
     const catSel = document.createElement("select");
     catSel.className = "pp-in lg-cat";
-    catSel.title = "budget category";
-    [["", "hard"], ["soft", "soft"], ["carry", "carry"], ["acquisition", "acquisition"]].forEach(([v, l]) => {
+    catSel.title = "budget category (soft = interest · taxes · insurance · utilities)";
+    [["", "hard"], ["soft", "soft"], ["acquisition", "acquisition"]].forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; catSel.append(o);
     });
     catSel.value = single.cat || "";
@@ -5896,7 +5919,7 @@ function workTodoRow(p, st, td) {
     more.after(m);
   };
   acts.append(more);
-  acts.append(workDeleteBtn(p, td.id, (td.paid || 0) + (td.committed || 0)));
+  acts.append(workDeleteBtn(p, td.id));
   row.append(acts);
   return row;
 }
@@ -5994,13 +6017,23 @@ function quietBtn(text, onclick) {
   return b;
 }
 
-function workDeleteBtn(p, id, money) {
+function workDeleteBtn(p, id) {
   const holder = el("span", "work-del");
   const x = el("button", "uw-x", "✕");
   x.title = "remove";
   x.onclick = (e) => {
     e.stopPropagation();
-    const ask = money > 0 ? "delete? (" + fmtMoney(money) + " stays in ledger, untethered)" : "delete?";
+    // cascade preview: tethered bids die with the node; paid expenses survive
+    let bids = 0, paid = 0;
+    (p.ledger || []).forEach((r) => {
+      if (!r.workId || (r.workId !== id && !r.workId.startsWith(id + "/"))) return;
+      if (r.type === "bid") bids += r.amount;
+      else if (r.type === "expense") paid += r.amount;
+    });
+    let ask = "delete?";
+    if (bids > 0 && paid > 0) ask = "delete? (removes " + fmtMoney(bids) + " bid · " + fmtMoney(paid) + " paid stays)";
+    else if (bids > 0) ask = "delete? (removes " + fmtMoney(bids) + " bid)";
+    else if (paid > 0) ask = "delete? (" + fmtMoney(paid) + " paid stays in ledger)";
     const yes = quietBtn(ask, () => workOp(p.slug, { op: "delete", id }));
     const no = quietBtn("no", () => { yes.remove(); no.remove(); x.hidden = false; });
     x.hidden = true;
@@ -6513,7 +6546,8 @@ function renderProp(p, src, geoFeatures) {
         showToast("Saved — source.json updated");
       },
       () => renderPropertyPage(p.slug));
-    if (propSlice) propertyLevelSections(body, propSlice, dirty);
+    if (propSlice) propertyLevelSections(body, propSlice, dirty,
+      { derivedHard: (p.work || []).some((st) => st.estTotal > 0) });
     if (isFullDeal) {
       const dealBody = collapsibleSection(host, "DEAL-LEVEL (this record IS the deal)", "", false);
       dealLevelSections(dealBody, src, dirty);

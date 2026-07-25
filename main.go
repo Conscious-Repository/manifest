@@ -161,6 +161,7 @@ func main() {
 		reRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))
 		reSvc = realestate.New(vix)
 		srv.UseRealestate(reSvc, reRoot, cfg.DataDir)
+		srv.UseRePortal(cfg.RePortalPath)
 		// Starter budget-mix template — write-once (goals.Seed precedent); the
 		// user edits or adds templates as plain records forever after.
 		if rel, err := vw.CreateRecord(reRoot+"/templates/gut-rehab.md", realestate.StarterTemplate); err == nil {

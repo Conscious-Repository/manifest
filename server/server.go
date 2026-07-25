@@ -50,6 +50,7 @@ type Server struct {
 	realestate     *realestate.Service
 	realestateRoot string // vault-relative records root (default "system/realestate")
 	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
+	rePortalPath   string // ooda site checkout for the deals.json publish ("" = disabled)
 	reImport       *realestate.ImportMemory
 	geocoder       *realestate.Geocoder
 	statements     *realestate.StatementStore
@@ -198,6 +199,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/properties/{slug}/ledger/mutate", s.handleLedgerMutate)
 	mux.HandleFunc("POST /api/properties/{slug}/work", s.handlePropertyWork)
 	mux.HandleFunc("POST /api/properties/{slug}/budget/lock", s.handleBudgetLock)
+	mux.HandleFunc("POST /api/realestate/publish-deals", s.handlePublishDeals)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)
 	mux.HandleFunc("POST /api/realestate/export-tax", s.handleTaxExport)
 	mux.HandleFunc("POST /api/realestate/statements/upload", s.handleStatementsUpload)
