@@ -260,8 +260,15 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "entity": // free text ("" clears → back to unassigned)
+	case "work-start": // schedule anchor (§3) — ISO date or "" to clear
+		if val != "" {
+			if _, err := time.Parse("2006-01-02", val); err != nil {
+				httpError(w, errBadRequest("work-start must be YYYY-MM-DD"))
+				return
+			}
+		}
 	default:
-		httpError(w, errBadRequest("key must be status, kind, or entity"))
+		httpError(w, errBadRequest("key must be status, kind, entity, or work-start"))
 		return
 	}
 	rel, ok := s.propertyRel(r.PathValue("slug"))
@@ -370,12 +377,14 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Op       string `json:"op"` // seed | add-stage | add-todo | check | edit | delete
+		Op       string `json:"op"` // seed | add-stage | add-todo | check | edit | delete | set-field
 		ID       string `json:"id"`
 		StageID  string `json:"stageId"`
 		Text     string `json:"text"`
 		Checked  bool   `json:"checked"`
 		Template string `json:"template"` // rehab | new-build | phases | empty
+		Field    string `json:"field"`    // set-field: est | weeks
+		Value    string `json:"value"`    // set-field: numeric string ("" clears)
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -402,11 +411,29 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var names []string
+		var weeks []float64
+		// template RECORDS own the stage seeds (§3) — consts are the fallback
+		tplStages := func(slug string) bool {
+			for _, t := range s.realestate.Templates() {
+				if strings.EqualFold(t.Slug, slug) && len(t.Stages) > 0 {
+					for _, st := range t.Stages {
+						names = append(names, st.Text)
+						weeks = append(weeks, st.Weeks)
+					}
+					return true
+				}
+			}
+			return false
+		}
 		switch b.Template {
 		case "rehab":
-			names = realestate.RehabStages
+			if !tplStages("gut-rehab") {
+				names = realestate.RehabStages
+			}
 		case "new-build":
-			names = realestate.NewBuildStages
+			if !tplStages("new-build") {
+				names = realestate.NewBuildStages
+			}
 		case "phases":
 			names = s.phaseNames(p) // seeded FROM site phases; stores never sync
 			if len(names) == 0 {
@@ -419,8 +446,13 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("unknown template"))
 			return
 		}
-		for _, n := range names {
-			stages = append(stages, realestate.WorkStage{Text: n})
+		for i, n := range names {
+			st := realestate.WorkStage{Text: n}
+			if i < len(weeks) && weeks[i] > 0 {
+				st.Fields = append(st.Fields, realestate.WorkField{Key: "weeks",
+					Value: strconv.FormatFloat(weeks[i], 'f', -1, 64)})
+			}
+			stages = append(stages, st)
 		}
 	case "add-stage":
 		if strings.TrimSpace(b.Text) == "" {
@@ -447,9 +479,36 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		}
 		if ti < 0 {
 			stages[si].Checked = b.Checked
+			// schedule pin (§3): checking a stage stamps its end date
+			done := ""
+			if b.Checked {
+				done = time.Now().Format("2006-01-02")
+			}
+			realestate.SetWorkField(stages, b.ID, "done", done)
 		} else {
 			stages[si].Todos[ti].Checked = b.Checked
 		}
+	case "set-field":
+		// the money slot / weeks editor: writes [est:: N] or [weeks:: N] on a
+		// stage or todo (empty value clears the field).
+		si, _ := find(b.ID)
+		if si < 0 {
+			http.Error(w, "work item not found", http.StatusNotFound)
+			return
+		}
+		key := strings.ToLower(strings.TrimSpace(b.Field))
+		val := strings.TrimSpace(b.Value)
+		if key != "est" && key != "weeks" {
+			httpError(w, errBadRequest("field must be est or weeks"))
+			return
+		}
+		if val != "" {
+			if _, err := strconv.ParseFloat(strings.ReplaceAll(strings.ReplaceAll(val, "$", ""), ",", ""), 64); err != nil {
+				httpError(w, errBadRequest(key+" must be a number"))
+				return
+			}
+		}
+		realestate.SetWorkField(stages, b.ID, key, val)
 	case "edit":
 		si, ti := find(b.ID)
 		if si < 0 {
@@ -931,17 +990,18 @@ func (s *Server) handleDealExportUnderwrite(w http.ResponseWriter, r *http.Reque
 	}
 	members := s.dealMembers(*deal)
 
-	// csv: one summary row per property+category, then the ledger detail
+	// csv: one summary row per property+STAGE (pass-5: work list = budget;
+	// columns renamed est/committed/paid), then the ledger detail
 	var buf strings.Builder
 	cw := csv.NewWriter(&buf)
-	_ = cw.Write([]string{"section", "property", "category", "budget", "paid", "committed", "date", "type", "vendor", "amount", "status", "note"})
+	_ = cw.Write([]string{"section", "property", "stage", "est", "committed", "paid", "date", "type", "vendor", "amount", "status", "note"})
 	for _, p := range members {
-		for _, c := range p.Rollup.Categories {
-			_ = cw.Write([]string{"rollup", p.Address, c.Category, f2(c.Budget), f2(c.Paid), f2(c.Committed), "", "", "", "", "", ""})
+		for _, st := range p.Work {
+			_ = cw.Write([]string{"rollup", p.Address, st.Text, f2(st.EstTotal), f2(st.Committed), f2(st.Paid), "", "", "", "", "", ""})
 		}
-		_ = cw.Write([]string{"rollup", p.Address, "TOTAL", f2(p.Rollup.Budget), f2(p.Rollup.Paid), f2(p.Rollup.Committed), "", "", "", "", "", ""})
+		_ = cw.Write([]string{"rollup", p.Address, "TOTAL", f2(p.Rollup.Budget), f2(p.Rollup.Committed), f2(p.Rollup.Paid), "", "", "", "", "", ""})
 		for _, lr := range p.Ledger {
-			_ = cw.Write([]string{"ledger", p.Address, lr.Category, "", "", "", lr.Date, lr.Type, lr.Vendor + lr.Contractor, f2(lr.Amount), lr.Status, lr.Note})
+			_ = cw.Write([]string{"ledger", p.Address, lr.WorkID, "", "", "", lr.Date, lr.Type, lr.Vendor + lr.Contractor, f2(lr.Amount), lr.Status, lr.Note})
 		}
 	}
 	cw.Flush()
@@ -982,8 +1042,9 @@ func (s *Server) dealMembers(d realestate.Deal) []realestate.Property {
 	return out
 }
 
-// handleTaxExport writes one CSV for an entity+year: every ledger line across
-// its properties, grouped by category (spec §3's tax handshake).
+// handleTaxExport (pass-5): the CPA package — one CSV per entity+year, THREE
+// sections: property-tethered lines (owned by the entity), admin lines (the
+// entity's own ledger), and intercompany lines grouped by paying→owning pair.
 func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 	if s.realestate == nil || s.vault == nil {
 		http.Error(w, "properties not available", http.StatusServiceUnavailable)
@@ -1003,32 +1064,64 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	type line struct {
-		p  realestate.Property
-		lr realestate.LedgerRow
+	var buf strings.Builder
+	cw := csv.NewWriter(&buf)
+	_ = cw.Write([]string{"section", "pair", "category", "date", "property", "vendor", "amount", "note"})
+	lines := 0
+	write := func(section, pair, cat, date, prop, vendor string, amt float64, note string) {
+		_ = cw.Write([]string{section, pair, cat, date, prop, vendor, f2(amt), note})
+		lines++
 	}
-	var lines []line
+	inYear := func(lr realestate.LedgerRow) bool {
+		return strings.HasPrefix(lr.Date, b.Year) && strings.EqualFold(lr.Type, "expense")
+	}
+	// 1. property section — rows in properties this entity OWNS (paid by it or unmarked)
+	// 3. intercompany — collected while walking (either direction touching the entity)
+	type icLine struct {
+		pair, cat, date, prop, vendor, note string
+		amt                                 float64
+	}
+	var ic []icLine
 	for _, p := range props {
-		if !strings.EqualFold(strings.TrimSpace(p.Entity), entity) {
-			continue
-		}
+		owns := strings.EqualFold(strings.TrimSpace(p.Entity), entity)
 		for _, lr := range p.Ledger {
-			if strings.HasPrefix(lr.Date, b.Year) && lr.Type == "expense" {
-				lines = append(lines, line{p, lr})
+			if !inYear(lr) {
+				continue
+			}
+			payer := strings.TrimSpace(lr.PaidBy)
+			switch {
+			case owns && (payer == "" || strings.EqualFold(payer, entity)):
+				write("property", "", lr.Category, lr.Date, p.Address, lr.Vendor, lr.Amount, lr.Note)
+			case owns && payer != "": // someone else paid for this entity's property
+				ic = append(ic, icLine{payer + " → " + entity, lr.Category, lr.Date, p.Address, lr.Vendor, lr.Note, lr.Amount})
+			case !owns && strings.EqualFold(payer, entity): // this entity paid another's property
+				owner := strings.TrimSpace(p.Entity)
+				if owner == "" {
+					owner = "unassigned"
+				}
+				ic = append(ic, icLine{entity + " → " + owner, lr.Category, lr.Date, p.Address, lr.Vendor, lr.Note, lr.Amount})
 			}
 		}
 	}
-	sort.Slice(lines, func(i, j int) bool {
-		if a, c := strings.ToLower(lines[i].lr.Category), strings.ToLower(lines[j].lr.Category); a != c {
-			return a < c
+	// 2. admin section — the entity's own admin ledger
+	if entity != "" {
+		adminRel := s.realestateRootOr() + "/entities/" + slugify(entity) + ".ledger.csv"
+		if raw, err := os.ReadFile(vaultJoin(s.vault.VaultRoot(), adminRel)); err == nil {
+			for _, lr := range realestate.ParseLedgerBytes(raw) {
+				if inYear(lr) {
+					write("admin", "", lr.Category, lr.Date, "", lr.Vendor, lr.Amount, lr.Note)
+				}
+			}
 		}
-		return lines[i].lr.Date < lines[j].lr.Date
+	}
+	sort.Slice(ic, func(i, j int) bool {
+		if ic[i].pair != ic[j].pair {
+			return ic[i].pair < ic[j].pair
+		}
+		return ic[i].date < ic[j].date
 	})
-	var buf strings.Builder
-	cw := csv.NewWriter(&buf)
-	_ = cw.Write([]string{"category", "date", "property", "vendor", "amount", "status", "note"})
-	for _, l := range lines {
-		_ = cw.Write([]string{l.lr.Category, l.lr.Date, l.p.Address, l.lr.Vendor, f2(l.lr.Amount), l.lr.Status, l.lr.Note})
+	for _, l := range ic {
+		write("intercompany", l.pair, l.cat, l.date, l.prop, l.vendor, l.amt, l.note)
 	}
 	cw.Flush()
 	eslug := slugify(entity)
@@ -1040,7 +1133,126 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"csv": rel, "lines": len(lines)})
+	writeJSON(w, map[string]any{"csv": rel, "lines": lines})
+}
+
+// ---- entities & contractors (pass-5 §5/§6) ----
+
+func (s *Server) handleEntitiesList(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		writeJSON(w, map[string]any{"entities": []any{}, "contractors": []any{}})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"entities":    s.realestate.Entities(),
+		"contractors": s.realestate.Contractors(),
+		"bindings":    s.reImport.LabelBindings(),
+	})
+}
+
+// handleEntityCreate makes an entity or contractor record (the autocomplete's
+// quiet `create "<name>" →` completion — an explicit user action).
+func (s *Server) handleEntityCreate(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil || s.index == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct{ Name, Kind string }
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Name) == "" {
+		httpError(w, errBadRequest("name is required"))
+		return
+	}
+	kind := "entity"
+	dir := "entities"
+	if b.Kind == "contractor" {
+		kind, dir = "contractor", "contractors"
+	}
+	slug := slugify(b.Name)
+	rel := path.Join(s.realestateRootOr(), dir, slug+".md")
+	content := "---\ncategories: [" + kind + "]\nname: " + strings.TrimSpace(b.Name) + "\n---\n\n# " + strings.TrimSpace(b.Name) + "\n"
+	if _, err := s.vault.CreateRecord(rel, content); err != nil {
+		httpError(w, err)
+		return
+	}
+	_ = s.index.ReindexPaths([]string{rel})
+	writeJSON(w, map[string]any{"slug": slug, "name": strings.TrimSpace(b.Name), "path": rel})
+}
+
+// handleEntitySave updates an entity's owners / admin-categories frontmatter
+// (SETTINGS). Ownership cycles are rejected with a clear error.
+func (s *Server) handleEntitySave(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	slug := r.PathValue("slug")
+	ents := s.realestate.Entities()
+	var target *realestate.Entity
+	for i := range ents {
+		if strings.EqualFold(ents[i].Slug, slug) {
+			target = &ents[i]
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "entity not found", http.StatusNotFound)
+		return
+	}
+	var b struct {
+		Owners          *[]realestate.Owner `json:"owners"`
+		AdminCategories *[]string           `json:"adminCategories"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if b.Owners != nil {
+		for _, o := range *b.Owners {
+			if realestate.OwnershipCycle(ents, target.Slug, o.Ref) {
+				httpError(w, errBadRequest("ownership cycle: "+o.Ref+" is already (transitively) owned by "+target.Slug))
+				return
+			}
+		}
+		var items []string
+		for _, o := range *b.Owners {
+			items = append(items, `"[[`+o.Ref+`]] `+strconv.FormatFloat(o.Percent, 'f', -1, 64)+`%"`)
+		}
+		if err := s.vault.SetFrontmatterField(target.Path, "owners", "["+strings.Join(items, ", ")+"]"); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	if b.AdminCategories != nil {
+		var items []string
+		for _, c := range *b.AdminCategories {
+			if strings.TrimSpace(c) != "" {
+				items = append(items, strings.TrimSpace(c))
+			}
+		}
+		if err := s.vault.SetFrontmatterField(target.Path, "admin-categories", "["+strings.Join(items, ", ")+"]"); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{target.Path})
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleBindingSave edits a statement source-label → entity binding (SETTINGS).
+func (s *Server) handleBindingSave(w http.ResponseWriter, r *http.Request) {
+	if s.reImport == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct{ Label, Entity string }
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Label) == "" {
+		httpError(w, errBadRequest("label is required"))
+		return
+	}
+	s.reImport.BindLabel(b.Label, b.Entity)
+	writeJSON(w, map[string]any{"bindings": s.reImport.LabelBindings()})
 }
 
 func f2(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }

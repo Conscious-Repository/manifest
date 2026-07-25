@@ -12,11 +12,15 @@ type fakeProps struct{ props []realestate.Property }
 func (f fakeProps) Properties() ([]realestate.Property, error) { return f.props, nil }
 
 func TestOverBudgetProperties(t *testing.T) {
+	// pass-5: per work STAGE, committed > est (committed overrun warns earlier
+	// than paid overrun).
 	p := realestate.Property{Slug: "4848-page", Address: "4848 Page Blvd"}
-	p.Rollup.Categories = []realestate.CategoryRollup{
-		{Category: "exterior", Budget: 10000, Paid: 12500, Over: true},
-		{Category: "interiors", Budget: 30000, Paid: 5000, Over: false},
-	}
+	p.Work = realestate.ParseWork([]string{
+		"- [ ] Exterior [work:: exterior] [est:: 10000]",
+		"- [ ] Interiors [work:: interiors] [est:: 30000]",
+	})
+	p.Work[0].Committed = 12500 // tethered accepted bids + expenses (joined upstream)
+	p.Work[1].Committed = 5000
 	sigs, err := OverBudgetProperties(fakeProps{[]realestate.Property{p}}).Emit(time.Now())
 	if err != nil || len(sigs) != 1 {
 		t.Fatalf("want exactly one over-budget signal, got %d (%v)", len(sigs), err)

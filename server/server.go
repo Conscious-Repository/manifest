@@ -204,6 +204,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/realestate/statements", s.handleStatementsList)
 	mux.HandleFunc("POST /api/realestate/statements/row", s.handleStatementsRow)
 	mux.HandleFunc("POST /api/realestate/statements/apply", s.handleStatementsApply)
+	mux.HandleFunc("GET /api/realestate/entities", s.handleEntitiesList)
+	mux.HandleFunc("POST /api/realestate/entities", s.handleEntityCreate)
+	mux.HandleFunc("POST /api/realestate/entities/{slug}/save", s.handleEntitySave)
+	mux.HandleFunc("POST /api/realestate/bindings", s.handleBindingSave)
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)

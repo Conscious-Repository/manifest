@@ -23,6 +23,8 @@ type ImportMemory struct {
 type importState struct {
 	VendorCategory map[string]string            `json:"vendorCategory"` // lower(vendor) → category
 	VendorProperty map[string]string            `json:"vendorProperty"` // lower(vendor) → property slug (workbench memory)
+	VendorWork     map[string]string            `json:"vendorWork"`     // lower(vendor) → work tether id (pass-5)
+	LabelEntity    map[string]string            `json:"labelEntity"`    // statement source label → paying entity (pass-5 upload binding)
 	Mappings       map[string]map[string]string `json:"mappings"`       // header signature → {field: column}
 }
 
@@ -34,17 +36,81 @@ func NewImportMemory(dataDir string) *ImportMemory {
 	}
 	if b, err := os.ReadFile(m.path); err == nil {
 		_ = json.Unmarshal(b, &m.st)
-		if m.st.VendorCategory == nil {
-			m.st.VendorCategory = map[string]string{}
-		}
-		if m.st.VendorProperty == nil {
-			m.st.VendorProperty = map[string]string{}
-		}
-		if m.st.Mappings == nil {
-			m.st.Mappings = map[string]map[string]string{}
-		}
+	}
+	if m.st.VendorCategory == nil {
+		m.st.VendorCategory = map[string]string{}
+	}
+	if m.st.VendorProperty == nil {
+		m.st.VendorProperty = map[string]string{}
+	}
+	if m.st.VendorWork == nil {
+		m.st.VendorWork = map[string]string{}
+	}
+	if m.st.LabelEntity == nil {
+		m.st.LabelEntity = map[string]string{}
+	}
+	if m.st.Mappings == nil {
+		m.st.Mappings = map[string]map[string]string{}
 	}
 	return m
+}
+
+// LabelEntityFor returns the remembered paying entity for a statement source
+// label ("" when unbound). BindLabel stores/updates the binding; empty removes.
+func (m *ImportMemory) LabelEntityFor(label string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.st.LabelEntity[strings.ToLower(strings.TrimSpace(label))]
+}
+
+func (m *ImportMemory) BindLabel(label, entity string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k := strings.ToLower(strings.TrimSpace(label))
+	if k == "" {
+		return
+	}
+	if strings.TrimSpace(entity) == "" {
+		delete(m.st.LabelEntity, k)
+	} else {
+		m.st.LabelEntity[k] = strings.TrimSpace(entity)
+	}
+	m.save()
+}
+
+// LabelBindings returns a copy of every source-label → entity binding (SETTINGS).
+func (m *ImportMemory) LabelBindings() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]string{}
+	for k, v := range m.st.LabelEntity {
+		out[k] = v
+	}
+	return out
+}
+
+// VendorWorkMap returns the vendor → work-tether memory (copy).
+func (m *ImportMemory) VendorWorkMap() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := map[string]string{}
+	for k, v := range m.st.VendorWork {
+		out[k] = v
+	}
+	return out
+}
+
+// RememberVendorWork stores vendor → work-tether pairs from an applied import.
+func (m *ImportMemory) RememberVendorWork(pairs map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for v, w := range pairs {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v != "" && strings.TrimSpace(w) != "" {
+			m.st.VendorWork[v] = strings.TrimSpace(w)
+		}
+	}
+	m.save()
 }
 
 // Signature normalizes a header row into the mapping key.

@@ -68,9 +68,10 @@ func TestWorkReadyAndFreeze(t *testing.T) {
 	}
 }
 
-// The tether rollup: expenses move paid+committed; ACCEPTED bids move committed
-// only; requested bids move nothing but surface as chips; a todo tether rolls
-// into its stage; a stage tether counts at stage level only.
+// The tether rollup, DRAW-AWARE (pass-5): an expense against a work item that
+// carries an accepted bid is a DRAW — it moves paid, never committed (no
+// double count; contracted-to-go hits 0 at full payment). committed per node =
+// max(Σ accepted bids, Σ expenses); requested bids move nothing but chip.
 func TestJoinWorkLedger(t *testing.T) {
 	stages := ParseWork([]string{
 		"- [ ] Rough-in [work:: rough-in]",
@@ -85,15 +86,24 @@ func TestJoinWorkLedger(t *testing.T) {
 	}
 	JoinWorkLedger(stages, ledger)
 	st := stages[0]
-	if st.Paid != 8900 || st.Committed != 8400+12150+500 {
-		t.Fatalf("stage rollup: paid=%v committed=%v", st.Paid, st.Committed)
+	if st.Paid != 8900 || st.Committed != 12150+500 {
+		t.Fatalf("stage rollup: paid=%v committed=%v (want 8900 / 12650)", st.Paid, st.Committed)
 	}
 	td := st.Todos[0]
-	if td.Paid != 8400 || td.Committed != 8400+12150 {
-		t.Fatalf("todo rollup: paid=%v committed=%v", td.Paid, td.Committed)
+	if td.Paid != 8400 || td.Committed != 12150 {
+		t.Fatalf("todo rollup: paid=%v committed=%v (want the contract 12150)", td.Paid, td.Committed)
 	}
 	if len(td.Bids) != 2 || td.Bids[0].Who != "ClearView" {
 		t.Fatalf("bid chips: %+v", td.Bids)
+	}
+	// overpayment: draws exceeding the contract raise committed to actual spend
+	over := ParseWork([]string{"- [ ] S [work:: s]", "    - [ ] T [work:: s/t]"})
+	JoinWorkLedger(over, []LedgerRow{
+		{Type: "bid", Amount: 1000, Status: "accepted", WorkID: "s/t"},
+		{Type: "expense", Amount: 1400, Status: "paid", WorkID: "s/t"},
+	})
+	if over[0].Todos[0].Committed != 1400 {
+		t.Fatalf("overpaid contract: committed=%v want 1400", over[0].Todos[0].Committed)
 	}
 }
 

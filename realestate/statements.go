@@ -21,8 +21,9 @@ import (
 // explicit parked-forever lane (personal spend), reversible.
 
 type Alloc struct {
-	Slug   string  `json:"slug"`
+	Slug   string  `json:"slug"` // property slug, or "admin:<entity-slug>" for the admin lane
 	Amount float64 `json:"amount"`
+	WorkID string  `json:"workId,omitempty"` // optional stage/todo tether
 }
 
 type StatementRow struct {
@@ -34,7 +35,8 @@ type StatementRow struct {
 	Note        string  `json:"note"`
 	Amount      float64 `json:"amount"`
 	Category    string  `json:"category"`
-	State       string  `json:"state"` // pending | assigned | split | applied | skipped
+	Entity      string  `json:"entity,omitempty"` // paying entity (bound at upload)
+	State       string  `json:"state"`            // pending | assigned | split | applied | skipped
 	Assignments []Alloc `json:"assignments,omitempty"`
 	Remembered  bool    `json:"remembered,omitempty"` // prefilled from vendor memory
 }

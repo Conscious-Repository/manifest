@@ -18,10 +18,9 @@ type PropertyLister interface {
 	Properties() ([]realestate.Property, error)
 }
 
-// OverBudgetProperties emits one signal per property CATEGORY whose paid exceeds
-// its budget — the category-level view, so an over-budget line is visible before
-// the property total hides it. Hash = the overage amount, so a dismissal re-arms
-// only on further slippage.
+// OverBudgetProperties emits one signal per work STAGE whose committed exceeds
+// its estimate (pass-5: the work list is the budget; a committed overrun warns
+// earlier than a paid one). Hash = the overage, re-arming on growth.
 func OverBudgetProperties(l PropertyLister) Emitter { return &overBudgetEmitter{l} }
 
 type overBudgetEmitter struct{ l PropertyLister }
@@ -33,16 +32,16 @@ func (e *overBudgetEmitter) Emit(now time.Time) ([]Signal, error) {
 	}
 	var out []Signal
 	for _, p := range props {
-		for _, c := range p.Rollup.Categories {
-			if !c.Over {
+		for _, st := range p.Work {
+			if st.EstTotal <= 0 || st.Committed <= st.EstTotal {
 				continue
 			}
-			over := c.Paid - c.Budget
+			over := st.Committed - st.EstTotal
 			out = append(out, Signal{
-				ID:      "property-overbudget:" + p.Slug + ":" + strings.ToLower(c.Category),
+				ID:      "property-overbudget:" + p.Slug + ":" + st.ID,
 				Kind:    "property-overbudget",
 				Entity:  p.Address,
-				Label:   fmt.Sprintf("%s — %s $%.0f over budget", firstOr(p.Address, p.Slug), c.Category, over),
+				Label:   fmt.Sprintf("%s — %s committed $%.0f over est", firstOr(p.Address, p.Slug), st.Text, over),
 				Age:     0,
 				ActHref: "#/properties/" + url.PathEscape(p.Slug),
 				Hash:    fmt.Sprintf("%.0f", over),

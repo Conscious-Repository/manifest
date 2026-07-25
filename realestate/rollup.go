@@ -2,16 +2,21 @@ package realestate
 
 import "strings"
 
-// Rollup is the derived money picture for a property (or, summed, a deal). Every
-// field is computed from budget + ledger at read time — nothing here is stored.
+// Rollup is the derived money picture for a property (or, summed, a deal).
+// Pass-5 semantics: the WORK LIST is the hard-cost budget — Budget = Σ stage
+// est totals; Paid/Committed = every ledger row (tethered or not — money truth
+// lives at property level); the to-go pair renders the forward view from the
+// same rows. Nothing here is ever stored.
 type Rollup struct {
-	Budget       float64          `json:"budget"`
-	Paid         float64          `json:"paid"`         // Σ expense rows
-	Committed    float64          `json:"committed"`    // paid + Σ accepted bids
-	PaidPct      float64          `json:"paidPct"`      // paid / budget (0 when no budget)
-	CommittedPct float64          `json:"committedPct"` // committed / budget
-	Categories   []CategoryRollup `json:"categories"`
-	OverBudget   bool             `json:"overBudget"` // any category paid > its budget
+	Budget         float64          `json:"budget"` // Σ work est (kept key name for UI compat; labeled EST)
+	Paid           float64          `json:"paid"`   // Σ expense rows
+	Committed      float64          `json:"committed"`
+	PaidPct        float64          `json:"paidPct"`
+	CommittedPct   float64          `json:"committedPct"`
+	BudgetToGo     float64          `json:"budgetToGo"`           // est − paid
+	ContractedToGo float64          `json:"contractedToGo"`       // committed − paid
+	Categories     []CategoryRollup `json:"categories,omitempty"` // retired from UI (migration-era data only)
+	OverBudget     bool             `json:"overBudget"`           // any stage committed > its est (est set)
 }
 
 // CategoryRollup is the same pair per budget category, so an over-budget category
@@ -96,4 +101,57 @@ func pct(value, base float64) float64 {
 		return 0
 	}
 	return value / base
+}
+
+// computeMoneyRollup is the pass-5 triplet: est from the work list, paid /
+// committed from EVERY ledger row, over-budget per stage (committed > est).
+func computeMoneyRollup(work []WorkStage, ledger []LedgerRow) Rollup {
+	var r Rollup
+	for _, st := range work {
+		r.Budget += st.EstTotal
+		if st.EstTotal > 0 && st.Committed > st.EstTotal {
+			r.OverBudget = true
+		}
+	}
+	// draw-aware committed (matches JoinWorkLedger): expenses against a
+	// work item with an accepted bid draw DOWN the contract, not up committed.
+	type acc struct{ acceptedSum, expenseSum float64 }
+	perWork := map[string]*acc{}
+	for _, row := range ledger {
+		isExpense := strings.EqualFold(row.Type, "expense")
+		accepted := strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
+		if isExpense {
+			r.Paid += row.Amount
+		}
+		if row.WorkID != "" && (isExpense || accepted) {
+			a, ok := perWork[row.WorkID]
+			if !ok {
+				a = &acc{}
+				perWork[row.WorkID] = a
+			}
+			if isExpense {
+				a.expenseSum += row.Amount
+			} else {
+				a.acceptedSum += row.Amount
+			}
+			continue
+		}
+		if isExpense {
+			r.Committed += row.Amount // untethered expense
+		} else if accepted {
+			r.Committed += row.Amount // untethered accepted bid
+		}
+	}
+	for _, a := range perWork {
+		c := a.expenseSum
+		if a.acceptedSum > c {
+			c = a.acceptedSum
+		}
+		r.Committed += c
+	}
+	r.PaidPct = pct(r.Paid, r.Budget)
+	r.CommittedPct = pct(r.Committed, r.Budget)
+	r.BudgetToGo = r.Budget - r.Paid
+	r.ContractedToGo = r.Committed - r.Paid
+	return r
 }

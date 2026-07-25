@@ -68,6 +68,8 @@ func (s *Server) handleStatementsUpload(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]any{
 		"label": fhs[0].Filename, "headers": headers, "rows": rows,
 		"signature": sig, "mapping": mapping, "remembered": remembered != nil,
+		// pass-5: uploads bind to a paying entity, remembered per source label
+		"entity": s.reImport.LabelEntityFor(fhs[0].Filename),
 	})
 }
 
@@ -79,6 +81,7 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 	}
 	var b struct {
 		Label     string            `json:"label"`
+		Entity    string            `json:"entity"` // paying entity — required (pass-5)
 		Signature string            `json:"signature"`
 		Mapping   map[string]string `json:"mapping"`
 		Rows      []struct {
@@ -90,6 +93,11 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, errBadRequest("rows are required"))
 		return
 	}
+	if strings.TrimSpace(b.Entity) == "" {
+		httpError(w, errBadRequest("paying entity is required"))
+		return
+	}
+	s.reImport.BindLabel(b.Label, b.Entity)
 	// every ledger line across the portfolio — no double entry, ever
 	ledgerKeys := map[string]bool{}
 	props, _ := s.realestate.Properties()
@@ -107,6 +115,7 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 		rows = append(rows, realestate.StatementRow{
 			Date: strings.TrimSpace(row.Date), Vendor: strings.TrimSpace(row.Vendor),
 			Note: strings.TrimSpace(row.Note), Amount: row.Amount,
+			Entity: strings.TrimSpace(b.Entity),
 		})
 	}
 	added, dups := s.statements.Ingest(b.Label, rows, ledgerKeys, vendorCat, vendorProp)
@@ -165,11 +174,20 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	// resolve slugs → ledger paths up front (fail before any write)
-	rels := map[string]string{}
+	// resolve targets → ledger csv paths up front (fail before any write).
+	// A slug of "admin:<entity>" routes to the entity's own admin ledger.
+	ledgers := map[string]string{}
 	for _, row := range rows {
 		for _, a := range row.Assignments {
-			if _, ok := rels[a.Slug]; ok {
+			if _, ok := ledgers[a.Slug]; ok {
+				continue
+			}
+			if ent, isAdmin := strings.CutPrefix(a.Slug, "admin:"); isAdmin {
+				if strings.TrimSpace(ent) == "" {
+					httpError(w, errBadRequest("admin assignment needs an entity"))
+					return
+				}
+				ledgers[a.Slug] = s.realestateRootOr() + "/entities/" + slugify(ent) + ".ledger.csv"
 				continue
 			}
 			rel, ok := s.propertyRel(a.Slug)
@@ -177,12 +195,12 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 				httpError(w, errBadRequest("unknown property "+a.Slug))
 				return
 			}
-			rels[a.Slug] = rel
+			ledgers[a.Slug] = realestate.LedgerRel(rel)
 		}
 	}
 	written := 0
 	propsTouched := map[string]bool{}
-	vendorCats, vendorProps := map[string]string{}, map[string]string{}
+	vendorCats, vendorProps, vendorWork := map[string]string{}, map[string]string{}, map[string]string{}
 	for _, row := range rows {
 		n := len(row.Assignments)
 		for i, a := range row.Assignments {
@@ -191,11 +209,21 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 				note = strings.TrimSpace("split " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) +
 					" of $" + strconv.FormatFloat(row.Amount, 'f', 2, 64) + " · " + row.Vendor)
 			}
+			// tokens: work tether per alloc + the paying entity (pass-5)
+			if a.WorkID != "" {
+				note = strings.TrimSpace(note + " [work:: " + a.WorkID + "]")
+				if p, ok := s.realestate.Get(a.Slug); ok {
+					s.tetherWorkID(p, a.WorkID) // freeze the id in the record
+				}
+			}
+			if row.Entity != "" {
+				note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")
+			}
 			rec := []string{
 				row.Date, "expense", row.Category, row.Vendor, "",
 				strconv.FormatFloat(a.Amount, 'f', -1, 64), "paid", note, "",
 			}
-			if err := s.vault.AppendLedgerRow(realestate.LedgerRel(rels[a.Slug]), realestate.LedgerHeader, rec); err != nil {
+			if err := s.vault.AppendLedgerRow(ledgers[a.Slug], realestate.LedgerHeader, rec); err != nil {
 				httpError(w, err)
 				return
 			}
@@ -204,13 +232,17 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 		}
 		if row.Vendor != "" {
 			vendorCats[row.Vendor] = row.Category
-			if n == 1 {
+			if n == 1 && !strings.HasPrefix(row.Assignments[0].Slug, "admin:") {
 				vendorProps[row.Vendor] = row.Assignments[0].Slug
+				if row.Assignments[0].WorkID != "" {
+					vendorWork[row.Vendor] = row.Assignments[0].WorkID
+				}
 			}
 		}
 	}
 	s.statements.MarkApplied(b.IDs)
 	s.reImport.Remember("", nil, vendorCats, vendorProps)
+	s.reImport.RememberVendorWork(vendorWork)
 	list, last := s.statements.List()
 	writeJSON(w, map[string]any{
 		"applied": len(rows), "lines": written, "properties": len(propsTouched),

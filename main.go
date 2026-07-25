@@ -166,6 +166,9 @@ func main() {
 		if rel, err := vw.CreateRecord(reRoot+"/templates/gut-rehab.md", realestate.StarterTemplate); err == nil {
 			_ = vix.ReindexPaths([]string{rel})
 		}
+		if rel, err := vw.CreateRecord(reRoot+"/templates/new-build.md", realestate.NewBuildTemplate); err == nil {
+			_ = vix.ReindexPaths([]string{rel})
+		}
 		log.Printf("realestate: enabled (property records over %s/)", reRoot)
 	}
 

@@ -2,6 +2,7 @@ package realestate
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +30,7 @@ type WorkTodo struct {
 	Explicit  bool        `json:"-"`  // id is frozen in the file
 	Text      string      `json:"text"`
 	Checked   bool        `json:"checked"`
+	Est       float64     `json:"est"` // [est:: N] — the work list IS the hard-cost budget (0 = unestimated)
 	Fields    []WorkField `json:"fields,omitempty"`
 	Extra     []string    `json:"-"`         // verbatim non-todo lines beneath (preserved)
 	Committed float64     `json:"committed"` // derived: tethered expenses + accepted bids
@@ -36,26 +38,34 @@ type WorkTodo struct {
 	Bids      []WorkBid   `json:"bids,omitempty"`
 }
 
-// WorkBid is a tethered ledger bid, surfaced for the todo's chips.
+// WorkBid is a tethered ledger bid, surfaced for the todo's chips. Row carries
+// the full source ledger row so chip actions (accept/decline) can exact-match
+// mutate without a second lookup.
 type WorkBid struct {
-	Who    string  `json:"who"`
-	Amount float64 `json:"amount"`
-	Status string  `json:"status"`
+	Who    string    `json:"who"`
+	Amount float64   `json:"amount"`
+	Status string    `json:"status"`
+	Row    LedgerRow `json:"row"`
 }
 
 // WorkStage is one top-level stage line.
 type WorkStage struct {
-	ID        string      `json:"id"`
-	Explicit  bool        `json:"-"`
-	Text      string      `json:"text"`
-	Checked   bool        `json:"checked"`
-	Ready     bool        `json:"ready"` // all todos checked (and at least one)
-	Current   bool        `json:"current"`
-	Fields    []WorkField `json:"fields,omitempty"`
-	Extra     []string    `json:"-"`
-	Todos     []WorkTodo  `json:"todos"`
-	Committed float64     `json:"committed"`
-	Paid      float64     `json:"paid"`
+	ID          string      `json:"id"`
+	Explicit    bool        `json:"-"`
+	Text        string      `json:"text"`
+	Checked     bool        `json:"checked"`
+	Ready       bool        `json:"ready"` // all todos checked (and at least one)
+	Current     bool        `json:"current"`
+	Est         float64     `json:"est"`         // the stage's OWN [est::] (not-yet-broken-down remainder)
+	EstTotal    float64     `json:"estTotal"`    // Σ todo est + own est
+	Unestimated int         `json:"unestimated"` // open todos carrying no est
+	Weeks       float64     `json:"weeks"`       // [weeks:: N] — schedule duration (§3)
+	Done        string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at stage check
+	Fields      []WorkField `json:"fields,omitempty"`
+	Extra       []string    `json:"-"`
+	Todos       []WorkTodo  `json:"todos"`
+	Committed   float64     `json:"committed"`
+	Paid        float64     `json:"paid"`
 }
 
 var (
@@ -117,18 +127,27 @@ func ParseWork(lines []string) []WorkStage {
 		}
 	}
 	assignWorkIDs(stages)
-	// derive current (first unchecked) + ready
+	// derive current (first unchecked) + ready + typed fields + est rollups
 	cur := false
 	for i := range stages {
 		st := &stages[i]
 		if st.Todos == nil {
 			st.Todos = []WorkTodo{} // marshal as [] — a nil slice is null in JSON and crashes .forEach client-side
 		}
+		st.Est = fieldFloat(st.Fields, "est")
+		st.Weeks = fieldFloat(st.Fields, "weeks")
+		st.Done = fieldValue(st.Fields, "done")
+		st.EstTotal = st.Est
 		st.Ready = len(st.Todos) > 0
-		for _, t := range st.Todos {
-			if !t.Checked {
+		for j := range st.Todos {
+			td := &st.Todos[j]
+			td.Est = fieldFloat(td.Fields, "est")
+			st.EstTotal += td.Est
+			if td.Est == 0 && !td.Checked {
+				st.Unestimated++
+			}
+			if !td.Checked {
 				st.Ready = false
-				break
 			}
 		}
 		if !st.Checked && !cur {
@@ -137,6 +156,51 @@ func ParseWork(lines []string) []WorkStage {
 		}
 	}
 	return stages
+}
+
+func fieldFloat(fs []WorkField, key string) float64 {
+	v := strings.ReplaceAll(strings.ReplaceAll(fieldValue(fs, key), "$", ""), ",", "")
+	if v == "" {
+		return 0
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0
+	}
+	return f
+}
+
+// SetWorkField updates/inserts/removes a [key:: value] on the node with the
+// given id (empty value removes). The typed projections re-derive on re-parse.
+func SetWorkField(stages []WorkStage, id, key, value string) bool {
+	upsert := func(fs *[]WorkField) {
+		for i := range *fs {
+			if strings.EqualFold((*fs)[i].Key, key) {
+				if value == "" {
+					*fs = append((*fs)[:i], (*fs)[i+1:]...)
+				} else {
+					(*fs)[i].Value = value
+				}
+				return
+			}
+		}
+		if value != "" {
+			*fs = append(*fs, WorkField{Key: key, Value: value})
+		}
+	}
+	for i := range stages {
+		if stages[i].ID == id {
+			upsert(&stages[i].Fields)
+			return true
+		}
+		for j := range stages[i].Todos {
+			if stages[i].Todos[j].ID == id {
+				upsert(&stages[i].Todos[j].Fields)
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // assignWorkIDs: explicit [work:: id] wins; else hierarchical slug with -2/-3
@@ -260,6 +324,21 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 			index[stages[i].Todos[j].ID] = slot{i, j}
 		}
 	}
+	// pass-5 accounting: an expense tethered to a work item that carries an
+	// ACCEPTED bid is a DRAW against that contract — it moves paid, not
+	// committed (no double count; contracted-to-go reaches 0 when fully paid).
+	// Per node: committed = max(Σ accepted bids, Σ expenses) when a bid exists,
+	// else Σ expenses.
+	type acc struct{ acceptedSum, expenseSum float64 }
+	perNode := map[string]*acc{}
+	touch := func(id string) *acc {
+		if a, ok := perNode[id]; ok {
+			return a
+		}
+		a := &acc{}
+		perNode[id] = a
+		return a
+	}
 	for _, r := range ledger {
 		if r.WorkID == "" {
 			continue
@@ -273,25 +352,34 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		accepted := strings.EqualFold(r.Type, "bid") && strings.EqualFold(r.Status, "accepted")
 		if isExpense {
 			st.Paid += r.Amount
-			st.Committed += r.Amount
+			touch(r.WorkID).expenseSum += r.Amount
 		} else if accepted {
-			st.Committed += r.Amount
+			touch(r.WorkID).acceptedSum += r.Amount
 		}
 		if sl.ti >= 0 {
 			td := &st.Todos[sl.ti]
 			if isExpense {
 				td.Paid += r.Amount
-				td.Committed += r.Amount
-			} else if accepted {
-				td.Committed += r.Amount
 			}
 			if strings.EqualFold(r.Type, "bid") {
 				who := r.Contractor
 				if who == "" {
 					who = r.Vendor
 				}
-				td.Bids = append(td.Bids, WorkBid{Who: who, Amount: r.Amount, Status: r.Status})
+				td.Bids = append(td.Bids, WorkBid{Who: who, Amount: r.Amount, Status: r.Status, Row: r})
 			}
+		}
+	}
+	// fold per-node committed (draw-aware) back onto todos + stages
+	for id, a := range perNode {
+		committed := a.expenseSum
+		if a.acceptedSum > 0 && a.acceptedSum > a.expenseSum {
+			committed = a.acceptedSum
+		}
+		sl := index[id]
+		stages[sl.si].Committed += committed
+		if sl.ti >= 0 {
+			stages[sl.si].Todos[sl.ti].Committed = committed
 		}
 	}
 }

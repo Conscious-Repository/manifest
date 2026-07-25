@@ -39,6 +39,8 @@ type Property struct {
 	LastLog      string       `json:"lastLog"`
 	Work         []WorkStage  `json:"work"`                   // `## work` stages+todos (management core)
 	CurrentStage string       `json:"currentStage,omitempty"` // first unchecked stage's text
+	WorkStart    string       `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
+	Schedule     []StageSpan  `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
 }
 
 // BudgetLine is one `## budget` table row: a category and its budgeted amount.
@@ -59,19 +61,31 @@ type LedgerRow struct {
 	Note       string  `json:"note"`   // display text — the [work:: id] tether token is stripped into WorkID
 	Doc        string  `json:"doc"`
 	WorkID     string  `json:"workId,omitempty"`  // tether to a `## work` stage/todo
+	PaidBy     string  `json:"paidBy,omitempty"`  // [paid-by:: entity] — the paying entity (statements workbench)
 	RawNote    string  `json:"rawNote,omitempty"` // note as stored on disk (token intact) — mutation matching
 }
 
 // LedgerHeader is the canonical csv column order (also the seed's empty-file header).
 var LedgerHeader = []string{"date", "type", "category", "vendor", "contractor", "amount", "status", "note", "doc"}
 
-// StarterTemplate is the boot-seeded gut-rehab budget mix (write-once; the user
-// edits amounts/categories or adds more `categories: [budget-template]` records).
+// StarterTemplate is the boot-seeded gut-rehab template (write-once). Pass-5:
+// its `## stages` section seeds work plans (names + default [weeks::]) — the
+// stage list and the schedule are the same object from birth.
 const StarterTemplate = `---
 categories: [budget-template]
 ---
 
 # gut rehab
+
+## stages
+- [ ] Acquisition & planning [weeks:: 2]
+- [ ] Exterior & structural [weeks:: 3]
+- [ ] Demo [weeks:: 1]
+- [ ] Rough-in [weeks:: 4]
+- [ ] Insulation & drywall [weeks:: 2]
+- [ ] Finishes [weeks:: 4]
+- [ ] Punch & final inspection [weeks:: 1]
+- [ ] Exit [weeks:: 2]
 
 ## budget
 | category | budget |
@@ -83,6 +97,32 @@ categories: [budget-template]
 | finishes | 15000 |
 | contingency | 13000 |
 `
+
+// NewBuildTemplate is the boot-seeded ground-up template (write-once).
+const NewBuildTemplate = `---
+categories: [budget-template]
+---
+
+# new build
+
+## stages
+- [ ] Pre-construction [weeks:: 6]
+- [ ] Site work [weeks:: 2]
+- [ ] Foundation [weeks:: 3]
+- [ ] Framing & dry-in [weeks:: 5]
+- [ ] MEP rough-in [weeks:: 4]
+- [ ] Insulation & drywall [weeks:: 3]
+- [ ] Finishes [weeks:: 6]
+- [ ] Final inspections & CO [weeks:: 2]
+- [ ] Close-out [weeks:: 3]
+`
+
+// ParseLedgerBytes exposes the ledger csv parse (entity admin ledgers, exports).
+func ParseLedgerBytes(raw []byte) []LedgerRow { return parseLedger(raw) }
+
+// ParseBudgetSection exposes the legacy `## budget` table parse for the
+// one-shot -migrate-budget command (the table is retired from the UI).
+func ParseBudgetSection(lines []string) []BudgetLine { return parseBudget(lines) }
 
 // parseBudget scans a `## budget` markdown table into lines. It skips the header
 // row and any `|---|` separator by requiring the amount cell to parse as a number
@@ -195,10 +235,18 @@ func parseLedger(raw []byte) []LedgerRow {
 			Date: get(0), Type: get(1), Category: get(2), Vendor: get(3),
 			Contractor: get(4), Amount: amt, Status: get(6), Note: get(7), Doc: get(8),
 		}
-		// the tether rides inside note: strip `[work:: id]` → WorkID for display
+		// tokens ride inside note: strip [work:: id] → WorkID and
+		// [paid-by:: entity] → PaidBy; display note is the cleaned text.
 		row.RawNote = row.Note
-		if m := workFieldRe.FindStringSubmatch(row.Note); m != nil && strings.EqualFold(m[1], "work") {
-			row.WorkID = strings.TrimSpace(m[2])
+		for _, m := range workFieldRe.FindAllStringSubmatch(row.Note, -1) {
+			switch strings.ToLower(m[1]) {
+			case "work":
+				row.WorkID = strings.TrimSpace(m[2])
+			case "paid-by":
+				row.PaidBy = strings.TrimSpace(m[2])
+			}
+		}
+		if row.WorkID != "" || row.PaidBy != "" {
 			row.Note = strings.Join(strings.Fields(workFieldRe.ReplaceAllString(row.Note, "")), " ")
 		}
 		if row.Date == "" && row.Type == "" && row.Amount == 0 {

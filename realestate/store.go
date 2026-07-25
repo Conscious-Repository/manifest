@@ -80,6 +80,7 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	}
 	p.Lat, _ = strconv.ParseFloat(strings.TrimSpace(fm["lat"]), 64)
 	p.Lng, _ = strconv.ParseFloat(strings.TrimSpace(fm["lng"]), 64)
+	p.WorkStart = strings.TrimSpace(fm["work-start"])
 	sections := parseSections(body)
 	p.Budget = parseBudget(sections["budget"])
 	p.Log = parseLog(sections["log"])
@@ -90,9 +91,12 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 		p.Ledger = parseLedger(led)
 	}
 	p.Units = sourceUnits(strings.TrimSuffix(full, ".md") + ".source.json")
-	p.Rollup = computeRollup(p.Budget, p.Ledger)
 	p.Work = ParseWork(sections["work"])
 	JoinWorkLedger(p.Work, p.Ledger)
+	// pass-5: the work list IS the hard-cost budget — the triplet derives from
+	// work est + the ledger. (parseBudget/computeRollup survive for migration.)
+	p.Rollup = computeMoneyRollup(p.Work, p.Ledger)
+	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {
 		if st.Current {
 			p.CurrentStage = st.Text
@@ -186,6 +190,7 @@ type Template struct {
 	Slug   string       `json:"slug"`
 	Name   string       `json:"name"`
 	Budget []BudgetLine `json:"budget"`
+	Stages []WorkStage  `json:"stages,omitempty"` // ## stages — seeds work plans (§3)
 }
 
 // Templates returns the budget-mix templates, sorted by name.
@@ -201,7 +206,9 @@ func (s *Service) Templates() []Template {
 			continue
 		}
 		_, body := mdfm.Split(string(raw))
-		t := Template{Slug: r.Name, Name: r.Name, Budget: parseBudget(parseSections(body)["budget"])}
+		secs := parseSections(body)
+		t := Template{Slug: r.Name, Name: r.Name, Budget: parseBudget(secs["budget"]),
+			Stages: ParseWork(secs["stages"])}
 		for _, ln := range strings.Split(body, "\n") {
 			if strings.HasPrefix(ln, "# ") {
 				t.Name = strings.TrimSpace(ln[2:])

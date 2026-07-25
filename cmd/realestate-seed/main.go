@@ -28,6 +28,7 @@ func main() {
 	vaultOverride := flag.String("vault", "", "override the vault path from config")
 	apply := flag.Bool("apply", false, "write files (default: dry-run report only)")
 	expand := flag.Bool("expand", false, "admin-portal migration: member records for every parcel + deal-level sources (re-sync from the live re-portal tree)")
+	migrateBudget := flag.Bool("migrate-budget", false, "pass-5: seed stage [est::] from legacy ## budget rows with matching names (tables left verbatim)")
 	flag.Parse()
 	srcDir := flag.Arg(0)
 	if srcDir == "" {
@@ -43,6 +44,10 @@ func main() {
 	}
 	if cfg.SystemRoot == "" {
 		cfg.SystemRoot = "system"
+	}
+	if *migrateBudget {
+		runMigrateBudget(cfg, *apply)
+		return
 	}
 	if *expand {
 		runExpand(cfg, srcDir, *apply)
