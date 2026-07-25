@@ -22,7 +22,8 @@ type Property struct {
 	Path         string       `json:"path"`    // vault-relative .md (for the note view)
 	Slug         string       `json:"slug"`    // basename without .md (the record key)
 	Name         string       `json:"name"`    // note title
-	Address      string       `json:"address"` // frontmatter address
+	Address      string       `json:"address"` // full standardized address (street, city, ST zip)
+	Short        string       `json:"short"`   // display name — the street part (before the first comma)
 	Entity       string       `json:"entity"`  // holding entity — Board groups by this ("" → unassigned)
 	Status       string       `json:"status"`  // negotiating | under_contract | pre_development | construction | completed | leased | listed | sold
 	Kind         string       `json:"kind"`    // rehab | new-construction | mixed | hold

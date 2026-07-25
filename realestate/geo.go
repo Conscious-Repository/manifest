@@ -13,8 +13,9 @@ import (
 // filter already-rendered parcels out of the background layer).
 type GeoRecord struct {
 	Slug      string            `json:"slug"`
-	Type      string            `json:"type"` // property | deal
-	Title     string            `json:"title"`
+	Type      string            `json:"type"`            // property | deal
+	Title     string            `json:"title"`           // FULL address (also the geocode query)
+	Short     string            `json:"short,omitempty"` // display name for popups
 	Status    string            `json:"status,omitempty"`
 	Control   string            `json:"control,omitempty"`
 	Path      string            `json:"path"`
@@ -36,6 +37,7 @@ func (s *Service) GeoRecords() ([]GeoRecord, error) {
 	for _, p := range props {
 		g := GeoRecord{
 			Slug: p.Slug, Type: "property", Title: firstNonEmpty(p.Address, p.Name),
+			Short:  firstNonEmpty(p.Short, p.Name),
 			Status: p.Status, Control: p.Control, Path: p.Path,
 			Lat: p.Lat, Lng: p.Lng, // frontmatter override (geocode may fill later)
 		}

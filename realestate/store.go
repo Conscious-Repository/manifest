@@ -75,6 +75,7 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 		Control: strings.ToLower(strings.TrimSpace(fm["control"])),
 		Hidden:  strings.EqualFold(strings.TrimSpace(fm["hidden"]), "true"),
 	}
+	p.Short = strings.TrimSpace(strings.SplitN(p.Address, ",", 2)[0])
 	if m := wikilinkRe.FindStringSubmatch(fm["deal"]); m != nil {
 		p.Deal = strings.TrimSpace(m[1])
 	}

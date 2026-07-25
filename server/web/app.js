@@ -4449,8 +4449,8 @@ function propertyTypeahead(placeholder, onPick, initial) {
     const hits = propertyCache.filter((p) =>
       !q || (p.address || "").toLowerCase().includes(q) || p.slug.includes(q) || (p.deal || "").includes(q)).slice(0, 12);
     hits.forEach((p) => {
-      const it = el("div", "ta-item", (p.address || p.slug) + (p.deal ? "  · " + p.deal : ""));
-      it.onmousedown = (e) => { e.preventDefault(); input.value = p.address || p.slug; drop.hidden = true; onPick(p); };
+      const it = el("div", "ta-item", (p.short || p.address || p.slug) + (p.deal ? "  · " + p.deal : ""));
+      it.onmousedown = (e) => { e.preventDefault(); input.value = p.short || p.address || p.slug; drop.hidden = true; onPick(p); };
       drop.append(it);
     });
     drop.hidden = !hits.length;
@@ -4670,7 +4670,7 @@ function boardRow(p, member) {
   const row = el("div", "property-row" +
     (p.control === "tracked" ? " tracked" : "") + (member ? " compact member" : ""));
   row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
-  row.append(el("span", "property-addr", p.address || p.name));
+  row.append(el("span", "property-addr", p.short || p.address || p.name));
   row.append(statusChip(p, () => loadProperties()));
   row.append(el("span", "property-stage", p.currentStage || ""));
   row.append(el("span", "property-units", p.units ? p.units + "u" : ""));
@@ -4810,7 +4810,7 @@ async function renderPropertyMap() {
     layer.on("mouseover", () => layer.setStyle({ weight: 3, fillOpacity: 0.24 }));
     layer.on("mouseout", () => layer.setStyle(style));
     const href = rec.type === "deal" ? "#/properties/deal/" + encodeURIComponent(rec.slug) : "#/properties/" + encodeURIComponent(rec.slug);
-    const label = rec.title + (rec.status ? " · " + rec.status : "") + (rec.type === "deal" ? " · bundle" : "");
+    const label = (rec.short || rec.title) + (rec.status ? " · " + rec.status : "") + (rec.type === "deal" ? " · bundle" : "");
     layer.bindPopup('<a href="' + href + '" class="prop-pop">' + escapeHtml(label) + "</a>", { closeButton: false });
     layer.addTo(map);
     rendered.push(layer);
@@ -5416,7 +5416,7 @@ async function renderStatements() {
     if (!match) continue;
     const hint = el("div", "stmt-suggest");
     hint.append(el("span", "", rows.length + " rows sum " + fmtMoney(sum) + " = accepted bid on " +
-      match.lr.workId.split("/").pop() + " (" + (match.p.address || match.p.slug) + ")"));
+      match.lr.workId.split("/").pop() + " (" + (match.p.short || match.p.address || match.p.slug) + ")"));
     const go = el("button", "stmt-hint stmt-echo", "group →");
     go.onclick = async () => {
       for (const r of rows) {
@@ -6038,7 +6038,7 @@ function orgChart(ents) {
     propsOf(e).forEach((p) => {
       const pr = el("div", "org-prop");
       pr.style.marginLeft = (depth + 1) * 22 + "px";
-      pr.textContent = "▪ " + (p.address || p.slug);
+      pr.textContent = "▪ " + (p.short || p.address || p.slug);
       out.append(pr);
     });
     kids.forEach((k) => {
@@ -6134,7 +6134,7 @@ function kanbanCard(p, cur) {
   const card = el("div", "kanban-card");
   card.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
   const head = el("div", "kanban-card-head");
-  head.append(el("span", "wv-addr", p.address || p.slug));
+  head.append(el("span", "wv-addr", p.short || p.address || p.slug));
   // stall dot: active property with no open todo queued
   if (cur && !(cur.todos || []).some((t) => !t.checked)) head.append(el("span", "stall-dot", "●"));
   card.append(head);
@@ -6188,7 +6188,7 @@ function ganttView(props) {
   }
   withSched.forEach((p, i) => {
     const y = 24 + i * ROW;
-    const label = mk("text", { x: 0, y: y + 14, class: "g-label" }, (p.address || p.slug).slice(0, 26));
+    const label = mk("text", { x: 0, y: y + 14, class: "g-label" }, (p.short || p.address || p.slug).slice(0, 26));
     label.style.cursor = "pointer";
     label.addEventListener("click", () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); });
     svg.append(label);
@@ -6265,8 +6265,9 @@ function renderProp(p, src, geoFeatures) {
   const head = el("div", "pp-head");
   const titleRow = el("div", "pp-title-row");
   const tcol = el("div", "pp-title-col");
-  const h = el("h2", "pp-title", p.address || p.name);
+  const h = el("h2", "pp-title", p.short || p.address || p.name);
   tcol.append(h);
+  if (p.address && p.address !== (p.short || "")) tcol.append(el("span", "pp-fulladdr", p.address));
   if (propSlice && propSlice.parcel_id) tcol.append(el("span", "pp-parcel", propSlice.parcel_id));
   const chips = el("div", "pp-chips");
   chips.append(editChip(p, "status", p.status, PROPERTY_STATUSES));

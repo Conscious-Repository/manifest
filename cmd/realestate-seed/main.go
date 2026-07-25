@@ -29,6 +29,7 @@ func main() {
 	apply := flag.Bool("apply", false, "write files (default: dry-run report only)")
 	expand := flag.Bool("expand", false, "admin-portal migration: member records for every parcel + deal-level sources (re-sync from the live re-portal tree)")
 	migrateBudget := flag.Bool("migrate-budget", false, "pass-5: seed stage [est::] from legacy ## budget rows with matching names (tables left verbatim)")
+	normalizeAddr := flag.Bool("normalize-addresses", false, "data hygiene: full standard addresses (street, Saint Louis, MO zip) — zips reverse-geocoded from parcel centroids")
 	flag.Parse()
 	srcDir := flag.Arg(0)
 	if srcDir == "" {
@@ -44,6 +45,10 @@ func main() {
 	}
 	if cfg.SystemRoot == "" {
 		cfg.SystemRoot = "system"
+	}
+	if *normalizeAddr {
+		runNormalizeAddresses(cfg, *apply)
+		return
 	}
 	if *migrateBudget {
 		runMigrateBudget(cfg, *apply)
