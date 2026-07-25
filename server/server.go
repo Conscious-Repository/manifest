@@ -197,6 +197,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/deals/{slug}/field", s.handleDealField)
 	mux.HandleFunc("POST /api/properties/{slug}/ledger/mutate", s.handleLedgerMutate)
 	mux.HandleFunc("POST /api/properties/{slug}/work", s.handlePropertyWork)
+	mux.HandleFunc("POST /api/properties/{slug}/budget/lock", s.handleBudgetLock)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)
 	mux.HandleFunc("POST /api/realestate/export-tax", s.handleTaxExport)
 	mux.HandleFunc("POST /api/realestate/statements/upload", s.handleStatementsUpload)

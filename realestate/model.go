@@ -42,6 +42,8 @@ type Property struct {
 	CurrentStage string       `json:"currentStage,omitempty"` // first unchecked stage's text
 	WorkStart    string       `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
 	Schedule     []StageSpan  `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
+	Project      *ProjectBudget `json:"project,omitempty"`    // pass-6 full-project budget (baseline vs live)
+	BudgetRaw    []string     `json:"-"`                      // raw `## budget` section lines (lock append preserves them)
 }
 
 // BudgetLine is one `## budget` table row: a category and its budgeted amount.
@@ -63,6 +65,7 @@ type LedgerRow struct {
 	Doc        string  `json:"doc"`
 	WorkID     string  `json:"workId,omitempty"`  // tether to a `## work` stage/todo
 	PaidBy     string  `json:"paidBy,omitempty"`  // [paid-by:: entity] — the paying entity (statements workbench)
+	Cat        string  `json:"cat,omitempty"`     // [cat:: soft|carry|acquisition] — budget category (blank/tethered = hard)
 	RawNote    string  `json:"rawNote,omitempty"` // note as stored on disk (token intact) — mutation matching
 }
 
@@ -226,8 +229,8 @@ func parseLedger(raw []byte) []LedgerRow {
 			Date: get(0), Type: get(1), Category: get(2), Vendor: get(3),
 			Contractor: get(4), Amount: amt, Status: get(6), Note: get(7), Doc: get(8),
 		}
-		// tokens ride inside note: strip [work:: id] → WorkID and
-		// [paid-by:: entity] → PaidBy; display note is the cleaned text.
+		// tokens ride inside note: strip [work:: id] → WorkID, [paid-by::
+		// entity] → PaidBy, [cat:: x] → Cat; display note is the cleaned text.
 		row.RawNote = row.Note
 		for _, m := range workFieldRe.FindAllStringSubmatch(row.Note, -1) {
 			switch strings.ToLower(m[1]) {
@@ -235,9 +238,11 @@ func parseLedger(raw []byte) []LedgerRow {
 				row.WorkID = strings.TrimSpace(m[2])
 			case "paid-by":
 				row.PaidBy = strings.TrimSpace(m[2])
+			case "cat":
+				row.Cat = strings.TrimSpace(m[2])
 			}
 		}
-		if row.WorkID != "" || row.PaidBy != "" {
+		if row.WorkID != "" || row.PaidBy != "" || row.Cat != "" {
 			row.Note = strings.Join(strings.Fields(workFieldRe.ReplaceAllString(row.Note, "")), " ")
 		}
 		if row.Date == "" && row.Type == "" && row.Amount == 0 {

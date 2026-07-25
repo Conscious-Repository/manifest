@@ -589,6 +589,40 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 	s.respondProperty(w, slug)
 }
 
+// handleBudgetLock snapshots the CURRENT category plans as the baseline — one
+// `- [locked:: date] …` line appended to `## budget` (prior lines, including
+// legacy tables and earlier locks, are preserved verbatim; latest lock wins).
+func (s *Server) handleBudgetLock(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	slug := r.PathValue("slug")
+	p, ok := s.realestate.Get(slug)
+	if !ok {
+		http.Error(w, "property not found", http.StatusNotFound)
+		return
+	}
+	if p.Project == nil {
+		httpError(w, errBadRequest("no budget to lock"))
+		return
+	}
+	amounts := map[string]float64{}
+	for _, c := range p.Project.Categories {
+		amounts[c.Key] = c.Budget
+	}
+	line := realestate.FormatBaselineLock(time.Now().Format("2006-01-02"), amounts)
+	body := strings.TrimRight(strings.Join(append(append([]string{}, p.BudgetRaw...), line), "\n"), "\n")
+	if err := s.vault.ReplaceSection(p.Path, "budget", body); err != nil {
+		httpError(w, err)
+		return
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{p.Path})
+	}
+	s.respondProperty(w, slug)
+}
+
 // writeWork emits + surgically replaces the `## work` section, then reindexes.
 func (s *Server) writeWork(rel string, stages []realestate.WorkStage) error {
 	if err := s.vault.ReplaceSection(rel, "work", realestate.EmitWork(stages)); err != nil {
