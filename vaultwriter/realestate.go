@@ -256,6 +256,59 @@ func (w *Writer) WriteExport(rel string, data []byte) error {
 	return os.WriteFile(full, data, 0o644)
 }
 
+// ReplaceSection swaps the BODY of one `## section` in a record (creating the
+// section at EOF when absent), byte-stable everywhere else — the surgical
+// write the `## work` mutations use (parse → mutate → emit → replace).
+// Database-class guarded.
+func (w *Writer) ReplaceSection(rel, section, body string) error {
+	full, err := w.resolveRecord(rel)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		return err
+	}
+	lines := strings.Split(string(raw), "\n")
+	start := -1
+	for i, ln := range lines {
+		t := strings.TrimRight(ln, " \t")
+		if strings.EqualFold(t, "## "+section) {
+			start = i
+			break
+		}
+	}
+	body = strings.TrimRight(body, "\n")
+	var bodyLines []string
+	if body != "" {
+		bodyLines = strings.Split(body, "\n")
+	}
+	var out []string
+	if start < 0 {
+		// absent → append at EOF
+		out = append(out, strings.Split(strings.TrimRight(string(raw), "\n"), "\n")...)
+		out = append(out, "", "## "+section)
+		out = append(out, bodyLines...)
+	} else {
+		end := len(lines)
+		for i := start + 1; i < len(lines); i++ {
+			t := strings.TrimRight(lines[i], " \t")
+			if strings.HasPrefix(t, "## ") && !strings.HasPrefix(t, "### ") {
+				end = i
+				break
+			}
+		}
+		// trim trailing blanks inside the old section span, keep ONE separator
+		out = append(out, lines[:start+1]...)
+		out = append(out, bodyLines...)
+		if end < len(lines) {
+			out = append(out, "") // blank line before the next section
+			out = append(out, lines[end:]...)
+		}
+	}
+	return os.WriteFile(full, []byte(strings.TrimRight(strings.Join(out, "\n"), "\n")+"\n"), 0o644)
+}
+
 // insertLogBullet places bullet right under the `## log` heading, or appends a new
 // `## log` section at the end when there is none.
 func insertLogBullet(content, bullet string) string {

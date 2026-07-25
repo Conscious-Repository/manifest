@@ -91,6 +91,14 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	}
 	p.Units = sourceUnits(strings.TrimSuffix(full, ".md") + ".source.json")
 	p.Rollup = computeRollup(p.Budget, p.Ledger)
+	p.Work = ParseWork(sections["work"])
+	JoinWorkLedger(p.Work, p.Ledger)
+	for _, st := range p.Work {
+		if st.Current {
+			p.CurrentStage = st.Text
+			break
+		}
+	}
 	return p, true
 }
 

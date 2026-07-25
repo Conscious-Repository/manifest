@@ -52,6 +52,7 @@ const els = {
   propertyPage: document.getElementById("propertyPage"),
   propToggle: document.getElementById("propToggle"),
   propertyStatements: document.getElementById("propertyStatements"),
+  propertyWork: document.getElementById("propertyWork"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
   propertyMap: document.getElementById("propertyMap"),
   propertyMapLegend: document.getElementById("propertyMapLegend"),
@@ -4353,8 +4354,10 @@ function showProperties(h) {
   const tail = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
   els.propertyPage.hidden = true; els.propertyMapWrap.hidden = true;
   els.propertyBoard.hidden = true; els.propertyStatements.hidden = true;
+  els.propertyWork.hidden = true;
   if (tail.startsWith("deal/")) { propMode = "page"; renderDealPage(tail.slice(5)); }
   else if (tail === "map") { propMode = "map"; syncPropChips(); loadProperties(); }
+  else if (tail === "work") { propMode = "work"; syncPropChips(); renderWorkView(); }
   else if (tail === "statements") { propMode = "statements"; syncPropChips(); renderStatements(); }
   else if (tail) { propMode = "page"; renderPropertyPage(tail); }
   else { propMode = "board"; syncPropChips(); loadProperties(); }
@@ -4547,7 +4550,7 @@ function renderBoardBody(body) {
   loose.sort((a, b) => (a.control === "tracked" ? 1 : 0) - (b.control === "tracked" ? 1 : 0) ||
     (a.address || "").localeCompare(b.address || ""));
   if (loose.length) {
-    body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "UNITS", "BUDGET", "PAID / COMMITTED"]));
+    body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "STAGE", "UNITS", "BUDGET", "PAID / COMMITTED"]));
     loose.forEach((p) => body.append(boardRow(p, false)));
   }
 
@@ -4573,7 +4576,8 @@ function dealHead(d, members) {
   row.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); };
   row.append(el("span", "property-addr deal-name", d.name));
   row.append(dealStatusChip(d));
-  row.append(el("span", "property-out", members.length + " parcels"));
+  row.append(el("span", "property-stage", members.length + " parcels"));
+  row.append(el("span", "property-units", ""));
   row.append(el("span", "property-budget", agg.budget ? fmtMoney(agg.budget) : ""));
   const out = el("span", "property-out");
   if (agg.budget) {
@@ -4666,6 +4670,7 @@ function boardRow(p, member) {
   row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
   row.append(el("span", "property-addr", p.address || p.name));
   row.append(statusChip(p, () => loadProperties()));
+  row.append(el("span", "property-stage", p.currentStage || ""));
   row.append(el("span", "property-units", p.units ? p.units + "u" : ""));
   row.append(el("span", "property-budget", p.rollup.budget ? fmtMoney(p.rollup.budget) : ""));
   const out = el("span", "property-out" + (p.rollup.overBudget ? " over" : ""));
@@ -5131,7 +5136,7 @@ async function renderDealPage(slug) {
   // MEMBERS
   host.append(el("div", "pp-section-head", "MEMBERS"));
   const mbox = el("div", "pp-members");
-  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "UNITS", "BUDGET", "PAID / COMMITTED"]));
+  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "STAGE", "UNITS", "BUDGET", "PAID / COMMITTED"]));
   (d.members || []).forEach((p) => mbox.append(boardRow(p, true)));
   host.append(mbox);
 
@@ -5429,8 +5434,236 @@ function renderSplitBlock(wrap, r, initialOnly) {
   wrap.append(block);
 }
 
+// ---- WORK section (pass-4): stages · todos · tethered money ----
+
+let pendingLedgerPrefill = null; // {type, workId} — set by "bid →"/"$ →", consumed by ledgerEntryRow
+const workOpen = {}; // per-render expanded non-current stages (slug:stageId → bool)
+
+async function workOp(slug, body) {
+  try {
+    await postJSONOk("/api/properties/" + encodeURIComponent(slug) + "/work", body);
+    renderPropertyPage(slug);
+  } catch (e) { showToast((e.message || "Work update failed").slice(0, 80)); }
+}
+
+// workBlock renders the management core in the goals-trail idiom: done stages
+// struck ✓, the current stage → in blue and open, others collapsed.
+function workBlock(p) {
+  const wrap = el("div", "work-block");
+  if (!(p.work || []).length) {
+    const seed = el("div", "work-seed");
+    seed.append(el("span", "pp-empty", "No work plan yet — seed stages:"));
+    const opts = [["rehab", "rehab (8)"], ["new-build", "new build (9)"], ["phases", "from site phases"], ["empty", "start empty"]];
+    opts.forEach(([tpl, label]) => {
+      const b = pillLight(label, () => workOp(p.slug, { op: "seed", template: tpl }));
+      if ((p.kind === "rehab" && tpl === "rehab") || (p.kind === "new-construction" && tpl === "new-build")) b.classList.add("suggested");
+      seed.append(b);
+    });
+    wrap.append(seed);
+    return wrap;
+  }
+
+  p.work.forEach((st) => {
+    const open = st.current || workOpen[p.slug + ":" + st.id];
+    const stageEl = el("div", "work-stage" + (st.checked ? " done" : "") + (st.current ? " cur" : ""));
+    const head = el("div", "work-stage-head");
+    const check = el("button", "check wk-check" + (st.checked ? " on" : ""), st.checked ? "✓" : "○");
+    check.title = st.checked ? "reopen stage" : st.ready ? "stage ready — mark complete" : "mark stage complete";
+    if (st.ready && !st.checked) check.classList.add("ready");
+    check.onclick = (e) => { e.stopPropagation(); workOp(p.slug, { op: "check", id: st.id, checked: !st.checked }); };
+    head.append(check);
+    head.append(el("span", "work-stage-name", (st.current ? "→ " : "") + st.text));
+    if (st.ready && !st.checked) head.append(el("span", "work-ready", "ready"));
+    if (st.committed > 0) head.append(el("span", "work-money", fmtMoney(st.paid) + " / " + fmtMoney(st.committed) + " committed"));
+    if (!st.current) {
+      head.classList.add("toggle");
+      head.append(el("span", "o-st-caret", open ? "▾" : "▸"));
+      head.onclick = () => { workOpen[p.slug + ":" + st.id] = !open; renderPropertyPage(p.slug); };
+    }
+    // hover delete for stages (inline y/n)
+    head.append(workDeleteBtn(p, st.id));
+    stageEl.append(head);
+
+    if (open) {
+      const list = el("div", "work-todos");
+      st.todos.forEach((td) => list.append(workTodoRow(p, st, td)));
+      list.append(ghostInput("＋ todo", "work-add", (v) => workOp(p.slug, { op: "add-todo", stageId: st.id, text: v }), "what needs to happen…"));
+      stageEl.append(list);
+    }
+    wrap.append(stageEl);
+  });
+  wrap.append(ghostInput("＋ stage", "work-add-stage", (v) => workOp(p.slug, { op: "add-stage", text: v }), "stage name…"));
+  return wrap;
+}
+
+function workTodoRow(p, st, td) {
+  const row = el("div", "work-todo" + (td.checked ? " done" : ""));
+  const check = el("button", "check wk-check" + (td.checked ? " on" : ""), td.checked ? "✓" : "○");
+  check.onclick = (e) => { e.stopPropagation(); workOp(p.slug, { op: "check", id: td.id, checked: !td.checked }); };
+  row.append(check);
+
+  const label = el("span", "work-todo-text", td.text);
+  label.title = "click to edit";
+  label.onclick = () => {
+    const input = inputEl(""); input.value = td.text; input.classList.add("work-edit");
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && input.value.trim()) workOp(p.slug, { op: "edit", id: td.id, text: input.value });
+      else if (ev.key === "Escape") input.replaceWith(label);
+    });
+    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(label); });
+    label.replaceWith(input);
+    input.focus();
+  };
+  row.append(label);
+
+  // tether chips: money + bids
+  if (td.paid > 0) row.append(el("span", "work-chip paid", fmtMoney(td.paid) + " paid"));
+  else if (td.committed > 0) row.append(el("span", "work-chip", fmtMoney(td.committed) + " committed"));
+  (td.bids || []).forEach((b) => {
+    if (b.status === "accepted" && td.committed > 0) return; // committed chip covers it
+    row.append(el("span", "work-chip bid-" + b.status, "bid " + b.status + ": " + (b.who || "?") + " " + fmtMoney(b.amount)));
+  });
+
+  // both-directions tether: open the ledger entry row prefilled + prelinked
+  const acts = el("span", "work-acts");
+  acts.append(quietBtn("bid →", () => prefillLedger(p, { type: "bid", workId: td.id })));
+  acts.append(quietBtn("$ →", () => prefillLedger(p, { type: "expense", workId: td.id })));
+  acts.append(workDeleteBtn(p, td.id));
+  row.append(acts);
+  return row;
+}
+
+function quietBtn(text, onclick) {
+  const b = el("button", "stmt-hint", text);
+  b.onclick = (e) => { e.stopPropagation(); onclick(); };
+  return b;
+}
+
+function workDeleteBtn(p, id) {
+  const holder = el("span", "work-del");
+  const x = el("button", "uw-x", "✕");
+  x.onclick = (e) => {
+    e.stopPropagation();
+    const yes = quietBtn("delete?", () => workOp(p.slug, { op: "delete", id }));
+    const no = quietBtn("no", () => { yes.remove(); no.remove(); x.hidden = false; });
+    x.hidden = true;
+    holder.append(yes, no);
+  };
+  holder.append(x);
+  return holder;
+}
+
+// prefillLedger re-renders the page with the entry row primed (type + todo
+// link) and scrolls to it — logging money from where you're looking.
+function prefillLedger(p, prefill) {
+  pendingLedgerPrefill = prefill;
+  renderPropertyPage(p.slug);
+}
+
+// openTodoOptions builds the ledger picker options: open todos first, then the
+// current row's tether even if checked (so edits don't lose it).
+function openTodoOptions(p, includeId) {
+  const opts = [["", "— no work link —"]];
+  (p.work || []).forEach((st) => {
+    st.todos.forEach((td) => {
+      if (!td.checked || td.id === includeId) opts.push([td.id, st.text + " · " + td.text]);
+    });
+    if (includeId && st.id === includeId) opts.push([st.id, st.text + " (stage)"]);
+  });
+  return opts;
+}
+
+// ---- WORK view (portfolio, design §5): the daily management screen ----
+
+async function renderWorkView() {
+  const host = els.propertyWork; host.hidden = false; host.innerHTML = "loading…";
+  try {
+    const d = await (await fetch("/api/properties")).json();
+    propertyCache = d.properties || [];
+    dealCache = d.deals || [];
+  } catch (e) { host.innerHTML = ""; host.append(emptyRow("Unavailable.")); return; }
+  host.innerHTML = "";
+  const active = propertyCache.filter((p) => !p.hidden && (p.status === "construction" || p.status === "pre_development"));
+  const withWork = propertyCache.filter((p) => !p.hidden && !active.includes(p) && (p.work || []).length);
+  const list = [...active, ...withWork];
+  els.propertiesMeta.textContent = active.length + " active projects";
+  if (!list.length) { host.append(emptyRow("No active projects — set a property to construction or pre_development.")); return; }
+
+  // needs-attention first: active with no open todos in the current stage
+  const openCount = (p) => {
+    const cur = (p.work || []).find((s) => s.current);
+    return cur ? cur.todos.filter((t) => !t.checked).length : -1; // -1 = no work plan
+  };
+  list.sort((a, b) => {
+    const oa = openCount(a), ob = openCount(b);
+    return (oa <= 0 ? 0 : 1) - (ob <= 0 ? 0 : 1) || (a.address || "").localeCompare(b.address || "");
+  });
+
+  list.forEach((p) => {
+    const card = el("div", "wv-card");
+    const head = el("div", "wv-head");
+    const addr = el("a", "wv-addr", p.address || p.slug);
+    addr.href = "#/properties/" + encodeURIComponent(p.slug);
+    head.append(addr);
+    head.append(el("span", "property-status status-" + (p.status || "").replace(/_/g, "-"), p.status));
+    const cur = (p.work || []).find((s) => s.current);
+    if (cur) {
+      head.append(el("span", "wv-stage", "→ " + cur.text + (cur.ready ? "  ·  ready ✓" : "")));
+    } else if ((p.work || []).length) {
+      head.append(el("span", "wv-stage done-all", "all stages complete"));
+    } else {
+      head.append(el("span", "wv-stage none", "no work plan — open the property to seed one"));
+    }
+    card.append(head);
+
+    if (cur) {
+      const openTodos = cur.todos.filter((t) => !t.checked);
+      if (!openTodos.length) card.append(el("div", "wv-warn", "no next action queued"));
+      const todos = el("div", "wv-todos");
+      openTodos.slice(0, 6).forEach((td) => {
+        const row = el("div", "wv-todo");
+        const check = el("button", "check wk-check", "○");
+        check.onclick = async () => {
+          try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", { op: "check", id: td.id, checked: true }); renderWorkView(); }
+          catch (e) { showToast("Couldn't check"); }
+        };
+        row.append(check, el("span", "work-todo-text", td.text));
+        if (td.committed > 0) row.append(el("span", "work-chip", fmtMoney(td.committed) + " committed"));
+        todos.append(row);
+      });
+      todos.append(ghostInput("＋ todo", "work-add", async (v) => {
+        try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", { op: "add-todo", stageId: cur.id, text: v }); renderWorkView(); }
+        catch (e) { showToast("Couldn't add"); }
+      }, "next action…"));
+      card.append(todos);
+    }
+
+    // pending bids with quick accept/decline (exact-match ledger mutate)
+    const pending = (p.ledger || []).filter((r) => r.type === "bid" && (r.status === "requested" || r.status === "received"));
+    if (pending.length) {
+      const bids = el("div", "wv-bids");
+      pending.forEach((r) => {
+        const line = el("div", "wv-bid");
+        line.append(el("span", "wv-bid-text", (r.contractor || r.vendor || "?") + " " + fmtMoney(r.amount) + " · " + r.status + (r.workId ? " · " + r.workId.split("/").pop() : "")));
+        const act = async (status) => {
+          const replacement = { ...r, status }; // server rebuilds the stored note canonically
+          try {
+            await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate", { original: r, replacement });
+            renderWorkView();
+          } catch (e) { showToast((e.message || "Bid update failed").slice(0, 80)); }
+        };
+        line.append(quietBtn("accept ✓", () => act("accepted")), quietBtn("decline ✕", () => act("declined")));
+        bids.append(line);
+      });
+      card.append(bids);
+    }
+    host.append(card);
+  });
+}
+
 async function renderPropertyPage(slug) {
   els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
+  els.propertyStatements.hidden = true; els.propertyWork.hidden = true;
   const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
   try {
     const [p, srcRes, geoRes] = await Promise.all([
@@ -5485,17 +5718,10 @@ function renderProp(p, src, geoFeatures) {
   sum.append(rollupStat("budget", "", fmtMoney(p.rollup.budget)));
   host.append(sum);
 
-  if ((p.rollup.categories || []).length) {
-    host.append(el("div", "pp-section-head", "BUDGET"));
-    const tbl = el("div", "pp-budget");
-    p.rollup.categories.forEach((c) => {
-      const r = el("div", "pp-budget-row" + (c.over ? " over" : ""));
-      r.append(el("span", "pp-cat", c.category), el("span", "pp-amt", fmtMoney(c.budget)),
-        el("span", "pp-catout", fmtPct(c.paidPct) + " / " + fmtPct(c.committedPct)));
-      tbl.append(r);
-    });
-    host.append(tbl);
-  }
+  // WORK — the management core (budget category table retired from the page;
+  // over-budget still surfaces via the rollup pair + feed signal).
+  host.append(el("div", "pp-section-head", "WORK"));
+  host.append(workBlock(p));
 
   host.append(el("div", "pp-section-head", "LEDGER"));
   host.append(ledgerTable(p));
@@ -5523,10 +5749,9 @@ function renderProp(p, src, geoFeatures) {
     }
   }
 
-  host.append(el("div", "pp-section-head", "LOG"));
-  host.append(logBlock(p));
-  host.append(el("div", "pp-section-head", "DOCS"));
-  host.append(docsBlock(p));
+  const logSum = (p.log || []).length ? p.log.length + " lines · " + (p.lastLog || "").slice(0, 44) : "empty";
+  collapsibleSection(host, "LOG", logSum, false).append(logBlock(p));
+  collapsibleSection(host, "DOCS", "click to open", false).append(docsBlock(p));
 
   const edit = el("button", "pill light pp-editnote", "edit note / prose →");
   edit.onclick = () => { _noteReturn = "#/properties/" + encodeURIComponent(p.slug); openNoteByPath(p.path); };
@@ -5611,7 +5836,7 @@ let ledgerShowAll = false;
 
 function ledgerTable(p) {
   const wrap = el("div", "pp-ledger");
-  wrap.append(ppCols("cols-ledger", ["DATE", "TYPE", "CATEGORY", "VENDOR", "AMOUNT", "STATUS", "NOTE", ""]));
+  wrap.append(ppCols("cols-ledger", ["DATE", "TYPE", "CATEGORY", "VENDOR", "AMOUNT", "STATUS", "NOTE", "WORK", ""]));
   wrap.append(ledgerEntryRow(p));
 
   const rows = (p.ledger || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
@@ -5638,6 +5863,7 @@ function ledgerTable(p) {
 }
 
 // ledgerEntryRow: the aligned quick-add — shares the ledger grid exactly.
+// Consumes pendingLedgerPrefill (the "bid →"/"$ →" tether from a work todo).
 function ledgerEntryRow(p) {
   const row = el("div", "pp-ledger-row entry");
   const date = inputEl(""); date.value = isoToday(); date.classList.add("lg-date");
@@ -5653,34 +5879,70 @@ function ledgerEntryRow(p) {
   const amt = inputEl("0.00"); amt.type = "number"; amt.step = "0.01";
   const statusSel = selectEl(["paid", "requested", "received", "accepted", "declined"]);
   const note = inputEl("note");
+  const workSel = workSelect(p, ""); // the tether picker
   const add = el("button", "pill lg-add", "add");
+
+  // prefill from a work-todo action
+  let focusTarget = null;
+  if (pendingLedgerPrefill) {
+    typeSel.value = pendingLedgerPrefill.type;
+    workSel.value = pendingLedgerPrefill.workId || "";
+    if (typeSel.value === "bid") statusSel.value = "requested";
+    pendingLedgerPrefill = null;
+    row.classList.add("prefilled");
+    focusTarget = who;
+  }
+
   const commit = async () => {
     const amount = parseFloat(amt.value) || 0;
     if (!cat.value.trim() && !amount) return;
-    const body = { date: date.value, type: typeSel.value, category: cat.value, amount, status: statusSel.value, note: note.value };
+    const body = { date: date.value, type: typeSel.value, category: cat.value, amount, status: statusSel.value, note: note.value, workId: workSel.value };
     if (typeSel.value === "bid") body.contractor = who.value; else body.vendor = who.value;
     add.disabled = true;
     try {
       await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger", body);
-      renderPropertyPage(p.slug); // fresh page; entry refocuses via autofocus below
+      renderPropertyPage(p.slug);
     } catch (e) { showToast("Couldn't add ledger row"); add.disabled = false; }
   };
   add.onclick = commit;
   [date, cat, who, amt, note].forEach((i) => i.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); }));
-  row.append(date, typeSel, cat, who, amt, statusSel, note, add);
+  row.append(date, typeSel, cat, who, amt, statusSel, note, workSel, add);
   row.append(dl, vdl);
+  if (focusTarget) setTimeout(() => { row.scrollIntoView({ behavior: "smooth", block: "center" }); focusTarget.focus(); }, 60);
   return row;
+}
+
+// workSelect: the ledger's optional tether picker (open todos, grouped by stage).
+function workSelect(p, current) {
+  const sel = document.createElement("select");
+  sel.className = "pp-in lg-work";
+  sel.title = "link to a work item";
+  openTodoOptions(p, current).forEach(([val, label]) => {
+    const o = document.createElement("option");
+    o.value = val; o.textContent = label;
+    sel.append(o);
+  });
+  if (current && ![...sel.options].some((o) => o.value === current)) {
+    const o = document.createElement("option");
+    o.value = current; o.textContent = current;
+    sel.append(o);
+  }
+  sel.value = current || "";
+  return sel;
 }
 
 // ledgerRowEl: display row → click to edit in place (✓/✕), hover ✕ → y/n delete.
 function ledgerRowEl(p, r) {
   const row = el("div", "pp-ledger-row");
+  const workCell = el("span", "lg-workcell");
+  if (r.workId) workCell.append(el("span", "work-chip lg-chip", "⚲ " + r.workId.split("/").pop()));
   const cells = [
     el("span", "", (r.date || "").slice(5)), // MM-DD under the month head
     el("span", "pp-ltype type-" + r.type, r.type),
     el("span", "", r.category), el("span", "", r.vendor || r.contractor || ""),
     el("span", "pp-amt", fmtMoney(r.amount)), el("span", "", r.status),
     el("span", "pp-lnote", r.note || ""),
+    workCell,
   ];
   cells.forEach((c) => row.append(c));
 
@@ -5713,11 +5975,13 @@ function ledgerRowEl(p, r) {
     const amt = inputEl(""); amt.type = "number"; amt.step = "0.01"; amt.value = r.amount;
     const statusSel = selectEl(["paid", "requested", "received", "accepted", "declined"]); statusSel.value = r.status || "paid";
     const note = inputEl("note"); note.value = r.note || "";
+    const workSel = workSelect(p, r.workId || "");
     const ok = el("button", "pill lg-add", "✓");
     ok.onclick = async () => {
       const replacement = {
         date: date.value, type: typeSel.value, category: cat.value,
         amount: parseFloat(amt.value) || 0, status: statusSel.value, note: note.value, doc: r.doc || "",
+        workId: workSel.value,
       };
       if (typeSel.value === "bid") replacement.contractor = who.value; else replacement.vendor = who.value;
       try {
@@ -5727,7 +5991,7 @@ function ledgerRowEl(p, r) {
     };
     const cancel = el("button", "pill light lg-add", "✕");
     cancel.onclick = (e) => { e.stopPropagation(); edit.replaceWith(row); };
-    edit.append(date, typeSel, cat, who, amt, statusSel, note, ok, cancel);
+    edit.append(date, typeSel, cat, who, amt, statusSel, note, workSel, ok, cancel);
     edit.onclick = (e) => e.stopPropagation();
     [date, cat, who, amt, note].forEach((i) => i.addEventListener("keydown", (e) => {
       if (e.key === "Enter") ok.onclick();

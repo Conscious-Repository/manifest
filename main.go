@@ -181,8 +181,9 @@ func main() {
 		}
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
 		if reSvc != nil {
-			// property signals (real-estate plan §4): over-budget category + stalled rehab
-			emitters = append(emitters, signals.OverBudgetProperties(reSvc), signals.StalledProperties(reSvc))
+			// property signals: over-budget category, stalled rehab, nothing-queued-next
+			emitters = append(emitters, signals.OverBudgetProperties(reSvc),
+				signals.StalledProperties(reSvc), signals.NoNextAction(reSvc))
 		}
 		srv.UseSignals(signals.New(sigStore, emitters...))
 		log.Printf("feed signals: enabled (%d emitters)", len(emitters))

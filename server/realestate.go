@@ -313,8 +313,8 @@ func (s *Server) handlePropertyLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Date, Type, Category, Vendor, Contractor, Status, Note, Doc string
-		Amount                                                      float64
+		Date, Type, Category, Vendor, Contractor, Status, Note, Doc, WorkID string
+		Amount                                                              float64
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -325,11 +325,12 @@ func (s *Server) handlePropertyLedger(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("type must be expense or bid"))
 		return
 	}
-	rel, ok := s.propertyRel(r.PathValue("slug"))
+	p, ok := s.realestate.Get(r.PathValue("slug"))
 	if !ok {
 		http.Error(w, "property not found", http.StatusNotFound)
 		return
 	}
+	rel := p.Path
 	date := strings.TrimSpace(b.Date)
 	if date == "" {
 		date = time.Now().Format("2006-01-02")
@@ -338,16 +339,222 @@ func (s *Server) handlePropertyLedger(w http.ResponseWriter, r *http.Request) {
 	if status == "" && b.Type == "expense" {
 		status = "paid"
 	}
+	// tether: freeze the work id in the record first, then store the token in note
+	s.tetherWorkID(p, strings.TrimSpace(b.WorkID))
 	row := []string{
 		date, b.Type, strings.TrimSpace(b.Category), strings.TrimSpace(b.Vendor),
 		strings.TrimSpace(b.Contractor), strconv.FormatFloat(b.Amount, 'f', -1, 64),
-		status, strings.TrimSpace(b.Note), strings.TrimSpace(b.Doc),
+		status, noteWithWork(b.Note, strings.TrimSpace(b.WorkID)), strings.TrimSpace(b.Doc),
 	}
 	if err := s.vault.AppendLedgerRow(realestate.LedgerRel(rel), realestate.LedgerHeader, row); err != nil {
 		httpError(w, err)
 		return
 	}
 	s.respondProperty(w, r.PathValue("slug"))
+}
+
+// ---- work management (pass-4): stages · todos · tethered money ----
+
+// handlePropertyWork is the single op endpoint for the `## work` section —
+// instant semantics (a checkbox is not a document edit): parse → mutate in
+// memory → EmitWork → surgical ReplaceSection → reindex → re-parsed property.
+func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	slug := r.PathValue("slug")
+	p, ok := s.realestate.Get(slug)
+	if !ok {
+		http.Error(w, "property not found", http.StatusNotFound)
+		return
+	}
+	var b struct {
+		Op       string `json:"op"` // seed | add-stage | add-todo | check | edit | delete
+		ID       string `json:"id"`
+		StageID  string `json:"stageId"`
+		Text     string `json:"text"`
+		Checked  bool   `json:"checked"`
+		Template string `json:"template"` // rehab | new-build | phases | empty
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	stages := p.Work
+	find := func(id string) (si, ti int) {
+		for i := range stages {
+			if stages[i].ID == id {
+				return i, -1
+			}
+			for j := range stages[i].Todos {
+				if stages[i].Todos[j].ID == id {
+					return i, j
+				}
+			}
+		}
+		return -1, -1
+	}
+	switch b.Op {
+	case "seed":
+		if len(stages) > 0 {
+			httpError(w, errBadRequest("work section already exists"))
+			return
+		}
+		var names []string
+		switch b.Template {
+		case "rehab":
+			names = realestate.RehabStages
+		case "new-build":
+			names = realestate.NewBuildStages
+		case "phases":
+			names = s.phaseNames(p) // seeded FROM site phases; stores never sync
+			if len(names) == 0 {
+				httpError(w, errBadRequest("no construction phases in the source data"))
+				return
+			}
+		case "empty":
+			names = []string{"Next up"}
+		default:
+			httpError(w, errBadRequest("unknown template"))
+			return
+		}
+		for _, n := range names {
+			stages = append(stages, realestate.WorkStage{Text: n})
+		}
+	case "add-stage":
+		if strings.TrimSpace(b.Text) == "" {
+			httpError(w, errBadRequest("text is required"))
+			return
+		}
+		stages = append(stages, realestate.WorkStage{Text: strings.TrimSpace(b.Text)})
+	case "add-todo":
+		si, ti := find(b.StageID)
+		if si < 0 || ti >= 0 {
+			httpError(w, errBadRequest("stageId must name a stage"))
+			return
+		}
+		if strings.TrimSpace(b.Text) == "" {
+			httpError(w, errBadRequest("text is required"))
+			return
+		}
+		stages[si].Todos = append(stages[si].Todos, realestate.WorkTodo{Text: strings.TrimSpace(b.Text)})
+	case "check":
+		si, ti := find(b.ID)
+		if si < 0 {
+			http.Error(w, "work item not found", http.StatusNotFound)
+			return
+		}
+		if ti < 0 {
+			stages[si].Checked = b.Checked
+		} else {
+			stages[si].Todos[ti].Checked = b.Checked
+		}
+	case "edit":
+		si, ti := find(b.ID)
+		if si < 0 {
+			http.Error(w, "work item not found", http.StatusNotFound)
+			return
+		}
+		if strings.TrimSpace(b.Text) == "" {
+			httpError(w, errBadRequest("text is required"))
+			return
+		}
+		if ti < 0 {
+			stages[si].Text = strings.TrimSpace(b.Text)
+		} else {
+			stages[si].Todos[ti].Text = strings.TrimSpace(b.Text)
+		}
+	case "delete":
+		si, ti := find(b.ID)
+		if si < 0 {
+			http.Error(w, "work item not found", http.StatusNotFound)
+			return
+		}
+		if ti < 0 {
+			stages = append(stages[:si], stages[si+1:]...)
+		} else {
+			st := &stages[si]
+			st.Todos = append(st.Todos[:ti], st.Todos[ti+1:]...)
+		}
+	default:
+		httpError(w, errBadRequest("unknown op"))
+		return
+	}
+	if err := s.writeWork(p.Path, stages); err != nil {
+		httpError(w, err)
+		return
+	}
+	s.respondProperty(w, slug)
+}
+
+// writeWork emits + surgically replaces the `## work` section, then reindexes.
+func (s *Server) writeWork(rel string, stages []realestate.WorkStage) error {
+	if err := s.vault.ReplaceSection(rel, "work", realestate.EmitWork(stages)); err != nil {
+		return err
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{rel})
+	}
+	return nil
+}
+
+// phaseNames pulls construction_phases names from the source sidecar (property
+// slice or single-parcel full-deal shape) for the "from site phases" seed.
+func (s *Server) phaseNames(p realestate.Property) []string {
+	raw, ok := s.realestate.Source(p.Path)
+	if !ok {
+		return nil
+	}
+	var v struct {
+		ConstructionPhases []struct {
+			Phase string `json:"phase"`
+		} `json:"construction_phases"`
+		Properties []struct {
+			ConstructionPhases []struct {
+				Phase string `json:"phase"`
+			} `json:"construction_phases"`
+		} `json:"properties"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return nil
+	}
+	phases := v.ConstructionPhases
+	if len(phases) == 0 && len(v.Properties) > 0 {
+		phases = v.Properties[0].ConstructionPhases
+	}
+	var out []string
+	for _, ph := range phases {
+		if strings.TrimSpace(ph.Phase) != "" {
+			out = append(out, strings.TrimSpace(ph.Phase))
+		}
+	}
+	return out
+}
+
+// tetherWorkID freezes a derived work id into the record (goals Promote
+// pattern) so the tether survives renames; no-op when already explicit.
+func (s *Server) tetherWorkID(p realestate.Property, workID string) {
+	if workID == "" {
+		return
+	}
+	stages := p.Work
+	if realestate.FreezeWorkID(stages, workID) {
+		_ = s.writeWork(p.Path, stages)
+	}
+}
+
+// noteWithWork renders the canonical stored note (display note + tether token).
+func noteWithWork(note, workID string) string {
+	note = strings.TrimSpace(note)
+	if workID == "" {
+		return note
+	}
+	tok := "[work:: " + workID + "]"
+	if note == "" {
+		return tok
+	}
+	return note + " " + tok
 }
 
 // ---- docs (spec §3): the property's document folder, vault-homed ----
@@ -639,11 +846,17 @@ func (s *Server) handleDealField(w http.ResponseWriter, r *http.Request) {
 // ---- ledger row mutation (property page inline edit/delete) ----
 
 func ledgerRecord(r realestate.LedgerRow) []string {
+	// on-disk note carries the tether token; RawNote (from a parsed row) wins,
+	// else it's reconstructed canonically from Note + WorkID.
+	note := strings.TrimSpace(r.RawNote)
+	if note == "" {
+		note = noteWithWork(r.Note, strings.TrimSpace(r.WorkID))
+	}
 	return []string{
 		strings.TrimSpace(r.Date), strings.TrimSpace(r.Type), strings.TrimSpace(r.Category),
 		strings.TrimSpace(r.Vendor), strings.TrimSpace(r.Contractor),
 		strconv.FormatFloat(r.Amount, 'f', -1, 64),
-		strings.TrimSpace(r.Status), strings.TrimSpace(r.Note), strings.TrimSpace(r.Doc),
+		strings.TrimSpace(r.Status), note, strings.TrimSpace(r.Doc),
 	}
 }
 
@@ -678,6 +891,11 @@ func (s *Server) handleLedgerMutate(w http.ResponseWriter, r *http.Request) {
 		if t := strings.ToLower(strings.TrimSpace(b.Replacement.Type)); t != "expense" && t != "bid" {
 			httpError(w, errBadRequest("type must be expense or bid"))
 			return
+		}
+		// replacement note is rebuilt canonically (never a stale echoed rawNote)
+		b.Replacement.RawNote = ""
+		if p, ok := s.realestate.Get(slug); ok {
+			s.tetherWorkID(p, strings.TrimSpace(b.Replacement.WorkID))
 		}
 		err = s.vault.UpdateLedgerRow(realestate.LedgerRel(rel), orig, ledgerRecord(*b.Replacement))
 	}

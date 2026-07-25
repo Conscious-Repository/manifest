@@ -19,24 +19,26 @@ import (
 // Property is one Board row / page — a projection of a property record + its
 // ledger sidecar. All money figures in Rollup are derived, never persisted.
 type Property struct {
-	Path    string       `json:"path"`    // vault-relative .md (for the note view)
-	Slug    string       `json:"slug"`    // basename without .md (the record key)
-	Name    string       `json:"name"`    // note title
-	Address string       `json:"address"` // frontmatter address
-	Entity  string       `json:"entity"`  // holding entity — Board groups by this ("" → unassigned)
-	Status  string       `json:"status"`  // negotiating | under_contract | pre_development | construction | completed | leased | listed | sold
-	Kind    string       `json:"kind"`    // rehab | new-construction | mixed | hold
-	Control string       `json:"control"` // owned | tracked
-	Deal    string       `json:"deal"`    // [[deal]] wikilink display, if bundled
-	Hidden  bool         `json:"hidden"`
-	Units   int          `json:"units,omitempty"` // total_units from the source sidecar
-	Lat     float64      `json:"lat,omitempty"`   // optional frontmatter map override
-	Lng     float64      `json:"lng,omitempty"`
-	Budget  []BudgetLine `json:"budget"`
-	Log     []string     `json:"log"`    // free lines, newest-first as written
-	Ledger  []LedgerRow  `json:"ledger"` // money facts from the csv sidecar
-	Rollup  Rollup       `json:"rollup"` // derived paid/committed/%out
-	LastLog string       `json:"lastLog"`
+	Path         string       `json:"path"`    // vault-relative .md (for the note view)
+	Slug         string       `json:"slug"`    // basename without .md (the record key)
+	Name         string       `json:"name"`    // note title
+	Address      string       `json:"address"` // frontmatter address
+	Entity       string       `json:"entity"`  // holding entity — Board groups by this ("" → unassigned)
+	Status       string       `json:"status"`  // negotiating | under_contract | pre_development | construction | completed | leased | listed | sold
+	Kind         string       `json:"kind"`    // rehab | new-construction | mixed | hold
+	Control      string       `json:"control"` // owned | tracked
+	Deal         string       `json:"deal"`    // [[deal]] wikilink display, if bundled
+	Hidden       bool         `json:"hidden"`
+	Units        int          `json:"units,omitempty"` // total_units from the source sidecar
+	Lat          float64      `json:"lat,omitempty"`   // optional frontmatter map override
+	Lng          float64      `json:"lng,omitempty"`
+	Budget       []BudgetLine `json:"budget"`
+	Log          []string     `json:"log"`    // free lines, newest-first as written
+	Ledger       []LedgerRow  `json:"ledger"` // money facts from the csv sidecar
+	Rollup       Rollup       `json:"rollup"` // derived paid/committed/%out
+	LastLog      string       `json:"lastLog"`
+	Work         []WorkStage  `json:"work"`                   // `## work` stages+todos (management core)
+	CurrentStage string       `json:"currentStage,omitempty"` // first unchecked stage's text
 }
 
 // BudgetLine is one `## budget` table row: a category and its budgeted amount.
@@ -54,8 +56,10 @@ type LedgerRow struct {
 	Contractor string  `json:"contractor"`
 	Amount     float64 `json:"amount"`
 	Status     string  `json:"status"` // expense: paid · bid: requested|received|accepted|declined
-	Note       string  `json:"note"`
+	Note       string  `json:"note"`   // display text — the [work:: id] tether token is stripped into WorkID
 	Doc        string  `json:"doc"`
+	WorkID     string  `json:"workId,omitempty"`  // tether to a `## work` stage/todo
+	RawNote    string  `json:"rawNote,omitempty"` // note as stored on disk (token intact) — mutation matching
 }
 
 // LedgerHeader is the canonical csv column order (also the seed's empty-file header).
@@ -190,6 +194,12 @@ func parseLedger(raw []byte) []LedgerRow {
 		row := LedgerRow{
 			Date: get(0), Type: get(1), Category: get(2), Vendor: get(3),
 			Contractor: get(4), Amount: amt, Status: get(6), Note: get(7), Doc: get(8),
+		}
+		// the tether rides inside note: strip `[work:: id]` → WorkID for display
+		row.RawNote = row.Note
+		if m := workFieldRe.FindStringSubmatch(row.Note); m != nil && strings.EqualFold(m[1], "work") {
+			row.WorkID = strings.TrimSpace(m[2])
+			row.Note = strings.Join(strings.Fields(workFieldRe.ReplaceAllString(row.Note, "")), " ")
 		}
 		if row.Date == "" && row.Type == "" && row.Amount == 0 {
 			continue // blank line
