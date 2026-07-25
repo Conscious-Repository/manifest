@@ -5278,6 +5278,75 @@ function ownerAutocomplete(placeholder, onSet) {
   return { el: wrap, value: () => input.value.trim(), setValue: (v) => { input.value = v; } };
 }
 
+// contractorAutocomplete: the bid form's name field — suggests contractor
+// records, PEOPLE from the vault (contacts search), and names already used
+// across the ledgers, with the quiet create-record completion for new ones.
+function contractorAutocomplete(placeholder, onSet) {
+  const wrap = el("span", "ta-wrap");
+  const input = inputEl(placeholder);
+  input.classList.add("ta-in");
+  const drop = el("div", "ta-drop");
+  drop.hidden = true;
+  let seq = 0;
+  const ledgerNames = () => {
+    const seen = new Set();
+    (propertyCache || []).forEach((p) => (p.ledger || []).forEach((r) => {
+      const n = (r.contractor || r.vendor || "").trim();
+      if (n) seen.add(n);
+    }));
+    return [...seen];
+  };
+  const refresh = async () => {
+    const q = input.value.toLowerCase().trim();
+    const mySeq = ++seq;
+    await ensureEntities();
+    let people = [];
+    if (q.length >= 2) {
+      try {
+        const d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json();
+        people = (d.results || []).filter((r) => r.isPerson && r.hasNote).slice(0, 5);
+      } catch (e) {}
+    }
+    if (mySeq !== seq) return;
+    drop.innerHTML = "";
+    const add = (label, kind, value) => {
+      const it = el("div", "ta-item");
+      it.append(el("span", "", label), el("span", "ta-kind", kind));
+      it.onmousedown = (e) => { e.preventDefault(); input.value = value; drop.hidden = true; if (onSet) onSet(value); };
+      drop.append(it);
+    };
+    const dedupe = new Set();
+    (((entitiesCache || {}).contractors) || [])
+      .filter((r) => !q || r.name.toLowerCase().includes(q)).slice(0, 5)
+      .forEach((r) => { dedupe.add(r.name.toLowerCase()); add(r.name, "contractor", r.name); });
+    ledgerNames().filter((n) => (!q || n.toLowerCase().includes(q)) && !dedupe.has(n.toLowerCase())).slice(0, 5)
+      .forEach((n) => { dedupe.add(n.toLowerCase()); add(n, "history", n); });
+    people.filter((r) => !dedupe.has(r.key)).forEach((r) => add(r.display, "person", r.key));
+    const exact = dedupe.has(q) || people.some((r) => r.key === q);
+    if (q && !exact) {
+      const mk = el("div", "ta-item ta-create", 'create contractor "' + input.value.trim() + '" →');
+      mk.onmousedown = async (e) => {
+        e.preventDefault();
+        try {
+          const rec = await postJSONOk("/api/realestate/entities", { name: input.value.trim(), kind: "contractor" });
+          await ensureEntities(true);
+          input.value = rec.name;
+          drop.hidden = true;
+          showToast("Contractor record created: " + rec.name);
+          if (onSet) onSet(rec.name);
+        } catch (err) { showToast("Couldn't create contractor"); }
+      };
+      drop.append(mk);
+    }
+    drop.hidden = !drop.children.length;
+  };
+  input.addEventListener("input", refresh);
+  input.addEventListener("focus", refresh);
+  input.addEventListener("blur", () => setTimeout(() => { drop.hidden = true; }, 150));
+  wrap.append(input, drop);
+  return { el: wrap, value: () => input.value.trim(), setValue: (v) => { input.value = v; }, focus: () => input.focus() };
+}
+
 // ---- STATEMENT WORKBENCH (design §4) ----
 
 let stmtRows = [];
@@ -6507,7 +6576,7 @@ function toggleBidForm(row, p, st, td) {
   if (existing) { existing.remove(); return; }
   const form = el("div", "bid-form");
   form.dataset.for = td.id;
-  const who = recordAutocomplete("contractor", "contractor…");
+  const who = contractorAutocomplete("contractor…");
   const amt = inputEl("amount $"); amt.type = "number"; amt.step = "1"; amt.classList.add("est-in");
   const send = el("button", "pill lg-add", "request bid");
   send.onclick = async () => {
