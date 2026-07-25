@@ -4347,7 +4347,9 @@ let dealCache = [];
 let templateCache = [];
 let propMode = "board"; // board | map | statements | page — derived from the hash
 let boardFilter = ""; // search-as-you-type
-let boardBuckets = new Set(); // active status-bucket filters (empty = all)
+let boardStatus = ""; // status dropdown ("" = all)
+let boardEntity = ""; // entity dropdown ("" = all)
+let boardSort = "status"; // status | address | budget | var
 
 // showProperties routes the PROPERTIES sub-views off the hash:
 //   #/properties · /map · /statements · /deal/<slug> · /<slug>
@@ -4493,22 +4495,28 @@ function bucketOf(p) {
 }
 
 function matchesBoardFilters(p) {
-  if (boardBuckets.size && !boardBuckets.has(bucketOf(p))) return false;
+  if (boardStatus && p.status !== boardStatus) return false;
+  if (boardEntity && (p.entity || "").trim() !== boardEntity) return false;
   if (!boardFilter) return true;
   const q = boardFilter.toLowerCase();
   return (p.address || "").toLowerCase().includes(q) || p.slug.includes(q) ||
     (p.deal || "").toLowerCase().includes(q) || (p.entity || "").toLowerCase().includes(q);
 }
 
-function dealExpanded(slug) {
-  try { return JSON.parse(localStorage.getItem("prop-open") || "{}")[slug]; } catch (e) { return undefined; }
-}
-function setDealExpanded(slug, open) {
-  try {
-    const st = JSON.parse(localStorage.getItem("prop-open") || "{}");
-    st[slug] = open;
-    localStorage.setItem("prop-open", JSON.stringify(st));
-  } catch (e) {}
+// canonical status order for the flat board: work first, pipeline, then done
+const STATUS_ORDER = ["construction", "pre_development", "under_contract", "negotiating",
+  "opportunity", "completed", "leased", "listed", "sold"];
+
+function boardComparator(key) {
+  const rank = (p) => { const i = STATUS_ORDER.indexOf(p.status); return i < 0 ? STATUS_ORDER.length : i; };
+  const addr = (a, b) => (a.short || a.address || a.slug).localeCompare(b.short || b.address || b.slug);
+  const cmp = {
+    status: (a, b) => rank(a) - rank(b) || addr(a, b),
+    address: addr,
+    budget: (a, b) => projMoney(b).budget - projMoney(a).budget || addr(a, b),
+    var: (a, b) => projMoney(b).varPct - projMoney(a).varPct || addr(a, b),
+  };
+  return cmp[key] || cmp.status;
 }
 
 function renderBoard() {
@@ -4516,23 +4524,34 @@ function renderBoard() {
   const shown = propertyCache.filter((p) => !p.hidden);
   els.propertiesMeta.textContent = shown.length + " properties · " + dealCache.length + " deals";
 
-  // toolbar: search + status buckets + composer
+  // toolbar (reading-page idiom): search + status/entity dropdowns + sort + composer
   const bar = el("div", "board-bar");
-  const search = inputEl("filter…");
+  const search = inputEl("search address / deal / entity…");
   search.classList.add("board-search");
   search.value = boardFilter;
   search.addEventListener("input", () => { boardFilter = search.value; renderBoardBody(body); });
   search.addEventListener("keydown", (e) => { if (e.key === "Escape") { search.value = ""; boardFilter = ""; renderBoardBody(body); } });
   bar.append(search);
-  ["active", "pipeline", "done", "tracked"].forEach((bk) => {
-    const chip = el("button", "filter-chip" + (boardBuckets.has(bk) ? " on" : ""), bk.toUpperCase());
-    chip.onclick = () => {
-      if (boardBuckets.has(bk)) boardBuckets.delete(bk); else boardBuckets.add(bk);
-      chip.classList.toggle("on");
-      renderBoardBody(body);
-    };
-    bar.append(chip);
-  });
+  const labeledSelect = (pairs, current, onChange, title) => {
+    const s = document.createElement("select");
+    s.className = "pp-in board-select";
+    s.title = title;
+    pairs.forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; s.append(o); });
+    s.value = current;
+    s.onchange = () => { onChange(s.value); renderBoardBody(body); };
+    return s;
+  };
+  const statusesPresent = STATUS_ORDER.filter((st) => shown.some((p) => p.status === st));
+  bar.append(labeledSelect(
+    [["", "all statuses"], ...statusesPresent.map((st) => [st, st.replace(/_/g, " ")])],
+    boardStatus, (v) => { boardStatus = v; }, "Filter by status"));
+  const entities = [...new Set(shown.map((p) => (p.entity || "").trim()).filter(Boolean))].sort();
+  bar.append(labeledSelect(
+    [["", "all entities"], ...entities.map((e) => [e, e])],
+    boardEntity, (v) => { boardEntity = v; }, "Filter by entity"));
+  bar.append(labeledSelect(
+    [["status", "by status"], ["address", "by address"], ["budget", "by budget"], ["var", "by variance"]],
+    boardSort, (v) => { boardSort = v; }, "Sort"));
   bar.append(propertyComposer());
   host.append(bar);
 
@@ -4556,80 +4575,15 @@ function renderBoard() {
   host.append(exports);
 }
 
+// flat list: every property is one row, ordered by the chosen sort (status by
+// default); deal bundles are a muted column linking to their pages.
 function renderBoardBody(body) {
   body.innerHTML = "";
-  const shown = propertyCache.filter((p) => !p.hidden && matchesBoardFilters(p));
-  const byDeal = new Map();
-  const loose = [];
-  shown.forEach((p) => {
-    if (p.deal) {
-      if (!byDeal.has(p.deal)) byDeal.set(p.deal, []);
-      byDeal.get(p.deal).push(p);
-    } else loose.push(p);
-  });
-
-  // ungrouped records first: owned singles, then tracked pipeline
-  loose.sort((a, b) => (a.control === "tracked" ? 1 : 0) - (b.control === "tracked" ? 1 : 0) ||
-    (a.address || "").localeCompare(b.address || ""));
-  if (loose.length) {
-    body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "STAGE", "UNITS", "BUDGET", "LIVE / VAR"]));
-    loose.forEach((p) => body.append(boardRow(p, false)));
-  }
-
-  // deal groups
-  dealCache.forEach((d) => {
-    const members = byDeal.get(d.slug) || [];
-    if ((boardFilter || boardBuckets.size) && !members.length) return; // filtered out entirely
-    body.append(dealHead(d, members));
-    const stored = dealExpanded(d.slug);
-    const filtering = !!(boardFilter || boardBuckets.size);
-    const open = filtering ? members.length > 0 : (stored !== undefined ? stored : members.length <= 5);
-    if (open) members.forEach((p) => body.append(boardRow(p, true)));
-  });
-
-  if (!body.children.length) body.append(emptyRow("Nothing matches the filter."));
-}
-
-function dealHead(d, members) {
-  const agg = members.reduce((a, p) => {
-    const pm = projMoney(p);
-    return { budget: a.budget + pm.budget, live: a.live + pm.live };
-  }, { budget: 0, live: 0 });
-  const row = el("div", "property-row deal-head");
-  row.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); };
-  row.append(el("span", "property-addr deal-name", d.name));
-  row.append(dealStatusChip(d));
-  row.append(el("span", "property-stage", members.length + " parcels"));
-  row.append(el("span", "property-units", ""));
-  row.append(el("span", "property-budget", agg.budget ? fmtMoney(agg.budget) : ""));
-  const out = el("span", "property-out");
-  if (agg.budget) {
-    out.append(el("span", "out-paid", fmtMoney(agg.live)), el("span", "out-sep", ""),
-      varChipEl((agg.live - agg.budget) / agg.budget));
-  }
-  const caret = el("button", "deal-caret", "▾");
-  const stored = dealExpanded(d.slug);
-  const open = stored !== undefined ? stored : members.length <= 5;
-  caret.textContent = open ? "▾" : "▸";
-  caret.onclick = (e) => {
-    e.stopPropagation();
-    setDealExpanded(d.slug, caret.textContent === "▸");
-    renderBoardBody(row.parentElement);
-  };
-  out.append(caret);
-  row.append(out);
-  const wrap = el("div", "deal-group");
-  wrap.append(row);
-  if (!open && members.length) {
-    // collapsed summary: member statuses at a glance
-    const counts = {};
-    members.forEach((p) => { counts[p.status] = (counts[p.status] || 0) + 1; });
-    const sum = Object.entries(counts).map(([st, n]) => n + " " + st).join(" · ");
-    const line = el("div", "deal-summary", sum);
-    line.onclick = () => { setDealExpanded(d.slug, true); renderBoardBody(wrap.parentElement); };
-    wrap.append(line);
-  }
-  return wrap;
+  const shown = propertyCache.filter((p) => !p.hidden && matchesBoardFilters(p))
+    .sort(boardComparator(boardSort));
+  if (!shown.length) { body.append(emptyRow("Nothing matches the filter.")); return; }
+  body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "DEAL", "STAGE", "UNITS", "BUDGET", "LIVE / VAR"]));
+  shown.forEach((p) => body.append(boardRow(p, false)));
 }
 
 // dealStatusChip mirrors statusChip against the deal endpoint (incl. "opportunity").
@@ -4693,6 +4647,15 @@ function boardRow(p, member) {
   row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
   row.append(el("span", "property-addr", p.short || p.address || p.name));
   row.append(statusChip(p, () => loadProperties()));
+  const dealCell = el("span", "property-deal");
+  if (!member && p.deal) {
+    const d = (dealCache || []).find((x) => x.slug === p.deal);
+    const lnk = el("a", "deal-link", (d && d.name) || p.deal);
+    lnk.href = "#/properties/deal/" + encodeURIComponent(p.deal);
+    lnk.onclick = (e) => e.stopPropagation();
+    dealCell.append(lnk);
+  }
+  row.append(dealCell);
   row.append(el("span", "property-stage", p.currentStage || ""));
   row.append(el("span", "property-units", p.units ? p.units + "u" : ""));
   const pm = projMoney(p);
@@ -4802,8 +4765,9 @@ async function renderPropertyMap() {
   const ownedLayers = []; // zoom anchors — the map opens on the owned cluster
   const unmapped = [];
   const statusesSeen = new Set();
-  // tracked first (below), owned after (on top so borders aren't clipped)
-  const recs = (geo.records || []).slice().sort((a, b) => (a.control === "tracked" ? 0 : 1) - (b.control === "tracked" ? 0 : 1));
+  // tracked first (below), owned/active after (on top so borders aren't clipped)
+  const trackedTier = (r) => (r.control === "tracked" && STATUS_BUCKET[r.status] !== "active") ? 0 : 1;
+  const recs = (geo.records || []).slice().sort((a, b) => trackedTier(a) - trackedTier(b));
   recs.forEach((rec) => {
     if (!(rec.features || []).length) {
       // pin fallback: frontmatter lat/lng or a cached geocode (no polygon)
@@ -4818,7 +4782,9 @@ async function renderPropertyMap() {
       } else unmapped.push(rec);
       return;
     }
-    const tracked = rec.control === "tracked";
+    // active status wins over the tracked tier (same rule as bucketOf): flipping
+    // a tracked parcel to pre_development/construction must recolor it
+    const tracked = rec.control === "tracked" && STATUS_BUCKET[rec.status] !== "active";
     const color = tracked ? "#b0a58e" : (PROP_STATUS_COLOR[rec.status] || "#8a93a6");
     if (rec.status) statusesSeen.add(tracked ? "tracked" : rec.status);
     else if (rec.type === "deal") statusesSeen.add("deal");
@@ -5170,7 +5136,7 @@ async function renderDealPage(slug) {
   // MEMBERS
   host.append(el("div", "pp-section-head", "MEMBERS"));
   const mbox = el("div", "pp-members");
-  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "STAGE", "UNITS", "BUDGET", "LIVE / VAR"]));
+  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "", "STAGE", "UNITS", "BUDGET", "LIVE / VAR"]));
   (d.members || []).forEach((p) => mbox.append(boardRow(p, true)));
   host.append(mbox);
 
