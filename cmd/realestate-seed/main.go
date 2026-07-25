@@ -27,6 +27,7 @@ func main() {
 	configPath := flag.String("config", "config.json", "manifest config (for vaultPath + systemRoot)")
 	vaultOverride := flag.String("vault", "", "override the vault path from config")
 	apply := flag.Bool("apply", false, "write files (default: dry-run report only)")
+	expand := flag.Bool("expand", false, "admin-portal migration: member records for every parcel + deal-level sources (re-sync from the live re-portal tree)")
 	flag.Parse()
 	srcDir := flag.Arg(0)
 	if srcDir == "" {
@@ -42,6 +43,10 @@ func main() {
 	}
 	if cfg.SystemRoot == "" {
 		cfg.SystemRoot = "system"
+	}
+	if *expand {
+		runExpand(cfg, srcDir, *apply)
+		return
 	}
 	dataDir := cfg.DataDir
 	if dataDir == "" {

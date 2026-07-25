@@ -3,6 +3,7 @@ package vaultwriter
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -121,6 +122,114 @@ func (w *Writer) SaveDoc(relDir, filename string, data []byte) (string, error) {
 		return relDir + "/" + fn, nil
 	}
 	return "", errors.New("too many name collisions")
+}
+
+// WriteSourceJSON writes a record's engine-shaped source sidecar — the LIVE
+// canonical for the owner's public-site data (admin-portal plan). Pinned to
+// `*.source.json` under the database zones; overwrite allowed (it's an edit
+// surface, not a write-once record). Callers must round-trip the FULL object —
+// unknown fields are never dropped (the fidelity contract).
+func (w *Writer) WriteSourceJSON(rel string, data []byte) error {
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	rel = filepath.ToSlash(rel)
+	if !strings.HasSuffix(rel, ".source.json") {
+		return errors.New("source writes are pinned to *.source.json")
+	}
+	if err := w.Guard(rel, WriteDatabase); err != nil {
+		return err
+	}
+	if !json.Valid(data) {
+		return errors.New("refusing to write invalid JSON")
+	}
+	full := filepath.Join(w.vault, filepath.FromSlash(rel))
+	if !isUnder(full, w.vault) {
+		return errors.New("invalid source path")
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(full, data, 0o644)
+}
+
+// UpdateLedgerRow replaces one exact row in a ledger csv; DeleteLedgerRow
+// removes it. Both are FAIL-CLOSED on a stale match (the file changed
+// underneath — an Obsidian/Excel edit is never silently clobbered), matching
+// the ReplaceBullet discipline. Rows are compared field-by-field after csv
+// parsing, so quoting differences don't defeat the match. First match wins.
+func (w *Writer) UpdateLedgerRow(rel string, original, replacement []string) error {
+	return w.editLedger(rel, original, &replacement)
+}
+
+func (w *Writer) DeleteLedgerRow(rel string, original []string) error {
+	return w.editLedger(rel, original, nil)
+}
+
+func (w *Writer) editLedger(rel string, original []string, replacement *[]string) error {
+	full, err := w.resolveRecord(rel)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		return err
+	}
+	rd := csv.NewReader(bytes.NewReader(raw))
+	rd.FieldsPerRecord = -1
+	records, err := rd.ReadAll()
+	if err != nil {
+		return err
+	}
+	found := -1
+	for i, rec := range records {
+		if i == 0 && len(rec) > 0 && strings.EqualFold(strings.TrimSpace(rec[0]), "date") {
+			continue // header
+		}
+		if rowsEqual(rec, original) {
+			found = i
+			break
+		}
+	}
+	if found < 0 {
+		return errors.New("that ledger row no longer matches the file (it changed underneath) — reload and retry")
+	}
+	if replacement != nil {
+		records[found] = *replacement
+	} else {
+		records = append(records[:found], records[found+1:]...)
+	}
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	if err := cw.WriteAll(records); err != nil {
+		return err
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		return err
+	}
+	return os.WriteFile(full, buf.Bytes(), 0o644)
+}
+
+// rowsEqual compares csv rows field-by-field, padding the shorter (ragged rows
+// from hand edits still match their parsed projection).
+func rowsEqual(a, b []string) bool {
+	n := len(a)
+	if len(b) > n {
+		n = len(b)
+	}
+	get := func(s []string, i int) string {
+		if i < len(s) {
+			return strings.TrimSpace(s[i])
+		}
+		return ""
+	}
+	for i := 0; i < n; i++ {
+		if get(a, i) != get(b, i) {
+			return false
+		}
+	}
+	return true
 }
 
 // WriteExport writes a generated export file (underwrite/tax handshake to the

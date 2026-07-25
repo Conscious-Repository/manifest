@@ -51,6 +51,7 @@ const els = {
   propertyBoard: document.getElementById("propertyBoard"),
   propertyPage: document.getElementById("propertyPage"),
   propToggle: document.getElementById("propToggle"),
+  propertyStatements: document.getElementById("propertyStatements"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
   propertyMap: document.getElementById("propertyMap"),
   propertyMapLegend: document.getElementById("propertyMapLegend"),
@@ -4342,12 +4343,26 @@ function cmdFact(label, val) {
 let propertyCache = [];
 let dealCache = [];
 let templateCache = [];
-let propMode = "list"; // list | map
+let propMode = "board"; // board | map | statements | page — derived from the hash
+let boardFilter = ""; // search-as-you-type
+let boardBuckets = new Set(); // active status-bucket filters (empty = all)
 
+// showProperties routes the PROPERTIES sub-views off the hash:
+//   #/properties · /map · /statements · /deal/<slug> · /<slug>
 function showProperties(h) {
-  const slug = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
-  if (slug) renderPropertyPage(slug);
-  else { els.propertyPage.hidden = true; loadProperties(); }
+  const tail = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
+  els.propertyPage.hidden = true; els.propertyMapWrap.hidden = true;
+  els.propertyBoard.hidden = true; els.propertyStatements.hidden = true;
+  if (tail.startsWith("deal/")) { propMode = "page"; renderDealPage(tail.slice(5)); }
+  else if (tail === "map") { propMode = "map"; syncPropChips(); loadProperties(); }
+  else if (tail === "statements") { propMode = "statements"; syncPropChips(); renderStatements(); }
+  else if (tail) { propMode = "page"; renderPropertyPage(tail); }
+  else { propMode = "board"; syncPropChips(); loadProperties(); }
+}
+
+function syncPropChips() {
+  els.propToggle.querySelectorAll(".filter-chip").forEach((b) =>
+    b.classList.toggle("on", b.dataset.mode === propMode));
 }
 
 async function loadProperties() {
@@ -4358,76 +4373,262 @@ async function loadProperties() {
     templateCache = d.templates || [];
   } catch (e) { propertyCache = []; dealCache = []; templateCache = []; }
   if (propMode === "map") renderPropertyMap();
-  else renderBoard();
+  else if (propMode === "board") renderBoard();
 }
-
-function setPropMode(mode) {
-  propMode = mode;
-  els.propToggle.querySelectorAll(".filter-chip").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
-  if (mode === "map") renderPropertyMap();
-  else renderBoard();
-}
-els.propToggle.querySelectorAll(".filter-chip").forEach((b) => b.addEventListener("click", () => setPropMode(b.dataset.mode)));
 
 function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
 function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
 
+// ---- shared primitives (admin-portal design §0) ----
+
+// ppCols: a one-line row of mono micro-labels sharing the exact grid of the
+// rows beneath it — labels live once, every input aligns under them.
+function ppCols(cls, labels) {
+  const row = el("div", "pp-cols " + cls);
+  labels.forEach((l) => row.append(el("span", "", l)));
+  return row;
+}
+
+// makeDirtyBar: the one editing model — quiet inputs mark dirty; a sticky
+// bottom bar appears with a single save (one PUT of the whole file).
+function makeDirtyBar(host, onSave, onDiscard) {
+  const bar = el("div", "dirty-bar");
+  bar.hidden = true;
+  const label = el("span", "dirty-label", "");
+  const save = el("button", "pill", "save");
+  const discard = el("button", "pill light", "discard");
+  bar.append(label, save, discard);
+  host.append(bar);
+  let count = 0;
+  const api = {
+    mark() { count++; label.textContent = count + " UNSAVED CHANGE" + (count === 1 ? "" : "S"); bar.hidden = false; },
+    clear() { count = 0; bar.hidden = true; },
+    get dirty() { return count > 0; },
+  };
+  save.onclick = async () => { save.disabled = true; try { await onSave(); api.clear(); } finally { save.disabled = false; } };
+  discard.onclick = () => { api.clear(); onDiscard(); };
+  return api;
+}
+
+// collapsibleSection: pp-section-head with a caret + optional collapsed summary.
+function collapsibleSection(host, title, summary, open) {
+  const head = el("div", "pp-section-head toggle");
+  const caret = el("span", "sec-caret", open ? "▾" : "▸");
+  head.append(caret, el("span", "", title));
+  const sum = el("span", "sec-summary", summary || "");
+  head.append(sum);
+  const body = el("div", "sec-body");
+  body.hidden = !open;
+  sum.hidden = open;
+  head.onclick = () => {
+    body.hidden = !body.hidden;
+    caret.textContent = body.hidden ? "▸" : "▾";
+    sum.hidden = !body.hidden;
+  };
+  host.append(head, body);
+  return body;
+}
+
+// propertyTypeahead: input + filtered dropdown over all property records
+// (63 items — a select is unusable). Matches address/slug/deal.
+function propertyTypeahead(placeholder, onPick, initial) {
+  const wrap = el("span", "ta-wrap");
+  const input = inputEl(placeholder);
+  input.classList.add("ta-in");
+  if (initial) input.value = initial;
+  const drop = el("div", "ta-drop");
+  drop.hidden = true;
+  const refresh = () => {
+    const q = input.value.toLowerCase().trim();
+    drop.innerHTML = "";
+    const hits = propertyCache.filter((p) =>
+      !q || (p.address || "").toLowerCase().includes(q) || p.slug.includes(q) || (p.deal || "").includes(q)).slice(0, 12);
+    hits.forEach((p) => {
+      const it = el("div", "ta-item", (p.address || p.slug) + (p.deal ? "  · " + p.deal : ""));
+      it.onmousedown = (e) => { e.preventDefault(); input.value = p.address || p.slug; drop.hidden = true; onPick(p); };
+      drop.append(it);
+    });
+    drop.hidden = !hits.length;
+  };
+  input.addEventListener("input", refresh);
+  input.addEventListener("focus", refresh);
+  input.addEventListener("blur", () => setTimeout(() => { drop.hidden = true; }, 150));
+  wrap.append(input, drop);
+  return wrap;
+}
+
+// ---- BOARD at scale (design §1): grouped by deal ----
+
+const STATUS_BUCKET = {
+  construction: "active", pre_development: "active",
+  negotiating: "pipeline", under_contract: "pipeline", opportunity: "pipeline",
+  completed: "done", leased: "done", listed: "done", sold: "done",
+};
+
+function bucketOf(p) { return p.control === "tracked" ? "tracked" : (STATUS_BUCKET[p.status] || "pipeline"); }
+
+function matchesBoardFilters(p) {
+  if (boardBuckets.size && !boardBuckets.has(bucketOf(p))) return false;
+  if (!boardFilter) return true;
+  const q = boardFilter.toLowerCase();
+  return (p.address || "").toLowerCase().includes(q) || p.slug.includes(q) ||
+    (p.deal || "").toLowerCase().includes(q) || (p.entity || "").toLowerCase().includes(q);
+}
+
+function dealExpanded(slug) {
+  try { return JSON.parse(localStorage.getItem("prop-open") || "{}")[slug]; } catch (e) { return undefined; }
+}
+function setDealExpanded(slug, open) {
+  try {
+    const st = JSON.parse(localStorage.getItem("prop-open") || "{}");
+    st[slug] = open;
+    localStorage.setItem("prop-open", JSON.stringify(st));
+  } catch (e) {}
+}
+
 function renderBoard() {
   const host = els.propertyBoard; host.innerHTML = ""; host.hidden = false;
-  els.propertyPage.hidden = true; els.propertyMapWrap.hidden = true;
   const shown = propertyCache.filter((p) => !p.hidden);
-  els.propertiesMeta.textContent = shown.length + (shown.length === 1 ? " property" : " properties") +
-    (dealCache.length ? " · " + dealCache.length + " deals" : "");
-  host.append(propertyComposer());
-  if (!shown.length) { host.append(emptyRow("No property records yet — run the seed, or add one above.")); return; }
-  // group by entity (blank → "unassigned"), preserving the server's stable order
-  const groups = new Map();
-  shown.forEach((p) => {
-    const key = (p.entity || "").trim() || "unassigned";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(p);
+  els.propertiesMeta.textContent = shown.length + " properties · " + dealCache.length + " deals";
+
+  // toolbar: search + status buckets + composer
+  const bar = el("div", "board-bar");
+  const search = inputEl("filter…");
+  search.classList.add("board-search");
+  search.value = boardFilter;
+  search.addEventListener("input", () => { boardFilter = search.value; renderBoardBody(body); });
+  search.addEventListener("keydown", (e) => { if (e.key === "Escape") { search.value = ""; boardFilter = ""; renderBoardBody(body); } });
+  bar.append(search);
+  ["active", "pipeline", "done", "tracked"].forEach((bk) => {
+    const chip = el("button", "filter-chip" + (boardBuckets.has(bk) ? " on" : ""), bk.toUpperCase());
+    chip.onclick = () => {
+      if (boardBuckets.has(bk)) boardBuckets.delete(bk); else boardBuckets.add(bk);
+      chip.classList.toggle("on");
+      renderBoardBody(body);
+    };
+    bar.append(chip);
   });
-  for (const [entity, rows] of groups) {
-    const head = el("div", "property-group-head");
-    head.append(el("span", "", entity));
-    head.append(pillLight("tax csv", () => taxExport(entity === "unassigned" ? "" : entity)));
-    host.append(head);
-    rows.forEach((p) => host.append(boardRow(p)));
+  bar.append(propertyComposer());
+  host.append(bar);
+
+  const body = el("div", "board-body");
+  host.append(body);
+  renderBoardBody(body);
+
+  // EXPORTS — demoted to one quiet line at the bottom
+  const exports = el("div", "board-exports");
+  exports.append(el("span", "pp-section-head", "EXPORTS"));
+  const entSel = selectEl([...new Set(["unassigned", ...shown.map((p) => (p.entity || "").trim()).filter(Boolean)])]);
+  const yearIn = inputEl("year"); yearIn.value = String(new Date().getFullYear()); yearIn.classList.add("board-year");
+  exports.append(entSel, yearIn, pillLight("tax csv", async () => {
+    try {
+      const res = await postJSONOk("/api/realestate/export-tax",
+        { entity: entSel.value === "unassigned" ? "" : entSel.value, year: yearIn.value.trim() });
+      showToast("Tax csv written — " + res.lines + " lines", () =>
+        window.open("/api/realestate/doc?path=" + encodeURIComponent(res.csv), "_blank"), "info");
+    } catch (e) { showToast("Export failed"); }
+  }));
+  host.append(exports);
+}
+
+function renderBoardBody(body) {
+  body.innerHTML = "";
+  const shown = propertyCache.filter((p) => !p.hidden && matchesBoardFilters(p));
+  const byDeal = new Map();
+  const loose = [];
+  shown.forEach((p) => {
+    if (p.deal) {
+      if (!byDeal.has(p.deal)) byDeal.set(p.deal, []);
+      byDeal.get(p.deal).push(p);
+    } else loose.push(p);
+  });
+
+  // ungrouped records first: owned singles, then tracked pipeline
+  loose.sort((a, b) => (a.control === "tracked" ? 1 : 0) - (b.control === "tracked" ? 1 : 0) ||
+    (a.address || "").localeCompare(b.address || ""));
+  if (loose.length) {
+    body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "UNITS", "BUDGET", "PAID / COMMITTED"]));
+    loose.forEach((p) => body.append(boardRow(p, false)));
   }
-  // deals lane: the multi-parcel bundles from deals.json — records for group
-  // underwriting + the map; their parcels are not individual Board rows.
-  if (dealCache.length) {
-    host.append(el("div", "property-group-head", "deals"));
-    dealCache.forEach((d) => {
-      const row = el("div", "property-row deal-row");
-      row.onclick = () => { _noteReturn = "#/properties"; openNoteByPath(d.path); };
-      row.append(el("span", "property-addr", d.name));
-      row.append(el("span", "property-status", "bundle"));
-      row.append(el("span", "property-out", (d.properties || []).length + " parcels"));
-      const uw = el("span", "property-budget");
-      uw.append(pillLight("underwrite ↓", (e) => { exportUnderwrite(d.slug); }));
-      uw.onclick = (e) => e.stopPropagation();
-      row.append(uw);
-      row.append(el("span", "property-last", (d.properties || []).slice(0, 3).join(" · ")));
-      host.append(row);
-    });
+
+  // deal groups
+  dealCache.forEach((d) => {
+    const members = byDeal.get(d.slug) || [];
+    if ((boardFilter || boardBuckets.size) && !members.length) return; // filtered out entirely
+    body.append(dealHead(d, members));
+    const stored = dealExpanded(d.slug);
+    const filtering = !!(boardFilter || boardBuckets.size);
+    const open = filtering ? members.length > 0 : (stored !== undefined ? stored : members.length <= 5);
+    if (open) members.forEach((p) => body.append(boardRow(p, true)));
+  });
+
+  if (!body.children.length) body.append(emptyRow("Nothing matches the filter."));
+}
+
+function dealHead(d, members) {
+  const agg = members.reduce((a, p) => ({
+    budget: a.budget + p.rollup.budget, paid: a.paid + p.rollup.paid, committed: a.committed + p.rollup.committed,
+  }), { budget: 0, paid: 0, committed: 0 });
+  const row = el("div", "property-row deal-head");
+  row.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); };
+  row.append(el("span", "property-addr deal-name", d.name));
+  row.append(dealStatusChip(d));
+  row.append(el("span", "property-out", members.length + " parcels"));
+  row.append(el("span", "property-budget", agg.budget ? fmtMoney(agg.budget) : ""));
+  const out = el("span", "property-out");
+  if (agg.budget) {
+    out.append(el("span", "out-paid", fmtPct(agg.paid / agg.budget)), el("span", "out-sep", "/"),
+      el("span", "out-committed", fmtPct(agg.committed / agg.budget)));
   }
+  const caret = el("button", "deal-caret", "▾");
+  const stored = dealExpanded(d.slug);
+  const open = stored !== undefined ? stored : members.length <= 5;
+  caret.textContent = open ? "▾" : "▸";
+  caret.onclick = (e) => {
+    e.stopPropagation();
+    setDealExpanded(d.slug, caret.textContent === "▸");
+    renderBoardBody(row.parentElement);
+  };
+  out.append(caret);
+  row.append(out);
+  const wrap = el("div", "deal-group");
+  wrap.append(row);
+  if (!open && members.length) {
+    // collapsed summary: member statuses at a glance
+    const counts = {};
+    members.forEach((p) => { counts[p.status] = (counts[p.status] || 0) + 1; });
+    const sum = Object.entries(counts).map(([st, n]) => n + " " + st).join(" · ");
+    const line = el("div", "deal-summary", sum);
+    line.onclick = () => { setDealExpanded(d.slug, true); renderBoardBody(wrap.parentElement); };
+    wrap.append(line);
+  }
+  return wrap;
+}
+
+// dealStatusChip mirrors statusChip against the deal endpoint (incl. "opportunity").
+function dealStatusChip(d) {
+  const chip = el("span", "property-status editable status-" + (d.status || "").replace(/_/g, "-"), d.status || "—");
+  chip.title = "click to change deal status";
+  chip.onclick = (e) => {
+    e.stopPropagation();
+    const sel = selectEl([...PROPERTY_STATUSES, "opportunity"]);
+    sel.value = d.status || "negotiating";
+    sel.onclick = (ev) => ev.stopPropagation();
+    sel.onchange = async () => {
+      try { await postJSONOk("/api/deals/" + encodeURIComponent(d.slug) + "/field", { key: "status", value: sel.value }); loadProperties(); }
+      catch (err) { showToast("Couldn't update status"); sel.replaceWith(chip); }
+    };
+    sel.onblur = () => { if (sel.parentNode) sel.replaceWith(chip); };
+    chip.replaceWith(sel);
+    sel.focus();
+  };
+  return chip;
 }
 
 async function exportUnderwrite(slug) {
   try {
     const res = await postJSONOk("/api/deals/" + encodeURIComponent(slug) + "/export-underwrite", {});
     showToast("Underwrite export written (" + res.members + " member records)", () =>
-      window.open("/api/realestate/doc?path=" + encodeURIComponent(res.csv), "_blank"), "info");
-  } catch (e) { showToast("Export failed"); }
-}
-
-async function taxExport(entity) {
-  const year = prompt("Tax year:", String(new Date().getFullYear()));
-  if (!year) return;
-  try {
-    const res = await postJSONOk("/api/realestate/export-tax", { entity, year });
-    showToast("Tax csv written — " + res.lines + " lines", () =>
       window.open("/api/realestate/doc?path=" + encodeURIComponent(res.csv), "_blank"), "info");
   } catch (e) { showToast("Export failed"); }
 }
@@ -4456,17 +4657,23 @@ function statusChip(p, onSaved) {
   return chip;
 }
 
-function boardRow(p) {
-  const row = el("div", "property-row" + (p.control === "tracked" ? " tracked" : ""));
+// boardRow: one property. Members render compact + left-ruled inside a deal
+// group; loose records render at standard density. Columns:
+// address · status · units · budget · paid%/committed%.
+function boardRow(p, member) {
+  const row = el("div", "property-row" +
+    (p.control === "tracked" ? " tracked" : "") + (member ? " compact member" : ""));
   row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
   row.append(el("span", "property-addr", p.address || p.name));
   row.append(statusChip(p, () => loadProperties()));
+  row.append(el("span", "property-units", p.units ? p.units + "u" : ""));
+  row.append(el("span", "property-budget", p.rollup.budget ? fmtMoney(p.rollup.budget) : ""));
   const out = el("span", "property-out" + (p.rollup.overBudget ? " over" : ""));
-  out.append(el("span", "out-paid", fmtPct(p.rollup.paidPct)), el("span", "out-sep", "/"),
-    el("span", "out-committed", fmtPct(p.rollup.committedPct)));
+  if (p.rollup.budget) {
+    out.append(el("span", "out-paid", fmtPct(p.rollup.paidPct)), el("span", "out-sep", "/"),
+      el("span", "out-committed", fmtPct(p.rollup.committedPct)));
+  }
   row.append(out);
-  row.append(el("span", "property-budget", fmtMoney(p.rollup.budget)));
-  row.append(el("span", "property-last", p.lastLog || ""));
   return row;
 }
 
@@ -4481,6 +4688,8 @@ function propertyComposer() {
     const kind = selectEl(PROPERTY_KINDS);
     const tpl = selectEl(["no template", ...templateCache.map((t) => t.slug)]);
     tpl.title = "budget-mix template";
+    const dealSel = selectEl(["unattached", ...dealCache.map((d) => d.slug)]);
+    dealSel.title = "attach to a deal bundle";
     const create = el("button", "pill", "create");
     create.onclick = async () => {
       if (!addr.value.trim()) { addr.focus(); return; }
@@ -4489,13 +4698,14 @@ function propertyComposer() {
         await postJSONOk("/api/properties", {
           address: addr.value, entity: entity.value, kind: kind.value,
           template: tpl.value === "no template" ? "" : tpl.value,
+          deal: dealSel.value === "unattached" ? "" : dealSel.value,
         });
         loadProperties();
       } catch (e) { showToast("Couldn't create property"); create.disabled = false; }
     };
     const cancel = el("button", "pill light", "✕");
     cancel.onclick = () => form.replaceWith(ghost);
-    form.append(addr, entity, kind, tpl, create, cancel);
+    form.append(addr, entity, kind, tpl, dealSel, create, cancel);
     ghost.replaceWith(form);
     addr.focus();
   };
@@ -4592,7 +4802,7 @@ async function renderPropertyMap() {
     const layer = L.geoJSON({ type: "FeatureCollection", features: rec.features }, { style });
     layer.on("mouseover", () => layer.setStyle({ weight: 3, fillOpacity: 0.24 }));
     layer.on("mouseout", () => layer.setStyle(style));
-    const href = rec.type === "deal" ? "#/note/" + encodeURIComponent(rec.path) : "#/properties/" + encodeURIComponent(rec.slug);
+    const href = rec.type === "deal" ? "#/properties/deal/" + encodeURIComponent(rec.slug) : "#/properties/" + encodeURIComponent(rec.slug);
     const label = rec.title + (rec.status ? " · " + rec.status : "") + (rec.type === "deal" ? " · bundle" : "");
     layer.bindPopup('<a href="' + href + '" class="prop-pop">' + escapeHtml(label) + "</a>", { closeButton: false });
     layer.addTo(map);
@@ -4630,29 +4840,643 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-async function renderPropertyPage(slug) {
-  els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
-  const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
-  try { renderProp(await (await fetch("/api/properties/" + encodeURIComponent(slug))).json()); }
-  catch (e) { host.innerHTML = ""; host.append(emptyRow("Property not found.")); }
+// ---- underwriting editor engine (design §2): quiet inputs over the
+// engine-shaped source object. The client mutates ONE object in memory and PUTs
+// the whole thing on save — unknown fields ride along untouched (fidelity). ----
+
+// uwInput: a quiet input bound to obj[key]. opts: pct (0.75↔75), money, int,
+// suffix ("%", "$", "mo", "yr", "%/yr").
+function uwInput(obj, key, opts, dirty) {
+  const wrap = el("span", "uw-val");
+  const input = document.createElement("input");
+  input.className = "uw-in";
+  const show = (v) => {
+    if (v === undefined || v === null || v === "") return "";
+    if (opts.pct) return String(Math.round(v * 10000) / 100);
+    return String(v);
+  };
+  input.value = show(obj[key]);
+  input.addEventListener("focus", () => input.select());
+  input.addEventListener("change", () => {
+    const raw = input.value.trim();
+    let v;
+    if (raw === "") v = undefined;
+    else if (opts.text) v = raw;
+    else {
+      v = parseFloat(raw.replace(/[$,%]/g, ""));
+      if (isNaN(v)) { input.value = show(obj[key]); return; }
+      if (opts.pct) v = v / 100;
+      if (opts.int) v = Math.round(v);
+    }
+    if (v === undefined) delete obj[key]; else obj[key] = v;
+    dirty.mark();
+  });
+  wrap.append(input);
+  if (opts.suffix) wrap.append(el("span", "uw-suffix", opts.suffix));
+  return wrap;
 }
 
-function renderProp(p) {
-  const host = els.propertyPage; host.innerHTML = ""; host.hidden = false;
-  els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
-  const back = el("button", "pill light pp-back", "‹ Board");
+// uwGrid: label/value pairs in a two-column definition grid.
+function uwGrid(host, obj, fields, dirty) {
+  const grid = el("div", "uw-grid");
+  fields.forEach(([key, label, opts]) => {
+    grid.append(el("span", "uw-label", label));
+    grid.append(uwInput(obj, key, opts || {}, dirty));
+  });
+  host.append(grid);
+  return grid;
+}
+
+// uwRows: the shared array editor — aligned rows of quiet inputs, hover ✕,
+// ghost ＋ row, optional Σ footer.
+function uwRows(host, obj, key, cols, dirty, opts) {
+  opts = opts || {};
+  const box = el("div", "uw-rows");
+  const render = () => {
+    box.innerHTML = "";
+    const arr = obj[key] || [];
+    box.append(ppCols("cols-" + cols.length, cols.map((c) => c.label.toUpperCase())));
+    arr.forEach((item, i) => {
+      const row = el("div", "uw-row cols-" + cols.length);
+      cols.forEach((c) => row.append(uwInput(item, c.key, c.opts || {}, dirty)));
+      const x = el("button", "uw-x", "✕");
+      x.onclick = () => { arr.splice(i, 1); obj[key] = arr; dirty.mark(); render(); };
+      row.append(x);
+      box.append(row);
+    });
+    const add = el("button", "o-ghost", "＋ " + (opts.addLabel || "row"));
+    add.onclick = () => {
+      const item = {};
+      cols.forEach((c) => { if (c.init !== undefined) item[c.key] = c.init; });
+      obj[key] = [...arr, item];
+      dirty.mark();
+      render();
+    };
+    box.append(add);
+    if (opts.footer) box.append(el("div", "uw-footer", opts.footer(arr)));
+  };
+  render();
+  host.append(box);
+}
+
+// uwKV: an object's key→number rows (soft_cost_items, opex_items).
+function uwKV(host, obj, key, dirty, opts) {
+  opts = opts || {};
+  const box = el("div", "uw-rows");
+  const render = () => {
+    box.innerHTML = "";
+    const m = obj[key] || {};
+    Object.keys(m).forEach((k) => {
+      const row = el("div", "uw-row cols-kv");
+      const kIn = document.createElement("input");
+      kIn.className = "uw-in uw-key";
+      kIn.value = k;
+      if (opts.keyList) kIn.setAttribute("list", opts.keyList);
+      kIn.addEventListener("change", () => {
+        const nk = kIn.value.trim();
+        if (!nk || nk === k) { kIn.value = k; return; }
+        m[nk] = m[k]; delete m[k]; dirty.mark(); render();
+      });
+      row.append(kIn);
+      const holder = { v: m[k] };
+      const vIn = uwInput(holder, "v", { suffix: opts.suffixFor ? opts.suffixFor(k) : "" }, dirty);
+      vIn.querySelector("input").addEventListener("change", () => { m[k] = holder.v; });
+      row.append(vIn);
+      const x = el("button", "uw-x", "✕");
+      x.onclick = () => { delete m[k]; dirty.mark(); render(); };
+      row.append(x);
+      box.append(row);
+    });
+    const add = el("button", "o-ghost", "＋ " + (opts.addLabel || "item"));
+    add.onclick = () => {
+      const m2 = obj[key] || {};
+      let n = "new item", i = 2;
+      while (n in m2) n = "new item " + i++;
+      m2[n] = 0; obj[key] = m2; dirty.mark(); render();
+    };
+    box.append(add);
+  };
+  render();
+  host.append(box);
+}
+
+const OPEX_SUFFIX = (k) => /per_unit_year/.test(k) ? "$/unit/yr" : /per_unit_month/.test(k) ? "$/unit/mo" : "%";
+const OPEX_KEYS = ["management_rate", "maintenance_rate", "reserves_rate", "property_tax_rate",
+  "property_tax_pct_of_value", "insurance_rate", "insurance_per_unit_year", "utilities_per_unit_month"];
+(function () {
+  const dl = document.getElementById("opexKeys");
+  if (dl) OPEX_KEYS.forEach((k) => { const o = document.createElement("option"); o.value = k; dl.append(o); });
+})();
+
+// dealLevelSections renders the deal-level engine groups into host.
+function dealLevelSections(host, src, dirty) {
+  let sec = collapsibleSection(host, "RENTS & UNITS", "", true);
+  uwGrid(sec, src, [
+    ["vacancy_rate", "vacancy rate", { pct: true, suffix: "%" }],
+    ["rent_growth", "rent growth", { pct: true, suffix: "%/yr" }],
+    ["market_cap_rate", "market cap rate", { pct: true, suffix: "%" }],
+    ["lease_up_months", "lease-up", { int: true, suffix: "mo" }],
+    ["lease_up_vacancy_rate", "lease-up vacancy", { pct: true, suffix: "%" }],
+  ], dirty);
+
+  sec = collapsibleSection(host, "FINANCING", "", true);
+  uwGrid(sec, src, [
+    ["construction_loan_ltc", "construction ltc", { pct: true, suffix: "%" }],
+    ["construction_interest_rate", "construction rate", { pct: true, suffix: "%" }],
+    ["perm_ltv", "perm ltv", { pct: true, suffix: "%" }],
+    ["perm_interest_rate", "perm rate", { pct: true, suffix: "%" }],
+    ["perm_amort_years", "perm amort", { int: true, suffix: "yr" }],
+  ], dirty);
+
+  sec = collapsibleSection(host, "OPEX", "", true);
+  if (!src.opex_items) src.opex_items = {};
+  uwKV(sec, src, "opex_items", dirty, { suffixFor: OPEX_SUFFIX, keyList: "opexKeys", addLabel: "opex item" });
+  uwGrid(sec, src, [["opex_growth", "opex growth", { pct: true, suffix: "%/yr" }]], dirty);
+
+  sec = collapsibleSection(host, "EXIT & HOLD", "", true);
+  uwGrid(sec, src, [
+    ["hold_years", "hold", { int: true, suffix: "yr" }],
+    ["exit_cap_rate", "exit cap", { pct: true, suffix: "%" }],
+    ["selling_cost_pct", "selling costs", { pct: true, suffix: "%" }],
+  ], dirty);
+  sec.append(el("div", "uw-sub", "capex schedule"));
+  uwRows(sec, src, "capex_schedule", [
+    { key: "through_year", label: "through yr", opts: { int: true } },
+    { key: "amount", label: "$ /unit/yr", opts: {} , init: 500 },
+  ], dirty, { addLabel: "tier" });
+  sec.append(el("div", "uw-sub", "equity"));
+  uwRows(sec, src, "equity_structure", [
+    { key: "role", label: "role", opts: { text: true }, init: "General Partner (GP)" },
+    { key: "share", label: "share %", opts: { pct: true } , init: 1 },
+    { key: "entity", label: "entity", opts: { text: true }, init: "OODA Group" },
+  ], dirty, {
+    addLabel: "partner",
+    footer: (arr) => {
+      const sum = arr.reduce((a, e) => a + (e.share || 0), 0);
+      return "Σ " + Math.round(sum * 100) + "%" + (Math.abs(sum - 1) < 0.001 ? " ✓" : " ✕ should be 100%");
+    },
+  });
+
+  sec = collapsibleSection(host, "NARRATIVE", "", true);
+  const ta = document.createElement("textarea");
+  ta.className = "uw-narrative";
+  ta.value = src.narrative_note || "";
+  ta.addEventListener("change", () => { src.narrative_note = ta.value.trim(); dirty.mark(); });
+  sec.append(ta);
+}
+
+// documentsSection: the documents[] list editor + drop-to-add.
+function documentsSection(host, src, dirty, docSlug, docKind) {
+  const sec = collapsibleSection(host, "DOCUMENTS", "", true);
+  uwRows(sec, src, "documents", [
+    { key: "name", label: "name", opts: { text: true } },
+    { key: "category", label: "category", opts: { text: true } },
+    { key: "file", label: "file", opts: { text: true } },
+  ], dirty, { addLabel: "document" });
+  const drop = el("div", "pp-dropzone", "drop a file to upload + add a row");
+  const pick = document.createElement("input");
+  pick.type = "file"; pick.hidden = true;
+  const upload = async (files) => {
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append("file", f);
+    try {
+      const res = await fetch("/api/properties/" + encodeURIComponent(docSlug) + "/docs", { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      const saved = (await res.json()).saved || [];
+      saved.forEach((rel) => {
+        const fn = rel.split("/").pop();
+        src.documents = [...(src.documents || []), { name: fn.replace(/\.[^.]+$/, ""), category: "", file: fn }];
+      });
+      dirty.mark();
+      showToast("Uploaded — document row added (save to keep)");
+    } catch (e) { showToast("Upload failed"); }
+  };
+  drop.onclick = () => pick.click();
+  pick.onchange = () => { upload(pick.files); pick.value = ""; };
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files); });
+  sec.append(drop, pick);
+  sec.append(el("div", "uw-footnote", "file syncs to the site repo on publish"));
+}
+
+// propertyLevelSections: the per-parcel engine fields.
+function propertyLevelSections(host, prop, dirty) {
+  const sec = host;
+  uwGrid(sec, prop, [
+    ["purchase_price", "purchase price", { suffix: "$" }],
+    ["year_built", "year built", { int: true }],
+    ["total_units", "total units", { int: true }],
+    ["total_sf", "total sf", { int: true }],
+    ["hard_costs", "hard costs", { suffix: "$" }],
+    ["contingency_pct", "contingency", { pct: true, suffix: "%" }],
+    ["closing_costs", "closing costs", { suffix: "$" }],
+    ["construction_period_months", "constr. period", { int: true, suffix: "mo" }],
+  ], dirty);
+  sec.append(el("div", "uw-sub", "unit mix"));
+  uwRows(sec, prop, "unit_mix", [
+    { key: "type", label: "type", opts: { text: true }, init: "1 BR" },
+    { key: "count", label: "count", opts: { int: true }, init: 1 },
+    { key: "rent", label: "rent $/mo", opts: {}, init: 1200 },
+  ], dirty, {
+    addLabel: "unit type",
+    footer: (arr) => {
+      const u = arr.reduce((a, e) => a + (e.count || 0), 0);
+      const r = arr.reduce((a, e) => a + (e.count || 0) * (e.rent || 0), 0);
+      return "Σ " + u + "u · $" + Math.round(r).toLocaleString() + "/mo";
+    },
+  });
+  sec.append(el("div", "uw-sub", "soft costs"));
+  uwKV(sec, prop, "soft_cost_items", dirty, { suffixFor: () => "$", addLabel: "item" });
+  sec.append(el("div", "uw-sub", "construction phases"));
+  uwRows(sec, prop, "construction_phases", [
+    { key: "phase", label: "phase", opts: { text: true }, init: "Phase" },
+    { key: "start", label: "start mo", opts: { int: true }, init: 1 },
+    { key: "end", label: "end mo", opts: { int: true }, init: 2 },
+  ], dirty, { addLabel: "phase" });
+}
+
+// ---- DEAL PAGE (design §2) ----
+
+async function renderDealPage(slug) {
+  const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
+  let d;
+  try { d = await (await fetch("/api/deals/" + encodeURIComponent(slug))).json(); }
+  catch (e) { host.innerHTML = ""; host.append(emptyRow("Deal not found.")); return; }
+  host.innerHTML = "";
+
+  const back = el("button", "pill light pp-back", "‹ board");
   back.onclick = () => { location.hash = "#/properties"; };
   host.append(back);
 
   const head = el("div", "pp-head");
-  head.append(el("h2", "pp-title", p.address || p.name));
+  head.append(el("h2", "pp-title", d.deal.name));
+  const chips = el("div", "pp-chips");
+  chips.append(dealStatusChip(d.deal));
+  const src = d.source || {};
+  [src.project_type, src.tier, src.default_strategy].filter(Boolean).forEach((c) => chips.append(el("span", "pp-chip", String(c))));
+  head.append(chips);
+  host.append(head);
+
+  // ACTUALS — manifest's own number; the site can't show this.
+  host.append(el("div", "pp-section-head tag-manifest", "ACTUALS · MANIFEST ONLY"));
+  const sum = el("div", "pp-rollup");
+  sum.append(rollupStat("paid", fmtPct(d.actuals.paidPct), fmtMoney(d.actuals.paid)));
+  sum.append(rollupStat("committed", fmtPct(d.actuals.committedPct), fmtMoney(d.actuals.committed)));
+  sum.append(rollupStat("budget", "", fmtMoney(d.actuals.budget)));
+  sum.append(rollupStat("ledgers", "", d.membersWithLedgers + "/" + (d.members || []).length));
+  host.append(sum);
+
+  // MEMBERS
+  host.append(el("div", "pp-section-head", "MEMBERS"));
+  const mbox = el("div", "pp-members");
+  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "UNITS", "BUDGET", "PAID / COMMITTED"]));
+  (d.members || []).forEach((p) => mbox.append(boardRow(p, true)));
+  host.append(mbox);
+
+  if (!d.source) {
+    host.append(emptyRow("No source sidecar — run the -expand migration."));
+    return;
+  }
+
+  // UNDERWRITING — the full engine editor over the deal-level source.
+  host.append(el("div", "pp-section-head tag-engine", "UNDERWRITING · FEEDS SITE ENGINE"));
+  const uw = el("div", "uw-block");
+  host.append(uw);
+  const orig = JSON.stringify(d.source);
+  const dirty = makeDirtyBar(host,
+    async () => {
+      await putJSON("/api/deals/" + encodeURIComponent(slug) + "/source", d.source);
+      showToast("Saved — source.json updated");
+    },
+    () => { renderDealPage(slug); });
+  dealLevelSections(uw, d.source, dirty);
+  documentsSection(uw, d.source, dirty, (d.members[0] || {}).slug || slug, "deal");
+
+  const foot = el("div", "pp-foot");
+  foot.append(pillLight("underwrite ↓", () => exportUnderwrite(slug)));
+  const noteBtn = el("button", "pill light", "open note →");
+  noteBtn.onclick = () => { _noteReturn = "#/properties/deal/" + encodeURIComponent(slug); openNoteByPath(d.deal.path); };
+  foot.append(noteBtn);
+  host.append(foot);
+}
+
+async function putJSON(url, body) {
+  const res = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
+  return res.json().catch(() => ({}));
+}
+
+// ---- STATEMENT WORKBENCH (design §4) ----
+
+let stmtRows = [];
+let stmtFilter = "pending"; // pending shows pending+assigned+split
+
+async function renderStatements() {
+  const host = els.propertyStatements; host.hidden = false; host.innerHTML = "loading…";
+  let d;
+  try { d = await (await fetch("/api/realestate/statements")).json(); }
+  catch (e) { host.innerHTML = ""; host.append(emptyRow("Statements unavailable.")); return; }
+  stmtRows = d.rows || [];
+  if (!propertyCache.length) { try { const pd = await (await fetch("/api/properties")).json(); propertyCache = pd.properties || []; } catch (e) {} }
+  host.innerHTML = "";
+
+  const counts = { pending: 0, assigned: 0, split: 0, applied: 0, skipped: 0 };
+  stmtRows.forEach((r) => { counts[r.state] = (counts[r.state] || 0) + 1; });
+  els.propertiesMeta.textContent = counts.pending + " unassigned · " + counts.skipped + " skipped" +
+    (d.lastImport ? " · last import " + d.lastImport : "");
+
+  // upload zone (always present)
+  const drop = el("div", "pp-dropzone", "drop a bank csv — or click to pick");
+  const pick = document.createElement("input");
+  pick.type = "file"; pick.accept = ".csv,text/csv"; pick.hidden = true;
+  drop.onclick = () => pick.click();
+  const mapHost = el("div", "stmt-maphost");
+  const doUpload = async (file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    drop.textContent = "parsing…";
+    try {
+      const res = await fetch("/api/realestate/statements/upload", { method: "POST", body: fd });
+      if (!res.ok) throw new Error(await res.text());
+      renderStmtMapping(mapHost, await res.json());
+    } catch (e) { showToast("Couldn't parse csv"); }
+    drop.textContent = "drop a bank csv — or click to pick";
+  };
+  pick.onchange = () => { doUpload(pick.files[0]); pick.value = ""; };
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); doUpload(e.dataTransfer.files[0]); });
+  host.append(drop, pick, mapHost);
+
+  // state filter chips
+  const chips = el("div", "stmt-chips");
+  [["pending", "PENDING"], ["applied", "APPLIED"], ["skipped", "SKIPPED"]].forEach(([val, label]) => {
+    const c = el("button", "filter-chip" + (stmtFilter === val ? " on" : ""), label);
+    c.onclick = () => { stmtFilter = val; renderStatements(); };
+    chips.append(c);
+  });
+  host.append(chips);
+
+  // rows grouped by statement label
+  const list = el("div", "stmt-list");
+  const show = stmtRows.filter((r) =>
+    stmtFilter === "pending" ? (r.state === "pending" || r.state === "assigned" || r.state === "split")
+      : r.state === stmtFilter);
+  const byStmt = new Map();
+  show.forEach((r) => {
+    const k = (r.statement || "earlier") + " · imported " + (r.imported || "");
+    if (!byStmt.has(k)) byStmt.set(k, []);
+    byStmt.get(k).push(r);
+  });
+  if (!show.length) list.append(emptyRow(stmtFilter === "pending" ? "Nothing pending — drop a statement above." : "Nothing here."));
+  for (const [label, rows] of byStmt) {
+    list.append(el("div", "pp-section-head", label.toUpperCase()));
+    list.append(ppCols("cols-stmt", ["DATE", "DESCRIPTION", "AMOUNT", "CATEGORY", "PROPERTY", "STATE"]));
+    rows.forEach((r) => list.append(stmtRowEl(r)));
+  }
+  host.append(list);
+
+  // sticky apply footer
+  const applicable = stmtRows.filter((r) => r.state === "assigned" || r.state === "split");
+  if (applicable.length) {
+    const bar = el("div", "dirty-bar");
+    bar.append(el("span", "dirty-label",
+      stmtRows.filter((r) => r.state === "assigned").length + " ASSIGNED · " +
+      stmtRows.filter((r) => r.state === "split").length + " SPLIT · " +
+      counts.pending + " PENDING"));
+    const apply = el("button", "pill", "apply " + applicable.length + " rows");
+    apply.onclick = async () => {
+      apply.disabled = true;
+      try {
+        const res = await postJSONOk("/api/realestate/statements/apply", { ids: applicable.map((r) => r.id) });
+        showToast("Applied " + res.applied + " rows (" + res.lines + " lines across " + res.properties + " properties)");
+        renderStatements();
+      } catch (e) { showToast("Apply failed: " + (e.message || "").slice(0, 80)); apply.disabled = false; }
+    };
+    bar.append(apply);
+    host.append(bar);
+  }
+}
+
+// renderStmtMapping: column mapping over an uploaded csv → ingest to the lot.
+function renderStmtMapping(host, pre) {
+  host.innerHTML = "";
+  const panel = el("div", "import-panel");
+  panel.append(el("div", "pp-section-head", "MAP COLUMNS · " + pre.label + (pre.remembered ? " (remembered)" : "")));
+  const selects = {};
+  const mapRow = el("div", "import-maprow");
+  ["date", "amount", "vendor", "note"].forEach((field) => {
+    const lab = el("label", "portal-field");
+    lab.append(el("span", "portal-field-label", field));
+    const sel = selectEl(field === "note" ? ["—", ...pre.headers] : pre.headers);
+    if (pre.mapping && pre.mapping[field]) sel.value = pre.mapping[field];
+    selects[field] = sel;
+    lab.append(sel);
+    mapRow.append(lab);
+  });
+  const flip = document.createElement("input"); flip.type = "checkbox";
+  const flipLab = el("label", "import-flip"); flipLab.append(flip, el("span", "", " debits are negative (flip sign)"));
+  mapRow.append(flipLab);
+  panel.append(mapRow);
+  const ingest = el("button", "pill", "add to workbench");
+  const cancel = el("button", "pill light", "✕");
+  cancel.onclick = () => { host.innerHTML = ""; };
+  ingest.onclick = async () => {
+    const col = (f) => pre.headers.indexOf(selects[f].value);
+    const di = col("date"), ai = col("amount"), vi = col("vendor");
+    const ni = selects.note.value === "—" ? -1 : pre.headers.indexOf(selects.note.value);
+    const rows = pre.rows.map((raw) => {
+      let amt = parseFloat(String(raw[ai] || "").replace(/[$,]/g, "")) || 0;
+      if (flip.checked) amt = -amt;
+      return {
+        date: normDate(raw[di] || ""), amount: Math.round(amt * 100) / 100,
+        vendor: (raw[vi] || "").trim(), note: ni >= 0 ? (raw[ni] || "").trim() : "",
+      };
+    }).filter((r) => r.date && r.amount > 0);
+    ingest.disabled = true;
+    try {
+      const mapping = { date: selects.date.value, amount: selects.amount.value, vendor: selects.vendor.value, note: selects.note.value };
+      const res = await postJSONOk("/api/realestate/statements/ingest",
+        { label: pre.label, signature: pre.signature, mapping, rows });
+      showToast("Added " + res.added + " rows (" + res.duplicates + " duplicates skipped)");
+      host.innerHTML = "";
+      renderStatements();
+    } catch (e) { showToast("Ingest failed"); ingest.disabled = false; }
+  };
+  const foot = el("div", "import-foot");
+  foot.append(ingest, cancel);
+  panel.append(foot);
+  host.append(panel);
+}
+
+// stmtRowEl: one workbench row — category input, property typeahead, split
+// block, skip link, vendor-echo bulk hint.
+function stmtRowEl(r) {
+  const wrap = el("div", "stmt-wrap");
+  const row = el("div", "stmt-row state-" + r.state);
+  row.append(el("span", "import-date", r.date));
+  row.append(el("span", "stmt-vendor", r.vendor + (r.note ? "  · " + r.note : "")));
+  row.append(el("span", "pp-amt", fmtMoney(r.amount)));
+
+  const readOnly = r.state === "applied";
+  if (readOnly) {
+    row.append(el("span", "", r.category || ""));
+    row.append(el("span", "", (r.assignments || []).map((a) => a.slug).join(" · ")));
+    row.append(el("span", "stmt-state", r.state));
+    wrap.append(row);
+    return wrap;
+  }
+
+  const cat = inputEl("category");
+  cat.classList.add("import-cat");
+  cat.value = r.category || "";
+  cat.addEventListener("change", () => patchStmt(r, { category: cat.value }));
+  row.append(cat);
+
+  const propCell = el("span", "stmt-prop");
+  const single = (r.assignments || []).length === 1 ? r.assignments[0] : null;
+  propCell.append(propertyTypeahead("property…", (p) => {
+    patchStmt(r, { assignments: [{ slug: p.slug, amount: r.amount }] });
+  }, single ? single.slug : ""));
+  const splitBtn = el("button", "stmt-split-btn", "split ⑂");
+  splitBtn.onclick = () => renderSplitBlock(wrap, r);
+  propCell.append(splitBtn);
+  row.append(propCell);
+
+  const stateCell = el("span", "stmt-state st-" + r.state, r.state);
+  row.append(stateCell);
+  wrap.append(row);
+
+  // quiet second line: remembered hint · vendor echo · skip
+  const hints = el("div", "stmt-hints");
+  if (r.remembered) hints.append(el("span", "stmt-hint", "↳ remembered"));
+  if (r.state === "assigned" || r.state === "split") {
+    const others = stmtRows.filter((o) => o.state === "pending" && o.vendor && o.vendor === r.vendor);
+    if (others.length) {
+      const echo = el("button", "stmt-hint stmt-echo", "apply to " + others.length + " more from " + r.vendor + " →");
+      echo.onclick = async () => {
+        for (const o of others) {
+          await patchStmt(o, { category: r.category, assignments: r.assignments }, true);
+        }
+        renderStatements();
+      };
+      hints.append(echo);
+    }
+  }
+  const skip = el("button", "stmt-hint", r.state === "skipped" ? "unskip" : "skip");
+  skip.onclick = () => patchStmt(r, { state: r.state === "skipped" ? "pending" : "skipped" });
+  hints.append(skip);
+  wrap.append(hints);
+
+  if ((r.assignments || []).length > 1) renderSplitBlock(wrap, r, true);
+  return wrap;
+}
+
+async function patchStmt(r, patch, silent) {
+  try {
+    await postJSONOk("/api/realestate/statements/row", { id: r.id, ...patch });
+    if (!silent) renderStatements();
+  } catch (e) { showToast("Couldn't update row"); }
+}
+
+// renderSplitBlock: inline allocation sub-rows — property + amount each, ÷
+// evenly, live remainder (nonzero keeps the row pending).
+function renderSplitBlock(wrap, r, initialOnly) {
+  let block = wrap.querySelector(".stmt-splits");
+  if (block) { if (initialOnly) return; block.remove(); return; }
+  block = el("div", "stmt-splits");
+  const allocs = (r.assignments || []).length ? r.assignments.map((a) => ({ ...a })) : [{ slug: "", amount: r.amount }];
+  const render = () => {
+    block.innerHTML = "";
+    allocs.forEach((a, i) => {
+      const line = el("div", "stmt-split-line");
+      line.append(propertyTypeahead("property…", (p) => { a.slug = p.slug; commit(); }, a.slug));
+      const amt = inputEl("amount");
+      amt.type = "number"; amt.step = "0.01"; amt.value = a.amount || "";
+      amt.addEventListener("change", () => { a.amount = parseFloat(amt.value) || 0; commit(); });
+      line.append(amt);
+      const x = el("button", "uw-x", "✕");
+      x.onclick = () => { allocs.splice(i, 1); commit(); };
+      line.append(x);
+      block.append(line);
+    });
+    const foot = el("div", "stmt-split-foot");
+    const add = el("button", "o-ghost", "＋ property");
+    add.onclick = () => { allocs.push({ slug: "", amount: 0 }); render(); };
+    const even = el("button", "stmt-hint", "÷ evenly");
+    even.onclick = () => {
+      const per = Math.floor((r.amount / allocs.length) * 100) / 100;
+      allocs.forEach((a, i) => { a.amount = i === allocs.length - 1 ? Math.round((r.amount - per * (allocs.length - 1)) * 100) / 100 : per; });
+      commit();
+    };
+    const sum = allocs.reduce((s, a) => s + (a.amount || 0), 0);
+    const rem = Math.round((r.amount - sum) * 100) / 100;
+    const remEl = el("span", "stmt-remainder" + (Math.abs(rem) < 0.01 ? " ok" : " bad"),
+      "$" + rem.toFixed(2) + " remaining" + (Math.abs(rem) < 0.01 ? " ✓" : ""));
+    foot.append(add, even, remEl);
+    block.append(foot);
+  };
+  const commit = async () => {
+    const clean = allocs.filter((a) => a.slug);
+    await patchStmt(r, { assignments: clean }, true);
+    r.assignments = clean;
+    render();
+  };
+  render();
+  wrap.append(block);
+}
+
+async function renderPropertyPage(slug) {
+  els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
+  const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
+  try {
+    const [p, srcRes, geoRes] = await Promise.all([
+      (await fetch("/api/properties/" + encodeURIComponent(slug))).json(),
+      fetch("/api/properties/" + encodeURIComponent(slug) + "/source").then((r) => r.json()).catch(() => ({})),
+      fetch("/api/properties/geo?slug=" + encodeURIComponent(slug)).then((r) => r.json()).catch(() => ({})),
+    ]);
+    renderProp(p, srcRes.source || null, ((geoRes.records || [])[0] || {}).features || []);
+  } catch (e) { host.innerHTML = ""; host.append(emptyRow("Property not found.")); }
+}
+
+// renderProp (design §3): money you touch daily on top, reference collapsed
+// below, prose last.
+function renderProp(p, src, geoFeatures) {
+  const host = els.propertyPage; host.innerHTML = ""; host.hidden = false;
+  els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
+
+  const back = el("button", "pill light pp-back", "‹ board");
+  back.onclick = () => { location.hash = "#/properties"; };
+  host.append(back);
+
+  // single-parcel deals carry the FULL deal object; members carry the slice.
+  const isFullDeal = !!(src && Array.isArray(src.properties) && src.properties.length);
+  const propSlice = isFullDeal ? src.properties[0] : (src || null);
+
+  const head = el("div", "pp-head");
+  const titleRow = el("div", "pp-title-row");
+  const tcol = el("div", "pp-title-col");
+  const h = el("h2", "pp-title", p.address || p.name);
+  tcol.append(h);
+  if (propSlice && propSlice.parcel_id) tcol.append(el("span", "pp-parcel", propSlice.parcel_id));
   const chips = el("div", "pp-chips");
   chips.append(editChip(p, "status", p.status, PROPERTY_STATUSES));
-  chips.append(el("span", "pp-chip", p.control)); // structural — not editable
+  chips.append(el("span", "pp-chip", p.control));
   chips.append(editChip(p, "kind", p.kind, PROPERTY_KINDS));
-  chips.append(editChip(p, "entity", p.entity, null)); // free text
-  if (p.deal) { const d = el("span", "pp-chip pp-deal", "▸ " + p.deal); chips.append(d); }
-  head.append(chips);
+  chips.append(editChip(p, "entity", p.entity, null));
+  if (p.deal) {
+    const dchip = el("a", "pp-chip pp-deal", "▸ " + p.deal);
+    dchip.href = "#/properties/deal/" + encodeURIComponent(p.deal);
+    chips.append(dchip);
+  }
+  tcol.append(chips);
+  titleRow.append(tcol);
+  const thumb = parcelThumb(geoFeatures);
+  if (thumb) { thumb.onclick = () => { location.hash = "#/properties/map"; }; titleRow.append(thumb); }
+  head.append(titleRow);
   host.append(head);
 
   const sum = el("div", "pp-rollup");
@@ -4662,7 +5486,7 @@ function renderProp(p) {
   host.append(sum);
 
   if ((p.rollup.categories || []).length) {
-    host.append(el("div", "pp-section-head", "budget"));
+    host.append(el("div", "pp-section-head", "BUDGET"));
     const tbl = el("div", "pp-budget");
     p.rollup.categories.forEach((c) => {
       const r = el("div", "pp-budget-row" + (c.over ? " over" : ""));
@@ -4673,16 +5497,71 @@ function renderProp(p) {
     host.append(tbl);
   }
 
-  host.append(el("div", "pp-section-head", "ledger"));
+  host.append(el("div", "pp-section-head", "LEDGER"));
   host.append(ledgerTable(p));
-  host.append(el("div", "pp-section-head", "log"));
+
+  // UNDERWRITING — collapsed reference; single-parcel deals get BOTH levels.
+  if (src) {
+    const summary = propSlice ?
+      [propSlice.purchase_price ? "$" + Math.round(propSlice.purchase_price / 1000) + "k purch" : "",
+        propSlice.total_units ? propSlice.total_units + "u" : "",
+        propSlice.total_sf ? propSlice.total_sf.toLocaleString() + "sf" : ""].filter(Boolean).join(" · ") : "";
+    const headEl = el("div", "pp-section-head tag-engine", "UNDERWRITING · FEEDS SITE ENGINE");
+    host.append(headEl);
+    const body = collapsibleSection(host, propSlice === src ? "PROPERTY FIELDS" : "FIELDS", summary, false);
+    const dirty = makeDirtyBar(host,
+      async () => {
+        await putJSON("/api/properties/" + encodeURIComponent(p.slug) + "/source", src);
+        showToast("Saved — source.json updated");
+      },
+      () => renderPropertyPage(p.slug));
+    if (propSlice) propertyLevelSections(body, propSlice, dirty);
+    if (isFullDeal) {
+      const dealBody = collapsibleSection(host, "DEAL-LEVEL (this record IS the deal)", "", false);
+      dealLevelSections(dealBody, src, dirty);
+      documentsSection(dealBody, src, dirty, p.slug, "single");
+    }
+  }
+
+  host.append(el("div", "pp-section-head", "LOG"));
   host.append(logBlock(p));
-  host.append(el("div", "pp-section-head", "docs"));
+  host.append(el("div", "pp-section-head", "DOCS"));
   host.append(docsBlock(p));
 
   const edit = el("button", "pill light pp-editnote", "edit note / prose →");
   edit.onclick = () => { _noteReturn = "#/properties/" + encodeURIComponent(p.slug); openNoteByPath(p.path); };
   host.append(edit);
+}
+
+// parcelThumb: the parcel polygon as a quiet inline SVG (no tiles, no Leaflet).
+function parcelThumb(features) {
+  if (!features || !features.length) return null;
+  let pts = [];
+  features.forEach((f) => {
+    const g = f.geometry || {};
+    if (g.type === "Polygon") (g.coordinates || []).forEach((ring) => pts.push(...ring));
+  });
+  if (pts.length < 3) return null;
+  const xs = pts.map((c) => c[0]), ys = pts.map((c) => c[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const W = 180, H = 120, pad = 10;
+  const sx = (W - 2 * pad) / (maxX - minX || 1), sy = (H - 2 * pad) / (maxY - minY || 1);
+  const s = Math.min(sx, sy);
+  const px = (c) => (pad + (c[0] - minX) * s).toFixed(1) + "," + (H - pad - (c[1] - minY) * s).toFixed(1);
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("class", "pp-thumb");
+  features.forEach((f) => {
+    const g = f.geometry || {};
+    if (g.type !== "Polygon") return;
+    (g.coordinates || []).forEach((ring) => {
+      const poly = document.createElementNS(svgNS, "polygon");
+      poly.setAttribute("points", ring.map(px).join(" "));
+      svg.append(poly);
+    });
+  });
+  return svg;
 }
 
 // editChip is a page chip that swaps to a select (enum) or text input (free) and
@@ -4699,7 +5578,7 @@ function editChip(p, key, value, options) {
     const save = async () => {
       const v = options ? ctl.value : ctl.value.trim();
       if (v === (value || "") && options) { ctl.replaceWith(chip); return; }
-      try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value: v })); }
+      try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value: v }); renderPropertyPage(p.slug); }
       catch (err) { showToast("Couldn't update " + key); ctl.replaceWith(chip); }
     };
     if (options) { ctl.onchange = save; ctl.onblur = () => { if (ctl.parentNode) ctl.replaceWith(chip); }; }
@@ -4724,144 +5603,139 @@ function rollupStat(label, pct, money) {
   return s;
 }
 
+// ledgerTable (design §3): quick-add is the FIRST ROW of the table under an
+// aligned label header — Enter commits + refocuses category for rapid entry.
+// Rows group under month heads; click a row to edit in place; hover ✕ deletes
+// with an inline y/n. Last 2 months by default.
+let ledgerShowAll = false;
+
 function ledgerTable(p) {
   const wrap = el("div", "pp-ledger");
-  (p.ledger || []).forEach((r) => {
-    const row = el("div", "pp-ledger-row");
-    row.append(el("span", "", r.date), el("span", "pp-ltype type-" + r.type, r.type),
-      el("span", "", r.category), el("span", "", r.vendor || r.contractor || ""),
-      el("span", "pp-amt", fmtMoney(r.amount)), el("span", "", r.status), el("span", "pp-lnote", r.note || ""));
-    wrap.append(row);
+  wrap.append(ppCols("cols-ledger", ["DATE", "TYPE", "CATEGORY", "VENDOR", "AMOUNT", "STATUS", "NOTE", ""]));
+  wrap.append(ledgerEntryRow(p));
+
+  const rows = (p.ledger || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  if (!rows.length) { wrap.append(el("div", "pp-empty", "No ledger rows yet.")); return wrap; }
+
+  // month cut: latest 2 distinct months unless expanded
+  const months = [...new Set(rows.map((r) => (r.date || "").slice(0, 7)))];
+  const visibleMonths = ledgerShowAll ? months : months.slice(0, 2);
+  let curMonth = null;
+  let shown = 0;
+  rows.forEach((r) => {
+    const m = (r.date || "").slice(0, 7);
+    if (!visibleMonths.includes(m)) return;
+    if (m !== curMonth) { curMonth = m; wrap.append(el("div", "pp-month", m || "undated")); }
+    wrap.append(ledgerRowEl(p, r));
+    shown++;
   });
-  if (!(p.ledger || []).length) wrap.append(el("div", "pp-empty", "No ledger rows yet."));
-
-  const form = el("div", "pp-ledger-add");
-  const typeSel = selectEl(["expense", "bid"]);
-  const cat = inputEl("category"), who = inputEl("vendor / contractor"), amt = inputEl("amount");
-  amt.type = "number"; amt.step = "0.01";
-  const statusSel = selectEl(["paid", "requested", "received", "accepted", "declined"]);
-  const note = inputEl("note");
-  const add = el("button", "pill", "add");
-  add.onclick = async () => {
-    const body = { type: typeSel.value, category: cat.value, amount: parseFloat(amt.value) || 0, status: statusSel.value, note: note.value };
-    if (typeSel.value === "bid") body.contractor = who.value; else body.vendor = who.value;
-    add.disabled = true;
-    try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger", body)); }
-    catch (e) { showToast("Couldn't add ledger row"); add.disabled = false; }
-  };
-  form.append(typeSel, cat, who, amt, statusSel, note, add);
-  wrap.append(form);
-
-  const importBtn = el("button", "pill light pp-import", "import bank csv…");
-  const importHost = el("div", "pp-import-host");
-  importBtn.onclick = () => importFlow(p, importHost, importBtn);
-  wrap.append(importBtn, importHost);
+  if (!ledgerShowAll && shown < rows.length) {
+    const more = el("button", "o-ghost", "show all (" + rows.length + ")");
+    more.onclick = () => { ledgerShowAll = true; renderPropertyPage(p.slug); };
+    wrap.append(more);
+  }
   return wrap;
 }
 
-// ---- bank-CSV import flow: pick file → map columns (remembered) → preview
-// with duplicate rows pre-unchecked → apply (server re-dedupes). ----
-function importFlow(p, host, btn) {
-  const pick = document.createElement("input");
-  pick.type = "file"; pick.accept = ".csv,text/csv";
-  pick.onchange = async () => {
-    if (!pick.files.length) return;
-    const fd = new FormData();
-    fd.append("file", pick.files[0]);
-    btn.disabled = true; btn.textContent = "parsing…";
+// ledgerEntryRow: the aligned quick-add — shares the ledger grid exactly.
+function ledgerEntryRow(p) {
+  const row = el("div", "pp-ledger-row entry");
+  const date = inputEl(""); date.value = isoToday(); date.classList.add("lg-date");
+  const typeSel = selectEl(["expense", "bid"]);
+  const cat = inputEl("category"); cat.setAttribute("list", "budgetCats-" + p.slug);
+  const dl = document.createElement("datalist"); dl.id = "budgetCats-" + p.slug;
+  (p.rollup.categories || []).forEach((c) => { const o = document.createElement("option"); o.value = c.category; dl.append(o); });
+  const who = inputEl("vendor"); who.setAttribute("list", "vendors-" + p.slug);
+  const vdl = document.createElement("datalist"); vdl.id = "vendors-" + p.slug;
+  [...new Set((p.ledger || []).map((r) => r.vendor || r.contractor).filter(Boolean))].forEach((v) => {
+    const o = document.createElement("option"); o.value = v; vdl.append(o);
+  });
+  const amt = inputEl("0.00"); amt.type = "number"; amt.step = "0.01";
+  const statusSel = selectEl(["paid", "requested", "received", "accepted", "declined"]);
+  const note = inputEl("note");
+  const add = el("button", "pill lg-add", "add");
+  const commit = async () => {
+    const amount = parseFloat(amt.value) || 0;
+    if (!cat.value.trim() && !amount) return;
+    const body = { date: date.value, type: typeSel.value, category: cat.value, amount, status: statusSel.value, note: note.value };
+    if (typeSel.value === "bid") body.contractor = who.value; else body.vendor = who.value;
+    add.disabled = true;
     try {
-      const res = await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/import/preview", { method: "POST", body: fd });
-      if (!res.ok) throw new Error((await res.text()).trim());
-      renderImportPanel(p, host, await res.json());
-    } catch (e) { showToast("Couldn't parse csv: " + (e.message || "").slice(0, 60)); }
-    btn.disabled = false; btn.textContent = "import bank csv…";
+      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger", body);
+      renderPropertyPage(p.slug); // fresh page; entry refocuses via autofocus below
+    } catch (e) { showToast("Couldn't add ledger row"); add.disabled = false; }
   };
-  pick.click();
+  add.onclick = commit;
+  [date, cat, who, amt, note].forEach((i) => i.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(); }));
+  row.append(date, typeSel, cat, who, amt, statusSel, note, add);
+  row.append(dl, vdl);
+  return row;
 }
 
-function renderImportPanel(p, host, pre) {
-  host.innerHTML = "";
-  const panel = el("div", "import-panel");
-  panel.append(el("div", "pp-section-head", "map columns" + (pre.remembered ? " (remembered)" : "")));
+// ledgerRowEl: display row → click to edit in place (✓/✕), hover ✕ → y/n delete.
+function ledgerRowEl(p, r) {
+  const row = el("div", "pp-ledger-row");
+  const cells = [
+    el("span", "", (r.date || "").slice(5)), // MM-DD under the month head
+    el("span", "pp-ltype type-" + r.type, r.type),
+    el("span", "", r.category), el("span", "", r.vendor || r.contractor || ""),
+    el("span", "pp-amt", fmtMoney(r.amount)), el("span", "", r.status),
+    el("span", "pp-lnote", r.note || ""),
+  ];
+  cells.forEach((c) => row.append(c));
 
-  const selects = {};
-  const mapRow = el("div", "import-maprow");
-  ["date", "amount", "vendor", "note"].forEach((field) => {
-    const lab = el("label", "portal-field");
-    lab.append(el("span", "portal-field-label", field));
-    const sel = selectEl(field === "note" ? ["—", ...pre.headers] : pre.headers);
-    if (pre.mapping && pre.mapping[field]) sel.value = pre.mapping[field];
-    selects[field] = sel;
-    lab.append(sel);
-    mapRow.append(lab);
-  });
-  const flip = document.createElement("input"); flip.type = "checkbox"; flip.id = "impFlip";
-  const flipLab = el("label", "import-flip"); flipLab.append(flip, el("span", "", " debits are negative (flip sign)"));
-  mapRow.append(flipLab);
-  panel.append(mapRow);
+  const xCell = el("span", "lg-x-cell");
+  const x = el("button", "uw-x", "✕");
+  x.onclick = (e) => {
+    e.stopPropagation();
+    const yes = el("button", "stmt-hint", "delete?");
+    const no = el("button", "stmt-hint", "no");
+    yes.onclick = async (ev) => {
+      ev.stopPropagation();
+      try {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate", { original: r });
+        renderPropertyPage(p.slug);
+      } catch (err) { showToast((err.message || "Delete failed").slice(0, 80)); }
+    };
+    no.onclick = (ev) => { ev.stopPropagation(); yes.remove(); no.remove(); x.hidden = false; };
+    x.hidden = true;
+    xCell.append(yes, no);
+  };
+  xCell.append(x);
+  row.append(xCell);
 
-  const tableHost = el("div", "import-rows");
-  panel.append(tableHost);
-  const applyBtn = el("button", "pill", "apply");
-  const cancel = el("button", "pill light", "✕ cancel");
-  cancel.onclick = () => { host.innerHTML = ""; };
-  const foot = el("div", "import-foot"); foot.append(applyBtn, cancel);
-  panel.append(foot);
-  host.append(panel);
-
-  const existingKeys = new Set((p.ledger || []).map((r) => r.date + "|" + (r.amount || 0).toFixed(2) + "|" + (r.vendor || "").toLowerCase()));
-  let mapped = [];
-
-  const remap = () => {
-    const col = (f) => pre.headers.indexOf(selects[f].value);
-    const di = col("date"), ai = col("amount"), vi = col("vendor");
-    const ni = selects.note.value === "—" ? -1 : pre.headers.indexOf(selects.note.value);
-    mapped = pre.rows.map((raw) => {
-      let amt = parseFloat(String(raw[ai] || "").replace(/[$,]/g, "")) || 0;
-      if (flip.checked) amt = -amt;
-      const vendor = (raw[vi] || "").trim();
-      const row = {
-        date: normDate(raw[di] || ""), amount: Math.round(amt * 100) / 100, vendor,
-        note: ni >= 0 ? (raw[ni] || "").trim() : "",
-        category: (pre.vendorCategories || {})[vendor.toLowerCase()] || "",
+  row.onclick = () => { // edit in place
+    const edit = el("div", "pp-ledger-row entry");
+    const date = inputEl(""); date.value = r.date;
+    const typeSel = selectEl(["expense", "bid"]); typeSel.value = r.type;
+    const cat = inputEl("category"); cat.value = r.category;
+    const who = inputEl("vendor"); who.value = r.vendor || r.contractor || "";
+    const amt = inputEl(""); amt.type = "number"; amt.step = "0.01"; amt.value = r.amount;
+    const statusSel = selectEl(["paid", "requested", "received", "accepted", "declined"]); statusSel.value = r.status || "paid";
+    const note = inputEl("note"); note.value = r.note || "";
+    const ok = el("button", "pill lg-add", "✓");
+    ok.onclick = async () => {
+      const replacement = {
+        date: date.value, type: typeSel.value, category: cat.value,
+        amount: parseFloat(amt.value) || 0, status: statusSel.value, note: note.value, doc: r.doc || "",
       };
-      row.dup = existingKeys.has(row.date + "|" + row.amount.toFixed(2) + "|" + vendor.toLowerCase());
-      row.use = !row.dup && row.amount > 0 && !!row.date;
-      return row;
-    });
-    renderRows();
+      if (typeSel.value === "bid") replacement.contractor = who.value; else replacement.vendor = who.value;
+      try {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate", { original: r, replacement });
+        renderPropertyPage(p.slug);
+      } catch (err) { showToast((err.message || "Edit failed").slice(0, 80)); }
+    };
+    const cancel = el("button", "pill light lg-add", "✕");
+    cancel.onclick = (e) => { e.stopPropagation(); edit.replaceWith(row); };
+    edit.append(date, typeSel, cat, who, amt, statusSel, note, ok, cancel);
+    edit.onclick = (e) => e.stopPropagation();
+    [date, cat, who, amt, note].forEach((i) => i.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ok.onclick();
+      else if (e.key === "Escape") edit.replaceWith(row);
+    }));
+    row.replaceWith(edit);
   };
-  const renderRows = () => {
-    tableHost.innerHTML = "";
-    tableHost.append(el("div", "import-count",
-      mapped.filter((r) => r.use).length + " to import · " + mapped.filter((r) => r.dup).length + " duplicates skipped"));
-    mapped.slice(0, 200).forEach((row) => {
-      const line = el("div", "import-row" + (row.dup ? " dup" : ""));
-      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = row.use;
-      cb.onchange = () => { row.use = cb.checked; };
-      const cat = inputEl("category"); cat.value = row.category; cat.classList.add("import-cat");
-      cat.oninput = () => { row.category = cat.value; };
-      line.append(cb, el("span", "import-date", row.date || "—"), el("span", "import-vendor", row.vendor),
-        el("span", "pp-amt", fmtMoney(row.amount)), cat, el("span", "import-note", row.dup ? "already in ledger" : row.note));
-      tableHost.append(line);
-    });
-  };
-  Object.values(selects).forEach((s) => { s.onchange = remap; });
-  flip.onchange = remap;
-  remap();
-
-  applyBtn.onclick = async () => {
-    const rows = mapped.filter((r) => r.use).map((r) => ({ date: r.date, amount: r.amount, vendor: r.vendor, category: r.category, note: r.note }));
-    if (!rows.length) { showToast("Nothing selected to import"); return; }
-    const mapping = { date: selects.date.value, amount: selects.amount.value, vendor: selects.vendor.value, note: selects.note.value };
-    applyBtn.disabled = true;
-    try {
-      const res = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/import/apply",
-        { signature: pre.signature, mapping, rows });
-      showToast("Imported " + res.added + " rows (" + res.skipped + " duplicates skipped)");
-      renderProp(res.property);
-    } catch (e) { showToast("Import failed"); applyBtn.disabled = false; }
-  };
+  return row;
 }
 
 // normDate coerces common bank formats (MM/DD/YYYY, YYYY-MM-DD) to ISO.
@@ -4885,7 +5759,7 @@ function logBlock(p) {
 }
 
 async function addLog(slug, text) {
-  try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(slug) + "/log", { text })); }
+  try { await postJSONOk("/api/properties/" + encodeURIComponent(slug) + "/log", { text }); renderPropertyPage(slug); }
   catch (e) { showToast("Couldn't add log line"); }
 }
 

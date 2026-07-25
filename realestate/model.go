@@ -29,7 +29,8 @@ type Property struct {
 	Control string       `json:"control"` // owned | tracked
 	Deal    string       `json:"deal"`    // [[deal]] wikilink display, if bundled
 	Hidden  bool         `json:"hidden"`
-	Lat     float64      `json:"lat,omitempty"` // optional frontmatter map override
+	Units   int          `json:"units,omitempty"` // total_units from the source sidecar
+	Lat     float64      `json:"lat,omitempty"`   // optional frontmatter map override
 	Lng     float64      `json:"lng,omitempty"`
 	Budget  []BudgetLine `json:"budget"`
 	Log     []string     `json:"log"`    // free lines, newest-first as written

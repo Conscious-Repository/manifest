@@ -28,6 +28,7 @@ func (s *Server) UseRealestate(svc *realestate.Service, root, dataDir string) {
 	s.bgParcelsPath = filepath.Join(dataDir, "realestate", "bgParcels.json")
 	s.reImport = realestate.NewImportMemory(dataDir)
 	s.geocoder = realestate.NewGeocoder(dataDir)
+	s.statements = realestate.NewStatementStore(dataDir)
 }
 
 func (s *Server) realestateRootOr() string {
@@ -62,6 +63,18 @@ func (s *Server) handlePropertiesGeo(w http.ResponseWriter, r *http.Request) {
 	records, err := s.realestate.GeoRecords()
 	if err != nil {
 		httpError(w, err)
+		return
+	}
+	// ?slug= → one record's features only, no background layer (the property
+	// page's SVG parcel thumbnail — cheap, not the 1,551-parcel map payload).
+	if slug := r.URL.Query().Get("slug"); slug != "" {
+		for _, g := range records {
+			if strings.EqualFold(g.Slug, slug) {
+				writeJSON(w, map[string]any{"records": []realestate.GeoRecord{g}, "bg": nil})
+				return
+			}
+		}
+		writeJSON(w, map[string]any{"records": []any{}, "bg": nil})
 		return
 	}
 	rendered := map[string]bool{}
@@ -148,7 +161,7 @@ func (s *Server) handlePropertyCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Address, Entity, Kind, Status, Template string
+		Address, Entity, Kind, Status, Template, Deal string
 	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Address) == "" {
 		httpError(w, errBadRequest("address is required"))
@@ -193,6 +206,9 @@ func (s *Server) handlePropertyCreate(w http.ResponseWriter, r *http.Request) {
 	fm.WriteString("status: " + status + "\n")
 	fm.WriteString("kind: " + kind + "\n")
 	fm.WriteString("control: owned\n")
+	if d := strings.TrimSpace(b.Deal); d != "" {
+		fm.WriteString("deal: \"[[" + d + "]]\"\n")
+	}
 	fm.WriteString("hidden: false\n")
 	fm.WriteString("---\n\n# " + strings.TrimSpace(b.Address) + "\n\n## budget\n" + budget + "\n## log\n")
 
@@ -451,121 +467,225 @@ func vaultJoin(root, rel string) string {
 // vaultwriterMaxDoc mirrors vaultwriter.MaxDocBytes for the multipart cap.
 const vaultwriterMaxDoc = 25 << 20
 
-// ---- bank-CSV import (spec §3): map columns once → preview → append ----
+// ---- source sidecars: the live canonical for the public-site data ----
 
-// handleImportPreview parses an uploaded bank/card csv and returns the raw rows
-// plus a suggested column mapping (remembered by header signature when this
-// export shape has been imported before) and the learned vendor→category map.
-// The client does the mapping/dup-flag UI; apply re-dedupes authoritatively.
-func (s *Server) handleImportPreview(w http.ResponseWriter, r *http.Request) {
-	if s.realestate == nil || s.reImport == nil {
+// handlePropertySource GETs/PUTs a property record's engine-shaped source
+// object. PUT takes the FULL object (the client round-trips everything it
+// received, so unknown fields survive — the fidelity contract).
+func (s *Server) handlePropertySource(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
 		http.Error(w, "properties not available", http.StatusServiceUnavailable)
 		return
 	}
-	if _, ok := s.propertyRel(r.PathValue("slug")); !ok {
-		http.Error(w, "property not found", http.StatusNotFound)
-		return
-	}
-	if err := r.ParseMultipartForm(8 << 20); err != nil {
-		httpError(w, err)
-		return
-	}
-	fhs := r.MultipartForm.File["file"]
-	if len(fhs) == 0 {
-		httpError(w, errBadRequest("no csv in upload"))
-		return
-	}
-	f, err := fhs[0].Open()
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	defer f.Close()
-	rd := csv.NewReader(f)
-	rd.FieldsPerRecord = -1 // lenient — bank exports are ragged
-	records, err := rd.ReadAll()
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	if len(records) < 2 {
-		httpError(w, errBadRequest("csv has no data rows"))
-		return
-	}
-	headers := records[0]
-	rows := records[1:]
-	if len(rows) > 1000 {
-		rows = rows[:1000] // bounded preview — a bank export, not a data lake
-	}
-	sig := realestate.Signature(headers)
-	remembered, vendorCats := s.reImport.Lookup(sig)
-	mapping := remembered
-	if mapping == nil {
-		mapping = realestate.SuggestMapping(headers)
-	}
-	writeJSON(w, map[string]any{
-		"headers": headers, "rows": rows, "signature": sig,
-		"mapping": mapping, "remembered": remembered != nil, "vendorCategories": vendorCats,
-	})
-}
-
-// handleImportApply appends the client-mapped rows, deduping on
-// date+amount+vendor against the existing ledger (the spec's key — a re-import
-// of the same file is a no-op), then remembers the mapping + vendor categories.
-func (s *Server) handleImportApply(w http.ResponseWriter, r *http.Request) {
-	if s.realestate == nil || s.vault == nil || s.reImport == nil {
-		http.Error(w, "properties not available", http.StatusServiceUnavailable)
-		return
-	}
-	slug := r.PathValue("slug")
-	var b struct {
-		Signature string            `json:"signature"`
-		Mapping   map[string]string `json:"mapping"`
-		Rows      []struct {
-			Date, Vendor, Category, Note string
-			Amount                       float64
-		} `json:"rows"`
-	}
-	if err := decode(r, &b); err != nil || len(b.Rows) == 0 {
-		httpError(w, errBadRequest("rows are required"))
-		return
-	}
-	p, ok := s.realestate.Get(slug)
+	rel, ok := s.propertyRel(r.PathValue("slug"))
 	if !ok {
 		http.Error(w, "property not found", http.StatusNotFound)
 		return
 	}
-	existing := map[string]bool{}
-	for _, lr := range p.Ledger {
-		existing[importKey(lr.Date, lr.Amount, lr.Vendor)] = true
-	}
-	ledgerRel := realestate.LedgerRel(p.Path)
-	added, skipped := 0, 0
-	vendorCats := map[string]string{}
-	for _, row := range b.Rows {
-		key := importKey(row.Date, row.Amount, row.Vendor)
-		if existing[key] {
-			skipped++
-			continue
+	s.serveSource(w, r, rel)
+}
+
+func (s *Server) serveSource(w http.ResponseWriter, r *http.Request, mdRel string) {
+	switch r.Method {
+	case http.MethodGet:
+		raw, ok := s.realestate.Source(mdRel)
+		if !ok {
+			writeJSON(w, map[string]any{"source": nil})
+			return
 		}
-		rec := []string{
-			strings.TrimSpace(row.Date), "expense", strings.TrimSpace(row.Category),
-			strings.TrimSpace(row.Vendor), "", strconv.FormatFloat(row.Amount, 'f', -1, 64),
-			"paid", strings.TrimSpace(row.Note), "",
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"source":`))
+		_, _ = w.Write(raw)
+		_, _ = w.Write([]byte(`}`))
+	case http.MethodPut:
+		if s.vault == nil {
+			http.Error(w, "vault unavailable", http.StatusServiceUnavailable)
+			return
 		}
-		if err := s.vault.AppendLedgerRow(ledgerRel, realestate.LedgerHeader, rec); err != nil {
+		body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
+		if err != nil {
 			httpError(w, err)
 			return
 		}
-		existing[key] = true
-		added++
-		if row.Vendor != "" && row.Category != "" {
-			vendorCats[row.Vendor] = row.Category
+		pretty, err := realestate.PrettySource(body)
+		if err != nil {
+			httpError(w, errBadRequest("body must be a JSON object"))
+			return
+		}
+		if err := s.vault.WriteSourceJSON(realestate.SourceRel(mdRel), pretty); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// dealBySlug finds a deal record.
+func (s *Server) dealBySlug(slug string) (realestate.Deal, bool) {
+	deals, _ := s.realestate.Deals()
+	for _, d := range deals {
+		if strings.EqualFold(d.Slug, slug) {
+			return d, true
 		}
 	}
-	s.reImport.Remember(b.Signature, b.Mapping, vendorCats)
-	prop, _ := s.realestate.Get(slug)
-	writeJSON(w, map[string]any{"added": added, "skipped": skipped, "property": prop})
+	return realestate.Deal{}, false
+}
+
+// handleDealPage is the deal page's one read: record + source + member
+// property projections + the aggregate actuals strip (manifest's own number).
+func (s *Server) handleDealPage(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	d, ok := s.dealBySlug(r.PathValue("slug"))
+	if !ok {
+		http.Error(w, "deal not found", http.StatusNotFound)
+		return
+	}
+	members := s.dealMemberProps(d.Slug)
+	var agg realestate.Rollup
+	withLedgers := 0
+	for _, m := range members {
+		agg.Budget += m.Rollup.Budget
+		agg.Paid += m.Rollup.Paid
+		agg.Committed += m.Rollup.Committed
+		if len(m.Ledger) > 0 {
+			withLedgers++
+		}
+	}
+	if agg.Budget > 0 {
+		agg.PaidPct = agg.Paid / agg.Budget
+		agg.CommittedPct = agg.Committed / agg.Budget
+	}
+	src, _ := s.realestate.Source(d.Path)
+	writeJSON(w, map[string]any{
+		"deal": d, "source": src, "members": members,
+		"actuals": agg, "membersWithLedgers": withLedgers,
+	})
+}
+
+// dealMemberProps: members are the property records whose deal:: link names
+// this slug (the authoritative join since -expand).
+func (s *Server) dealMemberProps(slug string) []realestate.Property {
+	props, err := s.realestate.Properties()
+	if err != nil {
+		return nil
+	}
+	var out []realestate.Property
+	for _, p := range props {
+		if strings.EqualFold(p.Deal, slug) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// handleDealSource GET/PUTs the deal-level source object.
+func (s *Server) handleDealSource(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	d, ok := s.dealBySlug(r.PathValue("slug"))
+	if !ok {
+		http.Error(w, "deal not found", http.StatusNotFound)
+		return
+	}
+	s.serveSource(w, r, d.Path)
+}
+
+// dealStatuses: the deal enum includes "opportunity" (deals.json vocabulary).
+var dealStatuses = map[string]bool{
+	"negotiating": true, "under_contract": true, "pre_development": true,
+	"construction": true, "completed": true, "leased": true, "listed": true,
+	"sold": true, "opportunity": true,
+}
+
+// handleDealField edits a deal md frontmatter scalar (status today).
+func (s *Server) handleDealField(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	d, ok := s.dealBySlug(r.PathValue("slug"))
+	if !ok {
+		http.Error(w, "deal not found", http.StatusNotFound)
+		return
+	}
+	var b struct{ Key, Value string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(b.Key))
+	val := strings.ToLower(strings.TrimSpace(b.Value))
+	if key != "status" || !dealStatuses[val] {
+		httpError(w, errBadRequest("only status (deal enum) is editable here"))
+		return
+	}
+	if err := s.vault.SetFrontmatterField(d.Path, "status", val); err != nil {
+		httpError(w, err)
+		return
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{d.Path})
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// ---- ledger row mutation (property page inline edit/delete) ----
+
+func ledgerRecord(r realestate.LedgerRow) []string {
+	return []string{
+		strings.TrimSpace(r.Date), strings.TrimSpace(r.Type), strings.TrimSpace(r.Category),
+		strings.TrimSpace(r.Vendor), strings.TrimSpace(r.Contractor),
+		strconv.FormatFloat(r.Amount, 'f', -1, 64),
+		strings.TrimSpace(r.Status), strings.TrimSpace(r.Note), strings.TrimSpace(r.Doc),
+	}
+}
+
+func (s *Server) handleLedgerMutate(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	slug := r.PathValue("slug")
+	rel, ok := s.propertyRel(slug)
+	if !ok {
+		http.Error(w, "property not found", http.StatusNotFound)
+		return
+	}
+	var b struct {
+		Original    realestate.LedgerRow  `json:"original"`
+		Replacement *realestate.LedgerRow `json:"replacement"` // nil → delete
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	orig := ledgerRecord(b.Original)
+	// The parsed ledger normalizes amounts; the on-disk row may carry "1240.55"
+	// vs "1240.550000" — ledgerRecord round-trips through the same float format
+	// used on write, so exact-match holds for app-written rows; hand-edited rows
+	// match via rowsEqual's trimmed comparison.
+	var err error
+	if b.Replacement == nil {
+		err = s.vault.DeleteLedgerRow(realestate.LedgerRel(rel), orig)
+	} else {
+		if t := strings.ToLower(strings.TrimSpace(b.Replacement.Type)); t != "expense" && t != "bid" {
+			httpError(w, errBadRequest("type must be expense or bid"))
+			return
+		}
+		err = s.vault.UpdateLedgerRow(realestate.LedgerRel(rel), orig, ledgerRecord(*b.Replacement))
+	}
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.respondProperty(w, slug)
 }
 
 // ---- exports (spec §3): the handshake files to the spreadsheets ----

@@ -1,6 +1,7 @@
 package realestate
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -88,8 +89,34 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	if led, err := os.ReadFile(ledgerPath(full)); err == nil {
 		p.Ledger = parseLedger(led)
 	}
+	p.Units = sourceUnits(strings.TrimSuffix(full, ".md") + ".source.json")
 	p.Rollup = computeRollup(p.Budget, p.Ledger)
 	return p, true
+}
+
+// sourceUnits pulls total_units from the source sidecar — either the
+// property-slice shape or a single-parcel full-deal shape (properties[0]).
+func sourceUnits(path string) int {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+	var v struct {
+		TotalUnits float64 `json:"total_units"`
+		Properties []struct {
+			TotalUnits float64 `json:"total_units"`
+		} `json:"properties"`
+	}
+	if json.Unmarshal(raw, &v) != nil {
+		return 0
+	}
+	if v.TotalUnits > 0 {
+		return int(v.TotalUnits)
+	}
+	if len(v.Properties) > 0 {
+		return int(v.Properties[0].TotalUnits)
+	}
+	return 0
 }
 
 // Deal is one deal-bundle record (categories: [deal]) — a group of parcels that
@@ -98,7 +125,8 @@ type Deal struct {
 	Path       string   `json:"path"`
 	Slug       string   `json:"slug"`
 	Name       string   `json:"name"`       // first `# ` heading, else the slug
-	Properties []string `json:"properties"` // member addresses/links (frontmatter list)
+	Status     string   `json:"status"`     // deal enum (incl. "opportunity")
+	Properties []string `json:"properties"` // member addresses (frontmatter list)
 }
 
 // Deals returns every deal record, sorted by name.
@@ -114,7 +142,8 @@ func (s *Service) Deals() ([]Deal, error) {
 			continue
 		}
 		fm, body := mdfm.Split(string(raw))
-		d := Deal{Path: r.Path, Slug: r.Name, Name: r.Name}
+		d := Deal{Path: r.Path, Slug: r.Name, Name: r.Name,
+			Status: strings.ToLower(strings.TrimSpace(fm["status"]))}
 		for _, ln := range strings.Split(body, "\n") {
 			if strings.HasPrefix(ln, "# ") {
 				d.Name = strings.TrimSpace(ln[2:])

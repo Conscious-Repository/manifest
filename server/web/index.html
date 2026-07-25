@@ -256,8 +256,9 @@
       <div class="agent-actions">
         <span id="propertiesMeta" class="panel-meta"></span>
         <span class="prop-toggle" id="propToggle">
-          <button class="filter-chip on" data-mode="list">LIST</button>
-          <button class="filter-chip" data-mode="map">MAP</button>
+          <a class="filter-chip on" data-mode="board" href="#/properties">BOARD</a>
+          <a class="filter-chip" data-mode="map" href="#/properties/map">MAP</a>
+          <a class="filter-chip" data-mode="statements" href="#/properties/statements">STATEMENTS</a>
         </span>
       </div>
     </div>
@@ -267,7 +268,9 @@
       <div id="propertyMapLegend" class="property-map-legend"></div>
       <div id="propertyUnmapped" class="property-unmapped" hidden></div>
     </div>
+    <div id="propertyStatements" class="property-statements" hidden></div>
     <div id="propertyPage" class="property-page" hidden></div>
+    <datalist id="opexKeys"></datalist>
   </section>
 
   <!-- UNIVERSAL NOTE VIEW — any vault note, rendered + raw-editable -->

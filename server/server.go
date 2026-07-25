@@ -52,6 +52,7 @@ type Server struct {
 	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
 	reImport       *realestate.ImportMemory
 	geocoder       *realestate.Geocoder
+	statements     *realestate.StatementStore
 	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
 	studio     *studio.Store
 	corpusPath string // <excalibur>/vessel/corpus/x.db
@@ -187,10 +188,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/properties/{slug}/docs", s.handlePropertyDocs)
 	mux.HandleFunc("POST /api/properties/{slug}/docs", s.handlePropertyDocUpload)
 	mux.HandleFunc("GET /api/realestate/doc", s.handleRealestateDoc)
-	mux.HandleFunc("POST /api/properties/{slug}/import/preview", s.handleImportPreview)
-	mux.HandleFunc("POST /api/properties/{slug}/import/apply", s.handleImportApply)
+	// Admin-portal surface: source sidecars are the live canonical for the
+	// public-site data; deal pages aggregate member actuals; ledger rows mutate
+	// inline; the statement workbench replaces per-property csv import.
+	mux.HandleFunc("/api/properties/{slug}/source", s.handlePropertySource) // GET+PUT
+	mux.HandleFunc("GET /api/deals/{slug}", s.handleDealPage)
+	mux.HandleFunc("/api/deals/{slug}/source", s.handleDealSource) // GET+PUT
+	mux.HandleFunc("POST /api/deals/{slug}/field", s.handleDealField)
+	mux.HandleFunc("POST /api/properties/{slug}/ledger/mutate", s.handleLedgerMutate)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)
 	mux.HandleFunc("POST /api/realestate/export-tax", s.handleTaxExport)
+	mux.HandleFunc("POST /api/realestate/statements/upload", s.handleStatementsUpload)
+	mux.HandleFunc("POST /api/realestate/statements/ingest", s.handleStatementsIngest)
+	mux.HandleFunc("GET /api/realestate/statements", s.handleStatementsList)
+	mux.HandleFunc("POST /api/realestate/statements/row", s.handleStatementsRow)
+	mux.HandleFunc("POST /api/realestate/statements/apply", s.handleStatementsApply)
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)

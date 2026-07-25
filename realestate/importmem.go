@@ -22,18 +22,23 @@ type ImportMemory struct {
 
 type importState struct {
 	VendorCategory map[string]string            `json:"vendorCategory"` // lower(vendor) → category
+	VendorProperty map[string]string            `json:"vendorProperty"` // lower(vendor) → property slug (workbench memory)
 	Mappings       map[string]map[string]string `json:"mappings"`       // header signature → {field: column}
 }
 
 func NewImportMemory(dataDir string) *ImportMemory {
 	m := &ImportMemory{
 		path: filepath.Join(dataDir, "realestate-import.json"),
-		st:   importState{VendorCategory: map[string]string{}, Mappings: map[string]map[string]string{}},
+		st: importState{VendorCategory: map[string]string{}, VendorProperty: map[string]string{},
+			Mappings: map[string]map[string]string{}},
 	}
 	if b, err := os.ReadFile(m.path); err == nil {
 		_ = json.Unmarshal(b, &m.st)
 		if m.st.VendorCategory == nil {
 			m.st.VendorCategory = map[string]string{}
+		}
+		if m.st.VendorProperty == nil {
+			m.st.VendorProperty = map[string]string{}
 		}
 		if m.st.Mappings == nil {
 			m.st.Mappings = map[string]map[string]string{}
@@ -51,28 +56,31 @@ func Signature(headers []string) string {
 	return strings.Join(h, "|")
 }
 
-// Lookup returns the remembered mapping for a header signature (nil if none)
-// and the vendor→category map (for auto-filling categories).
-func (m *ImportMemory) Lookup(sig string) (map[string]string, map[string]string) {
+// Lookup returns the remembered mapping for a header signature (nil if none),
+// the vendor→category map, and the vendor→property map (workbench prefills).
+func (m *ImportMemory) Lookup(sig string) (mapping, vendorCat, vendorProp map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var mapping map[string]string
 	if mm, ok := m.st.Mappings[sig]; ok {
 		mapping = map[string]string{}
 		for k, v := range mm {
 			mapping[k] = v
 		}
 	}
-	vc := map[string]string{}
+	vendorCat = map[string]string{}
 	for k, v := range m.st.VendorCategory {
-		vc[k] = v
+		vendorCat[k] = v
 	}
-	return mapping, vc
+	vendorProp = map[string]string{}
+	for k, v := range m.st.VendorProperty {
+		vendorProp[k] = v
+	}
+	return mapping, vendorCat, vendorProp
 }
 
-// Remember stores a used column mapping and the vendor→category pairs from an
-// applied import.
-func (m *ImportMemory) Remember(sig string, mapping map[string]string, vendorCats map[string]string) {
+// Remember stores a used column mapping plus the vendor→category and
+// vendor→property pairs learned from an applied import/statement.
+func (m *ImportMemory) Remember(sig string, mapping, vendorCats, vendorProps map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if sig != "" && len(mapping) > 0 {
@@ -80,9 +88,14 @@ func (m *ImportMemory) Remember(sig string, mapping map[string]string, vendorCat
 	}
 	for v, c := range vendorCats {
 		v = strings.ToLower(strings.TrimSpace(v))
-		c = strings.TrimSpace(c)
-		if v != "" && c != "" {
-			m.st.VendorCategory[v] = c
+		if v != "" && strings.TrimSpace(c) != "" {
+			m.st.VendorCategory[v] = strings.TrimSpace(c)
+		}
+	}
+	for v, p := range vendorProps {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v != "" && strings.TrimSpace(p) != "" {
+			m.st.VendorProperty[v] = strings.TrimSpace(p)
 		}
 	}
 	m.save()
