@@ -79,7 +79,7 @@ categories: [budget-template]
 # gut rehab
 
 ## stages
-- [ ] Acquisition & planning [weeks:: 2]
+- [ ] Pre-development [weeks:: 2]
 - [ ] Exterior & structural [weeks:: 3]
 - [ ] Demo [weeks:: 1]
 - [ ] Rough-in [weeks:: 4]

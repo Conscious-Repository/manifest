@@ -4470,7 +4470,11 @@ const STATUS_BUCKET = {
   completed: "done", leased: "done", listed: "done", sold: "done",
 };
 
-function bucketOf(p) { return p.control === "tracked" ? "tracked" : (STATUS_BUCKET[p.status] || "pipeline"); }
+function bucketOf(p) {
+  // an explicitly active status wins even on tracked-control records
+  if (STATUS_BUCKET[p.status] === "active") return "active";
+  return p.control === "tracked" ? "tracked" : (STATUS_BUCKET[p.status] || "pipeline");
+}
 
 function matchesBoardFilters(p) {
   if (boardBuckets.size && !boardBuckets.has(bucketOf(p))) return false;
@@ -6075,7 +6079,7 @@ async function renderWorkView() {
   });
   host.append(bar);
   const active = propertyCache.filter((p) => !p.hidden &&
-    (p.status === "construction" || p.status === "pre_development" || (p.work || []).length));
+    (bucketOf(p) === "active" || (p.work || []).length));
   els.propertiesMeta.textContent = active.length + " projects";
   if (!active.length) { host.append(emptyRow("No active projects.")); return; }
   if (workViewMode === "gantt") host.append(ganttView(active));

@@ -387,7 +387,7 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 // Stage templates (research consensus). Seeds only — never enforced; delete
 // five stages in ten seconds for a cosmetic flip.
 var RehabStages = []string{
-	"Acquisition & planning", "Exterior & structural", "Demo",
+	"Pre-development", "Exterior & structural", "Demo",
 	"Rough-in", "Insulation & drywall", "Finishes", "Punch & final inspection", "Exit",
 }
 
