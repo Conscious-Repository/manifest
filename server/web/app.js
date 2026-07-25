@@ -5230,6 +5230,54 @@ function recordAutocomplete(kind, placeholder, onPick) {
   return { el: wrap, value: () => input.value.trim(), setValue: (v) => { input.value = v; }, focus: () => input.focus() };
 }
 
+// ownerAutocomplete: the SETTINGS owners field — suggests ENTITY records and
+// PEOPLE from the vault (contacts search over person notes), so "brian
+// anderson" links [[brian anderson]] to his actual note. Person hits are the
+// vault's own graph; entity hits come from the records.
+function ownerAutocomplete(placeholder, onSet) {
+  const wrap = el("span", "ta-wrap");
+  const input = inputEl(placeholder);
+  input.classList.add("ta-in");
+  const drop = el("div", "ta-drop");
+  drop.hidden = true;
+  let seq = 0;
+  const refresh = async () => {
+    const q = input.value.toLowerCase().trim();
+    const mySeq = ++seq;
+    await ensureEntities();
+    let people = [];
+    if (q.length >= 2) {
+      try {
+        const d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json();
+        people = (d.results || []).filter((r) => r.isPerson && r.hasNote).slice(0, 6);
+      } catch (e) {}
+    }
+    if (mySeq !== seq) return; // a newer keystroke superseded this fetch
+    drop.innerHTML = "";
+    const ents = ((entitiesCache || {}).entities || [])
+      .filter((r) => !q || r.name.toLowerCase().includes(q)).slice(0, 6);
+    ents.forEach((r) => {
+      const it = el("div", "ta-item");
+      it.append(el("span", "", r.name), el("span", "ta-kind", "entity"));
+      it.onmousedown = (e) => { e.preventDefault(); input.value = r.name; drop.hidden = true; onSet(r.name); };
+      drop.append(it);
+    });
+    people.forEach((r) => {
+      const it = el("div", "ta-item");
+      it.append(el("span", "", r.display), el("span", "ta-kind", "person"));
+      it.onmousedown = (e) => { e.preventDefault(); input.value = r.key; drop.hidden = true; onSet(r.key); };
+      drop.append(it);
+    });
+    drop.hidden = !drop.children.length;
+  };
+  input.addEventListener("input", refresh);
+  input.addEventListener("focus", refresh);
+  input.addEventListener("change", () => onSet(input.value.trim()));
+  input.addEventListener("blur", () => setTimeout(() => { drop.hidden = true; }, 150));
+  wrap.append(input, drop);
+  return { el: wrap, value: () => input.value.trim(), setValue: (v) => { input.value = v; } };
+}
+
 // ---- STATEMENT WORKBENCH (design §4) ----
 
 let stmtRows = [];
@@ -5834,9 +5882,8 @@ function entityCard(e, ents) {
     box.innerHTML = "";
     owners.forEach((o, i) => {
       const row = el("div", "uw-row cols-kv");
-      const ref = recordAutocomplete("entity", "owner (entity or person)…");
+      const ref = ownerAutocomplete("owner (entity or person)…", (v) => { o.ref = v; });
       ref.setValue(o.ref);
-      ref.el.querySelector("input").addEventListener("change", () => { o.ref = ref.value(); });
       const pctIn = inputEl("%"); pctIn.type = "number"; pctIn.classList.add("est-in");
       pctIn.value = o.percent || "";
       pctIn.addEventListener("change", () => { o.percent = parseFloat(pctIn.value) || 0; render(); });
