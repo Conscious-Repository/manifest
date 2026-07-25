@@ -5486,7 +5486,7 @@ function workBlock(p) {
 
     if (open) {
       const list = el("div", "work-todos");
-      st.todos.forEach((td) => list.append(workTodoRow(p, st, td)));
+      (st.todos || []).forEach((td) => list.append(workTodoRow(p, st, td)));
       list.append(ghostInput("＋ todo", "work-add", (v) => workOp(p.slug, { op: "add-todo", stageId: st.id, text: v }), "what needs to happen…"));
       stageEl.append(list);
     }
@@ -5565,7 +5565,7 @@ function prefillLedger(p, prefill) {
 function openTodoOptions(p, includeId) {
   const opts = [["", "— no work link —"]];
   (p.work || []).forEach((st) => {
-    st.todos.forEach((td) => {
+    (st.todos || []).forEach((td) => {
       if (!td.checked || td.id === includeId) opts.push([td.id, st.text + " · " + td.text]);
     });
     if (includeId && st.id === includeId) opts.push([st.id, st.text + " (stage)"]);
@@ -5592,7 +5592,7 @@ async function renderWorkView() {
   // needs-attention first: active with no open todos in the current stage
   const openCount = (p) => {
     const cur = (p.work || []).find((s) => s.current);
-    return cur ? cur.todos.filter((t) => !t.checked).length : -1; // -1 = no work plan
+    return cur ? (cur.todos || []).filter((t) => !t.checked).length : -1; // -1 = no work plan
   };
   list.sort((a, b) => {
     const oa = openCount(a), ob = openCount(b);
@@ -5617,7 +5617,7 @@ async function renderWorkView() {
     card.append(head);
 
     if (cur) {
-      const openTodos = cur.todos.filter((t) => !t.checked);
+      const openTodos = (cur.todos || []).filter((t) => !t.checked);
       if (!openTodos.length) card.append(el("div", "wv-warn", "no next action queued"));
       const todos = el("div", "wv-todos");
       openTodos.slice(0, 6).forEach((td) => {

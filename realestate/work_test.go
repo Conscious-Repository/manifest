@@ -33,6 +33,18 @@ func TestWorkFixpoint(t *testing.T) {
 	}
 }
 
+// A freshly seeded stage has no todos — Todos must marshal as [] (never JSON
+// null, which crashed every .forEach in the UI: blank WORK tab, "property not
+// found" on pages with an empty work plan).
+func TestWorkEmptyTodosNotNil(t *testing.T) {
+	stages := ParseWork([]string{"- [ ] Demo", "- [ ] Rough-in"})
+	for _, st := range stages {
+		if st.Todos == nil {
+			t.Fatalf("stage %q Todos is nil — marshals as null and breaks the client", st.Text)
+		}
+	}
+}
+
 func TestWorkReadyAndFreeze(t *testing.T) {
 	stages := ParseWork([]string{
 		"- [ ] Rough-in",

@@ -121,6 +121,9 @@ func ParseWork(lines []string) []WorkStage {
 	cur := false
 	for i := range stages {
 		st := &stages[i]
+		if st.Todos == nil {
+			st.Todos = []WorkTodo{} // marshal as [] — a nil slice is null in JSON and crashes .forEach client-side
+		}
 		st.Ready = len(st.Todos) > 0
 		for _, t := range st.Todos {
 			if !t.Checked {
