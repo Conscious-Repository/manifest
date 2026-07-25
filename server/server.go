@@ -50,6 +50,8 @@ type Server struct {
 	realestate     *realestate.Service
 	realestateRoot string // vault-relative records root (default "system/realestate")
 	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
+	reImport       *realestate.ImportMemory
+	geocoder       *realestate.Geocoder
 	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
 	studio     *studio.Store
 	corpusPath string // <excalibur>/vessel/corpus/x.db
@@ -179,8 +181,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/properties/geo", s.handlePropertiesGeo)
 	mux.HandleFunc("POST /api/properties", s.handlePropertyCreate)
 	mux.HandleFunc("GET /api/properties/{slug}", s.handlePropertyGet)
+	mux.HandleFunc("POST /api/properties/{slug}/field", s.handlePropertyField)
 	mux.HandleFunc("POST /api/properties/{slug}/log", s.handlePropertyLog)
 	mux.HandleFunc("POST /api/properties/{slug}/ledger", s.handlePropertyLedger)
+	mux.HandleFunc("GET /api/properties/{slug}/docs", s.handlePropertyDocs)
+	mux.HandleFunc("POST /api/properties/{slug}/docs", s.handlePropertyDocUpload)
+	mux.HandleFunc("GET /api/realestate/doc", s.handleRealestateDoc)
+	mux.HandleFunc("POST /api/properties/{slug}/import/preview", s.handleImportPreview)
+	mux.HandleFunc("POST /api/properties/{slug}/import/apply", s.handleImportApply)
+	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)
+	mux.HandleFunc("POST /api/realestate/export-tax", s.handleTaxExport)
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)

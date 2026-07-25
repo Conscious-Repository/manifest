@@ -19,6 +19,8 @@ type GeoRecord struct {
 	Control   string            `json:"control,omitempty"`
 	Path      string            `json:"path"`
 	Features  []json.RawMessage `json:"features,omitempty"`
+	Lat       float64           `json:"lat,omitempty"` // pin fallback when no polygon
+	Lng       float64           `json:"lng,omitempty"`
 	ParcelIDs []string          `json:"-"`
 }
 
@@ -35,6 +37,7 @@ func (s *Service) GeoRecords() ([]GeoRecord, error) {
 		g := GeoRecord{
 			Slug: p.Slug, Type: "property", Title: firstNonEmpty(p.Address, p.Name),
 			Status: p.Status, Control: p.Control, Path: p.Path,
+			Lat: p.Lat, Lng: p.Lng, // frontmatter override (geocode may fill later)
 		}
 		s.fillSidecars(&g)
 		out = append(out, g)

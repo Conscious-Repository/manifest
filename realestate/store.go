@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"manifest/mdfm"
@@ -76,6 +77,8 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	if m := wikilinkRe.FindStringSubmatch(fm["deal"]); m != nil {
 		p.Deal = strings.TrimSpace(m[1])
 	}
+	p.Lat, _ = strconv.ParseFloat(strings.TrimSpace(fm["lat"]), 64)
+	p.Lng, _ = strconv.ParseFloat(strings.TrimSpace(fm["lng"]), 64)
 	sections := parseSections(body)
 	p.Budget = parseBudget(sections["budget"])
 	p.Log = parseLog(sections["log"])
@@ -138,6 +141,39 @@ func ledgerPath(mdFull string) string {
 // LedgerRel maps a vault-relative .md path to its vault-relative ledger csv path.
 func LedgerRel(mdRel string) string {
 	return strings.TrimSuffix(mdRel, ".md") + ".ledger.csv"
+}
+
+// Template is a budget-mix template (categories: [budget-template]) — a
+// user-editable record whose `## budget` table seeds new properties at creation.
+type Template struct {
+	Slug   string       `json:"slug"`
+	Name   string       `json:"name"`
+	Budget []BudgetLine `json:"budget"`
+}
+
+// Templates returns the budget-mix templates, sorted by name.
+func (s *Service) Templates() []Template {
+	refs, err := s.ix.Category("budget-template", vaultindex.SortNameAsc)
+	if err != nil {
+		return nil
+	}
+	var out []Template
+	for _, r := range refs {
+		raw, err := os.ReadFile(filepath.Join(s.ix.VaultRoot(), filepath.FromSlash(r.Path)))
+		if err != nil {
+			continue
+		}
+		_, body := mdfm.Split(string(raw))
+		t := Template{Slug: r.Name, Name: r.Name, Budget: parseBudget(parseSections(body)["budget"])}
+		for _, ln := range strings.Split(body, "\n") {
+			if strings.HasPrefix(ln, "# ") {
+				t.Name = strings.TrimSpace(ln[2:])
+				break
+			}
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // quotedList parses a frontmatter list whose items may be quoted strings

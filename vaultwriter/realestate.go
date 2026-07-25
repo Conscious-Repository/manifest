@@ -3,8 +3,10 @@ package vaultwriter
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -59,6 +61,90 @@ func (w *Writer) PrependLogLine(rel, line string) error {
 		return err
 	}
 	return os.WriteFile(full, []byte(insertLogBullet(string(raw), "- "+strings.TrimSpace(line))), 0o644)
+}
+
+// docExtAllow is the property-docs upload allowlist (bid PDFs, photos, sheets).
+var docExtAllow = map[string]bool{
+	".pdf": true, ".png": true, ".jpg": true, ".jpeg": true, ".heic": true,
+	".webp": true, ".csv": true, ".xlsx": true, ".docx": true, ".txt": true, ".md": true,
+}
+
+// MaxDocBytes caps one uploaded property document.
+const MaxDocBytes = 25 << 20
+
+// SaveDoc writes an uploaded property document under relDir (the server pins
+// relDir to <reRoot>/docs/<slug>/). Database-class guarded, filename sanitized,
+// extension allow-listed, size capped, write-once (numbered suffix on collision).
+// Returns the vault-relative path written.
+func (w *Writer) SaveDoc(relDir, filename string, data []byte) (string, error) {
+	if !w.Enabled() {
+		return "", errors.New("no vault configured")
+	}
+	if len(data) == 0 {
+		return "", errors.New("empty file")
+	}
+	if len(data) > MaxDocBytes {
+		return "", errors.New("file exceeds the 25MB doc cap")
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	if !docExtAllow[ext] {
+		return "", errors.New("file type " + ext + " is not allowed in property docs")
+	}
+	name := sanitizeName(strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename)))
+	if name == "" {
+		return "", errors.New("filename has no usable characters")
+	}
+	relDir = strings.Trim(filepath.ToSlash(relDir), "/")
+	if err := w.Guard(relDir+"/x"+ext, WriteDatabase); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(w.vault, filepath.FromSlash(relDir))
+	if !isUnder(dir, w.vault) {
+		return "", errors.New("invalid docs path")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	// write-once: never clobber — suffix -2, -3, … on collision
+	for i := 0; i < 100; i++ {
+		fn := name + ext
+		if i > 0 {
+			fn = name + "-" + strconv.Itoa(i+1) + ext
+		}
+		full := filepath.Join(dir, fn)
+		if _, err := os.Stat(full); err == nil {
+			continue
+		}
+		if err := os.WriteFile(full, data, 0o644); err != nil {
+			return "", err
+		}
+		return relDir + "/" + fn, nil
+	}
+	return "", errors.New("too many name collisions")
+}
+
+// WriteExport writes a generated export file (underwrite/tax handshake to the
+// spreadsheets). Database-class guarded; the caller pins rel under
+// <reRoot>/exports/. OVERWRITE allowed — exports regenerate, unlike records.
+func (w *Writer) WriteExport(rel string, data []byte) error {
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	rel = filepath.ToSlash(rel)
+	if !strings.Contains(rel, "/exports/") {
+		return errors.New("exports must land under the exports/ folder")
+	}
+	if err := w.Guard(rel, WriteDatabase); err != nil {
+		return err
+	}
+	full := filepath.Join(w.vault, filepath.FromSlash(rel))
+	if !isUnder(full, w.vault) {
+		return errors.New("invalid export path")
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(full, data, 0o644)
 }
 
 // insertLogBullet places bullet right under the `## log` heading, or appends a new

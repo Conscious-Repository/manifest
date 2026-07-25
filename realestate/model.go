@@ -29,6 +29,8 @@ type Property struct {
 	Control string       `json:"control"` // owned | tracked
 	Deal    string       `json:"deal"`    // [[deal]] wikilink display, if bundled
 	Hidden  bool         `json:"hidden"`
+	Lat     float64      `json:"lat,omitempty"` // optional frontmatter map override
+	Lng     float64      `json:"lng,omitempty"`
 	Budget  []BudgetLine `json:"budget"`
 	Log     []string     `json:"log"`    // free lines, newest-first as written
 	Ledger  []LedgerRow  `json:"ledger"` // money facts from the csv sidecar
@@ -57,6 +59,25 @@ type LedgerRow struct {
 
 // LedgerHeader is the canonical csv column order (also the seed's empty-file header).
 var LedgerHeader = []string{"date", "type", "category", "vendor", "contractor", "amount", "status", "note", "doc"}
+
+// StarterTemplate is the boot-seeded gut-rehab budget mix (write-once; the user
+// edits amounts/categories or adds more `categories: [budget-template]` records).
+const StarterTemplate = `---
+categories: [budget-template]
+---
+
+# gut rehab
+
+## budget
+| category | budget |
+| demo | 8000 |
+| structural | 20000 |
+| mechanicals | 30000 |
+| exterior | 25000 |
+| interiors | 35000 |
+| finishes | 15000 |
+| contingency | 13000 |
+`
 
 // parseBudget scans a `## budget` markdown table into lines. It skips the header
 // row and any `|---|` separator by requiring the amount cell to parse as a number

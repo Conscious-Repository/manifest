@@ -4341,6 +4341,7 @@ function cmdFact(label, val) {
 // budget, ledger with quick-add, log with quick-add, prose via the note view).
 let propertyCache = [];
 let dealCache = [];
+let templateCache = [];
 let propMode = "list"; // list | map
 
 function showProperties(h) {
@@ -4354,7 +4355,8 @@ async function loadProperties() {
     const d = await (await fetch("/api/properties")).json();
     propertyCache = d.properties || [];
     dealCache = d.deals || [];
-  } catch (e) { propertyCache = []; dealCache = []; }
+    templateCache = d.templates || [];
+  } catch (e) { propertyCache = []; dealCache = []; templateCache = []; }
   if (propMode === "map") renderPropertyMap();
   else renderBoard();
 }
@@ -4376,7 +4378,7 @@ function renderBoard() {
   const shown = propertyCache.filter((p) => !p.hidden);
   els.propertiesMeta.textContent = shown.length + (shown.length === 1 ? " property" : " properties") +
     (dealCache.length ? " · " + dealCache.length + " deals" : "");
-  host.append(ghostInput("＋ property", "property-add", (v) => createProperty(v), "address…"));
+  host.append(propertyComposer());
   if (!shown.length) { host.append(emptyRow("No property records yet — run the seed, or add one above.")); return; }
   // group by entity (blank → "unassigned"), preserving the server's stable order
   const groups = new Map();
@@ -4386,7 +4388,10 @@ function renderBoard() {
     groups.get(key).push(p);
   });
   for (const [entity, rows] of groups) {
-    host.append(el("div", "property-group-head", entity));
+    const head = el("div", "property-group-head");
+    head.append(el("span", "", entity));
+    head.append(pillLight("tax csv", () => taxExport(entity === "unassigned" ? "" : entity)));
+    host.append(head);
     rows.forEach((p) => host.append(boardRow(p)));
   }
   // deals lane: the multi-parcel bundles from deals.json — records for group
@@ -4399,18 +4404,63 @@ function renderBoard() {
       row.append(el("span", "property-addr", d.name));
       row.append(el("span", "property-status", "bundle"));
       row.append(el("span", "property-out", (d.properties || []).length + " parcels"));
-      row.append(el("span", "property-budget", ""));
+      const uw = el("span", "property-budget");
+      uw.append(pillLight("underwrite ↓", (e) => { exportUnderwrite(d.slug); }));
+      uw.onclick = (e) => e.stopPropagation();
+      row.append(uw);
       row.append(el("span", "property-last", (d.properties || []).slice(0, 3).join(" · ")));
       host.append(row);
     });
   }
 }
 
+async function exportUnderwrite(slug) {
+  try {
+    const res = await postJSONOk("/api/deals/" + encodeURIComponent(slug) + "/export-underwrite", {});
+    showToast("Underwrite export written (" + res.members + " member records)", () =>
+      window.open("/api/realestate/doc?path=" + encodeURIComponent(res.csv), "_blank"), "info");
+  } catch (e) { showToast("Export failed"); }
+}
+
+async function taxExport(entity) {
+  const year = prompt("Tax year:", String(new Date().getFullYear()));
+  if (!year) return;
+  try {
+    const res = await postJSONOk("/api/realestate/export-tax", { entity, year });
+    showToast("Tax csv written — " + res.lines + " lines", () =>
+      window.open("/api/realestate/doc?path=" + encodeURIComponent(res.csv), "_blank"), "info");
+  } catch (e) { showToast("Export failed"); }
+}
+
+const PROPERTY_STATUSES = ["negotiating", "under_contract", "pre_development", "construction", "completed", "leased", "listed", "sold"];
+const PROPERTY_KINDS = ["rehab", "new-construction", "mixed", "hold"];
+
+// statusChip renders a click-to-edit status: the chip swaps to a <select> in
+// place; picking a value POSTs the field edit and re-renders via onSaved.
+function statusChip(p, onSaved) {
+  const chip = el("span", "property-status editable status-" + (p.status || "").replace(/_/g, "-"), p.status || "—");
+  chip.title = "click to change status";
+  chip.onclick = (e) => {
+    e.stopPropagation();
+    const sel = selectEl(PROPERTY_STATUSES);
+    sel.value = p.status || "negotiating";
+    sel.onclick = (ev) => ev.stopPropagation();
+    sel.onchange = async () => {
+      try { onSaved(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key: "status", value: sel.value })); }
+      catch (err) { showToast("Couldn't update status"); sel.replaceWith(chip); }
+    };
+    sel.onblur = () => { if (sel.parentNode) sel.replaceWith(chip); };
+    chip.replaceWith(sel);
+    sel.focus();
+  };
+  return chip;
+}
+
 function boardRow(p) {
   const row = el("div", "property-row" + (p.control === "tracked" ? " tracked" : ""));
   row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
   row.append(el("span", "property-addr", p.address || p.name));
-  row.append(el("span", "property-status status-" + (p.status || "").replace(/_/g, "-"), p.status || "—"));
+  row.append(statusChip(p, () => loadProperties()));
   const out = el("span", "property-out" + (p.rollup.overBudget ? " over" : ""));
   out.append(el("span", "out-paid", fmtPct(p.rollup.paidPct)), el("span", "out-sep", "/"),
     el("span", "out-committed", fmtPct(p.rollup.committedPct)));
@@ -4420,10 +4470,36 @@ function boardRow(p) {
   return row;
 }
 
-async function createProperty(address) {
-  if (!address || !address.trim()) return;
-  try { await postJSONOk("/api/properties", { address }); loadProperties(); }
-  catch (e) { showToast("Couldn't create property"); }
+// propertyComposer: the spec's entire creation form — address · entity · kind ·
+// template pick (seeds the budget table). A ghost button expanding inline.
+function propertyComposer() {
+  const ghost = el("button", "o-ghost property-add", "＋ property");
+  ghost.onclick = () => {
+    const form = el("div", "prop-composer");
+    const addr = inputEl("address…"); addr.classList.add("pc-addr");
+    const entity = inputEl("entity (optional)");
+    const kind = selectEl(PROPERTY_KINDS);
+    const tpl = selectEl(["no template", ...templateCache.map((t) => t.slug)]);
+    tpl.title = "budget-mix template";
+    const create = el("button", "pill", "create");
+    create.onclick = async () => {
+      if (!addr.value.trim()) { addr.focus(); return; }
+      create.disabled = true;
+      try {
+        await postJSONOk("/api/properties", {
+          address: addr.value, entity: entity.value, kind: kind.value,
+          template: tpl.value === "no template" ? "" : tpl.value,
+        });
+        loadProperties();
+      } catch (e) { showToast("Couldn't create property"); create.disabled = false; }
+    };
+    const cancel = el("button", "pill light", "✕");
+    cancel.onclick = () => form.replaceWith(ghost);
+    form.append(addr, entity, kind, tpl, create, cancel);
+    ghost.replaceWith(form);
+    addr.focus();
+  };
+  return ghost;
 }
 
 // ---- PROPERTIES map (Leaflet from cdnjs, lazy-loaded; CartoDB light tiles) ----
@@ -4485,12 +4561,25 @@ async function renderPropertyMap() {
   }
 
   const rendered = [];
+  const ownedLayers = []; // zoom anchors — the map opens on the owned cluster
   const unmapped = [];
   const statusesSeen = new Set();
   // tracked first (below), owned after (on top so borders aren't clipped)
   const recs = (geo.records || []).slice().sort((a, b) => (a.control === "tracked" ? 0 : 1) - (b.control === "tracked" ? 0 : 1));
   recs.forEach((rec) => {
-    if (!(rec.features || []).length) { unmapped.push(rec); return; }
+    if (!(rec.features || []).length) {
+      // pin fallback: frontmatter lat/lng or a cached geocode (no polygon)
+      if (rec.lat && rec.lng) {
+        const color = PROP_STATUS_COLOR[rec.status] || "#8a93a6";
+        const pin = L.circleMarker([rec.lat, rec.lng], { radius: 8, color, fillColor: color, fillOpacity: 0.5, weight: 2 });
+        const href = "#/properties/" + encodeURIComponent(rec.slug);
+        pin.bindPopup('<a href="' + href + '" class="prop-pop">' + escapeHtml(rec.title + (rec.status ? " · " + rec.status : "")) + "</a>", { closeButton: false });
+        pin.addTo(map);
+        rendered.push(pin);
+        if (rec.status) statusesSeen.add(rec.status);
+      } else unmapped.push(rec);
+      return;
+    }
     const tracked = rec.control === "tracked";
     const color = tracked ? "#b0a58e" : (PROP_STATUS_COLOR[rec.status] || "#8a93a6");
     if (rec.status) statusesSeen.add(tracked ? "tracked" : rec.status);
@@ -4508,13 +4597,16 @@ async function renderPropertyMap() {
     layer.bindPopup('<a href="' + href + '" class="prop-pop">' + escapeHtml(label) + "</a>", { closeButton: false });
     layer.addTo(map);
     rendered.push(layer);
+    if (!tracked && rec.type === "property") ownedLayers.push(layer);
   });
 
-  if (rendered.length) {
-    const group = L.featureGroup(rendered);
-    map.fitBounds(group.getBounds().pad(0.08));
+  // Open zoomed to the OWNED cluster (the actual work); tracked/background are a
+  // pan away. maxZoom caps a lone parcel from diving to street level.
+  const anchors = ownedLayers.length ? ownedLayers : rendered;
+  if (anchors.length) {
+    map.fitBounds(L.featureGroup(anchors).getBounds().pad(0.05), { maxZoom: 17 });
   } else {
-    map.setView([38.65, -90.26], 15); // nothing mapped yet — the seed's neighborhood
+    map.setView([38.65, -90.26], 16); // nothing mapped yet — the seed's neighborhood
   }
 
   // quiet legend naming only the statuses actually visible
@@ -4555,7 +4647,10 @@ function renderProp(p) {
   const head = el("div", "pp-head");
   head.append(el("h2", "pp-title", p.address || p.name));
   const chips = el("div", "pp-chips");
-  [p.status, p.control, p.kind, p.entity].filter(Boolean).forEach((c) => chips.append(el("span", "pp-chip", c)));
+  chips.append(editChip(p, "status", p.status, PROPERTY_STATUSES));
+  chips.append(el("span", "pp-chip", p.control)); // structural — not editable
+  chips.append(editChip(p, "kind", p.kind, PROPERTY_KINDS));
+  chips.append(editChip(p, "entity", p.entity, null)); // free text
   if (p.deal) { const d = el("span", "pp-chip pp-deal", "▸ " + p.deal); chips.append(d); }
   head.append(chips);
   host.append(head);
@@ -4582,10 +4677,43 @@ function renderProp(p) {
   host.append(ledgerTable(p));
   host.append(el("div", "pp-section-head", "log"));
   host.append(logBlock(p));
+  host.append(el("div", "pp-section-head", "docs"));
+  host.append(docsBlock(p));
 
   const edit = el("button", "pill light pp-editnote", "edit note / prose →");
   edit.onclick = () => { _noteReturn = "#/properties/" + encodeURIComponent(p.slug); openNoteByPath(p.path); };
   host.append(edit);
+}
+
+// editChip is a page chip that swaps to a select (enum) or text input (free) and
+// POSTs the field edit — the property page's click-to-edit for status/kind/entity.
+function editChip(p, key, value, options) {
+  const label = value ? (key === "entity" ? value : value) : key + ": —";
+  const chip = el("span", "pp-chip editable", label);
+  chip.title = "click to edit " + key;
+  chip.onclick = () => {
+    let ctl;
+    if (options) { ctl = selectEl(options); ctl.value = value || options[0]; }
+    else { ctl = inputEl(key + "…"); ctl.value = value || ""; }
+    ctl.classList.add("pp-chip-edit");
+    const save = async () => {
+      const v = options ? ctl.value : ctl.value.trim();
+      if (v === (value || "") && options) { ctl.replaceWith(chip); return; }
+      try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value: v })); }
+      catch (err) { showToast("Couldn't update " + key); ctl.replaceWith(chip); }
+    };
+    if (options) { ctl.onchange = save; ctl.onblur = () => { if (ctl.parentNode) ctl.replaceWith(chip); }; }
+    else {
+      ctl.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter") save();
+        else if (ev.key === "Escape") ctl.replaceWith(chip);
+      });
+      ctl.addEventListener("blur", save);
+    }
+    chip.replaceWith(ctl);
+    ctl.focus();
+  };
+  return chip;
 }
 
 function rollupStat(label, pct, money) {
@@ -4623,7 +4751,129 @@ function ledgerTable(p) {
   };
   form.append(typeSel, cat, who, amt, statusSel, note, add);
   wrap.append(form);
+
+  const importBtn = el("button", "pill light pp-import", "import bank csv…");
+  const importHost = el("div", "pp-import-host");
+  importBtn.onclick = () => importFlow(p, importHost, importBtn);
+  wrap.append(importBtn, importHost);
   return wrap;
+}
+
+// ---- bank-CSV import flow: pick file → map columns (remembered) → preview
+// with duplicate rows pre-unchecked → apply (server re-dedupes). ----
+function importFlow(p, host, btn) {
+  const pick = document.createElement("input");
+  pick.type = "file"; pick.accept = ".csv,text/csv";
+  pick.onchange = async () => {
+    if (!pick.files.length) return;
+    const fd = new FormData();
+    fd.append("file", pick.files[0]);
+    btn.disabled = true; btn.textContent = "parsing…";
+    try {
+      const res = await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/import/preview", { method: "POST", body: fd });
+      if (!res.ok) throw new Error((await res.text()).trim());
+      renderImportPanel(p, host, await res.json());
+    } catch (e) { showToast("Couldn't parse csv: " + (e.message || "").slice(0, 60)); }
+    btn.disabled = false; btn.textContent = "import bank csv…";
+  };
+  pick.click();
+}
+
+function renderImportPanel(p, host, pre) {
+  host.innerHTML = "";
+  const panel = el("div", "import-panel");
+  panel.append(el("div", "pp-section-head", "map columns" + (pre.remembered ? " (remembered)" : "")));
+
+  const selects = {};
+  const mapRow = el("div", "import-maprow");
+  ["date", "amount", "vendor", "note"].forEach((field) => {
+    const lab = el("label", "portal-field");
+    lab.append(el("span", "portal-field-label", field));
+    const sel = selectEl(field === "note" ? ["—", ...pre.headers] : pre.headers);
+    if (pre.mapping && pre.mapping[field]) sel.value = pre.mapping[field];
+    selects[field] = sel;
+    lab.append(sel);
+    mapRow.append(lab);
+  });
+  const flip = document.createElement("input"); flip.type = "checkbox"; flip.id = "impFlip";
+  const flipLab = el("label", "import-flip"); flipLab.append(flip, el("span", "", " debits are negative (flip sign)"));
+  mapRow.append(flipLab);
+  panel.append(mapRow);
+
+  const tableHost = el("div", "import-rows");
+  panel.append(tableHost);
+  const applyBtn = el("button", "pill", "apply");
+  const cancel = el("button", "pill light", "✕ cancel");
+  cancel.onclick = () => { host.innerHTML = ""; };
+  const foot = el("div", "import-foot"); foot.append(applyBtn, cancel);
+  panel.append(foot);
+  host.append(panel);
+
+  const existingKeys = new Set((p.ledger || []).map((r) => r.date + "|" + (r.amount || 0).toFixed(2) + "|" + (r.vendor || "").toLowerCase()));
+  let mapped = [];
+
+  const remap = () => {
+    const col = (f) => pre.headers.indexOf(selects[f].value);
+    const di = col("date"), ai = col("amount"), vi = col("vendor");
+    const ni = selects.note.value === "—" ? -1 : pre.headers.indexOf(selects.note.value);
+    mapped = pre.rows.map((raw) => {
+      let amt = parseFloat(String(raw[ai] || "").replace(/[$,]/g, "")) || 0;
+      if (flip.checked) amt = -amt;
+      const vendor = (raw[vi] || "").trim();
+      const row = {
+        date: normDate(raw[di] || ""), amount: Math.round(amt * 100) / 100, vendor,
+        note: ni >= 0 ? (raw[ni] || "").trim() : "",
+        category: (pre.vendorCategories || {})[vendor.toLowerCase()] || "",
+      };
+      row.dup = existingKeys.has(row.date + "|" + row.amount.toFixed(2) + "|" + vendor.toLowerCase());
+      row.use = !row.dup && row.amount > 0 && !!row.date;
+      return row;
+    });
+    renderRows();
+  };
+  const renderRows = () => {
+    tableHost.innerHTML = "";
+    tableHost.append(el("div", "import-count",
+      mapped.filter((r) => r.use).length + " to import · " + mapped.filter((r) => r.dup).length + " duplicates skipped"));
+    mapped.slice(0, 200).forEach((row) => {
+      const line = el("div", "import-row" + (row.dup ? " dup" : ""));
+      const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = row.use;
+      cb.onchange = () => { row.use = cb.checked; };
+      const cat = inputEl("category"); cat.value = row.category; cat.classList.add("import-cat");
+      cat.oninput = () => { row.category = cat.value; };
+      line.append(cb, el("span", "import-date", row.date || "—"), el("span", "import-vendor", row.vendor),
+        el("span", "pp-amt", fmtMoney(row.amount)), cat, el("span", "import-note", row.dup ? "already in ledger" : row.note));
+      tableHost.append(line);
+    });
+  };
+  Object.values(selects).forEach((s) => { s.onchange = remap; });
+  flip.onchange = remap;
+  remap();
+
+  applyBtn.onclick = async () => {
+    const rows = mapped.filter((r) => r.use).map((r) => ({ date: r.date, amount: r.amount, vendor: r.vendor, category: r.category, note: r.note }));
+    if (!rows.length) { showToast("Nothing selected to import"); return; }
+    const mapping = { date: selects.date.value, amount: selects.amount.value, vendor: selects.vendor.value, note: selects.note.value };
+    applyBtn.disabled = true;
+    try {
+      const res = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/import/apply",
+        { signature: pre.signature, mapping, rows });
+      showToast("Imported " + res.added + " rows (" + res.skipped + " duplicates skipped)");
+      renderProp(res.property);
+    } catch (e) { showToast("Import failed"); applyBtn.disabled = false; }
+  };
+}
+
+// normDate coerces common bank formats (MM/DD/YYYY, YYYY-MM-DD) to ISO.
+function normDate(s) {
+  s = String(s).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (m) {
+    let y = m[3].length === 2 ? "20" + m[3] : m[3];
+    return y + "-" + m[1].padStart(2, "0") + "-" + m[2].padStart(2, "0");
+  }
+  return "";
 }
 
 function logBlock(p) {
@@ -4637,6 +4887,57 @@ function logBlock(p) {
 async function addLog(slug, text) {
   try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(slug) + "/log", { text })); }
   catch (e) { showToast("Couldn't add log line"); }
+}
+
+// docsBlock: the property's document folder — list (click opens raw), drag-drop
+// zone + picker fallback. Files live in the vault at system/realestate/docs/<slug>/.
+function docsBlock(p) {
+  const wrap = el("div", "pp-docs");
+  const list = el("div", "pp-doc-list");
+  wrap.append(list);
+  const refresh = async () => {
+    list.innerHTML = "";
+    let docs = [];
+    try { docs = (await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/docs")).json()).docs || []; }
+    catch (e) {}
+    if (!docs.length) { list.append(el("div", "pp-empty", "No documents yet — drop files below.")); return; }
+    docs.forEach((d) => {
+      const a = el("a", "pp-doc", d.name + "  (" + fmtBytes(d.size) + ")");
+      a.href = "/api/realestate/doc?path=" + encodeURIComponent(d.path);
+      a.target = "_blank";
+      list.append(a);
+    });
+  };
+  refresh();
+
+  const drop = el("div", "pp-dropzone", "drop files here — or click to pick");
+  const pick = document.createElement("input");
+  pick.type = "file"; pick.multiple = true; pick.hidden = true;
+  const upload = async (files) => {
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append("file", f);
+    drop.textContent = "uploading…";
+    try {
+      const res = await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/docs", { method: "POST", body: fd });
+      if (!res.ok) throw new Error((await res.text()).trim());
+      refresh();
+    } catch (e) { showToast("Upload failed: " + (e.message || "").slice(0, 80)); }
+    drop.textContent = "drop files here — or click to pick";
+  };
+  drop.onclick = () => pick.click();
+  pick.onchange = () => { upload(pick.files); pick.value = ""; };
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); upload(e.dataTransfer.files); });
+  wrap.append(drop, pick);
+  return wrap;
+}
+
+function fmtBytes(n) {
+  if (n > 1 << 20) return (n / (1 << 20)).toFixed(1) + "MB";
+  if (n > 1024) return Math.round(n / 1024) + "KB";
+  return n + "B";
 }
 
 function inputEl(placeholder) {

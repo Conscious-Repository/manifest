@@ -140,6 +140,7 @@ func main() {
 	srv := server.New(svc, goalsStore, calClient)
 	vw := vaultwriter.New(cfg.VaultPath).WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot)
 	var contactsSvc *contacts.Service // reused by the feed's cold-contact emitter
+	var reSvc *realestate.Service     // reused by the feed's property emitters
 	if vix != nil {
 		srv.UseIndex(vix)
 		// CONTACTS — the people layer over the index. Triage state lives under
@@ -158,7 +159,13 @@ func main() {
 
 		// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 		reRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))
-		srv.UseRealestate(realestate.New(vix), reRoot, filepath.Join(cfg.DataDir, "realestate", "bgParcels.json"))
+		reSvc = realestate.New(vix)
+		srv.UseRealestate(reSvc, reRoot, cfg.DataDir)
+		// Starter budget-mix template — write-once (goals.Seed precedent); the
+		// user edits or adds templates as plain records forever after.
+		if rel, err := vw.CreateRecord(reRoot+"/templates/gut-rehab.md", realestate.StarterTemplate); err == nil {
+			_ = vix.ReindexPaths([]string{rel})
+		}
 		log.Printf("realestate: enabled (property records over %s/)", reRoot)
 	}
 
@@ -173,6 +180,10 @@ func main() {
 			emitters = append(emitters, signals.ColdContacts(contactsSvc))
 		}
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
+		if reSvc != nil {
+			// property signals (real-estate plan §4): over-budget category + stalled rehab
+			emitters = append(emitters, signals.OverBudgetProperties(reSvc), signals.StalledProperties(reSvc))
+		}
 		srv.UseSignals(signals.New(sigStore, emitters...))
 		log.Printf("feed signals: enabled (%d emitters)", len(emitters))
 	}
