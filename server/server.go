@@ -16,6 +16,7 @@ import (
 	"manifest/goals"
 	"manifest/portals"
 	"manifest/reading"
+	"manifest/realestate"
 	"manifest/signals"
 	"manifest/spirits"
 	"manifest/studio"
@@ -45,6 +46,9 @@ type Server struct {
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
 	portals *portals.Service
+	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
+	realestate     *realestate.Service
+	realestateRoot string // vault-relative records root (default "system/realestate")
 	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
 	studio     *studio.Store
 	corpusPath string // <excalibur>/vessel/corpus/x.db
@@ -166,6 +170,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/portals/{id}/poll", s.handlePortalPoll)
 	mux.HandleFunc("POST /api/portals/{id}/disconnect", s.handlePortalDisconnect)
 	mux.HandleFunc("POST /api/portals/item/dismiss", s.handlePortalDismiss)
+
+	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
+	// Reads are the Board + property pages; the writes (create, quick-add log,
+	// quick-add ledger row) go through the vaultwriter database-class allow-list.
+	mux.HandleFunc("GET /api/properties", s.handlePropertiesList)
+	mux.HandleFunc("POST /api/properties", s.handlePropertyCreate)
+	mux.HandleFunc("GET /api/properties/{slug}", s.handlePropertyGet)
+	mux.HandleFunc("POST /api/properties/{slug}/log", s.handlePropertyLog)
+	mux.HandleFunc("POST /api/properties/{slug}/ledger", s.handlePropertyLedger)
 
 	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
 	mux.HandleFunc("GET /api/studio", s.handleStudio)

@@ -44,6 +44,12 @@ const els = {
   bookSort: document.getElementById("bookSort"),
   bookFilter: document.getElementById("bookFilter"),
   bookAddBtn: document.getElementById("bookAddBtn"),
+  // PROPERTIES — real-estate cockpit
+  propertiesView: document.getElementById("propertiesView"),
+  propertiesNav: document.getElementById("propertiesNav"),
+  propertiesMeta: document.getElementById("propertiesMeta"),
+  propertyBoard: document.getElementById("propertyBoard"),
+  propertyPage: document.getElementById("propertyPage"),
   // universal note view
   noteView: document.getElementById("noteView"),
   noteTitle: document.getElementById("noteTitle"),
@@ -4325,6 +4331,178 @@ function cmdFact(label, val) {
   return f;
 }
 
+// ---- PROPERTIES: the real-estate cockpit over system/realestate/ records ----
+// Board (grouped by entity, paid%/committed% rollups) + a property page (rollup,
+// budget, ledger with quick-add, log with quick-add, prose via the note view).
+let propertyCache = [];
+
+function showProperties(h) {
+  const slug = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
+  if (slug) renderPropertyPage(slug);
+  else { els.propertyPage.hidden = true; els.propertyBoard.hidden = false; loadProperties(); }
+}
+
+async function loadProperties() {
+  try {
+    propertyCache = (await (await fetch("/api/properties")).json()).properties || [];
+  } catch (e) { propertyCache = []; }
+  renderBoard();
+}
+
+function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
+function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
+
+function renderBoard() {
+  const host = els.propertyBoard; host.innerHTML = ""; host.hidden = false;
+  els.propertyPage.hidden = true;
+  const shown = propertyCache.filter((p) => !p.hidden);
+  els.propertiesMeta.textContent = shown.length + (shown.length === 1 ? " property" : " properties");
+  host.append(ghostInput("＋ property", "property-add", (v) => createProperty(v), "address…"));
+  if (!shown.length) { host.append(emptyRow("No property records yet — run the seed, or add one above.")); return; }
+  // group by entity (blank → "unassigned"), preserving the server's stable order
+  const groups = new Map();
+  shown.forEach((p) => {
+    const key = (p.entity || "").trim() || "unassigned";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  });
+  for (const [entity, rows] of groups) {
+    host.append(el("div", "property-group-head", entity));
+    rows.forEach((p) => host.append(boardRow(p)));
+  }
+}
+
+function boardRow(p) {
+  const row = el("div", "property-row" + (p.control === "tracked" ? " tracked" : ""));
+  row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
+  row.append(el("span", "property-addr", p.address || p.name));
+  row.append(el("span", "property-status status-" + (p.status || "").replace(/_/g, "-"), p.status || "—"));
+  const out = el("span", "property-out" + (p.rollup.overBudget ? " over" : ""));
+  out.append(el("span", "out-paid", fmtPct(p.rollup.paidPct)), el("span", "out-sep", "/"),
+    el("span", "out-committed", fmtPct(p.rollup.committedPct)));
+  row.append(out);
+  row.append(el("span", "property-budget", fmtMoney(p.rollup.budget)));
+  row.append(el("span", "property-last", p.lastLog || ""));
+  return row;
+}
+
+async function createProperty(address) {
+  if (!address || !address.trim()) return;
+  try { await postJSONOk("/api/properties", { address }); loadProperties(); }
+  catch (e) { showToast("Couldn't create property"); }
+}
+
+async function renderPropertyPage(slug) {
+  els.propertyBoard.hidden = true;
+  const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
+  try { renderProp(await (await fetch("/api/properties/" + encodeURIComponent(slug))).json()); }
+  catch (e) { host.innerHTML = ""; host.append(emptyRow("Property not found.")); }
+}
+
+function renderProp(p) {
+  const host = els.propertyPage; host.innerHTML = ""; host.hidden = false;
+  els.propertyBoard.hidden = true;
+  const back = el("button", "pill light pp-back", "‹ Board");
+  back.onclick = () => { location.hash = "#/properties"; };
+  host.append(back);
+
+  const head = el("div", "pp-head");
+  head.append(el("h2", "pp-title", p.address || p.name));
+  const chips = el("div", "pp-chips");
+  [p.status, p.control, p.kind, p.entity].filter(Boolean).forEach((c) => chips.append(el("span", "pp-chip", c)));
+  if (p.deal) { const d = el("span", "pp-chip pp-deal", "▸ " + p.deal); chips.append(d); }
+  head.append(chips);
+  host.append(head);
+
+  const sum = el("div", "pp-rollup");
+  sum.append(rollupStat("paid", fmtPct(p.rollup.paidPct), fmtMoney(p.rollup.paid)));
+  sum.append(rollupStat("committed", fmtPct(p.rollup.committedPct), fmtMoney(p.rollup.committed)));
+  sum.append(rollupStat("budget", "", fmtMoney(p.rollup.budget)));
+  host.append(sum);
+
+  if ((p.rollup.categories || []).length) {
+    host.append(el("div", "pp-section-head", "budget"));
+    const tbl = el("div", "pp-budget");
+    p.rollup.categories.forEach((c) => {
+      const r = el("div", "pp-budget-row" + (c.over ? " over" : ""));
+      r.append(el("span", "pp-cat", c.category), el("span", "pp-amt", fmtMoney(c.budget)),
+        el("span", "pp-catout", fmtPct(c.paidPct) + " / " + fmtPct(c.committedPct)));
+      tbl.append(r);
+    });
+    host.append(tbl);
+  }
+
+  host.append(el("div", "pp-section-head", "ledger"));
+  host.append(ledgerTable(p));
+  host.append(el("div", "pp-section-head", "log"));
+  host.append(logBlock(p));
+
+  const edit = el("button", "pill light pp-editnote", "edit note / prose →");
+  edit.onclick = () => { _noteReturn = "#/properties/" + encodeURIComponent(p.slug); openNoteByPath(p.path); };
+  host.append(edit);
+}
+
+function rollupStat(label, pct, money) {
+  const s = el("div", "pp-stat");
+  s.append(el("div", "pp-stat-big", pct || money));
+  s.append(el("div", "pp-stat-sub", pct ? money : ""));
+  s.append(el("div", "pp-stat-label", label));
+  return s;
+}
+
+function ledgerTable(p) {
+  const wrap = el("div", "pp-ledger");
+  (p.ledger || []).forEach((r) => {
+    const row = el("div", "pp-ledger-row");
+    row.append(el("span", "", r.date), el("span", "pp-ltype type-" + r.type, r.type),
+      el("span", "", r.category), el("span", "", r.vendor || r.contractor || ""),
+      el("span", "pp-amt", fmtMoney(r.amount)), el("span", "", r.status), el("span", "pp-lnote", r.note || ""));
+    wrap.append(row);
+  });
+  if (!(p.ledger || []).length) wrap.append(el("div", "pp-empty", "No ledger rows yet."));
+
+  const form = el("div", "pp-ledger-add");
+  const typeSel = selectEl(["expense", "bid"]);
+  const cat = inputEl("category"), who = inputEl("vendor / contractor"), amt = inputEl("amount");
+  amt.type = "number"; amt.step = "0.01";
+  const statusSel = selectEl(["paid", "requested", "received", "accepted", "declined"]);
+  const note = inputEl("note");
+  const add = el("button", "pill", "add");
+  add.onclick = async () => {
+    const body = { type: typeSel.value, category: cat.value, amount: parseFloat(amt.value) || 0, status: statusSel.value, note: note.value };
+    if (typeSel.value === "bid") body.contractor = who.value; else body.vendor = who.value;
+    add.disabled = true;
+    try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger", body)); }
+    catch (e) { showToast("Couldn't add ledger row"); add.disabled = false; }
+  };
+  form.append(typeSel, cat, who, amt, statusSel, note, add);
+  wrap.append(form);
+  return wrap;
+}
+
+function logBlock(p) {
+  const wrap = el("div", "pp-log");
+  (p.log || []).forEach((l) => wrap.append(el("div", "pp-log-line", l)));
+  if (!(p.log || []).length) wrap.append(el("div", "pp-empty", "No log entries yet."));
+  wrap.append(ghostInput("＋ log line", "pp-log-add", (v) => addLog(p.slug, v), "what happened…"));
+  return wrap;
+}
+
+async function addLog(slug, text) {
+  try { renderProp(await postJSONOk("/api/properties/" + encodeURIComponent(slug) + "/log", { text })); }
+  catch (e) { showToast("Couldn't add log line"); }
+}
+
+function inputEl(placeholder) {
+  const i = document.createElement("input");
+  i.className = "pp-in"; i.placeholder = placeholder; return i;
+}
+function selectEl(opts) {
+  const s = document.createElement("select"); s.className = "pp-in";
+  opts.forEach((o) => { const opt = document.createElement("option"); opt.value = o; opt.textContent = o; s.append(opt); });
+  return s;
+}
+
 function route() {
   const h = location.hash;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
@@ -4335,8 +4513,9 @@ function route() {
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");
+  const properties = h === "#/properties" || h.startsWith("#/properties/");
   const note = h.startsWith("#/note/");
-  const day = !goals && !cal && !fd && !studio && !sp && !contacts && !reading && !note;
+  const day = !goals && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !note;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.calendarView.hidden = !cal;
@@ -4345,6 +4524,7 @@ function route() {
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
   els.readingView.hidden = !reading;
+  els.propertiesView.hidden = !properties;
   els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
@@ -4353,6 +4533,7 @@ function route() {
   els.calNav.hidden = !day;
   els.contactsNav.hidden = !day;
   els.readingNav.hidden = !day;
+  els.propertiesNav.hidden = !day;
   els.spiritsNav.hidden = !day;
   els.dayNav.hidden = day;
   if (day) refreshFeedBadge(); // pill only shows on the day view — keep it honest
@@ -4369,6 +4550,7 @@ function route() {
   else if (sp) showSpirits(); // engine console: runs / rituals / approvals
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone
+  else if (properties) showProperties(h); // real-estate cockpit: board / property page
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }

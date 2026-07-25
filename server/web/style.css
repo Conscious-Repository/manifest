@@ -1338,3 +1338,54 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .portal-change-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 4px; padding: 1px 6px; }
 .portal-change-chip.change-new { color: #15803d; border: 1px solid #bfe3c9; }
 .portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }
+
+/* ---- PROPERTIES: the real-estate cockpit ---- */
+.property-board { display: flex; flex-direction: column; gap: 2px; }
+.property-add { margin: 4px 0 8px; }
+.property-group-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); margin: 16px 0 4px; }
+.property-row { display: grid; grid-template-columns: 2.2fr 1.1fr 0.9fr 0.9fr 2fr; align-items: baseline; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.property-row:hover { background: var(--hover); }
+.property-row.tracked { border-style: dashed; }
+.property-addr { font-family: var(--sans); font-size: 14px; color: var(--text); font-weight: 500; }
+.property-status { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.property-status.status-construction, .property-status.status-pre-development { color: var(--blue); }
+.property-status.status-completed, .property-status.status-leased, .property-status.status-sold { color: #15803d; }
+.property-out { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+.property-out.over { color: #b91c1c; }
+.out-committed { color: var(--muted); }
+.property-out.over .out-committed { color: #b91c1c; }
+.out-sep { color: var(--icon); margin: 0 3px; }
+.property-budget { font-family: var(--mono); font-size: 12.5px; color: var(--ink); }
+.property-last { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* property page */
+.property-page { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.pp-back { align-self: flex-start; }
+.pp-head { display: flex; flex-direction: column; gap: 6px; }
+.pp-title { font-family: var(--sans); font-size: 22px; font-weight: 600; margin: 0; }
+.pp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pp-chip { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; }
+.pp-chip.pp-deal { color: var(--blue); border-color: var(--blue-soft); }
+.pp-rollup { display: flex; gap: 28px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.pp-stat { display: flex; flex-direction: column; gap: 2px; }
+.pp-stat-big { font-family: var(--mono); font-size: 22px; color: var(--text); }
+.pp-stat-sub { font-family: var(--mono); font-size: 12px; color: var(--muted); min-height: 14px; }
+.pp-stat-label { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.pp-section-head { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); margin: 12px 0 2px; }
+.pp-budget, .pp-ledger { display: flex; flex-direction: column; gap: 1px; }
+.pp-budget-row { display: grid; grid-template-columns: 2fr 1fr 1.4fr; gap: 12px; padding: 4px 8px; font-size: 13px; }
+.pp-budget-row.over { color: #b91c1c; }
+.pp-catout { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.pp-amt { font-family: var(--mono); text-align: right; }
+.pp-ledger-row { display: grid; grid-template-columns: 1fr 0.7fr 1fr 1.2fr 0.9fr 0.9fr 1.4fr; gap: 10px; padding: 4px 8px; font-size: 12.5px; border-bottom: 1px solid var(--line); }
+.pp-ltype { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.pp-ltype.type-bid { color: var(--blue); }
+.pp-lnote { color: var(--muted); }
+.pp-empty { font-size: 13px; color: var(--muted); padding: 4px 8px; }
+.pp-ledger-add { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; margin-top: 4px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--hover); }
+.pp-in { font-family: var(--sans); font-size: 12.5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg, #fff); color: var(--text); min-width: 90px; }
+.pp-in:focus { outline: none; border-color: var(--blue); }
+.pp-log { display: flex; flex-direction: column; gap: 3px; }
+.pp-log-line { font-size: 13.5px; color: var(--text); padding: 2px 0; }
+.pp-log-add { margin-top: 4px; }
+.pp-editnote { align-self: flex-start; margin-top: 8px; }

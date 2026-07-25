@@ -24,6 +24,7 @@ import (
 	"manifest/goals"
 	"manifest/portals"
 	"manifest/reading"
+	"manifest/realestate"
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
@@ -154,6 +155,11 @@ func main() {
 		// READING — the book shelf over the extrinsic zone (reading-plan §3).
 		srv.UseReading(reading.New(vix), cfg.ExtrinsicRoot)
 		log.Printf("reading: enabled (book shelf over %s/)", cfg.ExtrinsicRoot)
+
+		// PROPERTIES — the real-estate cockpit over system/realestate/ records.
+		reRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))
+		srv.UseRealestate(realestate.New(vix), reRoot)
+		log.Printf("realestate: enabled (property records over %s/)", reRoot)
 	}
 
 	// FEED SIGNALS — app-derived cards (going-cold contacts, stalled Rocks).
