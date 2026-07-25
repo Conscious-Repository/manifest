@@ -5818,13 +5818,63 @@ function workBlock(p) {
     if (open) {
       const list = el("div", "work-todos");
       (st.todos || []).forEach((td) => list.append(workTodoRow(p, st, td)));
-      list.append(ghostInput("＋ todo", "work-add", (v) => workOp(p.slug, { op: "add-todo", stageId: st.id, text: v }), "what needs to happen…"));
+      list.append(todoComposer(p, st));
       stageEl.append(list);
     }
     wrap.append(stageEl);
   });
   wrap.append(ghostInput("＋ stage", "work-add-stage", (v) => workOp(p.slug, { op: "add-stage", text: v }), "stage name…"));
   return wrap;
+}
+
+// todoComposer: the "＋ todo" ghost expands to text + optional $ price +
+// optional who — one flow for the common case "task + firm price". Price
+// alone = [est::]; price + who = firm (accepted bid tethered to the new task).
+function todoComposer(p, st) {
+  const ghost = el("button", "o-ghost work-add", "＋ todo");
+  ghost.onclick = (e) => {
+    e.stopPropagation();
+    const box = el("div", "todo-compose");
+    const text = inputEl("what needs to happen…");
+    text.classList.add("o-edit", "tc-text");
+    const amt = inputEl("$ price"); amt.type = "number"; amt.step = "1"; amt.classList.add("est-in");
+    const who = contractorAutocomplete("who (firm)…");
+    const cancel = () => box.replaceWith(ghost);
+    const save = async () => {
+      const t = text.value.trim();
+      if (!t) { cancel(); return; }
+      const amount = parseFloat(amt.value) || 0;
+      const name = who.value();
+      try {
+        const resp = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work",
+          { op: "add-todo", stageId: st.id, text: t });
+        if (amount) {
+          // find the new todo's id in the response (last text match in this stage)
+          const stage = ((resp && resp.work) || []).find((s) => s.id === st.id);
+          const match = ((stage && stage.todos) || []).filter((td) => td.text === t).pop();
+          if (match) {
+            await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work",
+              { op: "set-field", id: match.id, field: "est", value: String(amount) });
+            if (name) {
+              await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger",
+                { type: "bid", status: "accepted", contractor: name, amount, workId: match.id });
+            }
+          }
+        }
+        renderPropertyPage(p.slug);
+      } catch (err) { showToast((err.message || "Couldn't add task").slice(0, 80)); }
+    };
+    [text, amt, who.el.querySelector("input")].forEach((inp) => inp.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") save();
+      else if (ev.key === "Escape") cancel();
+    }));
+    const add = el("button", "pill lg-add", "add");
+    add.onclick = save;
+    box.append(text, amt, who.el, add);
+    ghost.replaceWith(box);
+    text.focus();
+  };
+  return ghost;
 }
 
 function workTodoRow(p, st, td) {
@@ -5847,23 +5897,92 @@ function workTodoRow(p, st, td) {
   };
   row.append(label);
 
-  // est slot — the muted money field that makes the work list the budget
-  row.append(estSlot(p, td.id, td.est, td.est, false));
+  // ONE price slot: paid → firm → est → empty (firm = accepted bid under the hood)
+  row.append(priceSlot(p, td));
 
-  // tether chips: money + bids
-  if (td.paid > 0) row.append(el("span", "work-chip paid", fmtMoney(td.paid) + " paid"));
-  else if (td.committed > 0) row.append(el("span", "work-chip", fmtMoney(td.committed) + " committed"));
+  // requested/received bid chips still render (accept/decline); accepted is the slot's job
   (td.bids || []).forEach((b) => {
-    if (b.status === "accepted" && td.committed > 0) return; // committed chip covers it
+    if (b.status === "accepted") return;
     row.append(bidChipEl(p, b));
   });
 
-  // both-directions tether: open the ledger entry row prefilled + prelinked
   const acts = el("span", "work-acts");
-  acts.append(quietBtn("bid →", () => toggleBidForm(row, p, st, td)));
-  acts.append(workDeleteBtn(p, td.id));
+  const more = el("button", "uw-x work-more-btn", "⋯");
+  more.title = "more…";
+  more.onclick = (e) => {
+    e.stopPropagation();
+    const open = acts.querySelector(".work-more");
+    if (open) { open.remove(); return; }
+    const m = quietBtn("request bid…", () => { m.remove(); toggleBidForm(row, p, st, td); });
+    m.classList.add("work-more");
+    more.after(m);
+  };
+  acts.append(more);
+  acts.append(workDeleteBtn(p, td.id, (td.paid || 0) + (td.committed || 0)));
   row.append(acts);
   return row;
+}
+
+// priceSlot: one money field per task. A number alone = estimate (budget); a
+// number + name = FIRM price — written as an accepted bid tethered to the
+// task, so committed and payment draws work unchanged. Editing a firm price
+// mutates the SAME ledger row (fail-closed), never duplicates.
+function priceSlot(p, td) {
+  const firm = (td.bids || []).find((b) => b.status === "accepted");
+  let cls = "est-slot", label;
+  if (td.paid > 0) { cls += " firm"; label = fmtMoney(td.paid) + " paid / " + fmtMoney(td.committed || td.paid); }
+  else if (firm) { cls += " firm"; label = fmtMoney(firm.amount) + (firm.who ? " · " + firm.who : ""); }
+  else if (td.committed > 0) { cls += " firm"; label = fmtMoney(td.committed) + " committed"; }
+  else if (td.est > 0) label = "est " + fmtMoney(td.est);
+  else { cls += " empty"; label = "$ —"; }
+  const slot = el("button", cls, label);
+  slot.title = "price — number alone = estimate · add a name = firm (committed)";
+  slot.onclick = (e) => {
+    e.stopPropagation();
+    const box = el("span", "price-edit");
+    const amt = inputEl("$"); amt.type = "number"; amt.step = "1"; amt.classList.add("est-in");
+    if (firm) amt.value = firm.amount; else if (td.est > 0) amt.value = td.est;
+    const who = contractorAutocomplete("who (firm)…");
+    if (firm && firm.who) who.setValue(firm.who);
+    const save = async () => {
+      const amount = parseFloat(amt.value) || 0;
+      const name = who.value();
+      try {
+        if (amount && name) {
+          if (firm) {
+            if (firm.amount !== amount || (firm.who || "") !== name) {
+              await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate",
+                { original: firm.row, replacement: { ...firm.row, contractor: name, amount } });
+            }
+          } else {
+            await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger",
+              { type: "bid", status: "accepted", contractor: name, amount, workId: td.id });
+          }
+          if (!(td.est > 0)) { // plan defaults to the firm price; never overwrite an estimate
+            await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work",
+              { op: "set-field", id: td.id, field: "est", value: String(amount) });
+          }
+          renderPropertyPage(p.slug);
+        } else {
+          workOp(p.slug, { op: "set-field", id: td.id, field: "est", value: amt.value.trim() });
+        }
+      } catch (err) { showToast((err.message || "Couldn't save price").slice(0, 80)); }
+    };
+    amt.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") save();
+      else if (ev.key === "Escape") box.replaceWith(slot);
+    });
+    who.el.querySelector("input").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") save();
+      else if (ev.key === "Escape") box.replaceWith(slot);
+    });
+    const ok = el("button", "pill lg-add", "set");
+    ok.onclick = save;
+    box.append(amt, who.el, ok);
+    slot.replaceWith(box);
+    amt.focus();
+  };
+  return slot;
 }
 
 // estSlot: the inline estimate field on every work row. Shows the value (or a
@@ -5897,12 +6016,14 @@ function quietBtn(text, onclick) {
   return b;
 }
 
-function workDeleteBtn(p, id) {
+function workDeleteBtn(p, id, money) {
   const holder = el("span", "work-del");
   const x = el("button", "uw-x", "✕");
+  x.title = "remove";
   x.onclick = (e) => {
     e.stopPropagation();
-    const yes = quietBtn("delete?", () => workOp(p.slug, { op: "delete", id }));
+    const ask = money > 0 ? "delete? (" + fmtMoney(money) + " stays in ledger, untethered)" : "delete?";
+    const yes = quietBtn(ask, () => workOp(p.slug, { op: "delete", id }));
     const no = quietBtn("no", () => { yes.remove(); no.remove(); x.hidden = false; });
     x.hidden = true;
     holder.append(yes, no);

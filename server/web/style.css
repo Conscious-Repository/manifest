@@ -1568,9 +1568,17 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .work-chip.paid { color: #15803d; border-color: #bfe3c9; }
 .work-chip.bid-requested, .work-chip.bid-received { color: var(--blue); border-color: var(--blue-soft); }
 .work-chip.bid-declined { text-decoration: line-through; }
-.work-acts { display: inline-flex; gap: 10px; margin-left: auto; visibility: hidden; }
-.work-todo:hover .work-acts, .work-stage-head:hover .work-del { visibility: visible; }
-.work-del { display: inline-flex; gap: 6px; visibility: hidden; }
+.work-acts { display: inline-flex; gap: 10px; margin-left: auto; align-items: baseline; }
+.work-del { display: inline-flex; gap: 6px; }
+/* stage rows keep the quiet hover reveal; task rows are always visible but muted */
+.work-stage-head .work-del { visibility: hidden; }
+.work-stage-head:hover .work-del { visibility: visible; }
+.work-acts .uw-x, .work-del .uw-x { color: var(--icon); }
+.work-acts .uw-x:hover, .work-del .uw-x:hover { color: var(--fg); }
+.est-slot.firm { color: var(--fg); }
+.price-edit { display: inline-flex; gap: 6px; align-items: baseline; margin-left: 10px; }
+.todo-compose { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+.todo-compose .tc-text { flex: 1; min-width: 220px; }
 .work-edit { font-size: 14px; min-width: 260px; }
 .work-add, .work-add-stage { margin-top: 2px; }
 .lg-work { max-width: 130px; }
