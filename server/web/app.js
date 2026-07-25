@@ -50,6 +50,11 @@ const els = {
   propertiesMeta: document.getElementById("propertiesMeta"),
   propertyBoard: document.getElementById("propertyBoard"),
   propertyPage: document.getElementById("propertyPage"),
+  propToggle: document.getElementById("propToggle"),
+  propertyMapWrap: document.getElementById("propertyMapWrap"),
+  propertyMap: document.getElementById("propertyMap"),
+  propertyMapLegend: document.getElementById("propertyMapLegend"),
+  propertyUnmapped: document.getElementById("propertyUnmapped"),
   // universal note view
   noteView: document.getElementById("noteView"),
   noteTitle: document.getElementById("noteTitle"),
@@ -4335,28 +4340,42 @@ function cmdFact(label, val) {
 // Board (grouped by entity, paid%/committed% rollups) + a property page (rollup,
 // budget, ledger with quick-add, log with quick-add, prose via the note view).
 let propertyCache = [];
+let dealCache = [];
+let propMode = "list"; // list | map
 
 function showProperties(h) {
   const slug = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
   if (slug) renderPropertyPage(slug);
-  else { els.propertyPage.hidden = true; els.propertyBoard.hidden = false; loadProperties(); }
+  else { els.propertyPage.hidden = true; loadProperties(); }
 }
 
 async function loadProperties() {
   try {
-    propertyCache = (await (await fetch("/api/properties")).json()).properties || [];
-  } catch (e) { propertyCache = []; }
-  renderBoard();
+    const d = await (await fetch("/api/properties")).json();
+    propertyCache = d.properties || [];
+    dealCache = d.deals || [];
+  } catch (e) { propertyCache = []; dealCache = []; }
+  if (propMode === "map") renderPropertyMap();
+  else renderBoard();
 }
+
+function setPropMode(mode) {
+  propMode = mode;
+  els.propToggle.querySelectorAll(".filter-chip").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+  if (mode === "map") renderPropertyMap();
+  else renderBoard();
+}
+els.propToggle.querySelectorAll(".filter-chip").forEach((b) => b.addEventListener("click", () => setPropMode(b.dataset.mode)));
 
 function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
 function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
 
 function renderBoard() {
   const host = els.propertyBoard; host.innerHTML = ""; host.hidden = false;
-  els.propertyPage.hidden = true;
+  els.propertyPage.hidden = true; els.propertyMapWrap.hidden = true;
   const shown = propertyCache.filter((p) => !p.hidden);
-  els.propertiesMeta.textContent = shown.length + (shown.length === 1 ? " property" : " properties");
+  els.propertiesMeta.textContent = shown.length + (shown.length === 1 ? " property" : " properties") +
+    (dealCache.length ? " · " + dealCache.length + " deals" : "");
   host.append(ghostInput("＋ property", "property-add", (v) => createProperty(v), "address…"));
   if (!shown.length) { host.append(emptyRow("No property records yet — run the seed, or add one above.")); return; }
   // group by entity (blank → "unassigned"), preserving the server's stable order
@@ -4369,6 +4388,21 @@ function renderBoard() {
   for (const [entity, rows] of groups) {
     host.append(el("div", "property-group-head", entity));
     rows.forEach((p) => host.append(boardRow(p)));
+  }
+  // deals lane: the multi-parcel bundles from deals.json — records for group
+  // underwriting + the map; their parcels are not individual Board rows.
+  if (dealCache.length) {
+    host.append(el("div", "property-group-head", "deals"));
+    dealCache.forEach((d) => {
+      const row = el("div", "property-row deal-row");
+      row.onclick = () => { _noteReturn = "#/properties"; openNoteByPath(d.path); };
+      row.append(el("span", "property-addr", d.name));
+      row.append(el("span", "property-status", "bundle"));
+      row.append(el("span", "property-out", (d.properties || []).length + " parcels"));
+      row.append(el("span", "property-budget", ""));
+      row.append(el("span", "property-last", (d.properties || []).slice(0, 3).join(" · ")));
+      host.append(row);
+    });
   }
 }
 
@@ -4392,8 +4426,120 @@ async function createProperty(address) {
   catch (e) { showToast("Couldn't create property"); }
 }
 
+// ---- PROPERTIES map (Leaflet from cdnjs, lazy-loaded; CartoDB light tiles) ----
+// Parcel polygons color-coded by status: active work anchors on the app's blue,
+// everything else muted. Tracked (pipeline, not owned) parcels render dashed as
+// a distinct tier; background parcels sit underneath in near-invisible gray.
+// GeoJSON is [lng,lat] — L.geoJSON handles the flip; nothing constructs LatLngs
+// by hand. Bounds are computed from the rendered layers, never hardcoded.
+let _leafletLoading = null;
+let _propMap = null; // the live Leaflet map instance (rebuilt per render)
+
+const PROP_STATUS_COLOR = {
+  construction: "#265ACC", pre_development: "#5b82d9", // active — the app blue
+  under_contract: "#8a93a6", negotiating: "#a7aeba",   // pipeline — muted slate
+  completed: "#4d9d6a", leased: "#4d9d6a", listed: "#6fae85", sold: "#9fbfa9", // done — quiet green
+};
+
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (_leafletLoading) return _leafletLoading;
+  _leafletLoading = new Promise((resolve, reject) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
+    document.head.append(css);
+    const js = document.createElement("script");
+    js.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+    js.onload = () => resolve();
+    js.onerror = () => { _leafletLoading = null; reject(new Error("leaflet failed to load")); };
+    document.head.append(js);
+  });
+  return _leafletLoading;
+}
+
+async function renderPropertyMap() {
+  els.propertyBoard.hidden = true; els.propertyPage.hidden = true;
+  els.propertyMapWrap.hidden = false;
+  try { await loadLeaflet(); } catch (e) {
+    // offline — degrade to the list with a quiet notice
+    setPropMode("list");
+    showToast("Map unavailable offline — showing the list");
+    return;
+  }
+  let geo;
+  try { geo = await (await fetch("/api/properties/geo")).json(); }
+  catch (e) { setPropMode("list"); return; }
+
+  if (_propMap) { _propMap.remove(); _propMap = null; }
+  const map = L.map(els.propertyMap, { zoomControl: true, attributionControl: true });
+  _propMap = map;
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19,
+  }).addTo(map);
+
+  // background parcels — context only, nearly invisible
+  if (geo.bg && (geo.bg.features || []).length) {
+    L.geoJSON(geo.bg, { style: { color: "#d3d7de", weight: 1, fill: true, fillOpacity: 0.02, interactive: false } }).addTo(map);
+  }
+
+  const rendered = [];
+  const unmapped = [];
+  const statusesSeen = new Set();
+  // tracked first (below), owned after (on top so borders aren't clipped)
+  const recs = (geo.records || []).slice().sort((a, b) => (a.control === "tracked" ? 0 : 1) - (b.control === "tracked" ? 0 : 1));
+  recs.forEach((rec) => {
+    if (!(rec.features || []).length) { unmapped.push(rec); return; }
+    const tracked = rec.control === "tracked";
+    const color = tracked ? "#b0a58e" : (PROP_STATUS_COLOR[rec.status] || "#8a93a6");
+    if (rec.status) statusesSeen.add(tracked ? "tracked" : rec.status);
+    else if (rec.type === "deal") statusesSeen.add("deal");
+    const style = {
+      color, weight: tracked ? 1.5 : 2, dashArray: tracked ? "4 3" : null,
+      fillColor: color, fillOpacity: tracked ? 0.06 : 0.14,
+    };
+    // one layer per record → a multi-parcel deal hovers/selects as one group
+    const layer = L.geoJSON({ type: "FeatureCollection", features: rec.features }, { style });
+    layer.on("mouseover", () => layer.setStyle({ weight: 3, fillOpacity: 0.24 }));
+    layer.on("mouseout", () => layer.setStyle(style));
+    const href = rec.type === "deal" ? "#/note/" + encodeURIComponent(rec.path) : "#/properties/" + encodeURIComponent(rec.slug);
+    const label = rec.title + (rec.status ? " · " + rec.status : "") + (rec.type === "deal" ? " · bundle" : "");
+    layer.bindPopup('<a href="' + href + '" class="prop-pop">' + escapeHtml(label) + "</a>", { closeButton: false });
+    layer.addTo(map);
+    rendered.push(layer);
+  });
+
+  if (rendered.length) {
+    const group = L.featureGroup(rendered);
+    map.fitBounds(group.getBounds().pad(0.08));
+  } else {
+    map.setView([38.65, -90.26], 15); // nothing mapped yet — the seed's neighborhood
+  }
+
+  // quiet legend naming only the statuses actually visible
+  const legend = els.propertyMapLegend; legend.innerHTML = "";
+  statusesSeen.forEach((st) => {
+    const chip = el("span", "map-legend-chip");
+    const dot = el("span", "map-legend-dot");
+    dot.style.background = st === "tracked" ? "#b0a58e" : st === "deal" ? "#8a93a6" : (PROP_STATUS_COLOR[st] || "#8a93a6");
+    chip.append(dot, el("span", "", st.replace(/_/g, " ")));
+    legend.append(chip);
+  });
+
+  const um = els.propertyUnmapped;
+  if (unmapped.length) {
+    um.hidden = false;
+    um.textContent = "unmapped: " + unmapped.map((r) => r.title).join(" · ");
+  } else um.hidden = true;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 async function renderPropertyPage(slug) {
-  els.propertyBoard.hidden = true;
+  els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
   const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
   try { renderProp(await (await fetch("/api/properties/" + encodeURIComponent(slug))).json()); }
   catch (e) { host.innerHTML = ""; host.append(emptyRow("Property not found.")); }
@@ -4401,7 +4547,7 @@ async function renderPropertyPage(slug) {
 
 function renderProp(p) {
   const host = els.propertyPage; host.innerHTML = ""; host.hidden = false;
-  els.propertyBoard.hidden = true;
+  els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
   const back = el("button", "pill light pp-back", "‹ Board");
   back.onclick = () => { location.hash = "#/properties"; };
   host.append(back);

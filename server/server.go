@@ -49,6 +49,7 @@ type Server struct {
 	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
 	realestate     *realestate.Service
 	realestateRoot string // vault-relative records root (default "system/realestate")
+	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
 	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
 	studio     *studio.Store
 	corpusPath string // <excalibur>/vessel/corpus/x.db
@@ -175,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	// Reads are the Board + property pages; the writes (create, quick-add log,
 	// quick-add ledger row) go through the vaultwriter database-class allow-list.
 	mux.HandleFunc("GET /api/properties", s.handlePropertiesList)
+	mux.HandleFunc("GET /api/properties/geo", s.handlePropertiesGeo)
 	mux.HandleFunc("POST /api/properties", s.handlePropertyCreate)
 	mux.HandleFunc("GET /api/properties/{slug}", s.handlePropertyGet)
 	mux.HandleFunc("POST /api/properties/{slug}/log", s.handlePropertyLog)

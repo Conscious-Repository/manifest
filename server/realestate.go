@@ -1,7 +1,9 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -16,9 +18,10 @@ import (
 // the writes (create a property, quick-add a log line, quick-add a ledger row) go
 // through the vaultwriter database-class allow-list and reindex the touched record.
 
-func (s *Server) UseRealestate(svc *realestate.Service, root string) {
+func (s *Server) UseRealestate(svc *realestate.Service, root, bgParcelsPath string) {
 	s.realestate = svc
 	s.realestateRoot = root
+	s.bgParcelsPath = bgParcelsPath
 }
 
 func (s *Server) realestateRootOr() string {
@@ -30,7 +33,7 @@ func (s *Server) realestateRootOr() string {
 
 func (s *Server) handlePropertiesList(w http.ResponseWriter, r *http.Request) {
 	if s.realestate == nil {
-		writeJSON(w, map[string]any{"properties": []any{}})
+		writeJSON(w, map[string]any{"properties": []any{}, "deals": []any{}})
 		return
 	}
 	props, err := s.realestate.Properties()
@@ -38,7 +41,66 @@ func (s *Server) handlePropertiesList(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"properties": props})
+	deals, _ := s.realestate.Deals()
+	writeJSON(w, map[string]any{"properties": props, "deals": deals})
+}
+
+// handlePropertiesGeo feeds the map: every record's parcel Features + the
+// background-parcel layer (from dataDir, filtered so a parcel already rendered
+// as a record never doubles underneath itself). Nothing here writes anywhere.
+func (s *Server) handlePropertiesGeo(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		writeJSON(w, map[string]any{"records": []any{}, "bg": nil})
+		return
+	}
+	records, err := s.realestate.GeoRecords()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	rendered := map[string]bool{}
+	for _, g := range records {
+		for _, id := range g.ParcelIDs {
+			rendered[id] = true
+		}
+	}
+	writeJSON(w, map[string]any{"records": records, "bg": s.backgroundParcels(rendered)})
+}
+
+// backgroundParcels loads bgParcels.json and drops features whose properties.id
+// matches an already-rendered record parcel. Missing file → nil (map still works).
+func (s *Server) backgroundParcels(rendered map[string]bool) any {
+	if s.bgParcelsPath == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(s.bgParcelsPath)
+	if err != nil {
+		return nil
+	}
+	var fc struct {
+		Type     string `json:"type"`
+		Features []struct {
+			Type       string          `json:"type"`
+			Geometry   json.RawMessage `json:"geometry"`
+			Properties struct {
+				ID string `json:"id"`
+			} `json:"properties"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(raw, &fc); err != nil {
+		return nil
+	}
+	feats := make([]any, 0, len(fc.Features))
+	for _, f := range fc.Features {
+		if rendered[f.Properties.ID] {
+			continue
+		}
+		feats = append(feats, map[string]any{
+			"type": "Feature", "geometry": f.Geometry,
+			"properties": map[string]string{"id": f.Properties.ID},
+		})
+	}
+	return map[string]any{"type": "FeatureCollection", "features": feats}
 }
 
 func (s *Server) handlePropertyGet(w http.ResponseWriter, r *http.Request) {

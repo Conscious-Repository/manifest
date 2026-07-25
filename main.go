@@ -158,7 +158,7 @@ func main() {
 
 		// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 		reRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))
-		srv.UseRealestate(realestate.New(vix), reRoot)
+		srv.UseRealestate(realestate.New(vix), reRoot, filepath.Join(cfg.DataDir, "realestate", "bgParcels.json"))
 		log.Printf("realestate: enabled (property records over %s/)", reRoot)
 	}
 
