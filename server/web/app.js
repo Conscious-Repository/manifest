@@ -4715,7 +4715,19 @@ let _propMap = null; // the live Leaflet map instance (rebuilt per render)
 const PROP_STATUS_COLOR = {
   construction: "#265ACC", pre_development: "#5b82d9", // active — the app blue
   under_contract: "#8a93a6", negotiating: "#a7aeba",   // pipeline — muted slate
-  completed: "#4d9d6a", leased: "#4d9d6a", listed: "#6fae85", sold: "#9fbfa9", // done — quiet green
+  completed: "#4d9d6a", leased: "#4d9d6a", listed: "#4d9d6a", sold: "#4d9d6a", // complete — ONE quiet green
+};
+
+// legend: fixed canonical order, done statuses consolidated into one entry
+const MAP_LEGEND = [
+  ["construction", "#265ACC"], ["pre-development", "#5b82d9"],
+  ["under contract", "#8a93a6"], ["negotiating", "#a7aeba"],
+  ["complete", "#4d9d6a"], ["tracked", "#b0a58e"], ["deal", "#8a93a6"],
+];
+const LEGEND_GROUP = {
+  construction: "construction", pre_development: "pre-development",
+  under_contract: "under contract", negotiating: "negotiating", opportunity: "negotiating",
+  completed: "complete", leased: "complete", listed: "complete", sold: "complete",
 };
 
 function loadLeaflet() {
@@ -4778,7 +4790,7 @@ async function renderPropertyMap() {
         pin.bindPopup('<a href="' + href + '" class="prop-pop">' + escapeHtml(rec.title + (rec.status ? " · " + rec.status : "")) + "</a>", { closeButton: false });
         pin.addTo(map);
         rendered.push(pin);
-        if (rec.status) statusesSeen.add(rec.status);
+        if (rec.status) statusesSeen.add(LEGEND_GROUP[rec.status] || rec.status);
       } else unmapped.push(rec);
       return;
     }
@@ -4786,7 +4798,7 @@ async function renderPropertyMap() {
     // a tracked parcel to pre_development/construction must recolor it
     const tracked = rec.control === "tracked" && STATUS_BUCKET[rec.status] !== "active";
     const color = tracked ? "#b0a58e" : (PROP_STATUS_COLOR[rec.status] || "#8a93a6");
-    if (rec.status) statusesSeen.add(tracked ? "tracked" : rec.status);
+    if (rec.status) statusesSeen.add(tracked ? "tracked" : (LEGEND_GROUP[rec.status] || rec.status));
     else if (rec.type === "deal") statusesSeen.add("deal");
     const style = {
       color, weight: tracked ? 1.5 : 2, dashArray: tracked ? "4 3" : null,
@@ -4813,13 +4825,13 @@ async function renderPropertyMap() {
     map.setView([38.65, -90.26], 16); // nothing mapped yet — the seed's neighborhood
   }
 
-  // quiet legend naming only the statuses actually visible
+  // quiet legend: canonical order, only the groups actually visible
   const legend = els.propertyMapLegend; legend.innerHTML = "";
-  statusesSeen.forEach((st) => {
+  MAP_LEGEND.filter(([name]) => statusesSeen.has(name)).forEach(([name, color]) => {
     const chip = el("span", "map-legend-chip");
     const dot = el("span", "map-legend-dot");
-    dot.style.background = st === "tracked" ? "#b0a58e" : st === "deal" ? "#8a93a6" : (PROP_STATUS_COLOR[st] || "#8a93a6");
-    chip.append(dot, el("span", "", st.replace(/_/g, " ")));
+    dot.style.background = color;
+    chip.append(dot, el("span", "", name));
     legend.append(chip);
   });
 
