@@ -209,12 +209,16 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 				note = strings.TrimSpace("split " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) +
 					" of $" + strconv.FormatFloat(row.Amount, 'f', 2, 64) + " · " + row.Vendor)
 			}
-			// tokens: work tether per alloc + the paying entity (pass-5)
+			// tokens: work tether per alloc + budget category + the paying entity
 			if a.WorkID != "" {
 				note = strings.TrimSpace(note + " [work:: " + a.WorkID + "]")
 				if p, ok := s.realestate.Get(a.Slug); ok {
 					s.tetherWorkID(p, a.WorkID) // freeze the id in the record
 				}
+			}
+			if c := strings.ToLower(strings.TrimSpace(a.Cat)); c == realestate.CatSoft ||
+				c == realestate.CatCarry || c == realestate.CatAcquisition {
+				note = strings.TrimSpace(note + " [cat:: " + c + "]")
 			}
 			if row.Entity != "" {
 				note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")

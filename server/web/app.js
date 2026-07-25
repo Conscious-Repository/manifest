@@ -5597,10 +5597,23 @@ function stmtRowEl(r) {
   const single = (r.assignments || []).length === 1 ? r.assignments[0] : null;
   const isAdmin = single && single.slug.startsWith("admin:");
   propCell.append(propertyTypeahead("property…", (p) => {
-    patchStmt(r, { assignments: [{ slug: p.slug, amount: r.amount, workId: (single && single.workId) || "" }] });
+    patchStmt(r, { assignments: [{ slug: p.slug, amount: r.amount, workId: (single && single.workId) || "", cat: (single && single.cat) || "" }] });
   }, single && !isAdmin ? single.slug : ""));
-  // work tether: once a real property is assigned, offer its open todos
+  // budget category lane (pass-6): hard (default, tetherable) | soft | carry | acquisition
   if (single && !isAdmin) {
+    const catSel = document.createElement("select");
+    catSel.className = "pp-in lg-cat";
+    catSel.title = "budget category";
+    [["", "hard"], ["soft", "soft"], ["carry", "carry"], ["acquisition", "acquisition"]].forEach(([v, l]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = l; catSel.append(o);
+    });
+    catSel.value = single.cat || "";
+    catSel.onchange = () => patchStmt(r, { assignments: [{ slug: single.slug, amount: single.amount,
+      workId: catSel.value ? "" : (single.workId || ""), cat: catSel.value }] });
+    propCell.append(catSel);
+  }
+  // work tether: once a real property is assigned, offer its open todos (hard lane only)
+  if (single && !isAdmin && !single.cat) {
     const prop = propertyCache.find((p) => p.slug === single.slug);
     if (prop && (prop.work || []).length) {
       const sel = document.createElement("select");

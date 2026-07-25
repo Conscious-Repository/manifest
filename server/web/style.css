@@ -1574,6 +1574,7 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .work-edit { font-size: 14px; min-width: 260px; }
 .work-add, .work-add-stage { margin-top: 2px; }
 .lg-work { max-width: 130px; }
+.lg-cat { max-width: 90px; }
 .lg-workcell { overflow: hidden; }
 .lg-chip { font-size: 10px; }
 .pp-ledger-row.entry.prefilled { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
