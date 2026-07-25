@@ -1609,6 +1609,9 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .pp-money { display: flex; flex-direction: column; gap: 10px; }
 .pp-money-stages { display: flex; flex-direction: column; gap: 1px; }
 .cols-money { grid-template-columns: 2fr 1fr 1fr 1fr; }
+/* money tables: numeric headers right-align to sit OVER the .pp-amt values */
+.pp-cols.cols-money > span:not(:first-child),
+.pp-cols.cols-cats > span:not(:first-child) { text-align: right; }
 
 /* ---- pass-6: budget vs live ---- */
 .cols-cats { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr; }
