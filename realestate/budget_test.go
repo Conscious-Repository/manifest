@@ -58,6 +58,14 @@ func TestComputeProjectBudget(t *testing.T) {
 	if pb2.VariancePct <= 0 || !pb2.Drift {
 		t.Fatalf("locked variance/drift = %v %v", pb2.VariancePct, pb2.Drift)
 	}
+
+	// same-day re-lock: the LATER line in the file must win the tie
+	pb3 := ComputeProjectBudget(src, work, ledger, []BaselineLock{
+		{Date: "2026-07-25", Total: 100500}, {Date: "2026-07-25", Total: 133500},
+	})
+	if pb3.Baseline.Total != 133500 || len(pb3.History) != 1 || pb3.History[0].Total != 100500 {
+		t.Fatalf("same-day re-lock: baseline %v history %+v", pb3.Baseline.Total, pb3.History)
+	}
 }
 
 func TestSourceMoneyFallbackHardCosts(t *testing.T) {

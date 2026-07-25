@@ -191,10 +191,16 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 	}
 
 	if len(locks) > 0 {
-		sort.SliceStable(locks, func(i, j int) bool { return locks[i].Date > locks[j].Date })
-		pb.Baseline = &locks[0]
-		if len(locks) > 1 {
-			pb.History = locks[1:]
+		// newest wins; locks arrive in file order, so reverse BEFORE the stable
+		// sort — a same-day re-lock (later in the file) must beat the earlier one
+		ordered := make([]BaselineLock, len(locks))
+		for i, l := range locks {
+			ordered[len(locks)-1-i] = l
+		}
+		sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Date > ordered[j].Date })
+		pb.Baseline = &ordered[0]
+		if len(ordered) > 1 {
+			pb.History = ordered[1:]
 		}
 		pb.Drift = money(pb.PlanTotal) != money(pb.Baseline.Total)
 	}
