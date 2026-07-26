@@ -1966,6 +1966,22 @@ function signalRow(sg) {
   label.onclick = () => { location.hash = sg.actHref; };
   row.append(label);
   const act = el("span", "signal-actions");
+  if (sg.kind === "todo-stale" || sg.kind === "todo-waiting") {
+    // the stale-todo card asks for a decision: do · mark waiting · drop
+    // (state changes auto-clear the condition — no dismissal bookkeeping)
+    act.append(
+      pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })),
+    );
+    if (sg.kind === "todo-stale") {
+      act.append(pillLight("Waiting…", () => {
+        const who = personInput((v) => signalAction("/api/todos/update", { id: sg.goalId, waiting: v }),
+          () => loadFeed());
+        act.replaceWith(who.el);
+        who.focus();
+      }));
+    }
+    act.append(pillLight("Drop", () => signalAction("/api/todos/drop", { id: sg.goalId })));
+  }
   act.append(
     pillLight("Act", () => { location.hash = sg.actHref; }),
     pillLight("Snooze", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })),
@@ -2085,6 +2101,7 @@ function feedCard(it) {
     if (it.status !== "kept") actions.append(pillLight("Discard", () => feedAction(it.id, { status: "discarded" })));
     actions.append(pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })));
     if (!it.vaultNote) actions.append(pillLight("Save to vault", () => feedSaveToVault(it.id)));
+    actions.append(pillLight("→ todo", () => feedToTodo(it.id))); // catch it on the TODOS board (Inbox)
     if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
   } else {
     actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
@@ -2571,6 +2588,17 @@ async function feedAction(id, body) {
   catch (e) { setSaveState("error"); }
   loadFeed(); // re-renders + refreshes the badge from the same response
 }
+async function feedToTodo(id) {
+  setSaveState("saving");
+  try {
+    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/to-todo`, { method: "POST" });
+    if (!r.ok) throw new Error((await r.text()) || "promote failed");
+    setSaveState("saved");
+    showToast("Caught on the TODOS board → Inbox");
+  } catch (e) { setSaveState("error"); showToast("→ todo failed: " + e.message, null, "error"); }
+  loadFeed();
+}
+
 async function feedSaveToVault(id) {
   setSaveState("saving");
   try {
@@ -3521,6 +3549,21 @@ function renderContactPage(p) {
         gh.append(row);
       });
       sec.append(gh);
+    });
+    host.append(sec);
+  }
+
+  // waiting on them — todos-board delegations tracked on this person
+  if (p.waitingOn && p.waitingOn.length) {
+    const sec = cpSection("Waiting on them", p.waitingOn.length);
+    p.waitingOn.forEach((wo) => {
+      const row = el("div", "cp-loop-row");
+      row.append(el("span", "cp-loop-dot", "⏳"),
+        el("span", "cp-loop-text", wo.text),
+        el("span", "cp-date", wo.domain + " · " + wo.ageDays + "d"));
+      row.style.cursor = "pointer";
+      row.onclick = () => { location.hash = "#/todos"; };
+      sec.append(row);
     });
     host.append(sec);
   }

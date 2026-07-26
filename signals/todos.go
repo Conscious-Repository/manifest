@@ -1,0 +1,72 @@
+package signals
+
+import (
+	"strconv"
+	"time"
+
+	"manifest/todos"
+)
+
+// Stale-todo signals (todos-surface-scope §4 "quiet pressure"): an OPEN todo
+// past ~14 days gets exactly one feed signal asking for a decision (do · mark
+// waiting · drop); a WAITING todo ages from its waiting-since date with a
+// longer 30-day fuse. Conditions auto-clear the moment the todo changes state;
+// the hash includes state + an age bucket so a dismissal re-arms on real change.
+
+const (
+	staleOpenDays    = 14
+	staleWaitingDays = 30
+)
+
+// TodoLoader is the todos surface the emitter needs (todos.Store).
+type TodoLoader interface{ Load() (*todos.Doc, error) }
+
+// StaleTodos emits one card per aging open/waiting todo.
+func StaleTodos(l TodoLoader) Emitter { return todoEmitter{l} }
+
+type todoEmitter struct{ l TodoLoader }
+
+func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
+	doc, err := e.l.Load()
+	if err != nil {
+		return nil, err
+	}
+	var out []Signal
+	for _, dom := range doc.Domains {
+		for _, t := range dom.Todos {
+			age := t.AgeDays(now)
+			bucket := strconv.Itoa(age / 7) // week bucket: dismissals re-arm as it keeps aging
+			switch t.State() {
+			case "open":
+				if age < staleOpenDays {
+					continue
+				}
+				out = append(out, Signal{
+					ID:      "todo-stale:" + t.ID,
+					Kind:    "todo-stale",
+					Entity:  t.Text,
+					Label:   "stale todo · " + t.Text + " · " + strconv.Itoa(age) + "d",
+					Age:     age,
+					ActHref: "#/todos",
+					Hash:    "open|" + bucket,
+					GoalID:  t.ID, // carries the todo id for the card's decision pills
+				})
+			case "waiting":
+				if age < staleWaitingDays {
+					continue
+				}
+				out = append(out, Signal{
+					ID:      "todo-waiting:" + t.ID,
+					Kind:    "todo-waiting",
+					Entity:  t.Text,
+					Label:   "still waiting · " + t.Waiting + " · " + t.Text + " · " + strconv.Itoa(age) + "d",
+					Age:     age,
+					ActHref: "#/todos",
+					Hash:    "waiting|" + t.Since + "|" + bucket,
+					GoalID:  t.ID,
+				})
+			}
+		}
+	}
+	return out, nil
+}

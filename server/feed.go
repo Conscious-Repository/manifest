@@ -14,6 +14,7 @@ import (
 	"manifest/feed"
 	"manifest/signals"
 	"manifest/spirits"
+	"manifest/todos"
 )
 
 // FEED CENTRAL — manifest's one inbox, promoted from a SPIRITS sub-tab to a
@@ -277,6 +278,42 @@ func (s *Server) handleSignalSnooze(w http.ResponseWriter, r *http.Request) {
 
 // handleFeedSaveToVault promotes a feed item into a real extrinsic/ vault note
 // (write-once) and records the note path back on the item. User-triggered.
+// handleFeedToTodo promotes a feed card into an Inbox todo (todos-surface
+// §"Feed promote") — the card's title becomes the line, the source rides in
+// parentheses, and the item is marked kept. The board's domain chips finish it.
+func (s *Server) handleFeedToTodo(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil || s.todosStore == nil {
+		http.Error(w, "todos unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "item not found", http.StatusNotFound)
+		return
+	}
+	doc, err := s.todosStore.Load()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	text := strings.TrimSpace(it.Title)
+	if it.Source != "" {
+		text += " (" + it.Source + ")"
+	}
+	dom := doc.EnsureDomain(todos.InboxName)
+	dom.Todos = append(dom.Todos, &todos.Todo{Text: text, Added: time.Now().Format("2006-01-02")})
+	if err := s.todosStore.Save(doc); err != nil {
+		httpError(w, err)
+		return
+	}
+	updated, err := s.spirits.Feed.SetStatus(it.ID, "kept")
+	if err != nil {
+		writeJSON(w, it) // todo landed; status flip is best-effort
+		return
+	}
+	writeJSON(w, updated)
+}
+
 func (s *Server) handleFeedSaveToVault(w http.ResponseWriter, r *http.Request) {
 	if s.spirits == nil || s.vault == nil || !s.vault.Enabled() {
 		http.Error(w, "vault save unavailable", http.StatusServiceUnavailable)

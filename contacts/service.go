@@ -249,13 +249,24 @@ type Page struct {
 	Transcripts   []Transcript    `json:"transcripts"`
 	Upcoming      []UpcomingItem  `json:"upcoming"`
 	Loops         []OpenLoopGroup `json:"loops"`
-	NoteBody      string          `json:"noteBody"`
+	// WaitingOn: todos-board items waiting on THIS person (filled by the
+	// server from the todos store — contacts stays todos-agnostic).
+	WaitingOn []WaitingOnItem `json:"waitingOn,omitempty"`
+	NoteBody  string          `json:"noteBody"`
 	// Neglect lens ("meetings" basis when email-linked, else "mentions")
 	NeglectBasis string `json:"neglectBasis"`
 	Interactions int    `json:"interactions"`
 	MedianGap    int    `json:"medianGap"`
 	DaysSince    int    `json:"daysSince"`
 	Cold         bool   `json:"cold"`
+}
+
+// WaitingOnItem is one open loop the owner is tracking on this person.
+type WaitingOnItem struct {
+	Text    string `json:"text"`
+	Domain  string `json:"domain"`
+	Since   string `json:"since,omitempty"`
+	AgeDays int    `json:"ageDays"`
 }
 
 // Page assembles the contact page for an entity key (or a bound variant).

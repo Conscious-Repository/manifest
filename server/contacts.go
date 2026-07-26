@@ -2,7 +2,10 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"time"
+
+	"manifest/contacts"
 )
 
 // CONTACTS — the people layer over the vault index (plans/contacts-feature.md).
@@ -49,6 +52,25 @@ func (s *Server) handleContactPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, "no such contact", http.StatusNotFound)
 		return
+	}
+	// waiting-on open loops from the todos board ([[person]] waiting values)
+	if s.todosStore != nil {
+		if doc, err := s.todosStore.Load(); err == nil {
+			now := time.Now()
+			for _, dom := range doc.Domains {
+				for _, t := range dom.Todos {
+					who := t.WaitingPerson()
+					if who == "" || t.State() != "waiting" {
+						continue
+					}
+					if strings.EqualFold(who, p.Display) || strings.EqualFold(who, p.Key) {
+						p.WaitingOn = append(p.WaitingOn, contacts.WaitingOnItem{
+							Text: t.Text, Domain: dom.Name, Since: t.Since, AgeDays: t.AgeDays(now),
+						})
+					}
+				}
+			}
+		}
 	}
 	writeJSON(w, p)
 }

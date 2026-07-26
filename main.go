@@ -205,6 +205,7 @@ func main() {
 			emitters = append(emitters, signals.ColdContacts(contactsSvc))
 		}
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
+		emitters = append(emitters, signals.StaleTodos(todosStore))
 		if reSvc != nil {
 			// property signals: over-budget category, stalled rehab, nothing-queued-next
 			emitters = append(emitters, signals.OverBudgetProperties(reSvc),
