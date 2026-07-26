@@ -20,16 +20,44 @@ type Field struct {
 	Value string `json:"value"`
 }
 
-// Todo is one action line under a domain heading.
+// Todo is one action line under a domain heading (loose or inside a bucket).
 type Todo struct {
-	ID      string  `json:"id"` // explicit [todo:: id] else derived domain/text slug
-	Text    string  `json:"text"`
-	Checked bool    `json:"checked"`
-	Added   string  `json:"added,omitempty"`   // [added:: YYYY-MM-DD] — the age anchor
-	Done    string  `json:"done,omitempty"`    // [done:: YYYY-MM-DD] — stamped at check (sweep key)
-	Waiting string  `json:"waiting,omitempty"` // [waiting:: who] — free text or [[person]]
-	Since   string  `json:"since,omitempty"`   // [since:: YYYY-MM-DD] — waiting-since
-	Fields  []Field `json:"fields,omitempty"`  // unrecognized fields, verbatim
+	ID      string `json:"id"` // explicit [todo:: id] else derived domain/text slug
+	Text    string `json:"text"`
+	Checked bool   `json:"checked"`
+	Added   string `json:"added,omitempty"`   // [added:: YYYY-MM-DD] — the age anchor
+	Done    string `json:"done,omitempty"`    // [done:: YYYY-MM-DD] — stamped at check (sweep key)
+	Waiting string `json:"waiting,omitempty"` // [waiting:: who] — free text or [[person]]
+	Since   string `json:"since,omitempty"`   // [since:: YYYY-MM-DD] — waiting-since
+	// task-substrate tethers: bucket is WHERE it belongs, tether is WHAT it advances
+	Rock   string  `json:"rock,omitempty"`   // [rock:: rock-id] — services a Rock
+	Issue  string  `json:"issue,omitempty"`  // [issue:: issue-id] — works an issue
+	Stage  string  `json:"stage,omitempty"`  // [stage:: name] — then-current stage, stamped at completion
+	Fields []Field `json:"fields,omitempty"` // unrecognized fields, verbatim
+}
+
+// Bucket is a standing task grouping that is NOT a goal (partnerships,
+// properties, long-lived containers). Heading links bind records: a linked
+// property page renders the bucket's open todos.
+type Bucket struct {
+	Name   string   `json:"name"`
+	Slug   string   `json:"slug"` // kernel slug; explicit [bucket:: slug] pin wins
+	Links  []string `json:"links,omitempty"`
+	Todos  []*Todo  `json:"todos"`
+	pinned bool
+}
+
+// Issue is a decision/blocker under `### issues` — its own type: never aged,
+// never in the todo signal path. Resolving = checking with a one-line note.
+type Issue struct {
+	ID         string  `json:"id"` // [issue:: domain/slug], auto-assigned
+	Text       string  `json:"text"`
+	Checked    bool    `json:"checked"`
+	Added      string  `json:"added,omitempty"`
+	Done       string  `json:"done,omitempty"`
+	Resolution string  `json:"resolution,omitempty"` // [resolution:: note]
+	Fields     []Field `json:"fields,omitempty"`
+	explicit   bool    // carried an explicit [issue:: id]
 }
 
 // State reports open | waiting | done.
@@ -65,11 +93,27 @@ func (t *Todo) AgeDays(now time.Time) int {
 	return days
 }
 
-// Domain is one ## section. Inbox is the special undomained capture heading.
+// Domain is one ## section, in canonical order: loose todos → buckets →
+// ### issues → ### backlog. Inbox is the special undomained capture heading.
 type Domain struct {
-	Name  string   `json:"name"`
-	Todos []*Todo  `json:"todos"`
-	extra []string // verbatim non-todo lines under the heading (preserved, unrendered)
+	Name    string    `json:"name"`
+	Todos   []*Todo   `json:"todos"` // loose (unbucketed)
+	Buckets []*Bucket `json:"buckets,omitempty"`
+	Issues  []*Issue  `json:"issues,omitempty"`
+	Backlog []string  `json:"backlog,omitempty"` // plain idea bullets, verbatim, never aged
+	extra   []string  // verbatim non-todo lines (preserved, unrendered)
+}
+
+// AllTodos iterates loose + bucket todos (the aging/signal/find surface).
+func (dom *Domain) AllTodos(fn func(b *Bucket, t *Todo)) {
+	for _, t := range dom.Todos {
+		fn(nil, t)
+	}
+	for _, b := range dom.Buckets {
+		for _, t := range b.Todos {
+			fn(b, t)
+		}
+	}
 }
 
 // Doc is the whole file.
@@ -81,16 +125,45 @@ type Doc struct {
 // InboxName is the capture heading (case-insensitive match on parse).
 const InboxName = "Inbox"
 
-// Find returns the todo with id (explicit or derived) and its domain.
+// Find returns the todo with id (explicit or derived) and its domain —
+// searching loose AND bucket todos.
 func (d *Doc) Find(id string) (*Domain, *Todo) {
 	for _, dom := range d.Domains {
-		for _, t := range dom.Todos {
-			if t.ID == id || t.explicitID() == id {
-				return dom, t
+		var hit *Todo
+		dom.AllTodos(func(_ *Bucket, t *Todo) {
+			if hit == nil && (t.ID == id || t.explicitID() == id) {
+				hit = t
+			}
+		})
+		if hit != nil {
+			return dom, hit
+		}
+	}
+	return nil, nil
+}
+
+// FindIssue returns the issue with id and its domain.
+func (d *Doc) FindIssue(id string) (*Domain, *Issue) {
+	for _, dom := range d.Domains {
+		for _, is := range dom.Issues {
+			if is.ID == id {
+				return dom, is
 			}
 		}
 	}
 	return nil, nil
+}
+
+// EnsureBucket returns the named bucket in a domain, creating it.
+func (dom *Domain) EnsureBucket(name string) *Bucket {
+	for _, b := range dom.Buckets {
+		if strings.EqualFold(b.Name, name) || strings.EqualFold(b.Slug, slug(name)) {
+			return b
+		}
+	}
+	b := &Bucket{Name: strings.TrimSpace(name), Slug: slug(name)}
+	dom.Buckets = append(dom.Buckets, b)
+	return b
 }
 
 // Domain returns the domain by name (case-insensitive), or nil.
@@ -120,8 +193,26 @@ type View struct {
 }
 
 type DomainView struct {
+	Name    string       `json:"name"`
+	Todos   []TodoView   `json:"todos"` // loose
+	Buckets []BucketView `json:"buckets,omitempty"`
+	Issues  []IssueView  `json:"issues,omitempty"`
+	Backlog []string     `json:"backlog,omitempty"`
+}
+
+type BucketView struct {
 	Name  string     `json:"name"`
+	Slug  string     `json:"slug"`
+	Links []string   `json:"links,omitempty"`
 	Todos []TodoView `json:"todos"`
+}
+
+type IssueView struct {
+	ID         string `json:"id"`
+	Text       string `json:"text"`
+	Checked    bool   `json:"checked"`
+	Resolution string `json:"resolution,omitempty"`
+	OpenTasks  int    `json:"openTasks"` // open todos tethered to this issue — worked, not parked
 }
 
 type TodoView struct {
@@ -131,6 +222,9 @@ type TodoView struct {
 	Added   string `json:"added,omitempty"`
 	Waiting string `json:"waiting,omitempty"`
 	Since   string `json:"since,omitempty"`
+	Rock    string `json:"rock,omitempty"`
+	Issue   string `json:"issue,omitempty"`
+	Bucket  string `json:"bucket,omitempty"` // bucket slug when inside one
 	AgeDays int    `json:"ageDays"`
 }
 
@@ -138,15 +232,42 @@ type TodoView struct {
 // removes them — the board strikes them through).
 func (d *Doc) View(now time.Time) View {
 	v := View{Domains: []DomainView{}}
+	// open tethered-task counts per issue, across the whole doc
+	openByIssue := map[string]int{}
+	for _, dom := range d.Domains {
+		dom.AllTodos(func(_ *Bucket, t *Todo) {
+			if t.Issue != "" && !t.Checked {
+				openByIssue[t.Issue]++
+			}
+		})
+	}
+	tv := func(t *Todo, bucket string) TodoView {
+		return TodoView{
+			ID: t.ID, Text: t.Text, State: t.State(),
+			Added: t.Added, Waiting: t.Waiting, Since: t.Since,
+			Rock: t.Rock, Issue: t.Issue, Bucket: bucket,
+			AgeDays: t.AgeDays(now),
+		}
+	}
 	for _, dom := range d.Domains {
 		dv := DomainView{Name: dom.Name, Todos: []TodoView{}}
 		for _, t := range dom.Todos {
-			dv.Todos = append(dv.Todos, TodoView{
-				ID: t.ID, Text: t.Text, State: t.State(),
-				Added: t.Added, Waiting: t.Waiting, Since: t.Since,
-				AgeDays: t.AgeDays(now),
+			dv.Todos = append(dv.Todos, tv(t, ""))
+		}
+		for _, b := range dom.Buckets {
+			bv := BucketView{Name: b.Name, Slug: b.Slug, Links: b.Links, Todos: []TodoView{}}
+			for _, t := range b.Todos {
+				bv.Todos = append(bv.Todos, tv(t, b.Slug))
+			}
+			dv.Buckets = append(dv.Buckets, bv)
+		}
+		for _, is := range dom.Issues {
+			dv.Issues = append(dv.Issues, IssueView{
+				ID: is.ID, Text: is.Text, Checked: is.Checked,
+				Resolution: is.Resolution, OpenTasks: openByIssue[is.ID],
 			})
 		}
+		dv.Backlog = dom.Backlog
 		v.Domains = append(v.Domains, dv)
 	}
 	return v

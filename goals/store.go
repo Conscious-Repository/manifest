@@ -60,12 +60,28 @@ func (s *Store) CloseGoal(id, outcome, note, evidence string, now time.Time) err
 		Area: area.Name, Text: g.Text, GoalID: g.identity(),
 		Outcome: outcome, Closed: now.Format("2006-01-02"),
 		Reached: lastStageName(g), Evidence: evidence, Serves: g.Serves, Note: strings.TrimSpace(note),
+		History: frozenHistory(g),
 	}
 	doc.DeleteGoal(id)
 	if err := s.Save(doc); err != nil {
 		return err
 	}
 	return s.appendArchive(CurrentQuarter(now), entry)
+}
+
+// frozenHistory collects a closing Rock's frozen task lines, each preceded by
+// its stage line for context (verbatim indentation preserved) — checked
+// pre-split history archives with the Rock instead of being discarded.
+func frozenHistory(rock *Goal) []string {
+	var out []string
+	for _, st := range rock.Children {
+		if len(st.Frozen) == 0 {
+			continue
+		}
+		out = append(out, "    "+goalLine(st, roleStageTask))
+		out = append(out, st.Frozen...)
+	}
+	return out
 }
 
 // lastStageName is the trail's tip — the last stage under a Rock (completed or current).
@@ -238,64 +254,6 @@ func (s *Store) SaveRetro(quarter, start, stop, keep string) error {
 		return err
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
-}
-
-// CaptureTask appends a task under the stage stageID — the day-view capture flow
-// (goals-orient plan): a free-typed day task lands in goals.md under exactly the
-// stage the day's focus slot points at, with a durable [goal:: id] so the daily
-// backlink round-trips checks. An existing OPEN task with the same text is reused
-// (promoted if id-less) rather than duplicated, so re-typing pulls instead of
-// appending. One load/save; the write is byte-stable outside the touched lines.
-//
-// Depth guard: the ladder is positional (Rock → stage → task), and AddGoal would
-// happily append at any depth — so stageID must be a DIRECT child of a Rock. A
-// rock id or a task id here is refused, never a silent depth-3 write. A checked
-// stage still accepts a capture (it lands where the user aimed; stale-slot case).
-func (s *Store) CaptureTask(stageID, text string, now time.Time) (taskText, taskID string, err error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return "", "", fmt.Errorf("task text is required")
-	}
-	doc := s.Load()
-	_, stage := doc.FindGoal(stageID)
-	if stage == nil {
-		return "", "", fmt.Errorf("stage %q not found", stageID)
-	}
-	rock := doc.RockOf(stageID)
-	if rock == nil || rock.ID == stageID {
-		return "", "", fmt.Errorf("%q is not a stage — tasks land under a Rock's stage", stageID)
-	}
-	direct := false
-	for _, c := range rock.Children {
-		if c == stage {
-			direct = true
-			break
-		}
-	}
-	if !direct {
-		return "", "", fmt.Errorf("%q is not a stage — tasks land under a Rock's stage", stageID)
-	}
-
-	// Reuse an existing open task with the same text instead of duplicating.
-	var g *Goal
-	for _, c := range stage.Children {
-		if !c.Checked && strings.EqualFold(strings.TrimSpace(c.Text), text) {
-			g = c
-			break
-		}
-	}
-	if g == nil {
-		g, _ = doc.AddGoal("", stageID, "", text, "")
-	}
-	// Inline promote: the durable [goal:: id] the day-task backlink will carry.
-	if g.explicitID() == "" {
-		g.Fields = append(g.Fields, Field{Key: "goal", Value: g.ID})
-	}
-	rock.Moved = now.Format("2006-01-02")
-	if err := s.Save(doc); err != nil {
-		return "", "", err
-	}
-	return g.Text, g.identity(), nil
 }
 
 // Promote ensures a goal carries a durable [goal:: id] (so a daily-task backlink

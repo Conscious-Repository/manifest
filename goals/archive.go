@@ -8,15 +8,18 @@ import (
 // ArchiveEntry is one closed Rock recorded in a quarter archive (goals <quarter>.md).
 // Archives are read-only history: a Rock lands here only when it closes (§6).
 type ArchiveEntry struct {
-	Area    string `json:"area"`
-	Text    string `json:"text"`
-	GoalID  string `json:"goalId"`
-	Outcome string `json:"outcome"` // "win" | "learn"
-	Closed  string `json:"closed"`  // YYYY-MM-DD
+	Area     string `json:"area"`
+	Text     string `json:"text"`
+	GoalID   string `json:"goalId"`
+	Outcome  string `json:"outcome"`  // "win" | "learn"
+	Closed   string `json:"closed"`   // YYYY-MM-DD
 	Reached  string `json:"reached"`  // last stage name in the trail at close
 	Evidence string `json:"evidence"` // proof of the win (text or [[wikilink]]); required for a Win (§5)
 	Serves   string `json:"serves"`   // annual slug this Rock served ("" if none)
 	Note     string `json:"note"`     // optional (typically why it was a learn)
+	// History: the Rock's frozen task lines (verbatim, indented) — checked
+	// pre-split work travels with the Rock into the archive (task-substrate).
+	History []string `json:"history,omitempty"`
 }
 
 // ArchiveQuarter groups a quarter's closed Rocks (newest quarter first when listed).
@@ -42,6 +45,11 @@ func parseArchive(content string) []ArchiveEntry {
 		}
 		m := archiveLineRe.FindStringSubmatch(line)
 		if m == nil {
+			// indented non-blank lines under an entry = its frozen history
+			if len(out) > 0 && strings.TrimSpace(line) != "" &&
+				(strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
+				out[len(out)-1].History = append(out[len(out)-1].History, line)
+			}
 			continue
 		}
 		content := m[1]
@@ -93,6 +101,7 @@ func serializeArchive(quarter string, entries []ArchiveEntry) string {
 		out = append(out, "", "## "+area)
 		for _, e := range byArea[area] {
 			out = append(out, archiveLine(e))
+			out = append(out, e.History...)
 		}
 	}
 	return strings.Join(out, "\n") + "\n"

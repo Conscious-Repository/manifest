@@ -42,10 +42,12 @@ func yearSuffix(year string) string {
 	return " — " + year
 }
 
-// emitGoal writes a goal line at depth, then its children. A top-level node emits
-// with its role (annual/rock); everything below it is a stage/task.
+// emitGoal writes a goal line at depth, then its frozen history (verbatim,
+// task-substrate split), then its children. A top-level node emits with its
+// role (annual/rock); everything below it is a stage.
 func emitGoal(out *[]string, g *Goal, depth int, role fieldRole) {
 	*out = append(*out, strings.Repeat("    ", depth)+goalLine(g, role))
+	*out = append(*out, g.Frozen...)
 	for _, c := range g.Children {
 		emitGoal(out, c, depth+1, roleStageTask)
 	}

@@ -39,6 +39,7 @@ func TestCloseGoalArchivesAndRemoves(t *testing.T) {
 	goalsMD := "# Goals\n\n## Aion\n\n### 1-year — 2026\n- [ ] Series A closed [goal:: aion/2026]\n\n### Rocks (90-day)\n" +
 		"- [ ] Series A 15M [goal:: aion/series-a-15m] [quarter:: 2026-Q3] [serves:: aion/2026]\n" +
 		"    - [x] Soft lead\n" +
+		"        - [x] frozen done task\n" +
 		"    - [ ] Term sheet\n"
 	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(goalsMD), 0o644); err != nil {
 		t.Fatal(err)
@@ -72,9 +73,16 @@ func TestCloseGoalArchivesAndRemoves(t *testing.T) {
 			t.Fatalf("archive missing %q:\n%s", want, arch)
 		}
 	}
+	// frozen task history travels with the Rock (task-substrate split)
+	if !strings.Contains(string(arch), "        - [x] frozen done task") {
+		t.Fatalf("frozen history missing from archive:\n%s", arch)
+	}
 	all := st.LoadAllArchives()
 	if len(all) != 1 || all[0].Quarter != "2026-Q3" || len(all[0].Entries) != 1 {
 		t.Fatalf("LoadAllArchives wrong: %+v", all)
+	}
+	if len(all[0].Entries[0].History) == 0 {
+		t.Fatalf("archive entry lost history on re-parse: %+v", all[0].Entries[0])
 	}
 }
 

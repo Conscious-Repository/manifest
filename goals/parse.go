@@ -154,10 +154,18 @@ func Parse(content string) *Doc {
 						continue
 					}
 					w := indentWidth(m[1])
-					g := parseGoal(m)
 					for len(stack) > 0 && stack[len(stack)-1].indent >= w {
 						stack = stack[:len(stack)-1]
 					}
+					// task-substrate split: goals.md nests ONE level under a
+					// Rock (the stage). Anything deeper is FROZEN history —
+					// preserved verbatim on the stage, never parsed as a goal.
+					if root == &a.Rocks && len(stack) >= 2 {
+						st := stack[len(stack)-1].goal
+						st.Frozen = append(st.Frozen, line)
+						continue
+					}
+					g := parseGoal(m)
 					if len(stack) == 0 {
 						*root = append(*root, g)
 					} else {

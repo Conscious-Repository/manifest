@@ -69,8 +69,18 @@ func TestRockStageTaskDepth(t *testing.T) {
 	if len(rock.Children) != 1 || rock.Children[0].Text != "Term sheet" {
 		t.Fatalf("Rock should own one stage, got %+v", rock.Children)
 	}
-	if len(rock.Children[0].Children) != 1 || rock.Children[0].Children[0].Text != "Send deck" {
-		t.Fatalf("stage should own one task, got %+v", rock.Children[0].Children)
+	// task-substrate split: depth-2 lines are FROZEN history, never goals
+	st := rock.Children[0]
+	if len(st.Children) != 0 {
+		t.Fatalf("stage must own no task goals, got %+v", st.Children)
+	}
+	if len(st.Frozen) != 1 || st.Frozen[0] != "        - [ ] Send deck" {
+		t.Fatalf("depth-2 line should freeze verbatim, got %q", st.Frozen)
+	}
+	// frozen lines round-trip byte-identical
+	out := Serialize(Parse(in))
+	if Serialize(Parse(out)) != out || !strings.Contains(out, "        - [ ] Send deck\n") {
+		t.Fatalf("frozen history not byte-stable:\n%s", out)
 	}
 	// The lone checkbox under the second Rock is a stage, not lost.
 	if len(a.Rocks[1].Children) != 1 || a.Rocks[1].Children[0].Text != "just one checkbox" {
@@ -216,13 +226,14 @@ func TestMyPlateAndPool(t *testing.T) {
 		}
 	}
 	joined := strings.Join(plate, "|")
-	for _, want := range []string{"mineRock", "mineStage", "mineTask"} {
+	for _, want := range []string{"mineRock", "mineStage"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("MyPlate missing %q: %v", want, plate)
 		}
 	}
-	if strings.Contains(joined, "teamRock") || strings.Contains(joined, "doneTask") {
-		t.Fatalf("non-me or checked item leaked into My Plate: %v", plate)
+	// task-substrate split: depth-2 lines freeze — they never enter the plate
+	if strings.Contains(joined, "teamRock") || strings.Contains(joined, "doneTask") || strings.Contains(joined, "mineTask") {
+		t.Fatalf("non-me, checked, or frozen item leaked into My Plate: %v", plate)
 	}
 
 	pool := doc.Pool()

@@ -93,16 +93,32 @@ func (s *Store) Sweep(now time.Time) (int, error) {
 	}
 	cutoff := now.Add(-48 * time.Hour).Format("2006-01-02")
 	var archived []string
-	for _, dom := range d.Domains {
+	sweepList := func(list []*Todo, where string) []*Todo {
 		var keep []*Todo
-		for _, t := range dom.Todos {
+		for _, t := range list {
 			if t.Checked && t.Done != "" && t.Done < cutoff {
-				archived = append(archived, emitTodo(t)+" [domain:: "+dom.Name+"]")
+				archived = append(archived, emitTodo(t)+" [domain:: "+where+"]")
 				continue
 			}
 			keep = append(keep, t)
 		}
-		dom.Todos = keep
+		return keep
+	}
+	for _, dom := range d.Domains {
+		dom.Todos = sweepList(dom.Todos, dom.Name)
+		for _, b := range dom.Buckets {
+			b.Todos = sweepList(b.Todos, dom.Name+" / "+b.Name)
+		}
+		// resolved issues sweep too (with their resolution note riding along)
+		var keepIssues []*Issue
+		for _, is := range dom.Issues {
+			if is.Checked && is.Done != "" && is.Done < cutoff {
+				archived = append(archived, emitIssue(is)+" [domain:: "+dom.Name+"]")
+				continue
+			}
+			keepIssues = append(keepIssues, is)
+		}
+		dom.Issues = keepIssues
 	}
 	if len(archived) == 0 {
 		return 0, nil

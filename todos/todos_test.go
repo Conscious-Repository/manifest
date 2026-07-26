@@ -131,6 +131,76 @@ func TestSweepAndDrop(t *testing.T) {
 	}
 }
 
+const sampleV2 = `# To Do
+
+## Real Estate
+- [ ] hang banners in fountain park [added:: 2026-07-26]
+- [ ] order windows [rock:: real-estate/new-rock] [added:: 2026-07-26]
+
+### 4848 & 4852 · [[4848 fountain ave]] [[4852 fountain ave]]
+- [ ] get variance packet to attorney [issue:: real-estate/zoning-variance-for-4848-4852] [added:: 2026-07-26]
+
+### 743 · [[743 n euclid]]
+- [ ] schedule structural engineer walk [added:: 2026-07-26]
+
+### issues
+- [ ] zoning variance for 4848 & 4852 [issue:: real-estate/zoning-variance-for-4848-4852]
+
+### backlog
+- corner lot mural idea
+- talk to city about alley vacation
+`
+
+func TestV2Fixpoint(t *testing.T) {
+	out := Serialize(Parse(sampleV2))
+	if out != sampleV2 {
+		t.Fatalf("canonical v2 sample changed:\n%s", out)
+	}
+	if Serialize(Parse(out)) != out {
+		t.Fatal("v2 not a fixpoint")
+	}
+}
+
+func TestV2Structure(t *testing.T) {
+	d := Parse(sampleV2)
+	re := d.Domain("Real Estate")
+	if len(re.Todos) != 2 || len(re.Buckets) != 2 || len(re.Issues) != 1 || len(re.Backlog) != 2 {
+		t.Fatalf("structure: %d loose %d buckets %d issues %d backlog",
+			len(re.Todos), len(re.Buckets), len(re.Issues), len(re.Backlog))
+	}
+	if re.Todos[1].Rock != "real-estate/new-rock" {
+		t.Fatalf("rock tether: %+v", re.Todos[1])
+	}
+	b := re.Buckets[0]
+	if b.Name != "4848 & 4852" || b.Slug != "4848-4852" || len(b.Links) != 2 || b.Links[0] != "4848 fountain ave" {
+		t.Fatalf("bucket heading: %+v", b)
+	}
+	if b.Todos[0].Issue != "real-estate/zoning-variance-for-4848-4852" {
+		t.Fatalf("issue tether: %+v", b.Todos[0])
+	}
+	is := re.Issues[0]
+	if is.ID != "real-estate/zoning-variance-for-4848-4852" || is.Checked {
+		t.Fatalf("issue: %+v", is)
+	}
+	v := d.View(now)
+	if v.Domains[0].Issues[0].OpenTasks != 1 {
+		t.Fatalf("issue open-task count: %+v", v.Domains[0].Issues[0])
+	}
+	// bucket todo findable by id
+	if _, ft := d.Find(b.Todos[0].ID); ft == nil {
+		t.Fatal("bucket todo not findable")
+	}
+	// auto-assigned issue id pins on normalize
+	d2 := Parse("# To Do\n\n## Aion\n\n### issues\n- [ ] decide MRI vendor\n")
+	out2 := Serialize(d2)
+	if !strings.Contains(out2, "[issue:: aion/decide-mri-vendor]") {
+		t.Fatalf("issue id not auto-pinned:\n%s", out2)
+	}
+	if Serialize(Parse(out2)) != out2 {
+		t.Fatal("issue pin not a fixpoint")
+	}
+}
+
 const legacy = `- Pay federal taxes (2021 & 2023) - ~19k?
 
 - bio

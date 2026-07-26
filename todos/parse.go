@@ -7,40 +7,108 @@ import (
 
 var (
 	headingRe     = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
+	subHeadingRe  = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
 	todoLineRe    = regexp.MustCompile(`^[ \t]*[-*]\s*\[([ xX])\]\s?(.*)$`)
+	bulletLineRe  = regexp.MustCompile(`^[ \t]*[-*]\s+\S`)
 	inlineFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
 	// waiting values may BE a wikilink — [waiting:: [[Josh]]] — which the
 	// generic field regex can't hold (]] inside the value); match it first
 	waitingLinkRe = regexp.MustCompile(`\[waiting::\s*(\[\[[^\]]+\]\])\s*\]`)
+	linkRe        = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 )
 
-// Parse reads `to do.md` bytes into a Doc. Tolerant: any checkbox bullet under
-// a ## heading (any indent — the surface is flat) is a todo; every other line
-// round-trips verbatim (preamble before the first heading, extra lines inside
-// a domain — the [[x posts]] tail survives untouched).
+// sub-section modes within a domain
+const (
+	modeLoose = iota
+	modeBucket
+	modeIssues
+	modeBacklog
+)
+
+// Parse reads `to do.md` bytes into a Doc. Domain sections (`## X`) hold, in
+// canonical order: loose todos → `### <bucket>` blocks → `### issues` →
+// `### backlog`. Tolerant: unknown lines round-trip verbatim (preamble before
+// the first heading, extra lines inside a domain — the [[x posts]] tail
+// survives untouched; backlog lines are verbatim plain bullets).
 func Parse(raw string) *Doc {
 	d := &Doc{}
 	var cur *Domain
+	mode := modeLoose
+	var bucket *Bucket
 	for _, line := range strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n") {
-		if m := headingRe.FindStringSubmatch(line); m != nil {
+		if m := headingRe.FindStringSubmatch(line); m != nil && !strings.HasPrefix(strings.TrimSpace(line), "###") {
 			cur = &Domain{Name: strings.TrimSpace(m[1])}
 			d.Domains = append(d.Domains, cur)
+			mode, bucket = modeLoose, nil
 			continue
 		}
 		if cur == nil {
 			d.preamble = append(d.preamble, line)
 			continue
 		}
-		if m := todoLineRe.FindStringSubmatch(line); m != nil {
-			cur.Todos = append(cur.Todos, parseTodo(m[1] != " ", m[2]))
+		if m := subHeadingRe.FindStringSubmatch(line); m != nil {
+			head := strings.TrimSpace(m[1])
+			switch strings.ToLower(head) {
+			case "issues":
+				mode, bucket = modeIssues, nil
+			case "backlog":
+				mode, bucket = modeBacklog, nil
+			default:
+				bucket = parseBucketHeading(head)
+				cur.Buckets = append(cur.Buckets, bucket)
+				mode = modeBucket
+			}
 			continue
 		}
-		if strings.TrimSpace(line) != "" {
-			cur.extra = append(cur.extra, line)
+		if m := todoLineRe.FindStringSubmatch(line); m != nil {
+			switch mode {
+			case modeIssues:
+				cur.Issues = append(cur.Issues, parseIssue(m[1] != " ", m[2]))
+			case modeBacklog:
+				cur.Backlog = append(cur.Backlog, line) // checkboxes in backlog stay verbatim
+			case modeBucket:
+				bucket.Todos = append(bucket.Todos, parseTodo(m[1] != " ", m[2]))
+			default:
+				cur.Todos = append(cur.Todos, parseTodo(m[1] != " ", m[2]))
+			}
+			continue
 		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if mode == modeBacklog && bulletLineRe.MatchString(line) {
+			cur.Backlog = append(cur.Backlog, line)
+			continue
+		}
+		cur.extra = append(cur.extra, line)
 	}
 	d.assignIDs()
 	return d
+}
+
+// parseBucketHeading reads `<name> · [[link]] [[link]] [bucket:: slug]`.
+func parseBucketHeading(head string) *Bucket {
+	b := &Bucket{}
+	head = inlineFieldRe.ReplaceAllStringFunc(head, func(m string) string {
+		sm := inlineFieldRe.FindStringSubmatch(m)
+		if strings.EqualFold(strings.TrimSpace(sm[1]), "bucket") {
+			b.Slug = strings.TrimSpace(sm[2])
+			b.pinned = true
+			return ""
+		}
+		return m
+	})
+	head = linkRe.ReplaceAllStringFunc(head, func(m string) string {
+		b.Links = append(b.Links, strings.TrimSpace(linkRe.FindStringSubmatch(m)[1]))
+		return ""
+	})
+	head = strings.TrimSpace(head)
+	head = strings.TrimRight(head, "· \t")
+	b.Name = strings.TrimSpace(head)
+	if b.Slug == "" {
+		b.Slug = slug(b.Name)
+	}
+	return b
 }
 
 func parseTodo(checked bool, rest string) *Todo {
@@ -62,9 +130,14 @@ func parseTodo(checked bool, rest string) *Todo {
 			t.Done = val
 		case "waiting":
 			t.Waiting = val
-			return "" // waiting values may carry [[links]] — strip only the field shell
 		case "since":
 			t.Since = val
+		case "rock":
+			t.Rock = val
+		case "issue":
+			t.Issue = val
+		case "stage":
+			t.Stage = val
 		default:
 			unknown = append(unknown, Field{Key: sm[1], Value: val})
 		}
@@ -73,4 +146,30 @@ func parseTodo(checked bool, rest string) *Todo {
 	t.Fields = unknown
 	t.Text = strings.Join(strings.Fields(clean), " ")
 	return t
+}
+
+func parseIssue(checked bool, rest string) *Issue {
+	is := &Issue{Checked: checked}
+	var unknown []Field
+	clean := inlineFieldRe.ReplaceAllStringFunc(rest, func(m string) string {
+		sm := inlineFieldRe.FindStringSubmatch(m)
+		key, val := strings.TrimSpace(sm[1]), strings.TrimSpace(sm[2])
+		switch strings.ToLower(key) {
+		case "issue":
+			is.ID = val
+			is.explicit = true
+		case "added":
+			is.Added = val
+		case "done":
+			is.Done = val
+		case "resolution":
+			is.Resolution = val
+		default:
+			unknown = append(unknown, Field{Key: sm[1], Value: val})
+		}
+		return ""
+	})
+	is.Fields = unknown
+	is.Text = strings.Join(strings.Fields(clean), " ")
+	return is
 }

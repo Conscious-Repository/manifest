@@ -29,16 +29,26 @@ func (t *Todo) explicitID() string {
 	return ""
 }
 
-// assignIDs gives every todo a stable id: an explicit [todo:: id] wins, else
-// domain-slug/text-slug; collisions get -2/-3 suffixes.
+// assignIDs gives every todo and issue a stable id: an explicit pin wins,
+// else domain-slug/text-slug; collisions get -2/-3 suffixes. Todos (loose +
+// bucket) and issues share one id space — both are tether targets.
 func (d *Doc) assignIDs() {
 	seen := map[string]bool{}
+	uniq := func(id string) string {
+		root, n := id, 2
+		for seen[id] {
+			id = root + "-" + strconv.Itoa(n)
+			n++
+		}
+		seen[id] = true
+		return id
+	}
 	for _, dom := range d.Domains {
 		base := slug(dom.Name)
 		if base == "" {
 			base = "domain"
 		}
-		for _, t := range dom.Todos {
+		assign := func(t *Todo) {
 			id := t.explicitID()
 			if id == "" {
 				ts := slug(t.Text)
@@ -47,13 +57,26 @@ func (d *Doc) assignIDs() {
 				}
 				id = base + "/" + ts
 			}
-			root, n := id, 2
-			for seen[id] {
-				id = root + "-" + strconv.Itoa(n)
-				n++
+			t.ID = uniq(id)
+		}
+		for _, t := range dom.Todos {
+			assign(t)
+		}
+		for _, b := range dom.Buckets {
+			for _, t := range b.Todos {
+				assign(t)
 			}
-			seen[id] = true
-			t.ID = id
+		}
+		for _, is := range dom.Issues {
+			if is.ID == "" {
+				ts := slug(is.Text)
+				if ts == "" {
+					ts = "issue"
+				}
+				is.ID = uniq(base + "/" + ts)
+			} else {
+				seen[is.ID] = true
+			}
 		}
 	}
 }

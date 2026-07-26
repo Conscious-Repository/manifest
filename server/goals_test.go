@@ -12,6 +12,7 @@ import (
 	"manifest/approvals"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/todos"
 	"manifest/vault"
 )
 
@@ -69,15 +70,16 @@ func TestGoalsRollupMovedAndClose(t *testing.T) {
 		t.Fatalf("initial rollup wrong: active=%d won=%d", a.RollupActive, a.RollupWon)
 	}
 
-	// Ticking a task stamps the Rock's last movement.
+	// task-substrate split: depth-2 lines are frozen — checking a STAGE stamps
+	// the Rock's last movement (task ids no longer resolve in goals).
 	rec := httptest.NewRecorder()
 	s.handleGoalCheck(rec, httptest.NewRequest(http.MethodPost, "/api/goals/check",
-		strings.NewReader(`{"id":"aion/series-a-15m/term-sheet/send-deck","checked":true}`)))
+		strings.NewReader(`{"id":"aion/series-a-15m/term-sheet","checked":true}`)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("check: %d %s", rec.Code, rec.Body.String())
 	}
 	if r := findRock(getView(t, s), "Aion", "aion/series-a-15m"); r == nil || r.Moved == "" {
-		t.Fatalf("moved not stamped after a task check: %+v", r)
+		t.Fatalf("moved not stamped after a stage check: %+v", r)
 	}
 
 	// Closing the Rock Won archives it → roll-up flips to won.
@@ -117,18 +119,23 @@ func TestSyncGoalTasksWriteBackAndMiss(t *testing.T) {
 	s.UseApprovals(approvals.NewStore(t.TempDir()))
 
 	s.syncGoalTasks([]daily.Task{
-		{Text: "Task", Done: true, GoalID: "aion/rock/stage/task"},
+		{Text: "Stage", Done: true, GoalID: "aion/rock/stage"},
+		{Text: "Task", Done: true, GoalID: "aion/rock/stage/task"}, // frozen post-split → miss
 		{Text: "Ghost task", Done: true, GoalID: "aion/removed"},
 	})
 
-	// The linked task is checked in goals.md.
-	if r := findRock(getView(t, s), "Aion", "aion/rock"); r == nil || !r.Children[0].Children[0].Checked {
-		t.Fatalf("linked task not checked via write-back: %+v", r)
+	// The stage-linked tick is checked in goals.md; the legacy TASK tick is a
+	// no-op (task depth is frozen history now) and lands an inbox note.
+	if r := findRock(getView(t, s), "Aion", "aion/rock"); r == nil || !r.Children[0].Checked {
+		t.Fatalf("linked stage not checked via write-back: %+v", r)
 	}
-	// The stale tick landed an approvals note naming the goal.
 	pend := s.approvals.List("pending")
-	if len(pend) != 1 || !strings.Contains(pend[0].Body, "aion/removed") {
-		t.Fatalf("miss did not produce an inbox note: %+v", pend)
+	if len(pend) != 2 {
+		t.Fatalf("expected 2 miss notes (legacy task + removed), got %+v", pend)
+	}
+	joined := pend[0].Body + pend[1].Body
+	if !strings.Contains(joined, "aion/removed") || !strings.Contains(joined, "aion/rock/stage/task") {
+		t.Fatalf("miss notes wrong: %s", joined)
 	}
 }
 
@@ -163,6 +170,7 @@ func TestDayCapture(t *testing.T) {
 	}
 	svc := daily.NewService(daily.Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18}, idx)
 	s := New(svc, goals.NewStore(idx, dir, "goals.md"), nil)
+	s.UseTodos(todos.NewStore(dir, "to do.md"))
 
 	post := func() daily.Day {
 		rec := httptest.NewRecorder()
@@ -179,32 +187,41 @@ func TestDayCapture(t *testing.T) {
 		return d
 	}
 
+	// task-substrate: the typed task lands in to do.md as a ROCK-TETHERED todo
+	// (goals.md holds no tasks), seated on the day with [todo:: id].
 	day := post()
 	linked := 0
 	for _, tk := range day.Tasks {
-		if tk.GoalID == "aion/rock/stage/lee-sync" && tk.Text == "Lee sync" {
+		if tk.TodoID == "aion/lee-sync" && tk.Text == "Lee sync" {
 			linked++
 		}
 	}
 	if linked != 1 {
 		t.Fatalf("day tasks wrong: %+v", day.Tasks)
 	}
-	b, _ := os.ReadFile(filepath.Join(dir, "goals.md"))
-	if !strings.Contains(string(b), "- [ ] Lee sync [goal:: aion/rock/stage/lee-sync]") {
-		t.Fatalf("goals.md missing captured task:\n%s", b)
+	b, _ := os.ReadFile(filepath.Join(dir, "to do.md"))
+	if !strings.Contains(string(b), "Lee sync [todo:: aion/lee-sync] [rock:: aion/rock]") {
+		t.Fatalf("to do.md missing captured todo:\n%s", b)
+	}
+	gm, _ := os.ReadFile(filepath.Join(dir, "goals.md"))
+	if strings.Contains(string(gm), "Lee sync") {
+		t.Fatalf("goals.md must not receive tasks:\n%s", gm)
+	}
+	if !strings.Contains(string(gm), "[moved:: ") {
+		t.Fatalf("capture should stamp the Rock's moved::\n%s", gm)
 	}
 
-	// Idempotent: same POST → still one day task, one goals line.
+	// Idempotent: same POST → still one day task, one todo line.
 	day = post()
 	linked = 0
 	for _, tk := range day.Tasks {
-		if tk.GoalID == "aion/rock/stage/lee-sync" {
+		if tk.TodoID == "aion/lee-sync" {
 			linked++
 		}
 	}
-	b, _ = os.ReadFile(filepath.Join(dir, "goals.md"))
+	b, _ = os.ReadFile(filepath.Join(dir, "to do.md"))
 	if linked != 1 || strings.Count(string(b), "Lee sync") != 1 {
-		t.Fatalf("not idempotent: %d day tasks, %d goals lines", linked, strings.Count(string(b), "Lee sync"))
+		t.Fatalf("not idempotent: %d day tasks, %d todo lines", linked, strings.Count(string(b), "Lee sync"))
 	}
 
 	// Bad stage ids are refused.

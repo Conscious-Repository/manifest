@@ -394,22 +394,66 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	date := r.URL.Query().Get("date")
 	var b struct {
-		StageID string `json:"stageId"`
+		RockID  string `json:"rockId"`
+		StageID string `json:"stageId"` // legacy client shape — rock derived from the stage id
 		Text    string `json:"text"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		httpError(w, err)
 		return
 	}
-	text, gid, err := s.goals.CaptureTask(b.StageID, b.Text, time.Now())
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			http.Error(w, err.Error(), http.StatusNotFound)
-		} else {
-			httpError(w, err)
+	rockID := strings.TrimSpace(b.RockID)
+	if rockID == "" && b.StageID != "" {
+		if i := strings.LastIndex(b.StageID, "/"); i > 0 {
+			rockID = b.StageID[:i]
 		}
+	}
+	text := strings.Join(strings.Fields(b.Text), " ")
+	if rockID == "" || text == "" || s.todosStore == nil {
+		httpError(w, errBadRequest("rockId and text are required"))
 		return
 	}
+	// task-substrate: a day-typed task under a focus slot becomes a
+	// rock-tethered todo in the Rock's domain (goals.md holds no tasks).
+	gdoc := s.goals.Load()
+	var areaName string
+	for _, a := range gdoc.Areas {
+		for _, rock := range a.Rocks {
+			if rock.ID == rockID {
+				areaName = a.Name
+			}
+		}
+	}
+	if areaName == "" {
+		http.Error(w, "rock not found: "+rockID, http.StatusNotFound)
+		return
+	}
+	tdoc, err := s.todosStore.Load()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	dom := tdoc.EnsureDomain(areaName)
+	var todo *todos.Todo
+	dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) { // idempotent: reuse an open same-text capture
+		if todo == nil && !t.Checked && strings.EqualFold(t.Text, text) && t.Rock == rockID {
+			todo = t
+		}
+	})
+	if todo == nil {
+		todo = &todos.Todo{Text: text, Rock: rockID, Added: time.Now().Format("2006-01-02")}
+		dom.Todos = append(dom.Todos, todo)
+	}
+	if err := s.todosStore.Save(tdoc); err != nil { // assigns the id
+		httpError(w, err)
+		return
+	}
+	tdoc.Promote(todo.ID)
+	if err := s.todosStore.Save(tdoc); err != nil {
+		httpError(w, err)
+		return
+	}
+	s.stampRockMoved(rockID) // capture is movement
 	day, err := s.svc.Load(date)
 	if err != nil {
 		httpError(w, err)
@@ -417,13 +461,13 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	seated := false
 	for _, t := range day.Tasks {
-		if t.GoalID == gid {
+		if t.TodoID == todo.ID {
 			seated = true
 			break
 		}
 	}
 	if !seated {
-		day, err = s.svc.AddTask(date, daily.Task{Text: text, GoalID: gid})
+		day, err = s.svc.AddTask(date, daily.Task{Text: text, TodoID: todo.ID})
 		if err != nil {
 			httpError(w, err)
 			return
@@ -431,6 +475,21 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	s.fillPool(&day)
 	writeJSON(w, day)
+}
+
+// stampRockMoved stamps a Rock's last-movement date (tethered-todo activity
+// counts as movement — the rock-stalled signal reads this).
+func (s *Server) stampRockMoved(rockID string) {
+	if s.goals == nil || rockID == "" {
+		return
+	}
+	doc := s.goals.Load()
+	if _, g := doc.FindGoal(rockID); g != nil {
+		if rock := doc.RockOf(rockID); rock != nil && rock.ID == rockID {
+			rock.Moved = time.Now().Format("2006-01-02")
+			_ = s.goals.Save(doc)
+		}
+	}
 }
 
 // handleDayFocus sets or clears the day's Focus pick at a slot. Setting persists

@@ -30,6 +30,10 @@ type Goal struct {
 
 	Fields   []Field
 	Children []*Goal
+	// Frozen: verbatim task-history lines under a STAGE (task-substrate split —
+	// goals.md holds no live tasks; pre-split checked lines are preserved
+	// byte-identical, render muted, and archive with their Rock on close).
+	Frozen []string
 }
 
 // ResolvedOwner returns the effective owner ("me" when unset).
@@ -412,6 +416,7 @@ type GoalView struct {
 	RollupWon    int        `json:"rollupWon,omitempty"`
 	RollupLearn  int        `json:"rollupLearn,omitempty"`
 	Children     []GoalView `json:"children,omitempty"`
+	Frozen       []string   `json:"frozen,omitempty"` // muted task history (verbatim lines)
 }
 
 func (d *Doc) View() DocView {
@@ -434,10 +439,10 @@ func goalViews(gs []*Goal) []GoalView {
 	for _, g := range gs {
 		out = append(out, GoalView{
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
-			Owner: g.ResolvedOwner(),
+			Owner:   g.ResolvedOwner(),
 			Quarter: g.Quarter, Serves: g.Serves, Status: g.Status, Moved: g.Moved,
 			Until: g.Until, Verify: g.Verify, Kpi: g.Kpi,
-			Children: goalViews(g.Children),
+			Children: goalViews(g.Children), Frozen: g.Frozen,
 		})
 	}
 	return out
