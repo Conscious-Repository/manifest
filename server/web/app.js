@@ -52,6 +52,7 @@ const els = {
   propertyPage: document.getElementById("propertyPage"),
   propToggle: document.getElementById("propToggle"),
   propertyStatements: document.getElementById("propertyStatements"),
+  propertyContractors: document.getElementById("propertyContractors"),
   propertyWork: document.getElementById("propertyWork"),
   propertySettings: document.getElementById("propertySettings"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
@@ -4358,11 +4359,14 @@ function showProperties(h) {
   const tail = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
   els.propertyPage.hidden = true; els.propertyMapWrap.hidden = true;
   els.propertyBoard.hidden = true; els.propertyStatements.hidden = true;
+  els.propertyContractors.hidden = true;
   els.propertyWork.hidden = true; els.propertySettings.hidden = true;
   if (tail.startsWith("deal/")) { propMode = "page"; renderDealPage(tail.slice(5)); }
   else if (tail === "map") { propMode = "map"; syncPropChips(); loadProperties(); }
   else if (tail === "work") { propMode = "work"; syncPropChips(); renderWorkView(); }
-  else if (tail === "statements") { propMode = "statements"; syncPropChips(); renderStatements(); }
+  else if (tail === "statements") { location.hash = "#/properties/accounting"; return; } // legacy
+  else if (tail === "accounting") { propMode = "accounting"; syncPropChips(); renderAccounting(); }
+  else if (tail === "contractors") { propMode = "contractors"; syncPropChips(); renderContractors(); }
   else if (tail === "settings") { propMode = "settings"; syncPropChips(); renderREsettings(); }
   else if (tail) { propMode = "page"; renderPropertyPage(tail); }
   else { propMode = "board"; syncPropChips(); loadProperties(); }
@@ -5371,7 +5375,7 @@ function contractorAutocomplete(placeholder, onSet) {
 let stmtRows = [];
 let stmtFilter = "pending"; // pending shows pending+assigned+split
 
-async function renderStatements() {
+async function renderAccounting() {
   const host = els.propertyStatements; host.hidden = false; host.innerHTML = "loading…";
   let d;
   try { d = await (await fetch("/api/realestate/statements")).json(); }
@@ -5441,7 +5445,7 @@ async function renderStatements() {
       for (const r of rows) {
         await patchStmt(r, { category: r.category || match.lr.category, assignments: [{ slug: match.p.slug, amount: r.amount, workId: match.lr.workId }] }, true);
       }
-      renderStatements();
+      renderAccounting();
     };
     hint.append(go);
     host.append(hint);
@@ -5451,7 +5455,7 @@ async function renderStatements() {
   const chips = el("div", "stmt-chips");
   [["pending", "PENDING"], ["applied", "APPLIED"], ["skipped", "SKIPPED"]].forEach(([val, label]) => {
     const c = el("button", "filter-chip" + (stmtFilter === val ? " on" : ""), label);
-    c.onclick = () => { stmtFilter = val; renderStatements(); };
+    c.onclick = () => { stmtFilter = val; renderAccounting(); };
     chips.append(c);
   });
   host.append(chips);
@@ -5489,7 +5493,7 @@ async function renderStatements() {
       try {
         const res = await postJSONOk("/api/realestate/statements/apply", { ids: applicable.map((r) => r.id) });
         showToast("Applied " + res.applied + " rows (" + res.lines + " lines across " + res.properties + " properties)");
-        renderStatements();
+        renderAccounting();
       } catch (e) { showToast("Apply failed: " + (e.message || "").slice(0, 80)); apply.disabled = false; }
     };
     bar.append(apply);
@@ -5547,7 +5551,7 @@ function renderStmtMapping(host, pre) {
         { label: pre.label, entity: entAC.value(), signature: pre.signature, mapping, rows });
       showToast("Added " + res.added + " rows (" + res.duplicates + " duplicates skipped)");
       host.innerHTML = "";
-      renderStatements();
+      renderAccounting();
     } catch (e) { showToast("Ingest failed"); ingest.disabled = false; }
   };
   const foot = el("div", "import-foot");
@@ -5641,7 +5645,7 @@ function stmtRowEl(r) {
         for (const o of others) {
           await patchStmt(o, { category: r.category, assignments: r.assignments }, true);
         }
-        renderStatements();
+        renderAccounting();
       };
       hints.append(echo);
     }
@@ -5683,7 +5687,7 @@ async function toggleAdminForm(wrap, r) {
       assignments: [{ slug: "admin:" + slugified, amount: r.amount }],
     }, true);
     if (label.value.trim()) await patchStmt(r, { category: catSel.value + " · " + label.value.trim() }, true);
-    renderStatements();
+    renderAccounting();
   };
   form.append(entAC.el, catSel, label, set);
   wrap.append(form);
@@ -5692,7 +5696,7 @@ async function toggleAdminForm(wrap, r) {
 async function patchStmt(r, patch, silent) {
   try {
     await postJSONOk("/api/realestate/statements/row", { id: r.id, ...patch });
-    if (!silent) renderStatements();
+    if (!silent) renderAccounting();
   } catch (e) { showToast("Couldn't update row"); }
 }
 
@@ -6043,6 +6047,93 @@ function openTodoOptions(p, includeId) {
     if (includeId && st.id === includeId) opts.push([st.id, st.text + " (stage)"]);
   });
   return opts;
+}
+
+// ---- CONTRACTORS sub-tab: the contractor DB, searchable by trade ----
+
+const TRADES = ["masonry", "roofing", "plumbing", "electrical", "hvac", "framing",
+  "drywall", "flooring", "painting", "concrete", "windows", "gc", "landscaping", "other"];
+let contractorSearch = "";
+let contractorTrade = "";
+
+async function renderContractors() {
+  const host = els.propertyContractors; host.hidden = false; host.innerHTML = "loading…";
+  await ensureEntities(true);
+  if (!propertyCache.length) {
+    try { const d = await (await fetch("/api/properties")).json(); propertyCache = d.properties || []; } catch (e) {}
+  }
+  host.innerHTML = "";
+  const list = (entitiesCache || {}).contractors || [];
+  els.propertiesMeta.textContent = list.length + " contractors";
+
+  const bar = el("div", "board-bar");
+  const search = inputEl("search name…");
+  search.classList.add("board-search");
+  search.value = contractorSearch;
+  search.addEventListener("input", () => { contractorSearch = search.value; body.replaceWith(body = table()); });
+  bar.append(search);
+  const tradesPresent = [...new Set(list.map((c) => c.trade).filter(Boolean))].sort();
+  const sel = document.createElement("select");
+  sel.className = "pp-in board-select";
+  [["", "all trades"], ...tradesPresent.map((t) => [t, t])].forEach(([v, l]) => {
+    const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o);
+  });
+  sel.value = contractorTrade;
+  sel.onchange = () => { contractorTrade = sel.value; body.replaceWith(body = table()); };
+  bar.append(sel);
+  host.append(bar);
+
+  // derived money per contractor from the ledgers (same source as autocomplete history)
+  const stats = (name) => {
+    const s = { props: new Set(), paid: 0, openBids: 0 };
+    (propertyCache || []).forEach((p) => (p.ledger || []).forEach((r) => {
+      const who = (r.contractor || r.vendor || "").trim().toLowerCase();
+      if (who !== name.toLowerCase()) return;
+      s.props.add(p.short || p.address || p.slug);
+      if (r.type === "expense") s.paid += r.amount;
+      if (r.type === "bid" && (r.status === "requested" || r.status === "received")) s.openBids++;
+    }));
+    return s;
+  };
+
+  const table = () => {
+    const box = el("div", "contractor-table");
+    const rows = list.filter((c) =>
+      (!contractorSearch || c.name.toLowerCase().includes(contractorSearch.toLowerCase())) &&
+      (!contractorTrade || c.trade === contractorTrade));
+    if (!rows.length) { box.append(emptyRow("No contractors match.")); return box; }
+    box.append(ppCols("cols-contractors", ["NAME", "TRADE", "PROPERTIES", "TOTAL PAID", "OPEN BIDS"]));
+    rows.forEach((c) => {
+      const s = stats(c.name);
+      const row = el("div", "property-row cols-contractors");
+      const nm = el("span", "property-addr", c.name);
+      row.onclick = () => { _noteReturn = "#/properties/contractors"; openNoteByPath(c.path); };
+      // inline trade picker — the backfill surface
+      const tr = document.createElement("select");
+      tr.className = "pp-in ct-trade";
+      [["", "—"], ...TRADES.map((t) => [t, t])].forEach(([v, l]) => {
+        const o = document.createElement("option"); o.value = v; o.textContent = l; tr.append(o);
+      });
+      if (c.trade && !TRADES.includes(c.trade)) { const o = document.createElement("option"); o.value = c.trade; o.textContent = c.trade; tr.append(o); }
+      tr.value = c.trade || "";
+      tr.onclick = (e) => e.stopPropagation();
+      tr.onchange = async () => {
+        try {
+          await postJSONOk("/api/realestate/contractors/" + encodeURIComponent(c.slug), { trade: tr.value });
+          c.trade = tr.value;
+          showToast("Trade set: " + (tr.value || "—"));
+        } catch (e) { showToast("Couldn't set trade"); }
+      };
+      row.append(nm, tr,
+        el("span", "", [...s.props].slice(0, 3).join(" · ") + (s.props.size > 3 ? " +" + (s.props.size - 3) : "")),
+        el("span", "pp-amt", s.paid ? fmtMoney(s.paid) : ""),
+        el("span", "pp-amt", s.openBids ? String(s.openBids) : ""));
+      box.append(row);
+    });
+    return box;
+  };
+  let body = table();
+  host.append(body);
 }
 
 // ---- SETTINGS sub-tab (pass-5 §6) ----
@@ -6402,7 +6493,7 @@ function ganttView(props) {
 
 async function renderPropertyPage(slug) {
   els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
-  els.propertyStatements.hidden = true; els.propertyWork.hidden = true;
+  els.propertyStatements.hidden = true; els.propertyContractors.hidden = true; els.propertyWork.hidden = true;
   const host = els.propertyPage; host.hidden = false; host.textContent = "loading…";
   try {
     const [p, srcRes, geoRes] = await Promise.all([

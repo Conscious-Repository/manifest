@@ -18,6 +18,7 @@ type Entity struct {
 	Path            string   `json:"path"`
 	Slug            string   `json:"slug"`
 	Name            string   `json:"name"` // frontmatter name, else the slug
+	Trade           string   `json:"trade,omitempty"` // contractors: masonry · roofing · plumbing …
 	Owners          []Owner  `json:"owners,omitempty"`
 	AdminCategories []string `json:"adminCategories,omitempty"`
 }
@@ -121,6 +122,7 @@ func (s *Service) Contractors() []Entity {
 		if n := unquote(fm["name"]); n != "" {
 			e.Name = n
 		}
+		e.Trade = strings.ToLower(strings.TrimSpace(unquote(fm["trade"])))
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })

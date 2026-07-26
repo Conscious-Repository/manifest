@@ -1436,6 +1436,41 @@ func (s *Server) handleEntityCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"slug": slug, "name": strings.TrimSpace(b.Name), "path": rel})
 }
 
+// handleContractorTrade sets a contractor record's trade frontmatter field
+// (the CONTRACTORS table's inline picker).
+func (s *Server) handleContractorTrade(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct{ Trade string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	slug := r.PathValue("slug")
+	var target *realestate.Entity
+	for _, c := range s.realestate.Contractors() {
+		if strings.EqualFold(c.Slug, slug) {
+			t := c
+			target = &t
+			break
+		}
+	}
+	if target == nil {
+		http.Error(w, "contractor not found", http.StatusNotFound)
+		return
+	}
+	if err := s.vault.SetFrontmatterField(target.Path, "trade", strings.ToLower(strings.TrimSpace(b.Trade))); err != nil {
+		httpError(w, err)
+		return
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{target.Path})
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 // handleEntitySave updates an entity's owners / admin-categories frontmatter
 // (SETTINGS). Ownership cycles are rejected with a clear error.
 func (s *Server) handleEntitySave(w http.ResponseWriter, r *http.Request) {

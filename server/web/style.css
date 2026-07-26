@@ -1430,6 +1430,9 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 /* ---- admin-portal pass 3: primitives ---- */
 .pp-cols { display: grid; gap: 10px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); padding: 2px 8px; }
 .cols-board { grid-template-columns: 2fr 1fr 1fr 1fr 0.5fr 0.8fr 1.1fr; }
+.cols-contractors { grid-template-columns: 1.6fr 1fr 2fr 0.9fr 0.7fr; }
+.property-contractors { display: flex; flex-direction: column; gap: 6px; }
+.ct-trade { max-width: 130px; font-size: 12px; }
 .cols-ledger { grid-template-columns: 0.75fr 0.65fr 0.95fr 1.1fr 0.85fr 0.85fr 1.3fr 0.9fr auto; }
 .cols-stmt { grid-template-columns: 0.7fr 2fr 0.8fr 1fr 1.6fr 0.7fr; }
 .cols-2 { grid-template-columns: 1fr 1fr auto; }
