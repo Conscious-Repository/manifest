@@ -34,8 +34,12 @@ type WorkTodo struct {
 	Fields    []WorkField `json:"fields,omitempty"`
 	Extra     []string    `json:"-"`         // verbatim non-todo lines beneath (preserved)
 	Committed float64     `json:"committed"` // derived: tethered expenses + accepted bids
-	Paid      float64     `json:"paid"`      // derived: tethered expenses
-	Bids      []WorkBid   `json:"bids,omitempty"`
+	Paid      float64     `json:"paid"`      // derived: tethered expenses (cash)
+	// accrual recognition: a DONE todo's firm price counts as spent before the
+	// bank transaction lands; the gap is the ⚑ unreconciled amount.
+	Recognized   float64   `json:"recognized"`             // checked ? max(firm, paid) : paid
+	Unreconciled float64   `json:"unreconciled,omitempty"` // checked ? max(0, firm − paid) : 0
+	Bids         []WorkBid `json:"bids,omitempty"`
 }
 
 // WorkBid is a tethered ledger bid, surfaced for the todo's chips. Row carries
@@ -63,9 +67,11 @@ type WorkStage struct {
 	Done        string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at stage check
 	Fields      []WorkField `json:"fields,omitempty"`
 	Extra       []string    `json:"-"`
-	Todos       []WorkTodo  `json:"todos"`
-	Committed   float64     `json:"committed"`
-	Paid        float64     `json:"paid"`
+	Todos        []WorkTodo `json:"todos"`
+	Committed    float64    `json:"committed"`
+	Paid         float64    `json:"paid"`
+	Recognized   float64    `json:"recognized"`             // Σ todo recognized + stage-level recognition
+	Unreconciled float64    `json:"unreconciled,omitempty"` // Σ done-but-unlinked firm money
 }
 
 var (
@@ -380,6 +386,34 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		stages[sl.si].Committed += committed
 		if sl.ti >= 0 {
 			stages[sl.si].Todos[sl.ti].Committed = committed
+		}
+	}
+	// recognition (accrual): checking a node with a firm price recognizes it as
+	// SPENT before the bank transaction lands; the gap is ⚑ unreconciled until
+	// the workbench tethers real payments covering it.
+	for i := range stages {
+		st := &stages[i]
+		for j := range st.Todos {
+			td := &st.Todos[j]
+			firm := 0.0
+			if a, ok := perNode[td.ID]; ok {
+				firm = a.acceptedSum
+			}
+			td.Recognized = td.Paid
+			if td.Checked && firm > td.Paid {
+				td.Recognized = firm
+				td.Unreconciled = firm - td.Paid
+			}
+			st.Recognized += td.Recognized
+			st.Unreconciled += td.Unreconciled
+		}
+		if a, ok := perNode[st.ID]; ok { // rows tethered to the stage itself
+			rec := a.expenseSum
+			if st.Checked && a.acceptedSum > rec {
+				st.Unreconciled += a.acceptedSum - rec
+				rec = a.acceptedSum
+			}
+			st.Recognized += rec
 		}
 	}
 }

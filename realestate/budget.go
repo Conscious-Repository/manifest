@@ -47,13 +47,15 @@ type BudgetCatRow struct {
 
 // ProjectBudget is the derived budget picture for one property: the current
 // plan vs actual spend (plan-vs-spend only — no frozen baseline; the plan
-// drifting with edits is the point).
+// drifting with edits is the point). SPENT is accrual for the work list
+// (done + firm price = recognized) and cash for everything else.
 type ProjectBudget struct {
-	Categories []BudgetCatRow `json:"categories"`
-	PlanTotal  float64        `json:"planTotal"` // Σ category plans INCL contingency
-	Committed  float64        `json:"committed"`
-	Paid       float64        `json:"paid"`
-	Over       bool           `json:"over"` // any category over its plan
+	Categories   []BudgetCatRow `json:"categories"`
+	PlanTotal    float64        `json:"planTotal"` // Σ category plans INCL contingency
+	Committed    float64        `json:"committed"`
+	Paid         float64        `json:"paid"`                   // recognized spend (hard accrual + cash rest)
+	Unreconciled float64        `json:"unreconciled,omitempty"` // done-but-unlinked firm money (⚑)
+	Over         bool           `json:"over"` // any category over its plan
 }
 
 // sourceMoney reads the underwriting money keys (tolerant, like sourceUnits).
@@ -154,6 +156,17 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow)
 		if key != CatContingency {
 			row.Committed = committed[key]
 			row.Paid = paid[key]
+			if key == CatHard {
+				// accrual for the work list: recognized (done+firm counts) for
+				// tethered money, cash for untethered/orphan-tethered rows
+				var rec, tethCash float64
+				for _, st := range work {
+					rec += st.Recognized
+					tethCash += st.Paid
+					pb.Unreconciled += st.Unreconciled
+				}
+				row.Paid = rec + (paid[CatHard] - tethCash)
+			}
 			row.Over = row.Budget > 0 && (row.Committed > row.Budget || row.Paid > row.Budget)
 			pb.Committed += row.Committed
 			pb.Paid += row.Paid

@@ -5151,8 +5151,7 @@ async function renderDealPage(slug) {
   sum.append(rollupStat("ledgers", "", d.membersWithLedgers + "/" + (d.members || []).length));
   host.append(sum);
   const dtogo = el("div", "pp-togo");
-  dtogo.append(el("span", "", "committed " + fmtMoney(dm.committed)),
-    el("span", "", "contracted to go " + fmtMoney(Math.max(0, dm.committed - dm.paid))));
+  dtogo.append(el("span", "", "committed " + fmtMoney(dm.committed)));
   host.append(dtogo);
 
   // MEMBERS
@@ -5923,8 +5922,11 @@ function priceSlot(p, td) {
   else if (td.committed > 0) { cls += " firm"; label = fmtMoney(td.committed) + " committed"; }
   else if (td.est > 0) label = "est " + fmtMoney(td.est);
   else { cls += " empty"; label = "$ —"; }
+  if (td.checked && (td.unreconciled || 0) > 0) { cls += " unrec"; label = "⚑ " + label; }
   const slot = el("button", cls, label);
-  slot.title = "price — number alone = estimate · add a name = firm (committed)";
+  slot.title = td.checked && (td.unreconciled || 0) > 0
+    ? "done — " + fmtMoney(td.unreconciled) + " unreconciled: link the bank payment in the statement workbench"
+    : "price — number alone = estimate · add a name = firm (committed)";
   slot.onclick = (e) => {
     e.stopPropagation();
     const box = el("span", "price-edit");
@@ -6462,8 +6464,12 @@ function renderProp(p, src, geoFeatures) {
     sum.append(rollupStat("remaining", "", fmtMoney(pj.planTotal - pj.paid)));
     host.append(sum);
     const togo = el("div", "pp-togo");
-    togo.append(el("span", "", "committed " + fmtMoney(pj.committed)),
-      el("span", "", "contracted to go " + fmtMoney(Math.max(0, pj.committed - pj.paid))));
+    togo.append(el("span", "", "committed " + fmtMoney(pj.committed)));
+    if (pj.unreconciled > 0) {
+      const un = el("span", "pp-unrec", "⚑ unreconciled " + fmtMoney(pj.unreconciled));
+      un.title = "work marked done whose firm price has no linked bank transaction yet — link payments in the statement workbench";
+      togo.append(un);
+    }
     if (pj.over) togo.append(el("span", "pp-over-note", "over budget in a category ↓"));
     host.append(togo);
   }

@@ -1585,6 +1585,8 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .lg-work { max-width: 130px; }
 .lg-cat { max-width: 90px; }
 .uw-derived { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.est-slot.unrec { color: #b45309; } /* done, firm price, no linked payment yet */
+.pp-unrec { color: #b45309; }
 .lg-workcell { overflow: hidden; }
 .lg-chip { font-size: 10px; }
 .pp-ledger-row.entry.prefilled { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }

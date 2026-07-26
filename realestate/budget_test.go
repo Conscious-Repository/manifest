@@ -45,6 +45,50 @@ func TestComputeProjectBudget(t *testing.T) {
 	}
 }
 
+func TestRecognizedSpend(t *testing.T) {
+	// three tasks: done+firm+no cash (recognized, ⚑), done+firm+partial draw
+	// (recognized at firm, ⚑ gap), open+cash (cash only, no flag)
+	stages := []WorkStage{{ID: "demo", Text: "Demo", Todos: []WorkTodo{
+		{ID: "demo/a", Text: "a", Checked: true},
+		{ID: "demo/b", Text: "b", Checked: true},
+		{ID: "demo/c", Text: "c"},
+	}}}
+	ledger := []LedgerRow{
+		{Type: "bid", Status: "accepted", Amount: 5000, WorkID: "demo/a"},
+		{Type: "bid", Status: "accepted", Amount: 8000, WorkID: "demo/b"},
+		{Type: "expense", Amount: 3000, WorkID: "demo/b"},
+		{Type: "expense", Amount: 1000, WorkID: "demo/c"},
+	}
+	JoinWorkLedger(stages, ledger)
+	td := stages[0].Todos
+	if td[0].Recognized != 5000 || td[0].Unreconciled != 5000 {
+		t.Fatalf("done+firm no cash: %+v", td[0])
+	}
+	if td[1].Recognized != 8000 || td[1].Unreconciled != 5000 {
+		t.Fatalf("done+firm partial draw: %+v", td[1])
+	}
+	if td[2].Recognized != 1000 || td[2].Unreconciled != 0 {
+		t.Fatalf("open+cash: %+v", td[2])
+	}
+	if stages[0].Recognized != 14000 || stages[0].Unreconciled != 10000 {
+		t.Fatalf("stage rollup: rec %v unrec %v", stages[0].Recognized, stages[0].Unreconciled)
+	}
+
+	// property level: hard spent = recognized + untethered cash; ⚑ total rides up
+	pb := ComputeProjectBudget(SourceMoney{}, stages, append(ledger,
+		LedgerRow{Type: "expense", Amount: 700})) // untethered hard cash
+	byKey := map[string]BudgetCatRow{}
+	for _, c := range pb.Categories {
+		byKey[c.Key] = c
+	}
+	if h := byKey[CatHard]; h.Paid != 14700 {
+		t.Fatalf("hard spent = %v, want 14700 (14000 recognized + 700 untethered cash)", h.Paid)
+	}
+	if pb.Unreconciled != 10000 {
+		t.Fatalf("unreconciled = %v, want 10000", pb.Unreconciled)
+	}
+}
+
 func TestSourceMoneyFallbackHardCosts(t *testing.T) {
 	pb := ComputeProjectBudget(SourceMoney{HardCosts: 275000, ContingencyPct: 0.1}, nil, nil)
 	for _, c := range pb.Categories {
