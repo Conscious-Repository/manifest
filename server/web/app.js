@@ -5418,7 +5418,7 @@ async function renderAccounting() {
         } catch (e) { showToast(("Receipt failed: " + (e.message || "")).slice(0, 80)); }
       };
       rec.onclick = (e) => { e.stopPropagation(); filePick.click(); };
-      const link = el("button", "pill light", "link payment ↓");
+      const link = el("button", "pill light", "link ↓");
       link.title = "assign the matching bank row in the queue below (tether it to this task)";
       link.onclick = (e) => {
         e.stopPropagation();

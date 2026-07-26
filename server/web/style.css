@@ -1433,9 +1433,19 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .cols-contractors { grid-template-columns: 1.6fr 1fr 2fr 0.9fr 0.7fr; }
 .property-contractors { display: flex; flex-direction: column; gap: 6px; }
 .ct-trade { max-width: 130px; font-size: 12px; }
-.cols-recon { grid-template-columns: 1.4fr 2fr 0.9fr 0.9fr 1.4fr; }
+/* .property-row's generic 7-col grid is declared later — these two-class
+   rules out-rank it so recon/contractor rows keep their own column sets */
+.cols-recon, .property-row.cols-recon { grid-template-columns: 1.1fr 1.9fr 0.8fr 0.9fr 1.5fr; }
+.property-row.cols-contractors { grid-template-columns: 1.6fr 1fr 2fr 0.9fr 0.7fr; }
+/* numeric headers sit over their right-aligned values */
+.pp-cols.cols-recon > span:nth-child(3),
+.pp-cols.cols-recon > span:nth-child(4),
+.pp-cols.cols-contractors > span:nth-child(4),
+.pp-cols.cols-contractors > span:nth-child(5) { text-align: right; }
 .recon-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
-.recon-acts { display: inline-flex; gap: 8px; justify-content: flex-end; }
+.recon-list .property-row { align-items: center; }
+.recon-acts { display: inline-flex; gap: 8px; justify-content: flex-end; white-space: nowrap; }
+.recon-acts .pill { padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
 .unrec-amt { color: #b45309; }
 .doc-chip { text-decoration: none; }
 .doc-chip:hover { text-decoration: underline; }
