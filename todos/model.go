@@ -67,8 +67,8 @@ func (t *Todo) AgeDays(now time.Time) int {
 
 // Domain is one ## section. Inbox is the special undomained capture heading.
 type Domain struct {
-	Name  string  `json:"name"`
-	Todos []*Todo `json:"todos"`
+	Name  string   `json:"name"`
+	Todos []*Todo  `json:"todos"`
 	extra []string // verbatim non-todo lines under the heading (preserved, unrendered)
 }
 
