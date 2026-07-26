@@ -7483,7 +7483,7 @@ async function renderTodosSplit() {
 
   const refreshBar = () => {
     const demotes = Object.values(choice).filter((c) => c.action === "demote").length;
-    const moves = rocks.reduce((a, r) => a + r.openTasks.length, 0);
+    const moves = rocks.reduce((a, r) => a + (r.openTasks || []).length, 0);
     barLabel.textContent = moves + " OPEN TASKS MOVE · " + demotes + " ROCK" + (demotes === 1 ? "" : "S") + " DEMOTE · checked history freezes in place";
   };
 
@@ -7502,12 +7502,12 @@ async function renderTodosSplit() {
     };
     head.append(toggle);
     sec.append(head);
-    r.openTasks.forEach((t) => {
+    (r.openTasks || []).forEach((t) => {
       const row = el("div", "tdo-row");
       row.append(el("span", "tdo-triage-path", "\u2192 " + r.area), el("span", "tdo-text", t));
       sec.append(row);
     });
-    if (!r.openTasks.length) sec.append(el("div", "pp-empty", "no open tasks \u2014 only frozen history"));
+    if (!(r.openTasks || []).length) sec.append(el("div", "pp-empty", "no open tasks \u2014 only frozen history"));
     host.append(sec);
   });
 

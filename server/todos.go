@@ -317,6 +317,28 @@ func (s *Server) syncTodoTasks(tasks []daily.Task) {
 		return
 	}
 	missed, err := s.todosStore.SyncChecks(updates, time.Now())
+	// rock-tethered completions from the daily note stamp the then-current
+	// stage + the Rock's moved:: (same contract as a board check)
+	if err == nil {
+		if doc, e2 := s.todosStore.Load(); e2 == nil {
+			changed := false
+			for id, done := range updates {
+				if !done {
+					continue
+				}
+				if _, t := doc.Find(id); t != nil && t.Rock != "" {
+					if t.Stage == "" {
+						t.Stage = s.currentStageName(t.Rock)
+						changed = true
+					}
+					s.stampRockMoved(t.Rock)
+				}
+			}
+			if changed {
+				_ = s.todosStore.Save(doc)
+			}
+		}
+	}
 	if err != nil || s.approvals == nil || len(missed) == 0 {
 		return
 	}
