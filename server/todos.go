@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,7 +43,7 @@ func (s *Server) todosView() map[string]any {
 		}
 	}
 	v := doc.View(time.Now())
-	return map[string]any{"domains": v.Domains, "areas": areas, "triaged": doc.Triaged()}
+	return map[string]any{"domains": v.Domains, "areas": areas, "split": doc.SplitDone()}
 }
 
 func (s *Server) todosMutate(w http.ResponseWriter, fn func(*todos.Doc) (bool, error)) {
@@ -208,46 +210,78 @@ func (s *Server) syncTodoTasks(tasks []daily.Task) {
 	}
 }
 
-// ---- the ONE-TIME goals triage sweep (todos-surface §5b): every open stage
-// task in goals.md gets keep / move-to-todos / drop; one commit writes both
-// files; dropped lines are archived; goals.md emerges lean. ----
+// ---- the ONE TASK SUBSTRATE split (task-substrate spec §7): per active
+// Rock, its open frozen task lines move to to do.md with a [rock::] tether
+// (keep) or into a new bucket with the Rock closed as a Learn (demote).
+// Previewed, user-committed, both files backed up first. ----
 
-type triageRow struct {
-	ID    string `json:"id"`
-	Area  string `json:"area"`
-	Rock  string `json:"rock"`
-	Stage string `json:"stage"`
-	Task  string `json:"task"`
+type splitRock struct {
+	ID           string   `json:"id"`
+	Area         string   `json:"area"`
+	Rock         string   `json:"rock"`
+	OpenTasks    []string `json:"openTasks"` // cleaned text of open frozen lines
+	CheckedCount int      `json:"checkedCount"`
 }
 
-func (s *Server) handleTodosTriage(w http.ResponseWriter, r *http.Request) {
+// splitFrozen partitions a rock's frozen lines: open task texts + whether each
+// raw line is open (for removal on apply).
+func splitFrozen(rock *goals.Goal) (open []string, checked int) {
+	for _, st := range rock.Children {
+		for _, ln := range st.Frozen {
+			if m := todoLineMatch(ln); m != nil {
+				if m[1] == " " {
+					open = append(open, cleanFrozenText(m[2]))
+				} else {
+					checked++
+				}
+			}
+		}
+	}
+	return open, checked
+}
+
+var frozenFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
+
+// cleanFrozenText strips the legacy [goal:: …] identity off a frozen task line
+// (the todo gets a fresh [rock::] tether instead); other fields ride along.
+func cleanFrozenText(rest string) string {
+	out := frozenFieldRe.ReplaceAllStringFunc(rest, func(m string) string {
+		sm := frozenFieldRe.FindStringSubmatch(m)
+		if strings.EqualFold(strings.TrimSpace(sm[1]), "goal") {
+			return ""
+		}
+		return m
+	})
+	return strings.Join(strings.Fields(out), " ")
+}
+
+func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 	if !s.todosOK(w) || s.goals == nil {
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
 		gdoc := s.goals.Load()
-		rows := []triageRow{}
+		rocks := []splitRock{}
 		for _, a := range gdoc.Areas {
 			for _, rock := range a.Rocks {
 				if rock.Checked {
 					continue
 				}
-				for _, st := range rock.Children {
-					for _, task := range st.Children {
-						if task.Checked {
-							continue
-						}
-						rows = append(rows, triageRow{ID: task.ID, Area: a.Name, Rock: rock.Text, Stage: st.Text, Task: task.Text})
-					}
+				open, checked := splitFrozen(rock)
+				if len(open) == 0 && checked == 0 {
+					continue
 				}
+				rocks = append(rocks, splitRock{ID: rock.ID, Area: a.Name, Rock: rock.Text,
+					OpenTasks: open, CheckedCount: checked})
 			}
 		}
-		writeJSON(w, map[string]any{"rows": rows})
+		tdoc, _ := s.todosStore.Load()
+		done := tdoc != nil && tdoc.SplitDone()
+		writeJSON(w, map[string]any{"rocks": rocks, "done": done})
 	case http.MethodPost:
 		var b struct {
-			Moves []struct{ ID, Domain string } `json:"moves"`
-			Drops []string                      `json:"drops"`
+			Rocks []struct{ ID, Action, Bucket string } `json:"rocks"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
@@ -260,35 +294,58 @@ func (s *Server) handleTodosTriage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		today := time.Now().Format("2006-01-02")
-		var dropped []string
-		for _, m := range b.Moves {
-			text, area, ok := removeGoalTask(gdoc, m.ID)
-			if !ok {
-				httpError(w, errBadRequest("goal task not found: "+m.ID+" — nothing was written"))
+		type moveRec struct{ Line, To string }
+		var report []moveRec
+		var demotes []struct{ ID, Bucket string }
+		for _, choice := range b.Rocks {
+			area, rock := gdoc.FindGoal(choice.ID)
+			if rock == nil {
+				httpError(w, errBadRequest("rock not found: "+choice.ID+" — nothing was written"))
 				return
 			}
-			domain := strings.TrimSpace(m.Domain)
-			if domain == "" {
-				domain = area
+			var target func(text string) // where open tasks land
+			switch strings.ToLower(choice.Action) {
+			case "demote":
+				name := strings.TrimSpace(choice.Bucket)
+				if name == "" {
+					name = rock.Text
+				}
+				bucket := tdoc.EnsureDomain(area.Name).EnsureBucket(name)
+				target = func(text string) {
+					bucket.Todos = append(bucket.Todos, &todos.Todo{Text: text, Added: today})
+					report = append(report, moveRec{text, area.Name + " / " + name})
+				}
+				demotes = append(demotes, struct{ ID, Bucket string }{rock.ID, name})
+			default: // keep as Rock
+				dom := tdoc.EnsureDomain(area.Name)
+				rockID := rock.ID
+				target = func(text string) {
+					dom.Todos = append(dom.Todos, &todos.Todo{Text: text, Rock: rockID, Added: today})
+					report = append(report, moveRec{text, area.Name + " · [rock:: " + rockID + "]"})
+				}
 			}
-			dom := tdoc.EnsureDomain(domain)
-			dom.Todos = append(dom.Todos, &todos.Todo{Text: text, Added: today})
+			// move open frozen lines; checked ones stay frozen in place
+			for _, st := range rock.Children {
+				var keep []string
+				for _, ln := range st.Frozen {
+					if m := todoLineMatch(ln); m != nil && m[1] == " " {
+						target(cleanFrozenText(m[2]))
+						continue
+					}
+					keep = append(keep, ln)
+				}
+				st.Frozen = keep
+			}
 		}
-		for _, id := range b.Drops {
-			text, area, ok := removeGoalTask(gdoc, id)
-			if !ok {
-				httpError(w, errBadRequest("goal task not found: "+id+" — nothing was written"))
-				return
-			}
-			dropped = append(dropped, "- [ ] "+text+" [from:: goals/"+area+"] [dropped:: "+today+"]")
+		tdoc.MarkSplitDone(today)
+		// backups, then todos, then goals; demote closes run last (they reload)
+		if err := backupOnce(s.todosStore.Path(), s.todosStore.Path()+".pre-split"); err != nil {
+			httpError(w, err)
+			return
 		}
-		tdoc.MarkTriaged(today)
-		// both docs built in memory before ANY write; todos first, then goals
-		if len(dropped) > 0 {
-			if err := s.todosStore.ArchiveLines("goals triage "+today, dropped); err != nil {
-				httpError(w, err)
-				return
-			}
+		if err := backupOnce(s.goals.Path(), s.goals.Path()+".pre-split"); err != nil {
+			httpError(w, err)
+			return
 		}
 		if err := s.todosStore.Save(tdoc); err != nil {
 			httpError(w, err)
@@ -298,28 +355,35 @@ func (s *Server) handleTodosTriage(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		writeJSON(w, s.todosView())
+		for _, d := range demotes {
+			if err := s.goals.CloseGoal(d.ID, "learn", "reclassified as bucket", "", time.Now()); err != nil {
+				httpError(w, err)
+				return
+			}
+		}
+		writeJSON(w, map[string]any{"moved": report, "demoted": len(demotes), "view": s.todosView()})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-// removeGoalTask deletes one open stage task from the goals doc, returning its
-// text and area.
-func removeGoalTask(gdoc *goals.Doc, id string) (string, string, bool) {
-	for _, a := range gdoc.Areas {
-		for _, rock := range a.Rocks {
-			for _, st := range rock.Children {
-				for i, task := range st.Children {
-					if task.ID == id {
-						st.Children = append(st.Children[:i], st.Children[i+1:]...)
-						return task.Text, a.Name, true
-					}
-				}
-			}
-		}
+var todoLineRe2 = regexp.MustCompile(`^[ \t]*[-*]\s*\[([ xX])\]\s?(.*)$`)
+
+func todoLineMatch(ln string) []string { return todoLineRe2.FindStringSubmatch(ln) }
+
+// backupOnce copies src to dst if dst doesn't exist (the .pre-migration pattern).
+func backupOnce(src, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return nil
 	}
-	return "", "", false
+	raw, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return os.WriteFile(dst, raw, 0o644)
 }
 
 // handleTodoDrop — the stale-nudge's third exit: out of the live file, into

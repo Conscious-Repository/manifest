@@ -1500,6 +1500,7 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .tdo-triage-path { font-family: var(--mono); font-size: 10.5px; color: var(--icon); min-width: 260px; }
 .tdo-verdict { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 2px 10px; font-family: var(--mono); font-size: 11px; cursor: pointer; color: var(--muted); }
 .tdo-verdict.move { color: #265ACC; border-color: #265ACC; }
+.split-head { display: flex; justify-content: space-between; align-items: baseline; }
 .tdo-verdict.drop { color: #b91c1c; border-color: #b91c1c; }
 .o-rock-lint { font-family: var(--mono); font-size: 10.5px; color: #b45309; margin-left: 8px; }
 .cols-ledger { grid-template-columns: 0.75fr 0.65fr 0.95fr 1.1fr 0.85fr 0.85fr 1.3fr 0.9fr auto; }

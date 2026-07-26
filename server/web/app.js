@@ -7200,11 +7200,11 @@ function renderTodos() {
   }));
   els.todosMeta.textContent = open + " open · " + waiting + " waiting · t to capture";
 
-  // one-time goals lean-down banner (until the sweep commits)
-  if (todosCache.triaged === false) {
+  // one-time task-substrate split banner (until the migration commits)
+  if (todosCache.split === false) {
     const banner = el("div", "tdo-triage-banner");
-    banner.append(el("span", "", "goals.md carries task fluff — sweep every open stage task once: keep · move here · drop."));
-    banner.append(pillLight("triage goals →", renderTodosTriage));
+    banner.append(el("span", "", "one task substrate — move every open goals.md task here (tethered to its Rock, or demote the Rock to a bucket)."));
+    banner.append(pillLight("run the split →", renderTodosSplit));
     host.append(banner);
   }
 
@@ -7302,54 +7302,64 @@ function todoRow(dom, t, isInbox) {
   return row;
 }
 
-// renderTodosTriage — the one-time sweep surface: every open stage task in
-// goals.md with a keep → move → drop cycle chip; one commit writes both files.
-async function renderTodosTriage() {
+// renderTodosSplit — the one-time task-substrate migration surface: every
+// active Rock with task lines, keep-as-Rock (open tasks move here tethered)
+// or demote-to-bucket (Rock closes as a Learn); one previewed commit.
+async function renderTodosSplit() {
   const host = els.todosRows; host.innerHTML = "loading…";
-  let d = { rows: [] };
-  try { d = await (await fetch("/api/todos/triage")).json(); } catch (e) {}
+  let d = { rocks: [] };
+  try { d = await (await fetch("/api/todos/split")).json(); } catch (e) {}
   host.innerHTML = "";
-  const rows = d.rows || [];
-  els.todosMeta.textContent = rows.length + " open stage tasks in goals.md";
-  if (!rows.length) { host.append(el("div", "pp-empty", "goals.md has no open stage tasks — nothing to sweep.")); return; }
-  const verdicts = {}; // id → keep|move|drop
-  const bar = el("div", "dirty-bar");
-  const barLabel = el("span", "dirty-label", "");
+  const rocks = d.rocks || [];
+  els.todosMeta.textContent = rocks.length + " rocks carry task lines in goals.md";
+  if (!rocks.length) { host.append(el("div", "pp-empty", "goals.md carries no task lines — nothing to split.")); return; }
+  const choice = {}; // id → {action, bucket}
+  rocks.forEach((r) => { choice[r.id] = { action: "keep", bucket: r.rock }; });
+
   const refreshBar = () => {
-    const moves = Object.values(verdicts).filter((v) => v === "move").length;
-    const drops = Object.values(verdicts).filter((v) => v === "drop").length;
-    barLabel.textContent = moves + " MOVE → TODOS · " + drops + " DROP · rest keep";
-    commit.disabled = !(moves || drops);
+    const demotes = Object.values(choice).filter((c) => c.action === "demote").length;
+    const moves = rocks.reduce((a, r) => a + r.openTasks.length, 0);
+    barLabel.textContent = moves + " OPEN TASKS MOVE · " + demotes + " ROCK" + (demotes === 1 ? "" : "S") + " DEMOTE · checked history freezes in place";
   };
-  rows.forEach((r) => {
-    verdicts[r.id] = "keep";
-    const row = el("div", "tdo-row");
-    row.append(el("span", "tdo-triage-path", r.area + " · " + r.rock + " · " + r.stage));
-    row.append(el("span", "tdo-text", r.task));
-    const chip = el("button", "tdo-verdict keep", "keep");
-    chip.onclick = () => {
-      const next = { keep: "move", move: "drop", drop: "keep" }[verdicts[r.id]];
-      verdicts[r.id] = next;
-      chip.textContent = next === "move" ? "move → todos (" + r.area + ")" : next;
-      chip.className = "tdo-verdict " + next;
+
+  rocks.forEach((r) => {
+    const sec = el("div", "tdo-section");
+    const head = el("div", "tdo-head split-head");
+    head.append(el("span", "", r.area.toUpperCase() + " · " + r.rock +
+      (r.checkedCount ? "  (" + r.checkedCount + " checked lines stay frozen)" : "")));
+    const toggle = el("button", "tdo-verdict keep", "keep as rock");
+    toggle.onclick = () => {
+      const c = choice[r.id];
+      c.action = c.action === "keep" ? "demote" : "keep";
+      toggle.textContent = c.action === "keep" ? "keep as rock" : "demote \u2192 bucket \u201c" + c.bucket + "\u201d";
+      toggle.className = "tdo-verdict " + (c.action === "keep" ? "keep" : "move");
       refreshBar();
     };
-    row.append(chip);
-    host.append(row);
+    head.append(toggle);
+    sec.append(head);
+    r.openTasks.forEach((t) => {
+      const row = el("div", "tdo-row");
+      row.append(el("span", "tdo-triage-path", "\u2192 " + r.area), el("span", "tdo-text", t));
+      sec.append(row);
+    });
+    if (!r.openTasks.length) sec.append(el("div", "pp-empty", "no open tasks \u2014 only frozen history"));
+    host.append(sec);
   });
-  const commit = el("button", "pill", "commit sweep");
+
+  const bar = el("div", "dirty-bar");
+  const barLabel = el("span", "dirty-label", "");
+  const commit = el("button", "pill", "commit split");
   commit.onclick = async () => {
     commit.disabled = true;
-    const moves = rows.filter((r) => verdicts[r.id] === "move").map((r) => ({ id: r.id, domain: r.area }));
-    const drops = rows.filter((r) => verdicts[r.id] === "drop").map((r) => r.id);
+    const body = { rocks: rocks.map((r) => ({ id: r.id, action: choice[r.id].action, bucket: choice[r.id].bucket })) };
     try {
-      todosCache = await postJSONOk("/api/todos/triage", { moves, drops });
-      showToast("Swept — goals.md is lean; moved items are on the board");
-      renderTodos();
-    } catch (e) { showToast(("Sweep failed: " + (e.message || "")).slice(0, 90)); commit.disabled = false; }
+      const res = await postJSONOk("/api/todos/split", body);
+      showToast("Split committed \u2014 " + (res.moved || []).length + " tasks moved \u00b7 " + (res.demoted || 0) + " demoted (backups: .pre-split)");
+      loadTodos();
+    } catch (e) { showToast(("Split failed: " + (e.message || "")).slice(0, 90)); commit.disabled = false; }
   };
   const cancel = el("button", "pill light", "later");
-  cancel.onclick = () => renderTodos();
+  cancel.onclick = () => loadTodos();
   bar.append(barLabel, commit, cancel);
   refreshBar();
   host.append(bar);

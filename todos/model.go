@@ -273,21 +273,21 @@ func (d *Doc) View(now time.Time) View {
 	return v
 }
 
-// Triaged reports whether the one-time goals triage sweep has run (a
-// [triaged:: date] marker line in the preamble — todos-surface §5b).
-func (d *Doc) Triaged() bool {
+// SplitDone reports whether the one-time task-substrate split has run (a
+// [split:: date] marker line in the preamble — task-substrate §7).
+func (d *Doc) SplitDone() bool {
 	for _, ln := range d.preamble {
-		if strings.Contains(ln, "[triaged::") {
+		if strings.Contains(ln, "[split::") {
 			return true
 		}
 	}
 	return false
 }
 
-// MarkTriaged stamps the sweep marker (idempotent).
-func (d *Doc) MarkTriaged(date string) {
-	if !d.Triaged() {
-		d.preamble = append(d.preamble, "", "[triaged:: "+date+"]")
+// MarkSplitDone stamps the split marker (idempotent).
+func (d *Doc) MarkSplitDone(date string) {
+	if !d.SplitDone() {
+		d.preamble = append(d.preamble, "", "[split:: "+date+"]")
 	}
 }
 
