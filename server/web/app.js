@@ -839,7 +839,12 @@ const goalsUI = { expanded: new Set(), tab: "orient" };
 
 async function loadGoals(focusId) {
   try {
-    const doc = await (await fetch("/api/goals")).json();
+    // GOALS is a WINDOW over the task substrate — fetch both files' views
+    const [doc, tv] = await Promise.all([
+      (await fetch("/api/goals")).json(),
+      fetch("/api/todos").then((r) => r.json()).catch(() => null),
+    ]);
+    if (tv) todosCache = tv;
     state.goalsDoc = doc;
     // deep-links (#/goals/<id>) auto-expand the rock AND stage containing the target
     if (focusId) expandAncestors(doc.areas || [], focusId);
@@ -918,14 +923,24 @@ function renderOrientMeta(areas) {
 
 // rockLint (§3): deterministic conditions computed from the view, no text
 // analysis. Returns the plain reasons a Rock's quiet dot fires (empty = clean).
+// rockTodos: the Rock's open tethered todos from the substrate, oldest first.
+function rockTodos(rockId) {
+  const out = [];
+  const scan = (list) => (list || []).forEach((t) => { if (t.rock === rockId && t.state !== "done") out.push(t); });
+  ((todosCache && todosCache.domains) || []).forEach((dm) => {
+    scan(dm.todos);
+    (dm.buckets || []).forEach((bk) => scan(bk.todos));
+  });
+  out.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
+  return out;
+}
+
 function rockLint(g) {
   const reasons = [];
   if (!g.until) reasons.push("no finish line");
   if (!g.verify) reasons.push("no check");
   if (!g.serves) reasons.push("unlinked");
-  const stages = g.children || [];
-  const cur = stages.find((s) => !s.checked);
-  const hasOpenTask = cur && (cur.children || []).some((t) => !t.checked);
+  const hasOpenTask = rockTodos(g.id).length > 0; // substrate join, not task depth
   let staleDays = 0;
   if (g.moved) {
     const d = Math.floor((Date.now() - new Date(g.moved + "T00:00:00").getTime()) / 86400000);
@@ -985,7 +1000,7 @@ function orientArea(area) {
 
   // Rocks
   const rocks = el("div", "o-rocks");
-  (area.rocks || []).forEach((g) => rocks.appendChild(rockNode(g)));
+  (area.rocks || []).forEach((g) => rocks.appendChild(rockNode(g, area.name)));
   rocks.appendChild(rockComposer(area));
   card.appendChild(rocks);
   return card;
@@ -1024,7 +1039,7 @@ function rockComposer(area) {
 
 // rockNode: the collapsed row — dot · name · position → next-action — and, when
 // expanded, the stage trail + current-stage tasks.
-function rockNode(g) {
+function rockNode(g, areaName) {
   const wrap = el("div", "o-rock-wrap");
   wrap.dataset.goalId = g.id; // #/goals/<id> deep-link anchor
   const open = goalsUI.expanded.has(g.id);
@@ -1049,7 +1064,9 @@ function rockNode(g) {
   if (g.checked || (!cur && stages.length)) {
     next.appendChild(el("span", "o-done-hint", "done — complete it"));
   } else if (cur) {
-    const t = (cur.children || []).find((c) => !c.checked);
+    // next-action = the OLDEST open tethered todo; the stage name alone is
+    // the fallback — which is also the stall face (task-substrate §1)
+    const t = rockTodos(g.id)[0];
     if (t) {
       next.appendChild(document.createTextNode(cur.text + " → "));
       next.appendChild(el("span", "cur", t.text));
@@ -1070,16 +1087,16 @@ function rockNode(g) {
     name.addEventListener("click", (e) => e.stopPropagation());
     clickToEdit(name, () => g.text, (v) =>
       goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v }));
-    wrap.appendChild(rockExpand(g, stages, cur));
+    wrap.appendChild(rockExpand(g, stages, cur, areaName));
   }
   return wrap;
 }
 
-// rockExpand: the trail (✓ done / → current / plain future). The current stage is
-// always open (the active work). Every OTHER stage is click-to-expand, so tasks
-// can be added under any stage — not just the current one. An open stage shows
-// its tasks as checkboxes + a "+ task" ghost.
-function rockExpand(g, stages, cur) {
+// rockExpand: the trail (✓ done / → current / plain future) + the WINDOW into
+// the task substrate: the Rock's open tethered todos as live checkboxes and a
+// "+ task" ghost that writes to do.md (goals.md never stores a task). Frozen
+// pre-split history renders collapsed/muted per stage.
+function rockExpand(g, stages, cur, areaName) {
   const box = el("div", "o-expand");
 
   // §4 finish-line block: UNTIL + PROOF (with kpi right-aligned), above the trail.
@@ -1123,14 +1140,49 @@ function rockExpand(g, stages, cur) {
       const stPatch = (field) => (v) => goalsApi("PATCH", "/api/goals/item", { id: st.id, [field]: v });
       if (st.verify) box.appendChild(finishRow("PROOF", st.verify, "", stPatch("verify"), finishKpi(st.kpi, stPatch("kpi")), true));
       else if (st.kpi) box.appendChild(finishRow("", "", "", null, finishKpi(st.kpi, stPatch("kpi")), true));
-      (st.children || []).forEach((tk) => box.appendChild(taskRowEl(tk)));
-      box.appendChild(ghostInput("+ task", "o-tk-ghost", (v) =>
-        goalsApi("POST", "/api/goals/item", { parentId: st.id, text: v, owner: "" })));
+      // frozen pre-split history — collapsed, muted, read-only
+      if ((st.frozen || []).length) {
+        const key = st.id + "#history";
+        const h = el("button", "tdo-wait-foot", (goalsUI.expanded.has(key) ? "▾" : "▸") + " history · " + st.frozen.length);
+        h.onclick = (e) => {
+          e.stopPropagation();
+          if (goalsUI.expanded.has(key)) goalsUI.expanded.delete(key);
+          else goalsUI.expanded.add(key);
+          renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
+        };
+        box.appendChild(h);
+        if (goalsUI.expanded.has(key)) st.frozen.forEach((ln) =>
+          box.appendChild(el("div", "o-frozen-line", ln.trim().replace(/^[-*]\s*/, ""))));
+      }
     }
   });
   box.appendChild(ghostInput("+ stage", "o-st-ghost", (v) =>
     goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" }),
     "what state will you have reached?"));
+
+  // the WINDOW: open todos tethered to this Rock — live checkboxes reading and
+  // writing to do.md; checking stamps the Rock's moved:: server-side.
+  if (!g.checked) {
+    const tethered = rockTodos(g.id);
+    if (tethered.length) box.appendChild(el("div", "o-todo-head", "OPEN TASKS · to do.md"));
+    tethered.forEach((t) => {
+      const row = el("div", "o-tk");
+      const check = el("button", "check wk-check", "○");
+      check.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try { await postJSONOk("/api/todos/check", { id: t.id, checked: true }); } catch (err) {}
+        loadGoals();
+      });
+      row.append(check, el("span", "o-tk-text", t.text));
+      if (t.state === "waiting") row.append(el("span", "tdo-tag", "⏳ " + t.waiting));
+      row.append(el("span", "tdo-age", t.ageDays > 0 ? t.ageDays + "d" : ""));
+      box.appendChild(row);
+    });
+    box.appendChild(ghostInput("+ task", "o-tk-ghost", async (v) => {
+      try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
+      loadGoals();
+    }, "what advances this rock…"));
+  }
   if (!g.checked) box.appendChild(completeControl(g));
   return box;
 }
@@ -1203,19 +1255,6 @@ function completeControl(g) {
   });
   wrap.append(btn);
   return wrap;
-}
-
-function taskRowEl(tk) {
-  const row = el("div", "o-tk" + (tk.checked ? " done" : ""));
-  row.dataset.goalId = tk.id;
-  const check = el("button", "check" + (tk.checked ? " on" : ""), tk.checked ? "✓" : "○");
-  check.addEventListener("click", () =>
-    goalsApi("POST", "/api/goals/check", { id: tk.id, checked: !tk.checked }));
-  const label = el("span", "o-tk-text", tk.text);
-  clickToEdit(label, () => tk.text, (v) =>
-    goalsApi("PATCH", "/api/goals/item", { id: tk.id, text: v }));
-  row.append(check, label);
-  return row;
 }
 
 // clickToEdit: calm editing — a span that swaps to an input on click; Enter/blur
