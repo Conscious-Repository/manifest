@@ -949,6 +949,64 @@ func (s *Server) handlePropertyDocUpload(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, map[string]any{"saved": saved})
 }
 
+// handleReceiptUpload attaches a receipt to ONE ledger row: multipart `file` +
+// `original` field (JSON LedgerRow, exact-match). The file lands in the
+// property's docs folder; the row's doc column gets the saved filename — the
+// evidence that reconciles a firm price without a bank transaction.
+func (s *Server) handleReceiptUpload(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	slug := r.PathValue("slug")
+	rel, ok := s.propertyRel(slug)
+	if !ok {
+		http.Error(w, "property not found", http.StatusNotFound)
+		return
+	}
+	if err := r.ParseMultipartForm(int64(vaultwriterMaxDoc) + 1<<20); err != nil {
+		httpError(w, err)
+		return
+	}
+	var orig realestate.LedgerRow
+	if err := json.Unmarshal([]byte(r.FormValue("original")), &orig); err != nil {
+		httpError(w, errBadRequest("original ledger row required"))
+		return
+	}
+	files := r.MultipartForm.File["file"]
+	if len(files) == 0 {
+		httpError(w, errBadRequest("no file in upload"))
+		return
+	}
+	f, err := files[0].Open()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(f, int64(vaultwriterMaxDoc)+1))
+	f.Close()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	savedRel, err := s.vault.SaveDoc(s.docsDir(slug), files[0].Filename, data)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	origRec := ledgerRecord(orig)
+	repl := orig
+	repl.Doc = path.Base(savedRel)
+	if err := s.vault.UpdateLedgerRow(realestate.LedgerRel(rel), origRec, ledgerRecord(repl)); err != nil {
+		httpError(w, err)
+		return
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{rel})
+	}
+	s.respondProperty(w, slug)
+}
+
 // handleRealestateDoc serves a doc/export file raw (view a PDF, download a csv).
 // Read-only, pinned under the realestate root, traversal-guarded.
 func (s *Server) handleRealestateDoc(w http.ResponseWriter, r *http.Request) {

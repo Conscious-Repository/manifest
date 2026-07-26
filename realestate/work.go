@@ -38,7 +38,8 @@ type WorkTodo struct {
 	// accrual recognition: a DONE todo's firm price counts as spent before the
 	// bank transaction lands; the gap is the ⚑ unreconciled amount.
 	Recognized   float64   `json:"recognized"`             // checked ? max(firm, paid) : paid
-	Unreconciled float64   `json:"unreconciled,omitempty"` // checked ? max(0, firm − paid) : 0
+	Unreconciled float64   `json:"unreconciled,omitempty"` // checked ? max(0, firm − paid) : 0 (unless receipted)
+	Receipted    bool      `json:"receipted,omitempty"`    // firm price carries a receipt doc — evidence without cash
 	Bids         []WorkBid `json:"bids,omitempty"`
 }
 
@@ -390,7 +391,21 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 	}
 	// recognition (accrual): checking a node with a firm price recognizes it as
 	// SPENT before the bank transaction lands; the gap is ⚑ unreconciled until
-	// the workbench tethers real payments covering it.
+	// the workbench tethers real payments covering it OR a receipt is attached
+	// to the accepted bid (bank match OR receipt — either evidence clears it).
+	receipted := func(id string) bool {
+		any := false
+		for _, r := range ledger {
+			if r.WorkID != id || !strings.EqualFold(r.Type, "bid") || !strings.EqualFold(r.Status, "accepted") {
+				continue
+			}
+			if r.Doc == "" {
+				return false
+			}
+			any = true
+		}
+		return any
+	}
 	for i := range stages {
 		st := &stages[i]
 		for j := range st.Todos {
@@ -402,7 +417,11 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 			td.Recognized = td.Paid
 			if td.Checked && firm > td.Paid {
 				td.Recognized = firm
-				td.Unreconciled = firm - td.Paid
+				if receipted(td.ID) {
+					td.Receipted = true
+				} else {
+					td.Unreconciled = firm - td.Paid
+				}
 			}
 			st.Recognized += td.Recognized
 			st.Unreconciled += td.Unreconciled
@@ -410,7 +429,9 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		if a, ok := perNode[st.ID]; ok { // rows tethered to the stage itself
 			rec := a.expenseSum
 			if st.Checked && a.acceptedSum > rec {
-				st.Unreconciled += a.acceptedSum - rec
+				if !receipted(st.ID) {
+					st.Unreconciled += a.acceptedSum - rec
+				}
 				rec = a.acceptedSum
 			}
 			st.Recognized += rec

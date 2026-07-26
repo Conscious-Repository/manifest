@@ -1433,6 +1433,12 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .cols-contractors { grid-template-columns: 1.6fr 1fr 2fr 0.9fr 0.7fr; }
 .property-contractors { display: flex; flex-direction: column; gap: 6px; }
 .ct-trade { max-width: 130px; font-size: 12px; }
+.cols-recon { grid-template-columns: 1.4fr 2fr 0.9fr 0.9fr 1.4fr; }
+.recon-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 18px; }
+.recon-acts { display: inline-flex; gap: 8px; justify-content: flex-end; }
+.unrec-amt { color: #b45309; }
+.doc-chip { text-decoration: none; }
+.doc-chip:hover { text-decoration: underline; }
 .cols-ledger { grid-template-columns: 0.75fr 0.65fr 0.95fr 1.1fr 0.85fr 0.85fr 1.3fr 0.9fr auto; }
 .cols-stmt { grid-template-columns: 0.7fr 2fr 0.8fr 1fr 1.6fr 0.7fr; }
 .cols-2 { grid-template-columns: 1fr 1fr auto; }

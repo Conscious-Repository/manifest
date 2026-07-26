@@ -5381,8 +5381,57 @@ async function renderAccounting() {
   try { d = await (await fetch("/api/realestate/statements")).json(); }
   catch (e) { host.innerHTML = ""; host.append(emptyRow("Statements unavailable.")); return; }
   stmtRows = d.rows || [];
-  if (!propertyCache.length) { try { const pd = await (await fetch("/api/properties")).json(); propertyCache = pd.properties || []; } catch (e) {} }
+  try { const pd = await (await fetch("/api/properties")).json(); propertyCache = pd.properties || []; } catch (e) {}
   host.innerHTML = "";
+
+  // RECONCILE — every done work item still missing evidence (bank link OR
+  // receipt), across all properties. The tab's reason to exist.
+  const recon = [];
+  (propertyCache || []).forEach((p) => (p.work || []).forEach((st) => (st.todos || []).forEach((td) => {
+    if (td.checked && (td.unreconciled || 0) > 0) recon.push({ p, st, td });
+  })));
+  if (recon.length) {
+    host.append(el("div", "pp-section-head", "RECONCILE — " + recon.length + " completed expense" + (recon.length === 1 ? "" : "s") + " need evidence"));
+    const box = el("div", "recon-list");
+    box.append(ppCols("cols-recon", ["PROPERTY", "TASK", "FIRM PRICE", "UNRECONCILED", ""]));
+    recon.forEach(({ p, st, td }) => {
+      const firm = (td.bids || []).filter((b) => b.status === "accepted").reduce((a, b) => a + b.amount, 0);
+      const row = el("div", "property-row cols-recon");
+      const addr = el("span", "property-addr", p.short || p.address || p.slug);
+      row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
+      const acts = el("span", "recon-acts");
+      const rec = el("button", "pill light", "📎 receipt");
+      rec.title = "attach a receipt — reconciles without a bank transaction";
+      const filePick = document.createElement("input");
+      filePick.type = "file"; filePick.hidden = true;
+      filePick.onchange = async () => {
+        const bid = (td.bids || []).find((b) => b.status === "accepted");
+        if (!filePick.files[0] || !bid) return;
+        const fd = new FormData();
+        fd.append("file", filePick.files[0]);
+        fd.append("original", JSON.stringify(bid.row));
+        try {
+          const res = await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/receipt", { method: "POST", body: fd });
+          if (!res.ok) throw new Error(await res.text());
+          showToast("Receipt attached — reconciled");
+          renderAccounting();
+        } catch (e) { showToast(("Receipt failed: " + (e.message || "")).slice(0, 80)); }
+      };
+      rec.onclick = (e) => { e.stopPropagation(); filePick.click(); };
+      const link = el("button", "pill light", "link payment ↓");
+      link.title = "assign the matching bank row in the queue below (tether it to this task)";
+      link.onclick = (e) => {
+        e.stopPropagation();
+        const q = host.querySelector(".stmt-list") || host.lastElementChild;
+        if (q) q.scrollIntoView({ behavior: "smooth" });
+      };
+      acts.append(rec, filePick, link);
+      row.append(addr, el("span", "", st.text + " · " + td.text),
+        el("span", "pp-amt", fmtMoney(firm)), el("span", "pp-amt unrec-amt", fmtMoney(td.unreconciled)), acts);
+      box.append(row);
+    });
+    host.append(box);
+  }
 
   const counts = { pending: 0, assigned: 0, split: 0, applied: 0, skipped: 0 };
   stmtRows.forEach((r) => { counts[r.state] = (counts[r.state] || 0) + 1; });
@@ -6805,7 +6854,7 @@ function moneyBlock(p) {
     } else if (rows.length === 1) singles.push(rows[0]);
   }
   singles.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  singles.forEach((r) => lines.push({ date: r.date, el: activityLine(r) }));
+  singles.forEach((r) => lines.push({ date: r.date, el: activityLine(r, p.slug) }));
   lines.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const shown = moneyShowAll ? lines : lines.slice(0, 10);
   if (!shown.length) act.append(el("div", "pp-empty", "No payments yet — apply statement rows in the workbench."));
@@ -6819,7 +6868,7 @@ function moneyBlock(p) {
   return wrap;
 }
 
-function activityLine(r) {
+function activityLine(r, slug) {
   const line = el("div", "pp-act-line");
   line.append(el("span", "import-date", r.date));
   line.append(el("span", "stmt-vendor", r.vendor || r.contractor || ""));
@@ -6827,6 +6876,17 @@ function activityLine(r) {
   const tags = el("span", "pp-act-tags");
   if (r.workId) tags.append(el("span", "work-chip lg-chip", "⚲ " + r.workId.split("/").pop()));
   if (r.paidBy) tags.append(el("span", "work-chip", r.paidBy));
+  if (r.doc) {
+    const a = document.createElement("a");
+    a.className = "work-chip doc-chip";
+    a.textContent = "📎 " + r.doc;
+    if (slug) {
+      a.href = "/api/realestate/doc?path=" + encodeURIComponent("system/realestate/docs/" + slug + "/" + r.doc);
+      a.target = "_blank";
+      a.onclick = (e) => e.stopPropagation();
+    }
+    tags.append(a);
+  }
   line.append(tags);
   return line;
 }

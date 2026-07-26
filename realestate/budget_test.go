@@ -74,6 +74,15 @@ func TestRecognizedSpend(t *testing.T) {
 		t.Fatalf("stage rollup: rec %v unrec %v", stages[0].Recognized, stages[0].Unreconciled)
 	}
 
+	// receipt on the accepted bid = evidence without cash → flag clears (bank OR receipt)
+	stages2 := []WorkStage{{ID: "demo", Text: "Demo", Todos: []WorkTodo{{ID: "demo/a", Text: "a", Checked: true}}}}
+	JoinWorkLedger(stages2, []LedgerRow{
+		{Type: "bid", Status: "accepted", Amount: 5000, WorkID: "demo/a", Doc: "receipt.pdf"},
+	})
+	if td2 := stages2[0].Todos[0]; td2.Recognized != 5000 || td2.Unreconciled != 0 || !td2.Receipted {
+		t.Fatalf("receipted: %+v", td2)
+	}
+
 	// property level: hard spent = recognized + untethered cash; ⚑ total rides up
 	pb := ComputeProjectBudget(SourceMoney{}, stages, append(ledger,
 		LedgerRow{Type: "expense", Amount: 700})) // untethered hard cash
