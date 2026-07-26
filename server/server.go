@@ -18,6 +18,7 @@ import (
 	"manifest/reading"
 	"manifest/realestate"
 	"manifest/signals"
+	"manifest/todos"
 	"manifest/spirits"
 	"manifest/studio"
 	"manifest/vaultindex"
@@ -29,7 +30,8 @@ var webFiles embed.FS
 
 type Server struct {
 	svc   *daily.Service
-	goals *goals.Store
+	goals      *goals.Store
+	todosStore *todos.Store // the third surface — vault-root `to do.md` (nilable)
 	cal   *calendar.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
 	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
@@ -110,6 +112,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/archives", s.handleGoalsArchives) // History view
 	mux.HandleFunc("/api/goals/carry", s.handleGoalCarry)        // quarterly review: carry a Rock
 	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)        // quarterly review: save the retro
+
+	// TODOS — the third surface over `to do.md` (todos-surface-scope).
+	mux.HandleFunc("GET /api/todos", s.handleTodosGet)
+	mux.HandleFunc("POST /api/todos/item", s.handleTodoAdd)
+	mux.HandleFunc("POST /api/todos/check", s.handleTodoCheck)
+	mux.HandleFunc("POST /api/todos/update", s.handleTodoUpdate)
+	mux.HandleFunc("POST /api/todos/drop", s.handleTodoDrop)
 
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)

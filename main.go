@@ -27,6 +27,7 @@ import (
 	"manifest/realestate"
 	"manifest/server"
 	"manifest/signals"
+	"manifest/todos"
 	"manifest/spirits"
 	"manifest/studio"
 	"manifest/vault"
@@ -130,6 +131,25 @@ func main() {
 		log.Printf("goals.md migrated to the horizon ladder (backup: goals.md.pre-migration)")
 	}
 
+	// TODOS — the third surface over the vault-root `to do.md` (peer of goals.md).
+	todosStore := todos.NewStore(cfg.VaultPath, cfg.TodosFileName)
+	{
+		var areaNames []string
+		if doc := goalsStore.Load(); doc != nil {
+			for _, a := range doc.Areas {
+				areaNames = append(areaNames, a.Name)
+			}
+		}
+		if migrated, err := todosStore.Migrate(time.Now(), areaNames); err != nil {
+			log.Printf("migrating %s: %v", cfg.TodosFileName, err)
+		} else if migrated {
+			log.Printf("%s migrated to the domain grammar (backup: %s.pre-migration)", cfg.TodosFileName, cfg.TodosFileName)
+		}
+		if n, err := todosStore.Sweep(time.Now()); err == nil && n > 0 {
+			log.Printf("todos: swept %d done item(s) to the archive", n)
+		}
+	}
+
 	calClient := calendar.NewClient(ctx, cfg.Timezone)
 	// Offline calendar mirror is derived data → lives under DataDir, never the vault.
 	calSource := calendar.NewSource(calClient, filepath.Join(cfg.DataDir, "calendar-cache"))
@@ -138,6 +158,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	srv.UseTodos(todosStore)
 	vw := vaultwriter.New(cfg.VaultPath).WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot)
 	var contactsSvc *contacts.Service // reused by the feed's cold-contact emitter
 	var reSvc *realestate.Service     // reused by the feed's property emitters

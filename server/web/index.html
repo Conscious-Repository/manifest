@@ -12,16 +12,22 @@
 <body>
   <header class="nav">
     <div class="nav-left">
-      <div class="pill-group">
+      <div class="pill-group" id="navGroup">
         <span class="brand">◆</span>
         <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
+        <a class="pill" href="#/todos" id="todosNav">TODOS</a>
         <a class="pill" href="#/feed" id="feedNav">FEED<span id="feedNavBadge" class="nav-badge" hidden></span></a>
-        <a class="pill" href="#/studio" id="studioNav">STUDIO</a>
-        <a class="pill" href="#/calendar" id="calNav">CAL</a>
-        <a class="pill" href="#/contacts" id="contactsNav">CONTACTS</a>
-        <a class="pill" href="#/reading" id="readingNav">READING</a>
-        <a class="pill" href="#/properties" id="propertiesNav">PROPERTIES</a>
         <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
+        <span class="nav-more-wrap" id="navMoreWrap">
+          <button class="pill" id="moreNav" aria-expanded="false" title="Show the rest of the menu">MORE ▾</button>
+          <div class="nav-more-menu" id="navMoreMenu" hidden>
+            <a class="pill nav-extra" href="#/studio" id="studioNav">STUDIO</a>
+            <a class="pill nav-extra" href="#/calendar" id="calNav">CAL</a>
+            <a class="pill nav-extra" href="#/contacts" id="contactsNav">CONTACTS</a>
+            <a class="pill nav-extra" href="#/reading" id="readingNav">READING</a>
+            <a class="pill nav-extra" href="#/properties" id="propertiesNav">PROPERTIES</a>
+          </div>
+        </span>
         <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
       </div>
     </div>
@@ -92,6 +98,17 @@
       <div id="areasRows"></div>
       <button id="addArea" class="add-btn">+ Add area</button>
       <div id="historyRows" hidden></div>
+    </div>
+  </section>
+
+  <!-- TODOS — the third surface: everything that must happen but drives no vision -->
+  <section class="goals-page" id="todosView" hidden>
+    <div class="areas-col">
+      <div class="agent-head">
+        <span class="agent-title">TODOS</span>
+        <span id="todosMeta" class="panel-meta"></span>
+      </div>
+      <div id="todosRows"></div>
     </div>
   </section>
 

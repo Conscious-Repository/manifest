@@ -46,6 +46,7 @@ body {
 
 /* ---- nav ---- */
 .nav {
+  position: relative; /* anchor for the page-centered date bar */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -53,6 +54,8 @@ body {
   gap: 12px;
 }
 .nav-left, .nav-center, .nav-right { display: flex; align-items: center; gap: 8px; }
+/* date bar is centered to the page, not to the leftover flex space */
+.nav-center { position: absolute; left: 50%; transform: translateX(-50%); }
 .brand { font-size: 16px; color: var(--ink); margin-right: 4px; }
 
 .pill {
@@ -105,6 +108,26 @@ body {
   font-size: 13px;
 }
 .pill-group > * + * { border-left: 1px solid #3a3a3a; } /* visible divider between segments */
+
+/* MORE ▾ — overflow pills live in a dropdown so the group never crowds the date bar */
+.nav-more-wrap { position: relative; display: inline-flex; align-items: stretch; }
+.nav-more-menu {
+  /* fixed (JS-anchored to the MORE button) — the pill-group's overflow:hidden
+     would clip an absolutely-positioned child */
+  position: fixed;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 132px;
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-bd);
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.nav-more-menu .pill { justify-content: flex-start; height: 30px; }
+.nav-more-menu .pill + .pill { border-top: 1px solid #3a3a3a; }
+.nav-more-menu .pill:hover { background: rgba(255, 255, 255, 0.06); }
 
 .save-state { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 38px; }
 .save-state.saving { color: var(--blue); }
@@ -1454,6 +1477,25 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .stmt-progress { font-family: var(--mono); font-size: 11px; color: #15803d; }
 .stmt-progress.open { color: #b45309; }
 .dismiss-picker { display: inline-flex; gap: 8px; margin-left: 8px; }
+
+/* ---- TODOS: the third surface ---- */
+.tdo-section { margin-bottom: 22px; }
+.tdo-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; color: var(--muted); padding: 4px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tdo-row { display: flex; align-items: baseline; gap: 10px; padding: 5px 2px; }
+.tdo-row.done .tdo-text { text-decoration: line-through; color: var(--muted); }
+.tdo-text { cursor: text; }
+.tdo-age { font-family: var(--mono); font-size: 10.5px; color: var(--icon); min-width: 28px; text-align: right; margin-left: auto; }
+.tdo-age.stale { color: #b45309; }
+.tdo-age.stale::before { content: "● "; font-size: 7px; vertical-align: 2px; }
+.tdo-acts { display: inline-flex; gap: 8px; align-items: baseline; }
+.tdo-acts .uw-x { color: var(--icon); visibility: hidden; }
+.tdo-row:hover .uw-x { visibility: visible; }
+.tdo-wait-chip { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; cursor: pointer; }
+.tdo-wait-chip:hover { color: var(--fg); }
+.tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--icon); cursor: pointer; padding: 4px 2px; }
+.tdo-wait-foot:hover { color: var(--muted); }
+.tdo-domain-chips { display: inline-flex; gap: 6px; }
+.tdo-qa-chips { display: flex; gap: 8px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cols-ledger { grid-template-columns: 0.75fr 0.65fr 0.95fr 1.1fr 0.85fr 0.85fr 1.3fr 0.9fr auto; }
 .cols-stmt { grid-template-columns: 0.7fr 2fr 0.8fr 1fr 1.6fr 0.7fr; }
 .cols-2 { grid-template-columns: 1fr 1fr auto; }

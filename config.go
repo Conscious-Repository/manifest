@@ -63,6 +63,9 @@ type Config struct {
 	// src/data/deals.json from the vault's source sidecars for owner review
 	// (manifest never commits that repo). Empty disables the feature.
 	RePortalPath string `json:"rePortalPath"`
+	// TodosFileName is the vault-root todos file (the third surface, peer of
+	// goals.md). Default "to do.md" — the owner's existing file.
+	TodosFileName string `json:"todosFileName"`
 }
 
 func defaultConfig() Config {
@@ -133,6 +136,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if cfg.XPostsFile == "" {
 		cfg.XPostsFile = "x posts.md"
+	}
+	if cfg.TodosFileName == "" {
+		cfg.TodosFileName = "to do.md"
 	}
 	if err := validateZoneRoot("systemRoot", cfg.SystemRoot); err != nil {
 		return cfg, err

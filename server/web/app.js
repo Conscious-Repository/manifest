@@ -16,11 +16,19 @@ const els = {
   prepBanner: document.getElementById("prepBanner"),
   dayView: document.getElementById("dayView"),
   goalsView: document.getElementById("goalsView"),
+  todosView: document.getElementById("todosView"),
+  todosNav: document.getElementById("todosNav"),
+  todosRows: document.getElementById("todosRows"),
+  todosMeta: document.getElementById("todosMeta"),
   calendarView: document.getElementById("calendarView"),
   dateNav: document.getElementById("dateNav"),
   goalsNav: document.getElementById("goalsNav"),
   calNav: document.getElementById("calNav"),
   dayNav: document.getElementById("dayNav"),
+  navGroup: document.getElementById("navGroup"),
+  moreNav: document.getElementById("moreNav"),
+  navMoreWrap: document.getElementById("navMoreWrap"),
+  navMoreMenu: document.getElementById("navMoreMenu"),
   // contacts (people layer over the vault index)
   contactsView: document.getElementById("contactsView"),
   contactsNav: document.getElementById("contactsNav"),
@@ -4171,6 +4179,11 @@ window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
   else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }
   else if (e.key === "/" && els.castbar && els.castbar.hidden && !typingInField(e.target)) { e.preventDefault(); openCastbar(); }
+  else if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typingInField(e.target) &&
+    els.cmdbar.hidden && (!els.castbar || els.castbar.hidden)) {
+    e.preventDefault();
+    openTodoQuickAdd(); // ubiquitous capture — one line + domain, gone
+  }
 });
 
 // ---- cast command bar (press / anywhere): run a vault skill or on-demand ritual ----
@@ -4291,6 +4304,11 @@ if (els.castbarBackdrop) els.castbarBackdrop.addEventListener("click", closeCast
 async function cmdSearch(q) {
   const host = els.cmdbarResults; host.innerHTML = ""; cmdSel = -1; cmdResults = [];
   if (!q) return;
+  // quick-add lives here too: first row turns the query into a todo
+  const addRow = el("div", "cmd-result");
+  addRow.append(el("span", "cmd-name", "＋ todo “" + q + "”"), el("span", "cmd-refs", "capture"));
+  addRow.onclick = () => { closeCmdbar(); openTodoQuickAdd(q); };
+  host.append(addRow);
   let d = { results: [] };
   try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
   cmdResults = (d.results || []).slice(0, 8);
@@ -4305,7 +4323,9 @@ async function cmdSearch(q) {
 }
 function cmdMove(d) { if (!cmdResults.length) return; cmdSel = (cmdSel + d + cmdResults.length) % cmdResults.length; paintCmdSel(); }
 function paintCmdSel() {
-  [...els.cmdbarResults.children].forEach((c, i) => c.classList.toggle("sel", i === cmdSel));
+  const kids = [...els.cmdbarResults.children];
+  const offset = kids.length - cmdResults.length; // non-result rows (the ＋todo row) sit on top
+  kids.forEach((c, i) => c.classList.toggle("sel", i - offset === cmdSel));
 }
 
 async function cmdShowCard(key) {
@@ -7084,9 +7104,216 @@ function selectEl(opts) {
   return s;
 }
 
+// ================= TODOS (the third surface — `to do.md` board) =================
+// Manifest-quiet: domain groups, open items oldest-first, waiting collapsed at
+// each group's foot. A place to pick things off, not a dashboard.
+let todosCache = null;
+let todosWaitOpen = {}; // domain → expanded
+
+async function loadTodos() {
+  try { todosCache = await (await fetch("/api/todos")).json(); }
+  catch (e) { todosCache = { domains: [], areas: [] }; }
+  renderTodos();
+}
+
+async function todosApi(path, body) {
+  try {
+    todosCache = { ...todosCache, ...(await postJSONOk(path, body)) };
+    renderTodos();
+  } catch (e) { showToast((e.message || "Todo update failed").slice(0, 80)); }
+}
+
+function renderTodos() {
+  const host = els.todosRows; host.innerHTML = "";
+  const domains = (todosCache.domains || []).slice()
+    .sort((a, b) => (a.name.toLowerCase() === "inbox" ? -1 : 0) - (b.name.toLowerCase() === "inbox" ? -1 : 0));
+  let open = 0, waiting = 0;
+  domains.forEach((dom) => dom.todos.forEach((t) => {
+    if (t.state === "open") open++;
+    else if (t.state === "waiting") waiting++;
+  }));
+  els.todosMeta.textContent = open + " open · " + waiting + " waiting · t to capture";
+
+  domains.forEach((dom) => {
+    const isInbox = dom.name.toLowerCase() === "inbox";
+    if (isInbox && !dom.todos.length) return; // silent until something lands
+    const sec = el("div", "tdo-section");
+    const head = el("div", "tdo-head", dom.name.toUpperCase());
+    sec.append(head);
+
+    const opens = dom.todos.filter((t) => t.state === "open")
+      .sort((a, b) => (a.added || "").localeCompare(b.added || ""));
+    const waits = dom.todos.filter((t) => t.state === "waiting")
+      .sort((a, b) => (a.since || a.added || "").localeCompare(b.since || b.added || ""));
+    const dones = dom.todos.filter((t) => t.state === "done");
+
+    opens.forEach((t) => sec.append(todoRow(dom, t, isInbox)));
+    dones.forEach((t) => sec.append(todoRow(dom, t, false)));
+    sec.append(ghostInput("＋ todo", "tdo-add", (v) => todosApi("/api/todos/item", { text: v, domain: dom.name }), "one line — what must happen…"));
+
+    if (waits.length) {
+      const foot = el("button", "tdo-wait-foot", (todosWaitOpen[dom.name] ? "▾" : "▸") + " waiting · " + waits.length);
+      foot.onclick = () => { todosWaitOpen[dom.name] = !todosWaitOpen[dom.name]; renderTodos(); };
+      sec.append(foot);
+      if (todosWaitOpen[dom.name]) waits.forEach((t) => sec.append(todoRow(dom, t, false)));
+    }
+    host.append(sec);
+  });
+  if (!host.children.length) host.append(el("div", "pp-empty", "Nothing here — press t anywhere to capture."));
+}
+
+function todoRow(dom, t, isInbox) {
+  const row = el("div", "tdo-row" + (t.state === "done" ? " done" : ""));
+  const check = el("button", "check wk-check" + (t.state === "done" ? " on" : ""), t.state === "done" ? "✓" : "○");
+  check.onclick = () => todosApi("/api/todos/check", { id: t.id, checked: t.state !== "done" });
+  row.append(check);
+
+  const label = el("span", "tdo-text", t.text);
+  label.title = "click to edit";
+  label.onclick = () => {
+    const input = inputEl(""); input.value = t.text; input.classList.add("work-edit");
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/todos/update", { id: t.id, text: input.value });
+      else if (ev.key === "Escape") input.replaceWith(label);
+    });
+    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(label); });
+    label.replaceWith(input); input.focus();
+  };
+  row.append(label);
+
+  if (t.state === "waiting") {
+    const chip = el("span", "tdo-wait-chip", "⏳ " + t.waiting + " · " + t.ageDays + "d");
+    chip.title = "waiting since " + (t.since || "?") + " — click to resume (back to open)";
+    chip.onclick = () => todosApi("/api/todos/update", { id: t.id, waiting: "" });
+    row.append(chip);
+  }
+
+  if (isInbox) {
+    // one-tap domain assignment for inbox captures
+    const chips = el("span", "tdo-domain-chips");
+    (todosCache.areas || []).forEach((a) => {
+      const c = el("button", "stmt-hint", a);
+      c.onclick = () => todosApi("/api/todos/update", { id: t.id, domain: a });
+      chips.append(c);
+    });
+    row.append(chips);
+  }
+
+  const age = el("span", "tdo-age" + (t.state === "open" && t.ageDays >= 14 ? " stale" : ""),
+    t.ageDays > 0 ? t.ageDays + "d" : "");
+  if (t.state === "open" && t.ageDays >= 14) age.title = "aging — do it, mark waiting, or drop it";
+  row.append(age);
+
+  const acts = el("span", "tdo-acts");
+  if (t.state === "open") {
+    const wait = el("button", "stmt-hint", "waiting…");
+    wait.onclick = () => {
+      const who = personInput((v) => todosApi("/api/todos/update", { id: t.id, waiting: v }),
+        () => { who.el.replaceWith(wait); });
+      wait.replaceWith(who.el);
+      who.focus();
+    };
+    acts.append(wait);
+  }
+  const x = el("button", "uw-x", "✕");
+  x.title = "drop (archived, never deleted)";
+  x.onclick = () => {
+    const yes = quietBtn("drop?", () => todosApi("/api/todos/drop", { id: t.id }));
+    const no = quietBtn("no", () => { yes.remove(); no.remove(); x.hidden = false; });
+    x.hidden = true;
+    acts.append(yes, no);
+  };
+  acts.append(x);
+  row.append(acts);
+  return row;
+}
+
+// personInput: free text or a contact — picking a suggestion wraps [[display]]
+// so the waiting-on surfaces on that contact's page.
+function personInput(onSet, onCancel) {
+  const wrap = el("span", "ta-wrap");
+  const input = inputEl("who? (name or free text)");
+  input.classList.add("ta-in");
+  const drop = el("div", "ta-drop");
+  drop.hidden = true;
+  let seq = 0;
+  input.addEventListener("input", async () => {
+    const q = input.value.trim();
+    const mySeq = ++seq;
+    if (q.length < 2) { drop.hidden = true; return; }
+    let people = [];
+    try {
+      const d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json();
+      people = (d.results || []).slice(0, 5);
+    } catch (e) {}
+    if (mySeq !== seq) return;
+    drop.innerHTML = "";
+    people.forEach((p) => {
+      const it = el("div", "ta-item");
+      it.append(el("span", "", p.display), el("span", "ta-kind", "person"));
+      it.onmousedown = (ev) => { ev.preventDefault(); onSet("[[" + p.display + "]]"); };
+      drop.append(it);
+    });
+    drop.hidden = !drop.children.length;
+  });
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && input.value.trim()) onSet(input.value.trim());
+    else if (ev.key === "Escape") onCancel();
+  });
+  input.addEventListener("blur", () => setTimeout(() => { if (wrap.parentNode) onCancel(); }, 200));
+  wrap.append(input, drop);
+  return { el: wrap, focus: () => input.focus() };
+}
+
+// ---- global quick-add: press t anywhere (or via Cmd+K) — one line + domain, ≤2s ----
+function openTodoQuickAdd(prefill) {
+  if (document.getElementById("todoQuickAdd")) return;
+  const overlay = el("div", "cmdbar");
+  overlay.id = "todoQuickAdd";
+  const back = el("div", "cmdbar-backdrop");
+  const panel = el("div", "cmdbar-card");
+  const input = inputEl("what must happen…");
+  input.className = "cmdbar-input";
+  if (prefill) input.value = prefill;
+  const chips = el("div", "tdo-qa-chips");
+  let domain = "";
+  const names = ["Inbox", ...(todosCache && todosCache.areas ? todosCache.areas : ["Aion", "Real Estate", "Home", "Personal"])];
+  names.forEach((n, i) => {
+    const c = el("button", "filter-chip" + (i === 0 ? " on" : ""), n.toUpperCase());
+    c.onclick = () => {
+      domain = n === "Inbox" ? "" : n;
+      chips.querySelectorAll(".filter-chip").forEach((b) => b.classList.remove("on"));
+      c.classList.add("on");
+      input.focus();
+    };
+    chips.append(c);
+  });
+  const close = () => overlay.remove();
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text) { close(); return; }
+    try {
+      await postJSONOk("/api/todos/item", { text, domain });
+      showToast("Todo captured" + (domain ? " → " + domain : " → Inbox"));
+      close();
+      if (!els.todosView.hidden) loadTodos();
+    } catch (e) { showToast("Couldn't capture"); }
+  };
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") submit();
+    else if (ev.key === "Escape") close();
+  });
+  back.onclick = close;
+  panel.append(input, chips);
+  overlay.append(back, panel);
+  document.body.append(overlay);
+  input.focus();
+}
+
 function route() {
   const h = location.hash;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
+  const todosTab = h === "#/todos" || h.startsWith("#/todos/");
   const cal = h === "#/calendar";
   const fd = h === "#/feed";
   const studio = h === "#/studio" || h.startsWith("#/studio/");
@@ -7096,9 +7323,10 @@ function route() {
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const properties = h === "#/properties" || h.startsWith("#/properties/");
   const note = h.startsWith("#/note/");
-  const day = !goals && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !note;
+  const day = !goals && !todosTab && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !note;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
+  els.todosView.hidden = !todosTab;
   els.calendarView.hidden = !cal;
   els.feedView.hidden = !fd;
   els.studioView.hidden = !studio;
@@ -7109,6 +7337,7 @@ function route() {
   els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
+  els.todosNav.hidden = !day;
   els.feedNav.hidden = !day;
   els.studioNav.hidden = !day;
   els.calNav.hidden = !day;
@@ -7116,7 +7345,9 @@ function route() {
   els.readingNav.hidden = !day;
   els.propertiesNav.hidden = !day;
   els.spiritsNav.hidden = !day;
+  els.moreNav.hidden = !day;
   els.dayNav.hidden = day;
+  if (!day) setNavExpanded(false); // leaving the day view folds MORE back up
   if (day) refreshFeedBadge(); // pill only shows on the day view — keep it honest
   if (goals) {
     // "#/goals/history" is the archive tab; any other suffix is a goal-id
@@ -7125,6 +7356,7 @@ function route() {
     if (suffix === "history") showGoalsHistory();
     else loadGoals(suffix);
   }
+  else if (todosTab) loadTodos(); // the third surface — `to do.md` board
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
   else if (studio) showStudio(); // content studio: draft board + inspiration
@@ -7136,6 +7368,25 @@ function route() {
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);
+
+// MORE ▾ — the day-view menu keeps GOALS/FEED/SPIRITS up front; the rest lives in a dropdown
+function setNavExpanded(on) {
+  els.navMoreMenu.hidden = !on;
+  els.moreNav.setAttribute("aria-expanded", String(on));
+  els.moreNav.textContent = on ? "MORE ▴" : "MORE ▾";
+  if (on) {
+    // menu is position:fixed (pill-group clips absolute children) — pin it under the button
+    const r = els.moreNav.getBoundingClientRect();
+    els.navMoreMenu.style.top = r.bottom + 6 + "px";
+    els.navMoreMenu.style.right = window.innerWidth - r.right + "px";
+  }
+}
+els.moreNav.addEventListener("click", () => setNavExpanded(els.navMoreMenu.hidden));
+document.addEventListener("click", (e) => {
+  if (!els.navMoreMenu.hidden && !els.navMoreWrap.contains(e.target)) setNavExpanded(false);
+});
+window.addEventListener("scroll", () => { if (!els.navMoreMenu.hidden) setNavExpanded(false); }, true);
+window.addEventListener("resize", () => { if (!els.navMoreMenu.hidden) setNavExpanded(false); });
 
 // ---- day events ----
 document.getElementById("prevBtn").addEventListener("click", () => load(shiftDate(state.date, -1)));
