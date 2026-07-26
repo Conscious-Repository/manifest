@@ -152,6 +152,24 @@ func (d *Doc) View(now time.Time) View {
 	return v
 }
 
+// Triaged reports whether the one-time goals triage sweep has run (a
+// [triaged:: date] marker line in the preamble — todos-surface §5b).
+func (d *Doc) Triaged() bool {
+	for _, ln := range d.preamble {
+		if strings.Contains(ln, "[triaged::") {
+			return true
+		}
+	}
+	return false
+}
+
+// MarkTriaged stamps the sweep marker (idempotent).
+func (d *Doc) MarkTriaged(date string) {
+	if !d.Triaged() {
+		d.preamble = append(d.preamble, "", "[triaged:: "+date+"]")
+	}
+}
+
 var wikilinkRe = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
 // WaitingPerson extracts the [[person]] target from a waiting-on value ("" if

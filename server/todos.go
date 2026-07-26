@@ -7,6 +7,7 @@ import (
 
 	"manifest/approvals"
 	"manifest/daily"
+	"manifest/goals"
 	"manifest/todos"
 )
 
@@ -40,7 +41,7 @@ func (s *Server) todosView() map[string]any {
 		}
 	}
 	v := doc.View(time.Now())
-	return map[string]any{"domains": v.Domains, "areas": areas}
+	return map[string]any{"domains": v.Domains, "areas": areas, "triaged": doc.Triaged()}
 }
 
 func (s *Server) todosMutate(w http.ResponseWriter, fn func(*todos.Doc) (bool, error)) {
@@ -205,6 +206,120 @@ func (s *Server) syncTodoTasks(tasks []daily.Task) {
 			})
 		}
 	}
+}
+
+// ---- the ONE-TIME goals triage sweep (todos-surface §5b): every open stage
+// task in goals.md gets keep / move-to-todos / drop; one commit writes both
+// files; dropped lines are archived; goals.md emerges lean. ----
+
+type triageRow struct {
+	ID    string `json:"id"`
+	Area  string `json:"area"`
+	Rock  string `json:"rock"`
+	Stage string `json:"stage"`
+	Task  string `json:"task"`
+}
+
+func (s *Server) handleTodosTriage(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) || s.goals == nil {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		gdoc := s.goals.Load()
+		rows := []triageRow{}
+		for _, a := range gdoc.Areas {
+			for _, rock := range a.Rocks {
+				if rock.Checked {
+					continue
+				}
+				for _, st := range rock.Children {
+					for _, task := range st.Children {
+						if task.Checked {
+							continue
+						}
+						rows = append(rows, triageRow{ID: task.ID, Area: a.Name, Rock: rock.Text, Stage: st.Text, Task: task.Text})
+					}
+				}
+			}
+		}
+		writeJSON(w, map[string]any{"rows": rows})
+	case http.MethodPost:
+		var b struct {
+			Moves []struct{ ID, Domain string } `json:"moves"`
+			Drops []string                      `json:"drops"`
+		}
+		if err := decode(r, &b); err != nil {
+			httpError(w, err)
+			return
+		}
+		gdoc := s.goals.Load()
+		tdoc, err := s.todosStore.Load()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		today := time.Now().Format("2006-01-02")
+		var dropped []string
+		for _, m := range b.Moves {
+			text, area, ok := removeGoalTask(gdoc, m.ID)
+			if !ok {
+				httpError(w, errBadRequest("goal task not found: "+m.ID+" — nothing was written"))
+				return
+			}
+			domain := strings.TrimSpace(m.Domain)
+			if domain == "" {
+				domain = area
+			}
+			dom := tdoc.EnsureDomain(domain)
+			dom.Todos = append(dom.Todos, &todos.Todo{Text: text, Added: today})
+		}
+		for _, id := range b.Drops {
+			text, area, ok := removeGoalTask(gdoc, id)
+			if !ok {
+				httpError(w, errBadRequest("goal task not found: "+id+" — nothing was written"))
+				return
+			}
+			dropped = append(dropped, "- [ ] "+text+" [from:: goals/"+area+"] [dropped:: "+today+"]")
+		}
+		tdoc.MarkTriaged(today)
+		// both docs built in memory before ANY write; todos first, then goals
+		if len(dropped) > 0 {
+			if err := s.todosStore.ArchiveLines("goals triage "+today, dropped); err != nil {
+				httpError(w, err)
+				return
+			}
+		}
+		if err := s.todosStore.Save(tdoc); err != nil {
+			httpError(w, err)
+			return
+		}
+		if err := s.goals.Save(gdoc); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, s.todosView())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// removeGoalTask deletes one open stage task from the goals doc, returning its
+// text and area.
+func removeGoalTask(gdoc *goals.Doc, id string) (string, string, bool) {
+	for _, a := range gdoc.Areas {
+		for _, rock := range a.Rocks {
+			for _, st := range rock.Children {
+				for i, task := range st.Children {
+					if task.ID == id {
+						st.Children = append(st.Children[:i], st.Children[i+1:]...)
+						return task.Text, a.Name, true
+					}
+				}
+			}
+		}
+	}
+	return "", "", false
 }
 
 // handleTodoDrop — the stale-nudge's third exit: out of the live file, into

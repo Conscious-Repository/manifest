@@ -119,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/check", s.handleTodoCheck)
 	mux.HandleFunc("POST /api/todos/update", s.handleTodoUpdate)
 	mux.HandleFunc("POST /api/todos/drop", s.handleTodoDrop)
+	mux.HandleFunc("/api/todos/triage", s.handleTodosTriage) // GET list · POST commit (one-time sweep)
 
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)

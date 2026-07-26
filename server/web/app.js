@@ -944,6 +944,12 @@ function orientArea(area) {
   const name = el("div", "o-area-name", area.name);
   clickToEdit(name, () => area.name, (v) =>
     goalsApi("PATCH", "/api/areas", { name: area.name, newName: v }));
+  // soft one-Rock-per-domain lint (todos-surface §5a): note + quiet dot, never blocked
+  const activeRocks = (area.rocks || []).filter((r) => !r.checked && (!r.status || r.status === "active"));
+  if (activeRocks.length > 1) {
+    name.append(el("span", "o-rock-lint", " ● " + activeRocks.length + " rocks"));
+    name.title = activeRocks.length + " active Rocks in " + area.name + " — EOS says one; consider moving one to TODOS or closing it";
+  }
   card.appendChild(name);
 
   // North Star — one bold line; ghost when unset
@@ -7194,6 +7200,14 @@ function renderTodos() {
   }));
   els.todosMeta.textContent = open + " open · " + waiting + " waiting · t to capture";
 
+  // one-time goals lean-down banner (until the sweep commits)
+  if (todosCache.triaged === false) {
+    const banner = el("div", "tdo-triage-banner");
+    banner.append(el("span", "", "goals.md carries task fluff — sweep every open stage task once: keep · move here · drop."));
+    banner.append(pillLight("triage goals →", renderTodosTriage));
+    host.append(banner);
+  }
+
   domains.forEach((dom) => {
     const isInbox = dom.name.toLowerCase() === "inbox";
     if (isInbox && !dom.todos.length) return; // silent until something lands
@@ -7286,6 +7300,59 @@ function todoRow(dom, t, isInbox) {
   acts.append(x);
   row.append(acts);
   return row;
+}
+
+// renderTodosTriage — the one-time sweep surface: every open stage task in
+// goals.md with a keep → move → drop cycle chip; one commit writes both files.
+async function renderTodosTriage() {
+  const host = els.todosRows; host.innerHTML = "loading…";
+  let d = { rows: [] };
+  try { d = await (await fetch("/api/todos/triage")).json(); } catch (e) {}
+  host.innerHTML = "";
+  const rows = d.rows || [];
+  els.todosMeta.textContent = rows.length + " open stage tasks in goals.md";
+  if (!rows.length) { host.append(el("div", "pp-empty", "goals.md has no open stage tasks — nothing to sweep.")); return; }
+  const verdicts = {}; // id → keep|move|drop
+  const bar = el("div", "dirty-bar");
+  const barLabel = el("span", "dirty-label", "");
+  const refreshBar = () => {
+    const moves = Object.values(verdicts).filter((v) => v === "move").length;
+    const drops = Object.values(verdicts).filter((v) => v === "drop").length;
+    barLabel.textContent = moves + " MOVE → TODOS · " + drops + " DROP · rest keep";
+    commit.disabled = !(moves || drops);
+  };
+  rows.forEach((r) => {
+    verdicts[r.id] = "keep";
+    const row = el("div", "tdo-row");
+    row.append(el("span", "tdo-triage-path", r.area + " · " + r.rock + " · " + r.stage));
+    row.append(el("span", "tdo-text", r.task));
+    const chip = el("button", "tdo-verdict keep", "keep");
+    chip.onclick = () => {
+      const next = { keep: "move", move: "drop", drop: "keep" }[verdicts[r.id]];
+      verdicts[r.id] = next;
+      chip.textContent = next === "move" ? "move → todos (" + r.area + ")" : next;
+      chip.className = "tdo-verdict " + next;
+      refreshBar();
+    };
+    row.append(chip);
+    host.append(row);
+  });
+  const commit = el("button", "pill", "commit sweep");
+  commit.onclick = async () => {
+    commit.disabled = true;
+    const moves = rows.filter((r) => verdicts[r.id] === "move").map((r) => ({ id: r.id, domain: r.area }));
+    const drops = rows.filter((r) => verdicts[r.id] === "drop").map((r) => r.id);
+    try {
+      todosCache = await postJSONOk("/api/todos/triage", { moves, drops });
+      showToast("Swept — goals.md is lean; moved items are on the board");
+      renderTodos();
+    } catch (e) { showToast(("Sweep failed: " + (e.message || "")).slice(0, 90)); commit.disabled = false; }
+  };
+  const cancel = el("button", "pill light", "later");
+  cancel.onclick = () => renderTodos();
+  bar.append(barLabel, commit, cancel);
+  refreshBar();
+  host.append(bar);
 }
 
 // personInput: free text or a contact — picking a suggestion wraps [[display]]

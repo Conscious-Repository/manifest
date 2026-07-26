@@ -138,6 +138,12 @@ func (s *Store) Drop(id string, now time.Time) error {
 	return s.Save(d)
 }
 
+// ArchiveLines appends raw lines under a `## <section>` archive heading —
+// the goals-triage sweep records dropped tasks here (nothing silently dropped).
+func (s *Store) ArchiveLines(section string, lines []string) error {
+	return s.appendArchive(section, lines)
+}
+
 // appendArchive appends lines under a `## <section>` heading in the archive
 // file (created on first use), reusing the section when it is the last one.
 func (s *Store) appendArchive(section string, lines []string) error {
