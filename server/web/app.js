@@ -6819,6 +6819,47 @@ function renderProp(p, src, geoFeatures) {
   host.append(el("div", "pp-section-head", "WORK"));
   host.append(workBlock(p));
 
+  // TODOS strip (task-substrate §6): buckets whose heading [[links]] match
+  // this property render their open todos here — read/write of to do.md only
+  // (money and SOW stay in the realestate files).
+  try {
+    const tv = await (await fetch("/api/todos")).json();
+    const slugOf = (s2) => String(s2 || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const mine = [];
+    (tv.domains || []).forEach((dm) => (dm.buckets || []).forEach((bk) => {
+      const hit = (bk.links || []).some((l) => {
+        const ls = slugOf(l);
+        return ls === p.slug || p.slug.startsWith(ls) || ls.startsWith(p.slug) ||
+          slugOf(p.address).startsWith(ls);
+      });
+      if (hit) mine.push({ dm, bk });
+    }));
+    if (mine.length) {
+      host.append(el("div", "pp-section-head", "TODOS"));
+      mine.forEach(({ dm, bk }) => {
+        const box = el("div", "pp-todostrip");
+        box.append(el("div", "uw-sub", bk.name + " · " + dm.name.toLowerCase()));
+        bk.todos.filter((t) => t.state !== "done").forEach((t) => {
+          const row = el("div", "tdo-row");
+          const check = el("button", "check wk-check", "○");
+          check.onclick = async () => {
+            try { await postJSONOk("/api/todos/check", { id: t.id, checked: true }); } catch (e) {}
+            renderPropertyPage(p.slug);
+          };
+          row.append(check, el("span", "tdo-text", t.text));
+          if (t.issue) row.append(el("span", "tdo-tag", "⚑ " + t.issue.split("/").pop()));
+          if (t.state === "waiting") row.append(el("span", "tdo-tag", "⏳ " + t.waiting));
+          box.append(row);
+        });
+        box.append(ghostInput("＋ todo", "tdo-add", async (v) => {
+          try { await postJSONOk("/api/todos/item", { text: v, domain: dm.name, bucket: bk.name }); } catch (e) {}
+          renderPropertyPage(p.slug);
+        }, "into " + bk.name + "…"));
+        host.append(box);
+      });
+    }
+  } catch (e) {}
+
   // SCHEDULE anchor (§3): one date + per-stage derived spans on the rows
   const sched = el("div", "pp-sched");
   const wsLabel = el("span", "uw-label", "WORK START");

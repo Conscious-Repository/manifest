@@ -1765,3 +1765,4 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 /* task-substrate: goals window */
 .o-todo-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; color: var(--icon); margin: 10px 0 2px; }
 .o-frozen-line { font-family: var(--mono); font-size: 11px; color: var(--icon); padding: 1px 0 1px 26px; text-decoration: line-through; }
+.pp-todostrip { margin: 4px 0 10px; }
