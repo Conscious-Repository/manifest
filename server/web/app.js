@@ -391,11 +391,13 @@ async function openGoalPicker(slot) {
 function renderCascadeTasks(day) {
   const host = document.getElementById("focusExtra");
   if (host) host.innerHTML = "";
-  const existing = new Set((day.tasks || []).map((t) => t.goalId).filter(Boolean));
+  // offers are rock-tethered TODOS now (task-substrate) — todoId-keyed
+  const existing = new Set((day.tasks || []).map((t) => t.todoId || t.goalId).filter(Boolean));
   const suggestions = [];
   (day.focus || []).forEach((p) => {
     (p.tasks || []).forEach((t) => {
-      if (!existing.has(t.goalId)) suggestions.push({ goalId: t.goalId, text: t.text, goal: p.text });
+      const key = t.todoId || t.goalId;
+      if (!existing.has(key)) suggestions.push({ todoId: t.todoId, goalId: t.goalId, text: t.text, goal: p.text });
     });
   });
   if (!suggestions.length || !host) return;
@@ -421,7 +423,7 @@ function renderCascadeTasks(day) {
       chip.title = "Tasks are full — remove one to add this";
     } else {
       chip.title = `Add “${s.text}” to today`;
-      chip.addEventListener("click", () => pullGoal(s.goalId));
+      chip.addEventListener("click", () => (s.todoId ? pullTodo(s.todoId) : pullGoal(s.goalId)));
     }
     chips.appendChild(chip);
   });
@@ -459,20 +461,33 @@ function renderPrep(day) {
   els.prepBanner.hidden = false;
   const head = document.createElement("div");
   head.className = "prep-head";
-  head.textContent = `Planning ${prettyDate(day.date)} — pull from your 30-day plate:`;
+  head.textContent = `Planning ${prettyDate(day.date)} — pull from your todos:`;
   const chips = document.createElement("div");
   chips.className = "pool-chips";
-  day.pool.forEach((it) => {
+  const mk = (it) => {
     const chip = document.createElement("button");
     chip.className = "pool-chip";
     chip.title = `Add “${it.text}” to ${day.date}`;
     const area = document.createElement("span");
     area.className = "pool-area";
-    area.textContent = it.area;
+    area.textContent = it.area + (it.tier === 1 ? " ⧗" : "");
     chip.append(area, document.createTextNode(" " + it.text));
     chip.addEventListener("click", () => (it.todoId ? pullTodo(it.todoId) : pullGoal(it.goalId)));
-    chips.appendChild(chip);
-  });
+    return chip;
+  };
+  const near = day.pool.filter((it) => (it.tier || 3) < 3);
+  const far = day.pool.filter((it) => (it.tier || 3) === 3);
+  (near.length ? near : far).forEach((it) => chips.appendChild(mk(it)));
+  if (near.length && far.length) {
+    const reveal = document.createElement("button");
+    reveal.className = "pool-chip pool-reveal";
+    reveal.textContent = `all domains · ${far.length} more`;
+    reveal.onclick = () => {
+      reveal.remove();
+      far.forEach((it) => chips.appendChild(mk(it)));
+    };
+    chips.appendChild(reveal);
+  }
   els.prepBanner.append(head, chips);
 }
 
@@ -668,7 +683,7 @@ function renderTasks(tasks) {
   const rows = new Array(MAX_TASKS).fill(null);
   const leftover = [];
   list.forEach((t) => {
-    const si = slotForGoalId(t.goalId, focus);
+    const si = t.todoId ? slotForTodoId(t.todoId, focus) : slotForGoalId(t.goalId, focus);
     if (si >= 0 && si < MAX_TASKS && rows[si] === null) rows[si] = t; // seat at its goal's slot
     else leftover.push(t); // manual tasks, or a slot already taken
   });
@@ -685,6 +700,16 @@ function renderTasks(tasks) {
 // segment-boundary prefix of the task's goal id. -1 when the task isn't linked
 // to any current focus slot (a manually-typed task). Slug ids like
 // "aion/series-a-15m/<milestone>/<task>" make prefix matching exact.
+// slotForTodoId seats a substrate task under the focus slot whose Rock offers
+// it (the slot's tasks are that Rock's tethered todos).
+function slotForTodoId(id, focus) {
+  let best = -1;
+  (focus || []).forEach((p, i) => {
+    if (best < 0 && p && (p.tasks || []).some((t) => t.todoId === id)) best = i;
+  });
+  return best;
+}
+
 function slotForGoalId(g, focus) {
   if (!g) return -1;
   let best = -1, bestLen = -1;

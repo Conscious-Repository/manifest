@@ -155,7 +155,7 @@ func main() {
 	calSource := calendar.NewSource(calClient, filepath.Join(cfg.DataDir, "calendar-cache"))
 
 	svc := daily.NewService(dailyConfig(cfg), idx)
-	svc.UseGoals(server.NewGoalsAdapter(goalsStore))
+	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)

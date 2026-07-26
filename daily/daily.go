@@ -54,9 +54,10 @@ type Task struct {
 // unplanned future day.
 type PoolItem struct {
 	GoalID string `json:"goalId,omitempty"`
-	TodoID string `json:"todoId,omitempty"` // a todos-board item offered alongside goal stages
+	TodoID string `json:"todoId,omitempty"` // a todos-board item (the substrate pool)
 	Text   string `json:"text"`
 	Area   string `json:"area"`
+	Tier   int    `json:"tier,omitempty"` // 1 focused-rock tethers · 2 same-domain · 3 everything else
 }
 
 type Day struct {
@@ -79,7 +80,8 @@ const defaultFocusSlots = 3
 
 // FocusNode is a resolved cascade node — a 30-day milestone or one of its tasks.
 type FocusNode struct {
-	GoalID  string `json:"goalId"`
+	GoalID  string `json:"goalId,omitempty"`
+	TodoID  string `json:"todoId,omitempty"` // substrate-backed offer (rock-tethered todo)
 	Text    string `json:"text"`
 	Checked bool   `json:"checked,omitempty"`
 }

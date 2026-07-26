@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -311,25 +312,59 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 
 // fillPool attaches the 30-day me pool to an unplanned day so the UI can offer
 // quick-add chips. Planned days carry no pool.
+// fillPool offers the TASK SUBSTRATE, tiered (task-substrate §5): (1) todos
+// tethered to the day's focused Rocks, (2) other todos from those Rocks'
+// domains (buckets included), (3) everything else — the client folds tier 3
+// behind an "all domains" reveal.
 func (s *Server) fillPool(day *daily.Day) {
-	if !day.Unplanned {
+	if !day.Unplanned || s.todosStore == nil {
 		return
 	}
-	for _, it := range s.goals.Pool() {
-		day.Pool = append(day.Pool, daily.PoolItem{GoalID: it.GoalID, Text: it.Text, Area: it.Area})
+	doc, err := s.todosStore.Load()
+	if err != nil {
+		return
 	}
-	// todos join the pool after goal stages — open items, labeled by domain
-	if s.todosStore != nil {
-		if doc, err := s.todosStore.Load(); err == nil {
-			for _, dv := range doc.View(time.Now()).Domains {
-				for _, t := range dv.Todos {
-					if t.State == "open" {
-						day.Pool = append(day.Pool, daily.PoolItem{TodoID: t.ID, Text: t.Text, Area: dv.Name + " · todo"})
-					}
+	focusedRocks := map[string]bool{}
+	focusedAreas := map[string]bool{}
+	gdoc := s.goals.Load()
+	for _, p := range day.Focus {
+		if p.GoalID == "" {
+			continue
+		}
+		focusedRocks[p.GoalID] = true
+		for _, a := range gdoc.Areas {
+			for _, rock := range a.Rocks {
+				if rock.ID == p.GoalID {
+					focusedAreas[strings.ToLower(a.Name)] = true
 				}
 			}
 		}
 	}
+	v := doc.View(time.Now())
+	add := func(dv string, t todos.TodoView) {
+		if t.State != "open" {
+			return
+		}
+		tier := 3
+		switch {
+		case t.Rock != "" && focusedRocks[t.Rock]:
+			tier = 1
+		case focusedAreas[strings.ToLower(dv)]:
+			tier = 2
+		}
+		day.Pool = append(day.Pool, daily.PoolItem{TodoID: t.ID, Text: t.Text, Area: dv, Tier: tier})
+	}
+	for _, dv := range v.Domains {
+		for _, t := range dv.Todos {
+			add(dv.Name, t)
+		}
+		for _, bk := range dv.Buckets {
+			for _, t := range bk.Todos {
+				add(dv.Name, t)
+			}
+		}
+	}
+	sort.SliceStable(day.Pool, func(i, j int) bool { return day.Pool[i].Tier < day.Pool[j].Tier })
 }
 
 // handleDayPull pulls a 30-day goal into the day as a [goal:: id]-linked task.
