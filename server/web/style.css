@@ -1439,6 +1439,11 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .unrec-amt { color: #b45309; }
 .doc-chip { text-decoration: none; }
 .doc-chip:hover { text-decoration: underline; }
+.pp-amt.inflow { color: #15803d; }
+.stmt-head { display: flex; justify-content: space-between; align-items: baseline; }
+.stmt-progress { font-family: var(--mono); font-size: 11px; color: #15803d; }
+.stmt-progress.open { color: #b45309; }
+.dismiss-picker { display: inline-flex; gap: 8px; margin-left: 8px; }
 .cols-ledger { grid-template-columns: 0.75fr 0.65fr 0.95fr 1.1fr 0.85fr 0.85fr 1.3fr 0.9fr auto; }
 .cols-stmt { grid-template-columns: 0.7fr 2fr 0.8fr 1fr 1.6fr 0.7fr; }
 .cols-2 { grid-template-columns: 1fr 1fr auto; }

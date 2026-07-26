@@ -5435,8 +5435,16 @@ async function renderAccounting() {
 
   const counts = { pending: 0, assigned: 0, split: 0, applied: 0, skipped: 0 };
   stmtRows.forEach((r) => { counts[r.state] = (counts[r.state] || 0) + 1; });
-  els.propertiesMeta.textContent = counts.pending + " unassigned · " + counts.skipped + " skipped" +
-    (d.lastImport ? " · last import " + d.lastImport : "");
+  const units = new Map();
+  stmtRows.forEach((r) => {
+    const k = (r.statement || "earlier") + " · imported " + (r.imported || "");
+    const u = units.get(k) || { open: false };
+    if (r.state !== "applied" && r.state !== "skipped") u.open = true;
+    units.set(k, u);
+  });
+  const openCount = [...units.values()].filter((u) => u.open).length;
+  els.propertiesMeta.textContent = (openCount ? openCount + " statement" + (openCount === 1 ? "" : "s") + " open · " : "") +
+    counts.pending + " unassigned" + (d.lastImport ? " · last import " + d.lastImport : "");
 
   // upload zone (always present)
   const drop = el("div", "pp-dropzone", "drop a bank csv — or click to pick");
@@ -5521,8 +5529,20 @@ async function renderAccounting() {
     byStmt.get(k).push(r);
   });
   if (!show.length) list.append(emptyRow(stmtFilter === "pending" ? "Nothing pending — drop a statement above." : "Nothing here."));
+  // statement units: a statement is OPEN until every row is applied or
+  // dismissed-with-reason — x/y progress on each group header
+  const unitOf = (label) => {
+    const all = stmtRows.filter((r) => ((r.statement || "earlier") + " · imported " + (r.imported || "")) === label);
+    const done = all.filter((r) => r.state === "applied" || r.state === "skipped").length;
+    return { done, total: all.length, open: done < all.length };
+  };
   for (const [label, rows] of byStmt) {
-    list.append(el("div", "pp-section-head", label.toUpperCase()));
+    const u = unitOf(label);
+    const head = el("div", "pp-section-head stmt-head");
+    head.append(el("span", "", label.toUpperCase()));
+    head.append(el("span", "stmt-progress" + (u.open ? " open" : ""),
+      (u.open ? "OPEN · " : "CLOSED · ") + u.done + "/" + u.total + " reconciled"));
+    list.append(head);
     list.append(ppCols("cols-stmt", ["DATE", "DESCRIPTION", "AMOUNT", "CATEGORY", "PROPERTY", "STATE"]));
     rows.forEach((r) => list.append(stmtRowEl(r)));
   }
@@ -5591,7 +5611,7 @@ function renderStmtMapping(host, pre) {
         date: normDate(raw[di] || ""), amount: Math.round(amt * 100) / 100,
         vendor: (raw[vi] || "").trim(), note: ni >= 0 ? (raw[ni] || "").trim() : "",
       };
-    }).filter((r) => r.date && r.amount > 0);
+    }).filter((r) => r.date && r.amount !== 0); // negatives = deposits → inflow rows
     if (!entAC.value()) { showToast("Pick the paying entity first"); entAC.focus(); return; }
     ingest.disabled = true;
     try {
@@ -5615,8 +5635,8 @@ function stmtRowEl(r) {
   const wrap = el("div", "stmt-wrap");
   const row = el("div", "stmt-row state-" + r.state);
   row.append(el("span", "import-date", r.date));
-  row.append(el("span", "stmt-vendor", r.vendor + (r.note ? "  · " + r.note : "")));
-  row.append(el("span", "pp-amt", fmtMoney(r.amount)));
+  row.append(el("span", "stmt-vendor", (r.inflow ? "↓ " : "") + r.vendor + (r.note ? "  · " + r.note : "")));
+  row.append(el("span", "pp-amt" + (r.inflow ? " inflow" : ""), (r.inflow ? "+" : "") + fmtMoney(r.amount)));
 
   const readOnly = r.state === "applied";
   if (readOnly) {
@@ -5637,14 +5657,18 @@ function stmtRowEl(r) {
   const single = (r.assignments || []).length === 1 ? r.assignments[0] : null;
   const isAdmin = single && single.slug.startsWith("admin:");
   propCell.append(propertyTypeahead("property…", (p) => {
-    patchStmt(r, { assignments: [{ slug: p.slug, amount: r.amount, workId: (single && single.workId) || "", cat: (single && single.cat) || "" }] });
+    patchStmt(r, { assignments: [{ slug: p.slug, amount: r.amount, workId: (single && single.workId) || "",
+      cat: (single && single.cat) || (r.inflow ? "rent" : "") }] });
   }, single && !isAdmin ? single.slug : ""));
-  // budget category lane: hard (default, tetherable) | soft | acquisition
+  // budget category lane: hard (default, tetherable) | soft | acquisition;
+  // inflow rows instead pick what KIND of money arrived (rent | capital)
   if (single && !isAdmin) {
     const catSel = document.createElement("select");
     catSel.className = "pp-in lg-cat";
-    catSel.title = "budget category (soft = interest · taxes · insurance · utilities)";
-    [["", "hard"], ["soft", "soft"], ["acquisition", "acquisition"]].forEach(([v, l]) => {
+    catSel.title = r.inflow ? "income kind" : "budget category (soft = interest · taxes · insurance · utilities)";
+    (r.inflow
+      ? [["rent", "rent"], ["capital", "capital"]]
+      : [["", "hard"], ["soft", "soft"], ["acquisition", "acquisition"]]).forEach(([v, l]) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; catSel.append(o);
     });
     catSel.value = single.cat || "";
@@ -5699,9 +5723,34 @@ function stmtRowEl(r) {
       hints.append(echo);
     }
   }
-  const skip = el("button", "stmt-hint", r.state === "skipped" ? "unskip" : "skip");
-  skip.onclick = () => patchStmt(r, { state: r.state === "skipped" ? "pending" : "skipped" });
-  hints.append(skip);
+  // dismiss-with-reason: every statement item must end assigned or dismissed
+  if (r.state === "skipped") {
+    hints.append(el("span", "stmt-hint", "dismissed: " + (r.reason || "personal")));
+    const un = el("button", "stmt-hint", "restore");
+    un.onclick = () => patchStmt(r, { state: "pending", reason: "" });
+    hints.append(un);
+  } else {
+    const dis = el("button", "stmt-hint", "dismiss…");
+    dis.onclick = () => {
+      if (hints.querySelector(".dismiss-picker")) { hints.querySelector(".dismiss-picker").remove(); return; }
+      const pick = el("span", "dismiss-picker");
+      ["personal", "transfer", "duplicate"].forEach((why) => {
+        pick.append(quietBtn(why, () => patchStmt(r, { state: "skipped", reason: why })));
+      });
+      pick.append(quietBtn("other…", () => {
+        const why = inputEl("why?");
+        why.classList.add("est-in");
+        why.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" && why.value.trim()) patchStmt(r, { state: "skipped", reason: "other: " + why.value.trim() });
+          else if (ev.key === "Escape") why.remove();
+        });
+        pick.append(why);
+        why.focus();
+      }));
+      hints.append(pick);
+    };
+    hints.append(dis);
+  }
   wrap.append(hints);
 
   if ((r.assignments || []).length > 1) renderSplitBlock(wrap, r, true);

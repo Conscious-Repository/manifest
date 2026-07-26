@@ -24,7 +24,7 @@ type Alloc struct {
 	Slug   string  `json:"slug"` // property slug, or "admin:<entity-slug>" for the admin lane
 	Amount float64 `json:"amount"`
 	WorkID string  `json:"workId,omitempty"` // optional stage/todo tether (hard lane only)
-	Cat    string  `json:"cat,omitempty"`    // budget category: soft | acquisition (blank = hard)
+	Cat    string  `json:"cat,omitempty"`    // budget category: soft | acquisition (blank = hard); inflows: rent | capital
 }
 
 type StatementRow struct {
@@ -38,6 +38,8 @@ type StatementRow struct {
 	Category    string  `json:"category"`
 	Entity      string  `json:"entity,omitempty"` // paying entity (bound at upload)
 	State       string  `json:"state"`            // pending | assigned | split | applied | skipped
+	Inflow      bool    `json:"inflow,omitempty"` // deposit (rent / capital / transfer) — not an expense
+	Reason      string  `json:"reason,omitempty"` // dismiss reason when skipped: personal | transfer | duplicate | other:<note>
 	Assignments []Alloc `json:"assignments,omitempty"`
 	Remembered  bool    `json:"remembered,omitempty"` // prefilled from vendor memory
 }
@@ -90,16 +92,18 @@ func (s *StatementStore) Ingest(label string, rows []StatementRow, ledgerKeys ma
 		r.Imported = today
 		r.State = "pending"
 		vk := strings.ToLower(strings.TrimSpace(r.Vendor))
-		if c, ok := prefillCat[vk]; ok && r.Category == "" {
-			r.Category = c
-			r.Remembered = true
-		}
-		if p, ok := prefillProp[vk]; ok {
-			r.Assignments = []Alloc{{Slug: p, Amount: r.Amount}}
-			if r.Category != "" {
-				r.State = "assigned"
+		if !r.Inflow { // vendor memory is expense memory — never prefill deposits
+			if c, ok := prefillCat[vk]; ok && r.Category == "" {
+				r.Category = c
+				r.Remembered = true
 			}
-			r.Remembered = true
+			if p, ok := prefillProp[vk]; ok {
+				r.Assignments = []Alloc{{Slug: p, Amount: r.Amount}}
+				if r.Category != "" {
+					r.State = "assigned"
+				}
+				r.Remembered = true
+			}
 		}
 		s.st.Rows = append(s.st.Rows, r)
 		added++
@@ -127,9 +131,10 @@ func (s *StatementStore) List() ([]StatementRow, string) {
 	return out, s.st.LastImport
 }
 
-// Update patches one row's category/assignments/state (the workbench's row
-// interactions). Applied rows are immutable.
-func (s *StatementStore) Update(id string, category *string, assignments *[]Alloc, state *string) (StatementRow, error) {
+// Update patches one row's category/assignments/state/reason (the workbench's
+// row interactions). Applied rows are immutable. Skipping REQUIRES a reason —
+// every statement item must end assigned or dismissed-with-reason.
+func (s *StatementStore) Update(id string, category *string, assignments *[]Alloc, state, reason *string) (StatementRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.st.Rows {
@@ -146,9 +151,18 @@ func (s *StatementStore) Update(id string, category *string, assignments *[]Allo
 		if assignments != nil {
 			r.Assignments = *assignments
 		}
+		if reason != nil {
+			r.Reason = strings.TrimSpace(*reason)
+		}
 		if state != nil {
 			switch *state {
-			case "pending", "assigned", "split", "skipped":
+			case "pending", "assigned", "split":
+				r.State = *state
+				r.Reason = ""
+			case "skipped":
+				if r.Reason == "" {
+					return *r, fmt.Errorf("a dismiss reason is required (personal · transfer · duplicate · other)")
+				}
 				r.State = *state
 			default:
 				return *r, fmt.Errorf("bad state %q", *state)
@@ -188,7 +202,7 @@ func (s *StatementStore) Applicable(ids []string) ([]StatementRow, error) {
 		if r.State != "assigned" && r.State != "split" {
 			return nil, fmt.Errorf("row %s is %s — not applicable", r.ID, r.State)
 		}
-		if strings.TrimSpace(r.Category) == "" {
+		if strings.TrimSpace(r.Category) == "" && !r.Inflow {
 			return nil, fmt.Errorf("row %s has no category", r.ID)
 		}
 		var sum float64

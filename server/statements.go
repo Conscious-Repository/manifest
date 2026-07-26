@@ -109,12 +109,18 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 	_, vendorCat, vendorProp := s.reImport.Lookup("")
 	rows := make([]realestate.StatementRow, 0, len(b.Rows))
 	for _, row := range b.Rows {
-		if strings.TrimSpace(row.Date) == "" || row.Amount <= 0 {
+		if strings.TrimSpace(row.Date) == "" || row.Amount == 0 {
 			continue
+		}
+		// deposits ride in NEGATIVE after the sign convention → inflow rows
+		// (rent / capital / transfer) that must also be reconciled
+		amt, inflow := row.Amount, false
+		if amt < 0 {
+			amt, inflow = -amt, true
 		}
 		rows = append(rows, realestate.StatementRow{
 			Date: strings.TrimSpace(row.Date), Vendor: strings.TrimSpace(row.Vendor),
-			Note: strings.TrimSpace(row.Note), Amount: row.Amount,
+			Note: strings.TrimSpace(row.Note), Amount: amt, Inflow: inflow,
 			Entity: strings.TrimSpace(b.Entity),
 		})
 	}
@@ -142,12 +148,13 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 		Category    *string             `json:"category"`
 		Assignments *[]realestate.Alloc `json:"assignments"`
 		State       *string             `json:"state"`
+		Reason      *string             `json:"reason"`
 	}
 	if err := decode(r, &b); err != nil || b.ID == "" {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	row, err := s.statements.Update(b.ID, b.Category, b.Assignments, b.State)
+	row, err := s.statements.Update(b.ID, b.Category, b.Assignments, b.State, b.Reason)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -210,22 +217,35 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 					" of $" + strconv.FormatFloat(row.Amount, 'f', 2, 64) + " · " + row.Vendor)
 			}
 			// tokens: work tether per alloc + budget category + the paying entity
+			// + statement provenance (the accountant CSV's bank reference)
 			if a.WorkID != "" {
 				note = strings.TrimSpace(note + " [work:: " + a.WorkID + "]")
 				if p, ok := s.realestate.Get(a.Slug); ok {
 					s.tetherWorkID(p, a.WorkID) // freeze the id in the record
 				}
 			}
-			if c := strings.ToLower(strings.TrimSpace(a.Cat)); c == realestate.CatSoft ||
-				c == realestate.CatAcquisition {
+			if c := strings.ToLower(strings.TrimSpace(a.Cat)); !row.Inflow && (c == realestate.CatSoft ||
+				c == realestate.CatAcquisition) {
 				note = strings.TrimSpace(note + " [cat:: " + c + "]")
 			}
 			if row.Entity != "" {
 				note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")
 			}
+			if row.Statement != "" {
+				note = strings.TrimSpace(note + " [stmt:: " + row.Statement + "]")
+			}
+			// inflows book as income rows (rent / capital) — rollups ignore them
+			// (expense-only math); they exist for the books + accountant CSV
+			rowType, status, cat := "expense", "paid", row.Category
+			if row.Inflow {
+				rowType, status = "income", "received"
+				if c := strings.ToLower(strings.TrimSpace(a.Cat)); c != "" {
+					cat = c
+				}
+			}
 			rec := []string{
-				row.Date, "expense", row.Category, row.Vendor, "",
-				strconv.FormatFloat(a.Amount, 'f', -1, 64), "paid", note, "",
+				row.Date, rowType, cat, row.Vendor, "",
+				strconv.FormatFloat(a.Amount, 'f', -1, 64), status, note, "",
 			}
 			if err := s.vault.AppendLedgerRow(ledgers[a.Slug], realestate.LedgerHeader, rec); err != nil {
 				httpError(w, err)
