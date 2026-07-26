@@ -797,40 +797,6 @@ func (s *Server) syncHardCosts(slug string) {
 	}
 }
 
-// handleBudgetLock snapshots the CURRENT category plans as the baseline — one
-// `- [locked:: date] …` line appended to `## budget` (prior lines, including
-// legacy tables and earlier locks, are preserved verbatim; latest lock wins).
-func (s *Server) handleBudgetLock(w http.ResponseWriter, r *http.Request) {
-	if s.realestate == nil || s.vault == nil {
-		http.Error(w, "properties not available", http.StatusServiceUnavailable)
-		return
-	}
-	slug := r.PathValue("slug")
-	p, ok := s.realestate.Get(slug)
-	if !ok {
-		http.Error(w, "property not found", http.StatusNotFound)
-		return
-	}
-	if p.Project == nil {
-		httpError(w, errBadRequest("no budget to lock"))
-		return
-	}
-	amounts := map[string]float64{}
-	for _, c := range p.Project.Categories {
-		amounts[c.Key] = c.Budget
-	}
-	line := realestate.FormatBaselineLock(time.Now().Format("2006-01-02"), amounts)
-	body := strings.TrimRight(strings.Join(append(append([]string{}, p.BudgetRaw...), line), "\n"), "\n")
-	if err := s.vault.ReplaceSection(p.Path, "budget", body); err != nil {
-		httpError(w, err)
-		return
-	}
-	if s.index != nil {
-		_ = s.index.ReindexPaths([]string{p.Path})
-	}
-	s.respondProperty(w, slug)
-}
-
 // writeWork emits + surgically replaces the `## work` section, then reindexes.
 func (s *Server) writeWork(rel string, stages []realestate.WorkStage) error {
 	if err := s.vault.ReplaceSection(rel, "work", realestate.EmitWork(stages)); err != nil {
@@ -1280,17 +1246,13 @@ func (s *Server) handleDealExportUnderwrite(w http.ResponseWriter, r *http.Reque
 	cw := csv.NewWriter(&buf)
 	_ = cw.Write([]string{"section", "property", "stage", "est", "committed", "paid", "date", "type", "vendor", "amount", "status", "note"})
 	for _, p := range members {
-		// pass-6: full-project budget summary (category · budget · committed ·
-		// paid, live rides the est column) above the stage detail
+		// full-project budget summary (category · budget · committed · paid)
+		// above the stage detail
 		if p.Project != nil {
 			for _, c := range p.Project.Categories {
-				_ = cw.Write([]string{"budget-summary", p.Address, c.Key, f2(c.Budget), f2(c.Committed), f2(c.Paid), "", "", "", f2(c.Live), "", ""})
+				_ = cw.Write([]string{"budget-summary", p.Address, c.Key, f2(c.Budget), f2(c.Committed), f2(c.Paid), "", "", "", "", "", ""})
 			}
-			base := p.Project.PlanTotal
-			if p.Project.Baseline != nil {
-				base = p.Project.Baseline.Total
-			}
-			_ = cw.Write([]string{"budget-summary", p.Address, "TOTAL", f2(base), f2(p.Project.Committed), f2(p.Project.Paid), "", "", "", f2(p.Project.LiveTotal), "", ""})
+			_ = cw.Write([]string{"budget-summary", p.Address, "TOTAL", f2(p.Project.PlanTotal), f2(p.Project.Committed), f2(p.Project.Paid), "", "", "", "", "", ""})
 		}
 		for _, st := range p.Work {
 			_ = cw.Write([]string{"rollup", p.Address, st.Text, f2(st.EstTotal), f2(st.Committed), f2(st.Paid), "", "", "", "", "", ""})

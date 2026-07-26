@@ -4388,20 +4388,11 @@ async function loadProperties() {
 function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
 function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
 
-// projMoney: one property's budget-vs-live numbers (pass-6). budget = locked
-// baseline total when locked, else the drifting plan total.
+// projMoney: one property's plan-vs-spend numbers.
 function projMoney(p) {
   const pj = p.project || {};
-  const budget = pj.baseline ? pj.baseline.total : (pj.planTotal || 0);
-  const live = pj.liveTotal || 0;
-  return { budget, live, committed: pj.committed || 0, paid: pj.paid || 0,
-    varPct: budget > 0 ? (live - budget) / budget : 0, locked: !!pj.baseline };
-}
-
-// varChipEl: the colored ±% chip (green under / red over budget).
-function varChipEl(varPct, cls) {
-  return el("span", (cls || "out-var") + (varPct > 0.0005 ? " over" : " under"),
-    (varPct > 0 ? "+" : "") + (varPct * 100).toFixed(1) + "%");
+  return { budget: pj.planTotal || 0, committed: pj.committed || 0,
+    paid: pj.paid || 0, over: !!pj.over };
 }
 
 // ---- shared primitives (admin-portal design §0) ----
@@ -4594,7 +4585,7 @@ function renderBoardBody(body) {
   const shown = propertyCache.filter((p) => !p.hidden && matchesBoardFilters(p))
     .sort(boardComparator(boardSort));
   if (!shown.length) { body.append(emptyRow("Nothing matches the filter.")); return; }
-  body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "DEAL", "STAGE", "UNITS", "BUDGET", "LIVE / VAR"]));
+  body.append(ppCols("cols-board", ["ADDRESS", "STATUS", "DEAL", "STAGE", "UNITS", "BUDGET", "SPENT"]));
   shown.forEach((p) => body.append(boardRow(p, false)));
 }
 
@@ -4672,9 +4663,10 @@ function boardRow(p, member) {
   row.append(el("span", "property-units", p.units ? p.units + "u" : ""));
   const pm = projMoney(p);
   row.append(el("span", "property-budget", pm.budget ? fmtMoney(pm.budget) : ""));
-  const out = el("span", "property-out" + (pm.varPct > 0.0005 ? " over" : ""));
+  const out = el("span", "property-out" + (pm.over ? " over" : ""));
   if (pm.budget) {
-    out.append(el("span", "out-paid", fmtMoney(pm.live)), el("span", "out-sep", ""), varChipEl(pm.varPct));
+    out.append(el("span", "out-paid", fmtMoney(pm.paid)),
+      el("span", "out-committed", " " + fmtPct(pm.paid / pm.budget)));
   }
   row.append(out);
   return row;
@@ -5149,29 +5141,24 @@ async function renderDealPage(slug) {
   host.append(el("div", "pp-section-head tag-manifest", "ACTUALS · MANIFEST ONLY"));
   const dm = (d.members || []).reduce((a, p) => {
     const pm = projMoney(p);
-    a.budget += pm.budget; a.live += pm.live; a.committed += pm.committed; a.paid += pm.paid;
+    a.budget += pm.budget; a.committed += pm.committed; a.paid += pm.paid;
     return a;
-  }, { budget: 0, live: 0, committed: 0, paid: 0 });
+  }, { budget: 0, committed: 0, paid: 0 });
   const sum = el("div", "pp-rollup");
   sum.append(rollupStat("budget", "", fmtMoney(dm.budget)));
-  sum.append(rollupStat("live", "", fmtMoney(dm.live)));
-  const dv = el("div", "pp-stat");
-  dv.append(el("div", "pp-stat-big", ""));
-  dv.firstChild.append(varChipEl(dm.budget > 0 ? (dm.live - dm.budget) / dm.budget : 0, "pp-var"));
-  dv.append(el("div", "pp-stat-sub", ""), el("div", "pp-stat-label", "vs budget"));
-  sum.append(dv);
+  sum.append(rollupStat("spent", fmtPct(dm.budget > 0 ? dm.paid / dm.budget : 0), fmtMoney(dm.paid)));
+  sum.append(rollupStat("remaining", "", fmtMoney(dm.budget - dm.paid)));
   sum.append(rollupStat("ledgers", "", d.membersWithLedgers + "/" + (d.members || []).length));
   host.append(sum);
   const dtogo = el("div", "pp-togo");
-  dtogo.append(el("span", "", "spent " + fmtMoney(dm.paid)),
-    el("span", "", "committed " + fmtMoney(dm.committed)),
-    el("span", "", "remaining " + fmtMoney(dm.live - dm.paid)));
+  dtogo.append(el("span", "", "committed " + fmtMoney(dm.committed)),
+    el("span", "", "contracted to go " + fmtMoney(Math.max(0, dm.committed - dm.paid))));
   host.append(dtogo);
 
   // MEMBERS
   host.append(el("div", "pp-section-head", "MEMBERS"));
   const mbox = el("div", "pp-members");
-  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "", "STAGE", "UNITS", "BUDGET", "LIVE / VAR"]));
+  mbox.append(ppCols("cols-board", ["ADDRESS", "STATUS", "", "STAGE", "UNITS", "BUDGET", "SPENT"]));
   (d.members || []).forEach((p) => mbox.append(boardRow(p, true)));
   host.append(mbox);
 
@@ -6322,10 +6309,8 @@ function kanbanCard(p, cur) {
     else card.append(el("div", "kanban-todo warn", "no next action"));
   }
   const pm = projMoney(p);
-  const money = el("div", "kanban-money",
-    fmtMoney(pm.budget) + " bud · " + fmtMoney(pm.live) + " live · ");
-  money.append(varChipEl(pm.varPct));
-  card.append(money);
+  card.append(el("div", "kanban-money" + (pm.over ? " over" : ""),
+    fmtMoney(pm.budget) + " budget · " + fmtMoney(pm.paid) + " spent"));
   return card;
 }
 
@@ -6465,40 +6450,21 @@ function renderProp(p, src, geoFeatures) {
   head.append(titleRow);
   host.append(head);
 
-  // BUDGET · LIVE · variance (pass-6): BUDGET = locked baseline (until locked,
-  // the drifting plan, muted); LIVE = forecast at completion. The chip answers
-  // "am I on budget?" — green under, red over the baseline.
+  // BUDGET · SPENT · REMAINING — plan vs spend. The plan (ests + underwriting)
+  // IS the budget; over-budget shows red when any category's actuals exceed it.
   const pj = p.project;
   if (pj) {
-    const locked = !!pj.baseline;
     const sum = el("div", "pp-rollup");
-    const budgetStat = rollupStat(locked ? "budget · locked " + pj.baseline.date : "budget · plan (unlocked)",
-      "", fmtMoney(locked ? pj.baseline.total : pj.planTotal));
-    if (!locked) budgetStat.classList.add("unlocked");
-    sum.append(budgetStat);
-    sum.append(rollupStat("live", "", fmtMoney(pj.liveTotal)));
-    const vWrap = el("div", "pp-stat");
-    const v = pj.variancePct || 0;
-    const chip = el("span", "pp-var " + (v > 0.0005 ? "over" : "under"),
-      (v > 0 ? "+" : "") + (v * 100).toFixed(1) + "%");
-    vWrap.append(el("div", "pp-stat-big", ""), el("div", "pp-stat-sub", ""));
-    vWrap.firstChild.append(chip);
-    vWrap.append(el("div", "pp-stat-label", locked ? "vs baseline" : "vs plan"));
-    sum.append(vWrap);
-    const lockBtn = el("button", "pp-lock", locked ? (pj.drift ? "re-lock (plan drifted)" : "re-lock") : "lock budget");
-    lockBtn.onclick = async () => {
-      try {
-        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/budget/lock", {});
-        showToast("Budget locked");
-        renderPropertyPage(p.slug);
-      } catch (e) { showToast("Couldn't lock budget"); }
-    };
-    sum.append(lockBtn);
+    sum.append(rollupStat("budget", "", fmtMoney(pj.planTotal)));
+    const spent = rollupStat("spent", fmtPct(pj.planTotal > 0 ? pj.paid / pj.planTotal : 0), fmtMoney(pj.paid));
+    if (pj.over) spent.classList.add("over");
+    sum.append(spent);
+    sum.append(rollupStat("remaining", "", fmtMoney(pj.planTotal - pj.paid)));
     host.append(sum);
     const togo = el("div", "pp-togo");
-    togo.append(el("span", "", "spent " + fmtMoney(pj.paid)),
-      el("span", "", "committed " + fmtMoney(pj.committed)),
-      el("span", "", "remaining " + fmtMoney(pj.liveTotal - pj.paid)));
+    togo.append(el("span", "", "committed " + fmtMoney(pj.committed)),
+      el("span", "", "contracted to go " + fmtMoney(Math.max(0, pj.committed - pj.paid))));
+    if (pj.over) togo.append(el("span", "pp-over-note", "over budget in a category ↓"));
     host.append(togo);
   }
 
@@ -6685,25 +6651,18 @@ let moneyShowAll = false;
 
 function moneyBlock(p) {
   const wrap = el("div", "pp-money");
-  // category table (pass-6): the five project-cost lines, budget vs live
+  // category table: the four project-cost lines, plan vs spend
   if (p.project && (p.project.categories || []).length) {
     const cats = el("div", "pp-money-stages");
-    cats.append(ppCols("cols-cats", ["CATEGORY", "BUDGET", "LIVE", "COMMITTED", "PAID"]));
+    cats.append(ppCols("cols-cats", ["CATEGORY", "BUDGET", "COMMITTED", "PAID"]));
     p.project.categories.forEach((c) => {
       const row = el("div", "pp-money-row cols-cats" + (c.over ? " over" : ""));
-      const isCont = c.key === "contingency";
       row.append(el("span", "", c.key),
         el("span", "pp-amt", c.budget ? fmtMoney(c.budget) : "—"),
-        el("span", "pp-amt", isCont ? "" : (c.live ? fmtMoney(c.live) : "—")),
         el("span", "pp-amt", c.committed ? fmtMoney(c.committed) : ""),
         el("span", "pp-amt", c.paid ? fmtMoney(c.paid) : ""));
       cats.append(row);
     });
-    if (p.project.baseline && (p.project.history || []).length) {
-      const hist = el("div", "pp-lock-hist");
-      p.project.history.forEach((h) => hist.append(el("div", "", "locked " + h.date + " · total " + fmtMoney(h.total))));
-      cats.append(hist);
-    }
     wrap.append(cats);
   }
   // per-stage est · committed · paid

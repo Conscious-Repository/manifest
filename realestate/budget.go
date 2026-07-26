@@ -2,19 +2,14 @@ package realestate
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
-	"sort"
-	"strconv"
 	"strings"
 )
 
-// Pass-6 project budget: the full-project-cost view (acquisition + hard + soft +
-// carry + contingency) with a frozen baseline. The PLAN drifts as underwriting
-// fields and stage ests are edited; LOCKING snapshots it into the `## budget`
-// section (one `- [locked:: date] …` line per lock, latest = baseline). LIVE is
-// the forecast at completion; variance = live vs locked baseline. Nothing here
-// is stored except the lock lines.
+// Project budget: the full-project-cost view (acquisition + hard + soft +
+// contingency), PLAN vs SPEND only. The plan drifts as underwriting fields and
+// stage ests are edited — that drifting number IS the budget (no frozen
+// baseline; the owner manages forward). Nothing here is ever stored.
 
 // Budget category keys (also the `[cat:: x]` ledger note-token values; rows
 // without a cat token — including every work-tethered row — are hard costs).
@@ -44,31 +39,21 @@ type SourceMoney struct {
 // BudgetCatRow is one category line of the project budget.
 type BudgetCatRow struct {
 	Key       string  `json:"key"`
-	Budget    float64 `json:"budget"` // current plan (drifts with edits)
-	Live      float64 `json:"live"`   // forecast at completion — max(budget, committed, paid)
+	Budget    float64 `json:"budget"` // current plan (drifts with edits — it IS the budget)
 	Committed float64 `json:"committed"`
 	Paid      float64 `json:"paid"`
-	Over      bool    `json:"over"` // live exceeds plan
+	Over      bool    `json:"over"` // committed or paid exceeds the plan
 }
 
-// BaselineLock is one `- [locked:: date] …` line of the `## budget` section.
-type BaselineLock struct {
-	Date    string             `json:"date"`
-	Amounts map[string]float64 `json:"amounts"`
-	Total   float64            `json:"total"`
-}
-
-// ProjectBudget is the derived budget picture for one property.
+// ProjectBudget is the derived budget picture for one property: the current
+// plan vs actual spend (plan-vs-spend only — no frozen baseline; the plan
+// drifting with edits is the point).
 type ProjectBudget struct {
-	Categories  []BudgetCatRow `json:"categories"`
-	PlanTotal   float64        `json:"planTotal"` // Σ category plans INCL contingency
-	LiveTotal   float64        `json:"liveTotal"` // Σ category forecasts (contingency excluded — it's headroom)
-	Committed   float64        `json:"committed"`
-	Paid        float64        `json:"paid"`
-	Baseline    *BaselineLock  `json:"baseline,omitempty"` // latest lock
-	History     []BaselineLock `json:"history,omitempty"`  // earlier locks, newest first
-	VariancePct float64        `json:"variancePct"` // (live − base)/base; base = baseline total when locked, else plan total
-	Drift       bool           `json:"drift,omitempty"` // locked and the plan has moved since
+	Categories []BudgetCatRow `json:"categories"`
+	PlanTotal  float64        `json:"planTotal"` // Σ category plans INCL contingency
+	Committed  float64        `json:"committed"`
+	Paid       float64        `json:"paid"`
+	Over       bool           `json:"over"` // any category over its plan
 }
 
 // sourceMoney reads the underwriting money keys (tolerant, like sourceUnits).
@@ -101,8 +86,8 @@ func sourceMoney(path string) SourceMoney {
 	}
 }
 
-// ComputeProjectBudget derives the category table + totals + variance.
-func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow, locks []BaselineLock) *ProjectBudget {
+// ComputeProjectBudget derives the category table + totals (plan vs spend).
+func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow) *ProjectBudget {
 	// actuals per category — the hard lane keeps the draw-aware max() semantics
 	// (an expense against an accepted bid draws DOWN the contract, not up committed)
 	type acc struct{ acceptedSum, expenseSum float64 }
@@ -169,42 +154,15 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 		if key != CatContingency {
 			row.Committed = committed[key]
 			row.Paid = paid[key]
-			row.Live = row.Budget
-			if row.Committed > row.Live {
-				row.Live = row.Committed
-			}
-			if row.Paid > row.Live {
-				row.Live = row.Paid
-			}
-			row.Over = row.Live > row.Budget
-			pb.LiveTotal += row.Live
+			row.Over = row.Budget > 0 && (row.Committed > row.Budget || row.Paid > row.Budget)
 			pb.Committed += row.Committed
 			pb.Paid += row.Paid
+			if row.Over {
+				pb.Over = true
+			}
 		}
 		pb.PlanTotal += row.Budget
 		pb.Categories = append(pb.Categories, row)
-	}
-
-	if len(locks) > 0 {
-		// newest wins; locks arrive in file order, so reverse BEFORE the stable
-		// sort — a same-day re-lock (later in the file) must beat the earlier one
-		ordered := make([]BaselineLock, len(locks))
-		for i, l := range locks {
-			ordered[len(locks)-1-i] = l
-		}
-		sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Date > ordered[j].Date })
-		pb.Baseline = &ordered[0]
-		if len(ordered) > 1 {
-			pb.History = ordered[1:]
-		}
-		pb.Drift = money(pb.PlanTotal) != money(pb.Baseline.Total)
-	}
-	base := pb.PlanTotal
-	if pb.Baseline != nil {
-		base = pb.Baseline.Total
-	}
-	if base > 0 {
-		pb.VariancePct = (pb.LiveTotal - base) / base
 	}
 	return pb
 }
@@ -219,61 +177,4 @@ func normalizeCat(v string) string {
 	default:
 		return CatHard
 	}
-}
-
-// ParseBudgetLocks reads `- [locked:: date] acquisition N · hard N · …` lines
-// from the `## budget` section (legacy table rows and anything else are ignored).
-func ParseBudgetLocks(sectionLines []string) []BaselineLock {
-	var out []BaselineLock
-	for _, ln := range sectionLines {
-		t := strings.TrimSpace(ln)
-		if !strings.HasPrefix(t, "- ") {
-			continue
-		}
-		lock := BaselineLock{Amounts: map[string]float64{}}
-		rest := workFieldRe.ReplaceAllStringFunc(t[2:], func(m string) string {
-			g := workFieldRe.FindStringSubmatch(m)
-			if strings.EqualFold(g[1], "locked") {
-				lock.Date = strings.TrimSpace(g[2])
-			}
-			return ""
-		})
-		if lock.Date == "" {
-			continue
-		}
-		for _, part := range strings.Split(rest, "·") {
-			fields := strings.Fields(part)
-			if len(fields) != 2 {
-				continue
-			}
-			amt, err := strconv.ParseFloat(strings.ReplaceAll(fields[1], ",", ""), 64)
-			if err != nil {
-				continue
-			}
-			if strings.EqualFold(fields[0], "total") {
-				lock.Total = amt
-			} else {
-				lock.Amounts[strings.ToLower(fields[0])] = amt
-			}
-		}
-		out = append(out, lock)
-	}
-	return out
-}
-
-// FormatBaselineLock renders one lock line (the write side of ParseBudgetLocks).
-func FormatBaselineLock(date string, amounts map[string]float64) string {
-	parts := make([]string, 0, len(BudgetCats)+1)
-	total := 0.0
-	for _, key := range BudgetCats {
-		parts = append(parts, fmt.Sprintf("%s %s", key, money(amounts[key])))
-		total += amounts[key]
-	}
-	parts = append(parts, "total "+money(total))
-	return "- [locked:: " + date + "] " + strings.Join(parts, " · ")
-}
-
-// money renders an amount without exponent noise (whole dollars, cents kept when present).
-func money(v float64) string {
-	return strconv.FormatFloat(v, 'f', -1, 64)
 }

@@ -84,7 +84,6 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	p.WorkStart = strings.TrimSpace(fm["work-start"])
 	sections := parseSections(body)
 	p.Budget = parseBudget(sections["budget"])
-	p.BudgetRaw = sections["budget"]
 	p.Log = parseLog(sections["log"])
 	if len(p.Log) > 0 {
 		p.LastLog = p.Log[0]
@@ -100,7 +99,7 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	p.Rollup = computeMoneyRollup(p.Work, p.Ledger)
 	p.Project = ComputeProjectBudget(
 		sourceMoney(strings.TrimSuffix(full, ".md")+".source.json"),
-		p.Work, p.Ledger, ParseBudgetLocks(sections["budget"]))
+		p.Work, p.Ledger)
 	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {
 		if st.Current {

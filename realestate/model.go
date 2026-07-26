@@ -42,8 +42,7 @@ type Property struct {
 	CurrentStage string       `json:"currentStage,omitempty"` // first unchecked stage's text
 	WorkStart    string       `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
 	Schedule     []StageSpan  `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
-	Project      *ProjectBudget `json:"project,omitempty"`    // pass-6 full-project budget (baseline vs live)
-	BudgetRaw    []string     `json:"-"`                      // raw `## budget` section lines (lock append preserves them)
+	Project      *ProjectBudget `json:"project,omitempty"`    // full-project budget (plan vs spend)
 }
 
 // BudgetLine is one `## budget` table row: a category and its budgeted amount.
