@@ -6755,8 +6755,8 @@ async function renderPropertyPage(slug) {
 }
 
 // renderProp (design §3): money you touch daily on top, reference collapsed
-// below, prose last.
-function renderProp(p, src, geoFeatures) {
+// below, prose last. Async: the TODOS strip reads the task substrate.
+async function renderProp(p, src, geoFeatures) {
   const host = els.propertyPage; host.innerHTML = ""; host.hidden = false;
   els.propertyBoard.hidden = true; els.propertyMapWrap.hidden = true;
 
