@@ -1985,6 +1985,7 @@ function signalRow(sg) {
         act.replaceWith(who.el);
         who.focus();
       }));
+      act.append(pillLight("→ issue", () => signalAction("/api/todos/to-issue", { id: sg.goalId })));
     }
     act.append(pillLight("Drop", () => signalAction("/api/todos/drop", { id: sg.goalId })));
   }
@@ -7231,6 +7232,53 @@ function renderTodos() {
       sec.append(foot);
       if (todosWaitOpen[dom.name]) waits.forEach((t) => sec.append(todoRow(dom, t, false)));
     }
+
+    // buckets — standing containers, collapsible, record links shown
+    (dom.buckets || []).forEach((bk) => {
+      const key = dom.name + "/" + bk.slug;
+      const bkOpen = bk.todos.filter((t) => t.state !== "done");
+      const head = el("button", "tdo-bucket-head",
+        (todosWaitOpen[key] ? "▾ " : "▸ ") + bk.name + " · " + bkOpen.length + " open" +
+        ((bk.links || []).length ? "  ⧉ " + bk.links.join(" · ") : ""));
+      head.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
+      sec.append(head);
+      if (todosWaitOpen[key]) {
+        bk.todos.slice().sort((a, b) => (a.added || "").localeCompare(b.added || ""))
+          .forEach((t) => sec.append(todoRow(dom, t, false)));
+        sec.append(ghostInput("＋ todo", "tdo-add", (v) =>
+          todosApi("/api/todos/item", { text: v, domain: dom.name, bucket: bk.name }), "into " + bk.name + "…"));
+      }
+    });
+
+    // issues — decisions/blockers, collapsed; a live-tasked issue is being worked
+    const openIssues = (dom.issues || []).filter((i) => !i.checked);
+    if (openIssues.length || todosWaitOpen[dom.name + "#issues"]) {
+      const key = dom.name + "#issues";
+      const head = el("button", "tdo-bucket-head",
+        (todosWaitOpen[key] ? "▾ " : "▸ ") + "issues · " + openIssues.length);
+      head.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
+      sec.append(head);
+      if (todosWaitOpen[key]) {
+        (dom.issues || []).forEach((is) => sec.append(issueRow(dom, is)));
+        sec.append(ghostInput("＋ issue", "tdo-add", (v) =>
+          todosApi("/api/todos/issue", { text: v, domain: dom.name }), "the decision or blocker…"));
+      }
+    } else {
+      const mk = el("button", "tdo-wait-foot", "＋ issue");
+      mk.onclick = () => { todosWaitOpen[dom.name + "#issues"] = true; renderTodos(); };
+      sec.append(mk);
+    }
+
+    // backlog — ideas, collapsed, never aged, read-only here (hand-edit in Obsidian)
+    if ((dom.backlog || []).length) {
+      const key = dom.name + "#backlog";
+      const head = el("button", "tdo-bucket-head",
+        (todosWaitOpen[key] ? "▾ " : "▸ ") + "backlog · " + dom.backlog.length);
+      head.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
+      sec.append(head);
+      if (todosWaitOpen[key]) dom.backlog.forEach((ln) =>
+        sec.append(el("div", "tdo-backlog-line", ln.replace(/^[-*]\s*/, "· "))));
+    }
     host.append(sec);
   });
   if (!host.children.length) host.append(el("div", "pp-empty", "Nothing here — press t anywhere to capture."));
@@ -7254,6 +7302,18 @@ function todoRow(dom, t, isInbox) {
     label.replaceWith(input); input.focus();
   };
   row.append(label);
+
+  // tether tags: what this line advances (muted)
+  if (t.rock) {
+    const tag = el("span", "tdo-tag", "⧗ " + t.rock.split("/").pop());
+    tag.title = "services rock " + t.rock + " — ages by the rock's rhythm, not the 14d nudge";
+    row.append(tag);
+  }
+  if (t.issue) {
+    const tag = el("span", "tdo-tag", "⚑ " + t.issue.split("/").pop());
+    tag.title = "works issue " + t.issue;
+    row.append(tag);
+  }
 
   if (t.state === "waiting") {
     const chip = el("span", "tdo-wait-chip", "⏳ " + t.waiting + " · " + t.ageDays + "d");
@@ -7365,6 +7425,35 @@ async function renderTodosSplit() {
   host.append(bar);
 }
 
+// issueRow: a decision/blocker line — open-tethered-task count shows it's
+// being worked; resolving asks for the one-line note.
+function issueRow(dom, is) {
+  const row = el("div", "tdo-row" + (is.checked ? " done" : ""));
+  row.append(el("span", "tdo-issue-dot", "⚑"));
+  const label = el("span", "tdo-text", is.text + (is.checked && is.resolution ? " — " + is.resolution : ""));
+  row.append(label);
+  if (!is.checked && is.openTasks > 0) {
+    row.append(el("span", "tdo-tag", is.openTasks + " task" + (is.openTasks === 1 ? "" : "s")));
+  }
+  if (!is.checked) {
+    const resolve = el("button", "stmt-hint", "resolve…");
+    resolve.onclick = () => {
+      const input = inputEl("one-line resolution…");
+      input.classList.add("work-edit");
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" && input.value.trim()) {
+          todosApi("/api/todos/issue/resolve", { id: is.id, resolution: input.value });
+        } else if (ev.key === "Escape") input.replaceWith(resolve);
+      });
+      input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(resolve); });
+      resolve.replaceWith(input);
+      input.focus();
+    };
+    row.append(resolve);
+  }
+  return row;
+}
+
 // personInput: free text or a contact — picking a suggestion wraps [[display]]
 // so the waiting-on surfaces on that contact's page.
 function personInput(onSet, onCancel) {
@@ -7421,16 +7510,42 @@ function openTodoQuickAdd(prefill) {
       domain = n === "Inbox" ? "" : n;
       chips.querySelectorAll(".filter-chip").forEach((b) => b.classList.remove("on"));
       c.classList.add("on");
+      fillTether();
       input.focus();
     };
     chips.append(c);
   });
+  // optional tether/bucket — ONE picker across the domain's Rocks, issues,
+  // and buckets (none required; rebuilt when the domain chip changes)
+  const tether = document.createElement("select");
+  tether.className = "pp-in board-select";
+  tether.title = "optional: what this advances, or where it belongs";
+  let goalsAreas = null;
+  const fillTether = async () => {
+    if (goalsAreas === null) {
+      try { goalsAreas = (await (await fetch("/api/goals")).json()).areas || []; } catch (e) { goalsAreas = []; }
+    }
+    tether.innerHTML = "";
+    const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; tether.append(o); };
+    opt("", "no tether");
+    const area = goalsAreas.find((a) => a.name === domain);
+    ((area && area.rocks) || []).filter((r) => !r.checked).forEach((r) => opt("rock:" + r.id, "⧗ " + r.text));
+    const dv = (todosCache.domains || []).find((dm) => dm.name === (domain || "Inbox"));
+    ((dv && dv.issues) || []).filter((i) => !i.checked).forEach((i) => opt("issue:" + i.id, "⚑ " + i.text));
+    ((dv && dv.buckets) || []).forEach((bk) => opt("bucket:" + bk.name, "▸ " + bk.name));
+  };
+  fillTether();
   const close = () => overlay.remove();
   const submit = async () => {
     const text = input.value.trim();
     if (!text) { close(); return; }
+    const body = { text, domain };
+    const tv = tether.value;
+    if (tv.startsWith("rock:")) body.rock = tv.slice(5);
+    else if (tv.startsWith("issue:")) body.issue = tv.slice(6);
+    else if (tv.startsWith("bucket:")) body.bucket = tv.slice(7);
     try {
-      await postJSONOk("/api/todos/item", { text, domain });
+      await postJSONOk("/api/todos/item", body);
       showToast("Todo captured" + (domain ? " → " + domain : " → Inbox"));
       close();
       if (!els.todosView.hidden) loadTodos();
@@ -7441,6 +7556,7 @@ function openTodoQuickAdd(prefill) {
     else if (ev.key === "Escape") close();
   });
   back.onclick = close;
+  chips.append(tether);
   panel.append(input, chips);
   overlay.append(back, panel);
   document.body.append(overlay);

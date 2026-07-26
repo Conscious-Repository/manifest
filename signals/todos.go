@@ -33,13 +33,18 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 	}
 	var out []Signal
 	for _, dom := range doc.Domains {
-		for _, t := range dom.Todos {
+		dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) {
+			// rock-tethered todos are exempt — the rock-stalled signal owns
+			// that rhythm (no double nagging); issues/backlog never enter here
+			if t.Rock != "" {
+				return
+			}
 			age := t.AgeDays(now)
 			bucket := strconv.Itoa(age / 7) // week bucket: dismissals re-arm as it keeps aging
 			switch t.State() {
 			case "open":
 				if age < staleOpenDays {
-					continue
+					return
 				}
 				out = append(out, Signal{
 					ID:      "todo-stale:" + t.ID,
@@ -53,7 +58,7 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 				})
 			case "waiting":
 				if age < staleWaitingDays {
-					continue
+					return
 				}
 				out = append(out, Signal{
 					ID:      "todo-waiting:" + t.ID,
@@ -66,7 +71,7 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 					GoalID:  t.ID,
 				})
 			}
-		}
+		})
 	}
 	return out, nil
 }

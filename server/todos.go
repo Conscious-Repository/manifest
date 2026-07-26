@@ -76,12 +76,13 @@ func (s *Server) handleTodosGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.todosView())
 }
 
-// handleTodoAdd — quick capture: one line + a domain (blank → Inbox). ≤2s.
+// handleTodoAdd — quick capture: one line + a domain (blank → Inbox), with
+// optional tethers/placement: [rock::]/[issue::] and/or a bucket. ≤2s.
 func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.todosOK(w) {
 		return
 	}
-	var b struct{ Text, Domain string }
+	var b struct{ Text, Domain, Rock, Issue, Bucket string }
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Text) == "" {
 		httpError(w, errBadRequest("text is required"))
 		return
@@ -92,12 +93,109 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
 		dom := d.EnsureDomain(domain)
-		dom.Todos = append(dom.Todos, &todos.Todo{
+		t := &todos.Todo{
+			Text:  strings.Join(strings.Fields(b.Text), " "),
+			Rock:  strings.TrimSpace(b.Rock),
+			Issue: strings.TrimSpace(b.Issue),
+			Added: time.Now().Format("2006-01-02"),
+		}
+		if bk := strings.TrimSpace(b.Bucket); bk != "" {
+			bucket := dom.EnsureBucket(bk)
+			bucket.Todos = append(bucket.Todos, t)
+		} else {
+			dom.Todos = append(dom.Todos, t)
+		}
+		return true, nil
+	})
+	if b.Rock != "" {
+		s.stampRockMoved(strings.TrimSpace(b.Rock)) // new tethered work = movement
+	}
+}
+
+// handleIssueAdd — a decision/blocker under the domain's ### issues.
+func (s *Server) handleIssueAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) {
+		return
+	}
+	var b struct{ Text, Domain string }
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Text) == "" || strings.TrimSpace(b.Domain) == "" {
+		httpError(w, errBadRequest("text and domain are required"))
+		return
+	}
+	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+		dom := d.EnsureDomain(strings.TrimSpace(b.Domain))
+		dom.Issues = append(dom.Issues, &todos.Issue{
 			Text:  strings.Join(strings.Fields(b.Text), " "),
 			Added: time.Now().Format("2006-01-02"),
 		})
 		return true, nil
 	})
+}
+
+// handleIssueResolve — resolving = checking with a one-line resolution note
+// (the sweep archives it later; nothing is deleted).
+func (s *Server) handleIssueResolve(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) {
+		return
+	}
+	var b struct{ ID, Resolution string }
+	if err := decode(r, &b); err != nil || b.ID == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	if strings.TrimSpace(b.Resolution) == "" {
+		httpError(w, errBadRequest("a one-line resolution is required"))
+		return
+	}
+	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+		_, is := d.FindIssue(b.ID)
+		if is == nil {
+			return false, nil
+		}
+		is.Resolution = strings.Join(strings.Fields(b.Resolution), " ")
+		is.Checked = true
+		is.Done = time.Now().Format("2006-01-02")
+		return true, nil
+	})
+}
+
+// handleTodoToIssue — the stale card's `→ issue` conversion: the line moves
+// under ### issues with an auto id (explicit user action, never automatic).
+func (s *Server) handleTodoToIssue(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) {
+		return
+	}
+	var b struct{ ID string }
+	if err := decode(r, &b); err != nil || b.ID == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+		dom, t := d.Find(b.ID)
+		if t == nil {
+			return false, nil
+		}
+		removeTodo(dom, t)
+		dom.Issues = append(dom.Issues, &todos.Issue{Text: t.Text, Added: t.Added})
+		return true, nil
+	})
+}
+
+// removeTodo pulls a todo out of its domain (loose or bucket).
+func removeTodo(dom *todos.Domain, t *todos.Todo) {
+	filter := func(list []*todos.Todo) []*todos.Todo {
+		var keep []*todos.Todo
+		for _, o := range list {
+			if o != t {
+				keep = append(keep, o)
+			}
+		}
+		return keep
+	}
+	dom.Todos = filter(dom.Todos)
+	for _, b := range dom.Buckets {
+		b.Todos = filter(b.Todos)
+	}
 }
 
 // handleTodoCheck — done/undone (stamps [done::], the sweep key).
@@ -113,6 +211,7 @@ func (s *Server) handleTodoCheck(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	var rockID string
 	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
 		_, t := d.Find(b.ID)
 		if t == nil {
@@ -121,11 +220,38 @@ func (s *Server) handleTodoCheck(w http.ResponseWriter, r *http.Request) {
 		t.Checked = b.Checked
 		if b.Checked {
 			t.Done = time.Now().Format("2006-01-02")
+			// rock-tethered completion: stamp the then-current stage for
+			// history + count as Rock movement
+			if t.Rock != "" {
+				rockID = t.Rock
+				if t.Stage == "" {
+					t.Stage = s.currentStageName(t.Rock)
+				}
+			}
 		} else {
 			t.Done = ""
 		}
 		return true, nil
 	})
+	if rockID != "" {
+		s.stampRockMoved(rockID)
+	}
+}
+
+// currentStageName is the Rock's first unchecked stage ("" when none).
+func (s *Server) currentStageName(rockID string) string {
+	if s.goals == nil {
+		return ""
+	}
+	doc := s.goals.Load()
+	if _, rock := doc.FindGoal(rockID); rock != nil {
+		for _, st := range rock.Children {
+			if !st.Checked {
+				return st.Text
+			}
+		}
+	}
+	return ""
 }
 
 // handleTodoUpdate — edit text, move domain, set/clear waiting.
