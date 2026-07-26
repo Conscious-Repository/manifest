@@ -1382,40 +1382,66 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 	}
 	var buf strings.Builder
 	cw := csv.NewWriter(&buf)
-	_ = cw.Write([]string{"section", "pair", "category", "date", "property", "vendor", "amount", "note"})
+	_ = cw.Write([]string{"section", "pair", "date", "property", "vendor", "type", "category",
+		"amount", "receipt", "statement", "reconciled", "note"})
 	lines := 0
-	write := func(section, pair, cat, date, prop, vendor string, amt float64, note string) {
-		_ = cw.Write([]string{section, pair, cat, date, prop, vendor, f2(amt), note})
+	write := func(section, pair, prop string, lr realestate.LedgerRow, workText string) {
+		cat := lr.Cat
+		if cat == "" {
+			cat = "hard"
+		}
+		if strings.EqualFold(lr.Type, "income") {
+			cat = lr.Category // rent | capital
+		}
+		if workText != "" {
+			cat += " · " + workText
+		}
+		reconciled := "n"
+		if lr.Doc != "" || lr.Stmt != "" {
+			reconciled = "y"
+		}
+		_ = cw.Write([]string{section, pair, lr.Date, prop, lr.Vendor + lr.Contractor,
+			strings.ToLower(lr.Type), cat, f2(lr.Amount), lr.Doc, lr.Stmt, reconciled, lr.Note})
 		lines++
 	}
 	inYear := func(lr realestate.LedgerRow) bool {
-		return strings.HasPrefix(lr.Date, b.Year) && strings.EqualFold(lr.Type, "expense")
+		return strings.HasPrefix(lr.Date, b.Year) &&
+			(strings.EqualFold(lr.Type, "expense") || strings.EqualFold(lr.Type, "income"))
 	}
 	// 1. property section — rows in properties this entity OWNS (paid by it or unmarked)
 	// 3. intercompany — collected while walking (either direction touching the entity)
 	type icLine struct {
-		pair, cat, date, prop, vendor, note string
-		amt                                 float64
+		pair, prop, workText string
+		lr                   realestate.LedgerRow
 	}
 	var ic []icLine
 	for _, p := range props {
+		// tether id → "stage · task" for the category column
+		workText := map[string]string{}
+		for _, st := range p.Work {
+			workText[st.ID] = st.Text
+			for _, td := range st.Todos {
+				workText[td.ID] = st.Text + " · " + td.Text
+			}
+		}
 		owns := strings.EqualFold(strings.TrimSpace(p.Entity), entity)
 		for _, lr := range p.Ledger {
 			if !inYear(lr) {
 				continue
 			}
 			payer := strings.TrimSpace(lr.PaidBy)
+			income := strings.EqualFold(lr.Type, "income")
 			switch {
-			case owns && (payer == "" || strings.EqualFold(payer, entity)):
-				write("property", "", lr.Category, lr.Date, p.Address, lr.Vendor, lr.Amount, lr.Note)
+			case owns && (income || payer == "" || strings.EqualFold(payer, entity)):
+				write("property", "", p.Address, lr, workText[lr.WorkID])
 			case owns && payer != "": // someone else paid for this entity's property
-				ic = append(ic, icLine{payer + " → " + entity, lr.Category, lr.Date, p.Address, lr.Vendor, lr.Note, lr.Amount})
-			case !owns && strings.EqualFold(payer, entity): // this entity paid another's property
+				ic = append(ic, icLine{payer + " → " + entity, p.Address, workText[lr.WorkID], lr})
+			case !owns && strings.EqualFold(payer, entity) && !income: // this entity paid another's property
 				owner := strings.TrimSpace(p.Entity)
 				if owner == "" {
 					owner = "unassigned"
 				}
-				ic = append(ic, icLine{entity + " → " + owner, lr.Category, lr.Date, p.Address, lr.Vendor, lr.Note, lr.Amount})
+				ic = append(ic, icLine{entity + " → " + owner, p.Address, workText[lr.WorkID], lr})
 			}
 		}
 	}
@@ -1425,7 +1451,9 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 		if raw, err := os.ReadFile(vaultJoin(s.vault.VaultRoot(), adminRel)); err == nil {
 			for _, lr := range realestate.ParseLedgerBytes(raw) {
 				if inYear(lr) {
-					write("admin", "", lr.Category, lr.Date, "", lr.Vendor, lr.Amount, lr.Note)
+					adminLr := lr
+					adminLr.Cat = lr.Category // admin rows categorize by their own column
+					write("admin", "", "", adminLr, "")
 				}
 			}
 		}
@@ -1434,10 +1462,10 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 		if ic[i].pair != ic[j].pair {
 			return ic[i].pair < ic[j].pair
 		}
-		return ic[i].date < ic[j].date
+		return ic[i].lr.Date < ic[j].lr.Date
 	})
 	for _, l := range ic {
-		write("intercompany", l.pair, l.cat, l.date, l.prop, l.vendor, l.amt, l.note)
+		write("intercompany", l.pair, l.prop, l.lr, l.workText)
 	}
 	cw.Flush()
 	eslug := slugify(entity)

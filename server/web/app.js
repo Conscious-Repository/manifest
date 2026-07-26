@@ -4561,7 +4561,7 @@ function renderBoard() {
   exports.append(el("span", "pp-section-head", "EXPORTS"));
   const entSel = selectEl([...new Set(["unassigned", ...shown.map((p) => (p.entity || "").trim()).filter(Boolean)])]);
   const yearIn = inputEl("year"); yearIn.value = String(new Date().getFullYear()); yearIn.classList.add("board-year");
-  exports.append(entSel, yearIn, pillLight("tax csv", async () => {
+  exports.append(entSel, yearIn, pillLight("accountant csv", async () => {
     try {
       const res = await postJSONOk("/api/realestate/export-tax",
         { entity: entSel.value === "unassigned" ? "" : entSel.value, year: yearIn.value.trim() });
