@@ -470,7 +470,7 @@ function renderPrep(day) {
     area.className = "pool-area";
     area.textContent = it.area;
     chip.append(area, document.createTextNode(" " + it.text));
-    chip.addEventListener("click", () => pullGoal(it.goalId));
+    chip.addEventListener("click", () => (it.todoId ? pullTodo(it.todoId) : pullGoal(it.goalId)));
     chips.appendChild(chip);
   });
   els.prepBanner.append(head, chips);
@@ -504,6 +504,20 @@ async function pullGoal(goalId) {
     setSaveState("saved");
   } catch (e) { setSaveState("error"); }
   load(state.date); // reload to show the linked task + updated pool
+}
+
+async function pullTodo(todoId) {
+  if (collectTasks().length >= MAX_TASKS) return;
+  setSaveState("saving");
+  try {
+    await fetch(`/api/day/pull?date=${state.date}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ todoId }),
+    });
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); }
+  load(state.date);
 }
 
 // Schedule: two input lines per hour (:00 / :30), one focus circle per hour,
@@ -694,6 +708,7 @@ function addTaskRow(task, num, pick) {
   const row = document.createElement("div");
   row.className = "trow";
   if (task.goalId) row.dataset.goalId = task.goalId; // preserve backlink on save
+  if (task.todoId) row.dataset.todoId = task.todoId; // todos-board backlink, same contract
   if (task.owner) row.dataset.owner = task.owner;
   const n = document.createElement("span");
   n.className = "num";
@@ -706,7 +721,7 @@ function addTaskRow(task, num, pick) {
   // render and edit exactly as before.
   const stageId = pick && pick.resolved && pick.goalId && pick.milestone && pick.milestone.goalId
     ? pick.milestone.goalId : "";
-  const empty = !task.text && !task.goalId;
+  const empty = !task.text && !task.goalId && !task.todoId;
   if (empty && !stageId) {
     const hint = document.createElement("span");
     hint.className = "trow-gate";
@@ -767,6 +782,7 @@ function addTaskRow(task, num, pick) {
     input.classList.remove("done");
     check.classList.remove("on");
     delete row.dataset.goalId; // dropping the task also drops its cascade backlink
+    delete row.dataset.todoId;
     delete row.dataset.owner;
     refresh();
     saveDay();
@@ -791,6 +807,7 @@ function collectTasks() {
       if (!input) return { text: "" }; // gated row (no input) — filtered below
       const t = { text: input.value.trim(), done: input.classList.contains("done") };
       if (row.dataset.goalId) t.goalId = row.dataset.goalId;
+      if (row.dataset.todoId) t.todoId = row.dataset.todoId;
       if (row.dataset.owner) t.owner = row.dataset.owner;
       return t;
     })

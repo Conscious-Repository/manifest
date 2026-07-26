@@ -46,13 +46,15 @@ type Task struct {
 	Text   string `json:"text"`
 	Done   bool   `json:"done"`
 	GoalID string `json:"goalId,omitempty"` // [goal:: id] backlink, if pulled from a goal
+	TodoID string `json:"todoId,omitempty"` // [todo:: id] backlink, if pulled from the todos board
 	Owner  string `json:"owner,omitempty"`  // [owner:: x], if present
 }
 
 // PoolItem is a 30-day owner==me goal offered for quick-add when planning an
 // unplanned future day.
 type PoolItem struct {
-	GoalID string `json:"goalId"`
+	GoalID string `json:"goalId,omitempty"`
+	TodoID string `json:"todoId,omitempty"` // a todos-board item offered alongside goal stages
 	Text   string `json:"text"`
 	Area   string `json:"area"`
 }
@@ -273,6 +275,8 @@ func parseBlock(block string) ([]ScheduleRow, []Task, []FocusPick) {
 				switch {
 				case strings.EqualFold(f.key, "goal"):
 					t.GoalID = f.val
+				case strings.EqualFold(f.key, "todo"):
+					t.TodoID = f.val
 				case strings.EqualFold(f.key, "owner"):
 					t.Owner = f.val
 				}
@@ -499,6 +503,9 @@ func serializeBlock(d Day) string {
 		}
 		if t.GoalID != "" {
 			b.WriteString(" [goal:: " + t.GoalID + "]")
+		}
+		if t.TodoID != "" {
+			b.WriteString(" [todo:: " + t.TodoID + "]")
 		}
 		b.WriteString("\n")
 	}

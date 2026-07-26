@@ -297,6 +297,7 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.syncGoalTasks(body.Tasks) // §4: mirror goal-linked task ticks back into goals.md
+		s.syncTodoTasks(body.Tasks) // same contract for todo-linked ticks → to do.md
 		writeJSON(w, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -312,6 +313,18 @@ func (s *Server) fillPool(day *daily.Day) {
 	for _, it := range s.goals.Pool() {
 		day.Pool = append(day.Pool, daily.PoolItem{GoalID: it.GoalID, Text: it.Text, Area: it.Area})
 	}
+	// todos join the pool after goal stages — open items, labeled by domain
+	if s.todosStore != nil {
+		if doc, err := s.todosStore.Load(); err == nil {
+			for _, dv := range doc.View(time.Now()).Domains {
+				for _, t := range dv.Todos {
+					if t.State == "open" {
+						day.Pool = append(day.Pool, daily.PoolItem{TodoID: t.ID, Text: t.Text, Area: dv.Name + " · todo"})
+					}
+				}
+			}
+		}
+	}
 }
 
 // handleDayPull pulls a 30-day goal into the day as a [goal:: id]-linked task.
@@ -324,17 +337,41 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	date := r.URL.Query().Get("date")
 	var b struct {
 		GoalID string `json:"goalId"`
+		TodoID string `json:"todoId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		httpError(w, err)
 		return
 	}
-	text, gid, ok := s.goals.Promote(b.GoalID)
-	if !ok {
-		http.Error(w, "goal not found", http.StatusNotFound)
-		return
+	var task daily.Task
+	switch {
+	case b.TodoID != "" && s.todosStore != nil:
+		// a todos-board pick: pin the durable [todo:: id] so the backlink
+		// survives rewording (goals Promote contract)
+		doc, err := s.todosStore.Load()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		if !doc.Promote(b.TodoID) {
+			http.Error(w, "todo not found", http.StatusNotFound)
+			return
+		}
+		if err := s.todosStore.Save(doc); err != nil {
+			httpError(w, err)
+			return
+		}
+		_, t := doc.Find(b.TodoID)
+		task = daily.Task{Text: t.Text, TodoID: t.ID}
+	default:
+		text, gid, ok := s.goals.Promote(b.GoalID)
+		if !ok {
+			http.Error(w, "goal not found", http.StatusNotFound)
+			return
+		}
+		task = daily.Task{Text: text, GoalID: gid}
 	}
-	day, err := s.svc.AddTask(date, daily.Task{Text: text, GoalID: gid})
+	day, err := s.svc.AddTask(date, task)
 	if err != nil {
 		httpError(w, err)
 		return

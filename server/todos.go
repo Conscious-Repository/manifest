@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"manifest/approvals"
+	"manifest/daily"
 	"manifest/todos"
 )
 
@@ -167,6 +169,42 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		return true, nil
 	})
+}
+
+// syncTodoTasks mirrors todo-linked daily-note ticks back into `to do.md`
+// (the syncGoalTasks contract: on a miss, no write + an approvals note —
+// never a guess).
+func (s *Server) syncTodoTasks(tasks []daily.Task) {
+	if s.todosStore == nil {
+		return
+	}
+	updates := map[string]bool{}
+	for _, t := range tasks {
+		if t.TodoID != "" {
+			updates[t.TodoID] = t.Done
+		}
+	}
+	if len(updates) == 0 {
+		return
+	}
+	missed, err := s.todosStore.SyncChecks(updates, time.Now())
+	if err != nil || s.approvals == nil || len(missed) == 0 {
+		return
+	}
+	missedSet := map[string]bool{}
+	for _, id := range missed {
+		missedSet[id] = true
+	}
+	for _, t := range tasks {
+		if t.TodoID != "" && t.Done && missedSet[t.TodoID] {
+			_, _ = s.approvals.Propose(approvals.Proposal{
+				Agent:  "manifest",
+				Action: "Couldn't sync a ticked task to todos",
+				Body: "You ticked \"" + t.Text + "\" ([todo:: " + t.TodoID + "]) in the daily manifest, but no matching " +
+					"item is in to do.md — it may have been reworded, moved, or dropped. Check the TODOS board if it's still open.",
+			})
+		}
+	}
 }
 
 // handleTodoDrop — the stale-nudge's third exit: out of the live file, into
