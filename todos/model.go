@@ -154,6 +154,18 @@ func (d *Doc) FindIssue(id string) (*Domain, *Issue) {
 	return nil, nil
 }
 
+// Rename changes a bucket's display name, pinning its ORIGINAL slug first so
+// every reference (record links, board state, tethers) survives the rename —
+// the kernel identity rule.
+func (b *Bucket) Rename(name string) {
+	name = strings.TrimSpace(name)
+	if name == "" || name == b.Name {
+		return
+	}
+	b.pinned = true // keep the old slug as the durable identity
+	b.Name = name
+}
+
 // EnsureBucket returns the named bucket in a domain, creating it.
 func (dom *Domain) EnsureBucket(name string) *Bucket {
 	for _, b := range dom.Buckets {

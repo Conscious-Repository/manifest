@@ -121,6 +121,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/update", s.handleTodoUpdate)
 	mux.HandleFunc("POST /api/todos/drop", s.handleTodoDrop)
 	mux.HandleFunc("/api/todos/split", s.handleTodosSplit) // GET preview · POST commit (one task substrate)
+	mux.HandleFunc("POST /api/todos/bucket", s.handleBucketRename)
 	mux.HandleFunc("POST /api/todos/issue", s.handleIssueAdd)
 	mux.HandleFunc("POST /api/todos/issue/resolve", s.handleIssueResolve)
 	mux.HandleFunc("POST /api/todos/to-issue", s.handleTodoToIssue)

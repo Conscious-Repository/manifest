@@ -7346,7 +7346,22 @@ function renderTodos() {
       const bkOpen = bk.todos.filter((t) => t.state !== "done");
       const row = el("div", "tdo-row tdo-bucket-row");
       row.append(el("span", "sec-caret", open ? "▾" : "▸"));
-      row.append(el("span", "tdo-text tdo-bucket-name", bk.name));
+      const bkName = el("span", "tdo-text tdo-bucket-name", bk.name);
+      bkName.title = "click to rename";
+      bkName.onclick = (e) => {
+        e.stopPropagation(); // edit, don't toggle
+        const input = inputEl(""); input.value = bk.name; input.classList.add("work-edit");
+        input.onclick = (ev) => ev.stopPropagation();
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter" && input.value.trim()) {
+            todosApi("/api/todos/bucket", { domain: dom.name, slug: bk.slug, name: input.value });
+          } else if (ev.key === "Escape") input.replaceWith(bkName);
+        });
+        input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(bkName); });
+        bkName.replaceWith(input);
+        input.focus();
+      };
+      row.append(bkName);
       row.append(el("span", "tdo-tag", bkOpen.length + " open"));
       if ((bk.links || []).length) {
         const lk = el("span", "tdo-bucket-links", "⧉ " + bk.links.join(" · "));

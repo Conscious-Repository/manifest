@@ -112,6 +112,32 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleBucketRename — edit a bucket's display name in place; its slug pins
+// so links and board references survive.
+func (s *Server) handleBucketRename(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) {
+		return
+	}
+	var b struct{ Domain, Slug, Name string }
+	if err := decode(r, &b); err != nil || b.Slug == "" || strings.TrimSpace(b.Name) == "" {
+		httpError(w, errBadRequest("domain, slug, and name are required"))
+		return
+	}
+	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+		dom := d.Domain(b.Domain)
+		if dom == nil {
+			return false, nil
+		}
+		for _, bk := range dom.Buckets {
+			if strings.EqualFold(bk.Slug, b.Slug) {
+				bk.Rename(b.Name)
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+}
+
 // handleIssueAdd — a decision/blocker under the domain's ### issues.
 func (s *Server) handleIssueAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.todosOK(w) {
