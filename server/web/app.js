@@ -7338,20 +7338,30 @@ function renderTodos() {
       if (todosWaitOpen[dom.name]) waits.forEach((t) => sec.append(todoRow(dom, t, false)));
     }
 
-    // buckets — standing containers, collapsible, record links shown
+    // buckets — standing containers, rendered at todo-row weight with a
+    // collapsible item list beneath (they're peers of the work, not chrome)
     (dom.buckets || []).forEach((bk) => {
       const key = dom.name + "/" + bk.slug;
+      const open = !!todosWaitOpen[key];
       const bkOpen = bk.todos.filter((t) => t.state !== "done");
-      const head = el("button", "tdo-bucket-head",
-        (todosWaitOpen[key] ? "▾ " : "▸ ") + bk.name + " · " + bkOpen.length + " open" +
-        ((bk.links || []).length ? "  ⧉ " + bk.links.join(" · ") : ""));
-      head.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
-      sec.append(head);
-      if (todosWaitOpen[key]) {
+      const row = el("div", "tdo-row tdo-bucket-row");
+      row.append(el("span", "sec-caret", open ? "▾" : "▸"));
+      row.append(el("span", "tdo-text tdo-bucket-name", bk.name));
+      row.append(el("span", "tdo-tag", bkOpen.length + " open"));
+      if ((bk.links || []).length) {
+        const lk = el("span", "tdo-bucket-links", "⧉ " + bk.links.join(" · "));
+        lk.title = "linked records — these todos also show on the linked property pages";
+        row.append(lk);
+      }
+      row.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
+      sec.append(row);
+      if (open) {
+        const items = el("div", "tdo-bucket-items");
         bk.todos.slice().sort((a, b) => (a.added || "").localeCompare(b.added || ""))
-          .forEach((t) => sec.append(todoRow(dom, t, false)));
-        sec.append(ghostInput("＋ todo", "tdo-add", (v) =>
+          .forEach((t) => items.append(todoRow(dom, t, false)));
+        items.append(ghostInput("＋ todo", "tdo-add", (v) =>
           todosApi("/api/todos/item", { text: v, domain: dom.name, bucket: bk.name }), "into " + bk.name + "…"));
+        sec.append(items);
       }
     });
 
