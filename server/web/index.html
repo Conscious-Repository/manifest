@@ -354,6 +354,33 @@
   <!-- in-app toasts (run finished, digest landed) -->
   <div id="toastHost" class="toast-host"></div>
 
-  <script src="app.js"></script>
+  <!-- Userland modules (§11): one file per tab over a shared core, loaded in
+       order into one scope — no framework, no build step. -->
+  <script src="js/00-core.js"></script>
+  <script src="js/05-components.js"></script>
+  <script src="js/10-day.js"></script>
+  <script src="js/20-goals.js"></script>
+  <script src="js/30-calendar.js"></script>
+  <script src="js/40-spirits.js"></script>
+  <script src="js/45-feed.js"></script>
+  <script src="js/50-studio.js"></script>
+  <script src="js/55-approvals.js"></script>
+  <script src="js/58-rituals.js"></script>
+  <script src="js/60-contacts.js"></script>
+  <script src="js/65-reading.js"></script>
+  <script src="js/70-note.js"></script>
+  <script src="js/75-bars.js"></script>
+  <script src="js/80-properties-core.js"></script>
+  <script src="js/81-properties-board.js"></script>
+  <script src="js/82-properties-map.js"></script>
+  <script src="js/83-properties-page.js"></script>
+  <script src="js/84-properties-entities.js"></script>
+  <script src="js/85-properties-accounting.js"></script>
+  <script src="js/86-properties-work.js"></script>
+  <script src="js/87-properties-contractors.js"></script>
+  <script src="js/88-properties-settings.js"></script>
+  <script src="js/89-properties-workview.js"></script>
+  <script src="js/90-todos.js"></script>
+  <script src="js/99-boot.js"></script>
 </body>
 </html>
