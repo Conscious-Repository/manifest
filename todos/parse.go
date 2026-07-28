@@ -10,7 +10,7 @@ import (
 var (
 	headingRe    = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
 	subHeadingRe = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
-	todoLineRe   = regexp.MustCompile(`^[ \t]*[-*]\s*\[([ xX])\]\s?(.*)$`)
+	todoLineRe   = record.CheckboxRe // indent m[1], state m[2], rest m[3]
 	bulletLineRe = regexp.MustCompile(`^[ \t]*[-*]\s+\S`)
 	// the kernel grammar + its wikilink-value affordance (waiting values may
 	// BE a [[wikilink]], matched before the generic scan)
@@ -65,13 +65,13 @@ func Parse(raw string) *Doc {
 		if m := todoLineRe.FindStringSubmatch(line); m != nil {
 			switch mode {
 			case modeIssues:
-				cur.Issues = append(cur.Issues, parseIssue(m[1] != " ", m[2]))
+				cur.Issues = append(cur.Issues, parseIssue(m[2] != " ", m[3]))
 			case modeBacklog:
 				cur.Backlog = append(cur.Backlog, line) // checkboxes in backlog stay verbatim
 			case modeBucket:
-				bucket.Todos = append(bucket.Todos, parseTodo(m[1] != " ", m[2]))
+				bucket.Todos = append(bucket.Todos, parseTodo(m[2] != " ", m[3]))
 			default:
-				cur.Todos = append(cur.Todos, parseTodo(m[1] != " ", m[2]))
+				cur.Todos = append(cur.Todos, parseTodo(m[2] != " ", m[3]))
 			}
 			continue
 		}

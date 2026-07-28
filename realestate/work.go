@@ -78,8 +78,8 @@ type WorkStage struct {
 }
 
 var (
-	workLineRe  = regexp.MustCompile(`^([ \t]*)[-*]\s*\[([ xX])\]\s?(.*)$`) // goals goalLineRe
-	workFieldRe = record.FieldRe                                            // the kernel grammar
+	workLineRe  = record.CheckboxRe // the kernel checkbox grammar
+	workFieldRe = record.FieldRe    // the kernel field grammar
 	workSlugRe  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
@@ -93,17 +93,8 @@ func parseWorkFields(raw string) (text string, fields []WorkField) {
 	return strings.Join(strings.Fields(text), " "), fields
 }
 
-func workIndentWidth(s string) int { // tab = 4, like goals
-	w := 0
-	for _, r := range s {
-		if r == '\t' {
-			w += 4
-		} else {
-			w++
-		}
-	}
-	return w
-}
+// workIndentWidth is the kernel indent rule (tab = 4).
+func workIndentWidth(s string) int { return record.IndentWidth(s) }
 
 // ParseWork reads a `## work` section's lines into stages. Depth 0 checkbox
 // lines are stages, depth ≥1 are todos of the last stage; every non-checkbox

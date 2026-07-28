@@ -228,7 +228,7 @@ func (s *Service) configuredSlots() []string {
 // ----- parsing -----
 
 var (
-	taskRe        = regexp.MustCompile(`^\s*-\s*\[([ xX])\]\s?(.*)$`)
+	taskRe        = record.CheckboxRe // indent m[1], state m[2], rest m[3]
 	rowRe         = regexp.MustCompile(`^\s*\|(.*)\|\s*$`)
 	inlineFieldRe = record.FieldRe // the kernel grammar
 )
@@ -271,8 +271,8 @@ func parseBlock(block string) ([]ScheduleRow, []Task, []FocusPick) {
 			continue
 		}
 		if m := taskRe.FindStringSubmatch(line); m != nil {
-			text, fields := stripFields(m[2])
-			t := Task{Text: text, Done: strings.EqualFold(strings.TrimSpace(m[1]), "x")}
+			text, fields := stripFields(m[3])
+			t := Task{Text: text, Done: strings.EqualFold(strings.TrimSpace(m[2]), "x")}
 			for _, f := range fields {
 				switch {
 				case strings.EqualFold(f.key, "goal"):

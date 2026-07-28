@@ -3,7 +3,6 @@ package server
 import (
 	"net/http"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -404,8 +403,8 @@ func splitFrozen(rock *goals.Goal) (open []string, checked int) {
 	for _, st := range rock.Children {
 		for _, ln := range st.Frozen {
 			if m := todoLineMatch(ln); m != nil {
-				if m[1] == " " {
-					open = append(open, cleanFrozenText(m[2]))
+				if m[2] == " " {
+					open = append(open, cleanFrozenText(m[3]))
 				} else {
 					checked++
 				}
@@ -503,8 +502,8 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 			for _, st := range rock.Children {
 				var keep []string
 				for _, ln := range st.Frozen {
-					if m := todoLineMatch(ln); m != nil && m[1] == " " {
-						target(cleanFrozenText(m[2]))
+					if m := todoLineMatch(ln); m != nil && m[2] == " " {
+						target(cleanFrozenText(m[3]))
 						continue
 					}
 					keep = append(keep, ln)
@@ -542,9 +541,9 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-var todoLineRe2 = regexp.MustCompile(`^[ \t]*[-*]\s*\[([ xX])\]\s?(.*)$`)
-
-func todoLineMatch(ln string) []string { return todoLineRe2.FindStringSubmatch(ln) }
+// todoLineMatch applies the kernel checkbox grammar: indent m[1], state m[2],
+// rest m[3].
+func todoLineMatch(ln string) []string { return record.CheckboxRe.FindStringSubmatch(ln) }
 
 // backupOnce copies src to dst if dst doesn't exist (the .pre-migration pattern).
 func backupOnce(src, dst string) error {

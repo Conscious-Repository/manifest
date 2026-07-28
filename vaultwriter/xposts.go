@@ -28,10 +28,10 @@ type Bullet struct {
 
 // XPostsDoc is the parsed three-section view for display (studio.ledger, Queue tab).
 type XPostsDoc struct {
-	Drafts        []Bullet `json:"drafts"`
-	Queue         []Bullet `json:"queue"`
-	Posted        []Bullet `json:"posted"`
-	NeedsMigration bool    `json:"needsMigration"` // old shape: # queue present, # drafts absent
+	Drafts         []Bullet `json:"drafts"`
+	Queue          []Bullet `json:"queue"`
+	Posted         []Bullet `json:"posted"`
+	NeedsMigration bool     `json:"needsMigration"` // old shape: # queue present, # drafts absent
 }
 
 // ParseXPosts parses the file into its three sections. A pre-migration file

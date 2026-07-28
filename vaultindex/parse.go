@@ -77,7 +77,7 @@ var (
 	speakerLineRe = regexp.MustCompile(`(?m)^\s*\*\*[^*\n]{1,40}:\*\*`)
 	// task + heading extraction (open loops)
 	headingRe  = regexp.MustCompile(`^\s{0,3}#{1,6}\s+(.*\S)\s*$`)
-	checkboxRe = regexp.MustCompile(`^\s*[-*]\s+\[([ xX])\]\s?(.*)$`)
+	checkboxRe = record.CheckboxRe // kernel grammar: indent m[1], state m[2], rest m[3]
 	nextStepRe = regexp.MustCompile(`(?i)(next[- ]?steps?|action[- ]?items?|to-?dos?|follow[- ]?ups?)`)
 )
 
@@ -178,8 +178,8 @@ func extractTasks(content string) []Task {
 		}
 		if m := checkboxRe.FindStringSubmatch(line); m != nil {
 			out = append(out, Task{
-				Line: i, Text: strings.TrimSpace(m[2]),
-				Checked: m[1] == "x" || m[1] == "X", Kind: "checkbox",
+				Line: i, Text: strings.TrimSpace(m[3]),
+				Checked: m[2] == "x" || m[2] == "X", Kind: "checkbox",
 			})
 			continue
 		}

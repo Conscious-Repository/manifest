@@ -25,7 +25,7 @@ func TestGuardClasses(t *testing.T) {
 		{"system/excalibur/spirits/x/identity.md", WriteRawUser, false},
 		{"system/excalibur/artifacts/feed/item.md", WriteDatabase, false},
 		{"system/agents/brief.md", WriteRawUser, false},
-		{"Agents/legacy.md", WriteRawUser, false},     // legacy root (pre-reorg)
+		{"Agents/legacy.md", WriteRawUser, false}, // legacy root (pre-reorg)
 		{"excalibur/chargebook.md", WriteRawUser, false},
 
 		// database class: structured roots only — system/ AND extrinsic/ (books)

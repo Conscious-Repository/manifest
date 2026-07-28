@@ -3,14 +3,16 @@ package goals
 import (
 	"regexp"
 	"strings"
+
+	"manifest/record"
 )
 
 var (
 	areaHeadingRe = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
 	horizonRe     = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
-	// goalLineRe captures leading indentation (m[1]), the checkbox state (m[2]),
-	// and the rest of the line (m[3]). Indentation drives nesting depth.
-	goalLineRe = regexp.MustCompile(`^([ \t]*)[-*]\s*\[([ xX])\]\s?(.*)$`)
+	// goalLineRe is the kernel checkbox grammar: indent (m[1]), state (m[2]),
+	// rest (m[3]). Indentation drives nesting depth.
+	goalLineRe = record.CheckboxRe
 	yearRe     = regexp.MustCompile(`\b(\d{4})\b`)
 )
 
@@ -67,28 +69,6 @@ func northStarText(line string) string {
 
 func isBlank(line string) bool { return strings.TrimSpace(line) == "" }
 
-// indentWidth measures leading whitespace in columns (tab = 4), so 2-space,
-// 4-space, or tab nesting all round-trip predictably.
-func indentWidth(s string) int {
-	w := 0
-	for _, r := range s {
-		switch r {
-		case ' ':
-			w++
-		case '\t':
-			w += 4
-		default:
-			return w
-		}
-	}
-	return w
-}
-
-type frame struct {
-	indent int
-	goal   *Goal
-}
-
 // Parse turns goals.md content into a Doc. It never hard-errors: anything it
 // doesn't recognize is preserved as area "extra" prose or the doc preamble.
 // Checkbox lines under "### 1-year" nest into Annuals; under "### Rocks (90-day)"
@@ -116,8 +96,8 @@ func Parse(content string) *Doc {
 	for i < len(lines) {
 		a := &Area{Name: areaName(lines[i])}
 		i++
-		var stack []frame
-		var root *[]*Goal // nil = not currently in a goals section
+		var frames record.Frames[*Goal] // the kernel's relative-nesting stack
+		var root *[]*Goal               // nil = not currently in a goals section
 		for i < len(lines) && !isAreaHeading(lines[i]) {
 			line := lines[i]
 			i++
@@ -133,7 +113,7 @@ func Parse(content string) *Doc {
 				}
 			case horizonRe.MatchString(line):
 				sec, year := classifyHorizon(line)
-				stack = stack[:0]
+				frames.Reset()
 				switch sec {
 				case sectionAnnual:
 					a.hasAnnual = true
@@ -153,26 +133,21 @@ func Parse(content string) *Doc {
 						a.extra = append(a.extra, line)
 						continue
 					}
-					w := indentWidth(m[1])
-					for len(stack) > 0 && stack[len(stack)-1].indent >= w {
-						stack = stack[:len(stack)-1]
-					}
+					depth, parent := frames.Descend(record.IndentWidth(m[1]))
 					// task-substrate split: goals.md nests ONE level under a
 					// Rock (the stage). Anything deeper is FROZEN history —
 					// preserved verbatim on the stage, never parsed as a goal.
-					if root == &a.Rocks && len(stack) >= 2 {
-						st := stack[len(stack)-1].goal
-						st.Frozen = append(st.Frozen, line)
+					if root == &a.Rocks && depth >= 2 {
+						parent.Frozen = append(parent.Frozen, line)
 						continue
 					}
 					g := parseGoal(m)
-					if len(stack) == 0 {
+					if depth == 0 {
 						*root = append(*root, g)
 					} else {
-						p := stack[len(stack)-1].goal
-						p.Children = append(p.Children, g)
+						parent.Children = append(parent.Children, g)
 					}
-					stack = append(stack, frame{indent: w, goal: g})
+					frames.Push(record.IndentWidth(m[1]), g)
 					continue
 				}
 				a.extra = append(a.extra, line)
