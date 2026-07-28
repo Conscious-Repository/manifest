@@ -26,7 +26,7 @@ func goalsServer(t *testing.T, goalsMD string) (*Server, string) {
 	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(goalsMD), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return New(nil, goals.NewStore(idx, dir, "goals.md"), nil), dir
+	return New(nil, goals.NewStore(idx, dir, "goals.md", testWrite), nil), dir
 }
 
 // getView drives handleGoalsGet and returns the parsed DocView.
@@ -168,9 +168,9 @@ func TestDayCapture(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(seed), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	svc := daily.NewService(daily.Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18}, idx)
-	s := New(svc, goals.NewStore(idx, dir, "goals.md"), nil)
-	s.UseTodos(todos.NewStore(dir, "to do.md"))
+	svc := daily.NewService(daily.Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18, Write: testWrite}, idx)
+	s := New(svc, goals.NewStore(idx, dir, "goals.md", testWrite), nil)
+	s.UseTodos(todos.NewStore(dir, "to do.md", testWrite))
 
 	post := func() daily.Day {
 		rec := httptest.NewRecorder()
@@ -232,3 +232,6 @@ func TestDayCapture(t *testing.T) {
 		t.Fatal("capture under a rock id must be refused")
 	}
 }
+
+// testWrite is the tests' plain write path (prod injects a vaultwriter capability).
+func testWrite(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }

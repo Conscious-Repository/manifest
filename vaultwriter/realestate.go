@@ -61,7 +61,7 @@ func (w *Writer) PrependLogLine(rel, line string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(full, []byte(insertLogBullet(string(raw), "- "+strings.TrimSpace(line))), 0o644)
+	return w.commit(full, "re-log", []byte(insertLogBullet(string(raw), "- "+strings.TrimSpace(line))))
 }
 
 // docExtAllow is the property-docs upload allowlist (bid PDFs, photos, sheets).
@@ -116,7 +116,7 @@ func (w *Writer) SaveDoc(relDir, filename string, data []byte) (string, error) {
 		if _, err := os.Stat(full); err == nil {
 			continue
 		}
-		if err := os.WriteFile(full, data, 0o644); err != nil {
+		if err := w.commit(full, "re-doc", data); err != nil {
 			return "", err
 		}
 		return relDir + "/" + fn, nil
@@ -150,7 +150,7 @@ func (w *Writer) WriteSourceJSON(rel string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(full, data, 0o644)
+	return w.commit(full, "re-source", data)
 }
 
 // UpdateLedgerRow replaces one exact row in a ledger csv; DeleteLedgerRow
@@ -208,7 +208,7 @@ func (w *Writer) editLedger(rel string, original []string, replacement *[]string
 	if err := cw.Error(); err != nil {
 		return err
 	}
-	return os.WriteFile(full, buf.Bytes(), 0o644)
+	return w.commit(full, "re-ledger", buf.Bytes())
 }
 
 // rowsEqual compares csv rows field-by-field, padding the shorter (ragged rows
@@ -253,7 +253,7 @@ func (w *Writer) WriteExport(rel string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(full, data, 0o644)
+	return w.commit(full, "re-export", data)
 }
 
 // ReplaceSection swaps the BODY of one `## section` in a record (creating the
@@ -306,7 +306,7 @@ func (w *Writer) ReplaceSection(rel, section, body string) error {
 			out = append(out, lines[end:]...)
 		}
 	}
-	return os.WriteFile(full, []byte(strings.TrimRight(strings.Join(out, "\n"), "\n")+"\n"), 0o644)
+	return w.commit(full, "re-section", []byte(strings.TrimRight(strings.Join(out, "\n"), "\n")+"\n"))
 }
 
 // insertLogBullet places bullet right under the `## log` heading, or appends a new

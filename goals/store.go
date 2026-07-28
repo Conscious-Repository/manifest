@@ -13,18 +13,27 @@ import (
 
 // Store reads and writes the single goals.md master file. The path is resolved
 // through the vault Index (so a hand-moved goals.md is still found); a fallback
-// at the vault root is used when none has been indexed yet.
+// at the vault root is used when none has been indexed yet. Every write goes
+// through the injected write func (§A3 boundary — main binds it to a
+// vaultwriter knowledge-zone capability; this package never opens a file to
+// write).
 type Store struct {
 	idx       *vault.Index
 	fallback  string
 	vaultRoot string
+	write     func(path string, data []byte) error
 }
 
-func NewStore(idx *vault.Index, vaultRoot, goalsName string) *Store {
+func NewStore(idx *vault.Index, vaultRoot, goalsName string, write func(path string, data []byte) error) *Store {
 	if goalsName == "" {
 		goalsName = "goals.md"
 	}
-	return &Store{idx: idx, fallback: filepath.Join(vaultRoot, goalsName), vaultRoot: vaultRoot}
+	if write == nil {
+		write = func(string, []byte) error {
+			return fmt.Errorf("goals: no vault writer injected (§A3 write boundary)")
+		}
+	}
+	return &Store{idx: idx, fallback: filepath.Join(vaultRoot, goalsName), vaultRoot: vaultRoot, write: write}
 }
 
 // archivePath is the vault-root file for a quarter's closed Rocks, e.g.
@@ -99,10 +108,24 @@ func (s *Store) appendArchive(quarter string, entry ArchiveEntry) error {
 		entries = parseArchive(string(b))
 	}
 	entries = append(entries, entry)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	return s.write(path, []byte(serializeArchive(quarter, entries)))
+}
+
+// BackupOnce writes Path()+suffix with the live bytes if no such backup exists
+// yet (the .pre-split pattern) — through the same §A3 boundary as every write.
+func (s *Store) BackupOnce(suffix string) error {
+	dst := s.Path() + suffix
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+	raw, err := os.ReadFile(s.Path())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
-	return os.WriteFile(path, []byte(serializeArchive(quarter, entries)), 0o644)
+	return s.write(dst, raw)
 }
 
 // LoadAllArchives reads every "goals <quarter>.md" at the vault root, newest quarter
@@ -138,11 +161,7 @@ func (s *Store) Load() *Doc {
 }
 
 func (s *Store) Save(d *Doc) error {
-	p := s.Path()
-	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(p, []byte(Serialize(d)), 0o644)
+	return s.write(s.Path(), []byte(Serialize(d)))
 }
 
 // Seed creates a starter goals.md with the standard life areas if none exists.
@@ -169,7 +188,7 @@ func (s *Store) Migrate(now time.Time) (bool, error) {
 	}
 	backup := path + ".pre-migration"
 	if _, err := os.Stat(backup); os.IsNotExist(err) {
-		if err := os.WriteFile(backup, b, 0o644); err != nil {
+		if err := s.write(backup, b); err != nil {
 			return false, err
 		}
 	}
@@ -250,10 +269,7 @@ func (s *Store) SaveRetro(quarter, start, stop, keep string) error {
 	section("Start", start)
 	section("Stop", stop)
 	section("Keep", keep)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return s.write(path, []byte(b.String()))
 }
 
 // Promote ensures a goal carries a durable [goal:: id] (so a daily-task backlink

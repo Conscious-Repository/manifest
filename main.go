@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"manifest/approvals"
@@ -25,11 +26,12 @@ import (
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
+	"manifest/record"
 	"manifest/server"
 	"manifest/signals"
-	"manifest/todos"
 	"manifest/spirits"
 	"manifest/studio"
+	"manifest/todos"
 	"manifest/vault"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -119,7 +121,27 @@ func main() {
 		}()
 	}
 
-	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName)
+	// The §A3 write boundary: EVERY vault write — knowledge zone included, no
+	// exemptions (owner decision 2026-07-28) — flows through a declared
+	// vaultwriter capability and appends one line to <dataDir>/write-audit.log.
+	vw := vaultwriter.New(cfg.VaultPath).
+		WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot).
+		WithAudit(cfg.DataDir).
+		Grant(
+			// goals.md + "goals <quarter>.md" archives/reviews + .pre-* backups
+			vaultwriter.Capability{Name: "goals", Zone: record.ZoneKnowledge,
+				Pattern: strings.TrimSuffix(orDefault(cfg.GoalsFileName, "goals.md"), ".md") + "*",
+				Actor:   vaultwriter.ActorUserAction},
+			// to do.md + "to do archive.md" + .pre-* backups
+			vaultwriter.Capability{Name: "todos", Zone: record.ZoneKnowledge,
+				Pattern: strings.TrimSuffix(orDefault(cfg.TodosFileName, "to do.md"), ".md") + "*",
+				Actor:   vaultwriter.ActorUserAction},
+			// daily notes: the exact YYYY-MM-DD.md shape, wherever they live
+			vaultwriter.Capability{Name: "daily", Zone: record.ZoneKnowledge,
+				Pattern: "????-??-??.md", Actor: vaultwriter.ActorUserAction},
+		)
+
+	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName, vw.BindAbs("goals"))
 	if err := goalsStore.Seed(); err != nil {
 		log.Printf("seeding goals.md: %v", err)
 	}
@@ -132,7 +154,7 @@ func main() {
 	}
 
 	// TODOS — the third surface over the vault-root `to do.md` (peer of goals.md).
-	todosStore := todos.NewStore(cfg.VaultPath, cfg.TodosFileName)
+	todosStore := todos.NewStore(cfg.VaultPath, cfg.TodosFileName, vw.BindAbs("todos"))
 	{
 		var areaNames []string
 		if doc := goalsStore.Load(); doc != nil {
@@ -154,12 +176,13 @@ func main() {
 	// Offline calendar mirror is derived data → lives under DataDir, never the vault.
 	calSource := calendar.NewSource(calClient, filepath.Join(cfg.DataDir, "calendar-cache"))
 
-	svc := daily.NewService(dailyConfig(cfg), idx)
+	dc := dailyConfig(cfg)
+	dc.Write = vw.BindAbs("daily")
+	svc := daily.NewService(dc, idx)
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
-	vw := vaultwriter.New(cfg.VaultPath).WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot)
 	var contactsSvc *contacts.Service // reused by the feed's cold-contact emitter
 	var reSvc *realestate.Service     // reused by the feed's property emitters
 	if vix != nil {
@@ -332,4 +355,12 @@ func dailyConfig(c Config) daily.Config {
 		ScheduleStart: c.ScheduleStart,
 		ScheduleEnd:   c.ScheduleEnd,
 	}
+}
+
+// orDefault returns s unless blank.
+func orDefault(s, def string) string {
+	if strings.TrimSpace(s) == "" {
+		return def
+	}
+	return s
 }

@@ -27,7 +27,7 @@ func (s *Store) Migrate(now time.Time, areas []string) (bool, error) {
 		strings.Contains(content, "[todo::") {
 		return false, nil // already in the new grammar
 	}
-	if err := os.WriteFile(s.Path()+".pre-migration", raw, 0o644); err != nil {
+	if err := s.write(s.Path()+".pre-migration", raw); err != nil {
 		return false, err
 	}
 

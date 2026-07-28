@@ -25,8 +25,31 @@ import (
 	"strings"
 
 	"manifest/mdfm"
+	"manifest/record"
 	"manifest/vaultindex"
+	"manifest/vaultwriter"
 )
+
+// The §A3 capability-bound write paths, set in main() once flags resolve.
+var (
+	vw         *vaultwriter.Writer
+	exRoot     string                                  // extrinsic-zone root (slash, trimmed)
+	bookWrite  func(absPath string, data []byte) error // extrinsic-zone creates/repairs
+	mergeWrite func(absPath string, data []byte) error // knowledge-zone merge targets
+)
+
+// writeNote dispatches a note write to the right capability by where the note
+// lives: under extrinsic/ → books, else → merge (a user-named existing note).
+func writeNote(vault, abs string, data []byte) error {
+	rel, err := filepath.Rel(vault, abs)
+	if err != nil {
+		return err
+	}
+	if record.ZoneOf(filepath.ToSlash(rel), "", exRoot) == record.ZoneExtrinsic {
+		return bookWrite(abs, data)
+	}
+	return mergeWrite(abs, data)
+}
 
 func main() {
 	csvPath := flag.String("csv", "", "path to goodreads_library_export.csv")
@@ -40,6 +63,23 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: goodreads-import -csv <export.csv> -vault <path> [-apply]  |  -repair -vault <path>")
 		os.Exit(2)
 	}
+	// §A3 write boundary: book creates/repairs are an extrinsic-zone
+	// capability; merge-into-existing may touch a knowledge-zone note the user
+	// asked to enrich; moves re-file a note INTO extrinsic (dest-checked).
+	home, _ := os.UserHomeDir()
+	vw = vaultwriter.New(*vaultPath).
+		WithZoneRoots(*systemRoot, *extrinsicRoot).
+		WithAudit(filepath.Join(home, ".config", "manifest")).
+		Grant(
+			vaultwriter.Capability{Name: "goodreads-books", Zone: record.ZoneExtrinsic,
+				Pattern: strings.Trim(filepath.ToSlash(*extrinsicRoot), "/") + "/**",
+				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "goodreads-merge", Zone: record.ZoneKnowledge,
+				Pattern: "*", Actor: vaultwriter.ActorUserAction},
+		)
+	exRoot = strings.Trim(filepath.ToSlash(*extrinsicRoot), "/")
+	bookWrite = vw.BindAbs("goodreads-books")
+	mergeWrite = vw.BindAbs("goodreads-merge")
 	if *repair {
 		n, err := repairFullTitles(*vaultPath, *extrinsicRoot)
 		if err != nil {
@@ -273,7 +313,7 @@ func repairFullTitles(vault, extrinsicRoot string) (int, error) {
 			changed = true
 		}
 		if changed {
-			if err := os.WriteFile(full, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			if err := bookWrite(full, []byte(strings.Join(lines, "\n"))); err != nil {
 				return fixed, err
 			}
 			fixed++
@@ -427,27 +467,20 @@ func (p plan) write(im *importer) error {
 	for _, a := range p.creates {
 		rel := filepath.Join(im.extrinsicRoot, a.book.slug+".md")
 		full := filepath.Join(im.vault, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return err
-		}
 		if _, err := os.Stat(full); err == nil {
 			continue // never clobber (idempotency belt)
 		}
-		if err := os.WriteFile(full, []byte(a.book.newFileText()), 0o644); err != nil {
+		if err := bookWrite(full, []byte(a.book.newFileText())); err != nil {
 			return err
 		}
 	}
 	for _, a := range p.merges {
 		full := filepath.Join(im.vault, filepath.FromSlash(a.existing))
-		if err := mergeInto(full, a.addKeys); err != nil {
+		if err := mergeInto(im.vault, full, a.addKeys); err != nil {
 			return fmt.Errorf("merge %s: %w", a.existing, err)
 		}
 		if a.moveTo != "" { // relocate into extrinsic/ (basename unchanged → links hold)
-			dst := filepath.Join(im.vault, filepath.FromSlash(a.moveTo))
-			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-				return err
-			}
-			if err := os.Rename(full, dst); err != nil {
+			if err := vw.RenameCap("goodreads-books", a.existing, a.moveTo); err != nil {
 				return fmt.Errorf("move %s → %s: %w", a.existing, a.moveTo, err)
 			}
 		}
@@ -457,7 +490,7 @@ func (p plan) write(im *importer) error {
 
 // mergeInto inserts add keys into an existing note's frontmatter block WITHOUT
 // touching existing frontmatter lines or the body (byte-for-byte preserved).
-func mergeInto(full string, add []kv) error {
+func mergeInto(vault, full string, add []kv) error {
 	if len(add) == 0 {
 		return nil
 	}
@@ -475,12 +508,12 @@ func mergeInto(full string, add []kv) error {
 		if end := strings.Index(s[4:], "\n---"); end >= 0 {
 			cut := 4 + end // index of the '\n' before the closing ---
 			out := s[:cut] + "\n" + block + s[cut:]
-			return os.WriteFile(full, []byte(out), 0o644)
+			return writeNote(vault, full, []byte(out))
 		}
 	}
 	// no frontmatter block → prepend one, body preserved verbatim
 	out := "---\n" + block + "\n---\n\n" + strings.TrimLeft(s, "\n")
-	return os.WriteFile(full, []byte(out), 0o644)
+	return writeNote(vault, full, []byte(out))
 }
 
 // ---- report ----

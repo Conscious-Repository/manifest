@@ -83,7 +83,7 @@ func runNormalizeAddresses(cfg miniConfig, apply bool) {
 
 func writeAddr(fullPath, raw, addr string) {
 	next := regexp.MustCompile(`(?m)^address:\s*.+$`).ReplaceAllString(raw, "address: "+addr)
-	_ = os.WriteFile(fullPath, []byte(next), 0o644)
+	_ = vaultWrite(fullPath, []byte(next))
 }
 
 // centroidOf averages the first ring's vertices ([lng, lat] GeoJSON order).

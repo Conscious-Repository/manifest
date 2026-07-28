@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"manifest/mdfm"
 )
@@ -20,6 +21,10 @@ type Writer struct {
 	vault         string
 	systemRoot    string // vault-relative system-zone folder for the write guard ("" → "system")
 	extrinsicRoot string // vault-relative extrinsic-zone folder (books/articles) ("" → "extrinsic")
+
+	caps      map[string]Capability // declared write-capabilities (§A3)
+	auditPath string                // append-only write-audit.log ("" = no log)
+	auditMu   sync.Mutex
 }
 
 // New builds a writer for the given vault path ("" disables saving).
@@ -65,10 +70,7 @@ func (w *Writer) SaveExtrinsic(title, itemType, why, link, source, body string) 
 	if _, err := os.Stat(full); err == nil {
 		return rel, nil // already exists — write-once, keep the user's note
 	}
-	if err := os.MkdirAll(extrinsic, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(full, []byte(buildNote(itemType, why, link, source, body)), 0o644); err != nil {
+	if err := w.commit(full, "extrinsic-save", []byte(buildNote(itemType, why, link, source, body))); err != nil {
 		return "", err
 	}
 	return rel, nil

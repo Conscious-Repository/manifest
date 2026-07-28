@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -513,11 +512,11 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 		}
 		tdoc.MarkSplitDone(today)
 		// backups, then todos, then goals; demote closes run last (they reload)
-		if err := backupOnce(s.todosStore.Path(), s.todosStore.Path()+".pre-split"); err != nil {
+		if err := s.todosStore.BackupOnce(".pre-split"); err != nil {
 			httpError(w, err)
 			return
 		}
-		if err := backupOnce(s.goals.Path(), s.goals.Path()+".pre-split"); err != nil {
+		if err := s.goals.BackupOnce(".pre-split"); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -544,21 +543,6 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 // todoLineMatch applies the kernel checkbox grammar: indent m[1], state m[2],
 // rest m[3].
 func todoLineMatch(ln string) []string { return record.CheckboxRe.FindStringSubmatch(ln) }
-
-// backupOnce copies src to dst if dst doesn't exist (the .pre-migration pattern).
-func backupOnce(src, dst string) error {
-	if _, err := os.Stat(dst); err == nil {
-		return nil
-	}
-	raw, err := os.ReadFile(src)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	return os.WriteFile(dst, raw, 0o644)
-}
 
 // handleTodoDrop — the stale-nudge's third exit: out of the live file, into
 // the archive with a [dropped::] stamp (never deleted).

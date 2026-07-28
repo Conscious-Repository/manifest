@@ -1,9 +1,9 @@
 package daily
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -19,8 +19,6 @@ import (
 const (
 	dailyStart = "<!-- manifest:start -->"
 	dailyEnd   = "<!-- manifest:end -->"
-	listStart  = "<!-- manifest:list:start -->"
-	listEnd    = "<!-- manifest:list:end -->"
 )
 
 const dateLayout = "2006-01-02"
@@ -31,6 +29,9 @@ type Config struct {
 	VaultPath     string
 	ScheduleStart int
 	ScheduleEnd   int
+	// Write is the injected vault-write path (§A3): main binds it to a
+	// vaultwriter knowledge-zone capability. Daily never opens a file itself.
+	Write func(path string, data []byte) error
 }
 
 // ----- data model -----
@@ -669,7 +670,7 @@ func (s *Service) SaveDay(date string, schedule []ScheduleRow, tasks []Task) err
 	_, _, focus := parseBlock(blockOf(content)) // preserve existing Focus picks
 	day := Day{Focus: focus, Schedule: s.mergeSchedule(schedule), Tasks: tasks}
 	updated := upsertRegion(content, dailyStart, dailyEnd, serializeBlock(day))
-	return writeFile(path, updated)
+	return s.writeFile(path, updated)
 }
 
 // SetFocus sets (goalID != "") or clears (goalID == "") the Focus pick at a slot,
@@ -705,7 +706,7 @@ func (s *Service) SetFocus(date string, slot int, goalID string) (Day, error) {
 	}
 	day := Day{Focus: focus, Schedule: s.mergeSchedule(rows), Tasks: tasks}
 	updated := upsertRegion(content, dailyStart, dailyEnd, serializeBlock(day))
-	if err := writeFile(path, updated); err != nil {
+	if err := s.writeFile(path, updated); err != nil {
 		return Day{}, err
 	}
 	return s.Load(date)
@@ -728,7 +729,7 @@ func (s *Service) SetMilestone(date string, slot int, milestoneID string) (Day, 
 	}
 	day := Day{Focus: focus, Schedule: s.mergeSchedule(rows), Tasks: tasks}
 	updated := upsertRegion(content, dailyStart, dailyEnd, serializeBlock(day))
-	if err := writeFile(path, updated); err != nil {
+	if err := s.writeFile(path, updated); err != nil {
 		return Day{}, err
 	}
 	return s.Load(date)
@@ -753,42 +754,8 @@ func (s *Service) AddTask(date string, t Task) (Day, error) {
 	return s.Load(date)
 }
 
-// ----- list (goals/milestones) notes -----
-
-var bulletRe = regexp.MustCompile(`^\s*[-*]\s+(.*)$`)
-
-func readList(path string) []string {
-	content := readFile(path)
-	scope := content
-	if inner, ok := regionBetween(content, listStart, listEnd); ok {
-		scope = inner
-	}
-	var items []string
-	for _, line := range strings.Split(scope, "\n") {
-		if m := bulletRe.FindStringSubmatch(line); m != nil {
-			if t := strings.TrimSpace(m[1]); t != "" {
-				items = append(items, t)
-			}
-		}
-	}
-	return items
-}
-
-func writeList(path, heading string, items []string) error {
-	content := readFile(path)
-	var inner strings.Builder
-	if len(items) == 0 {
-		inner.WriteString("- \n")
-	}
-	for _, it := range items {
-		inner.WriteString("- " + it + "\n")
-	}
-	if content == "" {
-		content = "# " + heading + "\n\n"
-	}
-	updated := upsertRegion(content, listStart, listEnd, inner.String())
-	return writeFile(path, updated)
-}
+// (the legacy goals/milestones list-note read/write helpers were dead code —
+// removed with the §A3 write-boundary pass)
 
 // ----- streak -----
 
@@ -841,9 +808,10 @@ func readFile(path string) string {
 	return string(b)
 }
 
-func writeFile(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+// writeFile routes every daily-note write through the injected §A3 boundary.
+func (s *Service) writeFile(path, content string) error {
+	if s.cfg.Write == nil {
+		return errors.New("daily: no vault writer injected (§A3 write boundary)")
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return s.cfg.Write(path, []byte(content))
 }

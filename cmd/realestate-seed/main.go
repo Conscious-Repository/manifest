@@ -23,7 +23,12 @@ import (
 	"strings"
 
 	"manifest/record"
+	"manifest/vaultwriter"
 )
+
+// vaultWrite is the §A3 capability-bound vault write, set in main() once the
+// vault path is known. Every vault write in this importer goes through it.
+var vaultWrite func(absPath string, data []byte) error
 
 func main() {
 	configPath := flag.String("config", "config.json", "manifest config (for vaultPath + systemRoot)")
@@ -48,6 +53,21 @@ func main() {
 	if cfg.SystemRoot == "" {
 		cfg.SystemRoot = "system"
 	}
+	dataDir := cfg.DataDir
+	if dataDir == "" {
+		home, _ := os.UserHomeDir()
+		dataDir = filepath.Join(home, ".config", "manifest")
+	}
+	// §A3 write boundary: every vault write this importer makes goes through a
+	// declared system-zone capability and lands in the shared write-audit.log.
+	vaultWrite = vaultwriter.New(cfg.VaultPath).
+		WithZoneRoots(cfg.SystemRoot, "").
+		WithAudit(dataDir).
+		Grant(vaultwriter.Capability{
+			Name: "realestate-seed", Zone: record.ZoneSystem,
+			Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate")) + "/**",
+			Actor:   vaultwriter.ActorUserAction,
+		}).BindAbs("realestate-seed")
 	if *normalizeAddr {
 		runNormalizeAddresses(cfg, *apply)
 		return
@@ -59,11 +79,6 @@ func main() {
 	if *expand {
 		runExpand(cfg, srcDir, *apply)
 		return
-	}
-	dataDir := cfg.DataDir
-	if dataDir == "" {
-		home, _ := os.UserHomeDir()
-		dataDir = filepath.Join(home, ".config", "manifest")
 	}
 	reRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))
 
@@ -482,10 +497,16 @@ func (p *plan) write(vault, dataDir string) error {
 		if fileExists(full) {
 			continue // write-once — never clobber
 		}
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return err
+		if f.DataDir { // derived data outside the vault — not a vault write
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(full, f.Bytes, 0o644); err != nil {
+				return err
+			}
+			continue
 		}
-		if err := os.WriteFile(full, f.Bytes, 0o644); err != nil {
+		if err := vaultWrite(full, f.Bytes); err != nil {
 			return err
 		}
 	}

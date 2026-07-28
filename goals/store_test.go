@@ -19,7 +19,7 @@ func tempStore(t *testing.T, goalsMD string) (*Store, string) {
 	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(goalsMD), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return NewStore(idx, dir, "goals.md"), dir
+	return NewStore(idx, dir, "goals.md", testWrite), dir
 }
 
 func TestSyncChecks(t *testing.T) {
@@ -82,3 +82,6 @@ func TestSaveRetro(t *testing.T) {
 		}
 	}
 }
+
+// testWrite is the tests' plain write path (prod injects a vaultwriter capability).
+func testWrite(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }

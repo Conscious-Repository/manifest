@@ -43,7 +43,7 @@ func (w *Writer) CreatePersonNote(name string, aliases []string, body string) (s
 	if clean := dedupeAliases(aliases); len(clean) > 0 {
 		fm.SetList("alias", clean)
 	}
-	if err := os.WriteFile(full, []byte(fm.String(strings.TrimSpace(body))), 0o644); err != nil {
+	if err := w.commit(full, "contact-create", []byte(fm.String(strings.TrimSpace(body)))); err != nil {
 		return "", err
 	}
 	return rel, nil
@@ -68,7 +68,7 @@ func (w *Writer) ReplaceBody(rel, body string) error {
 	if b := strings.TrimSpace(body); b != "" {
 		out += b + "\n"
 	}
-	return os.WriteFile(full, []byte(out), 0o644)
+	return w.commit(full, "contact-body", []byte(out))
 }
 
 // AddFrontmatterValue adds value to a frontmatter list key (creating the block or
@@ -91,7 +91,7 @@ func (w *Writer) AddFrontmatterValue(rel, key, value string) error {
 	if !changed {
 		return nil
 	}
-	return os.WriteFile(full, []byte(next), 0o644)
+	return w.commit(full, "contact-frontmatter", []byte(next))
 }
 
 // WriteNote overwrites a note with the exact raw content the user typed in the
@@ -107,7 +107,7 @@ func (w *Writer) WriteNote(rel, raw string) error {
 	if !strings.HasSuffix(raw, "\n") {
 		raw += "\n"
 	}
-	return os.WriteFile(full, []byte(raw), 0o644)
+	return w.commit(full, "note-write", []byte(raw))
 }
 
 var taskMarkRe = regexp.MustCompile(`^(\s*[-*]\s+\[)[ xX](\].*)$`)
@@ -136,7 +136,7 @@ func (w *Writer) ToggleTask(rel string, line int, want bool) error {
 		mark = "x"
 	}
 	lines[line] = taskMarkRe.ReplaceAllString(strings.TrimRight(lines[line], "\r"), "${1}"+mark+"${2}")
-	return os.WriteFile(full, []byte(strings.Join(lines, "\n")), 0o644)
+	return w.commit(full, "task-toggle", []byte(strings.Join(lines, "\n")))
 }
 
 // resolve maps a vault-relative path to an absolute one, running the write

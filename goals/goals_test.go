@@ -173,7 +173,7 @@ func TestStoreMigrateWritesBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := NewStore(idx, dir, "goals.md")
+	st := NewStore(idx, dir, "goals.md", testWrite)
 	legacy := "# Goals\n\n## Aion\n\n### 90-day\n- [ ] Ship it [owner:: me] [due:: 2026-09-30]\n"
 	path := filepath.Join(dir, "goals.md")
 	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {

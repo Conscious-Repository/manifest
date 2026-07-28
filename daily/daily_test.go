@@ -17,8 +17,16 @@ func testService(t *testing.T) (*Service, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18}
+	cfg := Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18, Write: testWrite}
 	return NewService(cfg, idx), dir
+}
+
+// testWrite is the tests' plain write path (prod injects a vaultwriter capability).
+func testWrite(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 func TestSlotTokenRoundTrip(t *testing.T) {

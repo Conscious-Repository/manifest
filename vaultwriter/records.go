@@ -36,7 +36,7 @@ func (w *Writer) CreateRecord(rel, content string) (string, error) {
 	if !strings.HasSuffix(content, "\n") {
 		content += "\n"
 	}
-	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+	if err := w.commit(full, "record-create", []byte(content)); err != nil {
 		return "", err
 	}
 	return rel, nil
@@ -58,7 +58,7 @@ func (w *Writer) SetFrontmatterField(rel, key, value string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(full, []byte(next), 0o644)
+	return w.commit(full, "record-frontmatter", []byte(next))
 }
 
 // resolveRecord is resolve() for database-class edits.

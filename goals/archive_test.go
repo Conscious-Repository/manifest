@@ -35,7 +35,7 @@ func TestCloseGoalArchivesAndRemoves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	st := NewStore(idx, dir, "goals.md")
+	st := NewStore(idx, dir, "goals.md", testWrite)
 	goalsMD := "# Goals\n\n## Aion\n\n### 1-year — 2026\n- [ ] Series A closed [goal:: aion/2026]\n\n### Rocks (90-day)\n" +
 		"- [ ] Series A 15M [goal:: aion/series-a-15m] [quarter:: 2026-Q3] [serves:: aion/2026]\n" +
 		"    - [x] Soft lead\n" +

@@ -71,7 +71,7 @@ func TestParseStates(t *testing.T) {
 
 func TestPromoteAndSync(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStore(dir, "to do.md")
+	s := NewStore(dir, "to do.md", testWrite)
 	if err := os.WriteFile(s.Path(), []byte(sample), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestPromoteAndSync(t *testing.T) {
 
 func TestSweepAndDrop(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStore(dir, "to do.md")
+	s := NewStore(dir, "to do.md", testWrite)
 	if err := os.WriteFile(s.Path(), []byte(sample), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ const legacy = `- Pay federal taxes (2021 & 2023) - ~19k?
 
 func TestMigrateLegacy(t *testing.T) {
 	dir := t.TempDir()
-	s := NewStore(dir, "to do.md")
+	s := NewStore(dir, "to do.md", testWrite)
 	if err := os.WriteFile(s.Path(), []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -272,3 +272,6 @@ func TestMigrateLegacy(t *testing.T) {
 		t.Fatal("migrated file not a fixpoint")
 	}
 }
+
+// testWrite is the tests' plain write path (prod injects a vaultwriter capability).
+func testWrite(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }

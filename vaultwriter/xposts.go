@@ -96,7 +96,7 @@ func (w *Writer) MigrateXPosts(relFile string) error {
 	if !changed {
 		return errors.New("already migrated (# drafts present) — nothing to do")
 	}
-	return os.WriteFile(full, []byte(out), 0o644)
+	return w.commit(full, "xposts-migrate", []byte(out))
 }
 
 // PreviewMigration returns the post-migration content (for the old→new review),
@@ -178,7 +178,7 @@ func (w *Writer) AppendSectionBullet(relFile, section, block string) error {
 	if !changed {
 		return errors.New("that bullet is already present in # " + section)
 	}
-	return os.WriteFile(full, []byte(out), 0o644)
+	return w.commit(full, "xposts-append", []byte(out))
 }
 
 // AddBullet appends a bullet to a section (drafts or queue).
@@ -211,7 +211,7 @@ func (w *Writer) editBullets(relFile, section string, fn func(string) (string, e
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(full, []byte(out), 0o644)
+	return w.commit(full, "xposts-edit", []byte(out))
 }
 
 // replaceBullet swaps an exact original block (verbatim, joined by \n) for a new

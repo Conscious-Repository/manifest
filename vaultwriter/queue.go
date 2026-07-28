@@ -36,7 +36,7 @@ func (w *Writer) AppendQueueBullet(relFile, block string) error {
 	if !changed {
 		return errors.New("that bullet is already in the queue or posted — not re-adding")
 	}
-	return os.WriteFile(full, []byte(out), 0o644)
+	return w.commit(full, "queue-append", []byte(out))
 }
 
 // MoveBulletToPosted moves an exact queue bullet to `# posted` in relFile,
@@ -57,7 +57,7 @@ func (w *Writer) MoveBulletToPosted(relFile, bullet string) error {
 	if !moved {
 		return errors.New("bullet not found in the queue")
 	}
-	return os.WriteFile(full, []byte(out), 0o644)
+	return w.commit(full, "queue-posted", []byte(out))
 }
 
 // --- pure transforms (byte-preserving) ---

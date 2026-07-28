@@ -148,13 +148,10 @@ func (o expandOp) write(vault string) error {
 			if next == string(existing) {
 				return nil
 			}
-			return os.WriteFile(full, []byte(next), 0o644)
+			return vaultWrite(full, []byte(next))
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(full, o.Bytes, 0o644)
+	return vaultWrite(full, o.Bytes)
 }
 
 func report(ops []expandOp, vault string, apply bool) {

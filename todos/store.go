@@ -1,6 +1,7 @@
 package todos
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,18 +11,26 @@ import (
 )
 
 // Store owns the vault-root `to do.md` (name configurable — todosFileName).
-// Same contract as goals.Store: whole-file Load→mutate→Save, plain writes
-// (the file is the owner's hand-editable record, not database-zone data).
+// Same contract as goals.Store: whole-file Load→mutate→Save, with every write
+// going through the injected write func (§A3 boundary — main binds it to a
+// vaultwriter knowledge-zone capability; this package never opens a file to
+// write).
 type Store struct {
 	vaultRoot string
 	name      string
+	write     func(path string, data []byte) error
 }
 
-func NewStore(vaultRoot, name string) *Store {
+func NewStore(vaultRoot, name string, write func(path string, data []byte) error) *Store {
 	if strings.TrimSpace(name) == "" {
 		name = "to do.md"
 	}
-	return &Store{vaultRoot: vaultRoot, name: name}
+	if write == nil {
+		write = func(string, []byte) error {
+			return errors.New("todos: no vault writer injected (§A3 write boundary)")
+		}
+	}
+	return &Store{vaultRoot: vaultRoot, name: name, write: write}
 }
 
 func (s *Store) Path() string { return filepath.Join(s.vaultRoot, s.name) }
@@ -48,7 +57,24 @@ func (s *Store) Load() (*Doc, error) {
 
 func (s *Store) Save(d *Doc) error {
 	d.assignIDs()
-	return os.WriteFile(s.Path(), []byte(Serialize(d)), 0o644)
+	return s.write(s.Path(), []byte(Serialize(d)))
+}
+
+// BackupOnce writes Path()+suffix with the live bytes if no such backup exists
+// yet (the .pre-split pattern) — through the same §A3 boundary as every write.
+func (s *Store) BackupOnce(suffix string) error {
+	dst := s.Path() + suffix
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+	raw, err := os.ReadFile(s.Path())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	return s.write(dst, raw)
 }
 
 // SyncChecks marks todos done from daily-note ticks (id → done). Returns ids
@@ -171,5 +197,5 @@ func (s *Store) appendArchive(section string, lines []string) error {
 		return err
 	}
 	content := record.AppendSection(string(raw), "# To Do — archive", section, lines)
-	return os.WriteFile(path, []byte(content), 0o644)
+	return s.write(path, []byte(content))
 }
