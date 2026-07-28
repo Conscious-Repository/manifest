@@ -189,17 +189,23 @@ function fmtDur(min) {
   return (Number.isInteger(h) ? String(h) : h.toFixed(1).replace(/\.0$/, "")) + "h";
 }
 
-// ---- save plumbing (debounced per endpoint) ----
+// ---- save plumbing (debounced per endpoint+date) ----
+// Date AND payload are snapshotted at QUEUE time: navigating to another day
+// inside the debounce window must never retarget a pending save (that once
+// cloned a whole day's tasks into tomorrow's fresh note).
 const savers = {};
 function queueSave(endpoint, payloadFn) {
   setSaveState("saving");
-  clearTimeout(savers[endpoint]);
-  savers[endpoint] = setTimeout(async () => {
+  const date = state.date;
+  const payload = payloadFn();
+  const key = endpoint + "|" + date;
+  clearTimeout(savers[key]);
+  savers[key] = setTimeout(async () => {
     try {
-      await fetch(`/api/${endpoint}?date=${state.date}`, {
+      await fetch(`/api/${endpoint}?date=${date}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payloadFn()),
+        body: JSON.stringify(payload),
       });
       setSaveState("saved");
     } catch (e) { setSaveState("error"); }
