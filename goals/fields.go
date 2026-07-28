@@ -1,19 +1,16 @@
 package goals
 
 import (
-	"regexp"
 	"strings"
+
+	"manifest/record"
 )
 
-// inlineFieldRe matches Dataview-style inline fields: [key:: value].
-var inlineFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
+// inlineFieldRe is THE kernel grammar (record.FieldRe) — no local copy.
+var inlineFieldRe = record.FieldRe
 
-// Field is one inline [key:: value] pair, preserving the original key case so
-// unrecognized fields round-trip unchanged.
-type Field struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
+// Field is the kernel's inline-field pair.
+type Field = record.Field
 
 // fieldRole is the emitting goal's place in the ladder — it decides which
 // canonical fields are written (§1).
@@ -25,18 +22,8 @@ const (
 	roleStageTask                  // a stage or task: identity only when explicit
 )
 
-// parseFields strips every [key:: value] field out of text and returns the
-// cleaned text (fields removed, surrounding whitespace collapsed) plus the
-// fields in source order.
-func parseFields(text string) (string, []Field) {
-	var fields []Field
-	clean := inlineFieldRe.ReplaceAllStringFunc(text, func(m string) string {
-		sm := inlineFieldRe.FindStringSubmatch(m)
-		fields = append(fields, Field{Key: strings.TrimSpace(sm[1]), Value: strings.TrimSpace(sm[2])})
-		return ""
-	})
-	return strings.Join(strings.Fields(clean), " "), fields
-}
+// parseFields is the kernel scan (record.ParseFields).
+func parseFields(text string) (string, []Field) { return record.ParseFields(text) }
 
 // canonicalFields returns the fields to emit for a goal, in a deterministic order:
 // goal (identity), then Rock metadata (quarter, serves, status, rolled-from), then

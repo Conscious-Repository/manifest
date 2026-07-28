@@ -12,7 +12,7 @@ func TestComputeProjectBudget(t *testing.T) {
 		{Type: "expense", Amount: 900, Cat: "carry"},         // legacy carry token → soft
 		{Type: "expense", Amount: 60000, Cat: "acquisition"}, // closing statement — over the 57k plan
 	}
-	pb := ComputeProjectBudget(src, work, ledger)
+	pb := ComputeProjectBudget(src, work, ledger, false)
 
 	if len(pb.Categories) != 4 {
 		t.Fatalf("categories = %d, want 4", len(pb.Categories))
@@ -85,7 +85,7 @@ func TestRecognizedSpend(t *testing.T) {
 
 	// property level: hard spent = recognized + untethered cash; ⚑ total rides up
 	pb := ComputeProjectBudget(SourceMoney{}, stages, append(ledger,
-		LedgerRow{Type: "expense", Amount: 700})) // untethered hard cash
+		LedgerRow{Type: "expense", Amount: 700}), false) // untethered hard cash
 	byKey := map[string]BudgetCatRow{}
 	for _, c := range pb.Categories {
 		byKey[c.Key] = c
@@ -98,8 +98,41 @@ func TestRecognizedSpend(t *testing.T) {
 	}
 }
 
+func TestOwnedAcquisitionCountsAsSpent(t *testing.T) {
+	src := SourceMoney{PurchasePrice: 55000, ClosingCosts: 2000}
+
+	// owned, no ledger rows yet: the acquisition plan IS the spend
+	pb := ComputeProjectBudget(src, nil, nil, true)
+	byKey := map[string]BudgetCatRow{}
+	for _, c := range pb.Categories {
+		byKey[c.Key] = c
+	}
+	if a := byKey[CatAcquisition]; a.Paid != 57000 || a.Committed != 57000 || a.Over {
+		t.Fatalf("owned acquisition = %+v, want paid/committed 57000, not over", a)
+	}
+	if pb.Paid != 57000 {
+		t.Fatalf("paid = %v, want 57000", pb.Paid)
+	}
+
+	// owned + closing statement already in the ledger: max, not double count
+	pb = ComputeProjectBudget(src, nil, []LedgerRow{
+		{Type: "expense", Amount: 60000, Cat: "acquisition"},
+	}, true)
+	for _, c := range pb.Categories {
+		if c.Key == CatAcquisition && (c.Paid != 60000 || !c.Over) {
+			t.Fatalf("owned acquisition with ledger row = %+v, want paid 60000 (no double count), over", c)
+		}
+	}
+
+	// not owned: plan alone is not spend
+	pb = ComputeProjectBudget(src, nil, nil, false)
+	if pb.Paid != 0 {
+		t.Fatalf("tracked property paid = %v, want 0", pb.Paid)
+	}
+}
+
 func TestSourceMoneyFallbackHardCosts(t *testing.T) {
-	pb := ComputeProjectBudget(SourceMoney{HardCosts: 275000, ContingencyPct: 0.1}, nil, nil)
+	pb := ComputeProjectBudget(SourceMoney{HardCosts: 275000, ContingencyPct: 0.1}, nil, nil, false)
 	for _, c := range pb.Categories {
 		if c.Key == CatHard && c.Budget != 275000 {
 			t.Fatalf("hard fallback = %v, want 275000", c.Budget)

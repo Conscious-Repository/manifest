@@ -10,6 +10,7 @@ import (
 	"manifest/approvals"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/record"
 	"manifest/todos"
 )
 
@@ -414,7 +415,7 @@ func splitFrozen(rock *goals.Goal) (open []string, checked int) {
 	return open, checked
 }
 
-var frozenFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
+var frozenFieldRe = record.FieldRe // the kernel grammar
 
 // cleanFrozenText strips the legacy [goal:: …] identity off a frozen task line
 // (the todo gets a fresh [rock::] tether instead); other fields ride along.

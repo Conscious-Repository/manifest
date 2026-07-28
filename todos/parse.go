@@ -3,17 +3,19 @@ package todos
 import (
 	"regexp"
 	"strings"
+
+	"manifest/record"
 )
 
 var (
-	headingRe     = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
-	subHeadingRe  = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
-	todoLineRe    = regexp.MustCompile(`^[ \t]*[-*]\s*\[([ xX])\]\s?(.*)$`)
-	bulletLineRe  = regexp.MustCompile(`^[ \t]*[-*]\s+\S`)
-	inlineFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
-	// waiting values may BE a wikilink — [waiting:: [[Josh]]] — which the
-	// generic field regex can't hold (]] inside the value); match it first
-	waitingLinkRe = regexp.MustCompile(`\[waiting::\s*(\[\[[^\]]+\]\])\s*\]`)
+	headingRe    = regexp.MustCompile(`^##[ \t]+(.*\S)\s*$`)
+	subHeadingRe = regexp.MustCompile(`^###[ \t]+(.*\S)\s*$`)
+	todoLineRe   = regexp.MustCompile(`^[ \t]*[-*]\s*\[([ xX])\]\s?(.*)$`)
+	bulletLineRe = regexp.MustCompile(`^[ \t]*[-*]\s+\S`)
+	// the kernel grammar + its wikilink-value affordance (waiting values may
+	// BE a [[wikilink]], matched before the generic scan)
+	inlineFieldRe = record.FieldRe
+	waitingLinkRe = record.WikilinkValueRe("waiting")
 	linkRe        = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 )
 

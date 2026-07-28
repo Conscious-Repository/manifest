@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"manifest/record"
 )
 
 // The `## work` section (properties-pass-4 plan): the property's management
@@ -55,29 +57,29 @@ type WorkBid struct {
 
 // WorkStage is one top-level stage line.
 type WorkStage struct {
-	ID          string      `json:"id"`
-	Explicit    bool        `json:"-"`
-	Text        string      `json:"text"`
-	Checked     bool        `json:"checked"`
-	Ready       bool        `json:"ready"` // all todos checked (and at least one)
-	Current     bool        `json:"current"`
-	Est         float64     `json:"est"`         // the stage's OWN [est::] (not-yet-broken-down remainder)
-	EstTotal    float64     `json:"estTotal"`    // Σ todo est + own est
-	Unestimated int         `json:"unestimated"` // open todos carrying no est
-	Weeks       float64     `json:"weeks"`       // [weeks:: N] — schedule duration (§3)
-	Done        string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at stage check
-	Fields      []WorkField `json:"fields,omitempty"`
-	Extra       []string    `json:"-"`
-	Todos        []WorkTodo `json:"todos"`
-	Committed    float64    `json:"committed"`
-	Paid         float64    `json:"paid"`
-	Recognized   float64    `json:"recognized"`             // Σ todo recognized + stage-level recognition
-	Unreconciled float64    `json:"unreconciled,omitempty"` // Σ done-but-unlinked firm money
+	ID           string      `json:"id"`
+	Explicit     bool        `json:"-"`
+	Text         string      `json:"text"`
+	Checked      bool        `json:"checked"`
+	Ready        bool        `json:"ready"` // all todos checked (and at least one)
+	Current      bool        `json:"current"`
+	Est          float64     `json:"est"`         // the stage's OWN [est::] (not-yet-broken-down remainder)
+	EstTotal     float64     `json:"estTotal"`    // Σ todo est + own est
+	Unestimated  int         `json:"unestimated"` // open todos carrying no est
+	Weeks        float64     `json:"weeks"`       // [weeks:: N] — schedule duration (§3)
+	Done         string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at stage check
+	Fields       []WorkField `json:"fields,omitempty"`
+	Extra        []string    `json:"-"`
+	Todos        []WorkTodo  `json:"todos"`
+	Committed    float64     `json:"committed"`
+	Paid         float64     `json:"paid"`
+	Recognized   float64     `json:"recognized"`             // Σ todo recognized + stage-level recognition
+	Unreconciled float64     `json:"unreconciled,omitempty"` // Σ done-but-unlinked firm money
 }
 
 var (
-	workLineRe  = regexp.MustCompile(`^([ \t]*)[-*]\s*\[([ xX])\]\s?(.*)$`)  // goals goalLineRe
-	workFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`) // goals inlineFieldRe
+	workLineRe  = regexp.MustCompile(`^([ \t]*)[-*]\s*\[([ xX])\]\s?(.*)$`) // goals goalLineRe
+	workFieldRe = record.FieldRe                                            // the kernel grammar
 	workSlugRe  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 

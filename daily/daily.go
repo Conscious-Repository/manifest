@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/record"
 	"manifest/vault"
 )
 
@@ -229,25 +230,24 @@ func (s *Service) configuredSlots() []string {
 var (
 	taskRe        = regexp.MustCompile(`^\s*-\s*\[([ xX])\]\s?(.*)$`)
 	rowRe         = regexp.MustCompile(`^\s*\|(.*)\|\s*$`)
-	inlineFieldRe = regexp.MustCompile(`\[([A-Za-z][\w-]*)\s*::\s*([^\]]*)\]`)
+	inlineFieldRe = record.FieldRe // the kernel grammar
 )
 
 type inlineKV struct{ key, val string }
 
-// stripFields pulls [key:: value] fields off a task line, returning the clean
-// text and the fields. (Mirrors goals.parseFields; kept local to avoid a cross
-// dependency on the goals package.)
+// stripFields pulls [key:: value] fields off a task line via the kernel scan.
+// Field-less lines keep their interior whitespace verbatim (only trimmed) —
+// a journal line is the owner's text, not a record to normalize.
 func stripFields(text string) (string, []inlineKV) {
-	var fields []inlineKV
-	clean := inlineFieldRe.ReplaceAllStringFunc(text, func(m string) string {
-		sm := inlineFieldRe.FindStringSubmatch(m)
-		fields = append(fields, inlineKV{strings.TrimSpace(sm[1]), strings.TrimSpace(sm[2])})
-		return ""
-	})
+	clean, fields := record.ParseFields(text)
 	if len(fields) == 0 {
 		return strings.TrimSpace(text), nil
 	}
-	return strings.Join(strings.Fields(clean), " "), fields
+	kvs := make([]inlineKV, len(fields))
+	for i, f := range fields {
+		kvs[i] = inlineKV{f.Key, f.Value}
+	}
+	return clean, kvs
 }
 
 // parseBlock extracts the Focus picks, schedule rows, and tasks from the text

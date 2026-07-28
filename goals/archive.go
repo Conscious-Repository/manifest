@@ -3,6 +3,8 @@ package goals
 import (
 	"regexp"
 	"strings"
+
+	"manifest/record"
 )
 
 // ArchiveEntry is one closed Rock recorded in a quarter archive (goals <quarter>.md).
@@ -52,16 +54,9 @@ func parseArchive(content string) []ArchiveEntry {
 			}
 			continue
 		}
-		content := m[1]
-		// Pull the trailing [evidence:: …] off first (it's emitted last and may
-		// contain ]] — the standard inline-field scan can't handle that), then
-		// parse the remaining simple fields normally.
-		evidence := ""
-		if i := strings.LastIndex(content, "[evidence:: "); i >= 0 {
-			ev := content[i+len("[evidence:: "):]
-			evidence = strings.TrimSuffix(strings.TrimRight(ev, " "), "]")
-			content = strings.TrimRight(content[:i], " ")
-		}
+		// Evidence is emit-LAST with a possibly-wikilink value — the kernel's
+		// trailing-field affordance pulls it before the generic scan.
+		evidence, content := record.ExtractTrailingField(m[1], "evidence")
 		text, fields := parseFields(content)
 		e := ArchiveEntry{Area: area, Text: text, Evidence: evidence}
 		for _, f := range fields {

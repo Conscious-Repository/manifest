@@ -12,13 +12,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"manifest/record"
 )
 
-// Field is one inline [key:: value] pair (unrecognized keys round-trip).
-type Field struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
+// Field is the kernel's inline-field pair (unrecognized keys round-trip).
+type Field = record.Field
 
 // Todo is one action line under a domain heading (loose or inside a bucket).
 type Todo struct {

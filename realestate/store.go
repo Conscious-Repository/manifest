@@ -99,7 +99,7 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	p.Rollup = computeMoneyRollup(p.Work, p.Ledger)
 	p.Project = ComputeProjectBudget(
 		sourceMoney(strings.TrimSuffix(full, ".md")+".source.json"),
-		p.Work, p.Ledger)
+		p.Work, p.Ledger, p.Control == "owned")
 	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {
 		if st.Current {

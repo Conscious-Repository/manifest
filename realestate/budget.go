@@ -89,7 +89,9 @@ func sourceMoney(path string) SourceMoney {
 }
 
 // ComputeProjectBudget derives the category table + totals (plan vs spend).
-func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow) *ProjectBudget {
+// owned = the purchase already happened (control: owned), so the acquisition
+// plan is recognized as spent even before closing rows land in the ledger.
+func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow, owned bool) *ProjectBudget {
 	// actuals per category — the hard lane keeps the draw-aware max() semantics
 	// (an expense against an accepted bid draws DOWN the contract, not up committed)
 	type acc struct{ acceptedSum, expenseSum float64 }
@@ -156,6 +158,16 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow)
 		if key != CatContingency {
 			row.Committed = committed[key]
 			row.Paid = paid[key]
+			if key == CatAcquisition && owned {
+				// max, not +: a closing-statement expense row already in the
+				// ledger must not double count against the plan
+				if row.Budget > row.Paid {
+					row.Paid = row.Budget
+				}
+				if row.Budget > row.Committed {
+					row.Committed = row.Budget
+				}
+			}
 			if key == CatHard {
 				// accrual for the work list: recognized (done+firm counts) for
 				// tethered money, cash for untethered/orphan-tethered rows

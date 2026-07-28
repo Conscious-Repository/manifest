@@ -1,6 +1,10 @@
 package todos
 
-import "strings"
+import (
+	"strings"
+
+	"manifest/record"
+)
 
 // Serialize renders the Doc back to markdown, canonical order per domain:
 // loose todos → buckets → ### issues → ### backlog → extra. The output is a
@@ -123,15 +127,10 @@ func emitIssue(is *Issue) string {
 	return line
 }
 
-// stripBracket keeps a value from breaking the field grammar. Waiting values
-// may be a full [[wikilink]] (parsed by the dedicated pattern); anything else
-// loses lone brackets.
+// stripBracket is the kernel emit guard (record.StripBracket) — waiting
+// values may be a full [[wikilink]]; anything else loses lone brackets.
 func stripBracket(v string, allowWikilink bool) string {
-	v = strings.TrimSpace(v)
-	if allowWikilink && strings.HasPrefix(v, "[[") && strings.HasSuffix(v, "]]") {
-		return v
-	}
-	return strings.NewReplacer("[", "", "]", "").Replace(v)
+	return record.StripBracket(v, allowWikilink)
 }
 
 func trimTrailingBlank(lines []string) []string {

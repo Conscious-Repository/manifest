@@ -18,6 +18,8 @@ package vaultindex
 import (
 	"path"
 	"regexp"
+
+	"manifest/record"
 	"strings"
 )
 
@@ -63,10 +65,13 @@ type Task struct {
 }
 
 var (
-	datedFileRe    = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
-	isoDateRe      = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
-	wikilinkRe     = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
-	bracketFieldRe = regexp.MustCompile(`\[([A-Za-z0-9 _/-]+?)::\s*([^\]]*)\]`)
+	datedFileRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
+	isoDateRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
+	wikilinkRe  = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
+	// bracketed inline fields come from the kernel grammar (record.FieldRe);
+	// the UNBRACKETED Dataview line form (`key:: value` at line start) stays a
+	// local read-side pattern — the kernel owns only the bracketed grammar.
+	bracketFieldRe = record.FieldRe
 	lineFieldRe    = regexp.MustCompile(`(?m)^([A-Za-z0-9 _/-]+?)::[ \t]*(.+?)\s*$`)
 	// a Granola-export transcript turn: a **speaker:** label at line start
 	speakerLineRe = regexp.MustCompile(`(?m)^\s*\*\*[^*\n]{1,40}:\*\*`)
