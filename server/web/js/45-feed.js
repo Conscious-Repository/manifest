@@ -4,7 +4,29 @@
 const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"]];
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
-let feedCache = { items: [], signals: [], proposals: [], portalItems: [] };
+let feedCache = { items: [], signals: [], proposals: [], portalItems: [], receipts: [] };
+
+// ---- the §5 card registry: ONE renderer per attention kind, plus the
+// proposals lane (an authorization queue, not an attention kind). renderFeed
+// dispatches through this table — adding a kind = one renderer + one lane row.
+// Receipts are declared (permanent lifecycle, server slot registered) with no
+// machinery yet, so their lane renders nothing until an errand loop exists.
+const FEED_CARD = {
+  signal: (sg) => signalRow(sg),
+  proposal: (p) => approvalCardEl(p),
+  notice: (pc) => portalCardEl(pc),
+  finding: (it) => feedCard(it),
+  receipt: (rc) => el("div", "feed-card receipt", rc.title || ""),
+};
+// main-list lanes in render order (signals render into their own strip above).
+const FEED_LANES = [
+  { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
+  { kind: "notice", slice: (c) => c.portalItems, inboxOnly: true },
+];
+const FEED_TAIL_LANES = [ // after the empty-state check, like today
+  { kind: "finding", slice: (c) => c.items, inboxOnly: false },
+  { kind: "receipt", slice: (c) => c.receipts, inboxOnly: false },
+];
 
 function showFeed() {
   loadFeed();
@@ -15,10 +37,10 @@ async function loadFeed() {
   const view = state.feedView || "inbox";
   try {
     const d = await (await fetch("/api/feed?status=" + view)).json();
-    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [] };
+    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], receipts: d.receipts || [] };
     setBadge(els.feedNavBadge, d.badge || 0);
     if (view === "inbox") diffDigests(feedCache.items); // catch digests landed while unpolled
-  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [] }; }
+  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], receipts: [] }; }
   renderFeedFilters();
   renderFeed();
 }
@@ -52,29 +74,32 @@ function renderFeed() {
     const total = feedCache.signals.length;
     sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
     const shown = signalsExpanded ? total : Math.min(SIGNAL_CAP, total);
-    feedCache.signals.slice(0, shown).forEach((sg) => sigHost.appendChild(signalRow(sg)));
+    feedCache.signals.slice(0, shown).forEach((sg) => sigHost.appendChild(FEED_CARD.signal(sg)));
     if (total > SIGNAL_CAP) {
       const more = el("button", "signal-more", signalsExpanded ? "▴ show fewer" : `▾ ${total - SIGNAL_CAP} more`);
       more.onclick = () => { signalsExpanded = !signalsExpanded; renderFeed(); };
       sigHost.appendChild(more);
     }
   }
-  // pinned lane: FULL approval cards (diff + Confirm/Reject inline — the
-  // approvals inbox lives HERE now, not in SPIRITS) lead the inbox; digests pin
-  // next via the items sort. Approvals derive from pending/ so a decision
-  // resolves the card atomically; they never appear under KEPT/ALL.
-  if (view === "inbox") feedCache.proposals.forEach((p) => host.appendChild(approvalCardEl(p)));
-  // portal-items lane: externally-sourced notices (clickup digest, benchling
-  // items), deterministic + script-rendered. INBOX only — they're notices, not
-  // kept/discarded items, and never touch the tune loop.
-  if (view === "inbox") feedCache.portalItems.forEach((pc) => host.appendChild(portalCardEl(pc)));
+  // pinned lanes lead the inbox: proposals (FULL approval cards — diff +
+  // Confirm/Reject inline; they derive from pending/ so a decision resolves
+  // the card atomically) then notices (externally-sourced portal cards,
+  // deterministic + script-rendered). Both INBOX only — they are not
+  // kept/discarded items and never touch the tune loop.
+  FEED_LANES.forEach((lane) => {
+    if (lane.inboxOnly && view !== "inbox") return;
+    lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
+  });
   if (!feedCache.items.length && !host.children.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."
       : view === "kept" ? "Nothing kept yet." : "No feed items yet."));
     return;
   }
-  feedCache.items.forEach((it) => host.appendChild(feedCard(it)));
+  FEED_TAIL_LANES.forEach((lane) => {
+    if (lane.inboxOnly && view !== "inbox") return;
+    lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
+  });
   if (pendingApprovalFocus) { // deep-linked (Studio tuning panel "review →")
     const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
     pendingApprovalFocus = null;

@@ -29,20 +29,13 @@ import (
 
 // feedInboxCount is THE badge compute. The list handler, the badge handler,
 // and /api/spirits/status.feedInbox all call this one function so the counts
-// can never drift (feed-central §1). Count = new items + lapsed snoozes + app
-// signals + pending approvals (the same filtered set that renders as cards —
-// append-x-queue excluded, so a draft is never counted twice via its approval).
+// can never drift (feed-central §1). Count = every registered attention
+// kind's contribution (§5 registry: findings inbox + signals + notices +
+// receipts) + the pending-proposals lane (the same filtered set that renders
+// as cards — append-x-queue excluded, so a draft is never counted twice via
+// its approval).
 func (s *Server) feedInboxCount(now time.Time) int {
-	n := 0
-	if s.spirits != nil {
-		n += len(s.spirits.Feed.List(feed.Filter{Status: "inbox"}, now))
-	}
-	if s.signals != nil {
-		n += s.signals.Count(now)
-	}
-	n += len(s.approvalRows(feedApprovalExclude))
-	n += s.portalInboxCount() // externally-sourced portal items (clickup, benchling)
-	return n
+	return s.attentionRegistry().Badge(now) + len(s.approvalRows(feedApprovalExclude))
 }
 
 // feedApprovalExclude: approval types that already have a native feed card
@@ -70,28 +63,20 @@ type feedItemView struct {
 // link or body (the engine puts it in either place).
 var libraryRefRe = regexp.MustCompile(`artifacts/library/[^\s)"']+\.md`)
 
-// handleFeedList serves the unified stream: spirit items, virtual proposal
-// cards, app signals, plus the badge — one response.
+// handleFeedList serves the unified stream by iterating the §5 attention
+// registry — one response field per registered kind (kindField), plus the
+// proposals lane (an authorization queue, not an attention kind) and the
+// badge. Adding a kind = registering a source; no hand-merged fields.
 func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	views := []feedItemView{}
-	if s.spirits != nil {
-		f := feed.Filter{
-			Status: r.URL.Query().Get("status"),
-			Type:   r.URL.Query().Get("type"),
-			Domain: r.URL.Query().Get("domain"),
-		}
-		for _, it := range s.spirits.Feed.List(f, now) {
-			views = append(views, feedItemView{Item: it, ArtifactPath: s.artifactPath(it)})
-		}
+	resp := map[string]any{
+		"proposals": s.feedProposals(),
+		"badge":     s.feedInboxCount(now),
 	}
-	writeJSON(w, map[string]any{
-		"items":       views,
-		"signals":     s.activeSignals(now),
-		"proposals":   s.feedProposals(),
-		"portalItems": s.portalCards(),
-		"badge":       s.feedInboxCount(now),
-	})
+	for _, src := range s.attentionRegistry().Sources() {
+		resp[kindField[src.Kind()]] = src.Active(now, r.URL.Query())
+	}
+	writeJSON(w, resp)
 }
 
 // artifactPath resolves an artifact card's library reference to a vault-relative
