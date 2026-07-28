@@ -2,14 +2,14 @@ package vault
 
 import (
 	"context"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"manifest/record"
 )
 
 // Watcher keeps an Index live by folding filesystem changes back into it.
@@ -42,32 +42,11 @@ func (w *Watcher) Start(ctx context.Context) error {
 func (w *Watcher) Close() error { return w.fsw.Close() }
 
 func (w *Watcher) addRecursive(root string) error {
-	skip := make(map[string]bool, len(w.cfg.SkipDirs))
-	for _, d := range w.cfg.SkipDirs {
-		skip[d] = true
-	}
-	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if d != nil && d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		if path != root {
-			name := d.Name()
-			if skip[name] || strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
-			}
-			if underSystemZone(w.cfg, path) { // no dailies/goals there; don't watch engine churn
-				return filepath.SkipDir
-			}
-		}
-		_ = w.fsw.Add(path)
-		return nil
+	inSystem := func(abs string) bool { return underSystemZone(w.cfg, abs) } // don't watch engine churn
+	record.WalkDirs(root, record.SkipSet(w.cfg.SkipDirs), inSystem, func(abs string) {
+		_ = w.fsw.Add(abs)
 	})
+	return nil
 }
 
 func (w *Watcher) loop(ctx context.Context) {

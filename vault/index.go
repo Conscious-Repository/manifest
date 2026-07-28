@@ -3,8 +3,9 @@ package vault
 import (
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
+
+	"manifest/record"
 )
 
 // Index is a concurrency-safe, rebuildable view of the vault. It is a derived
@@ -99,15 +100,11 @@ func (ix *Index) update(path string) {
 }
 
 // underSystemZone reports whether an absolute path is the system-zone root or
-// anything inside it, matched by vault-relative path (never by base name).
+// anything inside it (kernel zone rule: vault-relative prefix, never base name).
 func underSystemZone(cfg Config, path string) bool {
-	if cfg.SystemRoot == "" {
-		return false
-	}
 	rel, err := filepath.Rel(cfg.Root, path)
 	if err != nil {
 		return false
 	}
-	r := filepath.ToSlash(rel)
-	return r == cfg.SystemRoot || strings.HasPrefix(r, cfg.SystemRoot+"/")
+	return record.UnderZoneRoot(filepath.ToSlash(rel), cfg.SystemRoot)
 }

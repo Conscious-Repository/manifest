@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 
 	_ "modernc.org/sqlite"
+
+	"manifest/record"
 )
 
 // memSeq names each in-memory database uniquely so separate indexes stay isolated.
@@ -58,18 +60,11 @@ func (c Config) aiRegions() []string {
 	return []string{"Agents/", "excalibur/", sr + "/agents/", sr + "/excalibur/"}
 }
 
-// zoneOf classifies a vault-relative path into its zone: under SystemRoot →
-// "system", under ExtrinsicRoot → "extrinsic", else "knowledge". Only the
-// knowledge zone feeds contacts (system-root-plan §1; reading-plan amendment).
-// Matched by path prefix, never base name.
+// zoneOf classifies a vault-relative path into its zone (kernel rule: path
+// prefix, never base name). Only the knowledge zone feeds contacts
+// (system-root-plan §1; reading-plan amendment).
 func (c Config) zoneOf(rel string) string {
-	if sr := c.systemRoot(); rel == sr || strings.HasPrefix(rel, sr+"/") {
-		return "system"
-	}
-	if er := c.extrinsicRoot(); rel == er || strings.HasPrefix(rel, er+"/") {
-		return "extrinsic"
-	}
-	return "knowledge"
+	return record.ZoneOf(rel, c.systemRoot(), c.extrinsicRoot())
 }
 
 // Index is the rebuildable SQLite projection of the vault. It owns only its own
@@ -202,44 +197,28 @@ func (ix *Index) Rebuild() (int, error) {
 
 	count := 0
 	regions := ix.cfg.aiRegions()
-	skip := skipSet(ix.cfg.SkipDirs)
-	err = filepath.WalkDir(ix.cfg.VaultRoot, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if d != nil && d.IsDir() {
-				return filepath.SkipDir
+	err = record.WalkMarkdown(ix.cfg.VaultRoot, record.SkipSet(ix.cfg.SkipDirs), nil,
+		func(p string, d fs.DirEntry) error {
+			rel, err := filepath.Rel(ix.cfg.VaultRoot, p)
+			if err != nil {
+				return nil
 			}
-			return nil
-		}
-		if d.IsDir() {
-			base := d.Name()
-			if p != ix.cfg.VaultRoot && (strings.HasPrefix(base, ".") || skip[base]) {
-				return filepath.SkipDir
+			content, err := os.ReadFile(p)
+			if err != nil {
+				return nil // unreadable file is skipped, not fatal
 			}
+			var mtime int64
+			if fi, err := d.Info(); err == nil {
+				mtime = fi.ModTime().Unix()
+			}
+			n := ParseNote(filepath.ToSlash(rel), content, mtime, regions)
+			n.Zone = ix.cfg.zoneOf(n.Path)
+			if err := insertNote(tx, n); err != nil {
+				return err
+			}
+			count++
 			return nil
-		}
-		if !strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
-			return nil
-		}
-		rel, err := filepath.Rel(ix.cfg.VaultRoot, p)
-		if err != nil {
-			return nil
-		}
-		content, err := os.ReadFile(p)
-		if err != nil {
-			return nil // unreadable file is skipped, not fatal
-		}
-		var mtime int64
-		if fi, err := d.Info(); err == nil {
-			mtime = fi.ModTime().Unix()
-		}
-		n := ParseNote(filepath.ToSlash(rel), content, mtime, regions)
-		n.Zone = ix.cfg.zoneOf(n.Path)
-		if err := insertNote(tx, n); err != nil {
-			return err
-		}
-		count++
-		return nil
-	})
+		})
 	if err != nil {
 		return 0, err
 	}
@@ -333,14 +312,6 @@ func deriveEntities(tx *sql.Tx) error {
 		return err
 	}
 	return nil
-}
-
-func skipSet(extra []string) map[string]bool {
-	m := map[string]bool{".git": true, ".obsidian": true, ".trash": true}
-	for _, d := range extra {
-		m[d] = true
-	}
-	return m
 }
 
 func b2i(b bool) int {

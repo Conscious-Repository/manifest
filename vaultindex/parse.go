@@ -65,8 +65,9 @@ type Task struct {
 }
 
 var (
-	datedFileRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
-	isoDateRe   = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})`)
+	// dated-prefix filename + ISO date-scalar validation: the kernel grammar.
+	datedFileRe = record.DatedPrefixRe
+	isoDateRe   = record.DatedPrefixRe
 	wikilinkRe  = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 	// bracketed inline fields come from the kernel grammar (record.FieldRe);
 	// the UNBRACKETED Dataview line form (`key:: value` at line start) stays a

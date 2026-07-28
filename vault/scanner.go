@@ -2,8 +2,8 @@ package vault
 
 import (
 	"io/fs"
-	"path/filepath"
-	"strings"
+
+	"manifest/record"
 )
 
 // Config controls how the vault is scanned and where new daily notes are created.
@@ -30,47 +30,24 @@ type Scanner struct{ cfg Config }
 
 func NewScanner(cfg Config) *Scanner { return &Scanner{cfg: cfg} }
 
-// Scan walks the vault once and returns a fresh snapshot. Unreadable entries are
-// skipped rather than aborting the whole scan.
+// Scan walks the vault once and returns a fresh snapshot. Unreadable entries
+// are skipped rather than aborting the whole scan. The walk + dir-skip policy
+// is the kernel's; the zone short-circuit (no dailies/goals in the system
+// zone) is this locator's declaration.
 func (s *Scanner) Scan() (*Snapshot, error) {
 	snap := &Snapshot{Daily: make(map[string]string)}
-	skip := make(map[string]bool, len(s.cfg.SkipDirs))
-	for _, d := range s.cfg.SkipDirs {
-		skip[d] = true
-	}
-	err := filepath.WalkDir(s.cfg.Root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if d != nil && d.IsDir() {
-				return filepath.SkipDir
+	inSystem := func(abs string) bool { return underSystemZone(s.cfg, abs) }
+	err := record.WalkMarkdown(s.cfg.Root, record.SkipSet(s.cfg.SkipDirs), inSystem,
+		func(path string, d fs.DirEntry) error {
+			switch kind, date := classify(d.Name(), path, s.cfg.GoalsName); kind {
+			case KindDaily:
+				snap.Daily[date] = path
+			case KindGoals:
+				if snap.GoalsPath == "" {
+					snap.GoalsPath = path
+				}
 			}
 			return nil
-		}
-		if d.IsDir() {
-			if path == s.cfg.Root {
-				return nil
-			}
-			name := d.Name()
-			if skip[name] || strings.HasPrefix(name, ".") {
-				return filepath.SkipDir
-			}
-			if underSystemZone(s.cfg, path) { // zone short-circuit: no dailies/goals there
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
-		}
-		switch kind, date := classify(d.Name(), path, s.cfg.GoalsName); kind {
-		case KindDaily:
-			snap.Daily[date] = path
-		case KindGoals:
-			if snap.GoalsPath == "" {
-				snap.GoalsPath = path
-			}
-		}
-		return nil
-	})
+		})
 	return snap, err
 }
-

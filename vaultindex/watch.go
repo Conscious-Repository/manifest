@@ -4,13 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
+	"manifest/record"
 )
 
 // ReindexPaths re-reads the given vault-relative markdown paths and updates the
@@ -86,7 +87,7 @@ func (ix *Index) Watch(ctx context.Context, debounce time.Duration, onReindex fu
 	if debounce <= 0 {
 		debounce = 400 * time.Millisecond
 	}
-	skip := skipSet(ix.cfg.SkipDirs)
+	skip := record.SkipSet(ix.cfg.SkipDirs)
 	ix.addDirs(w, skip)
 
 	pending := map[string]bool{}
@@ -146,15 +147,5 @@ func (ix *Index) Watch(ctx context.Context, debounce time.Duration, onReindex fu
 }
 
 func (ix *Index) addDirs(w *fsnotify.Watcher, skip map[string]bool) {
-	_ = filepath.WalkDir(ix.cfg.VaultRoot, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return nil
-		}
-		base := d.Name()
-		if p != ix.cfg.VaultRoot && (strings.HasPrefix(base, ".") || skip[base]) {
-			return filepath.SkipDir
-		}
-		_ = w.Add(p)
-		return nil
-	})
+	record.WalkDirs(ix.cfg.VaultRoot, skip, nil, func(abs string) { _ = w.Add(abs) })
 }

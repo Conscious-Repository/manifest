@@ -1,7 +1,6 @@
 package vault
 
 import (
-	"regexp"
 	"strings"
 
 	"manifest/record"
@@ -16,10 +15,9 @@ const (
 	KindGoals
 )
 
-// dailyRe matches a daily-note filename EXACTLY: YYYY-MM-DD.md and nothing more.
-// It must stay strictly anchored: the vault holds many notes whose names merely
-// START with a date (e.g. "2026-01-09 meeting.md") — those are NOT daily notes.
-var dailyRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})\.md$`)
+// dailyRe is the kernel's exact daily-note filename grammar (YYYY-MM-DD.md
+// and nothing more — dated-PREFIX notes are not daily notes).
+var dailyRe = record.DailyNoteRe
 
 // classify decides a file's Kind from its base name, reading frontmatter only
 // when the cheap filename checks don't settle it. For daily notes it returns the
