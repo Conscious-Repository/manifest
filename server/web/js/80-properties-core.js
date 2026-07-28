@@ -88,49 +88,20 @@ function makeDirtyBar(host, onSave, onDiscard) {
   return api;
 }
 
-// collapsibleSection: pp-section-head with a caret + optional collapsed summary.
-function collapsibleSection(host, title, summary, open) {
-  const head = el("div", "pp-section-head toggle");
-  const caret = el("span", "sec-caret", open ? "▾" : "▸");
-  head.append(caret, el("span", "", title));
-  const sum = el("span", "sec-summary", summary || "");
-  head.append(sum);
-  const body = el("div", "sec-body");
-  body.hidden = !open;
-  sum.hidden = open;
-  head.onclick = () => {
-    body.hidden = !body.hidden;
-    caret.textContent = body.hidden ? "▸" : "▾";
-    sum.hidden = !body.hidden;
-  };
-  host.append(head, body);
-  return body;
-}
+// (collapsibleSection lives in 05-components.js — the §11 component library)
 
-// propertyTypeahead: input + filtered dropdown over all property records
+// propertyTypeahead: the typeahead engine over all property records
 // (63 items — a select is unusable). Matches address/slug/deal.
 function propertyTypeahead(placeholder, onPick, initial) {
-  const wrap = el("span", "ta-wrap");
-  const input = inputEl(placeholder);
-  input.classList.add("ta-in");
-  if (initial) input.value = initial;
-  const drop = el("div", "ta-drop");
-  drop.hidden = true;
-  const refresh = () => {
-    const q = input.value.toLowerCase().trim();
-    drop.innerHTML = "";
-    const hits = propertyCache.filter((p) =>
-      !q || (p.address || "").toLowerCase().includes(q) || p.slug.includes(q) || (p.deal || "").includes(q)).slice(0, 12);
-    hits.forEach((p) => {
-      const it = el("div", "ta-item", (p.short || p.address || p.slug) + (p.deal ? "  · " + p.deal : ""));
-      it.onmousedown = (e) => { e.preventDefault(); input.value = p.short || p.address || p.slug; drop.hidden = true; onPick(p); };
-      drop.append(it);
-    });
-    drop.hidden = !hits.length;
-  };
-  input.addEventListener("input", refresh);
-  input.addEventListener("focus", refresh);
-  input.addEventListener("blur", () => setTimeout(() => { drop.hidden = true; }, 150));
-  wrap.append(input, drop);
-  return wrap;
+  const ta = typeahead({
+    placeholder, initial,
+    suggest: (q, add) => {
+      propertyCache.filter((p) =>
+        !q || (p.address || "").toLowerCase().includes(q) || p.slug.includes(q) || (p.deal || "").includes(q))
+        .slice(0, 12)
+        .forEach((p) => add((p.short || p.address || p.slug) + (p.deal ? "  · " + p.deal : ""), "",
+          () => { ta.commit(p.short || p.address || p.slug); onPick(p); }));
+    },
+  });
+  return ta.el;
 }

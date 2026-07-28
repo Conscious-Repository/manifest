@@ -473,31 +473,7 @@ function clickToEdit(span, getValue, save) {
 
 // ghostInput: a muted "＋ …" affordance that swaps to an input; Enter commits.
 // `placeholder` overrides the default (label minus its ＋).
-function ghostInput(label, cls, onSubmit, placeholder) {
-  const ghost = el("button", "o-ghost " + (cls || ""), label);
-  ghost.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const input = document.createElement("input");
-    input.className = "o-edit o-ghost-edit"; // block: the open input gets its own line
-    input.placeholder = placeholder || label.replace(/^[＋+]\s*/, "");
-    ghost.replaceWith(input);
-    input.focus();
-    let settled = false;
-    const settle = (commit) => {
-      if (settled) return;
-      settled = true;
-      const v = input.value.trim();
-      if (commit && v) onSubmit(v);
-      else input.replaceWith(ghost);
-    };
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") settle(true);
-      else if (ev.key === "Escape") settle(false);
-    });
-    input.addEventListener("blur", () => settle(true));
-  });
-  return ghost;
-}
+// (ghostInput lives in 05-components.js — the §11 component library)
 
 // closeGoal moves a Rock to the quarter archive file via the close API.
 async function closeGoal(id, outcome, note, evidence) {

@@ -1,26 +1,5 @@
 // ================= Agents panel =================
-// ---- Agents cockpit: small DOM helpers ----
-function el(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-}
-function pill(text, onclick) { const b = el("button", "pill", text); b.addEventListener("click", onclick); return b; }
-function pillLight(text, onclick) { const b = el("button", "pill light", text); b.addEventListener("click", onclick); return b; }
-function emptyRow(text) { return el("div", "ro-row empty", text); }
-function splitList(s) { return (s || "").split(",").map((x) => x.trim()).filter(Boolean); }
-function linkEl(text, href) { const a = el("a", null, text); a.href = href; a.target = "_blank"; a.rel = "noopener"; return a; }
-function fmtWhen(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (isNaN(d)) return String(iso).slice(0, 16).replace("T", " ");
-  const now = new Date();
-  if (Math.abs(d - now) < 86400000 && d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  }
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
+// (small DOM helpers live in 05-components.js — the §11 component library)
 
 // ---- SPIRITS: the excalibur harness console ----
 // Purely the engine console: RUNS · RITUALS — checking + instigating runs.

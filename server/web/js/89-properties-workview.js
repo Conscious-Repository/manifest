@@ -704,12 +704,4 @@ function fmtBytes(n) {
   return n + "B";
 }
 
-function inputEl(placeholder) {
-  const i = document.createElement("input");
-  i.className = "pp-in"; i.placeholder = placeholder; return i;
-}
-function selectEl(opts) {
-  const s = document.createElement("select"); s.className = "pp-in";
-  opts.forEach((o) => { const opt = document.createElement("option"); opt.value = o; opt.textContent = o; s.append(opt); });
-  return s;
-}
+// (inputEl / selectEl live in 05-components.js — the §11 component library)

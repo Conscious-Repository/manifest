@@ -309,36 +309,20 @@ function issueRow(dom, is) {
 // personInput: free text or a contact — picking a suggestion wraps [[display]]
 // so the waiting-on surfaces on that contact's page.
 function personInput(onSet, onCancel) {
-  const wrap = el("span", "ta-wrap");
-  const input = inputEl("who? (name or free text)");
-  input.classList.add("ta-in");
-  const drop = el("div", "ta-drop");
-  drop.hidden = true;
-  let seq = 0;
-  input.addEventListener("input", async () => {
-    const q = input.value.trim();
-    const mySeq = ++seq;
-    if (q.length < 2) { drop.hidden = true; return; }
-    let people = [];
-    try {
-      const d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json();
-      people = (d.results || []).slice(0, 5);
-    } catch (e) {}
-    if (mySeq !== seq) return;
-    drop.innerHTML = "";
-    people.forEach((p) => {
-      const it = el("div", "ta-item");
-      it.append(el("span", "", p.display), el("span", "ta-kind", "person"));
-      it.onmousedown = (ev) => { ev.preventDefault(); onSet("[[" + p.display + "]]"); };
-      drop.append(it);
-    });
-    drop.hidden = !drop.children.length;
+  const ta = typeahead({
+    placeholder: "who? (name or free text)",
+    minChars: 2,
+    onEnter: onSet,
+    onEscape: onCancel,
+    onBlurGone: onCancel,
+    suggest: async (q, add) => {
+      let people = [];
+      try {
+        const d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json();
+        people = (d.results || []).slice(0, 5);
+      } catch (e) {}
+      people.forEach((p) => add(p.display, "person", () => onSet("[[" + p.display + "]]")));
+    },
   });
-  input.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" && input.value.trim()) onSet(input.value.trim());
-    else if (ev.key === "Escape") onCancel();
-  });
-  input.addEventListener("blur", () => setTimeout(() => { if (wrap.parentNode) onCancel(); }, 200));
-  wrap.append(input, drop);
-  return { el: wrap, focus: () => input.focus() };
+  return ta;
 }
