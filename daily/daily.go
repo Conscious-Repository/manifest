@@ -517,6 +517,20 @@ func serializeBlock(d Day) string {
 // upsertRegion replaces the text between start/end markers, preserving
 // everything else. If the markers are absent it inserts a fresh region just
 // after any YAML frontmatter (or at the very top).
+// RoundTripNote re-parses and re-serializes the manifest region of a note —
+// golden-corpus heartbeat support. The journal outside the markers is
+// untouched by design; app-written regions must round-trip byte-identical.
+func RoundTripNote(content string) string {
+	si := strings.Index(content, dailyStart)
+	ei := strings.Index(content, dailyEnd)
+	if si < 0 || ei <= si {
+		return content
+	}
+	inner := strings.TrimPrefix(content[si+len(dailyStart):ei], "\n")
+	sched, tasks, focus := parseBlock(inner)
+	return upsertRegion(content, dailyStart, dailyEnd, serializeBlock(Day{Schedule: sched, Tasks: tasks, Focus: focus}))
+}
+
 func upsertRegion(content, start, end, inner string) string {
 	region := start + "\n" + strings.TrimRight(inner, "\n") + "\n" + end
 	si := strings.Index(content, start)

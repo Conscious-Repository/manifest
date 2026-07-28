@@ -85,6 +85,12 @@ func parseArchive(content string) []ArchiveEntry {
 	return out
 }
 
+// ReserializeArchive parse→emits a quarter archive's content verbatim —
+// golden-corpus heartbeat support (byte-stability proof).
+func ReserializeArchive(quarter, content string) string {
+	return serializeArchive(quarter, parseArchive(content))
+}
+
 // serializeArchive renders a quarter's entries as goals <quarter>.md, grouped by area
 // in first-seen order. A fixpoint: re-parsing and re-serializing yields identical bytes.
 func serializeArchive(quarter string, entries []ArchiveEntry) string {
