@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"manifest/mdfm"
+	"manifest/record"
 	"manifest/vaultindex"
 )
 
@@ -91,14 +92,14 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	if led, err := os.ReadFile(ledgerPath(full)); err == nil {
 		p.Ledger = parseLedger(led)
 	}
-	p.Units = sourceUnits(strings.TrimSuffix(full, ".md") + ".source.json")
+	p.Units = sourceUnits(record.Sidecar(full, record.SidecarSource))
 	p.Work = ParseWork(sections["work"])
 	JoinWorkLedger(p.Work, p.Ledger)
 	// pass-5: the work list IS the hard-cost budget — the triplet derives from
 	// work est + the ledger. (parseBudget/computeRollup survive for migration.)
 	p.Rollup = computeMoneyRollup(p.Work, p.Ledger)
 	p.Project = ComputeProjectBudget(
-		sourceMoney(strings.TrimSuffix(full, ".md")+".source.json"),
+		sourceMoney(record.Sidecar(full, record.SidecarSource)),
 		p.Work, p.Ledger, p.Control == "owned")
 	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {
@@ -179,14 +180,10 @@ func (s *Service) Deals() ([]Deal, error) {
 }
 
 // ledgerPath is the csv sidecar beside a property's .md (…/<slug>.md → …/<slug>.ledger.csv).
-func ledgerPath(mdFull string) string {
-	return strings.TrimSuffix(mdFull, ".md") + ".ledger.csv"
-}
+func ledgerPath(mdFull string) string { return record.Sidecar(mdFull, record.SidecarLedger) }
 
 // LedgerRel maps a vault-relative .md path to its vault-relative ledger csv path.
-func LedgerRel(mdRel string) string {
-	return strings.TrimSuffix(mdRel, ".md") + ".ledger.csv"
-}
+func LedgerRel(mdRel string) string { return record.Sidecar(mdRel, record.SidecarLedger) }
 
 // Template is a budget-mix template (categories: [budget-template]) — a
 // user-editable record whose `## budget` table seeds new properties at creation.

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"manifest/record"
 )
 
 // Store owns the vault-root `to do.md` (name configurable — todosFileName).
@@ -161,21 +163,13 @@ func (s *Store) ArchiveLines(section string, lines []string) error {
 }
 
 // appendArchive appends lines under a `## <section>` heading in the archive
-// file (created on first use), reusing the section when it is the last one.
+// file (created on first use) — the kernel's append-only archive policy.
 func (s *Store) appendArchive(section string, lines []string) error {
 	path := s.ArchivePath()
 	raw, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	content := string(raw)
-	if content == "" {
-		content = "# To Do — archive\n"
-	}
-	head := "## " + section
-	if !strings.Contains(content, "\n"+head+"\n") && !strings.HasSuffix(content, head+"\n") {
-		content = strings.TrimRight(content, "\n") + "\n\n" + head + "\n"
-	}
-	content = strings.TrimRight(content, "\n") + "\n" + strings.Join(lines, "\n") + "\n"
+	content := record.AppendSection(string(raw), "# To Do — archive", section, lines)
 	return os.WriteFile(path, []byte(content), 0o644)
 }

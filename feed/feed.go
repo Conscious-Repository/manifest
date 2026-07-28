@@ -10,13 +10,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"manifest/mdfm"
+	"manifest/record"
 )
 
 // Item is one feed card. type ∈ paper|person|company|finding|artifact|digest|draft.
@@ -314,8 +314,6 @@ func (s *Store) parse(path string) (Item, error) {
 	}, nil
 }
 
-var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
-
 // itemID is stable across runs (so re-materializing dedupes): a title slug plus a
 // short hash of the canonical key (link, else title|source).
 func itemID(it Item) string {
@@ -324,10 +322,7 @@ func itemID(it Item) string {
 		key = strings.ToLower(it.Title + "|" + it.Source)
 	}
 	h := sha1.Sum([]byte(key))
-	slug := strings.Trim(slugRe.ReplaceAllString(strings.ToLower(it.Title), "-"), "-")
-	if len(slug) > 40 {
-		slug = strings.Trim(slug[:40], "-")
-	}
+	slug := record.Slug(it.Title, 40)
 	return slug + "-" + hex.EncodeToString(h[:])[:8]
 }
 

@@ -21,6 +21,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"manifest/record"
 )
 
 func main() {
@@ -368,11 +370,8 @@ func kindFor(projectType string) string {
 	}
 }
 
-var illegal = regexp.MustCompile(`[^a-z0-9]+`)
-
-func slugify(s string) string {
-	return strings.Trim(illegal.ReplaceAllString(strings.ToLower(s), "-"), "-")
-}
+// slugify is the kernel slug, uncapped (file basenames carry the full address).
+func slugify(s string) string { return record.Slug(s, 0) }
 
 func titleize(slug string) string {
 	return strings.Join(strings.Fields(strings.ReplaceAll(slug, "-", " ")), " ")

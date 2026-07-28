@@ -1,37 +1,30 @@
 package vaultindex
 
-import "strings"
+import (
+	"strings"
+
+	"manifest/record"
+)
 
 // splitFrontmatter parses a leading `---` YAML block into key → values and
-// returns the remaining body. It is a deliberate YAML SUBSET that covers what
-// this vault actually uses (audit §0): scalars (`key: value`), inline lists
-// (`key: [a, b]`), and block dash-lists (`key:\n  - a\n  - b`) — the block form
-// covers most meeting notes. Every value is returned as a []string (a scalar is
+// returns the remaining body. The fence grammar, unquoting, and inline-list
+// form come from the kernel (record); what stays HERE is this index's read
+// POLICY — the deliberate YAML subset the vault actually uses (audit §0):
+// scalars (`key: value`), inline lists (`key: [a, b]`), and block dash-lists
+// (`key:\n  - a\n  - b`). Every value is returned as a []string (a scalar is
 // a one-element slice) so callers treat `categories: [x]` and the block form
 // identically. Values are unquoted but otherwise preserved EXACTLY (no
 // normalization — that is the whole point of the audit's "surface, don't
 // rewrite" rule). A file without a leading `---` yields an empty map + itself.
 func splitFrontmatter(content string) (map[string][]string, string) {
 	fm := map[string][]string{}
-	if !strings.HasPrefix(content, "---\n") && !strings.HasPrefix(content, "---\r\n") {
-		return fm, content
-	}
-	lines := strings.Split(content, "\n")
-	// find the closing fence (first `---` line after the opener)
-	end := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "---" {
-			end = i
-			break
-		}
-	}
-	if end < 0 {
-		return fm, content // unterminated block: treat as no frontmatter
+	block, body, ok := record.SplitFrontmatter(content)
+	if !ok {
+		return fm, body
 	}
 
-	block := lines[1:end]
 	for i := 0; i < len(block); i++ {
-		line := strings.TrimRight(block[i], "\r")
+		line := block[i]
 		if strings.TrimSpace(line) == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
 		}
@@ -51,58 +44,24 @@ func splitFrontmatter(content string) (map[string][]string, string) {
 			// block list: consume following `  - item` lines
 			var items []string
 			for j := i + 1; j < len(block); j++ {
-				t := strings.TrimSpace(strings.TrimRight(block[j], "\r"))
+				t := strings.TrimSpace(block[j])
 				if t == "" {
 					continue
 				}
 				if !strings.HasPrefix(t, "- ") && t != "-" {
 					break
 				}
-				items = append(items, unquote(strings.TrimSpace(strings.TrimPrefix(t, "-"))))
+				items = append(items, record.Unquote(strings.TrimSpace(strings.TrimPrefix(t, "-"))))
 				i = j
 			}
 			fm[key] = append(fm[key], nonEmpty(items)...)
 		case strings.HasPrefix(rest, "["):
-			fm[key] = append(fm[key], parseInlineList(rest)...)
+			fm[key] = append(fm[key], record.ParseList(rest)...)
 		default:
-			fm[key] = append(fm[key], unquote(rest))
+			fm[key] = append(fm[key], record.Unquote(rest))
 		}
 	}
-
-	// body = everything after the closing fence line
-	body := ""
-	if end+1 < len(lines) {
-		body = strings.Join(lines[end+1:], "\n")
-	}
-	return fm, strings.TrimPrefix(body, "\n")
-}
-
-// parseInlineList parses `[a, b, "c"]` → ["a","b","c"], tolerating a missing
-// closing bracket and quotes/blanks.
-func parseInlineList(v string) []string {
-	v = strings.TrimSpace(v)
-	v = strings.TrimPrefix(v, "[")
-	v = strings.TrimSuffix(v, "]")
-	if strings.TrimSpace(v) == "" {
-		return nil
-	}
-	var out []string
-	for _, p := range strings.Split(v, ",") {
-		if s := unquote(strings.TrimSpace(p)); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-func unquote(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
+	return fm, body
 }
 
 func nonEmpty(xs []string) []string {

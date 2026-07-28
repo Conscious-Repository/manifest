@@ -1,23 +1,14 @@
 package goals
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
+
+	"manifest/record"
 )
 
-var slugStripRe = regexp.MustCompile(`[^a-z0-9]+`)
-
-// slug lowercases and hyphenates text into a stable id fragment.
-func slug(s string) string {
-	s = strings.ToLower(s)
-	s = slugStripRe.ReplaceAllString(s, "-")
-	s = strings.Trim(s, "-")
-	if len(s) > 48 {
-		s = strings.Trim(s[:48], "-")
-	}
-	return s
-}
+// slug is the kernel slug at the goals id cap.
+func slug(s string) string { return record.Slug(s, 48) }
 
 // explicitID returns the value of an explicit [goal:: id] field, or "".
 func (g *Goal) explicitID() string {

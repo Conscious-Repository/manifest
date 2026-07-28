@@ -3,6 +3,8 @@ package vault
 import (
 	"regexp"
 	"strings"
+
+	"manifest/record"
 )
 
 // Kind classifies a markdown file by convention.
@@ -29,7 +31,7 @@ func classify(base, path, goalsName string) (Kind, string) {
 	if strings.EqualFold(base, goalsName) {
 		return KindGoals, ""
 	}
-	if strings.EqualFold(frontmatterType(path), "goals") {
+	if strings.EqualFold(record.FrontmatterScalar(path, "type"), "goals") {
 		return KindGoals, ""
 	}
 	return KindOther, ""

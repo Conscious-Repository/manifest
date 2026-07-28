@@ -114,7 +114,7 @@ func archiveLine(e ArchiveEntry) string {
 	b.WriteString(e.Text)
 	add := func(k, v string) {
 		if strings.TrimSpace(v) != "" {
-			b.WriteString(" [" + k + ":: " + v + "]")
+			b.WriteString(" " + record.EmitField(k, v))
 		}
 	}
 	add("goal", e.GoalID)

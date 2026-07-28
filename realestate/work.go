@@ -1,7 +1,6 @@
 package realestate
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -80,7 +79,6 @@ type WorkStage struct {
 var (
 	workLineRe  = record.CheckboxRe // the kernel checkbox grammar
 	workFieldRe = record.FieldRe    // the kernel field grammar
-	workSlugRe  = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
 // parseWorkFields strips every [key:: value] out of a bullet's text.
@@ -245,12 +243,9 @@ func fieldValue(fs []WorkField, key string) string {
 }
 
 func workSlug(s string) string {
-	sl := strings.Trim(workSlugRe.ReplaceAllString(strings.ToLower(s), "-"), "-")
+	sl := record.Slug(s, 40)
 	if sl == "" {
 		sl = "item"
-	}
-	if len(sl) > 40 {
-		sl = strings.Trim(sl[:40], "-")
 	}
 	return sl
 }

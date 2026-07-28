@@ -103,24 +103,8 @@ func TestResolveAnywhere(t *testing.T) {
 	}
 }
 
-func TestFrontmatterType(t *testing.T) {
-	dir := t.TempDir()
-	a := filepath.Join(dir, "a.md")
-	write(t, a, "---\ntype: agent\ntags: [x]\n---\nbody\n")
-	if got := frontmatterType(a); got != "agent" {
-		t.Fatalf("type: %q", got)
-	}
-	b := filepath.Join(dir, "b.md")
-	write(t, b, "#journal\nno frontmatter\n")
-	if got := frontmatterType(b); got != "" {
-		t.Fatalf("expected empty, got %q", got)
-	}
-	c := filepath.Join(dir, "c.md")
-	write(t, c, "---\nfoo: bar\n---\n")
-	if got := frontmatterType(c); got != "" {
-		t.Fatalf("expected empty type, got %q", got)
-	}
-}
+// frontmatter `type:` reading now lives in the kernel — see
+// record.FrontmatterScalar and its tests; classify.go is a thin call.
 
 func TestScanIdempotent(t *testing.T) {
 	dir := buildVault(t)

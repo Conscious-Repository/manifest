@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"manifest/record"
 )
 
 // GeoRecord is one mappable record — a property or deal plus its parcel
@@ -59,11 +61,11 @@ func (s *Service) GeoRecords() ([]GeoRecord, error) {
 // fillSidecars loads <base>.geo.json (Feature or FeatureCollection → Features)
 // and <base>.source.json (any nested parcel_id values).
 func (s *Service) fillSidecars(g *GeoRecord) {
-	base := strings.TrimSuffix(filepath.Join(s.ix.VaultRoot(), filepath.FromSlash(g.Path)), ".md")
-	if raw, err := os.ReadFile(base + ".geo.json"); err == nil {
+	full := filepath.Join(s.ix.VaultRoot(), filepath.FromSlash(g.Path))
+	if raw, err := os.ReadFile(record.Sidecar(full, record.SidecarGeo)); err == nil {
 		g.Features = normalizeFeatures(raw)
 	}
-	if raw, err := os.ReadFile(base + ".source.json"); err == nil {
+	if raw, err := os.ReadFile(record.Sidecar(full, record.SidecarSource)); err == nil {
 		g.ParcelIDs = parcelIDs(raw)
 	}
 }

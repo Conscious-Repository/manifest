@@ -1,53 +1,37 @@
-// Package mdfm is a tiny hand-rolled markdown-frontmatter toolkit shared by the
-// agent stores (profiles, feed, approvals). It is intentionally a YAML *subset*:
-// `key: value` scalars and `key: [a, b]` / `key: a, b` lists, matching the style
-// already used in app/agents (splitFrontmatter/parseList). No external dependency.
+// Package mdfm is the markdown-frontmatter toolkit shared by the agent stores
+// (profiles, feed, approvals). The fence grammar and list form come from the
+// kernel (record); what stays HERE is the agent-store read policy — a flat
+// scalar map (`key: value`, values RAW so quotes round-trip through the
+// Writer) — plus the Writer and the fenced-block extractors.
 package mdfm
 
-import "strings"
+import (
+	"strings"
+
+	"manifest/record"
+)
 
 // Split parses a leading `---` frontmatter block into key→value pairs and returns
 // the remaining body. Content without a leading `---` yields an empty map + the
-// whole string as body.
+// whole string as body. Values stay raw (not unquoted) so a Load→Save cycle
+// through the Writer preserves them byte-for-byte.
 func Split(content string) (map[string]string, string) {
 	fm := map[string]string{}
-	if !strings.HasPrefix(content, "---\n") {
-		return fm, content
+	block, body, ok := record.SplitFrontmatter(content)
+	if !ok {
+		return fm, body
 	}
-	idx := strings.Index(content, "\n---")
-	if idx < 0 {
-		return fm, content
-	}
-	block := content[4:idx]
-	rest := content[idx+4:]
-	if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
-		rest = rest[nl+1:]
-	}
-	for _, line := range strings.Split(block, "\n") {
+	for _, line := range block {
 		if k, v, ok := strings.Cut(line, ":"); ok {
 			fm[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
 	}
-	return fm, strings.TrimPrefix(rest, "\n")
+	return fm, body
 }
 
 // List parses a frontmatter list value: "[a, b]" or "a, b" → ["a","b"], tolerating
-// quotes and blanks.
-func List(v string) []string {
-	v = strings.TrimSpace(v)
-	v = strings.TrimPrefix(v, "[")
-	v = strings.TrimSuffix(v, "]")
-	if v == "" {
-		return nil
-	}
-	var out []string
-	for _, p := range strings.Split(v, ",") {
-		if p = strings.TrimSpace(strings.Trim(p, `"'`)); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
+// quotes and blanks (the kernel list form).
+func List(v string) []string { return record.ParseList(v) }
 
 // ExtractJSONArray pulls the structured output an agent appends to its reply: the
 // LAST fenced code block whose content is a JSON array (```json … ```), or the whole

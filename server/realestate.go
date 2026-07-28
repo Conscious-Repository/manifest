@@ -8,13 +8,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"manifest/realestate"
+	"manifest/record"
 )
 
 // PROPERTIES — the real-estate cockpit over system/realestate/ records
@@ -293,12 +293,9 @@ func (s *Server) handlePropertyGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, p)
 }
 
-var propIllegal = regexp.MustCompile(`[^a-z0-9]+`)
-
-// slugify makes a filesystem-safe, link-friendly slug from an address/title.
-func slugify(s string) string {
-	return strings.Trim(propIllegal.ReplaceAllString(strings.ToLower(s), "-"), "-")
-}
+// slugify makes a filesystem-safe, link-friendly slug from an address/title
+// (kernel rule, uncapped — file basenames carry the full address).
+func slugify(s string) string { return record.Slug(s, 0) }
 
 // handlePropertyCreate is the Board's `＋ property` ghost row: address (→ slug),
 // optional entity/kind/status → a new system/realestate/<slug>.md record + an

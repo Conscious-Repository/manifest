@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"manifest/record"
 )
 
 // The .source.json sidecars are the LIVE canonical for the owner's public-site
@@ -13,9 +14,7 @@ import (
 // full object, so unknown fields survive every save.
 
 // SourceRel maps a record's .md path to its source sidecar path.
-func SourceRel(mdRel string) string {
-	return strings.TrimSuffix(mdRel, ".md") + ".source.json"
-}
+func SourceRel(mdRel string) string { return record.Sidecar(mdRel, record.SidecarSource) }
 
 // Source reads a record's source sidecar (nil, false when absent/bad).
 func (s *Service) Source(mdRel string) (json.RawMessage, bool) {

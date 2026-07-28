@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"manifest/record"
 )
 
 // -normalize-addresses (data hygiene): every property's `address:` becomes the
@@ -49,7 +51,7 @@ func runNormalizeAddresses(cfg miniConfig, apply bool) {
 			continue
 		}
 		// short address — need the zip from the parcel centroid
-		lat, lng, ok := centroidOf(strings.TrimSuffix(full, ".md") + ".geo.json")
+		lat, lng, ok := centroidOf(record.Sidecar(full, record.SidecarGeo))
 		if !ok {
 			fmt.Printf("  [%s] SKIP — no geometry to reverse-geocode (%q left as-is)\n", slug, addr)
 			noGeo++
