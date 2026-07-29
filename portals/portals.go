@@ -25,6 +25,10 @@ const (
 	KindAPIKey Kind = "apikey" // manifest holds a key and polls (clickup, benchling)
 	KindOAuth  Kind = "oauth"  // browser sign-in, credentials owned elsewhere (calendar)
 	KindLLM    Kind = "llm"    // conduit owned by the excalibur engine (claude-sub, gpt-sub)
+	// KindEffector acts OUT (source portals poll in) — always behind explicit
+	// user intent, always leaving a receipt (ARCHITECTURE §6). No credentials
+	// here ever: the effector owns its own auth (aside's password manager).
+	KindEffector Kind = "effector"
 )
 
 // State is a portal's connection health, derived only from the last test/poll —

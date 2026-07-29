@@ -108,6 +108,12 @@ function buildPortalActions(p, acts, wrap) {
     }
     return;
   }
+  if (p.kind === "effector") {
+    // acts OUT via a local CLI (errands-aside §1) — nothing to connect here;
+    // the executor's actions arrive when it exists.
+    acts.append(el("span", "portal-dim", "local CLI"));
+    return;
+  }
   // llm — read-only, managed by the engine
   acts.append(el("span", "portal-dim", "engine"));
 }
