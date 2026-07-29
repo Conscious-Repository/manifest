@@ -45,8 +45,14 @@ func (w *Writer) AppendLedgerRow(rel string, header, row []string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = f.Write(buf.Bytes())
-	return err
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		return err
+	}
+	// §A3: appends audit like every other vault write (updates/deletes already
+	// did via commit; the O_APPEND fast path needs its own line). Delta is the
+	// appended byte count by construction.
+	w.audit(filepath.ToSlash(rel), "re-ledger-append", string(ActorUserAction), int64(buf.Len()))
+	return nil
 }
 
 // PrependLogLine inserts a `- <line>` bullet at the TOP of the record's `## log`

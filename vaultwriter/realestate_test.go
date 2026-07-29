@@ -3,6 +3,7 @@ package vaultwriter
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,32 @@ func TestWriteExport(t *testing.T) {
 	}
 	if err := w.WriteExport("system/realestate/records/x.csv", []byte("x")); err == nil {
 		t.Fatal("WriteExport must refuse paths outside exports/")
+	}
+}
+
+// §A3: a ledger APPEND must land in write-audit.log like every other vault
+// write (updates/deletes already did; the O_APPEND fast path gets its own line).
+func TestAppendLedgerRowAudits(t *testing.T) {
+	vault, data := t.TempDir(), t.TempDir()
+	w := New(vault).WithZoneRoots("system", "extrinsic").WithAudit(data)
+	rel := "system/realestate/4848-page.ledger.csv"
+
+	if err := w.AppendLedgerRow(rel, []string{"date", "amount"}, []string{"2026-07-29", "125"}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(vault, filepath.FromSlash(rel)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "date,amount\n2026-07-29,125\n"; string(raw) != want {
+		t.Fatalf("append bytes: %q want %q", raw, want)
+	}
+	audit, err := os.ReadFile(filepath.Join(data, "write-audit.log"))
+	if err != nil {
+		t.Fatal("append did not write an audit line:", err)
+	}
+	line := strings.TrimSpace(string(audit))
+	if !strings.Contains(line, rel+"\tre-ledger-append\tuser-action\t+"+strconv.Itoa(len(raw))) {
+		t.Fatalf("audit line: %q", line)
 	}
 }
