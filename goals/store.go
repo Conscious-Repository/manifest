@@ -7,8 +7,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"manifest/vault"
 )
 
 // Store reads and writes the single goals.md master file. The path is resolved
@@ -17,14 +15,21 @@ import (
 // through the injected write func (§A3 boundary — main binds it to a
 // vaultwriter knowledge-zone capability; this package never opens a file to
 // write).
+// GoalsLocator is the one thing this store needs from the vault locator: the
+// indexed goals.md path ("" when none) — interface-typed so the locator is
+// swappable at the type level (kernel-followups F2); *vault.Index satisfies it.
+type GoalsLocator interface {
+	GoalsPath() string
+}
+
 type Store struct {
-	idx       *vault.Index
+	idx       GoalsLocator
 	fallback  string
 	vaultRoot string
 	write     func(path string, data []byte) error
 }
 
-func NewStore(idx *vault.Index, vaultRoot, goalsName string, write func(path string, data []byte) error) *Store {
+func NewStore(idx GoalsLocator, vaultRoot, goalsName string, write func(path string, data []byte) error) *Store {
 	if goalsName == "" {
 		goalsName = "goals.md"
 	}

@@ -82,12 +82,15 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if w, err := vault.NewWatcher(idx, vaultConfig(cfg)); err != nil {
+	// THE vault watcher (kernel-followups F2): one fsnotify descriptor set,
+	// N sinks — the locator subscribes here, the content index below.
+	watch, err := record.NewWatch(cfg.VaultPath, cfg.SkipDirs)
+	if err != nil {
 		log.Printf("file watcher disabled: %v", err)
-	} else if err := w.Start(ctx); err != nil {
-		log.Printf("file watcher start failed: %v", err)
+		watch = nil
 	} else {
-		defer w.Close()
+		vault.NewWatcher(idx, vaultConfig(cfg), watch)
+		defer watch.Close()
 	}
 
 	// Read-only headless-Dataview index over the WHOLE vault (the M0 kernel).
@@ -110,15 +113,19 @@ func main() {
 		} else {
 			log.Printf("vault index: %d notes → %s", n, filepath.Join(cfg.DataDir, "index.db"))
 		}
-		go func() {
-			if err := vix.Watch(ctx, 0, func(paths []string, err error) {
+		if watch != nil {
+			vix.SubscribeWatch(watch, 0, func(paths []string, err error) {
 				if err != nil {
 					log.Printf("vault reindex: %v", err)
 				}
-			}); err != nil {
-				log.Printf("vault index watcher stopped: %v", err)
-			}
-		}()
+			})
+		}
+	}
+	// both sinks registered — one descriptor set goes live
+	if watch != nil {
+		if err := watch.Start(ctx); err != nil {
+			log.Printf("file watcher start failed: %v", err)
+		}
 	}
 
 	// The §A3 write boundary: EVERY vault write — knowledge zone included, no

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"manifest/record"
-	"manifest/vault"
 )
 
 // Markers delimit the regions this app owns inside a note. Everything outside
@@ -137,14 +136,22 @@ type GoalsProvider interface {
 
 // Service reads/writes the manifest regions of daily notes, resolving note paths
 // through the vault Index so a YYYY-MM-DD note is found anywhere in the vault.
+// DailyLocator is the one thing this service needs from the vault locator:
+// a date's note path (or the would-be path when none exists yet). Typed as an
+// interface so the locator is swappable at the type level (kernel-followups
+// F2); *vault.Index satisfies it.
+type DailyLocator interface {
+	DailyNote(date string) (string, error)
+}
+
 type Service struct {
 	cfg    Config
-	idx    *vault.Index
+	idx    DailyLocator
 	goals  GoalsProvider
 	events EventSource
 }
 
-func NewService(cfg Config, idx *vault.Index) *Service {
+func NewService(cfg Config, idx DailyLocator) *Service {
 	return &Service{cfg: cfg, idx: idx, events: NopEventSource{}}
 }
 

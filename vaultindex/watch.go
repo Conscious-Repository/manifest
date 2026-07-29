@@ -1,15 +1,13 @@
 package vaultindex
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/fsnotify/fsnotify"
 
 	"manifest/record"
 )
@@ -74,78 +72,50 @@ func deletePath(tx *sql.Tx, rel string) error {
 	return nil
 }
 
-// Watch blocks, watching the vault for markdown changes and reindexing affected
-// files (debounced). It returns when ctx is cancelled. onReindex, if non-nil, is
-// called after each debounced flush with the paths touched and any error — handy
-// for logging. New directories are picked up automatically.
-func (ix *Index) Watch(ctx context.Context, debounce time.Duration, onReindex func(paths []string, err error)) error {
-	w, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-	defer w.Close()
+// SubscribeWatch registers this index's sink on the kernel's single watch
+// (record.Watch — the fsnotify plumbing lives there once). What stays here is
+// this engine's POLICY: every zone, every markdown change (case-insensitive
+// .md, vault-relative paths) → debounced incremental ReindexPaths; new
+// directories are the watch's business, not a reindex trigger. onReindex, if
+// non-nil, is called after each flush with the paths touched and any error —
+// handy for logging.
+func (ix *Index) SubscribeWatch(w *record.Watch, debounce time.Duration, onReindex func(paths []string, err error)) {
 	if debounce <= 0 {
 		debounce = 400 * time.Millisecond
 	}
-	skip := record.SkipSet(ix.cfg.SkipDirs)
-	ix.addDirs(w, skip)
-
-	pending := map[string]bool{}
+	var mu sync.Mutex
 	var timer *time.Timer
-	var timerC <-chan time.Time
-	arm := func() {
-		if timer == nil {
-			timer = time.NewTimer(debounce)
-		} else {
-			timer.Reset(debounce)
+	pending := map[string]bool{}
+	flush := func() {
+		mu.Lock()
+		paths := make([]string, 0, len(pending))
+		for p := range pending {
+			paths = append(paths, p)
 		}
-		timerC = timer.C
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case ev, ok := <-w.Events:
-			if !ok {
-				return nil
-			}
-			// a newly created directory joins the watch
-			if ev.Op&(fsnotify.Create) != 0 {
-				if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-					base := filepath.Base(ev.Name)
-					if !strings.HasPrefix(base, ".") && !skip[base] {
-						_ = w.Add(ev.Name)
-					}
-					continue
-				}
-			}
-			if !strings.HasSuffix(strings.ToLower(ev.Name), ".md") {
-				continue
-			}
-			if rel, err := filepath.Rel(ix.cfg.VaultRoot, ev.Name); err == nil {
-				pending[filepath.ToSlash(rel)] = true
-				arm()
-			}
-		case <-timerC:
-			timerC = nil
-			paths := make([]string, 0, len(pending))
-			for p := range pending {
-				paths = append(paths, p)
-			}
-			pending = map[string]bool{}
-			err := ix.ReindexPaths(paths)
-			if onReindex != nil {
-				onReindex(paths, err)
-			}
-		case _, ok := <-w.Errors:
-			if !ok {
-				return nil
-			}
+		pending = map[string]bool{}
+		mu.Unlock()
+		if len(paths) == 0 {
+			return
+		}
+		err := ix.ReindexPaths(paths)
+		if onReindex != nil {
+			onReindex(paths, err)
 		}
 	}
-}
-
-func (ix *Index) addDirs(w *fsnotify.Watcher, skip map[string]bool) {
-	record.WalkDirs(ix.cfg.VaultRoot, skip, nil, func(abs string) { _ = w.Add(abs) })
+	w.Subscribe(func(e record.Event) {
+		if e.DirCreated || !strings.HasSuffix(strings.ToLower(e.Path), ".md") {
+			return
+		}
+		rel, err := filepath.Rel(ix.cfg.VaultRoot, e.Path)
+		if err != nil {
+			return
+		}
+		mu.Lock()
+		pending[filepath.ToSlash(rel)] = true
+		if timer != nil {
+			timer.Stop()
+		}
+		timer = time.AfterFunc(debounce, flush)
+		mu.Unlock()
+	})
 }

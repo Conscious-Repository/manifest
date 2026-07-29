@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"manifest/record"
 )
 
 func write(t *testing.T, path, content string) {
@@ -98,9 +100,6 @@ func TestResolveAnywhere(t *testing.T) {
 	if _, err := os.Stat(want); !os.IsNotExist(err) {
 		t.Fatal("DailyNote must not create a file for a missing date")
 	}
-	if _, ok := ix.Lookup("2025-01-01"); ok {
-		t.Fatal("Lookup should miss for an absent date")
-	}
 }
 
 // frontmatter `type:` reading now lives in the kernel — see
@@ -127,13 +126,14 @@ func TestWatcherUpdatesIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w, err := NewWatcher(ix, testConfig(dir))
+	watch, err := record.NewWatch(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	NewWatcher(ix, testConfig(dir), watch)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := w.Start(ctx); err != nil {
+	if err := watch.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -145,11 +145,11 @@ func TestWatcherUpdatesIndex(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if p, ok := ix.Lookup("2026-06-29"); ok && p == dst {
+		if p, _ := ix.DailyNote("2026-06-29"); p == dst {
 			return // index reflected the move
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	p, ok := ix.Lookup("2026-06-29")
-	t.Fatalf("index did not update after move: got %q ok=%v want %q", p, ok, dst)
+	p, _ := ix.DailyNote("2026-06-29")
+	t.Fatalf("index did not update after move: got %q want %q", p, dst)
 }

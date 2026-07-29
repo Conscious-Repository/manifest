@@ -51,14 +51,6 @@ func (ix *Index) DailyNote(date string) (string, error) {
 	return filepath.Join(ix.cfg.Root, ix.cfg.NewDailyDir, date+".md"), nil
 }
 
-// Lookup is the read-only variant: ("", false) when the date has no note.
-func (ix *Index) Lookup(date string) (string, bool) {
-	ix.mu.RLock()
-	defer ix.mu.RUnlock()
-	p, ok := ix.snap.Daily[date]
-	return p, ok
-}
-
 // Dates returns all indexed daily-note dates, sorted ascending.
 func (ix *Index) Dates() []string {
 	ix.mu.RLock()

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"manifest/record"
 )
 
 func TestWatchReindexesOnChange(t *testing.T) {
@@ -14,11 +16,18 @@ func TestWatchReindexesOnChange(t *testing.T) {
 	got := make(chan []string, 8)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go ix.Watch(ctx, 50*time.Millisecond, func(paths []string, err error) {
+	watch, err := record.NewWatch(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix.SubscribeWatch(watch, 50*time.Millisecond, func(paths []string, err error) {
 		if err == nil {
 			got <- paths
 		}
 	})
+	if err := watch.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(100 * time.Millisecond) // let the watcher register directories
 
 	// a brand-new person note should appear without a manual Rebuild

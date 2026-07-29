@@ -1,8 +1,6 @@
 package vault
 
 import (
-	"context"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,100 +10,66 @@ import (
 	"manifest/record"
 )
 
-// Watcher keeps an Index live by folding filesystem changes back into it.
-// fsnotify is non-recursive, so it watches every directory and adds watches for
-// directories created later. Bursts are debounced; creates/writes do a cheap
-// incremental update while renames/removes trigger a full (still fast) Rebuild.
+// Watcher keeps an Index live by folding filesystem changes back into it —
+// registered as a SINK on the kernel's single watch (record.Watch); the
+// fsnotify plumbing lives there once. What stays here is this locator's
+// POLICY: system-zone events are ignored (no dailies/goals there), bursts
+// debounce at 300ms, creates/writes of .md files fold in incrementally while
+// renames/removes (and new directories) trigger a full — still fast —
+// Rebuild.
 type Watcher struct {
 	ix  *Index
 	cfg Config
-	fsw *fsnotify.Watcher
+
+	mu      sync.Mutex
+	timer   *time.Timer
+	rebuild bool
+	touched map[string]bool
 }
 
-func NewWatcher(ix *Index, cfg Config) (*Watcher, error) {
-	fsw, err := fsnotify.NewWatcher()
-	if err != nil {
-		return nil, err
-	}
-	return &Watcher{ix: ix, cfg: cfg, fsw: fsw}, nil
+// NewWatcher builds the sink and subscribes it to the shared watch.
+func NewWatcher(ix *Index, cfg Config, w *record.Watch) *Watcher {
+	s := &Watcher{ix: ix, cfg: cfg, touched: map[string]bool{}}
+	w.Subscribe(s.onEvent)
+	return s
 }
 
-// Start adds watches for every directory and processes events until ctx is done.
-func (w *Watcher) Start(ctx context.Context) error {
-	if err := w.addRecursive(w.cfg.Root); err != nil {
-		return err
+// onEvent is the sink handler (watch-loop goroutine: bookkeeping only).
+func (w *Watcher) onEvent(e record.Event) {
+	if underSystemZone(w.cfg, e.Path) {
+		return // engine churn: not watched for dailies/goals
 	}
-	go w.loop(ctx)
-	return nil
+	w.mu.Lock()
+	switch {
+	case e.Op&(fsnotify.Rename|fsnotify.Remove) != 0:
+		w.rebuild = true
+	case e.DirCreated:
+		w.rebuild = true
+	case e.Op&(fsnotify.Create|fsnotify.Write) != 0 && strings.HasSuffix(e.Path, ".md"):
+		w.touched[e.Path] = true
+	default:
+		w.mu.Unlock()
+		return
+	}
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	w.timer = time.AfterFunc(300*time.Millisecond, w.flush)
+	w.mu.Unlock()
 }
 
-func (w *Watcher) Close() error { return w.fsw.Close() }
-
-func (w *Watcher) addRecursive(root string) error {
-	inSystem := func(abs string) bool { return underSystemZone(w.cfg, abs) } // don't watch engine churn
-	record.WalkDirs(root, record.SkipSet(w.cfg.SkipDirs), inSystem, func(abs string) {
-		_ = w.fsw.Add(abs)
-	})
-	return nil
-}
-
-func (w *Watcher) loop(ctx context.Context) {
-	var (
-		mu      sync.Mutex
-		timer   *time.Timer
-		rebuild bool
-		touched = map[string]bool{}
-	)
-	flush := func() {
-		mu.Lock()
-		rb := rebuild
-		rebuild = false
-		paths := touched
-		touched = map[string]bool{}
-		mu.Unlock()
-		if rb {
-			_ = w.ix.Rebuild()
-			return
-		}
-		for p := range paths {
-			w.ix.update(p)
-		}
+func (w *Watcher) flush() {
+	w.mu.Lock()
+	rb := w.rebuild
+	w.rebuild = false
+	paths := w.touched
+	w.touched = map[string]bool{}
+	w.mu.Unlock()
+	if rb {
+		_ = w.ix.Rebuild()
+		return
 	}
-	schedule := func() {
-		if timer != nil {
-			timer.Stop()
-		}
-		timer = time.AfterFunc(300*time.Millisecond, flush)
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			w.fsw.Close()
-			return
-		case ev, ok := <-w.fsw.Events:
-			if !ok {
-				return
-			}
-			mu.Lock()
-			switch {
-			case ev.Op&(fsnotify.Rename|fsnotify.Remove) != 0:
-				rebuild = true
-			case ev.Op&(fsnotify.Create|fsnotify.Write) != 0:
-				if fi, err := os.Stat(ev.Name); err == nil && fi.IsDir() {
-					if !underSystemZone(w.cfg, ev.Name) { // system zone stays unwatched
-						_ = w.fsw.Add(ev.Name) // watch a newly created directory
-						rebuild = true
-					}
-				} else if strings.HasSuffix(ev.Name, ".md") {
-					touched[ev.Name] = true
-				}
-			}
-			mu.Unlock()
-			schedule()
-		case _, ok := <-w.fsw.Errors:
-			if !ok {
-				return
-			}
-		}
+	for p := range paths {
+		w.ix.update(p)
 	}
 }
