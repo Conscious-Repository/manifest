@@ -481,12 +481,7 @@ function moneyBlock(p) {
     const cats = el("div", "pp-money-stages");
     cats.append(ppCols("cols-cats", ["CATEGORY", "BUDGET", "COMMITTED", "PAID"]));
     p.project.categories.forEach((c) => {
-      const row = el("div", "pp-money-row cols-cats" + (c.over ? " over" : ""));
-      row.append(el("span", "", c.key),
-        el("span", "pp-amt", c.budget ? fmtMoney(c.budget) : "—"),
-        el("span", "pp-amt", c.committed ? fmtMoney(c.committed) : ""),
-        el("span", "pp-amt", c.paid ? fmtMoney(c.paid) : ""));
-      cats.append(row);
+      cats.append(moneyTripletRow("cols-cats", c.key, c.budget, c.committed, c.paid, c.over));
     });
     wrap.append(cats);
   }
@@ -495,12 +490,8 @@ function moneyBlock(p) {
     const tbl = el("div", "pp-money-stages");
     tbl.append(ppCols("cols-money", ["STAGE", "EST", "COMMITTED", "PAID"]));
     p.work.forEach((st) => {
-      const row = el("div", "pp-money-row cols-money" + (st.estTotal > 0 && st.committed > st.estTotal ? " over" : ""));
-      row.append(el("span", "", st.text),
-        el("span", "pp-amt", st.estTotal ? fmtMoney(st.estTotal) : "—"),
-        el("span", "pp-amt", st.committed ? fmtMoney(st.committed) : ""),
-        el("span", "pp-amt", st.paid ? fmtMoney(st.paid) : ""));
-      tbl.append(row);
+      tbl.append(moneyTripletRow("cols-money", st.text,
+        st.estTotal, st.committed, st.paid, st.estTotal > 0 && st.committed > st.estTotal));
     });
     wrap.append(tbl);
   }

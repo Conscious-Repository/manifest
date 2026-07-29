@@ -47,8 +47,7 @@ async function loadProperties() {
   else if (propMode === "board") renderBoard();
 }
 
-function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
-function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
+// (fmtMoney / fmtPct live in 05-components.js — the money slot owns display policy)
 
 // projMoney: one property's plan-vs-spend numbers.
 function projMoney(p) {

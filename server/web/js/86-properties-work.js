@@ -79,7 +79,7 @@ function todoComposer(p, st) {
     const box = el("div", "todo-compose");
     const text = inputEl("what needs to happen…");
     text.classList.add("o-edit", "tc-text");
-    const amt = inputEl("$ price"); amt.type = "number"; amt.step = "1"; amt.classList.add("est-in");
+    const amt = moneyInput("$ price");
     const who = contractorAutocomplete("who (firm)…");
     const cancel = () => box.replaceWith(ghost);
     const save = async () => {
@@ -171,63 +171,52 @@ function workTodoRow(p, st, td) {
 // mutates the SAME ledger row (fail-closed), never duplicates.
 function priceSlot(p, td) {
   const firm = (td.bids || []).find((b) => b.status === "accepted");
-  let cls = "est-slot", label;
-  if (td.paid > 0) { cls += " firm"; label = fmtMoney(td.paid) + " paid / " + fmtMoney(td.committed || td.paid); }
-  else if (firm) { cls += " firm"; label = fmtMoney(firm.amount) + (firm.who ? " · " + firm.who : ""); }
-  else if (td.committed > 0) { cls += " firm"; label = fmtMoney(td.committed) + " committed"; }
-  else if (td.est > 0) label = "est " + fmtMoney(td.est);
-  else { cls += " empty"; label = "$ —"; }
-  if (td.checked && (td.unreconciled || 0) > 0) { cls += " unrec"; label = "⚑ " + label; }
-  const slot = el("button", cls, label);
-  slot.title = td.checked && (td.unreconciled || 0) > 0
-    ? "done — " + fmtMoney(td.unreconciled) + " unreconciled: link the bank payment in the statement workbench"
-    : "price — number alone = estimate · add a name = firm (committed)";
-  slot.onclick = (e) => {
-    e.stopPropagation();
-    const box = el("span", "price-edit");
-    const amt = inputEl("$"); amt.type = "number"; amt.step = "1"; amt.classList.add("est-in");
-    if (firm) amt.value = firm.amount; else if (td.est > 0) amt.value = td.est;
-    const who = contractorAutocomplete("who (firm)…");
-    if (firm && firm.who) who.setValue(firm.who);
-    const save = async () => {
-      const amount = parseFloat(amt.value) || 0;
-      const name = who.value();
-      try {
-        if (amount && name) {
-          if (firm) {
-            if (firm.amount !== amount || (firm.who || "") !== name) {
-              await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate",
-                { original: firm.row, replacement: { ...firm.row, contractor: name, amount } });
+  return moneySlot({
+    value: {
+      paid: td.paid, committed: td.committed, est: td.est,
+      firm: firm && { amount: firm.amount, who: firm.who },
+      checked: td.checked, unreconciled: td.unreconciled,
+    },
+    title: () => td.checked && (td.unreconciled || 0) > 0
+      ? "done — " + fmtMoney(td.unreconciled) + " unreconciled: link the bank payment in the statement workbench"
+      : "price — number alone = estimate · add a name = firm (committed)",
+    editor: (_, revert) => {
+      const box = el("span", "price-edit");
+      const amt = moneyInput("$", firm ? firm.amount : td.est);
+      const who = contractorAutocomplete("who (firm)…");
+      if (firm && firm.who) who.setValue(firm.who);
+      const save = async () => {
+        const amount = parseFloat(amt.value) || 0;
+        const name = who.value();
+        try {
+          if (amount && name) {
+            if (firm) {
+              if (firm.amount !== amount || (firm.who || "") !== name) {
+                await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate",
+                  { original: firm.row, replacement: { ...firm.row, contractor: name, amount } });
+              }
+            } else {
+              await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger",
+                { type: "bid", status: "accepted", contractor: name, amount, workId: td.id });
             }
+            if (!(td.est > 0)) { // plan defaults to the firm price; never overwrite an estimate
+              await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work",
+                { op: "set-field", id: td.id, field: "est", value: String(amount) });
+            }
+            renderPropertyPage(p.slug);
           } else {
-            await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger",
-              { type: "bid", status: "accepted", contractor: name, amount, workId: td.id });
+            workOp(p.slug, { op: "set-field", id: td.id, field: "est", value: amt.value.trim() });
           }
-          if (!(td.est > 0)) { // plan defaults to the firm price; never overwrite an estimate
-            await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work",
-              { op: "set-field", id: td.id, field: "est", value: String(amount) });
-          }
-          renderPropertyPage(p.slug);
-        } else {
-          workOp(p.slug, { op: "set-field", id: td.id, field: "est", value: amt.value.trim() });
-        }
-      } catch (err) { showToast((err.message || "Couldn't save price").slice(0, 80)); }
-    };
-    amt.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") save();
-      else if (ev.key === "Escape") box.replaceWith(slot);
-    });
-    who.el.querySelector("input").addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") save();
-      else if (ev.key === "Escape") box.replaceWith(slot);
-    });
-    const ok = el("button", "pill lg-add", "set");
-    ok.onclick = save;
-    box.append(amt, who.el, ok);
-    slot.replaceWith(box);
-    amt.focus();
-  };
-  return slot;
+        } catch (err) { showToast((err.message || "Couldn't save price").slice(0, 80)); }
+      };
+      moneyEditKeys(amt, save, revert);
+      moneyEditKeys(who.el.querySelector("input"), save, revert);
+      const ok = el("button", "pill lg-add", "set");
+      ok.onclick = save;
+      box.append(amt, who.el, ok);
+      return { el: box, focus: () => amt.focus() };
+    },
+  });
 }
 
 // estSlot: the inline estimate field on every work row. Shows the value (or a
@@ -235,24 +224,18 @@ function priceSlot(p, td) {
 // stages, `total` may include todo sums — display shows the total, editing
 // edits the stage's OWN est.
 function estSlot(p, id, own, total, isStage) {
-  const label = total > 0 ? "est " + fmtMoney(total) : "est —";
-  const slot = el("button", "est-slot" + (total > 0 ? "" : " empty"), label);
-  slot.title = isStage ? "stage estimate (own, on top of todo estimates)" : "estimate";
-  slot.onclick = (e) => {
-    e.stopPropagation();
-    const input = inputEl("est $");
-    input.type = "number"; input.step = "1"; input.classList.add("est-in");
-    if (own > 0) input.value = own;
-    const save = () => workOp(p.slug, { op: "set-field", id, field: "est", value: input.value.trim() });
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") save();
-      else if (ev.key === "Escape") input.replaceWith(slot);
-    });
-    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(slot); });
-    slot.replaceWith(input);
-    input.focus();
-  };
-  return slot;
+  return moneySlot({
+    value: { est: total },
+    emptyLabel: "est —",
+    title: isStage ? "stage estimate (own, on top of todo estimates)" : "estimate",
+    editor: (_, revert) => {
+      const input = moneyInput("est $", own);
+      const save = () => workOp(p.slug, { op: "set-field", id, field: "est", value: input.value.trim() });
+      moneyEditKeys(input, save, revert);
+      input.addEventListener("blur", () => { if (input.parentNode) revert(); });
+      return { el: input, focus: () => input.focus() };
+    },
+  });
 }
 
 function quietBtn(text, onclick) {

@@ -90,6 +90,86 @@ function collapsibleSection(host, title, summary, open) {
   return body;
 }
 
+// ---- THE money slot (§11 family #6) ----
+// One place for how money renders and how a money field edits. Display
+// precision is decided HERE once: whole dollars, thousands-separated.
+// The semantic model is encoded once — est=plan, committed=accepted bid,
+// paid=expense, unreconciled=done-but-unlinked — as the value shape
+// moneySlot takes; sites declare their SEMANTICS (endpoints, branch
+// actions) in callbacks, never the shell.
+
+function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
+function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
+
+// moneyInput is the one numeric money field (.est-in, step 1).
+function moneyInput(placeholder, initial) {
+  const i = inputEl(placeholder);
+  i.type = "number"; i.step = "1"; i.classList.add("est-in");
+  if (initial > 0) i.value = initial;
+  return i;
+}
+
+// moneySlotState derives the slot's class + label from the semantic value
+// shape {paid, committed, est, firm:{amount,who}, checked, unreconciled}.
+// The cascade: paid → firm bid → committed → est → empty.
+function moneySlotState(v, emptyLabel) {
+  let cls = "est-slot", label;
+  if (v.paid > 0) { cls += " firm"; label = fmtMoney(v.paid) + " paid / " + fmtMoney(v.committed || v.paid); }
+  else if (v.firm && v.firm.amount > 0) { cls += " firm"; label = fmtMoney(v.firm.amount) + (v.firm.who ? " · " + v.firm.who : ""); }
+  else if (v.committed > 0) { cls += " firm"; label = fmtMoney(v.committed) + " committed"; }
+  else if (v.est > 0) label = "est " + fmtMoney(v.est);
+  else { cls += " empty"; label = emptyLabel || "$ —"; }
+  if (v.checked && (v.unreconciled || 0) > 0) { cls += " unrec"; label = "⚑ " + label; }
+  return { cls, label };
+}
+
+// moneySlot: the click-to-edit slot. opts:
+//   value       the semantic shape above
+//   emptyLabel  what an empty slot reads ("$ —" / "est —")
+//   title       hover text (string, or (value) => string)
+//   editor      (commit, revert) => {el, focus} — builds the open editor;
+//               call revert() to restore the slot, commit is the site's save.
+//               Wire Enter/Escape inside via moneyEditKeys.
+// Returns the slot button. Sites re-render after save as they do today.
+function moneySlot(opts) {
+  const st = moneySlotState(opts.value || {}, opts.emptyLabel);
+  const slot = el("button", st.cls, st.label);
+  if (opts.title) slot.title = typeof opts.title === "function" ? opts.title(opts.value) : opts.title;
+  if (opts.editor) {
+    slot.onclick = (e) => {
+      e.stopPropagation();
+      let ed;
+      const revert = () => { if (ed.el.parentNode) ed.el.replaceWith(slot); };
+      ed = opts.editor(opts.commit, revert);
+      slot.replaceWith(ed.el);
+      if (ed.focus) ed.focus();
+    };
+  }
+  return slot;
+}
+
+// moneyEditKeys wires the standard keys on an editor input: Enter saves,
+// Escape reverts. Blur policy stays the site's (estSlot reverts on blur;
+// priceSlot deliberately doesn't — blur would kill the typeahead pick).
+function moneyEditKeys(input, save, revert) {
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") save();
+    else if (ev.key === "Escape") revert();
+  });
+}
+
+// moneyTripletRow: one plan/committed/paid table row (.pp-money-row) —
+// first amount renders an em-dash when absent, the rest blank, matching
+// the MONEY block's tables.
+function moneyTripletRow(colsClass, label, a, b, c, over) {
+  const row = el("div", "pp-money-row " + colsClass + (over ? " over" : ""));
+  row.append(el("span", "", label),
+    el("span", "pp-amt", a ? fmtMoney(a) : "—"),
+    el("span", "pp-amt", b ? fmtMoney(b) : ""),
+    el("span", "pp-amt", c ? fmtMoney(c) : ""));
+  return row;
+}
+
 // ---- THE typeahead engine ----
 // typeahead(opts) is the one `ta-wrap` inline-dropdown implementation,
 // parameterized by SOURCE: the suggest callback receives (q, add) and appends
