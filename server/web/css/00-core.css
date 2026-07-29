@@ -1,0 +1,44 @@
+/* 00-core — design tokens, reset, typography (loads first: :root feeds every file).
+   Carbon mono was an optional local font; its @font-face was removed 2026-07-29
+   (it 404'd on every load). To restore: drop carbon.woff2 into web/fonts/ and add
+   @font-face { font-family: "Carbon"; src: url("fonts/carbon.woff2") format("woff2"); font-weight: 400; font-display: swap; } */
+
+/* Exact VV-manifest design tokens, measured from the original.
+   Content type: Hanken Grotesk. Labels/time/pills: Carbon mono
+   (drop a carbon.woff2 into web/fonts to match 1:1; otherwise the
+   Spline Sans Mono fallback below is loaded from Google Fonts). */
+
+
+:root {
+  --bg: #ffffff;
+  --ink: #000000;        /* time labels, section titles */
+  --text: #171717;       /* dark UI text */
+  --blue: #265acc;       /* filled entries / active */
+  --blue-soft: #aebfe8;  /* duration connectors */
+  --line: #e5e5e5;       /* hairlines */
+  --muted: #a3a3a3;      /* meta labels */
+  --icon: #d4d4d4;       /* slot marker icons */
+  --pill-bg: #171717;
+  --pill-bd: #262626;
+  --pill-ink: #a3a3a3;
+  --streak-bg: #f5f5f5;
+  --streak-bd: #e5e5e5;
+  --streak-ink: #404040;
+  --hover: #fafafa;
+  --radius: 4px;
+  --sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "Carbon", "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; } /* beat .pill/.grid/.flex display rules */
+
+html, body { background: var(--bg); }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  letter-spacing: 0.4px;
+  -webkit-font-smoothing: antialiased;
+}

@@ -1,0 +1,49 @@
+/* 45-feed — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
+
+/* ---- Feed ---- */
+.feed-filters { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.feed-list { display: flex; flex-direction: column; gap: 12px; }
+.feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.feed-card.artifact { border-color: var(--blue-soft); background: #fbfcff; }
+.feed-top { display: flex; align-items: baseline; gap: 10px; }
+.type-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.type-chip.type-paper { color: #7c3aed; border-color: #ddd0f7; }
+.type-chip.type-person { color: #0e7490; border-color: #c6e6ee; }
+.type-chip.type-company { color: #b45309; border-color: #f0dcb8; }
+.type-chip.type-artifact { color: var(--blue); border-color: var(--blue-soft); }
+.feed-title { font-family: var(--sans); font-size: 16px; color: var(--text); font-weight: 500; text-decoration: none; }
+a.feed-title:hover { color: var(--blue); text-decoration: underline; }
+.conf { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; margin-left: auto; }
+.conf-high { color: #15803d; } .conf-medium { color: #b45309; } .conf-low { color: var(--muted); }
+.feed-why { font-family: var(--sans); font-size: 14px; color: var(--streak-ink); line-height: 1.5; }
+.feed-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.2px; }
+.feed-body { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 10px 12px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
+.feed-saved { font-family: var(--mono); font-size: 11px; color: #15803d; }
+.feed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ===== FEED — manifest's one inbox (top-level tab) ===== */
+.feed-view { max-width: 900px; margin: 8px auto 64px; padding: 0 28px; }
+.feed-view .feed-filters { margin-right: 8px; }
+.feed-signals:empty { display: none; } /* the signals lane never pads when empty */
+/* signals lane — quiet one-line nudges (conditions, not items) */
+.feed-signals { margin-bottom: 16px; }
+.signal-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.signal-label { font-family: var(--mono); font-size: 12px; color: var(--muted); cursor: pointer; }
+.signal-label:hover { color: var(--blue); }
+.signal-actions { margin-left: auto; display: flex; gap: 6px; }
+.signal-more { font-family: var(--mono); font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 6px 4px; }
+.signal-more:hover { color: var(--blue); }
+/* deep-link flash (goals rock focus + approvals diff focus) */
+.goal-flash { animation: goalflash 2.4s ease; }
+@keyframes goalflash { 0% { background: #fff7d6; } 100% { background: transparent; } }
+
+/* ---- portal feed cards (the third card kind): digest + itemized notices ---- */
+.type-chip.type-portal { color: #0e7490; border-color: #c6e6ee; }
+.feed-card.portal-card .feed-date { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
+.portal-subhead { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); margin: 8px 0 2px; }
+.portal-line { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
+.portal-line-text { font-size: 13.5px; color: var(--text); text-decoration: none; flex: 1; }
+a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
+.portal-change-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 4px; padding: 1px 6px; }
+.portal-change-chip.change-new { color: #15803d; border: 1px solid #bfe3c9; }
+.portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }

@@ -1,0 +1,128 @@
+/* 05-primitives — cross-tab component styles (§11 library): .pill, layout grid +
+   panel heads, .o-ghost, .filter-chip, picker modal, toasts, .ta-* typeahead,
+   collapsible section. Loads right after core; tab files may add contextual
+   variants but the base family lives here once. */
+
+.pill {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.325px;
+  color: var(--pill-ink);
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-bd);
+  border-radius: 7px;
+  padding: 5px 10px;
+  height: 28px;
+  line-height: 16px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pill.arrow { padding: 4px 9px; }
+.pill:hover { color: #d4d4d4; }
+/* ---- grid ---- */
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto; /* row 1: schedule + right column (even); row 2: focus extras */
+  column-gap: 40px;
+  row-gap: 16px;
+  max-width: 1180px;
+  margin: 8px auto 64px;
+  padding: 0 28px;
+}
+.schedule-panel { grid-column: 1; grid-row: 1; }
+/* The three boxes pin to top & bottom of the schedule's height (even top/bottom). */
+.right-col { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; justify-content: space-between; gap: 0; }
+.focus-extra { grid-column: 2; grid-row: 2; } /* "From your focus" — below the even line */
+@media (max-width: 860px) {
+  .grid { grid-template-columns: 1fr; row-gap: 30px; }
+  .schedule-panel, .right-col, .focus-extra { grid-column: 1; }
+  .schedule-panel { grid-row: auto; }
+  .right-col { grid-row: auto; justify-content: flex-start; gap: 30px; }
+  .focus-extra { grid-row: auto; }
+}
+
+/* ---- panel headers ---- */
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.panel-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+  letter-spacing: 0.4px;
+}
+.panel-meta {
+  font-family: var(--mono);
+  font-size: 12.8px;
+  color: var(--muted);
+  letter-spacing: 0.32px;
+}
+
+.o-ghost-edit { display: block; margin: 6px 0 4px; }
+.o-ghost {
+  display: inline-block; background: transparent; cursor: pointer;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.3px;
+  color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 4px 10px; margin-top: 8px; text-align: left;
+}
+.o-ghost:hover { color: var(--text); border-color: var(--muted); }
+.pill.light { background: var(--bg); border-color: var(--line); color: var(--streak-ink); }
+.pill.light:hover { border-color: var(--blue-soft); color: var(--blue); }
+.pill.light:disabled { opacity: 0.5; cursor: default; }
+.filter-chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px 11px; cursor: pointer; }
+.filter-chip:hover { border-color: var(--blue-soft); color: var(--blue); }
+.filter-chip.on { background: var(--streak-bg); border-color: var(--streak-bd); color: var(--ink); }
+.pill:disabled, .pill.disabled { opacity: 0.4; cursor: not-allowed; }
+.pill:disabled:hover { color: var(--pill-ink); }
+/* ---- reusable picker modal ---- */
+.modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
+.modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.28); }
+.modal-card {
+  position: relative; background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); width: min(440px, 92vw); max-height: 76vh;
+  display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.modal-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 14px 16px; border-bottom: 1px solid var(--line);
+}
+.modal-title { font-family: var(--mono); font-size: 13px; color: var(--ink); letter-spacing: 0.3px; }
+.modal-close { border: none; background: transparent; color: var(--muted); font-size: 16px; cursor: pointer; }
+.modal-close:hover { color: var(--text); }
+.modal-body { overflow-y: auto; padding: 10px 12px 14px; }
+.picker-item {
+  display: block; width: 100%; text-align: left; border: none; background: transparent;
+  font-family: var(--sans); font-size: 15px; color: var(--text);
+  padding: 9px 8px; border-radius: var(--radius); cursor: pointer;
+}
+.picker-item:hover { background: var(--hover); color: var(--blue); }
+
+/* in-app toasts (bottom-right, auto-dismiss) */
+.toast-host { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: flex; flex-direction: column; gap: 8px; max-width: 360px; }
+.toast { display: flex; align-items: center; gap: 10px; background: var(--text); color: #fff; border-radius: 8px; padding: 10px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.25); font-family: var(--sans); font-size: 13px; animation: toastIn 0.18s ease-out; }
+@keyframes toastIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast.clickable { cursor: pointer; }
+.toast.clickable:hover { filter: brightness(1.1); }
+.toast-msg { flex: 1; }
+.toast-x { background: none; border: none; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.toast-x:hover { color: #fff; }
+.toast-error { background: #7f1d2b; }
+.toast-digest { background: var(--blue); }
+.pp-section-head.toggle { cursor: pointer; display: flex; align-items: baseline; gap: 8px; }
+.sec-caret { color: var(--icon); font-size: 9px; }
+.sec-summary { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.sec-body { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 10px; }
+.ta-wrap { position: relative; display: inline-block; }
+.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); min-width: 240px; max-height: 220px; overflow-y: auto; }
+.ta-item { padding: 6px 10px; font-size: 12.5px; cursor: pointer; }
+.ta-item:hover { background: var(--hover); color: var(--blue); }
+.ta-create { color: var(--blue); font-style: italic; }
+.ta-kind { margin-left: auto; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); padding-left: 12px; }
+.ta-item { display: flex; align-items: baseline; }
