@@ -20,7 +20,7 @@ google_token.json
 
 # Local-only working material — repo is public, only /app is shared
 /context/
-/plans/
+/plans
 /.claude/
 
 # OS cruft
