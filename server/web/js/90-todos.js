@@ -64,7 +64,9 @@ function renderTodos() {
     // collapsible item list beneath (they're peers of the work, not chrome)
     (dom.buckets || []).forEach((bk) => {
       const key = dom.name + "/" + bk.slug;
-      const open = !!todosWaitOpen[key];
+      // buckets are CONTENT, not chrome: open by default so every todo is
+      // visible on load; a collapse holds for the session (absent key = open)
+      const open = todosWaitOpen[key] !== false;
       const bkOpen = bk.todos.filter((t) => t.state !== "done");
       const row = el("div", "tdo-row tdo-bucket-row");
       row.append(el("span", "sec-caret", open ? "▾" : "▸"));
@@ -90,7 +92,7 @@ function renderTodos() {
         lk.title = "linked records — these todos also show on the linked property pages";
         row.append(lk);
       }
-      row.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
+      row.onclick = () => { todosWaitOpen[key] = todosWaitOpen[key] === false; renderTodos(); };
       sec.append(row);
       if (open) {
         const items = el("div", "tdo-bucket-items");
