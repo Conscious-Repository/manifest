@@ -155,3 +155,61 @@ func TestOutcomeLineAndAccountParse(t *testing.T) {
 		t.Fatalf("accounts: %+v", accs)
 	}
 }
+
+func TestAckOnlyTerminal(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	r := &Record{ID: "x1", Text: "t", Account: "u0", Created: "2026-07-30T00:00:00Z", Status: StatusQueued}
+	_ = store.Save(r)
+	if err := store.Ack("x1"); err == nil {
+		t.Fatal("queued must not ack")
+	}
+	r.Status = StatusFailed
+	_ = store.Save(r)
+	if err := store.Ack("x1"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Get("x1")
+	if !got.Acknowledged || got.Status != StatusFailed {
+		t.Fatalf("ack lost state: %+v", got)
+	}
+}
+
+func TestSendInputAnswersAskGate(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	e := NewExecutor(store, 1)
+	// stub that ASKS on stdout then blocks on stdin — exits 0 when answered
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "aside")
+	os.WriteFile(bin, []byte("#!/bin/sh\necho 'which account?'\nread answer\necho \"got: $answer\"\nexit 0\n"), 0o755)
+	e.SetBinary(bin)
+	e.Start()
+	r, _ := e.Enqueue("interactive task", "u0", "user", "", "")
+	waitStatus(t, store, r.ID, StatusRunning, 5*time.Second)
+	time.Sleep(200 * time.Millisecond) // let it print + block on read
+	if err := e.SendInput(r.ID, "yahoo one"); err != nil {
+		t.Fatal(err)
+	}
+	got := waitStatus(t, store, r.ID, StatusDone, 5*time.Second)
+	if !strings.Contains(got.Outcome, "got: yahoo one") {
+		t.Fatalf("outcome: %q", got.Outcome)
+	}
+	// echo puts BOTH the question and the answer on the audit trail
+	raw, _ := os.ReadFile(store.TranscriptPath(r.ID))
+	if !strings.Contains(string(raw), "which account?") || !strings.Contains(string(raw), "yahoo one") {
+		t.Fatalf("transcript missing exchange: %q", raw)
+	}
+	if err := e.SendInput(r.ID, "late"); err == nil {
+		t.Fatal("input after exit must refuse")
+	}
+}
+
+func TestStartRecoversOrphans(t *testing.T) {
+	store, _ := NewStore(t.TempDir())
+	_ = store.Save(&Record{ID: "orph", Text: "t", Account: "u0", Created: "2026-07-30T00:00:00Z", Status: StatusRunning})
+	e := NewExecutor(store, 1)
+	e.Start()
+	got := waitStatus(t, store, "orph", StatusFailed, 2*time.Second)
+	if !strings.Contains(got.Outcome, "restart") {
+		t.Fatalf("outcome: %q", got.Outcome)
+	}
+}

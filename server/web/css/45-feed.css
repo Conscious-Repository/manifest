@@ -62,3 +62,7 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
    picker stays compact with the label ellipsized */
 .errand-actions .pill { white-space: nowrap; flex: none; }
 .errand-actions .errand-acct { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+/* live transcript console: reply row for ask-gate answers */
+.errand-reply { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.errand-reply-in { flex: 1; font-family: var(--mono); font-size: 12px; }

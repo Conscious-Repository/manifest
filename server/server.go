@@ -185,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/errands", s.handleErrands) // GET list · POST compose
 	mux.HandleFunc("GET /api/errands/accounts", s.handleErrandAccounts)
 	mux.HandleFunc("POST /api/errands/{id}/cancel", s.handleErrandCancel)
+	mux.HandleFunc("POST /api/errands/{id}/ack", s.handleErrandAck)
+	mux.HandleFunc("POST /api/errands/{id}/input", s.handleErrandInput)
 	mux.HandleFunc("POST /api/errands/{id}/retry", s.handleErrandRetry)
 	mux.HandleFunc("GET /api/errands/{id}/transcript", s.handleErrandTranscript)
 	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)

@@ -26,10 +26,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/creack/pty"
 )
+
+// idSeq disambiguates same-second enqueues (see Enqueue).
+var idSeq atomic.Uint64
 
 // Status is an errand's lifecycle state. Terminal states never change.
 type Status string
@@ -58,6 +62,10 @@ type Record struct {
 	ExitCode   *int   `json:"exitCode,omitempty"`
 	Outcome    string `json:"outcome,omitempty"` // one line, ANSI-stripped (card summary)
 	Transcript string `json:"transcript,omitempty"`
+	// Acknowledged is READ-state, not a verdict: a cleared receipt leaves the
+	// inbox and the badge but the record + transcript stay forever (the §5
+	// permanent-audit-trail rule) — visible under the feed's ALL view.
+	Acknowledged bool `json:"acknowledged,omitempty"`
 }
 
 // Store owns <dataDir>/errands/: one JSON record + one transcript per errand
@@ -100,6 +108,21 @@ func (s *Store) Get(id string) (*Record, error) {
 		return nil, err
 	}
 	return &r, nil
+}
+
+// Ack marks a TERMINAL errand acknowledged (cleared from the inbox; the
+// record persists). Queued/running errands can't be cleared — cancel them.
+func (s *Store) Ack(id string) error {
+	r, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	switch r.Status {
+	case StatusDone, StatusFailed, StatusCancelled:
+		r.Acknowledged = true
+		return s.Save(r)
+	}
+	return errors.New("only a finished errand clears — cancel it first")
 }
 
 // List returns every errand, newest-created first.
@@ -145,6 +168,7 @@ type Executor struct {
 	queue   []string // errand ids, FIFO
 	running string   // id currently executing ("" when idle)
 	cancels map[string]func()
+	ptys    map[string]*os.File // running errand → pty master (mid-run answers)
 	wake    chan struct{}
 	// OnChange, when set, fires after every state transition (badge refresh).
 	OnChange func()
@@ -157,15 +181,48 @@ func NewExecutor(store *Store, timeoutMinutes int) *Executor {
 	}
 	return &Executor{
 		store: store, timeout: time.Duration(timeoutMinutes) * time.Minute,
-		bin: "aside", cancels: map[string]func(){}, wake: make(chan struct{}, 1),
+		bin: "aside", cancels: map[string]func(){}, ptys: map[string]*os.File{},
+		wake: make(chan struct{}, 1),
 	}
 }
 
 // SetBinary overrides the CLI path (tests use a stub script).
 func (e *Executor) SetBinary(bin string) { e.bin = bin }
 
-// Start launches the run loop; returns immediately.
-func (e *Executor) Start() { go e.loop() }
+// Start recovers orphans (a record still queued/running belongs to a dead
+// process — a restart killed its child; mark it failed, transcript kept),
+// then launches the run loop.
+func (e *Executor) Start() {
+	for _, r := range e.store.List() {
+		if r.Status == StatusQueued || r.Status == StatusRunning {
+			r.Status = StatusFailed
+			if r.Outcome == "" {
+				r.Outcome = "interrupted by a dashboard restart — transcript kept"
+			}
+			r.Finished = time.Now().UTC().Format(time.RFC3339)
+			_ = e.store.Save(r)
+		}
+	}
+	go e.loop()
+}
+
+// SendInput writes a line into a RUNNING errand's pty — the mid-run answer
+// path for Aside's ask-gates (the agent's question streams into the
+// transcript; the reply goes back the same wire; pty echo records it there).
+func (e *Executor) SendInput(id, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("nothing to send")
+	}
+	e.mu.Lock()
+	f, ok := e.ptys[id]
+	e.mu.Unlock()
+	if !ok {
+		return errors.New("errand is not running")
+	}
+	_, err := f.Write([]byte(text + "\r"))
+	return err
+}
 
 // Enqueue validates and queues one errand (the ONLY way work starts —
 // explicit user submit or an approved run-errand proposal, §4).
@@ -178,8 +235,10 @@ func (e *Executor) Enqueue(text, account, source, approvalID, goalID string) (*R
 		return nil, errors.New("an errand needs an --account (pick one)")
 	}
 	now := time.Now().UTC()
+	// id = second-stamp + process-monotonic sequence: two Enqueues in the same
+	// millisecond must never collide (a collision silently merges two records).
 	r := &Record{
-		ID:   now.Format("20060102-150405") + "-" + fmt.Sprintf("%03d", now.Nanosecond()/1e6),
+		ID:   now.Format("20060102-150405") + "-" + fmt.Sprintf("%04d", idSeq.Add(1)%10000),
 		Text: text, Account: account, Source: source,
 		ApprovalID: approvalID, GoalID: goalID,
 		Created: now.Format(time.RFC3339), Status: StatusQueued,
@@ -294,6 +353,7 @@ func (e *Executor) runOne(id string) {
 	timedOut := false
 	e.mu.Lock()
 	e.cancels[id] = func() { cancelled = true; _ = cmd.Process.Signal(os.Interrupt); _ = cmd.Process.Kill() }
+	e.ptys[id] = ptmx
 	e.mu.Unlock()
 	timer := time.AfterFunc(e.timeout, func() { timedOut = true; _ = cmd.Process.Kill() })
 
@@ -314,10 +374,11 @@ func (e *Executor) runOne(id string) {
 	}
 	werr := cmd.Wait()
 	timer.Stop()
-	_ = ptmx.Close()
 	e.mu.Lock()
 	delete(e.cancels, id)
+	delete(e.ptys, id)
 	e.mu.Unlock()
+	_ = ptmx.Close()
 
 	code := 0
 	if werr != nil {

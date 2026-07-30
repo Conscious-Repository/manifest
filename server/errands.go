@@ -44,10 +44,11 @@ type receiptView struct {
 	Created    string `json:"created"`
 	Started    string `json:"started,omitempty"`
 	Finished   string `json:"finished,omitempty"`
-	DurationS  int    `json:"durationS,omitempty"`
-	Outcome    string `json:"outcome,omitempty"`
-	QueuePos   int    `json:"queuePos,omitempty"`
-	Transcript bool   `json:"transcript"`
+	DurationS    int    `json:"durationS,omitempty"`
+	Outcome      string `json:"outcome,omitempty"`
+	QueuePos     int    `json:"queuePos,omitempty"`
+	Transcript   bool   `json:"transcript"`
+	Acknowledged bool   `json:"acknowledged,omitempty"`
 }
 
 func (s *Server) receiptViews() []receiptView {
@@ -60,7 +61,7 @@ func (s *Server) receiptViews() []receiptView {
 			ID: r.ID, Status: string(r.Status), Text: r.Text, Account: r.Account,
 			GoalID: r.GoalID, Source: r.Source, ApprovalID: r.ApprovalID,
 			Created: r.Created, Started: r.Started, Finished: r.Finished,
-			Outcome: r.Outcome,
+			Outcome: r.Outcome, Acknowledged: r.Acknowledged,
 		}
 		if r.Transcript != "" {
 			if _, err := os.Stat(s.errands.TranscriptPath(r.ID)); err == nil {
@@ -90,9 +91,16 @@ type receiptsSource struct{ s *Server }
 
 func (rc receiptsSource) Kind() string                   { return "receipt" }
 func (rc receiptsSource) Lifecycle() attention.Lifecycle { return attention.LifecyclePermanent }
-func (rc receiptsSource) Active(_ time.Time, _ url.Values) []attention.Card {
+func (rc receiptsSource) Active(_ time.Time, q url.Values) []attention.Card {
+	view := q.Get("status")
 	out := []attention.Card{}
+	if view == "kept" {
+		return out // receipts are never "kept" — they're a trail, not verdicts
+	}
 	for _, v := range rc.s.receiptViews() {
+		if view != "all" && v.Acknowledged {
+			continue // cleared from the inbox; the ALL view keeps the full trail
+		}
 		out = append(out, v)
 	}
 	return out
@@ -103,6 +111,9 @@ func (rc receiptsSource) Count(time.Time) int {
 		return 0
 	}
 	for _, r := range rc.s.errands.List() {
+		if r.Acknowledged {
+			continue // cleared — no longer a demand (record persists)
+		}
 		switch r.Status {
 		case errands.StatusQueued, errands.StatusRunning, errands.StatusFailed:
 			n++
@@ -143,6 +154,38 @@ func (s *Server) handleErrands(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleErrandAck clears a finished receipt from the inbox (read-state only —
+// the record and transcript persist; the ALL view still shows them).
+func (s *Server) handleErrandAck(w http.ResponseWriter, r *http.Request) {
+	if !s.errandsOK(w) {
+		return
+	}
+	if err := s.errands.Ack(r.PathValue("id")); err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleErrandInput answers a running errand's ask-gate: the text goes into
+// the pty (the same wire the question streamed out of) and echoes into the
+// transcript, so the exchange stays on the audit trail.
+func (s *Server) handleErrandInput(w http.ResponseWriter, r *http.Request) {
+	if !s.errandsOK(w) {
+		return
+	}
+	var b struct{ Text string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, errBadRequest("bad input payload"))
+		return
+	}
+	if err := s.errandExec.SendInput(r.PathValue("id"), b.Text); err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleErrandCancel(w http.ResponseWriter, r *http.Request) {

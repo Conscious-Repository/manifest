@@ -381,6 +381,12 @@ function receiptCardEl(rc) {
   if (rc.status === "failed" || rc.status === "cancelled") {
     acts.append(pillLight("Retry", () => errandAction("/api/errands/" + rc.id + "/retry")));
   }
+  // Clear = acknowledged read-state, not a verdict: the card leaves the inbox
+  // and the badge; the record + transcript persist under ALL (§5 audit trail).
+  const finished = rc.status === "done" || rc.status === "failed" || rc.status === "cancelled";
+  if (finished && !rc.acknowledged) {
+    acts.append(pillLight("Clear", () => errandAction("/api/errands/" + rc.id + "/ack")));
+  }
   if (acts.children.length) card.append(acts);
   return card;
 }
@@ -390,17 +396,47 @@ async function errandAction(url) {
   loadFeed();
 }
 
-// showErrandTranscript opens the raw transcript read-only in the picker
-// modal — a dataDir file, not a vault note (§5).
+// showErrandTranscript opens the transcript in the picker modal — a dataDir
+// file, not a vault note (§5). A RUNNING errand's transcript is a live
+// console: it tails every 2s and takes a reply — Aside's ask-gate questions
+// stream out here and the answer goes back down the same pty, echoing into
+// the transcript so the exchange stays on the audit trail.
+const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
 async function showErrandTranscript(rc) {
-  let text = "";
-  try { text = await (await fetch("/api/errands/" + rc.id + "/transcript")).text(); }
-  catch (e) { text = "transcript unavailable"; }
   els.pickerTitle.textContent = "Errand transcript — " + rc.text.slice(0, 60);
   const body = els.pickerBody; body.innerHTML = "";
   const pre = el("pre", "errand-transcript");
-  pre.textContent = text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ""); // ANSI-stripped for reading
   body.append(pre);
+  const load = async () => {
+    try {
+      const t = await (await fetch("/api/errands/" + rc.id + "/transcript")).text();
+      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 8;
+      pre.textContent = stripAnsi(t) || "(no output yet)";
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+    } catch (e) { if (!pre.textContent) pre.textContent = "transcript unavailable"; }
+  };
+  await load();
+  if (rc.status === "queued" || rc.status === "running") {
+    const row = el("div", "errand-reply");
+    const input = inputEl("answer the agent's question… (Enter sends into the session)");
+    input.classList.add("errand-reply-in");
+    const send = async () => {
+      const t = input.value.trim();
+      if (!t) return;
+      input.value = "";
+      try { await postJSONOk("/api/errands/" + rc.id + "/input", { text: t }); }
+      catch (e) { showToast((e.message || "not running anymore").slice(0, 80), null, "error"); }
+      setTimeout(load, 600);
+    };
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") send(); });
+    row.append(input, pillLight("send ↵", send));
+    body.append(row);
+    pre.scrollTop = pre.scrollHeight;
+    const tick = setInterval(() => {
+      if (els.pickerModal.hidden) { clearInterval(tick); return; }
+      load();
+    }, 2000);
+  }
   els.pickerModal.hidden = false;
 }
 
