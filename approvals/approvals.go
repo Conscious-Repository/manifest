@@ -383,8 +383,8 @@ func rebuildProposedBody(body, proposed string) string {
 }
 
 // apply writes an actionable proposal's content to its target file. A
-// create-vault-note writes a NEW dated note at the vault root; every other type
-// writes a harness config file within the hard allow-list. Any violation
+// create-vault-note writes a NEW dated note under the vault's log/ folder; every
+// other type writes a harness config file within the hard allow-list. Any violation
 // returns an error and writes nothing.
 func (s *Store) apply(p Proposal) error {
 	switch p.Type {
@@ -428,10 +428,11 @@ func (s *Store) apply(p Proposal) error {
 	return os.WriteFile(target, []byte(body), 0o644)
 }
 
-// applyCreateVaultNote writes a granola-sync proposal as a NEW dated note at the
-// vault root. It refuses anything but a bare vault-root dated filename, refuses
-// when the note already exists (never overwrite), and refuses if no vault root
-// is configured. This is the ONLY way an approval writes outside the harness.
+// applyCreateVaultNote writes a granola/pocket-sync proposal as a NEW dated note
+// under the vault's log/ folder (the dated-note home since 2026-07-30). It still
+// refuses anything but a bare dated filename (the unchanged apply-path contract),
+// refuses when the note already exists (never overwrite), and refuses if no vault
+// root is configured. This is the ONLY way an approval writes outside the harness.
 func (s *Store) applyCreateVaultNote(p Proposal) error {
 	if !CreateVaultNotePathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is not a vault-root dated note (YYYY-MM-DD <title>.md)", p.ApplyPath)
@@ -446,11 +447,21 @@ func (s *Store) applyCreateVaultNote(p Proposal) error {
 	// propose a title-cased "2026-07-08 Some Meeting.md"; save it lowercase).
 	// The date digits are unaffected; Obsidian resolves [[links]] case-blind.
 	rel := strings.ToLower(p.ApplyPath)
-	target := filepath.Join(s.vaultRoot, filepath.FromSlash(rel))
-	rootAbs, _ := filepath.Abs(s.vaultRoot)
+	// Dated transcript notes live under log/ (the vault's dated-note home since
+	// the 2026-07-30 knowledge-OS split). The apply-path shape is still a bare
+	// dated filename — the ONLY allowed shape, byte-identical to the engine's
+	// audit contract — so the security boundary is unchanged; only the write
+	// folder moved off root. The engine keeps emitting bare filenames; manifest
+	// alone decides the destination on Confirm.
+	logDir := filepath.Join(s.vaultRoot, "log")
+	target := filepath.Join(logDir, filepath.FromSlash(rel))
+	logAbs, _ := filepath.Abs(logDir)
 	tgtAbs, _ := filepath.Abs(target)
-	if filepath.Dir(tgtAbs) != rootAbs {
-		return fmt.Errorf("apply refused: %q escapes the vault root", rel)
+	if filepath.Dir(tgtAbs) != logAbs {
+		return fmt.Errorf("apply refused: %q escapes log/", rel)
+	}
+	if err := os.MkdirAll(logAbs, 0o755); err != nil {
+		return fmt.Errorf("apply refused: cannot ensure log/ dir: %w", err)
 	}
 	if _, err := os.Stat(target); err == nil {
 		return fmt.Errorf("apply refused: %q already exists — not overwriting", rel)
