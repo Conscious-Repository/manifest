@@ -57,3 +57,8 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .rc-done { color: var(--icon); }
 .rc-failed { color: #b91c1c; }
 .errand-transcript { font-family: var(--mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; max-height: 60vh; overflow-y: auto; margin: 0; color: var(--text); }
+
+/* errand compose: the Run pill never wraps or shrinks; a multi-account
+   picker stays compact with the label ellipsized */
+.errand-actions .pill { white-space: nowrap; flex: none; }
+.errand-actions .errand-acct { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }

@@ -420,20 +420,30 @@ async function composeErrand() {
   const ta = el("textarea", "asktext-area");
   ta.placeholder = 'what should the browser do? e.g. "cancel the X subscription on the ooda account"';
   ta.rows = 3;
-  const sel = selectEl(accs.map((a) => a.id + " — " + a.label));
-  const acct = () => (sel.value || "").split(" — ")[0];
-  const actions = el("div", "asktext-actions");
+  // account picker: labels only (ids ride in option values); a single
+  // signed-in account needs no picker at all — the hint names it.
+  const sel = document.createElement("select");
+  sel.className = "pp-in errand-acct";
+  accs.forEach((a) => {
+    const opt = document.createElement("option");
+    opt.value = a.id; opt.textContent = a.label;
+    if (a.current) opt.selected = true;
+    sel.append(opt);
+  });
+  const actions = el("div", "asktext-actions errand-actions");
   const submit = pill("Run →", async () => {
     const text = ta.value.trim();
     if (!text) return;
     closePicker();
     try {
-      await postJSONOk("/api/errands", { text, account: acct() });
+      await postJSONOk("/api/errands", { text, account: sel.value });
       showToast("errand queued — receipt in the feed", null, "info");
     } catch (e) { showToast((e.message || "couldn't queue errand").slice(0, 80), null, "error"); }
     loadFeed();
   });
-  actions.append(el("span", "asktext-hint", "runs serially · " + (accs.length === 1 ? accs[0].label : accs.length + " accounts")), sel, submit);
+  actions.append(el("span", "asktext-hint", "runs serially · " + (accs.length === 1 ? accs[0].label : accs.length + " accounts")));
+  if (accs.length > 1) actions.append(sel);
+  actions.append(submit);
   body.append(ta, actions);
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit.click(); }
