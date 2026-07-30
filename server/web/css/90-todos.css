@@ -36,3 +36,6 @@
 .tdo-verdict.move { color: #265ACC; border-color: #265ACC; }
 .split-head { display: flex; justify-content: space-between; align-items: baseline; }
 .tdo-verdict.drop { color: #b91c1c; border-color: #b91c1c; }
+
+/* quick-add confirm: pinned right of the chip row */
+.qa-add { margin-left: auto; white-space: nowrap; flex: none; }

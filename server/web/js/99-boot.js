@@ -58,12 +58,17 @@ function openTodoQuickAdd(prefill) {
       if (!els.todosView.hidden) loadTodos();
     } catch (e) { showToast("Couldn't capture"); }
   };
-  input.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") submit();
+  // Enter/Escape work from ANYWHERE in the dialog — picking a domain chip or
+  // a tether from the select must never strand the capture without a confirm.
+  panel.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); submit(); }
     else if (ev.key === "Escape") close();
   });
+  tether.addEventListener("change", () => input.focus()); // hands back to the text
   back.onclick = close;
-  chips.append(tether);
+  const add = pill("Add ↵", submit);
+  add.classList.add("qa-add");
+  chips.append(tether, add);
   panel.append(input, chips);
   overlay.append(back, panel);
   document.body.append(overlay);
