@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/errands"
 	"manifest/portals"
 )
 
@@ -62,26 +63,44 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	}
 	rows = append(rows, s.calendarPortalRow())
 	rows = append(rows, s.llmPortalRows()...)
-	rows = append(rows, asidePortalRow())
+	rows = append(rows, s.asidePortalRow())
 	rows = append(rows, dormant...) // docusign at the bottom
 	writeJSON(w, map[string]any{"rows": rows})
 }
 
 // asidePortalRow surfaces the Aside browser as the first EFFECTOR portal
-// (errands-aside §1): no credentials ever (Aside owns its own auth), state
-// derived from CLI presence alone. Until the CLI exists on this machine the
-// row is sealed with the install hint and nothing else builds — §0 mandates
-// probing the CLI's real output shape before the executor exists ("the
-// executor parses what's real, not what's assumed").
-func asidePortalRow() panelRow {
+// (errands-aside §1): no credentials ever (Aside owns its own auth). State:
+// sealed = CLI missing (install hint); degraded = the LAST errand failed
+// (until the next success); open = CLI present. Last crossing = the last
+// finished errand.
+func (s *Server) asidePortalRow() panelRow {
 	row := panelRow{ID: "aside", Name: "Aside (errands)", Kind: string(portals.KindEffector), Masked: "no creds — aside owns auth"}
 	if _, err := exec.LookPath("aside"); err != nil {
-		row.State, row.Note = "sealed", "aside CLI not installed — install the Aside app + CLI, then errands build"
+		row.State, row.Note = "sealed", "aside CLI not installed — install the Aside app + CLI, then errands run"
 		return row
 	}
-	// CLI present: real state needs `aside account status` — wired when the
-	// §0 probe records the CLI's actual output shape (errands-aside §1).
-	row.State, row.Note = "open", "CLI present — errand executor not built yet (§0 probe pending)"
+	row.State = "open"
+	if accs, err := errands.Accounts(); err == nil { // §1: the row shows the real account list
+		for _, a := range accs {
+			row.Accounts = append(row.Accounts, a.ID+" — "+a.Label)
+		}
+	}
+	if s.errands != nil {
+		for _, r := range s.errands.List() { // newest first: first terminal state decides
+			switch r.Status {
+			case errands.StatusDone:
+				if row.LastCrossing == "" {
+					row.LastCrossing = r.Finished
+				}
+				return row
+			case errands.StatusFailed:
+				row.State, row.Err = "degraded", "last errand failed — "+r.Outcome
+				row.LastCrossing = r.Finished
+				return row
+			}
+		}
+	}
+	row.Note = "＋ errand in the FEED header composes one"
 	return row
 }
 

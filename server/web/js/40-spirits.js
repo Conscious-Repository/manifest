@@ -65,7 +65,7 @@ function portalRowEl(p) {
   row.append(acts);
   wrap.append(row);
   if (p.state === "degraded" && p.err) wrap.append(el("div", "portal-err", p.err));
-  if (p.kind === "oauth" && (p.accounts || []).length) {
+  if ((p.kind === "oauth" || p.kind === "effector") && (p.accounts || []).length) {
     wrap.append(el("div", "portal-note", "connected: " + p.accounts.join(", ")));
   } else if (p.note && p.state !== "degraded") {
     wrap.append(el("div", "portal-note", p.note));

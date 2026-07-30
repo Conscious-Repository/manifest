@@ -66,6 +66,13 @@ type Config struct {
 	// TodosFileName is the vault-root todos file (the third surface, peer of
 	// goals.md). Default "to do.md" — the owner's existing file.
 	TodosFileName string `json:"todosFileName"`
+	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
+	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and
+	// the app defaults new tasks to Guard (§0 probe).
+	ErrandTimeoutMinutes int `json:"errandTimeoutMinutes"`
+	// ErrandAccounts, when set, is the only set of aside account ids the
+	// compose picker offers and the API accepts (§6 allowlist).
+	ErrandAccounts []string `json:"errandAccounts"`
 }
 
 func defaultConfig() Config {

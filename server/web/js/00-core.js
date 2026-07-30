@@ -101,6 +101,7 @@ const els = {
   feedFilters: document.getElementById("feedFilters"),
   feedSignals: document.getElementById("feedSignals"),
   feedList: document.getElementById("feedList"),
+  feedErrandBtn: document.getElementById("feedErrandBtn"),
   feedAskBtn: document.getElementById("feedAskBtn"),
   feedRunNowBtn: document.getElementById("feedRunNowBtn"),
   // content studio (draft board + inspiration watchlist)

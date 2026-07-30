@@ -47,3 +47,13 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .portal-change-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 4px; padding: 1px 6px; }
 .portal-change-chip.change-new { color: #15803d; border: 1px solid #bfe3c9; }
 .portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }
+
+/* ---- receipts (errands-aside §5): the fourth attention kind ---- */
+.type-chip.type-receipt { color: #6d28d9; border-color: #ddd6fe; }
+.receipt-status { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; }
+.rc-queued, .rc-cancelled { color: var(--muted); }
+.rc-running { color: #1a7f37; }
+.rc-running::before { content: "● "; animation: pulse 1.3s ease-in-out infinite; }
+.rc-done { color: var(--icon); }
+.rc-failed { color: #b91c1c; }
+.errand-transcript { font-family: var(--mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; max-height: 60vh; overflow-y: auto; margin: 0; color: var(--text); }

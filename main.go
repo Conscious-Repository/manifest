@@ -22,6 +22,7 @@ import (
 	"manifest/calendar"
 	"manifest/contacts"
 	"manifest/daily"
+	"manifest/errands"
 	"manifest/goals"
 	"manifest/portals"
 	"manifest/reading"
@@ -190,6 +191,23 @@ func main() {
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
+	// ERRANDS — the action layer (errands-aside plan): records + transcripts
+	// under <dataDir>/errands/ (never the vault); the aside CLI is the hands.
+	// The store always exists (receipts render even with the CLI gone); runs
+	// simply fail fast when the binary is absent.
+	if estore, err := errands.NewStore(cfg.DataDir); err != nil {
+		log.Printf("errands disabled: %v", err)
+	} else {
+		eexec := errands.NewExecutor(estore, cfg.ErrandTimeoutMinutes)
+		eexec.Start()
+		srv.UseErrands(estore, eexec)
+		srv.SetErrandAccounts(cfg.ErrandAccounts)
+		if errands.CLIPresent() {
+			log.Printf("errands: enabled (aside CLI on PATH; timeout %dm)", max(cfg.ErrandTimeoutMinutes, 15))
+		} else {
+			log.Printf("errands: store ready, aside CLI not installed (portal row sealed)")
+		}
+	}
 	var contactsSvc *contacts.Service // reused by the feed's cold-contact emitter
 	var reSvc *realestate.Service     // reused by the feed's property emitters
 	if vix != nil {

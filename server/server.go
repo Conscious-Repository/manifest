@@ -14,14 +14,15 @@ import (
 	"manifest/calendar"
 	"manifest/contacts"
 	"manifest/daily"
+	"manifest/errands"
 	"manifest/goals"
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
 	"manifest/signals"
-	"manifest/todos"
 	"manifest/spirits"
 	"manifest/studio"
+	"manifest/todos"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
@@ -30,10 +31,10 @@ import (
 var webFiles embed.FS
 
 type Server struct {
-	svc   *daily.Service
+	svc        *daily.Service
 	goals      *goals.Store
 	todosStore *todos.Store // the third surface — vault-root `to do.md` (nilable)
-	cal   *calendar.Client
+	cal        *calendar.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
 	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
 	vault     *vaultwriter.Writer
@@ -61,6 +62,11 @@ type Server struct {
 	studio     *studio.Store
 	corpusPath string // <excalibur>/vessel/corpus/x.db
 	xPostsFile string // vault-relative X-posts file (default "x posts.md")
+	// Errands (the action layer — aside effector; records = FEED receipts).
+	// Nilable; dataDir state only, never the vault.
+	errands        *errands.Store
+	errandExec     *errands.Executor
+	errandAccounts []string // §6 allowlist ("" = any signed-in account)
 }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
@@ -175,6 +181,12 @@ func (s *Server) Handler() http.Handler {
 	// /api/spirits/feed* routes are gone — single user, no compat shims.
 	mux.HandleFunc("GET /api/feed", s.handleFeedList)
 	mux.HandleFunc("GET /api/feed/badge", s.handleFeedBadge)
+	// errands — the action layer (aside effector); records = FEED receipts
+	mux.HandleFunc("/api/errands", s.handleErrands) // GET list · POST compose
+	mux.HandleFunc("GET /api/errands/accounts", s.handleErrandAccounts)
+	mux.HandleFunc("POST /api/errands/{id}/cancel", s.handleErrandCancel)
+	mux.HandleFunc("POST /api/errands/{id}/retry", s.handleErrandRetry)
+	mux.HandleFunc("GET /api/errands/{id}/transcript", s.handleErrandTranscript)
 	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
 	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
 	mux.HandleFunc("POST /api/feed/{id}/to-todo", s.handleFeedToTodo)

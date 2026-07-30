@@ -15,14 +15,15 @@ import (
 // field each kind renders into is fixed by kindField (the client contract).
 
 // attentionRegistry builds the ordered registry: findings, signals, notices,
-// and the receipts slot — declared with a permanent lifecycle, EMPTY until an
-// errand loop exists to write receipts (that's a feature pass, not this one).
+// receipts — the fourth kind now BACKED by the errand store (errands-aside §5
+// as amended: the registry's own lane, permanent lifecycle, badge counts
+// queued/running/failed only).
 func (s *Server) attentionRegistry() *attention.Registry {
 	r := &attention.Registry{}
 	r.Register(findingsSource{s})
 	r.Register(signalsSource{s})
 	r.Register(noticesSource{s})
-	r.Register(attention.EmptySource{K: "receipt", L: attention.LifecyclePermanent})
+	r.Register(receiptsSource{s})
 	return r
 }
 

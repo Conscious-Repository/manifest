@@ -16,7 +16,7 @@ const FEED_CARD = {
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
   finding: (it) => feedCard(it),
-  receipt: (rc) => el("div", "feed-card receipt", rc.title || ""),
+  receipt: (rc) => receiptCardEl(rc),
 };
 // main-list lanes in render order (signals render into their own strip above).
 const FEED_LANES = [
@@ -90,7 +90,7 @@ function renderFeed() {
     if (lane.inboxOnly && view !== "inbox") return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
-  if (!feedCache.items.length && !host.children.length) {
+  if (!feedCache.items.length && !feedCache.receipts.length && !host.children.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."
       : view === "kept" ? "Nothing kept yet." : "No feed items yet."));
@@ -345,6 +345,104 @@ async function draftApproval(approvalId, kind) {
   showToast(kind === "confirm" ? "queued to x posts.md ✓" : "dismissed", null, "info");
   loadFeed();
 }
+
+// ---- receipts: the fourth attention kind, backed by <dataDir>/errands/
+// (errands-aside §5 as amended). App-local records — NEVER kept/discarded,
+// no expiry; queued shows its place in line, running shows a live dot,
+// failed/cancelled offer retry (no continue — the CLI emits no session ids).
+function receiptCardEl(rc) {
+  const card = el("div", "feed-card receipt status-" + rc.status);
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-receipt", "errand"));
+  top.append(el("span", "type-chip type-portal", "aside")); // muted source tag
+  const status = el("span", "receipt-status rc-" + rc.status,
+    rc.status === "queued" && rc.queuePos ? "queued · #" + rc.queuePos : rc.status);
+  top.append(status);
+  if (rc.created) top.append(el("span", "feed-date", fmtFeedDate(rc.created)));
+  card.append(top);
+  card.append(el("div", "feed-title", rc.text));
+  const meta = el("div", "feed-meta");
+  const bits = ["account " + rc.account];
+  if (rc.durationS) bits.push(rc.durationS + "s");
+  if (rc.source === "proposal") bits.push("via approved proposal");
+  meta.append(el("span", null, bits.join("  ·  ")));
+  card.append(meta);
+  if (rc.outcome) card.append(el("div", "feed-why", rc.outcome));
+  if (rc.goalId) {
+    const g = el("span", "work-chip cp-clickable", "⚑ " + rc.goalId);
+    g.onclick = () => { location.hash = "#/goals/" + encodeURIComponent(rc.goalId); };
+    card.append(g);
+  }
+  const acts = el("div", "feed-actions");
+  if (rc.transcript) acts.append(pillLight("transcript →", () => showErrandTranscript(rc)));
+  if (rc.status === "queued" || rc.status === "running") {
+    acts.append(pillLight("Cancel", () => errandAction("/api/errands/" + rc.id + "/cancel")));
+  }
+  if (rc.status === "failed" || rc.status === "cancelled") {
+    acts.append(pillLight("Retry", () => errandAction("/api/errands/" + rc.id + "/retry")));
+  }
+  if (acts.children.length) card.append(acts);
+  return card;
+}
+
+async function errandAction(url) {
+  try { await postJSONOk(url, {}); } catch (e) { showToast((e.message || "errand action failed").slice(0, 80), null, "error"); }
+  loadFeed();
+}
+
+// showErrandTranscript opens the raw transcript read-only in the picker
+// modal — a dataDir file, not a vault note (§5).
+async function showErrandTranscript(rc) {
+  let text = "";
+  try { text = await (await fetch("/api/errands/" + rc.id + "/transcript")).text(); }
+  catch (e) { text = "transcript unavailable"; }
+  els.pickerTitle.textContent = "Errand transcript — " + rc.text.slice(0, 60);
+  const body = els.pickerBody; body.innerHTML = "";
+  const pre = el("pre", "errand-transcript");
+  pre.textContent = text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, ""); // ANSI-stripped for reading
+  body.append(pre);
+  els.pickerModal.hidden = false;
+}
+
+// composeErrand: the ＋ errand affordance (§4 user path) — task text +
+// account picker; submitting IS the authorization. Guard mode is the app's
+// per-task default (no CLI flag exists — §0).
+async function composeErrand() {
+  let accs = [], cliOK = false;
+  try {
+    const d = await (await fetch("/api/errands/accounts")).json();
+    accs = d.accounts || []; cliOK = !!d.cli;
+  } catch (e) {}
+  if (!cliOK) { showToast("aside CLI not installed — see the PORTALS tab", null, "error"); return; }
+  if (!accs.length) { showToast("no aside accounts signed in", null, "error"); return; }
+  els.pickerTitle.textContent = "Run an errand (Aside, guard mode)";
+  const body = els.pickerBody; body.innerHTML = "";
+  const ta = el("textarea", "asktext-area");
+  ta.placeholder = 'what should the browser do? e.g. "cancel the X subscription on the ooda account"';
+  ta.rows = 3;
+  const sel = selectEl(accs.map((a) => a.id + " — " + a.label));
+  const acct = () => (sel.value || "").split(" — ")[0];
+  const actions = el("div", "asktext-actions");
+  const submit = pill("Run →", async () => {
+    const text = ta.value.trim();
+    if (!text) return;
+    closePicker();
+    try {
+      await postJSONOk("/api/errands", { text, account: acct() });
+      showToast("errand queued — receipt in the feed", null, "info");
+    } catch (e) { showToast((e.message || "couldn't queue errand").slice(0, 80), null, "error"); }
+    loadFeed();
+  });
+  actions.append(el("span", "asktext-hint", "runs serially · " + (accs.length === 1 ? accs[0].label : accs.length + " accounts")), sel, submit);
+  body.append(ta, actions);
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit.click(); }
+    else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+  });
+  els.pickerModal.hidden = false;
+  ta.focus();
+}
+if (els.feedErrandBtn) els.feedErrandBtn.addEventListener("click", composeErrand);
 
 async function studioPost(path, body) {
   setSaveState("saving");

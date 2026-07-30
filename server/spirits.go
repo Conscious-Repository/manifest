@@ -160,6 +160,9 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	}
 	_ = decode(r, &b) // body is optional (plain confirm)
 	id := r.PathValue("id")
+	// run-errand payload must be read BEFORE confirm (confirm moves the file);
+	// a failed confirm never enqueues, so approval maps 1:1 to one execution.
+	pending, loadErr := s.approvals.LoadPending(id)
 	var err error
 	if b.EditAttendees {
 		err = s.approvals.ConfirmCreateNote(id, b.Attendees)
@@ -169,6 +172,16 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+	if loadErr == nil && pending.Type == approvals.TypeRunErrand {
+		if s.errandExec == nil {
+			httpError(w, errBadRequest("approved, but errands are not available to enqueue"))
+			return
+		}
+		if _, err := s.errandExec.Enqueue(pending.ErrandText, pending.ErrandAccount, "proposal", id, pending.ErrandGoal); err != nil {
+			httpError(w, errBadRequest("approved, but enqueue failed: "+err.Error()))
+			return
+		}
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

@@ -38,6 +38,11 @@ type Proposal struct {
 	Body      string `json:"body"`
 	ApplyPath string `json:"applyPath"` // target (allow-list only), "" if none
 	Proposed  string `json:"proposed"`  // full new file content, "" if none
+	// run-errand fields (errands-aside §4): the one errand this proposal
+	// authorizes. Empty for every other type.
+	ErrandText    string `json:"errandText,omitempty"`
+	ErrandAccount string `json:"errandAccount,omitempty"`
+	ErrandGoal    string `json:"errandGoal,omitempty"`
 }
 
 // TypeCreateVaultNote is the granola-sync proposal type (plan §4): it writes a
@@ -52,6 +57,15 @@ const (
 	TypeAppendXQueue     = "append-x-queue"
 	TypeUpdateVaultSkill = "update-vault-skill"
 )
+
+// TypeRunErrand (errands-aside §4) authorizes exactly ONE aside errand:
+// approving enqueues it, never a standing grant. Unlike the actionable types
+// it writes NO file — Confirm records the decision (the folder move) and the
+// SERVER dispatches the enqueue after a successful confirm; ApplyPath stays
+// empty so the file-apply machinery is never touched. Nothing emits these
+// proposals yet (the EA loop will) — the type exists so the inbox can execute
+// errands the day it does.
+const TypeRunErrand = "run-errand"
 
 // XPostsFileName is the one vault-root X-posts file an append-x-queue may target.
 // A fixed convention (matches the engine + config xPostsFile default) so the
@@ -272,6 +286,17 @@ func (s *Store) Propose(p Proposal) (Proposal, error) {
 // nothing is written or moved and the error surfaces (the proposal stays
 // actionable in pending/).
 func (s *Store) Confirm(id string) error { return s.confirm(id, nil, false) }
+
+// LoadPending reads one pending proposal (the server's confirm dispatch reads
+// the run-errand payload BEFORE confirming; a missing file = already decided).
+func (s *Store) LoadPending(id string) (Proposal, error) {
+	p, err := s.parse(filepath.Join(s.dir, "pending", id+".md"))
+	if err != nil {
+		return Proposal{}, err
+	}
+	p.Status = "pending"
+	return p, nil
+}
 
 // ConfirmCreateNote confirms a create-vault-note after the user edited the
 // attendee list in the dashboard: the note's attendee wikilink line is rewritten
@@ -614,6 +639,10 @@ func (s *Store) parse(path string) (Proposal, error) {
 		Body:      body, // keeps the ````proposed fence, so the record round-trips
 		ApplyPath: strings.TrimSpace(fm["apply-path"]),
 		Proposed:  proposed,
+		// run-errand payload (errands-aside §4)
+		ErrandText:    strings.TrimSpace(fm["errand-text"]),
+		ErrandAccount: strings.TrimSpace(fm["errand-account"]),
+		ErrandGoal:    strings.TrimSpace(fm["errand-goal"]),
 	}, nil
 }
 
@@ -631,6 +660,9 @@ func serialize(p Proposal) string {
 		Set("section", p.Section).
 		Set("created", p.Created).
 		Set("apply-path", p.ApplyPath).
+		Set("errand-text", p.ErrandText).
+		Set("errand-account", p.ErrandAccount).
+		Set("errand-goal", p.ErrandGoal).
 		String(strings.TrimSpace(p.Body))
 }
 
