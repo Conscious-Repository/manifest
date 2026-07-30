@@ -68,6 +68,21 @@ func (s *Server) receiptViews() []receiptView {
 				v.Transcript = true
 			}
 		}
+		// done cards show the agent's full final answer block, recomputed from
+		// the transcript (records written before OutcomeBlock existed hold only
+		// the last line; failures keep their stored one-liner, incl. timeouts).
+		if r.Status == errands.StatusDone && v.Transcript {
+			if raw, err := os.ReadFile(s.errands.TranscriptPath(r.ID)); err == nil {
+				if tail := raw; len(tail) > 0 {
+					if len(tail) > 16384 {
+						tail = tail[len(tail)-16384:]
+					}
+					if block := errands.OutcomeBlock(tail); block != "" {
+						v.Outcome = block
+					}
+				}
+			}
+		}
 		if r.Status == errands.StatusQueued && s.errandExec != nil {
 			v.QueuePos = s.errandExec.QueuePosition(r.ID)
 		}

@@ -20,7 +20,7 @@ text="$3"
 case "$text" in
   fail*) echo "boom: $text"; exit 1 ;;
   sleep*) sleep 30; echo never ;;
-  *) printf 'Thinking...\n\033[32mdone\033[0m\nPage title: OK — %s\n' "$text"; exit 0 ;;
+  *) printf 'Thinking: plan\n\033[32mrepl(x)\033[0m\nPage title: OK — %s\n' "$text"; exit 0 ;;
 esac
 `
 	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
@@ -71,7 +71,7 @@ func TestExecutorRunsSeriallyAndRecords(t *testing.T) {
 	}
 	// transcript is the raw bytes, ANSI included
 	raw, err := os.ReadFile(store.TranscriptPath(a.ID))
-	if err != nil || !strings.Contains(string(raw), "\x1b[32mdone\x1b[0m") {
+	if err != nil || !strings.Contains(string(raw), "\x1b[32mrepl(x)\x1b[0m") {
 		t.Fatalf("transcript raw ANSI missing: %q err=%v", raw, err)
 	}
 }
@@ -211,5 +211,24 @@ func TestStartRecoversOrphans(t *testing.T) {
 	got := waitStatus(t, store, "orph", StatusFailed, 2*time.Second)
 	if !strings.Contains(got.Outcome, "restart") {
 		t.Fatalf("outcome: %q", got.Outcome)
+	}
+}
+
+func TestOutcomeBlockAnswerAfterNoise(t *testing.T) {
+	// the real youtube-answer shape: Thinking + tool block, then intro + list
+	tr := []byte("repl(x)\n > [\n  { a }\n]\nThinking: **plan**\n\n\nYour last 3 liked YouTube videos:\n\n1. [A](https://a)\n2. [B](https://b)\n3. [C](https://c)\n")
+	got := OutcomeBlock(tr)
+	want := "Your last 3 liked YouTube videos:\n1. [A](https://a)\n2. [B](https://b)\n3. [C](https://c)"
+	if got != want {
+		t.Fatalf("block: %q", got)
+	}
+	// the example.com shape: result tree glommed against the answer line
+	tr2 := []byte("Thinking: **plan**\nrepl(title: 'x',\n     code: \"y\")\n\n > ok opened\n- title: \"Example Domain\"\n  - link \"Learn more\" [ref=e1]\nPage title: **Example Domain**\n")
+	if got := OutcomeBlock(tr2); got != "- title: \"Example Domain\"\nPage title: **Example Domain**" && got != "Page title: **Example Domain**" {
+		t.Fatalf("example shape: %q", got)
+	}
+	long := strings.Repeat("x", 700)
+	if got := OutcomeBlock([]byte(long)); len(got) != 600+len("…") {
+		t.Fatalf("cap: %d", len(got))
 	}
 }

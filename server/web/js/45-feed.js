@@ -367,7 +367,7 @@ function receiptCardEl(rc) {
   if (rc.source === "proposal") bits.push("via approved proposal");
   meta.append(el("span", null, bits.join("  ·  ")));
   card.append(meta);
-  if (rc.outcome) card.append(el("div", "feed-why", rc.outcome));
+  if (rc.outcome) card.append(receiptOutcomeEl(rc.outcome));
   if (rc.goalId) {
     const g = el("span", "work-chip cp-clickable", "⚑ " + rc.goalId);
     g.onclick = () => { location.hash = "#/goals/" + encodeURIComponent(rc.goalId); };
@@ -389,6 +389,41 @@ function receiptCardEl(rc) {
   }
   if (acts.children.length) card.append(acts);
   return card;
+}
+
+// receiptOutcomeEl renders the agent's answer block: line breaks preserved,
+// markdown links clickable, **bold** honored — no raw markdown on the card.
+function receiptOutcomeEl(outcome) {
+  const box = el("div", "receipt-outcome");
+  const mdLink = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const bold = /\*\*([^*]+)\*\*/g;
+  outcome.split("\n").forEach((line) => {
+    const row = el("div", "receipt-outcome-line");
+    let rest = line;
+    const pushText = (t) => {
+      // render **bold** inside plain text runs
+      let i = 0, m;
+      bold.lastIndex = 0;
+      while ((m = bold.exec(t)) !== null) {
+        if (m.index > i) row.append(t.slice(i, m.index));
+        row.append(el("strong", "", m[1]));
+        i = m.index + m[0].length;
+      }
+      if (i < t.length) row.append(t.slice(i));
+    };
+    let m;
+    mdLink.lastIndex = 0;
+    while ((m = mdLink.exec(rest)) !== null) {
+      const pre = rest.slice(0, m.index);
+      if (pre) pushText(pre);
+      row.append(linkEl(m[1], m[2]));
+      rest = rest.slice(m.index + m[0].length);
+      mdLink.lastIndex = 0;
+    }
+    if (rest) pushText(rest);
+    box.append(row);
+  });
+  return box;
 }
 
 async function errandAction(url) {

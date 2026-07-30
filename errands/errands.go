@@ -145,7 +145,7 @@ func (s *Store) List() []*Record {
 // the raw bytes — they are the audit trail).
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\r`)
 
-// OutcomeLine derives the card summary: the last non-empty ANSI-stripped line.
+// OutcomeLine derives a one-line summary: the last non-empty ANSI-stripped line.
 func OutcomeLine(transcript []byte) string {
 	lines := strings.Split(ansiRe.ReplaceAllString(string(transcript), ""), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -154,6 +154,41 @@ func OutcomeLine(transcript []byte) string {
 		}
 	}
 	return ""
+}
+
+// outcomeNoiseRe marks transcript lines that are the agent's WORK, not its
+// answer (verified against real aside transcripts): "Thinking:" lines,
+// tool-call openers (repl( / ask_user_question( …), call-id terminators
+// ([call_…]), result heads ("> ✔︎ …"), and indented continuation/tree lines.
+var outcomeNoiseRe = regexp.MustCompile(`^(Thinking|[a-z_][\w.]*\(|\s*>\s|\s{2,}\S)|\[call_`)
+
+// OutcomeBlock derives the card's answer: everything AFTER the last noise
+// line — the agent's final answer paragraph/list in full (a "last 3 videos"
+// answer is an intro plus three link lines, not one truncated line).
+// ANSI-stripped, blank runs collapsed, capped at 600 chars; falls back to
+// the plain trailing block, then the last line.
+func OutcomeBlock(transcript []byte) string {
+	lines := strings.Split(ansiRe.ReplaceAllString(string(transcript), ""), "\n")
+	last := -1
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) != "" && outcomeNoiseRe.MatchString(ln) {
+			last = i
+		}
+	}
+	var kept []string
+	for _, ln := range lines[last+1:] {
+		if strings.TrimSpace(ln) != "" {
+			kept = append(kept, ln) // blanks dropped — the card renders tight lines
+		}
+	}
+	block := strings.TrimSpace(strings.Join(kept, "\n"))
+	if block == "" {
+		block = OutcomeLine(transcript)
+	}
+	if len(block) > 600 {
+		block = block[:600] + "…"
+	}
+	return block
 }
 
 // Executor runs errands SERIALLY (one at a time — errands-aside §3/§8)
@@ -389,7 +424,7 @@ func (e *Executor) runOne(id string) {
 		}
 	}
 	r.ExitCode = &code
-	r.Outcome = OutcomeLine(tail)
+	r.Outcome = OutcomeBlock(tail)
 	switch {
 	case cancelled:
 		r.Status = StatusCancelled
