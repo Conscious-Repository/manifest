@@ -117,3 +117,20 @@ func linkKeys(n Note) []string {
 	}
 	return out
 }
+
+// pocket-id mirrors granola-id: both spellings parse, absent stays empty
+// (pocket-sync plan §4 / M3).
+func TestPocketIDFromFrontmatter(t *testing.T) {
+	n := ParseNote("a.md", []byte("---\ncategories:\n  - sync\npocket-id: rec_abc\n---\nbody\n"), 0, nil)
+	if n.PocketID != "rec_abc" {
+		t.Fatalf("pocket-id: %q", n.PocketID)
+	}
+	n = ParseNote("b.md", []byte("---\npocket_id: rec_def\n---\n"), 0, nil)
+	if n.PocketID != "rec_def" {
+		t.Fatalf("pocket_id underscore: %q", n.PocketID)
+	}
+	n = ParseNote("c.md", []byte("---\ngranola-id: not_x\n---\n"), 0, nil)
+	if n.PocketID != "" || n.GranolaID != "not_x" {
+		t.Fatalf("keys must stay parallel: pocket=%q granola=%q", n.PocketID, n.GranolaID)
+	}
+}
