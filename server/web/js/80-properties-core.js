@@ -19,7 +19,9 @@ function showProperties(h) {
   els.propertyBoard.hidden = true; els.propertyStatements.hidden = true;
   els.propertyContractors.hidden = true;
   els.propertyWork.hidden = true; els.propertySettings.hidden = true;
+  if (els.propertyParcels) els.propertyParcels.hidden = true;
   if (tail.startsWith("deal/")) { propMode = "page"; renderDealPage(tail.slice(5)); }
+  else if (tail === "parcels") { propMode = "parcels"; syncPropChips(); renderParcelsView(); }
   else if (tail === "map") { propMode = "map"; syncPropChips(); loadProperties(); }
   else if (tail === "work") { propMode = "work"; syncPropChips(); renderWorkView(); }
   else if (tail === "statements") { location.hash = "#/properties/accounting"; return; } // legacy

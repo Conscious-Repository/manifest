@@ -63,6 +63,7 @@ const els = {
   propertyContractors: document.getElementById("propertyContractors"),
   propertyWork: document.getElementById("propertyWork"),
   propertySettings: document.getElementById("propertySettings"),
+  propertyParcels: document.getElementById("propertyParcels"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
   propertyMap: document.getElementById("propertyMap"),
   propertyMapLegend: document.getElementById("propertyMapLegend"),

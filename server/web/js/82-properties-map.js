@@ -135,6 +135,9 @@ async function renderPropertyMap() {
     um.hidden = false;
     um.textContent = "unmapped: " + unmapped.map((r) => r.title).join(" · ");
   } else um.hidden = true;
+
+  // research-parcel overlay (Bayard/Euclid/Page acquisition intel) — toggleable
+  try { await addParcelsOverlay(map); } catch (e) { /* overlay is additive */ }
 }
 
 function escapeHtml(s) {
