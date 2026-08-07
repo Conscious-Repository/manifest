@@ -25,11 +25,16 @@ function approvalCardEl(a) {
   const isXQueue = a.type === "append-x-queue";
   const isSkill = a.type === "update-vault-skill";
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
+  const titleRef = { value: null }; // create-vault-note: the editable filename title
   if (actionable) {
     card.classList.add("actionable");
-    const chip = el("div", "appr-apply");
-    chip.append(el("span", "appr-apply-label", "APPLIES TO"), el("code", "appr-apply-path", a.applyPath));
-    card.append(chip);
+    // create-vault-note shows its path via the editable title field below, so the
+    // static APPLIES-TO chip is redundant (and would show the pre-edit title).
+    if (!isNewNote) {
+      const chip = el("div", "appr-apply");
+      chip.append(el("span", "appr-apply-label", "APPLIES TO"), el("code", "appr-apply-path", a.applyPath));
+      card.append(chip);
+    }
 
     if (!a.allowed) {
       blocked = true;
@@ -46,8 +51,10 @@ function approvalCardEl(a) {
       blockMsg = "proposed content changes the cornerstone frontmatter — Confirm will refuse (behavior prose only).";
     }
 
-    // People editor: seed from the auto-linked attendees, let the user fix them.
+    // Title + people editors: fix the filename and the auto-linked attendees
+    // before confirming (transcripts from granola/pocket auto-title crudely).
     if (isNewNote) {
+      card.append(buildTitleEditor(a.applyPath, titleRef));
       attendees = parseAttendees(a.proposed || "");
       card.append(buildAttendeeEditor(attendees));
     }
@@ -67,7 +74,7 @@ function approvalCardEl(a) {
 
   const actions = el("div", "appr-actions");
   const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm",
-    () => spiritApprovalAct(a.id, "confirm", isNewNote ? attendees : null));
+    () => spiritApprovalAct(a.id, "confirm", isNewNote ? attendees : null, isNewNote ? titleRef.value : null));
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
   card.append(actions);
@@ -84,6 +91,35 @@ function parseAttendees(proposed) {
   let x;
   while ((x = re.exec(head))) names.push(x[1].trim());
   return names;
+}
+
+// buildTitleEditor renders an editable title field for a create-vault-note. The
+// date prefix (from the recording) stays fixed; the owner edits the title
+// portion of the filename. Mutates ref.value in place so Confirm sends it; a
+// live preview shows the resulting filename.
+function buildTitleEditor(applyPath, ref) {
+  const m = /^(\d{4}-\d{2}-\d{2}) (.+)\.md$/.exec(applyPath || "");
+  const date = m ? m[1] : "";
+  ref.value = m ? m[2] : "";
+  const wrap = el("div", "appr-title");
+  wrap.append(el("div", "appr-title-label", "Title — edit before confirming"));
+  const row = el("div", "appr-title-row");
+  if (date) row.append(el("span", "appr-title-date", date));
+  const input = el("input", "appr-title-input");
+  input.type = "text";
+  input.value = ref.value;
+  input.spellcheck = false;
+  const preview = el("code", "appr-title-preview");
+  const sync = () => {
+    ref.value = input.value;
+    const clean = input.value.replace(/[\[\]<>:"/\\|?*]/g, "").replace(/\s+/g, " ").trim();
+    preview.textContent = (date ? date + " " : "") + (clean || "…") + ".md";
+  };
+  input.oninput = sync;
+  row.append(input, el("span", "appr-title-ext", ".md"));
+  wrap.append(row, preview);
+  sync();
+  return wrap;
 }
 
 // buildAttendeeEditor renders the people-involved chips + an add box, mutating
@@ -199,7 +235,7 @@ function renderLineDiff(oldText, newText) {
   if (!changed) wrap.append(el("div", "diff-line diff-ctx", "(no textual change)"));
   return wrap;
 }
-function spiritApprovalAct(id, kind, attendees) {
+function spiritApprovalAct(id, kind, attendees, title) {
   if (kind === "reject") {
     // inline reason box (no browser prompt); Escape cancels
     askText("Reject — reason (optional)",
@@ -207,9 +243,11 @@ function spiritApprovalAct(id, kind, attendees) {
       (reason) => postApprovalDecision(id, "reject", { reason: reason.trim() || "rejected from dashboard" }));
     return;
   }
-  const body = (kind === "confirm" && attendees !== null && attendees !== undefined)
-    ? { editAttendees: true, attendees } // create-vault-note with the edited people list
-    : {};
+  let body = {};
+  if (kind === "confirm" && attendees !== null && attendees !== undefined) {
+    body = { editAttendees: true, attendees }; // create-vault-note with the edited people list
+    if (title !== null && title !== undefined && String(title).trim() !== "") body.title = String(title).trim();
+  }
   postApprovalDecision(id, kind, body);
 }
 async function postApprovalDecision(id, kind, body) {

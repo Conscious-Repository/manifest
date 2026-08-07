@@ -285,7 +285,7 @@ func (s *Store) Propose(p Proposal) (Proposal, error) {
 // that alters frontmatter — and only then moves it. If the apply is refused,
 // nothing is written or moved and the error surfaces (the proposal stays
 // actionable in pending/).
-func (s *Store) Confirm(id string) error { return s.confirm(id, nil, false) }
+func (s *Store) Confirm(id string) error { return s.confirm(id, nil, false, "") }
 
 // LoadPending reads one pending proposal (the server's confirm dispatch reads
 // the run-errand payload BEFORE confirming; a missing file = already decided).
@@ -298,15 +298,41 @@ func (s *Store) LoadPending(id string) (Proposal, error) {
 	return p, nil
 }
 
-// ConfirmCreateNote confirms a create-vault-note after the user edited the
-// attendee list in the dashboard: the note's attendee wikilink line is rewritten
-// to exactly `attendees` (canonical names, no brackets) before the note is
-// written. attendees == nil leaves the proposed attendees untouched.
-func (s *Store) ConfirmCreateNote(id string, attendees []string) error {
-	return s.confirm(id, attendees, true)
+// ConfirmCreateNote confirms a create-vault-note after the user edited it in the
+// dashboard: the attendee wikilink line is rewritten to exactly `attendees`
+// (canonical names, no brackets), and — when title is non-empty — the note's
+// FILENAME is retitled (the date prefix is kept, the title portion replaced,
+// filesystem-unsafe chars stripped). attendees == nil leaves attendees untouched;
+// title == "" leaves the filename untouched.
+func (s *Store) ConfirmCreateNote(id string, attendees []string, title string) error {
+	return s.confirm(id, attendees, true, title)
 }
 
-func (s *Store) confirm(id string, attendees []string, editAttendees bool) error {
+// datePrefixRe splits a "YYYY-MM-DD <title>.md" apply-path into date + title.
+var datePrefixRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}) (.+)\.md$`)
+
+// filenameUnsafe are the characters banned from a note filename (mirrors the
+// engine's granola/pocket noteFilename sanitizer).
+var filenameUnsafe = regexp.MustCompile(`[\[\]<>:"/\\|?*]`)
+
+// retitleApplyPath rebuilds a create-vault-note apply-path with a new title,
+// keeping the original date prefix. Returns (old, false) if the path isn't a
+// dated note or the sanitized title is empty (so a bad edit is a no-op, never a
+// widened write). The result still satisfies CreateVaultNotePathAllowed.
+func retitleApplyPath(old, title string) (string, bool) {
+	m := datePrefixRe.FindStringSubmatch(old)
+	if m == nil {
+		return old, false
+	}
+	title = strings.TrimSuffix(strings.TrimSpace(title), ".md")
+	title = strings.Join(strings.Fields(filenameUnsafe.ReplaceAllString(title, "")), " ")
+	if title == "" {
+		return old, false
+	}
+	return m[1] + " " + title + ".md", true
+}
+
+func (s *Store) confirm(id string, attendees []string, editAttendees bool, title string) error {
 	src := filepath.Join(s.dir, "pending", id+".md")
 	p, err := s.parse(src)
 	if err != nil {
@@ -315,6 +341,13 @@ func (s *Store) confirm(id string, attendees []string, editAttendees bool) error
 	if editAttendees && p.Type == TypeCreateVaultNote {
 		p.Proposed = replaceAttendeeLine(p.Proposed, attendees)
 		p.Body = rebuildProposedBody(p.Body, p.Proposed)
+	}
+	// Owner-edited title: retitle the filename (date prefix preserved).
+	if title = strings.TrimSpace(title); title != "" && p.Type == TypeCreateVaultNote {
+		if np, ok := retitleApplyPath(p.ApplyPath, title); ok && np != p.ApplyPath {
+			p.Action = strings.ReplaceAll(p.Action, p.ApplyPath, np) // keep the label in sync
+			p.ApplyPath = np
+		}
 	}
 	if p.ApplyPath != "" {
 		if err := s.apply(p); err != nil {

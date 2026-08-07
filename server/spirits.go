@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"manifest/approvals"
@@ -157,6 +158,7 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	var b struct {
 		Attendees     []string `json:"attendees"`
 		EditAttendees bool     `json:"editAttendees"`
+		Title         string   `json:"title"` // create-vault-note: owner-edited filename title
 	}
 	_ = decode(r, &b) // body is optional (plain confirm)
 	id := r.PathValue("id")
@@ -164,8 +166,8 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	// a failed confirm never enqueues, so approval maps 1:1 to one execution.
 	pending, loadErr := s.approvals.LoadPending(id)
 	var err error
-	if b.EditAttendees {
-		err = s.approvals.ConfirmCreateNote(id, b.Attendees)
+	if b.EditAttendees || strings.TrimSpace(b.Title) != "" {
+		err = s.approvals.ConfirmCreateNote(id, b.Attendees, b.Title)
 	} else {
 		err = s.approvals.Confirm(id)
 	}

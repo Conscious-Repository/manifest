@@ -145,7 +145,7 @@ func TestConfirmCreateNoteEditsAttendees(t *testing.T) {
 	content := "---\ncategories:\n  - sync\ngranola-id: not_z\n---\n[[wrong person]]\n\n## Transcript\n\n**Benjamin:** hi\n"
 	fileCreateNote(t, s, "e5e5e5e5e5e5", "2026-07-02 evan sync.md", content)
 
-	if err := s.ConfirmCreateNote("e5e5e5e5e5e5", []string{"Evan Fisher", "Benjamin"}); err != nil {
+	if err := s.ConfirmCreateNote("e5e5e5e5e5e5", []string{"Evan Fisher", "Benjamin"}, ""); err != nil {
 		t.Fatalf("ConfirmCreateNote: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(vault, "log", "2026-07-02 evan sync.md"))
@@ -154,5 +154,40 @@ func TestConfirmCreateNoteEditsAttendees(t *testing.T) {
 	}
 	if !contains(string(got), "[[Evan Fisher]] [[Benjamin]]") || contains(string(got), "wrong person") {
 		t.Fatalf("edited note attendees wrong:\n%s", got)
+	}
+}
+
+func TestConfirmCreateNoteEditsTitle(t *testing.T) {
+	s, vault := createNoteHarness(t)
+	content := "---\ncategories:\n  - sync\ngranola-id: not_t\n---\n[[jane doe]]\n\n## Transcript\n\n**Benjamin:** hi\n"
+	fileCreateNote(t, s, "f6f6f6f6f6f6", "2026-07-02 Conversation on Jul 2nd.md", content)
+
+	// retitle (date prefix kept, title replaced); attendees left untouched (nil)
+	if err := s.ConfirmCreateNote("f6f6f6f6f6f6", nil, "Crown Park charrette"); err != nil {
+		t.Fatalf("ConfirmCreateNote retitle: %v", err)
+	}
+	// the note lands at the NEW (lowercased) filename under log/
+	if _, err := os.ReadFile(filepath.Join(vault, "log", "2026-07-02 crown park charrette.md")); err != nil {
+		t.Fatalf("retitled note not written: %v", err)
+	}
+	// the OLD filename must NOT exist
+	if _, err := os.Stat(filepath.Join(vault, "log", "2026-07-02 conversation on jul 2nd.md")); err == nil {
+		t.Fatal("old-titled note should not have been written")
+	}
+}
+
+func TestRetitleApplyPathSanitizes(t *testing.T) {
+	// keeps the date, strips filesystem-unsafe chars, collapses whitespace
+	got, ok := retitleApplyPath("2026-07-02 old.md", "  a/b:c  new  ")
+	if !ok || got != "2026-07-02 abc new.md" {
+		t.Fatalf("retitle = %q, %v; want %q", got, ok, "2026-07-02 abc new.md")
+	}
+	// an empty/whitespace title is a no-op (never a widened write)
+	if g, ok := retitleApplyPath("2026-07-02 old.md", "  //  "); ok || g != "2026-07-02 old.md" {
+		t.Fatalf("empty title should be a no-op, got %q %v", g, ok)
+	}
+	// a non-dated path is left alone
+	if _, ok := retitleApplyPath("notes/x.md", "y"); ok {
+		t.Fatal("non-dated apply-path should not retitle")
 	}
 }
