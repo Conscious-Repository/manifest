@@ -36,6 +36,7 @@ type panelRow struct {
 	Fields       []portals.CredField `json:"fields,omitempty"`       // api-key connect/replace form
 	Have         []string            `json:"have,omitempty"`         // keys currently set (names only)
 	Accounts     []string            `json:"accounts,omitempty"`     // oauth: connected identities
+	Engine       bool                `json:"engine,omitempty"`       // engine-managed apikey (heypocket): no manifest poll
 }
 
 func (s *Server) UsePortals(p *portals.Service) { s.portals = p }
@@ -62,6 +63,7 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows = append(rows, s.calendarPortalRow())
+	rows = append(rows, s.heypocketPortalRow())
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())
 	rows = append(rows, dormant...) // docusign at the bottom
@@ -173,6 +175,10 @@ func (s *Server) portalService(w http.ResponseWriter) (*portals.Service, bool) {
 // handlePortalKey sets/replaces an api-key portal's credentials (paste → save →
 // auto-test). The key is written 0600 and never echoed back.
 func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("id") == heypocketID {
+		s.handleHeypocketKey(w, r)
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return
@@ -195,6 +201,10 @@ func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("id") == heypocketID {
+		s.handleHeypocketTest(w, r)
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return
@@ -210,6 +220,11 @@ func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("id") == heypocketID {
+		// engine-synced — nothing for manifest to poll; just refresh the row
+		writeJSON(w, s.heypocketPortalRow())
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return
@@ -225,6 +240,10 @@ func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("id") == heypocketID {
+		s.handleHeypocketDisconnect(w, r)
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return

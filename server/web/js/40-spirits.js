@@ -91,11 +91,12 @@ function buildPortalActions(p, acts, wrap) {
       acts.append(pillLight("connect", () => togglePortalForm(p, wrap)));
       return;
     }
+    acts.append(pillLight("test", () => portalAction("/api/portals/" + p.id + "/test")));
+    // engine-managed portals (heypocket) are polled by the excalibur ritual, not manifest
+    if (!p.engine) acts.append(pillLight("poll", () => portalAction("/api/portals/" + p.id + "/poll")));
     acts.append(
-      pillLight("test", () => portalAction("/api/portals/" + p.id + "/test")),
-      pillLight("poll", () => portalAction("/api/portals/" + p.id + "/poll")),
       pillLight("replace", () => togglePortalForm(p, wrap)),
-      pillLight("disconnect", () => { if (confirm("Disconnect " + p.name + "? Its cached items stay until they age out.")) portalAction("/api/portals/" + p.id + "/disconnect"); }),
+      pillLight("disconnect", () => { if (confirm((p.engine ? "Remove the " + p.name + " key?" : "Disconnect " + p.name + "? Its cached items stay until they age out."))) portalAction("/api/portals/" + p.id + "/disconnect"); }),
     );
     return;
   }
