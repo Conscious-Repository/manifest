@@ -1,6 +1,8 @@
 // ---- UNIVERSAL NOTE VIEW (contacts power-pass §1) ----
 let _note = null; // {path, name, raw, backlinks, vault}
-let _noteReturn = "#/contacts";
+// where Back goes: auto-tracked by route() (the last non-note surface);
+// sites may still set it explicitly for a more specific target.
+let _noteReturn = "#/";
 
 function showNote(path) {
   els.noteView.hidden = false;

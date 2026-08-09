@@ -11,7 +11,7 @@ import (
 
 func TestArchiveRoundTrip(t *testing.T) {
 	entries := []ArchiveEntry{
-		{Area: "Aion", Text: "Series A 15M", GoalID: "aion/series-a-15m", Outcome: "win", Closed: "2026-08-14", Reached: "Term sheet", Serves: "aion/2026"},
+		{Area: "Aion", Text: "Series A 15M", GoalID: "aion/series-a-15m", Outcome: "win", Closed: "2026-08-14", Reached: "Term sheet", Serves: []string{"aion/2026"}},
 		{Area: "Aion", Text: "Consumer MRI", GoalID: "aion/consumer-mri", Outcome: "learn", Closed: "2026-09-30", Reached: "Diligence", Note: "deprioritized behind Series A"},
 		{Area: "Home", Text: "Backyard", GoalID: "home/backyard", Outcome: "win", Closed: "2026-08-01", Reached: "Pavers"},
 	}
@@ -102,7 +102,7 @@ func TestArchiveEvidenceWikilinkRoundTrip(t *testing.T) {
 	// archive round-trip even alongside a note, and re-serialize as a fixpoint.
 	entries := []ArchiveEntry{
 		{Area: "Aion", Text: "Series A", GoalID: "aion/series-a", Outcome: "win",
-			Closed: "2026-07-22", Reached: "term sheet", Serves: "aion/2026",
+			Closed: "2026-07-22", Reached: "term sheet", Serves: []string{"aion/2026"},
 			Note: "closed hot", Evidence: "[[series a data room]]"},
 		{Area: "Aion", Text: "Old rock", Outcome: "learn", Closed: "2026-07-01", Note: "pivoted"},
 	}
@@ -114,7 +114,7 @@ func TestArchiveEvidenceWikilinkRoundTrip(t *testing.T) {
 	if got[0].Evidence != "[[series a data room]]" {
 		t.Fatalf("evidence not parsed back: %q\n%s", got[0].Evidence, s)
 	}
-	if got[0].Note != "closed hot" || got[0].Reached != "term sheet" || got[0].Serves != "aion/2026" {
+	if got[0].Note != "closed hot" || got[0].Reached != "term sheet" || len(got[0].Serves) != 1 || got[0].Serves[0] != "aion/2026" {
 		t.Fatalf("other fields corrupted by evidence extraction: %+v", got[0])
 	}
 	if twice := serializeArchive("2026-Q3", got); twice != s {

@@ -34,16 +34,16 @@ func (s *Server) errandsOK(w http.ResponseWriter) bool {
 
 // receiptView is one receipt card (client contract).
 type receiptView struct {
-	ID         string `json:"id"`
-	Status     string `json:"status"`
-	Text       string `json:"text"`
-	Account    string `json:"account"`
-	GoalID     string `json:"goalId,omitempty"`
-	Source     string `json:"source"`
-	ApprovalID string `json:"approvalId,omitempty"`
-	Created    string `json:"created"`
-	Started    string `json:"started,omitempty"`
-	Finished   string `json:"finished,omitempty"`
+	ID           string `json:"id"`
+	Status       string `json:"status"`
+	Text         string `json:"text"`
+	Account      string `json:"account"`
+	GoalID       string `json:"goalId,omitempty"`
+	Source       string `json:"source"`
+	ApprovalID   string `json:"approvalId,omitempty"`
+	Created      string `json:"created"`
+	Started      string `json:"started,omitempty"`
+	Finished     string `json:"finished,omitempty"`
 	DurationS    int    `json:"durationS,omitempty"`
 	Outcome      string `json:"outcome,omitempty"`
 	QueuePos     int    `json:"queuePos,omitempty"`

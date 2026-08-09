@@ -24,6 +24,7 @@ func (s *Server) attentionRegistry() *attention.Registry {
 	r.Register(signalsSource{s})
 	r.Register(noticesSource{s})
 	r.Register(receiptsSource{s})
+	r.Register(aionPublishSource{s})
 	return r
 }
 
@@ -95,3 +96,49 @@ func (n noticesSource) Active(_ time.Time, _ url.Values) []attention.Card {
 	return out
 }
 func (n noticesSource) Count(time.Time) int { return n.s.portalInboxCount() }
+
+// aionPublishSource: outcomes of the AION publish effector — a SECOND
+// receipt-kind source (the registry supports many per kind; handleFeedList
+// appends per field). Success AND failure are receipts — both are "the
+// outcome of an action the system took" (§5), and the trail is permanent;
+// the badge counts only unacknowledged failures (a demand), never successes
+// (history). Cards carry kind:"aion-publish" so the client renderer
+// dispatches away from errand receipts.
+type aionPublishSource struct{ s *Server }
+
+type aionPublishCard struct {
+	CardKind string `json:"cardKind"` // "aion-publish"
+	aionPublishRecord
+}
+
+func (a aionPublishSource) Kind() string                   { return "receipt" }
+func (a aionPublishSource) Lifecycle() attention.Lifecycle { return attention.LifecyclePermanent }
+func (a aionPublishSource) Active(_ time.Time, q url.Values) []attention.Card {
+	out := []attention.Card{}
+	if a.s.aion == nil {
+		return out
+	}
+	view := q.Get("status")
+	if view == "kept" {
+		return out
+	}
+	for _, r := range a.s.publishLog().list() {
+		if view != "all" && r.Acknowledged {
+			continue
+		}
+		out = append(out, aionPublishCard{CardKind: "aion-publish", aionPublishRecord: r})
+	}
+	return out
+}
+func (a aionPublishSource) Count(time.Time) int {
+	if a.s.aion == nil {
+		return 0
+	}
+	n := 0
+	for _, r := range a.s.publishLog().list() {
+		if r.Status == "failed" && !r.Acknowledged {
+			n++
+		}
+	}
+	return n
+}

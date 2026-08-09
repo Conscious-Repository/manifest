@@ -46,8 +46,8 @@ func fillRollup(view *goals.DocView, archives []goals.ArchiveQuarter, year strin
 	activeServ := map[string]int{}
 	for _, a := range view.Areas {
 		for _, rock := range a.Rocks {
-			if rock.Serves != "" {
-				activeServ[rock.Serves]++
+			for _, sv := range rock.Serves {
+				activeServ[sv]++
 			}
 		}
 	}
@@ -57,12 +57,13 @@ func fillRollup(view *goals.DocView, archives []goals.ArchiveQuarter, year strin
 			continue
 		}
 		for _, e := range aq.Entries {
-			switch {
-			case e.Serves == "":
-			case e.Outcome == "win":
-				won[e.Serves]++
-			case e.Outcome == "learn":
-				learn[e.Serves]++
+			for _, sv := range e.Serves {
+				switch e.Outcome {
+				case "win":
+					won[sv]++
+				case "learn":
+					learn[sv]++
+				}
 			}
 		}
 	}
@@ -248,15 +249,16 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 		})
 	case http.MethodPatch:
 		var b struct {
-			ID      string  `json:"id"`
-			Text    *string `json:"text"`
-			Owner   *string `json:"owner"`
-			Quarter *string `json:"quarter"`
-			Serves  *string `json:"serves"`
-			Status  *string `json:"status"`
-			Until   *string `json:"until"`
-			Verify  *string `json:"verify"`
-			Kpi     *string `json:"kpi"`
+			ID      string    `json:"id"`
+			Text    *string   `json:"text"`
+			Owner   *string   `json:"owner"`
+			Quarter *string   `json:"quarter"`
+			Serves  *[]string `json:"serves"`  // full replacement list (1:many)
+			Aliases *[]string `json:"aliases"` // full replacement list (portal-matcher vocabulary)
+			Status  *string   `json:"status"`
+			Until   *string   `json:"until"`
+			Verify  *string   `json:"verify"`
+			Kpi     *string   `json:"kpi"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
@@ -264,7 +266,7 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
 			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Quarter: b.Quarter,
-				Serves: b.Serves, Status: b.Status, Until: b.Until, Verify: b.Verify, Kpi: b.Kpi})
+				Serves: b.Serves, Aliases: b.Aliases, Status: b.Status, Until: b.Until, Verify: b.Verify, Kpi: b.Kpi})
 		})
 	case http.MethodDelete:
 		var b struct {
@@ -278,6 +280,25 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleGoalMove re-parents a goal inside its area (the ladder-connection
+// edit): nest an orphan Rock under another Rock, move a 30-day item between
+// Rocks, or promote a stage to a top-level Rock (parentId "").
+func (s *Server) handleGoalMove(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var b struct {
+		ID       string `json:"id"`
+		ParentID string `json:"parentId"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	s.mutate(w, func(d *goals.Doc) bool { return d.MoveGoal(b.ID, b.ParentID) })
 }
 
 func (s *Server) handleGoalCheck(w http.ResponseWriter, r *http.Request) {

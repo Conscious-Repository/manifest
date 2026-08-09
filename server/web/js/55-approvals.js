@@ -15,9 +15,11 @@ function approvalCardEl(a) {
   if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
 
   const actionable = !!a.applyPath;
+  const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic";
   // For an actionable proposal the ````proposed payload is rendered as a diff
-  // below, so strip it from the human-facing evidence body.
-  const bodyText = actionable ? stripProposedFence(a.body) : a.body;
+  // below (and an aion payload as its editable form), so strip the fence from
+  // the human-facing evidence body.
+  const bodyText = isAion ? stripFence(a.body, "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (bodyText && bodyText.trim()) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
 
   let blocked = false, blockMsg = "";
@@ -25,6 +27,7 @@ function approvalCardEl(a) {
   const isXQueue = a.type === "append-x-queue";
   const isSkill = a.type === "update-vault-skill";
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
+  let categories = null; // create-vault-note: the editable frontmatter categories
   const titleRef = { value: null }; // create-vault-note: the editable filename title
   if (actionable) {
     card.classList.add("actionable");
@@ -44,6 +47,8 @@ function approvalCardEl(a) {
         ? "apply-path is not the x-posts file — Confirm is disabled."
         : isSkill
         ? "update-vault-skill must target skills/x-content/{SKILL.md, references/<name>.md} and be filed by a tune ritual — Confirm is disabled."
+        : isAion
+        ? "apply-path is not the aion record file (system/aion/backlog.md · heuristics.md) or the payload is malformed — Confirm is disabled."
         : "apply-path is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md) — Confirm is disabled.";
     } else if (/\/cornerstone\.md$/.test(a.applyPath) && frontmatterOf(a.current || "") !== frontmatterOf(a.proposed || "")) {
       // client-side mirror of the server's cornerstone-frontmatter guard
@@ -51,15 +56,23 @@ function approvalCardEl(a) {
       blockMsg = "proposed content changes the cornerstone frontmatter — Confirm will refuse (behavior prose only).";
     }
 
-    // Title + people editors: fix the filename and the auto-linked attendees
-    // before confirming (transcripts from granola/pocket auto-title crudely).
+    // Title + people + category editors: fix the filename, the auto-linked
+    // attendees, and the note's categories before confirming. Categories
+    // drive automation — `aion` makes the written note auto-extract
+    // tasks/decisions/heuristics into FEED.
     if (isNewNote) {
       card.append(buildTitleEditor(a.applyPath, titleRef));
       attendees = parseAttendees(a.proposed || "");
       card.append(buildAttendeeEditor(attendees));
+      categories = parseCategories(a.proposed || "");
+      card.append(buildCategoryEditor(categories));
     }
 
-    if (isXQueue) {
+    if (isAion && a.aionPayload) {
+      // an aion extraction candidate: editable payload + the exact record
+      // line Confirm appends (the app renders it — nothing else is written)
+      card.append(buildAionEditor(a));
+    } else if (isXQueue) {
       // append-x-queue's proposed is ONLY the bullet — show it, not a whole-file diff
       card.append(el("div", "appr-diff-label", "Appends under # queue in " + a.applyPath));
       const pre = el("pre", "appr-body draft-tweet"); pre.textContent = (a.proposed || "").trim(); card.append(pre);
@@ -74,11 +87,86 @@ function approvalCardEl(a) {
 
   const actions = el("div", "appr-actions");
   const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm",
-    () => spiritApprovalAct(a.id, "confirm", isNewNote ? attendees : null, isNewNote ? titleRef.value : null));
+    () => spiritApprovalAct(a.id, "confirm",
+      isNewNote ? { attendees, title: titleRef.value, categories } : null));
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
   card.append(actions);
   return card;
+}
+
+// parseCategories reads the proposed note's frontmatter categories — both
+// YAML shapes: inline `categories: [a, b]` and block `categories:\n  - a`.
+function parseCategories(proposed) {
+  const m = proposed.match(/^---\n([\s\S]*?)\n---/);
+  if (!m) return [];
+  const lines = m[1].split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const km = lines[i].match(/^categories:\s*(.*)$/i);
+    if (!km) continue;
+    const inline = km[1].trim();
+    if (inline) {
+      return inline.replace(/^\[|\]$/g, "").split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    }
+    const out = [];
+    for (let j = i + 1; j < lines.length; j++) {
+      const bm = lines[j].match(/^\s+-\s+(.+)$/);
+      if (!bm) break;
+      out.push(bm[1].trim().replace(/^["']|["']$/g, ""));
+    }
+    return out;
+  }
+  return [];
+}
+
+// buildCategoryEditor renders the frontmatter-category chips + add box +
+// one-tap suggestions, mutating `categories` in place so Confirm sends the
+// edited list. `aion` is called out — it wires the note into extraction.
+function buildCategoryEditor(categories) {
+  const wrap = el("div", "appr-attendees appr-categories");
+  wrap.append(el("div", "appr-attendees-label",
+    "Categories — aion auto-extracts tasks / decisions / heuristics into FEED after confirm"));
+  const chips = el("div", "attendee-chips");
+  const suggestions = ["aion"];
+  const renderChips = () => {
+    chips.innerHTML = "";
+    categories.forEach((name, i) => {
+      const c = el("span", "attendee-chip" + (name.toLowerCase() === "aion" ? " cat-live" : ""));
+      c.append(el("span", "attendee-name", name));
+      const x = el("button", "attendee-remove", "✕");
+      x.title = "Remove category";
+      x.onclick = () => { categories.splice(i, 1); renderChips(); };
+      c.append(x);
+      chips.append(c);
+    });
+    suggestions.filter((s) => !categories.some((c) => c.toLowerCase() === s)).forEach((s) => {
+      const add = el("button", "attendee-add-btn cat-suggest", "＋ " + s);
+      add.title = s === "aion" ? "tag aion → the note auto-extracts into the AION backlog pipeline" : "add " + s;
+      add.onclick = () => { categories.push(s); renderChips(); };
+      chips.append(add);
+    });
+  };
+  const addRow = el("div", "attendee-add");
+  const input = el("input", "attendee-input");
+  input.type = "text";
+  input.placeholder = "Add a category…";
+  const commit = () => {
+    const v = input.value.trim();
+    if (v && !categories.some((c) => c.toLowerCase() === v.toLowerCase())) {
+      categories.push(v);
+      renderChips();
+    }
+    input.value = "";
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); commit(); }
+  });
+  const addBtn = el("button", "attendee-add-btn", "+ add");
+  addBtn.onclick = commit;
+  addRow.append(input, addBtn);
+  wrap.append(chips, addRow);
+  renderChips();
+  return wrap;
 }
 
 // parseAttendees pulls the [[wikilink]] names from a converted note's attendee
@@ -181,22 +269,174 @@ function collapsibleBlock(inner, lineCount) {
   return wrap;
 }
 
-// stripProposedFence removes the ````proposed … ```` block from an approval body
-// (it is shown as a diff instead). Handles 3+ backtick fences like the server.
-function stripProposedFence(body) {
+// stripFence removes a ````<lang> … ```` block from an approval body (it is
+// shown as a diff / form instead). Handles 3+ backtick fences like the server.
+function stripFence(body, lang) {
   if (!body) return body || "";
   const lines = body.split("\n"), out = [];
   let skipping = false, fence = 0;
   for (const line of lines) {
     const m = line.match(/^(`{3,})/);
     if (!skipping) {
-      if (m && line.slice(m[1].length).trim() === "proposed") { skipping = true; fence = m[1].length; continue; }
+      if (m && line.slice(m[1].length).trim() === lang) { skipping = true; fence = m[1].length; continue; }
       out.push(line);
     } else if (m && m[1].length >= fence && line.trim() === m[1]) {
       skipping = false;
     }
   }
   return out.join("\n").trim();
+}
+function stripProposedFence(body) { return stripFence(body, "proposed"); }
+
+// apprAionRegistry lazily fetches the aion registries the payload editor
+// suggests from: ACTIVE rocks (the goals ladder) + people.md initials.
+// Cached per page load.
+let apprAionReg = null;
+async function apprAionRegistry() {
+  if (apprAionReg) return apprAionReg;
+  try {
+    const d = await (await fetch("/api/aion")).json();
+    apprAionReg = {
+      rocks: (((d.goalsArea || {}).rocks) || []).filter((r) => !r.checked),
+      people: d.people || [],
+    };
+  } catch (e) { apprAionReg = { rocks: [], people: [] }; }
+  return apprAionReg;
+}
+
+// buildAionEditor renders the editable aion payload form: kind flip
+// (task⇄decision⇄heuristic incl. new⇄reinforce), title/owner/rock/due/
+// outcome, the record-line preview, and a save that rewrites the fence in
+// place (the id never changes; Confirm applies whatever was last saved).
+// Rock and owner hotload suggestions: active rocks from the goals ladder,
+// initials from people.md — free text still commits for one-offs.
+function buildAionEditor(a) {
+  const p = Object.assign({}, a.aionPayload);
+  p.heuristic = Object.assign({ mode: "", target: "" }, p.heuristic || {});
+  const wrap = el("div", "aion-appr");
+  wrap.append(el("div", "appr-diff-label", "Appends to " + a.applyPath + " — edit before confirming"));
+  const form = el("div", "aion-appr-form");
+  wrap.append(form);
+  const preview = el("pre", "aion-appr-line");
+  const dirtyNote = el("div", "appr-title-label", "");
+
+  const row = (label, node) => {
+    form.append(el("span", "aion-vto-key", label), node);
+  };
+  const textRow = (label, key, obj) => {
+    const input = inputEl(label);
+    input.value = (obj || p)[key] || "";
+    input.oninput = () => { (obj || p)[key] = input.value; sync(); };
+    row(label, input);
+    return input;
+  };
+  const rebuild = () => {
+    form.innerHTML = "";
+    const kindSel = selectEl(["task", "decision", "heuristic"]);
+    kindSel.value = p.kind;
+    kindSel.onchange = () => { p.kind = kindSel.value; if (p.kind === "heuristic" && !p.heuristic.mode) p.heuristic.mode = "new"; rebuild(); };
+    row("kind", kindSel);
+    textRow("title", "title");
+    if (p.kind === "heuristic") {
+      const modeSel = selectEl(["new", "reinforce"]);
+      modeSel.value = p.heuristic.mode || "new";
+      modeSel.onchange = () => { p.heuristic.mode = modeSel.value; rebuild(); };
+      row("mode", modeSel);
+      if (p.heuristic.mode === "reinforce") textRow("target statement", "target", p.heuristic);
+    } else {
+      // owner: typeahead over people.md (initials or name → initials)
+      let ownerPicked = null;
+      const ownerTa = typeahead({
+        placeholder: "initials…", initial: p.owner || "",
+        suggest: async (q, add, ta) => {
+          const reg = await apprAionRegistry();
+          reg.people
+            .filter((pp) => !q || pp.initials.toLowerCase().includes(q) || (pp.name || "").toLowerCase().includes(q))
+            .slice(0, 8)
+            .forEach((pp) => add(pp.initials + " · " + (pp.name || ""), "", () => {
+              p.owner = pp.initials; ownerPicked = pp.initials; ta.commit(pp.initials); sync();
+            }));
+        },
+        onChange: (v) => { if (v !== ownerPicked) p.owner = v; sync(); },
+      });
+      row("owner", ownerTa.el);
+      if (p.kind === "task") {
+        // rock: typeahead over the ladder's ACTIVE rocks — picking stores
+        // the rock ID (displays its title); free text commits verbatim
+        const reg0 = apprAionReg; // may already be cached for initial label
+        let rockPickedText = null;
+        const initialRock = (() => {
+          const hit = reg0 && reg0.rocks.find((r) => r.id === p.rock);
+          if (hit) { rockPickedText = hit.text; return hit.text; }
+          return p.rock || "";
+        })();
+        const rockTa = typeahead({
+          placeholder: "type to pick an active rock…", initial: initialRock,
+          suggest: async (q, add, ta) => {
+            const reg = await apprAionRegistry();
+            reg.rocks
+              .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+              .slice(0, 8)
+              .forEach((r) => add(r.text, "", () => {
+                p.rock = r.id; rockPickedText = r.text; ta.commit(r.text); sync();
+              }));
+            if (p.rock) add("✕ no rock (unanchored)", "create", () => {
+              p.rock = ""; rockPickedText = ""; ta.commit(""); sync();
+            });
+          },
+          onChange: (v) => { if (v !== rockPickedText) p.rock = v; sync(); },
+        });
+        row("rock", rockTa.el);
+        textRow("due", "due");
+      } else {
+        textRow("needed by", "needed_by");
+        textRow("outcome", "outcome");
+      }
+    }
+    sync();
+  };
+  const sync = () => {
+    // client-side line preview mirror (the server's RenderItemLine is
+    // authoritative — this is orientation, not the contract)
+    let line;
+    if (p.kind === "heuristic") {
+      line = p.heuristic.mode === "reinforce"
+        ? "reinforces: " + (p.heuristic.target || "…")
+        : "- " + (p.title || "…") + " [first:: " + (p.captured || "") + "]";
+    } else {
+      const f = [];
+      f.push("[kind:: " + p.kind + "]");
+      if (p.kind === "task") {
+        if (p.rock) f.push("[rock:: " + p.rock + "]");
+        if (p.due) f.push("[due:: " + p.due + "]");
+        if (p.status) f.push("[status:: " + p.status + "]");
+      } else {
+        if (p.status) f.push("[status:: " + p.status + "]");
+        if (p.needed_by) f.push("[needed_by:: " + p.needed_by + "]");
+        if (p.outcome) f.push("[outcome:: " + p.outcome + "]");
+      }
+      if (p.owner) f.push("[owner:: " + p.owner + "]");
+      (p.sources || []).forEach((s) => f.push("[source:: [[" + s + "]]]"));
+      if (p.captured) f.push("[captured:: " + p.captured + "]");
+      line = (p.kind === "task" ? "- [ ] " : "- ") + (p.title || "…") + " " + f.join(" ");
+    }
+    preview.textContent = line;
+    dirtyNote.textContent = "save edit before confirming if you changed anything";
+  };
+  rebuild();
+  wrap.append(preview, dirtyNote);
+  const save = pillLight("save edit", async () => {
+    try {
+      const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/aion", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      showToast("Proposal updated");
+      loadFeed();
+    } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
+  });
+  wrap.append(save);
+  return wrap;
 }
 
 // frontmatterOf returns the raw text between the leading `---` fences (mirrors
@@ -235,7 +475,7 @@ function renderLineDiff(oldText, newText) {
   if (!changed) wrap.append(el("div", "diff-line diff-ctx", "(no textual change)"));
   return wrap;
 }
-function spiritApprovalAct(id, kind, attendees, title) {
+function spiritApprovalAct(id, kind, edits) {
   if (kind === "reject") {
     // inline reason box (no browser prompt); Escape cancels
     askText("Reject — reason (optional)",
@@ -244,9 +484,19 @@ function spiritApprovalAct(id, kind, attendees, title) {
     return;
   }
   let body = {};
-  if (kind === "confirm" && attendees !== null && attendees !== undefined) {
-    body = { editAttendees: true, attendees }; // create-vault-note with the edited people list
-    if (title !== null && title !== undefined && String(title).trim() !== "") body.title = String(title).trim();
+  if (kind === "confirm" && edits) {
+    // create-vault-note: the edited people list, filename title, categories
+    if (edits.attendees !== null && edits.attendees !== undefined) {
+      body.editAttendees = true;
+      body.attendees = edits.attendees;
+    }
+    if (edits.title !== null && edits.title !== undefined && String(edits.title).trim() !== "") {
+      body.title = String(edits.title).trim();
+    }
+    if (edits.categories !== null && edits.categories !== undefined) {
+      body.editCategories = true;
+      body.categories = edits.categories;
+    }
   }
   postApprovalDecision(id, kind, body);
 }

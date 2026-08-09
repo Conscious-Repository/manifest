@@ -150,3 +150,24 @@
 .o-todo-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; color: var(--icon); margin: 10px 0 2px; }
 .o-frozen-line { font-family: var(--mono); font-size: 11px; color: var(--icon); padding: 1px 0 1px 26px; text-decoration: line-through; }
 .pp-todostrip { margin: 4px 0 10px; }
+
+/* ---- ladder-connection edits (serves/owner/quarter + move/delete) ---- */
+.o-st-owner { font-family: var(--mono); font-size: 10px; color: var(--blue); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 4px; flex: none; cursor: pointer; }
+.o-st-owner.empty { color: var(--icon); border-style: dashed; }
+.o-st-owner.empty:hover { color: var(--blue); }
+.o-item-acts { display: flex; gap: 14px; padding: 4px 0 6px; }
+.o-item-acts.sub { padding-left: 22px; }
+.o-quiet-act { background: none; border: none; font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--icon); cursor: pointer; padding: 0; }
+.o-quiet-act:hover { color: var(--blue); }
+.o-quiet-act.danger:hover { color: #b91c1c; }
+.o-yr .o-quiet-act { margin-left: 3px; text-transform: none; }
+/* inline owner typeahead (aion people registry) inside goal rows */
+.o-fl-row .ta-in, .o-st .ta-in { font-family: var(--sans); font-size: 13px; border: none; border-bottom: 1px solid var(--blue); background: none; outline: none; padding: 1px 0; width: 160px; }
+.o-st .ta-in { font-size: 12px; width: 120px; }
+/* 1:many serves chips */
+.o-serves { flex-wrap: wrap; }
+.o-serves-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.o-serves-chip { display: inline-flex; gap: 5px; align-items: baseline; font-size: 12.5px; color: var(--streak-ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px 7px; }
+.o-serves-chip.broken { color: var(--muted); border-style: dashed; }
+.o-serves-x { background: none; border: none; color: var(--icon); font-size: 10px; cursor: pointer; padding: 0; }
+.o-serves-x:hover { color: #b91c1c; }

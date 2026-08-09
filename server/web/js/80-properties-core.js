@@ -59,37 +59,8 @@ function projMoney(p) {
 }
 
 // ---- shared primitives (admin-portal design §0) ----
-
-// ppCols: a one-line row of mono micro-labels sharing the exact grid of the
-// rows beneath it — labels live once, every input aligns under them.
-function ppCols(cls, labels) {
-  const row = el("div", "pp-cols " + cls);
-  labels.forEach((l) => row.append(el("span", "", l)));
-  return row;
-}
-
-// makeDirtyBar: the one editing model — quiet inputs mark dirty; a sticky
-// bottom bar appears with a single save (one PUT of the whole file).
-function makeDirtyBar(host, onSave, onDiscard) {
-  const bar = el("div", "dirty-bar");
-  bar.hidden = true;
-  const label = el("span", "dirty-label", "");
-  const save = el("button", "pill", "save");
-  const discard = el("button", "pill light", "discard");
-  bar.append(label, save, discard);
-  host.append(bar);
-  let count = 0;
-  const api = {
-    mark() { count++; label.textContent = count + " UNSAVED CHANGE" + (count === 1 ? "" : "S"); bar.hidden = false; },
-    clear() { count = 0; bar.hidden = true; },
-    get dirty() { return count > 0; },
-  };
-  save.onclick = async () => { save.disabled = true; try { await onSave(); api.clear(); } finally { save.disabled = false; } };
-  discard.onclick = () => { api.clear(); onDiscard(); };
-  return api;
-}
-
-// (collapsibleSection lives in 05-components.js — the §11 component library)
+// (ppCols / makeDirtyBar / collapsibleSection live in 05-components.js — the
+// §11 component library; promoted there with the AION tab.)
 
 // propertyTypeahead: the typeahead engine over all property records
 // (63 items — a select is unusable). Matches address/slug/deal.

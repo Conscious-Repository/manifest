@@ -66,6 +66,11 @@ type Config struct {
 	// TodosFileName is the vault-root todos file (the third surface, peer of
 	// goals.md). Default "to do.md" — the owner's existing file.
 	TodosFileName string `json:"todosFileName"`
+	// AionPortal points the AION publish effector at the aionbio checkout.
+	// Path empty disables PUBLISH (the tab still works); Remote/Branch default
+	// origin/main. The effector writes ONLY the export-contract paths, commits
+	// once, pushes, and leaves a receipt (aion-domain spec §5).
+	AionPortal AionPortalConfig `json:"aionPortal"`
 	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
 	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and
 	// the app defaults new tasks to Guard (§0 probe).
@@ -73,6 +78,13 @@ type Config struct {
 	// ErrandAccounts, when set, is the only set of aside account ids the
 	// compose picker offers and the API accepts (§6 allowlist).
 	ErrandAccounts []string `json:"errandAccounts"`
+}
+
+// AionPortalConfig is the git coordinates of the aionbio checkout.
+type AionPortalConfig struct {
+	Path   string `json:"path"`
+	Remote string `json:"remote"`
+	Branch string `json:"branch"`
 }
 
 func defaultConfig() Config {
@@ -162,6 +174,13 @@ func LoadConfig(path string) (Config, error) {
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	cfg.RePortalPath = expandHome(cfg.RePortalPath)
+	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
+	if cfg.AionPortal.Remote == "" {
+		cfg.AionPortal.Remote = "origin"
+	}
+	if cfg.AionPortal.Branch == "" {
+		cfg.AionPortal.Branch = "main"
+	}
 	return cfg, nil
 }
 

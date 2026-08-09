@@ -76,7 +76,7 @@
 .pill.light { background: var(--bg); border-color: var(--line); color: var(--streak-ink); }
 .pill.light:hover { border-color: var(--blue-soft); color: var(--blue); }
 .pill.light:disabled { opacity: 0.5; cursor: default; }
-.filter-chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px 11px; cursor: pointer; }
+.filter-chip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 3px 11px; cursor: pointer; text-decoration: none; }
 .filter-chip:hover { border-color: var(--blue-soft); color: var(--blue); }
 .filter-chip.on { background: var(--streak-bg); border-color: var(--streak-bd); color: var(--ink); }
 .pill:disabled, .pill.disabled { opacity: 0.4; cursor: not-allowed; }

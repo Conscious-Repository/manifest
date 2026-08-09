@@ -17,11 +17,12 @@ type Goal struct {
 	Owner   string // "", "me", "team", or a name; "" resolves to "me"
 
 	// Rock-only metadata (empty on annuals, stages, tasks).
-	Quarter    string // "2026-Q3"; set at creation, updated on carry
-	Serves     string // annual slug this Rock serves; "" = needs setup
-	Status     string // "" (active) | "blocked" | "at-risk"
-	RolledFrom string // "2026-Q2" when carried across a quarter
-	Moved      string // last-movement date (YYYY-MM-DD); stamped when work lands beneath it
+	Quarter    string   // "2026-Q3"; set at creation, updated on carry
+	Serves     []string // annual slugs this Rock serves (1:many); empty = needs setup
+	Aliases    []string // portal-matcher vocabulary that resolves to this goal (exported)
+	Status     string   // "" (active) | "blocked" | "at-risk"
+	RolledFrom string   // "2026-Q2" when carried across a quarter
+	Moved      string   // last-movement date (YYYY-MM-DD); stamped when work lands beneath it
 
 	// Finish-line fields (goals-finish-lines spec). Conditions, not metrics.
 	Until  string // the finish line: a binary condition (annuals, Rocks, stages)
@@ -274,7 +275,8 @@ type GoalEdit struct {
 	Text    *string
 	Owner   *string
 	Quarter *string
-	Serves  *string
+	Serves  *[]string // full replacement list (1:many)
+	Aliases *[]string // full replacement list (portal-matcher vocabulary)
 	Status  *string
 	Until   *string
 	Verify  *string
@@ -283,6 +285,21 @@ type GoalEdit struct {
 
 // stripBracket removes `]` so a value can never break the [key:: value] regex.
 func stripBracket(s string) string { return strings.ReplaceAll(strings.TrimSpace(s), "]", "") }
+
+// dedupeNonEmpty strips brackets, drops blanks, and de-duplicates (order
+// preserved) — the full-replace shape for Serves/Aliases lists.
+func dedupeNonEmpty(in []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range in {
+		v = stripBracket(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
 
 func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	_, g := d.FindGoal(id)
@@ -299,7 +316,10 @@ func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 		g.Quarter = strings.TrimSpace(*e.Quarter)
 	}
 	if e.Serves != nil {
-		g.Serves = strings.TrimSpace(*e.Serves)
+		g.Serves = dedupeNonEmpty(*e.Serves)
+	}
+	if e.Aliases != nil {
+		g.Aliases = dedupeNonEmpty(*e.Aliases)
 	}
 	if e.Status != nil {
 		g.Status = strings.TrimSpace(*e.Status)
@@ -338,6 +358,52 @@ func (d *Doc) DeleteGoal(id string) bool {
 		}
 	}
 	return false
+}
+
+// MoveGoal re-parents a goal (with its subtree) inside its own area — the
+// ladder-connection edit: an orphan Rock nests under another Rock (becoming
+// its stage / 30-day item), a stage moves between Rocks, or — with
+// parentID "" — a stage is promoted to a top-level Rock. The target must be
+// a TOP-LEVEL Rock (depth stays rock → stage; anything deeper is frozen
+// history by the parse contract). Same-area only; cycles refused.
+func (d *Doc) MoveGoal(id, parentID string) bool {
+	if id == "" || id == parentID {
+		return false
+	}
+	area, cp, g := d.container(id)
+	if g == nil {
+		return false
+	}
+	detach := func() {
+		for i, x := range *cp {
+			if x == g {
+				*cp = append((*cp)[:i], (*cp)[i+1:]...)
+				return
+			}
+		}
+	}
+	if parentID == "" {
+		// promote to a top-level Rock in the same area
+		for _, r := range area.Rocks {
+			if r == g {
+				return false // already top-level
+			}
+		}
+		detach()
+		area.Rocks = append(area.Rocks, g)
+		area.hasRocks = true
+		return true
+	}
+	tArea, target := d.FindGoal(parentID)
+	if target == nil || tArea != area || target == g || subtreeContains(g, parentID) {
+		return false
+	}
+	if rock := d.RockOf(parentID); rock == nil || rock.ID != parentID {
+		return false // only a top-level Rock may gain children
+	}
+	detach()
+	target.Children = append(target.Children, g)
+	return true
 }
 
 // ReorderGoals reorders siblings: with parentID == "", the area's Rocks (or its
@@ -399,17 +465,18 @@ type AreaView struct {
 // GoalView backs both annuals and Rocks. Rock-only fields (quarter/serves/status)
 // are empty for annuals, stages and tasks and omitted from the JSON.
 type GoalView struct {
-	ID      string `json:"id"`
-	Text    string `json:"text"`
-	Checked bool   `json:"checked"`
-	Owner   string `json:"owner"`
-	Quarter string `json:"quarter,omitempty"`
-	Serves  string `json:"serves,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Moved   string `json:"moved,omitempty"`
-	Until   string `json:"until,omitempty"`
-	Verify  string `json:"verify,omitempty"`
-	Kpi     string `json:"kpi,omitempty"`
+	ID      string   `json:"id"`
+	Text    string   `json:"text"`
+	Checked bool     `json:"checked"`
+	Owner   string   `json:"owner"`
+	Quarter string   `json:"quarter,omitempty"`
+	Serves  []string `json:"serves,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	Status  string   `json:"status,omitempty"`
+	Moved   string   `json:"moved,omitempty"`
+	Until   string   `json:"until,omitempty"`
+	Verify  string   `json:"verify,omitempty"`
+	Kpi     string   `json:"kpi,omitempty"`
 	// Annual roll-up (§2): serving-Rock counts, filled by the server from goals.md +
 	// the current year's archives. Zero on Rocks/stages/tasks.
 	RollupActive int        `json:"rollupActive,omitempty"`
@@ -440,7 +507,7 @@ func goalViews(gs []*Goal) []GoalView {
 		out = append(out, GoalView{
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
 			Owner:   g.ResolvedOwner(),
-			Quarter: g.Quarter, Serves: g.Serves, Status: g.Status, Moved: g.Moved,
+			Quarter: g.Quarter, Serves: g.Serves, Aliases: g.Aliases, Status: g.Status, Moved: g.Moved,
 			Until: g.Until, Verify: g.Verify, Kpi: g.Kpi,
 			Children: goalViews(g.Children), Frozen: g.Frozen,
 		})

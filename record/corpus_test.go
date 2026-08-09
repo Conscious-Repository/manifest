@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"manifest/aion"
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/realestate"
@@ -131,6 +132,30 @@ func TestCorpusRealestate(t *testing.T) {
 		t.Fatalf("corpus looks incomplete: %d md, %d csv, %d json", mds, csvs, jsons)
 	}
 	t.Logf("realestate corpus: %d md · %d csv · %d json", mds, csvs, jsons)
+}
+
+// TestCorpusAion registers the seven aion corpora with the heartbeat: each
+// file under system/aion/ must parse→emit byte-identical through the
+// domain's declared round-trip (aion.Corpora). Skips per-file when the
+// corpus snapshot predates the domain.
+func TestCorpusAion(t *testing.T) {
+	dir := corpusDir(t)
+	found := 0
+	for _, name := range aion.Files {
+		path := filepath.Join(dir, "system", "aion", name)
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		found++
+		raw := read(t, path)
+		if out := aion.Corpora[name](raw); out != raw {
+			t.Fatalf("system/aion/%s round-trip diverged:\n%s", name, firstDiff(raw, out))
+		}
+	}
+	if found == 0 {
+		t.Skip("no system/aion files in corpus yet — refresh the snapshot after seeding")
+	}
+	t.Logf("aion corpus: %d/%d files", found, len(aion.Files))
 }
 
 // section extracts the body lines of `## <name>` (until the next ## or EOF).

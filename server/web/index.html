@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="css/89-properties-workview.css" />
   <link rel="stylesheet" href="css/91-parcels.css" />
   <link rel="stylesheet" href="css/90-todos.css" />
+  <link rel="stylesheet" href="css/92-aion.css" />
 </head>
 <body>
   <header class="nav">
@@ -48,6 +49,7 @@
             <a class="pill nav-extra" href="#/contacts" id="contactsNav">CONTACTS</a>
             <a class="pill nav-extra" href="#/reading" id="readingNav">READING</a>
             <a class="pill nav-extra" href="#/properties" id="propertiesNav">PROPERTIES</a>
+            <a class="pill nav-extra" href="#/aion" id="aionNav">AION</a>
           </div>
         </span>
         <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
@@ -321,6 +323,26 @@
     <datalist id="opexKeys"></datalist>
   </section>
 
+  <!-- AION — the program cockpit over system/aion/ records + publish effector -->
+  <section class="aion-view" id="aionView" hidden>
+    <div class="agent-head">
+      <span class="agent-title">AION</span>
+      <div class="agent-actions">
+        <span id="aionPublishRail" class="aion-rail"></span>
+        <span id="aionMeta" class="panel-meta"></span>
+        <span class="prop-toggle" id="aionToggle">
+          <a class="filter-chip on" data-mode="backlog" href="#/aion">BACKLOG</a>
+          <a class="filter-chip" data-mode="heuristics" href="#/aion/heuristics">HEURISTICS</a>
+          <a class="filter-chip" data-mode="vto" href="#/aion/vto">V/TO</a>
+          <a class="filter-chip" data-mode="goals" href="#/aion/goals">GOALS</a>
+          <a class="filter-chip" data-mode="org" href="#/aion/org">ORG</a>
+          <a class="filter-chip" data-mode="settings" href="#/aion/settings">SETTINGS</a>
+        </span>
+      </div>
+    </div>
+    <div id="aionBody" class="aion-body"></div>
+  </section>
+
   <!-- UNIVERSAL NOTE VIEW — any vault note, rendered + raw-editable -->
   <section class="note-view" id="noteView" hidden>
     <div class="agent-head">
@@ -407,6 +429,7 @@
   <script src="js/89-properties-workview.js"></script>
   <script src="js/90-todos.js"></script>
   <script src="js/91-parcels.js"></script>
+  <script src="js/92-aion.js"></script>
   <script src="js/99-boot.js"></script>
 </body>
 </html>

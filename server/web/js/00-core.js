@@ -68,6 +68,13 @@ const els = {
   propertyMap: document.getElementById("propertyMap"),
   propertyMapLegend: document.getElementById("propertyMapLegend"),
   propertyUnmapped: document.getElementById("propertyUnmapped"),
+  // AION — program cockpit over system/aion/
+  aionView: document.getElementById("aionView"),
+  aionNav: document.getElementById("aionNav"),
+  aionMeta: document.getElementById("aionMeta"),
+  aionToggle: document.getElementById("aionToggle"),
+  aionBody: document.getElementById("aionBody"),
+  aionPublishRail: document.getElementById("aionPublishRail"),
   // universal note view
   noteView: document.getElementById("noteView"),
   noteTitle: document.getElementById("noteTitle"),

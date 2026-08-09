@@ -1,0 +1,130 @@
+/* ---- AION: program cockpit (manifest-quiet: mono labels, hairlines,
+   ghost inputs, muted dots; #265ACC only for live/active) ---- */
+/* page frame: same convention as every other view — bounded width, auto
+   margins, real gutters (nothing touches the screen edges) */
+.aion-view { max-width: 1080px; margin: 8px auto 64px; padding: 0 28px; }
+.aion-body { padding: 8px 0 80px; }
+@media (max-width: 860px) { .aion-view { padding: 0 16px; } }
+
+/* publish rail */
+.aion-rail { display: inline-flex; align-items: center; gap: 10px; }
+.aion-last { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.3px; }
+.aion-dots { display: inline-flex; gap: 4px; align-items: center; }
+.status-dot.on { background: var(--blue); }
+
+/* chips */
+.aion-chips { display: flex; gap: 6px; align-items: center; padding: 4px 8px 10px; flex-wrap: wrap; }
+.aion-chip-gap { width: 18px; }
+
+/* backlog list: two-line rows, whole row opens the edit drawer */
+.aion-item { border-bottom: 1px solid var(--line); }
+.aion-item.done .aion-title { color: var(--muted); }
+.aion-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 44px; gap: 12px; align-items: center; padding: 9px 6px; cursor: pointer; }
+.aion-row:hover { background: var(--hover); }
+.aion-check { background: none; border: none; cursor: pointer; color: var(--blue); font-size: 13px; padding: 2px; }
+.aion-check.muted { color: var(--icon); cursor: default; }
+.aion-main { min-width: 0; }
+.aion-title { font-size: 13.5px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; }
+.aion-item-meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: 0.2px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aion-src { color: var(--muted); text-decoration: none; }
+.aion-src:hover { color: var(--blue); }
+
+/* the status chip — a labeled state, never a bare icon */
+.aion-status { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 7px; color: var(--muted); white-space: nowrap; flex: none; }
+.aion-status.active { color: var(--blue); border-color: var(--blue); }
+.aion-status.open { color: var(--streak-ink); }
+
+.aion-edit-btn { background: none; border: none; font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--icon); cursor: pointer; padding: 2px; }
+.aion-row:hover .aion-edit-btn, .aion-edit-btn:hover { color: var(--blue); }
+
+/* the edit drawer: labeled fields, one save */
+.aion-editor { background: var(--streak-bg); border-top: 1px solid var(--line); padding: 12px 14px 12px 38px; cursor: default; }
+.aion-editor-grid { display: grid; grid-template-columns: 76px minmax(220px, 420px); gap: 8px 10px; align-items: center; }
+.aion-editor-grid .pp-in, .aion-editor-grid .ta-in { width: 100%; box-sizing: border-box; background: var(--bg); }
+.aion-editor-grid .ta-wrap { display: block; position: relative; }
+.aion-editor-wide { min-width: 100%; }
+.aion-editor-actions { display: flex; gap: 8px; margin-top: 12px; }
+.aion-editor-decide { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.aion-editor-outcome { flex: 1; background: var(--bg); }
+.aion-adds { display: flex; gap: 14px; padding: 10px 6px; }
+
+/* heuristics */
+.aion-title-in { width: 100%; font: inherit; border: none; border-bottom: 1px solid var(--blue); outline: none; background: none; }
+.aion-mini { background: none; border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); font-size: 10px; cursor: pointer; padding: 1px 5px; }
+.aion-mini:hover { color: var(--text); border-color: var(--muted); }
+.aion-section-note { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 4px 8px 12px; letter-spacing: 0.3px; }
+.aion-heur { border-bottom: 1px solid var(--line); }
+.aion-heur-row { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; }
+.aion-heur-row.retired { color: var(--muted); }
+.aion-heur-caret { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; font-size: 11px; flex: none; }
+.aion-heur-text { flex: 1; cursor: text; }
+.aion-heur-count { font-family: var(--mono); font-size: 11px; color: var(--blue); flex: none; }
+.aion-heur-acts { display: none; gap: 4px; flex: none; }
+.aion-heur-row:hover .aion-heur-acts { display: inline-flex; }
+.aion-heur-sources { padding: 0 8px 8px 30px; }
+.aion-heur-src { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 1px 0; }
+.aion-heur-src a { color: var(--streak-ink); text-decoration: none; }
+.aion-heur-src a:hover { color: var(--blue); }
+
+/* vto */
+.aion-vto-sec { padding: 2px 8px 14px; }
+.aion-vto-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.aion-vto-key { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); min-width: 76px; }
+.aion-vto-row .pp-in { flex: 1; }
+.aion-vto-raw { font-size: 13px; color: var(--streak-ink); padding: 3px 0; }
+
+/* goals ladder (read-only) */
+.aion-goals-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; }
+.aion-northstar { font-size: 13px; color: var(--streak-ink); padding: 4px 8px 12px; }
+.aion-goal-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.aion-goal-row.rock { padding-left: 28px; }
+.aion-goal-row.milestone { padding-left: 52px; font-size: 12px; }
+.aion-goal-row.done .aion-goal-text { color: var(--muted); text-decoration: line-through; }
+.aion-goal-row.unlinked .aion-goal-text { color: var(--muted); }
+.aion-goal-mark { color: var(--blue); font-size: 11px; flex: none; }
+.aion-goal-text { flex: 1; }
+.aion-goal-chips { display: inline-flex; gap: 6px; flex: none; }
+.aion-goal-chip { font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 5px; }
+
+/* org */
+.cols-aion-people { grid-template-columns: 90px minmax(160px, 1fr) minmax(160px, 1fr) 30px; align-items: center; }
+.aion-people .pp-in { width: 100%; }
+.aion-preview-row { font-size: 12px; color: var(--streak-ink); padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.aion-preview-row.mono { font-family: var(--mono); font-size: 11px; }
+.aion-preview-row.failed { color: #b91c1c; }
+.aion-open { font-family: var(--mono); font-size: 11px; color: var(--muted); text-decoration: none; margin-left: auto; }
+.aion-open:hover { color: var(--blue); }
+.pp-section-head { display: flex; align-items: center; }
+.aion-fin { padding: 2px 8px 10px; max-width: 520px; }
+.aion-fin-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.aion-fin-row .pp-in { flex: 1; }
+.aion-fin-row.derived { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+.aion-fin-derived { font-family: var(--mono); font-size: 12px; color: var(--streak-ink); }
+
+/* publish panel */
+.aion-publish-panel { max-height: 78vh; overflow-y: auto; }
+.aion-publish-warn { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); color: var(--streak-ink); font-size: 12.5px; padding: 8px 10px; margin: 6px 0; }
+.aion-publish-body { margin: 8px 0; }
+.aion-publish-note { font-family: var(--mono); font-size: 11px; color: var(--muted); padding: 6px 0; }
+.aion-pub-file { display: flex; gap: 10px; align-items: baseline; padding: 6px 0 2px; }
+.aion-pub-file code { font-size: 11px; }
+.aion-pub-status { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
+.aion-pub-status.new, .aion-pub-status.changed { color: var(--blue); }
+
+/* approvals card: aion payload editor */
+.aion-appr-form { display: grid; grid-template-columns: 84px 1fr; gap: 4px 8px; align-items: center; margin: 8px 0; }
+.aion-appr-form .pp-in, .aion-appr-form .ta-in { width: 100%; box-sizing: border-box; }
+.aion-appr-form .ta-wrap { display: block; position: relative; }
+.aion-appr-line { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); padding: 6px 8px; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+/* org registry tables */
+.cols-aion-hiring { grid-template-columns: minmax(140px, 1.3fr) minmax(120px, 1fr) 130px 48px 24px; align-items: center; }
+.cols-aion-refs { grid-template-columns: minmax(150px, 1.4fr) minmax(140px, 1.4fr) 110px 96px 24px; align-items: center; }
+.cols-aion-people { grid-template-columns: 90px minmax(160px, 1fr) minmax(160px, 1fr) 24px; }
+.aion-table .pp-in { width: 100%; box-sizing: border-box; min-width: 0; }
+/* the row-remove ✕: a bare muted glyph in its own slot — never a boxed
+   button crowding the last input */
+.aion-table .aion-mini, .aion-people .aion-mini {
+  border: none; padding: 0; font-size: 12px; line-height: 1;
+  color: var(--icon); justify-self: center;
+}
+.aion-table .aion-mini:hover, .aion-people .aion-mini:hover { color: #b91c1c; border: none; }

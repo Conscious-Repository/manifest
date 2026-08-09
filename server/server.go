@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/aion"
 	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/contacts"
@@ -67,7 +68,18 @@ type Server struct {
 	errands        *errands.Store
 	errandExec     *errands.Executor
 	errandAccounts []string // §6 allowlist ("" = any signed-in account)
+	// AION (program cockpit over system/aion/ + publish effector). Nilable.
+	aion          *aion.Store
+	aionPortal    aionPortalCfg   // aionbio checkout coordinates ("" path = publish disabled)
+	aionDataDir   string          // publish receipts live under <dataDir>/aion/
+	aionPublishes *aionPublishLog // lazy-opened receipts log
+	// aionSink receives vault-relative paths to consider for extraction —
+	// the post-confirm nudge (aion.ExtractSink satisfies it). Nilable.
+	aionSink interface{ Notify([]string) }
 }
+
+// UseAionSink wires the extraction sink for the transcript-confirm nudge.
+func (s *Server) UseAionSink(sink interface{ Notify([]string) }) { s.aionSink = sink }
 
 func New(svc *daily.Service, gs *goals.Store, cal *calendar.Client) *Server {
 	return &Server{svc: svc, goals: gs, cal: cal}
@@ -115,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/item", s.handleGoalItem)
 	mux.HandleFunc("/api/goals/check", s.handleGoalCheck)
 	mux.HandleFunc("/api/goals/reorder", s.handleGoalsReorder)
+	mux.HandleFunc("POST /api/goals/move", s.handleGoalMove)     // re-parent: ladder-connection edits
 	mux.HandleFunc("/api/goals/close", s.handleGoalClose)        // close a Rock Win/Learn → archive
 	mux.HandleFunc("/api/goals/archives", s.handleGoalsArchives) // History view
 	mux.HandleFunc("/api/goals/carry", s.handleGoalCarry)        // quarterly review: carry a Rock
@@ -131,6 +144,27 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/issue", s.handleIssueAdd)
 	mux.HandleFunc("POST /api/todos/issue/resolve", s.handleIssueResolve)
 	mux.HandleFunc("POST /api/todos/to-issue", s.handleTodoToIssue)
+
+	// AION — program cockpit over system/aion/ records + publish effector.
+	if s.aion != nil {
+		mux.HandleFunc("GET /api/aion", s.handleAion)
+		mux.HandleFunc("PUT /api/aion/people", s.handleAionPeopleSave)
+		mux.HandleFunc("PUT /api/aion/vto", s.handleAionVTOSave)
+		mux.HandleFunc("PUT /api/aion/finances", s.handleAionFinancesSave)
+		mux.HandleFunc("PUT /api/aion/hiring", s.handleAionHiringSave)
+		mux.HandleFunc("PUT /api/aion/references", s.handleAionReferencesSave)
+		mux.HandleFunc("POST /api/aion/backlog/item", s.handleAionBacklogAdd)
+		mux.HandleFunc("POST /api/aion/backlog/{id}/update", s.handleAionBacklogUpdate)
+		mux.HandleFunc("POST /api/aion/backlog/{id}/decide", s.handleAionBacklogDecide)
+		mux.HandleFunc("POST /api/aion/heuristics/{id}/edit", s.handleAionHeuristicEdit)
+		mux.HandleFunc("POST /api/aion/heuristics/{id}/retire", s.handleAionHeuristicRetire)
+		mux.HandleFunc("POST /api/aion/heuristics/merge", s.handleAionHeuristicsMerge)
+		mux.HandleFunc("POST /api/aion/heuristics/reorder", s.handleAionHeuristicsReorder)
+		mux.HandleFunc("GET /api/aion/publish/preview", s.handleAionPublishPreview)
+		mux.HandleFunc("POST /api/aion/publish", s.handleAionPublish)
+		mux.HandleFunc("POST /api/aion/publish/baseline", s.handleAionPublishBaseline)
+		mux.HandleFunc("POST /api/aion/publishes/{id}/ack", s.handleAionPublishAck)
+	}
 
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)
@@ -149,6 +183,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/spirits/approvals", s.handleSpiritsApprovals)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/confirm", s.handleSpiritsApprovalConfirm)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
+	mux.HandleFunc("POST /api/spirits/approvals/{id}/aion", s.handleSpiritsApprovalAion)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	// RITUALS board + in-app markdown editing (spirits-console-upgrade).

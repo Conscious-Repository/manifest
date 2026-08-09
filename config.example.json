@@ -14,5 +14,10 @@
   "port": 7777,
   "systemRoot": "system",
   "extrinsicRoot": "extrinsic",
-  "excaliburPath": "~/Documents/index.ben/system/excalibur"
+  "excaliburPath": "~/Documents/index.ben/system/excalibur",
+  "aionPortal": {
+    "path": "~/aionbio",
+    "remote": "origin",
+    "branch": "main"
+  }
 }

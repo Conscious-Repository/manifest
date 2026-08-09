@@ -44,12 +44,24 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 		}
 	}
 
+	// Aliases (portal-matcher vocabulary) on an ANNUAL — a backlog item's
+	// rock can resolve to a 1-year goal. Rocks emit alias after serves
+	// (below) to preserve the established field order.
+	if role == roleAnnual {
+		for _, al := range g.Aliases {
+			out = append(out, Field{Key: "alias", Value: al})
+		}
+	}
+
 	if role == roleRock {
 		if g.Quarter != "" {
 			out = append(out, Field{Key: "quarter", Value: g.Quarter})
 		}
-		if g.Serves != "" {
-			out = append(out, Field{Key: "serves", Value: g.Serves})
+		for _, sv := range g.Serves {
+			out = append(out, Field{Key: "serves", Value: sv})
+		}
+		for _, al := range g.Aliases {
+			out = append(out, Field{Key: "alias", Value: al})
 		}
 		if g.Status != "" && !strings.EqualFold(g.Status, "active") {
 			out = append(out, Field{Key: "status", Value: g.Status})
@@ -93,7 +105,7 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 // the next save rather than round-tripped as junk.
 func isRecognizedField(key string) bool {
 	switch strings.ToLower(key) {
-	case "owner", "goal", "quarter", "serves", "status", "rolled-from", "moved", "due",
+	case "owner", "goal", "quarter", "serves", "alias", "aliases", "status", "rolled-from", "moved", "due",
 		"until", "verify", "kpi":
 		return true
 	}

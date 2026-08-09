@@ -51,6 +51,35 @@ var contractVectors = []pathVec{
 	{"skills/x-content", false, false, false},
 }
 
+// aionContractVectors pin the aion apply-path predicates the same way —
+// duplicated verbatim in engine/internal/audit/bytecontract_test.go.
+var aionContractVectors = []struct {
+	path      string
+	backlog   bool // AionBacklogPathAllowed
+	heuristic bool // AionHeuristicPathAllowed
+}{
+	{"system/aion/backlog.md", true, false},
+	{"system/aion/heuristics.md", false, true},
+	{"system/aion/Backlog.md", false, false},
+	{"backlog.md", false, false},
+	{"system/aion/../aion/backlog.md", false, false},
+	{"/system/aion/backlog.md", false, false},
+	{"system/aion/backlog.md ", false, false},
+	{"system/aion/people.md", false, false},
+	{"", false, false},
+}
+
+func TestByteContract_AionPredicates(t *testing.T) {
+	for _, v := range aionContractVectors {
+		if got := AionBacklogPathAllowed(v.path); got != v.backlog {
+			t.Errorf("AionBacklogPathAllowed(%q) = %v, want %v", v.path, got, v.backlog)
+		}
+		if got := AionHeuristicPathAllowed(v.path); got != v.heuristic {
+			t.Errorf("AionHeuristicPathAllowed(%q) = %v, want %v", v.path, got, v.heuristic)
+		}
+	}
+}
+
 func TestByteContract_ManifestPredicates(t *testing.T) {
 	for _, v := range contractVectors {
 		if got := AppendXQueuePathAllowed(v.path); got != v.xqueue {

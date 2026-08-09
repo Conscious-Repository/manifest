@@ -170,6 +170,62 @@ function moneyTripletRow(colsClass, label, a, b, c, over) {
   return row;
 }
 
+// ---- ppCols: a one-line row of mono micro-labels sharing the exact grid of
+// the rows beneath it — labels live once, every input aligns under them.
+// (Promoted from 80-properties-core.js — already a cross-tab primitive.) ----
+function ppCols(cls, labels) {
+  const row = el("div", "pp-cols " + cls);
+  labels.forEach((l) => row.append(el("span", "", l)));
+  return row;
+}
+
+// ---- makeDirtyBar: the one editing model — quiet inputs mark dirty; a sticky
+// bottom bar appears with a single save (one PUT of the whole file).
+// (Promoted from 80-properties-core.js.) ----
+function makeDirtyBar(host, onSave, onDiscard) {
+  const bar = el("div", "dirty-bar");
+  bar.hidden = true;
+  const label = el("span", "dirty-label", "");
+  const save = el("button", "pill", "save");
+  const discard = el("button", "pill light", "discard");
+  bar.append(label, save, discard);
+  host.append(bar);
+  let count = 0;
+  const api = {
+    mark() { count++; label.textContent = count + " UNSAVED CHANGE" + (count === 1 ? "" : "S"); bar.hidden = false; },
+    clear() { count = 0; bar.hidden = true; },
+    get dirty() { return count > 0; },
+  };
+  save.onclick = async () => { save.disabled = true; try { await onSave(); api.clear(); } finally { save.disabled = false; } };
+  discard.onclick = () => { api.clear(); onDiscard(); };
+  return api;
+}
+
+// ---- statusDot: the quiet dot as a library function — muted when off,
+// accent when on (the AION publish rail's per-section dirty dots). ----
+function statusDot(on, title) {
+  const d = el("span", "status-dot" + (on ? " on" : ""));
+  if (title) d.title = title;
+  return d;
+}
+
+// ---- diffView: a compact unified diff block from server-rendered diff text
+// (lines prefixed "+ " / "- "; everything else context). The first diff
+// surface in the app — new idiom, so it lives in the library. ----
+function diffView(unifiedText) {
+  const wrap = el("div", "appr-diff");
+  (unifiedText || "").split("\n").forEach((line) => {
+    let kind = "ctx", text = line;
+    if (line.startsWith("+ ")) { kind = "add"; text = line.slice(2); }
+    else if (line.startsWith("- ")) { kind = "del"; text = line.slice(2); }
+    const row = el("div", "diff-line diff-" + kind);
+    row.append(el("span", "diff-gutter", kind === "add" ? "+" : kind === "del" ? "−" : " "));
+    row.append(el("span", "diff-text", text === "" ? " " : text));
+    wrap.append(row);
+  });
+  return wrap;
+}
+
 // ---- THE typeahead engine ----
 // typeahead(opts) is the one `ta-wrap` inline-dropdown implementation,
 // parameterized by SOURCE: the suggest callback receives (q, add) and appends

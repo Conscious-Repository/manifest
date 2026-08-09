@@ -145,7 +145,7 @@ func TestConfirmCreateNoteEditsAttendees(t *testing.T) {
 	content := "---\ncategories:\n  - sync\ngranola-id: not_z\n---\n[[wrong person]]\n\n## Transcript\n\n**Benjamin:** hi\n"
 	fileCreateNote(t, s, "e5e5e5e5e5e5", "2026-07-02 evan sync.md", content)
 
-	if err := s.ConfirmCreateNote("e5e5e5e5e5e5", []string{"Evan Fisher", "Benjamin"}, ""); err != nil {
+	if err := s.ConfirmCreateNote("e5e5e5e5e5e5", ConfirmEdits{Attendees: []string{"Evan Fisher", "Benjamin"}, EditAttendees: true}); err != nil {
 		t.Fatalf("ConfirmCreateNote: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(vault, "log", "2026-07-02 evan sync.md"))
@@ -163,7 +163,7 @@ func TestConfirmCreateNoteEditsTitle(t *testing.T) {
 	fileCreateNote(t, s, "f6f6f6f6f6f6", "2026-07-02 Conversation on Jul 2nd.md", content)
 
 	// retitle (date prefix kept, title replaced); attendees left untouched (nil)
-	if err := s.ConfirmCreateNote("f6f6f6f6f6f6", nil, "Crown Park charrette"); err != nil {
+	if err := s.ConfirmCreateNote("f6f6f6f6f6f6", ConfirmEdits{Title: "Crown Park charrette"}); err != nil {
 		t.Fatalf("ConfirmCreateNote retitle: %v", err)
 	}
 	// the note lands at the NEW (lowercased) filename under log/

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/aion"
 	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/contacts"
@@ -83,6 +84,15 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// aion extraction sink (spec §3) — constructed BEFORE the watcher starts
+	// so the reindex callback never races the wiring; nil without an engine.
+	var spiritsStore *spirits.Store
+	var aionSink *aion.ExtractSink
+	if cfg.ExcaliburPath != "" {
+		spiritsStore = spirits.NewStore(cfg.ExcaliburPath)
+		aionSink = aion.NewExtractSink(cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
+		aionSink.Start(ctx)
+	}
 	// THE vault watcher (kernel-followups F2): one fsnotify descriptor set,
 	// N sinks — the locator subscribes here, the content index below.
 	watch, err := record.NewWatch(cfg.VaultPath, cfg.SkipDirs)
@@ -118,6 +128,12 @@ func main() {
 			vix.SubscribeWatch(watch, 0, func(paths []string, err error) {
 				if err != nil {
 					log.Printf("vault reindex: %v", err)
+					return
+				}
+				// aion extraction trigger (aion-domain spec §3): the sink is
+				// constructed later (it needs the spirits store) — nil until then.
+				if aionSink != nil {
+					aionSink.Notify(paths)
 				}
 			})
 		}
@@ -147,6 +163,16 @@ func main() {
 			// daily notes: the exact YYYY-MM-DD.md shape, wherever they live
 			vaultwriter.Capability{Name: "daily", Zone: record.ZoneKnowledge,
 				Pattern: "????-??-??.md", Actor: vaultwriter.ActorUserAction},
+			// AION — system/aion/** records; two actors, one subtree. The
+			// approved-proposal capability is the §4 lane: ONLY the approvals
+			// store's accept path writes under it (first live wiring of
+			// ActorApprovedProposal).
+			vaultwriter.Capability{Name: "aion", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "aion-approved", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion")) + "/**",
+				Actor:   vaultwriter.ActorApprovedProposal},
 		)
 
 	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName, vw.BindAbs("goals"))
@@ -242,6 +268,20 @@ func main() {
 		log.Printf("realestate: enabled (property records over %s/)", reRoot)
 	}
 
+	// AION — the program cockpit over system/aion/ records (aion-domain spec).
+	// Seven corpora seeded write-once (valid of shape, empty of content —
+	// except the owner-authored people roster); every write flows through the
+	// "aion" capability.
+	aionRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion"))
+	aionStore := aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion"))
+	for _, name := range aion.Files {
+		if rel, err := vw.CreateRecord(aionRoot+"/"+name, aion.SeedFiles[name]); err == nil && vix != nil {
+			_ = vix.ReindexPaths([]string{rel})
+		}
+	}
+	srv.UseAion(aionStore, cfg.AionPortal.Path, cfg.AionPortal.Remote, cfg.AionPortal.Branch, cfg.DataDir)
+	log.Printf("aion: enabled (program records over %s/)", aionRoot)
+
 	// FEED SIGNALS — app-derived cards (going-cold contacts, stalled Rocks).
 	// Computed at read time from state the dashboard already has; dismissals +
 	// snoozes persist under DataDir (feed-signals.json), outside both trees.
@@ -284,8 +324,9 @@ func main() {
 	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
 	srv.UseVault(vw)
 	if cfg.ExcaliburPath != "" {
-		srv.UseSpirits(spirits.NewStore(cfg.ExcaliburPath))
-		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")).WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw))
+		srv.UseSpirits(spiritsStore)
+		srv.UseAionSink(aionSink) // transcript-confirm → instant extraction spool
+		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")).WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved"))
 		srv.UseStudio(studio.NewStore(cfg.ExcaliburPath), studio.CorpusPath(cfg.ExcaliburPath), cfg.XPostsFile)
 		log.Printf("spirits: %s (approvals inbox: artifacts/approvals · studio board: artifacts/studio)", cfg.ExcaliburPath)
 	} else {

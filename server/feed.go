@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"manifest/approvals"
+	"manifest/attention"
 	"manifest/feed"
 	"manifest/signals"
 	"manifest/spirits"
@@ -74,7 +75,16 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 		"badge":     s.feedInboxCount(now),
 	}
 	for _, src := range s.attentionRegistry().Sources() {
-		resp[kindField[src.Kind()]] = src.Active(now, r.URL.Query())
+		field := kindField[src.Kind()]
+		cards := src.Active(now, r.URL.Query())
+		// two sources may share a kind (errand + aion-publish receipts):
+		// append into the field instead of overwriting — same field, same
+		// array shape, client-invisible
+		if existing, ok := resp[field].([]attention.Card); ok {
+			resp[field] = append(existing, cards...)
+		} else {
+			resp[field] = cards
+		}
 	}
 	writeJSON(w, resp)
 }

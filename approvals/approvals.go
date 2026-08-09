@@ -117,6 +117,7 @@ type Store struct {
 	root      string
 	vaultRoot string
 	vw        *vaultwriter.Writer // for the guarded append-x-queue write; nil disables it
+	aionCap   string              // approved-proposal capability for aion applies; "" disables them
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -235,6 +236,18 @@ func (s *Store) CurrentContent(p Proposal) (string, bool) {
 			return "", false
 		}
 		return string(b), true
+	case TypeAionBacklog, TypeAionHeuristic:
+		// the current corpus file, so the UI can diff current vs current+line
+		if s.vaultRoot == "" ||
+			(p.Type == TypeAionBacklog && !AionBacklogPathAllowed(p.ApplyPath)) ||
+			(p.Type == TypeAionHeuristic && !AionHeuristicPathAllowed(p.ApplyPath)) {
+			return "", false
+		}
+		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
 	default:
 		if p.ApplyPath == "" || s.root == "" || !ApplyPathAllowed(p.ApplyPath) {
 			return "", false
@@ -285,7 +298,7 @@ func (s *Store) Propose(p Proposal) (Proposal, error) {
 // that alters frontmatter — and only then moves it. If the apply is refused,
 // nothing is written or moved and the error surfaces (the proposal stays
 // actionable in pending/).
-func (s *Store) Confirm(id string) error { return s.confirm(id, nil, false, "") }
+func (s *Store) Confirm(id string) error { return s.confirm(id, ConfirmEdits{}) }
 
 // LoadPending reads one pending proposal (the server's confirm dispatch reads
 // the run-errand payload BEFORE confirming; a missing file = already decided).
@@ -298,14 +311,36 @@ func (s *Store) LoadPending(id string) (Proposal, error) {
 	return p, nil
 }
 
-// ConfirmCreateNote confirms a create-vault-note after the user edited it in the
-// dashboard: the attendee wikilink line is rewritten to exactly `attendees`
-// (canonical names, no brackets), and — when title is non-empty — the note's
-// FILENAME is retitled (the date prefix is kept, the title portion replaced,
-// filesystem-unsafe chars stripped). attendees == nil leaves attendees untouched;
-// title == "" leaves the filename untouched.
-func (s *Store) ConfirmCreateNote(id string, attendees []string, title string) error {
-	return s.confirm(id, attendees, true, title)
+// ConfirmEdits are the owner's pre-confirm edits to a create-vault-note:
+// the attendee wikilink line, the filename title (date prefix kept,
+// unsafe chars stripped), and the note's frontmatter categories (the
+// automation key — an `aion` category makes the freshly-written note
+// trigger the extraction pipeline). Edit* flags distinguish "no edit"
+// from "cleared to none".
+type ConfirmEdits struct {
+	Attendees      []string
+	EditAttendees  bool
+	Title          string
+	Categories     []string
+	EditCategories bool
+}
+
+// ConfirmCreateNote confirms a create-vault-note after the user edited it
+// in the dashboard.
+func (s *Store) ConfirmCreateNote(id string, e ConfirmEdits) error {
+	return s.confirm(id, e)
+}
+
+// LoadApproved reads one approved proposal (the post-confirm record — its
+// ApplyPath reflects any title edit, so the server's extraction nudge names
+// the file that was actually written).
+func (s *Store) LoadApproved(id string) (Proposal, error) {
+	p, err := s.parse(filepath.Join(s.dir, "approved", id+".md"))
+	if err != nil {
+		return Proposal{}, err
+	}
+	p.Status = "approved"
+	return p, nil
 }
 
 // datePrefixRe splits a "YYYY-MM-DD <title>.md" apply-path into date + title.
@@ -332,18 +367,22 @@ func retitleApplyPath(old, title string) (string, bool) {
 	return m[1] + " " + title + ".md", true
 }
 
-func (s *Store) confirm(id string, attendees []string, editAttendees bool, title string) error {
+func (s *Store) confirm(id string, e ConfirmEdits) error {
 	src := filepath.Join(s.dir, "pending", id+".md")
 	p, err := s.parse(src)
 	if err != nil {
 		return err
 	}
-	if editAttendees && p.Type == TypeCreateVaultNote {
-		p.Proposed = replaceAttendeeLine(p.Proposed, attendees)
+	if e.EditAttendees && p.Type == TypeCreateVaultNote {
+		p.Proposed = replaceAttendeeLine(p.Proposed, e.Attendees)
+		p.Body = rebuildProposedBody(p.Body, p.Proposed)
+	}
+	if e.EditCategories && p.Type == TypeCreateVaultNote {
+		p.Proposed = replaceCategories(p.Proposed, e.Categories)
 		p.Body = rebuildProposedBody(p.Body, p.Proposed)
 	}
 	// Owner-edited title: retitle the filename (date prefix preserved).
-	if title = strings.TrimSpace(title); title != "" && p.Type == TypeCreateVaultNote {
+	if title := strings.TrimSpace(e.Title); title != "" && p.Type == TypeCreateVaultNote {
 		if np, ok := retitleApplyPath(p.ApplyPath, title); ok && np != p.ApplyPath {
 			p.Action = strings.ReplaceAll(p.Action, p.ApplyPath, np) // keep the label in sync
 			p.ApplyPath = np
@@ -400,6 +439,63 @@ func replaceAttendeeLine(content string, names []string) string {
 	return head + strings.Join(links, " ") + "\n\n" + rest
 }
 
+// replaceCategories rewrites the proposed note's frontmatter `categories:`
+// key to exactly cats — consuming EITHER existing shape (inline
+// `categories: [a, b]` or block `categories:\n  - a`), emitting the
+// kernel-canonical inline form (vaultwriter SetList precedent; the index
+// parses both), inserting as the first key when absent, and removing the
+// key when cats is empty. Every other frontmatter line passes through
+// byte-intact; content without a frontmatter block is returned unchanged.
+func replaceCategories(content string, cats []string) string {
+	if !strings.HasPrefix(content, "---\n") {
+		return content
+	}
+	lines := strings.Split(content, "\n")
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" || lines[i] == "..." {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return content
+	}
+	var clean []string
+	for _, c := range cats {
+		if c = strings.TrimSpace(c); c != "" {
+			clean = append(clean, c)
+		}
+	}
+	catLine := ""
+	if len(clean) > 0 {
+		catLine = "categories: [" + strings.Join(clean, ", ") + "]"
+	}
+	out := []string{lines[0]}
+	replaced := false
+	for i := 1; i < end; i++ {
+		ln := lines[i]
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(ln)), "categories:") {
+			// consume the block-list continuation lines ("  - x")
+			for i+1 < end && strings.HasPrefix(strings.TrimSpace(lines[i+1]), "- ") &&
+				strings.HasPrefix(lines[i+1], " ") {
+				i++
+			}
+			if catLine != "" {
+				out = append(out, catLine)
+			}
+			replaced = true
+			continue
+		}
+		out = append(out, ln)
+	}
+	if !replaced && catLine != "" {
+		out = append(out[:1], append([]string{catLine}, out[1:]...)...)
+	}
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
+}
+
 // rebuildProposedBody swaps the content inside a proposal body's ````proposed
 // fence for the edited note, preserving the human-facing message above it.
 func rebuildProposedBody(body, proposed string) string {
@@ -427,6 +523,10 @@ func (s *Store) apply(p Proposal) error {
 		return s.applyAppendXQueue(p)
 	case TypeUpdateVaultSkill:
 		return s.applyUpdateVaultSkill(p)
+	case TypeAionBacklog:
+		return s.applyAionBacklog(p)
+	case TypeAionHeuristic:
+		return s.applyAionHeuristic(p)
 	}
 	if !ApplyPathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md)", p.ApplyPath)

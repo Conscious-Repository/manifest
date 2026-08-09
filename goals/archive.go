@@ -10,15 +10,15 @@ import (
 // ArchiveEntry is one closed Rock recorded in a quarter archive (goals <quarter>.md).
 // Archives are read-only history: a Rock lands here only when it closes (§6).
 type ArchiveEntry struct {
-	Area     string `json:"area"`
-	Text     string `json:"text"`
-	GoalID   string `json:"goalId"`
-	Outcome  string `json:"outcome"`  // "win" | "learn"
-	Closed   string `json:"closed"`   // YYYY-MM-DD
-	Reached  string `json:"reached"`  // last stage name in the trail at close
-	Evidence string `json:"evidence"` // proof of the win (text or [[wikilink]]); required for a Win (§5)
-	Serves   string `json:"serves"`   // annual slug this Rock served ("" if none)
-	Note     string `json:"note"`     // optional (typically why it was a learn)
+	Area     string   `json:"area"`
+	Text     string   `json:"text"`
+	GoalID   string   `json:"goalId"`
+	Outcome  string   `json:"outcome"`  // "win" | "learn"
+	Closed   string   `json:"closed"`   // YYYY-MM-DD
+	Reached  string   `json:"reached"`  // last stage name in the trail at close
+	Evidence string   `json:"evidence"` // proof of the win (text or [[wikilink]]); required for a Win (§5)
+	Serves   []string `json:"serves"`   // annual slugs this Rock served (empty if none)
+	Note     string   `json:"note"`     // optional (typically why it was a learn)
 	// History: the Rock's frozen task lines (verbatim, indented) — checked
 	// pre-split work travels with the Rock into the archive (task-substrate).
 	History []string `json:"history,omitempty"`
@@ -70,7 +70,7 @@ func parseArchive(content string) []ArchiveEntry {
 			case "reached":
 				e.Reached = f.Value
 			case "serves":
-				e.Serves = f.Value
+				e.Serves = append(e.Serves, f.Value)
 			case "note":
 				e.Note = f.Value
 			}
@@ -121,7 +121,9 @@ func archiveLine(e ArchiveEntry) string {
 	add("outcome", e.Outcome)
 	add("closed", e.Closed)
 	add("reached", e.Reached)
-	add("serves", e.Serves)
+	for _, sv := range e.Serves {
+		add("serves", sv)
+	}
 	add("note", e.Note)
 	// Evidence is emitted LAST (§5) because it may be a [[wikilink]] whose ]]
 	// would otherwise break the [^\]]* inline-field scan of a later field.

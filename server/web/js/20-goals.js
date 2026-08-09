@@ -123,7 +123,7 @@ function rockLint(g) {
   const reasons = [];
   if (!g.until) reasons.push("no finish line");
   if (!g.verify) reasons.push("no check");
-  if (!g.serves) reasons.push("unlinked");
+  if (!(g.serves || []).length) reasons.push("unlinked");
   const hasOpenTask = rockTodos(g.id).length > 0; // substrate join, not task depth
   let staleDays = 0;
   if (g.moved) {
@@ -174,7 +174,13 @@ function orientArea(area) {
       clickToEdit(span, () => an.text, (v) =>
         goalsApi("PATCH", "/api/goals/item", { id: an.id, text: v }));
       yr.appendChild(span);
+      yr.appendChild(quietDanger("✕", () => goalsApi("DELETE", "/api/goals/item", { id: an.id })));
     });
+    // an area with annuals can still add another (the 1-year rung grows)
+    yr.appendChild(document.createTextNode(" "));
+    yr.appendChild(ghostInput("＋", "o-yr-ghost", (v) =>
+      goalsApi("POST", "/api/goals/item", { area: area.name, parentId: "", section: "annual", text: v, owner: "me" }),
+      "another 1-year goal…"));
     card.appendChild(yr);
   } else {
     yr.appendChild(ghostInput("＋ set a 2026 goal", "o-yr-ghost", (v) =>
@@ -219,6 +225,184 @@ function rockComposer(area) {
     name.focus();
   });
   return ghost;
+}
+
+// ---- ladder-connection edits (chain fields + move + delete) ----
+// The portal (aion.bio) reads serves/owner/quarter and the rock→30-day
+// parentage; all of it is editable HERE, not just lintable.
+
+function areaView(name) {
+  return ((state.goalsDoc && state.goalsDoc.areas) || []).find((a) => a.name === name);
+}
+
+// quietAct / quietDanger: mono micro-actions; danger arms on first click
+// ("sure? click again") instead of a browser dialog.
+function quietAct(label, fn) {
+  const b = el("button", "o-quiet-act", label);
+  b.onclick = (e) => { e.stopPropagation(); fn(); };
+  return b;
+}
+function quietDanger(label, fn) {
+  const b = el("button", "o-quiet-act danger", label);
+  let armed = false, t;
+  b.onclick = (e) => {
+    e.stopPropagation();
+    if (armed) { clearTimeout(t); fn(); return; }
+    armed = true;
+    b.textContent = "sure? click again";
+    t = setTimeout(() => { armed = false; b.textContent = label; }, 3000);
+  };
+  return b;
+}
+
+// ---- owner editing with the aion people registry ----
+// In the Aion area, owner fields autocomplete from system/aion/people.md
+// (initials + names); elsewhere they stay plain inputs. The registry is
+// fetched once per page load.
+let goalsPeopleCache = null;
+async function aionPeopleList() {
+  if (goalsPeopleCache) return goalsPeopleCache;
+  try { goalsPeopleCache = ((await (await fetch("/api/aion")).json()) || {}).people || []; }
+  catch (e) { goalsPeopleCache = []; }
+  return goalsPeopleCache;
+}
+function isAionArea(name) { return (name || "").toLowerCase() === "aion"; }
+
+// ownerEditable: click swaps the node for a people typeahead (Aion) or a
+// plain input (other areas). save() receives bare initials/name, no "@".
+function ownerEditable(node, getValue, save, useRegistry) {
+  if (!useRegistry) { clickToEdit(node, getValue, save); return; }
+  node.classList.add("o-editable");
+  node.title = "owner — type initials or a name (from system/aion/people.md)";
+  node.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const people = await aionPeopleList();
+    const rerender = () => renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
+    const commit = (v) => {
+      v = v.replace(/^@/, "").trim();
+      if (v && v !== getValue()) save(v);
+      else rerender();
+    };
+    const ta = typeahead({
+      placeholder: "initials…",
+      initial: getValue(),
+      suggest: (q, add) => {
+        people
+          .filter((p) => !q || p.initials.toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q))
+          .slice(0, 8)
+          .forEach((p) => add(p.initials + " · " + (p.name || ""), "", () => commit(p.initials)));
+      },
+      onEnter: commit,
+      onEscape: rerender,
+      onBlurGone: () => commit(ta.value()),
+    });
+    node.replaceWith(ta.el);
+    ta.focus();
+  });
+}
+
+// ownerRow: the rock's OWNER line (with the quarter cell right-aligned).
+function ownerRow(g, areaName, right) {
+  const row = el("div", "o-fl-row");
+  row.append(el("span", "o-fl-label", "OWNER"));
+  const has = g.owner && g.owner !== "me";
+  const node = has ? el("span", "o-fl-val", "@" + g.owner)
+    : el("button", "o-ghost o-fl-ghost", "＋ owner…");
+  ownerEditable(node, () => (has ? g.owner : ""),
+    (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: v }), isAionArea(areaName));
+  row.append(node);
+  if (right) row.append(right);
+  return row;
+}
+
+// servesRow: the rock → 1-year links (1:many — Series A feeds ALL the
+// annuals): one chip per linked goal (✕ removes it), plus a ghost that adds
+// another from the annuals not yet linked. Every change PATCHes the full
+// list.
+function servesRow(g, areaName) {
+  const row = el("div", "o-fl-row o-serves");
+  row.append(el("span", "o-fl-label", "SERVES"));
+  const annuals = (areaView(areaName) || {}).annuals || [];
+  const linked = (g.serves || []).slice();
+  const save = (list) => goalsApi("PATCH", "/api/goals/item", { id: g.id, serves: list });
+  const chips = el("span", "o-serves-chips");
+  linked.forEach((sv) => {
+    const an = annuals.find((a) => a.id === sv);
+    const chip = el("span", "o-serves-chip" + (an ? "" : " broken"));
+    chip.append(el("span", "", an ? an.text : sv + " (broken link)"));
+    const x = el("button", "o-serves-x", "✕");
+    x.title = "unlink from this 1-year goal";
+    x.onclick = (e) => { e.stopPropagation(); save(linked.filter((v) => v !== sv)); };
+    chip.append(x);
+    chips.append(chip);
+  });
+  row.append(chips);
+  const remaining = annuals.filter((an) => !linked.includes(an.id));
+  if (remaining.length) {
+    const ghost = el("button", "o-ghost o-fl-ghost",
+      linked.length ? "＋ also serves…" : "＋ serves a 1-year goal…");
+    ghost.onclick = (e) => {
+      e.stopPropagation();
+      openPicker("serves which 1-year goal?",
+        [{ area: areaName, items: remaining.map((an) => ({ id: an.id, text: an.text })) }],
+        (id) => save(linked.concat([id])),
+        "no 1-year goals in " + areaName + " yet — add one above first");
+    };
+    row.append(ghost);
+  }
+  return row;
+}
+
+// aliasRow: portal-matcher vocabulary that resolves to this goal — free-text
+// chips (a backlog item's rock:: "fundraising" resolves here without
+// rewriting the item). ✕ removes; the ghost adds arbitrary text. PATCHes the
+// full list. Mirrors servesRow but with a text input, not an annual picker.
+function aliasRow(g) {
+  const row = el("div", "o-fl-row o-serves");
+  row.append(el("span", "o-fl-label", "ALIASES"));
+  const linked = (g.aliases || []).slice();
+  const save = (list) => goalsApi("PATCH", "/api/goals/item", { id: g.id, aliases: list });
+  const chips = el("span", "o-serves-chips");
+  linked.forEach((al) => {
+    const chip = el("span", "o-serves-chip");
+    chip.append(el("span", "", al));
+    const x = el("button", "o-serves-x", "✕");
+    x.title = "remove this alias";
+    x.onclick = (e) => { e.stopPropagation(); save(linked.filter((v) => v !== al)); };
+    chip.append(x);
+    chips.append(chip);
+  });
+  row.append(chips);
+  row.append(ghostInput(linked.length ? "＋ alias…" : "＋ add a portal alias…", "o-fl-ghost", (v) => {
+    v = v.trim();
+    if (v && !linked.includes(v)) save(linked.concat([v]));
+  }));
+  return row;
+}
+
+// quarterCell: right-aligned quarter (like the kpi cell).
+function quarterCell(g) {
+  const save = (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, quarter: v });
+  if (g.quarter) {
+    const v = el("span", "o-fl-kpi", g.quarter);
+    clickToEdit(v, () => g.quarter, save);
+    return v;
+  }
+  return ghostInput("＋ quarter", "o-fl-kpi o-fl-ghost", save);
+}
+
+// moveGoalPicker: re-parent a rock/stage under another rock (or promote a
+// stage to a top-level rock) — the 90↔30-day connection.
+function moveGoalPicker(g, areaName) {
+  const area = areaView(areaName);
+  const contains = (node, id) => (node.children || []).some((c) => c.id === id || contains(c, id));
+  const rocks = ((area && area.rocks) || []).filter((r) => r.id !== g.id && !contains(g, r.id));
+  const items = rocks.map((r) => ({ id: r.id, text: r.text }));
+  const isTop = ((area && area.rocks) || []).some((r) => r.id === g.id);
+  if (!isTop) items.push({ id: "", text: "— promote to a top-level rock —" });
+  openPicker("move “" + g.text + "” under…", [{ area: areaName, items }],
+    (id) => goalsApi("POST", "/api/goals/move", { id: g.id, parentId: id }),
+    "no other rocks in " + areaName);
 }
 
 // rockNode: the collapsed row — dot · name · position → next-action — and, when
@@ -288,6 +472,10 @@ function rockExpand(g, stages, cur, areaName) {
   box.appendChild(finishRow("UNTIL", g.until, "＋ done when…", patch("until")));
   const kpiCell = finishKpi(g.kpi, patch("kpi"));
   box.appendChild(finishRow("PROOF", g.verify, "＋ proven by…", patch("verify"), kpiCell));
+  // the chain fields the portal reads: serves link + owner, quarter right-aligned
+  box.appendChild(servesRow(g, areaName));
+  box.appendChild(ownerRow(g, areaName, quarterCell(g)));
+  box.appendChild(aliasRow(g));
 
   stages.forEach((st) => {
     const isCur = st === cur;
@@ -305,6 +493,14 @@ function rockExpand(g, stages, cur, areaName) {
     line.appendChild(check);
     const label = el("span", "o-st-label", (isCur ? "→ " : "") + st.text);
     line.appendChild(label);
+    // the 30-day owner chip (the portal's @initials) — click edits (with the
+    // people.md typeahead in the Aion area), never toggles
+    const hasOwner = st.owner && st.owner !== "me";
+    const ownerChip = el("span", "o-st-owner" + (hasOwner ? "" : " empty"), hasOwner ? "@" + st.owner : "＋@");
+    ownerChip.title = "owner initials — click to edit";
+    ownerEditable(ownerChip, () => (hasOwner ? st.owner : ""),
+      (v) => goalsApi("PATCH", "/api/goals/item", { id: st.id, owner: v }), isAionArea(areaName));
+    line.appendChild(ownerChip);
     if (!isCur) {
       line.append(el("span", "o-st-caret", open ? "▾" : "▸"));
       line.title = "click to add or view tasks";
@@ -338,6 +534,11 @@ function rockExpand(g, stages, cur, areaName) {
         if (goalsUI.expanded.has(key)) st.frozen.forEach((ln) =>
           box.appendChild(el("div", "o-frozen-line", ln.trim().replace(/^[-*]\s*/, ""))));
       }
+      // stage-level connections: move to another rock / promote / delete
+      const stActs = el("div", "o-item-acts sub");
+      stActs.append(quietAct("move…", () => moveGoalPicker(st, areaName)));
+      stActs.append(quietDanger("delete", () => goalsApi("DELETE", "/api/goals/item", { id: st.id })));
+      box.appendChild(stActs);
     }
   });
   box.appendChild(ghostInput("+ stage", "o-st-ghost", (v) =>
@@ -368,6 +569,12 @@ function rockExpand(g, stages, cur, areaName) {
     }, "what advances this rock…"));
   }
   if (!g.checked) box.appendChild(completeControl(g));
+  // rock-level connections: nest this rock under another (it becomes a
+  // 30-day item there) / delete without archiving (complete = the archive path)
+  const rkActs = el("div", "o-item-acts");
+  rkActs.append(quietAct("nest under another rock…", () => moveGoalPicker(g, areaName)));
+  rkActs.append(quietDanger("delete", () => goalsApi("DELETE", "/api/goals/item", { id: g.id })));
+  box.appendChild(rkActs);
   return box;
 }
 

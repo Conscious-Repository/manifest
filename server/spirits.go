@@ -6,9 +6,16 @@ import (
 	"strings"
 	"time"
 
+	"manifest/aion"
 	"manifest/approvals"
+	"manifest/secrets"
 	"manifest/spirits"
 )
+
+// maskSecrets is the display-side defense for aion proposal bodies: any
+// span matching a secret class renders as "•••" (the authoritative gates
+// refuse at edit/apply — this is belt over braces for the card itself).
+func maskSecrets(text string) string { return secrets.Mask(text) }
 
 // SPIRITS — the excalibur harness console. The dashboard reads the sibling
 // tree and records user decisions (keep/discard/snooze); execution belongs to
@@ -91,6 +98,12 @@ type approvalRow struct {
 	approvals.Proposal
 	Allowed bool   `json:"allowed"`
 	Current string `json:"current"`
+	// AionPayload is the parsed structured payload of an aion proposal (nil
+	// otherwise) — the editable card renders a form over it. Secret spans in
+	// the body are masked display-side before it reaches the client.
+	AionPayload *aion.ProposalPayload `json:"aionPayload,omitempty"`
+	// AionLine is the exact record line Confirm would write (the diff target).
+	AionLine string `json:"aionLine,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -127,6 +140,21 @@ func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 				if cur, ok := s.approvals.CurrentContent(p); ok {
 					rr.Current = cur
 				}
+			case approvals.TypeAionBacklog, approvals.TypeAionHeuristic:
+				// An aion extraction candidate: editable payload + the exact line
+				// Confirm would append. Secret-masked before rendering.
+				rr.Allowed = (p.Type == approvals.TypeAionBacklog && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
+					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath))
+				if cur, ok := s.approvals.CurrentContent(p); ok {
+					rr.Current = cur
+				}
+				if payload, ok := approvals.AionPayload(p); ok {
+					rr.AionPayload = &payload
+					rr.AionLine = aion.RenderItemLine(payload)
+				} else {
+					rr.Allowed = false
+				}
+				rr.Body = maskSecrets(rr.Body)
 			default:
 				rr.Allowed = approvals.ApplyPathAllowed(p.ApplyPath)
 				if cur, ok := s.approvals.CurrentContent(p); ok {
@@ -152,13 +180,16 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
 		return
 	}
-	// A create-vault-note may carry an edited attendee list (the user fixed the
-	// auto-linked people before confirming). editAttendees distinguishes "no edit"
-	// (nil) from "cleared to none" ([]).
+	// A create-vault-note may carry edited attendees, a retitled filename,
+	// and edited frontmatter categories (the `aion` category is the
+	// automation key — it makes the written note trigger extraction).
+	// Edit* flags distinguish "no edit" from "cleared to none".
 	var b struct {
-		Attendees     []string `json:"attendees"`
-		EditAttendees bool     `json:"editAttendees"`
-		Title         string   `json:"title"` // create-vault-note: owner-edited filename title
+		Attendees      []string `json:"attendees"`
+		EditAttendees  bool     `json:"editAttendees"`
+		Title          string   `json:"title"` // create-vault-note: owner-edited filename title
+		Categories     []string `json:"categories"`
+		EditCategories bool     `json:"editCategories"`
 	}
 	_ = decode(r, &b) // body is optional (plain confirm)
 	id := r.PathValue("id")
@@ -166,14 +197,28 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	// a failed confirm never enqueues, so approval maps 1:1 to one execution.
 	pending, loadErr := s.approvals.LoadPending(id)
 	var err error
-	if b.EditAttendees || strings.TrimSpace(b.Title) != "" {
-		err = s.approvals.ConfirmCreateNote(id, b.Attendees, b.Title)
+	if b.EditAttendees || b.EditCategories || strings.TrimSpace(b.Title) != "" {
+		err = s.approvals.ConfirmCreateNote(id, approvals.ConfirmEdits{
+			Attendees: b.Attendees, EditAttendees: b.EditAttendees,
+			Title:      b.Title,
+			Categories: b.Categories, EditCategories: b.EditCategories,
+		})
 	} else {
 		err = s.approvals.Confirm(id)
 	}
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+	// Extraction nudge: a freshly-written transcript with the aion category
+	// should spool the extractor NOW, not on the watcher's debounce. The
+	// sink re-checks category + content hash, so non-aion notes and the
+	// watcher's duplicate event are no-ops. The written filename is the
+	// (possibly retitled) apply path, lowercased by the apply.
+	if loadErr == nil && pending.Type == approvals.TypeCreateVaultNote && s.aionSink != nil {
+		if approved, err := s.approvals.LoadApproved(id); err == nil && approved.ApplyPath != "" {
+			s.aionSink.Notify([]string{"log/" + strings.ToLower(approved.ApplyPath)})
+		}
 	}
 	if loadErr == nil && pending.Type == approvals.TypeRunErrand {
 		if s.errandExec == nil {
@@ -184,6 +229,26 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 			httpError(w, errBadRequest("approved, but enqueue failed: "+err.Error()))
 			return
 		}
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleSpiritsApprovalAion rewrites a pending aion proposal's editable
+// payload (kind/title/owner/rock/due/outcome, heuristic new⇄reinforce flip)
+// — the pre-Confirm edit lane. The id never changes.
+func (s *Server) handleSpiritsApprovalAion(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var payload aion.ProposalPayload
+	if err := decode(r, &payload); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.approvals.SetAionPayload(r.PathValue("id"), payload); err != nil {
+		httpError(w, err)
+		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

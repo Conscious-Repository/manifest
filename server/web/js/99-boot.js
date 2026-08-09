@@ -77,6 +77,11 @@ function openTodoQuickAdd(prefill) {
 
 function route() {
   const h = location.hash;
+  // the note view's Back returns to wherever the user actually was: every
+  // non-note route records itself as the return target. Explicit
+  // _noteReturn sets (contact page, studio→feed) still win — they happen
+  // after the last non-note route, and note routes never overwrite.
+  if (!h.startsWith("#/note/")) _noteReturn = h || "#/";
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const todosTab = h === "#/todos" || h.startsWith("#/todos/");
   const cal = h === "#/calendar";
@@ -87,8 +92,9 @@ function route() {
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const properties = h === "#/properties" || h.startsWith("#/properties/");
+  const aionTab = h === "#/aion" || h.startsWith("#/aion/");
   const note = h.startsWith("#/note/");
-  const day = !goals && !todosTab && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !note;
+  const day = !goals && !todosTab && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !aionTab && !note;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -99,6 +105,7 @@ function route() {
   els.contactsView.hidden = !contacts;
   els.readingView.hidden = !reading;
   els.propertiesView.hidden = !properties;
+  els.aionView.hidden = !aionTab;
   els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
   els.goalsNav.hidden = !day;
@@ -109,6 +116,7 @@ function route() {
   els.contactsNav.hidden = !day;
   els.readingNav.hidden = !day;
   els.propertiesNav.hidden = !day;
+  els.aionNav.hidden = !day;
   els.spiritsNav.hidden = !day;
   els.moreNav.hidden = !day;
   els.dayNav.hidden = day;
@@ -129,6 +137,7 @@ function route() {
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone
   else if (properties) showProperties(h); // real-estate cockpit: board / property page
+  else if (aionTab) showAion(h); // aion program cockpit: backlog / heuristics / vto / …
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }

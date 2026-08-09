@@ -173,7 +173,21 @@ func parseGoal(m []string) *Goal {
 		case "quarter":
 			g.Quarter = strings.TrimSpace(f.Value)
 		case "serves":
-			g.Serves = strings.TrimSpace(f.Value)
+			// 1:many — repeated [serves::] fields append; a comma list in
+			// one field is tolerated (canonicalizes to repeated on save)
+			for _, sv := range strings.Split(f.Value, ",") {
+				if sv = strings.TrimSpace(sv); sv != "" {
+					g.Serves = append(g.Serves, sv)
+				}
+			}
+		case "alias", "aliases":
+			// portal vocabulary that resolves to this goal (repeated fields,
+			// comma-tolerant); the export emits them for the aion.bio matcher
+			for _, al := range strings.Split(f.Value, ",") {
+				if al = strings.TrimSpace(al); al != "" {
+					g.Aliases = append(g.Aliases, al)
+				}
+			}
 		case "status":
 			g.Status = strings.TrimSpace(f.Value)
 		case "rolled-from":
