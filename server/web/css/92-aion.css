@@ -128,3 +128,17 @@
   color: var(--icon); justify-self: center;
 }
 .aion-table .aion-mini:hover, .aion-people .aion-mini:hover { color: #b91c1c; border: none; }
+
+/* reconcile sweep */
+.aion-rec-kw { margin-left: auto; min-width: 200px; }
+.aion-rec-bulk { display: flex; gap: 8px; align-items: center; padding: 6px 8px 10px; }
+.aion-rec-bulk .ta-wrap { display: inline-block; }
+.cols-aion-rec { grid-template-columns: 24px minmax(0,1fr) 70px 260px 150px; align-items: center; }
+.aion-rec-cb { justify-self: center; }
+.aion-rec-assign { display: flex; gap: 6px; align-items: center; }
+.aion-rec-assign .ta-wrap { display: block; flex: 1; }
+.aion-rec-assign .ta-in { width: 100%; box-sizing: border-box; }
+.aion-rec-was { text-align: left; }
+.aion-rec-hint { background: none; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-family: var(--mono); font-size: 10px; cursor: pointer; padding: 1px 6px; }
+.aion-rec-hint:hover { color: var(--blue); border-color: var(--blue); }
+.aion-rec-savebar { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 10px 8px; background: var(--bg); border-top: 1px solid var(--line); }

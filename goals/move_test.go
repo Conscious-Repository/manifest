@@ -1,6 +1,8 @@
 package goals
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -169,3 +171,36 @@ func TestAliases(t *testing.T) {
 		t.Fatalf("serves clobbered by alias edit: %v", d.Areas[0].Rocks[0].Serves)
 	}
 }
+
+// TestAddArchiveEntry: a historic closed rock round-trips in a quarter
+// archive and is idempotent by goal id.
+func TestAddArchiveEntry(t *testing.T) {
+	// write to real disk: AddArchiveEntry re-reads the quarter file via
+	// os.ReadFile to dedupe, so the idempotency check needs the bytes on disk.
+	dir := t.TempDir()
+	s := NewStore(stubGoalsLoc{}, dir, "goals.md", func(path string, b []byte) error { return os.WriteFile(path, b, 0o644) })
+	e := ArchiveEntry{Area: "Aion", Text: "Ultrasound platform", GoalID: "aion/ultrasound-platform",
+		Outcome: "win", Closed: "2026-06-30", Serves: []string{"aion/mri-prototype"}, Evidence: "custom drivers shipped"}
+	ok, err := s.AddArchiveEntry("2026-Q2", e)
+	if err != nil || !ok {
+		t.Fatalf("add: ok=%v err=%v", ok, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "goals 2026-Q2.md"))
+	if err != nil {
+		t.Fatalf("archive file not written: %v", err)
+	}
+	content := string(raw)
+	// parse→emit fixpoint
+	if ReserializeArchive("2026-Q2", content) != content {
+		t.Fatalf("archive not a fixpoint:\n%s", content)
+	}
+	// re-add same goal id is a no-op
+	ok2, _ := s.AddArchiveEntry("2026-Q2", e)
+	if ok2 {
+		t.Fatal("duplicate goal id added")
+	}
+}
+
+type stubGoalsLoc struct{}
+
+func (stubGoalsLoc) GoalsPath() string { return "" }

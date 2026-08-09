@@ -262,6 +262,59 @@ func orDash(s string) string {
 	return s
 }
 
+// LinkEdit is one reconcile edit: set rock/decided/owner on an item by id.
+// A nil field is left unchanged; an empty-string field clears that value.
+// Only these three linkage fields are touched — never status/outcome/title
+// — so it applies to DECIDED decisions too (setting a decision's rock is
+// metadata, not re-deciding it; UpdateItem's permanence guard doesn't apply).
+type LinkEdit struct {
+	ID      string  `json:"id"`
+	Rock    *string `json:"rock,omitempty"`
+	Decided *string `json:"decided,omitempty"`
+	Owner   *string `json:"owner,omitempty"`
+}
+
+// BatchLink applies a set of LinkEdits in one parse → edit → serialize →
+// audited write. Returns how many items changed. Unknown ids are skipped.
+func (s *Store) BatchLink(edits []LinkEdit) (int, error) {
+	doc := s.LoadBacklog()
+	byID := map[string]*BacklogItem{}
+	for _, it := range allBacklogItems(doc) {
+		byID[it.ID] = it
+	}
+	n := 0
+	for _, e := range edits {
+		it := byID[e.ID]
+		if it == nil {
+			continue
+		}
+		changed := false
+		if e.Rock != nil && *e.Rock != it.Rock {
+			it.Rock = strings.TrimSpace(*e.Rock)
+			changed = true
+		}
+		if e.Owner != nil && *e.Owner != it.Owner {
+			it.Owner = strings.TrimSpace(*e.Owner)
+			changed = true
+		}
+		if e.Decided != nil && it.Kind == KindDecision && *e.Decided != it.Decided {
+			it.Decided = strings.TrimSpace(*e.Decided)
+			// a dated decision is a decided one — keep status coherent
+			if it.Decided != "" && it.Status != StatusDecided {
+				it.Status = StatusDecided
+			}
+			changed = true
+		}
+		if changed {
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, s.SaveBacklog(doc)
+}
+
 // Decide resolves an open decision — append-only: the line is never
 // removed, it gains [decided::] + [outcome::] and status decided.
 func (s *Store) Decide(id, outcome string, now time.Time) error {

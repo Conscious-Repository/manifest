@@ -207,6 +207,33 @@ func (s *Server) aionExportGoals() []aion.ExportGoal {
 			Aliases: nonNil(r.Aliases), Owner: owner(r), Quarter: r.Quarter, Children: nonNil(kids),
 		})
 	}
+
+	// Historic rocks: closed Aion rocks from the quarter archives (the
+	// one-time reconstruction of past 90-day priorities). They export as
+	// status:done rocks with a `closed` date so the portal can place them in
+	// the past cone; live ids already emitted above win any collision.
+	live := map[string]bool{}
+	for _, g := range out {
+		live[g.ID] = true
+	}
+	for _, aq := range s.goals.LoadAllArchives() {
+		for _, e := range aq.Entries {
+			if !strings.HasPrefix(e.GoalID, "aion/") || live[e.GoalID] {
+				continue
+			}
+			live[e.GoalID] = true
+			var serves *string
+			if len(e.Serves) > 0 {
+				v := e.Serves[0]
+				serves = &v
+			}
+			out = append(out, aion.ExportGoal{
+				ID: e.GoalID, Title: e.Text, Horizon: "rock", Status: "done",
+				Serves: serves, ServesAll: append([]string{}, e.Serves...),
+				Owner: nil, Quarter: aq.Quarter, Closed: e.Closed, Children: []string{},
+			})
+		}
+	}
 	return out
 }
 

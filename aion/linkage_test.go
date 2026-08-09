@@ -112,3 +112,57 @@ func TestRemapOwner(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchLink(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeTemp(t, dir, "system/aion/backlog.md", linkageFixture); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(dir, "system/aion", func(abs string, data []byte) error { return writeAbs(abs, data) })
+
+	// find the decided decision missing a date + an open task, by title
+	doc := s.LoadBacklog()
+	var pigID, deckID string
+	for _, it := range doc.Items() {
+		if it.Text == "Outsource pig work" {
+			pigID = it.ID
+		}
+		if it.Text == "Deck" {
+			deckID = it.ID
+		}
+	}
+	if pigID == "" || deckID == "" {
+		t.Fatal("fixture items not found")
+	}
+	rock := "aion/mouse-to-pig"
+	date := "2026-07-27"
+	n, err := s.BatchLink([]LinkEdit{
+		{ID: pigID, Rock: &rock, Decided: &date}, // decided decision — metadata edit allowed
+		{ID: deckID, Rock: &rock},
+		{ID: "nonexistent", Rock: &rock}, // skipped
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("changed %d, want 2", n)
+	}
+	out := s.RawFile("backlog.md")
+	// the decided decision got a rock AND a date without losing its outcome/status
+	pigLine := ""
+	for _, ln := range splitLinesT(out) {
+		if strings.Contains(ln, "Outsource pig work") {
+			pigLine = ln
+		}
+	}
+	for _, sub := range []string{"[rock:: aion/mouse-to-pig]", "[decided:: 2026-07-27]", "[outcome:: CRO]", "[status:: decided]"} {
+		if !strings.Contains(pigLine, sub) {
+			t.Fatalf("pig line missing %q:\n%s", sub, pigLine)
+		}
+	}
+	if SerializeBacklog(ParseBacklog(out)) != out {
+		t.Fatal("post-batchlink not a fixpoint")
+	}
+}
+
+func splitLinesT(s string) []string { return strings.Split(s, "\n") }

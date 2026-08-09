@@ -106,6 +106,26 @@ func lastStageName(rock *Goal) string {
 	return ""
 }
 
+// AddArchiveEntry appends one closed-Rock entry to a quarter archive
+// (goals <quarter>.md), through the injected §A3 writer. Exported for the
+// one-time historic-rocks backfill (cmd/aion-historic), which reconstructs
+// past 90-day rocks the live ladder never held. Idempotent by GoalID: an
+// entry whose goal id already exists in that quarter is left untouched.
+func (s *Store) AddArchiveEntry(quarter string, entry ArchiveEntry) (bool, error) {
+	path := s.archivePath(quarter)
+	var entries []ArchiveEntry
+	if b, err := os.ReadFile(path); err == nil {
+		entries = parseArchive(string(b))
+	}
+	for _, e := range entries {
+		if e.GoalID != "" && e.GoalID == entry.GoalID {
+			return false, nil // already present — re-run safe
+		}
+	}
+	entries = append(entries, entry)
+	return true, s.write(path, []byte(serializeArchive(quarter, entries)))
+}
+
 func (s *Store) appendArchive(quarter string, entry ArchiveEntry) error {
 	path := s.archivePath(quarter)
 	var entries []ArchiveEntry

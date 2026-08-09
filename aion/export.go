@@ -45,6 +45,9 @@ type ExportGoal struct {
 	// goals (Series A feeds all of them). Portal-side grouping should
 	// prefer this and fall back to serves.
 	ServesAll []string `json:"serves_all,omitempty"`
+	// Closed is the archive date on a historic (status:done) rock — the
+	// portal renders these in the past cone, not the active 90-day band.
+	Closed string `json:"closed,omitempty"`
 	// Aliases are portal-matcher vocabulary that resolves to this goal
 	// (aion.bio: rock → id → slug → alias). Absent when the goal has none.
 	Aliases  []string `json:"aliases,omitempty"`

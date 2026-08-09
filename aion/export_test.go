@@ -280,3 +280,29 @@ func TestRenderContractEmptyVault(t *testing.T) {
 		}
 	}
 }
+
+func TestExportArchivedRockShape(t *testing.T) {
+	// a historic (closed) rock enters goals.json as a status:done rock with a
+	// closed date; serves resolves; live goals are unaffected.
+	in := exportFixture()
+	serves := "aion/human-prototype-mri"
+	in.Goals = append(in.Goals, ExportGoal{
+		ID: "aion/ultrasound-platform", Title: "Ultrasound platform", Horizon: "rock",
+		Status: "done", Serves: &serves, ServesAll: []string{serves},
+		Closed: "2026-06-30", Children: []string{},
+	})
+	out, err := RenderContract(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob := string(out["public/portal/data/goals.json"])
+	if !strings.Contains(blob, `"id": "aion/ultrasound-platform"`) ||
+		!strings.Contains(blob, `"status": "done"`) ||
+		!strings.Contains(blob, `"closed": "2026-06-30"`) {
+		t.Fatalf("archived rock shape:\n%s", blob)
+	}
+	// an unrelated live goal did NOT gain a closed field
+	if strings.Contains(blob, `"closed": ""`) {
+		t.Fatal("empty closed leaked (omitempty broken)")
+	}
+}
