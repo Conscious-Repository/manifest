@@ -172,6 +172,12 @@ func parseGoal(m []string) *Goal {
 			g.Owner = strings.TrimSpace(f.Value)
 		case "quarter":
 			g.Quarter = strings.TrimSpace(f.Value)
+		case "start":
+			g.Start = strings.TrimSpace(f.Value)
+		case "due":
+			// re-activated (portal §7): explicit timeline end on rocks. The
+			// legacy 30-day due:: was retired; only rocks author it now.
+			g.Due = strings.TrimSpace(f.Value)
 		case "serves":
 			// 1:many — repeated [serves::] fields append; a comma list in
 			// one field is tolerated (canonicalizes to repeated on save)
@@ -200,7 +206,6 @@ func parseGoal(m []string) *Goal {
 			g.Verify = strings.TrimSpace(f.Value)
 		case "kpi":
 			g.Kpi = strings.TrimSpace(f.Value)
-			// `due` is intentionally ignored (retired).
 		}
 	}
 	return g

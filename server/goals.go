@@ -253,6 +253,8 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			Text    *string   `json:"text"`
 			Owner   *string   `json:"owner"`
 			Quarter *string   `json:"quarter"`
+			Start   *string   `json:"start"` // ISO timeline start (rocks; portal §7)
+			Due     *string   `json:"due"`   // ISO timeline end (rocks; portal §7)
 			Serves  *[]string `json:"serves"`  // full replacement list (1:many)
 			Aliases *[]string `json:"aliases"` // full replacement list (portal-matcher vocabulary)
 			Status  *string   `json:"status"`
@@ -266,6 +268,7 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 		}
 		s.mutate(w, func(d *goals.Doc) bool {
 			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Quarter: b.Quarter,
+				Start: b.Start, Due: b.Due,
 				Serves: b.Serves, Aliases: b.Aliases, Status: b.Status, Until: b.Until, Verify: b.Verify, Kpi: b.Kpi})
 		})
 	case http.MethodDelete:

@@ -380,6 +380,29 @@ function aliasRow(g) {
   return row;
 }
 
+// datesRow: explicit START / DUE ISO dates the portal timeline reads (§7).
+// Native date pickers; empty is fine (portal falls back to the quarter window).
+// Blanking a field and committing clears it. Rocks only.
+function datesRow(g) {
+  const row = el("div", "o-fl-row o-dates");
+  row.append(el("span", "o-fl-label", "DATES"));
+  const field = (label, value, key) => {
+    const wrap = el("label", "o-date-field");
+    wrap.append(el("span", "o-date-cap", label));
+    const inp = document.createElement("input");
+    inp.type = "date";
+    inp.className = "o-date-in";
+    inp.value = value || "";
+    inp.addEventListener("change", () =>
+      goalsApi("PATCH", "/api/goals/item", { id: g.id, [key]: inp.value.trim() }));
+    wrap.append(inp);
+    return wrap;
+  };
+  row.append(field("start", g.start, "start"));
+  row.append(field("due", g.due, "due"));
+  return row;
+}
+
 // quarterCell: right-aligned quarter (like the kpi cell).
 function quarterCell(g) {
   const save = (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, quarter: v });
@@ -475,6 +498,7 @@ function rockExpand(g, stages, cur, areaName) {
   // the chain fields the portal reads: serves link + owner, quarter right-aligned
   box.appendChild(servesRow(g, areaName));
   box.appendChild(ownerRow(g, areaName, quarterCell(g)));
+  box.appendChild(datesRow(g));
   box.appendChild(aliasRow(g));
 
   stages.forEach((st) => {

@@ -204,3 +204,21 @@ func TestAddArchiveEntry(t *testing.T) {
 type stubGoalsLoc struct{}
 
 func (stubGoalsLoc) GoalsPath() string { return "" }
+
+// TestEditGoalStartDue: start/due thread through GoalEdit like the finish-line
+// scalars, stripping brackets, and survive a save round-trip.
+func TestEditGoalStartDue(t *testing.T) {
+	d := Parse("# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock [goal:: aion/rock] [quarter:: 2026-Q3]\n")
+	start, due := "2026-07-01", "2026-09-30]"
+	if !d.EditGoal("aion/rock", GoalEdit{Start: &start, Due: &due}) {
+		t.Fatal("edit refused")
+	}
+	out := Serialize(d)
+	if !strings.Contains(out, "[start:: 2026-07-01]") {
+		t.Fatalf("start not emitted:\n%s", out)
+	}
+	// stripBracket must have removed the stray ] so the field regex can't break
+	if !strings.Contains(out, "[due:: 2026-09-30]") || strings.Contains(out, "2026-09-30]]") {
+		t.Fatalf("due not bracket-stripped:\n%s", out)
+	}
+}

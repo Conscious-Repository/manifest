@@ -306,3 +306,85 @@ func TestExportArchivedRockShape(t *testing.T) {
 		t.Fatal("empty closed leaked (omitempty broken)")
 	}
 }
+
+func TestExportGoalDatesAndContract(t *testing.T) {
+	in := exportFixture()
+	// give the rock explicit start/due; the annual stays dateless
+	for i := range in.Goals {
+		if in.Goals[i].Horizon == "rock" {
+			in.Goals[i].Start = "2026-07-01"
+			in.Goals[i].Due = "2026-09-30"
+		}
+	}
+	out, err := RenderContract(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goalsBlob := string(out["public/portal/data/goals.json"])
+	if !strings.Contains(goalsBlob, `"start": "2026-07-01"`) || !strings.Contains(goalsBlob, `"due": "2026-09-30"`) {
+		t.Fatalf("rock start/due not exported:\n%s", goalsBlob)
+	}
+	// omitempty: a dateless goal emits no start/due keys at all
+	if strings.Contains(goalsBlob, `"start": ""`) || strings.Contains(goalsBlob, `"due": ""`) {
+		t.Fatal("empty start/due leaked (omitempty broken)")
+	}
+	// contract stamp in meta.json
+	if !strings.Contains(string(out["public/portal/data/meta.json"]), `"contract": "1"`) {
+		t.Fatalf("meta.json missing contract stamp:\n%s", out["public/portal/data/meta.json"])
+	}
+}
+
+// buildRendered marshals just the two files AcceptContract reads.
+func buildRendered(t *testing.T, goalsV, backlogV any) map[string][]byte {
+	t.Helper()
+	gb, _ := json.MarshalIndent(goalsV, "", "  ")
+	bb, _ := json.MarshalIndent(backlogV, "", "  ")
+	return map[string][]byte{
+		"public/portal/data/goals.json":   gb,
+		"public/portal/data/backlog.json": bb,
+	}
+}
+
+func TestAcceptContract(t *testing.T) {
+	goalsV := map[string]any{"goals": []map[string]any{
+		{"id": "aion/mri", "horizon": "1yr"},
+		{"id": "aion/rock-a", "horizon": "rock", "status": "open", "quarter": "2026-Q3",
+			"start": "2026-07-01", "due": "2026-09-30", "aliases": []string{"fundraising"}},
+		{"id": "aion/rock-b", "horizon": "rock", "status": "open", "quarter": "2026-Q3"},                    // no dates → warn
+		{"id": "aion/bad-date", "horizon": "rock", "status": "open", "quarter": "2026-Q4", "start": "July"}, // non-ISO → err
+	}}
+	backlogV := map[string]any{"items": []map[string]any{
+		{"id": "aion-bl/ok", "kind": "task", "rock": "aion/rock-a"},                              // resolves via id
+		{"id": "aion-bl/alias", "kind": "task", "rock": "Fundraising"},                           // resolves via alias/slug
+		{"id": "aion-bl/bad", "kind": "task", "rock": "nonexistent-thing"},                       // unresolvable → err
+		{"id": "aion-bl/empty", "kind": "task", "rock": ""},                                      // empty string → err
+		{"id": "aion-bl/dec1", "kind": "decision", "status": "decided", "decided": "not-a-date"}, // non-ISO → err
+		{"id": "aion-bl/dec2", "kind": "decision", "status": "open"},                             // no needed_by → warn
+		{"id": "aion-bl/dec3", "kind": "decision", "status": "decided"},                          // no decided date → warn
+	}}
+	errs, warns := AcceptContract(buildRendered(t, goalsV, backlogV), map[string]bool{"2026-Q3": true, "2026-Q4": true})
+
+	joinErr := strings.Join(errs, " | ")
+	for _, want := range []string{"aion/bad-date", "nonexistent-thing", "empty string", "not-a-date"} {
+		if !strings.Contains(joinErr, want) {
+			t.Errorf("expected error mentioning %q; got: %s", want, joinErr)
+		}
+	}
+	// the empty-string rock must NOT also count as unresolvable noise beyond its own error;
+	// resolvable rocks (id + alias) produce no error
+	for _, bad := range []string{"aion/rock-a", "aion/rock-b", "Fundraising"} {
+		if strings.Contains(joinErr, bad+" resolves to no goal") {
+			t.Errorf("resolvable rock wrongly flagged: %s", bad)
+		}
+	}
+	joinWarn := strings.Join(warns, " | ")
+	for _, want := range []string{"aion/rock-b", "open decision has no needed_by", "no decided date"} {
+		if !strings.Contains(joinWarn, want) {
+			t.Errorf("expected warning mentioning %q; got: %s", want, joinWarn)
+		}
+	}
+	// rock-a has dates → no coverage warning about it
+	if strings.Contains(joinWarn, "aion/rock-a") {
+		t.Errorf("dated rock wrongly warned: %s", joinWarn)
+	}
+}

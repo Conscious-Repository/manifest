@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"manifest/aion"
@@ -25,12 +26,19 @@ type reconcileItem struct {
 	Title    string `json:"title"`
 	Status   string `json:"status"`
 	Owner    string `json:"owner"`
-	Rock     string `json:"rock"`    // current raw value ("" = none)
-	Decided  string `json:"decided"` // decisions only
+	Rock     string `json:"rock"`     // current raw value ("" = none)
+	Decided  string `json:"decided"`  // decisions only
+	NeededBy string `json:"neededBy"` // open-decision deadline (portal diamond)
 	Captured string `json:"captured"`
 	Hint     string `json:"hint"`   // original pre-linkage rock (git-recovered), "" if none
-	Reason   string `json:"reason"` // why it's a gap: unanchored | undated-decided | orphan-rock
+	Reason   string `json:"reason"` // why it's a gap: unanchored | undated-decided | open-decision
 }
+
+// isISODate reports whether s is exactly YYYY-MM-DD (the portal's timeline
+// contract for decided / needed_by / start / due).
+var isoDateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+func isISODate(s string) bool { return isoDateRe.MatchString(strings.TrimSpace(s)) }
 
 // aionReconcileHints loads the git-recovered {normalized title → original
 // rock} map (derived/operational, dataDir tier). Absent file = no hints.
@@ -85,8 +93,9 @@ func (s *Server) handleAionReconcile(w http.ResponseWriter, r *http.Request) {
 	hints := s.aionReconcileHints()
 	backlog := s.aion.LoadBacklog()
 	var gaps []reconcileItem
-	var unTasks, unDecs, undated int
+	var unTasks, unDecs, undated, openDecs int
 	for _, it := range backlog.Items() {
+		open := it.Status == aion.StatusOpen || it.Status == aion.StatusInProgress
 		reason := ""
 		switch {
 		case it.Kind == aion.KindDecision && it.Status == aion.StatusDecided && it.Decided == "":
@@ -95,20 +104,20 @@ func (s *Server) handleAionReconcile(w http.ResponseWriter, r *http.Request) {
 		case it.Kind == aion.KindDecision && it.Status == aion.StatusDecided && !resolves(it.Rock):
 			reason = "unanchored"
 			unDecs++
-		case it.Kind == aion.KindTask && (it.Status == aion.StatusOpen || it.Status == aion.StatusInProgress) && !resolves(it.Rock):
+		case it.Kind == aion.KindTask && open && !resolves(it.Rock):
 			reason = "unanchored"
 			unTasks++
+		case it.Kind == aion.KindDecision && open && (!resolves(it.Rock) || !isISODate(it.NeededBy)):
+			// open decision the portal can't fully place: no resolving rock
+			// and/or no ISO deadline (no timeline diamond). Coverage gap (§7).
+			reason = "open-decision"
+			openDecs++
 		default:
-			continue // resolved, or a done task / open decision — not a portal gap
+			continue // resolved, or a done task — not a portal gap
 		}
-		src := ""
-		if len(it.Sources) > 0 {
-			src = it.Sources[0]
-		}
-		_ = src
 		gaps = append(gaps, reconcileItem{
 			ID: it.ID, Kind: it.Kind, Title: it.Text, Status: it.Status,
-			Owner: it.Owner, Rock: it.Rock, Decided: it.Decided, Captured: it.Captured,
+			Owner: it.Owner, Rock: it.Rock, Decided: it.Decided, NeededBy: it.NeededBy, Captured: it.Captured,
 			Hint: hints[aion.NormalizeTitle(it.Text)], Reason: reason,
 		})
 	}
@@ -118,6 +127,7 @@ func (s *Server) handleAionReconcile(w http.ResponseWriter, r *http.Request) {
 			"unanchoredTasks":     unTasks,
 			"unanchoredDecisions": unDecs,
 			"undatedDecided":      undated,
+			"openDecisions":       openDecs,
 			"total":               len(gaps),
 		},
 	})

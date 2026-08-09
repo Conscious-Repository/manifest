@@ -122,6 +122,10 @@ async function openAionPublishPanel() {
   if (prev.unpushed > 0) {
     bodyHost.append(el("div", "aion-publish-note", prev.unpushed + " unpushed commit(s) — publish completes the push."));
   }
+  // acceptance gate (sync-contract §4): errors block the push; warnings inform.
+  const gateErrors = prev.errors || [];
+  (prev.warnings || []).forEach((wmsg) => bodyHost.append(el("div", "aion-publish-warn", "△ " + wmsg)));
+  gateErrors.forEach((emsg) => bodyHost.append(el("div", "appr-blocked", "⚠ " + emsg)));
   changed.forEach((f) => {
     const head = el("div", "aion-pub-file");
     head.append(el("code", "", f.path), el("span", "aion-pub-status " + f.status, f.status));
@@ -131,6 +135,7 @@ async function openAionPublishPanel() {
   const actions = el("div", "appr-actions");
   const confirmBtn = pill("CONFIRM — commit + push", async () => {
     confirmBtn.disabled = true;
+    if (gateErrors.length) { confirmBtn.disabled = false; return; } // guard: gate blocks the push
     try {
       const r = await fetch("/api/aion/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hash: prev.hash }) });
       const res = await r.json().catch(() => ({}));
@@ -144,6 +149,10 @@ async function openAionPublishPanel() {
       loadAion();
     } finally { confirmBtn.disabled = false; }
   });
+  if (gateErrors.length) {
+    confirmBtn.disabled = true;
+    bodyHost.append(el("div", "aion-publish-note", "fix the ⚠ format errors above before publishing (they'd break the portal)."));
+  }
   actions.append(confirmBtn, pillLight("cancel", close));
   panel.append(actions);
 }
@@ -289,9 +298,12 @@ function aionRowEditor(it) {
       st.onchange = () => { edits.status = st.value === "in progress" ? "in_progress" : "open"; };
     }
   } else {
-    const nb = field("needed by", inputEl("date or condition"));
-    nb.value = it.neededBy || "";
-    nb.oninput = () => { edits.needed_by = nb.value; };
+    // needed_by is the decision's deadline — the portal reads it as an ISO
+    // date to place a timeline diamond, so entry is a date picker (§7).
+    const nb = field("needed by", inputEl(""));
+    nb.type = "date";
+    nb.value = /^\d{4}-\d{2}-\d{2}$/.test(it.neededBy || "") ? it.neededBy : "";
+    nb.onchange = () => { edits.needed_by = nb.value; };
   }
 
   const actions = el("div", "aion-editor-actions");
@@ -671,6 +683,7 @@ function renderAionOrg(host) {
 let aionReconcile = null;   // {gaps, counts}
 let aionRecPicks = {};      // id → chosen rock (uncommitted)
 let aionRecDates = {};      // id → chosen decided date (uncommitted)
+let aionRecNeeded = {};     // id → chosen needed_by deadline (uncommitted, decisions)
 let aionRecSel = {};        // id → checked
 let aionRecKind = "";       // "" | task | decision
 let aionRecKeyword = "";
@@ -732,12 +745,12 @@ async function renderAionReconcile(host) {
         const res = await r.json();
         if (!r.ok || !res.ok) throw new Error(res.error || r.status);
         showToast("Relinked " + res.changed + " · PUBLISH to ship");
-        aionRecPicks = {}; aionRecDates = {}; aionRecSel = {};
+        aionRecPicks = {}; aionRecDates = {}; aionRecNeeded = {}; aionRecSel = {};
         aionReconcile = null;
         await loadAion();
       } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
     }));
-    saveBar.append(pillLight("discard", () => { aionRecPicks = {}; aionRecDates = {}; aionRecSel = {}; renderRecRows(); }));
+    saveBar.append(pillLight("discard", () => { aionRecPicks = {}; aionRecDates = {}; aionRecNeeded = {}; aionRecSel = {}; renderRecRows(); }));
   }
 
   function pendingEdits() {
@@ -746,6 +759,7 @@ async function renderAionReconcile(host) {
       const e = { id: g.id }; let has = false;
       if (aionRecPicks[g.id] !== undefined && aionRecPicks[g.id] !== g.rock) { e.rock = aionRecPicks[g.id]; has = true; }
       if (aionRecDates[g.id] !== undefined && aionRecDates[g.id] !== g.decided) { e.decided = aionRecDates[g.id]; has = true; }
+      if (aionRecNeeded[g.id] !== undefined && aionRecNeeded[g.id] !== g.neededBy) { e.neededBy = aionRecNeeded[g.id]; has = true; }
       if (has) out.push(e);
     });
     return out;
@@ -795,6 +809,13 @@ async function renderAionReconcile(host) {
       dt.value = aionRecDates[g.id] !== undefined ? aionRecDates[g.id] : (g.decided || "");
       dt.onchange = () => { aionRecDates[g.id] = dt.value; renderSaveBar(); };
       assign.append(dt);
+    } else if (g.kind === "decision") {
+      // open decision — a needed_by deadline becomes its timeline diamond (§7)
+      const nb = el("input", "aion-date"); nb.type = "date"; nb.title = "needed by (deadline)";
+      nb.value = aionRecNeeded[g.id] !== undefined ? aionRecNeeded[g.id]
+        : (/^\d{4}-\d{2}-\d{2}$/.test(g.neededBy || "") ? g.neededBy : "");
+      nb.onchange = () => { aionRecNeeded[g.id] = nb.value; renderSaveBar(); };
+      assign.append(nb);
     }
     row.append(assign);
 

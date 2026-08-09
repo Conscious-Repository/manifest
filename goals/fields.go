@@ -57,6 +57,12 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 		if g.Quarter != "" {
 			out = append(out, Field{Key: "quarter", Value: g.Quarter})
 		}
+		if g.Start != "" {
+			out = append(out, Field{Key: "start", Value: g.Start})
+		}
+		if g.Due != "" {
+			out = append(out, Field{Key: "due", Value: g.Due})
+		}
 		for _, sv := range g.Serves {
 			out = append(out, Field{Key: "serves", Value: sv})
 		}
@@ -101,11 +107,10 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 }
 
 // isRecognizedField reports keys the model owns (rebuilt from struct state, not
-// passed through as unknown). `due` is included so any legacy dates are dropped on
-// the next save rather than round-tripped as junk.
+// passed through as unknown). `start`/`due` are timeline dates on rocks (portal §7).
 func isRecognizedField(key string) bool {
 	switch strings.ToLower(key) {
-	case "owner", "goal", "quarter", "serves", "alias", "aliases", "status", "rolled-from", "moved", "due",
+	case "owner", "goal", "quarter", "start", "due", "serves", "alias", "aliases", "status", "rolled-from", "moved",
 		"until", "verify", "kpi":
 		return true
 	}

@@ -112,23 +112,26 @@ func TestFieldEmission(t *testing.T) {
 	}
 }
 
-func TestDueRetired(t *testing.T) {
-	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock [due:: 2026-09-30] [priority:: high]\n"
+// due:: was re-activated as a rock's ISO timeline end (portal §7): it now
+// round-trips on a rock (a byte-fixpoint), alongside unknown passthrough fields.
+func TestDueOnRock(t *testing.T) {
+	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n- [ ] Rock [goal:: aion/rock] [quarter:: 2026-Q3] [start:: 2026-07-01] [due:: 2026-09-30] [priority:: high]\n"
 	out := Serialize(Parse(in))
-	if strings.Contains(out, "due::") {
-		t.Fatalf("due:: must be dropped on save:\n%s", out)
-	}
-	if !strings.Contains(out, "[priority:: high]") {
-		t.Fatalf("unknown fields must still survive:\n%s", out)
+	if out != in {
+		t.Fatalf("start/due on a rock must be a fixpoint:\nin:  %s\nout: %s", in, out)
 	}
 }
 
 func TestNeedsMigration(t *testing.T) {
 	legacy := "# Goals\n## Aion\n### 90-day\n- [ ] x\n"
-	legacyDue := "# Goals\n## Aion\n### Rocks (90-day)\n- [ ] x [due:: 2026-01-01]\n"
+	// a rock carrying due:: under the NEW heading is valid now (§7) — not legacy
+	dueOnRock := "# Goals\n## Aion\n### Rocks (90-day)\n- [ ] x [due:: 2026-01-01]\n"
 	fresh := "# Goals\n## Aion\n### 1-year — 2026\n### Rocks (90-day)\n- [ ] x [quarter:: 2026-Q3]\n"
-	if !needsMigration(legacy) || !needsMigration(legacyDue) {
-		t.Fatal("legacy formats must need migration")
+	if !needsMigration(legacy) {
+		t.Fatal("the ### 90-day heading must need migration")
+	}
+	if needsMigration(dueOnRock) {
+		t.Fatal("due:: on a rock is a valid timeline field, not a legacy signal")
 	}
 	if needsMigration(fresh) {
 		t.Fatal("already-migrated file must not need migration")

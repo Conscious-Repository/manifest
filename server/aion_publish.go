@@ -204,7 +204,8 @@ func (s *Server) aionExportGoals() []aion.ExportGoal {
 		out = append(out, aion.ExportGoal{
 			ID: r.ID, Title: r.Text, Horizon: "rock", Status: status(r),
 			Serves: serves, ServesAll: append([]string{}, r.Serves...),
-			Aliases: nonNil(r.Aliases), Owner: owner(r), Quarter: r.Quarter, Children: nonNil(kids),
+			Aliases: nonNil(r.Aliases), Owner: owner(r), Quarter: r.Quarter,
+			Start: r.Start, Due: r.Due, Children: nonNil(kids),
 		})
 	}
 
@@ -438,6 +439,9 @@ func (s *Server) handleAionPublishPreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 	last, commit := s.aionLastPublished()
+	// acceptance gate preview: same split the push enforces, so the UI can
+	// show format errors (would block) + coverage warnings before publishing.
+	gateErrs, gateWarns := aion.AcceptContract(res.rendered, aionInScopeQuarters(time.Now()))
 	writeJSON(w, map[string]any{
 		"files":         res.files,
 		"blockers":      res.blockers,
@@ -446,6 +450,8 @@ func (s *Server) handleAionPublishPreview(w http.ResponseWriter, r *http.Request
 		"unpushed":      res.unpushed,
 		"lastPublished": last,
 		"lastCommit":    commit,
+		"errors":        gateErrs,
+		"warnings":      gateWarns,
 	})
 }
 
@@ -491,6 +497,15 @@ func (s *Server) handleAionPublish(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(changed) == 0 && res.unpushed == 0 {
 		httpError(w, errBadRequest("nothing to publish"))
+		return
+	}
+
+	// Pre-push acceptance gate (sync-contract §4): format errors block the
+	// push (no git op, failed receipt); coverage warnings ride the receipt.
+	// Runs on the rendered bytes — nothing is written to the checkout yet.
+	gateErrs, gateWarns := aion.AcceptContract(res.rendered, aionInScopeQuarters(time.Now()))
+	if len(gateErrs) > 0 {
+		fail("validate", fmt.Errorf("%s", strings.Join(gateErrs, "; ")))
 		return
 	}
 
@@ -542,7 +557,32 @@ func (s *Server) handleAionPublish(w http.ResponseWriter, r *http.Request) {
 		Commit: commit, Files: changed, At: publishedAt, Acknowledged: true,
 	}
 	s.publishLog().append(rec)
-	writeJSON(w, map[string]any{"ok": true, "commit": commit, "pushed": true, "files": changed})
+	writeJSON(w, map[string]any{"ok": true, "commit": commit, "pushed": true, "files": changed, "warnings": gateWarns})
+}
+
+// aionInScopeQuarters is the current + next quarter — the window whose live
+// rocks the acceptance gate expects to carry start/due (coverage warning).
+func aionInScopeQuarters(now time.Time) map[string]bool {
+	cur := goals.CurrentQuarter(now)
+	return map[string]bool{cur: true, nextQuarter(cur): true}
+}
+
+// nextQuarter advances "2026-Q3" → "2026-Q4" → "2027-Q1".
+func nextQuarter(q string) string {
+	if len(q) != 7 {
+		return q
+	}
+	year, _ := strconv.Atoi(q[:4])
+	switch q[6] {
+	case '1':
+		return fmt.Sprintf("%d-Q2", year)
+	case '2':
+		return fmt.Sprintf("%d-Q3", year)
+	case '3':
+		return fmt.Sprintf("%d-Q4", year)
+	default:
+		return fmt.Sprintf("%d-Q1", year+1)
+	}
 }
 
 func (s *Server) handleAionPublishAck(w http.ResponseWriter, r *http.Request) {

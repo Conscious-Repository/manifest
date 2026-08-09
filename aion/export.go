@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,11 @@ import (
 // export-contract exception — runway_months). Byte determinism is load-
 // bearing: publish dirtiness is computed by byte-comparing these renders
 // against the checkout, so structs/slices only, MarshalIndent, trailing \n.
+
+// ContractVersion is stamped into meta.json (portal sync-contract §4). Bump it
+// on any change to the exported shape; the portal footnotes a newer version it
+// doesn't yet know. "1" = the sync-contract v1 / linkage-scope v2 (§7) shape.
+const ContractVersion = "1"
 
 // ContractPaths are the nine checkout-relative paths the effector may
 // write — and the ONLY paths it may ever touch (canary-tested).
@@ -50,9 +56,13 @@ type ExportGoal struct {
 	Closed string `json:"closed,omitempty"`
 	// Aliases are portal-matcher vocabulary that resolves to this goal
 	// (aion.bio: rock → id → slug → alias). Absent when the goal has none.
-	Aliases  []string `json:"aliases,omitempty"`
-	Owner    *string  `json:"owner"`
-	Quarter  string   `json:"quarter,omitempty"`
+	Aliases []string `json:"aliases,omitempty"`
+	Owner   *string  `json:"owner"`
+	Quarter string   `json:"quarter,omitempty"`
+	// Start/Due are explicit ISO timeline dates on rocks (portal §7). Absent →
+	// the portal falls back to the rock's quarter window.
+	Start    string   `json:"start,omitempty"`
+	Due      string   `json:"due,omitempty"`
 	Children []string `json:"children"`
 }
 
@@ -129,6 +139,127 @@ func verifyChains(in ExportInput) error {
 	// (aionbio spec rule 3 — never invent links, never block on them).
 	_ = ids
 	return nil
+}
+
+var acceptISORe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+func acceptISO(s string) bool { return acceptISORe.MatchString(strings.TrimSpace(s)) }
+
+var acceptNonSlug = regexp.MustCompile(`[^a-z0-9/-]`)
+var acceptWS = regexp.MustCompile(`[\s_]+`)
+
+// acceptSlug mirrors the portal's rock-resolution normalization exactly
+// (sync-contract §2 / util.js buildGoalIndex): lower, trim, whitespace/underscore
+// → dash, strip everything else but a-z0-9/-.
+func acceptSlug(s string) string {
+	s = acceptWS.ReplaceAllString(strings.ToLower(strings.TrimSpace(s)), "-")
+	return acceptNonSlug.ReplaceAllString(s, "")
+}
+
+// AcceptContract is the pre-push acceptance gate (sync-contract §4 / linkage-
+// scope §6+§7). It runs on the RENDERED contract bytes (what would be pushed),
+// mirroring the portal's own resolution, and splits findings:
+//
+//   - errs  — format breakage that would corrupt the portal: an unresolvable or
+//     empty rock, or a non-ISO date in decided/needed_by/start/due. These BLOCK
+//     the push (the owner chose "format blocks").
+//   - warns — coverage gaps that degrade gracefully: a live current/next-quarter
+//     rock without dates, an open decision without a deadline, a decided decision
+//     with no date. These are surfaced but DO NOT block ("coverage warns").
+//
+// inScopeQuarters is the set of quarter labels (e.g. {"2026-Q3","2026-Q4"})
+// whose live rocks are expected to carry start/due; pass nil to skip that warn.
+func AcceptContract(rendered map[string][]byte, inScopeQuarters map[string]bool) (errs, warns []string) {
+	var goalsDoc struct {
+		Goals []struct {
+			ID      string   `json:"id"`
+			Horizon string   `json:"horizon"`
+			Status  string   `json:"status"`
+			Aliases []string `json:"aliases"`
+			Quarter string   `json:"quarter"`
+			Start   string   `json:"start"`
+			Due     string   `json:"due"`
+		} `json:"goals"`
+	}
+	if b := rendered["public/portal/data/goals.json"]; b != nil {
+		if err := json.Unmarshal(b, &goalsDoc); err != nil {
+			return []string{"goals.json is not valid JSON: " + err.Error()}, nil
+		}
+	}
+	// resolvable set = id + slug(id) + slug(de-prefixed id) + slug(aliases)
+	ids := map[string]bool{}
+	known := map[string]bool{}
+	for _, g := range goalsDoc.Goals {
+		ids[g.ID] = true
+		known[acceptSlug(g.ID)] = true
+		known[acceptSlug(strings.TrimPrefix(g.ID, "aion/"))] = true
+		for _, a := range g.Aliases {
+			known[acceptSlug(a)] = true
+		}
+	}
+	resolves := func(rock string) bool {
+		return ids[rock] || known[acceptSlug(rock)] || known[acceptSlug("aion/"+rock)]
+	}
+	for _, g := range goalsDoc.Goals {
+		if g.Start != "" && !acceptISO(g.Start) {
+			errs = append(errs, "goal "+g.ID+": start is not an ISO date ("+g.Start+")")
+		}
+		if g.Due != "" && !acceptISO(g.Due) {
+			errs = append(errs, "goal "+g.ID+": due is not an ISO date ("+g.Due+")")
+		}
+		if g.Horizon == "rock" && g.Status != "done" && inScopeQuarters[g.Quarter] && (g.Start == "" || g.Due == "") {
+			warns = append(warns, "rock "+g.ID+" ("+g.Quarter+") has no start/due — timeline bar falls back to the quarter window")
+		}
+	}
+
+	var backlogDoc struct {
+		Items []struct {
+			ID       string  `json:"id"`
+			Kind     string  `json:"kind"`
+			Title    string  `json:"title"`
+			Status   *string `json:"status"`
+			Rock     *string `json:"rock"`
+			Decided  *string `json:"decided"`
+			NeededBy *string `json:"needed_by"`
+		} `json:"items"`
+	}
+	if b := rendered["public/portal/data/backlog.json"]; b != nil {
+		if err := json.Unmarshal(b, &backlogDoc); err != nil {
+			return append(errs, "backlog.json is not valid JSON: "+err.Error()), warns
+		}
+	}
+	deref := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+	for _, it := range backlogDoc.Items {
+		label := it.ID
+		if it.Rock != nil {
+			if strings.TrimSpace(*it.Rock) == "" {
+				errs = append(errs, label+": rock is an empty string (use null for no rock)")
+			} else if !resolves(*it.Rock) {
+				errs = append(errs, label+": rock "+*it.Rock+" resolves to no goal id/slug/alias")
+			}
+		}
+		if d := deref(it.Decided); d != "" && !acceptISO(d) {
+			errs = append(errs, label+": decided is not an ISO date ("+d+")")
+		}
+		if nb := deref(it.NeededBy); nb != "" && !acceptISO(nb) {
+			errs = append(errs, label+": needed_by is not an ISO date ("+nb+")")
+		}
+		if it.Kind == "decision" {
+			status := deref(it.Status)
+			if status == "decided" && deref(it.Decided) == "" {
+				warns = append(warns, label+": decided decision has no decided date (no agency-field curve)")
+			}
+			if status != "decided" && deref(it.NeededBy) == "" {
+				warns = append(warns, label+": open decision has no needed_by (no timeline diamond)")
+			}
+		}
+	}
+	return errs, warns
 }
 
 type exportFinancesT struct {
@@ -350,6 +481,10 @@ func exportMeta(in ExportInput) map[string]any {
 		"sections":     sections,
 		"published_at": in.PublishedAt,
 		"source":       "manifest",
+		// contract version (portal sync-contract §4): bumped on any shape
+		// change; the portal logs a schema-drift footnote if it sees a newer
+		// one than it knows. "1" = the doc this export was written against.
+		"contract": ContractVersion,
 	}
 }
 

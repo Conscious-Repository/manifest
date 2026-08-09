@@ -268,10 +268,11 @@ func orDash(s string) string {
 // — so it applies to DECIDED decisions too (setting a decision's rock is
 // metadata, not re-deciding it; UpdateItem's permanence guard doesn't apply).
 type LinkEdit struct {
-	ID      string  `json:"id"`
-	Rock    *string `json:"rock,omitempty"`
-	Decided *string `json:"decided,omitempty"`
-	Owner   *string `json:"owner,omitempty"`
+	ID       string  `json:"id"`
+	Rock     *string `json:"rock,omitempty"`
+	Decided  *string `json:"decided,omitempty"`
+	Owner    *string `json:"owner,omitempty"`
+	NeededBy *string `json:"neededBy,omitempty"` // decision deadline (ISO) → portal diamond
 }
 
 // BatchLink applies a set of LinkEdits in one parse → edit → serialize →
@@ -303,6 +304,11 @@ func (s *Store) BatchLink(edits []LinkEdit) (int, error) {
 			if it.Decided != "" && it.Status != StatusDecided {
 				it.Status = StatusDecided
 			}
+			changed = true
+		}
+		if e.NeededBy != nil && it.Kind == KindDecision && *e.NeededBy != it.NeededBy {
+			// deadline on an OPEN decision — does NOT flip status (unlike decided)
+			it.NeededBy = strings.TrimSpace(*e.NeededBy)
 			changed = true
 		}
 		if changed {

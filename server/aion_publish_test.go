@@ -330,3 +330,36 @@ func TestAionPublishAbsentVaultNo500(t *testing.T) {
 		t.Fatalf("empty-vault snapshot: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// A non-ISO needed_by is a format error: publish must fail at the "validate"
+// stage BEFORE any git op — the remote HEAD is unchanged and the checkout
+// never gets a public/ tree.
+func TestAionPublishValidationGateBlocks(t *testing.T) {
+	srv, checkout, remote := aionPublishFixture(t)
+	// inject an open decision carrying a prose (non-ISO) needed_by
+	bad := "## Tasks\n\n## Decisions\n- Should we pivot [kind:: decision] [status:: open] [needed_by:: someday soon]\n"
+	if err := os.WriteFile(srv.aion.Path("backlog.md"), []byte(bad), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	remoteHead := git(t, remote, "rev-parse", "HEAD")
+
+	_, prev := doJSON(t, srv.handleAionPublishPreview, "GET", "/api/aion/publish/preview", "")
+	// preview surfaces the error
+	if errs, _ := prev["errors"].([]any); len(errs) == 0 {
+		t.Fatalf("preview should report a format error; got %v", prev["errors"])
+	}
+	hash, _ := prev["hash"].(string)
+
+	code, res := doJSON(t, srv.handleAionPublish, "POST", "/api/aion/publish", `{"hash":"`+hash+`"}`)
+	if code != 200 || res["ok"] != false || res["stage"] != "validate" {
+		t.Fatalf("expected validate-stage failure; got %d %v", code, res)
+	}
+	// nothing pushed, nothing written
+	if h := git(t, remote, "rev-parse", "HEAD"); h != remoteHead {
+		t.Fatalf("remote advanced despite validation failure: %s → %s", remoteHead, h)
+	}
+	if _, err := os.Stat(filepath.Join(checkout, "public")); err == nil {
+		t.Fatal("checkout was written despite validation failure")
+	}
+}

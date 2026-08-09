@@ -11,11 +11,12 @@ import (
 // which starts with "Rocks").
 var legacy90Re = regexp.MustCompile(`(?m)^###[ \t]+90`)
 
-// needsMigration reports whether raw goals.md bytes are the pre-v2 format: an old
-// "### 90-day" heading or any retired `due::` field. Already-migrated files (which
-// use "### Rocks (90-day)" / "### 1-year" and carry no due::) return false.
+// needsMigration reports whether raw goals.md bytes are the pre-v2 format,
+// signalled by an old "### 90-day" heading. (A bare `due::` no longer signals
+// legacy — it was re-activated as a rock's ISO timeline end, portal §7 — so only
+// the heading distinguishes a pre-v2 file that still needs the one-time upgrade.)
 func needsMigration(raw string) bool {
-	return legacy90Re.MatchString(raw) || strings.Contains(raw, "due::")
+	return legacy90Re.MatchString(raw)
 }
 
 // CurrentQuarter formats a time as the "2026-Q3" quarter slug — the value stamped
@@ -49,9 +50,12 @@ func (d *Doc) migrateFromLegacy(now time.Time) {
 	}
 }
 
-// stripDue removes any retired `due` inline field from a goal and its whole
-// subtree (serialize would drop it anyway, but this keeps the in-memory doc clean).
+// stripDue removes the retired legacy `due` (old 30-day deadline semantics)
+// from a goal and its whole subtree. `due` was re-activated as a rock's ISO
+// timeline end (portal §7), rebuilt from g.Due — so clear the struct field too,
+// not just the passthrough Fields, or the legacy value would re-emit.
 func stripDue(g *Goal) {
+	g.Due = ""
 	if len(g.Fields) > 0 {
 		kept := g.Fields[:0]
 		for _, f := range g.Fields {

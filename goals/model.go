@@ -18,6 +18,8 @@ type Goal struct {
 
 	// Rock-only metadata (empty on annuals, stages, tasks).
 	Quarter    string   // "2026-Q3"; set at creation, updated on carry
+	Start      string   // ISO YYYY-MM-DD; explicit timeline start (portal §7). Emitted for rocks.
+	Due        string   // ISO YYYY-MM-DD; explicit timeline end (portal §7). Emitted for rocks.
 	Serves     []string // annual slugs this Rock serves (1:many); empty = needs setup
 	Aliases    []string // portal-matcher vocabulary that resolves to this goal (exported)
 	Status     string   // "" (active) | "blocked" | "at-risk"
@@ -275,6 +277,8 @@ type GoalEdit struct {
 	Text    *string
 	Owner   *string
 	Quarter *string
+	Start   *string
+	Due     *string
 	Serves  *[]string // full replacement list (1:many)
 	Aliases *[]string // full replacement list (portal-matcher vocabulary)
 	Status  *string
@@ -314,6 +318,12 @@ func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	}
 	if e.Quarter != nil {
 		g.Quarter = strings.TrimSpace(*e.Quarter)
+	}
+	if e.Start != nil {
+		g.Start = stripBracket(*e.Start)
+	}
+	if e.Due != nil {
+		g.Due = stripBracket(*e.Due)
 	}
 	if e.Serves != nil {
 		g.Serves = dedupeNonEmpty(*e.Serves)
@@ -470,6 +480,8 @@ type GoalView struct {
 	Checked bool     `json:"checked"`
 	Owner   string   `json:"owner"`
 	Quarter string   `json:"quarter,omitempty"`
+	Start   string   `json:"start,omitempty"`
+	Due     string   `json:"due,omitempty"`
 	Serves  []string `json:"serves,omitempty"`
 	Aliases []string `json:"aliases,omitempty"`
 	Status  string   `json:"status,omitempty"`
@@ -507,7 +519,7 @@ func goalViews(gs []*Goal) []GoalView {
 		out = append(out, GoalView{
 			ID: g.ID, Text: g.Text, Checked: g.Checked,
 			Owner:   g.ResolvedOwner(),
-			Quarter: g.Quarter, Serves: g.Serves, Aliases: g.Aliases, Status: g.Status, Moved: g.Moved,
+			Quarter: g.Quarter, Start: g.Start, Due: g.Due, Serves: g.Serves, Aliases: g.Aliases, Status: g.Status, Moved: g.Moved,
 			Until: g.Until, Verify: g.Verify, Kpi: g.Kpi,
 			Children: goalViews(g.Children), Frozen: g.Frozen,
 		})

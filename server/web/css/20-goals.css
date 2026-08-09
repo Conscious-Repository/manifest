@@ -171,3 +171,10 @@
 .o-serves-chip.broken { color: var(--muted); border-style: dashed; }
 .o-serves-x { background: none; border: none; color: var(--icon); font-size: 10px; cursor: pointer; padding: 0; }
 .o-serves-x:hover { color: #b91c1c; }
+
+/* start/due date pickers (portal timeline §7) */
+.o-dates { gap: 16px; }
+.o-date-field { display: inline-flex; align-items: baseline; gap: 6px; cursor: pointer; }
+.o-date-cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--muted); }
+.o-date-in { font-family: var(--mono); font-size: 12px; color: var(--streak-ink); border: none; border-bottom: 1px solid var(--line); background: none; padding: 1px 2px; cursor: pointer; }
+.o-date-in:hover, .o-date-in:focus { border-bottom-color: var(--blue); outline: none; }
