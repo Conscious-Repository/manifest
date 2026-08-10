@@ -535,8 +535,17 @@ function renderSpiritRuns() {
     host.appendChild(emptyRow("No runs yet — cast a skill (press /) or wait for a scheduled ritual."));
     return;
   }
-  finished.forEach((r) => host.append(spiritRunRow(r)));
+  // the five most recent; the rest behind a quiet toggle (owner call)
+  const SHOW = 5;
+  (spiritRunsExpanded ? finished : finished.slice(0, SHOW)).forEach((r) => host.append(spiritRunRow(r)));
+  if (finished.length > SHOW) {
+    const t = el("button", "sprt-more",
+      spiritRunsExpanded ? "▴ show recent only" : "▸ all runs · " + (finished.length - SHOW) + " more");
+    t.onclick = () => { spiritRunsExpanded = !spiritRunsExpanded; renderSpiritRuns(); };
+    host.append(t);
+  }
 }
+let spiritRunsExpanded = false;
 
 // liveRunRow — ONE line (prototype): dot · RUNNING · spirit · ritual — request · elapsed
 function liveRunRow(item, running) {
