@@ -159,6 +159,8 @@ func (s *Store) Sweep(now time.Time) (int, error) {
 
 // Drop removes a todo from the live file and records it in the archive with a
 // [dropped:: date] stamp (the stale-nudge's "drop" — reversible by hand).
+// Find locates loose AND bucket todos, so removal must cover both — dropping
+// a bucket todo used to archive a copy while the live line survived.
 func (s *Store) Drop(id string, now time.Time) error {
 	d, err := s.Load()
 	if err != nil {
@@ -168,14 +170,35 @@ func (s *Store) Drop(id string, now time.Time) error {
 	if t == nil {
 		return os.ErrNotExist
 	}
-	line := emitTodo(t) + " [dropped:: " + now.Format("2006-01-02") + "] [domain:: " + dom.Name + "]"
+	where := dom.Name
+	removed := false
 	var keep []*Todo
 	for _, o := range dom.Todos {
 		if o != t {
 			keep = append(keep, o)
+		} else {
+			removed = true
 		}
 	}
 	dom.Todos = keep
+	if !removed {
+		for _, b := range dom.Buckets {
+			var kb []*Todo
+			for _, o := range b.Todos {
+				if o != t {
+					kb = append(kb, o)
+				} else {
+					removed = true
+					where = dom.Name + " / " + b.Name // the Sweep's archive convention
+				}
+			}
+			b.Todos = kb
+		}
+	}
+	if !removed {
+		return os.ErrNotExist // never archive a line the live file keeps
+	}
+	line := emitTodo(t) + " [dropped:: " + now.Format("2006-01-02") + "] [domain:: " + where + "]"
 	if err := s.appendArchive(now.Format("2006-01"), []string{line}); err != nil {
 		return err
 	}

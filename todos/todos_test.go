@@ -275,3 +275,33 @@ func TestMigrateLegacy(t *testing.T) {
 
 // testWrite is the tests' plain write path (prod injects a vaultwriter capability).
 func testWrite(path string, data []byte) error { return os.WriteFile(path, data, 0o644) }
+
+// Dropping a BUCKET todo must remove the live line (Find sees buckets; the
+// removal must too) — the 3×-archived-never-removed regression.
+func TestDropBucketTodo(t *testing.T) {
+	dir := t.TempDir()
+	raw := "# To Do\n\n## Real Estate\n- [ ] loose one [added:: 2026-07-01]\n\n### Tools · [bucket:: tools]\n- [ ] formalize heuristics tool [added:: 2026-07-30]\n"
+	if err := os.WriteFile(filepath.Join(dir, "to do.md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := NewStore(dir, "to do.md", func(p string, b []byte) error { return os.WriteFile(p, b, 0o644) })
+	if err := st.Drop("real-estate/formalize-heuristics-tool", now); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	live, _ := os.ReadFile(filepath.Join(dir, "to do.md"))
+	if strings.Contains(string(live), "formalize heuristics tool") {
+		t.Fatalf("bucket todo survived the drop:\n%s", live)
+	}
+	arch, _ := os.ReadFile(filepath.Join(dir, "to do archive.md"))
+	if !strings.Contains(string(arch), "[dropped:: ") || !strings.Contains(string(arch), "[domain:: Real Estate / Tools]") {
+		t.Fatalf("archive record wrong:\n%s", arch)
+	}
+	// loose drops still work
+	if err := st.Drop("real-estate/loose-one", now); err != nil {
+		t.Fatalf("loose drop: %v", err)
+	}
+	live, _ = os.ReadFile(filepath.Join(dir, "to do.md"))
+	if strings.Contains(string(live), "loose one") {
+		t.Fatalf("loose todo survived the drop:\n%s", live)
+	}
+}
