@@ -1,12 +1,16 @@
-// ================= TODOS (the third surface — `to do.md` board) =================
-// Manifest-quiet: domain groups, open items oldest-first, waiting collapsed at
-// each group's foot. A place to pick things off, not a dashboard.
+// ================= TODOS — everything you've committed to =================
+// Redesign §3 + Rev 2/3: ONE ranked list projected over personal + property +
+// aion items assigned to me (the stage-4 substrate), a decisions lane on top,
+// quiet rows for ideas and this week's done. Order IS the priority — drag a
+// row and [rank:: n] lands in the owning file. No waiting surface, no
+// parallel lists; every counter derives from the same rows.
 let todosCache = null;
-let todosWaitOpen = {}; // domain → expanded
+let todosTab = "focus"; // focus | aion | realestate | personal
+let todosQuiet = {};    // ideas / done expanded
 
 async function loadTodos() {
   try { todosCache = await (await fetch("/api/todos")).json(); }
-  catch (e) { todosCache = { domains: [], areas: [] }; }
+  catch (e) { todosCache = { rows: [], domains: [], areas: [], counts: {} }; }
   renderTodos();
 }
 
@@ -17,139 +21,191 @@ async function todosApi(path, body) {
   } catch (e) { showToast((e.message || "Todo update failed").slice(0, 80)); }
 }
 
-function renderTodos() {
-  const host = els.todosRows; host.innerHTML = "";
-  const domains = (todosCache.domains || []).slice()
-    .sort((a, b) => (a.name.toLowerCase() === "inbox" ? -1 : 0) - (b.name.toLowerCase() === "inbox" ? -1 : 0));
-  let open = 0, waiting = 0;
-  domains.forEach((dom) => dom.todos.forEach((t) => {
-    if (t.state === "open") open++;
-    else if (t.state === "waiting") waiting++;
-  }));
-  els.todosMeta.textContent = open + " open · " + waiting + " waiting · t to capture";
-
-  // one-time task-substrate split banner (until the migration commits)
-  if (todosCache.split === false) {
-    const banner = el("div", "tdo-triage-banner");
-    banner.append(el("span", "", "one task substrate — move every open goals.md task here (tethered to its Rock, or demote the Rock to a bucket)."));
-    banner.append(pillLight("run the split →", renderTodosSplit));
-    host.append(banner);
-  }
-
-  domains.forEach((dom) => {
-    const isInbox = dom.name.toLowerCase() === "inbox";
-    if (isInbox && !dom.todos.length) return; // silent until something lands
-    const sec = el("div", "tdo-section");
-    const head = el("div", "tdo-head", dom.name.toUpperCase());
-    sec.append(head);
-
-    const opens = dom.todos.filter((t) => t.state === "open")
-      .sort((a, b) => (a.added || "").localeCompare(b.added || ""));
-    const waits = dom.todos.filter((t) => t.state === "waiting")
-      .sort((a, b) => (a.since || a.added || "").localeCompare(b.since || b.added || ""));
-    const dones = dom.todos.filter((t) => t.state === "done");
-
-    opens.forEach((t) => sec.append(todoRow(dom, t, isInbox)));
-    dones.forEach((t) => sec.append(todoRow(dom, t, false)));
-    sec.append(ghostInput("＋ todo", "tdo-add", (v) => todosApi("/api/todos/item", { text: v, domain: dom.name }), "one line — what must happen…"));
-
-    if (waits.length) {
-      const foot = el("button", "tdo-wait-foot", (todosWaitOpen[dom.name] ? "▾" : "▸") + " waiting · " + waits.length);
-      foot.onclick = () => { todosWaitOpen[dom.name] = !todosWaitOpen[dom.name]; renderTodos(); };
-      sec.append(foot);
-      if (todosWaitOpen[dom.name]) waits.forEach((t) => sec.append(todoRow(dom, t, false)));
-    }
-
-    // buckets — standing containers, rendered at todo-row weight with a
-    // collapsible item list beneath (they're peers of the work, not chrome)
-    (dom.buckets || []).forEach((bk) => {
-      const key = dom.name + "/" + bk.slug;
-      // buckets are CONTENT, not chrome: open by default so every todo is
-      // visible on load; a collapse holds for the session (absent key = open)
-      const open = todosWaitOpen[key] !== false;
-      const bkOpen = bk.todos.filter((t) => t.state !== "done");
-      const row = el("div", "tdo-row tdo-bucket-row");
-      row.append(el("span", "sec-caret", open ? "▾" : "▸"));
-      const bkName = el("span", "tdo-text tdo-bucket-name", bk.name);
-      bkName.title = "click to rename";
-      bkName.onclick = (e) => {
-        e.stopPropagation(); // edit, don't toggle
-        const input = inputEl(""); input.value = bk.name; input.classList.add("work-edit");
-        input.onclick = (ev) => ev.stopPropagation();
-        input.addEventListener("keydown", (ev) => {
-          if (ev.key === "Enter" && input.value.trim()) {
-            todosApi("/api/todos/bucket", { domain: dom.name, slug: bk.slug, name: input.value });
-          } else if (ev.key === "Escape") input.replaceWith(bkName);
-        });
-        input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(bkName); });
-        bkName.replaceWith(input);
-        input.focus();
-      };
-      row.append(bkName);
-      row.append(el("span", "tdo-tag", bkOpen.length + " open"));
-      if ((bk.links || []).length) {
-        const lk = el("span", "tdo-bucket-links", "⧉ " + bk.links.join(" · "));
-        lk.title = "linked records — these todos also show on the linked property pages";
-        row.append(lk);
-      }
-      row.onclick = () => { todosWaitOpen[key] = todosWaitOpen[key] === false; renderTodos(); };
-      sec.append(row);
-      if (open) {
-        const items = el("div", "tdo-bucket-items");
-        bk.todos.slice().sort((a, b) => (a.added || "").localeCompare(b.added || ""))
-          .forEach((t) => items.append(todoRow(dom, t, false)));
-        items.append(ghostInput("＋ todo", "tdo-add", (v) =>
-          todosApi("/api/todos/item", { text: v, domain: dom.name, bucket: bk.name }), "into " + bk.name + "…"));
-        sec.append(items);
-      }
-    });
-
-    // issues — decisions/blockers, collapsed; a live-tasked issue is being worked
-    const openIssues = (dom.issues || []).filter((i) => !i.checked);
-    if (openIssues.length || todosWaitOpen[dom.name + "#issues"]) {
-      const key = dom.name + "#issues";
-      const head = el("button", "tdo-bucket-head",
-        (todosWaitOpen[key] ? "▾ " : "▸ ") + "issues · " + openIssues.length);
-      head.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
-      sec.append(head);
-      if (todosWaitOpen[key]) {
-        (dom.issues || []).forEach((is) => sec.append(issueRow(dom, is)));
-        sec.append(ghostInput("＋ issue", "tdo-add", (v) =>
-          todosApi("/api/todos/issue", { text: v, domain: dom.name }), "the decision or blocker…"));
-      }
-    } else {
-      const mk = el("button", "tdo-wait-foot", "＋ issue");
-      mk.onclick = () => { todosWaitOpen[dom.name + "#issues"] = true; renderTodos(); };
-      sec.append(mk);
-    }
-
-    // backlog — ideas, collapsed, never aged, read-only here (hand-edit in Obsidian)
-    if ((dom.backlog || []).length) {
-      const key = dom.name + "#backlog";
-      const head = el("button", "tdo-bucket-head",
-        (todosWaitOpen[key] ? "▾ " : "▸ ") + "backlog · " + dom.backlog.length);
-      head.onclick = () => { todosWaitOpen[key] = !todosWaitOpen[key]; renderTodos(); };
-      sec.append(head);
-      if (todosWaitOpen[key]) dom.backlog.forEach((ln) =>
-        sec.append(el("div", "tdo-backlog-line", ln.replace(/^[-*]\s*/, "· "))));
-    }
-    host.append(sec);
-  });
-  if (!host.children.length) host.append(el("div", "pp-empty", "Nothing here — press t anywhere to capture."));
+// tabOf buckets a row into the FOCUS sub-tabs by its container.
+function tabOf(r) {
+  if (r.source === "aion" || r.container.name === "Aion") return "aion";
+  if (r.source === "property" || /real estate/i.test(r.container.name || "")) return "realestate";
+  return "personal";
+}
+function issueTabOf(domainName) {
+  if (/^aion$/i.test(domainName)) return "aion";
+  if (/real estate/i.test(domainName)) return "realestate";
+  return "personal";
 }
 
-function todoRow(dom, t, isInbox) {
-  const row = el("div", "tdo-row" + (t.state === "done" ? " done" : ""));
-  const check = el("button", "check wk-check" + (t.state === "done" ? " on" : ""), t.state === "done" ? "✓" : "○");
-  check.onclick = () => todosApi("/api/todos/check", { id: t.id, checked: t.state !== "done" });
+const TODOS_TABS = [["focus", "FOCUS"], ["aion", "AION"], ["realestate", "REAL ESTATE"], ["personal", "PERSONAL"]];
+
+function renderTodos() {
+  const host = els.todosRows; host.innerHTML = "";
+  const counts = todosCache.counts || {};
+  els.todosMeta.textContent = (counts.todos || 0) + " open · t to capture";
+  if (typeof setCrumbMeta === "function" && !els.todosView.hidden) {
+    setCrumbMeta((counts.todos || 0) + " open" + (counts.outstanding ? " · " + counts.outstanding + " outstanding" : ""));
+  }
+  if (typeof railSetCount === "function") railSetCount("todos", counts.todos || 0);
+
+  // tab chips
+  const tabsHost = document.getElementById("todosTabs");
+  if (tabsHost) {
+    tabsHost.innerHTML = "";
+    TODOS_TABS.forEach(([val, label]) => {
+      const b = el("button", "filter-chip" + (todosTab === val ? " on" : ""), label);
+      b.onclick = () => { todosTab = val; renderTodos(); };
+      tabsHost.append(b);
+    });
+  }
+
+  // 1. decisions lane — always visible, never collapsed
+  const issues = [];
+  (todosCache.domains || []).forEach((dom) => (dom.issues || []).forEach((is) => {
+    if (!is.checked && (todosTab === "focus" || issueTabOf(dom.name) === todosTab)) {
+      issues.push({ is, domain: dom.name });
+    }
+  }));
+  if (issues.length) {
+    const lane = el("div", "tdo-decisions");
+    const head = el("div", "tdo-sec-label");
+    head.append(el("span", "tdo-sec-title", "⚑ Decisions waiting on you"),
+      el("span", "tdo-sec-count", String(issues.length)));
+    lane.append(head);
+    issues.forEach(({ is, domain }) => lane.append(decisionRow(is, domain)));
+    host.append(lane);
+  }
+
+  // 2. the ranked list
+  const rows = todosCache.rows || [];
+  const visible = todosTab === "focus" ? rows : rows.filter((r) => tabOf(r) === todosTab);
+  const sec = el("div", "tdo-main");
+  const head = el("div", "tdo-sec-label");
+  head.append(el("span", "tdo-sec-title", "Everything you've committed to"),
+    el("span", "tdo-sec-count", String(visible.length)),
+    el("span", "tdo-sec-hint", "⇅ drag to rank"));
+  sec.append(head);
+  visible.forEach((r) => sec.append(rankedRow(r, visible)));
+  if (!visible.length) sec.append(el("div", "pp-empty", "Nothing here — press t anywhere to capture."));
+  const capture = el("button", "tdo-capture", "＋ capture · t");
+  capture.onclick = () => openTodoQuickAdd();
+  sec.append(capture);
+  host.append(sec);
+
+  // 3. quiet rows — what used to be collapsed footers
+  const ideas = [];
+  (todosCache.domains || []).forEach((dom) => (dom.backlog || []).forEach((ln) =>
+    ideas.push({ domain: dom.name, line: ln })));
+  const dones = [];
+  (todosCache.domains || []).forEach((dom) => {
+    (dom.todos || []).forEach((t) => { if (t.state === "done") dones.push({ t, domain: dom.name }); });
+    (dom.buckets || []).forEach((bk) => (bk.todos || []).forEach((t) => {
+      if (t.state === "done") dones.push({ t, domain: dom.name });
+    }));
+  });
+  const quiet = el("div", "tdo-quiet-row");
+  const quietBtnEl = (key, label, n) => {
+    const b = el("button", "tdo-quiet" + (todosQuiet[key] ? " on" : ""), label + " · " + n);
+    b.onclick = () => { todosQuiet[key] = !todosQuiet[key]; renderTodos(); };
+    return b;
+  };
+  if (ideas.length) quiet.append(quietBtnEl("ideas", "◌ Ideas & backlog", ideas.length));
+  if (dones.length) quiet.append(quietBtnEl("done", "✓ Done this week", dones.length));
+  if (quiet.children.length) host.append(quiet);
+  if (todosQuiet.ideas && ideas.length) {
+    const box = el("div", "tdo-quiet-box");
+    ideas.forEach(({ domain, line }) => {
+      const row = el("div", "tdo-backlog-line", "· " + line.replace(/^[ \t]*[-*]\s*(\[.\]\s*)?/, ""));
+      row.title = domain;
+      box.append(row);
+    });
+    host.append(box);
+  }
+  if (todosQuiet.done && dones.length) {
+    const box = el("div", "tdo-quiet-box");
+    dones.forEach(({ t, domain }) => {
+      const row = el("div", "tdo-row done");
+      const check = el("button", "tdo-check on", "✓");
+      check.title = "reopen";
+      check.onclick = () => todosApi("/api/todos/check", { id: t.id, checked: false });
+      row.append(check, el("span", "tdo-text", t.text), containerPill(domain));
+      box.append(row);
+    });
+    host.append(box);
+  }
+}
+
+function containerPill(name) {
+  return el("span", "tdo-pill", name);
+}
+
+// decisionRow — ⚑ text · domain pill · ● age · decide → (inline resolution)
+function decisionRow(is, domain) {
+  const row = el("div", "tdo-dec-row");
+  row.append(el("span", "tdo-dec-flag", "⚑"));
+  const text = el("span", "tdo-dec-text", is.text);
+  row.append(text, containerPill(domain));
+  if (is.openTasks > 0) row.append(el("span", "tdo-pill", is.openTasks + " task" + (is.openTasks === 1 ? "" : "s")));
+  const right = el("span", "tdo-dec-right");
+  if (is.ageDays > 0) right.append(el("span", "tdo-dec-age", "● " + is.ageDays + "d"));
+  const decide = el("button", "tdo-decide", "decide →");
+  decide.onclick = () => {
+    const input = inputEl("one-line resolution — Enter commits…");
+    input.classList.add("tdo-decide-in");
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && input.value.trim()) {
+        todosApi("/api/todos/issue/resolve", { id: is.id, resolution: input.value });
+      } else if (ev.key === "Escape") input.replaceWith(decide);
+    });
+    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(decide); });
+    decide.replaceWith(input);
+    input.focus();
+  };
+  right.append(decide);
+  row.append(right);
+  return row;
+}
+
+// rankedRow — handle · checkbox · text · container · age. Thin by decree
+// (Rev 2): no rock tags, no waiting chips; stale = weight + ● only.
+let _dragId = null;
+function rankedRow(r, visible) {
+  const stale = r.ageDays >= 14;
+  const row = el("div", "tdo-row" + (stale ? " stale" : ""));
+  row.dataset.id = r.id;
+
+  const handle = el("span", "tdo-handle", "⠿");
+  handle.title = "drag to rank";
+  handle.onmousedown = () => { row.draggable = true; };
+  row.addEventListener("dragstart", (e) => {
+    _dragId = r.id;
+    row.classList.add("dragging");
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", r.id);
+  });
+  row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; });
+  row.addEventListener("dragover", (e) => {
+    if (!_dragId || _dragId === r.id) return;
+    e.preventDefault();
+    row.classList.add("drag-over");
+  });
+  row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+  row.addEventListener("drop", (e) => {
+    e.preventDefault();
+    row.classList.remove("drag-over");
+    if (!_dragId || _dragId === r.id) return;
+    commitRank(_dragId, r.id);
+    _dragId = null;
+  });
+  row.append(handle);
+
+  const check = el("button", "tdo-check", "○");
+  check.title = "done";
+  check.onclick = () => todosApi("/api/todos/check", { id: r.id, checked: true });
   row.append(check);
 
-  const label = el("span", "tdo-text", t.text);
+  const label = el("span", "tdo-text", r.text);
   label.title = "click to edit";
   label.onclick = () => {
-    const input = inputEl(""); input.value = t.text; input.classList.add("work-edit");
+    const input = inputEl(""); input.value = r.text; input.classList.add("work-edit");
     input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/todos/update", { id: t.id, text: input.value });
+      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/todos/update", { id: r.id, text: input.value });
       else if (ev.key === "Escape") input.replaceWith(label);
     });
     input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(label); });
@@ -157,159 +213,54 @@ function todoRow(dom, t, isInbox) {
   };
   row.append(label);
 
-  // tether tags: what this line advances (muted)
-  if (t.rock) {
-    const tag = el("span", "tdo-tag", "⧗ " + t.rock.split("/").pop());
-    tag.title = "services rock " + t.rock + " — ages by the rock's rhythm, not the 14d nudge";
-    row.append(tag);
+  const pill = containerPill(r.container.name);
+  if (r.container.kind === "property") {
+    pill.classList.add("linky");
+    pill.title = "open the property";
+    pill.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(r.container.slug); };
   }
-  if (t.issue) {
-    const tag = el("span", "tdo-tag", "⚑ " + t.issue.split("/").pop());
-    tag.title = "works issue " + t.issue;
-    row.append(tag);
-  }
+  row.append(pill);
 
-  if (t.state === "waiting") {
-    const chip = el("span", "tdo-wait-chip", "⏳ " + t.waiting + " · " + t.ageDays + "d");
-    chip.title = "waiting since " + (t.since || "?") + " — click to resume (back to open)";
-    chip.onclick = () => todosApi("/api/todos/update", { id: t.id, waiting: "" });
-    row.append(chip);
-  }
-
-  if (isInbox) {
-    // one-tap domain assignment for inbox captures
-    const chips = el("span", "tdo-domain-chips");
-    (todosCache.areas || []).forEach((a) => {
-      const c = el("button", "stmt-hint", a);
-      c.onclick = () => todosApi("/api/todos/update", { id: t.id, domain: a });
-      chips.append(c);
-    });
-    row.append(chips);
-  }
-
-  const age = el("span", "tdo-age" + (t.state === "open" && t.ageDays >= 14 ? " stale" : ""),
-    t.ageDays > 0 ? t.ageDays + "d" : "");
-  if (t.state === "open" && t.ageDays >= 14) age.title = "aging — do it, mark waiting, or drop it";
-  row.append(age);
-
-  const acts = el("span", "tdo-acts");
-  if (t.state === "open") {
-    const wait = el("button", "stmt-hint", "waiting…");
-    wait.onclick = () => {
-      const who = personInput((v) => todosApi("/api/todos/update", { id: t.id, waiting: v }),
-        () => { who.el.replaceWith(wait); });
-      wait.replaceWith(who.el);
-      who.focus();
+  const right = el("span", "tdo-right");
+  const age = el("span", "tdo-age" + (stale ? " stale" : ""),
+    r.ageDays > 0 ? (stale ? "● " : "") + r.ageDays + "d" : "");
+  if (stale) age.title = "aging — do it or drop it";
+  right.append(age);
+  if (r.source === "personal") {
+    const x = el("button", "uw-x", "✕");
+    x.title = "drop (archived, never deleted)";
+    x.onclick = () => {
+      const yes = el("button", "tdo-decide", "drop?");
+      yes.onclick = () => todosApi("/api/todos/drop", { id: r.id });
+      x.replaceWith(yes);
+      setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);
     };
-    acts.append(wait);
+    right.append(x);
   }
-  const x = el("button", "uw-x", "✕");
-  x.title = "drop (archived, never deleted)";
-  x.onclick = () => {
-    const yes = quietBtn("drop?", () => todosApi("/api/todos/drop", { id: t.id }));
-    const no = quietBtn("no", () => { yes.remove(); no.remove(); x.hidden = false; });
-    x.hidden = true;
-    acts.append(yes, no);
-  };
-  acts.append(x);
-  row.append(acts);
+  row.append(right);
   return row;
 }
 
-// renderTodosSplit — the one-time task-substrate migration surface: every
-// active Rock with task lines, keep-as-Rock (open tasks move here tethered)
-// or demote-to-bucket (Rock closes as a Learn); one previewed commit.
-async function renderTodosSplit() {
-  const host = els.todosRows; host.innerHTML = "loading…";
-  let d = { rocks: [] };
-  try { d = await (await fetch("/api/todos/split")).json(); } catch (e) {}
-  host.innerHTML = "";
-  const rocks = d.rocks || [];
-  els.todosMeta.textContent = rocks.length + " rocks carry task lines in goals.md";
-  if (!rocks.length) { host.append(el("div", "pp-empty", "goals.md carries no task lines — nothing to split.")); return; }
-  const choice = {}; // id → {action, bucket}
-  rocks.forEach((r) => { choice[r.id] = { action: "keep", bucket: r.rock }; });
-
-  const refreshBar = () => {
-    const demotes = Object.values(choice).filter((c) => c.action === "demote").length;
-    const moves = rocks.reduce((a, r) => a + (r.openTasks || []).length, 0);
-    barLabel.textContent = moves + " OPEN TASKS MOVE · " + demotes + " ROCK" + (demotes === 1 ? "" : "S") + " DEMOTE · checked history freezes in place";
-  };
-
-  rocks.forEach((r) => {
-    const sec = el("div", "tdo-section");
-    const head = el("div", "tdo-head split-head");
-    head.append(el("span", "", r.area.toUpperCase() + " · " + r.rock +
-      (r.checkedCount ? "  (" + r.checkedCount + " checked lines stay frozen)" : "")));
-    const toggle = el("button", "tdo-verdict keep", "keep as rock");
-    toggle.onclick = () => {
-      const c = choice[r.id];
-      c.action = c.action === "keep" ? "demote" : "keep";
-      toggle.textContent = c.action === "keep" ? "keep as rock" : "demote \u2192 bucket \u201c" + c.bucket + "\u201d";
-      toggle.className = "tdo-verdict " + (c.action === "keep" ? "keep" : "move");
-      refreshBar();
-    };
-    head.append(toggle);
-    sec.append(head);
-    (r.openTasks || []).forEach((t) => {
-      const row = el("div", "tdo-row");
-      row.append(el("span", "tdo-triage-path", "\u2192 " + r.area), el("span", "tdo-text", t));
-      sec.append(row);
-    });
-    if (!(r.openTasks || []).length) sec.append(el("div", "pp-empty", "no open tasks \u2014 only frozen history"));
-    host.append(sec);
-  });
-
-  const bar = el("div", "dirty-bar");
-  const barLabel = el("span", "dirty-label", "");
-  const commit = el("button", "pill", "commit split");
-  commit.onclick = async () => {
-    commit.disabled = true;
-    const body = { rocks: rocks.map((r) => ({ id: r.id, action: choice[r.id].action, bucket: choice[r.id].bucket })) };
-    try {
-      const res = await postJSONOk("/api/todos/split", body);
-      showToast("Split committed \u2014 " + (res.moved || []).length + " tasks moved \u00b7 " + (res.demoted || 0) + " demoted (backups: .pre-split)");
-      loadTodos();
-    } catch (e) { showToast(("Split failed: " + (e.message || "")).slice(0, 90)); commit.disabled = false; }
-  };
-  const cancel = el("button", "pill light", "later");
-  cancel.onclick = () => loadTodos();
-  bar.append(barLabel, commit, cancel);
-  refreshBar();
-  host.append(bar);
-}
-
-// issueRow: a decision/blocker line — open-tethered-task count shows it's
-// being worked; resolving asks for the one-line note.
-function issueRow(dom, is) {
-  const row = el("div", "tdo-row" + (is.checked ? " done" : ""));
-  row.append(el("span", "tdo-issue-dot", "⚑"));
-  const label = el("span", "tdo-text", is.text + (is.checked && is.resolution ? " — " + is.resolution : ""));
-  row.append(label);
-  if (!is.checked && is.openTasks > 0) {
-    row.append(el("span", "tdo-tag", is.openTasks + " task" + (is.openTasks === 1 ? "" : "s")));
-  }
-  if (!is.checked) {
-    const resolve = el("button", "stmt-hint", "resolve…");
-    resolve.onclick = () => {
-      const input = inputEl("one-line resolution…");
-      input.classList.add("work-edit");
-      input.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" && input.value.trim()) {
-          todosApi("/api/todos/issue/resolve", { id: is.id, resolution: input.value });
-        } else if (ev.key === "Escape") input.replaceWith(resolve);
-      });
-      input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(resolve); });
-      resolve.replaceWith(input);
-      input.focus();
-    };
-    row.append(resolve);
-  }
-  return row;
+// commitRank — reposition draggedId before targetId in the GLOBAL row order
+// (the visible list may be a tab subset), then one POST with the full order:
+// the server writes [rank:: n] with one write per touched file.
+function commitRank(draggedId, targetId) {
+  const order = (todosCache.rows || []).map((r) => r.id).filter((id) => id !== draggedId);
+  const at = order.indexOf(targetId);
+  if (at < 0) return;
+  order.splice(at, 0, draggedId);
+  // optimistic: re-order the cache rows to match, then persist
+  const byId = {};
+  (todosCache.rows || []).forEach((r) => { byId[r.id] = r; });
+  todosCache.rows = order.map((id) => byId[id]).filter(Boolean);
+  renderTodos();
+  todosApi("/api/todos/rank", { order });
 }
 
 // personInput: free text or a contact — picking a suggestion wraps [[display]]
-// so the waiting-on surfaces on that contact's page.
+// so the waiting-on surfaces on that contact's page. (Used by the FEED
+// signals lane's waiting quick-action; the todos board itself no longer
+// renders waiting — strict Rev 3.)
 function personInput(onSet, onCancel) {
   const ta = typeahead({
     placeholder: "who? (name or free text)",

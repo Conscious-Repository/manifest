@@ -227,6 +227,8 @@ type IssueView struct {
 	Checked    bool   `json:"checked"`
 	Resolution string `json:"resolution,omitempty"`
 	OpenTasks  int    `json:"openTasks"` // open todos tethered to this issue — worked, not parked
+	Added      string `json:"added,omitempty"`
+	AgeDays    int    `json:"ageDays"` // the decisions lane's ● age marker
 }
 
 type TodoView struct {
@@ -279,9 +281,16 @@ func (d *Doc) View(now time.Time) View {
 			dv.Buckets = append(dv.Buckets, bv)
 		}
 		for _, is := range dom.Issues {
+			age := 0
+			if d, err := time.Parse("2006-01-02", is.Added); err == nil {
+				if days := int(now.Sub(d).Hours() / 24); days > 0 {
+					age = days
+				}
+			}
 			dv.Issues = append(dv.Issues, IssueView{
 				ID: is.ID, Text: is.Text, Checked: is.Checked,
 				Resolution: is.Resolution, OpenTasks: openByIssue[is.ID],
+				Added: is.Added, AgeDays: age,
 			})
 		}
 		dv.Backlog = dom.Backlog

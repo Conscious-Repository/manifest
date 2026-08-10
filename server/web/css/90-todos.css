@@ -1,41 +1,76 @@
-/* 90-todos — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
+/* 90-todos — TODOS, the committed list (redesign §3 + Rev 2/3, 2026-08-09).
+   Dense rows: 4px 8px padding, 14px text, #f4f4f4 row hairlines. Alarm is
+   weight + a ● dot, never a color. */
 
-/* ---- TODOS: the third surface ---- */
-.tdo-section { margin-bottom: 22px; }
-.tdo-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; color: var(--muted); padding: 4px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
-.tdo-row { display: flex; align-items: baseline; gap: 10px; padding: 5px 2px; }
-.tdo-row.done .tdo-text { text-decoration: line-through; color: var(--muted); }
-.tdo-text { cursor: text; }
-.tdo-age { font-family: var(--mono); font-size: 10.5px; color: var(--icon); min-width: 28px; text-align: right; margin-left: auto; }
+/* section labels */
+.tdo-sec-label { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 6px; border-bottom: 1px solid var(--base-25); margin-bottom: 2px; }
+.tdo-sec-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
+.tdo-sec-count { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.tdo-sec-hint { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; }
+
+/* 1 — decisions lane (always visible, never collapsed) */
+.tdo-decisions { margin-bottom: 22px; }
+.tdo-dec-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 10px; border-top: 1px solid var(--base-25);
+  border-left: 2px solid var(--base-100); background: var(--base-05);
+}
+.tdo-dec-flag { font-size: 12px; color: var(--base-100); flex: none; }
+.tdo-dec-text { font-family: var(--sans); font-size: 14px; font-weight: 500; flex: 1 1 auto; min-width: 0; }
+.tdo-dec-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: 12px; white-space: nowrap; }
+.tdo-dec-age { font-family: var(--mono); font-size: 11px; color: var(--base-100); }
+.tdo-decide { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--accent); cursor: pointer; padding: 0; }
+.tdo-decide-in { font-family: var(--sans); font-size: 13px; border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 2px 8px; min-width: 240px; }
+
+/* 2 — the ranked list */
+.tdo-main { margin-bottom: 18px; }
+.tdo-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 4px 8px; border-top: 1px solid #f4f4f4;
+}
+.tdo-row:hover { background: var(--base-05); }
+.tdo-row.dragging { opacity: 0.4; }
+.tdo-row.drag-over { border-top: 2px solid var(--accent); }
+.tdo-handle { font-family: var(--mono); font-size: 11px; color: var(--base-30); width: 16px; flex: none; cursor: grab; user-select: none; }
+.tdo-check { background: none; border: none; font-size: 13px; color: var(--base-30); cursor: pointer; padding: 0 2px; flex: none; }
+.tdo-check:hover { color: var(--accent); }
+.tdo-check.on { color: var(--accent); }
+.tdo-text { font-family: var(--sans); font-size: 14px; cursor: text; min-width: 0; overflow-wrap: anywhere; }
+.tdo-row.stale .tdo-text { font-weight: 500; }
+.tdo-row.done .tdo-text { text-decoration: line-through; color: var(--base-40); }
+.tdo-pill { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; white-space: nowrap; flex: none; }
+.tdo-pill.linky { cursor: pointer; }
+.tdo-pill.linky:hover { color: var(--accent); border-color: var(--accent-soft); }
+.tdo-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.tdo-age { font-family: var(--mono); font-size: 11px; color: var(--base-40); min-width: 28px; text-align: right; }
 .tdo-age.stale { color: var(--base-100); }
-.tdo-age.stale::before { content: "● "; font-size: 7px; vertical-align: 2px; }
-.tdo-acts { display: inline-flex; gap: 8px; align-items: baseline; }
-.tdo-acts .uw-x { color: var(--icon); visibility: hidden; }
+.tdo-right .uw-x { color: var(--base-30); visibility: hidden; background: none; border: none; cursor: pointer; padding: 0; }
 .tdo-row:hover .uw-x { visibility: visible; }
-.tdo-wait-chip { font-family: var(--mono); font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: 1px 8px; cursor: pointer; }
-.tdo-wait-chip:hover { color: var(--fg); }
-.tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--icon); cursor: pointer; padding: 4px 2px; }
-.tdo-wait-foot:hover { color: var(--muted); }
-.tdo-domain-chips { display: inline-flex; gap: 6px; }
-.tdo-qa-chips { display: flex; gap: 8px; padding: 12px 18px 16px; flex-wrap: wrap; align-items: center; }
-.tdo-bucket-head { display: block; width: 100%; text-align: left; background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--muted); cursor: pointer; padding: 6px 2px 2px; }
-.tdo-bucket-head:hover { color: var(--fg); }
-/* buckets at todo-row weight: name reads like a task, items indent beneath */
-.tdo-bucket-row { cursor: pointer; }
-.tdo-bucket-row:hover .tdo-bucket-name { color: var(--fg); }
-.tdo-bucket-row .sec-caret { color: var(--icon); font-size: 10px; width: 12px; }
-.tdo-bucket-name { font-weight: 500; }
-.tdo-bucket-links { font-family: var(--mono); font-size: 10.5px; color: var(--icon); }
-.tdo-bucket-items { border-left: 2px solid var(--line); margin: 0 0 6px 5px; padding-left: 14px; }
-.tdo-tag { font-family: var(--mono); font-size: 10.5px; color: var(--icon); border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; }
-.tdo-issue-dot { color: var(--base-100); }
-.tdo-backlog-line { font-size: 12.5px; color: var(--muted); padding: 2px 2px 2px 14px; }
-.tdo-triage-banner { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 13px; margin-bottom: 16px; }
-.tdo-triage-path { font-family: var(--mono); font-size: 10.5px; color: var(--icon); min-width: 260px; }
-.tdo-verdict { margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 10px; padding: 2px 10px; font-family: var(--mono); font-size: 11px; cursor: pointer; color: var(--muted); }
-.tdo-verdict.move { color: #265ACC; border-color: #265ACC; }
-.split-head { display: flex; justify-content: space-between; align-items: baseline; }
-.tdo-verdict.drop { color: #b91c1c; border-color: #b91c1c; }
+.tdo-right .uw-x:hover { color: var(--base-100); }
 
-/* quick-add confirm: pinned right of the chip row */
-.qa-add { margin-left: auto; white-space: nowrap; flex: none; }
+/* capture ghost */
+.tdo-capture {
+  margin-top: 6px; background: none; cursor: pointer;
+  font-family: var(--mono); font-size: 11.5px; color: var(--base-40);
+  border: 1px dashed var(--base-25); border-radius: var(--radius); padding: 5px 11px;
+}
+.tdo-capture:hover { color: var(--accent); border-color: var(--accent-soft); }
+
+/* 3 — quiet rows */
+.tdo-quiet-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
+.tdo-quiet {
+  background: var(--base-05); border: 1px solid var(--base-25); border-radius: var(--radius-lg);
+  padding: 7px 12px; font-family: var(--mono); font-size: 11px; color: var(--base-50); cursor: pointer;
+}
+.tdo-quiet:hover, .tdo-quiet.on { color: var(--accent); border-color: var(--accent-soft); }
+.tdo-quiet-box { margin: 4px 0 10px; }
+.tdo-backlog-line { font-size: 12.5px; color: var(--base-40); padding: 2px 2px 2px 14px; }
+
+/* quick-add chips row (the t overlay) */
+.tdo-qa-chips { display: flex; gap: 8px; padding: 12px 18px 16px; flex-wrap: wrap; align-items: center; }
+
+/* compat: goals rock-window + work views still borrow these until their own
+   redesign stages (6, 9) land */
+.tdo-tag { font-family: var(--mono); font-size: 10.5px; color: var(--base-30); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; }
+.tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-30); cursor: pointer; padding: 4px 2px; }
+.tdo-wait-foot:hover { color: var(--base-40); }

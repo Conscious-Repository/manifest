@@ -42,18 +42,30 @@ function openTodoQuickAdd(prefill) {
     ((dv && dv.buckets) || []).forEach((bk) => opt("bucket:" + bk.name, "▸ " + bk.name));
   };
   fillTether();
+  // capture can target a property directly (Rev 3) — the line lands in THAT
+  // property's file, never as a parallel copy here
+  const propSel = document.createElement("select");
+  propSel.className = "pp-in board-select";
+  propSel.title = "optional: capture onto a property page instead";
+  {
+    const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; propSel.append(o); };
+    opt("", "no property");
+    ((todosCache && todosCache.containers) || []).filter((c) => c.kind === "property")
+      .forEach((c) => opt(c.slug, "⌂ " + c.name));
+  }
   const close = () => overlay.remove();
   const submit = async () => {
     const text = input.value.trim();
     if (!text) { close(); return; }
     const body = { text, domain };
+    if (propSel.value) body.container = { kind: "property", slug: propSel.value };
     const tv = tether.value;
     if (tv.startsWith("rock:")) body.rock = tv.slice(5);
     else if (tv.startsWith("issue:")) body.issue = tv.slice(6);
     else if (tv.startsWith("bucket:")) body.bucket = tv.slice(7);
     try {
       await postJSONOk("/api/todos/item", body);
-      showToast("Todo captured" + (domain ? " → " + domain : " → Inbox"));
+      showToast("Todo captured → " + (propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox")));
       close();
       if (!els.todosView.hidden) loadTodos();
     } catch (e) { showToast("Couldn't capture"); }
@@ -68,7 +80,8 @@ function openTodoQuickAdd(prefill) {
   back.onclick = close;
   const add = pill("Add ↵", submit);
   add.classList.add("qa-add");
-  chips.append(tether, add);
+  propSel.addEventListener("change", () => input.focus());
+  chips.append(tether, propSel, add);
   panel.append(input, chips);
   overlay.append(back, panel);
   document.body.append(overlay);
@@ -151,11 +164,7 @@ function railSetCount(key, n) {
 async function refreshRailCounts() {
   const j = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [td, gl, ai, pr] = await Promise.all([j("/api/todos"), j("/api/goals"), j("/api/aion"), j("/api/properties")]);
-  if (td && td.domains) {
-    railSetCount("todos", td.domains.reduce((n, d) =>
-      n + ((d.todos || []).filter((t) => !t.checked).length)
-        + ((d.buckets || []).reduce((m, b) => m + ((b.todos || b.items || []).filter((t) => !t.checked).length), 0)), 0));
-  }
+  if (td && td.counts) railSetCount("todos", td.counts.todos || 0); // same derivation as the surface — one truth
   if (gl && gl.areas) railSetCount("goals", gl.areas.reduce((n, a) => n + ((a.rocks || []).filter((r) => !r.checked).length), 0));
   if (ai && ai.backlog) railSetCount("aion", ai.backlog.filter((b) => !b.checked).length);
   if (pr && pr.properties) railSetCount("properties", pr.properties.length);
