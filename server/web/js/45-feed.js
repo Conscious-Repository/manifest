@@ -118,31 +118,13 @@ function signalRow(sg) {
   const label = el("span", "signal-label cp-clickable", sg.label);
   label.onclick = () => { location.hash = sg.actHref; };
   row.append(label);
+  // two verbs only (owner call 2026-08-10): Done ✓ on todo signals, dismiss on
+  // everything — the label itself already navigates to the item.
   const act = el("span", "signal-actions");
   if (sg.kind === "todo-stale" || sg.kind === "todo-waiting") {
-    // the stale-todo card asks for a decision: do · mark waiting · drop
-    // (state changes auto-clear the condition — no dismissal bookkeeping)
-    act.append(
-      pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })),
-    );
-    if (sg.kind === "todo-stale") {
-      act.append(pillLight("Waiting…", () => {
-        const who = personInput((v) => signalAction("/api/todos/update", { id: sg.goalId, waiting: v }),
-          () => loadFeed());
-        act.replaceWith(who.el);
-        who.focus();
-      }));
-      act.append(pillLight("→ issue", () => signalAction("/api/todos/to-issue", { id: sg.goalId })));
-    }
-    act.append(pillLight("Drop", () => signalAction("/api/todos/drop", { id: sg.goalId })));
+    act.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })));
   }
-  const actBtn = pillLight("act", () => { location.hash = sg.actHref; });
-  actBtn.classList.add("signal-act");
-  act.append(
-    actBtn,
-    pillLight("snooze", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })),
-    pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })),
-  );
+  act.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })));
   row.append(act);
   return row;
 }
