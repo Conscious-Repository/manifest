@@ -83,17 +83,15 @@ async function renderPropertyPage(slug) {
   }
 }
 
-// ---- side card: parcel outline + owner of record ----
+// ---- side card: located parcel thumb + owner of record ----
+
+let _thumbMap = null; // the live mini-map instance (rebuilt per render)
 
 function propSideCard(p) {
   const side = el("div", "pp3-side");
   const thumbSlot = el("div", "pp-thumb-slot");
   side.append(thumbSlot);
-  loadPropGeo(p.slug).then((features) => {
-    const t = parcelThumb(features);
-    if (t) thumbSlot.replaceWith(t);
-    else thumbSlot.remove();
-  });
+  loadPropGeo(p.slug).then((features) => mountParcelThumb(thumbSlot, features));
   side.append(ownerCard(p));
   return side;
 }
@@ -107,15 +105,60 @@ async function loadPropGeo(slug) {
   return propGeoCache[slug];
 }
 
-// parcelThumb: a quiet SVG of the parcel outline — no tiles, no Leaflet.
-// Click-through to the full map.
-function parcelThumb(features) {
+function ringsFromFeatures(features) {
   const rings = [];
   (features || []).forEach((f) => {
     const g = (f && f.geometry) || {};
     if (g.type === "Polygon") (g.coordinates || []).forEach((r) => rings.push(r));
     else if (g.type === "MultiPolygon") (g.coordinates || []).forEach((poly) => (poly || []).forEach((r) => rings.push(r)));
   });
+  return rings;
+}
+
+// mountParcelThumb: a LOCATED thumbnail — a small CARTO-tiled mini-map (same
+// basemap as the full map) zoomed to show the parcel in its block, with the
+// parcel highlighted. A bare outline floating on white doesn't tell you where
+// the property is; the streets and neighbors around it do. Non-interactive;
+// click → the full map. Falls back to the quiet SVG outline when offline.
+async function mountParcelThumb(slot, features) {
+  const rings = ringsFromFeatures(features);
+  if (rings.flat().length < 3) { slot.remove(); return; }
+  try { await loadLeaflet(); }
+  catch (e) {
+    const svg = parcelThumbSVG(rings);
+    if (svg) slot.replaceWith(svg); else slot.remove();
+    return;
+  }
+  if (!slot.isConnected) return;
+  const box = el("div", "pp-thumb");
+  slot.replaceWith(box);
+  if (_thumbMap) { try { _thumbMap.remove(); } catch (e) {} _thumbMap = null; }
+  const map = L.map(box, {
+    zoomControl: false, attributionControl: false, dragging: false,
+    scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
+    keyboard: false, touchZoom: false,
+  });
+  _thumbMap = map;
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(map);
+  const layer = L.geoJSON({ type: "FeatureCollection", features }, {
+    style: { color: "#265ACC", weight: 2, fillColor: "#265ACC", fillOpacity: 0.2 },
+  }).addTo(map);
+  const bounds = layer.getBounds();
+  // fit tight to the parcel, then back off two zoom levels so a block or two of
+  // context (streets, neighboring lots) is always in frame
+  const fit = () => {
+    map.fitBounds(bounds, { maxZoom: 19 });
+    map.setZoom(Math.max(map.getZoom() - 2, 15), { animate: false });
+  };
+  fit();
+  setTimeout(() => { map.invalidateSize(); fit(); }, 80);
+  map.on("click", () => { location.hash = "#/properties/map"; });
+  box.title = "open the map";
+  box.style.cursor = "pointer";
+}
+
+// parcelThumbSVG: the offline fallback — a quiet outline, no tiles.
+function parcelThumbSVG(rings) {
   const pts = rings.flat();
   if (pts.length < 3) return null;
   const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);

@@ -152,8 +152,9 @@
 .pp3-cols { display: flex; gap: 28px; align-items: flex-start; }
 .pp3-main { flex: 1 1 auto; min-width: 0; }
 .pp3-side { flex: 0 0 240px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: 14px; }
-.pp-thumb { width: 240px; height: 150px; background: var(--base-05); border: 1px solid var(--base-20); border-radius: var(--radius); cursor: pointer; }
-.pp-thumb polygon { fill: rgba(38, 90, 204, 0.08); stroke: var(--accent); stroke-width: 1.5; }
+.pp-thumb, .pp-thumb-slot { width: 240px; height: 150px; background: var(--base-05); border: 1px solid var(--base-20); border-radius: var(--radius); cursor: pointer; overflow: hidden; }
+.pp-thumb .leaflet-tile-pane { filter: saturate(0.85); } /* keep the basemap quiet under the accent parcel */
+.pp-thumb polygon { fill: rgba(38, 90, 204, 0.08); stroke: var(--accent); stroke-width: 1.5; } /* SVG offline fallback */
 .pp-thumb:hover polygon { fill: rgba(38, 90, 204, 0.16); }
 .pp3-owner { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 10px 12px; }
 .pp3-owner-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); margin-bottom: 4px; }
