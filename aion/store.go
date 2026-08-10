@@ -119,7 +119,10 @@ func (s *Store) UpdateItem(id string, set map[string]string, now time.Time) erro
 	if it == nil {
 		return fmt.Errorf("item %q not found", id)
 	}
-	if it.Status == StatusDecided {
+	// only a decided DECISION is permanent — a task that arrived with a stray
+	// [status:: decided] (extraction drift) must stay editable, or it locks
+	// forever behind an error about decisions
+	if it.Kind == KindDecision && it.Status == StatusDecided {
 		return fmt.Errorf("a decided decision is permanent")
 	}
 	for key, val := range set {
@@ -184,7 +187,7 @@ func (s *Store) SetRanks(ranks map[string]string) error {
 	changed := false
 	for id, rank := range ranks {
 		it := doc.Find(id)
-		if it == nil || it.Status == StatusDecided {
+		if it == nil || (it.Kind == KindDecision && it.Status == StatusDecided) {
 			continue
 		}
 		if it.Rank != rank {

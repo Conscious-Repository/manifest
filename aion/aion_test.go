@@ -1,8 +1,11 @@
 package aion
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // canonical fixtures — one per corpus, exercising the full grammar
@@ -405,5 +408,33 @@ func TestValidatePayload(t *testing.T) {
 	free := ProposalPayload{Kind: KindTask, Title: "x", Owner: "Ken Cron"}
 	if err := free.Validate(people); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A TASK that arrived with a stray [status:: decided] (extraction drift) must
+// stay editable — only decided DECISIONS are permanent. The guard once matched
+// on status alone, locking such tasks forever.
+func TestUpdateTaskWithStrayDecidedStatus(t *testing.T) {
+	dir := t.TempDir()
+	raw := "# AION — backlog\n\n## inbox\n- [ ] Execute advisor agreement [kind:: task] [owner:: BA] [status:: decided] [rock:: aion/operations-health]\n"
+	if err := os.WriteFile(filepath.Join(dir, "backlog.md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := NewStore(dir, "", func(p string, b []byte) error { return os.WriteFile(p, b, 0o644) })
+	id := ItemID(KindTask, "Execute advisor agreement")
+	if err := st.UpdateItem(id, map[string]string{"status": "done"}, time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("update refused: %v", err)
+	}
+	out, _ := os.ReadFile(filepath.Join(dir, "backlog.md"))
+	if !strings.Contains(string(out), "- [x] Execute advisor agreement") || !strings.Contains(string(out), "[status:: done]") {
+		t.Fatalf("task not marked done:\n%s", out)
+	}
+	// a decided DECISION stays permanent
+	raw2 := "# AION — backlog\n\n## inbox\n- [x] Pick the vendor [kind:: decision] [status:: decided] [outcome:: chose X]\n"
+	if err := os.WriteFile(filepath.Join(dir, "backlog.md"), []byte(raw2), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateItem(ItemID(KindDecision, "Pick the vendor"), map[string]string{"owner": "HZ"}, time.Now()); err == nil {
+		t.Fatal("decided decision must refuse edits")
 	}
 }
