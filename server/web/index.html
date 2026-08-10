@@ -55,6 +55,7 @@
       <span id="crumbPath" class="crumb-path"></span>
       <span class="crumb-right">
         <span id="crumbMeta" class="crumb-meta"></span>
+        <span id="aionPublishRail" class="aion-rail"></span>
         <span id="dateNav" class="crumb-datenav" hidden>
           <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
           <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
@@ -317,7 +318,6 @@
     <div class="agent-head">
       <span class="agent-title">AION</span>
       <div class="agent-actions">
-        <span id="aionPublishRail" class="aion-rail"></span>
         <span id="aionMeta" class="panel-meta"></span>
         <span class="prop-toggle" id="aionToggle">
           <a class="filter-chip on" data-mode="backlog" href="#/aion">BACKLOG</a>
@@ -328,6 +328,7 @@
           <a class="filter-chip" data-mode="reconcile" href="#/aion/reconcile">RECONCILE</a>
           <a class="filter-chip" data-mode="settings" href="#/aion/settings">SETTINGS</a>
         </span>
+        <button class="aion-raw-link" onclick="toggleRawOverlay()" title="Edit the raw markdown behind this tab">⌘/ edit raw</button>
       </div>
     </div>
     <div id="aionBody" class="aion-body"></div>

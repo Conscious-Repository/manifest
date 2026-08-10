@@ -327,9 +327,10 @@ function rawPathsForRoute() {
   if (sec === "goals") return ["goals.md"];
   if (sec === "note") return [decodeURIComponent(h.slice("#/note/".length))];
   if (sec === "aion") {
+    const orgFile = "system/aion/" + ((typeof aionOrgSel !== "undefined" && aionOrgSel) || "people") + ".md";
     const map = { "": "system/aion/backlog.md", heuristics: "system/aion/heuristics.md",
                   vto: "system/aion/vto.md", goals: "goals.md", // the aion GOALS tab reads the goals area
-                  org: "system/aion/people.md", reconcile: "system/aion/backlog.md" };
+                  org: orgFile, reconcile: "system/aion/backlog.md" };
     const f = map[sub[0] || ""];
     return f ? [f] : [];
   }
@@ -373,8 +374,8 @@ function buildRawOverlay() {
   return _rawEls;
 }
 
-async function openRawOverlay() {
-  const candidates = rawPathsForRoute();
+async function openRawOverlay(explicitPath) {
+  const candidates = explicitPath ? [explicitPath] : rawPathsForRoute();
   if (!candidates.length) { showToast("No raw file behind this view"); return; }
   const ui = buildRawOverlay();
   ui.path.textContent = candidates[0];

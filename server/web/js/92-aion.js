@@ -4,9 +4,11 @@
 // Settings — plus the publish rail (aionbio export effector). Manifest is the
 // only edit surface; the team portal is read-only, fed by PUBLISH.
 let aionCache = null;
-let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | settings
-let aionKindFilter = ""; // "" = all | task | decision
-let aionStatusFilter = "open"; // open | done | all
+let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | reconcile | settings
+let aionSelId = null;     // inspector selection (redesign §4 — replaces the drawer)
+let aionOrgSel = "people"; // org registry rail selection
+let aionDoneOpen = false;    // backlog: done-tasks section expanded
+let aionDecidedOpen = false; // backlog: decided-decisions log expanded
 let aionExpanded = {}; // heuristic id → sources expanded
 
 function showAion(h) {
@@ -46,24 +48,29 @@ async function aionPost(url, body, okMsg) {
   } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
 }
 
-// ---- publish rail: last published + per-section dirty dots + PUBLISH ----
+// ---- publish → the breadcrumb bar (redesign §2): ONE count badge replaces
+// the eight per-section dirty dots; the meta string carries last-published.
 function renderAionRail() {
   const rail = els.aionPublishRail;
   rail.innerHTML = "";
+  if (els.aionView.hidden) return;
   const pub = (aionCache && aionCache.publish) || {};
-  if (pub.lastPublished) {
-    rail.append(el("span", "aion-last", "published " + fmtWhen(pub.lastPublished) +
-      (pub.lastCommit ? " · " + pub.lastCommit.slice(0, 7) : "")));
-  } else if (pub.configured) {
-    rail.append(el("span", "aion-last", "never published"));
+  if (typeof setCrumbMeta === "function") {
+    setCrumbMeta(pub.lastPublished
+      ? "published " + fmtWhen(pub.lastPublished) + (pub.lastCommit ? " · " + pub.lastCommit.slice(0, 7) : "")
+      : (pub.configured ? "never published" : ""));
   }
+  if (!pub.configured) return;
   const dirty = pub.dirty || {};
-  const dots = el("span", "aion-dots");
-  ["finances", "vto", "goals", "backlog", "heuristics", "people", "hiring", "references"].forEach((name) => {
-    if (name in dirty) dots.append(statusDot(dirty[name], name + (dirty[name] ? " — unpublished changes" : " — clean")));
-  });
-  if (dots.children.length) rail.append(dots);
-  if (pub.configured) rail.append(pill("PUBLISH", openAionPublishPanel));
+  const n = Object.values(dirty).filter(Boolean).length;
+  const btn = el("button", "aion-publish-btn", "PUBLISH");
+  if (n) {
+    const badge = el("span", "aion-publish-badge", String(n));
+    badge.title = n + " section" + (n === 1 ? "" : "s") + " with unpublished changes";
+    btn.append(badge);
+  }
+  btn.onclick = openAionPublishPanel;
+  rail.append(btn);
 }
 
 // openAionPublishPanel: PREVIEW (no writes) → blockers or per-file diffs →
@@ -157,83 +164,145 @@ async function openAionPublishPanel() {
   panel.append(actions);
 }
 
-// ---- BACKLOG ----
-let aionEditingId = null; // row whose edit drawer is open (survives re-render)
+// ---- BACKLOG (redesign §4): decisions lane on top, tasks grouped by owner,
+// a 300px sticky inspector on the right. The filter-chip rows are gone —
+// their job is done by the structure. Selecting a row never reflows the list.
 
 function renderAionBacklog(host) {
   const items = aionCache.backlog || [];
-  const chips = el("div", "aion-chips");
-  const chip = (label, on, fn) => { const c = el("button", "filter-chip" + (on ? " on" : ""), label); c.onclick = fn; return c; };
-  [["ALL", ""], ["TASKS", "task"], ["DECISIONS", "decision"]].forEach(([l, v]) =>
-    chips.append(chip(l, aionKindFilter === v, () => { aionKindFilter = v; renderAion(); })));
-  chips.append(el("span", "aion-chip-gap", ""));
-  [["OPEN", "open"], ["DONE \u00b7 DECIDED", "done"], ["ALL", "all"]].forEach(([l, v]) =>
-    chips.append(chip(l, aionStatusFilter === v, () => { aionStatusFilter = v; renderAion(); })));
-  host.append(chips);
+  const wrap = el("div", "aion-backlog");
+  const list = el("div", "aion-list");
+  const insp = el("div", "aion-inspector");
+  wrap.append(list, insp);
+  host.append(wrap);
 
-  const closed = (it) => it.status === "done" || it.status === "decided";
-  const visible = items.filter((it) =>
-    (!aionKindFilter || it.kind === aionKindFilter) &&
-    (aionStatusFilter === "all" || (aionStatusFilter === "done" ? closed(it) : !closed(it))));
+  // -- decisions lane, always visible --
+  const decisions = items.filter((it) => it.kind === "decision");
+  const openDec = decisions.filter((it) => it.status !== "decided");
+  const lane = el("div", "aion-dec-lane");
+  const lh = el("div", "aion-sec-label");
+  lh.append(el("span", "aion-sec-title", "◇ Decisions"),
+    el("span", "aion-sec-count", openDec.length + " open · " + (decisions.length - openDec.length) + " decided"));
+  const decAdd = ghostInput("＋ decision", "aion-add", (v) =>
+    aionPost("/api/aion/backlog/item", { kind: "decision", title: v }, "Decision added"));
+  decAdd.classList.add("aion-sec-add");
+  lh.append(decAdd);
+  lane.append(lh);
+  openDec.forEach((it) => lane.append(aionDecisionRow(it)));
+  const decided = decisions.filter((it) => it.status === "decided");
+  if (decided.length) {
+    // the permanent log is long — keep the lane about what's OPEN
+    const t = el("button", "aion-done-toggle", (aionDecidedOpen ? "▾" : "▸") + " decided · " + decided.length);
+    t.onclick = () => { aionDecidedOpen = !aionDecidedOpen; renderAion(); };
+    lane.append(t);
+    if (aionDecidedOpen) decided.forEach((it) => lane.append(aionDecisionRow(it)));
+  }
+  list.append(lane);
 
-  if (!visible.length) host.append(emptyRow("nothing here \u2014 capture with \uff0b below, or approve extraction proposals in FEED"));
-  visible.forEach((it) => host.append(aionBacklogRow(it)));
-
-  const adds = el("div", "aion-adds");
-  adds.append(ghostInput("\uff0b task", "aion-add", (v) =>
+  // -- tasks, grouped by owner (open count desc) --
+  const tasks = items.filter((it) => it.kind === "task");
+  const openTasks = tasks.filter((it) => it.status !== "done");
+  const doneTasks = tasks.filter((it) => it.status === "done");
+  const people = {};
+  (aionCache.people || []).forEach((p) => { people[p.initials] = p.name || ""; });
+  const groups = {};
+  const order = [];
+  openTasks.forEach((it) => {
+    const key = (it.owner || "").toUpperCase() || "—";
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(it);
+  });
+  order.sort((a, b) => groups[b].length - groups[a].length);
+  order.forEach((key) => {
+    const g = el("div", "aion-owner-group");
+    const gh = el("div", "aion-owner-head");
+    gh.append(el("span", "aion-owner-ini", key === "—" ? "UNASSIGNED" : key));
+    const full = key.split("/").map((k) => people[k] || "").filter(Boolean).join(" · ");
+    if (full) gh.append(el("span", "aion-owner-name", full));
+    gh.append(el("span", "aion-sec-count", String(groups[key].length)));
+    g.append(gh);
+    groups[key].forEach((it) => g.append(aionTaskRow(it)));
+    if (key !== "—") {
+      g.append(ghostInput("＋ task for " + key, "aion-add", (v) =>
+        aionPost("/api/aion/backlog/item", { kind: "task", title: v, owner: key }, "Task added → " + key)));
+    }
+    list.append(g);
+  });
+  list.append(ghostInput("＋ task", "aion-add", (v) =>
     aionPost("/api/aion/backlog/item", { kind: "task", title: v }, "Task added")));
-  adds.append(ghostInput("\uff0b decision", "aion-add", (v) =>
-    aionPost("/api/aion/backlog/item", { kind: "decision", title: v }, "Decision added")));
-  host.append(adds);
+
+  // -- done tasks, one quiet collapsible --
+  if (doneTasks.length) {
+    const t = el("button", "aion-done-toggle", (aionDoneOpen ? "▾" : "▸") + " done · " + doneTasks.length);
+    t.onclick = () => { aionDoneOpen = !aionDoneOpen; renderAion(); };
+    list.append(t);
+    if (aionDoneOpen) doneTasks.forEach((it) => list.append(aionTaskRow(it)));
+  }
+
+  renderAionInspector(insp, items);
 }
 
-// statusChip: the one legible state control — a labeled chip, never an icon.
+// statusChip per the color rules: IN PROGRESS = accent; alarmed OPEN = ink;
+// unremarkable OPEN = base-50; DONE/DECIDED = base-40. Never amber/green.
 function aionStatusChip(it) {
   let label, cls;
+  const alarmed = aionAlarmed(it);
   if (it.kind === "decision") {
-    if (it.status === "decided") { label = "DECIDED" + (it.decided ? " " + it.decided : ""); cls = "closed"; }
-    else { label = "OPEN"; cls = "open"; }
-  } else if (it.status === "done") { label = "DONE" + (it.doneOn ? " " + it.doneOn : ""); cls = "closed"; }
+    if (it.status === "decided") { label = "DECIDED"; cls = "closed"; }
+    else { label = "OPEN"; cls = alarmed ? "alarm" : "open"; }
+  } else if (it.status === "done") { label = "DONE"; cls = "closed"; }
   else if (it.status === "in_progress") { label = "IN PROGRESS"; cls = "active"; }
-  else { label = "OPEN"; cls = "open"; }
+  else { label = "OPEN"; cls = alarmed ? "alarm" : "open"; }
   return el("span", "aion-status " + cls, label);
 }
 
-function aionBacklogRow(it) {
-  const done = it.status === "done" || it.status === "decided";
-  const wrap = el("div", "aion-item" + (done ? " done" : ""));
-  const row = el("div", "aion-row");
+function aionAlarmed(it) {
+  if (it.status === "done" || it.status === "decided") return false;
+  if (it.kind === "task") return !!it.due && it.due < isoToday();
+  return /^\d{4}-\d{2}-\d{2}$/.test(it.neededBy || "") && it.neededBy < isoToday();
+}
 
-  // done toggle (tasks) / decision glyph \u2014 STATUS is the source of truth
-  // (a few imported lines carry a checked mark with status open; the field
-  // wins, and the first toggle re-syncs the mark)
-  if (it.kind === "task") {
-    const isDone = it.status === "done";
-    const c = el("button", "aion-check", isDone ? "\u25cf" : "\u25cb");
-    c.title = isDone ? "reopen" : "mark done";
-    c.onclick = (e) => { e.stopPropagation(); aionPost("/api/aion/backlog/" + it.id + "/update",
-      { status: isDone ? "open" : "done" }); };
-    row.append(c);
-  } else {
-    const d = el("span", "aion-check muted", "\u25c7");
-    d.title = "decision";
-    row.append(d);
-  }
+function aionSelect(it) {
+  aionSelId = aionSelId === it.id ? null : it.id;
+  renderAion();
+}
 
-  // main: title + meta line
+function aionDecisionRow(it) {
+  const decided = it.status === "decided";
+  const row = el("div", "aion-dec-row" + (decided ? " decided" : "") + (aionSelId === it.id ? " sel" : ""));
+  row.append(el("span", "aion-dec-glyph", "◇"));
+  const main = el("div", "aion-main");
+  main.append(el("div", "aion-dec-text", it.text));
+  const bits = [];
+  if (!decided && it.neededBy) bits.push("needed by " + it.neededBy);
+  if (it.owner) bits.push("@" + it.owner);
+  if (decided) bits.push("decided " + (it.decided || "") + (it.outcome ? " → " + it.outcome : ""));
+  main.append(el("div", "aion-item-meta", bits.join(" · ")));
+  row.append(main, aionStatusChip(it));
+  row.onclick = () => aionSelect(it);
+  return row;
+}
+
+// task row — 4-col grid: check · title-over-meta · rock (its own column) · chip
+function aionTaskRow(it) {
+  const done = it.status === "done";
+  const alarmed = aionAlarmed(it);
+  const row = el("div", "aion-task-row" + (done ? " done" : "") + (alarmed ? " alarm" : "") + (aionSelId === it.id ? " sel" : ""));
+  const c = el("button", "aion-check" + (done ? " off" : ""), done ? "●" : "○");
+  c.title = done ? "reopen" : "mark done";
+  c.onclick = (e) => {
+    e.stopPropagation();
+    aionPost("/api/aion/backlog/" + it.id + "/update", { status: done ? "open" : "done" });
+  };
+  row.append(c);
   const main = el("div", "aion-main");
   main.append(el("div", "aion-title", it.text));
-  const meta = el("div", "aion-item-meta");
   const bits = [];
-  if (it.owner) bits.push("@" + it.owner);
-  if (it.kind === "task" && it.rock) bits.push("\u29d7 " + rockLabel(it.rock));
-  if (it.kind === "task" && it.due && !done) bits.push((it.due < isoToday() ? "\u26a0 overdue " : "due ") + it.due);
-  if (it.kind === "decision" && it.neededBy && !done) bits.push("needed by " + it.neededBy);
-  if (it.status === "decided" && it.outcome) bits.push("\u2192 " + it.outcome);
+  if (it.due && !done) bits.push((alarmed ? "● overdue " : "due ") + it.due);
   if (it.captured) bits.push(it.captured);
-  meta.textContent = bits.join("  \u00b7  ");
+  const meta = el("div", "aion-item-meta", bits.join(" · "));
   if ((it.sources || []).length) {
-    const src = el("a", "aion-src", " \u2398 " + it.sources[0]);
+    const src = el("a", "aion-src", " ⧉ " + it.sources[0]);
     src.title = "open source note";
     src.href = "#/note/" + encodeURIComponent(aionSourcePath(it.sources[0]));
     src.onclick = (e) => e.stopPropagation();
@@ -241,94 +310,107 @@ function aionBacklogRow(it) {
   }
   main.append(meta);
   row.append(main);
-
+  row.append(el("span", "aion-rock-tag", it.rock ? rockLabel(it.rock) : ""));
   row.append(aionStatusChip(it));
-
-  const edit = el("button", "aion-edit-btn", aionEditingId === it.id ? "\u2715" : "edit");
-  edit.title = aionEditingId === it.id ? "close editor" : "edit this " + it.kind;
-  row.append(edit);
-
-  const toggle = (e) => {
-    if (e) e.stopPropagation();
-    aionEditingId = aionEditingId === it.id ? null : it.id;
-    renderAion();
-  };
-  edit.onclick = toggle;
-  row.onclick = toggle; // the whole row opens the editor
-  wrap.append(row);
-  if (aionEditingId === it.id) wrap.append(aionRowEditor(it));
-  return wrap;
+  row.onclick = () => aionSelect(it);
+  return row;
 }
 
-// aionRowEditor: the labeled edit drawer — every field visible at once, one
-// SAVE for the lot (a single update POST), plus DECIDE for open decisions.
-function aionRowEditor(it) {
-  const box = el("div", "aion-editor");
-  box.onclick = (e) => e.stopPropagation();
-  const edits = {};
-  const grid = el("div", "aion-editor-grid");
-  box.append(grid);
-  const field = (label, node) => { grid.append(el("span", "aion-vto-key", label), node); return node; };
+// ---- the inspector (replaces the inline drawer — the list never reflows) ----
+function renderAionInspector(insp, items) {
+  const it = items.find((x) => x.id === aionSelId);
+  if (!it) {
+    insp.append(el("div", "aion-insp-empty", "select a row — every field edits in place, saves on blur"));
+    return;
+  }
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "Inspector"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { aionSelId = null; renderAion(); };
+  head.append(x);
+  insp.append(head);
 
-  const title = field("title", inputEl("title"));
+  const patch = (set, msg) => aionPost("/api/aion/backlog/" + it.id + "/update", set, msg);
+
+  // title — editable in place; a retitle re-derives the id, so selection clears
+  const title = inputEl("");
   title.value = it.text;
-  title.classList.add("aion-editor-wide");
-  title.oninput = () => { edits.title = title.value; };
+  title.className = "aion-insp-title";
+  const commitTitle = () => {
+    const v = title.value.trim();
+    if (v && v !== it.text) { aionSelId = null; patch({ title: v }); }
+  };
+  title.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") commitTitle();
+    else if (ev.key === "Escape") { title.value = it.text; title.blur(); }
+  });
+  title.addEventListener("blur", commitTitle);
+  insp.append(title);
+
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    insp.append(f);
+  };
 
   const ownerTa = typeahead({ placeholder: "initials", initial: it.owner || "",
-    suggest: aionOwnerSuggest, onChange: (v) => { edits.owner = v; } });
-  ownerTa.input.addEventListener("input", () => { edits.owner = ownerTa.value(); });
+    suggest: (q, add, ta) => aionOwnerSuggest(q, add, {
+      commit: (v) => { ta.commit(v); if (v !== it.owner) patch({ owner: v }); },
+      input: ta.input,
+    }) });
   field("owner", ownerTa.el);
 
   if (it.kind === "task") {
-    let rockPickedText = rockLabel(it.rock) || null;
     const rockTa = typeahead({
-      placeholder: "type to pick a rock\u2026", initial: rockLabel(it.rock),
-      suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id, text) => { edits.rock = id; rockPickedText = text; }),
-      // free-typed rock text commits verbatim (his corpus tags free slugs)
-      onChange: (v) => { if (v !== rockPickedText) edits.rock = v; },
+      placeholder: "type to pick a rock…", initial: rockLabel(it.rock),
+      suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id) => { if (id !== it.rock) patch({ rock: id }); }),
     });
     field("rock", rockTa.el);
-    const due = field("due", inputEl(""));
-    due.type = "date"; due.value = it.due || "";
-    due.onchange = () => { edits.due = due.value; };
+    const due = inputEl("");
+    due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
+    due.onchange = () => patch({ due: due.value });
+    field("due", due);
     if (it.status !== "done") {
-      const st = field("status", selectEl(["open", "in progress"]));
+      const st = selectEl(["open", "in progress"]);
       st.value = it.status === "in_progress" ? "in progress" : "open";
-      st.onchange = () => { edits.status = st.value === "in progress" ? "in_progress" : "open"; };
+      st.onchange = () => patch({ status: st.value === "in progress" ? "in_progress" : "open" });
+      field("status", st);
     }
   } else {
-    // needed_by is the decision's deadline — the portal reads it as an ISO
-    // date to place a timeline diamond, so entry is a date picker (§7).
-    const nb = field("needed by", inputEl(""));
-    nb.type = "date";
+    const nb = inputEl("");
+    nb.type = "date"; nb.className = "pp-in";
     nb.value = /^\d{4}-\d{2}-\d{2}$/.test(it.neededBy || "") ? it.neededBy : "";
-    nb.onchange = () => { edits.needed_by = nb.value; };
+    nb.onchange = () => patch({ needed_by: nb.value });
+    field("needed by", nb);
+    if (it.status !== "decided") {
+      const outcome = inputEl("outcome — what was decided…");
+      outcome.className = "pp-in aion-insp-outcome";
+      field("outcome", outcome);
+      const decide = el("button", "aion-decide-btn", "decide → permanent log");
+      decide.onclick = () => {
+        if (!outcome.value.trim()) { showToast("write the outcome first"); outcome.focus(); return; }
+        aionSelId = null;
+        aionPost("/api/aion/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
+      };
+      insp.append(decide);
+    } else if (it.outcome) {
+      field("outcome", el("span", "aion-insp-ro", it.outcome));
+    }
   }
+  if (it.captured) field("captured", el("span", "aion-insp-ro", it.captured));
+  field("kind", el("span", "aion-insp-ro", it.kind));
 
-  const actions = el("div", "aion-editor-actions");
-  actions.append(pill("save", async () => {
-    if (!Object.keys(edits).length) { aionEditingId = null; renderAion(); return; }
-    aionEditingId = null;
-    await aionPost("/api/aion/backlog/" + it.id + "/update", edits, "Saved");
-  }));
-  actions.append(pillLight("cancel", () => { aionEditingId = null; renderAion(); }));
-
-  if (it.kind === "decision" && it.status !== "decided") {
-    const outcome = inputEl("outcome \u2014 what was decided\u2026");
-    outcome.classList.add("aion-editor-outcome");
-    const decideBtn = pill("decide \u2192 permanent log", () => {
-      if (!outcome.value.trim()) { showToast("write the outcome first"); outcome.focus(); return; }
-      aionEditingId = null;
-      aionPost("/api/aion/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() },
-        "Decided \u2014 permanent log");
-    });
-    const drow = el("div", "aion-editor-decide");
-    drow.append(outcome, decideBtn);
-    box.append(drow);
+  if ((it.sources || []).length) {
+    const src = el("a", "aion-insp-src", "⧉ " + it.sources[0]);
+    src.href = "#/note/" + encodeURIComponent(aionSourcePath(it.sources[0]));
+    insp.append(src);
   }
-  box.append(actions);
-  return box;
+  const foot = el("div", "aion-insp-foot");
+  foot.append(el("span", "", "saves on blur"));
+  const raw = el("button", "aion-insp-raw", "⌘/ raw");
+  raw.onclick = () => toggleRawOverlay();
+  foot.append(raw);
+  insp.append(foot);
 }
 
 // aionSourcePath resolves a source note name to a vault path: names already
@@ -404,7 +486,12 @@ function aionHeuristicRow(h, i, list) {
   text.onclick = () => inlineEdit(text, h.text, (v) =>
     aionPost("/api/aion/heuristics/" + h.id + "/edit", { statement: v }));
   const n = (h.sources || []).length;
-  row.append(caret, text, el("span", "aion-heur-count", n > 1 ? "×" + n : ""));
+  // reinforcement bar (§6): strength legible without counting — 8px per
+  // source, capped at 56px
+  const bar = el("span", "aion-heur-bar");
+  bar.style.width = Math.min(n * 8, 56) + "px";
+  if (!n) bar.style.display = "none";
+  row.append(caret, text, bar, el("span", "aion-heur-count", n > 0 ? "×" + n : ""));
 
   const acts = el("span", "aion-heur-acts");
   const move = (delta) => {
@@ -617,62 +704,92 @@ function aionTableEditor(host, opts) {
 }
 
 function renderAionOrg(host) {
-  aionTableEditor(host, {
-    title: "PEOPLE", rel: "system/aion/people.md",
-    colsClass: "cols-aion-people",
-    cols: [{ key: "initials", label: "INITIALS" }, { key: "name", label: "NAME" }, { key: "role", label: "ROLE" }],
-    rows: aionCache.people || [],
-    put: "/api/aion/people", payloadKey: "people",
-    addLabel: "person", newRow: (v) => ({ initials: v.toUpperCase().slice(0, 3), name: "", role: "" }),
-  });
+  // §5: the four stacked tables become a 176px registry rail + ONE table at a
+  // time, keeping the aionTableEditor semantics and the sticky dirty bar.
+  const wrap = el("div", "aion-org");
+  const rail = el("div", "aion-org-rail");
+  const pane = el("div", "aion-org-pane");
+  wrap.append(rail, pane);
+  host.append(wrap);
 
-  aionTableEditor(host, {
-    title: "HIRING", rel: "system/aion/hiring.md",
-    colsClass: "cols-aion-hiring",
-    cols: [{ key: "role", label: "ROLE" }, { key: "candidate", label: "CANDIDATE" },
-      { key: "stage", label: "STAGE" }, { key: "priority", label: "PRI" }],
-    rows: aionCache.hiring || [],
-    put: "/api/aion/hiring", payloadKey: "items",
-    addLabel: "role", newRow: (v) => ({ role: v, candidate: "", stage: "", priority: "" }),
+  rail.append(el("div", "aion-org-label", "Registries"));
+  [["people", "People", (aionCache.people || []).length],
+   ["hiring", "Hiring", (aionCache.hiring || []).length],
+   ["references", "References", (aionCache.references || []).length],
+   ["finances", "Finances", null]].forEach(([key, label, n]) => {
+    const b = el("button", "aion-org-item" + (aionOrgSel === key ? " active" : ""));
+    b.append(el("span", "", label));
+    if (n !== null) b.append(el("span", "aion-org-count", String(n)));
+    b.onclick = () => { aionOrgSel = key; renderAion(); };
+    rail.append(b);
   });
+  const rel = { people: "system/aion/people.md", hiring: "system/aion/hiring.md",
+    references: "system/aion/references.md", finances: "system/aion/finances.md" }[aionOrgSel];
+  const fileBox = el("div", "aion-org-file");
+  fileBox.append(el("div", "aion-org-label", "File"), el("div", "aion-org-path", rel));
+  const rawBtn = el("button", "aion-org-raw", "⌘/ edit raw");
+  rawBtn.onclick = () => openRawOverlay(rel);
+  fileBox.append(rawBtn);
+  rail.append(fileBox);
 
-  aionTableEditor(host, {
-    title: "REFERENCES", rel: "system/aion/references.md",
-    colsClass: "cols-aion-refs",
-    cols: [{ key: "text", label: "TITLE" }, { key: "url", label: "URL" },
-      { key: "source", label: "SOURCE" }, { key: "date", label: "DATE" }],
-    rows: aionCache.references || [],
-    put: "/api/aion/references", payloadKey: "references",
-    addLabel: "reference", newRow: (v) => ({ text: v, url: "", source: "", date: "" }),
-  });
-
-  // FINANCES — compact; the private body stays hand-edited, runway derived
-  host.append(el("div", "pp-section-head", "FINANCES"));
-  const fin = { ...(aionCache.finances || {}) };
-  const finBar = makeDirtyBar(els.aionView, async () => {
-    await putJSON("/api/aion/finances", fin);
-    showToast("Saved — finances.md frontmatter updated");
-    loadAion();
-  }, () => renderAion());
-  const finHost = el("div", "aion-fin");
-  host.append(finHost);
-  ["capital", "monthly_burn", "as_of", "currency", "source", "note"].forEach((key) => {
-    const row = el("div", "aion-fin-row");
-    row.append(el("span", "aion-vto-key", key.replace("_", " ")));
-    const input = inputEl(key);
-    input.value = fin[key] || "";
-    input.oninput = () => { fin[key] = input.value; finBar.mark(); };
-    row.append(input);
-    finHost.append(row);
-  });
-  const cap = parseMoneyShorthand(fin.capital);
-  const burn = parseMoneyShorthand(fin.monthly_burn);
-  const runwayRow = el("div", "aion-fin-row derived");
-  runwayRow.append(el("span", "aion-vto-key", "runway"),
-    el("span", "aion-fin-derived", cap > 0 && burn > 0 ? (Math.round((cap / burn) * 10) / 10) + " months (derived)" : "— (needs capital + burn)"));
-  finHost.append(runwayRow);
-  host.append(el("div", "aion-section-note",
-    "these fields publish to the portal (finances.json) on PUBLISH — capital & burn take 1.95M / 85k / $2,480,000 shorthand"));
+  if (aionOrgSel === "people") {
+    aionTableEditor(pane, {
+      title: "PEOPLE", rel: "system/aion/people.md",
+      colsClass: "cols-aion-people",
+      cols: [{ key: "initials", label: "INITIALS" }, { key: "name", label: "NAME" }, { key: "role", label: "ROLE" }],
+      rows: aionCache.people || [],
+      put: "/api/aion/people", payloadKey: "people",
+      addLabel: "person", newRow: (v) => ({ initials: v.toUpperCase().slice(0, 3), name: "", role: "" }),
+    });
+  } else if (aionOrgSel === "hiring") {
+    aionTableEditor(pane, {
+      title: "HIRING", rel: "system/aion/hiring.md",
+      colsClass: "cols-aion-hiring",
+      cols: [{ key: "role", label: "ROLE" }, { key: "candidate", label: "CANDIDATE" },
+        { key: "stage", label: "STAGE" }, { key: "priority", label: "PRI" }],
+      rows: aionCache.hiring || [],
+      put: "/api/aion/hiring", payloadKey: "items",
+      addLabel: "role", newRow: (v) => ({ role: v, candidate: "", stage: "", priority: "" }),
+    });
+  } else if (aionOrgSel === "references") {
+    aionTableEditor(pane, {
+      title: "REFERENCES", rel: "system/aion/references.md",
+      colsClass: "cols-aion-refs",
+      cols: [{ key: "text", label: "TITLE" }, { key: "url", label: "URL" },
+        { key: "source", label: "SOURCE" }, { key: "date", label: "DATE" }],
+      rows: aionCache.references || [],
+      put: "/api/aion/references", payloadKey: "references",
+      addLabel: "reference", newRow: (v) => ({ text: v, url: "", source: "", date: "" }),
+    });
+  } else {
+    // FINANCES — key/value rows + the derived read-only runway line
+    pane.append(el("div", "pp-section-head", "FINANCES"));
+    const fin = { ...(aionCache.finances || {}) };
+    const finBar = makeDirtyBar(els.aionView, async () => {
+      await putJSON("/api/aion/finances", fin);
+      showToast("Saved — finances.md frontmatter updated");
+      loadAion();
+    }, () => renderAion());
+    const finHost = el("div", "aion-fin");
+    pane.append(finHost);
+    ["capital", "monthly_burn", "as_of", "currency", "source", "note"].forEach((key) => {
+      const row = el("div", "aion-fin-row");
+      row.append(el("span", "aion-vto-key", key.replace("_", " ")));
+      const input = inputEl(key);
+      input.value = fin[key] || "";
+      input.oninput = () => { fin[key] = input.value; finBar.mark(); };
+      row.append(input);
+      finHost.append(row);
+    });
+    const cap = parseMoneyShorthand(fin.capital);
+    const burn = parseMoneyShorthand(fin.monthly_burn);
+    const runwayRow = el("div", "aion-fin-row derived");
+    runwayRow.append(el("span", "aion-vto-key", "runway"),
+      el("span", "aion-fin-derived", cap > 0 && burn > 0 ? (Math.round((cap / burn) * 10) / 10) + " months (derived)" : "— (needs capital + burn)"));
+    finHost.append(runwayRow);
+    pane.append(el("div", "aion-section-note",
+      "these fields publish to the portal (finances.json) on PUBLISH — capital & burn take 1.95M / 85k / $2,480,000 shorthand"));
+  }
 }
 
 // ---- RECONCILE: close backend↔portal linkage gaps in bulk ----
