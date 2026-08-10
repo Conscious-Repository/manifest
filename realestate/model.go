@@ -31,6 +31,9 @@ type Property struct {
 	Kind         string       `json:"kind"`    // rehab | new-construction | mixed | hold
 	Control      string       `json:"control"` // owned | tracked
 	Deal         string       `json:"deal"`    // [[deal]] wikilink display, if bundled
+	Owner        string       `json:"owner,omitempty"`      // current owner of record (assessor-stamped by cmd/owner-pull, or hand-set)
+	OwnerAddr    string       `json:"ownerAddr,omitempty"`  // owner's mailing address
+	OwnerSince   string       `json:"ownerSince,omitempty"` // assessor sale date (their acquisition)
 	Hidden       bool         `json:"hidden"`
 	Units        int          `json:"units,omitempty"` // total_units from the source sidecar
 	Lat          float64      `json:"lat,omitempty"`   // optional frontmatter map override
@@ -46,6 +49,7 @@ type Property struct {
 	WorkStart    string       `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
 	Schedule     []StageSpan  `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
 	Project      *ProjectBudget `json:"project,omitempty"`    // full-project budget (plan vs spend)
+	Intel        *ParcelIntel   `json:"intel,omitempty"`      // research-parcel join (assessor owner/tax facts)
 }
 
 // BudgetLine is one `## budget` table row: a category and its budgeted amount.

@@ -1,14 +1,24 @@
 // ---- PROPERTY PAGE — Revision 3: one property, one scroll ----
-// Address + status select · BUDGET/SPENT strip · TODOS (composer always
-// present; selecting a row opens the assignment inspector) · LEDGER.
-// Nothing else — docs, contractors, the log and the work plan come off the
-// page; reach them with ⌘/ or the note view. Money: budget/spent still
-// derive from `## work` est + the ledger (the files keep their sections).
+// Address + status select · BUDGET/SPENT strip (BUDGET opens the underwrite
+// editor — the plan inputs behind the figure) · TODOS (composer always
+// present; selecting a row opens the assignment inspector) · LEDGER (rows
+// edit in place, ✕ deletes, a composer adds) · side card: parcel outline +
+// OWNER of record (assessor-stamped frontmatter, editable). Money: budget
+// derives from source.json underwrite + `## work` est; spent from the ledger.
 let propSelTodoId = null; // line-id of the inspector's todo
+let propPageSlug = null;  // page-local UI state resets when this changes
+let propUWOpen = false;   // underwrite editor visible
+let propLedgerEdit = -1;  // index of the ledger row being edited (-1 none)
+let propLedgerAdd = false;
+let propGeoCache = {};    // slug → geo features (parcel polygon)
 
 async function renderPropertyPage(slug) {
   const host = els.propertyPage;
   host.innerHTML = "";
+  if (slug !== propPageSlug) {
+    propPageSlug = slug;
+    propUWOpen = false; propLedgerEdit = -1; propLedgerAdd = false;
+  }
   const p = propertyCache.find((x) => x.slug === slug);
   if (!p) { host.append(el("div", "pp-empty", "Property not found.")); return; }
 
@@ -23,6 +33,11 @@ async function renderPropertyPage(slug) {
   head.append(openNote);
   host.append(head);
 
+  const cols = el("div", "pp3-cols");
+  const main = el("div", "pp3-main");
+  cols.append(main, propSideCard(p));
+  host.append(cols);
+
   // BUDGET · SPENT — two mono figures between hairlines
   const pm = projMoney(p);
   const strip = el("div", "pp3-strip");
@@ -31,9 +46,22 @@ async function renderPropertyPage(slug) {
     c.append(el("div", "pp3-cell-label", label), el("div", "pp3-cell-val" + (cls ? " " + cls : ""), val));
     return c;
   };
-  strip.append(cell("BUDGET", pm.budget ? fmtMoney(pm.budget) : "—"));
-  strip.append(cell("SPENT", pm.paid ? fmtMoney(pm.paid) : "—", pm.over ? "over" : ""));
-  host.append(strip);
+  const bCell = cell("BUDGET", pm.budget ? fmtMoney(pm.budget) : "—");
+  bCell.classList.add("click");
+  bCell.title = "edit the underwrite (plan inputs)";
+  bCell.onclick = () => { propUWOpen = !propUWOpen; renderPropertyPage(slug); };
+  strip.append(bCell);
+  const sCell = cell("SPENT", pm.paid ? fmtMoney(pm.paid) : "—", pm.over ? "over" : "");
+  sCell.title = "derived from the ledger below";
+  strip.append(sCell);
+  main.append(strip);
+
+  if (propUWOpen) {
+    const uw = el("div", "pp3-uw");
+    uw.append(el("div", "pp3-uw-loading", "loading underwrite…"));
+    main.append(uw);
+    renderUnderwrite(p, uw);
+  }
 
   // TODOS — the primary section; adding is the page's first-class action
   const todosSec = el("div", "pp3-sec");
@@ -44,29 +72,327 @@ async function renderPropertyPage(slug) {
   open.forEach((t) => todosSec.append(propTodoRow(p, t)));
   (p.todos || []).filter((t) => t.checked).forEach((t) => todosSec.append(propTodoRow(p, t)));
   todosSec.append(propTodoComposer(p));
-  host.append(todosSec);
+  main.append(todosSec);
 
-  // LEDGER — date · category · vendor · amount, read-only
-  const ledger = el("div", "pp3-sec");
-  const lh = el("div", "pp3-sec-head");
-  lh.append(el("span", "pp3-sec-title", "LEDGER"), el("span", "pp3-sec-count", String((p.ledger || []).length)));
-  ledger.append(lh);
-  (p.ledger || []).forEach((r) => {
-    const row = el("div", "pp3-ledger-row");
-    row.append(el("span", "", r.date || ""));
-    row.append(el("span", "", r.category || r.type || ""));
-    row.append(el("span", "pp3-ledger-vendor", r.vendor || r.contractor || ""));
-    row.append(el("span", "pp3-ledger-amt", r.amount ? fmtMoney(r.amount) : ""));
-    ledger.append(row);
-  });
-  if (!(p.ledger || []).length) ledger.append(el("div", "pp-empty", "No money facts yet."));
-  host.append(ledger);
+  main.append(ledgerSection(p));
 
   // restore an open inspector across re-renders
   if (propSelTodoId) {
     const t = (p.todos || []).find((x) => x.id === propSelTodoId);
     if (t) openPropInspector(p, t); else closePropInspector();
   }
+}
+
+// ---- side card: parcel outline + owner of record ----
+
+function propSideCard(p) {
+  const side = el("div", "pp3-side");
+  const thumbSlot = el("div", "pp-thumb-slot");
+  side.append(thumbSlot);
+  loadPropGeo(p.slug).then((features) => {
+    const t = parcelThumb(features);
+    if (t) thumbSlot.replaceWith(t);
+    else thumbSlot.remove();
+  });
+  side.append(ownerCard(p));
+  return side;
+}
+
+async function loadPropGeo(slug) {
+  if (slug in propGeoCache) return propGeoCache[slug];
+  try {
+    const d = await (await fetch("/api/properties/geo?slug=" + encodeURIComponent(slug))).json();
+    propGeoCache[slug] = ((d.records || [])[0] || {}).features || [];
+  } catch (e) { propGeoCache[slug] = []; }
+  return propGeoCache[slug];
+}
+
+// parcelThumb: a quiet SVG of the parcel outline — no tiles, no Leaflet.
+// Click-through to the full map.
+function parcelThumb(features) {
+  const rings = [];
+  (features || []).forEach((f) => {
+    const g = (f && f.geometry) || {};
+    if (g.type === "Polygon") (g.coordinates || []).forEach((r) => rings.push(r));
+    else if (g.type === "MultiPolygon") (g.coordinates || []).forEach((poly) => (poly || []).forEach((r) => rings.push(r)));
+  });
+  const pts = rings.flat();
+  if (pts.length < 3) return null;
+  const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const W = 240, H = 150, pad = 14;
+  const s = Math.min((W - 2 * pad) / ((maxX - minX) || 1e-9), (H - 2 * pad) / ((maxY - minY) || 1e-9));
+  const ox = (W - (maxX - minX) * s) / 2, oy = (H - (maxY - minY) * s) / 2;
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("class", "pp-thumb");
+  rings.forEach((r) => {
+    const poly = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+    poly.setAttribute("points",
+      r.map((q) => (((q[0] - minX) * s + ox).toFixed(1)) + "," + ((H - ((q[1] - minY) * s + oy)).toFixed(1))).join(" "));
+    svg.appendChild(poly);
+  });
+  svg.onclick = () => { location.hash = "#/properties/map"; };
+  return svg;
+}
+
+// ownerCard: who owns this parcel. Owned → the holding entity (with a "deed:"
+// check line when the assessor's vesting reads differently). Otherwise → the
+// owner of record (cmd/owner-pull stamps it from the assessor; click to
+// correct by hand), mailing address, tenure, and tax intel when the research
+// layer has this parcel.
+function ownerCard(p) {
+  const card = el("div", "pp3-owner");
+  card.append(el("div", "pp3-owner-label", "OWNER"));
+  const intel = p.intel || null;
+  const line = (txt, cls) => el("div", "pp3-owner-line" + (cls ? " " + cls : ""), txt);
+
+  if (p.control === "owned" && p.entity) {
+    card.append(el("div", "pp3-owner-name", p.entity));
+    // title check: the deed vesting per the assessor, when it disagrees
+    if (p.owner && p.owner.toLowerCase() !== p.entity.toLowerCase()) {
+      card.append(line("deed: " + p.owner, "warn"));
+    }
+    if (p.ownerSince) card.append(line("since " + p.ownerSince));
+  } else {
+    const name = p.owner || (intel && intel.owner) || "";
+    card.append(editableOwnerLine(p, "owner", name || "no owner on record", "pp3-owner-name" + (name ? "" : " missing")));
+    const addr = p.ownerAddr || (intel && intel.ownerAddr) || "";
+    if (addr || name) card.append(editableOwnerLine(p, "owner-addr", addr || "add mailing address…", "pp3-owner-line" + (addr ? "" : " missing")));
+    const since = p.ownerSince || (intel && intel.saleDate) || "";
+    if (since) card.append(line("theirs since " + since));
+  }
+  if (intel) {
+    if (intel.taxStatus === "delinquent") card.append(line("tax: DELINQUENT $" + Math.round(intel.taxBalDue || 0).toLocaleString(), "warn"));
+    else if (intel.taxStatus === "lra") card.append(line("LRA land-bank", "warn"));
+    else if (intel.taxStatus) card.append(line("tax: " + intel.taxStatus));
+    if (intel.assessed) card.append(line("assessed $" + Math.round(intel.assessed).toLocaleString()));
+  }
+  return card;
+}
+
+// editableOwnerLine: click the value → inline input → Enter writes the
+// frontmatter field (`owner` / `owner-addr`) via /field.
+function editableOwnerLine(p, key, display, cls) {
+  const v = el("div", cls, display);
+  v.title = "click to edit";
+  v.onclick = () => {
+    const input = inputEl("");
+    input.className = "pp3-owner-in";
+    input.value = (key === "owner" ? p.owner : p.ownerAddr) || "";
+    const save = async () => {
+      try {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key, value: input.value.trim() });
+        renderProperties();
+      } catch (e) { showToast("Couldn't save"); }
+    };
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") save();
+      if (ev.key === "Escape") input.replaceWith(v);
+    });
+    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(v); });
+    v.replaceWith(input);
+    input.focus();
+  };
+  return v;
+}
+
+// ---- underwrite editor: the plan inputs behind the BUDGET figure ----
+// purchase + closing (acquisition) · hard (Σ work est once estimated, else the
+// underwrite number) · soft/carry · contingency %. Writes source.json money
+// keys in place (read-modify-write, same slice the server derives from).
+
+async function renderUnderwrite(p, uwHost) {
+  let src = null;
+  try { src = (await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json()).source; } catch (e) {}
+  if (propPageSlug !== p.slug || !uwHost.isConnected) return;
+  uwHost.innerHTML = "";
+  const root = src && typeof src === "object" ? src : {};
+  // mirror the server's sourceMoney pick: top-level slice unless it's empty
+  // and a properties[0] full-deal shape exists
+  let money = root;
+  if (!(root.purchase_price > 0) && !(root.hard_costs > 0) &&
+      Array.isArray(root.properties) && root.properties.length > 0 &&
+      typeof root.properties[0] === "object") {
+    money = root.properties[0];
+  }
+  const workEst = (p.work || []).reduce((n, st) => n + (st.estTotal || 0), 0);
+
+  uwHost.append(el("div", "pp3-uw-title", "UNDERWRITE — the plan behind the budget"));
+  const fields = [];
+  const row = (label, key, val, note) => {
+    const r = el("div", "pp3-uw-row");
+    r.append(el("span", "pp3-uw-label", label));
+    if (note) r.append(el("span", "pp3-uw-note", note));
+    const input = moneyInput("0", val);
+    input.value = val || "";
+    r.append(input);
+    fields.push({ key, input });
+    uwHost.append(r);
+    return input;
+  };
+  row("purchase price", "purchase_price", money.purchase_price || 0);
+  row("closing costs", "closing_costs", money.closing_costs || 0);
+  if (workEst > 0) {
+    const r = el("div", "pp3-uw-row");
+    r.append(el("span", "pp3-uw-label", "hard costs"));
+    r.append(el("span", "pp3-uw-note", "Σ work est — edit in the record's ## work"));
+    r.append(el("span", "pp3-uw-derived", fmtMoney(workEst)));
+    uwHost.append(r);
+  } else {
+    row("hard costs", "hard_costs", money.hard_costs || 0, "until the work list is estimated");
+  }
+  row("soft / carry", "carry_cost", money.carry_cost || 0, "interest · taxes · ins · util");
+  // contingency: stored as a fraction, edited as a %
+  const cr = el("div", "pp3-uw-row");
+  cr.append(el("span", "pp3-uw-label", "contingency"));
+  cr.append(el("span", "pp3-uw-note", "% of hard"));
+  const pct = moneyInput("0", 0);
+  pct.step = "0.5";
+  pct.value = money.contingency_pct ? +(money.contingency_pct * 100).toFixed(2) : "";
+  cr.append(pct);
+  uwHost.append(cr);
+
+  const actions = el("div", "pp3-uw-actions");
+  const save = el("button", "pp3-compose-go", "save ↵");
+  save.onclick = async () => {
+    fields.forEach((f) => { money[f.key] = parseFloat(f.input.value) || 0; });
+    money.contingency_pct = (parseFloat(pct.value) || 0) / 100;
+    try {
+      await putJSON("/api/properties/" + encodeURIComponent(p.slug) + "/source", root);
+      showToast("Underwrite saved");
+      renderProperties();
+    } catch (e) { showToast("Couldn't save: " + (e.message || e)); }
+  };
+  const cancel = el("button", "pp3-uw-cancel", "close");
+  cancel.onclick = () => { propUWOpen = false; renderPropertyPage(p.slug); };
+  actions.append(cancel, save);
+  uwHost.append(actions);
+}
+
+// ---- ledger: rows edit in place, ✕ deletes, a composer adds ----
+
+function ledgerSection(p) {
+  const ledger = el("div", "pp3-sec");
+  const lh = el("div", "pp3-sec-head");
+  lh.append(el("span", "pp3-sec-title", "LEDGER"), el("span", "pp3-sec-count", String((p.ledger || []).length)));
+  ledger.append(lh);
+  (p.ledger || []).forEach((r, i) => {
+    ledger.append(i === propLedgerEdit ? ledgerForm(p, r, i) : ledgerRow(p, r, i));
+  });
+  if (!(p.ledger || []).length) ledger.append(el("div", "pp-empty", "No money facts yet."));
+  if (propLedgerAdd) {
+    ledger.append(ledgerForm(p, null, -1));
+  } else {
+    const add = el("button", "pp3-ledger-add", "＋ money fact");
+    add.onclick = () => { propLedgerAdd = true; renderPropertyPage(p.slug); };
+    ledger.append(add);
+  }
+  return ledger;
+}
+
+function ledgerRow(p, r, i) {
+  const row = el("div", "pp3-ledger-row");
+  row.append(el("span", "", r.date || ""));
+  const bidTag = r.type === "bid" ? "bid " + (r.status || "") : "";
+  row.append(el("span", "", r.category ? r.category + (bidTag ? " · " + bidTag : "") : (bidTag || r.type || "")));
+  row.append(el("span", "pp3-ledger-vendor", r.vendor || r.contractor || ""));
+  row.append(el("span", "pp3-ledger-amt", r.amount ? fmtMoney(r.amount) : ""));
+  // hover ✕ — arm to confirm, then delete the csv row
+  const x = el("button", "uw-x pp3-todo-x", "✕");
+  x.title = "delete this row";
+  x.onclick = (e) => {
+    e.stopPropagation();
+    const yes = el("button", "pp3-compose-go", "delete?");
+    yes.onclick = async (ev) => {
+      ev.stopPropagation();
+      try {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate", { original: r, replacement: null });
+        renderProperties();
+      } catch (err) { showToast("Couldn't delete"); }
+    };
+    x.replaceWith(yes);
+    setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);
+  };
+  row.append(x);
+  row.title = "click to edit";
+  row.onclick = () => { propLedgerEdit = i; propLedgerAdd = false; renderPropertyPage(p.slug); };
+  return row;
+}
+
+// ledgerForm: one inline editor for a row (r set) or the add composer (r null).
+function ledgerForm(p, r, i) {
+  const form = el("div", "pp3-lform");
+  const grid = el("div", "pp3-lform-grid");
+  const labeled = (label, node) => {
+    const wrap = el("label", "pp3-lform-field");
+    wrap.append(el("span", "pp3-lform-label", label), node);
+    return wrap;
+  };
+  const date = inputEl("YYYY-MM-DD");
+  const now = new Date();
+  const localToday = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+  date.className = "pp-in"; date.value = r ? (r.date || "") : localToday;
+  const type = selectEl(["expense", "bid"]);
+  type.className = "pp-in"; type.value = r && r.type === "bid" ? "bid" : "expense";
+  const status = selectEl([]);
+  status.className = "pp-in";
+  const setStatusOpts = () => {
+    status.innerHTML = "";
+    (type.value === "bid" ? ["requested", "received", "accepted", "declined"] : ["paid"]).forEach((s) => {
+      const o = document.createElement("option"); o.value = s; o.textContent = s; status.append(o);
+    });
+    if (r && r.status && [...status.options].some((o) => o.value === r.status)) status.value = r.status;
+  };
+  setStatusOpts();
+  type.onchange = setStatusOpts;
+  const category = inputEl("category"); category.className = "pp-in"; category.value = r ? (r.category || "") : "";
+  const vendor = inputEl("vendor"); vendor.className = "pp-in"; vendor.value = r ? (r.vendor || "") : "";
+  const contractor = inputEl("contractor"); contractor.className = "pp-in"; contractor.value = r ? (r.contractor || "") : "";
+  const amount = moneyInput("$", r ? r.amount : 0); amount.value = r && r.amount ? r.amount : "";
+  const note = inputEl("note"); note.className = "pp-in"; note.value = r ? (r.note || "") : "";
+  grid.append(labeled("date", date), labeled("type", type), labeled("status", status),
+    labeled("category", category), labeled("vendor", vendor), labeled("contractor", contractor),
+    labeled("amount", amount), labeled("note", note));
+  form.append(grid);
+  if (r && r.workId) form.append(el("div", "pp3-uw-note", "tethered to work [" + r.workId + "] — kept"));
+
+  const actions = el("div", "pp3-uw-actions");
+  const cancel = el("button", "pp3-uw-cancel", "cancel");
+  cancel.onclick = () => { propLedgerEdit = -1; propLedgerAdd = false; renderPropertyPage(p.slug); };
+  const save = el("button", "pp3-compose-go", r ? "save ↵" : "add ↵");
+  save.onclick = async () => {
+    const amt = parseFloat(amount.value) || 0;
+    if (!amt) { showToast("Amount is required"); return; }
+    try {
+      if (r) {
+        // rebuild the note with the row's hidden tokens intact — the server
+        // reconstructs the on-disk note from note+workId only
+        let n = note.value.trim();
+        if (r.cat) n += " [cat:: " + r.cat + "]";
+        if (r.paidBy) n += " [paid-by:: " + r.paidBy + "]";
+        if (r.stmt) n += " [stmt:: " + r.stmt + "]";
+        const replacement = {
+          date: date.value.trim(), type: type.value, category: category.value.trim(),
+          vendor: vendor.value.trim(), contractor: contractor.value.trim(), amount: amt,
+          status: status.value, note: n.trim(), doc: r.doc || "", workId: r.workId || "",
+        };
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate", { original: r, replacement });
+      } else {
+        await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger", {
+          date: date.value.trim(), type: type.value, category: category.value.trim(),
+          vendor: vendor.value.trim(), contractor: contractor.value.trim(), amount: amt,
+          status: status.value, note: note.value.trim(),
+        });
+      }
+      propLedgerEdit = -1; propLedgerAdd = false;
+      renderProperties();
+    } catch (e) { showToast("Couldn't save: " + (e.message || e)); }
+  };
+  actions.append(cancel, save);
+  form.append(actions);
+  return form;
 }
 
 function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }

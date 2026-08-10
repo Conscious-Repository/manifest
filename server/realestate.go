@@ -454,8 +454,9 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	case "owner", "owner-addr", "owner-since": // owner of record — free text ("" clears)
 	default:
-		httpError(w, errBadRequest("key must be status, kind, entity, or work-start"))
+		httpError(w, errBadRequest("key must be status, kind, entity, work-start, or owner/owner-addr/owner-since"))
 		return
 	}
 	rel, ok := s.propertyRel(r.PathValue("slug"))

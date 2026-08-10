@@ -147,3 +147,49 @@
 .est-in { width: 70px; }
 .pp3-todo-x { visibility: hidden; flex: none; }
 .pp3-todo:hover .pp3-todo-x { visibility: visible; }
+
+/* ---- page columns + side card (parcel thumb · owner of record) ---- */
+.pp3-cols { display: flex; gap: 28px; align-items: flex-start; }
+.pp3-main { flex: 1 1 auto; min-width: 0; }
+.pp3-side { flex: 0 0 240px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: 14px; }
+.pp-thumb { width: 240px; height: 150px; background: var(--base-05); border: 1px solid var(--base-20); border-radius: var(--radius); cursor: pointer; }
+.pp-thumb polygon { fill: rgba(38, 90, 204, 0.08); stroke: var(--accent); stroke-width: 1.5; }
+.pp-thumb:hover polygon { fill: rgba(38, 90, 204, 0.16); }
+.pp3-owner { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 10px 12px; }
+.pp3-owner-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); margin-bottom: 4px; }
+.pp3-owner-name { font-family: var(--sans); font-size: 14px; font-weight: 600; line-height: 1.35; cursor: pointer; }
+.pp3-owner-name.missing { color: var(--base-40); font-weight: 400; font-style: italic; }
+.pp3-owner-line { font-family: var(--mono); font-size: 11px; color: var(--base-60); margin-top: 4px; line-height: 1.4; }
+.pp3-owner-line.missing { color: var(--base-40); font-style: italic; cursor: pointer; }
+.pp3-owner-line.warn { color: var(--base-100); font-weight: 600; }
+.pp3-owner-in { width: 100%; border: none; border-bottom: 1px dashed var(--accent); outline: none; font-family: var(--sans); font-size: 13px; padding: 2px 0; background: none; color: var(--base-100); }
+
+/* ---- underwrite editor (the plan behind BUDGET) ---- */
+.pp3-cell.click { cursor: pointer; }
+.pp3-cell.click:hover .pp3-cell-label { color: var(--accent); }
+.pp3-cell.click:hover .pp3-cell-label::after { content: " ✎"; }
+.pp3-uw { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 12px 14px; margin: -12px 0 22px; max-width: 780px; }
+.pp3-uw-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); margin-bottom: 8px; }
+.pp3-uw-loading { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.pp3-uw-row { display: flex; align-items: baseline; gap: 12px; padding: 3px 0; }
+.pp3-uw-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); flex: 0 0 120px; }
+.pp3-uw-note { font-family: var(--sans); font-size: 12px; color: var(--base-50); flex: 1 1 auto; }
+.pp3-uw-row .est-in { width: 110px; text-align: right; margin-left: auto; }
+.pp3-uw-row .pp3-uw-note + .est-in { margin-left: 0; }
+.pp3-uw-derived { font-family: var(--mono); font-size: 13px; color: var(--base-100); margin-left: auto; }
+.pp3-uw-actions { display: flex; justify-content: flex-end; gap: 14px; margin-top: 10px; }
+.pp3-uw-cancel { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-40); cursor: pointer; }
+.pp3-uw-cancel:hover { color: var(--base-100); }
+
+/* ---- ledger editing ---- */
+.pp3-ledger-row { grid-template-columns: 90px 1fr 1.2fr auto auto; cursor: pointer; }
+.pp3-ledger-row:hover { background: var(--base-05); }
+.pp3-ledger-row .pp3-todo-x { visibility: hidden; }
+.pp3-ledger-row:hover .pp3-todo-x { visibility: visible; }
+.pp3-ledger-add { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-40); cursor: pointer; padding: 6px 8px; text-align: left; }
+.pp3-ledger-add:hover { color: var(--accent); }
+.pp3-lform { border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 10px 12px; margin: 4px 0; background: var(--base-05); }
+.pp3-lform-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 12px; }
+.pp3-lform-field { display: flex; flex-direction: column; gap: 2px; }
+.pp3-lform-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
+.pp3-lform .pp-in, .pp3-lform .est-in { width: 100%; box-sizing: border-box; }

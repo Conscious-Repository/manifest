@@ -42,6 +42,10 @@ func (s *Service) Properties() ([]Property, error) {
 		}
 		return strings.ToLower(out[i].Address) < strings.ToLower(out[j].Address)
 	})
+	intel := s.parcelIntel()
+	for i := range out {
+		out[i].Intel = intel[AddrKey(out[i].Address)]
+	}
 	return out, nil
 }
 
@@ -49,7 +53,11 @@ func (s *Service) Properties() ([]Property, error) {
 func (s *Service) Get(slug string) (Property, bool) {
 	for _, r := range mustRefs(s.ix.Category("property", vaultindex.SortNameAsc)) {
 		if strings.EqualFold(r.Name, slug) {
-			return s.parse(r.Path, r.Name)
+			p, ok := s.parse(r.Path, r.Name)
+			if ok {
+				p.Intel = s.parcelIntel()[AddrKey(p.Address)]
+			}
+			return p, ok
 		}
 	}
 	return Property{}, false
@@ -80,6 +88,9 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	if m := wikilinkRe.FindStringSubmatch(fm["deal"]); m != nil {
 		p.Deal = strings.TrimSpace(m[1])
 	}
+	p.Owner = unquote(fm["owner"])
+	p.OwnerAddr = unquote(fm["owner-addr"])
+	p.OwnerSince = strings.TrimSpace(fm["owner-since"])
 	p.Lat, _ = strconv.ParseFloat(strings.TrimSpace(fm["lat"]), 64)
 	p.Lng, _ = strconv.ParseFloat(strings.TrimSpace(fm["lng"]), 64)
 	p.WorkStart = strings.TrimSpace(fm["work-start"])
