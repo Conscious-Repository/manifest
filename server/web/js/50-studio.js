@@ -499,6 +499,18 @@ async function loadSpiritRuns() {
   renderSpiritRuns();
   ensureLivePoll();
 }
+// spiritWeekSpend — Σ spentUsd over runs started in the last 7 days (the
+// section head + crumb meta both read this; no endpoint involved).
+function spiritWeekSpend() {
+  const cutoff = Date.now() - 7 * 86400000;
+  let sum = 0;
+  (spiritRuns.data || []).forEach((r) => {
+    const t = new Date(r.started).getTime();
+    if (!isNaN(t) && t >= cutoff) sum += r.spentUsd || 0;
+  });
+  return sum;
+}
+
 // Re-renders the LIST only; never touches the open report detail (so a live
 // re-render doesn't close what you're reading).
 function renderSpiritRuns() {
@@ -507,40 +519,37 @@ function renderSpiritRuns() {
   const queued = spiritRuns.queued || [];
   const finished = (spiritRuns.data || []).filter((r) => r.outcome !== "running");
 
-  // the live strip mounts at the TOP of the one-page spirits view (§12)
+  // the live strip: one line per running/queued item, at the very top (§12)
   const liveHost = document.getElementById("spiritLive");
-  if (liveHost) liveHost.innerHTML = "";
-  if (running.length || queued.length) {
-    const strip = el("div", "live-strip");
-    strip.append(el("div", "live-strip-label", "RUNNING"));
-    running.forEach((r) => strip.append(liveRunRow(r, true)));
-    queued.forEach((q) => strip.append(liveRunRow(q, false)));
-    (liveHost || host).append(strip);
+  if (liveHost) {
+    liveHost.innerHTML = "";
+    running.forEach((r) => liveHost.append(liveRunRow(r, true)));
+    queued.forEach((q) => liveHost.append(liveRunRow(q, false)));
   }
+
+  const ws = document.getElementById("spiritWeekSpend");
+  if (ws) { const n = spiritWeekSpend(); ws.textContent = n > 0 ? "$" + n.toFixed(2) + " this week" : ""; }
+  if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
+
   if (!finished.length && !running.length && !queued.length) {
     host.appendChild(emptyRow("No runs yet — cast a skill (press /) or wait for a scheduled ritual."));
     return;
   }
-  finished.forEach((r) => host.append(spiritRunCard(r)));
+  finished.forEach((r) => host.append(spiritRunRow(r)));
 }
+
+// liveRunRow — ONE line (prototype): dot · RUNNING · spirit · ritual — request · elapsed
 function liveRunRow(item, running) {
-  const row = el("div", "live-row " + (running ? "running" : "queued"));
-  const head = el("div", "live-head");
-  head.append(el("span", "live-dot " + (running ? "on" : "wait")));
-  head.append(el("span", "run-title", `${item.spirit} / ${item.ritual}`));
-  head.append(el("span", "live-state", running ? "running" : "queued"));
-  if (running) head.append(el("span", "live-elapsed", elapsedSince(item.started)));
-  row.append(head);
-  if (item.request) row.append(el("div", "feed-why", "“" + item.request + "”"));
+  const row = el("div", "sprt-live" + (running ? " running" : ""));
+  row.append(el("span", "live-dot " + (running ? "on" : "wait")));
+  row.append(el("span", "sprt-live-state", running ? "running" : "queued"));
+  row.append(el("span", "sprt-live-text",
+    item.spirit + " · " + item.ritual + (item.request ? " — " + item.request : "")));
   if (running) {
-    const pct = item.ceilingUsd > 0 ? Math.min(100, Math.round((item.spentUsd / item.ceilingUsd) * 100)) : 0;
-    const bar = el("div", "charge-bar"); const fill = el("div", "charge-fill" + (pct >= 100 ? " over" : "")); fill.style.width = pct + "%"; bar.append(fill);
-    const cr = el("div", "charge-row"); cr.append(bar, el("span", "charge-label", `$${(item.spentUsd || 0).toFixed(4)} / $${(item.ceilingUsd || 0).toFixed(2)}`));
-    row.append(cr);
-    row.append(el("div", "feed-meta", `${item.steps || 0} step${item.steps === 1 ? "" : "s"} so far · click to watch the report append`));
+    row.append(el("span", "sprt-live-elapsed", elapsedSince(item.started)));
+    row.classList.add("clicky");
     row.onclick = () => openSpiritRun(item.id);
-  } else {
-    row.append(el("div", "feed-meta", "waiting for the engine to pick it up…"));
+    row.title = "watch the report append";
   }
   return row;
 }
@@ -550,25 +559,27 @@ function elapsedSince(iso) {
   const m = Math.floor(s / 60); s = s % 60;
   return m ? `${m}m ${s}s` : `${s}s`;
 }
-function spiritRunCard(r) {
-  const card = el("div", "run-card");
-  const top = el("div", "run-top");
+
+// spiritRunRow — the prototype's quiet row: chip · title · when, over a
+// 6px charge bar + $spent / $ceiling. The card's request/step/model noise
+// lives in the report detail a click away.
+function spiritRunRow(r) {
+  const row = el("div", "sprt-run");
+  const top = el("div", "sprt-run-top");
   top.append(el("span", "run-outcome oc-" + (r.outcome || "").replace(/[^a-z-]/g, ""), r.outcome || "?"));
-  top.append(el("span", "run-title", `${r.spirit} / ${r.ritual}`));
-  top.append(el("span", "run-when", fmtWhen(r.started)));
-  card.append(top);
+  top.append(el("span", "sprt-run-title", `${r.spirit} / ${r.ritual}`));
+  top.append(el("span", "sprt-run-when", fmtWhen(r.started)));
+  row.append(top);
   const pct = r.ceilingUsd > 0 ? Math.min(100, Math.round((r.spentUsd / r.ceilingUsd) * 100)) : 0;
-  const bar = el("div", "charge-bar");
-  const fill = el("div", "charge-fill" + (pct >= 100 ? " over" : ""));
+  const bar = el("span", "charge-bar");
+  const fill = el("span", "charge-fill" + (pct >= 100 ? " over" : ""));
   fill.style.width = pct + "%";
   bar.appendChild(fill);
-  const row = el("div", "charge-row");
-  row.append(bar, el("span", "charge-label", `$${r.spentUsd.toFixed(4)} / $${r.ceilingUsd.toFixed(2)}`));
-  card.append(row);
-  if (r.request) card.append(el("div", "feed-why", "“" + r.request + "”"));
-  card.append(el("div", "feed-meta", `${r.steps} steps · ${r.itemsWritten} items · ${r.portal} (${r.model})`));
-  card.onclick = () => openSpiritRun(r.id);
-  return card;
+  const cr = el("div", "charge-row");
+  cr.append(bar, el("span", "charge-label", `$${r.spentUsd.toFixed(4)} / $${r.ceilingUsd.toFixed(2)}`));
+  row.append(cr);
+  row.onclick = () => openSpiritRun(r.id);
+  return row;
 }
 async function openSpiritRun(id) {
   openRunId = id;

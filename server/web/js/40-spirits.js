@@ -38,12 +38,25 @@ async function loadPortals() {
   } catch (e) { host.innerHTML = ""; host.append(emptyRow("Portals unavailable.")); }
 }
 
+let spiritPortalsOpen = false; // the settings block at the foot, closed by default
+
 function renderPortals(rows) {
   const host = els.portalList; host.innerHTML = "";
   const head = el("div", "portal-row portal-head");
   ["PORTAL", "STATE", "LAST CROSSING", "KEY", ""].forEach((h) => head.append(el("span", "", h)));
   host.append(head);
   rows.forEach((p) => host.append(portalRowEl(p)));
+  // the quiet foot toggle (§12: portals live in settings, off the page face)
+  const foot = document.getElementById("spiritPortalsFoot");
+  if (foot) {
+    foot.innerHTML = "";
+    const degraded = rows.filter((p) => p.state === "degraded").length;
+    const t = el("button", "sprt-portals-toggle",
+      (spiritPortalsOpen ? "▾" : "▸") + " portals · " + rows.length + (degraded ? " · ● " + degraded + " degraded" : ""));
+    t.onclick = () => { spiritPortalsOpen = !spiritPortalsOpen; els.portalList.hidden = !spiritPortalsOpen; renderPortals(rows); };
+    foot.append(t);
+    els.portalList.hidden = !spiritPortalsOpen;
+  }
 }
 
 const PORTAL_STATE_LABEL = { open: "open", degraded: "degraded", sealed: "—", dormant: "—" };
@@ -176,12 +189,25 @@ async function portalDisconnectCalendar(email) {
 async function loadSpiritsStatus() {
   try { spiritStatusCache = await (await fetch("/api/spirits/status")).json(); }
   catch (e) { spiritStatusCache = null; }
+  updateSpiritsCrumb();
+}
+
+// The page keeps no status banner — engine state, ritual count, and the
+// week's spend ride the breadcrumb meta (§12 / prototype).
+function updateSpiritsCrumb() {
+  if (typeof setCrumbMeta !== "function" || els.spiritsView.hidden) return;
   const st = spiritStatusCache;
-  if (!st || !st.enabled) { els.spiritsStatus.textContent = "not configured — set excaliburPath"; return; }
-  const names = Object.keys(st.spirits || {});
-  els.spiritsStatus.textContent = (st.engineAlive ? "engine alive" : "engine down") +
-    (names.length ? " · " + names.join(", ") : "");
-  els.spiritsStatus.style.color = st.engineAlive ? "" : "#b91c1c";
+  const bits = [];
+  if (st && st.enabled) bits.push(st.engineAlive ? "engine ok" : "engine down");
+  else if (st) bits.push("not configured");
+  if (typeof spiritRitualRows !== "undefined" && spiritRitualRows.length) {
+    bits.push(spiritRitualRows.length + " ritual" + (spiritRitualRows.length === 1 ? "" : "s"));
+  }
+  if (typeof spiritWeekSpend === "function") {
+    const ws = spiritWeekSpend();
+    if (ws > 0) bits.push("$" + ws.toFixed(2) + " this week");
+  }
+  setCrumbMeta(bits.join(" · "));
 }
 function setBadge(elm, n) {
   if (!elm) return;
@@ -239,14 +265,14 @@ async function livePoll() {
     if (liveBaselined && r.outcome !== "running" && was === "running") {
       anyFinished = true;
       showToast(`${r.spirit}/${r.ritual} — ${r.outcome}` + (r.itemsWritten ? ` · ${r.itemsWritten} item${r.itemsWritten === 1 ? "" : "s"}` : ""),
-        () => { location.hash = "#/spirits/runs"; setTimeout(() => openSpiritRun(r.id), 120); });
+        () => { location.hash = "#/spirits"; setTimeout(() => openSpiritRun(r.id), 120); });
     }
     runOutcomes[r.id] = r.outcome;
   });
   liveBaselined = true;
 
-  // re-render whatever is open, from files alone
-  if (location.hash.startsWith("#/spirits") && spiritTabFromHash() === "runs") renderSpiritRuns();
+  // re-render whatever is open, from files alone (ONE page now)
+  if (location.hash.startsWith("#/spirits")) renderSpiritRuns();
   if (openRunId) refreshOpenRun(); // includes the finishing tick, so the report shows the terminal outcome
 
   if (anyFinished) {

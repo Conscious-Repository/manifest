@@ -2,48 +2,69 @@
 // The board reads every ritual (next-fire, last outcome, ceiling, validity);
 // clicking a row opens the raw markdown editor. Edits round-trip to the
 // excalibur tree via /api/spirits/file (allow-listed); the engine hot-reloads.
+let spiritRitualRows = []; // the crumb meta's ritual count reads this
+
 async function loadSpiritRituals() {
   let rows = [];
   try { rows = (await (await fetch("/api/spirits/rituals")).json()).data || []; } catch (e) {}
   renderSpiritRituals(rows);
 }
+
+// ONE flat table (§12 / prototype): spirit · ritual / cadence-over-cron /
+// next / outcome chip / ceiling. Row click edits the ritual; the spirit name
+// inside the cell edits identity+cornerstone.
 function renderSpiritRituals(rows) {
+  spiritRitualRows = rows;
   const host = els.spiritRitualBoard; host.innerHTML = "";
-  if (!rows.length) { host.appendChild(emptyRow("No rituals yet — add a spirit, then a ritual.")); return; }
-  // group by spirit
-  const bySpirit = {};
-  rows.forEach((r) => { (bySpirit[r.spirit] ||= []).push(r); });
-  Object.keys(bySpirit).sort().forEach((sp) => {
-    const head = el("div", "ritual-spirit-head");
-    const name = el("button", "ritual-spirit-name", sp);
-    name.title = "Edit " + sp + "'s identity + cornerstone";
-    name.onclick = () => openSpiritEditor(sp);
-    const addBtn = pillLight("+ ritual", () => newRitual(sp));
-    head.append(name, addBtn);
-    host.append(head);
-    bySpirit[sp].forEach((r) => host.append(ritualRow(r)));
-  });
+  if (!rows.length) {
+    host.appendChild(emptyRow("No rituals yet — add a spirit, then a ritual."));
+  } else {
+    rows.slice().sort((a, b) => (a.spirit + "/" + a.ritual).localeCompare(b.spirit + "/" + b.ritual))
+      .forEach((r) => host.append(ritualRow(r)));
+  }
+  // ＋ ritual — pick the spirit inline, then the existing create path
+  const spirits = [...new Set(rows.map((r) => r.spirit))].sort();
+  const ghost = el("button", "sprt-ghost sprt-add-ritual", "＋ ritual");
+  ghost.onclick = () => {
+    if (spirits.length === 1) { newRitual(spirits[0]); return; }
+    if (!spirits.length) { showToast("Add a spirit first"); return; }
+    const sel = selectEl(spirits);
+    sel.className = "pp-in";
+    const go = el("button", "sprt-quiet", "add →");
+    go.onclick = () => newRitual(sel.value);
+    const wrap = el("span", "sprt-add-wrap");
+    wrap.append(sel, go);
+    ghost.replaceWith(wrap);
+    sel.focus();
+  };
+  host.append(ghost);
+  if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
 }
+
 function ritualRow(r) {
   const row = el("div", "ritual-row" + (r.valid ? "" : " invalid"));
-  row.append(el("span", "ritual-name", r.ritual));
-  // cadence: human phrase primary; raw cron demoted to a tooltip. On-demand
-  // rows say how to run them; "custom" carries the raw string in the tooltip.
+  // name — spirit (its own editor) · ritual
+  const name = el("span", "ritual-name");
+  const sp = el("span", "sprt-spirit", r.spirit);
+  sp.title = "Edit " + r.spirit + "'s identity + cornerstone";
+  sp.onclick = (e) => { e.stopPropagation(); openSpiritEditor(r.spirit); };
+  name.append(sp, document.createTextNode(" · " + r.ritual));
+  row.append(name);
+  // cadence — human phrase over the raw cron (both visible, prototype)
   const cad = el("span", "ritual-cadence");
   if (r.cadence === "") {
     cad.append(el("span", "cad-human", "on-demand"));
-    cad.append(el("span", "cad-hint", " · run with /"));
+    cad.append(el("span", "cad-raw", "run with /"));
   } else {
-    const h = el("span", "cad-human", r.cadenceHuman || "custom");
-    if (r.cadence) h.title = r.cadence; // raw cron on hover only
-    cad.append(h);
+    cad.append(el("span", "cad-human", r.cadenceHuman || "custom"));
+    cad.append(el("span", "cad-raw", r.cadence));
   }
   row.append(cad);
-  // next fire — relative + absolute ("in 2h · 1:00p")
+  // next fire — absolute + quiet relative suffix
   const next = el("span", "ritual-next");
   if (r.valid && r.nextFire) {
+    next.append(document.createTextNode(fmtWhen(r.nextFire) + " "));
     next.append(el("span", "next-rel", relPhrase(r.nextFire)));
-    next.append(el("span", "next-abs", " · " + fmtWhen(r.nextFire)));
   } else {
     next.textContent = "—";
   }
@@ -56,7 +77,7 @@ function ritualRow(r) {
     oc.append(chip);
   } else if (r.lastOutcome) {
     const chip = el("span", "run-outcome oc-" + r.lastOutcome.replace(/[^a-z-]/g, ""), r.lastOutcome);
-    if (r.lastRunId) { chip.classList.add("linky"); chip.onclick = (e) => { e.stopPropagation(); location.hash = "#/spirits/runs"; setTimeout(() => openSpiritRun(r.lastRunId), 150); }; }
+    if (r.lastRunId) { chip.classList.add("linky"); chip.onclick = (e) => { e.stopPropagation(); openSpiritRun(r.lastRunId); }; }
     oc.append(chip);
   } else {
     oc.append(el("span", "run-outcome oc-never", "never run"));

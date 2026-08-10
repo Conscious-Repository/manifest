@@ -187,26 +187,26 @@
     <div id="studioBody" class="feed-list"></div>
   </section>
 
-  <!-- SPIRITS — the excalibur harness console (sibling tree; engine owns execution) -->
-  <section class="agents-view" id="spiritsView" hidden>
-    <div class="panel-head">
-      <span class="panel-title">SPIRITS</span>
-      <span id="spiritsStatus" class="panel-meta hermes-status"></span>
-    </div>
+  <!-- SPIRITS — ONE quiet page (redesign §12 / prototype): live strip →
+       rituals table → recent runs; engine status + week spend live in the
+       breadcrumb meta; portals fold into a closed section at the foot. -->
+  <section class="spirits-page" id="spiritsView" hidden>
+    <span id="spiritsStatus" hidden></span><!-- status text feeds the crumb meta -->
 
     <!-- live strip — only renders while something is queued/running -->
     <div id="spiritLive"></div>
 
-    <!-- ONE page (redesign §12): rituals board first, then runs, portals at the foot -->
-    <!-- RITUALS (board of every ritual + in-app markdown editing) -->
-    <div class="agent-panel" id="sp-rituals">
-      <div class="panel-subhead">
-        <span>RITUALS <span class="sub-meta">every ritual across spirits · click a row to edit · engine hot-reloads</span></span>
-        <span class="subhead-actions">
-          <button id="spiritEditChargebook" class="pill light" title="Edit chargebook.md">chargebook</button>
-          <button id="spiritNewSpirit" class="pill light">+ Spirit</button>
+    <!-- RITUALS — one flat table -->
+    <div class="sprt-block" id="sp-rituals">
+      <div class="sprt-head">
+        <span class="sprt-title">Rituals</span>
+        <span class="sprt-sub">every ritual across spirits · engine hot-reloads</span>
+        <span class="sprt-head-acts">
+          <button id="spiritEditChargebook" class="sprt-quiet" title="Edit chargebook.md">chargebook</button>
+          <button id="spiritNewSpirit" class="sprt-ghost">＋ spirit</button>
         </span>
       </div>
+      <div class="sprt-cols"><span>Ritual</span><span>Cadence</span><span>Next</span><span>Last</span><span class="r">Ceiling</span></div>
       <div id="spiritRitualBoard" class="ritual-board"></div>
       <!-- shared markdown editor drawer (rituals / identity / cornerstone / chargebook) -->
       <div id="spiritEditor" class="run-detail" hidden>
@@ -221,21 +221,21 @@
       </div>
     </div>
 
-    <!-- RUNS (artifacts/runs/ — the legible decision trail per run; the live strip renders on top) -->
-    <div class="agent-panel" id="sp-runs">
-      <div class="panel-subhead">
-        <span>RECENT RUNS <span class="sub-meta">every run writes markdown — context, decisions, charge, writes</span></span>
+    <!-- RECENT RUNS — quiet rows over charge bars; the week's spend in the head -->
+    <div class="sprt-block" id="sp-runs">
+      <div class="sprt-head">
+        <span class="sprt-title">Recent runs</span>
+        <span class="sprt-sub">context · decisions · charge · writes</span>
+        <span id="spiritWeekSpend" class="sprt-head-meta"></span>
       </div>
       <div id="spiritRunsList" class="runs-list"></div>
       <div id="spiritRunDetail" class="run-detail" hidden></div>
     </div>
 
-    <!-- PORTALS — the settings block at the foot (external realms; items land in FEED) -->
-    <div class="agent-panel" id="sp-portals">
-      <div class="panel-subhead">
-        <span>PORTALS <span class="sub-meta">every external realm the app touches · connect or repair right here · items land in FEED</span></span>
-      </div>
-      <div id="portalList" class="portal-board"></div>
+    <!-- PORTALS — the settings block at the foot, closed by default -->
+    <div class="sprt-block" id="sp-portals">
+      <div id="spiritPortalsFoot"></div>
+      <div id="portalList" class="portal-board" hidden></div>
     </div>
 
   </section>
