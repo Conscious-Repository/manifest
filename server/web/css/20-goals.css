@@ -178,3 +178,52 @@
 .o-date-cap { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--muted); }
 .o-date-in { font-family: var(--mono); font-size: 12px; color: var(--streak-ink); border: none; border-bottom: 1px solid var(--line); background: none; padding: 1px 2px; cursor: pointer; }
 .o-date-in:hover, .o-date-in:focus { border-bottom-color: var(--blue); outline: none; }
+
+/* ===== Rev 2 (2026-08-09): ONE editable outline per area — areas rail,
+   rock → stage → task, everything visible, alarm = weight + ● ===== */
+.go-shell { display: flex; align-items: flex-start; gap: 22px; }
+.go-rail { width: 176px; flex: none; border-right: 1px solid var(--base-25); padding: 6px 0 14px; position: sticky; top: 0; }
+.go-rail-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 10px 4px; }
+.go-rail-item { display: flex; align-items: baseline; gap: 8px; width: 100%; background: none; border: none; text-align: left; cursor: pointer; padding: 4px 10px; font-family: var(--sans); font-size: 13px; color: var(--base-70); }
+.go-rail-item:hover { background: var(--base-20); }
+.go-rail-item.active { color: var(--accent); background: var(--base-20); }
+.go-rail-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.go-rail-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.go-content { flex: 1; min-width: 0; max-width: 820px; }
+@media (max-width: 860px) { .go-rail { display: none; } }
+
+/* one rock block — the left rule carries the state */
+.go-rock { padding: 12px 12px 10px; border-top: 1px solid #f0f0f0; border-left: 2px solid var(--accent-soft); margin-bottom: 2px; }
+.go-rock.current { border-left-color: var(--accent); }
+.go-rock.stalled { border-left-color: var(--base-100); }
+.go-rock.done { opacity: 0.55; }
+.go-rock-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.go-rock-name { font-family: var(--sans); font-size: 15px; font-weight: 500; }
+.go-rock-name.done { text-decoration: line-through; color: var(--base-40); }
+.go-until { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 8px; white-space: nowrap; }
+.go-until-ghost { font-size: 10.5px; }
+.go-lint { font-family: var(--mono); font-size: 10.5px; color: var(--base-100); font-weight: 500; white-space: nowrap; }
+.go-open-count { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
+
+/* stages */
+.go-stage { display: flex; align-items: baseline; gap: 8px; padding: 3px 0 3px 14px; }
+.go-stage-text { font-family: var(--sans); font-size: 13.5px; }
+.go-stage.done .go-stage-text { color: var(--base-40); text-decoration: line-through; }
+.go-stage-cur { font-family: var(--mono); font-size: 12px; color: var(--accent); flex: none; }
+.go-stage.cur .go-stage-text { font-weight: 500; }
+.go-stage-owner { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.go-check { background: none; border: none; font-size: 12px; color: var(--base-30); cursor: pointer; padding: 0 2px; flex: none; }
+.go-check:hover { color: var(--accent); }
+.go-check.on { color: var(--accent); }
+
+/* tasks under the current stage */
+.go-task { display: flex; align-items: baseline; gap: 8px; padding: 2px 0 2px 34px; }
+.go-task-text { font-family: var(--sans); font-size: 13px; min-width: 0; }
+.go-task-age { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.go-task-ghost { margin-left: 34px; font-size: 11px; }
+.go-stage-ghost { margin-left: 14px; font-size: 11px; }
+
+/* quiet rock actions — hover-revealed */
+.go-rock-acts { display: flex; align-items: center; gap: 12px; margin-top: 8px; visibility: hidden; }
+.go-rock:hover .go-rock-acts { visibility: visible; }
+.go-rock-acts .o-complete { margin: 0; }
