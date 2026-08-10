@@ -84,7 +84,7 @@
 .cp-mention { font-family: var(--sans); font-size: 13px; color: var(--streak-ink); padding: 3px 0; }
 .cp-upcoming-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; }
 .cp-title { font-family: var(--sans); font-size: 13.5px; color: var(--text); flex: 1; }
-.cp-confirmed { font-family: var(--mono); font-size: 11px; color: #1a7f37; }
+.cp-confirmed { font-family: var(--mono); font-size: 11px; color: var(--accent); }
 .cp-note-editor { width: 100%; min-height: 150px; font-family: var(--mono); font-size: 13px; line-height: 1.55; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; resize: vertical; color: var(--text); box-sizing: border-box; }
 .cp-note-editor:focus { outline: none; border-color: var(--blue-soft); }
 .cp-note-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }

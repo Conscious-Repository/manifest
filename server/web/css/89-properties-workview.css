@@ -8,7 +8,7 @@
 .wv-addr:hover { color: var(--blue); }
 .wv-stage { font-family: var(--mono); font-size: 12px; color: var(--blue); }
 .wv-stage.none, .wv-stage.done-all { color: var(--muted); }
-.wv-warn { font-family: var(--mono); font-size: 11.5px; color: #b45309; }
+.wv-warn { font-family: var(--mono); font-size: 11.5px; color: var(--base-100); font-weight: 500; }
 .wv-todos { display: flex; flex-direction: column; gap: 2px; padding-left: 4px; }
 .wv-todo { display: flex; align-items: baseline; gap: 8px; font-size: 14px; }
 .wv-bids { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--line); padding-top: 6px; }
@@ -30,10 +30,10 @@
 .kanban-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
 .kanban-card:hover { background: var(--hover); border-color: var(--blue-soft); }
 .kanban-card-head { display: flex; justify-content: space-between; align-items: baseline; }
-.stall-dot { color: #b45309; font-size: 9px; }
+.stall-dot { color: var(--base-100); font-size: 9px; }
 .kanban-entity { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 .kanban-todo { font-size: 13px; color: var(--text); }
-.kanban-todo.warn { color: #b45309; font-family: var(--mono); font-size: 11.5px; }
+.kanban-todo.warn { color: var(--base-100); font-weight: 500; font-family: var(--mono); font-size: 11.5px; }
 .kanban-money { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
 /* gantt */
 .gantt-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; }

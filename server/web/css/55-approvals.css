@@ -45,12 +45,13 @@
 .diff-line { display: flex; white-space: pre; }
 .diff-gutter { flex: 0 0 1.6em; text-align: center; color: var(--muted); user-select: none; }
 .diff-text { flex: 1; padding-right: 10px; }
-.diff-add { background: #e7f5ec; }
-.diff-add .diff-gutter { color: #1a7f37; }
-.diff-add .diff-text { color: #12522a; }
-.diff-del { background: #fbe9eb; }
-.diff-del .diff-gutter { color: #c0304a; }
-.diff-del .diff-text { color: #86222f; }
+/* added lines are an accent tint, not green; removed lines stay neutral (README §11) */
+.diff-add { background: #f2f5fc; }
+.diff-add .diff-gutter { color: #1c469e; }
+.diff-add .diff-text { color: #1c469e; }
+.diff-del { background: var(--base-00); }
+.diff-del .diff-gutter { color: var(--base-40); }
+.diff-del .diff-text { color: var(--base-40); text-decoration: line-through; }
 .diff-ctx .diff-text { color: var(--streak-ink); }
 .appr-blocked { font-family: var(--mono); font-size: 12px; color: #c0304a; background: #fbe9eb; border-radius: var(--radius); padding: 8px 10px; }
 

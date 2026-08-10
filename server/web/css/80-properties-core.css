@@ -11,7 +11,7 @@
 .property-addr { font-family: var(--sans); font-size: 14px; color: var(--text); font-weight: 500; }
 .property-status { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .property-status.status-construction, .property-status.status-pre-development { color: var(--blue); }
-.property-status.status-completed, .property-status.status-leased, .property-status.status-sold { color: #15803d; }
+.property-status.status-completed, .property-status.status-leased, .property-status.status-sold { color: var(--base-40); }
 .property-out { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
 .property-out.over { color: #b91c1c; }
 .out-committed { color: var(--muted); }
@@ -107,13 +107,13 @@
 .recon-list .property-row { align-items: center; }
 .recon-acts { display: inline-flex; gap: 8px; justify-content: flex-end; white-space: nowrap; }
 .recon-acts .pill { padding: 3px 10px; font-size: 11.5px; white-space: nowrap; }
-.unrec-amt { color: #b45309; }
+.unrec-amt { color: var(--base-100); font-weight: 500; }
 .doc-chip { text-decoration: none; }
 .doc-chip:hover { text-decoration: underline; }
-.pp-amt.inflow { color: #15803d; }
+.pp-amt.inflow { color: var(--base-100); }
 .stmt-head { display: flex; justify-content: space-between; align-items: baseline; }
-.stmt-progress { font-family: var(--mono); font-size: 11px; color: #15803d; }
-.stmt-progress.open { color: #b45309; }
+.stmt-progress { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.stmt-progress.open { color: var(--base-100); font-weight: 500; }
 .dismiss-picker { display: inline-flex; gap: 8px; margin-left: 8px; }
 
 .cols-ledger { grid-template-columns: 0.75fr 0.65fr 0.95fr 1.1fr 0.85fr 0.85fr 1.3fr 0.9fr auto; }

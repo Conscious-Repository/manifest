@@ -9,16 +9,16 @@
 .type-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .type-chip.type-paper { color: #7c3aed; border-color: #ddd0f7; }
 .type-chip.type-person { color: #0e7490; border-color: #c6e6ee; }
-.type-chip.type-company { color: #b45309; border-color: #f0dcb8; }
+.type-chip.type-company { color: var(--base-50); border-color: var(--base-25); }
 .type-chip.type-artifact { color: var(--blue); border-color: var(--blue-soft); }
 .feed-title { font-family: var(--sans); font-size: 16px; color: var(--text); font-weight: 500; text-decoration: none; }
 a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .conf { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; margin-left: auto; }
-.conf-high { color: #15803d; } .conf-medium { color: #b45309; } .conf-low { color: var(--muted); }
+.conf-high { color: var(--base-40); } .conf-medium { color: var(--base-40); } .conf-low { color: var(--muted); }
 .feed-why { font-family: var(--sans); font-size: 14px; color: var(--streak-ink); line-height: 1.5; }
 .feed-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.2px; }
 .feed-body { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 10px 12px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
-.feed-saved { font-family: var(--mono); font-size: 11px; color: #15803d; }
+.feed-saved { font-family: var(--mono); font-size: 11px; color: var(--accent); }
 .feed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ===== FEED — manifest's one inbox (top-level tab) ===== */
@@ -45,14 +45,14 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .portal-line-text { font-size: 13.5px; color: var(--text); text-decoration: none; flex: 1; }
 a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .portal-change-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 4px; padding: 1px 6px; }
-.portal-change-chip.change-new { color: #15803d; border: 1px solid #bfe3c9; }
+.portal-change-chip.change-new { color: var(--base-50); border: 1px solid var(--base-25); }
 .portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }
 
 /* ---- receipts (errands-aside §5): the fourth attention kind ---- */
 .type-chip.type-receipt { color: #6d28d9; border-color: #ddd6fe; }
 .receipt-status { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; }
 .rc-queued, .rc-cancelled { color: var(--muted); }
-.rc-running { color: #1a7f37; }
+.rc-running { color: var(--accent); }
 .rc-running::before { content: "● "; animation: pulse 1.3s ease-in-out infinite; }
 .rc-done { color: var(--icon); }
 .rc-failed { color: #b91c1c; }

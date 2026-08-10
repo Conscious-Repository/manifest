@@ -10,22 +10,45 @@
 
 
 :root {
-  --bg: #ffffff;
-  --ink: #000000;        /* time labels, section titles */
-  --text: #171717;       /* dark UI text */
-  --blue: #265acc;       /* filled entries / active */
-  --blue-soft: #aebfe8;  /* duration connectors */
-  --line: #e5e5e5;       /* hairlines */
-  --muted: #a3a3a3;      /* meta labels */
-  --icon: #d4d4d4;       /* slot marker icons */
+  /* neutral ramp — surfaces, rules, text (docs/redesign/README.md §1) */
+  --base-00: #ffffff;   /* page + panel surface */
+  --base-05: #fafafa;   /* raised row, inspector, hover */
+  --base-10: #f5f5f4;   /* left rail */
+  --base-20: #ececea;   /* selected row / active nav item */
+  --base-25: #e5e5e5;   /* hairlines, borders */
+  --base-30: #d4d4d4;   /* icons, empty checkboxes, disabled chevrons */
+  --base-40: #a3a3a3;   /* muted labels, meta */
+  --base-50: #737373;   /* secondary text */
+  --base-60: #525252;   /* body sub-text */
+  --base-70: #404040;   /* nav item text */
+  --base-100: #171717;  /* ink: primary text, alarm */
+
+  /* the single accent — means LIVE */
+  --accent: #265acc;
+  --accent-soft: #aebfe8;
+
+  /* the one exception */
+  --over: #b91c1c;      /* money over budget ONLY */
+
+  /* legacy aliases — pre-redesign names; same values, so Day view is untouched */
+  --bg: var(--base-00);
+  --ink: #000000;        /* time labels, section titles (Day view keeps pure black) */
+  --text: var(--base-100);
+  --blue: var(--accent);
+  --blue-soft: var(--accent-soft);
+  --line: var(--base-25);
+  --muted: var(--base-40);
+  --icon: var(--base-30);
   --pill-bg: #171717;
   --pill-bd: #262626;
   --pill-ink: #a3a3a3;
   --streak-bg: #f5f5f5;
   --streak-bd: #e5e5e5;
   --streak-ink: #404040;
-  --hover: #fafafa;
+  --hover: var(--base-05);
+
   --radius: 4px;
+  --radius-lg: 6px;
   --sans: "Hanken Grotesk", -apple-system, BlinkMacSystemFont, sans-serif;
   --mono: "Carbon", "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }

@@ -7,7 +7,7 @@
 .tdo-row.done .tdo-text { text-decoration: line-through; color: var(--muted); }
 .tdo-text { cursor: text; }
 .tdo-age { font-family: var(--mono); font-size: 10.5px; color: var(--icon); min-width: 28px; text-align: right; margin-left: auto; }
-.tdo-age.stale { color: #b45309; }
+.tdo-age.stale { color: var(--base-100); }
 .tdo-age.stale::before { content: "● "; font-size: 7px; vertical-align: 2px; }
 .tdo-acts { display: inline-flex; gap: 8px; align-items: baseline; }
 .tdo-acts .uw-x { color: var(--icon); visibility: hidden; }
@@ -28,7 +28,7 @@
 .tdo-bucket-links { font-family: var(--mono); font-size: 10.5px; color: var(--icon); }
 .tdo-bucket-items { border-left: 2px solid var(--line); margin: 0 0 6px 5px; padding-left: 14px; }
 .tdo-tag { font-family: var(--mono); font-size: 10.5px; color: var(--icon); border: 1px solid var(--line); border-radius: 10px; padding: 0 7px; }
-.tdo-issue-dot { color: #b45309; }
+.tdo-issue-dot { color: var(--base-100); }
 .tdo-backlog-line { font-size: 12.5px; color: var(--muted); padding: 2px 2px 2px 14px; }
 .tdo-triage-banner { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 13px; margin-bottom: 16px; }
 .tdo-triage-path { font-family: var(--mono); font-size: 10.5px; color: var(--icon); min-width: 260px; }

@@ -149,15 +149,15 @@
 .run-card:hover { background: var(--hover); }
 .run-top { display: flex; align-items: baseline; gap: 10px; }
 .run-outcome { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: 2px 9px; }
-.oc-completed { color: #15803d; border-color: #bbe3c8; }
-.oc-stopped-charge, .oc-stopped-steps { color: #b45309; border-color: #ecd4b0; }
+.oc-completed { color: var(--accent); border-color: var(--accent-soft); }
+.oc-stopped-charge, .oc-stopped-steps { color: var(--base-50); border-color: var(--base-25); }
 .oc-error, .oc-errorprotocol { color: #b91c1c; border-color: #eec3c3; }
 .run-title { font-family: var(--mono); font-size: 13px; color: var(--ink); letter-spacing: 0.2px; }
 .run-when { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
 .charge-row { display: flex; align-items: center; gap: 10px; }
 .charge-bar { flex: 1; height: 6px; background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: 3px; overflow: hidden; }
 .charge-fill { height: 100%; background: var(--blue); border-radius: 3px; }
-.charge-fill.over { background: #b45309; }
+.charge-fill.over { background: var(--over); }
 .charge-label { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
 .run-detail { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .run-detail-head { display: flex; align-items: center; gap: 8px; }
@@ -190,11 +190,11 @@
 .editor-tabs { display: flex; gap: 4px; margin-right: auto; }
 .editor-tab { font-family: var(--mono); font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px; cursor: pointer; }
 .editor-tab.active { color: var(--ink); border-color: var(--blue-soft); background: var(--streak-bg); }
-.editor-dirty { font-family: var(--mono); font-size: 11px; color: #b45309; margin-right: 8px; }
+.editor-dirty { font-family: var(--mono); font-size: 11px; color: var(--base-40); margin-right: 8px; }
 .editor-area { width: 100%; min-height: 340px; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--text); background: var(--streak-bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; resize: vertical; box-sizing: border-box; white-space: pre; overflow-wrap: normal; }
 .editor-lint { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-family: var(--mono); font-size: 11.5px; }
-.editor-lint.lint-ok { color: #15803d; }
-.lint-err { color: #b91c1c; } .lint-warn { color: #b45309; } .lint-note { color: var(--muted); }
+.editor-lint.lint-ok { color: var(--base-40); }
+.lint-err { color: #b91c1c; } .lint-warn { color: var(--base-100); font-weight: 500; } .lint-note { color: var(--muted); }
 
 /* ---- SPIRITS: digest feed items (EA waiting-on), pinned + expanded ---- */
 .feed-card.digest { border-color: var(--blue-soft); background: #fbfcff; }
@@ -213,7 +213,7 @@
 .live-row.running:hover { border-color: var(--blue-soft); }
 .live-head { display: flex; align-items: center; gap: 8px; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.live-dot.on { background: #1a7f37; animation: pulse 1.3s ease-in-out infinite; }
+.live-dot.on { background: var(--accent); animation: pulse 1.3s ease-in-out infinite; }
 .live-dot.wait { background: var(--muted); }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 .live-state { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
@@ -244,8 +244,8 @@
 .portal-head { border: none; padding: 4px 10px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
 .portal-name { font-family: var(--sans); font-size: 14px; color: var(--text); font-weight: 500; }
 .portal-state { font-family: var(--mono); font-size: 12px; color: var(--muted); }
-.portal-row.state-open .portal-state { color: #15803d; }
-.portal-row.state-degraded .portal-state { color: #b91c1c; }
+.portal-row.state-open .portal-state { color: var(--base-50); }
+.portal-row.state-degraded .portal-state { color: var(--base-100); font-weight: 500; }
 .portal-cross { font-family: var(--mono); font-size: 12px; color: var(--ink); }
 .portal-key { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.5px; }
 .portal-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-self: end; }

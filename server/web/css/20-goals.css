@@ -145,7 +145,7 @@
 }
 .hist-note { font-size: 12.5px; color: var(--muted); font-style: italic; padding: 3px 4px 6px 24px; }
 
-.o-rock-lint { font-family: var(--mono); font-size: 10.5px; color: #b45309; margin-left: 8px; }
+.o-rock-lint { font-family: var(--mono); font-size: 10.5px; color: var(--base-100); font-weight: 500; margin-left: 8px; }
 /* task-substrate: goals window */
 .o-todo-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; color: var(--icon); margin: 10px 0 2px; }
 .o-frozen-line { font-family: var(--mono); font-size: 11px; color: var(--icon); padding: 1px 0 1px 26px; text-decoration: line-through; }

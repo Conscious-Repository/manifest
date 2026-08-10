@@ -88,8 +88,8 @@
 .stmt-split-line { display: flex; gap: 8px; align-items: center; }
 .stmt-split-foot { display: flex; gap: 14px; align-items: center; }
 .stmt-remainder { font-family: var(--mono); font-size: 11.5px; }
-.stmt-remainder.ok { color: #15803d; }
-.stmt-remainder.bad { color: #b91c1c; }
+.stmt-remainder.ok { color: var(--base-40); }
+.stmt-remainder.bad { color: var(--over); }
 .stmt-maphost { display: flex; flex-direction: column; }
 
 /* ---- pass-4: explicit expandable section heads ---- */
