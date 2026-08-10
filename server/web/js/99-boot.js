@@ -297,6 +297,7 @@ els.railCollapse.addEventListener("click", () => {
   setRailCollapsed(on, true);
 });
 els.railSearch.addEventListener("click", () => openCmdbar());
+document.getElementById("railRaw").addEventListener("click", () => toggleRawOverlay());
 els.crumbBack.addEventListener("click", navBack);
 els.crumbFwd.addEventListener("click", navForward);
 window.addEventListener("resize", applyRailWidth);

@@ -47,7 +47,7 @@
     <div class="rail-groups" id="railGroups"></div>
     <div class="rail-foot">
       <span id="saveState" class="save-state">saved</span>
-      <span class="rail-raw" title="Raw markdown (coming with the ⌘/ overlay)">⌘/ raw</span>
+      <button class="rail-raw" id="railRaw" title="Edit the raw markdown behind this view (⌘/)">⌘/ raw</button>
     </div>
   </nav>
 
@@ -371,7 +371,7 @@
   <div id="cmdbar" class="cmdbar" hidden>
     <div class="cmdbar-backdrop" id="cmdbarBackdrop"></div>
     <div class="cmdbar-card">
-      <input id="cmdbarInput" class="cmdbar-input" type="text" placeholder="Look up a contact…" autocomplete="off" />
+      <input id="cmdbarInput" class="cmdbar-input" type="text" placeholder="Go to a view, property, or contact…" autocomplete="off" />
       <div id="cmdbarResults" class="cmdbar-results"></div>
       <div id="cmdbarCard" class="cmdbar-cardview" hidden></div>
     </div>

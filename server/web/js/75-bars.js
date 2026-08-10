@@ -60,6 +60,7 @@ function openCmdbar() {
   els.cmdbarCard.hidden = true;
   cmdSel = -1; cmdResults = [];
   els.cmdbarInput.focus();
+  cmdSearch(""); // destinations show before a query is typed
 }
 function closeCmdbar() { els.cmdbar.hidden = true; }
 
@@ -74,13 +75,15 @@ if (els.cmdbarInput) {
   els.cmdbarInput.addEventListener("keydown", (e) => {
     if (e.key === "ArrowDown") { e.preventDefault(); cmdMove(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); cmdMove(-1); }
-    else if (e.key === "Enter") { e.preventDefault(); if (cmdResults[cmdSel]) cmdShowCard(cmdResults[cmdSel].key); }
+    else if (e.key === "Enter") { e.preventDefault(); if (cmdResults[cmdSel]) cmdResults[cmdSel].act(); }
     else if (e.key === "Escape") { closeCmdbar(); }
   });
 }
 if (els.cmdbarBackdrop) els.cmdbarBackdrop.addEventListener("click", closeCmdbar);
 window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
+  else if ((e.metaKey || e.ctrlKey) && e.key === "/") { e.preventDefault(); toggleRawOverlay(); }
+  else if (e.key === "Escape" && rawOpen) { closeRawOverlay(); }
   else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }
   else if (e.key === "/" && els.castbar && els.castbar.hidden && !typingInField(e.target)) { e.preventDefault(); openCastbar(); }
   else if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typingInField(e.target) &&
@@ -205,21 +208,65 @@ if (els.castbarArgInput) {
 if (els.castbarCast) els.castbarCast.addEventListener("click", castSubmit);
 if (els.castbarBackdrop) els.castbarBackdrop.addEventListener("click", closeCastbar);
 
+// ---- palette result set (redesign §2): every nav destination, every AION
+// sub-tab, every property, and every contact — one keyboard-driven list.
+let _cmdDests = null, _cmdProps = null;
+function cmdDestinations() {
+  if (_cmdDests) return _cmdDests;
+  _cmdDests = [];
+  NAV_SECTIONS.forEach((g) => g.items.forEach((it) =>
+    _cmdDests.push({ name: it.label, hint: g.label.toLowerCase() + " · view", hash: it.hash })));
+  [["Backlog", "#/aion"], ["Heuristics", "#/aion/heuristics"], ["V/TO", "#/aion/vto"],
+   ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Reconcile", "#/aion/reconcile"],
+   ["Settings", "#/aion/settings"]].forEach(([n, h]) =>
+    _cmdDests.push({ name: "Aion · " + n, hint: "aion tab", hash: h }));
+  [["Map", "#/properties/map"], ["Parcels", "#/properties/parcels"]].forEach(([n, h]) =>
+    _cmdDests.push({ name: "Properties · " + n, hint: "properties view", hash: h }));
+  return _cmdDests;
+}
+async function cmdProperties() {
+  if (_cmdProps) return _cmdProps;
+  try {
+    const d = await (await fetch("/api/properties")).json();
+    _cmdProps = (d.properties || []).map((p) => ({
+      name: p.name || p.address || p.slug,
+      hint: "property" + (p.status ? " · " + p.status : ""),
+      hash: "#/properties/" + encodeURIComponent(p.slug),
+    }));
+  } catch (e) { _cmdProps = []; }
+  return _cmdProps;
+}
+
 async function cmdSearch(q) {
   const host = els.cmdbarResults; host.innerHTML = ""; cmdSel = -1; cmdResults = [];
-  if (!q) return;
-  // quick-add lives here too: first row turns the query into a todo
-  const addRow = el("div", "cmd-result");
-  addRow.append(el("span", "cmd-name", "＋ todo “" + q + "”"), el("span", "cmd-refs", "capture"));
-  addRow.onclick = () => { closeCmdbar(); openTodoQuickAdd(q); };
-  host.append(addRow);
-  let d = { results: [] };
-  try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
-  cmdResults = (d.results || []).slice(0, 8);
+  const needle = q.toLowerCase();
+  if (q) {
+    // quick-add lives here too: first row turns the query into a todo
+    const addRow = el("div", "cmd-result");
+    addRow.append(el("span", "cmd-name", "＋ todo “" + q + "”"), el("span", "cmd-refs", "capture"));
+    addRow.onclick = () => { closeCmdbar(); openTodoQuickAdd(q); };
+    host.append(addRow);
+  }
+  const dests = cmdDestinations().concat(await cmdProperties())
+    .filter((d) => !needle || d.name.toLowerCase().includes(needle))
+    .slice(0, q ? 6 : 12)
+    .map((d) => ({ name: d.name, hint: d.hint, act: () => { closeCmdbar(); location.hash = d.hash; } }));
+  let contacts = [];
+  if (q) {
+    let d = { results: [] };
+    try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+    contacts = (d.results || []).slice(0, 8).map((r) => ({
+      name: r.display,
+      hint: (r.hasNote ? "note" : "no note") + " · " + r.refCount + " ref" + (r.refCount === 1 ? "" : "s"),
+      act: () => cmdShowCard(r.key),
+    }));
+  }
+  if (q !== els.cmdbarInput.value.trim()) return; // a newer keystroke owns the list
+  cmdResults = dests.concat(contacts);
   cmdResults.forEach((r, i) => {
     const row = el("div", "cmd-result");
-    row.append(el("span", "cmd-name", r.display), el("span", "cmd-refs", (r.hasNote ? "note" : "no note") + " · " + r.refCount + " ref" + (r.refCount === 1 ? "" : "s")));
-    row.onclick = () => cmdShowCard(r.key);
+    row.append(el("span", "cmd-name", r.name), el("span", "cmd-refs", r.hint));
+    row.onclick = r.act;
     row.onmouseenter = () => { cmdSel = i; paintCmdSel(); };
     host.append(row);
   });
@@ -263,3 +310,115 @@ function cmdFact(label, val) {
   f.append(el("span", "cmd-fact-label", label), el("span", "cmd-fact-val", val));
   return f;
 }
+
+// ---- ⌘/ raw-markdown overlay (redesign §2): the file behind the current view ----
+// Opens the markdown backing whatever is showing; saving goes through the same
+// guarded PUT /api/note as the note view — never around vaultwriter.
+let rawOpen = false, _rawEls = null;
+
+// Which vault file(s) back the current route, most-likely first.
+// Empty = no raw file for this view.
+function rawPathsForRoute() {
+  const h = normHash(location.hash);
+  const sec = sectionOf(h);
+  const sub = h.replace(/^#\//, "").split("/").filter(Boolean).slice(1).map(decodeURIComponent);
+  if (sec === "day") return ["intrinsic/" + state.date + ".md", state.date + ".md"]; // newDailyDir first, legacy root second
+  if (sec === "todos") return ["to do.md"];
+  if (sec === "goals") return ["goals.md"];
+  if (sec === "note") return [decodeURIComponent(h.slice("#/note/".length))];
+  if (sec === "aion") {
+    const map = { "": "system/aion/backlog.md", heuristics: "system/aion/heuristics.md",
+                  vto: "system/aion/vto.md", goals: "goals.md", // the aion GOALS tab reads the goals area
+                  org: "system/aion/people.md", reconcile: "system/aion/backlog.md" };
+    const f = map[sub[0] || ""];
+    return f ? [f] : [];
+  }
+  if (sec === "properties") {
+    const tabs = ["work", "map", "parcels", "accounting", "contractors", "settings"];
+    if (sub[0] && !tabs.includes(sub[0])) return ["system/realestate/properties/" + sub[0] + ".md"];
+    return [];
+  }
+  return [];
+}
+
+function buildRawOverlay() {
+  if (_rawEls) return _rawEls;
+  const overlay = el("div", "cmdbar rawbar");
+  overlay.hidden = true;
+  const back = el("div", "cmdbar-backdrop");
+  const card = el("div", "rawbar-card");
+  const head = el("div", "rawbar-head");
+  const path = el("span", "rawbar-path");
+  const note = el("span", "rawbar-note", "raw markdown · edits write straight to the vault");
+  const close = el("button", "rawbar-close", "✕ esc");
+  head.append(path, note, close);
+  const area = document.createElement("textarea");
+  area.className = "rawbar-area";
+  area.spellcheck = false;
+  const foot = el("div", "rawbar-foot");
+  const fix = el("span", "rawbar-fixpoint", "fixpoint guaranteed — parse→emit is byte-identical");
+  const save = el("button", "rawbar-save", "save");
+  foot.append(fix, save);
+  card.append(head, area, foot);
+  overlay.append(back, card);
+  document.body.append(overlay);
+  back.onclick = closeRawOverlay;
+  close.onclick = closeRawOverlay;
+  save.onclick = saveRawOverlay;
+  area.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); closeRawOverlay(); }
+    else if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "Enter")) { e.preventDefault(); saveRawOverlay(); }
+  });
+  _rawEls = { overlay, path, note, area, save };
+  return _rawEls;
+}
+
+async function openRawOverlay() {
+  const candidates = rawPathsForRoute();
+  if (!candidates.length) { showToast("No raw file behind this view"); return; }
+  const ui = buildRawOverlay();
+  ui.path.textContent = candidates[0];
+  ui.note.textContent = "raw markdown · edits write straight to the vault";
+  ui.area.value = "";
+  ui.overlay.hidden = false;
+  rawOpen = true;
+  let d = null;
+  for (const p of candidates) {
+    try {
+      const res = await fetch("/api/note?path=" + encodeURIComponent(p));
+      if (res.status === 404) continue;
+      if (!res.ok) { ui.note.textContent = "couldn't load"; ui.save.disabled = true; return; }
+      d = await res.json();
+      ui.path.textContent = p;
+      break;
+    } catch (e) { ui.note.textContent = "couldn't load"; ui.save.disabled = true; return; }
+  }
+  if (!d) { ui.note.textContent = "note not found — nothing to edit yet"; ui.save.disabled = true; return; }
+  ui.area.value = d.raw || "";
+  ui.save.disabled = !!d.readOnly;
+  if (d.readOnly) ui.note.textContent = "read-only — engine-owned note";
+  ui.area.focus();
+  ui.area.setSelectionRange(0, 0);
+}
+
+function closeRawOverlay() {
+  if (_rawEls) _rawEls.overlay.hidden = true;
+  rawOpen = false;
+}
+
+async function saveRawOverlay() {
+  const ui = buildRawOverlay();
+  const p = ui.path.textContent;
+  ui.save.disabled = true;
+  try {
+    await putJSON("/api/note", { path: p, body: ui.area.value });
+    showToast("Saved — " + p);
+    closeRawOverlay();
+    route(); // re-dispatch the current loader so the surface reflects the edit
+  } catch (e) {
+    ui.note.textContent = "save failed — " + (e && e.message ? e.message : "write refused");
+    ui.save.disabled = false;
+  }
+}
+
+function toggleRawOverlay() { rawOpen ? closeRawOverlay() : openRawOverlay(); }
