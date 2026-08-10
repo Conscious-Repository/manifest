@@ -842,7 +842,7 @@ async function renderAionReconcile(host) {
   const chip = (label, on, fn) => { const b = el("button", "filter-chip" + (on ? " on" : ""), label); b.onclick = fn; return b; };
   chips.append(
     chip("ALL · " + (c.total || 0), aionRecKind === "", () => { aionRecKind = ""; renderAion(); }),
-    chip("DECISIONS · " + (c.unanchoredDecisions || 0) + (c.undatedDecided ? "+" + c.undatedDecided + " undated" : ""), aionRecKind === "decision", () => { aionRecKind = "decision"; renderAion(); }),
+    chip("DECISIONS · " + ((c.unanchoredDecisions || 0) + (c.undatedDecided || 0) + (c.openDecisions || 0)), aionRecKind === "decision", () => { aionRecKind = "decision"; renderAion(); }),
     chip("OPEN TASKS · " + (c.unanchoredTasks || 0), aionRecKind === "task", () => { aionRecKind = "task"; renderAion(); }));
   const kw = inputEl("filter by title / hint…");
   kw.value = aionRecKeyword;
@@ -923,32 +923,40 @@ async function renderAionReconcile(host) {
 
     const main = el("div", "aion-main");
     main.append(el("div", "aion-title", g.title));
+    // the meta says EXACTLY what's missing (server-computed) — a re-anchored
+    // open decision reads "needs a deadline", never a stale "unanchored"
+    const missing = [];
+    if (g.needsRock) missing.push("no resolving rock");
+    if (g.needsDate) missing.push(g.reason === "undated-decided" ? "⚠ decided, no date" : "needs a deadline");
     const meta = el("div", "aion-item-meta");
     meta.textContent = (g.kind === "decision" ? "decision" : "task") +
-      (g.reason === "undated-decided" ? " · ⚠ decided, no date" : " · unanchored") +
+      (missing.length ? " · " + missing.join(" · ") : "") +
       (g.captured ? " · " + g.captured : "");
     main.append(meta);
     row.append(main);
 
     row.append(el("span", "aion-cell", g.owner ? "@" + g.owner : ""));
 
-    // assign cell: rock typeahead (+ date input for undated decided)
+    // assign cell: rock typeahead (PREFILLED with the current anchor — an
+    // edit that saved must read back) + the missing date, labeled
     const assign = el("div", "aion-rec-assign");
     const picked = aionRecPicks[g.id];
     const ta = typeahead({
       placeholder: "rock…",
-      initial: picked !== undefined ? rockLabel(picked) : "",
+      initial: picked !== undefined ? rockLabel(picked) : (g.rock ? rockLabel(g.rock) : ""),
       suggest: (q, add, taa) => aionRockSuggest(q, add, taa, (id) => { aionRecPicks[g.id] = id; renderSaveBar(); }),
       onChange: (v) => { /* free text ignored — reconcile assigns known goals */ },
     });
     assign.append(ta.el);
     if (g.reason === "undated-decided") {
+      assign.append(el("span", "aion-rec-dlabel", "decided"));
       const dt = el("input", "aion-date"); dt.type = "date";
       dt.value = aionRecDates[g.id] !== undefined ? aionRecDates[g.id] : (g.decided || "");
       dt.onchange = () => { aionRecDates[g.id] = dt.value; renderSaveBar(); };
       assign.append(dt);
     } else if (g.kind === "decision") {
       // open decision — a needed_by deadline becomes its timeline diamond (§7)
+      assign.append(el("span", "aion-rec-dlabel", "needed by"));
       const nb = el("input", "aion-date"); nb.type = "date"; nb.title = "needed by (deadline)";
       nb.value = aionRecNeeded[g.id] !== undefined ? aionRecNeeded[g.id]
         : (/^\d{4}-\d{2}-\d{2}$/.test(g.neededBy || "") ? g.neededBy : "");

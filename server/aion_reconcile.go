@@ -32,6 +32,10 @@ type reconcileItem struct {
 	Captured string `json:"captured"`
 	Hint     string `json:"hint"`   // original pre-linkage rock (git-recovered), "" if none
 	Reason   string `json:"reason"` // why it's a gap: unanchored | undated-decided | open-decision
+	// exactly which half is missing — the client renders THESE, not a guess
+	// (a re-anchored open decision is "needs a deadline", never "unanchored")
+	NeedsRock bool `json:"needsRock"`
+	NeedsDate bool `json:"needsDate"`
 }
 
 // isISODate reports whether s is exactly YYYY-MM-DD (the portal's timeline
@@ -127,10 +131,13 @@ func (s *Server) handleAionReconcile(w http.ResponseWriter, r *http.Request) {
 		default:
 			continue // resolved, or a done task — not a portal gap
 		}
+		needsDate := (reason == "undated-decided") ||
+			(reason == "open-decision" && !isISODate(it.NeededBy))
 		gaps = append(gaps, reconcileItem{
 			ID: it.ID, Kind: it.Kind, Title: it.Text, Status: it.Status,
 			Owner: it.Owner, Rock: it.Rock, Decided: it.Decided, NeededBy: it.NeededBy, Captured: it.Captured,
 			Hint: hints[aion.NormalizeTitle(it.Text)], Reason: reason,
+			NeedsRock: !resolves(it.Rock), NeedsDate: needsDate,
 		})
 	}
 	writeJSON(w, map[string]any{
