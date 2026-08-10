@@ -201,6 +201,7 @@
 .aion-task-row.done .aion-title { color: var(--base-40); text-decoration: line-through; }
 .aion-check.off { color: var(--base-40); }
 .aion-rock-tag { font-family: var(--mono); font-size: 10.5px; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.aion-rock-tag.stale { color: var(--base-40); font-style: italic; } /* closed/historic rock — not a live goals rock */
 .aion-done-toggle { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-40); cursor: pointer; padding: 8px 0; }
 .aion-done-toggle:hover { color: var(--base-100); }
 
@@ -220,6 +221,9 @@
 .aion-insp-src { display: block; font-family: var(--mono); font-size: 11px; color: var(--base-50); text-decoration: none; margin: 12px 0 0; }
 .aion-insp-src:hover { color: var(--accent); }
 .aion-decide-btn { margin-top: 6px; background: var(--accent); border: 1px solid var(--accent); color: #fff; font-family: var(--mono); font-size: 11px; border-radius: var(--radius-lg); padding: 4px 10px; cursor: pointer; }
+.aion-insp-del { margin-top: 16px; background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; padding: 0; }
+.aion-insp-del:hover { color: var(--over); }
+.aion-insp-del.armed { color: #fff; background: var(--over); border-radius: var(--radius-lg); padding: 3px 10px; }
 .aion-insp-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 16px; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
 .aion-insp-raw { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent); cursor: pointer; padding: 0; }
 .aion-insp-outcome { font-size: 13px; }

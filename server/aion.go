@@ -351,6 +351,18 @@ func (s *Server) handleAionBacklogUpdate(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+func (s *Server) handleAionBacklogDelete(w http.ResponseWriter, r *http.Request) {
+	if s.aion == nil {
+		http.Error(w, "aion not available", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.aion.DeleteItem(r.PathValue("id")); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleAionBacklogDecide(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Outcome string `json:"outcome"`

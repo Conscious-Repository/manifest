@@ -746,6 +746,20 @@ func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// an aion-backed row: hard-remove the backlog item (drop = delete for aion,
+	// not archive — there is no to-do.md line to archive)
+	if strings.HasPrefix(b.ID, "aion:") {
+		if s.aion == nil {
+			http.Error(w, "aion not available", http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.aion.DeleteItem(strings.TrimPrefix(b.ID, "aion:")); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, s.todosView())
+		return
+	}
 	if err := s.todosStore.Drop(b.ID, time.Now()); err != nil {
 		httpError(w, err)
 		return

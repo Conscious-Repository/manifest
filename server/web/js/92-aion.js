@@ -334,7 +334,9 @@ function aionTaskRow(it) {
   }
   main.append(meta);
   row.append(main);
-  row.append(el("span", "aion-rock-tag", it.rock ? rockLabel(it.rock) : ""));
+  const rockTag = el("span", "aion-rock-tag" + (it.rock && !rockResolved(it.rock) ? " stale" : ""), it.rock ? rockLabel(it.rock) : "");
+  if (it.rock && !rockResolved(it.rock)) rockTag.title = "closed/historic rock — reattach to a live rock";
+  row.append(rockTag);
   // no status chip on tasks — the checkbox IS the state (open/in-progress
   // retired); alarm still reads as the ink left rule + weight
   row.onclick = () => aionSelect(it);
@@ -426,6 +428,20 @@ function renderAionInspector(insp, items) {
     src.href = "#/note/" + encodeURIComponent(aionSourcePath(it.sources[0]));
     insp.append(src);
   }
+  // delete — arm-to-confirm, hard removal from backlog.md (owner's explicit
+  // "remove this"; a done task is different — that stays until PUBLISH)
+  const del = el("button", "aion-insp-del", "delete item");
+  del.onclick = () => {
+    const yes = el("button", "aion-insp-del armed", "delete — permanent?");
+    yes.onclick = () => {
+      aionSelId = null;
+      aionPost("/api/aion/backlog/" + it.id + "/delete", {}, "Deleted");
+    };
+    del.replaceWith(yes);
+    setTimeout(() => { if (yes.parentNode) yes.replaceWith(del); }, 2500);
+  };
+  insp.append(del);
+
   const foot = el("div", "aion-insp-foot");
   foot.append(el("span", "", "saves on blur"));
   const raw = el("button", "aion-insp-raw", "⌘/ raw");
@@ -441,12 +457,21 @@ function aionSourcePath(name) {
   return (/^\d{4}-\d{2}-\d{2} /.test(name) ? "log/" : "") + name + ".md";
 }
 
+// rockResolved: does this rock id name a LIVE goals aion rock (vs a closed /
+// historic rock that only survives in the archives)?
+function rockResolved(id) {
+  const area = aionCache.goalsArea;
+  return !!((area && area.rocks) || []).find((r) => r.id === id);
+}
+
 function rockLabel(id) {
   if (!id) return "";
   const area = aionCache.goalsArea;
-  const all = ((area && area.rocks) || []);
-  const rock = all.find((r) => r.id === id);
-  return rock ? rock.text : id;
+  const rock = ((area && area.rocks) || []).find((r) => r.id === id);
+  if (rock) return rock.text;
+  // a closed/historic rock (not in live goals) — de-slug so the UI never shows
+  // the raw "aion/<slug>"; it renders muted (see .aion-rock-tag.stale)
+  return id.replace(/^aion\//, "").replace(/-/g, " ");
 }
 
 function aionOwnerSuggest(q, add, ta) {

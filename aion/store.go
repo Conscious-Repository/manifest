@@ -201,6 +201,29 @@ func (s *Store) SetRanks(ranks map[string]string) error {
 	return s.SaveBacklog(doc)
 }
 
+// DeleteItem hard-removes a backlog item (and any nested child lines) by id —
+// the owner's explicit "remove this" action. Unlike marking a task done (which
+// keeps it until PUBLISH), this drops the line from backlog.md entirely.
+func (s *Store) DeleteItem(id string) error {
+	doc := s.LoadBacklog()
+	found := false
+	for _, sec := range doc.Sections {
+		out := sec.Lines[:0:0]
+		for _, ln := range sec.Lines {
+			if ln.Item != nil && ln.Item.ID == id {
+				found = true
+				continue
+			}
+			out = append(out, ln)
+		}
+		sec.Lines = out
+	}
+	if !found {
+		return fmt.Errorf("item %q not found", id)
+	}
+	return s.SaveBacklog(doc)
+}
+
 // LinkageReport summarizes a BackfillLinkage pass (for the cmd's dry-run).
 type LinkageReport struct {
 	RocksRewritten int
