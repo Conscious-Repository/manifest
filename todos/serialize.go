@@ -69,7 +69,9 @@ func emitTodo(t *Todo) string {
 	}
 	line := "- [" + mark + "] " + t.Text
 	// canonical field order: todo (only when pinned) · rock · issue · stage ·
-	// waiting · since · added · done · unknown passthrough
+	// waiting · since · added · done · owner · rank · unknown passthrough
+	// (owner/rank at the tail so hand-added copies stay byte-stable in the
+	// common case — they were emitted as trailing unknowns before recognition)
 	if id := t.explicitID(); id != "" {
 		line += " [todo:: " + id + "]"
 	}
@@ -93,6 +95,12 @@ func emitTodo(t *Todo) string {
 	}
 	if t.Done != "" {
 		line += " [done:: " + stripBracket(t.Done, false) + "]"
+	}
+	if t.Owner != "" {
+		line += " [owner:: " + stripBracket(t.Owner, false) + "]"
+	}
+	if t.Rank != "" {
+		line += " [rank:: " + stripBracket(t.Rank, false) + "]"
 	}
 	for _, f := range t.Fields {
 		if strings.EqualFold(f.Key, "todo") {

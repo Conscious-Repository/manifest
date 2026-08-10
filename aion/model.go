@@ -113,6 +113,7 @@ type BacklogItem struct {
 	Due    string `json:"due"`
 	Status string `json:"status"`
 	DoneOn string `json:"doneOn"`
+	Rank   string `json:"rank,omitempty"` // [rank:: n] — unified-todos drag-to-rank (redesign stage 4)
 
 	// decision extras
 	NeededBy string `json:"neededBy"`

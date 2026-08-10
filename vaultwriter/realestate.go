@@ -275,7 +275,31 @@ func (w *Writer) ReplaceSection(rel, section, body string) error {
 	if err != nil {
 		return err
 	}
-	lines := strings.Split(string(raw), "\n")
+	return w.commit(full, "re-section", []byte(spliceSection(string(raw), section, body)))
+}
+
+// ReplaceSectionCap is the same surgical section swap under a DECLARED write
+// capability (redesign stage 4 — new section writes must not ship on the
+// legacy guard path). Check, splice, write, capability audit.
+func (w *Writer) ReplaceSectionCap(capName, rel, section, body string) error {
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	_, clean, err := w.checkCap(capName, rel)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(filepath.Join(w.vault, filepath.FromSlash(clean)))
+	if err != nil {
+		return err
+	}
+	return w.WriteCap(capName, clean, []byte(spliceSection(string(raw), section, body)))
+}
+
+// spliceSection swaps one `## section` body inside raw (creating the section
+// at EOF when absent), preserving every byte outside the section span.
+func spliceSection(raw, section, body string) string {
+	lines := strings.Split(raw, "\n")
 	start := -1
 	for i, ln := range lines {
 		t := strings.TrimRight(ln, " \t")
@@ -292,7 +316,7 @@ func (w *Writer) ReplaceSection(rel, section, body string) error {
 	var out []string
 	if start < 0 {
 		// absent → append at EOF
-		out = append(out, strings.Split(strings.TrimRight(string(raw), "\n"), "\n")...)
+		out = append(out, strings.Split(strings.TrimRight(raw, "\n"), "\n")...)
 		out = append(out, "", "## "+section)
 		out = append(out, bodyLines...)
 	} else {
@@ -312,7 +336,7 @@ func (w *Writer) ReplaceSection(rel, section, body string) error {
 			out = append(out, lines[end:]...)
 		}
 	}
-	return w.commit(full, "re-section", []byte(strings.TrimRight(strings.Join(out, "\n"), "\n")+"\n"))
+	return strings.TrimRight(strings.Join(out, "\n"), "\n") + "\n"
 }
 
 // insertLogBullet places bullet right under the `## log` heading, or appends a new

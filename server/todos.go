@@ -5,9 +5,11 @@ import (
 	"strings"
 	"time"
 
+	"manifest/aion"
 	"manifest/approvals"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/realestate"
 	"manifest/record"
 	"manifest/todos"
 )
@@ -42,7 +44,11 @@ func (s *Server) todosView() map[string]any {
 		}
 	}
 	v := doc.View(time.Now())
-	return map[string]any{"domains": v.Domains, "areas": areas, "split": doc.SplitDone()}
+	out := map[string]any{"domains": v.Domains, "areas": areas, "split": doc.SplitDone()}
+	for k, uv := range s.unifiedView(doc) { // stage 4: the projection keys ride the same payload
+		out[k] = uv
+	}
+	return out
 }
 
 func (s *Server) todosMutate(w http.ResponseWriter, fn func(*todos.Doc) (bool, error)) {
@@ -77,13 +83,48 @@ func (s *Server) handleTodosGet(w http.ResponseWriter, r *http.Request) {
 
 // handleTodoAdd — quick capture: one line + a domain (blank → Inbox), with
 // optional tethers/placement: [rock::]/[issue::] and/or a bucket. ≤2s.
+// Stage 4: a Container can target a property or the aion backlog directly —
+// the line lands in THAT file (never a parallel copy here).
 func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.todosOK(w) {
 		return
 	}
-	var b struct{ Text, Domain, Rock, Issue, Bucket string }
+	var b struct {
+		Text, Domain, Rock, Issue, Bucket, Owner string
+		Container                                struct{ Kind, Slug string }
+	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Text) == "" {
 		httpError(w, errBadRequest("text is required"))
+		return
+	}
+	switch b.Container.Kind {
+	case "property":
+		if s.propTodoMutate(w, b.Container.Slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+			return list.Append(&todos.Todo{
+				Text:  strings.Join(strings.Fields(b.Text), " "),
+				Owner: strings.TrimSpace(b.Owner),
+				Added: time.Now().Format("2006-01-02"),
+			}), true, nil
+		}) {
+			writeJSON(w, s.todosView())
+		}
+		return
+	case "aion":
+		if s.aion == nil {
+			http.Error(w, "aion not available", http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.aion.AddItem(&aion.BacklogItem{
+			Kind:     aion.KindTask,
+			Text:     strings.Join(strings.Fields(b.Text), " "),
+			Owner:    strings.TrimSpace(b.Owner),
+			Status:   aion.StatusOpen,
+			Captured: time.Now().Format("2006-01-02"),
+		}); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, s.todosView())
 		return
 	}
 	domain := strings.TrimSpace(b.Domain)
@@ -96,6 +137,7 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 			Text:  strings.Join(strings.Fields(b.Text), " "),
 			Rock:  strings.TrimSpace(b.Rock),
 			Issue: strings.TrimSpace(b.Issue),
+			Owner: strings.TrimSpace(b.Owner),
 			Added: time.Now().Format("2006-01-02"),
 		}
 		if bk := strings.TrimSpace(b.Bucket); bk != "" {
@@ -236,6 +278,16 @@ func (s *Server) handleTodoCheck(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	// composite ids route to the owning file (stage 4): completed anywhere =
+	// completed everywhere, because there is only one line in one file.
+	if strings.HasPrefix(b.ID, "prop:") {
+		s.propTodoCheck(w, b.ID, b.Checked)
+		return
+	}
+	if strings.HasPrefix(b.ID, "aion:") {
+		s.aionTodoCheck(w, b.ID, b.Checked)
+		return
+	}
 	var rockID string
 	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
 		_, t := d.Find(b.ID)
@@ -289,9 +341,56 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		Text    *string
 		Domain  *string
 		Waiting *string // "" clears (back to open)
+		Owner   *string // "" clears (back to mine) — stage 4 assignment
 	}
 	if err := decode(r, &b); err != nil || b.ID == "" {
 		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	if strings.HasPrefix(b.ID, "prop:") {
+		slug, lineID := splitPropID(b.ID)
+		if slug == "" {
+			httpError(w, errBadRequest("malformed property todo id"))
+			return
+		}
+		if s.propTodoMutate(w, slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+			t := list.Find(lineID)
+			if t == nil {
+				return list, false, nil
+			}
+			if b.Text != nil && strings.TrimSpace(*b.Text) != "" {
+				t.Text = strings.Join(strings.Fields(*b.Text), " ")
+			}
+			if b.Owner != nil {
+				t.Owner = strings.TrimSpace(*b.Owner)
+			}
+			return list, true, nil
+		}) {
+			writeJSON(w, s.todosView())
+		}
+		return
+	}
+	if strings.HasPrefix(b.ID, "aion:") {
+		if s.aion == nil {
+			http.Error(w, "aion not available", http.StatusServiceUnavailable)
+			return
+		}
+		set := map[string]string{}
+		if b.Text != nil && strings.TrimSpace(*b.Text) != "" {
+			set["title"] = strings.Join(strings.Fields(*b.Text), " ")
+		}
+		if b.Owner != nil {
+			set["owner"] = strings.TrimSpace(*b.Owner)
+		}
+		if len(set) == 0 {
+			httpError(w, errBadRequest("nothing to update"))
+			return
+		}
+		if err := s.aion.UpdateItem(strings.TrimPrefix(b.ID, "aion:"), set, time.Now()); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, s.todosView())
 		return
 	}
 	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
@@ -301,6 +400,9 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if b.Text != nil && strings.TrimSpace(*b.Text) != "" {
 			t.Text = strings.Join(strings.Fields(*b.Text), " ")
+		}
+		if b.Owner != nil {
+			t.Owner = strings.TrimSpace(*b.Owner)
 		}
 		if b.Waiting != nil {
 			t.Waiting = strings.TrimSpace(*b.Waiting)

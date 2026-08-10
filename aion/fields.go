@@ -82,7 +82,7 @@ func parseLineFields(content string) (text string, sources []string, unknown []r
 func recognizedBacklogKey(key string) bool {
 	switch strings.ToLower(key) {
 	case "kind", "owner", "captured", "rock", "due", "status",
-		"done", "done_on", "needed_by", "decided", "outcome":
+		"done", "done_on", "needed_by", "decided", "outcome", "rank":
 		return true
 	}
 	return false
@@ -111,6 +111,8 @@ func setBacklogField(it *BacklogItem, key, value string) {
 		it.Decided = value
 	case "outcome":
 		it.Outcome = value
+	case "rank":
+		it.Rank = value
 	}
 }
 
@@ -138,6 +140,8 @@ func backlogFieldValue(it *BacklogItem, key string) string {
 		return it.Decided
 	case "outcome":
 		return it.Outcome
+	case "rank":
+		return it.Rank
 	}
 	return ""
 }
@@ -147,7 +151,7 @@ func backlogFieldValue(it *BacklogItem, key string) string {
 // owner's corpus convention: kind, owner, sources, captured, then state.
 // "source" is the slot where unpositioned sources flush.
 var canonicalAppendOrder = []string{
-	"kind", "owner", "source", "captured", "status", "needed_by", "due", "done", "decided", "outcome", "rock",
+	"kind", "owner", "source", "captured", "status", "needed_by", "due", "done", "decided", "outcome", "rock", "rank",
 }
 
 // backlogFields renders an item's field stream: positioned tokens first

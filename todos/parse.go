@@ -140,6 +140,10 @@ func parseTodo(checked bool, rest string) *Todo {
 			t.Issue = val
 		case "stage":
 			t.Stage = val
+		case "owner":
+			t.Owner = val
+		case "rank":
+			t.Rank = val
 		default:
 			unknown = append(unknown, Field{Key: sm[1], Value: val})
 		}

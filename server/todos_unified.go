@@ -1,0 +1,517 @@
+package server
+
+import (
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"manifest/aion"
+	"manifest/realestate"
+	"manifest/todos"
+)
+
+// ---- the unified todo substrate (redesign stage 4, Revision 3) ----
+//
+// TODOS is a PROJECTION over three files — personal `to do.md` lines, each
+// property's `## todos` section, and the aion backlog's open tasks — with one
+// id-keyed model. Composite ids route every write back to the owning file:
+//
+//	prop:<slug>/<line-id>  → system/realestate/properties/<slug>.md ## todos
+//	aion:<hex>             → system/aion/backlog.md
+//	anything else          → to do.md (backward compatible)
+//
+// Unassigned means mine; assigned-to-someone-else never reaches the TODOS
+// rows — it lives on the property page and under Outstanding.
+
+// UseOwner sets the initials that mean "me" in owner comparisons.
+func (s *Server) UseOwner(initials string) { s.ownerInitials = initials }
+
+func (s *Server) isMine(owner string) bool {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || strings.EqualFold(owner, "me") {
+		return true
+	}
+	me := strings.ToUpper(strings.TrimSpace(s.ownerInitials))
+	if me == "" {
+		return false
+	}
+	for _, tok := range strings.Split(owner, "/") {
+		if strings.ToUpper(strings.TrimSpace(tok)) == me {
+			return true
+		}
+	}
+	return false
+}
+
+type unifiedContainer struct {
+	Kind string `json:"kind"` // domain | property | aion
+	Slug string `json:"slug,omitempty"`
+	Name string `json:"name"`
+}
+
+type unifiedRow struct {
+	ID        string           `json:"id"`
+	Text      string           `json:"text"`
+	Owner     string           `json:"owner,omitempty"`
+	Rank      int              `json:"rank,omitempty"`
+	Added     string           `json:"added,omitempty"`
+	Rock      string           `json:"rock,omitempty"`
+	Source    string           `json:"source"` // personal | property | aion
+	Container unifiedContainer `json:"container"`
+	AgeDays   int              `json:"ageDays,omitempty"`
+}
+
+type outstandingGroup struct {
+	Container unifiedContainer `json:"container"`
+	Count     int              `json:"count"`
+	Items     []unifiedRow     `json:"items"`
+}
+
+// unifiedRows collects every OPEN item across the three sources, unfiltered —
+// callers split it into the me-projection and the Outstanding grouping.
+func (s *Server) unifiedRows(doc *todos.Doc, now time.Time) []unifiedRow {
+	var rows []unifiedRow
+	if doc != nil {
+		for _, dom := range doc.Domains {
+			c := unifiedContainer{Kind: "domain", Name: dom.Name}
+			dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) {
+				if t.Checked {
+					return
+				}
+				rows = append(rows, unifiedRow{
+					ID: t.ID, Text: t.Text, Owner: t.Owner, Rank: t.RankN(),
+					Added: t.Added, Rock: t.Rock, Source: "personal",
+					Container: c, AgeDays: t.AgeDays(now),
+				})
+			})
+		}
+	}
+	if s.realestate != nil {
+		if props, err := s.realestate.Properties(); err == nil {
+			for _, p := range props {
+				c := unifiedContainer{Kind: "property", Slug: p.Slug, Name: orStr(p.Short, p.Name)}
+				for _, t := range p.Todos {
+					if t.Checked {
+						continue
+					}
+					rows = append(rows, unifiedRow{
+						ID: "prop:" + p.Slug + "/" + t.ID, Text: t.Text, Owner: t.Owner,
+						Rank: t.RankN(), Added: t.Added, Source: "property",
+						Container: c, AgeDays: t.AgeDays(now),
+					})
+				}
+			}
+		}
+	}
+	if s.aion != nil {
+		c := unifiedContainer{Kind: "aion", Name: "Aion"}
+		for _, it := range s.aion.LoadBacklog().Items() {
+			if it.Kind != aion.KindTask || it.Checked ||
+				(it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "") {
+				continue
+			}
+			rank, _ := strconv.Atoi(it.Rank)
+			rows = append(rows, unifiedRow{
+				ID: "aion:" + it.ID, Text: it.Text, Owner: it.Owner, Rank: rank,
+				Added: it.Captured, Rock: it.Rock, Source: "aion", Container: c,
+			})
+		}
+	}
+	return rows
+}
+
+// sortRows: ranked first (rank asc), then oldest-added first, stable.
+func sortRows(rows []unifiedRow) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		ri, rj := rows[i].Rank, rows[j].Rank
+		if (ri > 0) != (rj > 0) {
+			return ri > 0
+		}
+		if ri > 0 && rj > 0 && ri != rj {
+			return ri < rj
+		}
+		ai, aj := rows[i].Added, rows[j].Added
+		if ai != aj {
+			if ai == "" {
+				return false
+			}
+			if aj == "" {
+				return true
+			}
+			return ai < aj
+		}
+		return false
+	})
+}
+
+// unifiedView is the stage-4 addition to the /api/todos payload.
+func (s *Server) unifiedView(doc *todos.Doc) map[string]any {
+	now := time.Now()
+	all := s.unifiedRows(doc, now)
+	var mine []unifiedRow
+	groups := map[string]*outstandingGroup{}
+	var groupOrder []string
+	for _, r := range all {
+		if s.isMine(r.Owner) {
+			mine = append(mine, r)
+			continue
+		}
+		key := r.Container.Kind + ":" + r.Container.Slug + ":" + r.Container.Name
+		g, ok := groups[key]
+		if !ok {
+			g = &outstandingGroup{Container: r.Container}
+			groups[key] = g
+			groupOrder = append(groupOrder, key)
+		}
+		g.Items = append(g.Items, r)
+		g.Count++
+	}
+	sortRows(mine)
+	outstanding := []outstandingGroup{}
+	outstandingTotal := 0
+	for _, key := range groupOrder {
+		outstanding = append(outstanding, *groups[key])
+		outstandingTotal += groups[key].Count
+	}
+	if mine == nil {
+		mine = []unifiedRow{}
+	}
+	return map[string]any{
+		"me":          s.ownerInitials,
+		"rows":        mine,
+		"outstanding": outstanding,
+		"counts":      map[string]int{"todos": len(mine), "outstanding": outstandingTotal},
+		"assignees":   s.assigneeLists(),
+		"containers":  s.containerList(doc),
+	}
+}
+
+// assigneeLists: real identities only (redesign Rev 3) — the aion people
+// registry and the real-estate contractor records. Never free-text.
+func (s *Server) assigneeLists() map[string]any {
+	out := map[string]any{}
+	if s.aion != nil {
+		type person struct {
+			Initials string `json:"initials"`
+			Name     string `json:"name"`
+		}
+		var people []person
+		for _, p := range s.aion.LoadPeople().People() {
+			people = append(people, person{Initials: p.Initials, Name: p.Name})
+		}
+		out["aion"] = people
+	}
+	if s.realestate != nil {
+		type ctr struct {
+			Slug  string `json:"slug"`
+			Name  string `json:"name"`
+			Trade string `json:"trade,omitempty"`
+		}
+		var list []ctr
+		for _, e := range s.realestate.Contractors() {
+			list = append(list, ctr{Slug: e.Slug, Name: e.Name, Trade: e.Trade})
+		}
+		out["realestate"] = list
+	}
+	return out
+}
+
+// containerList feeds the add-picker: personal domains, aion, every property.
+func (s *Server) containerList(doc *todos.Doc) []unifiedContainer {
+	var out []unifiedContainer
+	if doc != nil {
+		for _, dom := range doc.Domains {
+			out = append(out, unifiedContainer{Kind: "domain", Name: dom.Name})
+		}
+	}
+	if s.aion != nil {
+		out = append(out, unifiedContainer{Kind: "aion", Name: "Aion"})
+	}
+	if s.realestate != nil {
+		if props, err := s.realestate.Properties(); err == nil {
+			for _, p := range props {
+				out = append(out, unifiedContainer{Kind: "property", Slug: p.Slug, Name: orStr(p.Short, p.Name)})
+			}
+		}
+	}
+	return out
+}
+
+func orStr(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}
+
+// ---- composite-id write routing ----
+
+// splitPropID parses "prop:<slug>/<line-id>" ("", "" when malformed).
+func splitPropID(id string) (slug, lineID string) {
+	rest := strings.TrimPrefix(id, "prop:")
+	i := strings.Index(rest, "/")
+	if i <= 0 || i == len(rest)-1 {
+		return "", ""
+	}
+	return rest[:i], rest[i+1:]
+}
+
+// propTodoMutate loads a property's `## todos`, applies fn, writes the section
+// back under the realestate capability, and reindexes. fn returns false when
+// the line is missing.
+func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error)) bool {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return false
+	}
+	list, rel, ok := s.realestate.LoadTodos(slug)
+	if !ok {
+		http.Error(w, "property not found", http.StatusNotFound)
+		return false
+	}
+	next, found, err := fn(list)
+	if err != nil {
+		httpError(w, err)
+		return false
+	}
+	if !found {
+		http.Error(w, "todo not found", http.StatusNotFound)
+		return false
+	}
+	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(next)); err != nil {
+		httpError(w, err)
+		return false
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{rel})
+	}
+	return true
+}
+
+// propTodoCheck completes/reopens a property todo. A [work:: id] back-tether
+// DUAL-STAMPS the matching `## work` line so stage Ready/Recognized money
+// stays truthful (the one place Rev 3 touches the accounting model).
+func (s *Server) propTodoCheck(w http.ResponseWriter, id string, checked bool) {
+	slug, lineID := splitPropID(id)
+	if slug == "" {
+		httpError(w, errBadRequest("malformed property todo id"))
+		return
+	}
+	var workTether string
+	ok := s.propTodoMutate(w, slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+		t := list.Find(lineID)
+		if t == nil {
+			return list, false, nil
+		}
+		t.Checked = checked
+		if checked {
+			t.Done = time.Now().Format("2006-01-02")
+		} else {
+			t.Done = ""
+		}
+		workTether = t.FieldValue("work")
+		return list, true, nil
+	})
+	if !ok {
+		return
+	}
+	if workTether != "" {
+		if p, found := s.realestate.Get(slug); found {
+			stages := p.Work
+			changed := false
+			for i := range stages {
+				for j := range stages[i].Todos {
+					if stages[i].Todos[j].ID == workTether && stages[i].Todos[j].Checked != checked {
+						stages[i].Todos[j].Checked = checked
+						changed = true
+					}
+				}
+			}
+			if changed {
+				if err := s.vault.ReplaceSectionCap("realestate", p.Path, "work", realestate.EmitWork(stages)); err != nil {
+					httpError(w, err)
+					return
+				}
+				if s.index != nil {
+					_ = s.index.ReindexPaths([]string{p.Path})
+				}
+			}
+		}
+	}
+	writeJSON(w, s.todosView())
+}
+
+func (s *Server) aionTodoCheck(w http.ResponseWriter, id string, checked bool) {
+	if s.aion == nil {
+		http.Error(w, "aion not available", http.StatusServiceUnavailable)
+		return
+	}
+	status := aion.StatusOpen
+	if checked {
+		status = aion.StatusDone
+	}
+	if err := s.aion.UpdateItem(strings.TrimPrefix(id, "aion:"), map[string]string{"status": status}, time.Now()); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, s.todosView())
+}
+
+// ---- drag-to-rank: the full projected order in, ONE write per touched file ----
+
+func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) {
+		return
+	}
+	var b struct {
+		Order []string `json:"order"`
+	}
+	if err := decode(r, &b); err != nil || len(b.Order) == 0 {
+		httpError(w, errBadRequest("order is required"))
+		return
+	}
+	personal := map[string]string{}
+	aionRanks := map[string]string{}
+	propRanks := map[string]map[string]string{} // slug → lineID → rank
+	for i, id := range b.Order {
+		rank := strconv.Itoa(i + 1)
+		switch {
+		case strings.HasPrefix(id, "prop:"):
+			slug, lineID := splitPropID(id)
+			if slug == "" {
+				continue
+			}
+			if propRanks[slug] == nil {
+				propRanks[slug] = map[string]string{}
+			}
+			propRanks[slug][lineID] = rank
+		case strings.HasPrefix(id, "aion:"):
+			aionRanks[strings.TrimPrefix(id, "aion:")] = rank
+		default:
+			personal[id] = rank
+		}
+	}
+	if len(personal) > 0 {
+		doc, err := s.todosStore.Load()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		changed := false
+		for id, rank := range personal {
+			if _, t := doc.Find(id); t != nil && t.Rank != rank {
+				t.Rank = rank
+				changed = true
+			}
+		}
+		if changed {
+			if err := s.todosStore.Save(doc); err != nil {
+				httpError(w, err)
+				return
+			}
+		}
+	}
+	for slug, ranks := range propRanks {
+		list, rel, ok := s.realestate.LoadTodos(slug)
+		if !ok {
+			continue
+		}
+		changed := false
+		for lineID, rank := range ranks {
+			if t := list.Find(lineID); t != nil && t.Rank != rank {
+				t.Rank = rank
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(list)); err != nil {
+			httpError(w, err)
+			return
+		}
+		if s.index != nil {
+			_ = s.index.ReindexPaths([]string{rel})
+		}
+	}
+	if s.aion != nil && len(aionRanks) > 0 {
+		if err := s.aion.SetRanks(aionRanks); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	writeJSON(w, s.todosView())
+}
+
+// ---- one-time migration: open `## work` todos → `## todos` lines ----
+// GET previews per property; POST commits. `## work` bytes untouched; each
+// copied line carries its [work:: id] back-tether (idempotent — tethered
+// work ids are skipped on re-run).
+
+func (s *Server) handlePropTodosMigrate(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	props, err := s.realestate.Properties()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	type report struct {
+		Slug  string   `json:"slug"`
+		Name  string   `json:"name"`
+		Added []string `json:"added"`
+	}
+	now := time.Now()
+	switch r.Method {
+	case http.MethodGet:
+		var out []report
+		for _, p := range props {
+			list, _, ok := s.realestate.LoadTodos(p.Slug)
+			if !ok {
+				continue
+			}
+			if _, added := realestate.MigrateWorkTodos(p, list, now); len(added) > 0 {
+				out = append(out, report{Slug: p.Slug, Name: orStr(p.Short, p.Name), Added: added})
+			}
+		}
+		writeJSON(w, map[string]any{"properties": out})
+	case http.MethodPost:
+		var b struct {
+			Slugs []string `json:"slugs"` // empty = every property
+		}
+		_ = decode(r, &b)
+		want := map[string]bool{}
+		for _, sl := range b.Slugs {
+			want[sl] = true
+		}
+		var out []report
+		for _, p := range props {
+			if len(want) > 0 && !want[p.Slug] {
+				continue
+			}
+			list, rel, ok := s.realestate.LoadTodos(p.Slug)
+			if !ok {
+				continue
+			}
+			next, added := realestate.MigrateWorkTodos(p, list, now)
+			if len(added) == 0 {
+				continue
+			}
+			if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(next)); err != nil {
+				httpError(w, err)
+				return
+			}
+			if s.index != nil {
+				_ = s.index.ReindexPaths([]string{rel})
+			}
+			out = append(out, report{Slug: p.Slug, Name: orStr(p.Short, p.Name), Added: added})
+		}
+		writeJSON(w, map[string]any{"migrated": out})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}

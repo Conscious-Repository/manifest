@@ -32,6 +32,10 @@ type Config struct {
 	ScheduleEnd   int `json:"scheduleEnd"`
 	// Timezone is an IANA name for mapping calendar events to slots ("" = local).
 	Timezone string `json:"timezone"`
+	// OwnerInitials identify "me" in the unified todo projection (redesign
+	// stage 4): a todo whose [owner::] is empty, "me", or contains these
+	// initials is mine. Default "BA".
+	OwnerInitials string `json:"ownerInitials"`
 	// Port is the local port the web UI is served on.
 	Port int `json:"port"`
 	// DataDir is where ALL derived/operational state lives — OUTSIDE the vault

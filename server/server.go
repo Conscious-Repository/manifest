@@ -35,7 +35,10 @@ type Server struct {
 	svc        *daily.Service
 	goals      *goals.Store
 	todosStore *todos.Store // the third surface — vault-root `to do.md` (nilable)
-	cal        *calendar.Client
+	// ownerInitials identify "me" in the unified todo projection (stage 4):
+	// empty/"me"/containing-these-initials owners are mine.
+	ownerInitials string
+	cal           *calendar.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
 	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
 	vault     *vaultwriter.Writer
@@ -138,6 +141,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/item", s.handleTodoAdd)
 	mux.HandleFunc("POST /api/todos/check", s.handleTodoCheck)
 	mux.HandleFunc("POST /api/todos/update", s.handleTodoUpdate)
+	mux.HandleFunc("POST /api/todos/rank", s.handleTodosRank)                 // unified drag-to-rank (stage 4)
+	mux.HandleFunc("GET /api/properties/migrate-todos", s.handlePropTodosMigrate)  // preview
+	mux.HandleFunc("POST /api/properties/migrate-todos", s.handlePropTodosMigrate) // commit
 	mux.HandleFunc("POST /api/todos/drop", s.handleTodoDrop)
 	mux.HandleFunc("/api/todos/split", s.handleTodosSplit) // GET preview · POST commit (one task substrate)
 	mux.HandleFunc("POST /api/todos/bucket", s.handleBucketRename)

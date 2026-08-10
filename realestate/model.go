@@ -14,6 +14,8 @@ import (
 	"encoding/csv"
 	"strconv"
 	"strings"
+
+	"manifest/todos"
 )
 
 // Property is one Board row / page — a projection of a property record + its
@@ -39,6 +41,7 @@ type Property struct {
 	Rollup       Rollup       `json:"rollup"` // derived paid/committed/%out
 	LastLog      string       `json:"lastLog"`
 	Work         []WorkStage  `json:"work"`                   // `## work` stages+todos (management core)
+	Todos        []*todos.Todo `json:"todos"`                 // `## todos` action lines (redesign stage 4)
 	CurrentStage string       `json:"currentStage,omitempty"` // first unchecked stage's text
 	WorkStart    string       `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
 	Schedule     []StageSpan  `json:"schedule,omitempty"`     // derived spans (§3 — never stored)

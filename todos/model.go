@@ -29,9 +29,12 @@ type Todo struct {
 	Waiting string `json:"waiting,omitempty"` // [waiting:: who] — free text or [[person]]
 	Since   string `json:"since,omitempty"`   // [since:: YYYY-MM-DD] — waiting-since
 	// task-substrate tethers: bucket is WHERE it belongs, tether is WHAT it advances
-	Rock   string  `json:"rock,omitempty"`   // [rock:: rock-id] — services a Rock
-	Issue  string  `json:"issue,omitempty"`  // [issue:: issue-id] — works an issue
-	Stage  string  `json:"stage,omitempty"`  // [stage:: name] — then-current stage, stamped at completion
+	Rock  string `json:"rock,omitempty"`  // [rock:: rock-id] — services a Rock
+	Issue string `json:"issue,omitempty"` // [issue:: issue-id] — works an issue
+	Stage string `json:"stage,omitempty"` // [stage:: name] — then-current stage, stamped at completion
+	// assignment model (redesign Rev 3): unassigned means the owner's
+	Owner  string  `json:"owner,omitempty"`  // [owner:: initials|name] — who owes this ("" = me)
+	Rank   string  `json:"rank,omitempty"`   // [rank:: n] — drag-to-rank position (raw, round-trips)
 	Fields []Field `json:"fields,omitempty"` // unrecognized fields, verbatim
 }
 
@@ -236,6 +239,8 @@ type TodoView struct {
 	Rock    string `json:"rock,omitempty"`
 	Issue   string `json:"issue,omitempty"`
 	Bucket  string `json:"bucket,omitempty"` // bucket slug when inside one
+	Owner   string `json:"owner,omitempty"`  // assignee ("" = me)
+	Rank    int    `json:"rank,omitempty"`   // parsed [rank:: n] (0 = unranked)
 	AgeDays int    `json:"ageDays"`
 }
 
@@ -257,6 +262,7 @@ func (d *Doc) View(now time.Time) View {
 			ID: t.ID, Text: t.Text, State: t.State(),
 			Added: t.Added, Waiting: t.Waiting, Since: t.Since,
 			Rock: t.Rock, Issue: t.Issue, Bucket: bucket,
+			Owner: t.Owner, Rank: t.RankN(),
 			AgeDays: t.AgeDays(now),
 		}
 	}

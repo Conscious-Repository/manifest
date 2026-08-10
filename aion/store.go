@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -137,6 +138,13 @@ func (s *Store) UpdateItem(id string, set map[string]string, now time.Time) erro
 			it.Due = val
 		case "needed_by":
 			it.NeededBy = val
+		case "rank":
+			if val != "" {
+				if _, err := strconv.Atoi(val); err != nil {
+					return fmt.Errorf("rank must be a whole number")
+				}
+			}
+			it.Rank = val
 		case "status":
 			switch val {
 			case StatusOpen, StatusInProgress, StatusDone:
@@ -161,6 +169,31 @@ func (s *Store) UpdateItem(id string, set map[string]string, now time.Time) erro
 		default:
 			return fmt.Errorf("unknown field %q", key)
 		}
+	}
+	return s.SaveBacklog(doc)
+}
+
+// SetRanks writes [rank:: n] on many items in ONE backlog save (the unified
+// todos drag-to-rank batch — redesign stage 4). Unknown ids are skipped;
+// empty rank clears the field. No-op (no write) when nothing changed.
+func (s *Store) SetRanks(ranks map[string]string) error {
+	if len(ranks) == 0 {
+		return nil
+	}
+	doc := s.LoadBacklog()
+	changed := false
+	for id, rank := range ranks {
+		it := doc.Find(id)
+		if it == nil || it.Status == StatusDecided {
+			continue
+		}
+		if it.Rank != rank {
+			it.Rank = rank
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
 	}
 	return s.SaveBacklog(doc)
 }

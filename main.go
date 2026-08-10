@@ -173,6 +173,12 @@ func main() {
 			vaultwriter.Capability{Name: "aion-approved", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
+			// REAL ESTATE — property `## todos` writes (redesign stage 4). The
+			// declaration the direct re-* writers were always scheduled to get;
+			// migrating those legacy guarded writers onto it is a later pass.
+			vaultwriter.Capability{Name: "realestate", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
 		)
 
 	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName, vw.BindAbs("goals"))
@@ -217,6 +223,7 @@ func main() {
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
+	srv.UseOwner(orDefault(cfg.OwnerInitials, "BA")) // "me" in the unified todo projection
 	// ERRANDS — the action layer (errands-aside plan): records + transcripts
 	// under <dataDir>/errands/ (never the vault); the aside CLI is the hands.
 	// The store always exists (receipts render even with the CLI gone); runs
