@@ -199,6 +199,18 @@ func (d *Doc) RenameArea(old, neu string) bool {
 	if a == nil {
 		return false
 	}
+	// The area slug is the id PREFIX of every derived id beneath it — pin
+	// every unpinned goal first so identity never re-derives out from under
+	// the references (the kernel identity rule; todos.Bucket.Rename precedent).
+	var pinAll func(gs []*Goal)
+	pinAll = func(gs []*Goal) {
+		for _, g := range gs {
+			g.pin()
+			pinAll(g.Children)
+		}
+	}
+	pinAll(a.Annuals)
+	pinAll(a.Rocks)
 	a.Name = strings.TrimSpace(neu)
 	return true
 }
@@ -305,13 +317,65 @@ func dedupeNonEmpty(in []string) []string {
 	return out
 }
 
+// pin freezes the goal's CURRENT identity as an explicit [goal:: id] field
+// (idempotent). References store ids — to do.md [rock::], daily [goal::],
+// serves chains, the portal — so a pinned id makes any later rename safe.
+func (g *Goal) pin() {
+	if g.explicitID() == "" && g.ID != "" {
+		g.Fields = append(g.Fields, Field{Key: "goal", Value: g.ID})
+	}
+}
+
+// isTopLevel reports whether g is a rock or annual (vs a stage/task) — the
+// roles whose old-name slugs join the alias vocabulary on rename.
+func (d *Doc) isTopLevel(g *Goal) bool {
+	for _, a := range d.Areas {
+		for _, an := range a.Annuals {
+			if an == g {
+				return true
+			}
+		}
+		for _, r := range a.Rocks {
+			if r == g {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (d *Doc) EditGoal(id string, e GoalEdit) bool {
 	_, g := d.FindGoal(id)
 	if g == nil {
 		return false
 	}
 	if e.Text != nil {
-		g.Text = strings.TrimSpace(*e.Text)
+		neu := strings.TrimSpace(*e.Text)
+		if neu != g.Text && neu != "" {
+			// pin-before-rename: the id must never move under a reference
+			g.pin()
+			// rocks/annuals: the outgoing name's slug joins [alias::] so
+			// portal-boundary resolvers keep matching hand-written refs that
+			// used it (skipped when it already equals the id tail, which the
+			// resolvers cover, or an existing alias)
+			if d.isTopLevel(g) {
+				oldSlug := slug(g.Text)
+				tail := g.identity()
+				if i := strings.LastIndex(tail, "/"); i >= 0 {
+					tail = tail[i+1:]
+				}
+				dup := oldSlug == "" || oldSlug == tail || oldSlug == slug(neu)
+				for _, al := range g.Aliases {
+					if strings.EqualFold(slug(al), oldSlug) {
+						dup = true
+					}
+				}
+				if !dup {
+					g.Aliases = append(g.Aliases, oldSlug)
+				}
+			}
+		}
+		g.Text = neu
 	}
 	if e.Owner != nil {
 		g.Owner = strings.TrimSpace(*e.Owner)
