@@ -26,5 +26,5 @@
 .bk-date { font-family: var(--mono); font-size: 11.5px; color: var(--muted); text-align: right; }
 .bk-rating { display: inline-flex; gap: 1px; }
 .bk-star { color: var(--icon); cursor: pointer; font-size: 13px; line-height: 1; }
-.bk-star.on { color: #d9a520; } /* filled star */
-.bk-star:hover { color: #d9a520; }
+.bk-star.on { color: var(--accent); } /* single-accent rule; revert to #d9a520 gold if preferred */
+.bk-star:hover { color: var(--accent); }

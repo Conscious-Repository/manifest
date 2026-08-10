@@ -194,23 +194,12 @@
       <span id="spiritsStatus" class="panel-meta hermes-status"></span>
     </div>
 
-    <div class="agents-tabs" id="spiritsTabs">
-      <a class="atab" data-tab="runs" href="#/spirits/runs">RUNS</a>
-      <a class="atab" data-tab="rituals" href="#/spirits/rituals">RITUALS</a>
-      <a class="atab" data-tab="portals" href="#/spirits/portals">PORTALS</a>
-    </div>
+    <!-- live strip — only renders while something is queued/running -->
+    <div id="spiritLive"></div>
 
-    <!-- RUNS (artifacts/runs/ — the legible decision trail per run) -->
-    <div class="agent-panel" id="sp-runs" hidden>
-      <div class="panel-subhead">
-        <span>RUN REPORTS <span class="sub-meta">every run writes markdown — context, decisions, charge, writes</span></span>
-      </div>
-      <div id="spiritRunsList" class="runs-list"></div>
-      <div id="spiritRunDetail" class="run-detail" hidden></div>
-    </div>
-
+    <!-- ONE page (redesign §12): rituals board first, then runs, portals at the foot -->
     <!-- RITUALS (board of every ritual + in-app markdown editing) -->
-    <div class="agent-panel" id="sp-rituals" hidden>
+    <div class="agent-panel" id="sp-rituals">
       <div class="panel-subhead">
         <span>RITUALS <span class="sub-meta">every ritual across spirits · click a row to edit · engine hot-reloads</span></span>
         <span class="subhead-actions">
@@ -232,8 +221,17 @@
       </div>
     </div>
 
-    <!-- PORTALS (external realms — ClickUp/Benchling polled to FEED, calendar, LLM conduits) -->
-    <div class="agent-panel" id="sp-portals" hidden>
+    <!-- RUNS (artifacts/runs/ — the legible decision trail per run; the live strip renders on top) -->
+    <div class="agent-panel" id="sp-runs">
+      <div class="panel-subhead">
+        <span>RECENT RUNS <span class="sub-meta">every run writes markdown — context, decisions, charge, writes</span></span>
+      </div>
+      <div id="spiritRunsList" class="runs-list"></div>
+      <div id="spiritRunDetail" class="run-detail" hidden></div>
+    </div>
+
+    <!-- PORTALS — the settings block at the foot (external realms; items land in FEED) -->
+    <div class="agent-panel" id="sp-portals">
       <div class="panel-subhead">
         <span>PORTALS <span class="sub-meta">every external realm the app touches · connect or repair right here · items land in FEED</span></span>
       </div>

@@ -271,23 +271,26 @@ function renderContactPage(p) {
   }
   host.append(header);
 
-  // "last met" (calendar, email-matched) is DISTINCT from "last mentioned" (notes)
-  const dates = el("div", "cp-dates");
-  const met = el("div", "cp-lastmet", p.lastMet ? "Last met " + p.lastMet : "No calendar meeting on record");
-  met.append(el("span", "cp-date-src", " · calendar"));
-  if (!p.lastMet && !(p.emails && p.emails.length)) met.append(el("span", "cp-date-hint", " — link an email below"));
-  dates.append(met);
-  if (p.lastMentioned) {
-    const men = el("div", "cp-lastmentioned", "last mentioned " + p.lastMentioned);
-    men.append(el("span", "cp-date-src", " · notes"));
-    dates.append(men);
-  }
-  // going-cold marker names its basis (meeting cadence when email-linked, else mentions)
+  // facts strip first (redesign §13) — four columns between hairlines, the
+  // same anatomy as the property stat strip. "Last met" (calendar-verified)
+  // stays DISTINCT from "last mentioned" (notes).
+  const strip = el("div", "cp-facts");
+  const cell = (label, val, sub) => {
+    const c = el("div", "cp-fact");
+    c.append(el("div", "cp-fact-label", label), el("div", "cp-fact-val", val || "—"));
+    if (sub) c.append(el("div", "cp-fact-sub", sub));
+    return c;
+  };
+  strip.append(cell("LAST MET", p.lastMet, p.lastMet ? "calendar-verified" : "no meeting on record"));
+  strip.append(cell("LAST MENTIONED", p.lastMentioned, p.lastMentioned ? "notes" : ""));
+  strip.append(cell("CADENCE", p.medianGap ? "every " + p.medianGap + "d" : "", p.medianGap ? "median gap" : ""));
+  strip.append(cell("EMAILS", (p.emails && p.emails.length) ? String(p.emails.length) : "", (p.emails && p.emails.length) ? "linked" : "link one below"));
+  host.append(strip);
+  // going-cold: weight + a dot, never a color — names its basis
   if (p.cold && p.daysSince >= 0) {
     const verb = p.neglectBasis === "meetings" ? "met" : "mentioned";
-    dates.append(el("div", "cp-cold", "◆ going cold — " + verb + " " + p.daysSince + "d ago" + (p.medianGap ? " (usually every " + p.medianGap + "d)" : "")));
+    host.append(el("div", "cp-cold", "● going cold — " + verb + " " + p.daysSince + "d ago" + (p.medianGap ? " (usually every " + p.medianGap + "d)" : "")));
   }
-  host.append(dates);
 
   // open loops (§2) — unchecked tasks from meeting notes, grouped by source
   if (p.loops && p.loops.length) {

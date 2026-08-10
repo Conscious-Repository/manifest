@@ -5,24 +5,21 @@
 // Purely the engine console: RUNS · RITUALS — checking + instigating runs.
 // The feed (incl. the approvals inbox) lives one level up as its own tab; the
 // ENGINE owns execution — the only write toward it is a spooled run-now request.
-const SPIRIT_TABS = ["runs", "rituals", "portals"];
 let spiritStatusCache = null;
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
+// ONE page (redesign §12): live strip → rituals board → recent runs, with
+// portals as the settings block at the foot. The RUNS/RITUALS/PORTALS tab
+// bar is gone; legacy sub-routes fold back to #/spirits.
 function showSpirits() {
-  const tab = spiritTabFromHash();
-  SPIRIT_TABS.forEach((t) => { els["sp_" + t].hidden = t !== tab; });
-  document.querySelectorAll("#spiritsTabs .atab").forEach((a) => a.classList.toggle("active", a.dataset.tab === tab));
-  loadSpiritsStatus(); // engine-alive chip shows on every sub-tab
-  if (tab === "runs") loadSpiritRuns();
-  else if (tab === "rituals") loadSpiritRituals();
-  else if (tab === "portals") loadPortals();
+  if (location.hash.startsWith("#/spirits/")) { location.hash = "#/spirits"; return; }
+  ["runs", "rituals", "portals"].forEach((t) => { els["sp_" + t].hidden = false; });
+  loadSpiritsStatus();
+  loadSpiritRituals();
+  loadSpiritRuns();
+  loadPortals();
   ensureLivePoll(); // resume watching any queued/running runs, derived from files
-}
-function spiritTabFromHash() {
-  const t = (location.hash.split("/")[2] || "runs");
-  return SPIRIT_TABS.includes(t) ? t : "runs";
 }
 
 // ---- PORTALS sub-tab: every external realm, (re)connectable in place ----

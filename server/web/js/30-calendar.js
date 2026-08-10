@@ -9,13 +9,17 @@ function ensureCalState() {
   return state.cal;
 }
 
-// monthGridDays returns the 42 cells (6 weeks, Monday-first) covering the month,
-// including the leading/trailing days from adjacent months so the grid is always
-// complete and the columns stay uniform.
+// monthGridDays returns the month's cells, Monday-first, sized to EXACTLY the
+// rows the month needs (§14): offset is a COUNT of cells before the 1st, and
+// the grid is ceil((offset + daysInMonth) / 7) * 7 — never a fixed height, so
+// a Saturday-starting 31-day month gets its six rows and a 28-day month
+// starting Monday gets four.
 function monthGridDays(year, month) {
   const offset = (new Date(year, month, 1).getDay() + 6) % 7; // Monday = 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const total = Math.ceil((offset + daysInMonth) / 7) * 7;
   const cells = [];
-  for (let i = 0; i < 42; i++) {
+  for (let i = 0; i < total; i++) {
     const dt = new Date(year, month, 1 - offset + i);
     const iso = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
     cells.push({ iso, day: dt.getDate(), inMonth: dt.getMonth() === month });
@@ -35,7 +39,7 @@ async function loadCalendar() {
   let events = [];
   if (accounts.length) {
     try {
-      const r = await (await fetch(`/api/calendar/events?start=${cells[0].iso}&end=${cells[41].iso}`)).json();
+      const r = await (await fetch(`/api/calendar/events?start=${cells[0].iso}&end=${cells[cells.length - 1].iso}`)).json();
       events = r.events || [];
     } catch (e) {}
   }

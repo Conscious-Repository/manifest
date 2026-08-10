@@ -507,12 +507,15 @@ function renderSpiritRuns() {
   const queued = spiritRuns.queued || [];
   const finished = (spiritRuns.data || []).filter((r) => r.outcome !== "running");
 
+  // the live strip mounts at the TOP of the one-page spirits view (§12)
+  const liveHost = document.getElementById("spiritLive");
+  if (liveHost) liveHost.innerHTML = "";
   if (running.length || queued.length) {
     const strip = el("div", "live-strip");
-    strip.append(el("div", "live-strip-label", "LIVE"));
+    strip.append(el("div", "live-strip-label", "RUNNING"));
     running.forEach((r) => strip.append(liveRunRow(r, true)));
     queued.forEach((q) => strip.append(liveRunRow(q, false)));
-    host.append(strip);
+    (liveHost || host).append(strip);
   }
   if (!finished.length && !running.length && !queued.length) {
     host.appendChild(emptyRow("No runs yet — cast a skill (press /) or wait for a scheduled ritual."));

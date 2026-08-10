@@ -1,7 +1,7 @@
 /* 50-studio — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
 /* ---- Content Studio (draft cards, board, inspiration) ---- */
-.type-chip.type-draft { color: #0e7490; border-color: #c6e6ee; background: #f0fafc; }
+.type-chip.type-draft { }
 .feed-card.draft .draft-tweet { font-family: var(--sans); font-size: 16px; line-height: 1.5; color: var(--text); white-space: pre-wrap; padding: 4px 0; }
 .draft-format, .draft-score { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .draft-score { color: var(--base-50); border-color: var(--base-25); }

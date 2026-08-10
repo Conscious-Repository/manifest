@@ -34,7 +34,7 @@
 .er-arrow { font-family: var(--mono); font-size: 12px; color: var(--icon); }
 .er-target { font-family: var(--sans); font-size: 14px; color: var(--text); }
 .er-search { flex-basis: 100%; margin-top: 8px; }
-.er-flash { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: #1a7f4b; margin-top: 4px; } /* "✓ linked …" */
+.er-flash { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: 4px; } /* "✓ linked …" */
 .er-flash.error { color: #c0304a; }
 .triage-row.er-done { opacity: 0.45; transition: opacity 0.3s ease; } /* fading out after a successful link */
 
@@ -93,3 +93,12 @@
 /* triage additions (follow-up 1) */
 .triage-head-actions { display: flex; gap: 6px; align-items: center; }
 .triage-hint { font-family: var(--mono); font-size: 10px; color: var(--blue-soft); }
+
+/* ===== redesign §13 (2026-08-09): facts strip + going-cold as weight+dot ===== */
+.cp-facts { display: flex; border-top: 1px solid var(--base-25); border-bottom: 1px solid var(--base-25); margin: 12px 0 14px; }
+.cp-fact { flex: 1; padding: 10px 16px 10px 0; min-width: 0; }
+.cp-fact-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); white-space: nowrap; }
+.cp-fact-val { font-family: var(--mono); font-size: 15px; color: var(--base-100); padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-fact-sub { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; }
+.cp-cold { font-family: var(--mono); font-size: 11.5px; color: var(--base-100); font-weight: 500; margin: 0 0 14px; }
+.contact-cold { color: var(--base-100); }

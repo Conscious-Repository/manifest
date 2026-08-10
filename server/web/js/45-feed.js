@@ -136,10 +136,12 @@ function signalRow(sg) {
     }
     act.append(pillLight("Drop", () => signalAction("/api/todos/drop", { id: sg.goalId })));
   }
+  const actBtn = pillLight("act", () => { location.hash = sg.actHref; });
+  actBtn.classList.add("signal-act");
   act.append(
-    pillLight("Act", () => { location.hash = sg.actHref; }),
-    pillLight("Snooze", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })),
-    pillLight("Dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })),
+    actBtn,
+    pillLight("snooze", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })),
+    pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })),
   );
   row.append(act);
   return row;
@@ -147,6 +149,26 @@ function signalRow(sg) {
 async function signalAction(url, body) {
   try { await postJSON(url, body); } catch (e) {}
   loadFeed();
+}
+
+// feedVerdict — the moment a card gets its verdict it collapses to a one-line
+// stub (§11): the verb, the title struck through, and undo. The zero-inbox
+// count stays honest without the item vanishing irreversibly.
+async function feedVerdict(card, it, verb, status) {
+  setSaveState("saving");
+  try {
+    await fetch(`/api/feed/${encodeURIComponent(it.id)}/status`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+    });
+    setSaveState("saved");
+  } catch (e) { setSaveState("error"); loadFeed(); return; }
+  const stub = el("div", "feed-stub");
+  stub.append(el("span", "feed-stub-verb", verb), el("span", "feed-stub-title", it.title));
+  const undo = el("button", "feed-stub-undo", "undo");
+  undo.onclick = () => feedAction(it.id, { status: "new" });
+  stub.append(undo);
+  card.replaceWith(stub);
+  refreshFeedBadge();
 }
 
 // portalCardEl renders the third feed card kind: an externally-sourced portal
@@ -251,8 +273,10 @@ function feedCard(it) {
   const actions = el("div", "feed-actions");
   if (it.artifactPath) actions.append(pillLight("view →", () => openArtifact(it.artifactPath))); // the full brief
   if (it.status !== "discarded") {
-    actions.append(pillLight("Keep", () => feedAction(it.id, { status: "kept" })));
-    if (it.status !== "kept") actions.append(pillLight("Discard", () => feedAction(it.id, { status: "discarded" })));
+    const keep = pillLight("Keep", () => feedVerdict(card, it, "kept", "kept"));
+    keep.classList.add("verdict-primary");
+    actions.append(keep);
+    if (it.status !== "kept") actions.append(pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded")));
     actions.append(pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })));
     if (!it.vaultNote) actions.append(pillLight("Save to vault", () => feedSaveToVault(it.id)));
     actions.append(pillLight("→ todo", () => feedToTodo(it.id))); // catch it on the TODOS board (Inbox)
