@@ -24,10 +24,17 @@ function renderAllProperties() {
   host.append(propertyComposer());
 }
 
+// propOutstandingGroups — PROPERTY containers only (owner call 2026-08-09):
+// aion items owed to you live on the AION surface, never here.
+function propOutstandingGroups() {
+  return ((propTodosMeta && propTodosMeta.outstanding) || [])
+    .filter((g) => g.container.kind === "property");
+}
+
 function renderOutstanding() {
   const host = els.propertyBoard;
   host.innerHTML = "";
-  const groups = (propTodosMeta && propTodosMeta.outstanding) || [];
+  const groups = propOutstandingGroups();
   if (!groups.length) {
     host.append(el("div", "pp-empty", "Nothing outstanding — nobody owes you anything right now."));
     return;

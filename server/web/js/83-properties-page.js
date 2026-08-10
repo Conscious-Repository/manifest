@@ -131,14 +131,14 @@ function openPropInspector(p, t) {
     f.append(el("span", "pp3-insp-flabel", label), node);
     return f;
   };
-  // assignee: a real identity from the curated registry, never free text
+  // assignee: a real identity from the RE registry ONLY — system/realestate/
+  // people.md + contractor records; the aion roster never reaches properties
   const sel = document.createElement("select");
   sel.className = "pp-in";
   const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
   opt("", "you");
   const a = (propTodosMeta && propTodosMeta.assignees) || {};
   (a.realestate || []).forEach((c) => opt(c.slug, c.name + (c.trade ? " (" + c.trade + ")" : "")));
-  (a.aion || []).forEach((pp) => opt(pp.initials, pp.name + " · " + pp.initials));
   sel.value = t.owner || "";
   const note = el("div", "pp3-insp-note");
   const setNote = () => {

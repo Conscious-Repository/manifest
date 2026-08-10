@@ -149,22 +149,16 @@ async function setMilestone(slot, milestoneId) {
   renderDay();
 }
 
-// Open the goal picker for a focus slot: all MY open Rocks by area. "Mine"
-// matches the unified-substrate rule (empty · "me" · contains my initials) —
-// the aion linkage sweep stamps real initials (BA) on rock owners, so a
-// strict owner=="me" check silently dropped every Aion rock.
-function rockOwnerIsMe(owner) {
-  if (!owner || owner === "me") return true;
-  const me = ((typeof todosCache !== "undefined" && todosCache && todosCache.me) || "BA").toUpperCase();
-  return owner.toUpperCase().split("/").map((s) => s.trim()).includes(me);
-}
+// Open the goal picker for a focus slot: EVERY open Rock by area, regardless
+// of owner (owner call 2026-08-09) — the ladder in GOALS is the ladder here;
+// company rocks owned by others still drive my milestones and tasks.
 async function openGoalPicker(slot) {
   const doc = await (await fetch("/api/goals")).json();
   const groups = (doc.areas || [])
     .map((a) => ({
       area: a.name,
       items: (a.rocks || [])
-        .filter((g) => !g.checked && rockOwnerIsMe(g.owner))
+        .filter((g) => !g.checked)
         .map((g) => ({ id: g.id, text: g.text })),
     }))
     .filter((grp) => grp.items.length);

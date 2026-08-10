@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -210,6 +212,16 @@ func (s *Server) assigneeLists() map[string]any {
 			Trade string `json:"trade,omitempty"`
 		}
 		var list []ctr
+		// the curated RE people registry — <reRoot>/people.md, aion-people
+		// grammar, kept SEPARATE from the aion roster (owner call 2026-08-09)
+		if s.index != nil && s.realestateRoot != "" {
+			raw, err := os.ReadFile(filepath.Join(s.index.VaultRoot(), filepath.FromSlash(s.realestateRoot), "people.md"))
+			if err == nil {
+				for _, p := range aion.ParsePeople(string(raw)).People() {
+					list = append(list, ctr{Slug: p.Initials, Name: p.Name, Trade: p.Role})
+				}
+			}
+		}
 		for _, e := range s.realestate.Contractors() {
 			list = append(list, ctr{Slug: e.Slug, Name: e.Name, Trade: e.Trade})
 		}

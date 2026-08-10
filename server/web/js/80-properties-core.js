@@ -57,10 +57,10 @@ async function loadPropTodosMeta() {
 async function renderProperties() {
   await Promise.all([loadProperties(), loadPropTodosMeta()]);
   renderPropRail();
-  const counts = (propTodosMeta && propTodosMeta.counts) || {};
+  const outN = propOutstandingGroups().reduce((n, g) => n + g.count, 0); // property-owed only
   if (typeof setCrumbMeta === "function") {
     setCrumbMeta(propertyCache.length + " properties" +
-      (counts.outstanding ? " · " + counts.outstanding + " outstanding" : ""));
+      (outN ? " · " + outN + " outstanding" : ""));
   }
   if (typeof railSetCount === "function") railSetCount("properties", propertyCache.length);
   if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
@@ -93,7 +93,7 @@ function renderPropRail() {
     return a;
   };
   const views = group("Views");
-  const outN = ((propTodosMeta && propTodosMeta.counts) || {}).outstanding || 0;
+  const outN = propOutstandingGroups().reduce((n, g) => n + g.count, 0);
   item(views, "All properties", propMode === "all", () => { location.hash = "#/properties"; }, undefined);
   item(views, "Outstanding", propMode === "outstanding", () => { location.hash = "#/properties/outstanding"; }, outN);
   item(views, "Map", propMode === "map", () => { location.hash = "#/properties/map"; }, undefined, "quiet");
