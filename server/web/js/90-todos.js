@@ -257,11 +257,11 @@ function rankedRow(r, idx) {
       (p) => todosApi("/api/todos/update", { id: r.id, rock: p.rock, stage: p.stage }));
     right.append(teth);
   }
-  if (r.source === "personal") {
+  if (r.source === "personal" || r.source === "property") {
     const x = el("button", "uw-x", "✕");
-    x.title = "drop (archived, never deleted)";
+    x.title = r.source === "property" ? "delete from the property's todos" : "drop (archived, never deleted)";
     x.onclick = () => {
-      const yes = el("button", "tdo-decide", "drop?");
+      const yes = el("button", "tdo-decide", r.source === "property" ? "delete?" : "drop?");
       yes.onclick = () => todosApi("/api/todos/drop", { id: r.id });
       x.replaceWith(yes);
       setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);

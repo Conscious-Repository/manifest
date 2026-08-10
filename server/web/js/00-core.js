@@ -59,6 +59,7 @@ const els = {
   propInspector: document.getElementById("propInspector"),
   propertyPage: document.getElementById("propertyPage"),
   propertyParcels: document.getElementById("propertyParcels"),
+  propertySettings: document.getElementById("propertySettings"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
   propertyMap: document.getElementById("propertyMap"),
   propertyMapLegend: document.getElementById("propertyMapLegend"),

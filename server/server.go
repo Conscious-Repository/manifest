@@ -144,6 +144,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/rank", s.handleTodosRank)                 // unified drag-to-rank (stage 4)
 	mux.HandleFunc("GET /api/properties/migrate-todos", s.handlePropTodosMigrate)  // preview
 	mux.HandleFunc("POST /api/properties/migrate-todos", s.handlePropTodosMigrate) // commit
+	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)              // RE assignee registry
+	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
 	mux.HandleFunc("POST /api/todos/drop", s.handleTodoDrop)
 	mux.HandleFunc("/api/todos/split", s.handleTodosSplit) // GET preview · POST commit (one task substrate)
 	mux.HandleFunc("POST /api/todos/bucket", s.handleBucketRename)

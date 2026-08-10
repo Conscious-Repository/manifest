@@ -19,10 +19,11 @@ function showProperties(h) {
   els.propertyMapWrap.hidden = true;
   els.propertyBoard.hidden = true;
   if (els.propertyParcels) els.propertyParcels.hidden = true;
+  if (els.propertySettings) els.propertySettings.hidden = true;
   closePropInspector();
   // legacy sub-tab routes fold into the rail views; deal pages open the
   // bundle's vault note (the underwrite UI is retired)
-  if (["work", "accounting", "statements", "contractors", "settings"].includes(tail)) {
+  if (["work", "accounting", "statements", "contractors"].includes(tail)) {
     location.hash = "#/properties";
     return;
   }
@@ -34,6 +35,7 @@ function showProperties(h) {
   if (tail === "outstanding") propMode = "outstanding";
   else if (tail === "map") propMode = "map";
   else if (tail === "parcels") propMode = "parcels";
+  else if (tail === "settings") propMode = "settings";
   else if (tail) { propMode = "page"; propSlug = tail; }
   else propMode = "all";
   renderProperties();
@@ -65,6 +67,7 @@ async function renderProperties() {
   if (typeof railSetCount === "function") railSetCount("properties", propertyCache.length);
   if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
   else if (propMode === "parcels") renderParcelsView();
+  else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
   else { els.propertyBoard.hidden = false; propMode === "outstanding" ? renderOutstanding() : renderAllProperties(); }
 }
@@ -92,17 +95,15 @@ function renderPropRail() {
     g.append(a);
     return a;
   };
+  // the rail is a MENU, not a second property list (owner call 2026-08-09) —
+  // the all-properties table already lists every property
   const views = group("Views");
   const outN = propOutstandingGroups().reduce((n, g) => n + g.count, 0);
-  item(views, "All properties", propMode === "all", () => { location.hash = "#/properties"; }, undefined);
+  item(views, "All properties", propMode === "all" || propMode === "page", () => { location.hash = "#/properties"; }, undefined);
   item(views, "Outstanding", propMode === "outstanding", () => { location.hash = "#/properties/outstanding"; }, outN);
-  item(views, "Map", propMode === "map", () => { location.hash = "#/properties/map"; }, undefined, "quiet");
-  item(views, "Parcels", propMode === "parcels", () => { location.hash = "#/properties/parcels"; }, undefined, "quiet");
-  const props = group("Properties");
-  propertyCache.filter((p) => !p.hidden).forEach((p) => {
-    item(props, p.short || p.address || p.slug, propMode === "page" && propSlug === p.slug,
-      () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); }, openTodoCount(p));
-  });
+  item(views, "Map", propMode === "map", () => { location.hash = "#/properties/map"; });
+  item(views, "Parcels", propMode === "parcels", () => { location.hash = "#/properties/parcels"; });
+  item(views, "Settings", propMode === "settings", () => { location.hash = "#/properties/settings"; });
   const foot = el("div", "prop-rail-foot");
   const add = el("button", "o-ghost", "＋ property");
   add.onclick = () => { location.hash = "#/properties"; propComposerOpen = true; renderProperties(); };

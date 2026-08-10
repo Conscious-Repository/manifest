@@ -710,7 +710,9 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 func todoLineMatch(ln string) []string { return record.CheckboxRe.FindStringSubmatch(ln) }
 
 // handleTodoDrop — the stale-nudge's third exit: out of the live file, into
-// the archive with a [dropped::] stamp (never deleted).
+// the archive with a [dropped::] stamp (never deleted). A property todo
+// (prop:<slug>/<line>) is simply removed from its `## todos` section — the
+// property record is its own history; deletion is the owner's explicit call.
 func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 	if !s.todosOK(w) {
 		return
@@ -718,6 +720,28 @@ func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 	var b struct{ ID string }
 	if err := decode(r, &b); err != nil || b.ID == "" {
 		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	if strings.HasPrefix(b.ID, "prop:") {
+		slug, lineID := splitPropID(b.ID)
+		if slug == "" {
+			httpError(w, errBadRequest("malformed property todo id"))
+			return
+		}
+		if s.propTodoMutate(w, slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+			found := false
+			var out realestate.PropertyTodoList
+			for _, ln := range list {
+				if ln.Todo != nil && ln.Todo.ID == lineID {
+					found = true
+					continue
+				}
+				out = append(out, ln)
+			}
+			return out, found, nil
+		}) {
+			writeJSON(w, s.todosView())
+		}
 		return
 	}
 	if err := s.todosStore.Drop(b.ID, time.Now()); err != nil {

@@ -14,6 +14,14 @@ const PROP_STATUS_COLOR = {
 };
 
 // legend: fixed canonical order, done statuses consolidated into one entry
+// status → bucket (the map's only remaining consumer after the Rev-3 board
+// rewrite dropped the grouped board that originally defined this)
+const STATUS_BUCKET = {
+  construction: "active", pre_development: "active",
+  negotiating: "pipeline", under_contract: "pipeline", opportunity: "pipeline",
+  completed: "done", leased: "done", listed: "done", sold: "done",
+};
+
 const MAP_LEGEND = [
   ["construction", "#265ACC"], ["pre-development", "#5b82d9"],
   ["under contract", "#8a93a6"], ["negotiating", "#a7aeba"],
@@ -47,13 +55,13 @@ async function renderPropertyMap() {
   els.propertyMapWrap.hidden = false;
   try { await loadLeaflet(); } catch (e) {
     // offline — degrade to the list with a quiet notice
-    setPropMode("list");
+    location.hash = "#/properties";
     showToast("Map unavailable offline — showing the list");
     return;
   }
   let geo;
   try { geo = await (await fetch("/api/properties/geo")).json(); }
-  catch (e) { setPropMode("list"); return; }
+  catch (e) { location.hash = "#/properties"; return; }
 
   if (_propMap) { _propMap.remove(); _propMap = null; }
   const map = L.map(els.propertyMap, { zoomControl: true, attributionControl: true });
@@ -114,11 +122,18 @@ async function renderPropertyMap() {
   // Open zoomed to the OWNED cluster (the actual work); tracked/background are a
   // pan away. maxZoom caps a lone parcel from diving to street level.
   const anchors = ownedLayers.length ? ownedLayers : rendered;
-  if (anchors.length) {
-    map.fitBounds(L.featureGroup(anchors).getBounds().pad(0.05), { maxZoom: 17 });
-  } else {
-    map.setView([38.65, -90.26], 16); // nothing mapped yet — the seed's neighborhood
-  }
+  const fit = () => {
+    if (anchors.length) {
+      map.fitBounds(L.featureGroup(anchors).getBounds().pad(0.05), { maxZoom: 17 });
+    } else {
+      map.setView([38.65, -90.26], 16); // nothing mapped yet — the seed's neighborhood
+    }
+  };
+  fit();
+  // The shell mounts the map in a flex pane that settles AFTER L.map() reads
+  // its size — without an invalidate the tiles render at a stale scale (the
+  // "blurred out" map). Re-measure once layout is real, then re-fit.
+  setTimeout(() => { map.invalidateSize(); fit(); }, 80);
 
   // quiet legend: canonical order, only the groups actually visible
   const legend = els.propertyMapLegend; legend.innerHTML = "";

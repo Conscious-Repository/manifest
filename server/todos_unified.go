@@ -457,6 +457,58 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.todosView())
 }
 
+// ---- RE people registry: <reRoot>/people.md, aion-people grammar ----
+// The Settings page's PEOPLE table — the curated assignee roster for property
+// todos, kept separate from the aion roster. Full-row replace like the aion
+// registries; verbatim non-person lines survive (ReplacePeople contract).
+
+func (s *Server) rePeopleRel() string {
+	return filepath.ToSlash(filepath.Join(s.realestateRoot, "people.md"))
+}
+
+func (s *Server) handleRePeopleGet(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.index == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	raw, _ := os.ReadFile(filepath.Join(s.index.VaultRoot(), filepath.FromSlash(s.rePeopleRel())))
+	people := aion.ParsePeople(string(raw)).People()
+	if people == nil {
+		people = []*aion.Person{}
+	}
+	writeJSON(w, map[string]any{"people": people, "rel": s.rePeopleRel()})
+}
+
+func (s *Server) handleRePeopleSave(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.index == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		People []*aion.Person `json:"people"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	for _, p := range b.People {
+		if strings.TrimSpace(p.Initials) == "" {
+			httpError(w, errBadRequest("every person needs initials"))
+			return
+		}
+	}
+	rel := s.rePeopleRel()
+	raw, _ := os.ReadFile(filepath.Join(s.index.VaultRoot(), filepath.FromSlash(rel)))
+	doc := aion.ParsePeople(string(raw))
+	aion.ReplacePeople(doc, b.People)
+	if err := s.vault.WriteCap("realestate", rel, []byte(aion.SerializePeople(doc))); err != nil {
+		httpError(w, err)
+		return
+	}
+	_ = s.index.ReindexPaths([]string{rel})
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 // ---- one-time migration: open `## work` todos → `## todos` lines ----
 // GET previews per property; POST commits. `## work` bytes untouched; each
 // copied line carries its [work:: id] back-tether (idempotent — tethered

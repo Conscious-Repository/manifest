@@ -82,6 +82,21 @@ function propTodoRow(p, t) {
   };
   row.append(check, el("span", "pp3-todo-text", t.text));
   row.append(el("span", "prop-owner" + (mineOwner(t.owner) ? " mine" : ""), assigneeName(t.owner)));
+  // hover ✕ — delete the line from the property's ## todos (arm to confirm)
+  const x = el("button", "uw-x pp3-todo-x", "✕");
+  x.title = "delete this todo";
+  x.onclick = (e) => {
+    e.stopPropagation();
+    const yes = el("button", "pp3-compose-go", "delete?");
+    yes.onclick = async (ev) => {
+      ev.stopPropagation();
+      try { await postJSONOk("/api/todos/drop", { id: compositeId(p, t) }); renderProperties(); }
+      catch (err) { showToast("Couldn't delete"); }
+    };
+    x.replaceWith(yes);
+    setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);
+  };
+  row.append(x);
   row.onclick = () => {
     propSelTodoId = propSelTodoId === t.id ? null : t.id;
     propSelTodoId ? openPropInspector(p, t) : closePropInspector();
