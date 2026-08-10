@@ -31,7 +31,7 @@ function renderShelf() {
   shelf.append(shelfHeader());
   if (!rows.length) { shelf.append(el("div", "cp-empty", "No books match.")); return; }
   rows.forEach((b) => shelf.append(bookRow(b)));
-  els.readingNav && (document.title = "Reading — " + _books.length);
+  document.title = "Reading — " + _books.length;
 }
 
 function shelfComparator(key) {

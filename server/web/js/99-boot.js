@@ -75,13 +75,171 @@ function openTodoQuickAdd(prefill) {
   input.focus();
 }
 
+// ---- the shell: left rail + breadcrumbs + in-app history (redesign §2) ----
+// The rail and crumbs are just a new rendering of the existing hash routes;
+// every counter here is DERIVED from the same models as the surfaces — no
+// count is ever a string literal.
+const NAV_SECTIONS = [
+  { label: "PLAN", items: [
+    { key: "day", label: "Day", glyph: "☀", hash: "#/" },
+    { key: "goals", label: "Goals", glyph: "◎", hash: "#/goals", counted: true },
+    { key: "todos", label: "Todos", glyph: "✓", hash: "#/todos", counted: true },
+  ]},
+  { label: "WORK", items: [
+    { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },
+    { key: "properties", label: "Properties", glyph: "⌂", hash: "#/properties", counted: true },
+    { key: "studio", label: "Studio", glyph: "▤", hash: "#/studio" },
+  ]},
+  { label: "SIGNAL", items: [
+    { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
+    { key: "spirits", label: "Spirits", glyph: "✦", hash: "#/spirits" },
+    { key: "contacts", label: "Contacts", glyph: "◍", hash: "#/contacts" },
+    { key: "calendar", label: "Calendar", glyph: "▦", hash: "#/calendar" },
+    { key: "reading", label: "Reading", glyph: "▢", hash: "#/reading" },
+  ]},
+];
+
+let uiHistory = [];   // back stack of hashes
+let uiForward = [];   // forward stack
+let _navInternal = false;             // set by navBack/navForward so route() doesn't re-push
+let _curHash = normHash(location.hash);
+let _crumbSection = "";               // meta clears when the section changes
+const railItems = {};                 // key -> { a, count }
+
+function normHash(h) { return !h || h === "#" ? "#/" : h; }
+
+function sectionOf(h) {
+  if (h.startsWith("#/note/")) return "note";
+  const seg = h.replace(/^#\//, "").split("/")[0];
+  return ["goals","todos","calendar","feed","studio","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+}
+
+function buildRail() {
+  const host = els.railGroups;
+  host.innerHTML = "";
+  NAV_SECTIONS.forEach((g) => {
+    const grp = el("div", "rail-group");
+    grp.append(el("div", "rail-group-label", g.label));
+    g.items.forEach((it) => {
+      const a = document.createElement("a");
+      a.className = "rail-item";
+      a.href = it.hash;
+      a.title = it.label;
+      const count = el("span", "rail-count");
+      a.append(el("span", "rail-glyph", it.glyph), el("span", "rail-label", it.label), count);
+      if (it.key === "feed") { count.id = "feedNavBadge"; count.hidden = true; els.feedNavBadge = count; }
+      grp.append(a);
+      railItems[it.key] = { a, count, counted: !!it.counted };
+    });
+    host.append(grp);
+  });
+}
+
+function setRailActive() {
+  const active = sectionOf(_curHash);
+  Object.entries(railItems).forEach(([key, r]) => r.a.classList.toggle("active", key === active));
+}
+
+function railSetCount(key, n) {
+  const r = railItems[key];
+  if (!r || !r.counted) return;
+  r.count.textContent = n > 0 ? String(n) : "";
+}
+
+// Boot-time derivation of the Plan/Work rail counts from the same endpoints
+// the surfaces read. Each surface keeps them honest as it loads (stages 5–8).
+async function refreshRailCounts() {
+  const j = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  const [td, gl, ai, pr] = await Promise.all([j("/api/todos"), j("/api/goals"), j("/api/aion"), j("/api/properties")]);
+  if (td && td.domains) {
+    railSetCount("todos", td.domains.reduce((n, d) =>
+      n + ((d.todos || []).filter((t) => !t.checked).length)
+        + ((d.buckets || []).reduce((m, b) => m + ((b.todos || b.items || []).filter((t) => !t.checked).length), 0)), 0));
+  }
+  if (gl && gl.areas) railSetCount("goals", gl.areas.reduce((n, a) => n + ((a.rocks || []).filter((r) => !r.checked).length), 0));
+  if (ai && ai.backlog) railSetCount("aion", ai.backlog.filter((b) => !b.checked).length);
+  if (pr && pr.properties) railSetCount("properties", pr.properties.length);
+}
+
+// ---- in-app history: the crumb ‹ › drive these stacks, not window.history ----
+function navBack() {
+  if (!uiHistory.length) return;
+  uiForward.push(_curHash);
+  _navInternal = true;
+  location.hash = uiHistory.pop();
+}
+function navForward() {
+  if (!uiForward.length) return;
+  uiHistory.push(_curHash);
+  _navInternal = true;
+  location.hash = uiForward.pop();
+}
+function updateCrumbNav() {
+  els.crumbBack.disabled = !uiHistory.length;
+  els.crumbFwd.disabled = !uiForward.length;
+}
+
+function renderCrumbs(h) {
+  const host = els.crumbPath;
+  host.innerHTML = "";
+  const parts = [];
+  if (h.startsWith("#/note/")) {
+    const p = decodeURIComponent(h.slice("#/note/".length));
+    parts.push({ label: "note", hash: null });
+    parts.push({ label: p.split("/").pop().replace(/\.md$/, "") });
+  } else {
+    const sec = sectionOf(h);
+    parts.push({ label: sec, hash: sec === "day" ? "#/" : "#/" + sec });
+    if (sec !== "day") {
+      h.replace(/^#\//, "").split("/").filter(Boolean).slice(1)
+        .forEach((s) => parts.push({ label: decodeURIComponent(s) }));
+    }
+  }
+  parts.forEach((p, i) => {
+    if (i) host.append(el("span", "crumb-sep", "/"));
+    const last = i === parts.length - 1;
+    if (!last && p.hash) {
+      const a = document.createElement("a");
+      a.className = "crumb-seg";
+      a.href = p.hash;
+      a.textContent = p.label;
+      host.append(a);
+    } else {
+      host.append(el("span", "crumb-seg", p.label));
+    }
+  });
+  const sec = sectionOf(h);
+  if (sec !== _crumbSection) { _crumbSection = sec; setCrumbMeta(""); }
+}
+
+// Surfaces call this with their derived context string ("34 open · 3 decisions", …).
+function setCrumbMeta(text) { els.crumbMeta.textContent = text || ""; }
+
+// ---- rail collapse (persisted; auto-collapses under 860px) ----
+function setRailCollapsed(on, persist) {
+  els.appShell.classList.toggle("rail-collapsed", on);
+  els.railCollapse.textContent = on ? "››" : "‹‹";
+  els.railCollapse.title = on ? "Expand the rail" : "Collapse the rail";
+  if (persist) localStorage.setItem("manifest.rail.collapsed", on ? "1" : "0");
+}
+function railPref() { return localStorage.getItem("manifest.rail.collapsed") === "1"; }
+function applyRailWidth() { setRailCollapsed(window.innerWidth < 860 ? true : railPref(), false); }
+
 function route() {
-  const h = location.hash;
+  const h = normHash(location.hash);
+  if (h !== _curHash) {
+    if (_navInternal) _navInternal = false;
+    else { uiHistory.push(_curHash); uiForward.length = 0; }
+    _curHash = h;
+  }
+  updateCrumbNav();
+  setRailActive();
+  renderCrumbs(h);
   // the note view's Back returns to wherever the user actually was: every
   // non-note route records itself as the return target. Explicit
   // _noteReturn sets (contact page, studio→feed) still win — they happen
   // after the last non-note route, and note routes never overwrite.
-  if (!h.startsWith("#/note/")) _noteReturn = h || "#/";
+  if (!h.startsWith("#/note/")) _noteReturn = h === "#/" ? "#/" : h;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const todosTab = h === "#/todos" || h.startsWith("#/todos/");
   const cal = h === "#/calendar";
@@ -108,20 +266,8 @@ function route() {
   els.aionView.hidden = !aionTab;
   els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
-  els.goalsNav.hidden = !day;
-  els.todosNav.hidden = !day;
-  els.feedNav.hidden = !day;
-  els.studioNav.hidden = !day;
-  els.calNav.hidden = !day;
-  els.contactsNav.hidden = !day;
-  els.readingNav.hidden = !day;
-  els.propertiesNav.hidden = !day;
-  els.aionNav.hidden = !day;
-  els.spiritsNav.hidden = !day;
-  els.moreNav.hidden = !day;
-  els.dayNav.hidden = day;
-  if (!day) setNavExpanded(false); // leaving the day view folds MORE back up
-  if (day) refreshFeedBadge(); // pill only shows on the day view — keep it honest
+  els.contentScroll.scrollTop = 0;
+  refreshFeedBadge(); // the rail's Feed count doubles as the inbox badge — keep it honest everywhere
   if (goals) {
     // "#/goals/history" is the archive tab; any other suffix is a goal-id
     // deep-link (safe: real ids always contain "/", so "history" can't collide).
@@ -143,24 +289,17 @@ function route() {
 }
 window.addEventListener("hashchange", route);
 
-// MORE ▾ — the day-view menu keeps GOALS/FEED/SPIRITS up front; the rest lives in a dropdown
-function setNavExpanded(on) {
-  els.navMoreMenu.hidden = !on;
-  els.moreNav.setAttribute("aria-expanded", String(on));
-  els.moreNav.textContent = on ? "MORE ▴" : "MORE ▾";
-  if (on) {
-    // menu is position:fixed (pill-group clips absolute children) — pin it under the button
-    const r = els.moreNav.getBoundingClientRect();
-    els.navMoreMenu.style.top = r.bottom + 6 + "px";
-    els.navMoreMenu.style.right = window.innerWidth - r.right + "px";
-  }
-}
-els.moreNav.addEventListener("click", () => setNavExpanded(els.navMoreMenu.hidden));
-document.addEventListener("click", (e) => {
-  if (!els.navMoreMenu.hidden && !els.navMoreWrap.contains(e.target)) setNavExpanded(false);
+// ---- shell wiring ----
+buildRail();
+applyRailWidth();
+els.railCollapse.addEventListener("click", () => {
+  const on = !els.appShell.classList.contains("rail-collapsed");
+  setRailCollapsed(on, true);
 });
-window.addEventListener("scroll", () => { if (!els.navMoreMenu.hidden) setNavExpanded(false); }, true);
-window.addEventListener("resize", () => { if (!els.navMoreMenu.hidden) setNavExpanded(false); });
+els.railSearch.addEventListener("click", () => openCmdbar());
+els.crumbBack.addEventListener("click", navBack);
+els.crumbFwd.addEventListener("click", navForward);
+window.addEventListener("resize", applyRailWidth);
 
 // ---- day events ----
 document.getElementById("prevBtn").addEventListener("click", () => load(shiftDate(state.date, -1)));
@@ -168,3 +307,4 @@ document.getElementById("nextBtn").addEventListener("click", () => load(shiftDat
 document.getElementById("todayBtn").addEventListener("click", () => load(isoToday()));
 
 route();
+refreshRailCounts();

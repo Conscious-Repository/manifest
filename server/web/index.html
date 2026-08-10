@@ -33,39 +33,41 @@
   <link rel="stylesheet" href="css/92-aion.css" />
 </head>
 <body>
-  <header class="nav">
-    <div class="nav-left">
-      <div class="pill-group" id="navGroup">
-        <span class="brand">◆</span>
-        <a class="pill" href="#/goals" id="goalsNav">GOALS</a>
-        <a class="pill" href="#/todos" id="todosNav">TODOS</a>
-        <a class="pill" href="#/feed" id="feedNav">FEED<span id="feedNavBadge" class="nav-badge" hidden></span></a>
-        <a class="pill" href="#/spirits" id="spiritsNav">SPIRITS</a>
-        <span class="nav-more-wrap" id="navMoreWrap">
-          <button class="pill" id="moreNav" aria-expanded="false" title="Show the rest of the menu">MORE ▾</button>
-          <div class="nav-more-menu" id="navMoreMenu" hidden>
-            <a class="pill nav-extra" href="#/studio" id="studioNav">STUDIO</a>
-            <a class="pill nav-extra" href="#/calendar" id="calNav">CAL</a>
-            <a class="pill nav-extra" href="#/contacts" id="contactsNav">CONTACTS</a>
-            <a class="pill nav-extra" href="#/reading" id="readingNav">READING</a>
-            <a class="pill nav-extra" href="#/properties" id="propertiesNav">PROPERTIES</a>
-            <a class="pill nav-extra" href="#/aion" id="aionNav">AION</a>
-          </div>
-        </span>
-        <a class="pill" href="#/" id="dayNav" hidden>‹ DAY</a>
-      </div>
+  <div id="appShell" class="app-shell">
+
+  <!-- LEFT RAIL — persistent nav (redesign §2). Groups render from NAV_SECTIONS in 99-boot.js. -->
+  <nav id="rail" class="rail">
+    <div class="rail-head">
+      <span class="rail-brand"><span class="rail-glyph-box">◆</span><span class="rail-brand-name">MANIFEST</span></span>
+      <button id="railCollapse" class="rail-collapse" title="Collapse the rail" aria-label="Collapse">‹‹</button>
     </div>
-    <div class="nav-center" id="dateNav">
-      <div class="pill-group">
-        <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
-        <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
-        <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
-      </div>
-    </div>
-    <div class="nav-right">
+    <button id="railSearch" class="rail-search" title="Search (⌘K)">
+      <span class="rail-search-glyph">⌕</span><span class="rail-search-label">Search</span><span class="rail-search-kbd">⌘K</span>
+    </button>
+    <div class="rail-groups" id="railGroups"></div>
+    <div class="rail-foot">
       <span id="saveState" class="save-state">saved</span>
+      <span class="rail-raw" title="Raw markdown (coming with the ⌘/ overlay)">⌘/ raw</span>
     </div>
-  </header>
+  </nav>
+
+  <div class="content-col">
+    <!-- BREADCRUMB BAR — where am I + real in-app back/forward -->
+    <div class="crumb-bar" id="crumbBar">
+      <button id="crumbBack" class="crumb-nav" aria-label="Back" disabled>‹</button>
+      <button id="crumbFwd" class="crumb-nav" aria-label="Forward" disabled>›</button>
+      <span id="crumbPath" class="crumb-path"></span>
+      <span class="crumb-right">
+        <span id="crumbMeta" class="crumb-meta"></span>
+        <span id="dateNav" class="crumb-datenav" hidden>
+          <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
+          <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
+          <button id="nextBtn" class="pill arrow" aria-label="Next day">›</button>
+        </span>
+      </span>
+    </div>
+
+    <div id="contentScroll" class="content-scroll">
 
   <main id="dayView">
     <div id="prepBanner" class="prep-banner" hidden></div>
@@ -360,6 +362,10 @@
     <textarea id="noteRaw" class="note-raw" hidden spellcheck="false"></textarea>
     <div id="noteBacklinks" class="note-backlinks"></div>
   </section>
+
+    </div><!-- /contentScroll -->
+  </div><!-- /content-col -->
+  </div><!-- /appShell -->
 
   <!-- Quick-lookup command bar (⌘K / Ctrl-K from anywhere) -->
   <div id="cmdbar" class="cmdbar" hidden>
