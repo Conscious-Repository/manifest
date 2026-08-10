@@ -62,10 +62,17 @@ function renderOutstanding() {
   });
 }
 
+// mineOwner mirrors the substrate's rule: empty · "me" · my initials = me.
+function mineOwner(owner) {
+  if (!owner || owner === "me") return true;
+  const me = ((propTodosMeta && propTodosMeta.me) || "BA").toUpperCase();
+  return owner.toUpperCase().split("/").map((s) => s.trim()).includes(me);
+}
+
 // assigneeName resolves an owner value against the registries (contractor
-// slug → name; aion initials → name); unknown values render as written.
+// slug → name; aion initials → name); anything that means ME reads "you".
 function assigneeName(owner) {
-  if (!owner) return "you";
+  if (mineOwner(owner)) return "you";
   const a = (propTodosMeta && propTodosMeta.assignees) || {};
   const c = (a.realestate || []).find((e) => e.slug === owner || e.name === owner);
   if (c) return c.name + (c.trade ? " (" + c.trade + ")" : "");

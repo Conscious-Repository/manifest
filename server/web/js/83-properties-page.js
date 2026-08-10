@@ -81,7 +81,7 @@ function propTodoRow(p, t) {
     catch (err) { showToast("Couldn't update"); }
   };
   row.append(check, el("span", "pp3-todo-text", t.text));
-  row.append(el("span", "prop-owner" + (t.owner ? "" : " mine"), assigneeName(t.owner)));
+  row.append(el("span", "prop-owner" + (mineOwner(t.owner) ? " mine" : ""), assigneeName(t.owner)));
   row.onclick = () => {
     propSelTodoId = propSelTodoId === t.id ? null : t.id;
     propSelTodoId ? openPropInspector(p, t) : closePropInspector();
@@ -139,7 +139,7 @@ function openPropInspector(p, t) {
   opt("", "you");
   const a = (propTodosMeta && propTodosMeta.assignees) || {};
   (a.realestate || []).forEach((c) => opt(c.slug, c.name + (c.trade ? " (" + c.trade + ")" : "")));
-  sel.value = t.owner || "";
+  sel.value = mineOwner(t.owner) ? "" : t.owner; // BA/me/empty all read as "you"
   const note = el("div", "pp3-insp-note");
   const setNote = () => {
     note.textContent = sel.value

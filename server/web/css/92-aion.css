@@ -191,7 +191,7 @@
 .aion-owner-ini { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); }
 .aion-owner-name { font-family: var(--sans); font-size: 13px; color: var(--base-50); }
 .aion-task-row {
-  display: grid; grid-template-columns: 18px minmax(200px, 1fr) minmax(0, auto) minmax(0, auto);
+  display: grid; grid-template-columns: 18px minmax(200px, 1fr) minmax(0, auto);
   gap: 11px; align-items: baseline; padding: 4px 8px; border-top: 1px solid #f4f4f4; cursor: pointer;
 }
 .aion-task-row:hover { background: var(--base-05); }
@@ -243,3 +243,5 @@
 
 /* heuristics reinforcement bar */
 .aion-heur-bar { height: 4px; background: var(--accent); border-radius: 2px; flex: none; align-self: center; }
+
+.aion-owner-you { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }

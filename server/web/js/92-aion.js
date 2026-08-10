@@ -36,7 +36,7 @@ function renderAion() {
   else if (aionMode === "goals") renderAionGoals(host);
   else if (aionMode === "org") renderAionOrg(host);
   else if (aionMode === "reconcile") renderAionReconcile(host);
-  else if (aionMode === "settings") renderAionSettings(host);
+  else if (aionMode === "settings") { location.hash = "#/aion"; return; } // tab retired (owner call)
   else renderAionBacklog(host);
 }
 
@@ -239,6 +239,8 @@ function renderAionBacklog(host) {
     gh.append(el("span", "aion-owner-ini", key === "—" ? "UNASSIGNED" : key));
     const full = key.split("/").map((k) => people[k] || "").filter(Boolean).join(" · ");
     if (full) gh.append(el("span", "aion-owner-name", full));
+    const meIni = ((typeof todosCache !== "undefined" && todosCache && todosCache.me) || "BA").toUpperCase();
+    if (key.split("/").includes(meIni)) gh.append(el("span", "aion-owner-you", "· you"));
     gh.append(el("span", "aion-sec-count", String(openCount(key))));
     g.append(gh);
     groups[key].forEach((it) => g.append(aionTaskRow(it)));
@@ -333,7 +335,8 @@ function aionTaskRow(it) {
   main.append(meta);
   row.append(main);
   row.append(el("span", "aion-rock-tag", it.rock ? rockLabel(it.rock) : ""));
-  row.append(aionStatusChip(it));
+  // no status chip on tasks — the checkbox IS the state (open/in-progress
+  // retired); alarm still reads as the ink left rule + weight
   row.onclick = () => aionSelect(it);
   return row;
 }
@@ -392,12 +395,8 @@ function renderAionInspector(insp, items) {
     due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
     due.onchange = () => patch({ due: due.value });
     field("due", due);
-    if (it.status !== "done") {
-      const st = selectEl(["open", "in progress"]);
-      st.value = it.status === "in_progress" ? "in progress" : "open";
-      st.onchange = () => patch({ status: st.value === "in progress" ? "in_progress" : "open" });
-      field("status", st);
-    }
+    // (no status field — open/in-progress was a distinction without a
+    // difference; the checkbox is the state. owner call 2026-08-09)
   } else {
     const nb = inputEl("");
     nb.type = "date"; nb.className = "pp-in";
@@ -971,38 +970,4 @@ async function renderAionReconcile(host) {
   }
 
   renderRecRows();
-}
-
-// ---- SETTINGS ----
-function renderAionSettings(host) {
-  const pub = aionCache.publish || {};
-  host.append(el("div", "pp-section-head", "PUBLISH TARGET (config.json → aionPortal; restart to change)"));
-  const kv = (k, v) => {
-    const row = el("div", "aion-fin-row");
-    row.append(el("span", "aion-vto-key", k), el("span", "aion-fin-derived", v || "—"));
-    host.append(row);
-  };
-  kv("checkout", pub.checkout || "(not configured — publish disabled)");
-  kv("remote · branch", pub.configured ? (pub.remote + " · " + pub.branch) : "");
-  kv("last published", pub.lastPublished ? pub.lastPublished + (pub.lastCommit ? " · " + pub.lastCommit.slice(0, 12) : "") : "never");
-  if (pub.renderError) host.append(el("div", "appr-blocked", "⚠ render error: " + pub.renderError));
-
-  host.append(el("div", "pp-section-head", "CONTRACT PATHS — the only files publish may write"));
-  ["public/portal/content/hiring.md", "public/portal/content/references.md",
-    "public/portal/data/finances.json", "public/portal/data/vto.json", "public/portal/data/goals.json",
-    "public/portal/data/backlog.json", "public/portal/data/heuristics.json", "public/portal/data/people.json",
-    "public/portal/data/meta.json"].forEach((p) => host.append(el("div", "aion-preview-row mono", p)));
-  host.append(el("div", "aion-section-note",
-    "dirty check is scoped to these paths — uncommitted human edits inside them block publish; anything else in the checkout is ignored and never committed"));
-
-  host.append(el("div", "pp-section-head", "PUBLISH HISTORY"));
-  const hist = (pub.history || []).slice().reverse();
-  if (!hist.length) host.append(emptyRow("no publishes yet"));
-  hist.forEach((r) => {
-    const row = el("div", "aion-preview-row" + (r.status === "failed" ? " failed" : ""));
-    row.textContent = fmtWhen(r.at) + " · " + r.status + (r.stage ? " @ " + r.stage : "") +
-      (r.commit ? " · " + r.commit.slice(0, 7) : "") + ((r.files || []).length ? " · " + r.files.length + " file(s)" : "");
-    if (r.error) row.title = r.error;
-    host.append(row);
-  });
 }

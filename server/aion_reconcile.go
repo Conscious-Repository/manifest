@@ -63,16 +63,15 @@ func (s *Server) handleAionReconcile(w http.ResponseWriter, r *http.Request) {
 	// exactly the portal's matchRock contract (util.js buildGoalIndex)
 	ids := map[string]bool{}
 	known := map[string]bool{}
-	area := s.aionGoalsArea()
-	if area != nil {
-		add := func(id string, aliases []string) {
-			ids[id] = true
-			known[reconcileSlug(id)] = true
-			known[reconcileSlug(strings.TrimPrefix(id, "aion/"))] = true
-			for _, a := range aliases {
-				known[reconcileSlug(a)] = true
-			}
+	add := func(id string, aliases []string) {
+		ids[id] = true
+		known[reconcileSlug(id)] = true
+		known[reconcileSlug(strings.TrimPrefix(id, "aion/"))] = true
+		for _, a := range aliases {
+			known[reconcileSlug(a)] = true
 		}
+	}
+	if area := s.aionGoalsArea(); area != nil {
 		for i := range area.Annuals {
 			add(area.Annuals[i].ID, area.Annuals[i].Aliases)
 		}
@@ -80,6 +79,19 @@ func (s *Server) handleAionReconcile(w http.ResponseWriter, r *http.Request) {
 			add(rk.ID, rk.Aliases)
 			for _, c := range rk.Children {
 				add(c.ID, c.Aliases)
+			}
+		}
+	}
+	// HISTORIC rocks resolve too: the quarter archives carry the closed Aion
+	// rocks (the one-time reconstruction), and the publish exporter already
+	// ships them in goals.json with their dates — an item anchored to one is
+	// PLACED, not a gap. Without this, every pre-Q3 item false-flagged.
+	if s.goals != nil {
+		for _, aq := range s.goals.LoadAllArchives() {
+			for _, e := range aq.Entries {
+				if strings.HasPrefix(e.GoalID, "aion/") {
+					add(e.GoalID, nil)
+				}
 			}
 		}
 	}
