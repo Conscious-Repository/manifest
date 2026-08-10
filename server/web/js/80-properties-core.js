@@ -1,40 +1,42 @@
-// ---- PROPERTIES: the real-estate cockpit over system/realestate/ records ----
-// Board (grouped by entity, paid%/committed% rollups) + a property page (rollup,
-// budget, ledger with quick-add, log with quick-add, prose via the note view).
+// ---- PROPERTIES — Revision 3: one rail, one pane ----
+// A property is an address, a status, one budget number, and todos. The rail
+// lists Views (All properties · Outstanding · Map · Parcels) over every
+// property with its open-todo count; the pane renders one thing at a time.
+// The work kanban, SOW list, accounting, contractors, entities and settings
+// surfaces are gone — `## work` stays in the files as the budget source, and
+// deep material is reachable with ⌘/ or the note view.
 let propertyCache = [];
 let dealCache = [];
 let templateCache = [];
 let rePortalEnabled = false; // deals.json publish configured server-side
-let propMode = "board"; // board | map | statements | page — derived from the hash
-let boardFilter = ""; // search-as-you-type
-let boardStatus = ""; // status dropdown ("" = all)
-let boardEntity = ""; // entity dropdown ("" = all)
-let boardSort = "status"; // status | address | budget | var
+let propMode = "all"; // all | outstanding | map | parcels | page
+let propSlug = "";    // the open property (page mode)
+let propTodosMeta = null; // /api/todos payload — assignees + outstanding (one truth)
 
-// showProperties routes the PROPERTIES sub-views off the hash:
-//   #/properties · /map · /statements · /deal/<slug> · /<slug>
 function showProperties(h) {
   const tail = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
-  els.propertyPage.hidden = true; els.propertyMapWrap.hidden = true;
-  els.propertyBoard.hidden = true; els.propertyStatements.hidden = true;
-  els.propertyContractors.hidden = true;
-  els.propertyWork.hidden = true; els.propertySettings.hidden = true;
+  els.propertyPage.hidden = true;
+  els.propertyMapWrap.hidden = true;
+  els.propertyBoard.hidden = true;
   if (els.propertyParcels) els.propertyParcels.hidden = true;
-  if (tail.startsWith("deal/")) { propMode = "page"; renderDealPage(tail.slice(5)); }
-  else if (tail === "parcels") { propMode = "parcels"; syncPropChips(); renderParcelsView(); }
-  else if (tail === "map") { propMode = "map"; syncPropChips(); loadProperties(); }
-  else if (tail === "work") { propMode = "work"; syncPropChips(); renderWorkView(); }
-  else if (tail === "statements") { location.hash = "#/properties/accounting"; return; } // legacy
-  else if (tail === "accounting") { propMode = "accounting"; syncPropChips(); renderAccounting(); }
-  else if (tail === "contractors") { propMode = "contractors"; syncPropChips(); renderContractors(); }
-  else if (tail === "settings") { propMode = "settings"; syncPropChips(); renderREsettings(); }
-  else if (tail) { propMode = "page"; renderPropertyPage(tail); }
-  else { propMode = "board"; syncPropChips(); loadProperties(); }
-}
-
-function syncPropChips() {
-  els.propToggle.querySelectorAll(".filter-chip").forEach((b) =>
-    b.classList.toggle("on", b.dataset.mode === propMode));
+  closePropInspector();
+  // legacy sub-tab routes fold into the rail views; deal pages open the
+  // bundle's vault note (the underwrite UI is retired)
+  if (["work", "accounting", "statements", "contractors", "settings"].includes(tail)) {
+    location.hash = "#/properties";
+    return;
+  }
+  if (tail.startsWith("deal/")) {
+    location.hash = "#/note/" + encodeURIComponent("system/realestate/deals/" + tail.slice(5) + ".md");
+    return;
+  }
+  propSlug = "";
+  if (tail === "outstanding") propMode = "outstanding";
+  else if (tail === "map") propMode = "map";
+  else if (tail === "parcels") propMode = "parcels";
+  else if (tail) { propMode = "page"; propSlug = tail; }
+  else propMode = "all";
+  renderProperties();
 }
 
 async function loadProperties() {
@@ -45,22 +47,75 @@ async function loadProperties() {
     templateCache = d.templates || [];
     rePortalEnabled = !!d.rePortal;
   } catch (e) { propertyCache = []; dealCache = []; templateCache = []; }
-  if (propMode === "map") renderPropertyMap();
-  else if (propMode === "board") renderBoard();
 }
 
-// (fmtMoney / fmtPct live in 05-components.js — the money slot owns display policy)
+async function loadPropTodosMeta() {
+  try { propTodosMeta = await (await fetch("/api/todos")).json(); }
+  catch (e) { propTodosMeta = { outstanding: [], assignees: {}, counts: {} }; }
+}
 
-// projMoney: one property's plan-vs-spend numbers.
+async function renderProperties() {
+  await Promise.all([loadProperties(), loadPropTodosMeta()]);
+  renderPropRail();
+  const counts = (propTodosMeta && propTodosMeta.counts) || {};
+  if (typeof setCrumbMeta === "function") {
+    setCrumbMeta(propertyCache.length + " properties" +
+      (counts.outstanding ? " · " + counts.outstanding + " outstanding" : ""));
+  }
+  if (typeof railSetCount === "function") railSetCount("properties", propertyCache.length);
+  if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
+  else if (propMode === "parcels") renderParcelsView();
+  else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
+  else { els.propertyBoard.hidden = false; propMode === "outstanding" ? renderOutstanding() : renderAllProperties(); }
+}
+
+// openTodoCount — every open action line on the property (mine or owed).
+function openTodoCount(p) {
+  return (p.todos || []).filter((t) => !t.checked).length;
+}
+
+function renderPropRail() {
+  const host = els.propRail;
+  if (!host) return;
+  host.innerHTML = "";
+  const group = (label) => {
+    const g = el("div", "prop-rail-group");
+    g.append(el("div", "prop-rail-label", label));
+    host.append(g);
+    return g;
+  };
+  const item = (g, label, active, onclick, count, cls) => {
+    const a = el("button", "prop-rail-item" + (active ? " active" : "") + (cls ? " " + cls : ""));
+    a.append(el("span", "prop-rail-name", label));
+    if (count !== undefined) a.append(el("span", "prop-rail-count" + (count ? " some" : ""), count ? String(count) : ""));
+    a.onclick = onclick;
+    g.append(a);
+    return a;
+  };
+  const views = group("Views");
+  const outN = ((propTodosMeta && propTodosMeta.counts) || {}).outstanding || 0;
+  item(views, "All properties", propMode === "all", () => { location.hash = "#/properties"; }, undefined);
+  item(views, "Outstanding", propMode === "outstanding", () => { location.hash = "#/properties/outstanding"; }, outN);
+  item(views, "Map", propMode === "map", () => { location.hash = "#/properties/map"; }, undefined, "quiet");
+  item(views, "Parcels", propMode === "parcels", () => { location.hash = "#/properties/parcels"; }, undefined, "quiet");
+  const props = group("Properties");
+  propertyCache.filter((p) => !p.hidden).forEach((p) => {
+    item(props, p.short || p.address || p.slug, propMode === "page" && propSlug === p.slug,
+      () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); }, openTodoCount(p));
+  });
+  const foot = el("div", "prop-rail-foot");
+  const add = el("button", "o-ghost", "＋ property");
+  add.onclick = () => { location.hash = "#/properties"; propComposerOpen = true; renderProperties(); };
+  foot.append(add);
+  host.append(foot);
+}
+
+// projMoney: one property's plan-vs-spend numbers (Rev 3's two figures).
 function projMoney(p) {
   const pj = p.project || {};
   return { budget: pj.planTotal || 0, committed: pj.committed || 0,
     paid: pj.paid || 0, over: !!pj.over };
 }
-
-// ---- shared primitives (admin-portal design §0) ----
-// (ppCols / makeDirtyBar / collapsibleSection live in 05-components.js — the
-// §11 component library; promoted there with the AION tab.)
 
 // propertyTypeahead: the typeahead engine over all property records
 // (63 items — a select is unusable). Matches address/slug/deal.

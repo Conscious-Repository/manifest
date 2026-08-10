@@ -24,10 +24,6 @@
   <link rel="stylesheet" href="css/70-note.css" />
   <link rel="stylesheet" href="css/75-bars.css" />
   <link rel="stylesheet" href="css/80-properties-core.css" />
-  <link rel="stylesheet" href="css/84-properties-admin.css" />
-  <link rel="stylesheet" href="css/86-properties-work.css" />
-  <link rel="stylesheet" href="css/88-properties-settings.css" />
-  <link rel="stylesheet" href="css/89-properties-workview.css" />
   <link rel="stylesheet" href="css/91-parcels.css" />
   <link rel="stylesheet" href="css/90-todos.css" />
   <link rel="stylesheet" href="css/92-aion.css" />
@@ -296,36 +292,24 @@
     <div id="bookShelf" class="book-shelf"></div>
   </section>
 
-  <!-- PROPERTIES — the real-estate cockpit over system/realestate/ records -->
+  <!-- PROPERTIES — Revision 3: one rail, one pane. A property is an address,
+       a status, one budget number, and todos. Map/parcels survive as
+       palette + rail destinations; everything else moved off-surface. -->
   <section class="properties-view" id="propertiesView" hidden>
-    <div class="agent-head">
-      <span class="agent-title">PROPERTIES</span>
-      <div class="agent-actions">
-        <span id="propertiesMeta" class="panel-meta"></span>
-        <span class="prop-toggle" id="propToggle">
-          <a class="filter-chip on" data-mode="board" href="#/properties">BOARD</a>
-          <a class="filter-chip" data-mode="work" href="#/properties/work">WORK</a>
-          <a class="filter-chip" data-mode="map" href="#/properties/map">MAP</a>
-          <a class="filter-chip" data-mode="parcels" href="#/properties/parcels">PARCELS</a>
-          <a class="filter-chip" data-mode="accounting" href="#/properties/accounting">ACCOUNTING</a>
-          <a class="filter-chip" data-mode="contractors" href="#/properties/contractors">CONTRACTORS</a>
-          <a class="filter-chip" data-mode="settings" href="#/properties/settings">SETTINGS</a>
-        </span>
+    <div class="prop-shell">
+      <nav class="prop-rail" id="propRail"></nav>
+      <div class="prop-pane" id="propPane">
+        <div id="propertyBoard" class="property-board"></div>
+        <div id="propertyMapWrap" hidden>
+          <div id="propertyMap" class="property-map"></div>
+          <div id="propertyMapLegend" class="property-map-legend"></div>
+          <div id="propertyUnmapped" class="property-unmapped" hidden></div>
+        </div>
+        <div id="propertyParcels" class="property-parcels" hidden></div>
+        <div id="propertyPage" class="property-page" hidden></div>
       </div>
+      <aside class="prop-inspector" id="propInspector" hidden></aside>
     </div>
-    <div id="propertyBoard" class="property-board"></div>
-    <div id="propertyMapWrap" hidden>
-      <div id="propertyMap" class="property-map"></div>
-      <div id="propertyMapLegend" class="property-map-legend"></div>
-      <div id="propertyUnmapped" class="property-unmapped" hidden></div>
-    </div>
-    <div id="propertyParcels" class="property-parcels" hidden></div>
-    <div id="propertyStatements" class="property-statements" hidden></div>
-    <div id="propertyContractors" class="property-contractors" hidden></div>
-    <div id="propertyWork" class="property-workview" hidden></div>
-    <div id="propertySettings" class="property-settings" hidden></div>
-    <div id="propertyPage" class="property-page" hidden></div>
-    <datalist id="opexKeys"></datalist>
   </section>
 
   <!-- AION — the program cockpit over system/aion/ records + publish effector -->
@@ -431,12 +415,6 @@
   <script src="js/81-properties-board.js"></script>
   <script src="js/82-properties-map.js"></script>
   <script src="js/83-properties-page.js"></script>
-  <script src="js/84-properties-entities.js"></script>
-  <script src="js/85-properties-accounting.js"></script>
-  <script src="js/86-properties-work.js"></script>
-  <script src="js/87-properties-contractors.js"></script>
-  <script src="js/88-properties-settings.js"></script>
-  <script src="js/89-properties-workview.js"></script>
   <script src="js/90-todos.js"></script>
   <script src="js/91-parcels.js"></script>
   <script src="js/92-aion.js"></script>
