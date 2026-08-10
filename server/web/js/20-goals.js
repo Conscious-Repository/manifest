@@ -217,7 +217,63 @@ function orientArea(area) {
   (area.rocks || []).forEach((g) => rocks.appendChild(rockOutline(g, area.name)));
   rocks.appendChild(rockComposer(area));
   card.appendChild(rocks);
+
+  // unanchored — the area's domain todos advancing no rock, plus its open
+  // issues (they live on the TODOS surface; shown here quietly so they can
+  // be tethered — or converted-and-tethered — in place)
+  const un = areaUnanchored(area.name);
+  if (un.todos.length || un.issues.length) {
+    const foot = el("div", "go-unanchored");
+    const head = el("div", "go-un-head");
+    head.append(el("span", "go-un-title", "unanchored"),
+      el("span", "go-un-count", String(un.todos.length + un.issues.length)),
+      el("span", "go-un-hint", "in TODOS · advancing no rock — link to place"));
+    foot.append(head);
+    un.todos.forEach((t) => {
+      const row = goTaskRow(t);
+      const link = el("button", "go-un-link", "→ rock…");
+      link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
+        if (!p.rock) return;
+        try { await postJSONOk("/api/todos/update", { id: t.id, rock: p.rock, stage: p.stage }); } catch (err) {}
+        loadGoals();
+      });
+      row.insertBefore(link, row.lastChild); // before the age cell
+      foot.append(row);
+    });
+    un.issues.forEach((is) => {
+      const row = el("div", "go-task go-un-issue");
+      row.append(el("span", "go-un-flag", "⚑"), el("span", "go-task-text", is.text));
+      const link = el("button", "go-un-link", "→ task on rock…");
+      link.title = "convert this issue to a task tethered to a rock";
+      link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
+        if (!p.rock) return;
+        try { await postJSONOk("/api/todos/issue/to-todo", { id: is.id, rock: p.rock, stage: p.stage }); } catch (err) {}
+        loadGoals();
+      });
+      row.append(link);
+      foot.append(row);
+    });
+    card.appendChild(foot);
+  }
   return card;
+}
+
+// areaUnanchored — open todos in the area's DOMAIN (loose + buckets) that
+// carry no [rock::] tether, plus the domain's open issues.
+function areaUnanchored(areaName) {
+  const todos = [];
+  const issues = [];
+  const scan = (list) => (list || []).forEach((t) => {
+    if (t.state !== "done" && !t.rock) todos.push(t);
+  });
+  ((todosCache && todosCache.domains) || []).forEach((dm) => {
+    if (dm.name !== areaName) return;
+    scan(dm.todos);
+    (dm.buckets || []).forEach((bk) => scan(bk.todos));
+    (dm.issues || []).forEach((is) => { if (!is.checked) issues.push(is); });
+  });
+  todos.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
+  return { todos, issues };
 }
 
 // rockComposer (§2): the soft gate. The ＋ rock ghost opens three fields —
@@ -452,6 +508,28 @@ function moveGoalPicker(g, areaName) {
     "no other rocks in " + areaName);
 }
 
+// goTaskRow — one substrate task line inside the outline: live checkbox,
+// click-to-edit text, age.
+function goTaskRow(t) {
+  const row = el("div", "go-task");
+  const tc = el("button", "go-check", "○");
+  tc.title = "done";
+  tc.onclick = async (e) => {
+    e.stopPropagation();
+    try { await postJSONOk("/api/todos/check", { id: t.id, checked: true }); } catch (err) {}
+    loadGoals();
+  };
+  row.append(tc);
+  const tt = el("span", "go-task-text", t.text);
+  clickToEdit(tt, () => t.text, async (v) => {
+    try { await postJSONOk("/api/todos/update", { id: t.id, text: v }); } catch (err) {}
+    loadGoals();
+  });
+  row.append(tt);
+  row.append(el("span", "go-task-age", t.ageDays > 0 ? t.ageDays + "d" : ""));
+  return row;
+}
+
 // rockOutline (Rev 2): the whole rock inline — name (15px/500) with UNTIL as
 // a quiet tag and the ● lint meta on the rock's own line, the stage trail
 // (→ marks current), and the current stage's tasks from the substrate. Left
@@ -462,6 +540,15 @@ function rockOutline(g, areaName) {
   const reasons = g.checked ? [] : rockLint(g);
   const stalled = reasons.find((r) => r.startsWith("stalled"));
   const tethered = g.checked ? [] : rockTodos(g.id);
+  // a task with a [stage::] naming one of this rock's stages nests THERE;
+  // the rest ride the current stage (open work by default advances it)
+  const byStage = {};
+  const looseTasks = [];
+  tethered.forEach((t) => {
+    const m = t.stage && stages.find((s) => s.text === t.stage);
+    if (m) (byStage[m.id] = byStage[m.id] || []).push(t);
+    else looseTasks.push(t);
+  });
   const rule = stalled ? "stalled" : (tethered.length ? "current" : "quiet");
   const wrap = el("div", "go-rock " + rule + (g.checked ? " done" : ""));
   wrap.dataset.goalId = g.id;
@@ -504,28 +591,11 @@ function rockOutline(g, areaName) {
     if (hasOwner) sl.append(el("span", "go-stage-owner", "@" + st.owner));
     wrap.append(sl);
 
-    // the current stage carries the rock's open tasks (the substrate window —
-    // open todos have no [stage::] yet, so they ride the stage being worked)
+    // tasks nest under the stage their [stage::] names; the rest ride the
+    // current stage (open work by default advances it)
+    (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t)));
     if (isCur && !g.checked) {
-      tethered.forEach((t) => {
-        const row = el("div", "go-task");
-        const tc = el("button", "go-check", "○");
-        tc.title = "done";
-        tc.onclick = async (e) => {
-          e.stopPropagation();
-          try { await postJSONOk("/api/todos/check", { id: t.id, checked: true }); } catch (err) {}
-          loadGoals();
-        };
-        row.append(tc);
-        const tt = el("span", "go-task-text", t.text);
-        clickToEdit(tt, () => t.text, async (v) => {
-          try { await postJSONOk("/api/todos/update", { id: t.id, text: v }); } catch (err) {}
-          loadGoals();
-        });
-        row.append(tt);
-        row.append(el("span", "go-task-age", t.ageDays > 0 ? t.ageDays + "d" : ""));
-        wrap.append(row);
-      });
+      looseTasks.forEach((t) => wrap.append(goTaskRow(t)));
       wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
         try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
         loadGoals();

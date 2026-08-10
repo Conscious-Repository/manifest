@@ -149,6 +149,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/bucket", s.handleBucketRename)
 	mux.HandleFunc("POST /api/todos/issue", s.handleIssueAdd)
 	mux.HandleFunc("POST /api/todos/issue/resolve", s.handleIssueResolve)
+	mux.HandleFunc("POST /api/todos/issue/to-todo", s.handleIssueToTodo) // reverse conversion (+ optional tether)
 	mux.HandleFunc("POST /api/todos/to-issue", s.handleTodoToIssue)
 
 	// AION — program cockpit over system/aion/ records + publish effector.

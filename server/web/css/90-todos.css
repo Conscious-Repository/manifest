@@ -74,3 +74,11 @@
 .tdo-tag { font-family: var(--mono); font-size: 10.5px; color: var(--base-30); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; }
 .tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-30); cursor: pointer; padding: 4px 2px; }
 .tdo-wait-foot:hover { color: var(--base-40); }
+
+/* ⧗ tether — hover-revealed when unanchored, tiny accent when tethered */
+.tdo-tether { background: none; border: none; font-size: 12px; color: var(--base-30); cursor: pointer; padding: 0 2px; visibility: hidden; }
+.tdo-row:hover .tdo-tether { visibility: visible; }
+.tdo-tether:hover { color: var(--accent); }
+.tdo-tether.on { visibility: visible; color: var(--accent); }
+.tdo-right .ta-wrap { display: inline-block; position: relative; }
+.tdo-right .ta-in { font-size: 12px; min-width: 220px; }

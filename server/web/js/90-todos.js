@@ -248,6 +248,15 @@ function rankedRow(r, idx) {
     r.ageDays > 0 ? (stale ? "● " : "") + r.ageDays + "d" : "");
   if (stale) age.title = "aging — do it or drop it";
   right.append(age);
+  // ⧗ tether — quiet: hover-revealed when unanchored, tiny accent when set.
+  // Property todos aren't rock work; personal + aion rows tether in place.
+  if (r.source !== "property") {
+    const teth = el("button", "tdo-tether" + (r.rock ? " on" : ""), "⧗");
+    teth.title = r.rock ? "advances " + r.rock + " — click to change" : "tether to a rock or stage…";
+    teth.onclick = () => openTetherPicker(teth, { rock: r.rock }, r.container.name,
+      (p) => todosApi("/api/todos/update", { id: r.id, rock: p.rock, stage: p.stage }));
+    right.append(teth);
+  }
   if (r.source === "personal") {
     const x = el("button", "uw-x", "✕");
     x.title = "drop (archived, never deleted)";
@@ -277,6 +286,44 @@ function commitRank(draggedId, targetId) {
   todosCache.rows = order.map((id) => byId[id]).filter(Boolean);
   renderTodos();
   todosApi("/api/todos/rank", { order });
+}
+
+// ---- the tether picker: one typeahead over every open rock and stage ----
+// Shared by the TODOS rows (⧗) and the GOALS unanchored foot. Picking writes
+// [rock::] (+ optional [stage::]) through /api/todos/update — one line, one
+// file, both surfaces re-project it.
+async function tetherAreas() {
+  try { return ((await (await fetch("/api/goals")).json()).areas) || []; }
+  catch (e) { return []; }
+}
+
+// openTetherPicker swaps `anchor` for the typeahead; restores it on escape /
+// blur. preferArea floats that area's rocks to the top. onPick({rock, stage}).
+function openTetherPicker(anchor, current, preferArea, onPick) {
+  let done = false;
+  const restore = () => { if (!done && ta.el.parentNode) ta.el.replaceWith(anchor); };
+  const pick = (rock, stage) => { done = true; ta.el.replaceWith(anchor); onPick({ rock, stage }); };
+  const ta = typeahead({
+    placeholder: "rock, or rock → stage…",
+    minChars: 0,
+    onEscape: restore,
+    onBlurGone: restore,
+    suggest: async (q, add) => {
+      const areas = await tetherAreas();
+      const items = [];
+      areas.forEach((a) => (a.rocks || []).filter((r) => !r.checked).forEach((r) => {
+        items.push({ label: a.name + " · " + r.text, rock: r.id, stage: "", area: a.name });
+        (r.children || []).filter((c) => !c.checked).forEach((c) =>
+          items.push({ label: a.name + " · " + r.text + " → " + c.text, rock: r.id, stage: c.text, area: a.name }));
+      }));
+      items.sort((x, y) => (x.area === preferArea ? 0 : 1) - (y.area === preferArea ? 0 : 1));
+      items.filter((it) => !q || it.label.toLowerCase().includes(q)).slice(0, 10)
+        .forEach((it) => add(it.label, it.stage ? "stage" : "rock", () => pick(it.rock, it.stage)));
+      if (current && current.rock) add("✕ untether", "", () => pick("", ""));
+    },
+  });
+  anchor.replaceWith(ta.el);
+  ta.focus();
 }
 
 // personInput: free text or a contact — picking a suggestion wraps [[display]]

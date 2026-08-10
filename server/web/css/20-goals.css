@@ -227,3 +227,16 @@
 .go-rock-acts { display: flex; align-items: center; gap: 12px; margin-top: 8px; visibility: hidden; }
 .go-rock:hover .go-rock-acts { visibility: visible; }
 .go-rock-acts .o-complete { margin: 0; }
+
+/* unanchored foot — the area's rock-less domain todos, tetherable in place */
+.go-unanchored { margin-top: 14px; padding: 8px 12px 6px; border-top: 1px solid var(--base-25); }
+.go-un-head { display: flex; align-items: baseline; gap: 8px; padding-bottom: 4px; }
+.go-un-title { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); }
+.go-un-count { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.go-un-hint { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--base-30); white-space: nowrap; }
+.go-unanchored .go-task { padding-left: 14px; }
+.go-unanchored .go-task-text { color: var(--base-60); }
+.go-un-link { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent); cursor: pointer; padding: 0; white-space: nowrap; visibility: hidden; }
+.go-unanchored .go-task:hover .go-un-link { visibility: visible; }
+.go-un-flag { color: var(--base-100); font-size: 11px; flex: none; }
+.go-un-issue .go-task-text { font-weight: 500; }

@@ -226,6 +226,49 @@ func (s *Server) handleIssueResolve(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleIssueToTodo — the reverse conversion: an issue becomes a plain task
+// line (optionally tethered to a rock/stage in the same motion — the goals
+// outline's "→ rock…" on an unanchored issue). Explicit user action.
+func (s *Server) handleIssueToTodo(w http.ResponseWriter, r *http.Request) {
+	if !s.todosOK(w) {
+		return
+	}
+	var b struct{ ID, Rock, Stage string }
+	if err := decode(r, &b); err != nil || b.ID == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	var movedRock string
+	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+		dom, is := d.FindIssue(b.ID)
+		if is == nil {
+			return false, nil
+		}
+		var keep []*todos.Issue
+		for _, o := range dom.Issues {
+			if o != is {
+				keep = append(keep, o)
+			}
+		}
+		dom.Issues = keep
+		t := &todos.Todo{
+			Text:  is.Text,
+			Added: is.Added,
+			Rock:  strings.TrimSpace(b.Rock),
+			Stage: strings.TrimSpace(b.Stage),
+		}
+		if t.Added == "" {
+			t.Added = time.Now().Format("2006-01-02")
+		}
+		movedRock = t.Rock
+		dom.Todos = append(dom.Todos, t)
+		return true, nil
+	})
+	if movedRock != "" {
+		s.stampRockMoved(movedRock)
+	}
+}
+
 // handleTodoToIssue — the stale card's `→ issue` conversion: the line moves
 // under ### issues with an auto id (explicit user action, never automatic).
 func (s *Server) handleTodoToIssue(w http.ResponseWriter, r *http.Request) {
@@ -342,6 +385,8 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		Domain  *string
 		Waiting *string // "" clears (back to open)
 		Owner   *string // "" clears (back to mine) — stage 4 assignment
+		Rock    *string // "" untethers — the rock this line advances
+		Stage   *string // optional stage placement within the rock's trail
 	}
 	if err := decode(r, &b); err != nil || b.ID == "" {
 		httpError(w, errBadRequest("id is required"))
@@ -382,6 +427,9 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		if b.Owner != nil {
 			set["owner"] = strings.TrimSpace(*b.Owner)
 		}
+		if b.Rock != nil {
+			set["rock"] = strings.TrimSpace(*b.Rock)
+		}
 		if len(set) == 0 {
 			httpError(w, errBadRequest("nothing to update"))
 			return
@@ -393,6 +441,7 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.todosView())
 		return
 	}
+	var movedRock string
 	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
 		dom, t := d.Find(b.ID)
 		if t == nil {
@@ -403,6 +452,17 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if b.Owner != nil {
 			t.Owner = strings.TrimSpace(*b.Owner)
+		}
+		if b.Rock != nil {
+			t.Rock = strings.TrimSpace(*b.Rock)
+			if t.Rock == "" {
+				t.Stage = "" // untethering clears the stage placement too
+			} else {
+				movedRock = t.Rock // new tethered work = movement
+			}
+		}
+		if b.Stage != nil {
+			t.Stage = strings.TrimSpace(*b.Stage)
 		}
 		if b.Waiting != nil {
 			t.Waiting = strings.TrimSpace(*b.Waiting)
@@ -425,6 +485,9 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		return true, nil
 	})
+	if movedRock != "" {
+		s.stampRockMoved(movedRock) // same contract as capture/check
+	}
 }
 
 // syncTodoTasks mirrors todo-linked daily-note ticks back into `to do.md`
