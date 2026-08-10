@@ -123,7 +123,12 @@ function renderMonth(cells, events) {
       more.textContent = `${evs.length - cap} more`;
       cell.appendChild(more);
     }
-    cell.addEventListener("click", () => { state.date = iso; location.hash = "#/"; });
+    cell.addEventListener("click", () => {
+      // phone (Rev 4): cells show dots, not titles — a tap opens the day's
+      // agenda as a sheet; "open day →" inside it does what desktop click does.
+      if (window.mf && window.mf.phone()) { mfCalAgenda(iso, evs); return; }
+      state.date = iso; location.hash = "#/";
+    });
     els.calGrid.appendChild(cell);
   });
 }
@@ -190,3 +195,23 @@ els.calConnectBtn.addEventListener("click", () => connectCalendar(els.calConnect
 els.calAddAccount.addEventListener("click", () => connectCalendar(els.calAddAccount));
 els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
 els.calNext.addEventListener("click", () => shiftCalMonth(1));
+
+// mfCalAgenda (Rev 4, phone-only): the tapped day's events as a bottom sheet —
+// time · title rows plus "open day →" (which does what the desktop click does).
+function mfCalAgenda(iso, evs) {
+  window.mfSheet.open((body) => {
+    const d = new Date(iso + "T00:00:00");
+    body.append(el("div", "mf-agenda-day",
+      d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })));
+    if (!evs.length) body.append(el("div", "mf-agenda-ev", "no events"));
+    evs.forEach((e) => {
+      const row = el("div", "mf-agenda-ev");
+      row.append(el("span", "mf-agenda-time", e.allDay ? "all day" : formatTime(e.start)));
+      row.append(el("span", "mf-agenda-title", e.title || "(busy)"));
+      body.append(row);
+    });
+    const open = el("button", "mf-agenda-open", "open day →");
+    open.onclick = () => { window.mfSheet.close({ silent: true }); state.date = iso; location.hash = "#/"; };
+    body.append(open);
+  }, { key: "cal-agenda" });
+}

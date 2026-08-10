@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Manifest</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -27,6 +27,8 @@
   <link rel="stylesheet" href="css/91-parcels.css" />
   <link rel="stylesheet" href="css/90-todos.css" />
   <link rel="stylesheet" href="css/92-aion.css" />
+  <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
+  <link rel="stylesheet" href="css/95-mobile.css" />
 </head>
 <body>
   <div id="appShell" class="app-shell">
@@ -418,6 +420,7 @@
   <script src="js/90-todos.js"></script>
   <script src="js/91-parcels.js"></script>
   <script src="js/92-aion.js"></script>
+  <script src="js/98-mobile.js"></script>
   <script src="js/99-boot.js"></script>
 </body>
 </html>

@@ -1,0 +1,338 @@
+/* 95-mobile — the phone band (Rev 4, <860px). 2026-08-10.
+   ZERO-DESKTOP-CHANGE BY CONSTRUCTION: everything in this file sits inside
+   @media (max-width: 860px) or @media (hover: none) blocks, except the
+   default-hides right below (which only affect nodes 98-mobile.js creates).
+   ≥861px renders byte-identically to a build without this file.
+   860–1100 tablet band deliberately untouched (owner decision 2026-08-10). */
+
+/* ---- default state of mobile-only chrome: invisible on desktop ---- */
+.mf-topbar-btn { display: none; }
+.mf-scrim { display: none; }
+.mf-sheet-wrap { display: none; }
+
+@keyframes sheetUp {
+  from { transform: translateY(24px); opacity: 0.6; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ================= PHONE ================= */
+@media (max-width: 860px) {
+
+  /* ---- chrome ---- */
+  .app-shell { height: 100dvh; min-height: 100dvh; }   /* not 100vh — iOS toolbars */
+  body { overscroll-behavior-y: none; }                /* no rubber-band under sheets */
+  /* stale under a two-row top bar; flex sizing makes it unnecessary here */
+  .prop-shell { min-height: 0; }
+
+  /* ---- drawer: the rail leaves the flow and slides in ---- */
+  .rail {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 60;
+    width: min(300px, 82vw);
+    transform: translateX(-100%);
+    transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+    border-right: 1px solid var(--base-30);
+  }
+  .app-shell.drawer-open .rail { transform: none; }
+  .app-shell.drawer-open .mf-scrim {
+    display: block; position: fixed; inset: 0; z-index: 50;
+    background: rgba(0, 0, 0, 0.34); touch-action: none;
+  }
+  /* touch metrics — same groups/order/counts as desktop, bigger rows */
+  .rail-item { min-height: 46px; padding: 0 16px; font-size: 16px; }
+  .rail-glyph { width: 18px; font-size: 16px; }
+  .rail-search { min-height: 44px; }
+  .rail-search-label { font-size: 15px; }
+  .rail-foot { padding-bottom: calc(9px + env(safe-area-inset-bottom)); }
+  #railCollapse { display: none; } /* icon-strip mode is a desktop/tablet state */
+
+  /* Defensive belt: a stale .rail-collapsed class (e.g. mid-resize) must never
+     render an empty drawer. Neutralize every 07-nav collapsed rule; this file
+     loads last, so equal specificity wins. */
+  .app-shell.rail-collapsed .rail { width: min(300px, 82vw); }
+  .app-shell.rail-collapsed .rail-brand-name,
+  .app-shell.rail-collapsed .rail-search-label,
+  .app-shell.rail-collapsed .rail-search-kbd,
+  .app-shell.rail-collapsed .rail-label,
+  .app-shell.rail-collapsed .rail-count,
+  .app-shell.rail-collapsed .rail-foot .save-state { display: inline; }
+  .app-shell.rail-collapsed .rail-group-label { display: block; }
+  .app-shell.rail-collapsed .rail-raw { display: inline-block; }
+  .app-shell.rail-collapsed .rail-head { padding: 14px 12px 12px 14px; flex-direction: row; gap: 0; justify-content: space-between; }
+  .app-shell.rail-collapsed .rail-search { margin: 0 10px 14px; padding: 6px 9px; justify-content: flex-start; }
+  .app-shell.rail-collapsed .rail-item { justify-content: flex-start; padding: 0 16px; }
+  .app-shell.rail-collapsed .rail-group { padding-top: 0; border-top: none; }
+  .app-shell.rail-collapsed .rail-foot { justify-content: space-between; min-height: 0; }
+
+  /* ---- mobile top bar: ☰ · title/meta · ⌕ · ＋ ---- */
+  .crumb-bar {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+    grid-auto-rows: auto;
+    align-items: center; gap: 0 6px;
+    padding: calc(4px + env(safe-area-inset-top)) 10px 4px;
+  }
+  #crumbBack, #crumbFwd { display: none; } /* drawer + OS gesture cover it */
+  .mf-topbar-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; padding: 0;
+    background: none; border: none; cursor: pointer;
+    font-size: 20px; color: var(--base-70);
+  }
+  .mf-menu { grid-area: 1 / 1; }
+  .mf-search { grid-area: 1 / 3; }
+  .mf-add {
+    grid-area: 1 / 4;
+    background: var(--accent); color: #fff; border-radius: 22px; font-size: 22px;
+  }
+  /* title = the LAST crumb segment only, over the meta line */
+  .crumb-bar .crumb-path { grid-area: 1 / 2; font-size: 15px; }
+  .crumb-bar .crumb-path .crumb-seg:not(:last-child),
+  .crumb-bar .crumb-path .crumb-sep { display: none; }
+  .crumb-bar .crumb-right {
+    grid-area: 2 / 2 / 3 / 5; margin-left: 0; min-width: 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .crumb-bar .crumb-meta { font-size: 10.5px; }
+
+  /* ---- bottom sheets ---- */
+  .mf-sheet-wrap:not([hidden]) { display: block; }
+  .mf-sheet-scrim {
+    position: fixed; inset: 0; z-index: 69;
+    background: rgba(0, 0, 0, 0.34); touch-action: none;
+  }
+  .mf-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+    background: var(--base-00);
+    border-radius: 18px 18px 0 0;
+    border-top: 1px solid var(--base-30);
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.16);
+    padding: 8px 18px calc(30px + env(safe-area-inset-bottom));
+    animation: sheetUp 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+    max-height: 80dvh; display: flex; flex-direction: column;
+  }
+  .mf-sheet.no-anim { animation: none; }
+  .mf-sheet-handle {
+    width: 38px; height: 4px; border-radius: 2px; background: var(--base-30);
+    margin: 2px auto 12px; flex: none; cursor: pointer;
+    /* generous tap target without moving the visual */
+    box-shadow: 0 -14px 0 14px transparent;
+  }
+  .mf-sheet-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+  /* assignment tap-list (phone replacement for the inspector <select>) */
+  .mf-assign { display: flex; flex-direction: column; width: 100%; }
+  .mf-opt {
+    display: flex; align-items: center; gap: 10px;
+    min-height: 48px; padding: 0 2px; width: 100%;
+    background: none; border: none; border-bottom: 1px solid var(--base-20);
+    font-family: var(--sans); font-size: 15px; color: var(--base-80);
+    cursor: pointer; text-align: left;
+  }
+  .mf-opt:last-child { border-bottom: none; }
+  .mf-opt-dot { color: var(--base-30); font-size: 12px; flex: none; }
+  .mf-opt.on { color: var(--base-100); }
+  .mf-opt.on .mf-opt-dot { color: var(--accent); }
+
+  /* ---- cmdbar family (⌘K / castbar / t quick-add / ⌘/ raw) → sheets ----
+     They are all fixed inset:0 flex containers; re-anchoring the card to the
+     bottom converts them without touching their JS. */
+  .cmdbar { align-items: flex-end; }
+  .cmdbar .cmdbar-card, .cmdbar .rawbar-card {
+    margin: 0; width: 100%; max-width: 100%;
+    border-radius: 18px 18px 0 0;
+    border-top: 1px solid var(--base-30);
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.16);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+    animation: sheetUp 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .cmdbar .cmdbar-input { font-size: 19px; border-bottom: 2px solid var(--accent); }
+  .cmdbar .cmdbar-results { max-height: 46dvh; }
+  .cmdbar .rawbar-card { height: 88dvh; }
+  /* capture (t quick-add): touch-sized chips/selects, full-width commit */
+  #todoQuickAdd .tdo-qa-chips { overflow-x: auto; scrollbar-width: none; }
+  #todoQuickAdd .filter-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; }
+  #todoQuickAdd select.pp-in { min-height: 44px; width: 100%; font-size: 16px; }
+  #todoQuickAdd .pill.qa-add {
+    width: 100%; min-height: 44px; justify-content: center;
+    background: var(--accent); color: #fff; border-color: var(--accent);
+    font-size: 15px;
+  }
+
+  /* ---- toasts: above the home indicator, under nothing ---- */
+  .toast-host { left: 18px; right: 18px; bottom: calc(18px + env(safe-area-inset-bottom)); }
+  .toast-host .toast { max-width: none; }
+}
+
+/* ================= PHONE — per-surface shapes (Rev 4 phase B) ================= */
+@media (max-width: 860px) {
+
+  /* ---- shared touch metrics: chips scroll, never wrap; 44px chip targets ---- */
+  .feed-filters, .aion-chips, .tdo-qa-chips, #todosTabs {
+    display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
+    gap: 8px; align-items: center;
+  }
+  .filter-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; flex: none; }
+  /* batch-edit save bar + ranking are desktop-only (spec: stated, not broken) */
+  .dirty-bar { display: none; }
+
+  /* ---- DAY: touch scale ONLY — schedule geometry/connectors untouched ---- */
+  .trow { min-height: 52px; }
+  .focus-row { min-height: 52px; }
+  .slot { min-height: 52px; }
+
+  /* ---- TODOS: 44px check · 16px text over domain pill · age right; no drag ---- */
+  .tdo-handle { display: none; }
+  .tdo-row {
+    display: grid; grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center; row-gap: 2px; min-height: 52px; padding: 6px 4px;
+  }
+  .tdo-check { grid-row: 1 / 3; width: 40px; min-height: 44px; font-size: 16px; }
+  .tdo-text { grid-column: 2; grid-row: 1; font-size: 16px; }
+  .tdo-pill { grid-column: 2; grid-row: 2; justify-self: start; }
+  .tdo-right { grid-column: 3; grid-row: 1 / 3; margin-left: 0; }
+
+  /* ---- PROPERTIES rail → horizontal strip (views stay reachable) ---- */
+  .prop-shell { display: block; }
+  .prop-rail {
+    display: flex; width: auto; position: static; border-right: none;
+    border-bottom: 1px solid var(--base-25); padding: 4px 10px 10px;
+    gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center;
+  }
+  .prop-rail-group { flex-direction: row; flex: none; gap: 6px; align-items: center; }
+  .prop-rail-label { display: none; }
+  .prop-rail-foot { display: none; }
+  .prop-rail-item {
+    flex: none; width: auto; min-height: 40px; align-items: center;
+    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 14px;
+  }
+  /* all-properties table: address 16px over status · count · › */
+  .prop-cols { display: none; }
+  .prop-row {
+    grid-template-columns: minmax(0, 1fr) auto 14px;
+    align-items: center; row-gap: 0; min-height: 52px; padding: 8px;
+  }
+  .prop-addr { grid-column: 1; grid-row: 1; font-size: 16px; white-space: normal; }
+  .prop-status { grid-column: 1; grid-row: 2; }
+  .prop-count { grid-column: 2; grid-row: 1 / 3; }
+  .prop-row::after { content: "›"; grid-column: 3; grid-row: 1 / 3; color: var(--base-30); }
+  .prop-out-row { grid-template-columns: 16px minmax(0, 1fr) auto; min-height: 52px; }
+
+  /* ---- PROPERTY page: two equal money cells; ledger drops category ---- */
+  .pp3-strip { display: grid; grid-template-columns: 1fr 1fr; }
+  .pp3-cell-val { font-size: 24px; }
+  .pp3-todo { min-height: 48px; align-items: center; }
+  .pp3-ledger-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; row-gap: 0; min-height: 48px;
+  }
+  .pp3-ledger-row > :nth-child(1) { grid-column: 1; grid-row: 2; } /* date under vendor */
+  .pp3-ledger-row > :nth-child(2) { display: none; }               /* category drops */
+  .pp3-ledger-vendor { grid-column: 1; grid-row: 1; font-size: 13px; color: var(--base-100); }
+  .pp3-ledger-amt { grid-column: 2; grid-row: 1 / 3; }
+  .pp3-ledger-row .uw-x { display: none; } /* delete via desktop */
+
+  /* ---- FEED: cards in the 16px gutter; verdicts full-width side by side ---- */
+  .feed-card { border-radius: 6px; }
+  .feed-card .appr-actions { display: flex; gap: 8px; }
+  .feed-card .appr-actions .pill { flex: 1; min-height: 44px; justify-content: center; }
+
+  /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */
+  .cal-grid { grid-auto-rows: minmax(56px, auto); }
+  .cal-cell { display: block; padding: 8px 6px; }
+  .cal-day-num { display: block; margin-bottom: 4px; }
+  .cal-cell .cal-ev, .cal-cell .cal-ev.allday {
+    display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); padding: 0; margin: 0 3px 2px 0; overflow: hidden;
+  }
+  .cal-cell .cal-ev > * { display: none; }
+  .cal-cell .cal-ev:nth-of-type(n+4) { display: none; } /* ≤3 dots */
+  .cal-more { display: none; }
+  /* agenda sheet rows (mfCalAgenda) */
+  .mf-agenda-day { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); margin-bottom: 8px; }
+  .mf-agenda-ev { display: flex; align-items: baseline; gap: 10px; min-height: 44px; padding: 4px 0; border-bottom: 1px solid var(--base-20); }
+  .mf-agenda-time { font-family: var(--mono); font-size: 12px; color: var(--base-50); flex: none; min-width: 52px; }
+  .mf-agenda-title { font-family: var(--sans); font-size: 15px; min-width: 0; }
+  .mf-agenda-open { margin-top: 12px; width: 100%; min-height: 44px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-family: var(--mono); font-size: 12px; letter-spacing: 0.3px; cursor: pointer; }
+
+  /* ---- GOALS: area rail → chip strip; outline touch scale; UNTIL 2nd line ---- */
+  .go-shell { display: block; }
+  .go-rail {
+    display: flex; width: auto; position: static; border-right: none;
+    padding: 0 0 10px; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    align-items: center;
+  }
+  .go-rail-label { display: none; }
+  .go-rail-item {
+    flex: none; width: auto; min-height: 40px; align-items: center;
+    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 14px;
+  }
+  .go-rock-line { align-items: center; min-height: 44px; }
+  .go-until { flex-basis: 100%; align-self: flex-start; width: fit-content; margin-top: 2px; }
+  .go-stage { align-items: center; min-height: 44px; padding-left: 8px; }
+  .go-check { min-width: 36px; min-height: 44px; font-size: 15px; }
+
+  /* ---- AION: rows to touch scale; org rail → chips; registry tables stack ---- */
+  .aion-row { min-height: 52px; }
+  .aion-org { display: block; }
+  .aion-org-rail {
+    display: flex; width: auto; border-right: none; padding: 0 0 10px;
+    gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center;
+  }
+  .aion-org-label, .aion-org-file { display: none; }
+  .aion-org-item {
+    flex: none; width: auto; min-height: 40px; align-items: center;
+    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 14px;
+  }
+  /* registry rows: first two fields stacked, trailing action columns hidden;
+     the shared-grid header row makes no sense stacked — drop it */
+  .pp-cols[class*="cols-aion"] { display: none; }
+  .cols-aion-hiring, .cols-aion-refs, .cols-aion-people {
+    grid-template-columns: minmax(0, 1fr); align-items: start; min-height: 52px; row-gap: 1px;
+  }
+  .cols-aion-hiring > :nth-child(n+3), .cols-aion-refs > :nth-child(n+3),
+  .cols-aion-people > :nth-child(n+3) { display: none; }
+  /* RECONCILE rows keep their assign control: checkbox · item, assign below */
+  .cols-aion-rec { grid-template-columns: 24px minmax(0, 1fr); row-gap: 4px; min-height: 52px; }
+  .cols-aion-rec > :nth-child(3), .cols-aion-rec > :nth-child(5) { display: none; }
+  .cols-aion-rec > :nth-child(4) { grid-column: 2; }
+
+  /* ---- CONTACTS: name 16px over last-met; tap = the row ---- */
+  .contact-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; min-height: 52px; padding: 8px 4px;
+  }
+  .contact-name { font-size: 16px; }
+  .contact-row-right { align-items: flex-end; }
+
+  /* ---- SPIRITS: rituals = name over next fire · outcome; runs/charge = desktop ---- */
+  .ritual-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; row-gap: 0; min-height: 56px;
+  }
+  .ritual-cadence { display: none; }
+  .ritual-ceiling { display: none; }
+  .ritual-name { grid-column: 1; grid-row: 1; font-size: 14px; }
+  .ritual-next { grid-column: 1; grid-row: 2; font-size: 12px; color: var(--base-50); }
+  .ritual-outcome { grid-column: 2; grid-row: 1 / 3; }
+  .runs-list { display: none; }
+
+  /* ---- READING: title over author · rating right; year/date/sorts drop ---- */
+  .book-select { display: none; }
+  .book-head { display: none; }
+  .book-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; row-gap: 1px; min-height: 52px;
+  }
+  .bk-title { font-size: 16px; }
+  .bk-authors { grid-column: 1; grid-row: 2; }
+  .bk-rating { grid-column: 2; grid-row: 1 / 3; }
+  .bk-year, .bk-date { display: none; }
+}
+
+/* ================= TOUCH (any width) ================= */
+@media (hover: none) {
+  /* hover-revealed controls must be visible where hover doesn't exist */
+  .tdo-row .tdo-tether { opacity: 1; visibility: visible; }
+  .tdo-right .uw-x { visibility: visible; }
+  .focus-row.empty .focus-placeholder { opacity: 1; }
+}

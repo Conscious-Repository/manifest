@@ -261,7 +261,22 @@ function renderAionBacklog(host) {
     if (aionDoneOpen) doneTasks.forEach((it) => list.append(aionTaskRow(it)));
   }
 
-  renderAionInspector(insp, items);
+  // phone (Rev 4): the sticky inspector column is display:none — the same
+  // renderer fills a bottom sheet instead. Keyed open = re-fills in place on
+  // every renderAion() (field saves re-render) without re-animating.
+  if (window.mf && window.mf.phone()) {
+    if (aionSelId) {
+      window.mfSheet.open((b) => renderAionInspector(b, items), {
+        key: "aion",
+        onClose: () => { if (aionSelId) { aionSelId = null; renderAion(); } },
+        reopen: () => { if (!els.aionView.hidden) renderAion(); }, // desktop restore
+      });
+    } else {
+      window.mfSheet.closeIf("aion");
+    }
+  } else {
+    renderAionInspector(insp, items);
+  }
 }
 
 // statusChip per the color rules: IN PROGRESS = accent; alarmed OPEN = ink;

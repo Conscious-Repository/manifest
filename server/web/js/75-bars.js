@@ -402,6 +402,14 @@ async function openRawOverlay(explicitPath) {
   ui.area.value = d.raw || "";
   ui.save.disabled = !!d.readOnly;
   if (d.readOnly) ui.note.textContent = "read-only — engine-owned note";
+  // phone: the raw editor is a viewer (Rev 4 — batch text editing is
+  // desktop-only; a soft keyboard over a full-height textarea is a trap)
+  if (window.mf && window.mf.phone()) {
+    ui.area.readOnly = true;
+    ui.save.disabled = true;
+    ui.note.textContent = "read-only on mobile — open on desktop to edit";
+    return;
+  }
   ui.area.focus();
   ui.area.setSelectionRange(0, 0);
 }

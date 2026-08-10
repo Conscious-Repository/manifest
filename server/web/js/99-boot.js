@@ -232,7 +232,13 @@ function setRailCollapsed(on, persist) {
   if (persist) localStorage.setItem("manifest.rail.collapsed", on ? "1" : "0");
 }
 function railPref() { return localStorage.getItem("manifest.rail.collapsed") === "1"; }
-function applyRailWidth() { setRailCollapsed(window.innerWidth < 860 ? true : railPref(), false); }
+function applyRailWidth() {
+  // Phone band (Rev 4): the drawer CSS in 95-mobile.css owns the rail — the
+  // icon-strip collapsed mode must not be reachable there. matchMedia (not
+  // innerWidth) so JS agrees with CSS at exactly 860. ≥861 unchanged.
+  if (window.matchMedia("(max-width: 860px)").matches) { setRailCollapsed(false, false); return; }
+  setRailCollapsed(railPref(), false);
+}
 
 function route() {
   const h = normHash(location.hash);

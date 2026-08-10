@@ -499,9 +499,14 @@ function propTodoComposer(p) {
 
 // ---- the 280px assignment inspector (Rev 3's accountability half) ----
 function openPropInspector(p, t) {
-  const host = els.propInspector;
+  // phone (Rev 4): the sticky 280px column is display:none — the same builder
+  // fills a bottom sheet. Desktop path identical.
+  const phone = window.mf && window.mf.phone();
+  const host = phone
+    ? window.mfSheet.body("prop", closePropInspector, () => openPropInspector(p, t))
+    : els.propInspector;
   host.innerHTML = "";
-  host.hidden = false;
+  if (!phone) host.hidden = false;
   const head = el("div", "pp3-insp-head");
   head.append(el("span", "pp3-insp-label", "Inspector"));
   const x = el("button", "pp3-insp-x", "✕");
@@ -531,15 +536,31 @@ function openPropInspector(p, t) {
       : "Yours — it shows in TODOS under Real Estate.";
   };
   setNote();
-  sel.onchange = async () => {
+  const assign = async (owner) => {
     try {
-      await postJSONOk("/api/todos/update", { id: compositeId(p, t), owner: sel.value });
-      t.owner = sel.value;
+      await postJSONOk("/api/todos/update", { id: compositeId(p, t), owner });
+      t.owner = owner;
       setNote();
       renderProperties();
     } catch (e) { showToast("Couldn't assign"); }
   };
-  host.append(field("owner", sel));
+  sel.onchange = () => assign(sel.value);
+  if (phone) {
+    // Rev 4: a tap-list, not a <select> — 48px rows, ● on the current one.
+    const current = mineOwner(t.owner) ? "" : t.owner;
+    const list = el("div", "mf-assign");
+    const rowOpt = (v, l) => {
+      const r = el("button", "mf-opt" + (v === current ? " on" : ""));
+      r.append(el("span", "mf-opt-dot", v === current ? "●" : "○"), el("span", "", l));
+      r.onclick = () => assign(v).then(() => openPropInspector(p, t)); // re-fill in place (same key)
+      list.append(r);
+    };
+    rowOpt("", "you");
+    (a.realestate || []).forEach((c) => rowOpt(c.slug, c.name + (c.trade ? " (" + c.trade + ")" : "")));
+    host.append(field("owner", list));
+  } else {
+    host.append(field("owner", sel));
+  }
   host.append(field("property", el("span", "pp3-insp-val", p.short || p.address || p.slug)));
   if (t.added) host.append(field("added", el("span", "pp3-insp-val", t.added)));
   host.append(note);
@@ -548,6 +569,10 @@ function openPropInspector(p, t) {
 function closePropInspector() {
   propSelTodoId = null;
   if (els.propInspector) { els.propInspector.hidden = true; els.propInspector.innerHTML = ""; }
+  // phone: the ✕ inside the sheet routes here — close the sheet too. Safe both
+  // ways: mfSheet.close() nulls its state before invoking onClose, so the
+  // re-entrant call no-ops on closeIf.
+  if (window.mfSheet) window.mfSheet.closeIf("prop");
 }
 
 async function putJSON(url, body) {
