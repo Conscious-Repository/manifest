@@ -6,8 +6,34 @@ import (
 	"time"
 
 	"manifest/aion"
+	"manifest/daily"
 	"manifest/goals"
 )
+
+// syncAionTasks mirrors day-note ticks for aion-backed tasks (Task.TodoID
+// "aion:<id>") into the aion backlog: done → status done (stamps done_on +
+// the Rock's moved::), unticked → status open. The aion twin of syncTodoTasks.
+func (s *Server) syncAionTasks(tasks []daily.Task) {
+	if s.aion == nil {
+		return
+	}
+	now := time.Now()
+	for _, t := range tasks {
+		if !strings.HasPrefix(t.TodoID, "aion:") {
+			continue
+		}
+		id := strings.TrimPrefix(t.TodoID, "aion:")
+		status := aion.StatusOpen
+		if t.Done {
+			status = aion.StatusDone
+		}
+		if err := s.aion.UpdateItem(id, map[string]string{"status": status}, now); err == nil && t.Done {
+			if it := s.aion.LoadBacklog().Find(id); it != nil && it.Rock != "" {
+				s.stampRockMoved(it.Rock)
+			}
+		}
+	}
+}
 
 // UseAion wires the AION tab: the domain store over system/aion/ records,
 // the aionbio checkout coordinates (publish effector — path "" disables

@@ -141,7 +141,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/item", s.handleTodoAdd)
 	mux.HandleFunc("POST /api/todos/check", s.handleTodoCheck)
 	mux.HandleFunc("POST /api/todos/update", s.handleTodoUpdate)
-	mux.HandleFunc("POST /api/todos/rank", s.handleTodosRank)                 // unified drag-to-rank (stage 4)
+	mux.HandleFunc("POST /api/todos/rank", s.handleTodosRank)                      // unified drag-to-rank (stage 4)
 	mux.HandleFunc("GET /api/properties/migrate-todos", s.handlePropTodosMigrate)  // preview
 	mux.HandleFunc("POST /api/properties/migrate-todos", s.handlePropTodosMigrate) // commit
 	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)              // RE assignee registry
@@ -368,6 +368,7 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 		}
 		s.syncGoalTasks(body.Tasks) // §4: mirror goal-linked task ticks back into goals.md
 		s.syncTodoTasks(body.Tasks) // same contract for todo-linked ticks → to do.md
+		s.syncAionTasks(body.Tasks) // aion-backed ticks (TodoID "aion:<id>") → aion backlog
 		writeJSON(w, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -428,6 +429,26 @@ func (s *Server) fillPool(day *daily.Day) {
 			}
 		}
 	}
+	// AION open tasks are backlog items, not to-do.md todos — offer mine here too
+	// so a captured aion task is pull-able onto later days like any substrate item.
+	if s.aion != nil {
+		for _, it := range s.aion.LoadBacklog().Items() {
+			if it.Kind != aion.KindTask || it.Checked || !s.isMine(it.Owner) {
+				continue
+			}
+			if it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "" {
+				continue
+			}
+			tier := 3
+			switch {
+			case it.Rock != "" && focusedRocks[it.Rock]:
+				tier = 1
+			case focusedAreas["aion"]:
+				tier = 2
+			}
+			day.Pool = append(day.Pool, daily.PoolItem{TodoID: "aion:" + it.ID, Text: it.Text, Area: "Aion", Tier: tier})
+		}
+	}
 	sort.SliceStable(day.Pool, func(i, j int) bool { return day.Pool[i].Tier < day.Pool[j].Tier })
 }
 
@@ -449,6 +470,15 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	}
 	var task daily.Task
 	switch {
+	case strings.HasPrefix(b.TodoID, "aion:") && s.aion != nil:
+		// an aion backlog pick: seat with the `aion:<id>` backlink (syncAionTasks
+		// mirrors ticks back to the backlog). No promote — the id is content-stable.
+		it := s.aion.LoadBacklog().Find(strings.TrimPrefix(b.TodoID, "aion:"))
+		if it == nil {
+			http.Error(w, "aion task not found", http.StatusNotFound)
+			return
+		}
+		task = daily.Task{Text: it.Text, TodoID: b.TodoID}
 	case b.TodoID != "" && s.todosStore != nil:
 		// a todos-board pick: pin the durable [todo:: id] so the backlink
 		// survives rewording (goals Promote contract)
@@ -511,8 +541,19 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	text := strings.Join(strings.Fields(b.Text), " ")
-	if rockID == "" || text == "" || s.todosStore == nil {
+	if rockID == "" || text == "" {
 		httpError(w, errBadRequest("rockId and text are required"))
+		return
+	}
+	// AION captures land in the aion backlog (system/aion/backlog.md), not the
+	// personal todos board — so they project onto Todos/Goals AND ride the
+	// aionbio portal publish diff like any other backlog item.
+	if s.aion != nil && strings.HasPrefix(rockID, "aion/") {
+		s.captureAionBacklog(w, date, rockID, text)
+		return
+	}
+	if s.todosStore == nil {
+		httpError(w, errBadRequest("todos unavailable"))
 		return
 	}
 	// task-substrate: a day-typed task under a focus slot becomes a
@@ -570,6 +611,54 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	if !seated {
 		day, err = s.svc.AddTask(date, daily.Task{Text: text, TodoID: todo.ID})
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	s.fillPool(&day)
+	writeJSON(w, day)
+}
+
+// captureAionBacklog is the AION arm of day-capture: a free-typed task under an
+// aion focus slot becomes an aion backlog task ([kind:: task] [rock::], status
+// open), seated on the day with an `aion:<id>` backlink so ticks sync both ways
+// (syncAionTasks) and it rides the portal publish diff. Idempotent: the same
+// title reuses the existing item (aion ItemID = sha1(kind|title)), relinking the
+// rock if the existing copy sits under a different or blank one.
+func (s *Server) captureAionBacklog(w http.ResponseWriter, date, rockID, text string) {
+	now := time.Now()
+	it := &aion.BacklogItem{
+		Kind: aion.KindTask, Text: text, Rock: rockID,
+		Owner: s.ownerInitials, Status: aion.StatusOpen, Captured: now.Format("2006-01-02"),
+	}
+	if err := s.aion.AddItem(it); err != nil {
+		existing := s.aion.LoadBacklog().Find(aion.ItemID(aion.KindTask, text))
+		if existing == nil {
+			httpError(w, err)
+			return
+		}
+		it.ID = existing.ID
+		if existing.Rock != rockID {
+			_ = s.aion.UpdateItem(it.ID, map[string]string{"rock": rockID}, now)
+		}
+	}
+	s.stampRockMoved(rockID) // capture is movement
+	ref := "aion:" + it.ID
+	day, err := s.svc.Load(date)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	seated := false
+	for _, t := range day.Tasks {
+		if t.TodoID == ref {
+			seated = true
+			break
+		}
+	}
+	if !seated {
+		day, err = s.svc.AddTask(date, daily.Task{Text: text, TodoID: ref})
 		if err != nil {
 			httpError(w, err)
 			return

@@ -139,6 +139,12 @@ function rockTodos(rockId) {
     scan(dm.todos);
     (dm.buckets || []).forEach((bk) => scan(bk.todos));
   });
+  // AION tasks live in the aion backlog, not the to-do.md domains — they arrive
+  // in the unified projection rows (source "aion", open only). Surface them under
+  // their rock too, so a day-captured aion task shows here like any other.
+  ((todosCache && todosCache.rows) || []).forEach((t) => {
+    if (t.source === "aion" && t.rock === rockId) out.push(t);
+  });
   out.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
   return out;
 }

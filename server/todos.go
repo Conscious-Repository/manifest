@@ -499,7 +499,9 @@ func (s *Server) syncTodoTasks(tasks []daily.Task) {
 	}
 	updates := map[string]bool{}
 	for _, t := range tasks {
-		if t.TodoID != "" {
+		// aion-backed ticks route through syncAionTasks, not the to-do.md store —
+		// leaving them here would flag every one as a "missed" approval nudge
+		if t.TodoID != "" && !strings.HasPrefix(t.TodoID, "aion:") {
 			updates[t.TodoID] = t.Done
 		}
 	}
