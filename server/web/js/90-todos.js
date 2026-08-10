@@ -7,6 +7,9 @@
 let todosCache = null;
 let todosTab = "focus"; // focus | aion | realestate | personal
 let todosQuiet = {};    // ideas / done expanded
+// the regret window: a row checked this session stays IN PLACE, struck and
+// unmarkable, instead of vanishing into the quiet Done row. id → {row, idx}
+let todosFreshDone = {};
 
 async function loadTodos() {
   try { todosCache = await (await fetch("/api/todos")).json(); }
@@ -72,16 +75,22 @@ function renderTodos() {
     host.append(lane);
   }
 
-  // 2. the ranked list
+  // 2. the ranked list (+ this session's freshly-done rows held in place)
   const rows = todosCache.rows || [];
-  const visible = todosTab === "focus" ? rows : rows.filter((r) => tabOf(r) === todosTab);
+  const liveIds = new Set(rows.map((r) => r.id));
+  Object.keys(todosFreshDone).forEach((id) => { if (liveIds.has(id)) delete todosFreshDone[id]; }); // unmarked → live again
+  let visible = todosTab === "focus" ? rows.slice() : rows.filter((r) => tabOf(r) === todosTab);
+  Object.values(todosFreshDone).forEach(({ row, idx }) => {
+    if (todosTab !== "focus" && tabOf(row) !== todosTab) return;
+    visible.splice(Math.min(idx, visible.length), 0, { ...row, _freshDone: true });
+  });
   const sec = el("div", "tdo-main");
   const head = el("div", "tdo-sec-label");
   head.append(el("span", "tdo-sec-title", "Everything you've committed to"),
     el("span", "tdo-sec-count", String(visible.length)),
     el("span", "tdo-sec-hint", "⇅ drag to rank"));
   sec.append(head);
-  visible.forEach((r) => sec.append(rankedRow(r, visible)));
+  visible.forEach((r, i) => sec.append(rankedRow(r, i)));
   if (!visible.length) sec.append(el("div", "pp-empty", "Nothing here — press t anywhere to capture."));
   const capture = el("button", "tdo-capture", "＋ capture · t");
   capture.onclick = () => openTodoQuickAdd();
@@ -94,9 +103,10 @@ function renderTodos() {
     ideas.push({ domain: dom.name, line: ln })));
   const dones = [];
   (todosCache.domains || []).forEach((dom) => {
-    (dom.todos || []).forEach((t) => { if (t.state === "done") dones.push({ t, domain: dom.name }); });
+    // freshly-done rows are still standing in the list above — no double entry
+    (dom.todos || []).forEach((t) => { if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name }); });
     (dom.buckets || []).forEach((bk) => (bk.todos || []).forEach((t) => {
-      if (t.state === "done") dones.push({ t, domain: dom.name });
+      if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name });
     }));
   });
   const quiet = el("div", "tdo-quiet-row");
@@ -163,9 +173,18 @@ function decisionRow(is, domain) {
 }
 
 // rankedRow — handle · checkbox · text · container · age. Thin by decree
-// (Rev 2): no rock tags, no waiting chips; stale = weight + ● only.
+// (Rev 2): no rock tags, no waiting chips; stale = weight + ● only. A row
+// checked this session renders in place, struck, with ✓ to unmark.
 let _dragId = null;
-function rankedRow(r, visible) {
+function rankedRow(r, idx) {
+  if (r._freshDone) {
+    const row = el("div", "tdo-row done");
+    const check = el("button", "tdo-check on", "✓");
+    check.title = "unmark — back to open";
+    check.onclick = () => { todosApi("/api/todos/check", { id: r.id, checked: false }); };
+    row.append(el("span", "tdo-handle", ""), check, el("span", "tdo-text", r.text), containerPill(r.container.name));
+    return row;
+  }
   const stale = r.ageDays >= 14;
   const row = el("div", "tdo-row" + (stale ? " stale" : ""));
   row.dataset.id = r.id;
@@ -196,8 +215,11 @@ function rankedRow(r, visible) {
   row.append(handle);
 
   const check = el("button", "tdo-check", "○");
-  check.title = "done";
-  check.onclick = () => todosApi("/api/todos/check", { id: r.id, checked: true });
+  check.title = "done (stays here to unmark)";
+  check.onclick = () => {
+    todosFreshDone[r.id] = { row: r, idx }; // hold it in place for the regret window
+    todosApi("/api/todos/check", { id: r.id, checked: true });
+  };
   row.append(check);
 
   const label = el("span", "tdo-text", r.text);

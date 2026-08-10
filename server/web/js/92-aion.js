@@ -9,6 +9,7 @@ let aionSelId = null;     // inspector selection (redesign §4 — replaces the 
 let aionOrgSel = "people"; // org registry rail selection
 let aionDoneOpen = false;    // backlog: done-tasks section expanded
 let aionDecidedOpen = false; // backlog: decided-decisions log expanded
+let aionFreshDone = new Set(); // tasks checked this session — held in place until PUBLISH
 let aionExpanded = {}; // heuristic id → sources expanded
 
 function showAion(h) {
@@ -151,6 +152,7 @@ async function openAionPublishPanel() {
         showToast("Publish failed at " + (res.stage || "?") + (res.commit ? " (commit " + res.commit.slice(0, 7) + " kept locally)" : ""));
       } else {
         showToast("Published " + (res.commit || "").slice(0, 7) + " → " + ((aionCache.publish || {}).remote || "origin"));
+        aionFreshDone.clear(); // publish is the flush point — done tasks may now collapse
       }
       close();
       loadAion();
@@ -200,26 +202,44 @@ function renderAionBacklog(host) {
   list.append(lane);
 
   // -- tasks, grouped by owner (open count desc) --
+  // A task marked done stays IN PLACE — struck through, one click to unmark —
+  // until PUBLISH ships it (owner call 2026-08-09: an accidental check must be
+  // reversible where it happened, never vanish). "Fresh" = checked this
+  // session, or done on/after the last publish while the backlog is dirty.
   const tasks = items.filter((it) => it.kind === "task");
   const openTasks = tasks.filter((it) => it.status !== "done");
-  const doneTasks = tasks.filter((it) => it.status === "done");
+  const pub = aionCache.publish || {};
+  // LOCAL date of the last publish — doneOn is a local date, and slicing the
+  // UTC timestamp shifts an evening publish into tomorrow (hiding today's
+  // checks — the exact regret window this exists for)
+  let lastPubDate = "";
+  if (pub.lastPublished) {
+    const d = new Date(pub.lastPublished);
+    if (!isNaN(d)) lastPubDate = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  const backlogDirty = !!(pub.dirty || {}).backlog;
+  const freshDone = (it) => aionFreshDone.has(it.id) ||
+    (backlogDirty && lastPubDate && it.doneOn && it.doneOn >= lastPubDate);
+  const doneInPlace = tasks.filter((it) => it.status === "done" && freshDone(it));
+  const doneTasks = tasks.filter((it) => it.status === "done" && !freshDone(it));
   const people = {};
   (aionCache.people || []).forEach((p) => { people[p.initials] = p.name || ""; });
   const groups = {};
   const order = [];
-  openTasks.forEach((it) => {
+  openTasks.concat(doneInPlace).forEach((it) => {
     const key = (it.owner || "").toUpperCase() || "—";
     if (!groups[key]) { groups[key] = []; order.push(key); }
     groups[key].push(it);
   });
-  order.sort((a, b) => groups[b].length - groups[a].length);
+  const openCount = (key) => groups[key].filter((it) => it.status !== "done").length;
+  order.sort((a, b) => openCount(b) - openCount(a));
   order.forEach((key) => {
     const g = el("div", "aion-owner-group");
     const gh = el("div", "aion-owner-head");
     gh.append(el("span", "aion-owner-ini", key === "—" ? "UNASSIGNED" : key));
     const full = key.split("/").map((k) => people[k] || "").filter(Boolean).join(" · ");
     if (full) gh.append(el("span", "aion-owner-name", full));
-    gh.append(el("span", "aion-sec-count", String(groups[key].length)));
+    gh.append(el("span", "aion-sec-count", String(openCount(key))));
     g.append(gh);
     groups[key].forEach((it) => g.append(aionTaskRow(it)));
     if (key !== "—") {
@@ -289,9 +309,11 @@ function aionTaskRow(it) {
   const alarmed = aionAlarmed(it);
   const row = el("div", "aion-task-row" + (done ? " done" : "") + (alarmed ? " alarm" : "") + (aionSelId === it.id ? " sel" : ""));
   const c = el("button", "aion-check" + (done ? " off" : ""), done ? "●" : "○");
-  c.title = done ? "reopen" : "mark done";
+  c.title = done ? "unmark — this stays in place until PUBLISH" : "mark done (stays here, unmarkable, until PUBLISH)";
   c.onclick = (e) => {
     e.stopPropagation();
+    if (done) aionFreshDone.delete(it.id);
+    else aionFreshDone.add(it.id); // hold it in place for the regret window
     aionPost("/api/aion/backlog/" + it.id + "/update", { status: done ? "open" : "done" });
   };
   row.append(c);
