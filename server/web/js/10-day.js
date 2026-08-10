@@ -19,7 +19,8 @@ const MONTHS_FULL = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","A
 
 function renderDay() {
   const day = state.day;
-  renderPrep(day);
+  // (the "pull from your todos" prep banner is retired — owner call 2026-08-09:
+  // planning a day goes through the GOALS / MILESTONES / TASKS pickers only)
   if (day.schedule.length) {
     els.scheduleRange.textContent =
       `${hourLabel(Math.floor(slotMin(day.schedule[0].time) / 60))}–` +
@@ -148,15 +149,22 @@ async function setMilestone(slot, milestoneId) {
   renderDay();
 }
 
-// Open the goal picker for a focus slot: all owner==me, open Rocks by area. The
-// picked Rock resolves to its current stage + tasks (goalsadapter).
+// Open the goal picker for a focus slot: all MY open Rocks by area. "Mine"
+// matches the unified-substrate rule (empty · "me" · contains my initials) —
+// the aion linkage sweep stamps real initials (BA) on rock owners, so a
+// strict owner=="me" check silently dropped every Aion rock.
+function rockOwnerIsMe(owner) {
+  if (!owner || owner === "me") return true;
+  const me = ((typeof todosCache !== "undefined" && todosCache && todosCache.me) || "BA").toUpperCase();
+  return owner.toUpperCase().split("/").map((s) => s.trim()).includes(me);
+}
 async function openGoalPicker(slot) {
   const doc = await (await fetch("/api/goals")).json();
   const groups = (doc.areas || [])
     .map((a) => ({
       area: a.name,
       items: (a.rocks || [])
-        .filter((g) => !g.checked && g.owner === "me")
+        .filter((g) => !g.checked && rockOwnerIsMe(g.owner))
         .map((g) => ({ id: g.id, text: g.text })),
     }))
     .filter((grp) => grp.items.length);
@@ -231,46 +239,10 @@ function renderReadonly(container, items, emptyHint) {
   });
 }
 
-// Prep banner: on an unplanned future day, offer the 30-day owner==me pool as
-// click-to-add chips. Hidden on planned days and on today/past.
-function renderPrep(day) {
-  els.prepBanner.innerHTML = "";
-  if (!day.unplanned || !(day.pool && day.pool.length)) {
-    els.prepBanner.hidden = true;
-    return;
-  }
-  els.prepBanner.hidden = false;
-  const head = document.createElement("div");
-  head.className = "prep-head";
-  head.textContent = `Planning ${prettyDate(day.date)} — pull from your todos:`;
-  const chips = document.createElement("div");
-  chips.className = "pool-chips";
-  const mk = (it) => {
-    const chip = document.createElement("button");
-    chip.className = "pool-chip";
-    chip.title = `Add “${it.text}” to ${day.date}`;
-    const area = document.createElement("span");
-    area.className = "pool-area";
-    area.textContent = it.area + (it.tier === 1 ? " ⧗" : "");
-    chip.append(area, document.createTextNode(" " + it.text));
-    chip.addEventListener("click", () => (it.todoId ? pullTodo(it.todoId) : pullGoal(it.goalId)));
-    return chip;
-  };
-  const near = day.pool.filter((it) => (it.tier || 3) < 3);
-  const far = day.pool.filter((it) => (it.tier || 3) === 3);
-  (near.length ? near : far).forEach((it) => chips.appendChild(mk(it)));
-  if (near.length && far.length) {
-    const reveal = document.createElement("button");
-    reveal.className = "pool-chip pool-reveal";
-    reveal.textContent = `all domains · ${far.length} more`;
-    reveal.onclick = () => {
-      reveal.remove();
-      far.forEach((it) => chips.appendChild(mk(it)));
-    };
-    chips.appendChild(reveal);
-  }
-  els.prepBanner.append(head, chips);
-}
+// (renderPrep deleted 2026-08-09 — the unplanned-day "pull from your todos"
+// chip pool became a 30-chip wall once the unified projection landed. The
+// GOALS / MILESTONES / TASKS pickers are the planning surface; #prepBanner
+// stays hidden.)
 
 // captureTask (goals-orient): free-typed day task → appended into goals.md under
 // the focus slot's stage with a durable [goal:: id], seated on the day linked.
