@@ -43,6 +43,10 @@ function attachInlineLinks(input) {
     overlay.style.width = input.offsetWidth + "px";
     overlay.style.height = input.offsetHeight + "px";
     overlay.style.lineHeight = input.offsetHeight + "px"; // vertically center the single line
+    // the input's own text-decoration doesn't reach the overlay — mirror the
+    // done (line-through) state so a completed task with a [[wikilink]] still
+    // reads as struck through, matching a plain done task
+    overlay.classList.toggle("done", input.classList.contains("done"));
     overlay.style.display = "block";
     input.classList.add("inline-hidden");
   }
