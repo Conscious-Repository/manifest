@@ -197,6 +197,10 @@ func (s *Server) unifiedView(doc *todos.Doc) map[string]any {
 		"counts":      map[string]int{"todos": len(mine), "outstanding": outstandingTotal},
 		"assignees":   s.assigneeLists(),
 		"containers":  s.containerList(doc),
+		// delegation state keyed by todo id — so a DONE todo (absent from the
+		// open rows) can still show its "view result" chip (Phase 6 result
+		// visibility, owner ask 2026-08-11)
+		"delegations": s.delegationIndex(),
 	}
 }
 

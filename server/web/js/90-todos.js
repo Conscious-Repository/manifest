@@ -145,6 +145,8 @@ function renderTodos() {
       check.title = "reopen";
       check.onclick = () => todosApi("/api/todos/check", { id: t.id, checked: false });
       row.append(check, el("span", "tdo-text", t.text), containerPill(domain));
+      const dg = delegationFor(t.id); // a completed delegated todo keeps its result link
+      if (dg) row.append(delegationChip(dg));
       box.append(row);
     });
     host.append(box);
@@ -267,19 +269,10 @@ function rankedRow(r, idx) {
       (p) => todosApi("/api/todos/update", { id: r.id, rock: p.rock, stage: p.stage }));
     right.append(teth);
   }
-  // ⇢ delegate (Phase 6) — dispatch this todo to a harness; the chip below
-  // tracks the work order through the trace files.
+  // ⇢ delegate (Phase 6) — dispatch this todo to a harness; the chip tracks
+  // the work order through the trace files (and stays clickable when done).
   if (r.delegation) {
-    const d = r.delegation;
-    const chip = el("button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
-    chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
-      : d.runId ? "view the run report" : "delegated work — click for the runs board";
-    chip.onclick = () => {
-      if (d.state === "proposed") { location.hash = "#/feed"; return; }
-      if (d.runId) { openRunModal(d.runId); return; }
-      location.hash = "#/spirits";
-    };
-    right.append(chip);
+    right.append(delegationChip(r.delegation));
   } else {
     const dg = el("button", "uw-x tdo-delegate", "⇢");
     dg.title = "delegate to a harness…";
@@ -323,6 +316,29 @@ function commitRank(draggedId, targetId) {
 }
 
 // ---- the tether picker: one typeahead over every open rock and stage ----
+// delegationChip: one shared chip for a delegation state, clickable everywhere
+// (open rows, done rows, board cards). done/failed with a runId opens the run
+// report in place; proposed routes to the FEED inbox; queued/running → Spirits.
+function delegationChip(d, asSpan) {
+  const chip = el(asSpan ? "span" : "button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
+  chip.style.cursor = "pointer";
+  chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
+    : d.runId ? "view the result (run report)" : "delegated work — click for the runs board";
+  chip.onclick = (e) => {
+    e.stopPropagation();
+    if (d.state === "proposed") { location.hash = "#/feed"; return; }
+    if (d.runId) { openRunModal(d.runId); return; }
+    location.hash = "#/spirits";
+  };
+  return chip;
+}
+
+// delegationFor: look up a todo id's delegation state (for DONE rows/cards that
+// aren't in the open-rows projection).
+function delegationFor(id) {
+  return (todosCache && todosCache.delegations && todosCache.delegations[id]) || null;
+}
+
 // openDelegatePicker (Phase 6): pick a dispatch target (harness · on-demand
 // ritual), then an optional brief; POST /api/todos/delegate spools the work
 // order and stamps [waiting::]. The chip appears on the next render from the
@@ -474,18 +490,9 @@ function boardCard(r, colKey) {
   const meta = el("div", "tdo-card-meta");
   meta.append(el("span", "", r.container && r.container.name || ""));
   if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));
-  if (r.delegation) {
-    const d = r.delegation;
-    const chip = el("span", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
-    chip.style.cursor = "pointer";
-    chip.onclick = (e) => {
-      e.stopPropagation();
-      if (d.state === "proposed") { location.hash = "#/feed"; return; }
-      if (d.runId) { openRunModal(d.runId); return; }
-      location.hash = "#/spirits";
-    };
-    meta.append(chip);
-  }
+  // delegation: inline for open cards, looked up by id for the Done column
+  const dg = r.delegation || delegationFor(r.id);
+  if (dg) meta.append(delegationChip(dg, true));
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
   card.append(meta);
   return card;
