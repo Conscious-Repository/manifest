@@ -65,6 +65,7 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	rows = append(rows, s.calendarPortalRow())
 	rows = append(rows, s.gmailPortalRow())
 	rows = append(rows, s.heypocketPortalRow())
+	rows = append(rows, s.deepseekPortalRow()) // the testable lab conduit (Phase 5a)
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())
 	rows = append(rows, dormant...) // docusign at the bottom
@@ -157,6 +158,9 @@ func (s *Server) llmPortalRows() []panelRow {
 	sort.Strings(ids)
 	rows := make([]panelRow, 0, len(ids))
 	for _, id := range ids {
+		if id == deepseekID {
+			continue // has its own testable row — don't duplicate as "via engine"
+		}
 		rows = append(rows, panelRow{
 			ID: id, Name: id, Kind: "llm", State: "open", Masked: "engine", Note: "via engine",
 		})
@@ -178,6 +182,10 @@ func (s *Server) portalService(w http.ResponseWriter) (*portals.Service, bool) {
 func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("id") == heypocketID {
 		s.handleHeypocketKey(w, r)
+		return
+	}
+	if r.PathValue("id") == deepseekID {
+		s.handleDeepseekKey(w, r)
 		return
 	}
 	svc, ok := s.portalService(w)
@@ -206,6 +214,10 @@ func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
 		s.handleHeypocketTest(w, r)
 		return
 	}
+	if r.PathValue("id") == deepseekID {
+		s.handleDeepseekTest(w, r)
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return
@@ -226,6 +238,10 @@ func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, s.heypocketPortalRow())
 		return
 	}
+	if r.PathValue("id") == deepseekID {
+		s.handleDeepseekTest(w, r) // "poll" = the same health check
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return
@@ -241,6 +257,10 @@ func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePortalDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("id") == deepseekID {
+		s.handleDeepseekDisconnect(w, r)
+		return
+	}
 	if r.PathValue("id") == heypocketID {
 		s.handleHeypocketDisconnect(w, r)
 		return
