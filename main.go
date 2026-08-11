@@ -24,6 +24,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
+	"manifest/gmailauth"
 	"manifest/goals"
 	"manifest/portals"
 	"manifest/reading"
@@ -219,10 +220,19 @@ func main() {
 	dc := dailyConfig(cfg)
 	dc.Write = vw.BindAbs("daily")
 	svc := daily.NewService(dc, idx)
-	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore))
+	// aion store constructed early: the focus resolver offers a rock's open
+	// aion backlog tasks alongside its to-do.md tethers (day task picker).
+	aionRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion"))
+	aionStore := aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion"))
+	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore, aionStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
+	// Gmail read-only OAuth — manifest mints/validates the token the headless
+	// excalibur engine reads for the ea-coordinator waiting-on digest, and
+	// raises a FEED reconnect nudge when the sign-in expires.
+	gmailClient := gmailauth.New()
+	srv.UseGmail(gmailClient)
 	srv.UseOwner(orDefault(cfg.OwnerInitials, "BA")) // "me" in the unified todo projection
 	// ERRANDS — the action layer (errands-aside plan): records + transcripts
 	// under <dataDir>/errands/ (never the vault); the aside CLI is the hands.
@@ -279,8 +289,6 @@ func main() {
 	// Seven corpora seeded write-once (valid of shape, empty of content —
 	// except the owner-authored people roster); every write flows through the
 	// "aion" capability.
-	aionRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion"))
-	aionStore := aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion"))
 	for _, name := range aion.Files {
 		if rel, err := vw.CreateRecord(aionRoot+"/"+name, aion.SeedFiles[name]); err == nil && vix != nil {
 			_ = vix.ReindexPaths([]string{rel})
@@ -301,6 +309,7 @@ func main() {
 		}
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
 		emitters = append(emitters, signals.StaleTodos(todosStore))
+		emitters = append(emitters, signals.GmailReauth(gmailClient)) // "reconnect Gmail" nudge
 		if reSvc != nil {
 			// property signals: over-budget category, stalled rehab, nothing-queued-next
 			emitters = append(emitters, signals.OverBudgetProperties(reSvc),

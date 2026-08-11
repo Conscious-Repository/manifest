@@ -809,10 +809,13 @@ async function showGoalsHistory() {
 }
 
 // ---- reusable picker modal ----
-function openPicker(title, groups, onPick, emptyHint) {
+// openPicker(title, groups, onPick, emptyHint, create?) — create is an optional
+// {placeholder, onCreate} that appends a free-text row at the picker's foot:
+// pick an existing item OR type a new one (the day task picker uses this).
+function openPicker(title, groups, onPick, emptyHint, create) {
   els.pickerTitle.textContent = title;
   els.pickerBody.innerHTML = "";
-  if (!groups || !groups.length) {
+  if (!groups || !groups.length || groups.every((g) => !(g.items || []).length)) {
     const e = document.createElement("div");
     e.className = "ro-row empty";
     e.textContent = emptyHint || "Nothing to pick.";
@@ -834,6 +837,23 @@ function openPicker(title, groups, onPick, emptyHint) {
         els.pickerBody.appendChild(opt);
       });
     });
+  }
+  if (create) {
+    const wrap = el("div", "picker-create");
+    const input = inputEl(create.placeholder || "new…");
+    input.className = "picker-create-in";
+    const go = () => {
+      const v = input.value.trim();
+      if (!v) return;
+      closePicker();
+      create.onCreate(v);
+    };
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    const btn = el("button", "picker-create-go", "add ↵");
+    btn.onclick = go;
+    wrap.append(el("span", "picker-create-glyph", "＋"), input, btn);
+    els.pickerBody.appendChild(wrap);
+    setTimeout(() => input.focus(), 0);
   }
   els.pickerModal.hidden = false;
 }

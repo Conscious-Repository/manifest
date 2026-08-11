@@ -238,6 +238,29 @@ function renderReadonly(container, items, emptyHint) {
 // GOALS / MILESTONES / TASKS pickers are the planning surface; #prepBanner
 // stays hidden.)
 
+// openTaskPicker — the task box's picker (goals-orient v2): task row i draws
+// from focus slot i's rock (1↔1↔1 column alignment). Options = the rock's open
+// substrate tasks (to-do.md tethers + my aion backlog tasks) not already seated
+// today; the foot row types a NEW task, captured under the slot's milestone.
+function openTaskPicker(pick, stageId) {
+  const existing = new Set(((state.day && state.day.tasks) || [])
+    .map((t) => t.todoId || t.goalId).filter(Boolean));
+  const byId = new Map(); // id → {todo: bool} — route pull by link kind
+  const items = (pick.tasks || [])
+    .filter((t) => !existing.has(t.todoId || t.goalId))
+    .map((t) => {
+      const id = t.todoId || t.goalId;
+      byId.set(id, !!t.todoId);
+      return { id, text: t.text };
+    });
+  const msLabel = pick.milestone ? pick.milestone.text : "";
+  openPicker("Pick a task", [{ area: pick.text + (msLabel ? " · " + msLabel : ""), items }],
+    (id) => { byId.get(id) ? pullTodo(id) : pullGoal(id); },
+    "No open tasks under this rock yet — type one below.",
+    { placeholder: "new task under " + (msLabel || pick.text) + "…",
+      onCreate: (txt) => captureTask(stageId, txt) });
+}
+
 // captureTask (goals-orient): free-typed day task → appended into goals.md under
 // the focus slot's stage with a durable [goal:: id], seated on the day linked.
 async function captureTask(stageId, text) {
@@ -509,6 +532,7 @@ function addTaskRow(task, num, pick) {
   const input = document.createElement("input");
   input.className = "ttext" + (task.done ? " done" : "");
   input.value = task.text || "";
+  if (empty && stageId) input.placeholder = "pick ＋ or type a task…";
   attachWikilinkAutocomplete(input); // [[name]] autocomplete inline in task entries
   attachInlineLinks(input);          // [[name]] live-preview + click-to-open
   const remove = document.createElement("button");
@@ -522,15 +546,24 @@ function addTaskRow(task, num, pick) {
   cell.className = "check-cell";
   const check = document.createElement("button");
   check.className = "check" + (task.done ? " on" : "");
-  // ✓ when done, ○ when the row has text, blank when empty (matches the reference).
-  const sym = () => (input.classList.contains("done") ? "✓" : input.value.trim() ? "○" : "");
+  // ✓ when done, ○ when the row has text, ＋ on an empty gated row (click →
+  // the per-slot task picker), blank otherwise.
+  const sym = () => (input.classList.contains("done") ? "✓"
+    : input.value.trim() ? "○"
+    : (empty && stageId ? "＋" : ""));
   // Keep the row's filled state (drives the ✕ affordance) and check glyph in sync.
   const refresh = () => {
     row.classList.toggle("filled", input.value.trim() !== "");
+    check.classList.toggle("pick", !input.value.trim() && empty && !!stageId);
     check.textContent = sym();
   };
   check.addEventListener("click", () => {
-    if (!input.value.trim()) return; // can't complete an empty row
+    if (!input.value.trim()) {
+      // empty gated row: the box opens the slot's task picker — existing
+      // substrate tasks under this rock, or type a new one (goals-orient ask)
+      if (empty && stageId) openTaskPicker(pick, stageId);
+      return;
+    }
     const done = !input.classList.contains("done");
     input.classList.toggle("done", done);
     check.classList.toggle("on", done);

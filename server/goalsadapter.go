@@ -1,6 +1,9 @@
 package server
 
 import (
+	"strings"
+
+	"manifest/aion"
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/todos"
@@ -9,16 +12,19 @@ import (
 // goalsAdapter bridges the goals store to daily.GoalsProvider, resolving a picked
 // Rock slug into its text, its stages (to choose among), the selected stage
 // (defaulting to the current stage — the first unchecked one), and the Rock's
-// open tethered todos from the TASK SUBSTRATE (to do.md) — goals.md holds no
-// tasks (task-substrate split).
+// open tasks from the TASK SUBSTRATE — to-do.md tethers, plus (for aion/ rocks)
+// the owner's open aion backlog tasks — goals.md holds no tasks (task-substrate
+// split).
 type goalsAdapter struct {
 	store *goals.Store
 	todos *todos.Store // nilable
+	aion  *aion.Store  // nilable — aion/ rocks offer backlog tasks
+	owner string       // initials that mean "me" (aion tasks are owner-filtered)
 }
 
 // NewGoalsAdapter wires the goals store into the daily service's Focus resolution.
-func NewGoalsAdapter(store *goals.Store, td *todos.Store) daily.GoalsProvider {
-	return goalsAdapter{store, td}
+func NewGoalsAdapter(store *goals.Store, td *todos.Store, ai *aion.Store, owner string) daily.GoalsProvider {
+	return goalsAdapter{store, td, ai, owner}
 }
 
 func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolution, bool) {
@@ -63,5 +69,36 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 			}
 		}
 	}
+	// aion/ rocks: their tasks live in the aion backlog, not to-do.md — offer
+	// MY open backlog tasks under this rock (aion:<id> pulls/syncs like a todo).
+	if a.aion != nil && strings.HasPrefix(g.ID, "aion/") {
+		for _, it := range a.aion.LoadBacklog().Items() {
+			if it.Kind != aion.KindTask || it.Checked || it.Rock != g.ID || !a.mine(it.Owner) {
+				continue
+			}
+			if it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "" {
+				continue
+			}
+			res.Tasks = append(res.Tasks, daily.FocusNode{TodoID: "aion:" + it.ID, Text: it.Text})
+		}
+	}
 	return res, true
+}
+
+// mine mirrors Server.isMine: empty / "me" / containing my initials.
+func (a goalsAdapter) mine(owner string) bool {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || strings.EqualFold(owner, "me") {
+		return true
+	}
+	me := strings.ToUpper(strings.TrimSpace(a.owner))
+	if me == "" {
+		return false
+	}
+	for _, tok := range strings.Split(owner, "/") {
+		if strings.ToUpper(strings.TrimSpace(tok)) == me {
+			return true
+		}
+	}
+	return false
 }

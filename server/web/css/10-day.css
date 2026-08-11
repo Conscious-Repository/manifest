@@ -154,6 +154,8 @@
   cursor: pointer; color: var(--icon); font-size: 17px; line-height: 1;
 }
 .check.on { color: var(--blue); }
+.check.pick { color: var(--base-30); } /* empty gated row: faint ＋ opens the task picker */
+.check.pick:hover { color: var(--accent); }
 .add-btn {
   margin-top: 10px;
   font-family: var(--mono); font-size: 12px; letter-spacing: 0.3px;
