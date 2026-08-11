@@ -1,0 +1,27 @@
+# A per-harness excalibur engine (big-change Phase 4 + worker federation).
+# `%i` is the harness dir name under /private/harnesses — so a second worker
+# is one `systemctl enable --now excalibur-engine@hermes` away, no new file.
+# Same binary as excalibur-engine.service; each instance polls only its own
+# root's spool and writes its own heartbeat (the dashboard reads per-harness).
+#   sudo cp deploy/excalibur-engine@.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now excalibur-engine@hermes
+[Unit]
+Description=excalibur engine (%i harness) - ritual scheduler over /private/harnesses/%i
+After=network-online.target tailscaled.service
+Wants=network-online.target
+ConditionPathExists=/private/harnesses/%i/chargebook.md
+ConditionPathExists=/private/consciousrepo/goals.md
+
+[Service]
+Type=simple
+User=benjamin
+Group=benjamin
+Environment=PATH=/home/benjamin/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/benjamin/.local/bin/excalibur-engine serve \
+  -root /private/harnesses/%i \
+  -vault /private/consciousrepo
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -33,8 +33,13 @@ if [ -d /private/harnesses/excalibur/engine ]; then
   LAST=$(cat "$STAMPS/engine.built" 2>/dev/null || echo unbuilt)
   if [ "$ENG" != "$LAST" ] && [ "$ENG" != "none" ]; then
     (cd excalibur/engine && go build -o /home/benjamin/.local/bin/excalibur-engine ./cmd/excalibur)
+    # restart the primary engine + every per-harness worker instance
+    # (excalibur-engine@<name>) — they all share the one rebuilt binary
     sudo systemctl restart excalibur-engine
+    for u in $(systemctl list-units 'excalibur-engine@*' --no-legend --plain 2>/dev/null | awk '{print $1}'); do
+      sudo systemctl restart "$u"
+    done
     echo "$ENG" > "$STAMPS/engine.built"
-    echo "autodeploy: engine rebuilt at $ENG, restarted"
+    echo "autodeploy: engine rebuilt at $ENG, restarted (+ worker instances)"
   fi
 fi
