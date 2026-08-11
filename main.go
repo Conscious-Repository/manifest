@@ -311,6 +311,9 @@ func main() {
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
 		emitters = append(emitters, signals.StaleTodos(todosStore))
 		emitters = append(emitters, signals.GmailReauth(gmailClient)) // "reconnect Gmail" nudge
+		// manifest-sync's parked-conflict markers (big-change Phase 2b) — the
+		// daemon writes <dataDir>/sync/<root>.conflict.json, deletes on resume
+		emitters = append(emitters, signals.SyncConflicts(filepath.Join(cfg.DataDir, "sync")))
 		if reSvc != nil {
 			// property signals: over-budget category, stalled rehab, nothing-queued-next
 			emitters = append(emitters, signals.OverBudgetProperties(reSvc),

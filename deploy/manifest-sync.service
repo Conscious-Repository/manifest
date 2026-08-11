@@ -1,0 +1,26 @@
+# manifest-sync on metis (big-change Phase 2) — the vault+harness converge
+# daemon. Install:
+#   go build -o ~/.local/bin/manifest-sync ./cmd/manifest-sync
+#   sudo cp deploy/manifest-sync.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now manifest-sync
+# /private is a manually-unlocked LUKS volume: ConditionPathExists keeps the
+# unit dead after a reboot until the mount is back (then: systemctl start).
+[Unit]
+Description=manifest-sync - vault + harness git converge daemon
+After=network-online.target tailscaled.service
+Wants=network-online.target
+ConditionPathExists=/private/consciousrepo/.git
+
+[Service]
+Type=simple
+User=benjamin
+Group=benjamin
+ExecStart=/home/benjamin/.local/bin/manifest-sync \
+  -root vault=/private/consciousrepo \
+  -root harnesses=/private/harnesses \
+  -state /home/benjamin/.config/manifest/sync
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

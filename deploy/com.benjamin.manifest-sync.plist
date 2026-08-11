@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.benjamin.manifest-sync</string>
+  <!-- The vault+harness sync daemon (big-change Phase 2). Binary lives in a
+       non-TCC path; it READS/WRITES ~/Documents (the vault), so the binary
+       needs a one-time Full Disk Access grant (System Settings → Privacy →
+       Full Disk Access → add ~/.local/libexec/manifest-sync). Install:
+         go build -o ~/.local/libexec/manifest-sync ./cmd/manifest-sync
+         cp deploy/com.benjamin.manifest-sync.plist ~/Library/LaunchAgents/
+         launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.benjamin.manifest-sync.plist -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/benjamin/.local/libexec/manifest-sync</string>
+    <string>-root</string><string>vault=/Users/benjamin/Documents/index.ben</string>
+    <string>-root</string><string>harnesses=/Users/benjamin/harnesses</string>
+    <string>-state</string><string>/Users/benjamin/.config/manifest/sync</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/benjamin/Library/Logs/manifest-sync/sync.log</string>
+  <key>StandardErrorPath</key><string>/Users/benjamin/Library/Logs/manifest-sync/sync.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/benjamin/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
