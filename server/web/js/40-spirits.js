@@ -13,7 +13,11 @@ let openRunId = null;                       // which run's report detail is expa
 // portals as the settings block at the foot. The RUNS/RITUALS/PORTALS tab
 // bar is gone; legacy sub-routes fold back to #/spirits.
 function showSpirits() {
-  if (location.hash.startsWith("#/spirits/")) { location.hash = "#/spirits"; return; }
+  if (location.hash.startsWith("#/spirits/")) {
+    // deep link into the Portals section (e.g. the "reconnect Gmail" signal)
+    if (location.hash === "#/spirits/portals") spiritPortalsOpen = true;
+    location.hash = "#/spirits"; return;
+  }
   ["runs", "rituals", "portals"].forEach((t) => { els["sp_" + t].hidden = false; });
   loadSpiritsStatus();
   loadSpiritRituals();
@@ -111,6 +115,18 @@ function buildPortalActions(p, acts, wrap) {
     return;
   }
   if (p.kind === "oauth") {
+    if (p.id === "gmail") {
+      // single-account, read-only. degraded (needs reauth) leads with a
+      // prominent reconnect; connected offers reconnect + disconnect.
+      const label = p.state === "degraded" ? "reconnect" : (p.state === "open" ? "reconnect" : "connect");
+      const pill = p.state === "degraded" ? el("button", "pill-solid", "reconnect") : pillLight(label, () => portalConnectGmail());
+      if (p.state === "degraded") pill.onclick = () => portalConnectGmail();
+      acts.append(pill);
+      if (p.state === "open" || (p.accounts || []).length) {
+        acts.append(pillLight("disconnect", () => { if (confirm("Disconnect Gmail? The waiting-on digest stops until you reconnect.")) portalDisconnectGmail(); }));
+      }
+      return;
+    }
     if ((p.accounts || []).length) {
       acts.append(pillLight("add", () => portalConnectCalendar()));
       p.accounts.forEach((email) => acts.append(pillLight("disconnect", () => portalDisconnectCalendar(email))));
@@ -183,6 +199,20 @@ async function portalConnectCalendar() {
 }
 async function portalDisconnectCalendar(email) {
   try { await postJSON("/api/calendar/disconnect", { account: email }); } catch (e) {}
+  loadPortals();
+}
+
+// Gmail read-only OAuth — manifest mints the token the excalibur EA digest reads.
+async function portalConnectGmail() {
+  showToast("Opening Google sign-in… (check your browser)", null, "info");
+  try {
+    const r = await postJSON("/api/gmail/connect", {});
+    showToast(r && r.connected ? "Gmail reconnected — " + r.connected : "Gmail reconnected", null, "info");
+  } catch (e) { showToast("Couldn't reconnect Gmail — " + (e.message || "sign-in failed")); }
+  loadPortals();
+}
+async function portalDisconnectGmail() {
+  try { await postJSON("/api/gmail/disconnect", {}); } catch (e) {}
   loadPortals();
 }
 

@@ -63,6 +63,7 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rows = append(rows, s.calendarPortalRow())
+	rows = append(rows, s.gmailPortalRow())
 	rows = append(rows, s.heypocketPortalRow())
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())

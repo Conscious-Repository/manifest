@@ -253,8 +253,8 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			Text    *string   `json:"text"`
 			Owner   *string   `json:"owner"`
 			Quarter *string   `json:"quarter"`
-			Start   *string   `json:"start"` // ISO timeline start (rocks; portal §7)
-			Due     *string   `json:"due"`   // ISO timeline end (rocks; portal §7)
+			Start   *string   `json:"start"`   // ISO timeline start (rocks; portal §7)
+			Due     *string   `json:"due"`     // ISO timeline end (rocks; portal §7)
 			Serves  *[]string `json:"serves"`  // full replacement list (1:many)
 			Aliases *[]string `json:"aliases"` // full replacement list (portal-matcher vocabulary)
 			Status  *string   `json:"status"`

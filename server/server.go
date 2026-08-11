@@ -16,6 +16,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
+	"manifest/gmailauth"
 	"manifest/goals"
 	"manifest/portals"
 	"manifest/reading"
@@ -39,6 +40,9 @@ type Server struct {
 	// empty/"me"/containing-these-initials owners are mine.
 	ownerInitials string
 	cal           *calendar.Client
+	// Gmail read-only OAuth for the engine's ea-coordinator digest — manifest
+	// mints/validates the token the headless engine reads. Nilable.
+	gmail *gmailauth.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
 	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
 	vault     *vaultwriter.Writer
@@ -183,6 +187,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calendar/events", s.handleCalEvents)
 	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
 	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
+
+	// Gmail read-only OAuth — reconnect the engine's EA-digest inbox access.
+	mux.HandleFunc("/api/gmail/status", s.handleGmailStatus)
+	mux.HandleFunc("/api/gmail/connect", s.handleGmailConnect)
+	mux.HandleFunc("/api/gmail/disconnect", s.handleGmailDisconnect)
 
 	// SPIRITS — the excalibur harness console. Read-only over the sibling tree
 	// plus record-only user actions (feed keep/discard/snooze, approvals

@@ -232,3 +232,48 @@ func idleLabel(moved string, idle int) string {
 	}
 	return "idle " + strconv.Itoa(idle) + "d"
 }
+
+// ---- gmail reconnect ----
+
+// GmailAuthChecker is the auth surface the reconnect emitter reads
+// (implemented by gmailauth.Client). NeedsReauth is true only when a token
+// exists but its refresh token is dead — i.e. a genuine failure, not the
+// never-connected setup state. `email` is best-effort for the label; `detail`
+// is a short human reason. An error means "couldn't determine" — the emitter
+// then contributes nothing rather than nagging on a transient blip.
+type GmailAuthChecker interface {
+	AuthState(now time.Time) (needsReauth bool, email, detail string, err error)
+}
+
+// GmailReauth raises ONE signal when the engine's Gmail sign-in has expired, so
+// the waiting-on digest breaking becomes a visible nudge instead of silent
+// failure. Acting on it deep-links to the Portals reconnect.
+func GmailReauth(c GmailAuthChecker) Emitter { return gmailReauthEmitter{c} }
+
+type gmailReauthEmitter struct{ c GmailAuthChecker }
+
+func (e gmailReauthEmitter) Emit(now time.Time) ([]Signal, error) {
+	needs, email, detail, err := e.c.AuthState(now)
+	if err != nil {
+		return nil, err // undetermined ≠ all-clear; suppression state preserved
+	}
+	if !needs {
+		return nil, nil
+	}
+	who := email
+	if who == "" {
+		who = "Gmail"
+	}
+	if detail == "" {
+		detail = "sign-in expired"
+	}
+	return []Signal{{
+		ID:      "gmail-reauth",
+		Kind:    "gmail-reauth",
+		Entity:  who,
+		Label:   "reconnect Gmail · " + who + " · " + detail,
+		Age:     9000, // pins near the top — a broken integration is urgent
+		ActHref: "#/spirits/portals",
+		Hash:    "needs-reauth", // stable while the condition holds; re-arms on fix
+	}}, nil
+}
