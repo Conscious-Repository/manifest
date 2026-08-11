@@ -314,6 +314,9 @@ func main() {
 		// manifest-sync's parked-conflict markers (big-change Phase 2b) — the
 		// daemon writes <dataDir>/sync/<root>.conflict.json, deletes on resume
 		emitters = append(emitters, signals.SyncConflicts(filepath.Join(cfg.DataDir, "sync")))
+		// failed ritual runs page the feed (Phase 7; auto-clears on a newer
+		// completed run of the same spirit/ritual)
+		emitters = append(emitters, srv.RunFailureEmitter())
 		if reSvc != nil {
 			// property signals: over-budget category, stalled rehab, nothing-queued-next
 			emitters = append(emitters, signals.OverBudgetProperties(reSvc),

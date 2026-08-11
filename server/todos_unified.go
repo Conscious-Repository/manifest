@@ -63,6 +63,8 @@ type unifiedRow struct {
 	Source    string           `json:"source"` // personal | property | aion
 	Container unifiedContainer `json:"container"`
 	AgeDays   int              `json:"ageDays,omitempty"`
+	// Delegation (Phase 6): derived from harness traces carrying [todo:: id].
+	Delegation *delegationView `json:"delegation,omitempty"`
 }
 
 type outstandingGroup struct {
@@ -119,6 +121,13 @@ func (s *Server) unifiedRows(doc *todos.Doc, now time.Time) []unifiedRow {
 				ID: "aion:" + it.ID, Text: it.Text, Owner: it.Owner, Rank: rank,
 				Added: it.Captured, Rock: it.Rock, Source: "aion", Container: c,
 			})
+		}
+	}
+	// Phase 6: attach the delegation projection (one trace scan per request)
+	deleg := s.delegationIndex()
+	for i := range rows {
+		if d, ok := deleg[rows[i].ID]; ok {
+			rows[i].Delegation = &d
 		}
 	}
 	return rows

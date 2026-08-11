@@ -82,3 +82,11 @@
 .tdo-tether.on { visibility: visible; color: var(--accent); }
 .tdo-right .ta-wrap { display: inline-block; position: relative; }
 .tdo-right .ta-in { font-size: 12px; min-width: 220px; }
+
+/* delegation (Phase 6): dispatch affordance + the trace-derived state chip */
+.tdo-delegate { visibility: hidden; }
+.tdo-row:hover .tdo-delegate { visibility: visible; }
+.delegation-chip { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.3px; text-transform: uppercase; border: 1px solid var(--base-25); border-radius: 3px; padding: 0 5px; background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
+.delegation-chip.dstate-running { color: var(--accent); border-color: var(--accent-soft); }
+.delegation-chip.dstate-proposed { color: var(--base-100); font-weight: 600; }
+.delegation-chip.dstate-failed { color: var(--base-100); font-weight: 600; }

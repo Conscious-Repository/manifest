@@ -257,6 +257,21 @@ function rankedRow(r, idx) {
       (p) => todosApi("/api/todos/update", { id: r.id, rock: p.rock, stage: p.stage }));
     right.append(teth);
   }
+  // ⇢ delegate (Phase 6) — dispatch this todo to a harness; the chip below
+  // tracks the work order through the trace files.
+  if (r.delegation) {
+    const d = r.delegation;
+    const chip = el("button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
+    chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
+      : "delegated work — click for the runs board";
+    chip.onclick = () => { location.hash = d.state === "proposed" ? "#/feed" : "#/spirits"; };
+    right.append(chip);
+  } else {
+    const dg = el("button", "uw-x tdo-delegate", "⇢");
+    dg.title = "delegate to a harness…";
+    dg.onclick = () => openDelegatePicker(r);
+    right.append(dg);
+  }
   {
     // ✕ removes the row: personal → archived; property/aion → deleted from
     // its source file (there is no archive for those)
@@ -294,6 +309,31 @@ function commitRank(draggedId, targetId) {
 }
 
 // ---- the tether picker: one typeahead over every open rock and stage ----
+// openDelegatePicker (Phase 6): pick a dispatch target (harness · on-demand
+// ritual), then an optional brief; POST /api/todos/delegate spools the work
+// order and stamps [waiting::]. The chip appears on the next render from the
+// trace projection.
+async function openDelegatePicker(r) {
+  let targets = [];
+  try { targets = (await (await fetch("/api/todos/delegate/targets")).json()).targets || []; }
+  catch (e) { showToast("Couldn't load delegate targets"); return; }
+  if (!targets.length) { showToast("No dispatch targets — no harness has an on-demand ritual"); return; }
+  const byId = new Map(targets.map((t, i) => [String(i), t]));
+  openPicker("Delegate: " + r.text.slice(0, 60), [{ area: "dispatch to…", items:
+    targets.map((t, i) => ({ id: String(i), text: t.label })) }],
+    (id) => {
+      const t = byId.get(id);
+      if (!t) return;
+      askText("Brief for " + t.label, "optional — defaults to the todo text", async (brief) => {
+        try {
+          await postJSONOk("/api/todos/delegate", { id: r.id, harness: t.harness, spirit: t.spirit, ritual: t.ritual, brief: (brief || "").trim() });
+          showToast("Delegated → " + t.label);
+          loadTodos();
+        } catch (e) { showToast("Delegate failed: " + (e.message || e), null, "error"); }
+      });
+    });
+}
+
 // Shared by the TODOS rows (⧗) and the GOALS unanchored foot. Picking writes
 // [rock::] (+ optional [stage::]) through /api/todos/update — one line, one
 // file, both surfaces re-project it.
