@@ -6,6 +6,7 @@
 // parallel lists; every counter derives from the same rows.
 let todosCache = null;
 let todosTab = "focus"; // focus | aion | realestate | personal
+let todosMode = localStorage.getItem("todosMode") || "list"; // list (default) | board (Phase 8)
 let todosQuiet = {};    // ideas / done expanded
 // the regret window: a row checked this session stays IN PLACE, struck and
 // unmarkable, instead of vanishing into the quiet Done row. id → {row, idx}
@@ -47,7 +48,7 @@ function renderTodos() {
   }
   if (typeof railSetCount === "function") railSetCount("todos", counts.todos || 0);
 
-  // tab chips
+  // tab chips + the list/board mode toggle (Phase 8 — List stays the default)
   const tabsHost = document.getElementById("todosTabs");
   if (tabsHost) {
     tabsHost.innerHTML = "";
@@ -56,7 +57,16 @@ function renderTodos() {
       b.onclick = () => { todosTab = val; renderTodos(); };
       tabsHost.append(b);
     });
+    const mode = el("button", "tdo-mode-toggle", todosMode === "board" ? "☰ list" : "▦ board");
+    mode.title = todosMode === "board" ? "back to the ranked list" : "the board: Open · Waiting · Delegated · Done";
+    mode.onclick = () => {
+      todosMode = todosMode === "board" ? "list" : "board";
+      localStorage.setItem("todosMode", todosMode);
+      renderTodos();
+    };
+    tabsHost.append(mode);
   }
+  if (todosMode === "board") { renderTodosBoard(host); return; }
 
   // 1. decisions lane — always visible, never collapsed
   const issues = [];
@@ -392,4 +402,108 @@ function personInput(onSet, onCancel) {
     },
   });
   return ta;
+}
+
+// ================= THE BOARD (big-change Phase 8) =================
+// Pure projection over the SAME /api/todos payload the list renders — four
+// columns: Open · Waiting · Delegated · Done. Every drag maps to an EXISTING
+// endpoint (check / update-waiting / delegate); the Delegated column renders
+// Phase 6 trace state and resolves only through the FEED's human gates.
+function renderTodosBoard(host) {
+  const rows = (todosCache.rows || []).filter((r) => todosTab === "focus" || tabOf(r) === todosTab);
+  const cols = { open: [], waiting: [], delegated: [], done: [] };
+  rows.forEach((r) => {
+    if (r.delegation) cols.delegated.push(r);
+    else if (r.waiting) cols.waiting.push(r);
+    else cols.open.push(r);
+  });
+  // Done: personal todos completed but not yet swept (the domains view keeps
+  // them until the weekly sweep) — read-only history plus a drag target.
+  (todosCache.domains || []).forEach((dom) => {
+    const scan = (list) => (list || []).forEach((t) => {
+      if (t.state === "done" && (todosTab === "focus" || issueTabOf(dom.name) === todosTab)) {
+        cols.done.push({ id: t.id, text: t.text, container: { name: dom.name }, source: "personal", done: true });
+      }
+    });
+    scan(dom.todos);
+    (dom.buckets || []).forEach((bk) => scan(bk.todos));
+  });
+
+  const board = el("div", "tdo-board");
+  const defs = [
+    ["open", "OPEN", "drop here to reopen"],
+    ["waiting", "WAITING", "drop here → who are you waiting on?"],
+    ["delegated", "DELEGATED", "drop here to dispatch to a harness"],
+    ["done", "DONE", "drop here to complete"],
+  ];
+  defs.forEach(([key, label, hint]) => {
+    const col = el("div", "tdo-col");
+    col.dataset.col = key;
+    const head = el("div", "tdo-col-head");
+    head.append(el("span", "tdo-sec-title", label), el("span", "tdo-sec-count", String(cols[key].length)));
+    col.append(head);
+    cols[key].forEach((r) => col.append(boardCard(r, key)));
+    col.title = hint;
+    col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("dragging-over"); });
+    col.addEventListener("dragleave", () => col.classList.remove("dragging-over"));
+    col.addEventListener("drop", (e) => {
+      e.preventDefault();
+      col.classList.remove("dragging-over");
+      const id = e.dataTransfer.getData("text/todo-id");
+      const from = e.dataTransfer.getData("text/todo-col");
+      if (id) boardMove(id, from, key);
+    });
+    board.append(col);
+  });
+  host.append(board);
+}
+
+function boardCard(r, colKey) {
+  const card = el("div", "tdo-card" + (r.done ? " done" : ""));
+  card.draggable = true;
+  card.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/todo-id", r.id);
+    e.dataTransfer.setData("text/todo-col", colKey);
+    e.dataTransfer.effectAllowed = "move";
+  });
+  card.append(el("div", "tdo-card-text", r.text));
+  const meta = el("div", "tdo-card-meta");
+  meta.append(el("span", "", r.container && r.container.name || ""));
+  if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));
+  if (r.delegation) {
+    const d = r.delegation;
+    const chip = el("span", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
+    chip.style.cursor = "pointer";
+    chip.onclick = () => { location.hash = d.state === "proposed" ? "#/feed" : "#/spirits"; };
+    meta.append(chip);
+  }
+  if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
+  card.append(meta);
+  return card;
+}
+
+// boardMove maps a drag to the existing endpoints — nothing new writes.
+function boardMove(id, from, to) {
+  if (from === to) return;
+  const row = (todosCache.rows || []).find((r) => r.id === id);
+  switch (to) {
+    case "done":
+      todosApi("/api/todos/check", { id, checked: true });
+      return;
+    case "open":
+      if (from === "done") { todosApi("/api/todos/check", { id, checked: false }); return; }
+      if (from === "waiting") { todosApi("/api/todos/update", { id, waiting: "" }); return; }
+      if (from === "delegated") { showToast("Delegated work resolves through the FEED (approve/reject) — or drop it on Done"); return; }
+      return;
+    case "waiting":
+      if (from === "delegated") { showToast("Already delegated — it IS waiting on the harness"); return; }
+      askText("Waiting on…", "who has the ball? (person, org)", (who) => {
+        if (!(who || "").trim()) return;
+        todosApi("/api/todos/update", { id, waiting: who.trim() });
+      });
+      return;
+    case "delegated":
+      if (row) openDelegatePicker(row);
+      return;
+  }
 }

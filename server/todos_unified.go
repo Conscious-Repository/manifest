@@ -63,6 +63,7 @@ type unifiedRow struct {
 	Source    string           `json:"source"` // personal | property | aion
 	Container unifiedContainer `json:"container"`
 	AgeDays   int              `json:"ageDays,omitempty"`
+	Waiting   string           `json:"waiting,omitempty"` // [waiting:: who] (personal) — the board's Waiting column
 	// Delegation (Phase 6): derived from harness traces carrying [todo:: id].
 	Delegation *delegationView `json:"delegation,omitempty"`
 }
@@ -87,7 +88,7 @@ func (s *Server) unifiedRows(doc *todos.Doc, now time.Time) []unifiedRow {
 				rows = append(rows, unifiedRow{
 					ID: t.ID, Text: t.Text, Owner: t.Owner, Rank: t.RankN(),
 					Added: t.Added, Rock: t.Rock, Source: "personal",
-					Container: c, AgeDays: t.AgeDays(now),
+					Container: c, AgeDays: t.AgeDays(now), Waiting: t.Waiting,
 				})
 			})
 		}

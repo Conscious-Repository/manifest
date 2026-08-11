@@ -90,3 +90,17 @@
 .delegation-chip.dstate-running { color: var(--accent); border-color: var(--accent-soft); }
 .delegation-chip.dstate-proposed { color: var(--base-100); font-weight: 600; }
 .delegation-chip.dstate-failed { color: var(--base-100); font-weight: 600; }
+
+/* ---- the board (Phase 8): four columns over the same rows ---- */
+.tdo-mode-toggle { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; }
+.tdo-mode-toggle:hover { color: var(--accent); }
+.tdo-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; margin-top: 10px; }
+.tdo-col { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 8px; min-height: 220px; display: flex; flex-direction: column; gap: 6px; }
+.tdo-col.dragging-over { border-color: var(--accent); background: var(--base-05); }
+.tdo-col-head { display: flex; align-items: baseline; gap: 6px; padding: 0 2px 6px; border-bottom: 1px solid var(--base-20); }
+.tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 7px 9px; background: var(--bg, #fff); cursor: grab; }
+.tdo-card:active { cursor: grabbing; }
+.tdo-card.done .tdo-card-text { text-decoration: line-through; color: var(--base-40); }
+.tdo-card-text { font-family: var(--sans); font-size: 13.5px; line-height: 1.35; }
+.tdo-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--base-40); align-items: baseline; }
+.tdo-card-wait, .tdo-card-rock { color: var(--base-50); }
