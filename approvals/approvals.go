@@ -1,8 +1,9 @@
 // Package approvals is the human-in-the-loop gate for side-effectful agent work.
-// ea-coordinator DRAFTS proposals (never sends); the dashboard materializes them here,
-// under <dataDir>/agents/approvals/{pending,approved,rejected}/ (OUTSIDE the vault).
-// Confirm/Reject only RECORD the human decision (a folder move) — the app itself never
-// sends, pays, or acts. The status is the folder the file lives in.
+// ea-coordinator DRAFTS proposals (never sends); the dashboard materializes them
+// under <harness>/artifacts/approvals/{pending,approved,rejected}/ — the harness
+// tree, outside the vault since the medium split. Confirm/Reject only RECORD the
+// human decision (a folder move) — the app itself never sends, pays, or acts.
+// The status is the folder the file lives in.
 package approvals
 
 import (

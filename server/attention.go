@@ -50,7 +50,8 @@ func (f findingsSource) Active(now time.Time, q url.Values) []attention.Card {
 	}
 	flt := feed.Filter{Status: q.Get("status"), Type: q.Get("type"), Domain: q.Get("domain")}
 	for _, it := range f.s.spirits.Feed.List(flt, now) {
-		views = append(views, feedItemView{Item: it, ArtifactPath: f.s.artifactPath(it)})
+		vaultRel, harnessRef := f.s.artifactRefs(it)
+		views = append(views, feedItemView{Item: it, ArtifactPath: vaultRel, ArtifactRef: harnessRef})
 	}
 	return views
 }

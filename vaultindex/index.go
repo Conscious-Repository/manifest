@@ -48,16 +48,15 @@ func (c Config) extrinsicRoot() string {
 	return strings.Trim(filepath.ToSlash(c.ExtrinsicRoot), "/")
 }
 
-// aiRegions are the engine-authored subtrees. The default covers both the
-// system-rooted layout (system/agents/, system/excalibur/) and the legacy
-// vault-root layout (Agents/, excalibur/) so the index stays correct on either
-// side of the reorg.
+// aiRegions are the engine-authored subtrees still inside the vault. The
+// excalibur harness tree moved out entirely (big-change Phase 1); only the
+// agents subtree (and its legacy vault-root spelling) remains.
 func (c Config) aiRegions() []string {
 	if len(c.AIRegions) > 0 {
 		return c.AIRegions
 	}
 	sr := c.systemRoot()
-	return []string{"Agents/", "excalibur/", sr + "/agents/", sr + "/excalibur/"}
+	return []string{"Agents/", sr + "/agents/"}
 }
 
 // zoneOf classifies a vault-relative path into its zone (kernel rule: path

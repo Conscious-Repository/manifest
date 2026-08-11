@@ -32,12 +32,21 @@ var ErrAlreadyActive = errors.New("a run for this spirit/ritual is already queue
 const heartbeatFresh = 90 * time.Second
 
 type Store struct {
-	root string
-	Feed *feed.Store
+	root       string
+	skillsRoot string // <vault>/skills — explicit since the harness left the vault
+	Feed       *feed.Store
 }
 
 func NewStore(root string) *Store {
 	return &Store{root: root, Feed: feed.NewStoreDir(filepath.Join(root, "artifacts", "feed"))}
+}
+
+// WithSkillsRoot sets the vault-skills directory explicitly (chainable). The
+// harness tree no longer lives inside the vault, so the old parent-of-root
+// derivation can't find skills; main wires <vault>/skills here.
+func (s *Store) WithSkillsRoot(dir string) *Store {
+	s.skillsRoot = dir
+	return s
 }
 
 // Root is the excalibur tree root (an artifact card's `artifacts/library/…`

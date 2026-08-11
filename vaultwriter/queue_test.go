@@ -119,7 +119,7 @@ func TestWriterQueueOps_Guarded(t *testing.T) {
 	}
 
 	// engine-owned path refused by the guard
-	if err := w.AppendQueueBullet("system/excalibur/x posts.md", "- x"); err == nil {
+	if err := w.AppendQueueBullet("system/agents/x posts.md", "- x"); err == nil {
 		t.Fatal("engine-owned path should be refused")
 	}
 }

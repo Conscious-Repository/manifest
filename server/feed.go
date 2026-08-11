@@ -52,12 +52,15 @@ func (s *Server) activeSignals(now time.Time) []signals.Signal {
 }
 
 // feedItemView is a feed item enriched for the client: an `artifact` card whose
-// content lives in the excalibur tree (artifacts/library/…) gets a resolved
-// ArtifactPath so the dashboard can open it in the note view (the excalibur tree
-// is inside the vault, so that path is a normal vault note).
+// content lives in the harness tree (artifacts/library/…) gets a resolved
+// reference. Since the medium split the harness tree lives OUTSIDE the vault:
+// ArtifactRef is the harness-relative path the client opens through the spirits
+// read API (never the vault note view — two-media doctrine). ArtifactPath
+// survives for the legacy in-vault layout only.
 type feedItemView struct {
 	feed.Item
-	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative, when viewable
+	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative (legacy in-vault harness only)
+	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative, read via /api/spirits/file
 }
 
 // libraryRefRe pulls an `artifacts/library/<name>.md` reference out of a card's
@@ -89,12 +92,14 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
-// artifactPath resolves an artifact card's library reference to a vault-relative
-// note path (empty unless the item is an artifact and the file exists). The
-// excalibur tree sits inside the vault, so the result opens in the note view.
-func (s *Server) artifactPath(it feed.Item) string {
-	if it.Type != "artifact" || s.spirits == nil || s.index == nil {
-		return ""
+// artifactRefs resolves an artifact card's library reference. Returns
+// (vaultRel, harnessRef): vaultRel is non-empty only under the legacy in-vault
+// harness layout (opens in the note view); harnessRef is the harness-relative
+// path (opens through the spirits read API). Both empty when the item isn't an
+// artifact or the file is missing.
+func (s *Server) artifactRefs(it feed.Item) (string, string) {
+	if it.Type != "artifact" || s.spirits == nil {
+		return "", ""
 	}
 	ref := ""
 	if strings.HasPrefix(it.Link, "artifacts/library/") {
@@ -103,17 +108,18 @@ func (s *Server) artifactPath(it feed.Item) string {
 		ref = m
 	}
 	if ref == "" {
-		return ""
+		return "", ""
 	}
 	abs := filepath.Join(s.spirits.Root(), filepath.FromSlash(ref))
 	if _, err := os.Stat(abs); err != nil {
-		return "" // referenced file missing — nothing to open
+		return "", "" // referenced file missing — nothing to open
 	}
-	rel, err := filepath.Rel(s.index.VaultRoot(), abs)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return "" // artifact lives outside the vault — not a note view target
+	if s.index != nil {
+		if rel, err := filepath.Rel(s.index.VaultRoot(), abs); err == nil && !strings.HasPrefix(rel, "..") {
+			return filepath.ToSlash(rel), "" // legacy: harness still inside the vault
+		}
 	}
-	return filepath.ToSlash(rel)
+	return "", filepath.ToSlash(filepath.FromSlash(ref))
 }
 
 // feedProposals returns the FULL enriched approval rows for the feed's pinned

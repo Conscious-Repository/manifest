@@ -138,9 +138,11 @@ type LintResult struct {
 }
 
 // ReadFile returns an allow-listed harness file's contents. allowed=false means
-// the path is off the editor allow-list (caller → 404).
+// the path is off the read allow-list (caller → 404). Reads cover the editor
+// set PLUS artifacts/library/*.md (FEED artifact cards view their brief through
+// this since the harness left the vault); writes stay editor-set only.
 func (s *Store) ReadFile(rel string) (content string, allowed bool, err error) {
-	clean, ok := allowedEditPath(rel)
+	clean, ok := allowedReadPath(rel)
 	if !ok {
 		return "", false, nil
 	}
@@ -374,6 +376,23 @@ func allowedEditPath(rel string) (string, bool) {
 	if len(p) == 4 && p[0] == "spirits" && validSlug(p[1]) && p[2] == "rituals" &&
 		strings.HasSuffix(p[3], ".md") && validSlug(strings.TrimSuffix(p[3], ".md")) {
 		return rel, true
+	}
+	return "", false
+}
+
+// allowedReadPath is allowedEditPath plus the read-only artifact briefs:
+// artifacts/library/<name>.md. Never writable through the editor.
+func allowedReadPath(rel string) (string, bool) {
+	if clean, ok := allowedEditPath(rel); ok {
+		return clean, true
+	}
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(rel)))
+	if clean == "" || filepath.IsAbs(clean) || strings.Contains(clean, "..") {
+		return "", false
+	}
+	p := strings.Split(clean, "/")
+	if len(p) == 3 && p[0] == "artifacts" && p[1] == "library" && strings.HasSuffix(p[2], ".md") {
+		return clean, true
 	}
 	return "", false
 }

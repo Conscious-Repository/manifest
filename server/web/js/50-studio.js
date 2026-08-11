@@ -358,12 +358,37 @@ function studioAddRow(section) {
   return row;
 }
 
-// openArtifact opens an artifact's library file in the universal note view (the
-// excalibur tree is inside the vault, so it renders like any note), returning to
-// the feed on back.
+// openArtifact opens an artifact's library file in the universal note view —
+// legacy path for a harness tree still inside the vault; returns to the feed.
 function openArtifact(path) {
   _noteReturn = "#/feed";
   openNoteByPath(path);
+}
+
+// openHarnessArtifact — the post-split viewer: the harness tree lives outside
+// the vault, so artifact briefs read through the spirits file API (read-only
+// allow-list) into a quiet modal. Never the vault note view (two-media rule).
+async function openHarnessArtifact(ref) {
+  let content = "";
+  try {
+    const r = await fetch("/api/spirits/file?path=" + encodeURIComponent(ref));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    content = (await r.json()).content || "";
+  } catch (e) { showToast("Couldn't open artifact: " + (e.message || e), null, "error"); return; }
+  const overlay = el("div", "cmdbar");
+  const back = el("div", "cmdbar-backdrop");
+  const panel = el("div", "cmdbar-card harness-artifact");
+  overlay.append(back, panel);
+  const close = () => overlay.remove();
+  back.onclick = close;
+  const head = el("div", "appr-diff-label");
+  head.append(document.createTextNode(ref.replace(/^artifacts\/library\//, "")));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = close;
+  head.append(x);
+  const body = el("pre", "harness-artifact-body", content);
+  panel.append(head, body);
+  document.body.append(overlay);
 }
 
 // feedDig: "dig →" — spool a deeper run for the originating spirit; findings

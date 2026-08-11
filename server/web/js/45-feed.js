@@ -237,6 +237,7 @@ function feedCard(it) {
   let title;
   if (external) title = linkEl(it.title, it.link);
   else if (it.artifactPath) { title = el("span", "cp-clickable", it.title); title.onclick = () => openArtifact(it.artifactPath); }
+  else if (it.artifactRef) { title = el("span", "cp-clickable", it.title); title.onclick = () => openHarnessArtifact(it.artifactRef); }
   else title = el("span", null, it.title);
   title.classList.add("feed-title");
   top.append(title);
@@ -254,6 +255,7 @@ function feedCard(it) {
   if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
   const actions = el("div", "feed-actions");
   if (it.artifactPath) actions.append(pillLight("view →", () => openArtifact(it.artifactPath))); // the full brief
+  else if (it.artifactRef) actions.append(pillLight("view →", () => openHarnessArtifact(it.artifactRef)));
   if (it.status !== "discarded") {
     const keep = pillLight("Keep", () => feedVerdict(card, it, "kept", "kept"));
     keep.classList.add("verdict-primary");

@@ -21,12 +21,10 @@ func TestGuardClasses(t *testing.T) {
 		class WriteClass
 		ok    bool
 	}{
-		// engine-owned: refused for every class
-		{"system/excalibur/spirits/x/identity.md", WriteRawUser, false},
-		{"system/excalibur/artifacts/feed/item.md", WriteDatabase, false},
+		// engine-owned: refused for every class (the excalibur harness tree
+		// left the vault entirely — big-change Phase 1 — so only agents remains)
 		{"system/agents/brief.md", WriteRawUser, false},
 		{"Agents/legacy.md", WriteRawUser, false}, // legacy root (pre-reorg)
-		{"excalibur/chargebook.md", WriteRawUser, false},
 
 		// database class: structured roots only — system/ AND extrinsic/ (books)
 		{"system/crm/fundraising/acme ventures.md", WriteDatabase, true},
@@ -64,7 +62,7 @@ func TestWriterEntryPointsAreGuarded(t *testing.T) {
 	w := New(root).WithZoneRoots("system", "extrinsic")
 
 	// seed an engine-owned file + a knowledge-zone note on disk
-	for _, rel := range []string{"system/excalibur/spirits/x/identity.md", "alice.md"} {
+	for _, rel := range []string{"system/agents/brief.md", "alice.md"} {
 		p := filepath.Join(root, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -74,7 +72,7 @@ func TestWriterEntryPointsAreGuarded(t *testing.T) {
 		}
 	}
 
-	engineRel := "system/excalibur/spirits/x/identity.md"
+	engineRel := "system/agents/brief.md"
 	if err := w.WriteNote(engineRel, "overwritten"); err == nil {
 		t.Fatal("WriteNote into an engine-owned path must be refused")
 	}

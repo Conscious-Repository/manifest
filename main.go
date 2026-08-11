@@ -90,7 +90,8 @@ func main() {
 	var spiritsStore *spirits.Store
 	var aionSink *aion.ExtractSink
 	if cfg.ExcaliburPath != "" {
-		spiritsStore = spirits.NewStore(cfg.ExcaliburPath)
+		spiritsStore = spirits.NewStore(cfg.ExcaliburPath).
+			WithSkillsRoot(filepath.Join(cfg.VaultPath, "skills"))
 		aionSink = aion.NewExtractSink(cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
 		aionSink.Start(ctx)
 	}

@@ -57,10 +57,14 @@ func (s *Store) Castables(now time.Time) []Castable {
 
 type vaultSkill struct{ dir, label, desc string }
 
-// vaultSkills scans <vault>/skills/*/SKILL.md. The vault is the parent of the
-// excalibur harness root (the harness lives at <vault>/excalibur).
+// vaultSkills scans <vault>/skills/*/SKILL.md. The skills root is wired
+// explicitly (WithSkillsRoot) now that the harness tree lives outside the
+// vault; the parent-of-root derivation survives only as a legacy fallback.
 func (s *Store) vaultSkills() []vaultSkill {
-	dir := filepath.Join(filepath.Dir(s.root), "skills")
+	dir := s.skillsRoot
+	if dir == "" {
+		dir = filepath.Join(filepath.Dir(s.root), "skills")
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil

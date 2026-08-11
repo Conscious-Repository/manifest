@@ -68,8 +68,10 @@ func (w *Writer) Guard(rel string, class WriteClass) error {
 	if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) {
 		return errors.New("invalid note path")
 	}
+	// (the excalibur harness tree left the vault entirely — big-change Phase 1 —
+	// so its entries are gone from this list; only the agents subtree remains)
 	sr := w.systemRootOrDefault()
-	for _, owned := range []string{sr + "/agents", sr + "/excalibur", "Agents", "excalibur"} {
+	for _, owned := range []string{sr + "/agents", "Agents"} {
 		if clean == owned || strings.HasPrefix(clean, owned+"/") {
 			return errors.New("that path is engine-owned — the dashboard never writes it")
 		}
