@@ -1,0 +1,11 @@
+# One auto-deploy pass (fired by manifest-autodeploy.timer). See the script
+# header for what it does; ff-only keeps it loud-fail on divergence.
+[Unit]
+Description=manifest auto-deploy pass (pull + rebuild + restart on change)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=benjamin
+Group=benjamin
+ExecStart=/home/benjamin/src/manifest/deploy/manifest-autodeploy.sh
