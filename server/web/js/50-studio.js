@@ -365,6 +365,33 @@ function openArtifact(path) {
   openNoteByPath(path);
 }
 
+// openRunModal — view a run report IN PLACE from any surface (todos chip,
+// board card, delegation-done feed card): the report body IS the artifact for
+// runs that wrote nothing else. No navigation; same quiet modal as artifacts.
+async function openRunModal(runId) {
+  let run;
+  try {
+    const r = await fetch("/api/spirits/runs/" + encodeURIComponent(runId));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    run = await r.json();
+  } catch (e) { showToast("Couldn't open the run: " + (e.message || e), null, "error"); return; }
+  const overlay = el("div", "cmdbar");
+  const back = el("div", "cmdbar-backdrop");
+  const panel = el("div", "cmdbar-card harness-artifact");
+  overlay.append(back, panel);
+  const close = () => overlay.remove();
+  back.onclick = close;
+  const s = run.summary || {};
+  const head = el("div", "appr-diff-label");
+  head.append(document.createTextNode((s.spirit || "?") + " / " + (s.ritual || "?") + " · " + (s.outcome || "")));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = close;
+  head.append(x);
+  const body = el("pre", "harness-artifact-body", run.body || "(empty report)");
+  panel.append(head, body);
+  document.body.append(overlay);
+}
+
 // openHarnessArtifact — the post-split viewer: the harness tree lives outside
 // the vault, so artifact briefs read through the spirits file API (read-only
 // allow-list) into a quiet modal. Never the vault note view (two-media rule).

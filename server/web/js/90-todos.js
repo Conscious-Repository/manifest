@@ -273,8 +273,12 @@ function rankedRow(r, idx) {
     const d = r.delegation;
     const chip = el("button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
     chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
-      : "delegated work — click for the runs board";
-    chip.onclick = () => { location.hash = d.state === "proposed" ? "#/feed" : "#/spirits"; };
+      : d.runId ? "view the run report" : "delegated work — click for the runs board";
+    chip.onclick = () => {
+      if (d.state === "proposed") { location.hash = "#/feed"; return; }
+      if (d.runId) { openRunModal(d.runId); return; }
+      location.hash = "#/spirits";
+    };
     right.append(chip);
   } else {
     const dg = el("button", "uw-x tdo-delegate", "⇢");
@@ -474,7 +478,12 @@ function boardCard(r, colKey) {
     const d = r.delegation;
     const chip = el("span", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
     chip.style.cursor = "pointer";
-    chip.onclick = () => { location.hash = d.state === "proposed" ? "#/feed" : "#/spirits"; };
+    chip.onclick = (e) => {
+      e.stopPropagation();
+      if (d.state === "proposed") { location.hash = "#/feed"; return; }
+      if (d.runId) { openRunModal(d.runId); return; }
+      location.hash = "#/spirits";
+    };
     meta.append(chip);
   }
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));

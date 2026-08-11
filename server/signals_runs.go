@@ -8,6 +8,7 @@ package server
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"manifest/signals"
@@ -20,6 +21,70 @@ const runFailureWindow = 48 * time.Hour
 // RunFailureEmitter adapts the harness federation to the signals contract.
 // Lazy over s.eachHarness() — wiring order in main doesn't matter.
 func (s *Server) RunFailureEmitter() signals.Emitter { return runFailEmitter{s} }
+
+// DelegationDoneEmitter (owner ask 2026-08-11): delegated work whose run
+// COMPLETED while the todo is still open — "your result is ready". The card's
+// label opens the run report in place; Done ✓ closes the todo; the signal
+// clears itself when the todo gets checked (the condition disappears).
+func (s *Server) DelegationDoneEmitter() signals.Emitter { return delegDoneEmitter{s} }
+
+type delegDoneEmitter struct{ s *Server }
+
+func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
+	out := []signals.Signal{}
+	for id, d := range e.s.delegationIndex() {
+		if d.State != "done" || d.RunID == "" {
+			continue
+		}
+		text, open := e.s.openTodoText(id)
+		if !open {
+			continue // human already closed it — nothing to page
+		}
+		out = append(out, signals.Signal{
+			ID:      "delegated-done:" + id,
+			Kind:    "delegation-done",
+			Entity:  text,
+			Label:   "delegated work ready · " + text + " · " + d.Harness,
+			ActHref: "#/todos",
+			Hash:    d.RunID,
+			GoalID:  id, // Done ✓ checks the todo through the unified endpoint
+			RunID:   d.RunID,
+		})
+	}
+	return out, nil
+}
+
+// openTodoText resolves a unified composite id to (text, still-open).
+func (s *Server) openTodoText(id string) (string, bool) {
+	switch {
+	case strings.HasPrefix(id, "aion:"):
+		if s.aion != nil {
+			if it := s.aion.LoadBacklog().Find(strings.TrimPrefix(id, "aion:")); it != nil {
+				return it.Text, !it.Checked
+			}
+		}
+		return id, false
+	case strings.HasPrefix(id, "prop:"):
+		if s.realestate != nil {
+			slug, lineID := splitPropID(id)
+			if list, _, ok := s.realestate.LoadTodos(slug); ok {
+				if t := list.Find(lineID); t != nil {
+					return t.Text, !t.Checked
+				}
+			}
+		}
+		return id, false
+	default:
+		if s.todosStore != nil {
+			if doc, err := s.todosStore.Load(); err == nil {
+				if _, t := doc.Find(id); t != nil {
+					return t.Text, !t.Checked
+				}
+			}
+		}
+		return id, false
+	}
+}
 
 // EngineDownEmitter (Phase 7): a harness whose heartbeat is stale WHILE work
 // is queued in its spool is a down engine with a backlog — page the feed.

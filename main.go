@@ -319,6 +319,9 @@ func main() {
 		emitters = append(emitters, srv.RunFailureEmitter())
 		// a down engine with queued work + a degraded deepseek endpoint (Phase 7)
 		emitters = append(emitters, srv.EngineDownEmitter())
+		// delegated work whose run completed while the todo is still open —
+		// "your result is ready" (opens the report in place)
+		emitters = append(emitters, srv.DelegationDoneEmitter())
 		deepseekState := filepath.Join(cfg.DataDir, "portals", "deepseek.state.json")
 		srv.UseDeepseekState(deepseekState)
 		emitters = append(emitters, signals.DegradedPortal(deepseekState))

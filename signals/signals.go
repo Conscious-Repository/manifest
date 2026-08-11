@@ -28,6 +28,7 @@ type Signal struct {
 	ActHref string `json:"actHref"` // deep link, ready to assign to location.hash
 	Hash    string `json:"hash"`    // dismissal re-arm key (client echoes it back)
 	GoalID  string `json:"goalId,omitempty"`
+	RunID   string `json:"runId,omitempty"` // delegation-done: the report to open in place
 }
 
 // Emitter computes the currently-active conditions of one kind. An emitter that

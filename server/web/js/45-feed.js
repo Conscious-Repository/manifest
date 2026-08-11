@@ -116,12 +116,14 @@ function renderFeed() {
 function signalRow(sg) {
   const row = el("div", "signal-row");
   const label = el("span", "signal-label cp-clickable", sg.label);
-  label.onclick = () => { location.hash = sg.actHref; };
+  // a delegation-done card's label opens the RESULT (the run report) in
+  // place — the report body is the artifact; everything else navigates.
+  label.onclick = () => { sg.runId ? openRunModal(sg.runId) : (location.hash = sg.actHref); };
   row.append(label);
   // two verbs only (owner call 2026-08-10): Done ✓ on todo signals, dismiss on
   // everything — the label itself already navigates to the item.
   const act = el("span", "signal-actions");
-  if (sg.kind === "todo-stale" || sg.kind === "todo-waiting") {
+  if (sg.kind === "todo-stale" || sg.kind === "todo-waiting" || sg.kind === "delegation-done") {
     act.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })));
   }
   act.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })));
