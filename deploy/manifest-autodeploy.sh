@@ -14,16 +14,23 @@ STAMPS=/home/benjamin/.config/manifest/autodeploy
 mkdir -p "$STAMPS"
 
 # ---- manifest repo → dashboard + sync daemon ----
+# Rebuild when the BUILT binary is behind the checkout — not merely when a pull
+# happened. A manual `git pull` on the box would otherwise leave HEAD current
+# but the go:embed'd assets stale in the old binary (the recurring "I don't see
+# my change" bug). The stamp is the commit the running binary was built from.
 cd /home/benjamin/src/manifest
 git fetch -q origin main
-LOCAL=$(git rev-parse HEAD)
-REMOTE=$(git rev-parse origin/main)
-if [ "$LOCAL" != "$REMOTE" ]; then
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
   git pull --ff-only -q
+fi
+NOW=$(git rev-parse HEAD)
+BUILT=$(cat "$STAMPS/manifest.built" 2>/dev/null || echo none)
+if [ "$NOW" != "$BUILT" ]; then
   go build -o manifest .
   go build -o /home/benjamin/.local/bin/manifest-sync ./cmd/manifest-sync
   sudo systemctl restart manifest
-  echo "autodeploy: manifest $LOCAL -> $(git rev-parse --short HEAD), restarted"
+  echo "$NOW" > "$STAMPS/manifest.built"
+  echo "autodeploy: manifest built $BUILT -> $(git rev-parse --short HEAD), restarted"
 fi
 
 # ---- harness repo → engine (source syncs in via manifest-sync) ----
