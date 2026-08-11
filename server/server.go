@@ -165,6 +165,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/to-issue", s.handleTodoToIssue)
 	mux.HandleFunc("GET /api/todos/delegate/targets", s.handleDelegateTargets) // Phase 6
 	mux.HandleFunc("POST /api/todos/delegate", s.handleDelegate)
+	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
+	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
 
 	// AION — program cockpit over system/aion/ records + publish effector.
 	if s.aion != nil {

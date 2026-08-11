@@ -40,6 +40,70 @@ async function loadPortals() {
     const rows = (await (await fetch("/api/portals")).json()).rows || [];
     renderPortals(rows);
   } catch (e) { host.innerHTML = ""; host.append(emptyRow("Portals unavailable.")); }
+  loadHarnesses();
+}
+
+// ---- HARNESSES settings (owner ask): each federated tree's engine + which
+// conduit each spirit routes to, switchable in place. A quiet foot toggle,
+// closed by default — the sibling of the portals settings block. ----
+let harnessSettingsOpen = false;
+async function loadHarnesses() {
+  const foot = document.getElementById("spiritHarnessesFoot");
+  const board = document.getElementById("harnessBoard");
+  if (!foot || !board) return;
+  let harnesses = [];
+  try { harnesses = (await (await fetch("/api/harnesses")).json()).harnesses || []; }
+  catch (e) { return; }
+  const down = harnesses.filter((h) => !h.engineAlive).length;
+  foot.innerHTML = "";
+  const t = el("button", "sprt-portals-toggle",
+    (harnessSettingsOpen ? "▾" : "▸") + " harnesses · " + harnesses.length + (down ? " · ● " + down + " engine" + (down === 1 ? "" : "s") + " down" : ""));
+  t.onclick = () => { harnessSettingsOpen = !harnessSettingsOpen; renderHarnesses(harnesses); };
+  foot.append(t);
+  renderHarnesses(harnesses);
+}
+
+function renderHarnesses(harnesses) {
+  const board = document.getElementById("harnessBoard");
+  board.hidden = !harnessSettingsOpen;
+  if (!harnessSettingsOpen) return;
+  board.innerHTML = "";
+  harnesses.forEach((h) => {
+    const card = el("div", "harness-card");
+    const head = el("div", "harness-head");
+    head.append(el("span", "harness-name", h.name));
+    if (h.primary) head.append(el("span", "harness-chip", "primary"));
+    const dot = el("span", "harness-engine " + (h.engineAlive ? "on" : "off"),
+      h.engineAlive ? "engine live" : "engine down");
+    if (h.queued) dot.textContent += " · " + h.queued + " queued";
+    head.append(dot);
+    card.append(head);
+    card.append(el("div", "harness-path", h.path));
+    if (!h.engineAlive && h.engineHint) {
+      const hint = el("div", "harness-hint", h.engineHint);
+      card.append(hint);
+    }
+    (h.spirits || []).forEach((sp) => {
+      const row = el("div", "harness-spirit");
+      row.append(el("span", "harness-spirit-name", sp.name));
+      const sel = selectEl(h.portals || []);
+      sel.className = "pp-in harness-portal-sel";
+      sel.value = sp.portal;
+      sel.onchange = async () => {
+        try {
+          const r = await fetch("/api/harnesses/spirit/portal", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ harness: h.name, spirit: sp.name, portal: sel.value }),
+          });
+          if (!r.ok) throw new Error(await r.text());
+          showToast(sp.name + " → " + sel.value);
+        } catch (e) { showToast("Couldn't switch conduit: " + (e.message || e), null, "error"); sel.value = sp.portal; }
+      };
+      row.append(sel);
+      card.append(row);
+    });
+    board.append(card);
+  });
 }
 
 let spiritPortalsOpen = false; // the settings block at the foot, closed by default
