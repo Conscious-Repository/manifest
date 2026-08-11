@@ -137,15 +137,22 @@ the other; the contract is the interface. Keep it that way.
 
 ## 8. Topology (two machines, one human)
 
-Target: the laptop is the **cockpit** (interactive app); a home server is
-the **engine room** (spirits, pollers, always-on rituals). The vault syncs
-between them (git-based or owner-built; sovereign infrastructure preferred
-— no third-party sync services). Conflict doctrine: the human is the
-mutex. Interactive writes (goals, daily, records) happen where the owner
-is typing; the server's daemons write only their own territories (engine
-artifacts, system-zone areas they own, dataDir) — overlapping write
-surfaces across machines are forbidden by construction, not by merge
-tooling. dataDir is per-machine and never syncs.
+**Amended 2026-08-11 (big-change Phases 1–3, owner decisions 1–4): the
+cockpit is the browser.** Manifest and the excalibur engine run on metis
+(the engine room); laptop and phone reach the dashboard over Tailscale
+(https://metis.tail8f89de.ts.net). The laptop manifest stays buildable as
+dev/fallback, not a daily driver. Two media, two repos: the **vault**
+(consciousrepo — the human's permanent medium) and the **harnesses repo**
+(the agents' working medium, with decay); the excalibur tree left the
+vault entirely. Both sync hands-free via `cmd/manifest-sync` (git; watch →
+debounce → commit → pull --rebase → push; conflicts STOP/PARK/MARK into a
+FEED signal). Conflict doctrine: the human is the mutex. Interactive
+writes happen where the owner is typing and converge through sync; the
+engine writes only its own territories (harness artifacts, dataDir);
+promotion from harness to vault crosses only through the human gates
+(Save-to-vault, approvals Confirm). dataDir is per-machine and never
+syncs. Deployment is a repo artifact (`deploy/`, `make deploy`),
+operator-owned.
 
 ## 9. Identity doctrine
 

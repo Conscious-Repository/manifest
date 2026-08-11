@@ -1,0 +1,26 @@
+# The excalibur engine on metis (big-change Phase 3b) — the always-on half:
+# ritual scheduler + run-now spool + heartbeat, against the harness clone,
+# reading the vault clone. Install:
+#   cd /private/harnesses/excalibur/engine && go build -o ~/.local/bin/excalibur-engine ./cmd/excalibur
+#   sudo cp deploy/excalibur-engine.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now excalibur-engine
+[Unit]
+Description=excalibur engine - ritual scheduler over the harness tree
+After=network-online.target tailscaled.service
+Wants=network-online.target
+ConditionPathExists=/private/harnesses/excalibur/chargebook.md
+ConditionPathExists=/private/consciousrepo/goals.md
+
+[Service]
+Type=simple
+User=benjamin
+Group=benjamin
+Environment=PATH=/home/benjamin/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/benjamin/.local/bin/excalibur-engine serve \
+  -root /private/harnesses/excalibur \
+  -vault /private/consciousrepo
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

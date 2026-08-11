@@ -1,0 +1,13 @@
+# Watches for the unlocked /private volume (big-change Phase 3d): after a
+# reboot the services stay dead (their ConditionPathExists fails while the
+# LUKS volume is locked); the moment `private-unlock` mounts it, this path
+# unit fires engine-room.target and the room comes back by itself.
+[Unit]
+Description=start the engine room when /private is unlocked
+
+[Path]
+PathExists=/private/consciousrepo/goals.md
+Unit=engine-room.target
+
+[Install]
+WantedBy=multi-user.target

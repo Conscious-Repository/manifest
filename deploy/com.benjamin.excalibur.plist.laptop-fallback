@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.benjamin.excalibur</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- Binary lives OUTSIDE the vault. The tree is under ~/Documents (a macOS
+         TCC-protected location): a launchd-spawned child CAN read/write there,
+         but launchd itself cannot open stdout/stderr log files under ~/Documents
+         (job fails EX_CONFIG). So the binary + captured logs live in non-TCC
+         paths; only -root points into the vault. Build/install the binary with:
+           cd <root>/engine && go build -o ~/.local/libexec/excalibur-engine ./cmd/excalibur -->
+    <string>/Users/benjamin/.local/libexec/excalibur-engine</string>
+    <string>serve</string>
+    <string>-root</string>
+    <string>/Users/benjamin/harnesses/excalibur</string>
+    <string>-vault</string>
+    <string>/Users/benjamin/Documents/index.ben</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key><false/>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/benjamin/Library/Logs/excalibur/engine.log</string>
+  <key>StandardErrorPath</key><string>/Users/benjamin/Library/Logs/excalibur/engine.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/Users/benjamin/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <!-- No secrets here. The Exa key is read from ~/.config/excalibur/exa_key (0600). -->
+  </dict>
+</dict>
+</plist>
