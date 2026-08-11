@@ -30,9 +30,10 @@ func (s *Server) handleSpiritsStatus(w http.ResponseWriter, r *http.Request) {
 	alive, at := s.spirits.EngineAlive()
 	resp := map[string]any{
 		"enabled":     true,
-		"engineAlive": alive,
+		"engineAlive": alive, // legacy top-level = the primary harness
 		"spirits":     s.spirits.Spirits(),
 		"feedInbox":   s.feedInboxCount(time.Now()), // same compute as /api/feed — counts never drift
+		"harnesses":   s.harnessHeartbeats(),        // federation: per-harness liveness
 	}
 	if !at.IsZero() {
 		resp["heartbeat"] = at.Format(time.RFC3339)
@@ -49,9 +50,11 @@ func (s *Server) handleSpiritsRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// data = every run report (running ones included, outcome:running); queued =
-	// spool files not yet picked up. The client derives queued/running/done from
-	// these files alone — no browser-held run state (plan §1).
-	writeJSON(w, map[string]any{"data": s.spirits.Runs(), "queued": s.spirits.Queued()})
+	// spool files not yet picked up — merged across the harness federation,
+	// tagged by source. The client derives queued/running/done from these
+	// files alone — no browser-held run state (plan §1).
+	writeJSON(w, map[string]any{"data": s.mergedRuns(), "queued": s.mergedQueued(),
+		"primary": s.primaryHarnessName()})
 }
 
 func (s *Server) handleSpiritsRun(w http.ResponseWriter, r *http.Request) {
@@ -59,12 +62,12 @@ func (s *Server) handleSpiritsRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
 		return
 	}
-	sum, body, ok := s.spirits.Run(r.PathValue("id"))
+	h, sum, body, ok := s.findRun(r.PathValue("id"))
 	if !ok {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return
 	}
-	writeJSON(w, map[string]any{"summary": sum, "body": body})
+	writeJSON(w, map[string]any{"summary": sum, "body": body, "harness": h.Name})
 }
 
 // handleSpiritsRunPrompt serves the preserved exact prompts — the §6.5 "show
@@ -74,12 +77,12 @@ func (s *Server) handleSpiritsRunPrompt(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
 		return
 	}
-	sum, _, ok := s.spirits.Run(r.PathValue("id"))
+	h, sum, _, ok := s.findRun(r.PathValue("id"))
 	if !ok {
 		http.Error(w, "run not found", http.StatusNotFound)
 		return
 	}
-	turns, err := s.spirits.RunPrompts(sum.Spirit, sum.Run)
+	turns, err := h.Spirits.RunPrompts(sum.Spirit, sum.Run)
 	if err != nil {
 		http.Error(w, "prompts not found", http.StatusNotFound)
 		return
@@ -98,6 +101,7 @@ type approvalRow struct {
 	approvals.Proposal
 	Allowed bool   `json:"allowed"`
 	Current string `json:"current"`
+	Harness string `json:"harness,omitempty"` // federation source tag
 	// AionPayload is the parsed structured payload of an aion proposal (nil
 	// otherwise) — the editable card renders a form over it. Secret spans in
 	// the body are masked display-side before it reaches the client.
@@ -112,14 +116,25 @@ type approvalRow struct {
 // card already carries Approve/Dismiss — one object, one card).
 func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 	rows := []approvalRow{}
-	if s.approvals == nil {
-		return rows
+	for _, h := range s.eachHarness() {
+		if h.Approvals == nil {
+			continue
+		}
+		rows = append(rows, s.harnessApprovalRows(h, exclude)...)
 	}
-	for _, p := range s.approvals.List("pending") {
+	return rows
+}
+
+// harnessApprovalRows enriches ONE harness's pending proposals; the apply
+// allow-lists + current-content reads run against that harness's store.
+func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []approvalRow {
+	rows := []approvalRow{}
+	store := h.Approvals
+	for _, p := range store.List("pending") {
 		if exclude[p.Type] {
 			continue
 		}
-		rr := approvalRow{Proposal: p}
+		rr := approvalRow{Proposal: p, Harness: s.harnessTag(h.Name)}
 		if p.ApplyPath != "" {
 			switch p.Type {
 			case approvals.TypeCreateVaultNote:
@@ -130,14 +145,14 @@ func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 				// The bullet appends to the x-posts file; current content is that
 				// file so the UI can show where it lands.
 				rr.Allowed = approvals.AppendXQueuePathAllowed(p.ApplyPath)
-				if cur, ok := s.approvals.CurrentContent(p); ok {
+				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
 			case approvals.TypeUpdateVaultSkill:
 				// A skill-file edit: allowed only when the path is on the tight
 				// allow-list AND the filing ritual is a tune ritual (D15).
 				rr.Allowed = approvals.UpdateVaultSkillPathAllowed(p.ApplyPath) && p.Ritual == "tune"
-				if cur, ok := s.approvals.CurrentContent(p); ok {
+				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
 			case approvals.TypeAionBacklog, approvals.TypeAionHeuristic:
@@ -145,7 +160,7 @@ func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 				// Confirm would append. Secret-masked before rendering.
 				rr.Allowed = (p.Type == approvals.TypeAionBacklog && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
 					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath))
-				if cur, ok := s.approvals.CurrentContent(p); ok {
+				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
 				if payload, ok := approvals.AionPayload(p); ok {
@@ -157,7 +172,7 @@ func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 				rr.Body = maskSecrets(rr.Body)
 			default:
 				rr.Allowed = approvals.ApplyPathAllowed(p.ApplyPath)
-				if cur, ok := s.approvals.CurrentContent(p); ok {
+				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
 			}
@@ -172,7 +187,16 @@ func (s *Server) handleSpiritsApprovals(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, map[string]any{"pending": []any{}, "counts": map[string]int{}})
 		return
 	}
-	writeJSON(w, map[string]any{"pending": s.approvalRows(nil), "counts": s.approvals.Counts()})
+	counts := map[string]int{}
+	for _, h := range s.eachHarness() {
+		if h.Approvals == nil {
+			continue
+		}
+		for k, v := range h.Approvals.Counts() {
+			counts[k] += v
+		}
+	}
+	writeJSON(w, map[string]any{"pending": s.approvalRows(nil), "counts": counts})
 }
 
 func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Request) {
@@ -193,18 +217,19 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	}
 	_ = decode(r, &b) // body is optional (plain confirm)
 	id := r.PathValue("id")
+	store := s.approvalsFor(id) // federation: route to the harness holding the id
 	// run-errand payload must be read BEFORE confirm (confirm moves the file);
 	// a failed confirm never enqueues, so approval maps 1:1 to one execution.
-	pending, loadErr := s.approvals.LoadPending(id)
+	pending, loadErr := store.LoadPending(id)
 	var err error
 	if b.EditAttendees || b.EditCategories || strings.TrimSpace(b.Title) != "" {
-		err = s.approvals.ConfirmCreateNote(id, approvals.ConfirmEdits{
+		err = store.ConfirmCreateNote(id, approvals.ConfirmEdits{
 			Attendees: b.Attendees, EditAttendees: b.EditAttendees,
 			Title:      b.Title,
 			Categories: b.Categories, EditCategories: b.EditCategories,
 		})
 	} else {
-		err = s.approvals.Confirm(id)
+		err = store.Confirm(id)
 	}
 	if err != nil {
 		httpError(w, err)
@@ -216,7 +241,7 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	// watcher's duplicate event are no-ops. The written filename is the
 	// (possibly retitled) apply path, lowercased by the apply.
 	if loadErr == nil && pending.Type == approvals.TypeCreateVaultNote && s.aionSink != nil {
-		if approved, err := s.approvals.LoadApproved(id); err == nil && approved.ApplyPath != "" {
+		if approved, err := store.LoadApproved(id); err == nil && approved.ApplyPath != "" {
 			s.aionSink.Notify([]string{"log/" + strings.ToLower(approved.ApplyPath)})
 		}
 	}
@@ -246,7 +271,7 @@ func (s *Server) handleSpiritsApprovalAion(w http.ResponseWriter, r *http.Reques
 		httpError(w, err)
 		return
 	}
-	if err := s.approvals.SetAionPayload(r.PathValue("id"), payload); err != nil {
+	if err := s.approvalsFor(r.PathValue("id")).SetAionPayload(r.PathValue("id"), payload); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -262,7 +287,7 @@ func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Requ
 		Reason string `json:"reason"`
 	}
 	_ = decode(r, &b) // reason is optional
-	if err := s.approvals.Reject(r.PathValue("id"), b.Reason); err != nil {
+	if err := s.approvalsFor(r.PathValue("id")).Reject(r.PathValue("id"), b.Reason); err != nil {
 		httpError(w, err)
 		return
 	}

@@ -228,7 +228,10 @@ function updateSpiritsCrumb() {
   if (typeof setCrumbMeta !== "function" || els.spiritsView.hidden) return;
   const st = spiritStatusCache;
   const bits = [];
-  if (st && st.enabled) bits.push(st.engineAlive ? "engine ok" : "engine down");
+  if (st && st.enabled && (st.harnesses || []).length > 1) {
+    // federation: per-harness liveness ("excalibur ok · hermes down")
+    st.harnesses.forEach((h) => bits.push(h.name + (h.engineAlive ? " ok" : " down")));
+  } else if (st && st.enabled) bits.push(st.engineAlive ? "engine ok" : "engine down");
   else if (st) bits.push("not configured");
   if (typeof spiritRitualRows !== "undefined" && spiritRitualRows.length) {
     bits.push(spiritRitualRows.length + " ritual" + (spiritRitualRows.length === 1 ? "" : "s"));

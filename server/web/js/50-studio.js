@@ -577,6 +577,7 @@ function liveRunRow(item, running) {
   const row = el("div", "sprt-live" + (running ? " running" : ""));
   row.append(el("span", "live-dot " + (running ? "on" : "wait")));
   row.append(el("span", "sprt-live-state", running ? "running" : "queued"));
+  if (item.harness) row.append(el("span", "harness-chip", item.harness));
   row.append(el("span", "sprt-live-text",
     item.spirit + " · " + item.ritual + (item.request ? " — " + item.request : "")));
   if (running) {
@@ -601,6 +602,7 @@ function spiritRunRow(r) {
   const row = el("div", "sprt-run");
   const top = el("div", "sprt-run-top");
   top.append(el("span", "run-outcome oc-" + (r.outcome || "").replace(/[^a-z-]/g, ""), r.outcome || "?"));
+  if (r.harness) top.append(el("span", "harness-chip", r.harness)); // federation source
   top.append(el("span", "sprt-run-title", `${r.spirit} / ${r.ritual}`));
   top.append(el("span", "sprt-run-when", fmtWhen(r.started)));
   row.append(top);

@@ -49,9 +49,14 @@ func (f findingsSource) Active(now time.Time, q url.Values) []attention.Card {
 		return views
 	}
 	flt := feed.Filter{Status: q.Get("status"), Type: q.Get("type"), Domain: q.Get("domain")}
-	for _, it := range f.s.spirits.Feed.List(flt, now) {
-		vaultRel, harnessRef := f.s.artifactRefs(it)
-		views = append(views, feedItemView{Item: it, ArtifactPath: vaultRel, ArtifactRef: harnessRef})
+	for _, h := range f.s.eachHarness() {
+		if h.Spirits == nil {
+			continue
+		}
+		for _, it := range h.Spirits.Feed.List(flt, now) {
+			vaultRel, harnessRef := f.s.artifactRefsIn(h, it)
+			views = append(views, feedItemView{Item: it, ArtifactPath: vaultRel, ArtifactRef: harnessRef, Harness: f.s.harnessTag(h.Name)})
+		}
 	}
 	return views
 }
@@ -59,7 +64,13 @@ func (f findingsSource) Count(now time.Time) int {
 	if f.s.spirits == nil {
 		return 0
 	}
-	return len(f.s.spirits.Feed.List(feed.Filter{Status: "inbox"}, now))
+	n := 0
+	for _, h := range f.s.eachHarness() {
+		if h.Spirits != nil {
+			n += len(h.Spirits.Feed.List(feed.Filter{Status: "inbox"}, now))
+		}
+	}
+	return n
 }
 
 // signalsSource: app-computed conditions. Lifecycle dismiss-snooze-autoclear.

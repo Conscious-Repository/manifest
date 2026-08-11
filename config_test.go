@@ -114,3 +114,35 @@ func TestDerivedDataLivesOutsideVault(t *testing.T) {
 		}
 	}
 }
+
+// Harness federation (big-change Phase 4a): the legacy excaliburPath spelling
+// synthesizes a single-entry Harnesses list; an explicit harnesses list
+// mirrors its primary back into ExcaliburPath for the primary-only code paths.
+func TestHarnessesLegacySynthesis(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	os.WriteFile(p, []byte(`{"vaultPath":"/v","excaliburPath":"/v/harness"}`), 0o644)
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Harnesses) != 1 || cfg.Harnesses[0].Name != "excalibur" || cfg.Harnesses[0].Path != "/v/harness" {
+		t.Fatalf("legacy synthesis wrong: %+v", cfg.Harnesses)
+	}
+}
+
+func TestHarnessesListMirrorsPrimary(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.json")
+	os.WriteFile(p, []byte(`{"vaultPath":"/v","harnesses":[{"name":"excalibur","path":"/h/excalibur"},{"path":"/h/hermes"}]}`), 0o644)
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ExcaliburPath != "/h/excalibur" {
+		t.Fatalf("primary not mirrored into ExcaliburPath: %q", cfg.ExcaliburPath)
+	}
+	if len(cfg.Harnesses) != 2 || cfg.Harnesses[1].Name != "hermes" {
+		t.Fatalf("nameless entry should default to basename: %+v", cfg.Harnesses)
+	}
+}

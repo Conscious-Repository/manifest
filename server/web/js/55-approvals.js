@@ -11,6 +11,7 @@ function approvalCardEl(a) {
   card.dataset.approvalId = a.id;
   const head = el("div", "appr-head");
   head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
+  if (a.harness) head.append(el("span", "harness-chip", a.harness)); // federation source
   card.append(head);
   if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
 

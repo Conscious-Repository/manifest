@@ -61,6 +61,7 @@ type feedItemView struct {
 	feed.Item
 	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative (legacy in-vault harness only)
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative, read via /api/spirits/file
+	Harness      string `json:"harness,omitempty"`      // federation source tag
 }
 
 // libraryRefRe pulls an `artifacts/library/<name>.md` reference out of a card's
@@ -92,13 +93,13 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resp)
 }
 
-// artifactRefs resolves an artifact card's library reference. Returns
-// (vaultRel, harnessRef): vaultRel is non-empty only under the legacy in-vault
-// harness layout (opens in the note view); harnessRef is the harness-relative
-// path (opens through the spirits read API). Both empty when the item isn't an
-// artifact or the file is missing.
-func (s *Server) artifactRefs(it feed.Item) (string, string) {
-	if it.Type != "artifact" || s.spirits == nil {
+// artifactRefsIn resolves an artifact card's library reference against ITS
+// harness. Returns (vaultRel, harnessRef): vaultRel is non-empty only under
+// the legacy in-vault layout (opens in the note view); harnessRef is the
+// harness-relative path (opens through the spirits read API). Both empty when
+// the item isn't an artifact or the file is missing.
+func (s *Server) artifactRefsIn(h Harness, it feed.Item) (string, string) {
+	if it.Type != "artifact" || h.Spirits == nil {
 		return "", ""
 	}
 	ref := ""
@@ -110,7 +111,7 @@ func (s *Server) artifactRefs(it feed.Item) (string, string) {
 	if ref == "" {
 		return "", ""
 	}
-	abs := filepath.Join(s.spirits.Root(), filepath.FromSlash(ref))
+	abs := filepath.Join(h.Spirits.Root(), filepath.FromSlash(ref))
 	if _, err := os.Stat(abs); err != nil {
 		return "", "" // referenced file missing — nothing to open
 	}
@@ -153,6 +154,11 @@ func (s *Server) handleFeedStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
+	h, ok := s.feedHarnessFor(id) // federation: the verdict lands in the item's own tree
+	if !ok {
+		http.Error(w, "item not found", http.StatusNotFound)
+		return
+	}
 	var (
 		it  feed.Item
 		err error
@@ -162,9 +168,9 @@ func (s *Server) handleFeedStatus(w http.ResponseWriter, r *http.Request) {
 		if days <= 0 {
 			days = 7
 		}
-		it, err = s.spirits.Feed.Snooze(id, time.Now().Add(time.Duration(days)*24*time.Hour))
+		it, err = h.Spirits.Feed.Snooze(id, time.Now().Add(time.Duration(days)*24*time.Hour))
 	} else {
-		it, err = s.spirits.Feed.SetStatus(id, b.Status)
+		it, err = h.Spirits.Feed.SetStatus(id, b.Status)
 	}
 	if err != nil {
 		httpError(w, err)
@@ -185,11 +191,14 @@ func (s *Server) handleFeedDig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
 		return
 	}
-	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
+	fh, ok := s.feedHarnessFor(r.PathValue("id"))
 	if !ok {
 		http.Error(w, "item not found", http.StatusNotFound)
 		return
 	}
+	it, _ := fh.Spirits.Feed.Get(r.PathValue("id"))
+	// dig spools into the PRIMARY engine; a non-primary item whose agent isn't
+	// a primary spirit falls out below with an honest 422.
 	ritual := s.onDemandRitual(it.Agent)
 	if ritual == "" {
 		http.Error(w, it.Agent+" has no on-demand ritual to dig with", http.StatusUnprocessableEntity)
@@ -287,11 +296,12 @@ func (s *Server) handleFeedToTodo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "todos unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
+	fh, ok := s.feedHarnessFor(r.PathValue("id"))
 	if !ok {
 		http.Error(w, "item not found", http.StatusNotFound)
 		return
 	}
+	it, _ := fh.Spirits.Feed.Get(r.PathValue("id"))
 	doc, err := s.todosStore.Load()
 	if err != nil {
 		httpError(w, err)
@@ -307,7 +317,7 @@ func (s *Server) handleFeedToTodo(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	updated, err := s.spirits.Feed.SetStatus(it.ID, "kept")
+	updated, err := fh.Spirits.Feed.SetStatus(it.ID, "kept")
 	if err != nil {
 		writeJSON(w, it) // todo landed; status flip is best-effort
 		return
@@ -320,17 +330,18 @@ func (s *Server) handleFeedSaveToVault(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "vault save unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	it, ok := s.spirits.Feed.Get(r.PathValue("id"))
+	fh, ok := s.feedHarnessFor(r.PathValue("id"))
 	if !ok {
 		http.Error(w, "item not found", http.StatusNotFound)
 		return
 	}
+	it, _ := fh.Spirits.Feed.Get(r.PathValue("id"))
 	rel, err := s.vault.SaveExtrinsic(it.Title, it.Type, it.Why, it.Link, it.Source, it.Body)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	updated, err := s.spirits.Feed.SetVaultNote(it.ID, rel)
+	updated, err := fh.Spirits.Feed.SetVaultNote(it.ID, rel)
 	if err != nil {
 		httpError(w, err)
 		return

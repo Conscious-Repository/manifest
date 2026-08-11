@@ -343,14 +343,30 @@ func main() {
 	// approvals inbox is the excalibur surface (warden findings today, the
 	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
 	srv.UseVault(vw)
-	if cfg.ExcaliburPath != "" {
-		srv.UseSpirits(spiritsStore)
+	if len(cfg.Harnesses) > 0 {
+		// Harness federation (big-change Phase 4): one store pair per tree,
+		// primary first. The primary keeps every write surface (spool, ritual
+		// editor, studio, aion sink); the rest surface read-side, tagged.
+		var hs []server.Harness
+		for i, ref := range cfg.Harnesses {
+			sp := spiritsStore // the primary store already exists (aion sink holds it)
+			if i > 0 || sp == nil {
+				sp = spirits.NewStore(ref.Path).WithSkillsRoot(filepath.Join(cfg.VaultPath, "skills"))
+			}
+			ap := approvals.NewStore(filepath.Join(ref.Path, "artifacts")).
+				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved")
+			hs = append(hs, server.Harness{Name: ref.Name, Spirits: sp, Approvals: ap})
+		}
+		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
 		srv.UseAionSink(aionSink) // transcript-confirm → instant extraction spool
-		srv.UseApprovals(approvals.NewStore(filepath.Join(cfg.ExcaliburPath, "artifacts")).WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved"))
 		srv.UseStudio(studio.NewStore(cfg.ExcaliburPath), studio.CorpusPath(cfg.ExcaliburPath), cfg.XPostsFile)
-		log.Printf("spirits: %s (approvals inbox: artifacts/approvals · studio board: artifacts/studio)", cfg.ExcaliburPath)
+		names := make([]string, len(hs))
+		for i, h := range hs {
+			names[i] = h.Name
+		}
+		log.Printf("spirits: %d harness(es) [%s] (primary: %s)", len(hs), strings.Join(names, ", "), hs[0].Name)
 	} else {
-		log.Printf("spirits: disabled (set excaliburPath in config to enable the SPIRITS tab)")
+		log.Printf("spirits: disabled (set harnesses or excaliburPath in config to enable the SPIRITS tab)")
 	}
 	switch {
 	case calClient.Enabled():

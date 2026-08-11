@@ -231,6 +231,7 @@ function feedCard(it) {
   const top = el("div", "feed-top");
   if (pinned) top.append(el("span", "pin-chip", "📌 pinned"));
   top.append(el("span", "type-chip type-" + it.type, it.type));
+  if (it.harness) top.append(el("span", "harness-chip", it.harness)); // federation source
   // only a real external URL makes the title a link; an artifact's local
   // `artifacts/library/…` reference opens in the note view via "view →" instead.
   const external = /^https?:\/\//i.test(it.link || "");

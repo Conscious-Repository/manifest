@@ -58,7 +58,15 @@ type Config struct {
 	ExtrinsicRoot string `json:"extrinsicRoot"`
 	// ExcaliburPath is the root of the sibling excalibur harness tree (spirit
 	// feed, run reports, run-now spool). Empty disables the SPIRITS tab.
+	// Legacy spelling of Harnesses — honored as a single-entry list.
 	ExcaliburPath string `json:"excaliburPath"`
+	// Harnesses is the federation list (big-change Phase 4): N harness trees
+	// behind one on-disk contract (CONTRACT.md in the harnesses repo). The
+	// FIRST entry is the primary — it keeps the write surfaces (spool, ritual
+	// editor, studio, aion sink); the rest surface read-side (runs, feed,
+	// approvals) tagged by name. When empty, ExcaliburPath synthesizes
+	// [{name:"excalibur", path:ExcaliburPath}].
+	Harnesses []HarnessRef `json:"harnesses"`
 	// XPostsFile is the vault-relative X-posts file the Content Studio appends
 	// approved posts to (a `# queue`/`# posted` bullet list). Default "x posts.md".
 	XPostsFile string `json:"xPostsFile"`
@@ -82,6 +90,12 @@ type Config struct {
 	// ErrandAccounts, when set, is the only set of aside account ids the
 	// compose picker offers and the API accepts (§6 allowlist).
 	ErrandAccounts []string `json:"errandAccounts"`
+}
+
+// HarnessRef names one harness tree (federation, big-change Phase 4).
+type HarnessRef struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // AionPortalConfig is the git coordinates of the aionbio checkout.
@@ -179,6 +193,22 @@ func LoadConfig(path string) (Config, error) {
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	cfg.RePortalPath = expandHome(cfg.RePortalPath)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
+	// Harness federation (Phase 4): normalize the two spellings into BOTH —
+	// Harnesses is the canonical list (legacy ExcaliburPath synthesizes a
+	// single entry); ExcaliburPath mirrors the primary for the code paths
+	// that are primary-only by design (studio, corpus, aion sink).
+	for i := range cfg.Harnesses {
+		cfg.Harnesses[i].Path = expandHome(cfg.Harnesses[i].Path)
+		if strings.TrimSpace(cfg.Harnesses[i].Name) == "" {
+			cfg.Harnesses[i].Name = filepath.Base(cfg.Harnesses[i].Path)
+		}
+	}
+	if len(cfg.Harnesses) == 0 && cfg.ExcaliburPath != "" {
+		cfg.Harnesses = []HarnessRef{{Name: "excalibur", Path: cfg.ExcaliburPath}}
+	}
+	if len(cfg.Harnesses) > 0 && cfg.ExcaliburPath == "" {
+		cfg.ExcaliburPath = cfg.Harnesses[0].Path
+	}
 	if cfg.AionPortal.Remote == "" {
 		cfg.AionPortal.Remote = "origin"
 	}

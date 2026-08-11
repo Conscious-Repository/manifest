@@ -44,9 +44,12 @@ type Server struct {
 	// mints/validates the token the headless engine reads. Nilable.
 	gmail *gmailauth.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
-	approvals *approvals.Store // the one inbox: excalibur/artifacts/approvals
+	approvals *approvals.Store // the PRIMARY inbox (harness federation: first entry)
 	vault     *vaultwriter.Writer
-	spirits   *spirits.Store
+	spirits   *spirits.Store // the PRIMARY harness (write surfaces live here)
+	// harnessList is the federation (big-change Phase 4), primary first —
+	// runs/queued/feed/approvals merge across it, tagged by name.
+	harnessList []Harness
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
