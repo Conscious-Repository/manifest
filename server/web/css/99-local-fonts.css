@@ -1,0 +1,34 @@
+/* Self-hosted fonts for Manifest — no external Google Fonts dependency.
+   Vendored under server/web/fonts/ (Hanken Grotesk + Spline Sans Mono). */
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/hanken-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Hanken Grotesk";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/hanken-500.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/spline-400.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Spline Sans Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("fonts/spline-500.ttf") format("truetype");
+}
