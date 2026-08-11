@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"manifest/portals"
+	"manifest/signals"
 )
 
 // DeepSeek-local (big-change Phase 5a): the lab's OpenAI-compatible endpoint
@@ -107,6 +108,8 @@ func (s *Server) handleDeepseekKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDeepseekTest GETs <base>/models and reports the DISCOVERED model.
+// The result also lands in the dataDir state file the DegradedPortal signal
+// reads (Phase 7) — a degraded test pages the feed until a later open one.
 func (s *Server) handleDeepseekTest(w http.ResponseWriter, r *http.Request) {
 	row := s.deepseekPortalRow()
 	if row.State == "sealed" {
@@ -128,8 +131,22 @@ func (s *Server) handleDeepseekTest(w http.ResponseWriter, r *http.Request) {
 		}
 		row.Note = note + " · engine conduit"
 	}
+	s.writeDeepseekState(row.State, row.Err)
 	writeJSON(w, row)
 }
+
+// writeDeepseekState records the last explicit test for the feed signal.
+func (s *Server) writeDeepseekState(state, errMsg string) {
+	if s.deepseekStatePath == "" {
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(s.deepseekStatePath), 0o755)
+	b, _ := json.Marshal(signals.PortalState{Portal: deepseekID, State: state, Err: errMsg, At: time.Now()})
+	_ = os.WriteFile(s.deepseekStatePath, b, 0o644)
+}
+
+// UseDeepseekState points the test-state file (under dataDir, per-machine).
+func (s *Server) UseDeepseekState(path string) { s.deepseekStatePath = path }
 
 // handleDeepseekDisconnect removes the URL file.
 func (s *Server) handleDeepseekDisconnect(w http.ResponseWriter, r *http.Request) {

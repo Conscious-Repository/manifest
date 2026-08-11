@@ -317,6 +317,11 @@ func main() {
 		// failed ritual runs page the feed (Phase 7; auto-clears on a newer
 		// completed run of the same spirit/ritual)
 		emitters = append(emitters, srv.RunFailureEmitter())
+		// a down engine with queued work + a degraded deepseek endpoint (Phase 7)
+		emitters = append(emitters, srv.EngineDownEmitter())
+		deepseekState := filepath.Join(cfg.DataDir, "portals", "deepseek.state.json")
+		srv.UseDeepseekState(deepseekState)
+		emitters = append(emitters, signals.DegradedPortal(deepseekState))
 		if reSvc != nil {
 			// property signals: over-budget category, stalled rehab, nothing-queued-next
 			emitters = append(emitters, signals.OverBudgetProperties(reSvc),

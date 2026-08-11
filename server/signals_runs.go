@@ -7,6 +7,7 @@ package server
 // auto-clearing rule); a dismissal re-arms on the NEXT failure (hash = run id).
 
 import (
+	"strconv"
 	"time"
 
 	"manifest/signals"
@@ -19,6 +20,46 @@ const runFailureWindow = 48 * time.Hour
 // RunFailureEmitter adapts the harness federation to the signals contract.
 // Lazy over s.eachHarness() — wiring order in main doesn't matter.
 func (s *Server) RunFailureEmitter() signals.Emitter { return runFailEmitter{s} }
+
+// EngineDownEmitter (Phase 7): a harness whose heartbeat is stale WHILE work
+// is queued in its spool is a down engine with a backlog — page the feed.
+// Auto-clears when the heartbeat freshens or the queue drains (a laptop dev
+// dashboard with an empty spool stays quiet by construction).
+func (s *Server) EngineDownEmitter() signals.Emitter { return engineDownEmitter{s} }
+
+type engineDownEmitter struct{ s *Server }
+
+func (e engineDownEmitter) Emit(now time.Time) ([]signals.Signal, error) {
+	out := []signals.Signal{}
+	for _, h := range e.s.eachHarness() {
+		if h.Spirits == nil {
+			continue
+		}
+		alive, at := h.Spirits.EngineAlive()
+		if alive {
+			continue
+		}
+		queued := len(h.Spirits.Queued())
+		if queued == 0 {
+			continue // nothing waiting — silence is fine
+		}
+		age := 0
+		if !at.IsZero() {
+			age = int(now.Sub(at).Hours() / 24)
+		}
+		out = append(out, signals.Signal{
+			ID:      "engine-down:" + h.Name,
+			Kind:    "engine-down",
+			Entity:  h.Name,
+			Label:   "engine down · " + h.Name + " · " + strconv.Itoa(queued) + " queued",
+			Age:     age,
+			ActHref: "#/spirits",
+			Hash:    at.Format(time.RFC3339) + ":" + strconv.Itoa(queued),
+		})
+	}
+	return out, nil
+}
+
 
 type runFailEmitter struct{ s *Server }
 

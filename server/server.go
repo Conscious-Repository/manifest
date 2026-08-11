@@ -50,6 +50,9 @@ type Server struct {
 	// harnessList is the federation (big-change Phase 4), primary first —
 	// runs/queued/feed/approvals merge across it, tagged by name.
 	harnessList []Harness
+	// deepseekStatePath: the last explicit portal test's result (dataDir,
+	// per-machine) — the DegradedPortal feed signal reads it (Phase 7).
+	deepseekStatePath string
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
