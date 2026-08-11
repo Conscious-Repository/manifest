@@ -100,7 +100,7 @@ const NAV_SECTIONS = [
   ]},
   { label: "WORK", items: [
     { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },
-    { key: "properties", label: "Properties", glyph: "⌂", hash: "#/properties", counted: true },
+    { key: "properties", label: "Real Estate", glyph: "⌂", hash: "#/properties", counted: true },
     { key: "studio", label: "Studio", glyph: "▤", hash: "#/studio" },
   ]},
   { label: "SIGNAL", items: [
@@ -198,7 +198,10 @@ function renderCrumbs(h) {
     parts.push({ label: p.split("/").pop().replace(/\.md$/, "") });
   } else {
     const sec = sectionOf(h);
-    parts.push({ label: sec, hash: sec === "day" ? "#/" : "#/" + sec });
+    // display label diverges from the route key only for real estate (key stays
+    // "properties" so hash/counts/routing are untouched)
+    const secLabel = sec === "properties" ? "real estate" : sec;
+    parts.push({ label: secLabel, hash: sec === "day" ? "#/" : "#/" + sec });
     if (sec !== "day") {
       h.replace(/^#\//, "").split("/").filter(Boolean).slice(1)
         .forEach((s) => parts.push({ label: decodeURIComponent(s) }));
