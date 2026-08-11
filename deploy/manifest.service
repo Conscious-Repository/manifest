@@ -28,8 +28,11 @@ ExecStart=/home/benjamin/src/manifest/manifest -config /home/benjamin/src/manife
 Restart=on-failure
 RestartSec=5
 
-# Hardening — read-only everywhere except the three write territories:
-# dataDir (per-machine state), the vault clone, the harness clone.
+# Hardening — read-only everywhere except the write territories:
+# dataDir (per-machine state), the vault clone, the harness clone, and the
+# AION portal publish checkout (aionbio — AION publish writes public/portal/
+# data/*.json there, then commits + pushes; without this the publish fails at
+# "write" with EROFS). ReadWritePaths takes precedence over ProtectHome.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -37,6 +40,7 @@ ProtectHome=read-only
 ReadWritePaths=/home/benjamin/.config/manifest
 ReadWritePaths=/private/consciousrepo
 ReadWritePaths=/private/harnesses
+ReadWritePaths=/home/benjamin/aionbio
 
 [Install]
 WantedBy=multi-user.target
