@@ -4,7 +4,7 @@
 // Settings — plus the publish rail (aionbio export effector). Manifest is the
 // only edit surface; the team portal is read-only, fed by PUBLISH.
 let aionCache = null;
-let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | reconcile | settings
+let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | settings
 let aionSelId = null;     // inspector selection (redesign §4 — replaces the drawer)
 let aionOrgSel = "people"; // org registry rail selection
 let aionDoneOpen = false;    // backlog: done-tasks section expanded
@@ -35,8 +35,8 @@ function renderAion() {
   else if (aionMode === "vto") renderAionVTO(host);
   else if (aionMode === "goals") renderAionGoals(host);
   else if (aionMode === "org") renderAionOrg(host);
-  else if (aionMode === "reconcile") renderAionReconcile(host);
-  else if (aionMode === "settings") { location.hash = "#/aion"; return; } // tab retired (owner call)
+  // reconcile + settings tabs retired (owner calls) — inbound lives in FEED
+  else if (aionMode === "reconcile" || aionMode === "settings") { location.hash = "#/aion"; return; }
   else renderAionBacklog(host);
 }
 
@@ -870,169 +870,3 @@ function renderAionOrg(host) {
   }
 }
 
-// ---- RECONCILE: close backend↔portal linkage gaps in bulk ----
-// The portal renders relationships only through each item's rock (+ a
-// decided date for decisions). This surface lists every item the portal
-// can't fully place and lets the owner assign a rock / date across many at
-// once. Permanent: new un-rocked extraction proposals surface here too.
-let aionReconcile = null;   // {gaps, counts}
-let aionRecPicks = {};      // id → chosen rock (uncommitted)
-let aionRecDates = {};      // id → chosen decided date (uncommitted)
-let aionRecNeeded = {};     // id → chosen needed_by deadline (uncommitted, decisions)
-let aionRecSel = {};        // id → checked
-let aionRecKind = "";       // "" | task | decision
-let aionRecKeyword = "";
-
-async function renderAionReconcile(host) {
-  if (!aionReconcile) {
-    host.append(el("div", "aion-section-note", "loading gaps…"));
-    try { aionReconcile = await (await fetch("/api/aion/reconcile")).json(); }
-    catch (e) { host.innerHTML = ""; host.append(emptyRow("reconcile unavailable")); return; }
-    host.innerHTML = "";
-  }
-  const c = aionReconcile.counts || {};
-  host.append(el("div", "aion-section-note",
-    "gaps between the manifest backend and what aion.bio can render — the portal links items to goals only through their rock (decisions also need a decided date). assign below; PUBLISH ships it."));
-
-  // filter chips
-  const chips = el("div", "aion-chips");
-  const chip = (label, on, fn) => { const b = el("button", "filter-chip" + (on ? " on" : ""), label); b.onclick = fn; return b; };
-  chips.append(
-    chip("ALL · " + (c.total || 0), aionRecKind === "", () => { aionRecKind = ""; renderAion(); }),
-    chip("DECISIONS · " + ((c.unanchoredDecisions || 0) + (c.undatedDecided || 0) + (c.openDecisions || 0)), aionRecKind === "decision", () => { aionRecKind = "decision"; renderAion(); }),
-    chip("OPEN TASKS · " + (c.unanchoredTasks || 0), aionRecKind === "task", () => { aionRecKind = "task"; renderAion(); }));
-  const kw = inputEl("filter by title / hint…");
-  kw.value = aionRecKeyword;
-  kw.classList.add("aion-rec-kw");
-  kw.oninput = () => { aionRecKeyword = kw.value; renderRecRows(); };
-  chips.append(kw);
-  host.append(chips);
-
-  // bulk bar: assign one rock to every checked row
-  let aionRecBulkRock = "";
-  const bulk = el("div", "aion-rec-bulk");
-  const bulkRockTa = typeahead({
-    placeholder: "assign rock to selected…",
-    suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id) => { aionRecBulkRock = id; }),
-  });
-  bulk.append(el("span", "aion-vto-key", "BULK"), bulkRockTa.el);
-  bulk.append(pillLight("apply rock → selected", () => {
-    const ids = Object.keys(aionRecSel).filter((k) => aionRecSel[k]);
-    if (!ids.length) { showToast("select some rows first"); return; }
-    ids.forEach((id) => { aionRecPicks[id] = aionRecBulkRock; });
-    renderRecRows();
-  }));
-  host.append(bulk);
-
-  const rowsHost = el("div", "aion-rec-rows");
-  host.append(rowsHost);
-  const saveBar = el("div", "aion-rec-savebar");
-  host.append(saveBar);
-
-  function renderSaveBar() {
-    saveBar.innerHTML = "";
-    const edits = pendingEdits();
-    if (!edits.length) return;
-    saveBar.append(el("span", "dirty-label", edits.length + " item" + (edits.length === 1 ? "" : "s") + " to relink"));
-    saveBar.append(pill("save " + edits.length, async () => {
-      try {
-        const r = await fetch("/api/aion/backlog/link", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ edits }) });
-        const res = await r.json();
-        if (!r.ok || !res.ok) throw new Error(res.error || r.status);
-        showToast("Relinked " + res.changed + " · PUBLISH to ship");
-        aionRecPicks = {}; aionRecDates = {}; aionRecNeeded = {}; aionRecSel = {};
-        aionReconcile = null;
-        await loadAion();
-      } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
-    }));
-    saveBar.append(pillLight("discard", () => { aionRecPicks = {}; aionRecDates = {}; aionRecNeeded = {}; aionRecSel = {}; renderRecRows(); }));
-  }
-
-  function pendingEdits() {
-    const out = [];
-    (aionReconcile.gaps || []).forEach((g) => {
-      const e = { id: g.id }; let has = false;
-      if (aionRecPicks[g.id] !== undefined && aionRecPicks[g.id] !== g.rock) { e.rock = aionRecPicks[g.id]; has = true; }
-      if (aionRecDates[g.id] !== undefined && aionRecDates[g.id] !== g.decided) { e.decided = aionRecDates[g.id]; has = true; }
-      if (aionRecNeeded[g.id] !== undefined && aionRecNeeded[g.id] !== g.neededBy) { e.neededBy = aionRecNeeded[g.id]; has = true; }
-      if (has) out.push(e);
-    });
-    return out;
-  }
-
-  function renderRecRows() {
-    rowsHost.innerHTML = "";
-    const kwl = aionRecKeyword.toLowerCase().trim();
-    const gaps = (aionReconcile.gaps || []).filter((g) =>
-      (!aionRecKind || g.kind === aionRecKind) &&
-      (!kwl || g.title.toLowerCase().includes(kwl) || (g.hint || "").toLowerCase().includes(kwl)));
-    if (!gaps.length) { rowsHost.append(emptyRow("no gaps in this view — the portal can place everything here")); renderSaveBar(); return; }
-    rowsHost.append(ppCols("cols-aion-rec", ["", "ITEM", "OWNER", "ASSIGN ROCK / DATE", "WAS"]));
-    gaps.forEach((g) => rowsHost.append(recRow(g)));
-    renderSaveBar();
-  }
-
-  function recRow(g) {
-    const row = el("div", "aion-row cols-aion-rec");
-    const cb = el("input", "aion-rec-cb"); cb.type = "checkbox"; cb.checked = !!aionRecSel[g.id];
-    cb.onchange = () => { aionRecSel[g.id] = cb.checked; };
-    row.append(cb);
-
-    const main = el("div", "aion-main");
-    main.append(el("div", "aion-title", g.title));
-    // the meta says EXACTLY what's missing (server-computed) — a re-anchored
-    // open decision reads "needs a deadline", never a stale "unanchored"
-    const missing = [];
-    if (g.needsRock) missing.push("no resolving rock");
-    if (g.needsDate) missing.push(g.reason === "undated-decided" ? "⚠ decided, no date" : "needs a deadline");
-    const meta = el("div", "aion-item-meta");
-    meta.textContent = (g.kind === "decision" ? "decision" : "task") +
-      (missing.length ? " · " + missing.join(" · ") : "") +
-      (g.captured ? " · " + g.captured : "");
-    main.append(meta);
-    row.append(main);
-
-    row.append(el("span", "aion-cell", g.owner ? "@" + g.owner : ""));
-
-    // assign cell: rock typeahead (PREFILLED with the current anchor — an
-    // edit that saved must read back) + the missing date, labeled
-    const assign = el("div", "aion-rec-assign");
-    const picked = aionRecPicks[g.id];
-    const ta = typeahead({
-      placeholder: "rock…",
-      initial: picked !== undefined ? rockLabel(picked) : (g.rock ? rockLabel(g.rock) : ""),
-      suggest: (q, add, taa) => aionRockSuggest(q, add, taa, (id) => { aionRecPicks[g.id] = id; renderSaveBar(); }),
-      onChange: (v) => { /* free text ignored — reconcile assigns known goals */ },
-    });
-    assign.append(ta.el);
-    if (g.reason === "undated-decided") {
-      assign.append(el("span", "aion-rec-dlabel", "decided"));
-      const dt = el("input", "aion-date"); dt.type = "date";
-      dt.value = aionRecDates[g.id] !== undefined ? aionRecDates[g.id] : (g.decided || "");
-      dt.onchange = () => { aionRecDates[g.id] = dt.value; renderSaveBar(); };
-      assign.append(dt);
-    } else if (g.kind === "decision") {
-      // open decision — a needed_by deadline becomes its timeline diamond (§7)
-      assign.append(el("span", "aion-rec-dlabel", "needed by"));
-      const nb = el("input", "aion-date"); nb.type = "date"; nb.title = "needed by (deadline)";
-      nb.value = aionRecNeeded[g.id] !== undefined ? aionRecNeeded[g.id]
-        : (/^\d{4}-\d{2}-\d{2}$/.test(g.neededBy || "") ? g.neededBy : "");
-      nb.onchange = () => { aionRecNeeded[g.id] = nb.value; renderSaveBar(); };
-      assign.append(nb);
-    }
-    row.append(assign);
-
-    // hint chip (git-recovered original rock) — one tap to accept
-    const wasCell = el("span", "aion-cell aion-rec-was");
-    if (g.hint) {
-      const b = el("button", "aion-rec-hint", "was: " + g.hint);
-      b.title = "the original rock before the linkage sweep — click to reuse (resolves via id/alias, or add it as an alias in GOALS)";
-      b.onclick = () => { aionRecPicks[g.id] = g.hint; renderRecRows(); };
-      wasCell.append(b);
-    }
-    row.append(wasCell);
-    return row;
-  }
-
-  renderRecRows();
-}

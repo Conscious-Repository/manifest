@@ -184,8 +184,6 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /api/aion/backlog/{id}/update", s.handleAionBacklogUpdate)
 		mux.HandleFunc("POST /api/aion/backlog/{id}/delete", s.handleAionBacklogDelete)
 		mux.HandleFunc("POST /api/aion/backlog/{id}/decide", s.handleAionBacklogDecide)
-		mux.HandleFunc("GET /api/aion/reconcile", s.handleAionReconcile)
-		mux.HandleFunc("POST /api/aion/backlog/link", s.handleAionBacklogLink)
 		mux.HandleFunc("POST /api/aion/heuristics/{id}/edit", s.handleAionHeuristicEdit)
 		mux.HandleFunc("POST /api/aion/heuristics/{id}/retire", s.handleAionHeuristicRetire)
 		mux.HandleFunc("POST /api/aion/heuristics/merge", s.handleAionHeuristicsMerge)

@@ -40,10 +40,9 @@ function renderREBacklog() {
   wrap.append(list, insp);
   host.append(wrap);
 
-  // -- intake lane: pending re-backlog proposals (fills async) --
-  const intakeLane = el("div", "re-intake-lane");
-  list.append(intakeLane);
-  fillREIntakeLane(intakeLane);
+  // Pending re-backlog proposals live in the FEED only (owner call
+  // 2026-08-12 — the aion pattern): no intake lane here. The async 90-card
+  // insert was also what yanked the scroll position back to the top.
 
   // -- decisions lane --
   const items = reItems();
@@ -346,33 +345,6 @@ async function rePost(url, body, msg) {
   renderProperties();
 }
 
-// ---- INTAKE lane — pending re-backlog proposals, folded into the Backlog as
-// its top lane (was a standalone view). Each card is the SAME approval card
-// the FEED renders (edit-before-confirm, Confirm & apply, Reject), filtered to
-// this domain, with a `→ lands` line. Fills async; empty → the lane vanishes.
-async function fillREIntakeLane(host) {
-  let proposals = [];
-  try {
-    const d = await (await fetch("/api/feed?status=inbox")).json();
-    proposals = (d.proposals || []).filter((p) => p.type === "re-backlog");
-  } catch (e) { /* fall through to empty */ }
-  reIntakeCache = proposals;
-  if (!proposals.length) { host.remove(); return; }
-  const lh = el("div", "aion-sec-label");
-  lh.append(el("span", "aion-sec-title", "▽ Intake"),
-    el("span", "aion-sec-count", proposals.length + " awaiting confirm"));
-  host.append(lh);
-  proposals.forEach((p) => {
-    const wrap = el("div", "re-intake-card");
-    const payload = p.aionPayload || {};
-    const bits = ["→ lands: system/realestate/backlog.md"];
-    if (payload.rock) bits.push(payload.rock);
-    if (payload.owner) bits.push("@" + payload.owner);
-    wrap.append(el("div", "re-lands", bits.join(" · ")));
-    wrap.append(approvalCardEl(p));
-    host.append(wrap);
-  });
-}
 
 // ---- MONEY — the read-only transaction feed + property assignment ----
 // Grid: date · description · amount · property select. Deposits accent;

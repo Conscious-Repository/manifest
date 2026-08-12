@@ -123,10 +123,6 @@ function reOrgRocks() {
   return (area && area.rocks) || [];
 }
 
-// rePendingIntake: pending re-backlog proposals (filled by the intake view's
-// own fetch; the rail count reads the last fetch).
-let reIntakeCache = [];
-
 // openTodoCount — every open action line on the property (mine or owed).
 function openTodoCount(p) {
   return (p.todos || []).filter((t) => !t.checked).length;

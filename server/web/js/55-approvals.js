@@ -91,8 +91,19 @@ function approvalCardEl(a) {
 
   const actions = el("div", "appr-actions");
   const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm",
-    () => spiritApprovalAct(a.id, "confirm",
-      isNewNote ? { attendees, title: titleRef.value, categories } : null));
+    async () => {
+      // aion/re payload editors: whatever is in the form RIDES the confirm —
+      // an unsaved owner/rock edit must never silently drop (2026-08-12 bug:
+      // an assigned owner + rock vanished because "save edit" wasn't clicked)
+      if (a.__payloadFlush) {
+        confirmBtn.disabled = true;
+        try { await a.__payloadFlush(); }
+        catch (e) { showToast("Couldn't save the edits — " + String(e.message || e).slice(0, 100)); confirmBtn.disabled = false; return; }
+        confirmBtn.disabled = false;
+      }
+      spiritApprovalAct(a.id, "confirm",
+        isNewNote ? { attendees, title: titleRef.value, categories } : null);
+    });
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
   card.append(actions);
@@ -478,16 +489,21 @@ function buildAionEditor(a) {
       line = (p.kind === "task" ? "- [ ] " : "- ") + (p.title || "…") + " " + f.join(" ");
     }
     preview.textContent = line;
-    dirtyNote.textContent = "save edit before confirming if you changed anything";
+    dirtyNote.textContent = "edits ride Confirm automatically — save edit persists them without confirming";
   };
   rebuild();
   wrap.append(preview, dirtyNote);
+  const flush = async () => {
+    const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/aion", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  };
+  // Confirm flushes the CURRENT form state first — see the confirm handler
+  a.__payloadFlush = flush;
   const save = pillLight("save edit", async () => {
     try {
-      const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/aion", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
-      });
-      if (!r.ok) throw new Error(await r.text());
+      await flush();
       showToast("Proposal updated");
       loadFeed();
     } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
