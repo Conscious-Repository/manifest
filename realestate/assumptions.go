@@ -217,3 +217,68 @@ func (s *Service) AssumptionOverrides() []AssumptionOverride {
 	})
 	return out
 }
+
+// ---- the published module (oodagroup src/engine/defaults.js) ----
+
+// portalDefaultLineRe matches one value line inside the `export const
+// defaults = {` block: indent, key, numeric literal, trailing comma.
+var portalDefaultLineRe = regexp.MustCompile(`^(\s*)([a-z_]+):\s*(-?[0-9.]+),\s*$`)
+
+// RenderPortalDefaults rewrites ONLY the `export const defaults = {…}` block
+// of the portal's defaults.js from the assumption values, leaving every other
+// byte (opex breakdowns, capex schedules, comments) verbatim. Byte-stability
+// contract: a line whose literal already equals the value is kept EXACTLY as
+// written (0.10 stays 0.10) — publish with no edits diffs empty; assumption
+// keys missing from the block are appended before its closing brace.
+func RenderPortalDefaults(current []byte, values map[string]float64) ([]byte, error) {
+	lines := strings.Split(strings.TrimRight(string(current), "\n"), "\n")
+	start := -1
+	for i, ln := range lines {
+		if strings.HasPrefix(strings.TrimSpace(ln), "export const defaults = {") {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return nil, fmt.Errorf("defaults.js has no `export const defaults = {` block")
+	}
+	end := -1
+	for i := start + 1; i < len(lines); i++ {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), "}") {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return nil, fmt.Errorf("defaults.js block never closes")
+	}
+	seen := map[string]bool{}
+	var out []string
+	out = append(out, lines[:start+1]...)
+	for _, ln := range lines[start+1 : end] {
+		m := portalDefaultLineRe.FindStringSubmatch(ln)
+		if m == nil {
+			out = append(out, ln) // comments/unknown shapes ride verbatim
+			continue
+		}
+		key := m[2]
+		v, ok := values[key]
+		if !ok {
+			out = append(out, ln) // a key manifest doesn't own stays theirs
+			continue
+		}
+		seen[key] = true
+		if cur, err := strconv.ParseFloat(m[3], 64); err == nil && cur == v {
+			out = append(out, ln) // numerically equal — keep the exact literal
+			continue
+		}
+		out = append(out, m[1]+key+": "+trimFloat(v)+",")
+	}
+	for _, k := range AssumptionKeys {
+		if _, ok := values[k]; ok && !seen[k] {
+			out = append(out, "  "+k+": "+trimFloat(values[k])+",")
+		}
+	}
+	out = append(out, lines[end:]...)
+	return []byte(strings.Join(out, "\n") + "\n"), nil
+}

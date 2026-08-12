@@ -89,6 +89,7 @@ type Server struct {
 	aionPortal    aionPortalCfg   // aionbio checkout coordinates ("" path = publish disabled)
 	aionDataDir   string          // publish receipts live under <dataDir>/aion/
 	aionPublishes *aionPublishLog // lazy-opened receipts log
+	rePublishes   *aionPublishLog // RE publish receipts (same shape, own file)
 	// aionSink receives vault-relative paths to consider for extraction —
 	// the post-confirm nudge (aion.ExtractSink satisfies it). Nilable.
 	aionSink interface{ Notify([]string) }
@@ -308,6 +309,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/re/backlog/{id}/update", s.handleReBacklogUpdate)
 	mux.HandleFunc("POST /api/re/backlog/{id}/delete", s.handleReBacklogDelete)
 	mux.HandleFunc("POST /api/re/backlog/{id}/decide", s.handleReBacklogDecide)
+	mux.HandleFunc("GET /api/re/publish/preview", s.handleRePublishPreview)
+	mux.HandleFunc("POST /api/re/publish", s.handleRePublish)
+	mux.HandleFunc("POST /api/re/publish/ack/{id}", s.handleRePublishAck)
 	mux.HandleFunc("PUT /api/realestate/assumptions", s.handleAssumptionsPut)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}", s.handleContractorTrade)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)

@@ -154,10 +154,31 @@ func (s *Server) handlePublishDeals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	props, err := s.realestate.Properties()
+	out, nDeals, nProps, kept, err := s.reComposeDeals(template)
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+
+	pretty, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := os.WriteFile(dealsPath, append(pretty, '\n'), 0o644); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"deals": nDeals, "properties": nProps, "kept": kept, "path": dealsPath})
+}
+
+// reComposeDeals is the recompose shared by the legacy write-only endpoint and
+// the RE publish effector: template array in (the checkout's current
+// deals.json — it owns array order), the recomposed array out.
+func (s *Server) reComposeDeals(template []json.RawMessage) (out []any, nDeals, nProps int, kept []string, err error) {
+	props, err := s.realestate.Properties()
+	if err != nil {
+		return nil, 0, 0, nil, err
 	}
 	propPath := map[string]string{}
 	for _, p := range props {
@@ -224,10 +245,7 @@ func (s *Server) handlePublishDeals(w http.ResponseWriter, r *http.Request) {
 		return 0
 	}
 
-	var out []any
 	seen := map[string]bool{}
-	var kept []string
-	nDeals, nProps := 0, 0
 	for _, traw := range template {
 		var t struct {
 			Slug string `json:"slug"`
@@ -255,17 +273,7 @@ func (s *Server) handlePublishDeals(w http.ResponseWriter, r *http.Request) {
 			nProps += countProps(m)
 		}
 	}
-
-	pretty, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	if err := os.WriteFile(dealsPath, append(pretty, '\n'), 0o644); err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, map[string]any{"deals": nDeals, "properties": nProps, "kept": kept, "path": dealsPath})
+	return out, nDeals, nProps, kept, nil
 }
 
 // handlePropertiesGeo feeds the map: every record's parcel Features + the

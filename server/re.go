@@ -30,6 +30,7 @@ func (s *Server) handleReBacklog(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"items":     doc.Items(),
 		"goalsArea": s.goalsAreaByName("Real Estate"),
+		"publish":   s.rePublishInfo(),
 	})
 }
 

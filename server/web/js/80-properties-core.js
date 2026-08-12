@@ -9,7 +9,7 @@ let propertyCache = [];
 let dealCache = [];
 let templateCache = [];
 let holdingsCache = {};      // entity name → {owned, acquiring} (derived server-side)
-let reBacklogCache = null;   // /api/re/backlog — {items, goalsArea}
+let reBacklogCache = null;   // /api/re/backlog — {items, goalsArea, publish}
 let rePortalEnabled = false; // deals.json publish configured server-side
 let propMode = "portfolio"; // rocks | portfolio | decisions | intake | money | settings | outstanding | map | parcels | page | deal
 let propSlug = "";    // the open property (page mode)
@@ -159,6 +159,20 @@ function renderPropRail() {
   const add = el("button", "o-ghost", "＋ property");
   add.onclick = () => { location.hash = "#/properties/portfolio"; propComposerOpen = true; renderProperties(); };
   foot.append(add);
+  // PUBLISH — the ooda-portal export effector (deals.json + defaults.js);
+  // the badge = dirty contract files (current render vs checkout bytes)
+  const pub = (reBacklogCache && reBacklogCache.publish) || {};
+  if (pub.configured) {
+    const btn = el("button", "aion-publish-btn re-publish-btn", "PUBLISH");
+    const n = Object.values(pub.dirty || {}).filter(Boolean).length;
+    if (n) {
+      const badge = el("span", "aion-publish-badge", String(n));
+      badge.title = n + " contract file" + (n === 1 ? "" : "s") + " with unpublished changes";
+      btn.append(badge);
+    }
+    btn.onclick = openRePublishPanel;
+    foot.append(btn);
+  }
   host.append(foot);
 }
 

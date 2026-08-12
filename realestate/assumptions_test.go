@@ -75,3 +75,54 @@ func TestHoldings(t *testing.T) {
 		t.Fatalf("unexpected entities: %v", h)
 	}
 }
+
+// The published module: a no-edit render over the live portal file shape is
+// byte-identical (0.10 keeps its trailing zero); an edit rewrites ONLY its
+// line; content outside the defaults block never moves.
+func TestRenderPortalDefaults(t *testing.T) {
+	current := []byte(`export const defaults = {
+  vacancy_rate: 0.08,
+  opex_rate: 0.35,
+  construction_interest_rate: 0.10,
+  construction_loan_ltc: 0.70,
+};
+
+// Default itemized OpEx breakdown (sums to 0.35, matching opex_rate default)
+export const default_opex_items = {
+  property_tax_rate: 0.10,
+};
+`)
+	vals := map[string]float64{
+		"vacancy_rate": 0.08, "opex_rate": 0.35,
+		"construction_interest_rate": 0.10, "construction_loan_ltc": 0.70,
+	}
+	same, err := RenderPortalDefaults(current, vals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(same) != string(current) {
+		t.Fatalf("no-edit render not byte-stable:\n%s", same)
+	}
+	vals["vacancy_rate"] = 0.1
+	edited, err := RenderPortalDefaults(current, vals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(edited)
+	if !strings.Contains(got, "  vacancy_rate: 0.1,") {
+		t.Fatalf("edit did not land:\n%s", got)
+	}
+	if !strings.Contains(got, "  construction_interest_rate: 0.10,") ||
+		!strings.Contains(got, "  property_tax_rate: 0.10,") {
+		t.Fatalf("untouched literals/blocks rewritten:\n%s", got)
+	}
+	// a key with no line yet is appended inside the block
+	vals["contingency_pct"] = 0.05
+	withNew, err := RenderPortalDefaults(current, vals)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(withNew), "  contingency_pct: 0.05,\n};") {
+		t.Fatalf("missing key not appended before the close:\n%s", withNew)
+	}
+}

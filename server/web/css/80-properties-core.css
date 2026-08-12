@@ -331,3 +331,6 @@
 .re-acct-state.st-needs-reauth { color: #fff; background: var(--base-100); }
 .re-acct-state.st-not-connected { color: var(--base-40); background: var(--base-25); }
 .re-acct-act { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent); cursor: pointer; text-align: left; }
+
+/* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
+.re-publish-btn { margin-top: 6px; width: 100%; justify-content: center; }
