@@ -17,6 +17,9 @@
    tab-bar — #reToggle in .agent-head; see index.html) ---- */
 .prop-shell { display: flex; align-items: stretch; min-height: calc(100vh - 41px); }
 .prop-pane { flex: 1; min-width: 0; padding: 18px 24px 32px; }
+/* head shares the pane's 24px inset so REAL ESTATE aligns with the content
+   below it (AION gets this via .aion-view's own padding) */
+.properties-view .agent-head { padding-left: 24px; padding-right: 24px; }
 .prop-inspector {
   width: 280px; flex: none;
   border-left: 1px solid var(--base-25); background: var(--base-05);
