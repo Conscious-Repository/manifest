@@ -256,6 +256,14 @@ func main() {
 			log.Printf("seeding real-estate backlog: %v", err)
 		}
 	}
+	// assumptions.md: the single global underwriting set — seeded at the portal
+	// defaults so Settings edits and the PUBLISH render have a real record
+	// (reads fall back to defaults either way; the record is the edit surface).
+	if _, err := os.Stat(filepath.Join(cfg.VaultPath, filepath.FromSlash(reRootRel), realestate.AssumptionsFile)); os.IsNotExist(err) {
+		if _, err := vw.CreateRecord(reRootRel+"/"+realestate.AssumptionsFile, realestate.SeedAssumptions()); err != nil {
+			log.Printf("seeding real-estate assumptions: %v", err)
+		}
+	}
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
