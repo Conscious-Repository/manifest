@@ -208,3 +208,222 @@ function newSpirit() {
 if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateEditorDirty);
 if (els.spiritEditorSave) els.spiritEditorSave.addEventListener("click", saveEditor);
 if (els.spiritEditorClose) els.spiritEditorClose.addEventListener("click", closeEditor);
+
+// ---- SPIRITS.md §2: the cadence builder ----
+// State: { kind, days:[0..6], hours:[0..23], min:0..59, n:int }
+// kinds: ondemand | daily | weekdays | weekends | days | everyMin | everyHour | hourly
+// The option set is EXACTLY what humanCadence() (spirits/rituals.go) can
+// phrase — "custom" cron is deliberately unreachable through the form. The
+// compiled cron renders under the phrase as the receipt; an incomplete
+// cadence blocks the save. `on demand` writes NO cadence key.
+
+const CAD_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const CAD_KINDS = [
+  ["ondemand", "on demand"], ["daily", "daily"], ["weekdays", "weekdays"],
+  ["weekends", "weekends"], ["days", "named days"],
+  ["everyMin", "every N min"], ["everyHour", "every N hours"], ["hourly", "hourly"],
+];
+
+function cadDefault(kind) {
+  return {
+    kind,
+    days: [],
+    hours: ["daily", "weekdays", "weekends", "days"].includes(kind) ? [9] : [],
+    min: 0,
+    n: kind === "everyMin" ? 30 : 2,
+  };
+}
+
+function cadValidate(cad) {
+  const errs = [];
+  if (!cad) return ["custom cron — edit through raw"];
+  if (cad.kind === "days" && !cad.days.length) errs.push("pick at least one day");
+  if (["daily", "weekdays", "weekends", "days"].includes(cad.kind) && !cad.hours.length) errs.push("pick at least one time");
+  if ((cad.kind === "everyMin" || cad.kind === "everyHour") && !(cad.n >= 1)) errs.push("interval must be at least 1");
+  return errs;
+}
+
+function cadClock(hr, mn) {
+  let ap = "a", h = hr;
+  if (hr === 0) h = 12;
+  else if (hr === 12) ap = "p";
+  else if (hr > 12) { h = hr - 12; ap = "p"; }
+  return h + ":" + String(mn).padStart(2, "0") + ap;
+}
+
+// cadCompile — builder state → canonical cron (hours/days sorted ascending)
+// + the phrase humanCadence() will echo back for it.
+function cadCompile(cad) {
+  if (!cad) return { cron: null, phrase: "custom" };
+  if (cad.kind === "ondemand") return { cron: "", phrase: "on demand" };
+  if (cadValidate(cad).length) return { cron: null, phrase: "incomplete" };
+  if (cad.kind === "everyMin") return { cron: "*/" + cad.n + " * * * *", phrase: "every " + cad.n + " min" };
+  if (cad.kind === "everyHour") return { cron: "0 */" + cad.n + " * * *", phrase: "every " + cad.n + " hours" };
+  if (cad.kind === "hourly") return { cron: cad.min + " * * * *", phrase: "hourly at :" + String(cad.min).padStart(2, "0") };
+  const hours = [...cad.hours].sort((a, b) => a - b);
+  const days = [...cad.days].sort((a, b) => a - b);
+  const dow = { daily: "*", weekdays: "1-5", weekends: "0,6" }[cad.kind] || days.join(",");
+  const prefix = { daily: "daily", weekdays: "weekdays", weekends: "weekends" }[cad.kind]
+    || days.map((d) => CAD_DAY_NAMES[d]).join(", ");
+  return {
+    cron: cad.min + " " + hours.join(",") + " * * " + dow,
+    phrase: prefix + " " + hours.map((h) => cadClock(h, cad.min)).join(", "),
+  };
+}
+
+// cadParse — the inverse, mirroring humanCadence()'s decision order EXACTLY
+// (spirits/rituals.go:466). null = a custom cron the builder can't express
+// (raw-only editing). Stricter than Go only in bounding minute ≤ 59.
+function cadValueList(s, lo, hi) {
+  const out = [];
+  for (const p of s.split(",")) {
+    if (!/^\d+$/.test(p.trim())) return null;
+    const n = parseInt(p.trim(), 10);
+    if (n < lo || n > hi) return null;
+    out.push(n);
+  }
+  return out.length ? out : null;
+}
+
+function cadParse(cron) {
+  const s = (cron || "").trim();
+  if (s === "") return { kind: "ondemand", days: [], hours: [], min: 0, n: 0 };
+  const f = s.split(/\s+/);
+  if (f.length !== 5) return null;
+  const [min, hour, dom, mon, dow] = f;
+  const intOf = (x) => (/^\d+$/.test(x) ? parseInt(x, 10) : null);
+  if (min.startsWith("*/") && hour === "*" && dom === "*" && mon === "*" && dow === "*") {
+    const n = intOf(min.slice(2));
+    return n != null && n > 0 ? { kind: "everyMin", days: [], hours: [], min: 0, n } : null;
+  }
+  if (min === "0" && hour.startsWith("*/") && dom === "*" && mon === "*" && dow === "*") {
+    const n = intOf(hour.slice(2));
+    return n != null && n > 0 ? { kind: "everyHour", days: [], hours: [], min: 0, n } : null;
+  }
+  if (dom !== "*" || mon !== "*") return null;
+  const mn = intOf(min);
+  if (mn == null || mn > 59) return null;
+  if (hour === "*") return { kind: "hourly", days: [], hours: [], min: mn, n: 0 };
+  const hours = cadValueList(hour, 0, 23);
+  if (!hours) return null;
+  if (dow === "*") return { kind: "daily", days: [], hours, min: mn, n: 0 };
+  if (dow === "1-5") return { kind: "weekdays", days: [], hours, min: mn, n: 0 };
+  if (dow === "0,6" || dow === "6,0") return { kind: "weekends", days: [], hours, min: mn, n: 0 };
+  const days = cadValueList(dow, 0, 6);
+  return days ? { kind: "days", days, hours, min: mn, n: 0 } : null;
+}
+
+// canonCron — the dirty-compare key: canonical-vs-canonical, never raw strings
+// ("0 18,8 * * *" must open clean).
+function canonCron(cad) { return cad ? cadCompile(cad).cron : null; }
+
+// cadNextFire — client next-fire for the receipt's `next:` line. Minute-scan
+// over the builder vocabulary (exact / list / */N / 1-5 range); 8-day horizon.
+function cadNextFire(cron) {
+  if (!cron) return null;
+  const f = cron.trim().split(/\s+/);
+  if (f.length !== 5) return null;
+  const match = (field, v) => {
+    if (field === "*") return true;
+    if (field.startsWith("*/")) { const n = parseInt(field.slice(2), 10); return n > 0 && v % n === 0; }
+    return field.split(",").some((p) => {
+      const r = p.split("-");
+      if (r.length === 2) return v >= parseInt(r[0], 10) && v <= parseInt(r[1], 10);
+      return parseInt(p, 10) === v;
+    });
+  };
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(d.getMinutes() + 1);
+  for (let i = 0; i < 60 * 24 * 8; i++) {
+    if (match(f[0], d.getMinutes()) && match(f[1], d.getHours()) &&
+        match(f[2], d.getDate()) && match(f[3], d.getMonth() + 1) && match(f[4], d.getDay())) return d;
+    d.setMinutes(d.getMinutes() + 1);
+  }
+  return null;
+}
+
+// renderCadenceBuilder(host, cad, {custom, rawCron, onEdit}) — kind chips →
+// conditional rows → the receipt. Every control routes through onEdit(next)
+// (which hands authority back to the form — the raw pane's contract).
+function renderCadenceBuilder(host, cad, opts) {
+  host.innerHTML = "";
+  const edit = (next) => opts.onEdit(next);
+  if (opts.custom) {
+    const note = el("div", "cadb-custom");
+    note.append(el("span", "cadb-custom-msg", "custom cron — the builder can't express this; edit through raw below"));
+    note.append(el("code", "cadb-custom-cron", opts.rawCron || ""));
+    host.append(note);
+  }
+  // kind chips (picking one from custom mode reseeds the form — form wins)
+  const kinds = el("div", "cadb-row");
+  CAD_KINDS.forEach(([k, label]) => {
+    const b = el("button", "cadb-chip" + (!opts.custom && cad && cad.kind === k ? " on" : ""), label);
+    b.onclick = () => edit(cad && cad.kind === k ? { ...cad } : cadDefault(k));
+    kinds.append(b);
+  });
+  host.append(kinds);
+  if (opts.custom || !cad) return;
+
+  const chipRow = (label, chips) => {
+    const row = el("div", "cadb-row");
+    row.append(el("span", "cadb-label", label));
+    chips.forEach((c) => row.append(c));
+    host.append(row);
+    return row;
+  };
+  const toggleChip = (label, on, cb) => {
+    const b = el("button", "cadb-chip" + (on ? " on" : ""), label);
+    b.onclick = cb;
+    return b;
+  };
+
+  if (cad.kind === "days") {
+    chipRow("days", CAD_DAY_NAMES.map((nm, d) =>
+      toggleChip(nm, cad.days.includes(d), () => {
+        const days = cad.days.includes(d) ? cad.days.filter((x) => x !== d) : [...cad.days, d];
+        edit({ ...cad, days });
+      })));
+  }
+  if (["daily", "weekdays", "weekends", "days"].includes(cad.kind)) {
+    // time list: one chip per chosen hour (✕ removes), ＋ time appends
+    const chips = [...cad.hours].sort((a, b) => a - b).map((h) =>
+      toggleChip(cadClock(h, cad.min) + " ✕", true, () =>
+        edit({ ...cad, hours: cad.hours.filter((x) => x !== h) })));
+    const add = document.createElement("select");
+    add.className = "pp-in cadb-add";
+    const o0 = document.createElement("option"); o0.value = ""; o0.textContent = "＋ time"; add.append(o0);
+    for (let h = 0; h < 24; h++) {
+      if (cad.hours.includes(h)) continue;
+      const o = document.createElement("option"); o.value = String(h); o.textContent = cadClock(h, cad.min); add.append(o);
+    }
+    add.onchange = () => { if (add.value !== "") edit({ ...cad, hours: [...cad.hours, parseInt(add.value, 10)] }); };
+    chipRow("times", [...chips, add]);
+  }
+  if (cad.kind === "hourly" || ["daily", "weekdays", "weekends", "days"].includes(cad.kind)) {
+    const presets = [0, 15, 30, 45];
+    if (!presets.includes(cad.min)) presets.push(cad.min); // parsed off-preset value stays representable
+    chipRow("minute", presets.sort((a, b) => a - b).map((m) =>
+      toggleChip(":" + String(m).padStart(2, "0"), cad.min === m, () => edit({ ...cad, min: m }))));
+  }
+  if (cad.kind === "everyMin" || cad.kind === "everyHour") {
+    const presets = cad.kind === "everyMin" ? [5, 10, 15, 30, 45] : [1, 2, 3, 4, 6, 12];
+    if (!presets.includes(cad.n)) presets.push(cad.n);
+    chipRow("every", presets.sort((a, b) => a - b).map((n) =>
+      toggleChip(String(n) + (cad.kind === "everyMin" ? " min" : " h"), cad.n === n, () => edit({ ...cad, n }))));
+  }
+
+  // the receipt: phrase left, the compiled cron right — how you confirm the
+  // builder wrote what you meant
+  const { cron, phrase } = cadCompile(cad);
+  const errs = cadValidate(cad);
+  const receipt = el("div", "cadb-receipt" + (errs.length ? " incomplete" : ""));
+  receipt.append(el("span", "cadb-phrase", errs.length ? errs[0] : phrase));
+  receipt.append(el("code", "cadb-cron",
+    cad.kind === "ondemand" ? "no cadence key" : (cron == null ? "nothing to write yet" : "cadence: " + cron)));
+  host.append(receipt);
+  if (cron) {
+    const nx = cadNextFire(cron);
+    if (nx) host.append(el("div", "cadb-next", "next: " + nx.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })));
+  }
+}
