@@ -191,54 +191,65 @@
   <!-- SPIRITS — ONE quiet page (redesign §12 / prototype): live strip →
        rituals table → recent runs; engine status + week spend live in the
        breadcrumb meta; portals fold into a closed section at the foot. -->
+  <!-- SPIRITS — mirrors AION/RE: a top tab-bar over one body (SPIRITS.md §1).
+       ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
+       SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
+       pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
   <section class="spirits-page" id="spiritsView" hidden>
     <span id="spiritsStatus" hidden></span><!-- status text feeds the crumb meta -->
+    <div class="agent-head">
+      <span class="agent-title">SPIRITS</span>
+      <div class="agent-actions">
+        <span class="prop-toggle" id="spToggle">
+          <a class="filter-chip on" data-mode="rituals" href="#/spirits">ALL RITUALS</a>
+          <a class="filter-chip" data-mode="runs" href="#/spirits/runs">RUNS</a>
+          <a class="filter-chip" data-mode="settings" href="#/spirits/settings">SETTINGS<span id="spSettingsBadge" class="sp-badge" hidden></span></a>
+        </span>
+        <button class="aion-raw-link" onclick="toggleRawOverlay()" title="Edit the raw markdown behind this tab">⌘/ edit raw</button>
+      </div>
+    </div>
 
     <!-- live strip — only renders while something is queued/running -->
     <div id="spiritLive"></div>
 
-    <!-- RITUALS — one flat table -->
-    <div class="sprt-block" id="sp-rituals">
-      <div class="sprt-head">
-        <span class="sprt-title">Rituals</span>
-        <span class="sprt-sub">every ritual across spirits · engine hot-reloads</span>
-        <span class="sprt-head-acts">
-          <button id="spiritEditChargebook" class="sprt-quiet" title="Edit chargebook.md">chargebook</button>
-          <button id="spiritNewSpirit" class="sprt-ghost">＋ spirit</button>
-        </span>
-      </div>
+    <!-- ALL RITUALS — spirit index strip over the flat board -->
+    <div class="sprt-block" id="spRitualsWrap">
+      <div id="spiritIndex" class="spirit-index"></div>
       <div class="sprt-cols"><span>Ritual</span><span>Cadence</span><span>Next</span><span>Last</span><span class="r">Ceiling</span></div>
       <div id="spiritRitualBoard" class="ritual-board"></div>
-      <!-- shared markdown editor drawer (rituals / identity / cornerstone / chargebook) -->
-      <div id="spiritEditor" class="run-detail" hidden>
-        <div class="run-detail-head">
-          <span id="spiritEditorTabs" class="editor-tabs"></span>
-          <span id="spiritEditorDirty" class="editor-dirty" hidden>● unsaved</span>
-          <button id="spiritEditorSave" class="pill">Save</button>
-          <button id="spiritEditorClose" class="pill light">✕ Close</button>
-        </div>
-        <div id="spiritEditorLint" class="editor-lint" hidden></div>
-        <textarea id="spiritEditorArea" class="editor-area" spellcheck="false"></textarea>
-      </div>
     </div>
 
-    <!-- RECENT RUNS — quiet rows over charge bars; the week's spend in the head -->
-    <div class="sprt-block" id="sp-runs">
+    <!-- RITUAL EDITOR — #/spirits/ritual/<spirit>/<name> -->
+    <div class="sprt-block" id="spEditorWrap" hidden></div>
+
+    <!-- SPIRIT PAGE — #/spirits/<name> -->
+    <div class="sprt-block" id="spSpiritWrap" hidden></div>
+
+    <!-- RUNS — the global log -->
+    <div class="sprt-block" id="spRunsWrap" hidden>
       <div class="sprt-head">
-        <span class="sprt-title">Recent runs</span>
+        <span class="sprt-title">Runs</span>
         <span class="sprt-sub">context · decisions · charge · writes</span>
         <span id="spiritWeekSpend" class="sprt-head-meta"></span>
       </div>
+      <div id="spiritRunFilters" class="run-filters"></div>
       <div id="spiritRunsList" class="runs-list"></div>
       <div id="spiritRunDetail" class="run-detail" hidden></div>
     </div>
 
-    <!-- PORTALS — the settings block at the foot, closed by default -->
-    <div class="sprt-block" id="sp-portals">
-      <div id="spiritPortalsFoot"></div>
-      <div id="portalList" class="portal-board" hidden></div>
-      <div id="spiritHarnessesFoot"></div>
-      <div id="harnessBoard" class="harness-board" hidden></div>
+    <!-- SETTINGS — portals / chargebook / harnesses behind the inner rail -->
+    <div class="sprt-block" id="spSettingsWrap" hidden></div>
+
+    <!-- legacy markdown editor drawer (⌘/ raw escape hatch — chargebook etc.) -->
+    <div id="spiritEditor" class="run-detail" hidden>
+      <div class="run-detail-head">
+        <span id="spiritEditorTabs" class="editor-tabs"></span>
+        <span id="spiritEditorDirty" class="editor-dirty" hidden>● unsaved</span>
+        <button id="spiritEditorSave" class="pill">Save</button>
+        <button id="spiritEditorClose" class="pill light">✕ Close</button>
+      </div>
+      <div id="spiritEditorLint" class="editor-lint" hidden></div>
+      <textarea id="spiritEditorArea" class="editor-area" spellcheck="false"></textarea>
     </div>
 
   </section>

@@ -299,7 +299,7 @@ function route() {
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
   else if (studio) showStudio(); // content studio: draft board + inspiration
-  else if (sp) showSpirits(); // engine console: runs / rituals / approvals
+  else if (sp) showSpirits(h); // spirits cockpit: rituals / runs / settings / spirit pages
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone
   else if (properties) showProperties(h); // real-estate cockpit: board / property page

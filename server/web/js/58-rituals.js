@@ -38,6 +38,7 @@ function renderSpiritRituals(rows) {
     sel.focus();
   };
   host.append(ghost);
+  if (typeof renderSpiritIndex === "function") renderSpiritIndex(); // counts derive from these rows
   if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
 }
 
@@ -46,8 +47,8 @@ function ritualRow(r) {
   // name — spirit (its own editor) · ritual
   const name = el("span", "ritual-name");
   const sp = el("span", "sprt-spirit", r.spirit);
-  sp.title = "Edit " + r.spirit + "'s identity + cornerstone";
-  sp.onclick = (e) => { e.stopPropagation(); openSpiritEditor(r.spirit); };
+  sp.title = "Open " + r.spirit + "'s page";
+  sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/spirits/" + encodeURIComponent(r.spirit); };
   name.append(sp, document.createTextNode(" · " + r.ritual));
   row.append(name);
   // cadence — human phrase over the raw cron (both visible, prototype)
@@ -207,5 +208,3 @@ function newSpirit() {
 if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateEditorDirty);
 if (els.spiritEditorSave) els.spiritEditorSave.addEventListener("click", saveEditor);
 if (els.spiritEditorClose) els.spiritEditorClose.addEventListener("click", closeEditor);
-if (els.spiritNewSpirit) els.spiritNewSpirit.addEventListener("click", newSpirit);
-if (els.spiritEditChargebook) els.spiritEditChargebook.addEventListener("click", () => openEditor(["chargebook.md"]));

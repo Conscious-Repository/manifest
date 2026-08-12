@@ -9,21 +9,83 @@ let spiritStatusCache = null;
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
-// ONE page (redesign §12): live strip → rituals board → recent runs, with
-// portals as the settings block at the foot. The RUNS/RITUALS/PORTALS tab
-// bar is gone; legacy sub-routes fold back to #/spirits.
-function showSpirits() {
-  if (location.hash.startsWith("#/spirits/")) {
-    // deep link into the Portals section (e.g. the "reconnect Gmail" signal)
-    if (location.hash === "#/spirits/portals") spiritPortalsOpen = true;
-    location.hash = "#/spirits"; return;
-  }
-  ["runs", "rituals", "portals"].forEach((t) => { els["sp_" + t].hidden = false; });
+// SPIRITS.md §1: a top tab-bar over one body — ALL RITUALS · RUNS · SETTINGS —
+// and the spirit as the rail object: #/spirits/<name> is a spirit page,
+// #/spirits/ritual/<spirit>/<name> the ritual editor. Legacy tails fold in.
+let spMode = "rituals"; // rituals | runs | settings | spirit | editor
+let spSpirit = "";      // the open spirit (spirit/editor modes)
+let spRitualPath = "";  // the open ritual file (editor mode)
+let spSettingsTab = "portals"; // settings inner-rail selection
+
+function showSpirits(h) {
+  const tail = h && h.startsWith("#/spirits/") ? decodeURIComponent(h.slice("#/spirits/".length)) : "";
+  if (tail === "portals") { spSettingsTab = "portals"; location.hash = "#/spirits/settings"; return; } // legacy deep-link
+  spSpirit = ""; spRitualPath = "";
+  if (tail === "") spMode = "rituals";
+  else if (tail === "runs") spMode = "runs";
+  else if (tail === "settings") spMode = "settings";
+  else if (tail.startsWith("ritual/")) {
+    const rest = tail.slice("ritual/".length);
+    const i = rest.indexOf("/");
+    if (i <= 0) { location.hash = "#/spirits"; return; }
+    spMode = "editor";
+    spSpirit = rest.slice(0, i);
+    spRitualPath = "spirits/" + spSpirit + "/rituals/" + rest.slice(i + 1) + ".md";
+  } else { spMode = "spirit"; spSpirit = tail; }
+  renderSpirits();
+}
+
+// renderSpToggle — chip-active mirror of renderReToggle: spirit page and the
+// ritual editor keep ALL RITUALS lit (they open from it).
+function renderSpToggle() {
+  const active = (spMode === "spirit" || spMode === "editor") ? "rituals" : spMode;
+  const tog = document.getElementById("spToggle");
+  if (tog) tog.querySelectorAll(".filter-chip").forEach((b) =>
+    b.classList.toggle("on", b.dataset.mode === active));
+}
+
+function renderSpirits() {
+  renderSpToggle();
+  const show = (id, on) => { const n = document.getElementById(id); if (n) n.hidden = !on; };
+  show("spRitualsWrap", spMode === "rituals");
+  show("spEditorWrap", spMode === "editor");
+  show("spSpiritWrap", spMode === "spirit");
+  show("spRunsWrap", spMode === "runs");
+  show("spSettingsWrap", spMode === "settings");
+  if (typeof closeEditor === "function") closeEditor(); // no stale raw drawer under another view (renderers reopen it deliberately)
   loadSpiritsStatus();
-  loadSpiritRituals();
-  loadSpiritRuns();
-  loadPortals();
-  ensureLivePoll(); // resume watching any queued/running runs, derived from files
+  ensureLivePoll(); // resume watching queued/running runs, derived from files
+  loadPortalsBadge();
+  if (spMode === "rituals") { loadSpiritRituals(); loadSpiritRuns(); }
+  else if (spMode === "runs") { loadSpiritRuns(); }
+  else if (spMode === "settings") { renderSpiritSettings(); }
+  else if (spMode === "spirit") { renderSpiritPage(spSpirit); }
+  else if (spMode === "editor") { renderRitualEditor(spRitualPath); }
+}
+
+// The spirit index strip over the ALL RITUALS board: one quiet row per spirit
+// (name · N rituals — count derived from the board rows), click → the spirit
+// page, `＋ spirit` at the end (SPIRITS.md §1's "SPIRITS" group, chips-era shape).
+function renderSpiritIndex() {
+  const host = document.getElementById("spiritIndex");
+  if (!host) return;
+  host.innerHTML = "";
+  const counts = {};
+  (spiritRitualRows || []).forEach((r) => { counts[r.spirit] = (counts[r.spirit] || 0) + 1; });
+  const names = [...new Set([
+    ...Object.keys(counts),
+    ...Object.keys((spiritStatusCache && spiritStatusCache.spirits) || {}),
+  ])].sort();
+  names.forEach((name) => {
+    const b = el("button", "spirit-index-item");
+    b.append(el("span", "spirit-index-name", name));
+    b.append(el("span", "spirit-index-count", String(counts[name] || 0)));
+    b.onclick = () => { location.hash = "#/spirits/" + encodeURIComponent(name); };
+    host.append(b);
+  });
+  const add = el("button", "sprt-ghost", "＋ spirit");
+  add.onclick = () => newSpirit();
+  host.append(add);
 }
 
 // ---- PORTALS sub-tab: every external realm, (re)connectable in place ----
@@ -34,39 +96,45 @@ function showSpirits() {
 // server's portal definition (fields drive the form), so github/docusign appear
 // later as pure data.
 async function loadPortals() {
-  const host = els.portalList; if (!host) return;
+  const host = document.getElementById("portalList"); if (!host) return;
   if (!host.children.length) host.textContent = "loading…";
   try {
     const rows = (await (await fetch("/api/portals")).json()).rows || [];
     renderPortals(rows);
   } catch (e) { host.innerHTML = ""; host.append(emptyRow("Portals unavailable.")); }
-  loadHarnesses();
 }
 
-// ---- HARNESSES settings (owner ask): each federated tree's engine + which
-// conduit each spirit routes to, switchable in place. A quiet foot toggle,
-// closed by default — the sibling of the portals settings block. ----
-let harnessSettingsOpen = false;
+// The SETTINGS chip's degraded count (`n ●`) — derived from the last portal
+// rows on every fetch/action, never stored.
+let spPortalRows = []; // last /api/portals fetch (badge + settings rail count)
+function updateSettingsBadge() {
+  const badge = document.getElementById("spSettingsBadge");
+  const degraded = spPortalRows.filter((p) => p.state === "degraded").length;
+  if (badge) {
+    badge.hidden = !degraded;
+    badge.textContent = degraded ? degraded + " ●" : "";
+  }
+}
+async function loadPortalsBadge() {
+  try { spPortalRows = (await (await fetch("/api/portals")).json()).rows || []; } catch (e) { return; }
+  updateSettingsBadge();
+}
+
+// ---- HARNESSES settings: each federated tree's engine + which conduit each
+// spirit routes to, switchable in place. Renders into the Settings pane. ----
 async function loadHarnesses() {
-  const foot = document.getElementById("spiritHarnessesFoot");
   const board = document.getElementById("harnessBoard");
-  if (!foot || !board) return;
+  if (!board) return;
   let harnesses = [];
   try { harnesses = (await (await fetch("/api/harnesses")).json()).harnesses || []; }
   catch (e) { return; }
-  const down = harnesses.filter((h) => !h.engineAlive).length;
-  foot.innerHTML = "";
-  const t = el("button", "sprt-portals-toggle",
-    (harnessSettingsOpen ? "▾" : "▸") + " harnesses · " + harnesses.length + (down ? " · ● " + down + " engine" + (down === 1 ? "" : "s") + " down" : ""));
-  t.onclick = () => { harnessSettingsOpen = !harnessSettingsOpen; renderHarnesses(harnesses); };
-  foot.append(t);
   renderHarnesses(harnesses);
 }
 
 function renderHarnesses(harnesses) {
   const board = document.getElementById("harnessBoard");
-  board.hidden = !harnessSettingsOpen;
-  if (!harnessSettingsOpen) return;
+  if (!board) return;
+  board.hidden = false;
   board.innerHTML = "";
   harnesses.forEach((h) => {
     const card = el("div", "harness-card");
@@ -106,25 +174,131 @@ function renderHarnesses(harnesses) {
   });
 }
 
-let spiritPortalsOpen = false; // the settings block at the foot, closed by default
-
+// renderPortals — the Settings→Portals pane: Connections (apikey/oauth/effector)
+// grouped over Conduits (llm, engine-managed). Always visible inside the pane.
 function renderPortals(rows) {
-  const host = els.portalList; host.innerHTML = "";
-  const head = el("div", "portal-row portal-head");
-  ["PORTAL", "STATE", "LAST CROSSING", "KEY", ""].forEach((h) => head.append(el("span", "", h)));
+  spPortalRows = rows;
+  const host = document.getElementById("portalList");
+  if (!host) return;
+  host.hidden = false;
+  host.innerHTML = "";
+  const groups = [
+    ["CONNECTIONS", rows.filter((p) => p.kind !== "llm")],
+    ["CONDUITS", rows.filter((p) => p.kind === "llm")],
+  ];
+  groups.forEach(([label, list]) => {
+    if (!list.length) return;
+    host.append(el("div", "portal-group-label", label));
+    const head = el("div", "portal-row portal-head");
+    ["PORTAL", "STATE", "LAST CROSSING", "KEY", ""].forEach((h) => head.append(el("span", "", h)));
+    host.append(head);
+    list.forEach((p) => host.append(portalRowEl(p)));
+  });
+  updateSettingsBadge(); // repairing a portal clears the chip badge in place
+}
+
+// ---- SPIRIT PAGE (step-1 shape; step 5 brings the capability editor) ----
+// Head · this spirit's rituals (derived from the board rows) · raw
+// identity/cornerstone via the legacy drawer.
+async function renderSpiritPage(name) {
+  const host = document.getElementById("spSpiritWrap");
+  if (!host) return;
+  host.innerHTML = "";
+  const head = el("div", "sprt-head");
+  head.append(el("span", "sprt-title", name), el("span", "sprt-sub", "spirit"));
+  const acts = el("span", "sprt-head-acts");
+  const addR = el("button", "sprt-ghost", "＋ ritual");
+  addR.onclick = () => newRitual(name);
+  acts.append(addR);
+  head.append(acts);
   host.append(head);
-  rows.forEach((p) => host.append(portalRowEl(p)));
-  // the quiet foot toggle (§12: portals live in settings, off the page face)
-  const foot = document.getElementById("spiritPortalsFoot");
-  if (foot) {
-    foot.innerHTML = "";
-    const degraded = rows.filter((p) => p.state === "degraded").length;
-    const t = el("button", "sprt-portals-toggle",
-      (spiritPortalsOpen ? "▾" : "▸") + " portals · " + rows.length + (degraded ? " · ● " + degraded + " degraded" : ""));
-    t.onclick = () => { spiritPortalsOpen = !spiritPortalsOpen; els.portalList.hidden = !spiritPortalsOpen; renderPortals(rows); };
-    foot.append(t);
-    els.portalList.hidden = !spiritPortalsOpen;
+
+  let rows = [];
+  try { rows = ((await (await fetch("/api/spirits/rituals")).json()).data || []).filter((r) => r.spirit === name); }
+  catch (e) {}
+  host.append(el("div", "pp-section-head", "RITUALS"));
+  if (!rows.length) host.append(emptyRow("No rituals yet."));
+  else {
+    const board = el("div", "ritual-board");
+    rows.forEach((r) => board.append(ritualRow(r)));
+    host.append(board);
   }
+
+  host.append(el("div", "pp-section-head", "IDENTITY & CORNERSTONE"));
+  const open = el("button", "pill light", "edit raw (identity · cornerstone)");
+  open.onclick = () => openSpiritEditor(name);
+  host.append(open);
+}
+
+// ---- RITUAL EDITOR (step-1 shape; steps 2–4 bring the structured editor) ----
+function renderRitualEditor(path) {
+  const host = document.getElementById("spEditorWrap");
+  if (!host) return;
+  host.innerHTML = "";
+  const head = el("div", "sprt-head");
+  head.append(el("span", "sprt-title", spSpirit + " / " + path.split("/").pop().replace(/\.md$/, "")));
+  head.append(el("span", "sprt-sub", path));
+  host.append(head);
+  openEditor([path]);
+}
+
+// ---- SETTINGS — Portals · Chargebook · Harnesses behind the aion-org inner
+// rail (SPIRITS.md §4: configuration is never a top-level view) ----
+function renderSpiritSettings() {
+  const host = document.getElementById("spSettingsWrap");
+  if (!host) return;
+  host.innerHTML = "";
+  const wrap = el("div", "aion-org");
+  const rail = el("div", "aion-org-rail");
+  const pane = el("div", "aion-org-pane");
+  wrap.append(rail, pane);
+  host.append(wrap);
+
+  rail.append(el("div", "aion-org-label", "Settings"));
+  const degraded = spPortalRows.filter((p) => p.state === "degraded").length;
+  const items = [
+    ["portals", "Portals", degraded ? degraded + " ●" : String(spPortalRows.length || "")],
+    ["chargebook", "Chargebook", ""],
+    ["harnesses", "Harnesses", ""],
+  ];
+  items.forEach(([key, label, n]) => {
+    const b = el("button", "aion-org-item" + (spSettingsTab === key ? " active" : ""));
+    b.append(el("span", "", label));
+    if (n) b.append(el("span", "aion-org-count" + (key === "portals" && degraded ? " attn" : ""), n));
+    b.onclick = () => { spSettingsTab = key; renderSpiritSettings(); };
+    rail.append(b);
+  });
+  const fileBox = el("div", "aion-org-file");
+  const rel = { portals: "grimoire/portals/", chargebook: "chargebook.md", harnesses: "config.json harnesses[]" }[spSettingsTab];
+  fileBox.append(el("div", "aion-org-label", "File"), el("div", "aion-org-path", rel));
+  rail.append(fileBox);
+
+  if (spSettingsTab === "portals") {
+    pane.append(el("div", "pp-section-head", "PORTALS"));
+    const list = el("div", "portal-board");
+    list.id = "portalList";
+    pane.append(list);
+    loadPortals();
+  } else if (spSettingsTab === "chargebook") {
+    renderChargebookPane(pane);
+  } else {
+    pane.append(el("div", "pp-section-head", "HARNESSES"));
+    const board = el("div", "harness-board");
+    board.id = "harnessBoard";
+    pane.append(board);
+    loadHarnesses();
+  }
+}
+
+// Step-7 builds the real form; until then the chargebook pane hosts the legacy
+// raw drawer scoped to chargebook.md (the ⌘/ escape hatch, lint-gated).
+function renderChargebookPane(pane) {
+  pane.append(el("div", "pp-section-head", "CHARGEBOOK"));
+  pane.append(el("div", "aion-section-note",
+    "default_run_ceiling_usd is the ceiling every keyless ritual inherits; price.*/cast.* are the per-cast prices"));
+  const open = el("button", "pill light", "edit chargebook.md");
+  open.onclick = () => openEditor(["chargebook.md"]);
+  pane.append(open);
 }
 
 const PORTAL_STATE_LABEL = { open: "open", degraded: "degraded", sealed: "—", dormant: "—" };
@@ -248,8 +422,11 @@ function togglePortalForm(p, wrap) {
 async function portalAction(url) {
   try {
     const row = await postJSON(url, {});
-    const wrap = els.portalList.querySelector(`[data-portal-id="${CSS.escape(row.id)}"]`)?.closest(".portal-wrap");
+    const host = document.getElementById("portalList");
+    const wrap = host && host.querySelector(`[data-portal-id="${CSS.escape(row.id)}"]`)?.closest(".portal-wrap");
     if (wrap) wrap.replaceWith(portalRowEl(row));
+    spPortalRows = spPortalRows.map((p) => (p.id === row.id ? row : p));
+    updateSettingsBadge();
     refreshFeedBadge();
   } catch (e) { showToast("Portal action failed"); }
 }
