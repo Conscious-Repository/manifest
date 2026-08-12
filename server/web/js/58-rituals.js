@@ -89,7 +89,7 @@ function ritualRow(r) {
   ceil.title = r.ceilingDefault ? "chargebook default" : "ritual charge_usd";
   row.append(ceil);
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
-  row.onclick = () => openEditor([r.path]);
+  row.onclick = () => { location.hash = "#/spirits/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
   return row;
 }
 // relFuture: " · in 9h" / " · in 3d" / " · due"
@@ -426,4 +426,304 @@ function renderCadenceBuilder(host, cad, opts) {
     const nx = cadNextFire(cron);
     if (nx) host.append(el("div", "cadb-next", "next: " + nx.toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })));
   }
+}
+
+// ---- SPIRITS.md §3: the structured ritual editor ----
+// Four sections — Cadence (builder) · Limits (derived ceiling + steps +
+// read-only capability summary) · Instructions (body) · Raw (escape hatch).
+// TWO objects only: `record` (the fetched file) and `open` (the form). Dirty
+// is DERIVED by comparing them; save writes the record and the record becomes
+// the baseline — no second `saved` store (§7 parallel truth).
+
+let ritEd = null; // { path, spirit, name, record, open, bar, hosts }
+
+// splitFM — leading `---` fence block + body, kept as LINES so serialization
+// is line-surgery on the original (unsurfaced keys survive verbatim).
+function splitFM(content) {
+  const lines = content.split("\n");
+  if (lines[0] !== "---") return { fmLines: [], body: content, hasFM: false };
+  const end = lines.indexOf("---", 1);
+  if (end < 0) return { fmLines: [], body: content, hasFM: false };
+  return { fmLines: lines.slice(1, end), body: lines.slice(end + 1).join("\n"), hasFM: true };
+}
+function fmValue(fmLines, key) {
+  const re = new RegExp("^" + key + ":\\s*(.*)$");
+  for (const ln of fmLines) { const m = ln.match(re); if (m) return m[1].trim(); }
+  return null;
+}
+// fmSurgery — replace / insert (after ritual:, else at top) / delete one key's
+// line in the original fm block. Returns new lines; everything else verbatim.
+function fmSurgery(fmLines, key, value) {
+  const re = new RegExp("^" + key + ":");
+  const idx = fmLines.findIndex((ln) => re.test(ln));
+  const out = [...fmLines];
+  if (value === null) { if (idx >= 0) out.splice(idx, 1); return out; }
+  const line = key + ": " + value;
+  if (idx >= 0) out[idx] = line;
+  else {
+    const after = out.findIndex((ln) => /^ritual:/.test(ln));
+    out.splice(after >= 0 ? after + 1 : 0, 0, line);
+  }
+  return out;
+}
+
+function parseRitualRecord(raw) {
+  const { fmLines, body } = splitFM(raw);
+  const cadence = fmValue(fmLines, "cadence"); // null = no key = on demand
+  return {
+    raw, fmLines, body,
+    cadence: cadence === null ? "" : cadence,
+    charge: fmValue(fmLines, "charge_usd"),      // string|null (null = inherited)
+    maxSteps: fmValue(fmLines, "max_steps"),     // string|null
+  };
+}
+
+// serializeRitual — the record's own frontmatter with ONLY the edited keys
+// surgically changed; ondemand removes the cadence line, an inherited ceiling
+// removes charge_usd (the raw pane is the verifiable receipt of both).
+function serializeRitual(record, open) {
+  let fm = record.fmLines;
+  if (open.custom) {
+    // custom cron: the builder can't express it — cadence stays whatever raw
+    // editing made it; no surgery on the cadence line from the form side
+  } else {
+    const cron = cadCompile(open.cad).cron;
+    fm = fmSurgery(fm, "cadence", open.cad.kind === "ondemand" ? null : cron);
+  }
+  fm = fmSurgery(fm, "charge_usd", open.charge === null ? null : open.charge);
+  fm = fmSurgery(fm, "max_steps", open.maxSteps === null ? null : open.maxSteps);
+  return "---\n" + fm.join("\n") + "\n---\n" + open.body;
+}
+
+function ritEditorDirty() {
+  const { record, open } = ritEd;
+  if (open.raw !== undefined) return open.raw !== record.raw;
+  if (open.body !== record.body) return true;
+  if ((open.charge === null ? null : String(open.charge)) !== record.charge) return true;
+  if ((open.maxSteps === null ? null : String(open.maxSteps)) !== record.maxSteps) return true;
+  if (!open.custom) {
+    const recCad = cadParse(record.cadence);
+    if (recCad === null) return true; // form took over a custom cron
+    if (canonCron(open.cad) !== canonCron(recCad)) return true;
+  }
+  return false;
+}
+
+// the chargebook default the inherited figure renders at — derived from the
+// board row (Store.ritualRow already computes it); cold path parses
+// chargebook.md. Never a JS constant (the real value is 0.50, not the spec's
+// 0.25 fixture).
+async function chargebookDefault() {
+  const row = (spiritRitualRows || []).find((r) => r.ceilingDefault);
+  if (row) return Number(row.ceilingUsd);
+  try {
+    const raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent("chargebook.md"))).json()).content || "";
+    const m = raw.match(/^default_run_ceiling_usd:\s*([\d.]+)/m);
+    if (m) return parseFloat(m[1]);
+  } catch (e) {}
+  return null;
+}
+
+async function renderRitualEditor(path) {
+  const host = document.getElementById("spEditorWrap");
+  if (!host) return;
+  host.innerHTML = "loading…";
+  let raw = "";
+  try { raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(path))).json()).content || ""; }
+  catch (e) { host.innerHTML = ""; host.append(emptyRow("Couldn't load " + path)); return; }
+  const record = parseRitualRecord(raw);
+  const cad = cadParse(record.cadence);
+  ritEd = {
+    path,
+    spirit: spSpirit,
+    name: path.split("/").pop().replace(/\.md$/, ""),
+    record,
+    open: {
+      cad: cad || cadDefault("ondemand"),
+      custom: cad === null,
+      charge: record.charge === null ? null : record.charge,
+      maxSteps: record.maxSteps === null ? null : record.maxSteps,
+      body: record.body,
+      raw: undefined,
+    },
+    showRaw: cad === null, // custom cron: raw auto-opens — it IS the edit path
+  };
+  const defCeil = await chargebookDefault();
+  ritEd.defCeil = defCeil;
+  paintRitualEditor(host);
+}
+
+function paintRitualEditor(host) {
+  host.innerHTML = "";
+  const { record, open } = ritEd;
+
+  const head = el("div", "sprt-head");
+  head.append(el("span", "sprt-title", ritEd.spirit + " / " + ritEd.name));
+  head.append(el("span", "sprt-sub", ritEd.path + " · the engine hot-reloads on save"));
+  const acts = el("span", "sprt-head-acts");
+  const run = el("button", "sprt-quiet", "run now");
+  run.onclick = () => spiritSpool(ritEd.spirit, ritEd.name, "");
+  const rawT = el("button", "sprt-quiet", ritEd.showRaw ? "hide raw" : "show raw");
+  rawT.onclick = () => { ritEd.showRaw = !ritEd.showRaw; paintRitualEditor(host); };
+  acts.append(run, rawT);
+  head.append(acts);
+  host.append(head);
+
+  const lint = el("div", "editor-lint");
+  lint.hidden = true;
+  const bar = derivedDirtyBar(host, {
+    compute: () => {
+      const errs = open.raw !== undefined || open.custom ? [] : cadValidate(open.cad);
+      const dirty = ritEditorDirty();
+      return {
+        dirty, blocked: errs.length > 0,
+        msg: errs.length ? "can't save — " + errs[0]
+          : dirty ? "unsaved changes · lint runs on save"
+          : "no changes",
+      };
+    },
+    onSave: () => saveRitualEditor(host, lint),
+    onDiscard: () => renderRitualEditor(ritEd.path),
+  });
+  ritEd.bar = bar;
+  host.append(lint);
+
+  const section = (label) => { host.append(el("div", "pp-section-head", label)); };
+
+  // 1 · CADENCE
+  section("CADENCE");
+  const cadHost = el("div", "cadb");
+  host.append(cadHost);
+  const paintCad = () => renderCadenceBuilder(cadHost, open.custom ? null : open.cad, {
+    custom: open.custom,
+    rawCron: record.cadence,
+    onEdit: (next) => {
+      open.cad = next;
+      open.custom = false;      // touching any cadence control hands authority to the form
+      delete open.raw;          // …and the raw pane re-derives (§3 precedence)
+      paintCad();
+      paintRaw();
+      bar.refresh();
+    },
+  });
+  paintCad();
+
+  // 2 · LIMITS — inline figures + the read-only capability summary
+  section("LIMITS");
+  const lim = el("div", "rit-limits");
+  const figure = (label, valText, muted, note, onCommit) => {
+    const f = el("div", "rit-figure");
+    f.append(el("span", "rit-fig-label", label));
+    const v = el("button", "rit-fig-val" + (muted ? " muted" : ""), valText);
+    v.title = "click to edit" + (muted ? " — inheriting the chargebook default" : "");
+    v.onclick = () => {
+      const input = el("input", "pp-in rit-fig-in");
+      input.value = muted ? "" : valText.replace(/^\$/, "");
+      input.placeholder = muted ? valText.replace(/^\$/, "") : "";
+      const commit = () => { onCommit(input.value.trim()); };
+      input.onblur = commit;
+      input.onkeydown = (ev) => { if (ev.key === "Enter") input.blur(); if (ev.key === "Escape") paintRitualEditor(host); };
+      v.replaceWith(input);
+      input.focus();
+    };
+    f.append(v);
+    f.append(el("span", "rit-fig-note", note));
+    return f;
+  };
+  const ceilText = open.charge !== null ? "$" + Number(open.charge).toFixed(2)
+    : ritEd.defCeil !== null ? "$" + ritEd.defCeil.toFixed(2) : "$—";
+  lim.append(figure("charge ceiling", ceilText, open.charge === null,
+    open.charge === null ? "chargebook default" : "charge_usd",
+    (v) => {
+      open.charge = v === "" ? null : v;   // blank = inherit (no key in raw)
+      delete open.raw;
+      paintRitualEditor(host);
+    }));
+  lim.append(figure("max steps", open.maxSteps !== null ? String(open.maxSteps) : "—", open.maxSteps === null,
+    open.maxSteps === null ? "engine default" : "max_steps",
+    (v) => {
+      open.maxSteps = v === "" ? null : v;
+      delete open.raw;
+      paintRitualEditor(host);
+    }));
+  // capability summary — inherited from the cornerstone; editing it here would
+  // duplicate the spirit page, so it links there instead (spec §3.2)
+  const cap = el("div", "rit-capability");
+  cap.textContent = "…";
+  lim.append(cap);
+  host.append(lim);
+  fetch("/api/spirits/file?path=" + encodeURIComponent("spirits/" + ritEd.spirit + "/cornerstone.md"))
+    .then((r) => r.json()).then((d) => {
+      const { fmLines } = splitFM(d.content || "");
+      const portal = (fmValue(fmLines, "portal") || "").replace(/^:?\s*/, "") || "—";
+      const sbRaw = fmValue(fmLines, "available_spellbooks") || "[]";
+      const wrRaw = fmValue(fmLines, "writable") || "[]";
+      const count = (s) => (s.replace(/[\[\]\s]/g, "") ? s.replace(/[\[\]]/g, "").split(",").length : 0);
+      cap.innerHTML = "";
+      cap.append(el("span", "rit-cap-sum",
+        portal + " · " + count(sbRaw) + " spellbook" + (count(sbRaw) === 1 ? "" : "s") + " · writes " + (wrRaw.replace(/[\[\]]/g, "") || "nothing")));
+      const link = el("a", "aion-open", "edit " + ritEd.spirit + " →");
+      link.href = "#/spirits/" + encodeURIComponent(ritEd.spirit);
+      cap.append(link);
+    }).catch(() => { cap.textContent = ""; });
+
+  // 3 · INSTRUCTIONS — the markdown body, a real textarea
+  section("INSTRUCTIONS");
+  const bodyTa = el("textarea", "editor-area rit-body");
+  bodyTa.spellcheck = false;
+  bodyTa.value = open.body;
+  bodyTa.addEventListener("input", () => { open.body = bodyTa.value; delete open.raw; paintRaw(); bar.refresh(); });
+  host.append(bodyTa);
+
+  // 4 · RAW — behind show raw; live-derived until typed in (typing keeps what
+  // you typed; any cadence control hands authority back to the form)
+  const rawWrap = el("div", "rit-raw");
+  rawWrap.hidden = !ritEd.showRaw;
+  rawWrap.append(el("div", "pp-section-head", "RAW"));
+  const rawTa = el("textarea", "editor-area rit-raw-ta");
+  rawTa.spellcheck = false;
+  rawTa.addEventListener("input", () => { open.raw = rawTa.value; bar.refresh(); });
+  rawWrap.append(rawTa);
+  host.append(rawWrap);
+  const paintRaw = () => { rawTa.value = open.raw !== undefined ? open.raw : serializeRitual(record, open); };
+  paintRaw();
+
+  bar.refresh();
+}
+
+async function saveRitualEditor(host, lint) {
+  const { record, open } = ritEd;
+  const content = open.raw !== undefined ? open.raw : serializeRitual(record, open);
+  lint.hidden = true; lint.innerHTML = "";
+  setSaveState("saving");
+  try {
+    const r = await fetch("/api/spirits/file?path=" + encodeURIComponent(ritEd.path), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+    const res = await r.json();
+    if (r.status === 422 || res.ok === false) {
+      setSaveState("error");
+      lint.hidden = false;
+      (res.errors || ["save blocked"]).forEach((m) => lint.append(el("div", "lint-err", "✕ " + m)));
+      (res.warnings || []).forEach((m) => lint.append(el("div", "lint-warn", "⚠ " + m)));
+      return; // dirty persists — the record was not written
+    }
+    setSaveState("saved");
+    if ((res.warnings || []).length) {
+      lint.hidden = false;
+      lint.classList.add("lint-ok");
+      res.warnings.forEach((m) => lint.append(el("div", "lint-warn", "⚠ " + m)));
+    }
+    // the record IS the baseline: reparse what was written, reseed the form
+    ritEd.record = parseRitualRecord(content);
+    const cad = cadParse(ritEd.record.cadence);
+    ritEd.open = {
+      cad: cad || cadDefault("ondemand"), custom: cad === null,
+      charge: ritEd.record.charge, maxSteps: ritEd.record.maxSteps,
+      body: ritEd.record.body, raw: undefined,
+    };
+    loadSpiritRituals(); // board shows the new schedule
+    paintRitualEditor(host);
+  } catch (e) { setSaveState("error"); showToast("Save failed: " + (e.message || e), null, "error"); }
 }

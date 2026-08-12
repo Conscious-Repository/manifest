@@ -191,3 +191,45 @@
 
 /* the cadence cron sub-line must be LEGIBLE (spec §4): meta text, not ghost */
 .cad-raw { color: var(--base-40); font-size: 10.5px; }
+
+/* ---- SPIRITS.md §2/§3: cadence builder + structured ritual editor ---- */
+.cadb { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
+.cadb-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cadb-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); min-width: 52px; }
+.cadb-chip {
+  min-height: 28px; padding: 0 11px; border: 1px solid var(--base-25); border-radius: 14px;
+  background: none; font-family: var(--sans); font-size: 12.5px; color: var(--base-70); cursor: pointer;
+}
+.cadb-chip:hover { border-color: var(--base-40); }
+.cadb-chip.on { border-color: var(--accent); color: var(--accent); font-weight: 500; }
+.cadb-add { min-height: 28px; font-size: 12.5px; width: auto; }
+.cadb-receipt {
+  display: flex; align-items: baseline; gap: 14px; padding: 7px 10px;
+  border-left: 2px solid var(--accent); background: var(--base-05); margin-top: 2px;
+}
+.cadb-receipt.incomplete { border-left-color: var(--base-100); }
+.cadb-phrase { font-family: var(--sans); font-size: 13.5px; color: var(--base-100); font-weight: 500; }
+.cadb-cron { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin-left: auto; }
+.cadb-next { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); padding-left: 12px; }
+.cadb-custom { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-left: 2px solid var(--base-100); background: var(--base-05); }
+.cadb-custom-msg { font-family: var(--sans); font-size: 12.5px; color: var(--base-100); font-weight: 500; }
+.cadb-custom-cron { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+
+.rit-limits { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; margin: 4px 0 6px; }
+.rit-figure { display: flex; flex-direction: column; gap: 2px; }
+.rit-fig-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); }
+.rit-fig-val {
+  background: none; border: none; padding: 0; text-align: left; cursor: pointer;
+  font-family: var(--mono); font-size: 20px; color: var(--base-100);
+  border-bottom: 1px dashed var(--base-25);
+}
+.rit-fig-val.muted { color: var(--base-40); }
+.rit-fig-in { width: 90px; font-size: 16px; }
+.rit-fig-note { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.rit-capability { display: flex; flex-direction: column; gap: 3px; margin-left: auto; max-width: 300px; }
+.rit-cap-sum { font-family: var(--mono); font-size: 11.5px; color: var(--base-50); }
+.rit-body { min-height: 220px; }
+.rit-raw-ta { min-height: 200px; }
+
+.dirty-bar.derived { position: sticky; bottom: 0; }
+.dirty-bar.derived.quiet .dirty-label { color: var(--base-40); }

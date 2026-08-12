@@ -318,3 +318,31 @@ async function contactNoteIndex() {
   } catch (e) {}
   return _contactNoteIdx;
 }
+
+// ---- derivedDirtyBar: the dirty bar whose state is COMPUTED, never counted
+// (SPIRITS.md §3 — a hand-incremented counter detaches from the record the
+// moment you navigate). compute() returns {dirty, blocked, msg}; call
+// refresh() after every input. save runs onSave only when dirty && !blocked.
+function derivedDirtyBar(host, opts) {
+  const bar = el("div", "dirty-bar derived");
+  const label = el("span", "dirty-label", "");
+  const save = el("button", "pill", "save");
+  const discard = el("button", "pill light", "discard");
+  bar.append(label, save, discard);
+  host.append(bar);
+  const api = {
+    refresh() {
+      const { dirty, blocked, msg } = opts.compute();
+      bar.hidden = false; // always visible: it carries the "no changes" truth too
+      bar.classList.toggle("quiet", !dirty && !blocked);
+      label.textContent = msg;
+      save.disabled = !dirty || !!blocked;
+      discard.disabled = !dirty;
+      return dirty;
+    },
+  };
+  save.onclick = async () => { save.disabled = true; try { await opts.onSave(); } finally { api.refresh(); } };
+  discard.onclick = () => { opts.onDiscard(); api.refresh(); };
+  api.refresh();
+  return api;
+}

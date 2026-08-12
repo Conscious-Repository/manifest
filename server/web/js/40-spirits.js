@@ -230,17 +230,7 @@ async function renderSpiritPage(name) {
   host.append(open);
 }
 
-// ---- RITUAL EDITOR (step-1 shape; steps 2–4 bring the structured editor) ----
-function renderRitualEditor(path) {
-  const host = document.getElementById("spEditorWrap");
-  if (!host) return;
-  host.innerHTML = "";
-  const head = el("div", "sprt-head");
-  head.append(el("span", "sprt-title", spSpirit + " / " + path.split("/").pop().replace(/\.md$/, "")));
-  head.append(el("span", "sprt-sub", path));
-  host.append(head);
-  openEditor([path]);
-}
+// (renderRitualEditor — the structured editor — lives in 58-rituals.js)
 
 // ---- SETTINGS — Portals · Chargebook · Harnesses behind the aion-org inner
 // rail (SPIRITS.md §4: configuration is never a top-level view) ----
