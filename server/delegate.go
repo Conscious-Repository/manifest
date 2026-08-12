@@ -35,6 +35,9 @@ type delegationView struct {
 	// the result, ready to open: exactly one of these is ever set (§8 two media)
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
 	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
+	// Started is when the run began, used to prefer the newest run when two
+	// completed runs share the same todo id (not serialized to the client).
+	Started time.Time
 }
 
 // delegationIndex scans every harness's traces ONCE per request: spool files
@@ -49,7 +52,8 @@ func (s *Server) delegationIndex() map[string]delegationView {
 		if id == "" {
 			return
 		}
-		if cur, ok := out[id]; !ok || rank[d.State] > rank[cur.State] {
+		if cur, ok := out[id]; !ok || rank[d.State] > rank[cur.State] ||
+			(rank[d.State] == rank[cur.State] && d.Started.After(cur.Started)) {
 			out[id] = d
 		}
 	}
@@ -76,6 +80,9 @@ func (s *Server) delegationIndex() map[string]delegationView {
 					state = "failed"
 				}
 				d := delegationView{State: state, Harness: h.Name, RunID: r.ID}
+				if ts, err := time.Parse(time.RFC3339, r.Started); err == nil {
+					d.Started = ts
+				}
 				// the deliverable: the brief this run wrote, else the newest
 				// brief carrying the same delegation token
 				ref := libraryRefForRun(h, r.ID, lib)
