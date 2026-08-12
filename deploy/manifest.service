@@ -41,6 +41,7 @@ ReadWritePaths=/home/benjamin/.config/manifest
 ReadWritePaths=/private/consciousrepo
 ReadWritePaths=/private/harnesses
 ReadWritePaths=/home/benjamin/aionbio
+ReadWritePaths=/home/benjamin/re-portal
 
 [Install]
 WantedBy=multi-user.target
