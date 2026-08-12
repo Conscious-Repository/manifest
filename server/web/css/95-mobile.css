@@ -394,5 +394,4 @@
   .re-decision { min-height: 52px; }
   .re-set-tabs { display: flex; overflow-x: auto; scrollbar-width: none; width: auto; }
   .re-assump-row { grid-template-columns: 1fr 82px; min-height: 48px; align-items: center; }
-  .re-assump-who { display: none; } /* the override index is desktop-only */
 }

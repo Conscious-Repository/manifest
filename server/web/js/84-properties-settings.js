@@ -128,7 +128,6 @@ function renderAssumptionsPanel(pane) {
   pane.append(el("div", "pp-section-head", "UNDERWRITING ASSUMPTIONS — the single global set"));
   const grid = el("div", "re-assump-grid");
   const dirty = {};
-  const overridesFor = (key) => (a.__overrides || []).filter((o) => o.key === key);
   (a.__keys || []).forEach((key) => {
     const row = el("div", "re-assump-row");
     row.append(el("span", "re-assump-label", (a.__labels || {})[key] || key));
@@ -137,10 +136,6 @@ function renderAssumptionsPanel(pane) {
     inp.value = a[key] != null ? String(a[key]) : "";
     inp.oninput = () => { dirty[key] = inp.value; saveBar.hidden = !Object.keys(dirty).length; };
     row.append(inp);
-    const who = overridesFor(key);
-    row.append(el("span", "re-assump-who", who.length
-      ? who.map((o) => o.name + " (" + o.value + ")").join(" · ")
-      : "—"));
     grid.append(row);
   });
   pane.append(grid);

@@ -306,10 +306,9 @@
 .re-set-tab.active { color: var(--accent); background: var(--base-20); border-left-color: var(--accent); }
 .re-set-pane { overflow: hidden; }
 .re-assump-grid { max-width: 620px; }
-.re-assump-row { display: grid; grid-template-columns: 1fr 82px 96px; gap: 12px; align-items: baseline; padding: 4px 0; border-top: 1px solid #f4f4f4; }
+.re-assump-row { display: grid; grid-template-columns: 1fr 82px; gap: 12px; align-items: baseline; padding: 4px 0; border-top: 1px solid #f4f4f4; }
 .re-assump-label { font-size: 13px; }
 .re-assump-in { font-family: var(--mono); font-size: 12px; text-align: right; }
-.re-assump-who { font-family: var(--mono); font-size: 10px; color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .re-partnered { font-family: var(--mono); font-size: 10px; letter-spacing: 0.3px; border: 1px solid var(--base-25); border-radius: 10px; padding: 1px 8px; background: none; color: var(--base-40); cursor: pointer; }
 .re-partnered.on { color: var(--accent); border-color: var(--accent-soft); }
 .re-holdings { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
