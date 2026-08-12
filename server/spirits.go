@@ -452,3 +452,24 @@ func (s *Server) handleSpiritsCastables(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, map[string]any{"data": s.spirits.Castables(time.Now())})
 }
+
+// handleSpiritsCatalog — the spirit page's capability vocabularies: conduits
+// (grimoire/portals) + spellbooks (grimoire/spellbooks). Read-only, primary
+// harness (editing is primary-only anyway).
+func (s *Server) handleSpiritsCatalog(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		writeJSON(w, map[string]any{"portals": []string{}, "spellbooks": []string{}})
+		return
+	}
+	writeJSON(w, map[string]any{"portals": s.spirits.Conduits(), "spellbooks": s.spirits.Spellbooks()})
+}
+
+// handleSpiritsMemories — names and counts only, never contents (the
+// memories belong to the spirits).
+func (s *Server) handleSpiritsMemories(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		writeJSON(w, map[string]any{"data": []any{}})
+		return
+	}
+	writeJSON(w, map[string]any{"data": s.spirits.Memories(r.URL.Query().Get("spirit"))})
+}

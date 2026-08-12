@@ -555,3 +555,72 @@ func clock(hr, mn int) string {
 	}
 	return fmt.Sprintf("%d:%02d%s", h, mn, ap)
 }
+
+// Spellbooks lists the grimoire's spellbook catalog (grimoire/spellbooks/
+// directory names) — the vocabulary the spirit page's capability chips pick
+// from. Read-only; the grimoire belongs to the engine.
+func (s *Store) Spellbooks() []string {
+	ents, err := os.ReadDir(filepath.Join(s.root, "grimoire", "spellbooks"))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range ents {
+		if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// MemoryInfo is one row of a spirit's memory listing — names and counts only,
+// never contents (the memories belong to the spirits).
+type MemoryInfo struct {
+	Name  string `json:"name"`  // long-term | window | archive
+	Files int    `json:"files"` // 1 for long-term when present; per-day file count otherwise
+	Bytes int64  `json:"bytes"` // long-term only (0 for the dirs)
+}
+
+// Memories lists a spirit's memory surfaces: long-term.md size + window/ and
+// archive/ day-file counts.
+func (s *Store) Memories(spirit string) []MemoryInfo {
+	if !validSlug(spirit) {
+		return nil
+	}
+	base := filepath.Join(s.root, "spirits", spirit, "memories")
+	var out []MemoryInfo
+	if fi, err := os.Stat(filepath.Join(base, "long-term.md")); err == nil {
+		out = append(out, MemoryInfo{Name: "long-term", Files: 1, Bytes: fi.Size()})
+	}
+	for _, dir := range []string{"window", "archive"} {
+		ents, err := os.ReadDir(filepath.Join(base, dir))
+		if err != nil {
+			continue
+		}
+		n := 0
+		for _, e := range ents {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+				n++
+			}
+		}
+		out = append(out, MemoryInfo{Name: dir, Files: n})
+	}
+	return out
+}
+
+// Conduits lists the grimoire's portal defs (grimoire/portals/*.md, minus
+// .example) — the spirit page's conduit select vocabulary.
+func (s *Store) Conduits() []string {
+	matches, _ := filepath.Glob(filepath.Join(s.root, "grimoire", "portals", "*.md"))
+	var out []string
+	for _, m := range matches {
+		name := strings.TrimSuffix(filepath.Base(m), ".md")
+		if strings.HasSuffix(name, ".example") {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}

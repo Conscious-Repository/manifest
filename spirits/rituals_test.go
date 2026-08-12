@@ -1,6 +1,10 @@
 package spirits
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestHumanCadence(t *testing.T) {
 	cases := map[string]string{
@@ -73,4 +77,49 @@ func TestBuilderVocabulary(t *testing.T) {
 	if humanCadence("0 9 * * 6,0") != humanCadence("0 9 * * 0,6") {
 		t.Error("weekends 6,0 and 0,6 must phrase identically")
 	}
+}
+
+// The spirit-page vocabularies + memory listing read real tree shapes — pin
+// them against a scaffolded temp harness.
+func TestCatalogAndMemories(t *testing.T) {
+	root := t.TempDir()
+	st := NewStore(root)
+	// grimoire: two conduits (+ an .example that must be skipped), two spellbooks
+	mk := func(rel string) {
+		if err := osMkdirAllFile(root, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("grimoire/portals/claude-sub.md")
+	mk("grimoire/portals/deepseek-local.md")
+	mk("grimoire/portals/openai-compat.example.md")
+	mk("grimoire/spellbooks/web/SPELLBOOK.md")
+	mk("grimoire/spellbooks/feed/SPELLBOOK.md")
+	if got := st.Conduits(); len(got) != 2 || got[0] != "claude-sub" || got[1] != "deepseek-local" {
+		t.Fatalf("Conduits() = %v", got)
+	}
+	if got := st.Spellbooks(); len(got) != 2 || got[0] != "feed" || got[1] != "web" {
+		t.Fatalf("Spellbooks() = %v", got)
+	}
+	// a scaffolded spirit has long-term + empty window/archive
+	if err := st.ScaffoldSpirit("scout"); err != nil {
+		t.Fatal(err)
+	}
+	mems := st.Memories("scout")
+	if len(mems) != 3 || mems[0].Name != "long-term" || mems[0].Bytes == 0 ||
+		mems[1].Name != "window" || mems[2].Name != "archive" {
+		t.Fatalf("Memories() = %+v", mems)
+	}
+	if st.Memories("../escape") != nil {
+		t.Fatal("slug traversal not refused")
+	}
+}
+
+// osMkdirAllFile writes an empty file at rel, creating parents.
+func osMkdirAllFile(root, rel string) error {
+	full := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(full, []byte("x\n"), 0o644)
 }

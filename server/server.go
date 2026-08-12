@@ -219,6 +219,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/aion", s.handleSpiritsApprovalAion)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
+	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
+	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)
 	// RITUALS board + in-app markdown editing (spirits-console-upgrade).
 	mux.HandleFunc("GET /api/spirits/rituals", s.handleSpiritsRituals)
 	mux.HandleFunc("GET /api/spirits/file", s.handleSpiritsFileGet)

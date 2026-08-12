@@ -233,3 +233,16 @@
 
 .dirty-bar.derived { position: sticky; bottom: 0; }
 .dirty-bar.derived.quiet .dirty-label { color: var(--base-40); }
+
+/* ---- SPIRITS.md §4: spirit page ---- */
+.sp-identity { min-height: 160px; }
+.sp-capability { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
+.sp-cap-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cadb-chip.widened { border-color: var(--base-100); color: var(--base-100); }
+.sp-cap-warnings { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.sp-warn { font-family: var(--sans); font-size: 12px; color: var(--base-50); padding-left: 10px; border-left: 2px solid var(--base-25); }
+.sp-warn.ink { color: var(--base-100); font-weight: 500; border-left-color: var(--base-100); }
+.sp-mems { display: flex; flex-direction: column; }
+.sp-mem-row { display: flex; gap: 14px; align-items: baseline; min-height: 30px; border-bottom: 1px solid var(--base-20); }
+.sp-mem-name { font-family: var(--sans); font-size: 13px; color: var(--base-100); min-width: 90px; }
+.sp-mem-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
