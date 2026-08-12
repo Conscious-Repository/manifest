@@ -292,9 +292,11 @@ function stripFence(body, lang) {
 }
 function stripProposedFence(body) { return stripFence(body, "proposed"); }
 
-// apprAionRegistry lazily fetches the aion registries the payload editor
-// suggests from: ACTIVE rocks (the goals ladder) + people.md initials.
-// Cached per page load.
+// apprAionRegistry / apprReRegistry lazily fetch the DOMAIN registries the
+// payload editor suggests from — an aion card must never offer a real-estate
+// rock and vice versa. aion: active `## Aion` rocks + aion people.md. real
+// estate: active `## Real Estate` rocks + the RE people registry + every
+// property and deal (the rock slot tethers those too). Cached per page load.
 let apprAionReg = null;
 async function apprAionRegistry() {
   if (apprAionReg) return apprAionReg;
@@ -306,6 +308,30 @@ async function apprAionRegistry() {
     };
   } catch (e) { apprAionReg = { rocks: [], people: [] }; }
   return apprAionReg;
+}
+
+let apprReReg = null;
+async function apprReRegistry() {
+  if (apprReReg) return apprReReg;
+  try {
+    const [re, props, people] = await Promise.all([
+      (await fetch("/api/re/backlog")).json(),
+      (await fetch("/api/properties")).json(),
+      (await fetch("/api/properties/people")).json(),
+    ]);
+    apprReReg = {
+      rocks: (((re.goalsArea || {}).rocks) || []).filter((r) => !r.checked),
+      properties: (props.properties || []).filter((p) => !p.hidden),
+      deals: props.deals || [],
+      people: people.people || [],
+    };
+  } catch (e) { apprReReg = { rocks: [], properties: [], deals: [], people: [] }; }
+  return apprReReg;
+}
+
+// apprRegistryFor: the domain split — re-backlog cards get the RE registry.
+function apprRegistryFor(type) {
+  return type === "re-backlog" ? apprReRegistry() : apprAionRegistry();
 }
 
 // buildAionEditor renders the editable aion payload form: kind flip
@@ -350,12 +376,14 @@ function buildAionEditor(a) {
       row("mode", modeSel);
       if (p.heuristic.mode === "reinforce") textRow("target statement", "target", p.heuristic);
     } else {
-      // owner: typeahead over people.md (initials or name → initials)
+      const isRe = a.type === "re-backlog";
+      // owner: typeahead over THIS domain's registry (aion people.md, or the
+      // curated RE registry — the aion roster never reaches an RE card)
       let ownerPicked = null;
       const ownerTa = typeahead({
         placeholder: "initials…", initial: p.owner || "",
         suggest: async (q, add, ta) => {
-          const reg = await apprAionRegistry();
+          const reg = await apprRegistryFor(a.type);
           reg.people
             .filter((pp) => !q || pp.initials.toLowerCase().includes(q) || (pp.name || "").toLowerCase().includes(q))
             .slice(0, 8)
@@ -367,25 +395,48 @@ function buildAionEditor(a) {
       });
       row("owner", ownerTa.el);
       if (p.kind === "task") {
-        // rock: typeahead over the ladder's ACTIVE rocks — picking stores
-        // the rock ID (displays its title); free text commits verbatim
-        const reg0 = apprAionReg; // may already be cached for initial label
+        // rock: typeahead over THIS domain's ACTIVE rocks — picking stores the
+        // rock ID (displays its title); free text commits verbatim. RE cards
+        // also search PROPERTIES and DEALS live as you type — the rock slot
+        // tethers those too (renderer nests by slug on the Rocks/property
+        // views), so nothing has to be typed from memory.
+        const reg0 = isRe ? apprReReg : apprAionReg; // may already be cached for initial label
         let rockPickedText = null;
         const initialRock = (() => {
-          const hit = reg0 && reg0.rocks.find((r) => r.id === p.rock);
-          if (hit) { rockPickedText = hit.text; return hit.text; }
+          if (reg0) {
+            const hit = reg0.rocks.find((r) => r.id === p.rock);
+            if (hit) { rockPickedText = hit.text; return hit.text; }
+            if (isRe) {
+              const pr = reg0.properties.find((x) => x.slug === p.rock);
+              if (pr) { rockPickedText = pr.short || pr.address || pr.slug; return rockPickedText; }
+              const dl = reg0.deals.find((x) => x.slug === p.rock);
+              if (dl) { rockPickedText = dl.name || dl.slug; return rockPickedText; }
+            }
+          }
           return p.rock || "";
         })();
         const rockTa = typeahead({
-          placeholder: "type to pick an active rock…", initial: initialRock,
+          placeholder: isRe ? "rock, property, or deal…" : "type to pick an active rock…",
+          initial: initialRock,
           suggest: async (q, add, ta) => {
-            const reg = await apprAionRegistry();
+            const reg = await apprRegistryFor(a.type);
+            const pick = (id, label) => () => {
+              p.rock = id; rockPickedText = label; ta.commit(label); sync();
+            };
             reg.rocks
               .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
-              .slice(0, 8)
-              .forEach((r) => add(r.text, "", () => {
-                p.rock = r.id; rockPickedText = r.text; ta.commit(r.text); sync();
-              }));
+              .slice(0, 6)
+              .forEach((r) => add(r.text, isRe ? "rock" : "", pick(r.id, r.text)));
+            if (isRe) {
+              (reg.deals || [])
+                .filter((d) => q && ((d.name || "").toLowerCase().includes(q) || d.slug.includes(q)))
+                .slice(0, 4)
+                .forEach((d) => add(d.name || d.slug, "deal", pick(d.slug, d.name || d.slug)));
+              (reg.properties || [])
+                .filter((pr) => q && ((pr.address || "").toLowerCase().includes(q) || pr.slug.includes(q)))
+                .slice(0, 8)
+                .forEach((pr) => add(pr.short || pr.address || pr.slug, "property", pick(pr.slug, pr.short || pr.address || pr.slug)));
+            }
             if (p.rock) add("✕ no rock (unanchored)", "create", () => {
               p.rock = ""; rockPickedText = ""; ta.commit(""); sync();
             });
