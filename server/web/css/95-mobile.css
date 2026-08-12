@@ -227,7 +227,10 @@
   /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */
   .cal-grid { grid-auto-rows: minmax(56px, auto); }
   .cal-cell { display: block; padding: 8px 6px; }
-  .cal-day-num { display: block; margin-bottom: 4px; }
+  .cal-day-num {
+    display: flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%; margin: 0 auto 4px;
+  }
   .cal-cell .cal-ev, .cal-cell .cal-ev.allday {
     display: inline-block; width: 5px; height: 5px; border-radius: 50%;
     background: var(--accent); padding: 0; margin: 0 3px 2px 0; overflow: hidden;

@@ -16,7 +16,7 @@
 .session-row { display: flex; align-items: baseline; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--line); }
 .session-row:last-child { border-bottom: none; }
 .sess-src { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; border-radius: 4px; padding: 1px 6px; border: 1px solid var(--line); color: var(--muted); flex: none; }
-.sess-src.src-cron { color: #7c3aed; border-color: #ddd0f7; }
+.sess-src.src-cron { color: var(--base-50); border-color: var(--base-25); }
 .sess-src.src-api_server { color: var(--blue); border-color: var(--blue-soft); }
 .sess-src.src-telegram { color: #0e7490; border-color: #c6e6ee; }
 .sess-title { font-family: var(--sans); font-size: 13.5px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

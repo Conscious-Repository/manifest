@@ -102,3 +102,7 @@
 .cp-fact-sub { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; }
 .cp-cold { font-family: var(--mono); font-size: 11.5px; color: var(--base-100); font-weight: 500; margin: 0 0 14px; }
 .contact-cold { color: var(--base-100); }
+
+/* §13: list cold marker + the role chip */
+.contact-cold { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--base-100); white-space: nowrap; }
+.cp-role { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--base-50); border: 1px solid var(--base-25); border-radius: 3px; padding: 2px 7px; align-self: center; }

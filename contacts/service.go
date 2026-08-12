@@ -253,6 +253,9 @@ type Page struct {
 	// server from the todos store — contacts stays todos-agnostic).
 	WaitingOn []WaitingOnItem `json:"waitingOn,omitempty"`
 	NoteBody  string          `json:"noteBody"`
+	// Role: the person note's `role:` frontmatter — the neutral chip beside
+	// the name (§13). Empty when the note has none.
+	Role string `json:"role,omitempty"`
 	// Neglect lens ("meetings" basis when email-linked, else "mentions")
 	NeglectBasis string `json:"neglectBasis"`
 	Interactions int    `json:"interactions"`
@@ -337,8 +340,24 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 	}
 	if p.HasNote {
 		p.NoteBody = s.noteBody(p.NotePath)
+		p.Role = s.noteRole(p.NotePath)
 	}
 	return p, true
+}
+
+// noteRole reads the person note's `role:` frontmatter line ("" when absent).
+func (s *Service) noteRole(rel string) string {
+	b, err := os.ReadFile(filepath.Join(s.ix.VaultRoot(), filepath.FromSlash(rel)))
+	if err != nil {
+		return ""
+	}
+	front, _ := splitFront(string(b))
+	for _, ln := range strings.Split(front, "\n") {
+		if strings.HasPrefix(ln, "role:") {
+			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(ln, "role:")), `"'`)
+		}
+	}
+	return ""
 }
 
 // ---- quick-lookup card ----

@@ -57,7 +57,7 @@ function contactRow(c) {
   const row = el("div", "contact-row" + (c.cold ? " cold" : ""));
   row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
   const left = el("div", "contact-row-left");
-  if (c.cold) left.append(el("span", "contact-cold", "◆")); // quiet going-cold marker
+  if (c.cold) left.append(el("span", "contact-cold", "● going cold")); // §13: ink, never amber
   left.append(el("span", "contact-name", c.display));
   if (!c.hasNote) left.append(el("span", "contact-dot", "○")); // quiet no-note indicator
   if (c.openLoops > 0) left.append(el("span", "contact-loops", c.openLoops + " open"));
@@ -257,6 +257,7 @@ function renderContactPage(p) {
   const header = el("div", "cp-header");
   const nameRow = el("div", "cp-name-row");
   nameRow.append(el("h1", "cp-name", p.display));
+  if (p.role) nameRow.append(el("span", "cp-role", p.role.toUpperCase())); // §13: neutral role chip from the note's role:
   if (!p.hasNote) nameRow.append(el("span", "cp-nonote", "no note yet"));
   header.append(nameRow);
   if (p.aliases && p.aliases.length) header.append(el("div", "cp-aliases", "aka " + p.aliases.join(" · ")));
@@ -358,41 +359,32 @@ function renderContactPage(p) {
 
   const openItem = (path) => { _noteReturn = "#/contacts/" + encodeURIComponent(p.key); openNoteByPath(path); };
 
-  // Meetings (calendar-verified, email-matched) — the true "last met", distinct
-  // from the note Timeline below.
-  if (p.meetings && p.meetings.length) {
-    const sec = cpSection("Meetings", p.meetings.length);
-    p.meetings.forEach((m) => {
-      const row = el("div", "cp-tl-row");
-      row.append(el("span", "cp-date", m.date), el("span", "cp-tl-name", m.title), el("span", "cp-src", "calendar"));
-      sec.append(row);
-    });
-    host.append(sec);
-  }
-
-  // 3. timeline (dated interactions, newest first) — each opens the note view
-  const tl = cpSection("Timeline", p.timeline ? p.timeline.length : 0);
-  if (!p.timeline || !p.timeline.length) tl.append(el("div", "cp-empty", "No dated interactions."));
+  // 3. ONE timeline (§13): meetings + notes + transcripts merged newest-first.
+  // The CALENDAR badge (accent on accent-soft) marks calendar-verified rows
+  // ONLY; everything else says what it is in the src column. Deduped by path
+  // (a transcript indexed into the timeline never doubles).
+  const merged = [];
+  const seenPath = new Set();
+  (p.meetings || []).forEach((m) => merged.push({ date: m.date, name: m.title, src: "meeting", calendar: true, path: null }));
   (p.timeline || []).forEach((t) => {
-    const row = el("div", "cp-tl-row cp-clickable");
-    row.append(el("span", "cp-date", t.date), el("span", "cp-src", t.sourceType), el("span", "cp-tl-name", t.name));
-    if (t.isTranscript) row.append(el("span", "cp-badge", "transcript"));
-    row.onclick = () => openItem(t.path);
+    if (t.path) seenPath.add(t.path);
+    merged.push({ date: t.date, name: t.name, src: t.isTranscript ? "transcript" : (t.sourceType || "note"), path: t.path });
+  });
+  (p.transcripts || []).forEach((t) => {
+    if (t.path && seenPath.has(t.path)) return;
+    merged.push({ date: t.date, name: t.title, src: "transcript", path: t.path });
+  });
+  merged.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const tl = cpSection("Timeline", merged.length);
+  if (!merged.length) tl.append(el("div", "cp-empty", "No dated interactions."));
+  merged.forEach((t) => {
+    const row = el("div", "cp-tl-row" + (t.path ? " cp-clickable" : ""));
+    row.append(el("span", "cp-date", t.date), el("span", "cp-src", t.src), el("span", "cp-tl-name", t.name));
+    if (t.calendar) row.append(el("span", "cp-badge", "CALENDAR"));
+    if (t.path) row.onclick = () => openItem(t.path);
     tl.append(row);
   });
   host.append(tl);
-
-  // 4. transcripts
-  if (p.transcripts && p.transcripts.length) {
-    const sec = cpSection("Transcripts", p.transcripts.length);
-    p.transcripts.forEach((t) => {
-      const row = el("div", "cp-tl-row cp-clickable");
-      row.append(el("span", "cp-date", t.date), el("span", "cp-tl-name", t.title), el("span", "cp-src", t.source));
-      row.onclick = () => openItem(t.path);
-      sec.append(row);
-    });
-    host.append(sec);
-  }
 
   // 5. mentions (undated — never a date claim)
   if (p.mentions && p.mentions.length) {

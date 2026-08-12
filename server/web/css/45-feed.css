@@ -4,7 +4,7 @@
 .feed-filters { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .feed-list { display: flex; flex-direction: column; gap: 12px; }
 .feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-.feed-card.artifact { border-color: var(--blue-soft); background: #fbfcff; }
+.feed-card.artifact { border-color: var(--blue-soft); background: var(--base-05); }
 .feed-top { display: flex; align-items: baseline; gap: 10px; }
 .type-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .type-chip.type-company { color: var(--base-50); border-color: var(--base-25); }
@@ -32,7 +32,7 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .signal-more:hover { color: var(--blue); }
 /* deep-link flash (goals rock focus + approvals diff focus) */
 .goal-flash { animation: goalflash 2.4s ease; }
-@keyframes goalflash { 0% { background: #fff7d6; } 100% { background: transparent; } }
+@keyframes goalflash { 0% { background: var(--accent-soft); } 100% { background: transparent; } }
 
 /* ---- portal feed cards (the third card kind): digest + itemized notices ---- */
 .type-chip.type-portal { }

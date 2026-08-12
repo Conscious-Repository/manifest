@@ -207,7 +207,7 @@ function portalCardEl(pc) {
   const card = el("div", "feed-card portal-card" + (pc.pinned ? " pinned" : ""));
   card.dataset.portalId = pc.id;
   const top = el("div", "feed-top");
-  if (pc.pinned) top.append(el("span", "pin-chip", "📌 pinned"));
+  if (pc.pinned) top.append(el("span", "pin-chip", "pinned"));
   top.append(el("span", "type-chip type-portal", pc.portal)); // muted source tag
   if (pc.change) top.append(el("span", "portal-change-chip change-" + pc.change, pc.change)); // new / edited
   if (pc.date) top.append(el("span", "feed-date", fmtFeedDate(pc.date)));
@@ -273,7 +273,7 @@ function feedCard(it) {
   const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") +
     (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
   const top = el("div", "feed-top");
-  if (pinned) top.append(el("span", "pin-chip", "📌 pinned"));
+  if (pinned) top.append(el("span", "pin-chip", "pinned"));
   top.append(el("span", "type-chip type-" + it.type, it.type));
   if (it.harness) top.append(el("span", "harness-chip", it.harness)); // federation source
   // only a real external URL makes the title a link; an artifact's local
