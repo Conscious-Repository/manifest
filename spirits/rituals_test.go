@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestHumanCadence(t *testing.T) {
@@ -122,4 +123,71 @@ func osMkdirAllFile(root, rel string) error {
 		return err
 	}
 	return os.WriteFile(full, []byte("x\n"), 0o644)
+}
+
+// TestLintRitualFMEnabled — the `enabled` value grammar, the BYTE CONTRACT
+// mirrored in the engine (internal/spirit TestParseRitualEnabled): absent/
+// true/false pass the lint; anything else is an ERROR (a typo must fail
+// visibly, never silently-enabled).
+func TestLintRitualFMEnabled(t *testing.T) {
+	vectors := []struct {
+		value string
+		ok    bool
+	}{
+		{"", true}, {"true", true}, {"false", true}, {"False", true},
+		{"FALSE", true}, {" false ", true},
+		{"no", false}, {"0", false}, {"yes", false}, {"paused", false},
+	}
+	for _, v := range vectors {
+		fm := map[string]string{"ritual": "x"}
+		if v.value != "" {
+			fm["enabled"] = v.value
+		}
+		errs, _ := lintRitualFM(fm)
+		if (len(errs) == 0) != v.ok {
+			t.Errorf("enabled %q → errs %v, want ok=%v", v.value, errs, v.ok)
+		}
+	}
+	// the read side matches the grammar
+	if ritualEnabled(map[string]string{"enabled": "false"}) || ritualEnabled(map[string]string{"enabled": "False"}) {
+		t.Error("false must read paused")
+	}
+	if !ritualEnabled(map[string]string{}) || !ritualEnabled(map[string]string{"enabled": "true"}) {
+		t.Error("absent/true must read enabled")
+	}
+}
+
+// A paused ritual keeps its phrase but never a next-fire, and is skipped by
+// the castables catalog.
+func TestRitualsPausedRow(t *testing.T) {
+	root := t.TempDir()
+	st := NewStore(root)
+	dir := filepath.Join(root, "spirits", "s", "rituals")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("scheduled.md", "---\nritual: scheduled\ncadence: 0 7 * * *\nenabled: false\n---\nx\n")
+	write("ondemand.md", "---\nritual: ondemand\nenabled: false\n---\nx\n")
+	rows := st.Rituals(time.Now())
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d", len(rows))
+	}
+	for _, r := range rows {
+		if r.Enabled {
+			t.Errorf("%s: Enabled = true, want paused", r.Ritual)
+		}
+		if r.NextFire != "" {
+			t.Errorf("%s: paused row carries next-fire %q", r.Ritual, r.NextFire)
+		}
+	}
+	for _, c := range st.Castables(time.Now()) {
+		if c.Kind == "ritual" && c.Ritual == "ondemand" {
+			t.Error("paused on-demand ritual leaked into castables")
+		}
+	}
 }

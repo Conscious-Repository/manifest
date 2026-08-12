@@ -39,6 +39,7 @@ type RitualRow struct {
 	LastRunID      string  `json:"lastRunId"`
 	Valid          bool    `json:"valid"`
 	Error          string  `json:"error"`
+	Enabled        bool    `json:"enabled"` // false = paused (unscheduled; run-now still allowed)
 }
 
 // Rituals builds the board: every ritual across all spirits, joined with the
@@ -109,13 +110,16 @@ func (s *Store) ritualRow(spirit, rdir, file string, def float64, now time.Time,
 		row.Valid, row.Error = false, e
 	}
 
+	row.Enabled = ritualEnabled(fm)
 	switch {
 	case row.Cadence == "":
 		row.CadenceHuman = "on-demand"
 	case row.Valid:
 		row.CadenceHuman = humanCadence(row.Cadence)
-		if sched, e := cron.ParseStandard(row.Cadence); e == nil {
-			row.NextFire = sched.Next(now).Format(time.RFC3339)
+		if row.Enabled { // paused rituals keep the phrase but never a next-fire
+			if sched, e := cron.ParseStandard(row.Cadence); e == nil {
+				row.NextFire = sched.Next(now).Format(time.RFC3339)
+			}
 		}
 	default:
 		row.CadenceHuman = row.Cadence // invalid: show the raw string
@@ -297,7 +301,21 @@ func lintRitualFM(fm map[string]string) (errs, warns []string) {
 			errs = append(errs, fmt.Sprintf("max_steps %q is not an integer", v))
 		}
 	}
+	// enabled — the pause key (SPIRITS.md §3). Grammar contract MIRRORED in
+	// the engine (internal/spirit parseRitual + TestParseRitualEnabled):
+	// absent/true = enabled, false (case-insensitive) = paused, anything
+	// else is an ERROR — a typo must fail visibly, never silently-enabled.
+	switch strings.ToLower(strings.TrimSpace(fm["enabled"])) {
+	case "", "true", "false":
+	default:
+		errs = append(errs, fmt.Sprintf("enabled %q is not true/false", fm["enabled"]))
+	}
 	return errs, warns
+}
+
+// ritualEnabled reads the pause key with the same grammar as the lint.
+func ritualEnabled(fm map[string]string) bool {
+	return strings.ToLower(strings.TrimSpace(fm["enabled"])) != "false"
 }
 
 func (s *Store) lintCornerstoneFM(rel string, fm map[string]string) (errs, warns []string) {

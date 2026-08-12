@@ -43,7 +43,8 @@ function renderSpiritRituals(rows) {
 }
 
 function ritualRow(r) {
-  const row = el("div", "ritual-row" + (r.valid ? "" : " invalid"));
+  const paused = r.enabled === false;
+  const row = el("div", "ritual-row" + (r.valid ? "" : " invalid") + (paused ? " paused" : ""));
   // name — spirit (its own editor) · ritual
   const name = el("span", "ritual-name");
   const sp = el("span", "sprt-spirit", r.spirit);
@@ -53,7 +54,10 @@ function ritualRow(r) {
   row.append(name);
   // cadence — human phrase over the raw cron (both visible, prototype)
   const cad = el("span", "ritual-cadence");
-  if (r.cadence === "") {
+  if (paused) {
+    cad.append(el("span", "cad-human", "paused" + (r.cadenceHuman && r.cadence ? " · " + r.cadenceHuman : "")));
+    cad.append(el("span", "cad-raw", r.cadence || "run with /"));
+  } else if (r.cadence === "") {
     cad.append(el("span", "cad-human", "on-demand"));
     cad.append(el("span", "cad-raw", "run with /"));
   } else {
@@ -477,6 +481,7 @@ function parseRitualRecord(raw) {
     cadence: cadence === null ? "" : cadence,
     charge: fmValue(fmLines, "charge_usd"),      // string|null (null = inherited)
     maxSteps: fmValue(fmLines, "max_steps"),     // string|null
+    enabled: (fmValue(fmLines, "enabled") || "true").trim().toLowerCase() !== "false",
   };
 }
 
@@ -494,6 +499,7 @@ function serializeRitual(record, open) {
   }
   fm = fmSurgery(fm, "charge_usd", open.charge === null ? null : open.charge);
   fm = fmSurgery(fm, "max_steps", open.maxSteps === null ? null : open.maxSteps);
+  fm = fmSurgery(fm, "enabled", open.enabled ? null : "false"); // absent = enabled (canonical)
   return "---\n" + fm.join("\n") + "\n---\n" + open.body;
 }
 
@@ -503,6 +509,7 @@ function ritEditorDirty() {
   if (open.body !== record.body) return true;
   if ((open.charge === null ? null : String(open.charge)) !== record.charge) return true;
   if ((open.maxSteps === null ? null : String(open.maxSteps)) !== record.maxSteps) return true;
+  if (open.enabled !== record.enabled) return true;
   if (!open.custom) {
     const recCad = cadParse(record.cadence);
     if (recCad === null) return true; // form took over a custom cron
@@ -546,6 +553,7 @@ async function renderRitualEditor(path) {
       charge: record.charge === null ? null : record.charge,
       maxSteps: record.maxSteps === null ? null : record.maxSteps,
       body: record.body,
+      enabled: record.enabled,
       raw: undefined,
     },
     showRaw: cad === null, // custom cron: raw auto-opens — it IS the edit path
@@ -563,11 +571,15 @@ function paintRitualEditor(host) {
   head.append(el("span", "sprt-title", ritEd.spirit + " / " + ritEd.name));
   head.append(el("span", "sprt-sub", ritEd.path + " · the engine hot-reloads on save"));
   const acts = el("span", "sprt-head-acts");
+  const pause = el("button", "sprt-quiet rit-pause" + (open.enabled ? "" : " paused"),
+    open.enabled ? "enabled" : "paused");
+  pause.title = "pause without deleting — the engine unschedules it; run now stays a manual override";
+  pause.onclick = () => { open.enabled = !open.enabled; delete open.raw; paintRitualEditor(host); };
   const run = el("button", "sprt-quiet", "run now");
   run.onclick = () => spiritSpool(ritEd.spirit, ritEd.name, "");
   const rawT = el("button", "sprt-quiet", ritEd.showRaw ? "hide raw" : "show raw");
   rawT.onclick = () => { ritEd.showRaw = !ritEd.showRaw; paintRitualEditor(host); };
-  acts.append(run, rawT);
+  acts.append(pause, run, rawT);
   head.append(acts);
   host.append(head);
 
@@ -723,7 +735,7 @@ async function saveRitualEditor(host, lint) {
     ritEd.open = {
       cad: cad || cadDefault("ondemand"), custom: cad === null,
       charge: ritEd.record.charge, maxSteps: ritEd.record.maxSteps,
-      body: ritEd.record.body, raw: undefined,
+      body: ritEd.record.body, enabled: ritEd.record.enabled, raw: undefined,
     };
     loadSpiritRituals(); // board shows the new schedule
     paintRitualEditor(host);

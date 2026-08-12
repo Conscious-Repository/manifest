@@ -222,8 +222,8 @@ func (s *Server) handleFeedDig(w http.ResponseWriter, r *http.Request) {
 func (s *Server) onDemandRitual(spirit string) string {
 	var names []string
 	for _, rr := range s.spirits.Rituals(time.Now()) {
-		if rr.Spirit != spirit || rr.Cadence != "" || !rr.Valid {
-			continue
+		if rr.Spirit != spirit || rr.Cadence != "" || !rr.Valid || !rr.Enabled {
+			continue // paused on-demand rituals are not silently castable
 		}
 		if rr.Spirit == "sage" && rr.Ritual == "skill-cast" {
 			continue // cast a skill instead (castables rule)
