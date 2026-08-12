@@ -73,3 +73,13 @@ note:
 body is private — never rendered, never exported.
 `,
 }
+
+// REBacklogSeed is the freshly-created real-estate decision log — the SAME
+// grammar as the aion backlog (this package parses both); only the title
+// differs. Seeded alone: the other aion corpora never land in the RE root.
+const REBacklogSeed = `# Real Estate — backlog
+
+## Tasks
+
+## Decisions
+`

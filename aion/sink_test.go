@@ -32,7 +32,7 @@ func sinkFixture(t *testing.T) (*ExtractSink, *fakeSpooler, string) {
 	sp := &fakeSpooler{alive: true}
 	// the sink is constructed over the EMPTY vault (baseline = nothing);
 	// the notes below are post-baseline creations, the triggering case
-	sink := NewExtractSink(vault, "system", "extrinsic", dataDir, sp)
+	sink := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", dataDir, sp)
 	write := func(rel, content string) {
 		abs := filepath.Join(vault, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
@@ -64,7 +64,7 @@ func TestSinkBaselinesExistingCorpus(t *testing.T) {
 	_ = os.MkdirAll(filepath.Dir(abs), 0o755)
 	_ = os.WriteFile(abs, []byte("---\ncategories: [aion]\n---\nhistoric transcript\n"), 0o644)
 
-	sink := NewExtractSink(vault, "system", "extrinsic", dataDir, sp)
+	sink := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", dataDir, sp)
 	// the watcher sweeping the historic corpus is a no-op
 	sink.Notify([]string{"log/2026-07-20 aion team sync.md"})
 	if len(sp.requests) != 0 || sink.QueuedCount() != 0 {
@@ -181,7 +181,7 @@ func TestSinkCursorPersists(t *testing.T) {
 	dataDir := filepath.Dir(filepath.Dir(s.cursorPath))
 	s.Notify([]string{"log/2026-08-03 aion sync.md"})
 	// a fresh sink over the same dataDir sees the mark — no respool
-	s2 := NewExtractSink(vault, "system", "extrinsic", dataDir, sp)
+	s2 := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", dataDir, sp)
 	s2.Notify([]string{"log/2026-08-03 aion sync.md"})
 	if len(sp.requests) != 1 {
 		t.Fatalf("cursor not persisted: %d requests", len(sp.requests))
@@ -193,7 +193,7 @@ func TestSinkBatchRespectsRequestCap(t *testing.T) {
 	dataDir := t.TempDir()
 	sp := &fakeSpooler{alive: true}
 	// sink first (empty-vault baseline), notes after — the triggering case
-	s := NewExtractSink(vault, "system", "extrinsic", dataDir, sp)
+	s := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", dataDir, sp)
 	var rels []string
 	for i := 0; i < 100; i++ {
 		rel := "log/2026-08-03 aion note about a very long meeting series volume " +

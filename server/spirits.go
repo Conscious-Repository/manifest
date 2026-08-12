@@ -155,11 +155,12 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
-			case approvals.TypeAionBacklog, approvals.TypeAionHeuristic:
-				// An aion extraction candidate: editable payload + the exact line
-				// Confirm would append. Secret-masked before rendering.
+			case approvals.TypeAionBacklog, approvals.TypeAionHeuristic, approvals.TypeReBacklog:
+				// A domain extraction candidate (aion or real-estate): editable
+				// payload + the exact line Confirm would append. Secret-masked.
 				rr.Allowed = (p.Type == approvals.TypeAionBacklog && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
-					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath))
+					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath)) ||
+					(p.Type == approvals.TypeReBacklog && approvals.ReBacklogPathAllowed(p.ApplyPath))
 				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}

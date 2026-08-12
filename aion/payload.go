@@ -103,9 +103,16 @@ func isISODate(s string) bool {
 // PayloadFence is the fenced-block language tag for aion proposals.
 const PayloadFence = "aion"
 
+// REPayloadFence is the fenced-block language tag for real-estate proposals —
+// same payload shape, different domain (system/realestate/backlog.md).
+const REPayloadFence = "re"
+
 // ParsePayload extracts and decodes the ````aion fence from a proposal body.
-func ParsePayload(body string) (ProposalPayload, bool) {
-	block, ok := mdfm.ExtractFencedBlock(body, PayloadFence)
+func ParsePayload(body string) (ProposalPayload, bool) { return ParsePayloadFence(body, PayloadFence) }
+
+// ParsePayloadFence is the fence-parameterized parse (aion | re).
+func ParsePayloadFence(body, fence string) (ProposalPayload, bool) {
+	block, ok := mdfm.ExtractFencedBlock(body, fence)
 	if !ok {
 		return ProposalPayload{}, false
 	}
@@ -117,15 +124,23 @@ func ParsePayload(body string) (ProposalPayload, bool) {
 }
 
 // RenderPayloadFence renders the canonical fenced block for a payload.
-func RenderPayloadFence(p ProposalPayload) string {
+func RenderPayloadFence(p ProposalPayload) string { return RenderPayloadFenceIn(PayloadFence, p) }
+
+// RenderPayloadFenceIn is the fence-parameterized render.
+func RenderPayloadFenceIn(fence string, p ProposalPayload) string {
 	b, _ := json.Marshal(p)
-	return "````" + PayloadFence + "\n" + string(b) + "\n````"
+	return "````" + fence + "\n" + string(b) + "\n````"
 }
 
 // ReplacePayloadFence swaps the ````aion fence inside a proposal body for
 // the canonical rendering of p, leaving the rest of the body untouched.
 // ok=false when the body carries no fence.
 func ReplacePayloadFence(body string, p ProposalPayload) (string, bool) {
+	return ReplacePayloadFenceIn(body, PayloadFence, p)
+}
+
+// ReplacePayloadFenceIn is the fence-parameterized replace.
+func ReplacePayloadFenceIn(body, fence string, p ProposalPayload) (string, bool) {
 	lines := strings.Split(body, "\n")
 	start, end := -1, -1
 	for i, ln := range lines {
@@ -134,7 +149,7 @@ func ReplacePayloadFence(body string, p ProposalPayload) (string, bool) {
 			n++
 		}
 		if start < 0 {
-			if n >= 3 && strings.TrimSpace(ln[n:]) == PayloadFence {
+			if n >= 3 && strings.TrimSpace(ln[n:]) == fence {
 				start = i
 			}
 			continue
@@ -151,7 +166,7 @@ func ReplacePayloadFence(body string, p ProposalPayload) (string, bool) {
 		end = len(lines) - 1
 	}
 	out := append([]string{}, lines[:start]...)
-	out = append(out, strings.Split(RenderPayloadFence(p), "\n")...)
+	out = append(out, strings.Split(RenderPayloadFenceIn(fence, p), "\n")...)
 	out = append(out, lines[end+1:]...)
 	return strings.Join(out, "\n"), true
 }

@@ -119,6 +119,7 @@ type Store struct {
 	vaultRoot string
 	vw        *vaultwriter.Writer // for the guarded append-x-queue write; nil disables it
 	aionCap   string              // approved-proposal capability for aion applies; "" disables them
+	reCap     string              // approved-proposal capability for real-estate applies; "" disables them
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -237,11 +238,12 @@ func (s *Store) CurrentContent(p Proposal) (string, bool) {
 			return "", false
 		}
 		return string(b), true
-	case TypeAionBacklog, TypeAionHeuristic:
+	case TypeAionBacklog, TypeAionHeuristic, TypeReBacklog:
 		// the current corpus file, so the UI can diff current vs current+line
 		if s.vaultRoot == "" ||
 			(p.Type == TypeAionBacklog && !AionBacklogPathAllowed(p.ApplyPath)) ||
-			(p.Type == TypeAionHeuristic && !AionHeuristicPathAllowed(p.ApplyPath)) {
+			(p.Type == TypeAionHeuristic && !AionHeuristicPathAllowed(p.ApplyPath)) ||
+			(p.Type == TypeReBacklog && !ReBacklogPathAllowed(p.ApplyPath)) {
 			return "", false
 		}
 		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
@@ -524,6 +526,8 @@ func (s *Store) apply(p Proposal) error {
 		return s.applyAppendXQueue(p)
 	case TypeUpdateVaultSkill:
 		return s.applyUpdateVaultSkill(p)
+	case TypeReBacklog:
+		return s.applyReBacklog(p)
 	case TypeAionBacklog:
 		return s.applyAionBacklog(p)
 	case TypeAionHeuristic:

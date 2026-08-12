@@ -85,15 +85,28 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// aion extraction sink (spec §3) — constructed BEFORE the watcher starts
-	// so the reindex callback never races the wiring; nil without an engine.
+	// extraction sinks (spec §3) — constructed BEFORE the watcher starts so
+	// the reindex callback never races the wiring; nil without an engine.
+	// Two domains share the one watcher: aion, and real-estate (categories
+	// real-estate/ooda/ooda-group → the re-extractor spirit and the
+	// system/realestate/backlog.md decision log). A note tagged for both
+	// reaches both sinks — each files against its own record.
 	var spiritsStore *spirits.Store
 	var aionSink *aion.ExtractSink
+	var reSink *aion.ExtractSink
 	if cfg.ExcaliburPath != "" {
 		spiritsStore = spirits.NewStore(cfg.ExcaliburPath).
 			WithSkillsRoot(filepath.Join(cfg.VaultPath, "skills"))
-		aionSink = aion.NewExtractSink(cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
+		aionSink = aion.NewExtractSink(aion.ExtractorDomain, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
 		aionSink.Start(ctx)
+		reSink = aion.NewExtractSink(aion.DomainSpec{
+			Name:       "realestate",
+			Categories: []string{"real-estate", "ooda", "ooda-group"},
+			Spirit:     "re-extractor",
+			Ritual:     "extract",
+			Request:    "extract real-estate items from these vault notes:",
+		}, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
+		reSink.Start(ctx)
 	}
 	// THE vault watcher (kernel-followups F2): one fsnotify descriptor set,
 	// N sinks — the locator subscribes here, the content index below.
@@ -132,10 +145,13 @@ func main() {
 					log.Printf("vault reindex: %v", err)
 					return
 				}
-				// aion extraction trigger (aion-domain spec §3): the sink is
-				// constructed later (it needs the spirits store) — nil until then.
+				// extraction triggers (aion-domain spec §3): the sinks are
+				// constructed later (they need the spirits store) — nil until then.
 				if aionSink != nil {
 					aionSink.Notify(paths)
+				}
+				if reSink != nil {
+					reSink.Notify(paths)
 				}
 			})
 		}
@@ -181,6 +197,11 @@ func main() {
 			vaultwriter.Capability{Name: "realestate", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			// the RE §4 approved-proposal lane: ONLY the approvals store's
+			// accept path writes under it (re-backlog confirms)
+			vaultwriter.Capability{Name: "realestate-approved", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate")) + "/**",
+				Actor:   vaultwriter.ActorApprovedProposal},
 		)
 
 	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName, vw.BindAbs("goals"))
@@ -225,6 +246,16 @@ func main() {
 	// aion backlog tasks alongside its to-do.md tethers (day task picker).
 	aionRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion"))
 	aionStore := aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion"))
+	// The real-estate decision log reuses the aion store/grammar pointed at
+	// system/realestate — ONLY backlog methods are wired (server/re.go);
+	// the other corpus methods must never touch this root.
+	reRootRel := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))
+	reStore := aion.NewStore(cfg.VaultPath, reRootRel, vw.BindAbs("realestate"))
+	if _, err := os.Stat(filepath.Join(cfg.VaultPath, filepath.FromSlash(reRootRel), "backlog.md")); os.IsNotExist(err) {
+		if _, err := vw.CreateRecord(reRootRel+"/backlog.md", aion.REBacklogSeed); err != nil {
+			log.Printf("seeding real-estate backlog: %v", err)
+		}
+	}
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore, aionStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
@@ -296,6 +327,7 @@ func main() {
 		}
 	}
 	srv.UseAion(aionStore, cfg.AionPortal.Path, cfg.AionPortal.Remote, cfg.AionPortal.Branch, cfg.DataDir)
+	srv.UseRe(reStore)
 	log.Printf("aion: enabled (program records over %s/)", aionRoot)
 
 	// FEED SIGNALS — app-derived cards (going-cold contacts, stalled Rocks).
@@ -365,11 +397,11 @@ func main() {
 				sp = spirits.NewStore(ref.Path).WithSkillsRoot(filepath.Join(cfg.VaultPath, "skills"))
 			}
 			ap := approvals.NewStore(filepath.Join(ref.Path, "artifacts")).
-				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved")
+				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved")
 			hs = append(hs, server.Harness{Name: ref.Name, Spirits: sp, Approvals: ap})
 		}
-		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
-		srv.UseAionSink(aionSink) // transcript-confirm → instant extraction spool
+		srv.UseHarnesses(hs)                       // sets the primary spirits+approvals fields too
+		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
 		srv.UseStudio(studio.NewStore(cfg.ExcaliburPath), studio.CorpusPath(cfg.ExcaliburPath), cfg.XPostsFile)
 		names := make([]string, len(hs))
 		for i, h := range hs {
@@ -476,4 +508,23 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// sinkFan fans one transcript-confirm nudge out to every extraction sink —
+// a freshly-confirmed note may carry any domain's category, and each sink
+// filters for itself. Nil members are skipped (engine-less runs).
+type sinkFan []interface{ Notify([]string) }
+
+func (f sinkFan) Notify(paths []string) {
+	for _, s := range f {
+		if s != nil && !isNilSink(s) {
+			s.Notify(paths)
+		}
+	}
+}
+
+// isNilSink guards the typed-nil-in-interface case (*aion.ExtractSink)(nil).
+func isNilSink(s interface{ Notify([]string) }) bool {
+	sink, ok := s.(*aion.ExtractSink)
+	return ok && sink == nil
 }

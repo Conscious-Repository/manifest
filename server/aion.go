@@ -162,13 +162,17 @@ func referencesView(d *aion.ReferencesDoc) []*aion.Reference {
 
 // aionGoalsArea projects the goals.md `## Aion` area (read-only here — the
 // GOALS tab is the edit surface).
-func (s *Server) aionGoalsArea() *goals.AreaView {
+func (s *Server) aionGoalsArea() *goals.AreaView { return s.goalsAreaByName("Aion") }
+
+// goalsAreaByName is the area↔domain coupling point (aion: "Aion";
+// real estate: "Real Estate") — read-only; the GOALS tab owns edits.
+func (s *Server) goalsAreaByName(name string) *goals.AreaView {
 	if s.goals == nil {
 		return nil
 	}
 	view := s.goals.Load().View()
 	for i := range view.Areas {
-		if strings.EqualFold(view.Areas[i].Name, "Aion") {
+		if strings.EqualFold(view.Areas[i].Name, name) {
 			return &view.Areas[i]
 		}
 	}

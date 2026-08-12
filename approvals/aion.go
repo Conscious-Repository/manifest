@@ -49,10 +49,13 @@ func (s *Store) WithAionCapability(name string) *Store {
 // AionPayload parses the structured payload out of a proposal ("", false
 // for non-aion or malformed bodies).
 func AionPayload(p Proposal) (aion.ProposalPayload, bool) {
-	if p.Type != TypeAionBacklog && p.Type != TypeAionHeuristic {
-		return aion.ProposalPayload{}, false
+	switch p.Type {
+	case TypeAionBacklog, TypeAionHeuristic:
+		return aion.ParsePayload(p.Body)
+	case TypeReBacklog:
+		return aion.ParsePayloadFence(p.Body, aion.REPayloadFence)
 	}
-	return aion.ParsePayload(p.Body)
+	return aion.ProposalPayload{}, false
 }
 
 // SetAionPayload rewrites a PENDING aion proposal's ````aion fence in place
@@ -66,7 +69,7 @@ func (s *Store) SetAionPayload(id string, payload aion.ProposalPayload) error {
 	if err != nil {
 		return err
 	}
-	if p.Type != TypeAionBacklog && p.Type != TypeAionHeuristic {
+	if p.Type != TypeAionBacklog && p.Type != TypeAionHeuristic && p.Type != TypeReBacklog {
 		return fmt.Errorf("proposal %s is not an aion proposal", id)
 	}
 	if err := payload.Validate(nil); err != nil {
@@ -74,6 +77,18 @@ func (s *Store) SetAionPayload(id string, payload aion.ProposalPayload) error {
 	}
 	if fs := secrets.Scan(payload.Title + "\n" + payload.Outcome + "\n" + payload.Owner); len(fs) > 0 {
 		return fmt.Errorf("edit refused: payload matches secret pattern(s) %s", strings.Join(secrets.Classes(fs), ", "))
+	}
+	if p.Type == TypeReBacklog {
+		// real estate: type/apply-path are FIXED (no heuristics file to flip to)
+		if payload.Kind == aion.KindHeuristic {
+			return fmt.Errorf("edit refused: real estate has no heuristics file")
+		}
+		body, ok := aion.ReplacePayloadFenceIn(p.Body, aion.REPayloadFence, payload)
+		if !ok {
+			return fmt.Errorf("proposal %s carries no re payload fence", id)
+		}
+		p.Body = body
+		return os.WriteFile(src, []byte(serialize(p)), 0o644)
 	}
 	// a kind flip may change which file the accept writes — keep them in sync
 	if payload.Kind == aion.KindHeuristic {
@@ -163,14 +178,21 @@ func (s *Store) applyAionHeuristic(p Proposal) error {
 // aionCurrent reads the target corpus file's current content ("" when the
 // file does not exist yet — the transform appends into an empty doc).
 func (s *Store) aionCurrent(rel string) (string, error) {
+	return s.corpusCurrent(rel, s.aionCap, "aion")
+}
+
+// corpusCurrent reads the current bytes of a domain corpus ahead of an
+// approved-proposal append — shared by the aion and real-estate applies.
+// A missing file reads as "" (the append seeds the sections).
+func (s *Store) corpusCurrent(rel, cap, domain string) (string, error) {
 	if s.vaultRoot == "" {
-		return "", errors.New("apply refused: no vault root configured for aion")
+		return "", errors.New("apply refused: no vault root configured for " + domain)
 	}
 	if s.vw == nil || !s.vw.Enabled() {
-		return "", errors.New("apply refused: no vault writer configured for aion")
+		return "", errors.New("apply refused: no vault writer configured for " + domain)
 	}
-	if s.aionCap == "" {
-		return "", errors.New("apply refused: no aion capability granted")
+	if cap == "" {
+		return "", errors.New("apply refused: no " + domain + " capability granted")
 	}
 	b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(rel)))
 	if err != nil {

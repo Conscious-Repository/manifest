@@ -23,6 +23,7 @@ import (
 // aion-extractor spirit. The engine does the thinking (§7); a missed spool
 // is recoverable — queued paths persist and a ticker retries.
 type ExtractSink struct {
+	spec          DomainSpec
 	vaultRoot     string
 	systemRoot    string
 	extrinsicRoot string
@@ -47,6 +48,30 @@ const (
 	ExtractorRitual = "extract"
 )
 
+// DomainSpec parameterizes one extraction domain: which frontmatter
+// categories trigger it, which spirit/ritual the spool targets, and where its
+// cursor lives (<dataDir>/<Name>/cursor.json). One ExtractSink instance
+// serves one domain; a note tagged for several domains reaches each
+// instance independently (the desired behavior — each files its own
+// proposals against its own record).
+type DomainSpec struct {
+	Name       string   // cursor dir + log tag
+	Categories []string // frontmatter categories (EqualFold) that trigger extraction
+	Spirit     string
+	Ritual     string
+	Request    string // spool header line, e.g. "extract aion items from these vault notes:"
+}
+
+// ExtractorDomain is the original aion domain — byte-identical behavior to
+// the pre-parameterization sink, including the cursor path.
+var ExtractorDomain = DomainSpec{
+	Name:       "aion",
+	Categories: []string{"aion"},
+	Spirit:     ExtractorSpirit,
+	Ritual:     ExtractorRitual,
+	Request:    "extract aion items from these vault notes:",
+}
+
 // maxBatchNotes caps how many notes one spool names: the ritual has a step
 // ceiling (system reads + one read per note + the approval writes), so a
 // bulk change extracts across several small runs instead of one doomed
@@ -69,12 +94,13 @@ type noteMark struct {
 	SpooledAt string `json:"spooledAt"`
 }
 
-func NewExtractSink(vaultRoot, systemRoot, extrinsicRoot, dataDir string, sp Spooler) *ExtractSink {
+func NewExtractSink(spec DomainSpec, vaultRoot, systemRoot, extrinsicRoot, dataDir string, sp Spooler) *ExtractSink {
 	s := &ExtractSink{
+		spec:          spec,
 		vaultRoot:     vaultRoot,
 		systemRoot:    systemRoot,
 		extrinsicRoot: extrinsicRoot,
-		cursorPath:    filepath.Join(dataDir, "aion", "cursor.json"),
+		cursorPath:    filepath.Join(dataDir, spec.Name, "cursor.json"),
 		sp:            sp,
 	}
 	s.c = cursor{Notes: map[string]noteMark{}}
@@ -84,11 +110,12 @@ func NewExtractSink(vaultRoot, systemRoot, extrinsicRoot, dataDir string, sp Spo
 			s.c.Notes = map[string]noteMark{}
 		}
 	} else {
-		// FRESH cursor: baseline the existing corpus — every current aion
-		// note is presumed already processed (the historic backlog was
-		// imported wholesale), so only FUTURE creations/edits trigger
-		// extraction. Without this, the first watcher sweep over the
-		// historic corpus queues everything.
+		// FRESH cursor: baseline the existing corpus — every current
+		// domain-tagged note is presumed already processed, so only FUTURE
+		// creations/edits trigger extraction. Without this, the first sweep
+		// over a historic corpus (years of tagged notes) queues everything.
+		// NB: ship the FINAL category list at first boot — a category added
+		// later was never baselined; delete the cursor to re-baseline.
 		s.baseline()
 	}
 	return s
@@ -223,7 +250,7 @@ func (s *ExtractSink) Flush() {
 	}
 	// batch under the note cap + request cap; the remainder stays queued
 	var batch []string
-	req := "extract aion items from these vault notes:"
+	req := s.spec.Request
 	for _, rel := range s.c.Queued {
 		if len(batch) >= maxBatchNotes {
 			break
@@ -238,7 +265,7 @@ func (s *ExtractSink) Flush() {
 	if len(batch) == 0 {
 		return
 	}
-	if err := s.sp.SpoolRunNow(ExtractorSpirit, ExtractorRitual, req, ""); err != nil {
+	if err := s.sp.SpoolRunNow(s.spec.Spirit, s.spec.Ritual, req, ""); err != nil {
 		return // ErrAlreadyActive / spool failure — retry on the next tick
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -261,8 +288,9 @@ func (s *ExtractSink) QueuedCount() int {
 
 // isAionNote is the trigger filter (spec §3): a markdown note in the
 // KNOWLEDGE zone (this alone excludes system/** — and so system/excalibur —
-// and extrinsic/**) whose frontmatter categories include "aion" in either
-// YAML style (vaultindex.ParseNote handles inline and block lists).
+// and extrinsic/**) whose frontmatter categories include one of the
+// domain's categories, in either YAML style (vaultindex.ParseNote handles
+// inline and block lists).
 func (s *ExtractSink) isAionNote(rel string) bool {
 	if !strings.HasSuffix(rel, ".md") {
 		return false
@@ -276,8 +304,10 @@ func (s *ExtractSink) isAionNote(rel string) bool {
 	}
 	note := vaultindex.ParseNote(rel, b, 0, nil)
 	for _, c := range note.Categories {
-		if strings.EqualFold(c, "aion") {
-			return true
+		for _, want := range s.spec.Categories {
+			if strings.EqualFold(c, want) {
+				return true
+			}
 		}
 	}
 	return false

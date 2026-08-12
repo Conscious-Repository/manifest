@@ -82,7 +82,10 @@ type Server struct {
 	errandExec     *errands.Executor
 	errandAccounts []string // §6 allowlist ("" = any signed-in account)
 	// AION (program cockpit over system/aion/ + publish effector). Nilable.
-	aion          *aion.Store
+	aion *aion.Store
+	// Real-estate decision log (system/realestate/backlog.md — an aion.Store
+	// pointed at the RE root; backlog methods ONLY). Nilable.
+	re            *aion.Store
 	aionPortal    aionPortalCfg   // aionbio checkout coordinates ("" path = publish disabled)
 	aionDataDir   string          // publish receipts live under <dataDir>/aion/
 	aionPublishes *aionPublishLog // lazy-opened receipts log
@@ -299,6 +302,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/properties/{slug}/work", s.handlePropertyWork)
 	mux.HandleFunc("POST /api/realestate/publish-deals", s.handlePublishDeals)
 	mux.HandleFunc("GET /api/realestate/assumptions", s.handleAssumptionsGet)
+	// real-estate decision log (the aion-mirror domain half)
+	mux.HandleFunc("GET /api/re/backlog", s.handleReBacklog)
+	mux.HandleFunc("POST /api/re/backlog/item", s.handleReBacklogAdd)
+	mux.HandleFunc("POST /api/re/backlog/{id}/update", s.handleReBacklogUpdate)
+	mux.HandleFunc("POST /api/re/backlog/{id}/delete", s.handleReBacklogDelete)
+	mux.HandleFunc("POST /api/re/backlog/{id}/decide", s.handleReBacklogDecide)
 	mux.HandleFunc("PUT /api/realestate/assumptions", s.handleAssumptionsPut)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}", s.handleContractorTrade)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
