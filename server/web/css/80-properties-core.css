@@ -334,3 +334,6 @@
 
 /* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
 .re-publish-btn { margin-top: 6px; width: 100%; justify-content: center; }
+
+/* the money row's phone meta line — desktop keeps the 4-column grid instead */
+.re-money-meta { display: none; }

@@ -336,3 +336,75 @@
   .tdo-right .uw-x { visibility: visible; }
   .focus-row.empty .focus-placeholder { opacity: 1; }
 }
+
+/* ================= REAL ESTATE phone shapes (RE spec §8) ================= */
+/* The four defined shapes — Property, Rocks, Money, Entities — plus the
+   surfaces that only need touch scale. Two lines beat five columns. */
+@media (max-width: 860px) {
+  /* ---- PROPERTY: owner line · UNTIL · stages with nested tasks; the four
+     underwriting inputs are desktop-only (three computed outputs stay);
+     the ledger drops — reach spend from Money ---- */
+  .pp3-cols { display: block; }                     /* side card stacks under */
+  .pp3-side { position: static; flex: none; margin-top: 18px; }
+  .pp3-stage { min-height: 48px; align-items: center; }
+  .pp3-stage-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp3-todo.nested { min-height: 52px; margin-left: 26px; }
+  .re-uw-grid { display: none; }
+  .re-uw-outs { grid-template-columns: repeat(3, 1fr); }
+  .re-uw-outs .pp3-cell-val { font-size: 22px; }
+  .pp3-ledger-sec { display: none; }
+
+  /* ---- ROCKS: rock name 16px/500 + accent dot, UNTIL underneath,
+     stages 44px, tasks 48px; tags stay in accent ---- */
+  .re-rock-line { min-height: 56px; align-items: center; }
+  .re-rock-name { font-size: 16px; font-weight: 500; }
+  .re-stage { min-height: 44px; align-items: center; }
+  .re-task { min-height: 48px; align-items: center; }
+
+  /* ---- MONEY: two lines, no grid — description 15px over its property in
+     mono 11px (unassigned reads in ink), amount right; the select and the
+     side inspector give way to the row-tap assignment sheet ---- */
+  .re-money-cols { display: none; }
+  .re-money-shell { display: block; }
+  .re-money-insp { display: none; }
+  .re-money-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; row-gap: 0; min-height: 52px;
+  }
+  .re-money-date { display: none; }
+  .re-money-sel { display: none; }
+  .re-money-desc { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .re-money-desc > :first-child { font-size: 15px; }
+  .re-money-entity { display: none; }
+  .re-money-meta { display: block; font-family: var(--mono); font-size: 11px; color: var(--base-50); }
+  .re-money-meta.unfiled { color: var(--base-100); }
+  .re-money-amt { grid-column: 2; font-size: 15px; }
+
+  /* ---- ENTITIES: one block per entity; 52px account rows — bank over kind,
+     state chip right; per-row actions fold behind the chip; the connect
+     button keeps its 44px target ---- */
+  .set-entity-head { flex-wrap: wrap; row-gap: 4px; }
+  .re-acct-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center; row-gap: 1px; min-height: 52px;
+  }
+  .re-acct-label { grid-column: 1; grid-row: 1; font-size: 15px; }
+  .re-acct-kind { grid-column: 1; grid-row: 2; font-family: var(--mono); font-size: 11px; color: var(--base-50); }
+  .re-acct-state { grid-column: 2; grid-row: 1 / 3; }
+  .re-acct-act { display: none; }
+
+  /* ---- PORTFOLIO: address 16px over the stage bar; spent right; the open
+     count keeps its dot column (the generic .prop-row ::after chevron rides) */
+  .prop-row.pf-row { grid-template-columns: minmax(0, 1fr) auto auto 14px; min-height: 56px; }
+  .pf-row .prop-addr { grid-column: 1; grid-row: 1; }
+  .pf-row .pf-stage { grid-column: 1; grid-row: 2; }
+  .pf-row .prop-count { grid-column: 2; grid-row: 1 / 3; }
+  .pf-row .pf-spent { grid-column: 3; grid-row: 1 / 3; }
+  .prop-row.pf-row::after { grid-column: 4; }
+
+  /* ---- the rest of the RE surfaces: touch scale only ---- */
+  .re-decision { min-height: 52px; }
+  .re-set-tabs { display: flex; overflow-x: auto; scrollbar-width: none; width: auto; }
+  .re-assump-row { grid-template-columns: 1fr 82px; min-height: 48px; align-items: center; }
+  .re-assump-who { display: none; } /* the override index is desktop-only */
+}

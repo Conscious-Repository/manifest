@@ -399,7 +399,7 @@ async function renderUnderwrite(p, uwHost) {
 // ---- ledger: rows edit in place, ✕ deletes, a composer adds ----
 
 function ledgerSection(p) {
-  const ledger = el("div", "pp3-sec");
+  const ledger = el("div", "pp3-sec pp3-ledger-sec"); // phone drops it — reach spend from Money
   const lh = el("div", "pp3-sec-head");
   lh.append(el("span", "pp3-sec-title", "LEDGER"), el("span", "pp3-sec-count", String((p.ledger || []).length)));
   ledger.append(lh);

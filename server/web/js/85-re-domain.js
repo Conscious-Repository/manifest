@@ -146,11 +146,17 @@ async function renderREMoney() {
 }
 
 function moneyRow(r) {
+  const cur = (r.assignments && r.assignments[0] && r.assignments[0].slug) || "";
   const row = el("div", "re-money-row" + (moneySelId === r.id ? " sel" : ""));
   row.append(el("span", "re-money-date", (r.date || "").slice(5)));
   const desc = el("span", "re-money-desc");
   desc.append(el("span", "", r.vendor || r.note || "(no description)"));
   if (r.entity) desc.append(el("span", "re-money-entity", r.entity));
+  // phone meta line (desktop hides it): the assigned property, or the file
+  // prompt in ink — the row tap opens the assignment sheet
+  const curProp = cur ? activePortfolio().find((p) => p.slug === cur) : null;
+  desc.append(el("span", "re-money-meta" + (cur ? "" : " unfiled"),
+    cur ? ((curProp && (curProp.short || curProp.slug)) || cur) : "unassigned — tap to file"));
   row.append(desc);
   row.append(el("span", "re-money-amt" + (r.inflow ? " inflow" : ""),
     (r.inflow ? "+" : "") + fmtMoneyShort(Math.abs(r.amount || 0))));
@@ -160,7 +166,6 @@ function moneyRow(r) {
   const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
   opt("", r.state === "applied" ? "applied" : "unassigned");
   activePortfolio().forEach((p) => opt(p.slug, p.short || p.slug));
-  const cur = (r.assignments && r.assignments[0] && r.assignments[0].slug) || "";
   sel.value = cur;
   sel.disabled = r.state === "applied" || r.state === "skipped";
   sel.onclick = (e) => e.stopPropagation();
@@ -175,8 +180,50 @@ function moneyRow(r) {
     } catch (e) { showToast("Couldn't assign"); }
   };
   row.append(sel);
-  row.onclick = () => { moneySelId = moneySelId === r.id ? null : r.id; renderMoneyInspector(r); };
+  row.onclick = () => {
+    // phone (RE spec §8): the row tap IS the assignment gesture — a sheet of
+    // tap-targets replaces the desktop's inline select + side inspector
+    if (window.mf && window.mf.phone()) { openMoneyAssignSheet(r); return; }
+    moneySelId = moneySelId === r.id ? null : r.id;
+    renderMoneyInspector(r);
+  };
   return row;
+}
+
+function openMoneyAssignSheet(r) {
+  const cur = (r.assignments && r.assignments[0] && r.assignments[0].slug) || "";
+  const done = r.state === "applied" || r.state === "skipped";
+  window.mfSheet.open((body) => {
+    body.append(el("div", "pp3-insp-text",
+      (r.vendor || r.note || "(no description)") + " · " + (r.date || "") + " · " +
+      (r.inflow ? "+" : "") + fmtMoneyShort(Math.abs(r.amount || 0))));
+    if (done) {
+      body.append(el("div", "pp3-insp-note", "already " + r.state + " — edits happen on the property ledger"));
+      return;
+    }
+    const list = el("div", "mf-assign");
+    const assign = async (slug) => {
+      try {
+        await postJSONOk("/api/realestate/statements/row", {
+          id: r.id,
+          assignments: slug ? [{ slug, amount: Math.abs(r.amount || 0) }] : [],
+          state: slug ? "assigned" : "pending",
+        });
+        showToast(slug ? "Assigned — apply writes it to the ledger" : "Unassigned");
+        window.mfSheet.close();
+        renderProperties();
+      } catch (e) { showToast("Couldn't assign"); }
+    };
+    const rowOpt = (v, l) => {
+      const b = el("button", "mf-opt" + (v === cur ? " on" : ""));
+      b.append(el("span", "mf-opt-dot", v === cur ? "●" : "○"), el("span", "", l));
+      b.onclick = () => assign(v);
+      list.append(b);
+    };
+    rowOpt("", "unassigned");
+    activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
+    body.append(list);
+  }, { key: "money:" + r.id });
 }
 
 function renderMoneyInspector(r) {
