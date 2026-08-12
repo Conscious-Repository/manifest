@@ -341,10 +341,11 @@ function quietDanger(label, fn) {
   return b;
 }
 
-// ---- owner editing with the aion people registry ----
-// In the Aion area, owner fields autocomplete from system/aion/people.md
-// (initials + names); elsewhere they stay plain inputs. The registry is
-// fetched once per page load.
+// ---- owner editing with the DOMAIN people registry ----
+// Aion-area owner fields autocomplete from system/aion/people.md; Real
+// Estate-area ones from the RE roster — people.md partners PLUS contractor
+// records (contractors can own rocks; they commit by slug). Other areas stay
+// plain inputs. Each registry is fetched once per page load.
 let goalsPeopleCache = null;
 async function aionPeopleList() {
   if (goalsPeopleCache) return goalsPeopleCache;
@@ -352,17 +353,38 @@ async function aionPeopleList() {
   catch (e) { goalsPeopleCache = []; }
   return goalsPeopleCache;
 }
+let goalsRePeopleCache = null;
+async function rePeopleList() {
+  if (goalsRePeopleCache) return goalsRePeopleCache;
+  const out = [];
+  try {
+    const [pp, ents] = await Promise.all([
+      (await fetch("/api/properties/people")).json(),
+      (await fetch("/api/realestate/entities")).json(),
+    ]);
+    (pp.people || []).forEach((p) => out.push({ initials: p.initials, name: p.name || "" }));
+    (ents.contractors || []).forEach((c) =>
+      out.push({ initials: c.slug, name: c.name + (c.trade ? " (" + c.trade + ")" : "") }));
+  } catch (e) {}
+  goalsRePeopleCache = out;
+  return out;
+}
 function isAionArea(name) { return (name || "").toLowerCase() === "aion"; }
+function ownerRegistryFor(areaName) {
+  if (isAionArea(areaName)) return aionPeopleList;
+  if ((areaName || "").toLowerCase() === "real estate") return rePeopleList;
+  return null;
+}
 
-// ownerEditable: click swaps the node for a people typeahead (Aion) or a
-// plain input (other areas). save() receives bare initials/name, no "@".
-function ownerEditable(node, getValue, save, useRegistry) {
-  if (!useRegistry) { clickToEdit(node, getValue, save); return; }
+// ownerEditable: click swaps the node for a people typeahead (domain areas)
+// or a plain input (others). save() receives bare initials/slug, no "@".
+function ownerEditable(node, getValue, save, registry) {
+  if (!registry) { clickToEdit(node, getValue, save); return; }
   node.classList.add("o-editable");
-  node.title = "owner — type initials or a name (from system/aion/people.md)";
+  node.title = "owner — type initials or a name (from the domain's people registry)";
   node.addEventListener("click", async (e) => {
     e.stopPropagation();
-    const people = await aionPeopleList();
+    const people = await registry();
     const rerender = () => renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
     const commit = (v) => {
       v = v.replace(/^@/, "").trim();
@@ -395,7 +417,7 @@ function ownerRow(g, areaName, right) {
   const node = has ? el("span", "o-fl-val", "@" + g.owner)
     : el("button", "o-ghost o-fl-ghost", "＋ owner…");
   ownerEditable(node, () => (has ? g.owner : ""),
-    (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: v }), isAionArea(areaName));
+    (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, owner: v }), ownerRegistryFor(areaName));
   row.append(node);
   if (right) row.append(right);
   return row;

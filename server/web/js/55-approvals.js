@@ -325,16 +325,22 @@ let apprReReg = null;
 async function apprReRegistry() {
   if (apprReReg) return apprReReg;
   try {
-    const [re, props, people] = await Promise.all([
+    const [re, props, people, ents] = await Promise.all([
       (await fetch("/api/re/backlog")).json(),
       (await fetch("/api/properties")).json(),
       (await fetch("/api/properties/people")).json(),
+      (await fetch("/api/realestate/entities")).json(),
     ]);
+    // owners = the full RE roster: people.md partners (by initials) PLUS
+    // contractor records (by slug) — contractors own rocks and tasks too
+    const roster = (people.people || []).map((p) => ({ initials: p.initials, name: p.name || "" }));
+    (ents.contractors || []).forEach((c) =>
+      roster.push({ initials: c.slug, name: c.name + (c.trade ? " (" + c.trade + ")" : "") }));
     apprReReg = {
       rocks: (((re.goalsArea || {}).rocks) || []).filter((r) => !r.checked),
       properties: (props.properties || []).filter((p) => !p.hidden),
       deals: props.deals || [],
-      people: people.people || [],
+      people: roster,
     };
   } catch (e) { apprReReg = { rocks: [], properties: [], deals: [], people: [] }; }
   return apprReReg;
