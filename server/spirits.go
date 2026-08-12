@@ -473,3 +473,45 @@ func (s *Server) handleSpiritsMemories(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{"data": s.spirits.Memories(r.URL.Query().Get("spirit"))})
 }
+
+// handleSpiritsDeleteRitual / DeleteSpirit — deliberate destruction, primary
+// harness only (the same boundary as writes); the harness repo's git history
+// is the undo.
+func (s *Server) handleSpiritsDeleteRitual(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Spirit string `json:"spirit"`
+		Name   string `json:"name"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.spirits.DeleteRitual(b.Spirit, b.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleSpiritsDeleteSpirit(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Name string `json:"name"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.spirits.DeleteSpirit(b.Name); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}

@@ -191,3 +191,47 @@ func TestRitualsPausedRow(t *testing.T) {
 		}
 	}
 }
+
+// Deletion is slug-guarded, refuses the active, and actually removes.
+func TestDeleteRitualAndSpirit(t *testing.T) {
+	root := t.TempDir()
+	st := NewStore(root)
+	if err := st.ScaffoldSpirit("scout"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ScaffoldRitual("scout", "daily"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteRitual("../evil", "daily"); err == nil {
+		t.Fatal("slug traversal accepted")
+	}
+	if err := st.DeleteRitual("scout", "nope"); err == nil {
+		t.Fatal("missing ritual accepted")
+	}
+	if err := st.DeleteRitual("scout", "daily"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "spirits", "scout", "rituals", "daily.md")); err == nil {
+		t.Fatal("ritual file survived")
+	}
+	// active refusal: a queued spool blocks spirit deletion
+	if err := os.MkdirAll(filepath.Join(root, "vessel", "spool"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "vessel", "spool", "x.json"),
+		[]byte(`{"spirit":"scout","ritual":"daily"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteSpirit("scout"); err == nil {
+		t.Fatal("queued spirit deletion accepted")
+	}
+	if err := os.Remove(filepath.Join(root, "vessel", "spool", "x.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteSpirit("scout"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "spirits", "scout")); err == nil {
+		t.Fatal("spirit tree survived")
+	}
+}

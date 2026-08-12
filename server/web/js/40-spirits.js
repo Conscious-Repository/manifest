@@ -273,7 +273,19 @@ function paintSpiritPage(host) {
   addR.onclick = () => newRitual(name);
   const rawB = el("button", "sprt-quiet", "⌘/ raw");
   rawB.onclick = () => openSpiritEditor(name);
-  acts.append(addR, rawB);
+  const nRits = (spPg.rits || []).length;
+  const del = armedDelete("delete spirit",
+    "deletes " + nRits + " ritual" + (nRits === 1 ? "" : "s") + " + memories — confirm?",
+    async () => {
+      try {
+        const r = await fetch("/api/spirits/spirit/delete", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }) });
+        if (!r.ok) throw new Error(await r.text());
+        showToast("Deleted " + name + " — git history is the undo");
+        location.hash = "#/spirits";
+      } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
+    });
+  acts.append(addR, rawB, del);
   head.append(acts);
   host.append(head);
 

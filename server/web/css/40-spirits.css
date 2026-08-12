@@ -269,3 +269,6 @@
 .ritual-row.paused .ritual-name, .ritual-row.paused .cad-human,
 .ritual-row.paused .ritual-next, .ritual-row.paused .ritual-ceiling { color: var(--base-40); }
 .rit-pause.paused { color: var(--base-100); font-weight: 500; }
+
+/* armed destructive action: quiet until armed, then ink */
+.sprt-delete.armed { color: var(--base-100); font-weight: 500; border-color: var(--base-100); }

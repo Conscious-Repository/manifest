@@ -227,6 +227,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/spirits/file", s.handleSpiritsFilePut)
 	mux.HandleFunc("POST /api/spirits/ritual", s.handleSpiritsNewRitual)
 	mux.HandleFunc("POST /api/spirits/spirit", s.handleSpiritsNewSpirit)
+	mux.HandleFunc("POST /api/spirits/ritual/delete", s.handleSpiritsDeleteRitual)
+	mux.HandleFunc("POST /api/spirits/spirit/delete", s.handleSpiritsDeleteSpirit)
 
 	// CONTACTS — the people layer over the vault index (plans/contacts-feature.md).
 	// Reads are the graph; the only writes are explicit user actions (create a

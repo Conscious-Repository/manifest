@@ -214,6 +214,27 @@ if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateE
 if (els.spiritEditorSave) els.spiritEditorSave.addEventListener("click", saveEditor);
 if (els.spiritEditorClose) els.spiritEditorClose.addEventListener("click", closeEditor);
 
+// armedDelete — the destructive-action pattern: first click ARMS (ink
+// "confirm?" label), second click within 4s executes; it disarms itself.
+// No browser dialogs (owner call, spirits UX pass).
+function armedDelete(label, armedLabel, onConfirm) {
+  const b = el("button", "sprt-quiet sprt-delete", label);
+  let armed = false, timer = null;
+  b.onclick = () => {
+    if (!armed) {
+      armed = true;
+      b.textContent = armedLabel;
+      b.classList.add("armed");
+      timer = setTimeout(() => { armed = false; b.textContent = label; b.classList.remove("armed"); }, 4000);
+      return;
+    }
+    clearTimeout(timer);
+    b.disabled = true;
+    onConfirm();
+  };
+  return b;
+}
+
 // ---- SPIRITS.md §2: the cadence builder ----
 // State: { kind, days:[0..6], hours:[0..23], min:0..59, n:int }
 // kinds: ondemand | daily | weekdays | weekends | days | everyMin | everyHour | hourly
@@ -579,7 +600,16 @@ function paintRitualEditor(host) {
   run.onclick = () => spiritSpool(ritEd.spirit, ritEd.name, "");
   const rawT = el("button", "sprt-quiet", ritEd.showRaw ? "hide raw" : "show raw");
   rawT.onclick = () => { ritEd.showRaw = !ritEd.showRaw; paintRitualEditor(host); };
-  acts.append(pause, run, rawT);
+  const del = armedDelete("delete", "confirm delete?", async () => {
+    try {
+      const r = await fetch("/api/spirits/ritual/delete", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spirit: ritEd.spirit, name: ritEd.name }) });
+      if (!r.ok) throw new Error(await r.text());
+      showToast("Deleted " + ritEd.spirit + "/" + ritEd.name + " — git history is the undo");
+      location.hash = "#/spirits";
+    } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
+  });
+  acts.append(pause, run, rawT, del);
   head.append(acts);
   host.append(head);
 

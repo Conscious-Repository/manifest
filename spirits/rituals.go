@@ -642,3 +642,45 @@ func (s *Store) Conduits() []string {
 	sort.Strings(out)
 	return out
 }
+
+// DeleteRitual removes one ritual file. Slug-guarded; refuses a ritual that
+// is queued or running (delete mid-run would lie to the report). The engine's
+// rescan prune unschedules it within a tick; the harness repo's git history
+// is the undo.
+func (s *Store) DeleteRitual(spirit, name string) error {
+	if !validSlug(spirit) || !validSlug(name) {
+		return fmt.Errorf("invalid spirit/ritual name")
+	}
+	if s.IsActive(spirit, name) {
+		return fmt.Errorf("%s/%s is queued or running — wait for it to finish", spirit, name)
+	}
+	path := filepath.Join(s.root, "spirits", spirit, "rituals", name+".md")
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("no ritual %s/%s", spirit, name)
+	}
+	return os.Remove(path)
+}
+
+// DeleteSpirit removes the WHOLE spirit tree — identity, cornerstone,
+// rituals, and its memories. Refuses while any of its rituals is queued or
+// running. Deliberately destructive; git history is the undo.
+func (s *Store) DeleteSpirit(name string) error {
+	if !validSlug(name) {
+		return fmt.Errorf("invalid spirit name")
+	}
+	dir := filepath.Join(s.root, "spirits", name)
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return fmt.Errorf("no spirit %q", name)
+	}
+	for _, q := range s.Queued() {
+		if q.Spirit == name {
+			return fmt.Errorf("%s has a queued run — wait for it to finish", name)
+		}
+	}
+	for _, r := range s.Runs() {
+		if r.Spirit == name && r.Outcome == "running" {
+			return fmt.Errorf("%s is running — wait for it to finish", name)
+		}
+	}
+	return os.RemoveAll(dir)
+}
