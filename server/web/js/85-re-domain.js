@@ -31,6 +31,23 @@ function reBacklogSelect(src, id) {
   renderProperties();
 }
 
+// reOwnerSuggest — owner typeahead over the RE roster (the AION mirror). The
+// roster (propTodosMeta.assignees.realestate) already unifies people.md
+// persons/partners with contractor records — name · trade, keyed by slug.
+// "· you" clears ownership back to you (empty owner reads as mine).
+function reOwnerSuggest(q, add, ta, onPick) {
+  if (!q || "you".includes(q) || "me".includes(q)) {
+    add("· you (me)", "", () => { ta.commit(""); onPick(""); });
+  }
+  const roster = ((propTodosMeta && propTodosMeta.assignees) || {}).realestate || [];
+  roster
+    .filter((c) => !q || (c.slug || "").toLowerCase().includes(q) ||
+      (c.name || "").toLowerCase().includes(q) || (c.trade || "").toLowerCase().includes(q))
+    .slice(0, 8)
+    .forEach((c) => add(c.name + (c.trade ? " · " + c.trade : ""), c.slug || "",
+      () => { ta.commit(c.slug || ""); onPick(c.slug || ""); }));
+}
+
 function renderREBacklog() {
   const host = els.propertyBoard;
   host.innerHTML = "";
@@ -239,11 +256,16 @@ function renderREBacklogInspector(insp) {
     insp.append(f);
   };
 
-  const owner = inputEl("initials / contractor");
-  owner.value = it.owner || "";
-  owner.className = "pp-in";
-  owner.addEventListener("blur", () => { if ((owner.value || "") !== (it.owner || "")) patch({ owner: owner.value.trim() }); });
-  field("owner", owner);
+  // owner — a typeahead over the RE roster (people.md persons/partners +
+  // contractor records, via propTodosMeta.assignees.realestate), mirroring
+  // AION's people picker: a pick commits the roster slug; "· you" clears it.
+  const setOwner = (v) => { if (v !== (it.owner || "")) patch({ owner: v }); };
+  const ownerTa = typeahead({
+    placeholder: "person / partner / contractor",
+    initial: it.owner || "",
+    suggest: (q, add, ta) => reOwnerSuggest(q, add, ta, setOwner),
+  });
+  field("owner", ownerTa.el);
 
   if (it.kind === "task") {
     const rockSel = document.createElement("select");
