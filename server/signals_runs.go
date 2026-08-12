@@ -22,10 +22,14 @@ const runFailureWindow = 48 * time.Hour
 // Lazy over s.eachHarness() — wiring order in main doesn't matter.
 func (s *Server) RunFailureEmitter() signals.Emitter { return runFailEmitter{s} }
 
-// DelegationDoneEmitter (owner ask 2026-08-11): delegated work whose run
-// COMPLETED while the todo is still open — "your result is ready". The card's
-// label opens the run report in place; Done ✓ closes the todo; the signal
-// clears itself when the todo gets checked (the condition disappears).
+// DelegationDoneEmitter (owner ask 2026-08-11, re-routed 2026-08-12): delegated
+// work whose run COMPLETED while the todo is still open — "your result is
+// ready". Still a §5 SIGNAL (an app-derived condition that auto-clears when the
+// todo gets checked — the closed set stays four), but the client renders it as
+// a full FEED CARD in the main stream instead of a one-line strip chip: view
+// the result, open the todo, Done ✓. The label navigates to the todo (#/todos);
+// the RESULT is a separate, explicit action, so a click on the work never
+// lands in an unrelated run report.
 func (s *Server) DelegationDoneEmitter() signals.Emitter { return delegDoneEmitter{s} }
 
 type delegDoneEmitter struct{ s *Server }
@@ -41,14 +45,17 @@ func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 			continue // human already closed it — nothing to page
 		}
 		out = append(out, signals.Signal{
-			ID:      "delegated-done:" + id,
-			Kind:    "delegation-done",
-			Entity:  text,
-			Label:   "delegated work ready · " + text + " · " + d.Harness,
-			ActHref: "#/todos",
-			Hash:    d.RunID,
-			GoalID:  id, // Done ✓ checks the todo through the unified endpoint
-			RunID:   d.RunID,
+			ID:           "delegated-done:" + id,
+			Kind:         "delegation-done",
+			Entity:       text,
+			Label:        "delegated work ready · " + text + " · " + d.Harness,
+			ActHref:      "#/todos",
+			Hash:         d.RunID,
+			GoalID:       id, // Done ✓ checks the todo through the unified endpoint
+			RunID:        d.RunID,
+			ArtifactRef:  d.ArtifactRef, // the deliverable, when the run wrote one
+			ArtifactPath: d.ArtifactPath,
+			Harness:      d.Harness,
 		})
 	}
 	return out, nil
@@ -124,7 +131,6 @@ func (e engineDownEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	}
 	return out, nil
 }
-
 
 type runFailEmitter struct{ s *Server }
 

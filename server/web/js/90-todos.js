@@ -58,7 +58,7 @@ function renderTodos() {
       tabsHost.append(b);
     });
     const mode = el("button", "tdo-mode-toggle", todosMode === "board" ? "☰ list" : "▦ board");
-    mode.title = todosMode === "board" ? "back to the ranked list" : "the board: Open · Waiting · Delegated · Done";
+    mode.title = todosMode === "board" ? "back to the ranked list" : "the board: Open · Delegated · Review · Done";
     mode.onclick = () => {
       todosMode = todosMode === "board" ? "list" : "board";
       localStorage.setItem("todosMode", todosMode);
@@ -317,17 +317,21 @@ function commitRank(draggedId, targetId) {
 
 // ---- the tether picker: one typeahead over every open rock and stage ----
 // delegationChip: one shared chip for a delegation state, clickable everywhere
-// (open rows, done rows, board cards). done/failed with a runId opens the run
-// report in place; proposed routes to the FEED inbox; queued/running → Spirits.
+// (open rows, done rows, board cards). A finished delegation opens its RESULT
+// through the shared legible viewer — the artifact brief when the run wrote
+// one, else the run report; proposed routes to the FEED inbox; queued/running
+// → Spirits.
 function delegationChip(d, asSpan) {
   const chip = el(asSpan ? "span" : "button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
   chip.style.cursor = "pointer";
+  const hasResult = !!(d.artifactRef || d.artifactPath || d.runId);
   chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
+    : d.artifactRef || d.artifactPath ? "read the result"
     : d.runId ? "view the result (run report)" : "delegated work — click for the runs board";
   chip.onclick = (e) => {
     e.stopPropagation();
     if (d.state === "proposed") { location.hash = "#/feed"; return; }
-    if (d.runId) { openRunModal(d.runId); return; }
+    if (hasResult) { openResult(d); return; }
     location.hash = "#/spirits";
   };
   return chip;
@@ -343,24 +347,37 @@ function delegationFor(id) {
 // ritual), then an optional brief; POST /api/todos/delegate spools the work
 // order and stamps [waiting::]. The chip appears on the next render from the
 // trace projection.
-async function openDelegatePicker(r) {
+//
+// redelegate=true is the REVIEW → DELEGATED path (owner ask 2026-08-12): the
+// owner read the result and is sending it back out, so the box asks for the
+// comment and the comment travels as `comment` — labelled for the agent as a
+// steer on the previous result, never confused with the original brief.
+async function openDelegatePicker(r, redelegate) {
   let targets = [];
   try { targets = (await (await fetch("/api/todos/delegate/targets")).json()).targets || []; }
   catch (e) { showToast("Couldn't load delegate targets"); return; }
   if (!targets.length) { showToast("No dispatch targets — no harness has an on-demand ritual"); return; }
   const byId = new Map(targets.map((t, i) => [String(i), t]));
-  openPicker("Delegate: " + r.text.slice(0, 60), [{ area: "dispatch to…", items:
-    targets.map((t, i) => ({ id: String(i), text: t.label })) }],
+  const cur = r.delegation || delegationFor(r.id);
+  const title = (redelegate ? "Send back out: " : "Delegate: ") + r.text.slice(0, 60);
+  openPicker(title, [{ area: redelegate ? "send it back to…" : "dispatch to…", items:
+    targets.map((t, i) => ({ id: String(i), text: t.label + (cur && cur.harness === t.harness ? "  ·  last run here" : "") })) }],
     (id) => {
       const t = byId.get(id);
       if (!t) return;
-      askText("Brief for " + t.label, "optional — defaults to the todo text", async (brief) => {
+      const send = async (note) => {
+        const text = (note || "").trim();
+        if (redelegate && !text) { showToast("A comment is what makes this a re-delegation — nothing sent", null, "error"); return; }
+        const body = { id: r.id, harness: t.harness, spirit: t.spirit, ritual: t.ritual, brief: "", comment: "" };
+        if (redelegate) body.comment = text; else body.brief = text;
         try {
-          await postJSONOk("/api/todos/delegate", { id: r.id, harness: t.harness, spirit: t.spirit, ritual: t.ritual, brief: (brief || "").trim() });
-          showToast("Delegated → " + t.label);
+          await postJSONOk("/api/todos/delegate", body);
+          showToast((redelegate ? "Sent back with your comment → " : "Delegated → ") + t.label);
           loadTodos();
         } catch (e) { showToast("Delegate failed: " + (e.message || e), null, "error"); }
-      });
+      };
+      if (redelegate) askText("Your comment for " + t.label, "what to fix, change or go deeper on — this goes to the agent with the todo", send);
+      else askText("Brief for " + t.label, "optional — defaults to the todo text", send);
     });
 }
 
@@ -426,15 +443,21 @@ function personInput(onSet, onCancel) {
 
 // ================= THE BOARD (big-change Phase 8) =================
 // Pure projection over the SAME /api/todos payload the list renders — four
-// columns: Open · Waiting · Delegated · Done. Every drag maps to an EXISTING
-// endpoint (check / update-waiting / delegate); the Delegated column renders
-// Phase 6 trace state and resolves only through the FEED's human gates.
+// columns: Open · Delegated · Review · Done (owner call 2026-08-12: Waiting is
+// gone — it was never used, and delegated work already IS waiting). Every drag
+// maps to an EXISTING endpoint (check / delegate); no new state anywhere.
+//
+// REVIEW is the auto-move: a delegation whose result is ready (state done or
+// proposed) while the todo is still open lands here by projection, the instant
+// the agent finishes — the same condition the FEED's delegation-done card
+// keys on. From Review: drag → Done checks it; drag → Delegated sends it back
+// out with an owner comment.
+const DELEG_REVIEW = { done: true, proposed: true }; // result ready → Review
 function renderTodosBoard(host) {
   const rows = (todosCache.rows || []).filter((r) => todosTab === "focus" || tabOf(r) === todosTab);
-  const cols = { open: [], waiting: [], delegated: [], done: [] };
+  const cols = { open: [], delegated: [], review: [], done: [] };
   rows.forEach((r) => {
-    if (r.delegation) cols.delegated.push(r);
-    else if (r.waiting) cols.waiting.push(r);
+    if (r.delegation) (DELEG_REVIEW[r.delegation.state] ? cols.review : cols.delegated).push(r);
     else cols.open.push(r);
   });
   // Done: personal todos completed but not yet swept (the domains view keeps
@@ -452,8 +475,8 @@ function renderTodosBoard(host) {
   const board = el("div", "tdo-board");
   const defs = [
     ["open", "OPEN", "drop here to reopen"],
-    ["waiting", "WAITING", "drop here → who are you waiting on?"],
     ["delegated", "DELEGATED", "drop here to dispatch to a harness"],
+    ["review", "REVIEW", "delegated work that came back — read it, then Done or send it back out"],
     ["done", "DONE", "drop here to complete"],
   ];
   defs.forEach(([key, label, hint]) => {
@@ -495,6 +518,14 @@ function boardCard(r, colKey) {
   if (dg) meta.append(delegationChip(dg, true));
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
   card.append(meta);
+  // REVIEW cards carry the result up front — reading it IS the column's job
+  if (colKey === "review" && dg) {
+    const acts = el("div", "tdo-card-acts");
+    const read = pillLight("read the result →", () => openResult(dg, r.text));
+    read.onmousedown = (e) => e.stopPropagation();
+    acts.append(read);
+    card.append(acts);
+  }
   return card;
 }
 
@@ -508,18 +539,17 @@ function boardMove(id, from, to) {
       return;
     case "open":
       if (from === "done") { todosApi("/api/todos/check", { id, checked: false }); return; }
-      if (from === "waiting") { todosApi("/api/todos/update", { id, waiting: "" }); return; }
-      if (from === "delegated") { showToast("Delegated work resolves through the FEED (approve/reject) — or drop it on Done"); return; }
+      if (from === "delegated") { showToast("Still out with the harness — it lands in REVIEW when it comes back"); return; }
+      if (from === "review") { showToast("Read the result first — then Done, or drag back to DELEGATED to send it out again"); return; }
       return;
-    case "waiting":
-      if (from === "delegated") { showToast("Already delegated — it IS waiting on the harness"); return; }
-      askText("Waiting on…", "who has the ball? (person, org)", (who) => {
-        if (!(who || "").trim()) return;
-        todosApi("/api/todos/update", { id, waiting: who.trim() });
-      });
+    case "review":
+      showToast("REVIEW fills itself the moment delegated work comes back");
       return;
     case "delegated":
-      if (row) openDelegatePicker(row);
+      // from REVIEW this is a RE-delegation: the owner read the result and is
+      // sending it back out, so the comment is the point — it rides the work
+      // order to the agent (POST /api/todos/delegate {comment}).
+      if (row) openDelegatePicker(row, from === "review");
       return;
   }
 }

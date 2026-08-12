@@ -98,8 +98,11 @@ if (els.noteSaveBtn) els.noteSaveBtn.addEventListener("click", async () => {
 if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/contacts"; });
 
 // --- a compact markdown renderer that returns DOM (so wikilinks + checkboxes
-// are interactive). Handles the shapes this vault uses. ---
-function renderMarkdown(raw, notePath) {
+// are interactive). Handles the shapes this vault uses. opts.readOnly renders
+// a document that is NOT the open note (an agent artifact, a run report): its
+// checkboxes are inert, since there is no vault line behind them to toggle. ---
+function renderMarkdown(raw, notePath, opts) {
+  const readOnly = !!(opts && opts.readOnly);
   const frag = document.createDocumentFragment();
   const lines = raw.split("\n");
   let i = 0;
@@ -136,7 +139,8 @@ function renderMarkdown(raw, notePath) {
       const row = el("label", "md-task");
       const box = el("input"); box.type = "checkbox"; box.checked = cb[2] !== " ";
       const lineNo = i;
-      box.addEventListener("change", () => toggleNoteTask(lineNo, box.checked, box));
+      if (readOnly) box.disabled = true;
+      else box.addEventListener("change", () => toggleNoteTask(lineNo, box.checked, box));
       const span = el("span", "md-task-text"); inlineInto(span, cb[3], notePath);
       row.append(box, span); frag.appendChild(row); continue;
     }

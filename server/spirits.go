@@ -308,21 +308,43 @@ func (s *Server) handleSpiritsRituals(w http.ResponseWriter, r *http.Request) {
 // handleSpiritsFileGet / Put — the raw markdown editor over the allow-listed
 // harness config files (§2). Paths off the allow-list 404; PUT lints and blocks
 // hard breakage (422) while letting warnings through.
+// Reads span the FEDERATION (fix 2026-08-12): an artifact brief lives in the
+// harness that wrote it, so a hermes card asking for its own library file must
+// not 404 against excalibur. `harness` narrows the search when the client knows
+// the tag; otherwise every tree is tried, primary first. Writes stay
+// primary-only (PUT below) — the federation contract is read-side voluntary.
 func (s *Server) handleSpiritsFileGet(w http.ResponseWriter, r *http.Request) {
-	if s.spirits == nil {
+	hs := s.eachHarness()
+	if len(hs) == 0 {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
 		return
 	}
-	content, allowed, err := s.spirits.ReadFile(r.URL.Query().Get("path"))
-	if !allowed {
+	path := r.URL.Query().Get("path")
+	want := r.URL.Query().Get("harness")
+	offList := false
+	for _, h := range hs {
+		if h.Spirits == nil {
+			continue
+		}
+		if want != "" && h.Name != want && s.harnessTag(h.Name) != want {
+			continue
+		}
+		content, allowed, err := h.Spirits.ReadFile(path)
+		if !allowed {
+			offList = true
+			continue // the allow-list is identical across trees
+		}
+		if err != nil {
+			continue // not in THIS tree — try the next one
+		}
+		writeJSON(w, map[string]any{"path": path, "harness": s.harnessTag(h.Name), "content": content})
+		return
+	}
+	if offList {
 		http.Error(w, "path not editable", http.StatusNotFound)
 		return
 	}
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	writeJSON(w, map[string]any{"path": r.URL.Query().Get("path"), "content": content})
+	http.Error(w, "not found", http.StatusNotFound)
 }
 
 func (s *Server) handleSpiritsFilePut(w http.ResponseWriter, r *http.Request) {

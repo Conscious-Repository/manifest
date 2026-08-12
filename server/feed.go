@@ -3,8 +3,6 @@ package server
 import (
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -98,29 +96,27 @@ func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 // the legacy in-vault layout (opens in the note view); harnessRef is the
 // harness-relative path (opens through the spirits read API). Both empty when
 // the item isn't an artifact or the file is missing.
-func (s *Server) artifactRefsIn(h Harness, it feed.Item) (string, string) {
+//
+// Three ways in, in order of directness (owner ask 2026-08-12 — a delegated
+// artifact must ALWAYS be viewable): the card's own link, a library path
+// mentioned in its body, and — for cards that name their brief nowhere — the
+// delegation token they carry, matched against the harness library.
+func (s *Server) artifactRefsIn(h Harness, it feed.Item, lib libraryFn) (string, string) {
 	if it.Type != "artifact" || h.Spirits == nil {
 		return "", ""
 	}
 	ref := ""
-	if strings.HasPrefix(it.Link, "artifacts/library/") {
+	switch {
+	case strings.HasPrefix(it.Link, "artifacts/library/"):
 		ref = it.Link
-	} else if m := libraryRefRe.FindString(it.Body); m != "" {
-		ref = m
-	}
-	if ref == "" {
-		return "", ""
-	}
-	abs := filepath.Join(h.Spirits.Root(), filepath.FromSlash(ref))
-	if _, err := os.Stat(abs); err != nil {
-		return "", "" // referenced file missing — nothing to open
-	}
-	if s.index != nil {
-		if rel, err := filepath.Rel(s.index.VaultRoot(), abs); err == nil && !strings.HasPrefix(rel, "..") {
-			return filepath.ToSlash(rel), "" // legacy: harness still inside the vault
+	default:
+		if m := libraryRefRe.FindString(it.Body); m != "" {
+			ref = m
+		} else if m := todoTokenRe.FindStringSubmatch(it.Title + "\n" + it.Why + "\n" + it.Body); m != nil {
+			ref = libraryRefForToken(m[1], lib)
 		}
 	}
-	return "", filepath.ToSlash(filepath.FromSlash(ref))
+	return s.artifactRefSplit(h, ref)
 }
 
 // feedProposals returns the FULL enriched approval rows for the feed's pinned

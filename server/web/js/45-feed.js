@@ -13,13 +13,20 @@ let feedCache = { items: [], signals: [], proposals: [], portalItems: [], receip
 // machinery yet, so their lane renders nothing until an errand loop exists.
 const FEED_CARD = {
   signal: (sg) => signalRow(sg),
+  delegationDone: (sg) => delegationDoneCard(sg),
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
   finding: (it) => feedCard(it),
   receipt: (rc) => receiptCardEl(rc),
 };
-// main-list lanes in render order (signals render into their own strip above).
+// delegation-done is a SIGNAL server-side (an app-derived condition that
+// auto-clears when the todo is checked — §5 stays four kinds), but the owner
+// wants completed delegations to read as full, actionable cards rather than
+// one-line chips. So it splits off the strip and renders into the main list.
+const isDelegationDone = (sg) => sg.kind === "delegation-done";
+// main-list lanes in render order (other signals render into their own strip).
 const FEED_LANES = [
+  { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone), inboxOnly: true },
   { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
   { kind: "notice", slice: (c) => c.portalItems, inboxOnly: true },
 ];
@@ -70,11 +77,12 @@ function renderFeed() {
   // signals lane: app-derived nudges, INBOX only, tight one-line chips. Never
   // under KEPT/ALL (conditions, not items). Capped so a long neglect backlog
   // doesn't bury the findings — the most-overdue lead, the rest fold away.
-  if (view === "inbox" && feedCache.signals.length) {
-    const total = feedCache.signals.length;
+  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg));
+  if (view === "inbox" && stripSignals.length) {
+    const total = stripSignals.length;
     sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
     const shown = signalsExpanded ? total : Math.min(SIGNAL_CAP, total);
-    feedCache.signals.slice(0, shown).forEach((sg) => sigHost.appendChild(FEED_CARD.signal(sg)));
+    stripSignals.slice(0, shown).forEach((sg) => sigHost.appendChild(FEED_CARD.signal(sg)));
     if (total > SIGNAL_CAP) {
       const more = el("button", "signal-more", signalsExpanded ? "▴ show fewer" : `▾ ${total - SIGNAL_CAP} more`);
       more.onclick = () => { signalsExpanded = !signalsExpanded; renderFeed(); };
@@ -116,19 +124,53 @@ function renderFeed() {
 function signalRow(sg) {
   const row = el("div", "signal-row");
   const label = el("span", "signal-label cp-clickable", sg.label);
-  // a delegation-done card's label opens the RESULT (the run report) in
-  // place — the report body is the artifact; everything else navigates.
-  label.onclick = () => { sg.runId ? openRunModal(sg.runId) : (location.hash = sg.actHref); };
+  // the label ALWAYS navigates to the thing the signal is about (owner fix
+  // 2026-08-12: a runId used to hijack this into an unrelated run report —
+  // viewing a result is its own explicit action on the card, never the label).
+  label.onclick = () => { location.hash = sg.actHref || "#/feed"; };
   row.append(label);
   // two verbs only (owner call 2026-08-10): Done ✓ on todo signals, dismiss on
   // everything — the label itself already navigates to the item.
   const act = el("span", "signal-actions");
-  if (sg.kind === "todo-stale" || sg.kind === "todo-waiting" || sg.kind === "delegation-done") {
+  if (sg.kind === "todo-stale" || sg.kind === "todo-waiting") {
     act.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })));
   }
   act.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })));
   row.append(act);
   return row;
+}
+
+// delegationDoneCard — a completed delegation as a FULL feed card (owner ask
+// 2026-08-12): the work you delegated, its result one click away, and the todo
+// one click away. Signal lifecycle governs the verbs — dismiss/snooze, plus the
+// Done ✓ quick-action that resolves the condition (§5 amendment C4). Never
+// Keep/Discard: a condition must not pollute the findings quality signal.
+function delegationDoneCard(sg) {
+  const card = el("div", "feed-card artifact delegation-done");
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-artifact", "delegated"));
+  if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
+  const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
+  title.title = "open it on the TODOS board";
+  title.onclick = () => { location.hash = sg.actHref || "#/todos"; };
+  top.append(title);
+  card.append(top);
+  card.append(el("div", "feed-why", sg.artifactRef || sg.artifactPath
+    ? "delegated work came back with an artifact — read it, then close the todo or send it back out"
+    : "delegated work finished — read the run report, then close the todo or send it back out"));
+  const meta = el("div", "feed-meta");
+  meta.append(el("span", null, ["ready for review", sg.harness].filter(Boolean).join("  ·  ")));
+  card.append(meta);
+  const actions = el("div", "feed-actions");
+  const view = pillLight("view →", () => openResult(sg, sg.entity));
+  view.classList.add("verdict-primary");
+  actions.append(view);
+  actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/todos"; }));
+  actions.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })));
+  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })));
+  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })));
+  card.append(actions);
+  return card;
 }
 async function signalAction(url, body) {
   try { await postJSON(url, body); } catch (e) {}
@@ -239,8 +281,7 @@ function feedCard(it) {
   const external = /^https?:\/\//i.test(it.link || "");
   let title;
   if (external) title = linkEl(it.title, it.link);
-  else if (it.artifactPath) { title = el("span", "cp-clickable", it.title); title.onclick = () => openArtifact(it.artifactPath); }
-  else if (it.artifactRef) { title = el("span", "cp-clickable", it.title); title.onclick = () => openHarnessArtifact(it.artifactRef); }
+  else if (it.artifactPath || it.artifactRef) { title = el("span", "cp-clickable", it.title); title.onclick = () => openResult(it, it.title); }
   else title = el("span", null, it.title);
   title.classList.add("feed-title");
   top.append(title);
@@ -257,8 +298,9 @@ function feedCard(it) {
   if (it.body && (pinned || it.type === "artifact")) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
   if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
   const actions = el("div", "feed-actions");
-  if (it.artifactPath) actions.append(pillLight("view →", () => openArtifact(it.artifactPath))); // the full brief
-  else if (it.artifactRef) actions.append(pillLight("view →", () => openHarnessArtifact(it.artifactRef)));
+  // the full brief, rendered legibly (harness file or vault note — openResult
+  // picks the medium; a card with neither ref falls through with no "view →")
+  if (it.artifactPath || it.artifactRef) actions.append(pillLight("view →", () => openResult(it, it.title)));
   if (it.status !== "discarded") {
     const keep = pillLight("Keep", () => feedVerdict(card, it, "kept", "kept"));
     keep.classList.add("verdict-primary");

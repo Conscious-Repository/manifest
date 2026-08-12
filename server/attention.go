@@ -53,8 +53,9 @@ func (f findingsSource) Active(now time.Time, q url.Values) []attention.Card {
 		if h.Spirits == nil {
 			continue
 		}
+		lib := harnessLibrary(h) // read at most once per harness, only if a card needs it
 		for _, it := range h.Spirits.Feed.List(flt, now) {
-			vaultRel, harnessRef := f.s.artifactRefsIn(h, it)
+			vaultRel, harnessRef := f.s.artifactRefsIn(h, it, lib)
 			views = append(views, feedItemView{Item: it, ArtifactPath: vaultRel, ArtifactRef: harnessRef, Harness: f.s.harnessTag(h.Name)})
 		}
 	}

@@ -14,19 +14,27 @@ package server
 //     from which trace files exist and carry the token.
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"manifest/spirits"
 )
 
 var todoTokenRe = regexp.MustCompile(`\[todo::\s*([^\]]+)\]`)
 
-// delegationView is the row projection.
+// delegationView is the row projection. When the run left a library brief, the
+// projection carries it too — the board chip, the feed card and the run modal
+// then all open the SAME file (see server/artifacts.go).
 type delegationView struct {
 	State   string `json:"state"` // queued | running | failed | done | proposed
 	Harness string `json:"harness"`
 	RunID   string `json:"runId,omitempty"`
+	// the result, ready to open: exactly one of these is ever set (§8 two media)
+	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
+	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
 }
 
 // delegationIndex scans every harness's traces ONCE per request: spool files
@@ -47,6 +55,7 @@ func (s *Server) delegationIndex() map[string]delegationView {
 	}
 	for _, h := range s.eachHarness() {
 		if h.Spirits != nil {
+			lib := harnessLibrary(h) // one library read per harness, at most
 			for _, q := range h.Spirits.Queued() {
 				if m := todoTokenRe.FindStringSubmatch(q.Request); m != nil {
 					set(m[1], delegationView{State: "queued", Harness: h.Name})
@@ -66,7 +75,15 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				default:
 					state = "failed"
 				}
-				set(m[1], delegationView{State: state, Harness: h.Name, RunID: r.ID})
+				d := delegationView{State: state, Harness: h.Name, RunID: r.ID}
+				// the deliverable: the brief this run wrote, else the newest
+				// brief carrying the same delegation token
+				ref := libraryRefForRun(h, r.ID, lib)
+				if ref == "" {
+					ref = libraryRefForToken(strings.TrimSpace(m[1]), lib)
+				}
+				d.ArtifactPath, d.ArtifactRef = s.artifactRefSplit(h, ref)
+				set(m[1], d)
 			}
 		}
 		if h.Approvals != nil {
@@ -128,6 +145,10 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 		Spirit  string `json:"spirit"`
 		Ritual  string `json:"ritual"`
 		Brief   string `json:"brief"`
+		// Comment is the owner's steer when a REVIEWED result goes back out
+		// (board: Review → Delegated). It rides the work order verbatim and
+		// labelled, so the agent can't mistake it for the original brief.
+		Comment string `json:"comment"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -163,8 +184,16 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 			text = "work the delegated todo"
 		}
 	}
+	if c := strings.TrimSpace(b.Comment); c != "" {
+		text += " — owner comment on the previous result: " + c
+	}
 	request := text + " [todo:: " + b.ID + "]"
 	if err := target.Spirits.SpoolRunNow(b.Spirit, b.Ritual, request, ""); err != nil {
+		if errors.Is(err, spirits.ErrAlreadyActive) {
+			w.WriteHeader(http.StatusConflict)
+			writeJSON(w, map[string]any{"active": true, "harness": b.Harness, "spirit": b.Spirit, "ritual": b.Ritual})
+			return
+		}
 		httpError(w, err)
 		return
 	}

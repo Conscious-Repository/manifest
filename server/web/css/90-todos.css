@@ -91,7 +91,8 @@
 .delegation-chip.dstate-proposed { color: var(--base-100); font-weight: 600; }
 .delegation-chip.dstate-failed { color: var(--base-100); font-weight: 600; }
 
-/* ---- the board (Phase 8): four columns over the same rows ---- */
+/* ---- the board (Phase 8): four columns over the same rows —
+   Open · Delegated · Review · Done (Waiting retired 2026-08-12) ---- */
 .tdo-mode-toggle { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; }
 .tdo-mode-toggle:hover { color: var(--accent); }
 .tdo-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; margin-top: 10px; }
@@ -104,3 +105,6 @@
 .tdo-card-text { font-family: var(--sans); font-size: 13.5px; line-height: 1.35; }
 .tdo-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--base-40); align-items: baseline; }
 .tdo-card-wait, .tdo-card-rock { color: var(--base-50); }
+/* REVIEW: the result is the point of the column — one quiet read affordance */
+.tdo-card-acts { margin-top: 6px; }
+.tdo-card-acts .pill { font-family: var(--mono); font-size: 10px; }

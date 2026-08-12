@@ -29,6 +29,11 @@ type Signal struct {
 	Hash    string `json:"hash"`    // dismissal re-arm key (client echoes it back)
 	GoalID  string `json:"goalId,omitempty"`
 	RunID   string `json:"runId,omitempty"` // delegation-done: the report to open in place
+	// delegation-done also carries the RESULT, so its feed card can show the
+	// deliverable rather than the narration (exactly one is ever set).
+	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
+	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
+	Harness      string `json:"harness,omitempty"`      // federation source tag
 }
 
 // Emitter computes the currently-active conditions of one kind. An emitter that
