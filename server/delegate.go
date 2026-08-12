@@ -36,8 +36,10 @@ type delegationView struct {
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
 	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
 	// Started is when the run began, used to prefer the newest run when two
-	// completed runs share the same todo id (not serialized to the client).
-	Started time.Time
+	// completed runs share the same todo id. Server-side only: `-` keeps it off
+	// the wire entirely (omitempty would not — encoding/json never treats a
+	// struct as empty, and a real run's Started is non-zero anyway).
+	Started time.Time `json:"-"`
 }
 
 // delegationIndex scans every harness's traces ONCE per request: spool files
@@ -66,8 +68,34 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				}
 			}
 			for _, r := range h.Spirits.Runs() {
-				m := todoTokenRe.FindStringSubmatch(r.Request)
-				if m == nil {
+				var todoID string
+				var doc spirits.LibraryDoc // the brief this run wrote, if any
+				if m := todoTokenRe.FindStringSubmatch(r.Request); m != nil {
+					todoID = strings.TrimSpace(m[1])
+					doc, _ = libraryDocForRun(h, r.ID, lib)
+				} else {
+					// an OLD report whose `request:` frontmatter was truncated
+					// past its trailing token (the engine preserves it now, but
+					// history can't be rewritten). Recover the token so the todo
+					// still resolves to this run's artifact: first from the
+					// report BODY, which carries the request in full, then from
+					// the brief the run wrote.
+					sum, body, ok := h.Spirits.Run(r.ID)
+					runID := r.ID
+					if ok && sum.Run != "" {
+						runID = sum.Run
+					}
+					var wroteBrief bool
+					doc, wroteBrief = libraryDocForRunID(runID, r.ID, lib)
+					if m := todoTokenRe.FindStringSubmatch(body); m != nil {
+						todoID = strings.TrimSpace(m[1])
+					} else if wroteBrief {
+						if m := todoTokenRe.FindStringSubmatch(doc.Title + "\n" + doc.Body); m != nil {
+							todoID = strings.TrimSpace(m[1])
+						}
+					}
+				}
+				if todoID == "" {
 					continue
 				}
 				state := "done"
@@ -85,12 +113,12 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				}
 				// the deliverable: the brief this run wrote, else the newest
 				// brief carrying the same delegation token
-				ref := libraryRefForRun(h, r.ID, lib)
+				ref := doc.Ref
 				if ref == "" {
-					ref = libraryRefForToken(strings.TrimSpace(m[1]), lib)
+					ref = libraryRefForToken(todoID, lib)
 				}
 				d.ArtifactPath, d.ArtifactRef = s.artifactRefSplit(h, ref)
-				set(m[1], d)
+				set(todoID, d)
 			}
 		}
 		if h.Approvals != nil {

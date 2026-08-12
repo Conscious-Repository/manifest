@@ -60,22 +60,33 @@ func (s *Server) artifactRefSplit(h Harness, ref string) (string, string) {
 	return "", filepath.ToSlash(filepath.FromSlash(ref))
 }
 
-// libraryRefForRun is the brief a run wrote: the report's `run:` id matched
-// against the briefs' own `run:` field (the engine stamps both).
-func libraryRefForRun(h Harness, reportID string, lib libraryFn) string {
+// libraryDocForRun is the brief a run wrote: the report's `run:` id matched
+// against the briefs' own `run:` field (the engine stamps both). The whole doc,
+// not just the ref — a caller that lost the delegation token (a truncated
+// `request:` in an old report) can recover it from the brief's own text.
+func libraryDocForRun(h Harness, reportID string, lib libraryFn) (spirits.LibraryDoc, bool) {
 	if h.Spirits == nil || reportID == "" {
-		return ""
+		return spirits.LibraryDoc{}, false
 	}
 	runID := reportID
 	if sum, _, ok := h.Spirits.Run(reportID); ok && sum.Run != "" {
 		runID = sum.Run
 	}
+	return libraryDocForRunID(runID, reportID, lib)
+}
+
+// libraryDocForRunID is libraryDocForRun for a caller that already read the
+// report (and so already knows its `run:` id) — no second read of the report.
+func libraryDocForRunID(runID, reportID string, lib libraryFn) (spirits.LibraryDoc, bool) {
+	if runID == "" && reportID == "" {
+		return spirits.LibraryDoc{}, false
+	}
 	for _, d := range lib() {
 		if d.Run != "" && (d.Run == runID || d.Run == reportID) {
-			return d.Ref
+			return d, true
 		}
 	}
-	return ""
+	return spirits.LibraryDoc{}, false
 }
 
 // libraryRefForToken is the newest brief carrying a delegation's [todo:: id]
