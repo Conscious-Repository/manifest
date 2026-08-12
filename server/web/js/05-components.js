@@ -299,3 +299,22 @@ function typeahead(opts) {
   wrap.append(input, drop);
   return ta;
 }
+
+// contactNoteIndex — name → vault note path, from the contacts layer (people
+// notes in the conscious repo). Shared by the aion + RE people registries so
+// a registry row can link out to the person's actual note. Read-only; cached
+// per page load.
+let _contactNoteIdx = null;
+async function contactNoteIndex() {
+  if (_contactNoteIdx) return _contactNoteIdx;
+  _contactNoteIdx = {};
+  try {
+    const d = await (await fetch("/api/contacts")).json();
+    (d.contacts || []).forEach((c) => {
+      if (!c.hasNote || !c.notePath) return;
+      if (c.display) _contactNoteIdx[c.display.toLowerCase()] = c.notePath;
+      if (c.key) _contactNoteIdx[c.key.toLowerCase()] = c.notePath;
+    });
+  } catch (e) {}
+  return _contactNoteIdx;
+}

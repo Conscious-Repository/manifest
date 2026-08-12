@@ -250,3 +250,7 @@
 
 .aion-owner-you { font-family: var(--mono); font-size: 10.5px; color: var(--accent); }
 .aion-rec-dlabel { font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); white-space: nowrap; }
+
+/* people rows with an ↗ note link — the trailing cell holds ↗ + ✕ */
+.cols-aion-people.cols-people-linked { grid-template-columns: 90px minmax(160px, 1fr) minmax(160px, 1fr) 56px; }
+.aion-row-acts { display: flex; gap: 2px; justify-content: flex-end; }

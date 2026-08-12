@@ -88,14 +88,16 @@ async function renderREsettings() {
   host.append(wrap);
 
   rail.append(el("div", "aion-org-label", "Registries"));
+  // Partners + Contractors consolidated into ONE People item (owner call
+  // 2026-08-12) — partners on top (aion-style people.md table), contractor
+  // records below. Stale sub-tab keys from old links fold in.
+  if (reSettingsTab === "partners" || reSettingsTab === "contractors") reSettingsTab = "people";
   const items = [
     ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
     ["entities", "Entities", ents.length, "system/realestate/entities.md"],
-    ["partners", "Partners", (entitiesCache.partners || []).length, "system/realestate/entities.md"],
-    ["contractors", "Contractors", (entitiesCache.contractors || []).length, "system/realestate/entities.md"],
+    ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount) + (entitiesCache.contractors || []).length, "system/realestate/people.md"],
     ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
     ["tenants", "Tenants", (entitiesCache.tenants || []).length, "system/realestate/entities.md"],
-    ["people", "People", null, "system/realestate/people.md"],
   ];
   let rel = "system/realestate/assumptions.md";
   items.forEach(([key, label, n, path]) => {
@@ -114,15 +116,9 @@ async function renderREsettings() {
   rail.append(fileBox);
 
   if (reSettingsTab === "assumptions") { renderAssumptionsPanel(pane); return; }
-  if (reSettingsTab === "partners") { renderFlatRegistry(pane, "partner", entitiesCache.partners || []); return; }
   if (reSettingsTab === "lenders") { renderFlatRegistry(pane, "lender", entitiesCache.lenders || []); return; }
   if (reSettingsTab === "tenants") { renderFlatRegistry(pane, "tenant", entitiesCache.tenants || []); return; }
-  if (reSettingsTab === "contractors") {
-    pane.append(el("div", "pp-section-head", "CONTRACTORS — records"));
-    renderFlatRegistry(pane, "contractor", entitiesCache.contractors || []);
-    return;
-  }
-  if (reSettingsTab === "people") { await rePeopleTable(pane); return; }
+  if (reSettingsTab === "people") { await rePeoplePane(pane); return; }
   renderEntitiesPanel(pane, ents);
 }
 
@@ -243,20 +239,29 @@ function renderEntitiesPanel(host, ents) {
   host.append(tpl);
 }
 
-// rePeopleTable — the registry editor: one row per person, dirty-bar save
-// (full-list PUT; verbatim lines in the file survive server-side).
-async function rePeopleTable(host) {
+// rePeoplePane — the consolidated People registry (owner call 2026-08-12):
+// PARTNERS on top (system/realestate/people.md, the aion table shape —
+// initials/name/role), CONTRACTORS (records) below. An empty registry
+// prefills partner rows from the entity org charts' person owners — shown
+// dirty, written only on explicit save. A row whose name matches a person
+// note in the vault gets an ↗ link (same mechanism the aion roster uses).
+let _rePeopleCount = null;
+
+async function rePeoplePane(host) {
   let data = { people: [], rel: "system/realestate/people.md" };
   try { data = await (await fetch("/api/properties/people")).json(); } catch (e) {}
+  const noteIdx = await contactNoteIndex();
+  _rePeopleCount = (data.people || []).length;
+
   const head = el("div", "pp-section-head");
-  head.append(el("span", "", "PEOPLE"));
+  head.append(el("span", "", "PARTNERS"));
   const open = el("a", "aion-open", "⌘/ edit raw");
   open.href = "#";
   open.onclick = (ev) => { ev.preventDefault(); openRawOverlay(data.rel); };
   head.append(open);
   host.append(head);
   host.append(el("div", "aion-section-note",
-    "assignees for property todos — counsel, lenders, partners; contractor records join the list automatically"));
+    "the RE people registry (people.md) — partners, counsel, lenders; every row is a property-todo assignee. ↗ opens the person's note."));
 
   const rows = (data.people || []).map((p) => ({ ...p }));
   const bar = makeDirtyBar(els.propertiesView, async () => {
@@ -265,32 +270,76 @@ async function rePeopleTable(host) {
     renderREsettings();
   }, () => renderREsettings());
 
-  host.append(ppCols("cols-aion-people", ["INITIALS", "NAME", "ROLE", ""]));
+  // seed: person owners from the entity org charts (entity-to-entity refs
+  // excluded), role "partner" — dirty until the owner saves
+  if (!rows.length) {
+    const entNames = new Set(((entitiesCache || {}).entities || []).map((e) => e.name.toLowerCase()));
+    const seen = new Set();
+    const used = new Set(); // initials are assignee keys — collisions extend
+    const initialsFor = (name) => {
+      const words = name.split(/\s+/);
+      let ini = words.map((w) => w[0] || "").join("").toUpperCase().slice(0, 3);
+      for (let n = 2; used.has(ini) && n <= (words[0] || "").length; n++) {
+        ini = (words[0].slice(0, n) + words.slice(1).map((w) => w[0] || "").join("")).toUpperCase().slice(0, 4);
+      }
+      used.add(ini);
+      return ini;
+    };
+    (((entitiesCache || {}).entities) || []).forEach((e) => {
+      (e.owners || []).forEach((o) => {
+        const ref = (o.ref || "").trim();
+        if (!ref || entNames.has(ref.toLowerCase()) || seen.has(ref.toLowerCase())) return;
+        seen.add(ref.toLowerCase());
+        rows.push({ initials: initialsFor(ref), name: ref, role: "partner" });
+      });
+    });
+    if (rows.length) {
+      bar.mark();
+      host.append(el("div", "re-foot-note",
+        "prefilled from the entity org charts — save writes them to people.md"));
+    }
+  }
+
+  host.append(ppCols("cols-aion-people cols-people-linked", ["INITIALS", "NAME", "ROLE", ""]));
   const body = el("div", "aion-table");
   host.append(body);
   const renderRows = () => {
     body.innerHTML = "";
     rows.forEach((row, i) => {
-      const line = el("div", "aion-row cols-aion-people");
+      const line = el("div", "aion-row cols-aion-people cols-people-linked");
       [["initials", "INITIALS"], ["name", "NAME"], ["role", "ROLE"]].forEach(([key, label]) => {
         const input = inputEl(label.toLowerCase());
         input.value = row[key] || "";
         input.oninput = () => { row[key] = input.value; bar.mark(); };
         line.append(input);
       });
+      const acts = el("span", "aion-row-acts");
+      const notePath = noteIdx[(row.name || "").toLowerCase()];
+      if (notePath) {
+        const link = el("button", "aion-mini", "↗");
+        link.title = "open " + notePath;
+        link.onclick = () => { _noteReturn = "#/properties/settings"; openNoteByPath(notePath); };
+        acts.append(link);
+      }
       const x = el("button", "aion-mini", "✕");
       x.title = "remove row";
       x.onclick = () => { rows.splice(i, 1); bar.mark(); renderRows(); };
-      line.append(x);
+      acts.append(x);
+      line.append(acts);
       body.append(line);
     });
-    body.append(ghostInput("＋ person", "aion-add", (v) => {
-      rows.push({ initials: v.toUpperCase().slice(0, 3), name: "", role: "" });
+    body.append(ghostInput("＋ partner", "aion-add", (v) => {
+      rows.push({ initials: v.toUpperCase().slice(0, 3), name: "", role: "partner" });
       bar.mark();
       renderRows();
     }));
   };
   renderRows();
+
+  host.append(el("div", "pp-section-head", "CONTRACTORS"));
+  host.append(el("div", "aion-section-note",
+    "contractor records (system/realestate/contractors/) — they join the assignee list automatically"));
+  renderFlatRegistry(host, "contractor", entitiesCache.contractors || []);
 }
 
 function entityCard(e, ents) {

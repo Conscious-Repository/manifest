@@ -736,23 +736,37 @@ function aionTableEditor(host, opts) {
     loadAion();
   }, () => renderAion());
 
-  host.append(ppCols(opts.colsClass, opts.cols.map((c) => c.label).concat([""])));
+  // opts.noteLink (optional): row → vault note path — a matching row gets an
+  // ↗ out to the person's note in the conscious repo (display-only; the
+  // registry file itself never changes shape)
+  const linked = typeof opts.noteLink === "function";
+  const colsClass = opts.colsClass + (linked ? " cols-people-linked" : "");
+  host.append(ppCols(colsClass, opts.cols.map((c) => c.label).concat([""])));
   const body = el("div", "aion-table");
   host.append(body);
   const renderRows = () => {
     body.innerHTML = "";
     rows.forEach((row, i) => {
-      const line = el("div", "aion-row " + opts.colsClass);
+      const line = el("div", "aion-row " + colsClass);
       opts.cols.forEach((c) => {
         const input = inputEl(c.label.toLowerCase());
         input.value = row[c.key] || "";
         input.oninput = () => { row[c.key] = input.value; bar.mark(); };
         line.append(input);
       });
+      const acts = el("span", "aion-row-acts");
+      const notePath = linked ? opts.noteLink(row) : null;
+      if (notePath) {
+        const link = el("button", "aion-mini", "↗");
+        link.title = "open " + notePath;
+        link.onclick = () => { _noteReturn = "#/aion"; openNoteByPath(notePath); };
+        acts.append(link);
+      }
       const x = el("button", "aion-mini", "✕");
       x.title = "remove row";
       x.onclick = () => { rows.splice(i, 1); bar.mark(); renderRows(); };
-      line.append(x);
+      acts.append(x);
+      if (linked) line.append(acts); else { acts.remove(); line.append(x); }
       body.append(line);
     });
     body.append(ghostInput("＋ " + opts.addLabel, "aion-add", (v) => {
@@ -794,14 +808,17 @@ function renderAionOrg(host) {
   rail.append(fileBox);
 
   if (aionOrgSel === "people") {
-    aionTableEditor(pane, {
+    // rows whose name matches a person note in the vault link out to it —
+    // same mechanism as the RE partners table
+    contactNoteIndex().then((idx) => aionTableEditor(pane, {
       title: "PEOPLE", rel: "system/aion/people.md",
       colsClass: "cols-aion-people",
       cols: [{ key: "initials", label: "INITIALS" }, { key: "name", label: "NAME" }, { key: "role", label: "ROLE" }],
       rows: aionCache.people || [],
       put: "/api/aion/people", payloadKey: "people",
       addLabel: "person", newRow: (v) => ({ initials: v.toUpperCase().slice(0, 3), name: "", role: "" }),
-    });
+      noteLink: (row) => idx[(row.name || "").toLowerCase()] || null,
+    }));
   } else if (aionOrgSel === "hiring") {
     aionTableEditor(pane, {
       title: "HIRING", rel: "system/aion/hiring.md",
