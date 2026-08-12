@@ -30,7 +30,10 @@ function showProperties(h) {
   propDealSlug = "";
   const VIEWS = ["backlog", "portfolio", "rocks", "money", "settings", "map"];
   if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
-  else if (tail === "") propMode = (propMode === "page" || propMode === "deal") ? "backlog" : (VIEWS.includes(propMode) ? propMode : "backlog");
+  // bare #/properties = BACKLOG, always — the aion mirror (showAion: tail ||
+  // "backlog"). The old sticky-mode read made the BACKLOG chip (href
+  // #/properties) a no-op from any other tab.
+  else if (tail === "") propMode = "backlog";
   else if (VIEWS.includes(tail)) propMode = tail;
   else { propMode = "page"; propSlug = tail; }
   renderProperties();
