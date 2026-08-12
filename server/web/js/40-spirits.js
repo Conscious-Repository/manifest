@@ -489,15 +489,84 @@ function renderSpiritSettings() {
   }
 }
 
-// Step-7 builds the real form; until then the chargebook pane hosts the legacy
-// raw drawer scoped to chargebook.md (the ⌘/ escape hatch, lint-gated).
-function renderChargebookPane(pane) {
+// The chargebook form (SPIRITS.md §4 Settings): the default every keyless
+// ritual inherits + one row per price.*/cast.* key. Values compared against
+// the record for a derived dirty bar; save = line surgery → the lint-gated
+// PUT; the board's inherited ceilings re-derive after.
+async function renderChargebookPane(pane) {
   pane.append(el("div", "pp-section-head", "CHARGEBOOK"));
-  pane.append(el("div", "aion-section-note",
-    "default_run_ceiling_usd is the ceiling every keyless ritual inherits; price.*/cast.* are the per-cast prices"));
-  const open = el("button", "pill light", "edit chargebook.md");
-  open.onclick = () => openEditor(["chargebook.md"]);
-  pane.append(open);
+  let raw = "";
+  try { raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent("chargebook.md"))).json()).content || ""; }
+  catch (e) { pane.append(emptyRow("chargebook.md unavailable")); return; }
+  const record = splitFM(raw);
+  const keys = record.fmLines
+    .map((ln) => ln.match(/^([A-Za-z0-9_.-]+):\s*(.*)$/))
+    .filter(Boolean)
+    .map((m) => ({ key: m[1], val: m[2].trim() }));
+  const open = {};
+  keys.forEach((k) => { open[k.key] = k.val; });
+
+  const lint = el("div", "editor-lint");
+  lint.hidden = true;
+  const bar = derivedDirtyBar(pane, {
+    compute: () => {
+      const dirty = keys.some((k) => open[k.key] !== k.val);
+      return { dirty, blocked: false, msg: dirty ? "unsaved changes · lint runs on save" : "no changes" };
+    },
+    onSave: async () => {
+      let fm = record.fmLines;
+      keys.forEach((k) => { if (open[k.key] !== k.val) fm = fmSurgery(fm, k.key, open[k.key]); });
+      const content = "---\n" + fm.join("\n") + "\n---\n" + record.body;
+      lint.hidden = true; lint.innerHTML = "";
+      const r = await fetch("/api/spirits/file?path=" + encodeURIComponent("chargebook.md"), {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const res = await r.json();
+      if (r.status === 422 || res.ok === false) {
+        lint.hidden = false;
+        (res.errors || ["save blocked"]).forEach((m) => lint.append(el("div", "lint-err", "✕ " + m)));
+        return;
+      }
+      showToast("Chargebook saved — inherited ceilings re-derive");
+      loadSpiritRituals();
+      renderSpiritSettings();
+    },
+    onDiscard: () => renderSpiritSettings(),
+  });
+  pane.append(lint);
+
+  const section = (label) => pane.append(el("div", "aion-section-note", label));
+  const grid = el("div", "cb-grid");
+  const rowFor = (k, label) => {
+    const row = el("div", "cb-row");
+    row.append(el("span", "cb-key", label || k.key));
+    const input = el("input", "pp-in cb-in");
+    input.value = open[k.key];
+    input.oninput = () => { open[k.key] = input.value.trim(); bar.refresh(); };
+    row.append(input);
+    return row;
+  };
+  const def = keys.find((k) => k.key === "default_run_ceiling_usd");
+  if (def) {
+    section("the ceiling every keyless ritual inherits (USD)");
+    grid.append(rowFor(def, "default_run_ceiling_usd"));
+  }
+  const prices = keys.filter((k) => k.key.startsWith("price."));
+  if (prices.length) {
+    grid.append(el("div", "cb-group", "PRICES — $/mtok"));
+    prices.forEach((k) => grid.append(rowFor(k)));
+  }
+  const casts = keys.filter((k) => k.key.startsWith("cast."));
+  if (casts.length) {
+    grid.append(el("div", "cb-group", "CASTS — base $ per call"));
+    casts.forEach((k) => grid.append(rowFor(k)));
+  }
+  pane.append(grid);
+  const rawB = el("button", "sprt-quiet", "⌘/ edit raw");
+  rawB.onclick = () => openEditor(["chargebook.md"]);
+  pane.append(rawB);
+  bar.refresh();
 }
 
 const PORTAL_STATE_LABEL = { open: "open", degraded: "degraded", sealed: "—", dormant: "—" };

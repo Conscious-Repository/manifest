@@ -179,15 +179,18 @@ function showEditorLint(errors, warnings, savedOK) {
 }
 function closeEditor() { els.spiritEditor.hidden = true; editorState = null; }
 
+// ＋ ritual mirrors ScaffoldRitual (on demand · chargebook-default ceiling ·
+// 12 steps) and lands in the structured editor; ＋ spirit mirrors
+// ScaffoldSpirit (claude-sub · no spellbooks · writes artifacts/runs only)
+// and lands on the new spirit's page (SPIRITS.md §4 Creating).
 function newRitual(sp) {
   askText(`New ritual for ${sp}`, 'lowercase name, e.g. "weekly-review"', async (name) => {
     if (!name.trim()) return;
     try {
       const r = await fetch("/api/spirits/ritual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: sp, name: name.trim() }) });
       if (!r.ok) throw new Error(await r.text());
-      const { path } = await r.json();
       await loadSpiritRituals();
-      openEditor([path]);
+      location.hash = "#/spirits/ritual/" + encodeURIComponent(sp) + "/" + encodeURIComponent(name.trim());
     } catch (e) { showToast("Couldn't create ritual: " + (e.message || e), null, "error"); }
   });
 }
@@ -197,10 +200,8 @@ function newSpirit() {
     try {
       const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
       if (!r.ok) throw new Error(await r.text());
-      const { path } = await r.json();
-      await loadSpiritRituals();
       loadSpiritsStatus();
-      openEditor([`spirits/${name.trim()}/identity.md`, path], 1);
+      location.hash = "#/spirits/" + encodeURIComponent(name.trim());
     } catch (e) { showToast("Couldn't create spirit: " + (e.message || e), null, "error"); }
   });
 }
@@ -453,8 +454,9 @@ function fmValue(fmLines, key) {
 }
 // fmSurgery — replace / insert (after ritual:, else at top) / delete one key's
 // line in the original fm block. Returns new lines; everything else verbatim.
+// The key is escaped for the match (chargebook keys carry dots) but written raw.
 function fmSurgery(fmLines, key, value) {
-  const re = new RegExp("^" + key + ":");
+  const re = new RegExp("^" + key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ":");
   const idx = fmLines.findIndex((ln) => re.test(ln));
   const out = [...fmLines];
   if (value === null) { if (idx >= 0) out.splice(idx, 1); return out; }
