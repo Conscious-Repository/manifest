@@ -502,11 +502,18 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	var task daily.Task
 	switch {
 	case strings.HasPrefix(b.TodoID, "aion:") && s.aion != nil:
-		// an aion backlog pick: seat with the `aion:<id>` backlink (syncAionTasks
-		// mirrors ticks back to the backlog). No promote — the id is content-stable.
+		// a domain-backlog pick: seat with the `<domain>:<id>` backlink
+		// (syncAionTasks mirrors ticks back). No promote — the id is content-stable.
 		it := s.aion.LoadBacklog().Find(strings.TrimPrefix(b.TodoID, "aion:"))
 		if it == nil {
 			http.Error(w, "aion task not found", http.StatusNotFound)
+			return
+		}
+		task = daily.Task{Text: it.Text, TodoID: b.TodoID}
+	case strings.HasPrefix(b.TodoID, "re:") && s.re != nil:
+		it := s.re.LoadBacklog().Find(strings.TrimPrefix(b.TodoID, "re:"))
+		if it == nil {
+			http.Error(w, "re task not found", http.StatusNotFound)
 			return
 		}
 		task = daily.Task{Text: it.Text, TodoID: b.TodoID}
@@ -576,11 +583,15 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("rockId and text are required"))
 		return
 	}
-	// AION captures land in the aion backlog (system/aion/backlog.md), not the
-	// personal todos board — so they project onto Todos/Goals AND ride the
-	// aionbio portal publish diff like any other backlog item.
+	// Domain captures land in the DOMAIN backlog, not the personal todos board —
+	// so they project onto that domain's Rocks view (and, for aion, ride the
+	// portal publish diff like any other backlog item).
 	if s.aion != nil && strings.HasPrefix(rockID, "aion/") {
-		s.captureAionBacklog(w, date, rockID, text)
+		s.captureDomainBacklog(w, s.aion, "aion:", date, rockID, text)
+		return
+	}
+	if s.re != nil && strings.HasPrefix(rockID, "ooda-group/") {
+		s.captureDomainBacklog(w, s.re, "re:", date, rockID, text)
 		return
 	}
 	if s.todosStore == nil {
@@ -651,31 +662,31 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, day)
 }
 
-// captureAionBacklog is the AION arm of day-capture: a free-typed task under an
-// aion focus slot becomes an aion backlog task ([kind:: task] [rock::], status
-// open), seated on the day with an `aion:<id>` backlink so ticks sync both ways
-// (syncAionTasks) and it rides the portal publish diff. Idempotent: the same
-// title reuses the existing item (aion ItemID = sha1(kind|title)), relinking the
-// rock if the existing copy sits under a different or blank one.
-func (s *Server) captureAionBacklog(w http.ResponseWriter, date, rockID, text string) {
+// captureDomainBacklog is the domain arm of day-capture: a free-typed task
+// under a domain focus slot becomes a backlog task ([kind:: task] [rock::],
+// status open) in that domain's backlog, seated on the day with a
+// `<prefix><id>` backlink so ticks sync both ways (syncAionTasks). Idempotent:
+// the same title reuses the existing item (ItemID = sha1(kind|title)),
+// relinking the rock if the existing copy sits under a different or blank one.
+func (s *Server) captureDomainBacklog(w http.ResponseWriter, st *aion.Store, idPrefix, date, rockID, text string) {
 	now := time.Now()
 	it := &aion.BacklogItem{
 		Kind: aion.KindTask, Text: text, Rock: rockID,
 		Owner: s.ownerInitials, Status: aion.StatusOpen, Captured: now.Format("2006-01-02"),
 	}
-	if err := s.aion.AddItem(it); err != nil {
-		existing := s.aion.LoadBacklog().Find(aion.ItemID(aion.KindTask, text))
+	if err := st.AddItem(it); err != nil {
+		existing := st.LoadBacklog().Find(aion.ItemID(aion.KindTask, text))
 		if existing == nil {
 			httpError(w, err)
 			return
 		}
 		it.ID = existing.ID
 		if existing.Rock != rockID {
-			_ = s.aion.UpdateItem(it.ID, map[string]string{"rock": rockID}, now)
+			_ = st.UpdateItem(it.ID, map[string]string{"rock": rockID}, now)
 		}
 	}
 	s.stampRockMoved(rockID) // capture is movement
-	ref := "aion:" + it.ID
+	ref := idPrefix + it.ID
 	day, err := s.svc.Load(date)
 	if err != nil {
 		httpError(w, err)

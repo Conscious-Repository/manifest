@@ -643,6 +643,24 @@ function openPropInspector(p, t) {
   } else {
     host.append(field("owner", sel));
   }
+  // stage: file the task under one of THIS property's stages ("" = it rides
+  // the current stage) — the server refuses names outside the pipeline
+  if ((p.work || []).length) {
+    const stSel = document.createElement("select");
+    stSel.className = "pp-in";
+    const sopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; stSel.append(o); };
+    sopt("", "current stage");
+    (p.work || []).forEach((st) => sopt(st.text, st.text));
+    stSel.value = t.stage || "";
+    stSel.onchange = async () => {
+      try {
+        await postJSONOk("/api/todos/update", { id: compositeId(p, t), stage: stSel.value });
+        t.stage = stSel.value;
+        renderProperties();
+      } catch (e) { showToast("Couldn't move the task — " + (e.message || "")); }
+    };
+    host.append(field("stage", stSel));
+  }
   host.append(field("property", el("span", "pp3-insp-val", p.short || p.address || p.slug)));
   if (t.added) host.append(field("added", el("span", "pp3-insp-val", t.added)));
   host.append(note);

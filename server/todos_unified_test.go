@@ -222,3 +222,35 @@ func TestSplitPropID(t *testing.T) {
 		}
 	}
 }
+
+// A property todo files under one of THIS property's stages via {stage} on
+// /api/todos/update — names outside the pipeline are refused, "" clears.
+func TestPropTodoStageUpdate(t *testing.T) {
+	srv, vault := unifiedHarness(t)
+	post := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/api/todos/update", strings.NewReader(body))
+		srv.handleTodoUpdate(rec, req)
+		return rec
+	}
+	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":"rough-in"}`); rec.Code != 200 {
+		t.Fatalf("stage set: %d %s", rec.Code, rec.Body.String())
+	}
+	raw, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
+	if !strings.Contains(string(raw), "chase gutter bid") || !strings.Contains(string(raw), "[stage:: Rough-in]") {
+		t.Fatalf("stage not stamped (canonical casing):\n%s", raw)
+	}
+	// a name outside the property's pipeline is refused
+	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":"Lease-up"}`); rec.Code == 200 {
+		t.Fatalf("foreign stage accepted: %s", rec.Body.String())
+	}
+	// "" clears — the task rides the current stage again
+	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":""}`); rec.Code != 200 {
+		t.Fatalf("stage clear: %d %s", rec.Code, rec.Body.String())
+	}
+	raw, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
+	if strings.Contains(string(raw), "[stage::") {
+		t.Fatalf("stage not cleared:\n%s", raw)
+	}
+}

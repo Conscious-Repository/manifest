@@ -409,6 +409,27 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 			if b.Owner != nil {
 				t.Owner = strings.TrimSpace(*b.Owner)
 			}
+			if b.Stage != nil {
+				// stage vocabulary = THIS property's own `## stages` names
+				// ("" clears — the task rides the current stage again)
+				want := strings.TrimSpace(*b.Stage)
+				if want != "" {
+					matched := ""
+					if p, found := s.realestate.Get(slug); found {
+						for _, st := range p.Work {
+							if strings.EqualFold(st.Text, want) {
+								matched = st.Text
+								break
+							}
+						}
+					}
+					if matched == "" {
+						return list, false, errBadRequest("no stage named " + want + " on this property")
+					}
+					want = matched
+				}
+				t.Stage = want
+			}
 			return list, true, nil
 		}) {
 			writeJSON(w, s.todosView())

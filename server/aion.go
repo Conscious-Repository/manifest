@@ -10,25 +10,29 @@ import (
 	"manifest/goals"
 )
 
-// syncAionTasks mirrors day-note ticks for aion-backed tasks (Task.TodoID
-// "aion:<id>") into the aion backlog: done → status done (stamps done_on +
-// the Rock's moved::), unticked → status open. The aion twin of syncTodoTasks.
+// syncAionTasks mirrors day-note ticks for backlog-backed tasks (Task.TodoID
+// "aion:<id>" / "re:<id>") into the owning domain backlog: done → status done
+// (stamps done_on + the Rock's moved::), unticked → status open. The domain
+// twin of syncTodoTasks.
 func (s *Server) syncAionTasks(tasks []daily.Task) {
-	if s.aion == nil {
-		return
-	}
 	now := time.Now()
 	for _, t := range tasks {
-		if !strings.HasPrefix(t.TodoID, "aion:") {
+		var st *aion.Store
+		var id string
+		switch {
+		case strings.HasPrefix(t.TodoID, "aion:") && s.aion != nil:
+			st, id = s.aion, strings.TrimPrefix(t.TodoID, "aion:")
+		case strings.HasPrefix(t.TodoID, "re:") && s.re != nil:
+			st, id = s.re, strings.TrimPrefix(t.TodoID, "re:")
+		default:
 			continue
 		}
-		id := strings.TrimPrefix(t.TodoID, "aion:")
 		status := aion.StatusOpen
 		if t.Done {
 			status = aion.StatusDone
 		}
-		if err := s.aion.UpdateItem(id, map[string]string{"status": status}, now); err == nil && t.Done {
-			if it := s.aion.LoadBacklog().Find(id); it != nil && it.Rock != "" {
+		if err := st.UpdateItem(id, map[string]string{"status": status}, now); err == nil && t.Done {
+			if it := st.LoadBacklog().Find(id); it != nil && it.Rock != "" {
 				s.stampRockMoved(it.Rock)
 			}
 		}

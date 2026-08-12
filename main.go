@@ -256,7 +256,7 @@ func main() {
 			log.Printf("seeding real-estate backlog: %v", err)
 		}
 	}
-	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore, aionStore, orDefault(cfg.OwnerInitials, "BA")))
+	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
