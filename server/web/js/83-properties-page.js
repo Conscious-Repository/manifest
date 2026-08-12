@@ -111,12 +111,42 @@ async function renderPropertyPage(slug) {
   stages.forEach((st) => {
     const isCur = !!st.current;
     const line = el("div", "pp3-stage" + (st.checked ? " done" : "") + (isCur ? " cur" : ""));
-    line.append(el("span", "pp3-stage-glyph", st.checked ? "✓" : isCur ? "→" : "○"));
-    line.append(el("span", "pp3-stage-name", st.text || ""));
+    // glyph doubles as the done toggle (server stamps [done:: date] on check)
+    const glyph = el("button", "pp3-stage-glyph pp3-stage-check", st.checked ? "✓" : isCur ? "→" : "○");
+    glyph.title = st.checked ? "mark stage not done" : "mark stage done";
+    glyph.onclick = (e) => { e.stopPropagation(); propWorkOp(p, { op: "check", id: st.id, checked: !st.checked }); };
+    line.append(glyph);
+    // name — click to rename in place
+    const name = el("span", "pp3-stage-name", st.text || "");
+    name.title = "click to rename";
+    name.onclick = () => {
+      const input = inputEl(""); input.value = st.text || ""; input.classList.add("work-edit");
+      input.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" && input.value.trim()) propWorkOp(p, { op: "edit", id: st.id, text: input.value.trim() });
+        else if (ev.key === "Escape") input.replaceWith(name);
+      });
+      input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(name); });
+      name.replaceWith(input); input.focus();
+    };
+    line.append(name);
+    // delete — arm-to-confirm (cascades tethered bids server-side)
+    const del = el("button", "pp3-stage-x", "✕");
+    del.title = "delete stage";
+    del.onclick = (e) => {
+      e.stopPropagation();
+      const yes = el("button", "pp3-stage-x armed", "delete?");
+      yes.onclick = () => propWorkOp(p, { op: "delete", id: st.id });
+      del.replaceWith(yes);
+      setTimeout(() => { if (yes.parentNode) yes.replaceWith(del); }, 2500);
+    };
+    line.append(del);
     stagesSec.append(line);
     const nest = (byStage[st.text] || []).concat(isCur ? (byStage[""] || []) : []);
     nest.forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
   });
+  if (stages.length) {
+    stagesSec.append(ghostInput("＋ stage", "pp3-stage-add", (v) => propWorkOp(p, { op: "add-stage", text: v }), "stage name…"));
+  }
   if (!stages.length) {
     // no stage pipeline yet — flat list, plus a seed action from the template
     open.forEach((t) => stagesSec.append(propTodoRow(p, t)));
@@ -521,6 +551,17 @@ function ledgerForm(p, r, i) {
 }
 
 function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }
+
+// propWorkOp — the one op endpoint for the `## work` stage pipeline
+// (check · edit · delete · add-stage · add-todo · set-field). Re-renders the
+// property on success so the stage list, progress bar and hard-cost rollup
+// all re-derive from the fresh record.
+async function propWorkOp(p, body) {
+  try {
+    await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body);
+    renderProperties();
+  } catch (e) { showToast("Couldn't update the stage — " + (e.message || "")); }
+}
 
 function propTodoRow(p, t) {
   const row = el("div", "pp3-todo" + (t.checked ? " done" : "") + (propSelTodoId === t.id ? " sel" : ""));

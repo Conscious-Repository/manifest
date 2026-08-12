@@ -509,7 +509,24 @@ function boardCard(r, colKey) {
     e.dataTransfer.setData("text/todo-col", colKey);
     e.dataTransfer.effectAllowed = "move";
   });
-  card.append(el("div", "tdo-card-text", r.text));
+  // text — click to edit in place (mirrors the list's rankedRow); dragging is
+  // suspended while the input is open so text selection doesn't start a drag.
+  const textEl = el("div", "tdo-card-text", r.text);
+  textEl.title = "click to edit";
+  textEl.onclick = (e) => {
+    e.stopPropagation();
+    const input = inputEl(""); input.value = r.text; input.className = "work-edit tdo-card-edit";
+    const restore = () => { if (input.parentNode) input.replaceWith(textEl); card.draggable = true; };
+    card.draggable = false;
+    input.addEventListener("mousedown", (ev) => ev.stopPropagation());
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/todos/update", { id: r.id, text: input.value });
+      else if (ev.key === "Escape") restore();
+    });
+    input.addEventListener("blur", restore);
+    textEl.replaceWith(input); input.focus();
+  };
+  card.append(textEl);
   const meta = el("div", "tdo-card-meta");
   meta.append(el("span", "", r.container && r.container.name || ""));
   if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));

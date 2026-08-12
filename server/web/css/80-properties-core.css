@@ -284,6 +284,14 @@
 .pp3-stage.done { text-decoration: line-through; color: var(--base-40); }
 .pp3-stage.cur { color: var(--accent); font-weight: 500; }
 .pp3-stage-glyph { font-family: var(--mono); font-size: 11px; flex: none; width: 14px; }
+.pp3-stage-check { background: none; border: none; padding: 0; cursor: pointer; color: inherit; text-align: left; }
+.pp3-stage-check:hover { color: var(--accent); }
+.pp3-stage-name { flex: 1; min-width: 0; cursor: text; }
+.pp3-stage-x { flex: none; background: none; border: none; cursor: pointer; color: var(--base-30); font-size: 11px; opacity: 0; transition: opacity 0.1s; }
+.pp3-stage:hover .pp3-stage-x { opacity: 1; }
+.pp3-stage-x:hover { color: var(--over); }
+.pp3-stage-x.armed { opacity: 1; color: var(--over); font-family: var(--mono); font-size: 10px; }
+.pp3-stage-add { margin-top: 6px; }
 .pp3-todo.nested { padding-left: 30px; }
 .pp3-uw-sec .re-uw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 8px 0; }
 .re-uw-field { display: flex; flex-direction: column; gap: 2px; }

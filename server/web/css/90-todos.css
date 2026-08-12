@@ -102,7 +102,8 @@
 .tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 7px 9px; background: var(--bg, #fff); cursor: grab; }
 .tdo-card:active { cursor: grabbing; }
 .tdo-card.done .tdo-card-text { text-decoration: line-through; color: var(--base-40); }
-.tdo-card-text { font-family: var(--sans); font-size: 13.5px; line-height: 1.35; }
+.tdo-card-text { font-family: var(--sans); font-size: 13.5px; line-height: 1.35; cursor: text; }
+.tdo-card-edit { width: 100%; box-sizing: border-box; font-size: 13.5px; }
 .tdo-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--base-40); align-items: baseline; }
 .tdo-card-wait, .tdo-card-rock { color: var(--base-50); }
 /* REVIEW: the result is the point of the column — one quiet read affordance */
