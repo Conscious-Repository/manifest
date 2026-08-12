@@ -54,7 +54,75 @@ func (s *Server) handlePropertiesList(w http.ResponseWriter, r *http.Request) {
 	}
 	deals, _ := s.realestate.Deals()
 	writeJSON(w, map[string]any{"properties": props, "deals": deals,
-		"templates": s.realestate.Templates(), "rePortal": s.rePortalPath != ""})
+		"templates": s.realestate.Templates(), "rePortal": s.rePortalPath != "",
+		// derived, never typed (RE spec §2): entity name → {owned, acquiring}
+		"holdings": realestate.Holdings(props)})
+}
+
+// ---- global underwriting assumptions (RE spec §3 Settings / §4) ----
+
+// assumptionsRel is the record path under the realestate root.
+func (s *Server) assumptionsRel() string {
+	return s.realestateRootOr() + "/" + realestate.AssumptionsFile
+}
+
+// loadAssumptions reads + parses the record (missing file → defaults).
+func (s *Server) loadAssumptions() realestate.Assumptions {
+	raw, _ := os.ReadFile(filepath.Join(s.vault.VaultRoot(), filepath.FromSlash(s.assumptionsRel())))
+	return realestate.ParseAssumptions(string(raw))
+}
+
+// handleAssumptionsGet returns the 15 global values + labels + canonical order
+// + the derived override index (who overrides each key — from property/deal
+// source.json sidecars, so Settings cannot claim an override nothing backs).
+func (s *Server) handleAssumptionsGet(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"values":    s.loadAssumptions().Values,
+		"keys":      realestate.AssumptionKeys,
+		"labels":    realestate.AssumptionLabels,
+		"overrides": s.realestate.AssumptionOverrides(),
+	})
+}
+
+// handleAssumptionsPut saves edited values (whole-map PUT; only known keys).
+// Creates the record on first save.
+func (s *Server) handleAssumptionsPut(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Values map[string]float64 `json:"values"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	rel := s.assumptionsRel()
+	raw, err := os.ReadFile(filepath.Join(s.vault.VaultRoot(), filepath.FromSlash(rel)))
+	if err != nil {
+		if _, cerr := s.vault.CreateRecord(rel, realestate.SeedAssumptions()); cerr != nil {
+			httpError(w, cerr)
+			return
+		}
+		raw, _ = os.ReadFile(filepath.Join(s.vault.VaultRoot(), filepath.FromSlash(rel)))
+	}
+	a := realestate.ParseAssumptions(string(raw))
+	for k, v := range b.Values {
+		if err := a.SetAssumption(k, v); err != nil {
+			httpError(w, errBadRequest(err.Error()))
+			return
+		}
+	}
+	if err := s.vault.WriteCap("realestate", rel, []byte(realestate.EmitAssumptions(a))); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"values": a.Values})
 }
 
 // handlePublishDeals recomposes the ooda site's deals.json from the vault's
@@ -455,8 +523,15 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	case "owner", "owner-addr", "owner-since": // owner of record — free text ("" clears)
+	case "from": // the seller while acquiring (RE spec §2 OWNER) — free text, "" once closed
+	case "until": // the exit condition — free text ("" clears)
+	case "drive", "agc": // artifact links — URLs, linked never mirrored ("" clears)
+		if val != "" && !strings.HasPrefix(val, "http://") && !strings.HasPrefix(val, "https://") {
+			httpError(w, errBadRequest(key+" must be a URL"))
+			return
+		}
 	default:
-		httpError(w, errBadRequest("key must be status, kind, entity, work-start, or owner/owner-addr/owner-since"))
+		httpError(w, errBadRequest("key must be status, kind, entity, work-start, from, until, drive, agc, or owner/owner-addr/owner-since"))
 		return
 	}
 	rel, ok := s.propertyRel(r.PathValue("slug"))
@@ -1576,12 +1651,39 @@ func (s *Server) handleEntitySave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Owners          *[]realestate.Owner `json:"owners"`
-		AdminCategories *[]string           `json:"adminCategories"`
+		Owners          *[]realestate.Owner         `json:"owners"`
+		AdminCategories *[]string                   `json:"adminCategories"`
+		Partnered       *bool                       `json:"partnered"`
+		Accounts        *[]realestate.EntityAccount `json:"accounts"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
+	}
+	if b.Partnered != nil {
+		if err := s.vault.SetFrontmatterField(target.Path, "partnered", strconv.FormatBool(*b.Partnered)); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	if b.Accounts != nil {
+		var items []string
+		for _, a := range *b.Accounts {
+			label := strings.TrimSpace(a.Label)
+			if label == "" {
+				continue
+			}
+			kind := strings.TrimSpace(a.Kind)
+			state := strings.TrimSpace(a.State)
+			if state == "" {
+				state = "not-connected"
+			}
+			items = append(items, `"`+label+` | `+kind+` | `+state+`"`)
+		}
+		if err := s.vault.SetFrontmatterField(target.Path, "accounts", "["+strings.Join(items, ", ")+"]"); err != nil {
+			httpError(w, err)
+			return
+		}
 	}
 	if b.Owners != nil {
 		for _, o := range *b.Owners {

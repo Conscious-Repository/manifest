@@ -106,6 +106,12 @@ func TestCorpusRealestate(t *testing.T) {
 		case strings.HasSuffix(path, ".md"):
 			mds++
 			raw := read(t, path)
+			// assumptions.md: whole-file parse→emit fixpoint (RE spec §3)
+			if strings.HasSuffix(path, string(filepath.Separator)+realestate.AssumptionsFile) {
+				if got := realestate.EmitAssumptions(realestate.ParseAssumptions(raw)); got != raw {
+					t.Fatalf("assumptions.md diverged:\n--- have\n%s\n--- emit\n%s", raw, got)
+				}
+			}
 			// the fixpoint contract on records is per-SECTION (## work) — the
 			// store writes surgically, never whole-file
 			if sec, ok := section(raw, "work"); ok {
