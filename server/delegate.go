@@ -170,24 +170,41 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("unknown harness "+b.Harness))
 		return
 	}
-	// the request line: the brief (or the todo's own text) + the durable token
-	text := strings.TrimSpace(b.Brief)
-	if text == "" {
-		if s.todosStore != nil {
-			if doc, err := s.todosStore.Load(); err == nil {
-				if _, t := doc.Find(b.ID); t != nil {
-					text = t.Text
-				}
+	// the request line: brief + ALWAYS the todo's own text + the durable token.
+	// The todo text must never be dropped — it is the only unambiguous handle
+	// the agent has on what the id refers to. Sending only the (opaque,
+	// sometimes shared) id forces the agent to guess the subject, which is how
+	// a delegation ends up producing the wrong artifact (see the courier run
+	// that wrote "analytical psych" for the UAE goal in Aug 2026).
+	var todoText string
+	if s.todosStore != nil {
+		if doc, err := s.todosStore.Load(); err == nil {
+			if _, t := doc.Find(b.ID); t != nil {
+				todoText = t.Text
 			}
 		}
+	}
+	var request string
+	if todoText != "" {
+		request = "TASK (from your todo board): " + todoText
+		if brief := strings.TrimSpace(b.Brief); brief != "" {
+			request += "\nBRIEF: " + brief
+		}
+		if c := strings.TrimSpace(b.Comment); c != "" {
+			request += "\nOWNER COMMENT (on the previous result): " + c
+		}
+		request += "\nFor this todo: [todo:: " + b.ID + "]"
+	} else {
+		// no todo text found — fall back to brief-only (never silently drop text)
+		text := strings.TrimSpace(b.Brief)
 		if text == "" {
 			text = "work the delegated todo"
 		}
+		if c := strings.TrimSpace(b.Comment); c != "" {
+			text += " — owner comment on the previous result: " + c
+		}
+		request = text + " [todo:: " + b.ID + "]"
 	}
-	if c := strings.TrimSpace(b.Comment); c != "" {
-		text += " — owner comment on the previous result: " + c
-	}
-	request := text + " [todo:: " + b.ID + "]"
 	if err := target.Spirits.SpoolRunNow(b.Spirit, b.Ritual, request, ""); err != nil {
 		if errors.Is(err, spirits.ErrAlreadyActive) {
 			w.WriteHeader(http.StatusConflict)
