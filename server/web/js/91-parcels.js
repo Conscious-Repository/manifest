@@ -103,59 +103,6 @@ function parcelPopup(p, layer) {
   return box;
 }
 
-// ---- spreadsheet view (#/properties/parcels) ----
-let parcelFilter = ""; // "" | delinquent | lra
-
-async function renderParcelsView() {
-  const host = els.propertyParcels;
-  host.hidden = false;
-  host.innerHTML = "";
-  const parcels = await loadParcels();
-
-  const nDelinq = parcels.filter((p) => p.taxStatus === "delinquent").length;
-  const nLra = parcels.filter((p) => p.taxStatus === "lra").length;
-
-  const head = el("div", "parcels-head");
-  const chips = el("div", "parcels-filters");
-  const mkChip = (key, label) => {
-    const c = el("a", "filter-chip" + (parcelFilter === key ? " on" : ""), label);
-    c.href = "#"; c.onclick = (e) => { e.preventDefault(); parcelFilter = key; renderParcelsView(); };
-    return c;
-  };
-  chips.append(mkChip("", "all " + parcels.length), mkChip("delinquent", "delinquent " + nDelinq), mkChip("lra", "LRA " + nLra));
-  const exp = el("a", "pill light parcels-export", "Export CSV ↓");
-  exp.href = "/api/parcels/export";
-  head.append(chips, exp);
-  host.append(head);
-
-  const rows = parcelFilter ? parcels.filter((p) => p.taxStatus === parcelFilter) : parcels;
-  const table = el("div", "parcels-table");
-  const hdr = el("div", "parcels-row parcels-hdr");
-  ["address", "owner", "acquired", "tax status", "balance", "assessed", "notes"].forEach((h, i) =>
-    hdr.append(el("div", "pc pc-" + i, h)));
-  table.append(hdr);
-
-  rows.forEach((p) => {
-    const r = el("div", "parcels-row parcels-r pc-tax-" + p.taxStatus);
-    r.append(el("div", "pc pc-0", p.address));
-    r.append(el("div", "pc pc-1", p.owner || "—"));
-    r.append(el("div", "pc pc-2", p.saleDate || p.recDate || "—"));
-    r.append(el("div", "pc pc-3 pc-status", PARCEL_TAX_LABEL[p.taxStatus] || p.taxStatus));
-    r.append(el("div", "pc pc-4", p.taxBalDue ? fmtMoney(p.taxBalDue) : "—"));
-    r.append(el("div", "pc pc-5", p.assessed ? fmtMoney(p.assessed) : "—"));
-    const notesCell = el("div", "pc pc-6 pc-notes");
-    notesCell.textContent = (p.log || []).length ? "🗒 " + p.log.length : "";
-    notesCell.title = (p.log || []).join("\n");
-    r.append(notesCell);
-    r.onclick = () => openParcelNote(p);
-    table.append(r);
-  });
-  host.append(table);
-}
-
-// openParcelNote jumps to the universal note view for a parcel (raw record +
-// the ## log), where notes can also be read/added by hand. postJSON is the
-// shared global helper from 60-contacts.js.
-function openParcelNote(p) {
-  location.hash = "#/note/" + encodeURIComponent(p.path);
-}
+// (The standalone parcels spreadsheet view was removed — parcels now live only
+//  as the map overlay above (addParcelsOverlay) + the property-page intel join.
+//  loadParcels + parcelPopup + PARCEL_TAX_* stay as the overlay's dependencies.)

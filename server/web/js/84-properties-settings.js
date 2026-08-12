@@ -64,10 +64,12 @@ function ownerAutocomplete(placeholder, onSet) {
   return ta;
 }
 
-// The Settings tab rail (RE spec §3): Assumptions · Entities · Partners ·
-// Contractors · Lenders · Tenants. Existing sections fold in: org chart +
-// statement accounts + templates under Entities; the people.md assignee
-// registry under Contractors.
+// The Settings view — the AION ORG mirror: a 176px registry sub-rail
+// (Assumptions · Entities · Partners · Contractors · Lenders · Tenants ·
+// People, each with a count + a File/⌘-raw box) over ONE pane at a time.
+// Reuses the .aion-org* classes so the shape matches AION's Org tab. Existing
+// sections fold in: org chart + statement accounts + templates under Entities;
+// people.md is now its own registry item.
 let reSettingsTab = "assumptions";
 
 async function renderREsettings() {
@@ -79,17 +81,37 @@ async function renderREsettings() {
   host.innerHTML = "";
   const ents = entitiesCache.entities || [];
 
-  // tab rail
-  const tabs = el("div", "re-set-tabs");
-  [["assumptions", "Assumptions"], ["entities", "Entities"], ["partners", "Partners"],
-   ["contractors", "Contractors"], ["lenders", "Lenders"], ["tenants", "Tenants"]].forEach(([key, label]) => {
-    const b = el("button", "re-set-tab" + (reSettingsTab === key ? " active" : ""), label);
+  const wrap = el("div", "aion-org");
+  const rail = el("div", "aion-org-rail");
+  const pane = el("div", "aion-org-pane");
+  wrap.append(rail, pane);
+  host.append(wrap);
+
+  rail.append(el("div", "aion-org-label", "Registries"));
+  const items = [
+    ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
+    ["entities", "Entities", ents.length, "system/realestate/entities.md"],
+    ["partners", "Partners", (entitiesCache.partners || []).length, "system/realestate/entities.md"],
+    ["contractors", "Contractors", (entitiesCache.contractors || []).length, "system/realestate/entities.md"],
+    ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
+    ["tenants", "Tenants", (entitiesCache.tenants || []).length, "system/realestate/entities.md"],
+    ["people", "People", null, "system/realestate/people.md"],
+  ];
+  let rel = "system/realestate/assumptions.md";
+  items.forEach(([key, label, n, path]) => {
+    if (key === reSettingsTab) rel = path;
+    const b = el("button", "aion-org-item" + (reSettingsTab === key ? " active" : ""));
+    b.append(el("span", "", label));
+    if (n !== null) b.append(el("span", "aion-org-count", String(n)));
     b.onclick = () => { reSettingsTab = key; renderREsettings(); };
-    tabs.append(b);
+    rail.append(b);
   });
-  host.append(tabs);
-  const pane = el("div", "re-set-pane");
-  host.append(pane);
+  const fileBox = el("div", "aion-org-file");
+  fileBox.append(el("div", "aion-org-label", "File"), el("div", "aion-org-path", rel));
+  const rawBtn = el("button", "aion-org-raw", "⌘/ edit raw");
+  rawBtn.onclick = () => openRawOverlay(rel);
+  fileBox.append(rawBtn);
+  rail.append(fileBox);
 
   if (reSettingsTab === "assumptions") { renderAssumptionsPanel(pane); return; }
   if (reSettingsTab === "partners") { renderFlatRegistry(pane, "partner", entitiesCache.partners || []); return; }
@@ -98,9 +120,9 @@ async function renderREsettings() {
   if (reSettingsTab === "contractors") {
     pane.append(el("div", "pp-section-head", "CONTRACTORS — records"));
     renderFlatRegistry(pane, "contractor", entitiesCache.contractors || []);
-    await rePeopleTable(pane); // the assignee registry rides this tab
     return;
   }
+  if (reSettingsTab === "people") { await rePeopleTable(pane); return; }
   renderEntitiesPanel(pane, ents);
 }
 

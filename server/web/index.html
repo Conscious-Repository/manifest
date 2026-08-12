@@ -56,6 +56,7 @@
       <span class="crumb-right">
         <span id="crumbMeta" class="crumb-meta"></span>
         <span id="aionPublishRail" class="aion-rail"></span>
+        <span id="rePublishRail" class="aion-rail"></span>
         <span id="dateNav" class="crumb-datenav" hidden>
           <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
           <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
@@ -293,12 +294,25 @@
     <div id="bookShelf" class="book-shelf"></div>
   </section>
 
-  <!-- PROPERTIES — Revision 3: one rail, one pane. A property is an address,
-       a status, one budget number, and todos. Map/parcels survive as
-       palette + rail destinations; everything else moved off-surface. -->
+  <!-- REAL ESTATE — mirrors AION: a top tab-bar over one body. BACKLOG (intake
+       + decisions + owner-grouped tasks) · PORTFOLIO (+ deals) · ROCKS · MONEY ·
+       MAP · SETTINGS. PUBLISH rides the breadcrumb (#rePublishRail). -->
   <section class="properties-view" id="propertiesView" hidden>
+    <div class="agent-head">
+      <span class="agent-title">REAL ESTATE</span>
+      <div class="agent-actions">
+        <span class="prop-toggle" id="reToggle">
+          <a class="filter-chip on" data-mode="backlog" href="#/properties">BACKLOG</a>
+          <a class="filter-chip" data-mode="portfolio" href="#/properties/portfolio">PORTFOLIO</a>
+          <a class="filter-chip" data-mode="rocks" href="#/properties/rocks">ROCKS</a>
+          <a class="filter-chip" data-mode="money" href="#/properties/money">MONEY</a>
+          <a class="filter-chip" data-mode="map" href="#/properties/map">MAP</a>
+          <a class="filter-chip" data-mode="settings" href="#/properties/settings">SETTINGS</a>
+        </span>
+        <button class="aion-raw-link" onclick="toggleRawOverlay()" title="Edit the raw markdown behind this tab">⌘/ edit raw</button>
+      </div>
+    </div>
     <div class="prop-shell">
-      <nav class="prop-rail" id="propRail"></nav>
       <div class="prop-pane" id="propPane">
         <div id="propertyBoard" class="property-board"></div>
         <div id="propertyMapWrap" hidden>
@@ -306,7 +320,6 @@
           <div id="propertyMapLegend" class="property-map-legend"></div>
           <div id="propertyUnmapped" class="property-unmapped" hidden></div>
         </div>
-        <div id="propertyParcels" class="property-parcels" hidden></div>
         <div id="propertySettings" class="property-settings" hidden></div>
         <div id="propertyPage" class="property-page" hidden></div>
       </div>

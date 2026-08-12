@@ -55,10 +55,10 @@ const els = {
   // PROPERTIES — real-estate cockpit
   propertiesView: document.getElementById("propertiesView"),
   propertyBoard: document.getElementById("propertyBoard"),
-  propRail: document.getElementById("propRail"),
+  reToggle: document.getElementById("reToggle"),
+  rePublishRail: document.getElementById("rePublishRail"),
   propInspector: document.getElementById("propInspector"),
   propertyPage: document.getElementById("propertyPage"),
-  propertyParcels: document.getElementById("propertyParcels"),
   propertySettings: document.getElementById("propertySettings"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),
   propertyMap: document.getElementById("propertyMap"),

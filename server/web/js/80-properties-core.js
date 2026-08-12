@@ -1,17 +1,16 @@
-// ---- REAL ESTATE — the domain surface (RE spec §3: eight screens) ----
-// One rail, one pane. Views: Rocks (org work) · Portfolio · Decisions ·
-// Intake · Money · Settings, plus the quiet Outstanding/Map/Parcels lenses;
-// then the Deals group and the Properties group. A property is a rock
-// structurally (stages with tasks nested); the decision log is the aion
-// mirror at system/realestate/backlog.md. Every rail count derives from the
-// list it labels — no literals.
+// ---- REAL ESTATE — the domain surface, MIRRORING AION ----
+// A top tab-bar (BACKLOG · PORTFOLIO · ROCKS · MONEY · MAP · SETTINGS) over one
+// body. BACKLOG consolidates intake + decisions + owner-grouped tasks (aion's
+// backlog shape); PORTFOLIO folds in Deals; SETTINGS is the org-style registry
+// sub-rail. PUBLISH rides the breadcrumb. Decision log = system/realestate/
+// backlog.md, the aion mirror. Bare #/properties = BACKLOG (like #/aion).
 let propertyCache = [];
 let dealCache = [];
 let templateCache = [];
 let holdingsCache = {};      // entity name → {owned, acquiring} (derived server-side)
 let reBacklogCache = null;   // /api/re/backlog — {items, goalsArea, publish}
 let rePortalEnabled = false; // deals.json publish configured server-side
-let propMode = "portfolio"; // rocks | portfolio | decisions | intake | money | settings | outstanding | map | parcels | page | deal
+let propMode = "backlog"; // backlog | portfolio | rocks | money | map | settings | page | deal
 let propSlug = "";    // the open property (page mode)
 let propDealSlug = ""; // the open deal (deal mode)
 let propTodosMeta = null; // /api/todos payload — assignees + outstanding (one truth)
@@ -21,22 +20,51 @@ function showProperties(h) {
   els.propertyPage.hidden = true;
   els.propertyMapWrap.hidden = true;
   els.propertyBoard.hidden = true;
-  if (els.propertyParcels) els.propertyParcels.hidden = true;
   if (els.propertySettings) els.propertySettings.hidden = true;
   closePropInspector();
-  // legacy sub-tab routes fold into the rail views
-  if (["work", "accounting", "statements", "contractors"].includes(tail)) {
-    location.hash = "#/properties";
-    return;
-  }
+  // legacy sub-tab routes fold into the current tabs
+  if (["work", "accounting", "statements", "contractors"].includes(tail)) { location.hash = "#/properties"; return; }
+  if (["decisions", "intake", "outstanding"].includes(tail)) { location.hash = "#/properties"; return; } // → BACKLOG
+  if (["parcels", "all"].includes(tail)) { location.hash = "#/properties/portfolio"; return; }
   propSlug = "";
   propDealSlug = "";
-  const VIEWS = ["rocks", "portfolio", "decisions", "intake", "money", "settings", "outstanding", "map", "parcels"];
+  const VIEWS = ["backlog", "portfolio", "rocks", "money", "settings", "map"];
   if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
-  else if (tail === "all" || tail === "") propMode = tail === "all" ? "portfolio" : propMode === "page" || propMode === "deal" ? "portfolio" : (VIEWS.includes(propMode) ? propMode : "portfolio");
+  else if (tail === "") propMode = (propMode === "page" || propMode === "deal") ? "backlog" : (VIEWS.includes(propMode) ? propMode : "backlog");
   else if (VIEWS.includes(tail)) propMode = tail;
   else { propMode = "page"; propSlug = tail; }
   renderProperties();
+}
+
+// renderReToggle — mirror showAion's chip-active toggle. page/deal keep
+// PORTFOLIO lit (they open from it).
+function renderReToggle() {
+  const active = (propMode === "page" || propMode === "deal") ? "portfolio" : propMode;
+  els.reToggle && els.reToggle.querySelectorAll(".filter-chip").forEach((b) =>
+    b.classList.toggle("on", b.dataset.mode === active));
+}
+
+// renderRePublishRail — mirror renderAionRail: the deals.json PUBLISH badge in
+// the breadcrumb (was the rail foot), plus the crumb meta line.
+function renderRePublishRail() {
+  const rail = els.rePublishRail;
+  if (!rail) return;
+  rail.innerHTML = "";
+  if (els.propertiesView.hidden) return;
+  const pub = (reBacklogCache && reBacklogCache.publish) || {};
+  if (typeof setCrumbMeta === "function") {
+    setCrumbMeta(activePortfolio().length + " active · " + propertyCache.length + " tracked");
+  }
+  if (!pub.configured) return;
+  const btn = el("button", "aion-publish-btn re-publish-btn", "PUBLISH");
+  const n = Object.values(pub.dirty || {}).filter(Boolean).length;
+  if (n) {
+    const badge = el("span", "aion-publish-badge", String(n));
+    badge.title = n + " contract file" + (n === 1 ? "" : "s") + " with unpublished changes";
+    btn.append(badge);
+  }
+  btn.onclick = openRePublishPanel;
+  rail.append(btn);
 }
 
 async function loadProperties() {
@@ -62,23 +90,17 @@ async function loadPropTodosMeta() {
 
 async function renderProperties() {
   await Promise.all([loadProperties(), loadPropTodosMeta(), loadReBacklog()]);
-  renderPropRail();
-  const openDecisions = reOpenDecisions().length;
-  if (typeof setCrumbMeta === "function") {
-    setCrumbMeta(activePortfolio().length + " active · " + propertyCache.length + " tracked" +
-      (openDecisions ? " · " + openDecisions + " open decisions" : ""));
-  }
+  renderReToggle();
+  renderRePublishRail();
   if (typeof railSetCount === "function") railSetCount("properties", propertyCache.length);
   if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
-  else if (propMode === "parcels") renderParcelsView();
   else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
   else if (propMode === "deal") { els.propertyBoard.hidden = false; renderDealPage(propDealSlug); }
   else if (propMode === "rocks") { els.propertyBoard.hidden = false; renderRERocks(); }
-  else if (propMode === "decisions") { els.propertyBoard.hidden = false; renderREDecisions(); }
-  else if (propMode === "intake") { els.propertyBoard.hidden = false; renderREIntake(); }
   else if (propMode === "money") { els.propertyBoard.hidden = false; renderREMoney(); }
-  else { els.propertyBoard.hidden = false; propMode === "outstanding" ? renderOutstanding() : renderPortfolio(); }
+  else if (propMode === "portfolio") { els.propertyBoard.hidden = false; renderPortfolio(); }
+  else { els.propertyBoard.hidden = false; renderREBacklog(); } // default = BACKLOG
 }
 
 // ---- derived helpers (RE spec §2: every count computed from its list) ----
@@ -110,71 +132,9 @@ function openTodoCount(p) {
   return (p.todos || []).filter((t) => !t.checked).length;
 }
 
-function renderPropRail() {
-  const host = els.propRail;
-  if (!host) return;
-  host.innerHTML = "";
-  const group = (label) => {
-    const g = el("div", "prop-rail-group");
-    g.append(el("div", "prop-rail-label", label));
-    host.append(g);
-    return g;
-  };
-  const item = (g, label, active, onclick, count, cls) => {
-    const a = el("button", "prop-rail-item" + (active ? " active" : "") + (cls ? " " + cls : ""));
-    a.append(el("span", "prop-rail-name", label));
-    if (count !== undefined) a.append(el("span", "prop-rail-count" + (count ? " some" : ""), count ? String(count) : ""));
-    a.onclick = onclick;
-    g.append(a);
-    return a;
-  };
-  // Views group (RE spec §3) — counts derive from the lists they label
-  const views = group("Views");
-  const outN = propOutstandingGroups().reduce((n, g) => n + g.count, 0);
-  item(views, "Rocks", propMode === "rocks", () => { location.hash = "#/properties/rocks"; }, reOrgRocks().length);
-  item(views, "Portfolio", propMode === "portfolio" || propMode === "page", () => { location.hash = "#/properties/portfolio"; }, activePortfolio().length);
-  item(views, "Decisions", propMode === "decisions", () => { location.hash = "#/properties/decisions"; }, reOpenDecisions().length);
-  item(views, "Intake", propMode === "intake", () => { location.hash = "#/properties/intake"; }, reIntakeCache.length || undefined);
-  item(views, "Money", propMode === "money", () => { location.hash = "#/properties/money"; });
-  item(views, "Settings", propMode === "settings", () => { location.hash = "#/properties/settings"; });
-  // quiet lenses
-  item(views, "Outstanding", propMode === "outstanding", () => { location.hash = "#/properties/outstanding"; }, outN, "quiet");
-  item(views, "Map", propMode === "map", () => { location.hash = "#/properties/map"; }, undefined, "quiet");
-  item(views, "Parcels", propMode === "parcels", () => { location.hash = "#/properties/parcels"; }, undefined, "quiet");
-  // Deals group
-  if (dealCache.length) {
-    const dg = group("Deals");
-    dealCache.forEach((d) => {
-      item(dg, d.name || d.slug, propMode === "deal" && propDealSlug === d.slug,
-        () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); });
-    });
-  }
-  // Properties group — the active portfolio for one-tap page access
-  const pg = group("Properties");
-  activePortfolio().forEach((p) => {
-    item(pg, p.short || p.address || p.slug, propMode === "page" && propSlug === p.slug,
-      () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); }, openTodoCount(p) || undefined);
-  });
-  const foot = el("div", "prop-rail-foot");
-  const add = el("button", "o-ghost", "＋ property");
-  add.onclick = () => { location.hash = "#/properties/portfolio"; propComposerOpen = true; renderProperties(); };
-  foot.append(add);
-  // PUBLISH — the ooda-portal export effector (deals.json + defaults.js);
-  // the badge = dirty contract files (current render vs checkout bytes)
-  const pub = (reBacklogCache && reBacklogCache.publish) || {};
-  if (pub.configured) {
-    const btn = el("button", "aion-publish-btn re-publish-btn", "PUBLISH");
-    const n = Object.values(pub.dirty || {}).filter(Boolean).length;
-    if (n) {
-      const badge = el("span", "aion-publish-badge", String(n));
-      badge.title = n + " contract file" + (n === 1 ? "" : "s") + " with unpublished changes";
-      btn.append(badge);
-    }
-    btn.onclick = openRePublishPanel;
-    foot.append(btn);
-  }
-  host.append(foot);
-}
+// (renderPropRail deleted — the left rail became the AION-style top tab-bar;
+//  #reToggle + renderRePublishRail replace it. Deals live in Portfolio, the
+//  per-property list is redundant with the Portfolio board, Parcels is gone.)
 
 // projMoney: one property's plan-vs-spend numbers (Rev 3's two figures).
 function projMoney(p) {

@@ -191,20 +191,8 @@
   .tdo-pill { grid-column: 2; grid-row: 2; justify-self: start; }
   .tdo-right { grid-column: 3; grid-row: 1 / 3; margin-left: 0; }
 
-  /* ---- PROPERTIES rail → horizontal strip (views stay reachable) ---- */
+  /* ---- PROPERTIES: the tab-bar (#reToggle) wraps; pane goes full-width ---- */
   .prop-shell { display: block; }
-  .prop-rail {
-    display: flex; width: auto; position: static; border-right: none;
-    border-bottom: 1px solid var(--base-25); padding: 4px 10px 10px;
-    gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center;
-  }
-  .prop-rail-group { flex-direction: row; flex: none; gap: 6px; align-items: center; }
-  .prop-rail-label { display: none; }
-  .prop-rail-foot { display: none; }
-  .prop-rail-item {
-    flex: none; width: auto; min-height: 40px; align-items: center;
-    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 14px;
-  }
   /* all-properties table: address 16px over status · count · › */
   .prop-cols { display: none; }
   .prop-row {

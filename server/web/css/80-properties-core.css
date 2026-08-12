@@ -13,28 +13,9 @@
 .dirty-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--base-00); border-top: 1px solid var(--base-25); z-index: 20; }
 .dirty-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; color: var(--base-40); flex: 1; }
 
-/* ---- the Rev-3 shell: rail · pane · inspector ---- */
+/* ---- the shell: pane · inspector (the left rail became the AION-style top
+   tab-bar — #reToggle in .agent-head; see index.html) ---- */
 .prop-shell { display: flex; align-items: stretch; min-height: calc(100vh - 41px); }
-.prop-rail {
-  width: 200px; flex: none;
-  border-right: 1px solid var(--base-25);
-  padding: 14px 0 18px; display: flex; flex-direction: column; gap: 18px;
-}
-.prop-rail-group { display: flex; flex-direction: column; }
-.prop-rail-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 14px 4px; white-space: nowrap; }
-.prop-rail-item {
-  display: flex; align-items: baseline; gap: 8px; width: 100%;
-  background: none; border: none; text-align: left; cursor: pointer;
-  padding: 4px 14px; font-family: var(--sans); font-size: 13px; color: var(--base-70);
-}
-.prop-rail-item:hover { background: var(--base-20); }
-.prop-rail-item.active { color: var(--accent); background: var(--base-20); }
-.prop-rail-item.quiet .prop-rail-name { color: var(--base-40); }
-.prop-rail-item.active.quiet .prop-rail-name { color: var(--accent); }
-.prop-rail-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.prop-rail-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-30); }
-.prop-rail-count.some { color: var(--base-40); }
-.prop-rail-foot { margin-top: auto; padding: 10px 14px 0; }
 .prop-pane { flex: 1; min-width: 0; padding: 18px 24px 32px; }
 .prop-inspector {
   width: 280px; flex: none;
@@ -42,7 +23,6 @@
   padding: 14px 16px; position: sticky; top: 0; align-self: flex-start;
 }
 @media (max-width: 1100px) { .prop-inspector { display: none; } }
-@media (max-width: 860px) { .prop-rail { display: none; } }
 
 /* ---- all-properties table: address · status · open todos ---- */
 .prop-cols { display: grid; grid-template-columns: 2.6fr 1fr 0.8fr; gap: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 2px 8px 6px; border-bottom: 1px solid var(--base-25); }
@@ -195,11 +175,13 @@
 .pp3-lform-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
 .pp3-lform .pp-in, .pp3-lform .est-in { width: 100%; box-sizing: border-box; }
 
-/* ===== RE domain views (RE spec §3, 2026-08-12): Rocks · Portfolio ·
-   Decisions · Intake · Money · Deal · Settings tabs ===== */
+/* ===== RE domain views — the AION mirror (2026-08-12): Backlog (intake +
+   decisions + owner-grouped tasks, reusing .aion-* classes) · Portfolio (+
+   deals) · Rocks · Money · Map · Settings (org-style .aion-org rail) ===== */
 
-/* rail: quiet lens rows read dimmer */
-.prop-rail-item.quiet .prop-rail-name { color: var(--base-40); }
+/* backlog: the intake lane sits above the decisions lane */
+.re-intake-lane:empty { display: none; }
+.re-intake-lane { margin-bottom: 6px; }
 
 /* portfolio: property · stage bar · open · spent */
 .pf-cols, .pf-row { grid-template-columns: 1fr 1.5fr 44px 70px; }
@@ -211,6 +193,11 @@
 .pf-spent.over { color: var(--over); }
 .pf-tracked-foot { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; padding: 8px; }
 .pf-tracked-foot:hover { color: var(--accent); }
+
+/* deals fold into the portfolio foot: name · member count */
+.pf-deals { margin-top: 22px; }
+.pf-deal-row { grid-template-columns: 1fr auto; }
+.pf-deal-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); text-align: right; }
 
 /* rocks: org-level 90-day work, rock → stage → task */
 .re-rock { padding: 12px 8px 10px; border-top: 1px solid #f0f0f0; border-left: 2px solid var(--accent-soft); margin-bottom: 4px; }

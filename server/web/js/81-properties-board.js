@@ -39,11 +39,28 @@ function renderPortfolio() {
   // tracked-but-inactive records stay reachable behind a quiet foot count
   const tracked = propertyCache.filter((p) => !p.hidden && !(p.control === "owned" || p.entity));
   if (tracked.length) {
-    const t = el("button", "pf-tracked-foot", "▸ " + tracked.length + " tracked (research) — see Map/Parcels");
-    t.onclick = () => { location.hash = "#/properties/parcels"; };
+    const t = el("button", "pf-tracked-foot", "▸ " + tracked.length + " tracked (research) — see Map");
+    t.onclick = () => { location.hash = "#/properties/map"; };
     host.append(t);
   }
   host.append(propertyComposer());
+
+  // Deals fold in here (was the rail's Deals group): each deal → its deal page.
+  if (dealCache.length) {
+    const dealsSec = el("div", "pf-deals");
+    const dh = el("div", "aion-sec-label");
+    dh.append(el("span", "aion-sec-title", "◈ Deals"), el("span", "aion-sec-count", String(dealCache.length)));
+    dealsSec.append(dh);
+    dealCache.forEach((d) => {
+      const members = propertyCache.filter((p) => (p.deal || "") === (d.name || d.slug) || (p.deal || "") === d.slug);
+      const row = el("div", "prop-row pf-deal-row");
+      row.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); };
+      row.append(el("span", "prop-addr", d.name || d.slug));
+      row.append(el("span", "pf-deal-meta", members.length + " propert" + (members.length === 1 ? "y" : "ies")));
+      dealsSec.append(row);
+    });
+    host.append(dealsSec);
+  }
 }
 
 function fmtMoneyShort(v) {
@@ -101,36 +118,8 @@ function propOutstandingGroups() {
     .filter((g) => g.container.kind === "property");
 }
 
-function renderOutstanding() {
-  const host = els.propertyBoard;
-  host.innerHTML = "";
-  const groups = propOutstandingGroups();
-  if (!groups.length) {
-    host.append(el("div", "pp-empty", "Nothing outstanding — nobody owes you anything right now."));
-    return;
-  }
-  groups.forEach((g) => {
-    const sec = el("div", "prop-out-group");
-    const head = el("div", "prop-out-head");
-    const name = el("span", "prop-out-name", g.container.name);
-    if (g.container.kind === "property") {
-      name.classList.add("linky");
-      name.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(g.container.slug); };
-    }
-    head.append(name, el("span", "prop-out-count", g.count + " owed to you"));
-    sec.append(head);
-    (g.items || []).forEach((r) => {
-      const row = el("div", "prop-row prop-out-row");
-      row.append(el("span", "prop-out-glyph", "○"), el("span", "prop-out-text", r.text));
-      row.append(el("span", "prop-owner", assigneeName(r.owner)));
-      if (g.container.kind === "property") {
-        row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(g.container.slug); };
-      }
-      sec.append(row);
-    });
-    host.append(sec);
-  });
-}
+// (renderOutstanding deleted — Outstanding folded into the Backlog view as
+//  non-"you" owner groups. propOutstandingGroups() stays; the Backlog reads it.)
 
 // mineOwner mirrors the substrate's rule: empty · "me" · my initials = me.
 function mineOwner(owner) {

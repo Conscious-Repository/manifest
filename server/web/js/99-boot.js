@@ -285,6 +285,7 @@ function route() {
   els.noteView.hidden = !note;
   els.dateNav.hidden = !day;
   if (!aionTab && els.aionPublishRail) els.aionPublishRail.innerHTML = ""; // the crumb PUBLISH slot is aion-only
+  if (!properties && els.rePublishRail) els.rePublishRail.innerHTML = ""; // the RE crumb PUBLISH slot is properties-only
   els.contentScroll.scrollTop = 0;
   refreshFeedBadge(); // the rail's Feed count doubles as the inbox badge — keep it honest everywhere
   if (goals) {

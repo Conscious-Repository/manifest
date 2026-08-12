@@ -4,60 +4,336 @@
 // re-backlog proposals (same approval cards as the FEED); Money is the
 // read-only transaction feed over the statement workbench + property select.
 
-// ---- DECISIONS — one lane for the portfolio ----
-// Open decisions: 2px ink left rule, --base-05 background, 500 weight.
-// Decided: flat, outcome in the meta line. One `open` boolean drives count,
-// weight, rule, and background together.
+// ---- BACKLOG — the AION mirror (system/realestate/backlog.md via
+// /api/re/backlog). One two-column surface that folds the old Decisions,
+// Intake and Outstanding views: an intake lane (transcript extractions
+// awaiting confirm), a decisions lane, owner-grouped tasks (re-backlog tasks +
+// property todos, mine and owed), and a sticky inspector. Reuses the .aion-*
+// backlog classes so the shape is pixel-identical to AION.
 let reDecidedOpen = false;
+let reDoneOpen = false;
+let reBacklogSelId = null;   // selected row id
+let reBacklogSelSrc = null;  // "re" (backlog item) | "prop" (property todo)
+const reFreshDone = new Set(); // re-tasks checked this session — held in place
 
-function renderREDecisions() {
+// rock helpers over the goals `## Real Estate` area (the org rocks).
+function reRockResolved(id) { return !!reOrgRocks().find((r) => r.id === id); }
+function reRockLabel(id) {
+  if (!id) return "";
+  const rock = reOrgRocks().find((r) => r.id === id);
+  if (rock) return rock.text;
+  return id.replace(/^(realestate|re)\//, "").replace(/-/g, " ");
+}
+
+function reBacklogSelect(src, id) {
+  if (reBacklogSelId === id && reBacklogSelSrc === src) { reBacklogSelId = null; reBacklogSelSrc = null; }
+  else { reBacklogSelId = id; reBacklogSelSrc = src; }
+  renderProperties();
+}
+
+function renderREBacklog() {
   const host = els.propertyBoard;
   host.innerHTML = "";
-  const items = reItems().filter((it) => it.kind === "decision");
-  const open = items.filter((it) => it.status !== "decided");
-  const decided = items.filter((it) => it.status === "decided");
-  host.append(el("div", "re-lane-head", "DECISIONS · " + open.length + " open · " + decided.length + " decided"));
-  if (!open.length && !decided.length) {
-    host.append(emptyRow("No decisions yet — capture one below, or confirm intake proposals."));
-  }
-  open.forEach((it) => host.append(reDecisionRow(it, true)));
-  host.append(ghostInput("＋ decision", "re-add", (v) =>
+  const wrap = el("div", "aion-backlog");
+  const list = el("div", "aion-list");
+  const insp = el("div", "aion-inspector");
+  wrap.append(list, insp);
+  host.append(wrap);
+
+  // -- intake lane: pending re-backlog proposals (fills async) --
+  const intakeLane = el("div", "re-intake-lane");
+  list.append(intakeLane);
+  fillREIntakeLane(intakeLane);
+
+  // -- decisions lane --
+  const items = reItems();
+  const decisions = items.filter((it) => it.kind === "decision");
+  const openDec = decisions.filter((it) => it.status !== "decided");
+  const decided = decisions.filter((it) => it.status === "decided");
+  const lane = el("div", "aion-dec-lane");
+  const lh = el("div", "aion-sec-label");
+  lh.append(el("span", "aion-sec-title", "◇ Decisions"),
+    el("span", "aion-sec-count", openDec.length + " open · " + decided.length + " decided"));
+  lh.append(ghostInput("＋ decision", "aion-add aion-sec-add", (v) =>
     rePost("/api/re/backlog/item", { kind: "decision", title: v }, "Decision added")));
+  lane.append(lh);
+  openDec.forEach((it) => lane.append(reBacklogDecRow(it)));
   if (decided.length) {
-    const t = el("button", "re-decided-toggle", (reDecidedOpen ? "▾" : "▸") + " decided · " + decided.length);
+    const t = el("button", "aion-done-toggle", (reDecidedOpen ? "▾" : "▸") + " decided · " + decided.length);
     t.onclick = () => { reDecidedOpen = !reDecidedOpen; renderProperties(); };
-    host.append(t);
-    if (reDecidedOpen) decided.forEach((it) => host.append(reDecisionRow(it, false)));
+    lane.append(t);
+    if (reDecidedOpen) decided.forEach((it) => lane.append(reBacklogDecRow(it)));
+  }
+  list.append(lane);
+
+  // -- owner-grouped tasks (the Outstanding fold): re-backlog tasks + property
+  //    todos, mine and owed, grouped by owner exactly like AION. Non-"you"
+  //    groups ARE Outstanding (work owed to you by others). --
+  const tasks = [];
+  items.filter((it) => it.kind === "task").forEach((it) =>
+    tasks.push({ src: "re", id: it.id, owner: it.owner || "", done: it.status === "done", it }));
+  ((propTodosMeta && propTodosMeta.rows) || []).forEach((r) => {
+    if (r.source === "property") tasks.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: r.container });
+  });
+  propOutstandingGroups().forEach((g) => (g.items || []).forEach((r) =>
+    tasks.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: g.container })));
+
+  const ME = ((propTodosMeta && propTodosMeta.me) || "BA").toUpperCase();
+  const bucket = (owner) => (mineOwner(owner) ? ME : owner.toUpperCase());
+  const doneInPlace = tasks.filter((t) => t.done && t.src === "re" && reFreshDone.has(t.id));
+  const doneTasks = tasks.filter((t) => t.done && !(t.src === "re" && reFreshDone.has(t.id)));
+  const openTasks = tasks.filter((t) => !t.done);
+
+  const groups = {};
+  const order = [];
+  openTasks.concat(doneInPlace).forEach((t) => {
+    const key = bucket(t.owner);
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push(t);
+  });
+  const openCount = (key) => groups[key].filter((t) => !t.done).length;
+  order.sort((a, b) => openCount(b) - openCount(a));
+  order.forEach((key) => {
+    const g = el("div", "aion-owner-group");
+    const gh = el("div", "aion-owner-head");
+    gh.append(el("span", "aion-owner-ini", key || "UNASSIGNED"));
+    if (key === ME) gh.append(el("span", "aion-owner-you", "· you"));
+    else {
+      const name = assigneeName(key);
+      if (name && name !== key) gh.append(el("span", "aion-owner-name", name));
+    }
+    gh.append(el("span", "aion-sec-count", String(openCount(key))));
+    g.append(gh);
+    groups[key].forEach((t) => g.append(reTaskRow(t)));
+    g.append(ghostInput("＋ task for " + key, "aion-add", (v) =>
+      rePost("/api/re/backlog/item", { kind: "task", title: v, owner: key }, "Task added → " + key)));
+    list.append(g);
+  });
+  list.append(ghostInput("＋ task", "aion-add", (v) =>
+    rePost("/api/re/backlog/item", { kind: "task", title: v }, "Task added")));
+
+  if (doneTasks.length) {
+    const t = el("button", "aion-done-toggle", (reDoneOpen ? "▾" : "▸") + " done · " + doneTasks.length);
+    t.onclick = () => { reDoneOpen = !reDoneOpen; renderProperties(); };
+    list.append(t);
+    if (reDoneOpen) doneTasks.forEach((td) => list.append(reTaskRow(td)));
+  }
+
+  // sticky inspector — phone gets the same renderer in a bottom sheet (AION)
+  if (window.mf && window.mf.phone()) {
+    if (reBacklogSelId) {
+      window.mfSheet.open((b) => renderREBacklogInspector(b), {
+        key: "re-backlog",
+        onClose: () => { if (reBacklogSelId) { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); } },
+        reopen: () => { if (!els.propertiesView.hidden) renderProperties(); },
+      });
+    } else {
+      window.mfSheet.closeIf("re-backlog");
+    }
+  } else {
+    renderREBacklogInspector(insp);
   }
 }
 
-function reDecisionRow(it, isOpen) {
-  const row = el("div", "re-decision" + (isOpen ? " open" : ""));
-  const main = el("div", "re-decision-main");
-  main.append(el("div", "re-decision-title", it.text));
-  const meta = el("div", "re-decision-meta");
+function reTaskRow(t) { return t.src === "re" ? reBacklogTaskRow(t.it) : rePropTodoRow(t); }
+
+function reBacklogDecRow(it) {
+  const decided = it.status === "decided";
+  const sel = reBacklogSelId === it.id && reBacklogSelSrc === "re";
+  const row = el("div", "aion-dec-row" + (decided ? " decided" : "") + (sel ? " sel" : ""));
+  row.append(el("span", "aion-dec-glyph", "◇"));
+  const main = el("div", "aion-main");
+  main.append(el("div", "aion-dec-text", it.text));
   const bits = [];
+  if (!decided && it.neededBy) bits.push("needed by " + it.neededBy);
   if (it.owner) bits.push("@" + it.owner);
-  if (it.rock) bits.push("⧗ " + it.rock);
-  if (isOpen && it.neededBy) bits.push("needed by " + it.neededBy);
-  if (!isOpen && it.decided) bits.push("decided " + it.decided);
-  if (!isOpen && it.outcome) bits.push("→ " + it.outcome);
-  if (it.sources && it.sources.length) bits.push("[[" + it.sources[0] + "]]");
-  meta.textContent = bits.join(" · ");
-  main.append(meta);
+  if (decided) bits.push("decided " + (it.decided || "") + (it.outcome ? " → " + it.outcome : ""));
+  main.append(el("div", "aion-item-meta", bits.join(" · ")));
   row.append(main);
-  if (isOpen) {
-    const acts = el("span", "re-decision-acts");
-    const outcome = inputEl("outcome — what was decided…");
-    outcome.className = "re-outcome-in";
-    const decide = pillLight("decide", () => {
-      if (!outcome.value.trim()) { showToast("write the outcome first"); outcome.focus(); return; }
-      rePost("/api/re/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
-    });
-    acts.append(outcome, decide);
-    row.append(acts);
-  }
+  row.append(el("span", "aion-status " + (decided ? "closed" : "open"), decided ? "DECIDED" : "OPEN"));
+  row.onclick = () => reBacklogSelect("re", it.id);
   return row;
+}
+
+// re-backlog task row — mirror aionTaskRow (check · title/meta · rock · —).
+function reBacklogTaskRow(it) {
+  const done = it.status === "done";
+  const alarmed = !done && !!it.due && it.due < isoToday();
+  const sel = reBacklogSelId === it.id && reBacklogSelSrc === "re";
+  const row = el("div", "aion-task-row" + (done ? " done" : "") + (alarmed ? " alarm" : "") + (sel ? " sel" : ""));
+  const c = el("button", "aion-check" + (done ? " off" : ""), done ? "●" : "○");
+  c.title = done ? "unmark — stays in place until PUBLISH" : "mark done (stays here until PUBLISH)";
+  c.onclick = (e) => {
+    e.stopPropagation();
+    if (done) reFreshDone.delete(it.id); else reFreshDone.add(it.id);
+    rePost("/api/re/backlog/" + it.id + "/update", { status: done ? "open" : "done" });
+  };
+  row.append(c);
+  const main = el("div", "aion-main");
+  main.append(el("div", "aion-title", it.text));
+  const bits = [];
+  if (it.due && !done) bits.push((alarmed ? "● overdue " : "due ") + it.due);
+  if (it.captured) bits.push(it.captured);
+  main.append(el("div", "aion-item-meta", bits.join(" · ")));
+  row.append(main);
+  const stale = it.rock && !reRockResolved(it.rock);
+  const tag = el("span", "aion-rock-tag" + (stale ? " stale" : ""), it.rock ? reRockLabel(it.rock) : "");
+  if (stale) tag.title = "closed/historic rock — reattach to a live rock";
+  row.append(tag);
+  row.onclick = () => reBacklogSelect("re", it.id);
+  return row;
+}
+
+// property-todo row — the Outstanding fold. Check writes through /api/todos;
+// the property name rides the rock-tag column; the row selects into a light
+// inspector that links to the property.
+function rePropTodoRow(t) {
+  const sel = reBacklogSelId === t.id && reBacklogSelSrc === "prop";
+  const row = el("div", "aion-task-row" + (sel ? " sel" : ""));
+  const c = el("button", "aion-check", "○");
+  c.title = "mark done";
+  c.onclick = (e) => { e.stopPropagation(); rePost("/api/todos/check", { id: t.id, checked: true }, "Marked done"); };
+  row.append(c);
+  const main = el("div", "aion-main");
+  main.append(el("div", "aion-title", t.text));
+  main.append(el("div", "aion-item-meta", "property todo"));
+  row.append(main);
+  row.append(el("span", "aion-rock-tag", t.container ? (t.container.name || t.container.slug || "") : ""));
+  row.onclick = () => reBacklogSelect("prop", t.id);
+  return row;
+}
+
+// ---- the inspector (mirrors renderAionInspector; the list never reflows) ----
+function renderREBacklogInspector(insp) {
+  if (reBacklogSelSrc === "prop") { rePropTodoInspector(insp); return; }
+  const it = reItems().find((x) => x.id === reBacklogSelId);
+  if (!it) {
+    insp.append(el("div", "aion-insp-empty", "select a row — every field edits in place, saves on blur"));
+    return;
+  }
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "Inspector"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
+  head.append(x);
+  insp.append(head);
+
+  const patch = (set, msg) => rePost("/api/re/backlog/" + it.id + "/update", set, msg);
+
+  const title = inputEl("");
+  title.value = it.text;
+  title.className = "aion-insp-title";
+  const commitTitle = () => {
+    const v = title.value.trim();
+    if (v && v !== it.text) { reBacklogSelId = null; reBacklogSelSrc = null; patch({ title: v }); }
+  };
+  title.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") commitTitle();
+    else if (ev.key === "Escape") { title.value = it.text; title.blur(); }
+  });
+  title.addEventListener("blur", commitTitle);
+  insp.append(title);
+
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    insp.append(f);
+  };
+
+  const owner = inputEl("initials / contractor");
+  owner.value = it.owner || "";
+  owner.className = "pp-in";
+  owner.addEventListener("blur", () => { if ((owner.value || "") !== (it.owner || "")) patch({ owner: owner.value.trim() }); });
+  field("owner", owner);
+
+  if (it.kind === "task") {
+    const rockSel = document.createElement("select");
+    rockSel.className = "pp-in";
+    const no = document.createElement("option"); no.value = ""; no.textContent = "— no rock —"; rockSel.append(no);
+    reOrgRocks().forEach((r) => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.text; rockSel.append(o); });
+    if (it.rock && !reRockResolved(it.rock)) { const o = document.createElement("option"); o.value = it.rock; o.textContent = reRockLabel(it.rock) + " (historic)"; rockSel.append(o); }
+    rockSel.value = it.rock || "";
+    rockSel.onchange = () => patch({ rock: rockSel.value });
+    field("rock", rockSel);
+    const due = inputEl(""); due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
+    due.onchange = () => patch({ due: due.value });
+    field("due", due);
+  } else {
+    const nb = inputEl(""); nb.type = "date"; nb.className = "pp-in";
+    nb.value = /^\d{4}-\d{2}-\d{2}$/.test(it.neededBy || "") ? it.neededBy : "";
+    nb.onchange = () => patch({ needed_by: nb.value });
+    field("needed by", nb);
+    if (it.status !== "decided") {
+      const outcome = inputEl("outcome — what was decided…");
+      outcome.className = "pp-in aion-insp-outcome";
+      field("outcome", outcome);
+      const decide = el("button", "aion-decide-btn", "decide → permanent log");
+      decide.onclick = () => {
+        if (!outcome.value.trim()) { showToast("write the outcome first"); outcome.focus(); return; }
+        reBacklogSelId = null; reBacklogSelSrc = null;
+        rePost("/api/re/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
+      };
+      insp.append(decide);
+    } else if (it.outcome) {
+      field("outcome", el("span", "aion-insp-ro", it.outcome));
+    }
+  }
+  if (it.captured) field("captured", el("span", "aion-insp-ro", it.captured));
+  field("kind", el("span", "aion-insp-ro", it.kind));
+  if ((it.sources || []).length) {
+    const src = el("a", "aion-insp-src", "⧉ " + it.sources[0]);
+    src.href = "#/note/" + encodeURIComponent(it.sources[0].includes("/") ? it.sources[0] + ".md" : it.sources[0] + ".md");
+    insp.append(src);
+  }
+  const del = el("button", "aion-insp-del", "delete item");
+  del.onclick = () => {
+    const yes = el("button", "aion-insp-del armed", "delete — permanent?");
+    yes.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/re/backlog/" + it.id + "/delete", {}, "Deleted"); };
+    del.replaceWith(yes);
+    setTimeout(() => { if (yes.parentNode) yes.replaceWith(del); }, 2500);
+  };
+  insp.append(del);
+  const foot = el("div", "aion-insp-foot");
+  foot.append(el("span", "", "saves on blur"));
+  insp.append(foot);
+}
+
+// property-todo inspector — read-only text/owner + a link to the property and
+// a done button (these are owed items; the property page owns their edits).
+function rePropTodoInspector(insp) {
+  const id = reBacklogSelId;
+  let text = "", owner = "", container = null;
+  const mine = ((propTodosMeta && propTodosMeta.rows) || []).find((r) => r.id === id);
+  if (mine) { text = mine.text; owner = mine.owner; container = mine.container; }
+  else {
+    propOutstandingGroups().forEach((g) => (g.items || []).forEach((r) => {
+      if (r.id === id) { text = r.text; owner = r.owner; container = g.container; }
+    }));
+  }
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "Todo"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
+  head.append(x);
+  insp.append(head);
+  insp.append(el("div", "aion-insp-title", text));
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    insp.append(f);
+  };
+  field("owner", el("span", "aion-insp-ro", assigneeName(owner)));
+  if (container) {
+    const src = el("a", "aion-insp-src", "⧉ " + (container.name || container.slug));
+    if (container.slug) src.href = "#/properties/" + encodeURIComponent(container.slug);
+    insp.append(src);
+  }
+  const done = el("button", "aion-decide-btn", "mark done");
+  done.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/todos/check", { id, checked: true }, "Marked done"); };
+  insp.append(done);
+  const foot = el("div", "aion-insp-foot");
+  foot.append(el("span", "", "edits happen on the property page"));
+  insp.append(foot);
 }
 
 async function rePost(url, body, msg) {
@@ -70,40 +346,32 @@ async function rePost(url, body, msg) {
   renderProperties();
 }
 
-// ---- INTAKE — pending re-backlog proposals, the RE-scoped approvals lens ----
-// Each card is the SAME approval card the FEED renders (edit-before-confirm,
-// Confirm & apply, Reject) — filtered to this domain, with a `→ lands` line.
-async function renderREIntake() {
-  const host = els.propertyBoard;
-  host.innerHTML = "";
-  host.append(el("div", "re-lane-head", "INTAKE — transcript extractions awaiting your confirm"));
+// ---- INTAKE lane — pending re-backlog proposals, folded into the Backlog as
+// its top lane (was a standalone view). Each card is the SAME approval card
+// the FEED renders (edit-before-confirm, Confirm & apply, Reject), filtered to
+// this domain, with a `→ lands` line. Fills async; empty → the lane vanishes.
+async function fillREIntakeLane(host) {
   let proposals = [];
   try {
     const d = await (await fetch("/api/feed?status=inbox")).json();
     proposals = (d.proposals || []).filter((p) => p.type === "re-backlog");
   } catch (e) { /* fall through to empty */ }
   reIntakeCache = proposals;
-  if (!proposals.length) {
-    host.append(emptyRow("Nothing pending. Tag a transcript note real-estate / ooda and the extractor files candidates here."));
-    host.append(el("div", "re-foot-note",
-      "granola + heypocket transcripts with a real-estate or ooda category flow: note → re-extractor → proposal → your confirm → one line in the decision log"));
-    renderPropRail(); // count derives from this fetch
-    return;
-  }
+  if (!proposals.length) { host.remove(); return; }
+  const lh = el("div", "aion-sec-label");
+  lh.append(el("span", "aion-sec-title", "▽ Intake"),
+    el("span", "aion-sec-count", proposals.length + " awaiting confirm"));
+  host.append(lh);
   proposals.forEach((p) => {
     const wrap = el("div", "re-intake-card");
-    // `→ lands` line: exactly where a confirm writes
-    const lands = el("div", "re-lands");
     const payload = p.aionPayload || {};
     const bits = ["→ lands: system/realestate/backlog.md"];
     if (payload.rock) bits.push(payload.rock);
     if (payload.owner) bits.push("@" + payload.owner);
-    lands.textContent = bits.join(" · ");
-    wrap.append(lands);
+    wrap.append(el("div", "re-lands", bits.join(" · ")));
     wrap.append(approvalCardEl(p));
     host.append(wrap);
   });
-  renderPropRail();
 }
 
 // ---- MONEY — the read-only transaction feed + property assignment ----

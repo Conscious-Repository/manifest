@@ -224,7 +224,8 @@ function cmdDestinations() {
    ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Reconcile", "#/aion/reconcile"],
    ["Settings", "#/aion/settings"]].forEach(([n, h]) =>
     _cmdDests.push({ name: "Aion · " + n, hint: "aion tab", hash: h }));
-  [["Map", "#/properties/map"], ["Parcels", "#/properties/parcels"]].forEach(([n, h]) =>
+  [["Backlog", "#/properties"], ["Portfolio", "#/properties/portfolio"], ["Rocks", "#/properties/rocks"],
+   ["Money", "#/properties/money"], ["Map", "#/properties/map"], ["Settings", "#/properties/settings"]].forEach(([n, h]) =>
     _cmdDests.push({ name: "Properties · " + n, hint: "properties view", hash: h }));
   return _cmdDests;
 }
@@ -339,7 +340,7 @@ function rawPathsForRoute() {
     return f ? [f] : [];
   }
   if (sec === "properties") {
-    const tabs = ["work", "map", "parcels", "accounting", "contractors", "settings"];
+    const tabs = ["backlog", "portfolio", "rocks", "money", "map", "settings"];
     if (sub[0] && !tabs.includes(sub[0])) return ["system/realestate/properties/" + sub[0] + ".md"];
     return [];
   }
