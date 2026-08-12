@@ -168,6 +168,31 @@ func OwnershipCycle(entities []Entity, entitySlug, ownerRef string) bool {
 	return walk(start)
 }
 
+// Registry returns every record of a flat registry category (partner |
+// lender | tenant …) — name + slug + trade, the Settings tabs' row shape.
+func (s *Service) Registry(category string) []Entity {
+	refs, err := s.ix.Category(category, vaultindex.SortNameAsc)
+	if err != nil {
+		return nil
+	}
+	var out []Entity
+	for _, r := range refs {
+		raw, err := os.ReadFile(filepath.Join(s.ix.VaultRoot(), filepath.FromSlash(r.Path)))
+		if err != nil {
+			continue
+		}
+		fm, _ := mdfm.Split(string(raw))
+		e := Entity{Path: r.Path, Slug: r.Name, Name: r.Name}
+		if n := unquote(fm["name"]); n != "" {
+			e.Name = n
+		}
+		e.Trade = strings.ToLower(strings.TrimSpace(unquote(fm["trade"])))
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
+	return out
+}
+
 // Contractors returns every contractor record (name + slug), for autocomplete.
 func (s *Service) Contractors() []Entity {
 	refs, err := s.ix.Category("contractor", vaultindex.SortNameAsc)

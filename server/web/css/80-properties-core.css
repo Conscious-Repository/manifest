@@ -194,3 +194,140 @@
 .pp3-lform-field { display: flex; flex-direction: column; gap: 2px; }
 .pp3-lform-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
 .pp3-lform .pp-in, .pp3-lform .est-in { width: 100%; box-sizing: border-box; }
+
+/* ===== RE domain views (RE spec §3, 2026-08-12): Rocks · Portfolio ·
+   Decisions · Intake · Money · Deal · Settings tabs ===== */
+
+/* rail: quiet lens rows read dimmer */
+.prop-rail-item.quiet .prop-rail-name { color: var(--base-40); }
+
+/* portfolio: property · stage bar · open · spent */
+.pf-cols, .pf-row { grid-template-columns: 1fr 1.5fr 44px 70px; }
+.pf-stage { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.pf-bar { width: 44px; height: 4px; border-radius: 2px; background: #f0f0f0; flex: none; overflow: hidden; }
+.pf-bar-fill { display: block; height: 100%; background: var(--accent); }
+.pf-stage-name { font-family: var(--mono); font-size: 10.5px; color: var(--base-60); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-spent { font-family: var(--mono); font-size: 11px; color: var(--base-60); text-align: right; }
+.pf-spent.over { color: var(--over); }
+.pf-tracked-foot { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; padding: 8px; }
+.pf-tracked-foot:hover { color: var(--accent); }
+
+/* rocks: org-level 90-day work, rock → stage → task */
+.re-rock { padding: 12px 8px 10px; border-top: 1px solid #f0f0f0; border-left: 2px solid var(--accent-soft); margin-bottom: 4px; }
+.re-rock-line { display: flex; align-items: baseline; gap: 8px; }
+.re-rock-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; align-self: center; }
+.re-rock-name { font-size: 15px; font-weight: 500; cursor: pointer; }
+.re-rock-name:hover { color: var(--accent); }
+.re-rock-until { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); padding: 2px 0 4px 14px; }
+.re-stage { display: flex; align-items: baseline; gap: 8px; padding: 3px 0 3px 14px; font-size: 13.5px; color: var(--base-60); }
+.re-stage.done { text-decoration: line-through; color: var(--base-40); }
+.re-stage.cur { color: var(--accent); }
+.re-stage-glyph { font-family: var(--mono); font-size: 11px; flex: none; }
+.re-task { display: flex; align-items: baseline; gap: 8px; padding: 2px 0 2px 30px; font-size: 13px; }
+.re-task-glyph { font-family: var(--mono); font-size: 11px; color: var(--base-30); flex: none; }
+.re-task-owner { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.re-foot-note { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); padding: 14px 8px; }
+
+/* lane heads (decisions / intake / money) */
+.re-lane-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); padding: 4px 0 8px; border-bottom: 1px solid var(--base-25); margin-bottom: 6px; }
+
+/* decisions: one open boolean drives weight, rule, background */
+.re-decision { display: flex; align-items: baseline; gap: 10px; padding: 8px 10px; border-top: 1px solid #f4f4f4; }
+.re-decision.open { border-left: 2px solid var(--base-100); background: var(--base-05); font-weight: 500; }
+.re-decision-main { flex: 1; min-width: 0; }
+.re-decision-title { font-size: 14px; }
+.re-decision-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); font-weight: 400; margin-top: 2px; }
+.re-decision-acts { display: inline-flex; gap: 6px; align-items: center; }
+.re-outcome-in { font-size: 12px; min-width: 200px; }
+.re-decided-toggle { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; padding: 8px 2px; }
+.re-decided-toggle:hover { color: var(--accent); }
+
+/* intake */
+.re-intake-card { margin-bottom: 14px; }
+.re-lands { font-family: var(--mono); font-size: 10.5px; color: var(--accent); padding: 0 0 4px 2px; }
+
+/* money: date · description · amount · property select — the data column has
+   a floor; the decoration compresses first */
+.re-money-cols { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 82px minmax(88px, 150px); gap: 10px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 2px 8px 6px; border-bottom: 1px solid var(--base-25); }
+.re-money-shell { display: flex; gap: 16px; align-items: flex-start; }
+.re-money-list { flex: 1; min-width: 0; }
+.re-money-row { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 82px minmax(88px, 150px); gap: 10px; align-items: center; padding: 4px 8px; border-top: 1px solid #f4f4f4; cursor: pointer; }
+.re-money-row:hover { background: var(--base-05); }
+.re-money-row.sel { background: var(--base-20); border-left: 2px solid var(--accent); padding-left: 6px; }
+.re-money-date { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.re-money-desc { font-size: 13.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.re-money-entity { font-family: var(--mono); font-size: 10px; color: var(--base-40); margin-left: 8px; }
+.re-money-amt { font-family: var(--mono); font-size: 12px; color: var(--base-100); text-align: right; }
+.re-money-amt.inflow { color: var(--accent); }
+.re-money-sel { font-size: 11px; }
+.re-money-insp { width: 254px; flex: none; position: sticky; top: 0; border-left: 1px solid var(--base-25); padding: 4px 0 4px 14px; }
+.re-money-foot { margin-top: 22px; }
+.re-handoff-row { display: flex; align-items: baseline; gap: 12px; padding: 6px 8px; border-top: 1px solid #f4f4f4; }
+.re-handoff-name { font-size: 13.5px; min-width: 180px; }
+.re-handoff-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); flex: 1; }
+
+/* deal page */
+.re-deal-head { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.re-deal-cols, .re-deal-row, .re-deal-totals { grid-template-columns: 1fr 54px 80px 76px 60px; }
+.re-deal-totals { border-top: 1px solid var(--base-100); font-weight: 500; cursor: default; }
+.re-deal-check { margin-top: 20px; max-width: 460px; }
+.re-check-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 2px; font-size: 13px; color: var(--base-60); }
+.re-check-row.ok { color: var(--base-100); }
+.re-check-glyph { font-family: var(--mono); flex: none; }
+
+/* property page: owner line · UNTIL · stages · underwriting · links */
+.pp3-owner-line { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin: -2px 0 4px; display: flex; align-items: baseline; gap: 8px; }
+.pp3-owner-line.acquiring .pp3-owner-ent, .pp3-owner-from { color: var(--base-100); }
+.pp3-owner-ent { cursor: pointer; }
+.pp3-owner-ent:hover { color: var(--accent); }
+.pp3-owner-frombtn { background: none; border: none; font-family: var(--mono); font-size: 10px; color: var(--base-30); cursor: pointer; }
+.pp3-owner-frombtn:hover { color: var(--accent); }
+.pp3-until { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+.pp3-until-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; color: var(--base-40); flex: none; }
+.pp3-until-val { font-size: 13.5px; cursor: pointer; }
+.pp3-until-val:hover { color: var(--accent); }
+.pp3-until-val.ghost { color: var(--base-30); font-style: italic; }
+.pp3-stage { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 13.5px; color: var(--base-60); }
+.pp3-stage.done { text-decoration: line-through; color: var(--base-40); }
+.pp3-stage.cur { color: var(--accent); font-weight: 500; }
+.pp3-stage-glyph { font-family: var(--mono); font-size: 11px; flex: none; width: 14px; }
+.pp3-todo.nested { padding-left: 30px; }
+.pp3-uw-sec .re-uw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 8px 0; }
+.re-uw-field { display: flex; flex-direction: column; gap: 2px; }
+.re-uw-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
+.re-uw-in { font-family: var(--mono); }
+.re-uw-outs { margin-top: 8px; }
+.pp3-uw-settings { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; margin-left: auto; }
+.pp3-uw-settings:hover { color: var(--accent); }
+.re-override-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.re-override-chip { font-family: var(--mono); font-size: 10.5px; border: 1px solid var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 1px 8px; }
+.pp3-links { display: flex; gap: 14px; margin: 18px 0; }
+.pp3-link { font-family: var(--mono); font-size: 11px; color: var(--accent); text-decoration: none; background: none; border: none; cursor: pointer; padding: 0; }
+.pp3-link.ghost { color: var(--base-40); }
+.pp3-link:hover { text-decoration: underline; }
+
+/* settings: tab rail + assumptions + entity accounts */
+.re-set-tabs { display: flex; flex-direction: column; gap: 2px; width: 154px; float: left; margin-right: 22px; }
+.re-set-tab { background: none; border: none; text-align: left; font-size: 13px; color: var(--base-70); padding: 5px 10px; cursor: pointer; border-left: 2px solid transparent; }
+.re-set-tab:hover { background: var(--base-20); }
+.re-set-tab.active { color: var(--accent); background: var(--base-20); border-left-color: var(--accent); }
+.re-set-pane { overflow: hidden; }
+.re-assump-grid { max-width: 620px; }
+.re-assump-row { display: grid; grid-template-columns: 1fr 82px 96px; gap: 12px; align-items: baseline; padding: 4px 0; border-top: 1px solid #f4f4f4; }
+.re-assump-label { font-size: 13px; }
+.re-assump-in { font-family: var(--mono); font-size: 12px; text-align: right; }
+.re-assump-who { font-family: var(--mono); font-size: 10px; color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.re-partnered { font-family: var(--mono); font-size: 10px; letter-spacing: 0.3px; border: 1px solid var(--base-25); border-radius: 10px; padding: 1px 8px; background: none; color: var(--base-40); cursor: pointer; }
+.re-partnered.on { color: var(--accent); border-color: var(--accent-soft); }
+.re-holdings { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.re-acct-rollup { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin-left: auto; }
+.re-acct-rollup.attn { color: var(--base-100); font-weight: 500; }
+.re-accts { margin: 6px 0; }
+.re-acct-row { display: grid; grid-template-columns: minmax(120px, 1fr) 96px 108px 1fr 24px; gap: 10px; align-items: baseline; padding: 4px 0; border-top: 1px solid #f4f4f4; }
+.re-acct-label { font-size: 13px; }
+.re-acct-kind { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.re-acct-state { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; border-radius: 9px; padding: 1px 7px; text-align: center; }
+.re-acct-state.st-live { color: var(--accent); background: var(--accent-soft); }
+.re-acct-state.st-needs-reauth { color: #fff; background: var(--base-100); }
+.re-acct-state.st-not-connected { color: var(--base-40); background: var(--base-25); }
+.re-acct-act { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--accent); cursor: pointer; text-align: left; }

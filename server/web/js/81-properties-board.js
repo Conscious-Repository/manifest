@@ -6,22 +6,92 @@ let propComposerOpen = false;
 const PROPERTY_STATUSES = ["negotiating", "under_contract", "pre_development", "construction", "completed", "leased", "listed", "sold"];
 const PROPERTY_KINDS = ["rehab", "new-construction", "mixed", "hold"];
 
-function renderAllProperties() {
+// Portfolio — ONE table, four columns (RE spec §3): property · stage
+// (progress bar + name) · open · spent. No entity column — that fact lives
+// on the entity registry.
+function renderPortfolio() {
   const host = els.propertyBoard;
   host.innerHTML = "";
-  const cols = el("div", "prop-cols");
-  cols.append(el("span", "", "ADDRESS"), el("span", "", "STATUS"), el("span", "prop-col-r", "TODOS"));
+  const cols = el("div", "prop-cols pf-cols");
+  cols.append(el("span", "", "PROPERTY"), el("span", "", "STAGE"),
+    el("span", "prop-col-r", "OPEN"), el("span", "prop-col-r", "SPENT"));
   host.append(cols);
-  propertyCache.filter((p) => !p.hidden).forEach((p) => {
-    const row = el("div", "prop-row");
+  activePortfolio().forEach((p) => {
+    const row = el("div", "prop-row pf-row");
     row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
     row.append(el("span", "prop-addr", p.short || p.address || p.slug));
-    row.append(el("span", "prop-status", (p.status || "").replace(/_/g, " ")));
+    // stage cell: 44px progress bar + current stage name (derived from ## stages)
+    const stages = p.work || [];
+    const done = stages.filter((st) => st.checked).length;
+    const cell = el("span", "pf-stage");
+    const bar = el("span", "pf-bar");
+    const fill = el("span", "pf-bar-fill");
+    fill.style.width = stages.length ? Math.round((done / stages.length) * 100) + "%" : "0";
+    bar.append(fill);
+    cell.append(bar, el("span", "pf-stage-name", p.currentStage || (stages.length ? "done" : (p.status || "").replace(/_/g, " "))));
+    row.append(cell);
     const n = openTodoCount(p);
     row.append(el("span", "prop-count" + (n ? " some" : ""), n ? String(n) : "·"));
+    const m = projMoney(p);
+    row.append(el("span", "pf-spent" + (m.over ? " over" : ""), m.paid ? fmtMoneyShort(m.paid) : "·"));
     host.append(row);
   });
+  // tracked-but-inactive records stay reachable behind a quiet foot count
+  const tracked = propertyCache.filter((p) => !p.hidden && !(p.control === "owned" || p.entity));
+  if (tracked.length) {
+    const t = el("button", "pf-tracked-foot", "▸ " + tracked.length + " tracked (research) — see Map/Parcels");
+    t.onclick = () => { location.hash = "#/properties/parcels"; };
+    host.append(t);
+  }
   host.append(propertyComposer());
+}
+
+function fmtMoneyShort(v) {
+  if (v >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+  if (v >= 1e3) return "$" + Math.round(v / 1e3) + "k";
+  return "$" + Math.round(v);
+}
+
+// Rocks — org-level 90-day work from the goals `## Real Estate` area,
+// rendered rock → stage → task (the same shape a property renders in).
+// A task carrying a property/deal tag shows it in accent and also lives
+// there; the footer states the rule.
+function renderRERocks() {
+  const host = els.propertyBoard;
+  host.innerHTML = "";
+  const rocks = reOrgRocks();
+  if (!rocks.length) {
+    host.append(emptyRow("No org rocks in the Real Estate area yet — add one in GOALS."));
+    return;
+  }
+  rocks.forEach((g) => {
+    const wrap = el("div", "re-rock");
+    const line = el("div", "re-rock-line");
+    line.append(el("span", "re-rock-dot"));
+    const name = el("span", "re-rock-name", g.text);
+    name.onclick = () => { location.hash = "#/goals/" + encodeURIComponent(g.id); };
+    line.append(name);
+    wrap.append(line);
+    if (g.until) wrap.append(el("div", "re-rock-until", "UNTIL " + g.until));
+    // stage trail with tethered backlog tasks nested (from the RE backlog +
+    // the unified todos rows that carry this rock id)
+    const tethered = reItems().filter((it) => it.kind === "task" && it.status !== "done" && it.rock === g.id);
+    (g.children || []).forEach((st) => {
+      const cur = !st.checked && (g.children || []).find((c) => !c.checked) === st;
+      const sl = el("div", "re-stage" + (st.checked ? " done" : "") + (cur ? " cur" : ""));
+      sl.append(el("span", "re-stage-glyph", st.checked ? "✓" : cur ? "→" : "○"));
+      sl.append(el("span", "", st.text));
+      wrap.append(sl);
+    });
+    tethered.forEach((it) => {
+      const t = el("div", "re-task");
+      t.append(el("span", "re-task-glyph", "○"), el("span", "", it.text));
+      if (it.owner) t.append(el("span", "re-task-owner", "@" + it.owner));
+      wrap.append(t);
+    });
+    host.append(wrap);
+  });
+  host.append(el("div", "re-foot-note", "an untagged task is org-level and lives here — tag a property or deal to file it there too"));
 }
 
 // propOutstandingGroups — PROPERTY containers only (owner call 2026-08-09):

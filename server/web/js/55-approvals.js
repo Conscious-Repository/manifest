@@ -16,11 +16,12 @@ function approvalCardEl(a) {
   if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
 
   const actionable = !!a.applyPath;
-  const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic";
+  const isRe = a.type === "re-backlog"; // the real-estate domain twin (````re fence)
+  const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe;
   // For an actionable proposal the ````proposed payload is rendered as a diff
   // below (and an aion payload as its editable form), so strip the fence from
   // the human-facing evidence body.
-  const bodyText = isAion ? stripFence(a.body, "aion") : actionable ? stripProposedFence(a.body) : a.body;
+  const bodyText = isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (bodyText && bodyText.trim()) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
 
   let blocked = false, blockMsg = "";
@@ -48,6 +49,8 @@ function approvalCardEl(a) {
         ? "apply-path is not the x-posts file — Confirm is disabled."
         : isSkill
         ? "update-vault-skill must target skills/x-content/{SKILL.md, references/<name>.md} and be filed by a tune ritual — Confirm is disabled."
+        : isRe
+        ? "apply-path is not the real-estate decision log (system/realestate/backlog.md) or the payload is malformed — Confirm is disabled."
         : isAion
         ? "apply-path is not the aion record file (system/aion/backlog.md · heuristics.md) or the payload is malformed — Confirm is disabled."
         : "apply-path is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md) — Confirm is disabled.";
@@ -333,7 +336,9 @@ function buildAionEditor(a) {
   };
   const rebuild = () => {
     form.innerHTML = "";
-    const kindSel = selectEl(["task", "decision", "heuristic"]);
+    // real estate has no heuristics file — the kind flip is task⇄decision only
+    const kinds = a.type === "re-backlog" ? ["task", "decision"] : ["task", "decision", "heuristic"];
+    const kindSel = selectEl(kinds);
     kindSel.value = p.kind;
     kindSel.onchange = () => { p.kind = kindSel.value; if (p.kind === "heuristic" && !p.heuristic.mode) p.heuristic.mode = "new"; rebuild(); };
     row("kind", kindSel);

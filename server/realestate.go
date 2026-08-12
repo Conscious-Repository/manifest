@@ -1562,6 +1562,9 @@ func (s *Server) handleEntitiesList(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"entities":    s.realestate.Entities(),
+		"partners":    s.realestate.Registry("partner"),
+		"lenders":     s.realestate.Registry("lender"),
+		"tenants":     s.realestate.Registry("tenant"),
 		"contractors": s.realestate.Contractors(),
 		"bindings":    s.reImport.LabelBindings(),
 	})
@@ -1581,8 +1584,15 @@ func (s *Server) handleEntityCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	kind := "entity"
 	dir := "entities"
-	if b.Kind == "contractor" {
+	switch b.Kind {
+	case "contractor":
 		kind, dir = "contractor", "contractors"
+	case "partner":
+		kind, dir = "partner", "partners"
+	case "lender":
+		kind, dir = "lender", "lenders"
+	case "tenant":
+		kind, dir = "tenant", "tenants"
 	}
 	slug := slugify(b.Name)
 	rel := path.Join(s.realestateRootOr(), dir, slug+".md")

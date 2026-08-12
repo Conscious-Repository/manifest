@@ -54,12 +54,12 @@ func TestAssumptionsEditPreservesProse(t *testing.T) {
 // and entity-less records count nowhere.
 func TestHoldings(t *testing.T) {
 	props := []Property{
-		{Slug: "a", Entity: "The Garden SPE"},                        // owned
-		{Slug: "b", Entity: "IGS MO LLC", From: "J. Halloran"},       // acquiring
-		{Slug: "c", Entity: "ODA Group", From: "City LRA"},           // acquiring
-		{Slug: "d", Entity: "ODA Group"},                             // owned
-		{Slug: "e", Entity: "ODA Group", Hidden: true},               // hidden — skipped
-		{Slug: "f"},                                                  // no destination — counts nowhere
+		{Slug: "a", Entity: "The Garden SPE"},                  // owned
+		{Slug: "b", Entity: "IGS MO LLC", From: "J. Halloran"}, // acquiring
+		{Slug: "c", Entity: "ODA Group", From: "City LRA"},     // acquiring
+		{Slug: "d", Entity: "ODA Group"},                       // owned
+		{Slug: "e", Entity: "ODA Group", Hidden: true},         // hidden — skipped
+		{Slug: "f"}, // no destination — counts nowhere
 	}
 	h := Holdings(props)
 	if h["The Garden SPE"].Owned != 1 || h["The Garden SPE"].Acquiring != 0 {

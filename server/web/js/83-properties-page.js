@@ -33,6 +33,39 @@ async function renderPropertyPage(slug) {
   head.append(openNote);
   host.append(head);
 
+  // owner line (RE spec §2 OWNER): the books it lands on; the seller while
+  // acquiring reads in ink. Click-to-edit both.
+  const ownerLine = el("div", "pp3-owner-line" + (p.from ? " acquiring" : ""));
+  const entLabel = el("span", "pp3-owner-ent", p.entity ? p.entity : "＋ set the entity (its books)");
+  entLabel.title = "the entity whose books this lands on";
+  entLabel.onclick = () => {
+    const v = prompt("Entity (its books):", p.entity || "");
+    if (v !== null) propFieldSave(p.slug, "entity", v.trim());
+  };
+  ownerLine.append(entLabel);
+  if (p.from) {
+    ownerLine.append(el("span", "pp3-owner-from", " · acquiring from " + p.from));
+  }
+  const fromBtn = el("button", "pp3-owner-frombtn", p.from ? "edit" : "＋ acquiring from…");
+  fromBtn.onclick = () => {
+    const v = prompt("Seller (empty once closed):", p.from || "");
+    if (v !== null) propFieldSave(p.slug, "from", v.trim());
+  };
+  ownerLine.append(fromBtn);
+  host.append(ownerLine);
+
+  // UNTIL — the exit condition, click-to-edit
+  const untilRow = el("div", "pp3-until");
+  untilRow.append(el("span", "pp3-until-label", "UNTIL"));
+  const untilVal = el("span", "pp3-until-val" + (p.until ? "" : " ghost"),
+    p.until || "＋ the exit condition, e.g. “Refinanced at 75% LTV, DSCR ≥ 1.25”");
+  untilVal.onclick = () => {
+    const v = prompt("Exit condition:", p.until || "");
+    if (v !== null) propFieldSave(p.slug, "until", v.trim());
+  };
+  untilRow.append(untilVal);
+  host.append(untilRow);
+
   const cols = el("div", "pp3-cols");
   const main = el("div", "pp3-main");
   cols.append(main, propSideCard(p));
@@ -63,18 +96,67 @@ async function renderPropertyPage(slug) {
     renderUnderwrite(p, uw);
   }
 
-  // TODOS — the primary section; adding is the page's first-class action
-  const todosSec = el("div", "pp3-sec");
-  const th = el("div", "pp3-sec-head");
+  // STAGES with their tasks nested underneath — one list, not two (RE spec
+  // §3). A task carrying [stage::] nests there; untagged open tasks ride the
+  // current stage; the composer files into the current stage by construction.
+  const stagesSec = el("div", "pp3-sec");
+  const sh = el("div", "pp3-sec-head");
   const open = (p.todos || []).filter((t) => !t.checked);
-  th.append(el("span", "pp3-sec-title", "TODOS"), el("span", "pp3-sec-count", String(open.length)));
-  todosSec.append(th);
-  open.forEach((t) => todosSec.append(propTodoRow(p, t)));
-  (p.todos || []).filter((t) => t.checked).forEach((t) => todosSec.append(propTodoRow(p, t)));
-  todosSec.append(propTodoComposer(p));
-  main.append(todosSec);
+  sh.append(el("span", "pp3-sec-title", "STAGES"), el("span", "pp3-sec-count",
+    (p.currentStage ? "→ " + p.currentStage + " · " : "") + open.length + " open"));
+  stagesSec.append(sh);
+  const stages = p.work || [];
+  const byStage = {};
+  open.forEach((t) => { const k = t.stage || ""; (byStage[k] = byStage[k] || []).push(t); });
+  stages.forEach((st) => {
+    const isCur = !!st.current;
+    const line = el("div", "pp3-stage" + (st.checked ? " done" : "") + (isCur ? " cur" : ""));
+    line.append(el("span", "pp3-stage-glyph", st.checked ? "✓" : isCur ? "→" : "○"));
+    line.append(el("span", "pp3-stage-name", st.text || ""));
+    stagesSec.append(line);
+    const nest = (byStage[st.text] || []).concat(isCur ? (byStage[""] || []) : []);
+    nest.forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
+  });
+  if (!stages.length) {
+    // no stage pipeline yet — flat list, plus a seed action from the template
+    open.forEach((t) => stagesSec.append(propTodoRow(p, t)));
+    const seed = el("button", "o-ghost", "＋ seed stages from the " + (p.kind === "new-construction" ? "new build" : "gut rehab") + " template");
+    seed.onclick = async () => {
+      try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", { op: "seed", template: p.kind === "new-construction" ? "new-build" : "rehab" }); renderProperties(); }
+      catch (e) { showToast("Couldn't seed stages — " + (e.message || "")); }
+    };
+    stagesSec.append(seed);
+  }
+  (p.todos || []).filter((t) => t.checked).forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
+  const composer = propTodoComposer(p);
+  stagesSec.append(composer);
+  main.append(stagesSec);
 
+  // UNDERWRITING — override chips, the four tier-1 inputs, computed outputs
+  main.append(underwritingSection(p));
+
+  // SPEND — last 3 ledger rows + link to Money (full ledger stays below)
   main.append(ledgerSection(p));
+
+  // LINKS — artifacts are linked, never mirrored
+  const links = el("div", "pp3-links");
+  const linkBtn = (label, key, url) => {
+    if (url) {
+      const a = el("a", "pp3-link", label + " ↗");
+      a.href = url; a.target = "_blank"; a.rel = "noopener";
+      links.append(a);
+    } else {
+      const b = el("button", "pp3-link ghost", "＋ " + label);
+      b.onclick = () => {
+        const v = prompt(label + " URL:", "");
+        if (v !== null) propFieldSave(p.slug, key, v.trim());
+      };
+      links.append(b);
+    }
+  };
+  linkBtn("Drive", "drive", p.drive);
+  linkBtn("AGC", "agc", p.agc);
+  main.append(links);
 
   // restore an open inspector across re-renders
   if (propSelTodoId) {
@@ -579,4 +661,90 @@ async function putJSON(url, body) {
   const res = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
   return res.json().catch(() => ({}));
+}
+
+
+// propFieldSave — the one-scalar frontmatter save the page's click-to-edit
+// affordances share.
+async function propFieldSave(slug, key, value) {
+  try {
+    await postJSONOk("/api/properties/" + encodeURIComponent(slug) + "/field", { key, value });
+    renderProperties();
+  } catch (e) { showToast("Couldn't save " + key + " — " + (e.message || "")); }
+}
+
+// underwritingSection — override chips first (when any), then the FOUR
+// property-specific tier-1 inputs, then computed outputs (NOI · ARV · DSCR,
+// screening math — the portal engine is the pro-forma truth). Header links
+// to Settings with the derived inherit/override count.
+function underwritingSection(p) {
+  const sec = el("div", "pp3-sec pp3-uw-sec");
+  const head = el("div", "pp3-sec-head");
+  head.append(el("span", "pp3-sec-title", "UNDERWRITING"));
+  const a = reAssumptions();
+  const overrides = (a.__overrides || []).filter((o) => o.kind === "property" && o.slug === p.slug);
+  const inherit = (a.__keys || []).length - overrides.length;
+  const settingsLink = el("button", "pp3-uw-settings", "inherits " + Math.max(inherit, 0) + " · overrides " + overrides.length + " →");
+  settingsLink.onclick = () => { location.hash = "#/properties/settings"; };
+  head.append(settingsLink);
+  sec.append(head);
+  if (overrides.length) {
+    const chips = el("div", "re-override-chips");
+    overrides.forEach((o) => chips.append(el("span", "re-override-chip", o.key + " · " + o.value)));
+    sec.append(chips);
+  }
+  const host = el("div", "pp3-uw-body");
+  sec.append(host);
+  (async () => {
+    if (!reAssumptionsCache) await loadReAssumptions();
+    let src = p.__source;
+    if (!src) {
+      try { src = p.__source = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json(); }
+      catch (e) { src = p.__source = {}; }
+    }
+    host.innerHTML = "";
+    const grid = el("div", "re-uw-grid");
+    const input = (label, key) => {
+      const f = el("label", "re-uw-field");
+      f.append(el("span", "re-uw-label", label));
+      const inp = inputEl("");
+      inp.className = "pp-in re-uw-in";
+      inp.value = src[key] != null ? String(src[key]) : "";
+      inp.onchange = async () => {
+        const v = parseFloat(inp.value.replace(/[,$]/g, ""));
+        const next = Object.assign({}, src);
+        if (isNaN(v) || inp.value.trim() === "") delete next[key]; else next[key] = v;
+        try {
+          await putJSON("/api/properties/" + encodeURIComponent(p.slug) + "/source", next);
+          p.__source = next;
+          renderPropertyPage(p.slug); // recompute outputs
+        } catch (e) { showToast("Couldn't save " + key); }
+      };
+      f.append(inp);
+      return f;
+    };
+    grid.append(
+      input("purchase price", "purchase_price"),
+      input("hard costs", "hard_costs"),
+      input("units", "total_units"),
+      input("stabilized rent /unit/mo", "avg_rent_per_unit"),
+    );
+    host.append(grid);
+    const uw = reScreeningCalc(p);
+    const outs = el("div", "pp3-strip re-uw-outs");
+    const cell = (label, val, cls) => {
+      const c = el("div", "pp3-cell");
+      c.append(el("div", "pp3-cell-label", label), el("div", "pp3-cell-val" + (cls ? " " + cls : ""), val));
+      return c;
+    };
+    if (uw.complete) {
+      outs.append(cell("NOI", fmtMoneyShort(uw.noi)));
+      outs.append(cell("ARV", fmtMoneyShort(uw.arv)));
+      outs.append(cell("DSCR", uw.dscr ? uw.dscr.toFixed(2) : "—", uw.dscr && uw.dscr < 1.25 ? "over" : ""));
+    } else {
+      outs.append(el("div", "re-foot-note", "fill units + rent for screening outputs (NOI · ARV · DSCR)"));
+    }
+    host.append(outs);
+  })();
+  return sec;
 }

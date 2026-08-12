@@ -64,14 +64,114 @@ function ownerAutocomplete(placeholder, onSet) {
   return ta;
 }
 
+// The Settings tab rail (RE spec §3): Assumptions · Entities · Partners ·
+// Contractors · Lenders · Tenants. Existing sections fold in: org chart +
+// statement accounts + templates under Entities; the people.md assignee
+// registry under Contractors.
+let reSettingsTab = "assumptions";
+
 async function renderREsettings() {
   const host = els.propertySettings;
   host.hidden = false;
   host.innerHTML = "loading…";
   await ensureEntities(true);
+  if (!reAssumptionsCache) await loadReAssumptions();
   host.innerHTML = "";
   const ents = entitiesCache.entities || [];
 
+  // tab rail
+  const tabs = el("div", "re-set-tabs");
+  [["assumptions", "Assumptions"], ["entities", "Entities"], ["partners", "Partners"],
+   ["contractors", "Contractors"], ["lenders", "Lenders"], ["tenants", "Tenants"]].forEach(([key, label]) => {
+    const b = el("button", "re-set-tab" + (reSettingsTab === key ? " active" : ""), label);
+    b.onclick = () => { reSettingsTab = key; renderREsettings(); };
+    tabs.append(b);
+  });
+  host.append(tabs);
+  const pane = el("div", "re-set-pane");
+  host.append(pane);
+
+  if (reSettingsTab === "assumptions") { renderAssumptionsPanel(pane); return; }
+  if (reSettingsTab === "partners") { renderFlatRegistry(pane, "partner", entitiesCache.partners || []); return; }
+  if (reSettingsTab === "lenders") { renderFlatRegistry(pane, "lender", entitiesCache.lenders || []); return; }
+  if (reSettingsTab === "tenants") { renderFlatRegistry(pane, "tenant", entitiesCache.tenants || []); return; }
+  if (reSettingsTab === "contractors") {
+    pane.append(el("div", "pp-section-head", "CONTRACTORS — records"));
+    renderFlatRegistry(pane, "contractor", entitiesCache.contractors || []);
+    await rePeopleTable(pane); // the assignee registry rides this tab
+    return;
+  }
+  renderEntitiesPanel(pane, ents);
+}
+
+// ---- ASSUMPTIONS — the single global set, sticky save, derived override index ----
+function renderAssumptionsPanel(pane) {
+  const a = reAssumptions();
+  pane.append(el("div", "pp-section-head", "UNDERWRITING ASSUMPTIONS — the single global set"));
+  const grid = el("div", "re-assump-grid");
+  const dirty = {};
+  const overridesFor = (key) => (a.__overrides || []).filter((o) => o.key === key);
+  (a.__keys || []).forEach((key) => {
+    const row = el("div", "re-assump-row");
+    row.append(el("span", "re-assump-label", (a.__labels || {})[key] || key));
+    const inp = inputEl("");
+    inp.className = "pp-in re-assump-in";
+    inp.value = a[key] != null ? String(a[key]) : "";
+    inp.oninput = () => { dirty[key] = inp.value; saveBar.hidden = !Object.keys(dirty).length; };
+    row.append(inp);
+    const who = overridesFor(key);
+    row.append(el("span", "re-assump-who", who.length
+      ? who.map((o) => o.name + " (" + o.value + ")").join(" · ")
+      : "—"));
+    grid.append(row);
+  });
+  pane.append(grid);
+  const saveBar = el("div", "dirty-bar");
+  saveBar.hidden = true;
+  const save = el("button", "pill-solid", "save assumptions");
+  save.onclick = async () => {
+    const values = {};
+    let bad = "";
+    Object.keys(dirty).forEach((k) => {
+      const v = parseFloat(dirty[k]);
+      if (isNaN(v)) bad = k; else values[k] = v;
+    });
+    if (bad) { showToast(bad + " isn't a number"); return; }
+    try {
+      await putJSON("/api/realestate/assumptions", { values });
+      reAssumptionsCache = null;
+      showToast("Assumptions saved — PUBLISH pushes them to the portal engine");
+      renderREsettings();
+    } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
+  };
+  saveBar.append(save);
+  pane.append(saveBar);
+  pane.append(el("div", "re-foot-note",
+    "system/realestate/assumptions.md → published to oodagroup/src/engine/defaults.js"));
+}
+
+// ---- flat registries (Partners · Contractors · Lenders · Tenants) ----
+function renderFlatRegistry(pane, kind, rows) {
+  const list = el("div", "set-entities");
+  if (!rows.length) list.append(el("div", "pp-empty", "No " + kind + " records yet."));
+  rows.forEach((r) => {
+    const row = el("div", "set-bind-row");
+    row.append(el("span", "stmt-vendor", r.name + (r.trade ? "  (" + r.trade + ")" : "")));
+    row.append(pillLight("open →", () => {
+      _noteReturn = "#/properties/settings";
+      openNoteByPath(r.path);
+    }));
+    list.append(row);
+  });
+  list.append(ghostInput("＋ " + kind, "set-add", async (v) => {
+    try { await postJSONOk("/api/realestate/entities", { name: v, kind }); renderREsettings(); }
+    catch (err) { showToast("Couldn't create " + kind); }
+  }, kind + " name…"));
+  pane.append(list);
+}
+
+// ---- ENTITIES — per-entity blocks (the entity is the thing that has books) ----
+function renderEntitiesPanel(host, ents) {
   // ENTITIES — list, create, owners, admin categories
   host.append(el("div", "pp-section-head", "ENTITIES"));
   const list = el("div", "set-entities");
@@ -85,9 +185,6 @@ async function renderREsettings() {
   // ORG CHART — ownership tree read live from the records
   host.append(el("div", "pp-section-head", "ORG CHART"));
   host.append(orgChart(ents));
-
-  // PEOPLE — the RE assignee registry (kept separate from the aion roster)
-  await rePeopleTable(host);
 
   // STATEMENT ACCOUNTS — source-label → entity bindings
   host.append(el("div", "pp-section-head", "STATEMENT ACCOUNTS"));
@@ -178,8 +275,58 @@ function entityCard(e, ents) {
   const card = el("div", "set-entity");
   const head = el("div", "set-entity-head");
   head.append(el("span", "wv-addr", e.name));
+  // partnered toggle — splits the accountant handoff (personal vs partner books)
+  const pt = el("button", "re-partnered" + (e.partnered ? " on" : ""), e.partnered ? "partnered" : "personal");
+  pt.title = "personal books vs partner entity — drives the accountant handoff split";
+  pt.onclick = async () => {
+    try { await postJSONOk("/api/realestate/entities/" + encodeURIComponent(e.slug) + "/save", { partnered: !e.partnered }); renderREsettings(); }
+    catch (err) { showToast("Couldn't save"); }
+  };
+  head.append(pt);
+  // derived holdings — owned and acquiring stay separate, never summed
+  const h = (holdingsCache || {})[e.name] || { owned: 0, acquiring: 0 };
+  head.append(el("span", "re-holdings", h.owned + " owned" + (h.acquiring ? " · " + h.acquiring + " acquiring" : "")));
+  // account rollup: attention in ink when any account isn't live
+  const accs = e.accounts || [];
+  const bad = accs.filter((a) => a.state !== "live").length;
+  if (accs.length) {
+    head.append(el("span", "re-acct-rollup" + (bad ? " attn" : ""),
+      bad ? bad + " needs attention" : accs.length + " connected"));
+  }
   head.append(pillLight("open →", () => { _noteReturn = "#/properties/settings"; openNoteByPath(e.path); }));
   card.append(head);
+
+  // bank-account rows (scaffold until a live pull exists — statements bind
+  // via STATEMENT ACCOUNTS below; state chips are informational)
+  const acctBox = el("div", "re-accts");
+  const renderAccts = () => {
+    acctBox.innerHTML = "";
+    accs.forEach((a, i) => {
+      const row = el("div", "re-acct-row");
+      row.append(el("span", "re-acct-label", a.label));
+      row.append(el("span", "re-acct-kind", a.kind || "operating"));
+      row.append(el("span", "re-acct-state st-" + (a.state || "not-connected"), (a.state || "not-connected").replace(/-/g, " ")));
+      const act = el("button", "re-acct-act", a.state === "live" ? "disconnect" : a.state === "needs-reauth" ? "re-authorize" : "connect");
+      act.title = "live bank pull is a later phase — this row names the account; statements bind by label";
+      act.onclick = () => showToast("Live pull comes later — statements bind by label today");
+      row.append(act);
+      const x = el("button", "uw-x", "✕");
+      x.onclick = async () => {
+        accs.splice(i, 1);
+        try { await postJSONOk("/api/realestate/entities/" + encodeURIComponent(e.slug) + "/save", { accounts: accs }); renderREsettings(); }
+        catch (err) { showToast("Couldn't save"); }
+      };
+      row.append(x);
+      acctBox.append(row);
+    });
+  };
+  renderAccts();
+  card.append(acctBox);
+  card.append(ghostInput("＋ connect an account", "set-add", async (v) => {
+    accs.push({ label: v, kind: "operating", state: "not-connected" });
+    try { await postJSONOk("/api/realestate/entities/" + encodeURIComponent(e.slug) + "/save", { accounts: accs }); renderREsettings(); }
+    catch (err) { showToast("Couldn't save"); }
+  }, "bank + last four, e.g. Midwest ····4821"));
 
   // owners editor: owner ref + percent rows, Σ warning, cycle check server-side
   const owners = (e.owners || []).map((o) => ({ ...o }));
