@@ -13,19 +13,22 @@
 .dirty-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--base-00); border-top: 1px solid var(--base-25); z-index: 20; }
 .dirty-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; color: var(--base-40); flex: 1; }
 
-/* ---- the shell: pane · inspector (the left rail became the AION-style top
-   tab-bar — #reToggle in .agent-head; see index.html) ---- */
-.prop-shell { display: flex; align-items: stretch; min-height: calc(100vh - 41px); }
-.prop-pane { flex: 1; min-width: 0; padding: 18px 24px 32px; }
-/* head shares the pane's 24px inset so REAL ESTATE aligns with the content
-   below it (AION gets this via .aion-view's own padding) */
-.properties-view .agent-head { padding-left: 24px; padding-right: 24px; }
+/* ---- the shell — mirrors AION's geometry exactly. The view is a centered
+   1080px column (like .aion-view); the agent-head + body inherit its 28px
+   inset (no own horizontal padding, same as AION); .prop-shell plays the role
+   of .aion-body; and the backlog renders its own list+inspector split
+   (.aion-backlog) just like AION. The left rail became the top tab-bar
+   (#reToggle in .agent-head). ---- */
+.properties-view { max-width: 1080px; margin: 8px auto 64px; padding: 0 28px; }
+.prop-shell { display: flex; align-items: flex-start; padding: 8px 0 80px; }
+.prop-pane { flex: 1; min-width: 0; }
 .prop-inspector {
   width: 280px; flex: none;
   border-left: 1px solid var(--base-25); background: var(--base-05);
   padding: 14px 16px; position: sticky; top: 0; align-self: flex-start;
 }
 @media (max-width: 1100px) { .prop-inspector { display: none; } }
+@media (max-width: 860px) { .properties-view { padding: 0 16px; } }
 
 /* ---- all-properties table: address · status · open todos ---- */
 .prop-cols { display: grid; grid-template-columns: 2.6fr 1fr 0.8fr; gap: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 2px 8px 6px; border-bottom: 1px solid var(--base-25); }
