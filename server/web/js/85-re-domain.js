@@ -16,13 +16,41 @@ let reBacklogSelId = null;   // selected row id
 let reBacklogSelSrc = null;  // "re" (backlog item) | "prop" (property todo)
 const reFreshDone = new Set(); // re-tasks checked this session — held in place
 
-// rock helpers over the goals `## Real Estate` area (the org rocks).
-function reRockResolved(id) { return !!reOrgRocks().find((r) => r.id === id); }
+// rock helpers over the goals `## Real Estate` area (the org rocks). A task's
+// `rock` may instead hold a `property/<slug>` ref — the same field doubles as
+// the property tether, so both kinds resolve/label here.
+function rePropBySlug(slug) { return (typeof propertyCache !== "undefined" ? propertyCache : []).find((p) => p.slug === slug); }
+function rePropLabel(p) { return p.short || p.address || p.slug; }
+function reRockResolved(id) {
+  if (!id) return false;
+  if (id.startsWith("property/")) return !!rePropBySlug(id.slice(9));
+  return !!reOrgRocks().find((r) => r.id === id);
+}
 function reRockLabel(id) {
   if (!id) return "";
+  if (id.startsWith("property/")) {
+    const p = rePropBySlug(id.slice(9));
+    return p ? rePropLabel(p) : id.slice(9).replace(/-/g, " ");
+  }
   const rock = reOrgRocks().find((r) => r.id === id);
   if (rock) return rock.text;
   return id.replace(/^(realestate|re)\//, "").replace(/-/g, " ");
+}
+
+// reRockSuggest — the task inspector's rock typeahead: org rocks first, then
+// properties (picked as a `property/<slug>` ref). Empty pick clears the tether.
+function reRockSuggest(q, add, ta, onPick) {
+  add("— no rock —", "", () => { ta.commit(""); onPick(""); });
+  reOrgRocks()
+    .filter((r) => !q || (r.text || "").toLowerCase().includes(q))
+    .slice(0, 8)
+    .forEach((r) => add(r.text, "rock", () => { ta.commit(r.text); onPick(r.id); }));
+  (typeof propertyCache !== "undefined" ? propertyCache : [])
+    .filter((p) => !q || (p.address || "").toLowerCase().includes(q) ||
+      (p.slug || "").includes(q) || (p.deal || "").toLowerCase().includes(q))
+    .slice(0, 8)
+    .forEach((p) => add(rePropLabel(p) + (p.deal ? "  · " + p.deal : ""), "property",
+      () => { ta.commit(rePropLabel(p)); onPick("property/" + p.slug); }));
 }
 
 function reBacklogSelect(src, id) {
@@ -268,14 +296,13 @@ function renderREBacklogInspector(insp) {
   field("owner", ownerTa.el);
 
   if (it.kind === "task") {
-    const rockSel = document.createElement("select");
-    rockSel.className = "pp-in";
-    const no = document.createElement("option"); no.value = ""; no.textContent = "— no rock —"; rockSel.append(no);
-    reOrgRocks().forEach((r) => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.text; rockSel.append(o); });
-    if (it.rock && !reRockResolved(it.rock)) { const o = document.createElement("option"); o.value = it.rock; o.textContent = reRockLabel(it.rock) + " (historic)"; rockSel.append(o); }
-    rockSel.value = it.rock || "";
-    rockSel.onchange = () => patch({ rock: rockSel.value });
-    field("rock", rockSel);
+    const setRock = (v) => { if (v !== (it.rock || "")) patch({ rock: v }); };
+    const rockTa = typeahead({
+      placeholder: "rock or property",
+      initial: it.rock ? reRockLabel(it.rock) : "",
+      suggest: (q, add, ta) => reRockSuggest(q, add, ta, setRock),
+    });
+    field("rock", rockTa.el);
     const due = inputEl(""); due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
     due.onchange = () => patch({ due: due.value });
     field("due", due);
