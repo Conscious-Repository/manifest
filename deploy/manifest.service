@@ -24,6 +24,10 @@ User=benjamin
 Group=benjamin
 WorkingDirectory=/home/benjamin/src/manifest
 Environment=GOTOOLCHAIN=auto
+# metis is UTC; the owner's clock is Chicago. Cron next-fire math and run
+# stamps read the process TZ — without this every ritual display (and the
+# engine's schedule, pinned the same way in ITS unit) shifts 5-6 hours.
+Environment=TZ=America/Chicago
 ExecStart=/home/benjamin/src/manifest/manifest -config /home/benjamin/src/manifest/config.json
 Restart=on-failure
 RestartSec=5
