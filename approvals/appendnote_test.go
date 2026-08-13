@@ -98,6 +98,63 @@ func TestAppendVaultNoteRefusals(t *testing.T) {
 	}
 }
 
+func TestAppendVaultNoteRenamesRange(t *testing.T) {
+	s, vault := appendTestStore(t)
+	sections := "## 2026-08-14 — Jane Doe\nlatest word"
+	p := appendProposal("log/2026-08-10 roof bid.md", "thread-abc123", sections)
+	p.RenameTo = "log/2026-08-10 - 2026-08-14 roof bid.md"
+	saved, err := s.Propose(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notified []string
+	applied, refused := s.AutoApplyAppends(func(paths []string) { notified = append(notified, paths...) })
+	if applied != 1 || refused != 0 {
+		t.Fatalf("applied=%d refused=%d", applied, refused)
+	}
+	// the note lives under the range name; the old file is gone
+	after, err := os.ReadFile(filepath.Join(vault, "log", "2026-08-10 - 2026-08-14 roof bid.md"))
+	if err != nil {
+		t.Fatalf("renamed note missing: %v", err)
+	}
+	if !strings.Contains(string(after), "latest word") || !strings.Contains(string(after), "first message body") {
+		t.Fatalf("content wrong after rename:\n%s", after)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "log", "2026-08-10 roof bid.md")); err == nil {
+		t.Fatal("old note still present after rename")
+	}
+	// the extraction nudge names the NEW path
+	if len(notified) != 1 || notified[0] != "log/2026-08-10 - 2026-08-14 roof bid.md" {
+		t.Fatalf("notify paths = %v", notified)
+	}
+	if _, err := s.LoadApproved(saved.ID); err != nil {
+		t.Fatalf("approved record: %v", err)
+	}
+	// a rename target that already exists refuses (falls back to a card)
+	if err := os.WriteFile(filepath.Join(vault, "log", "2026-08-10 collision.md"), []byte(appendTestNote), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vault, "log", "2026-08-10 - 2026-08-15 collision.md"), []byte("taken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	q := appendProposal("log/2026-08-10 collision.md", "thread-abc123", "## x\nbody")
+	q.RenameTo = "log/2026-08-10 - 2026-08-15 collision.md"
+	if err := s.applyAppendVaultNote(q); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("existing rename target: got %v", err)
+	}
+}
+
+func TestRetitleKeepsDateRange(t *testing.T) {
+	got, ok := retitleApplyPath("2026-08-10 - 2026-08-14 roof bid.md", "jane roofing saga")
+	if !ok || got != "2026-08-10 - 2026-08-14 jane roofing saga.md" {
+		t.Fatalf("range retitle = %q,%v", got, ok)
+	}
+	got, ok = retitleApplyPath("2026-08-10 roof bid.md", "jane roofing saga")
+	if !ok || got != "2026-08-10 jane roofing saga.md" {
+		t.Fatalf("single retitle = %q,%v", got, ok)
+	}
+}
+
 func TestAutoApplyAppends(t *testing.T) {
 	s, vault := appendTestStore(t)
 	good, err := s.Propose(appendProposal("log/2026-08-10 roof bid.md", "thread-abc123", "## 2026-08-12 — Jane Doe\nsecond message"))

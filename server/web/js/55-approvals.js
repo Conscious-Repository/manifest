@@ -217,11 +217,11 @@ function parseAttendees(proposed) {
 }
 
 // buildTitleEditor renders an editable title field for a create-vault-note. The
-// date prefix (from the recording) stays fixed; the owner edits the title
-// portion of the filename. Mutates ref.value in place so Confirm sends it; a
-// live preview shows the resulting filename.
+// date prefix (from the recording; a date RANGE for email thread notes) stays
+// fixed; the owner edits the title portion of the filename. Mutates ref.value
+// in place so Confirm sends it; a live preview shows the resulting filename.
 function buildTitleEditor(applyPath, ref) {
-  const m = /^(\d{4}-\d{2}-\d{2}) (.+)\.md$/.exec(applyPath || "");
+  const m = /^(\d{4}-\d{2}-\d{2}(?: - \d{4}-\d{2}-\d{2})?) (.+)\.md$/.exec(applyPath || "");
   const date = m ? m[1] : "";
   ref.value = m ? m[2] : "";
   const wrap = el("div", "appr-title");

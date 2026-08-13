@@ -45,10 +45,13 @@ type Proposal struct {
 	ErrandAccount string `json:"errandAccount,omitempty"`
 	ErrandGoal    string `json:"errandGoal,omitempty"`
 	// append-vault-note fields (email-sync): the Gmail thread identity the
-	// append is anchored to, and the auto-apply stamp ("applied <RFC3339>")
-	// recorded when AutoApplyAppends confirmed it without a human card.
+	// append is anchored to, the auto-apply stamp ("applied <RFC3339>")
+	// recorded when AutoApplyAppends confirmed it without a human card, and
+	// the optional rename target — the filename carries the thread's date
+	// range, so a grown thread extends its end date on apply.
 	GmailThreadID string `json:"gmailThreadId,omitempty"`
 	Auto          string `json:"auto,omitempty"`
+	RenameTo      string `json:"renameTo,omitempty"`
 }
 
 // TypeCreateVaultNote is the granola-sync proposal type (plan §4): it writes a
@@ -363,7 +366,9 @@ func (s *Store) LoadApproved(id string) (Proposal, error) {
 }
 
 // datePrefixRe splits a "YYYY-MM-DD <title>.md" apply-path into date + title.
-var datePrefixRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}) (.+)\.md$`)
+// Email thread notes carry a date RANGE ("YYYY-MM-DD - YYYY-MM-DD <title>.md");
+// the whole range is the fixed prefix, so a retitle never clobbers the end date.
+var datePrefixRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}(?: - \d{4}-\d{2}-\d{2})?) (.+)\.md$`)
 
 // filenameUnsafe are the characters banned from a note filename (mirrors the
 // engine's granola/pocket noteFilename sanitizer).
@@ -817,6 +822,7 @@ func (s *Store) parse(path string) (Proposal, error) {
 		// append-vault-note payload (email-sync)
 		GmailThreadID: strings.TrimSpace(fm["gmail-thread-id"]),
 		Auto:          strings.TrimSpace(fm["auto"]),
+		RenameTo:      strings.TrimSpace(fm["rename-to"]),
 	}, nil
 }
 
@@ -839,6 +845,7 @@ func serialize(p Proposal) string {
 		Set("errand-goal", p.ErrandGoal).
 		Set("gmail-thread-id", p.GmailThreadID).
 		Set("auto", p.Auto).
+		Set("rename-to", p.RenameTo).
 		String(strings.TrimSpace(p.Body))
 }
 

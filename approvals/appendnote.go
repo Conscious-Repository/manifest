@@ -43,7 +43,10 @@ func AppendVaultNotePathAllowed(rel string) bool {
 // gmail-thread-id frontmatter must equal the proposal's (the note-identity
 // guard against renames/replacements), and the payload must be body text only —
 // a frontmatter-shaped payload is refused so an append can never touch the
-// note's frontmatter.
+// note's frontmatter. When the proposal carries rename-to (the thread's date
+// range extended), the grown note lands under the NEW name and the old file is
+// removed — the start date and the owner's title are preserved by the engine,
+// which only ever extends the end date.
 func (s *Store) applyAppendVaultNote(p Proposal) error {
 	if !AppendVaultNotePathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is not a log/ dated note (log/YYYY-MM-DD <title>.md)", p.ApplyPath)
@@ -62,11 +65,25 @@ func (s *Store) applyAppendVaultNote(p Proposal) error {
 		return errors.New("apply refused: no vault root configured for append-vault-note")
 	}
 	logDir := filepath.Join(s.vaultRoot, "log")
-	target := filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))
 	logAbs, _ := filepath.Abs(logDir)
+	target := filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))
 	tgtAbs, _ := filepath.Abs(target)
 	if filepath.Dir(tgtAbs) != logAbs {
 		return fmt.Errorf("apply refused: %q escapes log/", p.ApplyPath)
+	}
+	final := target
+	if rt := strings.TrimSpace(p.RenameTo); rt != "" && rt != p.ApplyPath {
+		if !AppendVaultNotePathAllowed(rt) {
+			return fmt.Errorf("apply refused: rename target %q is not a log/ dated note", rt)
+		}
+		final = filepath.Join(s.vaultRoot, filepath.FromSlash(rt))
+		finAbs, _ := filepath.Abs(final)
+		if filepath.Dir(finAbs) != logAbs {
+			return fmt.Errorf("apply refused: rename target %q escapes log/", rt)
+		}
+		if _, err := os.Stat(final); err == nil {
+			return fmt.Errorf("apply refused: rename target %q already exists — not overwriting", rt)
+		}
 	}
 	cur, err := os.ReadFile(target)
 	if err != nil {
@@ -81,7 +98,26 @@ func (s *Store) applyAppendVaultNote(p Proposal) error {
 		body += "\n"
 	}
 	body += "\n" + payload + "\n"
-	return os.WriteFile(target, []byte(body), 0o644)
+	if err := os.WriteFile(final, []byte(body), 0o644); err != nil {
+		return err
+	}
+	if final != target {
+		if err := os.Remove(target); err != nil {
+			_ = os.Remove(final) // roll back the copy so the note isn't doubled
+			return fmt.Errorf("apply refused: rename could not remove the old note: %w", err)
+		}
+	}
+	return nil
+}
+
+// AppendFinalPath is the vault-relative path the grown note lives at AFTER a
+// successful apply (the rename target when the range extended) — the path the
+// extraction nudge should name.
+func AppendFinalPath(p Proposal) string {
+	if rt := strings.TrimSpace(p.RenameTo); rt != "" {
+		return rt
+	}
+	return p.ApplyPath
 }
 
 // AutoApplyAppends applies every pending append-vault-note whose target note
@@ -109,7 +145,7 @@ func (s *Store) AutoApplyAppends(notify func(paths []string)) (int, int) {
 		}
 		_ = os.Remove(filepath.Join(s.dir, "pending", p.ID+".md"))
 		applied++
-		paths = append(paths, p.ApplyPath)
+		paths = append(paths, AppendFinalPath(p))
 	}
 	if len(paths) > 0 && notify != nil {
 		notify(paths)

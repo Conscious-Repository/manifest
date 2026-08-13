@@ -258,9 +258,9 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		}
 	}
 	// A manually-confirmed append (the auto-apply-refused fallback card) grew
-	// the thread note — same nudge; the apply path is already log/-relative.
+	// the thread note — same nudge; the final path reflects a range rename.
 	if loadErr == nil && pending.Type == approvals.TypeAppendVaultNote && s.aionSink != nil {
-		s.aionSink.Notify([]string{pending.ApplyPath})
+		s.aionSink.Notify([]string{approvals.AppendFinalPath(pending)})
 	}
 	if loadErr == nil && pending.Type == approvals.TypeRunErrand {
 		if s.errandExec == nil {
