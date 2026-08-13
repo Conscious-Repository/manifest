@@ -56,7 +56,41 @@ func gitRun(dir string, timeout time.Duration, args ...string) (string, error) {
 const (
 	gitLocalTimeout = 30 * time.Second
 	gitPushTimeout  = 120 * time.Second
+	gitPushTries    = 3
 )
+
+// isNonFastForward reports whether a push error is a divergence rejection (the
+// remote moved ahead) — the one class reconcileAndRetryPush can fix. It matches
+// git's own hints so a *server* rejection ("[remote rejected] … Internal Server
+// Error") is NOT mistaken for divergence: that's transient and gets retried.
+func isNonFastForward(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "non-fast-forward") || strings.Contains(s, "fetch first")
+}
+
+// gitPushRetry pushes with a few attempts, backing off between them. A publish
+// is user-triggered and infrequent, and GitHub returns the occasional 5xx /
+// drops the connection under load ("Publish failed at push" with a tiny commit
+// that pushes fine seconds later) — a bounded retry absorbs that. A
+// non-fast-forward rejection returns immediately so the caller can reconcile
+// (retrying it unchanged would only waste time).
+func gitPushRetry(dir, remote, branch string) (string, error) {
+	var out string
+	var err error
+	for attempt := 0; attempt < gitPushTries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 2 * time.Second)
+		}
+		out, err = gitRun(dir, gitPushTimeout, "push", remote, branch)
+		if err == nil || isNonFastForward(err) {
+			return out, err
+		}
+	}
+	return out, err
+}
 
 // reconcileAndRetryPush recovers a non-fast-forward publish push. The portal
 // checkout can fall behind when a portal-source commit is pushed from another
@@ -78,7 +112,7 @@ func reconcileAndRetryPush(p aionPortalCfg, commit string, pushErr error) (strin
 	if h, err := gitRun(p.Path, gitLocalTimeout, "rev-parse", "HEAD"); err == nil {
 		commit = strings.TrimSpace(h)
 	}
-	if _, err := gitRun(p.Path, gitPushTimeout, "push", p.Remote, p.Branch); err != nil {
+	if _, err := gitPushRetry(p.Path, p.Remote, p.Branch); err != nil {
 		return commit, err
 	}
 	return commit, nil
@@ -567,7 +601,7 @@ func (s *Server) handleAionPublish(w http.ResponseWriter, r *http.Request) {
 		fail("commit", err)
 		return
 	}
-	if _, err := gitRun(p.Path, gitPushTimeout, "push", p.Remote, p.Branch); err != nil {
+	if _, err := gitPushRetry(p.Path, p.Remote, p.Branch); err != nil {
 		// A remote advanced elsewhere (typically a portal-source commit pushed
 		// from another checkout) makes the push non-fast-forward. Publish
 		// commits only ever touch the data-contract paths, disjoint from portal

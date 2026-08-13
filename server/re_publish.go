@@ -275,7 +275,7 @@ func (s *Server) handleRePublish(w http.ResponseWriter, r *http.Request) {
 		fail("commit", err)
 		return
 	}
-	if _, err := gitRun(p.Path, gitPushTimeout, "push", p.Remote, p.Branch); err != nil {
+	if _, err := gitPushRetry(p.Path, p.Remote, p.Branch); err != nil {
 		// a remote advanced elsewhere (e.g. a portal-source commit) makes this
 		// non-fast-forward; publish commits touch only the data-contract paths,
 		// so rebase onto the remote tip and retry once (self-healing) — a real

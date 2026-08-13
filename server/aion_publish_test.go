@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -479,5 +480,36 @@ func TestReconcileAndRetryPushConflictAborts(t *testing.T) {
 	}
 	if h := git(t, ours, "rev-parse", "HEAD"); h != localHead {
 		t.Fatalf("local HEAD moved despite abort: %s → %s", localHead, h)
+	}
+}
+
+// isNonFastForward must fire ONLY on a real divergence. A GitHub server
+// rejection ("[remote rejected] … Internal Server Error") also contains the
+// word "rejected" but is transient — misclassifying it as non-ff would route a
+// retryable blip into a pointless rebase instead of a retry (the failure mode
+// behind a "Publish failed at push" on a tiny commit that pushes fine seconds
+// later).
+func TestIsNonFastForward(t *testing.T) {
+	nonFF := []string{
+		"git push origin main: exit status 1 — ! [rejected] main -> main (non-fast-forward)",
+		"failed to push some refs — Updates were rejected because the tip of your current branch is behind; hint: fetch first",
+	}
+	transient := []string{
+		"git push origin main: exit status 1 — remote: Internal Server Error\n ! [remote rejected] main -> main (Internal Server Error)",
+		"git push origin main: exit status 128 — fatal: Could not read from remote repository",
+		"ssh: connect to host github.com port 22: Connection timed out",
+	}
+	for _, s := range nonFF {
+		if !isNonFastForward(errors.New(s)) {
+			t.Errorf("expected non-fast-forward for: %q", s)
+		}
+	}
+	for _, s := range transient {
+		if isNonFastForward(errors.New(s)) {
+			t.Errorf("expected transient (retryable), not non-ff, for: %q", s)
+		}
+	}
+	if isNonFastForward(nil) {
+		t.Error("nil error must not be non-fast-forward")
 	}
 }
