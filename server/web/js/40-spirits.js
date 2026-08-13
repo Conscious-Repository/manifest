@@ -634,15 +634,14 @@ function buildPortalActions(p, acts, wrap) {
   }
   if (p.kind === "oauth") {
     if (p.id === "gmail") {
-      // single-account, read-only. degraded (needs reauth) leads with a
-      // prominent reconnect; connected offers reconnect + disconnect.
-      const label = p.state === "degraded" ? "reconnect" : (p.state === "open" ? "reconnect" : "connect");
-      const pill = p.state === "degraded" ? el("button", "pill-solid", "reconnect") : pillLight(label, () => portalConnectGmail());
-      if (p.state === "degraded") pill.onclick = () => portalConnectGmail();
+      // multi-account, read-only. The accounts panel holds per-account
+      // sync/extract/workspace routing + the paste-back connect flow.
+      const label = p.state === "degraded" ? "reconnect" : "accounts";
+      const pill = p.state === "degraded"
+        ? el("button", "pill-solid", label)
+        : pillLight(label, () => toggleGmailAccountsPanel(wrap));
+      if (p.state === "degraded") pill.onclick = () => toggleGmailAccountsPanel(wrap);
       acts.append(pill);
-      if (p.state === "open" || (p.accounts || []).length) {
-        acts.append(pillLight("disconnect", () => { if (confirm("Disconnect Gmail? The waiting-on digest stops until you reconnect.")) portalDisconnectGmail(); }));
-      }
       return;
     }
     if ((p.accounts || []).length) {
@@ -723,18 +722,114 @@ async function portalDisconnectCalendar(email) {
   loadPortals();
 }
 
-// Gmail read-only OAuth — manifest mints the token the excalibur EA digest reads.
-async function portalConnectGmail() {
-  showToast("Opening Google sign-in… (check your browser)", null, "info");
-  try {
-    const r = await postJSON("/api/gmail/connect", {});
-    showToast(r && r.connected ? "Gmail reconnected — " + r.connected : "Gmail reconnected", null, "info");
-  } catch (e) { showToast("Couldn't reconnect Gmail — " + (e.message || "sign-in failed")); }
-  loadPortals();
+// Gmail read-only OAuth, multi-account — manifest mints the tokens the
+// excalibur email-sync + EA digest read. The panel lists every connected
+// mailbox with its routing (sync / extraction workspace) and hosts the
+// paste-back connect flow (manifest runs headless, so Google's localhost
+// redirect can't reach it — the owner approves in their own browser and
+// pastes the resulting URL back).
+async function toggleGmailAccountsPanel(wrap) {
+  const existing = wrap.querySelector(".portal-form");
+  if (existing) { existing.remove(); return; }
+  const form = el("div", "portal-form gmail-accounts");
+  wrap.append(form);
+  await renderGmailAccounts(form);
 }
-async function portalDisconnectGmail() {
-  try { await postJSON("/api/gmail/disconnect", {}); } catch (e) {}
-  loadPortals();
+
+async function renderGmailAccounts(form) {
+  form.innerHTML = "";
+  let accounts = [];
+  try { accounts = (await (await fetch("/api/gmail/accounts")).json()).accounts || []; }
+  catch (e) { form.append(el("div", "portal-err", "couldn't load accounts")); return; }
+
+  accounts.forEach((a) => {
+    const row = el("div", "gmail-acct-row");
+    const head = el("div", "gmail-acct-head");
+    head.append(el("span", "gmail-acct-email", a.email));
+    if (a.primary) head.append(el("span", "gmail-acct-primary", "primary"));
+    if (a.needsReauth) head.append(el("span", "portal-err", "sign-in expired"));
+    row.append(head);
+
+    const ctl = el("div", "gmail-acct-ctl");
+    const mkToggle = (label, key, title) => {
+      const lab = el("label", "gmail-acct-toggle");
+      const cb = el("input", "");
+      cb.type = "checkbox";
+      cb.checked = !!a[key];
+      cb.title = title;
+      cb.onchange = () => { a[key] = cb.checked; saveAcct(); };
+      lab.append(cb, el("span", "", label));
+      return lab;
+    };
+    ctl.append(mkToggle("sync", "sync", "mirror this mailbox's known-contact threads into the vault"));
+    ctl.append(mkToggle("extract", "extract", "pre-tag new thread notes with the workspace category so confirming auto-extracts"));
+    const wsSel = document.createElement("select");
+    wsSel.className = "gmail-acct-ws";
+    [["", "— no workspace"], ["aion", "AION"], ["real-estate", "Real Estate"]].forEach(([v, label]) => {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = label;
+      wsSel.append(o);
+    });
+    wsSel.value = a.workspace || "";
+    wsSel.onchange = () => { a.workspace = wsSel.value; saveAcct(); };
+    ctl.append(wsSel);
+    const saveAcct = async () => {
+      try {
+        await postJSONOk("/api/gmail/accounts/set", {
+          email: a.email, sync: !!a.sync, extract: !!a.extract, workspace: a.workspace || "",
+        });
+        showToast(a.email + " routing saved", null, "info");
+      } catch (e) { showToast("Couldn't save — " + (e.message || "error")); }
+    };
+    const drop = pillLight("disconnect", async () => {
+      if (!confirm("Disconnect " + a.email + "?" + (a.primary ? " The waiting-on digest stops until you reconnect." : ""))) return;
+      try { await postJSONOk("/api/gmail/accounts/disconnect", { email: a.email }); } catch (e) {}
+      renderGmailAccounts(form);
+      loadPortals();
+    });
+    ctl.append(drop);
+    row.append(ctl);
+    form.append(row);
+  });
+  if (!accounts.length) form.append(el("div", "portal-note", "no Google accounts connected yet"));
+
+  // paste-back connect flow
+  const add = el("div", "gmail-acct-add");
+  const start = pillLight(accounts.length ? "connect another account" : "connect account", async () => {
+    try {
+      const r = await postJSONOk("/api/gmail/connect/start", {});
+      window.open(r.authUrl, "_blank");
+      start.replaceWith(buildPasteBack(form));
+      showToast("Approve in the Google tab, then paste the address it lands on", null, "info");
+    } catch (e) { showToast("Couldn't start sign-in — " + (e.message || "error")); }
+  });
+  add.append(start);
+  form.append(add);
+}
+
+// buildPasteBack renders step 2 of the connect flow: the paste box + finish.
+function buildPasteBack(form) {
+  const box = el("div", "gmail-acct-paste");
+  box.append(el("div", "portal-note", "after approving, the tab lands on an unreachable 127.0.0.1 page — copy its FULL address and paste it here"));
+  const input = el("input", "portal-input");
+  input.type = "text";
+  input.placeholder = "http://127.0.0.1:8123/oauth/callback?state=…&code=…";
+  input.spellcheck = false;
+  const fin = el("button", "pill-solid", "finish connect");
+  fin.onclick = async () => {
+    fin.disabled = true; fin.textContent = "connecting…";
+    try {
+      const r = await postJSONOk("/api/gmail/connect/finish", { redirect: input.value });
+      showToast("Connected " + r.connected, null, "info");
+      renderGmailAccounts(form);
+      loadPortals();
+    } catch (e) {
+      fin.disabled = false; fin.textContent = "finish connect";
+      showToast("Connect failed — " + (e.message || "check the pasted URL").slice(0, 140));
+    }
+  };
+  box.append(input, fin);
+  return box;
 }
 
 async function loadSpiritsStatus() {

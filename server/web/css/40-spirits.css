@@ -272,3 +272,17 @@
 
 /* armed destructive action: quiet until armed, then ink */
 .sprt-delete.armed { color: var(--base-100); font-weight: 500; border-color: var(--base-100); }
+
+/* Gmail multi-account panel (email-sync workspaces) */
+.portal-form.gmail-accounts { display: block; }
+.gmail-acct-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.gmail-acct-row:last-of-type { border-bottom: 0; }
+.gmail-acct-head { display: flex; align-items: baseline; gap: 8px; }
+.gmail-acct-email { font-weight: 500; color: var(--base-100); }
+.gmail-acct-primary { font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
+.gmail-acct-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 6px; }
+.gmail-acct-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--base-70); cursor: pointer; }
+.gmail-acct-ws { font: inherit; font-size: 12px; color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 3px 6px; }
+.gmail-acct-add { margin-top: 10px; }
+.gmail-acct-paste { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.gmail-acct-paste .portal-input { width: 100%; }

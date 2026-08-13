@@ -89,6 +89,7 @@ type Client struct {
 	cached    State
 	checkedAt time.Time
 	inflight  bool
+	pending   map[string]time.Time // paste-back OAuth states awaiting FinishConnect
 }
 
 func New() *Client { return &Client{} }

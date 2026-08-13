@@ -204,6 +204,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/gmail/status", s.handleGmailStatus)
 	mux.HandleFunc("/api/gmail/connect", s.handleGmailConnect)
 	mux.HandleFunc("/api/gmail/disconnect", s.handleGmailDisconnect)
+	mux.HandleFunc("GET /api/gmail/accounts", s.handleGmailAccounts)
+	mux.HandleFunc("POST /api/gmail/accounts/set", s.handleGmailAccountSet)
+	mux.HandleFunc("POST /api/gmail/connect/start", s.handleGmailConnectStart)
+	mux.HandleFunc("POST /api/gmail/connect/finish", s.handleGmailConnectFinish)
+	mux.HandleFunc("POST /api/gmail/accounts/disconnect", s.handleGmailAccountDisconnect)
 
 	// SPIRITS — the excalibur harness console. Read-only over the sibling tree
 	// plus record-only user actions (feed keep/discard/snooze, approvals
