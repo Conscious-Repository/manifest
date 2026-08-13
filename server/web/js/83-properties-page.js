@@ -54,17 +54,6 @@ async function renderPropertyPage(slug) {
   ownerLine.append(fromBtn);
   host.append(ownerLine);
 
-  // UNTIL — the exit condition, click-to-edit
-  const untilRow = el("div", "pp3-until");
-  untilRow.append(el("span", "pp3-until-label", "UNTIL"));
-  const untilVal = el("span", "pp3-until-val" + (p.until ? "" : " ghost"),
-    p.until || "＋ the exit condition, e.g. “Refinanced at 75% LTV, DSCR ≥ 1.25”");
-  untilVal.onclick = () => {
-    const v = prompt("Exit condition:", p.until || "");
-    if (v !== null) propFieldSave(p.slug, "until", v.trim());
-  };
-  untilRow.append(untilVal);
-  host.append(untilRow);
 
   const cols = el("div", "pp3-cols");
   const main = el("div", "pp3-main");
@@ -102,17 +91,18 @@ async function renderPropertyPage(slug) {
   const stagesSec = el("div", "pp3-sec");
   const sh = el("div", "pp3-sec-head");
   const open = (p.todos || []).filter((t) => !t.checked);
-  sh.append(el("span", "pp3-sec-title", "STAGES"), el("span", "pp3-sec-count",
-    (p.currentStage ? "→ " + p.currentStage + " · " : "") + open.length + " open"));
+  sh.append(el("span", "pp3-sec-title", "STAGES"), el("span", "pp3-sec-count", open.length + " open"));
   stagesSec.append(sh);
   const stages = p.work || [];
   const byStage = {};
   open.forEach((t) => { const k = t.stage || ""; (byStage[k] = byStage[k] || []).push(t); });
   stages.forEach((st) => {
-    const isCur = !!st.current;
-    const line = el("div", "pp3-stage" + (st.checked ? " done" : "") + (isCur ? " cur" : ""));
+    // stages are NOT sequential (owner call 2026-08-12): no current marker,
+    // any stage takes tasks, stages progress in parallel (demo alongside
+    // exterior/structural on a rehab)
+    const line = el("div", "pp3-stage" + (st.checked ? " done" : ""));
     // glyph doubles as the done toggle (server stamps [done:: date] on check)
-    const glyph = el("button", "pp3-stage-glyph pp3-stage-check", st.checked ? "✓" : isCur ? "→" : "○");
+    const glyph = el("button", "pp3-stage-glyph pp3-stage-check", st.checked ? "✓" : "○");
     glyph.title = st.checked ? "mark stage not done" : "mark stage done";
     glyph.onclick = (e) => { e.stopPropagation(); propWorkOp(p, { op: "check", id: st.id, checked: !st.checked }); };
     line.append(glyph);
@@ -141,9 +131,27 @@ async function renderPropertyPage(slug) {
     };
     line.append(del);
     stagesSec.append(line);
-    const nest = (byStage[st.text] || []).concat(isCur ? (byStage[""] || []) : []);
-    nest.forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
+    (byStage[st.text] || []).forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
+    if (!st.checked) {
+      const add = el("div", "pp3-compose nested");
+      add.append(el("span", "pp3-compose-glyph", "○"));
+      const input = inputEl("add a task to " + (st.text || "this stage") + "…");
+      input.className = "pp3-compose-in";
+      const submit = async () => {
+        const text = input.value.trim();
+        if (!text) return;
+        try {
+          await postJSONOk("/api/todos/item", { text, stage: st.text, container: { kind: "property", slug: p.slug } });
+          renderProperties();
+        } catch (e) { showToast("Couldn't add"); }
+      };
+      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submit(); });
+      add.append(input);
+      stagesSec.append(add);
+    }
   });
+  // stage-less tasks live at the record level, above the general composer
+  (byStage[""] || []).forEach((t) => { const row = propTodoRow(p, t); stagesSec.append(row); });
   if (stages.length) {
     stagesSec.append(ghostInput("＋ stage", "pp3-stage-add", (v) => propWorkOp(p, { op: "add-stage", text: v }), "stage name…"));
   }

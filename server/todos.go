@@ -91,6 +91,7 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		Text, Domain, Rock, Issue, Bucket, Owner string
+		Stage                                    string // milestone/stage placement (goals rocks + property stages)
 		Container                                struct{ Kind, Slug string }
 	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Text) == "" {
@@ -103,6 +104,7 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 			return list.Append(&todos.Todo{
 				Text:  strings.Join(strings.Fields(b.Text), " "),
 				Owner: strings.TrimSpace(b.Owner),
+				Stage: strings.TrimSpace(b.Stage),
 				Added: time.Now().Format("2006-01-02"),
 			}), true, nil
 		}) {
@@ -136,6 +138,7 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 		t := &todos.Todo{
 			Text:  strings.Join(strings.Fields(b.Text), " "),
 			Rock:  strings.TrimSpace(b.Rock),
+			Stage: strings.TrimSpace(b.Stage),
 			Issue: strings.TrimSpace(b.Issue),
 			Owner: strings.TrimSpace(b.Owner),
 			Added: time.Now().Format("2006-01-02"),

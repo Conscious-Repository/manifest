@@ -35,6 +35,9 @@ async function loadGoals(focusId) {
     setGoalsTab("orient");
     renderOrient(doc.areas || []);
     if (focusId) focusGoal(focusId);
+    // the AION tab mounts this same outline for its area — a mutation made
+    // there must repaint there, not just the hidden goals view
+    if (location.hash.startsWith("#/aion") && typeof loadAion === "function") loadAion();
   } catch (e) { setSaveState("error"); }
 }
 
@@ -124,8 +127,6 @@ function renderOrientMeta(areas) {
   let txt = `${now.getFullYear()} · Q${q}`;
   const rocks = (areas || []).flatMap((a) => (a.rocks || []).filter((r) => !r.checked));
   if (rocks.length > 5) txt += ` · ${rocks.length} rocks · heavy`;
-  const noFinish = rocks.filter((r) => !r.until).length;
-  if (noFinish > 0) txt += ` · ${noFinish} without finish lines`;
   meta.textContent = txt;
 }
 
@@ -150,17 +151,17 @@ function rockTodos(rockId) {
 }
 
 function rockLint(g) {
+  // owner call 2026-08-12: the until/verify nags are gone; "stalled" shows
+  // ONLY when the rock has no open tasks under it — visible work is its own
+  // proof of life.
   const reasons = [];
-  if (!g.until) reasons.push("no finish line");
-  if (!g.verify) reasons.push("no check");
-  if (!(g.serves || []).length) reasons.push("unlinked");
   const hasOpenTask = rockTodos(g.id).length > 0; // substrate join, not task depth
-  let staleDays = 0;
-  if (g.moved) {
-    const d = Math.floor((Date.now() - new Date(g.moved + "T00:00:00").getTime()) / 86400000);
-    if (d >= 14) staleDays = d;
-  }
-  if (!hasOpenTask || staleDays >= 14) {
+  if (!hasOpenTask) {
+    let staleDays = 0;
+    if (g.moved) {
+      const d = Math.floor((Date.now() - new Date(g.moved + "T00:00:00").getTime()) / 86400000);
+      if (d >= 14) staleDays = d;
+    }
     reasons.push(staleDays >= 14 ? `stalled ${staleDays}d` : "stalled");
   }
   return reasons;
@@ -290,23 +291,22 @@ function rockComposer(area) {
   ghost.addEventListener("click", () => {
     const box = el("div", "o-composer");
     const name = el("input", "o-edit o-composer-name"); name.placeholder = "name the rock…";
-    const until = el("input", "o-edit"); until.placeholder = "done when…            (skippable)";
     const verify = el("input", "o-edit"); verify.placeholder = "proven by…            (skippable)";
     const done = () => {
       const t = name.value.trim();
       if (!t) { box.replaceWith(ghost); return; }
       goalsApi("POST", "/api/goals/item", {
         area: area.name, parentId: "", section: "rock", text: t, owner: "me",
-        until: until.value.trim(), verify: verify.value.trim(),
+        verify: verify.value.trim(),
       });
     };
-    [name, until, verify].forEach((i) => i.addEventListener("keydown", (e) => {
+    [name, verify].forEach((i) => i.addEventListener("keydown", (e) => {
       if (e.key === "Enter") done();
       else if (e.key === "Escape") box.replaceWith(ghost);
     }));
     const save = el("button", "o-composer-save", "add rock");
     save.addEventListener("click", done);
-    box.append(name, until, verify, save);
+    box.append(name, verify, save);
     ghost.replaceWith(box);
     name.focus();
   });
@@ -555,6 +555,19 @@ function goTaskRow(t) {
   });
   row.append(tt);
   row.append(el("span", "go-task-age", t.ageDays > 0 ? t.ageDays + "d" : ""));
+  const x = el("button", "go-task-x", "✕");
+  x.title = "remove this task";
+  x.onclick = async (e) => {
+    e.stopPropagation();
+    if (!x.classList.contains("armed")) {
+      x.classList.add("armed");
+      setTimeout(() => x.classList.remove("armed"), 2500);
+      return;
+    }
+    try { await postJSONOk("/api/todos/drop", { id: t.id }); } catch (err) {}
+    loadGoals();
+  };
+  row.append(x);
   return row;
 }
 
@@ -564,7 +577,6 @@ function goTaskRow(t) {
 // rule: ink when stalled · accent when tasked · accent-soft otherwise.
 function rockOutline(g, areaName) {
   const stages = g.children || [];
-  const cur = stages.find((c) => !c.checked);
   const reasons = g.checked ? [] : rockLint(g);
   const stalled = reasons.find((r) => r.startsWith("stalled"));
   const tethered = g.checked ? [] : rockTodos(g.id);
@@ -586,64 +598,67 @@ function rockOutline(g, areaName) {
   const name = el("span", "go-rock-name" + (g.checked ? " done" : ""), g.text);
   clickToEdit(name, () => g.text, (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v }));
   line.append(name);
-  const patchUntil = (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, until: v });
-  if (g.until) {
-    const tag = el("span", "go-until", "until " + g.until);
-    clickToEdit(tag, () => g.until, patchUntil);
-    line.append(tag);
-  } else if (!g.checked) {
-    line.append(ghostInput("until…", "go-until-ghost", patchUntil, "done when…"));
-  }
   if (reasons.length) {
     const lint = el("span", "go-lint", "● " + reasons.join(" · "));
-    lint.title = "computed from the ladder — set a finish line / capture a task to clear";
+    lint.title = "no open tasks under this rock — capture one to clear";
     line.append(lint);
   }
   if (tethered.length) line.append(el("span", "go-open-count", tethered.length + " open"));
   wrap.append(line);
 
-  // stage trail — every stage visible, → marks the current one
+  // milestone trail — NOT sequential (owner call 2026-08-12): no current
+  // marker, every milestone takes tasks and an owner, they progress in parallel
   stages.forEach((st) => {
-    const isCur = st === cur;
-    const sl = el("div", "go-stage" + (st.checked ? " done" : "") + (isCur ? " cur" : ""));
+    const sl = el("div", "go-stage" + (st.checked ? " done" : ""));
     sl.dataset.goalId = st.id;
     const check = el("button", "go-check" + (st.checked ? " on" : ""), st.checked ? "✓" : "○");
-    check.title = st.checked ? "reopen this stage" : "mark this stage complete";
+    check.title = st.checked ? "reopen this milestone" : "mark this milestone complete";
     check.onclick = (e) => { e.stopPropagation(); goalsApi("POST", "/api/goals/check", { id: st.id, checked: !st.checked }); };
     sl.append(check);
-    if (isCur) sl.append(el("span", "go-stage-cur", "→"));
     const label = el("span", "go-stage-text", st.text);
     clickToEdit(label, () => st.text, (v) => goalsApi("PATCH", "/api/goals/item", { id: st.id, text: v }));
     sl.append(label);
+    // milestone owner — assignable in place, from the area's people registry
     const hasOwner = st.owner && st.owner !== "me";
-    if (hasOwner) sl.append(el("span", "go-stage-owner", "@" + st.owner));
+    const ownerNode = hasOwner ? el("span", "go-stage-owner", "@" + st.owner)
+      : el("button", "o-ghost go-owner-ghost", "＋@");
+    ownerEditable(ownerNode, () => (hasOwner ? st.owner : ""),
+      (v) => goalsApi("PATCH", "/api/goals/item", { id: st.id, owner: v }), ownerRegistryFor(areaName));
+    sl.append(ownerNode);
     wrap.append(sl);
 
-    // tasks nest under the stage their [stage::] names; the rest ride the
-    // current stage (open work by default advances it)
+    // tasks whose [stage::] names this milestone nest here; each milestone
+    // has its own composer (add work anywhere, any time)
     (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t)));
-    if (isCur && !g.checked) {
-      looseTasks.forEach((t) => wrap.append(goTaskRow(t)));
+    if (!g.checked && !st.checked) {
       wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
-        try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
+        try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
         loadGoals();
-      }, "what advances this rock…"));
-      // frozen pre-split history — collapsed, muted, read-only
-      if ((st.frozen || []).length) {
-        const key = st.id + "#history";
-        const h = el("button", "tdo-wait-foot", (goalsUI.expanded.has(key) ? "▾" : "▸") + " history · " + st.frozen.length);
-        h.onclick = () => {
-          if (goalsUI.expanded.has(key)) goalsUI.expanded.delete(key);
-          else goalsUI.expanded.add(key);
-          renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
-        };
-        wrap.append(h);
-        if (goalsUI.expanded.has(key)) st.frozen.forEach((ln) =>
-          wrap.append(el("div", "o-frozen-line", ln.trim().replace(/^[-*]\s*/, ""))));
-      }
+      }, "what advances " + st.text + "…"));
+    }
+    // frozen pre-split history — collapsed, muted, read-only
+    if ((st.frozen || []).length) {
+      const key = st.id + "#history";
+      const h = el("button", "tdo-wait-foot", (goalsUI.expanded.has(key) ? "▾" : "▸") + " history · " + st.frozen.length);
+      h.onclick = () => {
+        if (goalsUI.expanded.has(key)) goalsUI.expanded.delete(key);
+        else goalsUI.expanded.add(key);
+        renderOrient((state.goalsDoc && state.goalsDoc.areas) || []);
+      };
+      wrap.append(h);
+      if (goalsUI.expanded.has(key)) st.frozen.forEach((ln) =>
+        wrap.append(el("div", "o-frozen-line", ln.trim().replace(/^[-*]\s*/, ""))));
     }
   });
-  wrap.append(ghostInput("＋ stage", "go-stage-ghost", (v) =>
+  // milestone-less tasks live at the rock level, with the rock's own composer
+  if (looseTasks.length || !g.checked) {
+    looseTasks.forEach((t) => wrap.append(goTaskRow(t)));
+    if (!g.checked) wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
+      try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
+      loadGoals();
+    }, "what advances this rock…"));
+  }
+  wrap.append(ghostInput("＋ milestone", "go-stage-ghost", (v) =>
     goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" }),
     "what state will you have reached?"));
 
@@ -698,8 +713,6 @@ function completeControl(g) {
     btn.hidden = true;
     const panel = el("div", "o-confirm");
     panel.append(el("div", "o-confirm-q", "is this true?"));
-    panel.append(el("div", "o-confirm-line",
-      "UNTIL   " + (g.until || "no finish line was set")));
     if (g.verify) panel.append(el("div", "o-confirm-line", "PROOF   " + g.verify));
     const ev = el("input", "o-confirm-ev");
     ev.type = "text";
