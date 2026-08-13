@@ -1,13 +1,25 @@
 # Manifest
 
-A local, single-binary dashboard over your Obsidian vault. It turns the plain
-markdown you already keep — daily notes, goals, meeting notes — into a planner,
-a CRM, a goal tracker, and a calendar view, without ever taking your data out of
-the vault. The UI is modeled on the [Visualize Value manifest](https://vv.xyz/manifest).
+> *A local-first operating system for one person's work — a dashboard that lives
+> on top of your notes, not in spite of them.*
 
-Everything it shows is read back out of your notes, and the only things it writes
-are the edits you make through the dashboard — into a small, clearly delimited
-region of your own files. Your journal is never read, shown, or touched.
+**Manifest is a single-binary dashboard over your Obsidian vault.** It turns the
+plain markdown you already keep — daily notes, goals, meeting notes, contacts —
+into a planner, a CRM, a goal tracker, and a calendar view, without ever taking
+your data out of the vault. Your notes stay your notes; Manifest just holds a
+mirror up to them.
+
+It was built out of a simple conviction: **your knowledge should live on your
+device, in your own files, where you can always reach it.** No lock-in, no
+cloud hostage-taking, no background writes you didn't ask for. Everything
+Manifest shows is read back out of your notes, and the only things it writes
+are the edits you make through the dashboard — into a small, clearly
+delimited region of your own files. Your journal is never read, shown, or
+touched.
+
+If you use Obsidian and want a daily plan, a goal system, and a people layer
+that all come *from* your notes instead of replacing them, Manifest is for you.
+It's one person's tool made to be shared.
 
 ---
 
