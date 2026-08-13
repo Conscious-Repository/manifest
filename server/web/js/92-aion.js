@@ -424,10 +424,11 @@ function renderAionInspector(insp, items) {
       // outcome + decide are ONE quiet control: type the outcome, press
       // Enter (or the small affordance that wakes with it) — no banner
       // button mid-panel (owner call 2026-08-12)
-      const outcome = inputEl("what was decided… (enter ⏎ files it)");
+      const outcome = inputEl("what was decided…");
       outcome.className = "pp-in aion-insp-outcome";
       field("outcome", outcome);
-      const decide = el("button", "aion-decide-inline", "decide → permanent log");
+      const decide = el("button", "aion-decide-inline", "decide ⏎");
+      decide.title = "files to the permanent decision log (Enter in the outcome field does the same)";
       decide.disabled = true;
       const doDecide = () => {
         if (!outcome.value.trim()) return;
