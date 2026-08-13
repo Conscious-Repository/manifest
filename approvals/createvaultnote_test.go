@@ -138,6 +138,22 @@ func TestReplaceAttendeeLine(t *testing.T) {
 	if !contains(got3, "---\n\n## Transcript") {
 		t.Fatalf("cleared shape wrong:\n%s", got3)
 	}
+
+	// email thread notes anchor on the first message section, not ## Transcript
+	email := "---\ncategories:\n  - sync\ngmail-thread-id: t1\n---\n[[jane doe]]\n\n## 2026-08-10 — Jane Doe\n\nhello\n"
+	got4 := replaceAttendeeLine(email, []string{"Jane Doe", "Bob Smith"})
+	if !contains(got4, "[[Jane Doe]] [[Bob Smith]]") || contains(got4, "[[jane doe]]") {
+		t.Fatalf("email replace failed:\n%s", got4)
+	}
+	if !contains(got4, "## 2026-08-10 — Jane Doe") || !contains(got4, "gmail-thread-id: t1") {
+		t.Fatalf("email frontmatter/sections lost:\n%s", got4)
+	}
+	// add where the email note had no participants line
+	emailNone := "---\ncategories:\n  - sync\ngmail-thread-id: t1\n---\n\n## 2026-08-10 — Jane Doe\n\nhello\n"
+	got5 := replaceAttendeeLine(emailNone, []string{"Bob Smith"})
+	if !contains(got5, "---\n[[Bob Smith]]\n\n## 2026-08-10 — Jane Doe") {
+		t.Fatalf("email add-to-empty failed:\n%s", got5)
+	}
 }
 
 func TestConfirmCreateNoteEditsAttendees(t *testing.T) {

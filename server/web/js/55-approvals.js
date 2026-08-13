@@ -70,12 +70,8 @@ function approvalCardEl(a) {
     // tasks/decisions/heuristics into FEED.
     if (isNewNote) {
       card.append(buildTitleEditor(a.applyPath, titleRef));
-      // the attendee-line editor anchors on "## Transcript" — email thread
-      // notes have message sections instead, so the edit would be a no-op
-      if ((a.proposed || "").includes("## Transcript")) {
-        attendees = parseAttendees(a.proposed || "");
-        card.append(buildAttendeeEditor(attendees));
-      }
+      attendees = parseAttendees(a.proposed || "");
+      card.append(buildAttendeeEditor(attendees));
       categories = parseCategories(a.proposed || "");
       card.append(buildCategoryEditor(categories));
     }
@@ -204,10 +200,11 @@ function buildCategoryEditor(categories) {
   return wrap;
 }
 
-// parseAttendees pulls the [[wikilink]] names from a converted note's attendee
-// line (between the frontmatter and "## Transcript").
+// parseAttendees pulls the [[wikilink]] names from a converted note's
+// attendee/participants line (between the frontmatter and the first "## "
+// section heading — "## Transcript" or an email note's first message section).
 function parseAttendees(proposed) {
-  const m = proposed.match(/^---\n[\s\S]*?\n---\n([\s\S]*?)##\s*Transcript/);
+  const m = proposed.match(/^---\n[\s\S]*?\n---\n([\s\S]*?)^##\s/m);
   const head = m ? m[1] : "";
   const names = [];
   const re = /\[\[([^\]]+)\]\]/g;

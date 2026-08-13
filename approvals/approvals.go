@@ -434,9 +434,11 @@ func (s *Store) confirm(id string, e ConfirmEdits) error {
 }
 
 // replaceAttendeeLine rewrites a converted note's attendee wikilink line to
-// exactly names (as [[name]] links), keeping the frontmatter and transcript
-// intact. It anchors on "## Transcript" so it works whether or not an attendee
-// line was present. Unexpected shapes are returned unchanged.
+// exactly names (as [[name]] links), keeping the frontmatter and sections
+// intact. It anchors on the FIRST "## " section heading — "## Transcript"
+// for granola/pocket notes, the first "## <date> — <sender>" message section
+// for email thread notes — so it works whether or not an attendee line was
+// present. Unexpected shapes are returned unchanged.
 func replaceAttendeeLine(content string, names []string) string {
 	if !strings.HasPrefix(content, "---\n") {
 		return content
@@ -452,9 +454,14 @@ func replaceAttendeeLine(content string, names []string) string {
 	}
 	head := content[:fmClose+nl+1] // through the frontmatter's closing "---\n"
 	body := content[fmClose+nl+1:]
-	anchor := strings.Index(body, "## Transcript")
+	anchor := -1
+	if strings.HasPrefix(body, "## ") {
+		anchor = 0
+	} else if i := strings.Index(body, "\n## "); i >= 0 {
+		anchor = i + 1
+	}
 	if anchor < 0 {
-		return content // no transcript section — leave it alone
+		return content // no section heading — leave it alone
 	}
 	rest := body[anchor:]
 
