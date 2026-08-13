@@ -300,6 +300,25 @@ function typeahead(opts) {
   return ta;
 }
 
+// flattenRockLadder — a goals area's rock list flattened to the set of live
+// tether targets: every rock PLUS its child stages, as
+// {id, text, label, checked} where label carries parent context
+// ("Mechanism discovery › ICR go/no-go"). This is what keeps a rock pickable
+// and resolvable after it's consolidated into a stage under a parent — callers
+// walk the live ladder rather than a flat top-level snapshot, so no future rock
+// reshuffle can silently drop a tether target. Checked (done) rocks/stages are
+// INCLUDED (with checked:true) so a tether onto a done-but-still-live rock
+// still resolves and isn't mis-flagged historic; a picker filters !checked.
+function flattenRockLadder(rocks) {
+  const out = [];
+  const walk = (list, parent) => (list || []).forEach((r) => {
+    out.push({ id: r.id, text: r.text, label: parent ? parent + " › " + r.text : r.text, checked: !!r.checked });
+    walk(r.children, r.text);
+  });
+  walk(rocks, "");
+  return out;
+}
+
 // contactNoteIndex — name → vault note path, from the contacts layer (people
 // notes in the conscious repo). Shared by the aion + RE people registries so
 // a registry row can link out to the person's actual note. Read-only; cached

@@ -480,17 +480,24 @@ function aionSourcePath(name) {
   return (/^\d{4}-\d{2}-\d{2} /.test(name) ? "log/" : "") + name + ".md";
 }
 
-// rockResolved: does this rock id name a LIVE goals aion rock (vs a closed /
-// historic rock that only survives in the archives)?
+// aionRockLadder: the LIVE tether targets — every open goals aion rock plus its
+// open child stages (flattened, parent-labelled). Used by the resolver/labeller
+// and the picker so a rock consolidated into a stage under a parent stays a
+// valid, selectable, non-stale tether (e.g. "Mechanism discovery › ICR go/no-go").
+function aionRockLadder() {
+  const area = aionCache && aionCache.goalsArea;
+  return flattenRockLadder((area && area.rocks) || []);
+}
+
+// rockResolved: does this rock id name a LIVE goals aion rock or stage (vs a
+// closed / historic rock that only survives in the archives)?
 function rockResolved(id) {
-  const area = aionCache.goalsArea;
-  return !!((area && area.rocks) || []).find((r) => r.id === id);
+  return !!aionRockLadder().find((r) => r.id === id);
 }
 
 function rockLabel(id) {
   if (!id) return "";
-  const area = aionCache.goalsArea;
-  const rock = ((area && area.rocks) || []).find((r) => r.id === id);
+  const rock = aionRockLadder().find((r) => r.id === id);
   if (rock) return rock.text;
   // a closed/historic rock (not in live goals) — de-slug so the UI never shows
   // the raw "aion/<slug>"; it renders muted (see .aion-rock-tag.stale)
@@ -505,11 +512,11 @@ function aionOwnerSuggest(q, add, ta) {
 }
 
 function aionRockSuggest(q, add, ta, onPick) {
-  const area = aionCache.goalsArea;
-  ((area && area.rocks) || []).filter((r) => !r.checked)
-    .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+  aionRockLadder()
+    .filter((r) => !r.checked)
+    .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
     .slice(0, 8)
-    .forEach((r) => add(r.text, "", () => { ta.commit(r.text); onPick(r.id, r.text); }));
+    .forEach((r) => add(r.label, "", () => { ta.commit(r.text); onPick(r.id, r.text); }));
   add("\u2715 no rock (unanchored)", "create", () => { ta.commit(""); onPick("", ""); });
 }
 
@@ -673,14 +680,21 @@ function renderAionVTO(host) {
 }
 
 // ---- GOALS (read-only) ----
-function renderAionGoals(host) {
+async function renderAionGoals(host) {
   const area = aionCache.goalsArea;
-  const head = el("div", "aion-goals-head");
-  head.append(el("span", "aion-section-note", "the Aion ladder — read-only here"),
-    pillLight("edit in GOALS tab →", () => { location.hash = "#/goals"; }));
-  host.append(head);
   if (!area) { host.append(emptyRow("no ## Aion area in goals.md yet")); return; }
   if (area.northStar) host.append(el("div", "aion-northstar", "✦ " + area.northStar));
+  // EDITABLE (owner call 2026-08-12): the same outline as the GOALS tab,
+  // mounted here for the Aion area. It reads the task substrate for the
+  // tethered tasks, so refresh that first.
+  try { todosCache = await (await fetch("/api/todos")).json(); } catch (e) {}
+  host.append(el("div", "aion-section-note",
+    "editable — the GOALS-tab outline over ## Aion; milestones run in parallel"));
+  const rocksHost = el("div", "go-content aion-goals-outline");
+  (area.rocks || []).forEach((g) => rocksHost.append(rockOutline(g, area.name || "Aion")));
+  host.append(rocksHost);
+  // annuals stay a quiet read-only ladder below (chips carry the serves links)
+  host.append(el("div", "pp-section-head", "1-YEAR LADDER"));
 
   const rocksByServes = {};
   (area.rocks || []).forEach((r) => {
@@ -699,18 +713,7 @@ function renderAionGoals(host) {
     row.append(chips);
     return row;
   };
-  (area.annuals || []).forEach((a) => {
-    host.append(chipRow(a, "annual"));
-    (rocksByServes[a.id] || []).forEach((r) => {
-      host.append(chipRow(r, "rock"));
-      (r.children || []).forEach((c) => host.append(chipRow(c, "milestone")));
-    });
-  });
-  const unanchored = (rocksByServes[""] || []);
-  if (unanchored.length) {
-    host.append(el("div", "pp-section-head", "UNANCHORED — no [serves::] chain"));
-    unanchored.forEach((r) => host.append(chipRow(r, "rock unlinked")));
-  }
+  (area.annuals || []).forEach((a) => host.append(chipRow(a, "annual")));
 }
 
 // parseMoneyShorthand mirrors the exporter's ParseMoney: "1.95M", "85k",

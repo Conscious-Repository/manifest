@@ -316,7 +316,7 @@ async function apprAionRegistry() {
   try {
     const d = await (await fetch("/api/aion")).json();
     apprAionReg = {
-      rocks: (((d.goalsArea || {}).rocks) || []).filter((r) => !r.checked),
+      rocks: flattenRockLadder(((d.goalsArea || {}).rocks) || []),
       people: d.people || [],
     };
   } catch (e) { apprAionReg = { rocks: [], people: [] }; }
@@ -339,7 +339,7 @@ async function apprReRegistry() {
     (ents.contractors || []).forEach((c) =>
       roster.push({ initials: c.slug, name: c.name + (c.trade ? " (" + c.trade + ")" : "") }));
     apprReReg = {
-      rocks: (((re.goalsArea || {}).rocks) || []).filter((r) => !r.checked),
+      rocks: flattenRockLadder(((re.goalsArea || {}).rocks) || []),
       properties: (props.properties || []).filter((p) => !p.hidden),
       deals: props.deals || [],
       people: roster,
@@ -424,7 +424,7 @@ function buildAionEditor(a) {
         const initialRock = (() => {
           if (reg0) {
             const hit = reg0.rocks.find((r) => r.id === p.rock);
-            if (hit) { rockPickedText = hit.text; return hit.text; }
+            if (hit) { rockPickedText = hit.label; return hit.label; }
             if (isRe) {
               const pr = reg0.properties.find((x) => x.slug === p.rock);
               if (pr) { rockPickedText = pr.short || pr.address || pr.slug; return rockPickedText; }
@@ -443,9 +443,10 @@ function buildAionEditor(a) {
               p.rock = id; rockPickedText = label; ta.commit(label); sync();
             };
             reg.rocks
-              .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
-              .slice(0, 6)
-              .forEach((r) => add(r.text, isRe ? "rock" : "", pick(r.id, r.text)));
+              .filter((r) => !r.checked)
+              .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+              .slice(0, 8)
+              .forEach((r) => add(r.label, isRe ? "rock" : "", pick(r.id, r.label)));
             if (isRe) {
               (reg.deals || [])
                 .filter((d) => q && ((d.name || "").toLowerCase().includes(q) || d.slug.includes(q)))

@@ -89,14 +89,16 @@ function renderRERocks() {
     name.onclick = () => { location.hash = "#/goals/" + encodeURIComponent(g.id); };
     line.append(name);
     wrap.append(line);
-    if (g.until) wrap.append(el("div", "re-rock-until", "UNTIL " + g.until));
     // stage trail with tethered backlog tasks nested (from the RE backlog +
     // the unified todos rows that carry this rock id)
-    const tethered = reItems().filter((it) => it.kind === "task" && it.status !== "done" && it.rock === g.id);
+    // a task tethered to this rock OR any of its stages nests here (stages are
+    // pickable tether targets now, so match the whole subtree's ids)
+    const rockIds = new Set([g.id, ...(g.children || []).map((c) => c.id)]);
+    const tethered = reItems().filter((it) => it.kind === "task" && it.status !== "done" && rockIds.has(it.rock));
+    // milestones are not sequential (owner call 2026-08-12) — no current marker
     (g.children || []).forEach((st) => {
-      const cur = !st.checked && (g.children || []).find((c) => !c.checked) === st;
-      const sl = el("div", "re-stage" + (st.checked ? " done" : "") + (cur ? " cur" : ""));
-      sl.append(el("span", "re-stage-glyph", st.checked ? "✓" : cur ? "→" : "○"));
+      const sl = el("div", "re-stage" + (st.checked ? " done" : ""));
+      sl.append(el("span", "re-stage-glyph", st.checked ? "✓" : "○"));
       sl.append(el("span", "", st.text));
       wrap.append(sl);
     });

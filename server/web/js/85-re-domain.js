@@ -21,10 +21,15 @@ const reFreshDone = new Set(); // re-tasks checked this session — held in plac
 // the property tether, so both kinds resolve/label here.
 function rePropBySlug(slug) { return (typeof propertyCache !== "undefined" ? propertyCache : []).find((p) => p.slug === slug); }
 function rePropLabel(p) { return p.short || p.address || p.slug; }
+// reRockLadder — the LIVE tether targets from the goals `## Real Estate` area:
+// every open rock and its open child stages (flattened, parent-labelled). The
+// picker/resolver read this rather than reOrgRocks() (top-level only) so a rock
+// consolidated into a stage stays selectable and never reads as "stale".
+function reRockLadder() { return flattenRockLadder(reOrgRocks()); }
 function reRockResolved(id) {
   if (!id) return false;
   if (id.startsWith("property/")) return !!rePropBySlug(id.slice(9));
-  return !!reOrgRocks().find((r) => r.id === id);
+  return !!reRockLadder().find((r) => r.id === id);
 }
 function reRockLabel(id) {
   if (!id) return "";
@@ -32,7 +37,7 @@ function reRockLabel(id) {
     const p = rePropBySlug(id.slice(9));
     return p ? rePropLabel(p) : id.slice(9).replace(/-/g, " ");
   }
-  const rock = reOrgRocks().find((r) => r.id === id);
+  const rock = reRockLadder().find((r) => r.id === id);
   if (rock) return rock.text;
   return id.replace(/^(realestate|re)\//, "").replace(/-/g, " ");
 }
@@ -41,10 +46,11 @@ function reRockLabel(id) {
 // properties (picked as a `property/<slug>` ref). Empty pick clears the tether.
 function reRockSuggest(q, add, ta, onPick) {
   add("— no rock —", "", () => { ta.commit(""); onPick(""); });
-  reOrgRocks()
-    .filter((r) => !q || (r.text || "").toLowerCase().includes(q))
+  reRockLadder()
+    .filter((r) => !r.checked)
+    .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
     .slice(0, 8)
-    .forEach((r) => add(r.text, "rock", () => { ta.commit(r.text); onPick(r.id); }));
+    .forEach((r) => add(r.label, "rock", () => { ta.commit(r.text); onPick(r.id); }));
   (typeof propertyCache !== "undefined" ? propertyCache : [])
     .filter((p) => !q || (p.address || "").toLowerCase().includes(q) ||
       (p.slug || "").includes(q) || (p.deal || "").toLowerCase().includes(q))

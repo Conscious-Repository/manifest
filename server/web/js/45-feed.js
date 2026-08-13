@@ -42,6 +42,10 @@ function showFeed() {
 
 async function loadFeed() {
   const view = state.feedView || "inbox";
+  // Drop the cached approval registries so the next card built pulls the LIVE
+  // rock ladder (goals edited elsewhere in-session must not serve a stale
+  // rock list into the payload editor's typeahead).
+  apprAionReg = null; apprReReg = null;
   try {
     const d = await (await fetch("/api/feed?status=" + view)).json();
     feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], receipts: d.receipts || [] };
