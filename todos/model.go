@@ -239,6 +239,7 @@ type TodoView struct {
 	Waiting string `json:"waiting,omitempty"`
 	Since   string `json:"since,omitempty"`
 	Rock    string `json:"rock,omitempty"`
+	Stage   string `json:"stage,omitempty"` // milestone placement within the rock's trail
 	Issue   string `json:"issue,omitempty"`
 	Bucket  string `json:"bucket,omitempty"` // bucket slug when inside one
 	Owner   string `json:"owner,omitempty"`  // assignee ("" = me)
@@ -263,7 +264,7 @@ func (d *Doc) View(now time.Time) View {
 		return TodoView{
 			ID: t.ID, Text: t.Text, State: t.State(),
 			Added: t.Added, Waiting: t.Waiting, Since: t.Since,
-			Rock: t.Rock, Issue: t.Issue, Bucket: bucket,
+			Rock: t.Rock, Stage: t.Stage, Issue: t.Issue, Bucket: bucket,
 			Owner: t.Owner, Rank: t.RankN(),
 			AgeDays: t.AgeDays(now),
 		}
