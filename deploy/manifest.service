@@ -42,6 +42,7 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/benjamin/.config/manifest
+ReadWritePaths=/home/benjamin/.config/excalibur
 ReadWritePaths=/private/consciousrepo
 ReadWritePaths=/private/harnesses
 ReadWritePaths=/home/benjamin/aionbio
