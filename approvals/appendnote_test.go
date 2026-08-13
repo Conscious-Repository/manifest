@@ -153,6 +153,17 @@ func TestRetitleKeepsDateRange(t *testing.T) {
 	if !ok || got != "2026-08-10 jane roofing saga.md" {
 		t.Fatalf("single retitle = %q,%v", got, ok)
 	}
+	// a stale client can leak the range's end date into the title ("- 2026-08-13
+	// irving follow-up") — the server strips leading date fragments so the
+	// prefix never doubles
+	got, ok = retitleApplyPath("2026-02-17 - 2026-08-13 aion follow-up.md", "- 2026-08-13 irving follow-up")
+	if !ok || got != "2026-02-17 - 2026-08-13 irving follow-up.md" {
+		t.Fatalf("stale-title retitle = %q,%v", got, ok)
+	}
+	// a title that is ONLY a date fragment is a no-op, not an empty title
+	if _, ok = retitleApplyPath("2026-02-17 - 2026-08-13 aion follow-up.md", "- 2026-08-13"); ok {
+		t.Fatal("date-only title should be a no-op")
+	}
 }
 
 func TestAutoApplyAppends(t *testing.T) {

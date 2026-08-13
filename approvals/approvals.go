@@ -374,16 +374,24 @@ var datePrefixRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}(?: - \d{4}-\d{2}-\d{2
 // engine's granola/pocket noteFilename sanitizer).
 var filenameUnsafe = regexp.MustCompile(`[\[\]<>:"/\\|?*]`)
 
+// titleDateFragmentRe strips date fragments a client may have leaked into the
+// editable title (a stale title editor once showed "- YYYY-MM-DD <title>" as
+// the title portion of a range-named note — prefixing the range again doubled
+// the end date). The date prefix is server-owned; a title never carries one.
+var titleDateFragmentRe = regexp.MustCompile(`^(?:[-–—\s]*\d{4}-\d{2}-\d{2})+[-–—\s]*`)
+
 // retitleApplyPath rebuilds a create-vault-note apply-path with a new title,
-// keeping the original date prefix. Returns (old, false) if the path isn't a
-// dated note or the sanitized title is empty (so a bad edit is a no-op, never a
-// widened write). The result still satisfies CreateVaultNotePathAllowed.
+// keeping the original date prefix (a date RANGE for email thread notes).
+// Returns (old, false) if the path isn't a dated note or the sanitized title
+// is empty (so a bad edit is a no-op, never a widened write). The result
+// still satisfies CreateVaultNotePathAllowed.
 func retitleApplyPath(old, title string) (string, bool) {
 	m := datePrefixRe.FindStringSubmatch(old)
 	if m == nil {
 		return old, false
 	}
 	title = strings.TrimSuffix(strings.TrimSpace(title), ".md")
+	title = titleDateFragmentRe.ReplaceAllString(title, "")
 	title = strings.Join(strings.Fields(filenameUnsafe.ReplaceAllString(title, "")), " ")
 	if title == "" {
 		return old, false
