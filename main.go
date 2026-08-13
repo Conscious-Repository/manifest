@@ -410,6 +410,30 @@ func main() {
 		}
 		srv.UseHarnesses(hs)                       // sets the primary spirits+approvals fields too
 		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
+		// email-sync auto-append (standing consent): a confirmed thread note
+		// authorizes later appends, so matching append-vault-note proposals
+		// apply without a card; refusals stay pending and render normally.
+		for _, h := range hs {
+			ap := h.Approvals
+			go func() {
+				time.Sleep(20 * time.Second)
+				tick := time.NewTicker(60 * time.Second)
+				defer tick.Stop()
+				for {
+					applied, _ := ap.AutoApplyAppends(func(paths []string) {
+						sinkFan{aionSink, reSink}.Notify(paths)
+					})
+					if applied > 0 {
+						log.Printf("approvals: auto-applied %d thread append(s)", applied)
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-tick.C:
+					}
+				}
+			}()
+		}
 		srv.UseStudio(studio.NewStore(cfg.ExcaliburPath), studio.CorpusPath(cfg.ExcaliburPath), cfg.XPostsFile)
 		names := make([]string, len(hs))
 		for i, h := range hs {

@@ -40,6 +40,7 @@ type Note struct {
 	HasTranscript bool   // body carries a speaker-labelled transcript (Granola-export shape)
 	GranolaID     string // granola-id frontmatter, "" if none (dedupe key for granola-sync)
 	PocketID      string // pocket-id frontmatter, "" if none (dedupe key for pocket-sync)
+	GmailThreadID string // gmail-thread-id frontmatter, "" if none (dedupe key for email-sync)
 	MTime         int64
 	Body          string // text after the frontmatter block (FTS source)
 }
@@ -101,6 +102,7 @@ func ParseNote(relPath string, content []byte, mtime int64, aiRegions []string) 
 	// if renamed. Two parallel keys, one convention each (pocket-sync plan).
 	n.GranolaID = firstNonEmpty(append(append([]string{}, fm["granola-id"]...), fm["granola_id"]...))
 	n.PocketID = firstNonEmpty(append(append([]string{}, fm["pocket-id"]...), fm["pocket_id"]...))
+	n.GmailThreadID = firstNonEmpty(append(append([]string{}, fm["gmail-thread-id"]...), fm["gmail_thread_id"]...))
 
 	// date: dated filename wins; else a date: frontmatter field.
 	if m := datedFileRe.FindStringSubmatch(n.Name); m != nil {

@@ -155,12 +155,23 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
-			case approvals.TypeAionBacklog, approvals.TypeAionHeuristic, approvals.TypeReBacklog:
+			case approvals.TypeAppendVaultNote:
+				// An email-thread append that auto-apply refused (renamed note,
+				// thread-id mismatch): surfaces as a human card with the current
+				// note so the owner can see where the sections would land.
+				rr.Allowed = approvals.AppendVaultNotePathAllowed(p.ApplyPath) && p.GmailThreadID != ""
+				if cur, ok := store.CurrentContent(p); ok {
+					rr.Current = cur
+				}
+			case approvals.TypeAionBacklog, approvals.TypeAionHeuristic, approvals.TypeReBacklog,
+				approvals.TypeAionResolve, approvals.TypeReResolve:
 				// A domain extraction candidate (aion or real-estate): editable
-				// payload + the exact line Confirm would append. Secret-masked.
-				rr.Allowed = (p.Type == approvals.TypeAionBacklog && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
+				// payload + the exact line Confirm would append (or, for a
+				// resolve, the item line as it would read once flipped).
+				// Secret-masked.
+				rr.Allowed = ((p.Type == approvals.TypeAionBacklog || p.Type == approvals.TypeAionResolve) && approvals.AionBacklogPathAllowed(p.ApplyPath)) ||
 					(p.Type == approvals.TypeAionHeuristic && approvals.AionHeuristicPathAllowed(p.ApplyPath)) ||
-					(p.Type == approvals.TypeReBacklog && approvals.ReBacklogPathAllowed(p.ApplyPath))
+					((p.Type == approvals.TypeReBacklog || p.Type == approvals.TypeReResolve) && approvals.ReBacklogPathAllowed(p.ApplyPath))
 				if cur, ok := store.CurrentContent(p); ok {
 					rr.Current = cur
 				}
@@ -245,6 +256,11 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		if approved, err := store.LoadApproved(id); err == nil && approved.ApplyPath != "" {
 			s.aionSink.Notify([]string{"log/" + strings.ToLower(approved.ApplyPath)})
 		}
+	}
+	// A manually-confirmed append (the auto-apply-refused fallback card) grew
+	// the thread note — same nudge; the apply path is already log/-relative.
+	if loadErr == nil && pending.Type == approvals.TypeAppendVaultNote && s.aionSink != nil {
+		s.aionSink.Notify([]string{pending.ApplyPath})
 	}
 	if loadErr == nil && pending.Type == approvals.TypeRunErrand {
 		if s.errandExec == nil {

@@ -44,6 +44,11 @@ type Proposal struct {
 	ErrandText    string `json:"errandText,omitempty"`
 	ErrandAccount string `json:"errandAccount,omitempty"`
 	ErrandGoal    string `json:"errandGoal,omitempty"`
+	// append-vault-note fields (email-sync): the Gmail thread identity the
+	// append is anchored to, and the auto-apply stamp ("applied <RFC3339>")
+	// recorded when AutoApplyAppends confirmed it without a human card.
+	GmailThreadID string `json:"gmailThreadId,omitempty"`
+	Auto          string `json:"auto,omitempty"`
 }
 
 // TypeCreateVaultNote is the granola-sync proposal type (plan §4): it writes a
@@ -238,12 +243,23 @@ func (s *Store) CurrentContent(p Proposal) (string, bool) {
 			return "", false
 		}
 		return string(b), true
-	case TypeAionBacklog, TypeAionHeuristic, TypeReBacklog:
+	case TypeAppendVaultNote:
+		// the current thread note, so the fallback card can show where the
+		// appended sections land
+		if s.vaultRoot == "" || !AppendVaultNotePathAllowed(p.ApplyPath) {
+			return "", false
+		}
+		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
+	case TypeAionBacklog, TypeAionHeuristic, TypeReBacklog, TypeAionResolve, TypeReResolve:
 		// the current corpus file, so the UI can diff current vs current+line
 		if s.vaultRoot == "" ||
-			(p.Type == TypeAionBacklog && !AionBacklogPathAllowed(p.ApplyPath)) ||
+			((p.Type == TypeAionBacklog || p.Type == TypeAionResolve) && !AionBacklogPathAllowed(p.ApplyPath)) ||
 			(p.Type == TypeAionHeuristic && !AionHeuristicPathAllowed(p.ApplyPath)) ||
-			(p.Type == TypeReBacklog && !ReBacklogPathAllowed(p.ApplyPath)) {
+			((p.Type == TypeReBacklog || p.Type == TypeReResolve) && !ReBacklogPathAllowed(p.ApplyPath)) {
 			return "", false
 		}
 		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
@@ -522,6 +538,8 @@ func (s *Store) apply(p Proposal) error {
 	switch p.Type {
 	case TypeCreateVaultNote:
 		return s.applyCreateVaultNote(p)
+	case TypeAppendVaultNote:
+		return s.applyAppendVaultNote(p)
 	case TypeAppendXQueue:
 		return s.applyAppendXQueue(p)
 	case TypeUpdateVaultSkill:
@@ -532,6 +550,10 @@ func (s *Store) apply(p Proposal) error {
 		return s.applyAionBacklog(p)
 	case TypeAionHeuristic:
 		return s.applyAionHeuristic(p)
+	case TypeAionResolve:
+		return s.applyAionResolve(p)
+	case TypeReResolve:
+		return s.applyReResolve(p)
 	}
 	if !ApplyPathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md)", p.ApplyPath)
@@ -792,6 +814,9 @@ func (s *Store) parse(path string) (Proposal, error) {
 		ErrandText:    strings.TrimSpace(fm["errand-text"]),
 		ErrandAccount: strings.TrimSpace(fm["errand-account"]),
 		ErrandGoal:    strings.TrimSpace(fm["errand-goal"]),
+		// append-vault-note payload (email-sync)
+		GmailThreadID: strings.TrimSpace(fm["gmail-thread-id"]),
+		Auto:          strings.TrimSpace(fm["auto"]),
 	}, nil
 }
 
@@ -812,6 +837,8 @@ func serialize(p Proposal) string {
 		Set("errand-text", p.ErrandText).
 		Set("errand-account", p.ErrandAccount).
 		Set("errand-goal", p.ErrandGoal).
+		Set("gmail-thread-id", p.GmailThreadID).
+		Set("auto", p.Auto).
 		String(strings.TrimSpace(p.Body))
 }
 

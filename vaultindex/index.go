@@ -86,12 +86,14 @@ CREATE TABLE IF NOT EXISTS notes (
   transcript  INTEGER NOT NULL DEFAULT 0,
   granola_id  TEXT NOT NULL DEFAULT '',
   pocket_id   TEXT NOT NULL DEFAULT '',
+  gmail_thread_id TEXT NOT NULL DEFAULT '',
   mtime       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_notes_name_lower ON notes(name_lower);
 CREATE INDEX IF NOT EXISTS idx_notes_date       ON notes(date);
 CREATE INDEX IF NOT EXISTS idx_notes_granola    ON notes(granola_id);
 CREATE INDEX IF NOT EXISTS idx_notes_pocket     ON notes(pocket_id);
+CREATE INDEX IF NOT EXISTS idx_notes_gmail      ON notes(gmail_thread_id);
 
 CREATE TABLE IF NOT EXISTS note_categories (path TEXT NOT NULL, category TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_cat_value ON note_categories(category);
@@ -153,7 +155,7 @@ func Open(cfg Config) (*Index, error) {
 // disposable projection (Rebuild reproduces it from the vault), a version
 // mismatch simply drops every table and recreates — a stale on-disk index from
 // an older build upgrades itself with no migration, losslessly.
-const schemaVersion = 6 // v6: notes.pocket_id (pocket-sync dedupe key)
+const schemaVersion = 7 // v7: notes.gmail_thread_id (email-sync dedupe key)
 
 var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "note_tasks", "entities", "notes_fts"}
 
@@ -242,8 +244,8 @@ func insertNote(tx *sql.Tx, n Note) error {
 		zone = "knowledge"
 	}
 	ai := b2i(n.AIAuthored)
-	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,zone,ai_authored,transcript,granola_id,pocket_id,mtime) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, zone, ai, b2i(n.HasTranscript), n.GranolaID, n.PocketID, n.MTime)
+	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,zone,ai_authored,transcript,granola_id,pocket_id,gmail_thread_id,mtime) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, zone, ai, b2i(n.HasTranscript), n.GranolaID, n.PocketID, n.GmailThreadID, n.MTime)
 	if err != nil {
 		return err
 	}

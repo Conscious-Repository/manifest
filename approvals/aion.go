@@ -50,9 +50,9 @@ func (s *Store) WithAionCapability(name string) *Store {
 // for non-aion or malformed bodies).
 func AionPayload(p Proposal) (aion.ProposalPayload, bool) {
 	switch p.Type {
-	case TypeAionBacklog, TypeAionHeuristic:
+	case TypeAionBacklog, TypeAionHeuristic, TypeAionResolve:
 		return aion.ParsePayload(p.Body)
-	case TypeReBacklog:
+	case TypeReBacklog, TypeReResolve:
 		return aion.ParsePayloadFence(p.Body, aion.REPayloadFence)
 	}
 	return aion.ProposalPayload{}, false
@@ -69,7 +69,9 @@ func (s *Store) SetAionPayload(id string, payload aion.ProposalPayload) error {
 	if err != nil {
 		return err
 	}
-	if p.Type != TypeAionBacklog && p.Type != TypeAionHeuristic && p.Type != TypeReBacklog {
+	switch p.Type {
+	case TypeAionBacklog, TypeAionHeuristic, TypeReBacklog, TypeAionResolve, TypeReResolve:
+	default:
 		return fmt.Errorf("proposal %s is not an aion proposal", id)
 	}
 	if err := payload.Validate(nil); err != nil {
@@ -77,6 +79,27 @@ func (s *Store) SetAionPayload(id string, payload aion.ProposalPayload) error {
 	}
 	if fs := secrets.Scan(payload.Title + "\n" + payload.Outcome + "\n" + payload.Owner); len(fs) > 0 {
 		return fmt.Errorf("edit refused: payload matches secret pattern(s) %s", strings.Join(secrets.Classes(fs), ", "))
+	}
+	if p.Type == TypeAionResolve || p.Type == TypeReResolve {
+		// resolve edits: title/outcome/dates only — type, apply-path, and the
+		// resolving verb are fixed; a kind flip would retarget the mutation.
+		fence := aion.PayloadFence
+		if p.Type == TypeReResolve {
+			fence = aion.REPayloadFence
+		}
+		prev, ok := aion.ParsePayloadFence(p.Body, fence)
+		if !ok {
+			return fmt.Errorf("proposal %s carries no %s payload fence", id, fence)
+		}
+		if payload.Kind != prev.Kind {
+			return fmt.Errorf("edit refused: a resolve keeps its kind (%s)", prev.Kind)
+		}
+		body, ok := aion.ReplacePayloadFenceIn(p.Body, fence, payload)
+		if !ok {
+			return fmt.Errorf("proposal %s carries no %s payload fence", id, fence)
+		}
+		p.Body = body
+		return os.WriteFile(src, []byte(serialize(p)), 0o644)
 	}
 	if p.Type == TypeReBacklog {
 		// real estate: type/apply-path are FIXED (no heuristics file to flip to)

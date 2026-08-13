@@ -16,8 +16,9 @@ function approvalCardEl(a) {
   if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
 
   const actionable = !!a.applyPath;
-  const isRe = a.type === "re-backlog"; // the real-estate domain twin (````re fence)
-  const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe;
+  const isResolve = a.type === "aion-resolve" || a.type === "re-resolve"; // closed-loop: flip one backlog line
+  const isRe = a.type === "re-backlog" || a.type === "re-resolve"; // the real-estate domain twins (````re fence)
+  const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe || isResolve;
   // For an actionable proposal the ````proposed payload is rendered as a diff
   // below (and an aion payload as its editable form), so strip the fence from
   // the human-facing evidence body.
@@ -28,6 +29,7 @@ function approvalCardEl(a) {
   const isNewNote = a.type === "create-vault-note";
   const isXQueue = a.type === "append-x-queue";
   const isSkill = a.type === "update-vault-skill";
+  const isAppendNote = a.type === "append-vault-note"; // email-sync append the auto-apply refused
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
   let categories = null; // create-vault-note: the editable frontmatter categories
   const titleRef = { value: null }; // create-vault-note: the editable filename title
@@ -49,6 +51,8 @@ function approvalCardEl(a) {
         ? "apply-path is not the x-posts file — Confirm is disabled."
         : isSkill
         ? "update-vault-skill must target skills/x-content/{SKILL.md, references/<name>.md} and be filed by a tune ritual — Confirm is disabled."
+        : isAppendNote
+        ? "append target is not a log/ dated note or the proposal carries no thread id — Confirm is disabled."
         : isRe
         ? "apply-path is not the real-estate decision log (system/realestate/backlog.md) or the payload is malformed — Confirm is disabled."
         : isAion
@@ -66,13 +70,21 @@ function approvalCardEl(a) {
     // tasks/decisions/heuristics into FEED.
     if (isNewNote) {
       card.append(buildTitleEditor(a.applyPath, titleRef));
-      attendees = parseAttendees(a.proposed || "");
-      card.append(buildAttendeeEditor(attendees));
+      // the attendee-line editor anchors on "## Transcript" — email thread
+      // notes have message sections instead, so the edit would be a no-op
+      if ((a.proposed || "").includes("## Transcript")) {
+        attendees = parseAttendees(a.proposed || "");
+        card.append(buildAttendeeEditor(attendees));
+      }
       categories = parseCategories(a.proposed || "");
       card.append(buildCategoryEditor(categories));
     }
 
-    if (isAion && a.aionPayload) {
+    if (isResolve && a.aionPayload) {
+      // a closed-loop resolve: the evidence is the body above; the editable
+      // bits are the matching title and the outcome/date — kind is fixed
+      card.append(buildResolveEditor(a));
+    } else if (isAion && a.aionPayload) {
       // an aion extraction candidate: editable payload + the exact record
       // line Confirm appends (the app renders it — nothing else is written)
       card.append(buildAionEditor(a));
@@ -80,6 +92,12 @@ function approvalCardEl(a) {
       // append-x-queue's proposed is ONLY the bullet — show it, not a whole-file diff
       card.append(el("div", "appr-diff-label", "Appends under # queue in " + a.applyPath));
       const pre = el("pre", "appr-body draft-tweet"); pre.textContent = (a.proposed || "").trim(); card.append(pre);
+    } else if (isAppendNote) {
+      // append-vault-note's proposed is ONLY the new message sections — this
+      // card renders only when auto-apply refused (rename/mismatch), so say so
+      card.append(el("div", "appr-diff-label", "Appends to " + a.applyPath + " — auto-apply was refused, review before confirming"));
+      const pre = el("pre", "appr-body"); pre.textContent = (a.proposed || "").trim();
+      card.append(collapsibleBlock(pre, (a.proposed || "").split("\n").length));
     } else {
       card.append(el("div", "appr-diff-label", isNewNote ? "New note — will be created at the vault root"
         : isSkill ? "Skill change  ·  current → proposed" : "Proposed change  ·  current → proposed"));
@@ -516,6 +534,54 @@ function buildAionEditor(a) {
       showToast("Proposal updated");
       loadFeed();
     } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
+  });
+  wrap.append(save);
+  return wrap;
+}
+
+// buildResolveEditor renders the closed-loop resolve form: the matching
+// backlog title (must equal the line verbatim — the apply matches by it),
+// and the resolution — done_on for a task, decided date + outcome for a
+// decision. Kind and the resolving verb are fixed; the fence rewrites via
+// the same /aion endpoint (SetAionPayload's resolve lane).
+function buildResolveEditor(a) {
+  const p = Object.assign({}, a.aionPayload);
+  const wrap = el("div", "aion-appr");
+  const verb = p.kind === "decision" ? "decided" : "done";
+  wrap.append(el("div", "appr-diff-label",
+    "Resolves one " + p.kind + " in " + a.applyPath + " → " + verb + " — edit before confirming"));
+  const form = el("div", "aion-appr-form");
+  const preview = el("pre", "aion-appr-line");
+  const row = (label, key) => {
+    const input = inputEl(label);
+    input.value = p[key] || "";
+    input.oninput = () => { p[key] = input.value; sync(); };
+    form.append(el("span", "aion-vto-key", label), input);
+  };
+  row("title (must match the backlog line)", "title");
+  if (p.kind === "decision") {
+    row("outcome", "outcome");
+    row("decided (YYYY-MM-DD)", "decided");
+  } else {
+    row("done on (YYYY-MM-DD)", "done_on");
+  }
+  const sync = () => {
+    preview.textContent = p.kind === "decision"
+      ? "- " + (p.title || "…") + " → decided" + (p.decided ? " " + p.decided : "") + ": " + (p.outcome || "…")
+      : "- [x] " + (p.title || "…") + " → done" + (p.done_on ? " " + p.done_on : "");
+  };
+  sync();
+  wrap.append(form, preview);
+  const flush = async () => {
+    const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/aion", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  };
+  a.__payloadFlush = flush; // Confirm flushes the current form state first
+  const save = pillLight("save edit", async () => {
+    try { await flush(); showToast("Proposal updated"); loadFeed(); }
+    catch (e) { showToast(String(e.message || e).slice(0, 120)); }
   });
   wrap.append(save);
   return wrap;
