@@ -224,9 +224,12 @@
 .go-stage-ghost { margin-left: 14px; font-size: 11px; }
 
 /* quiet rock actions — hover-revealed */
-.go-rock-acts { display: flex; align-items: center; gap: 12px; margin-top: 8px; visibility: hidden; }
+.go-rock-acts { display: flex; align-items: baseline; gap: 12px; margin-top: 8px; visibility: hidden; }
 .go-rock:hover .go-rock-acts { visibility: visible; }
 .go-rock-acts .o-complete { margin: 0; }
+/* the complete button rides in a wrap div (holds the inline confirm); zero its
+   own margin so its label baselines flush with the bare `nest`/`delete` buttons */
+.go-rock-acts .o-complete-wrap { margin: 0; }
 
 /* unanchored foot — the area's rock-less domain todos, tetherable in place */
 .go-unanchored { margin-top: 14px; padding: 8px 12px 6px; border-top: 1px solid var(--base-25); }
