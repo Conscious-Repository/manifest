@@ -44,6 +44,7 @@ func main() {
 	configPath := flag.String("config", "config.json", "path to config file")
 	vaultFlag := flag.String("vault", "", "override vault path from config")
 	port := flag.Int("port", 0, "override port from config")
+	portalPort := flag.Int("portal-port", 0, "override the standalone AION portal port from config")
 	flag.Parse()
 
 	cfg, err := LoadConfig(*configPath)
@@ -55,6 +56,9 @@ func main() {
 	}
 	if *port != 0 {
 		cfg.Port = *port
+	}
+	if *portalPort != 0 {
+		cfg.PortalPort = *portalPort
 	}
 	if cfg.VaultPath == "" {
 		fmt.Fprintln(os.Stderr, "error: vaultPath is not set. Edit config.json or pass -vault /path/to/vault")
@@ -451,6 +455,24 @@ func main() {
 	default:
 		log.Printf("google calendar: disabled (no credentials in ~/.config/manifest/)")
 	}
+	// AION PORTAL — a SECOND, separate listener (phase 1 of the portal move).
+	// Its own mux, its own port, sharing nothing with the dashboard's routes:
+	// the embedded web/portal subtree served as a standalone static site. A
+	// bind failure here never takes the dashboard down.
+	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
+		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)
+		if h, err := server.PortalHandler(); err != nil {
+			log.Printf("aion portal disabled: %v", err)
+		} else {
+			go func() {
+				fmt.Printf("aion portal → http://%s\n", portalAddr)
+				if err := http.ListenAndServe(portalAddr, h); err != nil {
+					log.Printf("aion portal listener stopped: %v", err)
+				}
+			}()
+		}
+	}
+
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))

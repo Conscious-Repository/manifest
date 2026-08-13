@@ -1,0 +1,337 @@
+{
+  "goals": [
+    {
+      "id": "aion/mri-prototype",
+      "title": "Human prototype MRI + scalable spec",
+      "horizon": "1yr",
+      "status": "open",
+      "serves": null,
+      "owner": null,
+      "children": [
+        "aion/series-a-15m",
+        "aion/human-scale-spec"
+      ]
+    },
+    {
+      "id": "aion/write-candidate",
+      "title": "Definitive Phase 1 write candidate ready for people",
+      "horizon": "1yr",
+      "status": "open",
+      "serves": null,
+      "owner": null,
+      "children": [
+        "aion/series-a-15m",
+        "aion/mouse-to-pig"
+      ]
+    },
+    {
+      "id": "aion/cell-state-control",
+      "title": "Cell state control expanded to enable reprogramming on one axis",
+      "horizon": "1yr",
+      "status": "open",
+      "serves": null,
+      "owner": null,
+      "children": [
+        "aion/series-a-15m",
+        "aion/icr-go-no-go"
+      ]
+    },
+    {
+      "id": "aion/series-a-15m/soft-lead-identified",
+      "title": "Resources for raise ready",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "BA",
+      "children": []
+    },
+    {
+      "id": "aion/series-a-15m",
+      "title": "Series A 15M",
+      "horizon": "rock",
+      "status": "open",
+      "serves": "aion/mri-prototype",
+      "serves_all": [
+        "aion/mri-prototype",
+        "aion/write-candidate",
+        "aion/cell-state-control"
+      ],
+      "aliases": [
+        "fundraising",
+        "fundraise",
+        "series-a-raise",
+        "fundraising-network",
+        "fundraising strategy"
+      ],
+      "owner": "BA",
+      "quarter": "2026-Q3",
+      "start": "2026-07-01",
+      "due": "2026-09-30",
+      "children": [
+        "aion/series-a-15m/soft-lead-identified"
+      ]
+    },
+    {
+      "id": "aion/human-scale-spec/prototype",
+      "title": "Prototype",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "Y",
+      "children": []
+    },
+    {
+      "id": "aion/human-scale-spec/jackson-go-no-go",
+      "title": "Jackson go/no-go",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "BA",
+      "children": []
+    },
+    {
+      "id": "aion/human-scale-spec",
+      "title": "Human scale spec + team hired",
+      "horizon": "rock",
+      "status": "open",
+      "serves": "aion/mri-prototype",
+      "serves_all": [
+        "aion/mri-prototype"
+      ],
+      "owner": "RT",
+      "quarter": "2026-Q3",
+      "start": "2026-07-01",
+      "due": "2026-09-30",
+      "children": [
+        "aion/human-scale-spec/prototype",
+        "aion/human-scale-spec/jackson-go-no-go"
+      ]
+    },
+    {
+      "id": "aion/mouse-to-pig/mice-up",
+      "title": "Mice up",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "HZ",
+      "children": []
+    },
+    {
+      "id": "aion/mouse-to-pig/indication-protocols-approved",
+      "title": "Indication + protocols approved",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "HZ",
+      "children": []
+    },
+    {
+      "id": "aion/mouse-to-pig/device-ready",
+      "title": "Device ready",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "HG",
+      "children": []
+    },
+    {
+      "id": "aion/mouse-to-pig",
+      "title": "Mouse data to have informed pig go/no-go w/ US",
+      "horizon": "rock",
+      "status": "open",
+      "serves": "aion/write-candidate",
+      "serves_all": [
+        "aion/write-candidate"
+      ],
+      "owner": "RT",
+      "quarter": "2026-Q3",
+      "start": "2026-07-01",
+      "due": "2026-09-30",
+      "children": [
+        "aion/mouse-to-pig/mice-up",
+        "aion/mouse-to-pig/indication-protocols-approved",
+        "aion/mouse-to-pig/device-ready"
+      ]
+    },
+    {
+      "id": "aion/icr-go-no-go/icr-exp-ready",
+      "title": "ICR go/no-go",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "MM",
+      "children": []
+    },
+    {
+      "id": "aion/icr-go-no-go/epr-go-no-go",
+      "title": "EPR go/no-go",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "RT",
+      "children": []
+    },
+    {
+      "id": "aion/icr-go-no-go/reporter-panel-onboarded-to-macrophages",
+      "title": "Reporter panel onboarded to macrophages",
+      "horizon": "30",
+      "status": "open",
+      "serves": null,
+      "owner": "EL",
+      "children": []
+    },
+    {
+      "id": "aion/icr-go-no-go",
+      "title": "Mechanism discovery",
+      "horizon": "rock",
+      "status": "open",
+      "serves": "aion/cell-state-control",
+      "serves_all": [
+        "aion/cell-state-control"
+      ],
+      "aliases": [
+        "ICR program"
+      ],
+      "owner": "RT",
+      "quarter": "2026-Q3",
+      "start": "2026-07-01",
+      "due": "2026-09-30",
+      "children": [
+        "aion/icr-go-no-go/icr-exp-ready",
+        "aion/icr-go-no-go/epr-go-no-go",
+        "aion/icr-go-no-go/reporter-panel-onboarded-to-macrophages"
+      ]
+    },
+    {
+      "id": "aion/operations-health",
+      "title": "Operations \u0026 Company Health",
+      "horizon": "rock",
+      "status": "open",
+      "serves": null,
+      "owner": "BA",
+      "quarter": "2026-Q3",
+      "start": "2026-07-01",
+      "due": "2026-09-30",
+      "children": []
+    },
+    {
+      "id": "aion/new-rock-2",
+      "title": "Columbia partnership",
+      "horizon": "rock",
+      "status": "done",
+      "serves": null,
+      "closed": "2026-07-26",
+      "owner": null,
+      "quarter": "2026-Q3",
+      "children": []
+    },
+    {
+      "id": "aion/ultrasound-platform",
+      "title": "Ultrasound platform: drivers, wafers, focusing",
+      "horizon": "rock",
+      "status": "done",
+      "serves": "aion/mri-prototype",
+      "serves_all": [
+        "aion/mri-prototype",
+        "aion/write-candidate"
+      ],
+      "closed": "2026-06-30",
+      "owner": null,
+      "quarter": "2026-Q2",
+      "children": []
+    },
+    {
+      "id": "aion/mri-read-architecture",
+      "title": "Low-field MRI read architecture",
+      "horizon": "rock",
+      "status": "done",
+      "serves": "aion/mri-prototype",
+      "serves_all": [
+        "aion/mri-prototype"
+      ],
+      "closed": "2026-06-30",
+      "owner": null,
+      "quarter": "2026-Q2",
+      "children": []
+    },
+    {
+      "id": "aion/thymus-program",
+      "title": "Thymus immuno-reconstitution program",
+      "horizon": "rock",
+      "status": "done",
+      "serves": "aion/write-candidate",
+      "serves_all": [
+        "aion/write-candidate"
+      ],
+      "closed": "2026-06-30",
+      "owner": null,
+      "quarter": "2026-Q2",
+      "children": []
+    },
+    {
+      "id": "aion/team-building",
+      "title": "Hiring \u0026 team building",
+      "horizon": "rock",
+      "status": "done",
+      "serves": null,
+      "closed": "2026-06-30",
+      "owner": null,
+      "quarter": "2026-Q2",
+      "children": []
+    },
+    {
+      "id": "aion/partnerships-advisory",
+      "title": "Partnerships \u0026 advisory",
+      "horizon": "rock",
+      "status": "done",
+      "serves": null,
+      "closed": "2026-06-30",
+      "owner": null,
+      "quarter": "2026-Q2",
+      "children": []
+    },
+    {
+      "id": "aion/mechanism-validation",
+      "title": "Magnetoacoustic / ICR / CISS mechanism validation",
+      "horizon": "rock",
+      "status": "done",
+      "serves": "aion/write-candidate",
+      "serves_all": [
+        "aion/write-candidate",
+        "aion/cell-state-control"
+      ],
+      "closed": "2026-03-31",
+      "owner": null,
+      "quarter": "2026-Q1",
+      "children": []
+    },
+    {
+      "id": "aion/cell-reprogramming-wetlab",
+      "title": "Cell reprogramming \u0026 voltage-reporter wetlab",
+      "horizon": "rock",
+      "status": "done",
+      "serves": "aion/cell-state-control",
+      "serves_all": [
+        "aion/cell-state-control"
+      ],
+      "closed": "2026-03-31",
+      "owner": null,
+      "quarter": "2026-Q1",
+      "children": []
+    },
+    {
+      "id": "aion/regulatory-strategy",
+      "title": "Regulatory \u0026 reimbursement strategy",
+      "horizon": "rock",
+      "status": "done",
+      "serves": "aion/write-candidate",
+      "serves_all": [
+        "aion/write-candidate"
+      ],
+      "closed": "2026-03-31",
+      "owner": null,
+      "quarter": "2026-Q1",
+      "children": []
+    }
+  ]
+}

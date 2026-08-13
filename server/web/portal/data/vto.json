@@ -1,0 +1,33 @@
+{
+  "core_values": [
+    "Pursue truth earnestly"
+  ],
+  "core_focus": {
+    "niche": "Biophysics",
+    "purpose": "Bring the diseases of aging under biomedical control"
+  },
+  "ten_year_target": "50,000 flagships in homes.",
+  "marketing_strategy": {
+    "target": "",
+    "uniques": []
+  },
+  "three_year_picture": {
+    "date": "August 2029",
+    "measurables": [
+      "Closed-loop field control demonstrated in humans."
+    ]
+  },
+  "one_year_plan": {
+    "date": "",
+    "goals": [
+      "aion/mri-prototype",
+      "aion/write-candidate",
+      "aion/cell-state-control"
+    ],
+    "measurables": []
+  },
+  "quarter": {
+    "end": "2026-09-30",
+    "start": "2026-07-01"
+  }
+}
