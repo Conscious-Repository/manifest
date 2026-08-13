@@ -97,6 +97,69 @@ if (els.noteSaveBtn) els.noteSaveBtn.addEventListener("click", async () => {
 });
 if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/contacts"; });
 
+// ---- ARTIFACT READER — a full-page reader for agent artifacts (research
+// briefs) and run reports. Reuses the note view's reading surface (.note-view
+// + .note-rendered) but reads through the spirits API — the harness tree lives
+// OUTSIDE the vault, so this is strictly read-only: no raw edit, no backlinks,
+// no Obsidian link (there is no vault path). Routed as
+// #/artifact/ref/<harness>/<encRef> and #/artifact/run/<runId>. ----
+let _artifactRaw = "";
+async function showArtifact(tail) {
+  els.artifactView.hidden = false;
+  els.artifactRendered.innerHTML = "Loading…";
+  els.artifactSource.textContent = "";
+  els.artifactTitle.textContent = "";
+  _artifactRaw = "";
+  const parts = (tail || "").split("/");
+  const kind = parts[0];
+  let raw = "", title = "artifact", source = "";
+  try {
+    if (kind === "ref") {
+      const harness = decodeURIComponent(parts[1] || "");
+      const ref = decodeURIComponent(parts.slice(2).join("/") || "");
+      const q = "/api/spirits/file?path=" + encodeURIComponent(ref) + (harness ? "&harness=" + encodeURIComponent(harness) : "");
+      const r = await fetch(q);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      raw = (await r.json()).content || "";
+      title = artifactTitleFromRef(ref);
+      source = ref;
+    } else if (kind === "run") {
+      const runId = decodeURIComponent(parts.slice(1).join("/") || "");
+      const r = await fetch("/api/spirits/runs/" + encodeURIComponent(runId));
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const run = await r.json();
+      const s = run.summary || {};
+      raw = run.body || "(empty report)";
+      title = (s.spirit || "?") + " / " + (s.ritual || "?");
+      source = [s.outcome, s.request].filter(Boolean).join("  ·  ");
+    } else { throw new Error("unknown artifact route"); }
+  } catch (e) {
+    els.artifactRendered.textContent = "Couldn't open this artifact — " + (e.message || e);
+    return;
+  }
+  _artifactRaw = raw;
+  els.artifactTitle.textContent = title;
+  els.artifactSource.textContent = source;
+  els.artifactRendered.innerHTML = "";
+  els.artifactRendered.appendChild(renderMarkdown(raw, null, { readOnly: true }));
+}
+
+// artifactTitleFromRef: humanize the library filename for the header/crumb.
+// The document's own H1 carries the full title; this just labels the chrome.
+function artifactTitleFromRef(ref) {
+  const base = (ref || "").replace(/^.*\//, "").replace(/\.md$/, "");
+  return base.replace(/^\d{4}-\d{2}-\d{2}-/, "").replace(/-/g, " ") || "artifact";
+}
+
+if (els.artifactBackBtn) els.artifactBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/feed"; });
+if (els.artifactCopy) els.artifactCopy.addEventListener("click", async () => {
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(_artifactRaw || "");
+    showToast("Copied markdown");
+  } catch (e) { showToast("Copy failed — clipboard unavailable", null, "error"); }
+});
+
 // --- a compact markdown renderer that returns DOM (so wikilinks + checkboxes
 // are interactive). Handles the shapes this vault uses. opts.readOnly renders
 // a document that is NOT the open note (an agent artifact, a run report): its
@@ -132,6 +195,30 @@ function renderMarkdown(raw, notePath, opts) {
     // heading
     let hm = line.match(/^(#{1,6})\s+(.*)$/);
     if (hm) { flushPara(); const h = el("h" + hm[1].length, "md-h"); inlineInto(h, hm[2], notePath); frag.appendChild(h); continue; }
+    // GFM table: a `| … |` header row immediately followed by a `|---|` rule
+    if (t.startsWith("|") && i + 1 < lines.length) {
+      const sep = lines[i + 1].trim();
+      if (sep.includes("-") && /^\|?[\s:|-]+\|[\s:|-]*$/.test(sep)) {
+        flushPara();
+        const splitRow = (s) => { let x = s.trim(); if (x.startsWith("|")) x = x.slice(1); if (x.endsWith("|")) x = x.slice(0, -1); return x.split("|").map((c) => c.trim()); };
+        const header = splitRow(t);
+        let j = i + 2; const bodyRows = [];
+        for (; j < lines.length && lines[j].trim().startsWith("|"); j++) bodyRows.push(splitRow(lines[j].trim()));
+        const wrap = el("div", "md-table-wrap");
+        const table = el("table", "md-table");
+        const thead = el("thead"), htr = el("tr");
+        header.forEach((c) => { const th = el("th"); inlineInto(th, c, notePath); htr.appendChild(th); });
+        thead.appendChild(htr); table.appendChild(thead);
+        const tbody = el("tbody");
+        bodyRows.forEach((cells) => {
+          const tr = el("tr");
+          for (let k = 0; k < header.length; k++) { const td = el("td"); inlineInto(td, cells[k] || "", notePath); tr.appendChild(td); }
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody); wrap.appendChild(table); frag.appendChild(wrap);
+        i = j - 1; continue;
+      }
+    }
     // checkbox
     let cb = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s?(.*)$/);
     if (cb) {
@@ -173,7 +260,10 @@ function inlineInto(host, text, notePath) {
       a.onclick = () => resolveWikilink(target);
       host.appendChild(a);
     } else if (m[2] != null) { // [text](url)
-      const a = el("a", "md-link", m[2]); a.href = m[3]; a.target = "_blank"; host.appendChild(a);
+      const a = el("a", "md-link", m[2]); a.href = m[3]; a.target = "_blank";
+      // external source links (http/doi) read as citations — accent + ↗ glyph
+      if (/^https?:\/\//i.test(m[3]) || /doi\.org/i.test(m[3])) { a.classList.add("md-cite"); a.rel = "noopener noreferrer"; }
+      host.appendChild(a);
     } else if (m[4] != null) { host.appendChild(el("strong", null, m[4])); }
     else if (m[5] != null) { host.appendChild(el("em", null, m[5])); }
     else if (m[6] != null) { host.appendChild(el("code", "md-code", m[6])); }

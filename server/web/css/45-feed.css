@@ -88,7 +88,5 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .pill.verdict-primary, .pill.light.verdict-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .pill.verdict-primary:hover, .pill.light.verdict-primary:hover { background: var(--accent); color: #fff; }
 
-/* harness-artifact viewer — the brief read through the spirits file API */
-.harness-artifact { max-width: 720px; max-height: 76vh; display: flex; flex-direction: column; }
-.harness-artifact .appr-diff-label { display: flex; justify-content: space-between; align-items: baseline; }
-.harness-artifact-body { overflow: auto; white-space: pre-wrap; font-family: var(--sans); font-size: 13.5px; line-height: 1.55; color: var(--base-100); margin: 10px 2px 2px; }
+/* (the harness-artifact modal was replaced by the full-page artifact reader —
+   see #artifactView / showArtifact in 70-note.js) */

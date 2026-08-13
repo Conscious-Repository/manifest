@@ -123,6 +123,7 @@ function normHash(h) { return !h || h === "#" ? "#/" : h; }
 
 function sectionOf(h) {
   if (h.startsWith("#/note/")) return "note";
+  if (h.startsWith("#/artifact/")) return "artifact";
   const seg = h.replace(/^#\//, "").split("/")[0];
   return ["goals","todos","calendar","feed","studio","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
@@ -196,6 +197,12 @@ function renderCrumbs(h) {
     const p = decodeURIComponent(h.slice("#/note/".length));
     parts.push({ label: "note", hash: null });
     parts.push({ label: p.split("/").pop().replace(/\.md$/, "") });
+  } else if (h.startsWith("#/artifact/")) {
+    const seg = h.slice("#/artifact/".length).split("/");
+    const label = seg[0] === "run" ? "run report"
+      : decodeURIComponent(seg.slice(2).join("/") || "").split("/").pop().replace(/\.md$/, "") || "artifact";
+    parts.push({ label: "artifact", hash: null });
+    parts.push({ label });
   } else {
     const sec = sectionOf(h);
     // display label diverges from the route key only for real estate (key stays
@@ -257,7 +264,7 @@ function route() {
   // non-note route records itself as the return target. Explicit
   // _noteReturn sets (contact page, studio→feed) still win — they happen
   // after the last non-note route, and note routes never overwrite.
-  if (!h.startsWith("#/note/")) _noteReturn = h === "#/" ? "#/" : h;
+  if (!h.startsWith("#/note/") && !h.startsWith("#/artifact/")) _noteReturn = h === "#/" ? "#/" : h;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const todosTab = h === "#/todos" || h.startsWith("#/todos/");
   const cal = h === "#/calendar";
@@ -270,7 +277,8 @@ function route() {
   const properties = h === "#/properties" || h.startsWith("#/properties/");
   const aionTab = h === "#/aion" || h.startsWith("#/aion/");
   const note = h.startsWith("#/note/");
-  const day = !goals && !todosTab && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !aionTab && !note;
+  const artifact = h.startsWith("#/artifact/");
+  const day = !goals && !todosTab && !cal && !fd && !studio && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -283,6 +291,7 @@ function route() {
   els.propertiesView.hidden = !properties;
   els.aionView.hidden = !aionTab;
   els.noteView.hidden = !note;
+  if (els.artifactView) els.artifactView.hidden = !artifact;
   els.dateNav.hidden = !day;
   if (!aionTab && els.aionPublishRail) els.aionPublishRail.innerHTML = ""; // the crumb PUBLISH slot is aion-only
   if (!properties && els.rePublishRail) els.rePublishRail.innerHTML = ""; // the RE crumb PUBLISH slot is properties-only
@@ -305,6 +314,7 @@ function route() {
   else if (properties) showProperties(h); // real-estate cockpit: board / property page
   else if (aionTab) showAion(h); // aion program cockpit: backlog / heuristics / vto / …
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
+  else if (artifact) showArtifact(h.slice("#/artifact/".length)); // full-page agent-artifact reader
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);

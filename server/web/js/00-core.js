@@ -81,6 +81,13 @@ const els = {
   noteRendered: document.getElementById("noteRendered"),
   noteRaw: document.getElementById("noteRaw"),
   noteBacklinks: document.getElementById("noteBacklinks"),
+  // artifact reader (full-page agent-artifact / run-report viewer)
+  artifactView: document.getElementById("artifactView"),
+  artifactTitle: document.getElementById("artifactTitle"),
+  artifactSource: document.getElementById("artifactSource"),
+  artifactRendered: document.getElementById("artifactRendered"),
+  artifactBackBtn: document.getElementById("artifactBackBtn"),
+  artifactCopy: document.getElementById("artifactCopy"),
   // quick-lookup command bar
   cmdbar: document.getElementById("cmdbar"),
   cmdbarBackdrop: document.getElementById("cmdbarBackdrop"),

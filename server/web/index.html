@@ -374,6 +374,21 @@
     <div id="noteBacklinks" class="note-backlinks"></div>
   </section>
 
+  <!-- ARTIFACT READER — a full-page reader for agent artifacts (research
+       briefs, run reports) read through the spirits file/run API. Reuses the
+       note view's reading typography (.note-view + .note-rendered). -->
+  <section class="note-view artifact-view" id="artifactView" hidden>
+    <div class="agent-head">
+      <button id="artifactBackBtn" class="pill light">‹ Back</button>
+      <span id="artifactTitle" class="note-title"></span>
+      <div class="agent-actions">
+        <button id="artifactCopy" class="pill light" title="Copy the markdown">⧉ Copy</button>
+      </div>
+    </div>
+    <div id="artifactSource" class="artifact-source"></div>
+    <div id="artifactRendered" class="note-rendered"></div>
+  </section>
+
     </div><!-- /contentScroll -->
   </div><!-- /content-col -->
   </div><!-- /appShell -->

@@ -365,73 +365,17 @@ function openArtifact(path) {
   openNoteByPath(path);
 }
 
-// ---- ONE legible artifact viewer (owner ask 2026-08-12) ----
-// Delegated work must be READABLE where it lands, not raw markdown in a <pre>.
-// docModal renders through the same markdown renderer the note view uses
-// (headings, lists, code, wikilinks) into the quiet artifact modal, so a
-// harness brief, a vault brief and a run report all read alike.
-function docModal(title, subtitle, raw) {
-  const overlay = el("div", "cmdbar");
-  const back = el("div", "cmdbar-backdrop");
-  const panel = el("div", "cmdbar-card harness-artifact");
-  overlay.append(back, panel);
-  const close = () => overlay.remove();
-  back.onclick = close;
-  const head = el("div", "appr-diff-label");
-  head.append(el("span", "artifact-doc-title", title || "artifact"));
-  const x = el("button", "aion-insp-x", "✕");
-  x.onclick = close;
-  head.append(x);
-  panel.append(head);
-  if (subtitle) panel.append(el("div", "artifact-doc-sub", subtitle));
-  const body = el("div", "harness-artifact-body artifact-doc");
-  body.appendChild(renderMarkdown(raw || "", null, { readOnly: true }));
-  panel.append(body);
-  const esc = (e) => { if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); } };
-  document.addEventListener("keydown", esc);
-  document.body.append(overlay);
-}
-
-// openRunModal — view a run report IN PLACE from any surface (todos chip,
-// board card, delegation-done feed card): the report body IS the artifact for
-// runs that wrote nothing else. No navigation; rendered, not raw.
-async function openRunModal(runId) {
-  let run;
-  try {
-    const r = await fetch("/api/spirits/runs/" + encodeURIComponent(runId));
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    run = await r.json();
-  } catch (e) { showToast("Couldn't open the run: " + (e.message || e), null, "error"); return; }
-  const s = run.summary || {};
-  docModal((s.spirit || "?") + " / " + (s.ritual || "?"),
-    [s.outcome, s.request].filter(Boolean).join("  ·  "),
-    run.body || "(empty report)");
-}
-
-// openHarnessArtifact — the post-split viewer: the harness tree lives outside
-// the vault, so artifact briefs read through the spirits file API (read-only
-// allow-list) into the legible modal. Never the vault note view (two-media
-// rule). `harness` narrows the federated read to the tree that wrote it.
-async function openHarnessArtifact(ref, harness, title) {
-  let content = "";
-  try {
-    const q = "/api/spirits/file?path=" + encodeURIComponent(ref) + (harness ? "&harness=" + encodeURIComponent(harness) : "");
-    const r = await fetch(q);
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    content = (await r.json()).content || "";
-  } catch (e) { showToast("Couldn't open artifact: " + (e.message || e), null, "error"); return; }
-  docModal(title || ref.replace(/^artifacts\/library\//, ""), ref, content);
-}
-
 // openResult — the ONE entry point every surface uses to view delegated work:
 // the feed artifact card, the delegation-done card, the board's chip. Prefers
 // the deliverable (the library brief) over the narration (the run report), and
-// honors the two-media rule: a vault-side brief opens in the note view.
+// honors the two-media rule: a vault-side brief opens in the note view, while a
+// harness brief / run report opens in the full-page artifact reader
+// (showArtifact, 70-note.js) — the harness tree lives outside the vault.
 function openResult(d, title) {
   if (!d) return;
   if (d.artifactPath) { openArtifact(d.artifactPath); return; }
-  if (d.artifactRef) { openHarnessArtifact(d.artifactRef, d.harness, title); return; }
-  if (d.runId) { openRunModal(d.runId); return; }
+  if (d.artifactRef) { location.hash = "#/artifact/ref/" + encodeURIComponent(d.harness || "") + "/" + encodeURIComponent(d.artifactRef); return; }
+  if (d.runId) { location.hash = "#/artifact/run/" + encodeURIComponent(d.runId); return; }
   showToast("No result file yet for this work", null, "info");
 }
 

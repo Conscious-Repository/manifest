@@ -18,6 +18,18 @@ h1.md-h { font-size: 24px; } h2.md-h { font-size: 20px; } h3.md-h { font-size: 1
 .note-rendered .md-bq { border-left: 3px solid var(--line); margin: 10px 0; padding: 2px 0 2px 14px; color: var(--streak-ink); }
 .note-rendered .md-hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .note-rendered .md-link { color: var(--blue); }
+/* GFM tables — shared by the note view + the artifact reader; wide tables
+   scroll inside their own box, never the page */
+.note-rendered .md-table-wrap { overflow-x: auto; margin: 12px 0; }
+.note-rendered .md-table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.note-rendered .md-table th, .note-rendered .md-table td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.note-rendered .md-table th { font-weight: 500; color: var(--ink); background: var(--streak-bg); }
+/* external source links read as citations — accent + trailing ↗ */
+.note-rendered .md-cite { color: var(--blue); border-bottom: 1px solid var(--blue-soft); }
+.note-rendered .md-cite::after { content: " ↗"; font-size: 0.8em; opacity: 0.55; }
+/* artifact reader — the source path / run summary line under the head */
+.artifact-source { font-family: var(--mono); font-size: 11px; color: var(--muted); word-break: break-all; margin: 8px 0 2px; }
+.artifact-source:empty { display: none; }
 .wikilink { color: var(--blue); cursor: pointer; border-bottom: 1px solid var(--blue-soft); }
 .wikilink:hover { background: var(--hover); }
 .note-raw { width: 100%; min-height: 60vh; font-family: var(--mono); font-size: 13px; line-height: 1.55; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-sizing: border-box; color: var(--text); }
