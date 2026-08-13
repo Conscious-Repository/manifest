@@ -220,7 +220,6 @@
 .aion-insp-ro { font-family: var(--sans); font-size: 13.5px; color: var(--base-60); }
 .aion-insp-src { display: block; font-family: var(--mono); font-size: 11px; color: var(--base-50); text-decoration: none; margin: 12px 0 0; }
 .aion-insp-src:hover { color: var(--accent); }
-.aion-decide-btn { margin-top: 6px; background: var(--accent); border: 1px solid var(--accent); color: #fff; font-family: var(--mono); font-size: 11px; border-radius: var(--radius-lg); padding: 4px 10px; cursor: pointer; }
 .aion-insp-del { margin-top: 16px; background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; padding: 0; }
 .aion-insp-del:hover { color: var(--over); }
 .aion-insp-del.armed { color: #fff; background: var(--over); border-radius: var(--radius-lg); padding: 3px 10px; }
@@ -254,3 +253,12 @@
 /* people rows with an ↗ note link — the trailing cell holds ↗ + ✕ */
 .cols-aion-people.cols-people-linked { grid-template-columns: 90px minmax(160px, 1fr) minmax(160px, 1fr) 56px; }
 .aion-row-acts { display: flex; gap: 2px; justify-content: flex-end; }
+
+/* decide as a quiet inline affordance: asleep until the outcome has text,
+   then accent TEXT (never a solid banner mid-panel) */
+.aion-decide-inline {
+  align-self: flex-end; margin-top: 2px; background: none; border: none; padding: 0;
+  font-family: var(--mono); font-size: 11px; color: var(--base-30); cursor: default;
+}
+.aion-decide-inline:not(:disabled) { color: var(--accent); cursor: pointer; font-weight: 500; }
+.aion-decide-inline:not(:disabled):hover { text-decoration: underline; }

@@ -362,7 +362,7 @@ function aionTaskRow(it) {
 function renderAionInspector(insp, items) {
   const it = items.find((x) => x.id === aionSelId);
   if (!it) {
-    insp.append(el("div", "aion-insp-empty", "select a row — every field edits in place, saves on blur"));
+    insp.append(el("div", "aion-insp-empty", "select a row — edits save as you go"));
     return;
   }
   const head = el("div", "aion-insp-head");
@@ -421,15 +421,22 @@ function renderAionInspector(insp, items) {
     nb.onchange = () => patch({ needed_by: nb.value });
     field("needed by", nb);
     if (it.status !== "decided") {
-      const outcome = inputEl("outcome — what was decided…");
+      // outcome + decide are ONE quiet control: type the outcome, press
+      // Enter (or the small affordance that wakes with it) — no banner
+      // button mid-panel (owner call 2026-08-12)
+      const outcome = inputEl("what was decided… (enter ⏎ files it)");
       outcome.className = "pp-in aion-insp-outcome";
       field("outcome", outcome);
-      const decide = el("button", "aion-decide-btn", "decide → permanent log");
-      decide.onclick = () => {
-        if (!outcome.value.trim()) { showToast("write the outcome first"); outcome.focus(); return; }
+      const decide = el("button", "aion-decide-inline", "decide → permanent log");
+      decide.disabled = true;
+      const doDecide = () => {
+        if (!outcome.value.trim()) return;
         aionSelId = null;
         aionPost("/api/aion/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
       };
+      outcome.addEventListener("input", () => { decide.disabled = !outcome.value.trim(); });
+      outcome.addEventListener("keydown", (ev) => { if (ev.key === "Enter") doDecide(); });
+      decide.onclick = doDecide;
       insp.append(decide);
     } else if (it.outcome) {
       field("outcome", el("span", "aion-insp-ro", it.outcome));
@@ -458,7 +465,7 @@ function renderAionInspector(insp, items) {
   insp.append(del);
 
   const foot = el("div", "aion-insp-foot");
-  foot.append(el("span", "", "saves on blur"));
+  foot.append(el("span", "", "edits save as you go"));
   const raw = el("button", "aion-insp-raw", "⌘/ raw");
   raw.onclick = () => toggleRawOverlay();
   foot.append(raw);

@@ -252,7 +252,7 @@ function renderREBacklogInspector(insp) {
   if (reBacklogSelSrc === "prop") { rePropTodoInspector(insp); return; }
   const it = reItems().find((x) => x.id === reBacklogSelId);
   if (!it) {
-    insp.append(el("div", "aion-insp-empty", "select a row — every field edits in place, saves on blur"));
+    insp.append(el("div", "aion-insp-empty", "select a row — edits save as you go"));
     return;
   }
   const head = el("div", "aion-insp-head");
@@ -312,15 +312,20 @@ function renderREBacklogInspector(insp) {
     nb.onchange = () => patch({ needed_by: nb.value });
     field("needed by", nb);
     if (it.status !== "decided") {
-      const outcome = inputEl("outcome — what was decided…");
+      // outcome + decide are ONE quiet control (mirrors AION): Enter files it
+      const outcome = inputEl("what was decided… (enter ⏎ files it)");
       outcome.className = "pp-in aion-insp-outcome";
       field("outcome", outcome);
-      const decide = el("button", "aion-decide-btn", "decide → permanent log");
-      decide.onclick = () => {
-        if (!outcome.value.trim()) { showToast("write the outcome first"); outcome.focus(); return; }
+      const decide = el("button", "aion-decide-inline", "decide → permanent log");
+      decide.disabled = true;
+      const doDecide = () => {
+        if (!outcome.value.trim()) return;
         reBacklogSelId = null; reBacklogSelSrc = null;
         rePost("/api/re/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
       };
+      outcome.addEventListener("input", () => { decide.disabled = !outcome.value.trim(); });
+      outcome.addEventListener("keydown", (ev) => { if (ev.key === "Enter") doDecide(); });
+      decide.onclick = doDecide;
       insp.append(decide);
     } else if (it.outcome) {
       field("outcome", el("span", "aion-insp-ro", it.outcome));
@@ -342,7 +347,7 @@ function renderREBacklogInspector(insp) {
   };
   insp.append(del);
   const foot = el("div", "aion-insp-foot");
-  foot.append(el("span", "", "saves on blur"));
+  foot.append(el("span", "", "edits save as you go"));
   insp.append(foot);
 }
 
@@ -376,7 +381,7 @@ function rePropTodoInspector(insp) {
     if (container.slug) src.href = "#/properties/" + encodeURIComponent(container.slug);
     insp.append(src);
   }
-  const done = el("button", "aion-decide-btn", "mark done");
+  const done = el("button", "pill light", "mark done");
   done.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/todos/check", { id, checked: true }, "Marked done"); };
   insp.append(done);
   const foot = el("div", "aion-insp-foot");
