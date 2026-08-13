@@ -363,3 +363,121 @@ func TestAionPublishValidationGateBlocks(t *testing.T) {
 		t.Fatal("checkout was written despite validation failure")
 	}
 }
+
+// reconcileFixture: a bare remote with an initial commit and two clones ("ours"
+// = the publish checkout, "other" = a second machine). gitRun (used inside
+// reconcileAndRetryPush) doesn't inject an identity, so pin repo-local config.
+func reconcileFixture(t *testing.T) (remote, ours, other string) {
+	t.Helper()
+	scratch := t.TempDir()
+	remote = filepath.Join(scratch, "remote.git")
+	ours = filepath.Join(scratch, "ours")
+	other = filepath.Join(scratch, "other")
+	git(t, scratch, "-c", "init.defaultBranch=main", "init", "--bare", remote)
+	git(t, scratch, "clone", remote, ours)
+	git(t, ours, "checkout", "-b", "main")
+	git(t, ours, "config", "user.name", "t")
+	git(t, ours, "config", "user.email", "t@t")
+	if err := os.WriteFile(filepath.Join(ours, "data.json"), []byte("v1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, ours, "add", "-A")
+	git(t, ours, "commit", "-m", "init")
+	git(t, ours, "push", "-u", "origin", "main")
+	git(t, scratch, "clone", remote, other)
+	git(t, other, "config", "user.name", "o")
+	git(t, other, "config", "user.email", "o@o")
+	return remote, ours, other
+}
+
+// A publish push that lost the fast-forward race to a DISJOINT external commit
+// (portal source, not data) self-heals: fetch, rebase the publish commit onto
+// the remote tip, push. The remote ends with both commits.
+func TestReconcileAndRetryPushDisjoint(t *testing.T) {
+	remote, ours, other := reconcileFixture(t)
+
+	// other machine lands a disjoint portal-source commit → remote advances
+	if err := os.WriteFile(filepath.Join(other, "portal-source.txt"), []byte("gate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, other, "add", "-A")
+	git(t, other, "commit", "-m", "portal: gate button")
+	git(t, other, "push", "origin", "main")
+
+	// our publish commit touches only the data file, then the push loses the race
+	if err := os.WriteFile(filepath.Join(ours, "data.json"), []byte("v2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, ours, "add", "-A")
+	git(t, ours, "commit", "-m", "aion publish: backlog (manifest)")
+	localHead := git(t, ours, "rev-parse", "HEAD")
+
+	cfg := aionPortalCfg{Path: ours, Remote: "origin", Branch: "main"}
+	_, pushErr := gitRun(ours, gitPushTimeout, "push", cfg.Remote, cfg.Branch)
+	if pushErr == nil {
+		t.Fatal("expected the initial push to be rejected non-fast-forward")
+	}
+	newCommit, err := reconcileAndRetryPush(cfg, localHead, pushErr)
+	if err != nil {
+		t.Fatalf("reconcile should have recovered a disjoint divergence: %v", err)
+	}
+	if newCommit == localHead {
+		t.Fatal("HEAD should have been rewritten by the rebase")
+	}
+	if h := git(t, remote, "rev-parse", "HEAD"); h != newCommit {
+		t.Fatalf("remote tip %s != pushed commit %s", h, newCommit)
+	}
+	// both changes are present on the remote after a fresh clone
+	fresh := filepath.Join(t.TempDir(), "fresh")
+	git(t, t.TempDir(), "clone", remote, fresh)
+	if b, _ := os.ReadFile(filepath.Join(fresh, "data.json")); strings.TrimSpace(string(b)) != "v2" {
+		t.Fatalf("data.json not published: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(fresh, "portal-source.txt")); err != nil {
+		t.Fatal("external portal-source commit was clobbered")
+	}
+}
+
+// A real conflict (both sides edited the same data file) can't be rebased
+// silently: reconcile aborts, returns the original push error, and leaves the
+// checkout clean (no half-finished rebase) so the next publish can retry.
+func TestReconcileAndRetryPushConflictAborts(t *testing.T) {
+	_, ours, other := reconcileFixture(t)
+
+	if err := os.WriteFile(filepath.Join(other, "data.json"), []byte("remote-edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, other, "add", "-A")
+	git(t, other, "commit", "-m", "other edits data")
+	git(t, other, "push", "origin", "main")
+
+	if err := os.WriteFile(filepath.Join(ours, "data.json"), []byte("local-edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, ours, "add", "-A")
+	git(t, ours, "commit", "-m", "aion publish: backlog (manifest)")
+	localHead := git(t, ours, "rev-parse", "HEAD")
+
+	cfg := aionPortalCfg{Path: ours, Remote: "origin", Branch: "main"}
+	_, pushErr := gitRun(ours, gitPushTimeout, "push", cfg.Remote, cfg.Branch)
+	if pushErr == nil {
+		t.Fatal("expected a non-fast-forward rejection")
+	}
+	commit, err := reconcileAndRetryPush(cfg, localHead, pushErr)
+	if err == nil {
+		t.Fatal("a genuine conflict must not be silently pushed")
+	}
+	if commit != localHead {
+		t.Fatalf("commit should be unchanged on abort: %s → %s", localHead, commit)
+	}
+	// checkout is clean — no rebase left in progress
+	if st := git(t, ours, "status", "--porcelain"); st != "" {
+		t.Fatalf("checkout not clean after abort: %q", st)
+	}
+	if _, statErr := os.Stat(filepath.Join(ours, ".git", "rebase-merge")); statErr == nil {
+		t.Fatal("rebase still in progress after abort")
+	}
+	if h := git(t, ours, "rev-parse", "HEAD"); h != localHead {
+		t.Fatalf("local HEAD moved despite abort: %s → %s", localHead, h)
+	}
+}

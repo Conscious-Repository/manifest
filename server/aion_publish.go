@@ -58,6 +58,32 @@ const (
 	gitPushTimeout  = 120 * time.Second
 )
 
+// reconcileAndRetryPush recovers a non-fast-forward publish push. The portal
+// checkout can fall behind when a portal-source commit is pushed from another
+// machine; a publish commit only touches the data-contract paths, disjoint
+// from that source, so fetch the remote tip, rebase the publish commit(s) onto
+// it, and push again. On a clean recovery it returns the new HEAD (the rebase
+// rewrote the hash) and a nil error. If the fetch fails, or the rebase hits a
+// real conflict (aborted so the checkout is left clean), it returns the caller's
+// original commit and the original push error — same recoverable failed-push
+// state as before, just now self-healing for the common disjoint case.
+func reconcileAndRetryPush(p aionPortalCfg, commit string, pushErr error) (string, error) {
+	if _, err := gitRun(p.Path, gitPushTimeout, "fetch", p.Remote, p.Branch); err != nil {
+		return commit, pushErr
+	}
+	if _, err := gitRun(p.Path, gitLocalTimeout, "rebase", "FETCH_HEAD"); err != nil {
+		_, _ = gitRun(p.Path, gitLocalTimeout, "rebase", "--abort")
+		return commit, pushErr
+	}
+	if h, err := gitRun(p.Path, gitLocalTimeout, "rev-parse", "HEAD"); err == nil {
+		commit = strings.TrimSpace(h)
+	}
+	if _, err := gitRun(p.Path, gitPushTimeout, "push", p.Remote, p.Branch); err != nil {
+		return commit, err
+	}
+	return commit, nil
+}
+
 // ---- publish receipts (permanent audit trail, dataDir tier) ----
 
 type aionPublishRecord struct {
@@ -542,15 +568,24 @@ func (s *Server) handleAionPublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := gitRun(p.Path, gitPushTimeout, "push", p.Remote, p.Branch); err != nil {
-		// the commit exists locally — record it so the receipt carries the
-		// hash and the next publish completes push-only
-		rec := aionPublishRecord{
-			ID: "pub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "failed",
-			Stage: "push", Commit: commit, Files: changed, Error: err.Error(), At: publishedAt,
+		// A remote advanced elsewhere (typically a portal-source commit pushed
+		// from another checkout) makes the push non-fast-forward. Publish
+		// commits only ever touch the data-contract paths, disjoint from portal
+		// source, so replay them onto the remote tip and retry once. A genuine
+		// content conflict aborts the rebase cleanly and falls through to the
+		// failed-push receipt (unchanged behaviour, still recoverable).
+		commit, err = reconcileAndRetryPush(p, commit, err)
+		if err != nil {
+			// the commit exists locally — record it so the receipt carries the
+			// hash and the next publish completes push-only
+			rec := aionPublishRecord{
+				ID: "pub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "failed",
+				Stage: "push", Commit: commit, Files: changed, Error: err.Error(), At: publishedAt,
+			}
+			s.publishLog().append(rec)
+			writeJSON(w, map[string]any{"ok": false, "stage": "push", "error": err.Error(), "commit": commit})
+			return
 		}
-		s.publishLog().append(rec)
-		writeJSON(w, map[string]any{"ok": false, "stage": "push", "error": err.Error(), "commit": commit})
-		return
 	}
 	rec := aionPublishRecord{
 		ID: "pub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "ok",

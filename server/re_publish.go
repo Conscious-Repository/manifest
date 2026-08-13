@@ -276,12 +276,19 @@ func (s *Server) handleRePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := gitRun(p.Path, gitPushTimeout, "push", p.Remote, p.Branch); err != nil {
-		s.rePubLog().append(aionPublishRecord{
-			ID: "repub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "failed",
-			Stage: "push", Commit: commit, Files: changed, Error: err.Error(), At: publishedAt,
-		})
-		writeJSON(w, map[string]any{"ok": false, "stage": "push", "error": err.Error(), "commit": commit})
-		return
+		// a remote advanced elsewhere (e.g. a portal-source commit) makes this
+		// non-fast-forward; publish commits touch only the data-contract paths,
+		// so rebase onto the remote tip and retry once (self-healing) — a real
+		// conflict aborts clean and falls through to the failed-push receipt.
+		commit, err = reconcileAndRetryPush(p, commit, err)
+		if err != nil {
+			s.rePubLog().append(aionPublishRecord{
+				ID: "repub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "failed",
+				Stage: "push", Commit: commit, Files: changed, Error: err.Error(), At: publishedAt,
+			})
+			writeJSON(w, map[string]any{"ok": false, "stage": "push", "error": err.Error(), "commit": commit})
+			return
+		}
 	}
 	s.rePubLog().append(aionPublishRecord{
 		ID: "repub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "ok",
