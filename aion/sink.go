@@ -20,7 +20,7 @@ import (
 // vaultindex reindex callback — no second subscription), filters to
 // knowledge-zone notes whose frontmatter categories include "aion", diffs
 // them against a content-hash cursor, and spools a targeted ritual for the
-// aion-extractor spirit. The engine does the thinking (§7); a missed spool
+// extractor spirit's aion ritual. The engine does the thinking (§7); a missed spool
 // is recoverable — queued paths persist and a ticker retries.
 type ExtractSink struct {
 	spec          DomainSpec
@@ -42,10 +42,11 @@ type Spooler interface {
 }
 
 // The targeted ritual the sink spools (the engine-side spirit files carry
-// the extraction contract).
+// the extraction contract). One generalized `extractor` spirit serves both
+// domains (owner call 2026-08-12); the RITUAL carries the domain.
 const (
-	ExtractorSpirit = "aion-extractor"
-	ExtractorRitual = "extract"
+	ExtractorSpirit = "extractor"
+	ExtractorRitual = "aion"
 )
 
 // DomainSpec parameterizes one extraction domain: which frontmatter

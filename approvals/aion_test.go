@@ -50,7 +50,7 @@ func aionProposal(payload aion.ProposalPayload) Proposal {
 		aion.RenderPayloadFence(payload)
 	return Proposal{
 		Type: typ, Action: "aion: " + payload.Kind + " — " + payload.Title,
-		Agent: "aion-extractor", Ritual: "extract", Body: body, ApplyPath: path,
+		Agent: "extractor", Ritual: "aion", Body: body, ApplyPath: path,
 	}
 }
 

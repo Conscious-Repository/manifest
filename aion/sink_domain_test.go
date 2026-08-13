@@ -27,8 +27,8 @@ func (f *domainSpooler) EngineAlive() (bool, time.Time) { return f.alive, time.N
 var reTestDomain = DomainSpec{
 	Name:       "realestate",
 	Categories: []string{"real-estate", "ooda", "ooda-group"},
-	Spirit:     "re-extractor",
-	Ritual:     "extract",
+	Spirit:     "extractor",
+	Ritual:     "real-estate",
 	Request:    "extract real-estate items from these vault notes:",
 }
 
@@ -44,7 +44,7 @@ func writeNote(t *testing.T, vault, rel, categories string) {
 }
 
 // The RE-spec sink ignores aion-only notes and routes RE categories to the
-// re-extractor spirit; a dual-tagged note reaches BOTH sinks over one vault.
+// extractor real-estate ritual; a dual-tagged note reaches BOTH sinks over one vault.
 func TestSinkDomainRouting(t *testing.T) {
 	vault := t.TempDir()
 	dataDir := t.TempDir()
@@ -65,7 +65,7 @@ func TestSinkDomainRouting(t *testing.T) {
 	if len(aionSp.spooled) != 1 {
 		t.Fatalf("aion spooled %d requests, want 1", len(aionSp.spooled))
 	}
-	if got := aionSp.spooled[0]; got.spirit != "aion-extractor" ||
+	if got := aionSp.spooled[0]; got.spirit != "extractor" ||
 		!contains2(got.request, "log/aion-only.md") || !contains2(got.request, "log/dual.md") ||
 		contains2(got.request, "log/re-only.md") {
 		t.Fatalf("aion routing wrong: %+v", got)
@@ -73,7 +73,7 @@ func TestSinkDomainRouting(t *testing.T) {
 	if len(reSp.spooled) != 1 {
 		t.Fatalf("re spooled %d requests, want 1", len(reSp.spooled))
 	}
-	if got := reSp.spooled[0]; got.spirit != "re-extractor" ||
+	if got := reSp.spooled[0]; got.spirit != "extractor" ||
 		!contains2(got.request, "log/re-only.md") || !contains2(got.request, "log/ooda-note.md") ||
 		!contains2(got.request, "log/dual.md") || contains2(got.request, "log/aion-only.md") {
 		t.Fatalf("re routing wrong: %+v", got)

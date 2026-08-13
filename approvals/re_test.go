@@ -44,7 +44,7 @@ func reProposal(payload aion.ProposalPayload) Proposal {
 		aion.RenderPayloadFenceIn(aion.REPayloadFence, payload)
 	return Proposal{
 		Type: TypeReBacklog, Action: "re: " + payload.Kind + " — " + payload.Title,
-		Agent: "re-extractor", Ritual: "extract", Body: body, ApplyPath: ReBacklogPath,
+		Agent: "extractor", Ritual: "real-estate", Body: body, ApplyPath: ReBacklogPath,
 	}
 }
 

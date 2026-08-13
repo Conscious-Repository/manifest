@@ -88,7 +88,7 @@ func main() {
 	// extraction sinks (spec §3) — constructed BEFORE the watcher starts so
 	// the reindex callback never races the wiring; nil without an engine.
 	// Two domains share the one watcher: aion, and real-estate (categories
-	// real-estate/ooda/ooda-group → the re-extractor spirit and the
+	// real-estate/ooda/ooda-group → the extractor spirit's real-estate ritual and the
 	// system/realestate/backlog.md decision log). A note tagged for both
 	// reaches both sinks — each files against its own record.
 	var spiritsStore *spirits.Store
@@ -102,8 +102,8 @@ func main() {
 		reSink = aion.NewExtractSink(aion.DomainSpec{
 			Name:       "realestate",
 			Categories: []string{"real-estate", "ooda", "ooda-group"},
-			Spirit:     "re-extractor",
-			Ritual:     "extract",
+			Spirit:     "extractor",
+			Ritual:     "real-estate",
 			Request:    "extract real-estate items from these vault notes:",
 		}, cfg.VaultPath, cfg.SystemRoot, cfg.ExtrinsicRoot, cfg.DataDir, spiritsStore)
 		reSink.Start(ctx)

@@ -9,7 +9,7 @@ import (
 // The REAL-ESTATE extraction proposal type — the aion pipeline's second
 // domain (RE spec / owner decision 2026-08-12: one domain, one decision log).
 // Candidates mined from `real-estate`/`ooda`/`ooda-group`-category vault notes
-// by the re-extractor spirit; the body carries a ````re JSON fence in the SAME
+// by the extractor spirit's real-estate ritual; the body carries a ````re JSON fence in the SAME
 // payload shape as aion (the backlog grammar is domain-neutral — package aion
 // is the record library here, not a domain leak). On Confirm the app renders
 // the one markdown line and appends it to the RE decision log through the

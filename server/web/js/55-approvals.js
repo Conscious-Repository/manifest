@@ -140,13 +140,15 @@ function parseCategories(proposed) {
 function buildCategoryEditor(categories) {
   const wrap = el("div", "appr-attendees appr-categories");
   wrap.append(el("div", "appr-attendees-label",
-    "Categories — aion auto-extracts tasks / decisions / heuristics into FEED after confirm"));
+    "Categories — aion / real-estate auto-extract tasks + decisions into FEED after confirm"));
   const chips = el("div", "attendee-chips");
-  const suggestions = ["aion"];
+  const suggestions = ["aion", "real-estate"]; // the two extraction pipelines
+  const LIVE = { aion: "tag aion → the note auto-extracts into the AION backlog pipeline",
+    "real-estate": "tag real-estate → the note auto-extracts into the RE backlog pipeline" };
   const renderChips = () => {
     chips.innerHTML = "";
     categories.forEach((name, i) => {
-      const c = el("span", "attendee-chip" + (name.toLowerCase() === "aion" ? " cat-live" : ""));
+      const c = el("span", "attendee-chip" + (LIVE[name.toLowerCase()] ? " cat-live" : ""));
       c.append(el("span", "attendee-name", name));
       const x = el("button", "attendee-remove", "✕");
       x.title = "Remove category";
@@ -156,7 +158,7 @@ function buildCategoryEditor(categories) {
     });
     suggestions.filter((s) => !categories.some((c) => c.toLowerCase() === s)).forEach((s) => {
       const add = el("button", "attendee-add-btn cat-suggest", "＋ " + s);
-      add.title = s === "aion" ? "tag aion → the note auto-extracts into the AION backlog pipeline" : "add " + s;
+      add.title = LIVE[s] || ("add " + s);
       add.onclick = () => { categories.push(s); renderChips(); };
       chips.append(add);
     });
