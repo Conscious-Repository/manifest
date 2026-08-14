@@ -270,6 +270,25 @@ func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, se)
 }
 
+// handleTermKill ends the live backend but KEEPS the registry row — the
+// session moves to HISTORY (resumable). DELETE below is history's "forget".
+func (s *Server) handleTermKill(w http.ResponseWriter, r *http.Request) {
+	if s.terminal == nil {
+		http.Error(w, "terminal disabled", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	se, ok := s.terminal.find(id)
+	if !ok || !termIDRe.MatchString(id) {
+		http.Error(w, "no such session", http.StatusNotFound)
+		return
+	}
+	s.terminal.tmux("kill-session", "-t", tmuxName(id))
+	se.LastUsed = time.Now().Format(time.RFC3339)
+	s.terminal.upsert(se)
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 	if s.terminal == nil {
 		http.Error(w, "terminal disabled", http.StatusServiceUnavailable)

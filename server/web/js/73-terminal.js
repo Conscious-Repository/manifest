@@ -180,9 +180,13 @@ function termRenameInline(row, nameEl, se) {
   inp.focus(); inp.select();
 }
 
+// termKill ends a session's backend — the row survives into HISTORY
+// (forgetting is history's ✕). A dead-but-open row just closes.
 async function termKill(se) {
-  if (!confirm(se.live ? "End this session? The tmux backend is killed for good." : "Forget this session?")) return;
-  try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id), { method: "DELETE" }); } catch (e) {}
+  if (se.live) {
+    if (!confirm("End this session? It moves to history" + (se.resumeId ? " (resumable)" : "") + ".")) return;
+    try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id) + "/kill", { method: "POST" }); } catch (e) {}
+  }
   if (termOpenId === se.id) { termOpenId = ""; detachTerm(); renderTermEmpty(); }
   loadTermSessions();
 }
