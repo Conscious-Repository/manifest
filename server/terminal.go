@@ -112,6 +112,23 @@ func (c *termCfg) upsert(s termSession) {
 // tmuxName is the session's tmux identity.
 func tmuxName(id string) string { return "manifest_" + id }
 
+// shortName mints cmd-ctr-style default names: sh1, cc2, cdx1 … (next free
+// number for the kind's prefix across the registry).
+func (c *termCfg) shortName(kind string) string {
+	prefix := map[string]string{"claude": "cc", "codex": "cdx"}[kind]
+	if prefix == "" {
+		prefix = "sh"
+	}
+	max := 0
+	for _, se := range c.load() {
+		var n int
+		if _, err := fmt.Sscanf(se.Name, prefix+"%d", &n); err == nil && n > max {
+			max = n
+		}
+	}
+	return fmt.Sprintf("%s%d", prefix, max+1)
+}
+
 // launchCmd resolves the inner command a fresh/resumed session runs.
 func (s termSession) launchCmd() string {
 	switch s.Kind {
@@ -212,7 +229,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: now, LastUsed: now,
 	}
 	if se.Name == "" {
-		se.Name = kind + " · " + time.Now().Format("Jan 2 15:04")
+		se.Name = s.terminal.shortName(kind)
 	}
 	// mint claude's resume handle up front → `claude --resume` works forever.
 	// (Not when resuming via the picker — the id would shadow the choice.)

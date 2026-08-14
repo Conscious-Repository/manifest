@@ -104,18 +104,22 @@ function renderTermSessions(enabled) {
 function termSessionRow(se) {
   const row = el("div", "term-sess" + (se.id === termOpenId ? " open" : ""));
   row.append(el("span", "term-dot k-" + se.kind));
-  const name = el("span", "term-sess-name", se.name || se.kind);
+  const name = el("span", "term-sess-name");
+  name.append(document.createTextNode(se.name || se.kind));
+  name.append(el("span", "term-sess-host", " · " + (se.device || "metis")));
   name.title = (se.name || se.kind) + (se.cwd ? " — " + se.cwd : "");
   name.ondblclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
   row.append(name);
   const badges = el("span", "term-sess-badges");
-  if (se.device) badges.append(el("span", "term-badge", se.device));
   if (se.resumeId) badges.append(el("span", "term-badge", "⟳"));
   row.append(badges);
+  const pen = el("button", "term-x", "✎");
+  pen.title = "Rename";
+  pen.onclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
   const x = el("button", "term-x", "✕");
   x.title = se.live ? "End session (kills the tmux)" : "Close";
   x.onclick = (e) => { e.stopPropagation(); termKill(se); };
-  row.append(x);
+  row.append(pen, x);
   row.onclick = () => { termOpenId = se.id; termSetStage("term"); renderTermSessions(true); attachTerm(se.id); };
   return row;
 }
@@ -259,7 +263,7 @@ function renderTermDevices() {
 
   const list = el("div", "term-dev-list");
   termDevices.forEach((d) => {
-    const row = el("div", "term-dev-row pick" + ((d.self ? "" : d.name) === termLaunch.device ? " on" : ""));
+    const row = el("div", "term-dev-row pick" + ((d.self ? "" : d.name) === termLaunch.device ? " on" : "") + (d.status === "offline" ? " dim" : ""));
     row.append(statusDot(d.status === "self" || d.status === "ok", d.status));
     row.append(el("span", "term-dev-name", d.name));
     if (d.self) row.append(el("span", "term-badge", "this box"));

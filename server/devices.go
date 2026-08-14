@@ -57,6 +57,91 @@ type devCfg struct {
 	mu     sync.Mutex
 	probes map[string]devProbe
 	inFly  map[string]chan struct{}
+	peers  []tailnetPeer // discovered fleet (tailscale status), cached
+	peerAt time.Time
+}
+
+// tailnetPeer is one box tailscale can see (cmd-ctr's whole-tailnet list).
+type tailnetPeer struct {
+	Name   string
+	Host   string // first tailscale IP
+	OS     string
+	Online bool
+}
+
+// tailnetPeers lists the tailnet (cached 30s). No tailscale binary → empty.
+func (c *devCfg) tailnetPeers() []tailnetPeer {
+	c.mu.Lock()
+	if time.Since(c.peerAt) < 30*time.Second {
+		out := c.peers
+		c.mu.Unlock()
+		return out
+	}
+	c.mu.Unlock()
+
+	var peers []tailnetPeer
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	if b, err := exec.CommandContext(ctx, "tailscale", "status", "--json").Output(); err == nil {
+		var st struct {
+			Peer map[string]struct {
+				HostName     string   `json:"HostName"`
+				OS           string   `json:"OS"`
+				Online       bool     `json:"Online"`
+				TailscaleIPs []string `json:"TailscaleIPs"`
+			} `json:"Peer"`
+		}
+		if json.Unmarshal(b, &st) == nil {
+			for _, p := range st.Peer {
+				name := strings.ToLower(strings.TrimSuffix(p.HostName, "."))
+				if !devNameRe2.MatchString(name) || len(p.TailscaleIPs) == 0 {
+					continue
+				}
+				peers = append(peers, tailnetPeer{Name: name, Host: p.TailscaleIPs[0], OS: p.OS, Online: p.Online})
+			}
+		}
+	}
+	sortPeers(peers)
+	c.mu.Lock()
+	c.peers, c.peerAt = peers, time.Now()
+	c.mu.Unlock()
+	return peers
+}
+
+func sortPeers(ps []tailnetPeer) {
+	for i := 1; i < len(ps); i++ { // online first, then name (tiny insertion sort)
+		for j := i; j > 0; j-- {
+			a, b := ps[j-1], ps[j]
+			if (b.Online && !a.Online) || (a.Online == b.Online && b.Name < a.Name) {
+				ps[j-1], ps[j] = b, a
+			} else {
+				break
+			}
+		}
+	}
+}
+
+// discovered synthesizes a TermDevice for a tailnet peer that isn't in the
+// config (default user = the manifest user; the gear override refines it).
+func (c *devCfg) discovered(name string) (TermDevice, bool) {
+	for _, p := range c.tailnetPeers() {
+		if p.Name == name {
+			d := TermDevice{Name: p.Name, Host: p.Host, User: "benjamin"}
+			if o, ok := c.loadOverrides()[name]; ok {
+				if o.User != "" {
+					d.User = o.User
+				}
+				if o.Port != 0 {
+					d.Port = o.Port
+				}
+				if o.Identity != "" {
+					d.Identity = o.Identity
+				}
+			}
+			return d, true
+		}
+	}
+	return TermDevice{}, false
 }
 
 // devFieldRes mirror the config-load validation for runtime override input.
@@ -94,7 +179,8 @@ func (c *devCfg) saveOverrides(m map[string]devOverride) error {
 	return os.Rename(tmp, c.overridesPath)
 }
 
-// effective returns the device with any runtime override applied.
+// effective returns the device with any runtime override applied — config
+// devices first, then tailnet-discovered peers.
 func (c *devCfg) effective(name string) (TermDevice, bool) {
 	for _, d := range c.devices {
 		if d.Name != name {
@@ -113,7 +199,7 @@ func (c *devCfg) effective(name string) (TermDevice, bool) {
 		}
 		return d, true
 	}
-	return TermDevice{}, false
+	return c.discovered(name)
 }
 
 // sshArgs builds the validated argv prefix for reaching a device. Every field
@@ -209,8 +295,10 @@ func (s *Server) handleTermDevices(w http.ResponseWriter, r *http.Request) {
 		Port       int    `json:"port,omitempty"`
 		Identity   string `json:"identity,omitempty"`
 		Agent      string `json:"agent,omitempty"`
+		OS         string `json:"os,omitempty"`
 		Status     string `json:"status"`
 		Overridden bool   `json:"overridden,omitempty"`
+		Discovered bool   `json:"discovered,omitempty"`
 	}
 	self := "metis"
 	if s.devices != nil {
@@ -219,24 +307,54 @@ func (s *Server) handleTermDevices(w http.ResponseWriter, r *http.Request) {
 	rows := []row{{Name: self, Self: true, Status: "self"}}
 	if s.devices != nil {
 		ovr := s.devices.loadOverrides()
+		// the whole visible fleet: configured devices + tailnet-discovered
+		// peers (deduped by name and by tailscale IP)
+		type target struct {
+			name       string
+			online     bool // discovered-and-offline skips the ssh probe
+			os         string
+			discovered bool
+		}
+		targets := []target{}
+		seenName, seenHost := map[string]bool{self: true}, map[string]bool{}
+		for _, d := range s.devices.devices {
+			targets = append(targets, target{name: d.Name, online: true})
+			seenName[d.Name] = true
+			seenHost[d.Host] = true
+		}
+		for _, p := range s.devices.tailnetPeers() {
+			if seenName[p.Name] || seenHost[p.Host] || strings.EqualFold(p.Name, self) {
+				continue
+			}
+			seenName[p.Name] = true
+			targets = append(targets, target{name: p.Name, online: p.Online, os: p.OS, discovered: true})
+		}
 		type res struct {
 			i int
 			r row
 		}
-		ch := make(chan res, len(s.devices.devices))
-		for i, d := range s.devices.devices {
-			go func(i int, name string) {
-				d, _ := s.devices.effective(name)
-				_, hasOvr := ovr[name]
+		ch := make(chan res, len(targets))
+		for i, t := range targets {
+			go func(i int, t target) {
+				d, _ := s.devices.effective(t.name)
+				_, hasOvr := ovr[t.name]
+				status := "offline"
+				if t.online {
+					status = s.devices.probe(t.name)
+					// tailnet says it's up — no ssh path just means no key/port
+					if status == "offline" && t.discovered {
+						status = "needs-key"
+					}
+				}
 				ch <- res{i, row{
 					Name: d.Name, Host: d.Host, User: d.User, Port: d.Port,
-					Identity: d.Identity, Agent: d.Agent,
-					Status: s.devices.probe(name), Overridden: hasOvr,
+					Identity: d.Identity, Agent: d.Agent, OS: t.os,
+					Status: status, Overridden: hasOvr, Discovered: t.discovered,
 				}}
-			}(i, d.Name)
+			}(i, t)
 		}
-		got := make([]row, len(s.devices.devices))
-		for range s.devices.devices {
+		got := make([]row, len(targets))
+		for range targets {
 			r := <-ch
 			got[r.i] = r.r
 		}
