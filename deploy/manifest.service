@@ -47,6 +47,8 @@ ReadWritePaths=/private/consciousrepo
 ReadWritePaths=/private/harnesses
 ReadWritePaths=/home/benjamin/aionbio
 ReadWritePaths=/home/benjamin/re-portal
+ReadWritePaths=/shared/apps/aion-portal
+ReadWritePaths=/shared/apps
 
 [Install]
 WantedBy=multi-user.target
