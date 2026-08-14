@@ -11,19 +11,24 @@ let chatSpiritsCache = null;
 let chatPollTimer = null;
 let chatLastUpdated = "";   // change-detection for transcript re-render
 
+let chatLanding = false;            // ＋new → lazy landing (session created on first send)
+let chatPendingSpirit = "concierge"; // spirit/model the landing's first send uses
+let chatPendingModel = "";
+
 function showChat(h) {
   const tail = h && h.startsWith("#/chat/") ? decodeURIComponent(h.slice("#/chat/".length)) : "";
   if (tail.startsWith("cmp/")) { renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
-  chatOpenId = tail;
+  if (tail === "new") { chatOpenId = ""; chatLanding = true; }
+  else { chatOpenId = tail; chatLanding = false; }
   loadChatSessions().then(() => {
-    // no explicit session → open the most recent one
-    if (!chatOpenId && chatSessions.length) {
+    // no explicit session → most recent; none at all → the landing
+    if (!chatOpenId && !chatLanding && chatSessions.length) {
       chatOpenId = chatSessions[0].id;
     }
     renderChatRail();
     renderChatComposer();
     if (chatOpenId) loadChatSession(chatOpenId);
-    else renderChatEmpty();
+    else renderChatLanding();
   });
 }
 
@@ -45,8 +50,11 @@ function renderChatRail() {
   const host = document.getElementById("chatRail");
   if (!host) return;
   host.innerHTML = "";
+  // ＋ new is LAZY (cmd-ctr model): it opens the greeting landing — nothing
+  // is created until the first message sends. The landing carries the
+  // spirit/model chooser.
   const newBtn = el("button", "pill chat-new", "＋ new conversation");
-  newBtn.onclick = () => chatNewSessionPicker(newBtn);
+  newBtn.onclick = () => { location.hash = "#/chat/new"; };
   host.append(newBtn);
   if (!chatSessions.length) {
     host.append(emptyRow("No conversations yet."));
@@ -67,43 +75,69 @@ function renderChatRail() {
   });
 }
 
-// chatNewSessionPicker — a tiny inline spirit picker under the ＋ button.
-// Spirits with a chat.md `models:` whitelist get per-model buttons (the
-// override pins for the session's whole life); "⇄ compare" fans one prompt
-// across several models side-by-side.
-async function chatNewSessionPicker(anchor) {
-  const existing = document.querySelector(".chat-spirit-pick");
-  if (existing) { existing.remove(); return; }
+// renderChatLanding — the lazy new-chat landing (cmd-ctr model): a time-aware
+// greeting, spirit/model chips that set what the FIRST SEND creates, and the
+// centered composer. No session exists until the first message goes out, so
+// "new conversation" can never feel dead.
+function chatGreeting() {
+  const h = new Date().getHours();
+  const pool = h < 5 ? ["Late one. What's on your mind?", "Still going — what do you need?"]
+    : h < 12 ? ["Morning. What are we into?", "Where do we start today?"]
+    : h < 18 ? ["What's next?", "What can I dig into?"]
+    : ["Evening. What's open?", "What's still on your mind?"];
+  return pool[new Date().getMinutes() % pool.length];
+}
+
+async function renderChatLanding() {
+  const host = document.getElementById("chatTranscript");
+  const main = document.querySelector(".chat-main");
+  if (!host) return;
+  if (main) main.classList.add("landing");
+  host.innerHTML = "";
+  host.append(el("div", "chat-greeting", chatGreeting()));
+
   const spirits = (await chatSpiritList()).filter((s) => s.enabled);
-  const pick = el("div", "chat-spirit-pick");
-  if (!spirits.length) pick.append(emptyRow("No chattable spirits (add a chat.md)."));
-  const create = async (spirit, model) => {
-    pick.remove();
-    try {
-      const r = await postJSONOk("/api/chat/sessions", { spirit, model: model || "" });
-      chatOpenId = r.id;
-      location.hash = "#/chat/" + encodeURIComponent(r.id);
-    } catch (e) { showToast("Couldn't create the session — " + (e.message || "error")); }
-  };
-  spirits.forEach((s) => {
-    const row = el("div", "chat-pick-row");
-    row.append(el("button", "pill light", s.name)).onclick = () => create(s.name, "");
-    (s.models || []).forEach((m) => {
-      const short = m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
-      const mb = el("button", "sprt-quiet", short);
-      mb.title = s.name + " · " + m;
-      mb.onclick = () => create(s.name, m);
-      row.append(mb);
-    });
-    pick.append(row);
-  });
-  const cmpSpirit = spirits.find((s) => (s.models || []).length > 1);
-  if (cmpSpirit) {
-    const cb = el("button", "sprt-quiet", "⇄ compare models");
-    cb.onclick = () => { pick.remove(); openComparePrompt(cmpSpirit); };
-    pick.append(cb);
+  if (!spirits.length) {
+    host.append(emptyRow("No chattable spirits (add a chat.md)."));
+    return;
   }
-  anchor.after(pick);
+  if (!spirits.some((s) => s.name === chatPendingSpirit)) {
+    chatPendingSpirit = spirits[0].name;
+    chatPendingModel = "";
+  }
+  const picks = el("div", "chat-spirit-pick");
+  const paint = () => {
+    picks.innerHTML = "";
+    spirits.forEach((s) => {
+      const row = el("div", "chat-pick-row");
+      const b = el("button", "pill light" + (s.name === chatPendingSpirit && !chatPendingModel ? " on" : ""), s.name);
+      b.onclick = () => { chatPendingSpirit = s.name; chatPendingModel = ""; paint(); focusChatInput(); };
+      row.append(b);
+      (s.models || []).forEach((m) => {
+        const short = m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
+        const mb = el("button", "sprt-quiet" + (s.name === chatPendingSpirit && chatPendingModel === m ? " on" : ""), short);
+        mb.title = s.name + " · " + m;
+        mb.onclick = () => { chatPendingSpirit = s.name; chatPendingModel = m; paint(); focusChatInput(); };
+        row.append(mb);
+      });
+      picks.append(row);
+    });
+    const cmpSpirit = spirits.find((s) => (s.models || []).length > 1);
+    if (cmpSpirit) {
+      const cb = el("button", "sprt-quiet", "⇄ compare models");
+      cb.onclick = () => { if (main) main.classList.remove("landing"); openComparePrompt(cmpSpirit); };
+      picks.append(cb);
+    }
+  };
+  paint();
+  host.append(picks);
+  host.append(el("div", "chat-landing-hint", "type below — Enter sends, the conversation starts then"));
+  focusChatInput();
+}
+
+function focusChatInput() {
+  const ta = document.querySelector("#chatComposer textarea");
+  if (ta) ta.focus();
 }
 
 // ---- Compare: one prompt → N model lanes (UI-level fan-out) ----
@@ -156,7 +190,12 @@ async function renderCompare(ids) {
   const comp = document.getElementById("chatComposer");
   if (comp) comp.hidden = true;
   const rail = document.getElementById("chatRail");
-  if (rail) { rail.innerHTML = ""; rail.append(el("button", "pill chat-new", "‹ back to chat")).onclick = () => { location.hash = "#/chat"; if (comp) comp.hidden = false; }; }
+  if (rail) {
+    rail.innerHTML = "";
+    const back = el("button", "pill chat-new", "‹ back to chat");
+    back.onclick = () => { location.hash = "#/chat"; if (comp) comp.hidden = false; };
+    rail.append(back);
+  }
   if (!host) return;
   host.innerHTML = "";
   const row = el("div", "chat-cmp-row");
@@ -203,10 +242,7 @@ async function renderCompare(ids) {
 
 // ---- transcript ----
 
-function renderChatEmpty() {
-  const t = document.getElementById("chatTranscript");
-  if (t) { t.innerHTML = ""; t.append(emptyRow("Start a conversation — ＋ new, or just type below (concierge answers).")); }
-}
+function renderChatEmpty() { renderChatLanding(); }
 
 async function loadChatSession(id) {
   let d;
@@ -216,6 +252,8 @@ async function loadChatSession(id) {
     d = await res.json();
   } catch (e) { return; }
   if (id !== chatOpenId) return; // navigated away mid-fetch
+  const main = document.querySelector(".chat-main");
+  if (main) main.classList.remove("landing");
   renderChatTranscript(d);
   renderChatComposer(d.session);
   ensureChatPoll(d.session, (d.queued || []).length);
@@ -351,10 +389,12 @@ function renderChatComposer(session) {
       if (chatOpenId) {
         await postJSONOk("/api/chat/sessions/" + encodeURIComponent(chatOpenId) + "/messages", { text });
       } else {
-        const spirits = (await chatSpiritList()).filter((s) => s.enabled);
-        const spirit = spirits.length ? spirits[0].name : "concierge";
-        const r = await postJSONOk("/api/chat/sessions", { spirit, text });
+        // lazy create (cmd-ctr model): the landing's chosen spirit/model
+        const r = await postJSONOk("/api/chat/sessions", {
+          spirit: chatPendingSpirit || "concierge", model: chatPendingModel || "", text,
+        });
         chatOpenId = r.id;
+        chatLanding = false;
         location.hash = "#/chat/" + encodeURIComponent(r.id);
         return;
       }

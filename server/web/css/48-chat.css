@@ -46,3 +46,11 @@
 .chat-cmp-row { display: flex; gap: 16px; align-items: flex-start; overflow-x: auto; }
 .chat-cmp-lane { flex: 1; min-width: 300px; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 .chat-cmp-head { font-size: 11px; color: var(--base-40); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+
+/* lazy new-chat landing (cmd-ctr feel) */
+.chat-main.landing .chat-transcript { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 14px; }
+.chat-greeting { font-size: 20px; font-weight: 500; color: var(--base-100); letter-spacing: -0.2px; }
+.chat-landing-hint { font-size: 11.5px; color: var(--base-30); }
+.chat-main.landing .chat-spirit-pick { justify-content: center; }
+.chat-main.landing .chat-composer { border-top: 0; max-width: 640px; width: 100%; margin: 0 auto; }
+.chat-spirit-pick .sprt-quiet.on { color: var(--accent); border-color: var(--accent); }
