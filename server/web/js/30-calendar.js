@@ -30,28 +30,37 @@ function monthGridDays(year, month) {
 async function loadCalendar() {
   const { year, month } = ensureCalState();
   els.calMonthLabel.textContent = `${MONTHS[month]} ${year}`.toUpperCase();
-  let status = { accounts: [], hasCreds: false };
+  let status = { accounts: [], hasCreds: false, accountStatuses: [] };
   try { status = await (await fetch("/api/calendar/status")).json(); } catch (e) {}
   const accounts = status.accounts || [];
-  renderCalAccounts(accounts, !!status.hasCreds);
+  const statuses = status.accountStatuses || [];
+  renderCalAccounts(accounts, !!status.hasCreds, statuses);
 
   const cells = monthGridDays(year, month);
   let events = [];
+  let eventsError = false;
   if (accounts.length) {
+    // A dead refresh token makes this 500 (Google's invalid_grant). Surface it
+    // instead of swallowing the error into a silently empty month.
     try {
-      const r = await (await fetch(`/api/calendar/events?start=${cells[0].iso}&end=${cells[cells.length - 1].iso}`)).json();
-      events = r.events || [];
-    } catch (e) {}
+      const resp = await fetch(`/api/calendar/events?start=${cells[0].iso}&end=${cells[cells.length - 1].iso}`);
+      if (!resp.ok) { eventsError = true; }
+      else { events = (await resp.json()).events || []; }
+    } catch (e) { eventsError = true; }
   }
+  renderCalError(eventsError, statuses);
   renderMonth(cells, events);
 }
 
-// Show the accounts list (with per-account Disconnect) when ≥1 account is
-// connected; otherwise the connect prompt (adapted for missing credentials).
-function renderCalAccounts(accounts, hasCreds) {
+// Show the accounts list (with per-account Disconnect, plus Reconnect when a
+// token has gone stale) when ≥1 account is connected; otherwise the connect
+// prompt (adapted for missing credentials). `statuses` is the per-account
+// reauth verdict from /api/calendar/status.
+function renderCalAccounts(accounts, hasCreds, statuses) {
   const has = accounts.length > 0;
   els.calAccounts.hidden = !has;
   els.calConnect.hidden = has;
+  document.getElementById("calPasteBack")?.remove();
   if (!has) {
     els.calConnectBtn.hidden = !hasCreds;
     els.calConnect.querySelector("p").textContent = hasCreds
@@ -59,20 +68,60 @@ function renderCalAccounts(accounts, hasCreds) {
       : "Add google_credentials.json to ~/.config/manifest/ to connect Google Calendar.";
     return;
   }
+  const byEmail = {};
+  (statuses || []).forEach((s) => { byEmail[s.email] = s; });
   els.calAccountRows.innerHTML = "";
   accounts.forEach((email) => {
+    const st = byEmail[email] || {};
     const row = document.createElement("div");
-    row.className = "cal-account";
+    row.className = "cal-account" + (st.needsReauth ? " needs-reauth" : "");
+
+    const main = document.createElement("div");
+    main.className = "cal-account-main";
     const name = document.createElement("span");
     name.className = "cal-account-email";
     name.textContent = email;
+    main.appendChild(name);
+    if (st.needsReauth) {
+      const warn = document.createElement("span");
+      warn.className = "cal-account-warn";
+      warn.textContent = "sign-in expired — reconnect to restore your events";
+      main.appendChild(warn);
+    }
+
+    const ctl = document.createElement("div");
+    ctl.className = "cal-account-ctl";
+    if (st.needsReauth) {
+      const rc = document.createElement("button");
+      rc.className = "cal-reconnect";
+      rc.textContent = "Reconnect";
+      rc.addEventListener("click", () => startCalConnect(rc));
+      ctl.appendChild(rc);
+    }
     const dc = document.createElement("button");
     dc.className = "cal-disconnect";
     dc.textContent = "Disconnect";
     dc.addEventListener("click", () => disconnectAccount(email));
-    row.append(name, dc);
+    ctl.appendChild(dc);
+
+    row.append(main, ctl);
     els.calAccountRows.appendChild(row);
   });
+}
+
+// renderCalError shows a standalone banner when the events fetch failed but the
+// throttled per-account check hasn't caught up yet (the first load right after a
+// token dies). Once a status row is flagged needsReauth it carries its own
+// reconnect affordance, so the banner steps aside to avoid double-nagging.
+function renderCalError(eventsError, statuses) {
+  document.getElementById("calErrBanner")?.remove();
+  const anyReauth = (statuses || []).some((s) => s.needsReauth);
+  if (!eventsError || anyReauth) return;
+  const banner = el("div", "cal-err-banner",
+    "Couldn't load your events — your Google sign-in may have expired. Reconnect below to restore them.");
+  banner.id = "calErrBanner";
+  const host = els.calAccounts.hidden ? els.calConnect : els.calAccounts;
+  host.prepend(banner);
 }
 
 async function disconnectAccount(email) {
@@ -179,20 +228,56 @@ function shiftCalMonth(delta) {
   loadCalendar();
 }
 
-// Connect one Google account; safe to call repeatedly (Google shows the account
-// chooser each time so you can pick a different account).
-async function connectCalendar(btn) {
-  const label = btn ? btn.textContent : "";
-  if (btn) btn.textContent = "Connecting… (check your browser)";
+// Connect (or reconnect) a Google account via the PASTE-BACK flow. Manifest runs
+// headless on metis, so the old loopback listener never reaches the owner's
+// browser; instead we open Google's consent URL, the owner approves, and pastes
+// the resulting redirect address back. Safe to call repeatedly — Google shows
+// the account chooser so you can pick a different account each time.
+async function startCalConnect(anchor) {
+  if (anchor) anchor.disabled = true;
   try {
-    await fetch("/api/calendar/connect", { method: "POST" });
-  } catch (e) {}
-  if (btn) btn.textContent = label;
-  loadCalendar();
+    const r = await postJSONOk("/api/calendar/connect/start", {});
+    window.open(r.authUrl, "_blank");
+    showCalPasteBack();
+    showToast("Approve in the Google tab, then paste the address it lands on", null, "info");
+  } catch (e) {
+    showToast("Couldn't start sign-in — " + (e.message || "error"));
+  }
+  if (anchor) anchor.disabled = false;
 }
 
-els.calConnectBtn.addEventListener("click", () => connectCalendar(els.calConnectBtn));
-els.calAddAccount.addEventListener("click", () => connectCalendar(els.calAddAccount));
+// showCalPasteBack renders step 2 of the flow (the paste box) into whichever
+// account container is currently visible, replacing any earlier one.
+function showCalPasteBack() {
+  document.getElementById("calPasteBack")?.remove();
+  const box = el("div", "cal-paste");
+  box.id = "calPasteBack";
+  box.append(el("div", "cal-paste-note",
+    "after approving, the tab lands on an unreachable 127.0.0.1 page — copy its FULL address and paste it here"));
+  const input = el("input", "cal-paste-input");
+  input.type = "text";
+  input.placeholder = "http://127.0.0.1:8123/oauth/callback?state=…&code=…";
+  input.spellcheck = false;
+  const fin = el("button", "cal-paste-finish", "finish connect");
+  fin.onclick = async () => {
+    fin.disabled = true; fin.textContent = "connecting…";
+    try {
+      const r = await postJSONOk("/api/calendar/connect/finish", { redirect: input.value });
+      showToast("Connected " + r.connected, null, "info");
+      loadCalendar();
+    } catch (e) {
+      fin.disabled = false; fin.textContent = "finish connect";
+      showToast("Connect failed — " + (e.message || "check the pasted URL").slice(0, 140));
+    }
+  };
+  box.append(input, fin);
+  const host = els.calAccounts.hidden ? els.calConnect : els.calAccounts;
+  host.appendChild(box);
+  input.focus();
+}
+
+els.calConnectBtn.addEventListener("click", () => startCalConnect(els.calConnectBtn));
+els.calAddAccount.addEventListener("click", () => startCalConnect(els.calAddAccount));
 els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
 els.calNext.addEventListener("click", () => shiftCalMonth(1));
 

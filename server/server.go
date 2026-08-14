@@ -226,6 +226,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/calendar/events", s.handleCalEvents)
 	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
 	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
+	mux.HandleFunc("POST /api/calendar/connect/start", s.handleCalConnectStart)
+	mux.HandleFunc("POST /api/calendar/connect/finish", s.handleCalConnectFinish)
 
 	// Gmail read-only OAuth — reconnect the engine's EA-digest inbox access.
 	mux.HandleFunc("/api/gmail/status", s.handleGmailStatus)

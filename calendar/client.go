@@ -32,6 +32,21 @@ type Client struct {
 
 	mu       sync.Mutex
 	accounts []*account
+
+	// authMu guards the paste-back reconnect state and the throttled per-account
+	// token-validation cache. Kept separate from mu so a background revalidation
+	// never contends with Events.
+	authMu   sync.Mutex
+	pending  map[string]time.Time // paste-back OAuth states awaiting FinishConnect
+	valCache map[string]acctCheck // per-account auth verdict (email -> check)
+	valAt    time.Time            // last revalidation time (throttle)
+	valBusy  bool                 // a background revalidation is in flight
+}
+
+// acctCheck is one account's cached auth verdict.
+type acctCheck struct {
+	needsReauth bool
+	detail      string
 }
 
 // NewClient builds a client. tz is an IANA name; "" means time.Local.
@@ -129,6 +144,7 @@ func (c *Client) AddAccount(ctx context.Context) (string, error) {
 	if err := saveAccountToken(email, tok); err != nil {
 		return "", err
 	}
+	c.clearAcctCheck(email)
 	c.reload() // pick up the new account (overwrites a duplicate email)
 	return email, nil
 }
@@ -138,6 +154,7 @@ func (c *Client) RemoveAccount(email string) error {
 	if err := removeAccountToken(email); err != nil {
 		return err
 	}
+	c.clearAcctCheck(email)
 	c.reload()
 	return nil
 }

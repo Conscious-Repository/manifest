@@ -13,6 +13,10 @@ func (s *Server) handleCalStatus(w http.ResponseWriter, r *http.Request) {
 		"needsAuth":  s.cal.NeedsAuth(),
 		"hasCreds":   s.cal.HasCreds(),
 		"accounts":   s.cal.Accounts(),
+		// accountStatuses carries the per-account reauth verdict (throttled,
+		// non-blocking) so a revoked token surfaces as a reconnect prompt
+		// instead of a silently empty calendar.
+		"accountStatuses": s.cal.AccountStatuses(time.Now()),
 	})
 }
 
@@ -68,6 +72,39 @@ func (s *Server) handleCalConnect(w http.ResponseWriter, r *http.Request) {
 	email, err := s.cal.AddAccount(ctx)
 	if err != nil {
 		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"connected": email, "accounts": s.cal.Accounts()})
+}
+
+// handleCalConnectStart begins the paste-back OAuth flow. Manifest runs headless
+// on metis, so the loopback listener in handleCalConnect can't reach the owner's
+// browser — this returns the consent URL for the owner to approve in their own
+// browser, then paste the redirect back to handleCalConnectFinish.
+func (s *Server) handleCalConnectStart(w http.ResponseWriter, r *http.Request) {
+	authURL, err := s.cal.StartConnect()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"authUrl": authURL})
+}
+
+// handleCalConnectFinish completes the paste-back flow from the redirect URL the
+// owner pasted.
+func (s *Server) handleCalConnectFinish(w http.ResponseWriter, r *http.Request) {
+	var b struct {
+		Redirect string `json:"redirect"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
+		httpError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	email, err := s.cal.FinishConnect(ctx, b.Redirect)
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
 		return
 	}
 	writeJSON(w, map[string]any{"connected": email, "accounts": s.cal.Accounts()})
