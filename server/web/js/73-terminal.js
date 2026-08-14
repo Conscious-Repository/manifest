@@ -193,7 +193,7 @@ function renderTermLauncher(enabled) {
   recent.onclick = () => termToggleRecent(host, inp);
   dirRow.append(inp, recent);
   host.append(dirRow);
-  const browse = el("button", "term-browse", "▸ browse folders");
+  const browse = el("button", "term-browse", "＋ browse files");
   browse.onclick = () => termToggleBrowse(host, browse, inp);
   host.append(browse);
   host.append(el("div", "term-browse-slot"));
@@ -373,7 +373,7 @@ function termToggleRecent(host, inp) {
 async function termToggleBrowse(host, btn, inp) {
   const slot = host.querySelector(".term-browse-slot");
   termBrowseOpen = !termBrowseOpen;
-  btn.textContent = (termBrowseOpen ? "▾" : "▸") + " browse folders";
+  btn.textContent = (termBrowseOpen ? "−" : "＋") + " browse files";
   slot.innerHTML = "";
   if (!termBrowseOpen) return;
   const tree = el("div", "term-dirpick");

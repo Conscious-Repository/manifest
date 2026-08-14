@@ -1,14 +1,14 @@
 /* FILES — the cockpit's fleet browser (cmd-ctr parity, token-native) */
-.fs-toolbar { display: flex; align-items: center; gap: 7px; row-gap: 8px; flex-wrap: wrap; padding: 2px 4px 12px 0; flex: none; }
+.fs-toolbar { display: flex; align-items: center; gap: 8px; row-gap: 10px; flex-wrap: wrap; padding: 2px 6px 14px 0; flex: none; }
 .fs-toolbar .feed-filters { margin-right: 8px; }
-.fs-tool { border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius); color: var(--base-40); cursor: pointer; font-size: 12px; padding: 4px 7px; flex: none; text-decoration: none; line-height: 1.2; }
+.fs-tool { border: 1px solid var(--line); background: var(--bg); border-radius: 8px; color: var(--base-40); cursor: pointer; font-size: 13px; min-width: 34px; height: 34px; padding: 0 9px; flex: none; text-decoration: none; line-height: 32px; text-align: center; }
 .fs-tool:hover { color: var(--base-100); background: var(--hover); }
 .fs-tool.on { color: var(--accent); border-color: var(--accent-soft); }
 .fs-tool:disabled { opacity: 0.4; cursor: default; }
 .fs-tool.droptarget { background: var(--base-20); border-color: var(--accent-soft); }
 .fs-sort { font-family: var(--mono); font-size: 11px; }
-.fs-crumbs { display: flex; align-items: center; gap: 1px; flex: 1; min-width: 120px; overflow: hidden; font-family: var(--mono); font-size: 12px; padding-left: 6px; }
-.fs-crumb { border: 0; background: none; color: var(--base-50); cursor: pointer; font: inherit; padding: 3px 3px; border-radius: var(--radius); white-space: nowrap; }
+.fs-crumbs { display: flex; align-items: center; gap: 1px; flex: 1; min-width: 120px; overflow: hidden; font-family: var(--mono); font-size: 13px; padding-left: 8px; }
+.fs-crumb { border: 0; background: none; color: var(--base-50); cursor: pointer; font: inherit; padding: 5px 4px; border-radius: 6px; white-space: nowrap; }
 .fs-crumb:hover { color: var(--accent); background: var(--hover); }
 .fs-crumb.last { color: var(--base-100); }
 .fs-crumb.droptarget { background: var(--base-20); outline: 1px solid var(--accent-soft); }
@@ -19,7 +19,7 @@
 .fs-body.droppane { background: var(--base-05); outline: 1px dashed var(--accent-soft); }
 
 /* list rows */
-.fs-row { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: var(--radius); cursor: default; }
+.fs-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: default; }
 .fs-row:hover { background: var(--hover); }
 .fs-row.sel { background: var(--base-20); }
 .fs-row.hid { opacity: 0.55; }
@@ -32,7 +32,7 @@ img.fs-ico { width: 20px; height: 20px; object-fit: cover; border-radius: 3px; }
 .fs-linkmark { color: var(--base-30); font-weight: 400; }
 .fs-acts { display: none; gap: 3px; flex: none; }
 .fs-row:hover .fs-acts { display: flex; }
-.fs-acts .fs-tool { padding: 1px 5px; font-size: 11px; border: 0; background: none; }
+.fs-acts .fs-tool { min-width: 0; height: auto; padding: 1px 5px; font-size: 11px; border: 0; background: none; line-height: 1.4; }
 .fs-size, .fs-mtime { font-family: var(--mono); font-size: 11px; color: var(--base-40); flex: none; font-variant-numeric: tabular-nums; }
 .fs-size { width: 52px; text-align: right; }
 .fs-mtime { width: 88px; text-align: right; }
