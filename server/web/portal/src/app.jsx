@@ -2,8 +2,9 @@
    hash routing. Config knobs live in window.PORTAL_CONFIG (index.html) so
    plain scripts can read them at load.
 
-   Phase 2 (2026-08-14): the static password gate is gone — the portal is
-   open-read; Google sign-in (@aion.bio) gates writes only (team.jsx). */
+   Phase 2 (2026-08-14): the static password gate is gone. The portal now
+   requires Google sign-in (@aion.bio) to VIEW — enforced server-side
+   (server/portal.go requireSignIn); team writes ride the same session. */
 
 function PortalApp() {
   const CONFIG = window.PORTAL_CONFIG || {};

@@ -766,6 +766,7 @@ a:hover { text-decoration-color: var(--fg-1); }
 .team-comment { padding: 8px 0; border-bottom: 1px solid var(--rule-faint); }
 .team-comment:last-of-type { border-bottom: none; }
 .team-comment-meta { font-size: var(--text-xs); color: var(--fg-7); margin-bottom: 3px; }
+.team-comment-del { font-size: var(--text-xs); }
 .team-comment-text { font-size: var(--text-md); color: var(--fg-2); white-space: pre-wrap; }
 .team-hint { font-size: var(--text-sm); color: var(--fg-7); margin-top: 10px; }
 .team-err { font-size: var(--text-sm); color: var(--fg-1); margin-top: 8px; min-height: 1em; }

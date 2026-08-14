@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -29,11 +30,12 @@ type PortalOptions struct {
 // requests with document-relative URLs — so the portal is self-contained at
 // the root of its port.
 //
-// Phase 2–3 (2026-08-14): open read stays; Google sign-in (@aion.bio only)
-// gates the write endpoints — comments (any member), item PATCH (assignee
-// only), team/ adds (self), and proposals for others (owner- or
-// target-approved). Team state lives in opt.Store, merged client-side over
-// the published data files.
+// Phase 2–3 (2026-08-14): Google sign-in (@aion.bio only) now gates the WHOLE
+// portal — view and write alike (requireSignIn below). Within a session, the
+// write endpoints keep their finer locks — comments (any member), item PATCH
+// (assignee only), team/ adds (self), and proposals for others (owner- or
+// target-approved). Team state lives in opt.Store, merged client-side over the
+// published data files.
 func PortalHandler(opt PortalOptions) (http.Handler, error) {
 	sub, err := fs.Sub(webFiles, "web/portal")
 	if err != nil {
@@ -53,13 +55,59 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 		mux.HandleFunc("GET /api/team/state", api.handleState)
 		if opt.Auth != nil {
 			mux.HandleFunc("POST /api/team/comment", api.handleComment)
+			mux.HandleFunc("DELETE /api/team/comment", api.handleDeleteComment)
 			mux.HandleFunc("PATCH /api/team/item/{id...}", api.handlePatch)
 			mux.HandleFunc("POST /api/team/items", api.handleAdd)
 			mux.HandleFunc("POST /api/team/proposals", api.handlePropose)
 			mux.HandleFunc("POST /api/team/proposals/decide", api.handleDecide)
 		}
 	}
-	return mux, nil
+	return requireSignIn(opt, mux), nil
+}
+
+// requireSignIn gates the WHOLE portal behind Google sign-in: the only way in
+// is an @aion.bio session (2026-08-14 — "login to view", tightening the earlier
+// open-read stance). The /oauth2/* endpoints stay anonymous — they ARE the way
+// in and out — but the app shell, its assets, and every /api route now need a
+// valid session. A signed-out browser navigation is bounced to Google; a
+// signed-out asset/XHR fetch gets a plain 401 (no redirect for a data request).
+//
+// When Auth is nil (no OAuth client on this host) the gate is a no-op: with no
+// way to sign in, locking would brick the site — the same graceful degradation
+// as the zero-value "serve the static Phase-1 site" path.
+func requireSignIn(opt PortalOptions, inner http.Handler) http.Handler {
+	if opt.Auth == nil {
+		return inner
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/oauth2/") {
+			inner.ServeHTTP(w, r)
+			return
+		}
+		if _, ok := opt.Auth.Identify(r); ok {
+			inner.ServeHTTP(w, r)
+			return
+		}
+		if isBrowserNav(r) {
+			http.Redirect(w, r, "/oauth2/login", http.StatusFound)
+			return
+		}
+		http.Error(w, "sign in with your @"+teamportal.Domain+" account to view this portal", http.StatusUnauthorized)
+	})
+}
+
+// isBrowserNav reports whether r is a top-level document navigation (rather than
+// an XHR/fetch or a sub-resource load) — only those get the 302-to-Google, so
+// data fetches receive a clean 401 the app can handle. Sec-Fetch-Mode is the
+// reliable signal on modern browsers; Accept: text/html is the fallback.
+func isBrowserNav(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	if m := r.Header.Get("Sec-Fetch-Mode"); m != "" {
+		return m == "navigate"
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 // portalAPI is the team write surface. It resolves emails to the roster's
@@ -212,6 +260,31 @@ func (p *portalAPI) handleComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, c)
+}
+
+// handleDeleteComment removes a comment. The store enforces the permission
+// (author or admin); we map its sentinels to 404/403 so the UI can tell "gone"
+// from "not yours".
+func (p *portalAPI) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Item, ID string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	switch err := p.opt.Store.DeleteComment(id, b.Item, b.ID, p.isAdmin(id.Email), time.Now()); {
+	case err == nil:
+		writeJSON(w, map[string]any{"deleted": b.ID})
+	case errors.Is(err, teamportal.ErrCommentNotFound):
+		http.Error(w, "comment not found", http.StatusNotFound)
+	case errors.Is(err, teamportal.ErrNotYours):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	default:
+		httpError(w, errBadRequest(err.Error()))
+	}
 }
 
 // handlePatch is the owner-lock write: ONLY the item's assignee may change its

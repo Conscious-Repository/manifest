@@ -107,6 +107,8 @@ func describe(e Entry) (title, detail string) {
 	switch e.Action {
 	case ActComment:
 		return "portal comment on " + str("item"), str("text")
+	case ActDeleteComment:
+		return "portal comment removed on " + str("item"), str("text")
 	case ActPatch:
 		fields := ""
 		if f, ok := e.Payload["fields"].(map[string]any); ok {

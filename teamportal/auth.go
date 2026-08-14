@@ -4,8 +4,9 @@
 // items.ext.json), and the bridge that surfaces team writes as FEED notices.
 //
 // Doctrine fit (ARCHITECTURE §1 amendment 2026-08-14, §2, §6): the portal is
-// open-read, login-to-write; team members are AUTHORIZED writers of portal
-// team state ONLY — never the vault, never the owner's records. All team
+// login-to-view (Google @aion.bio only, gated whole in server/portal.go) and
+// login-to-write; team members are AUTHORIZED writers of portal team state
+// ONLY — never the vault, never the owner's records. All team
 // state is derived state outside the vault; credentials live in the secrets
 // tier (<dataDir>/portals/, 0600) following the Calendar/Gmail OAuth pattern
 // (gmailauth). The OAuth client here is a "web" client (fixed redirect URIs:

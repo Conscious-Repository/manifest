@@ -117,11 +117,19 @@ type Entry struct {
 
 // Actions written to activity.log.
 const (
-	ActComment = "comment"
-	ActPatch   = "patch"
-	ActAdd     = "add-item"
-	ActPropose = "propose"
-	ActDecide  = "decide-proposal"
+	ActComment       = "comment"
+	ActDeleteComment = "delete-comment"
+	ActPatch         = "patch"
+	ActAdd           = "add-item"
+	ActPropose       = "propose"
+	ActDecide        = "decide-proposal"
+)
+
+// Sentinel errors the delete path returns so the HTTP layer can map them to
+// 404/403 — a bare errors.New would collapse both into a generic 400.
+var (
+	ErrCommentNotFound = errors.New("comment not found")
+	ErrNotYours        = errors.New("only the author or the portal owner may delete this comment")
 )
 
 // PatchFields is the closed set a team PATCH may touch.
@@ -228,6 +236,39 @@ func (s *Store) AddComment(actor Identity, itemID, text string, now time.Time) (
 	err := s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActComment,
 		Payload: map[string]any{"item": itemID, "text": text}})
 	return c, err
+}
+
+// DeleteComment removes a comment from an item. Only its author or the portal
+// admin may delete it; anyone else gets ErrNotYours, and a missing comment is
+// ErrCommentNotFound. The removal is logged (ActDeleteComment) so the activity
+// trail — and the FEED bridge — record who cleared what.
+func (s *Store) DeleteComment(actor Identity, itemID, commentID string, isAdmin bool, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	list := ext.Comments[itemID]
+	idx := -1
+	for i, c := range list {
+		if c.ID == commentID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return ErrCommentNotFound
+	}
+	c := list[idx]
+	if !isAdmin && !strings.EqualFold(strings.TrimSpace(c.Author), strings.TrimSpace(actor.Email)) {
+		return ErrNotYours
+	}
+	// full-slice expression (list[:idx:idx]) caps the head so append allocates
+	// rather than clobbering the shared backing array.
+	ext.Comments[itemID] = append(list[:idx:idx], list[idx+1:]...)
+	if len(ext.Comments[itemID]) == 0 {
+		delete(ext.Comments, itemID)
+	}
+	return s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActDeleteComment,
+		Payload: map[string]any{"item": itemID, "comment": commentID, "text": c.Text}})
 }
 
 // Patch merges validated field changes into an item's override (the caller has

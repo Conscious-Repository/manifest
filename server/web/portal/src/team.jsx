@@ -1,8 +1,8 @@
 /* Team layer (portal move Phase 2–3) — Google sign-in chip, per-item drawer
    (comments for any signed-in member; status/fields for the assignee only),
    team/ adds for oneself, proposals for others (owner- or target-approved).
-   All state lives server-side (/api/team/*); anonymous readers see everything,
-   writes require an @aion.bio session. */
+   All state lives server-side (/api/team/*); viewing and writing both require
+   an @aion.bio session (the whole portal is gated — server/portal.go). */
 
 const TEAM_API = {
   post(path, body, method) {
@@ -57,6 +57,14 @@ function TeamItemDrawer({ item, me, team, onClose, onChange }) {
     TEAM_API.post('api/team/comment', { item: item.id, text: text })
       .then(r => { if (fail(r)) { setText(''); onChange(); } });
   };
+  // A comment is deletable by its author or the portal owner (admin).
+  const canDelete = c => signedIn &&
+    (me.admin || (c.author || '').toLowerCase() === (me.email || '').toLowerCase());
+  const removeComment = c => {
+    if (!window.confirm('Delete this comment?')) return;
+    TEAM_API.post('api/team/comment', { item: item.id, id: c.id }, 'DELETE')
+      .then(r => { if (fail(r)) onChange(); });
+  };
   const save = fields =>
     TEAM_API.post('api/team/item/' + item.id, fields, 'PATCH')
       .then(r => { if (fail(r)) onChange(); });
@@ -107,6 +115,9 @@ function TeamItemDrawer({ item, me, team, onClose, onChange }) {
               <div className="team-comment" key={c.id}>
                 <div className="team-comment-meta">
                   {c.author_name || c.author} · {String(c.at).slice(0, 10)}
+                  {canDelete(c) && (
+                    <span className="auth-link team-comment-del" onClick={() => removeComment(c)}> · delete</span>
+                  )}
                 </div>
                 <div className="team-comment-text">{c.text}</div>
               </div>
