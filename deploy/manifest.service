@@ -43,6 +43,9 @@ ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/benjamin/.config/manifest
 ReadWritePaths=/home/benjamin/.config/excalibur
+# The terminal cockpit runs real PTY shells (and the FILES stage writes) as
+# children of this unit — home must be writable for them to do real work.
+ReadWritePaths=/home/benjamin
 ReadWritePaths=/private/consciousrepo
 ReadWritePaths=/private/harnesses
 ReadWritePaths=/home/benjamin/aionbio
