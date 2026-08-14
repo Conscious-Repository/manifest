@@ -13,6 +13,7 @@ let chatLastUpdated = "";   // change-detection for transcript re-render
 
 function showChat(h) {
   const tail = h && h.startsWith("#/chat/") ? decodeURIComponent(h.slice("#/chat/".length)) : "";
+  if (tail.startsWith("cmp/")) { renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
   chatOpenId = tail;
   loadChatSessions().then(() => {
     // no explicit session → open the most recent one
@@ -67,25 +68,137 @@ function renderChatRail() {
 }
 
 // chatNewSessionPicker — a tiny inline spirit picker under the ＋ button.
+// Spirits with a chat.md `models:` whitelist get per-model buttons (the
+// override pins for the session's whole life); "⇄ compare" fans one prompt
+// across several models side-by-side.
 async function chatNewSessionPicker(anchor) {
   const existing = document.querySelector(".chat-spirit-pick");
   if (existing) { existing.remove(); return; }
   const spirits = (await chatSpiritList()).filter((s) => s.enabled);
   const pick = el("div", "chat-spirit-pick");
   if (!spirits.length) pick.append(emptyRow("No chattable spirits (add a chat.md)."));
+  const create = async (spirit, model) => {
+    pick.remove();
+    try {
+      const r = await postJSONOk("/api/chat/sessions", { spirit, model: model || "" });
+      chatOpenId = r.id;
+      location.hash = "#/chat/" + encodeURIComponent(r.id);
+    } catch (e) { showToast("Couldn't create the session — " + (e.message || "error")); }
+  };
   spirits.forEach((s) => {
-    const b = el("button", "pill light", s.name);
-    b.onclick = async () => {
-      pick.remove();
-      try {
-        const r = await postJSONOk("/api/chat/sessions", { spirit: s.name });
-        chatOpenId = r.id;
-        location.hash = "#/chat/" + encodeURIComponent(r.id);
-      } catch (e) { showToast("Couldn't create the session — " + (e.message || "error")); }
-    };
-    pick.append(b);
+    const row = el("div", "chat-pick-row");
+    row.append(el("button", "pill light", s.name)).onclick = () => create(s.name, "");
+    (s.models || []).forEach((m) => {
+      const short = m.replace(/^claude-/, "").replace(/-\d{8}$/, "");
+      const mb = el("button", "sprt-quiet", short);
+      mb.title = s.name + " · " + m;
+      mb.onclick = () => create(s.name, m);
+      row.append(mb);
+    });
+    pick.append(row);
   });
+  const cmpSpirit = spirits.find((s) => (s.models || []).length > 1);
+  if (cmpSpirit) {
+    const cb = el("button", "sprt-quiet", "⇄ compare models");
+    cb.onclick = () => { pick.remove(); openComparePrompt(cmpSpirit); };
+    pick.append(cb);
+  }
   anchor.after(pick);
+}
+
+// ---- Compare: one prompt → N model lanes (UI-level fan-out) ----
+
+function openComparePrompt(spirit) {
+  const host = document.getElementById("chatTranscript");
+  if (!host) return;
+  host.innerHTML = "";
+  host.append(el("div", "chat-head-title", "Compare — one prompt across models"));
+  const ta = document.createElement("textarea");
+  ta.className = "chat-input";
+  ta.rows = 3;
+  ta.placeholder = "The prompt to fan out…";
+  host.append(ta);
+  const picks = el("div", "chat-spirit-pick");
+  const chosen = new Set(spirit.models.slice(0, 2));
+  spirit.models.forEach((m) => {
+    const b = el("button", "pill light" + (chosen.has(m) ? " on" : ""), m.replace(/^claude-/, "").replace(/-\d{8}$/, ""));
+    b.onclick = () => {
+      if (chosen.has(m)) chosen.delete(m); else chosen.add(m);
+      b.classList.toggle("on");
+    };
+    picks.append(b);
+  });
+  host.append(picks);
+  const go = el("button", "pill", "run compare");
+  go.onclick = async () => {
+    const text = ta.value.trim();
+    if (!text || chosen.size < 2) { showToast("Prompt + at least two models"); return; }
+    go.disabled = true;
+    try {
+      const ids = [];
+      for (const m of chosen) {
+        const r = await postJSONOk("/api/chat/sessions", {
+          spirit: spirit.name, model: m, text,
+          title: "cmp · " + m.replace(/^claude-/, "") + " · " + text.slice(0, 30),
+        });
+        ids.push(r.id);
+      }
+      location.hash = "#/chat/cmp/" + ids.map(encodeURIComponent).join(",");
+    } catch (e) { showToast("Compare failed — " + (e.message || "error")); go.disabled = false; }
+  };
+  host.append(go);
+  ta.focus();
+}
+
+let cmpPollTimer = null;
+async function renderCompare(ids) {
+  const host = document.getElementById("chatTranscript");
+  const comp = document.getElementById("chatComposer");
+  if (comp) comp.hidden = true;
+  const rail = document.getElementById("chatRail");
+  if (rail) { rail.innerHTML = ""; rail.append(el("button", "pill chat-new", "‹ back to chat")).onclick = () => { location.hash = "#/chat"; if (comp) comp.hidden = false; }; }
+  if (!host) return;
+  host.innerHTML = "";
+  const row = el("div", "chat-cmp-row");
+  host.append(row);
+  let anyThinking = false;
+  for (const id of ids) {
+    const lane = el("div", "chat-cmp-lane");
+    let d;
+    try {
+      const res = await fetch("/api/chat/sessions/" + encodeURIComponent(id));
+      if (!res.ok) { lane.append(emptyRow("gone")); row.append(lane); continue; }
+      d = await res.json();
+    } catch (e) { continue; }
+    lane.append(el("div", "chat-cmp-head", (d.session.model || d.session.spirit) + " · $" + d.session.spentUsd.toFixed(4)));
+    const turns = parseChatTurns(d.body || "");
+    const say = turns.filter((t) => t.who !== "user" && t.who !== "system").map((t) => {
+      const st = parseChatSteps(t.text).find((s) => s.cast === "say");
+      return st ? st.body : t.text;
+    }).join("\n\n");
+    const bodyEl = el("div", "chat-say");
+    if (say) {
+      try { bodyEl.append(renderMarkdown(say, "", { readOnly: true })); } catch (e) { bodyEl.textContent = say; }
+    } else if (d.session.status === "thinking" || (d.queued || []).length) {
+      bodyEl.append(el("div", "chat-thinking", "✦ thinking…"));
+      anyThinking = true;
+    } else {
+      bodyEl.textContent = "—";
+    }
+    lane.append(bodyEl);
+    const open = el("button", "sprt-quiet", "open ↗");
+    open.onclick = () => { if (comp) comp.hidden = false; chatOpenSession(id); };
+    lane.append(open);
+    row.append(lane);
+  }
+  if (cmpPollTimer) { clearInterval(cmpPollTimer); cmpPollTimer = null; }
+  if (anyThinking) {
+    cmpPollTimer = setInterval(() => {
+      if (!location.hash.startsWith("#/chat/cmp/")) { clearInterval(cmpPollTimer); cmpPollTimer = null; return; }
+      renderCompare(ids);
+      clearInterval(cmpPollTimer); cmpPollTimer = null;
+    }, 2000);
+  }
 }
 
 // ---- transcript ----

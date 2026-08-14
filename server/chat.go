@@ -39,6 +39,7 @@ func (s *Server) handleChatSessionCreate(w http.ResponseWriter, r *http.Request)
 		Spirit string `json:"spirit"`
 		Title  string `json:"title"`
 		Text   string `json:"text"`
+		Model  string `json:"model"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -48,7 +49,7 @@ func (s *Server) handleChatSessionCreate(w http.ResponseWriter, r *http.Request)
 	if title == "" && strings.TrimSpace(b.Text) != "" {
 		title = firstLine(b.Text, 60)
 	}
-	id, err := s.spirits.CreateChatSession(b.Spirit, title)
+	id, err := s.spirits.CreateChatSession(b.Spirit, title, b.Model)
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return

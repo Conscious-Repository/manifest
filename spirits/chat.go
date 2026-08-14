@@ -28,8 +28,9 @@ var chatSessionIDRe = regexp.MustCompile(`^[0-9]{8}-[0-9]{6}-[0-9a-z]{2,8}$`)
 
 // ChatSpirit is one chattable spirit (spirits/<name>/chat.md present).
 type ChatSpirit struct {
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	Name    string   `json:"name"`
+	Enabled bool     `json:"enabled"`
+	Models  []string `json:"models,omitempty"` // chat.md models: — per-session override choices
 }
 
 // ChatSessionSummary is a parsed session frontmatter row.
@@ -60,7 +61,7 @@ func (s *Store) ChatSpirits() []ChatSpirit {
 		}
 		fm, _ := mdfm.Split(string(b))
 		enabled := strings.ToLower(strings.TrimSpace(fm["enabled"])) != "false"
-		out = append(out, ChatSpirit{Name: e.Name(), Enabled: enabled})
+		out = append(out, ChatSpirit{Name: e.Name(), Enabled: enabled, Models: mdfm.List(fm["models"])})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -126,8 +127,10 @@ func (s *Store) ChatSession(id string) (ChatSessionSummary, string, bool) {
 }
 
 // CreateChatSession writes the session skeleton and returns its id. The
-// engine fills ceilings/portal/model on the first turn.
-func (s *Store) CreateChatSession(spirit, title string) (string, error) {
+// engine fills ceilings/portal on the first turn; a non-empty model pins a
+// per-session override (must be on the spirit's chat.md models whitelist —
+// the engine enforces, fail closed).
+func (s *Store) CreateChatSession(spirit, title, model string) (string, error) {
 	if !validID(spirit) {
 		return "", fmt.Errorf("bad spirit name")
 	}
@@ -155,6 +158,7 @@ func (s *Store) CreateChatSession(spirit, title string) (string, error) {
 		SetRaw("turns", "0").
 		SetRaw("charge_spent_usd", "0.0000").
 		SetRaw("charge_ceiling_usd", "0.00").
+		Set("model", strings.TrimSpace(model)).
 		String("")
 	if err := os.WriteFile(filepath.Join(s.chatDir(), id+".md"), []byte(out), 0o644); err != nil {
 		return "", err

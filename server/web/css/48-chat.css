@@ -39,3 +39,10 @@
   .chat-rail { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
   .chat-rail-row { display: inline-block; max-width: 46vw; }
 }
+
+/* compare lanes (P7) */
+.chat-pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.chat-spirit-pick .pill.light.on { border-color: var(--accent); color: var(--accent); }
+.chat-cmp-row { display: flex; gap: 16px; align-items: flex-start; overflow-x: auto; }
+.chat-cmp-lane { flex: 1; min-width: 300px; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
+.chat-cmp-head { font-size: 11px; color: var(--base-40); margin-bottom: 8px; font-variant-numeric: tabular-nums; }
