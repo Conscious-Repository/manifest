@@ -1,0 +1,265 @@
+/* AION Design System — colors_and_type.css
+ *
+ * Two typefaces:
+ *   1. Alchimia Regular (self-hosted, fonts/Alchimia-Regular.otf) —
+ *      the DISPLAY face. An all-caps alchemical serif; use ONLY for
+ *      hero / section display type, never body.
+ *   2. JetBrains Mono (Google Fonts, pinned substitute) — the body /
+ *      UI face. The live site uses the browser default `monospace`
+ *      stack; JetBrains Mono is a pinned substitute for consistency
+ *      across design artifacts.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+@font-face {
+  font-family: 'Alchimia';
+  src: url('fonts/Alchimia-Regular.otf') format('opentype');
+  /* path is relative to this css file → assets/fonts/Alchimia-Regular.otf */
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* ─── Color foundations ────────────────────────────────────── */
+
+  /* Brand blue — the one non-neutral the brand owns. Pulled from
+     AION LOGO BLUE.png. Used sparingly as a signal color. */
+  --aion-blue:        #0022ff;
+  --aion-blue-ink:    #ffffff;   /* text on blue */
+
+  /* Light-mode surface (used on index.html — the marketing landing). */
+  --light-bg:         #ffffff;
+  --light-fg:         #000000;
+  --light-muted:      #999999;   /* footer, de-emphasized */
+
+  /* Dark-mode surface — used on every other page (exec overview,
+     careers, data-room). This is the dominant AION surface. */
+  --dark-bg:          #262626;   /* page background */
+  --dark-bg-sunken:   #1a1a1a;   /* inputs, code blocks */
+  --dark-bg-raised:   #1e1e1e;   /* tables */
+  --dark-border:      #3a3a3a;   /* hairlines, dividers */
+  --dark-border-soft: #333333;   /* code-block borders */
+
+  /* Dark-mode foreground ramp. Opinionated — the site uses many
+     small steps of gray for hierarchy rather than size or weight. */
+  --fg-1:             #d4d4d4;   /* primary body text */
+  --fg-2:             #cccccc;   /* indent-1 */
+  --fg-3:             #bbbbbb;   /* table text */
+  --fg-4:             #aaaaaa;   /* indent-2 */
+  --fg-5:             #999999;   /* lead body, indent-3 */
+  --fg-6:             #888888;   /* metadata, captions */
+  --fg-7:             #777777;   /* TOC links, secondary links */
+  --fg-8:             #666666;   /* muted links, footnotes */
+  --fg-9:             #555555;   /* tree gutter, footer */
+  --fg-10:            #444444;   /* placeholder oneliners */
+
+  /* Semantic signal colors (very few — the brand is restrained). */
+  --error:            #aa4444;   /* gate error — muted red */
+  --focus-border:     #555555;   /* input focus ring (subtle) */
+
+  /* Semantic tokens — use these in product code. */
+  --bg:               var(--dark-bg);
+  --bg-sunken:        var(--dark-bg-sunken);
+  --bg-raised:        var(--dark-bg-raised);
+  --fg:               var(--fg-1);
+  --fg-muted:         var(--fg-6);
+  --fg-subtle:        var(--fg-8);
+  --border:           var(--dark-border);
+  --border-soft:      var(--dark-border-soft);
+  --accent:           var(--aion-blue);
+  --link:             var(--fg-1);
+  --link-underline:   var(--fg-9);
+
+  /* ─── Typography ───────────────────────────────────────────── */
+
+  /* Alchimia — the display face. All-caps serif with alchemical
+     character (reduced cap height, delicate serifs, ligatured feel).
+     USE ONLY FOR DISPLAY: hero titles, section markers, the occasional
+     dramatic pull-quote. NEVER for body — glyph forms don't hold up
+     below ~32px and there is no lowercase. */
+  --font-display: 'Alchimia', 'Times New Roman', serif;
+
+  /* JetBrains Mono — the body / UI face. Pinned substitute for the
+     live site's default `monospace` stack. */
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo,
+               Monaco, Consolas, 'Liberation Mono', 'Courier New',
+               monospace;
+  --font-body: var(--font-mono);  /* body is always mono */
+
+  /* Charter serif — the READING face. Used for long-form prose inside
+     chapter bodies where 14px mono would fatigue. Matches the executive
+     overview page for visual continuity. */
+  --font-reading: Charter, 'Bitstream Charter', Georgia, 'Times New Roman', serif;
+
+  /* Size scale — mono body stays tiny and tight (AION reads like a
+     terminal), while display type gets generous scale to let Alchimia
+     breathe. */
+  --text-xs:  11px;   /* TOC label, uppercase tags */
+  --text-sm:  12px;   /* footer, caption, footnote */
+  --text-md:  13px;   /* lead, blurb, sub-text */
+  --text-lg:  14px;   /* default body */
+  --text-xl:  16px;   /* section headers */
+  --text-2xl: 20px;   /* reserved for future display use */
+
+  /* Display scale — Alchimia only. */
+  --display-sm: 40px;  /* section display (minimum) */
+  --display-md: 64px;  /* page display */
+  --display-lg: 96px;  /* hero display */
+  --display-xl: 144px; /* splash / title card */
+
+  --leading-tight: 1.5;
+  --leading-body:  1.7;
+  --leading-loose: 1.8;
+
+  /* ─── Spacing + shape ──────────────────────────────────────── */
+
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-7:  48px;
+  --space-8:  80px;
+
+  --radius-0: 0px;     /* default — corners are sharp */
+  --radius-1: 2px;     /* code blocks, tables (barely-there softening) */
+
+  --page-gutter: 3%;   /* horizontal page padding used on every page */
+  --measure:     680px; /* max content width for long-form reading */
+  --measure-wide: 1100px; /* outer layout + TOC */
+
+  /* ─── Motion ───────────────────────────────────────────────── */
+  /* The site has no declared transitions. Hover = instant underline.
+     Keep motion minimal in any system extension. */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --easing:      cubic-bezier(0.2, 0.0, 0.2, 1);
+}
+
+/* ─── Semantic element styles ────────────────────────────────── */
+
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  line-height: var(--leading-body);
+}
+
+h1, .h1 {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  margin-bottom: var(--space-4);
+  color: var(--fg-1);
+}
+
+h2, .h2 {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  margin-top: var(--space-7);
+  margin-bottom: var(--space-4);
+  color: var(--fg-1);
+}
+
+h3, .h3 {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+  color: var(--fg-1);
+}
+
+p {
+  margin-bottom: var(--space-4);
+}
+
+.lead {
+  font-style: italic;
+  color: var(--fg-1);
+}
+
+.caption {
+  font-size: var(--text-sm);
+  color: var(--fg-7);
+  margin-top: calc(-1 * var(--space-4));
+  margin-bottom: var(--space-5);
+}
+
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--link-underline);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: var(--fg-1);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-6) 0;
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+}
+
+/* ─── Display type (Alchimia) ────────────────────────────────── */
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--fg-1);
+}
+.display-sm { font-family: var(--font-display); font-size: var(--display-sm); line-height: 1.05; color: var(--fg-1); }
+.display-md { font-family: var(--font-display); font-size: var(--display-md); line-height: 1;    color: var(--fg-1); }
+.display-lg { font-family: var(--font-display); font-size: var(--display-lg); line-height: 1;    color: var(--fg-1); }
+.display-xl { font-family: var(--font-display); font-size: var(--display-xl); line-height: 0.95; color: var(--fg-1); }
+
+pre.code {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-1);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-md);
+  line-height: var(--leading-tight);
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--fg-2);
+}
+
+blockquote {
+  border-left: 3px solid var(--fg-10);
+  padding-left: var(--space-4);
+  margin: var(--space-5) 0;
+  color: var(--fg-5);
+  font-size: var(--text-md);
+}
+
+input[type="text"], input[type="password"] {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  padding: 10px 12px;
+  outline: none;
+  border-radius: 0;
+}
+
+input:focus {
+  border-color: var(--focus-border);
+}
+
+/* ASCII gutter glyphs used everywhere in AION — ├── └── │ */
+.gutter {
+  color: var(--fg-9);
+  user-select: none;
+  font-family: var(--font-mono);
+  white-space: pre;
+}
