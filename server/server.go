@@ -68,6 +68,8 @@ type Server struct {
 	sttModel string
 	// files: the FILES fleet browser (local roots + per-device agents). Nilable.
 	files *filesCfg
+	// terminal: the in-app PTY terminal (metis-local, tmux-persistent). Nilable.
+	terminal *termCfg
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -257,6 +259,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/chat/sessions/{id}", s.handleChatDelete)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/events", s.handleChatEvents)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/stream", s.handleChatStream)
+
+	// TERMINAL — in-app PTY over tmux (metis-local; claude/codex presets).
+	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)
+	mux.HandleFunc("POST /api/terminal/session", s.handleTermCreate)
+	mux.HandleFunc("PUT /api/terminal/session/{id}", s.handleTermUpdate)
+	mux.HandleFunc("DELETE /api/terminal/session/{id}", s.handleTermDelete)
+	mux.HandleFunc("GET /api/terminal/ws", s.handleTermWS)
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)

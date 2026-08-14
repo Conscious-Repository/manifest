@@ -107,6 +107,7 @@ const NAV_SECTIONS = [
     { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
     { key: "capture", label: "Capture", glyph: "⊕", hash: "#/capture" }, // count = open tray cards
     { key: "files", label: "Files", glyph: "▤", hash: "#/files" },
+    { key: "terminal", label: "Terminal", glyph: "❯", hash: "#/terminal" },
     { key: "chat", label: "Chat", glyph: "✉", hash: "#/chat" },
     { key: "spirits", label: "Spirits", glyph: "✦", hash: "#/spirits" },
     { key: "contacts", label: "Contacts", glyph: "◍", hash: "#/contacts" },
@@ -128,7 +129,7 @@ function sectionOf(h) {
   if (h.startsWith("#/note/")) return "note";
   if (h.startsWith("#/artifact/")) return "artifact";
   const seg = h.replace(/^#\//, "").split("/")[0];
-  return ["goals","todos","calendar","feed","chat","capture","files","studio","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  return ["goals","todos","calendar","feed","chat","capture","files","terminal","studio","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -276,6 +277,7 @@ function route() {
   const chat = h === "#/chat" || h.startsWith("#/chat/");
   const capture = h === "#/capture";
   const filesTab = h === "#/files";
+  const terminalTab = h === "#/terminal";
   const studio = h === "#/studio" || h.startsWith("#/studio/");
   if (h === "#/spirits/approvals") { location.hash = "#/feed"; return; } // approvals live in FEED now
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
@@ -285,7 +287,7 @@ function route() {
   const aionTab = h === "#/aion" || h.startsWith("#/aion/");
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
-  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !filesTab && !studio && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact;
+  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !filesTab && !terminalTab && !studio && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -294,6 +296,7 @@ function route() {
   if (els.chatView) els.chatView.hidden = !chat;
   if (els.captureView) els.captureView.hidden = !capture;
   if (els.filesView) els.filesView.hidden = !filesTab;
+  if (els.terminalView) els.terminalView.hidden = !terminalTab;
   els.studioView.hidden = !studio;
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
@@ -320,6 +323,7 @@ function route() {
   else if (chat) showChat(h); // conversations with chattable spirits
   else if (capture) showCapture(); // the tray — triage into todos/chat
   else if (filesTab) showFiles(); // fleet file browser
+  else if (terminalTab) showTerminal(); // in-app PTY over tmux
   else if (studio) showStudio(); // content studio: draft board + inspiration
   else if (sp) showSpirits(h); // spirits cockpit: rituals / runs / settings / spirit pages
   else if (contacts) showContacts(); // people layer: list / page

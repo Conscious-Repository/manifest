@@ -288,6 +288,12 @@ func main() {
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
 	srv.UseSTT(cfg.LabSttUrl, cfg.LabSttModel)             // mic dictation → lab granite-speech (P6)
+	// TERMINAL: in-app PTY over tmux. Socket dir under dataDir so it's writable
+	// under the metis systemd sandbox (TMUX_TMPDIR); cwd defaults to $HOME.
+	{
+		home, _ := os.UserHomeDir()
+		srv.UseTerminal(filepath.Join(cfg.DataDir, "terminals.json"), filepath.Join(cfg.DataDir, "tmux"), home)
+	}
 	// FILES fleet browser (P8): local roots + tailnet agents; the agent-auth
 	// master lives in dataDir and never leaves this box.
 	{

@@ -23,6 +23,8 @@
   <link rel="stylesheet" href="css/48-chat.css" />
   <link rel="stylesheet" href="css/76-capture.css" />
   <link rel="stylesheet" href="css/74-files.css" />
+  <link rel="stylesheet" href="vendor/xterm.css" />
+  <link rel="stylesheet" href="css/73-terminal.css" />
   <link rel="stylesheet" href="css/50-studio.css" />
   <link rel="stylesheet" href="css/55-approvals.css" />
   <link rel="stylesheet" href="css/60-contacts.css" />
@@ -204,6 +206,19 @@
        ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
        SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
        pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
+  <!-- TERMINAL (cmd-ctr import): in-app PTY over tmux on metis. Session rail +
+       xterm screen + claude/codex presets. Sessions persist via tmux. -->
+  <section class="term-page" id="terminalView" hidden>
+    <div class="term-shell">
+      <aside class="term-rail" id="termRail"></aside>
+      <div class="term-main">
+        <div class="term-actions" id="termActions"></div>
+        <div class="term-screen" id="termScreen"></div>
+        <div class="term-keys" id="termKeys"></div>
+      </div>
+    </div>
+  </section>
+
   <!-- FILES (cmd-ctr import P8): fleet file browser — local roots + tailnet
        agents, ticket-authed. Read/preview/upload; no delete by design. -->
   <section class="goals-page" id="filesView" hidden>
@@ -497,6 +512,9 @@
   <script src="js/60-contacts.js"></script>
   <script src="js/65-reading.js"></script>
   <script src="js/70-note.js"></script>
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="js/73-terminal.js"></script>
   <script src="js/74-files.js"></script>
   <script src="js/75-bars.js"></script>
   <script src="js/76-capture.js"></script>

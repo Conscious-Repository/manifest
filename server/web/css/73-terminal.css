@@ -1,0 +1,33 @@
+/* TERMINAL — in-app PTY (cmd-ctr import) */
+.term-shell { display: flex; gap: 16px; height: calc(100vh - 150px); }
+.term-rail { width: 220px; flex: none; border-right: 1px solid var(--line); padding-right: 12px; overflow-y: auto; }
+.term-launch { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.term-rail-row { position: relative; padding: 8px 6px; border-radius: var(--radius); cursor: pointer; }
+.term-rail-row:hover { background: var(--hover); }
+.term-rail-row.open { background: var(--hover); }
+.term-rail-top { display: flex; align-items: baseline; gap: 6px; }
+.term-live { color: #3fb950; font-size: 9px; }
+.term-rail-name { font-size: 13px; color: var(--base-100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-rail-meta { display: flex; gap: 8px; margin-top: 3px; }
+.term-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }
+.term-kind.k-claude { color: var(--accent); }
+.term-kind.k-codex { color: #d29922; }
+.term-resume { font-size: 10px; color: var(--base-30); }
+.term-x { position: absolute; top: 6px; right: 4px; border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: 11px; opacity: 0; }
+.term-rail-row:hover .term-x { opacity: 1; }
+.term-x:hover { color: var(--base-100); }
+
+.term-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.term-actions { display: flex; gap: 8px; align-items: center; padding-bottom: 8px; }
+.term-screen { flex: 1; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); background: #0e1116; overflow: hidden; }
+.term-mount { width: 100%; height: 100%; padding: 8px; }
+.term-keys { display: none; gap: 5px; flex-wrap: wrap; padding: 8px 0 2px; }
+.term-key { font: inherit; font-size: 12px; color: var(--base-70); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; cursor: pointer; }
+.term-key:active { background: var(--hover); }
+
+@media (max-width: 860px) {
+  .term-shell { flex-direction: column; height: auto; }
+  .term-rail { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; }
+  .term-screen { height: 60vh; }
+  .term-keys { display: flex; }
+}
