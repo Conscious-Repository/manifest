@@ -1,79 +1,381 @@
-// ---- TERMINAL: in-app PTY over tmux (cmd-ctr import) ----
-// A real terminal on metis (where manifest, the engine, the vault, and the
-// claude-sub CLI all live). tmux keeps sessions alive across disconnect and
-// navigation; claude/codex presets + a minted resume id make "manage Claude
-// Code from inside the app" one click. xterm.js is vendored (UMD, no build).
+// ---- TERMINAL: the cockpit (cmd-ctr terminal-module parity) ----
+// One surface: a rail of SESSIONS / NEW SESSION / HISTORY with an icon tab bar
+// pinned at its foot, and a stage swapping Terminal (PTY over metis tmux) /
+// Files (fleet browser) / Activity (fleet stats). Every session — local or
+// remote — is a metis tmux, so keep-alive is inherent. xterm vendored (UMD).
 
 let termSessions = [];
 let termOpenId = "";
-let termInst = null;   // { term, fit, ws, id }
+let termInst = null;   // { term, fit, ws, id, ro }
+let termStage = "term";           // term | files | activity
+let termLaunch = { kind: "shell", cwd: "" };
+let termHistQuery = "";
+let termPollTimer = null;
+let termBrowseOpen = false, termBrowsePath = "";
+
+const TERM_STAGES = [
+  { stage: "term", glyph: "❯", label: "term" },
+  { stage: "files", glyph: "▤", label: "files" },
+  { stage: "activity", glyph: "∿", label: "stats" },
+];
 
 function showTerminal() {
+  try { termStage = localStorage.getItem("manifest.termStage") || termStage; } catch (e) {}
+  if (!TERM_STAGES.some((s) => s.stage === termStage)) termStage = "term";
+  renderTermTabbar();
+  termApplyStage();
+  loadTermSessions();
+  if (!termPollTimer) termPollTimer = setInterval(() => {
+    if (els.terminalView && !els.terminalView.hidden && !document.hidden) loadTermSessions(true);
+  }, 5000);
+}
+
+function renderTermTabbar() {
+  const bar = document.getElementById("termTabbar");
+  if (!bar) return;
+  bar.innerHTML = "";
+  TERM_STAGES.forEach((t) => {
+    const b = el("button", "term-tab" + (t.stage === termStage ? " on" : ""));
+    b.append(el("span", "term-tab-glyph", t.glyph), el("span", "term-tab-label", t.label));
+    b.onclick = () => termSetStage(t.stage);
+    bar.append(b);
+  });
+}
+
+function termSetStage(stage) {
+  termStage = stage;
+  try { localStorage.setItem("manifest.termStage", stage); } catch (e) {}
+  renderTermTabbar();
+  termApplyStage();
+}
+
+function termApplyStage() {
+  const panes = { term: "termStageTerm", files: "termStageFiles", activity: "termStageActivity" };
+  Object.entries(panes).forEach(([k, id]) => {
+    const p = document.getElementById(id);
+    if (p) p.hidden = k !== termStage;
+  });
+  // the WS stays attached when leaving the term stage — scrollback keeps warm
+  if (termStage === "term" && termInst) { try { termInst.fit.fit(); sendTermResize(); } catch (e) {} }
+  if (termStage === "files" && typeof showFilesStage === "function") showFilesStage();
+  if (termStage === "activity") {
+    if (typeof showActivityStage === "function") showActivityStage();
+    else {
+      const p = document.getElementById("termStageActivity");
+      if (p && !p.childElementCount) p.append(emptyRow("Activity lands in a later phase."));
+    }
+  }
+}
+
+async function loadTermSessions(quiet) {
+  let d = { sessions: [], enabled: true };
+  try { d = await (await fetch("/api/terminal/sessions")).json(); } catch (e) { if (quiet) return; }
+  termSessions = d.sessions || [];
+  renderTermSessions(d.enabled !== false);
+  renderTermLauncher(d.enabled !== false);
+  renderTermHistory();
+  if (quiet) return;
+  if (!termOpenId) {
+    const first = termSessions.find((s) => s.live);
+    if (first) termOpenId = first.id;
+  }
+  if (termOpenId && termStage === "term") attachTerm(termOpenId);
+  else if (termStage === "term") renderTermEmpty();
+}
+
+// --- rail: SESSIONS (live tmux + the currently open one) ---
+
+function termLiveList() {
+  return termSessions.filter((s) => s.live || s.id === termOpenId);
+}
+
+function renderTermSessions(enabled) {
+  const host = document.getElementById("termSessionRows");
+  if (!host) return;
+  host.innerHTML = "";
+  if (!enabled) { host.append(el("div", "term-none", "not enabled on this server")); return; }
+  const list = termLiveList();
+  if (!list.length) { host.append(el("div", "term-none", "no live sessions")); return; }
+  list.forEach((se) => host.append(termSessionRow(se)));
+}
+
+function termSessionRow(se) {
+  const row = el("div", "term-sess" + (se.id === termOpenId ? " open" : ""));
+  row.append(el("span", "term-dot k-" + se.kind));
+  const name = el("span", "term-sess-name", se.name || se.kind);
+  name.title = (se.name || se.kind) + (se.cwd ? " — " + se.cwd : "");
+  name.ondblclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
+  row.append(name);
+  const badges = el("span", "term-sess-badges");
+  if (se.device) badges.append(el("span", "term-badge", se.device));
+  if (se.resumeId) badges.append(el("span", "term-badge", "⟳"));
+  row.append(badges);
+  const x = el("button", "term-x", "✕");
+  x.title = se.live ? "End session (kills the tmux)" : "Close";
+  x.onclick = (e) => { e.stopPropagation(); termKill(se); };
+  row.append(x);
+  row.onclick = () => { termOpenId = se.id; termSetStage("term"); renderTermSessions(true); attachTerm(se.id); };
+  return row;
+}
+
+function termRenameInline(row, nameEl, se) {
+  const inp = document.createElement("input");
+  inp.className = "term-rename";
+  inp.value = se.name || "";
+  const commit = async () => {
+    const v = inp.value.trim();
+    inp.replaceWith(nameEl);
+    if (!v || v === se.name) return;
+    try {
+      await fetch("/api/terminal/session/" + encodeURIComponent(se.id), {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: v }),
+      });
+      loadTermSessions(true);
+    } catch (e) {}
+  };
+  inp.onblur = commit;
+  inp.onkeydown = (e) => {
+    if (e.key === "Enter") inp.blur();
+    if (e.key === "Escape") { inp.value = se.name || ""; inp.blur(); }
+  };
+  nameEl.replaceWith(inp);
+  inp.focus(); inp.select();
+}
+
+async function termKill(se) {
+  if (!confirm(se.live ? "End this session? The tmux backend is killed for good." : "Forget this session?")) return;
+  try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id), { method: "DELETE" }); } catch (e) {}
+  if (termOpenId === se.id) { termOpenId = ""; detachTerm(); renderTermEmpty(); }
   loadTermSessions();
 }
 
-async function loadTermSessions() {
-  let d = { sessions: [], enabled: true };
-  try { d = await (await fetch("/api/terminal/sessions")).json(); } catch (e) {}
-  termSessions = d.sessions || [];
-  renderTermRail(d.enabled !== false);
-  if (!termOpenId && termSessions.length) termOpenId = termSessions[0].id;
-  if (termOpenId) attachTerm(termOpenId);
-  else renderTermEmpty();
+// --- rail: NEW SESSION (launcher) ---
+
+function renderTermLauncher(enabled) {
+  const host = document.getElementById("termLauncher");
+  if (!host || host.dataset.built) { termSyncLauncher(); return; }
+  if (!enabled) return;
+  host.dataset.built = "1";
+
+  // device slot — metis-only v1; Phase 2 replaces this with the fleet list
+  const dev = el("div", "term-dev-row on");
+  dev.append(statusDot(true), el("span", "term-dev-name", "metis"), el("span", "term-badge", "this box"));
+  host.append(dev);
+
+  // kind seg
+  const seg = el("div", "term-seg");
+  ["shell", "claude", "codex"].forEach((k) => {
+    const c = el("button", "filter-chip" + (termLaunch.kind === k ? " on" : ""), k);
+    c.dataset.kind = k;
+    c.onclick = () => { termLaunch.kind = k; termSyncLauncher(); };
+    seg.append(c);
+  });
+  host.append(seg);
+
+  // cwd + recent + browse
+  const dirRow = el("div", "term-dir-row");
+  const inp = document.createElement("input");
+  inp.className = "term-cwd";
+  inp.placeholder = "~ (home)";
+  inp.spellcheck = false;
+  inp.oninput = () => { termLaunch.cwd = inp.value.trim(); };
+  inp.id = "termCwdInput";
+  const recent = el("button", "term-tool", "⏱");
+  recent.title = "Recent folders";
+  recent.onclick = () => termToggleRecent(host, inp);
+  dirRow.append(inp, recent);
+  host.append(dirRow);
+  const browse = el("button", "term-browse", "▸ browse folders");
+  browse.onclick = () => termToggleBrowse(host, browse, inp);
+  host.append(browse);
+  host.append(el("div", "term-browse-slot"));
+
+  // actions
+  const acts = el("div", "term-launch-acts");
+  acts.append(pill("Open", () => termCreate(termLaunch.kind, false)));
+  const res = pillLight("Resume", () => termCreate(termLaunch.kind, true));
+  res.className += " term-resume-btn";
+  res.title = "Reopen a past conversation (interactive picker)";
+  acts.append(res);
+  host.append(acts);
+  termSyncLauncher();
 }
 
-function renderTermRail(enabled) {
-  const host = document.getElementById("termRail");
+function termSyncLauncher() {
+  const host = document.getElementById("termLauncher");
   if (!host) return;
-  host.innerHTML = "";
-  if (!enabled) { host.append(emptyRow("Terminal not enabled on this server.")); return; }
-  const launch = el("div", "term-launch");
-  ["shell", "claude", "codex"].forEach((kind) => {
-    const b = el("button", "pill" + (kind === "shell" ? " light" : ""), "＋ " + kind);
-    b.onclick = () => termCreate(kind);
-    launch.append(b);
+  host.querySelectorAll(".term-seg .filter-chip").forEach((c) => {
+    c.classList.toggle("on", c.dataset.kind === termLaunch.kind);
   });
-  host.append(launch);
-  termSessions.forEach((se) => {
-    const row = el("div", "term-rail-row" + (se.id === termOpenId ? " open" : ""));
-    const top = el("div", "term-rail-top");
-    if (se.live) top.append(el("span", "term-live", "●"));
-    top.append(el("span", "term-rail-name", se.name || se.kind));
-    row.append(top);
-    const meta = el("div", "term-rail-meta");
-    meta.append(el("span", "term-kind k-" + se.kind, se.kind));
-    if (se.resumeId && se.kind === "claude") meta.append(el("span", "term-resume", "resumable"));
-    row.append(meta);
-    row.onclick = () => { termOpenId = se.id; renderTermRail(true); attachTerm(se.id); };
-    const x = el("button", "term-x", "✕");
-    x.title = "End session";
-    x.onclick = async (e) => {
-      e.stopPropagation();
-      if (!confirm("End this terminal session?")) return;
-      try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id), { method: "DELETE" }); } catch (e2) {}
-      if (termOpenId === se.id) { termOpenId = ""; detachTerm(); }
-      loadTermSessions();
+  const res = host.querySelector(".term-resume-btn");
+  if (res) res.hidden = termLaunch.kind === "shell";
+  const inp = host.querySelector("#termCwdInput");
+  if (inp) inp.placeholder = termLaunch.kind === "shell" ? "~ (home)" : "~/project";
+}
+
+function termToggleRecent(host, inp) {
+  let dd = host.querySelector(".term-recent");
+  if (dd) { dd.remove(); return; }
+  const dirs = [...new Set(termSessions.map((s) => s.cwd).filter(Boolean))].slice(0, 8);
+  dd = el("div", "term-recent");
+  if (!dirs.length) dd.append(el("div", "term-none", "no recent folders"));
+  dirs.forEach((d) => {
+    const r = el("button", "term-recent-row", d);
+    r.onclick = () => { inp.value = d; termLaunch.cwd = d; dd.remove(); };
+    dd.append(r);
+  });
+  host.querySelector(".term-dir-row").after(dd);
+}
+
+// inline lazy directory tree (cmd-ctr's launcher picker): clicking a folder
+// sets the cwd; carets expand one level at a time via /api/terminal/ls.
+async function termToggleBrowse(host, btn, inp) {
+  const slot = host.querySelector(".term-browse-slot");
+  termBrowseOpen = !termBrowseOpen;
+  btn.textContent = (termBrowseOpen ? "▾" : "▸") + " browse folders";
+  slot.innerHTML = "";
+  if (!termBrowseOpen) return;
+  const tree = el("div", "term-dirpick");
+  slot.append(tree);
+  await termRenderTreeLevel(tree, "", inp, 0);
+}
+
+async function termRenderTreeLevel(mount, path, inp, depth) {
+  let d;
+  try {
+    const res = await fetch("/api/terminal/ls?path=" + encodeURIComponent(path));
+    if (!res.ok) { mount.append(el("div", "term-none", "unreadable")); return; }
+    d = await res.json();
+  } catch (e) { mount.append(el("div", "term-none", "unreachable")); return; }
+  if (depth === 0) {
+    termBrowsePath = d.path;
+    const head = el("div", "term-dirpick-head");
+    const up = el("button", "term-tool", "‹");
+    up.title = "Up a level";
+    up.onclick = () => {
+      const parent = d.path.replace(/\/+$/, "").split("/").slice(0, -1).join("/") || "/";
+      mount.innerHTML = "";
+      termRenderTreeLevel(mount, parent, inp, 0);
     };
-    row.append(x);
-    host.append(row);
+    const lbl = el("code", "term-dirpick-path", d.path);
+    lbl.title = "Use this folder";
+    lbl.onclick = () => { inp.value = d.path; termLaunch.cwd = d.path; };
+    head.append(up, lbl);
+    mount.append(head);
+  }
+  const dirs = (d.dirs || []).filter((x) => !x.hidden);
+  if (!dirs.length && depth === 0) mount.append(el("div", "term-none", "no subfolders"));
+  dirs.forEach((x) => {
+    const full = d.path.replace(/\/+$/, "") + "/" + x.name;
+    const row = el("div", "term-dirpick-row");
+    row.style.paddingLeft = 8 + depth * 14 + "px";
+    const caret = el("button", "term-dirpick-caret", "▸");
+    const name = el("button", "term-dirpick-name", x.name);
+    name.title = full;
+    name.onclick = () => { inp.value = full; termLaunch.cwd = full; };
+    let openBelow = null;
+    caret.onclick = async () => {
+      if (openBelow) { openBelow.remove(); openBelow = null; caret.textContent = "▸"; return; }
+      caret.textContent = "▾";
+      openBelow = el("div", "term-dirpick-kids");
+      row.after(openBelow);
+      await termRenderTreeLevel(openBelow, full, inp, depth + 1);
+    };
+    row.append(caret, name);
+    mount.append(row);
   });
 }
 
-async function termCreate(kind) {
+async function termCreate(kind, resume) {
   try {
-    const se = await postJSONOk("/api/terminal/session", { kind });
+    const body = { kind, cwd: termLaunch.cwd };
+    if (resume) body.resumePicker = true;
+    const se = await postJSONOk("/api/terminal/session", body);
     termOpenId = se.id;
+    termSetStage("term");
     await loadTermSessions();
   } catch (e) { showToast("Couldn't create terminal — " + (e.message || "error")); }
 }
 
-function renderTermEmpty() {
-  const host = document.getElementById("termScreen");
-  if (host) { host.innerHTML = ""; host.append(emptyRow("Start a terminal — ＋ shell, ＋ claude, or ＋ codex.")); }
+// --- rail: HISTORY (registry rows; pinned first — smart reopen) ---
+
+function renderTermHistory() {
+  const host = document.getElementById("termHistoryRows");
+  if (!host) return;
+  host.innerHTML = "";
+  let search = host.parentElement.querySelector(".term-hist-search");
+  if (!search) {
+    search = document.createElement("input");
+    search.className = "term-hist-search";
+    search.placeholder = "search…";
+    search.spellcheck = false;
+    search.oninput = () => { termHistQuery = search.value.trim().toLowerCase(); renderTermHistory(); };
+    host.before(search);
+  }
+  const liveIds = new Set(termLiveList().map((s) => s.id));
+  let rows = termSessions.filter((s) => !liveIds.has(s.id));
+  if (termHistQuery) {
+    rows = rows.filter((s) =>
+      ((s.name || "") + " " + (s.cwd || "") + " " + s.kind + " " + (s.device || "")).toLowerCase().includes(termHistQuery));
+  }
+  if (!rows.length) { host.append(el("div", "term-none", termHistQuery ? "no matches" : "nothing yet")); return; }
+  rows.slice(0, 30).forEach((se) => {
+    const row = el("div", "term-hist-row" + (se.pinned ? " pinned" : ""));
+    row.append(el("span", "term-dot k-" + se.kind));
+    const name = el("span", "term-sess-name", se.name || se.kind);
+    name.title = (se.cwd || "") + " · " + (se.lastUsed || "");
+    row.append(name);
+    row.append(el("span", "term-hist-when", fmtWhen(se.lastUsed)));
+    const acts = el("span", "term-hist-acts");
+    const pin = el("button", "term-x", se.pinned ? "★" : "☆");
+    pin.title = se.pinned ? "Unpin" : "Pin (survives cleanup)";
+    pin.onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        await fetch("/api/terminal/session/" + encodeURIComponent(se.id), {
+          method: "PUT", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pinned: !se.pinned }),
+        });
+        loadTermSessions(true);
+      } catch (e2) {}
+    };
+    const ren = el("button", "term-x", "✎");
+    ren.title = "Rename";
+    ren.onclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
+    const x = el("button", "term-x", "✕");
+    x.title = "Forget (leaves nothing running)";
+    x.onclick = async (e) => {
+      e.stopPropagation();
+      try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id), { method: "DELETE" }); } catch (e2) {}
+      loadTermSessions(true);
+    };
+    acts.append(pin, ren, x);
+    row.append(acts);
+    // smart reopen: attaching re-runs launchCmd — claude/codex resume via their
+    // minted id, a dead shell simply starts fresh in the same tmux name/cwd.
+    row.onclick = () => { termOpenId = se.id; termSetStage("term"); loadTermSessions(); };
+    host.append(row);
+  });
 }
 
+function renderTermEmpty() {
+  const host = document.getElementById("termScreen");
+  if (host && !termInst) {
+    host.innerHTML = "";
+    host.append(el("div", "term-blank", "❯ start a session — pick a kind and Open"));
+  }
+}
+
+// --- the PTY attach (unchanged core) ---
+
 function detachTerm() {
-  if (termInst) { try { termInst.ws.close(); } catch (e) {} try { termInst.term.dispose(); } catch (e) {} termInst = null; }
+  if (termInst) {
+    try { termInst.ro.disconnect(); } catch (e) {}
+    try { termInst.ws.close(); } catch (e) {}
+    try { termInst.term.dispose(); } catch (e) {}
+    termInst = null;
+  }
 }
 
 function attachTerm(id) {
@@ -152,10 +454,14 @@ function buildTermKeys(ws) {
   });
 }
 
-// ⌘K + palette: jump to / start a terminal
+// ⌘K + palette
 cmdRegistry.register(() => [
-  { id: "goto:#/terminal", name: "Terminal", hint: "server · view", keywords: "terminal shell console ssh claude",
-    act: () => { closeCmdbar(); location.hash = "#/terminal"; } },
-  { id: "act:new-claude-term", name: "New Claude terminal (metis)", hint: "terminal · action", keywords: "claude code resume terminal",
-    act: () => { closeCmdbar(); location.hash = "#/terminal"; setTimeout(() => termCreate("claude"), 250); } },
+  { id: "goto:#/terminal", name: "Terminal", hint: "cockpit · view", keywords: "terminal shell console ssh claude",
+    act: () => { closeCmdbar(); location.hash = "#/terminal"; setTimeout(() => termSetStage("term"), 50); } },
+  { id: "goto:files-stage", name: "Files", hint: "cockpit · view", keywords: "files fleet browse filesystem",
+    act: () => { closeCmdbar(); location.hash = "#/terminal"; setTimeout(() => termSetStage("files"), 50); } },
+  { id: "goto:activity-stage", name: "Activity", hint: "cockpit · view", keywords: "activity stats cpu memory fleet monitor",
+    act: () => { closeCmdbar(); location.hash = "#/terminal"; setTimeout(() => termSetStage("activity"), 50); } },
+  { id: "act:new-claude-term", name: "New Claude terminal", hint: "terminal · action", keywords: "claude code resume terminal",
+    act: () => { closeCmdbar(); location.hash = "#/terminal"; setTimeout(() => { termLaunch.kind = "claude"; termCreate("claude", false); }, 250); } },
 ]);

@@ -266,6 +266,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/terminal/session/{id}", s.handleTermUpdate)
 	mux.HandleFunc("DELETE /api/terminal/session/{id}", s.handleTermDelete)
 	mux.HandleFunc("GET /api/terminal/ws", s.handleTermWS)
+	mux.HandleFunc("GET /api/terminal/ls", s.handleTermLs)
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)

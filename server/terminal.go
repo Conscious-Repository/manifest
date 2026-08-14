@@ -36,6 +36,7 @@ type termSession struct {
 	Cwd       string `json:"cwd"`
 	Name      string `json:"name"`
 	ResumeID  string `json:"resumeId,omitempty"` // claude --session-id / --resume handle
+	Resume    bool   `json:"resume,omitempty"`   // launched via the interactive resume picker
 	CreatedAt string `json:"createdAt"`
 	LastUsed  string `json:"lastUsed"`
 	Pinned    bool   `json:"pinned,omitempty"`
@@ -115,10 +116,16 @@ func (s termSession) launchCmd() string {
 		if s.ResumeID != "" && resumeIDRe.MatchString(s.ResumeID) {
 			return "claude --resume " + s.ResumeID
 		}
+		if s.Resume {
+			return "claude --resume" // interactive conversation picker
+		}
 		return "claude"
 	case "codex":
 		if s.ResumeID != "" && resumeIDRe.MatchString(s.ResumeID) {
 			return "codex resume --yolo " + s.ResumeID
+		}
+		if s.Resume {
+			return "codex resume --yolo"
 		}
 		return "codex --yolo"
 	default:
@@ -158,9 +165,10 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Kind string `json:"kind"`
-		Cwd  string `json:"cwd"`
-		Name string `json:"name"`
+		Kind         string `json:"kind"`
+		Cwd          string `json:"cwd"`
+		Name         string `json:"name"`
+		ResumePicker bool   `json:"resumePicker"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -176,13 +184,15 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	se := termSession{
 		ID: hex.EncodeToString(idb), Kind: kind,
 		Cwd: strings.TrimSpace(b.Cwd), Name: strings.TrimSpace(b.Name),
+		Resume:    b.ResumePicker,
 		CreatedAt: now, LastUsed: now,
 	}
 	if se.Name == "" {
 		se.Name = kind + " · " + time.Now().Format("Jan 2 15:04")
 	}
-	// mint claude's resume handle up front → `claude --resume` works forever
-	if kind == "claude" {
+	// mint claude's resume handle up front → `claude --resume` works forever.
+	// (Not when resuming via the picker — the id would shadow the choice.)
+	if kind == "claude" && !b.ResumePicker {
 		u := make([]byte, 16)
 		_, _ = rand.Read(u)
 		se.ResumeID = fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
@@ -240,6 +250,45 @@ func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.terminal.save(out)
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleTermLs lists sub-directories for the launcher's cwd browse picker.
+// Not restricted to filesRoots: the terminal is already arbitrary-exec as this
+// user, and this only reveals directory NAMES. Metis-local v1 (device= later).
+func (s *Server) handleTermLs(w http.ResponseWriter, r *http.Request) {
+	if s.terminal == nil {
+		http.Error(w, "terminal disabled", http.StatusServiceUnavailable)
+		return
+	}
+	p := strings.TrimSpace(r.URL.Query().Get("path"))
+	if p == "" || p == "~" {
+		p = s.terminal.defaultWd
+	}
+	if strings.HasPrefix(p, "~/") {
+		p = filepath.Join(s.terminal.defaultWd, p[2:])
+	}
+	p = filepath.Clean(p)
+	if !filepath.IsAbs(p) {
+		http.Error(w, "path must be absolute", http.StatusBadRequest)
+		return
+	}
+	ents, err := os.ReadDir(p)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	type dirRow struct {
+		Name   string `json:"name"`
+		Hidden bool   `json:"hidden,omitempty"`
+	}
+	dirs := []dirRow{}
+	for _, e := range ents {
+		if !e.IsDir() {
+			continue
+		}
+		dirs = append(dirs, dirRow{Name: e.Name(), Hidden: strings.HasPrefix(e.Name(), ".")})
+	}
+	writeJSON(w, map[string]any{"path": p, "home": s.terminal.defaultWd, "dirs": dirs})
 }
 
 // tmux runs a tmux control command against the sandbox socket dir.

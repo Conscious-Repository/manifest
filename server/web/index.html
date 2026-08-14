@@ -206,28 +206,32 @@
        ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
        SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
        pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
-  <!-- TERMINAL (cmd-ctr import): in-app PTY over tmux on metis. Session rail +
-       xterm screen + claude/codex presets. Sessions persist via tmux. -->
+  <!-- TERMINAL — the cockpit (cmd-ctr terminal-module parity): a rail of
+       SESSIONS / NEW SESSION / HISTORY with an icon tab bar at its foot, and a
+       stage that swaps Terminal (PTY over metis tmux) / Files (fleet browser,
+       absorbed from the old top-level tab) / Activity (fleet stats). -->
   <section class="term-page" id="terminalView" hidden>
     <div class="term-shell">
-      <aside class="term-rail" id="termRail"></aside>
-      <div class="term-main">
-        <div class="term-actions" id="termActions"></div>
-        <div class="term-screen" id="termScreen"></div>
-        <div class="term-keys" id="termKeys"></div>
+      <aside class="term-rail">
+        <div class="term-rail-scroll">
+          <div class="rail-sec"><div class="rail-sec-label">Sessions</div>
+            <div id="termSessionRows"></div></div>
+          <div class="rail-sec"><div class="rail-sec-label">New session</div>
+            <div id="termLauncher"></div></div>
+          <div class="rail-sec"><div class="rail-sec-label" id="termHistLabel">History</div>
+            <div id="termHistoryRows"></div></div>
+        </div>
+        <nav class="term-tabbar" id="termTabbar"></nav>
+      </aside>
+      <div class="term-stage">
+        <div class="term-stage-pane" id="termStageTerm">
+          <div class="term-actions" id="termActions"></div>
+          <div class="term-screen" id="termScreen"></div>
+          <div class="term-keys" id="termKeys"></div>
+        </div>
+        <div class="term-stage-pane" id="termStageFiles" hidden></div>
+        <div class="term-stage-pane" id="termStageActivity" hidden></div>
       </div>
-    </div>
-  </section>
-
-  <!-- FILES (cmd-ctr import P8): fleet file browser — local roots + tailnet
-       agents, ticket-authed. Read/preview/upload; no delete by design. -->
-  <section class="goals-page" id="filesView" hidden>
-    <div class="areas-col">
-      <div class="agent-head">
-        <span class="agent-title">FILES</span>
-        <div class="agent-actions"><span id="filesHosts" class="feed-filters"></span></div>
-      </div>
-      <div id="filesRows" class="files-rows"></div>
     </div>
   </section>
 

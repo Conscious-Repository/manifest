@@ -122,7 +122,6 @@ const els = {
   spiritsView: document.getElementById("spiritsView"),
   chatView: document.getElementById("chatView"),
   captureView: document.getElementById("captureView"),
-  filesView: document.getElementById("filesView"),
   terminalView: document.getElementById("terminalView"),
   spiritsStatus: document.getElementById("spiritsStatus"),
   spiritRunsList: document.getElementById("spiritRunsList"),

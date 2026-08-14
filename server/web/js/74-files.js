@@ -5,7 +5,21 @@
 
 let filesHosts = [], filesHost = "", filesPath = "";
 
-function showFiles() {
+// showFilesStage mounts the browser into the terminal cockpit's Files pane
+// (the old top-level FILES tab is absorbed; #/files redirects here).
+function showFilesStage() {
+  const pane = document.getElementById("termStageFiles");
+  if (pane && !pane.dataset.built) {
+    pane.dataset.built = "1";
+    const head = el("div", "fs-head");
+    head.append(el("span", "agent-title", "FILES"));
+    const chips = el("span", "feed-filters");
+    chips.id = "filesHosts";
+    head.append(chips);
+    const rows = el("div", "files-rows");
+    rows.id = "filesRows";
+    pane.append(head, rows);
+  }
   loadFilesHosts();
 }
 
@@ -131,9 +145,4 @@ function fmtBytes(n) {
   return n + "B";
 }
 
-// ⌘K: jump to files
-cmdRegistry.register(() => [{
-  id: "goto:#/files", name: "Files", hint: "fleet · view",
-  keywords: "files fleet browse filesystem",
-  act: () => { closeCmdbar(); location.hash = "#/files"; },
-}]);
+// (⌘K entry lives in 73-terminal.js — Files is a cockpit stage now)
