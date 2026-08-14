@@ -1,9 +1,12 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Chat (cmd-ctr import P2): the dashboard's conversational surface over
@@ -143,6 +146,82 @@ func (s *Server) handleChatEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	after, _ := strconv.Atoi(r.URL.Query().Get("after"))
 	writeJSON(w, map[string]any{"events": s.spirits.ChatEvents(r.PathValue("id"), after)})
+}
+
+// handleChatStream is the live SSE tail of a session's event log (A2): the
+// browser subscribes once per open session and receives every event the
+// engine appends, seq-tagged for resume. Manifest is the file→SSE bus; the
+// engine stays a pure file writer. `after=-1` means "only events from now on"
+// (the transcript render already covers history); any other value replays
+// from that seq first.
+func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	last := 0
+	if a := r.URL.Query().Get("after"); a == "-1" || a == "" {
+		// start from the CURRENT end — history came from the session file
+		for _, raw := range s.spirits.ChatEvents(id, 0) {
+			var seq struct {
+				Seq int `json:"seq"`
+			}
+			if json.Unmarshal(raw, &seq) == nil && seq.Seq > last {
+				last = seq.Seq
+			}
+		}
+	} else if n, err := strconv.Atoi(a); err == nil {
+		last = n
+	}
+
+	send := func(raw json.RawMessage) {
+		var meta struct {
+			Seq  int    `json:"seq"`
+			Type string `json:"type"`
+		}
+		_ = json.Unmarshal(raw, &meta)
+		fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", meta.Seq, meta.Type, raw)
+		if meta.Seq > last {
+			last = meta.Seq
+		}
+	}
+	for _, raw := range s.spirits.ChatEvents(id, last) {
+		send(raw)
+	}
+	fl.Flush()
+
+	tick := time.NewTicker(150 * time.Millisecond)
+	keep := time.NewTicker(20 * time.Second)
+	defer tick.Stop()
+	defer keep.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-keep.C:
+			fmt.Fprint(w, ": keepalive\n\n")
+			fl.Flush()
+		case <-tick.C:
+			evs := s.spirits.ChatEvents(id, last)
+			if len(evs) == 0 {
+				continue
+			}
+			for _, raw := range evs {
+				send(raw)
+			}
+			fl.Flush()
+		}
+	}
 }
 
 func firstLine(s string, n int) string {

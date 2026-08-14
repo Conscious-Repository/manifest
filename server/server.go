@@ -256,6 +256,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/chat/sessions/{id}/rename", s.handleChatRename)
 	mux.HandleFunc("DELETE /api/chat/sessions/{id}", s.handleChatDelete)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/events", s.handleChatEvents)
+	mux.HandleFunc("GET /api/chat/sessions/{id}/stream", s.handleChatStream)
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)

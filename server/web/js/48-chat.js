@@ -256,7 +256,155 @@ async function loadChatSession(id) {
   if (main) main.classList.remove("landing");
   renderChatTranscript(d);
   renderChatComposer(d.session);
-  ensureChatPoll(d.session, (d.queued || []).length);
+  ensureChatStream(d.session);
+  if ((d.queued || []).length || d.session.status === "thinking") ensureChatPoll(d.session, (d.queued || []).length);
+}
+
+// ---- live stream layer (A2): EventSource over the engine's event log ----
+// The transcript render covers history from the session file; this layer
+// paints the CURRENT turn as it happens — tool chips lighting up, thinking,
+// and (once the engine streams deltas) the reply typing out with constant-
+// speed reveal. On turn.completed the session refetches and the layer clears.
+let chatES = null, chatESFor = "";
+let chatLive = null; // {tools:[], thinking:"", thinkTok:0, say:"", revealed:0, open:true}
+let chatRevealTimer = null, chatLastMd = 0;
+
+function ensureChatStream(session) {
+  if (chatESFor === session.id && chatES) return;
+  if (chatES) { chatES.close(); chatES = null; }
+  chatESFor = session.id;
+  chatLive = null;
+  let es;
+  try { es = new EventSource("/api/chat/sessions/" + encodeURIComponent(session.id) + "/stream?after=-1"); }
+  catch (e) { return; }
+  chatES = es;
+  const refetch = () => { if (chatOpenId === session.id) { loadChatSessions().then(renderChatRail); refetchChatSession(session.id); } };
+  const on = (type, fn) => es.addEventListener(type, (ev) => {
+    if (chatOpenId !== session.id) return;
+    let d = {};
+    try { d = (JSON.parse(ev.data).data) || {}; } catch (e) {}
+    fn(d);
+  });
+  on("turn.started", () => { chatLive = { tools: [], thinking: "", thinkTok: 0, say: "", revealed: 0, open: true }; renderChatLive(); });
+  on("tool.started", (d) => { if (!chatLive) chatLive = { tools: [], thinking: "", thinkTok: 0, say: "", revealed: 0, open: true }; chatLive.tools.push({ cast: d.cast, detail: d.rationale || "", done: false }); renderChatLive(); });
+  on("tool.completed", (d) => {
+    if (!chatLive) return;
+    const t = chatLive.tools.slice().reverse().find((x) => x.cast === d.cast && !x.done);
+    if (t) { t.done = true; t.detail = d.summary || d.error || t.detail; }
+    renderChatLive();
+  });
+  on("thinking.delta", (d) => { if (chatLive) { chatLive.thinking += d.text || ""; scheduleChatReveal(); } });
+  on("thinking.tokens", (d) => { if (chatLive) { chatLive.thinkTok = d.tokens || 0; renderChatLive(); } });
+  on("assistant.delta", (d) => { if (chatLive) { chatLive.say += d.text || ""; scheduleChatReveal(); } });
+  on("assistant.message", (d) => { if (chatLive) { chatLive.say = d.text || chatLive.say; chatLive.open = false; scheduleChatReveal(); } });
+  on("turn.completed", () => { finishChatLive(); refetch(); });
+  on("session.error", refetch);
+  on("user.message", refetch);
+  es.onerror = () => {
+    // degraded network / proxy: fall back to the file poll
+    if (chatES === es) { es.close(); chatES = null; chatESFor = ""; ensureChatPoll(session, 1); }
+  };
+}
+
+async function refetchChatSession(id) {
+  try {
+    const res = await fetch("/api/chat/sessions/" + encodeURIComponent(id));
+    if (!res.ok || id !== chatOpenId) return;
+    const d = await res.json();
+    renderChatTranscript(d);
+    renderChatComposer(d.session);
+  } catch (e) {}
+}
+
+function finishChatLive() {
+  if (chatRevealTimer) { clearInterval(chatRevealTimer); chatRevealTimer = null; }
+  chatLive = null;
+  const area = document.getElementById("chatLiveArea");
+  if (area) area.innerHTML = "";
+}
+
+// constant-speed reveal (cmd-ctr: ~85 chars/sec, catch up if far behind)
+function scheduleChatReveal() {
+  if (chatRevealTimer) return;
+  chatRevealTimer = setInterval(() => {
+    if (!chatLive) { clearInterval(chatRevealTimer); chatRevealTimer = null; return; }
+    const target = chatLive.say.length;
+    if (chatLive.revealed < target) {
+      const behind = target - chatLive.revealed;
+      chatLive.revealed += behind > 130 ? Math.ceil(behind / 8) : 5; // ~85cps at 60ms tick
+      if (chatLive.revealed > target) chatLive.revealed = target;
+    }
+    const now = Date.now();
+    if (now - chatLastMd >= 90 || chatLive.revealed >= target) {
+      chatLastMd = now;
+      renderChatLive();
+    }
+    if (chatLive.revealed >= target && !chatLive.open && chatLive.thinking === chatLive._renderedThinking) {
+      clearInterval(chatRevealTimer);
+      chatRevealTimer = null;
+    }
+  }, 60);
+}
+
+function renderChatLive() {
+  const host = document.getElementById("chatTranscript");
+  if (!host) return;
+  let area = document.getElementById("chatLiveArea");
+  if (!area) {
+    area = el("div", "chat-live-area");
+    area.id = "chatLiveArea";
+    host.append(area);
+  }
+  area.innerHTML = "";
+  if (!chatLive) return;
+  const wrap = el("div", "chat-turn chat-spirit");
+  chatLive.tools.forEach((t) => {
+    const ln = el("div", "run-trace-step chat-step" + (t.done ? "" : " running"));
+    ln.append(el("span", "chat-step-dot", t.done ? "✓" : "▸"));
+    ln.append(el("span", "run-trace-cast", t.cast));
+    ln.append(el("span", "run-trace-detail", t.detail || ""));
+    wrap.append(ln);
+  });
+  if (chatLive.thinking) {
+    chatLive._renderedThinking = chatLive.thinking;
+    const det = document.createElement("details");
+    det.className = "chat-thinking-block";
+    const sum = document.createElement("summary");
+    sum.textContent = "▸ thinking" + (chatLive.thinkTok ? " · " + chatLive.thinkTok + " tok" : "");
+    det.append(sum, el("div", "chat-thinking-text", chatLive.thinking));
+    wrap.append(det);
+  }
+  if (chatLive.say) {
+    const say = el("div", "chat-say");
+    const shown = chatLive.say.slice(0, chatLive.revealed);
+    try { say.append(renderMarkdown(shown, "", { readOnly: true })); }
+    catch (e) { say.textContent = shown; }
+    if (chatLive.revealed < chatLive.say.length || chatLive.open) say.append(el("span", "chat-cursor", "▍"));
+    wrap.append(say);
+  } else if (chatLive.open && !chatLive.tools.length) {
+    wrap.append(el("div", "chat-thinking", "✦ thinking…" + (chatLive.thinkTok ? " · " + chatLive.thinkTok + " tok" : "")));
+  }
+  area.append(wrap);
+  chatPin();
+}
+
+// ---- stick-to-bottom (cmd-ctr rules: release on scroll-up, re-arm ≤24px) ----
+let chatStick = true, chatLastY = 0, chatScrollBound = false;
+function bindChatScroll() {
+  if (chatScrollBound) return;
+  const host = document.getElementById("chatTranscript");
+  if (!host) return;
+  chatScrollBound = true;
+  host.addEventListener("scroll", () => {
+    const y = host.scrollTop;
+    if (y < chatLastY - 1) chatStick = false;
+    if (host.scrollHeight - y - host.clientHeight <= 24) chatStick = true;
+    chatLastY = y;
+  });
+}
+function chatPin() {
+  const host = document.getElementById("chatTranscript");
+  if (host && chatStick) host.scrollTop = host.scrollHeight;
 }
 
 // parseChatTurns splits the session body into turn blocks.
@@ -290,7 +438,7 @@ function parseChatSteps(text) {
 function renderChatTranscript(d) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
-  const stick = host.scrollTop + host.clientHeight >= host.scrollHeight - 60;
+  bindChatScroll();
   host.innerHTML = "";
   const s = d.session;
   chatLastUpdated = s.updated + "|" + s.status + "|" + (d.queued || []).length;
@@ -356,10 +504,16 @@ function renderChatTranscript(d) {
     b.textContent = q;
     host.append(b);
   });
-  if (s.status === "thinking") {
-    host.append(el("div", "chat-thinking", "✦ thinking…"));
+  // the live layer's mount point (turn.started paints into it); when the ES
+  // hasn't caught the turn yet, the status flag still shows a quiet indicator
+  const area = el("div", "chat-live-area");
+  area.id = "chatLiveArea";
+  host.append(area);
+  if (s.status === "thinking" && !chatLive) {
+    area.append(el("div", "chat-thinking", "✦ thinking…"));
   }
-  if (stick) host.scrollTop = host.scrollHeight;
+  chatStick = true;
+  chatPin();
 }
 
 // ---- composer ----
