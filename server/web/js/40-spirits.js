@@ -886,6 +886,7 @@ function showToast(msg, onClick, kind) {
 let livePollTimer = null;
 let runOutcomes = {};       // runId → last-seen outcome (transition detection)
 let liveBaselined = false;  // don't toast runs that were already finished on first look
+let liveIdleTicks = 0;      // consecutive polls with nothing active (grace before stop)
 let knownDigestIds = null;  // feed digest ids seen, for the digest-landed toast
 
 function pollScopeOpen() {
@@ -900,20 +901,42 @@ function ensureLivePoll() {
   livePollTimer = setInterval(livePoll, 3000);
   livePoll(); // immediate tick
 }
-function stopLivePoll() { if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; } }
+function stopLivePoll() {
+  if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+  // Re-baseline on the next (re)start: the first tick then records whatever is
+  // already finished WITHOUT toasting it, so the isNew-terminal path only fires
+  // for runs that actually start and finish inside the fresh watch window.
+  liveBaselined = false;
+  liveIdleTicks = 0;
+}
 
 async function livePoll() {
   if (!pollScopeOpen()) { stopLivePoll(); return; }
   const firstPoll = !liveBaselined;
   spiritRuns = await fetchSpiritRuns();
 
-  // detect running → terminal transitions for the run-finished toast
+  // Detect finished runs for the run-finished toast. A run finishes when it
+  // transitions running → terminal, OR — for a run fast enough that no poll ever
+  // caught it mid-"running" (granola-sync et al. complete in ~9s, inside the 3s
+  // poll + engine-pickup latency) — when a brand-new run id first appears already
+  // terminal. Without the second case a quick launch spools, runs, and finishes
+  // with no closure at all, which reads as "nothing happened". The baseline pass
+  // (liveBaselined false on the first tick after each (re)start) records existing
+  // runs silently so we never toast history.
   let anyFinished = false;
   (spiritRuns.data || []).forEach((r) => {
     const was = runOutcomes[r.id];
-    if (liveBaselined && r.outcome !== "running" && was === "running") {
+    const isNew = !(r.id in runOutcomes);
+    const terminal = r.outcome !== "running";
+    if (liveBaselined && terminal && (was === "running" || isNew)) {
       anyFinished = true;
-      showToast(`${r.spirit}/${r.ritual} — ${r.outcome}` + (r.itemsWritten ? ` · ${r.itemsWritten} item${r.itemsWritten === 1 ? "" : "s"}` : ""),
+      let detail = "";
+      if (r.outcome === "completed") {
+        detail = r.itemsWritten
+          ? ` · ${r.itemsWritten} item${r.itemsWritten === 1 ? "" : "s"}`
+          : " · no changes"; // distinguish a clean no-op from a failure
+      }
+      showToast(`${r.spirit}/${r.ritual} — ${r.outcome}${detail}`,
         () => { location.hash = "#/spirits"; setTimeout(() => openSpiritRun(r.id), 120); });
     }
     runOutcomes[r.id] = r.outcome;
@@ -930,7 +953,13 @@ async function livePoll() {
     if (location.hash === "#/feed") loadFeed();       // new findings land in place
   }
   if (firstPoll || anyFinished) detectNewDigest();   // baseline on first look; then catch a landed digest
-  if (activeRuns() === 0) stopLivePoll();            // nothing left to watch
+
+  // Stop only after a grace window of quiet. A just-spooled run is invisible for
+  // a beat between the engine consuming the spool file and its run report
+  // appearing; without the grace the poll would stop in that gap and miss the
+  // completion of a fast run entirely.
+  if (activeRuns() > 0) liveIdleTicks = 0;
+  else if (++liveIdleTicks >= 4) stopLivePoll();     // ~12s of quiet
 }
 
 async function detectNewDigest() {
