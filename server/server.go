@@ -296,6 +296,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/files/list", s.handleFilesList)
 	mux.HandleFunc("GET /api/files/read", s.handleFilesRead)
 	mux.HandleFunc("POST /api/files/upload", s.handleFilesUpload)
+	mux.HandleFunc("POST /api/files/mkdir", s.handleFilesMkdir)
+	mux.HandleFunc("POST /api/files/rename", s.handleFilesRename)
+	mux.HandleFunc("POST /api/files/delete", s.handleFilesDelete)
+	mux.HandleFunc("/api/files/home", s.handleFilesHome)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
 	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)

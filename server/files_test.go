@@ -60,11 +60,19 @@ func TestFilesResolveLocal(t *testing.T) {
 	if _, err := f.resolveLocal(filepath.Join(root, "sub", "file.txt")); err != nil {
 		t.Fatalf("in-root: %v", err)
 	}
+	// dotfiles inside the roots are allowed now (hidden toggle governs
+	// visibility client-side) — the roots + traversal rules stay the boundary
+	for _, ok := range []string{
+		filepath.Join(root, ".ssh", "id_rsa"),
+		filepath.Join(root, "sub", ".env"),
+	} {
+		if _, err := f.resolveLocal(ok); err != nil {
+			t.Fatalf("dotfile in-root must resolve %q: %v", ok, err)
+		}
+	}
 	for _, bad := range []string{
 		"/etc/passwd",
 		filepath.Join(root, "..", "out.txt"),
-		filepath.Join(root, ".ssh", "id_rsa"),
-		filepath.Join(root, "sub", ".env"),
 		"relative/path",
 	} {
 		if _, err := f.resolveLocal(bad); err == nil {

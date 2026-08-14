@@ -5,8 +5,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,12 +39,17 @@ type filesCfg struct {
 	localRoots []string
 	agents     []FilesHost
 	masterPath string
+	prefsPath  string // <dataDir>/files_prefs.json — per-box pinned homes
+	prefsMu    sync.Mutex
 }
 
 // UseFiles wires the FILES surface. localRoots empty disables local browsing;
 // agents may still be reachable.
 func (s *Server) UseFiles(localName string, localRoots []string, agents map[string]string, masterPath string) {
-	cfg := &filesCfg{localName: localName, localRoots: localRoots, masterPath: masterPath}
+	cfg := &filesCfg{
+		localName: localName, localRoots: localRoots, masterPath: masterPath,
+		prefsPath: filepath.Join(filepath.Dir(masterPath), "files_prefs.json"),
+	}
 	var names []string
 	for n := range agents {
 		names = append(names, n)
@@ -113,16 +121,13 @@ func (f *filesCfg) agentURL(host string) string {
 	return ""
 }
 
+// resolveLocal contains a path to the roots allowlist. Dotfiles are allowed
+// (owner decision — the hidden toggle governs visibility client-side); the
+// roots + no-traversal rules remain the boundary.
 func (f *filesCfg) resolveLocal(p string) (string, error) {
 	clean := filepath.Clean(p)
 	if !filepath.IsAbs(clean) || strings.Contains(p, "..") {
 		return "", fmt.Errorf("path must be absolute, no traversal")
-	}
-	// dotdirs hold credentials — refuse reads, don't just hide listings
-	for _, seg := range strings.Split(clean, string(filepath.Separator)) {
-		if strings.HasPrefix(seg, ".") && seg != "." {
-			return "", fmt.Errorf("dot-paths are off limits")
-		}
 	}
 	for _, root := range f.localRoots {
 		rootAbs, _ := filepath.Abs(root)
@@ -131,6 +136,34 @@ func (f *filesCfg) resolveLocal(p string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("path outside the browsable roots")
+}
+
+// --- per-box pinned homes ---------------------------------------------------
+
+type filesPrefs struct {
+	Homes map[string]string `json:"homes"`
+}
+
+func (f *filesCfg) loadPrefs() filesPrefs {
+	out := filesPrefs{Homes: map[string]string{}}
+	if b, err := os.ReadFile(f.prefsPath); err == nil {
+		_ = json.Unmarshal(b, &out)
+	}
+	if out.Homes == nil {
+		out.Homes = map[string]string{}
+	}
+	return out
+}
+
+func (f *filesCfg) savePrefs(p filesPrefs) error {
+	f.prefsMu.Lock()
+	defer f.prefsMu.Unlock()
+	b, _ := json.MarshalIndent(p, "", "  ")
+	tmp := f.prefsPath + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, f.prefsPath)
 }
 
 // --- handlers ---------------------------------------------------------------
@@ -149,10 +182,45 @@ func (s *Server) handleFilesHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 type filesEntry struct {
-	Name  string `json:"name"`
-	Dir   bool   `json:"dir"`
-	Size  int64  `json:"size"`
-	MTime int64  `json:"mtime"`
+	Name   string `json:"name"`
+	Dir    bool   `json:"dir"`
+	Size   int64  `json:"size"`
+	MTime  int64  `json:"mtime"`
+	Hidden bool   `json:"hidden,omitempty"`
+	Link   bool   `json:"link,omitempty"`
+}
+
+// listDir is the shared local listing (server + agent keep the same shape).
+func listDir(full string) ([]filesEntry, error) {
+	des, err := os.ReadDir(full)
+	if err != nil {
+		return nil, err
+	}
+	out := []filesEntry{}
+	for _, d := range des {
+		e := filesEntry{
+			Name: d.Name(), Dir: d.IsDir(),
+			Hidden: strings.HasPrefix(d.Name(), "."),
+			Link:   d.Type()&fs.ModeSymlink != 0,
+		}
+		if e.Link {
+			// a symlink to a dir should still browse like a dir
+			if fi, err := os.Stat(filepath.Join(full, d.Name())); err == nil {
+				e.Dir = fi.IsDir()
+			}
+		}
+		if fi, err := d.Info(); err == nil {
+			e.Size, e.MTime = fi.Size(), fi.ModTime().Unix()
+		}
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Dir != out[j].Dir {
+			return out[i].Dir
+		}
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
+	})
+	return out, nil
 }
 
 func (s *Server) handleFilesList(w http.ResponseWriter, r *http.Request) {
@@ -175,32 +243,15 @@ func (s *Server) handleFilesList(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
-		des, err := os.ReadDir(full)
+		out, err := listDir(full)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		var out []filesEntry
-		for _, d := range des {
-			if strings.HasPrefix(d.Name(), ".") {
-				continue
-			}
-			e := filesEntry{Name: d.Name(), Dir: d.IsDir()}
-			if fi, err := d.Info(); err == nil {
-				e.Size, e.MTime = fi.Size(), fi.ModTime().Unix()
-			}
-			out = append(out, e)
-		}
-		sort.Slice(out, func(i, j int) bool {
-			if out[i].Dir != out[j].Dir {
-				return out[i].Dir
-			}
-			return out[i].Name < out[j].Name
-		})
 		writeJSON(w, map[string]any{"path": full, "entries": out})
 		return
 	}
-	s.filesProxy(w, r, host, "/fs/list?path="+urlQueryEscape(p), nil)
+	s.filesProxy(w, r, host, http.MethodGet, "/fs/list?path="+urlQueryEscape(p), nil)
 }
 
 func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +260,7 @@ func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host, p := r.URL.Query().Get("host"), r.URL.Query().Get("path")
+	dl := r.URL.Query().Get("dl") == "1"
 	if host == s.files.localName {
 		full, err := s.files.resolveLocal(p)
 		if err != nil {
@@ -219,10 +271,17 @@ func (s *Server) handleFilesRead(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "not a readable file (or >50MB)", http.StatusNotFound)
 			return
 		}
+		if dl {
+			w.Header().Set("Content-Disposition", "attachment; filename=\""+filepath.Base(full)+"\"")
+		}
 		http.ServeFile(w, r, full)
 		return
 	}
-	s.filesProxy(w, r, host, "/fs/read?path="+urlQueryEscape(p), nil)
+	q := "/fs/read?path=" + urlQueryEscape(p)
+	if dl {
+		q += "&dl=1"
+	}
+	s.filesProxy(w, r, host, http.MethodGet, q, nil)
 }
 
 func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +290,7 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host, p := r.URL.Query().Get("host"), r.URL.Query().Get("path")
+	overwrite := r.URL.Query().Get("overwrite") == "1"
 	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
 	if host == s.files.localName {
 		full, err := s.files.resolveLocal(p)
@@ -238,7 +298,7 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusForbidden)
 			return
 		}
-		if _, err := os.Stat(full); err == nil {
+		if _, err := os.Stat(full); err == nil && !overwrite {
 			http.Error(w, "refusing to overwrite an existing file", http.StatusConflict)
 			return
 		}
@@ -254,11 +314,143 @@ func (s *Server) handleFilesUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"ok": true, "bytes": len(b)})
 		return
 	}
-	s.filesProxy(w, r, host, "/fs/write?path="+urlQueryEscape(p), r.Body)
+	q := "/fs/write?path=" + urlQueryEscape(p)
+	if overwrite {
+		q += "&overwrite=1"
+	}
+	s.filesProxy(w, r, host, http.MethodPost, q, r.Body)
 }
 
-// filesProxy relays one request to a host agent with a fresh ticket.
-func (s *Server) filesProxy(w http.ResponseWriter, r *http.Request, host, pathQ string, body io.Reader) {
+// handleFilesMkdir creates one directory level inside the roots.
+func (s *Server) handleFilesMkdir(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		http.Error(w, "files disabled", http.StatusServiceUnavailable)
+		return
+	}
+	host, p := r.URL.Query().Get("host"), r.URL.Query().Get("path")
+	if host == s.files.localName {
+		full, err := s.files.resolveLocal(p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if err := os.Mkdir(full, 0o755); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+		return
+	}
+	s.filesProxy(w, r, host, http.MethodPost, "/fs/mkdir?path="+urlQueryEscape(p), nil)
+}
+
+// handleFilesRename renames/moves within the roots (from → to, both resolved).
+func (s *Server) handleFilesRename(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		http.Error(w, "files disabled", http.StatusServiceUnavailable)
+		return
+	}
+	host, from, to := r.URL.Query().Get("host"), r.URL.Query().Get("from"), r.URL.Query().Get("to")
+	if host == s.files.localName {
+		fromFull, err := s.files.resolveLocal(from)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		toFull, err := s.files.resolveLocal(to)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		if _, err := os.Stat(toFull); err == nil {
+			http.Error(w, "target already exists", http.StatusConflict)
+			return
+		}
+		if err := os.Rename(fromFull, toFull); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+		return
+	}
+	s.filesProxy(w, r, host, http.MethodPost, "/fs/rename?from="+urlQueryEscape(from)+"&to="+urlQueryEscape(to), nil)
+}
+
+// handleFilesDelete removes a file or (recursive=1) a directory tree.
+func (s *Server) handleFilesDelete(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		http.Error(w, "files disabled", http.StatusServiceUnavailable)
+		return
+	}
+	host, p := r.URL.Query().Get("host"), r.URL.Query().Get("path")
+	recursive := r.URL.Query().Get("recursive") == "1"
+	if host == s.files.localName {
+		full, err := s.files.resolveLocal(p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		// never delete a root itself
+		for _, root := range s.files.localRoots {
+			rootAbs, _ := filepath.Abs(root)
+			if full == rootAbs {
+				http.Error(w, "refusing to delete a browse root", http.StatusForbidden)
+				return
+			}
+		}
+		if recursive {
+			err = os.RemoveAll(full)
+		} else {
+			err = os.Remove(full)
+		}
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true})
+		return
+	}
+	q := "/fs/delete?path=" + urlQueryEscape(p)
+	if recursive {
+		q += "&recursive=1"
+	}
+	s.filesProxy(w, r, host, http.MethodPost, q, nil)
+}
+
+// handleFilesHome gets/sets the per-box pinned start folder.
+func (s *Server) handleFilesHome(w http.ResponseWriter, r *http.Request) {
+	if s.files == nil {
+		http.Error(w, "files disabled", http.StatusServiceUnavailable)
+		return
+	}
+	host := r.URL.Query().Get("host")
+	if r.Method == http.MethodGet {
+		writeJSON(w, map[string]any{"path": s.files.loadPrefs().Homes[host]})
+		return
+	}
+	var b struct {
+		Path string `json:"path"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	prefs := s.files.loadPrefs()
+	if strings.TrimSpace(b.Path) == "" {
+		delete(prefs.Homes, host)
+	} else {
+		prefs.Homes[host] = strings.TrimSpace(b.Path)
+	}
+	if err := s.files.savePrefs(prefs); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// filesProxy relays one request to a host agent with a fresh ticket. Range
+// headers pass through both ways so remote video/pdf previews can seek.
+func (s *Server) filesProxy(w http.ResponseWriter, r *http.Request, host, method, pathQ string, body io.Reader) {
 	base := s.files.agentURL(host)
 	if base == "" {
 		http.Error(w, "unknown host "+host, http.StatusNotFound)
@@ -269,16 +461,15 @@ func (s *Server) filesProxy(w http.ResponseWriter, r *http.Request, host, pathQ 
 		httpError(w, err)
 		return
 	}
-	method := http.MethodGet
-	if body != nil {
-		method = http.MethodPost
-	}
 	req, err := http.NewRequestWithContext(r.Context(), method, strings.TrimRight(base, "/")+pathQ, body)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+ticket)
+	if v := r.Header.Get("Range"); v != "" {
+		req.Header.Set("Range", v)
+	}
 	client := &http.Client{Timeout: 90 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -286,7 +477,7 @@ func (s *Server) filesProxy(w http.ResponseWriter, r *http.Request, host, pathQ 
 		return
 	}
 	defer resp.Body.Close()
-	for _, h := range []string{"Content-Type", "Content-Length"} {
+	for _, h := range []string{"Content-Type", "Content-Length", "Content-Disposition", "Accept-Ranges", "Content-Range"} {
 		if v := resp.Header.Get(h); v != "" {
 			w.Header().Set(h, v)
 		}

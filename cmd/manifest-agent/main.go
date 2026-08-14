@@ -28,10 +28,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -71,6 +74,10 @@ func main() {
 	mux.HandleFunc("GET /fs/list", a.auth(a.handleList))
 	mux.HandleFunc("GET /fs/read", a.auth(a.handleRead))
 	mux.HandleFunc("POST /fs/write", a.auth(a.handleWrite))
+	mux.HandleFunc("POST /fs/mkdir", a.auth(a.handleMkdir))
+	mux.HandleFunc("POST /fs/rename", a.auth(a.handleRename))
+	mux.HandleFunc("POST /fs/delete", a.auth(a.handleDelete))
+	mux.HandleFunc("GET /stats", a.auth(a.handleStats))
 	log.Printf("manifest-agent %s serving %s (roots %v)", cfg.Name, cfg.Addr, cfg.Roots)
 	log.Fatal(http.ListenAndServe(cfg.Addr, mux))
 }
@@ -107,8 +114,8 @@ func (a *agent) auth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // resolve maps a requested path into the roots allowlist (fail closed).
-// Dot-segments are refused outright — dotdirs hold credentials (.ssh,
-// .config); hiding them from listings is not enough, reads must refuse too.
+// Dotfiles are allowed (the browser's hidden toggle governs visibility);
+// the roots + no-traversal rules remain the boundary.
 func (a *agent) resolve(p string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("empty path")
@@ -116,11 +123,6 @@ func (a *agent) resolve(p string) (string, error) {
 	clean := filepath.Clean(p)
 	if !filepath.IsAbs(clean) || strings.Contains(p, "..") {
 		return "", fmt.Errorf("path must be absolute, no traversal")
-	}
-	for _, seg := range strings.Split(clean, string(filepath.Separator)) {
-		if strings.HasPrefix(seg, ".") && seg != "." {
-			return "", fmt.Errorf("dot-paths are off limits")
-		}
 	}
 	for _, root := range a.cfg.Roots {
 		rootAbs, _ := filepath.Abs(root)
@@ -132,10 +134,12 @@ func (a *agent) resolve(p string) (string, error) {
 }
 
 type entry struct {
-	Name  string `json:"name"`
-	Dir   bool   `json:"dir"`
-	Size  int64  `json:"size"`
-	MTime int64  `json:"mtime"`
+	Name   string `json:"name"`
+	Dir    bool   `json:"dir"`
+	Size   int64  `json:"size"`
+	MTime  int64  `json:"mtime"`
+	Hidden bool   `json:"hidden,omitempty"`
+	Link   bool   `json:"link,omitempty"`
 }
 
 func (a *agent) handleList(w http.ResponseWriter, r *http.Request) {
@@ -159,12 +163,18 @@ func (a *agent) handleList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	var out []entry
+	out := []entry{}
 	for _, d := range des {
-		if strings.HasPrefix(d.Name(), ".") {
-			continue // dotfiles stay private
+		e := entry{
+			Name: d.Name(), Dir: d.IsDir(),
+			Hidden: strings.HasPrefix(d.Name(), "."),
+			Link:   d.Type()&os.ModeSymlink != 0,
 		}
-		e := entry{Name: d.Name(), Dir: d.IsDir()}
+		if e.Link {
+			if fi, err := os.Stat(filepath.Join(full, d.Name())); err == nil {
+				e.Dir = fi.IsDir()
+			}
+		}
 		if fi, err := d.Info(); err == nil {
 			e.Size, e.MTime = fi.Size(), fi.ModTime().Unix()
 		}
@@ -174,7 +184,7 @@ func (a *agent) handleList(w http.ResponseWriter, r *http.Request) {
 		if out[i].Dir != out[j].Dir {
 			return out[i].Dir
 		}
-		return out[i].Name < out[j].Name
+		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	_ = json.NewEncoder(w).Encode(map[string]any{"path": full, "entries": out})
 }
@@ -203,7 +213,7 @@ func (a *agent) handleWrite(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	if _, err := os.Stat(full); err == nil {
+	if _, err := os.Stat(full); err == nil && r.URL.Query().Get("overwrite") != "1" {
 		http.Error(w, "refusing to overwrite an existing file", http.StatusConflict)
 		return
 	}
@@ -218,6 +228,227 @@ func (a *agent) handleWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "bytes": len(b)})
+}
+
+func (a *agent) handleMkdir(w http.ResponseWriter, r *http.Request) {
+	full, err := a.resolve(r.URL.Query().Get("path"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if err := os.Mkdir(full, 0o755); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func (a *agent) handleRename(w http.ResponseWriter, r *http.Request) {
+	from, err := a.resolve(r.URL.Query().Get("from"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	to, err := a.resolve(r.URL.Query().Get("to"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if _, err := os.Stat(to); err == nil {
+		http.Error(w, "target already exists", http.StatusConflict)
+		return
+	}
+	if err := os.Rename(from, to); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+func (a *agent) handleDelete(w http.ResponseWriter, r *http.Request) {
+	full, err := a.resolve(r.URL.Query().Get("path"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	for _, root := range a.cfg.Roots {
+		rootAbs, _ := filepath.Abs(root)
+		if full == rootAbs {
+			http.Error(w, "refusing to delete a root", http.StatusForbidden)
+			return
+		}
+	}
+	if r.URL.Query().Get("recursive") == "1" {
+		err = os.RemoveAll(full)
+	} else {
+		err = os.Remove(full)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
+// handleStats reports this box's vitals for the activity monitor (darwin).
+// cpu/net are CUMULATIVE COUNTERS (cpu: summed %cpu snapshot; net: interface
+// byte totals) — the metis collector keeps the previous sample and deltas.
+func (a *agent) handleStats(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"os": runtime.GOOS, "cores": runtime.NumCPU()}
+	sysctl := func(k string) string {
+		b, _ := exec.Command("sysctl", "-n", k).Output()
+		return strings.TrimSpace(string(b))
+	}
+	// uptime from kern.boottime: "{ sec = 1699999999, usec = 0 } ..."
+	if bt := sysctl("kern.boottime"); bt != "" {
+		if i := strings.Index(bt, "sec = "); i >= 0 {
+			s := bt[i+6:]
+			if j := strings.IndexAny(s, ",} "); j > 0 {
+				if sec, err := strconv.ParseInt(s[:j], 10, 64); err == nil {
+					out["uptime"] = time.Now().Unix() - sec
+				}
+			}
+		}
+	}
+	// memory: total from hw.memsize, used from vm_stat pages
+	if t, err := strconv.ParseInt(sysctl("hw.memsize"), 10, 64); err == nil {
+		used := int64(0)
+		if vb, err := exec.Command("vm_stat").Output(); err == nil {
+			page := int64(16384)
+			for _, ln := range strings.Split(string(vb), "\n") {
+				if strings.Contains(ln, "page size of") {
+					f := strings.Fields(ln)
+					if n, err := strconv.ParseInt(f[len(f)-2], 10, 64); err == nil {
+						page = n
+					}
+				}
+				for _, k := range []string{"Pages active", "Pages wired down", "Pages occupied by compressor"} {
+					if strings.HasPrefix(ln, k) {
+						v := strings.TrimSuffix(strings.TrimSpace(strings.SplitN(ln, ":", 2)[1]), ".")
+						if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+							used += n * page
+						}
+					}
+				}
+			}
+		}
+		out["mem"] = map[string]int64{"used": used, "total": t}
+	}
+	// swap: vm.swapusage "total = 2048.00M  used = 1024.00M  free = ..."
+	if sw := sysctl("vm.swapusage"); sw != "" {
+		parseM := func(tag string) int64 {
+			i := strings.Index(sw, tag+" = ")
+			if i < 0 {
+				return 0
+			}
+			s := sw[i+len(tag)+3:]
+			j := 0
+			for j < len(s) && (s[j] == '.' || (s[j] >= '0' && s[j] <= '9')) {
+				j++
+			}
+			v, _ := strconv.ParseFloat(s[:j], 64)
+			mult := float64(1 << 20)
+			if j < len(s) {
+				switch s[j] {
+				case 'K':
+					mult = 1 << 10
+				case 'G':
+					mult = 1 << 30
+				}
+			}
+			return int64(v * mult)
+		}
+		out["swap"] = map[string]int64{"used": parseM("used"), "total": parseM("total")}
+	}
+	// cpu: summed per-process %cpu (over cores*100); collector normalizes
+	if pb, err := exec.Command("ps", "-A", "-o", "%cpu").Output(); err == nil {
+		total := 0.0
+		for _, ln := range strings.Split(string(pb), "\n")[1:] {
+			if v, err := strconv.ParseFloat(strings.TrimSpace(ln), 64); err == nil {
+				total += v
+			}
+		}
+		out["cpu"] = total / float64(runtime.NumCPU()) // % of all cores
+	}
+	// net: cumulative bytes across physical interfaces (netstat -ibn)
+	if nb, err := exec.Command("netstat", "-ibn").Output(); err == nil {
+		var rx, tx int64
+		seen := map[string]bool{}
+		for _, ln := range strings.Split(string(nb), "\n")[1:] {
+			f := strings.Fields(ln)
+			if len(f) < 10 || seen[f[0]] || strings.HasPrefix(f[0], "lo") {
+				continue
+			}
+			// only rows with a Link# address column carry interface totals
+			if !strings.HasPrefix(f[2], "<Link#") {
+				continue
+			}
+			seen[f[0]] = true
+			if v, err := strconv.ParseInt(f[len(f)-5], 10, 64); err == nil {
+				rx += v
+			}
+			if v, err := strconv.ParseInt(f[len(f)-2], 10, 64); err == nil {
+				tx += v
+			}
+		}
+		out["net"] = map[string]int64{"rx": rx, "tx": tx}
+	}
+	// battery: pmset -g batt → "85%; charging"
+	if bb, err := exec.Command("pmset", "-g", "batt").Output(); err == nil {
+		s := string(bb)
+		if i := strings.Index(s, "%"); i > 0 {
+			j := i - 1
+			for j >= 0 && s[j] >= '0' && s[j] <= '9' {
+				j--
+			}
+			if pct, err := strconv.Atoi(s[j+1 : i]); err == nil {
+				out["battery"] = map[string]any{"pct": pct, "charging": strings.Contains(s, "AC Power")}
+			}
+		}
+	}
+	// disks: one row per root's filesystem
+	disks := []map[string]any{}
+	seen := map[string]bool{}
+	for _, root := range a.cfg.Roots {
+		var st syscall.Statfs_t
+		if syscall.Statfs(root, &st) != nil {
+			continue
+		}
+		total := int64(st.Blocks) * int64(st.Bsize)
+		free := int64(st.Bavail) * int64(st.Bsize)
+		key := fmt.Sprintf("%d/%d", total, free)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		disks = append(disks, map[string]any{"mount": root, "used": total - free, "total": total})
+	}
+	out["disks"] = disks
+	// top processes on demand (the one fork-heavy probe)
+	if r.URL.Query().Get("top") == "1" {
+		if tb, err := exec.Command("ps", "-Aceo", "pid,pcpu,pmem,rss,comm", "-r").Output(); err == nil {
+			lines := strings.Split(string(tb), "\n")
+			procs := []map[string]any{}
+			for _, ln := range lines[1:] {
+				f := strings.Fields(ln)
+				if len(f) < 5 {
+					continue
+				}
+				cpu, _ := strconv.ParseFloat(f[1], 64)
+				memPct, _ := strconv.ParseFloat(f[2], 64)
+				rss, _ := strconv.ParseInt(f[3], 10, 64)
+				procs = append(procs, map[string]any{
+					"pid": f[0], "cpu": cpu, "memPct": memPct, "rss": rss * 1024,
+					"cmd": strings.Join(f[4:], " "),
+				})
+				if len(procs) >= 12 {
+					break
+				}
+			}
+			out["procs"] = procs
+		}
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 func defaultConfigPath() string {
