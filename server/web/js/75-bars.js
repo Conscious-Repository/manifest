@@ -86,6 +86,8 @@ if (els.cmdbarInput) {
 if (els.cmdbarBackdrop) els.cmdbarBackdrop.addEventListener("click", closeCmdbar);
 window.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
+  else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); toggleQuickChat(); }
+  else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") { e.preventDefault(); toggleSticky(); }
   else if ((e.metaKey || e.ctrlKey) && e.key === "/") { e.preventDefault(); toggleRawOverlay(); }
   else if (e.key === "Escape" && rawOpen) { closeRawOverlay(); }
   else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }

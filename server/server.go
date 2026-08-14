@@ -56,6 +56,8 @@ type Server struct {
 	// deepseekStatePath: the last explicit portal test's result (dataDir,
 	// per-machine) — the DegradedPortal feed signal reads it (Phase 7).
 	deepseekStatePath string
+	// stickyPath: the ⌘I floating post-it file (<dataDir>/sticky.md). Nilable.
+	stickyPath string
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -238,6 +240,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/chat/sessions/{id}/rename", s.handleChatRename)
 	mux.HandleFunc("DELETE /api/chat/sessions/{id}", s.handleChatDelete)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/events", s.handleChatEvents)
+
+	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
+	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)
+	mux.HandleFunc("PUT /api/sticky", s.handleStickyPut)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
 	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)

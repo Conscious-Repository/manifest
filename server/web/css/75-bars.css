@@ -57,3 +57,20 @@
 .rawbar-fixpoint { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
 .rawbar-save { background: var(--accent); border: 1px solid var(--accent); color: #fff; font-family: var(--mono); font-size: 11.5px; border-radius: var(--radius-lg); padding: 4px 14px; cursor: pointer; }
 .rawbar-save:disabled { opacity: 0.5; cursor: default; }
+
+/* floating windows — ⌘J quick-chat · ⌘I sticky (cmd-ctr import P4) */
+.float-win { position: fixed; z-index: 340; width: 400px; height: 380px; min-width: 280px; min-height: 220px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); resize: both; overflow: hidden; }
+.float-head { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
+.float-title { font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); flex: 1; }
+.float-close { border: 0; background: none; color: var(--base-40); cursor: pointer; font-size: 12px; }
+.float-close:hover { color: var(--base-100); }
+.float-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.float-sticky-area { flex: 1; resize: none; border: 0; outline: none; background: none; color: var(--base-100); font: inherit; font-size: 13px; line-height: 1.5; padding: 12px; }
+.float-chat-log { flex: 1; overflow-y: auto; padding: 10px 12px; }
+.float-chat-user { margin: 6px 0 6px auto; max-width: 85%; width: fit-content; background: var(--hover); border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 9px; font-size: 12.5px; white-space: pre-wrap; }
+.float-chat-user.queued { opacity: 0.55; }
+.float-chat-say { margin: 6px 0; font-size: 12.5px; line-height: 1.5; }
+.float-chat-say .md-p { margin: 4px 0; }
+.float-chat-row { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line); }
+.float-chat-input { flex: 1; resize: none; font: inherit; font-size: 12.5px; color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; }
+.float-chat-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }

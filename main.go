@@ -272,6 +272,7 @@ func main() {
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
+	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	// Gmail read-only OAuth — manifest mints/validates the token the headless
 	// excalibur engine reads for the ea-coordinator waiting-on digest, and
 	// raises a FEED reconnect nudge when the sign-in expires.
