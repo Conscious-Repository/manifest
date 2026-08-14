@@ -275,6 +275,7 @@ func main() {
 	srv.UseTodos(todosStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
+	srv.UseSTT(cfg.LabSttUrl, cfg.LabSttModel)             // mic dictation → lab granite-speech (P6)
 	// Gmail read-only OAuth — manifest mints/validates the token the headless
 	// excalibur engine reads for the ea-coordinator waiting-on digest, and
 	// raises a FEED reconnect nudge when the sign-in expires.

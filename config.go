@@ -74,6 +74,12 @@ type Config struct {
 	// XPostsFile is the vault-relative X-posts file the Content Studio appends
 	// approved posts to (a `# queue`/`# posted` bullet list). Default "x posts.md".
 	XPostsFile string `json:"xPostsFile"`
+	// LabSttUrl is the self-hosted speech-to-text endpoint (OpenAI-compatible
+	// POST /v1/audio/transcriptions on the lab; reachable from metis only).
+	// Empty disables the mic buttons' dictation. LabSttModel names the model
+	// the service expects (default granite-speech-4.1-2b).
+	LabSttUrl   string `json:"labSttUrl"`
+	LabSttModel string `json:"labSttModel"`
 	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
 	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
 	// src/data/deals.json from the vault's source sidecars for owner review
@@ -181,6 +187,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if cfg.XPostsFile == "" {
 		cfg.XPostsFile = "x posts.md"
+	}
+	if cfg.LabSttModel == "" {
+		cfg.LabSttModel = "granite-speech-4.1-2b"
 	}
 	if cfg.TodosFileName == "" {
 		cfg.TodosFileName = "to do.md"

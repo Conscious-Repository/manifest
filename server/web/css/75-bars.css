@@ -74,3 +74,9 @@
 .float-chat-row { display: flex; gap: 6px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line); }
 .float-chat-input { flex: 1; resize: none; font: inherit; font-size: 12.5px; color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; }
 .float-chat-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }
+
+/* mic dictation button (cmd-ctr import P6) */
+.mic-btn { border: 1px solid var(--line); background: none; color: var(--base-40); border-radius: var(--radius); padding: 5px 9px; cursor: pointer; font-size: 13px; }
+.mic-btn:hover { color: var(--base-100); border-color: var(--base-40); }
+.mic-btn.recording { color: #d33; border-color: #d33; animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 50% { opacity: 0.45; } }

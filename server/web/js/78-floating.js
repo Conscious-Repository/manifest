@@ -110,7 +110,14 @@ function toggleQuickChat() {
     ta.rows = 1;
     ta.placeholder = "ask concierge…";
     const full = el("button", "sprt-quiet", "open full ↗");
-    row.append(ta, full);
+    row.append(ta);
+    if (typeof micButton === "function") {
+      row.append(micButton((text) => {
+        ta.value = (ta.value ? ta.value + " " : "") + text;
+        ta.focus();
+      }));
+    }
+    row.append(full);
     body.append(log, row);
 
     let sid = "";

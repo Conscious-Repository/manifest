@@ -62,6 +62,9 @@ type Server struct {
 	stickyPath string
 	// capture: the tray (cmd-ctr Stage — dataDir cards + media). Nilable.
 	capture *capture.Store
+	// sttURL/sttModel: the lab transcription endpoint the mic buttons proxy to.
+	sttURL   string
+	sttModel string
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -259,6 +262,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/capture/{id}/status", s.handleCaptureStatus)
 	mux.HandleFunc("POST /api/capture/{id}/dismiss", s.handleCaptureDismiss)
 	mux.HandleFunc("GET /api/capture/media/{name}", s.handleCaptureMedia)
+
+	// STT — the mic buttons' dictation proxy (lab granite-speech; P6).
+	mux.HandleFunc("POST /api/stt", s.handleSTT)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
 	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)
