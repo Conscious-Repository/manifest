@@ -26,10 +26,26 @@ function showTerminal() {
   if (!TERM_STAGES.some((s) => s.stage === termStage)) termStage = "term";
   renderTermTabbar();
   termApplyStage();
+  termFitShell();
   loadTermSessions();
-  if (!termPollTimer) termPollTimer = setInterval(() => {
-    if (els.terminalView && !els.terminalView.hidden && !document.hidden) loadTermSessions(true);
-  }, 5000);
+  if (!termPollTimer) {
+    termPollTimer = setInterval(() => {
+      if (els.terminalView && !els.terminalView.hidden && !document.hidden) loadTermSessions(true);
+    }, 5000);
+    window.addEventListener("resize", termFitShell);
+  }
+}
+
+// termFitShell sizes the cockpit to EXACTLY the space below its top edge —
+// a fixed vh-calc breaks whenever the chrome above grows (zoom, banners,
+// taller crumbs) and the last terminal row falls off-screen.
+function termFitShell() {
+  const shell = document.querySelector("#terminalView .term-shell");
+  if (!shell || els.terminalView.hidden) return;
+  if (window.innerWidth <= 860) { shell.style.height = ""; return; } // mobile stacks
+  const top = shell.getBoundingClientRect().top;
+  shell.style.height = Math.max(320, window.innerHeight - top - 14) + "px";
+  if (termInst) { try { termInst.fit.fit(); sendTermResize(); } catch (e) {} }
 }
 
 function renderTermTabbar() {

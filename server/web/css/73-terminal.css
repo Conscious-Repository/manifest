@@ -2,7 +2,10 @@
    a generous 284px rail, ~40px control heights, soft rounded fills over
    hairlines, real gaps — recolored with manifest's base ramp + accent.
    The terminal screen stays the one deliberate dark island. */
-.term-shell { display: flex; gap: 22px; height: calc(100vh - 150px); padding: 6px 0 0 12px; }
+/* height is set precisely by termFitShell() (top offset varies with chrome/
+   zoom/banners); the calc is only the pre-JS fallback. 18px right gutter =
+   cmd-ctr's breathing room off the window edge. */
+.term-shell { display: flex; gap: 22px; height: calc(100vh - 150px); padding: 6px 18px 0 12px; }
 
 /* --- rail ------------------------------------------------------------- */
 .term-rail { width: 284px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding-right: 20px; min-height: 0; }
@@ -132,7 +135,7 @@
 #termStageFiles .files-rows { flex: 1; min-height: 0; overflow-y: auto; }
 
 @media (max-width: 860px) {
-  .term-shell { flex-direction: column; height: auto; padding-left: 0; }
+  .term-shell { flex-direction: column; height: auto; padding-left: 0; padding-right: 0; }
   .term-rail { width: auto; border-right: 0; padding-right: 0; flex-direction: column-reverse; }
   .term-rail-head { display: none; }
   .term-tabbar { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 10px; margin: 0 0 14px; }
