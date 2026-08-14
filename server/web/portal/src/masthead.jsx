@@ -8,7 +8,7 @@ function Masthead({ meta }) {
     <div className="masthead">
       <div>
         <div className="masthead-wordmark">
-          <img className="masthead-logo" src="/investor/assets/logo-wordmark-dark.png" alt="AION" />
+          <img className="masthead-logo" src="./assets/logo-wordmark-dark.png" alt="AION" />
         </div>
       </div>
       <div className="masthead-meta">
