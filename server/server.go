@@ -72,6 +72,8 @@ type Server struct {
 	terminal *termCfg
 	// devices: the terminal cockpit's ssh fleet (launcher targets). Nilable.
 	devices *devCfg
+	// activity: the cockpit's fleet vitals collector (STATS stage). Nilable.
+	activity *actCfg
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -272,6 +274,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/terminal/devices", s.handleTermDevices)
 	mux.HandleFunc("PUT /api/terminal/device/{name}", s.handleTermDeviceUpdate)
 	mux.HandleFunc("POST /api/terminal/device/{name}/probe", s.handleTermDeviceProbe)
+	mux.HandleFunc("GET /api/activity", s.handleActivity)
+	mux.HandleFunc("GET /api/activity/history", s.handleActivityHistory)
+	mux.HandleFunc("GET /api/activity/top", s.handleActivityTop)
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)

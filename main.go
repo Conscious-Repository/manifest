@@ -319,6 +319,8 @@ func main() {
 		}
 		srv.UseFiles(orDefault(host, "local"), cfg.FilesRoots, agents, filepath.Join(cfg.DataDir, "agent_master"))
 	}
+	// ACTIVITY: the cockpit's fleet vitals collector (needs devices+files wired)
+	srv.UseActivity(filepath.Join(cfg.DataDir, "activity.json"))
 	// Gmail read-only OAuth — manifest mints/validates the token the headless
 	// excalibur engine reads for the ea-coordinator waiting-on digest, and
 	// raises a FEED reconnect nudge when the sign-in expires.

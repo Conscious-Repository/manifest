@@ -1,0 +1,33 @@
+/* ACTIVITY — fleet vitals cards (cockpit STATS stage, token-native) */
+.act-head { display: flex; align-items: center; gap: 12px; padding-bottom: 10px; flex: none; }
+.act-reach { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.act-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; align-content: start; overflow-y: auto; flex: 1; min-height: 0; padding-bottom: 12px; }
+.act-card { border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 12px 14px; cursor: pointer; }
+.act-card:hover { background: var(--hover); }
+.act-card.off { opacity: 0.55; }
+.act-card.open { background: var(--base-05); }
+.act-card-head { display: flex; align-items: baseline; gap: 8px; }
+.act-name { font-size: 14px; font-weight: 600; color: var(--base-100); }
+.act-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+.act-chip { font-family: var(--mono); font-size: 10px; color: var(--base-50); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px 5px; }
+.act-chip.over { color: var(--over); border-color: var(--over); }
+.act-mets { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.act-metric { display: flex; align-items: center; gap: 8px; }
+.act-met-label { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.6px; color: var(--base-40); width: 34px; flex: none; }
+.act-spark { flex: 1; height: 26px; min-width: 0; }
+.act-spark-base { stroke: var(--base-25); stroke-width: 1; }
+.act-spark-line { fill: none; stroke: var(--accent); stroke-width: 1.25; stroke-linejoin: round; }
+.act-spark-dot { fill: var(--accent); }
+.act-met-val { font-family: var(--mono); font-size: 10.5px; color: var(--base-70); flex: none; min-width: 82px; text-align: right; font-variant-numeric: tabular-nums; }
+.act-procs { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; cursor: default; }
+.act-proc-tbl { display: flex; flex-direction: column; gap: 1px; }
+.act-proc-row { display: flex; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--base-70); padding: 1.5px 0; }
+.act-proc-row.head { color: var(--base-40); font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; }
+.act-proc-pro { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-proc-cpu { width: 54px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+.act-proc-mem { width: 64px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+
+@media (max-width: 860px) {
+  .act-grid { grid-template-columns: 1fr; }
+}
