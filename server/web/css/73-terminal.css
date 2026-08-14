@@ -119,8 +119,11 @@
 /* --- stage ------------------------------------------------------------- */
 .term-stage { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; padding-top: 6px; }
 .term-stage-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.term-screen { flex: 1; min-height: 0; border-radius: 8px; background: #0e1116; overflow: hidden; }
-.term-mount { width: 100%; height: 100%; padding: 12px; }
+/* padding lives on .term-screen, NOT the mount — xterm's FitAddon measures
+   the mount's client height (padding included), so mount padding makes the
+   row grid overflow and clips the last line. */
+.term-screen { flex: 1; min-height: 0; border-radius: 8px; background: #0e1116; overflow: hidden; padding: 10px 8px 10px 12px; }
+.term-mount { width: 100%; height: 100%; }
 .term-blank { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
 .term-blank-line { font-family: var(--mono); font-size: 12.5px; color: #4a5563; }
 .term-blank-quick { display: flex; gap: 10px; }
