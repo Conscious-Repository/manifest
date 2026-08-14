@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/30-calendar.css" />
   <link rel="stylesheet" href="css/40-spirits.css" />
   <link rel="stylesheet" href="css/45-feed.css" />
+  <link rel="stylesheet" href="css/48-chat.css" />
   <link rel="stylesheet" href="css/50-studio.css" />
   <link rel="stylesheet" href="css/55-approvals.css" />
   <link rel="stylesheet" href="css/60-contacts.css" />
@@ -195,6 +196,19 @@
        ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
        SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
        pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
+  <!-- CHAT (cmd-ctr import P2): conversations with chattable spirits. The
+       ENGINE writes the session files; this surface reads them + spools
+       messages. Session rail · transcript · composer, all built in 48-chat.js. -->
+  <section class="chat-page" id="chatView" hidden>
+    <div class="chat-shell">
+      <aside class="chat-rail" id="chatRail"></aside>
+      <div class="chat-main">
+        <div class="chat-transcript" id="chatTranscript"></div>
+        <div class="chat-composer" id="chatComposer"></div>
+      </div>
+    </div>
+  </section>
+
   <section class="spirits-page" id="spiritsView" hidden>
     <span id="spiritsStatus" hidden></span><!-- status text feeds the crumb meta -->
     <div class="agent-head">
@@ -443,6 +457,7 @@
   <script src="js/30-calendar.js"></script>
   <script src="js/40-spirits.js"></script>
   <script src="js/45-feed.js"></script>
+  <script src="js/48-chat.js"></script>
   <script src="js/50-studio.js"></script>
   <script src="js/55-approvals.js"></script>
   <script src="js/58-rituals.js"></script>

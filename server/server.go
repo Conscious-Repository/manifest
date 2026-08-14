@@ -226,6 +226,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/aion", s.handleSpiritsApprovalAion)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
+
+	// Chat with spirits (cmd-ctr import P2): sessions are harness files the
+	// ENGINE writes; these routes read them + spool user messages. The events
+	// route is the bridge/SSE seam (resumable via ?after=seq).
+	mux.HandleFunc("GET /api/chat/spirits", s.handleChatSpirits)
+	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
+	mux.HandleFunc("POST /api/chat/sessions", s.handleChatSessionCreate)
+	mux.HandleFunc("GET /api/chat/sessions/{id}", s.handleChatSession)
+	mux.HandleFunc("POST /api/chat/sessions/{id}/messages", s.handleChatMessage)
+	mux.HandleFunc("POST /api/chat/sessions/{id}/rename", s.handleChatRename)
+	mux.HandleFunc("DELETE /api/chat/sessions/{id}", s.handleChatDelete)
+	mux.HandleFunc("GET /api/chat/sessions/{id}/events", s.handleChatEvents)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
 	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)
