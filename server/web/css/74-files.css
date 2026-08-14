@@ -1,0 +1,13 @@
+/* FILES — fleet browser (cmd-ctr import P8) */
+.files-rows { margin-top: 12px; }
+.files-pathbar { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.files-path { font-size: 12px; color: var(--base-40); overflow: hidden; text-overflow: ellipsis; }
+.files-row { display: flex; align-items: baseline; gap: 10px; padding: 5px 8px; border-radius: var(--radius); cursor: pointer; }
+.files-row:hover { background: var(--hover); }
+.files-glyph { color: var(--base-30); width: 12px; }
+.files-name { font-size: 13px; color: var(--base-70); }
+.files-name.dir { color: var(--base-100); font-weight: 500; }
+.files-size { margin-left: auto; font-size: 11px; color: var(--base-30); font-variant-numeric: tabular-nums; }
+.files-preview { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 12px; }
+.files-preview-img { max-width: 100%; max-height: 480px; object-fit: contain; }
+.files-preview-text { max-height: 420px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }

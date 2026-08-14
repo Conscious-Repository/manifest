@@ -22,6 +22,7 @@
   <link rel="stylesheet" href="css/45-feed.css" />
   <link rel="stylesheet" href="css/48-chat.css" />
   <link rel="stylesheet" href="css/76-capture.css" />
+  <link rel="stylesheet" href="css/74-files.css" />
   <link rel="stylesheet" href="css/50-studio.css" />
   <link rel="stylesheet" href="css/55-approvals.css" />
   <link rel="stylesheet" href="css/60-contacts.css" />
@@ -203,6 +204,18 @@
        ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
        SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
        pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
+  <!-- FILES (cmd-ctr import P8): fleet file browser — local roots + tailnet
+       agents, ticket-authed. Read/preview/upload; no delete by design. -->
+  <section class="goals-page" id="filesView" hidden>
+    <div class="areas-col">
+      <div class="agent-head">
+        <span class="agent-title">FILES</span>
+        <div class="agent-actions"><span id="filesHosts" class="feed-filters"></span></div>
+      </div>
+      <div id="filesRows" class="files-rows"></div>
+    </div>
+  </section>
+
   <!-- CAPTURE (cmd-ctr import P5): the tray — shared links, screenshots, and
        quick notes land as cards; the owner triages each (→ todo / → chat /
        keep / bin). dataDir until promoted; share_target posts here. -->
@@ -484,6 +497,7 @@
   <script src="js/60-contacts.js"></script>
   <script src="js/65-reading.js"></script>
   <script src="js/70-note.js"></script>
+  <script src="js/74-files.js"></script>
   <script src="js/75-bars.js"></script>
   <script src="js/76-capture.js"></script>
   <script src="js/78-floating.js"></script>

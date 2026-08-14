@@ -11,6 +11,12 @@ import (
 // Config controls where the vault is and how the schedule is laid out. It is
 // loaded from a JSON file (see config.example.json); any field left empty falls
 // back to a sensible default.
+// FilesAgent is one remote device running cmd/manifest-agent.
+type FilesAgent struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 type Config struct {
 	// VaultPath is the absolute path to your Obsidian vault (the whole vault —
 	// notes are found by convention, not by a single folder).
@@ -80,6 +86,13 @@ type Config struct {
 	// the service expects (default granite-speech-4.1-2b).
 	LabSttUrl   string `json:"labSttUrl"`
 	LabSttModel string `json:"labSttModel"`
+	// FILES fleet browser (cmd-ctr FAST-agent pattern): FilesRoots are the
+	// absolute paths of THIS machine's filesystem the FILES tab may browse
+	// (empty = local browsing off); FilesAgents are remote per-device agents
+	// (cmd/manifest-agent) reachable over the tailnet. The agent-auth master
+	// secret lives at <dataDir>/agent_master (auto-created 0600).
+	FilesRoots  []string     `json:"filesRoots"`
+	FilesAgents []FilesAgent `json:"filesAgents"`
 	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
 	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
 	// src/data/deals.json from the vault's source sidecars for owner review

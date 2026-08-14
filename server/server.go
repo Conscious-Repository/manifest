@@ -65,6 +65,8 @@ type Server struct {
 	// sttURL/sttModel: the lab transcription endpoint the mic buttons proxy to.
 	sttURL   string
 	sttModel string
+	// files: the FILES fleet browser (local roots + per-device agents). Nilable.
+	files *filesCfg
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -265,6 +267,12 @@ func (s *Server) Handler() http.Handler {
 
 	// STT — the mic buttons' dictation proxy (lab granite-speech; P6).
 	mux.HandleFunc("POST /api/stt", s.handleSTT)
+
+	// FILES — fleet file browser (local roots + ticket-authed agents; P8).
+	mux.HandleFunc("GET /api/files/hosts", s.handleFilesHosts)
+	mux.HandleFunc("GET /api/files/list", s.handleFilesList)
+	mux.HandleFunc("GET /api/files/read", s.handleFilesRead)
+	mux.HandleFunc("POST /api/files/upload", s.handleFilesUpload)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
 	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)

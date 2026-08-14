@@ -46,6 +46,7 @@ func main() {
 	vaultFlag := flag.String("vault", "", "override vault path from config")
 	port := flag.Int("port", 0, "override port from config")
 	portalPort := flag.Int("portal-port", 0, "override the standalone AION portal port from config")
+	deriveAgentKey := flag.String("derive-agent-key", "", "print the FILES agent key for a host (run on the box holding the master) and exit")
 	flag.Parse()
 
 	cfg, err := LoadConfig(*configPath)
@@ -60,6 +61,16 @@ func main() {
 	}
 	if *portalPort != 0 {
 		cfg.PortalPort = *portalPort
+	}
+	if *deriveAgentKey != "" {
+		// mint the per-host FILES agent key from this box's master (P8):
+		// installed once on the device; the master never ships.
+		key, err := server.DeriveAgentKeyFromMaster(filepath.Join(cfg.DataDir, "agent_master"), *deriveAgentKey)
+		if err != nil {
+			log.Fatalf("derive agent key: %v", err)
+		}
+		fmt.Println(key)
+		return
 	}
 	if cfg.VaultPath == "" {
 		fmt.Fprintln(os.Stderr, "error: vaultPath is not set. Edit config.json or pass -vault /path/to/vault")
@@ -276,6 +287,19 @@ func main() {
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
 	srv.UseSTT(cfg.LabSttUrl, cfg.LabSttModel)             // mic dictation → lab granite-speech (P6)
+	// FILES fleet browser (P8): local roots + tailnet agents; the agent-auth
+	// master lives in dataDir and never leaves this box.
+	{
+		agents := map[string]string{}
+		for _, a := range cfg.FilesAgents {
+			agents[a.Name] = a.URL
+		}
+		host, _ := os.Hostname()
+		if i := strings.IndexByte(host, '.'); i > 0 {
+			host = host[:i]
+		}
+		srv.UseFiles(orDefault(host, "local"), cfg.FilesRoots, agents, filepath.Join(cfg.DataDir, "agent_master"))
+	}
 	// Gmail read-only OAuth — manifest mints/validates the token the headless
 	// excalibur engine reads for the ea-coordinator waiting-on digest, and
 	// raises a FEED reconnect nudge when the sign-in expires.
