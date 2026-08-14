@@ -179,10 +179,12 @@ function renderTermLauncher(enabled) {
   if (!enabled) return;
   host.dataset.built = "1";
 
-  // device slot — re-rendered whenever fleet data lands
+  // device slot — paint the self row instantly, refine when fleet data lands
+  // (the first /devices call cold-probes ssh boxes and can take seconds)
   const devSlot = el("div", "term-dev-slot");
   devSlot.id = "termDevSlot";
   host.append(devSlot);
+  renderTermDevices();
   loadTermDevices();
 
   // kind seg — one connected segmented control (cmd-ctr's form)
