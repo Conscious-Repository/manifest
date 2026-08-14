@@ -39,9 +39,15 @@
 .term-hist-search::placeholder { color: var(--base-30); }
 .term-hist-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-lg); cursor: pointer; }
 .term-hist-row:hover { background: var(--base-05); }
+.term-hist-resume { color: var(--base-40); font-size: 12px; flex: none; margin: 0 -3px; }
 .term-hist-when { font-family: var(--mono); font-size: 11px; color: var(--base-40); flex: none; font-variant-numeric: tabular-nums; }
-.term-hist-acts { display: flex; flex: none; }
+.term-hist-acts { display: flex; gap: 2px; flex: none; }
+.term-hist-acts .term-x { font-size: 12px; padding: 3px 4px; }
+.term-hist-acts .term-x.pinned { opacity: 1; color: var(--accent); }
 .term-hist-row.pinned .term-sess-name { font-weight: 600; }
+#termHistLabel { display: flex; align-items: center; }
+.term-hist-tog { margin-left: auto; border: 0; background: none; color: var(--base-40); cursor: pointer; font-size: 13px; padding: 0 2px; line-height: 1; }
+.term-hist-tog:hover { color: var(--base-100); }
 
 /* --- launcher ---------------------------------------------------------- */
 /* device selector: a select-shaped field expanding into a soft list panel */

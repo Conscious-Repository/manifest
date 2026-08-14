@@ -69,13 +69,28 @@ function termApplyStage() {
   }
 }
 
+let termLastPayload = "";
+
+// termRailBusy: true while the user is mid-interaction in the rail (typing a
+// search / rename) — the quiet poll must NOT rebuild the DOM under them.
+function termRailBusy() {
+  const a = document.activeElement;
+  return !!(a && (a.classList.contains("term-rename") || a.classList.contains("term-hist-search") ||
+    a.classList.contains("term-cwd")) );
+}
+
 async function loadTermSessions(quiet) {
   let d = { sessions: [], enabled: true };
   try { d = await (await fetch("/api/terminal/sessions")).json(); } catch (e) { if (quiet) return; }
   termSessions = d.sessions || [];
-  renderTermSessions(d.enabled !== false);
-  renderTermLauncher(d.enabled !== false);
-  renderTermHistory();
+  const payload = JSON.stringify(termSessions) + "|" + termOpenId;
+  const changed = payload !== termLastPayload;
+  if (!quiet || (changed && !termRailBusy())) {
+    termLastPayload = payload;
+    renderTermSessions(d.enabled !== false);
+    renderTermLauncher(d.enabled !== false);
+    renderTermHistory();
+  }
   if (quiet) return;
   if (!termOpenId) {
     const first = termSessions.find((s) => s.live);
@@ -440,19 +455,47 @@ async function termCreate(kind, resume) {
 
 // --- rail: HISTORY (registry rows; pinned first — smart reopen) ---
 
+// termRelTime — cmd-ctr's short relative stamp (2m · 4h · 3d).
+function termRelTime(iso) {
+  if (!iso) return "";
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 90) return "now";
+  if (s < 3600) return Math.floor(s / 60) + "m";
+  if (s < 172800) return Math.floor(s / 3600) + "h";
+  return Math.floor(s / 86400) + "d";
+}
+
+let termHistOpen = true;
+try { termHistOpen = localStorage.getItem("manifest.termHistOpen") !== "0"; } catch (e) {}
+
 function renderTermHistory() {
   const host = document.getElementById("termHistoryRows");
   if (!host) return;
   host.innerHTML = "";
+  // collapse toggle lives in the section label (cmd-ctr's − / +)
+  const label = document.getElementById("termHistLabel");
+  if (label && !label.dataset.built) {
+    label.dataset.built = "1";
+    const tog = el("button", "term-hist-tog", termHistOpen ? "−" : "＋");
+    tog.onclick = () => {
+      termHistOpen = !termHistOpen;
+      try { localStorage.setItem("manifest.termHistOpen", termHistOpen ? "1" : "0"); } catch (e) {}
+      tog.textContent = termHistOpen ? "−" : "＋";
+      renderTermHistory();
+    };
+    label.append(tog);
+  }
   let search = host.parentElement.querySelector(".term-hist-search");
+  if (!termHistOpen) { if (search) search.hidden = true; return; }
   if (!search) {
     search = document.createElement("input");
     search.className = "term-hist-search";
-    search.placeholder = "search…";
+    search.placeholder = "search sessions…";
     search.spellcheck = false;
     search.oninput = () => { termHistQuery = search.value.trim().toLowerCase(); renderTermHistory(); };
     host.before(search);
   }
+  search.hidden = false;
   const liveIds = new Set(termLiveList().map((s) => s.id));
   let rows = termSessions.filter((s) => !liveIds.has(s.id));
   if (termHistQuery) {
@@ -462,14 +505,16 @@ function renderTermHistory() {
   if (!rows.length) { host.append(el("div", "term-none", termHistQuery ? "no matches" : "nothing yet")); return; }
   rows.slice(0, 30).forEach((se) => {
     const row = el("div", "term-hist-row" + (se.pinned ? " pinned" : ""));
+    const resumable = se.resumeId && se.kind !== "shell";
     row.append(el("span", "term-dot k-" + se.kind));
+    if (resumable) row.append(el("span", "term-hist-resume", "⟳"));
     const name = el("span", "term-sess-name", se.name || se.kind);
-    name.title = (se.cwd || "") + " · " + (se.lastUsed || "");
+    name.ondblclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
     row.append(name);
-    row.append(el("span", "term-hist-when", fmtWhen(se.lastUsed)));
+    row.append(el("span", "term-hist-when", (se.device || "metis") + " · " + termRelTime(se.lastUsed)));
     const acts = el("span", "term-hist-acts");
-    const pin = el("button", "term-x", se.pinned ? "★" : "☆");
-    pin.title = se.pinned ? "Unpin" : "Pin (survives cleanup)";
+    const pin = el("button", "term-x" + (se.pinned ? " pinned" : ""), se.pinned ? "★" : "☆");
+    pin.title = se.pinned ? "Unpin" : "Pin (floats to top, survives cleanup)";
     pin.onclick = async (e) => {
       e.stopPropagation();
       try {
@@ -484,7 +529,7 @@ function renderTermHistory() {
     ren.title = "Rename";
     ren.onclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
     const x = el("button", "term-x", "✕");
-    x.title = "Forget (leaves nothing running)";
+    x.title = "Forget this session (leaves nothing running)";
     x.onclick = async (e) => {
       e.stopPropagation();
       try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id), { method: "DELETE" }); } catch (e2) {}
@@ -492,9 +537,16 @@ function renderTermHistory() {
     };
     acts.append(pin, ren, x);
     row.append(acts);
-    // smart reopen: attaching re-runs launchCmd — claude/codex resume via their
-    // minted id, a dead shell simply starts fresh in the same tmux name/cwd.
-    row.onclick = () => { termOpenId = se.id; termSetStage("term"); loadTermSessions(); };
+    // reopen NOW: attach re-runs launchCmd inside the same tmux name —
+    // claude/codex resume their exact conversation, a shell starts fresh there
+    row.title = (se.device || "metis") + ":" + (se.cwd || "~") +
+      (resumable ? " — resumes this exact conversation — no picker" : " — reopens a shell here");
+    row.onclick = () => {
+      termOpenId = se.id;
+      termSetStage("term");
+      attachTerm(se.id);
+      loadTermSessions(true);
+    };
     host.append(row);
   });
 }
