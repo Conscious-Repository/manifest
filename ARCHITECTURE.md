@@ -17,7 +17,9 @@ signals for a new area of life) should fall, not rise.
 
 * **One user, one writer — forever.** No auth, no roles, no concurrent
   human writers. Every design may assume a single human's intent. (Decided
-  2026-07-26.)
+  2026-07-26. Amended 2026-08-14 — §12: the AION team portal is the one
+  bounded exception; the vault, the records, and every other surface keep
+  this invariant untouched.)
 * **Personal system first; publishable artifact eventually.** Code and docs
   are written so another person could someday run it — no hardcoded
   personal paths outside config — but product polish is never prioritized
@@ -187,3 +189,20 @@ without touching the library first. No frameworks; vanilla stays.
 This file changes only by deliberate owner decision, recorded with a date.
 Passes that discover a conflict between code and this file fix the code or
 propose an amendment — never silently diverge.
+
+**2026-08-14 — the AION team portal: an authorized many-writers class.**
+Owner decision (portal move, 2026-08-13/14): the team portal served on its
+own listener (`:7778`, portal.aion.bio) admits a second class of writers —
+any Google-verified `@aion.bio` account (wildcard by design, no manual
+allow-list) — for **portal team state only**: comments on items, field
+overrides on items assigned to them (assignee lock, no admin override
+lane), their own `team/`-tagged adds, and proposals for others (decided by
+the portal owner or the target). The boundary is tier-shaped, not
+role-shaped: team writes land exclusively in the shared derived store
+(`/shared/apps/aion-portal` — append-only `activity.log` JSONL +
+`items.ext.json`, git-trailable), never the vault, never the system zone,
+never the owner's records. Manifest reads that store back as FEED
+**notices** (§5's existing kind — no taxonomy change). The vault remains
+single-writer; §1 holds everywhere except this named surface. Auth is
+Google OAuth (web client in the secrets tier) with signed cookie sessions;
+open read stays.

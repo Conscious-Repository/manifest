@@ -440,6 +440,11 @@ func (s *Server) Handler() http.Handler {
 	// PWA: the webmanifest must serve with its registered type (Linux metis
 	// has no .webmanifest mapping by default → text/plain → Chrome ignores it).
 	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+	// The team portal ships on its own listener (PortalHandler, cfg.PortalPort);
+	// the recursive web embed would otherwise expose the same tree here through
+	// the catch-all. Shadow it so the private cockpit serves no team surface.
+	mux.HandleFunc("/portal", http.NotFound)
+	mux.HandleFunc("/portal/", http.NotFound)
 	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
 	return mux
 }

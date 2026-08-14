@@ -697,3 +697,93 @@ a:hover { text-decoration-color: var(--fg-1); }
   .sp-h { flex-direction: column; gap: 1px; }
   .sp-h-k { width: auto; }
 }
+
+/* ═══════════════ TEAM LAYER (portal move Phase 2–3) ═══════════════
+   Sign-in chip, item drawer controls, add/propose forms, proposals.
+   Everything rides the shared tokens; inputs mirror .gate-form. */
+
+.auth-chip { font-size: var(--text-sm); color: var(--fg-6); white-space: nowrap; }
+.auth-who  { color: var(--fg-4); }
+.auth-link {
+  color: var(--fg-5); cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--fg-9);
+  text-underline-offset: 3px;
+}
+.auth-link:hover { color: var(--fg-1); text-decoration-color: var(--fg-1); }
+
+.team-chip {
+  margin-left: 8px; padding: 0 6px 1px;
+  font-size: var(--text-xs); letter-spacing: 1px;
+  color: var(--fg-5); border: 1px solid var(--rule);
+  white-space: nowrap;
+}
+.team-openable { cursor: pointer; }
+.team-openable:hover { background: var(--bg-raised); }
+.team-count { font-size: var(--text-sm); color: var(--fg-7); flex: none; }
+.team-add-toggle {
+  font-size: var(--text-sm); color: var(--fg-5);
+  cursor: pointer; user-select: none; margin-left: 14px;
+}
+.team-add-toggle:hover { color: var(--fg-1); }
+
+.team-add {
+  margin: 10px 0 14px; padding: 12px 14px;
+  border: 1px solid var(--rule); background: var(--bg-sunken);
+}
+.team-row { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; margin-top: 8px; }
+.team-row:first-child { margin-top: 0; }
+.team-input,
+.team-row select,
+.team-row input[type="date"] {
+  background: var(--bg-sunken);
+  border: 1px solid var(--rule);
+  color: var(--fg-1);
+  font-family: var(--font-mono); font-size: var(--text-md);
+  padding: 5px 8px; border-radius: 0; outline: none;
+  color-scheme: dark;
+}
+.team-input:focus,
+.team-row select:focus,
+.team-row input[type="date"]:focus { border-color: var(--focus-border); }
+.team-input-wide { flex: 1; min-width: 220px; }
+.team-btn {
+  font-family: var(--font-mono); font-size: var(--text-md);
+  color: var(--fg-5); background: transparent;
+  border: 1px solid var(--rule); padding: 5px 14px;
+  text-align: center;
+}
+.team-btn:hover { color: var(--fg-1); border-color: var(--focus-border); }
+.team-label {
+  font-size: var(--text-xs); color: var(--fg-7);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.team-controls {
+  margin: 0 0 18px; padding: 12px 14px;
+  border: 1px solid var(--rule);
+}
+.team-comments { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.team-comment { padding: 8px 0; border-bottom: 1px solid var(--rule-faint); }
+.team-comment:last-of-type { border-bottom: none; }
+.team-comment-meta { font-size: var(--text-xs); color: var(--fg-7); margin-bottom: 3px; }
+.team-comment-text { font-size: var(--text-md); color: var(--fg-2); white-space: pre-wrap; }
+.team-hint { font-size: var(--text-sm); color: var(--fg-7); margin-top: 10px; }
+.team-err { font-size: var(--text-sm); color: var(--fg-1); margin-top: 8px; min-height: 1em; }
+.team-err:not(:empty) {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 8px;
+}
+
+.team-proposals { margin: 22px 0 8px; }
+.prop-count { font-size: var(--text-sm); color: var(--fg-6); margin-left: 14px; }
+.prop-for-me { box-shadow: inset 3px 0 0 var(--accent); padding-left: 10px; }
+.prop-you-chip { color: var(--fg-2); border-color: var(--fg-6); }
+.prop-decided { margin-top: 10px; }
+.prop-decided-toggle {
+  font-size: var(--text-sm); color: var(--fg-7);
+  cursor: pointer; user-select: none;
+}
+.prop-decided-toggle:hover { color: var(--fg-1); }
+.prop-decided-row { margin-top: 6px; }
+.prop-decided-row .dec-title { color: var(--fg-5); }
+.prop-verdict { flex: none; color: var(--fg-6); }
