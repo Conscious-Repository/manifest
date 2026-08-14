@@ -1,11 +1,14 @@
 package server
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -370,18 +373,52 @@ func (s *Server) Handler() http.Handler {
 	if err != nil {
 		log.Fatal(err)
 	}
-	mux.Handle("/", noCache(http.FileServer(http.FS(sub))))
+	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
 	return mux
 }
 
 // noCache makes the browser revalidate the embedded assets every load. embed.FS
 // files have a zero modtime (no Last-Modified/ETag), so without this a rebuilt
 // app.js/style.css can stay cached and the UI looks stale after an upgrade.
-func noCache(h http.Handler) http.Handler {
+// The content-hash ETags (etagFor) make that revalidation CHEAP: an unchanged
+// asset answers 304 with no body instead of re-transferring the whole file on
+// every reload (~840KB of JS/CSS otherwise re-downloaded per page load).
+func noCache(etags map[string]string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache")
+		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if p == "" || strings.HasSuffix(r.URL.Path, "/") {
+			p = path.Join(p, "index.html")
+		}
+		if tag, ok := etags[p]; ok {
+			w.Header().Set("ETag", tag)
+			if r.Header.Get("If-None-Match") == tag {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// etagFor hashes every embedded asset once at startup — the binary is the
+// deployment unit, so a content hash is stable for its lifetime and changes
+// exactly when a rebuild ships new assets.
+func etagFor(fsys fs.FS) map[string]string {
+	etags := map[string]string{}
+	_ = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		b, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return nil
+		}
+		sum := sha256.Sum256(b)
+		etags[p] = `"` + hex.EncodeToString(sum[:8]) + `"`
+		return nil
+	})
+	return etags
 }
 
 func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {

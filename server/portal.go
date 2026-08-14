@@ -23,6 +23,6 @@ func PortalHandler() (http.Handler, error) {
 		return nil, err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/", noCache(http.FileServer(http.FS(sub))))
+	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
 	return mux, nil
 }
