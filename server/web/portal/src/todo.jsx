@@ -1,10 +1,19 @@
 /* Todo tab — task outline grouped under rocks, collapsed weekly archive,
-   open decisions, and the append-only log (never truncated). */
+   open decisions, and the append-only log (never truncated).
 
-function Todo({ data, goalsIndex, filter, jump }) {
+   Team layer (Phase 2–3): rows open the team drawer (comments + assignee
+   controls), team/ items carry their chip, signed-in members get "+ add",
+   and pending proposals render for owner/target decision. */
+
+function Todo({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChange }) {
   const U = window.PORTAL_UTIL;
   const backlog = data.backlog;
   const today = U.todayISO();
+  const [adding, setAdding] = React.useState(false);
+  const signedIn = me && !me.anon;
+  const open = onOpenItem || function () {};
+  const commentCount = id =>
+    ((team && team.comments && team.comments[id]) || []).length;
 
   if (!backlog) {
     return (
@@ -59,15 +68,18 @@ function Todo({ data, goalsIndex, filter, jump }) {
         <div className="dec-open">
           {openDecisions.length === 0 && <div className="no-data">none open</div>}
           {openDecisions.map(d => (
-            <div className="dec-row" key={d.id}>
+            <div className="dec-row team-openable" key={d.id} onClick={() => open(d.id)}>
               <span className="dec-title">{d.title}</span>
               <span className="dec-meta">
                 decides: <span className="dec-who">{d.owner || '—'}</span>
                 {d.needed_by ? ' · ' + d.needed_by : ''}
+                {commentCount(d.id) > 0 ? ' · 💬 ' + commentCount(d.id) : ''}
               </span>
             </div>
           ))}
         </div>
+
+        <TeamProposals me={me} team={team} onChange={onTeamChange} />
 
         <div className="log-block">
           <div className="log-head">log</div>
@@ -84,7 +96,13 @@ function Todo({ data, goalsIndex, filter, jump }) {
         </div>
       </div>
 
-      <div className="ov-head" id="sec-todo"><span className="ov-head-title">TODO</span></div>
+      <div className="ov-head" id="sec-todo">
+        <span className="ov-head-title">TODO</span>
+        {signedIn && !adding && (
+          <span className="team-add-toggle" onClick={() => setAdding(true)}>+ add</span>
+        )}
+      </div>
+      {adding && <TeamAdd me={me} onClose={() => setAdding(false)} onChange={onTeamChange} />}
 
       <div className="todo-groups">
         {groups.length === 0 && <div className="no-data">no open tasks{filter ? ' under this rock' : ''}</div>}
@@ -98,11 +116,15 @@ function Todo({ data, goalsIndex, filter, jump }) {
               {g.tasks.map((t, i) => {
                 const overdue = t.due && t.due < today;
                 return (
-                  <div className="todo-row" key={t.id}>
+                  <div className="todo-row team-openable" key={t.id} onClick={() => open(t.id)}>
                     <span className="gutter">{i === g.tasks.length - 1 ? '└── ' : '├── '}</span>
                     <span className="todo-mark">{U.statusMark(t.status)}</span>
-                    <span className="todo-title">{t.title}</span>
+                    <span className="todo-title">
+                      {t.title}
+                      {t.team ? <span className="team-chip">team/</span> : null}
+                    </span>
                     <span className="todo-owner">{t.owner ? '@' + t.owner : ''}</span>
+                    {commentCount(t.id) > 0 && <span className="team-count">💬 {commentCount(t.id)}</span>}
                     <span className={'due-label' + (overdue ? ' is-overdue' : '')}>
                       {t.due ? 'due ' + t.due.slice(5) : ''}
                     </span>

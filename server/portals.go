@@ -293,10 +293,6 @@ func (s *Server) portalRowView(pr portals.Row) panelRow {
 // ---- portal feed items (the third card kind) ----
 
 func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
-	svc, ok := s.portalService(w)
-	if !ok {
-		return
-	}
 	var b struct {
 		ID string `json:"id"`
 	}
@@ -304,22 +300,43 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	// team-portal notices dismiss into the bridge's own cache (same id-prefix
+	// routing the portals service uses internally for clickup/benchling)
+	if s.teamBridge != nil && s.teamBridge.Owns(b.ID) {
+		s.teamBridge.Dismiss(b.ID, time.Now())
+		writeJSON(w, map[string]bool{"ok": true})
+		return
+	}
+	svc, ok := s.portalService(w)
+	if !ok {
+		return
+	}
 	svc.Dismiss(b.ID)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // portalCards is the feed's portal-item slice (empty when portals disabled).
+// Team-portal notices (Phase 4 bridge) join the same slice — same kind, same
+// renderer, same dismiss-expire lifecycle.
 func (s *Server) portalCards() []portals.Card {
-	if s.portals == nil {
-		return []portals.Card{}
+	cards := []portals.Card{}
+	if s.portals != nil {
+		cards = s.portals.Cards()
 	}
-	return s.portals.Cards()
+	if s.teamBridge != nil {
+		cards = append(cards, s.teamBridge.Cards(time.Now())...)
+	}
+	return cards
 }
 
 // portalInboxCount feeds the badge (0 when disabled).
 func (s *Server) portalInboxCount() int {
-	if s.portals == nil {
-		return 0
+	n := 0
+	if s.portals != nil {
+		n = s.portals.InboxCount()
 	}
-	return s.portals.InboxCount()
+	if s.teamBridge != nil {
+		n += len(s.teamBridge.Cards(time.Now()))
+	}
+	return n
 }

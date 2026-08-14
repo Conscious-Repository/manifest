@@ -1,14 +1,28 @@
-/* PortalApp — gate wrapper, tab + rock-filter + drawer-selection state,
-   cross-tab jumps, hash routing. Config knobs live in window.PORTAL_CONFIG
-   (index.html) so plain scripts can read them at load. */
+/* PortalApp — tab + rock-filter + drawer-selection state, cross-tab jumps,
+   hash routing. Config knobs live in window.PORTAL_CONFIG (index.html) so
+   plain scripts can read them at load.
+
+   Phase 2 (2026-08-14): the static password gate is gone — the portal is
+   open-read; Google sign-in (@aion.bio) gates writes only (team.jsx). */
 
 function PortalApp() {
   const CONFIG = window.PORTAL_CONFIG || {};
-  const [authed, setAuthed] = React.useState(
-    sessionStorage.getItem('portal_auth') === 'true');
-
-  if (!authed) return <Gate onUnlock={() => setAuthed(true)} />;
   return <Portal config={CONFIG} />;
+}
+
+/* Team overlay: published backlog + team/ items, with team field overrides
+   applied on top (status changes, done marks, due edits). */
+function mergedBacklog(backlog, team) {
+  if (!backlog) return backlog;
+  let items = backlog.items.slice();
+  if (team && Array.isArray(team.items)) items = items.concat(team.items);
+  if (team && team.overrides) {
+    items = items.map(it => {
+      const ov = team.overrides[it.id];
+      return ov && ov.fields ? Object.assign({}, it, ov.fields) : it;
+    });
+  }
+  return Object.assign({}, backlog, { items });
 }
 
 // #hash → landing tab + anchor (used by the /roadmap redirect stub)
@@ -26,15 +40,27 @@ function Portal({ config }) {
   const [tab, setTab] = React.useState((initial && initial.tab) || config.defaultTab || 'overview');
   const [filter, setFilter] = React.useState(null); // pinned rock (goal id) — survives tab switches
   const [selection, setSelection] = React.useState(null); // timeline drawer {kind, id}
+  const [teamSel, setTeamSel] = React.useState(null); // team item drawer (item id)
   const [data, setData] = React.useState(null);
 
   React.useEffect(() => {
     window.loadPortalData().then(setData);
   }, []);
 
-  // Esc closes the timeline drawer
+  // team writes → refetch only the server-side overlay (team state + me)
+  const reloadTeam = React.useCallback(() => {
+    const U = window.PORTAL_UTIL;
+    Promise.all([U.fetchJSON('api/team/state'), U.fetchJSON('api/me')]).then(rs => {
+      setData(d => d ? Object.assign({}, d, {
+        team: rs[0].ok ? rs[0].value : d.team,
+        me: rs[1].ok ? rs[1].value : d.me
+      }) : d);
+    });
+  }, []);
+
+  // Esc closes the drawers
   React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') setSelection(null); };
+    const onKey = (e) => { if (e.key === 'Escape') { setSelection(null); setTeamSel(null); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
@@ -74,6 +100,12 @@ function Portal({ config }) {
     () => (data && data.goals ? U.buildGoalIndex(data.goals) : null),
     [data]);
 
+  // team overlay merged over the published backlog (memo keyed on both)
+  const viewData = React.useMemo(() => {
+    if (!data) return data;
+    return Object.assign({}, data, { backlog: mergedBacklog(data.backlog, data.team) });
+  }, [data]);
+
   if (!data) {
     return (
       <div className="portal-shell">
@@ -85,9 +117,13 @@ function Portal({ config }) {
 
   const filterGoal = filter && goalsIndex ? goalsIndex.get(filter) : null;
 
+  const teamItem = teamSel && viewData.backlog
+    ? viewData.backlog.items.find(it => it.id === teamSel)
+    : null;
+
   return (
     <div className="portal-shell">
-      <Masthead meta={data.meta} />
+      <Masthead meta={data.meta} me={data.me} onAuthChange={reloadTeam} />
       <TabNav tab={tab} onTab={onTab} />
 
       <div className="portal-body">
@@ -97,7 +133,7 @@ function Portal({ config }) {
 
         {tab === 'overview' && (
           <Overview
-            data={data}
+            data={viewData}
             goalsIndex={goalsIndex}
             filter={filter}
             onFilter={setFilter}
@@ -108,13 +144,13 @@ function Portal({ config }) {
         {tab === 'goals' && (
           <div>
             {goalsIndex || data.vto
-              ? <Vto data={data} goalsIndex={goalsIndex} filter={filter} onFilter={setFilter} jump={jump} />
+              ? <Vto data={viewData} goalsIndex={goalsIndex} filter={filter} onFilter={setFilter} jump={jump} />
               : <div className="no-data">no data yet</div>}
             <Heuristics heuristics={data.heuristics} errors={data.errors} />
             <div id="sec-timeline" className="timeline-block">
               <div className="ov-head"><span className="ov-head-title">TIMELINE</span></div>
               <Timeline
-                data={data}
+                data={viewData}
                 filter={filter}
                 goalsIndex={goalsIndex}
                 selection={selection}
@@ -126,7 +162,16 @@ function Portal({ config }) {
         )}
 
         {tab === 'todo' && (
-          <Todo data={data} goalsIndex={goalsIndex} filter={filter} jump={jump} />
+          <Todo
+            data={viewData}
+            goalsIndex={goalsIndex}
+            filter={filter}
+            jump={jump}
+            me={data.me}
+            team={data.team}
+            onOpenItem={setTeamSel}
+            onTeamChange={reloadTeam}
+          />
         )}
       </div>
 
@@ -135,9 +180,19 @@ function Portal({ config }) {
       {selection && (
         <TimelineDrawer
           selection={selection}
-          data={data}
+          data={viewData}
           goalsIndex={goalsIndex}
           onClose={() => setSelection(null)}
+        />
+      )}
+
+      {teamItem && (
+        <TeamItemDrawer
+          item={teamItem}
+          me={data.me}
+          team={data.team}
+          onClose={() => setTeamSel(null)}
+          onChange={reloadTeam}
         />
       )}
     </div>

@@ -20,7 +20,11 @@
     backlog:    ['data/backlog.json',    function (v) { return v && Array.isArray(v.items); }],
     heuristics: ['data/heuristics.json', function (v) { return v && Array.isArray(v.heuristics); }],
     people:     ['data/people.json',     function (v) { return v && Array.isArray(v.people); }],
-    meta:       ['data/meta.json',       function (v) { return v && typeof v === 'object'; }]
+    meta:       ['data/meta.json',       function (v) { return v && typeof v === 'object'; }],
+    // team layer (Phase 2–3): server endpoints, not static files. 404 (team
+    // layer disabled) → null, and the portal renders exactly as before.
+    team:       ['api/team/state',       function (v) { return v && typeof v === 'object'; }],
+    me:         ['api/me',               function (v) { return v && typeof v === 'object'; }]
   };
   var MD_FILES = {
     hiring:     'content/hiring.md',

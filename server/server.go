@@ -29,6 +29,7 @@ import (
 	"manifest/signals"
 	"manifest/spirits"
 	"manifest/studio"
+	"manifest/teamportal"
 	"manifest/todos"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -107,7 +108,13 @@ type Server struct {
 	// aionSink receives vault-relative paths to consider for extraction —
 	// the post-confirm nudge (aion.ExtractSink satisfies it). Nilable.
 	aionSink interface{ Notify([]string) }
+	// teamBridge surfaces AION team-portal writes as FEED notices (portal
+	// move Phase 4 — same notice kind as clickup/benchling). Nilable.
+	teamBridge *teamportal.Bridge
 }
+
+// UseTeamPortal wires the team-portal → FEED notices bridge.
+func (s *Server) UseTeamPortal(b *teamportal.Bridge) { s.teamBridge = b }
 
 // UseAionSink wires the extraction sink for the transcript-confirm nudge.
 func (s *Server) UseAionSink(sink interface{ Notify([]string) }) { s.aionSink = sink }

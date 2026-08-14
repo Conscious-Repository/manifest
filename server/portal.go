@@ -1,12 +1,26 @@
 package server
 
 import (
+	"encoding/json"
 	"io/fs"
 	"net/http"
+	"strings"
+	"time"
+
+	"manifest/teamportal"
 )
 
-// PortalHandler serves the AION portal as a standalone static site, rooted at
-// the embedded web/portal subtree (the copy of the aionbio public/portal app).
+// PortalOptions wires the team write layer (portal move, Phase 2–3) into the
+// standalone portal listener. The zero value serves the Phase-1 static site
+// unchanged (open read, no auth, no writes).
+type PortalOptions struct {
+	Auth       *teamportal.Auth  // Google OAuth + sessions (nil → no sign-in)
+	Store      *teamportal.Store // team state on /shared (nil → no writes)
+	AdminEmail string            // the portal owner — may decide any proposal
+}
+
+// PortalHandler serves the AION portal as a standalone site, rooted at the
+// embedded web/portal subtree (the copy of the aionbio public/portal app).
 //
 // This is a SEPARATE mux from Handler(): it is mounted on its own listener
 // (cfg.PortalPort, default 7778) and shares nothing with the dashboard's
@@ -15,14 +29,302 @@ import (
 // requests with document-relative URLs — so the portal is self-contained at
 // the root of its port.
 //
-// The AION portal move, phase 1: additive only. Nothing here is wired into
-// the dashboard mux, the 7777 listener, or the aionbio publish path.
-func PortalHandler() (http.Handler, error) {
+// Phase 2–3 (2026-08-14): open read stays; Google sign-in (@aion.bio only)
+// gates the write endpoints — comments (any member), item PATCH (assignee
+// only), team/ adds (self), and proposals for others (owner- or
+// target-approved). Team state lives in opt.Store, merged client-side over
+// the published data files.
+func PortalHandler(opt PortalOptions) (http.Handler, error) {
 	sub, err := fs.Sub(webFiles, "web/portal")
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
+
+	if opt.Auth != nil {
+		mux.HandleFunc("GET /oauth2/login", opt.Auth.HandleLogin)
+		mux.HandleFunc("GET /oauth2/callback", opt.Auth.HandleCallback)
+		mux.HandleFunc("POST /oauth2/logout", opt.Auth.HandleLogout)
+	}
+	api := &portalAPI{opt: opt, people: portalPeople(sub), owners: portalOwners(sub)}
+	mux.HandleFunc("GET /api/me", api.handleMe)
+	if opt.Store != nil {
+		mux.HandleFunc("GET /api/team/state", api.handleState)
+		if opt.Auth != nil {
+			mux.HandleFunc("POST /api/team/comment", api.handleComment)
+			mux.HandleFunc("PATCH /api/team/item/{id...}", api.handlePatch)
+			mux.HandleFunc("POST /api/team/items", api.handleAdd)
+			mux.HandleFunc("POST /api/team/proposals", api.handlePropose)
+			mux.HandleFunc("POST /api/team/proposals/decide", api.handleDecide)
+		}
+	}
 	return mux, nil
+}
+
+// portalAPI is the team write surface. It resolves emails to the roster's
+// initials (people.json + optional emails.json overrides in the team dir) and
+// enforces the assignee lock against the published backlog + team items.
+type portalAPI struct {
+	opt    PortalOptions
+	people []portalPerson
+	owners map[string]string // published item id → owner initials
+}
+
+type portalPerson struct {
+	Initials string `json:"initials"`
+	Name     string `json:"name"`
+}
+
+// portalPeople parses the embedded people.json roster (nil-safe on drift).
+func portalPeople(sub fs.FS) []portalPerson {
+	var doc struct {
+		People []portalPerson `json:"people"`
+	}
+	if b, err := fs.ReadFile(sub, "data/people.json"); err == nil {
+		_ = json.Unmarshal(b, &doc)
+	}
+	return doc.People
+}
+
+// portalOwners maps published backlog item ids to their owner initials.
+func portalOwners(sub fs.FS) map[string]string {
+	var doc struct {
+		Items []struct {
+			ID    string `json:"id"`
+			Owner string `json:"owner"`
+		} `json:"items"`
+	}
+	out := map[string]string{}
+	if b, err := fs.ReadFile(sub, "data/backlog.json"); err == nil {
+		_ = json.Unmarshal(b, &doc)
+	}
+	for _, it := range doc.Items {
+		out[it.ID] = it.Owner
+	}
+	return out
+}
+
+// initialsFor resolves an @aion.bio email to roster initials: the hand-edited
+// emails.json override wins; else the email local part must equal a person's
+// first name or their initials (benjamin@ → Benjamin Anderson → BA). Empty
+// when unmapped — such a member can comment and add, but owns nothing
+// published.
+func (p *portalAPI) initialsFor(email string) string {
+	local := strings.ToLower(strings.TrimSpace(strings.SplitN(email, "@", 2)[0]))
+	if local == "" {
+		return ""
+	}
+	if p.opt.Store != nil {
+		if ini, ok := p.opt.Store.EmailOverrides()[strings.ToLower(strings.TrimSpace(email))]; ok {
+			return ini
+		}
+	}
+	for _, per := range p.people {
+		first := strings.ToLower(strings.SplitN(strings.TrimSpace(per.Name), " ", 2)[0])
+		if local == first || strings.EqualFold(local, per.Initials) {
+			return per.Initials
+		}
+	}
+	return ""
+}
+
+// ownerToken is the owner written onto items a member creates: their roster
+// initials, or the email local part when unmapped (still identifiable).
+func (p *portalAPI) ownerToken(email string) string {
+	if ini := p.initialsFor(email); ini != "" {
+		return ini
+	}
+	return strings.SplitN(email, "@", 2)[0]
+}
+
+// ownerOf finds an item's assignee: published backlog first, then team items.
+func (p *portalAPI) ownerOf(itemID string) (string, bool) {
+	if o, ok := p.owners[itemID]; ok {
+		return o, true
+	}
+	if p.opt.Store != nil {
+		return p.opt.Store.TeamOwner(itemID)
+	}
+	return "", false
+}
+
+func (p *portalAPI) isAdmin(email string) bool {
+	return p.opt.AdminEmail != "" && strings.EqualFold(email, p.opt.AdminEmail)
+}
+
+// identify authenticates a write request; 401 (with a clear message) when
+// anonymous or expired.
+func (p *portalAPI) identify(w http.ResponseWriter, r *http.Request) (teamportal.Identity, bool) {
+	if p.opt.Auth == nil {
+		http.Error(w, "sign-in is not configured", http.StatusServiceUnavailable)
+		return teamportal.Identity{}, false
+	}
+	id, ok := p.opt.Auth.Identify(r)
+	if !ok {
+		http.Error(w, "sign in with your @"+teamportal.Domain+" account to write", http.StatusUnauthorized)
+		return teamportal.Identity{}, false
+	}
+	return id, true
+}
+
+// handleMe reports the caller's identity to the portal UI (open endpoint —
+// anonymous readers get {anon:true}).
+func (p *portalAPI) handleMe(w http.ResponseWriter, r *http.Request) {
+	if p.opt.Auth == nil {
+		writeJSON(w, map[string]any{"anon": true, "authConfigured": false})
+		return
+	}
+	id, ok := p.opt.Auth.Identify(r)
+	if !ok {
+		writeJSON(w, map[string]any{"anon": true, "authConfigured": p.opt.Auth.Enabled()})
+		return
+	}
+	writeJSON(w, map[string]any{
+		"email": id.Email, "name": id.Name,
+		"initials": p.initialsFor(id.Email),
+		"admin":    p.isAdmin(id.Email),
+	})
+}
+
+// handleState serves the whole team overlay — open read, like the site.
+func (p *portalAPI) handleState(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, p.opt.Store.Ext())
+}
+
+func (p *portalAPI) handleComment(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Item, Text string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if _, exists := p.ownerOf(b.Item); !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	c, err := p.opt.Store.AddComment(id, b.Item, b.Text, time.Now())
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, c)
+}
+
+// handlePatch is the owner-lock write: ONLY the item's assignee may change its
+// status/fields (the admin included — no override lane, decided 2026-08-13).
+func (p *portalAPI) handlePatch(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	itemID := r.PathValue("id")
+	owner, exists := p.ownerOf(itemID)
+	if !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	mine := p.ownerToken(id.Email)
+	if owner == "" || !strings.EqualFold(owner, mine) {
+		http.Error(w, "only the assignee ("+orDash(owner)+") can change this item", http.StatusForbidden)
+		return
+	}
+	var fields map[string]string
+	if err := decode(r, &fields); err != nil {
+		httpError(w, err)
+		return
+	}
+	ov, err := p.opt.Store.Patch(id, itemID, fields, time.Now())
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, map[string]any{"item": itemID, "override": ov})
+}
+
+// handleAdd creates the caller's own team/ item (direct, no approval).
+func (p *portalAPI) handleAdd(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Kind, Title, Rock, Due string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	it, err := p.opt.Store.AddItem(id, p.ownerToken(id.Email), b.Kind, b.Title, b.Rock, b.Due, time.Now())
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, it)
+}
+
+// handlePropose files an item for someone else — a proposal until the portal
+// owner or the target approves it.
+func (p *portalAPI) handlePropose(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Target, Kind, Title, Rock, Due string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	prop, err := p.opt.Store.Propose(id, b.Target, p.ownerToken(b.Target), b.Kind, b.Title, b.Rock, b.Due, time.Now())
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, prop)
+}
+
+// handleDecide resolves a proposal. Authorized deciders: the portal owner
+// (admin) or the proposal's target — either suffices (approvals-model mirror).
+func (p *portalAPI) handleDecide(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		ID      string `json:"id"`
+		Approve bool   `json:"approve"`
+	}
+	if err := decode(r, &b); err != nil || b.ID == "" {
+		httpError(w, errBadRequest("proposal id is required"))
+		return
+	}
+	target := ""
+	for _, prop := range p.opt.Store.Ext().Proposals {
+		if prop.ID == b.ID {
+			target = prop.Target
+			break
+		}
+	}
+	if target == "" {
+		http.Error(w, "proposal not found", http.StatusNotFound)
+		return
+	}
+	if !p.isAdmin(id.Email) && !strings.EqualFold(id.Email, target) {
+		http.Error(w, "only "+target+" or the portal owner can decide this", http.StatusForbidden)
+		return
+	}
+	prop, err := p.opt.Store.Decide(id, b.ID, b.Approve, time.Now())
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, prop)
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
 }

@@ -121,11 +121,18 @@ type HarnessRef struct {
 	Path string `json:"path"`
 }
 
-// AionPortalConfig is the git coordinates of the aionbio checkout.
+// AionPortalConfig is the git coordinates of the aionbio checkout, plus the
+// team write layer (portal move Phase 2–3). TeamDir is the derived team-state
+// directory on metis (production: /shared/apps/aion-portal — activity.log +
+// items.ext.json); empty disables sign-in and every write endpoint (the
+// portal stays the Phase-1 static site). AdminEmail is the portal owner's
+// @aion.bio account — the second authorized decider on team proposals.
 type AionPortalConfig struct {
-	Path   string `json:"path"`
-	Remote string `json:"remote"`
-	Branch string `json:"branch"`
+	Path       string `json:"path"`
+	Remote     string `json:"remote"`
+	Branch     string `json:"branch"`
+	TeamDir    string `json:"teamDir"`
+	AdminEmail string `json:"adminEmail"`
 }
 
 func defaultConfig() Config {
@@ -223,6 +230,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	cfg.RePortalPath = expandHome(cfg.RePortalPath)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
+	cfg.AionPortal.TeamDir = expandHome(cfg.AionPortal.TeamDir)
 	// Harness federation (Phase 4): normalize the two spellings into BOTH —
 	// Harnesses is the canonical list (legacy ExcaliburPath synthesizes a
 	// single entry); ExcaliburPath mirrors the primary for the code paths

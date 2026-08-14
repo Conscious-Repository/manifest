@@ -1,0 +1,13 @@
+{
+  "_readme": "Redacted shape of the AION portal's Google OAuth *web* client (a SEPARATE client from the installed-app Calendar/Gmail one). Download the real JSON from Google Cloud console → Credentials → the 'AION portal' web client, and place it — never committed — at <dataDir>/portals/aion-portal-oauth.json (or point AION_PORTAL_OAUTH_CLIENT at it). The redirect_uris below must exactly match the URIs registered on the client.",
+  "web": {
+    "client_id": "REDACTED.apps.googleusercontent.com",
+    "client_secret": "REDACTED",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "redirect_uris": [
+      "https://portal.aion.bio/oauth2/callback",
+      "http://localhost:8080/oauth2/callback"
+    ]
+  }
+}

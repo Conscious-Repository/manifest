@@ -35,6 +35,7 @@ import (
 	"manifest/signals"
 	"manifest/spirits"
 	"manifest/studio"
+	"manifest/teamportal"
 	"manifest/todos"
 	"manifest/vault"
 	"manifest/vaultindex"
@@ -487,9 +488,29 @@ func main() {
 	// Its own mux, its own port, sharing nothing with the dashboard's routes:
 	// the embedded web/portal subtree served as a standalone static site. A
 	// bind failure here never takes the dashboard down.
+	//
+	// Phase 2–4 (2026-08-14): when aionPortal.teamDir is set, the listener
+	// gains Google sign-in (@aion.bio wildcard) + the team write endpoints,
+	// and team writes bridge into the FEED as notices. Credentials live in
+	// the secrets tier (<dataDir>/portals/aion-portal-oauth.json, 0600).
+	var portalOpts server.PortalOptions
+	if cfg.AionPortal.TeamDir != "" {
+		if ts, err := teamportal.New(cfg.AionPortal.TeamDir); err != nil {
+			log.Printf("aion portal team layer disabled: %v", err)
+		} else {
+			auth := teamportal.NewAuth(cfg.DataDir)
+			portalOpts = server.PortalOptions{Auth: auth, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail}
+			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail))
+			if auth.Enabled() {
+				log.Printf("aion portal team layer: enabled (writes → %s; any @%s account)", cfg.AionPortal.TeamDir, teamportal.Domain)
+			} else {
+				log.Printf("aion portal team layer: store ready, OAuth client missing (sign-in sealed until %s/portals/aion-portal-oauth.json exists)", cfg.DataDir)
+			}
+		}
+	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)
-		if h, err := server.PortalHandler(); err != nil {
+		if h, err := server.PortalHandler(portalOpts); err != nil {
 			log.Printf("aion portal disabled: %v", err)
 		} else {
 			go func() {

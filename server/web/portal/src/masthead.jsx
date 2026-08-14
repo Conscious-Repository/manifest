@@ -1,7 +1,7 @@
 /* Masthead — backlink, wordmark, `last published` (meta.json), tab nav,
    rock-filter chip, page footer. Terse labels; no legend, no roster. */
 
-function Masthead({ meta }) {
+function Masthead({ meta, me, onAuthChange }) {
   const published = meta && meta.published_at ? meta.published_at.slice(0, 10) : null;
   const by = meta && meta.published_by ? meta.published_by : null;
   return (
@@ -15,6 +15,7 @@ function Masthead({ meta }) {
         {published
           ? <div>last published {published}{by ? ' · ' + by : ''} · confidential</div>
           : <div>last published — no data yet</div>}
+        <AuthChip me={me} onChange={onAuthChange} />
       </div>
     </div>
   );

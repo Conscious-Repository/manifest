@@ -10,7 +10,7 @@ import (
 // The standalone portal listener (AION portal move, phase 1): GET / is the
 // portal's own index.html, and its assets resolve at the root of that port.
 func TestPortalHandlerServesTheEmbeddedPortal(t *testing.T) {
-	h, err := PortalHandler()
+	h, err := PortalHandler(PortalOptions{})
 	if err != nil {
 		t.Fatalf("PortalHandler: %v", err)
 	}
