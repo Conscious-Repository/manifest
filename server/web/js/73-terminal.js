@@ -166,10 +166,10 @@ function renderTermLauncher(enabled) {
   host.append(devSlot);
   loadTermDevices();
 
-  // kind seg
+  // kind seg — one connected segmented control (cmd-ctr's form)
   const seg = el("div", "term-seg");
   ["shell", "claude", "codex"].forEach((k) => {
-    const c = el("button", "filter-chip" + (termLaunch.kind === k ? " on" : ""), k);
+    const c = el("button", "term-seg-btn" + (termLaunch.kind === k ? " on" : ""), k);
     c.dataset.kind = k;
     c.onclick = () => { termLaunch.kind = k; termSyncLauncher(); };
     seg.append(c);
@@ -194,12 +194,14 @@ function renderTermLauncher(enabled) {
   host.append(browse);
   host.append(el("div", "term-browse-slot"));
 
-  // actions
+  // actions — Open is the accent primary, Resume its quiet twin
   const acts = el("div", "term-launch-acts");
   acts.id = "termLaunchActs";
-  acts.append(pill("Open", () => termCreate(termLaunch.kind, false)));
-  const res = pillLight("Resume", () => termCreate(termLaunch.kind, true));
-  res.className += " term-resume-btn";
+  const open = el("button", "term-primary", "Open");
+  open.onclick = () => termCreate(termLaunch.kind, false);
+  acts.append(open);
+  const res = el("button", "term-secondary term-resume-btn", "Resume");
+  res.onclick = () => termCreate(termLaunch.kind, true);
   res.title = "Reopen a past conversation (interactive picker)";
   acts.append(res);
   host.append(acts);
@@ -209,7 +211,7 @@ function renderTermLauncher(enabled) {
 function termSyncLauncher() {
   const host = document.getElementById("termLauncher");
   if (!host) return;
-  host.querySelectorAll(".term-seg .filter-chip").forEach((c) => {
+  host.querySelectorAll(".term-seg .term-seg-btn").forEach((c) => {
     c.classList.toggle("on", c.dataset.kind === termLaunch.kind);
   });
   const res = host.querySelector(".term-resume-btn");
@@ -339,7 +341,7 @@ function termSyncOpenGate() {
   if (!host) return;
   const sel = termSelectedDevice();
   const blocked = sel && !sel.self && sel.status !== "ok";
-  host.querySelectorAll("#termLaunchActs .pill").forEach((b) => {
+  host.querySelectorAll("#termLaunchActs button").forEach((b) => {
     b.disabled = !!blocked;
     b.style.opacity = blocked ? ".45" : "";
     b.title = blocked ? (sel.status === "needs-key" ? "No ssh path — set a user/key via ⚙" : "Device is offline") : "";
@@ -495,10 +497,18 @@ function renderTermHistory() {
 
 function renderTermEmpty() {
   const host = document.getElementById("termScreen");
-  if (host && !termInst) {
-    host.innerHTML = "";
-    host.append(el("div", "term-blank", "❯ start a session — pick a kind and Open"));
-  }
+  if (!host || termInst) return;
+  host.innerHTML = "";
+  const blank = el("div", "term-blank");
+  blank.append(el("div", "term-blank-line", "no session on screen"));
+  const quick = el("div", "term-blank-quick");
+  ["shell", "claude", "codex"].forEach((k) => {
+    const b = el("button", "term-blank-btn", "＋ " + k);
+    b.onclick = () => { termLaunch.kind = k; termSyncLauncher(); termCreate(k, false); };
+    quick.append(b);
+  });
+  blank.append(quick);
+  host.append(blank);
 }
 
 // --- the PTY attach (unchanged core) ---
@@ -537,16 +547,23 @@ function attachTerm(id) {
   ws.binaryType = "arraybuffer";
   termInst = { term, fit, ws, id };
 
+  const openedAt = Date.now();
   ws.onopen = () => { sendTermResize(); };
   ws.onmessage = (ev) => {
     if (typeof ev.data === "string") term.write(ev.data);
     else term.write(new Uint8Array(ev.data));
   };
   ws.onclose = () => {
-    if (termInst && termInst.id === id && !els.terminalView.hidden) {
-      term.write("\r\n\x1b[2m[disconnected — reattaching…]\x1b[0m\r\n");
-      setTimeout(() => { if (termOpenId === id) attachTerm(id); }, 1200);
+    if (!(termInst && termInst.id === id && !els.terminalView.hidden)) return;
+    // an instant close means the inner program EXITED (bad flag, crash) —
+    // reattaching would just respawn it in a loop. Stop and say so.
+    if (Date.now() - openedAt < 2500) {
+      term.write("\r\n\x1b[2m[session ended — click it in the rail to relaunch]\x1b[0m\r\n");
+      loadTermSessions(true);
+      return;
     }
+    term.write("\r\n\x1b[2m[disconnected — reattaching…]\x1b[0m\r\n");
+    setTimeout(() => { if (termOpenId === id) attachTerm(id); }, 1200);
   };
   term.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); });
 
@@ -554,11 +571,13 @@ function attachTerm(id) {
   ro.observe(mount);
   termInst.ro = ro;
 
-  // voice → terminal (reuse the mic component)
+  // voice → terminal: the mic lives in the rail head (cmd-ctr's home for it)
   if (typeof micButton === "function") {
-    const bar = document.getElementById("termActions");
-    if (bar && !bar.querySelector(".mic-btn")) {
-      bar.append(micButton((text) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d: text })); }));
+    const head = document.getElementById("termRailHead");
+    if (head && !head.querySelector(".mic-btn")) {
+      head.append(micButton((text) => {
+        if (termInst && termInst.ws.readyState === 1) termInst.ws.send(JSON.stringify({ t: "i", d: text }));
+      }));
     }
   }
   buildTermKeys(ws);

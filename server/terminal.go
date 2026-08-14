@@ -39,6 +39,7 @@ type termSession struct {
 	Name      string `json:"name"`
 	ResumeID  string `json:"resumeId,omitempty"` // claude --session-id / --resume handle
 	Resume    bool   `json:"resume,omitempty"`   // launched via the interactive resume picker
+	Started   bool   `json:"started,omitempty"`  // first attach happened → reopen resumes
 	CreatedAt string `json:"createdAt"`
 	LastUsed  string `json:"lastUsed"`
 	Pinned    bool   `json:"pinned,omitempty"`
@@ -115,8 +116,15 @@ func tmuxName(id string) string { return "manifest_" + id }
 func (s termSession) launchCmd() string {
 	switch s.Kind {
 	case "claude":
+		// cmd-ctr semantics: the FIRST run CREATES the conversation under the
+		// minted id (--session-id); only after it has started does a dead-tmux
+		// reopen resume it (--resume against a virgin id = "No conversation
+		// found" + an exit/reattach loop).
 		if s.ResumeID != "" && resumeIDRe.MatchString(s.ResumeID) {
-			return "claude --resume " + s.ResumeID
+			if s.Started {
+				return "claude --resume " + s.ResumeID
+			}
+			return "claude --session-id " + s.ResumeID
 		}
 		if s.Resume {
 			return "claude --resume" // interactive conversation picker
@@ -469,8 +477,9 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = ptmx.Close(); _ = cmd.Process.Kill() }()
 
-	// touch lastUsed
+	// touch lastUsed; the session has now run once → future reopens resume
 	se.LastUsed = time.Now().Format(time.RFC3339)
+	se.Started = true
 	s.terminal.upsert(se)
 
 	// PTY → browser (binary frames)
