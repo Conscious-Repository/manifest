@@ -1,0 +1,47 @@
+{
+  "contract": "1",
+  "published_at": "2026-08-13T22:04:23Z",
+  "sections": [
+    {
+      "name": "finances",
+      "file": "data/finances.json",
+      "count": 1
+    },
+    {
+      "name": "vto",
+      "file": "data/vto.json",
+      "count": 1
+    },
+    {
+      "name": "goals",
+      "file": "data/goals.json",
+      "count": 26
+    },
+    {
+      "name": "backlog",
+      "file": "data/backlog.json",
+      "count": 367
+    },
+    {
+      "name": "heuristics",
+      "file": "data/heuristics.json",
+      "count": 26
+    },
+    {
+      "name": "people",
+      "file": "data/people.json",
+      "count": 10
+    },
+    {
+      "name": "hiring",
+      "file": "content/hiring.md",
+      "count": 1
+    },
+    {
+      "name": "references",
+      "file": "content/references.md",
+      "count": 1
+    }
+  ],
+  "source": "manifest"
+}

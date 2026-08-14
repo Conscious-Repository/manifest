@@ -1,0 +1,54 @@
+{
+  "people": [
+    {
+      "initials": "BA",
+      "name": "Benjamin Anderson",
+      "role": "CEO"
+    },
+    {
+      "initials": "RT",
+      "name": "RJ Tevonian",
+      "role": "CSO"
+    },
+    {
+      "initials": "HZ",
+      "name": "Hannah Zmuda",
+      "role": "Founding Scientist"
+    },
+    {
+      "initials": "HG",
+      "name": "Heye Groß",
+      "role": "Founding Engineer"
+    },
+    {
+      "initials": "EL",
+      "name": "Ellie Lumen",
+      "role": "Study Director"
+    },
+    {
+      "initials": "NM",
+      "name": "Nirosha Murugan",
+      "role": "External lead, Murugan Lab"
+    },
+    {
+      "initials": "YA",
+      "name": "Yousuke Akama",
+      "role": "MRI Engineer"
+    },
+    {
+      "initials": "MM",
+      "name": "Morgan Miller",
+      "role": "Engineer"
+    },
+    {
+      "initials": "JR",
+      "name": "Jack Ruhl",
+      "role": ""
+    },
+    {
+      "initials": "ME",
+      "name": "Matthias Estermann",
+      "role": "Engineer"
+    }
+  ]
+}

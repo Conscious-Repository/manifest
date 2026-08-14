@@ -1,0 +1,342 @@
+{
+  "heuristics": [
+    {
+      "id": "aion-h/take-the-longer-path-that-gets-you-there-faster",
+      "statement": "Take the longer path that gets you there faster",
+      "first": "2026-03-09",
+      "reinforcements": [
+        {
+          "source": "log/2026-07-31 jack ruhl sync",
+          "date": "2026-07-31"
+        },
+        {
+          "source": "log/2026-05-05 jack ruhl sync",
+          "date": "2026-05-05"
+        },
+        {
+          "source": "log/2026-04-29 germany budget sync",
+          "date": "2026-04-29"
+        },
+        {
+          "source": "log/2026-03-09 team sync",
+          "date": "2026-03-09"
+        },
+        {
+          "source": "aion biosciences",
+          "date": null
+        }
+      ]
+    },
+    {
+      "id": "aion-h/never-be-raising-and-be-vocal-about-it-the-surest-way-to-rai",
+      "statement": "Never be raising - and be vocal about it (the surest way to raise successfully)",
+      "first": "2026-02-16",
+      "reinforcements": [
+        {
+          "source": "log/2026-05-19 shoumik sync",
+          "date": "2026-05-19"
+        },
+        {
+          "source": "log/2026-03-31 george call",
+          "date": "2026-03-31"
+        },
+        {
+          "source": "log/2026-02-16 rj sync",
+          "date": "2026-02-16"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/morale-is-one-of-the-most-valuable-resources-we-have",
+      "statement": "Morale is one of the most valuable resources we have",
+      "first": "2026-03-09",
+      "reinforcements": [
+        {
+          "source": "log/2026-04-20 jack ruhl sync",
+          "date": "2026-04-20"
+        },
+        {
+          "source": "log/2026-03-09 hannah sync",
+          "date": "2026-03-09"
+        },
+        {
+          "source": "aion biosciences",
+          "date": null
+        }
+      ]
+    },
+    {
+      "id": "aion-h/underpromise-and-overdeliver",
+      "statement": "Underpromise and overdeliver",
+      "first": "2026-01-19",
+      "reinforcements": [
+        {
+          "source": "log/2026-02-05 investment and business strategy",
+          "date": "2026-02-05"
+        },
+        {
+          "source": "log/2026-01-19 aion team sync",
+          "date": "2026-01-19"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/spend-liberally-below-10k-to-move-fast-any-spend-over-10k-re",
+      "statement": "Spend liberally below $10k to move fast; any spend over $10k requires Ben+RJ conferral and cost-benefit conversation",
+      "first": "2026-03-23",
+      "reinforcements": [
+        {
+          "source": "log/2026-04-01 heye sync vector alignment",
+          "date": "2026-04-01"
+        },
+        {
+          "source": "log/2026-03-23 hannah sync",
+          "date": "2026-03-23"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/hire-generalist-fast-problem-solvers-not-domain-specific-eng",
+      "statement": "Hire generalist fast problem-solvers, not domain-specific engineers",
+      "first": "2026-05-18",
+      "reinforcements": [
+        {
+          "source": "log/2026-06-19 standing waves sync",
+          "date": "2026-06-19"
+        },
+        {
+          "source": "log/2026-05-18 suvan interview",
+          "date": "2026-05-18"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/hire-for-mission-alignment-integrity-and-competence-in-that",
+      "statement": "Hire for mission alignment, integrity, and competence in that order",
+      "first": "2026-06-03",
+      "reinforcements": [
+        {
+          "source": "log/2026-07-31 jack ruhl sync",
+          "date": "2026-07-31"
+        },
+        {
+          "source": "log/2026-06-03 akshaan intro",
+          "date": "2026-06-03"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/every-approach-must-rest-on-a-falsifiable-hypothesis-not-bru",
+      "statement": "Every approach must rest on a falsifiable hypothesis, not brute-force screening",
+      "first": "2025-09-09",
+      "reinforcements": [
+        {
+          "source": "log/2025-09-09 hevolution memo 001",
+          "date": "2025-09-09"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/call-out-when-shared-text-is-ai-generated-and-review-it-more",
+      "statement": "Call out when shared text is AI-generated and review it more closely",
+      "first": "2025-09-09",
+      "reinforcements": [
+        {
+          "source": "log/2025-09-09 hevolution memo 001",
+          "date": "2025-09-09"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/in-person-beats-remote-one-hour-in-person-equals-five-on-vid",
+      "statement": "In-person beats remote; one hour in person equals five on video",
+      "first": "2025-11-30",
+      "reinforcements": [
+        {
+          "source": "updates for justin",
+          "date": "2025-11-30"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/we-build-for-clinical-outcomes-not-phd-level-papers",
+      "statement": "We build for clinical outcomes, not PhD-level papers",
+      "first": "2025-12-11",
+      "reinforcements": [
+        {
+          "source": "log/2025-12-11 hannah ecm presentaion",
+          "date": "2025-12-11"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/ip-protection-is-fake-rely-on-a-trade-secret-strategy-over-p",
+      "statement": "IP protection is fake; rely on a trade-secret strategy over patents",
+      "first": "2026-02-02",
+      "reinforcements": [
+        {
+          "source": "log/2026-02-02 aion team sync",
+          "date": "2026-02-02"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/help-lab-visitors-when-asked-otherwise-let-them-fail-no-full",
+      "statement": "Help lab visitors when asked, otherwise let them fail (no full-time handholding)",
+      "first": "2026-02-16",
+      "reinforcements": [
+        {
+          "source": "log/2026-02-16 team sync standing",
+          "date": "2026-02-16"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/raise-from-low-time-preference-investors-aligned-with-the-ch",
+      "statement": "Raise from low-time-preference investors aligned with the change they want to see",
+      "first": "2026-03-06",
+      "reinforcements": [
+        {
+          "source": "log/2026-03-06 george sync",
+          "date": "2026-03-06"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/scrutinize-positive-experimental-results-as-hard-as-if-they",
+      "statement": "Scrutinize positive experimental results as hard as if they disproved the hypothesis; pre-run the critics' experiments",
+      "first": "2026-03-23",
+      "reinforcements": [
+        {
+          "source": "log/2026-03-23 hannah sync",
+          "date": "2026-03-23"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/never-contract-into-ongoing-payments-before-work-has-proven",
+      "statement": "Never contract into ongoing payments before work has proven itself",
+      "first": "2026-03-25",
+      "reinforcements": [
+        {
+          "source": "log/2026-03-25 heye \u0026 benjamin sync",
+          "date": "2026-03-25"
+        },
+        {
+          "source": "log/2026-08-10 aion team sync",
+          "date": "2026-08-10"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/unconstrained-n-1-human-experiments-beat-large-slow-mouse-st",
+      "statement": "Unconstrained n=1 human experiments beat large slow mouse studies",
+      "first": "2026-03-27",
+      "reinforcements": [
+        {
+          "source": "log/2026-03-27 magnetoaccoustics standing",
+          "date": "2026-03-27"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/touch-every-investor-at-least-every-6-weeks-to-keep-the-intr",
+      "statement": "Touch every investor at least every 6 weeks to keep the intro flywheel going",
+      "first": "2026-04-01",
+      "reinforcements": [
+        {
+          "source": "log/2026-04-01 heye sync vector alignment",
+          "date": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/reduce-the-naive-tax-by-talking-to-experts",
+      "statement": "Reduce the naive tax by talking to experts",
+      "first": "2026-05-08",
+      "reinforcements": [
+        {
+          "source": "log/2026-05-08 acoustics standing",
+          "date": "2026-05-08"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/don-t-design-studies-contingent-on-a-single-sole-source-supp",
+      "statement": "Don't design studies contingent on a single sole-source supplier",
+      "first": "2026-06-22",
+      "reinforcements": [
+        {
+          "source": "log/2026-06-22 aion team sync",
+          "date": "2026-06-22"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/hold-out-for-the-right-hire-rather-than-adding-a-warm-body",
+      "statement": "Hold out for the right hire rather than adding a warm body",
+      "first": "2026-06-22",
+      "reinforcements": [
+        {
+          "source": "log/2026-06-22 aion team sync",
+          "date": "2026-06-22"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/move-from-science-risk-into-engineering-execution-risk-as-fa",
+      "statement": "Move from science risk into engineering execution risk as fast as possible",
+      "first": "2026-06-30",
+      "reinforcements": [
+        {
+          "source": "log/2026-06-30 bridget and joey intro",
+          "date": "2026-06-30"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/timelines-are-green-lights-to-malibu-in-30-minutes-give-best",
+      "statement": "Timelines are 'green lights to Malibu in 30 minutes': give best-case estimates and just report the red lights",
+      "first": "2026-07-27",
+      "reinforcements": [
+        {
+          "source": "log/2026-07-27 aion team sync",
+          "date": "2026-07-27"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/some-problems-are-to-be-aware-of-not-to-build-around-build-s",
+      "statement": "Some problems are to be aware of, not to build around: build something good enough to break the problem",
+      "first": "2026-07-27",
+      "reinforcements": [
+        {
+          "source": "log/2026-07-27 aion team sync",
+          "date": "2026-07-27"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/regulatory-institutions-are-relational-not-procedural-build",
+      "statement": "Regulatory institutions are relational, not procedural: build relationships before you need the gates unlocked",
+      "first": "2026-07-29",
+      "reinforcements": [
+        {
+          "source": "log/2026-07-29 eric contrary vc",
+          "date": "2026-07-29"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/never-take-an-investment-from-someone-you-would-dread-to-spe",
+      "statement": "Never take an investment from someone you would dread to spend an evening with",
+      "first": "",
+      "reinforcements": [
+        {
+          "source": "aion biosciences",
+          "date": null
+        }
+      ]
+    }
+  ]
+}

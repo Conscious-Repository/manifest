@@ -38,6 +38,10 @@ type Config struct {
 	OwnerInitials string `json:"ownerInitials"`
 	// Port is the local port the web UI is served on.
 	Port int `json:"port"`
+	// PortalPort is the local port the standalone AION portal is served on —
+	// a SECOND listener, mutually exclusive with the dashboard mux on Port
+	// (AION portal move, phase 1). Default 7778.
+	PortalPort int `json:"portalPort"`
 	// DataDir is where ALL derived/operational state lives — OUTSIDE the vault
 	// (calendar cache today, the read-only index next). Defaults to
 	// $MANIFEST_CONFIG_DIR or ~/.config/manifest (same external root as the
@@ -116,6 +120,7 @@ func defaultConfig() Config {
 		ScheduleStart:   8,
 		ScheduleEnd:     18,
 		Port:            7777,
+		PortalPort:      7778,
 		SystemRoot:      "system",
 		ExtrinsicRoot:   "extrinsic",
 	}
@@ -161,6 +166,9 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if cfg.Port == 0 {
 		cfg.Port = d.Port
+	}
+	if cfg.PortalPort == 0 {
+		cfg.PortalPort = d.PortalPort
 	}
 	if cfg.DataDir == "" {
 		cfg.DataDir = defaultDataDir()
