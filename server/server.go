@@ -70,6 +70,8 @@ type Server struct {
 	files *filesCfg
 	// terminal: the in-app PTY terminal (metis-local, tmux-persistent). Nilable.
 	terminal *termCfg
+	// devices: the terminal cockpit's ssh fleet (launcher targets). Nilable.
+	devices *devCfg
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -267,6 +269,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/terminal/session/{id}", s.handleTermDelete)
 	mux.HandleFunc("GET /api/terminal/ws", s.handleTermWS)
 	mux.HandleFunc("GET /api/terminal/ls", s.handleTermLs)
+	mux.HandleFunc("GET /api/terminal/devices", s.handleTermDevices)
+	mux.HandleFunc("PUT /api/terminal/device/{name}", s.handleTermDeviceUpdate)
+	mux.HandleFunc("POST /api/terminal/device/{name}/probe", s.handleTermDeviceProbe)
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)

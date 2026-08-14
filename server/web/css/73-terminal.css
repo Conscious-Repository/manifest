@@ -35,7 +35,13 @@
 /* launcher */
 .term-dev-row { display: flex; align-items: center; gap: 7px; padding: 6px; border-radius: var(--radius); }
 .term-dev-row.on { background: var(--base-05); }
+.term-dev-row.pick { cursor: pointer; }
+.term-dev-row.pick:hover { background: var(--hover); }
+.term-dev-row.pick .term-x { opacity: 1; }
 .term-dev-name { flex: 1; font-size: 13px; color: var(--base-100); }
+.term-dev-list { border: 1px solid var(--line); border-radius: var(--radius); margin-top: 4px; padding: 2px; }
+.term-gear { padding: 6px; display: flex; flex-direction: column; gap: 5px; border-top: 1px dashed var(--line); }
+.term-gear-hint { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
 .term-seg { display: flex; gap: 5px; margin: 8px 0; }
 .term-dir-row { display: flex; gap: 5px; align-items: center; }
 .term-cwd { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: var(--radius); padding: 5px 7px; background: var(--bg); color: var(--base-100); }

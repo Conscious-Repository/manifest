@@ -293,6 +293,18 @@ func main() {
 	{
 		home, _ := os.UserHomeDir()
 		srv.UseTerminal(filepath.Join(cfg.DataDir, "terminals.json"), filepath.Join(cfg.DataDir, "tmux"), home)
+		// the cockpit's ssh fleet (device selector); self = this box's hostname
+		devs := make([]server.TermDevice, 0, len(cfg.TerminalDevices))
+		for _, d := range cfg.TerminalDevices {
+			devs = append(devs, server.TermDevice(d))
+		}
+		self, _ := os.Hostname()
+		if i := strings.IndexByte(self, '.'); i > 0 {
+			self = self[:i]
+		}
+		srv.UseDevices(orDefault(self, "metis"), devs,
+			filepath.Join(cfg.DataDir, "device_overrides.json"),
+			filepath.Join(cfg.DataDir, "ssh_known_hosts"))
 	}
 	// FILES fleet browser (P8): local roots + tailnet agents; the agent-auth
 	// master lives in dataDir and never leaves this box.

@@ -8,7 +8,9 @@ let termSessions = [];
 let termOpenId = "";
 let termInst = null;   // { term, fit, ws, id, ro }
 let termStage = "term";           // term | files | activity
-let termLaunch = { kind: "shell", cwd: "" };
+let termLaunch = { kind: "shell", cwd: "", device: "" }; // device "" = this box
+let termDevices = [];             // fleet rows from /api/terminal/devices
+let termDevOpen = false;          // device list expanded?
 let termHistQuery = "";
 let termPollTimer = null;
 let termBrowseOpen = false, termBrowsePath = "";
@@ -158,10 +160,11 @@ function renderTermLauncher(enabled) {
   if (!enabled) return;
   host.dataset.built = "1";
 
-  // device slot — metis-only v1; Phase 2 replaces this with the fleet list
-  const dev = el("div", "term-dev-row on");
-  dev.append(statusDot(true), el("span", "term-dev-name", "metis"), el("span", "term-badge", "this box"));
-  host.append(dev);
+  // device slot — re-rendered whenever fleet data lands
+  const devSlot = el("div", "term-dev-slot");
+  devSlot.id = "termDevSlot";
+  host.append(devSlot);
+  loadTermDevices();
 
   // kind seg
   const seg = el("div", "term-seg");
@@ -193,6 +196,7 @@ function renderTermLauncher(enabled) {
 
   // actions
   const acts = el("div", "term-launch-acts");
+  acts.id = "termLaunchActs";
   acts.append(pill("Open", () => termCreate(termLaunch.kind, false)));
   const res = pillLight("Resume", () => termCreate(termLaunch.kind, true));
   res.className += " term-resume-btn";
@@ -214,10 +218,140 @@ function termSyncLauncher() {
   if (inp) inp.placeholder = termLaunch.kind === "shell" ? "~ (home)" : "~/project";
 }
 
+// --- fleet device selector (cmd-ctr model: dot + badges + gear override) ---
+
+async function loadTermDevices() {
+  try { termDevices = ((await (await fetch("/api/terminal/devices")).json()).devices) || []; }
+  catch (e) { termDevices = []; }
+  renderTermDevices();
+}
+
+function termSelectedDevice() {
+  return termDevices.find((d) => (d.self ? "" : d.name) === termLaunch.device) ||
+    termDevices.find((d) => d.self) || null;
+}
+
+function renderTermDevices() {
+  const slot = document.getElementById("termDevSlot");
+  if (!slot) return;
+  slot.innerHTML = "";
+  const sel = termSelectedDevice();
+  // collapsed row: the current pick (+/− toggles the list)
+  const cur = el("div", "term-dev-row on");
+  cur.append(statusDot(!sel || sel.status === "self" || sel.status === "ok", sel ? sel.status : ""));
+  cur.append(el("span", "term-dev-name", sel ? sel.name : "metis"));
+  if (!sel || sel.self) cur.append(el("span", "term-badge", "this box"));
+  else if (sel.status === "needs-key") cur.append(el("span", "term-badge warn", "needs key"));
+  else if (sel.status === "offline") cur.append(el("span", "term-badge", "offline"));
+  if (termDevices.length > 1) {
+    const tog = el("button", "term-x", termDevOpen ? "−" : "+");
+    tog.style.opacity = "1";
+    tog.title = "Pick a device";
+    tog.onclick = (e) => { e.stopPropagation(); termDevOpen = !termDevOpen; renderTermDevices(); };
+    cur.append(tog);
+    cur.onclick = () => { termDevOpen = !termDevOpen; renderTermDevices(); };
+    cur.style.cursor = "pointer";
+  }
+  slot.append(cur);
+  if (!termDevOpen) { termSyncOpenGate(); return; }
+
+  const list = el("div", "term-dev-list");
+  termDevices.forEach((d) => {
+    const row = el("div", "term-dev-row pick" + ((d.self ? "" : d.name) === termLaunch.device ? " on" : ""));
+    row.append(statusDot(d.status === "self" || d.status === "ok", d.status));
+    row.append(el("span", "term-dev-name", d.name));
+    if (d.self) row.append(el("span", "term-badge", "this box"));
+    else {
+      if (d.status === "needs-key") row.append(el("span", "term-badge warn", "needs key"));
+      if (d.status === "offline") row.append(el("span", "term-badge", "offline"));
+      if (d.overridden) row.append(el("span", "term-badge", d.user + "@"));
+      const gear = el("button", "term-x", "⚙");
+      gear.title = "SSH override (user / port / key)";
+      gear.onclick = (e) => { e.stopPropagation(); termToggleGear(list, row, d); };
+      row.append(gear);
+    }
+    row.onclick = () => {
+      termLaunch.device = d.self ? "" : d.name;
+      termDevOpen = false;
+      termBrowseOpen = false;
+      const bslot = document.querySelector("#termLauncher .term-browse-slot");
+      if (bslot) bslot.innerHTML = "";
+      const bbtn = document.querySelector("#termLauncher .term-browse");
+      if (bbtn) bbtn.textContent = "▸ browse folders";
+      renderTermDevices();
+    };
+    list.append(row);
+  });
+  slot.append(list);
+  termSyncOpenGate();
+}
+
+// termToggleGear opens the inline ssh-override form under a device row.
+function termToggleGear(list, row, d) {
+  const old = list.querySelector(".term-gear");
+  if (old) { old.remove(); return; }
+  const form = el("div", "term-gear");
+  const mk = (ph, val) => {
+    const i = document.createElement("input");
+    i.className = "term-cwd";
+    i.placeholder = ph;
+    i.value = val || "";
+    i.spellcheck = false;
+    return i;
+  };
+  const user = mk("user", d.user);
+  const port = mk("port (22)", d.port && d.port !== 22 ? String(d.port) : "");
+  const ident = mk("identity file (optional, abs path on metis)", d.identity);
+  form.append(user, port, ident,
+    el("div", "term-gear-hint", "blank key = the box's default ssh identity"));
+  const acts = el("div", "term-launch-acts");
+  acts.append(pillLight("save", async () => {
+    try {
+      await postPUT("/api/terminal/device/" + encodeURIComponent(d.name), {
+        user: user.value.trim(), port: parseInt(port.value, 10) || 0, identity: ident.value.trim(),
+      });
+      showToast("Saved — probing " + d.name, null, "info");
+      loadTermDevices();
+    } catch (e) { showToast("Couldn't save — " + (e.message || "error")); }
+  }));
+  if (d.overridden) {
+    acts.append(pillLight("clear", async () => {
+      try {
+        await postPUT("/api/terminal/device/" + encodeURIComponent(d.name), { clear: true });
+        loadTermDevices();
+      } catch (e) {}
+    }));
+  }
+  form.append(acts);
+  row.after(form);
+}
+
+async function postPUT(url, body) {
+  const res = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.text()).slice(0, 140));
+  return res.json();
+}
+
+// termSyncOpenGate disables Open/Resume with the reason when the selected
+// device isn't reachable.
+function termSyncOpenGate() {
+  const host = document.getElementById("termLauncher");
+  if (!host) return;
+  const sel = termSelectedDevice();
+  const blocked = sel && !sel.self && sel.status !== "ok";
+  host.querySelectorAll("#termLaunchActs .pill").forEach((b) => {
+    b.disabled = !!blocked;
+    b.style.opacity = blocked ? ".45" : "";
+    b.title = blocked ? (sel.status === "needs-key" ? "No ssh path — set a user/key via ⚙" : "Device is offline") : "";
+  });
+}
+
 function termToggleRecent(host, inp) {
   let dd = host.querySelector(".term-recent");
   if (dd) { dd.remove(); return; }
-  const dirs = [...new Set(termSessions.map((s) => s.cwd).filter(Boolean))].slice(0, 8);
+  const dirs = [...new Set(termSessions
+    .filter((s) => (s.device || "") === termLaunch.device)
+    .map((s) => s.cwd).filter(Boolean))].slice(0, 8);
   dd = el("div", "term-recent");
   if (!dirs.length) dd.append(el("div", "term-none", "no recent folders"));
   dirs.forEach((d) => {
@@ -244,7 +378,7 @@ async function termToggleBrowse(host, btn, inp) {
 async function termRenderTreeLevel(mount, path, inp, depth) {
   let d;
   try {
-    const res = await fetch("/api/terminal/ls?path=" + encodeURIComponent(path));
+    const res = await fetch("/api/terminal/ls?device=" + encodeURIComponent(termLaunch.device) + "&path=" + encodeURIComponent(path));
     if (!res.ok) { mount.append(el("div", "term-none", "unreadable")); return; }
     d = await res.json();
   } catch (e) { mount.append(el("div", "term-none", "unreachable")); return; }
@@ -289,7 +423,7 @@ async function termRenderTreeLevel(mount, path, inp, depth) {
 
 async function termCreate(kind, resume) {
   try {
-    const body = { kind, cwd: termLaunch.cwd };
+    const body = { kind, cwd: termLaunch.cwd, device: termLaunch.device };
     if (resume) body.resumePicker = true;
     const se = await postJSONOk("/api/terminal/session", body);
     termOpenId = se.id;

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -32,7 +33,8 @@ import (
 // termSession is one registry row (<dataDir>/terminals.json).
 type termSession struct {
 	ID        string `json:"id"`
-	Kind      string `json:"kind"` // shell | claude | codex
+	Kind      string `json:"kind"`             // shell | claude | codex
+	Device    string `json:"device,omitempty"` // "" = this box; else a fleet name
 	Cwd       string `json:"cwd"`
 	Name      string `json:"name"`
 	ResumeID  string `json:"resumeId,omitempty"` // claude --session-id / --resume handle
@@ -166,6 +168,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		Kind         string `json:"kind"`
+		Device       string `json:"device"`
 		Cwd          string `json:"cwd"`
 		Name         string `json:"name"`
 		ResumePicker bool   `json:"resumePicker"`
@@ -178,11 +181,24 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	if kind != "claude" && kind != "codex" {
 		kind = "shell"
 	}
+	device := strings.TrimSpace(b.Device)
+	if device != "" {
+		if s.devices == nil {
+			http.Error(w, "no devices configured", http.StatusBadRequest)
+			return
+		}
+		if device == s.devices.selfName {
+			device = ""
+		} else if _, ok := s.devices.effective(device); !ok {
+			http.Error(w, "unknown device "+device, http.StatusBadRequest)
+			return
+		}
+	}
 	idb := make([]byte, 8)
 	_, _ = rand.Read(idb)
 	now := time.Now().Format(time.RFC3339)
 	se := termSession{
-		ID: hex.EncodeToString(idb), Kind: kind,
+		ID: hex.EncodeToString(idb), Kind: kind, Device: device,
 		Cwd: strings.TrimSpace(b.Cwd), Name: strings.TrimSpace(b.Name),
 		Resume:    b.ResumePicker,
 		CreatedAt: now, LastUsed: now,
@@ -260,6 +276,10 @@ func (s *Server) handleTermLs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "terminal disabled", http.StatusServiceUnavailable)
 		return
 	}
+	if dev := strings.TrimSpace(r.URL.Query().Get("device")); dev != "" && s.devices != nil && dev != s.devices.selfName {
+		s.handleTermLsRemote(w, r, dev)
+		return
+	}
 	p := strings.TrimSpace(r.URL.Query().Get("path"))
 	if p == "" || p == "~" {
 		p = s.terminal.defaultWd
@@ -289,6 +309,55 @@ func (s *Server) handleTermLs(w http.ResponseWriter, r *http.Request) {
 		dirs = append(dirs, dirRow{Name: e.Name(), Hidden: strings.HasPrefix(e.Name(), ".")})
 	}
 	writeJSON(w, map[string]any{"path": p, "home": s.terminal.defaultWd, "dirs": dirs})
+}
+
+// handleTermLsRemote lists a fleet box's sub-dirs via a one-shot ssh (the
+// browse picker on a remote device). ~-relative paths resolve remotely.
+func (s *Server) handleTermLsRemote(w http.ResponseWriter, r *http.Request, device string) {
+	dev, ok := s.devices.effective(device)
+	if !ok {
+		http.Error(w, "unknown device", http.StatusNotFound)
+		return
+	}
+	p := strings.TrimSpace(r.URL.Query().Get("path"))
+	if p == "" || p == "~" {
+		p = "$HOME"
+	} else if !strings.HasPrefix(p, "/") {
+		http.Error(w, "path must be absolute", http.StatusBadRequest)
+		return
+	}
+	q := p
+	if q != "$HOME" {
+		q = shQuote(filepath.Clean(p))
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+	args := s.devices.sshArgs(dev)
+	args = append(args[1:], "cd "+q+" && pwd && ls -1Ap") // drop -tt for one-shots
+	out, err := exec.CommandContext(ctx, "ssh", args...).Output()
+	if err != nil {
+		http.Error(w, "unreachable", http.StatusBadGateway)
+		return
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) == 0 {
+		http.Error(w, "empty reply", http.StatusBadGateway)
+		return
+	}
+	type dirRow struct {
+		Name   string `json:"name"`
+		Hidden bool   `json:"hidden,omitempty"`
+	}
+	resolved := strings.TrimSpace(lines[0])
+	dirs := []dirRow{}
+	for _, ln := range lines[1:] {
+		if !strings.HasSuffix(ln, "/") {
+			continue
+		}
+		n := strings.TrimSuffix(ln, "/")
+		dirs = append(dirs, dirRow{Name: n, Hidden: strings.HasPrefix(n, ".")})
+	}
+	writeJSON(w, map[string]any{"path": resolved, "device": device, "dirs": dirs})
 }
 
 // tmux runs a tmux control command against the sandbox socket dir.
@@ -347,11 +416,37 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	// build the tmux create-or-attach command (cmd-ctr's exact option order:
 	// default-terminal BEFORE new-session, status off, mouse on, set-titles).
 	name := tmuxName(id)
-	cwd := se.Cwd
-	if cwd == "" {
-		cwd = s.terminal.defaultWd
+	var inner string
+	if se.Device != "" {
+		// remote session: the tmux inner command is ssh to the box. The remote
+		// side gets ONE shQuoted command string its login shell runs; the metis
+		// side (bash -lc) sees every ssh arg individually shQuoted.
+		var dev TermDevice
+		ok := false
+		if s.devices != nil {
+			dev, ok = s.devices.effective(se.Device)
+		}
+		if !ok {
+			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] unknown device "+se.Device+"\r\n"))
+			return
+		}
+		remote := "exec " + se.launchCmd()
+		if se.Cwd != "" {
+			remote = "cd " + shQuote(se.Cwd) + " 2>/dev/null; " + remote
+		}
+		parts := []string{"exec", "ssh"}
+		for _, a := range s.devices.sshArgs(dev) {
+			parts = append(parts, shQuote(a))
+		}
+		parts = append(parts, shQuote(remote))
+		inner = strings.Join(parts, " ")
+	} else {
+		cwd := se.Cwd
+		if cwd == "" {
+			cwd = s.terminal.defaultWd
+		}
+		inner = fmt.Sprintf("cd %s 2>/dev/null; exec %s", shQuote(cwd), se.launchCmd())
 	}
-	inner := fmt.Sprintf("cd %s 2>/dev/null; exec %s", shQuote(cwd), se.launchCmd())
 	tmuxArgs := []string{
 		"new-session", "-A", "-s", name, "bash", "-lc", inner, ";",
 		"set-option", "-t", name, "status", "off", ";",

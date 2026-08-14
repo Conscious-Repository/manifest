@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +17,19 @@ import (
 type FilesAgent struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
+}
+
+// TerminalDevice is one ssh-reachable box the terminal cockpit can launch
+// sessions on (metis itself is implicit). Remote sessions run `ssh -tt`
+// INSIDE a metis tmux, so keep-alive is inherent. Fields are validated at
+// load — they are interpolated into ssh argv (never a shell string).
+type TerminalDevice struct {
+	Name     string `json:"name"`               // display + registry key
+	Host     string `json:"host"`               // tailnet IP/DNS or LAN address
+	User     string `json:"user"`               // ssh login
+	Port     int    `json:"port,omitempty"`     // default 22
+	Identity string `json:"identity,omitempty"` // abs path to a key on this box
+	Agent    string `json:"agent,omitempty"`    // FilesAgent name (stats via /stats)
 }
 
 type Config struct {
@@ -93,6 +108,9 @@ type Config struct {
 	// secret lives at <dataDir>/agent_master (auto-created 0600).
 	FilesRoots  []string     `json:"filesRoots"`
 	FilesAgents []FilesAgent `json:"filesAgents"`
+	// TerminalDevices are the ssh boxes the terminal cockpit's device selector
+	// offers beyond metis itself (see TerminalDevice).
+	TerminalDevices []TerminalDevice `json:"terminalDevices"`
 	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
 	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
 	// src/data/deals.json from the vault's source sidecars for owner review
@@ -253,7 +271,41 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.AionPortal.Branch == "" {
 		cfg.AionPortal.Branch = "main"
 	}
+	// Terminal devices: these fields reach ssh argv — validate hard at load so
+	// a config typo fails the boot, not a shell.
+	for i := range cfg.TerminalDevices {
+		d := &cfg.TerminalDevices[i]
+		d.Identity = expandHome(d.Identity)
+		if err := d.validate(); err != nil {
+			return cfg, err
+		}
+	}
 	return cfg, nil
+}
+
+var (
+	devNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+	devUserRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.-]{0,31}$`)
+	devHostRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.:_-]{0,127}$`)
+)
+
+func (d TerminalDevice) validate() error {
+	if !devNameRe.MatchString(d.Name) {
+		return errors.New("terminalDevices: bad name " + strconv.Quote(d.Name))
+	}
+	if !devUserRe.MatchString(d.User) {
+		return errors.New("terminalDevices " + d.Name + ": bad user")
+	}
+	if !devHostRe.MatchString(d.Host) {
+		return errors.New("terminalDevices " + d.Name + ": bad host")
+	}
+	if d.Port < 0 || d.Port > 65535 {
+		return errors.New("terminalDevices " + d.Name + ": bad port")
+	}
+	if d.Identity != "" && !filepath.IsAbs(d.Identity) {
+		return errors.New("terminalDevices " + d.Name + ": identity must be absolute")
+	}
+	return nil
 }
 
 // validateZoneRoot refuses a zone root that is empty, the vault itself,
