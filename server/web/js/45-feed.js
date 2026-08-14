@@ -137,9 +137,9 @@ function signalRow(sg) {
   // everything — the label itself already navigates to the item.
   const act = el("span", "signal-actions");
   if (sg.kind === "todo-stale" || sg.kind === "todo-waiting") {
-    act.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })));
+    act.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true }, row)));
   }
-  act.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })));
+  act.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, row)));
   row.append(act);
   return row;
 }
@@ -170,13 +170,14 @@ function delegationDoneCard(sg) {
   view.classList.add("verdict-primary");
   actions.append(view);
   actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/todos"; }));
-  actions.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true })));
-  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 })));
-  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash })));
+  actions.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true }, card)));
+  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));
+  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
   return card;
 }
-async function signalAction(url, body) {
+async function signalAction(url, body, cardEl) {
+  if (cardEl) cardEl.remove(); // optimistic — the condition clears server-side next
   try { await postJSON(url, body); } catch (e) {}
   loadFeed();
 }
@@ -185,6 +186,14 @@ async function signalAction(url, body) {
 // stub (§11): the verb, the title struck through, and undo. The zero-inbox
 // count stays honest without the item vanishing irreversibly.
 async function feedVerdict(card, it, verb, status) {
+  // optimistic: the stub swaps in the instant you click — the write follows
+  // behind it; a failed write reloads the list so the card comes back honest.
+  const stub = el("div", "feed-stub");
+  stub.append(el("span", "feed-stub-verb", verb), el("span", "feed-stub-title", it.title));
+  const undo = el("button", "feed-stub-undo", "undo");
+  undo.onclick = () => feedAction(it.id, { status: "new" });
+  stub.append(undo);
+  card.replaceWith(stub);
   setSaveState("saving");
   try {
     await fetch(`/api/feed/${encodeURIComponent(it.id)}/status`, {
@@ -192,12 +201,6 @@ async function feedVerdict(card, it, verb, status) {
     });
     setSaveState("saved");
   } catch (e) { setSaveState("error"); loadFeed(); return; }
-  const stub = el("div", "feed-stub");
-  stub.append(el("span", "feed-stub-verb", verb), el("span", "feed-stub-title", it.title));
-  const undo = el("button", "feed-stub-undo", "undo");
-  undo.onclick = () => feedAction(it.id, { status: "new" });
-  stub.append(undo);
-  card.replaceWith(stub);
   refreshFeedBadge();
 }
 
@@ -236,7 +239,7 @@ function portalCardEl(pc) {
 
   const acts = el("div", "feed-actions");
   if (!isDigest && pc.url) acts.append(pillLight("jump →", () => window.open(pc.url, "_blank")));
-  acts.append(pillLight("Dismiss", () => portalDismiss(pc.id)));
+  acts.append(pillLight("Dismiss", () => portalDismiss(pc.id, card)));
   card.append(acts);
   return card;
 }
@@ -251,7 +254,8 @@ function portalLineRow(ln) {
   return row;
 }
 
-async function portalDismiss(id) {
+async function portalDismiss(id, cardEl) {
+  if (cardEl) cardEl.remove(); // optimistic — the dismissal lands server-side next
   try { await postJSON("/api/portals/item/dismiss", { id }); } catch (e) {}
   loadFeed();
 }
@@ -376,9 +380,9 @@ function draftFeedCard(it) {
 
   const actions = el("div", "feed-actions");
   actions.append(
-    pill("Approve → queue", () => draftApproval(it.approvalId, "confirm")),
+    pill("Approve → queue", () => draftApproval(it.approvalId, "confirm", card)),
     pillLight("Edit", () => { editWrap.hidden = !editWrap.hidden; }),
-    pillLight("Dismiss", () => studioDismiss(it.draftId, it.approvalId, loadFeed)),
+    pillLight("Dismiss", () => { card.remove(); studioDismiss(it.draftId, it.approvalId, loadFeed); }),
   );
   card.append(editWrap, fb, actions);
   return card;
@@ -393,8 +397,9 @@ async function studioDismiss(draftId, approvalId, refresh) {
   refresh();
 }
 
-async function draftApproval(approvalId, kind) {
+async function draftApproval(approvalId, kind, cardEl) {
   if (!approvalId) { showToast("this draft has no linked approval", null, "error"); return; }
+  if (cardEl) cardEl.remove(); // optimistic — the decision resolves server-side next
   setSaveState("saving");
   const body = kind === "reject" ? { reason: "dismissed from studio" } : {};
   try { await fetch(`/api/spirits/approvals/${encodeURIComponent(approvalId)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
@@ -475,6 +480,7 @@ function aionPublishReceiptEl(rc) {
   acts.append(pillLight("open AION →", () => { location.hash = "#/aion/settings"; }));
   if (!rc.acknowledged) {
     acts.append(pillLight("Clear", async () => {
+      card.remove(); // optimistic — the ack lands server-side next
       try { await fetch("/api/aion/publishes/" + encodeURIComponent(rc.id) + "/ack", { method: "POST" }); } catch (e) {}
       loadFeed();
     }));

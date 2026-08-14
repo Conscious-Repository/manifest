@@ -14,9 +14,13 @@ import (
 
 // pastMeetingWindowDays is how far back calendar-verified "last met" looks
 // (24 months); meetingCacheTTL bounds how often that pull is repeated.
+// upcomingCacheTTL bounds the forward pull the same way — List() runs on every
+// FEED render and badge refresh, and an uncached Upcoming() is a live Google
+// round trip each time (the ~300ms that made every feed action feel slow).
 const (
 	pastMeetingWindowDays = 730
 	meetingCacheTTL       = 30 * time.Minute
+	upcomingCacheTTL      = 10 * time.Minute
 )
 
 // CalendarReader is the minimal calendar surface the contacts layer needs for
@@ -63,8 +67,16 @@ type Service struct {
 	cal     CalendarReader   // nil → no upcoming / no calendar last-met
 	granola TranscriptSource // nil → vault-only transcripts
 
-	mu       sync.Mutex    // guards the meeting cache below
+	mu       sync.Mutex    // guards the two calendar caches below
 	meetings *meetingIndex // email→past-meetings projection, TTL-cached
+	upcoming *upcomingIndex // future-events pull, TTL-cached (same reason)
+}
+
+// upcomingIndex caches one Upcoming() calendar pull (the raw events; the
+// per-contact match in confirmedUpcoming stays live against the index).
+type upcomingIndex struct {
+	events  []Event
+	builtAt time.Time
 }
 
 // meetingIndex is a cached projection of the past-meeting window keyed by
@@ -962,10 +974,11 @@ func (s *Service) meetingsByEmail(now time.Time) map[string][]meetingRef {
 }
 
 // invalidateMeetings forces the next meeting lookup to rebuild (after an email
-// is linked, so calendar last-met updates instantly).
+// is linked, so calendar last-met — and upcoming matches — update instantly).
 func (s *Service) invalidateMeetings() {
 	s.mu.Lock()
 	s.meetings = nil
+	s.upcoming = nil
 	s.mu.Unlock()
 }
 
@@ -1059,7 +1072,7 @@ func (s *Service) upcomingFor(p Page, now time.Time) []UpcomingItem {
 	}
 	names := append([]string{p.Display}, p.Aliases...)
 	var out []UpcomingItem
-	for _, ev := range s.cal.Upcoming(now, 30) {
+	for _, ev := range s.upcomingEvents(now) {
 		date := ev.Start.Format("2006-01-02")
 		matchedConfirmed := false
 		var candidateEmail string
@@ -1083,6 +1096,23 @@ func (s *Service) upcomingFor(p Page, now time.Time) []UpcomingItem {
 	return out
 }
 
+// upcomingEvents returns the 30-day forward calendar pull, TTL-cached — the
+// pull is a live Google call, and List() (feed signals, badge) must not pay it
+// per render. invalidateMeetings drops it with the past cache.
+func (s *Service) upcomingEvents(now time.Time) []Event {
+	if s.cal == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if u := s.upcoming; u != nil && !now.Before(u.builtAt) && now.Sub(u.builtAt) < upcomingCacheTTL {
+		return u.events
+	}
+	evs := s.cal.Upcoming(now, 30)
+	s.upcoming = &upcomingIndex{events: evs, builtAt: now}
+	return evs
+}
+
 // confirmedUpcoming maps each contact key to its next CONFIRMED upcoming date
 // (for the list view — unconfirmed shows nothing there).
 func (s *Service) confirmedUpcoming(now time.Time) map[string]string {
@@ -1090,7 +1120,7 @@ func (s *Service) confirmedUpcoming(now time.Time) map[string]string {
 	if s.cal == nil {
 		return out
 	}
-	for _, ev := range s.cal.Upcoming(now, 30) {
+	for _, ev := range s.upcomingEvents(now) {
 		date := ev.Start.Format("2006-01-02")
 		for _, a := range ev.Attendees {
 			if k := s.ix.ResolveEmail(a.Email); k != "" {

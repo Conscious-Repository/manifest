@@ -646,6 +646,11 @@ function spiritApprovalAct(id, kind, edits) {
   postApprovalDecision(id, kind, body);
 }
 async function postApprovalDecision(id, kind, body) {
+  // optimistic: the card leaves the moment you decide — the pending/ move
+  // follows; loadFeed() converges to truth either way (a refused decision
+  // brings the card back).
+  const card = document.querySelector(`[data-approval-id="${CSS.escape(id)}"]`);
+  if (card) card.remove();
   setSaveState("saving");
   try { await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
   catch (e) { setSaveState("error"); }
