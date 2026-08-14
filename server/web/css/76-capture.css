@@ -1,0 +1,14 @@
+/* CAPTURE — the tray (cmd-ctr import P5) */
+.capture-composer { display: inline-flex; align-items: center; gap: 8px; }
+.capture-input { width: 320px; max-width: 60vw; font: inherit; font-size: 13px; color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; }
+.capture-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }
+.capture-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 14px; }
+.capture-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.capture-card.kept { border-left: 3px solid var(--accent); }
+.capture-head { display: flex; gap: 10px; font-size: 10.5px; letter-spacing: 0.4px; color: var(--base-40); text-transform: uppercase; }
+.capture-title { font-weight: 500; color: var(--base-100); font-size: 13.5px; }
+.capture-url { font-size: 13px; color: var(--accent); word-break: break-all; text-decoration: none; }
+.capture-url:hover { text-decoration: underline; }
+.capture-thumb { max-width: 100%; max-height: 220px; object-fit: contain; border-radius: calc(var(--radius) - 2px); cursor: zoom-in; align-self: flex-start; }
+.capture-text { font: inherit; font-size: 13px; line-height: 1.5; color: var(--base-70); background: none; border: 0; outline: none; resize: vertical; min-height: 22px; padding: 0; }
+.capture-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }

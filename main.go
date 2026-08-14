@@ -21,6 +21,7 @@ import (
 	"manifest/aion"
 	"manifest/approvals"
 	"manifest/calendar"
+	"manifest/capture"
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
@@ -273,6 +274,7 @@ func main() {
 	srv := server.New(svc, goalsStore, calClient)
 	srv.UseTodos(todosStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
+	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
 	// Gmail read-only OAuth — manifest mints/validates the token the headless
 	// excalibur engine reads for the ea-coordinator waiting-on digest, and
 	// raises a FEED reconnect nudge when the sign-in expires.

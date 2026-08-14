@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"log"
+	"mime"
 	"net/http"
 	"path"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"manifest/aion"
 	"manifest/approvals"
 	"manifest/calendar"
+	"manifest/capture"
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
@@ -58,6 +60,8 @@ type Server struct {
 	deepseekStatePath string
 	// stickyPath: the ⌘I floating post-it file (<dataDir>/sticky.md). Nilable.
 	stickyPath string
+	// capture: the tray (cmd-ctr Stage — dataDir cards + media). Nilable.
+	capture *capture.Store
 	// Read-only headless-Dataview index over the whole vault (M0). Nilable.
 	index *vaultindex.Index
 	// Contacts (people layer) over the index. Nilable.
@@ -244,6 +248,17 @@ func (s *Server) Handler() http.Handler {
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)
 	mux.HandleFunc("PUT /api/sticky", s.handleStickyPut)
+
+	// Capture tray (cmd-ctr import P5) — /share is the PWA share_target action.
+	mux.HandleFunc("GET /api/capture", s.handleCaptureList)
+	mux.HandleFunc("GET /api/capture/badge", s.handleCaptureBadge)
+	mux.HandleFunc("POST /api/capture/item", s.handleCaptureAdd)
+	mux.HandleFunc("POST /api/capture/upload", s.handleCaptureUpload)
+	mux.HandleFunc("POST /api/capture/share", s.handleCaptureShare)
+	mux.HandleFunc("POST /api/capture/{id}/update", s.handleCaptureUpdate)
+	mux.HandleFunc("POST /api/capture/{id}/status", s.handleCaptureStatus)
+	mux.HandleFunc("POST /api/capture/{id}/dismiss", s.handleCaptureDismiss)
+	mux.HandleFunc("GET /api/capture/media/{name}", s.handleCaptureMedia)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
 	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
 	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)
@@ -391,6 +406,9 @@ func (s *Server) Handler() http.Handler {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// PWA: the webmanifest must serve with its registered type (Linux metis
+	// has no .webmanifest mapping by default → text/plain → Chrome ignores it).
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
 	return mux
 }

@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Manifest</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#0e1116" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <link rel="stylesheet" href="css/99-local-fonts.css" />
   <!-- Styles (§11): core tokens first, then the shared primitives, then one
        file per tab — cascade order matters, keep it aligned with js/. -->
@@ -16,6 +21,7 @@
   <link rel="stylesheet" href="css/40-spirits.css" />
   <link rel="stylesheet" href="css/45-feed.css" />
   <link rel="stylesheet" href="css/48-chat.css" />
+  <link rel="stylesheet" href="css/76-capture.css" />
   <link rel="stylesheet" href="css/50-studio.css" />
   <link rel="stylesheet" href="css/55-approvals.css" />
   <link rel="stylesheet" href="css/60-contacts.css" />
@@ -197,6 +203,19 @@
        ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
        SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
        pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
+  <!-- CAPTURE (cmd-ctr import P5): the tray — shared links, screenshots, and
+       quick notes land as cards; the owner triages each (→ todo / → chat /
+       keep / bin). dataDir until promoted; share_target posts here. -->
+  <section class="goals-page" id="captureView" hidden>
+    <div class="areas-col">
+      <div class="agent-head">
+        <span class="agent-title">CAPTURE</span>
+        <div class="agent-actions"><span id="captureComposer" class="capture-composer"></span></div>
+      </div>
+      <div id="captureRows" class="capture-rows"></div>
+    </div>
+  </section>
+
   <!-- CHAT (cmd-ctr import P2): conversations with chattable spirits. The
        ENGINE writes the session files; this surface reads them + spools
        messages. Session rail · transcript · composer, all built in 48-chat.js. -->
@@ -466,6 +485,7 @@
   <script src="js/65-reading.js"></script>
   <script src="js/70-note.js"></script>
   <script src="js/75-bars.js"></script>
+  <script src="js/76-capture.js"></script>
   <script src="js/78-floating.js"></script>
   <script src="js/80-properties-core.js"></script>
   <script src="js/81-properties-board.js"></script>
@@ -478,5 +498,10 @@
   <script src="js/92-aion.js"></script>
   <script src="js/98-mobile.js"></script>
   <script src="js/99-boot.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+  </script>
 </body>
 </html>

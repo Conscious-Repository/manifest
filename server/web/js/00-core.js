@@ -121,6 +121,7 @@ const els = {
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   chatView: document.getElementById("chatView"),
+  captureView: document.getElementById("captureView"),
   spiritsStatus: document.getElementById("spiritsStatus"),
   spiritRunsList: document.getElementById("spiritRunsList"),
   spiritRunDetail: document.getElementById("spiritRunDetail"),
