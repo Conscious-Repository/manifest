@@ -6,6 +6,43 @@ async function load(date) {
   const r = await fetch(`/api/day?date=${date}`);
   state.day = await r.json();
   renderDay();
+  loadBriefingCard(today);
+}
+
+// ---- morning briefing headline (cmd-ctr import P3) ----
+// The concierge `briefing` ritual publishes ONE feed digest (profile:
+// briefing) each morning; TODAY leads with it. Dismiss = the feed verdict
+// (discarded), so the card and the FEED agree on lifecycle.
+async function loadBriefingCard(today) {
+  const host = document.getElementById("briefingCard");
+  if (!host) return;
+  host.hidden = true;
+  host.innerHTML = "";
+  if (!today) return;
+  let items = [];
+  try { items = ((await (await fetch("/api/feed?status=inbox")).json()).items) || []; } catch (e) { return; }
+  const iso = isoToday();
+  const brief = items.find((it) => it.profile === "briefing" && (it.date || "").slice(0, 10) === iso);
+  if (!brief) return;
+  const head = el("div", "briefing-head");
+  head.append(el("span", "briefing-label", "BRIEFING"), el("span", "briefing-title", brief.title || ""));
+  const dismiss = el("button", "sprt-quiet", "dismiss");
+  dismiss.onclick = async () => {
+    host.hidden = true;
+    try {
+      await fetch("/api/feed/" + encodeURIComponent(brief.id) + "/status", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "discarded" }),
+      });
+    } catch (e) {}
+  };
+  head.append(dismiss);
+  host.append(head);
+  const body = el("div", "briefing-body");
+  try { body.append(renderMarkdown(brief.body || brief.why || "", "", { readOnly: true })); }
+  catch (e) { body.textContent = brief.body || brief.why || ""; }
+  host.append(body);
+  host.hidden = false;
 }
 
 // Decorative per-row markers for the Goals / Milestones slots (mood, image,
