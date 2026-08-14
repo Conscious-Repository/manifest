@@ -212,8 +212,21 @@ if (els.castbarArgInput) {
 if (els.castbarCast) els.castbarCast.addEventListener("click", castSubmit);
 if (els.castbarBackdrop) els.castbarBackdrop.addEventListener("click", closeCastbar);
 
-// ---- palette result set (redesign §2): every nav destination, every AION
-// sub-tab, every property, and every contact — one keyboard-driven list.
+// ---- palette result set (redesign §2 → cmd-ctr import P1): every nav
+// destination, AION/Properties sub-tab, property, contact, goal rock, and
+// ritual — one keyboard-driven list, provider-fed via cmdRegistry
+// (00-core.js), fuzzy-ranked with recents-first empty state.
+const CMD_RECENTS_KEY = "manifest.cmd.recents";
+function cmdRecents() {
+  try { return JSON.parse(localStorage.getItem(CMD_RECENTS_KEY)) || []; } catch (e) { return []; }
+}
+function cmdRecordRecent(id) {
+  if (!id) return;
+  const r = cmdRecents().filter((x) => x !== id);
+  r.unshift(id);
+  try { localStorage.setItem(CMD_RECENTS_KEY, JSON.stringify(r.slice(0, 30))); } catch (e) {}
+}
+
 let _cmdDests = null, _cmdProps = null;
 function cmdDestinations() {
   if (_cmdDests) return _cmdDests;
@@ -242,9 +255,63 @@ async function cmdProperties() {
   return _cmdProps;
 }
 
+// Core providers. Destinations + properties are goto rows; contacts search
+// only with a query (keeps the empty state calm) and drill into the card.
+cmdRegistry.register((q) =>
+  cmdDestinations().map((d) => ({
+    id: "goto:" + d.hash, name: d.name, hint: d.hint,
+    act: () => { closeCmdbar(); location.hash = d.hash; },
+  })));
+cmdRegistry.register(async (q) =>
+  (await cmdProperties()).map((d) => ({
+    id: "goto:" + d.hash, name: d.name, hint: d.hint,
+    act: () => { closeCmdbar(); location.hash = d.hash; },
+  })));
+cmdRegistry.register(async (q) => {
+  if (!q) return [];
+  let d = { results: [] };
+  try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+  return (d.results || []).slice(0, 8).map((r) => ({
+    id: "contact:" + r.key, name: r.display,
+    hint: (r.hasNote ? "note" : "no note") + " · " + r.refCount + " ref" + (r.refCount === 1 ? "" : "s"),
+    act: () => cmdShowCard(r.key),
+  }));
+});
+// Rituals + skills: pick one from ⌘K and land in the castbar's argument box.
+let _cmdCastables = null;
+cmdRegistry.register(async (q) => {
+  if (!q) return []; // rituals surface on search, not in the empty state
+  if (!_cmdCastables) {
+    try { _cmdCastables = ((await (await fetch("/api/spirits/castables")).json()).data) || []; }
+    catch (e) { _cmdCastables = []; }
+  }
+  return _cmdCastables.map((c) => ({
+    id: "cast:" + (c.kind === "skill" ? "skill/" + (c.skill || c.label) : c.spirit + "/" + c.ritual),
+    name: (c.kind === "skill" ? "Cast · " : "Run · ") + c.label,
+    hint: c.kind === "skill" ? "sage · skill" : c.spirit + " · ritual",
+    keywords: (c.description || "") + " run cast ritual skill",
+    act: () => { closeCmdbar(); castOpenWith(c); },
+  }));
+});
+// Quick actions.
+cmdRegistry.register((q) => [
+  { id: "act:raw", name: "Raw markdown behind this view", hint: "⌘/ · action", keywords: "edit file raw markdown",
+    act: () => { closeCmdbar(); toggleRawOverlay(); } },
+]);
+
+// castOpenWith: open the castbar with a castable pre-chosen (⌘K handoff).
+async function castOpenWith(c) {
+  await openCastbar();
+  castChoose(c);
+}
+
 async function cmdSearch(q) {
-  const host = els.cmdbarResults; host.innerHTML = ""; cmdSel = -1; cmdResults = [];
+  const host = els.cmdbarResults;
   const needle = q.toLowerCase();
+  const lists = await Promise.all(cmdRegistry.providers.map((p) =>
+    Promise.resolve().then(() => p(q)).catch(() => [])));
+  if (q !== els.cmdbarInput.value.trim()) return; // a newer keystroke owns the list
+  host.innerHTML = ""; cmdSel = -1; cmdResults = [];
   if (q) {
     // quick-add lives here too: first row turns the query into a todo
     const addRow = el("div", "cmd-result");
@@ -252,22 +319,26 @@ async function cmdSearch(q) {
     addRow.onclick = () => { closeCmdbar(); openTodoQuickAdd(q); };
     host.append(addRow);
   }
-  const dests = cmdDestinations().concat(await cmdProperties())
-    .filter((d) => !needle || d.name.toLowerCase().includes(needle))
-    .slice(0, q ? 6 : 12)
-    .map((d) => ({ name: d.name, hint: d.hint, act: () => { closeCmdbar(); location.hash = d.hash; } }));
-  let contacts = [];
-  if (q) {
-    let d = { results: [] };
-    try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (e) {}
-    contacts = (d.results || []).slice(0, 8).map((r) => ({
-      name: r.display,
-      hint: (r.hasNote ? "note" : "no note") + " · " + r.refCount + " ref" + (r.refCount === 1 ? "" : "s"),
-      act: () => cmdShowCard(r.key),
-    }));
+  let items = lists.flat().filter(Boolean);
+  const recents = cmdRecents();
+  const recIdx = new Map(recents.map((id, i) => [id, i]));
+  if (needle) {
+    items = items
+      .map((it) => ({ it, s: fuzzyScore(needle, (it.name + " " + (it.keywords || "")).toLowerCase()) }))
+      .filter((x) => x.s >= 0)
+      .sort((a, b) => (b.s - a.s) ||
+        ((recIdx.has(a.it.id) ? recIdx.get(a.it.id) : 99) - (recIdx.has(b.it.id) ? recIdx.get(b.it.id) : 99)))
+      .map((x) => x.it);
+  } else {
+    // empty query: recents first (recency order), then the rest in provider order
+    const byId = new Map(items.map((it) => [it.id, it]));
+    const rec = recents.map((id) => byId.get(id)).filter(Boolean);
+    items = rec.concat(items.filter((it) => !recIdx.has(it.id)));
   }
-  if (q !== els.cmdbarInput.value.trim()) return; // a newer keystroke owns the list
-  cmdResults = dests.concat(contacts);
+  cmdResults = items.slice(0, 14).map((r) => ({
+    ...r,
+    act: () => { cmdRecordRecent(r.id); r.act(); },
+  }));
   cmdResults.forEach((r, i) => {
     const row = el("div", "cmd-result");
     row.append(el("span", "cmd-name", r.name), el("span", "cmd-refs", r.hint));

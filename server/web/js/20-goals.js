@@ -909,3 +909,27 @@ els.pickerBackdrop.addEventListener("click", closePicker);
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !els.pickerModal.hidden) closePicker();
 });
+
+// ---- ⌘K provider: jump to any live rock/stage (goals ladder deep-link) ----
+let _cmdRocks = null, _cmdRocksAt = 0;
+cmdRegistry.register(async (q) => {
+  if (!q) return [];
+  if (!_cmdRocks || Date.now() - _cmdRocksAt > 60000) {
+    try {
+      const d = await (await fetch("/api/goals")).json();
+      _cmdRocks = [];
+      (d.areas || []).forEach((a) =>
+        flattenRockLadder(a.rocks || []).forEach((r) => {
+          if (r.checked) return;
+          _cmdRocks.push({
+            id: "rock:" + r.id, name: r.label,
+            hint: (a.name || "goals").toLowerCase() + " · rock",
+            keywords: "goal rock milestone",
+            act: () => { closeCmdbar(); location.hash = "#/goals/" + encodeURIComponent(r.id); },
+          });
+        }));
+      _cmdRocksAt = Date.now();
+    } catch (e) { _cmdRocks = []; }
+  }
+  return _cmdRocks;
+});

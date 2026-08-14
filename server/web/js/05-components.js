@@ -365,3 +365,18 @@ function derivedDirtyBar(host, opts) {
   api.refresh();
   return api;
 }
+
+// fuzzyScore ranks hay against needle for the ⌘K palette: 4 full prefix,
+// 3 word prefix, 2 substring, 1 in-order subsequence, -1 no match. Both
+// arguments are expected lowercased; ties break by recency upstream.
+function fuzzyScore(needle, hay) {
+  if (!needle) return 0;
+  if (hay.startsWith(needle)) return 4;
+  if (hay.split(/[\s·—\-\/]+/).some((w) => w.startsWith(needle))) return 3;
+  if (hay.includes(needle)) return 2;
+  let i = 0;
+  for (const ch of hay) {
+    if (ch === needle[i]) { i++; if (i === needle.length) return 1; }
+  }
+  return -1;
+}

@@ -225,3 +225,13 @@ function saveDay() {
 function scheduleForSave() {
   return state.day.schedule.map((r) => (r.source === "calendar" ? { ...r, label: "" } : r));
 }
+
+// ---- command-palette registry (⌘K, cmd-ctr import P1) ----
+// Defined here (first script) so every later tab file can contribute a
+// provider at parse time. A provider is `async (q) => [{id, name, hint,
+// keywords?, act}]` — id is the stable recents key ("goto:#/aion/vto",
+// "rock:<goalid>", "ritual:<spirit>/<ritual>"); providers own their caching.
+const cmdRegistry = {
+  providers: [],
+  register(fn) { this.providers.push(fn); },
+};
