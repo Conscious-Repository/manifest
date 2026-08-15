@@ -51,17 +51,18 @@ async function aionPost(url, body, okMsg) {
   } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
 }
 
-// ---- publish → the breadcrumb bar (redesign §2): ONE count badge replaces
-// the eight per-section dirty dots; the meta string carries last-published.
+// ---- publish → the page header actions (next to the tabs): ONE count badge
+// replaces the eight per-section dirty dots; the meta string carries
+// last-published. Moved out of the (now section-hidden) breadcrumb bar.
 function renderAionRail() {
   const rail = els.aionPublishRail;
   rail.innerHTML = "";
   if (els.aionView.hidden) return;
   const pub = (aionCache && aionCache.publish) || {};
-  if (typeof setCrumbMeta === "function") {
-    setCrumbMeta(pub.lastPublished
+  if (els.aionMeta) {
+    els.aionMeta.textContent = pub.lastPublished
       ? "published " + fmtWhen(pub.lastPublished) + (pub.lastCommit ? " · " + pub.lastCommit.slice(0, 7) : "")
-      : (pub.configured ? "never published" : ""));
+      : (pub.configured ? "never published" : "");
   }
   if (!pub.configured) return;
   const dirty = pub.dirty || {};

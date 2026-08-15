@@ -48,15 +48,15 @@ function renderReToggle() {
 }
 
 // renderRePublishRail — mirror renderAionRail: the deals.json PUBLISH badge in
-// the breadcrumb (was the rail foot), plus the crumb meta line.
+// the page header actions (next to the tabs), plus the header's status meta.
 function renderRePublishRail() {
   const rail = els.rePublishRail;
   if (!rail) return;
   rail.innerHTML = "";
   if (els.propertiesView.hidden) return;
   const pub = (reBacklogCache && reBacklogCache.publish) || {};
-  if (typeof setCrumbMeta === "function") {
-    setCrumbMeta(activePortfolio().length + " active · " + propertyCache.length + " tracked");
+  if (els.reMeta) {
+    els.reMeta.textContent = activePortfolio().length + " active · " + propertyCache.length + " tracked";
   }
   if (!pub.configured) return;
   const btn = el("button", "aion-publish-btn re-publish-btn", "PUBLISH");

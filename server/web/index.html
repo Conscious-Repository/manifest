@@ -67,8 +67,6 @@
       <span id="crumbPath" class="crumb-path"></span>
       <span class="crumb-right">
         <span id="crumbMeta" class="crumb-meta"></span>
-        <span id="aionPublishRail" class="aion-rail"></span>
-        <span id="rePublishRail" class="aion-rail"></span>
         <span id="dateNav" class="crumb-datenav" hidden>
           <button id="prevBtn" class="pill arrow" aria-label="Previous day">‹</button>
           <button id="todayBtn" class="pill" title="Jump to today"><span id="dateLabel">TODAY</span></button>
@@ -379,7 +377,7 @@
 
   <!-- REAL ESTATE — mirrors AION: a top tab-bar over one body. BACKLOG (intake
        + decisions + owner-grouped tasks) · PORTFOLIO (+ deals) · ROCKS · MONEY ·
-       MAP · SETTINGS. PUBLISH rides the breadcrumb (#rePublishRail). -->
+       MAP · SETTINGS. PUBLISH + status meta live in the page header actions. -->
   <section class="properties-view" id="propertiesView" hidden>
     <div class="agent-head">
       <span class="agent-title">REAL ESTATE</span>
@@ -392,7 +390,8 @@
           <a class="filter-chip" data-mode="map" href="#/properties/map">MAP</a>
           <a class="filter-chip" data-mode="settings" href="#/properties/settings">SETTINGS</a>
         </span>
-        
+        <span id="reMeta" class="panel-meta"></span>
+        <span id="rePublishRail" class="aion-rail"></span>
       </div>
     </div>
     <div class="prop-shell">
@@ -415,7 +414,6 @@
     <div class="agent-head">
       <span class="agent-title">AION</span>
       <div class="agent-actions">
-        <span id="aionMeta" class="panel-meta"></span>
         <span class="prop-toggle" id="aionToggle">
           <a class="filter-chip on" data-mode="backlog" href="#/aion">BACKLOG</a>
           <a class="filter-chip" data-mode="heuristics" href="#/aion/heuristics">HEURISTICS</a>
@@ -423,7 +421,8 @@
           <a class="filter-chip" data-mode="goals" href="#/aion/goals">GOALS</a>
           <a class="filter-chip" data-mode="org" href="#/aion/org">ORG</a>
         </span>
-        
+        <span id="aionMeta" class="panel-meta"></span>
+        <span id="aionPublishRail" class="aion-rail"></span>
       </div>
     </div>
     <div id="aionBody" class="aion-body"></div>

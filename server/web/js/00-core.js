@@ -56,6 +56,7 @@ const els = {
   propertiesView: document.getElementById("propertiesView"),
   propertyBoard: document.getElementById("propertyBoard"),
   reToggle: document.getElementById("reToggle"),
+  reMeta: document.getElementById("reMeta"),
   rePublishRail: document.getElementById("rePublishRail"),
   propInspector: document.getElementById("propInspector"),
   propertyPage: document.getElementById("propertyPage"),

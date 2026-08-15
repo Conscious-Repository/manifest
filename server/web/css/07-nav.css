@@ -116,6 +116,17 @@ a.crumb-seg:hover { color: var(--accent); }
 .save-state { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); min-width: 38px; }
 .save-state.saving { color: var(--accent); }
 
+/* The crumb bar is redundant on top-level sections — each page carries its own
+   title header + tabs, and the left rail + browser history already cover nav.
+   Hide it there (JS toggles .crumb-hidden on the shell), keeping it only for
+   the Day home (date-nav) and note/artifact drill-downs where the breadcrumb +
+   Back ARE the navigation. Desktop only: on the phone band the crumb bar is the
+   top bar (☰/⌕/＋), so it must always stay. */
+@media (min-width: 861px) {
+  .app-shell.crumb-hidden .crumb-bar { display: none; }
+  .app-shell.crumb-hidden .content-scroll { padding-top: 6px; }
+}
+
 /* below 860px the rail auto-collapses (JS adds the class; this is the floor) */
 @media (max-width: 860px) {
   .crumb-bar { padding: 10px 14px; }

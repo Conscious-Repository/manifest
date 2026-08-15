@@ -30,6 +30,20 @@ function showChat(h) {
     if (chatOpenId) loadChatSession(chatOpenId);
     else renderChatLanding();
   });
+  requestAnimationFrame(chatFitShell);
+  if (!chatFitBound) { window.addEventListener("resize", chatFitShell); chatFitBound = true; }
+}
+
+// chatFitShell sizes the shell to exactly the space below its top edge (mirrors
+// termFitShell) so it fills correctly whatever chrome sits above it — e.g. with
+// the crumb bar hidden on this section, the shell reclaims that height.
+let chatFitBound = false;
+function chatFitShell() {
+  const shell = document.querySelector(".chat-shell");
+  if (!shell || els.chatView.hidden) return;
+  if (window.innerWidth <= 860) { shell.style.height = ""; return; } // mobile stacks
+  const top = shell.getBoundingClientRect().top;
+  shell.style.height = Math.max(320, window.innerHeight - top - 14) + "px";
 }
 
 async function loadChatSessions() {
