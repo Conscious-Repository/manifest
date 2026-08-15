@@ -337,6 +337,28 @@
           "date": null
         }
       ]
+    },
+    {
+      "id": "aion-h/generate-many-options-and-attack-your-own-thesis-as-a-compet",
+      "statement": "Generate many options and attack your own thesis (as a competitor would) before committing to the first viable path",
+      "first": "2026-08-14",
+      "reinforcements": [
+        {
+          "source": "log/2026-08-14 jack sync",
+          "date": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "id": "aion-h/engineer-backward-from-the-kpis-needed-to-win-the-market-opt",
+      "statement": "Engineer backward from the KPIs needed to win the market (optimism-first), not forward from current constraints",
+      "first": "2026-08-14",
+      "reinforcements": [
+        {
+          "source": "log/2026-08-14 jack sync",
+          "date": "2026-08-14"
+        }
+      ]
     }
   ]
 }
