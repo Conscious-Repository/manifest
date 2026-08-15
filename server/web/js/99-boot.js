@@ -107,7 +107,6 @@ const NAV_SECTIONS = [
     { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
     { key: "capture", label: "Capture", glyph: "⊕", hash: "#/capture" }, // count = open tray cards
     { key: "terminal", label: "Terminal", glyph: "❯", hash: "#/terminal" },
-    { key: "chat", label: "Chat", glyph: "✉", hash: "#/chat" },
     { key: "spirits", label: "Spirits", glyph: "✦", hash: "#/spirits" },
     { key: "contacts", label: "Contacts", glyph: "◍", hash: "#/contacts" },
     { key: "calendar", label: "Calendar", glyph: "▦", hash: "#/calendar" },
@@ -156,6 +155,10 @@ function buildRail() {
 function setRailActive() {
   const active = sectionOf(_curHash);
   Object.entries(railItems).forEach(([key, r]) => r.a.classList.toggle("active", key === active));
+  // chat lives BEHIND THE LOGO (todo-panel plan D7): the brand is its only
+  // nav entry, so it alone lights up on #/chat — no rail item does.
+  const brand = document.getElementById("railBrand");
+  if (brand) brand.classList.toggle("brand-active", active === "chat");
 }
 
 function railSetCount(key, n) {
@@ -349,6 +352,8 @@ els.railCollapse.addEventListener("click", () => {
   setRailCollapsed(on, true);
 });
 els.railSearch.addEventListener("click", () => openCmdbar());
+// the logo IS the chat entry (D7 — hidden, not removed: ⌘K/⌘J still reach it)
+document.getElementById("railBrand").addEventListener("click", () => { location.hash = "#/chat"; });
 document.getElementById("railRaw").addEventListener("click", () => toggleRawOverlay());
 els.crumbBack.addEventListener("click", navBack);
 els.crumbFwd.addEventListener("click", navForward);
