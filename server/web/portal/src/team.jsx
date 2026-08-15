@@ -27,11 +27,14 @@ function AuthChip({ me, onChange }) {
       </span>
     );
   }
-  // logout returns 204 (no body) — a plain fetch, then reload so the whole-site
-  // sign-in gate takes over and bounces to re-auth. (TEAM_API.post would try to
-  // JSON-parse the empty 204 and reject before anything ran.)
+  // logout returns 204 (no body) — a plain fetch clears the cookie, then we send
+  // the browser to /oauth2/login?switch=1, which forces Google's account chooser
+  // (prompt=select_account) so the user actually lands on a login screen instead
+  // of being silently re-authenticated straight back in. (TEAM_API.post would
+  // try to JSON-parse the empty 204 and reject before anything ran.)
   const signOut = () =>
-    fetch('oauth2/logout', { method: 'POST' }).finally(() => location.reload());
+    fetch('oauth2/logout', { method: 'POST' })
+      .finally(() => { location.href = 'oauth2/login?switch=1'; });
   return (
     <span className="auth-chip">
       <span className="auth-who">{me.email}</span>

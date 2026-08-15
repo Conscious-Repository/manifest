@@ -287,7 +287,14 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 	// hd biases Google's chooser to the workspace domain (advisory only — the
 	// callback still verifies the email itself).
-	http.Redirect(w, r, cfg.AuthCodeURL(state, oauth2.SetAuthURLParam("hd", Domain)), http.StatusFound)
+	opts := []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("hd", Domain)}
+	// After an explicit sign-out (?switch=1) force the account chooser, else
+	// Google silently re-authenticates the still-live session and the user never
+	// leaves — "sign out" would look like it did nothing.
+	if r.URL.Query().Get("switch") != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
+	}
+	http.Redirect(w, r, cfg.AuthCodeURL(state, opts...), http.StatusFound)
 }
 
 // HandleCallback (GET /oauth2/callback) verifies state, exchanges the code,
