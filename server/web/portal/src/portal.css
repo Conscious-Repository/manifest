@@ -396,6 +396,8 @@ a:hover { text-decoration-color: var(--fg-1); }
 
 .log-block { margin-top: 34px; }
 .log-head { font-size: var(--text-sm); color: var(--fg-5); border-bottom: 1px solid var(--rule); padding-bottom: 6px; }
+.log-head-toggle { cursor: pointer; user-select: none; }
+.log-head-toggle:hover { color: var(--fg-1); }
 .log-rows { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; font-size: var(--text-md); color: var(--fg-5); }
 .log-row { display: flex; gap: 16px; align-items: baseline; }
 .log-date { width: 96px; flex: none; }

@@ -10,6 +10,9 @@ function Todo({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChan
   const backlog = data.backlog;
   const today = U.todayISO();
   const [adding, setAdding] = React.useState(false);
+  // decided log collapsed by default — open decisions + open todos are the
+  // primary views on this page
+  const [logOpen, setLogOpen] = React.useState(false);
   const signedIn = me && !me.anon;
   const open = onOpenItem || function () {};
   const commentCount = id =>
@@ -82,17 +85,22 @@ function Todo({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChan
         <TeamProposals me={me} team={team} onChange={onTeamChange} />
 
         <div className="log-block">
-          <div className="log-head">log</div>
-          <div className="log-rows">
-            {decidedLog.length === 0 && <div className="no-data">nothing decided yet</div>}
-            {decidedLog.map(d => (
-              <div className="log-row" key={d.id}>
-                <span className="log-date">{d.decided || '—'}</span>
-                <span className="log-title">{d.title}</span>
-                <span className="log-outcome">{d.outcome ? '→ ' + d.outcome : ''}</span>
-              </div>
-            ))}
-          </div>
+          <div
+            className="log-head log-head-toggle"
+            onClick={() => setLogOpen(o => !o)}
+          >log — {decidedLog.length} decided {logOpen ? '▾' : '▸'}</div>
+          {logOpen && (
+            <div className="log-rows">
+              {decidedLog.length === 0 && <div className="no-data">nothing decided yet</div>}
+              {decidedLog.map(d => (
+                <div className="log-row" key={d.id}>
+                  <span className="log-date">{d.decided || '—'}</span>
+                  <span className="log-title">{d.title}</span>
+                  <span className="log-outcome">{d.outcome ? '→ ' + d.outcome : ''}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
