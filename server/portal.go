@@ -62,7 +62,8 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			mux.HandleFunc("POST /api/team/proposals/decide", api.handleDecide)
 		}
 	}
-	return requireSignIn(opt, mux), nil
+	loginPage, _ := fs.ReadFile(sub, "login.html") // the anonymous landing (nil → fall back to a redirect)
+	return requireSignIn(opt, mux, loginPage), nil
 }
 
 // requireSignIn gates the WHOLE portal behind Google sign-in: the only way in
@@ -75,7 +76,7 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 // When Auth is nil (no OAuth client on this host) the gate is a no-op: with no
 // way to sign in, locking would brick the site — the same graceful degradation
 // as the zero-value "serve the static Phase-1 site" path.
-func requireSignIn(opt PortalOptions, inner http.Handler) http.Handler {
+func requireSignIn(opt PortalOptions, inner http.Handler, loginPage []byte) http.Handler {
 	if opt.Auth == nil {
 		return inner
 	}
@@ -88,8 +89,20 @@ func requireSignIn(opt PortalOptions, inner http.Handler) http.Handler {
 			inner.ServeHTTP(w, r)
 			return
 		}
+		// Anonymous browser navigation → the branded landing page (logo + a
+		// Sign in button), NOT an auto-redirect to Google. Auto-redirecting let
+		// Google silently re-authenticate a still-live session, so a signed-out
+		// user could never stay out; the landing keeps sign-in a deliberate
+		// click. A data/XHR fetch still gets a plain 401.
 		if isBrowserNav(r) {
-			http.Redirect(w, r, "/oauth2/login", http.StatusFound)
+			if len(loginPage) > 0 {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(http.StatusOK)
+				w.Write(loginPage)
+				return
+			}
+			http.Redirect(w, r, "/oauth2/login", http.StatusFound) // fallback if the page is missing
 			return
 		}
 		http.Error(w, "sign in with your @"+teamportal.Domain+" account to view this portal", http.StatusUnauthorized)

@@ -6,9 +6,11 @@ package teamportal_test
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -267,7 +269,7 @@ func TestPortalRequiresSignIn(t *testing.T) {
 		return http.ErrUseLastResponse
 	}}
 
-	get := func(path, accept string) *http.Response {
+	get := func(path, accept string) (*http.Response, string) {
 		req, _ := http.NewRequest("GET", srv.URL+path, nil)
 		if accept != "" {
 			req.Header.Set("Accept", accept)
@@ -276,23 +278,25 @@ func TestPortalRequiresSignIn(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
 		}
+		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return resp
+		return resp, string(body)
 	}
 
-	// Top-level navigation (Accept: text/html) → 302 to /oauth2/login.
-	if resp := get("/", "text/html"); resp.StatusCode != http.StatusFound ||
-		resp.Header.Get("Location") != "/oauth2/login" {
-		t.Errorf("anon nav to / = %d loc=%q, want 302 → /oauth2/login", resp.StatusCode, resp.Header.Get("Location"))
+	// Top-level navigation (Accept: text/html) → the branded landing page (200),
+	// NOT an auto-redirect to Google (which would silently re-auth a live
+	// session so a signed-out user could never stay out).
+	if resp, body := get("/", "text/html"); resp.StatusCode != http.StatusOK ||
+		!strings.Contains(body, "Sign in") {
+		t.Errorf("anon nav to / = %d, want 200 landing page with a Sign in button", resp.StatusCode)
 	}
-	// A data fetch (no html Accept) → 401, not a redirect.
-	if resp := get("/data/backlog.json", "application/json"); resp.StatusCode != http.StatusUnauthorized {
+	// A data fetch (no html Accept) → 401, not the landing page.
+	if resp, _ := get("/data/backlog.json", "application/json"); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("anon data fetch = %d, want 401", resp.StatusCode)
 	}
 	// The sign-in route itself is reachable anonymously (no OAuth client here,
-	// so it 503s — but crucially it is NOT gated to 401/302).
-	if resp := get("/oauth2/login", "text/html"); resp.StatusCode == http.StatusUnauthorized ||
-		(resp.StatusCode == http.StatusFound && resp.Header.Get("Location") == "/oauth2/login") {
+	// so it 503s — but crucially it is NOT gated to 401 or the landing page).
+	if resp, _ := get("/oauth2/login", "text/html"); resp.StatusCode == http.StatusUnauthorized {
 		t.Errorf("/oauth2/login was gated (%d) — the way in must stay open", resp.StatusCode)
 	}
 }
