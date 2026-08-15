@@ -81,7 +81,12 @@ func requireSignIn(opt PortalOptions, inner http.Handler, loginPage []byte) http
 		return inner
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/oauth2/") {
+		// The oauth endpoints AND the portal's public branding assets (logo,
+		// favicon, fonts, colour tokens) are the only anonymous surface — the
+		// landing page shows the logo to signed-out visitors by design, so those
+		// files aren't secret. Everything else needs a session.
+		if strings.HasPrefix(r.URL.Path, "/oauth2/") ||
+			(r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/assets/")) {
 			inner.ServeHTTP(w, r)
 			return
 		}
