@@ -237,7 +237,7 @@ function orientArea(area) {
       el("span", "go-un-hint", "in TODOS · advancing no rock — link to place"));
     foot.append(head);
     un.todos.forEach((t) => {
-      const row = goTaskRow(t);
+      const row = goTaskRow(t, area.name);
       const link = el("button", "go-un-link", "→ rock…");
       link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
         if (!p.rock) return;
@@ -538,7 +538,7 @@ function moveGoalPicker(g, areaName) {
 
 // goTaskRow — one substrate task line inside the outline: live checkbox,
 // click-to-edit text, age.
-function goTaskRow(t) {
+function goTaskRow(t, areaName) {
   const row = el("div", "go-task");
   const tc = el("button", "go-check", "○");
   tc.title = "done";
@@ -554,6 +554,17 @@ function goTaskRow(t) {
     loadGoals();
   });
   row.append(tt);
+  // owner — @initials when assigned, a quiet ＋@ ghost while it defaults to you.
+  // Editable in place from the domain's people registry, same as a milestone's
+  // owner; the write lands on the todo's own owner:: (to-do.md line).
+  const hasOwner = t.owner && t.owner !== "me";
+  const ownerNode = hasOwner ? el("span", "go-stage-owner", "@" + t.owner)
+    : el("button", "o-ghost go-owner-ghost", "＋@");
+  ownerEditable(ownerNode, () => (hasOwner ? t.owner : ""), async (v) => {
+    try { await postJSONOk("/api/todos/update", { id: t.id, owner: v }); } catch (err) {}
+    loadGoals();
+  }, ownerRegistryFor(areaName));
+  row.append(ownerNode);
   row.append(el("span", "go-task-age", t.ageDays > 0 ? t.ageDays + "d" : ""));
   const x = el("button", "go-task-x", "✕");
   x.title = "remove this task";
@@ -629,7 +640,7 @@ function rockOutline(g, areaName) {
 
     // tasks whose [stage::] names this milestone nest here; each milestone
     // has its own composer (add work anywhere, any time)
-    (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t)));
+    (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t, areaName)));
     if (!g.checked && !st.checked) {
       wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
         try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
@@ -650,10 +661,13 @@ function rockOutline(g, areaName) {
         wrap.append(el("div", "o-frozen-line", ln.trim().replace(/^[-*]\s*/, ""))));
     }
   });
-  // milestone-less tasks live at the rock level, with the rock's own composer
-  if (looseTasks.length || !g.checked) {
-    looseTasks.forEach((t) => wrap.append(goTaskRow(t)));
-    if (!g.checked) wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
+  // milestone-less tasks live at the rock level, always shown. The rock-level
+  // task composer only appears when the rock has NO milestones — otherwise each
+  // milestone owns its own ＋ task, and a second rock-level one right after the
+  // last milestone read as a confusing duplicate (owner call 2026-08-14).
+  looseTasks.forEach((t) => wrap.append(goTaskRow(t, areaName)));
+  if (!g.checked && stages.length === 0) {
+    wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
       try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
       loadGoals();
     }, "what advances this rock…"));
