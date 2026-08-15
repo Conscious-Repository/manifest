@@ -1,11 +1,13 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"manifest/realestate"
+	"manifest/spirits"
 	"manifest/teamportal"
 	"manifest/threads"
 )
@@ -261,20 +263,24 @@ func (s *Server) handleTodoThreadPost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "comment": c, "thread": s.listThread(id)})
 }
 
-// threadMentionHook reacts to agent mentions in a fresh comment. Phase 4
-// wires the comment-phase spool; until then it is deliberately inert.
+// threadMentionHook: a mentioned AGENT gets the comment relayed as a
+// comment-phase work order (steer/re-plan); mentioned people stay record-only.
 func (s *Server) threadMentionHook(todoID string, mentions []string, text string) {
-	_ = todoID
-	_ = mentions
-	_ = text
+	for _, m := range mentions {
+		if harness := s.agentHarness(m); harness != "" {
+			_ = s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "comment", text)
+		}
+	}
 }
 
-// assignAgentHook kicks the plan-phase delegation on agent assignment.
-// Phase 4 replaces the body with the real spool; inert until then.
+// assignAgentHook: assigning to an agent spools the PLAN-phase work order —
+// the §12 lane's entry point. Execution still waits for the explicit fire.
 func (s *Server) assignAgentHook(todoID, harness string) error {
-	_ = todoID
-	_ = harness
-	return nil
+	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "plan", "")
+	if errors.Is(err, spirits.ErrAlreadyActive) {
+		return nil // already out planning — the state chip says so
+	}
+	return err
 }
 
 // handleTodoThreadFile stores one attachment blob (raw body) and returns its

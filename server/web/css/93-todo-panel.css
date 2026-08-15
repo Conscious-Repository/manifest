@@ -81,3 +81,10 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: 20px; }
 .tdo-agent-chip { font-family: var(--mono); font-size: 10px; color: var(--accent); border: 1px solid var(--accent-soft); border-radius: 5px; padding: 1px 6px; flex: none; }
 .tdo-p-assignee-wrap .ta-wrap { width: 100%; }
 .tdo-p-assignee-wrap .ta-in { width: 100%; font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 7px 10px; background: var(--bg); }
+
+/* fire (the explicit go) + plan-state chips */
+.tdo-p-fire { margin-top: 4px; }
+.tdo-p-firebtn { width: 100%; }
+.delegation-chip.dstate-plan-queued, .delegation-chip.dstate-plan-running { color: var(--base-50); }
+.delegation-chip.dstate-plan-ready { color: var(--accent); border-color: var(--accent-soft); }
+.delegation-chip.dstate-go-queued { color: #b45309; }

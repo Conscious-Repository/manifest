@@ -14,6 +14,7 @@ let feedCache = { items: [], signals: [], proposals: [], portalItems: [], receip
 const FEED_CARD = {
   signal: (sg) => signalRow(sg),
   delegationDone: (sg) => delegationDoneCard(sg),
+  planReady: (sg) => planReadyCard(sg),
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
   finding: (it) => feedCard(it),
@@ -24,8 +25,10 @@ const FEED_CARD = {
 // wants completed delegations to read as full, actionable cards rather than
 // one-line chips. So it splits off the strip and renders into the main list.
 const isDelegationDone = (sg) => sg.kind === "delegation-done";
+const isPlanReady = (sg) => sg.kind === "plan-ready";
 // main-list lanes in render order (other signals render into their own strip).
 const FEED_LANES = [
+  { kind: "planReady", slice: (c) => (c.signals || []).filter(isPlanReady), inboxOnly: true },
   { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone), inboxOnly: true },
   { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
   { kind: "notice", slice: (c) => c.portalItems, inboxOnly: true },
@@ -176,6 +179,30 @@ function delegationDoneCard(sg) {
   card.append(actions);
   return card;
 }
+// planReadyCard (todo-panel Phase 4): the assigned agent's PLAN landed in the
+// todo's record — review it in the panel, edit by hand, then fire. The card
+// auto-clears when the go-phase run outranks plan-ready (or the todo closes).
+function planReadyCard(sg) {
+  const card = el("div", "feed-card artifact plan-ready");
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-artifact", "plan"));
+  if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
+  const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
+  title.title = "review the plan in the todo panel";
+  title.onclick = () => { location.hash = sg.actHref || "#/todos"; };
+  top.append(title);
+  card.append(top);
+  card.append(el("div", "feed-why", "the agent drafted a plan — review it, edit it in place if needed, then fire to execute"));
+  const actions = el("div", "feed-actions");
+  const review = pillLight("review plan →", () => { location.hash = sg.actHref || "#/todos"; });
+  review.classList.add("verdict-primary");
+  actions.append(review);
+  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));
+  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
+  card.append(actions);
+  return card;
+}
+
 async function signalAction(url, body, cardEl) {
   if (cardEl) cardEl.remove(); // optimistic — the condition clears server-side next
   try { await postJSON(url, body); } catch (e) {}

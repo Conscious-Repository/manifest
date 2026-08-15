@@ -292,7 +292,7 @@ function rankedRow(r, idx) {
   // ⇢ delegate (Phase 6) — dispatch this todo to a harness; the chip tracks
   // the work order through the trace files (and stays clickable when done).
   if (r.delegation) {
-    right.append(delegationChip(r.delegation));
+    right.append(delegationChip(r.delegation, false, r.id));
   } else {
     const dg = el("button", "uw-x tdo-delegate", "⇢");
     dg.title = "delegate to a harness…";
@@ -348,15 +348,19 @@ function commitRank(draggedId, targetId) {
 // through the shared legible viewer — the artifact brief when the run wrote
 // one, else the run report; proposed routes to the FEED inbox; queued/running
 // → Spirits.
-function delegationChip(d, asSpan) {
+function delegationChip(d, asSpan, todoId) {
   const chip = el(asSpan ? "span" : "button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
   chip.style.cursor = "pointer";
   const hasResult = !!(d.artifactRef || d.artifactPath || d.runId);
+  const planState = (d.state || "").startsWith("plan");
   chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
+    : d.state === "plan-ready" ? "the plan is in — review it in the panel, then fire"
+    : planState ? "the agent is drafting a plan"
     : d.artifactRef || d.artifactPath ? "read the result"
     : d.runId ? "view the result (run report)" : "delegated work — click for the runs board";
   chip.onclick = (e) => {
     e.stopPropagation();
+    if (planState && todoId && typeof openTodoPanel === "function") { openTodoPanel(todoId); return; }
     if (d.state === "proposed") { location.hash = "#/feed"; return; }
     if (hasResult) { openResult(d); return; }
     location.hash = "#/spirits";
@@ -566,7 +570,7 @@ function boardCard(r, colKey) {
   if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));
   // delegation: inline for open cards, looked up by id for the Done column
   const dg = r.delegation || delegationFor(r.id);
-  if (dg) meta.append(delegationChip(dg, true));
+  if (dg) meta.append(delegationChip(dg, true, r.id));
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
   const open = el("button", "tdo-open-chevron", "›");
   open.title = "open — description, plan, thread";

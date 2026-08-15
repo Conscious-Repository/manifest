@@ -426,6 +426,7 @@ func main() {
 		// delegated work whose run completed while the todo is still open —
 		// "your result is ready" (opens the report in place)
 		emitters = append(emitters, srv.DelegationDoneEmitter())
+		emitters = append(emitters, srv.PlanReadyEmitter()) // todo-panel Phase 4: materialize + page
 		deepseekState := filepath.Join(cfg.DataDir, "portals", "deepseek.state.json")
 		srv.UseDeepseekState(deepseekState)
 		emitters = append(emitters, signals.DegradedPortal(deepseekState))

@@ -125,6 +125,27 @@ async function renderTodoPanel(refetch) {
     planBody.append(el("div", "tdo-p-empty", "no plan yet — write one, or assign an agent to draft it"));
   }
   plan.append(planBody);
+  // fire — the explicit go (§12: the plan lane never executes on its own).
+  // Shown when a plan exists and an agent holds the assignment.
+  const assignee = rec.Assignee || rec.assignee || "";
+  const st = d.delegation && d.delegation.state;
+  if (planText && assignee.startsWith("agent:") && st !== "go-queued" && st !== "running") {
+    const fireRow = el("div", "tdo-p-fire");
+    const fire = el("button", "term-primary tdo-p-firebtn", "fire → " + assignee.slice(6) + " executes");
+    fire.onclick = async () => {
+      fire.disabled = true;
+      try {
+        await postJSONOk("/api/todos/fire", { id: todoSelId });
+        showToast("Fired — " + assignee.slice(6) + " is executing the plan", null, "info");
+        renderTodoPanel(true);
+      } catch (e) {
+        fire.disabled = false;
+        showToast("Couldn't fire — " + (e.message || "error"));
+      }
+    };
+    fireRow.append(fire);
+    plan.append(fireRow);
+  }
   editBtn.onclick = () => {
     const ta = document.createElement("textarea");
     ta.className = "tdo-p-textarea plan";

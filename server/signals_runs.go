@@ -32,6 +32,42 @@ func (s *Server) RunFailureEmitter() signals.Emitter { return runFailEmitter{s} 
 // lands in an unrelated run report.
 func (s *Server) DelegationDoneEmitter() signals.Emitter { return delegDoneEmitter{s} }
 
+// PlanReadyEmitter (todo-panel plan Phase 4): an assigned agent's PLAN came
+// back — the emitter first MATERIALIZES the brief into the todo's record
+// (## plan, `todo-plans-agent`, idempotent by run id — the §12 lane), then
+// pages "review the plan →". Auto-clears on fire (the go-phase run outranks
+// plan-ready) or when the todo closes.
+func (s *Server) PlanReadyEmitter() signals.Emitter { return planReadyEmitter{s} }
+
+type planReadyEmitter struct{ s *Server }
+
+func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
+	out := []signals.Signal{}
+	index := e.s.delegationIndex()
+	e.s.materializePlans(index)
+	for id, d := range index {
+		if d.State != "plan-ready" || d.RunID == "" {
+			continue
+		}
+		text, open := e.s.openTodoText(id)
+		if !open {
+			continue
+		}
+		out = append(out, signals.Signal{
+			ID:      "plan-ready:" + id,
+			Kind:    "plan-ready",
+			Entity:  text,
+			Label:   "plan ready · " + text + " · " + d.Harness,
+			ActHref: "#/todos/" + id,
+			Hash:    d.RunID,
+			GoalID:  id,
+			RunID:   d.RunID,
+			Harness: d.Harness,
+		})
+	}
+	return out, nil
+}
+
 type delegDoneEmitter struct{ s *Server }
 
 func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
