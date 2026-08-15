@@ -27,12 +27,16 @@ function AuthChip({ me, onChange }) {
       </span>
     );
   }
+  // logout returns 204 (no body) — a plain fetch, then reload so the whole-site
+  // sign-in gate takes over and bounces to re-auth. (TEAM_API.post would try to
+  // JSON-parse the empty 204 and reject before anything ran.)
   const signOut = () =>
-    TEAM_API.post('oauth2/logout').then(() => onChange && onChange());
+    fetch('oauth2/logout', { method: 'POST' }).finally(() => location.reload());
   return (
     <span className="auth-chip">
       <span className="auth-who">{me.email}</span>
-      <span className="auth-link" onClick={signOut}> · sign out</span>
+      {' · '}
+      <span className="auth-link" onClick={signOut}>sign out</span>
     </span>
   );
 }
