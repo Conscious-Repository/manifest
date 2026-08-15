@@ -138,7 +138,18 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				default:
 					state = "failed"
 				}
-				st, ph := phased(state, r.Request)
+				// phase recovery rides the same ladder as the todo token: the
+				// report's `request:` may be TRUNCATED past the trailing
+				// [phase::] token (the owner's first live test hit exactly
+				// this) — fall back to the brief the run wrote.
+				phaseSrc := r.Request
+				if !phaseTokenRe.MatchString(phaseSrc) {
+					if doc.Ref == "" {
+						doc, _ = libraryDocForRun(h, r.ID, lib)
+					}
+					phaseSrc += "\n" + doc.Title + "\n" + doc.Body
+				}
+				st, ph := phased(state, phaseSrc)
 				d := delegationView{State: st, Phase: ph, Harness: h.Name, RunID: r.ID}
 				if ts, err := time.Parse(time.RFC3339, r.Started); err == nil {
 					d.Started = ts
@@ -379,6 +390,11 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		}
 		if brief == "" {
 			continue
+		}
+		// a phased brief implies engagement: backfill the record assignee when
+		// unset (pre-auto-assign history) so follow-up comments relay
+		if rec := s.readPlanRecord(id); rec.Assignee == "" {
+			_ = s.setPlanAssignee(id, "agent:"+d.Harness)
 		}
 		questions, questionsOnly := briefQuestions(brief)
 		if questionsOnly && questions != "" {
