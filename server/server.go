@@ -107,7 +107,7 @@ type Server struct {
 	// Real-estate decision log (system/realestate/backlog.md — an aion.Store
 	// pointed at the RE root; backlog methods ONLY). Nilable.
 	re            *aion.Store
-	aionPortal    aionPortalCfg   // aionbio checkout coordinates ("" path = publish disabled)
+	aionPortal    aionPortalCfg   // portal publish checkout — a manifest checkout ("" path = publish disabled)
 	aionDataDir   string          // publish receipts live under <dataDir>/aion/
 	aionPublishes *aionPublishLog // lazy-opened receipts log
 	rePublishes   *aionPublishLog // RE publish receipts (same shape, own file)

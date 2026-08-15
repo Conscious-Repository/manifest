@@ -33,10 +33,11 @@ Restart=on-failure
 RestartSec=5
 
 # Hardening — read-only everywhere except the write territories:
-# dataDir (per-machine state), the vault clone, the harness clone, and the
-# AION portal publish checkout (aionbio — AION publish writes public/portal/
-# data/*.json there, then commits + pushes; without this the publish fails at
-# "write" with EROFS). ReadWritePaths takes precedence over ProtectHome.
+# dataDir (per-machine state), the vault clone, and the harness clone.
+# The AION portal publish target is this same manifest checkout (2026-08-15:
+# publish writes server/web/portal/, commits + pushes; autodeploy rebuilds) —
+# covered by the /home/benjamin line below. ReadWritePaths takes precedence
+# over ProtectHome.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -48,7 +49,6 @@ ReadWritePaths=/home/benjamin/.config/excalibur
 ReadWritePaths=/home/benjamin
 ReadWritePaths=/private/consciousrepo
 ReadWritePaths=/private/harnesses
-ReadWritePaths=/home/benjamin/aionbio
 ReadWritePaths=/home/benjamin/re-portal
 ReadWritePaths=/shared/apps/aion-portal
 ReadWritePaths=/shared/apps

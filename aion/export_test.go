@@ -131,7 +131,7 @@ func TestRenderContractShapes(t *testing.T) {
 		RunwayMonths *float64 `json:"runway_months"`
 		Source       string   `json:"source"`
 	}
-	if err := json.Unmarshal(out["public/portal/data/finances.json"], &fin); err != nil {
+	if err := json.Unmarshal(out["server/web/portal/data/finances.json"], &fin); err != nil {
 		t.Fatal(err)
 	}
 	if fin.RunwayMonths == nil || *fin.RunwayMonths != 15.8 {
@@ -151,7 +151,7 @@ func TestRenderContractShapes(t *testing.T) {
 		} `json:"one_year_plan"`
 		Quarter map[string]string `json:"quarter"`
 	}
-	if err := json.Unmarshal(out["public/portal/data/vto.json"], &vto); err != nil {
+	if err := json.Unmarshal(out["server/web/portal/data/vto.json"], &vto); err != nil {
 		t.Fatal(err)
 	}
 	if len(vto.CoreValues) != 1 || vto.TenYearTarget != "A medbed in every home" ||
@@ -162,7 +162,7 @@ func TestRenderContractShapes(t *testing.T) {
 	}
 
 	// backlog: ids prefixed, nulls for empty
-	blob := string(out["public/portal/data/backlog.json"])
+	blob := string(out["server/web/portal/data/backlog.json"])
 	if !strings.Contains(blob, `"id": "aion-bl/`) || !strings.Contains(blob, `"rock": null`) ||
 		!strings.Contains(blob, `"done_on": "2026-07-06"`) ||
 		!strings.Contains(blob, `"outcome": "use a CRO"`) {
@@ -170,7 +170,7 @@ func TestRenderContractShapes(t *testing.T) {
 	}
 
 	// heuristics: retired excluded, order preserved, reinforcements present
-	hblob := string(out["public/portal/data/heuristics.json"])
+	hblob := string(out["server/web/portal/data/heuristics.json"])
 	if strings.Contains(hblob, "pruned idea") {
 		t.Fatal("retired heuristic exported")
 	}
@@ -179,12 +179,12 @@ func TestRenderContractShapes(t *testing.T) {
 	}
 
 	// hiring/references verbatim
-	if string(out["public/portal/content/hiring.md"]) != "# AION — hiring\n- [role:: lab engineer] [stage:: sourcing]\n" {
+	if string(out["server/web/portal/content/hiring.md"]) != "# AION — hiring\n- [role:: lab engineer] [stage:: sourcing]\n" {
 		t.Fatal("hiring.md not verbatim")
 	}
 
 	// meta: sections + timestamp + source
-	mblob := string(out["public/portal/data/meta.json"])
+	mblob := string(out["server/web/portal/data/meta.json"])
 	if !strings.Contains(mblob, `"published_at": "2026-08-07T00:00:00Z"`) ||
 		!strings.Contains(mblob, `"source": "manifest"`) {
 		t.Fatalf("meta.json:\n%s", mblob)
@@ -239,7 +239,7 @@ func TestRenderContractChainIntegrity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("free-text rock blocked the render: %v", err)
 	}
-	if !strings.Contains(string(out["public/portal/data/backlog.json"]), `"rock": "free-text-rock"`) {
+	if !strings.Contains(string(out["server/web/portal/data/backlog.json"]), `"rock": "free-text-rock"`) {
 		t.Fatal("rock not exported verbatim")
 	}
 	// a rock serving an unknown 1yr goal refuses (goals-internal chain —
@@ -271,7 +271,7 @@ func TestRenderContractEmptyVault(t *testing.T) {
 	}
 	// empty collections are [] not null (the portal iterates them)
 	for _, p := range []string{"backlog", "heuristics", "people", "goals"} {
-		blob := string(out["public/portal/data/"+p+".json"])
+		blob := string(out["server/web/portal/data/"+p+".json"])
 		if strings.Contains(blob, "null,") || strings.HasPrefix(blob, "null") {
 			t.Fatalf("%s.json has null collection:\n%s", p, blob)
 		}
@@ -295,7 +295,7 @@ func TestExportArchivedRockShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blob := string(out["public/portal/data/goals.json"])
+	blob := string(out["server/web/portal/data/goals.json"])
 	if !strings.Contains(blob, `"id": "aion/ultrasound-platform"`) ||
 		!strings.Contains(blob, `"status": "done"`) ||
 		!strings.Contains(blob, `"closed": "2026-06-30"`) {
@@ -320,7 +320,7 @@ func TestExportGoalDatesAndContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	goalsBlob := string(out["public/portal/data/goals.json"])
+	goalsBlob := string(out["server/web/portal/data/goals.json"])
 	if !strings.Contains(goalsBlob, `"start": "2026-07-01"`) || !strings.Contains(goalsBlob, `"due": "2026-09-30"`) {
 		t.Fatalf("rock start/due not exported:\n%s", goalsBlob)
 	}
@@ -329,8 +329,8 @@ func TestExportGoalDatesAndContract(t *testing.T) {
 		t.Fatal("empty start/due leaked (omitempty broken)")
 	}
 	// contract stamp in meta.json
-	if !strings.Contains(string(out["public/portal/data/meta.json"]), `"contract": "1"`) {
-		t.Fatalf("meta.json missing contract stamp:\n%s", out["public/portal/data/meta.json"])
+	if !strings.Contains(string(out["server/web/portal/data/meta.json"]), `"contract": "1"`) {
+		t.Fatalf("meta.json missing contract stamp:\n%s", out["server/web/portal/data/meta.json"])
 	}
 }
 
@@ -340,8 +340,8 @@ func buildRendered(t *testing.T, goalsV, backlogV any) map[string][]byte {
 	gb, _ := json.MarshalIndent(goalsV, "", "  ")
 	bb, _ := json.MarshalIndent(backlogV, "", "  ")
 	return map[string][]byte{
-		"public/portal/data/goals.json":   gb,
-		"public/portal/data/backlog.json": bb,
+		"server/web/portal/data/goals.json":   gb,
+		"server/web/portal/data/backlog.json": bb,
 	}
 }
 

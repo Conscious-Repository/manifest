@@ -40,7 +40,8 @@ func (s *Server) syncAionTasks(tasks []daily.Task) {
 }
 
 // UseAion wires the AION tab: the domain store over system/aion/ records,
-// the aionbio checkout coordinates (publish effector — path "" disables
+// the portal publish checkout coordinates (a MANIFEST checkout since the
+// portal move — publish writes server/web/portal/ there; path "" disables
 // PUBLISH), and dataDir (publish receipts).
 func (s *Server) UseAion(st *aion.Store, portalPath, remote, branch, dataDir string) {
 	s.aion = st

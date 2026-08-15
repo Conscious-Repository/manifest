@@ -126,10 +126,13 @@ type Config struct {
 	// TodosFileName is the vault-root todos file (the third surface, peer of
 	// goals.md). Default "to do.md" — the owner's existing file.
 	TodosFileName string `json:"todosFileName"`
-	// AionPortal points the AION publish effector at the aionbio checkout.
-	// Path empty disables PUBLISH (the tab still works); Remote/Branch default
-	// origin/main. The effector writes ONLY the export-contract paths, commits
-	// once, pushes, and leaves a receipt (aion-domain spec §5).
+	// AionPortal points the AION publish effector at the portal's serving
+	// checkout — a MANIFEST checkout since the portal move (2026-08-15; the
+	// effector writes server/web/portal/**, autodeploy rebuilds → live at
+	// portal.aion.bio). Path empty disables PUBLISH (the tab still works);
+	// Remote/Branch default origin/main. The effector writes ONLY the
+	// export-contract paths, commits once, pushes, and leaves a receipt
+	// (aion-domain spec §5).
 	AionPortal AionPortalConfig `json:"aionPortal"`
 	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
 	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and

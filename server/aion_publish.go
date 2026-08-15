@@ -412,7 +412,7 @@ func (s *Server) aionPreflight() (blockers, untracked []string) {
 
 // handleAionPublishBaseline preserves pre-existing portal files in their own
 // commit ("keep what's there, then take over") — the self-serve fix for the
-// untracked-files refusal. It commits the WHOLE public/portal tree verbatim
+// untracked-files refusal. It commits the WHOLE server/web/portal tree verbatim
 // (one feature unit — leaving src/ behind while committing data/ would split
 // the portal across commits); nothing is written or modified, only added.
 func (s *Server) handleAionPublishBaseline(w http.ResponseWriter, r *http.Request) {
@@ -426,7 +426,7 @@ func (s *Server) handleAionPublishBaseline(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	p := s.aionPortal
-	if _, err := gitRun(p.Path, gitLocalTimeout, "add", "--", "public/portal"); err != nil {
+	if _, err := gitRun(p.Path, gitLocalTimeout, "add", "--", "server/web/portal"); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -572,7 +572,7 @@ func (s *Server) handleAionPublish(w http.ResponseWriter, r *http.Request) {
 	p := s.aionPortal
 	if len(changed) > 0 {
 		// meta.json rides along with every content commit
-		writeSet := append(append([]string{}, changed...), "public/portal/data/meta.json")
+		writeSet := append(append([]string{}, changed...), "server/web/portal/data/meta.json")
 		sort.Strings(writeSet)
 		seen := map[string]bool{}
 		for _, rel := range writeSet {
@@ -720,7 +720,7 @@ func (s *Server) aionLastPublished() (string, string) {
 	}
 	if s.aionPortal.Path != "" {
 		if out, err := gitRun(s.aionPortal.Path, gitLocalTimeout,
-			"log", "-1", "--format=%H%x09%cI", "--", "public/portal"); err == nil && out != "" {
+			"log", "-1", "--format=%H%x09%cI", "--", "server/web/portal"); err == nil && out != "" {
 			parts := strings.SplitN(out, "\t", 2)
 			if len(parts) == 2 && parts[0] != commit {
 				if commit == "" || parts[1] > last {

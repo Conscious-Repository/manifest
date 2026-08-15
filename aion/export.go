@@ -12,11 +12,15 @@ import (
 )
 
 // The export contract (aion-domain spec §6 / aionbio portal spec §2): the
-// exact files manifest materializes into the aionbio checkout. This is the
-// ONE deliberate place derived values may be stored (ARCHITECTURE §3
-// export-contract exception — runway_months). Byte determinism is load-
-// bearing: publish dirtiness is computed by byte-comparing these renders
-// against the checkout, so structs/slices only, MarshalIndent, trailing \n.
+// exact files manifest materializes into the portal's served tree. Since the
+// portal move (2026-08-15, old aionbio-side portal retired) that tree is
+// server/web/portal/ in a MANIFEST checkout — publish commits + pushes it and
+// metis autodeploy rebuilds, so portal.aion.bio serves the fresh data within
+// ~a minute. This is the ONE deliberate place derived values may be stored
+// (ARCHITECTURE §3 export-contract exception — runway_months). Byte
+// determinism is load-bearing: publish dirtiness is computed by
+// byte-comparing these renders against the checkout, so structs/slices only,
+// MarshalIndent, trailing \n.
 
 // ContractVersion is stamped into meta.json (portal sync-contract §4). Bump it
 // on any change to the exported shape; the portal footnotes a newer version it
@@ -27,15 +31,15 @@ const ContractVersion = "1"
 // write — and the ONLY paths it may ever touch (canary-tested).
 func ContractPaths() []string {
 	return []string{
-		"public/portal/content/hiring.md",
-		"public/portal/content/references.md",
-		"public/portal/data/finances.json",
-		"public/portal/data/vto.json",
-		"public/portal/data/goals.json",
-		"public/portal/data/backlog.json",
-		"public/portal/data/heuristics.json",
-		"public/portal/data/people.json",
-		"public/portal/data/meta.json",
+		"server/web/portal/content/hiring.md",
+		"server/web/portal/content/references.md",
+		"server/web/portal/data/finances.json",
+		"server/web/portal/data/vto.json",
+		"server/web/portal/data/goals.json",
+		"server/web/portal/data/backlog.json",
+		"server/web/portal/data/heuristics.json",
+		"server/web/portal/data/people.json",
+		"server/web/portal/data/meta.json",
 	}
 }
 
@@ -84,20 +88,20 @@ type ExportInput struct {
 // lines, or the finances body (leak-canary tested).
 func RenderContract(in ExportInput) (map[string][]byte, error) {
 	out := map[string][]byte{}
-	out["public/portal/content/hiring.md"] = append([]byte(nil), in.HiringMD...)
-	out["public/portal/content/references.md"] = append([]byte(nil), in.ReferencesMD...)
+	out["server/web/portal/content/hiring.md"] = append([]byte(nil), in.HiringMD...)
+	out["server/web/portal/content/references.md"] = append([]byte(nil), in.ReferencesMD...)
 
 	files := []struct {
 		path string
 		v    any
 	}{
-		{"public/portal/data/finances.json", exportFinances(in.Finances)},
-		{"public/portal/data/vto.json", exportVTO(in.VTO)},
-		{"public/portal/data/goals.json", map[string]any{"goals": in.Goals}},
-		{"public/portal/data/backlog.json", exportBacklog(in.Backlog)},
-		{"public/portal/data/heuristics.json", exportHeuristics(in.Heuristics)},
-		{"public/portal/data/people.json", exportPeople(in.People)},
-		{"public/portal/data/meta.json", exportMeta(in)},
+		{"server/web/portal/data/finances.json", exportFinances(in.Finances)},
+		{"server/web/portal/data/vto.json", exportVTO(in.VTO)},
+		{"server/web/portal/data/goals.json", map[string]any{"goals": in.Goals}},
+		{"server/web/portal/data/backlog.json", exportBacklog(in.Backlog)},
+		{"server/web/portal/data/heuristics.json", exportHeuristics(in.Heuristics)},
+		{"server/web/portal/data/people.json", exportPeople(in.People)},
+		{"server/web/portal/data/meta.json", exportMeta(in)},
 	}
 	for _, f := range files {
 		b, err := json.MarshalIndent(f.v, "", "  ")
@@ -181,7 +185,7 @@ func AcceptContract(rendered map[string][]byte, inScopeQuarters map[string]bool)
 			Due     string   `json:"due"`
 		} `json:"goals"`
 	}
-	if b := rendered["public/portal/data/goals.json"]; b != nil {
+	if b := rendered["server/web/portal/data/goals.json"]; b != nil {
 		if err := json.Unmarshal(b, &goalsDoc); err != nil {
 			return []string{"goals.json is not valid JSON: " + err.Error()}, nil
 		}
@@ -223,7 +227,7 @@ func AcceptContract(rendered map[string][]byte, inScopeQuarters map[string]bool)
 			NeededBy *string `json:"needed_by"`
 		} `json:"items"`
 	}
-	if b := rendered["public/portal/data/backlog.json"]; b != nil {
+	if b := rendered["server/web/portal/data/backlog.json"]; b != nil {
 		if err := json.Unmarshal(b, &backlogDoc); err != nil {
 			return append(errs, "backlog.json is not valid JSON: "+err.Error()), warns
 		}

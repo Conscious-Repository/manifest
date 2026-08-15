@@ -95,7 +95,7 @@ func TestAionPublishEndToEnd(t *testing.T) {
 		t.Fatal("no hash")
 	}
 	// preview wrote NOTHING
-	if _, err := os.Stat(filepath.Join(checkout, "public")); err == nil {
+	if _, err := os.Stat(filepath.Join(checkout, "server")); err == nil {
 		t.Fatal("preview touched the checkout")
 	}
 
@@ -126,7 +126,7 @@ func TestAionPublishEndToEnd(t *testing.T) {
 		if line == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, "public/portal/") {
+		if !strings.HasPrefix(line, "server/web/portal/") {
 			t.Fatalf("non-contract path in commit: %q", line)
 		}
 	}
@@ -158,11 +158,11 @@ func TestAionPublishScopedDirtyCheck(t *testing.T) {
 	}
 	// a SIBLING file in the contract dirs (roadmap.js is hand-maintained
 	// portal-side by contract) must NOT block — publish never touches it
-	roadmap := filepath.Join(checkout, "public", "portal", "data", "roadmap.js")
+	roadmap := filepath.Join(checkout, "server", "web", "portal", "data", "roadmap.js")
 	if err := os.WriteFile(roadmap, []byte("window.ROADMAP_DATA = {};\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, checkout, "add", "--", "public/portal/data/roadmap.js")
+	git(t, checkout, "add", "--", "server/web/portal/data/roadmap.js")
 	git(t, checkout, "commit", "-m", "roadmap baseline")
 	if err := os.WriteFile(roadmap, []byte("window.ROADMAP_DATA = {edited: 1};\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -171,10 +171,10 @@ func TestAionPublishScopedDirtyCheck(t *testing.T) {
 	if b, _ := prevR["blockers"].([]any); len(b) != 0 {
 		t.Fatalf("sibling roadmap.js edit blocked publish: %v", b)
 	}
-	git(t, checkout, "checkout", "--", "public/portal/data/roadmap.js")
+	git(t, checkout, "checkout", "--", "server/web/portal/data/roadmap.js")
 
 	// a human edit to a CONTRACT file blocks, with the path spelled intact
-	if err := os.WriteFile(filepath.Join(checkout, "public", "portal", "data", "people.json"), []byte("{}"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(checkout, "server", "web", "portal", "data", "people.json"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, prev2 := doJSON(t, srv.handleAionPublishPreview, "GET", "/x", "")
@@ -182,11 +182,11 @@ func TestAionPublishScopedDirtyCheck(t *testing.T) {
 	if len(blockers) == 0 {
 		t.Fatal("in-contract edit did not block")
 	}
-	if !strings.Contains(blockers[0].(string), "public/portal/data/people.json") {
+	if !strings.Contains(blockers[0].(string), "server/web/portal/data/people.json") {
 		t.Fatalf("blocker path mangled: %v", blockers[0])
 	}
 	// clean it up → root clutter alone never blocks
-	git(t, checkout, "checkout", "--", "public/portal/data/people.json")
+	git(t, checkout, "checkout", "--", "server/web/portal/data/people.json")
 	_, prev3 := doJSON(t, srv.handleAionPublishPreview, "GET", "/x", "")
 	if b, _ := prev3["blockers"].([]any); len(b) != 0 {
 		t.Fatalf("root clutter blocked: %v", b)
@@ -196,7 +196,7 @@ func TestAionPublishScopedDirtyCheck(t *testing.T) {
 func TestAionPublishUntrackedBaselineFlow(t *testing.T) {
 	srv, checkout, _ := aionPublishFixture(t)
 	// pre-existing portal work git doesn't know about (the aionbio-side drop)
-	legacy := filepath.Join(checkout, "public", "portal", "data", "backlog.json")
+	legacy := filepath.Join(checkout, "server", "web", "portal", "data", "backlog.json")
 	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestAionPublishUntrackedBaselineFlow(t *testing.T) {
 		t.Fatalf("baseline: %d %v", code, bres)
 	}
 	baselineCommit, _ := bres["commit"].(string)
-	if shown := git(t, checkout, "show", "--name-only", "--format=", baselineCommit); !strings.Contains(shown, "public/portal/data/backlog.json") {
+	if shown := git(t, checkout, "show", "--name-only", "--format=", baselineCommit); !strings.Contains(shown, "server/web/portal/data/backlog.json") {
 		t.Fatalf("baseline commit missing the file:\n%s", shown)
 	}
 	// clean now → publish goes through and the old bytes survive in history
@@ -236,7 +236,7 @@ func TestAionPublishUntrackedBaselineFlow(t *testing.T) {
 	if code, res2 := doJSON(t, srv.handleAionPublish, "POST", "/x", `{"hash":"`+hash2+`"}`); code != 200 || res2["ok"] != true {
 		t.Fatalf("publish after baseline: %d %v", code, res2)
 	}
-	if old := git(t, checkout, "show", baselineCommit+":public/portal/data/backlog.json"); old != "{\"items\":[]}" {
+	if old := git(t, checkout, "show", baselineCommit+":server/web/portal/data/backlog.json"); old != "{\"items\":[]}" {
 		t.Fatalf("pre-manifest bytes lost from history: %q", old)
 	}
 	// baseline with nothing to preserve refuses
@@ -299,9 +299,9 @@ func TestWriteAionContractCanary(t *testing.T) {
 	for _, rel := range []string{
 		"src/index.html",
 		"../escape.json",
-		"public/portal/data/../../../etc/passwd",
-		"public/portal/data/extra.json",
-		"/abs/public/portal/data/meta.json",
+		"server/web/portal/data/../../../etc/passwd",
+		"server/web/portal/data/extra.json",
+		"/abs/server/web/portal/data/meta.json",
 	} {
 		if err := writeAionContract(root, rel, []byte("x")); err == nil {
 			t.Errorf("canary accepted %q", rel)
@@ -313,7 +313,7 @@ func TestWriteAionContractCanary(t *testing.T) {
 		t.Fatalf("canary wrote files: %v", entries)
 	}
 	// a legal path works
-	if err := writeAionContract(root, "public/portal/data/meta.json", []byte("{}\n")); err != nil {
+	if err := writeAionContract(root, "server/web/portal/data/meta.json", []byte("{}\n")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -360,7 +360,7 @@ func TestAionPublishValidationGateBlocks(t *testing.T) {
 	if h := git(t, remote, "rev-parse", "HEAD"); h != remoteHead {
 		t.Fatalf("remote advanced despite validation failure: %s → %s", remoteHead, h)
 	}
-	if _, err := os.Stat(filepath.Join(checkout, "public")); err == nil {
+	if _, err := os.Stat(filepath.Join(checkout, "server")); err == nil {
 		t.Fatal("checkout was written despite validation failure")
 	}
 }

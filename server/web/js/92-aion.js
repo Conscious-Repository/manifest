@@ -1,8 +1,10 @@
 // ---- AION: the program cockpit over system/aion/ records ----
 // Backlog (task/decision substrate) · Heuristics (living synthesis) · V/TO ·
 // Goals (read-only Aion ladder) · Org (people/hiring/references/finances) ·
-// Settings — plus the publish rail (aionbio export effector). Manifest is the
-// only edit surface; the team portal is read-only, fed by PUBLISH.
+// Settings — plus the publish rail (export effector → the portal's serving
+// checkout, live at portal.aion.bio). Manifest is the only edit surface;
+// the team portal's published data is fed by PUBLISH (team writes ride the
+// separate /shared overlay).
 let aionCache = null;
 let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | settings
 let aionSelId = null;     // inspector selection (redesign §4 — replaces the drawer)
@@ -86,7 +88,7 @@ async function openAionPublishPanel() {
   document.body.append(overlay);
   const close = () => overlay.remove();
   back.onclick = close;
-  panel.append(el("div", "appr-diff-label", "PUBLISH → aion.bio/portal — preview"));
+  panel.append(el("div", "appr-diff-label", "PUBLISH → portal.aion.bio — preview"));
   const bodyHost = el("div", "aion-publish-body");
   panel.append(bodyHost, el("div", "aion-publish-note", "fetching preview…"));
   let prev;
