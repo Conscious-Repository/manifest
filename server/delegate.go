@@ -340,10 +340,25 @@ func agentIdentity(harness string) threads.Identity {
 	return threads.Identity{ID: "agent:" + harness, Name: name}
 }
 
+// AgentLoopTicker keeps the dialog moving even when nobody reads the feed —
+// without it, ingestion (plan attach/update, questions, relays) only ran on
+// /api/feed evaluation, which lagged the owner's live test by minutes.
+func (s *Server) AgentLoopTicker() {
+	t := time.NewTicker(60 * time.Second)
+	for range t.C {
+		s.agentLoopSweep(s.delegationIndex())
+	}
+}
+
 func (s *Server) agentLoopSweep(index map[string]delegationView) {
 	if s.threads == nil || s.todoPlans == nil || s.vault == nil || s.threads.private == nil {
 		return
 	}
+	// one sweep at a time — the ticker and feed-driven emitters overlap
+	if !s.threads.sweepMu.TryLock() {
+		return
+	}
+	defer s.threads.sweepMu.Unlock()
 	priv := s.threads.private
 	for id, d := range index {
 		if d.RunID == "" {
@@ -393,9 +408,11 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		}
 		// a phased brief implies engagement: backfill the record assignee when
 		// unset (pre-auto-assign history) so follow-up comments relay
-		if rec := s.readPlanRecord(id); rec.Assignee == "" {
+		rec := s.readPlanRecord(id)
+		if rec.Assignee == "" {
 			_ = s.setPlanAssignee(id, "agent:"+d.Harness)
 		}
+		hadPlan := strings.TrimSpace(rec.Plan) != ""
 		questions, questionsOnly := briefQuestions(brief)
 		if questionsOnly && questions != "" {
 			if _, err := s.addThreadEntry(hermes, id, threads.ActComment, questions, nil, nil, meta); err != nil {
@@ -407,8 +424,12 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		if err := s.writePlanSection("todo-plans-agent", id, "plan", brief); err != nil {
 			continue // capability/store hiccup — retry next sweep
 		}
+		verb := "plan attached to this task"
+		if hadPlan {
+			verb = "plan updated on this task"
+		}
 		_, _ = s.addThreadEntry(hermes, id, threads.ActComment,
-			"plan attached to this task — answer in the thread to refine it, edit it directly, or fire to execute", nil, nil, meta)
+			verb+" — answer in the thread to refine it, edit it directly, or fire to execute", nil, nil, meta)
 		if questions != "" { // drift guard: embedded questions still surface as dialog
 			_, _ = s.addThreadEntry(hermes, id, threads.ActComment, questions, nil, nil, meta)
 		}

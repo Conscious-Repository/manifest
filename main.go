@@ -567,6 +567,9 @@ func main() {
 				}
 			}
 			srv.UseThreads(private, reStore, aionTeamStore, aionBlobs, cfg.AionPortal.AdminEmail)
+			// the agent dialog must not wait for a feed read — ingestion
+			// (plan attach/update, questions, relay retries) ticks on its own
+			go srv.AgentLoopTicker()
 		}
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {

@@ -8,6 +8,28 @@
 let todoSelId = null;      // selected todo id ("" = none)
 let todoPanelData = null;  // last /api/todos/panel payload
 let todoDeepLink = null;   // #/todos/<id> → open after load
+let todoPanelTimer = null; // live refresh while the panel is open
+
+// the panel stays LIVE while open: hermes' plan updates and thread replies
+// land without a manual reload. Re-render only when the payload actually
+// changed, and never while the owner is typing in the panel.
+function ensureTodoPanelPoll() {
+  if (todoPanelTimer) return;
+  todoPanelTimer = setInterval(async () => {
+    if (!todoSelId || document.hidden || !els.todosView || els.todosView.hidden) return;
+    const host = document.getElementById("todoPanel");
+    if (host && host.contains(document.activeElement) &&
+        /^(input|textarea)$/i.test(document.activeElement.tagName)) return;
+    try {
+      const fresh = await (await fetch("/api/todos/panel?id=" + encodeURIComponent(todoSelId))).json();
+      if (fresh.id !== todoSelId) return;
+      if (JSON.stringify(fresh) !== JSON.stringify(todoPanelData)) {
+        todoPanelData = fresh;
+        renderTodoPanel(false);
+      }
+    } catch (e) {}
+  }, 8000);
+}
 
 // openTodoPanel — from a row/card ({id, text, ...}) or an id string.
 function openTodoPanel(rOrId) {
@@ -17,6 +39,7 @@ function openTodoPanel(rOrId) {
   if (location.hash !== suffix) {
     try { history.replaceState(null, "", suffix); } catch (e) {}
   }
+  ensureTodoPanelPoll();
   renderTodoPanel(true);
 }
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/realestate"
@@ -33,6 +34,7 @@ type threadsCfg struct {
 	aion    *teamportal.Store // the portal's team store (nil = fall back)
 	aionFS  *threads.Store    // blob store rooted at the portal shared dir
 	admin   teamportal.Identity
+	sweepMu sync.Mutex // one agent-loop sweep at a time (ticker vs feed reads)
 }
 
 // UseThreads wires the thread stores (any but private may be nil).
