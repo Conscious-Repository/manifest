@@ -133,7 +133,10 @@ function sectionOf(h) {
 function buildRail() {
   const host = els.railGroups;
   host.innerHTML = "";
-  NAV_SECTIONS.forEach((g) => {
+  NAV_SECTIONS.forEach((g, gi) => {
+    // a flexible spacer before every group but the first spreads the sections
+    // down the rail's full height (styling in 07-nav.css .rail-spacer)
+    if (gi > 0) host.append(el("div", "rail-spacer"));
     const grp = el("div", "rail-group");
     grp.append(el("div", "rail-group-label", g.label));
     g.items.forEach((it) => {

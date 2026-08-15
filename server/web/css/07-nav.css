@@ -38,14 +38,20 @@
 .rail-search-label { font-family: var(--sans); font-size: 13px; color: var(--base-40); }
 .rail-search-kbd { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--base-30); }
 
-.rail-groups { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; padding-bottom: 12px; }
+.rail-groups { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0; padding-bottom: 12px; }
+.rail-group { flex: none; }
+/* flexible spacers (inserted between sections in buildRail) grow to spread the
+   groups across the rail's full height so the nav fills top-to-bottom instead
+   of packing at the top; min-height keeps the baseline gap, and they collapse
+   to 0 on short windows so the list scrolls normally rather than clipping. */
+.rail-spacer { flex: 1 1 0; min-height: 20px; }
 .rail-group-label {
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
   color: var(--base-40); padding: 0 14px 4px; white-space: nowrap;
 }
 .rail-item {
   display: flex; align-items: center; gap: 9px;
-  padding: 6px 14px; font-size: 13.5px; letter-spacing: 0.4px;
+  padding: 9px 14px; font-size: 13.5px; letter-spacing: 0.4px;
   color: var(--base-70); text-decoration: none;
 }
 .rail-item:hover { background: var(--base-20); }
@@ -74,8 +80,10 @@
 .app-shell.rail-collapsed .rail-raw { display: none; }
 .app-shell.rail-collapsed .rail-head { padding: 14px 8px 12px; justify-content: center; flex-direction: column; gap: 8px; }
 .app-shell.rail-collapsed .rail-search { margin: 0 8px 14px; padding: 6px 0; justify-content: center; }
-.app-shell.rail-collapsed .rail-item { justify-content: center; padding: 6px 0; }
+.app-shell.rail-collapsed .rail-item { justify-content: center; padding: 8px 0; }
 .app-shell.rail-collapsed .rail-group { padding-top: 6px; border-top: 1px solid var(--base-25); }
+/* collapsed stays top-packed — spacers hold only their baseline gap, no spread */
+.app-shell.rail-collapsed .rail-spacer { flex: none; min-height: 14px; }
 .app-shell.rail-collapsed .rail-foot { justify-content: center; min-height: 14px; }
 
 /* ---- breadcrumb bar ---- */
