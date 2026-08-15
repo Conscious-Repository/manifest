@@ -88,3 +88,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: 20px; }
 .delegation-chip.dstate-plan-queued, .delegation-chip.dstate-plan-running { color: var(--base-50); }
 .delegation-chip.dstate-plan-ready { color: var(--accent); border-color: var(--accent-soft); }
 .delegation-chip.dstate-go-queued { color: #b45309; }
+
+/* the plan preview is itself the doorway to the full page */
+.tdo-p-plan.clickable { cursor: pointer; border-radius: var(--radius-lg); padding: 4px 6px; margin: -4px -6px; }
+.tdo-p-plan.clickable:hover { background: var(--base-10); }

@@ -124,26 +124,36 @@ async function renderTodoPanel(refetch) {
   desc.append(dta);
   host.append(desc);
 
-  // --- plan (rendered md · edit toggle · open the record file) ---
+  // --- plan: rendered preview + ONE action. "open →" goes to the full-page
+  // record (which carries its own Edit raw / Obsidian toggles); inline
+  // writing exists only while there is no plan yet.
   const plan = el("div", "tdo-p-sec");
   const planHead = el("div", "tdo-p-sec-label");
   planHead.append(document.createTextNode("plan"));
   const planActs = el("span", "tdo-p-sec-acts");
   const planText = rec.Plan || rec.plan || "";
-  if (rec.Exists || rec.exists) {
-    const openFile = el("button", "tdo-p-linky", "file →");
-    openFile.title = "open the plan record";
-    openFile.onclick = () => { location.hash = "#/note/" + encodeURIComponent(rec.Rel || rec.rel); };
-    planActs.append(openFile);
+  const openPlan = () => { location.hash = "#/note/" + encodeURIComponent(rec.Rel || rec.rel); };
+  let editBtn = null;
+  if (planText) {
+    const open = el("button", "tdo-p-linky", "open →");
+    open.title = "open the plan full-page (edit there)";
+    open.onclick = openPlan;
+    planActs.append(open);
+  } else {
+    editBtn = el("button", "tdo-p-linky", "＋ write");
+    planActs.append(editBtn);
   }
-  const editBtn = el("button", "tdo-p-linky", planText ? "edit" : "＋ write");
-  planActs.append(editBtn);
   planHead.append(planActs);
   plan.append(planHead);
   const planBody = el("div", "tdo-p-plan");
   if (planText) {
-    try { planBody.innerHTML = renderMarkdown(planText, null, { inline: false }); }
+    // renderMarkdown returns a DOM fragment — append it (innerHTML would
+    // stringify to "[object DocumentFragment]")
+    try { planBody.append(renderMarkdown(planText, null, { readOnly: true })); }
     catch (e) { planBody.textContent = planText; }
+    planBody.classList.add("clickable");
+    planBody.title = "open the plan full-page";
+    planBody.onclick = (ev) => { if (!ev.target.closest("a")) openPlan(); };
   } else {
     planBody.append(el("div", "tdo-p-empty", "no plan yet — write one, or assign an agent to draft it"));
   }
@@ -169,22 +179,23 @@ async function renderTodoPanel(refetch) {
     fireRow.append(fire);
     plan.append(fireRow);
   }
-  editBtn.onclick = () => {
-    const ta = document.createElement("textarea");
-    ta.className = "tdo-p-textarea plan";
-    ta.value = planText;
-    ta.rows = Math.max(6, Math.min(18, (planText.match(/\n/g) || []).length + 3));
-    const save = pillLight("save plan", async () => {
-      try {
-        await postJSONOk("/api/todos/plan", { id: todoSelId, text: ta.value });
-        renderTodoPanel(true);
-      } catch (e) { showToast("Couldn't save plan — " + (e.message || "error")); }
-    });
-    planBody.replaceWith(ta);
-    plan.append(save);
-    editBtn.hidden = true;
-    ta.focus();
-  };
+  if (editBtn) {
+    editBtn.onclick = () => {
+      const ta = document.createElement("textarea");
+      ta.className = "tdo-p-textarea plan";
+      ta.rows = 6;
+      const save = pillLight("save plan", async () => {
+        try {
+          await postJSONOk("/api/todos/plan", { id: todoSelId, text: ta.value });
+          renderTodoPanel(true);
+        } catch (e) { showToast("Couldn't save plan — " + (e.message || "error")); }
+      });
+      planBody.replaceWith(ta);
+      plan.append(save);
+      editBtn.hidden = true;
+      ta.focus();
+    };
+  }
   host.append(plan);
 
   // --- thread ---
