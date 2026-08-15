@@ -115,17 +115,31 @@ func (s *Server) unifiedRows(doc *todos.Doc, now time.Time) []unifiedRow {
 			}
 		}
 	}
-	if s.aion != nil {
-		c := unifiedContainer{Kind: "aion", Name: "Aion"}
-		for _, it := range s.aion.LoadBacklog().Items() {
+	// the two DOMAIN backlogs — aion and its RE mirror — project identically
+	// (owner report 2026-08-15: RE tasks were missing from the board; the RE
+	// domain build shipped the store but never this projection)
+	backlogs := []struct {
+		store  *aion.Store
+		prefix string
+		c      unifiedContainer
+		source string
+	}{
+		{s.aion, "aion:", unifiedContainer{Kind: "aion", Name: "Aion"}, "aion"},
+		{s.re, "re:", unifiedContainer{Kind: "re", Name: "Real Estate"}, "realestate"},
+	}
+	for _, b := range backlogs {
+		if b.store == nil {
+			continue
+		}
+		for _, it := range b.store.LoadBacklog().Items() {
 			if it.Kind != aion.KindTask || it.Checked ||
 				(it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "") {
 				continue
 			}
 			rank, _ := strconv.Atoi(it.Rank)
 			rows = append(rows, unifiedRow{
-				ID: "aion:" + it.ID, Text: it.Text, Owner: it.Owner, Rank: rank,
-				Added: it.Captured, Rock: it.Rock, Source: "aion", Container: c,
+				ID: b.prefix + it.ID, Text: it.Text, Owner: it.Owner, Rank: rank,
+				Added: it.Captured, Rock: it.Rock, Source: b.source, Container: b.c,
 			})
 		}
 	}
@@ -262,6 +276,9 @@ func (s *Server) containerList(doc *todos.Doc) []unifiedContainer {
 	}
 	if s.aion != nil {
 		out = append(out, unifiedContainer{Kind: "aion", Name: "Aion"})
+	}
+	if s.re != nil {
+		out = append(out, unifiedContainer{Kind: "re", Name: "Real Estate"})
 	}
 	if s.realestate != nil {
 		if props, err := s.realestate.Properties(); err == nil {
@@ -440,16 +457,29 @@ func (s *Server) propTodoCheck(w http.ResponseWriter, id string, checked bool) {
 	writeJSON(w, s.todosView())
 }
 
-func (s *Server) aionTodoCheck(w http.ResponseWriter, id string, checked bool) {
-	if s.aion == nil {
-		http.Error(w, "aion not available", http.StatusServiceUnavailable)
+// backlogStoreFor maps a composite backlog id (aion:<id> / re:<id>) to its
+// store — the RE domain is an AION mirror, so one router serves both.
+func (s *Server) backlogStoreFor(id string) (*aion.Store, string, bool) {
+	switch {
+	case strings.HasPrefix(id, "aion:"):
+		return s.aion, strings.TrimPrefix(id, "aion:"), s.aion != nil
+	case strings.HasPrefix(id, "re:"):
+		return s.re, strings.TrimPrefix(id, "re:"), s.re != nil
+	}
+	return nil, id, false
+}
+
+func (s *Server) backlogTodoCheck(w http.ResponseWriter, id string, checked bool) {
+	store, bare, ok := s.backlogStoreFor(id)
+	if !ok {
+		http.Error(w, "backlog not available", http.StatusServiceUnavailable)
 		return
 	}
 	status := aion.StatusOpen
 	if checked {
 		status = aion.StatusDone
 	}
-	if err := s.aion.UpdateItem(strings.TrimPrefix(id, "aion:"), map[string]string{"status": status}, time.Now()); err != nil {
+	if err := store.UpdateItem(bare, map[string]string{"status": status}, time.Now()); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -471,6 +501,7 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 	}
 	personal := map[string]string{}
 	aionRanks := map[string]string{}
+	reRanks := map[string]string{}
 	propRanks := map[string]map[string]string{} // slug → lineID → rank
 	for i, id := range b.Order {
 		rank := strconv.Itoa(i + 1)
@@ -486,6 +517,8 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 			propRanks[slug][lineID] = rank
 		case strings.HasPrefix(id, "aion:"):
 			aionRanks[strings.TrimPrefix(id, "aion:")] = rank
+		case strings.HasPrefix(id, "re:"):
+			reRanks[strings.TrimPrefix(id, "re:")] = rank
 		default:
 			personal[id] = rank
 		}
@@ -531,6 +564,12 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.index != nil {
 			_ = s.index.ReindexPaths([]string{rel})
+		}
+	}
+	if s.re != nil && len(reRanks) > 0 {
+		if err := s.re.SetRanks(reRanks); err != nil {
+			httpError(w, err)
+			return
 		}
 	}
 	if s.aion != nil && len(aionRanks) > 0 {

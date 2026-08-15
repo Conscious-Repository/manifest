@@ -50,7 +50,8 @@ func (s *Server) threadKind(todoID string) string {
 	if strings.HasPrefix(todoID, "aion:") && s.threads.aion != nil {
 		return "aion"
 	}
-	if (strings.HasPrefix(todoID, "prop:") || strings.HasPrefix(todoID, "real-estate/")) && s.threads.re != nil {
+	if (strings.HasPrefix(todoID, "prop:") || strings.HasPrefix(todoID, "re:") ||
+		strings.HasPrefix(todoID, "real-estate/")) && s.threads.re != nil {
 		return "re"
 	}
 	return "private"
@@ -137,11 +138,12 @@ func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text st
 // non-HTTP three-way sibling of handleTodoUpdate's owner patch).
 func (s *Server) setTodoOwner(id, owner string) error {
 	switch {
-	case strings.HasPrefix(id, "aion:"):
-		if s.aion == nil {
-			return errBadRequest("aion not configured")
+	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
+		store, bare, ok := s.backlogStoreFor(id)
+		if !ok {
+			return errBadRequest("backlog not configured")
 		}
-		return s.aion.UpdateItem(strings.TrimPrefix(id, "aion:"), map[string]string{"owner": owner}, time.Now())
+		return store.UpdateItem(bare, map[string]string{"owner": owner}, time.Now())
 	case strings.HasPrefix(id, "prop:"):
 		slug, lineID := splitPropID(id)
 		if slug == "" {

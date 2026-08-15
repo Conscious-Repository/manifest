@@ -100,9 +100,9 @@ func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 // openTodoText resolves a unified composite id to (text, still-open).
 func (s *Server) openTodoText(id string) (string, bool) {
 	switch {
-	case strings.HasPrefix(id, "aion:"):
-		if s.aion != nil {
-			if it := s.aion.LoadBacklog().Find(strings.TrimPrefix(id, "aion:")); it != nil {
+	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
+		if store, bare, ok := s.backlogStoreFor(id); ok {
+			if it := store.LoadBacklog().Find(bare); it != nil {
 				return it.Text, !it.Checked
 			}
 		}

@@ -1,0 +1,87 @@
+package server
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"manifest/aion"
+	"manifest/todos"
+)
+
+// TestReBacklogSync — owner report 2026-08-15: RE backlog tasks (the AION
+// mirror at system/realestate/backlog.md) were absent from the unified board
+// and had no re: write routing. This locks the parity in.
+func TestReBacklogSync(t *testing.T) {
+	srv, vault := panelFixture(t)
+	dir := t.TempDir()
+	st := todos.NewStore(dir, "to do.md", testWriteAbs)
+	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] personal thing [added:: 2026-08-14]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv.todosStore = st
+
+	mk := func(root string) *aion.Store {
+		if err := os.MkdirAll(filepath.Join(vault, filepath.FromSlash(root)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return aion.NewStore(vault, root, testWriteAbs)
+	}
+	srv.aion = mk("system/aion")
+	srv.re = mk("system/realestate")
+	if err := srv.aion.AddItem(&aion.BacklogItem{Kind: aion.KindTask, Text: "aion task", Status: aion.StatusOpen, Captured: "2026-08-14"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.re.AddItem(&aion.BacklogItem{Kind: aion.KindTask, Text: "re task", Status: aion.StatusOpen, Captured: "2026-08-14"}); err != nil {
+		t.Fatal(err)
+	}
+
+	doc, _ := srv.todosStore.Load()
+	rows := srv.unifiedRows(doc, time.Now())
+	var reRow, aionRow *unifiedRow
+	for i := range rows {
+		if strings.HasPrefix(rows[i].ID, "re:") {
+			reRow = &rows[i]
+		}
+		if strings.HasPrefix(rows[i].ID, "aion:") {
+			aionRow = &rows[i]
+		}
+	}
+	if aionRow == nil || reRow == nil {
+		t.Fatalf("both backlogs must project; rows=%+v", rows)
+	}
+	if reRow.Source != "realestate" || reRow.Container.Name != "Real Estate" || reRow.Container.Kind != "re" {
+		t.Fatalf("re row shape: %+v", reRow)
+	}
+
+	// write routing parity: pin resolves, owner patch lands, check closes
+	if _, ok := srv.pinTodoID(reRow.ID); !ok {
+		t.Fatal("re: id must pin/resolve")
+	}
+	if err := srv.setTodoOwner(reRow.ID, "agent:hermes"); err != nil {
+		t.Fatalf("owner patch: %v", err)
+	}
+	bare := strings.TrimPrefix(reRow.ID, "re:")
+	if it := srv.re.LoadBacklog().Find(bare); it == nil || it.Owner != "agent:hermes" {
+		t.Fatalf("owner not in RE backlog: %+v", it)
+	}
+	store, b2, ok := srv.backlogStoreFor(reRow.ID)
+	if !ok || b2 != bare || store != srv.re {
+		t.Fatal("backlogStoreFor must route re: to s.re")
+	}
+	if err := store.UpdateItem(bare, map[string]string{"status": aion.StatusDone}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	doc, _ = srv.todosStore.Load()
+	for _, r := range srv.unifiedRows(doc, time.Now()) {
+		if r.ID == reRow.ID {
+			t.Fatalf("done RE item must leave the board: %+v", r)
+		}
+	}
+	// thread routing: re: ids land in the shared RE store
+	if srv.threadKind(reRow.ID) != "re" {
+		t.Fatal("re: threads must route to the shared RE store")
+	}
+}

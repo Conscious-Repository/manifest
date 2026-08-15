@@ -309,10 +309,11 @@ function rankedRow(r, idx) {
   {
     // ✕ removes the row: personal → archived; property/aion → deleted from
     // its source file (there is no archive for those)
-    const isDelete = r.source === "property" || r.source === "aion";
+    const isDelete = r.source === "property" || r.source === "aion" || r.source === "realestate";
     const x = el("button", "uw-x", "✕");
     x.title = r.source === "property" ? "delete from the property's todos"
       : r.source === "aion" ? "delete from the aion backlog"
+      : r.source === "realestate" ? "delete from the real-estate backlog"
       : "drop (archived, never deleted)";
     x.onclick = () => {
       const yes = el("button", "tdo-decide", isDelete ? "delete?" : "drop?");

@@ -59,13 +59,13 @@ func (s *Server) todosView() map[string]any {
 // whether it resolved to a real todo.
 func (s *Server) pinTodoID(id string) (string, bool) {
 	switch {
-	case strings.HasPrefix(id, "aion:"):
-		if s.aion == nil {
+	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
+		store, bare, okb := s.backlogStoreFor(id)
+		if !okb {
 			return id, false
 		}
-		want := strings.TrimPrefix(id, "aion:")
-		for _, it := range s.aion.LoadBacklog().Items() {
-			if it.ID == want {
+		for _, it := range store.LoadBacklog().Items() {
+			if it.ID == bare {
 				return id, true
 			}
 		}
@@ -158,12 +158,16 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, s.todosView())
 		}
 		return
-	case "aion":
-		if s.aion == nil {
-			http.Error(w, "aion not available", http.StatusServiceUnavailable)
+	case "aion", "re":
+		store := s.aion
+		if b.Container.Kind == "re" {
+			store = s.re
+		}
+		if store == nil {
+			http.Error(w, b.Container.Kind+" backlog not available", http.StatusServiceUnavailable)
 			return
 		}
-		if err := s.aion.AddItem(&aion.BacklogItem{
+		if err := store.AddItem(&aion.BacklogItem{
 			Kind:     aion.KindTask,
 			Text:     strings.Join(strings.Fields(b.Text), " "),
 			Owner:    strings.TrimSpace(b.Owner),
@@ -377,8 +381,8 @@ func (s *Server) handleTodoCheck(w http.ResponseWriter, r *http.Request) {
 		s.propTodoCheck(w, b.ID, b.Checked)
 		return
 	}
-	if strings.HasPrefix(b.ID, "aion:") {
-		s.aionTodoCheck(w, b.ID, b.Checked)
+	if strings.HasPrefix(b.ID, "aion:") || strings.HasPrefix(b.ID, "re:") {
+		s.backlogTodoCheck(w, b.ID, b.Checked)
 		return
 	}
 	var rockID string
@@ -486,9 +490,10 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if strings.HasPrefix(b.ID, "aion:") {
-		if s.aion == nil {
-			http.Error(w, "aion not available", http.StatusServiceUnavailable)
+	if strings.HasPrefix(b.ID, "aion:") || strings.HasPrefix(b.ID, "re:") {
+		store, bare, okb := s.backlogStoreFor(b.ID)
+		if !okb {
+			http.Error(w, "backlog not available", http.StatusServiceUnavailable)
 			return
 		}
 		set := map[string]string{}
@@ -505,7 +510,7 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("nothing to update"))
 			return
 		}
-		if err := s.aion.UpdateItem(strings.TrimPrefix(b.ID, "aion:"), set, time.Now()); err != nil {
+		if err := store.UpdateItem(bare, set, time.Now()); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -819,12 +824,13 @@ func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 	}
 	// an aion-backed row: hard-remove the backlog item (drop = delete for aion,
 	// not archive — there is no to-do.md line to archive)
-	if strings.HasPrefix(b.ID, "aion:") {
-		if s.aion == nil {
-			http.Error(w, "aion not available", http.StatusServiceUnavailable)
+	if strings.HasPrefix(b.ID, "aion:") || strings.HasPrefix(b.ID, "re:") {
+		store, bare, okb := s.backlogStoreFor(b.ID)
+		if !okb {
+			http.Error(w, "backlog not available", http.StatusServiceUnavailable)
 			return
 		}
-		if err := s.aion.DeleteItem(strings.TrimPrefix(b.ID, "aion:")); err != nil {
+		if err := store.DeleteItem(bare); err != nil {
 			httpError(w, err)
 			return
 		}
