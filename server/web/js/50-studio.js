@@ -412,16 +412,6 @@ async function feedToTodo(id) {
   loadFeed();
 }
 
-async function feedSaveToVault(id) {
-  setSaveState("saving");
-  try {
-    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/save-to-vault`, { method: "POST" });
-    if (!r.ok) throw new Error((await r.text()) || "save failed");
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); showToast("Save to vault failed: " + e.message, null, "error"); }
-  loadFeed();
-}
-
 // ---- run now / ask a scout (spooled request; engine picks it up within ~5s) ----
 // spiritPick opens the spirit/ritual picker (one area per spirit, its rituals
 // as items) and calls onPick("spirit","ritual"). askRitual, when given, is

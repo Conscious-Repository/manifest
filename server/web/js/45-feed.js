@@ -127,7 +127,7 @@ function renderFeed() {
 }
 
 // signalRow renders one app-signal: a quiet one-line chip (kind · entity · age)
-// with Act (deep link) · Snooze · Dismiss. A rock signal can also go "→ today".
+// whose label deep-links to the item; verbs are Done ✓ (todo signals) · Dismiss.
 function signalRow(sg) {
   const row = el("div", "signal-row");
   const label = el("span", "signal-label cp-clickable", sg.label);
@@ -149,7 +149,7 @@ function signalRow(sg) {
 
 // delegationDoneCard — a completed delegation as a FULL feed card (owner ask
 // 2026-08-12): the work you delegated, its result one click away, and the todo
-// one click away. Signal lifecycle governs the verbs — dismiss/snooze, plus the
+// one click away. Signal lifecycle governs the verbs — dismiss, plus the
 // Done ✓ quick-action that resolves the condition (§5 amendment C4). Never
 // Keep/Discard: a condition must not pollute the findings quality signal.
 function delegationDoneCard(sg) {
