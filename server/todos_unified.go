@@ -316,6 +316,34 @@ func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list
 	return true
 }
 
+// propTodoPin freezes a property line's within-file id as an explicit
+// [todo:: id] pin (plan D1 — the non-HTTP sibling of propTodoMutate). The
+// composite `prop:<slug>/<lineID>` then survives rewording. Idempotent.
+func (s *Server) propTodoPin(slug, lineID string) bool {
+	if s.realestate == nil || s.vault == nil {
+		return false
+	}
+	list, rel, ok := s.realestate.LoadTodos(slug)
+	if !ok {
+		return false
+	}
+	t := list.Find(lineID)
+	if t == nil {
+		return false
+	}
+	if t.ExplicitID() != "" {
+		return true // already pinned — no write
+	}
+	t.PinID(lineID)
+	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(list)); err != nil {
+		return false
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{rel})
+	}
+	return true
+}
+
 // propTodoCheck completes/reopens a property todo. A [work:: id] back-tether
 // DUAL-STAMPS the matching `## work` line so stage Ready/Recognized money
 // stays truthful (the one place Rev 3 touches the accounting model).

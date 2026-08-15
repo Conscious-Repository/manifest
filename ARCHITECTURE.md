@@ -190,6 +190,17 @@ This file changes only by deliberate owner decision, recorded with a date.
 Passes that discover a conflict between code and this file fix the code or
 propose an amendment — never silently diverge.
 
+**2026-08-15 — assign-to-agent plan lane (standing-consent materialization).**
+Owner decision (todo-panel plan, approved 2026-08-15): assigning a todo to an
+agent is standing approval for materializing that agent's plan output into
+`system/todo-plans/<todo-id>.md` (`## plan` section only), through vaultwriter
+under the `todo-plans-agent` capability. Execution beyond the plan still
+requires the explicit fire action. §4 otherwise holds — agents only propose;
+the materialization is audited (`write-audit.log`) and git-trailed like every
+system-zone write, the write is a surgical section swap so hand-edits to the
+rest of the record never collide, and the human-is-the-mutex doctrine holds
+because fire snapshots the plan bytes at fire time.
+
 **2026-08-14 — the AION team portal: an authorized many-writers class.**
 Owner decision (portal move, 2026-08-13/14): the team portal served on its
 own listener (`:7778`, portal.aion.bio) admits a second class of writers —

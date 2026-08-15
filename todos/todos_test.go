@@ -98,6 +98,44 @@ func TestPromoteAndSync(t *testing.T) {
 	}
 }
 
+// TestPinSurvivesRewording — plan D1: once pinned, editing the text must NOT
+// change the id (panel artifacts key on it), and the pin round-trips.
+func TestPinSurvivesRewording(t *testing.T) {
+	d := Parse(sample)
+	if !d.Promote("inbox/undomained-thing") {
+		t.Fatal("promote missed")
+	}
+	out := Serialize(d)
+	if !strings.Contains(out, "undomained thing [todo:: inbox/undomained-thing]") {
+		t.Fatalf("pin not serialized:\n%s", out)
+	}
+	// reword the text — the derived slug would change, the pin must not
+	d2 := Parse(out)
+	_, tt := d2.Find("inbox/undomained-thing")
+	if tt == nil {
+		t.Fatal("pinned id lost after round-trip")
+	}
+	tt.Text = "completely different wording"
+	d3 := Parse(Serialize(d2))
+	_, tt3 := d3.Find("inbox/undomained-thing")
+	if tt3 == nil || tt3.Text != "completely different wording" {
+		t.Fatalf("pinned id must survive rewording; got %+v", tt3)
+	}
+	if tt3.ExplicitID() != "inbox/undomained-thing" {
+		t.Fatalf("explicit id = %q", tt3.ExplicitID())
+	}
+	// pinning is idempotent — a second Promote adds nothing
+	before := Serialize(d3)
+	d3.Promote("inbox/undomained-thing")
+	if Serialize(d3) != before {
+		t.Fatal("second promote changed the file")
+	}
+	// fixpoint holds with the pin present
+	if again := Serialize(Parse(before)); again != before {
+		t.Fatalf("pin broke the fixpoint:\n%s\nvs\n%s", before, again)
+	}
+}
+
 func TestSweepAndDrop(t *testing.T) {
 	dir := t.TempDir()
 	s := NewStore(dir, "to do.md", testWrite)

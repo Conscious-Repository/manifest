@@ -51,6 +51,53 @@ func (s *Server) todosView() map[string]any {
 	return out
 }
 
+// pinTodoID freezes a todo's identity BEFORE any panel artifact (description,
+// plan, thread, assignment) keys on it (plan D1). Personal and property ids
+// are text-derived — they change when the text is edited — so the first
+// enrichment pins the current id as an explicit [todo:: id] in the source
+// file. Aion ids are already stable. Idempotent; returns the id unchanged and
+// whether it resolved to a real todo.
+func (s *Server) pinTodoID(id string) (string, bool) {
+	switch {
+	case strings.HasPrefix(id, "aion:"):
+		if s.aion == nil {
+			return id, false
+		}
+		want := strings.TrimPrefix(id, "aion:")
+		for _, it := range s.aion.LoadBacklog().Items() {
+			if it.ID == want {
+				return id, true
+			}
+		}
+		return id, false
+	case strings.HasPrefix(id, "prop:"):
+		slug, lineID := splitPropID(id)
+		if slug == "" {
+			return id, false
+		}
+		return id, s.propTodoPin(slug, lineID)
+	default:
+		if s.todosStore == nil {
+			return id, false
+		}
+		doc, err := s.todosStore.Load()
+		if err != nil {
+			return id, false
+		}
+		_, t := doc.Find(id)
+		if t == nil {
+			return id, false
+		}
+		if t.ExplicitID() != "" {
+			return id, true // already pinned — no write
+		}
+		if !doc.Promote(id) {
+			return id, false
+		}
+		return id, s.todosStore.Save(doc) == nil
+	}
+}
+
 func (s *Server) todosMutate(w http.ResponseWriter, fn func(*todos.Doc) (bool, error)) {
 	doc, err := s.todosStore.Load()
 	if err != nil {
