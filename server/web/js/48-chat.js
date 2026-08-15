@@ -94,6 +94,7 @@ async function renderChatLanding() {
   if (!host) return;
   if (main) main.classList.add("landing");
   host.innerHTML = "";
+  host.append(el("div", "chat-spark", "✦"));
   host.append(el("div", "chat-greeting", chatGreeting()));
 
   const spirits = (await chatSpiritList()).filter((s) => s.enabled);
@@ -523,22 +524,28 @@ function renderChatComposer(session) {
   if (!host) return;
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
-    const send = host.querySelector("button");
+    const send = host.querySelector(".chat-send");
     const busy = session && session.status === "thinking";
-    if (ta) ta.placeholder = busy ? "✦ thinking — messages queue…" : "Message…  (Enter sends, Shift-Enter = newline)";
+    if (ta) ta.placeholder = busy ? "✦ thinking — messages queue…" : "Message…";
     if (send) send.disabled = false;
     return;
   }
   host.dataset.built = "1";
   const ta = document.createElement("textarea");
   ta.className = "chat-input";
-  ta.rows = 2;
-  ta.placeholder = "Message…  (Enter sends, Shift-Enter = newline)";
-  const send = el("button", "pill", "send");
+  ta.rows = 1;
+  ta.placeholder = "Message…";
+  // auto-grow with content (target feel): reset then snap to scrollHeight,
+  // clamped so a long paste scrolls inside instead of shoving the transcript.
+  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + "px"; };
+  ta.addEventListener("input", grow);
+  const send = el("button", "chat-send", "↑");
+  send.title = "Send  ·  Enter";
   const submit = async () => {
     const text = ta.value.trim();
     if (!text) return;
     ta.value = "";
+    grow();
     try {
       if (chatOpenId) {
         await postJSONOk("/api/chat/sessions/" + encodeURIComponent(chatOpenId) + "/messages", { text });
@@ -554,7 +561,7 @@ function renderChatComposer(session) {
       }
       loadChatSession(chatOpenId);
       loadChatSessions().then(renderChatRail);
-    } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; }
+    } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; grow(); }
   };
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
