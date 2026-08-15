@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/realestate"
 	"manifest/teamportal"
 	"manifest/threads"
 )
@@ -128,6 +129,99 @@ func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text st
 	return s.threadStore(kind).Add(author, todoID, action, text, mentions, files, meta, now)
 }
 
+// --- assignment (todo-panel plan Phase 3) ------------------------------------
+
+// setTodoOwner patches the owner field in the todo's SOURCE file (the
+// non-HTTP three-way sibling of handleTodoUpdate's owner patch).
+func (s *Server) setTodoOwner(id, owner string) error {
+	switch {
+	case strings.HasPrefix(id, "aion:"):
+		if s.aion == nil {
+			return errBadRequest("aion not configured")
+		}
+		return s.aion.UpdateItem(strings.TrimPrefix(id, "aion:"), map[string]string{"owner": owner}, time.Now())
+	case strings.HasPrefix(id, "prop:"):
+		slug, lineID := splitPropID(id)
+		if slug == "" {
+			return errBadRequest("malformed property todo id")
+		}
+		list, rel, ok := s.realestate.LoadTodos(slug)
+		if !ok {
+			return errBadRequest("property not found")
+		}
+		t := list.Find(lineID)
+		if t == nil {
+			return errBadRequest("todo not found")
+		}
+		t.Owner = owner
+		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(list)); err != nil {
+			return err
+		}
+		if s.index != nil {
+			_ = s.index.ReindexPaths([]string{rel})
+		}
+		return nil
+	default:
+		doc, err := s.todosStore.Load()
+		if err != nil {
+			return err
+		}
+		_, t := doc.Find(id)
+		if t == nil {
+			return errBadRequest("todo not found")
+		}
+		t.Owner = owner
+		return s.todosStore.Save(doc)
+	}
+}
+
+// handleTodoAssign — the uniform assignee write: pins identity, ensures the
+// plan record (assignee in frontmatter), patches [owner::] in the source
+// file, logs the replayable `assign` thread action, and — when the token
+// carries the hard `agent:` prefix (validated against the roster; unknown →
+// 400) — kicks the plan-phase delegation (Phase 4 hook).
+func (s *Server) handleTodoAssign(w http.ResponseWriter, r *http.Request) {
+	var b struct{ ID, Owner string }
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	owner := strings.TrimSpace(b.Owner)
+	harness := ""
+	if strings.HasPrefix(owner, "agent:") {
+		if harness = s.agentHarness(owner); harness == "" {
+			httpError(w, errBadRequest("unknown agent "+owner+" — only configured harnesses are assignable"))
+			return
+		}
+	}
+	id, ok := s.pinTodoID(strings.TrimSpace(b.ID))
+	if !ok {
+		http.Error(w, "todo not found", http.StatusNotFound)
+		return
+	}
+	if err := s.setTodoOwner(id, owner); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.setPlanAssignee(id, owner); err != nil {
+		httpError(w, err)
+		return
+	}
+	text := "assigned to " + orStr(owner, "me")
+	if _, err := s.addThreadEntry(s.ownerIdentity(), id, threads.ActAssign, text, nil, nil,
+		map[string]any{"assignee": owner}); err != nil {
+		httpError(w, err)
+		return
+	}
+	if harness != "" {
+		if err := s.assignAgentHook(id, harness); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	writeJSON(w, map[string]any{"ok": true, "record": s.readPlanRecord(id), "thread": s.listThread(id)})
+}
+
 // --- endpoints ---------------------------------------------------------------
 
 func (s *Server) handleTodoThreadGet(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +267,14 @@ func (s *Server) threadMentionHook(todoID string, mentions []string, text string
 	_ = todoID
 	_ = mentions
 	_ = text
+}
+
+// assignAgentHook kicks the plan-phase delegation on agent assignment.
+// Phase 4 replaces the body with the real spool; inert until then.
+func (s *Server) assignAgentHook(todoID, harness string) error {
+	_ = todoID
+	_ = harness
+	return nil
 }
 
 // handleTodoThreadFile stores one attachment blob (raw body) and returns its

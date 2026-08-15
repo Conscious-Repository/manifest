@@ -204,6 +204,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/todos/panel", s.handleTodoPanel)
 	mux.HandleFunc("POST /api/todos/description", s.handleTodoDescription)
 	mux.HandleFunc("POST /api/todos/plan", s.handleTodoPlan)
+	mux.HandleFunc("POST /api/todos/assign", s.handleTodoAssign)
 	mux.HandleFunc("GET /api/todos/thread", s.handleTodoThreadGet)
 	mux.HandleFunc("POST /api/todos/thread", s.handleTodoThreadPost)
 	mux.HandleFunc("POST /api/todos/thread/file", s.handleTodoThreadFile)

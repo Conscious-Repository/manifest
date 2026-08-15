@@ -159,12 +159,39 @@ async function renderTodoPanel(refetch) {
   list.scrollTop = list.scrollHeight;
 }
 
-// todoAssigneeControl — Phase 2 shows the owner; Phase 3 swaps in the roster
-// typeahead (this function is the seam).
+// todoAssigneeControl — the uniform roster picker (Phase 3): people from the
+// aion/RE groups (record-only assignment) + AGENTS with the hard `agent:`
+// prefix; picking an agent kicks the plan-phase delegation server-side.
 function todoAssigneeControl(d, row) {
   const rec = d.record || {};
   const cur = (row && row.owner) || rec.Assignee || rec.assignee || "";
-  return el("div", "tdo-p-assignee", cur || "unassigned");
+  const display = cur.startsWith("agent:") ? "✦ " + cur.slice(6) : cur;
+  const wrap = el("div", "tdo-p-assignee-wrap");
+  const ta = typeahead({
+    placeholder: "unassigned — type to assign…",
+    initial: display,
+    suggest: (q, add, taRef) => {
+      const ql = (q || "").toLowerCase();
+      todoRoster().forEach((p) => {
+        if (ql && !p.name.toLowerCase().includes(ql) && !p.id.toLowerCase().includes(ql)) return;
+        add((p.kind === "agent" ? "✦ " : "") + p.name, p.kind.toUpperCase(), () => todoAssign(p.id, taRef));
+      });
+      if (cur) add("✕ unassign", "", () => todoAssign("", taRef));
+    },
+  });
+  wrap.append(ta.el);
+  return wrap;
+}
+
+async function todoAssign(ownerToken, taRef) {
+  try {
+    await postJSONOk("/api/todos/assign", { id: todoSelId, owner: ownerToken });
+    loadTodos(); // rows re-project the owner; panel re-syncs via loadTodos
+    renderTodoPanel(true);
+  } catch (e) {
+    showToast("Couldn't assign — " + (e.message || "error"));
+    if (taRef && taRef.el) renderTodoPanel(true);
+  }
 }
 
 function todoThreadEntry(c) {
@@ -227,7 +254,7 @@ function todoComposer() {
       suggest: (q, add, taRef) => {
         todoRoster().forEach((p) => {
           if (!q || p.name.toLowerCase().includes(q.toLowerCase()) || p.id.toLowerCase().includes(q.toLowerCase())) {
-            add(p.name + (p.kind ? " · " + p.kind : ""), () => {
+            add(p.name, p.kind.toUpperCase(), () => {
               mentions.push(p.id);
               chips.append(el("span", "tdo-p-chip mention", "@" + p.name));
               taRef.el.remove();

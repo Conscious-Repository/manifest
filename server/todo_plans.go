@@ -109,6 +109,22 @@ func (s *Server) ensurePlanRecord(id, assignee string) error {
 	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## description\n\n## plan\n")))
 }
 
+// setPlanAssignee rewrites the record's frontmatter assignee (creating the
+// record when absent), preserving both section bodies byte-for-byte.
+func (s *Server) setPlanAssignee(id, assignee string) error {
+	if err := s.ensurePlanRecord(id, assignee); err != nil {
+		return err
+	}
+	rel := s.todoPlans.rel(id)
+	raw, err := s.vault.ReadVaultFile(rel)
+	if err != nil {
+		return err
+	}
+	fm, body := mdfm.Split(string(raw))
+	w := (&mdfm.Writer{}).Set("todo", fm["todo"]).Set("assignee", assignee).SetRaw("state", orStr(fm["state"], "open"))
+	return s.vault.WriteCap("todo-plans", rel, []byte(w.String(strings.TrimLeft(body, "\n"))))
+}
+
 // writePlanSection swaps one section under the given capability.
 func (s *Server) writePlanSection(capName, id, section, body string) error {
 	if err := s.ensurePlanRecord(id, ""); err != nil {

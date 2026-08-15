@@ -35,6 +35,11 @@ func (s *Server) isMine(owner string) bool {
 	if owner == "" || strings.EqualFold(owner, "me") {
 		return true
 	}
+	// agent-assigned stays MINE (todo-panel plan D5): the agent works it, the
+	// human owns it — the row keeps its place, the delegation chip carries state
+	if strings.HasPrefix(owner, "agent:") {
+		return true
+	}
 	me := strings.ToUpper(strings.TrimSpace(s.ownerInitials))
 	if me == "" {
 		return false
@@ -241,6 +246,9 @@ func (s *Server) assigneeLists() map[string]any {
 		}
 		out["realestate"] = list
 	}
+	if agents := s.agentRoster(); len(agents) > 0 {
+		out["agents"] = agents
+	}
 	return out
 }
 
@@ -314,6 +322,41 @@ func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list
 		_ = s.index.ReindexPaths([]string{rel})
 	}
 	return true
+}
+
+// agentRoster — the assignable agents (todo-panel plan D5): every configured
+// non-primary harness, ids carrying the hard `agent:` prefix so the raw
+// markdown token `[owner:: agent:hermes]` is visually unambiguous.
+func (s *Server) agentRoster() []map[string]string {
+	out := []map[string]string{}
+	hs := s.eachHarness()
+	for i, h := range hs {
+		if i == 0 { // the primary runs the house; delegation targets are the rest
+			continue
+		}
+		name := h.Name
+		if name == "" {
+			continue
+		}
+		display := strings.ToUpper(name[:1]) + name[1:]
+		out = append(out, map[string]string{"id": "agent:" + name, "name": display, "harness": name})
+	}
+	return out
+}
+
+// agentHarness resolves an `agent:` owner token to its harness name
+// ("" = not a known agent).
+func (s *Server) agentHarness(owner string) string {
+	if !strings.HasPrefix(owner, "agent:") {
+		return ""
+	}
+	want := strings.TrimPrefix(owner, "agent:")
+	for _, a := range s.agentRoster() {
+		if a["harness"] == want {
+			return want
+		}
+	}
+	return ""
 }
 
 // propTodoPin freezes a property line's within-file id as an explicit

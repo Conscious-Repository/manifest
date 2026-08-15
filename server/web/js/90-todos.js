@@ -269,6 +269,11 @@ function rankedRow(r, idx) {
     pill.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(r.container.slug); };
   }
   row.append(pill);
+  // agent owner chip (plan D5): raw markdown keeps [owner:: agent:x],
+  // display strips the prefix behind the ✦ glyph
+  if (r.owner && r.owner.startsWith("agent:")) {
+    row.append(el("span", "tdo-agent-chip", "✦ " + r.owner.slice(6)));
+  }
 
   const right = el("span", "tdo-right");
   const age = el("span", "tdo-age" + (stale ? " stale" : ""),
@@ -557,6 +562,7 @@ function boardCard(r, colKey) {
   card.append(textEl);
   const meta = el("div", "tdo-card-meta");
   meta.append(el("span", "", r.container && r.container.name || ""));
+  if (r.owner && r.owner.startsWith("agent:")) meta.append(el("span", "tdo-agent-chip", "✦ " + r.owner.slice(6)));
   if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));
   // delegation: inline for open cards, looked up by id for the Done column
   const dg = r.delegation || delegationFor(r.id);
