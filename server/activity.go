@@ -646,4 +646,3 @@ func parsePS(out string) []map[string]any {
 	}
 	return procs
 }
-

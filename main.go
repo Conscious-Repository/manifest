@@ -36,6 +36,7 @@ import (
 	"manifest/spirits"
 	"manifest/studio"
 	"manifest/teamportal"
+	"manifest/threads"
 	"manifest/todos"
 	"manifest/vault"
 	"manifest/vaultindex"
@@ -218,6 +219,16 @@ func main() {
 			// accept path writes under it (re-backlog confirms)
 			vaultwriter.Capability{Name: "realestate-approved", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate")) + "/**",
+				Actor:   vaultwriter.ActorApprovedProposal},
+			// TODO PANEL — system/todo-plans/** records (todo-panel plan D2/D6).
+			// The owner's direct edits (description, plan) ride the user-action
+			// capability; the agent-plan MATERIALIZATION rides the standing-
+			// consent lane the §12 amendment (2026-08-15) grants.
+			vaultwriter.Capability{Name: "todo-plans", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "todo-plans-agent", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
 		)
 
@@ -514,6 +525,7 @@ func main() {
 	// and team writes bridge into the FEED as notices. Credentials live in
 	// the secrets tier (<dataDir>/portals/aion-portal-oauth.json, 0600).
 	var portalOpts server.PortalOptions
+	var aionTeamStore *teamportal.Store // shared with the todo-panel thread router
 	if cfg.AionPortal.TeamDir != "" {
 		if ts, err := teamportal.New(cfg.AionPortal.TeamDir); err != nil {
 			log.Printf("aion portal team layer disabled: %v", err)
@@ -521,11 +533,39 @@ func main() {
 			auth := teamportal.NewAuth(cfg.DataDir)
 			portalOpts = server.PortalOptions{Auth: auth, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail}
 			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail))
+			aionTeamStore = ts
 			if auth.Enabled() {
 				log.Printf("aion portal team layer: enabled (writes → %s; any @%s account)", cfg.AionPortal.TeamDir, teamportal.Domain)
 			} else {
 				log.Printf("aion portal team layer: store ready, OAuth client missing (sign-in sealed until %s/portals/aion-portal-oauth.json exists)", cfg.DataDir)
 			}
+		}
+	}
+	// TODO PANEL (todo-panel plan Phases 1-2): the plan-record layer over
+	// system/todo-plans + the three-way thread stores. The private store is
+	// per-machine dataDir; the shared RE store waits for a future RE surface;
+	// aion todos comment through the portal's own team store (+ a blob-only
+	// threads.Store rooted at the same shared dir for attachments).
+	srv.UseTodoPlans(filepath.Join(cfg.SystemRoot, "todo-plans"))
+	{
+		private, err := threads.New(filepath.Join(cfg.DataDir, "todo-threads"))
+		if err != nil {
+			log.Printf("todo threads disabled: %v", err)
+		} else {
+			var reStore, aionBlobs *threads.Store
+			if cfg.RealEstate.TeamDir != "" {
+				if reStore, err = threads.New(cfg.RealEstate.TeamDir); err != nil {
+					log.Printf("shared RE thread store disabled: %v", err)
+				} else {
+					log.Printf("re team threads: enabled (writes → %s)", cfg.RealEstate.TeamDir)
+				}
+			}
+			if aionTeamStore != nil {
+				if aionBlobs, err = threads.New(cfg.AionPortal.TeamDir); err != nil {
+					log.Printf("aion thread blobs disabled: %v", err)
+				}
+			}
+			srv.UseThreads(private, reStore, aionTeamStore, aionBlobs, cfg.AionPortal.AdminEmail)
 		}
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {

@@ -20,6 +20,7 @@
     "remote": "origin",
     "branch": "main"
   },
+  "realEstate": { "teamDir": "/shared/apps/re-team" },
   "terminalDevices": [
     { "name": "macbook", "host": "100.x.y.z", "user": "benjamin" },
     { "name": "lab", "host": "192.168.87.10", "user": "ben", "port": 22, "identity": "~/.ssh/id_lab", "agent": "" }

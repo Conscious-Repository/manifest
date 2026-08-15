@@ -39,19 +39,30 @@ func New(dir string) (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-func (s *Store) Dir() string       { return s.dir }
-func (s *Store) extPath() string   { return filepath.Join(s.dir, "items.ext.json") }
-func (s *Store) logPath() string   { return filepath.Join(s.dir, "activity.log") }
+func (s *Store) Dir() string        { return s.dir }
+func (s *Store) extPath() string    { return filepath.Join(s.dir, "items.ext.json") }
+func (s *Store) logPath() string    { return filepath.Join(s.dir, "activity.log") }
 func (s *Store) emailsPath() string { return filepath.Join(s.dir, "emails.json") }
 
 // Comment is one team comment on an item (any signed-in member may comment).
+// Files (todo-panel plan D4) are content-addressed refs into the shared dir's
+// files/ tree — additive JSON; older portal clients simply ignore the field.
 type Comment struct {
 	ID         string    `json:"id"`
 	Item       string    `json:"item"`
 	Author     string    `json:"author"`      // email
 	AuthorName string    `json:"author_name"` // display name from Google
 	Text       string    `json:"text"`
+	Files      []FileRef `json:"files,omitempty"`
 	At         time.Time `json:"at"`
+}
+
+// FileRef is one content-addressed attachment (sha256 blob in files/).
+type FileRef struct {
+	Hash string `json:"hash"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+	Mime string `json:"mime,omitempty"`
 }
 
 // Override is the latest team-applied field state for one item — merged over
@@ -217,8 +228,14 @@ func (s *Store) TeamOwner(itemID string) (string, bool) {
 // AddComment appends a comment (any signed-in member; the caller has already
 // verified the item exists).
 func (s *Store) AddComment(actor Identity, itemID, text string, now time.Time) (Comment, error) {
+	return s.AddCommentWithFiles(actor, itemID, text, nil, now)
+}
+
+// AddCommentWithFiles is AddComment carrying content-addressed attachments
+// (the todo-panel thread path; the portal's own composer stays text-only).
+func (s *Store) AddCommentWithFiles(actor Identity, itemID, text string, files []FileRef, now time.Time) (Comment, error) {
 	text = strings.TrimSpace(text)
-	if text == "" {
+	if text == "" && len(files) == 0 {
 		return Comment{}, errors.New("empty comment")
 	}
 	if len(text) > 4000 {
@@ -228,13 +245,13 @@ func (s *Store) AddComment(actor Identity, itemID, text string, now time.Time) (
 	defer s.mu.Unlock()
 	ext := s.readExt()
 	c := Comment{
-		ID:     fmt.Sprintf("c-%d", now.UnixNano()),
-		Item:   itemID, Author: actor.Email, AuthorName: actor.Name,
-		Text: text, At: now.UTC(),
+		ID:   fmt.Sprintf("c-%d", now.UnixNano()),
+		Item: itemID, Author: actor.Email, AuthorName: actor.Name,
+		Text: text, Files: files, At: now.UTC(),
 	}
 	ext.Comments[itemID] = append(ext.Comments[itemID], c)
 	err := s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActComment,
-		Payload: map[string]any{"item": itemID, "text": text}})
+		Payload: map[string]any{"item": itemID, "text": text, "files": len(files)}})
 	return c, err
 }
 

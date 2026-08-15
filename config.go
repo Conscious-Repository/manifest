@@ -111,6 +111,13 @@ type Config struct {
 	// TerminalDevices are the ssh boxes the terminal cockpit's device selector
 	// offers beyond metis itself (see TerminalDevice).
 	TerminalDevices []TerminalDevice `json:"terminalDevices"`
+	// RealEstate mirrors AionPortal's team-state shape for the RE side
+	// (todo-panel plan D3): TeamDir is a shared on-disk thread store
+	// (production: /shared/apps/re-team) that a future RE team surface reads
+	// as-is. Empty = RE todo threads stay in the private store.
+	RealEstate struct {
+		TeamDir string `json:"teamDir"`
+	} `json:"realEstate"`
 	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
 	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
 	// src/data/deals.json from the vault's source sidecars for owner review
@@ -247,6 +254,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	cfg.RePortalPath = expandHome(cfg.RePortalPath)
+	cfg.RealEstate.TeamDir = expandHome(cfg.RealEstate.TeamDir)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
 	cfg.AionPortal.TeamDir = expandHome(cfg.AionPortal.TeamDir)
 	// Harness federation (Phase 4): normalize the two spellings into BOTH —

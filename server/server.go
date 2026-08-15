@@ -117,6 +117,10 @@ type Server struct {
 	// teamBridge surfaces AION team-portal writes as FEED notices (portal
 	// move Phase 4 — same notice kind as clickup/benchling). Nilable.
 	teamBridge *teamportal.Bridge
+	// todoPlans: the todo-panel plan-record layer (system/todo-plans). Nilable.
+	todoPlans *todoPlansCfg
+	// threads: the todo-panel comment stores (private/RE-shared/aion). Nilable.
+	threads *threadsCfg
 }
 
 // UseTeamPortal wires the team-portal → FEED notices bridge.
@@ -196,6 +200,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/to-issue", s.handleTodoToIssue)
 	mux.HandleFunc("GET /api/todos/delegate/targets", s.handleDelegateTargets) // Phase 6
 	mux.HandleFunc("POST /api/todos/delegate", s.handleDelegate)
+	// TODO PANEL (todo-panel plan): record + thread + attachments.
+	mux.HandleFunc("GET /api/todos/panel", s.handleTodoPanel)
+	mux.HandleFunc("POST /api/todos/description", s.handleTodoDescription)
+	mux.HandleFunc("POST /api/todos/plan", s.handleTodoPlan)
+	mux.HandleFunc("GET /api/todos/thread", s.handleTodoThreadGet)
+	mux.HandleFunc("POST /api/todos/thread", s.handleTodoThreadPost)
+	mux.HandleFunc("POST /api/todos/thread/file", s.handleTodoThreadFile)
+	mux.HandleFunc("GET /api/todos/thread/file/{hash}", s.handleTodoThreadBlob)
 	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
 	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
 
@@ -309,8 +321,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/files/delete", s.handleFilesDelete)
 	mux.HandleFunc("/api/files/home", s.handleFilesHome)
 	mux.HandleFunc("GET /api/spirits/castables", s.handleSpiritsCastables) // command-bar catalog
-	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)    // spirit-page vocabularies (conduits + spellbooks)
-	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)  // per-spirit memory listing (counts only)
+	mux.HandleFunc("GET /api/spirits/catalog", s.handleSpiritsCatalog)     // spirit-page vocabularies (conduits + spellbooks)
+	mux.HandleFunc("GET /api/spirits/memories", s.handleSpiritsMemories)   // per-spirit memory listing (counts only)
 	// RITUALS board + in-app markdown editing (spirits-console-upgrade).
 	mux.HandleFunc("GET /api/spirits/rituals", s.handleSpiritsRituals)
 	mux.HandleFunc("GET /api/spirits/file", s.handleSpiritsFileGet)
