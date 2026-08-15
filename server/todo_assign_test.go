@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"manifest/spirits"
 	"manifest/todos"
 )
 
@@ -23,7 +24,9 @@ func assignFixture(t *testing.T) (*Server, string) {
 		t.Fatal(err)
 	}
 	srv.todosStore = st
-	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes"}})
+	// hermes needs a real spirits store — assignment spools the plan-phase
+	// work order into it (Phase 4)
+	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes", Spirits: spirits.NewStore(t.TempDir())}})
 	return srv, vault
 }
 
