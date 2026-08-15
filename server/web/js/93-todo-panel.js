@@ -224,6 +224,12 @@ function todoThreadEntry(c) {
   head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
   e.append(head);
   if (c.text) e.append(el("div", "tdo-p-c-text", c.text));
+  // an agent comment that references its brief carries a view chip
+  if (c.meta && c.meta.artifactRef && typeof openResult === "function") {
+    const v = el("button", "tdo-p-c-file", "view brief →");
+    v.onclick = () => openResult({ artifactRef: c.meta.artifactRef, harness: c.meta.harness }, c.text || "brief");
+    e.append(v);
+  }
   (c.files || []).forEach((f) => {
     const a = document.createElement("a");
     a.className = "tdo-p-c-file";

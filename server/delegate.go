@@ -193,48 +193,181 @@ func (s *Server) findHarness(name string) *Harness {
 
 // spoolTodoWorkOrder composes and spools one phased work order. The request
 // ALWAYS carries the todo's own text (the agent's only unambiguous handle)
-// plus the durable [todo::] and [phase::] tokens.
+// plus the durable [todo::] and [phase::] tokens. Comment-phase orders carry
+// the FULL dialog context (description · current plan · thread tail) — the
+// thread IS the conversation channel (owner decision 2026-08-15).
 func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra string) error {
 	if harness == nil || harness.Spirits == nil {
 		return errBadRequest("harness not available")
 	}
 	text, _ := s.openTodoText(todoID)
+	rec := s.readPlanRecord(todoID)
 	var b strings.Builder
 	b.WriteString("TASK (from your todo board): " + text + "\n")
+	if d := strings.TrimSpace(rec.Description); d != "" && phase != "go" {
+		b.WriteString("DESCRIPTION:\n" + d + "\n")
+	}
 	switch phase {
 	case "plan":
-		b.WriteString("PRODUCE A PLAN ONLY — a concrete, numbered plan for how you would do this task: " +
-			"steps, what you'd need, risks, and the deliverable you'd produce. Do NOT execute any step, " +
-			"do NOT produce the deliverable itself. Write the plan as your library brief.\n")
+		if extra != "" {
+			b.WriteString("OWNER'S ASK:\n" + extra + "\n")
+		}
+		b.WriteString(agentProtocolReminder)
 	case "go":
 		b.WriteString("EXECUTE the approved plan below. The owner reviewed and fired it — do the work and " +
 			"write the result as your library brief.\nAPPROVED PLAN:\n" + extra + "\n")
 	case "comment":
-		b.WriteString("OWNER COMMENT (steer on this todo — revise your plan or answer accordingly):\n" + extra + "\n")
+		if p := strings.TrimSpace(rec.Plan); p != "" {
+			b.WriteString("CURRENT PLAN (the canon plan on the record — the owner may have edited it):\n" + p + "\n")
+		}
+		if tail := s.threadTail(todoID, 6); tail != "" {
+			b.WriteString("THREAD (newest last — this is your running dialog with the owner):\n" + tail + "\n")
+		}
+		if extra != "" {
+			b.WriteString("NEW OWNER COMMENT (respond to this):\n" + extra + "\n")
+		}
+		b.WriteString(agentProtocolReminder)
 	}
 	b.WriteString("For this todo: [todo:: " + todoID + "] [phase:: " + phase + "]")
 	spirit, ritual := delegateTargetFor(harness)
 	return harness.Spirits.SpoolRunNow(spirit, ritual, b.String(), "")
 }
 
-// materializePlans runs on the signals cadence: every plan-ready delegation
-// whose brief has NOT yet been materialized gets its plan written into the
-// todo's record (## plan only, `todo-plans-agent` — the §12 standing-consent
-// lane) + a replayable `plan` thread entry. Idempotent by run id.
-func (s *Server) materializePlans(index map[string]delegationView) {
-	if s.threads == nil || s.todoPlans == nil || s.vault == nil {
-		return
+// agentProtocolReminder is stamped on plan/comment orders — the manifest side
+// of the one contract the ritual also states.
+const agentProtocolReminder = "PROTOCOL: your library brief must be exactly ONE of — " +
+	"(a) QUESTIONS: if you cannot proceed without answers, the ENTIRE brief is your questions " +
+	"under a leading '# questions' heading, nothing else; " +
+	"(b) PLAN: a complete, concrete, numbered plan with ZERO questions inside it. " +
+	"Never mix the two. Do not execute anything in these phases.\n"
+
+// threadTail renders the last n visible thread entries, author-labeled.
+func (s *Server) threadTail(todoID string, n int) string {
+	th := s.listThread(todoID)
+	if len(th) == 0 {
+		return ""
 	}
-	for id, d := range index {
-		if d.State != "plan-ready" || d.RunID == "" {
+	var lines []string
+	for _, c := range th[max(0, len(th)-n):] {
+		if strings.TrimSpace(c.Text) == "" {
 			continue
 		}
-		store := s.threadStore("private") // structural trail lives private for every kind
-		if store == nil || store.HasAction(id, threads.ActPlan, d.RunID) {
+		who := c.AuthorName
+		if who == "" {
+			who = c.Author
+		}
+		lines = append(lines, who+": "+strings.TrimSpace(c.Text))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// --- the agent loop (todo-panel robustness pass, owner test 2026-08-15) -----
+//
+// agentLoopSweep runs on the signals cadence and makes the dialog robust:
+//
+//   - EVERY completed plan/comment-phase run is ingested: a questions-only
+//     brief becomes a hermes thread comment (never a plan); a plan brief
+//     materializes into the record's ## plan (§12 lane) + a "plan attached/
+//     updated" thread comment; an embedded questions section (model drift)
+//     is split out as its own comment on top of the materialized plan.
+//   - go-phase completions post a result comment.
+//   - owner comments that missed their relay (agent was mid-run) are retried.
+//
+// Idempotency markers (empty structural entries, meta.marker) live in the
+// PRIVATE store regardless of where the visible dialog lands; visible agent
+// comments route like any comment (aion → team thread, as Hermes).
+
+// briefQuestions extracts a `# questions`-style section from a brief.
+// questionsOnly = the brief LEADS with the questions heading (the protocol's
+// questions shape); a mid-document section is the defensive split-out case.
+func briefQuestions(brief string) (questions string, questionsOnly bool) {
+	lines := strings.Split(brief, "\n")
+	firstHeading, qStart, qLevel := -1, -1, 0
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if !strings.HasPrefix(t, "#") {
+			continue
+		}
+		level := 0
+		for level < len(t) && t[level] == '#' {
+			level++
+		}
+		title := strings.ToLower(strings.TrimSpace(t[level:]))
+		if firstHeading < 0 {
+			firstHeading = i
+		}
+		if qStart < 0 && strings.Contains(title, "question") {
+			qStart, qLevel = i, level
+		}
+	}
+	if qStart < 0 {
+		return "", false
+	}
+	end := len(lines)
+	for i := qStart + 1; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(t, "#") {
+			lvl := 0
+			for lvl < len(t) && t[lvl] == '#' {
+				lvl++
+			}
+			if lvl <= qLevel {
+				end = i
+				break
+			}
+		}
+	}
+	body := strings.TrimSpace(strings.Join(lines[qStart+1:end], "\n"))
+	return body, firstHeading == qStart
+}
+
+func agentIdentity(harness string) threads.Identity {
+	name := harness
+	if name != "" {
+		name = strings.ToUpper(name[:1]) + name[1:]
+	}
+	return threads.Identity{ID: "agent:" + harness, Name: name}
+}
+
+func (s *Server) agentLoopSweep(index map[string]delegationView) {
+	if s.threads == nil || s.todoPlans == nil || s.vault == nil || s.threads.private == nil {
+		return
+	}
+	priv := s.threads.private
+	for id, d := range index {
+		if d.RunID == "" {
+			continue
+		}
+		var mode string // "brief" (plan|questions) or "result"
+		switch {
+		case d.State == "plan-ready":
+			mode = "brief"
+		case d.State == "done" && d.Phase == "comment":
+			mode = "brief"
+		case d.State == "done" && d.Phase == "go":
+			mode = "result"
+		default:
 			continue
 		}
 		h := s.findHarness(d.Harness)
 		if h == nil || h.Spirits == nil {
+			continue
+		}
+		hermes := agentIdentity(d.Harness)
+		meta := map[string]any{"run": d.RunID, "harness": d.Harness}
+		if d.ArtifactRef != "" {
+			meta["artifactRef"] = d.ArtifactRef
+		}
+		if mode == "result" {
+			if priv.HasAction(id, threads.ActResult, d.RunID) {
+				continue
+			}
+			_, _ = s.addThreadEntry(hermes, id, threads.ActComment,
+				"result is ready — review it, then check the todo or send it back with a comment", nil, nil, meta)
+			s.markerAdd(id, threads.ActResult, d.RunID)
+			continue
+		}
+		if priv.HasAction(id, threads.ActPlan, d.RunID) || priv.HasAction(id, threads.ActQuestions, d.RunID) {
 			continue
 		}
 		doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
@@ -247,12 +380,81 @@ func (s *Server) materializePlans(index map[string]delegationView) {
 		if brief == "" {
 			continue
 		}
+		questions, questionsOnly := briefQuestions(brief)
+		if questionsOnly && questions != "" {
+			if _, err := s.addThreadEntry(hermes, id, threads.ActComment, questions, nil, nil, meta); err != nil {
+				continue
+			}
+			s.markerAdd(id, threads.ActQuestions, d.RunID)
+			continue
+		}
 		if err := s.writePlanSection("todo-plans-agent", id, "plan", brief); err != nil {
 			continue // capability/store hiccup — retry next sweep
 		}
-		_, _ = store.Add(threads.Identity{ID: "agent:" + d.Harness, Name: strings.ToUpper(d.Harness[:1]) + d.Harness[1:]},
-			id, threads.ActPlan, "plan drafted — review it, edit if needed, then fire",
-			nil, nil, map[string]any{"run": d.RunID}, time.Now())
+		_, _ = s.addThreadEntry(hermes, id, threads.ActComment,
+			"plan attached to this task — answer in the thread to refine it, edit it directly, or fire to execute", nil, nil, meta)
+		if questions != "" { // drift guard: embedded questions still surface as dialog
+			_, _ = s.addThreadEntry(hermes, id, threads.ActComment, questions, nil, nil, meta)
+		}
+		s.markerAdd(id, threads.ActPlan, d.RunID)
+	}
+	s.relaySweep(index)
+}
+
+// markerAdd writes a hidden idempotency marker into the private store.
+func (s *Server) markerAdd(id, action, runID string) {
+	_, _ = s.threads.private.Add(threads.Identity{ID: "system", Name: "system"}, id, action, "",
+		nil, nil, map[string]any{"run": runID, "marker": true}, time.Now())
+}
+
+// relaySweep retries owner comments that missed their relay (the agent was
+// mid-run when they posted — SpoolRunNow refuses while active).
+func (s *Server) relaySweep(index map[string]delegationView) {
+	priv := s.threads.private
+	// candidate ids: anything with private entries, shared-RE entries, or an
+	// active delegation — agent-assigned todos always land in at least one
+	ids := map[string]bool{}
+	for _, id := range priv.TodoIDs() {
+		ids[id] = true
+	}
+	if s.threads.re != nil {
+		for _, id := range s.threads.re.TodoIDs() {
+			ids[id] = true
+		}
+	}
+	for id := range index {
+		ids[id] = true
+	}
+	for id := range ids {
+		rec := s.readPlanRecord(id)
+		harness := s.agentHarness(rec.Assignee)
+		if harness == "" {
+			continue
+		}
+		var lastOwner time.Time
+		for _, c := range s.listThread(id) {
+			if c.Action == threads.ActComment && !strings.HasPrefix(c.Author, "agent:") && c.At.After(lastOwner) {
+				lastOwner = c.At
+			}
+		}
+		if lastOwner.IsZero() {
+			continue
+		}
+		var lastAct time.Time
+		for _, c := range priv.Thread(id) {
+			if c.Action == threads.ActRelay && c.At.After(lastAct) {
+				lastAct = c.At
+			}
+		}
+		if d, ok := index[id]; ok && d.Started.After(lastAct) {
+			lastAct = d.Started
+		}
+		if !lastOwner.After(lastAct) {
+			continue // the dialog is caught up
+		}
+		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "comment", ""); err == nil {
+			s.markerAdd(id, threads.ActRelay, "")
+		}
 	}
 }
 
@@ -301,6 +503,7 @@ func (s *Server) handleTodoFire(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = s.addThreadEntry(s.ownerIdentity(), id, threads.ActFire,
 		"fired — "+harness+" is executing the plan", nil, nil, map[string]any{"harness": harness})
+	s.markerAdd(id, threads.ActFire, "") // the signal scan reads private markers
 	writeJSON(w, map[string]any{"ok": true, "queued": true, "thread": s.listThread(id)})
 }
 

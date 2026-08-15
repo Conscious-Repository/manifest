@@ -53,13 +53,17 @@ type Comment struct {
 	At         time.Time      `json:"at"`
 }
 
-// Actions.
+// Actions. questions/relay are the agent-loop's: questions = the agent needs
+// answers before it can plan; relay = an owner comment was forwarded to the
+// agent (idempotency marker for the retry sweep).
 const (
-	ActComment = "comment"
-	ActAssign  = "assign"
-	ActPlan    = "plan"
-	ActFire    = "fire"
-	ActResult  = "result"
+	ActComment   = "comment"
+	ActAssign    = "assign"
+	ActPlan      = "plan"
+	ActFire      = "fire"
+	ActResult    = "result"
+	ActQuestions = "questions"
+	ActRelay     = "relay"
 )
 
 const maxCommentLen = 8000
@@ -172,6 +176,19 @@ func (s *Store) Thread(todoID string) []Comment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.read().Comments[todoID]
+}
+
+// TodoIDs lists every todo with at least one entry — the agent-loop sweep
+// iterates this to find assigned todos awaiting a relay.
+func (s *Store) TodoIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read()
+	out := make([]string, 0, len(st.Comments))
+	for id := range st.Comments {
+		out = append(out, id)
+	}
+	return out
 }
 
 // HasAction reports whether an entry with action and meta run id already

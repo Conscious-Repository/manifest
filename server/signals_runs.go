@@ -43,26 +43,77 @@ type planReadyEmitter struct{ s *Server }
 
 func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	out := []signals.Signal{}
-	index := e.s.delegationIndex()
-	e.s.materializePlans(index)
-	for id, d := range index {
-		if d.State != "plan-ready" || d.RunID == "" {
+	s := e.s
+	index := s.delegationIndex()
+	s.agentLoopSweep(index)
+	if s.threads == nil || s.threads.private == nil {
+		return out, nil
+	}
+	// signal state derives from the PRIVATE structural trail: the newest of
+	// {questions, plan, fire, result} decides what (if anything) pages —
+	// answering/firing naturally clears the card because a newer marker lands.
+	for _, id := range s.threads.private.TodoIDs() {
+		var newest string
+		var newestAt time.Time
+		var run, harness string
+		for _, c := range s.threads.private.Thread(id) {
+			switch c.Action {
+			case "questions", "plan", "fire", "result":
+				if c.At.After(newestAt) {
+					newest, newestAt = c.Action, c.At
+					run, _ = c.Meta["run"].(string)
+					if h, _ := c.Meta["harness"].(string); h != "" {
+						harness = h
+					}
+				}
+			}
+		}
+		if newest != "questions" && newest != "plan" {
 			continue
 		}
-		text, open := e.s.openTodoText(id)
+		if harness == "" {
+			harness = s.agentHarness(s.readPlanRecord(id).Assignee)
+		}
+		text, open := s.openTodoText(id)
 		if !open {
+			continue
+		}
+		if newest == "questions" {
+			// the owner already answered → the ball is back with the agent;
+			// the card clears until hermes' next brief lands
+			answered := false
+			for _, c := range s.listThread(id) {
+				if c.Action == "comment" && !strings.HasPrefix(c.Author, "agent:") && c.At.After(newestAt) {
+					answered = true
+					break
+				}
+			}
+			if answered {
+				continue
+			}
+			out = append(out, signals.Signal{
+				ID:      "agent-questions:" + id,
+				Kind:    "agent-questions",
+				Entity:  text,
+				Label:   "agent has questions · " + text + " · " + harness,
+				ActHref: "#/todos/" + id,
+				Hash:    run,
+				GoalID:  id,
+				RunID:   run,
+				Harness: harness,
+			})
 			continue
 		}
 		out = append(out, signals.Signal{
 			ID:      "plan-ready:" + id,
 			Kind:    "plan-ready",
 			Entity:  text,
-			Label:   "plan ready · " + text + " · " + d.Harness,
+			Label:   "plan ready · " + text + " · " + harness,
 			ActHref: "#/todos/" + id,
-			Hash:    d.RunID,
+			Hash:    run,
 			GoalID:  id,
-			RunID:   d.RunID,
-			Harness: d.Harness,
+			RunID:   run,
+			Harness: harness,
 		})
 	}
 	return out, nil

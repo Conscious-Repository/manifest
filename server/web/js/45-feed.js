@@ -15,6 +15,7 @@ const FEED_CARD = {
   signal: (sg) => signalRow(sg),
   delegationDone: (sg) => delegationDoneCard(sg),
   planReady: (sg) => planReadyCard(sg),
+  agentQuestions: (sg) => agentQuestionsCard(sg),
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
   finding: (it) => feedCard(it),
@@ -26,8 +27,10 @@ const FEED_CARD = {
 // one-line chips. So it splits off the strip and renders into the main list.
 const isDelegationDone = (sg) => sg.kind === "delegation-done";
 const isPlanReady = (sg) => sg.kind === "plan-ready";
+const isAgentQuestions = (sg) => sg.kind === "agent-questions";
 // main-list lanes in render order (other signals render into their own strip).
 const FEED_LANES = [
+  { kind: "agentQuestions", slice: (c) => (c.signals || []).filter(isAgentQuestions), inboxOnly: true },
   { kind: "planReady", slice: (c) => (c.signals || []).filter(isPlanReady), inboxOnly: true },
   { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone), inboxOnly: true },
   { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
@@ -84,7 +87,7 @@ function renderFeed() {
   // signals lane: app-derived nudges, INBOX only, tight one-line chips. Never
   // under KEPT/ALL (conditions, not items). Capped so a long neglect backlog
   // doesn't bury the findings — the most-overdue lead, the rest fold away.
-  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg) && !isPlanReady(sg));
+  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg) && !isPlanReady(sg) && !isAgentQuestions(sg));
   if (view === "inbox" && stripSignals.length) {
     const total = stripSignals.length;
     sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
@@ -196,6 +199,30 @@ function planReadyCard(sg) {
   const review = pillLight("review plan →", () => { location.hash = sg.actHref || "#/todos"; });
   review.classList.add("verdict-primary");
   actions.append(review);
+  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
+  card.append(actions);
+  return card;
+}
+
+// agentQuestionsCard — the agent needs answers before it can plan; the
+// questions are IN the todo's thread. Auto-clears when you answer (the ball
+// moves) or a newer brief lands.
+function agentQuestionsCard(sg) {
+  const card = el("div", "feed-card artifact agent-questions");
+  const top = el("div", "feed-top");
+  top.append(el("span", "type-chip type-artifact", "questions"));
+  if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
+  const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
+  title.title = "open the thread";
+  title.onclick = () => { location.hash = sg.actHref || "#/todos"; };
+  top.append(title);
+  card.append(top);
+  card.append(el("div", "feed-why", "the agent has questions before it can plan — answer them in the todo's thread"));
+  const actions = el("div", "feed-actions");
+  const ans = pillLight("answer in the thread →", () => { location.hash = sg.actHref || "#/todos"; });
+  ans.classList.add("verdict-primary");
+  actions.append(ans);
+  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
   return card;

@@ -41,7 +41,7 @@ func TestAssignSpoolsPlanPhase(t *testing.T) {
 	if len(q) != 1 {
 		t.Fatalf("spool: %+v", q)
 	}
-	for _, want := range []string{"paint the fence", "[todo:: inbox/paint-the-fence]", "[phase:: plan]", "PRODUCE A PLAN ONLY"} {
+	for _, want := range []string{"paint the fence", "[todo:: inbox/paint-the-fence]", "[phase:: plan]", "PROTOCOL:"} {
 		if !strings.Contains(q[0].Request, want) {
 			t.Fatalf("work order missing %q:\n%s", want, q[0].Request)
 		}

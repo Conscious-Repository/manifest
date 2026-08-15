@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -79,8 +80,31 @@ func (s *Server) ownerIdentity() threads.Identity {
 	return threads.Identity{ID: "owner", Name: name}
 }
 
+// isMarker: hidden idempotency/relay entries never render.
+func isMarker(c threads.Comment) bool {
+	if c.Action == threads.ActRelay {
+		return true
+	}
+	m, _ := c.Meta["marker"].(bool)
+	return m
+}
+
+// visibleThread filters markers out of a store's entries.
+func visibleThread(in []threads.Comment) []threads.Comment {
+	out := make([]threads.Comment, 0, len(in))
+	for _, c := range in {
+		if !isMarker(c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 // listThread returns a todo's thread in the uniform shape, regardless of
-// which store holds it.
+// which store holds it. For aion todos the view MERGES the team thread with
+// the private structural trail (assign/plan/fire/result) — the panel shows
+// the whole conversation (owner report 2026-08-15: the trail was invisible
+// on team todos).
 func (s *Server) listThread(todoID string) []threads.Comment {
 	if s.threads == nil {
 		return nil
@@ -99,9 +123,13 @@ func (s *Server) listThread(todoID string) []threads.Comment {
 				Text: c.Text, Files: files, At: c.At,
 			})
 		}
+		if s.threads.private != nil {
+			out = append(out, visibleThread(s.threads.private.Thread(todoID))...)
+		}
+		sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 		return out
 	}
-	return s.threadStore(s.threadKind(todoID)).Thread(todoID)
+	return visibleThread(s.threadStore(s.threadKind(todoID)).Thread(todoID))
 }
 
 // addThreadEntry routes one entry to the right store. Structural actions
@@ -118,7 +146,13 @@ func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text st
 		for _, f := range files {
 			pf = append(pf, teamportal.FileRef{Hash: f.Hash, Name: f.Name, Size: f.Size, Mime: f.Mime})
 		}
-		c, err := s.threads.aion.AddCommentWithFiles(s.threads.admin, strings.TrimPrefix(todoID, "aion:"), text, pf, now)
+		// the AGENT speaks with its own identity on the team thread (owner
+		// decision 2026-08-15) — everyone else posts as the portal owner
+		actor := s.threads.admin
+		if strings.HasPrefix(author.ID, "agent:") {
+			actor = teamportal.Identity{Email: author.ID, Name: author.Name}
+		}
+		c, err := s.threads.aion.AddCommentWithFiles(actor, strings.TrimPrefix(todoID, "aion:"), text, pf, now)
 		if err != nil {
 			return threads.Comment{}, err
 		}
@@ -261,22 +295,52 @@ func (s *Server) handleTodoThreadPost(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	s.threadMentionHook(id, b.Mentions, b.Text) // agent mentions → Phase 4 spool
+	s.threadDialogHook(id, b.Mentions, b.Text)
 	writeJSON(w, map[string]any{"ok": true, "comment": c, "thread": s.listThread(id)})
 }
 
-// threadMentionHook: a mentioned AGENT gets the comment relayed as a
-// comment-phase work order (steer/re-plan); mentioned people stay record-only.
-func (s *Server) threadMentionHook(todoID string, mentions []string, text string) {
+// threadDialogHook — the dialog semantics (owner decisions 2026-08-15):
+//   - agent-assigned todo: EVERY owner comment relays (the thread IS the
+//     channel; no re-mentioning). A missed relay (agent mid-run) is retried
+//     by the sweep.
+//   - unassigned todo + an agent MENTION: auto-assign to that agent and relay
+//     the comment as the opening ask.
+//   - mentioned people stay record-only.
+func (s *Server) threadDialogHook(todoID string, mentions []string, text string) {
+	rec := s.readPlanRecord(todoID)
+	if harness := s.agentHarness(rec.Assignee); harness != "" {
+		s.relayToAgent(todoID, harness, text)
+		return
+	}
 	for _, m := range mentions {
 		if harness := s.agentHarness(m); harness != "" {
-			_ = s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "comment", text)
+			s.autoAssignAgent(todoID, m, harness, text)
+			return
 		}
 	}
 }
 
-// assignAgentHook: assigning to an agent spools the PLAN-phase work order —
-// the §12 lane's entry point. Execution still waits for the explicit fire.
+// relayToAgent forwards an owner comment as a comment-phase work order and
+// writes the relay marker; ErrAlreadyActive is tolerated (sweep retries).
+func (s *Server) relayToAgent(todoID, harness, text string) {
+	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "comment", text)
+	if err == nil {
+		s.markerAdd(todoID, threads.ActRelay, "")
+	}
+}
+
+// autoAssignAgent — a work-requesting mention on an unassigned todo assigns
+// it (full lifecycle engages) with the comment as the opening ask.
+func (s *Server) autoAssignAgent(todoID, ownerToken, harness, text string) {
+	_ = s.setTodoOwner(todoID, ownerToken)
+	_ = s.setPlanAssignee(todoID, ownerToken)
+	_, _ = s.addThreadEntry(s.ownerIdentity(), todoID, threads.ActAssign,
+		"assigned to "+ownerToken+" (mentioned)", nil, nil, map[string]any{"assignee": ownerToken})
+	s.relayToAgent(todoID, harness, text)
+}
+
+// assignAgentHook: an explicit assignment (no comment) spools the PLAN-phase
+// work order — the §12 lane's entry point. Execution still waits for fire.
 func (s *Server) assignAgentHook(todoID, harness string) error {
 	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "plan", "")
 	if errors.Is(err, spirits.ErrAlreadyActive) {
