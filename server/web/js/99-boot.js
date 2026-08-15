@@ -320,7 +320,10 @@ function route() {
     if (suffix === "history") showGoalsHistory();
     else loadGoals(suffix);
   }
-  else if (todosTab) loadTodos(); // the third surface — `to do.md` board
+  else if (todosTab) { // the third surface — `to do.md` board (+ panel deep link)
+    if (h.startsWith("#/todos/")) todoDeepLink = decodeURIComponent(h.slice("#/todos/".length));
+    loadTodos();
+  }
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
   else if (chat) showChat(h); // conversations with chattable spirits

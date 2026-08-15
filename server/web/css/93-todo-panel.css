@@ -1,0 +1,78 @@
+/* TODO PANEL — the sticky inspector (aion idiom, terminal-cockpit rhythm) */
+.tdo-shell { display: flex; align-items: flex-start; gap: 0; }
+.tdo-shell > #todosRows { flex: 1; min-width: 0; }
+body.tdo-panel-open .tdo-shell > #todosRows { padding-right: 20px; }
+.tdo-panel {
+  width: 340px; flex: none;
+  border-left: 1px solid var(--base-25); background: var(--base-05);
+  position: sticky; top: 0; align-self: flex-start;
+  padding: 14px 16px 18px; min-height: 260px;
+  max-height: calc(100vh - 120px); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px;
+}
+
+.tdo-p-head { display: flex; align-items: flex-start; gap: 8px; }
+.tdo-p-titlewrap { flex: 1; min-width: 0; }
+.tdo-p-title { font-size: 14.5px; font-weight: 600; color: var(--base-100); line-height: 1.35; }
+.tdo-p-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin-top: 3px; }
+.tdo-p-deleg { margin-top: -8px; }
+
+.tdo-p-sec { display: flex; flex-direction: column; gap: 7px; }
+.tdo-p-sec-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--base-40); display: flex; align-items: baseline; }
+.tdo-p-sec-acts { margin-left: auto; display: flex; gap: 8px; }
+.tdo-p-thread-kind { color: var(--base-30); text-transform: none; letter-spacing: 0.2px; }
+.tdo-p-linky { border: 0; background: none; color: var(--base-40); cursor: pointer; font-family: var(--mono); font-size: 10.5px; padding: 0; }
+.tdo-p-linky:hover { color: var(--accent); }
+.tdo-p-empty { font-size: 12.5px; color: var(--base-40); }
+
+.tdo-p-textarea { width: 100%; font: inherit; font-size: 13px; line-height: 1.45; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 8px 10px; background: var(--bg); color: var(--base-100); resize: vertical; }
+.tdo-p-textarea:focus { outline: none; border-color: var(--accent-soft); }
+.tdo-p-textarea::placeholder { color: var(--base-30); }
+.tdo-p-textarea.plan { font-family: var(--mono); font-size: 12.5px; }
+
+.tdo-p-plan { font-size: 13px; line-height: 1.5; color: var(--base-100); }
+.tdo-p-plan h1, .tdo-p-plan h2, .tdo-p-plan h3 { font-size: 13px; margin: 10px 0 4px; }
+.tdo-p-plan ul, .tdo-p-plan ol { padding-left: 18px; margin: 4px 0; }
+.tdo-p-plan p { margin: 4px 0; }
+.tdo-p-plan code { font-family: var(--mono); font-size: 12px; background: var(--base-10); padding: 0 3px; border-radius: 3px; }
+
+.tdo-p-assignee { font-size: 13px; color: var(--base-70); }
+
+.tdo-p-threadsec { border-top: 1px solid var(--base-25); padding-top: 12px; }
+.tdo-p-thread { display: flex; flex-direction: column; gap: 10px; max-height: 320px; overflow-y: auto; }
+.tdo-p-comment { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 8px 10px; }
+.tdo-p-comment.structural { background: none; border: 0; padding: 2px 0; }
+.tdo-p-c-head { display: flex; align-items: baseline; gap: 7px; }
+.tdo-p-c-author { font-size: 12px; font-weight: 600; color: var(--base-100); }
+.tdo-p-c-act { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--accent); }
+.tdo-p-c-when { font-family: var(--mono); font-size: 10px; color: var(--base-40); margin-left: auto; font-variant-numeric: tabular-nums; }
+.tdo-p-c-text { font-size: 13px; line-height: 1.45; color: var(--base-100); margin-top: 3px; white-space: pre-wrap; word-break: break-word; }
+.tdo-p-comment.structural .tdo-p-c-text { color: var(--base-50); font-size: 12px; }
+.tdo-p-c-file { display: inline-block; font-family: var(--mono); font-size: 11px; color: var(--accent); text-decoration: none; margin-top: 5px; margin-right: 8px; }
+.tdo-p-c-file:hover { text-decoration: underline; }
+
+.tdo-p-composer { display: flex; flex-direction: column; gap: 6px; }
+.tdo-p-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+.tdo-p-chips:empty { display: none; }
+.tdo-p-chip { font-family: var(--mono); font-size: 10.5px; color: var(--base-70); border: 1px solid var(--line); border-radius: 5px; padding: 1px 7px; background: var(--bg); }
+.tdo-p-chip.mention { color: var(--accent); border-color: var(--accent-soft); }
+.tdo-p-c-acts { display: flex; align-items: center; gap: 12px; }
+.tdo-p-c-acts .pill { margin-left: auto; }
+
+/* the row/card open affordance */
+.tdo-open-chevron { border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: 13px; padding: 1px 4px; flex: none; }
+.tdo-row:hover .tdo-open-chevron, .tdo-card:hover .tdo-open-chevron { color: var(--base-70); }
+.tdo-open-chevron:hover { color: var(--accent); }
+.tdo-row.panel-sel { background: var(--base-05); box-shadow: inset 2px 0 0 var(--accent); }
+.tdo-card.panel-sel { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* <1100px: the sticky column disappears; the panel becomes a sheet */
+@media (max-width: 1100px) {
+  .tdo-panel {
+    position: fixed; inset: auto 0 0 0; top: 18vh; width: auto; z-index: 55;
+    border-left: 0; border-top: 1px solid var(--base-25);
+    border-radius: 12px 12px 0 0; background: var(--bg);
+    box-shadow: 0 -8px 40px rgba(23, 23, 23, 0.18);
+    max-height: 82vh;
+  }
+}

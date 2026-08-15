@@ -16,6 +16,14 @@ async function loadTodos() {
   try { todosCache = await (await fetch("/api/todos")).json(); }
   catch (e) { todosCache = { rows: [], domains: [], areas: [], counts: {} }; }
   renderTodos();
+  // deep link #/todos/<id> → open the panel once the rows are here
+  if (typeof todoDeepLink !== "undefined" && todoDeepLink) {
+    const id = todoDeepLink;
+    todoDeepLink = null;
+    openTodoPanel(id);
+  } else if (typeof todoSelId !== "undefined" && todoSelId) {
+    renderTodoPanel(true); // keep the open panel in sync after mutations
+  }
 }
 
 async function todosApi(path, body) {
@@ -198,8 +206,15 @@ function rankedRow(r, idx) {
     return row;
   }
   const stale = r.ageDays >= 14;
-  const row = el("div", "tdo-row" + (stale ? " stale" : ""));
+  const row = el("div", "tdo-row" + (stale ? " stale" : "") +
+    (typeof todoSelId !== "undefined" && todoSelId === r.id ? " panel-sel" : ""));
   row.dataset.id = r.id;
+  // background click opens the PANEL; every interactive child stops
+  // propagation or is filtered here (text keeps click-to-edit)
+  row.onclick = (e) => {
+    if (e.target !== row && !e.target.classList.contains("tdo-right")) return;
+    openTodoPanel(r);
+  };
 
   const handle = el("span", "tdo-handle", "⠿");
   handle.title = "drag to rank";
@@ -278,6 +293,13 @@ function rankedRow(r, idx) {
     dg.title = "delegate to a harness…";
     dg.onclick = () => openDelegatePicker(r);
     right.append(dg);
+  }
+  {
+    // › opens the panel (description · plan · thread · assignee)
+    const open = el("button", "tdo-open-chevron", "›");
+    open.title = "open — description, plan, thread";
+    open.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
+    right.append(open);
   }
   {
     // ✕ removes the row: personal → archived; property/aion → deleted from
@@ -502,7 +524,13 @@ function renderTodosBoard(host) {
 }
 
 function boardCard(r, colKey) {
-  const card = el("div", "tdo-card" + (r.done ? " done" : ""));
+  const card = el("div", "tdo-card" + (r.done ? " done" : "") +
+    (typeof todoSelId !== "undefined" && todoSelId === r.id ? " panel-sel" : ""));
+  card.onclick = (e) => {
+    // card background opens the panel; text/buttons keep their own handlers
+    if (e.target !== card && !e.target.classList.contains("tdo-card-meta")) return;
+    openTodoPanel(r);
+  };
   card.draggable = true;
   card.addEventListener("dragstart", (e) => {
     e.dataTransfer.setData("text/todo-id", r.id);
@@ -534,6 +562,11 @@ function boardCard(r, colKey) {
   const dg = r.delegation || delegationFor(r.id);
   if (dg) meta.append(delegationChip(dg, true));
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
+  const open = el("button", "tdo-open-chevron", "›");
+  open.title = "open — description, plan, thread";
+  open.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
+  open.onmousedown = (e) => e.stopPropagation();
+  meta.append(open);
   card.append(meta);
   // REVIEW cards carry the result up front — reading it IS the column's job
   if (colKey === "review" && dg) {

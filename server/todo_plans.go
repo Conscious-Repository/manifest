@@ -128,9 +128,10 @@ func (s *Server) handleTodoPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := map[string]any{
-		"id":     id,
-		"record": s.readPlanRecord(id),
-		"thread": s.listThread(id),
+		"id":         id,
+		"record":     s.readPlanRecord(id),
+		"thread":     s.listThread(id),
+		"threadKind": s.threadKind(id),
 	}
 	if d, ok := s.delegationIndex()[id]; ok {
 		out["delegation"] = d

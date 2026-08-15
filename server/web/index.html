@@ -35,6 +35,7 @@
   <link rel="stylesheet" href="css/80-properties-core.css" />
   <link rel="stylesheet" href="css/91-parcels.css" />
   <link rel="stylesheet" href="css/90-todos.css" />
+  <link rel="stylesheet" href="css/93-todo-panel.css" />
   <link rel="stylesheet" href="css/92-aion.css" />
   <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
   <link rel="stylesheet" href="css/95-mobile.css" />
@@ -147,7 +148,11 @@
           <span id="todosMeta" class="panel-meta"></span>
         </div>
       </div>
-      <div id="todosRows"></div>
+      <!-- todo-panel plan Phase 2: list + sticky inspector (aion idiom) -->
+      <div class="tdo-shell">
+        <div id="todosRows"></div>
+        <aside class="tdo-panel" id="todoPanel" hidden></aside>
+      </div>
     </div>
   </section>
 
@@ -533,6 +538,7 @@
   <script src="js/84-properties-settings.js"></script>
   <script src="js/85-re-domain.js"></script>
   <script src="js/90-todos.js"></script>
+  <script src="js/93-todo-panel.js"></script>
   <script src="js/91-parcels.js"></script>
   <script src="js/92-aion.js"></script>
   <script src="js/98-mobile.js"></script>
