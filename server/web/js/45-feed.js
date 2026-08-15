@@ -84,7 +84,7 @@ function renderFeed() {
   // signals lane: app-derived nudges, INBOX only, tight one-line chips. Never
   // under KEPT/ALL (conditions, not items). Capped so a long neglect backlog
   // doesn't bury the findings — the most-overdue lead, the rest fold away.
-  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg));
+  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg) && !isPlanReady(sg));
   if (view === "inbox" && stripSignals.length) {
     const total = stripSignals.length;
     sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
@@ -174,7 +174,6 @@ function delegationDoneCard(sg) {
   actions.append(view);
   actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/todos"; }));
   actions.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true }, card)));
-  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
   return card;
@@ -197,7 +196,6 @@ function planReadyCard(sg) {
   const review = pillLight("review plan →", () => { location.hash = sg.actHref || "#/todos"; });
   review.classList.add("verdict-primary");
   actions.append(review);
-  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
   return card;
@@ -341,8 +339,6 @@ function feedCard(it) {
     keep.classList.add("verdict-primary");
     actions.append(keep);
     if (it.status !== "kept") actions.append(pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded")));
-    actions.append(pillLight("Snooze 7d", () => feedAction(it.id, { status: "snoozed", days: 7 })));
-    if (!it.vaultNote) actions.append(pillLight("Save to vault", () => feedSaveToVault(it.id)));
     actions.append(pillLight("→ todo", () => feedToTodo(it.id))); // catch it on the TODOS board (Inbox)
     if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
   } else {
