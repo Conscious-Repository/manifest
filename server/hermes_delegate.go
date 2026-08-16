@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"manifest/aion"
 	"manifest/approvals"
@@ -77,6 +80,11 @@ func (s *Server) startHermesTurn(todoID, phase, intent, prompt string) error {
 	}
 	s.hermes.running[todoID] = phase
 	s.hermes.mu.Unlock()
+	// let the do-bot SEE what the owner attached on the thread — text files
+	// inlined, images handed their path (vision reads them; already in scope).
+	if att := s.hermesAttachments(todoID); att != "" {
+		prompt += "\n" + att
+	}
 	// the go phase carries the proposals protocol (Phase 2): execution stays
 	// read-only tool-wise; world-changes ride fenced blocks that manifest files
 	// into the approvals inbox for the owner's confirm.
@@ -274,6 +282,89 @@ func (s *Server) hermesProposal(todoID string, sp hermes.ProposalSpec) (approval
 		return p, fmt.Errorf("unknown proposal type %q", sp.Type)
 	}
 	return p, nil
+}
+
+// hermesInlineMax caps how big a text attachment we inline into the prompt;
+// larger ones are handed by path instead.
+const hermesInlineMax = 128 << 10
+
+// hermesAttachments renders the owner's thread attachments into a prompt block
+// the do-bot can consume — so "i attached a ui file" actually reaches Hermes.
+// Text-decodable files are inlined verbatim; images (and other binaries) are
+// handed their on-disk blob path (which keeps its extension), and Hermes's
+// vision toolset — already in the read-only scope — reads local image paths.
+// Only the OWNER's attachments (not agent posts) are surfaced, deduped by hash.
+func (s *Server) hermesAttachments(todoID string) string {
+	if s.threads == nil {
+		return ""
+	}
+	st := s.threadStore(s.threadKind(todoID))
+	if st == nil {
+		return ""
+	}
+	seen := map[string]bool{}
+	var b strings.Builder
+	for _, c := range s.listThread(todoID) {
+		if strings.HasPrefix(c.Author, "agent:") {
+			continue // the owner's attachments only
+		}
+		for _, f := range c.Files {
+			if f.Hash == "" || seen[f.Hash] {
+				continue
+			}
+			seen[f.Hash] = true
+			path := st.BlobPath(f.Hash)
+			if path == "" {
+				continue
+			}
+			if b.Len() == 0 {
+				b.WriteString("\nATTACHMENTS the owner shared on this task — read them before you answer:\n")
+			}
+			if body, ok := readTextAttachment(path, f); ok {
+				fmt.Fprintf(&b, "\n--- %s (attached file) ---\n%s\n--- end %s ---\n", f.Name, body, f.Name)
+			} else if strings.HasPrefix(strings.ToLower(f.Mime), "image/") || isImageExt(f.Name) {
+				fmt.Fprintf(&b, "\n- %s (image — view it with your vision tool) is at: %s\n", f.Name, path)
+			} else {
+				fmt.Fprintf(&b, "\n- %s (%s) is at: %s\n", f.Name, orDash(f.Mime), path)
+			}
+		}
+	}
+	return b.String()
+}
+
+// readTextAttachment returns an attachment's content if it's small, text-typed,
+// and valid UTF-8 — the "inline it into the prompt" case.
+func readTextAttachment(path string, f threads.FileRef) (string, bool) {
+	if f.Size > hermesInlineMax || !isTextAttachment(f) {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || int64(len(data)) > hermesInlineMax || !utf8.Valid(data) {
+		return "", false
+	}
+	return strings.TrimRight(string(data), "\n"), true
+}
+
+func isTextAttachment(f threads.FileRef) bool {
+	m := strings.ToLower(f.Mime)
+	if strings.HasPrefix(m, "text/") || m == "application/json" || m == "application/xml" ||
+		strings.Contains(m, "javascript") || strings.Contains(m, "yaml") || strings.Contains(m, "csv") {
+		return true
+	}
+	switch strings.ToLower(filepath.Ext(f.Name)) {
+	case ".md", ".txt", ".css", ".html", ".htm", ".js", ".jsx", ".ts", ".tsx", ".json",
+		".yaml", ".yml", ".csv", ".go", ".py", ".sh", ".toml", ".xml", ".svg", ".rs", ".c", ".cpp", ".sql":
+		return true
+	}
+	return false
+}
+
+func isImageExt(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic":
+		return true
+	}
+	return false
 }
 
 // overlayHermesRunning injects in-flight runner turns into the delegation index
