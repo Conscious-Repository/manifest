@@ -200,6 +200,11 @@ the materialization is audited (`write-audit.log`) and git-trailed like every
 system-zone write, the write is a surgical section swap so hand-edits to the
 rest of the record never collide, and the human-is-the-mutex doctrine holds
 because fire snapshots the plan bytes at fire time.
+*Amended 2026-08-16 (persona plan Q3, owner-resolved 2026-08-15): the standing
+consent covers system-initiated re-materialization — when the todo's text or
+description changes under an agent-held plan, manifest may spool a re-plan
+without a per-replacement approval; the replacement still lands audited,
+section-swapped, and traced as a thread comment. Fire semantics unchanged.*
 
 **2026-08-14 — the AION team portal: an authorized many-writers class.**
 Owner decision (portal move, 2026-08-13/14): the team portal served on its

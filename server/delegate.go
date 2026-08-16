@@ -14,6 +14,8 @@ package server
 //     from which trace files exist and carry the token.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log"
 	"net/http"
@@ -471,27 +473,75 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		if err := s.writePlanSection("todo-plans-agent", id, "plan", brief); err != nil {
 			continue // capability/store hiccup — retry next sweep
 		}
-		s.ledger(ledger.Entry{Source: "plan", Kind: "plan.materialized",
+		// a run answering an outstanding replan spool (Phase 2) traces as a
+		// REPLACEMENT — the visible comment is the owner's audit trail
+		replanned := s.outstandingReplan(id)
+		kind, verb := "plan.materialized", "plan attached to this task — answer in the thread to refine it, edit it directly, or fire to execute"
+		switch {
+		case replanned:
+			kind, verb = "plan.replanned", "plan replaced — the task context changed, so I re-planned (review or fire)"
+		case hadPlan:
+			verb = "plan updated on this task — answer in the thread to refine it, edit it directly, or fire to execute"
+		}
+		s.ledger(ledger.Entry{Source: "plan", Kind: kind,
 			Actor: hermes.ID, Todo: id, Run: d.RunID, Harness: d.Harness,
 			Ref: s.readPlanRecord(id).Rel})
-		verb := "plan attached to this task"
-		if hadPlan {
-			verb = "plan updated on this task"
-		}
-		_, _ = s.addThreadEntry(hermes, id, threads.ActComment,
-			verb+" — answer in the thread to refine it, edit it directly, or fire to execute", nil, nil, meta)
+		_, _ = s.addThreadEntry(hermes, id, threads.ActComment, verb, nil, nil, meta)
 		if questions != "" { // drift guard: embedded questions still surface as dialog
 			_, _ = s.addThreadEntry(hermes, id, threads.ActComment, questions, nil, nil, meta)
 		}
-		s.markerAdd(id, threads.ActPlan, d.RunID)
+		// the baseline stamp: what the world looked like when this plan landed
+		s.markerAddMeta(id, threads.ActPlan, d.RunID, map[string]any{"ctx": s.planCtxHash(id)})
 	}
 	s.relaySweep(index)
+	s.replanSweep(index)
+}
+
+// outstandingReplan reports whether the newest ActReplan marker postdates the
+// newest ActPlan marker — i.e. the run being ingested answers a replan spool.
+func (s *Server) outstandingReplan(id string) bool {
+	var planAt, replanAt time.Time
+	for _, c := range s.threads.private.Thread(id) {
+		switch c.Action {
+		case threads.ActPlan:
+			if c.At.After(planAt) {
+				planAt = c.At
+			}
+		case threads.ActReplan:
+			if c.At.After(replanAt) {
+				replanAt = c.At
+			}
+		}
+	}
+	return !replanAt.IsZero() && replanAt.After(planAt)
 }
 
 // markerAdd writes a hidden idempotency marker into the private store.
 func (s *Server) markerAdd(id, action, runID string) {
+	s.markerAddMeta(id, action, runID, nil)
+}
+
+// markerAddMeta is markerAdd with extra meta (Phase 2 stamps the plan-context
+// hash onto ActPlan/ActReplan markers — provenance lives in markers, NOT in
+// plan-record frontmatter, because setPlanAssignee rewrites frontmatter from
+// a fixed key set and would silently drop any extra field).
+func (s *Server) markerAddMeta(id, action, runID string, extra map[string]any) {
+	meta := map[string]any{"run": runID, "marker": true}
+	for k, v := range extra {
+		meta[k] = v
+	}
 	_, _ = s.threads.private.Add(threads.Identity{ID: "system", Name: "system"}, id, action, "",
-		nil, nil, map[string]any{"run": runID, "marker": true}, time.Now())
+		nil, nil, meta, time.Now())
+}
+
+// planCtxHash fingerprints the exact inputs a plan-phase work order carries —
+// the todo's text and its record description. If the hash didn't change, the
+// agent saw the same world; if it did, the current plan may be stale.
+func (s *Server) planCtxHash(id string) string {
+	text, _ := s.openTodoText(id)
+	rec := s.readPlanRecord(id)
+	sum := sha256.Sum256([]byte(text + "\n\x00" + rec.Description))
+	return hex.EncodeToString(sum[:])[:12]
 }
 
 // relaySweep retries owner comments that missed their relay (the agent was
@@ -541,6 +591,96 @@ func (s *Server) relaySweep(index map[string]delegationView) {
 		}
 		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "comment", "", ""); err == nil {
 			s.markerAdd(id, threads.ActRelay, "")
+		}
+	}
+}
+
+// replanSweep (persona plan Phase 2): the system-initiated trigger of the §12
+// lane — when a todo's reality (its text or description) has changed since
+// its agent-held plan was materialized, manifest spools a re-plan on its own.
+// The replacement lands through the ordinary materialization path, audited
+// and traced as a thread comment; fire semantics are untouched, replans never
+// execute anything. Owner consent: the §12 amendment (persona plan Q3,
+// resolved 2026-08-15).
+func (s *Server) replanSweep(index map[string]delegationView) {
+	priv := s.threads.private
+	ids := map[string]bool{}
+	for _, id := range priv.TodoIDs() {
+		ids[id] = true
+	}
+	if s.threads.re != nil {
+		for _, id := range s.threads.re.TodoIDs() {
+			ids[id] = true
+		}
+	}
+	for id := range index {
+		ids[id] = true
+	}
+	for id := range ids {
+		rec := s.readPlanRecord(id)
+		harness := s.agentHarness(rec.Assignee)
+		if harness == "" || strings.TrimSpace(rec.Plan) == "" || orStr(rec.State, "open") != "open" {
+			continue
+		}
+		// never interrupt a live run; never race the fire lane
+		if d, ok := index[id]; ok {
+			switch d.State {
+			case "queued", "plan-queued", "go-queued", "running", "plan-running", "proposed":
+				continue
+			}
+		}
+		// baseline: the newest ActPlan marker's ctx. No baseline → no replan
+		// (pre-Phase-2 todos re-baseline on their next ordinary
+		// materialization, so a deploy never triggers a replan storm).
+		var baseline string
+		var planAt, replanAt time.Time
+		replanCtxs := map[string]bool{}
+		for _, c := range priv.Thread(id) {
+			ctx, _ := c.Meta["ctx"].(string)
+			switch c.Action {
+			case threads.ActPlan:
+				if c.At.After(planAt) {
+					planAt, baseline = c.At, ctx
+				}
+			case threads.ActReplan:
+				if ctx != "" {
+					replanCtxs[ctx] = true
+				}
+				if c.At.After(replanAt) {
+					replanAt = c.At
+				}
+			}
+		}
+		if baseline == "" {
+			continue
+		}
+		now := s.planCtxHash(id)
+		if now == baseline {
+			continue // the world the plan was written for still holds
+		}
+		// throttle: one attempt per distinct change; a refused spool retries
+		// no sooner than 30 minutes after the last attempt
+		if replanCtxs[now] {
+			continue
+		}
+		if !replanAt.IsZero() && time.Since(replanAt) < 30*time.Minute {
+			continue
+		}
+		// an actively typing owner is about to relay anyway — don't double-spool
+		var lastOwner time.Time
+		for _, c := range s.listThread(id) {
+			if c.Action == threads.ActComment && !strings.HasPrefix(c.Author, "agent:") && c.At.After(lastOwner) {
+				lastOwner = c.At
+			}
+		}
+		if !lastOwner.IsZero() && time.Since(lastOwner) < 5*time.Minute {
+			continue
+		}
+		replanExtra := "REPLAN — the task context changed since your current plan was written. CURRENT PLAN:\n" +
+			rec.Plan + "\nRe-read the task and description above; REPLACE the plan if the change matters, " +
+			"or return it unchanged with a one-line note if it doesn't."
+		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "plan", replanExtra, "plan"); err == nil {
+			s.markerAddMeta(id, threads.ActReplan, "", map[string]any{"ctx": now})
 		}
 	}
 }

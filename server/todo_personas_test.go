@@ -132,13 +132,21 @@ func TestSpoolPersonaRequestShape(t *testing.T) {
 // fakeRunReq drops a completed run report with a fully custom request line.
 func fakeRunReq(t *testing.T, srv *Server, runID, request, briefBody string) {
 	t.Helper()
+	fakeRunReqAt(t, srv, runID, request, briefBody, "2026-08-15T05:00:00Z")
+}
+
+// fakeRunReqAt is fakeRunReq with an explicit start time — the delegation
+// index prefers the NEWEST run per todo, so successive fixture runs need
+// distinct starts.
+func fakeRunReqAt(t *testing.T, srv *Server, runID, request, briefBody, started string) {
+	t.Helper()
 	root := srv.eachHarness()[1].Spirits.Root()
 	for _, d := range []string{"runs", "library"} {
 		if err := os.MkdirAll(filepath.Join(root, "artifacts", d), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	report := fmt.Sprintf("---\nrun: %s\nspirit: hermes\nritual: delegate\nrequest: %q\nstarted: 2026-08-15T05:00:00Z\nfinished: 2026-08-15T05:01:00Z\noutcome: completed\n---\nran\n", runID, request)
+	report := fmt.Sprintf("---\nrun: %s\nspirit: hermes\nritual: delegate\nrequest: %q\nstarted: %s\nfinished: %s\noutcome: completed\n---\nran\n", runID, request, started, started)
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "runs", "2026-08-15-hermes-"+runID+".md"), []byte(report), 0o644); err != nil {
 		t.Fatal(err)
 	}
