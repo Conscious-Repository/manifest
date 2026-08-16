@@ -3,7 +3,7 @@ package server
 // Harness federation (big-change Phase 4): manifest reads N harness trees
 // behind one on-disk contract (CONTRACT.md in the harnesses repo). The FIRST
 // harness is the primary — it keeps every write surface (spool run-now, the
-// ritual editor, studio, castables, aion-sink spooling, proposal filing); the
+// ritual editor, castables, aion-sink spooling, proposal filing); the
 // rest surface read-side only, per the contract, voluntarily: drop run reports
 // in <tree>/artifacts/runs → they appear; file proposals in the approvals
 // shape → they hit the inbox. Merged rows carry a `harness` tag; the UI shows

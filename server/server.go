@@ -29,7 +29,6 @@ import (
 	"manifest/realestate"
 	"manifest/signals"
 	"manifest/spirits"
-	"manifest/studio"
 	"manifest/teamportal"
 	"manifest/todos"
 	"manifest/vaultindex"
@@ -98,10 +97,6 @@ type Server struct {
 	reImport       *realestate.ImportMemory
 	geocoder       *realestate.Geocoder
 	statements     *realestate.StatementStore
-	// Content Studio (STUDIO tab): draft board + read-only X corpus. Nilable.
-	studio     *studio.Store
-	corpusPath string // <excalibur>/vessel/corpus/x.db
-	xPostsFile string // vault-relative X-posts file (default "x posts.md")
 	// Errands (the action layer — aside effector; records = FEED receipts).
 	// Nilable; dataDir state only, never the vault.
 	errands        *errands.Store
@@ -479,26 +474,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/realestate/entities", s.handleEntityCreate)
 	mux.HandleFunc("POST /api/realestate/entities/{slug}/save", s.handleEntitySave)
 	mux.HandleFunc("POST /api/realestate/bindings", s.handleBindingSave)
-
-	// CONTENT STUDIO — the draft board + inspiration watchlist (content-studio §8).
-	mux.HandleFunc("GET /api/studio", s.handleStudio)
-	mux.HandleFunc("POST /api/studio/draft/{id}/dismiss", s.handleStudioDismiss)
-	mux.HandleFunc("POST /api/studio/draft/{id}/feedback", s.handleStudioFeedback)
-	mux.HandleFunc("POST /api/studio/draft/{id}/edit", s.handleStudioEdit)
-	mux.HandleFunc("POST /api/studio/draft/{id}/mark-posted", s.handleStudioMarkPosted)
-	mux.HandleFunc("POST /api/studio/draft/{id}/consume-seed", s.handleStudioConsumeSeed)
-	mux.HandleFunc("POST /api/studio/draft/{id}/overrule", s.handleStudioOverrule)
-	// Queue tab: live-editable x posts.md (§1/§3)
-	mux.HandleFunc("GET /api/studio/queue", s.handleStudioQueue)
-	mux.HandleFunc("POST /api/studio/migrate", s.handleStudioMigrate)
-	mux.HandleFunc("POST /api/studio/bullet/{op}", s.handleStudioBullet)
-	mux.HandleFunc("POST /api/studio/queue/mark-posted", s.handleStudioQueuePosted)
-	// Inspiration tab writes (§8)
-	mux.HandleFunc("POST /api/studio/account/{handle}/commentary", s.handleStudioCommentary)
-	mux.HandleFunc("POST /api/studio/account/{handle}/self", s.handleStudioSelf)
-	mux.HandleFunc("POST /api/studio/annotate", s.handleStudioAnnotate)
-	mux.HandleFunc("POST /api/studio/account/add", s.handleStudioAddAccount)
-	mux.HandleFunc("POST /api/studio/commission", s.handleStudioCommission)
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)

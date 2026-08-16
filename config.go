@@ -88,13 +88,10 @@ type Config struct {
 	// Harnesses is the federation list (big-change Phase 4): N harness trees
 	// behind one on-disk contract (CONTRACT.md in the harnesses repo). The
 	// FIRST entry is the primary — it keeps the write surfaces (spool, ritual
-	// editor, studio, aion sink); the rest surface read-side (runs, feed,
+	// editor, aion sink); the rest surface read-side (runs, feed,
 	// approvals) tagged by name. When empty, ExcaliburPath synthesizes
 	// [{name:"excalibur", path:ExcaliburPath}].
 	Harnesses []HarnessRef `json:"harnesses"`
-	// XPostsFile is the vault-relative X-posts file the Content Studio appends
-	// approved posts to (a `# queue`/`# posted` bullet list). Default "x posts.md".
-	XPostsFile string `json:"xPostsFile"`
 	// LabSttUrl is the self-hosted speech-to-text endpoint (OpenAI-compatible
 	// POST /v1/audio/transcriptions on the lab; reachable from metis only).
 	// Empty disables the mic buttons' dictation. LabSttModel names the model
@@ -263,9 +260,6 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.ExtrinsicRoot == "" {
 		cfg.ExtrinsicRoot = d.ExtrinsicRoot
 	}
-	if cfg.XPostsFile == "" {
-		cfg.XPostsFile = "x posts.md"
-	}
 	if cfg.LabSttModel == "" {
 		cfg.LabSttModel = "granite-speech-4.1-2b"
 	}
@@ -293,7 +287,7 @@ func LoadConfig(path string) (Config, error) {
 	// Harness federation (Phase 4): normalize the two spellings into BOTH —
 	// Harnesses is the canonical list (legacy ExcaliburPath synthesizes a
 	// single entry); ExcaliburPath mirrors the primary for the code paths
-	// that are primary-only by design (studio, corpus, aion sink).
+	// that are primary-only by design (aion sink).
 	for i := range cfg.Harnesses {
 		cfg.Harnesses[i].Path = expandHome(cfg.Harnesses[i].Path)
 		if strings.TrimSpace(cfg.Harnesses[i].Name) == "" {

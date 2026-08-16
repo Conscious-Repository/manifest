@@ -19,7 +19,7 @@ import (
 	"manifest/record"
 )
 
-// Item is one feed card. type ∈ paper|person|company|finding|artifact|digest|draft.
+// Item is one feed card. type ∈ paper|person|company|finding|artifact|digest.
 // status ∈ new|kept|discarded|snoozed.
 type Item struct {
 	ID          string   `json:"id"`
@@ -38,13 +38,8 @@ type Item struct {
 	SnoozeUntil string   `json:"snoozeUntil"`
 	Tags        []string `json:"tags"`
 	Body        string   `json:"body"`
-	// draft-card fields (type "draft"): a tweet-shaped card sharing one object
-	// with its append-x-queue approval + studio draft file (content-studio §8).
+	// ApprovalID links a card to a pending approval (shared across card types).
 	ApprovalID string `json:"approvalId,omitempty"`
-	DraftID    string `json:"draftId,omitempty"`
-	Format     string `json:"format,omitempty"`     // single|thread|quote
-	QuotedText string `json:"quotedText,omitempty"` // quote variant: the quoted post
-	QuotedURL  string `json:"quotedUrl,omitempty"`
 }
 
 // Filter selects items for List.
@@ -274,11 +269,7 @@ func (s *Store) write(it Item) error {
 		Set("confidence", it.Confidence).
 		Set("vault_note", it.VaultNote).
 		Set("snooze_until", it.SnoozeUntil).
-		Set("approval-id", it.ApprovalID). // draft cards (Set skips empty for other types)
-		Set("draft-id", it.DraftID).
-		Set("format", it.Format).
-		Set("quoted-text", it.QuotedText).
-		Set("quoted-url", it.QuotedURL).
+		Set("approval-id", it.ApprovalID). // Set skips empty for other types
 		SetList("tags", it.Tags)
 	return os.WriteFile(s.path(it.ID), []byte(w.String(it.Body)), 0o644)
 }
@@ -307,10 +298,6 @@ func (s *Store) parse(path string) (Item, error) {
 		Tags:        mdfm.List(fm["tags"]),
 		Body:        strings.TrimSpace(body),
 		ApprovalID:  strings.TrimSpace(fm["approval-id"]),
-		DraftID:     strings.TrimSpace(fm["draft-id"]),
-		Format:      strings.TrimSpace(fm["format"]),
-		QuotedText:  fm["quoted-text"],
-		QuotedURL:   strings.TrimSpace(fm["quoted-url"]),
 	}, nil
 }
 

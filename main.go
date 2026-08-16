@@ -36,7 +36,6 @@ import (
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
-	"manifest/studio"
 	"manifest/teamportal"
 	"manifest/threads"
 	"manifest/todos"
@@ -471,7 +470,7 @@ func main() {
 	if len(cfg.Harnesses) > 0 {
 		// Harness federation (big-change Phase 4): one store pair per tree,
 		// primary first. The primary keeps every write surface (spool, ritual
-		// editor, studio, aion sink); the rest surface read-side, tagged.
+		// editor, aion sink); the rest surface read-side, tagged.
 		var hs []server.Harness
 		for i, ref := range cfg.Harnesses {
 			sp := spiritsStore // the primary store already exists (aion sink holds it)
@@ -518,7 +517,6 @@ func main() {
 				}
 			}()
 		}
-		srv.UseStudio(studio.NewStore(cfg.ExcaliburPath), studio.CorpusPath(cfg.ExcaliburPath), cfg.XPostsFile)
 		names := make([]string, len(hs))
 		for i, h := range hs {
 			names[i] = h.Name

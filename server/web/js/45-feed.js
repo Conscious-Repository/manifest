@@ -118,7 +118,7 @@ function renderFeed() {
     if (lane.inboxOnly && view !== "inbox") return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
-  if (pendingApprovalFocus) { // deep-linked (Studio tuning panel "review →")
+  if (pendingApprovalFocus) { // deep-linked ("review →")
     const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
     pendingApprovalFocus = null;
     if (target) {
@@ -328,7 +328,6 @@ function faviconFor(link) {
   } catch (e) { return null; }
 }
 function feedCard(it) {
-  if (it.type === "draft") return draftFeedCard(it);
   const pinned = it.type === "digest" && it.status === "new";
   const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") +
     (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
@@ -373,89 +372,6 @@ function feedCard(it) {
   }
   card.append(actions);
   return card;
-}
-
-// draftFeedCard renders a Content Studio draft as a tweet-shaped card: the post
-// text big, the critic's rationale, and inline approve / edit / dismiss plus a
-// "judge" note. Approve confirms the linked append-x-queue approval; dismiss
-// rejects it; edit rewrites both the draft and the pending bullet so the edited
-// text is what lands.
-function draftFeedCard(it) {
-  const card = el("div", "feed-card draft" + (it.status === "discarded" ? " discarded" : ""));
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-draft", "draft"));
-  if (it.format && it.format !== "single") top.append(el("span", "draft-format", it.format));
-  top.append(el("span", "feed-title", it.title || "draft"));
-  card.append(top);
-
-  const tweet = el("div", "draft-tweet");
-  tweet.textContent = it.body || "";
-  card.append(tweet);
-  // quote-tweet variant: render the quoted post beneath (like X)
-  if (it.quotedText) {
-    const q = el("div", "draft-quote");
-    q.append(el("div", "draft-quote-text", it.quotedText));
-    if (it.quotedUrl) q.append(linkEl(it.quotedUrl, it.quotedUrl));
-    card.append(q);
-  }
-  if (it.why) card.append(el("div", "feed-why", it.why));
-  const meta = el("div", "feed-meta");
-  meta.append(el("span", null, [it.agent, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ")));
-  card.append(meta);
-
-  if (it.status === "discarded") {
-    const a = el("div", "feed-actions");
-    a.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
-    card.append(a);
-    return card;
-  }
-
-  // edit box (hidden until "Edit")
-  const editWrap = el("div", "draft-edit"); editWrap.hidden = true;
-  const ta = el("textarea", "draft-edit-input"); ta.value = it.body || "";
-  const editActions = el("div", "feed-actions");
-  editActions.append(
-    pill("Save edit", async () => {
-      const t = ta.value.trim(); if (!t) return;
-      await studioPost(`/api/studio/draft/${encodeURIComponent(it.draftId)}/edit`, { text: t, approvalId: it.approvalId });
-      showToast("edit saved — approve to queue the edited version", null, "info");
-      loadFeed();
-    }),
-    pillLight("Cancel", () => { editWrap.hidden = true; }),
-  );
-  editWrap.append(ta, editActions);
-
-  // feedback: a single "judge" affordance (shared with the board cards)
-  const fb = buildDraftFeedback(it.draftId, "");
-
-  const actions = el("div", "feed-actions");
-  actions.append(
-    pill("Approve → queue", () => draftApproval(it.approvalId, "confirm", card)),
-    pillLight("Edit", () => { editWrap.hidden = !editWrap.hidden; }),
-    pillLight("Dismiss", () => { card.remove(); studioDismiss(it.draftId, it.approvalId, loadFeed); }),
-  );
-  card.append(editWrap, fb, actions);
-  return card;
-}
-
-// studioDismiss resolves an owner rejection server-side across all three
-// objects (approval + draft file + feed card) — see handleStudioDismiss.
-async function studioDismiss(draftId, approvalId, refresh) {
-  if (!draftId) { showToast("this card has no draft id", null, "error"); return; }
-  await studioPost(`/api/studio/draft/${encodeURIComponent(draftId)}/dismiss`, { approvalId: approvalId || "" });
-  showToast("dismissed", null, "info");
-  refresh();
-}
-
-async function draftApproval(approvalId, kind, cardEl) {
-  if (!approvalId) { showToast("this draft has no linked approval", null, "error"); return; }
-  if (cardEl) cardEl.remove(); // optimistic — the decision resolves server-side next
-  setSaveState("saving");
-  const body = kind === "reject" ? { reason: "dismissed from studio" } : {};
-  try { await fetch(`/api/spirits/approvals/${encodeURIComponent(approvalId)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
-  showToast(kind === "confirm" ? "queued to x posts.md ✓" : "dismissed", null, "info");
-  loadFeed();
 }
 
 // ---- receipts: the fourth attention kind, backed by <dataDir>/errands/
@@ -672,9 +588,3 @@ async function composeErrand() {
   ta.focus();
 }
 if (els.feedErrandBtn) els.feedErrandBtn.addEventListener("click", composeErrand);
-
-async function studioPost(path, body) {
-  setSaveState("saving");
-  try { const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); if (!r.ok) throw new Error(await r.text()); setSaveState("saved"); return await r.json().catch(() => ({})); }
-  catch (e) { setSaveState("error"); showToast("Studio action failed: " + (e.message || e), null, "error"); throw e; }
-}

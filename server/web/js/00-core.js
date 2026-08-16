@@ -114,11 +114,6 @@ const els = {
   feedErrandBtn: document.getElementById("feedErrandBtn"),
   feedAskBtn: document.getElementById("feedAskBtn"),
   feedRunNowBtn: document.getElementById("feedRunNowBtn"),
-  // content studio (draft board + inspiration watchlist)
-  studioView: document.getElementById("studioView"),
-  studioTabs: document.getElementById("studioTabs"),
-  studioRuns: document.getElementById("studioRuns"),
-  studioBody: document.getElementById("studioBody"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
   chatView: document.getElementById("chatView"),

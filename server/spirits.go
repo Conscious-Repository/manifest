@@ -111,9 +111,7 @@ type approvalRow struct {
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
-// exclude. Shared by the SPIRITS endpoint (all rows — the Studio tuning panel
-// reads it) and the FEED (which excludes append-x-queue: a draft's tweet-shaped
-// card already carries Approve/Dismiss — one object, one card).
+// exclude. Shared by the SPIRITS endpoint and the FEED (the approvals inbox).
 func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 	rows := []approvalRow{}
 	for _, h := range s.eachHarness() {
@@ -141,20 +139,6 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 				// A new vault-root note: allowed by its own path rule, no current
 				// content (the diff renders as an all-added new file).
 				rr.Allowed = approvals.CreateVaultNotePathAllowed(p.ApplyPath)
-			case approvals.TypeAppendXQueue:
-				// The bullet appends to the x-posts file; current content is that
-				// file so the UI can show where it lands.
-				rr.Allowed = approvals.AppendXQueuePathAllowed(p.ApplyPath)
-				if cur, ok := store.CurrentContent(p); ok {
-					rr.Current = cur
-				}
-			case approvals.TypeUpdateVaultSkill:
-				// A skill-file edit: allowed only when the path is on the tight
-				// allow-list AND the filing ritual is a tune ritual (D15).
-				rr.Allowed = approvals.UpdateVaultSkillPathAllowed(p.ApplyPath) && p.Ritual == "tune"
-				if cur, ok := store.CurrentContent(p); ok {
-					rr.Current = cur
-				}
 			case approvals.TypeAppendVaultNote:
 				// An email-thread append that auto-apply refused (renamed note,
 				// thread-id mismatch): surfaces as a human card with the current

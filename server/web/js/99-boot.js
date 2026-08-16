@@ -101,7 +101,6 @@ const NAV_SECTIONS = [
   { label: "WORK", items: [
     { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },
     { key: "properties", label: "Real Estate", glyph: "⌂", hash: "#/properties", counted: true },
-    { key: "studio", label: "Studio", glyph: "▤", hash: "#/studio" },
   ]},
   { label: "SIGNAL", items: [
     { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
@@ -127,7 +126,7 @@ function sectionOf(h) {
   if (h.startsWith("#/note/")) return "note";
   if (h.startsWith("#/artifact/")) return "artifact";
   const seg = h.replace(/^#\//, "").split("/")[0];
-  return ["goals","todos","calendar","feed","chat","capture","terminal","studio","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  return ["goals","todos","calendar","feed","chat","capture","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -272,7 +271,7 @@ function route() {
   renderCrumbs(h);
   // the note view's Back returns to wherever the user actually was: every
   // non-note route records itself as the return target. Explicit
-  // _noteReturn sets (contact page, studio→feed) still win — they happen
+  // _noteReturn sets (contact page → feed) still win — they happen
   // after the last non-note route, and note routes never overwrite.
   if (!h.startsWith("#/note/") && !h.startsWith("#/artifact/")) _noteReturn = h === "#/" ? "#/" : h;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
@@ -288,7 +287,6 @@ function route() {
     return;
   }
   const terminalTab = h === "#/terminal";
-  const studio = h === "#/studio" || h.startsWith("#/studio/");
   if (h === "#/spirits/approvals") { location.hash = "#/feed"; return; } // approvals live in FEED now
   const sp = h === "#/spirits" || h.startsWith("#/spirits/");
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
@@ -297,7 +295,7 @@ function route() {
   const aionTab = h === "#/aion" || h.startsWith("#/aion/");
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
-  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !terminalTab && !studio && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact;
+  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !terminalTab && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -306,7 +304,6 @@ function route() {
   if (els.chatView) els.chatView.hidden = !chat;
   if (els.captureView) els.captureView.hidden = !capture;
   if (els.terminalView) els.terminalView.hidden = !terminalTab;
-  els.studioView.hidden = !studio;
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
   els.readingView.hidden = !reading;
@@ -340,7 +337,6 @@ function route() {
   else if (chat) showChat(h); // conversations with chattable spirits
   else if (capture) showCapture(); // the tray — triage into todos/chat
   else if (terminalTab) showTerminal(); // the cockpit: terminal / files / activity
-  else if (studio) showStudio(); // content studio: draft board + inspiration
   else if (sp) showSpirits(h); // spirits cockpit: rituals / runs / settings / spirit pages
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone

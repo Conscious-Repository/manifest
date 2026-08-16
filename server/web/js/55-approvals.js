@@ -1,7 +1,7 @@
 // ---- spirit approvals (artifacts/approvals/ — the ONE inbox) ----
 // Spirits file proposals via the write_approval cast; Confirm/Reject only
 // RECORD the decision (a folder move on the excalibur tree). Nothing sends.
-let pendingApprovalFocus = null; // approval id to scroll to in FEED (Studio tuning panel "review →")
+let pendingApprovalFocus = null; // approval id to scroll to in FEED (deep-link "review →")
 
 // approvalCardEl: a pending approval as a first-class FEED card — evidence,
 // per-type guards, current-vs-proposed diff, and Confirm/Reject inline
@@ -27,8 +27,6 @@ function approvalCardEl(a) {
 
   let blocked = false, blockMsg = "";
   const isNewNote = a.type === "create-vault-note";
-  const isXQueue = a.type === "append-x-queue";
-  const isSkill = a.type === "update-vault-skill";
   const isAppendNote = a.type === "append-vault-note"; // email-sync append the auto-apply refused
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
   let categories = null; // create-vault-note: the editable frontmatter categories
@@ -47,10 +45,6 @@ function approvalCardEl(a) {
       blocked = true;
       blockMsg = isNewNote
         ? "apply-path is not a vault-root dated note (YYYY-MM-DD <title>.md) — Confirm is disabled."
-        : isXQueue
-        ? "apply-path is not the x-posts file — Confirm is disabled."
-        : isSkill
-        ? "update-vault-skill must target skills/x-content/{SKILL.md, references/<name>.md} and be filed by a tune ritual — Confirm is disabled."
         : isAppendNote
         ? "append target is not a log/ dated note or the proposal carries no thread id — Confirm is disabled."
         : isRe
@@ -84,10 +78,6 @@ function approvalCardEl(a) {
       // an aion extraction candidate: editable payload + the exact record
       // line Confirm appends (the app renders it — nothing else is written)
       card.append(buildAionEditor(a));
-    } else if (isXQueue) {
-      // append-x-queue's proposed is ONLY the bullet — show it, not a whole-file diff
-      card.append(el("div", "appr-diff-label", "Appends under # queue in " + a.applyPath));
-      const pre = el("pre", "appr-body draft-tweet"); pre.textContent = (a.proposed || "").trim(); card.append(pre);
     } else if (isAppendNote) {
       // append-vault-note's proposed is ONLY the new message sections — this
       // card renders only when auto-apply refused (rename/mismatch), so say so
@@ -96,7 +86,7 @@ function approvalCardEl(a) {
       card.append(collapsibleBlock(pre, (a.proposed || "").split("\n").length));
     } else {
       card.append(el("div", "appr-diff-label", isNewNote ? "New note — will be created at the vault root"
-        : isSkill ? "Skill change  ·  current → proposed" : "Proposed change  ·  current → proposed"));
+        : "Proposed change  ·  current → proposed"));
       const diff = renderLineDiff(a.current || "", a.proposed || "");
       card.append(collapsibleBlock(diff, diff.childElementCount));
     }

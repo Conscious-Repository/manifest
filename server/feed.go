@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"manifest/approvals"
 	"manifest/attention"
 	"manifest/feed"
 	"manifest/signals"
@@ -30,16 +29,14 @@ import (
 // and /api/spirits/status.feedInbox all call this one function so the counts
 // can never drift (feed-central §1). Count = every registered attention
 // kind's contribution (§5 registry: findings inbox + signals + notices +
-// receipts) + the pending-proposals lane (the same filtered set that renders
-// as cards — append-x-queue excluded, so a draft is never counted twice via
-// its approval).
+// receipts) + the pending-proposals lane (the same set that renders as cards).
 func (s *Server) feedInboxCount(now time.Time) int {
 	return s.attentionRegistry().Badge(now) + len(s.approvalRows(feedApprovalExclude))
 }
 
-// feedApprovalExclude: approval types that already have a native feed card
-// (the tweet-shaped draft card carries Approve/Dismiss for append-x-queue).
-var feedApprovalExclude = map[string]bool{approvals.TypeAppendXQueue: true}
+// feedApprovalExclude: approval types that already have a native feed card and
+// should not also render as a generic approval row. Currently none.
+var feedApprovalExclude = map[string]bool{}
 
 // activeSignals returns the app-signal cards (empty when disabled).
 func (s *Server) activeSignals(now time.Time) []signals.Signal {
@@ -120,11 +117,10 @@ func (s *Server) artifactRefsIn(h Harness, it feed.Item, lib libraryFn) (string,
 }
 
 // feedProposals returns the FULL enriched approval rows for the feed's pinned
-// lane (approvals-move-to-feed plan): every pending approval except types with
-// a native feed card (append-x-queue → the draft card). The card in FEED is now
-// the control itself — diff + Confirm/Reject inline — and it resolves atomically
-// on decision because pending/ is the only source of truth. Nothing is ever
-// written to the engine's feed dir for these.
+// lane (approvals-move-to-feed plan): every pending approval. The card in FEED
+// is the control itself — diff + Confirm/Reject inline — and it resolves
+// atomically on decision because pending/ is the only source of truth. Nothing
+// is ever written to the engine's feed dir for these.
 func (s *Server) feedProposals() []approvalRow {
 	return s.approvalRows(feedApprovalExclude)
 }

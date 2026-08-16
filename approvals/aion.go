@@ -23,8 +23,8 @@ const (
 )
 
 // AionBacklogPath / AionHeuristicPath are the ONLY apply-paths the aion
-// types may write. Fixed conventions (like XPostsFileName) so the
-// byte-contract with the engine needs no shared config.
+// types may write. Fixed conventions so the byte-contract with the engine
+// needs no shared config.
 const (
 	AionBacklogPath   = "system/aion/backlog.md"
 	AionHeuristicPath = "system/aion/heuristics.md"
