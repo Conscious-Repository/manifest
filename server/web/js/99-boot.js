@@ -64,7 +64,7 @@ function openTodoQuickAdd(prefill) {
     else if (tv.startsWith("issue:")) body.issue = tv.slice(6);
     else if (tv.startsWith("bucket:")) body.bucket = tv.slice(7);
     try {
-      await postJSONOk("/api/todos/item", body);
+      await postJSONOk("/api/tasks/item", body);
       showToast("Todo captured → " + (propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox")));
       close();
       if (!els.todosView.hidden) loadTodos();
@@ -173,8 +173,8 @@ function railSetCount(key, n) {
 // the surfaces read. Each surface keeps them honest as it loads (stages 5–8).
 async function refreshRailCounts() {
   const j = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [td, gl, ai, pr] = await Promise.all([j("/api/todos"), j("/api/goals"), j("/api/aion"), j("/api/properties")]);
-  if (td && td.counts) railSetCount("todos", td.counts.todos || 0); // same derivation as the surface — one truth
+  const [td, gl, ai, pr] = await Promise.all([j("/api/tasks"), j("/api/goals"), j("/api/aion"), j("/api/properties")]);
+  if (td && td.counts) railSetCount("todos", td.counts.tasks || 0); // same derivation as the surface — one truth
   if (gl && gl.areas) railSetCount("goals", gl.areas.reduce((n, a) => n + ((a.rocks || []).filter((r) => !r.checked).length), 0));
   if (ai && ai.backlog) railSetCount("aion", ai.backlog.filter((b) => !b.checked).length);
   if (pr && pr.properties) railSetCount("properties", pr.properties.length);

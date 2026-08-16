@@ -690,7 +690,7 @@ async function renderAionGoals(host) {
   // EDITABLE (owner call 2026-08-12): the same outline as the GOALS tab,
   // mounted here for the Aion area. It reads the task substrate for the
   // tethered tasks, so refresh that first.
-  try { todosCache = await (await fetch("/api/todos")).json(); } catch (e) {}
+  try { todosCache = await (await fetch("/api/tasks")).json(); } catch (e) {}
   host.append(el("div", "aion-section-note",
     "editable — the GOALS-tab outline over ## Aion; milestones run in parallel"));
   const rocksHost = el("div", "go-content aion-goals-outline");

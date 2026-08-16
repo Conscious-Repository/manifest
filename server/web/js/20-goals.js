@@ -26,7 +26,7 @@ async function loadGoals(focusId) {
     // GOALS is a WINDOW over the task substrate — fetch both files' views
     const [doc, tv] = await Promise.all([
       (await fetch("/api/goals")).json(),
-      fetch("/api/todos").then((r) => r.json()).catch(() => null),
+      fetch("/api/tasks").then((r) => r.json()).catch(() => null),
     ]);
     if (tv) todosCache = tv;
     state.goalsDoc = doc;
@@ -137,8 +137,8 @@ function rockTodos(rockId) {
   const out = [];
   const scan = (list) => (list || []).forEach((t) => { if (t.rock === rockId && t.state !== "done") out.push(t); });
   ((todosCache && todosCache.domains) || []).forEach((dm) => {
-    scan(dm.todos);
-    (dm.buckets || []).forEach((bk) => scan(bk.todos));
+    scan(dm.tasks);
+    (dm.buckets || []).forEach((bk) => scan(bk.tasks));
   });
   // AION tasks live in the aion backlog, not the to-do.md domains — they arrive
   // in the unified projection rows (source "aion", open only). Surface them under
@@ -229,19 +229,19 @@ function orientArea(area) {
   // issues (they live on the TODOS surface; shown here quietly so they can
   // be tethered — or converted-and-tethered — in place)
   const un = areaUnanchored(area.name);
-  if (un.todos.length || un.issues.length) {
+  if (un.tasks.length || un.issues.length) {
     const foot = el("div", "go-unanchored");
     const head = el("div", "go-un-head");
     head.append(el("span", "go-un-title", "unanchored"),
-      el("span", "go-un-count", String(un.todos.length + un.issues.length)),
+      el("span", "go-un-count", String(un.tasks.length + un.issues.length)),
       el("span", "go-un-hint", "in TODOS · advancing no rock — link to place"));
     foot.append(head);
-    un.todos.forEach((t) => {
+    un.tasks.forEach((t) => {
       const row = goTaskRow(t, area.name);
       const link = el("button", "go-un-link", "→ rock…");
       link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
         if (!p.rock) return;
-        try { await postJSONOk("/api/todos/update", { id: t.id, rock: p.rock, stage: p.stage }); } catch (err) {}
+        try { await postJSONOk("/api/tasks/update", { id: t.id, rock: p.rock, stage: p.stage }); } catch (err) {}
         loadGoals();
       });
       row.insertBefore(link, row.lastChild); // before the age cell
@@ -254,7 +254,7 @@ function orientArea(area) {
       link.title = "convert this issue to a task tethered to a rock";
       link.onclick = () => openTetherPicker(link, { rock: "" }, area.name, async (p) => {
         if (!p.rock) return;
-        try { await postJSONOk("/api/todos/issue/to-todo", { id: is.id, rock: p.rock, stage: p.stage }); } catch (err) {}
+        try { await postJSONOk("/api/tasks/issue/to-task", { id: is.id, rock: p.rock, stage: p.stage }); } catch (err) {}
         loadGoals();
       });
       row.append(link);
@@ -275,8 +275,8 @@ function areaUnanchored(areaName) {
   });
   ((todosCache && todosCache.domains) || []).forEach((dm) => {
     if (dm.name !== areaName) return;
-    scan(dm.todos);
-    (dm.buckets || []).forEach((bk) => scan(bk.todos));
+    scan(dm.tasks);
+    (dm.buckets || []).forEach((bk) => scan(bk.tasks));
     (dm.issues || []).forEach((is) => { if (!is.checked) issues.push(is); });
   });
   todos.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
@@ -544,13 +544,13 @@ function goTaskRow(t, areaName) {
   tc.title = "done";
   tc.onclick = async (e) => {
     e.stopPropagation();
-    try { await postJSONOk("/api/todos/check", { id: t.id, checked: true }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/check", { id: t.id, checked: true }); } catch (err) {}
     loadGoals();
   };
   row.append(tc);
   const tt = el("span", "go-task-text", t.text);
   clickToEdit(tt, () => t.text, async (v) => {
-    try { await postJSONOk("/api/todos/update", { id: t.id, text: v }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/update", { id: t.id, text: v }); } catch (err) {}
     loadGoals();
   });
   row.append(tt);
@@ -561,7 +561,7 @@ function goTaskRow(t, areaName) {
   const ownerNode = hasOwner ? el("span", "go-stage-owner", "@" + t.owner)
     : el("button", "o-ghost go-owner-ghost", "＋@");
   ownerEditable(ownerNode, () => (hasOwner ? t.owner : ""), async (v) => {
-    try { await postJSONOk("/api/todos/update", { id: t.id, owner: v }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/update", { id: t.id, owner: v }); } catch (err) {}
     loadGoals();
   }, ownerRegistryFor(areaName));
   row.append(ownerNode);
@@ -575,7 +575,7 @@ function goTaskRow(t, areaName) {
       setTimeout(() => x.classList.remove("armed"), 2500);
       return;
     }
-    try { await postJSONOk("/api/todos/drop", { id: t.id }); } catch (err) {}
+    try { await postJSONOk("/api/tasks/drop", { id: t.id }); } catch (err) {}
     loadGoals();
   };
   row.append(x);
@@ -643,7 +643,7 @@ function rockOutline(g, areaName) {
     (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t, areaName)));
     if (!g.checked && !st.checked) {
       wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
-        try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
+        try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
         loadGoals();
       }, "what advances " + st.text + "…"));
     }
@@ -668,7 +668,7 @@ function rockOutline(g, areaName) {
   looseTasks.forEach((t) => wrap.append(goTaskRow(t, areaName)));
   if (!g.checked && stages.length === 0) {
     wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
-      try { await postJSONOk("/api/todos/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
+      try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
       loadGoals();
     }, "what advances this rock…"));
   }

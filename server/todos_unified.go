@@ -177,7 +177,7 @@ func sortRows(rows []unifiedRow) {
 	})
 }
 
-// unifiedView is the stage-4 addition to the /api/todos payload.
+// unifiedView is the stage-4 addition to the /api/tasks payload.
 func (s *Server) unifiedView(doc *tasks.Doc) map[string]any {
 	now := time.Now()
 	all := s.unifiedRows(doc, now)

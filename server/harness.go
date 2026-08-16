@@ -144,7 +144,7 @@ func (s *Server) harnessHeartbeats() []harnessHeartbeat {
 }
 
 // feedHarnessFor finds the harness whose feed store holds the item id —
-// the routing for feed actions (status, snooze, save-to-vault, to-todo).
+// the routing for feed actions (status, snooze, save-to-vault, to-task).
 func (s *Server) feedHarnessFor(id string) (Harness, bool) {
 	for _, h := range s.eachHarness() {
 		if h.Spirits == nil {

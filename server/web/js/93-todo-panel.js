@@ -6,7 +6,7 @@
 // content-addressed attachments. Under 1100px the panel becomes a sheet.
 
 let todoSelId = null;      // selected todo id ("" = none)
-let todoPanelData = null;  // last /api/todos/panel payload
+let todoPanelData = null;  // last /api/tasks/panel payload
 let todoDeepLink = null;   // #/todos/<id> → open after load
 let todoPanelTimer = null; // live refresh while the panel is open
 
@@ -21,7 +21,7 @@ function ensureTodoPanelPoll() {
     if (host && host.contains(document.activeElement) &&
         /^(input|textarea)$/i.test(document.activeElement.tagName)) return;
     try {
-      const fresh = await (await fetch("/api/todos/panel?id=" + encodeURIComponent(todoSelId))).json();
+      const fresh = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(todoSelId))).json();
       if (fresh.id !== todoSelId) return;
       if (JSON.stringify(fresh) !== JSON.stringify(todoPanelData)) {
         todoPanelData = fresh;
@@ -68,7 +68,7 @@ async function renderTodoPanel(refetch) {
   document.body.classList.add("tdo-panel-open");
   if (refetch || !todoPanelData || todoPanelData.id !== todoSelId) {
     try {
-      todoPanelData = await (await fetch("/api/todos/panel?id=" + encodeURIComponent(todoSelId))).json();
+      todoPanelData = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(todoSelId))).json();
     } catch (e) { todoPanelData = { id: todoSelId, record: {}, thread: [] }; }
   }
   if (todoPanelData.id !== todoSelId) return; // raced a newer selection
@@ -148,7 +148,7 @@ async function renderTodoPanel(refetch) {
     fire.onclick = async () => {
       fire.disabled = true;
       try {
-        await postJSONOk("/api/todos/fire", { id: todoSelId });
+        await postJSONOk("/api/tasks/fire", { id: todoSelId });
         showToast("Fired — " + assignee.slice(6) + " is executing the plan", null, "info");
         renderTodoPanel(true);
       } catch (e) {
@@ -166,7 +166,7 @@ async function renderTodoPanel(refetch) {
       ta.rows = 6;
       const save = pillLight("save plan", async () => {
         try {
-          await postJSONOk("/api/todos/plan", { id: todoSelId, text: ta.value });
+          await postJSONOk("/api/tasks/plan", { id: todoSelId, text: ta.value });
           renderTodoPanel(true);
         } catch (e) { showToast("Couldn't save plan — " + (e.message || "error")); }
       });
@@ -221,7 +221,7 @@ function todoAssigneeControl(d, row) {
 
 async function todoAssign(ownerToken, taRef) {
   try {
-    await postJSONOk("/api/todos/assign", { id: todoSelId, owner: ownerToken });
+    await postJSONOk("/api/tasks/assign", { id: todoSelId, owner: ownerToken });
     loadTodos(); // rows re-project the owner; panel re-syncs via loadTodos
     renderTodoPanel(true);
   } catch (e) {
@@ -250,7 +250,7 @@ function todoThreadEntry(c) {
     const a = document.createElement("a");
     a.className = "tdo-p-c-file";
     a.textContent = "⤓ " + f.name;
-    a.href = "/api/todos/thread/file/" + f.hash + "?id=" + encodeURIComponent(todoSelId);
+    a.href = "/api/tasks/thread/file/" + f.hash + "?id=" + encodeURIComponent(todoSelId);
     a.target = "_blank";
     e.append(a);
   });
@@ -276,7 +276,7 @@ function todoComposer() {
   fi.onchange = async () => {
     for (const f of [...fi.files]) {
       try {
-        const res = await fetch("/api/todos/thread/file?id=" + encodeURIComponent(todoSelId) +
+        const res = await fetch("/api/tasks/thread/file?id=" + encodeURIComponent(todoSelId) +
           "&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
         if (!res.ok) throw new Error((await res.text()).slice(0, 120));
         const ref = (await res.json()).file;
@@ -313,7 +313,7 @@ function todoComposer() {
     const text = ta.value.trim();
     if (!text && !pendingFiles.length) return;
     try {
-      await postJSONOk("/api/todos/thread", { id: todoSelId, text, mentions, files: pendingFiles });
+      await postJSONOk("/api/tasks/thread", { id: todoSelId, text, mentions, files: pendingFiles });
       ta.value = "";
       pendingFiles.length = 0;
       mentions.length = 0;
@@ -329,7 +329,7 @@ function todoComposer() {
   return box;
 }
 
-// todoRoster — merged assignee groups from the /api/todos payload
+// todoRoster — merged assignee groups from the /api/tasks payload
 // (Phase 3 adds the agents group server-side; this reads whatever is there).
 // Agents expand into their base token plus one intent-tagged entry per
 // enabled persona (persona plan Phase 1): `agent:hermes::brief` — the intent

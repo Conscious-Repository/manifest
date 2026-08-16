@@ -220,33 +220,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)        // quarterly review: save the retro
 
 	// TODOS — the third surface over `to do.md` (todos-surface-scope).
-	mux.HandleFunc("GET /api/todos", s.handleTasksGet)
-	mux.HandleFunc("POST /api/todos/item", s.handleTaskAdd)
-	mux.HandleFunc("POST /api/todos/check", s.handleTaskCheck)
-	mux.HandleFunc("POST /api/todos/update", s.handleTaskUpdate)
-	mux.HandleFunc("POST /api/todos/rank", s.handleTasksRank)                      // unified drag-to-rank (stage 4)
-	mux.HandleFunc("GET /api/properties/migrate-todos", s.handlePropTasksMigrate)  // preview
-	mux.HandleFunc("POST /api/properties/migrate-todos", s.handlePropTasksMigrate) // commit
+	mux.HandleFunc("GET /api/tasks", s.handleTasksGet)
+	mux.HandleFunc("POST /api/tasks/item", s.handleTaskAdd)
+	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)
+	mux.HandleFunc("POST /api/tasks/update", s.handleTaskUpdate)
+	mux.HandleFunc("POST /api/tasks/rank", s.handleTasksRank)                      // unified drag-to-rank (stage 4)
+	mux.HandleFunc("GET /api/properties/migrate-tasks", s.handlePropTasksMigrate)  // preview
+	mux.HandleFunc("POST /api/properties/migrate-tasks", s.handlePropTasksMigrate) // commit
 	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)              // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
-	mux.HandleFunc("POST /api/todos/drop", s.handleTaskDrop)
-	mux.HandleFunc("/api/todos/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)
-	mux.HandleFunc("POST /api/todos/bucket", s.handleBucketRename)
-	mux.HandleFunc("POST /api/todos/issue", s.handleIssueAdd)
-	mux.HandleFunc("POST /api/todos/issue/resolve", s.handleIssueResolve)
-	mux.HandleFunc("POST /api/todos/issue/to-todo", s.handleIssueToTask) // reverse conversion (+ optional tether)
-	mux.HandleFunc("POST /api/todos/to-issue", s.handleTaskToIssue)
-	mux.HandleFunc("GET /api/todos/delegate/targets", s.handleDelegateTargets) // Phase 6
-	mux.HandleFunc("POST /api/todos/delegate", s.handleDelegate)
+	mux.HandleFunc("POST /api/tasks/drop", s.handleTaskDrop)
+	mux.HandleFunc("/api/tasks/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)
+	mux.HandleFunc("POST /api/tasks/bucket", s.handleBucketRename)
+	mux.HandleFunc("POST /api/tasks/issue", s.handleIssueAdd)
+	mux.HandleFunc("POST /api/tasks/issue/resolve", s.handleIssueResolve)
+	mux.HandleFunc("POST /api/tasks/issue/to-task", s.handleIssueToTask) // reverse conversion (+ optional tether)
+	mux.HandleFunc("POST /api/tasks/to-issue", s.handleTaskToIssue)
+	mux.HandleFunc("GET /api/tasks/delegate/targets", s.handleDelegateTargets) // Phase 6
+	mux.HandleFunc("POST /api/tasks/delegate", s.handleDelegate)
 	// TODO PANEL (todo-panel plan): record + thread + attachments.
-	mux.HandleFunc("GET /api/todos/panel", s.handleTaskPanel)
-	mux.HandleFunc("POST /api/todos/plan", s.handleTaskPlan)
-	mux.HandleFunc("POST /api/todos/assign", s.handleTaskAssign)
-	mux.HandleFunc("POST /api/todos/fire", s.handleTaskFire)
-	mux.HandleFunc("GET /api/todos/thread", s.handleTaskThreadGet)
-	mux.HandleFunc("POST /api/todos/thread", s.handleTaskThreadPost)
-	mux.HandleFunc("POST /api/todos/thread/file", s.handleTaskThreadFile)
-	mux.HandleFunc("GET /api/todos/thread/file/{hash}", s.handleTaskThreadBlob)
+	mux.HandleFunc("GET /api/tasks/panel", s.handleTaskPanel)
+	mux.HandleFunc("POST /api/tasks/plan", s.handleTaskPlan)
+	mux.HandleFunc("POST /api/tasks/assign", s.handleTaskAssign)
+	mux.HandleFunc("POST /api/tasks/fire", s.handleTaskFire)
+	mux.HandleFunc("GET /api/tasks/thread", s.handleTaskThreadGet)
+	mux.HandleFunc("POST /api/tasks/thread", s.handleTaskThreadPost)
+	mux.HandleFunc("POST /api/tasks/thread/file", s.handleTaskThreadFile)
+	mux.HandleFunc("GET /api/tasks/thread/file/{hash}", s.handleTaskThreadBlob)
 	mux.HandleFunc("GET /api/agents/personas", s.handlePersonas)                     // persona records (persona plan Phase 1)
 	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
 	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
@@ -408,7 +408,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/errands/{id}/transcript", s.handleErrandTranscript)
 	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
 	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
-	mux.HandleFunc("POST /api/feed/{id}/to-todo", s.handleFeedToTask)
+	mux.HandleFunc("POST /api/feed/{id}/to-task", s.handleFeedToTask)
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig) // "dig →"
 	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
 	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
@@ -666,7 +666,7 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	date := r.URL.Query().Get("date")
 	var b struct {
 		GoalID string `json:"goalId"`
-		TaskID string `json:"todoId"`
+		TaskID string `json:"taskId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		httpError(w, err)

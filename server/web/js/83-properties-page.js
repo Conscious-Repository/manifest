@@ -5,7 +5,7 @@
 // edit in place, ✕ deletes, a composer adds) · side card: parcel outline +
 // OWNER of record (assessor-stamped frontmatter, editable). Money: budget
 // derives from source.json underwrite + `## work` est; spent from the ledger.
-let propSelTodoId = null; // line-id of the inspector's todo
+let propSelTaskId = null; // line-id of the inspector's todo
 let propPageSlug = null;  // page-local UI state resets when this changes
 let propUWOpen = false;   // underwrite editor visible
 let propLedgerEdit = -1;  // index of the ledger row being edited (-1 none)
@@ -90,7 +90,7 @@ async function renderPropertyPage(slug) {
   // current stage; the composer files into the current stage by construction.
   const stagesSec = el("div", "pp3-sec");
   const sh = el("div", "pp3-sec-head");
-  const open = (p.todos || []).filter((t) => !t.checked);
+  const open = (p.tasks || []).filter((t) => !t.checked);
   sh.append(el("span", "pp3-sec-title", "STAGES"), el("span", "pp3-sec-count", open.length + " open"));
   stagesSec.append(sh);
   const stages = p.work || [];
@@ -141,7 +141,7 @@ async function renderPropertyPage(slug) {
         const text = input.value.trim();
         if (!text) return;
         try {
-          await postJSONOk("/api/todos/item", { text, stage: st.text, container: { kind: "property", slug: p.slug } });
+          await postJSONOk("/api/tasks/item", { text, stage: st.text, container: { kind: "property", slug: p.slug } });
           renderProperties();
         } catch (e) { showToast("Couldn't add"); }
       };
@@ -165,7 +165,7 @@ async function renderPropertyPage(slug) {
     };
     stagesSec.append(seed);
   }
-  (p.todos || []).filter((t) => t.checked).forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
+  (p.tasks || []).filter((t) => t.checked).forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
   const composer = propTodoComposer(p);
   stagesSec.append(composer);
   main.append(stagesSec);
@@ -197,8 +197,8 @@ async function renderPropertyPage(slug) {
   main.append(links);
 
   // restore an open inspector across re-renders
-  if (propSelTodoId) {
-    const t = (p.todos || []).find((x) => x.id === propSelTodoId);
+  if (propSelTaskId) {
+    const t = (p.tasks || []).find((x) => x.id === propSelTaskId);
     if (t) openPropInspector(p, t); else closePropInspector();
   }
 }
@@ -572,12 +572,12 @@ async function propWorkOp(p, body) {
 }
 
 function propTodoRow(p, t) {
-  const row = el("div", "pp3-todo" + (t.checked ? " done" : "") + (propSelTodoId === t.id ? " sel" : ""));
+  const row = el("div", "pp3-todo" + (t.checked ? " done" : "") + (propSelTaskId === t.id ? " sel" : ""));
   const check = el("button", "tdo-check" + (t.checked ? " on" : ""), t.checked ? "✓" : "○");
   check.title = t.checked ? "reopen" : "done";
   check.onclick = async (e) => {
     e.stopPropagation();
-    try { await postJSONOk("/api/todos/check", { id: compositeId(p, t), checked: !t.checked }); renderProperties(); }
+    try { await postJSONOk("/api/tasks/check", { id: compositeId(p, t), checked: !t.checked }); renderProperties(); }
     catch (err) { showToast("Couldn't update"); }
   };
   row.append(check, el("span", "pp3-todo-text", t.text));
@@ -590,7 +590,7 @@ function propTodoRow(p, t) {
     const yes = el("button", "pp3-compose-go", "delete?");
     yes.onclick = async (ev) => {
       ev.stopPropagation();
-      try { await postJSONOk("/api/todos/drop", { id: compositeId(p, t) }); renderProperties(); }
+      try { await postJSONOk("/api/tasks/drop", { id: compositeId(p, t) }); renderProperties(); }
       catch (err) { showToast("Couldn't delete"); }
     };
     x.replaceWith(yes);
@@ -598,11 +598,11 @@ function propTodoRow(p, t) {
   };
   row.append(x);
   row.onclick = () => {
-    propSelTodoId = propSelTodoId === t.id ? null : t.id;
-    propSelTodoId ? openPropInspector(p, t) : closePropInspector();
+    propSelTaskId = propSelTaskId === t.id ? null : t.id;
+    propSelTaskId ? openPropInspector(p, t) : closePropInspector();
     // repaint selection without a full reload
     els.propertyPage.querySelectorAll(".pp3-todo.sel").forEach((n) => n.classList.remove("sel"));
-    if (propSelTodoId) row.classList.add("sel");
+    if (propSelTaskId) row.classList.add("sel");
   };
   return row;
 }
@@ -617,7 +617,7 @@ function propTodoComposer(p) {
     const text = input.value.trim();
     if (!text) return;
     try {
-      await postJSONOk("/api/todos/item", { text, container: { kind: "property", slug: p.slug } });
+      await postJSONOk("/api/tasks/item", { text, container: { kind: "property", slug: p.slug } });
       renderProperties();
     } catch (e) { showToast("Couldn't add"); }
   };
@@ -669,7 +669,7 @@ function openPropInspector(p, t) {
   setNote();
   const assign = async (owner) => {
     try {
-      await postJSONOk("/api/todos/update", { id: compositeId(p, t), owner });
+      await postJSONOk("/api/tasks/update", { id: compositeId(p, t), owner });
       t.owner = owner;
       setNote();
       renderProperties();
@@ -703,7 +703,7 @@ function openPropInspector(p, t) {
     stSel.value = t.stage || "";
     stSel.onchange = async () => {
       try {
-        await postJSONOk("/api/todos/update", { id: compositeId(p, t), stage: stSel.value });
+        await postJSONOk("/api/tasks/update", { id: compositeId(p, t), stage: stSel.value });
         t.stage = stSel.value;
         renderProperties();
       } catch (e) { showToast("Couldn't move the task — " + (e.message || "")); }
@@ -716,7 +716,7 @@ function openPropInspector(p, t) {
 }
 
 function closePropInspector() {
-  propSelTodoId = null;
+  propSelTaskId = null;
   if (els.propInspector) { els.propInspector.hidden = true; els.propInspector.innerHTML = ""; }
   // phone: the ✕ inside the sheet routes here — close the sheet too. Safe both
   // ways: mfSheet.close() nulls its state before invoking onClose, so the

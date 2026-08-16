@@ -51,7 +51,7 @@ func TestAgentsRoster(t *testing.T) {
 func TestAssignFlow(t *testing.T) {
 	srv, _ := assignFixture(t)
 	post := func(body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest("POST", "/api/todos/assign", strings.NewReader(body))
+		req := httptest.NewRequest("POST", "/api/tasks/assign", strings.NewReader(body))
 		w := httptest.NewRecorder()
 		srv.handleTaskAssign(w, req)
 		return w

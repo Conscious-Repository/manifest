@@ -13,7 +13,7 @@ let todosQuiet = {};    // ideas / done expanded
 let todosFreshDone = {};
 
 async function loadTodos() {
-  try { todosCache = await (await fetch("/api/todos")).json(); }
+  try { todosCache = await (await fetch("/api/tasks")).json(); }
   catch (e) { todosCache = { rows: [], domains: [], areas: [], counts: {} }; }
   renderTodos();
   // deep link #/todos/<id> → open the panel once the rows are here
@@ -50,11 +50,11 @@ const TODOS_TABS = [["focus", "FOCUS"], ["aion", "AION"], ["realestate", "REAL E
 function renderTodos() {
   const host = els.todosRows; host.innerHTML = "";
   const counts = todosCache.counts || {};
-  els.todosMeta.textContent = (counts.todos || 0) + " open · t to capture";
+  els.todosMeta.textContent = (counts.tasks || 0) + " open · t to capture";
   if (typeof setCrumbMeta === "function" && !els.todosView.hidden) {
-    setCrumbMeta((counts.todos || 0) + " open" + (counts.outstanding ? " · " + counts.outstanding + " outstanding" : ""));
+    setCrumbMeta((counts.tasks || 0) + " open" + (counts.outstanding ? " · " + counts.outstanding + " outstanding" : ""));
   }
-  if (typeof railSetCount === "function") railSetCount("todos", counts.todos || 0);
+  if (typeof railSetCount === "function") railSetCount("todos", counts.tasks || 0);
 
   // tab chips + the list/board mode toggle (Phase 8 — List stays the default)
   const tabsHost = document.getElementById("todosTabs");
@@ -122,8 +122,8 @@ function renderTodos() {
   const dones = [];
   (todosCache.domains || []).forEach((dom) => {
     // freshly-done rows are still standing in the list above — no double entry
-    (dom.todos || []).forEach((t) => { if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name }); });
-    (dom.buckets || []).forEach((bk) => (bk.todos || []).forEach((t) => {
+    (dom.tasks || []).forEach((t) => { if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name }); });
+    (dom.buckets || []).forEach((bk) => (bk.tasks || []).forEach((t) => {
       if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name });
     }));
   });
@@ -151,7 +151,7 @@ function renderTodos() {
       const row = el("div", "tdo-row done");
       const check = el("button", "tdo-check on", "✓");
       check.title = "reopen";
-      check.onclick = () => todosApi("/api/todos/check", { id: t.id, checked: false });
+      check.onclick = () => todosApi("/api/tasks/check", { id: t.id, checked: false });
       row.append(check, el("span", "tdo-text", t.text), containerPill(domain));
       const dg = delegationFor(t.id); // a completed delegated todo keeps its result link
       if (dg) row.append(delegationChip(dg));
@@ -180,7 +180,7 @@ function decisionRow(is, domain) {
     input.classList.add("tdo-decide-in");
     input.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && input.value.trim()) {
-        todosApi("/api/todos/issue/resolve", { id: is.id, resolution: input.value });
+        todosApi("/api/tasks/issue/resolve", { id: is.id, resolution: input.value });
       } else if (ev.key === "Escape") input.replaceWith(decide);
     });
     input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(decide); });
@@ -201,7 +201,7 @@ function rankedRow(r, idx) {
     const row = el("div", "tdo-row done");
     const check = el("button", "tdo-check on", "✓");
     check.title = "unmark — back to open";
-    check.onclick = () => { todosApi("/api/todos/check", { id: r.id, checked: false }); };
+    check.onclick = () => { todosApi("/api/tasks/check", { id: r.id, checked: false }); };
     row.append(el("span", "tdo-handle", ""), check, el("span", "tdo-text", r.text), containerPill(r.container.name));
     return row;
   }
@@ -245,7 +245,7 @@ function rankedRow(r, idx) {
   check.title = "done (stays here to unmark)";
   check.onclick = () => {
     todosFreshDone[r.id] = { row: r, idx }; // hold it in place for the regret window
-    todosApi("/api/todos/check", { id: r.id, checked: true });
+    todosApi("/api/tasks/check", { id: r.id, checked: true });
   };
   row.append(check);
 
@@ -254,7 +254,7 @@ function rankedRow(r, idx) {
   label.onclick = () => {
     const input = inputEl(""); input.value = r.text; input.classList.add("work-edit");
     input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/todos/update", { id: r.id, text: input.value });
+      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/tasks/update", { id: r.id, text: input.value });
       else if (ev.key === "Escape") input.replaceWith(label);
     });
     input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(label); });
@@ -286,7 +286,7 @@ function rankedRow(r, idx) {
     const teth = el("button", "tdo-tether" + (r.rock ? " on" : ""), "⧗");
     teth.title = r.rock ? "advances " + r.rock + " — click to change" : "tether to a rock or stage…";
     teth.onclick = () => openTetherPicker(teth, { rock: r.rock }, r.container.name,
-      (p) => todosApi("/api/todos/update", { id: r.id, rock: p.rock, stage: p.stage }));
+      (p) => todosApi("/api/tasks/update", { id: r.id, rock: p.rock, stage: p.stage }));
     right.append(teth);
   }
   // ⇢ delegate (Phase 6) — dispatch this todo to a harness; the chip tracks
@@ -317,7 +317,7 @@ function rankedRow(r, idx) {
       : "drop (archived, never deleted)";
     x.onclick = () => {
       const yes = el("button", "tdo-decide", isDelete ? "delete?" : "drop?");
-      yes.onclick = () => todosApi("/api/todos/drop", { id: r.id });
+      yes.onclick = () => todosApi("/api/tasks/drop", { id: r.id });
       x.replaceWith(yes);
       setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);
     };
@@ -340,7 +340,7 @@ function commitRank(draggedId, targetId) {
   (todosCache.rows || []).forEach((r) => { byId[r.id] = r; });
   todosCache.rows = order.map((id) => byId[id]).filter(Boolean);
   renderTodos();
-  todosApi("/api/todos/rank", { order });
+  todosApi("/api/tasks/rank", { order });
 }
 
 // ---- the tether picker: one typeahead over every open rock and stage ----
@@ -349,7 +349,7 @@ function commitRank(draggedId, targetId) {
 // through the shared legible viewer — the artifact brief when the run wrote
 // one, else the run report; proposed routes to the FEED inbox; queued/running
 // → Spirits.
-function delegationChip(d, asSpan, todoId) {
+function delegationChip(d, asSpan, taskId) {
   const chip = el(asSpan ? "span" : "button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
   chip.style.cursor = "pointer";
   const hasResult = !!(d.artifactRef || d.artifactPath || d.runId);
@@ -361,7 +361,7 @@ function delegationChip(d, asSpan, todoId) {
     : d.runId ? "view the result (run report)" : "delegated work — click for the runs board";
   chip.onclick = (e) => {
     e.stopPropagation();
-    if (planState && todoId && typeof openTodoPanel === "function") { openTodoPanel(todoId); return; }
+    if (planState && taskId && typeof openTodoPanel === "function") { openTodoPanel(taskId); return; }
     if (d.state === "proposed") { location.hash = "#/feed"; return; }
     if (hasResult) { openResult(d); return; }
     location.hash = "#/spirits";
@@ -376,7 +376,7 @@ function delegationFor(id) {
 }
 
 // openDelegatePicker (Phase 6): pick a dispatch target (harness · on-demand
-// ritual), then an optional brief; POST /api/todos/delegate spools the work
+// ritual), then an optional brief; POST /api/tasks/delegate spools the work
 // order and stamps [waiting::]. The chip appears on the next render from the
 // trace projection.
 //
@@ -386,7 +386,7 @@ function delegationFor(id) {
 // steer on the previous result, never confused with the original brief.
 async function openDelegatePicker(r, redelegate) {
   let targets = [];
-  try { targets = (await (await fetch("/api/todos/delegate/targets")).json()).targets || []; }
+  try { targets = (await (await fetch("/api/tasks/delegate/targets")).json()).targets || []; }
   catch (e) { showToast("Couldn't load delegate targets"); return; }
   if (!targets.length) { showToast("No dispatch targets — no harness has an on-demand ritual"); return; }
   const byId = new Map(targets.map((t, i) => [String(i), t]));
@@ -403,7 +403,7 @@ async function openDelegatePicker(r, redelegate) {
         const body = { id: r.id, harness: t.harness, spirit: t.spirit, ritual: t.ritual, brief: "", comment: "" };
         if (redelegate) body.comment = text; else body.brief = text;
         try {
-          await postJSONOk("/api/todos/delegate", body);
+          await postJSONOk("/api/tasks/delegate", body);
           showToast((redelegate ? "Sent back with your comment → " : "Delegated → ") + t.label);
           loadTodos();
         } catch (e) { showToast("Delegate failed: " + (e.message || e), null, "error"); }
@@ -414,7 +414,7 @@ async function openDelegatePicker(r, redelegate) {
 }
 
 // Shared by the TODOS rows (⧗) and the GOALS unanchored foot. Picking writes
-// [rock::] (+ optional [stage::]) through /api/todos/update — one line, one
+// [rock::] (+ optional [stage::]) through /api/tasks/update — one line, one
 // file, both surfaces re-project it.
 async function tetherAreas() {
   try { return ((await (await fetch("/api/goals")).json()).areas) || []; }
@@ -474,7 +474,7 @@ function personInput(onSet, onCancel) {
 }
 
 // ================= THE BOARD (big-change Phase 8) =================
-// Pure projection over the SAME /api/todos payload the list renders — four
+// Pure projection over the SAME /api/tasks payload the list renders — four
 // columns: Open · Delegated · Review · Done (owner call 2026-08-12: Waiting is
 // gone — it was never used, and delegated work already IS waiting). Every drag
 // maps to an EXISTING endpoint (check / delegate); no new state anywhere.
@@ -500,8 +500,8 @@ function renderTodosBoard(host) {
         cols.done.push({ id: t.id, text: t.text, container: { name: dom.name }, source: "personal", done: true });
       }
     });
-    scan(dom.todos);
-    (dom.buckets || []).forEach((bk) => scan(bk.todos));
+    scan(dom.tasks);
+    (dom.buckets || []).forEach((bk) => scan(bk.tasks));
   });
 
   const board = el("div", "tdo-board");
@@ -558,7 +558,7 @@ function boardCard(r, colKey) {
     card.draggable = false;
     input.addEventListener("mousedown", (ev) => ev.stopPropagation());
     input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/todos/update", { id: r.id, text: input.value });
+      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/tasks/update", { id: r.id, text: input.value });
       else if (ev.key === "Escape") restore();
     });
     input.addEventListener("blur", restore);
@@ -596,10 +596,10 @@ function boardMove(id, from, to) {
   const row = (todosCache.rows || []).find((r) => r.id === id);
   switch (to) {
     case "done":
-      todosApi("/api/todos/check", { id, checked: true });
+      todosApi("/api/tasks/check", { id, checked: true });
       return;
     case "open":
-      if (from === "done") { todosApi("/api/todos/check", { id, checked: false }); return; }
+      if (from === "done") { todosApi("/api/tasks/check", { id, checked: false }); return; }
       if (from === "delegated") { showToast("Still out with the harness — it lands in REVIEW when it comes back"); return; }
       if (from === "review") { showToast("Read the result first — then Done, or drag back to DELEGATED to send it out again"); return; }
       return;
@@ -609,7 +609,7 @@ function boardMove(id, from, to) {
     case "delegated":
       // from REVIEW this is a RE-delegation: the owner read the result and is
       // sending it back out, so the comment is the point — it rides the work
-      // order to the agent (POST /api/todos/delegate {comment}).
+      // order to the agent (POST /api/tasks/delegate {comment}).
       if (row) openDelegatePicker(row, from === "review");
       return;
   }

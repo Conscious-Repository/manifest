@@ -29,7 +29,7 @@ func fireFixture(t *testing.T) *Server {
 
 func TestAssignSpoolsPlanPhase(t *testing.T) {
 	srv := fireFixture(t)
-	req := httptest.NewRequest("POST", "/api/todos/assign",
+	req := httptest.NewRequest("POST", "/api/tasks/assign",
 		strings.NewReader(`{"id":"inbox/paint-the-fence","owner":"agent:hermes"}`))
 	w := httptest.NewRecorder()
 	srv.handleTaskAssign(w, req)
@@ -56,7 +56,7 @@ func TestAssignSpoolsPlanPhase(t *testing.T) {
 func TestFireGuards(t *testing.T) {
 	srv := fireFixture(t)
 	post := func(body string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest("POST", "/api/todos/fire", strings.NewReader(body))
+		req := httptest.NewRequest("POST", "/api/tasks/fire", strings.NewReader(body))
 		w := httptest.NewRecorder()
 		srv.handleTaskFire(w, req)
 		return w

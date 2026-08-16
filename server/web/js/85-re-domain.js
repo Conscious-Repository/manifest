@@ -234,7 +234,7 @@ function reBacklogTaskRow(it) {
   return row;
 }
 
-// property-todo row — the Outstanding fold. Check writes through /api/todos;
+// property-todo row — the Outstanding fold. Check writes through /api/tasks;
 // the property name rides the rock-tag column; the row selects into a light
 // inspector that links to the property.
 function rePropTodoRow(t) {
@@ -242,7 +242,7 @@ function rePropTodoRow(t) {
   const row = el("div", "aion-task-row" + (sel ? " sel" : ""));
   const c = el("button", "aion-check", "○");
   c.title = "mark done";
-  c.onclick = (e) => { e.stopPropagation(); rePost("/api/todos/check", { id: t.id, checked: true }, "Marked done"); };
+  c.onclick = (e) => { e.stopPropagation(); rePost("/api/tasks/check", { id: t.id, checked: true }, "Marked done"); };
   row.append(c);
   const main = el("div", "aion-main");
   main.append(el("div", "aion-title", t.text));
@@ -389,7 +389,7 @@ function rePropTodoInspector(insp) {
     insp.append(src);
   }
   const done = el("button", "pill light", "mark done");
-  done.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/todos/check", { id, checked: true }, "Marked done"); };
+  done.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/tasks/check", { id, checked: true }, "Marked done"); };
   insp.append(done);
   const foot = el("div", "aion-insp-foot");
   foot.append(el("span", "", "edits happen on the property page"));

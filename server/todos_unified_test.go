@@ -83,9 +83,9 @@ func unifiedHarness(t *testing.T) (*Server, string) {
 func getTasksView(t *testing.T, srv *Server) map[string]any {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	srv.handleTasksGet(rec, httptest.NewRequest("GET", "/api/todos", nil))
+	srv.handleTasksGet(rec, httptest.NewRequest("GET", "/api/tasks", nil))
 	if rec.Code != 200 {
-		t.Fatalf("GET /api/todos: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("GET /api/tasks: %d %s", rec.Code, rec.Body.String())
 	}
 	var v map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
@@ -132,7 +132,7 @@ func TestUnifiedProjection(t *testing.T) {
 func TestPropTaskCheckDualStamp(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/todos/check",
+	req := httptest.NewRequest("POST", "/api/tasks/check",
 		strings.NewReader(`{"id":"prop:761-maple/rough-electrical","checked":true}`))
 	srv.handleTaskCheck(rec, req)
 	if rec.Code != 200 {
@@ -148,7 +148,7 @@ func TestPropTaskCheckDualStamp(t *testing.T) {
 	}
 	// unchecking reverses both
 	rec = httptest.NewRecorder()
-	req = httptest.NewRequest("POST", "/api/todos/check",
+	req = httptest.NewRequest("POST", "/api/tasks/check",
 		strings.NewReader(`{"id":"prop:761-maple/rough-electrical","checked":false}`))
 	srv.handleTaskCheck(rec, req)
 	raw, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
@@ -163,7 +163,7 @@ func TestPropTaskCheckDualStamp(t *testing.T) {
 func TestRankBatch(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/todos/rank", strings.NewReader(
+	req := httptest.NewRequest("POST", "/api/tasks/rank", strings.NewReader(
 		`{"order":["prop:761-maple/rough-electrical","real-estate/call-the-county","inbox/loose-personal-thing"]}`))
 	srv.handleTasksRank(rec, req)
 	if rec.Code != 200 {
@@ -191,7 +191,7 @@ func TestRankBatch(t *testing.T) {
 func TestAddToProperty(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/api/todos/item", strings.NewReader(
+	req := httptest.NewRequest("POST", "/api/tasks/item", strings.NewReader(
 		`{"text":"order dumpsters","container":{"kind":"property","slug":"761-maple"},"owner":"acme-gc"}`))
 	srv.handleTaskAdd(rec, req)
 	if rec.Code != 200 {
@@ -224,13 +224,13 @@ func TestSplitPropID(t *testing.T) {
 }
 
 // A property todo files under one of THIS property's stages via {stage} on
-// /api/todos/update — names outside the pipeline are refused, "" clears.
+// /api/tasks/update — names outside the pipeline are refused, "" clears.
 func TestPropTaskStageUpdate(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	post := func(body string) *httptest.ResponseRecorder {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("POST", "/api/todos/update", strings.NewReader(body))
+		req := httptest.NewRequest("POST", "/api/tasks/update", strings.NewReader(body))
 		srv.handleTaskUpdate(rec, req)
 		return rec
 	}

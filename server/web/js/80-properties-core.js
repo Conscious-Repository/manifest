@@ -13,7 +13,7 @@ let rePortalEnabled = false; // deals.json publish configured server-side
 let propMode = "backlog"; // backlog | portfolio | rocks | money | map | settings | page | deal
 let propSlug = "";    // the open property (page mode)
 let propDealSlug = ""; // the open deal (deal mode)
-let propTodosMeta = null; // /api/todos payload — assignees + outstanding (one truth)
+let propTodosMeta = null; // /api/tasks payload — assignees + outstanding (one truth)
 
 function showProperties(h) {
   const tail = h.startsWith("#/properties/") ? decodeURIComponent(h.slice("#/properties/".length)) : "";
@@ -87,7 +87,7 @@ async function loadReBacklog() {
 }
 
 async function loadPropTodosMeta() {
-  try { propTodosMeta = await (await fetch("/api/todos")).json(); }
+  try { propTodosMeta = await (await fetch("/api/tasks")).json(); }
   catch (e) { propTodosMeta = { outstanding: [], assignees: {}, counts: {} }; }
 }
 
@@ -128,7 +128,7 @@ function reOrgRocks() {
 
 // openTodoCount — every open action line on the property (mine or owed).
 function openTodoCount(p) {
-  return (p.todos || []).filter((t) => !t.checked).length;
+  return (p.tasks || []).filter((t) => !t.checked).length;
 }
 
 // (renderPropRail deleted — the left rail became the AION-style top tab-bar;

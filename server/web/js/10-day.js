@@ -211,13 +211,13 @@ async function openGoalPicker(slot) {
 function renderCascadeTasks(day) {
   const host = document.getElementById("focusExtra");
   if (host) host.innerHTML = "";
-  // offers are rock-tethered TODOS now (task-substrate) — todoId-keyed
-  const existing = new Set((day.tasks || []).map((t) => t.todoId || t.goalId).filter(Boolean));
+  // offers are rock-tethered TODOS now (task-substrate) — taskId-keyed
+  const existing = new Set((day.tasks || []).map((t) => t.taskId || t.goalId).filter(Boolean));
   const suggestions = [];
   (day.focus || []).forEach((p) => {
     (p.tasks || []).forEach((t) => {
-      const key = t.todoId || t.goalId;
-      if (!existing.has(key)) suggestions.push({ todoId: t.todoId, goalId: t.goalId, text: t.text, goal: p.text });
+      const key = t.taskId || t.goalId;
+      if (!existing.has(key)) suggestions.push({ taskId: t.taskId, goalId: t.goalId, text: t.text, goal: p.text });
     });
   });
   if (!suggestions.length || !host) return;
@@ -243,7 +243,7 @@ function renderCascadeTasks(day) {
       chip.title = "Tasks are full — remove one to add this";
     } else {
       chip.title = `Add “${s.text}” to today`;
-      chip.addEventListener("click", () => (s.todoId ? pullTodo(s.todoId) : pullGoal(s.goalId)));
+      chip.addEventListener("click", () => (s.taskId ? pullTodo(s.taskId) : pullGoal(s.goalId)));
     }
     chips.appendChild(chip);
   });
@@ -281,13 +281,13 @@ function renderReadonly(container, items, emptyHint) {
 // today; the foot row types a NEW task, captured under the slot's milestone.
 function openTaskPicker(pick, stageId) {
   const existing = new Set(((state.day && state.day.tasks) || [])
-    .map((t) => t.todoId || t.goalId).filter(Boolean));
+    .map((t) => t.taskId || t.goalId).filter(Boolean));
   const byId = new Map(); // id → {todo: bool} — route pull by link kind
   const items = (pick.tasks || [])
-    .filter((t) => !existing.has(t.todoId || t.goalId))
+    .filter((t) => !existing.has(t.taskId || t.goalId))
     .map((t) => {
-      const id = t.todoId || t.goalId;
-      byId.set(id, !!t.todoId);
+      const id = t.taskId || t.goalId;
+      byId.set(id, !!t.taskId);
       return { id, text: t.text };
     });
   const msLabel = pick.milestone ? pick.milestone.text : "";
@@ -328,14 +328,14 @@ async function pullGoal(goalId) {
   load(state.date); // reload to show the linked task + updated pool
 }
 
-async function pullTodo(todoId) {
+async function pullTodo(taskId) {
   if (collectTasks().length >= MAX_TASKS) return;
   setSaveState("saving");
   try {
     await fetch(`/api/day/pull?date=${state.date}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ todoId }),
+      body: JSON.stringify({ taskId }),
     });
     setSaveState("saved");
   } catch (e) { setSaveState("error"); }
@@ -490,7 +490,7 @@ function renderTasks(tasks) {
   const rows = new Array(MAX_TASKS).fill(null);
   const leftover = [];
   list.forEach((t) => {
-    const si = t.todoId ? slotForTodoId(t.todoId, focus) : slotForGoalId(t.goalId, focus);
+    const si = t.taskId ? slotForTaskId(t.taskId, focus) : slotForGoalId(t.goalId, focus);
     if (si >= 0 && si < MAX_TASKS && rows[si] === null) rows[si] = t; // seat at its goal's slot
     else leftover.push(t); // manual tasks, or a slot already taken
   });
@@ -507,12 +507,12 @@ function renderTasks(tasks) {
 // segment-boundary prefix of the task's goal id. -1 when the task isn't linked
 // to any current focus slot (a manually-typed task). Slug ids like
 // "aion/series-a-15m/<milestone>/<task>" make prefix matching exact.
-// slotForTodoId seats a substrate task under the focus slot whose Rock offers
+// slotForTaskId seats a substrate task under the focus slot whose Rock offers
 // it (the slot's tasks are that Rock's tethered todos).
-function slotForTodoId(id, focus) {
+function slotForTaskId(id, focus) {
   let best = -1;
   (focus || []).forEach((p, i) => {
-    if (best < 0 && p && (p.tasks || []).some((t) => t.todoId === id)) best = i;
+    if (best < 0 && p && (p.tasks || []).some((t) => t.taskId === id)) best = i;
   });
   return best;
 }
@@ -540,7 +540,7 @@ function addTaskRow(task, num, pick) {
   const row = document.createElement("div");
   row.className = "trow";
   if (task.goalId) row.dataset.goalId = task.goalId; // preserve backlink on save
-  if (task.todoId) row.dataset.todoId = task.todoId; // todos-board backlink, same contract
+  if (task.taskId) row.dataset.taskId = task.taskId; // todos-board backlink, same contract
   if (task.owner) row.dataset.owner = task.owner;
   const n = document.createElement("span");
   n.className = "num";
@@ -553,7 +553,7 @@ function addTaskRow(task, num, pick) {
   // render and edit exactly as before.
   const stageId = pick && pick.resolved && pick.goalId && pick.milestone && pick.milestone.goalId
     ? pick.milestone.goalId : "";
-  const empty = !task.text && !task.goalId && !task.todoId;
+  const empty = !task.text && !task.goalId && !task.taskId;
   if (empty && !stageId) {
     const hint = document.createElement("span");
     hint.className = "trow-gate";
@@ -624,7 +624,7 @@ function addTaskRow(task, num, pick) {
     input.classList.remove("done");
     check.classList.remove("on");
     delete row.dataset.goalId; // dropping the task also drops its cascade backlink
-    delete row.dataset.todoId;
+    delete row.dataset.taskId;
     delete row.dataset.owner;
     refresh();
     saveDay();
@@ -649,7 +649,7 @@ function collectTasks() {
       if (!input) return { text: "" }; // gated row (no input) — filtered below
       const t = { text: input.value.trim(), done: input.classList.contains("done") };
       if (row.dataset.goalId) t.goalId = row.dataset.goalId;
-      if (row.dataset.todoId) t.todoId = row.dataset.todoId;
+      if (row.dataset.taskId) t.taskId = row.dataset.taskId;
       if (row.dataset.owner) t.owner = row.dataset.owner;
       return t;
     })

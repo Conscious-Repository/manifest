@@ -1030,7 +1030,7 @@ async function feedAction(id, body) {
 async function feedToTodo(id) {
   setSaveState("saving");
   try {
-    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/to-todo`, { method: "POST" });
+    const r = await fetch(`/api/feed/${encodeURIComponent(id)}/to-task`, { method: "POST" });
     if (!r.ok) throw new Error((await r.text()) || "promote failed");
     setSaveState("saved");
     showToast("Caught on the TODOS board → Inbox");

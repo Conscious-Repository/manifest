@@ -45,7 +45,7 @@ type Bucket struct {
 	Name   string   `json:"name"`
 	Slug   string   `json:"slug"` // kernel slug; explicit [bucket:: slug] pin wins
 	Links  []string `json:"links,omitempty"`
-	Tasks  []*Task  `json:"todos"`
+	Tasks  []*Task  `json:"tasks"`
 	pinned bool
 }
 
@@ -99,7 +99,7 @@ func (t *Task) AgeDays(now time.Time) int {
 // ### issues → ### backlog. Inbox is the special undomained capture heading.
 type Domain struct {
 	Name    string    `json:"name"`
-	Tasks   []*Task   `json:"todos"` // loose (unbucketed)
+	Tasks   []*Task   `json:"tasks"` // loose (unbucketed)
 	Buckets []*Bucket `json:"buckets,omitempty"`
 	Issues  []*Issue  `json:"issues,omitempty"`
 	Backlog []string  `json:"backlog,omitempty"` // plain idea bullets, verbatim, never aged
@@ -208,7 +208,7 @@ type View struct {
 
 type DomainView struct {
 	Name    string       `json:"name"`
-	Tasks   []TaskView   `json:"todos"` // loose
+	Tasks   []TaskView   `json:"tasks"` // loose
 	Buckets []BucketView `json:"buckets,omitempty"`
 	Issues  []IssueView  `json:"issues,omitempty"`
 	Backlog []string     `json:"backlog,omitempty"`
@@ -218,7 +218,7 @@ type BucketView struct {
 	Name  string     `json:"name"`
 	Slug  string     `json:"slug"`
 	Links []string   `json:"links,omitempty"`
-	Tasks []TaskView `json:"todos"`
+	Tasks []TaskView `json:"tasks"`
 }
 
 type IssueView struct {

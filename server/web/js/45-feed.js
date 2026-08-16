@@ -143,7 +143,7 @@ function signalRow(sg) {
   // everything — the label itself already navigates to the item.
   const act = el("span", "signal-actions");
   if (sg.kind === "todo-stale" || sg.kind === "todo-waiting") {
-    act.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true }, row)));
+    act.append(pillLight("Done ✓", () => signalAction("/api/tasks/check", { id: sg.goalId, checked: true }, row)));
   }
   act.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, row)));
   row.append(act);
@@ -176,7 +176,7 @@ function delegationDoneCard(sg) {
   view.classList.add("verdict-primary");
   actions.append(view);
   actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/todos"; }));
-  actions.append(pillLight("Done ✓", () => signalAction("/api/todos/check", { id: sg.goalId, checked: true }, card)));
+  actions.append(pillLight("Done ✓", () => signalAction("/api/tasks/check", { id: sg.goalId, checked: true }, card)));
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
   return card;

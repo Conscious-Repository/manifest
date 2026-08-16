@@ -69,7 +69,7 @@ type WorkStage struct {
 	Done         string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at stage check
 	Fields       []WorkField `json:"fields,omitempty"`
 	Extra        []string    `json:"-"`
-	Tasks        []WorkTask  `json:"todos"`
+	Tasks        []WorkTask  `json:"tasks"`
 	Committed    float64     `json:"committed"`
 	Paid         float64     `json:"paid"`
 	Recognized   float64     `json:"recognized"`             // Σ todo recognized + stage-level recognition
