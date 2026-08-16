@@ -104,26 +104,6 @@ async function renderTodoPanel(refetch) {
   asg.append(todoAssigneeControl(d, row));
   host.append(asg);
 
-  // --- description ---
-  const desc = el("div", "tdo-p-sec");
-  desc.append(el("div", "tdo-p-sec-label", "description"));
-  const dta = document.createElement("textarea");
-  dta.className = "tdo-p-textarea";
-  dta.placeholder = "why this matters, context, links…";
-  dta.value = rec.Description || rec.description || "";
-  dta.rows = Math.max(2, Math.min(8, (dta.value.match(/\n/g) || []).length + 2));
-  let descDirty = false;
-  dta.oninput = () => { descDirty = true; };
-  dta.onblur = async () => {
-    if (!descDirty) return;
-    descDirty = false;
-    try {
-      await postJSONOk("/api/todos/description", { id: todoSelId, text: dta.value });
-    } catch (e) { showToast("Couldn't save description — " + (e.message || "error")); }
-  };
-  desc.append(dta);
-  host.append(desc);
-
   // --- plan: rendered preview + ONE action. "open →" goes to the full-page
   // record (which carries its own Edit raw / Obsidian toggles); inline
   // writing exists only while there is no plan yet.

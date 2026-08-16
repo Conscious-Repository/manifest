@@ -300,9 +300,9 @@ function rankedRow(r, idx) {
     right.append(dg);
   }
   {
-    // › opens the panel (description · plan · thread · assignee)
+    // › opens the panel (plan · thread · assignee)
     const open = el("button", "tdo-open-chevron", "›");
-    open.title = "open — description, plan, thread";
+    open.title = "open — plan, thread";
     open.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
     right.append(open);
   }
@@ -574,7 +574,7 @@ function boardCard(r, colKey) {
   if (dg) meta.append(delegationChip(dg, true, r.id));
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
   const open = el("button", "tdo-open-chevron", "›");
-  open.title = "open — description, plan, thread";
+  open.title = "open — plan, thread";
   open.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
   open.onmousedown = (e) => e.stopPropagation();
   meta.append(open);

@@ -64,16 +64,12 @@ func TestPlanRecordRoundTrip(t *testing.T) {
 	if !rec.Exists || rec.Assignee != "agent:hermes" || rec.State != "open" {
 		t.Fatalf("skeleton: %+v", rec)
 	}
-	// section writes are surgical: description lands, plan untouched, then
-	// plan lands under the AGENT capability without touching description
-	if err := srv.writePlanSection("todo-plans", "aion:abc123", "description", "why this matters"); err != nil {
-		t.Fatal(err)
-	}
+	// the plan section lands under the AGENT capability, frontmatter untouched
 	if err := srv.writePlanSection("todo-plans-agent", "aion:abc123", "plan", "1. do the thing"); err != nil {
 		t.Fatal(err)
 	}
 	rec = srv.readPlanRecord("aion:abc123")
-	if rec.Description != "why this matters" || rec.Plan != "1. do the thing" {
+	if rec.Plan != "1. do the thing" {
 		t.Fatalf("sections: %+v", rec)
 	}
 	// the file is where the capability says it is (slugged, exact id in fm)

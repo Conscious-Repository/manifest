@@ -19,11 +19,9 @@ func TestPlanCtxHashStability(t *testing.T) {
 	if h2 := srv.planCtxHash(id); h2 != h1 {
 		t.Fatalf("same inputs must hash the same: %q vs %q", h1, h2)
 	}
-	if err := srv.writePlanSection("todo-plans", id, "description", "the deadline moved to Friday"); err != nil {
-		t.Fatal(err)
-	}
-	if h3 := srv.planCtxHash(id); h3 == h1 {
-		t.Fatal("a description edit must change the hash")
+	// the ctx hash keys on the todo text — a different todo hashes differently
+	if hOther := srv.planCtxHash("inbox/something-else"); hOther == h1 {
+		t.Fatal("a different todo's text must change the hash")
 	}
 }
 
@@ -137,9 +135,6 @@ func TestReplanNegativeGates(t *testing.T) {
 	// with a baseline but a fresh owner comment → hold off
 	materializeBaseline(t, srv, id, "r30")
 	drainSpool(t, srv)
-	if err := srv.writePlanSection("todo-plans", id, "description", "deadline moved"); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "hold on, rethinking this", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}

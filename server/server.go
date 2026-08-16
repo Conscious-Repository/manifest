@@ -240,7 +240,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/delegate", s.handleDelegate)
 	// TODO PANEL (todo-panel plan): record + thread + attachments.
 	mux.HandleFunc("GET /api/todos/panel", s.handleTodoPanel)
-	mux.HandleFunc("POST /api/todos/description", s.handleTodoDescription)
 	mux.HandleFunc("POST /api/todos/plan", s.handleTodoPlan)
 	mux.HandleFunc("POST /api/todos/assign", s.handleTodoAssign)
 	mux.HandleFunc("POST /api/todos/fire", s.handleTodoFire)

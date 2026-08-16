@@ -12,10 +12,10 @@ import (
 
 // The todo-panel plan record (todo-panel plan D2): one hand-editable vault
 // file per ENRICHED todo — `<SystemRoot>/todo-plans/<slug>.md` — frontmatter
-// (todo / assignee / state) + `## description` + `## plan`. Writes are
+// (todo / assignee / state) + `## plan`. Writes are
 // surgical section swaps (vaultwriter.ReplaceSectionCap under the
-// `todo-plans` capability), so an Obsidian hand-edit to one section never
-// collides with an app write to the other. The agent-plan materialization
+// `todo-plans` capability), so an Obsidian hand-edit never
+// collides with an app write. The agent-plan materialization
 // (Phase 4) writes the `## plan` section only, under `todo-plans-agent` —
 // the §12 standing-consent lane.
 
@@ -41,12 +41,11 @@ func (c *todoPlansCfg) rel(id string) string { return c.root + "/" + planSlug(id
 
 // planRecord is the parsed record.
 type planRecord struct {
-	Exists      bool   `json:"exists"`
-	Description string `json:"description"`
-	Plan        string `json:"plan"`
-	Assignee    string `json:"assignee,omitempty"`
-	State       string `json:"state,omitempty"`
-	Rel         string `json:"rel"` // vault-relative path (the "plan file →" link)
+	Exists   bool   `json:"exists"`
+	Plan     string `json:"plan"`
+	Assignee string `json:"assignee,omitempty"`
+	State    string `json:"state,omitempty"`
+	Rel      string `json:"rel"` // vault-relative path (the "plan file →" link)
 }
 
 // sectionBody extracts one `## name` body from a markdown body — the read
@@ -88,7 +87,6 @@ func (s *Server) readPlanRecord(id string) planRecord {
 	}
 	fm, body := mdfm.Split(string(raw))
 	out.Exists = true
-	out.Description = sectionBody(body, "description")
 	out.Plan = sectionBody(body, "plan")
 	out.Assignee = fm["assignee"]
 	out.State = fm["state"]
@@ -106,7 +104,7 @@ func (s *Server) ensurePlanRecord(id, assignee string) error {
 		return nil // already a record
 	}
 	w := (&mdfm.Writer{}).Set("todo", id).Set("assignee", assignee).SetRaw("state", "open")
-	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## description\n\n## plan\n")))
+	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## plan\n")))
 }
 
 // setPlanAssignee rewrites the record's frontmatter assignee (creating the
@@ -155,12 +153,8 @@ func (s *Server) handleTodoPanel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// handleTodoDescription / handleTodoPlan — the owner's direct section edits.
+// handleTodoPlan — the owner's direct section edit.
 // The FIRST panel artifact pins the todo's identity (plan D1).
-func (s *Server) handleTodoDescription(w http.ResponseWriter, r *http.Request) {
-	s.handlePlanSectionWrite(w, r, "description")
-}
-
 func (s *Server) handleTodoPlan(w http.ResponseWriter, r *http.Request) {
 	s.handlePlanSectionWrite(w, r, "plan")
 }

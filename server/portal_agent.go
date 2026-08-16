@@ -32,9 +32,8 @@ func (s *Server) AionPanel(itemID string) map[string]any {
 	id := "aion:" + itemID
 	rec := s.readPlanRecord(id)
 	out := map[string]any{
-		"plan":        rec.Plan,
-		"description": rec.Description,
-		"assignee":    rec.Assignee,
+		"plan":     rec.Plan,
+		"assignee": rec.Assignee,
 	}
 	if d, ok := s.delegationIndex()[id]; ok {
 		out["delegation"] = d

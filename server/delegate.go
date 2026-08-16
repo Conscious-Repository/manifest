@@ -254,9 +254,6 @@ func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, inte
 		b.WriteString("PERSONA (how to respond — this governs your reply's shape and length):\n" + p.Prompt + "\n")
 	}
 	b.WriteString("TASK (from your todo board): " + text + "\n")
-	if d := strings.TrimSpace(rec.Description); d != "" && phase != "go" {
-		b.WriteString("DESCRIPTION:\n" + d + "\n")
-	}
 	protocol := agentProtocolReminder
 	if hasPersona && p.Intent != "plan" {
 		protocol = "PROTOCOL: reply in ONE library brief that IS your answer. Do not write a plan. Do not execute anything.\n"
@@ -571,8 +568,7 @@ func (s *Server) markerAddMeta(id, action, runID string, extra map[string]any) {
 // agent saw the same world; if it did, the current plan may be stale.
 func (s *Server) planCtxHash(id string) string {
 	text, _ := s.openTodoText(id)
-	rec := s.readPlanRecord(id)
-	sum := sha256.Sum256([]byte(text + "\n\x00" + rec.Description))
+	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
