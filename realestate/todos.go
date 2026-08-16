@@ -118,7 +118,7 @@ func (s *Service) LoadTasks(slug string) (PropertyTaskList, string, bool) {
 		return nil, "", false
 	}
 	_, body := mdfm.Split(string(raw))
-	return ParsePropertyTasks(parseSections(body)["todos"]), p.Path, true
+	return ParsePropertyTasks(parseSections(body)["tasks"]), p.Path, true
 }
 
 // MigrateWorkTasks previews (or builds) the one-time copy of a property's OPEN

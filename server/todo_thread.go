@@ -202,7 +202,7 @@ func (s *Server) setTaskOwner(id, owner string) error {
 			return errBadRequest("todo not found")
 		}
 		t.Owner = owner
-		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(list)); err != nil {
+		if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(list)); err != nil {
 			return err
 		}
 		if s.index != nil {

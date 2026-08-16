@@ -561,7 +561,7 @@ function ledgerForm(p, r, i) {
 function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }
 
 // propWorkOp — the one op endpoint for the `## work` stage pipeline
-// (check · edit · delete · add-stage · add-todo · set-field). Re-renders the
+// (check · edit · delete · add-stage · add-task · set-field). Re-renders the
 // property on success so the stage list, progress bar and hard-cost rollup
 // all re-derive from the fresh record.
 async function propWorkOp(p, body) {

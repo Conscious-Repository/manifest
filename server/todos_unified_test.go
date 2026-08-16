@@ -16,7 +16,7 @@ import (
 )
 
 // unifiedHarness builds a real temp vault: a `to do.md`, one property record
-// with `## work` + `## todos` sections, a live index, and a server whose
+// with `## work` + `## tasks` sections, a live index, and a server whose
 // writes flow through declared capabilities — the stage-4 substrate end to end.
 func unifiedHarness(t *testing.T) (*Server, string) {
 	t.Helper()
@@ -51,7 +51,7 @@ func unifiedHarness(t *testing.T) (*Server, string) {
 		"- [ ] Rough-in",
 		"    - [ ] Rough electrical [est:: 8000]",
 		"",
-		"## todos",
+		"## tasks",
 		"- [ ] rough electrical [added:: 2026-08-05] [work:: rough-in/rough-electrical]",
 		"- [ ] chase gutter bid [added:: 2026-08-06] [owner:: acme-gc]",
 	}, "\n")+"\n")
@@ -122,7 +122,7 @@ func TestUnifiedProjection(t *testing.T) {
 		t.Fatalf("outstanding group: %v", g)
 	}
 	counts := v["counts"].(map[string]any)
-	if counts["todos"].(float64) != float64(len(rows)) {
+	if counts["tasks"].(float64) != float64(len(rows)) {
 		t.Fatal("counts.todos must derive from rows")
 	}
 }

@@ -8,7 +8,7 @@ import (
 	"manifest/tasks"
 )
 
-// The property `## todos` section rides the shared to-do line grammar; the
+// The property `## tasks` section rides the shared to-do line grammar; the
 // fixpoint contract is what lets hand edits and app writes coexist.
 func TestPropertyTasksFixpoint(t *testing.T) {
 	src := strings.Join([]string{

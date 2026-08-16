@@ -213,7 +213,7 @@ func (s *Server) unifiedView(doc *tasks.Doc) map[string]any {
 		"me":          s.ownerInitials,
 		"rows":        mine,
 		"outstanding": outstanding,
-		"counts":      map[string]int{"todos": len(mine), "outstanding": outstandingTotal},
+		"counts":      map[string]int{"tasks": len(mine), "outstanding": outstandingTotal},
 		"assignees":   s.assigneeLists(),
 		"containers":  s.containerList(doc),
 		// delegation state keyed by todo id — so a DONE todo (absent from the
@@ -331,7 +331,7 @@ func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return false
 	}
-	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(next)); err != nil {
+	if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(next)); err != nil {
 		httpError(w, err)
 		return false
 	}
@@ -435,7 +435,7 @@ func (s *Server) propTaskPin(slug, lineID string) bool {
 		return true // already pinned — no write
 	}
 	t.PinID(lineID)
-	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(list)); err != nil {
+	if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(list)); err != nil {
 		return false
 	}
 	if s.index != nil {
@@ -598,7 +598,7 @@ func (s *Server) handleTasksRank(w http.ResponseWriter, r *http.Request) {
 		if !changed {
 			continue
 		}
-		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(list)); err != nil {
+		if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(list)); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -729,7 +729,7 @@ func (s *Server) handlePropTasksMigrate(w http.ResponseWriter, r *http.Request) 
 			if len(added) == 0 {
 				continue
 			}
-			if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(next)); err != nil {
+			if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(next)); err != nil {
 				httpError(w, err)
 				return
 			}

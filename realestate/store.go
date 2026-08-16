@@ -108,7 +108,7 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 		p.Ledger = parseLedger(led)
 	}
 	p.Units = sourceUnits(record.Sidecar(full, record.SidecarSource))
-	p.Tasks = ParsePropertyTasks(sections["todos"]).Tasks()
+	p.Tasks = ParsePropertyTasks(sections["tasks"]).Tasks()
 	p.Work = ParseWork(sections["work"])
 	JoinWorkLedger(p.Work, p.Ledger)
 	// pass-5: the work list IS the hard-cost budget — the triplet derives from

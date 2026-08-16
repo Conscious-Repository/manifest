@@ -648,7 +648,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Op       string `json:"op"` // seed | add-stage | add-todo | check | edit | delete | set-field
+		Op       string `json:"op"` // seed | add-stage | add-task | check | edit | delete | set-field
 		ID       string `json:"id"`
 		StageID  string `json:"stageId"`
 		Text     string `json:"text"`
@@ -731,7 +731,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		stages = append(stages, realestate.WorkStage{Text: strings.TrimSpace(b.Text)})
-	case "add-todo":
+	case "add-task":
 		si, ti := find(b.StageID)
 		if si < 0 || ti >= 0 {
 			httpError(w, errBadRequest("stageId must name a stage"))
