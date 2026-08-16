@@ -1,6 +1,21 @@
 {
   "items": [
     {
+      "id": "aion-bl/follow-up-with-alex-ubeda-janie-page-s-biologist-contact-on",
+      "kind": "task",
+      "title": "Follow up with Alex Ubeda (Janie Page's biologist contact) on ICR/field mechanism collaboration",
+      "owner": "BA",
+      "source": "log/2025-12-09 - 2026-08-16 janie page info",
+      "captured": "2026-08-16",
+      "rock": "aion/icr-go-no-go/icr-exp-ready",
+      "due": null,
+      "status": "open",
+      "done_on": null,
+      "needed_by": null,
+      "decided": null,
+      "outcome": null
+    },
+    {
       "id": "aion-bl/set-up-an-aion-email-address-for-jack-ruhl-s-business-scienc",
       "kind": "task",
       "title": "Set up an AION email address for Jack Ruhl's business/science outreach",
@@ -158,7 +173,7 @@
       "source": "log/2026-03-06 - 2026-08-13 patrick positive sum intro",
       "captured": "2026-08-13",
       "rock": "aion/series-a-15m/soft-lead-identified",
-      "due": "2026-08-14",
+      "due": "2026-08-17",
       "status": "open",
       "done_on": null,
       "needed_by": null,
