@@ -161,13 +161,13 @@ function delegationDoneCard(sg) {
   top.append(el("span", "type-chip type-artifact", "delegated"));
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
-  title.title = "open it on the TODOS board";
+  title.title = "open it on the TASKS board";
   title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
   top.append(title);
   card.append(top);
   card.append(el("div", "feed-why", sg.artifactRef || sg.artifactPath
-    ? "delegated work came back with an artifact — read it, then close the todo or send it back out"
-    : "delegated work finished — read the run report, then close the todo or send it back out"));
+    ? "delegated work came back with an artifact — read it, then close the task or send it back out"
+    : "delegated work finished — read the run report, then close the task or send it back out"));
   const meta = el("div", "feed-meta");
   meta.append(el("span", null, ["ready for review", sg.harness].filter(Boolean).join("  ·  ")));
   card.append(meta);
@@ -175,7 +175,7 @@ function delegationDoneCard(sg) {
   const view = pillLight("view →", () => openResult(sg, sg.entity));
   view.classList.add("verdict-primary");
   actions.append(view);
-  actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/tasks"; }));
+  actions.append(pillLight("open task →", () => { location.hash = sg.actHref || "#/tasks"; }));
   actions.append(pillLight("Done ✓", () => signalAction("/api/tasks/check", { id: sg.goalId, checked: true }, card)));
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
@@ -190,7 +190,7 @@ function planReadyCard(sg) {
   top.append(el("span", "type-chip type-artifact", "plan"));
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
-  title.title = "review the plan in the todo panel";
+  title.title = "review the plan in the task panel";
   title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
   top.append(title);
   card.append(top);
@@ -217,7 +217,7 @@ function agentQuestionsCard(sg) {
   title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
   top.append(title);
   card.append(top);
-  card.append(el("div", "feed-why", "the agent has questions before it can plan — answer them in the todo's thread"));
+  card.append(el("div", "feed-why", "the agent has questions before it can plan — answer them in the task's thread"));
   const actions = el("div", "feed-actions");
   const ans = pillLight("answer in the thread →", () => { location.hash = sg.actHref || "#/tasks"; });
   ans.classList.add("verdict-primary");
@@ -365,7 +365,7 @@ function feedCard(it) {
     keep.classList.add("verdict-primary");
     actions.append(keep);
     if (it.status !== "kept") actions.append(pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded")));
-    actions.append(pillLight("→ todo", () => feedToTodo(it.id))); // catch it on the TODOS board (Inbox)
+    actions.append(pillLight("→ task", () => feedToTodo(it.id))); // catch it on the TASKS board (Inbox)
     if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
   } else {
     actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));

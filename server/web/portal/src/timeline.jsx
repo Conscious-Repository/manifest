@@ -119,7 +119,7 @@ function QuarterCard({ card, selection, onSelect }) {
     ? 'closed ' + (g.closed ? g.closed.slice(5) : '')
     : [
         g.owner ? '@' + g.owner : null,
-        card.openTasks ? card.openTasks + ' to-dos' : null,
+        card.openTasks ? card.openTasks + ' tasks' : null,
         card.openDecisions ? card.openDecisions + (card.openDecisions === 1 ? ' decision' : ' decisions') : null
       ].filter(Boolean).join(' · ') || 'no open items';
 
@@ -210,7 +210,7 @@ function TimelineDrawer({ selection, data, goalsIndex, onClose }) {
           </dl>
 
           <div className="drawer-section">
-            <div className="drawer-section-label">open to-dos ({openTasks.length})</div>
+            <div className="drawer-section-label">open tasks ({openTasks.length})</div>
             {openTasks.length === 0 && <div className="no-data">none linked yet</div>}
             <ul className="drawer-gate-list">
               {openTasks.map(t => (

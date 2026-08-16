@@ -317,7 +317,7 @@ async function cmdSearch(q) {
   if (q) {
     // quick-add lives here too: first row turns the query into a todo
     const addRow = el("div", "cmd-result");
-    addRow.append(el("span", "cmd-name", "＋ todo “" + q + "”"), el("span", "cmd-refs", "capture"));
+    addRow.append(el("span", "cmd-name", "＋ task “" + q + "”"), el("span", "cmd-refs", "capture"));
     addRow.onclick = () => { closeCmdbar(); openTodoQuickAdd(q); };
     host.append(addRow);
   }

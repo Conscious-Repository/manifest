@@ -30,7 +30,7 @@ async function todosApi(path, body) {
   try {
     todosCache = { ...todosCache, ...(await postJSONOk(path, body)) };
     renderTodos();
-  } catch (e) { showToast((e.message || "Todo update failed").slice(0, 80)); }
+  } catch (e) { showToast((e.message || "Task update failed").slice(0, 80)); }
 }
 
 // tabOf buckets a row into the FOCUS sub-tabs by its container.
@@ -311,7 +311,7 @@ function rankedRow(r, idx) {
     // its source file (there is no archive for those)
     const isDelete = r.source === "property" || r.source === "aion" || r.source === "realestate";
     const x = el("button", "uw-x", "✕");
-    x.title = r.source === "property" ? "delete from the property's todos"
+    x.title = r.source === "property" ? "delete from the property's tasks"
       : r.source === "aion" ? "delete from the aion backlog"
       : r.source === "realestate" ? "delete from the real-estate backlog"
       : "drop (archived, never deleted)";
@@ -408,8 +408,8 @@ async function openDelegatePicker(r, redelegate) {
           loadTodos();
         } catch (e) { showToast("Delegate failed: " + (e.message || e), null, "error"); }
       };
-      if (redelegate) askText("Your comment for " + t.label, "what to fix, change or go deeper on — this goes to the agent with the todo", send);
-      else askText("Brief for " + t.label, "optional — defaults to the todo text", send);
+      if (redelegate) askText("Your comment for " + t.label, "what to fix, change or go deeper on — this goes to the agent with the task", send);
+      else askText("Brief for " + t.label, "optional — defaults to the task text", send);
     });
 }
 

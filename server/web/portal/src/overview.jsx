@@ -172,7 +172,7 @@ function FieldPanel({ data, goalsIndex, filter, selection, today, onFilter, onCl
         {section('OPEN TASKS', tasks.map(taskRow), 'no open tasks')}
         {section('OPEN DECISIONS', openDecs.map(d => decisionRow(d, false)), 'no open decisions')}
         <div className="fp-links">
-          <span className="cone-i-link" onClick={() => jump('todo', null)}>see in todo</span>
+          <span className="cone-i-link" onClick={() => jump('task', null)}>see in tasks</span>
         </div>
       </div>
     );
@@ -198,7 +198,7 @@ function FieldPanel({ data, goalsIndex, filter, selection, today, onFilter, onCl
         )}
         {d.outcome && <div className="fp-outcome">{d.outcome}</div>}
         <div className="fp-links">
-          <span className="cone-i-link" onClick={() => jump('todo', 'sec-decisions')}>past log</span>
+          <span className="cone-i-link" onClick={() => jump('task', 'sec-decisions')}>past log</span>
         </div>
       </div>
     );
@@ -225,7 +225,7 @@ function FieldPanel({ data, goalsIndex, filter, selection, today, onFilter, onCl
         {isDone && decidedHere.length > 0 && section('DECIDED HERE', decidedHere.map(d => decisionRow(d, true)), '')}
         <div className="fp-links">
           <span className="cone-i-link" onClick={() => jump('goals', 'sec-timeline')}>see in timeline</span>
-          <span className="cone-i-link" onClick={() => jump('todo', null)}>see in todo</span>
+          <span className="cone-i-link" onClick={() => jump('task', null)}>see in tasks</span>
         </div>
       </div>
     );
@@ -244,7 +244,7 @@ function FieldPanel({ data, goalsIndex, filter, selection, today, onFilter, onCl
         {week.length ? week.map(taskRow) : <div className="no-data">nothing due this week</div>}
       </div>
       <div className="fp-links">
-        <span className="cone-i-link" onClick={() => jump('todo', null)}>all open items ({openTasks.length})</span>
+        <span className="cone-i-link" onClick={() => jump('task', null)}>all open items ({openTasks.length})</span>
       </div>
     </div>
   );

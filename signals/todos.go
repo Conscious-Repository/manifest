@@ -50,7 +50,7 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 					ID:      "todo-stale:" + t.ID,
 					Kind:    "todo-stale",
 					Entity:  t.Text,
-					Label:   "stale todo · " + t.Text + " · " + strconv.Itoa(age) + "d",
+					Label:   "stale task · " + t.Text + " · " + strconv.Itoa(age) + "d",
 					Age:     age,
 					ActHref: "#/tasks",
 					Hash:    "open|" + bucket,

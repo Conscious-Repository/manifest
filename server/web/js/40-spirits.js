@@ -1033,8 +1033,8 @@ async function feedToTodo(id) {
     const r = await fetch(`/api/feed/${encodeURIComponent(id)}/to-task`, { method: "POST" });
     if (!r.ok) throw new Error((await r.text()) || "promote failed");
     setSaveState("saved");
-    showToast("Caught on the TODOS board → Inbox");
-  } catch (e) { setSaveState("error"); showToast("→ todo failed: " + e.message, null, "error"); }
+    showToast("Caught on the TASKS board → Inbox");
+  } catch (e) { setSaveState("error"); showToast("→ task failed: " + e.message, null, "error"); }
   loadFeed();
 }
 

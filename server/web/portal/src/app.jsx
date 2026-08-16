@@ -30,8 +30,9 @@ function mergedBacklog(backlog, team) {
 function parseHash() {
   const h = (location.hash || '').replace('#', '');
   if (h === 'gantt' || h === 'timeline') return { tab: 'goals', anchor: 'sec-timeline' };
-  if (h === 'decisions') return { tab: 'todo', anchor: 'sec-decisions' };
-  if (h === 'goals' || h === 'todo' || h === 'overview') return { tab: h, anchor: null };
+  if (h === 'decisions') return { tab: 'task', anchor: 'sec-decisions' };
+  if (h === 'todo') return { tab: 'task', anchor: null }; // legacy #todo → the renamed tab
+  if (h === 'goals' || h === 'task' || h === 'overview') return { tab: h, anchor: null };
   return null;
 }
 
@@ -162,8 +163,8 @@ function Portal({ config }) {
           </div>
         )}
 
-        {tab === 'todo' && (
-          <Todo
+        {tab === 'task' && (
+          <Tasks
             data={viewData}
             goalsIndex={goalsIndex}
             filter={filter}

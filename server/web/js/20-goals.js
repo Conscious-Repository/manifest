@@ -178,7 +178,7 @@ function orientArea(area) {
   const activeRocks = (area.rocks || []).filter((r) => !r.checked && (!r.status || r.status === "active"));
   if (activeRocks.length > 1) {
     name.append(el("span", "o-rock-lint", " ● " + activeRocks.length + " rocks"));
-    name.title = activeRocks.length + " active Rocks in " + area.name + " — EOS says one; consider moving one to TODOS or closing it";
+    name.title = activeRocks.length + " active Rocks in " + area.name + " — EOS says one; consider moving one to TASKS or closing it";
   }
   card.appendChild(name);
 
@@ -234,7 +234,7 @@ function orientArea(area) {
     const head = el("div", "go-un-head");
     head.append(el("span", "go-un-title", "unanchored"),
       el("span", "go-un-count", String(un.tasks.length + un.issues.length)),
-      el("span", "go-un-hint", "in TODOS · advancing no rock — link to place"));
+      el("span", "go-un-hint", "in TASKS · advancing no rock — link to place"));
     foot.append(head);
     un.tasks.forEach((t) => {
       const row = goTaskRow(t, area.name);

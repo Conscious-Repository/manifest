@@ -65,7 +65,7 @@ function openTodoQuickAdd(prefill) {
     else if (tv.startsWith("bucket:")) body.bucket = tv.slice(7);
     try {
       await postJSONOk("/api/tasks/item", body);
-      showToast("Todo captured → " + (propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox")));
+      showToast("Task captured → " + (propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox")));
       close();
       if (!els.todosView.hidden) loadTodos();
     } catch (e) { showToast("Couldn't capture"); }
@@ -96,7 +96,7 @@ const NAV_SECTIONS = [
   { label: "PLAN", items: [
     { key: "day", label: "Day", glyph: "☀", hash: "#/" },
     { key: "goals", label: "Goals", glyph: "◎", hash: "#/goals", counted: true },
-    { key: "tasks", label: "Todos", glyph: "✓", hash: "#/tasks", counted: true },
+    { key: "tasks", label: "Tasks", glyph: "✓", hash: "#/tasks", counted: true },
   ]},
   { label: "WORK", items: [
     { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },

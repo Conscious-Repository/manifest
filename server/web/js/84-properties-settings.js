@@ -256,7 +256,7 @@ async function rePeoplePane(host) {
   head.append(open);
   host.append(head);
   host.append(el("div", "aion-section-note",
-    "the RE people registry (people.md) — partners, counsel, lenders; every row is a property-todo assignee. ↗ opens the person's note."));
+    "the RE people registry (people.md) — partners, counsel, lenders; every row is a property-task assignee. ↗ opens the person's note."));
 
   const rows = (data.people || []).map((p) => ({ ...p }));
   const bar = makeDirtyBar(els.propertiesView, async () => {

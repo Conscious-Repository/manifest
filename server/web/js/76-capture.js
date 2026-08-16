@@ -84,7 +84,7 @@ function captureCardEl(it) {
 
   const acts = el("div", "capture-acts");
   const summary = () => (it.title || it.text || it.url || "").split("\n")[0].slice(0, 200);
-  acts.append(pillLight("→ todo", () => {
+  acts.append(pillLight("→ task", () => {
     openTodoQuickAdd(summary());
   }));
   acts.append(pillLight("→ chat", () => {

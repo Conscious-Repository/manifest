@@ -5,7 +5,7 @@
    controls), team/ items carry their chip, signed-in members get "+ add",
    and pending proposals render for owner/target decision. */
 
-function Todo({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChange }) {
+function Tasks({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChange }) {
   const U = window.PORTAL_UTIL;
   const backlog = data.backlog;
   const today = U.todayISO();
@@ -21,7 +21,7 @@ function Todo({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChan
   if (!backlog) {
     return (
       <div className="todo-tab">
-        <div className="ov-head" id="sec-todo"><span className="ov-head-title">TODO</span></div>
+        <div className="ov-head" id="sec-todo"><span className="ov-head-title">TASKS</span></div>
         <div className="no-data">no data yet</div>
         <DriftNote errors={data.errors} keys={['backlog']} />
       </div>
@@ -105,7 +105,7 @@ function Todo({ data, goalsIndex, filter, jump, me, team, onOpenItem, onTeamChan
       </div>
 
       <div className="ov-head" id="sec-todo">
-        <span className="ov-head-title">TODO</span>
+        <span className="ov-head-title">TASKS</span>
         {signedIn && !adding && (
           <span className="team-add-toggle" onClick={() => setAdding(true)}>+ add</span>
         )}
@@ -201,4 +201,4 @@ function Archive({ doneTasks }) {
   );
 }
 
-Object.assign(window, { Todo });
+Object.assign(window, { Tasks });

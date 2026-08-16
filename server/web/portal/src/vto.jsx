@@ -189,7 +189,7 @@ function Vto({ data, goalsIndex, filter, onFilter, jump }) {
         {openDecisions === null
           ? <div className="no-data">no data yet</div>
           : (
-            <span className="issues-link" onClick={() => jump('todo', 'sec-decisions')}>
+            <span className="issues-link" onClick={() => jump('task', 'sec-decisions')}>
               {openDecisions} open
             </span>
           )}

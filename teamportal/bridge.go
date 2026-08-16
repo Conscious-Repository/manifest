@@ -92,7 +92,7 @@ func (b *Bridge) Cards(now time.Time) []portals.Card {
 		cards = append(cards, portals.Card{
 			ID: id, Type: "portal-item", Portal: "aion-portal",
 			Title: title, Detail: detail, Change: e.Action, Actor: e.Actor,
-			URL:  "https://portal.aion.bio/#todo",
+			URL:  "https://portal.aion.bio/#task",
 			Date: e.TS.Format(time.RFC3339),
 		})
 	}

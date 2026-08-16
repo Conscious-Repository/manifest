@@ -584,7 +584,7 @@ function propTodoRow(p, t) {
   row.append(el("span", "prop-owner" + (mineOwner(t.owner) ? " mine" : ""), assigneeName(t.owner)));
   // hover ✕ — delete the line from the property's ## todos (arm to confirm)
   const x = el("button", "uw-x pp3-todo-x", "✕");
-  x.title = "delete this todo";
+  x.title = "delete this task";
   x.onclick = (e) => {
     e.stopPropagation();
     const yes = el("button", "pp3-compose-go", "delete?");
@@ -611,7 +611,7 @@ function propTodoRow(p, t) {
 function propTodoComposer(p) {
   const row = el("div", "pp3-compose");
   row.append(el("span", "pp3-compose-glyph", "○"));
-  const input = inputEl("add a todo for this property…");
+  const input = inputEl("add a task for this property…");
   input.className = "pp3-compose-in";
   const submit = async () => {
     const text = input.value.trim();
@@ -663,8 +663,8 @@ function openPropInspector(p, t) {
   const note = el("div", "pp3-insp-note");
   const setNote = () => {
     note.textContent = sel.value
-      ? "Assigned to " + assigneeName(sel.value) + " — tracked here, never in your TODOS. It shows under Outstanding until they close it."
-      : "Yours — it shows in TODOS under Real Estate.";
+      ? "Assigned to " + assigneeName(sel.value) + " — tracked here, never in your TASKS. It shows under Outstanding until they close it."
+      : "Yours — it shows in TASKS under Real Estate.";
   };
   setNote();
   const assign = async (owner) => {

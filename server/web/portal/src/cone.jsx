@@ -113,7 +113,7 @@ function Cone({ goalsIndex, backlog, vto, filter, onFilter, jump, externalPerson
     kind: 'person',
     mark: '',
     title: '@' + personLabel,
-    meta: personRocks.length + ' rocks · ' + personTodos + ' to-dos · '
+    meta: personRocks.length + ' rocks · ' + personTodos + ' tasks · '
       + personRocks.filter(g => g.horizon === '30').length + ' this month'
   } : iGoal ? {
     kind: 'goal',
@@ -121,7 +121,7 @@ function Cone({ goalsIndex, backlog, vto, filter, onFilter, jump, externalPerson
     title: iGoal.title,
     meta: horizonLabel(iGoal.horizon)
       + (iGoal.owner ? ' · accountable @' + iGoal.owner : '')
-      + ' · ' + taskCount(iGoal.id) + ' open to-dos'
+      + ' · ' + taskCount(iGoal.id) + ' open tasks'
       + ' · ' + (iGoal.status === 'done' ? 'done' : iGoal.status === 'in_progress' ? 'in progress' : 'open')
   } : iDecision ? {
     kind: 'decision',
@@ -162,7 +162,7 @@ function Cone({ goalsIndex, backlog, vto, filter, onFilter, jump, externalPerson
           </svg>
 
           <div className="cone-now">now</div>
-          <div className="cone-pastlog" onClick={() => jump('todo', 'sec-decisions')}>← past log</div>
+          <div className="cone-pastlog" onClick={() => jump('task', 'sec-decisions')}>← past log</div>
 
           <div className="cone-apex">
             <div className="cone-apex-kicker">10-YEAR TARGET</div>
@@ -214,11 +214,11 @@ function Cone({ goalsIndex, backlog, vto, filter, onFilter, jump, externalPerson
             <span className="cone-i-title">{inspector.title}</span>
             <span className="cone-i-meta">{inspector.meta}</span>
             {inspector.kind === 'decision' ? (
-              <span className="cone-i-link" onClick={() => jump('todo', 'sec-decisions')}>past log</span>
+              <span className="cone-i-link" onClick={() => jump('task', 'sec-decisions')}>past log</span>
             ) : (
               <>
                 <span className="cone-i-link" onClick={() => jump('goals', 'sec-timeline')}>see in timeline</span>
-                <span className="cone-i-link" onClick={() => jump('todo', null)}>see in todo</span>
+                <span className="cone-i-link" onClick={() => jump('task', null)}>see in tasks</span>
               </>
             )}
             <span

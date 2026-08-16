@@ -246,7 +246,7 @@ function rePropTodoRow(t) {
   row.append(c);
   const main = el("div", "aion-main");
   main.append(el("div", "aion-title", t.text));
-  main.append(el("div", "aion-item-meta", "property todo"));
+  main.append(el("div", "aion-item-meta", "property task"));
   row.append(main);
   row.append(el("span", "aion-rock-tag", t.container ? (t.container.name || t.container.slug || "") : ""));
   row.onclick = () => reBacklogSelect("prop", t.id);
@@ -371,7 +371,7 @@ function rePropTodoInspector(insp) {
     }));
   }
   const head = el("div", "aion-insp-head");
-  head.append(el("span", "aion-insp-label", "Todo"));
+  head.append(el("span", "aion-insp-label", "Task"));
   const x = el("button", "aion-insp-x", "✕");
   x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
   head.append(x);

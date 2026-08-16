@@ -25,7 +25,7 @@ function TabNav({ tab, onTab }) {
   return (
     <div className="tabbar">
       <div className="tabbar-inner">
-        {['overview', 'goals', 'todo'].map(id => (
+        {['overview', 'goals', 'task'].map(id => (
           <span
             key={id}
             className={'ptab' + (tab === id ? ' is-on' : '')}
