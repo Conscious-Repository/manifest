@@ -1,0 +1,27 @@
+# kairos-runner — the team agent's contract adapter (kairos plan Phase B).
+# Runs on LAB-APPS as the dedicated `kairos` user: polls the harness tree on
+# the shared volume for work orders manifest (on metis) spools, invokes the
+# NousResearch hermes-agent headless, and writes run reports + library briefs
+# in the harness-contract shapes manifest reads back.
+#
+# Install (lab-apps):
+#   sudo cp kairos-runner.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now kairos-runner
+# The binary arrives via deploy/kairos-deploy.sh (manifest autodeploy does not
+# reach lab-apps — runner updates are rare and explicit).
+[Unit]
+Description=kairos team-agent runner (hermes-agent contract adapter)
+After=network-online.target remote-fs.target
+Wants=network-online.target
+ConditionPathExists=/shared/apps/kairos/vessel
+
+[Service]
+User=kairos
+Group=kairos
+UMask=0002
+ExecStart=/home/kairos/.local/bin/kairos-runner -root /shared/apps/kairos -bin /home/kairos/.local/bin/hermes -args "-z {request}" -model deepseek-v4-flash-0731 -timeout 10m
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

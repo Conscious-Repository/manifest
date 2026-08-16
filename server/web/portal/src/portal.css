@@ -790,3 +790,20 @@ a:hover { text-decoration-color: var(--fg-1); }
 .prop-decided-row { margin-top: 6px; }
 .prop-decided-row .dec-title { color: var(--fg-5); }
 .prop-verdict { flex: none; color: var(--fg-6); }
+
+/* --- agent loop on the drawer (kairos plan Phases C/D) --- */
+.team-composer { position: relative; }
+.mention-pop { position: absolute; bottom: 100%; left: 0; right: 72px; margin-bottom: 4px;
+  background: var(--panel, #fff); border: 1px solid var(--line, #d9d4c8); border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.12); overflow: hidden; z-index: 30; }
+.mention-opt { padding: 10px 12px; min-height: 40px; box-sizing: border-box; cursor: pointer;
+  font-size: 13px; display: flex; align-items: center; }
+.mention-opt:hover { background: rgba(0,0,0,0.05); }
+.team-agent .team-assignee { font-size: 13px; opacity: 0.85; }
+.deleg-chip { text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; margin-left: 8px; }
+.deleg-plan-ready, .deleg-done { color: #2e7d32; }
+.deleg-failed { color: #b3261e; }
+.deleg-plan-queued, .deleg-plan-running, .deleg-go-queued, .deleg-running { color: #b45309; }
+.team-plan { white-space: pre-wrap; font-size: 13px; line-height: 1.5; padding: 8px 10px;
+  border: 1px solid var(--line, #d9d4c8); border-radius: 8px; max-height: 320px; overflow-y: auto; }
+.team-fire { font-weight: 600; }

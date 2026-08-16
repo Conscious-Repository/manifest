@@ -205,6 +205,14 @@ consent covers system-initiated re-materialization — when the todo's text or
 description changes under an agent-held plan, manifest may spool a re-plan
 without a per-replacement approval; the replacement still lands audited,
 section-swapped, and traced as a thread comment. Fire semantics unchanged.*
+*Amended 2026-08-16 (kairos plan, owner-approved with it): on AION items the
+standing consent extends to TEAM-triggered actions from the portal — any
+signed-in @aion.bio member may mention/assign the team-surface agent (plans
+materialize through the same audited lane) and FIRE its plan; every fire is
+attributed to the member, recorded in the team activity trail, carded into the
+owner's FEED, and the result posts back into the item's team-visible thread
+(the closed loop). Execution never starts without a fire; REVIEW stays the
+ceiling.*
 
 **2026-08-14 — the AION team portal: an authorized many-writers class.**
 Owner decision (portal move, 2026-08-13/14): the team portal served on its

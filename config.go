@@ -144,9 +144,14 @@ type Config struct {
 }
 
 // HarnessRef names one harness tree (federation, big-change Phase 4).
+// Surface scopes where the harness's agent identity is offered (kairos plan):
+// "" = the personal dashboard (default); "team" = the AION portal roster only —
+// the delegation machinery still orchestrates it, but personal typeaheads
+// never offer it.
 type HarnessRef struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Surface string `json:"surface"`
 }
 
 // AionPortalConfig is the git coordinates of the aionbio checkout, plus the

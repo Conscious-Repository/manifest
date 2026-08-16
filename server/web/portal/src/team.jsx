@@ -13,8 +13,180 @@ const TEAM_API = {
     }).then(r => r.ok
       ? r.json().then(v => ({ ok: true, value: v }))
       : r.text().then(t => ({ ok: false, error: t.trim() || ('HTTP ' + r.status) })));
+  },
+  // get — NOT via PORTAL_UTIL.fetchJSON (its blind '?t=' cache-bust corrupts
+  // query strings like ?id=…).
+  get(path) {
+    return fetch(path, { cache: 'no-store' }).then(r => r.ok
+      ? r.json().then(v => ({ ok: true, value: v }))
+      : r.text().then(t => ({ ok: false, error: t.trim() || ('HTTP ' + r.status) })));
   }
 };
+
+/* The taggable-agent roster (kairos plan Phase C) — fetched once per session
+   on first drawer open; a 404 from an older server degrades to "no agents". */
+let TEAM_AGENTS = null;
+function loadAgents() {
+  if (TEAM_AGENTS) return Promise.resolve(TEAM_AGENTS);
+  return TEAM_API.get('api/team/agents').then(r => {
+    TEAM_AGENTS = (r.ok && r.value && r.value.agents) ? r.value.agents : [];
+    return TEAM_AGENTS;
+  });
+}
+
+/* Each agent expands into its bare token plus one intent-tagged variant per
+   persona (agent:kairos::brief) — intent rides the mention, never ownership. */
+function agentOptions(agents, q) {
+  const out = [];
+  (agents || []).forEach(a => {
+    out.push({ token: a.id, label: a.name });
+    (a.personas || []).forEach(pi => out.push({ token: a.id + '::' + pi, label: a.name + '::' + pi }));
+  });
+  const ql = (q || '').toLowerCase();
+  return out.filter(o => !ql ||
+    o.label.toLowerCase().indexOf(ql) >= 0 || o.token.toLowerCase().indexOf(ql) >= 0);
+}
+
+/* Composer with @-mention typeahead: '@' + typing filters the agent list; a
+   pick inserts the display label into the text and records the STRUCTURAL
+   token on the POST (mentions ride the comment, manifest's dialog hook does
+   the rest). Degrades to the plain composer when no agents are configured. */
+function MentionComposer({ item, onPosted, onErr }) {
+  const [text, setText] = React.useState('');
+  const [mentions, setMentions] = React.useState([]);
+  const [agents, setAgents] = React.useState(null);
+  const [sug, setSug] = React.useState(null);
+  React.useEffect(() => {
+    let on = true;
+    loadAgents().then(a => { if (on) setAgents(a); });
+    return () => { on = false; };
+  }, []);
+  const labelFor = token => {
+    const hit = agentOptions(agents, '').filter(o => o.token === token)[0];
+    return hit ? hit.label : token;
+  };
+  const onInput = v => {
+    setText(v);
+    const m = /(^|\s)@([A-Za-z:.-]*)$/.exec(v);
+    setSug(m && agents && agents.length ? agentOptions(agents, m[2]) : null);
+  };
+  const pick = o => {
+    setText(t => t.replace(/@[A-Za-z:.-]*$/, '@' + o.label + ' '));
+    setMentions(ms => ms.indexOf(o.token) < 0 ? ms.concat(o.token) : ms);
+    setSug(null);
+  };
+  const post = () => {
+    if (!text.trim()) return;
+    // prune tokens whose visible @label the author deleted before sending
+    const live = mentions.filter(tok => text.indexOf('@' + labelFor(tok)) >= 0);
+    TEAM_API.post('api/team/comment', { item: item, text: text, mentions: live })
+      .then(r => {
+        if (r.ok) { setText(''); setMentions([]); setSug(null); onPosted(); }
+        else onErr(r.error);
+      });
+  };
+  const onKey = e => {
+    if (sug && sug.length) {
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(sug[0]); return; }
+      if (e.key === 'Escape') { e.stopPropagation(); setSug(null); return; } // don't close the drawer
+    }
+    if (e.key === 'Enter') post();
+  };
+  return (
+    <div className="team-row team-composer">
+      {sug && sug.length > 0 && (
+        <div className="mention-pop">
+          {sug.map(o => (
+            <div key={o.token} className="mention-opt" onMouseDown={e => { e.preventDefault(); pick(o); }}>
+              @{o.label}
+            </div>
+          ))}
+        </div>
+      )}
+      <input
+        className="team-input"
+        placeholder={agents && agents.length ? 'add a comment… @ tags the agent' : 'add a comment…'}
+        value={text}
+        onChange={e => onInput(e.target.value)}
+        onKeyDown={onKey}
+      />
+      <button className="team-btn" onClick={post}>post</button>
+    </div>
+  );
+}
+
+/* The action loop on the drawer (kairos plan Phase D): delegation state,
+   agent assign, the materialized PLAN, and fire — team-wide (any member).
+   Renders nothing when the server predates the panel API. */
+function TeamAgentPanel({ item, me, onChange }) {
+  const U = window.PORTAL_UTIL;
+  const [panel, setPanel] = React.useState(null);
+  const [agents, setAgents] = React.useState([]);
+  const [sel, setSel] = React.useState('');
+  const [err, setErr] = React.useState('');
+  const load = React.useCallback(() =>
+    TEAM_API.get('api/team/panel?id=' + encodeURIComponent(item.id))
+      .then(r => setPanel(r.ok ? r.value : null)), [item.id]);
+  React.useEffect(() => {
+    let on = true;
+    load();
+    loadAgents().then(a => { if (on) setAgents(a); });
+    return () => { on = false; };
+  }, [load]);
+  const deleg = (panel && panel.delegation) || null;
+  const state = deleg ? deleg.state : '';
+  React.useEffect(() => { // poll only while the loop is moving
+    if (!/queued|running/.test(state)) return;
+    const t = setInterval(() => { load(); onChange(); }, 20000);
+    return () => clearInterval(t);
+  }, [state, load]);
+  if (!panel) return null;
+  const assignee = panel.assignee || '';
+  const isAgent = assignee.indexOf('agent:') === 0;
+  const canAct = me && !me.anon && me.canFire;
+  const assign = () =>
+    TEAM_API.post('api/team/assign', { item: item.id, owner: sel })
+      .then(r => {
+        if (r.ok) { setErr(''); setSel(''); setPanel(r.value); onChange(); }
+        else setErr(r.error);
+      });
+  const fire = () =>
+    TEAM_API.post('api/team/fire', { item: item.id })
+      .then(r => {
+        if (r.ok) { setErr(''); load(); onChange(); } else setErr(r.error);
+      });
+  if (!agents.length && !isAgent && !panel.plan) return null; // nothing agentic to show
+  return (
+    <div className="team-controls team-agent">
+      <div className="team-label">
+        agent
+        {state ? <span className={'team-chip deleg-chip deleg-' + state}>{state}</span> : null}
+      </div>
+      <div className="team-row">
+        <span className="team-assignee">
+          {isAgent ? '✦ ' + assignee.slice(6) : (assignee || 'unassigned')}
+        </span>
+        {canAct && agents.length > 0 && (
+          <select value={sel} onChange={e => setSel(e.target.value)}>
+            <option value="">assign the agent…</option>
+            {agents.map(a => <option key={a.id} value={a.id}>✦ {a.name}</option>)}
+          </select>
+        )}
+        {canAct && sel && <button className="team-btn" onClick={assign}>assign</button>}
+        {canAct && isAgent && panel.plan && !/queued|running/.test(state) && (
+          <button className="team-btn team-fire" onClick={fire}>fire → execute the plan</button>
+        )}
+      </div>
+      {panel.plan ? (
+        <div>
+          <div className="team-label">plan</div>
+          <div className="team-plan">{U.renderInline(panel.plan)}</div>
+        </div>
+      ) : null}
+      <div className="team-err">{err}</div>
+    </div>
+  );
+}
 
 /* Sign-in chip in the masthead: quiet text, no loud color. */
 function AuthChip({ me, onChange }) {
@@ -52,18 +224,12 @@ function TeamItemDrawer({ item, me, team, onClose, onChange }) {
   const mine = signedIn && item.owner &&
     (item.owner.toLowerCase() === (me.initials || '').toLowerCase() ||
      item.owner.toLowerCase() === me.email.split('@')[0].toLowerCase());
-  const [text, setText] = React.useState('');
   const [status, setStatus] = React.useState(item.status || 'open');
   const [due, setDue] = React.useState(item.due || '');
   const [err, setErr] = React.useState('');
 
   const fail = r => { if (!r.ok) setErr(r.error); return r.ok; };
 
-  const comment = () => {
-    if (!text.trim()) return;
-    TEAM_API.post('api/team/comment', { item: item.id, text: text })
-      .then(r => { if (fail(r)) { setText(''); onChange(); } });
-  };
   // A comment is deletable by its author or the portal owner (admin).
   const canDelete = c => signedIn &&
     (me.admin || (c.author || '').toLowerCase() === (me.email || '').toLowerCase());
@@ -115,6 +281,8 @@ function TeamItemDrawer({ item, me, team, onClose, onChange }) {
             </div>
           )}
 
+          {signedIn && <TeamAgentPanel item={item} me={me} onChange={onChange} />}
+
           <div className="team-comments">
             <div className="team-label">comments</div>
             {comments.length === 0 && <div className="no-data">none yet</div>}
@@ -130,14 +298,7 @@ function TeamItemDrawer({ item, me, team, onClose, onChange }) {
               </div>
             ))}
             {signedIn ? (
-              <div className="team-row">
-                <input
-                  className="team-input" placeholder="add a comment…" value={text}
-                  onChange={e => setText(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') comment(); }}
-                />
-                <button className="team-btn" onClick={comment}>post</button>
-              </div>
+              <MentionComposer item={item.id} onPosted={onChange} onErr={setErr} />
             ) : (
               <div className="team-hint"><a className="auth-link" href="oauth2/login">sign in</a> to comment</div>
             )}
@@ -300,4 +461,4 @@ function TeamProposals({ me, team, onChange }) {
   );
 }
 
-Object.assign(window, { AuthChip, TeamItemDrawer, TeamAdd, TeamProposals, TEAM_API });
+Object.assign(window, { AuthChip, TeamItemDrawer, TeamAdd, TeamProposals, TEAM_API, MentionComposer, TeamAgentPanel });

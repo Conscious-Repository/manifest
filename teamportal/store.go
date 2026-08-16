@@ -46,13 +46,16 @@ func (s *Store) emailsPath() string { return filepath.Join(s.dir, "emails.json")
 
 // Comment is one team comment on an item (any signed-in member may comment).
 // Files (todo-panel plan D4) are content-addressed refs into the shared dir's
-// files/ tree — additive JSON; older portal clients simply ignore the field.
+// files/ tree; Mentions (kairos plan Phase C) are structural roster tokens
+// (`agent:kairos`, optionally intent-tagged `agent:kairos::brief`) — both
+// additive JSON; older portal clients simply ignore the fields.
 type Comment struct {
 	ID         string    `json:"id"`
 	Item       string    `json:"item"`
 	Author     string    `json:"author"`      // email
 	AuthorName string    `json:"author_name"` // display name from Google
 	Text       string    `json:"text"`
+	Mentions   []string  `json:"mentions,omitempty"`
 	Files      []FileRef `json:"files,omitempty"`
 	At         time.Time `json:"at"`
 }
@@ -228,12 +231,18 @@ func (s *Store) TeamOwner(itemID string) (string, bool) {
 // AddComment appends a comment (any signed-in member; the caller has already
 // verified the item exists).
 func (s *Store) AddComment(actor Identity, itemID, text string, now time.Time) (Comment, error) {
-	return s.AddCommentWithFiles(actor, itemID, text, nil, now)
+	return s.AddCommentFull(actor, itemID, text, nil, nil, now)
 }
 
 // AddCommentWithFiles is AddComment carrying content-addressed attachments
 // (the todo-panel thread path; the portal's own composer stays text-only).
 func (s *Store) AddCommentWithFiles(actor Identity, itemID, text string, files []FileRef, now time.Time) (Comment, error) {
+	return s.AddCommentFull(actor, itemID, text, files, nil, now)
+}
+
+// AddCommentFull is the real writer: attachments + structural mentions
+// (kairos plan Phase C — the portal composer records agent tokens here).
+func (s *Store) AddCommentFull(actor Identity, itemID, text string, files []FileRef, mentions []string, now time.Time) (Comment, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
 		return Comment{}, errors.New("empty comment")
@@ -247,12 +256,21 @@ func (s *Store) AddCommentWithFiles(actor Identity, itemID, text string, files [
 	c := Comment{
 		ID:   fmt.Sprintf("c-%d", now.UnixNano()),
 		Item: itemID, Author: actor.Email, AuthorName: actor.Name,
-		Text: text, Files: files, At: now.UTC(),
+		Text: text, Mentions: mentions, Files: files, At: now.UTC(),
 	}
 	ext.Comments[itemID] = append(ext.Comments[itemID], c)
 	err := s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActComment,
 		Payload: map[string]any{"item": itemID, "text": text, "files": len(files)}})
 	return c, err
+}
+
+// LogAction appends an activity-trail-only entry (no ext state change) — the
+// kairos plan's agent actions (assign/fire from the portal) record here so
+// the FEED bridge cards them for the owner and the team trail stays complete.
+func (s *Store) LogAction(actor Identity, action string, payload map[string]any, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.appendLog(Entry{TS: now.UTC(), Actor: actor.Email, Action: action, Payload: payload})
 }
 
 // DeleteComment removes a comment from an item. Only its author or the portal

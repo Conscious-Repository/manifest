@@ -135,6 +135,10 @@ func describe(e Entry) (title, detail string) {
 			verdict = "approved"
 		}
 		return "portal proposal " + verdict, str("title") + " (for " + str("target") + ")"
+	case "agent-assign":
+		return "portal: " + str("owner") + " assigned on " + str("item"), "by " + e.Actor
+	case "agent-fire":
+		return "portal: plan FIRED on " + str("item"), "by " + e.Actor + " — the agent is executing"
 	}
 	return "portal activity: " + e.Action, ""
 }

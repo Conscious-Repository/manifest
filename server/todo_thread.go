@@ -223,54 +223,58 @@ func (s *Server) setTodoOwner(id, owner string) error {
 	}
 }
 
-// handleTodoAssign — the uniform assignee write: pins identity, ensures the
+// assignTodo — the uniform assignee write core: pins identity, ensures the
 // plan record (assignee in frontmatter), patches [owner::] in the source
-// file, logs the replayable `assign` thread action, and — when the token
-// carries the hard `agent:` prefix (validated against the roster; unknown →
-// 400) — kicks the plan-phase delegation (Phase 4 hook).
+// file, logs the replayable `assign` thread action ATTRIBUTED to the actor
+// (a portal member's assign shows their name, not the owner's), and — when
+// the token carries the hard `agent:` prefix (validated against the roster;
+// unknown → error) — kicks the plan-phase delegation (§12 lane entry point).
+// Returns the pinned id.
+func (s *Server) assignTodo(actor threads.Identity, rawID, owner string) (string, error) {
+	owner = strings.TrimSpace(owner)
+	harness := ""
+	if strings.HasPrefix(owner, "agent:") {
+		if strings.Contains(owner, "::") {
+			return "", errBadRequest("assignee must be the bare agent token — intent (::" +
+				strings.SplitN(owner, "::", 2)[1] + ") is per-message, not per-assignment")
+		}
+		if harness = s.agentHarness(owner); harness == "" {
+			return "", errBadRequest("unknown agent " + owner + " — only configured harnesses are assignable")
+		}
+	}
+	id, ok := s.pinTodoID(strings.TrimSpace(rawID))
+	if !ok {
+		return "", errBadRequest("todo not found")
+	}
+	if err := s.setTodoOwner(id, owner); err != nil {
+		return "", err
+	}
+	if err := s.setPlanAssignee(id, owner); err != nil {
+		return "", err
+	}
+	text := "assigned to " + orStr(owner, "me")
+	if _, err := s.addThreadEntry(actor, id, threads.ActAssign, text, nil, nil,
+		map[string]any{"assignee": owner}); err != nil {
+		return "", err
+	}
+	if harness != "" {
+		if err := s.assignAgentHook(id, harness); err != nil {
+			return "", err
+		}
+	}
+	return id, nil
+}
+
 func (s *Server) handleTodoAssign(w http.ResponseWriter, r *http.Request) {
 	var b struct{ ID, Owner string }
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	owner := strings.TrimSpace(b.Owner)
-	harness := ""
-	if strings.HasPrefix(owner, "agent:") {
-		if strings.Contains(owner, "::") {
-			httpError(w, errBadRequest("assignee must be the bare agent token — intent (::" +
-				strings.SplitN(owner, "::", 2)[1] + ") is per-message, not per-assignment"))
-			return
-		}
-		if harness = s.agentHarness(owner); harness == "" {
-			httpError(w, errBadRequest("unknown agent "+owner+" — only configured harnesses are assignable"))
-			return
-		}
-	}
-	id, ok := s.pinTodoID(strings.TrimSpace(b.ID))
-	if !ok {
-		http.Error(w, "todo not found", http.StatusNotFound)
-		return
-	}
-	if err := s.setTodoOwner(id, owner); err != nil {
+	id, err := s.assignTodo(s.ownerIdentity(), b.ID, b.Owner)
+	if err != nil {
 		httpError(w, err)
 		return
-	}
-	if err := s.setPlanAssignee(id, owner); err != nil {
-		httpError(w, err)
-		return
-	}
-	text := "assigned to " + orStr(owner, "me")
-	if _, err := s.addThreadEntry(s.ownerIdentity(), id, threads.ActAssign, text, nil, nil,
-		map[string]any{"assignee": owner}); err != nil {
-		httpError(w, err)
-		return
-	}
-	if harness != "" {
-		if err := s.assignAgentHook(id, harness); err != nil {
-			httpError(w, err)
-			return
-		}
 	}
 	writeJSON(w, map[string]any{"ok": true, "record": s.readPlanRecord(id), "thread": s.listThread(id)})
 }

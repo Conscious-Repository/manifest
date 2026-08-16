@@ -479,7 +479,7 @@ func main() {
 			}
 			ap := approvals.NewStore(filepath.Join(ref.Path, "artifacts")).
 				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved")
-			hs = append(hs, server.Harness{Name: ref.Name, Spirits: sp, Approvals: ap})
+			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
 		srv.UseHarnesses(hs)                       // sets the primary spirits+approvals fields too
 		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
@@ -600,6 +600,16 @@ func main() {
 			}
 		}
 		srv.UsePersonas(filepath.Join(cfg.VaultPath, filepath.FromSlash(personaRoot)), personaRoot)
+	}
+	// The portal↔cockpit agent bridges (kairos plan): wired HERE, after srv is
+	// fully configured (threads, harnesses, personas all set above) and before
+	// the portal listener starts.
+	if aionTeamStore != nil {
+		portalOpts.OnComment = srv.AionThreadHook
+		portalOpts.Agents = srv.AionTeamAgents
+		portalOpts.Panel = srv.AionPanel
+		portalOpts.Assign = srv.AionAssign
+		portalOpts.Fire = srv.AionFire
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)

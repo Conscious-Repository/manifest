@@ -17,9 +17,12 @@ import (
 	"manifest/spirits"
 )
 
-// Harness is one federated tree's stores.
+// Harness is one federated tree's stores. Surface "" = personal dashboard;
+// "team" = offered only on the AION portal roster (kairos plan) — delegation
+// machinery includes it either way.
 type Harness struct {
 	Name      string
+	Surface   string
 	Spirits   *spirits.Store
 	Approvals *approvals.Store
 }

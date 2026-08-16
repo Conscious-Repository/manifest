@@ -424,8 +424,24 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			if priv.HasAction(id, threads.ActResult, d.RunID) {
 				continue
 			}
-			_, _ = s.addThreadEntry(hermes, id, threads.ActComment,
-				"result is ready — review it, then check the todo or send it back with a comment", nil, nil, meta)
+			text := "result is ready — review it, then check the todo or send it back with a comment"
+			// closed loop (kairos plan Phase D): on team-visible items the
+			// deliverable itself posts into the thread — portal members read
+			// the result where they fired it, not behind a dashboard link.
+			if s.threadKind(id) == "aion" {
+				doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
+				body := strings.TrimSpace(doc.Body)
+				if !ok || body == "" {
+					if _, rb, ok2 := h.Spirits.Run(d.RunID); ok2 {
+						body = strings.TrimSpace(rb)
+					}
+				}
+				if body != "" {
+					text = ledger.Snip(body, 3600) +
+						"\n\n— result delivered; review it, then close the item or send it back with a comment"
+				}
+			}
+			_, _ = s.addThreadEntry(hermes, id, threads.ActComment, text, nil, nil, meta)
 			s.markerAdd(id, threads.ActResult, d.RunID)
 			continue
 		}
@@ -685,28 +701,22 @@ func (s *Server) replanSweep(index map[string]delegationView) {
 	}
 }
 
-// handleTodoFire — the explicit go: snapshots the CURRENT plan bytes (the
+// fireTodo — the explicit go core: snapshots the CURRENT plan bytes (the
 // human may have hand-edited them — the human is the mutex) + the thread tail
-// into a go-phase work order.
-func (s *Server) handleTodoFire(w http.ResponseWriter, r *http.Request) {
-	var b struct{ ID string }
-	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
-		httpError(w, errBadRequest("id is required"))
-		return
-	}
-	id := strings.TrimSpace(b.ID)
+// into a go-phase work order. The fire thread entry is attributed to the
+// actor (a portal member's fire shows their name). Returns
+// spirits.ErrAlreadyActive when the agent is mid-run.
+func (s *Server) fireTodo(actor threads.Identity, id string) error {
 	rec := s.readPlanRecord(id)
 	if !rec.Exists || strings.TrimSpace(rec.Plan) == "" {
-		httpError(w, errBadRequest("no plan to fire — write one or assign an agent first"))
-		return
+		return errBadRequest("no plan to fire — write one or assign an agent first")
 	}
 	harness := s.agentHarness(rec.Assignee)
 	if harness == "" {
-		httpError(w, errBadRequest("this todo isn't assigned to an agent"))
-		return
+		return errBadRequest("this todo isn't assigned to an agent")
 	}
 	extra := rec.Plan
-	// the thread tail rides along — the owner's comments are steer
+	// the thread tail rides along — the humans' comments are steer
 	th := s.listThread(id)
 	if n := len(th); n > 0 {
 		var tail []string
@@ -720,17 +730,30 @@ func (s *Server) handleTodoFire(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "go", extra, ""); err != nil {
+		return err
+	}
+	_, _ = s.addThreadEntry(actor, id, threads.ActFire,
+		"fired — "+harness+" is executing the plan", nil, nil, map[string]any{"harness": harness})
+	s.markerAdd(id, threads.ActFire, "") // the signal scan reads private markers
+	return nil
+}
+
+func (s *Server) handleTodoFire(w http.ResponseWriter, r *http.Request) {
+	var b struct{ ID string }
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
+		httpError(w, errBadRequest("id is required"))
+		return
+	}
+	id := strings.TrimSpace(b.ID)
+	if err := s.fireTodo(s.ownerIdentity(), id); err != nil {
 		if errors.Is(err, spirits.ErrAlreadyActive) {
 			w.WriteHeader(http.StatusConflict)
-			writeJSON(w, map[string]any{"active": true, "harness": harness})
+			writeJSON(w, map[string]any{"active": true})
 			return
 		}
 		httpError(w, err)
 		return
 	}
-	_, _ = s.addThreadEntry(s.ownerIdentity(), id, threads.ActFire,
-		"fired — "+harness+" is executing the plan", nil, nil, map[string]any{"harness": harness})
-	s.markerAdd(id, threads.ActFire, "") // the signal scan reads private markers
 	writeJSON(w, map[string]any{"ok": true, "queued": true, "thread": s.listThread(id)})
 }
 

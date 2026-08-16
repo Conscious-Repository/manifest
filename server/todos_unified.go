@@ -341,12 +341,12 @@ func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list
 	return true
 }
 
-// agentRoster — the assignable agents (todo-panel plan D5): every configured
-// non-primary harness, ids carrying the hard `agent:` prefix so the raw
-// markdown token `[owner:: agent:hermes]` is visually unambiguous. Each row
-// carries the enabled persona intents (persona plan Phase 1) so the mention
-// typeahead can offer `agent:hermes::brief` variants.
-func (s *Server) agentRoster() []map[string]any {
+// rosterFor — the assignable agents (todo-panel plan D5): every configured
+// non-primary harness matching the surface, ids carrying the hard `agent:`
+// prefix so the raw markdown token `[owner:: agent:hermes]` is visually
+// unambiguous. Each row carries the enabled persona intents (persona plan
+// Phase 1) so the mention typeahead can offer `agent:hermes::brief` variants.
+func (s *Server) rosterFor(surface string) []map[string]any {
 	out := []map[string]any{}
 	var intents []string
 	for k, p := range s.personas() {
@@ -358,6 +358,9 @@ func (s *Server) agentRoster() []map[string]any {
 	hs := s.eachHarness()
 	for i, h := range hs {
 		if i == 0 { // the primary runs the house; delegation targets are the rest
+			continue
+		}
+		if h.Surface != surface {
 			continue
 		}
 		name := h.Name
@@ -374,16 +377,26 @@ func (s *Server) agentRoster() []map[string]any {
 	return out
 }
 
+// agentRoster is the PERSONAL surface's roster (team-surface harnesses like
+// kairos never appear in dashboard typeaheads — kairos plan).
+func (s *Server) agentRoster() []map[string]any { return s.rosterFor("") }
+
+// teamAgentRoster is the AION portal's roster (surface "team").
+func (s *Server) teamAgentRoster() []map[string]any { return s.rosterFor("team") }
+
 // agentHarness resolves a BARE `agent:` owner token to its harness name
 // ("" = not a known agent; intent-suffixed tokens are deliberately not
-// accepted — split them with splitAgentToken first).
+// accepted — split them with splitAgentToken first). Resolution spans ALL
+// non-primary harnesses regardless of surface — relays, ingestion and portal
+// assigns must recognize team-scoped agents too.
 func (s *Server) agentHarness(owner string) string {
 	if !strings.HasPrefix(owner, "agent:") {
 		return ""
 	}
 	want := strings.TrimPrefix(owner, "agent:")
-	for _, a := range s.agentRoster() {
-		if a["harness"] == want {
+	hs := s.eachHarness()
+	for i := range hs {
+		if i > 0 && hs[i].Name == want {
 			return want
 		}
 	}

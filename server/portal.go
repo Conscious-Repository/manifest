@@ -8,16 +8,33 @@ import (
 	"strings"
 	"time"
 
+	"manifest/spirits"
 	"manifest/teamportal"
 )
 
 // PortalOptions wires the team write layer (portal move, Phase 2–3) into the
 // standalone portal listener. The zero value serves the Phase-1 static site
 // unchanged (open read, no auth, no writes).
+//
+// The agent-loop callbacks (kairos plan Phases C/D) bridge the portal into
+// the cockpit Server's delegation machinery — both listeners live in one
+// process, so these are plain closures wired in main. All nil-safe: a nil
+// callback means the route isn't registered / the hook is skipped.
 type PortalOptions struct {
 	Auth       *teamportal.Auth  // Google OAuth + sessions (nil → no sign-in)
 	Store      *teamportal.Store // team state on /shared (nil → no writes)
 	AdminEmail string            // the portal owner — may decide any proposal
+	// OnComment runs after a member's comment is stored — the dialog hook
+	// (mention → auto-assign + relay; assigned item → every comment relays).
+	OnComment func(itemID string, mentions []string, text string)
+	// Agents lists the TEAM-surface roster ({id,name,harness,personas}).
+	Agents func() []map[string]any
+	// Panel returns an item's plan record + delegation state.
+	Panel func(itemID string) map[string]any
+	// Assign assigns an agent (or clears); actor = the member, for attribution.
+	Assign func(itemID, owner, memberEmail, memberName string) error
+	// Fire executes the plan; returns spirits.ErrAlreadyActive when mid-run.
+	Fire func(itemID, memberEmail, memberName string) error
 }
 
 // PortalHandler serves the AION portal as a standalone site, rooted at the
@@ -60,6 +77,21 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			mux.HandleFunc("POST /api/team/items", api.handleAdd)
 			mux.HandleFunc("POST /api/team/proposals", api.handlePropose)
 			mux.HandleFunc("POST /api/team/proposals/decide", api.handleDecide)
+			// the agent loop on the portal (kairos plan Phases C/D) — routes
+			// exist only when the cockpit bridges are wired. Item ids carry
+			// slashes (team/<slug>), so ids ride the body/query, never the path.
+			if opt.Agents != nil {
+				mux.HandleFunc("GET /api/team/agents", api.handleAgents)
+			}
+			if opt.Panel != nil {
+				mux.HandleFunc("GET /api/team/panel", api.handlePanel)
+			}
+			if opt.Assign != nil {
+				mux.HandleFunc("POST /api/team/assign", api.handleAssign)
+			}
+			if opt.Fire != nil {
+				mux.HandleFunc("POST /api/team/fire", api.handleFire)
+			}
 		}
 	}
 	loginPage, _ := fs.ReadFile(sub, "login.html") // the anonymous landing (nil → fall back to a redirect)
@@ -250,6 +282,9 @@ func (p *portalAPI) handleMe(w http.ResponseWriter, r *http.Request) {
 		"email": id.Email, "name": id.Name,
 		"initials": p.initialsFor(id.Email),
 		"admin":    p.isAdmin(id.Email),
+		// canFire is server-side policy the drawer trusts: team-wide today
+		// (owner decision 2026-08-16); a single line here tightens it later.
+		"canFire": p.opt.Fire != nil,
 	})
 }
 
@@ -263,7 +298,10 @@ func (p *portalAPI) handleComment(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var b struct{ Item, Text string }
+	var b struct {
+		Item, Text string
+		Mentions   []string
+	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
@@ -272,12 +310,90 @@ func (p *portalAPI) handleComment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown item", http.StatusNotFound)
 		return
 	}
-	c, err := p.opt.Store.AddComment(id, b.Item, b.Text, time.Now())
+	c, err := p.opt.Store.AddCommentFull(id, b.Item, b.Text, nil, b.Mentions, time.Now())
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
+	// the dialog hook (kairos plan Phase C): AFTER the store write, so the
+	// relay's thread tail includes this comment. Synchronous, mirroring the
+	// dashboard's handleTodoThreadPost; a missed relay is retried by the sweep.
+	if p.opt.OnComment != nil {
+		p.opt.OnComment(b.Item, b.Mentions, b.Text)
+	}
 	writeJSON(w, c)
+}
+
+// --- the agent loop on the portal (kairos plan Phases C/D) -------------------
+
+func (p *portalAPI) handleAgents(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	writeJSON(w, map[string]any{"agents": p.opt.Agents()})
+}
+
+func (p *portalAPI) handlePanel(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	itemID := strings.TrimSpace(r.URL.Query().Get("id"))
+	if _, exists := p.ownerOf(itemID); !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, p.opt.Panel(itemID))
+}
+
+// handleAssign — TEAM-WIDE (owner decision 2026-08-16, Buzz heuristic: scope
+// by membership): any signed-in member may put the team agent on an item.
+// Token validation (roster check, bare-token rule) lives in the bridge.
+func (p *portalAPI) handleAssign(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Item, Owner string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if _, exists := p.ownerOf(b.Item); !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	if err := p.opt.Assign(b.Item, b.Owner, id.Email, id.Name); err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, p.opt.Panel(b.Item))
+}
+
+// handleFire — TEAM-WIDE: any member executes an agent-held plan; the fire is
+// attributed to them, the owner gets a FEED notice, and the result posts back
+// into this item's thread (the closed loop).
+func (p *portalAPI) handleFire(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Item string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if _, exists := p.ownerOf(b.Item); !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	switch err := p.opt.Fire(b.Item, id.Email, id.Name); {
+	case err == nil:
+		writeJSON(w, map[string]any{"ok": true, "queued": true})
+	case errors.Is(err, spirits.ErrAlreadyActive):
+		http.Error(w, "the agent is already running — try again when it finishes", http.StatusConflict)
+	default:
+		httpError(w, errBadRequest(err.Error()))
+	}
 }
 
 // handleDeleteComment removes a comment. The store enforces the permission
