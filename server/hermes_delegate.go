@@ -46,6 +46,22 @@ func (s *Server) hermesForked(h *Harness) bool {
 	return s.hermes != nil && h != nil && strings.EqualFold(h.Name, "hermes")
 }
 
+// hermesEnabled reports whether the do-bot runner is wired.
+func (s *Server) hermesEnabled() bool { return s.hermes != nil }
+
+// hermesRealHarness reports whether a real `hermes` harness tree is still in the
+// federation. Once Phase 1c retires it from config, Hermes is a VIRTUAL agent —
+// the runner-backed identity with no tree — so findHarness/rosterFor/agentHarness
+// synthesize it. This guard just avoids a duplicate during the transition.
+func (s *Server) hermesRealHarness() bool {
+	for _, h := range s.eachHarness() {
+		if strings.EqualFold(h.Name, "hermes") {
+			return true
+		}
+	}
+	return false
+}
+
 // startHermesTurn kicks off one agent turn in the background (a turn is slow —
 // the tool loop). It coalesces: a second call while a turn is in flight for the
 // same todo is refused, mirroring the harness double-spool guard.

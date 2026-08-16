@@ -374,6 +374,15 @@ func (s *Server) rosterFor(surface string) []map[string]any {
 		}
 		out = append(out, row)
 	}
+	// the virtual Hermes: the runner-backed do-bot identity, offered on the
+	// personal surface even with no `hermes` harness tree (Phase 1c retired it).
+	if surface == "" && s.hermesEnabled() && !s.hermesRealHarness() {
+		row := map[string]any{"id": "agent:hermes", "name": "Hermes", "harness": "hermes"}
+		if len(intents) > 0 {
+			row["personas"] = intents
+		}
+		out = append(out, row)
+	}
 	return out
 }
 
@@ -399,6 +408,10 @@ func (s *Server) agentHarness(owner string) string {
 		if i > 0 && hs[i].Name == want {
 			return want
 		}
+	}
+	// the virtual Hermes resolves even without a harness tree (Phase 1c).
+	if s.hermesEnabled() && want == "hermes" {
+		return "hermes"
 	}
 	return ""
 }

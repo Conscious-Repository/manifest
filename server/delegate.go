@@ -209,13 +209,19 @@ func delegateTargetFor(h *Harness) (spirit, ritual string) {
 	return h.Name, "delegate"
 }
 
-// findHarness resolves a harness by name.
+// findHarness resolves a harness by name. When the do-bot runner is enabled and
+// no real `hermes` tree exists (Phase 1c), it synthesizes a nameonly Hermes
+// harness so the delegation callers route to the runner (its Spirits is nil —
+// spoolTodoWorkOrder handles that for the fork).
 func (s *Server) findHarness(name string) *Harness {
 	hs := s.eachHarness()
 	for i := range hs {
 		if hs[i].Name == name {
 			return &hs[i]
 		}
+	}
+	if s.hermesEnabled() && strings.EqualFold(name, "hermes") {
+		return &Harness{Name: "hermes"}
 	}
 	return nil
 }
@@ -230,7 +236,11 @@ func (s *Server) findHarness(name string) *Harness {
 // stamps a recoverable [persona::] token; an unknown/disabled intent degrades
 // to today's request byte-for-byte.
 func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, intent string) error {
-	if harness == nil || harness.Spirits == nil {
+	if harness == nil {
+		return errBadRequest("harness not available")
+	}
+	// the virtual Hermes (runner-backed) has no Spirits — the fork handles it.
+	if !s.hermesForked(harness) && harness.Spirits == nil {
 		return errBadRequest("harness not available")
 	}
 	p, hasPersona := s.persona(intent)
