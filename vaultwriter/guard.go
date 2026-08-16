@@ -69,11 +69,18 @@ func (w *Writer) Guard(rel string, class WriteClass) error {
 		return errors.New("invalid note path")
 	}
 	// (the excalibur harness tree left the vault entirely — big-change Phase 1 —
-	// so its entries are gone from this list; only the agents subtree remains)
+	// so its entries are gone from this list; only the agents subtree remains.
+	// Carve-out, owner decision 2026-08-16 (persona plan Phase 1): the persona
+	// records at <systemRoot>/agents/personas/ are owner guidance TO agents —
+	// app-seeded, owner-edited, never engine working state — so the dashboard
+	// writes there; the rest of the agents subtree stays sealed.)
 	sr := w.systemRootOrDefault()
-	for _, owned := range []string{sr + "/agents", "Agents"} {
-		if clean == owned || strings.HasPrefix(clean, owned+"/") {
-			return errors.New("that path is engine-owned — the dashboard never writes it")
+	personas := sr + "/agents/personas"
+	if !(clean == personas || strings.HasPrefix(clean, personas+"/")) {
+		for _, owned := range []string{sr + "/agents", "Agents"} {
+			if clean == owned || strings.HasPrefix(clean, owned+"/") {
+				return errors.New("that path is engine-owned — the dashboard never writes it")
+			}
 		}
 	}
 	if class == WriteDatabase {
