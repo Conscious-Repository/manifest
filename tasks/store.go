@@ -35,7 +35,7 @@ func NewStore(vaultRoot, name string, write func(path string, data []byte) error
 
 func (s *Store) Path() string { return filepath.Join(s.vaultRoot, s.name) }
 
-// ArchivePath is the append-only history peer ("to do archive.md").
+// ArchivePath is the append-only history peer ("tasks archive.md").
 func (s *Store) ArchivePath() string {
 	base := strings.TrimSuffix(s.name, ".md")
 	return filepath.Join(s.vaultRoot, base+" archive.md")
@@ -46,7 +46,7 @@ func (s *Store) Load() (*Doc, error) {
 	raw, err := os.ReadFile(s.Path())
 	if err != nil {
 		if os.IsNotExist(err) {
-			d := &Doc{preamble: []string{"# To Do"}}
+			d := &Doc{preamble: []string{"# Tasks"}}
 			d.EnsureDomain(InboxName)
 			return d, nil
 		}
@@ -219,6 +219,6 @@ func (s *Store) appendArchive(section string, lines []string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	content := record.AppendSection(string(raw), "# To Do — archive", section, lines)
+	content := record.AppendSection(string(raw), "# Tasks — archive", section, lines)
 	return s.write(path, []byte(content))
 }

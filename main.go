@@ -193,9 +193,9 @@ func main() {
 			vaultwriter.Capability{Name: "goals", Zone: record.ZoneKnowledge,
 				Pattern: strings.TrimSuffix(orDefault(cfg.GoalsFileName, "goals.md"), ".md") + "*",
 				Actor:   vaultwriter.ActorUserAction},
-			// to do.md + "to do archive.md" + .pre-* backups
+			// tasks.md + "tasks archive.md" + .pre-* backups
 			vaultwriter.Capability{Name: "todos", Zone: record.ZoneKnowledge,
-				Pattern: strings.TrimSuffix(orDefault(cfg.TasksFileName, "to do.md"), ".md") + "*",
+				Pattern: strings.TrimSuffix(orDefault(cfg.TasksFileName, "tasks.md"), ".md") + "*",
 				Actor:   vaultwriter.ActorUserAction},
 			// daily notes: the exact YYYY-MM-DD.md shape, wherever they live
 			vaultwriter.Capability{Name: "daily", Zone: record.ZoneKnowledge,

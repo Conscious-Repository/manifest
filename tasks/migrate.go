@@ -31,7 +31,7 @@ func (s *Store) Migrate(now time.Time, areas []string) (bool, error) {
 		return false, err
 	}
 
-	d := &Doc{preamble: []string{"# To Do"}}
+	d := &Doc{preamble: []string{"# Tasks"}}
 	d.EnsureDomain(InboxName)
 	for _, a := range areas { // live goals areas, one shared vocabulary
 		d.EnsureDomain(a)
