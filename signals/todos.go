@@ -52,7 +52,7 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 					Entity:  t.Text,
 					Label:   "stale todo · " + t.Text + " · " + strconv.Itoa(age) + "d",
 					Age:     age,
-					ActHref: "#/todos",
+					ActHref: "#/tasks",
 					Hash:    "open|" + bucket,
 					GoalID:  t.ID, // carries the todo id for the card's decision pills
 				})
@@ -66,7 +66,7 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 					Entity:  t.Text,
 					Label:   "still waiting · " + t.Waiting + " · " + t.Text + " · " + strconv.Itoa(age) + "d",
 					Age:     age,
-					ActHref: "#/todos",
+					ActHref: "#/tasks",
 					Hash:    "waiting|" + t.Since + "|" + bucket,
 					GoalID:  t.ID,
 				})

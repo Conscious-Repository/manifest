@@ -7,7 +7,7 @@
 
 let todoSelId = null;      // selected todo id ("" = none)
 let todoPanelData = null;  // last /api/tasks/panel payload
-let todoDeepLink = null;   // #/todos/<id> → open after load
+let todoDeepLink = null;   // #/tasks/<id> → open after load
 let todoPanelTimer = null; // live refresh while the panel is open
 
 // the panel stays LIVE while open: hermes' plan updates and thread replies
@@ -35,7 +35,7 @@ function ensureTodoPanelPoll() {
 function openTodoPanel(rOrId) {
   const id = typeof rOrId === "string" ? rOrId : rOrId.id;
   todoSelId = id;
-  const suffix = "#/todos/" + encodeURIComponent(id);
+  const suffix = "#/tasks/" + encodeURIComponent(id);
   if (location.hash !== suffix) {
     try { history.replaceState(null, "", suffix); } catch (e) {}
   }
@@ -46,7 +46,7 @@ function openTodoPanel(rOrId) {
 function closeTodoPanel() {
   todoSelId = null;
   todoPanelData = null;
-  try { history.replaceState(null, "", "#/todos"); } catch (e) {}
+  try { history.replaceState(null, "", "#/tasks"); } catch (e) {}
   renderTodoPanel(false);
 }
 

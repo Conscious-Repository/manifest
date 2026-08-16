@@ -332,7 +332,7 @@ function renderContactPage(p) {
         el("span", "cp-loop-text", wo.text),
         el("span", "cp-date", wo.domain + " · " + wo.ageDays + "d"));
       row.style.cursor = "pointer";
-      row.onclick = () => { location.hash = "#/todos"; };
+      row.onclick = () => { location.hash = "#/tasks"; };
       sec.append(row);
     });
     host.append(sec);

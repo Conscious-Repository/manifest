@@ -16,7 +16,7 @@ async function loadTodos() {
   try { todosCache = await (await fetch("/api/tasks")).json(); }
   catch (e) { todosCache = { rows: [], domains: [], areas: [], counts: {} }; }
   renderTodos();
-  // deep link #/todos/<id> → open the panel once the rows are here
+  // deep link #/tasks/<id> → open the panel once the rows are here
   if (typeof todoDeepLink !== "undefined" && todoDeepLink) {
     const id = todoDeepLink;
     todoDeepLink = null;

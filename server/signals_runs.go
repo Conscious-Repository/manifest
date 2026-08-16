@@ -27,7 +27,7 @@ func (s *Server) RunFailureEmitter() signals.Emitter { return runFailEmitter{s} 
 // ready". Still a §5 SIGNAL (an app-derived condition that auto-clears when the
 // todo gets checked — the closed set stays four), but the client renders it as
 // a full FEED CARD in the main stream instead of a one-line strip chip: view
-// the result, open the todo, Done ✓. The label navigates to the todo (#/todos);
+// the result, open the todo, Done ✓. The label navigates to the todo (#/tasks);
 // the RESULT is a separate, explicit action, so a click on the work never
 // lands in an unrelated run report.
 func (s *Server) DelegationDoneEmitter() signals.Emitter { return delegDoneEmitter{s} }
@@ -96,7 +96,7 @@ func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 				Kind:    "agent-questions",
 				Entity:  text,
 				Label:   "agent has questions · " + text + " · " + harness,
-				ActHref: "#/todos/" + id,
+				ActHref: "#/tasks/" + id,
 				Hash:    run,
 				GoalID:  id,
 				RunID:   run,
@@ -109,7 +109,7 @@ func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 			Kind:    "plan-ready",
 			Entity:  text,
 			Label:   "plan ready · " + text + " · " + harness,
-			ActHref: "#/todos/" + id,
+			ActHref: "#/tasks/" + id,
 			Hash:    run,
 			GoalID:  id,
 			RunID:   run,
@@ -136,7 +136,7 @@ func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 			Kind:         "delegation-done",
 			Entity:       text,
 			Label:        "delegated work ready · " + text + " · " + d.Harness,
-			ActHref:      "#/todos",
+			ActHref:      "#/tasks",
 			Hash:         d.RunID,
 			GoalID:       id, // Done ✓ checks the todo through the unified endpoint
 			RunID:        d.RunID,

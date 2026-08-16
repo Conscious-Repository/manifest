@@ -162,7 +162,7 @@ function delegationDoneCard(sg) {
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
   title.title = "open it on the TODOS board";
-  title.onclick = () => { location.hash = sg.actHref || "#/todos"; };
+  title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
   top.append(title);
   card.append(top);
   card.append(el("div", "feed-why", sg.artifactRef || sg.artifactPath
@@ -175,7 +175,7 @@ function delegationDoneCard(sg) {
   const view = pillLight("view →", () => openResult(sg, sg.entity));
   view.classList.add("verdict-primary");
   actions.append(view);
-  actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/todos"; }));
+  actions.append(pillLight("open todo →", () => { location.hash = sg.actHref || "#/tasks"; }));
   actions.append(pillLight("Done ✓", () => signalAction("/api/tasks/check", { id: sg.goalId, checked: true }, card)));
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
   card.append(actions);
@@ -191,12 +191,12 @@ function planReadyCard(sg) {
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
   title.title = "review the plan in the todo panel";
-  title.onclick = () => { location.hash = sg.actHref || "#/todos"; };
+  title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
   top.append(title);
   card.append(top);
   card.append(el("div", "feed-why", "the agent drafted a plan — review it, edit it in place if needed, then fire to execute"));
   const actions = el("div", "feed-actions");
-  const review = pillLight("review plan →", () => { location.hash = sg.actHref || "#/todos"; });
+  const review = pillLight("review plan →", () => { location.hash = sg.actHref || "#/tasks"; });
   review.classList.add("verdict-primary");
   actions.append(review);
   actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
@@ -214,12 +214,12 @@ function agentQuestionsCard(sg) {
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
   title.title = "open the thread";
-  title.onclick = () => { location.hash = sg.actHref || "#/todos"; };
+  title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
   top.append(title);
   card.append(top);
   card.append(el("div", "feed-why", "the agent has questions before it can plan — answer them in the todo's thread"));
   const actions = el("div", "feed-actions");
-  const ans = pillLight("answer in the thread →", () => { location.hash = sg.actHref || "#/todos"; });
+  const ans = pillLight("answer in the thread →", () => { location.hash = sg.actHref || "#/tasks"; });
   ans.classList.add("verdict-primary");
   actions.append(ans);
   actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));

@@ -96,7 +96,7 @@ const NAV_SECTIONS = [
   { label: "PLAN", items: [
     { key: "day", label: "Day", glyph: "☀", hash: "#/" },
     { key: "goals", label: "Goals", glyph: "◎", hash: "#/goals", counted: true },
-    { key: "todos", label: "Todos", glyph: "✓", hash: "#/todos", counted: true },
+    { key: "tasks", label: "Todos", glyph: "✓", hash: "#/tasks", counted: true },
   ]},
   { label: "WORK", items: [
     { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },
@@ -126,7 +126,7 @@ function sectionOf(h) {
   if (h.startsWith("#/note/")) return "note";
   if (h.startsWith("#/artifact/")) return "artifact";
   const seg = h.replace(/^#\//, "").split("/")[0];
-  return ["goals","todos","calendar","feed","chat","capture","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  return ["goals","tasks","calendar","feed","chat","capture","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -174,7 +174,7 @@ function railSetCount(key, n) {
 async function refreshRailCounts() {
   const j = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const [td, gl, ai, pr] = await Promise.all([j("/api/tasks"), j("/api/goals"), j("/api/aion"), j("/api/properties")]);
-  if (td && td.counts) railSetCount("todos", td.counts.tasks || 0); // same derivation as the surface — one truth
+  if (td && td.counts) railSetCount("tasks", td.counts.tasks || 0); // same derivation as the surface — one truth
   if (gl && gl.areas) railSetCount("goals", gl.areas.reduce((n, a) => n + ((a.rocks || []).filter((r) => !r.checked).length), 0));
   if (ai && ai.backlog) railSetCount("aion", ai.backlog.filter((b) => !b.checked).length);
   if (pr && pr.properties) railSetCount("properties", pr.properties.length);
@@ -260,7 +260,14 @@ function applyRailWidth() {
 }
 
 function route() {
-  const h = normHash(location.hash);
+  let h = normHash(location.hash);
+  // legacy redirect: #/todos and #/todos/<id> were renamed to #/tasks. Keep
+  // old bookmarks, feed actHrefs, and panel deep-links working.
+  if (h === "#/todos" || h.startsWith("#/todos/")) {
+    h = "#/tasks" + h.slice("#/todos".length);
+    _navInternal = true;
+    try { history.replaceState(null, "", h); } catch (e) {}
+  }
   if (h !== _curHash) {
     if (_navInternal) _navInternal = false;
     else { uiHistory.push(_curHash); uiForward.length = 0; }
@@ -275,7 +282,7 @@ function route() {
   // after the last non-note route, and note routes never overwrite.
   if (!h.startsWith("#/note/") && !h.startsWith("#/artifact/")) _noteReturn = h === "#/" ? "#/" : h;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
-  const todosTab = h === "#/todos" || h.startsWith("#/todos/");
+  const todosTab = h === "#/tasks" || h.startsWith("#/tasks/");
   const cal = h === "#/calendar";
   const fd = h === "#/feed";
   const chat = h === "#/chat" || h.startsWith("#/chat/");
@@ -329,7 +336,7 @@ function route() {
     else loadGoals(suffix);
   }
   else if (todosTab) { // the third surface — `to do.md` board (+ panel deep link)
-    if (h.startsWith("#/todos/")) todoDeepLink = decodeURIComponent(h.slice("#/todos/".length));
+    if (h.startsWith("#/tasks/")) todoDeepLink = decodeURIComponent(h.slice("#/tasks/".length));
     loadTodos();
   }
   else if (cal) loadCalendar();
