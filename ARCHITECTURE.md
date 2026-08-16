@@ -32,7 +32,7 @@ signals for a new area of life) should fall, not rise.
 
 1. **Knowledge zone** (vault, outside `system/`) — the owner's authored
    thought. The app reads; it writes only the user's explicit edits, only
-   inside delimited regions or files the user owns (goals.md, to do.md,
+   inside delimited regions or files the user owns (goals.md, tasks.md,
    daily blocks) and their app-maintained history peers (`goals
    <quarter>.md`, `to do archive.md`, `.pre-*` backups — append/archive
    sweeps of the owner's own lines, never new content). No AI-authored
@@ -86,9 +86,9 @@ proposal). One enforcement point, byte-contract tested, with an append-only
 audit log in dataDir. Every write is an explicit user action or a
 user-approved proposal; agents (EA, spirits) only ever *propose*, through
 the approvals inbox. No package writes vault files directly — the
-KNOWLEDGE ZONE INCLUDED: goals.md, to do.md, daily notes, and archives
+KNOWLEDGE ZONE INCLUDED: goals.md, tasks.md, daily notes, and archives
 route through the chokepoint under a knowledge-zone capability, no
-exemptions (decided 2026-07-28; goals/todos/daily's direct writers predate
+exemptions (decided 2026-07-28; goals/tasks/daily's direct writers predate
 the boundary and are scheduled for the kernel-extraction pass).
 
 ## 5. Attention taxonomy (closed set)
@@ -101,7 +101,7 @@ of exactly four kinds, each with a declared lifecycle behind a single
   the tune loop; may be saved to vault.
 * **signals** — app-derived conditions; virtual; auto-clear on resolution;
   Act/Snooze/Dismiss; never enter kept/discarded. A signal card MAY carry
-  domain quick-actions that resolve its condition (e.g. a stale todo's
+  domain quick-actions that resolve its condition (e.g. a stale task's
   Done/Waiting/→issue/Drop) — those are domain writes, not lifecycle
   verbs; auto-clear still governs. (Clarified 2026-07-28.)
 * **notices** — externally-sourced portal items; dismiss; expire (14d);
@@ -191,7 +191,7 @@ Passes that discover a conflict between code and this file fix the code or
 propose an amendment — never silently diverge.
 
 **2026-08-15 — assign-to-agent plan lane (standing-consent materialization).**
-Owner decision (todo-panel plan, approved 2026-08-15): assigning a todo to an
+Owner decision (todo-panel plan, approved 2026-08-15): assigning a task to an
 agent is standing approval for materializing that agent's plan output into
 `system/todo-plans/<todo-id>.md` (`## plan` section only), through vaultwriter
 under the `todo-plans-agent` capability. Execution beyond the plan still
@@ -201,7 +201,7 @@ system-zone write, the write is a surgical section swap so hand-edits to the
 rest of the record never collide, and the human-is-the-mutex doctrine holds
 because fire snapshots the plan bytes at fire time.
 *Amended 2026-08-16 (persona plan Q3, owner-resolved 2026-08-15): the standing
-consent covers system-initiated re-materialization — when the todo's text or
+consent covers system-initiated re-materialization — when the task's text or
 description changes under an agent-held plan, manifest may spool a re-plan
 without a per-replacement approval; the replacement still lands audited,
 section-swapped, and traced as a thread comment. Fire semantics unchanged.*
