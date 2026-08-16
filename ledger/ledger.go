@@ -28,7 +28,7 @@ type Entry struct {
 	Source  string         `json:"source"`            // "thread" | "chat" | "run" | "plan"
 	Kind    string         `json:"kind"`              // see the package vocabulary
 	Actor   string         `json:"actor"`             // "owner" | "agent:hermes" | "system" | spirit name
-	Todo    string         `json:"todo,omitempty"`    // composite todo id
+	Task    string         `json:"todo,omitempty"`    // composite todo id
 	Session string         `json:"session,omitempty"` // chat session id
 	Run     string         `json:"run,omitempty"`     // run id
 	Harness string         `json:"harness,omitempty"`

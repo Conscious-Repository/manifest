@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"manifest/spirits"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 func testWriteAbs(abs string, data []byte) error { return os.WriteFile(abs, data, 0o644) }
@@ -19,11 +19,11 @@ func assignFixture(t *testing.T) (*Server, string) {
 	t.Helper()
 	srv, vault := panelFixture(t)
 	dir := t.TempDir()
-	st := todos.NewStore(dir, "to do.md", testWriteAbs)
+	st := tasks.NewStore(dir, "to do.md", testWriteAbs)
 	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] wire the fence [added:: 2026-08-14]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	srv.todosStore = st
+	srv.tasksStore = st
 	// hermes needs a real spirits store — assignment spools the plan-phase
 	// work order into it (Phase 4)
 	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes", Spirits: spirits.NewStore(t.TempDir())}})
@@ -53,7 +53,7 @@ func TestAssignFlow(t *testing.T) {
 	post := func(body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("POST", "/api/todos/assign", strings.NewReader(body))
 		w := httptest.NewRecorder()
-		srv.handleTodoAssign(w, req)
+		srv.handleTaskAssign(w, req)
 		return w
 	}
 	// unknown agent → 400, nothing written
@@ -64,7 +64,7 @@ func TestAssignFlow(t *testing.T) {
 	if w := post(`{"id":"inbox/wire-the-fence","owner":"agent:hermes"}`); w.Code != 200 {
 		t.Fatalf("assign: %d %s", w.Code, w.Body.String())
 	}
-	raw, _ := os.ReadFile(srv.todosStore.Path())
+	raw, _ := os.ReadFile(srv.tasksStore.Path())
 	if !strings.Contains(string(raw), "[todo:: inbox/wire-the-fence]") {
 		t.Fatalf("assign must pin identity:\n%s", raw)
 	}
@@ -83,12 +83,12 @@ func TestAssignFlow(t *testing.T) {
 	if w := post(`{"id":"inbox/wire-the-fence","owner":"RT"}`); w.Code != 200 {
 		t.Fatalf("person assign: %d %s", w.Code, w.Body.String())
 	}
-	raw, _ = os.ReadFile(srv.todosStore.Path())
+	raw, _ = os.ReadFile(srv.tasksStore.Path())
 	if !strings.Contains(string(raw), "[owner:: RT]") {
 		t.Fatalf("person owner must land:\n%s", raw)
 	}
 	// the record file survives both writes with sections intact
-	if _, err := os.Stat(filepath.Join(srv.todosStore.Path())); err != nil {
+	if _, err := os.Stat(filepath.Join(srv.tasksStore.Path())); err != nil {
 		t.Fatal(err)
 	}
 }

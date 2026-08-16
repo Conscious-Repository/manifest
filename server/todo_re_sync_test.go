@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"manifest/aion"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // TestReBacklogSync — owner report 2026-08-15: RE backlog tasks (the AION
@@ -17,11 +17,11 @@ import (
 func TestReBacklogSync(t *testing.T) {
 	srv, vault := panelFixture(t)
 	dir := t.TempDir()
-	st := todos.NewStore(dir, "to do.md", testWriteAbs)
+	st := tasks.NewStore(dir, "to do.md", testWriteAbs)
 	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] personal thing [added:: 2026-08-14]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	srv.todosStore = st
+	srv.tasksStore = st
 
 	mk := func(root string) *aion.Store {
 		if err := os.MkdirAll(filepath.Join(vault, filepath.FromSlash(root)), 0o755); err != nil {
@@ -38,7 +38,7 @@ func TestReBacklogSync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	doc, _ := srv.todosStore.Load()
+	doc, _ := srv.tasksStore.Load()
 	rows := srv.unifiedRows(doc, time.Now())
 	var reRow, aionRow *unifiedRow
 	for i := range rows {
@@ -57,10 +57,10 @@ func TestReBacklogSync(t *testing.T) {
 	}
 
 	// write routing parity: pin resolves, owner patch lands, check closes
-	if _, ok := srv.pinTodoID(reRow.ID); !ok {
+	if _, ok := srv.pinTaskID(reRow.ID); !ok {
 		t.Fatal("re: id must pin/resolve")
 	}
-	if err := srv.setTodoOwner(reRow.ID, "agent:hermes"); err != nil {
+	if err := srv.setTaskOwner(reRow.ID, "agent:hermes"); err != nil {
 		t.Fatalf("owner patch: %v", err)
 	}
 	bare := strings.TrimPrefix(reRow.ID, "re:")
@@ -74,7 +74,7 @@ func TestReBacklogSync(t *testing.T) {
 	if err := store.UpdateItem(bare, map[string]string{"status": aion.StatusDone}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	doc, _ = srv.todosStore.Load()
+	doc, _ = srv.tasksStore.Load()
 	for _, r := range srv.unifiedRows(doc, time.Now()) {
 		if r.ID == reRow.ID {
 			t.Fatalf("done RE item must leave the board: %+v", r)

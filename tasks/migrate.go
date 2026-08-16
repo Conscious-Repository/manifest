@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"os"
@@ -43,7 +43,7 @@ func (s *Store) Migrate(now time.Time, areas []string) (bool, error) {
 			return
 		}
 		dom := d.EnsureDomain(domain)
-		dom.Todos = append(dom.Todos, &Todo{Text: text, Added: today})
+		dom.Tasks = append(dom.Tasks, &Task{Text: text, Added: today})
 	}
 	// group name → (domain, prefix); unmatched groups land in the Inbox
 	groupOf := func(name string) (string, string) {

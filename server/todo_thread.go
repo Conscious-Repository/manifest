@@ -47,15 +47,15 @@ func (s *Server) UseThreads(private, re *threads.Store, aionTeam *teamportal.Sto
 }
 
 // threadKind classifies a todo id for routing: "aion" | "re" | "private".
-func (s *Server) threadKind(todoID string) string {
+func (s *Server) threadKind(taskID string) string {
 	if s.threads == nil {
 		return "private"
 	}
-	if strings.HasPrefix(todoID, "aion:") && s.threads.aion != nil {
+	if strings.HasPrefix(taskID, "aion:") && s.threads.aion != nil {
 		return "aion"
 	}
-	if (strings.HasPrefix(todoID, "prop:") || strings.HasPrefix(todoID, "re:") ||
-		strings.HasPrefix(todoID, "real-estate/")) && s.threads.re != nil {
+	if (strings.HasPrefix(taskID, "prop:") || strings.HasPrefix(taskID, "re:") ||
+		strings.HasPrefix(taskID, "real-estate/")) && s.threads.re != nil {
 		return "re"
 	}
 	return "private"
@@ -108,12 +108,12 @@ func visibleThread(in []threads.Comment) []threads.Comment {
 // the private structural trail (assign/plan/fire/result) — the panel shows
 // the whole conversation (owner report 2026-08-15: the trail was invisible
 // on team todos).
-func (s *Server) listThread(todoID string) []threads.Comment {
+func (s *Server) listThread(taskID string) []threads.Comment {
 	if s.threads == nil {
 		return nil
 	}
-	if s.threadKind(todoID) == "aion" {
-		item := strings.TrimPrefix(todoID, "aion:")
+	if s.threadKind(taskID) == "aion" {
+		item := strings.TrimPrefix(taskID, "aion:")
 		var out []threads.Comment
 		for _, c := range s.threads.aion.Ext().Comments[item] {
 			files := make([]threads.FileRef, 0, len(c.Files))
@@ -121,30 +121,30 @@ func (s *Server) listThread(todoID string) []threads.Comment {
 				files = append(files, threads.FileRef{Hash: f.Hash, Name: f.Name, Size: f.Size, Mime: f.Mime})
 			}
 			out = append(out, threads.Comment{
-				ID: c.ID, TodoID: todoID, Action: threads.ActComment,
+				ID: c.ID, TaskID: taskID, Action: threads.ActComment,
 				Author: c.Author, AuthorName: c.AuthorName,
 				Text: c.Text, Files: files, At: c.At,
 			})
 		}
 		if s.threads.private != nil {
-			out = append(out, visibleThread(s.threads.private.Thread(todoID))...)
+			out = append(out, visibleThread(s.threads.private.Thread(taskID))...)
 		}
 		sort.SliceStable(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
 		return out
 	}
-	return visibleThread(s.threadStore(s.threadKind(todoID)).Thread(todoID))
+	return visibleThread(s.threadStore(s.threadKind(taskID)).Thread(taskID))
 }
 
 // addThreadEntry routes one entry to the right store. Structural actions
 // (assign/plan/fire/result) always land in the threads-shaped store — for
 // aion todos the TEXT of plain comments goes team-visible via teamportal,
 // structural entries stay in the private machine trail.
-func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text string, mentions []string, files []threads.FileRef, meta map[string]any) (threads.Comment, error) {
+func (s *Server) addThreadEntry(author threads.Identity, taskID, action, text string, mentions []string, files []threads.FileRef, meta map[string]any) (threads.Comment, error) {
 	now := time.Now()
 	if s.threads == nil {
 		return threads.Comment{}, errBadRequest("threads not configured")
 	}
-	if s.threadKind(todoID) == "aion" && action == threads.ActComment {
+	if s.threadKind(taskID) == "aion" && action == threads.ActComment {
 		pf := make([]teamportal.FileRef, 0, len(files))
 		for _, f := range files {
 			pf = append(pf, teamportal.FileRef{Hash: f.Hash, Name: f.Name, Size: f.Size, Mime: f.Mime})
@@ -155,32 +155,32 @@ func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text st
 		if strings.HasPrefix(author.ID, "agent:") {
 			actor = teamportal.Identity{Email: author.ID, Name: author.Name}
 		}
-		c, err := s.threads.aion.AddCommentWithFiles(actor, strings.TrimPrefix(todoID, "aion:"), text, pf, now)
+		c, err := s.threads.aion.AddCommentWithFiles(actor, strings.TrimPrefix(taskID, "aion:"), text, pf, now)
 		if err != nil {
 			return threads.Comment{}, err
 		}
 		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
-			Actor: author.ID, Todo: todoID, Text: ledger.Snip(text, 280)})
-		return threads.Comment{ID: c.ID, TodoID: todoID, Action: threads.ActComment,
+			Actor: author.ID, Task: taskID, Text: ledger.Snip(text, 280)})
+		return threads.Comment{ID: c.ID, TaskID: taskID, Action: threads.ActComment,
 			Author: c.Author, AuthorName: c.AuthorName, Text: c.Text, Files: files, At: c.At}, nil
 	}
-	kind := s.threadKind(todoID)
+	kind := s.threadKind(taskID)
 	if kind == "aion" {
 		kind = "private" // structural trail for aion todos stays private
 	}
-	c, err := s.threadStore(kind).Add(author, todoID, action, text, mentions, files, meta, now)
+	c, err := s.threadStore(kind).Add(author, taskID, action, text, mentions, files, meta, now)
 	if err == nil && !isMarker(c) {
 		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
-			Actor: author.ID, Todo: todoID, Text: ledger.Snip(text, 280)})
+			Actor: author.ID, Task: taskID, Text: ledger.Snip(text, 280)})
 	}
 	return c, err
 }
 
 // --- assignment (todo-panel plan Phase 3) ------------------------------------
 
-// setTodoOwner patches the owner field in the todo's SOURCE file (the
-// non-HTTP three-way sibling of handleTodoUpdate's owner patch).
-func (s *Server) setTodoOwner(id, owner string) error {
+// setTaskOwner patches the owner field in the todo's SOURCE file (the
+// non-HTTP three-way sibling of handleTaskUpdate's owner patch).
+func (s *Server) setTaskOwner(id, owner string) error {
 	switch {
 	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
 		store, bare, ok := s.backlogStoreFor(id)
@@ -193,7 +193,7 @@ func (s *Server) setTodoOwner(id, owner string) error {
 		if slug == "" {
 			return errBadRequest("malformed property todo id")
 		}
-		list, rel, ok := s.realestate.LoadTodos(slug)
+		list, rel, ok := s.realestate.LoadTasks(slug)
 		if !ok {
 			return errBadRequest("property not found")
 		}
@@ -202,7 +202,7 @@ func (s *Server) setTodoOwner(id, owner string) error {
 			return errBadRequest("todo not found")
 		}
 		t.Owner = owner
-		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(list)); err != nil {
+		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(list)); err != nil {
 			return err
 		}
 		if s.index != nil {
@@ -210,7 +210,7 @@ func (s *Server) setTodoOwner(id, owner string) error {
 		}
 		return nil
 	default:
-		doc, err := s.todosStore.Load()
+		doc, err := s.tasksStore.Load()
 		if err != nil {
 			return err
 		}
@@ -219,18 +219,18 @@ func (s *Server) setTodoOwner(id, owner string) error {
 			return errBadRequest("todo not found")
 		}
 		t.Owner = owner
-		return s.todosStore.Save(doc)
+		return s.tasksStore.Save(doc)
 	}
 }
 
-// assignTodo — the uniform assignee write core: pins identity, ensures the
+// assignTask — the uniform assignee write core: pins identity, ensures the
 // plan record (assignee in frontmatter), patches [owner::] in the source
 // file, logs the replayable `assign` thread action ATTRIBUTED to the actor
 // (a portal member's assign shows their name, not the owner's), and — when
 // the token carries the hard `agent:` prefix (validated against the roster;
 // unknown → error) — kicks the plan-phase delegation (§12 lane entry point).
 // Returns the pinned id.
-func (s *Server) assignTodo(actor threads.Identity, rawID, owner string) (string, error) {
+func (s *Server) assignTask(actor threads.Identity, rawID, owner string) (string, error) {
 	owner = strings.TrimSpace(owner)
 	harness := ""
 	if strings.HasPrefix(owner, "agent:") {
@@ -242,11 +242,11 @@ func (s *Server) assignTodo(actor threads.Identity, rawID, owner string) (string
 			return "", errBadRequest("unknown agent " + owner + " — only configured harnesses are assignable")
 		}
 	}
-	id, ok := s.pinTodoID(strings.TrimSpace(rawID))
+	id, ok := s.pinTaskID(strings.TrimSpace(rawID))
 	if !ok {
 		return "", errBadRequest("todo not found")
 	}
-	if err := s.setTodoOwner(id, owner); err != nil {
+	if err := s.setTaskOwner(id, owner); err != nil {
 		return "", err
 	}
 	if err := s.setPlanAssignee(id, owner); err != nil {
@@ -265,13 +265,13 @@ func (s *Server) assignTodo(actor threads.Identity, rawID, owner string) (string
 	return id, nil
 }
 
-func (s *Server) handleTodoAssign(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskAssign(w http.ResponseWriter, r *http.Request) {
 	var b struct{ ID, Owner string }
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	id, err := s.assignTodo(s.ownerIdentity(), b.ID, b.Owner)
+	id, err := s.assignTask(s.ownerIdentity(), b.ID, b.Owner)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -281,7 +281,7 @@ func (s *Server) handleTodoAssign(w http.ResponseWriter, r *http.Request) {
 
 // --- endpoints ---------------------------------------------------------------
 
-func (s *Server) handleTodoThreadGet(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskThreadGet(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	if id == "" {
 		httpError(w, errBadRequest("id is required"))
@@ -290,11 +290,11 @@ func (s *Server) handleTodoThreadGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"thread": s.listThread(id)})
 }
 
-// handleTodoThreadPost adds a comment. The composer uploads files first
-// (handleTodoThreadFile) and posts their refs here. Mentions are structural
+// handleTaskThreadPost adds a comment. The composer uploads files first
+// (handleTaskThreadFile) and posts their refs here. Mentions are structural
 // roster tokens (typeahead-inserted — no new syntax); a mentioned agent
 // triggers the comment-phase spool (Phase 4 hook).
-func (s *Server) handleTodoThreadPost(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		ID, Text string
 		Mentions []string
@@ -304,7 +304,7 @@ func (s *Server) handleTodoThreadPost(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	id, ok := s.pinTodoID(strings.TrimSpace(b.ID))
+	id, ok := s.pinTaskID(strings.TrimSpace(b.ID))
 	if !ok {
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return
@@ -325,8 +325,8 @@ func (s *Server) handleTodoThreadPost(w http.ResponseWriter, r *http.Request) {
 //   - unassigned todo + an agent MENTION: auto-assign to that agent and relay
 //     the comment as the opening ask.
 //   - mentioned people stay record-only.
-func (s *Server) threadDialogHook(todoID string, mentions []string, text string) {
-	rec := s.readPlanRecord(todoID)
+func (s *Server) threadDialogHook(taskID string, mentions []string, text string) {
+	rec := s.readPlanRecord(taskID)
 	// an intent may ride a mention token (agent:hermes::brief) — per-message,
 	// never per-assignment; the owner field only ever holds the base token
 	intent, mentionBase := "", ""
@@ -338,49 +338,49 @@ func (s *Server) threadDialogHook(todoID string, mentions []string, text string)
 		}
 	}
 	if harness := s.agentHarness(rec.Assignee); harness != "" {
-		s.relayToAgent(todoID, harness, text, intent)
+		s.relayToAgent(taskID, harness, text, intent)
 		return
 	}
 	if mentionBase != "" {
-		s.autoAssignAgent(todoID, mentionBase, s.agentHarness(mentionBase), text, intent)
+		s.autoAssignAgent(taskID, mentionBase, s.agentHarness(mentionBase), text, intent)
 	}
 }
 
 // relayToAgent forwards an owner comment as a work order (comment-phase, or
 // plan-phase when the ::plan intent asks for a draft) and writes the relay
 // marker; ErrAlreadyActive is tolerated (sweep retries).
-func (s *Server) relayToAgent(todoID, harness, text, intent string) {
-	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, personaPhase(intent), text, intent)
+func (s *Server) relayToAgent(taskID, harness, text, intent string) {
+	err := s.spoolTaskWorkOrder(s.findHarness(harness), taskID, personaPhase(intent), text, intent)
 	if err == nil {
-		s.markerAdd(todoID, threads.ActRelay, "")
+		s.markerAdd(taskID, threads.ActRelay, "")
 	}
 }
 
 // autoAssignAgent — a work-requesting mention on an unassigned todo assigns
 // it (full lifecycle engages) with the comment as the opening ask.
-func (s *Server) autoAssignAgent(todoID, ownerToken, harness, text, intent string) {
-	_ = s.setTodoOwner(todoID, ownerToken)
-	_ = s.setPlanAssignee(todoID, ownerToken)
-	_, _ = s.addThreadEntry(s.ownerIdentity(), todoID, threads.ActAssign,
+func (s *Server) autoAssignAgent(taskID, ownerToken, harness, text, intent string) {
+	_ = s.setTaskOwner(taskID, ownerToken)
+	_ = s.setPlanAssignee(taskID, ownerToken)
+	_, _ = s.addThreadEntry(s.ownerIdentity(), taskID, threads.ActAssign,
 		"assigned to "+ownerToken+" (mentioned)", nil, nil, map[string]any{"assignee": ownerToken})
-	s.relayToAgent(todoID, harness, text, intent)
+	s.relayToAgent(taskID, harness, text, intent)
 }
 
 // assignAgentHook: an explicit assignment (no comment) spools the PLAN-phase
 // work order — the §12 lane's entry point. Assignment IS the draft-plan
 // intent, so the `plan` persona rides along when seeded and enabled (the
 // spool degrades to today's request when it isn't). Execution waits for fire.
-func (s *Server) assignAgentHook(todoID, harness string) error {
-	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "plan", "", "plan")
+func (s *Server) assignAgentHook(taskID, harness string) error {
+	err := s.spoolTaskWorkOrder(s.findHarness(harness), taskID, "plan", "", "plan")
 	if errors.Is(err, spirits.ErrAlreadyActive) {
 		return nil // already out planning — the state chip says so
 	}
 	return err
 }
 
-// handleTodoThreadFile stores one attachment blob (raw body) and returns its
+// handleTaskThreadFile stores one attachment blob (raw body) and returns its
 // content-addressed ref — the composer attaches refs on the comment POST.
-func (s *Server) handleTodoThreadFile(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskThreadFile(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if id == "" || name == "" {
@@ -405,8 +405,8 @@ func (s *Server) handleTodoThreadFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "file": ref})
 }
 
-// handleTodoThreadBlob serves a stored attachment.
-func (s *Server) handleTodoThreadBlob(w http.ResponseWriter, r *http.Request) {
+// handleTaskThreadBlob serves a stored attachment.
+func (s *Server) handleTaskThreadBlob(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	hash := r.PathValue("hash")
 	if s.threads == nil {

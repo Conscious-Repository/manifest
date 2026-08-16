@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"regexp"
@@ -69,9 +69,9 @@ func Parse(raw string) *Doc {
 			case modeBacklog:
 				cur.Backlog = append(cur.Backlog, line) // checkboxes in backlog stay verbatim
 			case modeBucket:
-				bucket.Todos = append(bucket.Todos, parseTodo(m[2] != " ", m[3]))
+				bucket.Tasks = append(bucket.Tasks, parseTask(m[2] != " ", m[3]))
 			default:
-				cur.Todos = append(cur.Todos, parseTodo(m[2] != " ", m[3]))
+				cur.Tasks = append(cur.Tasks, parseTask(m[2] != " ", m[3]))
 			}
 			continue
 		}
@@ -113,8 +113,8 @@ func parseBucketHeading(head string) *Bucket {
 	return b
 }
 
-func parseTodo(checked bool, rest string) *Todo {
-	t := &Todo{Checked: checked}
+func parseTask(checked bool, rest string) *Task {
+	t := &Task{Checked: checked}
 	rest = waitingLinkRe.ReplaceAllStringFunc(rest, func(m string) string {
 		t.Waiting = strings.TrimSpace(waitingLinkRe.FindStringSubmatch(m)[1])
 		return ""

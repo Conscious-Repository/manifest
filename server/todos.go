@@ -11,27 +11,27 @@ import (
 	"manifest/goals"
 	"manifest/realestate"
 	"manifest/record"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // TODOS — the third surface (todos-surface-scope): everything that must
 // happen but drives no vision. `to do.md` is truth; every handler is
 // load → mutate → save → respond with the fresh view (goals `mutate` idiom).
 
-func (s *Server) UseTodos(st *todos.Store) { s.todosStore = st }
+func (s *Server) UseTasks(st *tasks.Store) { s.tasksStore = st }
 
-func (s *Server) todosOK(w http.ResponseWriter) bool {
-	if s.todosStore == nil {
+func (s *Server) tasksOK(w http.ResponseWriter) bool {
+	if s.tasksStore == nil {
 		http.Error(w, "todos not available", http.StatusServiceUnavailable)
 		return false
 	}
 	return true
 }
 
-// todosView is the board payload: the doc + the shared area vocabulary
+// tasksView is the board payload: the doc + the shared area vocabulary
 // (live goals areas — one list, never two).
-func (s *Server) todosView() map[string]any {
-	doc, err := s.todosStore.Load()
+func (s *Server) tasksView() map[string]any {
+	doc, err := s.tasksStore.Load()
 	if err != nil {
 		return map[string]any{"domains": []any{}, "areas": []any{}}
 	}
@@ -51,13 +51,13 @@ func (s *Server) todosView() map[string]any {
 	return out
 }
 
-// pinTodoID freezes a todo's identity BEFORE any panel artifact (description,
+// pinTaskID freezes a todo's identity BEFORE any panel artifact (description,
 // plan, thread, assignment) keys on it (plan D1). Personal and property ids
 // are text-derived — they change when the text is edited — so the first
 // enrichment pins the current id as an explicit [todo:: id] in the source
 // file. Aion ids are already stable. Idempotent; returns the id unchanged and
 // whether it resolved to a real todo.
-func (s *Server) pinTodoID(id string) (string, bool) {
+func (s *Server) pinTaskID(id string) (string, bool) {
 	switch {
 	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
 		store, bare, okb := s.backlogStoreFor(id)
@@ -75,12 +75,12 @@ func (s *Server) pinTodoID(id string) (string, bool) {
 		if slug == "" {
 			return id, false
 		}
-		return id, s.propTodoPin(slug, lineID)
+		return id, s.propTaskPin(slug, lineID)
 	default:
-		if s.todosStore == nil {
+		if s.tasksStore == nil {
 			return id, false
 		}
-		doc, err := s.todosStore.Load()
+		doc, err := s.tasksStore.Load()
 		if err != nil {
 			return id, false
 		}
@@ -94,12 +94,12 @@ func (s *Server) pinTodoID(id string) (string, bool) {
 		if !doc.Promote(id) {
 			return id, false
 		}
-		return id, s.todosStore.Save(doc) == nil
+		return id, s.tasksStore.Save(doc) == nil
 	}
 }
 
-func (s *Server) todosMutate(w http.ResponseWriter, fn func(*todos.Doc) (bool, error)) {
-	doc, err := s.todosStore.Load()
+func (s *Server) tasksMutate(w http.ResponseWriter, fn func(*tasks.Doc) (bool, error)) {
+	doc, err := s.tasksStore.Load()
 	if err != nil {
 		httpError(w, err)
 		return
@@ -113,27 +113,27 @@ func (s *Server) todosMutate(w http.ResponseWriter, fn func(*todos.Doc) (bool, e
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return
 	}
-	if err := s.todosStore.Save(doc); err != nil {
+	if err := s.tasksStore.Save(doc); err != nil {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, s.todosView())
+	writeJSON(w, s.tasksView())
 }
 
-func (s *Server) handleTodosGet(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+func (s *Server) handleTasksGet(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
-	_, _ = s.todosStore.Sweep(time.Now()) // keep the live file lean on every read
-	writeJSON(w, s.todosView())
+	_, _ = s.tasksStore.Sweep(time.Now()) // keep the live file lean on every read
+	writeJSON(w, s.tasksView())
 }
 
-// handleTodoAdd — quick capture: one line + a domain (blank → Inbox), with
+// handleTaskAdd — quick capture: one line + a domain (blank → Inbox), with
 // optional tethers/placement: [rock::]/[issue::] and/or a bucket. ≤2s.
 // Stage 4: a Container can target a property or the aion backlog directly —
 // the line lands in THAT file (never a parallel copy here).
-func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct {
@@ -147,15 +147,15 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	switch b.Container.Kind {
 	case "property":
-		if s.propTodoMutate(w, b.Container.Slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
-			return list.Append(&todos.Todo{
+		if s.propTaskMutate(w, b.Container.Slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
+			return list.Append(&tasks.Task{
 				Text:  strings.Join(strings.Fields(b.Text), " "),
 				Owner: strings.TrimSpace(b.Owner),
 				Stage: strings.TrimSpace(b.Stage),
 				Added: time.Now().Format("2006-01-02"),
 			}), true, nil
 		}) {
-			writeJSON(w, s.todosView())
+			writeJSON(w, s.tasksView())
 		}
 		return
 	case "aion", "re":
@@ -177,16 +177,16 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		writeJSON(w, s.todosView())
+		writeJSON(w, s.tasksView())
 		return
 	}
 	domain := strings.TrimSpace(b.Domain)
 	if domain == "" {
-		domain = todos.InboxName
+		domain = tasks.InboxName
 	}
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		dom := d.EnsureDomain(domain)
-		t := &todos.Todo{
+		t := &tasks.Task{
 			Text:  strings.Join(strings.Fields(b.Text), " "),
 			Rock:  strings.TrimSpace(b.Rock),
 			Stage: strings.TrimSpace(b.Stage),
@@ -196,9 +196,9 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 		}
 		if bk := strings.TrimSpace(b.Bucket); bk != "" {
 			bucket := dom.EnsureBucket(bk)
-			bucket.Todos = append(bucket.Todos, t)
+			bucket.Tasks = append(bucket.Tasks, t)
 		} else {
-			dom.Todos = append(dom.Todos, t)
+			dom.Tasks = append(dom.Tasks, t)
 		}
 		return true, nil
 	})
@@ -210,7 +210,7 @@ func (s *Server) handleTodoAdd(w http.ResponseWriter, r *http.Request) {
 // handleBucketRename — edit a bucket's display name in place; its slug pins
 // so links and board references survive.
 func (s *Server) handleBucketRename(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct{ Domain, Slug, Name string }
@@ -218,7 +218,7 @@ func (s *Server) handleBucketRename(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("domain, slug, and name are required"))
 		return
 	}
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		dom := d.Domain(b.Domain)
 		if dom == nil {
 			return false, nil
@@ -235,7 +235,7 @@ func (s *Server) handleBucketRename(w http.ResponseWriter, r *http.Request) {
 
 // handleIssueAdd — a decision/blocker under the domain's ### issues.
 func (s *Server) handleIssueAdd(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct{ Text, Domain string }
@@ -243,9 +243,9 @@ func (s *Server) handleIssueAdd(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("text and domain are required"))
 		return
 	}
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		dom := d.EnsureDomain(strings.TrimSpace(b.Domain))
-		dom.Issues = append(dom.Issues, &todos.Issue{
+		dom.Issues = append(dom.Issues, &tasks.Issue{
 			Text:  strings.Join(strings.Fields(b.Text), " "),
 			Added: time.Now().Format("2006-01-02"),
 		})
@@ -256,7 +256,7 @@ func (s *Server) handleIssueAdd(w http.ResponseWriter, r *http.Request) {
 // handleIssueResolve — resolving = checking with a one-line resolution note
 // (the sweep archives it later; nothing is deleted).
 func (s *Server) handleIssueResolve(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct{ ID, Resolution string }
@@ -268,7 +268,7 @@ func (s *Server) handleIssueResolve(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("a one-line resolution is required"))
 		return
 	}
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		_, is := d.FindIssue(b.ID)
 		if is == nil {
 			return false, nil
@@ -280,11 +280,11 @@ func (s *Server) handleIssueResolve(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleIssueToTodo — the reverse conversion: an issue becomes a plain task
+// handleIssueToTask — the reverse conversion: an issue becomes a plain task
 // line (optionally tethered to a rock/stage in the same motion — the goals
 // outline's "→ rock…" on an unanchored issue). Explicit user action.
-func (s *Server) handleIssueToTodo(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+func (s *Server) handleIssueToTask(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct{ ID, Rock, Stage string }
@@ -293,19 +293,19 @@ func (s *Server) handleIssueToTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var movedRock string
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		dom, is := d.FindIssue(b.ID)
 		if is == nil {
 			return false, nil
 		}
-		var keep []*todos.Issue
+		var keep []*tasks.Issue
 		for _, o := range dom.Issues {
 			if o != is {
 				keep = append(keep, o)
 			}
 		}
 		dom.Issues = keep
-		t := &todos.Todo{
+		t := &tasks.Task{
 			Text:  is.Text,
 			Added: is.Added,
 			Rock:  strings.TrimSpace(b.Rock),
@@ -315,7 +315,7 @@ func (s *Server) handleIssueToTodo(w http.ResponseWriter, r *http.Request) {
 			t.Added = time.Now().Format("2006-01-02")
 		}
 		movedRock = t.Rock
-		dom.Todos = append(dom.Todos, t)
+		dom.Tasks = append(dom.Tasks, t)
 		return true, nil
 	})
 	if movedRock != "" {
@@ -323,10 +323,10 @@ func (s *Server) handleIssueToTodo(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleTodoToIssue — the stale card's `→ issue` conversion: the line moves
+// handleTaskToIssue — the stale card's `→ issue` conversion: the line moves
 // under ### issues with an auto id (explicit user action, never automatic).
-func (s *Server) handleTodoToIssue(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+func (s *Server) handleTaskToIssue(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct{ ID string }
@@ -334,21 +334,21 @@ func (s *Server) handleTodoToIssue(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		dom, t := d.Find(b.ID)
 		if t == nil {
 			return false, nil
 		}
-		removeTodo(dom, t)
-		dom.Issues = append(dom.Issues, &todos.Issue{Text: t.Text, Added: t.Added})
+		removeTask(dom, t)
+		dom.Issues = append(dom.Issues, &tasks.Issue{Text: t.Text, Added: t.Added})
 		return true, nil
 	})
 }
 
-// removeTodo pulls a todo out of its domain (loose or bucket).
-func removeTodo(dom *todos.Domain, t *todos.Todo) {
-	filter := func(list []*todos.Todo) []*todos.Todo {
-		var keep []*todos.Todo
+// removeTask pulls a todo out of its domain (loose or bucket).
+func removeTask(dom *tasks.Domain, t *tasks.Task) {
+	filter := func(list []*tasks.Task) []*tasks.Task {
+		var keep []*tasks.Task
 		for _, o := range list {
 			if o != t {
 				keep = append(keep, o)
@@ -356,15 +356,15 @@ func removeTodo(dom *todos.Domain, t *todos.Todo) {
 		}
 		return keep
 	}
-	dom.Todos = filter(dom.Todos)
+	dom.Tasks = filter(dom.Tasks)
 	for _, b := range dom.Buckets {
-		b.Todos = filter(b.Todos)
+		b.Tasks = filter(b.Tasks)
 	}
 }
 
-// handleTodoCheck — done/undone (stamps [done::], the sweep key).
-func (s *Server) handleTodoCheck(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+// handleTaskCheck — done/undone (stamps [done::], the sweep key).
+func (s *Server) handleTaskCheck(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct {
@@ -378,15 +378,15 @@ func (s *Server) handleTodoCheck(w http.ResponseWriter, r *http.Request) {
 	// composite ids route to the owning file (stage 4): completed anywhere =
 	// completed everywhere, because there is only one line in one file.
 	if strings.HasPrefix(b.ID, "prop:") {
-		s.propTodoCheck(w, b.ID, b.Checked)
+		s.propTaskCheck(w, b.ID, b.Checked)
 		return
 	}
 	if strings.HasPrefix(b.ID, "aion:") || strings.HasPrefix(b.ID, "re:") {
-		s.backlogTodoCheck(w, b.ID, b.Checked)
+		s.backlogTaskCheck(w, b.ID, b.Checked)
 		return
 	}
 	var rockID string
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		_, t := d.Find(b.ID)
 		if t == nil {
 			return false, nil
@@ -428,9 +428,9 @@ func (s *Server) currentStageName(rockID string) string {
 	return ""
 }
 
-// handleTodoUpdate — edit text, move domain, set/clear waiting.
-func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+// handleTaskUpdate — edit text, move domain, set/clear waiting.
+func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct {
@@ -452,7 +452,7 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("malformed property todo id"))
 			return
 		}
-		if s.propTodoMutate(w, slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+		if s.propTaskMutate(w, slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
 			t := list.Find(lineID)
 			if t == nil {
 				return list, false, nil
@@ -486,7 +486,7 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			return list, true, nil
 		}) {
-			writeJSON(w, s.todosView())
+			writeJSON(w, s.tasksView())
 		}
 		return
 	}
@@ -514,11 +514,11 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		writeJSON(w, s.todosView())
+		writeJSON(w, s.tasksView())
 		return
 	}
 	var movedRock string
-	s.todosMutate(w, func(d *todos.Doc) (bool, error) {
+	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
 		dom, t := d.Find(b.ID)
 		if t == nil {
 			return false, nil
@@ -549,15 +549,15 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if b.Domain != nil && strings.TrimSpace(*b.Domain) != "" && !strings.EqualFold(dom.Name, *b.Domain) {
-			var keep []*todos.Todo
-			for _, o := range dom.Todos {
+			var keep []*tasks.Task
+			for _, o := range dom.Tasks {
 				if o != t {
 					keep = append(keep, o)
 				}
 			}
-			dom.Todos = keep
+			dom.Tasks = keep
 			target := d.EnsureDomain(strings.TrimSpace(*b.Domain))
-			target.Todos = append(target.Todos, t)
+			target.Tasks = append(target.Tasks, t)
 		}
 		return true, nil
 	})
@@ -566,29 +566,29 @@ func (s *Server) handleTodoUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// syncTodoTasks mirrors todo-linked daily-note ticks back into `to do.md`
+// syncTaskTasks mirrors todo-linked daily-note ticks back into `to do.md`
 // (the syncGoalTasks contract: on a miss, no write + an approvals note —
 // never a guess).
-func (s *Server) syncTodoTasks(tasks []daily.Task) {
-	if s.todosStore == nil {
+func (s *Server) syncTaskTasks(tasks []daily.Task) {
+	if s.tasksStore == nil {
 		return
 	}
 	updates := map[string]bool{}
 	for _, t := range tasks {
 		// aion-backed ticks route through syncAionTasks, not the to-do.md store —
 		// leaving them here would flag every one as a "missed" approval nudge
-		if t.TodoID != "" && !strings.HasPrefix(t.TodoID, "aion:") {
-			updates[t.TodoID] = t.Done
+		if t.TaskID != "" && !strings.HasPrefix(t.TaskID, "aion:") {
+			updates[t.TaskID] = t.Done
 		}
 	}
 	if len(updates) == 0 {
 		return
 	}
-	missed, err := s.todosStore.SyncChecks(updates, time.Now())
+	missed, err := s.tasksStore.SyncChecks(updates, time.Now())
 	// rock-tethered completions from the daily note stamp the then-current
 	// stage + the Rock's moved:: (same contract as a board check)
 	if err == nil {
-		if doc, e2 := s.todosStore.Load(); e2 == nil {
+		if doc, e2 := s.tasksStore.Load(); e2 == nil {
 			changed := false
 			for id, done := range updates {
 				if !done {
@@ -603,7 +603,7 @@ func (s *Server) syncTodoTasks(tasks []daily.Task) {
 				}
 			}
 			if changed {
-				_ = s.todosStore.Save(doc)
+				_ = s.tasksStore.Save(doc)
 			}
 		}
 	}
@@ -615,11 +615,11 @@ func (s *Server) syncTodoTasks(tasks []daily.Task) {
 		missedSet[id] = true
 	}
 	for _, t := range tasks {
-		if t.TodoID != "" && t.Done && missedSet[t.TodoID] {
+		if t.TaskID != "" && t.Done && missedSet[t.TaskID] {
 			_, _ = s.approvals.Propose(approvals.Proposal{
 				Agent:  "manifest",
 				Action: "Couldn't sync a ticked task to todos",
-				Body: "You ticked \"" + t.Text + "\" ([todo:: " + t.TodoID + "]) in the daily manifest, but no matching " +
+				Body: "You ticked \"" + t.Text + "\" ([todo:: " + t.TaskID + "]) in the daily manifest, but no matching " +
 					"item is in to do.md — it may have been reworded, moved, or dropped. Check the TODOS board if it's still open.",
 			})
 		}
@@ -671,8 +671,8 @@ func cleanFrozenText(rest string) string {
 	return strings.Join(strings.Fields(out), " ")
 }
 
-func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) || s.goals == nil {
+func (s *Server) handleTasksSplit(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) || s.goals == nil {
 		return
 	}
 	switch r.Method {
@@ -692,7 +692,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 					OpenTasks: open, CheckedCount: checked})
 			}
 		}
-		tdoc, _ := s.todosStore.Load()
+		tdoc, _ := s.tasksStore.Load()
 		done := tdoc != nil && tdoc.SplitDone()
 		writeJSON(w, map[string]any{"rocks": rocks, "done": done})
 	case http.MethodPost:
@@ -704,7 +704,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		gdoc := s.goals.Load()
-		tdoc, err := s.todosStore.Load()
+		tdoc, err := s.tasksStore.Load()
 		if err != nil {
 			httpError(w, err)
 			return
@@ -728,7 +728,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 				}
 				bucket := tdoc.EnsureDomain(area.Name).EnsureBucket(name)
 				target = func(text string) {
-					bucket.Todos = append(bucket.Todos, &todos.Todo{Text: text, Added: today})
+					bucket.Tasks = append(bucket.Tasks, &tasks.Task{Text: text, Added: today})
 					report = append(report, moveRec{text, area.Name + " / " + name})
 				}
 				demotes = append(demotes, struct{ ID, Bucket string }{rock.ID, name})
@@ -736,7 +736,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 				dom := tdoc.EnsureDomain(area.Name)
 				rockID := rock.ID
 				target = func(text string) {
-					dom.Todos = append(dom.Todos, &todos.Todo{Text: text, Rock: rockID, Added: today})
+					dom.Tasks = append(dom.Tasks, &tasks.Task{Text: text, Rock: rockID, Added: today})
 					report = append(report, moveRec{text, area.Name + " · [rock:: " + rockID + "]"})
 				}
 			}
@@ -755,7 +755,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 		}
 		tdoc.MarkSplitDone(today)
 		// backups, then todos, then goals; demote closes run last (they reload)
-		if err := s.todosStore.BackupOnce(".pre-split"); err != nil {
+		if err := s.tasksStore.BackupOnce(".pre-split"); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -763,7 +763,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		if err := s.todosStore.Save(tdoc); err != nil {
+		if err := s.tasksStore.Save(tdoc); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -777,7 +777,7 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		writeJSON(w, map[string]any{"moved": report, "demoted": len(demotes), "view": s.todosView()})
+		writeJSON(w, map[string]any{"moved": report, "demoted": len(demotes), "view": s.tasksView()})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -787,12 +787,12 @@ func (s *Server) handleTodosSplit(w http.ResponseWriter, r *http.Request) {
 // rest m[3].
 func todoLineMatch(ln string) []string { return record.CheckboxRe.FindStringSubmatch(ln) }
 
-// handleTodoDrop — the stale-nudge's third exit: out of the live file, into
+// handleTaskDrop — the stale-nudge's third exit: out of the live file, into
 // the archive with a [dropped::] stamp (never deleted). A property todo
 // (prop:<slug>/<line>) is simply removed from its `## todos` section — the
 // property record is its own history; deletion is the owner's explicit call.
-func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+func (s *Server) handleTaskDrop(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct{ ID string }
@@ -806,11 +806,11 @@ func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("malformed property todo id"))
 			return
 		}
-		if s.propTodoMutate(w, slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+		if s.propTaskMutate(w, slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
 			found := false
-			var out realestate.PropertyTodoList
+			var out realestate.PropertyTaskList
 			for _, ln := range list {
-				if ln.Todo != nil && ln.Todo.ID == lineID {
+				if ln.Task != nil && ln.Task.ID == lineID {
 					found = true
 					continue
 				}
@@ -818,7 +818,7 @@ func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 			}
 			return out, found, nil
 		}) {
-			writeJSON(w, s.todosView())
+			writeJSON(w, s.tasksView())
 		}
 		return
 	}
@@ -834,12 +834,12 @@ func (s *Server) handleTodoDrop(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		writeJSON(w, s.todosView())
+		writeJSON(w, s.tasksView())
 		return
 	}
-	if err := s.todosStore.Drop(b.ID, time.Now()); err != nil {
+	if err := s.tasksStore.Drop(b.ID, time.Now()); err != nil {
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, s.todosView())
+	writeJSON(w, s.tasksView())
 }

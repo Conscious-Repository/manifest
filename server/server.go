@@ -30,7 +30,7 @@ import (
 	"manifest/signals"
 	"manifest/spirits"
 	"manifest/teamportal"
-	"manifest/todos"
+	"manifest/tasks"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
@@ -41,7 +41,7 @@ var webFiles embed.FS
 type Server struct {
 	svc        *daily.Service
 	goals      *goals.Store
-	todosStore *todos.Store // the third surface — vault-root `to do.md` (nilable)
+	tasksStore *tasks.Store // the third surface — vault-root `to do.md` (nilable)
 	// ownerInitials identify "me" in the unified todo projection (stage 4):
 	// empty/"me"/containing-these-initials owners are mine.
 	ownerInitials string
@@ -220,33 +220,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)        // quarterly review: save the retro
 
 	// TODOS — the third surface over `to do.md` (todos-surface-scope).
-	mux.HandleFunc("GET /api/todos", s.handleTodosGet)
-	mux.HandleFunc("POST /api/todos/item", s.handleTodoAdd)
-	mux.HandleFunc("POST /api/todos/check", s.handleTodoCheck)
-	mux.HandleFunc("POST /api/todos/update", s.handleTodoUpdate)
-	mux.HandleFunc("POST /api/todos/rank", s.handleTodosRank)                      // unified drag-to-rank (stage 4)
-	mux.HandleFunc("GET /api/properties/migrate-todos", s.handlePropTodosMigrate)  // preview
-	mux.HandleFunc("POST /api/properties/migrate-todos", s.handlePropTodosMigrate) // commit
+	mux.HandleFunc("GET /api/todos", s.handleTasksGet)
+	mux.HandleFunc("POST /api/todos/item", s.handleTaskAdd)
+	mux.HandleFunc("POST /api/todos/check", s.handleTaskCheck)
+	mux.HandleFunc("POST /api/todos/update", s.handleTaskUpdate)
+	mux.HandleFunc("POST /api/todos/rank", s.handleTasksRank)                      // unified drag-to-rank (stage 4)
+	mux.HandleFunc("GET /api/properties/migrate-todos", s.handlePropTasksMigrate)  // preview
+	mux.HandleFunc("POST /api/properties/migrate-todos", s.handlePropTasksMigrate) // commit
 	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)              // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
-	mux.HandleFunc("POST /api/todos/drop", s.handleTodoDrop)
-	mux.HandleFunc("/api/todos/split", s.handleTodosSplit) // GET preview · POST commit (one task substrate)
+	mux.HandleFunc("POST /api/todos/drop", s.handleTaskDrop)
+	mux.HandleFunc("/api/todos/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)
 	mux.HandleFunc("POST /api/todos/bucket", s.handleBucketRename)
 	mux.HandleFunc("POST /api/todos/issue", s.handleIssueAdd)
 	mux.HandleFunc("POST /api/todos/issue/resolve", s.handleIssueResolve)
-	mux.HandleFunc("POST /api/todos/issue/to-todo", s.handleIssueToTodo) // reverse conversion (+ optional tether)
-	mux.HandleFunc("POST /api/todos/to-issue", s.handleTodoToIssue)
+	mux.HandleFunc("POST /api/todos/issue/to-todo", s.handleIssueToTask) // reverse conversion (+ optional tether)
+	mux.HandleFunc("POST /api/todos/to-issue", s.handleTaskToIssue)
 	mux.HandleFunc("GET /api/todos/delegate/targets", s.handleDelegateTargets) // Phase 6
 	mux.HandleFunc("POST /api/todos/delegate", s.handleDelegate)
 	// TODO PANEL (todo-panel plan): record + thread + attachments.
-	mux.HandleFunc("GET /api/todos/panel", s.handleTodoPanel)
-	mux.HandleFunc("POST /api/todos/plan", s.handleTodoPlan)
-	mux.HandleFunc("POST /api/todos/assign", s.handleTodoAssign)
-	mux.HandleFunc("POST /api/todos/fire", s.handleTodoFire)
-	mux.HandleFunc("GET /api/todos/thread", s.handleTodoThreadGet)
-	mux.HandleFunc("POST /api/todos/thread", s.handleTodoThreadPost)
-	mux.HandleFunc("POST /api/todos/thread/file", s.handleTodoThreadFile)
-	mux.HandleFunc("GET /api/todos/thread/file/{hash}", s.handleTodoThreadBlob)
+	mux.HandleFunc("GET /api/todos/panel", s.handleTaskPanel)
+	mux.HandleFunc("POST /api/todos/plan", s.handleTaskPlan)
+	mux.HandleFunc("POST /api/todos/assign", s.handleTaskAssign)
+	mux.HandleFunc("POST /api/todos/fire", s.handleTaskFire)
+	mux.HandleFunc("GET /api/todos/thread", s.handleTaskThreadGet)
+	mux.HandleFunc("POST /api/todos/thread", s.handleTaskThreadPost)
+	mux.HandleFunc("POST /api/todos/thread/file", s.handleTaskThreadFile)
+	mux.HandleFunc("GET /api/todos/thread/file/{hash}", s.handleTaskThreadBlob)
 	mux.HandleFunc("GET /api/agents/personas", s.handlePersonas)                     // persona records (persona plan Phase 1)
 	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
 	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
@@ -408,7 +408,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/errands/{id}/transcript", s.handleErrandTranscript)
 	mux.HandleFunc("POST /api/feed/{id}/status", s.handleFeedStatus)
 	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
-	mux.HandleFunc("POST /api/feed/{id}/to-todo", s.handleFeedToTodo)
+	mux.HandleFunc("POST /api/feed/{id}/to-todo", s.handleFeedToTask)
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig) // "dig →"
 	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
 	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
@@ -571,8 +571,8 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.syncGoalTasks(body.Tasks) // §4: mirror goal-linked task ticks back into goals.md
-		s.syncTodoTasks(body.Tasks) // same contract for todo-linked ticks → to do.md
-		s.syncAionTasks(body.Tasks) // aion-backed ticks (TodoID "aion:<id>") → aion backlog
+		s.syncTaskTasks(body.Tasks) // same contract for todo-linked ticks → to do.md
+		s.syncAionTasks(body.Tasks) // aion-backed ticks (TaskID "aion:<id>") → aion backlog
 		writeJSON(w, map[string]bool{"ok": true})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -586,10 +586,10 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 // domains (buckets included), (3) everything else — the client folds tier 3
 // behind an "all domains" reveal.
 func (s *Server) fillPool(day *daily.Day) {
-	if !day.Unplanned || s.todosStore == nil {
+	if !day.Unplanned || s.tasksStore == nil {
 		return
 	}
-	doc, err := s.todosStore.Load()
+	doc, err := s.tasksStore.Load()
 	if err != nil {
 		return
 	}
@@ -610,7 +610,7 @@ func (s *Server) fillPool(day *daily.Day) {
 		}
 	}
 	v := doc.View(time.Now())
-	add := func(dv string, t todos.TodoView) {
+	add := func(dv string, t tasks.TaskView) {
 		if t.State != "open" {
 			return
 		}
@@ -621,14 +621,14 @@ func (s *Server) fillPool(day *daily.Day) {
 		case focusedAreas[strings.ToLower(dv)]:
 			tier = 2
 		}
-		day.Pool = append(day.Pool, daily.PoolItem{TodoID: t.ID, Text: t.Text, Area: dv, Tier: tier})
+		day.Pool = append(day.Pool, daily.PoolItem{TaskID: t.ID, Text: t.Text, Area: dv, Tier: tier})
 	}
 	for _, dv := range v.Domains {
-		for _, t := range dv.Todos {
+		for _, t := range dv.Tasks {
 			add(dv.Name, t)
 		}
 		for _, bk := range dv.Buckets {
-			for _, t := range bk.Todos {
+			for _, t := range bk.Tasks {
 				add(dv.Name, t)
 			}
 		}
@@ -650,7 +650,7 @@ func (s *Server) fillPool(day *daily.Day) {
 			case focusedAreas["aion"]:
 				tier = 2
 			}
-			day.Pool = append(day.Pool, daily.PoolItem{TodoID: "aion:" + it.ID, Text: it.Text, Area: "Aion", Tier: tier})
+			day.Pool = append(day.Pool, daily.PoolItem{TaskID: "aion:" + it.ID, Text: it.Text, Area: "Aion", Tier: tier})
 		}
 	}
 	sort.SliceStable(day.Pool, func(i, j int) bool { return day.Pool[i].Tier < day.Pool[j].Tier })
@@ -666,7 +666,7 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	date := r.URL.Query().Get("date")
 	var b struct {
 		GoalID string `json:"goalId"`
-		TodoID string `json:"todoId"`
+		TaskID string `json:"todoId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		httpError(w, err)
@@ -674,40 +674,40 @@ func (s *Server) handleDayPull(w http.ResponseWriter, r *http.Request) {
 	}
 	var task daily.Task
 	switch {
-	case strings.HasPrefix(b.TodoID, "aion:") && s.aion != nil:
+	case strings.HasPrefix(b.TaskID, "aion:") && s.aion != nil:
 		// a domain-backlog pick: seat with the `<domain>:<id>` backlink
 		// (syncAionTasks mirrors ticks back). No promote — the id is content-stable.
-		it := s.aion.LoadBacklog().Find(strings.TrimPrefix(b.TodoID, "aion:"))
+		it := s.aion.LoadBacklog().Find(strings.TrimPrefix(b.TaskID, "aion:"))
 		if it == nil {
 			http.Error(w, "aion task not found", http.StatusNotFound)
 			return
 		}
-		task = daily.Task{Text: it.Text, TodoID: b.TodoID}
-	case strings.HasPrefix(b.TodoID, "re:") && s.re != nil:
-		it := s.re.LoadBacklog().Find(strings.TrimPrefix(b.TodoID, "re:"))
+		task = daily.Task{Text: it.Text, TaskID: b.TaskID}
+	case strings.HasPrefix(b.TaskID, "re:") && s.re != nil:
+		it := s.re.LoadBacklog().Find(strings.TrimPrefix(b.TaskID, "re:"))
 		if it == nil {
 			http.Error(w, "re task not found", http.StatusNotFound)
 			return
 		}
-		task = daily.Task{Text: it.Text, TodoID: b.TodoID}
-	case b.TodoID != "" && s.todosStore != nil:
+		task = daily.Task{Text: it.Text, TaskID: b.TaskID}
+	case b.TaskID != "" && s.tasksStore != nil:
 		// a todos-board pick: pin the durable [todo:: id] so the backlink
 		// survives rewording (goals Promote contract)
-		doc, err := s.todosStore.Load()
+		doc, err := s.tasksStore.Load()
 		if err != nil {
 			httpError(w, err)
 			return
 		}
-		if !doc.Promote(b.TodoID) {
+		if !doc.Promote(b.TaskID) {
 			http.Error(w, "todo not found", http.StatusNotFound)
 			return
 		}
-		if err := s.todosStore.Save(doc); err != nil {
+		if err := s.tasksStore.Save(doc); err != nil {
 			httpError(w, err)
 			return
 		}
-		_, t := doc.Find(b.TodoID)
-		task = daily.Task{Text: t.Text, TodoID: t.ID}
+		_, t := doc.Find(b.TaskID)
+		task = daily.Task{Text: t.Text, TaskID: t.ID}
 	default:
 		text, gid, ok := s.goals.Promote(b.GoalID)
 		if !ok {
@@ -767,7 +767,7 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 		s.captureDomainBacklog(w, s.re, "re:", date, rockID, text)
 		return
 	}
-	if s.todosStore == nil {
+	if s.tasksStore == nil {
 		httpError(w, errBadRequest("todos unavailable"))
 		return
 	}
@@ -786,28 +786,28 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rock not found: "+rockID, http.StatusNotFound)
 		return
 	}
-	tdoc, err := s.todosStore.Load()
+	tdoc, err := s.tasksStore.Load()
 	if err != nil {
 		httpError(w, err)
 		return
 	}
 	dom := tdoc.EnsureDomain(areaName)
-	var todo *todos.Todo
-	dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) { // idempotent: reuse an open same-text capture
+	var todo *tasks.Task
+	dom.AllTasks(func(_ *tasks.Bucket, t *tasks.Task) { // idempotent: reuse an open same-text capture
 		if todo == nil && !t.Checked && strings.EqualFold(t.Text, text) && t.Rock == rockID {
 			todo = t
 		}
 	})
 	if todo == nil {
-		todo = &todos.Todo{Text: text, Rock: rockID, Added: time.Now().Format("2006-01-02")}
-		dom.Todos = append(dom.Todos, todo)
+		todo = &tasks.Task{Text: text, Rock: rockID, Added: time.Now().Format("2006-01-02")}
+		dom.Tasks = append(dom.Tasks, todo)
 	}
-	if err := s.todosStore.Save(tdoc); err != nil { // assigns the id
+	if err := s.tasksStore.Save(tdoc); err != nil { // assigns the id
 		httpError(w, err)
 		return
 	}
 	tdoc.Promote(todo.ID)
-	if err := s.todosStore.Save(tdoc); err != nil {
+	if err := s.tasksStore.Save(tdoc); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -819,13 +819,13 @@ func (s *Server) handleDayCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	seated := false
 	for _, t := range day.Tasks {
-		if t.TodoID == todo.ID {
+		if t.TaskID == todo.ID {
 			seated = true
 			break
 		}
 	}
 	if !seated {
-		day, err = s.svc.AddTask(date, daily.Task{Text: text, TodoID: todo.ID})
+		day, err = s.svc.AddTask(date, daily.Task{Text: text, TaskID: todo.ID})
 		if err != nil {
 			httpError(w, err)
 			return
@@ -867,13 +867,13 @@ func (s *Server) captureDomainBacklog(w http.ResponseWriter, st *aion.Store, idP
 	}
 	seated := false
 	for _, t := range day.Tasks {
-		if t.TodoID == ref {
+		if t.TaskID == ref {
 			seated = true
 			break
 		}
 	}
 	if !seated {
-		day, err = s.svc.AddTask(date, daily.Task{Text: text, TodoID: ref})
+		day, err = s.svc.AddTask(date, daily.Task{Text: text, TaskID: ref})
 		if err != nil {
 			httpError(w, err)
 			return

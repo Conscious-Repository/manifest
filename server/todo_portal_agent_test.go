@@ -9,7 +9,7 @@ import (
 
 	"manifest/aion"
 	"manifest/spirits"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // kairosFixture: panelFixture + personas + a THREE-harness federation where
@@ -19,11 +19,11 @@ func kairosFixture(t *testing.T) (*Server, string) {
 	t.Helper()
 	srv, vault := panelFixture(t)
 	dir := t.TempDir()
-	st := todos.NewStore(dir, "to do.md", testWriteAbs)
+	st := tasks.NewStore(dir, "to do.md", testWriteAbs)
 	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] research zoning [added:: 2026-08-14]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	srv.todosStore = st
+	srv.tasksStore = st
 	if err := os.MkdirAll(filepath.Join(vault, "system", "aion"), 0o755); err != nil {
 		t.Fatal(err)
 	}

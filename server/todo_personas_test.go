@@ -94,7 +94,7 @@ func TestSpoolPersonaRequestShape(t *testing.T) {
 	h := srv.findHarness("hermes")
 
 	// brief intent: persona preamble + reply-shape protocol + tokens
-	if err := srv.spoolTodoWorkOrder(h, id, personaPhase("brief"), "how deep is the setback?", "brief"); err != nil {
+	if err := srv.spoolTaskWorkOrder(h, id, personaPhase("brief"), "how deep is the setback?", "brief"); err != nil {
 		t.Fatal(err)
 	}
 	q := hermes.Queued()
@@ -116,7 +116,7 @@ func TestSpoolPersonaRequestShape(t *testing.T) {
 	}
 
 	// empty intent: today's request exactly — no persona traces
-	if err := srv.spoolTodoWorkOrder(h, id, "comment", "plain relay", ""); err != nil {
+	if err := srv.spoolTaskWorkOrder(h, id, "comment", "plain relay", ""); err != nil {
 		t.Fatal(err)
 	}
 	q = hermes.Queued()
@@ -212,7 +212,7 @@ func TestPersonaTokenRecoveryFromBrief(t *testing.T) {
 
 func TestAssignRejectsIntentToken(t *testing.T) {
 	srv := personaFixture(t)
-	if _, ok := srv.pinTodoID("inbox/research-zoning"); !ok {
+	if _, ok := srv.pinTaskID("inbox/research-zoning"); !ok {
 		t.Fatal("pin")
 	}
 	// the handler path guards it; the model-level guard is agentHarness
@@ -236,7 +236,7 @@ func TestMentionIntentRidesRelay(t *testing.T) {
 		!strings.Contains(q[0].Request, "[phase:: comment]") {
 		t.Fatalf("intent must ride the spool: %+v", q)
 	}
-	raw, _ := os.ReadFile(srv.todosStore.Path())
+	raw, _ := os.ReadFile(srv.tasksStore.Path())
 	if strings.Contains(string(raw), "::brief") {
 		t.Fatalf("[owner::] must never carry an intent:\n%s", raw)
 	}

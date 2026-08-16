@@ -10,20 +10,20 @@ import (
 	"manifest/goals"
 )
 
-// syncAionTasks mirrors day-note ticks for backlog-backed tasks (Task.TodoID
+// syncAionTasks mirrors day-note ticks for backlog-backed tasks (Task.TaskID
 // "aion:<id>" / "re:<id>") into the owning domain backlog: done → status done
 // (stamps done_on + the Rock's moved::), unticked → status open. The domain
-// twin of syncTodoTasks.
+// twin of syncTaskTasks.
 func (s *Server) syncAionTasks(tasks []daily.Task) {
 	now := time.Now()
 	for _, t := range tasks {
 		var st *aion.Store
 		var id string
 		switch {
-		case strings.HasPrefix(t.TodoID, "aion:") && s.aion != nil:
-			st, id = s.aion, strings.TrimPrefix(t.TodoID, "aion:")
-		case strings.HasPrefix(t.TodoID, "re:") && s.re != nil:
-			st, id = s.re, strings.TrimPrefix(t.TodoID, "re:")
+		case strings.HasPrefix(t.TaskID, "aion:") && s.aion != nil:
+			st, id = s.aion, strings.TrimPrefix(t.TaskID, "aion:")
+		case strings.HasPrefix(t.TaskID, "re:") && s.re != nil:
+			st, id = s.re, strings.TrimPrefix(t.TaskID, "re:")
 		default:
 			continue
 		}

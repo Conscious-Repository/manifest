@@ -44,7 +44,7 @@ func (s *Server) AionPanel(itemID string) map[string]any {
 // AionAssign assigns an agent on a portal item, attributed to the member.
 // The team activity trail records it (→ the owner's FEED via the bridge).
 func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error {
-	_, err := s.assignTodo(threads.Identity{ID: memberEmail, Name: memberName}, "aion:"+itemID, owner)
+	_, err := s.assignTask(threads.Identity{ID: memberEmail, Name: memberName}, "aion:"+itemID, owner)
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
 			"agent-assign", map[string]any{"item": itemID, "owner": owner}, time.Now())
@@ -56,7 +56,7 @@ func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error
 // member. spirits.ErrAlreadyActive passes through for the 409; a successful
 // fire lands in the team activity trail (→ the owner's FEED notice).
 func (s *Server) AionFire(itemID, memberEmail, memberName string) error {
-	err := s.fireTodo(threads.Identity{ID: memberEmail, Name: memberName}, "aion:"+itemID)
+	err := s.fireTask(threads.Identity{ID: memberEmail, Name: memberName}, "aion:"+itemID)
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
 			"agent-fire", map[string]any{"item": itemID}, time.Now())

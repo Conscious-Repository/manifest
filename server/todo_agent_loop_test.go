@@ -10,7 +10,7 @@ import (
 
 	"manifest/spirits"
 	"manifest/threads"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // loopFixture: fire fixture + helpers that fake completed hermes runs (trace
@@ -19,18 +19,18 @@ func loopFixture(t *testing.T) *Server {
 	t.Helper()
 	srv, _ := panelFixture(t)
 	dir := t.TempDir()
-	st := todos.NewStore(dir, "to do.md", testWriteAbs)
+	st := tasks.NewStore(dir, "to do.md", testWriteAbs)
 	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] research zoning [added:: 2026-08-14]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	srv.todosStore = st
+	srv.tasksStore = st
 	hermes := spirits.NewStore(t.TempDir())
 	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes", Spirits: hermes}})
 	return srv
 }
 
 // fakeRun drops a completed run report + library brief into the hermes tree.
-func fakeRun(t *testing.T, srv *Server, runID, todoID, phase, briefBody string) {
+func fakeRun(t *testing.T, srv *Server, runID, taskID, phase, briefBody string) {
 	t.Helper()
 	root := srv.eachHarness()[1].Spirits.Root()
 	if err := os.MkdirAll(filepath.Join(root, "artifacts", "runs"), 0o755); err != nil {
@@ -49,7 +49,7 @@ finished: 2026-08-15T05:01:00Z
 outcome: completed
 ---
 ran
-`, runID, todoID, phase)
+`, runID, taskID, phase)
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "runs", "2026-08-15-hermes-"+runID+".md"), []byte(report), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRelayAlwaysAndAutoAssign(t *testing.T) {
 		!strings.Contains(q[0].Request, "take a pass at a plan?") {
 		t.Fatalf("auto-assign spool: %+v", q)
 	}
-	raw, _ := os.ReadFile(srv.todosStore.Path())
+	raw, _ := os.ReadFile(srv.tasksStore.Path())
 	if !strings.Contains(string(raw), "[owner:: agent:hermes]") {
 		t.Fatalf("owner token missing:\n%s", raw)
 	}
@@ -190,14 +190,14 @@ func TestRelaySweepRetries(t *testing.T) {
 	srv := loopFixture(t)
 	id := "inbox/research-zoning"
 	hermes := srv.eachHarness()[1].Spirits
-	if _, ok := srv.pinTodoID(id); !ok {
+	if _, ok := srv.pinTaskID(id); !ok {
 		t.Fatal("pin")
 	}
 	if err := srv.setPlanAssignee(id, "agent:hermes"); err != nil {
 		t.Fatal(err)
 	}
 	// a queued spool makes SpoolRunNow refuse → the owner's comment relay drops
-	if err := srv.spoolTodoWorkOrder(srv.findHarness("hermes"), id, "plan", "", ""); err != nil {
+	if err := srv.spoolTaskWorkOrder(srv.findHarness("hermes"), id, "plan", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "answer: use vendor B", nil, nil, nil)

@@ -54,11 +54,11 @@ func (s *Server) handleContactPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// waiting-on open loops from the todos board ([[person]] waiting values)
-	if s.todosStore != nil {
-		if doc, err := s.todosStore.Load(); err == nil {
+	if s.tasksStore != nil {
+		if doc, err := s.tasksStore.Load(); err == nil {
 			now := time.Now()
 			for _, dom := range doc.Domains {
-				for _, t := range dom.Todos {
+				for _, t := range dom.Tasks {
 					who := t.WaitingPerson()
 					if who == "" || t.State() != "waiting" {
 						continue

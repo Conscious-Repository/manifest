@@ -76,7 +76,7 @@ func (s *Server) ledgerSweep() {
 			Text:    firstLine(r.Request, 280),
 		}
 		if m := todoTokenRe.FindStringSubmatch(r.Request); m != nil {
-			e.Todo = strings.TrimSpace(m[1])
+			e.Task = strings.TrimSpace(m[1])
 		}
 		s.ledger(e)
 		dirty = true

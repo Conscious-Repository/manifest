@@ -25,7 +25,7 @@ import (
 
 	"manifest/aion"
 	"manifest/record"
-	"manifest/todos"
+	"manifest/tasks"
 	"manifest/vaultwriter"
 )
 
@@ -48,10 +48,10 @@ func main() {
 			vaultwriter.Capability{Name: "daily", Zone: record.ZoneKnowledge,
 				Pattern: "????-??-??.md", Actor: vaultwriter.ActorUserAction},
 		)
-	todosStore := todos.NewStore(*vault, *todosFile, vw.BindAbs("todos"))
+	tasksStore := tasks.NewStore(*vault, *todosFile, vw.BindAbs("todos"))
 	aionStore := aion.NewStore(*vault, aionRoot, vw.BindAbs("aion"))
 
-	doc, err := todosStore.Load()
+	doc, err := tasksStore.Load()
 	if err != nil {
 		fatal("load %s: %v", *todosFile, err)
 	}
@@ -59,19 +59,19 @@ func main() {
 	// collect every aion/-rock-tethered todo (loose + bucketed), with the domain
 	// + bucket it lives in so we can excise the exact line on -apply
 	type victim struct {
-		t      *todos.Todo
-		dom    *todos.Domain
-		bucket *todos.Bucket
+		t      *tasks.Task
+		dom    *tasks.Domain
+		bucket *tasks.Bucket
 	}
 	var victims []victim
 	for _, dm := range doc.Domains {
-		for _, t := range dm.Todos {
+		for _, t := range dm.Tasks {
 			if strings.HasPrefix(t.Rock, "aion/") {
 				victims = append(victims, victim{t, dm, nil})
 			}
 		}
 		for _, bk := range dm.Buckets {
-			for _, t := range bk.Todos {
+			for _, t := range bk.Tasks {
 				if strings.HasPrefix(t.Rock, "aion/") {
 					victims = append(victims, victim{t, dm, bk})
 				}
@@ -138,17 +138,17 @@ func main() {
 	}
 
 	// 2) excise the adopted lines from to do.md (byte-stable fixpoint save)
-	adopt := map[*todos.Todo]bool{}
+	adopt := map[*tasks.Task]bool{}
 	for _, v := range victims {
 		adopt[v.t] = true
 	}
 	for _, dm := range doc.Domains {
-		dm.Todos = keepTodos(dm.Todos, adopt)
+		dm.Tasks = keepTasks(dm.Tasks, adopt)
 		for _, bk := range dm.Buckets {
-			bk.Todos = keepTodos(bk.Todos, adopt)
+			bk.Tasks = keepTasks(bk.Tasks, adopt)
 		}
 	}
-	if err := todosStore.Save(doc); err != nil {
+	if err := tasksStore.Save(doc); err != nil {
 		fatal("save %s: %v", *todosFile, err)
 	}
 
@@ -160,7 +160,7 @@ func main() {
 		adopted, aionRoot, *todosFile, notesFixed)
 }
 
-func keepTodos(list []*todos.Todo, drop map[*todos.Todo]bool) []*todos.Todo {
+func keepTasks(list []*tasks.Task, drop map[*tasks.Task]bool) []*tasks.Task {
 	out := list[:0:0]
 	for _, t := range list {
 		if !drop[t] {

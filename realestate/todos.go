@@ -1,5 +1,5 @@
 // The property `## todos` section (redesign stage 4 — Revision 3): a flat
-// list of action lines in the SHARED to-do line grammar (todos.ParseLine /
+// list of action lines in the SHARED to-do line grammar (tasks.ParseLine /
 // EmitLine — one grammar, one file, kernel doctrine §3). A property todo
 // carries text · an [owner::] assignee ("" = the owner's) · optionally a
 // [work:: id] back-tether to the `## work` line it was migrated from (the
@@ -16,24 +16,24 @@ import (
 	"time"
 
 	"manifest/mdfm"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
-// PropertyTodoLine is one section body line: a parsed todo or a verbatim
+// PropertyTaskLine is one section body line: a parsed todo or a verbatim
 // line (comments, blanks — preserved in place for the fixpoint).
-type PropertyTodoLine struct {
-	Todo *todos.Todo
+type PropertyTaskLine struct {
+	Task *tasks.Task
 	Raw  string
 }
 
-// PropertyTodoList is the parsed `## todos` section body.
-type PropertyTodoList []PropertyTodoLine
+// PropertyTaskList is the parsed `## todos` section body.
+type PropertyTaskList []PropertyTaskLine
 
-// ParsePropertyTodos reads section body lines. Checkbox lines parse through
+// ParsePropertyTasks reads section body lines. Checkbox lines parse through
 // the shared grammar; everything else rides verbatim. Ids: explicit
 // [todo:: id] pin wins, else the text slug with -2/-3 collision suffixes.
-func ParsePropertyTodos(lines []string) PropertyTodoList {
-	var out PropertyTodoList
+func ParsePropertyTasks(lines []string) PropertyTaskList {
+	var out PropertyTaskList
 	seen := map[string]bool{}
 	uniq := func(id string) string {
 		root, n := id, 2
@@ -47,32 +47,32 @@ func ParsePropertyTodos(lines []string) PropertyTodoList {
 	for _, ln := range lines {
 		m := todoLineRe.FindStringSubmatch(ln)
 		if m == nil {
-			out = append(out, PropertyTodoLine{Raw: ln})
+			out = append(out, PropertyTaskLine{Raw: ln})
 			continue
 		}
-		t := todos.ParseLine(m[2] != " ", m[3])
+		t := tasks.ParseLine(m[2] != " ", m[3])
 		id := t.ExplicitID()
 		if id == "" {
-			ts := todos.LineSlug(t.Text)
+			ts := tasks.LineSlug(t.Text)
 			if ts == "" {
 				ts = "todo"
 			}
 			id = ts
 		}
 		t.ID = uniq(id)
-		out = append(out, PropertyTodoLine{Todo: t})
+		out = append(out, PropertyTaskLine{Task: t})
 	}
 	return out
 }
 
 var todoLineRe = workLineRe // the kernel checkbox grammar (one regex, one file)
 
-// EmitPropertyTodos renders the section body back (fixpoint with parse).
-func EmitPropertyTodos(list PropertyTodoList) string {
+// EmitPropertyTasks renders the section body back (fixpoint with parse).
+func EmitPropertyTasks(list PropertyTaskList) string {
 	var b strings.Builder
 	for _, ln := range list {
-		if ln.Todo != nil {
-			b.WriteString(todos.EmitLine(ln.Todo) + "\n")
+		if ln.Task != nil {
+			b.WriteString(tasks.EmitLine(ln.Task) + "\n")
 		} else {
 			b.WriteString(ln.Raw + "\n")
 		}
@@ -81,34 +81,34 @@ func EmitPropertyTodos(list PropertyTodoList) string {
 }
 
 // Find returns the todo with id, or nil.
-func (l PropertyTodoList) Find(id string) *todos.Todo {
+func (l PropertyTaskList) Find(id string) *tasks.Task {
 	for _, ln := range l {
-		if ln.Todo != nil && ln.Todo.ID == id {
-			return ln.Todo
+		if ln.Task != nil && ln.Task.ID == id {
+			return ln.Task
 		}
 	}
 	return nil
 }
 
-// Todos returns just the parsed todo lines, in order.
-func (l PropertyTodoList) Todos() []*todos.Todo {
-	var out []*todos.Todo
+// Tasks returns just the parsed todo lines, in order.
+func (l PropertyTaskList) Tasks() []*tasks.Task {
+	var out []*tasks.Task
 	for _, ln := range l {
-		if ln.Todo != nil {
-			out = append(out, ln.Todo)
+		if ln.Task != nil {
+			out = append(out, ln.Task)
 		}
 	}
 	return out
 }
 
 // Append adds a new todo line at the end of the section.
-func (l PropertyTodoList) Append(t *todos.Todo) PropertyTodoList {
-	return append(l, PropertyTodoLine{Todo: t})
+func (l PropertyTaskList) Append(t *tasks.Task) PropertyTaskList {
+	return append(l, PropertyTaskLine{Task: t})
 }
 
-// LoadTodos re-reads a property's file and parses its `## todos` section.
+// LoadTasks re-reads a property's file and parses its `## todos` section.
 // Returns the list, the vault-relative path (for the section write), and ok.
-func (s *Service) LoadTodos(slug string) (PropertyTodoList, string, bool) {
+func (s *Service) LoadTasks(slug string) (PropertyTaskList, string, bool) {
 	p, ok := s.Get(slug)
 	if !ok {
 		return nil, "", false
@@ -118,33 +118,33 @@ func (s *Service) LoadTodos(slug string) (PropertyTodoList, string, bool) {
 		return nil, "", false
 	}
 	_, body := mdfm.Split(string(raw))
-	return ParsePropertyTodos(parseSections(body)["todos"]), p.Path, true
+	return ParsePropertyTasks(parseSections(body)["todos"]), p.Path, true
 }
 
-// MigrateWorkTodos previews (or builds) the one-time copy of a property's OPEN
+// MigrateWorkTasks previews (or builds) the one-time copy of a property's OPEN
 // `## work` todos into `## todos`, each carrying its [work:: id] back-tether
 // and an [added::] stamp. `## work` bytes are untouched — it stays the budget
 // source; the tether is what keeps the money model truthful on completion.
 // Already-tethered lines are skipped (idempotent).
-func MigrateWorkTodos(p Property, list PropertyTodoList, now time.Time) (PropertyTodoList, []string) {
+func MigrateWorkTasks(p Property, list PropertyTaskList, now time.Time) (PropertyTaskList, []string) {
 	tethered := map[string]bool{}
 	for _, ln := range list {
-		if ln.Todo != nil {
-			if wid := ln.Todo.FieldValue("work"); wid != "" {
+		if ln.Task != nil {
+			if wid := ln.Task.FieldValue("work"); wid != "" {
 				tethered[wid] = true
 			}
 		}
 	}
 	var added []string
 	for _, st := range p.Work {
-		for _, td := range st.Todos {
+		for _, td := range st.Tasks {
 			if td.Checked || tethered[td.ID] {
 				continue
 			}
-			t := &todos.Todo{
+			t := &tasks.Task{
 				Text:  td.Text,
 				Added: now.Format("2006-01-02"),
-				Fields: []todos.Field{
+				Fields: []tasks.Field{
 					{Key: "work", Value: td.ID},
 				},
 			}

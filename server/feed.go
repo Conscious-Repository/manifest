@@ -12,7 +12,7 @@ import (
 	"manifest/feed"
 	"manifest/signals"
 	"manifest/spirits"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // FEED CENTRAL — manifest's one inbox, promoted from a SPIRITS sub-tab to a
@@ -280,11 +280,11 @@ func (s *Server) handleSignalSnooze(w http.ResponseWriter, r *http.Request) {
 
 // handleFeedSaveToVault promotes a feed item into a real extrinsic/ vault note
 // (write-once) and records the note path back on the item. User-triggered.
-// handleFeedToTodo promotes a feed card into an Inbox todo (todos-surface
+// handleFeedToTask promotes a feed card into an Inbox todo (todos-surface
 // §"Feed promote") — the card's title becomes the line, the source rides in
 // parentheses, and the item is marked kept. The board's domain chips finish it.
-func (s *Server) handleFeedToTodo(w http.ResponseWriter, r *http.Request) {
-	if s.spirits == nil || s.todosStore == nil {
+func (s *Server) handleFeedToTask(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil || s.tasksStore == nil {
 		http.Error(w, "todos unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -294,7 +294,7 @@ func (s *Server) handleFeedToTodo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, _ := fh.Spirits.Feed.Get(r.PathValue("id"))
-	doc, err := s.todosStore.Load()
+	doc, err := s.tasksStore.Load()
 	if err != nil {
 		httpError(w, err)
 		return
@@ -303,9 +303,9 @@ func (s *Server) handleFeedToTodo(w http.ResponseWriter, r *http.Request) {
 	if it.Source != "" {
 		text += " (" + it.Source + ")"
 	}
-	dom := doc.EnsureDomain(todos.InboxName)
-	dom.Todos = append(dom.Todos, &todos.Todo{Text: text, Added: time.Now().Format("2006-01-02")})
-	if err := s.todosStore.Save(doc); err != nil {
+	dom := doc.EnsureDomain(tasks.InboxName)
+	dom.Tasks = append(dom.Tasks, &tasks.Task{Text: text, Added: time.Now().Format("2006-01-02")})
+	if err := s.tasksStore.Save(doc); err != nil {
 		httpError(w, err)
 		return
 	}

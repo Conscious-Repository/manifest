@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"strconv"
@@ -10,18 +10,18 @@ import (
 // of growing a second parser (kernel doctrine §3: one regex in one file).
 
 // ParseLine parses one checkbox line's body (everything after "- [x] ") into a
-// Todo. ID is left to the caller's id scheme (an explicit [todo:: id] pin is
+// Task. ID is left to the caller's id scheme (an explicit [todo:: id] pin is
 // available via ExplicitID).
-func ParseLine(checked bool, rest string) *Todo { return parseTodo(checked, rest) }
+func ParseLine(checked bool, rest string) *Task { return parseTask(checked, rest) }
 
 // EmitLine renders a todo back to its canonical markdown line ("- [ ] …").
-func EmitLine(t *Todo) string { return emitTodo(t) }
+func EmitLine(t *Task) string { return emitTask(t) }
 
 // ExplicitID returns the [todo:: id] identity pin, or "".
-func (t *Todo) ExplicitID() string { return t.explicitID() }
+func (t *Task) ExplicitID() string { return t.explicitID() }
 
 // PinID freezes id as the explicit [todo:: id] identity (idempotent).
-func (t *Todo) PinID(id string) {
+func (t *Task) PinID(id string) {
 	if t.explicitID() == "" && id != "" {
 		t.Fields = append(t.Fields, Field{Key: "todo", Value: id})
 	}
@@ -29,7 +29,7 @@ func (t *Todo) PinID(id string) {
 
 // FieldValue reads an unrecognized field's value ("" when absent) — the
 // property todo's [work:: id] back-tether reads through this.
-func (t *Todo) FieldValue(key string) string {
+func (t *Task) FieldValue(key string) string {
 	for _, f := range t.Fields {
 		if strings.EqualFold(f.Key, key) {
 			return f.Value
@@ -39,7 +39,7 @@ func (t *Todo) FieldValue(key string) string {
 }
 
 // RankN parses [rank:: n] as an int (0 = unranked / unparsable).
-func (t *Todo) RankN() int {
+func (t *Task) RankN() int {
 	n, err := strconv.Atoi(t.Rank)
 	if err != nil || n < 0 {
 		return 0

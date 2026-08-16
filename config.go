@@ -120,9 +120,9 @@ type Config struct {
 	// src/data/deals.json from the vault's source sidecars for owner review
 	// (manifest never commits that repo). Empty disables the feature.
 	RePortalPath string `json:"rePortalPath"`
-	// TodosFileName is the vault-root todos file (the third surface, peer of
+	// TasksFileName is the vault-root todos file (the third surface, peer of
 	// goals.md). Default "to do.md" — the owner's existing file.
-	TodosFileName string `json:"todosFileName"`
+	TasksFileName string `json:"tasksFileName"`
 	// AionPortal points the AION publish effector at the portal's serving
 	// checkout — a MANIFEST checkout since the portal move (2026-08-15; the
 	// effector writes server/web/portal/**, autodeploy rebuilds → live at
@@ -263,8 +263,8 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.LabSttModel == "" {
 		cfg.LabSttModel = "granite-speech-4.1-2b"
 	}
-	if cfg.TodosFileName == "" {
-		cfg.TodosFileName = "to do.md"
+	if cfg.TasksFileName == "" {
+		cfg.TasksFileName = "to do.md"
 	}
 	if err := validateZoneRoot("systemRoot", cfg.SystemRoot); err != nil {
 		return cfg, err

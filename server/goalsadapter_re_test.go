@@ -11,7 +11,7 @@ import (
 )
 
 // An ooda-group/ rock's day-focus offers come from the RE backlog (mirroring
-// aion/ rocks over the aion backlog): mine + open only, TodoID "re:<id>".
+// aion/ rocks over the aion backlog): mine + open only, TaskID "re:<id>".
 func TestGoalsAdapterReRockOffersBacklogTasks(t *testing.T) {
 	dir := t.TempDir()
 	goalsMD := "# Goals\n\n## Real Estate\n\n### Rocks (90-day)\n" +
@@ -59,7 +59,7 @@ func TestGoalsAdapterReRockOffersBacklogTasks(t *testing.T) {
 		t.Fatalf("offers = %+v, want exactly the one mine+open task", res.Tasks)
 	}
 	got := res.Tasks[0]
-	if got.Text != "call the bank about the term sheet" || len(got.TodoID) < 4 || got.TodoID[:3] != "re:" {
+	if got.Text != "call the bank about the term sheet" || len(got.TaskID) < 4 || got.TaskID[:3] != "re:" {
 		t.Fatalf("offer wrong: %+v", got)
 	}
 }

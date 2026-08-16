@@ -317,7 +317,7 @@ func (p *portalAPI) handleComment(w http.ResponseWriter, r *http.Request) {
 	}
 	// the dialog hook (kairos plan Phase C): AFTER the store write, so the
 	// relay's thread tail includes this comment. Synchronous, mirroring the
-	// dashboard's handleTodoThreadPost; a missed relay is retried by the sweep.
+	// dashboard's handleTaskThreadPost; a missed relay is retried by the sweep.
 	if p.opt.OnComment != nil {
 		p.opt.OnComment(b.Item, b.Mentions, b.Text)
 	}

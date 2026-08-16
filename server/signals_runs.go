@@ -52,7 +52,7 @@ func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	// signal state derives from the PRIVATE structural trail: the newest of
 	// {questions, plan, fire, result} decides what (if anything) pages —
 	// answering/firing naturally clears the card because a newer marker lands.
-	for _, id := range s.threads.private.TodoIDs() {
+	for _, id := range s.threads.private.TaskIDs() {
 		var newest string
 		var newestAt time.Time
 		var run, harness string
@@ -74,7 +74,7 @@ func (e planReadyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		if harness == "" {
 			harness = s.agentHarness(s.readPlanRecord(id).Assignee)
 		}
-		text, open := s.openTodoText(id)
+		text, open := s.openTaskText(id)
 		if !open {
 			continue
 		}
@@ -127,7 +127,7 @@ func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 		if d.State != "done" || d.RunID == "" {
 			continue
 		}
-		text, open := e.s.openTodoText(id)
+		text, open := e.s.openTaskText(id)
 		if !open {
 			continue // human already closed it — nothing to page
 		}
@@ -148,8 +148,8 @@ func (e delegDoneEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 	return out, nil
 }
 
-// openTodoText resolves a unified composite id to (text, still-open).
-func (s *Server) openTodoText(id string) (string, bool) {
+// openTaskText resolves a unified composite id to (text, still-open).
+func (s *Server) openTaskText(id string) (string, bool) {
 	switch {
 	case strings.HasPrefix(id, "aion:"), strings.HasPrefix(id, "re:"):
 		if store, bare, ok := s.backlogStoreFor(id); ok {
@@ -161,7 +161,7 @@ func (s *Server) openTodoText(id string) (string, bool) {
 	case strings.HasPrefix(id, "prop:"):
 		if s.realestate != nil {
 			slug, lineID := splitPropID(id)
-			if list, _, ok := s.realestate.LoadTodos(slug); ok {
+			if list, _, ok := s.realestate.LoadTasks(slug); ok {
 				if t := list.Find(lineID); t != nil {
 					return t.Text, !t.Checked
 				}
@@ -169,8 +169,8 @@ func (s *Server) openTodoText(id string) (string, bool) {
 		}
 		return id, false
 	default:
-		if s.todosStore != nil {
-			if doc, err := s.todosStore.Load(); err == nil {
+		if s.tasksStore != nil {
+			if doc, err := s.tasksStore.Load(); err == nil {
 				if _, t := doc.Find(id); t != nil {
 					return t.Text, !t.Checked
 				}

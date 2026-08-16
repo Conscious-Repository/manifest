@@ -92,14 +92,14 @@ func libraryDocForRunID(runID, reportID string, lib libraryFn) (spirits.LibraryD
 // libraryRefForToken is the newest brief carrying a delegation's [todo:: id]
 // token — the fallback for a card that names no library file at all (the
 // engine put the reference nowhere the link/body regex can see it).
-func libraryRefForToken(todoID string, lib libraryFn) string {
-	todoID = strings.TrimSpace(todoID)
-	if todoID == "" {
+func libraryRefForToken(taskID string, lib libraryFn) string {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
 		return ""
 	}
 	for _, d := range lib() { // newest first
 		for _, m := range todoTokenRe.FindAllStringSubmatch(d.Title+"\n"+d.Body, -1) {
-			if strings.TrimSpace(m[1]) == todoID {
+			if strings.TrimSpace(m[1]) == taskID {
 				return d.Ref
 			}
 		}

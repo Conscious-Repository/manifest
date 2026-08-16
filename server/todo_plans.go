@@ -23,8 +23,8 @@ type todoPlansCfg struct {
 	root string // vault-relative slash path, e.g. "system/todo-plans"
 }
 
-// UseTodoPlans wires the plan-record layer (root = <SystemRoot>/todo-plans).
-func (s *Server) UseTodoPlans(root string) {
+// UseTaskPlans wires the plan-record layer (root = <SystemRoot>/todo-plans).
+func (s *Server) UseTaskPlans(root string) {
 	if strings.TrimSpace(root) == "" {
 		return
 	}
@@ -133,9 +133,9 @@ func (s *Server) writePlanSection(capName, id, section, body string) error {
 
 // --- endpoints ---------------------------------------------------------------
 
-// handleTodoPanel serves everything the panel needs in one payload:
+// handleTaskPanel serves everything the panel needs in one payload:
 // the plan record + the thread + the delegation state.
-func (s *Server) handleTodoPanel(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.URL.Query().Get("id"))
 	if id == "" {
 		httpError(w, errBadRequest("id is required"))
@@ -153,9 +153,9 @@ func (s *Server) handleTodoPanel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// handleTodoPlan — the owner's direct section edit.
+// handleTaskPlan — the owner's direct section edit.
 // The FIRST panel artifact pins the todo's identity (plan D1).
-func (s *Server) handleTodoPlan(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskPlan(w http.ResponseWriter, r *http.Request) {
 	s.handlePlanSectionWrite(w, r, "plan")
 }
 
@@ -165,7 +165,7 @@ func (s *Server) handlePlanSectionWrite(w http.ResponseWriter, r *http.Request, 
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	id, ok := s.pinTodoID(strings.TrimSpace(b.ID))
+	id, ok := s.pinTaskID(strings.TrimSpace(b.ID))
 	if !ok {
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return

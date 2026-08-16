@@ -201,7 +201,7 @@ func (d *Doc) RenameArea(old, neu string) bool {
 	}
 	// The area slug is the id PREFIX of every derived id beneath it — pin
 	// every unpinned goal first so identity never re-derives out from under
-	// the references (the kernel identity rule; todos.Bucket.Rename precedent).
+	// the references (the kernel identity rule; tasks.Bucket.Rename precedent).
 	var pinAll func(gs []*Goal)
 	pinAll = func(gs []*Goal) {
 		for _, g := range gs {

@@ -59,7 +59,7 @@ func TestReplanOnContextChange(t *testing.T) {
 	}
 
 	// the todo's TEXT changes under the plan
-	if err := os.WriteFile(srv.todosStore.Path(),
+	if err := os.WriteFile(srv.tasksStore.Path(),
 		[]byte("# To Do\n\n## Inbox\n- [ ] research zoning AND parking minimums [todo:: inbox/research-zoning] [owner:: agent:hermes] [added:: 2026-08-14]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestReplanNegativeGates(t *testing.T) {
 	hermes := srv.eachHarness()[1].Spirits
 
 	// no baseline ctx (plan written by hand, no ActPlan marker) → no replan
-	if _, ok := srv.pinTodoID(id); !ok {
+	if _, ok := srv.pinTaskID(id); !ok {
 		t.Fatal("pin")
 	}
 	if err := srv.setPlanAssignee(id, "agent:hermes"); err != nil {
@@ -149,7 +149,7 @@ func TestReplanNegativeGates(t *testing.T) {
 
 	// go-queued parks replans: drain, then leave a go spool in the queue
 	drainSpool(t, srv)
-	if err := srv.spoolTodoWorkOrder(srv.findHarness("hermes"), id, "go", "the plan", ""); err != nil {
+	if err := srv.spoolTaskWorkOrder(srv.findHarness("hermes"), id, "go", "the plan", ""); err != nil {
 		t.Fatal(err)
 	}
 	sweep(srv)

@@ -11,16 +11,16 @@ import (
 // them: text inlined, images handed a path (vision reads those).
 func TestHermesAttachmentsInlineAndImage(t *testing.T) {
 	srv, _ := panelFixture(t)
-	todoID := "inbox/wants-a-ui"
+	taskID := "inbox/wants-a-ui"
 
 	css := srv.saveThreadBlob(t, "design.css", "text/css", "body { color: rebeccapurple }")
 	img := srv.saveThreadBlob(t, "inspo.png", "image/png", "\x89PNG\r\n\x1a\nfake-bytes")
-	if _, err := srv.addThreadEntry(srv.ownerIdentity(), todoID, threads.ActComment,
+	if _, err := srv.addThreadEntry(srv.ownerIdentity(), taskID, threads.ActComment,
 		"build this — i attached a ui file", nil, []threads.FileRef{css, img}, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	att := srv.hermesAttachments(todoID)
+	att := srv.hermesAttachments(taskID)
 	if !strings.Contains(att, "design.css (attached file)") || !strings.Contains(att, "rebeccapurple") {
 		t.Errorf("text attachment not inlined:\n%s", att)
 	}
@@ -39,8 +39,8 @@ func TestHermesAttachmentsInlineAndImage(t *testing.T) {
 
 	// an agent-authored attachment is NOT surfaced (owner's only)
 	af := srv.saveThreadBlob(t, "agent.txt", "text/plain", "agent output")
-	_, _ = srv.addThreadEntry(agentIdentity("hermes"), todoID, threads.ActComment, "here", nil, []threads.FileRef{af}, nil)
-	if strings.Contains(srv.hermesAttachments(todoID), "agent output") {
+	_, _ = srv.addThreadEntry(agentIdentity("hermes"), taskID, threads.ActComment, "here", nil, []threads.FileRef{af}, nil)
+	if strings.Contains(srv.hermesAttachments(taskID), "agent output") {
 		t.Errorf("agent attachment leaked into the owner-attachment block")
 	}
 

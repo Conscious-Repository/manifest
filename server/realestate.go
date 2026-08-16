@@ -667,8 +667,8 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			if stages[i].ID == id {
 				return i, -1
 			}
-			for j := range stages[i].Todos {
-				if stages[i].Todos[j].ID == id {
+			for j := range stages[i].Tasks {
+				if stages[i].Tasks[j].ID == id {
 					return i, j
 				}
 			}
@@ -741,7 +741,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("text is required"))
 			return
 		}
-		stages[si].Todos = append(stages[si].Todos, realestate.WorkTodo{Text: strings.TrimSpace(b.Text)})
+		stages[si].Tasks = append(stages[si].Tasks, realestate.WorkTask{Text: strings.TrimSpace(b.Text)})
 	case "check":
 		si, ti := find(b.ID)
 		if si < 0 {
@@ -757,7 +757,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			}
 			realestate.SetWorkField(stages, b.ID, "done", done)
 		} else {
-			stages[si].Todos[ti].Checked = b.Checked
+			stages[si].Tasks[ti].Checked = b.Checked
 		}
 	case "set-field":
 		// the money slot / weeks editor: writes [est:: N] or [weeks:: N] on a
@@ -793,7 +793,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		if ti < 0 {
 			stages[si].Text = strings.TrimSpace(b.Text)
 		} else {
-			stages[si].Todos[ti].Text = strings.TrimSpace(b.Text)
+			stages[si].Tasks[ti].Text = strings.TrimSpace(b.Text)
 		}
 	case "delete":
 		si, ti := find(b.ID)
@@ -805,7 +805,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 			stages = append(stages[:si], stages[si+1:]...)
 		} else {
 			st := &stages[si]
-			st.Todos = append(st.Todos[:ti], st.Todos[ti+1:]...)
+			st.Tasks = append(st.Tasks[:ti], st.Tasks[ti+1:]...)
 		}
 		// cascade: BID rows tethered to the deleted node (a stage delete catches
 		// its todos' tethers via the id prefix) die with it — they are artifacts
@@ -1501,7 +1501,7 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 		workText := map[string]string{}
 		for _, st := range p.Work {
 			workText[st.ID] = st.Text
-			for _, td := range st.Todos {
+			for _, td := range st.Tasks {
 				workText[td.ID] = st.Text + " · " + td.Text
 			}
 		}

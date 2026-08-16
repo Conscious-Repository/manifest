@@ -11,7 +11,7 @@ import (
 
 	"manifest/aion"
 	"manifest/realestate"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // ---- the unified todo substrate (redesign stage 4, Revision 3) ----
@@ -81,12 +81,12 @@ type outstandingGroup struct {
 
 // unifiedRows collects every OPEN item across the three sources, unfiltered —
 // callers split it into the me-projection and the Outstanding grouping.
-func (s *Server) unifiedRows(doc *todos.Doc, now time.Time) []unifiedRow {
+func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 	var rows []unifiedRow
 	if doc != nil {
 		for _, dom := range doc.Domains {
 			c := unifiedContainer{Kind: "domain", Name: dom.Name}
-			dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) {
+			dom.AllTasks(func(_ *tasks.Bucket, t *tasks.Task) {
 				if t.Checked {
 					return
 				}
@@ -102,7 +102,7 @@ func (s *Server) unifiedRows(doc *todos.Doc, now time.Time) []unifiedRow {
 		if props, err := s.realestate.Properties(); err == nil {
 			for _, p := range props {
 				c := unifiedContainer{Kind: "property", Slug: p.Slug, Name: orStr(p.Short, p.Name)}
-				for _, t := range p.Todos {
+				for _, t := range p.Tasks {
 					if t.Checked {
 						continue
 					}
@@ -178,7 +178,7 @@ func sortRows(rows []unifiedRow) {
 }
 
 // unifiedView is the stage-4 addition to the /api/todos payload.
-func (s *Server) unifiedView(doc *todos.Doc) map[string]any {
+func (s *Server) unifiedView(doc *tasks.Doc) map[string]any {
 	now := time.Now()
 	all := s.unifiedRows(doc, now)
 	var mine []unifiedRow
@@ -267,7 +267,7 @@ func (s *Server) assigneeLists() map[string]any {
 }
 
 // containerList feeds the add-picker: personal domains, aion, every property.
-func (s *Server) containerList(doc *todos.Doc) []unifiedContainer {
+func (s *Server) containerList(doc *tasks.Doc) []unifiedContainer {
 	var out []unifiedContainer
 	if doc != nil {
 		for _, dom := range doc.Domains {
@@ -309,15 +309,15 @@ func splitPropID(id string) (slug, lineID string) {
 	return rest[:i], rest[i+1:]
 }
 
-// propTodoMutate loads a property's `## todos`, applies fn, writes the section
+// propTaskMutate loads a property's `## todos`, applies fn, writes the section
 // back under the realestate capability, and reindexes. fn returns false when
 // the line is missing.
-func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error)) bool {
+func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error)) bool {
 	if s.realestate == nil || s.vault == nil {
 		http.Error(w, "properties not available", http.StatusServiceUnavailable)
 		return false
 	}
-	list, rel, ok := s.realestate.LoadTodos(slug)
+	list, rel, ok := s.realestate.LoadTasks(slug)
 	if !ok {
 		http.Error(w, "property not found", http.StatusNotFound)
 		return false
@@ -331,7 +331,7 @@ func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return false
 	}
-	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(next)); err != nil {
+	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(next)); err != nil {
 		httpError(w, err)
 		return false
 	}
@@ -416,14 +416,14 @@ func (s *Server) agentHarness(owner string) string {
 	return ""
 }
 
-// propTodoPin freezes a property line's within-file id as an explicit
-// [todo:: id] pin (plan D1 — the non-HTTP sibling of propTodoMutate). The
+// propTaskPin freezes a property line's within-file id as an explicit
+// [todo:: id] pin (plan D1 — the non-HTTP sibling of propTaskMutate). The
 // composite `prop:<slug>/<lineID>` then survives rewording. Idempotent.
-func (s *Server) propTodoPin(slug, lineID string) bool {
+func (s *Server) propTaskPin(slug, lineID string) bool {
 	if s.realestate == nil || s.vault == nil {
 		return false
 	}
-	list, rel, ok := s.realestate.LoadTodos(slug)
+	list, rel, ok := s.realestate.LoadTasks(slug)
 	if !ok {
 		return false
 	}
@@ -435,7 +435,7 @@ func (s *Server) propTodoPin(slug, lineID string) bool {
 		return true // already pinned — no write
 	}
 	t.PinID(lineID)
-	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(list)); err != nil {
+	if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(list)); err != nil {
 		return false
 	}
 	if s.index != nil {
@@ -444,17 +444,17 @@ func (s *Server) propTodoPin(slug, lineID string) bool {
 	return true
 }
 
-// propTodoCheck completes/reopens a property todo. A [work:: id] back-tether
+// propTaskCheck completes/reopens a property todo. A [work:: id] back-tether
 // DUAL-STAMPS the matching `## work` line so stage Ready/Recognized money
 // stays truthful (the one place Rev 3 touches the accounting model).
-func (s *Server) propTodoCheck(w http.ResponseWriter, id string, checked bool) {
+func (s *Server) propTaskCheck(w http.ResponseWriter, id string, checked bool) {
 	slug, lineID := splitPropID(id)
 	if slug == "" {
 		httpError(w, errBadRequest("malformed property todo id"))
 		return
 	}
 	var workTether string
-	ok := s.propTodoMutate(w, slug, func(list realestate.PropertyTodoList) (realestate.PropertyTodoList, bool, error) {
+	ok := s.propTaskMutate(w, slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
 		t := list.Find(lineID)
 		if t == nil {
 			return list, false, nil
@@ -476,9 +476,9 @@ func (s *Server) propTodoCheck(w http.ResponseWriter, id string, checked bool) {
 			stages := p.Work
 			changed := false
 			for i := range stages {
-				for j := range stages[i].Todos {
-					if stages[i].Todos[j].ID == workTether && stages[i].Todos[j].Checked != checked {
-						stages[i].Todos[j].Checked = checked
+				for j := range stages[i].Tasks {
+					if stages[i].Tasks[j].ID == workTether && stages[i].Tasks[j].Checked != checked {
+						stages[i].Tasks[j].Checked = checked
 						changed = true
 					}
 				}
@@ -494,7 +494,7 @@ func (s *Server) propTodoCheck(w http.ResponseWriter, id string, checked bool) {
 			}
 		}
 	}
-	writeJSON(w, s.todosView())
+	writeJSON(w, s.tasksView())
 }
 
 // backlogStoreFor maps a composite backlog id (aion:<id> / re:<id>) to its
@@ -509,7 +509,7 @@ func (s *Server) backlogStoreFor(id string) (*aion.Store, string, bool) {
 	return nil, id, false
 }
 
-func (s *Server) backlogTodoCheck(w http.ResponseWriter, id string, checked bool) {
+func (s *Server) backlogTaskCheck(w http.ResponseWriter, id string, checked bool) {
 	store, bare, ok := s.backlogStoreFor(id)
 	if !ok {
 		http.Error(w, "backlog not available", http.StatusServiceUnavailable)
@@ -523,13 +523,13 @@ func (s *Server) backlogTodoCheck(w http.ResponseWriter, id string, checked bool
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, s.todosView())
+	writeJSON(w, s.tasksView())
 }
 
 // ---- drag-to-rank: the full projected order in, ONE write per touched file ----
 
-func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
-	if !s.todosOK(w) {
+func (s *Server) handleTasksRank(w http.ResponseWriter, r *http.Request) {
+	if !s.tasksOK(w) {
 		return
 	}
 	var b struct {
@@ -564,7 +564,7 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(personal) > 0 {
-		doc, err := s.todosStore.Load()
+		doc, err := s.tasksStore.Load()
 		if err != nil {
 			httpError(w, err)
 			return
@@ -577,14 +577,14 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if changed {
-			if err := s.todosStore.Save(doc); err != nil {
+			if err := s.tasksStore.Save(doc); err != nil {
 				httpError(w, err)
 				return
 			}
 		}
 	}
 	for slug, ranks := range propRanks {
-		list, rel, ok := s.realestate.LoadTodos(slug)
+		list, rel, ok := s.realestate.LoadTasks(slug)
 		if !ok {
 			continue
 		}
@@ -598,7 +598,7 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 		if !changed {
 			continue
 		}
-		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(list)); err != nil {
+		if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(list)); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -618,7 +618,7 @@ func (s *Server) handleTodosRank(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, s.todosView())
+	writeJSON(w, s.tasksView())
 }
 
 // ---- RE people registry: <reRoot>/people.md, aion-people grammar ----
@@ -678,7 +678,7 @@ func (s *Server) handleRePeopleSave(w http.ResponseWriter, r *http.Request) {
 // copied line carries its [work:: id] back-tether (idempotent — tethered
 // work ids are skipped on re-run).
 
-func (s *Server) handlePropTodosMigrate(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handlePropTasksMigrate(w http.ResponseWriter, r *http.Request) {
 	if s.realestate == nil || s.vault == nil {
 		http.Error(w, "properties not available", http.StatusServiceUnavailable)
 		return
@@ -698,11 +698,11 @@ func (s *Server) handlePropTodosMigrate(w http.ResponseWriter, r *http.Request) 
 	case http.MethodGet:
 		var out []report
 		for _, p := range props {
-			list, _, ok := s.realestate.LoadTodos(p.Slug)
+			list, _, ok := s.realestate.LoadTasks(p.Slug)
 			if !ok {
 				continue
 			}
-			if _, added := realestate.MigrateWorkTodos(p, list, now); len(added) > 0 {
+			if _, added := realestate.MigrateWorkTasks(p, list, now); len(added) > 0 {
 				out = append(out, report{Slug: p.Slug, Name: orStr(p.Short, p.Name), Added: added})
 			}
 		}
@@ -721,15 +721,15 @@ func (s *Server) handlePropTodosMigrate(w http.ResponseWriter, r *http.Request) 
 			if len(want) > 0 && !want[p.Slug] {
 				continue
 			}
-			list, rel, ok := s.realestate.LoadTodos(p.Slug)
+			list, rel, ok := s.realestate.LoadTasks(p.Slug)
 			if !ok {
 				continue
 			}
-			next, added := realestate.MigrateWorkTodos(p, list, now)
+			next, added := realestate.MigrateWorkTasks(p, list, now)
 			if len(added) == 0 {
 				continue
 			}
-			if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTodos(next)); err != nil {
+			if err := s.vault.ReplaceSectionCap("realestate", rel, "todos", realestate.EmitPropertyTasks(next)); err != nil {
 				httpError(w, err)
 				return
 			}

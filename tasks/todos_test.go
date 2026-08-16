@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"os"
@@ -41,26 +41,26 @@ func TestFixpoint(t *testing.T) {
 func TestParseStates(t *testing.T) {
 	d := Parse(sample)
 	dom := d.Domain("Aion")
-	if dom == nil || len(dom.Todos) != 3 {
+	if dom == nil || len(dom.Tasks) != 3 {
 		t.Fatalf("aion domain: %+v", dom)
 	}
-	if st := dom.Todos[0].State(); st != "open" {
+	if st := dom.Tasks[0].State(); st != "open" {
 		t.Fatalf("open state = %s", st)
 	}
-	amere := dom.Todos[1]
+	amere := dom.Tasks[1]
 	if amere.State() != "waiting" || amere.Waiting != "Ameren" || amere.AgeDays(now) != 6 {
 		t.Fatalf("waiting free text: %+v age %d", amere, amere.AgeDays(now))
 	}
-	yos := dom.Todos[2]
+	yos := dom.Tasks[2]
 	if yos.ID != "aion/yoshiro-side-letter" || yos.WaitingPerson() != "Yoshiro" {
 		t.Fatalf("wikilink waiting: id=%s person=%s", yos.ID, yos.WaitingPerson())
 	}
-	if open := dom.Todos[0]; open.AgeDays(now) != 0 {
+	if open := dom.Tasks[0]; open.AgeDays(now) != 0 {
 		t.Fatalf("added-today age = %d", open.AgeDays(now))
 	}
 	// derived ids
-	if d.Domains[0].Todos[0].ID != "inbox/undomained-thing" {
-		t.Fatalf("derived id = %s", d.Domains[0].Todos[0].ID)
+	if d.Domains[0].Tasks[0].ID != "inbox/undomained-thing" {
+		t.Fatalf("derived id = %s", d.Domains[0].Tasks[0].ID)
 	}
 	// extra line preserved
 	re := d.Domain("Real Estate")
@@ -202,19 +202,19 @@ func TestV2Fixpoint(t *testing.T) {
 func TestV2Structure(t *testing.T) {
 	d := Parse(sampleV2)
 	re := d.Domain("Real Estate")
-	if len(re.Todos) != 2 || len(re.Buckets) != 2 || len(re.Issues) != 1 || len(re.Backlog) != 2 {
+	if len(re.Tasks) != 2 || len(re.Buckets) != 2 || len(re.Issues) != 1 || len(re.Backlog) != 2 {
 		t.Fatalf("structure: %d loose %d buckets %d issues %d backlog",
-			len(re.Todos), len(re.Buckets), len(re.Issues), len(re.Backlog))
+			len(re.Tasks), len(re.Buckets), len(re.Issues), len(re.Backlog))
 	}
-	if re.Todos[1].Rock != "real-estate/new-rock" {
-		t.Fatalf("rock tether: %+v", re.Todos[1])
+	if re.Tasks[1].Rock != "real-estate/new-rock" {
+		t.Fatalf("rock tether: %+v", re.Tasks[1])
 	}
 	b := re.Buckets[0]
 	if b.Name != "4848 & 4852" || b.Slug != "4848-4852" || len(b.Links) != 2 || b.Links[0] != "4848 fountain ave" {
 		t.Fatalf("bucket heading: %+v", b)
 	}
-	if b.Todos[0].Issue != "real-estate/zoning-variance-for-4848-4852" {
-		t.Fatalf("issue tether: %+v", b.Todos[0])
+	if b.Tasks[0].Issue != "real-estate/zoning-variance-for-4848-4852" {
+		t.Fatalf("issue tether: %+v", b.Tasks[0])
 	}
 	is := re.Issues[0]
 	if is.ID != "real-estate/zoning-variance-for-4848-4852" || is.Checked {
@@ -225,7 +225,7 @@ func TestV2Structure(t *testing.T) {
 		t.Fatalf("issue open-task count: %+v", v.Domains[0].Issues[0])
 	}
 	// bucket todo findable by id
-	if _, ft := d.Find(b.Todos[0].ID); ft == nil {
+	if _, ft := d.Find(b.Tasks[0].ID); ft == nil {
 		t.Fatal("bucket todo not findable")
 	}
 	// auto-assigned issue id pins on normalize
@@ -271,20 +271,20 @@ func TestMigrateLegacy(t *testing.T) {
 		t.Fatal("no backup written")
 	}
 	d, _ := s.Load()
-	if d.Domain("Aion") == nil || len(d.Domain("Aion").Todos) != 2 {
+	if d.Domain("Aion") == nil || len(d.Domain("Aion").Tasks) != 2 {
 		t.Fatalf("aion todos: %+v", d.Domain("Aion"))
 	}
-	if got := d.Domain("Aion").Todos[0].Text; got != "bio · reach out to [[Ulrike Granögger]]" {
+	if got := d.Domain("Aion").Tasks[0].Text; got != "bio · reach out to [[Ulrike Granögger]]" {
 		t.Fatalf("bio prefix: %q", got)
 	}
 	per := d.Domain("Personal")
-	if len(per.Todos) != 3 { // taxes + 2 blogs
-		t.Fatalf("personal todos: %d", len(per.Todos))
+	if len(per.Tasks) != 3 { // taxes + 2 blogs
+		t.Fatalf("personal todos: %d", len(per.Tasks))
 	}
-	if !strings.HasPrefix(per.Todos[1].Text, "blog · ") {
-		t.Fatalf("blog prefix: %q", per.Todos[1].Text)
+	if !strings.HasPrefix(per.Tasks[1].Text, "blog · ") {
+		t.Fatalf("blog prefix: %q", per.Tasks[1].Text)
 	}
-	if len(d.Domain("Real Estate").Todos) != 2 {
+	if len(d.Domain("Real Estate").Tasks) != 2 {
 		t.Fatal("real estate todos")
 	}
 	raw, _ := os.ReadFile(s.Path())
@@ -293,7 +293,7 @@ func TestMigrateLegacy(t *testing.T) {
 	}
 	// every migrated item stamped with today's added date
 	for _, dom := range d.Domains {
-		for _, td := range dom.Todos {
+		for _, td := range dom.Tasks {
 			if td.Added != "2026-07-26" {
 				t.Fatalf("missing added stamp: %+v", td)
 			}
@@ -316,7 +316,7 @@ func testWrite(path string, data []byte) error { return os.WriteFile(path, data,
 
 // Dropping a BUCKET todo must remove the live line (Find sees buckets; the
 // removal must too) — the 3×-archived-never-removed regression.
-func TestDropBucketTodo(t *testing.T) {
+func TestDropBucketTask(t *testing.T) {
 	dir := t.TempDir()
 	raw := "# To Do\n\n## Real Estate\n- [ ] loose one [added:: 2026-07-01]\n\n### Tools · [bucket:: tools]\n- [ ] formalize heuristics tool [added:: 2026-07-30]\n"
 	if err := os.WriteFile(filepath.Join(dir, "to do.md"), []byte(raw), 0o644); err != nil {

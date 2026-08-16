@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // The property `## todos` section rides the shared to-do line grammar; the
 // fixpoint contract is what lets hand edits and app writes coexist.
-func TestPropertyTodosFixpoint(t *testing.T) {
+func TestPropertyTasksFixpoint(t *testing.T) {
 	src := strings.Join([]string{
 		"- [ ] gutters front + back [added:: 2026-08-01]",
 		"- [ ] pull electrical permit [added:: 2026-08-02] [owner:: acme-gc] [rank:: 2]",
@@ -18,18 +18,18 @@ func TestPropertyTodosFixpoint(t *testing.T) {
 		"- [x] order windows [added:: 2026-07-20] [done:: 2026-08-01] [work:: rough-in/order-windows]",
 		"- [ ] gutters front + back [todo:: gutters-2] [added:: 2026-08-05]",
 	}, "\n") + "\n"
-	list := ParsePropertyTodos(strings.Split(strings.TrimRight(src, "\n"), "\n"))
-	if out := EmitPropertyTodos(list); out != src {
+	list := ParsePropertyTasks(strings.Split(strings.TrimRight(src, "\n"), "\n"))
+	if out := EmitPropertyTasks(list); out != src {
 		t.Fatalf("fixpoint broken:\n--- in ---\n%s--- out ---\n%s", src, out)
 	}
 	// a hand-written field order normalizes ONCE, then stays byte-stable
 	hand := []string{"- [x] order windows [work:: w1] [added:: 2026-07-20]"}
-	once := EmitPropertyTodos(ParsePropertyTodos(hand))
-	twice := EmitPropertyTodos(ParsePropertyTodos(strings.Split(strings.TrimRight(once, "\n"), "\n")))
+	once := EmitPropertyTasks(ParsePropertyTasks(hand))
+	twice := EmitPropertyTasks(ParsePropertyTasks(strings.Split(strings.TrimRight(once, "\n"), "\n")))
 	if once != twice {
 		t.Fatalf("normalize-once broken:\n%q\n%q", once, twice)
 	}
-	items := list.Todos()
+	items := list.Tasks()
 	if len(items) != 4 {
 		t.Fatalf("want 4 todos, got %d", len(items))
 	}
@@ -53,29 +53,29 @@ func TestPropertyTodosFixpoint(t *testing.T) {
 
 // Migration copies OPEN work todos with a [work::] back-tether, skips checked
 // ones and already-tethered ids (idempotent), and never touches ## work.
-func TestMigrateWorkTodos(t *testing.T) {
+func TestMigrateWorkTasks(t *testing.T) {
 	p := Property{Work: ParseWork([]string{
 		"- [ ] Rough-in",
 		"    - [x] Rough plumbing",
 		"    - [ ] Rough electrical",
 		"    - [ ] Order windows",
 	})}
-	list := ParsePropertyTodos([]string{
+	list := ParsePropertyTasks([]string{
 		"- [ ] order windows [work:: rough-in/order-windows] [added:: 2026-08-01]",
 	})
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
-	next, added := MigrateWorkTodos(p, list, now)
+	next, added := MigrateWorkTasks(p, list, now)
 	if len(added) != 1 || added[0] != "Rough electrical" {
 		t.Fatalf("added = %v", added)
 	}
-	items := next.Todos()
+	items := next.Tasks()
 	last := items[len(items)-1]
 	if last.FieldValue("work") != "rough-in/rough-electrical" || last.Added != "2026-08-09" {
 		t.Fatalf("migrated line: %+v", last)
 	}
 	// re-running adds nothing
-	if _, again := MigrateWorkTodos(p, next, now); len(again) != 0 {
+	if _, again := MigrateWorkTasks(p, next, now); len(again) != 0 {
 		t.Fatalf("not idempotent: %v", again)
 	}
-	_ = todos.EmitLine(last) // the migrated line emits through the shared grammar
+	_ = tasks.EmitLine(last) // the migrated line emits through the shared grammar
 }

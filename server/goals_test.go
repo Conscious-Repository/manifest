@@ -12,7 +12,7 @@ import (
 	"manifest/approvals"
 	"manifest/daily"
 	"manifest/goals"
-	"manifest/todos"
+	"manifest/tasks"
 	"manifest/vault"
 )
 
@@ -170,7 +170,7 @@ func TestDayCapture(t *testing.T) {
 	}
 	svc := daily.NewService(daily.Config{VaultPath: dir, ScheduleStart: 8, ScheduleEnd: 18, Write: testWrite}, idx)
 	s := New(svc, goals.NewStore(idx, dir, "goals.md", testWrite), nil)
-	s.UseTodos(todos.NewStore(dir, "to do.md", testWrite))
+	s.UseTasks(tasks.NewStore(dir, "to do.md", testWrite))
 
 	post := func() daily.Day {
 		rec := httptest.NewRecorder()
@@ -192,7 +192,7 @@ func TestDayCapture(t *testing.T) {
 	day := post()
 	linked := 0
 	for _, tk := range day.Tasks {
-		if tk.TodoID == "aion/lee-sync" && tk.Text == "Lee sync" {
+		if tk.TaskID == "aion/lee-sync" && tk.Text == "Lee sync" {
 			linked++
 		}
 	}
@@ -215,7 +215,7 @@ func TestDayCapture(t *testing.T) {
 	day = post()
 	linked = 0
 	for _, tk := range day.Tasks {
-		if tk.TodoID == "aion/lee-sync" {
+		if tk.TaskID == "aion/lee-sync" {
 			linked++
 		}
 	}

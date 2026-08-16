@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"strings"
@@ -20,13 +20,13 @@ func Serialize(d *Doc) string {
 			b.WriteString("\n")
 		}
 		b.WriteString("## " + dom.Name + "\n")
-		for _, t := range dom.Todos {
-			b.WriteString(emitTodo(t) + "\n")
+		for _, t := range dom.Tasks {
+			b.WriteString(emitTask(t) + "\n")
 		}
 		for _, bk := range dom.Buckets {
 			b.WriteString("\n" + bucketHeading(bk) + "\n")
-			for _, t := range bk.Todos {
-				b.WriteString(emitTodo(t) + "\n")
+			for _, t := range bk.Tasks {
+				b.WriteString(emitTask(t) + "\n")
 			}
 		}
 		if len(dom.Issues) > 0 {
@@ -62,7 +62,7 @@ func bucketHeading(bk *Bucket) string {
 	return line
 }
 
-func emitTodo(t *Todo) string {
+func emitTask(t *Task) string {
 	mark := " "
 	if t.Checked {
 		mark = "x"

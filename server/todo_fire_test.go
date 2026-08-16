@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"manifest/spirits"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // fireFixture: assignFixture + a REAL hermes spirits store (temp dir) so
@@ -17,11 +17,11 @@ func fireFixture(t *testing.T) *Server {
 	t.Helper()
 	srv, _ := panelFixture(t)
 	dir := t.TempDir()
-	st := todos.NewStore(dir, "to do.md", testWriteAbs)
+	st := tasks.NewStore(dir, "to do.md", testWriteAbs)
 	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] paint the fence [added:: 2026-08-14]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	srv.todosStore = st
+	srv.tasksStore = st
 	hermes := spirits.NewStore(t.TempDir())
 	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes", Spirits: hermes}})
 	return srv
@@ -32,7 +32,7 @@ func TestAssignSpoolsPlanPhase(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/todos/assign",
 		strings.NewReader(`{"id":"inbox/paint-the-fence","owner":"agent:hermes"}`))
 	w := httptest.NewRecorder()
-	srv.handleTodoAssign(w, req)
+	srv.handleTaskAssign(w, req)
 	if w.Code != 200 {
 		t.Fatalf("assign: %d %s", w.Code, w.Body.String())
 	}
@@ -58,7 +58,7 @@ func TestFireGuards(t *testing.T) {
 	post := func(body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("POST", "/api/todos/fire", strings.NewReader(body))
 		w := httptest.NewRecorder()
-		srv.handleTodoFire(w, req)
+		srv.handleTaskFire(w, req)
 		return w
 	}
 	// no record/plan yet → 400
@@ -66,7 +66,7 @@ func TestFireGuards(t *testing.T) {
 		t.Fatalf("fire without plan: %d", w.Code)
 	}
 	// a plan but a PERSON assignee → 400 (fire is the agent lane)
-	if _, ok := srv.pinTodoID("inbox/paint-the-fence"); !ok {
+	if _, ok := srv.pinTaskID("inbox/paint-the-fence"); !ok {
 		t.Fatal("pin")
 	}
 	if err := srv.setPlanAssignee("inbox/paint-the-fence", "RT"); err != nil {

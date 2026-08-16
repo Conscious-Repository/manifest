@@ -38,7 +38,7 @@ import (
 	"manifest/spirits"
 	"manifest/teamportal"
 	"manifest/threads"
-	"manifest/todos"
+	"manifest/tasks"
 	"manifest/vault"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -195,7 +195,7 @@ func main() {
 				Actor:   vaultwriter.ActorUserAction},
 			// to do.md + "to do archive.md" + .pre-* backups
 			vaultwriter.Capability{Name: "todos", Zone: record.ZoneKnowledge,
-				Pattern: strings.TrimSuffix(orDefault(cfg.TodosFileName, "to do.md"), ".md") + "*",
+				Pattern: strings.TrimSuffix(orDefault(cfg.TasksFileName, "to do.md"), ".md") + "*",
 				Actor:   vaultwriter.ActorUserAction},
 			// daily notes: the exact YYYY-MM-DD.md shape, wherever they live
 			vaultwriter.Capability{Name: "daily", Zone: record.ZoneKnowledge,
@@ -253,7 +253,7 @@ func main() {
 	}
 
 	// TODOS — the third surface over the vault-root `to do.md` (peer of goals.md).
-	todosStore := todos.NewStore(cfg.VaultPath, cfg.TodosFileName, vw.BindAbs("todos"))
+	tasksStore := tasks.NewStore(cfg.VaultPath, cfg.TasksFileName, vw.BindAbs("todos"))
 	{
 		var areaNames []string
 		if doc := goalsStore.Load(); doc != nil {
@@ -261,12 +261,12 @@ func main() {
 				areaNames = append(areaNames, a.Name)
 			}
 		}
-		if migrated, err := todosStore.Migrate(time.Now(), areaNames); err != nil {
-			log.Printf("migrating %s: %v", cfg.TodosFileName, err)
+		if migrated, err := tasksStore.Migrate(time.Now(), areaNames); err != nil {
+			log.Printf("migrating %s: %v", cfg.TasksFileName, err)
 		} else if migrated {
-			log.Printf("%s migrated to the domain grammar (backup: %s.pre-migration)", cfg.TodosFileName, cfg.TodosFileName)
+			log.Printf("%s migrated to the domain grammar (backup: %s.pre-migration)", cfg.TasksFileName, cfg.TasksFileName)
 		}
-		if n, err := todosStore.Sweep(time.Now()); err == nil && n > 0 {
+		if n, err := tasksStore.Sweep(time.Now()); err == nil && n > 0 {
 			log.Printf("todos: swept %d done item(s) to the archive", n)
 		}
 	}
@@ -300,10 +300,10 @@ func main() {
 			log.Printf("seeding real-estate assumptions: %v", err)
 		}
 	}
-	svc.UseGoals(server.NewGoalsAdapter(goalsStore, todosStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
+	svc.UseGoals(server.NewGoalsAdapter(goalsStore, tasksStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
-	srv.UseTodos(todosStore)
+	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
 	srv.UseSTT(cfg.LabSttUrl, cfg.LabSttModel)             // mic dictation → lab granite-speech (P6)
@@ -421,7 +421,7 @@ func main() {
 			emitters = append(emitters, signals.ColdContacts(contactsSvc))
 		}
 		emitters = append(emitters, signals.StalledRocks(goalsStore))
-		emitters = append(emitters, signals.StaleTodos(todosStore))
+		emitters = append(emitters, signals.StaleTasks(tasksStore))
 		emitters = append(emitters, signals.GmailReauth(gmailClient)) // "reconnect Gmail" nudge
 		// manifest-sync's parked-conflict markers (big-change Phase 2b) — the
 		// daemon writes <dataDir>/sync/<root>.conflict.json, deletes on resume
@@ -564,7 +564,7 @@ func main() {
 	// per-machine dataDir; the shared RE store waits for a future RE surface;
 	// aion todos comment through the portal's own team store (+ a blob-only
 	// threads.Store rooted at the same shared dir for attachments).
-	srv.UseTodoPlans(filepath.Join(cfg.SystemRoot, "todo-plans"))
+	srv.UseTaskPlans(filepath.Join(cfg.SystemRoot, "todo-plans"))
 	{
 		private, err := threads.New(filepath.Join(cfg.DataDir, "todo-threads"))
 		if err != nil {

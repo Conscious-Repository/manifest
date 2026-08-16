@@ -18,7 +18,7 @@ import (
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/realestate"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 func corpusDir(t *testing.T) string {
@@ -73,10 +73,10 @@ func TestCorpusGoalsArchives(t *testing.T) {
 	}
 }
 
-func TestCorpusTodos(t *testing.T) {
+func TestCorpusTasks(t *testing.T) {
 	dir := corpusDir(t)
 	raw := read(t, filepath.Join(dir, "to do.md"))
-	if out := todos.Serialize(todos.Parse(raw)); out != raw {
+	if out := tasks.Serialize(tasks.Parse(raw)); out != raw {
 		t.Fatalf("to do.md round-trip diverged:\n%s", firstDiff(raw, out))
 	}
 }

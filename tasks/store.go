@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"manifest/record"
 )
 
-// Store owns the vault-root `to do.md` (name configurable — todosFileName).
+// Store owns the vault-root `to do.md` (name configurable — tasksFileName).
 // Same contract as goals.Store: whole-file Load→mutate→Save, with every write
 // going through the injected write func (§A3 boundary — main binds it to a
 // vaultwriter knowledge-zone capability; this package never opens a file to
@@ -121,11 +121,11 @@ func (s *Store) Sweep(now time.Time) (int, error) {
 	}
 	cutoff := now.Add(-48 * time.Hour).Format("2006-01-02")
 	var archived []string
-	sweepList := func(list []*Todo, where string) []*Todo {
-		var keep []*Todo
+	sweepList := func(list []*Task, where string) []*Task {
+		var keep []*Task
 		for _, t := range list {
 			if t.Checked && t.Done != "" && t.Done < cutoff {
-				archived = append(archived, emitTodo(t)+" [domain:: "+where+"]")
+				archived = append(archived, emitTask(t)+" [domain:: "+where+"]")
 				continue
 			}
 			keep = append(keep, t)
@@ -133,9 +133,9 @@ func (s *Store) Sweep(now time.Time) (int, error) {
 		return keep
 	}
 	for _, dom := range d.Domains {
-		dom.Todos = sweepList(dom.Todos, dom.Name)
+		dom.Tasks = sweepList(dom.Tasks, dom.Name)
 		for _, b := range dom.Buckets {
-			b.Todos = sweepList(b.Todos, dom.Name+" / "+b.Name)
+			b.Tasks = sweepList(b.Tasks, dom.Name+" / "+b.Name)
 		}
 		// resolved issues sweep too (with their resolution note riding along)
 		var keepIssues []*Issue
@@ -172,19 +172,19 @@ func (s *Store) Drop(id string, now time.Time) error {
 	}
 	where := dom.Name
 	removed := false
-	var keep []*Todo
-	for _, o := range dom.Todos {
+	var keep []*Task
+	for _, o := range dom.Tasks {
 		if o != t {
 			keep = append(keep, o)
 		} else {
 			removed = true
 		}
 	}
-	dom.Todos = keep
+	dom.Tasks = keep
 	if !removed {
 		for _, b := range dom.Buckets {
-			var kb []*Todo
-			for _, o := range b.Todos {
+			var kb []*Task
+			for _, o := range b.Tasks {
 				if o != t {
 					kb = append(kb, o)
 				} else {
@@ -192,13 +192,13 @@ func (s *Store) Drop(id string, now time.Time) error {
 					where = dom.Name + " / " + b.Name // the Sweep's archive convention
 				}
 			}
-			b.Todos = kb
+			b.Tasks = kb
 		}
 	}
 	if !removed {
 		return os.ErrNotExist // never archive a line the live file keeps
 	}
-	line := emitTodo(t) + " [dropped:: " + now.Format("2006-01-02") + "] [domain:: " + where + "]"
+	line := emitTask(t) + " [dropped:: " + now.Format("2006-01-02") + "] [domain:: " + where + "]"
 	if err := s.appendArchive(now.Format("2006-01"), []string{line}); err != nil {
 		return err
 	}

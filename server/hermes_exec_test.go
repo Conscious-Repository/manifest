@@ -20,7 +20,7 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 	store := approvals.NewStore(filepath.Join(t.TempDir(), "artifacts")).WithVaultRoot(vault)
 	srv.UseApprovals(store)
 
-	todoID := "inbox/set-up-vendor-notes"
+	taskID := "inbox/set-up-vendor-notes"
 	reply := "# RESULT\n\nShortlist assembled.\n\n" +
 		"```manifest-proposal\n" +
 		`{"type":"create-vault-note","title":"Vendor Shortlist","body":"- acme\n- globex"}` + "\n" +
@@ -28,7 +28,7 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 		"```manifest-proposal\n" +
 		`{"type":"run-errand","errand":"email the acme rep for a quote"}` + "\n" +
 		"```\n"
-	srv.materializeHermesBrief(todoID, "go", "", reply)
+	srv.materializeHermesBrief(taskID, "go", "", reply)
 
 	pending := store.List("pending")
 	if len(pending) != 2 {
@@ -50,7 +50,7 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 		if p.Agent != "hermes" {
 			t.Errorf("agent = %q, want hermes", p.Agent)
 		}
-		if !strings.Contains(p.Action, "[todo:: "+todoID+"]") {
+		if !strings.Contains(p.Action, "[todo:: "+taskID+"]") {
 			t.Errorf("action missing todo token: %q", p.Action)
 		}
 	}
@@ -59,12 +59,12 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 	}
 
 	// the todo panel sees the pending proposal → state=proposed
-	if d := srv.delegationIndex()[todoID]; d.State != "proposed" {
+	if d := srv.delegationIndex()[taskID]; d.State != "proposed" {
 		t.Errorf("delegation state = %q, want proposed (%+v)", d.State, d)
 	}
 
 	// the thread comment: filed count + placeholders, never raw JSON
-	th := srv.listThread(todoID)
+	th := srv.listThread(taskID)
 	if len(th) != 1 {
 		t.Fatalf("thread = %+v", th)
 	}
@@ -90,7 +90,7 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 	}
 
 	// re-filing the same reply dedupes (same action|body → same id, already decided elsewhere or pending)
-	srv.materializeHermesBrief(todoID, "go", "", reply)
+	srv.materializeHermesBrief(taskID, "go", "", reply)
 	if got := len(store.List("pending")); got != 1 { // errand still pending; note already approved → re-filed? id exists in approved
 		// Propose dedupes only against pending; an approved twin refiling is
 		// acceptable — assert no THIRD distinct proposal appeared.
@@ -115,14 +115,14 @@ func TestHermesGoBadBlocksWarnOnly(t *testing.T) {
 	srv, vault := panelFixture(t)
 	store := approvals.NewStore(filepath.Join(t.TempDir(), "artifacts")).WithVaultRoot(vault)
 	srv.UseApprovals(store)
-	todoID := "inbox/bad-blocks"
+	taskID := "inbox/bad-blocks"
 	reply := "result\n```manifest-proposal\n{nope\n```\n" +
 		"```manifest-proposal\n" + `{"type":"delete-everything"}` + "\n```\n"
-	srv.materializeHermesBrief(todoID, "go", "", reply)
+	srv.materializeHermesBrief(taskID, "go", "", reply)
 	if got := len(store.List("pending")); got != 0 {
 		t.Fatalf("pending = %d, want 0", got)
 	}
-	th := srv.listThread(todoID)
+	th := srv.listThread(taskID)
 	if len(th) != 1 || !strings.Contains(th[0].Text, "⚠") {
 		t.Fatalf("expected warnings in thread: %+v", th)
 	}

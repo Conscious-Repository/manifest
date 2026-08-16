@@ -101,7 +101,7 @@ ran
 		t.Fatalf("want one chat.assistant (deltas skipped): %+v", es)
 	}
 	for _, e := range es {
-		if e.Kind == "run.completed" && (e.Todo != "inbox/research-zoning" || e.Harness != "hermes" || e.Actor != "hermes") {
+		if e.Kind == "run.completed" && (e.Task != "inbox/research-zoning" || e.Harness != "hermes" || e.Actor != "hermes") {
 			t.Fatalf("run entry fields: %+v", e)
 		}
 		if e.Kind == "chat.assistant" && (e.Session != sid || e.Text != "the full answer" || e.Actor != "concierge") {
@@ -125,7 +125,7 @@ func TestLedgerThreadHookSkipsMarkers(t *testing.T) {
 	srv.markerAdd(id, threads.ActRelay, "")                                                       // hidden marker via the private store
 	_, _ = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActRelay, "", nil, nil, nil)       // relay action is a marker
 	es := allLedgerEntries(t, led)
-	if len(es) != 1 || es[0].Kind != "thread.comment" || es[0].Todo != id || es[0].Actor != "owner" {
+	if len(es) != 1 || es[0].Kind != "thread.comment" || es[0].Task != id || es[0].Actor != "owner" {
 		t.Fatalf("want exactly the one comment line: %+v", es)
 	}
 }

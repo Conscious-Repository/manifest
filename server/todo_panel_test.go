@@ -32,7 +32,7 @@ func panelFixture(t *testing.T) (*Server, string) {
 		)
 	srv := &Server{}
 	srv.UseVault(vw)
-	srv.UseTodoPlans("system/todo-plans")
+	srv.UseTaskPlans("system/todo-plans")
 	private, err := threads.New(filepath.Join(dataDir, "todo-threads"))
 	if err != nil {
 		t.Fatal(err)

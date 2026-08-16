@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"time"
 
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // Stale-todo signals (todos-surface-scope §4 "quiet pressure"): an OPEN todo
@@ -18,13 +18,13 @@ const (
 	staleWaitingDays = 30
 )
 
-// TodoLoader is the todos surface the emitter needs (todos.Store).
-type TodoLoader interface{ Load() (*todos.Doc, error) }
+// TaskLoader is the todos surface the emitter needs (tasks.Store).
+type TaskLoader interface{ Load() (*tasks.Doc, error) }
 
-// StaleTodos emits one card per aging open/waiting todo.
-func StaleTodos(l TodoLoader) Emitter { return todoEmitter{l} }
+// StaleTasks emits one card per aging open/waiting todo.
+func StaleTasks(l TaskLoader) Emitter { return todoEmitter{l} }
 
-type todoEmitter struct{ l TodoLoader }
+type todoEmitter struct{ l TaskLoader }
 
 func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 	doc, err := e.l.Load()
@@ -33,7 +33,7 @@ func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 	}
 	var out []Signal
 	for _, dom := range doc.Domains {
-		dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) {
+		dom.AllTasks(func(_ *tasks.Bucket, t *tasks.Task) {
 			// rock-tethered todos are exempt — the rock-stalled signal owns
 			// that rhythm (no double nagging); issues/backlog never enter here
 			if t.Rock != "" {

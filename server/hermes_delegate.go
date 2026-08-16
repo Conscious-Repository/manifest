@@ -35,7 +35,7 @@ type hermesCfg struct {
 	runner    *hermes.Runner
 	readTools string            // -t scope for plan/comment (read-only)
 	mu        sync.Mutex        // guards running
-	running   map[string]string // todoID → phase currently executing
+	running   map[string]string // taskID → phase currently executing
 }
 
 // UseHermes wires the do-bot runner. readTools is the read-only toolset scope
@@ -72,17 +72,17 @@ func (s *Server) hermesRealHarness() bool {
 // startHermesTurn kicks off one agent turn in the background (a turn is slow —
 // the tool loop). It coalesces: a second call while a turn is in flight for the
 // same todo is refused, mirroring the harness double-spool guard.
-func (s *Server) startHermesTurn(todoID, phase, intent, prompt string) error {
+func (s *Server) startHermesTurn(taskID, phase, intent, prompt string) error {
 	s.hermes.mu.Lock()
-	if _, busy := s.hermes.running[todoID]; busy {
+	if _, busy := s.hermes.running[taskID]; busy {
 		s.hermes.mu.Unlock()
 		return errBadRequest("Hermes is already working on this — wait for it to finish")
 	}
-	s.hermes.running[todoID] = phase
+	s.hermes.running[taskID] = phase
 	s.hermes.mu.Unlock()
 	// let the do-bot SEE what the owner attached on the thread — text files
 	// inlined, images handed their path (vision reads them; already in scope).
-	if att := s.hermesAttachments(todoID); att != "" {
+	if att := s.hermesAttachments(taskID); att != "" {
 		prompt += "\n" + att
 	}
 	// the go phase carries the proposals protocol (Phase 2): execution stays
@@ -91,7 +91,7 @@ func (s *Server) startHermesTurn(todoID, phase, intent, prompt string) error {
 	if phase == "go" {
 		prompt += "\n" + hermesGoProtocol
 	}
-	go s.runHermesTurn(todoID, phase, intent, prompt)
+	go s.runHermesTurn(taskID, phase, intent, prompt)
 	return nil
 }
 
@@ -119,21 +119,21 @@ claiming it is done. Everything else in your reply is the RESULT brief.
 
 // runHermesTurn invokes the CLI and materializes the reply. Always clears the
 // in-flight marker.
-func (s *Server) runHermesTurn(todoID, phase, intent, prompt string) {
+func (s *Server) runHermesTurn(taskID, phase, intent, prompt string) {
 	defer func() {
 		s.hermes.mu.Lock()
-		delete(s.hermes.running, todoID)
+		delete(s.hermes.running, taskID)
 		s.hermes.mu.Unlock()
 	}()
 	who := agentIdentity("hermes")
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
 		Prompt:   prompt,
-		Session:  hermesSession(todoID), // per-thread continuity, shared with the CLI/Telegram store
+		Session:  hermesSession(taskID), // per-thread continuity, shared with the CLI/Telegram store
 		Toolsets: s.hermes.readTools,    // read-only scope until Phase 2's gated execution
 	})
 	if err != nil {
-		log.Printf("hermes turn %s (%s): %v", todoID, phase, err)
-		_, _ = s.addThreadEntry(who, todoID, threads.ActComment,
+		log.Printf("hermes turn %s (%s): %v", taskID, phase, err)
+		_, _ = s.addThreadEntry(who, taskID, threads.ActComment,
 			"⚠ Hermes couldn't finish that — "+err.Error(), nil, nil, map[string]any{"hermes": true})
 		return
 	}
@@ -141,7 +141,7 @@ func (s *Server) runHermesTurn(todoID, phase, intent, prompt string) {
 	if p, ok := s.persona(intent); ok {
 		persona = p.Intent
 	}
-	s.materializeHermesBrief(todoID, phase, persona, res.Reply)
+	s.materializeHermesBrief(taskID, phase, persona, res.Reply)
 }
 
 // materializeHermesBrief turns the CLI's reply into the same surfaces the
@@ -149,16 +149,16 @@ func (s *Server) runHermesTurn(todoID, phase, intent, prompt string) {
 // reply rather than a harness run report): a plan brief → the plan record + a
 // thread note; a questions brief → a thread question; a non-plan persona reply
 // or a fired result → a thread comment.
-func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
+func (s *Server) materializeHermesBrief(taskID, phase, persona, brief string) {
 	brief = strings.TrimSpace(brief)
 	if brief == "" || s.threads == nil || s.todoPlans == nil || s.vault == nil {
 		return
 	}
 	who := agentIdentity("hermes")
 	meta := map[string]any{"hermes": true}
-	rec := s.readPlanRecord(todoID)
+	rec := s.readPlanRecord(taskID)
 	if rec.Assignee == "" { // engagement implies assignment (mirrors the sweep)
-		_ = s.setPlanAssignee(todoID, "agent:hermes")
+		_ = s.setPlanAssignee(taskID, "agent:hermes")
 	}
 
 	// go phase → the deliverable lands in the thread, and any manifest-proposal
@@ -168,7 +168,7 @@ func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
 		clean, specs, warns := hermes.ParseProposals(brief)
 		filed := 0
 		for _, sp := range specs {
-			p, err := s.hermesProposal(todoID, sp)
+			p, err := s.hermesProposal(taskID, sp)
 			if err == nil && s.approvals == nil {
 				err = fmt.Errorf("no approvals inbox is configured")
 			}
@@ -189,24 +189,24 @@ func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
 		for _, w := range warns {
 			text += "\n⚠ " + w
 		}
-		_, _ = s.addThreadEntry(who, todoID, threads.ActComment, text, nil, nil, meta)
+		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, text, nil, nil, meta)
 		return
 	}
 	// non-plan persona (brief/info/…) → the whole reply IS the answer.
 	if persona != "" && persona != "plan" {
-		_, _ = s.addThreadEntry(who, todoID, threads.ActComment, brief, nil, nil, meta)
+		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, brief, nil, nil, meta)
 		return
 	}
 	// questions-only → post them as dialog, leave the plan untouched.
 	questions, questionsOnly := briefQuestions(brief)
 	if questionsOnly && questions != "" {
-		_, _ = s.addThreadEntry(who, todoID, threads.ActComment, questions, nil, nil, meta)
+		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, questions, nil, nil, meta)
 		return
 	}
 	// plan brief → attach/update the canon plan + a thread note.
 	hadPlan := strings.TrimSpace(rec.Plan) != ""
-	if err := s.writePlanSection("todo-plans-agent", todoID, "plan", brief); err != nil {
-		log.Printf("hermes plan write %s: %v", todoID, err)
+	if err := s.writePlanSection("todo-plans-agent", taskID, "plan", brief); err != nil {
+		log.Printf("hermes plan write %s: %v", taskID, err)
 		return
 	}
 	verb := "plan attached to this task — answer in the thread to refine it, edit it directly, or fire to execute"
@@ -214,10 +214,10 @@ func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
 		verb = "plan updated on this task — answer in the thread to refine it, edit it directly, or fire to execute"
 	}
 	s.ledger(ledger.Entry{Source: "plan", Kind: "plan.materialized",
-		Actor: who.ID, Todo: todoID, Harness: "hermes", Ref: s.readPlanRecord(todoID).Rel})
-	_, _ = s.addThreadEntry(who, todoID, threads.ActComment, verb, nil, nil, meta)
+		Actor: who.ID, Task: taskID, Harness: "hermes", Ref: s.readPlanRecord(taskID).Rel})
+	_, _ = s.addThreadEntry(who, taskID, threads.ActComment, verb, nil, nil, meta)
 	if questions != "" { // drift guard: embedded questions still surface as dialog
-		_, _ = s.addThreadEntry(who, todoID, threads.ActComment, questions, nil, nil, meta)
+		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, questions, nil, nil, meta)
 	}
 }
 
@@ -228,8 +228,8 @@ func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
 // [todo:: <id>] token rides the Action so the todo panel shows state=proposed
 // (delegationIndex matches it) and dedupe (id = sha1(action|body)) keeps a
 // re-fired plan from double-filing.
-func (s *Server) hermesProposal(todoID string, sp hermes.ProposalSpec) (approvals.Proposal, error) {
-	token := " [todo:: " + todoID + "]"
+func (s *Server) hermesProposal(taskID string, sp hermes.ProposalSpec) (approvals.Proposal, error) {
+	token := " [todo:: " + taskID + "]"
 	p := approvals.Proposal{Agent: "hermes", Ritual: "delegate"}
 	switch sp.Type {
 	case "create-vault-note":
@@ -294,17 +294,17 @@ const hermesInlineMax = 128 << 10
 // handed their on-disk blob path (which keeps its extension), and Hermes's
 // vision toolset — already in the read-only scope — reads local image paths.
 // Only the OWNER's attachments (not agent posts) are surfaced, deduped by hash.
-func (s *Server) hermesAttachments(todoID string) string {
+func (s *Server) hermesAttachments(taskID string) string {
 	if s.threads == nil {
 		return ""
 	}
-	st := s.threadStore(s.threadKind(todoID))
+	st := s.threadStore(s.threadKind(taskID))
 	if st == nil {
 		return ""
 	}
 	seen := map[string]bool{}
 	var b strings.Builder
-	for _, c := range s.listThread(todoID) {
+	for _, c := range s.listThread(taskID) {
 		if strings.HasPrefix(c.Author, "agent:") {
 			continue // the owner's attachments only
 		}
@@ -388,7 +388,7 @@ func (s *Server) overlayHermesRunning(out map[string]delegationView) {
 // hermesSession maps a todo to a stable Hermes session name (--resume target),
 // so a plan refined across the thread is one continuous conversation. Slashes
 // and spaces in composite ids (aion:…, team/…) are flattened.
-func hermesSession(todoID string) string {
+func hermesSession(taskID string) string {
 	r := strings.NewReplacer("/", "-", ":", "-", " ", "-")
-	return "manifest-todo-" + strings.Trim(r.Replace(strings.TrimSpace(todoID)), "-")
+	return "manifest-todo-" + strings.Trim(r.Replace(strings.TrimSpace(taskID)), "-")
 }

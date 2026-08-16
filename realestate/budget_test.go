@@ -48,7 +48,7 @@ func TestComputeProjectBudget(t *testing.T) {
 func TestRecognizedSpend(t *testing.T) {
 	// three tasks: done+firm+no cash (recognized, ⚑), done+firm+partial draw
 	// (recognized at firm, ⚑ gap), open+cash (cash only, no flag)
-	stages := []WorkStage{{ID: "demo", Text: "Demo", Todos: []WorkTodo{
+	stages := []WorkStage{{ID: "demo", Text: "Demo", Tasks: []WorkTask{
 		{ID: "demo/a", Text: "a", Checked: true},
 		{ID: "demo/b", Text: "b", Checked: true},
 		{ID: "demo/c", Text: "c"},
@@ -60,7 +60,7 @@ func TestRecognizedSpend(t *testing.T) {
 		{Type: "expense", Amount: 1000, WorkID: "demo/c"},
 	}
 	JoinWorkLedger(stages, ledger)
-	td := stages[0].Todos
+	td := stages[0].Tasks
 	if td[0].Recognized != 5000 || td[0].Unreconciled != 5000 {
 		t.Fatalf("done+firm no cash: %+v", td[0])
 	}
@@ -75,11 +75,11 @@ func TestRecognizedSpend(t *testing.T) {
 	}
 
 	// receipt on the accepted bid = evidence without cash → flag clears (bank OR receipt)
-	stages2 := []WorkStage{{ID: "demo", Text: "Demo", Todos: []WorkTodo{{ID: "demo/a", Text: "a", Checked: true}}}}
+	stages2 := []WorkStage{{ID: "demo", Text: "Demo", Tasks: []WorkTask{{ID: "demo/a", Text: "a", Checked: true}}}}
 	JoinWorkLedger(stages2, []LedgerRow{
 		{Type: "bid", Status: "accepted", Amount: 5000, WorkID: "demo/a", Doc: "receipt.pdf"},
 	})
-	if td2 := stages2[0].Todos[0]; td2.Recognized != 5000 || td2.Unreconciled != 0 || !td2.Receipted {
+	if td2 := stages2[0].Tasks[0]; td2.Recognized != 5000 || td2.Unreconciled != 0 || !td2.Receipted {
 		t.Fatalf("receipted: %+v", td2)
 	}
 

@@ -1,4 +1,4 @@
-package todos
+package tasks
 
 import (
 	"strconv"
@@ -11,7 +11,7 @@ import (
 func slug(s string) string { return record.Slug(s, 48) }
 
 // explicitID returns the value of an explicit [todo:: id] field, or "".
-func (t *Todo) explicitID() string {
+func (t *Task) explicitID() string {
 	for _, f := range t.Fields {
 		if strings.EqualFold(f.Key, "todo") {
 			return f.Value
@@ -21,7 +21,7 @@ func (t *Todo) explicitID() string {
 }
 
 // assignIDs gives every todo and issue a stable id: an explicit pin wins,
-// else domain-slug/text-slug; collisions get -2/-3 suffixes. Todos (loose +
+// else domain-slug/text-slug; collisions get -2/-3 suffixes. Tasks (loose +
 // bucket) and issues share one id space — both are tether targets.
 func (d *Doc) assignIDs() {
 	seen := map[string]bool{}
@@ -39,7 +39,7 @@ func (d *Doc) assignIDs() {
 		if base == "" {
 			base = "domain"
 		}
-		assign := func(t *Todo) {
+		assign := func(t *Task) {
 			id := t.explicitID()
 			if id == "" {
 				ts := slug(t.Text)
@@ -50,11 +50,11 @@ func (d *Doc) assignIDs() {
 			}
 			t.ID = uniq(id)
 		}
-		for _, t := range dom.Todos {
+		for _, t := range dom.Tasks {
 			assign(t)
 		}
 		for _, b := range dom.Buckets {
-			for _, t := range b.Todos {
+			for _, t := range b.Tasks {
 				assign(t)
 			}
 		}

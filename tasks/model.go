@@ -6,7 +6,7 @@
 // a state (open → done, plus waiting-on carrying who + since-when). No
 // projects, no subtasks, no priorities, no due dates — deep structured work
 // belongs to the domains (todos-surface-scope §"The object").
-package todos
+package tasks
 
 import (
 	"regexp"
@@ -19,8 +19,8 @@ import (
 // Field is the kernel's inline-field pair (unrecognized keys round-trip).
 type Field = record.Field
 
-// Todo is one action line under a domain heading (loose or inside a bucket).
-type Todo struct {
+// Task is one action line under a domain heading (loose or inside a bucket).
+type Task struct {
 	ID      string `json:"id"` // explicit [todo:: id] else derived domain/text slug
 	Text    string `json:"text"`
 	Checked bool   `json:"checked"`
@@ -40,12 +40,12 @@ type Todo struct {
 
 // Bucket is a standing task grouping that is NOT a goal (partnerships,
 // properties, long-lived containers). Heading links bind records: a linked
-// property page renders the bucket's open todos.
+// property page renders the bucket's open tasks.
 type Bucket struct {
 	Name   string   `json:"name"`
 	Slug   string   `json:"slug"` // kernel slug; explicit [bucket:: slug] pin wins
 	Links  []string `json:"links,omitempty"`
-	Todos  []*Todo  `json:"todos"`
+	Tasks  []*Task  `json:"todos"`
 	pinned bool
 }
 
@@ -63,7 +63,7 @@ type Issue struct {
 }
 
 // State reports open | waiting | done.
-func (t *Todo) State() string {
+func (t *Task) State() string {
 	switch {
 	case t.Checked:
 		return "done"
@@ -76,7 +76,7 @@ func (t *Todo) State() string {
 
 // AgeDays is days since Added (waiting items age from Since — the fuse
 // restarts when the ball moves to someone else's court).
-func (t *Todo) AgeDays(now time.Time) int {
+func (t *Task) AgeDays(now time.Time) int {
 	anchor := t.Added
 	if t.State() == "waiting" && t.Since != "" {
 		anchor = t.Since
@@ -99,20 +99,20 @@ func (t *Todo) AgeDays(now time.Time) int {
 // ### issues → ### backlog. Inbox is the special undomained capture heading.
 type Domain struct {
 	Name    string    `json:"name"`
-	Todos   []*Todo   `json:"todos"` // loose (unbucketed)
+	Tasks   []*Task   `json:"todos"` // loose (unbucketed)
 	Buckets []*Bucket `json:"buckets,omitempty"`
 	Issues  []*Issue  `json:"issues,omitempty"`
 	Backlog []string  `json:"backlog,omitempty"` // plain idea bullets, verbatim, never aged
 	extra   []string  // verbatim non-todo lines (preserved, unrendered)
 }
 
-// AllTodos iterates loose + bucket todos (the aging/signal/find surface).
-func (dom *Domain) AllTodos(fn func(b *Bucket, t *Todo)) {
-	for _, t := range dom.Todos {
+// AllTasks iterates loose + bucket todos (the aging/signal/find surface).
+func (dom *Domain) AllTasks(fn func(b *Bucket, t *Task)) {
+	for _, t := range dom.Tasks {
 		fn(nil, t)
 	}
 	for _, b := range dom.Buckets {
-		for _, t := range b.Todos {
+		for _, t := range b.Tasks {
 			fn(b, t)
 		}
 	}
@@ -128,11 +128,11 @@ type Doc struct {
 const InboxName = "Inbox"
 
 // Find returns the todo with id (explicit or derived) and its domain —
-// searching loose AND bucket todos.
-func (d *Doc) Find(id string) (*Domain, *Todo) {
+// searching loose AND bucket tasks.
+func (d *Doc) Find(id string) (*Domain, *Task) {
 	for _, dom := range d.Domains {
-		var hit *Todo
-		dom.AllTodos(func(_ *Bucket, t *Todo) {
+		var hit *Task
+		dom.AllTasks(func(_ *Bucket, t *Task) {
 			if hit == nil && (t.ID == id || t.explicitID() == id) {
 				hit = t
 			}
@@ -208,7 +208,7 @@ type View struct {
 
 type DomainView struct {
 	Name    string       `json:"name"`
-	Todos   []TodoView   `json:"todos"` // loose
+	Tasks   []TaskView   `json:"todos"` // loose
 	Buckets []BucketView `json:"buckets,omitempty"`
 	Issues  []IssueView  `json:"issues,omitempty"`
 	Backlog []string     `json:"backlog,omitempty"`
@@ -218,7 +218,7 @@ type BucketView struct {
 	Name  string     `json:"name"`
 	Slug  string     `json:"slug"`
 	Links []string   `json:"links,omitempty"`
-	Todos []TodoView `json:"todos"`
+	Tasks []TaskView `json:"todos"`
 }
 
 type IssueView struct {
@@ -231,7 +231,7 @@ type IssueView struct {
 	AgeDays    int    `json:"ageDays"` // the decisions lane's ● age marker
 }
 
-type TodoView struct {
+type TaskView struct {
 	ID      string `json:"id"`
 	Text    string `json:"text"`
 	State   string `json:"state"`
@@ -254,14 +254,14 @@ func (d *Doc) View(now time.Time) View {
 	// open tethered-task counts per issue, across the whole doc
 	openByIssue := map[string]int{}
 	for _, dom := range d.Domains {
-		dom.AllTodos(func(_ *Bucket, t *Todo) {
+		dom.AllTasks(func(_ *Bucket, t *Task) {
 			if t.Issue != "" && !t.Checked {
 				openByIssue[t.Issue]++
 			}
 		})
 	}
-	tv := func(t *Todo, bucket string) TodoView {
-		return TodoView{
+	tv := func(t *Task, bucket string) TaskView {
+		return TaskView{
 			ID: t.ID, Text: t.Text, State: t.State(),
 			Added: t.Added, Waiting: t.Waiting, Since: t.Since,
 			Rock: t.Rock, Stage: t.Stage, Issue: t.Issue, Bucket: bucket,
@@ -270,14 +270,14 @@ func (d *Doc) View(now time.Time) View {
 		}
 	}
 	for _, dom := range d.Domains {
-		dv := DomainView{Name: dom.Name, Todos: []TodoView{}}
-		for _, t := range dom.Todos {
-			dv.Todos = append(dv.Todos, tv(t, ""))
+		dv := DomainView{Name: dom.Name, Tasks: []TaskView{}}
+		for _, t := range dom.Tasks {
+			dv.Tasks = append(dv.Tasks, tv(t, ""))
 		}
 		for _, b := range dom.Buckets {
-			bv := BucketView{Name: b.Name, Slug: b.Slug, Links: b.Links, Todos: []TodoView{}}
-			for _, t := range b.Todos {
-				bv.Todos = append(bv.Todos, tv(t, b.Slug))
+			bv := BucketView{Name: b.Name, Slug: b.Slug, Links: b.Links, Tasks: []TaskView{}}
+			for _, t := range b.Tasks {
+				bv.Tasks = append(bv.Tasks, tv(t, b.Slug))
 			}
 			dv.Buckets = append(dv.Buckets, bv)
 		}
@@ -322,7 +322,7 @@ var wikilinkRe = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 
 // WaitingPerson extracts the [[person]] target from a waiting-on value ("" if
 // the who is free text) — the contacts page's open-loop hook.
-func (t *Todo) WaitingPerson() string {
+func (t *Task) WaitingPerson() string {
 	if m := wikilinkRe.FindStringSubmatch(t.Waiting); m != nil {
 		return strings.TrimSpace(m[1])
 	}

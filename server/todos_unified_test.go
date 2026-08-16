@@ -10,7 +10,7 @@ import (
 
 	"manifest/realestate"
 	"manifest/record"
-	"manifest/todos"
+	"manifest/tasks"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
@@ -74,16 +74,16 @@ func unifiedHarness(t *testing.T) (*Server, string) {
 
 	srv := &Server{index: ix}
 	srv.UseVault(vw)
-	srv.UseTodos(todos.NewStore(vault, "to do.md", vw.BindAbs("todos")))
+	srv.UseTasks(tasks.NewStore(vault, "to do.md", vw.BindAbs("todos")))
 	srv.UseOwner("BA")
 	srv.realestate = realestate.New(ix)
 	return srv, vault
 }
 
-func getTodosView(t *testing.T, srv *Server) map[string]any {
+func getTasksView(t *testing.T, srv *Server) map[string]any {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	srv.handleTodosGet(rec, httptest.NewRequest("GET", "/api/todos", nil))
+	srv.handleTasksGet(rec, httptest.NewRequest("GET", "/api/todos", nil))
 	if rec.Code != 200 {
 		t.Fatalf("GET /api/todos: %d %s", rec.Code, rec.Body.String())
 	}
@@ -98,7 +98,7 @@ func getTodosView(t *testing.T, srv *Server) map[string]any {
 // never reaches rows — it appears under Outstanding, grouped by container.
 func TestUnifiedProjection(t *testing.T) {
 	srv, _ := unifiedHarness(t)
-	v := getTodosView(t, srv)
+	v := getTasksView(t, srv)
 	rows := v["rows"].([]any)
 	ids := map[string]bool{}
 	for _, r := range rows {
@@ -129,12 +129,12 @@ func TestUnifiedProjection(t *testing.T) {
 
 // Checking a property todo routes to the property file, stamps [done::], and
 // DUAL-STAMPS the [work::]-tethered `## work` line (accrual truth).
-func TestPropTodoCheckDualStamp(t *testing.T) {
+func TestPropTaskCheckDualStamp(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/todos/check",
 		strings.NewReader(`{"id":"prop:761-maple/rough-electrical","checked":true}`))
-	srv.handleTodoCheck(rec, req)
+	srv.handleTaskCheck(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("check: %d %s", rec.Code, rec.Body.String())
 	}
@@ -150,7 +150,7 @@ func TestPropTodoCheckDualStamp(t *testing.T) {
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest("POST", "/api/todos/check",
 		strings.NewReader(`{"id":"prop:761-maple/rough-electrical","checked":false}`))
-	srv.handleTodoCheck(rec, req)
+	srv.handleTaskCheck(rec, req)
 	raw, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
 	got = string(raw)
 	if strings.Contains(got, "- [x] rough electrical") || strings.Contains(got, "    - [x] Rough electrical") {
@@ -165,7 +165,7 @@ func TestRankBatch(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/todos/rank", strings.NewReader(
 		`{"order":["prop:761-maple/rough-electrical","real-estate/call-the-county","inbox/loose-personal-thing"]}`))
-	srv.handleTodosRank(rec, req)
+	srv.handleTasksRank(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("rank: %d %s", rec.Code, rec.Body.String())
 	}
@@ -178,7 +178,7 @@ func TestRankBatch(t *testing.T) {
 	if !strings.Contains(string(prop), "rough electrical [added:: 2026-08-05] [rank:: 1] [work:: rough-in/rough-electrical]") {
 		t.Fatalf("property rank not written:\n%s", prop)
 	}
-	v := getTodosView(t, srv)
+	v := getTasksView(t, srv)
 	rows := v["rows"].([]any)
 	if rows[0].(map[string]any)["id"] != "prop:761-maple/rough-electrical" ||
 		rows[1].(map[string]any)["id"] != "real-estate/call-the-county" {
@@ -193,7 +193,7 @@ func TestAddToProperty(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/todos/item", strings.NewReader(
 		`{"text":"order dumpsters","container":{"kind":"property","slug":"761-maple"},"owner":"acme-gc"}`))
-	srv.handleTodoAdd(rec, req)
+	srv.handleTaskAdd(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
 	}
@@ -225,13 +225,13 @@ func TestSplitPropID(t *testing.T) {
 
 // A property todo files under one of THIS property's stages via {stage} on
 // /api/todos/update — names outside the pipeline are refused, "" clears.
-func TestPropTodoStageUpdate(t *testing.T) {
+func TestPropTaskStageUpdate(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	post := func(body string) *httptest.ResponseRecorder {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest("POST", "/api/todos/update", strings.NewReader(body))
-		srv.handleTodoUpdate(rec, req)
+		srv.handleTaskUpdate(rec, req)
 		return rec
 	}
 	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":"rough-in"}`); rec.Code != 200 {

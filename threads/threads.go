@@ -42,7 +42,7 @@ type FileRef struct {
 // — those are deliberately replayable by a future notifier.
 type Comment struct {
 	ID         string         `json:"id"`
-	TodoID     string         `json:"todo"`
+	TaskID     string         `json:"todo"`
 	Action     string         `json:"action"` // comment | assign | plan | fire | result
 	Author     string         `json:"author"`
 	AuthorName string         `json:"author_name"`
@@ -148,7 +148,7 @@ func (s *Store) write(st state, e Entry) error {
 
 // Add appends a thread entry. action defaults to comment; either text or
 // files must be present for comments, structural actions may be text-only.
-func (s *Store) Add(author Identity, todoID, action, text string, mentions []string, files []FileRef, meta map[string]any, now time.Time) (Comment, error) {
+func (s *Store) Add(author Identity, taskID, action, text string, mentions []string, files []FileRef, meta map[string]any, now time.Time) (Comment, error) {
 	text = strings.TrimSpace(text)
 	if action == "" {
 		action = ActComment
@@ -164,27 +164,27 @@ func (s *Store) Add(author Identity, todoID, action, text string, mentions []str
 	st := s.read()
 	c := Comment{
 		ID:     fmt.Sprintf("c-%d", now.UnixNano()),
-		TodoID: todoID, Action: action,
+		TaskID: taskID, Action: action,
 		Author: author.ID, AuthorName: author.Name,
 		Text: text, Mentions: mentions, Files: files, Meta: meta,
 		At: now.UTC(),
 	}
-	st.Comments[todoID] = append(st.Comments[todoID], c)
+	st.Comments[taskID] = append(st.Comments[taskID], c)
 	err := s.write(st, Entry{TS: now.UTC(), Actor: author.ID, Action: action,
-		Payload: map[string]any{"todo": todoID, "text": text, "mentions": mentions, "files": len(files), "meta": meta}})
+		Payload: map[string]any{"todo": taskID, "text": text, "mentions": mentions, "files": len(files), "meta": meta}})
 	return c, err
 }
 
 // Thread returns a todo's entries, oldest first.
-func (s *Store) Thread(todoID string) []Comment {
+func (s *Store) Thread(taskID string) []Comment {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.read().Comments[todoID]
+	return s.read().Comments[taskID]
 }
 
-// TodoIDs lists every todo with at least one entry — the agent-loop sweep
+// TaskIDs lists every todo with at least one entry — the agent-loop sweep
 // iterates this to find assigned todos awaiting a relay.
-func (s *Store) TodoIDs() []string {
+func (s *Store) TaskIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st := s.read()
@@ -197,10 +197,10 @@ func (s *Store) TodoIDs() []string {
 
 // HasAction reports whether an entry with action and meta run id already
 // exists — the materialization idempotency check (plan Phase 4).
-func (s *Store) HasAction(todoID, action, runID string) bool {
+func (s *Store) HasAction(taskID, action, runID string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, c := range s.read().Comments[todoID] {
+	for _, c := range s.read().Comments[taskID] {
 		if c.Action != action || c.Meta == nil {
 			continue
 		}

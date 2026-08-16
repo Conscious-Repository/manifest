@@ -25,8 +25,8 @@ type WorkField struct {
 	Value string `json:"value"`
 }
 
-// WorkTodo is one action line under a stage.
-type WorkTodo struct {
+// WorkTask is one action line under a stage.
+type WorkTask struct {
 	ID        string      `json:"id"` // explicit [work:: id] else derived stage/todo slug
 	Explicit  bool        `json:"-"`  // id is frozen in the file
 	Text      string      `json:"text"`
@@ -69,7 +69,7 @@ type WorkStage struct {
 	Done         string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at stage check
 	Fields       []WorkField `json:"fields,omitempty"`
 	Extra        []string    `json:"-"`
-	Todos        []WorkTodo  `json:"todos"`
+	Tasks        []WorkTask  `json:"todos"`
 	Committed    float64     `json:"committed"`
 	Paid         float64     `json:"paid"`
 	Recognized   float64     `json:"recognized"`             // Σ todo recognized + stage-level recognition
@@ -107,8 +107,8 @@ func ParseWork(lines []string) []WorkStage {
 					continue // stray prose before the first stage — dropped like pre-## prose
 				}
 				st := &stages[len(stages)-1]
-				if len(st.Todos) > 0 {
-					st.Todos[len(st.Todos)-1].Extra = append(st.Todos[len(st.Todos)-1].Extra, ln)
+				if len(st.Tasks) > 0 {
+					st.Tasks[len(st.Tasks)-1].Extra = append(st.Tasks[len(st.Tasks)-1].Extra, ln)
 				} else {
 					st.Extra = append(st.Extra, ln)
 				}
@@ -121,7 +121,7 @@ func ParseWork(lines []string) []WorkStage {
 			stages = append(stages, WorkStage{Text: text, Checked: checked, Fields: fields})
 		} else {
 			st := &stages[len(stages)-1]
-			st.Todos = append(st.Todos, WorkTodo{Text: text, Checked: checked, Fields: fields})
+			st.Tasks = append(st.Tasks, WorkTask{Text: text, Checked: checked, Fields: fields})
 		}
 	}
 	assignWorkIDs(stages)
@@ -129,16 +129,16 @@ func ParseWork(lines []string) []WorkStage {
 	cur := false
 	for i := range stages {
 		st := &stages[i]
-		if st.Todos == nil {
-			st.Todos = []WorkTodo{} // marshal as [] — a nil slice is null in JSON and crashes .forEach client-side
+		if st.Tasks == nil {
+			st.Tasks = []WorkTask{} // marshal as [] — a nil slice is null in JSON and crashes .forEach client-side
 		}
 		st.Est = fieldFloat(st.Fields, "est")
 		st.Weeks = fieldFloat(st.Fields, "weeks")
 		st.Done = fieldValue(st.Fields, "done")
 		st.EstTotal = st.Est
-		st.Ready = len(st.Todos) > 0
-		for j := range st.Todos {
-			td := &st.Todos[j]
+		st.Ready = len(st.Tasks) > 0
+		for j := range st.Tasks {
+			td := &st.Tasks[j]
 			td.Est = fieldFloat(td.Fields, "est")
 			st.EstTotal += td.Est
 			if td.Est == 0 && !td.Checked {
@@ -191,9 +191,9 @@ func SetWorkField(stages []WorkStage, id, key, value string) bool {
 			upsert(&stages[i].Fields)
 			return true
 		}
-		for j := range stages[i].Todos {
-			if stages[i].Todos[j].ID == id {
-				upsert(&stages[i].Todos[j].Fields)
+		for j := range stages[i].Tasks {
+			if stages[i].Tasks[j].ID == id {
+				upsert(&stages[i].Tasks[j].Fields)
 				return true
 			}
 		}
@@ -221,8 +221,8 @@ func assignWorkIDs(stages []WorkStage) {
 		} else {
 			st.ID = uniq(workSlug(st.Text))
 		}
-		for j := range st.Todos {
-			td := &st.Todos[j]
+		for j := range st.Tasks {
+			td := &st.Tasks[j]
 			if ex := fieldValue(td.Fields, "work"); ex != "" {
 				td.ID, td.Explicit = ex, true
 				seen[ex] = true
@@ -272,7 +272,7 @@ func EmitWork(stages []WorkStage) string {
 		for _, ex := range st.Extra {
 			b.WriteString(ex + "\n")
 		}
-		for _, td := range st.Todos {
+		for _, td := range st.Tasks {
 			line(1, td.Checked, td.Text, td.Fields)
 			for _, ex := range td.Extra {
 				b.WriteString(ex + "\n")
@@ -292,8 +292,8 @@ func FreezeWorkID(stages []WorkStage, id string) bool {
 			st.Explicit = true
 			return true
 		}
-		for j := range st.Todos {
-			td := &st.Todos[j]
+		for j := range st.Tasks {
+			td := &st.Tasks[j]
 			if td.ID == id && !td.Explicit {
 				td.Fields = append(td.Fields, WorkField{Key: "work", Value: id})
 				td.Explicit = true
@@ -315,8 +315,8 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 	index := map[string]slot{}
 	for i := range stages {
 		index[stages[i].ID] = slot{i, -1}
-		for j := range stages[i].Todos {
-			index[stages[i].Todos[j].ID] = slot{i, j}
+		for j := range stages[i].Tasks {
+			index[stages[i].Tasks[j].ID] = slot{i, j}
 		}
 	}
 	// pass-5 accounting: an expense tethered to a work item that carries an
@@ -352,7 +352,7 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 			touch(r.WorkID).acceptedSum += r.Amount
 		}
 		if sl.ti >= 0 {
-			td := &st.Todos[sl.ti]
+			td := &st.Tasks[sl.ti]
 			if isExpense {
 				td.Paid += r.Amount
 			}
@@ -374,7 +374,7 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		sl := index[id]
 		stages[sl.si].Committed += committed
 		if sl.ti >= 0 {
-			stages[sl.si].Todos[sl.ti].Committed = committed
+			stages[sl.si].Tasks[sl.ti].Committed = committed
 		}
 	}
 	// recognition (accrual): checking a node with a firm price recognizes it as
@@ -396,8 +396,8 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 	}
 	for i := range stages {
 		st := &stages[i]
-		for j := range st.Todos {
-			td := &st.Todos[j]
+		for j := range st.Tasks {
+			td := &st.Tasks[j]
 			firm := 0.0
 			if a, ok := perNode[td.ID]; ok {
 				firm = a.acceptedSum

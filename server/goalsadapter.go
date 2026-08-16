@@ -6,7 +6,7 @@ import (
 	"manifest/aion"
 	"manifest/daily"
 	"manifest/goals"
-	"manifest/todos"
+	"manifest/tasks"
 )
 
 // goalsAdapter bridges the goals store to daily.GoalsProvider, resolving a picked
@@ -17,14 +17,14 @@ import (
 // split).
 type goalsAdapter struct {
 	store *goals.Store
-	todos *todos.Store // nilable
+	tasks *tasks.Store // nilable
 	aion  *aion.Store  // nilable — aion/ rocks offer backlog tasks
 	re    *aion.Store  // nilable — ooda-group/ rocks offer RE backlog tasks
 	owner string       // initials that mean "me" (backlog tasks are owner-filtered)
 }
 
 // NewGoalsAdapter wires the goals store into the daily service's Focus resolution.
-func NewGoalsAdapter(store *goals.Store, td *todos.Store, ai, re *aion.Store, owner string) daily.GoalsProvider {
+func NewGoalsAdapter(store *goals.Store, td *tasks.Store, ai, re *aion.Store, owner string) daily.GoalsProvider {
 	return goalsAdapter{store, td, ai, re, owner}
 }
 
@@ -57,14 +57,14 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 		}
 	}
 	res.Milestone = &daily.FocusNode{GoalID: sel.ID, Text: sel.Text, Checked: sel.Checked}
-	// "From your focus" offers = the Rock's open tethered todos (TodoID carried
+	// "From your focus" offers = the Rock's open tethered tasks (TaskID carried
 	// in GoalID's slot via the dedicated field below).
-	if a.todos != nil {
-		if doc, err := a.todos.Load(); err == nil {
+	if a.tasks != nil {
+		if doc, err := a.tasks.Load(); err == nil {
 			for _, dom := range doc.Domains {
-				dom.AllTodos(func(_ *todos.Bucket, t *todos.Todo) {
+				dom.AllTasks(func(_ *tasks.Bucket, t *tasks.Task) {
 					if t.Rock == g.ID && !t.Checked {
-						res.Tasks = append(res.Tasks, daily.FocusNode{TodoID: t.ID, Text: t.Text})
+						res.Tasks = append(res.Tasks, daily.FocusNode{TaskID: t.ID, Text: t.Text})
 					}
 				})
 			}
@@ -88,7 +88,7 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 			if it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "" {
 				continue
 			}
-			res.Tasks = append(res.Tasks, daily.FocusNode{TodoID: d.idPrefix + it.ID, Text: it.Text})
+			res.Tasks = append(res.Tasks, daily.FocusNode{TaskID: d.idPrefix + it.ID, Text: it.Text})
 		}
 	}
 	return res, true

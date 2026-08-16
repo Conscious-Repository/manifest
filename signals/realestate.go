@@ -123,7 +123,7 @@ func (e *noNextEmitter) Emit(now time.Time) ([]Signal, error) {
 		for _, st := range p.Work {
 			if st.Current {
 				open := 0
-				for _, t := range st.Todos {
+				for _, t := range st.Tasks {
 					if !t.Checked {
 						open++
 					}

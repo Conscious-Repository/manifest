@@ -112,10 +112,10 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				}
 			}
 			for _, r := range h.Spirits.Runs() {
-				var todoID string
+				var taskID string
 				var doc spirits.LibraryDoc // the brief this run wrote, if any
 				if m := todoTokenRe.FindStringSubmatch(r.Request); m != nil {
-					todoID = strings.TrimSpace(m[1])
+					taskID = strings.TrimSpace(m[1])
 					doc, _ = libraryDocForRun(h, r.ID, lib)
 				} else {
 					// an OLD report whose `request:` frontmatter was truncated
@@ -132,14 +132,14 @@ func (s *Server) delegationIndex() map[string]delegationView {
 					var wroteBrief bool
 					doc, wroteBrief = libraryDocForRunID(runID, r.ID, lib)
 					if m := todoTokenRe.FindStringSubmatch(body); m != nil {
-						todoID = strings.TrimSpace(m[1])
+						taskID = strings.TrimSpace(m[1])
 					} else if wroteBrief {
 						if m := todoTokenRe.FindStringSubmatch(doc.Title + "\n" + doc.Body); m != nil {
-							todoID = strings.TrimSpace(m[1])
+							taskID = strings.TrimSpace(m[1])
 						}
 					}
 				}
-				if todoID == "" {
+				if taskID == "" {
 					continue
 				}
 				state := "done"
@@ -175,10 +175,10 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				// brief carrying the same delegation token
 				ref := doc.Ref
 				if ref == "" {
-					ref = libraryRefForToken(todoID, lib)
+					ref = libraryRefForToken(taskID, lib)
 				}
 				d.ArtifactPath, d.ArtifactRef = s.artifactRefSplit(h, ref)
-				set(todoID, d)
+				set(taskID, d)
 			}
 		}
 		if h.Approvals != nil {
@@ -212,7 +212,7 @@ func delegateTargetFor(h *Harness) (spirit, ritual string) {
 // findHarness resolves a harness by name. When the do-bot runner is enabled and
 // no real `hermes` tree exists (Phase 1c), it synthesizes a nameonly Hermes
 // harness so the delegation callers route to the runner (its Spirits is nil —
-// spoolTodoWorkOrder handles that for the fork).
+// spoolTaskWorkOrder handles that for the fork).
 func (s *Server) findHarness(name string) *Harness {
 	hs := s.eachHarness()
 	for i := range hs {
@@ -226,7 +226,7 @@ func (s *Server) findHarness(name string) *Harness {
 	return nil
 }
 
-// spoolTodoWorkOrder composes and spools one phased work order. The request
+// spoolTaskWorkOrder composes and spools one phased work order. The request
 // ALWAYS carries the todo's own text (the agent's only unambiguous handle)
 // plus the durable [todo::] and [phase::] tokens. Comment-phase orders carry
 // the FULL dialog context (description · current plan · thread tail) — the
@@ -235,7 +235,7 @@ func (s *Server) findHarness(name string) *Harness {
 // swaps the protocol line for a reply-shape line on non-plan intents, and
 // stamps a recoverable [persona::] token; an unknown/disabled intent degrades
 // to today's request byte-for-byte.
-func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, intent string) error {
+func (s *Server) spoolTaskWorkOrder(harness *Harness, taskID, phase, extra, intent string) error {
 	if harness == nil {
 		return errBadRequest("harness not available")
 	}
@@ -247,8 +247,8 @@ func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, inte
 	if intent != "" && !hasPersona {
 		log.Printf("todo work order: unknown or disabled persona %q — spooling without it", intent)
 	}
-	text, _ := s.openTodoText(todoID)
-	rec := s.readPlanRecord(todoID)
+	text, _ := s.openTaskText(taskID)
+	rec := s.readPlanRecord(taskID)
 	var b strings.Builder
 	if hasPersona {
 		b.WriteString("PERSONA (how to respond — this governs your reply's shape and length):\n" + p.Prompt + "\n")
@@ -271,7 +271,7 @@ func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, inte
 		if pl := strings.TrimSpace(rec.Plan); pl != "" {
 			b.WriteString("CURRENT PLAN (the canon plan on the record — the owner may have edited it):\n" + pl + "\n")
 		}
-		if tail := s.threadTail(todoID, 6); tail != "" {
+		if tail := s.threadTail(taskID, 6); tail != "" {
 			b.WriteString("THREAD (newest last — this is your running dialog with the owner):\n" + tail + "\n")
 		}
 		if extra != "" {
@@ -279,14 +279,14 @@ func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, inte
 		}
 		b.WriteString(protocol)
 	}
-	b.WriteString("For this todo: [todo:: " + todoID + "] [phase:: " + phase + "]")
+	b.WriteString("For this todo: [todo:: " + taskID + "] [phase:: " + phase + "]")
 	if hasPersona {
 		b.WriteString(" [persona:: " + p.Intent + "]")
 	}
 	// Hermes runs on the owner's real do-bot (the Hermes Agent CLI), not the
 	// excalibur harness — intercept and route the composed work order there.
 	if s.hermesForked(harness) {
-		return s.startHermesTurn(todoID, phase, intent, b.String())
+		return s.startHermesTurn(taskID, phase, intent, b.String())
 	}
 	spirit, ritual := delegateTargetFor(harness)
 	return harness.Spirits.SpoolRunNow(spirit, ritual, b.String(), "")
@@ -301,8 +301,8 @@ const agentProtocolReminder = "PROTOCOL: your library brief must be exactly ONE 
 	"Never mix the two. Do not execute anything in these phases.\n"
 
 // threadTail renders the last n visible thread entries, author-labeled.
-func (s *Server) threadTail(todoID string, n int) string {
-	th := s.listThread(todoID)
+func (s *Server) threadTail(taskID string, n int) string {
+	th := s.listThread(taskID)
 	if len(th) == 0 {
 		return ""
 	}
@@ -513,7 +513,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			verb = "plan updated on this task — answer in the thread to refine it, edit it directly, or fire to execute"
 		}
 		s.ledger(ledger.Entry{Source: "plan", Kind: kind,
-			Actor: hermes.ID, Todo: id, Run: d.RunID, Harness: d.Harness,
+			Actor: hermes.ID, Task: id, Run: d.RunID, Harness: d.Harness,
 			Ref: s.readPlanRecord(id).Rel})
 		_, _ = s.addThreadEntry(hermes, id, threads.ActComment, verb, nil, nil, meta)
 		if questions != "" { // drift guard: embedded questions still surface as dialog
@@ -567,7 +567,7 @@ func (s *Server) markerAddMeta(id, action, runID string, extra map[string]any) {
 // the todo's text and its record description. If the hash didn't change, the
 // agent saw the same world; if it did, the current plan may be stale.
 func (s *Server) planCtxHash(id string) string {
-	text, _ := s.openTodoText(id)
+	text, _ := s.openTaskText(id)
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])[:12]
 }
@@ -579,11 +579,11 @@ func (s *Server) relaySweep(index map[string]delegationView) {
 	// candidate ids: anything with private entries, shared-RE entries, or an
 	// active delegation — agent-assigned todos always land in at least one
 	ids := map[string]bool{}
-	for _, id := range priv.TodoIDs() {
+	for _, id := range priv.TaskIDs() {
 		ids[id] = true
 	}
 	if s.threads.re != nil {
-		for _, id := range s.threads.re.TodoIDs() {
+		for _, id := range s.threads.re.TaskIDs() {
 			ids[id] = true
 		}
 	}
@@ -617,7 +617,7 @@ func (s *Server) relaySweep(index map[string]delegationView) {
 		if !lastOwner.After(lastAct) {
 			continue // the dialog is caught up
 		}
-		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "comment", "", ""); err == nil {
+		if err := s.spoolTaskWorkOrder(s.findHarness(harness), id, "comment", "", ""); err == nil {
 			s.markerAdd(id, threads.ActRelay, "")
 		}
 	}
@@ -633,11 +633,11 @@ func (s *Server) relaySweep(index map[string]delegationView) {
 func (s *Server) replanSweep(index map[string]delegationView) {
 	priv := s.threads.private
 	ids := map[string]bool{}
-	for _, id := range priv.TodoIDs() {
+	for _, id := range priv.TaskIDs() {
 		ids[id] = true
 	}
 	if s.threads.re != nil {
-		for _, id := range s.threads.re.TodoIDs() {
+		for _, id := range s.threads.re.TaskIDs() {
 			ids[id] = true
 		}
 	}
@@ -707,18 +707,18 @@ func (s *Server) replanSweep(index map[string]delegationView) {
 		replanExtra := "REPLAN — the task context changed since your current plan was written. CURRENT PLAN:\n" +
 			rec.Plan + "\nRe-read the task and description above; REPLACE the plan if the change matters, " +
 			"or return it unchanged with a one-line note if it doesn't."
-		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "plan", replanExtra, "plan"); err == nil {
+		if err := s.spoolTaskWorkOrder(s.findHarness(harness), id, "plan", replanExtra, "plan"); err == nil {
 			s.markerAddMeta(id, threads.ActReplan, "", map[string]any{"ctx": now})
 		}
 	}
 }
 
-// fireTodo — the explicit go core: snapshots the CURRENT plan bytes (the
+// fireTask — the explicit go core: snapshots the CURRENT plan bytes (the
 // human may have hand-edited them — the human is the mutex) + the thread tail
 // into a go-phase work order. The fire thread entry is attributed to the
 // actor (a portal member's fire shows their name). Returns
 // spirits.ErrAlreadyActive when the agent is mid-run.
-func (s *Server) fireTodo(actor threads.Identity, id string) error {
+func (s *Server) fireTask(actor threads.Identity, id string) error {
 	rec := s.readPlanRecord(id)
 	if !rec.Exists || strings.TrimSpace(rec.Plan) == "" {
 		return errBadRequest("no plan to fire — write one or assign an agent first")
@@ -741,7 +741,7 @@ func (s *Server) fireTodo(actor threads.Identity, id string) error {
 			extra += "\n\nRECENT THREAD:\n" + strings.Join(tail, "\n")
 		}
 	}
-	if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "go", extra, ""); err != nil {
+	if err := s.spoolTaskWorkOrder(s.findHarness(harness), id, "go", extra, ""); err != nil {
 		return err
 	}
 	_, _ = s.addThreadEntry(actor, id, threads.ActFire,
@@ -750,14 +750,14 @@ func (s *Server) fireTodo(actor threads.Identity, id string) error {
 	return nil
 }
 
-func (s *Server) handleTodoFire(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleTaskFire(w http.ResponseWriter, r *http.Request) {
 	var b struct{ ID string }
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
 	id := strings.TrimSpace(b.ID)
-	if err := s.fireTodo(s.ownerIdentity(), id); err != nil {
+	if err := s.fireTask(s.ownerIdentity(), id); err != nil {
 		if errors.Is(err, spirits.ErrAlreadyActive) {
 			w.WriteHeader(http.StatusConflict)
 			writeJSON(w, map[string]any{"active": true})
@@ -809,7 +809,7 @@ func (s *Server) handleDelegateTargets(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"targets": targets})
 }
 
-// handleDelegate spools the work order + stamps waiting on personal todos.
+// handleDelegate spools the work order + stamps waiting on personal tasks.
 func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		ID      string `json:"id"` // unified composite id
@@ -848,17 +848,17 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 	// sometimes shared) id forces the agent to guess the subject, which is how
 	// a delegation ends up producing the wrong artifact (see the courier run
 	// that wrote "analytical psych" for the UAE goal in Aug 2026).
-	var todoText string
-	if s.todosStore != nil {
-		if doc, err := s.todosStore.Load(); err == nil {
+	var taskText string
+	if s.tasksStore != nil {
+		if doc, err := s.tasksStore.Load(); err == nil {
 			if _, t := doc.Find(b.ID); t != nil {
-				todoText = t.Text
+				taskText = t.Text
 			}
 		}
 	}
 	var request string
-	if todoText != "" {
-		request = "TASK (from your todo board): " + todoText
+	if taskText != "" {
+		request = "TASK (from your todo board): " + taskText
 		if brief := strings.TrimSpace(b.Brief); brief != "" {
 			request += "\nBRIEF: " + brief
 		}
@@ -888,12 +888,12 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 	}
 	// waiting stamp — personal todos only (the chip derives from traces for
 	// every source; waiting is the belt on the todo line itself)
-	if s.todosStore != nil && !strings.ContainsAny(b.ID, ":") {
-		if doc, err := s.todosStore.Load(); err == nil {
+	if s.tasksStore != nil && !strings.ContainsAny(b.ID, ":") {
+		if doc, err := s.tasksStore.Load(); err == nil {
 			if _, t := doc.Find(b.ID); t != nil {
 				t.Waiting = b.Harness
 				t.Since = time.Now().Format("2006-01-02")
-				_ = s.todosStore.Save(doc)
+				_ = s.tasksStore.Save(doc)
 			}
 		}
 	}

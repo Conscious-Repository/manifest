@@ -25,22 +25,22 @@ func TestWorkFixpoint(t *testing.T) {
 	if len(stages) != 3 || stages[0].Current || !stages[1].Current {
 		t.Fatalf("current must be the first UNCHECKED stage: %+v", stages)
 	}
-	if stages[1].Todos[1].ID != "rough-in/rough-electrical" {
-		t.Fatalf("derived todo id wrong: %q", stages[1].Todos[1].ID)
+	if stages[1].Tasks[1].ID != "rough-in/rough-electrical" {
+		t.Fatalf("derived todo id wrong: %q", stages[1].Tasks[1].ID)
 	}
 	if fieldValue(stages[1].Fields, "crew") != "joes-guys" {
 		t.Fatal("unknown field lost")
 	}
 }
 
-// A freshly seeded stage has no todos — Todos must marshal as [] (never JSON
+// A freshly seeded stage has no todos — Tasks must marshal as [] (never JSON
 // null, which crashed every .forEach in the UI: blank WORK tab, "property not
 // found" on pages with an empty work plan).
-func TestWorkEmptyTodosNotNil(t *testing.T) {
+func TestWorkEmptyTasksNotNil(t *testing.T) {
 	stages := ParseWork([]string{"- [ ] Demo", "- [ ] Rough-in"})
 	for _, st := range stages {
-		if st.Todos == nil {
-			t.Fatalf("stage %q Todos is nil — marshals as null and breaks the client", st.Text)
+		if st.Tasks == nil {
+			t.Fatalf("stage %q Tasks is nil — marshals as null and breaks the client", st.Text)
 		}
 	}
 }
@@ -89,7 +89,7 @@ func TestJoinWorkLedger(t *testing.T) {
 	if st.Paid != 8900 || st.Committed != 12150+500 {
 		t.Fatalf("stage rollup: paid=%v committed=%v (want 8900 / 12650)", st.Paid, st.Committed)
 	}
-	td := st.Todos[0]
+	td := st.Tasks[0]
 	if td.Paid != 8400 || td.Committed != 12150 {
 		t.Fatalf("todo rollup: paid=%v committed=%v (want the contract 12150)", td.Paid, td.Committed)
 	}
@@ -102,8 +102,8 @@ func TestJoinWorkLedger(t *testing.T) {
 		{Type: "bid", Amount: 1000, Status: "accepted", WorkID: "s/t"},
 		{Type: "expense", Amount: 1400, Status: "paid", WorkID: "s/t"},
 	})
-	if over[0].Todos[0].Committed != 1400 {
-		t.Fatalf("overpaid contract: committed=%v want 1400", over[0].Todos[0].Committed)
+	if over[0].Tasks[0].Committed != 1400 {
+		t.Fatalf("overpaid contract: committed=%v want 1400", over[0].Tasks[0].Committed)
 	}
 }
 
