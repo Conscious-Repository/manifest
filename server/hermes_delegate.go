@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"manifest/aion"
+	"manifest/approvals"
 	"manifest/hermes"
 	"manifest/ledger"
 	"manifest/threads"
@@ -73,9 +77,37 @@ func (s *Server) startHermesTurn(todoID, phase, intent, prompt string) error {
 	}
 	s.hermes.running[todoID] = phase
 	s.hermes.mu.Unlock()
+	// the go phase carries the proposals protocol (Phase 2): execution stays
+	// read-only tool-wise; world-changes ride fenced blocks that manifest files
+	// into the approvals inbox for the owner's confirm.
+	if phase == "go" {
+		prompt += "\n" + hermesGoProtocol
+	}
 	go s.runHermesTurn(todoID, phase, intent, prompt)
 	return nil
 }
+
+// hermesGoProtocol is the Phase-2 execution contract stamped on every fired
+// ("go") work order: Hermes cannot change the owner's systems directly — each
+// world-change is a fenced manifest-proposal block that manifest parses and
+// files for approval (hermes.ParseProposals is the counterpart parser).
+const hermesGoProtocol = `CHANGES PROTOCOL (hard rule): you have NO direct write access to the owner's
+systems. To change anything in the world, emit one fenced block per change,
+exactly like this, anywhere in your reply:
+
+` + "```manifest-proposal\n" + `{"type":"create-vault-note","title":"<note title>","body":"<full note content>"}
+` + "```" + `
+
+Allowed types (one JSON object per block; no other types exist):
+- {"type":"create-vault-note","title":"...","body":"..."}            — a new dated note in the owner's vault log
+- {"type":"run-errand","errand":"<what to do>","account":"<optional>"} — a real-world errand the owner's effector runs
+- {"type":"aion-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>","due":"YYYY-MM-DD, optional"}
+- {"type":"re-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>"}
+
+Each block is filed for the OWNER'S APPROVAL — nothing happens until he
+confirms, so file the change and reference it in your brief rather than
+claiming it is done. Everything else in your reply is the RESULT brief.
+`
 
 // runHermesTurn invokes the CLI and materializes the reply. Always clears the
 // in-flight marker.
@@ -121,10 +153,34 @@ func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
 		_ = s.setPlanAssignee(todoID, "agent:hermes")
 	}
 
-	// go phase → the deliverable itself lands in the thread.
+	// go phase → the deliverable lands in the thread, and any manifest-proposal
+	// blocks are filed into the approvals inbox (Phase 2: the approval gate —
+	// nothing executes until the owner confirms in FEED).
 	if phase == "go" {
-		text := ledger.Snip(brief, 3600) +
+		clean, specs, warns := hermes.ParseProposals(brief)
+		filed := 0
+		for _, sp := range specs {
+			p, err := s.hermesProposal(todoID, sp)
+			if err == nil && s.approvals == nil {
+				err = fmt.Errorf("no approvals inbox is configured")
+			}
+			if err == nil {
+				_, err = s.approvals.Propose(p)
+			}
+			if err != nil {
+				warns = append(warns, "couldn't file a proposal — "+err.Error())
+				continue
+			}
+			filed++
+		}
+		text := ledger.Snip(clean, 3600) +
 			"\n\n— result delivered; review it, then close the item or send it back with a comment"
+		if filed > 0 {
+			text += fmt.Sprintf("\n⚑ %d change(s) filed for your approval — review them in FEED", filed)
+		}
+		for _, w := range warns {
+			text += "\n⚠ " + w
+		}
 		_, _ = s.addThreadEntry(who, todoID, threads.ActComment, text, nil, nil, meta)
 		return
 	}
@@ -155,6 +211,69 @@ func (s *Server) materializeHermesBrief(todoID, phase, persona, brief string) {
 	if questions != "" { // drift guard: embedded questions still surface as dialog
 		_, _ = s.addThreadEntry(who, todoID, threads.ActComment, questions, nil, nil, meta)
 	}
+}
+
+// hermesProposal maps one validated ProposalSpec onto the approvals byte-
+// contract — the SAME shapes the excalibur engine's write_approval emits, so
+// Confirm applies through the existing lanes (vault log/ write, errand enqueue,
+// backlog append) with their allow-lists and secret scans intact. The
+// [todo:: <id>] token rides the Action so the todo panel shows state=proposed
+// (delegationIndex matches it) and dedupe (id = sha1(action|body)) keeps a
+// re-fired plan from double-filing.
+func (s *Server) hermesProposal(todoID string, sp hermes.ProposalSpec) (approvals.Proposal, error) {
+	token := " [todo:: " + todoID + "]"
+	p := approvals.Proposal{Agent: "hermes", Ritual: "delegate"}
+	switch sp.Type {
+	case "create-vault-note":
+		date := strings.TrimSpace(sp.Date)
+		if date == "" {
+			date = time.Now().Format("2006-01-02")
+		} else if _, err := time.Parse("2006-01-02", date); err != nil {
+			return p, fmt.Errorf("create-vault-note date %q is not YYYY-MM-DD", sp.Date)
+		}
+		p.Type = approvals.TypeCreateVaultNote
+		p.ApplyPath = date + " " + strings.TrimSpace(sp.Title) + ".md"
+		if !approvals.CreateVaultNotePathAllowed(p.ApplyPath) {
+			return p, fmt.Errorf("create-vault-note title %q doesn't form an allowed note name", sp.Title)
+		}
+		p.Action = "create vault note " + p.ApplyPath + token
+		// the proposed content rides the body as a ````proposed fence — that is
+		// how the store persists it (parse() re-derives Proposed from the fence).
+		p.Body = "Hermes (go phase) drafted this note while executing the fired plan.\n\n````proposed\n" + sp.Body + "\n````"
+	case "run-errand":
+		p.Type = approvals.TypeRunErrand
+		p.ErrandText = strings.TrimSpace(sp.Errand)
+		p.ErrandAccount = strings.TrimSpace(sp.Account)
+		p.ErrandGoal = strings.TrimSpace(sp.Goal)
+		p.Action = "run errand: " + p.ErrandText + token
+		p.Body = "Hermes (go phase) requests this errand as part of the fired plan."
+	case "aion-backlog", "re-backlog":
+		payload := aion.ProposalPayload{
+			Kind: sp.Kind, Title: strings.TrimSpace(sp.Title),
+			Owner: strings.TrimSpace(sp.Owner), Rock: strings.TrimSpace(sp.Rock),
+			Due: strings.TrimSpace(sp.Due), Sources: sp.Sources,
+			Captured: time.Now().Format("2006-01-02"),
+		}
+		fenceTag := aion.PayloadFence
+		p.Type, p.ApplyPath = approvals.TypeAionBacklog, approvals.AionBacklogPath
+		if sp.Type == "re-backlog" {
+			fenceTag = aion.REPayloadFence
+			p.Type, p.ApplyPath = approvals.TypeReBacklog, approvals.ReBacklogPath
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return p, err
+		}
+		evidence := strings.TrimSpace(sp.Body)
+		if evidence == "" {
+			evidence = "Hermes (go phase) filed this while executing the fired plan."
+		}
+		p.Body = evidence + "\n\n````" + fenceTag + "\n" + string(raw) + "\n````"
+		p.Action = sp.Type + " " + sp.Kind + ": " + payload.Title + token
+	default: // unreachable — ParseProposals validated the type
+		return p, fmt.Errorf("unknown proposal type %q", sp.Type)
+	}
+	return p, nil
 }
 
 // overlayHermesRunning injects in-flight runner turns into the delegation index
