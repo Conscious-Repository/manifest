@@ -189,6 +189,7 @@ func (s *Server) delegationIndex() map[string]delegationView {
 			}
 		}
 	}
+	s.overlayHermesRunning(out) // in-flight do-bot turns have no spool/run to scan
 	return out
 }
 
@@ -274,6 +275,11 @@ func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, inte
 	b.WriteString("For this todo: [todo:: " + todoID + "] [phase:: " + phase + "]")
 	if hasPersona {
 		b.WriteString(" [persona:: " + p.Intent + "]")
+	}
+	// Hermes runs on the owner's real do-bot (the Hermes Agent CLI), not the
+	// excalibur harness — intercept and route the composed work order there.
+	if s.hermesForked(harness) {
+		return s.startHermesTurn(todoID, phase, intent, b.String())
 	}
 	spirit, ritual := delegateTargetFor(harness)
 	return harness.Spirits.SpoolRunNow(spirit, ritual, b.String(), "")

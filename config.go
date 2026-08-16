@@ -141,7 +141,32 @@ type Config struct {
 	// ErrandAccounts, when set, is the only set of aside account ids the
 	// compose picker offers and the API accepts (§6 allowlist).
 	ErrandAccounts []string `json:"errandAccounts"`
+	// Hermes wires the app's @hermes to the owner's REAL do-bot — the local
+	// NousResearch Hermes Agent CLI (`hermes -z`), the same agent he pings on
+	// Telegram — instead of the excalibur-harness copy. Off by default, so this
+	// lands dark: enabled=false keeps the legacy harness path unchanged.
+	Hermes HermesConfig `json:"hermes"`
 }
+
+// HermesConfig configures the local Hermes Agent CLI runner (see the hermes
+// package). Bin defaults to "hermes" on $PATH; Model/Toolsets are optional
+// per-invocation overrides (-m / -t); TimeoutSeconds bounds one agent turn.
+type HermesConfig struct {
+	Enabled bool   `json:"enabled"`
+	Bin     string `json:"bin"`
+	Model   string `json:"model"`
+	// Toolsets is the general -t scope (used by the go phase in Phase 2).
+	Toolsets string `json:"toolsets"`
+	// ReadToolsets is the read-only -t scope applied to plan/comment turns so a
+	// planning turn cannot act — the approval-gate pre-stage. Empty → a safe
+	// default (web/search/memory/skills; no code_execution/terminal/file/…).
+	ReadToolsets   string `json:"readToolsets"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
+}
+
+// DefaultHermesReadToolsets is the read-only scope for plan/comment turns —
+// research + memory only, no world-changing tools.
+const DefaultHermesReadToolsets = "web,session_search,memory,x_search,skills,clarify,context_engine,vision"
 
 // HarnessRef names one harness tree (federation, big-change Phase 4).
 // Surface scopes where the harness's agent identity is offered (kairos plan):

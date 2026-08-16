@@ -57,6 +57,10 @@ type Server struct {
 	// harnessList is the federation (big-change Phase 4), primary first —
 	// runs/queued/feed/approvals merge across it, tagged by name.
 	harnessList []Harness
+	// hermes routes @hermes off the excalibur harness onto the owner's real
+	// do-bot (the local Hermes Agent CLI). Nil → the legacy harness path. Its
+	// type + logic live in hermes_delegate.go.
+	hermes *hermesCfg
 	// deepseekStatePath: the last explicit portal test's result (dataDir,
 	// per-machine) — the DegradedPortal feed signal reads it (Phase 7).
 	deepseekStatePath string

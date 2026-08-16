@@ -27,6 +27,7 @@ import (
 	"manifest/errands"
 	"manifest/gmailauth"
 	"manifest/goals"
+	"manifest/hermes"
 	"manifest/ledger"
 	"manifest/portals"
 	"manifest/reading"
@@ -481,7 +482,17 @@ func main() {
 				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved")
 			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
-		srv.UseHarnesses(hs)                       // sets the primary spirits+approvals fields too
+		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
+		// Hermes routes off the excalibur harness onto the owner's REAL do-bot
+		// (the local Hermes Agent CLI) when enabled; plan/comment turns run with
+		// a read-only toolset scope (the approval-gate pre-stage). Off → the
+		// legacy harness path is unchanged.
+		if cfg.Hermes.Enabled {
+			srv.UseHermes(hermes.NewRunner(hermes.Config{
+				Enabled: true, Bin: cfg.Hermes.Bin, Model: cfg.Hermes.Model,
+				Toolsets: cfg.Hermes.Toolsets, TimeoutSeconds: cfg.Hermes.TimeoutSeconds,
+			}), orDefault(cfg.Hermes.ReadToolsets, DefaultHermesReadToolsets))
+		}
 		srv.UseAionSink(sinkFan{aionSink, reSink}) // transcript-confirm → instant extraction spool (both domains)
 		// email-sync auto-append (standing consent): a confirmed thread note
 		// authorizes later appends, so matching append-vault-note proposals
