@@ -228,6 +228,7 @@ function todoAssigneeControl(d, row) {
     suggest: (q, add, taRef) => {
       const ql = (q || "").toLowerCase();
       todoRoster().forEach((p) => {
+        if (p.id.includes("::")) return; // assignment takes the BASE token only — intent is per-message
         if (ql && !p.name.toLowerCase().includes(ql) && !p.id.toLowerCase().includes(ql)) return;
         add((p.kind === "agent" ? "✦ " : "") + p.name, p.kind.toUpperCase(), () => todoAssign(p.id, taRef));
       });
@@ -255,6 +256,7 @@ function todoThreadEntry(c) {
   const who = c.author_name || c.authorName || c.author || "?";
   head.append(el("span", "tdo-p-c-author", who));
   if (c.action && c.action !== "comment") head.append(el("span", "tdo-p-c-act", c.action));
+  if (c.meta && c.meta.persona) head.append(el("span", "tdo-p-c-persona", c.meta.persona));
   head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
   e.append(head);
   if (c.text) e.append(el("div", "tdo-p-c-text", c.text));
@@ -349,10 +351,17 @@ function todoComposer() {
 
 // todoRoster — merged assignee groups from the /api/todos payload
 // (Phase 3 adds the agents group server-side; this reads whatever is there).
+// Agents expand into their base token plus one intent-tagged entry per
+// enabled persona (persona plan Phase 1): `agent:hermes::brief` — the intent
+// rides the mention, never the assignment.
 function todoRoster() {
   const a = (todosCache && todosCache.assignees) || {};
   const out = [];
-  (a.agents || []).forEach((x) => out.push({ id: x.id, name: x.name, kind: "agent" }));
+  (a.agents || []).forEach((x) => {
+    out.push({ id: x.id, name: x.name, kind: "agent" });
+    (x.personas || []).forEach((pi) =>
+      out.push({ id: x.id + "::" + pi, name: x.name + " · " + pi, kind: "agent" }));
+  });
   (a.aion || []).forEach((x) => out.push({ id: x.id || x.initials || x.name, name: x.name || x.initials, kind: "aion" }));
   (a.realestate || []).forEach((x) => out.push({ id: x.id || x.name, name: x.name, kind: "re" }));
   return out;

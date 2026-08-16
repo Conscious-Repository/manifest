@@ -125,6 +125,9 @@ type Server struct {
 	// ledgerStore: the daily shared thread — a tier-3 JSONL projection of
 	// thread/chat/run/plan events (persona plan Phase 0). Nilable.
 	ledgerStore *ledger.Store
+	// personasCfg: intent-tagged agent response personas (persona plan Phase 1;
+	// system/agents/personas/<intent>.md records). Nilable.
+	personasCfg *personasCfg
 }
 
 // UseLedger wires the daily ledger.
@@ -246,6 +249,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/todos/thread", s.handleTodoThreadPost)
 	mux.HandleFunc("POST /api/todos/thread/file", s.handleTodoThreadFile)
 	mux.HandleFunc("GET /api/todos/thread/file/{hash}", s.handleTodoThreadBlob)
+	mux.HandleFunc("GET /api/agents/personas", s.handlePersonas)                     // persona records (persona plan Phase 1)
 	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
 	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
 

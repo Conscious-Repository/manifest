@@ -15,6 +15,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -32,12 +33,17 @@ var todoTokenRe = regexp.MustCompile(`\[todo::\s*([^\]]+)\]`)
 // No phase = the classic single-shot delegation.
 var phaseTokenRe = regexp.MustCompile(`\[phase::\s*([a-z]+)\]`)
 
+// personaTokenRe (persona plan Phase 1): an intent-tagged work order carries
+// `[persona:: brief|info|plan|…]` so ingestion knows how to route the reply.
+var personaTokenRe = regexp.MustCompile(`\[persona::\s*([a-z0-9-]+)\]`)
+
 // delegationView is the row projection. When the run left a library brief, the
 // projection carries it too — the board chip, the feed card and the run modal
 // then all open the SAME file (see server/artifacts.go).
 type delegationView struct {
 	State   string `json:"state"` // queued | running | failed | done | proposed (+ plan-queued | plan-running | plan-ready | go-queued)
 	Phase   string `json:"phase,omitempty"`
+	Persona string `json:"persona,omitempty"` // recovered [persona::] intent (persona plan Phase 1)
 	Harness string `json:"harness"`
 	RunID   string `json:"runId,omitempty"`
 	// the result, ready to open: exactly one of these is ever set (§8 two media)
@@ -96,7 +102,11 @@ func (s *Server) delegationIndex() map[string]delegationView {
 			for _, q := range h.Spirits.Queued() {
 				if m := todoTokenRe.FindStringSubmatch(q.Request); m != nil {
 					st, ph := phased("queued", q.Request)
-					set(m[1], delegationView{State: st, Phase: ph, Harness: h.Name})
+					d := delegationView{State: st, Phase: ph, Harness: h.Name}
+					if pm := personaTokenRe.FindStringSubmatch(q.Request); pm != nil {
+						d.Persona = pm[1]
+					}
+					set(m[1], d)
 				}
 			}
 			for _, r := range h.Spirits.Runs() {
@@ -142,9 +152,10 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				// phase recovery rides the same ladder as the todo token: the
 				// report's `request:` may be TRUNCATED past the trailing
 				// [phase::] token (the owner's first live test hit exactly
-				// this) — fall back to the brief the run wrote.
+				// this) — fall back to the brief the run wrote. The persona
+				// token rides the same ladder.
 				phaseSrc := r.Request
-				if !phaseTokenRe.MatchString(phaseSrc) {
+				if !phaseTokenRe.MatchString(phaseSrc) || !personaTokenRe.MatchString(phaseSrc) {
 					if doc.Ref == "" {
 						doc, _ = libraryDocForRun(h, r.ID, lib)
 					}
@@ -152,6 +163,9 @@ func (s *Server) delegationIndex() map[string]delegationView {
 				}
 				st, ph := phased(state, phaseSrc)
 				d := delegationView{State: st, Phase: ph, Harness: h.Name, RunID: r.ID}
+				if pm := personaTokenRe.FindStringSubmatch(phaseSrc); pm != nil {
+					d.Persona = pm[1]
+				}
 				if ts, err := time.Parse(time.RFC3339, r.Started); err == nil {
 					d.Started = ts
 				}
@@ -207,30 +221,45 @@ func (s *Server) findHarness(name string) *Harness {
 // ALWAYS carries the todo's own text (the agent's only unambiguous handle)
 // plus the durable [todo::] and [phase::] tokens. Comment-phase orders carry
 // the FULL dialog context (description · current plan · thread tail) — the
-// thread IS the conversation channel (owner decision 2026-08-15).
-func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra string) error {
+// thread IS the conversation channel (owner decision 2026-08-15). An intent
+// with an enabled persona (persona plan Phase 1) prepends the persona prompt,
+// swaps the protocol line for a reply-shape line on non-plan intents, and
+// stamps a recoverable [persona::] token; an unknown/disabled intent degrades
+// to today's request byte-for-byte.
+func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra, intent string) error {
 	if harness == nil || harness.Spirits == nil {
 		return errBadRequest("harness not available")
+	}
+	p, hasPersona := s.persona(intent)
+	if intent != "" && !hasPersona {
+		log.Printf("todo work order: unknown or disabled persona %q — spooling without it", intent)
 	}
 	text, _ := s.openTodoText(todoID)
 	rec := s.readPlanRecord(todoID)
 	var b strings.Builder
+	if hasPersona {
+		b.WriteString("PERSONA (how to respond — this governs your reply's shape and length):\n" + p.Prompt + "\n")
+	}
 	b.WriteString("TASK (from your todo board): " + text + "\n")
 	if d := strings.TrimSpace(rec.Description); d != "" && phase != "go" {
 		b.WriteString("DESCRIPTION:\n" + d + "\n")
+	}
+	protocol := agentProtocolReminder
+	if hasPersona && p.Intent != "plan" {
+		protocol = "PROTOCOL: reply in ONE library brief that IS your answer. Do not write a plan. Do not execute anything.\n"
 	}
 	switch phase {
 	case "plan":
 		if extra != "" {
 			b.WriteString("OWNER'S ASK:\n" + extra + "\n")
 		}
-		b.WriteString(agentProtocolReminder)
+		b.WriteString(protocol)
 	case "go":
 		b.WriteString("EXECUTE the approved plan below. The owner reviewed and fired it — do the work and " +
 			"write the result as your library brief.\nAPPROVED PLAN:\n" + extra + "\n")
 	case "comment":
-		if p := strings.TrimSpace(rec.Plan); p != "" {
-			b.WriteString("CURRENT PLAN (the canon plan on the record — the owner may have edited it):\n" + p + "\n")
+		if pl := strings.TrimSpace(rec.Plan); pl != "" {
+			b.WriteString("CURRENT PLAN (the canon plan on the record — the owner may have edited it):\n" + pl + "\n")
 		}
 		if tail := s.threadTail(todoID, 6); tail != "" {
 			b.WriteString("THREAD (newest last — this is your running dialog with the owner):\n" + tail + "\n")
@@ -238,9 +267,12 @@ func (s *Server) spoolTodoWorkOrder(harness *Harness, todoID, phase, extra strin
 		if extra != "" {
 			b.WriteString("NEW OWNER COMMENT (respond to this):\n" + extra + "\n")
 		}
-		b.WriteString(agentProtocolReminder)
+		b.WriteString(protocol)
 	}
 	b.WriteString("For this todo: [todo:: " + todoID + "] [phase:: " + phase + "]")
+	if hasPersona {
+		b.WriteString(" [persona:: " + p.Intent + "]")
+	}
 	spirit, ritual := delegateTargetFor(harness)
 	return harness.Spirits.SpoolRunNow(spirit, ritual, b.String(), "")
 }
@@ -395,7 +427,8 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			s.markerAdd(id, threads.ActResult, d.RunID)
 			continue
 		}
-		if priv.HasAction(id, threads.ActPlan, d.RunID) || priv.HasAction(id, threads.ActQuestions, d.RunID) {
+		if priv.HasAction(id, threads.ActPlan, d.RunID) || priv.HasAction(id, threads.ActQuestions, d.RunID) ||
+			priv.HasAction(id, threads.ActReply, d.RunID) {
 			continue
 		}
 		doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
@@ -413,6 +446,18 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		rec := s.readPlanRecord(id)
 		if rec.Assignee == "" {
 			_ = s.setPlanAssignee(id, "agent:"+d.Harness)
+		}
+		if d.Persona != "" {
+			meta["persona"] = d.Persona
+		}
+		// persona-gated direct answers (brief/info/…): the WHOLE brief is the
+		// reply — post it as a thread comment, never touch the plan.
+		if d.Persona != "" && d.Persona != "plan" {
+			if _, err := s.addThreadEntry(hermes, id, threads.ActComment, brief, nil, nil, meta); err != nil {
+				continue
+			}
+			s.markerAdd(id, threads.ActReply, d.RunID)
+			continue
 		}
 		hadPlan := strings.TrimSpace(rec.Plan) != ""
 		questions, questionsOnly := briefQuestions(brief)
@@ -494,7 +539,7 @@ func (s *Server) relaySweep(index map[string]delegationView) {
 		if !lastOwner.After(lastAct) {
 			continue // the dialog is caught up
 		}
-		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "comment", ""); err == nil {
+		if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "comment", "", ""); err == nil {
 			s.markerAdd(id, threads.ActRelay, "")
 		}
 	}
@@ -534,7 +579,7 @@ func (s *Server) handleTodoFire(w http.ResponseWriter, r *http.Request) {
 			extra += "\n\nRECENT THREAD:\n" + strings.Join(tail, "\n")
 		}
 	}
-	if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "go", extra); err != nil {
+	if err := s.spoolTodoWorkOrder(s.findHarness(harness), id, "go", extra, ""); err != nil {
 		if errors.Is(err, spirits.ErrAlreadyActive) {
 			w.WriteHeader(http.StatusConflict)
 			writeJSON(w, map[string]any{"active": true, "harness": harness})

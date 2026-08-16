@@ -237,6 +237,11 @@ func (s *Server) handleTodoAssign(w http.ResponseWriter, r *http.Request) {
 	owner := strings.TrimSpace(b.Owner)
 	harness := ""
 	if strings.HasPrefix(owner, "agent:") {
+		if strings.Contains(owner, "::") {
+			httpError(w, errBadRequest("assignee must be the bare agent token — intent (::" +
+				strings.SplitN(owner, "::", 2)[1] + ") is per-message, not per-assignment"))
+			return
+		}
 		if harness = s.agentHarness(owner); harness == "" {
 			httpError(w, errBadRequest("unknown agent "+owner+" — only configured harnesses are assignable"))
 			return
@@ -318,22 +323,30 @@ func (s *Server) handleTodoThreadPost(w http.ResponseWriter, r *http.Request) {
 //   - mentioned people stay record-only.
 func (s *Server) threadDialogHook(todoID string, mentions []string, text string) {
 	rec := s.readPlanRecord(todoID)
+	// an intent may ride a mention token (agent:hermes::brief) — per-message,
+	// never per-assignment; the owner field only ever holds the base token
+	intent, mentionBase := "", ""
+	for _, m := range mentions {
+		base, in := splitAgentToken(m)
+		if s.agentHarness(base) != "" {
+			mentionBase, intent = base, in
+			break
+		}
+	}
 	if harness := s.agentHarness(rec.Assignee); harness != "" {
-		s.relayToAgent(todoID, harness, text)
+		s.relayToAgent(todoID, harness, text, intent)
 		return
 	}
-	for _, m := range mentions {
-		if harness := s.agentHarness(m); harness != "" {
-			s.autoAssignAgent(todoID, m, harness, text)
-			return
-		}
+	if mentionBase != "" {
+		s.autoAssignAgent(todoID, mentionBase, s.agentHarness(mentionBase), text, intent)
 	}
 }
 
-// relayToAgent forwards an owner comment as a comment-phase work order and
-// writes the relay marker; ErrAlreadyActive is tolerated (sweep retries).
-func (s *Server) relayToAgent(todoID, harness, text string) {
-	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "comment", text)
+// relayToAgent forwards an owner comment as a work order (comment-phase, or
+// plan-phase when the ::plan intent asks for a draft) and writes the relay
+// marker; ErrAlreadyActive is tolerated (sweep retries).
+func (s *Server) relayToAgent(todoID, harness, text, intent string) {
+	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, personaPhase(intent), text, intent)
 	if err == nil {
 		s.markerAdd(todoID, threads.ActRelay, "")
 	}
@@ -341,18 +354,20 @@ func (s *Server) relayToAgent(todoID, harness, text string) {
 
 // autoAssignAgent — a work-requesting mention on an unassigned todo assigns
 // it (full lifecycle engages) with the comment as the opening ask.
-func (s *Server) autoAssignAgent(todoID, ownerToken, harness, text string) {
+func (s *Server) autoAssignAgent(todoID, ownerToken, harness, text, intent string) {
 	_ = s.setTodoOwner(todoID, ownerToken)
 	_ = s.setPlanAssignee(todoID, ownerToken)
 	_, _ = s.addThreadEntry(s.ownerIdentity(), todoID, threads.ActAssign,
 		"assigned to "+ownerToken+" (mentioned)", nil, nil, map[string]any{"assignee": ownerToken})
-	s.relayToAgent(todoID, harness, text)
+	s.relayToAgent(todoID, harness, text, intent)
 }
 
 // assignAgentHook: an explicit assignment (no comment) spools the PLAN-phase
-// work order — the §12 lane's entry point. Execution still waits for fire.
+// work order — the §12 lane's entry point. Assignment IS the draft-plan
+// intent, so the `plan` persona rides along when seeded and enabled (the
+// spool degrades to today's request when it isn't). Execution waits for fire.
 func (s *Server) assignAgentHook(todoID, harness string) error {
-	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "plan", "")
+	err := s.spoolTodoWorkOrder(s.findHarness(harness), todoID, "plan", "", "plan")
 	if errors.Is(err, spirits.ErrAlreadyActive) {
 		return nil // already out planning — the state chip says so
 	}

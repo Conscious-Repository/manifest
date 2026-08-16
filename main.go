@@ -231,6 +231,13 @@ func main() {
 			vaultwriter.Capability{Name: "todo-plans-agent", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
+			// AGENT PERSONAS — system/agents/personas/<intent>.md (persona plan
+			// Phase 1): owner guidance to agents, seeded write-once, edited as
+			// vault notes. Owner-confirmed home 2026-08-16: the system zone —
+			// personas are guidance TO agents, never agent working state.
+			vaultwriter.Capability{Name: "agent-personas", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "agents")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
 		)
 
 	goalsStore := goals.NewStore(idx, cfg.VaultPath, cfg.GoalsFileName, vw.BindAbs("goals"))
@@ -581,6 +588,18 @@ func main() {
 	} else {
 		srv.UseLedger(led)
 		log.Printf("ledger: enabled (%s/ledger, day = %s)", cfg.DataDir, portalLoc)
+	}
+	// AGENT PERSONAS (persona plan Phase 1) — seed the three intent records
+	// write-once; both the app (work-order preambles) and the agents (vault
+	// spellbook) read them from the system zone.
+	{
+		personaRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "agents", "personas"))
+		for intent, body := range server.SeedPersonas {
+			if _, err := vw.CreateRecord(personaRoot+"/"+intent+".md", body); err != nil {
+				log.Printf("persona seed %s: %v", intent, err)
+			}
+		}
+		srv.UsePersonas(filepath.Join(cfg.VaultPath, filepath.FromSlash(personaRoot)), personaRoot)
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)

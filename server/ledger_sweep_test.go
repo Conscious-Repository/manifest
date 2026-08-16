@@ -85,8 +85,8 @@ ran
 	if err := os.MkdirAll(evDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	events := `{"seq":1,"type":"assistant.delta","text":"par"}
-{"seq":2,"type":"assistant.message","text":"the full answer"}
+	events := `{"seq":1,"ts":"2026-08-15T12:05:00Z","type":"assistant.delta","data":{"text":"par"}}
+{"seq":2,"ts":"2026-08-15T12:05:01Z","type":"assistant.message","data":{"text":"the full answer"}}
 `
 	if err := os.WriteFile(filepath.Join(evDir, "events.jsonl"), []byte(events), 0o644); err != nil {
 		t.Fatal(err)

@@ -93,9 +93,12 @@ func (s *Server) ledgerSweep() {
 			maxSeq := after
 			for _, raw := range s.spirits.ChatEvents(sess.ID, after) {
 				var ev struct {
-					Seq  int    `json:"seq"`
-					Type string `json:"type"`
-					Text string `json:"text"`
+					Seq  int       `json:"seq"`
+					TS   time.Time `json:"ts"`
+					Type string    `json:"type"`
+					Data struct {
+						Text string `json:"text"`
+					} `json:"data"`
 				}
 				if json.Unmarshal(raw, &ev) != nil {
 					continue
@@ -106,8 +109,8 @@ func (s *Server) ledgerSweep() {
 				if ev.Type != "assistant.message" { // deltas/thinking never ledger
 					continue
 				}
-				s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant",
-					Actor: sess.Spirit, Session: sess.ID, Text: ledger.Snip(ev.Text, 280)})
+				s.ledger(ledger.Entry{TS: ev.TS, Source: "chat", Kind: "chat.assistant",
+					Actor: sess.Spirit, Session: sess.ID, Text: ledger.Snip(ev.Data.Text, 280)})
 			}
 			if maxSeq != after {
 				cur.Chat[sess.ID] = maxSeq

@@ -55,7 +55,9 @@ type Comment struct {
 
 // Actions. questions/relay are the agent-loop's: questions = the agent needs
 // answers before it can plan; relay = an owner comment was forwarded to the
-// agent (idempotency marker for the retry sweep).
+// agent (idempotency marker for the retry sweep); reply = a persona-gated
+// direct answer was posted as a comment (persona plan Phase 1); replan = a
+// system-initiated re-plan was spooled (Phase 2, marker-only).
 const (
 	ActComment   = "comment"
 	ActAssign    = "assign"
@@ -64,6 +66,8 @@ const (
 	ActResult    = "result"
 	ActQuestions = "questions"
 	ActRelay     = "relay"
+	ActReply     = "reply"
+	ActReplan    = "replan"
 )
 
 const maxCommentLen = 8000

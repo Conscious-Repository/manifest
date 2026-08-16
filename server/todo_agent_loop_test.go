@@ -197,7 +197,7 @@ func TestRelaySweepRetries(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a queued spool makes SpoolRunNow refuse → the owner's comment relay drops
-	if err := srv.spoolTodoWorkOrder(srv.findHarness("hermes"), id, "plan", ""); err != nil {
+	if err := srv.spoolTodoWorkOrder(srv.findHarness("hermes"), id, "plan", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	_, _ = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "answer: use vendor B", nil, nil, nil)

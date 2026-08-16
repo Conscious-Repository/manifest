@@ -343,9 +343,18 @@ func (s *Server) propTodoMutate(w http.ResponseWriter, slug string, fn func(list
 
 // agentRoster — the assignable agents (todo-panel plan D5): every configured
 // non-primary harness, ids carrying the hard `agent:` prefix so the raw
-// markdown token `[owner:: agent:hermes]` is visually unambiguous.
-func (s *Server) agentRoster() []map[string]string {
-	out := []map[string]string{}
+// markdown token `[owner:: agent:hermes]` is visually unambiguous. Each row
+// carries the enabled persona intents (persona plan Phase 1) so the mention
+// typeahead can offer `agent:hermes::brief` variants.
+func (s *Server) agentRoster() []map[string]any {
+	out := []map[string]any{}
+	var intents []string
+	for k, p := range s.personas() {
+		if p.Enabled {
+			intents = append(intents, k)
+		}
+	}
+	sort.Strings(intents)
 	hs := s.eachHarness()
 	for i, h := range hs {
 		if i == 0 { // the primary runs the house; delegation targets are the rest
@@ -356,13 +365,18 @@ func (s *Server) agentRoster() []map[string]string {
 			continue
 		}
 		display := strings.ToUpper(name[:1]) + name[1:]
-		out = append(out, map[string]string{"id": "agent:" + name, "name": display, "harness": name})
+		row := map[string]any{"id": "agent:" + name, "name": display, "harness": name}
+		if len(intents) > 0 {
+			row["personas"] = intents
+		}
+		out = append(out, row)
 	}
 	return out
 }
 
-// agentHarness resolves an `agent:` owner token to its harness name
-// ("" = not a known agent).
+// agentHarness resolves a BARE `agent:` owner token to its harness name
+// ("" = not a known agent; intent-suffixed tokens are deliberately not
+// accepted — split them with splitAgentToken first).
 func (s *Server) agentHarness(owner string) string {
 	if !strings.HasPrefix(owner, "agent:") {
 		return ""

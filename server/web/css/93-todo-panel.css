@@ -92,3 +92,6 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: 20px; }
 /* the plan preview is itself the doorway to the full page */
 .tdo-p-plan.clickable { cursor: pointer; border-radius: var(--radius-lg); padding: 4px 6px; margin: -4px -6px; }
 .tdo-p-plan.clickable:hover { background: var(--base-10); }
+
+/* persona chip on a persona-gated agent reply (persona plan Phase 1) */
+.tdo-p-c-persona { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
