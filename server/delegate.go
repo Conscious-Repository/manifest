@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/ledger"
 	"manifest/spirits"
 	"manifest/threads"
 )
@@ -347,6 +348,7 @@ func (s *Server) AgentLoopTicker() {
 	t := time.NewTicker(60 * time.Second)
 	for range t.C {
 		s.agentLoopSweep(s.delegationIndex())
+		s.ledgerSweep()
 	}
 }
 
@@ -424,6 +426,9 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		if err := s.writePlanSection("todo-plans-agent", id, "plan", brief); err != nil {
 			continue // capability/store hiccup — retry next sweep
 		}
+		s.ledger(ledger.Entry{Source: "plan", Kind: "plan.materialized",
+			Actor: hermes.ID, Todo: id, Run: d.RunID, Harness: d.Harness,
+			Ref: s.readPlanRecord(id).Rel})
 		verb := "plan attached to this task"
 		if hadPlan {
 			verb = "plan updated on this task"

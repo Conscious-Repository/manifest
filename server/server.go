@@ -23,6 +23,7 @@ import (
 	"manifest/errands"
 	"manifest/gmailauth"
 	"manifest/goals"
+	"manifest/ledger"
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
@@ -121,6 +122,41 @@ type Server struct {
 	todoPlans *todoPlansCfg
 	// threads: the todo-panel comment stores (private/RE-shared/aion). Nilable.
 	threads *threadsCfg
+	// ledgerStore: the daily shared thread — a tier-3 JSONL projection of
+	// thread/chat/run/plan events (persona plan Phase 0). Nilable.
+	ledgerStore *ledger.Store
+}
+
+// UseLedger wires the daily ledger.
+func (s *Server) UseLedger(l *ledger.Store) { s.ledgerStore = l }
+
+// ledger appends one entry, nil-safe and best-effort — call sites stay one line.
+func (s *Server) ledger(e ledger.Entry) {
+	if s.ledgerStore == nil {
+		return
+	}
+	if e.TS.IsZero() {
+		e.TS = time.Now()
+	}
+	_ = s.ledgerStore.Append(e)
+}
+
+// handleLedger serves one day's entries (default: today in the owner's tz).
+func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) {
+	if s.ledgerStore == nil {
+		writeJSON(w, map[string]any{"date": "", "entries": []any{}, "days": []any{}})
+		return
+	}
+	date := strings.TrimSpace(r.URL.Query().Get("date"))
+	if date == "" {
+		date = s.ledgerStore.Today()
+	}
+	entries, err := s.ledgerStore.Day(date)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"date": date, "entries": entries, "days": s.ledgerStore.Days()})
 }
 
 // UseTeamPortal wires the team-portal → FEED notices bridge.
@@ -294,6 +330,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/activity", s.handleActivity)
 	mux.HandleFunc("GET /api/activity/history", s.handleActivityHistory)
 	mux.HandleFunc("GET /api/activity/top", s.handleActivityTop)
+
+	// LEDGER — the daily shared thread (tier-3 projection; persona plan Phase 0).
+	mux.HandleFunc("GET /api/ledger", s.handleLedger)
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)

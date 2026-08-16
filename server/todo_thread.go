@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"manifest/ledger"
 	"manifest/realestate"
 	"manifest/spirits"
 	"manifest/teamportal"
@@ -158,6 +159,8 @@ func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text st
 		if err != nil {
 			return threads.Comment{}, err
 		}
+		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
+			Actor: author.ID, Todo: todoID, Text: ledger.Snip(text, 280)})
 		return threads.Comment{ID: c.ID, TodoID: todoID, Action: threads.ActComment,
 			Author: c.Author, AuthorName: c.AuthorName, Text: c.Text, Files: files, At: c.At}, nil
 	}
@@ -165,7 +168,12 @@ func (s *Server) addThreadEntry(author threads.Identity, todoID, action, text st
 	if kind == "aion" {
 		kind = "private" // structural trail for aion todos stays private
 	}
-	return s.threadStore(kind).Add(author, todoID, action, text, mentions, files, meta, now)
+	c, err := s.threadStore(kind).Add(author, todoID, action, text, mentions, files, meta, now)
+	if err == nil && !isMarker(c) {
+		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
+			Actor: author.ID, Todo: todoID, Text: ledger.Snip(text, 280)})
+	}
+	return c, err
 }
 
 // --- assignment (todo-panel plan Phase 3) ------------------------------------

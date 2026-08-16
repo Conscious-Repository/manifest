@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"manifest/ledger"
 )
 
 // Chat (cmd-ctr import P2): the dashboard's conversational surface over
@@ -62,6 +64,8 @@ func (s *Server) handleChatSessionCreate(w http.ResponseWriter, r *http.Request)
 			httpError(w, err)
 			return
 		}
+		s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
+			Session: id, Text: ledger.Snip(b.Text, 280)})
 	}
 	writeJSON(w, map[string]any{"id": id})
 }
@@ -104,6 +108,8 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
+	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
+		Session: sum.ID, Text: ledger.Snip(b.Text, 280)})
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

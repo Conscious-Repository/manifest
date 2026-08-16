@@ -27,6 +27,7 @@ import (
 	"manifest/errands"
 	"manifest/gmailauth"
 	"manifest/goals"
+	"manifest/ledger"
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
@@ -571,6 +572,15 @@ func main() {
 			// (plan attach/update, questions, relay retries) ticks on its own
 			go srv.AgentLoopTicker()
 		}
+	}
+	// LEDGER — the daily shared thread (persona plan Phase 0): a tier-3 JSONL
+	// projection under dataDir, one file per owner-timezone day. Foreground
+	// hooks append at write time; the AgentLoopTicker mirrors runs + chat.
+	if led, err := ledger.New(filepath.Join(cfg.DataDir, "ledger"), portalLoc); err != nil {
+		log.Printf("ledger disabled: %v", err)
+	} else {
+		srv.UseLedger(led)
+		log.Printf("ledger: enabled (%s/ledger, day = %s)", cfg.DataDir, portalLoc)
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)
