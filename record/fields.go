@@ -36,6 +36,29 @@ func ParseFields(text string) (string, []Field) {
 // EmitField renders one canonical field.
 func EmitField(key, value string) string { return "[" + key + ":: " + value + "]" }
 
+// OwnerIsMe reports whether an [owner::] value is the "me" sentinel — the
+// grammar's way of saying "the vault's owner", equivalent to leaving owner
+// unset. Every domain that filters by owner shares this one rule.
+//
+// The sentinel is NOT matched case-insensitively: initials are the other thing
+// an owner value can be, and an ALL-CAPS token of three letters or fewer is
+// initials (the same test aion.ValidOwner applies to the people registry).
+// "ME" is Matthias Estermann; only "me"/"Me" are the sentinel.
+func OwnerIsMe(owner string) bool {
+	owner = strings.TrimSpace(owner)
+	if !strings.EqualFold(owner, "me") {
+		return false
+	}
+	return !IsInitials(owner)
+}
+
+// IsInitials reports whether one owner token reads as initials rather than a
+// name or a sentinel: ALL-CAPS, three letters or fewer (e.g. "BA", "HZ", "ME").
+func IsInitials(tok string) bool {
+	tok = strings.TrimSpace(tok)
+	return tok != "" && len(tok) <= 3 && tok == strings.ToUpper(tok)
+}
+
 // ---- wikilink-valued fields (first-class affordance, not per-site hacks) ----
 //
 // A field value that IS a [[wikilink]] cannot pass through FieldRe (the "]]"

@@ -8,6 +8,7 @@ import (
 
 	"manifest/aion"
 	"manifest/goals"
+	"manifest/record"
 )
 
 // aionExportInput assembles the owner-authored base contract in memory. The
@@ -35,7 +36,7 @@ func (s *Server) aionExportGoals() []aion.ExportGoal {
 		return "open"
 	}
 	owner := func(g goals.GoalView) *string {
-		if g.Owner == "" || strings.EqualFold(g.Owner, "me") {
+		if g.Owner == "" || record.OwnerIsMe(g.Owner) {
 			return nil
 		}
 		o := g.Owner

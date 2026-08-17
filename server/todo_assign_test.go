@@ -48,6 +48,23 @@ func TestAgentsRoster(t *testing.T) {
 	}
 }
 
+// A teammate whose initials spell the "me" sentinel (ME = Matthias Estermann)
+// owes his own tasks — they belong under Outstanding, not on my list.
+func TestIsMineInitialsCollision(t *testing.T) {
+	srv, _ := assignFixture(t)
+	srv.UseOwner("BA")
+	for _, owner := range []string{"ME", "HZ", "HG/ME"} {
+		if srv.isMine(owner) {
+			t.Errorf("isMine(%q) = true, want false", owner)
+		}
+	}
+	for _, owner := range []string{"", "me", "BA", "BA/RT"} {
+		if !srv.isMine(owner) {
+			t.Errorf("isMine(%q) = false, want true", owner)
+		}
+	}
+}
+
 func TestAssignFlow(t *testing.T) {
 	srv, _ := assignFixture(t)
 	post := func(body string) *httptest.ResponseRecorder {

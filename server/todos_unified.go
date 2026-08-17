@@ -11,6 +11,7 @@ import (
 
 	"manifest/aion"
 	"manifest/realestate"
+	"manifest/record"
 	"manifest/tasks"
 )
 
@@ -32,7 +33,7 @@ func (s *Server) UseOwner(initials string) { s.ownerInitials = initials }
 
 func (s *Server) isMine(owner string) bool {
 	owner = strings.TrimSpace(owner)
-	if owner == "" || strings.EqualFold(owner, "me") {
+	if owner == "" || record.OwnerIsMe(owner) {
 		return true
 	}
 	// agent-assigned stays MINE (todo-panel plan D5): the agent works it, the

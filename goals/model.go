@@ -3,6 +3,8 @@ package goals
 import (
 	"sort"
 	"strings"
+
+	"manifest/record"
 )
 
 // Goal is one checkbox line in goals.md. Its role comes from where it sits:
@@ -47,7 +49,7 @@ func (g *Goal) ResolvedOwner() string {
 	return g.Owner
 }
 
-func (g *Goal) ownerIsMe() bool { return strings.EqualFold(g.ResolvedOwner(), "me") }
+func (g *Goal) ownerIsMe() bool { return record.OwnerIsMe(g.ResolvedOwner()) }
 
 // currentStage returns a Rock's first unchecked stage (the trail's live tip), or
 // nil when every stage is done or there are none.

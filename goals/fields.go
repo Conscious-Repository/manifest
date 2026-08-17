@@ -93,7 +93,7 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 		out = append(out, Field{Key: "kpi", Value: g.Kpi})
 	}
 
-	if g.Owner != "" && !strings.EqualFold(g.Owner, "me") {
+	if g.Owner != "" && !record.OwnerIsMe(g.Owner) {
 		out = append(out, Field{Key: "owner", Value: g.Owner})
 	}
 

@@ -6,6 +6,7 @@ import (
 	"manifest/aion"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/record"
 	"manifest/tasks"
 )
 
@@ -97,7 +98,7 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 // mine mirrors Server.isMine: empty / "me" / containing my initials.
 func (a goalsAdapter) mine(owner string) bool {
 	owner = strings.TrimSpace(owner)
-	if owner == "" || strings.EqualFold(owner, "me") {
+	if owner == "" || record.OwnerIsMe(owner) {
 		return true
 	}
 	me := strings.ToUpper(strings.TrimSpace(a.owner))
