@@ -158,7 +158,7 @@ func (s *Server) chatSweep() {
 			}
 		}
 		var props []chatthreads.Proposal
-		if r.Ritual == "delegate" && r.Outcome == "completed" {
+		if r.Outcome == "completed" { // parse any turn: kairos may volunteer a fence in an ask; ParseProposals no-ops without one
 			clean, parsed, _ := chatthreads.ParseProposals(body)
 			body, props = clean, parsed
 		}
