@@ -48,6 +48,17 @@ func (s *Server) wireFundraisingContacts() {
 }
 
 func (s *Server) fundraisingView() map[string]any {
+	ops := s.FundraisingSnapshot()
+	resources := []fundraising.Resource{}
+	if s.fundraising != nil {
+		resources = s.fundraising.Resources()
+	}
+	return map[string]any{"opportunities": ops, "statuses": fundraising.Statuses, "interests": fundraising.Interests, "resources": resources}
+}
+
+// FundraisingSnapshot is the private complete projection shared by the owner
+// cockpit and the Sheet sync. It is never mounted on the team portal.
+func (s *Server) FundraisingSnapshot() []fundraising.Opportunity {
 	ops := []fundraising.Opportunity{}
 	if s.fundraising != nil {
 		ops, _ = s.fundraising.List()
@@ -62,11 +73,7 @@ func (s *Server) fundraisingView() map[string]any {
 			}
 		}
 	}
-	resources := []fundraising.Resource{}
-	if s.fundraising != nil {
-		resources = s.fundraising.Resources()
-	}
-	return map[string]any{"opportunities": ops, "statuses": fundraising.Statuses, "interests": fundraising.Interests, "resources": resources}
+	return ops
 }
 
 func (s *Server) handleFundraisingList(w http.ResponseWriter, _ *http.Request) {

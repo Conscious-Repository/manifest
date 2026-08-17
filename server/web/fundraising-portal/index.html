@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AION Fundraising</title>
+  <link rel="stylesheet" href="style.css?v=1" />
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">AION</a>
+    <span class="section">FUNDRAISING</span>
+    <span id="identity"></span>
+    <button id="logout" class="quiet">sign out</button>
+  </header>
+  <main>
+    <section class="toolbar">
+      <input id="search" type="search" placeholder="Search firms, people, next steps…" />
+      <button id="add">+ opportunity</button>
+    </section>
+    <div id="notice" role="status"></div>
+    <section class="layout">
+      <div class="table-wrap">
+        <div class="row head"><span>FIRM</span><span>PEOPLE</span><span>LAST TOUCHPOINT</span><span>NEXT STEP</span></div>
+        <div id="rows"></div>
+      </div>
+      <aside id="editor"><p>Select an opportunity to edit it.</p></aside>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

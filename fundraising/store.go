@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/mdfm"
@@ -30,6 +31,7 @@ type Store struct {
 	registryRel string
 	writeRecord func(string, []byte) error
 	writePeople func(string, []byte) error
+	writeMu     sync.Mutex
 }
 
 func NewStore(vaultRoot, root, registryRel string, writeRecord, writePeople func(string, []byte) error) *Store {
@@ -41,6 +43,8 @@ func (s *Store) RegistryRel() string   { return s.registryRel }
 func (s *Store) abs(rel string) string { return filepath.Join(s.vaultRoot, filepath.FromSlash(rel)) }
 
 func (s *Store) Ensure() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if _, err := os.Stat(s.abs(s.registryRel)); errors.Is(err, os.ErrNotExist) {
 		if s.writePeople == nil {
 			return errors.New("fundraising: CRM contacts writer unavailable")
@@ -83,7 +87,7 @@ func (s *Store) migrateLegacyIntroVia() error {
 			if !hasPerson(people, p.Key) {
 				people = append(people, p)
 			}
-			if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display}); err != nil {
+			if err := s.upsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display}); err != nil {
 				return err
 			}
 		}
@@ -115,6 +119,8 @@ func hasPerson(people []PersonRef, key string) bool {
 // legacy people names into Source. Contact-valued sources are never touched.
 // Dry-run returns the exact affected opportunity/person counts without writes.
 func (s *Store) RepairTextSourcesAsPeople(dryRun bool) (opportunities, people int, err error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	ops, err := s.List()
 	if err != nil {
 		return 0, 0, err
@@ -138,7 +144,7 @@ func (s *Store) RepairTextSourcesAsPeople(dryRun bool) (opportunities, people in
 			continue
 		}
 		for _, p := range refs {
-			if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display}); err != nil {
+			if err := s.upsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display}); err != nil {
 				return opportunities, people, err
 			}
 		}
@@ -259,6 +265,8 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	}
 	op.Amount, _ = strconv.ParseFloat(strings.TrimSpace(fm["amount"]), 64)
 	_ = json.Unmarshal([]byte(fm["people"]), &op.People)
+	_ = json.Unmarshal([]byte(fm["people-text"]), &op.UnlinkedPeople)
+	op.UnlinkedPeople = normalizePlainPeople(op.UnlinkedPeople)
 	_ = json.Unmarshal([]byte(fm["source"]), &op.Source)
 	_ = json.Unmarshal([]byte(fm["source-rows"]), &op.SourceRows)
 	if op.People == nil {
@@ -289,6 +297,12 @@ func scalar(v string) string {
 func q(v string) string { return strconv.Quote(strings.TrimSpace(v)) }
 
 func (s *Store) Create(firm string) (Opportunity, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.create(firm)
+}
+
+func (s *Store) create(firm string) (Opportunity, error) {
 	firm = strings.TrimSpace(firm)
 	if firm == "" {
 		return Opportunity{}, errors.New("firm is required")
@@ -304,7 +318,7 @@ func (s *Store) Create(firm string) (Opportunity, error) {
 		}
 		slug = fmt.Sprintf("%s-%d", base, n)
 	}
-	op := Opportunity{ID: "fr/" + slug, Path: s.root + "/" + slug + ".md", Firm: firm, Status: StatusProspect, Interest: InterestUnknown, Currency: "USD", People: []PersonRef{}}
+	op := Opportunity{ID: "fr/" + slug, Path: s.root + "/" + slug + ".md", Firm: firm, Status: StatusProspect, Interest: InterestUnknown, Currency: "USD", People: []PersonRef{}, UnlinkedPeople: []string{}}
 	if err := s.writeNew(op); err != nil {
 		return Opportunity{}, err
 	}
@@ -316,6 +330,7 @@ func (s *Store) writeNew(op Opportunity) error {
 		return errors.New("fundraising: record writer unavailable")
 	}
 	people, _ := json.Marshal(op.People)
+	plainPeople, _ := json.Marshal(normalizePlainPeople(op.UnlinkedPeople))
 	rows, _ := json.Marshal(op.SourceRows)
 	var b strings.Builder
 	b.WriteString("---\n")
@@ -329,6 +344,9 @@ func (s *Store) writeNew(op Opportunity) error {
 		b.WriteString("amount: " + strconv.FormatFloat(op.Amount, 'f', -1, 64) + "\n")
 	}
 	b.WriteString("currency: " + op.Currency + "\npeople: " + string(people) + "\n")
+	if len(op.UnlinkedPeople) > 0 {
+		b.WriteString("people-text: " + string(plainPeople) + "\n")
+	}
 	if op.Source != nil {
 		source, _ := json.Marshal(op.Source)
 		b.WriteString("source: " + string(source) + "\n")
@@ -343,9 +361,11 @@ func (s *Store) writeNew(op Opportunity) error {
 // win over firm-name matching, so re-running the one-time import cannot create
 // duplicates.
 func (s *Store) ImportUpsert(op Opportunity) (Opportunity, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	for _, p := range op.People {
 		if p.NotePath == "" {
-			if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display, Emails: p.Emails}); err != nil {
+			if err := s.upsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display, Emails: p.Emails}); err != nil {
 				return Opportunity{}, err
 			}
 		}
@@ -398,6 +418,7 @@ func (s *Store) replaceKnown(op Opportunity) error {
 		return err
 	}
 	people, _ := json.Marshal(op.People)
+	plainPeople, _ := json.Marshal(normalizePlainPeople(op.UnlinkedPeople))
 	rows, _ := json.Marshal(op.SourceRows)
 	vals := map[string]*string{}
 	put := func(k, v string) { vv := v; vals[k] = &vv }
@@ -412,6 +433,11 @@ func (s *Store) replaceKnown(op Opportunity) error {
 	put("interest", op.Interest)
 	put("currency", op.Currency)
 	put("people", string(people))
+	if len(op.UnlinkedPeople) > 0 {
+		put("people-text", string(plainPeople))
+	} else {
+		vals["people-text"] = nil
+	}
 	if op.Source != nil {
 		source, _ := json.Marshal(op.Source)
 		put("source", string(source))
@@ -436,6 +462,12 @@ func (s *Store) replaceKnown(op Opportunity) error {
 }
 
 func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.update(id, set)
+}
+
+func (s *Store) update(id string, set map[string]any) (Opportunity, error) {
 	op, ok := s.Get(id)
 	if !ok {
 		return Opportunity{}, fmt.Errorf("opportunity %q not found", id)
@@ -476,6 +508,24 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 				}
 				op.Amount = f
 			}
+		case "currency":
+			v := strings.ToUpper(strings.TrimSpace(fmt.Sprint(raw)))
+			if len(v) != 3 {
+				return op, errors.New("currency must be a three-letter code")
+			}
+			op.Currency = v
+		case "people":
+			people, err := normalizePeople(raw)
+			if err != nil {
+				return op, err
+			}
+			op.People = people
+		case "unlinkedPeople":
+			plain, err := plainPeopleFrom(raw)
+			if err != nil {
+				return op, err
+			}
+			op.UnlinkedPeople = plain
 		case "source":
 			source, err := normalizeSource(raw)
 			if err != nil {
@@ -483,18 +533,24 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 			}
 			op.Source = source
 			if source != nil && source.Contact != nil && source.Contact.NotePath == "" {
-				if err := s.UpsertRegistry(RegistryPerson{Key: source.Contact.Key, Display: source.Contact.Display, Emails: source.Contact.Emails}); err != nil {
+				if err := s.upsertRegistry(RegistryPerson{Key: source.Contact.Key, Display: source.Contact.Display, Emails: source.Contact.Emails}); err != nil {
 					return op, err
 				}
 			}
 		case "lastTouchpoint":
 			op.LastTouchpoint = fmt.Sprint(raw)
 		case "lastTouchpointDate":
-			op.LastTouchpointDate = fmt.Sprint(raw)
+			op.LastTouchpointDate = strings.TrimSpace(fmt.Sprint(raw))
+			if err := validISODate(op.LastTouchpointDate); err != nil {
+				return op, fmt.Errorf("last touchpoint date: %w", err)
+			}
 		case "nextStep":
 			op.NextStep = fmt.Sprint(raw)
 		case "nextStepDue":
-			op.NextStepDue = fmt.Sprint(raw)
+			op.NextStepDue = strings.TrimSpace(fmt.Sprint(raw))
+			if err := validISODate(op.NextStepDue); err != nil {
+				return op, fmt.Errorf("next step due: %w", err)
+			}
 		case "notes":
 			op.Notes = fmt.Sprint(raw)
 		case "importReview":
@@ -561,6 +617,8 @@ func normalizeSource(raw any) (*SourceRef, error) {
 }
 
 func (s *Store) Archive(id string, archived bool) (Opportunity, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	op, ok := s.Get(id)
 	if !ok {
 		return op, fmt.Errorf("opportunity %q not found", id)
@@ -573,6 +631,8 @@ func (s *Store) Archive(id string, archived bool) (Opportunity, error) {
 // record. The category becomes fundraising-deleted and the complete remaining
 // frontmatter/body stays in place, making an accidental deletion recoverable.
 func (s *Store) Delete(id string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if s.writeRecord == nil {
 		return errors.New("fundraising: record writer unavailable")
 	}
@@ -593,6 +653,53 @@ func (s *Store) Delete(id string) error {
 }
 
 func normalizeKey(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
+func normalizePlainPeople(xs []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(xs))
+	for _, x := range xs {
+		x = strings.TrimSpace(x)
+		key := strings.ToLower(x)
+		if x != "" && !seen[key] {
+			seen[key] = true
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func plainPeopleFrom(raw any) ([]string, error) {
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, errors.New("unlinked people must be a list of names")
+	}
+	var xs []string
+	if err := json.Unmarshal(b, &xs); err != nil {
+		return nil, errors.New("unlinked people must be a list of names")
+	}
+	return normalizePlainPeople(xs), nil
+}
+
+func normalizePeople(raw any) ([]PersonRef, error) {
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, errors.New("people must be a list of contacts")
+	}
+	var people []PersonRef
+	if err := json.Unmarshal(b, &people); err != nil {
+		return nil, errors.New("people must be a list of contacts")
+	}
+	for i := range people {
+		people[i].Key = normalizeKey(people[i].Key)
+		people[i].Display = strings.TrimSpace(people[i].Display)
+		people[i].NotePath = filepath.ToSlash(strings.TrimSpace(people[i].NotePath))
+		people[i].Emails = dedupeEmails(people[i].Emails)
+		if people[i].Key == "" || people[i].Display == "" {
+			return nil, errors.New("person key and display are required")
+		}
+	}
+	return mergePeople(nil, people), nil
+}
+
 func dedupeEmails(xs []string) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -608,6 +715,8 @@ func dedupeEmails(xs []string) []string {
 }
 
 func (s *Store) AddPerson(id string, p PersonRef) (Opportunity, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	op, ok := s.Get(id)
 	if !ok {
 		return op, fmt.Errorf("opportunity %q not found", id)
@@ -629,13 +738,15 @@ func (s *Store) AddPerson(id string, p PersonRef) (Opportunity, error) {
 		op.People = append(op.People, p)
 	}
 	if p.NotePath == "" {
-		if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display, Emails: p.Emails}); err != nil {
+		if err := s.upsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display, Emails: p.Emails}); err != nil {
 			return op, err
 		}
 	}
 	return op, s.replaceKnown(op)
 }
 func (s *Store) RemovePerson(id, key string) (Opportunity, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	op, ok := s.Get(id)
 	if !ok {
 		return op, fmt.Errorf("opportunity %q not found", id)
@@ -708,6 +819,12 @@ func (s *Store) RegistryPerson(key string) (RegistryPerson, bool) {
 	return RegistryPerson{}, false
 }
 func (s *Store) UpsertRegistry(in RegistryPerson) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	return s.upsertRegistry(in)
+}
+
+func (s *Store) upsertRegistry(in RegistryPerson) error {
 	people, raw, err := s.registry()
 	if err != nil {
 		return err
@@ -731,20 +848,24 @@ func (s *Store) UpsertRegistry(in RegistryPerson) error {
 	return s.saveRegistry(people, raw)
 }
 func (s *Store) AddEmail(key, email string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	p, ok := s.RegistryPerson(key)
 	if !ok {
 		return fmt.Errorf("CRM contact %q not found", key)
 	}
 	p.Emails = append(p.Emails, email)
-	return s.UpsertRegistry(p)
+	return s.upsertRegistry(p)
 }
 func (s *Store) AttachNote(key, notePath string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	p, ok := s.RegistryPerson(key)
 	if !ok {
 		return fmt.Errorf("CRM contact %q not found", key)
 	}
 	p.NotePath = filepath.ToSlash(notePath)
-	return s.UpsertRegistry(p)
+	return s.upsertRegistry(p)
 }
 
 // People returns the explicit CRM contact universe: registry-only people plus
@@ -846,6 +967,8 @@ func (s *Store) Resources() []Resource {
 }
 
 func (s *Store) SaveResources(resources []Resource) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if s.writeRecord == nil {
 		return errors.New("fundraising: record writer unavailable")
 	}

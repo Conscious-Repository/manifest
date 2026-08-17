@@ -22,6 +22,18 @@
     "teamDir": "/shared/apps/aion-portal",
     "adminEmail": "owner@aion.bio"
   },
+  "fundraisingSheets": {
+    "enabled": false,
+    "spreadsheetId": "1jAxUzcJa3O_imx26uAiHAxxic4EJRYJ9aAJ2UCxOGRQ",
+    "sheetId": 0,
+    "credentialsPath": "~/.config/manifest/fundraising/google-service-account.json",
+    "syncIntervalMinutes": 5
+  },
+  "fundraisingPortal": {
+    "port": 0,
+    "adminEmail": "owner@aion.bio",
+    "oauthClient": "~/.config/manifest/portals/fundraising-portal-oauth.json"
+  },
   "realEstate": { "teamDir": "/shared/apps/re-team" },
   "terminalDevices": [
     { "name": "macbook", "host": "100.x.y.z", "user": "benjamin" },

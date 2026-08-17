@@ -27,6 +27,7 @@ import (
 	"manifest/daily"
 	"manifest/errands"
 	"manifest/fundraising"
+	"manifest/fundraisingportal"
 	"manifest/geocode"
 	"manifest/gmailauth"
 	"manifest/goals"
@@ -418,6 +419,22 @@ func main() {
 		}
 		log.Printf("realestate: enabled (property records over %s/)", reRoot)
 	}
+	if cfg.FundraisingSheets.Enabled {
+		backend, err := fundraising.NewGoogleSheetBackend(ctx, fundraising.GoogleSheetConfig{
+			SpreadsheetID:   cfg.FundraisingSheets.SpreadsheetID,
+			SheetID:         cfg.FundraisingSheets.SheetID,
+			CredentialsPath: cfg.FundraisingSheets.CredentialsPath,
+		})
+		if err != nil {
+			log.Printf("fundraising Sheets sync disabled: %v", err)
+		} else {
+			url := "https://docs.google.com/spreadsheets/d/" + cfg.FundraisingSheets.SpreadsheetID + "/edit#gid=" + fmt.Sprint(cfg.FundraisingSheets.SheetID)
+			syncer := fundraising.NewSheetSync(frStore, backend, filepath.Join(cfg.DataDir, "fundraising", "sheet-sync.json"), url, srv.FundraisingSnapshot)
+			srv.UseFundraisingSync(syncer)
+			syncer.Start(ctx, time.Duration(cfg.FundraisingSheets.SyncIntervalMinutes)*time.Minute)
+			log.Printf("fundraising Sheets sync: enabled (every %dm, gid %d)", cfg.FundraisingSheets.SyncIntervalMinutes, cfg.FundraisingSheets.SheetID)
+		}
+	}
 
 	// AION — the program cockpit over system/aion/ records (aion-domain spec).
 	// Seven corpora seeded write-once (valid of shape, empty of content —
@@ -694,6 +711,39 @@ func main() {
 					log.Printf("aion portal listener stopped: %v", err)
 				}
 			}()
+		}
+	}
+	if cfg.FundraisingPortal.Port != 0 && cfg.FundraisingPortal.Port != cfg.Port && cfg.FundraisingPortal.Port != cfg.PortalPort {
+		admin := strings.TrimSpace(cfg.FundraisingPortal.AdminEmail)
+		if admin == "" {
+			admin = cfg.AionPortal.AdminEmail
+		}
+		invites, inviteErr := fundraisingportal.NewInviteStore(cfg.DataDir, admin)
+		if inviteErr != nil {
+			log.Printf("fundraising portal disabled: %v", inviteErr)
+		} else {
+			srv.UseFundraisingInvites(invites)
+			auth := teamportal.NewScopedAuth(cfg.DataDir, cfg.FundraisingPortal.OAuthClient, "fundraising_portal", invites.Allowed, "invited fundraising collaborators")
+			handler, handlerErr := server.FundraisingPortalHandler(server.FundraisingPortalOptions{
+				Auth: auth, Invites: invites, Store: frStore, Snapshot: srv.FundraisingSnapshot, AdminEmail: admin,
+				AuditPath: filepath.Join(cfg.DataDir, "fundraising", "external-activity.jsonl"),
+			})
+			if handlerErr != nil {
+				log.Printf("fundraising portal disabled: %v", handlerErr)
+			} else {
+				addr := fmt.Sprintf("127.0.0.1:%d", cfg.FundraisingPortal.Port)
+				go func() {
+					fmt.Printf("fundraising portal → http://%s\n", addr)
+					if err := http.ListenAndServe(addr, handler); err != nil {
+						log.Printf("fundraising portal listener stopped: %v", err)
+					}
+				}()
+				if auth.Enabled() {
+					log.Printf("fundraising portal: invite-only editor enabled on %s", addr)
+				} else {
+					log.Printf("fundraising portal: listener ready, OAuth client missing (%s)", cfg.FundraisingPortal.OAuthClient)
+				}
+			}
 		}
 	}
 

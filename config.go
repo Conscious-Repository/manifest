@@ -127,6 +127,12 @@ type Config struct {
 	// remain readable for one transition release; only Path is consulted by
 	// the stable-ID migration, and runtime sync ignores all three.
 	AionPortal AionPortalConfig `json:"aionPortal"`
+	// FundraisingSheets enables the private Markdown↔Google Sheet collaboration
+	// bridge. It remains dark unless Enabled is explicitly true.
+	FundraisingSheets FundraisingSheetsConfig `json:"fundraisingSheets"`
+	// FundraisingPortal is the isolated invite-only external editor. A zero port
+	// keeps the listener disabled.
+	FundraisingPortal FundraisingPortalConfig `json:"fundraisingPortal"`
 	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
 	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and
 	// the app defaults new tasks to Guard (§0 probe).
@@ -184,6 +190,20 @@ type AionPortalConfig struct {
 	Branch     string `json:"branch"`
 	TeamDir    string `json:"teamDir"`
 	AdminEmail string `json:"adminEmail"`
+}
+
+type FundraisingSheetsConfig struct {
+	Enabled             bool   `json:"enabled"`
+	SpreadsheetID       string `json:"spreadsheetId"`
+	SheetID             int64  `json:"sheetId"`
+	CredentialsPath     string `json:"credentialsPath"`
+	SyncIntervalMinutes int    `json:"syncIntervalMinutes"`
+}
+
+type FundraisingPortalConfig struct {
+	Port        int    `json:"port"`
+	AdminEmail  string `json:"adminEmail"`
+	OAuthClient string `json:"oauthClient"`
 }
 
 func defaultConfig() Config {
@@ -247,6 +267,9 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.PortalPort == 0 {
 		cfg.PortalPort = d.PortalPort
 	}
+	if cfg.FundraisingSheets.SyncIntervalMinutes == 0 {
+		cfg.FundraisingSheets.SyncIntervalMinutes = 5
+	}
 	if cfg.DataDir == "" {
 		cfg.DataDir = defaultDataDir()
 	}
@@ -280,6 +303,12 @@ func LoadConfig(path string) (Config, error) {
 	cfg.RealEstate.TeamDir = expandHome(cfg.RealEstate.TeamDir)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
 	cfg.AionPortal.TeamDir = expandHome(cfg.AionPortal.TeamDir)
+	if cfg.FundraisingSheets.CredentialsPath == "" {
+		cfg.FundraisingSheets.CredentialsPath = filepath.Join(cfg.DataDir, "fundraising", "google-service-account.json")
+	} else {
+		cfg.FundraisingSheets.CredentialsPath = expandHome(cfg.FundraisingSheets.CredentialsPath)
+	}
+	cfg.FundraisingPortal.OAuthClient = expandHome(cfg.FundraisingPortal.OAuthClient)
 	// Harness federation (Phase 4): normalize the two spellings into BOTH —
 	// Harnesses is the canonical list (legacy ExcaliburPath synthesizes a
 	// single entry); ExcaliburPath mirrors the primary for the code paths

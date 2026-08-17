@@ -5,12 +5,21 @@ let frCache = null;
 let frStatus = "open";
 let frQuery = "";
 let frSel = null;
+let frSync = null;
+let frSyncOpen = false;
+let frInvites = null;
 
 async function loadFundraising() {
   try {
-    const r = await fetch("/api/aion/fundraising", { cache: "no-store" });
+    const [r, sr, ir] = await Promise.all([
+      fetch("/api/aion/fundraising", { cache: "no-store" }),
+      fetch("/api/aion/fundraising/sync", { cache: "no-store" }),
+      fetch("/api/aion/fundraising/invites", { cache: "no-store" }),
+    ]);
     if (!r.ok) throw new Error(await r.text());
     frCache = await r.json();
+    frSync = sr.ok ? await sr.json() : { enabled: false, conflicts: [] };
+    frInvites = ir.ok ? await ir.json() : { enabled: false, emails: [] };
   } catch (_) { frCache = { opportunities: [], resources: [] }; }
 }
 
@@ -33,7 +42,12 @@ async function renderAionFundraising(host) {
   bar.append(search);
   const statuses = [["open", "OPEN"], ["all", "ALL"], ["prospect", "PROSPECT"], ["active", "ACTIVE"], ["committed", "COMMITTED"], ["passed", "PASSED"], ["archived", "ARCHIVED"]];
   statuses.forEach(([key, label]) => { const b = el("button", "filter-chip" + (frStatus === key ? " on" : ""), label); b.onclick = () => { frStatus = key; renderAion(); }; bar.append(b); });
+  const syncCount = ((frSync && frSync.conflicts) || []).length;
+  const syncButton = el("button", "filter-chip fr-sync-toggle" + (frSyncOpen ? " on" : ""), frSync && frSync.enabled ? (syncCount ? "SYNC · " + syncCount : "SYNC") : "SHEET OFF");
+  syncButton.onclick = () => { frSyncOpen = !frSyncOpen; renderAion(); };
+  bar.append(syncButton);
   main.append(bar);
+  if (frSyncOpen) main.append(renderFundraisingSync());
 
   const add = ghostInput("＋ firm or opportunity", "aion-add fr-add", async (firm) => {
     await frPost("/api/aion/fundraising/item", { firm }, "Opportunity added");
@@ -74,7 +88,7 @@ function frVisible(op) {
   if (frStatus === "all" && op.archived) return false;
   const q = frQuery.trim().toLowerCase();
   if (!q) return true;
-  return [op.firm, op.website, frSourceLabel(op), op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display)).join(" ").toLowerCase().includes(q);
+  return [op.firm, op.website, frSourceLabel(op), op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display), op.unlinkedPeople || []).join(" ").toLowerCase().includes(q);
 }
 
 function frRow(op) {
@@ -84,6 +98,7 @@ function frRow(op) {
   if (op.importReview) firm.append(el("span", "micro-label fr-review", "REVIEW"));
   const people = el("div", "fr-people");
   (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts/" + encodeURIComponent(p.key); }; people.append(b); });
+  (op.unlinkedPeople || []).forEach((name) => people.append(el("span", "fr-person-name fr-person-plain", name)));
   if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
   const touch = el("div", "fr-stack");
   touch.append(el("span", "", op.lastTouchpoint || "—"));
@@ -138,6 +153,72 @@ async function frPost(url, body, msg) {
   } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
 }
 
+function renderFundraisingSync() {
+  const panel = el("section", "fr-sync-panel");
+  if (!frSync || !frSync.enabled) {
+    panel.append(el("div", "fr-sync-note", "Google Sheet sync is disabled in server configuration."));
+    renderFundraisingInvites(panel);
+    return panel;
+  }
+  const head = el("div", "fr-sync-head");
+  const state = frSync.lastError ? "error · " + frSync.lastError : (frSync.lastSuccess ? "last synced " + new Date(frSync.lastSuccess).toLocaleString() : "not synced yet");
+  head.append(el("span", "fr-sync-state", state));
+  if (frSync.spreadsheetUrl) { const link = el("a", "fr-sync-link", "open sheet ↗"); link.href = frSync.spreadsheetUrl; link.target = "_blank"; link.rel = "noopener"; head.append(link); }
+  const now = el("button", "pill light", "Sync now"); now.onclick = frSyncNow; head.append(now);
+  panel.append(head);
+  const conflicts = frSync.conflicts || [];
+  if (!conflicts.length) panel.append(el("div", "fr-sync-note", frSync.initialized ? "No conflicts." : "The workbook has not been initialized."));
+  conflicts.forEach((c) => {
+    const row = el("div", "fr-sync-conflict");
+    const detail = el("div", "fr-sync-detail");
+    detail.append(el("strong", "", c.firm + " · " + c.field), el("span", "", "Manifest: " + (c.manifest || "—")), el("span", "", "Sheet: " + (c.sheet || "—")));
+    const actions = el("div", "fr-sync-actions");
+    const keep = el("button", "pill light", "Keep Manifest"); keep.onclick = () => frResolveSync(c, "manifest");
+    const use = el("button", "pill light", "Use Sheet"); use.onclick = () => frResolveSync(c, "sheet");
+    actions.append(keep, use); row.append(detail, actions); panel.append(row);
+  });
+  renderFundraisingInvites(panel);
+  return panel;
+}
+
+function renderFundraisingInvites(panel) {
+  const invites = el("div", "fr-invites");
+  invites.append(el("span", "micro-label", "FUNDRAISING.AION.BIO INVITES"));
+  if (!frInvites || !frInvites.enabled) {
+    invites.append(el("div", "fr-sync-note", "The branded fundraising portal is disabled in server configuration."));
+  } else {
+    const input = el("textarea", "pp-in fr-invite-input"); input.placeholder = "advisor@example.com\ninvestor@example.com"; input.value = (frInvites.emails || []).join("\n");
+    const save = el("button", "pill light", "Save invites"); save.onclick = () => frSaveInvites(input.value);
+    invites.append(input, save);
+  }
+  panel.append(invites);
+}
+
+async function frSyncNow() {
+  try {
+    const r = await fetch("/api/aion/fundraising/sync", { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    frSync = await r.json(); frCache = null; showToast("Fundraising sync complete"); renderAion();
+  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+}
+
+async function frResolveSync(conflict, choice) {
+  try {
+    const r = await fetch("/api/aion/fundraising/sync/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: conflict.id, field: conflict.field, choice }) });
+    if (!r.ok) throw new Error(await r.text());
+    frSync = await r.json(); frCache = null; showToast("Conflict resolved"); renderAion();
+  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+}
+
+async function frSaveInvites(value) {
+  const emails = String(value || "").split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
+  try {
+    const r = await fetch("/api/aion/fundraising/invites", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails }) });
+    if (!r.ok) throw new Error(await r.text());
+    frInvites = await r.json(); showToast("Fundraising invites saved"); renderAion();
+  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+}
+
 function renderFundraisingInspector(host, op) {
   const head = el("div", "aion-insp-head"); head.append(el("span", "aion-insp-label", "Fundraising"));
   const x = el("button", "aion-insp-x", "✕"); x.onclick = () => { frSel = null; renderAion(); }; head.append(x); host.append(head);
@@ -158,6 +239,11 @@ function renderFundraisingInspector(host, op) {
 
   const people = el("div", "fr-insp-people");
   (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
+  (op.unlinkedPeople || []).forEach((name) => {
+    const chip = el("span", "fr-person-chip plain"); chip.append(el("span", "fr-person-name fr-person-plain", name));
+    const rm = el("button", "fr-person-rm", "×"); rm.title = "remove plaintext person"; rm.onclick = () => patch({ unlinkedPeople: (op.unlinkedPeople || []).filter((x) => x !== name) });
+    chip.append(rm); people.append(chip);
+  });
   const addPerson = typeahead({
     placeholder: "find or add a person…",
     minChars: 1,

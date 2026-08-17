@@ -30,6 +30,26 @@ func TestAuthorizedDomainGate(t *testing.T) {
 	}
 }
 
+func TestScopedAuthRechecksAuthorizationOnEveryRequest(t *testing.T) {
+	allowed := true
+	auth := NewScopedAuth(t.TempDir(), "", "fundraising_test", func(email string) bool {
+		return allowed && email == "advisor@example.com"
+	}, "invited collaborators")
+	cookie, err := auth.SessionCookie("advisor@example.com", "Advisor", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(cookie)
+	if _, ok := auth.Identify(r); !ok {
+		t.Fatal("fresh invite session was not recognized")
+	}
+	allowed = false
+	if _, ok := auth.Identify(r); ok {
+		t.Fatal("revoked invite session remained recognized")
+	}
+}
+
 func TestIdentifyRequestAcceptsBearerAndPrefersCookie(t *testing.T) {
 	tokens := NewTokens(t.TempDir())
 	a := NewAuth(t.TempDir()).WithTokens(tokens)

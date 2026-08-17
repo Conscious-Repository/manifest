@@ -37,25 +37,28 @@ type SourceRef struct {
 
 // Opportunity is one Markdown record under system/crm/fundraising/.
 type Opportunity struct {
-	ID                     string      `json:"id"`
-	Path                   string      `json:"path"`
-	Firm                   string      `json:"firm"`
-	Website                string      `json:"website,omitempty"`
-	Status                 string      `json:"status"`
-	Interest               string      `json:"interest"`
-	Amount                 float64     `json:"amount,omitempty"`
-	Currency               string      `json:"currency"`
-	People                 []PersonRef `json:"people"`
-	Source                 *SourceRef  `json:"source,omitempty"`
-	LastTouchpoint         string      `json:"lastTouchpoint"`
-	LastTouchpointDate     string      `json:"lastTouchpointDate"`
-	ComputedLastTouchpoint string      `json:"computedLastTouchpoint,omitempty"`
-	NextStep               string      `json:"nextStep"`
-	NextStepDue            string      `json:"nextStepDue"`
-	Notes                  string      `json:"notes"`
-	Archived               bool        `json:"archived"`
-	SourceRows             []int       `json:"sourceRows,omitempty"`
-	ImportReview           bool        `json:"importReview"`
+	ID       string      `json:"id"`
+	Path     string      `json:"path"`
+	Firm     string      `json:"firm"`
+	Website  string      `json:"website,omitempty"`
+	Status   string      `json:"status"`
+	Interest string      `json:"interest"`
+	Amount   float64     `json:"amount,omitempty"`
+	Currency string      `json:"currency"`
+	People   []PersonRef `json:"people"`
+	// UnlinkedPeople are opportunity-local display names entered by external
+	// collaborators. They deliberately do not create or mutate CRM contacts.
+	UnlinkedPeople         []string   `json:"unlinkedPeople,omitempty"`
+	Source                 *SourceRef `json:"source,omitempty"`
+	LastTouchpoint         string     `json:"lastTouchpoint"`
+	LastTouchpointDate     string     `json:"lastTouchpointDate"`
+	ComputedLastTouchpoint string     `json:"computedLastTouchpoint,omitempty"`
+	NextStep               string     `json:"nextStep"`
+	NextStepDue            string     `json:"nextStepDue"`
+	Notes                  string     `json:"notes"`
+	Archived               bool       `json:"archived"`
+	SourceRows             []int      `json:"sourceRows,omitempty"`
+	ImportReview           bool       `json:"importReview"`
 }
 
 // RegistryPerson is a row in system/crm/contacts.md.
