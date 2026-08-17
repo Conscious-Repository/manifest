@@ -74,12 +74,13 @@ function frVisible(op) {
   if (frStatus === "all" && op.archived) return false;
   const q = frQuery.trim().toLowerCase();
   if (!q) return true;
-  return [op.firm, frSourceLabel(op), op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display)).join(" ").toLowerCase().includes(q);
+  return [op.firm, op.website, frSourceLabel(op), op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display)).join(" ").toLowerCase().includes(q);
 }
 
 function frRow(op) {
   const row = el("div", "fr-row" + (frSel === op.id ? " sel" : "") + (op.importReview ? " review" : ""));
   const firm = el("div", "fr-firm"); firm.append(el("span", "fr-firm-name", op.firm));
+  if (op.website) { const site = el("a", "fr-website-link", "↗"); site.href = op.website; site.target = "_blank"; site.rel = "noopener"; site.title = "open website"; site.setAttribute("aria-label", "Open " + op.firm + " website"); site.onclick = (e) => e.stopPropagation(); firm.append(site); }
   if (op.importReview) firm.append(el("span", "micro-label fr-review", "REVIEW"));
   const people = el("div", "fr-people");
   (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts/" + encodeURIComponent(p.key); }; people.append(b); });
@@ -146,6 +147,13 @@ function renderFundraisingInspector(host, op) {
   const text = (label, key, value, multiline) => { const n = el(multiline ? "textarea" : "input", "pp-in fr-in"); if (!multiline) n.type = "text"; n.value = value || ""; let old = n.value; n.onblur = () => { if (n.value !== old) patch({ [key]: n.value }); }; field(label, n); return n; };
 
   text("firm", "firm", op.firm);
+  const website = el("div", "fr-website-editor");
+  const websiteInput = el("input", "pp-in fr-in"); websiteInput.type = "url"; websiteInput.placeholder = "https://…"; websiteInput.value = op.website || ""; let oldWebsite = websiteInput.value;
+  websiteInput.onblur = () => { if (websiteInput.value !== oldWebsite) patch({ website: websiteInput.value }); };
+  websiteInput.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); websiteInput.blur(); } };
+  website.append(websiteInput);
+  if (op.website) { const openWebsite = el("a", "fr-website-open", "open ↗"); openWebsite.href = op.website; openWebsite.target = "_blank"; openWebsite.rel = "noopener"; website.append(openWebsite); }
+  field("website", website);
   const status = el("select", "pp-in fr-in"); ["prospect", "active", "committed", "passed"].forEach((v) => { const o = el("option", "", v); o.value = v; o.selected = op.status === v; status.append(o); }); status.onchange = () => patch({ status: status.value }); field("status", status);
   const amount = el("input", "pp-in fr-in"); amount.type = "number"; amount.min = "0"; amount.step = "1000"; amount.value = op.amount || ""; amount.onblur = () => patch({ amount: amount.value }); field("amount", amount);
 

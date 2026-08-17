@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -240,7 +241,7 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	if !containsFold(mdfm.List(fm["categories"]), "fundraising") {
 		return Opportunity{}, false
 	}
-	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Status: strings.ToLower(scalar(fm["status"])), Interest: strings.ToLower(scalar(fm["interest"])), Currency: scalar(fm["currency"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
+	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Website: scalar(fm["website"]), Status: strings.ToLower(scalar(fm["status"])), Interest: strings.ToLower(scalar(fm["interest"])), Currency: scalar(fm["currency"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
 	if op.ID == "" {
 		op.ID = "fr/" + strings.TrimSuffix(filepath.Base(rel), ".md")
 	}
@@ -320,6 +321,9 @@ func (s *Store) writeNew(op Opportunity) error {
 	b.WriteString("---\n")
 	b.WriteString("categories: [fundraising]\n")
 	b.WriteString("id: " + q(op.ID) + "\nfirm: " + q(op.Firm) + "\n")
+	if op.Website != "" {
+		b.WriteString("website: " + q(op.Website) + "\n")
+	}
 	b.WriteString("status: " + op.Status + "\ninterest: " + op.Interest + "\n")
 	if op.Amount > 0 {
 		b.WriteString("amount: " + strconv.FormatFloat(op.Amount, 'f', -1, 64) + "\n")
@@ -399,6 +403,11 @@ func (s *Store) replaceKnown(op Opportunity) error {
 	put := func(k, v string) { vv := v; vals[k] = &vv }
 	put("id", q(op.ID))
 	put("firm", q(op.Firm))
+	if op.Website != "" {
+		put("website", q(op.Website))
+	} else {
+		vals["website"] = nil
+	}
 	put("status", op.Status)
 	put("interest", op.Interest)
 	put("currency", op.Currency)
@@ -438,6 +447,12 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 			if op.Firm == "" {
 				return op, errors.New("firm cannot be empty")
 			}
+		case "website":
+			website, err := normalizeWebsite(fmt.Sprint(raw))
+			if err != nil {
+				return op, err
+			}
+			op.Website = website
 		case "status":
 			v := strings.ToLower(strings.TrimSpace(fmt.Sprint(raw)))
 			if !validStatus(v) {
@@ -489,6 +504,21 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 		}
 	}
 	return op, s.replaceKnown(op)
+}
+
+func normalizeWebsite(raw string) (string, error) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+	if !strings.Contains(v, "://") {
+		v = "https://" + v
+	}
+	u, err := url.ParseRequestURI(v)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", errors.New("website must be an http or https URL")
+	}
+	return u.String(), nil
 }
 
 func normalizeSource(raw any) (*SourceRef, error) {

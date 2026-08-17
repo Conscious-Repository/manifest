@@ -36,12 +36,12 @@ func TestStoreCRUDPreservesUnknownContent(t *testing.T) {
 	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(op.ID, map[string]any{"status": "active", "nextStep": "Send deck", "amount": "250000"}); err != nil {
+	if _, err := s.Update(op.ID, map[string]any{"status": "active", "nextStep": "Send deck", "amount": "250000", "website": "acme.vc"}); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(path)
 	got := string(b)
-	for _, want := range []string{"status: active", "next-step: \"Send deck\"", "amount: 250000", "custom-field: keep-me", "## private scratch", "keep this body"} {
+	for _, want := range []string{"status: active", "next-step: \"Send deck\"", "amount: 250000", "website: \"https://acme.vc\"", "custom-field: keep-me", "## private scratch", "keep this body"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
@@ -52,6 +52,29 @@ func TestStoreCRUDPreservesUnknownContent(t *testing.T) {
 	arch, _ := s.Get(op.ID)
 	if !arch.Archived {
 		t.Fatal("archive state not persisted")
+	}
+}
+
+func TestOpportunityWebsiteValidationAndClear(t *testing.T) {
+	s, root := testStore(t)
+	op, err := s.Create("Web Fund")
+	if err != nil {
+		t.Fatal(err)
+	}
+	op, err = s.Update(op.ID, map[string]any{"website": "example.com/path"})
+	if err != nil || op.Website != "https://example.com/path" {
+		t.Fatalf("website=%q err=%v", op.Website, err)
+	}
+	if _, err := s.Update(op.ID, map[string]any{"website": "javascript:alert(1)"}); err == nil {
+		t.Fatal("unsafe website scheme accepted")
+	}
+	op, err = s.Update(op.ID, map[string]any{"website": ""})
+	if err != nil || op.Website != "" {
+		t.Fatalf("clear website=%q err=%v", op.Website, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(op.Path)))
+	if strings.Contains(string(b), "\nwebsite:") {
+		t.Fatalf("cleared website remains in frontmatter:\n%s", b)
 	}
 }
 

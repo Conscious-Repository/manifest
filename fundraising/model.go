@@ -40,6 +40,7 @@ type Opportunity struct {
 	ID                     string      `json:"id"`
 	Path                   string      `json:"path"`
 	Firm                   string      `json:"firm"`
+	Website                string      `json:"website,omitempty"`
 	Status                 string      `json:"status"`
 	Interest               string      `json:"interest"`
 	Amount                 float64     `json:"amount,omitempty"`
