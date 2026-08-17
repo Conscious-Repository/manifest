@@ -74,7 +74,7 @@ function frVisible(op) {
   if (frStatus === "all" && op.archived) return false;
   const q = frQuery.trim().toLowerCase();
   if (!q) return true;
-  return [op.firm, op.introVia, op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display)).join(" ").toLowerCase().includes(q);
+  return [op.firm, op.introVia, frSourceLabel(op), op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display)).join(" ").toLowerCase().includes(q);
 }
 
 function frRow(op) {
@@ -118,6 +118,22 @@ function frSetPlainPeople(op, names, msg) {
 function frAddPlainPerson(op, name) {
   const linked = (op.people || []).some((p) => [p.key, p.display].some((v) => String(v || "").toLowerCase() === name.trim().toLowerCase()));
   if (!linked) return frSetPlainPeople(op, frPlainPeople(op).concat(name), "Plain-text person added");
+}
+
+function frSourceLabel(op) {
+  if (op.source && op.source.contact) return op.source.contact.display || op.source.contact.key || "";
+  return (op.source && op.source.text) || "";
+}
+
+function frSetSourceText(op, value) {
+  value = String(value || "").trim();
+  return frPost("/api/aion/fundraising/update/" + op.id, { source: value ? { text: value } : null }, value ? "Source saved" : "Source cleared");
+}
+
+function frSetSourceContact(op, contact) {
+  return frPost("/api/aion/fundraising/update/" + op.id, { source: { contact: {
+    key: contact.key, display: contact.display, notePath: contact.notePath || "",
+  } } }, "Source contact linked");
 }
 
 async function frContactMatches(query) {
@@ -173,6 +189,33 @@ function renderFundraisingInspector(host, op) {
   });
   people.append(addPerson.el);
   field("people", people);
+
+  const source = el("div", "fr-source-editor");
+  if (op.source && op.source.contact) {
+    const p = op.source.contact;
+    const chip = el("span", "fr-person-chip linked");
+    const open = el("button", "fr-person-name fr-person", p.display || p.key);
+    open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); };
+    const rm = el("button", "fr-person-rm", "×"); rm.title = "clear source"; rm.onclick = () => frSetSourceText(op, "");
+    chip.append(open, rm); source.append(chip);
+  } else if (op.source && op.source.text) {
+    const chip = el("span", "fr-person-chip plain");
+    chip.append(el("span", "fr-person-name fr-person-plain", op.source.text));
+    const rm = el("button", "fr-person-rm", "×"); rm.title = "clear source"; rm.onclick = () => frSetSourceText(op, "");
+    chip.append(rm); source.append(chip);
+  }
+  const sourceInput = typeahead({
+    placeholder: frSourceLabel(op) ? "replace source…" : "contact, DM, cold intro…",
+    minChars: 1,
+    onEnter: (value) => frSetSourceText(op, value),
+    suggest: async (q, add) => {
+      const matches = await frContactMatches(q);
+      matches.slice(0, 6).forEach((p) => add(p.display, "contact", () => frSetSourceContact(op, p)));
+      add("Use “" + sourceInput.value() + "” as plain text", "text", () => frSetSourceText(op, sourceInput.value()));
+    },
+  });
+  source.append(sourceInput.el);
+  field("source", source);
   text("last touch", "lastTouchpoint", op.lastTouchpoint);
   const lastDate = el("input", "pp-in fr-in"); lastDate.type = "date"; lastDate.value = op.lastTouchpointDate || ""; lastDate.onchange = () => patch({ lastTouchpointDate: lastDate.value }); field("touch date", lastDate);
   if (op.computedLastTouchpoint) field("contacts", el("span", "aion-insp-ro", op.computedLastTouchpoint + " · latest linked interaction"));

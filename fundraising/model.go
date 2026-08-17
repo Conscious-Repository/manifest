@@ -27,6 +27,14 @@ type PersonRef struct {
 	Emails   []string `json:"emails,omitempty"`
 }
 
+// SourceRef records how an opportunity entered the pipeline. Exactly one of
+// Contact or Text is set: linked introductions retain contact identity while
+// channel-style sources such as "DM" or "cold intro" remain honest free text.
+type SourceRef struct {
+	Contact *PersonRef `json:"contact,omitempty"`
+	Text    string     `json:"text,omitempty"`
+}
+
 // Opportunity is one Markdown record under system/crm/fundraising/.
 type Opportunity struct {
 	ID                     string      `json:"id"`
@@ -37,6 +45,7 @@ type Opportunity struct {
 	Amount                 float64     `json:"amount,omitempty"`
 	Currency               string      `json:"currency"`
 	People                 []PersonRef `json:"people"`
+	Source                 *SourceRef  `json:"source,omitempty"`
 	IntroVia               string      `json:"introVia"`
 	LastTouchpoint         string      `json:"lastTouchpoint"`
 	LastTouchpointDate     string      `json:"lastTouchpointDate"`

@@ -47,7 +47,7 @@ func TestFundraisingPrivateCRUD(t *testing.T) {
 	}
 	id := view.Opportunities[0].ID
 
-	update := httptest.NewRequest(http.MethodPost, "/api/aion/fundraising/update/"+id, strings.NewReader(`{"status":"active","nextStep":"Send deck"}`))
+	update := httptest.NewRequest(http.MethodPost, "/api/aion/fundraising/update/"+id, strings.NewReader(`{"status":"active","nextStep":"Send deck","source":{"text":"DM"}}`))
 	update.SetPathValue("id", id)
 	updated := httptest.NewRecorder()
 	s.handleFundraisingUpdate(updated, update)
@@ -55,7 +55,7 @@ func TestFundraisingPrivateCRUD(t *testing.T) {
 		t.Fatalf("update status=%d body=%s", updated.Code, updated.Body.String())
 	}
 	op, ok := store.Get(id)
-	if !ok || op.Status != fundraising.StatusActive || op.NextStep != "Send deck" {
+	if !ok || op.Status != fundraising.StatusActive || op.NextStep != "Send deck" || op.Source == nil || op.Source.Text != "DM" {
 		t.Fatalf("updated opportunity=%+v ok=%v", op, ok)
 	}
 

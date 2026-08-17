@@ -39,6 +39,9 @@ textarea.fr-in { min-height: calc(var(--sp-9) + var(--sp-9) + var(--sp-9) + var(
 .fr-person-rm:hover { color: var(--base-100); }
 .fr-insp-people .ta-wrap { flex: 1 1 100%; min-width: 0; }
 .fr-insp-people .ta-in, .fr-insp-people .ta-drop { width: 100%; }
+.fr-source-editor { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); position: relative; }
+.fr-source-editor .ta-wrap { flex: 1 1 100%; min-width: 0; }
+.fr-source-editor .ta-in, .fr-source-editor .ta-drop { width: 100%; }
 @media (max-width: 1100px) {
   .fr-main { overflow-x: auto; }
   .fr-table { min-width: var(--fr-wide-min); }

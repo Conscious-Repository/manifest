@@ -81,6 +81,76 @@ func TestParserWriterFixpoint(t *testing.T) {
 	}
 }
 
+func TestOpportunitySourceAcceptsTextOrLinkedContact(t *testing.T) {
+	s, root := testStore(t)
+	op, err := s.Create("Source Capital")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	op, err = s.Update(op.ID, map[string]any{"source": "cold intro"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Source == nil || op.Source.Text != "cold intro" || op.Source.Contact != nil {
+		t.Fatalf("plain source=%+v", op.Source)
+	}
+
+	contact := map[string]any{"key": "Jane Doe", "display": "Jane Doe"}
+	op, err = s.Update(op.ID, map[string]any{"source": map[string]any{"contact": contact}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Source == nil || op.Source.Contact == nil || op.Source.Contact.Key != "jane doe" || op.Source.Text != "" {
+		t.Fatalf("contact source=%+v", op.Source)
+	}
+	if p, ok := s.Person("jane doe"); !ok || p.Display != "Jane Doe" {
+		t.Fatalf("source contact missing from CRM: person=%+v ok=%v", p, ok)
+	}
+	if got := s.OpportunitiesFor("jane doe"); len(got) != 1 || got[0].ID != op.ID {
+		t.Fatalf("source contact opportunities=%+v", got)
+	}
+
+	path := filepath.Join(root, filepath.FromSlash(op.Path))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `source: {"contact":{"key":"jane doe","display":"Jane Doe"}}`) {
+		t.Fatalf("linked source not persisted:\n%s", b)
+	}
+
+	if _, err := s.Update(op.ID, map[string]any{"source": map[string]any{"text": "DM", "contact": contact}}); err == nil {
+		t.Fatal("source accepted both contact and text")
+	}
+	op, err = s.Update(op.ID, map[string]any{"source": nil})
+	if err != nil || op.Source != nil {
+		t.Fatalf("clear source: op=%+v err=%v", op.Source, err)
+	}
+	b, _ = os.ReadFile(path)
+	if strings.Contains(string(b), "\nsource:") {
+		t.Fatalf("cleared source remains in frontmatter:\n%s", b)
+	}
+}
+
+func TestOpportunitySourceParsesHandEditedFrontmatter(t *testing.T) {
+	s, root := testStore(t)
+	op, err := s.Create("Hand Edit Fund")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, filepath.FromSlash(op.Path))
+	b, _ := os.ReadFile(path)
+	b = []byte(strings.Replace(string(b), "people: []", "people: []\nsource: {\"text\":\"DM\"}", 1))
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := s.Get(op.ID)
+	if !ok || got.Source == nil || got.Source.Text != "DM" {
+		t.Fatalf("hand-edited source=%+v ok=%v", got.Source, ok)
+	}
+}
+
 func TestStoreWritesStayInsideCapabilities(t *testing.T) {
 	root := t.TempDir()
 	frRoot := filepath.Join(root, "system", "crm", "fundraising")

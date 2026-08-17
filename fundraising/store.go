@@ -157,6 +157,7 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	}
 	op.Amount, _ = strconv.ParseFloat(strings.TrimSpace(fm["amount"]), 64)
 	_ = json.Unmarshal([]byte(fm["people"]), &op.People)
+	_ = json.Unmarshal([]byte(fm["source"]), &op.Source)
 	_ = json.Unmarshal([]byte(fm["source-rows"]), &op.SourceRows)
 	if op.People == nil {
 		op.People = []PersonRef{}
@@ -223,6 +224,10 @@ func (s *Store) writeNew(op Opportunity) error {
 		b.WriteString("amount: " + strconv.FormatFloat(op.Amount, 'f', -1, 64) + "\n")
 	}
 	b.WriteString("currency: " + op.Currency + "\npeople: " + string(people) + "\n")
+	if op.Source != nil {
+		source, _ := json.Marshal(op.Source)
+		b.WriteString("source: " + string(source) + "\n")
+	}
 	b.WriteString("intro-via: " + q(op.IntroVia) + "\nlast-touchpoint: " + q(op.LastTouchpoint) + "\nlast-touchpoint-date: " + q(op.LastTouchpointDate) + "\n")
 	b.WriteString("next-step: " + q(op.NextStep) + "\nnext-step-due: " + q(op.NextStepDue) + "\nnotes: " + q(op.Notes) + "\n")
 	b.WriteString("archived: " + strconv.FormatBool(op.Archived) + "\nsource-rows: " + string(rows) + "\nimport-review: " + strconv.FormatBool(op.ImportReview) + "\n---\n\n# " + op.Firm + "\n")
@@ -290,6 +295,12 @@ func (s *Store) replaceKnown(op Opportunity) error {
 	put("interest", op.Interest)
 	put("currency", op.Currency)
 	put("people", string(people))
+	if op.Source != nil {
+		source, _ := json.Marshal(op.Source)
+		put("source", string(source))
+	} else {
+		vals["source"] = nil
+	}
 	put("intro-via", q(op.IntroVia))
 	put("last-touchpoint", q(op.LastTouchpoint))
 	put("last-touchpoint-date", q(op.LastTouchpointDate))
@@ -342,6 +353,17 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 				}
 				op.Amount = f
 			}
+		case "source":
+			source, err := normalizeSource(raw)
+			if err != nil {
+				return op, err
+			}
+			op.Source = source
+			if source != nil && source.Contact != nil && source.Contact.NotePath == "" {
+				if err := s.UpsertRegistry(RegistryPerson{Key: source.Contact.Key, Display: source.Contact.Display, Emails: source.Contact.Emails}); err != nil {
+					return op, err
+				}
+			}
 		case "introVia":
 			op.IntroVia = fmt.Sprint(raw)
 		case "lastTouchpoint":
@@ -361,6 +383,45 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 		}
 	}
 	return op, s.replaceKnown(op)
+}
+
+func normalizeSource(raw any) (*SourceRef, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if text, ok := raw.(string); ok {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return nil, nil
+		}
+		return &SourceRef{Text: text}, nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil, errors.New("source must be a contact or plain text")
+	}
+	var source SourceRef
+	if err := json.Unmarshal(b, &source); err != nil {
+		return nil, errors.New("source must be a contact or plain text")
+	}
+	source.Text = strings.TrimSpace(source.Text)
+	if source.Contact != nil {
+		source.Contact.Key = normalizeKey(source.Contact.Key)
+		source.Contact.Display = strings.TrimSpace(source.Contact.Display)
+		source.Contact.NotePath = filepath.ToSlash(strings.TrimSpace(source.Contact.NotePath))
+		source.Contact.Emails = dedupeEmails(source.Contact.Emails)
+		if source.Text != "" {
+			return nil, errors.New("source cannot be both a contact and plain text")
+		}
+		if source.Contact.Key == "" || source.Contact.Display == "" {
+			return nil, errors.New("source contact key and display are required")
+		}
+		return &source, nil
+	}
+	if source.Text == "" {
+		return nil, nil
+	}
+	return &source, nil
 }
 
 func (s *Store) Archive(id string, archived bool) (Opportunity, error) {
@@ -550,6 +611,20 @@ func (s *Store) People() []RegistryPerson {
 			p.Emails = dedupeEmails(append(p.Emails, r.Emails...))
 			by[k] = p
 		}
+		if op.Source != nil && op.Source.Contact != nil {
+			r := *op.Source.Contact
+			k := normalizeKey(r.Key)
+			p := by[k]
+			p.Key = k
+			if p.Display == "" {
+				p.Display = r.Display
+			}
+			if p.NotePath == "" {
+				p.NotePath = r.NotePath
+			}
+			p.Emails = dedupeEmails(append(p.Emails, r.Emails...))
+			by[k] = p
+		}
 	}
 	out := make([]RegistryPerson, 0, len(by))
 	for _, p := range by {
@@ -572,11 +647,15 @@ func (s *Store) OpportunitiesFor(key string) []Opportunity {
 	ops, _ := s.List()
 	out := []Opportunity{}
 	for _, op := range ops {
+		matched := op.Source != nil && op.Source.Contact != nil && normalizeKey(op.Source.Contact.Key) == key
 		for _, p := range op.People {
 			if normalizeKey(p.Key) == key {
-				out = append(out, op)
+				matched = true
 				break
 			}
+		}
+		if matched {
+			out = append(out, op)
 		}
 	}
 	return out
