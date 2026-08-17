@@ -16,6 +16,7 @@ let aionRevision = "";
 let aionRevisionETag = "";
 let aionPollDelay = 3000;
 let aionPollTimer = null;
+let aionWarningsOpen = false;
 
 function scheduleAionPoll(delay) {
   if (aionPollTimer) clearTimeout(aionPollTimer);
@@ -75,9 +76,34 @@ function renderAionRail() {
       ? "SYNC DEGRADED · serving " + (sync.servingRevision || "last good")
       : "LIVE" + (sync.lastGoodAt ? " · " + fmtWhen(sync.lastGoodAt) : "") + (warningCount ? " · " + warningCount + " WARNING" + (warningCount === 1 ? "" : "S") : "");
   }
-  const dot = el("span", "aion-status " + (sync.stale ? "alarm" : "active"), sync.stale ? "STALE" : (warningCount ? "LIVE · WARN" : "LIVE"));
+  const dot = el(warningCount ? "button" : "span", "aion-status " + (sync.stale ? "alarm" : "active"), sync.stale ? "STALE" : (warningCount ? "LIVE · WARN" : "LIVE"));
   if (sync.error || warningCount) dot.title = sync.error || sync.warnings.join("\n");
+  if (warningCount) {
+    dot.type = "button";
+    dot.setAttribute("aria-expanded", String(aionWarningsOpen));
+    dot.setAttribute("aria-label", warningCount + " Aion warning" + (warningCount === 1 ? "" : "s") + "; show details");
+    dot.onclick = () => { aionWarningsOpen = !aionWarningsOpen; renderAionRail(); };
+  }
   rail.append(dot);
+  if (aionWarningsOpen && warningCount) {
+    const panel = el("div", "aion-warning-panel");
+    panel.append(el("div", "aion-warning-head", warningCount + " contract warning" + (warningCount === 1 ? "" : "s")));
+    sync.warnings.forEach((message) => {
+      const row = el("button", "aion-warning-row", message);
+      row.type = "button";
+      const id = message.split(":", 1)[0];
+      row.onclick = () => {
+        if ((aionCache.backlog || []).some((it) => it.id === id)) {
+          aionWarningsOpen = false;
+          aionSelId = id;
+          if (location.hash !== "#/aion") location.hash = "#/aion";
+          else renderAion();
+        }
+      };
+      panel.append(row);
+    });
+    rail.append(panel);
+  }
 }
 
 async function pollAionLive() {

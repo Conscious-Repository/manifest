@@ -13,10 +13,15 @@
 @media (max-width: 860px) { .aion-view { padding: 0 var(--sp-7); } }
 
 /* publish rail */
-.aion-rail { display: inline-flex; align-items: center; gap: var(--sp-5); }
+.aion-rail { display: inline-flex; align-items: center; gap: var(--sp-5); position: relative; }
 .aion-last { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: 0.3px; }
 .aion-dots { display: inline-flex; gap: var(--sp-2); align-items: center; }
 .status-dot.on { background: var(--blue); }
+.aion-rail button.aion-status { background: none; cursor: pointer; }
+.aion-warning-panel { position: absolute; z-index: 30; top: calc(100% + var(--sp-2)); right: 0; width: min(520px, calc(100vw - 32px)); padding: var(--sp-3); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 10px 28px rgba(0,0,0,.12); }
+.aion-warning-head { padding: var(--sp-2) var(--sp-3); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.aion-warning-row { display: block; width: 100%; padding: var(--sp-3); border: 0; border-top: 1px solid var(--line); background: none; color: var(--text); font: inherit; font-size: var(--fs-sm); line-height: 1.4; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.aion-warning-row:hover { background: var(--hover); color: var(--blue); }
 
 /* chips */
 .aion-chips { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-2) var(--sp-4) var(--sp-5); flex-wrap: wrap; }
