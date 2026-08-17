@@ -60,11 +60,11 @@ func TestSheetImportCountMergeAndConservativeMapping(t *testing.T) {
 			angels++
 		}
 	}
-	if eight == nil || len(eight.SourceRows) != 2 || len(eight.People) != 1 {
+	if eight == nil || len(eight.SourceRows) != 2 || len(eight.People) != 2 {
 		t.Fatalf("8VC merge=%+v", eight)
 	}
-	if eight.Source == nil || eight.Source.Contact != nil || eight.Source.Text != "Drew; Francisco Gimenez" {
-		t.Fatalf("8VC source=%+v", eight.Source)
+	if eight.Source != nil {
+		t.Fatalf("warm contacts were reclassified as source: %+v", eight.Source)
 	}
 	if angels != 2 {
 		t.Fatalf("Angel/LP rows merged unexpectedly: %d", angels)

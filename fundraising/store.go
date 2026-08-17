@@ -51,9 +51,9 @@ func (s *Store) Ensure() error {
 	return s.migrateLegacyIntroVia()
 }
 
-// migrateLegacyIntroVia removes the retired scalar from every record. A
-// non-empty value is preserved as a text source only when the record does not
-// already have the replacement source field.
+// migrateLegacyIntroVia removes the retired scalar from every record. Its
+// names remain people: unresolved names become explicit note-less CRM contacts
+// instead of being reclassified as opportunity provenance.
 func (s *Store) migrateLegacyIntroVia() error {
 	ents, err := os.ReadDir(s.abs(s.root))
 	if errors.Is(err, os.ErrNotExist) {
@@ -76,12 +76,20 @@ func (s *Store) migrateLegacyIntroVia() error {
 		if !exists || !containsFold(mdfm.List(fm["categories"]), "fundraising") {
 			continue
 		}
-		updates := map[string]*string{"intro-via": nil}
-		if strings.TrimSpace(fm["source"]) == "" && scalar(legacy) != "" {
-			source, _ := json.Marshal(SourceRef{Text: scalar(legacy)})
-			value := string(source)
-			updates["source"] = &value
+		var people []PersonRef
+		_ = json.Unmarshal([]byte(fm["people"]), &people)
+		for _, p := range personRefsFromText(scalar(legacy)) {
+			if !hasPerson(people, p.Key) {
+				people = append(people, p)
+			}
+			if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display}); err != nil {
+				return err
+			}
 		}
+		people = mergePeople(nil, people)
+		encoded, _ := json.Marshal(people)
+		peopleValue := string(encoded)
+		updates := map[string]*string{"intro-via": nil, "people": &peopleValue}
 		if s.writeRecord == nil {
 			return errors.New("fundraising: record writer unavailable")
 		}
@@ -90,6 +98,56 @@ func (s *Store) migrateLegacyIntroVia() error {
 		}
 	}
 	return nil
+}
+
+func hasPerson(people []PersonRef, key string) bool {
+	key = normalizeKey(key)
+	for _, p := range people {
+		if normalizeKey(p.Key) == key {
+			return true
+		}
+	}
+	return false
+}
+
+// RepairTextSourcesAsPeople reverses the short-lived migration that moved
+// legacy people names into Source. Contact-valued sources are never touched.
+// Dry-run returns the exact affected opportunity/person counts without writes.
+func (s *Store) RepairTextSourcesAsPeople(dryRun bool) (opportunities, people int, err error) {
+	ops, err := s.List()
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, op := range ops {
+		if op.Source == nil || op.Source.Contact != nil || strings.TrimSpace(op.Source.Text) == "" {
+			continue
+		}
+		refs := personRefsFromText(op.Source.Text)
+		if len(refs) == 0 {
+			continue
+		}
+		opportunities++
+		for _, p := range refs {
+			if !hasPerson(op.People, p.Key) {
+				op.People = append(op.People, p)
+				people++
+			}
+		}
+		if dryRun {
+			continue
+		}
+		for _, p := range refs {
+			if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display}); err != nil {
+				return opportunities, people, err
+			}
+		}
+		op.People = mergePeople(nil, op.People)
+		op.Source = nil
+		if err := s.replaceKnown(op); err != nil {
+			return opportunities, people, err
+		}
+	}
+	return opportunities, people, nil
 }
 
 func validStatus(v string) bool {
@@ -281,6 +339,13 @@ func (s *Store) writeNew(op Opportunity) error {
 // win over firm-name matching, so re-running the one-time import cannot create
 // duplicates.
 func (s *Store) ImportUpsert(op Opportunity) (Opportunity, error) {
+	for _, p := range op.People {
+		if p.NotePath == "" {
+			if err := s.UpsertRegistry(RegistryPerson{Key: p.Key, Display: p.Display, Emails: p.Emails}); err != nil {
+				return Opportunity{}, err
+			}
+		}
+	}
 	ops, err := s.List()
 	if err != nil {
 		return Opportunity{}, err

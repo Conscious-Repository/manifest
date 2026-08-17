@@ -151,7 +151,7 @@ func TestOpportunitySourceParsesHandEditedFrontmatter(t *testing.T) {
 	}
 }
 
-func TestEnsureRemovesLegacyIntroViaAndPreservesItsValueAsSource(t *testing.T) {
+func TestEnsureRemovesLegacyIntroViaAndPreservesItsPeople(t *testing.T) {
 	s, root := testStore(t)
 	op, err := s.Create("Legacy Fund")
 	if err != nil {
@@ -159,7 +159,7 @@ func TestEnsureRemovesLegacyIntroViaAndPreservesItsValueAsSource(t *testing.T) {
 	}
 	path := filepath.Join(root, filepath.FromSlash(op.Path))
 	b, _ := os.ReadFile(path)
-	b = []byte(strings.Replace(string(b), "people: []", "people: []\nintro-via: \"cold intro\"", 1))
+	b = []byte(strings.Replace(string(b), "people: []", "people: []\nintro-via: \"Jane Doe, John Smith\"", 1))
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -167,12 +167,51 @@ func TestEnsureRemovesLegacyIntroViaAndPreservesItsValueAsSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, ok := s.Get(op.ID)
-	if !ok || got.Source == nil || got.Source.Text != "cold intro" {
-		t.Fatalf("migrated source=%+v ok=%v", got.Source, ok)
+	if !ok || got.Source != nil || len(got.People) != 2 || got.People[0].Key != "jane doe" || got.People[1].Key != "john smith" {
+		t.Fatalf("migrated opportunity=%+v ok=%v", got, ok)
 	}
 	b, _ = os.ReadFile(path)
-	if strings.Contains(string(b), "\nintro-via:") || !strings.Contains(string(b), `source: {"text":"cold intro"}`) {
+	if strings.Contains(string(b), "\nintro-via:") || strings.Contains(string(b), "\nsource:") {
 		t.Fatalf("legacy field was not replaced:\n%s", b)
+	}
+}
+
+func TestRepairTextSourcesRestoresMultiplePeopleAndLeavesContactSource(t *testing.T) {
+	s, _ := testStore(t)
+	bad, err := s.Create("Bad Migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(bad.ID, map[string]any{"source": map[string]any{"text": "Jane Doe; John Smith"}}); err != nil {
+		t.Fatal(err)
+	}
+	linked, err := s.Create("Legitimate Source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(linked.ID, map[string]any{"source": map[string]any{"contact": map[string]any{"key": "introducer", "display": "Introducer"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	ops, people, err := s.RepairTextSourcesAsPeople(true)
+	if err != nil || ops != 1 || people != 2 {
+		t.Fatalf("dry-run opportunities=%d people=%d err=%v", ops, people, err)
+	}
+	stillBad, _ := s.Get(bad.ID)
+	if stillBad.Source == nil || len(stillBad.People) != 0 {
+		t.Fatalf("dry-run mutated record: %+v", stillBad)
+	}
+	ops, people, err = s.RepairTextSourcesAsPeople(false)
+	if err != nil || ops != 1 || people != 2 {
+		t.Fatalf("repair opportunities=%d people=%d err=%v", ops, people, err)
+	}
+	repaired, _ := s.Get(bad.ID)
+	if repaired.Source != nil || len(repaired.People) != 2 {
+		t.Fatalf("repaired opportunity=%+v", repaired)
+	}
+	untouched, _ := s.Get(linked.ID)
+	if untouched.Source == nil || untouched.Source.Contact == nil || untouched.Source.Contact.Key != "introducer" {
+		t.Fatalf("contact source changed: %+v", untouched.Source)
 	}
 }
 

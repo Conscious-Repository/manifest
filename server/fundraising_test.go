@@ -72,6 +72,34 @@ func TestFundraisingPrivateCRUD(t *testing.T) {
 	}
 }
 
+func TestFundraisingPeopleCanCreateAndLinkMultipleContacts(t *testing.T) {
+	store := testFundraisingStore(t)
+	s := &Server{fundraising: store}
+	op, err := store.Create("Multi Person Fund")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"key":"jane doe","display":"Jane Doe"}`,
+		`{"key":"john smith","display":"John Smith"}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/aion/fundraising/person/"+op.ID, strings.NewReader(body))
+		req.SetPathValue("id", op.ID)
+		w := httptest.NewRecorder()
+		s.handleFundraisingPersonAdd(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("add person status=%d body=%s", w.Code, w.Body.String())
+		}
+	}
+	got, _ := store.Get(op.ID)
+	if len(got.People) != 2 || got.People[0].Key != "jane doe" || got.People[1].Key != "john smith" {
+		t.Fatalf("people=%+v", got.People)
+	}
+	if _, ok := store.RegistryPerson("jane doe"); !ok {
+		t.Fatal("typed person was not created in CRM registry")
+	}
+}
+
 func TestFundraisingExcludedFromGlobalAionContract(t *testing.T) {
 	for _, path := range aion.ContractPaths() {
 		if strings.Contains(strings.ToLower(path), "fundrais") || strings.Contains(strings.ToLower(path), "crm") {

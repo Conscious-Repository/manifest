@@ -125,7 +125,7 @@ async function frCommitTypedPerson(op, value) {
   const lower = value.toLowerCase();
   const exact = matches.find((p) => [p.key, p.display].some((v) => String(v || "").toLowerCase() === lower));
   if (exact) return frPost("/api/aion/fundraising/person/" + op.id, { key: exact.key, display: exact.display, notePath: exact.notePath || "" }, "Contact linked");
-  showToast("Choose an existing contact result");
+  return frPost("/api/aion/fundraising/person/" + op.id, { key: lower, display: value }, "Contact created and linked");
 }
 
 async function frPost(url, body, msg) {
@@ -152,7 +152,7 @@ function renderFundraisingInspector(host, op) {
   const people = el("div", "fr-insp-people");
   (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
   const addPerson = typeahead({
-    placeholder: "find a person…",
+    placeholder: "find or add a person…",
     minChars: 1,
     onEnter: (value) => frCommitTypedPerson(op, value),
     suggest: async (q, add) => {
@@ -160,6 +160,8 @@ function renderFundraisingInspector(host, op) {
       const linked = new Set((op.people || []).map((p) => p.key));
       matches.filter((p) => !linked.has(p.key)).slice(0, 6).forEach((p) =>
         add(p.display, "contact", () => frPost("/api/aion/fundraising/person/" + op.id, { key: p.key, display: p.display, notePath: p.notePath || "" }, "Contact linked")));
+      if (!matches.some((p) => [p.key, p.display].some((v) => String(v || "").toLowerCase() === addPerson.value().toLowerCase())))
+        add("Add “" + addPerson.value() + "” as a new contact", "create", () => frCommitTypedPerson(op, addPerson.value()));
     },
   });
   people.append(addPerson.el);
