@@ -43,7 +43,7 @@ async function renderAionFundraising(host) {
   let rows = (frCache.opportunities || []).filter(frVisible);
   const table = el("div", "fr-table");
   const head = el("div", "fr-row fr-head");
-  ["FIRM", "PEOPLE", "STATUS", "AMOUNT", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
+  ["FIRM", "PEOPLE", "STATUS", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
   table.append(head);
   if (!rows.length) table.append(emptyRow("No fundraising opportunities match."));
   rows.forEach((op) => table.append(frRow(op)));
@@ -87,13 +87,12 @@ function frRow(op) {
     .forEach((name) => people.append(el("span", "fr-person-name fr-person-plain", name)));
   if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
   const status = el("span", "micro-label fr-status " + op.status, op.status.toUpperCase());
-  const amount = el("span", "fr-money", op.amount ? money(op.amount) : "—");
   const touch = el("div", "fr-stack");
   touch.append(el("span", "", op.lastTouchpoint || "—"));
   if (op.lastTouchpointDate) touch.append(el("span", "fr-sub", "manual · " + op.lastTouchpointDate));
   if (op.computedLastTouchpoint) touch.append(el("span", "fr-sub", "contacts · " + op.computedLastTouchpoint));
   const next = el("div", "fr-stack"); next.append(el("span", "", op.nextStep || "—")); if (op.nextStepDue) next.append(el("span", "fr-sub", "due " + op.nextStepDue));
-  row.append(firm, people, status, amount, touch, next);
+  row.append(firm, people, status, touch, next);
   row.onclick = () => { frSel = frSel === op.id ? null : op.id; renderAion(); };
   return row;
 }
