@@ -268,10 +268,10 @@ function orientArea(area) {
 // areaUnanchored — open todos in the area's DOMAIN (loose + buckets) that
 // carry no [rock::] tether, plus the domain's open issues.
 function areaUnanchored(areaName) {
-  const todos = [];
+  const tasks = [];
   const issues = [];
   const scan = (list) => (list || []).forEach((t) => {
-    if (t.state !== "done" && !t.rock) todos.push(t);
+    if (t.state !== "done" && !t.rock) tasks.push(t);
   });
   ((todosCache && todosCache.domains) || []).forEach((dm) => {
     if (dm.name !== areaName) return;
@@ -279,8 +279,8 @@ function areaUnanchored(areaName) {
     (dm.buckets || []).forEach((bk) => scan(bk.tasks));
     (dm.issues || []).forEach((is) => { if (!is.checked) issues.push(is); });
   });
-  todos.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
-  return { todos, issues };
+  tasks.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
+  return { tasks, issues };
 }
 
 // rockComposer (§2): the soft gate. The ＋ rock ghost opens three fields —
