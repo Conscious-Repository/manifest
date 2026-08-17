@@ -159,7 +159,7 @@
   font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px;
   border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-5); cursor: pointer;
 }
-.aion-publish-badge { background: #fff; color: var(--accent); font-size: var(--fs-2xs); border-radius: 8px; padding: 0 var(--sp-3); }
+.aion-publish-badge { background: #fff; color: var(--accent); font-size: var(--fs-2xs); border-radius: var(--radius-lg); padding: 0 var(--sp-3); }
 
 /* backlog layout: list + 300px sticky inspector */
 .aion-backlog { display: flex; align-items: flex-start; gap: 0; }
@@ -251,7 +251,7 @@
 .aion-org-pane { flex: 1; min-width: 0; }
 
 /* heuristics reinforcement bar */
-.aion-heur-bar { height: 4px; background: var(--accent); border-radius: 2px; flex: none; align-self: center; }
+.aion-heur-bar { height: 4px; background: var(--accent); border-radius: var(--radius); flex: none; align-self: center; }
 
 .aion-owner-you { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); }
 .aion-rec-dlabel { font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }

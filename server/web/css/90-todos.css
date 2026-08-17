@@ -44,7 +44,7 @@
 .tdo-text { font-family: var(--sans); font-size: var(--fs-lg); cursor: text; min-width: 0; overflow-wrap: anywhere; }
 .tdo-row.stale .tdo-text { font-weight: 500; }
 .tdo-row.done .tdo-text { text-decoration: line-through; color: var(--base-40); }
-.tdo-pill { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 var(--sp-3); white-space: nowrap; flex: none; }
+.tdo-pill { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: 0 var(--sp-3); white-space: nowrap; flex: none; }
 .tdo-pill.linky { cursor: pointer; }
 .tdo-pill.linky:hover { color: var(--accent); border-color: var(--accent-soft); }
 .tdo-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: var(--sp-4); white-space: nowrap; }
@@ -77,7 +77,7 @@
 
 /* compat: goals rock-window + work views still borrow these until their own
    redesign stages (6, 9) land */
-.tdo-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 var(--sp-3); }
+.tdo-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: 0 var(--sp-3); }
 .tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-30); cursor: pointer; padding: var(--sp-2) var(--sp-1); }
 .tdo-wait-foot:hover { color: var(--base-40); }
 
@@ -92,7 +92,7 @@
 /* delegation (Phase 6): dispatch affordance + the trace-derived state chip */
 .tdo-delegate { visibility: hidden; }
 .tdo-row:hover .tdo-delegate { visibility: visible; }
-.delegation-chip { font-size: var(--fs-2xs); border: 1px solid var(--base-25); border-radius: 3px; padding: 0 var(--sp-2); background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
+.delegation-chip { font-size: var(--fs-2xs); border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
 .delegation-chip.dstate-running { color: var(--accent); border-color: var(--accent-soft); }
 .delegation-chip.dstate-proposed { color: var(--base-100); font-weight: 600; }
 .delegation-chip.dstate-failed { color: var(--base-100); font-weight: 600; }

@@ -610,9 +610,12 @@ function attachTerm(id) {
   const mount = el("div", "term-mount");
   host.append(mount);
 
+  // font matches the app's --mono token (Carbon/Spline) so the terminal reads
+  // like the rest of the UI; read from the computed token, fall back to the OS mono.
+  const appMono = getComputedStyle(document.documentElement).getPropertyValue("--mono").trim();
   const term = new Terminal({
     fontSize: 13, scrollback: 6000, cursorBlink: true,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    fontFamily: appMono || "ui-monospace, SFMono-Regular, Menlo, monospace",
     theme: { background: "#0e1116", foreground: "#c8d0da", cursor: "#265ACC" },
   });
   const fit = new FitAddon.FitAddon();

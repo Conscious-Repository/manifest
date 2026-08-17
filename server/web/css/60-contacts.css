@@ -60,7 +60,7 @@
 .cp-header { margin-bottom: var(--sp-3); }
 .cp-name-row { display: flex; align-items: baseline; gap: var(--sp-5); }
 .cp-name { font-family: var(--sans); font-size: var(--fs-3xl); font-weight: 500; color: var(--ink); margin: 0; }
-.cp-nonote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: var(--sp-1) var(--sp-3); }
+.cp-nonote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); }
 .cp-aliases { font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); margin-top: var(--sp-1); }
 .cp-firms { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-4); }
 .cp-firm { font-family: var(--mono); font-size: var(--fs-sm); color: var(--blue); background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-1) var(--sp-4); cursor: pointer; }
@@ -86,7 +86,7 @@
 .cp-date { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); flex: 0 0 88px; }
 .cp-src { font-size: var(--fs-2xs); color: var(--muted); flex: 0 0 84px; }
 .cp-tl-name { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
-.cp-badge { font-family: var(--mono); font-size: var(--fs-3xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: 3px; padding: var(--sp-1) var(--sp-2); }
+.cp-badge { font-family: var(--mono); font-size: var(--fs-3xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: var(--sp-1) var(--sp-2); }
 .cp-mention { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); padding: var(--sp-1) 0; }
 .cp-upcoming-row { display: flex; align-items: center; gap: var(--sp-6); padding: var(--sp-2) 0; }
 .cp-title { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); flex: 1; }
@@ -111,4 +111,4 @@
 
 /* §13: list cold marker + the role chip */
 .contact-cold { font-family: var(--mono); font-size: var(--fs-2xs); font-weight: 500; color: var(--base-100); white-space: nowrap; }
-.cp-role { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--base-50); border: 1px solid var(--base-25); border-radius: 3px; padding: var(--sp-1) var(--sp-3); align-self: center; }
+.cp-role { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--base-50); border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); align-self: center; }

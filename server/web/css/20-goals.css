@@ -203,7 +203,7 @@
 .go-rock-line { display: flex; align-items: baseline; gap: var(--sp-5); flex-wrap: wrap; }
 .go-rock-name { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 500; }
 .go-rock-name.done { text-decoration: line-through; color: var(--base-40); }
-.go-until { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 var(--sp-4); white-space: nowrap; }
+.go-until { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: 0 var(--sp-4); white-space: nowrap; }
 .go-until-ghost { font-size: var(--fs-2xs); }
 .go-lint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); font-weight: 500; white-space: nowrap; }
 .go-open-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); white-space: nowrap; }

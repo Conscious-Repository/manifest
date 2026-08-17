@@ -21,7 +21,7 @@
 .sessions-list { display: flex; flex-direction: column; }
 .session-row { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-3) var(--sp-2); border-bottom: 1px solid var(--line); }
 .session-row:last-child { border-bottom: none; }
-.sess-src { font-size: var(--fs-2xs); border-radius: 4px; padding: var(--sp-1) var(--sp-3); border: 1px solid var(--line); color: var(--muted); flex: none; }
+.sess-src { font-size: var(--fs-2xs); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); border: 1px solid var(--line); color: var(--muted); flex: none; }
 .sess-src.src-cron { color: var(--base-50); border-color: var(--base-25); }
 .sess-src.src-api_server { color: var(--blue); border-color: var(--blue-soft); }
 .sess-src.src-telegram { color: #0e7490; border-color: #c6e6ee; }

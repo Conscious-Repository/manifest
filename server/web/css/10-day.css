@@ -234,7 +234,7 @@
 .focus-text.unresolved { color: var(--muted); font-style: italic; }
 .focus-badge {
   font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.3px;
-  color: var(--muted); border: 1px solid var(--line); border-radius: 10px; padding: var(--sp-1) var(--sp-3); margin-left: var(--sp-4);
+  color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); margin-left: var(--sp-4);
 }
 .focus-clear { margin-left: auto; }
 

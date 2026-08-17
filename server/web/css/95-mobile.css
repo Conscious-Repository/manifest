@@ -118,7 +118,7 @@
   }
   .mf-sheet.no-anim { animation: none; }
   .mf-sheet-handle {
-    width: 38px; height: 4px; border-radius: 2px; background: var(--base-30);
+    width: 38px; height: 4px; border-radius: var(--radius); background: var(--base-30);
     margin: var(--sp-1) auto var(--sp-6); flex: none; cursor: pointer;
     /* generous tap target without moving the visual */
     box-shadow: 0 -14px 0 14px transparent;
@@ -226,7 +226,7 @@
   .pp3-ledger-row .uw-x { display: none; } /* delete via desktop */
 
   /* ---- FEED: cards in the 16px gutter; verdicts full-width side by side ---- */
-  .feed-card { border-radius: 6px; }
+  .feed-card { border-radius: var(--radius-lg); }
   .feed-card .appr-actions { display: flex; gap: var(--sp-4); }
   .feed-card .appr-actions .pill { flex: 1; min-height: 44px; justify-content: center; }
 

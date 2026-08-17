@@ -103,7 +103,7 @@
 /* all-day event: a filled bar */
 .cal-ev.allday {
   display: block; color: var(--blue); background: #eef2fb;
-  border-radius: 3px; padding: var(--sp-1) var(--sp-3); overflow: hidden; text-overflow: ellipsis;
+  border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); overflow: hidden; text-overflow: ellipsis;
 }
 .cal-more { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); margin-top: var(--sp-1); }
 @media (max-width: 860px) { .cal-grid { grid-auto-rows: minmax(84px, auto); } }

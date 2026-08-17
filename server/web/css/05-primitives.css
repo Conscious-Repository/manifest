@@ -10,7 +10,7 @@
   color: var(--pill-ink);
   background: var(--pill-bg);
   border: 1px solid var(--pill-bd);
-  border-radius: 7px;
+  border-radius: var(--radius-lg);
   padding: var(--sp-2) var(--sp-5);
   height: 28px;
   line-height: 16px;
@@ -125,7 +125,7 @@
 
 /* in-app toasts (bottom-right, auto-dismiss) */
 .toast-host { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: flex; flex-direction: column; gap: var(--sp-4); max-width: 360px; }
-.toast { display: flex; align-items: center; gap: var(--sp-5); background: var(--text); color: #fff; border-radius: 8px; padding: var(--sp-5) var(--sp-6); box-shadow: 0 10px 30px rgba(0,0,0,0.25); font-family: var(--sans); font-size: var(--fs-md); animation: toastIn 0.18s ease-out; }
+.toast { display: flex; align-items: center; gap: var(--sp-5); background: var(--text); color: #fff; border-radius: var(--radius-lg); padding: var(--sp-5) var(--sp-6); box-shadow: 0 10px 30px rgba(0,0,0,0.25); font-family: var(--sans); font-size: var(--fs-md); animation: toastIn 0.18s ease-out; }
 @keyframes toastIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 .toast.clickable { cursor: pointer; }
 .toast.clickable:hover { filter: brightness(1.1); }
@@ -139,7 +139,7 @@
 .sec-summary { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); text-transform: none; letter-spacing: 0; }
 .sec-body { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-5); }
 .ta-wrap { position: relative; display: inline-block; }
-.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); min-width: 240px; max-height: 220px; overflow-y: auto; }
+.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,0.12); min-width: 240px; max-height: 220px; overflow-y: auto; }
 .ta-item { padding: var(--sp-3) var(--sp-5); font-size: var(--fs-sm); cursor: pointer; }
 .ta-item:hover { background: var(--hover); color: var(--blue); }
 .ta-create { color: var(--blue); font-style: italic; }

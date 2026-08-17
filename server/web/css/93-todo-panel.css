@@ -40,7 +40,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-plan h1, .tdo-p-plan h2, .tdo-p-plan h3 { font-size: var(--fs-md); margin: var(--sp-5) 0 var(--sp-2); }
 .tdo-p-plan ul, .tdo-p-plan ol { padding-left: var(--sp-7); margin: var(--sp-2) 0; }
 .tdo-p-plan p { margin: var(--sp-2) 0; }
-.tdo-p-plan code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--base-10); padding: 0 var(--sp-1); border-radius: 3px; }
+.tdo-p-plan code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--base-10); padding: 0 var(--sp-1); border-radius: var(--radius); }
 
 .tdo-p-assignee { font-size: var(--fs-md); color: var(--base-70); }
 
@@ -60,7 +60,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-composer { display: flex; flex-direction: column; gap: var(--sp-3); }
 .tdo-p-chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .tdo-p-chips:empty { display: none; }
-.tdo-p-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); border: 1px solid var(--line); border-radius: 5px; padding: var(--sp-1) var(--sp-3); background: var(--bg); }
+.tdo-p-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); background: var(--bg); }
 .tdo-p-chip.mention { color: var(--accent); border-color: var(--accent-soft); }
 .tdo-p-c-acts { display: flex; align-items: center; gap: var(--sp-6); }
 .tdo-p-c-acts .pill { margin-left: auto; }
@@ -84,7 +84,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 }
 
 /* agent owner chip on rows/cards */
-.tdo-agent-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); border: 1px solid var(--accent-soft); border-radius: 5px; padding: var(--sp-1) var(--sp-3); flex: none; }
+.tdo-agent-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); border: 1px solid var(--accent-soft); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); flex: none; }
 .tdo-p-assignee-wrap .ta-wrap { width: 100%; }
 .tdo-p-assignee-wrap .ta-in { width: 100%; font-size: var(--fs-md); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-3) var(--sp-5); background: var(--bg); }
 
