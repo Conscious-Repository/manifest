@@ -18,7 +18,6 @@ function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, team
     <aside className="v2-rail">
       <div style={{ padding: '0 18px' }}>
         <div role="img" aria-label="AION" className="v2-logo" />
-        <div style={{ fontSize: 11, letterSpacing: '.2em', color: 'var(--ink-faint,#888)', marginTop: 6 }}>team-portal</div>
       </div>
 
       <nav style={{ display: 'flex', flexDirection: 'column' }}>
