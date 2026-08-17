@@ -55,7 +55,7 @@ type ProjectBudget struct {
 	Committed    float64        `json:"committed"`
 	Paid         float64        `json:"paid"`                   // recognized spend (hard accrual + cash rest)
 	Unreconciled float64        `json:"unreconciled,omitempty"` // done-but-unlinked firm money (⚑)
-	Over         bool           `json:"over"` // any category over its plan
+	Over         bool           `json:"over"`                   // any category over its plan
 }
 
 // sourceMoney reads the underwriting money keys (tolerant, like sourceUnits).

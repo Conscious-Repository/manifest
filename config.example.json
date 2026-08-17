@@ -18,7 +18,9 @@
   "aionPortal": {
     "path": "~/aionbio",
     "remote": "origin",
-    "branch": "main"
+    "branch": "main",
+    "teamDir": "/shared/apps/aion-portal",
+    "adminEmail": "owner@aion.bio"
   },
   "realEstate": { "teamDir": "/shared/apps/re-team" },
   "terminalDevices": [

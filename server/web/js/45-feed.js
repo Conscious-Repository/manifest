@@ -379,7 +379,6 @@ function feedCard(it) {
 // no expiry; queued shows its place in line, running shows a live dot,
 // failed/cancelled offer retry (no continue — the CLI emits no session ids).
 function receiptCardEl(rc) {
-  if (rc.cardKind === "aion-publish") return aionPublishReceiptEl(rc);
   const card = el("div", "feed-card receipt status-" + rc.status);
   const top = el("div", "feed-top");
   top.append(el("span", "type-chip micro-label type-receipt", "errand"));
@@ -417,41 +416,6 @@ function receiptCardEl(rc) {
     acts.append(pillLight("Clear", () => errandAction("/api/errands/" + rc.id + "/ack")));
   }
   if (acts.children.length) card.append(acts);
-  return card;
-}
-
-// aionPublishReceiptEl: an AION publish outcome — permanent trail; failures
-// carry Clear (acknowledged read-state), successes are pre-acknowledged.
-function aionPublishReceiptEl(rc) {
-  const card = el("div", "feed-card receipt status-" + rc.status);
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip micro-label type-receipt", "publish"));
-  top.append(el("span", "type-chip micro-label type-portal", "aion.bio"));
-  top.append(el("span", "receipt-status micro-label rc-" + (rc.status === "ok" ? "done" : "failed"),
-    rc.status === "ok" ? "pushed" : "failed @ " + (rc.stage || "?")));
-  if (rc.at) top.append(el("span", "feed-date", fmtFeedDate(rc.at)));
-  card.append(top);
-  card.append(el("div", "feed-title",
-    rc.status === "ok"
-      ? "Published " + ((rc.files || []).length || "no") + " file(s) → portal"
-      : "Publish failed" + (rc.commit ? " — commit " + rc.commit.slice(0, 7) + " kept locally" : "")));
-  const meta = el("div", "feed-meta");
-  const bits = [];
-  if (rc.commit) bits.push("commit " + rc.commit.slice(0, 7));
-  if ((rc.files || []).length) bits.push(rc.files.map((f) => f.split("/").pop()).join(", "));
-  if (bits.length) meta.append(el("span", null, bits.join("  ·  ")));
-  card.append(meta);
-  if (rc.error) { const e = el("pre", "appr-body"); e.textContent = rc.error; card.append(e); }
-  const acts = el("div", "feed-actions");
-  acts.append(pillLight("open AION →", () => { location.hash = "#/aion/settings"; }));
-  if (!rc.acknowledged) {
-    acts.append(pillLight("Clear", async () => {
-      card.remove(); // optimistic — the ack lands server-side next
-      try { await fetch("/api/aion/publishes/" + encodeURIComponent(rc.id) + "/ack", { method: "POST" }); } catch (e) {}
-      loadFeed();
-    }));
-  }
-  card.append(acts);
   return card;
 }
 

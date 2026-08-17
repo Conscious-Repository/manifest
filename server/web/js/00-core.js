@@ -70,7 +70,7 @@ const els = {
   aionMeta: document.getElementById("aionMeta"),
   aionToggle: document.getElementById("aionToggle"),
   aionBody: document.getElementById("aionBody"),
-  aionPublishRail: document.getElementById("aionPublishRail"),
+  aionLiveRail: document.getElementById("aionLiveRail"),
   // universal note view
   noteView: document.getElementById("noteView"),
   noteTitle: document.getElementById("noteTitle"),

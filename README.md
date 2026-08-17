@@ -310,6 +310,11 @@ The UI is a thin client over a JSON API on the same port. Main groups:
 - **Spirits** — `GET /api/spirits/{status,feed,runs,rituals,approvals}` and the
   corresponding POST/PUT actions
 
+The separately authenticated AION team portal (`portalPort`, normally behind
+`https://portal.aion.bio`) also has a per-user bearer-token API for team tools
+and custom backends. See [docs/team-api.md](docs/team-api.md); an optional stdio
+MCP wrapper lives in [integrations/portal-mcp](integrations/portal-mcp).
+
 ---
 
 ## Architecture

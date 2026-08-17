@@ -2,7 +2,7 @@
    Structural labels are lowercase; labels 10px/.16em; radius 0 everywhere. */
 
 function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, teamOn,
-  pendingCount, agentProposals, chatLive, onAdd, onProposals, me, themeName, onThemes }) {
+  pendingCount, agentProposals, chatLive, onAdd, onProposals, me, themeName, onThemes, onAPI }) {
   const nav = [
     { id: 'field', label: 'field', count: '' },
     { id: 'work', label: 'work', count: counts.work },
@@ -76,6 +76,8 @@ function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, team
             <div style={{ display: 'flex', gap: 8 }}>
               <a href="#" style={{ color: 'var(--ink-faint,#888)' }}
                 onClick={e => { e.preventDefault(); fetch('oauth2/logout', { method: 'POST' }).finally(() => { location.href = '/'; }); }}>sign out</a>
+              <button className="v2-bare v2-hoveraccent-t" onClick={onAPI}
+                style={{ color: 'var(--ink-faint,#888)', fontSize: 11 }}>api access</button>
             </div>
           </div>
         )}

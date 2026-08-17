@@ -3,6 +3,7 @@ package aion
 import (
 	"crypto/sha1"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -82,7 +83,7 @@ func parseLineFields(content string) (text string, sources []string, unknown []r
 func recognizedBacklogKey(key string) bool {
 	switch strings.ToLower(key) {
 	case "kind", "owner", "captured", "rock", "due", "status",
-		"done", "done_on", "needed_by", "decided", "outcome", "rank":
+		"done", "done_on", "needed_by", "decided", "outcome", "rank", "id":
 		return true
 	}
 	return false
@@ -91,6 +92,9 @@ func recognizedBacklogKey(key string) bool {
 // setBacklogField routes one recognized field into the item struct.
 func setBacklogField(it *BacklogItem, key, value string) {
 	switch strings.ToLower(key) {
+	case "id":
+		it.ID = value
+		it.IDPersisted = value != ""
 	case "kind":
 		it.Kind = strings.ToLower(value)
 	case "owner":
@@ -120,6 +124,11 @@ func setBacklogField(it *BacklogItem, key, value string) {
 // edits take effect in place, at the field's original position.
 func backlogFieldValue(it *BacklogItem, key string) string {
 	switch strings.ToLower(key) {
+	case "id":
+		if it.IDPersisted {
+			return it.ID
+		}
+		return ""
 	case "kind":
 		return it.Kind
 	case "owner":
@@ -151,7 +160,7 @@ func backlogFieldValue(it *BacklogItem, key string) string {
 // owner's corpus convention: kind, owner, sources, captured, then state.
 // "source" is the slot where unpositioned sources flush.
 var canonicalAppendOrder = []string{
-	"kind", "owner", "source", "captured", "status", "needed_by", "due", "done", "decided", "outcome", "rock", "rank",
+	"id", "kind", "owner", "source", "captured", "status", "needed_by", "due", "done", "decided", "outcome", "rock", "rank",
 }
 
 // backlogFields renders an item's field stream: positioned tokens first
@@ -234,10 +243,24 @@ func NormalizeTitle(s string) string {
 	return strings.TrimRight(s, ".!?,;: ")
 }
 
-// ItemID derives the stable, never-persisted id for a backlog item.
+// ItemID is the legacy identity fallback for rows that have not yet received
+// a persisted portal id.
 func ItemID(kind, title string) string {
 	sum := sha1.Sum([]byte(kind + "|" + NormalizeTitle(title)))
 	return hex.EncodeToString(sum[:])[:8]
+}
+
+// PortalItemID assigns the cross-surface identity for a new or migrated row.
+func PortalItemID(title string, taken map[string]bool) string {
+	base := "aion-bl/" + record.Slug(title, 60)
+	if base == "aion-bl/" {
+		base = "aion-bl/item"
+	}
+	id := base
+	for n := 2; taken[id]; n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	return id
 }
 
 // HeuristicID derives the stable id for a heuristic statement.

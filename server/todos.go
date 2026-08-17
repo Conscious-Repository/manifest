@@ -64,6 +64,11 @@ func (s *Server) pinTaskID(id string) (string, bool) {
 		if !okb {
 			return id, false
 		}
+		if strings.HasPrefix(id, "aion:") && s.aionLive != nil {
+			if _, ok := s.aionLive.OwnerOf(bare); ok {
+				return id, true
+			}
+		}
 		for _, it := range store.LoadBacklog().Items() {
 			if it.ID == bare {
 				return id, true

@@ -35,6 +35,7 @@ function PortalApp() {
   const [addOpen, setAddOpen] = React.useState(false);
   const [themeId, setThemeId] = React.useState(T.load);
   const [themeModal, setThemeModal] = React.useState(false);
+  const [apiModal, setApiModal] = React.useState(false);
   const [data, setData] = React.useState(null);
   const [w, setW] = React.useState(typeof window !== 'undefined' ? window.innerWidth : 1440);
 
@@ -55,6 +56,32 @@ function PortalApp() {
   }, []);
 
   React.useEffect(() => { window.loadPortalData().then(setData); }, []);
+
+  // One lightweight revision poll keeps an already-open portal converged with
+  // vault and team writes. Full data reloads only when the effective token
+  // changes; hidden tabs do no work and failures back off to 30 seconds.
+  React.useEffect(() => {
+    let on = true, timer = null, delay = 3000, revision = '', etag = '';
+    const tick = () => {
+      if (!on) return;
+      if (document.hidden) { timer = setTimeout(tick, 3000); return; }
+      fetch('api/live/revision', { cache: 'no-cache', headers: etag ? { 'If-None-Match': etag } : {} }).then(async res => {
+        if (!on) return;
+        if (res.status === 304) { delay = 3000; timer = setTimeout(tick, delay); return; }
+        if (!res.ok) throw new Error('revision ' + res.status);
+        etag = res.headers.get('ETag') || etag;
+        const value = await res.json();
+        delay = 3000;
+        const next = value.effectiveRevision || '';
+        if (revision && next && next !== revision) window.loadPortalData().then(v => { if (on) setData(v); });
+        revision = next;
+        timer = setTimeout(tick, delay);
+      }).catch(() => { if (on) { delay = Math.min(delay * 2, 30000); timer = setTimeout(tick, delay); } });
+    };
+    const focus = () => { if (timer) clearTimeout(timer); timer = setTimeout(tick, 0); };
+    tick(); window.addEventListener('focus', focus);
+    return () => { on = false; if (timer) clearTimeout(timer); window.removeEventListener('focus', focus); };
+  }, []);
   React.useEffect(() => { T.applyBody(themeId); }, [themeId]);
 
   // the rail heartbeat dot: poll the kairos engine (slow when not in chat)
@@ -93,11 +120,13 @@ function PortalApp() {
   React.useEffect(() => {
     const onKey = e => {
       if (e.key !== 'Escape') return;
-      setThemeModal(m => { if (m) return false; setSel(null); return false; });
+      if (apiModal) { setApiModal(false); return; }
+      if (themeModal) { setThemeModal(false); return; }
+      setSel(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [apiModal, themeModal]);
 
   const go = React.useCallback((toView, anchorId, tab) => {
     setView(toView);
@@ -128,6 +157,7 @@ function PortalApp() {
 
   const Rail = safe('Rail');
   const ThemeModal = safe('ThemeModal');
+  const ApiAccessModal = safe('ApiAccessModal');
 
   if (!data) {
     return (
@@ -180,8 +210,12 @@ function PortalApp() {
   }
 
   const viewLabel = selItem ? 'work / item' : view;
-  const metaLine = data.meta && data.meta.published_at
-    ? 'last published ' + data.meta.published_at.slice(0, 10) + ' · confidential' : 'confidential';
+  const metaLine = data.meta && data.meta.source === 'manifest-live'
+    ? ((data.meta.stale ? 'sync degraded · serving last good' : 'live · synced') +
+      (data.meta.generated_at ? ' ' + data.meta.generated_at.slice(0, 16).replace('T', ' ') : '') +
+      ((data.meta.warnings || []).length ? ' · ' + data.meta.warnings.length + ' warning' + (data.meta.warnings.length === 1 ? '' : 's') : '') + ' · confidential')
+    : (data.meta && data.meta.published_at
+      ? 'last published ' + data.meta.published_at.slice(0, 10) + ' · confidential' : 'confidential');
 
   return (
     <div className={'v2-shell' + (mid ? '' : ' v2-shell-1')}
@@ -192,7 +226,7 @@ function PortalApp() {
         agentProposals={agentProps} chatLive={chatLive}
         onAdd={() => { setView('work'); setSel(null); setAddOpen(true); }}
         onProposals={() => go('work', 'sec-proposals')} me={me} themeName={T.byId(themeId).name}
-        onThemes={() => setThemeModal(true)} />
+        onThemes={() => setThemeModal(true)} onAPI={() => setApiModal(true)} />
 
       <main className="v2-main">
         <div className="v2-breadcrumb">
@@ -203,6 +237,7 @@ function PortalApp() {
       </main>
 
       {themeModal && <ThemeModal activeId={themeId} onPick={setTheme} onClose={() => setThemeModal(false)} />}
+      {apiModal && <ApiAccessModal onClose={() => setApiModal(false)} />}
     </div>
   );
 }

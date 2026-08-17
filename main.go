@@ -37,9 +37,9 @@ import (
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
+	"manifest/tasks"
 	"manifest/teamportal"
 	"manifest/threads"
-	"manifest/tasks"
 	"manifest/vault"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
@@ -407,6 +407,14 @@ func main() {
 			_ = vix.ReindexPaths([]string{rel})
 		}
 	}
+	if n, collisions, err := aionStore.EnsureStableIDsFromPortal(cfg.AionPortal.Path); err != nil {
+		log.Printf("aion stable-id migration failed: %v", err)
+	} else if n > 0 {
+		log.Printf("aion: assigned stable live-sync ids to %d backlog item(s) (%d collision(s) repaired)", n, collisions)
+	}
+	if cfg.AionPortal.Path != "" || cfg.AionPortal.Remote != "origin" || cfg.AionPortal.Branch != "main" {
+		log.Printf("aionPortal.path/remote/branch are deprecated; path was read only for stable-ID migration and live sync ignores git coordinates")
+	}
 	srv.UseAion(aionStore, cfg.AionPortal.Path, cfg.AionPortal.Remote, cfg.AionPortal.Branch, cfg.DataDir)
 	srv.UseRe(reStore)
 	log.Printf("aion: enabled (program records over %s/)", aionRoot)
@@ -427,6 +435,7 @@ func main() {
 		// manifest-sync's parked-conflict markers (big-change Phase 2b) — the
 		// daemon writes <dataDir>/sync/<root>.conflict.json, deletes on resume
 		emitters = append(emitters, signals.SyncConflicts(filepath.Join(cfg.DataDir, "sync")))
+		emitters = append(emitters, signals.AionLiveSync(srv.AionLive()))
 		// failed ritual runs page the feed (Phase 7; auto-clears on a newer
 		// completed run of the same spirit/ritual)
 		emitters = append(emitters, srv.RunFailureEmitter())
@@ -549,9 +558,13 @@ func main() {
 		if ts, err := teamportal.New(cfg.AionPortal.TeamDir); err != nil {
 			log.Printf("aion portal team layer disabled: %v", err)
 		} else {
-			auth := teamportal.NewAuth(cfg.DataDir)
-			portalOpts = server.PortalOptions{Auth: auth, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail}
-			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail))
+			tokens := teamportal.NewTokens(cfg.DataDir)
+			auth := teamportal.NewAuth(cfg.DataDir).WithTokens(tokens)
+			portalOpts = server.PortalOptions{Auth: auth, Tokens: tokens, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail, Live: srv.AionLive()}
+			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail), ts, cfg.AionPortal.AdminEmail)
+			if orphans := srv.AionLive().OrphanTeamIDs(); len(orphans) > 0 {
+				log.Printf("aion live sync: unresolved legacy collaboration ids (not guessed): %s", strings.Join(orphans, ", "))
+			}
 			aionTeamStore = ts
 			if auth.Enabled() {
 				log.Printf("aion portal team layer: enabled (writes → %s; any @%s account)", cfg.AionPortal.TeamDir, teamportal.Domain)
@@ -559,6 +572,9 @@ func main() {
 				log.Printf("aion portal team layer: store ready, OAuth client missing (sign-in sealed until %s/portals/aion-portal-oauth.json exists)", cfg.DataDir)
 			}
 		}
+	}
+	if portalOpts.Live == nil {
+		portalOpts.Live = srv.AionLive()
 	}
 	// TODO PANEL (todo-panel plan Phases 1-2): the plan-record layer over
 	// system/todo-plans + the three-way thread stores. The private store is

@@ -67,7 +67,9 @@ func parseBacklogItemLine(line string) (indent int, it *BacklogItem) {
 		if it.Kind == "" {
 			it.Kind = KindTask
 		}
-		it.ID = ItemID(it.Kind, it.Text)
+		if it.ID == "" {
+			it.ID = ItemID(it.Kind, it.Text)
+		}
 		return ind, it
 	}
 	trimmed := strings.TrimLeft(line, " \t")
@@ -87,7 +89,9 @@ func parseBacklogItemLine(line string) (indent int, it *BacklogItem) {
 	}
 	it = &BacklogItem{Text: text, Sources: sources, Unknown: unknown, toks: toks, Plain: true}
 	applyRecognized(it, trimmed[2:])
-	it.ID = ItemID(it.Kind, it.Text)
+	if it.ID == "" {
+		it.ID = ItemID(it.Kind, it.Text)
+	}
 	return record.IndentWidth(line[:len(line)-len(trimmed)]), it
 }
 
@@ -142,7 +146,16 @@ func emitBacklogItem(it *BacklogItem, depth int) []string {
 // lands at the TOP of the list (newest first — the corpus convention),
 // after any leading non-item lines.
 func (d *BacklogDoc) AppendItem(it *BacklogItem) {
-	it.ID = ItemID(it.Kind, it.Text)
+	if it.ID == "" {
+		taken := map[string]bool{}
+		for _, have := range d.AllItems() {
+			if have.IDPersisted {
+				taken[have.ID] = true
+			}
+		}
+		it.ID = PortalItemID(it.Text, taken)
+		it.IDPersisted = true
+	}
 	want := "Tasks"
 	if it.Kind == KindDecision {
 		want = "Decisions"

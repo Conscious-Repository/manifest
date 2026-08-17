@@ -1,18 +1,26 @@
 // ---- AION: the program cockpit over system/aion/ records ----
 // Backlog (task/decision substrate) · Heuristics (living synthesis) · V/TO ·
 // Goals (read-only Aion ladder) · Org (people/hiring/references/finances) ·
-// Settings — plus the publish rail (export effector → the portal's serving
-// checkout, live at portal.aion.bio). Manifest is the only edit surface;
-// the team portal's published data is fed by PUBLISH (team writes ride the
-// separate /shared overlay).
+// Both this cockpit and portal.aion.bio render the same live projection:
+// owner-authored vault base + attributed team overlay.
 let aionCache = null;
 let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | settings
 let aionSelId = null;     // inspector selection (redesign §4 — replaces the drawer)
 let aionOrgSel = "people"; // org registry rail selection
 let aionDoneOpen = false;    // backlog: done-tasks section expanded
 let aionDecidedOpen = false; // backlog: decided-decisions log expanded
-let aionFreshDone = new Set(); // tasks checked this session — held in place until PUBLISH
+let aionArchivedOpen = false;
+let aionFreshDone = new Set(); // tasks checked this session — held in place for regret
 let aionExpanded = {}; // heuristic id → sources expanded
+let aionRevision = "";
+let aionRevisionETag = "";
+let aionPollDelay = 3000;
+let aionPollTimer = null;
+
+function scheduleAionPoll(delay) {
+  if (aionPollTimer) clearTimeout(aionPollTimer);
+  aionPollTimer = setTimeout(pollAionLive, delay);
+}
 
 function showAion(h) {
   const tail = h.startsWith("#/aion/") ? decodeURIComponent(h.slice("#/aion/".length)) : "";
@@ -51,123 +59,40 @@ async function aionPost(url, body, okMsg) {
   } catch (e) { showToast(String(e.message || e).slice(0, 120)); }
 }
 
-// ---- publish → the page header actions (next to the tabs): ONE count badge
-// replaces the eight per-section dirty dots; the meta string carries
-// last-published. Moved out of the (now section-hidden) breadcrumb bar.
 function renderAionRail() {
-  const rail = els.aionPublishRail;
+  const rail = els.aionLiveRail;
   rail.innerHTML = "";
   if (els.aionView.hidden) return;
-  const pub = (aionCache && aionCache.publish) || {};
+  const sync = (aionCache && aionCache.sync) || {};
+  const warningCount = (sync.warnings || []).length;
   if (els.aionMeta) {
-    els.aionMeta.textContent = pub.lastPublished
-      ? "published " + fmtWhen(pub.lastPublished) + (pub.lastCommit ? " · " + pub.lastCommit.slice(0, 7) : "")
-      : (pub.configured ? "never published" : "");
+    els.aionMeta.textContent = sync.stale
+      ? "SYNC DEGRADED · serving " + (sync.servingRevision || "last good")
+      : "LIVE" + (sync.lastGoodAt ? " · " + fmtWhen(sync.lastGoodAt) : "") + (warningCount ? " · " + warningCount + " WARNING" + (warningCount === 1 ? "" : "S") : "");
   }
-  if (!pub.configured) return;
-  const dirty = pub.dirty || {};
-  const n = Object.values(dirty).filter(Boolean).length;
-  const btn = el("button", "aion-publish-btn", "PUBLISH");
-  if (n) {
-    const badge = el("span", "aion-publish-badge", String(n));
-    badge.title = n + " section" + (n === 1 ? "" : "s") + " with unpublished changes";
-    btn.append(badge);
-  }
-  btn.onclick = openAionPublishPanel;
-  rail.append(btn);
+  const dot = el("span", "aion-status " + (sync.stale ? "alarm" : "active"), sync.stale ? "STALE" : (warningCount ? "LIVE · WARN" : "LIVE"));
+  if (sync.error || warningCount) dot.title = sync.error || sync.warnings.join("\n");
+  rail.append(dot);
 }
 
-// openAionPublishPanel: PREVIEW (no writes) → blockers or per-file diffs →
-// CONFIRM (carries the preview hash so a vault change forces a re-preview).
-async function openAionPublishPanel() {
-  if (document.getElementById("aionPublishModal")) return;
-  const overlay = el("div", "cmdbar");
-  overlay.id = "aionPublishModal";
-  const back = el("div", "cmdbar-backdrop");
-  const panel = el("div", "cmdbar-card aion-publish-panel");
-  overlay.append(back, panel);
-  document.body.append(overlay);
-  const close = () => overlay.remove();
-  back.onclick = close;
-  panel.append(el("div", "appr-diff-label", "PUBLISH → portal.aion.bio — preview"));
-  const bodyHost = el("div", "aion-publish-body");
-  panel.append(bodyHost, el("div", "aion-publish-note", "fetching preview…"));
-  let prev;
-  try { prev = await (await fetch("/api/aion/publish/preview")).json(); }
-  catch (e) { panel.lastChild.textContent = "preview failed: " + e; return; }
-  panel.lastChild.remove();
-
-  if ((prev.blockers || []).length) {
-    prev.blockers.forEach((b) => bodyHost.append(el("div", "appr-blocked", "⚠ " + b)));
-    panel.append(pillLight("close", close));
-    return;
-  }
-  if ((prev.untracked || []).length) {
-    bodyHost.append(el("div", "aion-publish-warn",
-      "⚠ the checkout has portal files git doesn't know about yet — publish never overwrites unpreserved work."));
-    prev.untracked.forEach((f) => bodyHost.append(el("div", "aion-preview-row mono", f)));
-    bodyHost.append(el("div", "aion-publish-note",
-      "\"preserve & continue\" commits everything under public/portal exactly as it is (its own commit — nothing is lost, and the publish diff stays honest), then re-opens this preview."));
-    const acts = el("div", "appr-actions");
-    const keep = pill("preserve in a baseline commit & continue", async () => {
-      keep.disabled = true;
-      try {
-        const r = await fetch("/api/aion/publish/baseline", { method: "POST" });
-        const res = await r.json().catch(() => ({}));
-        if (!r.ok || !res.ok) { showToast("baseline failed: " + (res.error || r.status)); return; }
-        showToast("Preserved as " + (res.commit || "").slice(0, 7));
-        close();
-        openAionPublishPanel(); // fresh preview, now clean
-      } finally { keep.disabled = false; }
-    });
-    acts.append(keep, pillLight("close", close));
-    panel.append(acts);
-    return;
-  }
-  const changed = (prev.files || []).filter((f) => f.status !== "unchanged");
-  if (!changed.length && !(prev.unpushed > 0)) {
-    bodyHost.append(el("div", "aion-publish-note", "nothing to publish — the checkout matches the record."));
-    panel.append(pillLight("close", close));
-    return;
-  }
-  if (prev.unpushed > 0) {
-    bodyHost.append(el("div", "aion-publish-note", prev.unpushed + " unpushed commit(s) — publish completes the push."));
-  }
-  // acceptance gate (sync-contract §4): errors block the push; warnings inform.
-  const gateErrors = prev.errors || [];
-  (prev.warnings || []).forEach((wmsg) => bodyHost.append(el("div", "aion-publish-warn", "△ " + wmsg)));
-  gateErrors.forEach((emsg) => bodyHost.append(el("div", "appr-blocked", "⚠ " + emsg)));
-  changed.forEach((f) => {
-    const head = el("div", "aion-pub-file");
-    head.append(el("code", "", f.path), el("span", "aion-pub-status " + f.status, f.status));
-    bodyHost.append(head);
-    if (f.diff) bodyHost.append(collapsibleBlock(diffView(f.diff), f.diff.split("\n").length));
-  });
-  const actions = el("div", "appr-actions");
-  const confirmBtn = pill("CONFIRM — commit + push", async () => {
-    confirmBtn.disabled = true;
-    if (gateErrors.length) { confirmBtn.disabled = false; return; } // guard: gate blocks the push
-    try {
-      const r = await fetch("/api/aion/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hash: prev.hash }) });
-      const res = await r.json().catch(() => ({}));
-      if (r.status === 409) { showToast("Vault changed since preview — re-open PUBLISH"); close(); return; }
-      if (!r.ok || res.ok === false) {
-        showToast("Publish failed at " + (res.stage || "?") + (res.commit ? " (commit " + res.commit.slice(0, 7) + " kept locally)" : ""));
-      } else {
-        showToast("Published " + (res.commit || "").slice(0, 7) + " → " + ((aionCache.publish || {}).remote || "origin"));
-        aionFreshDone.clear(); // publish is the flush point — done tasks may now collapse
-      }
-      close();
-      loadAion();
-    } finally { confirmBtn.disabled = false; }
-  });
-  if (gateErrors.length) {
-    confirmBtn.disabled = true;
-    bodyHost.append(el("div", "aion-publish-note", "fix the ⚠ format errors above before publishing (they'd break the portal)."));
-  }
-  actions.append(confirmBtn, pillLight("cancel", close));
-  panel.append(actions);
+async function pollAionLive() {
+  if (document.hidden || !els.aionView || els.aionView.hidden) { scheduleAionPoll(3000); return; }
+  try {
+    const r = await fetch("/api/aion/revision", { cache: "no-cache", headers: aionRevisionETag ? { "If-None-Match": aionRevisionETag } : {} });
+    if (r.status === 304) { aionPollDelay = 3000; scheduleAionPoll(aionPollDelay); return; }
+    if (!r.ok) throw new Error("revision " + r.status);
+    aionRevisionETag = r.headers.get("ETag") || aionRevisionETag;
+    const st = await r.json();
+    const next = st.effectiveRevision || "";
+    const editing = els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (aionRevision && next && next !== aionRevision && !editing) await loadAion();
+    aionRevision = next;
+    aionPollDelay = 3000;
+  } catch (_) { aionPollDelay = Math.min(aionPollDelay * 2, 30000); }
+  scheduleAionPoll(aionPollDelay);
 }
+scheduleAionPoll(3000);
+window.addEventListener("focus", () => { if (!els.aionView.hidden) scheduleAionPoll(0); });
 
 // ---- BACKLOG (redesign §4): decisions lane on top, tasks grouped by owner,
 // a 300px sticky inspector on the right. The filter-chip rows are gone —
@@ -204,25 +129,39 @@ function renderAionBacklog(host) {
   }
   list.append(lane);
 
+  // -- owner-visible proposals --
+  const proposals = (((aionCache || {}).collaboration || {}).proposals || [])
+    .filter((p) => p.status === "pending");
+  if (proposals.length) {
+    const proposalsLane = el("div", "aion-dec-lane");
+    proposalsLane.append(el("div", "aion-sec-label", "PROPOSALS · " + proposals.length));
+    proposals.forEach((p) => {
+      const row = el("div", "aion-dec-row");
+      const main = el("div", "aion-main");
+      main.append(el("div", "aion-dec-text", p.title));
+      main.append(el("div", "aion-item-meta", "for @" + (p.target_owner || "—") + " · by " + (p.proposed_name || p.proposed_by || "team")));
+      const acts = el("div", "tdo-p-sec-acts");
+      ["approve", "reject"].forEach((decision) => {
+        const b = el("button", "tdo-p-linky", decision);
+        b.onclick = (ev) => {
+          ev.stopPropagation();
+          aionPost("/api/aion/proposals/decide", { id: p.id, approve: decision === "approve" }, decision === "approve" ? "Proposal approved" : "Proposal rejected");
+        };
+        acts.append(b);
+      });
+      row.append(main, acts);
+      proposalsLane.append(row);
+    });
+    list.append(proposalsLane);
+  }
+
   // -- tasks, grouped by owner (open count desc) --
   // A task marked done stays IN PLACE — struck through, one click to unmark —
-  // until PUBLISH ships it (owner call 2026-08-09: an accidental check must be
-  // reversible where it happened, never vanish). "Fresh" = checked this
-  // session, or done on/after the last publish while the backlog is dirty.
+  // for the current session (an accidental check must be reversible where it
+  // happened, never vanish). A reload moves it into the quiet done section.
   const tasks = items.filter((it) => it.kind === "task");
   const openTasks = tasks.filter((it) => it.status !== "done");
-  const pub = aionCache.publish || {};
-  // LOCAL date of the last publish — doneOn is a local date, and slicing the
-  // UTC timestamp shifts an evening publish into tomorrow (hiding today's
-  // checks — the exact regret window this exists for)
-  let lastPubDate = "";
-  if (pub.lastPublished) {
-    const d = new Date(pub.lastPublished);
-    if (!isNaN(d)) lastPubDate = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-  }
-  const backlogDirty = !!(pub.dirty || {}).backlog;
-  const freshDone = (it) => aionFreshDone.has(it.id) ||
-    (backlogDirty && lastPubDate && it.doneOn && it.doneOn >= lastPubDate);
+  const freshDone = (it) => aionFreshDone.has(it.id);
   const doneInPlace = tasks.filter((it) => it.status === "done" && freshDone(it));
   const doneTasks = tasks.filter((it) => it.status === "done" && !freshDone(it));
   const people = {};
@@ -264,12 +203,31 @@ function renderAionBacklog(host) {
     if (aionDoneOpen) doneTasks.forEach((it) => list.append(aionTaskRow(it)));
   }
 
+  const archives = (((aionCache || {}).collaboration || {}).archives || []);
+  if (archives.length) {
+    const t = el("button", "aion-done-toggle", (aionArchivedOpen ? "▾" : "▸") + " archived collaboration · " + archives.length);
+    t.onclick = () => { aionArchivedOpen = !aionArchivedOpen; renderAion(); };
+    list.append(t);
+    if (aionArchivedOpen) archives.slice().reverse().forEach((a) => {
+      const row = el("div", "aion-task-row done");
+      row.append(el("span", "aion-check off", "×"));
+      const main = el("div", "aion-main");
+      main.append(el("div", "aion-title", a.title));
+      main.append(el("div", "aion-item-meta", "archived by " + (a.archived_by || "owner") + " · " + fmtWhen(a.archived_at || "")));
+      row.append(main);
+      row.onclick = () => { aionSelId = a.id; renderAion(); };
+      list.append(row);
+    });
+  }
+
+  const inspectionItems = items.concat(archives.map(aionArchivedView));
+
   // phone (Rev 4): the sticky inspector column is display:none — the same
   // renderer fills a bottom sheet instead. Keyed open = re-fills in place on
   // every renderAion() (field saves re-render) without re-animating.
   if (window.mf && window.mf.phone()) {
     if (aionSelId) {
-      window.mfSheet.open((b) => renderAionInspector(b, items), {
+      window.mfSheet.open((b) => renderAionInspector(b, inspectionItems), {
         key: "aion",
         onClose: () => { if (aionSelId) { aionSelId = null; renderAion(); } },
         reopen: () => { if (!els.aionView.hidden) renderAion(); }, // desktop restore
@@ -278,8 +236,19 @@ function renderAionBacklog(host) {
       window.mfSheet.closeIf("aion");
     }
   } else {
-    renderAionInspector(insp, items);
+    renderAionInspector(insp, inspectionItems);
   }
+}
+
+function aionArchivedView(a) {
+  return {
+    id: a.id, kind: a.kind, text: a.title, owner: a.owner || "", captured: a.captured || "",
+    rock: a.rock || "", due: a.due || "", status: a.status || "", doneOn: a.done_on || "",
+    neededBy: a.needed_by || "", decided: a.decided || "", outcome: a.outcome || "",
+    sourceType: "archived", archived: true, archivedBy: a.archived_by || "", archivedAt: a.archived_at || "",
+    commentCount: ((((aionCache || {}).collaboration || {}).comments || {})[a.id] || []).length,
+    sources: [],
+  };
 }
 
 // statusChip per the color rules: IN PROGRESS = accent; alarmed OPEN = ink;
@@ -317,6 +286,7 @@ function aionDecisionRow(it) {
   if (!decided && it.neededBy) bits.push("needed by " + it.neededBy);
   if (it.owner) bits.push("@" + it.owner);
   if (decided) bits.push("decided " + (it.decided || "") + (it.outcome ? " → " + it.outcome : ""));
+  bits.push(...aionProvenanceBits(it));
   main.append(el("div", "aion-item-meta", bits.join(" · ")));
   row.append(main, aionStatusChip(it));
   row.onclick = () => aionSelect(it);
@@ -329,12 +299,12 @@ function aionTaskRow(it) {
   const alarmed = aionAlarmed(it);
   const row = el("div", "aion-task-row" + (done ? " done" : "") + (alarmed ? " alarm" : "") + (aionSelId === it.id ? " sel" : ""));
   const c = el("button", "aion-check" + (done ? " off" : ""), done ? "●" : "○");
-  c.title = done ? "unmark — this stays in place until PUBLISH" : "mark done (stays here, unmarkable, until PUBLISH)";
+  c.title = done ? "unmark done" : "mark done (held here for this session so it is easy to undo)";
   c.onclick = (e) => {
     e.stopPropagation();
     if (done) aionFreshDone.delete(it.id);
     else aionFreshDone.add(it.id); // hold it in place for the regret window
-    aionPost("/api/aion/backlog/" + it.id + "/update", { status: done ? "open" : "done" });
+    aionPost("/api/aion/backlog/update/" + it.id, { status: done ? "open" : "done" });
   };
   row.append(c);
   const main = el("div", "aion-main");
@@ -342,6 +312,7 @@ function aionTaskRow(it) {
   const bits = [];
   if (it.due && !done) bits.push((alarmed ? "● overdue " : "due ") + it.due);
   if (it.captured) bits.push(it.captured);
+  bits.push(...aionProvenanceBits(it));
   const meta = el("div", "aion-item-meta", bits.join(" · "));
   if ((it.sources || []).length) {
     const src = el("a", "aion-src", " ⧉ " + it.sources[0]);
@@ -361,6 +332,15 @@ function aionTaskRow(it) {
   return row;
 }
 
+function aionProvenanceBits(it) {
+  const bits = [];
+  if (it.sourceType === "team" || it.team) bits.push("team/");
+  if (it.overrideBy) bits.push("override · " + it.overrideBy + (it.overrideAt ? " · " + fmtWhen(it.overrideAt) : ""));
+  else if (it.lastActor) bits.push(it.lastActor + (it.lastAt ? " · " + fmtWhen(it.lastAt) : ""));
+  if (it.commentCount) bits.push(it.commentCount + " comment" + (it.commentCount === 1 ? "" : "s"));
+  return bits;
+}
+
 // ---- the inspector (replaces the inline drawer — the list never reflows) ----
 function renderAionInspector(insp, items) {
   const it = items.find((x) => x.id === aionSelId);
@@ -375,15 +355,28 @@ function renderAionInspector(insp, items) {
   head.append(x);
   insp.append(head);
 
-  const patch = (set, msg) => aionPost("/api/aion/backlog/" + it.id + "/update", set, msg);
+  if (it.archived) {
+    insp.append(el("div", "aion-insp-title", it.text));
+    const summary = [it.kind, it.owner ? "@" + it.owner : "", "archived by " + (it.archivedBy || "owner"), fmtWhen(it.archivedAt)].filter(Boolean).join(" · ");
+    insp.append(el("div", "aion-item-meta", summary));
+    if (it.outcome) insp.append(el("div", "aion-insp-ro", "→ " + it.outcome));
+    const collab = el("div", "tdo-p-sec aion-collaboration");
+    collab.append(el("div", "tdo-p-empty", "loading preserved collaboration…"));
+    insp.append(collab);
+    renderAionCollaboration(collab, it);
+    insp.append(el("div", "aion-insp-foot", "archived · snapshot and thread preserved"));
+    return;
+  }
 
-  // title — editable in place; a retitle re-derives the id, so selection clears
+  const patch = (set, msg) => aionPost("/api/aion/backlog/update/" + it.id, set, msg);
+
+  // Stable IDs survive title edits, so the inspector remains selected.
   const title = inputEl("");
   title.value = it.text;
   title.className = "aion-insp-title";
   const commitTitle = () => {
     const v = title.value.trim();
-    if (v && v !== it.text) { aionSelId = null; patch({ title: v }); }
+    if (v && v !== it.text) patch({ title: v });
   };
   title.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") commitTitle();
@@ -436,7 +429,7 @@ function renderAionInspector(insp, items) {
       const doDecide = () => {
         if (!outcome.value.trim()) return;
         aionSelId = null;
-        aionPost("/api/aion/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
+        aionPost("/api/aion/backlog/decide/" + it.id, { outcome: outcome.value.trim() }, "Decided — permanent log");
       };
       outcome.addEventListener("input", () => { decide.disabled = !outcome.value.trim(); });
       outcome.addEventListener("keydown", (ev) => { if (ev.key === "Enter") doDecide(); });
@@ -448,32 +441,138 @@ function renderAionInspector(insp, items) {
   }
   if (it.captured) field("captured", el("span", "aion-insp-ro", it.captured));
   field("kind", el("span", "aion-insp-ro", it.kind));
+  const provenance = aionProvenanceBits(it);
+  if (provenance.length) field("provenance", el("span", "aion-insp-ro", provenance.join(" · ")));
 
   if ((it.sources || []).length) {
     const src = el("a", "aion-insp-src", "⧉ " + it.sources[0]);
     src.href = "#/note/" + encodeURIComponent(aionSourcePath(it.sources[0]));
     insp.append(src);
   }
-  // delete — arm-to-confirm, hard removal from backlog.md (owner's explicit
-  // "remove this"; a done task is different — that stays until PUBLISH)
-  const del = el("button", "aion-insp-del", "delete item");
+  const collaborative = it.sourceType === "team" || it.commentCount || it.overrideBy;
+  const del = el("button", "aion-insp-del", collaborative ? "archive item" : "delete item");
   del.onclick = () => {
-    const yes = el("button", "aion-insp-del armed", "delete — permanent?");
+    const yes = el("button", "aion-insp-del armed", collaborative ? "archive — preserve thread?" : "delete — permanent?");
     yes.onclick = () => {
       aionSelId = null;
-      aionPost("/api/aion/backlog/" + it.id + "/delete", {}, "Deleted");
+      aionPost("/api/aion/backlog/delete/" + it.id, {}, "Archived");
     };
     del.replaceWith(yes);
     setTimeout(() => { if (yes.parentNode) yes.replaceWith(del); }, 2500);
   };
   insp.append(del);
 
+  const collab = el("div", "tdo-p-sec aion-collaboration");
+  collab.append(el("div", "tdo-p-empty", "loading collaboration…"));
+  insp.append(collab);
+  renderAionCollaboration(collab, it);
+
   const foot = el("div", "aion-insp-foot");
   foot.append(el("span", "", "edits save as you go"));
-  const raw = el("button", "aion-insp-raw", "⌘/ raw");
-  raw.onclick = () => toggleRawOverlay();
-  foot.append(raw);
+  if (it.sourceType !== "team") {
+    const raw = el("button", "aion-insp-raw", "⌘/ raw");
+    raw.onclick = () => toggleRawOverlay();
+    foot.append(raw);
+  }
   insp.append(foot);
+}
+
+async function renderAionCollaboration(host, it) {
+  const taskID = "aion:" + it.id;
+  const selected = it.id;
+  let panel = {}, activity = [];
+  try {
+    const [panelRes, activityRes] = await Promise.all([
+      fetch("/api/tasks/panel?id=" + encodeURIComponent(taskID)),
+      fetch("/api/aion/activity?item=" + encodeURIComponent(it.id), { cache: "no-store" }),
+    ]);
+    if (panelRes.ok) panel = await panelRes.json();
+    if (activityRes.ok) activity = (await activityRes.json()).activity || [];
+  } catch (_) {}
+  if (aionSelId !== selected || !host.isConnected) return;
+  host.innerHTML = "";
+
+  const rec = panel.record || {};
+  const planText = rec.Plan || rec.plan || "";
+  const assignee = rec.Assignee || rec.assignee || "";
+  const state = (panel.delegation && panel.delegation.state) || rec.State || rec.state || "";
+  const plan = el("div", "tdo-p-sec");
+  plan.append(el("div", "tdo-p-sec-label", "agent / plan"));
+  plan.append(el("div", "aion-item-meta", [assignee || "unassigned", state].filter(Boolean).join(" · ")));
+  plan.append(el("div", planText ? "tdo-p-plan" : "tdo-p-empty", planText || "no agent plan yet"));
+  host.append(plan);
+
+  const thread = el("div", "tdo-p-sec tdo-p-threadsec");
+  thread.append(el("div", "tdo-p-sec-label", "thread · team-visible"));
+  const comments = el("div", "tdo-p-thread");
+  (panel.thread || []).forEach((c) => comments.append(aionThreadEntry(c, taskID)));
+  if (!(panel.thread || []).length) comments.append(el("div", "tdo-p-empty", "no comments yet"));
+  thread.append(comments);
+  if (!it.archived) thread.append(aionComposer(taskID, selected));
+  host.append(thread);
+
+  if (activity.length) {
+    const acts = el("div", "tdo-p-sec");
+    acts.append(el("div", "tdo-p-sec-label", "activity"));
+    activity.slice().reverse().slice(0, 20).forEach((a) => {
+      acts.append(el("div", "aion-item-meta", (a.action || "change") + " · " + (a.actor || "system") + " · " + fmtWhen(a.ts || "")));
+    });
+    host.append(acts);
+  }
+}
+
+function aionThreadEntry(c, taskID) {
+  const e = el("div", "tdo-p-comment" + (c.action && c.action !== "comment" ? " structural" : ""));
+  const head = el("div", "tdo-p-c-head");
+  head.append(el("span", "tdo-p-c-author", c.author_name || c.authorName || c.author || "?"));
+  if (c.action && c.action !== "comment") head.append(el("span", "tdo-p-c-act", c.action));
+  head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
+  e.append(head);
+  if (c.text) e.append(el("div", "tdo-p-c-text", c.text));
+  (c.files || []).forEach((f) => {
+    const a = el("a", "tdo-p-c-file", "⤓ " + f.name);
+    a.href = "/api/tasks/thread/file/" + f.hash + "?id=" + encodeURIComponent(taskID);
+    a.target = "_blank";
+    e.append(a);
+  });
+  return e;
+}
+
+function aionComposer(taskID, selected) {
+  const box = el("div", "tdo-p-composer");
+  const pendingFiles = [];
+  const chips = el("div", "tdo-p-chips");
+  const ta = document.createElement("textarea");
+  ta.className = "tdo-p-textarea composer";
+  ta.placeholder = "comment…";
+  ta.rows = 2;
+  const acts = el("div", "tdo-p-c-acts");
+  const fi = document.createElement("input");
+  fi.type = "file"; fi.multiple = true; fi.hidden = true;
+  fi.onchange = async () => {
+    for (const f of [...fi.files]) {
+      const res = await fetch("/api/tasks/thread/file?id=" + encodeURIComponent(taskID) + "&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+      if (res.ok) {
+        const ref = (await res.json()).file;
+        pendingFiles.push(ref);
+        chips.append(el("span", "tdo-p-chip", "⤓ " + ref.name));
+      }
+    }
+    fi.value = "";
+  };
+  const attach = el("button", "tdo-p-linky", "＋ file");
+  attach.onclick = () => fi.click();
+  const send = pillLight("comment", async () => {
+    if (!ta.value.trim() && !pendingFiles.length) return;
+    try {
+      await postJSONOk("/api/tasks/thread", { id: taskID, text: ta.value.trim(), files: pendingFiles, mentions: [] });
+      if (aionSelId === selected) { await loadAion(); }
+    } catch (e) { showToast("Couldn't comment — " + (e.message || "error")); }
+  });
+  ta.onkeydown = (ev) => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) send.click(); };
+  acts.append(attach, send, fi);
+  box.append(chips, ta, acts);
+  return box;
 }
 
 // aionSourcePath resolves a source note name to a vault path: names already
@@ -880,7 +979,6 @@ function renderAionOrg(host) {
       el("span", "aion-fin-derived", cap > 0 && burn > 0 ? (Math.round((cap / burn) * 10) / 10) + " months (derived)" : "— (needs capital + burn)"));
     finHost.append(runwayRow);
     pane.append(el("div", "aion-section-note",
-      "these fields publish to the portal (finances.json) on PUBLISH — capital & burn take 1.95M / 85k / $2,480,000 shorthand"));
+      "these fields update the live portal contract automatically — capital & burn take 1.95M / 85k / $2,480,000 shorthand"));
   }
 }
-

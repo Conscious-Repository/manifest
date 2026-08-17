@@ -190,6 +190,30 @@ This file changes only by deliberate owner decision, recorded with a date.
 Passes that discover a conflict between code and this file fix the code or
 propose an amendment — never silently diverge.
 
+**2026-08-17 — AION is one live composed model, not a publish artifact.**
+The Manifest process owns the projection rendered by both the private AION
+cockpit and the team portal: owner-authored vault records form the base;
+`/shared/apps/aion-portal` contributes `team/` items, comments, activity, and
+field overrides; the overlay wins for its bounded fields; archives are kept
+with their attributed snapshot and thread but excluded from active views.
+Every vault backlog item carries a persisted `aion-bl/…` identity that is
+stable across title edits. Portal writes update only the shared team store and
+**never** materialize into Markdown. An explicit owner edit in Manifest still
+crosses `vaultwriter`, supersedes only overlapping overlay keys, and records
+that resolution in team activity. Multi-store owner operations are journaled
+under dataDir and replay idempotently.
+
+The portal's compatible `data/*.json` and `content/*.md` contract is rendered
+and validated in-process. Valid revisions become visible immediately;
+coverage warnings remain visible; invalid revisions serve the atomically
+persisted last-known-good snapshot and raise an auto-clearing FEED signal.
+Both open UIs converge through lightweight visibility-aware revision polling;
+git, a deploy, and a PUBLISH gesture are not part of AION synchronization.
+This amendment preserves the 2026-08-14 exception exactly: the team portal is
+still the one bounded many-writer surface, its assignee/proposal authorization
+rules are unchanged, and the vault and every other Manifest surface remain
+single-writer.
+
 **2026-08-15 — assign-to-agent plan lane (standing-consent materialization).**
 Owner decision (todo-panel plan, approved 2026-08-15): assigning a task to an
 agent is standing approval for materializing that agent's plan output into

@@ -66,8 +66,9 @@ type Auth struct {
 	clientPath string
 	keyPath    string
 
-	mu  sync.Mutex
-	key []byte // cached session HMAC key
+	mu     sync.Mutex
+	key    []byte // cached session HMAC key
+	tokens *TokenStore
 }
 
 // NewAuth resolves the credential paths under dataDir. AION_PORTAL_OAUTH_CLIENT
@@ -81,6 +82,15 @@ func NewAuth(dataDir string) *Auth {
 		clientPath: cp,
 		keyPath:    filepath.Join(dataDir, "portals", "aion-portal-session.key"),
 	}
+}
+
+// WithTokens adds the non-browser authentication path used by scripts and MCP
+// clients. It returns the receiver for fluent setup in main.
+func (a *Auth) WithTokens(tokens *TokenStore) *Auth {
+	a.mu.Lock()
+	a.tokens = tokens
+	a.mu.Unlock()
+	return a
 }
 
 // Enabled reports whether the OAuth client file is present (sign-in possible).
@@ -256,6 +266,26 @@ func (a *Auth) Identify(r *http.Request) (Identity, bool) {
 		return Identity{}, false
 	}
 	return Identity{Email: p.Email, Name: p.Name}, true
+}
+
+// IdentifyRequest preserves cookie sessions as the first choice, then accepts
+// an Authorization: Bearer token. OAuth callbacks and token-management routes
+// deliberately keep using Identify so a token cannot mint another token.
+func (a *Auth) IdentifyRequest(r *http.Request) (Identity, bool) {
+	if id, ok := a.Identify(r); ok {
+		return id, true
+	}
+	parts := strings.Fields(r.Header.Get("Authorization"))
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return Identity{}, false
+	}
+	a.mu.Lock()
+	tokens := a.tokens
+	a.mu.Unlock()
+	if tokens == nil {
+		return Identity{}, false
+	}
+	return tokens.Resolve(parts[1])
 }
 
 // isSecure reports whether the request arrived over https — directly or via a

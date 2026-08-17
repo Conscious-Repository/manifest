@@ -123,13 +123,9 @@ type Config struct {
 	// TasksFileName is the vault-root tasks file (the third surface, peer of
 	// goals.md). Default "tasks.md" — the owner's existing file.
 	TasksFileName string `json:"tasksFileName"`
-	// AionPortal points the AION publish effector at the portal's serving
-	// checkout — a MANIFEST checkout since the portal move (2026-08-15; the
-	// effector writes server/web/portal/**, autodeploy rebuilds → live at
-	// portal.aion.bio). Path empty disables PUBLISH (the tab still works);
-	// Remote/Branch default origin/main. The effector writes ONLY the
-	// export-contract paths, commits once, pushes, and leaves a receipt
-	// (aion-domain spec §5).
+	// AionPortal configures the live listener/team store. Path/Remote/Branch
+	// remain readable for one transition release; only Path is consulted by
+	// the stable-ID migration, and runtime sync ignores all three.
 	AionPortal AionPortalConfig `json:"aionPortal"`
 	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
 	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and

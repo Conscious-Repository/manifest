@@ -75,6 +75,34 @@ func call(t *testing.T, srv *httptest.Server, method, path string, cookie *http.
 	return resp.StatusCode
 }
 
+func callBearer(t *testing.T, srv *httptest.Server, method, path, token string, body, out any) (int, string) {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatalf("encode body: %v", err)
+		}
+	}
+	req, err := http.NewRequest(method, srv.URL+path, &buf)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+	if out != nil && resp.StatusCode < 300 {
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			t.Fatalf("%s %s: decode response: %v", method, path, err)
+		}
+		return resp.StatusCode, ""
+	}
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b)
+}
+
 // addItem creates a team item as the given member and returns it.
 func addItem(t *testing.T, srv *httptest.Server, c *http.Cookie, title string) teamportal.TeamItem {
 	t.Helper()
@@ -89,7 +117,7 @@ func addItem(t *testing.T, srv *httptest.Server, c *http.Cookie, title string) t
 // admin included, gets 403 (no override lane, decided 2026-08-13).
 func TestPatchAssigneeLock(t *testing.T) {
 	srv, auth := newPortal(t)
-	hannah := session(t, auth, "hannah@aion.bio", "Hannah Zmuda") // roster: HZ
+	hannah := session(t, auth, "hannah@aion.bio", "Hannah Zmuda")          // roster: HZ
 	benjamin := session(t, auth, "benjamin@aion.bio", "Benjamin Anderson") // roster: BA, admin
 
 	it := addItem(t, srv, hannah, "Calibrate the MRI phantom")
@@ -298,5 +326,81 @@ func TestPortalRequiresSignIn(t *testing.T) {
 	// so it 503s — but crucially it is NOT gated to 401 or the landing page).
 	if resp, _ := get("/oauth2/login", "text/html"); resp.StatusCode == http.StatusUnauthorized {
 		t.Errorf("/oauth2/login was gated (%d) — the way in must stay open", resp.StatusCode)
+	}
+}
+
+func TestBearerTokenUsesPortalIdentityAndRevokes(t *testing.T) {
+	dataDir := t.TempDir()
+	tokens := teamportal.NewTokens(dataDir)
+	auth := teamportal.NewAuth(dataDir).WithTokens(tokens)
+	store, err := teamportal.New(filepath.Join(t.TempDir(), "team"))
+	if err != nil {
+		t.Fatalf("teamportal.New: %v", err)
+	}
+	h, err := server.PortalHandler(server.PortalOptions{
+		Auth: auth, Tokens: tokens, Store: store, AdminEmail: "benjamin@aion.bio",
+	})
+	if err != nil {
+		t.Fatalf("PortalHandler: %v", err)
+	}
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	// Token management is browser-session-only.
+	hannah := session(t, auth, "hannah@aion.bio", "Hannah Zmuda")
+	var minted struct {
+		ID    string `json:"id"`
+		Token string `json:"token"`
+	}
+	if code := call(t, srv, "POST", "/api/tokens", hannah, map[string]string{"label": "MCP"}, &minted); code != http.StatusOK {
+		t.Fatalf("POST /api/tokens = %d", code)
+	}
+	if minted.ID == "" || !strings.HasPrefix(minted.Token, "aiontok_") {
+		t.Fatalf("mint response = %+v", minted)
+	}
+	if code, _ := callBearer(t, srv, "GET", "/api/tokens", minted.Token, nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("bearer GET /api/tokens = %d, want 401", code)
+	}
+
+	// The token gets the same identity attribution and write capabilities as its
+	// owner's cookie session.
+	var item teamportal.TeamItem
+	if code, body := callBearer(t, srv, "POST", "/api/team/items", minted.Token,
+		map[string]string{"title": "Token-created item"}, &item); code != http.StatusOK {
+		t.Fatalf("bearer add item = %d: %s", code, body)
+	}
+	var comment teamportal.Comment
+	if code, body := callBearer(t, srv, "POST", "/api/team/comment", minted.Token,
+		map[string]string{"item": item.ID, "text": "from external tooling"}, &comment); code != http.StatusOK {
+		t.Fatalf("bearer comment = %d: %s", code, body)
+	}
+	if comment.Author != "hannah@aion.bio" || comment.AuthorName != "Hannah Zmuda" {
+		t.Fatalf("bearer comment attribution = %+v", comment)
+	}
+	entries := store.Activity(time.Time{})
+	if len(entries) < 2 || entries[len(entries)-1].Actor != "hannah@aion.bio" {
+		t.Fatalf("activity attribution = %+v", entries)
+	}
+	if code, body := callBearer(t, srv, "GET", "/api/team/state", minted.Token, nil, nil); code != http.StatusOK {
+		t.Fatalf("bearer state = %d: %s", code, body)
+	}
+	var snapshot map[string]any
+	if code, body := callBearer(t, srv, "GET", "/api/team/snapshot", minted.Token, nil, &snapshot); code != http.StatusOK {
+		t.Fatalf("bearer snapshot = %d: %s", code, body)
+	}
+	for _, key := range []string{"backlog", "goals", "people", "meta", "team"} {
+		if snapshot[key] == nil {
+			t.Errorf("bearer snapshot missing %q: %+v", key, snapshot)
+		}
+	}
+
+	if code := call(t, srv, "DELETE", "/api/tokens/"+minted.ID, hannah, nil, nil); code != http.StatusOK {
+		t.Fatalf("DELETE /api/tokens/{id} = %d", code)
+	}
+	if code, _ := callBearer(t, srv, "GET", "/api/team/state", minted.Token, nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("revoked bearer state = %d, want 401", code)
+	}
+	if code, body := callBearer(t, srv, "GET", "/", "not-a-token", nil, nil); code != http.StatusUnauthorized || strings.Contains(body, "Sign in") {
+		t.Fatalf("bad bearer browser-like request = %d, %q; want clean 401", code, body)
 	}
 }

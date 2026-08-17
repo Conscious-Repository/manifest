@@ -99,7 +99,7 @@ const (
 // BacklogItem is one substrate line. Tasks are checkboxes; decisions are
 // plain bullets. Kind is the [kind::] field; ID is derived (never persisted).
 type BacklogItem struct {
-	ID      string `json:"id"` // sha1(kind|normalized title)[:8], parse-time
+	ID      string `json:"id"` // persisted aion-bl/<slug>; legacy rows use the old hash until migrated
 	Text    string `json:"text"`
 	Checked bool   `json:"checked"`
 	Kind    string `json:"kind"`
@@ -129,6 +129,10 @@ type BacklogItem struct {
 	// Plain marks a plain-bullet line (no checkbox) — the owner's corpus
 	// writes decisions BOTH ways; each line keeps its own style.
 	Plain bool `json:"-"`
+	// IDPersisted distinguishes a real [id::] token from the legacy derived
+	// hash used while reading an unmigrated line. Reading an old file therefore
+	// remains a byte-for-byte fixpoint.
+	IDPersisted bool `json:"-"`
 	// toks is the parsed field stream in source order — recognized values
 	// re-render from struct state AT THEIR ORIGINAL POSITION, so hand-
 	// authored field orderings round-trip byte-identically.
@@ -167,9 +171,26 @@ func (d *BacklogDoc) Items() []*BacklogItem {
 	return out
 }
 
+// AllItems includes nested checklist children for identity migration and
+// collision detection. Active portal views continue to use top-level Items.
+func (d *BacklogDoc) AllItems() []*BacklogItem {
+	var out []*BacklogItem
+	var walk func(*BacklogItem)
+	walk = func(it *BacklogItem) {
+		out = append(out, it)
+		for _, child := range it.Children {
+			walk(child)
+		}
+	}
+	for _, it := range d.Items() {
+		walk(it)
+	}
+	return out
+}
+
 // Find returns the top-level item with the given derived id (nil if absent).
 func (d *BacklogDoc) Find(id string) *BacklogItem {
-	for _, it := range d.Items() {
+	for _, it := range d.AllItems() {
 		if it.ID == id {
 			return it
 		}

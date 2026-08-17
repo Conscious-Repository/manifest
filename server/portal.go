@@ -21,9 +21,11 @@ import (
 // process, so these are plain closures wired in main. All nil-safe: a nil
 // callback means the route isn't registered / the hook is skipped.
 type PortalOptions struct {
-	Auth       *teamportal.Auth  // Google OAuth + sessions (nil → no sign-in)
-	Store      *teamportal.Store // team state on /shared (nil → no writes)
-	AdminEmail string            // the portal owner — may decide any proposal
+	Auth       *teamportal.Auth       // Google OAuth + sessions (nil → no sign-in)
+	Tokens     *teamportal.TokenStore // revocable per-user API tokens (nil → no API access panel)
+	Store      *teamportal.Store      // team state on /shared (nil → no writes)
+	Live       *AionLive              // live vault base + team overlay (nil → embedded fallback)
+	AdminEmail string                 // the portal owner — may decide any proposal
 	// OnComment runs after a member's comment is stored — the dialog hook
 	// (mention → auto-assign + relay; assigned item → every comment relays).
 	OnComment func(itemID string, mentions []string, text string)
@@ -69,8 +71,8 @@ type PortalOptions struct {
 // portal — view and write alike (requireSignIn below). Within a session, the
 // write endpoints keep their finer locks — comments (any member), item PATCH
 // (assignee only), team/ adds (self), and proposals for others (owner- or
-// target-approved). Team state lives in opt.Store, merged client-side over the
-// published data files.
+// target-approved). Team state lives in opt.Store and AionLive composes it
+// server-side over the owner-authored base.
 func PortalHandler(opt PortalOptions) (http.Handler, error) {
 	sub, err := fs.Sub(webFiles, "web/portal")
 	if err != nil {
@@ -78,16 +80,35 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
+	if opt.Live != nil {
+		for _, path := range []string{
+			"/data/finances.json", "/data/vto.json", "/data/goals.json", "/data/backlog.json",
+			"/data/heuristics.json", "/data/people.json", "/data/meta.json",
+			"/content/hiring.md", "/content/references.md",
+		} {
+			mux.HandleFunc("GET "+path, handleAionLiveFile(opt.Live, path))
+		}
+		mux.HandleFunc("GET /api/live/revision", handleAionLiveRevision(opt.Live))
+	}
 
 	if opt.Auth != nil {
 		mux.HandleFunc("GET /oauth2/login", opt.Auth.HandleLogin)
 		mux.HandleFunc("GET /oauth2/callback", opt.Auth.HandleCallback)
 		mux.HandleFunc("POST /oauth2/logout", opt.Auth.HandleLogout)
 	}
-	api := &portalAPI{opt: opt, people: portalPeople(sub), owners: portalOwners(sub)}
+	api := &portalAPI{
+		opt: opt, people: portalPeople(sub), owners: portalOwners(sub),
+		published: portalPublishedState(sub),
+	}
 	mux.HandleFunc("GET /api/me", api.handleMe)
+	if opt.Auth != nil && opt.Tokens != nil {
+		mux.HandleFunc("GET /api/tokens", api.handleTokens)
+		mux.HandleFunc("POST /api/tokens", api.handleCreateToken)
+		mux.HandleFunc("DELETE /api/tokens/{id}", api.handleRevokeToken)
+	}
 	if opt.Store != nil {
 		mux.HandleFunc("GET /api/team/state", api.handleState)
+		mux.HandleFunc("GET /api/team/snapshot", api.handleSnapshot)
 		if opt.Auth != nil {
 			mux.HandleFunc("POST /api/team/comment", api.handleComment)
 			mux.HandleFunc("DELETE /api/team/comment", api.handleDeleteComment)
@@ -142,12 +163,12 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 	return requireSignIn(opt, mux, loginPage), nil
 }
 
-// requireSignIn gates the WHOLE portal behind Google sign-in: the only way in
-// is an @aion.bio session (2026-08-14 — "login to view", tightening the earlier
-// open-read stance). The /oauth2/* endpoints stay anonymous — they ARE the way
-// in and out — but the app shell, its assets, and every /api route now need a
-// valid session. A signed-out browser navigation is bounced to Google; a
-// signed-out asset/XHR fetch gets a plain 401 (no redirect for a data request).
+// requireSignIn gates the WHOLE portal behind an @aion.bio identity: browsers
+// use a Google-backed session, while scripts may use a per-user bearer token.
+// The /oauth2/* endpoints stay anonymous — they are the browser's way in and
+// out — but the app shell, its assets, and every /api route need a valid
+// identity. A signed-out browser navigation gets the login page; a signed-out
+// asset/XHR fetch gets a plain 401 (no redirect for a data request).
 //
 // When Auth is nil (no OAuth client on this host) the gate is a no-op: with no
 // way to sign in, locking would brick the site — the same graceful degradation
@@ -166,8 +187,14 @@ func requireSignIn(opt PortalOptions, inner http.Handler, loginPage []byte) http
 			inner.ServeHTTP(w, r)
 			return
 		}
-		if _, ok := opt.Auth.Identify(r); ok {
+		if _, ok := opt.Auth.IdentifyRequest(r); ok {
 			inner.ServeHTTP(w, r)
+			return
+		}
+		// Authorization headers are API attempts, never browser navigation. A
+		// bad token must receive a machine-readable status, not login HTML.
+		if r.Header.Get("Authorization") != "" {
+			http.Error(w, "invalid or revoked bearer token", http.StatusUnauthorized)
 			return
 		}
 		// Anonymous browser navigation → the branded landing page (logo + a
@@ -204,13 +231,51 @@ func isBrowserNav(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
+func handleAionLiveFile(live *AionLive, path string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		b, rev, err := live.File(path)
+		if err != nil {
+			http.Error(w, "live Aion contract unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		etag := `"` + rev + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "no-cache")
+		if strings.HasSuffix(path, ".json") {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		} else {
+			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+		}
+		_, _ = w.Write(b)
+	}
+}
+
+func handleAionLiveRevision(live *AionLive) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		st := live.Status()
+		etag := `"` + st.EffectiveRevision + `"`
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "no-cache")
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeJSON(w, st)
+	}
+}
+
 // portalAPI is the team write surface. It resolves emails to the roster's
 // initials (people.json + optional emails.json overrides in the team dir) and
 // enforces the assignee lock against the published backlog + team items.
 type portalAPI struct {
-	opt    PortalOptions
-	people []portalPerson
-	owners map[string]string // published item id → owner initials
+	opt       PortalOptions
+	people    []portalPerson
+	owners    map[string]string // published item id → owner initials
+	published map[string]any    // immutable embedded backlog/goals/people/meta
 }
 
 type portalPerson struct {
@@ -266,13 +331,13 @@ func (p *portalAPI) initialsFor(email string) string {
 		}
 	}
 	// the roster's own email field — the deterministic association (people.md)
-	for _, per := range p.people {
+	for _, per := range p.peopleList() {
 		if per.Email != "" && strings.EqualFold(strings.TrimSpace(per.Email), full) {
 			return per.Initials
 		}
 	}
 	// fallback for accounts with no explicit email: first-name / initials match
-	for _, per := range p.people {
+	for _, per := range p.peopleList() {
 		first := strings.ToLower(strings.SplitN(strings.TrimSpace(per.Name), " ", 2)[0])
 		if local == first || strings.EqualFold(local, per.Initials) {
 			return per.Initials
@@ -288,12 +353,19 @@ func (p *portalAPI) personName(email string) string {
 	if ini == "" {
 		return ""
 	}
-	for _, per := range p.people {
+	for _, per := range p.peopleList() {
 		if strings.EqualFold(per.Initials, ini) {
 			return per.Name
 		}
 	}
 	return ""
+}
+
+func (p *portalAPI) peopleList() []portalPerson {
+	if p.opt.Live != nil {
+		return p.opt.Live.People()
+	}
+	return p.people
 }
 
 // ownerToken is the owner written onto items a member creates: their roster
@@ -307,6 +379,9 @@ func (p *portalAPI) ownerToken(email string) string {
 
 // ownerOf finds an item's assignee: published backlog first, then team items.
 func (p *portalAPI) ownerOf(itemID string) (string, bool) {
+	if p.opt.Live != nil {
+		return p.opt.Live.OwnerOf(itemID)
+	}
 	if o, ok := p.owners[itemID]; ok {
 		return o, true
 	}
@@ -327,7 +402,7 @@ func (p *portalAPI) identify(w http.ResponseWriter, r *http.Request) (teamportal
 		http.Error(w, "sign-in is not configured", http.StatusServiceUnavailable)
 		return teamportal.Identity{}, false
 	}
-	id, ok := p.opt.Auth.Identify(r)
+	id, ok := p.opt.Auth.IdentifyRequest(r)
 	if !ok {
 		http.Error(w, "sign in with your @"+teamportal.Domain+" account to write", http.StatusUnauthorized)
 		return teamportal.Identity{}, false
@@ -342,7 +417,7 @@ func (p *portalAPI) handleMe(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"anon": true, "authConfigured": false})
 		return
 	}
-	id, ok := p.opt.Auth.Identify(r)
+	id, ok := p.opt.Auth.IdentifyRequest(r)
 	if !ok {
 		writeJSON(w, map[string]any{"anon": true, "authConfigured": p.opt.Auth.Enabled()})
 		return
@@ -358,9 +433,142 @@ func (p *portalAPI) handleMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// identifyCookie is intentionally narrower than identify: API tokens may use
+// portal capabilities but may not mint or revoke credentials.
+func (p *portalAPI) identifyCookie(w http.ResponseWriter, r *http.Request) (teamportal.Identity, bool) {
+	if p.opt.Auth == nil {
+		http.Error(w, "sign-in is not configured", http.StatusServiceUnavailable)
+		return teamportal.Identity{}, false
+	}
+	id, ok := p.opt.Auth.Identify(r)
+	if !ok {
+		http.Error(w, "sign in to the portal to manage API tokens", http.StatusUnauthorized)
+		return teamportal.Identity{}, false
+	}
+	return id, true
+}
+
+type portalTokenView struct {
+	ID       string     `json:"id"`
+	Label    string     `json:"label"`
+	Created  time.Time  `json:"created"`
+	LastUsed *time.Time `json:"last_used,omitempty"`
+	Revoked  bool       `json:"revoked"`
+}
+
+func tokenView(rec teamportal.TokenRecord) portalTokenView {
+	return portalTokenView{ID: rec.ID, Label: rec.Label, Created: rec.Created, LastUsed: rec.LastUsed, Revoked: rec.Revoked}
+}
+
+func (p *portalAPI) handleTokens(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	id, ok := p.identifyCookie(w, r)
+	if !ok {
+		return
+	}
+	recs := p.opt.Tokens.List(id.Email)
+	out := make([]portalTokenView, 0, len(recs))
+	for _, rec := range recs {
+		out = append(out, tokenView(rec))
+	}
+	writeJSON(w, map[string]any{"tokens": out})
+}
+
+func (p *portalAPI) handleCreateToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	id, ok := p.identifyCookie(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Label string `json:"label"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	plain, rec, err := p.opt.Tokens.Mint(id, b.Label)
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, map[string]any{"id": rec.ID, "token": plain, "label": rec.Label, "created": rec.Created})
+}
+
+func (p *portalAPI) handleRevokeToken(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	id, ok := p.identifyCookie(w, r)
+	if !ok {
+		return
+	}
+	if !p.opt.Tokens.Revoke(id.Email, r.PathValue("id")) {
+		http.Error(w, "token not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
 // handleState serves the whole team overlay — open read, like the site.
 func (p *portalAPI) handleState(w http.ResponseWriter, r *http.Request) {
+	if p.opt.Live != nil {
+		st := p.opt.Live.Status()
+		etag := `"` + st.EffectiveRevision + `"`
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "no-cache")
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeJSON(w, p.opt.Live.TeamState())
+		return
+	}
 	writeJSON(w, p.opt.Store.Ext())
+}
+
+// handleSnapshot gives external tools the same read model the portal builds in
+// the browser: published items and rocks plus the live multi-writer overlay.
+// When the live projection is wired, both published data and team state are
+// read on every request; otherwise the embedded published fallback is reused.
+func (p *portalAPI) handleSnapshot(w http.ResponseWriter, r *http.Request) {
+	if p.opt.Live != nil {
+		out := map[string]any{"team": p.opt.Live.TeamState()}
+		for key, path := range map[string]string{"backlog": "/data/backlog.json", "goals": "/data/goals.json", "people": "/data/people.json", "meta": "/data/meta.json"} {
+			if b, _, err := p.opt.Live.File(path); err == nil {
+				var value any
+				if json.Unmarshal(b, &value) == nil {
+					out[key] = value
+				}
+			}
+		}
+		writeJSON(w, out)
+		return
+	}
+	out := make(map[string]any, len(p.published)+1)
+	for key, value := range p.published {
+		out[key] = value
+	}
+	out["team"] = p.opt.Store.Ext()
+	writeJSON(w, out)
+}
+
+func portalPublishedState(sub fs.FS) map[string]any {
+	out := make(map[string]any, 4)
+	for key, path := range map[string]string{
+		"backlog": "data/backlog.json",
+		"goals":   "data/goals.json",
+		"people":  "data/people.json",
+		"meta":    "data/meta.json",
+	} {
+		b, err := fs.ReadFile(sub, path)
+		if err != nil {
+			continue
+		}
+		var value any
+		if json.Unmarshal(b, &value) == nil {
+			out[key] = value
+		}
+	}
+	return out
 }
 
 func (p *portalAPI) handleComment(w http.ResponseWriter, r *http.Request) {

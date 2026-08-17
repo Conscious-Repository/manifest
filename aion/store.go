@@ -1,6 +1,7 @@
 package aion
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -99,15 +100,99 @@ func (s *Store) AddItem(it *BacklogItem) error {
 		return fmt.Errorf("title is required")
 	}
 	doc := s.LoadBacklog()
-	it.ID = ItemID(it.Kind, it.Text)
-	if doc.Find(it.ID) != nil {
-		return fmt.Errorf("already in backlog: %q", it.Text)
+	for _, have := range doc.AllItems() {
+		if have.Kind == it.Kind && strings.EqualFold(strings.TrimSpace(have.Text), strings.TrimSpace(it.Text)) {
+			return fmt.Errorf("already in backlog: %q", it.Text)
+		}
 	}
+	taken := map[string]bool{}
+	for _, have := range doc.AllItems() {
+		if have.IDPersisted {
+			taken[have.ID] = true
+		}
+	}
+	it.ID = PortalItemID(it.Text, taken)
+	it.IDPersisted = true
 	if it.Status == "" {
 		it.Status = StatusOpen
 	}
 	doc.AppendItem(it)
 	return s.SaveBacklog(doc)
+}
+
+// EnsureStableIDs performs the one-time, idempotent backlog identity upgrade.
+// Existing ids win; legacy rows receive the historic title-slug portal id,
+// with deterministic suffixes for collisions.
+func (s *Store) EnsureStableIDs() (int, error) {
+	n, _, err := s.EnsureStableIDsFromPortal("")
+	return n, err
+}
+
+// EnsureStableIDsFromPortal uses a transition-release portal checkout only
+// to preserve exact legacy contract IDs for exact kind+title matches. It
+// never guesses across renamed or ambiguous rows. Existing vault IDs win;
+// duplicate IDs are repaired deterministically in document order.
+func (s *Store) EnsureStableIDsFromPortal(portalPath string) (migrated, collisions int, err error) {
+	doc := s.LoadBacklog()
+	legacy := legacyPortalIDs(portalPath)
+	taken := map[string]bool{}
+	for _, it := range doc.AllItems() {
+		id := strings.TrimSpace(it.ID)
+		if it.IDPersisted && strings.HasPrefix(id, "aion-bl/") && !taken[id] {
+			taken[id] = true
+			continue
+		}
+		if it.IDPersisted && strings.HasPrefix(id, "aion-bl/") && id != "" {
+			collisions++
+		}
+		candidate := ""
+		key := it.Kind + "\x00" + strings.TrimSpace(it.Text)
+		if ids := legacy[key]; len(ids) == 1 && !taken[ids[0]] {
+			candidate = ids[0]
+		}
+		if candidate == "" {
+			candidate = PortalItemID(it.Text, taken)
+		}
+		it.ID = candidate
+		it.IDPersisted = true
+		taken[it.ID] = true
+		migrated++
+	}
+	if migrated == 0 {
+		return 0, collisions, nil
+	}
+	return migrated, collisions, s.SaveBacklog(doc)
+}
+
+func legacyPortalIDs(root string) map[string][]string {
+	out := map[string][]string{}
+	if strings.TrimSpace(root) == "" {
+		return out
+	}
+	var body struct {
+		Items []struct {
+			ID, Kind, Title string
+		} `json:"items"`
+	}
+	paths := []string{
+		filepath.Join(root, "server", "web", "portal", "data", "backlog.json"),
+		filepath.Join(root, "data", "backlog.json"),
+	}
+	for _, path := range paths {
+		b, readErr := os.ReadFile(path)
+		if readErr != nil || json.Unmarshal(b, &body) != nil {
+			continue
+		}
+		for _, it := range body.Items {
+			if !strings.HasPrefix(strings.TrimSpace(it.ID), "aion-bl/") {
+				continue
+			}
+			key := strings.TrimSpace(it.Kind) + "\x00" + strings.TrimSpace(it.Title)
+			out[key] = append(out[key], strings.TrimSpace(it.ID))
+		}
+		break
+	}
+	return out
 }
 
 // UpdateItem edits a task/decision's editable fields. Status transitions:
@@ -132,7 +217,6 @@ func (s *Store) UpdateItem(id string, set map[string]string, now time.Time) erro
 				return fmt.Errorf("title cannot be empty")
 			}
 			it.Text = val
-			it.ID = ItemID(it.Kind, it.Text)
 		case "owner":
 			it.Owner = val
 		case "rock":
@@ -201,9 +285,8 @@ func (s *Store) SetRanks(ranks map[string]string) error {
 	return s.SaveBacklog(doc)
 }
 
-// DeleteItem hard-removes a backlog item (and any nested child lines) by id —
-// the owner's explicit "remove this" action. Unlike marking a task done (which
-// keeps it until PUBLISH), this drops the line from backlog.md entirely.
+// DeleteItem hard-removes a backlog item (and any nested child lines) by id.
+// The live coordinator promotes collaborative deletion to an archive first.
 func (s *Store) DeleteItem(id string) error {
 	doc := s.LoadBacklog()
 	found := false

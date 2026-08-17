@@ -33,13 +33,13 @@ var reContractPaths = []string{"src/data/deals.json", "src/engine/defaults.js"}
 
 // rePortalCfg reuses the aion coordinates shape: the re-portal checkout on
 // origin/main (Cloudflare builds from main).
-func (s *Server) rePortalCfg() aionPortalCfg {
-	return aionPortalCfg{Path: s.rePortalPath, Remote: "origin", Branch: "main"}
+func (s *Server) rePortalCfg() publishPortalCfg {
+	return publishPortalCfg{Path: s.rePortalPath, Remote: "origin", Branch: "main"}
 }
 
-func (s *Server) rePubLog() *aionPublishLog {
+func (s *Server) rePubLog() *publishLog {
 	if s.rePublishes == nil {
-		s.rePublishes = &aionPublishLog{path: filepath.Join(s.aionDataDir, "realestate", "publishes.json")}
+		s.rePublishes = &publishLog{path: filepath.Join(s.aionDataDir, "realestate", "publishes.json")}
 	}
 	return s.rePublishes
 }
@@ -152,7 +152,7 @@ func (s *Server) rePreflight() []string {
 }
 
 type rePreviewResult struct {
-	files    []aionPublishFile
+	files    []publishFile
 	blockers []string
 	kept     []string
 	hash     string
@@ -183,7 +183,7 @@ func (s *Server) rePreview() rePreviewResult {
 
 	for _, path := range reContractPaths {
 		cur, err := os.ReadFile(filepath.Join(p.Path, filepath.FromSlash(path)))
-		f := aionPublishFile{Path: path}
+		f := publishFile{Path: path}
 		switch {
 		case err != nil:
 			f.Status = "new"
@@ -227,7 +227,7 @@ func (s *Server) handleRePublish(w http.ResponseWriter, r *http.Request) {
 	publishedAt := time.Now().UTC().Format(time.RFC3339)
 	res := s.rePreview()
 	fail := func(stage string, err error) {
-		s.rePubLog().append(aionPublishRecord{
+		s.rePubLog().append(publishRecord{
 			ID: "repub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "failed",
 			Stage: stage, Error: err.Error(), At: publishedAt,
 		})
@@ -282,7 +282,7 @@ func (s *Server) handleRePublish(w http.ResponseWriter, r *http.Request) {
 		// conflict aborts clean and falls through to the failed-push receipt.
 		commit, err = reconcileAndRetryPush(p, commit, err)
 		if err != nil {
-			s.rePubLog().append(aionPublishRecord{
+			s.rePubLog().append(publishRecord{
 				ID: "repub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "failed",
 				Stage: "push", Commit: commit, Files: changed, Error: err.Error(), At: publishedAt,
 			})
@@ -290,7 +290,7 @@ func (s *Server) handleRePublish(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.rePubLog().append(aionPublishRecord{
+	s.rePubLog().append(publishRecord{
 		ID: "repub-" + strconv.FormatInt(time.Now().UnixNano(), 36), Status: "ok",
 		Commit: commit, Files: changed, At: publishedAt, Acknowledged: true,
 	})

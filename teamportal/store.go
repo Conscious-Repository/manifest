@@ -1,6 +1,7 @@
 package teamportal
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,8 +90,33 @@ type TeamItem struct {
 	Due      string `json:"due,omitempty"`
 	Status   string `json:"status"`
 	DoneOn   string `json:"done_on,omitempty"`
+	NeededBy string `json:"needed_by,omitempty"`
+	Decided  string `json:"decided,omitempty"`
+	Outcome  string `json:"outcome,omitempty"`
 	Team     bool   `json:"team"`               // the distinguishing mark
 	AddedBy  string `json:"added_by,omitempty"` // email of the creator
+}
+
+// ArchivedItem preserves the last visible item snapshot when the private
+// cockpit archives collaborative work. Threads remain keyed by ID, so history
+// stays readable without keeping the item in active projections.
+type ArchivedItem struct {
+	ID       string    `json:"id"`
+	Kind     string    `json:"kind"`
+	Title    string    `json:"title"`
+	Owner    string    `json:"owner,omitempty"`
+	Captured string    `json:"captured,omitempty"`
+	Rock     string    `json:"rock,omitempty"`
+	Due      string    `json:"due,omitempty"`
+	Status   string    `json:"status,omitempty"`
+	DoneOn   string    `json:"done_on,omitempty"`
+	NeededBy string    `json:"needed_by,omitempty"`
+	Decided  string    `json:"decided,omitempty"`
+	Outcome  string    `json:"outcome,omitempty"`
+	Team     bool      `json:"team,omitempty"`
+	AddedBy  string    `json:"added_by,omitempty"`
+	By       string    `json:"archived_by"`
+	At       time.Time `json:"archived_at"`
 }
 
 // Proposal is a member's suggested item for ANOTHER person. It mirrors the
@@ -119,6 +145,7 @@ type Ext struct {
 	Overrides map[string]Override  `json:"overrides"` // item id → latest team field state
 	Items     []TeamItem           `json:"items"`     // team/-tagged member adds
 	Proposals []Proposal           `json:"proposals"`
+	Archives  []ArchivedItem       `json:"archives,omitempty"`
 }
 
 // Entry is one activity.log line.
@@ -137,6 +164,9 @@ const (
 	ActAdd           = "add-item"
 	ActPropose       = "propose"
 	ActDecide        = "decide-proposal"
+	ActOwnerResolve  = "owner-resolve"
+	ActOwnerPatch    = "owner-patch"
+	ActArchive       = "archive-item"
 )
 
 // Sentinel errors the delete path returns so the HTTP layer can map them to
@@ -207,6 +237,22 @@ func (s *Store) Ext() Ext {
 	return s.readExt()
 }
 
+// Revision is a strong token over the current team projection and activity
+// trail. The files are intentionally small; hashing avoids timestamp races on
+// shared filesystems and makes conditional refresh exact.
+func (s *Store) Revision() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	h := sha256.New()
+	for _, path := range []string{s.extPath(), s.logPath()} {
+		if b, err := os.ReadFile(path); err == nil {
+			h.Write([]byte(path))
+			h.Write(b)
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:16]
+}
+
 // EmailOverrides reads the optional hand-edited email → initials map.
 func (s *Store) EmailOverrides() map[string]string {
 	out := map[string]string{}
@@ -226,6 +272,184 @@ func (s *Store) TeamOwner(itemID string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// TeamItem returns a copy of an active team-added item.
+func (s *Store) TeamItem(itemID string) (TeamItem, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, it := range s.readExt().Items {
+		if it.ID == itemID {
+			return it, true
+		}
+	}
+	return TeamItem{}, false
+}
+
+// HasCollaboration reports whether an item has state that must survive an
+// owner delete as an archive rather than becoming an orphaned thread.
+func (s *Store) HasCollaboration(itemID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	if len(ext.Comments[itemID]) > 0 {
+		return true
+	}
+	if _, ok := ext.Overrides[itemID]; ok {
+		return true
+	}
+	for _, it := range ext.Items {
+		if it.ID == itemID {
+			return true
+		}
+	}
+	if b, err := os.ReadFile(s.logPath()); err == nil {
+		for _, line := range strings.Split(string(b), "\n") {
+			var entry Entry
+			if json.Unmarshal([]byte(line), &entry) == nil && entry.Payload["item"] == itemID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// OwnerResolve clears only the overlay keys explicitly superseded by the
+// private cockpit and leaves an attributed activity record.
+func (s *Store) OwnerResolve(actor Identity, itemID string, keys []string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	ov, ok := ext.Overrides[itemID]
+	if !ok || len(ov.Fields) == 0 {
+		return nil
+	}
+	cleared := map[string]string{}
+	for _, key := range keys {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if old, exists := ov.Fields[key]; exists {
+			cleared[key] = old
+			delete(ov.Fields, key)
+		}
+	}
+	if len(cleared) == 0 {
+		return nil
+	}
+	if len(ov.Fields) == 0 {
+		delete(ext.Overrides, itemID)
+	} else {
+		ov.By, ov.At = actor.Email, now.UTC()
+		ext.Overrides[itemID] = ov
+	}
+	return s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActOwnerResolve,
+		Payload: map[string]any{"item": itemID, "cleared": cleared}})
+}
+
+// OwnerPatchTeamItem is the trusted private-cockpit lane for editing a
+// team-added item. Portal callers continue to use Patch and its assignee lock.
+func (s *Store) OwnerPatchTeamItem(actor Identity, itemID string, fields map[string]string, now time.Time) (TeamItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	idx := -1
+	for i := range ext.Items {
+		if ext.Items[i].ID == itemID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return TeamItem{}, errors.New("team item not found")
+	}
+	it := ext.Items[idx]
+	ov := ext.Overrides[itemID]
+	if ov.Fields == nil {
+		ov.Fields = map[string]string{}
+	}
+	for key, val := range fields {
+		val = strings.TrimSpace(val)
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "title":
+			if val == "" {
+				return TeamItem{}, errors.New("title cannot be empty")
+			}
+			it.Title = val
+		case "kind":
+			if val != "task" && val != "decision" {
+				return TeamItem{}, errors.New("kind must be task or decision")
+			}
+			it.Kind = val
+		case "owner":
+			it.Owner = val
+		case "rock":
+			it.Rock = val
+		case "due":
+			it.Due = val
+			delete(ov.Fields, "due")
+		case "done_on":
+			it.DoneOn = val
+			delete(ov.Fields, "done_on")
+		case "needed_by":
+			it.NeededBy = val
+			delete(ov.Fields, "needed_by")
+		case "outcome":
+			it.Outcome = val
+			delete(ov.Fields, "outcome")
+		case "decided":
+			it.Decided = val
+		case "status":
+			if !PatchStatuses[val] && val != "decided" {
+				return TeamItem{}, fmt.Errorf("status %q is invalid", val)
+			}
+			it.Status = val
+			delete(ov.Fields, "status")
+			if val == "done" && it.DoneOn == "" {
+				it.DoneOn = now.Format("2006-01-02")
+			} else if val != "done" {
+				it.DoneOn = ""
+			}
+			delete(ov.Fields, "done_on")
+			if val == "decided" && it.Decided == "" {
+				it.Decided = now.Format("2006-01-02")
+			}
+		default:
+			return TeamItem{}, fmt.Errorf("field %q is not owner-editable", key)
+		}
+	}
+	if len(ov.Fields) == 0 {
+		delete(ext.Overrides, itemID)
+	} else {
+		ov.By, ov.At = actor.Email, now.UTC()
+		ext.Overrides[itemID] = ov
+	}
+	ext.Items[idx] = it
+	err := s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActOwnerPatch,
+		Payload: map[string]any{"item": itemID, "fields": fields}})
+	return it, err
+}
+
+// Archive removes an item from active team state while preserving a complete
+// snapshot, its comments, and the append-only activity trail.
+func (s *Store) Archive(actor Identity, snap ArchivedItem, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	for _, a := range ext.Archives {
+		if a.ID == snap.ID {
+			return nil
+		}
+	}
+	for i, it := range ext.Items {
+		if it.ID == snap.ID {
+			ext.Items = append(ext.Items[:i:i], ext.Items[i+1:]...)
+			break
+		}
+	}
+	delete(ext.Overrides, snap.ID)
+	snap.By, snap.At = actor.Email, now.UTC()
+	ext.Archives = append(ext.Archives, snap)
+	return s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActArchive,
+		Payload: map[string]any{"item": snap.ID, "title": snap.Title}})
 }
 
 // AddComment appends a comment (any signed-in member; the caller has already

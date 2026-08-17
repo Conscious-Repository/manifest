@@ -28,6 +28,9 @@
   /* Team overlay: published backlog + team/ items + field overrides. */
   function mergedBacklog(backlog, team) {
     if (!backlog) return backlog;
+    if (team && Array.isArray(team.effective_items)) {
+      return Object.assign({}, backlog, { items: team.effective_items.slice() });
+    }
     let items = backlog.items.slice();
     if (team && Array.isArray(team.items)) items = items.concat(team.items);
     if (team && team.overrides) {
@@ -177,6 +180,7 @@
     if (!team || !team.comments) return out;
     const byId = {};
     items.forEach(function (it) { byId[it.id] = it; });
+    ((team && team.archives) || []).forEach(function (it) { byId[it.id] = it; });
     Object.keys(team.comments).forEach(function (id) {
       const it = byId[id];
       team.comments[id].forEach(function (c) {
@@ -211,6 +215,13 @@
     const papers = paperEntries(referencesMd);
     const heur = (heuristics && heuristics.heuristics) || [];
     const arts = artifactEntries(items, idx, team);
+    const preserved = ((team && team.archives) || []).map(function (a) {
+      const comments = ((team.comments || {})[a.id] || []).length;
+      return { f: a.kind === 'decision' ? 'decisions' : 'work', date: a.archived_at,
+        kind: 'archived', title: a.title,
+        detail: comments ? comments + ' comment' + (comments === 1 ? '' : 's') + ' preserved' : 'collaboration snapshot preserved',
+        provenance: 'archived by ' + (a.archived_by || 'owner'), goal: rockOf(idx, a), open: function () {} };
+    });
     const all = []
       .concat(items.filter(function (i) { return i.kind === 'task' && i.status === 'done'; }).map(function (t) {
         return { f: 'work', date: t.done_on || t.captured, kind: 'done', title: t.title, detail: '',
@@ -222,6 +233,7 @@
           provenance: u.personName(d.owner) + ' · ' + (d.source || ''),
           goal: rockOf(idx, d), open: function () { hooks.select('item', d.id); } };
       }))
+      .concat(preserved)
       .concat((idx ? idx.goals : []).filter(function (g) { return g.status === 'done' && g.closed; }).map(function (g) {
         return { f: 'work', date: g.closed, kind: 'rock closed', title: g.title, detail: '',
           provenance: g.quarter || '', goal: g.id, open: function () { hooks.openGoal(g.id); } };

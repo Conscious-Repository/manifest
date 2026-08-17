@@ -1,6 +1,7 @@
 package teamportal
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -14,8 +15,8 @@ func TestAuthorizedDomainGate(t *testing.T) {
 		want  bool
 	}{
 		{"hannah@aion.bio", true},
-		{"Benjamin@AION.BIO", true},   // case-insensitive
-		{"  rj@aion.bio  ", true},     // whitespace-tolerant
+		{"Benjamin@AION.BIO", true},      // case-insensitive
+		{"  rj@aion.bio  ", true},        // whitespace-tolerant
 		{"new-hire-2027@aion.bio", true}, // wildcard: unknown accounts still pass
 		{"someone@gmail.com", false},
 		{"hannah@notaion.bio", false}, // suffix must include the @
@@ -26,6 +27,40 @@ func TestAuthorizedDomainGate(t *testing.T) {
 		if got := Authorized(tc.email); got != tc.want {
 			t.Errorf("Authorized(%q) = %v, want %v", tc.email, got, tc.want)
 		}
+	}
+}
+
+func TestIdentifyRequestAcceptsBearerAndPrefersCookie(t *testing.T) {
+	tokens := NewTokens(t.TempDir())
+	a := NewAuth(t.TempDir()).WithTokens(tokens)
+	plain, _, err := tokens.Mint(Identity{Email: "hannah@aion.bio", Name: "Hannah"}, "test")
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	r := httptest.NewRequest(http.MethodGet, "/api/team/state", nil)
+	r.Header.Set("Authorization", "Bearer "+plain)
+	if id, ok := a.IdentifyRequest(r); !ok || id.Email != "hannah@aion.bio" {
+		t.Fatalf("IdentifyRequest bearer = %+v, %v", id, ok)
+	}
+
+	// A valid browser session is authoritative when both credentials appear.
+	c, err := a.SessionCookie("rj@aion.bio", "RJ", false, time.Now())
+	if err != nil {
+		t.Fatalf("SessionCookie: %v", err)
+	}
+	r.AddCookie(c)
+	if id, ok := a.IdentifyRequest(r); !ok || id.Email != "rj@aion.bio" {
+		t.Fatalf("IdentifyRequest cookie precedence = %+v, %v", id, ok)
+	}
+
+	bad := httptest.NewRequest(http.MethodGet, "/api/team/state", nil)
+	bad.Header.Set("Authorization", "Basic nope")
+	if _, ok := a.IdentifyRequest(bad); ok {
+		t.Fatal("IdentifyRequest accepted a non-bearer Authorization header")
+	}
+	bad.Header.Set("Authorization", "Bearer "+plain+" extra")
+	if _, ok := a.IdentifyRequest(bad); ok {
+		t.Fatal("IdentifyRequest accepted a malformed bearer header")
 	}
 }
 

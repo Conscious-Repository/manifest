@@ -329,7 +329,7 @@ func TestExportGoalDatesAndContract(t *testing.T) {
 		t.Fatal("empty start/due leaked (omitempty broken)")
 	}
 	// contract stamp in meta.json
-	if !strings.Contains(string(out["server/web/portal/data/meta.json"]), `"contract": "1"`) {
+	if !strings.Contains(string(out["server/web/portal/data/meta.json"]), `"contract": "2"`) {
 		t.Fatalf("meta.json missing contract stamp:\n%s", out["server/web/portal/data/meta.json"])
 	}
 }

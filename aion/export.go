@@ -11,24 +11,18 @@ import (
 	"manifest/record"
 )
 
-// The export contract (aion-domain spec §6 / aionbio portal spec §2): the
-// exact files manifest materializes into the portal's served tree. Since the
-// portal move (2026-08-15, old aionbio-side portal retired) that tree is
-// server/web/portal/ in a MANIFEST checkout — publish commits + pushes it and
-// metis autodeploy rebuilds, so portal.aion.bio serves the fresh data within
-// ~a minute. This is the ONE deliberate place derived values may be stored
+// The portal contract (aion-domain spec §6 / portal spec §2): the exact files
+// AionLive renders in memory and serves dynamically. The validated snapshot
+// is also the one deliberate place derived portal values may be materialized
 // (ARCHITECTURE §3 export-contract exception — runway_months). Byte
-// determinism is load-bearing: publish dirtiness is computed by
-// byte-comparing these renders against the checkout, so structs/slices only,
-// MarshalIndent, trailing \n.
+// determinism keeps revisions and the last-known-good cache stable.
 
 // ContractVersion is stamped into meta.json (portal sync-contract §4). Bump it
 // on any change to the exported shape; the portal footnotes a newer version it
 // doesn't yet know. "1" = the sync-contract v1 / linkage-scope v2 (§7) shape.
-const ContractVersion = "1"
+const ContractVersion = "2"
 
-// ContractPaths are the nine checkout-relative paths the effector may
-// write — and the ONLY paths it may ever touch (canary-tested).
+// ContractPaths are the nine compatibility paths served by the live listener.
 func ContractPaths() []string {
 	return []string{
 		"server/web/portal/content/hiring.md",
@@ -410,9 +404,12 @@ func exportBacklog(d *BacklogDoc) map[string]any {
 		if len(it.Sources) > 0 {
 			src = it.Sources[0]
 		}
+		id := it.ID
+		if !it.IDPersisted || !strings.HasPrefix(id, "aion-bl/") {
+			id = "aion-bl/" + record.Slug(it.Text, 60)
+		}
 		items = append(items, exportItemT{
-			// title-slug ids (the shape already consumed portal-side)
-			ID: "aion-bl/" + record.Slug(it.Text, 60), Kind: it.Kind, Title: it.Text,
+			ID: id, Kind: it.Kind, Title: it.Text,
 			Owner: nullable(it.Owner), Source: src, Captured: it.Captured,
 			Rock: nullable(it.Rock), Due: nullable(it.Due),
 			Status: nullable(it.Status), DoneOn: nullable(it.DoneOn),

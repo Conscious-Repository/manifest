@@ -32,8 +32,8 @@ import (
 	"manifest/realestate"
 	"manifest/signals"
 	"manifest/spirits"
-	"manifest/teamportal"
 	"manifest/tasks"
+	"manifest/teamportal"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 )
@@ -105,15 +105,16 @@ type Server struct {
 	errands        *errands.Store
 	errandExec     *errands.Executor
 	errandAccounts []string // §6 allowlist ("" = any signed-in account)
-	// AION (program cockpit over system/aion/ + publish effector). Nilable.
+	// AION (program cockpit over system/aion/ + live team projection). Nilable.
 	aion *aion.Store
+	// aionLive is the shared vault-base + team-overlay projection served by
+	// both listeners. AION has no git/deploy effector.
+	aionLive *AionLive
 	// Real-estate decision log (system/realestate/backlog.md — an aion.Store
 	// pointed at the RE root; backlog methods ONLY). Nilable.
-	re            *aion.Store
-	aionPortal    aionPortalCfg   // portal publish checkout — a manifest checkout ("" path = publish disabled)
-	aionDataDir   string          // publish receipts live under <dataDir>/aion/
-	aionPublishes *aionPublishLog // lazy-opened receipts log
-	rePublishes   *aionPublishLog // RE publish receipts (same shape, own file)
+	re          *aion.Store
+	aionDataDir string      // live cache/journal, plus legacy/RE operational records
+	rePublishes *publishLog // RE publish receipts
 	// aionSink receives vault-relative paths to consider for extraction —
 	// the post-confirm nudge (aion.ExtractSink satisfies it). Nilable.
 	aionSink interface{ Notify([]string) }
@@ -168,8 +169,17 @@ func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"date": date, "entries": entries, "days": s.ledgerStore.Days()})
 }
 
-// UseTeamPortal wires the team-portal → FEED notices bridge.
-func (s *Server) UseTeamPortal(b *teamportal.Bridge) { s.teamBridge = b }
+// UseTeamPortal wires the team-portal → FEED notices bridge and live overlay.
+func (s *Server) UseTeamPortal(b *teamportal.Bridge, st *teamportal.Store, adminEmail string) {
+	s.teamBridge = b
+	if s.aionLive != nil {
+		s.aionLive.UseTeam(st, teamportal.Identity{Email: adminEmail, Name: "Benjamin"})
+		_ = s.aionLive.recoverJournal()
+	}
+}
+
+// AionLive returns the in-process portal/cockpit projection.
+func (s *Server) AionLive() *AionLive { return s.aionLive }
 
 // UseAionSink wires the extraction sink for the transcript-confirm nudge.
 func (s *Server) UseAionSink(sink interface{ Notify([]string) }) { s.aionSink = sink }
@@ -258,26 +268,35 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/harnesses", s.handleHarnesses)                          // harness settings
 	mux.HandleFunc("POST /api/harnesses/spirit/portal", s.handleHarnessSpiritPortal) // switch a spirit's conduit
 
-	// AION — program cockpit over system/aion/ records + publish effector.
+	// AION — program cockpit over the shared live AION projection.
 	if s.aion != nil {
 		mux.HandleFunc("GET /api/aion", s.handleAion)
+		mux.HandleFunc("GET /api/aion/revision", func(w http.ResponseWriter, r *http.Request) {
+			if s.aionLive == nil {
+				writeJSON(w, map[string]any{"effectiveRevision": ""})
+				return
+			}
+			handleAionLiveRevision(s.aionLive)(w, r)
+		})
 		mux.HandleFunc("PUT /api/aion/people", s.handleAionPeopleSave)
 		mux.HandleFunc("PUT /api/aion/vto", s.handleAionVTOSave)
 		mux.HandleFunc("PUT /api/aion/finances", s.handleAionFinancesSave)
 		mux.HandleFunc("PUT /api/aion/hiring", s.handleAionHiringSave)
 		mux.HandleFunc("PUT /api/aion/references", s.handleAionReferencesSave)
 		mux.HandleFunc("POST /api/aion/backlog/item", s.handleAionBacklogAdd)
+		mux.HandleFunc("POST /api/aion/backlog/update/{id...}", s.handleAionBacklogUpdate)
+		mux.HandleFunc("POST /api/aion/backlog/delete/{id...}", s.handleAionBacklogDelete)
+		mux.HandleFunc("POST /api/aion/backlog/decide/{id...}", s.handleAionBacklogDecide)
+		// One-release compatibility for legacy hash ids.
 		mux.HandleFunc("POST /api/aion/backlog/{id}/update", s.handleAionBacklogUpdate)
 		mux.HandleFunc("POST /api/aion/backlog/{id}/delete", s.handleAionBacklogDelete)
 		mux.HandleFunc("POST /api/aion/backlog/{id}/decide", s.handleAionBacklogDecide)
+		mux.HandleFunc("POST /api/aion/proposals/decide", s.handleAionProposalDecide)
+		mux.HandleFunc("GET /api/aion/activity", s.handleAionCollaborationActivity)
 		mux.HandleFunc("POST /api/aion/heuristics/{id}/edit", s.handleAionHeuristicEdit)
 		mux.HandleFunc("POST /api/aion/heuristics/{id}/retire", s.handleAionHeuristicRetire)
 		mux.HandleFunc("POST /api/aion/heuristics/merge", s.handleAionHeuristicsMerge)
 		mux.HandleFunc("POST /api/aion/heuristics/reorder", s.handleAionHeuristicsReorder)
-		mux.HandleFunc("GET /api/aion/publish/preview", s.handleAionPublishPreview)
-		mux.HandleFunc("POST /api/aion/publish", s.handleAionPublish)
-		mux.HandleFunc("POST /api/aion/publish/baseline", s.handleAionPublishBaseline)
-		mux.HandleFunc("POST /api/aion/publishes/{id}/ack", s.handleAionPublishAck)
 	}
 
 	// Google Calendar (M3, read-only).
@@ -511,8 +530,8 @@ func (s *Server) Handler() http.Handler {
 	// when any embedded asset changes (assetBuildVersion over the content ETags).
 	etags := etagFor(sub)
 	idx := versionedIndex(sub, assetBuildVersion(etags))
-	mux.HandleFunc("GET /{$}", idx)          // exact "/"
-	mux.HandleFunc("GET /index.html", idx)   // and the explicit path
+	mux.HandleFunc("GET /{$}", idx)        // exact "/"
+	mux.HandleFunc("GET /index.html", idx) // and the explicit path
 	mux.Handle("/", noCache(etags, http.FileServer(http.FS(sub))))
 	return mux
 }

@@ -324,7 +324,7 @@ function route() {
   // drill-downs (breadcrumb + Back). Desktop-only — on the phone band the crumb
   // bar IS the top bar (☰/⌕/＋), so 07-nav.css gates the hide to ≥861px.
   els.appShell.classList.toggle("crumb-hidden", !(day || note || artifact));
-  if (!aionTab && els.aionPublishRail) els.aionPublishRail.innerHTML = ""; // PUBLISH slot is aion-only
+  if (!aionTab && els.aionLiveRail) els.aionLiveRail.innerHTML = "";
   if (!properties && els.rePublishRail) els.rePublishRail.innerHTML = ""; // RE PUBLISH slot is properties-only
   els.contentScroll.scrollTop = 0;
   refreshFeedBadge(); // the rail's Feed count doubles as the inbox badge — keep it honest everywhere

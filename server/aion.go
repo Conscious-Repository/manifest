@@ -8,6 +8,7 @@ import (
 	"manifest/aion"
 	"manifest/daily"
 	"manifest/goals"
+	"manifest/teamportal"
 )
 
 // syncAionTasks mirrors day-note ticks for backlog-backed tasks (Task.TaskID
@@ -19,9 +20,11 @@ func (s *Server) syncAionTasks(tasks []daily.Task) {
 	for _, t := range tasks {
 		var st *aion.Store
 		var id string
+		var live *AionLive
 		switch {
 		case strings.HasPrefix(t.TaskID, "aion:") && s.aion != nil:
 			st, id = s.aion, strings.TrimPrefix(t.TaskID, "aion:")
+			live = s.aionLive
 		case strings.HasPrefix(t.TaskID, "re:") && s.re != nil:
 			st, id = s.re, strings.TrimPrefix(t.TaskID, "re:")
 		default:
@@ -31,7 +34,13 @@ func (s *Server) syncAionTasks(tasks []daily.Task) {
 		if t.Done {
 			status = aion.StatusDone
 		}
-		if err := st.UpdateItem(id, map[string]string{"status": status}, now); err == nil && t.Done {
+		var err error
+		if live != nil {
+			err = live.ownerUpdate(id, map[string]string{"status": status}, now)
+		} else {
+			err = st.UpdateItem(id, map[string]string{"status": status}, now)
+		}
+		if err == nil && t.Done {
 			if it := st.LoadBacklog().Find(id); it != nil && it.Rock != "" {
 				s.stampRockMoved(it.Rock)
 			}
@@ -39,20 +48,17 @@ func (s *Server) syncAionTasks(tasks []daily.Task) {
 	}
 }
 
-// UseAion wires the AION tab: the domain store over system/aion/ records,
-// the portal publish checkout coordinates (a MANIFEST checkout since the
-// portal move — publish writes server/web/portal/ there; path "" disables
-// PUBLISH), and dataDir (publish receipts).
-func (s *Server) UseAion(st *aion.Store, portalPath, remote, branch, dataDir string) {
+// UseAion wires the AION tab and its live projection. The checkout arguments
+// remain accepted for one transition release, but no runtime behavior uses
+// them; historical receipt files are left untouched.
+func (s *Server) UseAion(st *aion.Store, _ string, _ string, _ string, dataDir string) {
 	s.aion = st
-	s.aionPortal = aionPortalCfg{Path: portalPath, Remote: remote, Branch: branch}
 	s.aionDataDir = dataDir
+	s.aionLive = newAionLive(s)
 }
 
-type aionPortalCfg struct{ Path, Remote, Branch string }
-
 // handleAion is the aggregate read: all seven parsed corpora + the goals
-// Aion ladder (read-only) + the publish block.
+// Aion ladder (read-only) + the collaboration/live-sync state.
 func (s *Server) handleAion(w http.ResponseWriter, r *http.Request) {
 	if s.aion == nil {
 		httpError(w, errBadRequest("aion not enabled"))
@@ -81,17 +87,26 @@ func (s *Server) handleAion(w http.ResponseWriter, r *http.Request) {
 		}
 		return v
 	}
+	effectiveBacklog := any(nonNilItems(backlog.Items()))
+	var collaboration any
+	var syncStatus any
+	if s.aionLive != nil {
+		effectiveBacklog = s.aionLive.ManifestItems()
+		collaboration = s.aionLive.TeamState()
+		syncStatus = s.aionLive.Status()
+	}
 	resp := map[string]any{
-		"people":     peopleView(people),
-		"vto":        vtoView(vto),
-		"backlog":    nonNilItems(backlog.Items()),
-		"heuristics": nonNilHeur(heur.LiveEntries()),
-		"retired":    retiredView(heur),
-		"hiring":     hiringView(s.aion.LoadHiring()),
-		"references": referencesView(s.aion.LoadReferences()),
-		"finances":   finances,
-		"goalsArea":  s.aionGoalsArea(),
-		"publish":    s.aionPublishInfo(),
+		"people":        peopleView(people),
+		"vto":           vtoView(vto),
+		"backlog":       effectiveBacklog,
+		"collaboration": collaboration,
+		"sync":          syncStatus,
+		"heuristics":    nonNilHeur(heur.LiveEntries()),
+		"retired":       retiredView(heur),
+		"hiring":        hiringView(s.aion.LoadHiring()),
+		"references":    referencesView(s.aion.LoadReferences()),
+		"finances":      finances,
+		"goalsArea":     s.aionGoalsArea(),
 	}
 	writeJSON(w, resp)
 }
@@ -344,6 +359,9 @@ func (s *Server) handleAionBacklogAdd(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	if s.aionLive != nil {
+		_ = s.aionLive.refresh(true)
+	}
 	writeJSON(w, map[string]any{"ok": true, "id": it.ID})
 }
 
@@ -353,7 +371,13 @@ func (s *Server) handleAionBacklogUpdate(w http.ResponseWriter, r *http.Request)
 		httpError(w, err)
 		return
 	}
-	if err := s.aion.UpdateItem(r.PathValue("id"), b, time.Now()); err != nil {
+	var err error
+	if s.aionLive != nil {
+		err = s.aionLive.ownerUpdate(r.PathValue("id"), b, time.Now())
+	} else {
+		err = s.aion.UpdateItem(r.PathValue("id"), b, time.Now())
+	}
+	if err != nil {
 		httpError(w, err)
 		return
 	}
@@ -365,7 +389,13 @@ func (s *Server) handleAionBacklogDelete(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "aion not available", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.aion.DeleteItem(r.PathValue("id")); err != nil {
+	var err error
+	if s.aionLive != nil {
+		err = s.aionLive.ownerDelete(r.PathValue("id"), time.Now())
+	} else {
+		err = s.aion.DeleteItem(r.PathValue("id"))
+	}
+	if err != nil {
 		httpError(w, err)
 		return
 	}
@@ -380,11 +410,52 @@ func (s *Server) handleAionBacklogDecide(w http.ResponseWriter, r *http.Request)
 		httpError(w, err)
 		return
 	}
-	if err := s.aion.Decide(r.PathValue("id"), b.Outcome, time.Now()); err != nil {
+	var err error
+	if s.aionLive != nil {
+		err = s.aionLive.ownerDecide(r.PathValue("id"), b.Outcome, time.Now())
+	} else {
+		err = s.aion.Decide(r.PathValue("id"), b.Outcome, time.Now())
+	}
+	if err != nil {
 		httpError(w, err)
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleAionProposalDecide(w http.ResponseWriter, r *http.Request) {
+	if s.aionLive == nil {
+		http.Error(w, "Aion live state unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		ID      string `json:"id"`
+		Approve bool   `json:"approve"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	store, actor := s.aionLive.teamStore()
+	if store == nil {
+		http.Error(w, "Aion team store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	p, err := store.Decide(teamportal.Identity{Email: actor.Email, Name: actor.Name}, b.ID, b.Approve, time.Now())
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, p)
+}
+
+func (s *Server) handleAionCollaborationActivity(w http.ResponseWriter, r *http.Request) {
+	item := strings.TrimSpace(r.URL.Query().Get("item"))
+	if item == "" {
+		httpError(w, errBadRequest("item is required"))
+		return
+	}
+	writeJSON(w, map[string]any{"activity": s.AionActivity(item)})
 }
 
 func (s *Server) handleAionHeuristicEdit(w http.ResponseWriter, r *http.Request) {

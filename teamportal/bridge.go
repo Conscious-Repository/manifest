@@ -135,6 +135,12 @@ func describe(e Entry) (title, detail string) {
 			verdict = "approved"
 		}
 		return "portal proposal " + verdict, str("title") + " (for " + str("target") + ")"
+	case ActOwnerResolve:
+		return "manifest resolved portal fields on " + str("item"), "by " + e.Actor
+	case ActOwnerPatch:
+		return "manifest updated " + str("item"), "by " + e.Actor
+	case ActArchive:
+		return "manifest archived " + str("item"), str("title")
 	case "agent-assign":
 		return "portal: " + str("owner") + " assigned on " + str("item"), "by " + e.Actor
 	case "agent-fire":
