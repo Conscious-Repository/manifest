@@ -623,6 +623,19 @@ function attachTerm(id) {
   term.open(mount);
   try { fit.fit(); } catch (e) {}
 
+  // xterm measures its glyph atlas at open(); if the app mono (Spline Sans Mono)
+  // hadn't finished loading yet, it locks in the fallback (Menlo) and never
+  // reflows — so the terminal would look unchanged. Once fonts are ready, toggle
+  // the fontFamily to force a re-measure + refit so it matches the rest of the UI.
+  if (appMono && document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      if (!termInst || termInst.term !== term) return;
+      term.options.fontFamily = "monospace";
+      term.options.fontFamily = appMono;
+      try { fit.fit(); sendTermResize(); } catch (e) {}
+    });
+  }
+
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   const ws = new WebSocket(proto + "//" + location.host + "/api/terminal/ws?id=" + encodeURIComponent(id) + "&c=" + term.cols + "&r=" + term.rows);
   ws.binaryType = "arraybuffer";
