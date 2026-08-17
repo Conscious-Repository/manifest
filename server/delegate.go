@@ -396,6 +396,7 @@ func (s *Server) AgentLoopTicker() {
 	for range t.C {
 		s.agentLoopSweep(s.delegationIndex())
 		s.ledgerSweep()
+		s.chatSweep()
 	}
 }
 

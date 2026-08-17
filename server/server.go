@@ -13,12 +13,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/aion"
 	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/capture"
+	"manifest/chatthreads"
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
@@ -128,6 +130,10 @@ type Server struct {
 	// personasCfg: intent-tagged agent response personas (persona plan Phase 1;
 	// system/agents/personas/<intent>.md records). Nilable.
 	personasCfg *personasCfg
+	// chat: the native portal chat-with-kairos store (chat-kairos handoff;
+	// shared threads on /shared/apps/aion-portal/chat). Nilable.
+	chat        *chatthreads.Store
+	chatSweepMu sync.Mutex // one chat sweep at a time (ticker vs read-driven)
 }
 
 // UseLedger wires the daily ledger.

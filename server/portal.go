@@ -42,6 +42,17 @@ type PortalOptions struct {
 	PlanWrite func(itemID, section, text string) error
 	// FileBlob resolves a comment-attachment hash to a served file path.
 	FileBlob func(hash string) string
+	// --- native chat with kairos (chat-kairos handoff) ---
+	// ChatThreads returns threads + messages + the engine snapshot (heartbeat,
+	// active claim, pending). ChatThread is create/rename/rescope/archive/reopen.
+	// ChatAsk spools an ask/delegate run. ChatEngine is the sidebar snapshot.
+	// ChatProposal applies/discards a proposal (assignee/admin gated in the
+	// bridge). All nil-safe — chat routes register only when wired.
+	ChatThreads  func() map[string]any
+	ChatThread   func(op, id, title, rock, memberEmail, memberName string) (map[string]any, error)
+	ChatAsk      func(thread, text, ritual string, context []string, memberEmail, memberName string) error
+	ChatEngine   func() map[string]any
+	ChatProposal func(thread, msg string, index int, apply bool, memberEmail, memberName, memberInitials string, admin bool) error
 }
 
 // PortalHandler serves the AION portal as a standalone site, rooted at the
@@ -108,6 +119,22 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			}
 			if opt.FileBlob != nil {
 				mux.HandleFunc("GET /api/team/file/{hash}", api.handleFileBlob)
+			}
+			// native chat with kairos (chat-kairos handoff)
+			if opt.ChatThreads != nil {
+				mux.HandleFunc("GET /api/chat/threads", api.handleChatThreads)
+			}
+			if opt.ChatThread != nil {
+				mux.HandleFunc("POST /api/chat/thread", api.handleChatThread)
+			}
+			if opt.ChatAsk != nil {
+				mux.HandleFunc("POST /api/chat/ask", api.handleChatAsk)
+			}
+			if opt.ChatEngine != nil {
+				mux.HandleFunc("GET /api/chat/engine", api.handleChatEngine)
+			}
+			if opt.ChatProposal != nil {
+				mux.HandleFunc("POST /api/chat/proposal", api.handleChatProposal)
 			}
 		}
 	}
@@ -496,6 +523,88 @@ func (p *portalAPI) handleFileBlob(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment")
 	}
 	http.ServeFile(w, r, path)
+}
+
+// --- native chat with kairos (chat-kairos handoff) --------------------------
+
+func (p *portalAPI) handleChatThreads(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	writeJSON(w, p.opt.ChatThreads())
+}
+
+func (p *portalAPI) handleChatThread(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Op, ID, Title, Rock string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	out, err := p.opt.ChatThread(b.Op, b.ID, b.Title, b.Rock, id.Email, id.Name)
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, out)
+}
+
+func (p *portalAPI) handleChatAsk(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Thread, Text, Ritual string
+		Context              []string
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	switch err := p.opt.ChatAsk(b.Thread, b.Text, b.Ritual, b.Context, id.Email, id.Name); {
+	case err == nil:
+		writeJSON(w, map[string]any{"ok": true, "queued": true})
+	case errors.Is(err, spirits.ErrAlreadyActive):
+		http.Error(w, "kairos is running — this queues behind the active run", http.StatusConflict)
+	default:
+		httpError(w, errBadRequest(err.Error()))
+	}
+}
+
+func (p *portalAPI) handleChatEngine(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	writeJSON(w, p.opt.ChatEngine())
+}
+
+func (p *portalAPI) handleChatProposal(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Thread, Msg string
+		Index       int
+		Apply       bool
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := p.opt.ChatProposal(b.Thread, b.Msg, b.Index, b.Apply, id.Email, id.Name, p.ownerToken(id.Email), p.isAdmin(id.Email)); err != nil {
+		if strings.Contains(err.Error(), "only") { // gate refusal → 403
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, p.opt.ChatThreads())
 }
 
 // handleDeleteComment removes a comment. The store enforces the permission

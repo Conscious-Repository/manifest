@@ -22,6 +22,7 @@ import (
 	"manifest/approvals"
 	"manifest/calendar"
 	"manifest/capture"
+	"manifest/chatthreads"
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
@@ -584,6 +585,16 @@ func main() {
 				}
 			}
 			srv.UseThreads(private, reStore, aionTeamStore, aionBlobs, cfg.AionPortal.AdminEmail)
+			// native chat with kairos (chat-kairos handoff): shared threads on
+			// the same portal volume, ingested by the AgentLoopTicker's chatSweep.
+			if aionTeamStore != nil && cfg.AionPortal.TeamDir != "" {
+				if chatStore, cerr := chatthreads.New(filepath.Join(cfg.AionPortal.TeamDir, "chat")); cerr != nil {
+					log.Printf("portal chat disabled: %v", cerr)
+				} else {
+					srv.UseChatThreads(chatStore)
+					log.Printf("portal chat: enabled (writes → %s/chat)", cfg.AionPortal.TeamDir)
+				}
+			}
 			// the agent dialog must not wait for a feed read — ingestion
 			// (plan attach/update, questions, relay retries) ticks on its own
 			go srv.AgentLoopTicker()
@@ -622,6 +633,12 @@ func main() {
 		portalOpts.Activity = srv.AionActivity
 		portalOpts.PlanWrite = srv.AionPlanWrite
 		portalOpts.FileBlob = srv.AionFileBlob
+		// native chat with kairos (chat-kairos handoff)
+		portalOpts.ChatThreads = srv.AionChatThreads
+		portalOpts.ChatThread = srv.AionChatThread
+		portalOpts.ChatAsk = srv.AionChatAsk
+		portalOpts.ChatEngine = srv.AionChatEngine
+		portalOpts.ChatProposal = srv.AionChatProposal
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)
