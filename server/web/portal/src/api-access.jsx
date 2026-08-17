@@ -59,7 +59,6 @@ function ApiAccessModal({ onClose }) {
         className="v2-modal" style={{ width: 'min(640px,92vw)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '14px 16px 10px', borderBottom: '1px solid var(--line,#3a3a3a)' }}>
           <span className="v2-label" style={{ letterSpacing: '.18em' }}>API ACCESS</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>scripts · custom backends · MCP</span>
           <button className="v2-bare v2-hoverink" onClick={onClose}
             style={{ marginLeft: 'auto', color: 'var(--ink-mute,#666)', fontSize: 11 }}>esc ✕</button>
         </div>
@@ -67,6 +66,18 @@ function ApiAccessModal({ onClose }) {
         <div style={{ padding: 16 }}>
           <div style={{ fontSize: 12, color: 'var(--ink-dim,#aaa)', lineHeight: 1.65 }}>
             Tokens act exactly as your signed-in account. Existing assignee and admin locks still apply.
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <a className="v2-btn v2-hoveraccent" target="_blank" rel="noreferrer"
+              href="https://github.com/Conscious-Repository/manifest/blob/main/docs/team-api.md"
+              style={{ color: 'var(--accent,#0091ea)', padding: '4px 9px', textDecoration: 'none' }}>API reference ↗</a>
+            <a className="v2-btn v2-hoveraccent" target="_blank" rel="noreferrer"
+              href="https://github.com/Conscious-Repository/manifest/blob/main/integrations/portal-mcp/README.md"
+              style={{ color: 'var(--accent,#0091ea)', padding: '4px 9px', textDecoration: 'none' }}>MCP setup ↗</a>
+            <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>
+              Generate a token, copy it once, then follow either guide.
+            </span>
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
@@ -106,7 +117,7 @@ function ApiAccessModal({ onClose }) {
           </div>
           {note && <div style={{ fontSize: 11, color: 'var(--ink-faint,#888)', marginTop: 10 }}>{note}</div>}
           <div style={{ fontSize: 10.5, color: 'var(--ink-mute,#555)', marginTop: 14 }}>
-            Use as <code>Authorization: Bearer aiontok_…</code> · direct cross-origin browser calls are not enabled.
+            Base URL <code>https://portal.aion.bio</code> · send <code>Authorization: Bearer aiontok_…</code>
           </div>
         </div>
       </div>
