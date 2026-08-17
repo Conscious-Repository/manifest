@@ -2,7 +2,7 @@
 // an offline shell, not performance: network-first, /api/* never cached.
 // Bump CACHE on any manifest.webmanifest change (Chrome re-reads it on SW
 // update, which is how share_target edits propagate).
-const CACHE = "manifest-shell-v2";
+const CACHE = "manifest-shell-v3";
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.add("/")).then(() => self.skipWaiting()));

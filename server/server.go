@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -498,8 +499,50 @@ func (s *Server) Handler() http.Handler {
 	// the catch-all. Shadow it so the private cockpit serves no team surface.
 	mux.HandleFunc("/portal", http.NotFound)
 	mux.HandleFunc("/portal/", http.NotFound)
-	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
+	// Cache-bust: the shell (index.html) is served with a build-hash ?v= injected
+	// into every js/css URL, so a deploy always forces a fresh fetch — no stale
+	// asset behind a browser cache or service worker. The hash changes exactly
+	// when any embedded asset changes (assetBuildVersion over the content ETags).
+	etags := etagFor(sub)
+	idx := versionedIndex(sub, assetBuildVersion(etags))
+	mux.HandleFunc("GET /{$}", idx)          // exact "/"
+	mux.HandleFunc("GET /index.html", idx)   // and the explicit path
+	mux.Handle("/", noCache(etags, http.FileServer(http.FS(sub))))
 	return mux
+}
+
+// assetBuildVersion is a short hash over every embedded asset's content ETag —
+// stable for the binary's life, changing exactly when a rebuild ships new assets.
+func assetBuildVersion(etags map[string]string) string {
+	keys := make([]string, 0, len(etags))
+	for k := range etags {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	h := sha256.New()
+	for _, k := range keys {
+		h.Write([]byte(k))
+		h.Write([]byte(etags[k]))
+	}
+	return hex.EncodeToString(h.Sum(nil))[:8]
+}
+
+var assetRefRe = regexp.MustCompile(`(src|href)="((?:js|css)/[^"?]+\.(?:js|css))"`)
+
+// versionedIndex serves index.html with ?v=<ver> appended to every local js/css
+// reference, computed once at startup. index.html itself is no-cache so the
+// browser always re-reads it (and thus the fresh ?v=) after a deploy.
+func versionedIndex(sub fs.FS, ver string) http.HandlerFunc {
+	raw, err := fs.ReadFile(sub, "index.html")
+	if err != nil {
+		return func(w http.ResponseWriter, r *http.Request) { http.Error(w, "index missing", 500) }
+	}
+	body := []byte(assetRefRe.ReplaceAllString(string(raw), `$1="$2?v=`+ver+`"`))
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(body)
+	}
 }
 
 // noCache makes the browser revalidate the embedded assets every load. embed.FS
