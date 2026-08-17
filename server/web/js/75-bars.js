@@ -236,7 +236,7 @@ function cmdDestinations() {
   NAV_SECTIONS.forEach((g) => g.items.forEach((it) =>
     _cmdDests.push({ name: it.label, hint: g.label.toLowerCase() + " · view", hash: it.hash })));
   [["Backlog", "#/aion"], ["Heuristics", "#/aion/heuristics"], ["V/TO", "#/aion/vto"],
-   ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Reconcile", "#/aion/reconcile"],
+   ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Fundraising", "#/aion/fundraising"], ["Reconcile", "#/aion/reconcile"],
    ["Settings", "#/aion/settings"]].forEach(([n, h]) =>
     _cmdDests.push({ name: "Aion · " + n, hint: "aion tab", hash: h }));
   [["Backlog", "#/properties"], ["Portfolio", "#/properties/portfolio"], ["Rocks", "#/properties/rocks"],

@@ -112,3 +112,10 @@
 /* §13: list cold marker + the role chip */
 .contact-cold { font-family: var(--mono); font-size: var(--fs-2xs); font-weight: 500; color: var(--base-100); white-space: nowrap; }
 .cp-role { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--base-50); border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); align-self: center; }
+.cp-fr-row { width: 100%; display: grid; grid-template-columns: minmax(150px,1.2fr) 90px 100px 70px minmax(180px,1.5fr); align-items: center; gap: var(--sp-3); min-height: 42px; padding: var(--sp-2) 0; border: 0; border-bottom: 1px solid var(--base-15); background: none; color: var(--base-80); text-align: left; cursor: pointer; font: inherit; }
+.cp-fr-row:hover { background: var(--base-08); }
+.cp-fr-firm { font-weight: 500; }
+.cp-fr-status, .cp-fr-interest { color: var(--base-50); font-size: var(--fs-xs); letter-spacing: .06em; }
+.cp-fr-amount { font-variant-numeric: tabular-nums; }
+.cp-fr-next { color: var(--base-60); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 700px) { .cp-fr-row { grid-template-columns: 1fr auto; } .cp-fr-amount, .cp-fr-interest, .cp-fr-next { grid-column: 1 / -1; } }

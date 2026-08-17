@@ -272,6 +272,22 @@ function renderContactPage(p) {
   }
   host.append(header);
 
+  // Explicit private-CRM relationships. These are composed by Contacts but
+  // never enter the public Aion portal contract.
+  if (p.fundraising && p.fundraising.length) {
+    const crm = cpSection("Fundraising", p.fundraising.length);
+    p.fundraising.forEach((f) => {
+      const row = el("button", "cp-fr-row");
+      row.append(el("span", "cp-fr-firm", f.firm), el("span", "cp-fr-status", (f.status || "").toUpperCase()));
+      if (f.amount) row.append(el("span", "cp-fr-amount", money(f.amount)));
+      if (f.interest && f.interest !== "unknown") row.append(el("span", "cp-fr-interest", f.interest.toUpperCase()));
+      if (f.nextStep) row.append(el("span", "cp-fr-next", f.nextStep));
+      row.onclick = () => { if (typeof frSel !== "undefined") frSel = f.id; location.hash = "#/aion/fundraising"; };
+      crm.append(row);
+    });
+    host.append(crm);
+  }
+
   // facts strip first (redesign §13) — four columns between hairlines, the
   // same anatomy as the property stat strip. "Last met" (calendar-verified)
   // stays DISTINCT from "last mentioned" (notes).

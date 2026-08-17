@@ -26,6 +26,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
+	"manifest/fundraising"
 	"manifest/gmailauth"
 	"manifest/goals"
 	"manifest/hermes"
@@ -211,6 +212,15 @@ func main() {
 			vaultwriter.Capability{Name: "aion-approved", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
+			// PRIVATE FUNDRAISING CRM — explicitly separate from AION's public
+			// live/export contract. Opportunity records and the shared note-less
+			// contact registry have separately bounded capabilities.
+			vaultwriter.Capability{Name: "fundraising", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "fundraising")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "crm-contacts", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "contacts.md")),
+				Actor:   vaultwriter.ActorUserAction},
 			// REAL ESTATE — property `## todos` writes (redesign stage 4). The
 			// declaration the direct re-* writers were always scheduled to get;
 			// migrating those legacy guarded writers onto it is a later pass.
@@ -283,6 +293,12 @@ func main() {
 	// aion backlog tasks alongside its to-do.md tethers (day task picker).
 	aionRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion"))
 	aionStore := aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion"))
+	frRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "fundraising"))
+	frRegistry := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "contacts.md"))
+	frStore := fundraising.NewStore(cfg.VaultPath, frRoot, frRegistry, vw.BindAbs("fundraising"), vw.BindAbs("crm-contacts"))
+	if err := frStore.Ensure(); err != nil {
+		log.Printf("fundraising CRM registry unavailable: %v", err)
+	}
 	// The real-estate decision log reuses the aion store/grammar pointed at
 	// system/realestate — ONLY backlog methods are wired (server/re.go);
 	// the other corpus methods must never touch this root.
@@ -304,6 +320,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, tasksStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	srv.UseFundraising(frStore)
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)

@@ -165,6 +165,88 @@ func TestBlankLastMetWithoutDatedEvidence(t *testing.T) {
 	}
 }
 
+type testCRMDirectory struct {
+	people   map[string]CRMContact
+	emails   []string
+	attached string
+}
+
+func (d *testCRMDirectory) People() []CRMContact {
+	out := []CRMContact{}
+	for _, p := range d.people {
+		out = append(out, p)
+	}
+	return out
+}
+func (d *testCRMDirectory) Person(key string) (CRMContact, bool) {
+	p, ok := d.people[strings.ToLower(key)]
+	return p, ok
+}
+func (d *testCRMDirectory) AddEmail(key, email string) error {
+	p := d.people[strings.ToLower(key)]
+	p.Emails = append(p.Emails, email)
+	d.people[strings.ToLower(key)] = p
+	d.emails = append(d.emails, email)
+	return nil
+}
+func (d *testCRMDirectory) AttachNote(key, notePath string) error {
+	p := d.people[strings.ToLower(key)]
+	p.NotePath = notePath
+	d.people[strings.ToLower(key)] = p
+	d.attached = notePath
+	return nil
+}
+func (d *testCRMDirectory) Fundraising(key string) []FundraisingSummary {
+	if strings.EqualFold(key, "jane investor") {
+		return []FundraisingSummary{{ID: "fr/acme", Firm: "Acme", Status: "active", Amount: 250000, NextStep: "Send deck"}}
+	}
+	return nil
+}
+
+func TestCRMDirectoryContactNeedsNoPersonalNote(t *testing.T) {
+	svc, _, root := harness(t)
+	dir := &testCRMDirectory{people: map[string]CRMContact{
+		"jane investor": {Key: "jane investor", Display: "Jane Investor", Emails: []string{"jane@example.com"}},
+	}}
+	svc.UseCRMDirectory(dir)
+	p, ok := svc.Page("jane investor", now)
+	if !ok || p.HasNote || len(p.Emails) != 1 || len(p.Fundraising) != 1 {
+		t.Fatalf("CRM page=%+v ok=%v", p, ok)
+	}
+	list, err := svc.List(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range list {
+		if c.Key == "jane investor" && !c.HasNote {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("CRM contact missing from list: %+v", list)
+	}
+	if err := svc.ConfirmEmail("jane investor", "Jane Investor", "second@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if len(dir.emails) != 1 {
+		t.Fatal("note-less email was not stored in CRM")
+	}
+	if _, err := svc.SaveNote("jane investor", "Jane Investor", "optional note"); err != nil {
+		t.Fatal(err)
+	}
+	if dir.attached == "" {
+		t.Fatal("created note was not attached to CRM identity")
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "jane investor.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "jane@example.com") || !strings.Contains(string(raw), "second@example.com") {
+		t.Fatalf("CRM emails not promoted:\n%s", raw)
+	}
+}
+
 func TestTriageQueueAndDecisions(t *testing.T) {
 	svc, _, _ := harness(t)
 	tri, _ := svc.Triage()

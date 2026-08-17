@@ -24,6 +24,7 @@ import (
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
+	"manifest/fundraising"
 	"manifest/gmailauth"
 	"manifest/goals"
 	"manifest/ledger"
@@ -107,6 +108,9 @@ type Server struct {
 	errandAccounts []string // §6 allowlist ("" = any signed-in account)
 	// AION (program cockpit over system/aion/ + live team projection). Nilable.
 	aion *aion.Store
+	// Private Aion fundraising CRM. This is intentionally outside AionLive and
+	// the portal export contract.
+	fundraising *fundraising.Store
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
@@ -199,7 +203,10 @@ func (s *Server) UseSpirits(sp *spirits.Store) { s.spirits = sp }
 func (s *Server) UseIndex(ix *vaultindex.Index) { s.index = ix }
 
 // UseContacts wires the people layer (CONTACTS tab).
-func (s *Server) UseContacts(c *contacts.Service) { s.contacts = c }
+func (s *Server) UseContacts(c *contacts.Service) { s.contacts = c; s.wireFundraisingContacts() }
+
+// UseFundraising wires the private Manifest-only Aion CRM.
+func (s *Server) UseFundraising(f *fundraising.Store) { s.fundraising = f; s.wireFundraisingContacts() }
 
 // UseReading wires the book shelf (READING tab). extrinsicRoot is where the
 // "+ book" action creates new records.
@@ -297,6 +304,12 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /api/aion/heuristics/{id}/retire", s.handleAionHeuristicRetire)
 		mux.HandleFunc("POST /api/aion/heuristics/merge", s.handleAionHeuristicsMerge)
 		mux.HandleFunc("POST /api/aion/heuristics/reorder", s.handleAionHeuristicsReorder)
+		mux.HandleFunc("GET /api/aion/fundraising", s.handleFundraisingList)
+		mux.HandleFunc("POST /api/aion/fundraising/item", s.handleFundraisingCreate)
+		mux.HandleFunc("POST /api/aion/fundraising/update/{id...}", s.handleFundraisingUpdate)
+		mux.HandleFunc("POST /api/aion/fundraising/archive/{id...}", s.handleFundraisingArchive)
+		mux.HandleFunc("POST /api/aion/fundraising/person/{id...}", s.handleFundraisingPersonAdd)
+		mux.HandleFunc("POST /api/aion/fundraising/person-remove/{id...}", s.handleFundraisingPersonRemove)
 	}
 
 	// Google Calendar (M3, read-only).

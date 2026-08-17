@@ -61,15 +61,46 @@ type Transcript struct {
 // Service is the people layer: it reads the vault index graph, applies the
 // triage store, and performs the three user-action vault writes.
 type Service struct {
-	ix      *vaultindex.Index
-	store   *Store
-	vw      *vaultwriter.Writer
-	cal     CalendarReader   // nil → no upcoming / no calendar last-met
-	granola TranscriptSource // nil → vault-only transcripts
+	ix        *vaultindex.Index
+	store     *Store
+	vw        *vaultwriter.Writer
+	cal       CalendarReader   // nil → no upcoming / no calendar last-met
+	granola   TranscriptSource // nil → vault-only transcripts
+	directory CRMDirectory     // nil → vault/index contacts only
 
-	mu       sync.Mutex    // guards the two calendar caches below
-	meetings *meetingIndex // email→past-meetings projection, TTL-cached
+	mu       sync.Mutex     // guards the two calendar caches below
+	meetings *meetingIndex  // email→past-meetings projection, TTL-cached
 	upcoming *upcomingIndex // future-events pull, TTL-cached (same reason)
+}
+
+// CRMContact is an explicit system-CRM person. Unlike ordinary system-zone
+// wikilinks, directory rows are intentionally admitted to the personal people
+// layer and may exist without a personal note.
+type CRMContact struct {
+	Key      string
+	Display  string
+	NotePath string
+	Emails   []string
+}
+
+// FundraisingSummary is the private CRM context appended to a contact page.
+type FundraisingSummary struct {
+	ID       string  `json:"id"`
+	Firm     string  `json:"firm"`
+	Status   string  `json:"status"`
+	Interest string  `json:"interest"`
+	Amount   float64 `json:"amount,omitempty"`
+	NextStep string  `json:"nextStep"`
+}
+
+// CRMDirectory is the narrow bridge implemented by the private fundraising
+// store. contacts deliberately does not import a business-domain package.
+type CRMDirectory interface {
+	People() []CRMContact
+	Person(key string) (CRMContact, bool)
+	AddEmail(key, email string) error
+	AttachNote(key, notePath string) error
+	Fundraising(key string) []FundraisingSummary
 }
 
 // upcomingIndex caches one Upcoming() calendar pull (the raw events; the
@@ -93,6 +124,9 @@ type meetingRef struct{ Date, Title string }
 func New(ix *vaultindex.Index, store *Store, vw *vaultwriter.Writer, cal CalendarReader, granola TranscriptSource) *Service {
 	return &Service{ix: ix, store: store, vw: vw, cal: cal, granola: granola}
 }
+
+// UseCRMDirectory attaches an explicit private-CRM people source.
+func (s *Service) UseCRMDirectory(d CRMDirectory) { s.directory = d }
 
 // ---- list ----
 
@@ -143,6 +177,11 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 	for _, p := range people {
 		add(Contact{Key: p.Key, Display: p.Display, NotePath: p.NotePath, HasNote: true})
 	}
+	if s.directory != nil {
+		for _, p := range s.directory.People() {
+			add(Contact{Key: p.Key, Display: p.Display, NotePath: p.NotePath, HasNote: p.NotePath != ""})
+		}
+	}
 	for _, t := range targets {
 		if s.store.IsDismissed(t.Key) {
 			continue
@@ -172,7 +211,7 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 			mentionDates = append(mentionDates, dateMap[k]...)
 		}
 		// calendar-verified last-met + hybrid neglect basis (meetings, else mentions)
-		meetDates := s.meetingDatesFor(s.emailsFor(c.HasNote, c.Key), now)
+		meetDates := s.meetingDatesFor(s.contactEmails(c.Key, c.HasNote), now)
 		c.LastMet = firstDate(meetDates) // meetDates is newest-first
 		if len(meetDates) > 0 {
 			c.NeglectBasis = "meetings"
@@ -209,6 +248,7 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 type Ref struct {
 	Key      string `json:"key"`
 	Display  string `json:"display"`
+	NotePath string `json:"notePath,omitempty"`
 	HasNote  bool   `json:"hasNote"`
 	IsPerson bool   `json:"isPerson"`
 	RefCount int    `json:"refCount"`
@@ -269,11 +309,12 @@ type Page struct {
 	// the name (§13). Empty when the note has none.
 	Role string `json:"role,omitempty"`
 	// Neglect lens ("meetings" basis when email-linked, else "mentions")
-	NeglectBasis string `json:"neglectBasis"`
-	Interactions int    `json:"interactions"`
-	MedianGap    int    `json:"medianGap"`
-	DaysSince    int    `json:"daysSince"`
-	Cold         bool   `json:"cold"`
+	NeglectBasis string               `json:"neglectBasis"`
+	Interactions int                  `json:"interactions"`
+	MedianGap    int                  `json:"medianGap"`
+	DaysSince    int                  `json:"daysSince"`
+	Cold         bool                 `json:"cold"`
+	Fundraising  []FundraisingSummary `json:"fundraising,omitempty"`
 }
 
 // WaitingOnItem is one open loop the owner is tracking on this person.
@@ -288,9 +329,15 @@ type WaitingOnItem struct {
 func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 	canon := s.canonical(rawKey)
 	e, ok := s.ix.Entity(canon)
+	ext, extOK := CRMContact{}, false
+	if s.directory != nil {
+		ext, extOK = s.directory.Person(canon)
+	}
 	if !ok {
 		// note-less but real (confirmed / has links): synthesize from links
-		if disp, refs := s.displayAndRefs(canon); refs > 0 || s.store.IsConfirmed(canon) {
+		if extOK {
+			e = vaultindex.Entity{Key: canon, Display: ext.Display, NotePath: ext.NotePath}
+		} else if disp, refs := s.displayAndRefs(canon); refs > 0 || s.store.IsConfirmed(canon) {
 			e = vaultindex.Entity{Key: canon, Display: disp}
 		} else {
 			return Page{}, false
@@ -331,6 +378,9 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 			p.Emails = es
 		}
 	}
+	if extOK {
+		p.Emails = mergeStrings(p.Emails, ext.Emails)
+	}
 	meetings := s.meetingsFor(p.Emails, now)
 	var meetDates []string
 	for _, m := range meetings {
@@ -353,6 +403,9 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 	if p.HasNote {
 		p.NoteBody = s.noteBody(p.NotePath)
 		p.Role = s.noteRole(p.NotePath)
+	}
+	if s.directory != nil {
+		p.Fundraising = s.directory.Fundraising(p.Key)
 	}
 	return p, true
 }
@@ -392,6 +445,14 @@ func (s *Service) Card(rawKey string, now time.Time) (Card, bool) {
 	canon := s.canonical(rawKey)
 	e, ok := s.ix.Entity(canon)
 	if !ok {
+		if s.directory != nil {
+			if ext, found := s.directory.Person(canon); found {
+				e = vaultindex.Entity{Key: canon, Display: ext.Display, NotePath: ext.NotePath}
+				ok = true
+			}
+		}
+	}
+	if !ok {
 		disp, refs := s.displayAndRefs(canon)
 		if refs == 0 && !s.store.IsConfirmed(canon) {
 			return Card{}, false
@@ -401,7 +462,7 @@ func (s *Service) Card(rawKey string, now time.Time) (Card, bool) {
 	c := Card{Key: e.Key, Display: e.Display, HasNote: e.NotePath != ""}
 	keys := s.keysFor(e.Key, e.NotePath)
 	c.LastMentioned = s.mergedLastMet(keys) // notes
-	c.LastMet = firstDate(s.meetingDatesFor(s.emailsFor(c.HasNote, e.Key), now))
+	c.LastMet = firstDate(s.meetingDatesFor(s.contactEmails(e.Key, c.HasNote), now))
 	tl := s.mergedTimeline(keys)
 	c.RefCount = len(tl)
 	if ts := s.transcripts(keys, tl); len(ts) > 0 {
@@ -520,7 +581,20 @@ func (s *Service) Search(query string) ([]Ref, error) {
 	}
 	out := make([]Ref, 0, len(refs))
 	for _, r := range refs {
-		out = append(out, Ref{Key: r.Key, Display: r.Display, HasNote: r.HasNote, IsPerson: r.IsPerson, RefCount: r.RefCount})
+		out = append(out, Ref{Key: r.Key, Display: r.Display, NotePath: r.NotePath, HasNote: r.HasNote, IsPerson: r.IsPerson, RefCount: r.RefCount})
+	}
+	if s.directory != nil {
+		q := strings.ToLower(strings.TrimSpace(query))
+		seen := map[string]bool{}
+		for _, r := range out {
+			seen[r.Key] = true
+		}
+		for _, p := range s.directory.People() {
+			if seen[p.Key] || (q != "" && !strings.Contains(strings.ToLower(p.Display), q) && !strings.Contains(p.Key, q)) {
+				continue
+			}
+			out = append(out, Ref{Key: p.Key, Display: p.Display, NotePath: p.NotePath, HasNote: p.NotePath != "", IsPerson: true})
+		}
 	}
 	return out, nil
 }
@@ -571,6 +645,18 @@ func (s *Service) SaveNote(rawKey, display, body string) (string, error) {
 		return "", err
 	}
 	_ = s.store.Confirm(canon) // now a real contact
+	if s.directory != nil {
+		if ext, ok := s.directory.Person(canon); ok {
+			for _, email := range ext.Emails {
+				if err := s.vw.AddFrontmatterValue(rel, "email", email); err != nil {
+					return "", err
+				}
+			}
+			if err := s.directory.AttachNote(canon, rel); err != nil {
+				return "", err
+			}
+		}
+	}
 	_ = s.ix.ReindexPaths([]string{rel})
 	return strings.ToLower(strings.TrimSuffix(filepath.Base(rel), ".md")), nil
 }
@@ -582,6 +668,15 @@ func (s *Service) ConfirmEmail(rawKey, display, email string) error {
 	e, _ := s.ix.Entity(canon)
 	notePath := e.NotePath
 	if notePath == "" {
+		if s.directory != nil {
+			if _, ok := s.directory.Person(canon); ok {
+				if err := s.directory.AddEmail(canon, email); err != nil {
+					return err
+				}
+				s.invalidateMeetings()
+				return nil
+			}
+		}
 		name := strings.TrimSpace(display)
 		if name == "" {
 			name = e.Display
@@ -605,6 +700,51 @@ func (s *Service) ConfirmEmail(rawKey, display, email string) error {
 	}
 	s.invalidateMeetings() // last-met must reflect the new email immediately
 	return nil
+}
+
+func mergeStrings(a, b []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(a)+len(b))
+	for _, xs := range [][]string{a, b} {
+		for _, v := range xs {
+			v = strings.ToLower(strings.TrimSpace(v))
+			if v != "" && !seen[v] {
+				seen[v] = true
+				out = append(out, v)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *Service) contactEmails(key string, hasNote bool) []string {
+	out := s.emailsFor(hasNote, key)
+	if s.directory != nil {
+		if p, ok := s.directory.Person(key); ok {
+			out = mergeStrings(out, p.Emails)
+		}
+	}
+	return out
+}
+
+// LatestInteraction returns the newest reliable Contacts date for CRM table
+// composition. It has no write side effects.
+func (s *Service) LatestInteraction(key string, now time.Time) string {
+	p, ok := s.Page(key, now)
+	if !ok {
+		return ""
+	}
+	best := p.LastMet
+	if p.LastMentioned > best {
+		best = p.LastMentioned
+	}
+	for _, t := range p.Transcripts {
+		if t.Date > best {
+			best = t.Date
+		}
+	}
+	return best
 }
 
 // ---- email-linking review queue (§4) ----
