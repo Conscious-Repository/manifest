@@ -25,7 +25,6 @@ import (
 	"manifest/daily"
 	"manifest/errands"
 	"manifest/fundraising"
-	"manifest/fundraisingportal"
 	"manifest/geocode"
 	"manifest/gmailauth"
 	"manifest/goals"
@@ -112,9 +111,8 @@ type Server struct {
 	aion *aion.Store
 	// Private Aion fundraising CRM. This is intentionally outside AionLive and
 	// the portal export contract.
-	fundraising        *fundraising.Store
-	fundraisingSync    *fundraising.SheetSync
-	fundraisingInvites *fundraisingportal.InviteStore
+	fundraising     *fundraising.Store
+	fundraisingSync *fundraising.SheetSync
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
@@ -213,9 +211,6 @@ func (s *Server) UseGeocoder(g *geocode.Service)  { s.geocoder = g }
 // UseFundraising wires the private Manifest-only Aion CRM.
 func (s *Server) UseFundraising(f *fundraising.Store)            { s.fundraising = f; s.wireFundraisingContacts() }
 func (s *Server) UseFundraisingSync(sync *fundraising.SheetSync) { s.fundraisingSync = sync }
-func (s *Server) UseFundraisingInvites(invites *fundraisingportal.InviteStore) {
-	s.fundraisingInvites = invites
-}
 
 // UseReading wires the book shelf (READING tab). extrinsicRoot is where the
 // "+ book" action creates new records.
@@ -323,8 +318,6 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/aion/fundraising/sync", s.handleFundraisingSyncStatus)
 		mux.HandleFunc("POST /api/aion/fundraising/sync", s.handleFundraisingSyncNow)
 		mux.HandleFunc("POST /api/aion/fundraising/sync/resolve", s.handleFundraisingSyncResolve)
-		mux.HandleFunc("GET /api/aion/fundraising/invites", s.handleFundraisingInvitesGet)
-		mux.HandleFunc("PUT /api/aion/fundraising/invites", s.handleFundraisingInvitesPut)
 	}
 
 	// Google Calendar (M3, read-only).

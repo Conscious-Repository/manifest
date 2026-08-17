@@ -326,8 +326,8 @@ Private contact locations remain on the owner cockpit API and are not part of
 that team contract.
 
 The private fundraising CRM can also be shared through a five-minute Google
-Sheet sync and an isolated invite-only editor at `fundraising.aion.bio`. Both
-ship disabled until their credentials are installed. See
+Sheet sync. It ships disabled until its service-account credential is
+installed. See
 [docs/fundraising-sharing.md](docs/fundraising-sharing.md).
 
 ---

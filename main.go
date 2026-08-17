@@ -27,7 +27,6 @@ import (
 	"manifest/daily"
 	"manifest/errands"
 	"manifest/fundraising"
-	"manifest/fundraisingportal"
 	"manifest/geocode"
 	"manifest/gmailauth"
 	"manifest/goals"
@@ -713,40 +712,6 @@ func main() {
 			}()
 		}
 	}
-	if cfg.FundraisingPortal.Port != 0 && cfg.FundraisingPortal.Port != cfg.Port && cfg.FundraisingPortal.Port != cfg.PortalPort {
-		admin := strings.TrimSpace(cfg.FundraisingPortal.AdminEmail)
-		if admin == "" {
-			admin = cfg.AionPortal.AdminEmail
-		}
-		invites, inviteErr := fundraisingportal.NewInviteStore(cfg.DataDir, admin)
-		if inviteErr != nil {
-			log.Printf("fundraising portal disabled: %v", inviteErr)
-		} else {
-			srv.UseFundraisingInvites(invites)
-			auth := teamportal.NewScopedAuth(cfg.DataDir, cfg.FundraisingPortal.OAuthClient, "fundraising_portal", invites.Allowed, "invited fundraising collaborators")
-			handler, handlerErr := server.FundraisingPortalHandler(server.FundraisingPortalOptions{
-				Auth: auth, Invites: invites, Store: frStore, Snapshot: srv.FundraisingSnapshot, AdminEmail: admin,
-				AuditPath: filepath.Join(cfg.DataDir, "fundraising", "external-activity.jsonl"),
-			})
-			if handlerErr != nil {
-				log.Printf("fundraising portal disabled: %v", handlerErr)
-			} else {
-				addr := fmt.Sprintf("127.0.0.1:%d", cfg.FundraisingPortal.Port)
-				go func() {
-					fmt.Printf("fundraising portal → http://%s\n", addr)
-					if err := http.ListenAndServe(addr, handler); err != nil {
-						log.Printf("fundraising portal listener stopped: %v", err)
-					}
-				}()
-				if auth.Enabled() {
-					log.Printf("fundraising portal: invite-only editor enabled on %s", addr)
-				} else {
-					log.Printf("fundraising portal: listener ready, OAuth client missing (%s)", cfg.FundraisingPortal.OAuthClient)
-				}
-			}
-		}
-	}
-
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))

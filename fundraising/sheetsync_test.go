@@ -163,7 +163,9 @@ func TestPlaintextPeopleFrontmatterPreservesUnknownFieldsAndBody(t *testing.T) {
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.SharedPatch(op.ID, map[string]any{"notes": "updated"}); err != nil {
+	desired := SharedFromOpportunity(op)
+	desired.Notes = "updated"
+	if _, err := store.SharedUpdate(op.ID, desired, []string{"notes"}); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)

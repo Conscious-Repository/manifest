@@ -63,13 +63,8 @@ type Identity struct {
 // never committed — see docs/aion-portal-oauth.example.json) and
 // <dataDir>/portals/aion-portal-session.key (auto-generated, 0600).
 type Auth struct {
-	clientPath        string
-	keyPath           string
-	sessionName       string
-	stateName         string
-	hostedDomain      string
-	authorize         func(string) bool
-	accessDescription string
+	clientPath string
+	keyPath    string
 
 	mu     sync.Mutex
 	key    []byte // cached session HMAC key
@@ -83,31 +78,10 @@ func NewAuth(dataDir string) *Auth {
 	if p := strings.TrimSpace(os.Getenv("AION_PORTAL_OAUTH_CLIENT")); p != "" {
 		cp = p
 	}
-	auth := newScopedAuth(dataDir, cp, "aion_portal", Domain, Authorized, "@"+Domain+" accounts")
-	auth.keyPath = filepath.Join(dataDir, "portals", "aion-portal-session.key") // preserve deployed sessions
-	return auth
-}
-
-// NewScopedAuth creates an isolated Google OAuth/session realm backed by a
-// caller-supplied authorization check. It is used by fundraising.aion.bio so
-// external invitees never enter the @aion.bio team realm.
-func NewScopedAuth(dataDir, clientPath, namespace string, authorize func(string) bool, accessDescription string) *Auth {
-	if strings.TrimSpace(clientPath) == "" {
-		clientPath = filepath.Join(dataDir, "portals", namespace+"-oauth.json")
-	}
-	return newScopedAuth(dataDir, clientPath, namespace, "", authorize, accessDescription)
-}
-
-func newScopedAuth(dataDir, clientPath, namespace, hostedDomain string, authorize func(string) bool, accessDescription string) *Auth {
 	return &Auth{
-		clientPath: clientPath, keyPath: filepath.Join(dataDir, "portals", namespace+"-session.key"),
-		sessionName: namespace + "_session", stateName: namespace + "_state", hostedDomain: hostedDomain,
-		authorize: authorize, accessDescription: accessDescription,
+		clientPath: cp,
+		keyPath:    filepath.Join(dataDir, "portals", "aion-portal-session.key"),
 	}
-}
-
-func (a *Auth) authorized(email string) bool {
-	return a != nil && a.authorize != nil && a.authorize(strings.ToLower(strings.TrimSpace(email)))
 }
 
 // WithTokens adds the non-browser authentication path used by scripts and MCP
@@ -261,8 +235,8 @@ func (a *Auth) verify(v string) ([]byte, bool) {
 // callback's own check. Exported for the server-side tests that exercise the
 // write endpoints without a live Google round-trip.
 func (a *Auth) SessionCookie(email, name string, secure bool, now time.Time) (*http.Cookie, error) {
-	if !a.authorized(email) {
-		return nil, fmt.Errorf("account is not authorized: %s", email)
+	if !Authorized(email) {
+		return nil, fmt.Errorf("not an @%s account: %s", Domain, email)
 	}
 	b, _ := json.Marshal(sessionPayload{Email: email, Name: name, Exp: now.Add(sessionTTL).Unix()})
 	v, err := a.sign(b)
@@ -270,7 +244,7 @@ func (a *Auth) SessionCookie(email, name string, secure bool, now time.Time) (*h
 		return nil, err
 	}
 	return &http.Cookie{
-		Name: a.sessionName, Value: v, Path: "/",
+		Name: sessionCookie, Value: v, Path: "/",
 		Expires: now.Add(sessionTTL), MaxAge: int(sessionTTL / time.Second),
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
 	}, nil
@@ -279,7 +253,7 @@ func (a *Auth) SessionCookie(email, name string, secure bool, now time.Time) (*h
 // Identify returns the verified identity on r, if any. An expired, tampered,
 // or non-@aion.bio session is simply anonymous.
 func (a *Auth) Identify(r *http.Request) (Identity, bool) {
-	c, err := r.Cookie(a.sessionName)
+	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
 		return Identity{}, false
 	}
@@ -288,7 +262,7 @@ func (a *Auth) Identify(r *http.Request) (Identity, bool) {
 		return Identity{}, false
 	}
 	var p sessionPayload
-	if json.Unmarshal(body, &p) != nil || p.Exp < time.Now().Unix() || !a.authorized(p.Email) {
+	if json.Unmarshal(body, &p) != nil || p.Exp < time.Now().Unix() || !Authorized(p.Email) {
 		return Identity{}, false
 	}
 	return Identity{Email: p.Email, Name: p.Name}, true
@@ -338,15 +312,12 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: a.stateName, Value: v, Path: "/", MaxAge: int(stateTTL / time.Second),
+		Name: stateCookie, Value: v, Path: "/", MaxAge: int(stateTTL / time.Second),
 		HttpOnly: true, Secure: isSecure(r), SameSite: http.SameSiteLaxMode,
 	})
 	// hd biases Google's chooser to the workspace domain (advisory only — the
 	// callback still verifies the email itself).
-	opts := []oauth2.AuthCodeOption{}
-	if a.hostedDomain != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("hd", a.hostedDomain))
-	}
+	opts := []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("hd", Domain)}
 	// After an explicit sign-out (?switch=1) force the account chooser, else
 	// Google silently re-authenticates the still-live session and the user never
 	// leaves — "sign out" would look like it did nothing.
@@ -360,7 +331,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 // reads the identity from Google's id_token, enforces the @aion.bio gate, and
 // sets the session cookie.
 func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	sc, err := r.Cookie(a.stateName)
+	sc, err := r.Cookie(stateCookie)
 	if err != nil {
 		http.Error(w, "sign-in expired — start again at /oauth2/login", http.StatusBadRequest)
 		return
@@ -372,7 +343,7 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state mismatch — start again at /oauth2/login", http.StatusBadRequest)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: a.stateName, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: stateCookie, Value: "", Path: "/", MaxAge: -1})
 	cfg, err := a.oauthConfig(r.Host)
 	if err != nil {
 		http.Error(w, "sign-in unavailable", http.StatusServiceUnavailable)
@@ -388,10 +359,10 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Google returned no verified email — please try again", http.StatusBadGateway)
 		return
 	}
-	if !a.authorized(email) {
+	if !Authorized(email) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, "This portal is limited to %s.\nYou signed in as %s — switch Google accounts and try again.\n", a.accessDescription, email)
+		fmt.Fprintf(w, "This portal accepts @%s accounts only.\nYou signed in as %s — switch Google accounts and try again.\n", Domain, email)
 		return
 	}
 	c, err := a.SessionCookie(email, name, isSecure(r), time.Now())
@@ -406,7 +377,7 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 // HandleLogout (POST /oauth2/logout) clears the session.
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name: a.sessionName, Value: "", Path: "/", MaxAge: -1,
+		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, Secure: isSecure(r), SameSite: http.SameSiteLaxMode,
 	})
 	w.WriteHeader(http.StatusNoContent)

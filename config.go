@@ -128,11 +128,8 @@ type Config struct {
 	// the stable-ID migration, and runtime sync ignores all three.
 	AionPortal AionPortalConfig `json:"aionPortal"`
 	// FundraisingSheets enables the private Markdown↔Google Sheet collaboration
-	// bridge. It remains dark unless Enabled is explicitly true.
+	// bridge. It remains disabled unless Enabled is explicitly true.
 	FundraisingSheets FundraisingSheetsConfig `json:"fundraisingSheets"`
-	// FundraisingPortal is the isolated invite-only external editor. A zero port
-	// keeps the listener disabled.
-	FundraisingPortal FundraisingPortalConfig `json:"fundraisingPortal"`
 	// ErrandTimeoutMinutes kills a hung aside errand (errands-aside §6).
 	// 0 → 15. Guard mode is not configurable — the CLI has no mode flag and
 	// the app defaults new tasks to Guard (§0 probe).
@@ -198,12 +195,6 @@ type FundraisingSheetsConfig struct {
 	SheetID             int64  `json:"sheetId"`
 	CredentialsPath     string `json:"credentialsPath"`
 	SyncIntervalMinutes int    `json:"syncIntervalMinutes"`
-}
-
-type FundraisingPortalConfig struct {
-	Port        int    `json:"port"`
-	AdminEmail  string `json:"adminEmail"`
-	OAuthClient string `json:"oauthClient"`
 }
 
 func defaultConfig() Config {
@@ -308,7 +299,6 @@ func LoadConfig(path string) (Config, error) {
 	} else {
 		cfg.FundraisingSheets.CredentialsPath = expandHome(cfg.FundraisingSheets.CredentialsPath)
 	}
-	cfg.FundraisingPortal.OAuthClient = expandHome(cfg.FundraisingPortal.OAuthClient)
 	// Harness federation (Phase 4): normalize the two spellings into BOTH —
 	// Harnesses is the canonical list (legacy ExcaliburPath synthesizes a
 	// single entry); ExcaliburPath mirrors the primary for the code paths

@@ -1,7 +1,6 @@
 package fundraising
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -11,8 +10,8 @@ import (
 )
 
 // SharedOpportunity is the deliberately flattened fundraising projection used
-// by Google Sheets and the external fundraising portal. It contains no contact
-// emails, note paths, vault paths, or import metadata.
+// by Google Sheets. It contains no contact emails, note paths, vault paths, or
+// import metadata.
 type SharedOpportunity struct {
 	ID                     string   `json:"id"`
 	Firm                   string   `json:"firm"`
@@ -243,46 +242,6 @@ func (s *Store) CreateShared(desired SharedOpportunity) (Opportunity, error) {
 		return Opportunity{}, err
 	}
 	return op, nil
-}
-
-// SharedPatch applies the external portal's deliberately flattened patch. Only
-// collaborator-editable opportunity fields are accepted.
-func (s *Store) SharedPatch(id string, patch map[string]any) (Opportunity, error) {
-	current, ok := s.Get(id)
-	if !ok {
-		return Opportunity{}, fmt.Errorf("opportunity %q not found", id)
-	}
-	desired := SharedFromOpportunity(current)
-	fields := []string{}
-	values := sharedFieldMap(desired)
-	for key, raw := range patch {
-		switch key {
-		case "firm", "website", "source", "status", "interest", "amount", "currency", "lastTouchpoint", "lastTouchpointDate", "nextStep", "nextStepDue", "notes":
-			values[key] = strings.TrimSpace(fmt.Sprint(raw))
-			fields = append(fields, key)
-		case "people":
-			switch v := raw.(type) {
-			case string:
-				values[key] = strings.Join(splitPeople(v), "; ")
-			default:
-				b, _ := json.Marshal(v)
-				var names []string
-				if json.Unmarshal(b, &names) != nil {
-					return current, errors.New("people must be a list of names")
-				}
-				values[key] = strings.Join(normalizePlainPeople(names), "; ")
-			}
-			fields = append(fields, key)
-		default:
-			return current, fmt.Errorf("field %q is not editable", key)
-		}
-	}
-	var err error
-	desired, err = sharedWithFields(desired, values)
-	if err != nil {
-		return current, err
-	}
-	return s.SharedUpdate(id, desired, fields)
 }
 
 func (s *Store) resolveSharedPeople(names []string, current Opportunity) ([]PersonRef, []string) {

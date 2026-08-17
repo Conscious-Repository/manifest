@@ -7,19 +7,16 @@ let frQuery = "";
 let frSel = null;
 let frSync = null;
 let frSyncOpen = false;
-let frInvites = null;
 
 async function loadFundraising() {
   try {
-    const [r, sr, ir] = await Promise.all([
+    const [r, sr] = await Promise.all([
       fetch("/api/aion/fundraising", { cache: "no-store" }),
       fetch("/api/aion/fundraising/sync", { cache: "no-store" }),
-      fetch("/api/aion/fundraising/invites", { cache: "no-store" }),
     ]);
     if (!r.ok) throw new Error(await r.text());
     frCache = await r.json();
     frSync = sr.ok ? await sr.json() : { enabled: false, conflicts: [] };
-    frInvites = ir.ok ? await ir.json() : { enabled: false, emails: [] };
   } catch (_) { frCache = { opportunities: [], resources: [] }; }
 }
 
@@ -157,7 +154,6 @@ function renderFundraisingSync() {
   const panel = el("section", "fr-sync-panel");
   if (!frSync || !frSync.enabled) {
     panel.append(el("div", "fr-sync-note", "Google Sheet sync is disabled in server configuration."));
-    renderFundraisingInvites(panel);
     return panel;
   }
   const head = el("div", "fr-sync-head");
@@ -177,21 +173,7 @@ function renderFundraisingSync() {
     const use = el("button", "pill light", "Use Sheet"); use.onclick = () => frResolveSync(c, "sheet");
     actions.append(keep, use); row.append(detail, actions); panel.append(row);
   });
-  renderFundraisingInvites(panel);
   return panel;
-}
-
-function renderFundraisingInvites(panel) {
-  const invites = el("div", "fr-invites");
-  invites.append(el("span", "micro-label", "FUNDRAISING.AION.BIO INVITES"));
-  if (!frInvites || !frInvites.enabled) {
-    invites.append(el("div", "fr-sync-note", "The branded fundraising portal is disabled in server configuration."));
-  } else {
-    const input = el("textarea", "pp-in fr-invite-input"); input.placeholder = "advisor@example.com\ninvestor@example.com"; input.value = (frInvites.emails || []).join("\n");
-    const save = el("button", "pill light", "Save invites"); save.onclick = () => frSaveInvites(input.value);
-    invites.append(input, save);
-  }
-  panel.append(invites);
 }
 
 async function frSyncNow() {
@@ -207,15 +189,6 @@ async function frResolveSync(conflict, choice) {
     const r = await fetch("/api/aion/fundraising/sync/resolve", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: conflict.id, field: conflict.field, choice }) });
     if (!r.ok) throw new Error(await r.text());
     frSync = await r.json(); frCache = null; showToast("Conflict resolved"); renderAion();
-  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
-}
-
-async function frSaveInvites(value) {
-  const emails = String(value || "").split(/[\n,;]+/).map((x) => x.trim()).filter(Boolean);
-  try {
-    const r = await fetch("/api/aion/fundraising/invites", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails }) });
-    if (!r.ok) throw new Error(await r.text());
-    frInvites = await r.json(); showToast("Fundraising invites saved"); renderAion();
   } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
 }
 
