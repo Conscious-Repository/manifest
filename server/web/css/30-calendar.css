@@ -1,7 +1,7 @@
 /* 30-calendar — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
 /* ---- calendar (month view) ---- */
-.calendar-view { max-width: 1320px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.calendar-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
 .cal-head-row { display: flex; align-items: center; justify-content: center; gap: var(--sp-6); margin-bottom: var(--sp-7); }
 .cal-month-label { font-family: var(--mono); font-size: var(--fs-lg); letter-spacing: 0.4px; color: var(--ink); min-width: 180px; text-align: center; }
 .cal-connect {

@@ -25,7 +25,7 @@
    of .aion-body; and the backlog renders its own list+inspector split
    (.aion-backlog) just like AION. The left rail became the top tab-bar
    (#reToggle in .agent-head). ---- */
-.properties-view { max-width: 1080px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.properties-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
 .prop-shell { display: flex; align-items: flex-start; padding: var(--sp-4) 0 80px; }
 .prop-pane { flex: 1; min-width: 0; }
 .prop-inspector {

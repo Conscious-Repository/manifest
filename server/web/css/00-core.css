@@ -78,6 +78,11 @@
   --fs-2xl: 19px;   /* page / panel titles */
   --fs-3xl: 30px;   /* hero numerals (rare) */
 
+  /* page container — every top-level view shares ONE column width + gutter so
+     titles and content line up tab-to-tab (ui-conventions.md §page). */
+  --page-max: 1180px;
+  --page-gutter: 28px;
+
   /* ── space scale (role-named) ── derived from the gap cadence already in use
      (8/10/6/12/2 cover ~63% of gaps). Odd values snap to nearest even. */
   --sp-1: 2px;

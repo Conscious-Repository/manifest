@@ -22,7 +22,7 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .feed-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 
 /* ===== FEED — manifest's one inbox (top-level tab) ===== */
-.feed-view { max-width: 900px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.feed-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
 .feed-view .feed-filters { margin-right: var(--sp-4); }
 .feed-signals:empty { display: none; } /* the signals lane never pads when empty */
 /* signals lane — quiet one-line nudges (conditions, not items) */

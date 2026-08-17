@@ -8,7 +8,7 @@
 }
 /* page frame: same convention as every other view — bounded width, auto
    margins, real gutters (nothing touches the screen edges) */
-.aion-view { max-width: 1080px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.aion-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
 .aion-body { padding: var(--sp-4) 0 80px; }
 @media (max-width: 860px) { .aion-view { padding: 0 var(--sp-7); } }
 

@@ -127,6 +127,19 @@ Every tab registers a ⌘K provider at parse time (see `cmdRegistry` in
 `00-core.js`). A new tab should reach parity using only library helpers + tokens,
 with **no new raw values** — that's the practical test that the system is real.
 
+**Page container (the outer wrapper of every top-level view):** all views share
+ONE column so titles and content line up tab-to-tab — never invent a per-tab
+width:
+
+```css
+.someView { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
+```
+
+`--page-max` (1180px) and `--page-gutter` (28px) live in `00-core.css`. Change
+the width once there and every page moves together. The header inside is the
+shared `.agent-head` + `.agent-title` (mono uppercase). Do not set a bespoke
+`max-width`/`margin: auto` on a view.
+
 ---
 
 ## Self-check (the no-linter substitute — run before shipping UI)

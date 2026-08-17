@@ -116,7 +116,7 @@
 .pill-solid:disabled { opacity: 0.6; cursor: default; }
 
 /* ===== SPIRITS one-page (§12 / prototype, 2026-08-10) ===== */
-.spirits-page { padding: var(--sp-7) var(--sp-9) 40px; max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
+.spirits-page { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); display: flex; flex-direction: column; gap: 26px; }
 .sprt-block { display: flex; flex-direction: column; }
 .sprt-head { display: flex; align-items: baseline; gap: var(--sp-5); padding-bottom: var(--sp-4); }
 .sprt-title { font-size: var(--fs-xs); color: var(--base-100); white-space: nowrap; }
