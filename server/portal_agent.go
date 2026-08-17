@@ -26,7 +26,7 @@ import (
 // relay; agent-assigned item → every comment relays. Same semantics as the
 // dashboard composer.
 func (s *Server) AionThreadHook(itemID string, mentions []string, text string) {
-	s.threadDialogHook("aion:"+itemID, mentions, text)
+	s.threadDialogHook(s.aionTodoID(itemID), mentions, text)
 }
 
 // AionTeamAgents is the portal roster: TEAM-surface harnesses only (kairos —
@@ -37,7 +37,7 @@ func (s *Server) AionTeamAgents() []map[string]any { return s.teamAgentRoster() 
 // (portal-v2: the whole PLAN block payload — description section, record
 // provenance, and the agent-held flag).
 func (s *Server) AionPanel(itemID string) map[string]any {
-	id := "aion:" + itemID
+	id := s.aionTodoID(itemID)
 	rec := s.readPlanRecord(id)
 	out := map[string]any{
 		"plan":     rec.Plan,
@@ -74,9 +74,13 @@ func (s *Server) AionActivity(itemID string) []map[string]any {
 	if s.threads == nil || s.threads.aion == nil {
 		return out
 	}
+	ids := map[string]bool{itemID: true}
+	for _, legacy := range s.threads.aion.AliasesFor(itemID) {
+		ids[legacy] = true
+	}
 	for _, e := range s.threads.aion.Activity(time.Time{}) {
 		item, _ := e.Payload["item"].(string)
-		if item != itemID {
+		if !ids[item] {
 			continue
 		}
 		out = append(out, map[string]any{
@@ -94,7 +98,7 @@ func (s *Server) AionPlanWrite(itemID, section, text string) error {
 	if section != "plan" && section != "description" {
 		return errBadRequest("unknown section " + section)
 	}
-	return s.writePlanSection("todo-plans", "aion:"+itemID, section, strings.TrimRight(text, "\n"))
+	return s.writePlanSection("todo-plans", s.aionTodoID(itemID), section, strings.TrimRight(text, "\n"))
 }
 
 // AionFileBlob resolves a comment-attachment hash to its stored path ("" when
@@ -109,7 +113,7 @@ func (s *Server) AionFileBlob(hash string) string {
 // AionAssign assigns an agent on a portal item, attributed to the member.
 // The team activity trail records it (→ the owner's FEED via the bridge).
 func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error {
-	_, err := s.assignTask(threads.Identity{ID: memberEmail, Name: memberName}, "aion:"+itemID, owner)
+	_, err := s.assignTask(threads.Identity{ID: memberEmail, Name: memberName}, s.aionTodoID(itemID), owner)
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
 			"agent-assign", map[string]any{"item": itemID, "owner": owner}, time.Now())
@@ -121,12 +125,29 @@ func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error
 // member. spirits.ErrAlreadyActive passes through for the 409; a successful
 // fire lands in the team activity trail (→ the owner's FEED notice).
 func (s *Server) AionFire(itemID, memberEmail, memberName string) error {
-	err := s.fireTask(threads.Identity{ID: memberEmail, Name: memberName}, "aion:"+itemID)
+	err := s.fireTask(threads.Identity{ID: memberEmail, Name: memberName}, s.aionTodoID(itemID))
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
 			"agent-fire", map[string]any{"item": itemID}, time.Now())
 	}
 	return err
+}
+
+// aionTodoID keeps pre-stable-id plan records usable without rewriting vault
+// history. New items use the stable id; an existing legacy plan is selected
+// only when the team-store migration recorded the exact alias.
+func (s *Server) aionTodoID(itemID string) string {
+	stable := "aion:" + itemID
+	if s.readPlanRecord(stable).Exists || s.threads == nil || s.threads.aion == nil {
+		return stable
+	}
+	for _, legacy := range s.threads.aion.AliasesFor(itemID) {
+		candidate := "aion:" + legacy
+		if s.readPlanRecord(candidate).Exists {
+			return candidate
+		}
+	}
+	return stable
 }
 
 // --- native chat with kairos (chat-kairos handoff) --------------------------

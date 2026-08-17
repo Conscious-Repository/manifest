@@ -128,6 +128,31 @@ func (s *Store) EnsureStableIDs() (int, error) {
 	return n, err
 }
 
+// LegacyIDMap returns the exact old derived id → persisted id mapping for the
+// current backlog. It is used once at startup to carry collaboration created
+// before stable ids across the identity migration. Title edits after this
+// migration never affect the persisted id.
+func (s *Store) LegacyIDMap() map[string]string {
+	out := map[string]string{}
+	ambiguous := map[string]bool{}
+	for _, it := range s.LoadBacklog().AllItems() {
+		if !it.IDPersisted || !strings.HasPrefix(it.ID, "aion-bl/") {
+			continue
+		}
+		legacy := ItemID(it.Kind, it.Text)
+		if legacy == "" || legacy == it.ID || ambiguous[legacy] {
+			continue
+		}
+		if _, exists := out[legacy]; exists {
+			delete(out, legacy)
+			ambiguous[legacy] = true
+			continue
+		}
+		out[legacy] = it.ID
+	}
+	return out
+}
+
 // EnsureStableIDsFromPortal uses a transition-release portal checkout only
 // to preserve exact legacy contract IDs for exact kind+title matches. It
 // never guesses across renamed or ambiguous rows. Existing vault IDs win;

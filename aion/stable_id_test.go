@@ -59,4 +59,8 @@ func TestStableIDMigrationPreservesLegacyAndRepairsCollisions(t *testing.T) {
 	if strings.Count(serialized, "[id::") != 4 {
 		t.Fatalf("not every nested item received an id:\n%s", serialized)
 	}
+	legacyMap := store.LegacyIDMap()
+	if got := legacyMap[ItemID(KindTask, "A completely new title")]; got != before {
+		t.Fatalf("LegacyIDMap after title edit = %q, want %q", got, before)
+	}
 }

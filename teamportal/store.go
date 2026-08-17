@@ -1,6 +1,7 @@
 package teamportal
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -141,11 +142,12 @@ type Proposal struct {
 
 // Ext is the whole extended store (items.ext.json).
 type Ext struct {
-	Comments  map[string][]Comment `json:"comments"`  // item id → comments (oldest first)
-	Overrides map[string]Override  `json:"overrides"` // item id → latest team field state
-	Items     []TeamItem           `json:"items"`     // team/-tagged member adds
-	Proposals []Proposal           `json:"proposals"`
-	Archives  []ArchivedItem       `json:"archives,omitempty"`
+	Comments     map[string][]Comment `json:"comments"`  // item id → comments (oldest first)
+	Overrides    map[string]Override  `json:"overrides"` // item id → latest team field state
+	Items        []TeamItem           `json:"items"`     // team/-tagged member adds
+	Proposals    []Proposal           `json:"proposals"`
+	Archives     []ArchivedItem       `json:"archives,omitempty"`
+	IDMigrations map[string]string    `json:"id_migrations,omitempty"` // legacy id → stable id
 }
 
 // Entry is one activity.log line.
@@ -167,6 +169,7 @@ const (
 	ActOwnerResolve  = "owner-resolve"
 	ActOwnerPatch    = "owner-patch"
 	ActArchive       = "archive-item"
+	ActMigrateID     = "migrate-item-id"
 )
 
 // Sentinel errors the delete path returns so the HTTP layer can map them to
@@ -235,6 +238,109 @@ func (s *Store) Ext() Ext {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.readExt()
+}
+
+// MigrateItemIDs atomically rekeys collaboration from legacy derived ids to
+// stable ids. The append-only activity log is not rewritten; IDMigrations
+// preserves aliases so historical activity remains addressable by inspectors.
+// Only ids that actually have team state or activity are persisted.
+func (s *Store) MigrateItemIDs(mapping map[string]string, actor Identity, now time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	if ext.IDMigrations == nil {
+		ext.IDMigrations = map[string]string{}
+	}
+	logBody, _ := os.ReadFile(s.logPath())
+	legacyIDs := make([]string, 0, len(mapping))
+	for legacy := range mapping {
+		legacyIDs = append(legacyIDs, legacy)
+	}
+	sort.Strings(legacyIDs)
+
+	changed := 0
+	for _, legacy := range legacyIDs {
+		stable := strings.TrimSpace(mapping[legacy])
+		legacy = strings.TrimSpace(legacy)
+		if legacy == "" || stable == "" || legacy == stable || ext.IDMigrations[legacy] == stable {
+			continue
+		}
+		hasActivity := bytes.Contains(logBody, []byte(`"item":"`+legacy+`"`))
+		comments, hasComments := ext.Comments[legacy]
+		legacyOverride, hasOverride := ext.Overrides[legacy]
+		hasArchive := false
+		for _, archived := range ext.Archives {
+			if archived.ID == legacy {
+				hasArchive = true
+				break
+			}
+		}
+		if !hasActivity && !hasComments && !hasOverride && !hasArchive {
+			continue
+		}
+
+		if hasComments {
+			for i := range comments {
+				comments[i].Item = stable
+			}
+			ext.Comments[stable] = append(ext.Comments[stable], comments...)
+			sort.SliceStable(ext.Comments[stable], func(i, j int) bool {
+				return ext.Comments[stable][i].At.Before(ext.Comments[stable][j].At)
+			})
+			delete(ext.Comments, legacy)
+		}
+		if hasOverride {
+			if current, ok := ext.Overrides[stable]; ok {
+				older, newer := legacyOverride, current
+				if current.At.Before(legacyOverride.At) {
+					older, newer = current, legacyOverride
+				}
+				merged := map[string]string{}
+				for key, value := range older.Fields {
+					merged[key] = value
+				}
+				for key, value := range newer.Fields {
+					merged[key] = value
+				}
+				newer.Fields = merged
+				ext.Overrides[stable] = newer
+			} else {
+				ext.Overrides[stable] = legacyOverride
+			}
+			delete(ext.Overrides, legacy)
+		}
+		for i := range ext.Archives {
+			if ext.Archives[i].ID == legacy {
+				ext.Archives[i].ID = stable
+			}
+		}
+		for i := range ext.Proposals {
+			if ext.Proposals[i].ItemID == legacy {
+				ext.Proposals[i].ItemID = stable
+			}
+		}
+		ext.IDMigrations[legacy] = stable
+		changed++
+	}
+	if changed == 0 {
+		return 0, nil
+	}
+	return changed, s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActMigrateID,
+		Payload: map[string]any{"count": changed}})
+}
+
+// AliasesFor returns legacy ids whose activity belongs to stableID.
+func (s *Store) AliasesFor(stableID string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for legacy, stable := range s.readExt().IDMigrations {
+		if stable == stableID {
+			out = append(out, legacy)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Revision is a strong token over the current team projection and activity

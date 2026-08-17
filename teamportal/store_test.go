@@ -115,3 +115,46 @@ func TestPatchValidatesFields(t *testing.T) {
 		t.Error("Patch accepted an empty field set")
 	}
 }
+
+func TestMigrateItemIDsRekeysStateAndPreservesActivity(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor := Identity{Email: "ben@aion.bio", Name: "Benjamin"}
+	now := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	legacy, stable := "8cc936dc", "aion-bl/make-canon-legible"
+	if _, err := s.AddComment(actor, legacy, "preserve this", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Patch(actor, legacy, map[string]string{"status": "in_progress"}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(filepath.Join(dir, "activity.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := s.MigrateItemIDs(map[string]string{legacy: stable, "unused": "aion-bl/unused"}, actor, now.Add(2*time.Minute))
+	if err != nil || n != 1 {
+		t.Fatalf("MigrateItemIDs = %d, %v", n, err)
+	}
+	ext := s.Ext()
+	if len(ext.Comments[legacy]) != 0 || len(ext.Comments[stable]) != 1 || ext.Comments[stable][0].Item != stable {
+		t.Fatalf("comments not rekeyed: %+v", ext.Comments)
+	}
+	if _, ok := ext.Overrides[legacy]; ok || ext.Overrides[stable].Fields["status"] != "in_progress" {
+		t.Fatalf("override not rekeyed: %+v", ext.Overrides)
+	}
+	if got := s.AliasesFor(stable); len(got) != 1 || got[0] != legacy {
+		t.Fatalf("AliasesFor = %v", got)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, "activity.log"))
+	if err != nil || !strings.HasPrefix(string(after), string(before)) {
+		t.Fatal("migration rewrote the append-only activity trail")
+	}
+	if n, err := s.MigrateItemIDs(map[string]string{legacy: stable}, actor, now.Add(3*time.Minute)); err != nil || n != 0 {
+		t.Fatalf("idempotent migration = %d, %v", n, err)
+	}
+}

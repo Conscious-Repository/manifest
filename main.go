@@ -561,6 +561,12 @@ func main() {
 			tokens := teamportal.NewTokens(cfg.DataDir)
 			auth := teamportal.NewAuth(cfg.DataDir).WithTokens(tokens)
 			portalOpts = server.PortalOptions{Auth: auth, Tokens: tokens, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail, Live: srv.AionLive()}
+			migrationActor := teamportal.Identity{Email: cfg.AionPortal.AdminEmail, Name: "Manifest migration"}
+			if n, migrateErr := ts.MigrateItemIDs(aionStore.LegacyIDMap(), migrationActor, time.Now()); migrateErr != nil {
+				log.Printf("aion collaboration id migration failed: %v", migrateErr)
+			} else if n > 0 {
+				log.Printf("aion: migrated collaboration for %d legacy item id(s)", n)
+			}
 			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail), ts, cfg.AionPortal.AdminEmail)
 			if orphans := srv.AionLive().OrphanTeamIDs(); len(orphans) > 0 {
 				log.Printf("aion live sync: unresolved legacy collaboration ids (not guessed): %s", strings.Join(orphans, ", "))
