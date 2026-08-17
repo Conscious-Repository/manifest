@@ -287,10 +287,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /api/aion/backlog/update/{id...}", s.handleAionBacklogUpdate)
 		mux.HandleFunc("POST /api/aion/backlog/delete/{id...}", s.handleAionBacklogDelete)
 		mux.HandleFunc("POST /api/aion/backlog/decide/{id...}", s.handleAionBacklogDecide)
-		// One-release compatibility for legacy hash ids.
-		mux.HandleFunc("POST /api/aion/backlog/{id}/update", s.handleAionBacklogUpdate)
-		mux.HandleFunc("POST /api/aion/backlog/{id}/delete", s.handleAionBacklogDelete)
-		mux.HandleFunc("POST /api/aion/backlog/{id}/decide", s.handleAionBacklogDecide)
+		// One-release compatibility for legacy hash ids. A single catch-all is
+		// used because three {id}/action patterns conflict with the new
+		// action/{id...} patterns under Go's ServeMux specificity rules.
+		mux.HandleFunc("POST /api/aion/backlog/{legacy...}", s.handleAionBacklogLegacy)
 		mux.HandleFunc("POST /api/aion/proposals/decide", s.handleAionProposalDecide)
 		mux.HandleFunc("GET /api/aion/activity", s.handleAionCollaborationActivity)
 		mux.HandleFunc("POST /api/aion/heuristics/{id}/edit", s.handleAionHeuristicEdit)

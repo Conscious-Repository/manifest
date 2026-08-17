@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,6 +94,25 @@ func TestAionLiveProjectionAndOwnerResolution(t *testing.T) {
 	}
 	if len(team.Ext().Archives) != 1 || len(team.Ext().Comments[baseID]) != 1 {
 		t.Fatalf("archive did not preserve snapshot/thread: %+v", team.Ext())
+	}
+}
+
+func TestAionHandlerRoutePatternsDoNotConflict(t *testing.T) {
+	srv, _, _, baseID := liveFixture(t)
+	h := srv.Handler() // regression: conflicting legacy/new patterns panicked here
+
+	req := httptest.NewRequest(http.MethodPost, "/api/aion/backlog/update/"+baseID, strings.NewReader(`{"status":"in_progress"}`))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("new update route = %d: %s", w.Code, w.Body.String())
+	}
+
+	legacy := httptest.NewRequest(http.MethodPost, "/api/aion/backlog/deadbeef/update", strings.NewReader(`{"status":"open"}`))
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, legacy)
+	if w.Code == http.StatusNotFound {
+		t.Fatalf("legacy compatibility route did not dispatch: %s", w.Body.String())
 	}
 }
 

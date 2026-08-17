@@ -384,6 +384,25 @@ func (s *Server) handleAionBacklogUpdate(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+func (s *Server) handleAionBacklogLegacy(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.PathValue("legacy"), "/"), "/")
+	if len(parts) != 2 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	r.SetPathValue("id", parts[0])
+	switch parts[1] {
+	case "update":
+		s.handleAionBacklogUpdate(w, r)
+	case "delete":
+		s.handleAionBacklogDelete(w, r)
+	case "decide":
+		s.handleAionBacklogDecide(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (s *Server) handleAionBacklogDelete(w http.ResponseWriter, r *http.Request) {
 	if s.aion == nil {
 		http.Error(w, "aion not available", http.StatusServiceUnavailable)
