@@ -2,13 +2,18 @@
    Structural labels are lowercase; labels 10px/.16em; radius 0 everywhere. */
 
 function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, teamOn,
-  pendingCount, onAdd, onProposals, me, themeName, onThemes, chatUrl }) {
+  pendingCount, agentProposals, chatLive, onAdd, onProposals, me, themeName, onThemes }) {
   const nav = [
     { id: 'field', label: 'field', count: '' },
     { id: 'work', label: 'work', count: counts.work },
     { id: 'goals', label: 'goals', count: counts.goals },
     { id: 'archive', label: 'archive', count: '' }
   ];
+  // the chat row's count slot is the engine heartbeat dot, not a number
+  const beat = chatLive === true ? { g: '●', c: 'var(--good,#6fb8dd)' }
+    : chatLive === false ? { g: '○', c: 'var(--warn,#a44)' } : { g: '', c: 'var(--ink-mute,#555)' };
+  const propCount = (agentProposals && agentProposals > 0)
+    ? pendingCount + ' · ' + agentProposals : pendingCount;
   return (
     <aside className="v2-rail">
       <div style={{ padding: '0 18px' }}>
@@ -26,11 +31,13 @@ function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, team
             <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-mute,#666)' }}>{n.count}</span>
           </button>
         ))}
-        <a className="v2-navbtn v2-navlink" href={chatUrl} target="_blank" rel="noopener">
-          <span style={{ color: 'var(--ink-mute,#555)', fontSize: 11 }}>·</span>
+        <button className="v2-navbtn" onClick={() => go('chat')}
+          style={{ borderLeft: '2px solid ' + (view === 'chat' ? 'var(--accent,#0091ea)' : 'transparent'),
+            color: view === 'chat' ? 'var(--ink,#d4d4d4)' : 'var(--ink-faint,#888)' }}>
+          <span style={{ color: 'var(--ink-mute,#555)', fontSize: 11 }}>{view === 'chat' ? '▸' : '·'}</span>
           <span>chat</span>
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-mute,#555)' }}>↗</span>
-        </a>
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: beat.c }}>{beat.g}</span>
+        </button>
       </nav>
 
       {filterGoal && (
@@ -49,7 +56,7 @@ function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, team
             style={{ color: 'var(--accent,#0091ea)', padding: '4px 8px', textAlign: 'left' }}>+ add / propose</button>
           <button className="v2-btn v2-hoverline" onClick={onProposals}
             style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--ink-faint,#888)', padding: '4px 8px', textAlign: 'left' }}>
-            <span>proposals</span><span style={{ color: 'var(--accent,#0091ea)' }}>{pendingCount}</span>
+            <span>proposals</span><span style={{ color: 'var(--accent,#0091ea)' }}>{propCount}</span>
           </button>
         </div>
       )}

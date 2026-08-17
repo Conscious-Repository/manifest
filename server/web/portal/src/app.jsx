@@ -17,6 +17,7 @@ function parseHash() {
   if (h === 'overview' || h === 'field') return { view: 'field', anchor: null };
   if (h === 'library' || h === 'archive') return { view: 'archive', anchor: null };
   if (h === 'goals') return { view: 'goals', anchor: null };
+  if (h === 'chat') return { view: 'chat', anchor: null };
   return null;
 }
 
@@ -37,8 +38,39 @@ function PortalApp() {
   const [data, setData] = React.useState(null);
   const [w, setW] = React.useState(typeof window !== 'undefined' ? window.innerWidth : 1440);
 
+  const [chatLive, setChatLive] = React.useState(null);   // engine heartbeat: true|false|null
+  const [agentProps, setAgentProps] = React.useState(0);  // pending chat proposals (rail 'N · A')
+  const [chatSeed, setChatSeed] = React.useState(null);   // {threadID, ctx} from "discuss with kairos"
+
+  // discuss an item with kairos: create/find a rock-scoped thread, seed the
+  // item as context, jump to chat
+  const onDiscuss = React.useCallback((item) => {
+    const tid = 'th/item-' + String(item.id).replace(/[^a-z0-9-]+/gi, '-').toLowerCase().slice(0, 40);
+    const title = String(item.title || 'item').toLowerCase().slice(0, 22);
+    window.TEAM_API.post('api/chat/thread', { op: 'create', id: tid, title: title, rock: item.rock || '' })
+      .finally(() => {
+        setChatSeed({ threadID: tid, ctx: ['aion:' + item.id] });
+        setSel(null); setView('chat'); history.replaceState(null, '', '#chat');
+      });
+  }, []);
+
   React.useEffect(() => { window.loadPortalData().then(setData); }, []);
   React.useEffect(() => { T.applyBody(themeId); }, [themeId]);
+
+  // the rail heartbeat dot: poll the kairos engine (slow when not in chat)
+  React.useEffect(() => {
+    let on = true;
+    const tick = () => {
+      if (!on) return;
+      window.TEAM_API.get('api/chat/engine').then(r => {
+        if (on && r.ok && r.value) setChatLive(!!r.value.live);
+      });
+    };
+    tick();
+    const ms = view === 'chat' ? 4000 : 30000;
+    const t = setInterval(tick, ms);
+    return () => { on = false; clearInterval(t); };
+  }, [view]);
 
   const reloadTeam = React.useCallback(() => {
     Promise.all([U.fetchJSON('api/team/state'), U.fetchJSON('api/me')]).then(rs => {
@@ -120,7 +152,7 @@ function PortalApp() {
     const ItemView = safe('ItemView');
     main = <ItemView item={selItem} me={me} team={data.team} teamOn={teamOn}
       goalsIndex={goalsIndex} filter={filter} onBack={() => { setSel(null); setView('work'); }}
-      pin={pin} reloadTeam={reloadTeam} />;
+      pin={pin} reloadTeam={reloadTeam} onDiscuss={onDiscuss} />;
   } else if (view === 'field') {
     const FieldView = safe('FieldView');
     main = <FieldView data={data} items={items} goalsIndex={goalsIndex} me={me} filter={filter}
@@ -134,6 +166,12 @@ function PortalApp() {
   } else if (view === 'goals') {
     const GoalsView = safe('GoalsView');
     main = <GoalsView data={data} items={items} goalsIndex={goalsIndex} filter={filter} pin={pin} go={go} />;
+  } else if (view === 'chat') {
+    const ChatView = safe('ChatView');
+    main = <ChatView me={me} goalsIndex={goalsIndex} items={items} filter={filter}
+      openItem={sel && sel.kind === 'item' ? sel.id : null} w={w} seed={chatSeed}
+      onSeedUsed={() => setChatSeed(null)}
+      onAgentProps={setAgentProps} onEngine={e => setChatLive(e && e.live)} />;
   } else {
     const ArchiveView = safe('ArchiveView');
     main = <ArchiveView data={data} items={items} goalsIndex={goalsIndex} filter={filter}
@@ -151,9 +189,10 @@ function PortalApp() {
       <Rail view={view} counts={counts} go={go} filterGoal={filterGoal}
         filterExplain={D.filterExplain(items, goalsIndex, filter)}
         onClearFilter={() => setFilter(null)} teamOn={teamOn} pendingCount={pendingCount}
+        agentProposals={agentProps} chatLive={chatLive}
         onAdd={() => { setView('work'); setSel(null); setAddOpen(true); }}
         onProposals={() => go('work', 'sec-proposals')} me={me} themeName={T.byId(themeId).name}
-        onThemes={() => setThemeModal(true)} chatUrl="https://100.95.45.62:8443/" />
+        onThemes={() => setThemeModal(true)} />
 
       <main className="v2-main">
         <div className="v2-breadcrumb">

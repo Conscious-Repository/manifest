@@ -4,7 +4,7 @@
    with the @Kairos mention lane. Mirrors the prototype; agent semantics map
    to the live backend (plans auto-materialize; "run the plan" = fire). */
 
-function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, reloadTeam }) {
+function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, reloadTeam, onDiscuss }) {
   const U = window.PORTAL_UTIL;
   const D = window.PORTAL_DERIVE;
   const PT = window.PORTAL_TEAM;
@@ -180,7 +180,13 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
       </div>
       <div style={{ fontSize: 20, lineHeight: 1.35, marginTop: 8 }}>{item.title}</div>
       <div style={{ fontSize: 11, color: 'var(--ink-faint,#888)', marginTop: 6 }}>{itemSub}</div>
-      <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{item.source || ''}</div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{item.source || ''}</span>
+        {teamOn && onDiscuss && (
+          <button className="v2-bare v2-underlink v2-hoveraccent-t" style={{ color: 'var(--ink-faint,#888)', fontSize: 11 }}
+            onClick={() => onDiscuss(item)}>discuss with kairos →</button>
+        )}
+      </div>
 
       {canEdit && (
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
