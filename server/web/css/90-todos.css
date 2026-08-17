@@ -2,9 +2,15 @@
    Dense rows: 4px 8px padding, 14px text, #f4f4f4 row hairlines. Alarm is
    weight + a ● dot, never a color. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.tdo-sec-title, .delegation-chip {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* section labels */
 .tdo-sec-label { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-3); border-bottom: 1px solid var(--base-25); margin-bottom: var(--sp-1); }
-.tdo-sec-title { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
+.tdo-sec-title { font-size: var(--fs-xs); color: var(--base-100); white-space: nowrap; }
 .tdo-sec-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .tdo-sec-hint { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
 
@@ -86,7 +92,7 @@
 /* delegation (Phase 6): dispatch affordance + the trace-derived state chip */
 .tdo-delegate { visibility: hidden; }
 .tdo-row:hover .tdo-delegate { visibility: visible; }
-.delegation-chip { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.3px; text-transform: uppercase; border: 1px solid var(--base-25); border-radius: 3px; padding: 0 var(--sp-2); background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
+.delegation-chip { font-size: var(--fs-2xs); border: 1px solid var(--base-25); border-radius: 3px; padding: 0 var(--sp-2); background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
 .delegation-chip.dstate-running { color: var(--accent); border-color: var(--accent-soft); }
 .delegation-chip.dstate-proposed { color: var(--base-100); font-weight: 600; }
 .delegation-chip.dstate-failed { color: var(--base-100); font-weight: 600; }

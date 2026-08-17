@@ -1,4 +1,10 @@
 /* TODO PANEL — the sticky inspector (aion idiom, terminal-cockpit rhythm) */
+
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.tdo-p-sec-label, .tdo-p-c-act, .tdo-p-c-persona {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
 .tdo-shell { display: flex; align-items: flex-start; gap: 0; }
 .tdo-shell > #todosRows { flex: 1; min-width: 0; }
 body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
@@ -18,7 +24,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-deleg { margin-top: -8px; }
 
 .tdo-p-sec { display: flex; flex-direction: column; gap: var(--sp-3); }
-.tdo-p-sec-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.8px; text-transform: uppercase; color: var(--base-40); display: flex; align-items: baseline; }
+.tdo-p-sec-label { font-size: var(--fs-2xs); color: var(--base-40); display: flex; align-items: baseline; }
 .tdo-p-sec-acts { margin-left: auto; display: flex; gap: var(--sp-4); }
 .tdo-p-thread-kind { color: var(--base-30); text-transform: none; letter-spacing: 0.2px; }
 .tdo-p-linky { border: 0; background: none; color: var(--base-40); cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); padding: 0; }
@@ -44,7 +50,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-comment.structural { background: none; border: 0; padding: var(--sp-1) 0; }
 .tdo-p-c-head { display: flex; align-items: baseline; gap: var(--sp-3); }
 .tdo-p-c-author { font-size: var(--fs-sm); font-weight: 600; color: var(--base-100); }
-.tdo-p-c-act { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.6px; text-transform: uppercase; color: var(--accent); }
+.tdo-p-c-act { font-size: var(--fs-2xs); color: var(--accent); }
 .tdo-p-c-when { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; font-variant-numeric: tabular-nums; }
 .tdo-p-c-text { font-size: var(--fs-md); line-height: 1.45; color: var(--base-100); margin-top: var(--sp-1); white-space: pre-wrap; word-break: break-word; }
 .tdo-p-comment.structural .tdo-p-c-text { color: var(--base-50); font-size: var(--fs-sm); }
@@ -94,4 +100,4 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-plan.clickable:hover { background: var(--base-10); }
 
 /* persona chip on a persona-gated agent reply (persona plan Phase 1) */
-.tdo-p-c-persona { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.6px; text-transform: uppercase; color: var(--muted); }
+.tdo-p-c-persona { font-size: var(--fs-2xs); color: var(--muted); }

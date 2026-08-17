@@ -1,5 +1,11 @@
 /* 55-approvals — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.sess-src, .appr-diff-label, .appr-title-label, .appr-attendees-label {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ---- Jobs + sessions ---- */
 .jobs-list { display: flex; flex-direction: column; }
 .job-row { display: flex; align-items: center; gap: var(--sp-6); border-bottom: 1px solid var(--line); padding: var(--sp-6) var(--sp-2); }
@@ -15,7 +21,7 @@
 .sessions-list { display: flex; flex-direction: column; }
 .session-row { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-3) var(--sp-2); border-bottom: 1px solid var(--line); }
 .session-row:last-child { border-bottom: none; }
-.sess-src { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.3px; border-radius: 4px; padding: var(--sp-1) var(--sp-3); border: 1px solid var(--line); color: var(--muted); flex: none; }
+.sess-src { font-size: var(--fs-2xs); border-radius: 4px; padding: var(--sp-1) var(--sp-3); border: 1px solid var(--line); color: var(--muted); flex: none; }
 .sess-src.src-cron { color: var(--base-50); border-color: var(--base-25); }
 .sess-src.src-api_server { color: var(--blue); border-color: var(--blue-soft); }
 .sess-src.src-telegram { color: #0e7490; border-color: #c6e6ee; }
@@ -40,7 +46,7 @@
 .appr-apply { display: flex; align-items: center; gap: var(--sp-4); }
 .appr-apply-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--muted); }
 .appr-apply-path { font-family: var(--mono); font-size: var(--fs-sm); color: var(--blue); background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); }
-.appr-diff-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; }
+.appr-diff-label { font-size: var(--fs-2xs); color: var(--muted); }
 .appr-diff { border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; }
 .diff-line { display: flex; white-space: pre; }
 .diff-gutter { flex: 0 0 1.6em; text-align: center; color: var(--muted); user-select: none; }
@@ -63,7 +69,7 @@
 
 /* title editor on create-vault-note proposals (edit the filename before confirming) */
 .appr-title { display: flex; flex-direction: column; gap: var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); background: var(--hover); margin-bottom: var(--sp-4); }
-.appr-title-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
+.appr-title-label { font-size: var(--fs-2xs); color: var(--muted); }
 .appr-title-row { display: flex; align-items: center; gap: var(--sp-3); }
 .appr-title-date { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
 .appr-title-input { flex: 1; font-family: var(--sans); font-size: var(--fs-md); padding: var(--sp-2) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius); outline: none; color: var(--text); background: var(--bg); }
@@ -73,7 +79,7 @@
 
 /* people-involved editor on create-vault-note proposals */
 .appr-attendees { display: flex; flex-direction: column; gap: var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); background: var(--hover); }
-.appr-attendees-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
+.appr-attendees-label { font-size: var(--fs-2xs); color: var(--muted); }
 .attendee-chips { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .attendee-chip { display: inline-flex; align-items: center; gap: var(--sp-2); background: var(--bg); border: 1px solid var(--line); border-radius: 9999px; padding: var(--sp-1) var(--sp-3) var(--sp-1) var(--sp-5); font-family: var(--sans); font-size: var(--fs-sm); color: var(--text); }
 .attendee-name { line-height: 1; }

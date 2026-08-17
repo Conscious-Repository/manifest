@@ -5,6 +5,12 @@
    ≥861px renders byte-identically to a build without this file.
    860–1100 tablet band deliberately untouched (owner decision 2026-08-10). */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.mf-agenda-day {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ---- default state of mobile-only chrome: invisible on desktop ---- */
 .mf-topbar-btn { display: none; }
 .mf-scrim { display: none; }
@@ -239,7 +245,7 @@
   .cal-cell .cal-ev:nth-of-type(n+4) { display: none; } /* ≤3 dots */
   .cal-more { display: none; }
   /* agenda sheet rows (mfCalAgenda) */
-  .mf-agenda-day { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); margin-bottom: var(--sp-4); }
+  .mf-agenda-day { font-size: var(--fs-xs); color: var(--base-40); margin-bottom: var(--sp-4); }
   .mf-agenda-ev { display: flex; align-items: baseline; gap: var(--sp-5); min-height: 44px; padding: var(--sp-2) 0; border-bottom: 1px solid var(--base-20); }
   .mf-agenda-time { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-50); flex: none; min-width: 52px; }
   .mf-agenda-title { font-family: var(--sans); font-size: var(--fs-lg); min-width: 0; }

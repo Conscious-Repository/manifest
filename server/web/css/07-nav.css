@@ -2,6 +2,12 @@
    Replaces the top pill-bar + MORE dropdown. Views mount unchanged inside
    .content-scroll; the Day view is untouched by doctrine. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.rail-group-label {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ---- app shell ---- */
 .app-shell { height: 100vh; display: flex; overflow: hidden; }
 .content-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -45,10 +51,7 @@
    of packing at the top; min-height keeps the baseline gap, and they collapse
    to 0 on short windows so the list scrolls normally rather than clipping. */
 .rail-spacer { flex: 1 1 0; min-height: 20px; }
-.rail-group-label {
-  font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase;
-  color: var(--base-40); padding: 0 var(--sp-6) var(--sp-2); white-space: nowrap;
-}
+.rail-group-label { font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-6) var(--sp-2); white-space: nowrap; }
 .rail-item {
   display: flex; align-items: center; gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-6); font-size: var(--fs-md); letter-spacing: 0.4px;

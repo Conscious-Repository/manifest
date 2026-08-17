@@ -1,5 +1,11 @@
 /* 20-goals — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.o-area-name, .o-quiet-act, .go-rail-label, .go-un-title {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ---- goals page ---- */
 .goals-page {
   display: block;
@@ -24,10 +30,7 @@
 }
 .icon-btn:hover { color: var(--blue); }
 .o-area { margin-top: 30px; }
-.o-area-name {
-  font-family: var(--mono); font-size: var(--fs-md); letter-spacing: 0.4px;
-  color: var(--ink); text-transform: uppercase; display: inline-block;
-}
+.o-area-name { font-size: var(--fs-md); color: var(--ink); display: inline-block; }
 .o-ns {
   font-family: var(--sans); font-size: var(--fs-lg); font-weight: 500;
   color: var(--text); margin-top: var(--sp-3);
@@ -157,7 +160,7 @@
 .o-st-owner.empty:hover { color: var(--blue); }
 .o-item-acts { display: flex; gap: var(--sp-6); padding: var(--sp-2) 0 var(--sp-3); }
 .o-item-acts.sub { padding-left: var(--sp-8); }
-.o-quiet-act { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--icon); cursor: pointer; padding: 0; }
+.o-quiet-act { background: none; border: none; font-size: var(--fs-2xs); color: var(--icon); cursor: pointer; padding: 0; }
 .o-quiet-act:hover { color: var(--blue); }
 .o-quiet-act.danger:hover { color: var(--danger); }
 .o-yr .o-quiet-act { margin-left: var(--sp-1); text-transform: none; }
@@ -183,7 +186,7 @@
    rock → stage → task, everything visible, alarm = weight + ● ===== */
 .go-shell { display: flex; align-items: flex-start; gap: var(--sp-8); }
 .go-rail { width: 176px; flex: none; border-right: 1px solid var(--base-25); padding: var(--sp-3) 0 var(--sp-6); position: sticky; top: 0; }
-.go-rail-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 var(--sp-5) var(--sp-2); }
+.go-rail-label { font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-5) var(--sp-2); }
 .go-rail-item { display: flex; align-items: baseline; gap: var(--sp-4); width: 100%; background: none; border: none; text-align: left; cursor: pointer; padding: var(--sp-2) var(--sp-5); font-family: var(--sans); font-size: var(--fs-md); color: var(--base-70); }
 .go-rail-item:hover { background: var(--base-20); }
 .go-rail-item.active { color: var(--accent); background: var(--base-20); }
@@ -234,7 +237,7 @@
 /* unanchored foot — the area's rock-less domain todos, tetherable in place */
 .go-unanchored { margin-top: var(--sp-6); padding: var(--sp-4) var(--sp-6) var(--sp-3); border-top: 1px solid var(--base-25); }
 .go-un-head { display: flex; align-items: baseline; gap: var(--sp-4); padding-bottom: var(--sp-2); }
-.go-un-title { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); }
+.go-un-title { font-size: var(--fs-2xs); color: var(--base-40); }
 .go-un-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .go-un-hint { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); white-space: nowrap; }
 .go-unanchored .go-task { padding-left: var(--sp-6); }

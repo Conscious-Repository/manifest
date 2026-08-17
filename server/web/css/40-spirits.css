@@ -1,5 +1,11 @@
 /* 40-spirits — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.run-outcome, .portal-head, .portal-field-label, .sprt-title, .sprt-cols, .sprt-live-state, .harness-chip, .portal-group-label, .cadb-label, .rit-fig-label, .cb-group {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* the prompt viewer's TURN headers still use this */
 .panel-subhead {
   display: flex; justify-content: space-between; align-items: center; gap: var(--sp-6);
@@ -10,7 +16,7 @@
 
 /* ---- SPIRITS: run reports + charge bars (excalibur harness console) ---- */
 .runs-list { display: flex; flex-direction: column; gap: var(--sp-5); }
-.run-outcome { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: var(--sp-1) var(--sp-4); }
+.run-outcome { font-size: var(--fs-2xs); border: 1px solid var(--line); border-radius: 12px; padding: var(--sp-1) var(--sp-4); }
 .oc-completed { color: var(--accent); border-color: var(--accent-soft); }
 .oc-stopped-charge, .oc-stopped-steps { color: var(--base-50); border-color: var(--base-25); }
 .oc-error, .oc-errorprotocol { color: var(--danger); border-color: #eec3c3; }
@@ -90,7 +96,7 @@
 .portal-board { display: flex; flex-direction: column; gap: var(--sp-1); }
 .portal-wrap { display: flex; flex-direction: column; }
 .portal-row { display: grid; grid-template-columns: 1.3fr 0.8fr 1.2fr 0.9fr auto; align-items: baseline; gap: var(--sp-6); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); }
-.portal-head { border: none; padding: var(--sp-2) var(--sp-5); font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+.portal-head { border: none; padding: var(--sp-2) var(--sp-5); font-size: var(--fs-2xs); color: var(--muted); }
 .portal-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); font-weight: 500; }
 .portal-state { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); }
 .portal-row.state-open .portal-state { color: var(--base-50); }
@@ -103,7 +109,7 @@
 .portal-note { font-size: var(--fs-sm); color: var(--muted); padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 .portal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-6); padding: var(--sp-5); margin: var(--sp-1) 0 var(--sp-3); border: 1px dashed var(--blue-soft); border-radius: var(--radius); background: var(--hover); }
 .portal-field { display: flex; flex-direction: column; gap: var(--sp-1); }
-.portal-field-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); }
+.portal-field-label { font-size: var(--fs-2xs); color: var(--muted); }
 .portal-input { font-family: var(--mono); font-size: var(--fs-md); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: 5px; min-width: 240px; background: var(--bg, #fff); color: var(--text); }
 .portal-input:focus { outline: none; border-color: var(--blue); }
 .pill-solid { font-family: var(--sans); font-size: var(--fs-sm); padding: var(--sp-3) var(--sp-6); border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; }
@@ -113,7 +119,7 @@
 .spirits-page { padding: var(--sp-7) var(--sp-9) 40px; max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
 .sprt-block { display: flex; flex-direction: column; }
 .sprt-head { display: flex; align-items: baseline; gap: var(--sp-5); padding-bottom: var(--sp-4); }
-.sprt-title { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
+.sprt-title { font-size: var(--fs-xs); color: var(--base-100); white-space: nowrap; }
 .sprt-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-head-acts { margin-left: auto; display: inline-flex; gap: var(--sp-4); align-items: baseline; }
 .sprt-head-meta { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
@@ -123,7 +129,7 @@
 .sprt-ghost:hover { color: var(--accent); border-color: var(--accent-soft); }
 .sprt-add-ritual { align-self: flex-start; margin-top: var(--sp-4); }
 .sprt-add-wrap { display: inline-flex; gap: var(--sp-4); align-items: center; margin-top: var(--sp-4); }
-.sprt-cols { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; gap: var(--sp-6); font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 var(--sp-4) var(--sp-3); }
+.sprt-cols { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; gap: var(--sp-6); font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-4) var(--sp-3); }
 .sprt-cols .r { text-align: right; }
 
 /* live strip — one line per running/queued item */
@@ -131,7 +137,7 @@
 #spiritLive:empty { display: none; }
 .sprt-live { border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); background: var(--base-05); display: flex; align-items: center; gap: var(--sp-5); }
 .sprt-live.clicky { cursor: pointer; }
-.sprt-live-state { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); flex: none; }
+.sprt-live-state { font-size: var(--fs-2xs); color: var(--accent); flex: none; }
 .sprt-live:not(.running) .sprt-live-state { color: var(--base-40); }
 .sprt-live-text { font-size: var(--fs-lg); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-live-elapsed { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); flex: none; }
@@ -151,7 +157,7 @@
 .sprt-more:hover { color: var(--base-100); }
 
 /* federation: the muted source chip on non-primary harness rows (§11 idiom) */
-.harness-chip { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); border: 1px solid var(--base-25); border-radius: 3px; padding: 0 var(--sp-2); white-space: nowrap; }
+.harness-chip { font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: 3px; padding: 0 var(--sp-2); white-space: nowrap; }
 
 /* harnesses settings — engine status per tree + per-spirit conduit switch */
 .harness-board { display: flex; flex-direction: column; gap: var(--sp-6); margin-top: var(--sp-4); }
@@ -183,10 +189,7 @@
 .spirit-index-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 /* settings pane groupings */
-.portal-group-label {
-  font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--base-40); margin: var(--sp-6) 0 var(--sp-2);
-}
+.portal-group-label { font-size: var(--fs-2xs); color: var(--base-40); margin: var(--sp-6) 0 var(--sp-2); }
 .aion-org-count.attn { color: var(--base-100); font-weight: 500; }
 
 /* the cadence cron sub-line must be LEGIBLE (spec §4): meta text, not ghost */
@@ -195,7 +198,7 @@
 /* ---- SPIRITS.md §2/§3: cadence builder + structured ritual editor ---- */
 .cadb { display: flex; flex-direction: column; gap: var(--sp-4); margin: var(--sp-2) 0 var(--sp-3); }
 .cadb-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
-.cadb-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); min-width: 52px; }
+.cadb-label { font-size: var(--fs-2xs); color: var(--base-40); min-width: 52px; }
 .cadb-chip {
   min-height: 28px; padding: 0 var(--sp-5); border: 1px solid var(--base-25); border-radius: 14px;
   background: none; font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer;
@@ -217,7 +220,7 @@
 
 .rit-limits { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; margin: var(--sp-2) 0 var(--sp-3); }
 .rit-figure { display: flex; flex-direction: column; gap: var(--sp-1); }
-.rit-fig-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); }
+.rit-fig-label { font-size: var(--fs-2xs); color: var(--base-40); }
 .rit-fig-val {
   background: none; border: none; padding: 0; text-align: left; cursor: pointer;
   font-family: var(--mono); font-size: var(--fs-2xl); color: var(--base-100);
@@ -260,7 +263,7 @@
 
 /* chargebook form */
 .cb-grid { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-3) 0; max-width: 560px; }
-.cb-group { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--base-40); margin: var(--sp-6) 0 var(--sp-2); }
+.cb-group { font-size: var(--fs-2xs); color: var(--base-40); margin: var(--sp-6) 0 var(--sp-2); }
 .cb-row { display: flex; gap: var(--sp-6); align-items: center; min-height: 30px; border-bottom: 1px solid var(--base-20); }
 .cb-key { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); flex: 1; min-width: 0; }
 .cb-in { width: 110px; font-family: var(--mono); font-size: var(--fs-sm); text-align: right; }

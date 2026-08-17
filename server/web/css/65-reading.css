@@ -1,12 +1,18 @@
 /* 65-reading — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.reading-strip-head {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ===== READING — the book shelf over the extrinsic zone ===== */
 .reading-view { max-width: 1180px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
 .book-select { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: #fff; cursor: pointer; }
 .book-select:focus { outline: none; border-color: var(--blue-soft); }
 /* currently-reading strip */
 .reading-strip { margin-bottom: var(--sp-7); border-left: 2px solid var(--accent); padding-left: var(--sp-6); }
-.reading-strip-head { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: var(--sp-4); }
+.reading-strip-head { font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-4); }
 .reading-strip-cards { display: flex; flex-wrap: wrap; gap: var(--sp-5); }
 .reading-card { display: flex; flex-direction: column; gap: var(--sp-3); border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); min-width: 220px; max-width: 300px; }
 .reading-card-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-100); cursor: pointer; }

@@ -2,6 +2,12 @@
    a generous 284px rail, ~40px control heights, soft rounded fills over
    hairlines, real gaps — recolored with manifest's base ramp + accent.
    The terminal screen stays the one deliberate dark island. */
+
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.rail-sec-label, .term-tab-label {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
 /* height is set precisely by termFitShell() (top offset varies with chrome/
    zoom/banners); the calc is only the pre-JS fallback. 18px right gutter =
    cmd-ctr's breathing room off the window edge. */
@@ -14,7 +20,7 @@
 .term-rail-head .mic-btn { margin-left: auto; }
 .term-rail-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: var(--sp-1); margin: -2px; }
 .rail-sec + .rail-sec { margin-top: 30px; }
-.rail-sec-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 1.2px; text-transform: uppercase; color: var(--base-40); margin-bottom: var(--sp-6); }
+.rail-sec-label { font-size: var(--fs-2xs); color: var(--base-40); margin-bottom: var(--sp-6); }
 .term-none { font-size: var(--fs-md); color: var(--base-40); padding: var(--sp-6) var(--sp-6); background: var(--base-05); border-radius: var(--radius-lg); text-align: center; }
 
 /* session cards — soft filled rows, no hairlines */
@@ -112,7 +118,7 @@
 .term-tabbar { flex: none; display: flex; gap: var(--sp-4); border-top: 1px solid var(--line); padding-top: var(--sp-6); margin-top: var(--sp-7); }
 .term-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); background: none; border: 0; border-radius: var(--radius-lg); color: var(--base-40); cursor: pointer; padding: var(--sp-4) 0 var(--sp-4); }
 .term-tab-glyph { font-size: var(--fs-xl); line-height: 1; }
-.term-tab-label { font-family: var(--mono); font-size: var(--fs-3xs); letter-spacing: 0.8px; text-transform: uppercase; }
+.term-tab-label { font-size: var(--fs-3xs); }
 .term-tab:hover { color: var(--base-70); background: var(--base-05); }
 .term-tab.on { color: var(--accent); background: var(--base-05); }
 

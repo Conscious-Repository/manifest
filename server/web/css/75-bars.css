@@ -1,5 +1,11 @@
 /* 75-bars — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.cast-kind, .cmd-fact-label {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ===== quick-lookup command bar (⌘K) ===== */
 .cmdbar { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-start; justify-content: center; }
 .cmdbar-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.28); }
@@ -14,7 +20,7 @@
 
 /* cast command bar (press /) */
 .cmd-empty { padding: var(--sp-6) var(--sp-7); font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); }
-.cast-kind { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.03em; border-radius: 3px; padding: var(--sp-1) var(--sp-3); flex: none; }
+.cast-kind { font-size: var(--fs-2xs); border-radius: 3px; padding: var(--sp-1) var(--sp-3); flex: none; }
 .cast-kind-skill { background: var(--blue); color: #fff; }
 .cast-kind-ritual { background: var(--hover); color: var(--muted); border: 1px solid var(--line); }
 .cast-desc { font-family: var(--sans); font-size: var(--fs-xs); color: var(--muted); flex: 1 1 auto; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -31,7 +37,7 @@
 .cmd-card-nonote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: var(--sp-1) var(--sp-3); }
 .cmd-card-facts { display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-6); }
 .cmd-fact { display: flex; gap: var(--sp-6); }
-.cmd-fact-label { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); flex: 0 0 130px; text-transform: uppercase; letter-spacing: 0.04em; }
+.cmd-fact-label { font-size: var(--fs-xs); color: var(--muted); flex: 0 0 130px; }
 .cmd-fact-val { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
 
 /* ===== ⌘/ raw-markdown overlay (redesign §2) ===== */

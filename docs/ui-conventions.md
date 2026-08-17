@@ -71,7 +71,19 @@ The mono uppercase metadata label is manifest's most-repeated idiom. It lives as
 Put `micro-label` on any label/chip element. A tab's own class adds ONLY
 structural extras (border, padding, a state color override) — **never re-type the
 font/size/transform recipe.** Before this, the recipe was copy-pasted across ~70
-selectors; that is the drift we're removing.
+selectors; that is the drift we removed.
+
+**Two ways the recipe reaches a label — both valid, never re-typed inline:**
+1. **`.micro-label` utility (JS-applied)** — add the class in the `el(...)` call.
+   Preferred for new labels and cross-cutting chips (Feed uses this).
+2. **Per-file grouped rule (CSS-only)** — each tab file that has several label
+   classes carries ONE grouped rule at the top holding the invariant recipe
+   (`--mono` + `uppercase` + `letter-spacing`), and each label selector keeps only
+   its own `font-size`/`color`/structure. This is how the existing tabs were
+   consolidated (no JS churn). Look for the `mono-label group` comment.
+
+Either way the rule is: the mono/uppercase/letter-spacing recipe exists in exactly
+one place per label, never copied into the individual selector.
 
 ---
 

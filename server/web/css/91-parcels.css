@@ -1,5 +1,11 @@
 /* PARCELS — research-parcel spreadsheet + map popup (system/realestate/parcels) */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.parcels-hdr, .pc-status, .pp-tax, .pp-notes-h {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ---- spreadsheet view ---- */
 .parcels-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-6); margin: var(--sp-3) 0 var(--sp-5); flex-wrap: wrap; }
 .parcels-filters { display: flex; gap: var(--sp-3); align-items: center; }
@@ -13,13 +19,13 @@
   border-bottom: 1px solid var(--line); font-size: var(--fs-md);
 }
 .parcels-row:last-child { border-bottom: none; }
-.parcels-hdr { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); background: var(--streak-bg); }
+.parcels-hdr { font-size: var(--fs-xs); color: var(--muted); background: var(--streak-bg); }
 .parcels-r { cursor: pointer; }
 .parcels-r:hover { background: var(--hover); }
 .parcels-row .pc-0 { font-family: var(--sans); font-weight: 500; color: var(--text); }
 .parcels-row .pc-1 { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parcels-row .pc-2, .parcels-row .pc-4, .parcels-row .pc-5 { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); }
-.pc-status { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.3px; }
+.pc-status { font-size: var(--fs-xs); }
 .pc-notes { font-size: var(--fs-sm); color: var(--muted); text-align: right; }
 
 /* tax-status accents (left border + status text color) */
@@ -32,7 +38,7 @@
 /* ---- map click popup ---- */
 .parcel-pop { font-family: var(--sans); min-width: 220px; }
 .parcel-pop .pp-addr { font-size: var(--fs-lg); font-weight: 600; color: var(--text); margin-bottom: var(--sp-1); }
-.parcel-pop .pp-tax { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: var(--sp-3); }
+.parcel-pop .pp-tax { font-size: var(--fs-xs); margin-bottom: var(--sp-3); }
 .parcel-pop .pp-tax.pp-delinquent { color: var(--danger); }
 .parcel-pop .pp-tax.pp-lra { color: #c77c14; }
 .parcel-pop .pp-tax.pp-current { color: var(--good); }
@@ -40,7 +46,7 @@
 .parcel-pop .pp-facts td { font-size: var(--fs-sm); padding: var(--sp-1) 0; vertical-align: top; }
 .parcel-pop .pp-k { color: var(--muted); padding-right: var(--sp-5) !important; white-space: nowrap; }
 .parcel-pop .pp-v { color: var(--text); }
-.parcel-pop .pp-notes-h { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border-top: 1px solid var(--line); padding-top: var(--sp-2); margin-top: var(--sp-1); }
+.parcel-pop .pp-notes-h { font-size: var(--fs-2xs); color: var(--muted); border-top: 1px solid var(--line); padding-top: var(--sp-2); margin-top: var(--sp-1); }
 .parcel-pop .pp-notes { max-height: 120px; overflow-y: auto; margin: var(--sp-1) 0; }
 .parcel-pop .pp-note { font-size: var(--fs-sm); color: var(--text); padding: var(--sp-1) 0; border-bottom: 1px dotted var(--line); }
 .parcel-pop .pp-note.pp-empty { color: var(--muted); font-style: italic; border: none; }

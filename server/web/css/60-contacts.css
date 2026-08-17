@@ -1,5 +1,11 @@
 /* 60-contacts — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
+/* mono-label group (ui-conventions.md §labels): the invariant recipe once;
+   each selector below keeps only its own size/color/structure. */
+.cp-date-src, .cp-section-head, .cp-src, .cp-fact-label {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+
 /* ===== CONTACTS — the people layer ===== */
 .contacts-view { max-width: 1180px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
 .agent-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-6); padding: var(--sp-6) 0 var(--sp-5); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
@@ -62,7 +68,7 @@
 .cp-lastmet { font-family: var(--mono); font-size: var(--fs-sm); color: var(--streak-ink); margin: 0; }
 .cp-dates .cp-lastmet { margin: 0; }
 .cp-lastmentioned { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-top: var(--sp-1); }
-.cp-date-src { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--icon); }
+.cp-date-src { font-size: var(--fs-2xs); color: var(--icon); }
 .cp-date-hint { font-family: var(--sans); font-size: var(--fs-xs); font-style: italic; color: var(--icon); }
 .cp-dates .cp-cold { margin-left: 0; margin-top: var(--sp-3); }
 /* emails section (linked calendar identities + manual add + per-contact suggestions) */
@@ -73,12 +79,12 @@
 .cp-email-suggest { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-3) 0 0; }
 .cp-email-suggest-text { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); }
 .cp-section { margin-bottom: var(--sp-8); }
-.cp-section-head { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: var(--sp-2); margin-bottom: var(--sp-4); }
+.cp-section-head { font-size: var(--fs-xs); color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: var(--sp-2); margin-bottom: var(--sp-4); }
 .cp-count { color: var(--icon); }
 .cp-empty { font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); font-style: italic; }
 .cp-tl-row { display: flex; align-items: baseline; gap: var(--sp-6); padding: var(--sp-2) 0; }
 .cp-date { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); flex: 0 0 88px; }
-.cp-src { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); text-transform: uppercase; flex: 0 0 84px; }
+.cp-src { font-size: var(--fs-2xs); color: var(--muted); flex: 0 0 84px; }
 .cp-tl-name { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
 .cp-badge { font-family: var(--mono); font-size: var(--fs-3xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: 3px; padding: var(--sp-1) var(--sp-2); }
 .cp-mention { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); padding: var(--sp-1) 0; }
@@ -97,7 +103,7 @@
 /* ===== redesign §13 (2026-08-09): facts strip + going-cold as weight+dot ===== */
 .cp-facts { display: flex; border-top: 1px solid var(--base-25); border-bottom: 1px solid var(--base-25); margin: var(--sp-6) 0 var(--sp-6); }
 .cp-fact { flex: 1; padding: var(--sp-5) var(--sp-7) var(--sp-5) 0; min-width: 0; }
-.cp-fact-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); white-space: nowrap; }
+.cp-fact-label { font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
 .cp-fact-val { font-family: var(--mono); font-size: var(--fs-lg); color: var(--base-100); padding: var(--sp-1) 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-fact-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
 .cp-cold { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); font-weight: 500; margin: 0 0 var(--sp-6); }
