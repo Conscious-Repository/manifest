@@ -9,11 +9,11 @@
       "captured": "2026-08-13",
       "rock": null,
       "due": null,
-      "status": "open",
+      "status": "decided",
       "done_on": null,
       "needed_by": null,
-      "decided": null,
-      "outcome": "Yeah- we're going to do that"
+      "decided": "2026-08-17",
+      "outcome": "Yes- doing this."
     },
     {
       "id": "aion-bl/follow-up-with-alex-ubeda-janie-page-s-biologist-contact-on",
