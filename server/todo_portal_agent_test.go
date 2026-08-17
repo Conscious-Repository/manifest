@@ -128,3 +128,52 @@ func TestAionPanelAndFireBridges(t *testing.T) {
 		t.Fatal("fire must land in the team activity trail")
 	}
 }
+
+func TestAionPanelV2AndActivityAndPlanWrite(t *testing.T) {
+	srv, item := kairosFixture(t)
+	// plan-section writes from the portal (both sections), then the extended panel
+	if err := srv.AionPlanWrite(item, "plan", "1. draft the memo\n2. circulate"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.AionPlanWrite(item, "description", "why this matters"); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.AionPlanWrite(item, "bogus", "x"); err == nil {
+		t.Fatal("unknown section must refuse")
+	}
+	p := srv.AionPanel(item)
+	if p["exists"] != true || p["description"] != "why this matters" ||
+		!strings.Contains(p["plan"].(string), "draft the memo") {
+		t.Fatalf("extended panel: %+v", p)
+	}
+	if p["planLines"] != 2 {
+		t.Fatalf("planLines: %+v", p["planLines"])
+	}
+	if at, _ := p["planAt"].(string); at == "" {
+		t.Fatalf("planAt missing: %+v", p)
+	}
+	if rel, _ := p["rel"].(string); !strings.Contains(rel, "todo-plans/aion-") {
+		t.Fatalf("rel: %+v", p["rel"])
+	}
+	// activity: an assign lands in the trail for THIS item only
+	if err := srv.AionAssign(item, "agent:kairos", "member@aion.bio", "Team Member"); err != nil {
+		t.Fatal(err)
+	}
+	acts := srv.AionActivity(item)
+	found := false
+	for _, a := range acts {
+		if a["action"] == "agent-assign" && a["actor"] == "member@aion.bio" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("assign missing from item activity: %+v", acts)
+	}
+	if other := srv.AionActivity("some-other-item"); len(other) != 0 {
+		t.Fatalf("activity must filter by item: %+v", other)
+	}
+	// held flips with an agent assignee
+	if p2 := srv.AionPanel(item); p2["held"] != true {
+		t.Fatalf("agent assignee must read as held: %+v", p2)
+	}
+}

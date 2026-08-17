@@ -619,6 +619,9 @@ func main() {
 		portalOpts.Panel = srv.AionPanel
 		portalOpts.Assign = srv.AionAssign
 		portalOpts.Fire = srv.AionFire
+		portalOpts.Activity = srv.AionActivity
+		portalOpts.PlanWrite = srv.AionPlanWrite
+		portalOpts.FileBlob = srv.AionFileBlob
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)

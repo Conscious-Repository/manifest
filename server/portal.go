@@ -35,6 +35,13 @@ type PortalOptions struct {
 	Assign func(itemID, owner, memberEmail, memberName string) error
 	// Fire executes the plan; returns spirits.ErrAlreadyActive when mid-run.
 	Fire func(itemID, memberEmail, memberName string) error
+	// Activity returns one item's team activity trail (portal v2 stream).
+	Activity func(itemID string) []map[string]any
+	// Panel plan-section write (portal v2 plan editor); handler gates
+	// assignee/admin before calling.
+	PlanWrite func(itemID, section, text string) error
+	// FileBlob resolves a comment-attachment hash to a served file path.
+	FileBlob func(hash string) string
 }
 
 // PortalHandler serves the AION portal as a standalone site, rooted at the
@@ -91,6 +98,16 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			}
 			if opt.Fire != nil {
 				mux.HandleFunc("POST /api/team/fire", api.handleFire)
+			}
+			// portal v2: item activity trail, plan-section writes, attachments
+			if opt.Activity != nil {
+				mux.HandleFunc("GET /api/team/activity", api.handleActivity)
+			}
+			if opt.PlanWrite != nil {
+				mux.HandleFunc("POST /api/team/plan", api.handlePlanWrite)
+			}
+			if opt.FileBlob != nil {
+				mux.HandleFunc("GET /api/team/file/{hash}", api.handleFileBlob)
 			}
 		}
 	}
@@ -394,6 +411,65 @@ func (p *portalAPI) handleFire(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpError(w, errBadRequest(err.Error()))
 	}
+}
+
+// handleActivity — one item's slice of the team activity trail (v2 stream's
+// "changed" rows). Any signed-in member may read it (same visibility as the
+// state dump).
+func (p *portalAPI) handleActivity(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	itemID := strings.TrimSpace(r.URL.Query().Get("item"))
+	if itemID == "" {
+		httpError(w, errBadRequest("item is required"))
+		return
+	}
+	writeJSON(w, map[string]any{"activity": p.opt.Activity(itemID)})
+}
+
+// handlePlanWrite — the v2 plan editor's section write. Gate: the item's
+// ASSIGNEE (email→initials mapping) or the portal admin; everyone else reads.
+func (p *portalAPI) handlePlanWrite(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	var b struct{ Item, Section, Text string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	owner, exists := p.ownerOf(b.Item)
+	if !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	if !p.isAdmin(id.Email) && !strings.EqualFold(owner, p.ownerToken(id.Email)) {
+		http.Error(w, "the plan record is assignee-only — "+orDash(owner)+" holds it", http.StatusForbidden)
+		return
+	}
+	if err := p.opt.PlanWrite(b.Item, b.Section, b.Text); err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, p.opt.Panel(b.Item))
+}
+
+// handleFileBlob serves a comment-attachment blob by hash.
+func (p *portalAPI) handleFileBlob(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	path := p.opt.FileBlob(r.PathValue("hash"))
+	if path == "" {
+		http.Error(w, "no such file", http.StatusNotFound)
+		return
+	}
+	if r.URL.Query().Get("dl") == "1" {
+		w.Header().Set("Content-Disposition", "attachment")
+	}
+	http.ServeFile(w, r, path)
 }
 
 // handleDeleteComment removes a comment. The store enforces the permission
