@@ -249,6 +249,11 @@ loops** (unchecked tasks from meeting notes), **transcripts**, and their linked
 - **Triage.** Note-less names you `[[link]]` outside meeting context wait in a
   triage strip until you confirm them as a Person, mark them an Org, or dismiss
   them.
+- **Nearby.** A contact can carry one standardized city/place plus an optional
+  private street address. The Nearby lens resolves a destination explicitly,
+  then finds contacts within an adjustable radius using city-center distances.
+  Distances are approximate; street addresses are reference-only and are never
+  submitted to the geocoder.
 
 Email is written into note frontmatter as an inline list, matching the vault's
 existing convention:
@@ -257,6 +262,8 @@ existing convention:
 ---
 categories: [people]
 email: [dabir@anfavc.com, shoumik.dabir@gmail.com]
+location: "St. Louis, MO, US"
+address: "123 Main St, St. Louis, MO 63101"
 ---
 ```
 
@@ -303,7 +310,8 @@ The UI is a thin client over a JSON API on the same port. Main groups:
   `/api/goals/archives`, `/api/goals/carry`, `/api/goals/retro`, `/api/myplate`
 - **Calendar** — `GET /api/calendar/status`, `/api/calendar/events`,
   `POST /api/calendar/connect`, `/api/calendar/disconnect`
-- **Contacts** — `GET /api/contacts`, `/api/contacts/{triage,page,card,search}`,
+- **Contacts** — `GET /api/contacts`, `/api/contacts/{triage,page,card,search,places,nearby}`,
+  `PUT/DELETE /api/contacts/location`,
   `POST /api/contacts/{confirm,dismiss,dismiss-bulk,org,bind,note,email}`,
   `GET /api/contacts/email-review`, `POST /api/contacts/email-dismiss`
 - **Notes** — `GET/PUT /api/note`, `POST /api/note/task`, `GET /api/note/resolve`
@@ -314,6 +322,8 @@ The separately authenticated AION team portal (`portalPort`, normally behind
 `https://portal.aion.bio`) also has a per-user bearer-token API for team tools
 and custom backends. See [docs/team-api.md](docs/team-api.md); an optional stdio
 MCP wrapper lives in [integrations/portal-mcp](integrations/portal-mcp).
+Private contact locations remain on the owner cockpit API and are not part of
+that team contract.
 
 ---
 

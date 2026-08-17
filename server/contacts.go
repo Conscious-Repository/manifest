@@ -2,11 +2,108 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"manifest/contacts"
 )
+
+func (s *Server) handleContactPlaces(w http.ResponseWriter, r *http.Request) {
+	if s.geocoder == nil {
+		http.Error(w, "place resolver unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		httpError(w, errBadRequest("q is required"))
+		return
+	}
+	places, err := s.geocoder.SearchPlaces(r.Context(), q)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"places": places})
+}
+
+func (s *Server) handleContactLocationPut(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Key      string `json:"key"`
+		Display  string `json:"display"`
+		Location string `json:"location"`
+		Address  string `json:"address"`
+	}
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Key) == "" || strings.TrimSpace(b.Location) == "" {
+		httpError(w, errBadRequest("key and location are required"))
+		return
+	}
+	// A cache miss is allowed for a hand-edited canonical label, but resolution
+	// remains locality-only. The private address is never passed to this service.
+	if s.geocoder != nil {
+		if _, ok := s.geocoder.CachedPlace(b.Location); !ok {
+			s.geocoder.EnqueuePlace(b.Location)
+		}
+	}
+	key, err := s.contacts.SaveLocation(b.Key, b.Display, b.Location, b.Address)
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	p, _ := s.contacts.Page(key, time.Now())
+	writeJSON(w, p)
+}
+
+func (s *Server) handleContactLocationDelete(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil {
+		http.Error(w, "contacts disabled", http.StatusServiceUnavailable)
+		return
+	}
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		httpError(w, errBadRequest("key is required"))
+		return
+	}
+	canonical, err := s.contacts.SaveLocation(key, "", "", "")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	p, _ := s.contacts.Page(canonical, time.Now())
+	writeJSON(w, p)
+}
+
+func (s *Server) handleContactsNearby(w http.ResponseWriter, r *http.Request) {
+	if s.contacts == nil || s.geocoder == nil {
+		http.Error(w, "nearby contacts unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	lat, errLat := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
+	lng, errLng := strconv.ParseFloat(r.URL.Query().Get("lng"), 64)
+	radius := 50.0
+	if raw := strings.TrimSpace(r.URL.Query().Get("radiusMiles")); raw != "" {
+		var err error
+		radius, err = strconv.ParseFloat(raw, 64)
+		if err != nil {
+			httpError(w, errBadRequest("radiusMiles must be a number"))
+			return
+		}
+	}
+	if errLat != nil || errLng != nil {
+		httpError(w, errBadRequest("lat and lng are required numbers"))
+		return
+	}
+	result, err := s.contacts.Nearby(lat, lng, radius, s.geocoder)
+	if err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	writeJSON(w, result)
+}
 
 // CONTACTS — the people layer over the vault index (plans/contacts-feature.md).
 // All reads are graph queries; the only writes are explicit user actions (create

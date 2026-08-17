@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"manifest/mdfm"
@@ -92,6 +93,90 @@ func (w *Writer) AddFrontmatterValue(rel, key, value string) error {
 		return nil
 	}
 	return w.commit(full, "contact-frontmatter", []byte(next))
+}
+
+// SetContactLocation atomically replaces the standardized locality and optional
+// private street address on a person note. Empty location clears both fields;
+// an address can never exist without a queryable locality.
+func (w *Writer) SetContactLocation(rel, location, address string) error {
+	location = strings.TrimSpace(location)
+	address = strings.TrimSpace(address)
+	if location == "" && address != "" {
+		return errors.New("address requires a location")
+	}
+	full, err := w.resolve(rel)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		return err
+	}
+	next := string(raw)
+	if location == "" {
+		next = removeFMField(next, "location")
+		next = removeFMField(next, "address")
+	} else {
+		next, err = upsertFMScalar(next, "location", strconv.Quote(location))
+		if err != nil {
+			return err
+		}
+		if address == "" {
+			next = removeFMField(next, "address")
+		} else {
+			next, err = upsertFMScalar(next, "address", strconv.Quote(address))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if next == string(raw) {
+		return nil
+	}
+	return w.commit(full, "contact-location", []byte(next))
+}
+
+// removeFMField removes one top-level field and any indented continuation rows,
+// preserving every unrelated frontmatter line and the body byte-for-byte.
+func removeFMField(raw, want string) string {
+	if !strings.HasPrefix(raw, "---\n") {
+		return raw
+	}
+	lines := strings.Split(raw, "\n")
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], "\r") == "---" {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return raw
+	}
+	out := append([]string{}, lines[:1]...)
+	removed := false
+	for i := 1; i < end; i++ {
+		line := lines[i]
+		if line != "" && line[0] != ' ' && line[0] != '\t' && line[0] != '-' {
+			if k, _, ok := strings.Cut(line, ":"); ok && strings.EqualFold(strings.TrimSpace(k), want) {
+				removed = true
+				for i+1 < end {
+					next := lines[i+1]
+					if next != "" && next[0] != ' ' && next[0] != '\t' && next[0] != '-' {
+						break
+					}
+					i++
+				}
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+	if !removed {
+		return raw
+	}
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n")
 }
 
 // WriteNote overwrites a note with the exact raw content the user typed in the

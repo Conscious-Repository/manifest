@@ -40,6 +40,8 @@ const els = {
   contactEmailReview: document.getElementById("contactEmailReview"),
   contactSearch: document.getElementById("contactSearch"),
   contactColdToggle: document.getElementById("contactColdToggle"),
+  contactNearbyToggle: document.getElementById("contactNearbyToggle"),
+  contactNearby: document.getElementById("contactNearby"),
   contactAddBtn: document.getElementById("contactAddBtn"),
   contactBackBtn: document.getElementById("contactBackBtn"),
   contactPage: document.getElementById("contactPage"),

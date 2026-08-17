@@ -29,13 +29,24 @@
 .contact-row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-6); padding: var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); cursor: pointer; }
 .contact-row:hover { background: var(--hover); }
 .contact-row-left { display: flex; align-items: baseline; gap: var(--sp-3); }
+.contact-ident { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .contact-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
+.contact-location { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); }
 .contact-dot { color: var(--icon); font-size: var(--fs-2xs); } /* quiet no-note indicator */
 .contact-row-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
 .contact-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); min-width: 96px; text-align: right; }
 .contact-meta.muted { font-style: italic; color: var(--icon); } /* mentioned-only: not calendar-verified */
 .contact-submeta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--icon); text-align: right; } /* note "mentioned" under calendar "met" */
 .contact-upcoming { font-family: var(--mono); font-size: var(--fs-xs); color: var(--blue); }
+.contact-nearby { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-5); margin-bottom: var(--sp-6); }
+.nearby-form { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); }
+.nearby-form .contact-search { flex: 1; min-width: 240px; }
+.nearby-radius { width: 72px; font-family: var(--mono); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3); color: var(--text); }
+.nearby-radius-wrap, .nearby-status, .nearby-attribution { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
+.nearby-candidates { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); }
+.nearby-attribution { margin-left: auto; }
+.nearby-status { margin-top: var(--sp-3); }
+.nearby-distance { margin-left: auto; font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); }
 /* email-review strip (attendee → contact) — reuses the triage-strip look */
 .er-arrow { font-family: var(--mono); font-size: var(--fs-sm); color: var(--icon); }
 .er-target { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
@@ -60,6 +71,7 @@
 .cp-header { margin-bottom: var(--sp-3); }
 .cp-name-row { display: flex; align-items: baseline; gap: var(--sp-5); }
 .cp-name { font-family: var(--sans); font-size: var(--fs-3xl); font-weight: 500; color: var(--ink); margin: 0; }
+.cp-location-current { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); margin-top: var(--sp-2); }
 .cp-nonote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); }
 .cp-aliases { font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); margin-top: var(--sp-1); }
 .cp-firms { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-4); }
@@ -95,6 +107,15 @@
 .cp-note-editor:focus { outline: none; border-color: var(--blue-soft); }
 .cp-note-actions { display: flex; align-items: center; gap: var(--sp-5); margin-top: var(--sp-4); }
 .cp-note-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
+.cp-location-view { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3) var(--sp-6); }
+.cp-location-label { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
+.cp-location-address { flex-basis: 100%; font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); }
+.cp-location-actions { display: flex; align-items: center; gap: var(--sp-3); margin-left: auto; }
+.cp-location-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.cp-location-place-row { display: flex; gap: var(--sp-3); }
+.cp-location-input { flex: 1; font-family: var(--sans); font-size: var(--fs-md); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); color: var(--text); }
+.cp-location-input:focus { outline: none; border-color: var(--blue-soft); }
+.cp-location-note { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); }
 
 /* triage additions (follow-up 1) */
 .triage-head-actions { display: flex; gap: var(--sp-3); align-items: center; }

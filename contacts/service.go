@@ -1,6 +1,8 @@
 package contacts
 
 import (
+	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -138,6 +140,7 @@ type Contact struct {
 	Display       string `json:"display"`
 	NotePath      string `json:"notePath"`
 	HasNote       bool   `json:"hasNote"`
+	Location      string `json:"location,omitempty"`
 	LastMet       string `json:"lastMet"`       // calendar-verified (email-matched); "" if no email / no meeting
 	LastMentioned string `json:"lastMentioned"` // newest dated NOTE that links them; "" if none
 	RefCount      int    `json:"refCount"`
@@ -197,9 +200,16 @@ func (s *Service) List(now time.Time) ([]Contact, error) {
 	upcoming := s.confirmedUpcoming(now)
 	loopCounts, _ := s.ix.OpenLoopCounts()
 	dateMap, _ := s.ix.InteractionDatesByKey()
+	locationByPath := map[string]string{}
+	if locations, err := s.ix.PeopleLocations(); err == nil {
+		for _, loc := range locations {
+			locationByPath[loc.NotePath] = loc.Location
+		}
+	}
 
 	out := make([]Contact, 0, len(byKey))
 	for _, c := range byKey {
+		c.Location = locationByPath[c.NotePath]
 		keys := s.keysFor(c.Key, c.NotePath)
 		c.LastMentioned = s.mergedLastMet(keys) // newest dated note (was LastMet)
 		if u, ok := upcoming[c.Key]; ok {
@@ -290,6 +300,7 @@ type Page struct {
 	Display       string          `json:"display"`
 	NotePath      string          `json:"notePath"`
 	HasNote       bool            `json:"hasNote"`
+	Location      ContactLocation `json:"location"`
 	Aliases       []string        `json:"aliases"`
 	Firms         []Ref           `json:"firms"`
 	LastMet       string          `json:"lastMet"`       // calendar-verified (email-matched)
@@ -315,6 +326,13 @@ type Page struct {
 	DaysSince    int                  `json:"daysSince"`
 	Cold         bool                 `json:"cold"`
 	Fundraising  []FundraisingSummary `json:"fundraising,omitempty"`
+}
+
+// ContactLocation is the private full location record returned only by the
+// owner cockpit's contact-page endpoint. Nearby/list projections omit Address.
+type ContactLocation struct {
+	Label   string `json:"label,omitempty"`
+	Address string `json:"address,omitempty"`
 }
 
 // WaitingOnItem is one open loop the owner is tracking on this person.
@@ -343,7 +361,18 @@ func (s *Service) Page(rawKey string, now time.Time) (Page, bool) {
 			return Page{}, false
 		}
 	}
+	if extOK {
+		if e.Display == "" {
+			e.Display = ext.Display
+		}
+		if e.NotePath == "" {
+			e.NotePath = ext.NotePath
+		}
+	}
 	p := Page{Key: e.Key, Display: e.Display, NotePath: e.NotePath, HasNote: e.NotePath != ""}
+	if p.NotePath != "" {
+		p.Location.Label, p.Location.Address = s.ix.LocationByPath(p.NotePath)
+	}
 	keys := s.keysFor(e.Key, e.NotePath)
 
 	if al, err := s.ix.EntityAliases(e.Key); err == nil {
@@ -659,6 +688,125 @@ func (s *Service) SaveNote(rawKey, display, body string) (string, error) {
 	}
 	_ = s.ix.ReindexPaths([]string{rel})
 	return strings.ToLower(strings.TrimSuffix(filepath.Base(rel), ".md")), nil
+}
+
+// SaveLocation replaces one contact's primary locality and optional reference
+// address. Saving onto a note-less contact materializes the private person note
+// first, including the CRM registry attachment performed by SaveNote.
+func (s *Service) SaveLocation(rawKey, display, location, address string) (string, error) {
+	location = strings.TrimSpace(location)
+	address = strings.TrimSpace(address)
+	if location == "" && address != "" {
+		return "", errors.New("address requires a location")
+	}
+	canon := s.canonical(rawKey)
+	notePath := ""
+	if e, ok := s.ix.Entity(canon); ok {
+		notePath = e.NotePath
+	}
+	if notePath == "" && s.directory != nil {
+		if ext, ok := s.directory.Person(canon); ok {
+			notePath = ext.NotePath
+		}
+	}
+	if notePath == "" {
+		if location == "" {
+			return canon, nil // clearing a note-less contact is already complete
+		}
+		createdKey, err := s.SaveNote(canon, display, "")
+		if err != nil {
+			return "", err
+		}
+		canon = createdKey
+		if e, ok := s.ix.Entity(canon); ok {
+			notePath = e.NotePath
+		}
+	}
+	if notePath == "" {
+		return "", errors.New("contact note unavailable")
+	}
+	if err := s.vw.SetContactLocation(notePath, location, address); err != nil {
+		return "", err
+	}
+	if err := s.ix.ReindexPaths([]string{notePath}); err != nil {
+		return "", err
+	}
+	return canon, nil
+}
+
+// CentroidLookup is the derived-place cache surface required for nearby search.
+type CentroidLookup interface {
+	PlaceCentroid(label string) (lat, lng float64, ok bool)
+	EnqueuePlace(label string)
+}
+
+// NearbyContact deliberately omits the private street address and centroid.
+type NearbyContact struct {
+	Key           string  `json:"key"`
+	Display       string  `json:"display"`
+	Location      string  `json:"location"`
+	DistanceMiles float64 `json:"distanceMiles"`
+	HasNote       bool    `json:"hasNote"`
+}
+
+type NearbyResult struct {
+	Contacts        []NearbyContact `json:"contacts"`
+	RadiusMiles     float64         `json:"radiusMiles"`
+	UnresolvedCount int             `json:"unresolvedCount"`
+}
+
+// Nearby returns contacts inside an inclusive great-circle radius. Every
+// distance is approximate because contact coordinates are locality centroids.
+func (s *Service) Nearby(lat, lng, radiusMiles float64, centroids CentroidLookup) (NearbyResult, error) {
+	result := NearbyResult{Contacts: []NearbyContact{}, RadiusMiles: radiusMiles}
+	if centroids == nil {
+		return result, errors.New("place resolver unavailable")
+	}
+	if math.IsNaN(lat) || math.IsInf(lat, 0) || lat < -90 || lat > 90 ||
+		math.IsNaN(lng) || math.IsInf(lng, 0) || lng < -180 || lng > 180 {
+		return result, errors.New("invalid destination coordinates")
+	}
+	if math.IsNaN(radiusMiles) || math.IsInf(radiusMiles, 0) || radiusMiles < 1 || radiusMiles > 500 {
+		return result, errors.New("radiusMiles must be between 1 and 500")
+	}
+	locations, err := s.ix.PeopleLocations()
+	if err != nil {
+		return result, err
+	}
+	for _, p := range locations {
+		if s.canonical(p.Key) != p.Key {
+			continue
+		}
+		plat, plng, ok := centroids.PlaceCentroid(p.Location)
+		if !ok {
+			result.UnresolvedCount++
+			centroids.EnqueuePlace(p.Location)
+			continue
+		}
+		distance := haversineMiles(lat, lng, plat, plng)
+		if distance <= radiusMiles {
+			result.Contacts = append(result.Contacts, NearbyContact{
+				Key: p.Key, Display: p.Display, Location: p.Location,
+				DistanceMiles: math.Round(distance*10) / 10, HasNote: true,
+			})
+		}
+	}
+	sort.SliceStable(result.Contacts, func(i, j int) bool {
+		if result.Contacts[i].DistanceMiles != result.Contacts[j].DistanceMiles {
+			return result.Contacts[i].DistanceMiles < result.Contacts[j].DistanceMiles
+		}
+		return strings.ToLower(result.Contacts[i].Display) < strings.ToLower(result.Contacts[j].Display)
+	})
+	return result, nil
+}
+
+func haversineMiles(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthMiles = 3958.7613
+	toRad := math.Pi / 180
+	phi1, phi2 := lat1*toRad, lat2*toRad
+	dphi, dlambda := (lat2-lat1)*toRad, (lng2-lng1)*toRad
+	a := math.Sin(dphi/2)*math.Sin(dphi/2) + math.Cos(phi1)*math.Cos(phi2)*math.Sin(dlambda/2)*math.Sin(dlambda/2)
+	return earthMiles * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }
 
 // ConfirmEmail records an email on a contact's note (§6), creating the note if

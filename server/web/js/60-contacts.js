@@ -13,6 +13,12 @@ async function postJSONOk(url, body) {
   return res.json().catch(() => ({}));
 }
 
+async function putJSONOk(url, body) {
+  const res = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
+  return res.json().catch(() => ({}));
+}
+
 function showContacts() {
   const rest = location.hash.replace(/^#\/contacts\/?/, "");
   if (rest === "cold") { _coldOnly = true; showContactList(); } // neglect view (deep-linkable)
@@ -32,10 +38,13 @@ async function loadContactList() {
   let d = { contacts: [] };
   try { d = await (await fetch("/api/contacts")).json(); } catch (e) {}
   window._contacts = d.contacts || [];
-  renderContactList(window._contacts, els.contactSearch.value);
+  if (!_nearbyMode) renderContactList(window._contacts, els.contactSearch.value);
 }
 
 let _coldOnly = false;
+let _nearbyMode = false;
+let _nearbyPlace = null;
+let _nearbyRadius = 50;
 
 function renderContactList(list, query) {
   const host = els.contactList; host.innerHTML = "";
@@ -58,7 +67,10 @@ function contactRow(c) {
   row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
   const left = el("div", "contact-row-left");
   if (c.cold) left.append(el("span", "contact-cold", "● going cold")); // §13: ink, never amber
-  left.append(el("span", "contact-name", c.display));
+  const ident = el("span", "contact-ident");
+  ident.append(el("span", "contact-name", c.display));
+  if (c.location) ident.append(el("span", "contact-location", c.location));
+  left.append(ident);
   if (!c.hasNote) left.append(el("span", "contact-dot", "○")); // quiet no-note indicator
   if (c.openLoops > 0) left.append(el("span", "contact-loops", c.openLoops + " open"));
   const right = el("div", "contact-row-right");
@@ -78,6 +90,90 @@ function contactRow(c) {
   return row;
 }
 
+function setNearbyMode(on) {
+  _nearbyMode = !!on;
+  if (_nearbyMode) _coldOnly = false;
+  els.contactNearby.hidden = !_nearbyMode;
+  els.contactNearbyToggle.classList.toggle("on", _nearbyMode);
+  els.contactNearbyToggle.textContent = _nearbyMode ? "◎ Nearby on" : "◎ Nearby";
+  els.contactTriage.hidden = _nearbyMode;
+  els.contactEmailReview.hidden = _nearbyMode;
+  if (_nearbyMode) renderNearbyPanel();
+  else {
+    renderContactList(window._contacts || [], els.contactSearch.value);
+    loadContactTriage(); loadContactEmailReview();
+  }
+}
+
+function renderNearbyPanel() {
+  const panel = els.contactNearby; panel.innerHTML = "";
+  const form = el("div", "nearby-form");
+  const placeInput = el("input", "contact-search"); placeInput.type = "search";
+  placeInput.placeholder = "City or place, e.g. Chicago";
+  if (_nearbyPlace) placeInput.value = _nearbyPlace.label;
+  const radiusInput = el("input", "nearby-radius"); radiusInput.type = "number";
+  radiusInput.min = "1"; radiusInput.max = "500"; radiusInput.value = String(_nearbyRadius);
+  const candidates = el("div", "nearby-candidates");
+  const status = el("div", "nearby-status");
+  const find = pill("Find place", async () => {
+    const q = placeInput.value.trim(); if (!q) return;
+    find.disabled = true; status.textContent = "finding place…"; candidates.innerHTML = "";
+    try {
+      const res = await fetch("/api/contacts/places?q=" + encodeURIComponent(q));
+      if (!res.ok) throw new Error((await res.text()).trim() || "place lookup failed");
+      const d = await res.json();
+      status.textContent = (d.places || []).length ? "Choose the intended place" : "No city or place found.";
+      (d.places || []).forEach((p) => {
+        const b = pillLight(p.label, () => {
+          _nearbyPlace = p; placeInput.value = p.label;
+          candidates.innerHTML = ""; status.textContent = "";
+          runNearbySearch();
+        });
+        candidates.append(b);
+      });
+      if ((d.places || []).length) candidates.append(el("a", "nearby-attribution", "Place data © OpenStreetMap contributors"));
+      const a = candidates.querySelector("a"); if (a) { a.href = "https://www.openstreetmap.org/copyright"; a.target = "_blank"; a.rel = "noopener"; }
+    } catch (e) { status.textContent = "✕ " + errMsg(e); }
+    finally { find.disabled = false; }
+  });
+  const run = pillLight("Search radius", () => runNearbySearch());
+  const radiusWrap = el("label", "nearby-radius-wrap", "within "); radiusWrap.append(radiusInput, document.createTextNode(" miles"));
+  radiusInput.addEventListener("change", () => { _nearbyRadius = Number(radiusInput.value) || 50; });
+  placeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find.click(); } });
+  form.append(placeInput, find, radiusWrap, run);
+  panel.append(form, candidates, status);
+  if (_nearbyPlace) runNearbySearch();
+  else els.contactList.innerHTML = "", els.contactList.append(emptyRow("Choose a destination to find contacts nearby."));
+}
+
+async function runNearbySearch() {
+  if (!_nearbyPlace) return;
+  const radiusInput = els.contactNearby.querySelector(".nearby-radius");
+  _nearbyRadius = Math.max(1, Math.min(500, Number(radiusInput && radiusInput.value) || 50));
+  const host = els.contactList; host.innerHTML = ""; host.append(emptyRow("Finding nearby contacts…"));
+  try {
+    const qs = new URLSearchParams({ lat: _nearbyPlace.lat, lng: _nearbyPlace.lng, radiusMiles: _nearbyRadius });
+    const res = await fetch("/api/contacts/nearby?" + qs.toString());
+    if (!res.ok) throw new Error((await res.text()).trim() || "nearby search failed");
+    const d = await res.json(); host.innerHTML = "";
+    if (!(d.contacts || []).length) host.append(emptyRow("No contacts found within " + _nearbyRadius + " miles of " + _nearbyPlace.label + "."));
+    (d.contacts || []).forEach((c) => host.append(nearbyContactRow(c)));
+    const status = els.contactNearby.querySelector(".nearby-status");
+    status.textContent = (d.contacts || []).length + " contact" + ((d.contacts || []).length === 1 ? "" : "s") + " near " + _nearbyPlace.label +
+      (d.unresolvedCount ? " · " + d.unresolvedCount + " location" + (d.unresolvedCount === 1 ? " is" : "s are") + " still resolving" : "") +
+      " · distances use city centers";
+  } catch (e) { host.innerHTML = ""; host.append(emptyRow("Could not search nearby: " + errMsg(e))); }
+}
+
+function nearbyContactRow(c) {
+  const row = el("div", "contact-row nearby-result");
+  row.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(c.key); };
+  const ident = el("span", "contact-ident");
+  ident.append(el("span", "contact-name", c.display), el("span", "contact-location", c.location));
+  row.append(ident, el("span", "nearby-distance", "≈ " + Number(c.distanceMiles).toFixed(1) + " mi"));
+  return row;
+}
+
 async function loadContactTriage() {
   let d = { triage: [] };
   try { d = await (await fetch("/api/contacts/triage")).json(); } catch (e) {}
@@ -86,6 +182,7 @@ async function loadContactTriage() {
 
 function renderTriage(items) {
   const host = els.contactTriage; host.innerHTML = "";
+  if (_nearbyMode) { host.hidden = true; return; }
   if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
   window._triage = items;
@@ -136,6 +233,7 @@ let _emailReviewOpen = false; // preserve expand/collapse across in-place update
 function renderEmailReview(items) {
   const host = els.contactEmailReview; if (!host) return;
   host.innerHTML = "";
+  if (_nearbyMode) { host.hidden = true; return; }
   if (!items.length) { host.hidden = true; return; }
   host.hidden = false;
   const head = el("div", "triage-head");
@@ -260,6 +358,7 @@ function renderContactPage(p) {
   if (p.role) nameRow.append(el("span", "cp-role", p.role.toUpperCase())); // §13: neutral role chip from the note's role:
   if (!p.hasNote) nameRow.append(el("span", "cp-nonote", "no note yet"));
   header.append(nameRow);
+  if (p.location && p.location.label) header.append(el("div", "cp-location-current", p.location.label));
   if (p.aliases && p.aliases.length) header.append(el("div", "cp-aliases", "aka " + p.aliases.join(" · ")));
   if (p.firms && p.firms.length) {
     const f = el("div", "cp-firms");
@@ -271,6 +370,8 @@ function renderContactPage(p) {
     header.append(f);
   }
   host.append(header);
+
+  host.append(renderContactLocation(p));
 
   // Explicit private-CRM relationships. These are composed by Contacts but
   // never enter the public Aion portal contract.
@@ -463,6 +564,67 @@ function renderContactPage(p) {
   host.append(note);
 }
 
+function renderContactLocation(p) {
+  const sec = cpSection("Location");
+  const current = el("div", "cp-location-view");
+  if (p.location && p.location.label) {
+    current.append(el("div", "cp-location-label", p.location.label));
+    if (p.location.address) current.append(el("div", "cp-location-address", p.location.address));
+  } else current.append(el("div", "cp-empty", "No location recorded."));
+  const actions = el("div", "cp-location-actions");
+  actions.append(pillLight((p.location && p.location.label) ? "Edit" : "Add location", () => openEditor()));
+  if (p.location && p.location.label) actions.append(pillLight("Clear", async () => {
+    if (!confirm("Clear this contact’s location and address?")) return;
+    const res = await fetch("/api/contacts/location?key=" + encodeURIComponent(p.key), { method: "DELETE" });
+    if (!res.ok) { alert((await res.text()).trim() || "Could not clear location"); return; }
+    renderContactPage(await res.json());
+  }));
+  current.append(actions); sec.append(current);
+
+  function openEditor() {
+    sec.innerHTML = ""; sec.append(el("div", "cp-section-head", "Location"));
+    const form = el("div", "cp-location-form");
+    const place = el("input", "cp-location-input"); place.type = "search";
+    place.placeholder = "City or place"; place.value = (p.location && p.location.label) || "";
+    const address = el("input", "cp-location-input"); address.type = "text";
+    address.placeholder = "Optional street address (private reference only)"; address.value = (p.location && p.location.address) || "";
+    let selectedLabel = place.value;
+    const candidates = el("div", "nearby-candidates");
+    const status = el("div", "nearby-status");
+    const save = pill("Save location", async () => {
+      if (!selectedLabel) { status.textContent = "Choose a resolved place first."; return; }
+      save.disabled = true;
+      try {
+        renderContactPage(await putJSONOk("/api/contacts/location", { key: p.key, display: p.display, location: selectedLabel, address: address.value.trim() }));
+      } catch (e) { status.textContent = "✕ " + errMsg(e); save.disabled = false; }
+    });
+    const find = pillLight("Find place", async () => {
+      const q = place.value.trim(); if (!q) return;
+      find.disabled = true; status.textContent = "finding place…"; candidates.innerHTML = "";
+      try {
+        const res = await fetch("/api/contacts/places?q=" + encodeURIComponent(q));
+        if (!res.ok) throw new Error((await res.text()).trim() || "place lookup failed");
+        const d = await res.json(); status.textContent = (d.places || []).length ? "Choose the intended place" : "No city or place found.";
+        (d.places || []).forEach((candidate) => candidates.append(pillLight(candidate.label, () => {
+          selectedLabel = candidate.label; place.value = candidate.label; candidates.innerHTML = ""; status.textContent = "";
+        })));
+        if ((d.places || []).length) {
+          const attr = el("a", "nearby-attribution", "Place data © OpenStreetMap contributors");
+          attr.href = "https://www.openstreetmap.org/copyright"; attr.target = "_blank"; attr.rel = "noopener"; candidates.append(attr);
+        }
+      } catch (e) { status.textContent = "✕ " + errMsg(e); }
+      finally { find.disabled = false; }
+    });
+    place.addEventListener("input", () => { if (place.value.trim() !== selectedLabel) selectedLabel = ""; });
+    place.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); find.click(); } });
+    const placeRow = el("div", "cp-location-place-row"); placeRow.append(place, find);
+    form.append(placeRow, candidates, address, el("div", "cp-location-note", "The address stays private and does not affect nearby matching."), status);
+    const formActions = el("div", "cp-location-actions"); formActions.append(save, pillLight("Cancel", () => renderContactPage(p))); form.append(formActions);
+    sec.append(form); place.focus();
+  }
+  return sec;
+}
+
 // create flow — bind to existing links before making a new contact (§5)
 function openCreatePanel() {
   if (document.querySelector(".contact-create")) return;
@@ -503,6 +665,7 @@ async function runCreateSearch(q, host) {
 }
 
 if (els.contactSearch) els.contactSearch.addEventListener("input", () => renderContactList(window._contacts || [], els.contactSearch.value));
-if (els.contactColdToggle) els.contactColdToggle.addEventListener("click", () => { location.hash = _coldOnly ? "#/contacts" : "#/contacts/cold"; });
+if (els.contactColdToggle) els.contactColdToggle.addEventListener("click", () => { if (_nearbyMode) setNearbyMode(false); location.hash = _coldOnly ? "#/contacts" : "#/contacts/cold"; });
+if (els.contactNearbyToggle) els.contactNearbyToggle.addEventListener("click", () => setNearbyMode(!_nearbyMode));
 if (els.contactAddBtn) els.contactAddBtn.addEventListener("click", openCreatePanel);
 if (els.contactBackBtn) els.contactBackBtn.addEventListener("click", () => { location.hash = "#/contacts"; });

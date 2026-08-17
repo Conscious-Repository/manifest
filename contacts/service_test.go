@@ -247,6 +247,105 @@ func TestCRMDirectoryContactNeedsNoPersonalNote(t *testing.T) {
 	}
 }
 
+func TestContactLocationSaveProjectsAndClears(t *testing.T) {
+	svc, _, root := harness(t)
+	key, err := svc.SaveLocation("alice", "Alice", "St. Louis, MO, US", "123 Main St, St. Louis, MO")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := svc.Page(key, now)
+	if !ok || p.Location.Label != "St. Louis, MO, US" || p.Location.Address != "123 Main St, St. Louis, MO" {
+		t.Fatalf("page location=%+v ok=%v", p.Location, ok)
+	}
+	list, err := svc.List(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var alice *Contact
+	for i := range list {
+		if list[i].Key == "alice" {
+			alice = &list[i]
+		}
+	}
+	if alice == nil || alice.Location != "St. Louis, MO, US" {
+		t.Fatalf("list projection=%+v", alice)
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, "alice.md"))
+	if !containsAll(string(raw), `location: "St. Louis, MO, US"`, `address: "123 Main St, St. Louis, MO"`, "friend") {
+		t.Fatalf("note fields wrong:\n%s", raw)
+	}
+	if _, err := svc.SaveLocation("alice", "Alice", "", "orphan"); err == nil {
+		t.Fatal("address without a location must fail")
+	}
+	if _, err := svc.SaveLocation("alice", "Alice", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = svc.Page("alice", now)
+	if p.Location.Label != "" || p.Location.Address != "" {
+		t.Fatalf("clear left location=%+v", p.Location)
+	}
+}
+
+func TestCRMLocationMaterializesPrivatePersonNote(t *testing.T) {
+	svc, _, root := harness(t)
+	dir := &testCRMDirectory{people: map[string]CRMContact{
+		"jane investor": {Key: "jane investor", Display: "Jane Investor", Emails: []string{"jane@example.com"}},
+	}}
+	svc.UseCRMDirectory(dir)
+	key, err := svc.SaveLocation("jane investor", "Jane Investor", "Boston, MA, US", "8 Beacon St")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir.attached == "" {
+		t.Fatal("CRM identity was not attached to the materialized person note")
+	}
+	raw, err := os.ReadFile(filepath.Join(root, "jane investor.md"))
+	if err != nil || !containsAll(string(raw), "categories: [people]", `location: "Boston, MA, US"`, `address: "8 Beacon St"`) {
+		t.Fatalf("created note key=%q err=%v:\n%s", key, err, raw)
+	}
+}
+
+type fakeCentroids struct {
+	points   map[string][2]float64
+	enqueued []string
+}
+
+func (f *fakeCentroids) PlaceCentroid(label string) (float64, float64, bool) {
+	p, ok := f.points[label]
+	return p[0], p[1], ok
+}
+func (f *fakeCentroids) EnqueuePlace(label string) { f.enqueued = append(f.enqueued, label) }
+
+func TestNearbyUsesApproximateCityCentroids(t *testing.T) {
+	svc, _, _ := harness(t)
+	_, _ = svc.SaveLocation("alice", "Alice", "St. Louis, MO, US", "private address")
+	_, _ = svc.SaveLocation("michael trinh", "Michael Trinh", "Chicago, IL, US", "")
+	_, _ = svc.SaveLocation("shoumik dabir", "Shoumik Dabir", "Boston, MA, US", "")
+	geo := &fakeCentroids{points: map[string][2]float64{
+		"St. Louis, MO, US": {38.6270, -90.1994},
+		"Chicago, IL, US":   {41.8781, -87.6298},
+	}}
+	got, err := svc.Nearby(38.6270, -90.1994, 300, geo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Contacts) != 2 || got.Contacts[0].Display != "alice" || got.Contacts[1].Display != "michael trinh" {
+		t.Fatalf("nearby=%+v", got)
+	}
+	if got.UnresolvedCount != 1 || len(geo.enqueued) != 1 || geo.enqueued[0] != "Boston, MA, US" {
+		t.Fatalf("unresolved=%d enqueued=%v", got.UnresolvedCount, geo.enqueued)
+	}
+	if got.Contacts[0].DistanceMiles != 0 || got.Contacts[1].DistanceMiles <= 250 {
+		t.Fatalf("distances=%+v", got.Contacts)
+	}
+	if _, err := svc.Nearby(91, 0, 50, geo); err == nil {
+		t.Fatal("invalid destination must fail")
+	}
+	if _, err := svc.Nearby(0, 0, 501, geo); err == nil {
+		t.Fatal("out-of-range radius must fail")
+	}
+}
+
 func TestTriageQueueAndDecisions(t *testing.T) {
 	svc, _, _ := harness(t)
 	tri, _ := svc.Triage()

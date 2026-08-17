@@ -85,3 +85,33 @@ func TestDisabledWithoutVault(t *testing.T) {
 		t.Fatal("expected error with no vault")
 	}
 }
+
+func TestSetContactLocationAtomicRoundTrip(t *testing.T) {
+	vault := t.TempDir()
+	rel := "jane.md"
+	original := "---\ncategories: [people]\nrole: founder\n---\n\nHand-written body.\n"
+	if err := os.WriteFile(filepath.Join(vault, rel), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w := New(vault)
+	if err := w.SetContactLocation(rel, "St. Louis, MO, US", "123 Main #4"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(vault, rel))
+	s := string(b)
+	if !strings.Contains(s, `location: "St. Louis, MO, US"`) || !strings.Contains(s, `address: "123 Main #4"`) ||
+		!strings.Contains(s, "role: founder") || !strings.HasSuffix(s, "Hand-written body.\n") {
+		t.Fatalf("unexpected location write:\n%s", s)
+	}
+	if err := w.SetContactLocation(rel, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(filepath.Join(vault, rel))
+	s = string(b)
+	if strings.Contains(s, "location:") || strings.Contains(s, "address:") || !strings.Contains(s, "role: founder") || !strings.HasSuffix(s, "Hand-written body.\n") {
+		t.Fatalf("clear did not preserve unrelated content:\n%s", s)
+	}
+	if err := w.SetContactLocation(rel, "", "orphan address"); err == nil {
+		t.Fatal("address without location must fail")
+	}
+}

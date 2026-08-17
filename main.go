@@ -27,6 +27,7 @@ import (
 	"manifest/daily"
 	"manifest/errands"
 	"manifest/fundraising"
+	"manifest/geocode"
 	"manifest/gmailauth"
 	"manifest/goals"
 	"manifest/hermes"
@@ -320,6 +321,9 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, tasksStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	// One geocoder instance serves every feature so the provider's global rate
+	// limit cannot be exceeded by contacts and properties independently.
+	srv.UseGeocoder(geocode.New(cfg.DataDir))
 	srv.UseFundraising(frStore)
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)

@@ -25,6 +25,7 @@ import (
 	"manifest/daily"
 	"manifest/errands"
 	"manifest/fundraising"
+	"manifest/geocode"
 	"manifest/gmailauth"
 	"manifest/goals"
 	"manifest/ledger"
@@ -99,7 +100,7 @@ type Server struct {
 	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
 	rePortalPath   string // ooda site checkout for the deals.json publish ("" = disabled)
 	reImport       *realestate.ImportMemory
-	geocoder       *realestate.Geocoder
+	geocoder       *geocode.Service
 	statements     *realestate.StatementStore
 	// Errands (the action layer — aside effector; records = FEED receipts).
 	// Nilable; dataDir state only, never the vault.
@@ -204,6 +205,7 @@ func (s *Server) UseIndex(ix *vaultindex.Index) { s.index = ix }
 
 // UseContacts wires the people layer (CONTACTS tab).
 func (s *Server) UseContacts(c *contacts.Service) { s.contacts = c; s.wireFundraisingContacts() }
+func (s *Server) UseGeocoder(g *geocode.Service)  { s.geocoder = g }
 
 // UseFundraising wires the private Manifest-only Aion CRM.
 func (s *Server) UseFundraising(f *fundraising.Store) { s.fundraising = f; s.wireFundraisingContacts() }
@@ -422,6 +424,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/contacts/page", s.handleContactPage)
 	mux.HandleFunc("GET /api/contacts/card", s.handleContactCard)
 	mux.HandleFunc("GET /api/contacts/search", s.handleContactsSearch)
+	mux.HandleFunc("GET /api/contacts/places", s.handleContactPlaces)
+	mux.HandleFunc("GET /api/contacts/nearby", s.handleContactsNearby)
+	mux.HandleFunc("PUT /api/contacts/location", s.handleContactLocationPut)
+	mux.HandleFunc("DELETE /api/contacts/location", s.handleContactLocationDelete)
 	mux.HandleFunc("POST /api/contacts/confirm", s.handleContactsConfirm)
 	mux.HandleFunc("POST /api/contacts/dismiss", s.handleContactsDismiss)
 	mux.HandleFunc("POST /api/contacts/dismiss-bulk", s.handleContactsDismissBulk)

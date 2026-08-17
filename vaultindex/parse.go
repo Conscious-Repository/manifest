@@ -33,6 +33,8 @@ type Note struct {
 	Categories    []string // exact frontmatter values, order preserved, de-duped
 	Aliases       []string // union of alias: and aliases:
 	Emails        []string // union of email: and emails: (confirm-once contact matching)
+	Location      string   // standardized contact locality: "City, Region, CC"
+	Address       string   // optional private contact reference; never geocoded
 	InlineFields  []InlineField
 	Links         []Link
 	Tasks         []Task
@@ -97,6 +99,8 @@ func ParseNote(relPath string, content []byte, mtime int64, aiRegions []string) 
 	n.Categories = dedupe(fm["categories"])
 	n.Aliases = dedupe(append(append([]string{}, fm["alias"]...), fm["aliases"]...))
 	n.Emails = dedupe(append(append([]string{}, fm["email"]...), fm["emails"]...))
+	n.Location = firstNonEmpty(fm["location"])
+	n.Address = firstNonEmpty(fm["address"])
 	// granola-id / pocket-id (both dash and underscore spellings) are the
 	// strongest dedupe keys for their syncs: a re-listed note is caught even
 	// if renamed. Two parallel keys, one convention each (pocket-sync plan).

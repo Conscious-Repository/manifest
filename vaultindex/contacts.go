@@ -36,6 +36,13 @@ type PersonSeed struct {
 	Key, Display, NotePath string
 }
 
+// PersonLocation is the single current locality projected from a person note.
+// Address is intentionally not used by geographic queries.
+type PersonLocation struct {
+	Key, Display, NotePath string
+	Location, Address      string
+}
+
 // PeopleNotes returns every note-backed person entity. Knowledge zone only:
 // a system-zone record can never be a person (contacts live in your language).
 func (ix *Index) PeopleNotes() ([]PersonSeed, error) {
@@ -56,6 +63,37 @@ func (ix *Index) PeopleNotes() ([]PersonSeed, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// PeopleLocations returns note-backed contacts with a standardized locality.
+// Knowledge-zone person notes are the only canonical source, so system CRM
+// records and ordinary wikilinks can never leak into this private query.
+func (ix *Index) PeopleLocations() ([]PersonLocation, error) {
+	rows, err := ix.db.Query(`
+		SELECT e.key, e.display, e.note_path, n.location, n.address
+		FROM entities e JOIN notes n ON n.path=e.note_path
+		WHERE e.is_person=1 AND n.location!='' AND ` + knowledgeSrcSQL + `
+		ORDER BY e.display`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PersonLocation
+	for rows.Next() {
+		var p PersonLocation
+		if err := rows.Scan(&p.Key, &p.Display, &p.NotePath, &p.Location, &p.Address); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// LocationByPath reads the contact fields for one note path. It supports CRM
+// identities whose registry key is not necessarily the note basename.
+func (ix *Index) LocationByPath(notePath string) (location, address string) {
+	_ = ix.db.QueryRow(`SELECT location,address FROM notes WHERE path=?`, notePath).Scan(&location, &address)
+	return location, address
 }
 
 // NoteLessTarget is a link-target entity with no note behind it.

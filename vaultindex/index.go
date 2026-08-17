@@ -87,6 +87,8 @@ CREATE TABLE IF NOT EXISTS notes (
   granola_id  TEXT NOT NULL DEFAULT '',
   pocket_id   TEXT NOT NULL DEFAULT '',
   gmail_thread_id TEXT NOT NULL DEFAULT '',
+	location    TEXT NOT NULL DEFAULT '',
+	address     TEXT NOT NULL DEFAULT '',
   mtime       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_notes_name_lower ON notes(name_lower);
@@ -155,7 +157,7 @@ func Open(cfg Config) (*Index, error) {
 // disposable projection (Rebuild reproduces it from the vault), a version
 // mismatch simply drops every table and recreates — a stale on-disk index from
 // an older build upgrades itself with no migration, losslessly.
-const schemaVersion = 7 // v7: notes.gmail_thread_id (email-sync dedupe key)
+const schemaVersion = 8 // v8: standardized contact location + private address
 
 var allTables = []string{"notes", "note_categories", "note_aliases", "note_emails", "links", "inline_fields", "note_tasks", "entities", "notes_fts"}
 
@@ -244,8 +246,8 @@ func insertNote(tx *sql.Tx, n Note) error {
 		zone = "knowledge"
 	}
 	ai := b2i(n.AIAuthored)
-	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,zone,ai_authored,transcript,granola_id,pocket_id,gmail_thread_id,mtime) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, zone, ai, b2i(n.HasTranscript), n.GranolaID, n.PocketID, n.GmailThreadID, n.MTime)
+	res, err := tx.Exec(`INSERT INTO notes(path,name,name_lower,date,date_source,zone,ai_authored,transcript,granola_id,pocket_id,gmail_thread_id,location,address,mtime) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		n.Path, n.Name, strings.ToLower(n.Name), n.Date, n.DateSource, zone, ai, b2i(n.HasTranscript), n.GranolaID, n.PocketID, n.GmailThreadID, n.Location, n.Address, n.MTime)
 	if err != nil {
 		return err
 	}

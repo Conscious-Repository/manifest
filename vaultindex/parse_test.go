@@ -43,6 +43,18 @@ func TestInlineCategoriesAndAliases(t *testing.T) {
 	}
 }
 
+func TestContactLocationFrontmatter(t *testing.T) {
+	src := "---\ncategories: [people]\nlocation: \"St. Louis, MO, US\"\naddress: \"123 Main St, St. Louis, MO 63101\"\n---\nfriend\n"
+	n := ParseNote("jane.md", []byte(src), 0, aiRegions)
+	if n.Location != "St. Louis, MO, US" || n.Address != "123 Main St, St. Louis, MO 63101" {
+		t.Fatalf("location=%q address=%q", n.Location, n.Address)
+	}
+	empty := ParseNote("nobody.md", []byte("---\ncategories: [people]\n---\n"), 0, aiRegions)
+	if empty.Location != "" || empty.Address != "" {
+		t.Fatalf("missing fields must stay empty: %+v", empty)
+	}
+}
+
 func TestDateFromFrontmatterWhenFilenameUndated(t *testing.T) {
 	n := ParseNote("some idea.md", []byte("---\ndate: 2026-03-04\ncategories: [essays]\n---\nBody\n"), 0, aiRegions)
 	if n.Date != "2026-03-04" || n.DateSource != "frontmatter" {

@@ -27,7 +27,9 @@ func (s *Server) UseRealestate(svc *realestate.Service, root, dataDir string) {
 	s.realestateRoot = root
 	s.bgParcelsPath = filepath.Join(dataDir, "realestate", "bgParcels.json")
 	s.reImport = realestate.NewImportMemory(dataDir)
-	s.geocoder = realestate.NewGeocoder(dataDir)
+	if s.geocoder == nil {
+		s.geocoder = realestate.NewGeocoder(dataDir)
+	}
 	s.statements = realestate.NewStatementStore(dataDir)
 }
 
