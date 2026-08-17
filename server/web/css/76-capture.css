@@ -1,14 +1,14 @@
 /* CAPTURE — the tray (cmd-ctr import P5) */
-.capture-composer { display: inline-flex; align-items: center; gap: 8px; }
-.capture-input { width: 320px; max-width: 60vw; font: inherit; font-size: var(--fs-md); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; }
+.capture-composer { display: inline-flex; align-items: center; gap: var(--sp-4); }
+.capture-input { width: 320px; max-width: 60vw; font: inherit; font-size: var(--fs-md); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-5); }
 .capture-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }
-.capture-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-top: 14px; }
-.capture-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.capture-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-6); margin-top: var(--sp-6); }
+.capture-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-6) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
 .capture-card.kept { border-left: 3px solid var(--accent); }
-.capture-head { display: flex; gap: 10px; font-size: var(--fs-2xs); letter-spacing: 0.4px; color: var(--base-40); text-transform: uppercase; }
+.capture-head { display: flex; gap: var(--sp-5); font-size: var(--fs-2xs); letter-spacing: 0.4px; color: var(--base-40); text-transform: uppercase; }
 .capture-title { font-weight: 500; color: var(--base-100); font-size: var(--fs-md); }
 .capture-url { font-size: var(--fs-md); color: var(--accent); word-break: break-all; text-decoration: none; }
 .capture-url:hover { text-decoration: underline; }
 .capture-thumb { max-width: 100%; max-height: 220px; object-fit: contain; border-radius: calc(var(--radius) - 2px); cursor: zoom-in; align-self: flex-start; }
 .capture-text { font: inherit; font-size: var(--fs-md); line-height: 1.5; color: var(--base-70); background: none; border: 0; outline: none; resize: vertical; min-height: 22px; padding: 0; }
-.capture-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.capture-acts { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-1); }

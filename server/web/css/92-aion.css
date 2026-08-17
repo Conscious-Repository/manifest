@@ -2,120 +2,120 @@
    ghost inputs, muted dots; #265ACC only for live/active) ---- */
 /* page frame: same convention as every other view — bounded width, auto
    margins, real gutters (nothing touches the screen edges) */
-.aion-view { max-width: 1080px; margin: 8px auto 64px; padding: 0 28px; }
-.aion-body { padding: 8px 0 80px; }
-@media (max-width: 860px) { .aion-view { padding: 0 16px; } }
+.aion-view { max-width: 1080px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.aion-body { padding: var(--sp-4) 0 80px; }
+@media (max-width: 860px) { .aion-view { padding: 0 var(--sp-7); } }
 
 /* publish rail */
-.aion-rail { display: inline-flex; align-items: center; gap: 10px; }
+.aion-rail { display: inline-flex; align-items: center; gap: var(--sp-5); }
 .aion-last { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: 0.3px; }
-.aion-dots { display: inline-flex; gap: 4px; align-items: center; }
+.aion-dots { display: inline-flex; gap: var(--sp-2); align-items: center; }
 .status-dot.on { background: var(--blue); }
 
 /* chips */
-.aion-chips { display: flex; gap: 6px; align-items: center; padding: 4px 8px 10px; flex-wrap: wrap; }
+.aion-chips { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-2) var(--sp-4) var(--sp-5); flex-wrap: wrap; }
 .aion-chip-gap { width: 18px; }
 
 /* backlog list: two-line rows, whole row opens the edit drawer */
 .aion-item { border-bottom: 1px solid var(--line); }
 .aion-item.done .aion-title { color: var(--muted); }
-.aion-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 44px; gap: 12px; align-items: center; padding: 9px 6px; cursor: pointer; }
+.aion-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto 44px; gap: var(--sp-6); align-items: center; padding: var(--sp-4) var(--sp-3); cursor: pointer; }
 .aion-row:hover { background: var(--hover); }
-.aion-check { background: none; border: none; cursor: pointer; color: var(--blue); font-size: var(--fs-md); padding: 2px; }
+.aion-check { background: none; border: none; cursor: pointer; color: var(--blue); font-size: var(--fs-md); padding: var(--sp-1); }
 .aion-check.muted { color: var(--icon); cursor: default; }
 .aion-main { min-width: 0; }
 .aion-title { font-size: var(--fs-md); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; }
-.aion-item-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); letter-spacing: 0.2px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aion-item-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); letter-spacing: 0.2px; margin-top: var(--sp-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aion-src { color: var(--muted); text-decoration: none; }
 .aion-src:hover { color: var(--blue); }
 
 /* the status chip — a labeled state, never a bare icon */
-.aion-status { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 7px; color: var(--muted); white-space: nowrap; flex: none; }
+.aion-status { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.6px; border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); color: var(--muted); white-space: nowrap; flex: none; }
 .aion-status.active { color: var(--blue); border-color: var(--blue); }
 .aion-status.open { color: var(--streak-ink); }
 
-.aion-edit-btn { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--icon); cursor: pointer; padding: 2px; }
+.aion-edit-btn { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--icon); cursor: pointer; padding: var(--sp-1); }
 .aion-row:hover .aion-edit-btn, .aion-edit-btn:hover { color: var(--blue); }
 
 /* the edit drawer: labeled fields, one save */
-.aion-editor { background: var(--streak-bg); border-top: 1px solid var(--line); padding: 12px 14px 12px 38px; cursor: default; }
-.aion-editor-grid { display: grid; grid-template-columns: 76px minmax(220px, 420px); gap: 8px 10px; align-items: center; }
+.aion-editor { background: var(--streak-bg); border-top: 1px solid var(--line); padding: var(--sp-6) var(--sp-6) var(--sp-6) 38px; cursor: default; }
+.aion-editor-grid { display: grid; grid-template-columns: 76px minmax(220px, 420px); gap: var(--sp-4) var(--sp-5); align-items: center; }
 .aion-editor-grid .pp-in, .aion-editor-grid .ta-in { width: 100%; box-sizing: border-box; background: var(--bg); }
 .aion-editor-grid .ta-wrap { display: block; position: relative; }
 .aion-editor-wide { min-width: 100%; }
-.aion-editor-actions { display: flex; gap: 8px; margin-top: 12px; }
-.aion-editor-decide { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.aion-editor-actions { display: flex; gap: var(--sp-4); margin-top: var(--sp-6); }
+.aion-editor-decide { display: flex; gap: var(--sp-4); align-items: center; margin-top: var(--sp-6); padding-top: var(--sp-5); border-top: 1px solid var(--line); }
 .aion-editor-outcome { flex: 1; background: var(--bg); }
-.aion-adds { display: flex; gap: 14px; padding: 10px 6px; }
+.aion-adds { display: flex; gap: var(--sp-6); padding: var(--sp-5) var(--sp-3); }
 
 /* heuristics */
 .aion-title-in { width: 100%; font: inherit; border: none; border-bottom: 1px solid var(--blue); outline: none; background: none; }
-.aion-mini { background: none; border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); font-size: var(--fs-2xs); cursor: pointer; padding: 1px 5px; }
+.aion-mini { background: none; border: 1px solid var(--line); border-radius: var(--radius); color: var(--muted); font-size: var(--fs-2xs); cursor: pointer; padding: var(--sp-1) var(--sp-2); }
 .aion-mini:hover { color: var(--text); border-color: var(--muted); }
-.aion-section-note { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); padding: 4px 8px 12px; letter-spacing: 0.3px; }
+.aion-section-note { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); padding: var(--sp-2) var(--sp-4) var(--sp-6); letter-spacing: 0.3px; }
 .aion-heur { border-bottom: 1px solid var(--line); }
-.aion-heur-row { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; }
+.aion-heur-row { display: flex; gap: var(--sp-4); align-items: baseline; padding: var(--sp-3) var(--sp-4); }
 .aion-heur-row.retired { color: var(--muted); }
 .aion-heur-caret { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0; font-size: var(--fs-xs); flex: none; }
 .aion-heur-text { flex: 1; cursor: text; }
 .aion-heur-count { font-family: var(--mono); font-size: var(--fs-xs); color: var(--blue); flex: none; }
-.aion-heur-acts { display: none; gap: 4px; flex: none; }
+.aion-heur-acts { display: none; gap: var(--sp-2); flex: none; }
 .aion-heur-row:hover .aion-heur-acts { display: inline-flex; }
-.aion-heur-sources { padding: 0 8px 8px 30px; }
-.aion-heur-src { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); padding: 1px 0; }
+.aion-heur-sources { padding: 0 var(--sp-4) var(--sp-4) 30px; }
+.aion-heur-src { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); padding: var(--sp-1) 0; }
 .aion-heur-src a { color: var(--streak-ink); text-decoration: none; }
 .aion-heur-src a:hover { color: var(--blue); }
 
 /* vto */
-.aion-vto-sec { padding: 2px 8px 14px; }
-.aion-vto-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.aion-vto-sec { padding: var(--sp-1) var(--sp-4) var(--sp-6); }
+.aion-vto-row { display: flex; gap: var(--sp-4); align-items: center; padding: var(--sp-1) 0; }
 .aion-vto-key { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); min-width: 76px; }
 .aion-vto-row .pp-in { flex: 1; }
-.aion-vto-raw { font-size: var(--fs-md); color: var(--streak-ink); padding: 3px 0; }
+.aion-vto-raw { font-size: var(--fs-md); color: var(--streak-ink); padding: var(--sp-1) 0; }
 
 /* goals ladder (read-only) */
-.aion-goals-head { display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; }
-.aion-northstar { font-size: var(--fs-md); color: var(--streak-ink); padding: 4px 8px 12px; }
-.aion-goal-row { display: flex; gap: 8px; align-items: baseline; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.aion-goals-head { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-2) var(--sp-4); }
+.aion-northstar { font-size: var(--fs-md); color: var(--streak-ink); padding: var(--sp-2) var(--sp-4) var(--sp-6); }
+.aion-goal-row { display: flex; gap: var(--sp-4); align-items: baseline; padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--line); }
 .aion-goal-row.rock { padding-left: 28px; }
 .aion-goal-row.milestone { padding-left: 52px; font-size: var(--fs-sm); }
 .aion-goal-row.done .aion-goal-text { color: var(--muted); text-decoration: line-through; }
 .aion-goal-row.unlinked .aion-goal-text { color: var(--muted); }
 .aion-goal-mark { color: var(--blue); font-size: var(--fs-xs); flex: none; }
 .aion-goal-text { flex: 1; }
-.aion-goal-chips { display: inline-flex; gap: 6px; flex: none; }
-.aion-goal-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 5px; }
+.aion-goal-chips { display: inline-flex; gap: var(--sp-3); flex: none; }
+.aion-goal-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 0 var(--sp-2); }
 
 /* org */
 .cols-aion-people { grid-template-columns: 90px minmax(160px, 1fr) minmax(160px, 1fr) 30px; align-items: center; }
 .aion-people .pp-in { width: 100%; }
-.aion-preview-row { font-size: var(--fs-sm); color: var(--streak-ink); padding: 3px 8px; border-bottom: 1px solid var(--line); }
+.aion-preview-row { font-size: var(--fs-sm); color: var(--streak-ink); padding: var(--sp-1) var(--sp-4); border-bottom: 1px solid var(--line); }
 .aion-preview-row.mono { font-family: var(--mono); font-size: var(--fs-xs); }
 .aion-preview-row.failed { color: #b91c1c; }
 .aion-open { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); text-decoration: none; margin-left: auto; }
 .aion-open:hover { color: var(--blue); }
 .pp-section-head { display: flex; align-items: center; }
-.aion-fin { padding: 2px 8px 10px; max-width: 520px; }
-.aion-fin-row { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.aion-fin { padding: var(--sp-1) var(--sp-4) var(--sp-5); max-width: 520px; }
+.aion-fin-row { display: flex; gap: var(--sp-4); align-items: center; padding: var(--sp-1) 0; }
 .aion-fin-row .pp-in { flex: 1; }
-.aion-fin-row.derived { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 8px; }
+.aion-fin-row.derived { border-top: 1px solid var(--line); margin-top: var(--sp-3); padding-top: var(--sp-4); }
 .aion-fin-derived { font-family: var(--mono); font-size: var(--fs-sm); color: var(--streak-ink); }
 
 /* publish panel */
 .aion-publish-panel { max-height: 78vh; overflow-y: auto; }
-.aion-publish-warn { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); color: var(--streak-ink); font-size: var(--fs-sm); padding: 8px 10px; margin: 6px 0; }
-.aion-publish-body { margin: 8px 0; }
-.aion-publish-note { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); padding: 6px 0; }
-.aion-pub-file { display: flex; gap: 10px; align-items: baseline; padding: 6px 0 2px; }
+.aion-publish-warn { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); color: var(--streak-ink); font-size: var(--fs-sm); padding: var(--sp-4) var(--sp-5); margin: var(--sp-3) 0; }
+.aion-publish-body { margin: var(--sp-4) 0; }
+.aion-publish-note { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); padding: var(--sp-3) 0; }
+.aion-pub-file { display: flex; gap: var(--sp-5); align-items: baseline; padding: var(--sp-3) 0 var(--sp-1); }
 .aion-pub-file code { font-size: var(--fs-xs); }
 .aion-pub-status { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); }
 .aion-pub-status.new, .aion-pub-status.changed { color: var(--blue); }
 
 /* approvals card: aion payload editor */
-.aion-appr-form { display: grid; grid-template-columns: 84px 1fr; gap: 4px 8px; align-items: center; margin: 8px 0; }
+.aion-appr-form { display: grid; grid-template-columns: 84px 1fr; gap: var(--sp-2) var(--sp-4); align-items: center; margin: var(--sp-4) 0; }
 .aion-appr-form .pp-in, .aion-appr-form .ta-in { width: 100%; box-sizing: border-box; }
 .aion-appr-form .ta-wrap { display: block; position: relative; }
-.aion-appr-line { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); padding: 6px 8px; font-family: var(--mono); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-word; }
+.aion-appr-line { background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); font-family: var(--mono); font-size: var(--fs-xs); white-space: pre-wrap; word-break: break-word; }
 /* org registry tables */
 .cols-aion-hiring { grid-template-columns: minmax(140px, 1.3fr) minmax(120px, 1fr) 130px 48px 24px; align-items: center; }
 .cols-aion-refs { grid-template-columns: minmax(150px, 1.4fr) minmax(140px, 1.4fr) 110px 96px 24px; align-items: center; }
@@ -131,51 +131,51 @@
 
 /* reconcile sweep */
 .aion-rec-kw { margin-left: auto; min-width: 200px; }
-.aion-rec-bulk { display: flex; gap: 8px; align-items: center; padding: 6px 8px 10px; }
+.aion-rec-bulk { display: flex; gap: var(--sp-4); align-items: center; padding: var(--sp-3) var(--sp-4) var(--sp-5); }
 .aion-rec-bulk .ta-wrap { display: inline-block; }
 .cols-aion-rec { grid-template-columns: 24px minmax(0,1fr) 70px 260px 150px; align-items: center; }
 .aion-rec-cb { justify-self: center; }
-.aion-rec-assign { display: flex; gap: 6px; align-items: center; }
+.aion-rec-assign { display: flex; gap: var(--sp-3); align-items: center; }
 .aion-rec-assign .ta-wrap { display: block; flex: 1; }
 .aion-rec-assign .ta-in { width: 100%; box-sizing: border-box; }
 .aion-rec-was { text-align: left; }
-.aion-rec-hint { background: none; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-family: var(--mono); font-size: var(--fs-2xs); cursor: pointer; padding: 1px 6px; }
+.aion-rec-hint { background: none; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-family: var(--mono); font-size: var(--fs-2xs); cursor: pointer; padding: var(--sp-1) var(--sp-3); }
 .aion-rec-hint:hover { color: var(--blue); border-color: var(--blue); }
-.aion-rec-savebar { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 10px 8px; background: var(--bg); border-top: 1px solid var(--line); }
+.aion-rec-savebar { position: sticky; bottom: 0; display: flex; gap: var(--sp-5); align-items: center; padding: var(--sp-5) var(--sp-4); background: var(--bg); border-top: 1px solid var(--line); }
 
 /* ===== redesign §4–6 (2026-08-09): backlog lane/groups/inspector, publish
    badge, org registry rail, heuristics reinforcement bars ===== */
 
 /* publish button in the breadcrumb bar */
 .aion-publish-btn {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; gap: var(--sp-3);
   background: var(--accent); border: 1px solid var(--accent); color: #fff;
   font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px;
-  border-radius: var(--radius-lg); padding: 4px 11px; cursor: pointer;
+  border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-5); cursor: pointer;
 }
-.aion-publish-badge { background: #fff; color: var(--accent); font-size: var(--fs-2xs); border-radius: 8px; padding: 0 6px; }
+.aion-publish-badge { background: #fff; color: var(--accent); font-size: var(--fs-2xs); border-radius: 8px; padding: 0 var(--sp-3); }
 
 /* backlog layout: list + 300px sticky inspector */
 .aion-backlog { display: flex; align-items: flex-start; gap: 0; }
-.aion-list { flex: 1; min-width: 0; padding: 4px 20px 40px 0; }
+.aion-list { flex: 1; min-width: 0; padding: var(--sp-2) var(--sp-8) 40px 0; }
 .aion-inspector {
   width: 300px; flex: none;
   border-left: 1px solid var(--base-25); background: var(--base-05);
   position: sticky; top: 0; align-self: flex-start;
-  padding: 14px 16px; min-height: 220px;
+  padding: var(--sp-6) var(--sp-7); min-height: 220px;
 }
 @media (max-width: 1100px) { .aion-inspector { display: none; } }
 
-.aion-sec-label { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 6px; border-bottom: 1px solid var(--base-25); }
+.aion-sec-label { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-3); border-bottom: 1px solid var(--base-25); }
 .aion-sec-title { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
 .aion-sec-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
 .aion-sec-add { margin-left: auto; }
 
 /* decisions lane */
-.aion-dec-lane { margin-bottom: 22px; }
+.aion-dec-lane { margin-bottom: var(--sp-8); }
 .aion-dec-row {
-  display: flex; align-items: baseline; gap: 10px;
-  padding: 6px 10px; border-top: 1px solid var(--base-25);
+  display: flex; align-items: baseline; gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--base-25);
   border-left: 2px solid var(--base-100); background: var(--base-05); cursor: pointer;
 }
 .aion-dec-row.decided { border-left-color: transparent; background: none; }
@@ -186,44 +186,44 @@
 .aion-dec-text { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 500; }
 
 /* owner groups + 4-col task rows */
-.aion-owner-group { margin-bottom: 16px; }
-.aion-owner-head { display: flex; align-items: baseline; gap: 10px; padding: 8px 0 4px; border-bottom: 1px solid var(--base-25); }
+.aion-owner-group { margin-bottom: var(--sp-7); }
+.aion-owner-head { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-4) 0 var(--sp-2); border-bottom: 1px solid var(--base-25); }
 .aion-owner-ini { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); }
 .aion-owner-name { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-50); }
 .aion-task-row {
   display: grid; grid-template-columns: 18px minmax(200px, 1fr) minmax(0, auto);
-  gap: 11px; align-items: baseline; padding: 4px 8px; border-top: 1px solid #f4f4f4; cursor: pointer;
+  gap: var(--sp-5); align-items: baseline; padding: var(--sp-2) var(--sp-4); border-top: 1px solid #f4f4f4; cursor: pointer;
 }
 .aion-task-row:hover { background: var(--base-05); }
-.aion-task-row.sel { background: var(--base-20); border-left: 2px solid var(--accent); padding-left: 6px; }
-.aion-task-row.alarm { border-left: 2px solid var(--base-100); padding-left: 6px; }
+.aion-task-row.sel { background: var(--base-20); border-left: 2px solid var(--accent); padding-left: var(--sp-3); }
+.aion-task-row.alarm { border-left: 2px solid var(--base-100); padding-left: var(--sp-3); }
 .aion-task-row.alarm .aion-title { font-weight: 500; }
 .aion-task-row.done .aion-title { color: var(--base-40); text-decoration: line-through; }
 .aion-check.off { color: var(--base-40); }
 .aion-rock-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .aion-rock-tag.stale { color: var(--base-40); font-style: italic; } /* closed/historic rock — not a live goals rock */
-.aion-done-toggle { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: 8px 0; }
+.aion-done-toggle { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: var(--sp-4) 0; }
 .aion-done-toggle:hover { color: var(--base-100); }
 
 /* the inspector */
 .aion-insp-empty { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-40); line-height: 1.5; }
-.aion-insp-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.aion-insp-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--sp-5); }
 .aion-insp-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); }
 .aion-insp-x { background: none; border: none; color: var(--base-40); cursor: pointer; font-size: var(--fs-sm); }
 .aion-insp-x:hover { color: var(--base-100); }
-.aion-insp-title { width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); border: none; border-bottom: 1px solid var(--accent); background: none; outline: none; padding: 0 0 8px; margin-bottom: 12px; color: var(--base-100); }
-.aion-insp-field { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+.aion-insp-title { width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); border: none; border-bottom: 1px solid var(--accent); background: none; outline: none; padding: 0 0 var(--sp-4); margin-bottom: var(--sp-6); color: var(--base-100); }
+.aion-insp-field { display: flex; align-items: baseline; gap: var(--sp-5); margin-bottom: var(--sp-4); }
 .aion-insp-flabel { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); flex: 0 0 66px; }
-.aion-insp-field .pp-in, .aion-insp-field .ta-in { width: 100%; box-sizing: border-box; border: none; border-bottom: 1px dashed var(--base-25); border-radius: 0; background: none; padding: 2px 0; font-size: var(--fs-md); }
+.aion-insp-field .pp-in, .aion-insp-field .ta-in { width: 100%; box-sizing: border-box; border: none; border-bottom: 1px dashed var(--base-25); border-radius: 0; background: none; padding: var(--sp-1) 0; font-size: var(--fs-md); }
 .aion-insp-field .pp-in:focus, .aion-insp-field .ta-in:focus { border-bottom-color: var(--accent); }
 .aion-insp-field .ta-wrap { display: block; position: relative; flex: 1; min-width: 0; }
 .aion-insp-ro { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-60); }
-.aion-insp-src { display: block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); text-decoration: none; margin: 12px 0 0; }
+.aion-insp-src { display: block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); text-decoration: none; margin: var(--sp-6) 0 0; }
 .aion-insp-src:hover { color: var(--accent); }
-.aion-insp-del { margin-top: 16px; background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
+.aion-insp-del { margin-top: var(--sp-7); background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
 .aion-insp-del:hover { color: var(--over); }
-.aion-insp-del.armed { color: #fff; background: var(--over); border-radius: var(--radius-lg); padding: 3px 10px; }
-.aion-insp-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: 16px; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.aion-insp-del.armed { color: #fff; background: var(--over); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-5); }
+.aion-insp-foot { display: flex; justify-content: space-between; align-items: baseline; margin-top: var(--sp-7); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .aion-insp-raw { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; padding: 0; }
 .aion-insp-outcome { font-size: var(--fs-md); }
 
@@ -232,15 +232,15 @@
 .aion-raw-link:hover { color: var(--accent); }
 
 /* org: 176px registry rail + one table */
-.aion-org { display: flex; align-items: flex-start; gap: 20px; }
-.aion-org-rail { width: 176px; flex: none; border-right: 1px solid var(--base-25); padding: 6px 0 14px; }
-.aion-org-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 10px 4px; }
-.aion-org-item { display: flex; align-items: baseline; gap: 8px; width: 100%; background: none; border: none; text-align: left; cursor: pointer; padding: 4px 10px; font-family: var(--sans); font-size: var(--fs-md); color: var(--base-70); }
+.aion-org { display: flex; align-items: flex-start; gap: var(--sp-8); }
+.aion-org-rail { width: 176px; flex: none; border-right: 1px solid var(--base-25); padding: var(--sp-3) 0 var(--sp-6); }
+.aion-org-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 var(--sp-5) var(--sp-2); }
+.aion-org-item { display: flex; align-items: baseline; gap: var(--sp-4); width: 100%; background: none; border: none; text-align: left; cursor: pointer; padding: var(--sp-2) var(--sp-5); font-family: var(--sans); font-size: var(--fs-md); color: var(--base-70); }
 .aion-org-item:hover { background: var(--base-20); }
 .aion-org-item.active { color: var(--accent); background: var(--base-20); }
 .aion-org-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
-.aion-org-file { margin-top: 18px; padding: 10px 10px 0; border-top: 1px solid var(--base-25); }
-.aion-org-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); word-break: break-all; padding-bottom: 4px; }
+.aion-org-file { margin-top: var(--sp-7); padding: var(--sp-5) var(--sp-5) 0; border-top: 1px solid var(--base-25); }
+.aion-org-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); word-break: break-all; padding-bottom: var(--sp-2); }
 .aion-org-raw { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; padding: 0; }
 .aion-org-pane { flex: 1; min-width: 0; }
 
@@ -252,12 +252,12 @@
 
 /* people rows with an ↗ note link — the trailing cell holds ↗ + ✕ */
 .cols-aion-people.cols-people-linked { grid-template-columns: 90px minmax(160px, 1fr) minmax(160px, 1fr) 56px; }
-.aion-row-acts { display: flex; gap: 2px; justify-content: flex-end; }
+.aion-row-acts { display: flex; gap: var(--sp-1); justify-content: flex-end; }
 
 /* decide as a quiet inline affordance: asleep until the outcome has text,
    then accent TEXT (never a solid banner mid-panel) */
 .aion-decide-inline {
-  align-self: flex-end; margin-top: 2px; background: none; border: none; padding: 0;
+  align-self: flex-end; margin-top: var(--sp-1); background: none; border: none; padding: 0;
   font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-30); cursor: default;
 }
 .aion-decide-inline:not(:disabled) { color: var(--accent); cursor: pointer; font-weight: 500; }

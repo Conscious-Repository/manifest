@@ -1,19 +1,19 @@
 /* 65-reading — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
 
 /* ===== READING — the book shelf over the extrinsic zone ===== */
-.reading-view { max-width: 1180px; margin: 8px auto 64px; padding: 0 28px; }
-.book-select { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; background: #fff; cursor: pointer; }
+.reading-view { max-width: 1180px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.book-select { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: #fff; cursor: pointer; }
 .book-select:focus { outline: none; border-color: var(--blue-soft); }
 /* currently-reading strip */
-.reading-strip { margin-bottom: 18px; border-left: 2px solid var(--accent); padding-left: 12px; }
-.reading-strip-head { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-.reading-strip-cards { display: flex; flex-wrap: wrap; gap: 10px; }
-.reading-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 10px 12px; min-width: 220px; max-width: 300px; }
+.reading-strip { margin-bottom: var(--sp-7); border-left: 2px solid var(--accent); padding-left: var(--sp-6); }
+.reading-strip-head { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: var(--sp-4); }
+.reading-strip-cards { display: flex; flex-wrap: wrap; gap: var(--sp-5); }
+.reading-card { display: flex; flex-direction: column; gap: var(--sp-3); border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); min-width: 220px; max-width: 300px; }
 .reading-card-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-100); cursor: pointer; }
 .reading-card .pill { align-self: flex-start; }
 /* the shelf */
 .book-shelf { display: flex; flex-direction: column; }
-.book-row { display: grid; grid-template-columns: minmax(200px, 3fr) minmax(120px, 2fr) 56px 92px 100px; gap: 12px; align-items: baseline; padding: 8px 4px; border-bottom: 1px solid var(--line); }
+.book-row { display: grid; grid-template-columns: minmax(200px, 3fr) minmax(120px, 2fr) 56px 92px 100px; gap: var(--sp-6); align-items: baseline; padding: var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); }
 .book-head { border-bottom: 1px solid var(--ink); }
 .book-head span { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--muted); }
 .bk-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-100); }
@@ -24,7 +24,7 @@
 .bk-author-link:hover { color: var(--blue); text-decoration: underline; }
 .bk-year { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); }
 .bk-date { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); text-align: right; }
-.bk-rating { display: inline-flex; gap: 1px; }
+.bk-rating { display: inline-flex; gap: var(--sp-1); }
 .bk-star { color: var(--icon); cursor: pointer; font-size: var(--fs-md); line-height: 1; }
 .bk-star.on { color: var(--accent); } /* single-accent rule; revert to #d9a520 gold if preferred */
 .bk-star:hover { color: var(--accent); }

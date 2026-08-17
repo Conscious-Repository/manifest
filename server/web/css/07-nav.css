@@ -14,8 +14,8 @@
   border-right: 1px solid var(--base-25);
   display: flex; flex-direction: column;
 }
-.rail-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 12px 12px 14px; }
-.rail-brand { display: inline-flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer; }
+.rail-head { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-6) var(--sp-6) var(--sp-6) var(--sp-6); }
+.rail-brand { display: inline-flex; align-items: center; gap: var(--sp-4); min-width: 0; cursor: pointer; }
 .rail-brand:hover .rail-glyph-box { background: var(--accent); }
 .rail-brand.brand-active .rail-glyph-box { background: var(--accent); }
 .rail-brand.brand-active .rail-brand-name { color: var(--accent); }
@@ -25,12 +25,12 @@
   display: inline-flex; align-items: center; justify-content: center;
 }
 .rail-brand-name { font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.5px; color: var(--base-100); }
-.rail-collapse { background: none; border: none; color: var(--base-40); font-size: var(--fs-sm); cursor: pointer; padding: 2px 4px; }
+.rail-collapse { background: none; border: none; color: var(--base-40); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-1) var(--sp-2); }
 .rail-collapse:hover { color: var(--base-70); }
 
 .rail-search {
-  display: flex; align-items: center; gap: 7px;
-  margin: 0 10px 14px; padding: 6px 9px;
+  display: flex; align-items: center; gap: var(--sp-3);
+  margin: 0 var(--sp-5) var(--sp-6); padding: var(--sp-3) var(--sp-4);
   background: var(--base-00); border: 1px solid var(--base-25); border-radius: var(--radius-lg);
   cursor: pointer; text-align: left;
 }
@@ -38,7 +38,7 @@
 .rail-search-label { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-40); }
 .rail-search-kbd { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); }
 
-.rail-groups { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0; padding-bottom: 12px; }
+.rail-groups { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0; padding-bottom: var(--sp-6); }
 .rail-group { flex: none; }
 /* flexible spacers (inserted between sections in buildRail) grow to spread the
    groups across the rail's full height so the nav fills top-to-bottom instead
@@ -47,11 +47,11 @@
 .rail-spacer { flex: 1 1 0; min-height: 20px; }
 .rail-group-label {
   font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase;
-  color: var(--base-40); padding: 0 14px 4px; white-space: nowrap;
+  color: var(--base-40); padding: 0 var(--sp-6) var(--sp-2); white-space: nowrap;
 }
 .rail-item {
-  display: flex; align-items: center; gap: 9px;
-  padding: 9px 14px; font-size: var(--fs-md); letter-spacing: 0.4px;
+  display: flex; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6); font-size: var(--fs-md); letter-spacing: 0.4px;
   color: var(--base-70); text-decoration: none;
 }
 .rail-item:hover { background: var(--base-20); }
@@ -62,8 +62,8 @@
 .rail-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 .rail-foot {
-  border-top: 1px solid var(--base-25); padding: 9px 14px;
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border-top: 1px solid var(--base-25); padding: var(--sp-4) var(--sp-6);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4);
 }
 .rail-raw { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; background: none; border: none; cursor: pointer; padding: 0; }
 .rail-raw:hover { color: var(--accent); }
@@ -78,39 +78,39 @@
 .app-shell.rail-collapsed .rail-count,
 .app-shell.rail-collapsed .rail-foot .save-state,
 .app-shell.rail-collapsed .rail-raw { display: none; }
-.app-shell.rail-collapsed .rail-head { padding: 14px 8px 12px; justify-content: center; flex-direction: column; gap: 8px; }
-.app-shell.rail-collapsed .rail-search { margin: 0 8px 14px; padding: 6px 0; justify-content: center; }
-.app-shell.rail-collapsed .rail-item { justify-content: center; padding: 8px 0; }
-.app-shell.rail-collapsed .rail-group { padding-top: 6px; border-top: 1px solid var(--base-25); }
+.app-shell.rail-collapsed .rail-head { padding: var(--sp-6) var(--sp-4) var(--sp-6); justify-content: center; flex-direction: column; gap: var(--sp-4); }
+.app-shell.rail-collapsed .rail-search { margin: 0 var(--sp-4) var(--sp-6); padding: var(--sp-3) 0; justify-content: center; }
+.app-shell.rail-collapsed .rail-item { justify-content: center; padding: var(--sp-4) 0; }
+.app-shell.rail-collapsed .rail-group { padding-top: var(--sp-3); border-top: 1px solid var(--base-25); }
 /* collapsed stays top-packed — spacers hold only their baseline gap, no spread */
 .app-shell.rail-collapsed .rail-spacer { flex: none; min-height: 14px; }
 .app-shell.rail-collapsed .rail-foot { justify-content: center; min-height: 14px; }
 
 /* ---- breadcrumb bar ---- */
 .crumb-bar {
-  flex: none; display: flex; align-items: center; gap: 10px;
-  padding: 10px 24px; border-bottom: 1px solid var(--base-25);
+  flex: none; display: flex; align-items: center; gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-9); border-bottom: 1px solid var(--base-25);
 }
-.crumb-nav { background: none; border: none; font-size: var(--fs-lg); color: var(--base-60); cursor: pointer; padding: 0 2px; line-height: 1; }
+.crumb-nav { background: none; border: none; font-size: var(--fs-lg); color: var(--base-60); cursor: pointer; padding: 0 var(--sp-1); line-height: 1; }
 .crumb-nav:hover:not(:disabled) { color: var(--base-100); }
 .crumb-nav:disabled { color: var(--base-30); cursor: default; }
-.crumb-path { display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; min-width: 0; }
+.crumb-path { display: inline-flex; align-items: baseline; gap: var(--sp-4); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; min-width: 0; }
 .crumb-seg { color: var(--base-100); }
 a.crumb-seg { color: var(--base-40); text-decoration: none; }
 a.crumb-seg:hover { color: var(--accent); }
 .crumb-sep { color: var(--base-30); }
-.crumb-right { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
+.crumb-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-6); }
 .crumb-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); white-space: nowrap; }
 
 /* the day date control, relocated into the crumb bar as quiet chrome */
-.crumb-datenav { display: inline-flex; align-items: center; gap: 2px; }
+.crumb-datenav { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .crumb-datenav .pill {
   background: none; border: 1px solid var(--base-25); border-radius: var(--radius-lg);
   color: var(--base-60); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px;
-  height: 24px; padding: 0 10px; cursor: pointer; display: inline-flex; align-items: center;
+  height: 24px; padding: 0 var(--sp-5); cursor: pointer; display: inline-flex; align-items: center;
 }
 .crumb-datenav .pill:hover { border-color: var(--accent-soft); color: var(--accent); }
-.crumb-datenav .pill.arrow { padding: 0 7px; }
+.crumb-datenav .pill.arrow { padding: 0 var(--sp-3); }
 #dateLabel { min-width: 84px; text-align: center; }
 
 .save-state { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 38px; }
@@ -124,10 +124,10 @@ a.crumb-seg:hover { color: var(--accent); }
    top bar (☰/⌕/＋), so it must always stay. */
 @media (min-width: 861px) {
   .app-shell.crumb-hidden .crumb-bar { display: none; }
-  .app-shell.crumb-hidden .content-scroll { padding-top: 6px; }
+  .app-shell.crumb-hidden .content-scroll { padding-top: var(--sp-3); }
 }
 
 /* below 860px the rail auto-collapses (JS adds the class; this is the floor) */
 @media (max-width: 860px) {
-  .crumb-bar { padding: 10px 14px; }
+  .crumb-bar { padding: var(--sp-5) var(--sp-6); }
 }

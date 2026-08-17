@@ -38,7 +38,7 @@
     background: rgba(0, 0, 0, 0.34); touch-action: none;
   }
   /* touch metrics — same groups/order/counts as desktop, bigger rows */
-  .rail-item { min-height: 46px; padding: 0 16px; font-size: var(--fs-xl); }
+  .rail-item { min-height: 46px; padding: 0 var(--sp-7); font-size: var(--fs-xl); }
   .rail-glyph { width: 18px; font-size: var(--fs-xl); }
   .rail-search { min-height: 44px; }
   .rail-search-label { font-size: var(--fs-lg); }
@@ -57,9 +57,9 @@
   .app-shell.rail-collapsed .rail-foot .save-state { display: inline; }
   .app-shell.rail-collapsed .rail-group-label { display: block; }
   .app-shell.rail-collapsed .rail-raw { display: inline-block; }
-  .app-shell.rail-collapsed .rail-head { padding: 14px 12px 12px 14px; flex-direction: row; gap: 0; justify-content: space-between; }
-  .app-shell.rail-collapsed .rail-search { margin: 0 10px 14px; padding: 6px 9px; justify-content: flex-start; }
-  .app-shell.rail-collapsed .rail-item { justify-content: flex-start; padding: 0 16px; }
+  .app-shell.rail-collapsed .rail-head { padding: var(--sp-6) var(--sp-6) var(--sp-6) var(--sp-6); flex-direction: row; gap: 0; justify-content: space-between; }
+  .app-shell.rail-collapsed .rail-search { margin: 0 var(--sp-5) var(--sp-6); padding: var(--sp-3) var(--sp-4); justify-content: flex-start; }
+  .app-shell.rail-collapsed .rail-item { justify-content: flex-start; padding: 0 var(--sp-7); }
   .app-shell.rail-collapsed .rail-group { padding-top: 0; border-top: none; }
   .app-shell.rail-collapsed .rail-foot { justify-content: space-between; min-height: 0; }
 
@@ -68,7 +68,7 @@
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
     grid-auto-rows: auto;
-    align-items: center; gap: 0 6px;
+    align-items: center; gap: 0 var(--sp-3);
     padding: calc(4px + env(safe-area-inset-top)) 10px 4px;
   }
   #crumbBack, #crumbFwd { display: none; } /* drawer + OS gesture cover it */
@@ -113,7 +113,7 @@
   .mf-sheet.no-anim { animation: none; }
   .mf-sheet-handle {
     width: 38px; height: 4px; border-radius: 2px; background: var(--base-30);
-    margin: 2px auto 12px; flex: none; cursor: pointer;
+    margin: var(--sp-1) auto var(--sp-6); flex: none; cursor: pointer;
     /* generous tap target without moving the visual */
     box-shadow: 0 -14px 0 14px transparent;
   }
@@ -122,8 +122,8 @@
   /* assignment tap-list (phone replacement for the inspector <select>) */
   .mf-assign { display: flex; flex-direction: column; width: 100%; }
   .mf-opt {
-    display: flex; align-items: center; gap: 10px;
-    min-height: 48px; padding: 0 2px; width: 100%;
+    display: flex; align-items: center; gap: var(--sp-5);
+    min-height: 48px; padding: 0 var(--sp-1); width: 100%;
     background: none; border: none; border-bottom: 1px solid var(--base-20);
     font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-80);
     cursor: pointer; text-align: left;
@@ -150,7 +150,7 @@
   .cmdbar .rawbar-card { height: 88dvh; }
   /* capture (t quick-add): touch-sized chips/selects, full-width commit */
   #todoQuickAdd .tdo-qa-chips { overflow-x: auto; scrollbar-width: none; }
-  #todoQuickAdd .filter-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 16px; }
+  #todoQuickAdd .filter-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 var(--sp-7); }
   #todoQuickAdd select.pp-in { min-height: 44px; width: 100%; font-size: var(--fs-xl); }
   #todoQuickAdd .pill.qa-add {
     width: 100%; min-height: 44px; justify-content: center;
@@ -169,9 +169,9 @@
   /* ---- shared touch metrics: chips scroll, never wrap; 44px chip targets ---- */
   .feed-filters, .aion-chips, .tdo-qa-chips, #todosTabs {
     display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none;
-    gap: 8px; align-items: center;
+    gap: var(--sp-4); align-items: center;
   }
-  .filter-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; flex: none; }
+  .filter-chip { min-height: 44px; display: inline-flex; align-items: center; padding: 0 var(--sp-6); flex: none; }
   /* batch-edit save bar + ranking are desktop-only (spec: stated, not broken) */
   .dirty-bar { display: none; }
 
@@ -184,7 +184,7 @@
   .tdo-handle { display: none; }
   .tdo-row {
     display: grid; grid-template-columns: 40px minmax(0, 1fr) auto;
-    align-items: center; row-gap: 2px; min-height: 52px; padding: 6px 4px;
+    align-items: center; row-gap: var(--sp-1); min-height: 52px; padding: var(--sp-3) var(--sp-2);
   }
   .tdo-check { grid-row: 1 / 3; width: 40px; min-height: 44px; font-size: var(--fs-xl); }
   .tdo-text { grid-column: 2; grid-row: 1; font-size: var(--fs-xl); }
@@ -197,7 +197,7 @@
   .prop-cols { display: none; }
   .prop-row {
     grid-template-columns: minmax(0, 1fr) auto 14px;
-    align-items: center; row-gap: 0; min-height: 52px; padding: 8px;
+    align-items: center; row-gap: 0; min-height: 52px; padding: var(--sp-4);
   }
   .prop-addr { grid-column: 1; grid-row: 1; font-size: var(--fs-xl); white-space: normal; }
   .prop-status { grid-column: 1; grid-row: 2; }
@@ -221,76 +221,76 @@
 
   /* ---- FEED: cards in the 16px gutter; verdicts full-width side by side ---- */
   .feed-card { border-radius: 6px; }
-  .feed-card .appr-actions { display: flex; gap: 8px; }
+  .feed-card .appr-actions { display: flex; gap: var(--sp-4); }
   .feed-card .appr-actions .pill { flex: 1; min-height: 44px; justify-content: center; }
 
   /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */
   .cal-grid { grid-auto-rows: minmax(56px, auto); }
-  .cal-cell { display: block; padding: 8px 6px; }
+  .cal-cell { display: block; padding: var(--sp-4) var(--sp-3); }
   .cal-day-num {
     display: flex; align-items: center; justify-content: center;
-    width: 22px; height: 22px; border-radius: 50%; margin: 0 auto 4px;
+    width: 22px; height: 22px; border-radius: 50%; margin: 0 auto var(--sp-2);
   }
   .cal-cell .cal-ev, .cal-cell .cal-ev.allday {
     display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-    background: var(--accent); padding: 0; margin: 0 3px 2px 0; overflow: hidden;
+    background: var(--accent); padding: 0; margin: 0 var(--sp-1) var(--sp-1) 0; overflow: hidden;
   }
   .cal-cell .cal-ev > * { display: none; }
   .cal-cell .cal-ev:nth-of-type(n+4) { display: none; } /* ≤3 dots */
   .cal-more { display: none; }
   /* agenda sheet rows (mfCalAgenda) */
-  .mf-agenda-day { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); margin-bottom: 8px; }
-  .mf-agenda-ev { display: flex; align-items: baseline; gap: 10px; min-height: 44px; padding: 4px 0; border-bottom: 1px solid var(--base-20); }
+  .mf-agenda-day { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); margin-bottom: var(--sp-4); }
+  .mf-agenda-ev { display: flex; align-items: baseline; gap: var(--sp-5); min-height: 44px; padding: var(--sp-2) 0; border-bottom: 1px solid var(--base-20); }
   .mf-agenda-time { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-50); flex: none; min-width: 52px; }
   .mf-agenda-title { font-family: var(--sans); font-size: var(--fs-lg); min-width: 0; }
-  .mf-agenda-open { margin-top: 12px; width: 100%; min-height: 44px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.3px; cursor: pointer; }
+  .mf-agenda-open { margin-top: var(--sp-6); width: 100%; min-height: 44px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.3px; cursor: pointer; }
 
   /* ---- GOALS: area rail → chip strip; outline touch scale; UNTIL 2nd line ---- */
   .go-shell { display: block; }
   .go-rail {
     display: flex; width: auto; position: static; border-right: none;
-    padding: 0 0 10px; gap: 6px; overflow-x: auto; scrollbar-width: none;
+    padding: 0 0 var(--sp-5); gap: var(--sp-3); overflow-x: auto; scrollbar-width: none;
     align-items: center;
   }
   .go-rail-label { display: none; }
   .go-rail-item {
     flex: none; width: auto; min-height: 40px; align-items: center;
-    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 14px;
+    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 var(--sp-6);
   }
   .go-rock-line { align-items: center; min-height: 44px; }
-  .go-until { flex-basis: 100%; align-self: flex-start; width: fit-content; margin-top: 2px; }
-  .go-stage { align-items: center; min-height: 44px; padding-left: 8px; }
+  .go-until { flex-basis: 100%; align-self: flex-start; width: fit-content; margin-top: var(--sp-1); }
+  .go-stage { align-items: center; min-height: 44px; padding-left: var(--sp-4); }
   .go-check { min-width: 36px; min-height: 44px; font-size: var(--fs-lg); }
 
   /* ---- AION: rows to touch scale; org rail → chips; registry tables stack ---- */
   .aion-row { min-height: 52px; }
   .aion-org { display: block; }
   .aion-org-rail {
-    display: flex; width: auto; border-right: none; padding: 0 0 10px;
-    gap: 6px; overflow-x: auto; scrollbar-width: none; align-items: center;
+    display: flex; width: auto; border-right: none; padding: 0 0 var(--sp-5);
+    gap: var(--sp-3); overflow-x: auto; scrollbar-width: none; align-items: center;
   }
   .aion-org-label, .aion-org-file { display: none; }
   .aion-org-item {
     flex: none; width: auto; min-height: 40px; align-items: center;
-    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 14px;
+    border: 1px solid var(--base-25); border-radius: 16px; padding: 0 var(--sp-6);
   }
   /* registry rows: first two fields stacked, trailing action columns hidden;
      the shared-grid header row makes no sense stacked — drop it */
   .pp-cols[class*="cols-aion"] { display: none; }
   .cols-aion-hiring, .cols-aion-refs, .cols-aion-people {
-    grid-template-columns: minmax(0, 1fr); align-items: start; min-height: 52px; row-gap: 1px;
+    grid-template-columns: minmax(0, 1fr); align-items: start; min-height: 52px; row-gap: var(--sp-1);
   }
   .cols-aion-hiring > :nth-child(n+3), .cols-aion-refs > :nth-child(n+3),
   .cols-aion-people > :nth-child(n+3) { display: none; }
   /* RECONCILE rows keep their assign control: checkbox · item, assign below */
-  .cols-aion-rec { grid-template-columns: 24px minmax(0, 1fr); row-gap: 4px; min-height: 52px; }
+  .cols-aion-rec { grid-template-columns: 24px minmax(0, 1fr); row-gap: var(--sp-2); min-height: 52px; }
   .cols-aion-rec > :nth-child(3), .cols-aion-rec > :nth-child(5) { display: none; }
   .cols-aion-rec > :nth-child(4) { grid-column: 2; }
 
   /* ---- CONTACTS: name 16px over last-met; tap = the row ---- */
   .contact-row {
     display: grid; grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center; min-height: 52px; padding: 8px 4px;
+    align-items: center; min-height: 52px; padding: var(--sp-4) var(--sp-2);
   }
   .contact-name { font-size: var(--fs-xl); }
   .contact-row-right { align-items: flex-end; }
@@ -312,7 +312,7 @@
   .book-head { display: none; }
   .book-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center; row-gap: 1px; min-height: 52px;
+    align-items: center; row-gap: var(--sp-1); min-height: 52px;
   }
   .bk-title { font-size: var(--fs-xl); }
   .bk-authors { grid-column: 1; grid-row: 2; }
@@ -336,7 +336,7 @@
      underwriting inputs are desktop-only (three computed outputs stay);
      the ledger drops — reach spend from Money ---- */
   .pp3-cols { display: block; }                     /* side card stacks under */
-  .pp3-side { position: static; flex: none; margin-top: 18px; }
+  .pp3-side { position: static; flex: none; margin-top: var(--sp-7); }
   .pp3-stage { min-height: 48px; align-items: center; }
   .pp3-stage-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pp3-todo.nested { min-height: 52px; margin-left: 26px; }
@@ -364,7 +364,7 @@
   }
   .re-money-date { display: none; }
   .re-money-sel { display: none; }
-  .re-money-desc { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .re-money-desc { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
   .re-money-desc > :first-child { font-size: var(--fs-lg); }
   .re-money-entity { display: none; }
   .re-money-meta { display: block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); }
@@ -374,10 +374,10 @@
   /* ---- ENTITIES: one block per entity; 52px account rows — bank over kind,
      state chip right; per-row actions fold behind the chip; the connect
      button keeps its 44px target ---- */
-  .set-entity-head { flex-wrap: wrap; row-gap: 4px; }
+  .set-entity-head { flex-wrap: wrap; row-gap: var(--sp-2); }
   .re-acct-row {
     display: grid; grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center; row-gap: 1px; min-height: 52px;
+    align-items: center; row-gap: var(--sp-1); min-height: 52px;
   }
   .re-acct-label { grid-column: 1; grid-row: 1; font-size: var(--fs-lg); }
   .re-acct-kind { grid-column: 1; grid-row: 2; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); }
