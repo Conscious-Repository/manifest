@@ -264,7 +264,7 @@ func main() {
 		log.Printf("goals.md migrated to the horizon ladder (backup: goals.md.pre-migration)")
 	}
 
-	// TODOS — the third surface over the vault-root `to do.md` (peer of goals.md).
+	// TODOS — the third surface over the vault-root `tasks.md` (peer of goals.md).
 	tasksStore := tasks.NewStore(cfg.VaultPath, cfg.TasksFileName, vw.BindAbs("todos"))
 	{
 		var areaNames []string
@@ -291,7 +291,7 @@ func main() {
 	dc.Write = vw.BindAbs("daily")
 	svc := daily.NewService(dc, idx)
 	// aion store constructed early: the focus resolver offers a rock's open
-	// aion backlog tasks alongside its to-do.md tethers (day task picker).
+	// aion backlog tasks alongside its tasks.md tethers (day task picker).
 	aionRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion"))
 	aionStore := aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion"))
 	frRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "crm", "fundraising"))

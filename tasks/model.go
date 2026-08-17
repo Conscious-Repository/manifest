@@ -1,4 +1,4 @@
-// Package todos is the third surface's file library: a vault-root `to do.md`
+// Package todos is the third surface's file library: a vault-root `tasks.md`
 // parsed and re-serialized as a FIXPOINT (goals.md's exact contract — the
 // file is truth, hand-editable in Obsidian, byte-stable round trips).
 //

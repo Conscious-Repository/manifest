@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 )
 
 // TODOS — the third surface (todos-surface-scope): everything that must
-// happen but drives no vision. `to do.md` is truth; every handler is
+// happen but drives no vision. `tasks.md` is truth; every handler is
 // load → mutate → save → respond with the fresh view (goals `mutate` idiom).
 
 func (s *Server) UseTasks(st *tasks.Store) { s.tasksStore = st }
@@ -571,7 +572,8 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// syncTaskTasks mirrors todo-linked daily-note ticks back into `to do.md`
+// syncTaskTasks mirrors personal todo-linked daily-note ticks back into
+// `tasks.md`
 // (the syncGoalTasks contract: on a miss, no write + an approvals note —
 // never a guess).
 func (s *Server) syncTaskTasks(tasks []daily.Task) {
@@ -580,9 +582,10 @@ func (s *Server) syncTaskTasks(tasks []daily.Task) {
 	}
 	updates := map[string]bool{}
 	for _, t := range tasks {
-		// aion-backed ticks route through syncAionTasks, not the to-do.md store —
-		// leaving them here would flag every one as a "missed" approval nudge
-		if t.TaskID != "" && !strings.HasPrefix(t.TaskID, "aion:") {
+		// Composite ids belong to their projected source, never tasks.md. Aion
+		// and RE ticks route through syncAionTasks; property ids are likewise
+		// excluded rather than manufacturing a false personal-task miss.
+		if t.TaskID != "" && !isProjectedTaskID(t.TaskID) {
 			updates[t.TaskID] = t.Done
 		}
 	}
@@ -621,18 +624,23 @@ func (s *Server) syncTaskTasks(tasks []daily.Task) {
 	}
 	for _, t := range tasks {
 		if t.TaskID != "" && t.Done && missedSet[t.TaskID] {
+			tasksFile := filepath.Base(s.tasksStore.Path())
 			_, _ = s.approvals.Propose(approvals.Proposal{
 				Agent:  "manifest",
 				Action: "Couldn't sync a ticked task to todos",
 				Body: "You ticked \"" + t.Text + "\" ([todo:: " + t.TaskID + "]) in the daily manifest, but no matching " +
-					"item is in to do.md — it may have been reworded, moved, or dropped. Check the TODOS board if it's still open.",
+					"item is in " + tasksFile + " — it may have been reworded, moved, or dropped. Check the TODOS board if it's still open.",
 			})
 		}
 	}
 }
 
+func isProjectedTaskID(id string) bool {
+	return strings.HasPrefix(id, "aion:") || strings.HasPrefix(id, "re:") || strings.HasPrefix(id, "prop:")
+}
+
 // ---- the ONE TASK SUBSTRATE split (task-substrate spec §7): per active
-// Rock, its open frozen task lines move to to do.md with a [rock::] tether
+// Rock, its open frozen task lines move to tasks.md with a [rock::] tether
 // (keep) or into a new bucket with the Rock closed as a Learn (demote).
 // Previewed, user-committed, both files backed up first. ----
 
@@ -828,7 +836,7 @@ func (s *Server) handleTaskDrop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// an aion-backed row: hard-remove the backlog item (drop = delete for aion,
-	// not archive — there is no to-do.md line to archive)
+	// not archive — there is no tasks.md line to archive)
 	if strings.HasPrefix(b.ID, "aion:") || strings.HasPrefix(b.ID, "re:") {
 		store, bare, okb := s.backlogStoreFor(b.ID)
 		if !okb {

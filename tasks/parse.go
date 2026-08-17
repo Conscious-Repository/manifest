@@ -27,7 +27,7 @@ const (
 	modeBacklog
 )
 
-// Parse reads `to do.md` bytes into a Doc. Domain sections (`## X`) hold, in
+// Parse reads `tasks.md` bytes into a Doc. Domain sections (`## X`) hold, in
 // canonical order: loose todos → `### <bucket>` blocks → `### issues` →
 // `### backlog`. Tolerant: unknown lines round-trip verbatim (preamble before
 // the first heading, extra lines inside a domain — the [[x posts]] tail

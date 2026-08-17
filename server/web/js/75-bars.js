@@ -401,7 +401,7 @@ function rawPathsForRoute() {
   const sec = sectionOf(h);
   const sub = h.replace(/^#\//, "").split("/").filter(Boolean).slice(1).map(decodeURIComponent);
   if (sec === "day") return ["intrinsic/" + state.date + ".md", state.date + ".md"]; // newDailyDir first, legacy root second
-  if (sec === "todos") return ["to do.md"];
+  if (sec === "todos") return ["tasks.md"];
   if (sec === "goals") return ["goals.md"];
   if (sec === "note") return [decodeURIComponent(h.slice("#/note/".length))];
   if (sec === "aion") {

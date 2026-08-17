@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"manifest/aion"
+	"manifest/approvals"
+	"manifest/daily"
 	"manifest/tasks"
 )
 
@@ -83,5 +85,42 @@ func TestReBacklogSync(t *testing.T) {
 	// thread routing: re: ids land in the shared RE store
 	if srv.threadKind(reRow.ID) != "re" {
 		t.Fatal("re: threads must route to the shared RE store")
+	}
+}
+
+func TestDailyRETickDoesNotCreatePersonalTasksMiss(t *testing.T) {
+	vault := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(vault, "system", "realestate"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reStore := aion.NewStore(vault, "system/realestate", testWriteAbs)
+	it := &aion.BacklogItem{Kind: aion.KindTask, Text: "Questions answered for OPG", Status: aion.StatusOpen, Captured: "2026-08-17"}
+	if err := reStore.AddItem(it); err != nil {
+		t.Fatal(err)
+	}
+	tasksStore := tasks.NewStore(vault, "tasks.md", testWriteAbs)
+	if err := os.WriteFile(tasksStore.Path(), []byte("# Tasks\n\n## Inbox\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	srv := &Server{tasksStore: tasksStore, re: reStore, approvals: approvals.NewStore(t.TempDir())}
+	tick := daily.Task{Text: it.Text, TaskID: "re:" + it.ID, Done: true}
+	srv.syncTaskTasks([]daily.Task{tick})
+	srv.syncAionTasks([]daily.Task{tick})
+	if pending := srv.approvals.List("pending"); len(pending) != 0 {
+		t.Fatalf("RE tick created a false tasks.md miss: %+v", pending)
+	}
+	if got := reStore.LoadBacklog().Find(it.ID); got == nil || got.Status != aion.StatusDone {
+		t.Fatalf("RE tick did not route to backlog: %+v", got)
+	}
+
+	// A genuine personal miss still produces a useful notice using the
+	// configured tasks filename, while other composite ids stay excluded.
+	srv.syncTaskTasks([]daily.Task{
+		{Text: "Missing personal task", TaskID: "inbox/missing", Done: true},
+		{Text: "Projected property task", TaskID: "prop:house/roof", Done: true},
+	})
+	pending := srv.approvals.List("pending")
+	if len(pending) != 1 || !strings.Contains(pending[0].Body, "tasks.md") || strings.Contains(pending[0].Body, "to do.md") {
+		t.Fatalf("personal miss notice=%+v", pending)
 	}
 }

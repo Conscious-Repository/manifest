@@ -10,7 +10,7 @@ import (
 	"manifest/record"
 )
 
-// Store owns the vault-root `to do.md` (name configurable — tasksFileName).
+// Store owns the vault-root `tasks.md` (name configurable — tasksFileName).
 // Same contract as goals.Store: whole-file Load→mutate→Save, with every write
 // going through the injected write func (§A3 boundary — main binds it to a
 // vaultwriter knowledge-zone capability; this package never opens a file to

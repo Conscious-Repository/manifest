@@ -140,7 +140,7 @@ function rockTodos(rockId) {
     scan(dm.tasks);
     (dm.buckets || []).forEach((bk) => scan(bk.tasks));
   });
-  // AION tasks live in the aion backlog, not the to-do.md domains — they arrive
+  // AION tasks live in the aion backlog, not the tasks.md domains — they arrive
   // in the unified projection rows (source "aion", open only). Surface them under
   // their rock too, so a day-captured aion task shows here like any other.
   ((todosCache && todosCache.rows) || []).forEach((t) => {
@@ -556,7 +556,7 @@ function goTaskRow(t, areaName) {
   row.append(tt);
   // owner — @initials when assigned, a quiet ＋@ ghost while it defaults to you.
   // Editable in place from the domain's people registry, same as a milestone's
-  // owner; the write lands on the todo's own owner:: (to-do.md line).
+  // owner; the write lands on the todo's own owner:: (tasks.md line).
   const hasOwner = t.owner && t.owner !== "me";
   const ownerNode = hasOwner ? el("span", "go-stage-owner", "@" + t.owner)
     : el("button", "o-ghost go-owner-ghost", "＋@");

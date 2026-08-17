@@ -16,13 +16,13 @@ import (
 
 // ---- the unified todo substrate (redesign stage 4, Revision 3) ----
 //
-// TODOS is a PROJECTION over three files — personal `to do.md` lines, each
+// TODOS is a PROJECTION over three files — personal `tasks.md` lines, each
 // property's `## todos` section, and the aion backlog's open tasks — with one
 // id-keyed model. Composite ids route every write back to the owning file:
 //
 //	prop:<slug>/<line-id>  → system/realestate/properties/<slug>.md ## todos
 //	aion:<hex>             → system/aion/backlog.md
-//	anything else          → to do.md (backward compatible)
+//	anything else          → tasks.md
 //
 // Unassigned means mine; assigned-to-someone-else never reaches the TODOS
 // rows — it lives on the property page and under Outstanding.

@@ -46,7 +46,7 @@ var webFiles embed.FS
 type Server struct {
 	svc        *daily.Service
 	goals      *goals.Store
-	tasksStore *tasks.Store // the third surface — vault-root `to do.md` (nilable)
+	tasksStore *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
 	// ownerInitials identify "me" in the unified todo projection (stage 4):
 	// empty/"me"/containing-these-initials owners are mine.
 	ownerInitials string
@@ -245,7 +245,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/goals/carry", s.handleGoalCarry)        // quarterly review: carry a Rock
 	mux.HandleFunc("/api/goals/retro", s.handleGoalRetro)        // quarterly review: save the retro
 
-	// TODOS — the third surface over `to do.md` (todos-surface-scope).
+	// TODOS — the third surface over `tasks.md` (todos-surface-scope).
 	mux.HandleFunc("GET /api/tasks", s.handleTasksGet)
 	mux.HandleFunc("POST /api/tasks/item", s.handleTaskAdd)
 	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)
@@ -658,7 +658,7 @@ func (s *Server) handleDay(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.syncGoalTasks(body.Tasks) // §4: mirror goal-linked task ticks back into goals.md
-		s.syncTaskTasks(body.Tasks) // same contract for todo-linked ticks → to do.md
+		s.syncTaskTasks(body.Tasks) // personal todo-linked ticks → tasks.md
 		s.syncAionTasks(body.Tasks) // aion-backed ticks (TaskID "aion:<id>") → aion backlog
 		writeJSON(w, map[string]bool{"ok": true})
 	default:
@@ -720,7 +720,7 @@ func (s *Server) fillPool(day *daily.Day) {
 			}
 		}
 	}
-	// AION open tasks are backlog items, not to-do.md todos — offer mine here too
+	// AION open tasks are backlog items, not tasks.md todos — offer mine here too
 	// so a captured aion task is pull-able onto later days like any substrate item.
 	if s.aion != nil {
 		for _, it := range s.aion.LoadBacklog().Items() {

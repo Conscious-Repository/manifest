@@ -277,7 +277,7 @@ function renderReadonly(container, items, emptyHint) {
 
 // openTaskPicker — the task box's picker (goals-orient v2): task row i draws
 // from focus slot i's rock (1↔1↔1 column alignment). Options = the rock's open
-// substrate tasks (to-do.md tethers + my aion backlog tasks) not already seated
+// substrate tasks (tasks.md tethers + my aion backlog tasks) not already seated
 // today; the foot row types a NEW task, captured under the slot's milestone.
 function openTaskPicker(pick, stageId) {
   const existing = new Set(((state.day && state.day.tasks) || [])

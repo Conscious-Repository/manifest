@@ -335,7 +335,7 @@ function route() {
     if (suffix === "history") showGoalsHistory();
     else loadGoals(suffix);
   }
-  else if (todosTab) { // the third surface — `to do.md` board (+ panel deep link)
+  else if (todosTab) { // the third surface — `tasks.md` board (+ panel deep link)
     if (h.startsWith("#/tasks/")) todoDeepLink = decodeURIComponent(h.slice("#/tasks/".length));
     loadTodos();
   }

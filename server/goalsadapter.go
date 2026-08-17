@@ -12,7 +12,7 @@ import (
 // goalsAdapter bridges the goals store to daily.GoalsProvider, resolving a picked
 // Rock slug into its text, its stages (to choose among), the selected stage
 // (defaulting to the current stage — the first unchecked one), and the Rock's
-// open tasks from the TASK SUBSTRATE — to-do.md tethers, plus (for aion/ rocks)
+// open tasks from the TASK SUBSTRATE — tasks.md tethers, plus (for aion/ rocks)
 // the owner's open aion backlog tasks — goals.md holds no tasks (task-substrate
 // split).
 type goalsAdapter struct {
@@ -70,7 +70,7 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 			}
 		}
 	}
-	// domain rocks: their tasks live in a DOMAIN backlog, not to-do.md — offer
+	// domain rocks: their tasks live in a DOMAIN backlog, not tasks.md — offer
 	// MY open backlog tasks under this rock (<domain>:<id> pulls/syncs like a
 	// todo). aion/ → the aion backlog; ooda-group/ → the real-estate backlog.
 	for _, d := range []struct {
