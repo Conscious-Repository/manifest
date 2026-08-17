@@ -1,6 +1,6 @@
 {
   "contract": "1",
-  "published_at": "2026-08-16T17:25:51Z",
+  "published_at": "2026-08-17T15:48:21Z",
   "sections": [
     {
       "name": "finances",
@@ -20,7 +20,7 @@
     {
       "name": "backlog",
       "file": "data/backlog.json",
-      "count": 374
+      "count": 375
     },
     {
       "name": "heuristics",

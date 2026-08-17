@@ -1,6 +1,21 @@
 {
   "items": [
     {
+      "id": "aion-bl/whether-to-pursue-more-intentional-investment-conversations",
+      "kind": "decision",
+      "title": "Whether to pursue more intentional investment conversations with Positive Sum (Donald Lee-Brown) ahead of the September diagnostic-tech raise",
+      "owner": "BA",
+      "source": "log/2026-03-06 - 2026-08-16 patrick positive sum intro",
+      "captured": "2026-08-13",
+      "rock": null,
+      "due": null,
+      "status": "open",
+      "done_on": null,
+      "needed_by": null,
+      "decided": null,
+      "outcome": "Yeah- we're going to do that"
+    },
+    {
       "id": "aion-bl/follow-up-with-alex-ubeda-janie-page-s-biologist-contact-on",
       "kind": "task",
       "title": "Follow up with Alex Ubeda (Janie Page's biologist contact) on ICR/field mechanism collaboration",
@@ -64,13 +79,13 @@
       "id": "aion-bl/evaluate-juicebox-as-a-recruiting-tool-alongside-ashby",
       "kind": "task",
       "title": "Evaluate Juicebox as a recruiting tool alongside Ashby",
-      "owner": "BA",
+      "owner": "agent:hermes",
       "source": "log/2026-08-13 justin sync",
       "captured": "2026-08-13",
       "rock": "aion/team-building",
       "due": null,
-      "status": "open",
-      "done_on": null,
+      "status": "done",
+      "done_on": "2026-08-17",
       "needed_by": null,
       "decided": null,
       "outcome": null
@@ -279,8 +294,8 @@
       "captured": "2026-08-12",
       "rock": "aion/icr-go-no-go",
       "due": "2026-08-19",
-      "status": "open",
-      "done_on": null,
+      "status": "done",
+      "done_on": "2026-08-17",
       "needed_by": null,
       "decided": null,
       "outcome": null
