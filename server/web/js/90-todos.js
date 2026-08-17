@@ -54,7 +54,7 @@ function renderTodos() {
   if (typeof setCrumbMeta === "function" && !els.todosView.hidden) {
     setCrumbMeta((counts.tasks || 0) + " open" + (counts.outstanding ? " · " + counts.outstanding + " outstanding" : ""));
   }
-  if (typeof railSetCount === "function") railSetCount("todos", counts.tasks || 0);
+  if (typeof railSetCount === "function") railSetCount("tasks", counts.tasks || 0);
 
   // tab chips + the list/board mode toggle (Phase 8 — List stays the default)
   const tabsHost = document.getElementById("todosTabs");

@@ -23,7 +23,7 @@ type Store struct {
 
 func NewStore(vaultRoot, name string, write func(path string, data []byte) error) *Store {
 	if strings.TrimSpace(name) == "" {
-		name = "to do.md"
+		name = "tasks.md"
 	}
 	if write == nil {
 		write = func(string, []byte) error {
