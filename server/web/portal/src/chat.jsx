@@ -206,7 +206,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                           onClick={() => { setDraft('narrower re-run of ' + m.run + ' — '); setRitual(m.ritual || 'ask'); }}>re-run</button>}
                       </div>
                       {m.text && <div style={{ fontSize: 12.5, lineHeight: 1.65, whiteSpace: 'pre-wrap',
-                        overflowWrap: 'break-word', wordBreak: 'break-word', marginTop: 3,
+                        overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', marginTop: 3,
                         color: isK ? 'var(--ink,#d4d4d4)' : 'var(--ink,#d4d4d4)' }}>{m.text}</div>}
                       {(m.context && m.context.length > 0) && (
                         <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 4 }}>
@@ -244,7 +244,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                               <div style={{ borderLeft: '2px solid var(--line,#3a3a3a)', paddingLeft: 10, marginTop: 6 }}>
                                 {p.section && <div className="v2-label">## {p.section}</div>}
                                 <div style={{ fontSize: 12, lineHeight: 1.7, whiteSpace: 'pre-wrap',
-                                  overflowWrap: 'break-word', wordBreak: 'break-word', color: 'var(--ink-dim,#aaa)', marginTop: 4 }}>
+                                  overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0, maxWidth: '100%', color: 'var(--ink-dim,#aaa)', marginTop: 4 }}>
                                   {p.body || (p.field + ' → ' + p.value)}
                                 </div>
                                 {p.was && <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 6 }}>replaces · {p.was}</div>}
