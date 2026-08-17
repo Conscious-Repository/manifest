@@ -27,10 +27,10 @@
 /* reconnect surface — a stale/revoked token flags its row and offers Reconnect */
 .cal-account-main { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
 .cal-account-ctl { display: flex; align-items: center; gap: var(--sp-4); flex-shrink: 0; }
-.cal-account.needs-reauth { border-color: var(--warn, #c47f1a); background: var(--warn-soft, rgba(196,127,26,0.07)); }
+.cal-account.needs-reauth { border-color: var(--warn); background: var(--warn-soft, rgba(196,127,26,0.07)); }
 .cal-account-warn {
   font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.2px;
-  color: var(--warn, #c47f1a);
+  color: var(--warn);
 }
 .cal-reconnect {
   font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px;
@@ -39,7 +39,7 @@
 }
 .cal-reconnect:hover { filter: brightness(1.05); }
 .cal-err-banner {
-  border: 1px solid var(--warn, #c47f1a); border-radius: var(--radius);
+  border: 1px solid var(--warn); border-radius: var(--radius);
   background: var(--warn-soft, rgba(196,127,26,0.07));
   color: var(--text); font-family: var(--sans); font-size: var(--fs-md);
   padding: var(--sp-5) var(--sp-6); margin-bottom: var(--sp-5);

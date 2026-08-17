@@ -159,7 +159,7 @@
 .o-item-acts.sub { padding-left: var(--sp-8); }
 .o-quiet-act { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--icon); cursor: pointer; padding: 0; }
 .o-quiet-act:hover { color: var(--blue); }
-.o-quiet-act.danger:hover { color: #b91c1c; }
+.o-quiet-act.danger:hover { color: var(--danger); }
 .o-yr .o-quiet-act { margin-left: var(--sp-1); text-transform: none; }
 /* inline owner typeahead (aion people registry) inside goal rows */
 .o-fl-row .ta-in, .o-st .ta-in { font-family: var(--sans); font-size: var(--fs-md); border: none; border-bottom: 1px solid var(--blue); background: none; outline: none; padding: var(--sp-1) 0; width: 160px; }
@@ -170,7 +170,7 @@
 .o-serves-chip { display: inline-flex; gap: var(--sp-2); align-items: baseline; font-size: var(--fs-sm); color: var(--streak-ink); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); }
 .o-serves-chip.broken { color: var(--muted); border-style: dashed; }
 .o-serves-x { background: none; border: none; color: var(--icon); font-size: var(--fs-2xs); cursor: pointer; padding: 0; }
-.o-serves-x:hover { color: #b91c1c; }
+.o-serves-x:hover { color: var(--danger); }
 
 /* start/due date pickers (portal timeline §7) */
 .o-dates { gap: var(--sp-7); }

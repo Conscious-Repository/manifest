@@ -23,9 +23,9 @@
 .pc-notes { font-size: var(--fs-sm); color: var(--muted); text-align: right; }
 
 /* tax-status accents (left border + status text color) */
-.pc-tax-delinquent { box-shadow: inset 3px 0 0 #d9534f; }
+.pc-tax-delinquent { box-shadow: inset 3px 0 0 var(--danger); }
 .pc-tax-lra { box-shadow: inset 3px 0 0 #e0972f; }
-.pc-tax-delinquent .pc-status { color: #c9302c; }
+.pc-tax-delinquent .pc-status { color: var(--danger); }
 .pc-tax-lra .pc-status { color: #c77c14; }
 .pc-tax-current .pc-status { color: var(--muted); }
 
@@ -33,9 +33,9 @@
 .parcel-pop { font-family: var(--sans); min-width: 220px; }
 .parcel-pop .pp-addr { font-size: var(--fs-lg); font-weight: 600; color: var(--text); margin-bottom: var(--sp-1); }
 .parcel-pop .pp-tax { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: var(--sp-3); }
-.parcel-pop .pp-tax.pp-delinquent { color: #c9302c; }
+.parcel-pop .pp-tax.pp-delinquent { color: var(--danger); }
 .parcel-pop .pp-tax.pp-lra { color: #c77c14; }
-.parcel-pop .pp-tax.pp-current { color: #4d9d6a; }
+.parcel-pop .pp-tax.pp-current { color: var(--good); }
 .parcel-pop .pp-facts { width: 100%; border-collapse: collapse; margin-bottom: var(--sp-3); }
 .parcel-pop .pp-facts td { font-size: var(--fs-sm); padding: var(--sp-1) 0; vertical-align: top; }
 .parcel-pop .pp-k { color: var(--muted); padding-right: var(--sp-5) !important; white-space: nowrap; }

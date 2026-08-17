@@ -43,7 +43,7 @@ h1.md-h { font-size: var(--fs-2xl); } h2.md-h { font-size: var(--fs-2xl); } h3.m
 /* contact page — clickable items + neglect + open loops */
 .cp-clickable { cursor: pointer; border-radius: var(--radius); }
 .cp-clickable:hover { background: var(--hover); }
-.cp-cold { font-family: var(--mono); font-size: var(--fs-xs); color: #c0304a; margin-left: var(--sp-5); }
+.cp-cold { font-family: var(--mono); font-size: var(--fs-xs); color: var(--danger); margin-left: var(--sp-5); }
 .cp-loop-group { margin-bottom: var(--sp-6); }
 .cp-loop-src { display: flex; gap: var(--sp-5); align-items: baseline; cursor: pointer; padding: var(--sp-1) 0; }
 .cp-loop-src:hover { background: var(--hover); }
@@ -53,9 +53,9 @@ h1.md-h { font-size: var(--fs-2xl); } h2.md-h { font-size: var(--fs-2xl); } h3.m
 .cp-loop-text { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
 
 /* contacts list — neglect + open-loop chips */
-.contact-cold { color: #c0304a; font-size: var(--fs-2xs); }
+.contact-cold { color: var(--danger); font-size: var(--fs-2xs); }
 .contact-loops { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: 3px; padding: 0 var(--sp-2); }
-.contact-row.cold .contact-meta { color: #c0304a; }
+.contact-row.cold .contact-meta { color: var(--danger); }
 .pill.light.on { background: var(--streak-bg); color: var(--ink); }
 .cmd-fact-link { cursor: pointer; }
 .cmd-fact-link:hover .cmd-fact-val { color: var(--blue); text-decoration: underline; }

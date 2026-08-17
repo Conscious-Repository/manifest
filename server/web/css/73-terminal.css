@@ -25,12 +25,12 @@
 .term-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .term-dot.k-shell { background: var(--base-40); }
 .term-dot.k-claude { background: var(--accent); }
-.term-dot.k-codex { background: #d29922; }
+.term-dot.k-codex { background: var(--warn); }
 .term-sess-name { flex: 1; min-width: 0; font-size: var(--fs-lg); color: var(--base-100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .term-sess-host { color: var(--base-40); font-size: var(--fs-md); }
 .term-sess-badges { display: flex; gap: var(--sp-2); flex: none; }
 .term-badge { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: 5px; padding: var(--sp-1) var(--sp-3); line-height: 1.6; background: var(--bg); }
-.term-badge.warn { color: #b45309; border-color: #d9a662; background: #fdf6ec; }
+.term-badge.warn { color: var(--warn); border-color: var(--warn); background: #fdf6ec; }
 .term-x { border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); opacity: 0; flex: none; }
 .term-sess:hover .term-x, .term-hist-row:hover .term-x, .term-dev-row:hover .term-x { opacity: 1; }
 .term-x:hover { color: var(--base-100); }

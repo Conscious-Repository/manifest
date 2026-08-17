@@ -87,7 +87,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-firebtn { width: 100%; }
 .delegation-chip.dstate-plan-queued, .delegation-chip.dstate-plan-running { color: var(--base-50); }
 .delegation-chip.dstate-plan-ready { color: var(--accent); border-color: var(--accent-soft); }
-.delegation-chip.dstate-go-queued { color: #b45309; }
+.delegation-chip.dstate-go-queued { color: var(--warn); }
 
 /* the plan preview is itself the doorway to the full page */
 .tdo-p-plan.clickable { cursor: pointer; border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-3); margin: -4px -6px; }
