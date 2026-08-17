@@ -3,27 +3,27 @@
 /* the prompt viewer's TURN headers still use this */
 .panel-subhead {
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  font-family: var(--mono); font-size: 12px; letter-spacing: 0.4px; color: var(--base-100);
+  font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.4px; color: var(--base-100);
   margin: 18px 0 10px;
 }
 .panel-subhead:first-child { margin-top: 0; }
 
 /* ---- SPIRITS: run reports + charge bars (excalibur harness console) ---- */
 .runs-list { display: flex; flex-direction: column; gap: 10px; }
-.run-outcome { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: 2px 9px; }
+.run-outcome { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid var(--line); border-radius: 12px; padding: 2px 9px; }
 .oc-completed { color: var(--accent); border-color: var(--accent-soft); }
 .oc-stopped-charge, .oc-stopped-steps { color: var(--base-50); border-color: var(--base-25); }
 .oc-error, .oc-errorprotocol { color: #b91c1c; border-color: #eec3c3; }
-.run-title { font-family: var(--mono); font-size: 13px; color: var(--ink); letter-spacing: 0.2px; }
+.run-title { font-family: var(--mono); font-size: var(--fs-md); color: var(--ink); letter-spacing: 0.2px; }
 .charge-row { display: flex; align-items: center; gap: 10px; }
 .charge-bar { flex: 1; height: 6px; background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: 3px; overflow: hidden; }
 .charge-fill { height: 100%; background: var(--blue); border-radius: 3px; }
 .charge-fill.over { background: var(--over); }
-.charge-label { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.charge-label { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
 .run-detail { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; }
 .run-detail-head { display: flex; align-items: center; gap: 8px; }
 .run-detail-head .run-title { margin-right: auto; }
-.run-report { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
+.run-report { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 12px 14px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
 .run-report.prompt { background: #fbfcff; border: 1px solid var(--blue-soft); }
 .run-prompts { display: flex; flex-direction: column; gap: 8px; }
 
@@ -32,35 +32,35 @@
 .ritual-row { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; align-items: baseline; gap: 12px; padding: 5px 8px; border-top: 1px solid #f0f0f0; cursor: pointer; }
 .ritual-row:hover { background: var(--base-05); }
 .ritual-row.invalid { border-color: #eec3c3; background: #fdf6f6; }
-.ritual-name { font-family: var(--mono); font-size: 12.5px; color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ritual-name { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-spirit { cursor: pointer; }
 .sprt-spirit:hover { color: var(--accent); }
 .ritual-cadence { display: flex; flex-direction: column; gap: 1px; }
-.cad-human { font-size: 13px; color: var(--text); }
-.cad-raw { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
-.ritual-next { font-size: 13px; color: var(--base-100); }
-.next-rel { color: var(--base-40); font-size: 11.5px; }
+.cad-human { font-size: var(--fs-md); color: var(--text); }
+.cad-raw { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); }
+.ritual-next { font-size: var(--fs-md); color: var(--base-100); }
+.next-rel { color: var(--base-40); font-size: var(--fs-xs); }
 .ritual-outcome .run-outcome { cursor: default; }
 .run-outcome.linky { cursor: pointer; } .run-outcome.linky:hover { border-color: var(--blue); }
 .oc-never, .oc-invalid { color: var(--muted); border-color: var(--line); }
 .oc-invalid { color: #b91c1c; border-color: #eec3c3; }
-.ritual-ceiling { font-family: var(--mono); font-size: 12px; color: var(--text); text-align: right; }
+.ritual-ceiling { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); text-align: right; }
 .ritual-ceiling.muted { color: var(--muted); }
-.ritual-error { grid-column: 1 / -1; font-family: var(--mono); font-size: 11px; color: #b91c1c; margin-top: 2px; }
+.ritual-error { grid-column: 1 / -1; font-family: var(--mono); font-size: var(--fs-xs); color: #b91c1c; margin-top: 2px; }
 .editor-tabs { display: flex; gap: 4px; margin-right: auto; }
-.editor-tab { font-family: var(--mono); font-size: 11px; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px; cursor: pointer; }
+.editor-tab { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 10px; padding: 2px 9px; cursor: pointer; }
 .editor-tab.active { color: var(--ink); border-color: var(--blue-soft); background: var(--streak-bg); }
-.editor-dirty { font-family: var(--mono); font-size: 11px; color: var(--base-40); margin-right: 8px; }
-.editor-area { width: 100%; min-height: 340px; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--text); background: var(--streak-bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; resize: vertical; box-sizing: border-box; white-space: pre; overflow-wrap: normal; }
-.editor-lint { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-family: var(--mono); font-size: 11.5px; }
+.editor-dirty { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); margin-right: 8px; }
+.editor-area { width: 100%; min-height: 340px; font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--text); background: var(--streak-bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; resize: vertical; box-sizing: border-box; white-space: pre; overflow-wrap: normal; }
+.editor-lint { display: flex; flex-direction: column; gap: 3px; margin: 8px 0; font-family: var(--mono); font-size: var(--fs-xs); }
 .editor-lint.lint-ok { color: var(--base-40); }
 .lint-err { color: #b91c1c; } .lint-warn { color: var(--base-100); font-weight: 500; } .lint-note { color: var(--muted); }
 
 /* ---- SPIRITS: digest feed items (EA waiting-on), pinned + expanded ---- */
 .feed-card.digest { border-color: var(--blue-soft); background: #fbfcff; }
 .feed-card.pinned { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
-.pin-chip { font-family: var(--mono); font-size: 10px; color: var(--blue); letter-spacing: 0.3px; }
-.feed-card.digest .feed-body { white-space: pre-wrap; font-family: var(--sans); font-size: 13.5px; line-height: 1.5; color: var(--text); }
+.pin-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue); letter-spacing: 0.3px; }
+.feed-card.digest .feed-body { white-space: pre-wrap; font-family: var(--sans); font-size: var(--fs-md); line-height: 1.5; color: var(--text); }
 
 /* ===== SPIRITS UX pass: live runs, toasts, inbox, timing ===== */
 
@@ -81,49 +81,49 @@
 /* rituals board timing */
 
 /* askText inline dialog (reuses picker modal chrome) */
-.asktext-area { width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 14px; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
+.asktext-area { width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
 .asktext-area:focus { border-color: var(--blue); }
 .asktext-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 10px; }
-.asktext-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.asktext-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 
 /* ---- PORTALS panel (SPIRITS sub-tab): the external-realms table + reconnect form ---- */
 .portal-board { display: flex; flex-direction: column; gap: 2px; }
 .portal-wrap { display: flex; flex-direction: column; }
 .portal-row { display: grid; grid-template-columns: 1.3fr 0.8fr 1.2fr 0.9fr auto; align-items: baseline; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); }
-.portal-head { border: none; padding: 4px 10px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
-.portal-name { font-family: var(--sans); font-size: 14px; color: var(--text); font-weight: 500; }
-.portal-state { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.portal-head { border: none; padding: 4px 10px; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); }
+.portal-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); font-weight: 500; }
+.portal-state { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); }
 .portal-row.state-open .portal-state { color: var(--base-50); }
 .portal-row.state-degraded .portal-state { color: var(--base-100); font-weight: 500; }
-.portal-cross { font-family: var(--mono); font-size: 12px; color: var(--ink); }
-.portal-key { font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: 0.5px; }
+.portal-cross { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); }
+.portal-key { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); letter-spacing: 0.5px; }
 .portal-acts { display: flex; flex-wrap: wrap; gap: 6px; justify-self: end; }
-.portal-dim { font-family: var(--mono); font-size: 11px; color: var(--muted); }
-.portal-err { font-family: var(--mono); font-size: 11.5px; color: #b91c1c; padding: 2px 10px 6px; }
-.portal-note { font-size: 12px; color: var(--muted); padding: 2px 10px 6px; }
+.portal-dim { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
+.portal-err { font-family: var(--mono); font-size: var(--fs-xs); color: #b91c1c; padding: 2px 10px 6px; }
+.portal-note { font-size: var(--fs-sm); color: var(--muted); padding: 2px 10px 6px; }
 .portal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 10px; margin: 2px 0 6px; border: 1px dashed var(--blue-soft); border-radius: var(--radius); background: var(--hover); }
 .portal-field { display: flex; flex-direction: column; gap: 3px; }
-.portal-field-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); }
-.portal-input { font-family: var(--mono); font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; min-width: 240px; background: var(--bg, #fff); color: var(--text); }
+.portal-field-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); }
+.portal-input { font-family: var(--mono); font-size: var(--fs-md); padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px; min-width: 240px; background: var(--bg, #fff); color: var(--text); }
 .portal-input:focus { outline: none; border-color: var(--blue); }
-.pill-solid { font-family: var(--sans); font-size: 12px; padding: 6px 12px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; }
+.pill-solid { font-family: var(--sans); font-size: var(--fs-sm); padding: 6px 12px; border: none; border-radius: 6px; background: var(--blue); color: #fff; cursor: pointer; }
 .pill-solid:disabled { opacity: 0.6; cursor: default; }
 
 /* ===== SPIRITS one-page (§12 / prototype, 2026-08-10) ===== */
 .spirits-page { padding: 18px 24px 40px; max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
 .sprt-block { display: flex; flex-direction: column; }
 .sprt-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 8px; }
-.sprt-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
-.sprt-sub { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sprt-title { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
+.sprt-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-head-acts { margin-left: auto; display: inline-flex; gap: 8px; align-items: baseline; }
-.sprt-head-meta { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; }
-.sprt-quiet { background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; padding: 0; }
+.sprt-head-meta { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
+.sprt-quiet { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
 .sprt-quiet:hover { color: var(--accent); }
-.sprt-ghost { background: transparent; border: 1px dashed var(--base-25); border-radius: var(--radius); font-family: var(--mono); font-size: 10.5px; color: var(--base-40); padding: 2px 9px; cursor: pointer; }
+.sprt-ghost { background: transparent; border: 1px dashed var(--base-25); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); padding: 2px 9px; cursor: pointer; }
 .sprt-ghost:hover { color: var(--accent); border-color: var(--accent-soft); }
 .sprt-add-ritual { align-self: flex-start; margin-top: 8px; }
 .sprt-add-wrap { display: inline-flex; gap: 8px; align-items: center; margin-top: 8px; }
-.sprt-cols { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; gap: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 8px 6px; }
+.sprt-cols { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; gap: 12px; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); padding: 0 8px 6px; }
 .sprt-cols .r { text-align: right; }
 
 /* live strip — one line per running/queued item */
@@ -131,103 +131,103 @@
 #spiritLive:empty { display: none; }
 .sprt-live { border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 10px 12px; background: var(--base-05); display: flex; align-items: center; gap: 10px; }
 .sprt-live.clicky { cursor: pointer; }
-.sprt-live-state { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); flex: none; }
+.sprt-live-state { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); flex: none; }
 .sprt-live:not(.running) .sprt-live-state { color: var(--base-40); }
-.sprt-live-text { font-size: 14px; color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sprt-live-elapsed { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--accent); flex: none; }
+.sprt-live-text { font-size: var(--fs-lg); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sprt-live-elapsed { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); flex: none; }
 
 /* recent runs — quiet rows over charge bars */
 .sprt-run { border-top: 1px solid #f0f0f0; padding: 7px 8px; display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
 .sprt-run:hover { background: var(--base-05); }
 .sprt-run-top { display: flex; align-items: baseline; gap: 10px; }
-.sprt-run-title { font-family: var(--mono); font-size: 13px; color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sprt-run-when { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--base-40); flex: none; }
+.sprt-run-title { font-family: var(--mono); font-size: var(--fs-md); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sprt-run-when { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); flex: none; }
 
 /* portals foot toggle */
-.sprt-portals-toggle { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-40); cursor: pointer; padding: 4px 0; }
+.sprt-portals-toggle { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: 4px 0; }
 .sprt-portals-toggle:hover { color: var(--base-100); }
 #sp-portals .portal-board { margin-top: 8px; }
-.sprt-more { align-self: flex-start; background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-40); cursor: pointer; padding: 6px 8px; }
+.sprt-more { align-self: flex-start; background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: 6px 8px; }
 .sprt-more:hover { color: var(--base-100); }
 
 /* federation: the muted source chip on non-primary harness rows (§11 idiom) */
-.harness-chip { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); border: 1px solid var(--base-25); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
+.harness-chip { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); border: 1px solid var(--base-25); border-radius: 3px; padding: 0 5px; white-space: nowrap; }
 
 /* harnesses settings — engine status per tree + per-spirit conduit switch */
 .harness-board { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
 .harness-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 10px 12px; }
 .harness-head { display: flex; align-items: baseline; gap: 8px; }
-.harness-name { font-family: var(--sans); font-size: 14px; font-weight: 600; }
-.harness-engine { margin-left: auto; font-family: var(--mono); font-size: 10.5px; }
+.harness-name { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 600; }
+.harness-engine { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); }
 .harness-engine.on { color: var(--accent); }
 .harness-engine.off { color: var(--base-40); }
-.harness-path { font-family: var(--mono); font-size: 10px; color: var(--base-40); margin: 2px 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.harness-hint { font-family: var(--mono); font-size: 10.5px; color: var(--base-100); background: var(--base-05); border-radius: 3px; padding: 5px 7px; margin-bottom: 6px; }
+.harness-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin: 2px 0 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.harness-hint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); background: var(--base-05); border-radius: 3px; padding: 5px 7px; margin-bottom: 6px; }
 .harness-spirit { display: flex; align-items: center; gap: 10px; padding: 3px 0; border-top: 1px solid #f4f4f4; }
-.harness-spirit-name { font-family: var(--sans); font-size: 13px; flex: 1; }
+.harness-spirit-name { font-family: var(--sans); font-size: var(--fs-md); flex: 1; }
 .harness-portal-sel { width: 150px; }
 
 /* ---- SPIRITS.md §1: chips hierarchy · spirit index · settings pane ---- */
 /* settings-chip degraded badge — damage reported without portals taking a slot */
-.sp-badge { margin-left: 6px; font-family: var(--mono); font-size: 10px; color: var(--base-100); font-weight: 500; }
+.sp-badge { margin-left: 6px; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); font-weight: 500; }
 
 /* the spirit index strip over the ALL RITUALS board */
 .spirit-index { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 12px; }
 .spirit-index-item {
   display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
   padding: 0 12px; border: 1px solid var(--base-25); border-radius: 15px;
-  background: none; font-family: var(--sans); font-size: 13px; color: var(--base-100); cursor: pointer;
+  background: none; font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100); cursor: pointer;
 }
 .spirit-index-item:hover { border-color: var(--base-40); }
 .spirit-index-name { font-weight: 500; }
-.spirit-index-count { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.spirit-index-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 /* settings pane groupings */
 .portal-group-label {
-  font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em;
+  font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em;
   text-transform: uppercase; color: var(--base-40); margin: 14px 0 4px;
 }
 .aion-org-count.attn { color: var(--base-100); font-weight: 500; }
 
 /* the cadence cron sub-line must be LEGIBLE (spec §4): meta text, not ghost */
-.cad-raw { color: var(--base-40); font-size: 10.5px; }
+.cad-raw { color: var(--base-40); font-size: var(--fs-2xs); }
 
 /* ---- SPIRITS.md §2/§3: cadence builder + structured ritual editor ---- */
 .cadb { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 6px; }
 .cadb-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.cadb-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); min-width: 52px; }
+.cadb-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); min-width: 52px; }
 .cadb-chip {
   min-height: 28px; padding: 0 11px; border: 1px solid var(--base-25); border-radius: 14px;
-  background: none; font-family: var(--sans); font-size: 12.5px; color: var(--base-70); cursor: pointer;
+  background: none; font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer;
 }
 .cadb-chip:hover { border-color: var(--base-40); }
 .cadb-chip.on { border-color: var(--accent); color: var(--accent); font-weight: 500; }
-.cadb-add { min-height: 28px; font-size: 12.5px; width: auto; }
+.cadb-add { min-height: 28px; font-size: var(--fs-sm); width: auto; }
 .cadb-receipt {
   display: flex; align-items: baseline; gap: 14px; padding: 7px 10px;
   border-left: 2px solid var(--accent); background: var(--base-05); margin-top: 2px;
 }
 .cadb-receipt.incomplete { border-left-color: var(--base-100); }
-.cadb-phrase { font-family: var(--sans); font-size: 13.5px; color: var(--base-100); font-weight: 500; }
-.cadb-cron { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin-left: auto; }
-.cadb-next { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); padding-left: 12px; }
+.cadb-phrase { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100); font-weight: 500; }
+.cadb-cron { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; }
+.cadb-next { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); padding-left: 12px; }
 .cadb-custom { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-left: 2px solid var(--base-100); background: var(--base-05); }
-.cadb-custom-msg { font-family: var(--sans); font-size: 12.5px; color: var(--base-100); font-weight: 500; }
-.cadb-custom-cron { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.cadb-custom-msg { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-100); font-weight: 500; }
+.cadb-custom-cron { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); }
 
 .rit-limits { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; margin: 4px 0 6px; }
 .rit-figure { display: flex; flex-direction: column; gap: 2px; }
-.rit-fig-label { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); }
+.rit-fig-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--base-40); }
 .rit-fig-val {
   background: none; border: none; padding: 0; text-align: left; cursor: pointer;
-  font-family: var(--mono); font-size: 20px; color: var(--base-100);
+  font-family: var(--mono); font-size: var(--fs-2xl); color: var(--base-100);
   border-bottom: 1px dashed var(--base-25);
 }
 .rit-fig-val.muted { color: var(--base-40); }
-.rit-fig-in { width: 90px; font-size: 16px; }
-.rit-fig-note { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.rit-fig-in { width: 90px; font-size: var(--fs-xl); }
+.rit-fig-note { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rit-capability { display: flex; flex-direction: column; gap: 3px; margin-left: auto; max-width: 300px; }
-.rit-cap-sum { font-family: var(--mono); font-size: 11.5px; color: var(--base-50); }
+.rit-cap-sum { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); }
 .rit-body { min-height: 220px; }
 .rit-raw-ta { min-height: 200px; }
 
@@ -240,30 +240,30 @@
 .sp-cap-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .cadb-chip.widened { border-color: var(--base-100); color: var(--base-100); }
 .sp-cap-warnings { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
-.sp-warn { font-family: var(--sans); font-size: 12px; color: var(--base-50); padding-left: 10px; border-left: 2px solid var(--base-25); }
+.sp-warn { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-50); padding-left: 10px; border-left: 2px solid var(--base-25); }
 .sp-warn.ink { color: var(--base-100); font-weight: 500; border-left-color: var(--base-100); }
 .sp-mems { display: flex; flex-direction: column; }
 .sp-mem-row { display: flex; gap: 14px; align-items: baseline; min-height: 30px; border-bottom: 1px solid var(--base-20); }
-.sp-mem-name { font-family: var(--sans); font-size: 13px; color: var(--base-100); min-width: 90px; }
-.sp-mem-meta { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.sp-mem-name { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100); min-width: 90px; }
+.sp-mem-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 /* ---- SPIRITS.md §4: the global runs log ---- */
 .run-filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
-.sprt-run-wrote { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin-left: auto; padding-right: 12px; }
+.sprt-run-wrote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; padding-right: 12px; }
 .run-trace { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 10px 26px; border-bottom: 1px solid var(--base-20); background: var(--base-05); }
 .run-trace-step { display: flex; gap: 10px; align-items: baseline; min-height: 24px; }
-.run-trace-n { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); min-width: 16px; text-align: right; }
-.run-trace-cast { font-family: var(--mono); font-size: 11.5px; color: var(--base-100); min-width: 150px; }
-.run-trace-detail { font-family: var(--sans); font-size: 12.5px; color: var(--base-70); min-width: 0; }
-.run-trace-usd { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); margin-left: auto; }
+.run-trace-n { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 16px; text-align: right; }
+.run-trace-cast { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); min-width: 150px; }
+.run-trace-detail { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-70); min-width: 0; }
+.run-trace-usd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; }
 .run-trace .pill { align-self: flex-start; margin-top: 6px; }
 
 /* chargebook form */
 .cb-grid { display: flex; flex-direction: column; gap: 2px; margin: 6px 0; max-width: 560px; }
-.cb-group { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--base-40); margin: 12px 0 4px; }
+.cb-group { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; text-transform: uppercase; color: var(--base-40); margin: 12px 0 4px; }
 .cb-row { display: flex; gap: 12px; align-items: center; min-height: 30px; border-bottom: 1px solid var(--base-20); }
-.cb-key { font-family: var(--mono); font-size: 11.5px; color: var(--base-70); flex: 1; min-width: 0; }
-.cb-in { width: 110px; font-family: var(--mono); font-size: 12.5px; text-align: right; }
+.cb-key { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); flex: 1; min-width: 0; }
+.cb-in { width: 110px; font-family: var(--mono); font-size: var(--fs-sm); text-align: right; }
 
 /* paused rituals: muted rows, a paused pill in the editor head */
 .ritual-row.paused .ritual-name, .ritual-row.paused .cad-human,
@@ -279,10 +279,10 @@
 .gmail-acct-row:last-of-type { border-bottom: 0; }
 .gmail-acct-head { display: flex; align-items: baseline; gap: 8px; }
 .gmail-acct-email { font-weight: 500; color: var(--base-100); }
-.gmail-acct-primary { font-size: 10px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
+.gmail-acct-primary { font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
 .gmail-acct-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 6px; }
-.gmail-acct-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--base-70); cursor: pointer; }
-.gmail-acct-ws { font: inherit; font-size: 12px; color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 3px 6px; }
+.gmail-acct-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
+.gmail-acct-ws { font: inherit; font-size: var(--fs-sm); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 3px 6px; }
 .gmail-acct-add { margin-top: 10px; }
 .gmail-acct-paste { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .gmail-acct-paste .portal-input { width: 100%; }

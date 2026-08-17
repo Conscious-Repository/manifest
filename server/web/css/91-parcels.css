@@ -10,17 +10,17 @@
   display: grid;
   grid-template-columns: 1.4fr 1.8fr 0.9fr 1fr 0.8fr 0.8fr 0.5fr;
   align-items: baseline; gap: 12px; padding: 7px 12px;
-  border-bottom: 1px solid var(--line); font-size: 13px;
+  border-bottom: 1px solid var(--line); font-size: var(--fs-md);
 }
 .parcels-row:last-child { border-bottom: none; }
-.parcels-hdr { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); background: var(--streak-bg); }
+.parcels-hdr { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); background: var(--streak-bg); }
 .parcels-r { cursor: pointer; }
 .parcels-r:hover { background: var(--hover); }
 .parcels-row .pc-0 { font-family: var(--sans); font-weight: 500; color: var(--text); }
 .parcels-row .pc-1 { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.parcels-row .pc-2, .parcels-row .pc-4, .parcels-row .pc-5 { font-family: var(--mono); font-size: 12.5px; color: var(--text); }
-.pc-status { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
-.pc-notes { font-size: 12px; color: var(--muted); text-align: right; }
+.parcels-row .pc-2, .parcels-row .pc-4, .parcels-row .pc-5 { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); }
+.pc-status { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.3px; }
+.pc-notes { font-size: var(--fs-sm); color: var(--muted); text-align: right; }
 
 /* tax-status accents (left border + status text color) */
 .pc-tax-delinquent { box-shadow: inset 3px 0 0 #d9534f; }
@@ -31,19 +31,19 @@
 
 /* ---- map click popup ---- */
 .parcel-pop { font-family: var(--sans); min-width: 220px; }
-.parcel-pop .pp-addr { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
-.parcel-pop .pp-tax { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
+.parcel-pop .pp-addr { font-size: var(--fs-lg); font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.parcel-pop .pp-tax { font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 6px; }
 .parcel-pop .pp-tax.pp-delinquent { color: #c9302c; }
 .parcel-pop .pp-tax.pp-lra { color: #c77c14; }
 .parcel-pop .pp-tax.pp-current { color: #4d9d6a; }
 .parcel-pop .pp-facts { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-.parcel-pop .pp-facts td { font-size: 12px; padding: 1px 0; vertical-align: top; }
+.parcel-pop .pp-facts td { font-size: var(--fs-sm); padding: 1px 0; vertical-align: top; }
 .parcel-pop .pp-k { color: var(--muted); padding-right: 10px !important; white-space: nowrap; }
 .parcel-pop .pp-v { color: var(--text); }
-.parcel-pop .pp-notes-h { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 5px; margin-top: 3px; }
+.parcel-pop .pp-notes-h { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 5px; margin-top: 3px; }
 .parcel-pop .pp-notes { max-height: 120px; overflow-y: auto; margin: 3px 0; }
-.parcel-pop .pp-note { font-size: 12px; color: var(--text); padding: 2px 0; border-bottom: 1px dotted var(--line); }
+.parcel-pop .pp-note { font-size: var(--fs-sm); color: var(--text); padding: 2px 0; border-bottom: 1px dotted var(--line); }
 .parcel-pop .pp-note.pp-empty { color: var(--muted); font-style: italic; border: none; }
 .parcel-pop .pp-add { display: flex; gap: 5px; margin-top: 5px; }
-.parcel-pop .pp-input { flex: 1; font-family: var(--sans); font-size: 12px; padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--radius); }
-.parcel-pop .pp-addbtn { font-size: 11px; padding: 3px 10px; }
+.parcel-pop .pp-input { flex: 1; font-family: var(--sans); font-size: var(--fs-sm); padding: 4px 6px; border: 1px solid var(--line); border-radius: var(--radius); }
+.parcel-pop .pp-addbtn { font-size: var(--fs-xs); padding: 3px 10px; }

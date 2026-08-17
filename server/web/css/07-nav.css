@@ -21,11 +21,11 @@
 .rail-brand.brand-active .rail-brand-name { color: var(--accent); }
 .rail-glyph-box {
   width: 22px; height: 22px; flex: none; border-radius: 5px;
-  background: var(--base-100); color: #fff; font-size: 11px;
+  background: var(--base-100); color: #fff; font-size: var(--fs-xs);
   display: inline-flex; align-items: center; justify-content: center;
 }
-.rail-brand-name { font-family: var(--mono); font-size: 12px; letter-spacing: 0.5px; color: var(--base-100); }
-.rail-collapse { background: none; border: none; color: var(--base-40); font-size: 12px; cursor: pointer; padding: 2px 4px; }
+.rail-brand-name { font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.5px; color: var(--base-100); }
+.rail-collapse { background: none; border: none; color: var(--base-40); font-size: var(--fs-sm); cursor: pointer; padding: 2px 4px; }
 .rail-collapse:hover { color: var(--base-70); }
 
 .rail-search {
@@ -34,9 +34,9 @@
   background: var(--base-00); border: 1px solid var(--base-25); border-radius: var(--radius-lg);
   cursor: pointer; text-align: left;
 }
-.rail-search-glyph { color: var(--base-40); font-size: 13px; flex: none; }
-.rail-search-label { font-family: var(--sans); font-size: 13px; color: var(--base-40); }
-.rail-search-kbd { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--base-30); }
+.rail-search-glyph { color: var(--base-40); font-size: var(--fs-md); flex: none; }
+.rail-search-label { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-40); }
+.rail-search-kbd { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); }
 
 .rail-groups { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 0; padding-bottom: 12px; }
 .rail-group { flex: none; }
@@ -46,12 +46,12 @@
    to 0 on short windows so the list scrolls normally rather than clipping. */
 .rail-spacer { flex: 1 1 0; min-height: 20px; }
 .rail-group-label {
-  font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase;
+  font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase;
   color: var(--base-40); padding: 0 14px 4px; white-space: nowrap;
 }
 .rail-item {
   display: flex; align-items: center; gap: 9px;
-  padding: 9px 14px; font-size: 13.5px; letter-spacing: 0.4px;
+  padding: 9px 14px; font-size: var(--fs-md); letter-spacing: 0.4px;
   color: var(--base-70); text-decoration: none;
 }
 .rail-item:hover { background: var(--base-20); }
@@ -59,13 +59,13 @@
 .rail-glyph { width: 14px; flex: none; text-align: center; color: var(--base-40); }
 .rail-item.active .rail-glyph { color: var(--accent); }
 .rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rail-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
+.rail-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 .rail-foot {
   border-top: 1px solid var(--base-25); padding: 9px 14px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.rail-raw { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; background: none; border: none; cursor: pointer; padding: 0; }
+.rail-raw { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; background: none; border: none; cursor: pointer; padding: 0; }
 .rail-raw:hover { color: var(--accent); }
 
 /* collapsed rail: 50px, glyph column only */
@@ -91,29 +91,29 @@
   flex: none; display: flex; align-items: center; gap: 10px;
   padding: 10px 24px; border-bottom: 1px solid var(--base-25);
 }
-.crumb-nav { background: none; border: none; font-size: 14px; color: var(--base-60); cursor: pointer; padding: 0 2px; line-height: 1; }
+.crumb-nav { background: none; border: none; font-size: var(--fs-lg); color: var(--base-60); cursor: pointer; padding: 0 2px; line-height: 1; }
 .crumb-nav:hover:not(:disabled) { color: var(--base-100); }
 .crumb-nav:disabled { color: var(--base-30); cursor: default; }
-.crumb-path { display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.3px; min-width: 0; }
+.crumb-path { display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; min-width: 0; }
 .crumb-seg { color: var(--base-100); }
 a.crumb-seg { color: var(--base-40); text-decoration: none; }
 a.crumb-seg:hover { color: var(--accent); }
 .crumb-sep { color: var(--base-30); }
 .crumb-right { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
-.crumb-meta { font-family: var(--mono); font-size: 11px; color: var(--base-40); white-space: nowrap; }
+.crumb-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); white-space: nowrap; }
 
 /* the day date control, relocated into the crumb bar as quiet chrome */
 .crumb-datenav { display: inline-flex; align-items: center; gap: 2px; }
 .crumb-datenav .pill {
   background: none; border: 1px solid var(--base-25); border-radius: var(--radius-lg);
-  color: var(--base-60); font-family: var(--mono); font-size: 11px; letter-spacing: 0.3px;
+  color: var(--base-60); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px;
   height: 24px; padding: 0 10px; cursor: pointer; display: inline-flex; align-items: center;
 }
 .crumb-datenav .pill:hover { border-color: var(--accent-soft); color: var(--accent); }
 .crumb-datenav .pill.arrow { padding: 0 7px; }
 #dateLabel { min-width: 84px; text-align: center; }
 
-.save-state { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); min-width: 38px; }
+.save-state { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 38px; }
 .save-state.saving { color: var(--accent); }
 
 /* The crumb bar is redundant on top-level sections — each page carries its own

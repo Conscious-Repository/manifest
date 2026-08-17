@@ -3,19 +3,19 @@
 /* ===== CONTACTS — the people layer ===== */
 .contacts-view { max-width: 1180px; margin: 8px auto 64px; padding: 0 28px; }
 .agent-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0 10px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
-.agent-title { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em; color: var(--ink); }
+.agent-title { font-family: var(--mono); font-size: var(--fs-md); letter-spacing: 0.08em; color: var(--ink); }
 .agent-actions { display: flex; gap: 8px; align-items: center; }
-.contact-search { font-family: var(--sans); font-size: 13px; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; min-width: 220px; color: var(--text); }
+.contact-search { font-family: var(--sans); font-size: var(--fs-md); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 10px; min-width: 220px; color: var(--text); }
 .contact-search:focus { outline: none; border-color: var(--blue-soft); }
 
 /* triage */
 .contact-triage { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 14px; margin-bottom: 16px; }
 .triage-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.triage-label { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.triage-label { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .triage-rows { margin-top: 10px; }
 .triage-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); }
-.triage-name { font-family: var(--sans); font-size: 14px; color: var(--text); flex: 0 0 auto; }
-.triage-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.triage-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); flex: 0 0 auto; }
+.triage-refs { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .triage-actions { margin-left: auto; display: flex; gap: 6px; }
 
 /* list */
@@ -23,29 +23,29 @@
 .contact-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 9px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .contact-row:hover { background: var(--hover); }
 .contact-row-left { display: flex; align-items: baseline; gap: 7px; }
-.contact-name { font-family: var(--sans); font-size: 15px; color: var(--text); }
-.contact-dot { color: var(--icon); font-size: 10px; } /* quiet no-note indicator */
+.contact-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
+.contact-dot { color: var(--icon); font-size: var(--fs-2xs); } /* quiet no-note indicator */
 .contact-row-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
-.contact-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 96px; text-align: right; }
+.contact-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); min-width: 96px; text-align: right; }
 .contact-meta.muted { font-style: italic; color: var(--icon); } /* mentioned-only: not calendar-verified */
-.contact-submeta { font-family: var(--mono); font-size: 10px; color: var(--icon); text-align: right; } /* note "mentioned" under calendar "met" */
-.contact-upcoming { font-family: var(--mono); font-size: 11px; color: var(--blue); }
+.contact-submeta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--icon); text-align: right; } /* note "mentioned" under calendar "met" */
+.contact-upcoming { font-family: var(--mono); font-size: var(--fs-xs); color: var(--blue); }
 /* email-review strip (attendee → contact) — reuses the triage-strip look */
-.er-arrow { font-family: var(--mono); font-size: 12px; color: var(--icon); }
-.er-target { font-family: var(--sans); font-size: 14px; color: var(--text); }
+.er-arrow { font-family: var(--mono); font-size: var(--fs-sm); color: var(--icon); }
+.er-target { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
 .er-search { flex-basis: 100%; margin-top: 8px; }
-.er-flash { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: var(--accent); margin-top: 4px; } /* "✓ linked …" */
+.er-flash { flex-basis: 100%; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); margin-top: 4px; } /* "✓ linked …" */
 .er-flash.error { color: #c0304a; }
 .triage-row.er-done { opacity: 0.45; transition: opacity 0.3s ease; } /* fading out after a successful link */
 
 /* create flow */
 .contact-create { border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px; }
-.contact-create-head { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px; }
-.contact-create-input { width: 100%; font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 10px; margin-bottom: 8px; }
+.contact-create-head { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-bottom: 8px; }
+.contact-create-input { width: 100%; font-family: var(--sans); font-size: var(--fs-lg); border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 10px; margin-bottom: 8px; }
 .contact-create-input:focus { outline: none; border-color: var(--blue-soft); }
 .cc-result { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
-.cc-name { font-family: var(--sans); font-size: 14px; color: var(--text); }
-.cc-refs { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.cc-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
+.cc-refs { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .cc-actions { margin-left: auto; display: flex; gap: 6px; }
 .cc-create { padding-top: 10px; margin-top: 6px; border-top: 1px solid var(--line); }
 
@@ -53,56 +53,56 @@
 .contact-page { padding: 8px 0; }
 .cp-header { margin-bottom: 6px; }
 .cp-name-row { display: flex; align-items: baseline; gap: 10px; }
-.cp-name { font-family: var(--sans); font-size: 26px; font-weight: 500; color: var(--ink); margin: 0; }
-.cp-nonote { font-family: var(--mono); font-size: 10px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
-.cp-aliases { font-family: var(--sans); font-size: 13px; color: var(--muted); margin-top: 3px; }
+.cp-name { font-family: var(--sans); font-size: var(--fs-3xl); font-weight: 500; color: var(--ink); margin: 0; }
+.cp-nonote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; }
+.cp-aliases { font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); margin-top: 3px; }
 .cp-firms { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.cp-firm { font-family: var(--mono); font-size: 12px; color: var(--blue); background: var(--streak-bg); border-radius: var(--radius); padding: 2px 8px; cursor: pointer; }
+.cp-firm { font-family: var(--mono); font-size: var(--fs-sm); color: var(--blue); background: var(--streak-bg); border-radius: var(--radius); padding: 2px 8px; cursor: pointer; }
 .cp-dates { margin: 10px 0 18px; }
-.cp-lastmet { font-family: var(--mono); font-size: 12px; color: var(--streak-ink); margin: 0; }
+.cp-lastmet { font-family: var(--mono); font-size: var(--fs-sm); color: var(--streak-ink); margin: 0; }
 .cp-dates .cp-lastmet { margin: 0; }
-.cp-lastmentioned { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 2px; }
-.cp-date-src { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--icon); }
-.cp-date-hint { font-family: var(--sans); font-size: 11px; font-style: italic; color: var(--icon); }
+.cp-lastmentioned { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-top: 2px; }
+.cp-date-src { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--icon); }
+.cp-date-hint { font-family: var(--sans); font-size: var(--fs-xs); font-style: italic; color: var(--icon); }
 .cp-dates .cp-cold { margin-left: 0; margin-top: 6px; }
 /* emails section (linked calendar identities + manual add + per-contact suggestions) */
-.cp-email { font-family: var(--mono); font-size: 12.5px; color: var(--text); padding: 3px 0; }
+.cp-email { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); padding: 3px 0; }
 .cp-email-add { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.cp-email-input { flex: 1; font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; }
+.cp-email-input { flex: 1; font-family: var(--mono); font-size: var(--fs-sm); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 9px; }
 .cp-email-input:focus { outline: none; border-color: var(--blue-soft); }
 .cp-email-suggest { display: flex; align-items: center; gap: 10px; padding: 7px 0 0; }
-.cp-email-suggest-text { font-family: var(--sans); font-size: 13px; color: var(--streak-ink); }
+.cp-email-suggest-text { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); }
 .cp-section { margin-bottom: 20px; }
-.cp-section-head { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 5px; margin-bottom: 8px; }
+.cp-section-head { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 5px; margin-bottom: 8px; }
 .cp-count { color: var(--icon); }
-.cp-empty { font-family: var(--sans); font-size: 13px; color: var(--muted); font-style: italic; }
+.cp-empty { font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); font-style: italic; }
 .cp-tl-row { display: flex; align-items: baseline; gap: 12px; padding: 4px 0; }
-.cp-date { font-family: var(--mono); font-size: 12px; color: var(--ink); flex: 0 0 88px; }
-.cp-src { font-family: var(--mono); font-size: 10px; color: var(--muted); text-transform: uppercase; flex: 0 0 84px; }
-.cp-tl-name { font-family: var(--sans); font-size: 13.5px; color: var(--text); }
-.cp-badge { font-family: var(--mono); font-size: 9px; color: var(--blue); border: 1px solid var(--blue-soft); border-radius: 3px; padding: 1px 5px; }
-.cp-mention { font-family: var(--sans); font-size: 13px; color: var(--streak-ink); padding: 3px 0; }
+.cp-date { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); flex: 0 0 88px; }
+.cp-src { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); text-transform: uppercase; flex: 0 0 84px; }
+.cp-tl-name { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
+.cp-badge { font-family: var(--mono); font-size: var(--fs-3xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: 3px; padding: 1px 5px; }
+.cp-mention { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); padding: 3px 0; }
 .cp-upcoming-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; }
-.cp-title { font-family: var(--sans); font-size: 13.5px; color: var(--text); flex: 1; }
-.cp-confirmed { font-family: var(--mono); font-size: 11px; color: var(--accent); }
-.cp-note-editor { width: 100%; min-height: 150px; font-family: var(--mono); font-size: 13px; line-height: 1.55; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; resize: vertical; color: var(--text); box-sizing: border-box; }
+.cp-title { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); flex: 1; }
+.cp-confirmed { font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); }
+.cp-note-editor { width: 100%; min-height: 150px; font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; resize: vertical; color: var(--text); box-sizing: border-box; }
 .cp-note-editor:focus { outline: none; border-color: var(--blue-soft); }
 .cp-note-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
-.cp-note-hint { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.cp-note-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 
 /* triage additions (follow-up 1) */
 .triage-head-actions { display: flex; gap: 6px; align-items: center; }
-.triage-hint { font-family: var(--mono); font-size: 10px; color: var(--blue-soft); }
+.triage-hint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue-soft); }
 
 /* ===== redesign §13 (2026-08-09): facts strip + going-cold as weight+dot ===== */
 .cp-facts { display: flex; border-top: 1px solid var(--base-25); border-bottom: 1px solid var(--base-25); margin: 12px 0 14px; }
 .cp-fact { flex: 1; padding: 10px 16px 10px 0; min-width: 0; }
-.cp-fact-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); white-space: nowrap; }
-.cp-fact-val { font-family: var(--mono); font-size: 15px; color: var(--base-100); padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cp-fact-sub { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; }
-.cp-cold { font-family: var(--mono); font-size: 11.5px; color: var(--base-100); font-weight: 500; margin: 0 0 14px; }
+.cp-fact-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); white-space: nowrap; }
+.cp-fact-val { font-family: var(--mono); font-size: var(--fs-lg); color: var(--base-100); padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-fact-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
+.cp-cold { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); font-weight: 500; margin: 0 0 14px; }
 .contact-cold { color: var(--base-100); }
 
 /* §13: list cold marker + the role chip */
-.contact-cold { font-family: var(--mono); font-size: 10.5px; font-weight: 500; color: var(--base-100); white-space: nowrap; }
-.cp-role { font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em; color: var(--base-50); border: 1px solid var(--base-25); border-radius: 3px; padding: 2px 7px; align-self: center; }
+.contact-cold { font-family: var(--mono); font-size: var(--fs-2xs); font-weight: 500; color: var(--base-100); white-space: nowrap; }
+.cp-role { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.06em; color: var(--base-50); border: 1px solid var(--base-25); border-radius: 3px; padding: 2px 7px; align-self: center; }

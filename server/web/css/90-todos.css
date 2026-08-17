@@ -4,9 +4,9 @@
 
 /* section labels */
 .tdo-sec-label { display: flex; align-items: baseline; gap: 8px; padding: 4px 0 6px; border-bottom: 1px solid var(--base-25); margin-bottom: 2px; }
-.tdo-sec-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
-.tdo-sec-count { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); }
-.tdo-sec-hint { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); white-space: nowrap; }
+.tdo-sec-title { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-100); white-space: nowrap; }
+.tdo-sec-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.tdo-sec-hint { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
 
 /* 1 — decisions lane (always visible, never collapsed) */
 .tdo-decisions { margin-bottom: 22px; }
@@ -15,12 +15,12 @@
   padding: 6px 10px; border-top: 1px solid var(--base-25);
   border-left: 2px solid var(--base-100); background: var(--base-05);
 }
-.tdo-dec-flag { font-size: 12px; color: var(--base-100); flex: none; }
-.tdo-dec-text { font-family: var(--sans); font-size: 14px; font-weight: 500; flex: 1 1 auto; min-width: 0; }
+.tdo-dec-flag { font-size: var(--fs-sm); color: var(--base-100); flex: none; }
+.tdo-dec-text { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 500; flex: 1 1 auto; min-width: 0; }
 .tdo-dec-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: 12px; white-space: nowrap; }
-.tdo-dec-age { font-family: var(--mono); font-size: 11px; color: var(--base-100); }
-.tdo-decide { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--accent); cursor: pointer; padding: 0; }
-.tdo-decide-in { font-family: var(--sans); font-size: 13px; border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 2px 8px; min-width: 240px; }
+.tdo-dec-age { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); }
+.tdo-decide { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); cursor: pointer; padding: 0; }
+.tdo-decide-in { font-family: var(--sans); font-size: var(--fs-md); border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 2px 8px; min-width: 240px; }
 
 /* 2 — the ranked list */
 .tdo-main { margin-bottom: 18px; }
@@ -31,18 +31,18 @@
 .tdo-row:hover { background: var(--base-05); }
 .tdo-row.dragging { opacity: 0.4; }
 .tdo-row.drag-over { border-top: 2px solid var(--accent); }
-.tdo-handle { font-family: var(--mono); font-size: 11px; color: var(--base-30); width: 16px; flex: none; cursor: grab; user-select: none; }
-.tdo-check { background: none; border: none; font-size: 13px; color: var(--base-30); cursor: pointer; padding: 0 2px; flex: none; }
+.tdo-handle { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-30); width: 16px; flex: none; cursor: grab; user-select: none; }
+.tdo-check { background: none; border: none; font-size: var(--fs-md); color: var(--base-30); cursor: pointer; padding: 0 2px; flex: none; }
 .tdo-check:hover { color: var(--accent); }
 .tdo-check.on { color: var(--accent); }
-.tdo-text { font-family: var(--sans); font-size: 14px; cursor: text; min-width: 0; overflow-wrap: anywhere; }
+.tdo-text { font-family: var(--sans); font-size: var(--fs-lg); cursor: text; min-width: 0; overflow-wrap: anywhere; }
 .tdo-row.stale .tdo-text { font-weight: 500; }
 .tdo-row.done .tdo-text { text-decoration: line-through; color: var(--base-40); }
-.tdo-pill { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; white-space: nowrap; flex: none; }
+.tdo-pill { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; white-space: nowrap; flex: none; }
 .tdo-pill.linky { cursor: pointer; }
 .tdo-pill.linky:hover { color: var(--accent); border-color: var(--accent-soft); }
 .tdo-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
-.tdo-age { font-family: var(--mono); font-size: 11px; color: var(--base-40); min-width: 28px; text-align: right; }
+.tdo-age { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); min-width: 28px; text-align: right; }
 .tdo-age.stale { color: var(--base-100); }
 .tdo-right .uw-x { color: var(--base-30); visibility: hidden; background: none; border: none; cursor: pointer; padding: 0; }
 .tdo-row:hover .uw-x { visibility: visible; }
@@ -51,7 +51,7 @@
 /* capture ghost */
 .tdo-capture {
   margin-top: 6px; background: none; cursor: pointer;
-  font-family: var(--mono); font-size: 11.5px; color: var(--base-40);
+  font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40);
   border: 1px dashed var(--base-25); border-radius: var(--radius); padding: 5px 11px;
 }
 .tdo-capture:hover { color: var(--accent); border-color: var(--accent-soft); }
@@ -60,40 +60,40 @@
 .tdo-quiet-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 6px; }
 .tdo-quiet {
   background: var(--base-05); border: 1px solid var(--base-25); border-radius: var(--radius-lg);
-  padding: 7px 12px; font-family: var(--mono); font-size: 11px; color: var(--base-50); cursor: pointer;
+  padding: 7px 12px; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); cursor: pointer;
 }
 .tdo-quiet:hover, .tdo-quiet.on { color: var(--accent); border-color: var(--accent-soft); }
 .tdo-quiet-box { margin: 4px 0 10px; }
-.tdo-backlog-line { font-size: 12.5px; color: var(--base-40); padding: 2px 2px 2px 14px; }
+.tdo-backlog-line { font-size: var(--fs-sm); color: var(--base-40); padding: 2px 2px 2px 14px; }
 
 /* quick-add chips row (the t overlay) */
 .tdo-qa-chips { display: flex; gap: 8px; padding: 12px 18px 16px; flex-wrap: wrap; align-items: center; }
 
 /* compat: goals rock-window + work views still borrow these until their own
    redesign stages (6, 9) land */
-.tdo-tag { font-family: var(--mono); font-size: 10.5px; color: var(--base-30); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; }
-.tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-30); cursor: pointer; padding: 4px 2px; }
+.tdo-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); border: 1px solid var(--base-25); border-radius: 10px; padding: 0 7px; }
+.tdo-wait-foot { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-30); cursor: pointer; padding: 4px 2px; }
 .tdo-wait-foot:hover { color: var(--base-40); }
 
 /* ⧗ tether — hover-revealed when unanchored, tiny accent when tethered */
-.tdo-tether { background: none; border: none; font-size: 12px; color: var(--base-30); cursor: pointer; padding: 0 2px; visibility: hidden; }
+.tdo-tether { background: none; border: none; font-size: var(--fs-sm); color: var(--base-30); cursor: pointer; padding: 0 2px; visibility: hidden; }
 .tdo-row:hover .tdo-tether { visibility: visible; }
 .tdo-tether:hover { color: var(--accent); }
 .tdo-tether.on { visibility: visible; color: var(--accent); }
 .tdo-right .ta-wrap { display: inline-block; position: relative; }
-.tdo-right .ta-in { font-size: 12px; min-width: 220px; }
+.tdo-right .ta-in { font-size: var(--fs-sm); min-width: 220px; }
 
 /* delegation (Phase 6): dispatch affordance + the trace-derived state chip */
 .tdo-delegate { visibility: hidden; }
 .tdo-row:hover .tdo-delegate { visibility: visible; }
-.delegation-chip { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.3px; text-transform: uppercase; border: 1px solid var(--base-25); border-radius: 3px; padding: 0 5px; background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
+.delegation-chip { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.3px; text-transform: uppercase; border: 1px solid var(--base-25); border-radius: 3px; padding: 0 5px; background: none; color: var(--base-40); cursor: pointer; white-space: nowrap; }
 .delegation-chip.dstate-running { color: var(--accent); border-color: var(--accent-soft); }
 .delegation-chip.dstate-proposed { color: var(--base-100); font-weight: 600; }
 .delegation-chip.dstate-failed { color: var(--base-100); font-weight: 600; }
 
 /* ---- the board (Phase 8): four columns over the same rows —
    Open · Delegated · Review · Done (Waiting retired 2026-08-12) ---- */
-.tdo-mode-toggle { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: 10.5px; color: var(--base-40); cursor: pointer; }
+.tdo-mode-toggle { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; }
 .tdo-mode-toggle:hover { color: var(--accent); }
 .tdo-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; margin-top: 10px; }
 .tdo-col { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 8px; min-height: 220px; display: flex; flex-direction: column; gap: 6px; }
@@ -102,10 +102,10 @@
 .tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: 7px 9px; background: var(--bg, #fff); cursor: grab; }
 .tdo-card:active { cursor: grabbing; }
 .tdo-card.done .tdo-card-text { text-decoration: line-through; color: var(--base-40); }
-.tdo-card-text { font-family: var(--sans); font-size: 13.5px; line-height: 1.35; cursor: text; }
-.tdo-card-edit { width: 100%; box-sizing: border-box; font-size: 13.5px; }
-.tdo-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--base-40); align-items: baseline; }
+.tdo-card-text { font-family: var(--sans); font-size: var(--fs-md); line-height: 1.35; cursor: text; }
+.tdo-card-edit { width: 100%; box-sizing: border-box; font-size: var(--fs-md); }
+.tdo-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); align-items: baseline; }
 .tdo-card-wait, .tdo-card-rock { color: var(--base-50); }
 /* REVIEW: the result is the point of the column — one quiet read affordance */
 .tdo-card-acts { margin-top: 6px; }
-.tdo-card-acts .pill { font-family: var(--mono); font-size: 10px; }
+.tdo-card-acts .pill { font-family: var(--mono); font-size: var(--fs-2xs); }
