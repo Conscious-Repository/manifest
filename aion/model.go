@@ -30,7 +30,8 @@ type Person struct {
 	Initials string  `json:"initials"`
 	Name     string  `json:"name"`
 	Role     string  `json:"role"`
-	Unknown  []Field `json:"-"` // unrecognized fields, round-tripped in place
+	Email    string  `json:"email,omitempty"` // work email — drives portal sign-in → person attribution
+	Unknown  []Field `json:"-"`               // unrecognized fields, round-tripped in place
 }
 
 // PeopleLine is one body line: a Person row or a verbatim line — the

@@ -64,7 +64,8 @@ function Rail({ view, counts, go, filterGoal, filterExplain, onClearFilter, team
         </button>
         {me && !me.anon && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <div style={{ color: 'var(--ink,#d4d4d4)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{me.email}</div>
+            {me.person && <div style={{ color: 'var(--ink,#d4d4d4)' }}>{me.person}</div>}
+            <div style={{ color: me.person ? 'var(--ink-mute,#666)' : 'var(--ink,#d4d4d4)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{me.email}</div>
             <div style={{ color: 'var(--ink-mute,#666)' }}>{me.admin ? 'admin' : 'member'}</div>
             <div style={{ display: 'flex', gap: 8 }}>
               <a href="#" style={{ color: 'var(--ink-faint,#888)' }}

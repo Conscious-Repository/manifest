@@ -147,6 +147,27 @@ func TestHandEditReadback(t *testing.T) {
 	}
 }
 
+func TestPeopleEmailField(t *testing.T) {
+	// email is first-class: parsed, round-tripped byte-stable, exported
+	src := "- [initials:: BA] [name:: Benjamin Anderson] [role:: CEO] [email:: ben@aion.bio]\n" +
+		"- [initials:: NM] [name:: Nirosha Murugan] [role:: External]\n"
+	doc := ParsePeople(src)
+	ppl := doc.People()
+	if len(ppl) != 2 || ppl[0].Email != "ben@aion.bio" {
+		t.Fatalf("email not parsed: %+v", ppl)
+	}
+	if ppl[1].Email != "" {
+		t.Fatalf("emailless person must stay empty: %q", ppl[1].Email)
+	}
+	if out := SerializePeople(doc); out != src {
+		t.Fatalf("people.md not a fixpoint with email:\n--- got ---\n%s\n--- want ---\n%s", out, src)
+	}
+	ex := exportPeople(doc)["people"].([]exportPersonT)
+	if ex[0].Email != "ben@aion.bio" || ex[1].Email != "" {
+		t.Fatalf("export email: %+v", ex)
+	}
+}
+
 func TestBacklogParseShapes(t *testing.T) {
 	doc := ParseBacklog(fixtures["backlog.md"])
 	items := doc.Items()

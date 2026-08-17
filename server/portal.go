@@ -189,6 +189,7 @@ type portalAPI struct {
 type portalPerson struct {
 	Initials string `json:"initials"`
 	Name     string `json:"name"`
+	Email    string `json:"email,omitempty"`
 }
 
 // portalPeople parses the embedded people.json roster (nil-safe on drift).
@@ -226,19 +227,43 @@ func portalOwners(sub fs.FS) map[string]string {
 // when unmapped — such a member can comment and add, but owns nothing
 // published.
 func (p *portalAPI) initialsFor(email string) string {
+	full := strings.ToLower(strings.TrimSpace(email))
 	local := strings.ToLower(strings.TrimSpace(strings.SplitN(email, "@", 2)[0]))
 	if local == "" {
 		return ""
 	}
+	// hand-edited emails.json override wins (per-machine, top priority)
 	if p.opt.Store != nil {
-		if ini, ok := p.opt.Store.EmailOverrides()[strings.ToLower(strings.TrimSpace(email))]; ok {
+		if ini, ok := p.opt.Store.EmailOverrides()[full]; ok {
 			return ini
 		}
 	}
+	// the roster's own email field — the deterministic association (people.md)
+	for _, per := range p.people {
+		if per.Email != "" && strings.EqualFold(strings.TrimSpace(per.Email), full) {
+			return per.Initials
+		}
+	}
+	// fallback for accounts with no explicit email: first-name / initials match
 	for _, per := range p.people {
 		first := strings.ToLower(strings.SplitN(strings.TrimSpace(per.Name), " ", 2)[0])
 		if local == first || strings.EqualFold(local, per.Initials) {
 			return per.Initials
+		}
+	}
+	return ""
+}
+
+// personName resolves an email to the roster person's display name ("" when
+// unmapped) — the portal's "signed in as" confirmation.
+func (p *portalAPI) personName(email string) string {
+	ini := p.initialsFor(email)
+	if ini == "" {
+		return ""
+	}
+	for _, per := range p.people {
+		if strings.EqualFold(per.Initials, ini) {
+			return per.Name
 		}
 	}
 	return ""
@@ -298,6 +323,7 @@ func (p *portalAPI) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"email": id.Email, "name": id.Name,
 		"initials": p.initialsFor(id.Email),
+		"person":   p.personName(id.Email),
 		"admin":    p.isAdmin(id.Email),
 		// canFire is server-side policy the drawer trusts: team-wide today
 		// (owner decision 2026-08-16); a single line here tightens it later.

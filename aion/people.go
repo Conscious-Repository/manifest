@@ -40,6 +40,8 @@ func parsePersonLine(line string) (*Person, bool) {
 			p.Name = f.Value
 		case "role":
 			p.Role = f.Value
+		case "email":
+			p.Email = f.Value
 		default:
 			p.Unknown = append(p.Unknown, f)
 		}
@@ -73,6 +75,7 @@ func emitPersonLine(p *Person) string {
 	add("initials", p.Initials)
 	add("name", p.Name)
 	add("role", p.Role)
+	add("email", p.Email)
 	for _, f := range p.Unknown {
 		fields = append(fields, record.EmitField(f.Key, f.Value))
 	}

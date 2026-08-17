@@ -7,6 +7,32 @@ import (
 	"testing"
 )
 
+// initialsFor resolves a Google email to the roster person via the explicit
+// email field (people.md), so ben@aion.bio → BA even though the local-part
+// matches neither "benjamin" nor "ba".
+func TestInitialsForEmailField(t *testing.T) {
+	api := &portalAPI{people: []portalPerson{
+		{Initials: "BA", Name: "Benjamin Anderson", Email: "ben@aion.bio"},
+		{Initials: "YA", Name: "Yousuke Akama", Email: "yashiro@aion.bio"},
+		{Initials: "JR", Name: "Jack Ruhl"}, // no email — heuristic fallback
+	}}
+	cases := []struct{ email, want string }{
+		{"ben@aion.bio", "BA"},        // exact email field
+		{"BEN@AION.BIO", "BA"},        // case-insensitive
+		{"yashiro@aion.bio", "YA"},    // name ≠ local-part, resolved by email
+		{"jack@aion.bio", "JR"},       // fallback: first-name heuristic
+		{"nobody@aion.bio", ""},       // unmapped
+	}
+	for _, c := range cases {
+		if got := api.initialsFor(c.email); got != c.want {
+			t.Errorf("initialsFor(%q) = %q, want %q", c.email, got, c.want)
+		}
+	}
+	if got := api.personName("ben@aion.bio"); got != "Benjamin Anderson" {
+		t.Errorf("personName = %q", got)
+	}
+}
+
 // The standalone portal listener (AION portal move, phase 1): GET / is the
 // portal's own index.html, and its assets resolve at the root of that port.
 func TestPortalHandlerServesTheEmbeddedPortal(t *testing.T) {
@@ -42,10 +68,11 @@ func TestPortalHandlerServesTheEmbeddedPortal(t *testing.T) {
 	}
 
 	// The portal index points at its assets by relative path (no /investor
-	// prefix from the aionbio root) so it renders standalone on :7778.
+	// prefix from the aionbio root) so it renders standalone on :7778. The v2
+	// redesign self-hosts fonts in portal.css (colors_and_type.css dropped).
 	idx := getBody(t, srv.URL+"/")
-	if !strings.Contains(idx, `href="./assets/colors_and_type.css"`) {
-		t.Errorf("index.html: missing relative colors_and_type.css reference")
+	if !strings.Contains(idx, `href="src/portal.css`) {
+		t.Errorf("index.html: missing portal.css reference")
 	}
 	if !strings.Contains(idx, `href="./assets/favicon.png"`) {
 		t.Errorf("index.html: missing relative favicon reference")

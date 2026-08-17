@@ -454,12 +454,13 @@ type exportPersonT struct {
 	Initials string `json:"initials"`
 	Name     string `json:"name"`
 	Role     string `json:"role"`
+	Email    string `json:"email,omitempty"`
 }
 
 func exportPeople(d *PeopleDoc) map[string]any {
 	ps := []exportPersonT{}
 	for _, p := range d.People() {
-		ps = append(ps, exportPersonT{Initials: p.Initials, Name: p.Name, Role: p.Role})
+		ps = append(ps, exportPersonT{Initials: p.Initials, Name: p.Name, Role: p.Role, Email: p.Email})
 	}
 	return map[string]any{"people": ps}
 }

@@ -3,27 +3,32 @@
     {
       "initials": "BA",
       "name": "Benjamin Anderson",
-      "role": "CEO"
+      "role": "CEO",
+      "email": "ben@aion.bio"
     },
     {
       "initials": "RT",
       "name": "RJ Tevonian",
-      "role": "CSO"
+      "role": "CSO",
+      "email": "rj@aion.bio"
     },
     {
       "initials": "HZ",
       "name": "Hannah Zmuda",
-      "role": "Founding Scientist"
+      "role": "Founding Scientist",
+      "email": "hannah@aion.bio"
     },
     {
       "initials": "HG",
       "name": "Heye Groß",
-      "role": "Founding Engineer"
+      "role": "Founding Engineer",
+      "email": "heye@aion.bio"
     },
     {
       "initials": "EL",
       "name": "Ellie Lumen",
-      "role": "Study Director"
+      "role": "Study Director",
+      "email": "ellie@aion.bio"
     },
     {
       "initials": "NM",
@@ -33,22 +38,26 @@
     {
       "initials": "YA",
       "name": "Yousuke Akama",
-      "role": "MRI Engineer"
+      "role": "MRI Engineer",
+      "email": "yashiro@aion.bio"
     },
     {
       "initials": "MM",
       "name": "Morgan Miller",
-      "role": "Engineer"
+      "role": "Engineer",
+      "email": "morgan@aion.bio"
     },
     {
       "initials": "JR",
       "name": "Jack Ruhl",
-      "role": ""
+      "role": "",
+      "email": "jack@aion.bio"
     },
     {
       "initials": "ME",
       "name": "Matthias Estermann",
-      "role": "Engineer"
+      "role": "Engineer",
+      "email": "matthias@aion.bio"
     }
   ]
 }
