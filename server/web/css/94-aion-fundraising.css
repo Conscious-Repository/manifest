@@ -2,14 +2,13 @@
 .fr-main { min-width: 0; overflow: hidden; }
 .fr-toolbar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20); }
 .fr-search { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); }
-.fr-filter { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: .3px; }
 .fr-add { margin: var(--sp-4) 0; }
 .fr-table {
   --fr-wide-min: calc(var(--page-max) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter));
   --fr-phone-min: calc(var(--fr-wide-min) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter) - var(--page-gutter));
   width: 100%; min-width: 0;
 }
-.fr-row { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1.05fr) max-content max-content minmax(0,.65fr) minmax(0,1fr) minmax(0,1.1fr); align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--base-20); font-size: var(--fs-md); line-height: 1.35; cursor: pointer; }
+.fr-row { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,1.1fr) minmax(0,.65fr) minmax(0,.7fr) minmax(0,1.15fr) minmax(0,1.25fr); align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--base-20); font-size: var(--fs-md); line-height: 1.35; cursor: pointer; }
 .fr-row:hover, .fr-row.sel { background: var(--base-05); }
 .fr-row.sel { box-shadow: inset 2px 0 0 var(--accent); }
 .fr-row.review { box-shadow: inset 2px 0 0 var(--base-50); }
@@ -28,11 +27,9 @@
 .fr-status { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); width: fit-content; }
 .fr-status.active { color: var(--accent); border-color: var(--accent); }
 .fr-status.committed, .fr-status.passed { color: var(--base-50); }
-.fr-interest { color: var(--base-60); }
 .fr-money { font-family: var(--mono); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .fr-stack { display: flex; min-width: 0; flex-direction: column; gap: var(--sp-1); overflow: hidden; }
 .fr-stack > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fr-resources { display: flex; gap: var(--sp-4); align-items: center; padding: var(--sp-6) var(--sp-3); }
 .fr-insp-field { align-items: flex-start; }
 .fr-insp-field .aion-insp-flabel { padding-top: var(--sp-3); }
 .fr-in { flex: 1; min-width: 0; }

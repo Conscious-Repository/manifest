@@ -3,7 +3,6 @@
 // AionLive contract used by portal.aion.bio.
 let frCache = null;
 let frStatus = "open";
-let frInterest = "all";
 let frQuery = "";
 let frSel = null;
 
@@ -34,9 +33,6 @@ async function renderAionFundraising(host) {
   bar.append(search);
   const statuses = [["open", "OPEN"], ["all", "ALL"], ["prospect", "PROSPECT"], ["active", "ACTIVE"], ["committed", "COMMITTED"], ["passed", "PASSED"], ["archived", "ARCHIVED"]];
   statuses.forEach(([key, label]) => { const b = el("button", "filter-chip" + (frStatus === key ? " on" : ""), label); b.onclick = () => { frStatus = key; renderAion(); }; bar.append(b); });
-  const interest = el("select", "pp-in fr-filter");
-  [["all", "ALL INTEREST"], ["high", "HIGH"], ["medium", "MEDIUM"], ["low", "LOW"], ["unknown", "UNKNOWN"]].forEach(([v, label]) => { const o = el("option", "", label); o.value = v; o.selected = frInterest === v; interest.append(o); });
-  interest.onchange = () => { frInterest = interest.value; renderAion(); }; bar.append(interest);
   main.append(bar);
 
   const add = ghostInput("＋ firm or opportunity", "aion-add fr-add", async (firm) => {
@@ -47,17 +43,11 @@ async function renderAionFundraising(host) {
   let rows = (frCache.opportunities || []).filter(frVisible);
   const table = el("div", "fr-table");
   const head = el("div", "fr-row fr-head");
-  ["FIRM", "PEOPLE", "STATUS", "INTEREST", "AMOUNT", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
+  ["FIRM", "PEOPLE", "STATUS", "AMOUNT", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
   table.append(head);
   if (!rows.length) table.append(emptyRow("No fundraising opportunities match."));
   rows.forEach((op) => table.append(frRow(op)));
   main.append(table);
-
-  if ((frCache.resources || []).length) {
-    const res = el("div", "fr-resources"); res.append(el("span", "micro-label fr-mini-label", "RESOURCES"));
-    frCache.resources.forEach((r) => { const a = el("a", "aion-src", r.title || r.url); a.href = r.url; a.target = "_blank"; a.rel = "noreferrer"; res.append(a); });
-    main.append(res);
-  }
 
   const selected = (frCache.opportunities || []).find((x) => x.id === frSel);
   if (window.mf && window.mf.phone()) {
@@ -82,7 +72,6 @@ function frVisible(op) {
   if (frStatus === "archived" && !op.archived) return false;
   if (!["open", "all", "archived"].includes(frStatus) && (op.archived || op.status !== frStatus)) return false;
   if (frStatus === "all" && op.archived) return false;
-  if (frInterest !== "all" && op.interest !== frInterest) return false;
   const q = frQuery.trim().toLowerCase();
   if (!q) return true;
   return [op.firm, op.introVia, op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display)).join(" ").toLowerCase().includes(q);
@@ -98,14 +87,13 @@ function frRow(op) {
     .forEach((name) => people.append(el("span", "fr-person-name fr-person-plain", name)));
   if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
   const status = el("span", "micro-label fr-status " + op.status, op.status.toUpperCase());
-  const interest = el("span", "micro-label fr-interest", (op.interest || "unknown").toUpperCase());
   const amount = el("span", "fr-money", op.amount ? money(op.amount) : "—");
   const touch = el("div", "fr-stack");
   touch.append(el("span", "", op.lastTouchpoint || "—"));
   if (op.lastTouchpointDate) touch.append(el("span", "fr-sub", "manual · " + op.lastTouchpointDate));
   if (op.computedLastTouchpoint) touch.append(el("span", "fr-sub", "contacts · " + op.computedLastTouchpoint));
   const next = el("div", "fr-stack"); next.append(el("span", "", op.nextStep || "—")); if (op.nextStepDue) next.append(el("span", "fr-sub", "due " + op.nextStepDue));
-  row.append(firm, people, status, interest, amount, touch, next);
+  row.append(firm, people, status, amount, touch, next);
   row.onclick = () => { frSel = frSel === op.id ? null : op.id; renderAion(); };
   return row;
 }
@@ -167,7 +155,6 @@ function renderFundraisingInspector(host, op) {
 
   text("firm", "firm", op.firm);
   const status = el("select", "pp-in fr-in"); ["prospect", "active", "committed", "passed"].forEach((v) => { const o = el("option", "", v); o.value = v; o.selected = op.status === v; status.append(o); }); status.onchange = () => patch({ status: status.value }); field("status", status);
-  const interest = el("select", "pp-in fr-in"); ["unknown", "high", "medium", "low"].forEach((v) => { const o = el("option", "", v); o.value = v; o.selected = op.interest === v; interest.append(o); }); interest.onchange = () => patch({ interest: interest.value }); field("interest", interest);
   const amount = el("input", "pp-in fr-in"); amount.type = "number"; amount.min = "0"; amount.step = "1000"; amount.value = op.amount || ""; amount.onblur = () => patch({ amount: amount.value }); field("amount", amount);
 
   const people = el("div", "fr-insp-people");
