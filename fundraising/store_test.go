@@ -151,6 +151,31 @@ func TestOpportunitySourceParsesHandEditedFrontmatter(t *testing.T) {
 	}
 }
 
+func TestEnsureRemovesLegacyIntroViaAndPreservesItsValueAsSource(t *testing.T) {
+	s, root := testStore(t)
+	op, err := s.Create("Legacy Fund")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, filepath.FromSlash(op.Path))
+	b, _ := os.ReadFile(path)
+	b = []byte(strings.Replace(string(b), "people: []", "people: []\nintro-via: \"cold intro\"", 1))
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := s.Get(op.ID)
+	if !ok || got.Source == nil || got.Source.Text != "cold intro" {
+		t.Fatalf("migrated source=%+v ok=%v", got.Source, ok)
+	}
+	b, _ = os.ReadFile(path)
+	if strings.Contains(string(b), "\nintro-via:") || !strings.Contains(string(b), `source: {"text":"cold intro"}`) {
+		t.Fatalf("legacy field was not replaced:\n%s", b)
+	}
+}
+
 func TestStoreWritesStayInsideCapabilities(t *testing.T) {
 	root := t.TempDir()
 	frRoot := filepath.Join(root, "system", "crm", "fundraising")

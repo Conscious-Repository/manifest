@@ -63,6 +63,9 @@ func TestSheetImportCountMergeAndConservativeMapping(t *testing.T) {
 	if eight == nil || len(eight.SourceRows) != 2 || len(eight.People) != 1 {
 		t.Fatalf("8VC merge=%+v", eight)
 	}
+	if eight.Source == nil || eight.Source.Contact != nil || eight.Source.Text != "Drew; Francisco Gimenez" {
+		t.Fatalf("8VC source=%+v", eight.Source)
+	}
 	if angels != 2 {
 		t.Fatalf("Angel/LP rows merged unexpectedly: %d", angels)
 	}

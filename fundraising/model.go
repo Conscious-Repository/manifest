@@ -46,7 +46,6 @@ type Opportunity struct {
 	Currency               string      `json:"currency"`
 	People                 []PersonRef `json:"people"`
 	Source                 *SourceRef  `json:"source,omitempty"`
-	IntroVia               string      `json:"introVia"`
 	LastTouchpoint         string      `json:"lastTouchpoint"`
 	LastTouchpointDate     string      `json:"lastTouchpointDate"`
 	ComputedLastTouchpoint string      `json:"computedLastTouchpoint,omitempty"`

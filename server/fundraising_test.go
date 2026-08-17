@@ -54,6 +54,9 @@ func TestFundraisingPrivateCRUD(t *testing.T) {
 	if updated.Code != http.StatusOK {
 		t.Fatalf("update status=%d body=%s", updated.Code, updated.Body.String())
 	}
+	if strings.Contains(updated.Body.String(), "introVia") {
+		t.Fatalf("legacy introVia leaked into response: %s", updated.Body.String())
+	}
 	op, ok := store.Get(id)
 	if !ok || op.Status != fundraising.StatusActive || op.NextStep != "Send deck" || op.Source == nil || op.Source.Text != "DM" {
 		t.Fatalf("updated opportunity=%+v ok=%v", op, ok)

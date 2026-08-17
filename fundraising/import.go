@@ -90,7 +90,7 @@ func NormalizeSheet(rows []SheetRow, exact ExactContactResolver) []Opportunity {
 		if firm == "" {
 			firm = row.Warm
 		}
-		op := Opportunity{Firm: firm, Status: StatusActive, Interest: normalizeInterest(row.Interest), Currency: "USD", IntroVia: row.Warm, LastTouchpoint: row.Touch, NextStep: row.Next, Notes: row.Notes, SourceRows: []int{row.Row}, People: []PersonRef{}}
+		op := Opportunity{Firm: firm, Status: StatusActive, Interest: normalizeInterest(row.Interest), Currency: "USD", Source: textSource(row.Warm), LastTouchpoint: row.Touch, NextStep: row.Next, Notes: row.Notes, SourceRows: []int{row.Row}, People: []PersonRef{}}
 		if row.Section == "hit" {
 			op.Status = StatusProspect
 		}
@@ -112,7 +112,10 @@ func NormalizeSheet(rows []SheetRow, exact ExactContactResolver) []Opportunity {
 		if exact != nil {
 			matched, residual := resolveWarm(row.Warm, exact)
 			op.People = matched
-			op.IntroVia = residual
+			if len(matched) == 1 && residual == "" {
+				contact := matched[0]
+				op.Source = &SourceRef{Contact: &contact}
+			}
 		}
 		merge := ""
 		if strings.EqualFold(strings.TrimSpace(row.Firm), "8vc") {
@@ -122,7 +125,7 @@ func NormalizeSheet(rows []SheetRow, exact ExactContactResolver) []Opportunity {
 			have := &out[idx]
 			have.SourceRows = append(have.SourceRows, op.SourceRows...)
 			have.People = mergePeople(have.People, op.People)
-			have.IntroVia = joinText(have.IntroVia, op.IntroVia)
+			have.Source = mergeSources(have.Source, op.Source)
 			if have.LastTouchpoint == "" {
 				have.LastTouchpoint = op.LastTouchpoint
 			}
@@ -139,6 +142,37 @@ func NormalizeSheet(rows []SheetRow, exact ExactContactResolver) []Opportunity {
 		out = append(out, op)
 	}
 	return out
+}
+
+func textSource(v string) *SourceRef {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return &SourceRef{Text: v}
+}
+
+func sourceText(s *SourceRef) string {
+	if s == nil {
+		return ""
+	}
+	if s.Contact != nil {
+		return s.Contact.Display
+	}
+	return s.Text
+}
+
+func mergeSources(a, b *SourceRef) *SourceRef {
+	if a == nil {
+		return b
+	}
+	if b == nil {
+		return a
+	}
+	if a.Contact != nil && b.Contact != nil && strings.EqualFold(a.Contact.Key, b.Contact.Key) {
+		return a
+	}
+	return textSource(joinText(sourceText(a), sourceText(b)))
 }
 
 func normalizeInterest(v string) string {

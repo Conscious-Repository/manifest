@@ -44,7 +44,50 @@ func (s *Store) Ensure() error {
 		if s.writePeople == nil {
 			return errors.New("fundraising: CRM contacts writer unavailable")
 		}
-		return s.writePeople(s.abs(s.registryRel), []byte(registrySeed))
+		if err := s.writePeople(s.abs(s.registryRel), []byte(registrySeed)); err != nil {
+			return err
+		}
+	}
+	return s.migrateLegacyIntroVia()
+}
+
+// migrateLegacyIntroVia removes the retired scalar from every record. A
+// non-empty value is preserved as a text source only when the record does not
+// already have the replacement source field.
+func (s *Store) migrateLegacyIntroVia() error {
+	ents, err := os.ReadDir(s.abs(s.root))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, ent := range ents {
+		if ent.IsDir() || ent.Name() == "resources.md" || !strings.HasSuffix(strings.ToLower(ent.Name()), ".md") {
+			continue
+		}
+		abs := s.abs(s.root + "/" + ent.Name())
+		b, err := os.ReadFile(abs)
+		if err != nil {
+			return err
+		}
+		fm, _ := mdfm.Split(string(b))
+		legacy, exists := fm["intro-via"]
+		if !exists || !containsFold(mdfm.List(fm["categories"]), "fundraising") {
+			continue
+		}
+		updates := map[string]*string{"intro-via": nil}
+		if strings.TrimSpace(fm["source"]) == "" && scalar(legacy) != "" {
+			source, _ := json.Marshal(SourceRef{Text: scalar(legacy)})
+			value := string(source)
+			updates["source"] = &value
+		}
+		if s.writeRecord == nil {
+			return errors.New("fundraising: record writer unavailable")
+		}
+		if err := s.writeRecord(abs, patchFrontmatter(b, updates)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -139,7 +182,7 @@ func (s *Store) loadRel(rel string) (Opportunity, bool) {
 	if !containsFold(mdfm.List(fm["categories"]), "fundraising") {
 		return Opportunity{}, false
 	}
-	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Status: strings.ToLower(scalar(fm["status"])), Interest: strings.ToLower(scalar(fm["interest"])), Currency: scalar(fm["currency"]), IntroVia: scalar(fm["intro-via"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
+	op := Opportunity{Path: rel, ID: scalar(fm["id"]), Firm: scalar(fm["firm"]), Status: strings.ToLower(scalar(fm["status"])), Interest: strings.ToLower(scalar(fm["interest"])), Currency: scalar(fm["currency"]), LastTouchpoint: scalar(fm["last-touchpoint"]), LastTouchpointDate: scalar(fm["last-touchpoint-date"]), NextStep: scalar(fm["next-step"]), NextStepDue: scalar(fm["next-step-due"]), Notes: scalar(fm["notes"]), Archived: parseBool(fm["archived"]), ImportReview: parseBool(fm["import-review"])}
 	if op.ID == "" {
 		op.ID = "fr/" + strings.TrimSuffix(filepath.Base(rel), ".md")
 	}
@@ -228,7 +271,7 @@ func (s *Store) writeNew(op Opportunity) error {
 		source, _ := json.Marshal(op.Source)
 		b.WriteString("source: " + string(source) + "\n")
 	}
-	b.WriteString("intro-via: " + q(op.IntroVia) + "\nlast-touchpoint: " + q(op.LastTouchpoint) + "\nlast-touchpoint-date: " + q(op.LastTouchpointDate) + "\n")
+	b.WriteString("last-touchpoint: " + q(op.LastTouchpoint) + "\nlast-touchpoint-date: " + q(op.LastTouchpointDate) + "\n")
 	b.WriteString("next-step: " + q(op.NextStep) + "\nnext-step-due: " + q(op.NextStepDue) + "\nnotes: " + q(op.Notes) + "\n")
 	b.WriteString("archived: " + strconv.FormatBool(op.Archived) + "\nsource-rows: " + string(rows) + "\nimport-review: " + strconv.FormatBool(op.ImportReview) + "\n---\n\n# " + op.Firm + "\n")
 	return s.writeRecord(s.abs(op.Path), []byte(b.String()))
@@ -301,7 +344,7 @@ func (s *Store) replaceKnown(op Opportunity) error {
 	} else {
 		vals["source"] = nil
 	}
-	put("intro-via", q(op.IntroVia))
+	vals["intro-via"] = nil
 	put("last-touchpoint", q(op.LastTouchpoint))
 	put("last-touchpoint-date", q(op.LastTouchpointDate))
 	put("next-step", q(op.NextStep))
@@ -364,8 +407,6 @@ func (s *Store) Update(id string, set map[string]any) (Opportunity, error) {
 					return op, err
 				}
 			}
-		case "introVia":
-			op.IntroVia = fmt.Sprint(raw)
 		case "lastTouchpoint":
 			op.LastTouchpoint = fmt.Sprint(raw)
 		case "lastTouchpointDate":
