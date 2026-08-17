@@ -158,7 +158,7 @@ function signalRow(sg) {
 function delegationDoneCard(sg) {
   const card = el("div", "feed-card artifact delegation-done");
   const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-artifact", "delegated"));
+  top.append(el("span", "type-chip micro-label type-artifact", "delegated"));
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
   title.title = "open it on the TASKS board";
@@ -187,7 +187,7 @@ function delegationDoneCard(sg) {
 function planReadyCard(sg) {
   const card = el("div", "feed-card artifact plan-ready");
   const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-artifact", "plan"));
+  top.append(el("span", "type-chip micro-label type-artifact", "plan"));
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
   title.title = "review the plan in the task panel";
@@ -210,7 +210,7 @@ function planReadyCard(sg) {
 function agentQuestionsCard(sg) {
   const card = el("div", "feed-card artifact agent-questions");
   const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-artifact", "questions"));
+  top.append(el("span", "type-chip micro-label type-artifact", "questions"));
   if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
   const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
   title.title = "open the thread";
@@ -241,7 +241,7 @@ async function feedVerdict(card, it, verb, status) {
   // optimistic: the stub swaps in the instant you click — the write follows
   // behind it; a failed write reloads the list so the card comes back honest.
   const stub = el("div", "feed-stub");
-  stub.append(el("span", "feed-stub-verb", verb), el("span", "feed-stub-title", it.title));
+  stub.append(el("span", "feed-stub-verb micro-label", verb), el("span", "feed-stub-title", it.title));
   const undo = el("button", "feed-stub-undo", "undo");
   undo.onclick = () => feedAction(it.id, { status: "new" });
   stub.append(undo);
@@ -267,19 +267,19 @@ function portalCardEl(pc) {
   card.dataset.portalId = pc.id;
   const top = el("div", "feed-top");
   if (pc.pinned) top.append(el("span", "pin-chip", "pinned"));
-  top.append(el("span", "type-chip type-portal", pc.portal)); // muted source tag
-  if (pc.change) top.append(el("span", "portal-change-chip change-" + pc.change, pc.change)); // new / edited
+  top.append(el("span", "type-chip micro-label type-portal", pc.portal)); // muted source tag
+  if (pc.change) top.append(el("span", "portal-change-chip micro-label change-" + pc.change, pc.change)); // new / edited
   if (pc.date) top.append(el("span", "feed-date", fmtFeedDate(pc.date)));
   card.append(top);
   card.append(el("div", "feed-title", pc.title));
 
   if (isDigest) {
     if ((pc.forYou || []).length) {
-      card.append(el("div", "portal-subhead", "assigned to you / mentions you"));
+      card.append(el("div", "portal-subhead micro-label", "assigned to you / mentions you"));
       pc.forYou.forEach((ln) => card.append(portalLineRow(ln)));
     }
     (pc.groups || []).forEach((g) => {
-      card.append(el("div", "portal-subhead", g.list));
+      card.append(el("div", "portal-subhead micro-label", g.list));
       (g.lines || []).forEach((ln) => card.append(portalLineRow(ln)));
     });
   } else {
@@ -333,7 +333,7 @@ function feedCard(it) {
     (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
   const top = el("div", "feed-top");
   if (pinned) top.append(el("span", "pin-chip", "pinned"));
-  top.append(el("span", "type-chip type-" + it.type, it.type));
+  top.append(el("span", "type-chip micro-label type-" + it.type, it.type));
   if (it.harness) top.append(el("span", "harness-chip", it.harness)); // federation source
   // only a real external URL makes the title a link; an artifact's local
   // `artifacts/library/…` reference opens in the note view via "view →" instead.
@@ -344,7 +344,7 @@ function feedCard(it) {
   else title = el("span", null, it.title);
   title.classList.add("feed-title");
   top.append(title);
-  if (it.confidence) top.append(el("span", "conf conf-" + it.confidence, it.confidence));
+  if (it.confidence) top.append(el("span", "conf micro-label conf-" + it.confidence, it.confidence));
   card.append(top);
   // the why line is written to be the reason you care — lead with it, emphasized
   if (it.why) card.append(el("div", "feed-why", it.why));
@@ -382,9 +382,9 @@ function receiptCardEl(rc) {
   if (rc.cardKind === "aion-publish") return aionPublishReceiptEl(rc);
   const card = el("div", "feed-card receipt status-" + rc.status);
   const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-receipt", "errand"));
-  top.append(el("span", "type-chip type-portal", "aside")); // muted source tag
-  const status = el("span", "receipt-status rc-" + rc.status,
+  top.append(el("span", "type-chip micro-label type-receipt", "errand"));
+  top.append(el("span", "type-chip micro-label type-portal", "aside")); // muted source tag
+  const status = el("span", "receipt-status micro-label rc-" + rc.status,
     rc.status === "queued" && rc.queuePos ? "queued · #" + rc.queuePos : rc.status);
   top.append(status);
   if (rc.created) top.append(el("span", "feed-date", fmtFeedDate(rc.created)));
@@ -425,9 +425,9 @@ function receiptCardEl(rc) {
 function aionPublishReceiptEl(rc) {
   const card = el("div", "feed-card receipt status-" + rc.status);
   const top = el("div", "feed-top");
-  top.append(el("span", "type-chip type-receipt", "publish"));
-  top.append(el("span", "type-chip type-portal", "aion.bio"));
-  top.append(el("span", "receipt-status rc-" + (rc.status === "ok" ? "done" : "failed"),
+  top.append(el("span", "type-chip micro-label type-receipt", "publish"));
+  top.append(el("span", "type-chip micro-label type-portal", "aion.bio"));
+  top.append(el("span", "receipt-status micro-label rc-" + (rc.status === "ok" ? "done" : "failed"),
     rc.status === "ok" ? "pushed" : "failed @ " + (rc.stage || "?")));
   if (rc.at) top.append(el("span", "feed-date", fmtFeedDate(rc.at)));
   card.append(top);

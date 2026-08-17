@@ -1,34 +1,37 @@
-/* 45-feed — split from style.css 2026-07-29 (F1); rules verbatim, original order. */
+/* 45-feed — split from style.css 2026-07-29 (F1).
+   Migrated to the token scales (ui-conventions.md): --fs-* sizes, --sp-* space,
+   --micro-label for mono chips, status tokens for state color. */
 
 /* ---- Feed ---- */
-.feed-filters { display: inline-flex; flex-wrap: wrap; gap: 6px; }
-.feed-list { display: flex; flex-direction: column; gap: 12px; }
-.feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.feed-filters { display: inline-flex; flex-wrap: wrap; gap: var(--sp-3); }
+.feed-list { display: flex; flex-direction: column; gap: var(--sp-6); }
+.feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-7) var(--sp-7); display: flex; flex-direction: column; gap: var(--sp-4); }
 .feed-card.artifact { border-color: var(--blue-soft); background: var(--base-05); }
-.feed-top { display: flex; align-items: baseline; gap: 10px; }
-.type-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+.feed-top { display: flex; align-items: baseline; gap: var(--sp-5); }
+/* .type-chip: structural only — the mono/size/uppercase recipe comes from .micro-label */
+.type-chip { color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); }
 .type-chip.type-company { color: var(--base-50); border-color: var(--base-25); }
-.feed-title { font-family: var(--sans); font-size: 16px; color: var(--text); font-weight: 500; text-decoration: none; }
+.feed-title { font-family: var(--sans); font-size: var(--fs-xl); color: var(--text); font-weight: 500; text-decoration: none; }
 a.feed-title:hover { color: var(--blue); text-decoration: underline; }
-.conf { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; margin-left: auto; }
+.conf { margin-left: auto; }
 .conf-high { color: var(--base-40); } .conf-medium { color: var(--base-40); } .conf-low { color: var(--muted); }
-.feed-why { font-family: var(--sans); font-size: 14px; color: var(--streak-ink); line-height: 1.5; }
-.feed-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: 0.2px; }
-.feed-body { font-family: var(--mono); font-size: 12px; color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: 10px 12px; white-space: pre-wrap; overflow-x: auto; margin: 0; }
-.feed-saved { font-family: var(--mono); font-size: 11px; color: var(--accent); }
-.feed-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.feed-why { font-family: var(--sans); font-size: var(--fs-lg); color: var(--streak-ink); line-height: 1.5; }
+.feed-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: 0.2px; }
+.feed-body { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); white-space: pre-wrap; overflow-x: auto; margin: 0; }
+.feed-saved { font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); }
+.feed-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 
 /* ===== FEED — manifest's one inbox (top-level tab) ===== */
-.feed-view { max-width: 900px; margin: 8px auto 64px; padding: 0 28px; }
-.feed-view .feed-filters { margin-right: 8px; }
+.feed-view { max-width: 900px; margin: var(--sp-4) auto 64px; padding: 0 28px; }
+.feed-view .feed-filters { margin-right: var(--sp-4); }
 .feed-signals:empty { display: none; } /* the signals lane never pads when empty */
 /* signals lane — quiet one-line nudges (conditions, not items) */
-.feed-signals { margin-bottom: 16px; }
-.signal-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
-.signal-label { font-family: var(--mono); font-size: 12px; color: var(--muted); cursor: pointer; }
+.feed-signals { margin-bottom: var(--sp-7); }
+.signal-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-3) var(--sp-2); border-bottom: 1px solid var(--line); }
+.signal-label { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); cursor: pointer; }
 .signal-label:hover { color: var(--blue); }
-.signal-actions { margin-left: auto; display: flex; gap: 6px; }
-.signal-more { font-family: var(--mono); font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer; padding: 6px 4px; }
+.signal-actions { margin-left: auto; display: flex; gap: var(--sp-3); }
+.signal-more { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); background: none; border: none; cursor: pointer; padding: var(--sp-3) var(--sp-2); }
 .signal-more:hover { color: var(--blue); }
 /* deep-link flash (goals rock focus + approvals diff focus) */
 .goal-flash { animation: goalflash 2.4s ease; }
@@ -36,24 +39,25 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 
 /* ---- portal feed cards (the third card kind): digest + itemized notices ---- */
 .type-chip.type-portal { }
-.feed-card.portal-card .feed-date { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-left: auto; }
-.portal-subhead { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--muted); margin: 8px 0 2px; }
-.portal-line { display: flex; align-items: baseline; gap: 10px; padding: 2px 0; }
-.portal-line-text { font-size: 13.5px; color: var(--text); text-decoration: none; flex: 1; }
+.feed-card.portal-card .feed-date { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-left: auto; }
+/* .portal-subhead / .portal-change-chip: structural only — recipe from .micro-label */
+.portal-subhead { margin: var(--sp-4) 0 var(--sp-1); }
+.portal-line { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-1) 0; }
+.portal-line-text { font-size: var(--fs-lg); color: var(--text); text-decoration: none; flex: 1; }
 a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
-.portal-change-chip { font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; border-radius: 4px; padding: 1px 6px; }
+.portal-change-chip { border-radius: var(--radius); padding: 1px var(--sp-3); }
 .portal-change-chip.change-new { color: var(--base-50); border: 1px solid var(--base-25); }
 .portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }
 
 /* ---- receipts (errands-aside §5): the fourth attention kind ---- */
 .type-chip.type-receipt { }
-.receipt-status { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; }
+/* .receipt-status: recipe from .micro-label; the rc-* classes set state color */
 .rc-queued, .rc-cancelled { color: var(--muted); }
 .rc-running { color: var(--accent); }
 .rc-running::before { content: "● "; animation: pulse 1.3s ease-in-out infinite; }
 .rc-done { color: var(--icon); }
-.rc-failed { color: #b91c1c; }
-.errand-transcript { font-family: var(--mono); font-size: 11.5px; line-height: 1.5; white-space: pre-wrap; max-height: 60vh; overflow-y: auto; margin: 0; color: var(--text); }
+.rc-failed { color: var(--danger); }
+.errand-transcript { font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; white-space: pre-wrap; max-height: 60vh; overflow-y: auto; margin: 0; color: var(--text); }
 
 /* errand compose: the Run pill never wraps or shrinks; a multi-account
    picker stays compact with the label ellipsized */
@@ -61,30 +65,31 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .errand-actions .errand-acct { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 
 /* live transcript console: reply row for ask-gate answers */
-.errand-reply { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-.errand-reply-in { flex: 1; font-family: var(--mono); font-size: 12px; }
+.errand-reply { display: flex; gap: var(--sp-4); margin-top: var(--sp-5); align-items: center; }
+.errand-reply-in { flex: 1; font-family: var(--mono); font-size: var(--fs-sm); }
 
 /* receipt answer block: the agent's final answer, line breaks kept, links live */
-.receipt-outcome { font-size: 13.5px; line-height: 1.55; color: var(--text); border-left: 2px solid var(--line); padding: 2px 0 2px 10px; margin: 2px 0 6px; }
+.receipt-outcome { font-size: var(--fs-lg); line-height: 1.55; color: var(--text); border-left: 2px solid var(--line); padding: var(--sp-1) 0 var(--sp-1) var(--sp-5); margin: var(--sp-1) 0 var(--sp-3); }
 .receipt-outcome-line { min-height: 1.2em; }
 .receipt-outcome a { color: var(--blue); text-decoration: none; }
 .receipt-outcome a:hover { text-decoration: underline; }
 
 /* ===== redesign §11 (2026-08-09): neutral kind chips, dense cards, the
    signals lane as weight+dot, verdict stubs ===== */
-.feed-card { border: 1px solid var(--base-25); border-radius: var(--radius); padding: 9px 12px; display: flex; flex-direction: column; gap: 6px; }
+.feed-card { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
 .feed-card.pinned { border-color: var(--accent); background: var(--base-05); box-shadow: none; }
-.feed-title { font-size: 14.5px; }
-.feed-why { font-size: 13px; line-height: 1.45; }
+.feed-title { font-size: var(--fs-lg); }
+.feed-why { font-size: var(--fs-md); line-height: 1.45; }
 .signal-label { color: var(--base-100); }
-.signal-label::before { content: "\25cf  "; font-size: 8px; vertical-align: 1px; }
-.signal-actions .pill { background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--base-40); padding: 0 2px; height: auto; }
+.signal-label::before { content: "\25cf  "; font-size: var(--fs-3xs); vertical-align: 1px; }
+.signal-actions .pill { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); padding: 0 var(--sp-1); height: auto; }
 .signal-actions .pill:hover { color: var(--base-100); }
 .signal-actions .signal-act { color: var(--accent); }
-.feed-stub { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; border: 1px solid var(--base-25); border-radius: var(--radius); }
-.feed-stub-verb { font-family: var(--mono); font-size: 10.5px; color: var(--base-40); text-transform: uppercase; letter-spacing: 0.4px; flex: none; }
-.feed-stub-title { font-size: 13px; color: var(--base-40); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.feed-stub-undo { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: 11px; color: var(--accent); cursor: pointer; padding: 0; }
+.feed-stub { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-3) var(--sp-5); border: 1px solid var(--base-25); border-radius: var(--radius); }
+/* .feed-stub-verb: recipe from .micro-label; keeps its state color + flex */
+.feed-stub-verb { color: var(--base-40); flex: none; }
+.feed-stub-title { font-size: var(--fs-md); color: var(--base-40); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-stub-undo { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); cursor: pointer; padding: 0; }
 .pill.verdict-primary, .pill.light.verdict-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .pill.verdict-primary:hover, .pill.light.verdict-primary:hover { background: var(--accent); color: #fff; }
 
