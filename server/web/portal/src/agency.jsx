@@ -404,48 +404,63 @@ function buildAgencyField(root, model) {
   const onRootClick = event => { if (event.target === root || event.target === root.querySelector('.aaf__svg')) reset(); };
   root.addEventListener('click', onRootClick);
 
-  return () => {
-    root.removeEventListener('click', onRootClick);
-    nodeListeners.forEach(([node, onClick, onKey]) => {
-      node.removeEventListener('click', onClick);
-      node.removeEventListener('keydown', onKey);
-    });
-    layers.forEach(l => { l.innerHTML = ''; });
+  return {
+    cleanup: () => {
+      root.removeEventListener('click', onRootClick);
+      nodeListeners.forEach(([node, onClick, onKey]) => {
+        node.removeEventListener('click', onClick);
+        node.removeEventListener('keydown', onKey);
+      });
+      layers.forEach(l => { l.innerHTML = ''; });
+    },
+    reset
   };
 }
 
-function AgencyField({ data, goalsIndex, onSelect }) {
+function AgencyField({ data, goalsIndex, onSelect, selection }) {
   const rootRef = React.useRef(null);
+  const apiRef = React.useRef(null);
   const model = React.useMemo(() => buildAgencyModel(data, goalsIndex), [data, goalsIndex]);
 
   React.useEffect(() => {
     const root = rootRef.current;
     if (!root || !model) return;
-    const cleanup = buildAgencyField(root, model);
+    const api = buildAgencyField(root, model);
+    apiRef.current = api;
     const handler = e => { if (onSelect) onSelect(e.detail); };
     root.addEventListener('aion-agency-select', handler);
     return () => {
       root.removeEventListener('aion-agency-select', handler);
-      cleanup();
+      apiRef.current = null;
+      api.cleanup();
     };
   }, [model, onSelect]);
 
+  // pane-side clears (Esc, ✕) un-dim the cone without re-emitting
+  React.useEffect(() => {
+    if (!selection && apiRef.current) apiRef.current.reset(false);
+  }, [selection]);
+
   if (!model) return null;
 
+  /* Gradient stops read the v2 token contract (stop-color is a CSS property —
+     var() resolves in inline STYLE, never as a bare attribute); fallbacks keep
+     the cone sane when no theme tokens are set. No color-mix anywhere (older
+     Safari hard-fails) — translucency rides stopOpacity/fill-opacity. */
   return (
     <div className="agency-block">
       <section className="aaf" ref={rootRef} aria-label="AION collective agency field">
-        <svg className="aaf__svg" viewBox="0 0 1040 740" role="group" aria-label="AION collective agency field. Select a person, goal, completed rock, or decision to reveal its relationships.">
+        <svg className="aaf__svg" viewBox="30 26 980 690" preserveAspectRatio="xMidYMid meet" role="group" aria-label="AION collective agency field. Select a person, goal, completed rock, or decision to reveal its relationships.">
           <defs>
-            <linearGradient id="aaf-collective-future" x1="0" y1="1" x2="0" y2="0"><stop stopColor="#344cff" stopOpacity=".19" /><stop offset="1" stopColor="#9ba4ff" stopOpacity=".22" /></linearGradient>
-            <linearGradient id="aaf-collective-past" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#344cff" stopOpacity=".15" /><stop offset="1" stopColor="#344cff" stopOpacity=".035" /></linearGradient>
-            <linearGradient id="aaf-goal-future" x1="0" y1="1" x2="0" y2="0"><stop stopColor="#77a84c" stopOpacity=".17" /><stop offset="1" stopColor="#d1efad" stopOpacity=".28" /></linearGradient>
-            <linearGradient id="aaf-goal-past" x1="0" y1="0" x2="0" y2="1"><stop stopColor="#8dbc5e" stopOpacity=".13" /><stop offset="1" stopColor="#6b973f" stopOpacity=".035" /></linearGradient>
-            <linearGradient id="aaf-person-pink" x1="0" y1="1" x2="0" y2="0"><stop stopColor="#d9799d" stopOpacity=".28" /><stop offset=".5" stopColor="#ffd5e4" stopOpacity=".45" /><stop offset="1" stopColor="#ed92b3" stopOpacity=".22" /></linearGradient>
+            <linearGradient id="aaf-collective-future" x1="0" y1="1" x2="0" y2="0"><stop style={{ stopColor: 'var(--accent-deep,#0135fe)', stopOpacity: 0.13 }} /><stop offset="1" style={{ stopColor: 'var(--accent-deep,#0135fe)', stopOpacity: 0.07 }} /></linearGradient>
+            <linearGradient id="aaf-collective-past" x1="0" y1="0" x2="0" y2="1"><stop style={{ stopColor: 'var(--accent-deep,#0135fe)', stopOpacity: 0.10 }} /><stop offset="1" style={{ stopColor: 'var(--accent-deep,#0135fe)', stopOpacity: 0.03 }} /></linearGradient>
+            <linearGradient id="aaf-goal-future" x1="0" y1="1" x2="0" y2="0"><stop style={{ stopColor: 'var(--m1,#0091ea)', stopOpacity: 0.2 }} /><stop offset="1" style={{ stopColor: 'var(--accent-bright,#5ec8f5)', stopOpacity: 0.34 }} /></linearGradient>
+            <linearGradient id="aaf-goal-past" x1="0" y1="0" x2="0" y2="1"><stop style={{ stopColor: 'var(--m1,#0091ea)', stopOpacity: 0.15 }} /><stop offset="1" style={{ stopColor: 'var(--accent-deep,#0135fe)', stopOpacity: 0.05 }} /></linearGradient>
+            <linearGradient id="aaf-person-pink" x1="0" y1="1" x2="0" y2="0"><stop style={{ stopColor: 'var(--m2,#d4d4d4)', stopOpacity: 0.26 }} /><stop offset=".5" style={{ stopColor: 'var(--m2,#ffffff)', stopOpacity: 0.42 }} /><stop offset="1" style={{ stopColor: 'var(--m2,#cfcfcf)', stopOpacity: 0.2 }} /></linearGradient>
           </defs>
 
           <ellipse className="aaf__plane" cx="520" cy="374" rx="410" ry="112" />
-          <text className="aaf__now" x="935" y="377">NOW</text>
+          <text className="aaf__now" x="938" y="377">NOW</text>
 
           <path className="aaf__collective" fill="url(#aaf-collective-future)" d="M520 48 L902 374 L138 374 Z" />
           <path className="aaf__collective" fill="url(#aaf-collective-past)" d="M138 374 L902 374 L520 704 Z" />
