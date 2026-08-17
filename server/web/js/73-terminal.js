@@ -665,9 +665,9 @@ function attachTerm(id) {
   ro.observe(mount);
   termInst.ro = ro;
 
-  // voice → terminal: the mic lives in the rail head (cmd-ctr's home for it)
+  // voice → terminal: the mic lives in the page header's actions slot
   if (typeof micButton === "function") {
-    const head = document.getElementById("termRailHead");
+    const head = document.getElementById("termHeadActions");
     if (head && !head.querySelector(".mic-btn")) {
       head.append(micButton((text) => {
         if (termInst && termInst.ws.readyState === 1) termInst.ws.send(JSON.stringify({ t: "i", d: text }));

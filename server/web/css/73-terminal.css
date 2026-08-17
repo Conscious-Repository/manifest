@@ -11,17 +11,22 @@
 /* height is set precisely by termFitShell() (top offset varies with chrome/
    zoom/banners); the calc is only the pre-JS fallback. 18px right gutter =
    cmd-ctr's breathing room off the window edge. */
-.term-shell { display: flex; gap: var(--sp-8); height: calc(100vh - 150px); padding: var(--sp-3) var(--sp-7) 0 var(--sp-6); }
+.term-shell { display: flex; gap: var(--sp-8); height: calc(100vh - 200px); padding: var(--sp-3) var(--sp-7) 0 var(--sp-6); }
 
 /* --- rail ------------------------------------------------------------- */
 .term-rail { width: 284px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding-right: var(--sp-8); min-height: 0; }
-.term-rail-head { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-2) var(--sp-1) var(--sp-8); flex: none; }
-.term-rail-title { font-size: var(--fs-lg); font-weight: 600; color: var(--base-100); flex: 1; letter-spacing: 0.2px; }
-.term-rail-head .mic-btn { margin-left: auto; }
+/* page header — the standard agent-head/agent-title convention (TERMINAL in
+   uppercase mono, like every other tab), aligned to the rail's left edge and
+   spanning to the shell's right gutter. The mic (voice → terminal) lands in
+   its actions slot when a session attaches. */
+.term-head { padding-left: var(--sp-6); padding-right: var(--sp-7); margin-bottom: 0; }
+.term-head .mic-btn { margin: -4px 0; }
 .term-rail-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: var(--sp-1); margin: -2px; }
 .rail-sec + .rail-sec { margin-top: 30px; }
 .rail-sec-label { font-size: var(--fs-2xs); color: var(--base-40); margin-bottom: var(--sp-6); }
-.term-none { font-size: var(--fs-md); color: var(--base-40); padding: var(--sp-6) var(--sp-6); background: var(--base-05); border-radius: var(--radius-lg); text-align: center; }
+/* empty states read like manifest's quiet .ro-row.empty — muted italic text,
+   no filled card (was a grey rounded block, heavier than the rest of the app) */
+.term-none { font-size: var(--fs-md); color: var(--base-40); font-style: italic; padding: var(--sp-4) var(--sp-2); }
 
 /* session cards — soft filled rows, no hairlines */
 .term-sess { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-5) var(--sp-6); border-radius: var(--radius-lg); cursor: pointer; background: var(--base-05); position: relative; }
@@ -74,11 +79,12 @@
 .term-gear .term-cwd { background: var(--bg); }
 .term-gear-hint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
-/* the segmented kind control — a filled track with a solid active pill */
-.term-seg { display: flex; background: var(--base-05); border-radius: var(--radius-lg); padding: var(--sp-1); gap: var(--sp-1); margin-bottom: var(--sp-6); }
-.term-seg-btn { flex: 1; border: 1px solid transparent; background: none; font: inherit; font-size: var(--fs-md); color: var(--base-50); padding: var(--sp-3) 0; cursor: pointer; border-radius: var(--radius); }
+/* the kind control — a flat underlined tab strip (manifest's editorial idiom)
+   rather than the old filled track + drop-shadowed active pill */
+.term-seg { display: flex; gap: var(--sp-5); margin-bottom: var(--sp-6); border-bottom: 1px solid var(--line); }
+.term-seg-btn { flex: 1; border: 0; background: none; font: inherit; font-size: var(--fs-md); color: var(--base-50); padding: var(--sp-4) 0; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .term-seg-btn:hover { color: var(--base-100); }
-.term-seg-btn.on { background: var(--bg); color: var(--accent); font-weight: 600; border-color: var(--line); box-shadow: 0 1px 2px rgba(23,23,23,0.05); }
+.term-seg-btn.on { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
 
 .term-dir-row { display: flex; gap: var(--sp-3); align-items: center; }
 .term-cwd { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-sm); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 0 var(--sp-6); height: 38px; background: var(--bg); color: var(--base-100); }
@@ -107,10 +113,10 @@
 
 /* launch actions — solid accent primary + quiet outline twin */
 .term-launch-acts { display: flex; gap: var(--sp-4); margin-top: var(--sp-6); }
-.term-primary { flex: 1.4; border: 0; background: var(--accent); color: #fff; font: inherit; font-size: var(--fs-md); font-weight: 600; height: 40px; border-radius: var(--radius-lg); cursor: pointer; }
+.term-primary { flex: 1.4; border: 0; background: var(--accent); color: #fff; font: inherit; font-size: var(--fs-md); font-weight: 600; height: 36px; border-radius: var(--radius-lg); cursor: pointer; }
 .term-primary:hover { filter: brightness(1.08); }
 .term-primary:disabled { opacity: 0.45; cursor: default; filter: none; }
-.term-secondary { flex: 1; border: 1px solid var(--line); background: var(--bg); color: var(--base-70); font: inherit; font-size: var(--fs-md); height: 40px; border-radius: var(--radius-lg); cursor: pointer; }
+.term-secondary { flex: 1; border: 1px solid var(--line); background: var(--bg); color: var(--base-70); font: inherit; font-size: var(--fs-md); height: 36px; border-radius: var(--radius-lg); cursor: pointer; }
 .term-secondary:hover { background: var(--hover); color: var(--base-100); }
 .term-secondary:disabled { opacity: 0.45; cursor: default; }
 
@@ -146,7 +152,7 @@
 @media (max-width: 860px) {
   .term-shell { flex-direction: column; height: auto; padding-left: 0; padding-right: 0; }
   .term-rail { width: auto; border-right: 0; padding-right: 0; flex-direction: column-reverse; }
-  .term-rail-head { display: none; }
+  .term-head { padding-left: 0; padding-right: 0; }
   .term-tabbar { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 var(--sp-5); margin: 0 0 var(--sp-6); }
   .term-rail-scroll { overflow: visible; }
   #termSessionRows { display: flex; gap: var(--sp-3); overflow-x: auto; padding-bottom: var(--sp-2); }

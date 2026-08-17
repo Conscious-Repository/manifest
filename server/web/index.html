@@ -202,9 +202,12 @@
        stage that swaps Terminal (PTY over metis tmux) / Files (fleet browser,
        absorbed from the old top-level tab) / Activity (fleet stats). -->
   <section class="term-page" id="terminalView" hidden>
+    <div class="agent-head term-head">
+      <span class="agent-title">TERMINAL</span>
+      <div class="agent-actions" id="termHeadActions"></div>
+    </div>
     <div class="term-shell">
       <aside class="term-rail">
-        <div class="term-rail-head" id="termRailHead"><span class="term-rail-title">Terminal</span></div>
         <div class="term-rail-scroll">
           <div class="rail-sec"><div class="rail-sec-label">Sessions</div>
             <div id="termSessionRows"></div></div>
