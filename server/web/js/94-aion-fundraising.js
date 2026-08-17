@@ -29,12 +29,12 @@ async function renderAionFundraising(host) {
   wrap.append(main, inspector); host.append(wrap);
 
   const bar = el("div", "fr-toolbar");
-  const search = el("input", "fr-search"); search.type = "search"; search.placeholder = "Search firms, people, next steps…"; search.value = frQuery;
+  const search = el("input", "pp-in fr-search"); search.type = "search"; search.placeholder = "Search firms, people, next steps…"; search.value = frQuery;
   search.oninput = () => { frQuery = search.value; renderAion(); };
   bar.append(search);
   const statuses = [["open", "OPEN"], ["all", "ALL"], ["prospect", "PROSPECT"], ["active", "ACTIVE"], ["committed", "COMMITTED"], ["passed", "PASSED"], ["archived", "ARCHIVED"]];
   statuses.forEach(([key, label]) => { const b = el("button", "filter-chip" + (frStatus === key ? " on" : ""), label); b.onclick = () => { frStatus = key; renderAion(); }; bar.append(b); });
-  const interest = el("select", "fr-filter");
+  const interest = el("select", "pp-in fr-filter");
   [["all", "ALL INTEREST"], ["high", "HIGH"], ["medium", "MEDIUM"], ["low", "LOW"], ["unknown", "UNKNOWN"]].forEach(([v, label]) => { const o = el("option", "", label); o.value = v; o.selected = frInterest === v; interest.append(o); });
   interest.onchange = () => { frInterest = interest.value; renderAion(); }; bar.append(interest);
   main.append(bar);
@@ -47,14 +47,14 @@ async function renderAionFundraising(host) {
   let rows = (frCache.opportunities || []).filter(frVisible);
   const table = el("div", "fr-table");
   const head = el("div", "fr-row fr-head");
-  ["FIRM", "PEOPLE", "STATUS", "INTEREST", "AMOUNT", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "", x)));
+  ["FIRM", "PEOPLE", "STATUS", "INTEREST", "AMOUNT", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
   table.append(head);
   if (!rows.length) table.append(emptyRow("No fundraising opportunities match."));
   rows.forEach((op) => table.append(frRow(op)));
   main.append(table);
 
   if ((frCache.resources || []).length) {
-    const res = el("div", "fr-resources"); res.append(el("span", "fr-mini-label", "RESOURCES"));
+    const res = el("div", "fr-resources"); res.append(el("span", "micro-label fr-mini-label", "RESOURCES"));
     frCache.resources.forEach((r) => { const a = el("a", "aion-src", r.title || r.url); a.href = r.url; a.target = "_blank"; a.rel = "noreferrer"; res.append(a); });
     main.append(res);
   }
@@ -91,12 +91,14 @@ function frVisible(op) {
 function frRow(op) {
   const row = el("div", "fr-row" + (frSel === op.id ? " sel" : "") + (op.importReview ? " review" : ""));
   const firm = el("div", "fr-firm"); firm.append(el("span", "fr-firm-name", op.firm));
-  if (op.importReview) firm.append(el("span", "fr-review", "REVIEW"));
+  if (op.importReview) firm.append(el("span", "micro-label fr-review", "REVIEW"));
   const people = el("div", "fr-people");
-  (op.people || []).forEach((p) => { const b = el("button", "fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts/" + encodeURIComponent(p.key); }; people.append(b); });
-  if (!(op.people || []).length && op.introVia) people.append(el("span", "fr-muted", op.introVia));
-  const status = el("span", "fr-status " + op.status, op.status.toUpperCase());
-  const interest = el("span", "fr-interest", (op.interest || "unknown").toUpperCase());
+  (op.people || []).forEach((p) => { const b = el("button", "fr-person-name fr-person", p.display); b.onclick = (e) => { e.stopPropagation(); location.hash = "#/contacts/" + encodeURIComponent(p.key); }; people.append(b); });
+  frPlainPeople(op).filter((name) => !(op.people || []).some((p) => [p.key, p.display].some((v) => String(v || "").toLowerCase() === name.toLowerCase())))
+    .forEach((name) => people.append(el("span", "fr-person-name fr-person-plain", name)));
+  if (!people.children.length) people.append(el("span", "fr-person-empty", "—"));
+  const status = el("span", "micro-label fr-status " + op.status, op.status.toUpperCase());
+  const interest = el("span", "micro-label fr-interest", (op.interest || "unknown").toUpperCase());
   const amount = el("span", "fr-money", op.amount ? money(op.amount) : "—");
   const touch = el("div", "fr-stack");
   touch.append(el("span", "", op.lastTouchpoint || "—"));
@@ -109,6 +111,42 @@ function frRow(op) {
 }
 
 function money(v) { try { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v); } catch (_) { return "$" + v; } }
+
+// The imported sheet called these values "intro via". In the CRM they are
+// simply people whose names are not linked to a contact record yet.
+function frPlainPeople(op) {
+  return String(op.introVia || "").split(/\s*[,;]\s*/).map((name) => name.trim()).filter(Boolean);
+}
+
+function frSetPlainPeople(op, names, msg) {
+  const seen = new Set();
+  const clean = names.map((name) => name.trim()).filter((name) => {
+    const key = name.toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key); return true;
+  });
+  return frPost("/api/aion/fundraising/update/" + op.id, { introVia: clean.join(", ") }, msg);
+}
+
+function frAddPlainPerson(op, name) {
+  const linked = (op.people || []).some((p) => [p.key, p.display].some((v) => String(v || "").toLowerCase() === name.trim().toLowerCase()));
+  if (!linked) return frSetPlainPeople(op, frPlainPeople(op).concat(name), "Plain-text person added");
+}
+
+async function frContactMatches(query) {
+  try {
+    const d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(query))).json();
+    return (d.results || []).filter((p) => p.isPerson);
+  } catch (_) { return []; }
+}
+
+async function frCommitTypedPerson(op, value) {
+  const matches = await frContactMatches(value);
+  const lower = value.toLowerCase();
+  const exact = matches.find((p) => [p.key, p.display].some((v) => String(v || "").toLowerCase() === lower));
+  if (exact) return frPost("/api/aion/fundraising/person/" + op.id, { key: exact.key, display: exact.display, notePath: exact.notePath || "" }, "Contact linked");
+  return frAddPlainPerson(op, value);
+}
 
 async function frPost(url, body, msg) {
   try {
@@ -133,11 +171,22 @@ function renderFundraisingInspector(host, op) {
   const amount = el("input", "pp-in fr-in"); amount.type = "number"; amount.min = "0"; amount.step = "1000"; amount.value = op.amount || ""; amount.onblur = () => patch({ amount: amount.value }); field("amount", amount);
 
   const people = el("div", "fr-insp-people");
-  (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip"); const open = el("button", "fr-person", p.display); open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
-  const addPerson = el("input", "pp-in fr-in"); addPerson.placeholder = "link or create a person…"; people.append(addPerson); const results = el("div", "fr-person-results"); people.append(results); let timer;
-  addPerson.oninput = () => { clearTimeout(timer); timer = setTimeout(() => frPersonSearch(op, addPerson, results), 180); };
+  (op.people || []).forEach((p) => { const chip = el("span", "fr-person-chip linked"); const open = el("button", "fr-person-name fr-person", p.display); open.onclick = () => { location.hash = "#/contacts/" + encodeURIComponent(p.key); }; const rm = el("button", "fr-person-rm", "×"); rm.title = "unlink from this opportunity"; rm.onclick = () => frPost("/api/aion/fundraising/person-remove/" + op.id, { key: p.key }); chip.append(open, rm); people.append(chip); });
+  frPlainPeople(op).forEach((name, index, names) => { const chip = el("span", "fr-person-chip plain"); chip.append(el("span", "fr-person-name fr-person-plain", name)); const rm = el("button", "fr-person-rm", "×"); rm.title = "remove plain-text person"; rm.onclick = () => frSetPlainPeople(op, names.filter((_, i) => i !== index)); chip.append(rm); people.append(chip); });
+  const addPerson = typeahead({
+    placeholder: "find or add a person…",
+    minChars: 1,
+    onEnter: (value) => frCommitTypedPerson(op, value),
+    suggest: async (q, add) => {
+      const matches = await frContactMatches(q);
+      const linked = new Set((op.people || []).map((p) => p.key));
+      matches.filter((p) => !linked.has(p.key)).slice(0, 6).forEach((p) =>
+        add(p.display, "contact", () => frPost("/api/aion/fundraising/person/" + op.id, { key: p.key, display: p.display, notePath: p.notePath || "" }, "Contact linked")));
+      add("Add “" + addPerson.value() + "” as plain text", "create", () => frAddPlainPerson(op, addPerson.value()));
+    },
+  });
+  people.append(addPerson.el);
   field("people", people);
-  text("intro via", "introVia", op.introVia);
   text("last touch", "lastTouchpoint", op.lastTouchpoint);
   const lastDate = el("input", "pp-in fr-in"); lastDate.type = "date"; lastDate.value = op.lastTouchpointDate || ""; lastDate.onchange = () => patch({ lastTouchpointDate: lastDate.value }); field("touch date", lastDate);
   if (op.computedLastTouchpoint) field("contacts", el("span", "aion-insp-ro", op.computedLastTouchpoint + " · latest linked interaction"));
@@ -146,11 +195,4 @@ function renderFundraisingInspector(host, op) {
   text("notes", "notes", op.notes, true);
   if (op.importReview) { const done = el("button", "pill light", "Mark import reviewed"); done.onclick = () => patch({ importReview: false }); host.append(done); }
   const archive = el("button", "aion-insp-del", op.archived ? "restore opportunity" : "archive opportunity"); archive.onclick = () => frPost("/api/aion/fundraising/archive/" + op.id, { archived: !op.archived }, op.archived ? "Opportunity restored" : "Opportunity archived"); host.append(archive);
-}
-
-async function frPersonSearch(op, input, host) {
-  host.innerHTML = ""; const q = input.value.trim(); if (!q) return;
-  let d = { results: [] }; try { d = await (await fetch("/api/contacts/search?q=" + encodeURIComponent(q))).json(); } catch (_) {}
-  (d.results || []).slice(0, 6).forEach((p) => { const b = el("button", "fr-person-result", p.display + (p.hasNote ? " · note" : " · no note")); b.onclick = () => frPost("/api/aion/fundraising/person/" + op.id, { key: p.key, display: p.display, notePath: p.hasNote ? (p.notePath || "") : "" }, "Person linked"); host.append(b); });
-  const create = el("button", "fr-person-result create", "Create note-less contact “" + q + "”"); create.onclick = () => frPost("/api/aion/fundraising/person/" + op.id, { key: q.toLowerCase(), display: q }, "Note-less contact created"); host.append(create);
 }
