@@ -286,9 +286,9 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
                   <div className="v2-label">{e.planLabel}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 6 }}>
                     {e.steps.map((s, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 9, fontSize: 11.5, color: 'var(--ink-dim,#aaa)' }}>
-                        <span style={{ color: 'var(--ink-mute,#555)' }}>{s.n}</span>
-                        <span>{s.text}</span>
+                      <div key={i} style={{ display: 'flex', gap: 9, minWidth: 0, fontSize: 11.5, color: 'var(--ink-dim,#aaa)' }}>
+                        <span style={{ flex: 'none', color: 'var(--ink-mute,#555)' }}>{s.n}</span>
+                        <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{s.text}</span>
                       </div>
                     ))}
                   </div>
