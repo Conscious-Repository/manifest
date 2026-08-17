@@ -11,15 +11,20 @@
 /* height is set precisely by termFitShell() (top offset varies with chrome/
    zoom/banners); the calc is only the pre-JS fallback. 18px right gutter =
    cmd-ctr's breathing room off the window edge. */
-.term-shell { display: flex; gap: var(--sp-8); height: calc(100vh - 200px); padding: var(--sp-3) var(--sp-7) 0 var(--sp-6); }
+.term-shell { display: flex; gap: var(--sp-8); height: calc(100vh - 200px); padding: 0 var(--page-gutter); }
 
 /* --- rail ------------------------------------------------------------- */
 .term-rail { width: 284px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding-right: var(--sp-8); min-height: 0; }
 /* page header — the standard agent-head/agent-title convention (TERMINAL in
-   uppercase mono, like every other tab), aligned to the rail's left edge and
-   spanning to the shell's right gutter. The mic (voice → terminal) lands in
-   its actions slot when a session attaches. */
-.term-head { padding-left: var(--sp-6); padding-right: var(--sp-7); margin-bottom: 0; }
+   uppercase mono, like every other tab). Aligned to --page-gutter and given the
+   same vertical rhythm as other tabs' headers (agent-head's own sp-6 top / sp-5
+   bottom padding + sp-6 margin below the rule), so the full-width rule and the
+   content below it breathe the way SPIRITS/GOALS do. The mic (voice → terminal)
+   lands in its actions slot when a session attaches.
+   NB: .agent-head (60-contacts.css) loads AFTER this file and its `padding`
+   shorthand resets left/right to 0 — so the horizontal gutter MUST be set at
+   higher specificity (.term-page .term-head) to win the cascade. */
+.term-page .term-head { padding-left: var(--page-gutter); padding-right: var(--page-gutter); margin-top: var(--sp-4); }
 .term-head .mic-btn { margin: -4px 0; }
 .term-rail-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: var(--sp-1); margin: -2px; }
 .rail-sec + .rail-sec { margin-top: 30px; }
@@ -152,7 +157,7 @@
 @media (max-width: 860px) {
   .term-shell { flex-direction: column; height: auto; padding-left: 0; padding-right: 0; }
   .term-rail { width: auto; border-right: 0; padding-right: 0; flex-direction: column-reverse; }
-  .term-head { padding-left: 0; padding-right: 0; }
+  .term-page .term-head { padding-left: 0; padding-right: 0; }
   .term-tabbar { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 var(--sp-5); margin: 0 0 var(--sp-6); }
   .term-rail-scroll { overflow: visible; }
   #termSessionRows { display: flex; gap: var(--sp-3); overflow-x: auto; padding-bottom: var(--sp-2); }
