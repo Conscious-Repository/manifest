@@ -1,57 +1,46 @@
-/* PortalApp — tab + rock-filter + drawer-selection state, cross-tab jumps,
-   hash routing. Config knobs live in window.PORTAL_CONFIG (index.html) so
-   plain scripts can read them at load.
+/* Portal v2 top-level app (design handoff). Two-column shell (rail + main);
+   the field inspector lives inline, an item replaces main full-width. State
+   owner + hash router + theme + Esc/resize. Views resolve through safe() so
+   one broken Babel file degrades to a labeled box, never a blank page. */
 
-   Phase 2 (2026-08-14): the static password gate is gone. The portal now
-   requires Google sign-in (@aion.bio) to VIEW — enforced server-side
-   (server/portal.go requireSignIn); team writes ride the same session. */
-
-function PortalApp() {
-  const CONFIG = window.PORTAL_CONFIG || {};
-  return <Portal config={CONFIG} />;
+function safe(name) {
+  return window[name] || function Missing() {
+    return <div className="no-data" style={{ padding: '20px 0' }}>{name} failed to load — check the console</div>;
+  };
 }
 
-/* Team overlay: published backlog + team/ items, with team field overrides
-   applied on top (status changes, done marks, due edits). */
-function mergedBacklog(backlog, team) {
-  if (!backlog) return backlog;
-  let items = backlog.items.slice();
-  if (team && Array.isArray(team.items)) items = items.concat(team.items);
-  if (team && team.overrides) {
-    items = items.map(it => {
-      const ov = team.overrides[it.id];
-      return ov && ov.fields ? Object.assign({}, it, ov.fields) : it;
-    });
-  }
-  return Object.assign({}, backlog, { items });
-}
-
-// #hash → landing tab + anchor (used by the /roadmap redirect stub)
 function parseHash() {
   const h = (location.hash || '').replace('#', '');
-  if (h === 'gantt' || h === 'timeline') return { tab: 'goals', anchor: 'sec-timeline' };
-  if (h === 'decisions') return { tab: 'task', anchor: 'sec-decisions' };
-  if (h === 'todo') return { tab: 'task', anchor: null }; // legacy #todo → the renamed tab
-  if (h === 'goals' || h === 'task' || h === 'overview') return { tab: h, anchor: null };
+  if (h === 'gantt' || h === 'timeline') return { view: 'goals', anchor: 'sec-timeline' };
+  if (h === 'decisions' || h === 'proposals') return { view: 'work', anchor: 'sec-proposals' };
+  if (h === 'todo' || h === 'task' || h === 'tasks' || h === 'work') return { view: 'work', anchor: null };
+  if (h === 'overview' || h === 'field') return { view: 'field', anchor: null };
+  if (h === 'library' || h === 'archive') return { view: 'archive', anchor: null };
+  if (h === 'goals') return { view: 'goals', anchor: null };
   return null;
 }
 
-function Portal({ config }) {
+function PortalApp() {
   const U = window.PORTAL_UTIL;
+  const D = window.PORTAL_DERIVE;
+  const T = window.PORTAL_THEMES;
+  const CONFIG = window.PORTAL_CONFIG || {};
+
   const initial = parseHash();
-  const [tab, setTab] = React.useState((initial && initial.tab) || config.defaultTab || 'overview');
-  const [filter, setFilter] = React.useState(null); // pinned rock (goal id) — survives tab switches
-  const [selection, setSelection] = React.useState(null); // timeline drawer {kind, id}
-  const [teamSel, setTeamSel] = React.useState(null); // team item drawer (item id)
+  const [view, setView] = React.useState((initial && initial.view) || CONFIG.defaultView || 'field');
+  const [filter, setFilter] = React.useState(null);
+  const [sel, setSel] = React.useState(null);       // {kind:'item'|'person'|'goal'|'decision'} | 'add' | null
+  const [libTab, setLibTab] = React.useState('all');
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [themeId, setThemeId] = React.useState(T.load);
+  const [themeModal, setThemeModal] = React.useState(false);
   const [data, setData] = React.useState(null);
+  const [w, setW] = React.useState(typeof window !== 'undefined' ? window.innerWidth : 1440);
 
-  React.useEffect(() => {
-    window.loadPortalData().then(setData);
-  }, []);
+  React.useEffect(() => { window.loadPortalData().then(setData); }, []);
+  React.useEffect(() => { T.applyBody(themeId); }, [themeId]);
 
-  // team writes → refetch only the server-side overlay (team state + me)
   const reloadTeam = React.useCallback(() => {
-    const U = window.PORTAL_UTIL;
     Promise.all([U.fetchJSON('api/team/state'), U.fetchJSON('api/me')]).then(rs => {
       setData(d => d ? Object.assign({}, d, {
         team: rs[0].ok ? rs[0].value : d.team,
@@ -60,143 +49,121 @@ function Portal({ config }) {
     });
   }, []);
 
-  // Esc closes the drawers
+  // resize (8px threshold to avoid thrash)
   React.useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') { setSelection(null); setTeamSel(null); } };
+    let last = window.innerWidth;
+    const onResize = () => { if (Math.abs(window.innerWidth - last) > 8) { last = window.innerWidth; setW(last); } };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Esc: close modal first, else clear selection
+  React.useEffect(() => {
+    const onKey = e => {
+      if (e.key !== 'Escape') return;
+      setThemeModal(m => { if (m) return false; setSel(null); return false; });
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const jump = React.useCallback((toTab, anchorId) => {
-    setTab(toTab);
-    const hash = anchorId === 'sec-timeline' ? '#gantt'
-      : anchorId === 'sec-decisions' ? '#decisions'
-      : '#' + toTab;
+  const go = React.useCallback((toView, anchorId, tab) => {
+    setView(toView);
+    setSel(null);
+    if (tab) setLibTab(tab);
+    const hash = anchorId === 'sec-timeline' ? '#timeline'
+      : anchorId === 'sec-proposals' ? '#proposals' : '#' + toView;
     history.replaceState(null, '', hash);
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (!anchorId) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+      if (!anchorId) { window.scrollTo({ top: 0 }); return; }
       const el = document.getElementById(anchorId);
-      if (el) window.scrollTo({
-        top: window.scrollY + el.getBoundingClientRect().top - 80,
-        behavior: 'smooth'
-      });
+      if (el) window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 70, behavior: 'smooth' });
     }));
   }, []);
 
-  // land on the hash anchor once data is in (bars need data to exist)
-  const landedRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!data || landedRef.current) return;
-    landedRef.current = true;
-    const h = parseHash();
-    if (h && h.anchor) jump(h.tab, h.anchor);
-  }, [data, jump]);
-
-  const onTab = (id) => {
-    setTab(id);
-    history.replaceState(null, '', '#' + id);
-    window.scrollTo({ top: 0 });
-  };
+  const pin = React.useCallback((id) => { setFilter(f => f === id ? null : id); }, []);
+  const select = React.useCallback((kind, id) => { setSel({ kind: kind, id: id }); }, []);
 
   const goalsIndex = React.useMemo(
-    () => (data && data.goals ? U.buildGoalIndex(data.goals) : null),
-    [data]);
-
-  // team overlay merged over the published backlog (memo keyed on both)
-  const viewData = React.useMemo(() => {
-    if (!data) return data;
-    return Object.assign({}, data, { backlog: mergedBacklog(data.backlog, data.team) });
+    () => (data && data.goals ? U.buildGoalIndex(data.goals) : null), [data]);
+  const items = React.useMemo(() => {
+    if (!data || !data.backlog) return [];
+    const merged = D.mergedBacklog(data.backlog, data.team);
+    return (merged && merged.items) || [];
   }, [data]);
+
+  const setTheme = id => { setThemeId(id); T.save(id); setThemeModal(false); };
+
+  const Rail = safe('Rail');
+  const ThemeModal = safe('ThemeModal');
 
   if (!data) {
     return (
-      <div className="portal-shell">
-        <Masthead meta={null} />
-        <div className="no-data" style={{ padding: '40px 0' }}>loading…</div>
+      <div style={T.tokenObject(themeId)} className="v2-shell v2-shell-1">
+        <div className="no-data" style={{ padding: '40px 30px' }}>loading…</div>
       </div>
     );
   }
 
+  const me = data.me || { anon: true };
+  const teamOn = !!(data.team && me && !me.anon);
   const filterGoal = filter && goalsIndex ? goalsIndex.get(filter) : null;
+  const counts = D.navCounts(items, goalsIndex, filter);
+  const pendingCount = String(((data.team && data.team.proposals) || []).filter(p => p.status === 'pending').length);
+  const mid = w >= 940;
+  const shellCols = mid ? (w >= 1180 ? '214px minmax(0,1fr)' : '190px minmax(0,1fr)') : '1fr';
 
-  const teamItem = teamSel && viewData.backlog
-    ? viewData.backlog.items.find(it => it.id === teamSel)
-    : null;
+  const selItem = sel && sel.kind === 'item' ? items.filter(i => i.id === sel.id)[0] : null;
+
+  let main;
+  if (selItem) {
+    const ItemView = safe('ItemView');
+    main = <ItemView item={selItem} me={me} team={data.team} teamOn={teamOn}
+      goalsIndex={goalsIndex} filter={filter} onBack={() => { setSel(null); setView('work'); }}
+      pin={pin} reloadTeam={reloadTeam} />;
+  } else if (view === 'field') {
+    const FieldView = safe('FieldView');
+    main = <FieldView data={data} items={items} goalsIndex={goalsIndex} me={me} filter={filter}
+      sel={sel} w={w} onSelect={select} onClearSel={() => setSel(null)} pin={pin} go={go}
+      openFile={hash => window.open('api/team/file/' + hash, '_blank')} />;
+  } else if (view === 'work') {
+    const WorkView = safe('WorkView');
+    main = <WorkView data={data} items={items} goalsIndex={goalsIndex} me={me} team={data.team}
+      filter={filter} addOpen={addOpen} onToggleAdd={() => setAddOpen(a => !a)}
+      onSelect={select} pin={pin} reloadTeam={reloadTeam} />;
+  } else if (view === 'goals') {
+    const GoalsView = safe('GoalsView');
+    main = <GoalsView data={data} items={items} goalsIndex={goalsIndex} filter={filter} pin={pin} go={go} />;
+  } else {
+    const ArchiveView = safe('ArchiveView');
+    main = <ArchiveView data={data} items={items} goalsIndex={goalsIndex} filter={filter}
+      tab={libTab} onTab={setLibTab} onSelect={select} pin={pin} go={go}
+      openFile={hash => window.open('api/team/file/' + hash, '_blank')} />;
+  }
+
+  const viewLabel = selItem ? 'work / item' : view;
+  const metaLine = data.meta && data.meta.published_at
+    ? 'last published ' + data.meta.published_at.slice(0, 10) + ' · confidential' : 'confidential';
 
   return (
-    <div className="portal-shell">
-      <Masthead meta={data.meta} me={data.me} onAuthChange={reloadTeam} />
-      <TabNav tab={tab} onTab={onTab} />
+    <div className={'v2-shell' + (mid ? '' : ' v2-shell-1')}
+      style={Object.assign({}, T.tokenObject(themeId), { gridTemplateColumns: shellCols })}>
+      <Rail view={view} counts={counts} go={go} filterGoal={filterGoal}
+        filterExplain={D.filterExplain(items, goalsIndex, filter)}
+        onClearFilter={() => setFilter(null)} teamOn={teamOn} pendingCount={pendingCount}
+        onAdd={() => { setView('work'); setSel(null); setAddOpen(true); }}
+        onProposals={() => go('work', 'sec-proposals')} me={me} themeName={T.byId(themeId).name}
+        onThemes={() => setThemeModal(true)} chatUrl="https://100.95.45.62:8443/" />
 
-      <div className="portal-body">
-        {tab !== 'overview' && (
-          <FilterChip filterGoal={filterGoal} onClear={() => setFilter(null)} />
-        )}
+      <main className="v2-main">
+        <div className="v2-breadcrumb">
+          <div style={{ fontSize: 12, color: 'var(--ink-faint,#777)' }}>portal / <span style={{ color: 'var(--ink,#d4d4d4)' }}>{viewLabel}</span></div>
+          <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', textAlign: 'right' }}>{metaLine}</div>
+        </div>
+        {main}
+      </main>
 
-        {tab === 'overview' && (
-          <Overview
-            data={viewData}
-            goalsIndex={goalsIndex}
-            filter={filter}
-            onFilter={setFilter}
-            jump={jump}
-          />
-        )}
-
-        {tab === 'goals' && (
-          <div>
-            {goalsIndex || data.vto
-              ? <Vto data={viewData} goalsIndex={goalsIndex} filter={filter} onFilter={setFilter} jump={jump} />
-              : <div className="no-data">no data yet</div>}
-            <Heuristics heuristics={data.heuristics} errors={data.errors} />
-            <div id="sec-timeline" className="timeline-block">
-              <div className="ov-head"><span className="ov-head-title">TIMELINE</span></div>
-              <Timeline
-                data={viewData}
-                filter={filter}
-                goalsIndex={goalsIndex}
-                selection={selection}
-                onSelect={setSelection}
-              />
-            </div>
-            <DriftNote errors={data.errors} keys={['vto', 'goals', 'heuristics', 'backlog']} />
-          </div>
-        )}
-
-        {tab === 'task' && (
-          <Tasks
-            data={viewData}
-            goalsIndex={goalsIndex}
-            filter={filter}
-            jump={jump}
-            me={data.me}
-            team={data.team}
-            onOpenItem={setTeamSel}
-            onTeamChange={reloadTeam}
-          />
-        )}
-      </div>
-
-      <Footer meta={data.meta} />
-
-      {selection && (
-        <TimelineDrawer
-          selection={selection}
-          data={viewData}
-          goalsIndex={goalsIndex}
-          onClose={() => setSelection(null)}
-        />
-      )}
-
-      {teamItem && (
-        <TeamItemDrawer
-          item={teamItem}
-          me={data.me}
-          team={data.team}
-          onClose={() => setTeamSel(null)}
-          onChange={reloadTeam}
-        />
-      )}
+      {themeModal && <ThemeModal activeId={themeId} onPick={setTheme} onClose={() => setThemeModal(false)} />}
     </div>
   );
 }

@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" data-aesthetic="terminal">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AION &middot; portal</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/png" href="./assets/favicon.png">
-  <link rel="stylesheet" href="./assets/colors_and_type.css">
-  <link rel="stylesheet" href="src/portal.css?v=10">
+  <link rel="preload" as="font" type="font/otf" crossorigin href="assets/fonts/Alchimia-Regular.otf">
+  <link rel="stylesheet" href="src/portal.css?v=11">
 </head>
 <body>
   <div id="root"></div>
@@ -16,28 +16,27 @@
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 
-  <!-- app config — the only knobs -->
+  <!-- app config -->
   <script>
-    window.PORTAL_CONFIG = {
-      defaultTab: 'overview',
-      archiveOpenByDefault: false
-    };
+    window.PORTAL_CONFIG = { defaultView: 'field' };
   </script>
 
-  <!-- helpers (plain scripts, executed before JSX) -->
-  <script src="src/util.js?v=10"></script>
-  <script src="src/data-load.js?v=10"></script>
+  <!-- plain scripts (no Babel), executed before JSX -->
+  <script src="src/util.js?v=11"></script>
+  <script src="src/themes.js?v=11"></script>
+  <script src="src/data-load.js?v=11"></script>
+  <script src="src/team-api.js?v=11"></script>
+  <script src="src/derive.js?v=11"></script>
 
-  <!-- v=N — bump on every deploy to bust browser + CDN cache -->
-  <script type="text/babel" src="src/gate.jsx?v=10"></script>
-  <script type="text/babel" src="src/team.jsx?v=10"></script>
-  <script type="text/babel" src="src/masthead.jsx?v=10"></script>
-  <script type="text/babel" src="src/agency.jsx?v=10"></script>
-  <script type="text/babel" src="src/overview.jsx?v=10"></script>
-  <script type="text/babel" src="src/vto.jsx?v=10"></script>
-  <script type="text/babel" src="src/heuristics.jsx?v=10"></script>
-  <script type="text/babel" src="src/timeline.jsx?v=10"></script>
-  <script type="text/babel" src="src/todo.jsx?v=10"></script>
-  <script type="text/babel" src="src/app.jsx?v=10"></script>
+  <!-- v=N — bump on every deploy to bust browser + CDN cache. app.jsx mounts last. -->
+  <script type="text/babel" src="src/gate.jsx?v=11"></script>
+  <script type="text/babel" src="src/agency.jsx?v=11"></script>
+  <script type="text/babel" src="src/shell.jsx?v=11"></script>
+  <script type="text/babel" src="src/view-field.jsx?v=11"></script>
+  <script type="text/babel" src="src/view-work.jsx?v=11"></script>
+  <script type="text/babel" src="src/view-goals.jsx?v=11"></script>
+  <script type="text/babel" src="src/view-archive.jsx?v=11"></script>
+  <script type="text/babel" src="src/view-item.jsx?v=11"></script>
+  <script type="text/babel" src="src/app.jsx?v=11"></script>
 </body>
 </html>
