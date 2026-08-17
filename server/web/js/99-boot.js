@@ -204,19 +204,19 @@ function renderCrumbs(h) {
   const parts = [];
   if (h.startsWith("#/note/")) {
     const p = decodeURIComponent(h.slice("#/note/".length));
-    parts.push({ label: "note", hash: null });
+    parts.push({ label: "NOTE", hash: null });
     parts.push({ label: p.split("/").pop().replace(/\.md$/, "") });
   } else if (h.startsWith("#/artifact/")) {
     const seg = h.slice("#/artifact/".length).split("/");
     const label = seg[0] === "run" ? "run report"
       : decodeURIComponent(seg.slice(2).join("/") || "").split("/").pop().replace(/\.md$/, "") || "artifact";
-    parts.push({ label: "artifact", hash: null });
+    parts.push({ label: "ARTIFACT", hash: null });
     parts.push({ label });
   } else {
     const sec = sectionOf(h);
     // display label diverges from the route key only for real estate (key stays
     // "properties" so hash/counts/routing are untouched)
-    const secLabel = sec === "properties" ? "real estate" : sec;
+    const secLabel = (sec === "properties" ? "real estate" : sec).toUpperCase();
     parts.push({ label: secLabel, hash: sec === "day" ? "#/" : "#/" + sec });
     if (sec !== "day") {
       h.replace(/^#\//, "").split("/").filter(Boolean).slice(1)
