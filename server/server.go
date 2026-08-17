@@ -511,9 +511,13 @@ func (s *Server) Handler() http.Handler {
 	// real-estate decision log (the aion-mirror domain half)
 	mux.HandleFunc("GET /api/re/backlog", s.handleReBacklog)
 	mux.HandleFunc("POST /api/re/backlog/item", s.handleReBacklogAdd)
-	mux.HandleFunc("POST /api/re/backlog/{id}/update", s.handleReBacklogUpdate)
-	mux.HandleFunc("POST /api/re/backlog/{id}/delete", s.handleReBacklogDelete)
-	mux.HandleFunc("POST /api/re/backlog/{id}/decide", s.handleReBacklogDecide)
+	// id LAST as a multi-segment wildcard: portal ids carry a slash
+	// ("aion-bl/<slug>"), which a mid-path {id} cannot match. Same shape the
+	// aion backlog routes use; {legacy...} keeps the old paths answering.
+	mux.HandleFunc("POST /api/re/backlog/update/{id...}", s.handleReBacklogUpdate)
+	mux.HandleFunc("POST /api/re/backlog/delete/{id...}", s.handleReBacklogDelete)
+	mux.HandleFunc("POST /api/re/backlog/decide/{id...}", s.handleReBacklogDecide)
+	mux.HandleFunc("POST /api/re/backlog/{legacy...}", s.handleReBacklogLegacy)
 	mux.HandleFunc("GET /api/re/publish/preview", s.handleRePublishPreview)
 	mux.HandleFunc("POST /api/re/publish", s.handleRePublish)
 	mux.HandleFunc("POST /api/re/publish/ack/{id}", s.handleRePublishAck)

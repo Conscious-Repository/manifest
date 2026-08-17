@@ -216,7 +216,7 @@ function reBacklogTaskRow(it) {
   c.onclick = (e) => {
     e.stopPropagation();
     if (done) reFreshDone.delete(it.id); else reFreshDone.add(it.id);
-    rePost("/api/re/backlog/" + it.id + "/update", { status: done ? "open" : "done" });
+    rePost("/api/re/backlog/update/" + it.id, { status: done ? "open" : "done" });
   };
   row.append(c);
   const main = el("div", "aion-main");
@@ -268,7 +268,7 @@ function renderREBacklogInspector(insp) {
   head.append(x);
   insp.append(head);
 
-  const patch = (set, msg) => rePost("/api/re/backlog/" + it.id + "/update", set, msg);
+  const patch = (set, msg) => rePost("/api/re/backlog/update/" + it.id, set, msg);
 
   const title = inputEl("");
   title.value = it.text;
@@ -328,7 +328,7 @@ function renderREBacklogInspector(insp) {
       const doDecide = () => {
         if (!outcome.value.trim()) return;
         reBacklogSelId = null; reBacklogSelSrc = null;
-        rePost("/api/re/backlog/" + it.id + "/decide", { outcome: outcome.value.trim() }, "Decided — permanent log");
+        rePost("/api/re/backlog/decide/" + it.id, { outcome: outcome.value.trim() }, "Decided — permanent log");
       };
       outcome.addEventListener("input", () => { decide.disabled = !outcome.value.trim(); });
       outcome.addEventListener("keydown", (ev) => { if (ev.key === "Enter") doDecide(); });
@@ -348,7 +348,7 @@ function renderREBacklogInspector(insp) {
   const del = el("button", "aion-insp-del", "delete item");
   del.onclick = () => {
     const yes = el("button", "aion-insp-del armed", "delete — permanent?");
-    yes.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/re/backlog/" + it.id + "/delete", {}, "Deleted"); };
+    yes.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; rePost("/api/re/backlog/delete/" + it.id, {}, "Deleted"); };
     del.replaceWith(yes);
     setTimeout(() => { if (yes.parentNode) yes.replaceWith(del); }, 2500);
   };

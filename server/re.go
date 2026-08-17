@@ -84,6 +84,29 @@ func (s *Server) handleReBacklogUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// handleReBacklogLegacy answers the pre-wildcard route shape
+// (/api/re/backlog/{id}/{verb}) so a browser holding the old JS keeps working.
+// Slash-bearing portal ids never reached these paths — they 404'd at the mux —
+// so only the two-segment slug/hex form needs answering.
+func (s *Server) handleReBacklogLegacy(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(r.PathValue("legacy"), "/"), "/")
+	if len(parts) != 2 || parts[0] == "" {
+		http.NotFound(w, r)
+		return
+	}
+	r.SetPathValue("id", parts[0])
+	switch parts[1] {
+	case "update":
+		s.handleReBacklogUpdate(w, r)
+	case "delete":
+		s.handleReBacklogDelete(w, r)
+	case "decide":
+		s.handleReBacklogDecide(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (s *Server) handleReBacklogDelete(w http.ResponseWriter, r *http.Request) {
 	if s.re == nil {
 		http.Error(w, "real-estate domain not available", http.StatusServiceUnavailable)
