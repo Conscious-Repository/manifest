@@ -209,4 +209,11 @@ function renderFundraisingInspector(host, op) {
   text("notes", "notes", op.notes, true);
   if (op.importReview) { const done = el("button", "pill light", "Mark import reviewed"); done.onclick = () => patch({ importReview: false }); host.append(done); }
   const archive = el("button", "aion-insp-del", op.archived ? "restore opportunity" : "archive opportunity"); archive.onclick = () => frPost("/api/aion/fundraising/archive/" + op.id, { archived: !op.archived }, op.archived ? "Opportunity restored" : "Opportunity archived"); host.append(archive);
+  const remove = el("button", "aion-insp-del fr-delete", "delete opportunity");
+  remove.onclick = () => {
+    const confirm = el("button", "aion-insp-del fr-delete armed", "confirm delete?");
+    confirm.onclick = async () => { frSel = null; await frPost("/api/aion/fundraising/delete/" + op.id, {}, "Opportunity deleted"); };
+    remove.replaceWith(confirm); confirm.focus();
+  };
+  host.append(remove);
 }

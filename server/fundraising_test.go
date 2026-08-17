@@ -70,6 +70,17 @@ func TestFundraisingPrivateCRUD(t *testing.T) {
 	if archived.Code != http.StatusOK || !op.Archived {
 		t.Fatalf("archive status=%d opportunity=%+v", archived.Code, op)
 	}
+
+	remove := httptest.NewRequest(http.MethodPost, "/api/aion/fundraising/delete/"+id, nil)
+	remove.SetPathValue("id", id)
+	deleted := httptest.NewRecorder()
+	s.handleFundraisingDelete(deleted, remove)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	if _, ok := store.Get(id); ok {
+		t.Fatal("deleted opportunity remains in fundraising view")
+	}
 }
 
 func TestFundraisingPeopleCanCreateAndLinkMultipleContacts(t *testing.T) {

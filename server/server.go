@@ -310,6 +310,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /api/aion/fundraising/item", s.handleFundraisingCreate)
 		mux.HandleFunc("POST /api/aion/fundraising/update/{id...}", s.handleFundraisingUpdate)
 		mux.HandleFunc("POST /api/aion/fundraising/archive/{id...}", s.handleFundraisingArchive)
+		mux.HandleFunc("POST /api/aion/fundraising/delete/{id...}", s.handleFundraisingDelete)
 		mux.HandleFunc("POST /api/aion/fundraising/person/{id...}", s.handleFundraisingPersonAdd)
 		mux.HandleFunc("POST /api/aion/fundraising/person-remove/{id...}", s.handleFundraisingPersonRemove)
 	}

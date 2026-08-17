@@ -132,6 +132,18 @@ func (s *Server) handleFundraisingArchive(w http.ResponseWriter, r *http.Request
 	writeJSON(w, s.fundraisingView())
 }
 
+func (s *Server) handleFundraisingDelete(w http.ResponseWriter, r *http.Request) {
+	if s.fundraising == nil {
+		http.Error(w, "fundraising unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.fundraising.Delete(r.PathValue("id")); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, s.fundraisingView())
+}
+
 func (s *Server) handleFundraisingPersonAdd(w http.ResponseWriter, r *http.Request) {
 	if s.fundraising == nil {
 		http.Error(w, "fundraising unavailable", http.StatusServiceUnavailable)

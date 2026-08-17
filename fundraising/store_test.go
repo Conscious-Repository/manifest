@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testStore(t *testing.T) (*Store, string) {
@@ -75,6 +76,38 @@ func TestOpportunityWebsiteValidationAndClear(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(op.Path)))
 	if strings.Contains(string(b), "\nwebsite:") {
 		t.Fatalf("cleared website remains in frontmatter:\n%s", b)
+	}
+}
+
+func TestDeleteTombstonesOpportunityWithoutErasingRecord(t *testing.T) {
+	s, root := testStore(t)
+	op, err := s.Create("Delete Me Capital")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, filepath.FromSlash(op.Path))
+	b, _ := os.ReadFile(path)
+	b = append(b, []byte("\n## private context\nkeep this history\n")...)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldTouch := Touch
+	Touch = func() time.Time { return time.Date(2026, 8, 17, 20, 0, 0, 0, time.UTC) }
+	defer func() { Touch = oldTouch }()
+	if err := s.Delete(op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.Get(op.ID); ok {
+		t.Fatal("deleted opportunity remains in live CRM")
+	}
+	b, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("recoverable record was erased: %v", err)
+	}
+	for _, want := range []string{"categories: [fundraising-deleted]", `deleted: "2026-08-17T20:00:00Z"`, "## private context", "keep this history"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("deleted record missing %q:\n%s", want, b)
+		}
 	}
 }
 

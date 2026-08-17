@@ -569,6 +569,29 @@ func (s *Store) Archive(id string, archived bool) (Opportunity, error) {
 	return op, s.replaceKnown(op)
 }
 
+// Delete removes an opportunity from the live CRM without erasing its source
+// record. The category becomes fundraising-deleted and the complete remaining
+// frontmatter/body stays in place, making an accidental deletion recoverable.
+func (s *Store) Delete(id string) error {
+	if s.writeRecord == nil {
+		return errors.New("fundraising: record writer unavailable")
+	}
+	op, ok := s.Get(id)
+	if !ok {
+		return fmt.Errorf("opportunity %q not found", id)
+	}
+	b, err := os.ReadFile(s.abs(op.Path))
+	if err != nil {
+		return err
+	}
+	category := "[fundraising-deleted]"
+	deleted := q(Touch().UTC().Format(time.RFC3339))
+	return s.writeRecord(s.abs(op.Path), patchFrontmatter(b, map[string]*string{
+		"categories": &category,
+		"deleted":    &deleted,
+	}))
+}
+
 func normalizeKey(v string) string { return strings.ToLower(strings.TrimSpace(v)) }
 func dedupeEmails(xs []string) []string {
 	seen := map[string]bool{}
