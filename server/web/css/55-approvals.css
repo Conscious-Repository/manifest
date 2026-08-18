@@ -96,3 +96,11 @@
 .attendee-chip.cat-live { border-color: var(--blue); color: var(--blue); }
 .attendee-chip.cat-live .attendee-name { color: var(--blue); }
 .attendee-add-btn.cat-suggest { border-style: dashed; }
+
+/* re-contract intake card (overhaul pass 3): label · value rows + the
+   adjust-amounts split */
+.re-intake-editor { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-4) 0; }
+.re-intake-editor .appr-aion-row { display: grid; grid-template-columns: 90px 1fr; gap: var(--sp-5); align-items: baseline; }
+.re-intake-editor .appr-aion-label { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; color: var(--base-40); text-transform: uppercase; }
+.re-intake-editor .appr-aion-val { font-size: var(--fs-sm); }
+.re-intake-editor .re-intake-alloc .re-alloc-node { flex: 1; }
