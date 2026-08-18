@@ -32,3 +32,5 @@ google_token.json
 manifest
 manifest-sync
 aion-adopt
+re-rocks-migrate
+re-contracts-migrate
