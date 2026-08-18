@@ -147,3 +147,26 @@ func TestReNoWriteWithoutCapability(t *testing.T) {
 		t.Fatalf("write allowed without capability: %v", err)
 	}
 }
+
+// A DECISION carries its rock through the whole approve→vault lane (the
+// payload dropped it on the decision branch, so an RE decision could never be
+// tethered to a rock/property/deal from the card).
+func TestReDecisionKeepsItsRock(t *testing.T) {
+	s, vault, _ := reTestStore(t)
+	payload := aion.ProposalPayload{
+		Kind: "decision", Title: "Refinance 4032 Page before the rate reset",
+		Owner: "BA", Status: "decided", Decided: "2026-08-14", Outcome: "locked at 6.5%",
+		Rock: "4032-page", Sources: []string{"2026-08-14 lender call"}, Captured: "2026-08-14",
+	}
+	p, err := s.Propose(reProposal(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Confirm(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(vault, "system", "realestate", "backlog.md"))
+	if !strings.Contains(string(after), "[rock:: 4032-page]") {
+		t.Fatalf("decision landed without its rock:\n%s", after)
+	}
+}
