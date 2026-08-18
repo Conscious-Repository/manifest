@@ -85,25 +85,63 @@ async function renderPropertyPage(slug) {
     renderUnderwrite(p, uw);
   }
 
-  // STAGES with their tasks nested underneath — one list, not two (RE spec
-  // §3). A task carrying [stage::] nests there; untagged open tasks ride the
-  // current stage; the composer files into the current stage by construction.
+  // DECISIONS lane (overhaul decision 9): every open [decision::] node in the
+  // tree surfaces here with its rock context; the lines themselves stay under
+  // their rock/milestone in the file. Never ages; resolves with a note.
+  const decisions = [];
+  const walkNodes = (rock, nodes, fn) => (nodes || []).forEach((n) => { fn(rock, n); walkNodes(rock, n.children, fn); });
+  (p.work || []).forEach((st) => walkNodes(st, st.tasks, (rock, n) => { if (n.decision) decisions.push({ rock, n }); }));
+  const openDecs = decisions.filter((d) => !d.n.checked);
+  if (decisions.length) {
+    const lane = el("div", "pp3-sec pp3-dec-lane");
+    const dh = el("div", "pp3-sec-head");
+    dh.append(el("span", "pp3-sec-title", "◇ DECISIONS"), el("span", "pp3-sec-count", openDecs.length + " open"));
+    lane.append(dh);
+    openDecs.forEach(({ rock, n }) => {
+      const row = el("div", "pp3-todo pp3-dec-row");
+      const resolve = el("button", "tdo-check", "◇");
+      resolve.title = "resolve with a note";
+      resolve.onclick = async (e) => {
+        e.stopPropagation();
+        const note = prompt("Resolution:", "");
+        if (note === null) return;
+        if (note.trim()) await propWorkOp(p, { op: "set-field", id: n.id, field: "resolution", value: note.trim() }, true);
+        propWorkOp(p, { op: "check", id: n.id, checked: true });
+      };
+      row.append(resolve, el("span", "pp3-todo-text", n.text));
+      row.append(el("span", "pp3-dec-rock", rock.text || ""));
+      row.append(el("span", "prop-owner" + (mineOwner(n.owner) ? " mine" : ""), assigneeName(n.owner)));
+      lane.append(row);
+    });
+    const decided = decisions.filter((d) => d.n.checked);
+    if (decided.length) {
+      const body = collapsibleSection(lane, "decided", String(decided.length), false);
+      decided.forEach(({ n }) => {
+        const row = el("div", "pp3-todo done pp3-dec-row");
+        row.append(el("span", "tdo-check on", "◆"), el("span", "pp3-todo-text", n.text + (n.resolution ? " — " + n.resolution : "")));
+        body.append(row);
+      });
+    }
+    main.append(lane);
+  }
+
+  // ROCKS — the tree: rock → milestone → task/decision (overhaul decision 1).
+  // Rocks carry [done-by::] dates — the rock list IS the schedule. Rocks are
+  // NOT sequential (owner call 2026-08-12): no current marker, any rock takes
+  // tasks, rocks progress in parallel.
   const stagesSec = el("div", "pp3-sec");
   const sh = el("div", "pp3-sec-head");
-  const open = (p.tasks || []).filter((t) => !t.checked);
-  sh.append(el("span", "pp3-sec-title", "STAGES"), el("span", "pp3-sec-count", open.length + " open"));
+  let openCount = 0;
+  (p.work || []).forEach((st) => walkNodes(st, st.tasks, (_, n) => { if (!n.checked && !n.milestone && !n.decision) openCount++; }));
+  sh.append(el("span", "pp3-sec-title", "ROCKS"), el("span", "pp3-sec-count", openCount + " open"));
   stagesSec.append(sh);
   const stages = p.work || [];
-  const byStage = {};
-  open.forEach((t) => { const k = t.stage || ""; (byStage[k] = byStage[k] || []).push(t); });
+  const today = new Date().toISOString().slice(0, 10);
   stages.forEach((st) => {
-    // stages are NOT sequential (owner call 2026-08-12): no current marker,
-    // any stage takes tasks, stages progress in parallel (demo alongside
-    // exterior/structural on a rehab)
     const line = el("div", "pp3-stage" + (st.checked ? " done" : ""));
     // glyph doubles as the done toggle (server stamps [done:: date] on check)
     const glyph = el("button", "pp3-stage-glyph pp3-stage-check", st.checked ? "✓" : "○");
-    glyph.title = st.checked ? "mark stage not done" : "mark stage done";
+    glyph.title = st.checked ? "mark rock not done" : "mark rock done";
     glyph.onclick = (e) => { e.stopPropagation(); propWorkOp(p, { op: "check", id: st.id, checked: !st.checked }); };
     line.append(glyph);
     // name — click to rename in place
@@ -119,9 +157,22 @@ async function renderPropertyPage(slug) {
       name.replaceWith(input); input.focus();
     };
     line.append(name);
+    // done-by chip — the schedule date (click to set; ink when past due)
+    const dbCls = "pp3-doneby" + (!st.checked && st.doneBy && st.doneBy < today ? " late" : "");
+    const db = el("button", dbCls, st.checked ? (st.done || "") : (st.doneBy ? "by " + st.doneBy : "by —"));
+    db.title = st.checked ? "done date" : "done-by date (click to set)";
+    if (!st.checked) db.onclick = (e) => {
+      e.stopPropagation();
+      const input = document.createElement("input");
+      input.type = "date"; input.className = "pp3-doneby-edit"; input.value = st.doneBy || "";
+      input.onchange = () => propWorkOp(p, { op: "set-field", id: st.id, field: "done-by", value: input.value });
+      input.onblur = () => { if (input.parentNode) input.replaceWith(db); };
+      db.replaceWith(input); input.focus();
+    };
+    line.append(db);
     // delete — arm-to-confirm (cascades tethered bids server-side)
     const del = el("button", "pp3-stage-x", "✕");
-    del.title = "delete stage";
+    del.title = "delete rock";
     del.onclick = (e) => {
       e.stopPropagation();
       const yes = el("button", "pp3-stage-x armed", "delete?");
@@ -131,41 +182,90 @@ async function renderPropertyPage(slug) {
     };
     line.append(del);
     stagesSec.append(line);
-    (byStage[st.text] || []).forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
+    // nodes: milestones render as sub-heads with their own children +
+    // composer; tasks render as todo rows; decisions live in the lane above
+    const nodeRow = (n, depth) => {
+      if (n.decision) return;
+      if (n.milestone) {
+        const ml = el("div", "pp3-milestone" + (n.checked ? " done" : ""));
+        const mglyph = el("button", "pp3-stage-glyph pp3-stage-check", n.checked ? "✓" : "◇");
+        mglyph.title = n.checked ? "reopen milestone" : "mark milestone done";
+        mglyph.onclick = (e) => { e.stopPropagation(); propWorkOp(p, { op: "check", id: n.id, checked: !n.checked }); };
+        const mname = el("span", "pp3-milestone-name", n.text || "");
+        mname.title = "click to rename";
+        mname.onclick = () => {
+          const input = inputEl(""); input.value = n.text || ""; input.classList.add("work-edit");
+          input.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" && input.value.trim()) propWorkOp(p, { op: "edit", id: n.id, text: input.value.trim() });
+            else if (ev.key === "Escape") input.replaceWith(mname);
+          });
+          input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(mname); });
+          mname.replaceWith(input); input.focus();
+        };
+        const mdel = el("button", "pp3-stage-x", "✕");
+        mdel.title = "delete milestone";
+        mdel.onclick = (e) => {
+          e.stopPropagation();
+          const yes = el("button", "pp3-stage-x armed", "delete?");
+          yes.onclick = () => propWorkOp(p, { op: "delete", id: n.id });
+          mdel.replaceWith(yes);
+          setTimeout(() => { if (yes.parentNode) yes.replaceWith(mdel); }, 2500);
+        };
+        ml.append(mglyph, mname, mdel);
+        ml.classList.add("nested");
+        stagesSec.append(ml);
+        (n.children || []).forEach((c) => nodeRow(c, depth + 1));
+        if (!n.checked) {
+          const add = el("div", "pp3-compose nested deep");
+          add.append(el("span", "pp3-compose-glyph", "○"));
+          const input = inputEl("add to " + (n.text || "milestone") + "…");
+          input.className = "pp3-compose-in";
+          input.addEventListener("keydown", (ev) => {
+            if (ev.key !== "Enter" || !input.value.trim()) return;
+            propWorkOp(p, { op: "add-task", stageId: n.id, text: input.value.trim() });
+          });
+          add.append(input);
+          stagesSec.append(add);
+        }
+        return;
+      }
+      const row = propTodoRow(p, { id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "" });
+      row.classList.add("nested");
+      if (depth > 0) row.classList.add("deep");
+      stagesSec.append(row);
+      (n.children || []).forEach((c) => nodeRow(c, depth + 1));
+    };
+    (st.tasks || []).forEach((n) => nodeRow(n, 0));
     if (!st.checked) {
       const add = el("div", "pp3-compose nested");
       add.append(el("span", "pp3-compose-glyph", "○"));
-      const input = inputEl("add a task to " + (st.text || "this stage") + "…");
+      const input = inputEl("add a task to " + (st.text || "this rock") + "…  (milestone: / decision: …)");
       input.className = "pp3-compose-in";
-      const submit = async () => {
+      const submit = () => {
         const text = input.value.trim();
         if (!text) return;
-        try {
-          await postJSONOk("/api/tasks/item", { text, stage: st.text, container: { kind: "property", slug: p.slug } });
-          renderProperties();
-        } catch (e) { showToast("Couldn't add"); }
+        const m = text.match(/^milestone:\s*(.+)$/i);
+        if (m) propWorkOp(p, { op: "add-task", stageId: st.id, text: m[1], kind: "milestone" });
+        else propWorkOp(p, { op: "add-task", stageId: st.id, text });
       };
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submit(); });
       add.append(input);
       stagesSec.append(add);
     }
   });
-  // stage-less tasks live at the record level, above the general composer
-  (byStage[""] || []).forEach((t) => { const row = propTodoRow(p, t); stagesSec.append(row); });
   if (stages.length) {
-    stagesSec.append(ghostInput("＋ stage", "pp3-stage-add", (v) => propWorkOp(p, { op: "add-stage", text: v }), "stage name…"));
+    stagesSec.append(ghostInput("＋ rock", "pp3-stage-add", (v) => propWorkOp(p, { op: "add-stage", text: v }), "rock name…"));
   }
   if (!stages.length) {
-    // no stage pipeline yet — flat list, plus a seed action from the template
-    open.forEach((t) => stagesSec.append(propTodoRow(p, t)));
-    const seed = el("button", "o-ghost", "＋ seed stages from the " + (p.kind === "new-construction" ? "new build" : "gut rehab") + " template");
+    // no rock plan yet — flat legacy list, plus a seed action from the template
+    (p.tasks || []).filter((t) => !t.checked).forEach((t) => stagesSec.append(propTodoRow(p, t)));
+    const seed = el("button", "o-ghost", "＋ seed rocks from the " + (p.kind === "new-construction" ? "new build" : "gut rehab") + " template");
     seed.onclick = async () => {
       try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", { op: "seed", template: p.kind === "new-construction" ? "new-build" : "rehab" }); renderProperties(); }
-      catch (e) { showToast("Couldn't seed stages — " + (e.message || "")); }
+      catch (e) { showToast("Couldn't seed rocks — " + (e.message || "")); }
     };
     stagesSec.append(seed);
   }
-  (p.tasks || []).filter((t) => t.checked).forEach((t) => { const row = propTodoRow(p, t); row.classList.add("nested"); stagesSec.append(row); });
   const composer = propTodoComposer(p);
   stagesSec.append(composer);
   main.append(stagesSec);
@@ -560,15 +660,16 @@ function ledgerForm(p, r, i) {
 
 function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }
 
-// propWorkOp — the one op endpoint for the `## work` stage pipeline
+// propWorkOp — the one op endpoint for the `## rocks` tree
 // (check · edit · delete · add-stage · add-task · set-field). Re-renders the
-// property on success so the stage list, progress bar and hard-cost rollup
-// all re-derive from the fresh record.
-async function propWorkOp(p, body) {
+// property on success so the rock list, progress bar and hard-cost rollup
+// all re-derive from the fresh record. quiet=true skips the re-render (for
+// chained ops like resolve-then-check).
+async function propWorkOp(p, body, quiet) {
   try {
     await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body);
-    renderProperties();
-  } catch (e) { showToast("Couldn't update the stage — " + (e.message || "")); }
+    if (!quiet) renderProperties();
+  } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
 }
 
 function propTodoRow(p, t) {
@@ -692,23 +793,25 @@ function openPropInspector(p, t) {
   } else {
     host.append(field("owner", sel));
   }
-  // stage: file the task under one of THIS property's stages ("" = it rides
-  // the current stage) — the server refuses names outside the pipeline
+  // rock: move the task under another of THIS property's rocks (the tree IS
+  // the placement) — the server refuses names outside the pipeline
   if ((p.work || []).length) {
     const stSel = document.createElement("select");
     stSel.className = "pp-in";
     const sopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; stSel.append(o); };
-    sopt("", "current stage");
-    (p.work || []).forEach((st) => sopt(st.text, st.text));
-    stSel.value = t.stage || "";
+    const home = (p.work || []).find((st) =>
+      (st.tasks || []).some(function inTree(n) { return n.taskId === t.id || (n.children || []).some(inTree); }));
+    sopt("", home ? home.text : "—");
+    (p.work || []).filter((st) => !home || st.id !== home.id).forEach((st) => sopt(st.text, st.text));
+    stSel.value = "";
     stSel.onchange = async () => {
+      if (!stSel.value) return;
       try {
         await postJSONOk("/api/tasks/update", { id: compositeId(p, t), stage: stSel.value });
-        t.stage = stSel.value;
         renderProperties();
       } catch (e) { showToast("Couldn't move the task — " + (e.message || "")); }
     };
-    host.append(field("stage", stSel));
+    host.append(field("rock", stSel));
   }
   host.append(field("property", el("span", "pp3-insp-val", p.short || p.address || p.slug)));
   if (t.added) host.append(field("added", el("span", "pp3-insp-val", t.added)));

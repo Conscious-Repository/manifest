@@ -15,6 +15,7 @@ import (
 
 	"manifest/realestate"
 	"manifest/record"
+	"manifest/tasks"
 )
 
 // PROPERTIES — the real-estate cockpit over system/realestate/ records
@@ -457,7 +458,7 @@ func (s *Server) handlePropertyCreate(w http.ResponseWriter, r *http.Request) {
 	fm.WriteString("hidden: false\n")
 	fm.WriteString("---\n\n# " + strings.TrimSpace(b.Address) + "\n")
 	if work != "" {
-		fm.WriteString("\n## work\n" + work)
+		fm.WriteString("\n## rocks\n" + work)
 	}
 	fm.WriteString("\n## log\n")
 
@@ -652,30 +653,26 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Op       string `json:"op"` // seed | add-stage | add-task | check | edit | delete | set-field
 		ID       string `json:"id"`
-		StageID  string `json:"stageId"`
+		StageID  string `json:"stageId"` // add-task: parent — a rock id, milestone id, or rock text
 		Text     string `json:"text"`
+		Kind     string `json:"kind"` // add-task: task (default) | decision | milestone
 		Checked  bool   `json:"checked"`
 		Template string `json:"template"` // rehab | new-build | phases | empty
-		Field    string `json:"field"`    // set-field: est | weeks
-		Value    string `json:"value"`    // set-field: numeric string ("" clears)
+		Field    string `json:"field"`    // set-field: est | weeks | done-by | owner | resolution | waiting | since
+		Value    string `json:"value"`    // set-field: the value ("" clears)
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
 	stages := p.Work
-	find := func(id string) (si, ti int) {
+	findStage := func(id string) int {
 		for i := range stages {
 			if stages[i].ID == id {
-				return i, -1
-			}
-			for j := range stages[i].Tasks {
-				if stages[i].Tasks[j].ID == id {
-					return i, j
-				}
+				return i
 			}
 		}
-		return -1, -1
+		return -1
 	}
 	switch b.Op {
 	case "seed":
@@ -734,80 +731,104 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		}
 		stages = append(stages, realestate.WorkStage{Text: strings.TrimSpace(b.Text)})
 	case "add-task":
-		si, ti := find(b.StageID)
-		if si < 0 || ti >= 0 {
-			httpError(w, errBadRequest("stageId must name a stage"))
-			return
-		}
-		if strings.TrimSpace(b.Text) == "" {
+		// parent = a rock id, a milestone (any node) id, or a rock's text; a
+		// leading "decision:" converts to a decision (capture sugar), and
+		// kind picks the role explicitly.
+		text := strings.TrimSpace(b.Text)
+		if text == "" {
 			httpError(w, errBadRequest("text is required"))
 			return
 		}
-		stages[si].Tasks = append(stages[si].Tasks, realestate.WorkTask{Text: strings.TrimSpace(b.Text)})
-	case "check":
-		si, ti := find(b.ID)
-		if si < 0 {
-			http.Error(w, "work item not found", http.StatusNotFound)
-			return
+		kind := strings.ToLower(strings.TrimSpace(b.Kind))
+		if rest, ok := strings.CutPrefix(strings.ToLower(text), "decision:"); ok && strings.TrimSpace(rest) != "" {
+			text = strings.TrimSpace(text[len(text)-len(rest):])
+			kind = "decision"
 		}
-		if ti < 0 {
+		list := &realestate.PropertyTaskList{Stages: stages, Section: p.RocksSection}
+		t := &tasks.Task{Text: text, Added: time.Now().Format("2006-01-02")}
+		node := list.Append(t, strings.TrimSpace(b.StageID))
+		switch kind {
+		case "decision":
+			t.Fields = append(t.Fields, tasks.Field{Key: "decision", Value: ""})
+		case "milestone":
+			t.Fields = append(t.Fields, tasks.Field{Key: "milestone", Value: ""})
+			t.Added = "" // structure, not an aging task
+		}
+		_ = node
+		stages = list.Stages
+	case "check":
+		if si := findStage(b.ID); si >= 0 {
 			stages[si].Checked = b.Checked
-			// schedule pin (§3): checking a stage stamps its end date
+			// schedule pin (§3): checking a rock stamps its end date
 			done := ""
 			if b.Checked {
 				done = time.Now().Format("2006-01-02")
 			}
 			realestate.SetWorkField(stages, b.ID, "done", done)
+		} else if _, n := realestate.FindWorkNode(stages, b.ID); n != nil {
+			n.Task.Checked = b.Checked
+			if b.Checked {
+				n.Task.Done = time.Now().Format("2006-01-02")
+			} else {
+				n.Task.Done = ""
+			}
 		} else {
-			stages[si].Tasks[ti].Checked = b.Checked
+			http.Error(w, "work item not found", http.StatusNotFound)
+			return
 		}
 	case "set-field":
-		// the money slot / weeks editor: writes [est:: N] or [weeks:: N] on a
-		// stage or todo (empty value clears the field).
-		si, _ := find(b.ID)
-		if si < 0 {
-			http.Error(w, "work item not found", http.StatusNotFound)
-			return
-		}
+		// the money slot / field editors: [est::]/[weeks::] numbers, the
+		// rock's [done-by::] date, and the node's owner / resolution /
+		// waiting / since (empty value clears).
 		key := strings.ToLower(strings.TrimSpace(b.Field))
 		val := strings.TrimSpace(b.Value)
-		if key != "est" && key != "weeks" {
-			httpError(w, errBadRequest("field must be est or weeks"))
+		switch key {
+		case "est", "weeks":
+			if val != "" {
+				if _, err := strconv.ParseFloat(strings.ReplaceAll(strings.ReplaceAll(val, "$", ""), ",", ""), 64); err != nil {
+					httpError(w, errBadRequest(key+" must be a number"))
+					return
+				}
+			}
+		case "done-by", "since":
+			if val != "" {
+				if _, err := time.Parse("2006-01-02", val); err != nil {
+					httpError(w, errBadRequest(key+" must be YYYY-MM-DD"))
+					return
+				}
+			}
+		case "owner", "resolution", "waiting":
+		default:
+			httpError(w, errBadRequest("field must be est, weeks, done-by, owner, resolution, waiting, or since"))
 			return
 		}
-		if val != "" {
-			if _, err := strconv.ParseFloat(strings.ReplaceAll(strings.ReplaceAll(val, "$", ""), ",", ""), 64); err != nil {
-				httpError(w, errBadRequest(key+" must be a number"))
-				return
-			}
-		}
-		realestate.SetWorkField(stages, b.ID, key, val)
-	case "edit":
-		si, ti := find(b.ID)
-		if si < 0 {
+		if !realestate.SetWorkField(stages, b.ID, key, val) {
 			http.Error(w, "work item not found", http.StatusNotFound)
 			return
 		}
+	case "edit":
 		if strings.TrimSpace(b.Text) == "" {
 			httpError(w, errBadRequest("text is required"))
 			return
 		}
-		if ti < 0 {
+		if si := findStage(b.ID); si >= 0 {
 			stages[si].Text = strings.TrimSpace(b.Text)
+		} else if _, n := realestate.FindWorkNode(stages, b.ID); n != nil {
+			n.Task.Text = strings.Join(strings.Fields(b.Text), " ")
 		} else {
-			stages[si].Tasks[ti].Text = strings.TrimSpace(b.Text)
-		}
-	case "delete":
-		si, ti := find(b.ID)
-		if si < 0 {
 			http.Error(w, "work item not found", http.StatusNotFound)
 			return
 		}
-		if ti < 0 {
+	case "delete":
+		if si := findStage(b.ID); si >= 0 {
 			stages = append(stages[:si], stages[si+1:]...)
 		} else {
-			st := &stages[si]
-			st.Tasks = append(st.Tasks[:ti], st.Tasks[ti+1:]...)
+			list := &realestate.PropertyTaskList{Stages: stages, Section: p.RocksSection}
+			if !list.Remove(b.ID) {
+				http.Error(w, "work item not found", http.StatusNotFound)
+				return
+			}
+			stages = list.Stages
 		}
 		// cascade: BID rows tethered to the deleted node (a stage delete catches
 		// its todos' tethers via the id prefix) die with it — they are artifacts
@@ -827,7 +848,7 @@ func (s *Server) handlePropertyWork(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("unknown op"))
 		return
 	}
-	if err := s.writeWork(p.Path, stages); err != nil {
+	if err := s.writeWork(p.Path, p.RocksSection, stages); err != nil {
 		httpError(w, err)
 		return
 	}
@@ -880,9 +901,13 @@ func (s *Server) syncHardCosts(slug string) {
 	}
 }
 
-// writeWork emits + surgically replaces the `## work` section, then reindexes.
-func (s *Server) writeWork(rel string, stages []realestate.WorkStage) error {
-	if err := s.vault.ReplaceSection(rel, "work", realestate.EmitWork(stages)); err != nil {
+// writeWork emits + surgically replaces the record's rock-tree section
+// ("rocks", or legacy "work" until the migration renames it), then reindexes.
+func (s *Server) writeWork(rel, section string, stages []realestate.WorkStage) error {
+	if section == "" {
+		section = "rocks"
+	}
+	if err := s.vault.ReplaceSection(rel, section, realestate.EmitWork(stages)); err != nil {
 		return err
 	}
 	if s.index != nil {
@@ -932,7 +957,7 @@ func (s *Server) tetherWorkID(p realestate.Property, workID string) {
 	}
 	stages := p.Work
 	if realestate.FreezeWorkID(stages, workID) {
-		_ = s.writeWork(p.Path, stages)
+		_ = s.writeWork(p.Path, p.RocksSection, stages)
 	}
 }
 
@@ -1499,14 +1524,14 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 	}
 	var ic []icLine
 	for _, p := range props {
-		// tether id → "stage · task" for the category column
+		// tether id → "rock · task" for the category column
 		workText := map[string]string{}
 		for _, st := range p.Work {
 			workText[st.ID] = st.Text
-			for _, td := range st.Tasks {
-				workText[td.ID] = st.Text + " · " + td.Text
-			}
 		}
+		realestate.WalkNodes(p.Work, func(st *realestate.WorkStage, n *realestate.WorkNode) {
+			workText[n.ID] = st.Text + " · " + n.Task.Text
+		})
 		owns := strings.EqualFold(strings.TrimSpace(p.Entity), entity)
 		for _, lr := range p.Ledger {
 			if !inYear(lr) {

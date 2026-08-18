@@ -13,7 +13,7 @@ function renderPortfolio() {
   const host = els.propertyBoard;
   host.innerHTML = "";
   const cols = el("div", "prop-cols pf-cols");
-  cols.append(el("span", "", "PROPERTY"), el("span", "", "STAGE"),
+  cols.append(el("span", "", "PROPERTY"), el("span", "", "ROCK"),
     el("span", "prop-col-r", "OPEN"), el("span", "prop-col-r", "SPENT"));
   host.append(cols);
   activePortfolio().forEach((p) => {
@@ -69,14 +69,24 @@ function fmtMoneyShort(v) {
   return "$" + Math.round(v);
 }
 
-// Rocks — org-level 90-day work from the goals `## Real Estate` area,
-// rendered rock → stage → task (the same shape a property renders in).
-// A task carrying a property/deal tag shows it in accent and also lives
-// there; the footer states the rule.
-function renderRERocks() {
+// GOALS — the merged view (owner call 2026-08-18): org-level 90-day rocks
+// from the goals `## Real Estate` area on top, then every active property's
+// own rock tree beneath. Same grammar at two altitudes, one destination.
+function renderREGoals() {
   const host = els.propertyBoard;
   host.innerHTML = "";
+  renderREOrgRocks(host);
+  renderREPropertyRocks(host);
+}
+
+// Org rocks — goals-ladder work, rendered rock → stage → task. A task
+// carrying a property/deal tag shows it in accent and also lives there;
+// the footer states the rule.
+function renderREOrgRocks(host) {
   const rocks = reOrgRocks();
+  const head = el("div", "aion-sec-label");
+  head.append(el("span", "aion-sec-title", "● Org rocks"), el("span", "aion-sec-count", String(rocks.length)));
+  host.append(head);
   if (!rocks.length) {
     host.append(emptyRow("No org rocks in the Real Estate area yet — add one in GOALS."));
     return;
@@ -111,6 +121,51 @@ function renderRERocks() {
     host.append(wrap);
   });
   host.append(el("div", "re-foot-note", "an untagged task is org-level and lives here — tag a property or deal to file it there too"));
+}
+
+// Property rocks — each active property's own rock tree, compact: rock line
+// (done glyph · name · done-by, ink when late) + open task count; milestones
+// read as sub-points. Click-through to the property page for the full lanes.
+function renderREPropertyRocks(host) {
+  const today = new Date().toISOString().slice(0, 10);
+  const withRocks = activePortfolio().filter((p) => (p.work || []).length);
+  const head = el("div", "aion-sec-label re-proprocks-label");
+  head.append(el("span", "aion-sec-title", "◈ Property rocks"), el("span", "aion-sec-count", String(withRocks.length)));
+  host.append(head);
+  withRocks.forEach((p) => {
+    const wrap = el("div", "re-rock re-proprock");
+    const line = el("div", "re-rock-line");
+    line.append(el("span", "re-rock-dot"));
+    const name = el("span", "re-rock-name", p.short || p.address || p.slug);
+    name.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
+    line.append(name);
+    const openN = openTodoCount(p);
+    if (openN) line.append(el("span", "aion-sec-count", openN + " open"));
+    wrap.append(line);
+    (p.work || []).forEach((st) => {
+      const sl = el("div", "re-stage" + (st.checked ? " done" : ""));
+      sl.append(el("span", "re-stage-glyph", st.checked ? "✓" : "○"));
+      sl.append(el("span", "", st.text));
+      const when = st.checked ? (st.done || "") : (st.doneBy || "");
+      if (when) {
+        sl.append(el("span", "re-stage-doneby" + (!st.checked && st.doneBy && st.doneBy < today ? " late" : ""),
+          st.checked ? when : "by " + when));
+      }
+      const openHere = countOpenNodes(st.tasks);
+      if (openHere) sl.append(el("span", "re-stage-open", openHere + ""));
+      wrap.append(sl);
+    });
+    host.append(wrap);
+  });
+}
+
+function countOpenNodes(nodes) {
+  let n = 0;
+  (nodes || []).forEach((t) => {
+    if (!t.checked && !t.milestone && !t.decision) n++;
+    n += countOpenNodes(t.children);
+  });
+  return n;
 }
 
 // propOutstandingGroups — PROPERTY containers only (owner call 2026-08-09):

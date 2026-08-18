@@ -486,9 +486,11 @@ func main() {
 		srv.UseDeepseekState(deepseekState)
 		emitters = append(emitters, signals.DegradedPortal(deepseekState))
 		if reSvc != nil {
-			// property signals: over-budget category, stalled rehab, nothing-queued-next
+			// property signals: over-budget category, stalled rehab, nothing-queued-next,
+			// aging rock-tree tasks (overhaul decision 8)
 			emitters = append(emitters, signals.OverBudgetProperties(reSvc),
-				signals.StalledProperties(reSvc), signals.NoNextAction(reSvc))
+				signals.StalledProperties(reSvc), signals.NoNextAction(reSvc),
+				signals.StalePropertyTasks(reSvc))
 		}
 		srv.UseSignals(signals.New(sigStore, emitters...))
 		log.Printf("feed signals: enabled (%d emitters)", len(emitters))

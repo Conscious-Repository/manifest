@@ -253,8 +253,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)
 	mux.HandleFunc("POST /api/tasks/update", s.handleTaskUpdate)
 	mux.HandleFunc("POST /api/tasks/rank", s.handleTasksRank)                      // unified drag-to-rank (stage 4)
-	mux.HandleFunc("GET /api/properties/migrate-tasks", s.handlePropTasksMigrate)  // preview
-	mux.HandleFunc("POST /api/properties/migrate-tasks", s.handlePropTasksMigrate) // commit
 	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)              // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
 	mux.HandleFunc("POST /api/tasks/drop", s.handleTaskDrop)

@@ -26,6 +26,67 @@ func StaleTasks(l TaskLoader) Emitter { return todoEmitter{l} }
 
 type todoEmitter struct{ l TaskLoader }
 
+// StalePropertyTasks extends the same aging fuses to property rock-tree
+// tasks (overhaul decision 8: global aging signals read property records
+// too). Decisions never enter — the task projection excludes them. Only
+// ACTIVE properties age; a parked or sold property's list is history, and
+// the stalled-property signal owns whole-property neglect.
+func StalePropertyTasks(l PropertyLister) Emitter { return propTodoEmitter{l} }
+
+type propTodoEmitter struct{ l PropertyLister }
+
+func (e propTodoEmitter) Emit(now time.Time) ([]Signal, error) {
+	props, err := e.l.Properties()
+	if err != nil {
+		return nil, err
+	}
+	var out []Signal
+	for _, p := range props {
+		if p.Status != "pre_development" && p.Status != "construction" {
+			continue
+		}
+		for _, t := range p.Tasks {
+			if t.Checked {
+				continue
+			}
+			age := t.AgeDays(now)
+			bucket := strconv.Itoa(age / 7)
+			id := "prop:" + p.Slug + "/" + t.ID
+			switch t.State() {
+			case "open":
+				if age < staleOpenDays {
+					continue
+				}
+				out = append(out, Signal{
+					ID:      "todo-stale:" + id,
+					Kind:    "todo-stale",
+					Entity:  t.Text,
+					Label:   "stale task · " + firstOr(p.Address, p.Slug) + " · " + t.Text + " · " + strconv.Itoa(age) + "d",
+					Age:     age,
+					ActHref: "#/properties/" + p.Slug,
+					Hash:    "open|" + bucket,
+					GoalID:  id, // composite id — the card's decision pills route through the unified endpoints
+				})
+			case "waiting":
+				if age < staleWaitingDays {
+					continue
+				}
+				out = append(out, Signal{
+					ID:      "todo-waiting:" + id,
+					Kind:    "todo-waiting",
+					Entity:  t.Text,
+					Label:   "still waiting · " + t.Waiting + " · " + t.Text + " · " + strconv.Itoa(age) + "d",
+					Age:     age,
+					ActHref: "#/properties/" + p.Slug,
+					Hash:    "waiting|" + t.Since + "|" + bucket,
+					GoalID:  id,
+				})
+			}
+		}
+	}
+	return out, nil
+}
+
 func (e todoEmitter) Emit(now time.Time) ([]Signal, error) {
 	doc, err := e.l.Load()
 	if err != nil {

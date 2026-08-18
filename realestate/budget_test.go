@@ -48,11 +48,12 @@ func TestComputeProjectBudget(t *testing.T) {
 func TestRecognizedSpend(t *testing.T) {
 	// three tasks: done+firm+no cash (recognized, ⚑), done+firm+partial draw
 	// (recognized at firm, ⚑ gap), open+cash (cash only, no flag)
-	stages := []WorkStage{{ID: "demo", Text: "Demo", Tasks: []WorkTask{
-		{ID: "demo/a", Text: "a", Checked: true},
-		{ID: "demo/b", Text: "b", Checked: true},
-		{ID: "demo/c", Text: "c"},
-	}}}
+	stages := ParseWork([]string{
+		"- [ ] Demo [work:: demo]",
+		"    - [x] a [work:: demo/a]",
+		"    - [x] b [work:: demo/b]",
+		"    - [ ] c [work:: demo/c]",
+	})
 	ledger := []LedgerRow{
 		{Type: "bid", Status: "accepted", Amount: 5000, WorkID: "demo/a"},
 		{Type: "bid", Status: "accepted", Amount: 8000, WorkID: "demo/b"},
@@ -75,7 +76,10 @@ func TestRecognizedSpend(t *testing.T) {
 	}
 
 	// receipt on the accepted bid = evidence without cash → flag clears (bank OR receipt)
-	stages2 := []WorkStage{{ID: "demo", Text: "Demo", Tasks: []WorkTask{{ID: "demo/a", Text: "a", Checked: true}}}}
+	stages2 := ParseWork([]string{
+		"- [ ] Demo [work:: demo]",
+		"    - [x] a [work:: demo/a]",
+	})
 	JoinWorkLedger(stages2, []LedgerRow{
 		{Type: "bid", Status: "accepted", Amount: 5000, WorkID: "demo/a", Doc: "receipt.pdf"},
 	})

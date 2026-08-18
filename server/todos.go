@@ -153,13 +153,21 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	switch b.Container.Kind {
 	case "property":
-		if s.propTaskMutate(w, b.Container.Slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
-			return list.Append(&tasks.Task{
-				Text:  strings.Join(strings.Fields(b.Text), " "),
+		if s.propTaskMutate(w, b.Container.Slug, func(list *realestate.PropertyTaskList) (bool, error) {
+			// the line lands IN the tree: under the named rock/milestone, else
+			// loose under the current rock. "decision:" converts (capture sugar).
+			text := strings.Join(strings.Fields(b.Text), " ")
+			t := &tasks.Task{
+				Text:  text,
 				Owner: strings.TrimSpace(b.Owner),
-				Stage: strings.TrimSpace(b.Stage),
 				Added: time.Now().Format("2006-01-02"),
-			}), true, nil
+			}
+			if rest, ok := strings.CutPrefix(strings.ToLower(text), "decision:"); ok && strings.TrimSpace(rest) != "" {
+				t.Text = strings.TrimSpace(text[len(text)-len(rest):])
+				t.Fields = append(t.Fields, tasks.Field{Key: "decision", Value: ""})
+			}
+			list.Append(t, strings.TrimSpace(b.Stage))
+			return true, nil
 		}) {
 			writeJSON(w, s.tasksView())
 		}
@@ -458,39 +466,40 @@ func (s *Server) handleTaskUpdate(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("malformed property todo id"))
 			return
 		}
-		if s.propTaskMutate(w, slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
-			t := list.Find(lineID)
-			if t == nil {
-				return list, false, nil
+		if s.propTaskMutate(w, slug, func(list *realestate.PropertyTaskList) (bool, error) {
+			n := list.Find(lineID)
+			if n == nil {
+				return false, nil
 			}
 			if b.Text != nil && strings.TrimSpace(*b.Text) != "" {
-				t.Text = strings.Join(strings.Fields(*b.Text), " ")
+				n.Task.Text = strings.Join(strings.Fields(*b.Text), " ")
 			}
 			if b.Owner != nil {
-				t.Owner = strings.TrimSpace(*b.Owner)
+				n.Task.Owner = strings.TrimSpace(*b.Owner)
 			}
 			if b.Stage != nil {
-				// stage vocabulary = THIS property's own `## stages` names
-				// ("" clears — the task rides the current stage again)
+				// re-parent: the task moves under the named rock (the tree IS
+				// the placement — no [stage::] field; "" is a no-op)
 				want := strings.TrimSpace(*b.Stage)
 				if want != "" {
-					matched := ""
-					if p, found := s.realestate.Get(slug); found {
-						for _, st := range p.Work {
-							if strings.EqualFold(st.Text, want) {
-								matched = st.Text
-								break
-							}
+					dest := ""
+					for i := range list.Stages {
+						if strings.EqualFold(list.Stages[i].Text, want) || list.Stages[i].ID == want {
+							dest = list.Stages[i].ID
+							break
 						}
 					}
-					if matched == "" {
-						return list, false, errBadRequest("no stage named " + want + " on this property")
+					if dest == "" {
+						return false, errBadRequest("no rock named " + want + " on this property")
 					}
-					want = matched
+					moved := *n.Task
+					if !list.Remove(lineID) {
+						return false, nil
+					}
+					list.Append(&moved, dest)
 				}
-				t.Stage = want
 			}
-			return list, true, nil
+			return true, nil
 		}) {
 			writeJSON(w, s.tasksView())
 		}
@@ -819,17 +828,8 @@ func (s *Server) handleTaskDrop(w http.ResponseWriter, r *http.Request) {
 			httpError(w, errBadRequest("malformed property todo id"))
 			return
 		}
-		if s.propTaskMutate(w, slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
-			found := false
-			var out realestate.PropertyTaskList
-			for _, ln := range list {
-				if ln.Task != nil && ln.Task.ID == lineID {
-					found = true
-					continue
-				}
-				out = append(out, ln)
-			}
-			return out, found, nil
+		if s.propTaskMutate(w, slug, func(list *realestate.PropertyTaskList) (bool, error) {
+			return list.Remove(lineID), nil
 		}) {
 			writeJSON(w, s.tasksView())
 		}

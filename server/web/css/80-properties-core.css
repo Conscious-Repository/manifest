@@ -299,6 +299,27 @@
 .pp3-stage-x.armed { opacity: 1; color: var(--over); font-family: var(--mono); font-size: var(--fs-2xs); }
 .pp3-stage-add { margin-top: var(--sp-3); }
 .pp3-todo.nested { padding-left: 30px; }
+.pp3-todo.deep, .pp3-compose.deep { padding-left: 60px; }
+
+/* rocks tree (overhaul): done-by dates, milestones, the decisions lane */
+.pp3-doneby { flex: none; background: none; border: none; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.pp3-doneby:hover { color: var(--accent); }
+.pp3-doneby.late { color: var(--over); }
+.pp3-doneby-edit { font-family: var(--mono); font-size: var(--fs-2xs); border: none; border-bottom: 1px solid var(--accent-soft); background: none; }
+.pp3-milestone { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0; font-size: var(--fs-md); color: var(--base-70); }
+.pp3-milestone.done { text-decoration: line-through; color: var(--base-40); }
+.pp3-milestone-name { flex: 1; min-width: 0; cursor: text; font-variant-caps: all-small-caps; letter-spacing: 0.4px; }
+.pp3-milestone .pp3-stage-x { opacity: 0; }
+.pp3-milestone:hover .pp3-stage-x { opacity: 1; }
+.pp3-dec-lane { border-left: 2px solid var(--accent-soft); padding-left: var(--sp-5); }
+.pp3-dec-row { align-items: baseline; }
+.pp3-dec-rock { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+
+/* GOALS tab: per-property rock trails */
+.re-proprocks-label { margin-top: var(--sp-8); }
+.re-stage-doneby { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.re-stage-doneby.late { color: var(--over); }
+.re-stage-open { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); }
 .pp3-uw-sec .re-uw-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4) var(--sp-7); margin: var(--sp-4) 0; }
 .re-uw-field { display: flex; flex-direction: column; gap: var(--sp-1); }
 .re-uw-label { font-size: var(--fs-2xs); color: var(--base-40); }

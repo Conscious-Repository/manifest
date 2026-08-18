@@ -1,39 +1,40 @@
-// The property `## todos` section (redesign stage 4 — Revision 3): a flat
-// list of action lines in the SHARED to-do line grammar (tasks.ParseLine /
-// EmitLine — one grammar, one file, kernel doctrine §3). A property todo
-// carries text · an [owner::] assignee ("" = the owner's) · optionally a
-// [work:: id] back-tether to the `## work` line it was migrated from (the
-// accounting dual-stamp key) and a [rank:: n] for the unified board order.
-//
-// `## work` stays untouched by this section: it remains the budget/spent/
-// schedule source; this list is the property's ACTION surface.
+// Property tasks live IN the `## rocks` tree (realestate-overhaul §6): the
+// property record is the single home for property tasks/decisions. This file
+// is the task-surface facade over that tree — the unified todo board, the
+// task panel, and the composer all mutate tree nodes through it. The retired
+// `## tasks` section still READS tolerantly (pre-migration files), but every
+// write lands in the tree.
 package realestate
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"manifest/mdfm"
 	"manifest/tasks"
 )
 
-// PropertyTaskLine is one section body line: a parsed todo or a verbatim
-// line (comments, blanks — preserved in place for the fixpoint).
-type PropertyTaskLine struct {
+// PropertyTaskList is the task-surface view of one property's rock tree,
+// loaded fresh for a mutation (parse → mutate → EmitWork → section replace).
+type PropertyTaskList struct {
+	Stages  []WorkStage
+	Section string       // the heading the tree lives under: "rocks" | legacy "work"
+	Legacy  []LegacyLine // remaining `## tasks` lines (read-only; pre-migration)
+}
+
+// LegacyLine is one un-migrated `## tasks` section line.
+type LegacyLine struct {
 	Task *tasks.Task
 	Raw  string
 }
 
-// PropertyTaskList is the parsed `## todos` section body.
-type PropertyTaskList []PropertyTaskLine
-
-// ParsePropertyTasks reads section body lines. Checkbox lines parse through
-// the shared grammar; everything else rides verbatim. Ids: explicit
+// ParsePropertyTasks reads legacy `## tasks` section body lines (tolerant
+// read for pre-migration files + the migration itself). Checkbox lines parse
+// through the shared grammar; everything else rides verbatim. Ids: explicit
 // [todo:: id] pin wins, else the text slug with -2/-3 collision suffixes.
-func ParsePropertyTasks(lines []string) PropertyTaskList {
-	var out PropertyTaskList
+func ParsePropertyTasks(lines []string) []LegacyLine {
+	var out []LegacyLine
 	seen := map[string]bool{}
 	uniq := func(id string) string {
 		root, n := id, 2
@@ -45,9 +46,9 @@ func ParsePropertyTasks(lines []string) PropertyTaskList {
 		return id
 	}
 	for _, ln := range lines {
-		m := todoLineRe.FindStringSubmatch(ln)
+		m := workLineRe.FindStringSubmatch(ln)
 		if m == nil {
-			out = append(out, PropertyTaskLine{Raw: ln})
+			out = append(out, LegacyLine{Raw: ln})
 			continue
 		}
 		t := tasks.ParseLine(m[2] != " ", m[3])
@@ -60,40 +61,32 @@ func ParsePropertyTasks(lines []string) PropertyTaskList {
 			id = ts
 		}
 		t.ID = uniq(id)
-		out = append(out, PropertyTaskLine{Task: t})
+		out = append(out, LegacyLine{Task: t})
 	}
 	return out
 }
 
-var todoLineRe = workLineRe // the kernel checkbox grammar (one regex, one file)
-
-// EmitPropertyTasks renders the section body back (fixpoint with parse).
-func EmitPropertyTasks(list PropertyTaskList) string {
-	var b strings.Builder
-	for _, ln := range list {
-		if ln.Task != nil {
-			b.WriteString(tasks.EmitLine(ln.Task) + "\n")
-		} else {
-			b.WriteString(ln.Raw + "\n")
-		}
-	}
-	return b.String()
+// Find returns the tree node whose task id (or work id) matches, or nil.
+func (l *PropertyTaskList) Find(id string) *WorkNode {
+	_, n := FindWorkNode(l.Stages, id)
+	return n
 }
 
-// Find returns the todo with id, or nil.
-func (l PropertyTaskList) Find(id string) *tasks.Task {
-	for _, ln := range l {
-		if ln.Task != nil && ln.Task.ID == id {
-			return ln.Task
-		}
-	}
-	return nil
-}
-
-// Tasks returns just the parsed todo lines, in order.
-func (l PropertyTaskList) Tasks() []*tasks.Task {
+// Tasks returns the task-surface projection of the tree: every non-milestone,
+// non-decision node (all depths), as shared-grammar tasks whose ID is the
+// node's task id. Legacy `## tasks` lines (pre-migration) append after.
+// Projections are copies — mutate through the tree, not these.
+func (l *PropertyTaskList) Tasks() []*tasks.Task {
 	var out []*tasks.Task
-	for _, ln := range l {
+	WalkNodes(l.Stages, func(_ *WorkStage, n *WorkNode) {
+		if n.Milestone || n.Decision {
+			return
+		}
+		t := *n.Task
+		t.ID = n.TaskID()
+		out = append(out, &t)
+	})
+	for _, ln := range l.Legacy {
 		if ln.Task != nil {
 			out = append(out, ln.Task)
 		}
@@ -101,14 +94,67 @@ func (l PropertyTaskList) Tasks() []*tasks.Task {
 	return out
 }
 
-// Append adds a new todo line at the end of the section.
-func (l PropertyTaskList) Append(t *tasks.Task) PropertyTaskList {
-	return append(l, PropertyTaskLine{Task: t})
+// Append adds a task/decision to the tree: under the rock (or milestone)
+// named by parent — matched by id first, then case-insensitive rock text —
+// else loose under the current rock; with no rocks at all an "Inbox" rock is
+// created. Returns the new node.
+func (l *PropertyTaskList) Append(t *tasks.Task, parent string) *WorkNode {
+	node := &WorkNode{Task: t}
+	parent = strings.TrimSpace(parent)
+	if parent != "" {
+		if _, p := FindWorkNode(l.Stages, parent); p != nil {
+			p.Children = append(p.Children, node)
+			return node
+		}
+		for i := range l.Stages {
+			if l.Stages[i].ID == parent || strings.EqualFold(l.Stages[i].Text, parent) {
+				l.Stages[i].Tasks = append(l.Stages[i].Tasks, node)
+				return node
+			}
+		}
+	}
+	for i := range l.Stages {
+		if !l.Stages[i].Checked {
+			l.Stages[i].Tasks = append(l.Stages[i].Tasks, node)
+			return node
+		}
+	}
+	l.Stages = append(l.Stages, WorkStage{Text: "Inbox", Tasks: []*WorkNode{node}})
+	return node
 }
 
-// LoadTasks re-reads a property's file and parses its `## todos` section.
-// Returns the list, the vault-relative path (for the section write), and ok.
-func (s *Service) LoadTasks(slug string) (PropertyTaskList, string, bool) {
+// Remove deletes the node with the given task id from the tree. Returns
+// whether a node was removed.
+func (l *PropertyTaskList) Remove(id string) bool {
+	var prune func(nodes []*WorkNode) ([]*WorkNode, bool)
+	prune = func(nodes []*WorkNode) ([]*WorkNode, bool) {
+		for i, n := range nodes {
+			if n.ID == id || n.TaskID() == id {
+				return append(nodes[:i], nodes[i+1:]...), true
+			}
+			if next, ok := prune(n.Children); ok {
+				n.Children = next
+				return nodes, true
+			}
+		}
+		return nodes, false
+	}
+	for i := range l.Stages {
+		if next, ok := prune(l.Stages[i].Tasks); ok {
+			l.Stages[i].Tasks = next
+			return true
+		}
+	}
+	return false
+}
+
+// Emit renders the tree back to its section body (fixpoint with the parse).
+func (l *PropertyTaskList) Emit() string { return EmitWork(l.Stages) }
+
+// LoadTasks re-reads a property's file and parses its rock tree (plus any
+// legacy `## tasks` remainder). Returns the list, the vault-relative path
+// (for the section write), and ok.
+func (s *Service) LoadTasks(slug string) (*PropertyTaskList, string, bool) {
 	p, ok := s.Get(slug)
 	if !ok {
 		return nil, "", false
@@ -118,39 +164,15 @@ func (s *Service) LoadTasks(slug string) (PropertyTaskList, string, bool) {
 		return nil, "", false
 	}
 	_, body := mdfm.Split(string(raw))
-	return ParsePropertyTasks(parseSections(body)["tasks"]), p.Path, true
-}
-
-// MigrateWorkTasks previews (or builds) the one-time copy of a property's OPEN
-// `## work` todos into `## todos`, each carrying its [work:: id] back-tether
-// and an [added::] stamp. `## work` bytes are untouched — it stays the budget
-// source; the tether is what keeps the money model truthful on completion.
-// Already-tethered lines are skipped (idempotent).
-func MigrateWorkTasks(p Property, list PropertyTaskList, now time.Time) (PropertyTaskList, []string) {
-	tethered := map[string]bool{}
-	for _, ln := range list {
-		if ln.Task != nil {
-			if wid := ln.Task.FieldValue("work"); wid != "" {
-				tethered[wid] = true
-			}
+	secs := parseSections(body)
+	list := &PropertyTaskList{Section: "rocks"}
+	sec, okSec := secs["rocks"]
+	if !okSec {
+		if legacy, okW := secs["work"]; okW {
+			sec, list.Section = legacy, "work"
 		}
 	}
-	var added []string
-	for _, st := range p.Work {
-		for _, td := range st.Tasks {
-			if td.Checked || tethered[td.ID] {
-				continue
-			}
-			t := &tasks.Task{
-				Text:  td.Text,
-				Added: now.Format("2006-01-02"),
-				Fields: []tasks.Field{
-					{Key: "work", Value: td.ID},
-				},
-			}
-			list = list.Append(t)
-			added = append(added, td.Text)
-		}
-	}
-	return list, added
+	list.Stages = ParseWork(sec)
+	list.Legacy = ParsePropertyTasks(secs["tasks"])
+	return list, p.Path, true
 }

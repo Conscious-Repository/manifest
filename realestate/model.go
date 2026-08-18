@@ -51,8 +51,9 @@ type Property struct {
 	Ledger       []LedgerRow    `json:"ledger"` // money facts from the csv sidecar
 	Rollup       Rollup         `json:"rollup"` // derived paid/committed/%out
 	LastLog      string         `json:"lastLog"`
-	Work         []WorkStage    `json:"work"`                   // `## work` stages+todos (management core)
-	Tasks        []*tasks.Task  `json:"tasks"`                  // `## todos` action lines (redesign stage 4)
+	Work         []WorkStage    `json:"work"`                   // `## rocks` tree (management core; legacy `## work` reads through)
+	RocksSection string         `json:"-"`                      // heading the tree lives under ("rocks" | legacy "work") — write-back target
+	Tasks        []*tasks.Task  `json:"tasks"`                  // task-surface projection of the tree (+ legacy `## tasks` remainder)
 	CurrentStage string         `json:"currentStage,omitempty"` // first unchecked stage's text
 	WorkStart    string         `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
 	Schedule     []StageSpan    `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
@@ -87,16 +88,17 @@ type LedgerRow struct {
 // LedgerHeader is the canonical csv column order (also the seed's empty-file header).
 var LedgerHeader = []string{"date", "type", "category", "vendor", "contractor", "amount", "status", "note", "doc"}
 
-// StarterTemplate is the boot-seeded gut-rehab template (write-once). Pass-5:
-// its `## stages` section seeds work plans (names + default [weeks::]) — the
-// stage list and the schedule are the same object from birth.
+// StarterTemplate is the boot-seeded gut-rehab template (write-once). Its
+// `## rocks` section seeds rock plans (names + default [weeks::], which
+// prefill [done-by::] dates from work-start) — the rock list and the
+// schedule are the same object from birth.
 const StarterTemplate = `---
 categories: [budget-template]
 ---
 
 # gut rehab
 
-## stages
+## rocks
 - [ ] Pre-development [weeks:: 2]
 - [ ] Exterior & structural [weeks:: 3]
 - [ ] Demo [weeks:: 1]
@@ -114,7 +116,7 @@ categories: [budget-template]
 
 # new build
 
-## stages
+## rocks
 - [ ] Pre-construction [weeks:: 6]
 - [ ] Site work [weeks:: 2]
 - [ ] Foundation [weeks:: 3]

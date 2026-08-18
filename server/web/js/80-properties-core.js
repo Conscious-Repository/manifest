@@ -26,9 +26,10 @@ function showProperties(h) {
   if (["work", "accounting", "statements", "contractors"].includes(tail)) { location.hash = "#/properties"; return; }
   if (["decisions", "intake", "outstanding"].includes(tail)) { location.hash = "#/properties"; return; } // → BACKLOG
   if (["parcels", "all"].includes(tail)) { location.hash = "#/properties/portfolio"; return; }
+  if (tail === "rocks") { location.hash = "#/properties/goals"; return; } // renamed tab (overhaul)
   propSlug = "";
   propDealSlug = "";
-  const VIEWS = ["backlog", "portfolio", "rocks", "money", "settings", "map"];
+  const VIEWS = ["backlog", "portfolio", "goals", "money", "settings", "map"];
   if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
   // bare #/properties = BACKLOG, always — the aion mirror (showAion: tail ||
   // "backlog"). The old sticky-mode read made the BACKLOG chip (href
@@ -100,7 +101,7 @@ async function renderProperties() {
   else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
   else if (propMode === "deal") { els.propertyBoard.hidden = false; renderDealPage(propDealSlug); }
-  else if (propMode === "rocks") { els.propertyBoard.hidden = false; renderRERocks(); }
+  else if (propMode === "goals") { els.propertyBoard.hidden = false; renderREGoals(); }
   else if (propMode === "money") { els.propertyBoard.hidden = false; renderREMoney(); }
   else if (propMode === "portfolio") { els.propertyBoard.hidden = false; renderPortfolio(); }
   else { els.propertyBoard.hidden = false; renderREBacklog(); } // default = BACKLOG

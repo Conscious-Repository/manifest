@@ -310,10 +310,10 @@ func splitPropID(id string) (slug, lineID string) {
 	return rest[:i], rest[i+1:]
 }
 
-// propTaskMutate loads a property's `## todos`, applies fn, writes the section
+// propTaskMutate loads a property's rock tree, applies fn, writes the section
 // back under the realestate capability, and reindexes. fn returns false when
 // the line is missing.
-func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error)) bool {
+func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list *realestate.PropertyTaskList) (bool, error)) bool {
 	if s.realestate == nil || s.vault == nil {
 		http.Error(w, "properties not available", http.StatusServiceUnavailable)
 		return false
@@ -323,7 +323,7 @@ func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list
 		http.Error(w, "property not found", http.StatusNotFound)
 		return false
 	}
-	next, found, err := fn(list)
+	found, err := fn(list)
 	if err != nil {
 		httpError(w, err)
 		return false
@@ -332,7 +332,7 @@ func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return false
 	}
-	if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(next)); err != nil {
+	if err := s.vault.ReplaceSectionCap("realestate", rel, list.Section, list.Emit()); err != nil {
 		httpError(w, err)
 		return false
 	}
@@ -428,15 +428,15 @@ func (s *Server) propTaskPin(slug, lineID string) bool {
 	if !ok {
 		return false
 	}
-	t := list.Find(lineID)
-	if t == nil {
+	n := list.Find(lineID)
+	if n == nil {
 		return false
 	}
-	if t.ExplicitID() != "" {
+	if n.Task.ExplicitID() != "" {
 		return true // already pinned — no write
 	}
-	t.PinID(lineID)
-	if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(list)); err != nil {
+	n.Task.PinID(lineID)
+	if err := s.vault.ReplaceSectionCap("realestate", rel, list.Section, list.Emit()); err != nil {
 		return false
 	}
 	if s.index != nil {
@@ -445,55 +445,30 @@ func (s *Server) propTaskPin(slug, lineID string) bool {
 	return true
 }
 
-// propTaskCheck completes/reopens a property todo. A [work:: id] back-tether
-// DUAL-STAMPS the matching `## work` line so stage Ready/Recognized money
-// stays truthful (the one place Rev 3 touches the accounting model).
+// propTaskCheck completes/reopens a property task. The task IS a tree node
+// (overhaul §6) — checking it moves the rock's Ready/Recognized state
+// directly; the Rev-3 dual-stamp is gone because there is only one line.
 func (s *Server) propTaskCheck(w http.ResponseWriter, id string, checked bool) {
 	slug, lineID := splitPropID(id)
 	if slug == "" {
 		httpError(w, errBadRequest("malformed property todo id"))
 		return
 	}
-	var workTether string
-	ok := s.propTaskMutate(w, slug, func(list realestate.PropertyTaskList) (realestate.PropertyTaskList, bool, error) {
-		t := list.Find(lineID)
-		if t == nil {
-			return list, false, nil
+	ok := s.propTaskMutate(w, slug, func(list *realestate.PropertyTaskList) (bool, error) {
+		n := list.Find(lineID)
+		if n == nil {
+			return false, nil
 		}
-		t.Checked = checked
+		n.Task.Checked = checked
 		if checked {
-			t.Done = time.Now().Format("2006-01-02")
+			n.Task.Done = time.Now().Format("2006-01-02")
 		} else {
-			t.Done = ""
+			n.Task.Done = ""
 		}
-		workTether = t.FieldValue("work")
-		return list, true, nil
+		return true, nil
 	})
 	if !ok {
 		return
-	}
-	if workTether != "" {
-		if p, found := s.realestate.Get(slug); found {
-			stages := p.Work
-			changed := false
-			for i := range stages {
-				for j := range stages[i].Tasks {
-					if stages[i].Tasks[j].ID == workTether && stages[i].Tasks[j].Checked != checked {
-						stages[i].Tasks[j].Checked = checked
-						changed = true
-					}
-				}
-			}
-			if changed {
-				if err := s.vault.ReplaceSectionCap("realestate", p.Path, "work", realestate.EmitWork(stages)); err != nil {
-					httpError(w, err)
-					return
-				}
-				if s.index != nil {
-					_ = s.index.ReindexPaths([]string{p.Path})
-				}
-			}
-		}
 	}
 	writeJSON(w, s.tasksView())
 }
@@ -591,15 +566,15 @@ func (s *Server) handleTasksRank(w http.ResponseWriter, r *http.Request) {
 		}
 		changed := false
 		for lineID, rank := range ranks {
-			if t := list.Find(lineID); t != nil && t.Rank != rank {
-				t.Rank = rank
+			if n := list.Find(lineID); n != nil && n.Task.Rank != rank {
+				n.Task.Rank = rank
 				changed = true
 			}
 		}
 		if !changed {
 			continue
 		}
-		if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(list)); err != nil {
+		if err := s.vault.ReplaceSectionCap("realestate", rel, list.Section, list.Emit()); err != nil {
 			httpError(w, err)
 			return
 		}
@@ -672,75 +647,4 @@ func (s *Server) handleRePeopleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.index.ReindexPaths([]string{rel})
 	writeJSON(w, map[string]bool{"ok": true})
-}
-
-// ---- one-time migration: open `## work` todos → `## todos` lines ----
-// GET previews per property; POST commits. `## work` bytes untouched; each
-// copied line carries its [work:: id] back-tether (idempotent — tethered
-// work ids are skipped on re-run).
-
-func (s *Server) handlePropTasksMigrate(w http.ResponseWriter, r *http.Request) {
-	if s.realestate == nil || s.vault == nil {
-		http.Error(w, "properties not available", http.StatusServiceUnavailable)
-		return
-	}
-	props, err := s.realestate.Properties()
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	type report struct {
-		Slug  string   `json:"slug"`
-		Name  string   `json:"name"`
-		Added []string `json:"added"`
-	}
-	now := time.Now()
-	switch r.Method {
-	case http.MethodGet:
-		var out []report
-		for _, p := range props {
-			list, _, ok := s.realestate.LoadTasks(p.Slug)
-			if !ok {
-				continue
-			}
-			if _, added := realestate.MigrateWorkTasks(p, list, now); len(added) > 0 {
-				out = append(out, report{Slug: p.Slug, Name: orStr(p.Short, p.Name), Added: added})
-			}
-		}
-		writeJSON(w, map[string]any{"properties": out})
-	case http.MethodPost:
-		var b struct {
-			Slugs []string `json:"slugs"` // empty = every property
-		}
-		_ = decode(r, &b)
-		want := map[string]bool{}
-		for _, sl := range b.Slugs {
-			want[sl] = true
-		}
-		var out []report
-		for _, p := range props {
-			if len(want) > 0 && !want[p.Slug] {
-				continue
-			}
-			list, rel, ok := s.realestate.LoadTasks(p.Slug)
-			if !ok {
-				continue
-			}
-			next, added := realestate.MigrateWorkTasks(p, list, now)
-			if len(added) == 0 {
-				continue
-			}
-			if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(next)); err != nil {
-				httpError(w, err)
-				return
-			}
-			if s.index != nil {
-				_ = s.index.ReindexPaths([]string{rel})
-			}
-			out = append(out, report{Slug: p.Slug, Name: orStr(p.Short, p.Name), Added: added})
-		}
-		writeJSON(w, map[string]any{"migrated": out})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
 }

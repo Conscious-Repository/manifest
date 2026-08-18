@@ -16,8 +16,8 @@ import (
 )
 
 // unifiedHarness builds a real temp vault: a `to do.md`, one property record
-// with `## work` + `## tasks` sections, a live index, and a server whose
-// writes flow through declared capabilities — the stage-4 substrate end to end.
+// whose `## rocks` tree holds the property tasks (overhaul §6), a live index,
+// and a server whose writes flow through declared capabilities.
 func unifiedHarness(t *testing.T) (*Server, string) {
 	t.Helper()
 	vault := t.TempDir()
@@ -47,13 +47,11 @@ func unifiedHarness(t *testing.T) (*Server, string) {
 		"control: owned",
 		"---",
 		"",
-		"## work",
-		"- [ ] Rough-in",
-		"    - [ ] Rough electrical [est:: 8000]",
-		"",
-		"## tasks",
-		"- [ ] rough electrical [added:: 2026-08-05] [work:: rough-in/rough-electrical]",
-		"- [ ] chase gutter bid [added:: 2026-08-06] [owner:: acme-gc]",
+		"## rocks",
+		"- [ ] Rough-in [done-by:: 2026-11-01]",
+		"    - [ ] Rough electrical [added:: 2026-08-05] [est:: 8000]",
+		"    - [ ] chase gutter bid [added:: 2026-08-06] [owner:: acme-gc]",
+		"- [ ] Finishes",
 	}, "\n")+"\n")
 
 	ix, err := vaultindex.Open(vaultindex.Config{VaultRoot: vault})
@@ -94,7 +92,7 @@ func getTasksView(t *testing.T, srv *Server) map[string]any {
 	return v
 }
 
-// The projection: my rows span personal + property files; someone else's item
+// The projection: my rows span personal + property trees; someone else's item
 // never reaches rows — it appears under Outstanding, grouped by container.
 func TestUnifiedProjection(t *testing.T) {
 	srv, _ := unifiedHarness(t)
@@ -107,10 +105,10 @@ func TestUnifiedProjection(t *testing.T) {
 	if !ids["inbox/loose-personal-thing"] || !ids["real-estate/call-the-county"] {
 		t.Fatalf("personal rows missing: %v", ids)
 	}
-	if !ids["prop:761-maple/rough-electrical"] {
-		t.Fatalf("property row missing: %v", ids)
+	if !ids["prop:761-maple/rough-in/rough-electrical"] {
+		t.Fatalf("property tree row missing: %v", ids)
 	}
-	if ids["prop:761-maple/chase-gutter-bid"] {
+	if ids["prop:761-maple/rough-in/chase-gutter-bid"] {
 		t.Fatal("assigned-to-others item leaked into my rows")
 	}
 	out := v["outstanding"].([]any)
@@ -127,34 +125,32 @@ func TestUnifiedProjection(t *testing.T) {
 	}
 }
 
-// Checking a property todo routes to the property file, stamps [done::], and
-// DUAL-STAMPS the [work::]-tethered `## work` line (accrual truth).
-func TestPropTaskCheckDualStamp(t *testing.T) {
+// Checking a property task routes to the tree line, stamps [done::], and
+// flips the ONE line — the rock's Ready/money state derives from it directly
+// (the Rev-3 dual-stamp is gone with the merge).
+func TestPropTaskCheckTree(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/tasks/check",
-		strings.NewReader(`{"id":"prop:761-maple/rough-electrical","checked":true}`))
+		strings.NewReader(`{"id":"prop:761-maple/rough-in/rough-electrical","checked":true}`))
 	srv.handleTaskCheck(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("check: %d %s", rec.Code, rec.Body.String())
 	}
 	raw, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
 	got := string(raw)
-	if !strings.Contains(got, "- [x] rough electrical") || !strings.Contains(got, "[done:: ") {
-		t.Fatalf("todo line not checked/stamped:\n%s", got)
+	if !strings.Contains(got, "- [x] Rough electrical") || !strings.Contains(got, "[done:: ") {
+		t.Fatalf("tree line not checked/stamped:\n%s", got)
 	}
-	if !strings.Contains(got, "    - [x] Rough electrical [est:: 8000]") {
-		t.Fatalf("work line not dual-stamped:\n%s", got)
-	}
-	// unchecking reverses both
+	// unchecking reverses it
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest("POST", "/api/tasks/check",
-		strings.NewReader(`{"id":"prop:761-maple/rough-electrical","checked":false}`))
+		strings.NewReader(`{"id":"prop:761-maple/rough-in/rough-electrical","checked":false}`))
 	srv.handleTaskCheck(rec, req)
 	raw, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
 	got = string(raw)
-	if strings.Contains(got, "- [x] rough electrical") || strings.Contains(got, "    - [x] Rough electrical") {
-		t.Fatalf("uncheck did not reverse both stamps:\n%s", got)
+	if strings.Contains(got, "- [x] Rough electrical") || strings.Contains(got, "[done:: ") {
+		t.Fatalf("uncheck did not reverse:\n%s", got)
 	}
 }
 
@@ -164,7 +160,7 @@ func TestRankBatch(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/api/tasks/rank", strings.NewReader(
-		`{"order":["prop:761-maple/rough-electrical","real-estate/call-the-county","inbox/loose-personal-thing"]}`))
+		`{"order":["prop:761-maple/rough-in/rough-electrical","real-estate/call-the-county","inbox/loose-personal-thing"]}`))
 	srv.handleTasksRank(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("rank: %d %s", rec.Code, rec.Body.String())
@@ -175,19 +171,19 @@ func TestRankBatch(t *testing.T) {
 		t.Fatalf("personal ranks not written:\n%s", td)
 	}
 	prop, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
-	if !strings.Contains(string(prop), "rough electrical [added:: 2026-08-05] [rank:: 1] [work:: rough-in/rough-electrical]") {
+	if !strings.Contains(string(prop), "Rough electrical [added:: 2026-08-05] [rank:: 1] [est:: 8000]") {
 		t.Fatalf("property rank not written:\n%s", prop)
 	}
 	v := getTasksView(t, srv)
 	rows := v["rows"].([]any)
-	if rows[0].(map[string]any)["id"] != "prop:761-maple/rough-electrical" ||
+	if rows[0].(map[string]any)["id"] != "prop:761-maple/rough-in/rough-electrical" ||
 		rows[1].(map[string]any)["id"] != "real-estate/call-the-county" {
 		t.Fatalf("view order does not follow rank: %v", rows)
 	}
 }
 
-// Adding with a property container lands the line in THAT file — no copy in
-// to do.md (one line, one file; surfaces project it).
+// Adding with a property container lands the line IN the tree — under the
+// current rock — no copy in to do.md (one line, one file; surfaces project it).
 func TestAddToProperty(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	rec := httptest.NewRecorder()
@@ -198,13 +194,30 @@ func TestAddToProperty(t *testing.T) {
 		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
 	}
 	prop, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
-	if !strings.Contains(string(prop), "- [ ] order dumpsters [added:: ") ||
+	if !strings.Contains(string(prop), "    - [ ] order dumpsters [added:: ") ||
 		!strings.Contains(string(prop), "[owner:: acme-gc]") {
-		t.Fatalf("property add missing:\n%s", prop)
+		t.Fatalf("tree add missing:\n%s", prop)
 	}
 	td, _ := os.ReadFile(filepath.Join(vault, "to do.md"))
 	if strings.Contains(string(td), "order dumpsters") {
 		t.Fatal("parallel copy leaked into to do.md")
+	}
+}
+
+// The "decision:" capture sugar converts to a [decision::] node in the tree.
+func TestAddDecisionSugar(t *testing.T) {
+	srv, vault := unifiedHarness(t)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/api/tasks/item", strings.NewReader(
+		`{"text":"decision: pick shingle color","container":{"kind":"property","slug":"761-maple"}}`))
+	srv.handleTaskAdd(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("add: %d %s", rec.Code, rec.Body.String())
+	}
+	prop, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
+	if !strings.Contains(string(prop), "- [ ] pick shingle color [added:: ") ||
+		!strings.Contains(string(prop), "[decision::]") {
+		t.Fatalf("decision sugar missing:\n%s", prop)
 	}
 }
 
@@ -223,9 +236,9 @@ func TestSplitPropID(t *testing.T) {
 	}
 }
 
-// A property todo files under one of THIS property's stages via {stage} on
-// /api/tasks/update — names outside the pipeline are refused, "" clears.
-func TestPropTaskStageUpdate(t *testing.T) {
+// {stage} on /api/tasks/update re-parents the task under the named rock (the
+// tree IS the placement) — names outside the pipeline are refused, "" no-ops.
+func TestPropTaskMove(t *testing.T) {
 	srv, vault := unifiedHarness(t)
 	post := func(body string) *httptest.ResponseRecorder {
 		t.Helper()
@@ -234,23 +247,22 @@ func TestPropTaskStageUpdate(t *testing.T) {
 		srv.handleTaskUpdate(rec, req)
 		return rec
 	}
-	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":"rough-in"}`); rec.Code != 200 {
-		t.Fatalf("stage set: %d %s", rec.Code, rec.Body.String())
+	if rec := post(`{"id":"prop:761-maple/rough-in/chase-gutter-bid","stage":"Finishes"}`); rec.Code != 200 {
+		t.Fatalf("move: %d %s", rec.Code, rec.Body.String())
 	}
 	raw, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
-	if !strings.Contains(string(raw), "chase gutter bid") || !strings.Contains(string(raw), "[stage:: Rough-in]") {
-		t.Fatalf("stage not stamped (canonical casing):\n%s", raw)
+	got := string(raw)
+	fin := strings.Index(got, "- [ ] Finishes")
+	bid := strings.Index(got, "chase gutter bid")
+	if fin < 0 || bid < fin {
+		t.Fatalf("task did not move under Finishes:\n%s", got)
 	}
 	// a name outside the property's pipeline is refused
-	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":"Lease-up"}`); rec.Code == 200 {
-		t.Fatalf("foreign stage accepted: %s", rec.Body.String())
+	if rec := post(`{"id":"prop:761-maple/finishes/chase-gutter-bid","stage":"Lease-up"}`); rec.Code == 200 {
+		t.Fatalf("foreign rock accepted: %s", rec.Body.String())
 	}
-	// "" clears — the task rides the current stage again
-	if rec := post(`{"id":"prop:761-maple/chase-gutter-bid","stage":""}`); rec.Code != 200 {
-		t.Fatalf("stage clear: %d %s", rec.Code, rec.Body.String())
-	}
-	raw, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/761-maple.md"))
-	if strings.Contains(string(raw), "[stage::") {
-		t.Fatalf("stage not cleared:\n%s", raw)
+	// "" is a no-op (position is home)
+	if rec := post(`{"id":"prop:761-maple/finishes/chase-gutter-bid","stage":""}`); rec.Code != 200 {
+		t.Fatalf("empty stage no-op: %d %s", rec.Code, rec.Body.String())
 	}
 }

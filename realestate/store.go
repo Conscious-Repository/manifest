@@ -108,8 +108,18 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 		p.Ledger = parseLedger(led)
 	}
 	p.Units = sourceUnits(record.Sidecar(full, record.SidecarSource))
-	p.Tasks = ParsePropertyTasks(sections["tasks"]).Tasks()
-	p.Work = ParseWork(sections["work"])
+	// the rock tree: `## rocks`, tolerant-reading the legacy `## work` heading
+	// (writes go back to whichever heading the file has — RocksSection)
+	p.RocksSection = "rocks"
+	rockLines, okRocks := sections["rocks"]
+	if !okRocks {
+		if legacy, okWork := sections["work"]; okWork {
+			rockLines, p.RocksSection = legacy, "work"
+		}
+	}
+	p.Work = ParseWork(rockLines)
+	view := &PropertyTaskList{Stages: p.Work, Legacy: ParsePropertyTasks(sections["tasks"])}
+	p.Tasks = view.Tasks()
 	JoinWorkLedger(p.Work, p.Ledger)
 	// pass-5: the work list IS the hard-cost budget — the triplet derives from
 	// work est + the ledger. (parseBudget/computeRollup survive for migration.)
@@ -224,8 +234,12 @@ func (s *Service) Templates() []Template {
 		}
 		_, body := mdfm.Split(string(raw))
 		secs := parseSections(body)
+		tplLines, okTpl := secs["rocks"]
+		if !okTpl {
+			tplLines = secs["stages"] // legacy template heading
+		}
 		t := Template{Slug: r.Name, Name: r.Name, Budget: parseBudget(secs["budget"]),
-			Stages: ParseWork(secs["stages"])}
+			Stages: ParseWork(tplLines)}
 		for _, ln := range strings.Split(body, "\n") {
 			if strings.HasPrefix(ln, "# ") {
 				t.Name = strings.TrimSpace(ln[2:])

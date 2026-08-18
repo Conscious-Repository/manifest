@@ -106,6 +106,10 @@ func emitTask(t *Task) string {
 		if strings.EqualFold(f.Key, "todo") {
 			continue // identity already emitted
 		}
+		if f.Value == "" {
+			line += " [" + f.Key + "::]" // bare marker ([decision::]) — no trailing space
+			continue
+		}
 		line += " [" + f.Key + ":: " + stripBracket(f.Value, false) + "]"
 	}
 	return line

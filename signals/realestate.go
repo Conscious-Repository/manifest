@@ -123,11 +123,11 @@ func (e *noNextEmitter) Emit(now time.Time) ([]Signal, error) {
 		for _, st := range p.Work {
 			if st.Current {
 				open := 0
-				for _, t := range st.Tasks {
-					if !t.Checked {
+				realestate.WalkNodes([]realestate.WorkStage{st}, func(_ *realestate.WorkStage, n *realestate.WorkNode) {
+					if !n.Task.Checked && !n.Milestone {
 						open++
 					}
-				}
+				})
 				cur = &struct {
 					id   string
 					open int

@@ -162,8 +162,8 @@ func (s *Server) openTaskText(id string) (string, bool) {
 		if s.realestate != nil {
 			slug, lineID := splitPropID(id)
 			if list, _, ok := s.realestate.LoadTasks(slug); ok {
-				if t := list.Find(lineID); t != nil {
-					return t.Text, !t.Checked
+				if n := list.Find(lineID); n != nil {
+					return n.Task.Text, !n.Task.Checked
 				}
 			}
 		}

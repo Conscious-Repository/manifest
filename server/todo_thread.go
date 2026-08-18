@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"manifest/ledger"
-	"manifest/realestate"
 	"manifest/spirits"
 	"manifest/teamportal"
 	"manifest/threads"
@@ -197,12 +196,12 @@ func (s *Server) setTaskOwner(id, owner string) error {
 		if !ok {
 			return errBadRequest("property not found")
 		}
-		t := list.Find(lineID)
-		if t == nil {
+		n := list.Find(lineID)
+		if n == nil {
 			return errBadRequest("todo not found")
 		}
-		t.Owner = owner
-		if err := s.vault.ReplaceSectionCap("realestate", rel, "tasks", realestate.EmitPropertyTasks(list)); err != nil {
+		n.Task.Owner = owner
+		if err := s.vault.ReplaceSectionCap("realestate", rel, list.Section, list.Emit()); err != nil {
 			return err
 		}
 		if s.index != nil {
