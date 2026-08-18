@@ -119,7 +119,9 @@ function buildAgencyModel(data, goalsIndex) {
   const rockById = Object.fromEntries(rocks.map(r => [r.id, r]));
 
   /* recent decided decisions — clustered around the rock they fed (or below
-     their live goal cone), golden-angle rings, deterministic collision nudge */
+     their live goal cone; one without a resolvable [rock::] rings the field
+     centre rather than dropping off the cone), golden-angle rings,
+     deterministic collision nudge */
   const placed = rocks.map(r => ({ x: r.x, y: r.y }));
   const anchors = {};
   const decisions = items
@@ -128,8 +130,7 @@ function buildAgencyModel(data, goalsIndex) {
     .slice(0, AAF_PAST_DECISIONS)
     .map(d => {
       const gid = goalsIndex.matchRock(d.rock);
-      if (!gid) return null;
-      const rock = rockById[gid] || null;
+      const rock = gid ? rockById[gid] || null : null;
       const cone = rock ? null : goals.find(F => inSub(gid, F.id));
       let ax, ay, key;
       if (rock) { ax = rock.x; ay = rock.y; key = rock.id; }
@@ -159,8 +160,7 @@ function buildAgencyModel(data, goalsIndex) {
         liveGoalId: cone ? cone.id : null,
         goals: goals.filter(F => inSub(gid, F.id)).map(F => F.id)
       };
-    })
-    .filter(Boolean);
+    });
 
   people.forEach(p => {
     const mine = decisions.filter(d => p.aliases.includes(d.portal.owner));
