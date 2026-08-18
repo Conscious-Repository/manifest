@@ -140,11 +140,16 @@ function rockTodos(rockId) {
     scan(dm.tasks);
     (dm.buckets || []).forEach((bk) => scan(bk.tasks));
   });
-  // AION tasks live in the aion backlog, not the tasks.md domains — they arrive
-  // in the unified projection rows (source "aion", open only). Surface them under
-  // their rock too, so a day-captured aion task shows here like any other.
+  // The two DOMAIN backlogs (aion + its RE mirror) live outside the tasks.md
+  // domains — they arrive in the unified projection rows, open only. Surface
+  // them under their rock too, so an extracted or day-captured domain task
+  // shows here like any other. Extraction tethers to a MILESTONE id
+  // ("aion/mouse-to-pig/mice-up"), so take the rock's own id AND anything
+  // beneath it; rockOutline nests those under the milestone they name.
   ((todosCache && todosCache.rows) || []).forEach((t) => {
-    if (t.source === "aion" && t.rock === rockId) out.push(t);
+    if (t.source !== "aion" && t.source !== "realestate") return;
+    const rk = t.rock || "";
+    if (rk === rockId || rk.startsWith(rockId + "/")) out.push(t);
   });
   out.sort((a, b) => (a.added || "").localeCompare(b.added || ""));
   return out;
@@ -592,11 +597,14 @@ function rockOutline(g, areaName) {
   const stalled = reasons.find((r) => r.startsWith("stalled"));
   const tethered = g.checked ? [] : rockTodos(g.id);
   // a task with a [stage::] naming one of this rock's stages nests THERE;
-  // the rest ride the current stage (open work by default advances it)
+  // a domain-backlog task instead carries the milestone's ID in its [rock::]
+  // (that is what extraction writes), so match on that too. The rest ride the
+  // rock itself.
   const byStage = {};
   const looseTasks = [];
   tethered.forEach((t) => {
-    const m = t.stage && stages.find((s) => s.text === t.stage);
+    const m = (t.stage && stages.find((s) => s.text === t.stage)) ||
+      stages.find((s) => s.id === t.rock);
     if (m) (byStage[m.id] = byStage[m.id] || []).push(t);
     else looseTasks.push(t);
   });
