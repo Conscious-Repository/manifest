@@ -524,6 +524,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/realestate/files/{hash}", s.handleREFileGet)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}/update", s.handleContractorUpdate)
 	mux.HandleFunc("GET /api/realestate/contractors/{slug}/page", s.handleContractorPage)
+	// intake (overhaul §5): document → CAS + extract → re-intake ritual → proposal
+	mux.HandleFunc("POST /api/realestate/intake", s.handleREIntake)
+	mux.HandleFunc("POST /api/spirits/approvals/{id}/recontract", s.handleApprovalReContract)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)
 	mux.HandleFunc("POST /api/realestate/export-tax", s.handleTaxExport)

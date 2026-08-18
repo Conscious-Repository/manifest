@@ -61,3 +61,29 @@ func TestByteContract_ManifestPredicates(t *testing.T) {
 		}
 	}
 }
+
+// reContractVectors pin the re-contract apply-path predicate — duplicated
+// verbatim in engine/internal/audit/bytecontract_test.go.
+var reContractVectors = []struct {
+	path    string
+	allowed bool // ReContractPathAllowed
+}{
+	{"system/realestate/contracts/twisted-brick-masonry.md", true},
+	{"system/realestate/contracts/mcc-roof-751.md", true},
+	{"system/realestate/contracts/UPPER.md", false},
+	{"system/realestate/contracts/nested/x.md", false},
+	{"system/realestate/contracts/../contracts/x.md", false},
+	{"system/realestate/backlog.md", false},
+	{"system/realestate/contracts/.md", false},
+	{"/system/realestate/contracts/x.md", false},
+	{"system/realestate/contracts/x.md ", false},
+	{"", false},
+}
+
+func TestByteContract_ReContractPredicate(t *testing.T) {
+	for _, v := range reContractVectors {
+		if got := ReContractPathAllowed(v.path); got != v.allowed {
+			t.Errorf("ReContractPathAllowed(%q) = %v, want %v", v.path, got, v.allowed)
+		}
+	}
+}

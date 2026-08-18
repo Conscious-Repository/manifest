@@ -8,6 +8,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/record"
 	"manifest/secrets"
 	"manifest/spirits"
 )
@@ -108,6 +109,9 @@ type approvalRow struct {
 	AionPayload *aion.ProposalPayload `json:"aionPayload,omitempty"`
 	// AionLine is the exact record line Confirm would write (the diff target).
 	AionLine string `json:"aionLine,omitempty"`
+	// ReContractPayload is the parsed intake payload of a re-contract proposal
+	// (nil otherwise) — the card renders the adjust-amounts editor over it.
+	ReContractPayload *approvals.ReContractPayload `json:"reContractPayload,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -162,6 +166,17 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 				if payload, ok := approvals.AionPayload(p); ok {
 					rr.AionPayload = &payload
 					rr.AionLine = aion.RenderItemLine(payload)
+				} else {
+					rr.Allowed = false
+				}
+				rr.Body = maskSecrets(rr.Body)
+			case approvals.TypeReContract:
+				// an intake proposal (overhaul §5): the card renders the payload
+				// with editable amounts — the owner always adjusts; the spirit
+				// proposes, never decides
+				rr.Allowed = approvals.ReContractPathAllowed(p.ApplyPath)
+				if payload, ok := approvals.ParseReContractPayload(p.Body); ok {
+					rr.ReContractPayload = &payload
 				} else {
 					rr.Allowed = false
 				}
@@ -240,6 +255,24 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 		if approved, err := store.LoadApproved(id); err == nil && approved.ApplyPath != "" {
 			s.aionSink.Notify([]string{"log/" + strings.ToLower(approved.ApplyPath)})
 		}
+	}
+	// re-contract applies write index-read records (contract, contractor,
+	// property trees) — reindex them so the surfaces see the confirm at once
+	if loadErr == nil && pending.Type == approvals.TypeReContract && s.index != nil {
+		paths := []string{pending.ApplyPath}
+		if payload, ok := approvals.ParseReContractPayload(pending.Body); ok {
+			seen := map[string]bool{}
+			for _, a := range payload.Allocations {
+				if !seen[a.Property] {
+					seen[a.Property] = true
+					paths = append(paths, s.realestateRootOr()+"/properties/"+a.Property+".md")
+				}
+			}
+			if payload.ContractorCreate != "" {
+				paths = append(paths, s.realestateRootOr()+"/contractors/"+record.Slug(payload.ContractorCreate, 60)+".md")
+			}
+		}
+		_ = s.index.ReindexPaths(paths)
 	}
 	// A manually-confirmed append (the auto-apply-refused fallback card) grew
 	// the thread note — same nudge; the final path reflects a range rename.

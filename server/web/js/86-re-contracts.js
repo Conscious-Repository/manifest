@@ -32,6 +32,149 @@ function reScopeVocab() {
   return [...vocab].filter(Boolean).sort();
 }
 
+// ---- the INTAKE lane (overhaul §5): one affordance on the RE overview ----
+// Drop (or browse) a bid/contract/estimate → CAS + text extract + the
+// re-intake ritual → an adjustable re-contract proposal in FEED. "enter
+// manually" is the same outcome minus the file (the contract form).
+
+function reIntakeLane() {
+  const lane = el("div", "re-intake-lane");
+  const drop = el("div", "re-intake-drop");
+  drop.append(el("span", "re-intake-glyph", "⇪"));
+  drop.append(el("span", "", "drop a bid / contract here — or "));
+  const browse = el("button", "pp3-link", "browse");
+  const manual = el("button", "pp3-link", "enter manually");
+  drop.append(browse, el("span", "", " · "), manual);
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".pdf,.docx,image/*";
+  input.hidden = true;
+  drop.append(input);
+  browse.onclick = () => input.click();
+  manual.onclick = () => { location.hash = "#/properties/contract-new"; };
+  input.onchange = () => { if (input.files && input.files[0]) reIntakeUpload(input.files[0]); };
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) reIntakeUpload(e.dataTransfer.files[0]);
+  };
+  lane.append(drop);
+  return lane;
+}
+
+async function reIntakeUpload(file) {
+  showToast("Uploading " + file.name + "…");
+  try {
+    const r = await fetch("/api/realestate/intake?name=" + encodeURIComponent(file.name), {
+      method: "POST", body: file,
+    });
+    if (!r.ok) throw new Error(await r.text());
+    showToast("Parsing " + file.name + " — the proposal will land in FEED");
+  } catch (e) {
+    showToast("Intake failed — " + String(e.message || e).slice(0, 120));
+  }
+}
+
+// ---- the manual contract form (#/properties/contract-new) — same writes,
+// no file (overhaul §5). Creates through POST /api/realestate/contracts. ----
+
+function renderContractForm() {
+  const host = els.propertyBoard;
+  host.innerHTML = "";
+  const page = el("div", "re-contract-page");
+  host.append(page);
+  page.append(el("h2", "pp3-title", "New contract"));
+  page.append(el("div", "aion-section-note",
+    "the manual intake path — a bid or signed contract entered by hand; the record lands in system/realestate/contracts/"));
+
+  const form = el("div", "pp3-lform re-cform");
+  const grid = el("div", "pp3-lform-grid");
+  const labeled = (label, node) => {
+    const wrap = el("label", "pp3-lform-field");
+    wrap.append(el("span", "pp3-lform-label", label), node);
+    return wrap;
+  };
+  const name = inputEl("Twisted Brick — masonry, 751 + 753"); name.className = "pp-in";
+  // contractor: records only, quiet create-new
+  let contractorSlug = "";
+  const ctr = recordAutocomplete("contractor", "contractor…", (rec) => { contractorSlug = rec.slug; });
+  const status = selectEl(["proposed", "accepted"]);
+  const total = moneyInput("$", 0);
+  const date = inputEl("YYYY-MM-DD"); date.className = "pp-in";
+  date.value = new Date().toISOString().slice(0, 10);
+  const expires = inputEl("YYYY-MM-DD (optional)"); expires.className = "pp-in";
+  grid.append(labeled("name", name), labeled("contractor", ctr.el), labeled("status", status),
+    labeled("total", total), labeled("date", date), labeled("expires", expires));
+  form.append(grid);
+
+  // allocations builder: property → node → amount, N rows
+  const allocHead = el("div", "pp3-sec-head");
+  allocHead.append(el("span", "pp3-sec-title", "ALLOCATIONS"));
+  form.append(allocHead);
+  const allocRows = [];
+  const allocBox = el("div", "re-cform-allocs");
+  const addAllocRow = () => {
+    const row = { prop: "", node: "", amount: null };
+    const line = el("div", "re-cform-alloc");
+    const propSel = selectEl([]);
+    const popt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; propSel.append(o); };
+    popt("", "property…");
+    activePortfolio().forEach((p) => popt(p.slug, p.short || p.slug));
+    const nodeSel = selectEl([]);
+    const fillNodes = () => {
+      nodeSel.innerHTML = "";
+      const nopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; nodeSel.append(o); };
+      nopt("", "node…");
+      const p = propertyCache.find((x) => x.slug === propSel.value);
+      ((p && p.work) || []).forEach((st) => {
+        nopt(st.id, st.text);
+        (st.tasks || []).forEach(function walk(n, prefix) {
+          const pre = typeof prefix === "string" ? prefix : "· ";
+          nopt(n.id, pre + n.text);
+          (n.children || []).forEach((c) => walk(c, pre + "· "));
+        });
+      });
+    };
+    fillNodes();
+    propSel.onchange = () => { row.prop = propSel.value; fillNodes(); };
+    nodeSel.onchange = () => { row.node = nodeSel.value; };
+    const amt = moneyInput("$", 0);
+    amt.oninput = () => { row.amount = parseFloat(amt.value.replace(/[$,]/g, "")) || 0; };
+    line.append(propSel, nodeSel, amt);
+    allocBox.append(line);
+    allocRows.push(row);
+  };
+  addAllocRow();
+  form.append(allocBox);
+  form.append(ghostInput("＋ allocation (multi-property contracts split here)", "aion-add", () => addAllocRow()));
+
+  const actions = el("div", "pp3-uw-actions");
+  const cancel = el("button", "pp3-uw-cancel", "cancel");
+  cancel.onclick = () => { location.hash = "#/properties"; };
+  const save = el("button", "pp3-compose-go", "create ↵");
+  save.onclick = async () => {
+    const t = parseFloat(total.value.replace(/[$,]/g, "")) || 0;
+    const allocations = allocRows
+      .filter((r) => r.prop && r.node && r.amount > 0)
+      .map((r) => r.prop + " | " + r.node + " | " + r.amount);
+    if (!contractorSlug) { showToast("Pick (or create) the contractor"); return; }
+    if (!allocations.length) { showToast("At least one allocation (property · node · amount)"); return; }
+    try {
+      const res = await postJSONOk("/api/realestate/contracts", {
+        name: name.value.trim() || null, contractor: contractorSlug, status: status.value,
+        total: t, date: date.value.trim(), expires: expires.value.trim(), allocations,
+      });
+      showToast("Contract created");
+      location.hash = "#/properties/contract/" + encodeURIComponent(res.slug);
+    } catch (e) { showToast("Couldn't create — " + String(e.message || e).slice(0, 140)); }
+  };
+  actions.append(cancel, save);
+  form.append(actions);
+  page.append(form);
+}
+
 // ---- the contractor table (Settings → Contractors) ----
 
 function reContractorsPane(host) {

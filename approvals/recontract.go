@@ -1,0 +1,345 @@
+package approvals
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"manifest/mdfm"
+	"manifest/realestate"
+	"manifest/record"
+	"manifest/tasks"
+)
+
+// The RE-CONTRACT proposal type (overhaul §5 — the intake ritual's output):
+// the extractor parses an uploaded bid/contract/estimate document into ONE
+// structured proposal — contractor match-or-create, total, property
+// allocation split, node mapping (with new milestones where the tree lacks a
+// scope), extracted tasks + decisions, and the terms/exclusions/risk prose.
+// The owner adjusts amounts on the card (the spirit proposes, never
+// decides); Confirm writes the records through the approved-proposal
+// capability: contractor (when new) → per-property tree additions →
+// the contract record. Audited, git-trailed.
+const TypeReContract = "re-contract"
+
+// ReContractFence is the body's payload fence language tag.
+const ReContractFence = "re-contract"
+
+// reContractPathRe is the ONLY apply-path shape: one new record directly
+// under the contracts folder. Byte-identical to the engine's audit predicate.
+var reContractPathRe = regexp.MustCompile(`^system/realestate/contracts/[a-z0-9][a-z0-9-]*\.md$`)
+
+// ReContractPathAllowed is the re-contract apply-path allow-list.
+func ReContractPathAllowed(rel string) bool { return reContractPathRe.MatchString(rel) }
+
+// ReContractAllocation is one slice of the proposed split.
+type ReContractAllocation struct {
+	Property string  `json:"property"` // property slug
+	Node     string  `json:"node"`     // rock/milestone/task work id (may name a new_milestones entry)
+	Amount   float64 `json:"amount"`
+	Reason   string  `json:"reason,omitempty"` // the split reasoning, shown on the card
+}
+
+// ReContractMilestone is a proposed new milestone (a scope the tree lacks).
+type ReContractMilestone struct {
+	Property string `json:"property"`
+	Rock     string `json:"rock"` // rock id or text
+	Name     string `json:"name"` // milestone text; its node id becomes <rock-id>/<slug(name)>
+}
+
+// ReContractTask is one extracted task or decision.
+type ReContractTask struct {
+	Property string `json:"property"`
+	Parent   string `json:"parent,omitempty"` // rock/milestone id or rock text ("" = current rock)
+	Text     string `json:"text"`
+	Decision bool   `json:"decision,omitempty"`
+	Owner    string `json:"owner,omitempty"`
+}
+
+// ReContractPayload is the ````re-contract fence's JSON object.
+type ReContractPayload struct {
+	Kind             string                 `json:"kind"`                        // bid | contract | estimate
+	Contractor       string                 `json:"contractor,omitempty"`        // existing record slug
+	ContractorCreate string                 `json:"contractor_create,omitempty"` // display name when no record matches
+	Name             string                 `json:"name"`
+	Total            float64                `json:"total"`
+	Date             string                 `json:"date,omitempty"`
+	Expires          string                 `json:"expires,omitempty"`
+	Doc              string                 `json:"doc,omitempty"` // sha256:… CAS ref
+	Allocations      []ReContractAllocation `json:"allocations"`
+	NewMilestones    []ReContractMilestone  `json:"new_milestones,omitempty"`
+	Tasks            []ReContractTask       `json:"tasks,omitempty"`
+	Terms            []string               `json:"terms,omitempty"`
+	Exclusions       []string               `json:"exclusions,omitempty"`
+	RiskItems        []string               `json:"risk_items,omitempty"`
+}
+
+// Validate checks the shape invariants (shared by filing, edit, and apply).
+func (p *ReContractPayload) Validate() error {
+	switch p.Kind {
+	case "bid", "contract", "estimate":
+	default:
+		return fmt.Errorf("kind must be bid|contract|estimate")
+	}
+	if strings.TrimSpace(p.Contractor) == "" && strings.TrimSpace(p.ContractorCreate) == "" {
+		return fmt.Errorf("contractor (slug) or contractor_create (name) is required")
+	}
+	if strings.TrimSpace(p.Name) == "" {
+		return fmt.Errorf("name is required")
+	}
+	if p.Total <= 0 {
+		return fmt.Errorf("total must be positive")
+	}
+	if len(p.Allocations) == 0 {
+		return fmt.Errorf("at least one allocation is required")
+	}
+	var sum float64
+	for _, a := range p.Allocations {
+		if strings.TrimSpace(a.Property) == "" || strings.TrimSpace(a.Node) == "" {
+			return fmt.Errorf("every allocation needs property and node")
+		}
+		if a.Amount <= 0 {
+			return fmt.Errorf("allocation amounts must be positive")
+		}
+		sum += a.Amount
+	}
+	if diff := sum - p.Total; diff > 0.01 || diff < -0.01 {
+		return fmt.Errorf("Σ allocations (%.2f) must equal total (%.2f)", sum, p.Total)
+	}
+	for _, t := range p.Tasks {
+		if strings.TrimSpace(t.Text) == "" || strings.TrimSpace(t.Property) == "" {
+			return fmt.Errorf("every task needs property and text")
+		}
+	}
+	return nil
+}
+
+// Status maps the document kind to the contract lifecycle: a signed contract
+// commits money; bids and estimates arrive proposed.
+func (p *ReContractPayload) Status() string {
+	if p.Kind == "contract" {
+		return "accepted"
+	}
+	return "proposed"
+}
+
+// ParseReContractPayload extracts the fence from a proposal body.
+func ParseReContractPayload(body string) (ReContractPayload, bool) {
+	raw, ok := mdfm.ExtractFencedBlock(body, ReContractFence)
+	if !ok {
+		return ReContractPayload{}, false
+	}
+	var p ReContractPayload
+	if json.Unmarshal([]byte(raw), &p) != nil {
+		return ReContractPayload{}, false
+	}
+	return p, true
+}
+
+// SetReContractPayload rewrites the pending proposal's fence with the
+// owner-edited payload (the card's adjust-amounts affordance — decision §5:
+// the owner always adjusts; the spirit proposes, never decides).
+func (s *Store) SetReContractPayload(id string, payload ReContractPayload) error {
+	src := filepath.Join(s.dir, "pending", id+".md")
+	p, err := s.parse(src)
+	if err != nil {
+		return err
+	}
+	if p.Type != TypeReContract {
+		return fmt.Errorf("proposal %s is not a re-contract proposal", id)
+	}
+	if err := payload.Validate(); err != nil {
+		return err
+	}
+	out, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	body, ok := replaceFencedBlock(p.Body, ReContractFence, string(out))
+	if !ok {
+		return fmt.Errorf("proposal %s carries no %s payload fence", id, ReContractFence)
+	}
+	p.Body = body
+	return os.WriteFile(src, []byte(serialize(p)), 0o644)
+}
+
+// replaceFencedBlock swaps the CONTENT of the first ````<lang> fence.
+func replaceFencedBlock(body, lang, content string) (string, bool) {
+	lines := strings.Split(body, "\n")
+	start := -1
+	for i, ln := range lines {
+		t := strings.TrimSpace(ln)
+		if strings.HasPrefix(t, "````"+lang) || strings.HasPrefix(t, "```"+lang) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return "", false
+	}
+	marker := "````"
+	if !strings.HasPrefix(strings.TrimSpace(lines[start]), "````") {
+		marker = "```"
+	}
+	end := -1
+	for i := start + 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == marker {
+			end = i
+			break
+		}
+	}
+	if end < 0 {
+		return "", false
+	}
+	out := append([]string{}, lines[:start+1]...)
+	out = append(out, strings.Split(strings.TrimRight(content, "\n"), "\n")...)
+	out = append(out, lines[end:]...)
+	return strings.Join(out, "\n"), true
+}
+
+// applyReContract writes the confirmed intake: contractor record (when new),
+// per-property tree additions (new milestones + extracted tasks/decisions),
+// then the contract record — everything through the approved-proposal
+// capability, refusing any drift from the allow-list.
+func (s *Store) applyReContract(p Proposal) error {
+	if !ReContractPathAllowed(p.ApplyPath) {
+		return fmt.Errorf("apply refused: %q is not a contracts-folder record path", p.ApplyPath)
+	}
+	if s.vw == nil || s.reCap == "" || s.vaultRoot == "" {
+		return fmt.Errorf("apply refused: real-estate applies are not configured")
+	}
+	payload, ok := ParseReContractPayload(p.Body)
+	if !ok {
+		return fmt.Errorf("apply refused: re-contract %s carries no payload fence", p.ID)
+	}
+	if err := payload.Validate(); err != nil {
+		return fmt.Errorf("apply refused: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))); err == nil {
+		return fmt.Errorf("apply refused: %s already exists", p.ApplyPath)
+	}
+
+	// 1) contractor — an existing slug must resolve; a create writes a thin
+	// record (idempotent: an existing file just gets referenced)
+	ctrDir := "system/realestate/contractors"
+	slug := strings.TrimSpace(payload.Contractor)
+	if slug == "" {
+		name := strings.TrimSpace(payload.ContractorCreate)
+		slug = record.Slug(name, 60)
+		rel := path.Join(ctrDir, slug+".md")
+		if _, err := os.Stat(filepath.Join(s.vaultRoot, filepath.FromSlash(rel))); err != nil {
+			content := "---\ncategories: [contractor]\nname: " + name + "\n---\n\n# " + name + "\n"
+			if err := s.vw.WriteCap(s.reCap, rel, []byte(content)); err != nil {
+				return fmt.Errorf("apply refused: contractor create: %w", err)
+			}
+		}
+	} else if _, err := os.Stat(filepath.Join(s.vaultRoot, filepath.FromSlash(path.Join(ctrDir, slug+".md")))); err != nil {
+		return fmt.Errorf("apply refused: no contractor record %q", slug)
+	}
+
+	// 2) per-property tree additions — one surgical section write per property
+	type propWork struct {
+		milestones []ReContractMilestone
+		tasks      []ReContractTask
+	}
+	perProp := map[string]*propWork{}
+	touchProp := func(slug string) *propWork {
+		if w, ok := perProp[slug]; ok {
+			return w
+		}
+		w := &propWork{}
+		perProp[slug] = w
+		return w
+	}
+	for _, m := range payload.NewMilestones {
+		touchProp(m.Property).milestones = append(touchProp(m.Property).milestones, m)
+	}
+	for _, t := range payload.Tasks {
+		touchProp(t.Property).tasks = append(touchProp(t.Property).tasks, t)
+	}
+	for _, a := range payload.Allocations {
+		touchProp(a.Property) // existence check below, even with no tree writes
+	}
+	today := time.Now().Format("2006-01-02")
+	for propSlug, work := range perProp {
+		rel := path.Join("system/realestate/properties", propSlug+".md")
+		raw, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			return fmt.Errorf("apply refused: no property record %q", propSlug)
+		}
+		if len(work.milestones) == 0 && len(work.tasks) == 0 {
+			continue
+		}
+		_, body := mdfm.Split(string(raw))
+		section, lines := rockSection(body)
+		stages := realestate.ParseWork(lines)
+		list := &realestate.PropertyTaskList{Stages: stages, Section: section}
+		for _, m := range work.milestones {
+			t := &tasks.Task{Text: strings.TrimSpace(m.Name)}
+			t.Fields = append(t.Fields, tasks.Field{Key: "milestone", Value: ""})
+			node := list.Append(t, strings.TrimSpace(m.Rock))
+			_ = node
+		}
+		list.Stages = realestate.ParseWork(strings.Split(strings.TrimRight(realestate.EmitWork(list.Stages), "\n"), "\n"))
+		for _, tk := range work.tasks {
+			t := &tasks.Task{Text: strings.TrimSpace(tk.Text), Added: today, Owner: strings.TrimSpace(tk.Owner)}
+			if tk.Decision {
+				t.Fields = append(t.Fields, tasks.Field{Key: "decision", Value: ""})
+			}
+			list.Append(t, strings.TrimSpace(tk.Parent))
+		}
+		if err := s.vw.ReplaceSectionCap(s.reCap, rel, section, realestate.EmitWork(list.Stages)); err != nil {
+			return fmt.Errorf("apply refused: tree write on %s: %w", propSlug, err)
+		}
+	}
+
+	// 3) the contract record itself
+	c := realestate.Contract{
+		Slug: strings.TrimSuffix(path.Base(p.ApplyPath), ".md"),
+		Name: payload.Name, Contractor: slug, Status: payload.Status(),
+		Total: payload.Total, Date: payload.Date, Expires: payload.Expires, Doc: payload.Doc,
+		Terms: payload.Terms, Exclusions: payload.Exclusions, RiskItems: payload.RiskItems,
+	}
+	for _, a := range payload.Allocations {
+		c.Allocations = append(c.Allocations, realestate.ContractAllocation{
+			Property: a.Property, NodeID: a.Node, Amount: a.Amount,
+		})
+	}
+	if err := s.vw.WriteCap(s.reCap, p.ApplyPath, []byte(realestate.NewContractRecord(c))); err != nil {
+		return fmt.Errorf("apply refused: contract write: %w", err)
+	}
+	return nil
+}
+
+// rockSection picks the tree's section: `## rocks`, tolerating the legacy
+// `## work` heading (pre-migration records).
+func rockSection(body string) (string, []string) {
+	sec := func(name string) ([]string, bool) {
+		var out []string
+		in, seen := false, false
+		for _, ln := range strings.Split(body, "\n") {
+			t := strings.TrimRight(ln, " \t")
+			if strings.HasPrefix(t, "## ") && !strings.HasPrefix(t, "### ") {
+				in = strings.EqualFold(t, "## "+name)
+				if in {
+					seen = true
+				}
+				continue
+			}
+			if in {
+				out = append(out, ln)
+			}
+		}
+		return out, seen
+	}
+	if lines, ok := sec("rocks"); ok {
+		return "rocks", lines
+	}
+	lines, _ := sec("work")
+	return "work", lines
+}

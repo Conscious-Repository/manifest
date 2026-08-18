@@ -495,6 +495,8 @@ func (s *Store) apply(p Proposal) error {
 		return s.applyCreateVaultNote(p)
 	case TypeAppendVaultNote:
 		return s.applyAppendVaultNote(p)
+	case TypeReContract:
+		return s.applyReContract(p)
 	case TypeReBacklog:
 		return s.applyReBacklog(p)
 	case TypeAionBacklog:

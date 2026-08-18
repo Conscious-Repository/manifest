@@ -19,10 +19,12 @@ function approvalCardEl(a) {
   const isResolve = a.type === "aion-resolve" || a.type === "re-resolve"; // closed-loop: flip one backlog line
   const isRe = a.type === "re-backlog" || a.type === "re-resolve"; // the real-estate domain twins (````re fence)
   const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe || isResolve;
+  const isReContract = a.type === "re-contract"; // intake (overhaul §5): adjust-amounts card
   // For an actionable proposal the ````proposed payload is rendered as a diff
   // below (and an aion payload as its editable form), so strip the fence from
   // the human-facing evidence body.
-  const bodyText = isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
+  const bodyText = isReContract ? stripFence(a.body, "re-contract")
+    : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (bodyText && bodyText.trim()) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
 
   let blocked = false, blockMsg = "";
@@ -47,6 +49,8 @@ function approvalCardEl(a) {
         ? "apply-path is not a vault-root dated note (YYYY-MM-DD <title>.md) — Confirm is disabled."
         : isAppendNote
         ? "append target is not a log/ dated note or the proposal carries no thread id — Confirm is disabled."
+        : isReContract
+        ? "apply-path is not a system/realestate/contracts/<slug>.md record or the payload is malformed — Confirm is disabled."
         : isRe
         ? "apply-path is not the real-estate decision log (system/realestate/backlog.md) or the payload is malformed — Confirm is disabled."
         : isAion
@@ -70,7 +74,10 @@ function approvalCardEl(a) {
       card.append(buildCategoryEditor(categories));
     }
 
-    if (isResolve && a.aionPayload) {
+    if (isReContract && a.reContractPayload) {
+      // the intake card: the owner ALWAYS adjusts amounts before confirming
+      card.append(buildReContractEditor(a));
+    } else if (isResolve && a.aionPayload) {
       // a closed-loop resolve: the evidence is the body above; the editable
       // bits are the matching title and the outcome/date — kind is fixed
       card.append(buildResolveEditor(a));
@@ -364,6 +371,92 @@ function apprRegistryFor(type) {
 // place (the id never changes; Confirm applies whatever was last saved).
 // Rock and owner hotload suggestions: active rocks from the goals ladder,
 // initials from people.md — free text still commits for one-offs.
+// buildReContractEditor — the intake card's structured view (overhaul §5):
+// contractor (match or create-new badge) · kind/total/date/expiry ·
+// EDITABLE allocation amounts + total · proposed milestones · extracted
+// tasks/decisions · terms. Edits flush through the recontract endpoint and
+// RIDE the confirm (same __payloadFlush contract as the aion editors).
+function buildReContractEditor(a) {
+  const p = JSON.parse(JSON.stringify(a.reContractPayload)); // working copy
+  const box = el("div", "appr-aion re-intake-editor");
+  const line = (label, node) => {
+    const row = el("div", "appr-aion-row");
+    row.append(el("span", "appr-aion-label", label), node);
+    box.append(row);
+  };
+  // contractor
+  const ctr = p.contractor
+    ? el("span", "appr-aion-val", "@" + p.contractor)
+    : el("span", "appr-aion-val", (p.contractor_create || "?") + "  ");
+  if (!p.contractor) ctr.append(el("span", "appr-new-badge", "new record"));
+  line("contractor", ctr);
+  line("kind", el("span", "appr-aion-val", p.kind + (p.date ? " · " + p.date : "") + (p.expires ? " · expires " + p.expires : "")));
+  // total — editable
+  const totalIn = inputEl("total");
+  totalIn.className = "pp-in appr-money-in";
+  totalIn.value = p.total;
+  totalIn.oninput = () => { p.total = parseFloat(totalIn.value.replace(/[$,]/g, "")) || 0; dirty(); };
+  line("total $", totalIn);
+  // allocations — editable amounts (the owner always adjusts)
+  const allocBox = el("div", "re-intake-allocs");
+  (p.allocations || []).forEach((al) => {
+    const row = el("div", "re-intake-alloc");
+    row.append(el("span", "re-intake-alloc-prop", al.property));
+    row.append(el("span", "re-alloc-node", al.node));
+    const amt = inputEl("amount");
+    amt.className = "pp-in appr-money-in";
+    amt.value = al.amount;
+    amt.oninput = () => { al.amount = parseFloat(amt.value.replace(/[$,]/g, "")) || 0; dirty(); };
+    row.append(amt);
+    allocBox.append(row);
+    if (al.reason) allocBox.append(el("div", "re-intake-reason", "· " + al.reason));
+  });
+  const sumNote = el("div", "re-intake-sum");
+  allocBox.append(sumNote);
+  line("split", allocBox);
+  const checkSum = () => {
+    const sum = (p.allocations || []).reduce((n, al) => n + (al.amount || 0), 0);
+    const off = Math.abs(sum - (p.total || 0)) > 0.01;
+    sumNote.textContent = off ? "Σ " + fmtMoney(sum) + " ≠ total " + fmtMoney(p.total || 0) + " — fix before confirm" : "";
+    sumNote.classList.toggle("off", off);
+    return !off;
+  };
+  checkSum();
+  // proposed structure + extractions — display (they apply as written)
+  if ((p.new_milestones || []).length) {
+    line("milestones", el("span", "appr-aion-val",
+      p.new_milestones.map((m) => m.property + ": " + m.name + " (under " + m.rock + ")").join(" · ")));
+  }
+  if ((p.tasks || []).length) {
+    const t = el("div", "");
+    p.tasks.forEach((tk) => t.append(el("div", "appr-aion-val",
+      (tk.decision ? "◇ " : "○ ") + tk.text + "  → " + tk.property + (tk.parent ? " / " + tk.parent : ""))));
+    line("tasks", t);
+  }
+  ["terms", "exclusions", "risk_items"].forEach((k) => {
+    if ((p[k] || []).length) line(k.replace("_", " "), el("span", "appr-aion-val", p[k].join(" · ")));
+  });
+  if (p.doc && p.doc.startsWith("sha256:")) {
+    const dl = el("a", "pp3-link", "document ↗");
+    dl.href = "/api/realestate/files/" + p.doc.slice(7);
+    dl.target = "_blank";
+    line("document", dl);
+  }
+  let isDirty = false;
+  const dirty = () => { isDirty = true; checkSum(); };
+  // edits ride the confirm (the __payloadFlush contract)
+  a.__payloadFlush = async () => {
+    if (!checkSum()) throw new Error("Σ allocations must equal total");
+    if (!isDirty) return;
+    const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/recontract", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    isDirty = false;
+  };
+  return box;
+}
+
 function buildAionEditor(a) {
   const p = Object.assign({}, a.aionPayload);
   p.heuristic = Object.assign({ mode: "", target: "" }, p.heuristic || {});

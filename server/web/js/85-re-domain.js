@@ -92,8 +92,10 @@ function renderREBacklog() {
   host.append(wrap);
 
   // Pending re-backlog proposals live in the FEED only (owner call
-  // 2026-08-12 — the aion pattern): no intake lane here. The async 90-card
-  // insert was also what yanked the scroll position back to the top.
+  // 2026-08-12 — the aion pattern). The DOCUMENT intake affordance (overhaul
+  // §5) is static — no async insert, so the scroll position stays put; the
+  // parsed proposal lands in FEED.
+  list.append(reIntakeLane());
 
   // -- decisions lane --
   const items = reItems();
