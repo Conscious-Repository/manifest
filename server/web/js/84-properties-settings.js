@@ -91,11 +91,12 @@ async function renderREsettings() {
   // Partners + Contractors consolidated into ONE People item (owner call
   // 2026-08-12) — partners on top (aion-style people.md table), contractor
   // records below. Stale sub-tab keys from old links fold in.
-  if (reSettingsTab === "partners" || reSettingsTab === "contractors") reSettingsTab = "people";
+  if (reSettingsTab === "partners") reSettingsTab = "people";
   const items = [
     ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
     ["entities", "Entities", ents.length, "system/realestate/entities.md"],
-    ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount) + (entitiesCache.contractors || []).length, "system/realestate/people.md"],
+    ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount), "system/realestate/people.md"],
+    ["contractors", "Contractors", (entitiesCache.contractors || []).length, "system/realestate/contractors/"],
     ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
     ["tenants", "Tenants", (entitiesCache.tenants || []).length, "system/realestate/entities.md"],
   ];
@@ -119,6 +120,7 @@ async function renderREsettings() {
   if (reSettingsTab === "lenders") { renderFlatRegistry(pane, "lender", entitiesCache.lenders || []); return; }
   if (reSettingsTab === "tenants") { renderFlatRegistry(pane, "tenant", entitiesCache.tenants || []); return; }
   if (reSettingsTab === "people") { await rePeoplePane(pane); return; }
+  if (reSettingsTab === "contractors") { reContractorsPane(pane); return; }
   renderEntitiesPanel(pane, ents);
 }
 
@@ -331,10 +333,6 @@ async function rePeoplePane(host) {
   };
   renderRows();
 
-  host.append(el("div", "pp-section-head", "CONTRACTORS"));
-  host.append(el("div", "aion-section-note",
-    "contractor records (system/realestate/contractors/) — they join the assignee list automatically"));
-  renderFlatRegistry(host, "contractor", entitiesCache.contractors || []);
 }
 
 function entityCard(e, ents) {

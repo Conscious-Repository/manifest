@@ -97,6 +97,7 @@ type Server struct {
 	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
 	realestate     *realestate.Service
 	realestateRoot string // vault-relative records root (default "system/realestate")
+	reFiles        *realestate.FileStore // CAS document store (overhaul §3.3). Nilable.
 	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
 	rePortalPath   string // ooda site checkout for the deals.json publish ("" = disabled)
 	reImport       *realestate.ImportMemory
@@ -514,6 +515,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/re/publish/ack/{id}", s.handleRePublishAck)
 	mux.HandleFunc("PUT /api/realestate/assumptions", s.handleAssumptionsPut)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}", s.handleContractorTrade)
+	// contracts + CAS + contractor surfaces (overhaul pass 2)
+	mux.HandleFunc("GET /api/realestate/contracts", s.handleContractsList)
+	mux.HandleFunc("POST /api/realestate/contracts", s.handleContractCreate)
+	mux.HandleFunc("GET /api/realestate/contracts/{slug}", s.handleContractGet)
+	mux.HandleFunc("POST /api/realestate/contracts/{slug}/update", s.handleContractUpdate)
+	mux.HandleFunc("POST /api/realestate/files", s.handleREFileUpload)
+	mux.HandleFunc("GET /api/realestate/files/{hash}", s.handleREFileGet)
+	mux.HandleFunc("POST /api/realestate/contractors/{slug}/update", s.handleContractorUpdate)
+	mux.HandleFunc("GET /api/realestate/contractors/{slug}/page", s.handleContractorPage)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)
 	mux.HandleFunc("POST /api/realestate/export-tax", s.handleTaxExport)

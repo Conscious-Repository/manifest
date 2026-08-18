@@ -91,31 +91,41 @@ func sourceMoney(path string) SourceMoney {
 // ComputeProjectBudget derives the category table + totals (plan vs spend).
 // owned = the purchase already happened (control: owned), so the acquisition
 // plan is recognized as spent even before closing rows land in the ledger.
-func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow, owned bool) *ProjectBudget {
+// Committed's hard lane comes from accepted-contract allocations (overhaul
+// decision 4); legacy fallback: with none, accepted bid rows still commit.
+func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow, owned bool, allocs []NodeAllocation) *ProjectBudget {
 	// actuals per category — the hard lane keeps the draw-aware max() semantics
-	// (an expense against an accepted bid draws DOWN the contract, not up committed)
+	// (an expense against a committed node draws DOWN the contract, not up committed)
 	type acc struct{ acceptedSum, expenseSum float64 }
+	legacyBids := len(allocs) == 0
 	paid := map[string]float64{}
 	committed := map[string]float64{}
 	perWork := map[string]map[string]*acc{} // cat → workID → sums
+	touch := func(cat, workID string) *acc {
+		pw := perWork[cat]
+		if pw == nil {
+			pw = map[string]*acc{}
+			perWork[cat] = pw
+		}
+		a := pw[workID]
+		if a == nil {
+			a = &acc{}
+			pw[workID] = a
+		}
+		return a
+	}
+	for _, a := range allocs {
+		touch(CatHard, a.NodeID).acceptedSum += a.Amount // construction contracts are the hard lane
+	}
 	for _, row := range ledger {
 		cat := normalizeCat(row.Cat)
 		isExpense := strings.EqualFold(row.Type, "expense")
-		accepted := strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
+		accepted := legacyBids && strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
 		if isExpense {
 			paid[cat] += row.Amount
 		}
 		if row.WorkID != "" && (isExpense || accepted) {
-			pw := perWork[cat]
-			if pw == nil {
-				pw = map[string]*acc{}
-				perWork[cat] = pw
-			}
-			a := pw[row.WorkID]
-			if a == nil {
-				a = &acc{}
-				pw[row.WorkID] = a
-			}
+			a := touch(cat, row.WorkID)
 			if isExpense {
 				a.expenseSum += row.Amount
 			} else {

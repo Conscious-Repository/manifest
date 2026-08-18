@@ -125,7 +125,7 @@ func TestJoinWorkLedgerDepth2(t *testing.T) {
 		{Type: "bid", Status: "accepted", Amount: 9000, WorkID: "exterior/roofing/tear-off"},
 		{Type: "expense", Status: "paid", Amount: 4000, WorkID: "exterior/roofing/tear-off"},
 		{Type: "expense", Status: "paid", Amount: 500, WorkID: "exterior/roofing"},
-	})
+	}, nil)
 	leaf := stages[0].Tasks[0].Children[0]
 	if leaf.Committed != 9000 || leaf.Paid != 4000 {
 		t.Fatalf("leaf money: %+v", leaf)

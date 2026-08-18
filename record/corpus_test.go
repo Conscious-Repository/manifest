@@ -112,12 +112,23 @@ func TestCorpusRealestate(t *testing.T) {
 					t.Fatalf("assumptions.md diverged:\n--- have\n%s\n--- emit\n%s", raw, got)
 				}
 			}
-			// the fixpoint contract on records is per-SECTION (## work) — the
-			// store writes surgically, never whole-file
-			if sec, ok := section(raw, "work"); ok {
-				stages := realestate.ParseWork(sec)
-				if got := strings.TrimRight(realestate.EmitWork(stages), "\n"); got != strings.TrimRight(strings.Join(sec, "\n"), "\n") {
-					t.Fatalf("%s ## work diverged:\n--- have\n%s\n--- emit\n%s", filepath.Base(path), strings.Join(sec, "\n"), got)
+			// the fixpoint contract on records is per-SECTION (## rocks, née
+			// ## work) — the store writes surgically, never whole-file
+			for _, name := range []string{"work", "rocks"} {
+				if sec, ok := section(raw, name); ok {
+					stages := realestate.ParseWork(sec)
+					if got := strings.TrimRight(realestate.EmitWork(stages), "\n"); got != strings.TrimRight(strings.Join(sec, "\n"), "\n") {
+						t.Fatalf("%s ## %s diverged:\n--- have\n%s\n--- emit\n%s", filepath.Base(path), name, strings.Join(sec, "\n"), got)
+					}
+				}
+			}
+			// contract records: whole-file round-trip (they are written
+			// canonically by NewContractRecord — overhaul §3.2)
+			if strings.Contains(path, string(filepath.Separator)+"contracts"+string(filepath.Separator)) {
+				slug := strings.TrimSuffix(filepath.Base(path), ".md")
+				c := realestate.ParseContract("", slug, raw)
+				if got := realestate.NewContractRecord(c); got != raw {
+					t.Fatalf("%s contract round-trip diverged:\n--- have\n%s\n--- emit\n%s", filepath.Base(path), raw, got)
 				}
 			}
 		case strings.HasSuffix(path, ".ledger.csv"):

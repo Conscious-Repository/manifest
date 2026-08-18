@@ -103,10 +103,13 @@ func pct(value, base float64) float64 {
 	return value / base
 }
 
-// computeMoneyRollup is the pass-5 triplet: est from the work list, paid /
-// committed from EVERY ledger row, over-budget per stage (committed > est).
-func computeMoneyRollup(work []WorkStage, ledger []LedgerRow) Rollup {
+// computeMoneyRollup is the pass-5 triplet: est from the work list, paid from
+// EVERY ledger row, committed from accepted-contract allocations (+ expenses,
+// draw-aware), over-budget per stage (committed > est). Legacy fallback: with
+// no allocations, accepted bid rows still commit (pre-migration records).
+func computeMoneyRollup(work []WorkStage, ledger []LedgerRow, allocs []NodeAllocation) Rollup {
 	var r Rollup
+	legacyBids := len(allocs) == 0
 	for _, st := range work {
 		r.Budget += st.EstTotal
 		if st.EstTotal > 0 && st.Committed > st.EstTotal {
@@ -114,21 +117,28 @@ func computeMoneyRollup(work []WorkStage, ledger []LedgerRow) Rollup {
 		}
 	}
 	// draw-aware committed (matches JoinWorkLedger): expenses against a
-	// work item with an accepted bid draw DOWN the contract, not up committed.
+	// committed node draw DOWN the contract, not up committed.
 	type acc struct{ acceptedSum, expenseSum float64 }
 	perWork := map[string]*acc{}
+	touch := func(id string) *acc {
+		a, ok := perWork[id]
+		if !ok {
+			a = &acc{}
+			perWork[id] = a
+		}
+		return a
+	}
+	for _, a := range allocs {
+		touch(a.NodeID).acceptedSum += a.Amount // node existence irrelevant — committed is committed
+	}
 	for _, row := range ledger {
 		isExpense := strings.EqualFold(row.Type, "expense")
-		accepted := strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
+		accepted := legacyBids && strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
 		if isExpense {
 			r.Paid += row.Amount
 		}
 		if row.WorkID != "" && (isExpense || accepted) {
-			a, ok := perWork[row.WorkID]
-			if !ok {
-				a = &acc{}
-				perWork[row.WorkID] = a
-			}
+			a := touch(row.WorkID)
 			if isExpense {
 				a.expenseSum += row.Amount
 			} else {
@@ -139,7 +149,7 @@ func computeMoneyRollup(work []WorkStage, ledger []LedgerRow) Rollup {
 		if isExpense {
 			r.Committed += row.Amount // untethered expense
 		} else if accepted {
-			r.Committed += row.Amount // untethered accepted bid
+			r.Committed += row.Amount // untethered accepted bid (legacy)
 		}
 	}
 	for _, a := range perWork {

@@ -62,7 +62,15 @@ type WorkNode struct {
 	Recognized   float64
 	Unreconciled float64
 	Receipted    bool
-	Bids         []WorkBid
+	Bids         []WorkBid      // legacy bid chips (pre-contract records only)
+	Contracts    []WorkContract // accepted-contract slices targeting this node
+}
+
+// WorkContract is one accepted allocation chip on a node.
+type WorkContract struct {
+	Slug       string  `json:"slug"`
+	Contractor string  `json:"contractor"`
+	Amount     float64 `json:"amount"`
 }
 
 // TaskID is the node's identity on the unified task surface: the explicit
@@ -127,6 +135,9 @@ func (n *WorkNode) MarshalJSON() ([]byte, error) {
 	}
 	if len(n.Bids) > 0 {
 		obj["bids"] = n.Bids
+	}
+	if len(n.Contracts) > 0 {
+		obj["contracts"] = n.Contracts
 	}
 	return json.Marshal(obj)
 }
@@ -553,10 +564,14 @@ func FreezeWorkID(stages []WorkStage, id string) bool {
 
 // JoinWorkLedger attaches the derived money to the tree: a ledger row's
 // WorkID matches any node (rolls up through its milestone into its rock) or a
-// rock id directly. committed = expenses + ACCEPTED bids, draw-aware; paid =
-// expenses. One source of truth — the ledger; these numbers are never stored.
-func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
+// rock id directly. COMMITTED comes from accepted-contract allocations
+// (overhaul decision 4) — draw-aware: committed = max(Σ allocations,
+// Σ expenses) per node; paid = expenses. Legacy fallback: with no contract
+// allocations at all, accepted BID rows still commit (pre-migration records
+// keep working — live rehabs must never break). Never stored.
+func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow, allocs []NodeAllocation) {
 	type acc struct{ acceptedSum, expenseSum float64 }
+	legacyBids := len(allocs) == 0
 	// index every tether target
 	nodeByID := map[string]*WorkNode{}
 	stageByID := map[string]*WorkStage{}
@@ -568,8 +583,8 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		nodeByID[n.ID] = n
 		nodeStage[n.ID] = st
 	})
-	// per-tether-id own sums; expenses against a node with an ACCEPTED bid are
-	// a DRAW against that contract — committed = max(Σ accepted, Σ expenses).
+	// per-tether-id own sums; expenses against a committed node are a DRAW
+	// against that contract — committed = max(Σ committed, Σ expenses).
 	perID := map[string]*acc{}
 	touch := func(id string) *acc {
 		if a, ok := perID[id]; ok {
@@ -578,6 +593,19 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		a := &acc{}
 		perID[id] = a
 		return a
+	}
+	for _, a := range allocs {
+		n, isNode := nodeByID[a.NodeID]
+		_, isStage := stageByID[a.NodeID]
+		if !isNode && !isStage {
+			continue // allocation to a deleted node — money stays on the contract, no crash
+		}
+		touch(a.NodeID).acceptedSum += a.Amount
+		if isNode {
+			n.Contracts = append(n.Contracts, WorkContract{
+				Slug: a.Contract, Contractor: a.Contractor, Amount: a.Amount,
+			})
+		}
 	}
 	for _, r := range ledger {
 		if r.WorkID == "" {
@@ -592,10 +620,10 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		accepted := strings.EqualFold(r.Type, "bid") && strings.EqualFold(r.Status, "accepted")
 		if isExpense {
 			touch(r.WorkID).expenseSum += r.Amount
-		} else if accepted {
+		} else if accepted && legacyBids {
 			touch(r.WorkID).acceptedSum += r.Amount
 		}
-		if isNode && strings.EqualFold(r.Type, "bid") {
+		if isNode && legacyBids && strings.EqualFold(r.Type, "bid") {
 			who := r.Contractor
 			if who == "" {
 				who = r.Vendor
@@ -612,8 +640,22 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow) {
 		}
 		return a.expenseSum
 	}
-	// receipt evidence: EVERY accepted bid row tethered to the id carries a doc
+	// receipt evidence: every committed slice on the id carries a doc —
+	// contract mode reads the contracts' doc refs, legacy mode the bid rows'
 	receipted := func(id string) bool {
+		if !legacyBids {
+			any := false
+			for _, a := range allocs {
+				if a.NodeID != id {
+					continue
+				}
+				if a.Doc == "" {
+					return false
+				}
+				any = true
+			}
+			return any
+		}
 		any := false
 		for _, r := range ledger {
 			if r.WorkID != id || !strings.EqualFold(r.Type, "bid") || !strings.EqualFold(r.Status, "accepted") {

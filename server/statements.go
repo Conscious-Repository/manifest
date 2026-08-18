@@ -224,6 +224,9 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 					s.tetherWorkID(p, a.WorkID) // freeze the id in the record
 				}
 			}
+			if a.Contract != "" {
+				note = strings.TrimSpace(note + " [contract:: " + a.Contract + "]") // draw-down tether (§7)
+			}
 			if c := strings.ToLower(strings.TrimSpace(a.Cat)); !row.Inflow && (c == realestate.CatSoft ||
 				c == realestate.CatAcquisition) {
 				note = strings.TrimSpace(note + " [cat:: " + c + "]")

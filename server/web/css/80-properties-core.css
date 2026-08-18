@@ -315,6 +315,30 @@
 .pp3-dec-row { align-items: baseline; }
 .pp3-dec-rock { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
+/* contracts + contractor surfaces (overhaul pass 2) */
+.re-node-contract { flex: none; background: none; border: 1px solid var(--accent-soft); border-radius: var(--radius-lg); color: var(--accent); font-family: var(--mono); font-size: var(--fs-2xs); padding: 0 var(--sp-3); cursor: pointer; }
+.re-node-contract:hover { background: var(--base-20); }
+.re-ctr-shell { margin-top: var(--sp-4); }
+.re-ctr-cols { display: grid; grid-template-columns: 1fr 1fr 90px 110px; gap: var(--sp-5); }
+.re-ctr-scopes { color: var(--base-50); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.re-scope-box { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.re-ctrp-head { display: flex; align-items: baseline; gap: var(--sp-4); flex-wrap: wrap; }
+.re-ctrp-meta { display: flex; gap: var(--sp-6); font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); margin: var(--sp-2) 0 var(--sp-5); }
+.re-ctrp-facts { margin-bottom: var(--sp-6); }
+.re-ctrp-props { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-6); }
+.re-ctrp-prose { white-space: pre-wrap; color: var(--base-70); font-size: var(--fs-md); margin: var(--sp-3) 0; }
+.re-contract-row { display: flex; gap: var(--sp-5); align-items: baseline; cursor: pointer; }
+.re-contract-status { font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; width: 74px; flex: none; color: var(--base-40); }
+.re-contract-status.s-accepted { color: var(--accent); }
+.re-contract-status.s-declined, .re-contract-status.s-expired { text-decoration: line-through; }
+.re-contract-money { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-60); }
+.re-contract-page { max-width: 720px; }
+.re-contract-statussel { width: auto; }
+.re-alloc-row { display: flex; gap: var(--sp-5); align-items: baseline; }
+.re-alloc-node { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); flex: 1; }
+.re-alloc-row .prop-col-r { margin-left: auto; }
+.re-contract-prose { font-size: var(--fs-md); color: var(--base-70); padding: var(--sp-1) 0; }
+
 /* GOALS tab: per-property rock trails */
 .re-proprocks-label { margin-top: var(--sp-8); }
 .re-stage-doneby { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }

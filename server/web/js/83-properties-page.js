@@ -211,7 +211,9 @@ async function renderPropertyPage(slug) {
           mdel.replaceWith(yes);
           setTimeout(() => { if (yes.parentNode) yes.replaceWith(mdel); }, 2500);
         };
-        ml.append(mglyph, mname, mdel);
+        ml.append(mglyph, mname);
+        appendContractChips(ml, n);
+        ml.append(mdel);
         ml.classList.add("nested");
         stagesSec.append(ml);
         (n.children || []).forEach((c) => nodeRow(c, depth + 1));
@@ -232,6 +234,7 @@ async function renderPropertyPage(slug) {
       const row = propTodoRow(p, { id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "" });
       row.classList.add("nested");
       if (depth > 0) row.classList.add("deep");
+      appendContractChips(row, n);
       stagesSec.append(row);
       (n.children || []).forEach((c) => nodeRow(c, depth + 1));
     };
@@ -618,8 +621,34 @@ function ledgerForm(p, r, i) {
   grid.append(labeled("date", date), labeled("type", type), labeled("status", status),
     labeled("category", category), labeled("vendor", vendor), labeled("contractor", contractor),
     labeled("amount", amount), labeled("note", note));
+  // quick-add hops (§7): property → node → contract. The contract list =
+  // accepted contracts with allocations on THIS property, showing remaining.
+  let nodeSel = null, contractSel = null;
+  if (!r) {
+    nodeSel = selectEl([]);
+    nodeSel.className = "pp-in";
+    const nopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; nodeSel.append(o); };
+    nopt("", "— no tether —");
+    (p.work || []).forEach((st) => {
+      nopt(st.id, st.text);
+      (st.tasks || []).forEach(function walk(n, prefix) {
+        const pre = typeof prefix === "string" ? prefix : "· ";
+        nopt(n.id, pre + n.text);
+        (n.children || []).forEach((c) => walk(c, pre + "· "));
+      });
+    });
+    contractSel = selectEl([]);
+    contractSel.className = "pp-in";
+    const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; contractSel.append(o); };
+    copt("", "— no contract —");
+    (typeof reContracts === "function" ? reContracts() : [])
+      .filter((c) => c.status === "accepted" && (c.allocations || []).some((a) => a.property === p.slug))
+      .forEach((c) => copt(c.slug, c.name + " · " + fmtMoney(c.remaining != null ? c.remaining : c.total) + " left"));
+    grid.append(labeled("node", nodeSel), labeled("contract", contractSel));
+  }
   form.append(grid);
   if (r && r.workId) form.append(el("div", "pp3-uw-note", "tethered to work [" + r.workId + "] — kept"));
+  if (r && r.contract) form.append(el("div", "pp3-uw-note", "draws contract [" + r.contract + "] — kept"));
 
   const actions = el("div", "pp3-uw-actions");
   const cancel = el("button", "pp3-uw-cancel", "cancel");
@@ -633,6 +662,7 @@ function ledgerForm(p, r, i) {
         // rebuild the note with the row's hidden tokens intact — the server
         // reconstructs the on-disk note from note+workId only
         let n = note.value.trim();
+        if (r.contract) n += " [contract:: " + r.contract + "]";
         if (r.cat) n += " [cat:: " + r.cat + "]";
         if (r.paidBy) n += " [paid-by:: " + r.paidBy + "]";
         if (r.stmt) n += " [stmt:: " + r.stmt + "]";
@@ -647,6 +677,7 @@ function ledgerForm(p, r, i) {
           date: date.value.trim(), type: type.value, category: category.value.trim(),
           vendor: vendor.value.trim(), contractor: contractor.value.trim(), amount: amt,
           status: status.value, note: note.value.trim(),
+          workId: nodeSel ? nodeSel.value : "", contract: contractSel ? contractSel.value : "",
         });
       }
       propLedgerEdit = -1; propLedgerAdd = false;
@@ -659,6 +690,21 @@ function ledgerForm(p, r, i) {
 }
 
 function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }
+
+// appendContractChips — a node's accepted-contract slices (the committed
+// source) render as chips linking to the contract page.
+function appendContractChips(row, n) {
+  (n.contracts || []).forEach((cc) => {
+    const chip = el("button", "re-node-contract", cc.contractor + " " + fmtMoneyShort(cc.amount));
+    chip.title = "contract " + cc.slug;
+    chip.onclick = (e) => {
+      e.stopPropagation();
+      location.hash = "#/properties/contract/" + encodeURIComponent(cc.slug);
+    };
+    const x = row.querySelector(".pp3-todo-x, .pp3-stage-x");
+    if (x) row.insertBefore(chip, x); else row.append(chip);
+  });
+}
 
 // propWorkOp — the one op endpoint for the `## rocks` tree
 // (check · edit · delete · add-stage · add-task · set-field). Re-renders the

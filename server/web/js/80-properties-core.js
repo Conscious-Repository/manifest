@@ -31,6 +31,8 @@ function showProperties(h) {
   propDealSlug = "";
   const VIEWS = ["backlog", "portfolio", "goals", "money", "settings", "map"];
   if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
+  else if (tail.startsWith("contract/")) { propMode = "contract"; propSlug = tail.slice(9); }
+  else if (tail.startsWith("contractor/")) { propMode = "contractor"; propSlug = tail.slice(11); }
   // bare #/properties = BACKLOG, always — the aion mirror (showAion: tail ||
   // "backlog"). The old sticky-mode read made the BACKLOG chip (href
   // #/properties) a no-op from any other tab.
@@ -101,6 +103,8 @@ async function renderProperties() {
   else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
   else if (propMode === "deal") { els.propertyBoard.hidden = false; renderDealPage(propDealSlug); }
+  else if (propMode === "contract") { els.propertyBoard.hidden = false; renderContractPage(propSlug); }
+  else if (propMode === "contractor") { els.propertyBoard.hidden = false; renderContractorPage(propSlug); }
   else if (propMode === "goals") { els.propertyBoard.hidden = false; renderREGoals(); }
   else if (propMode === "money") { els.propertyBoard.hidden = false; renderREMoney(); }
   else if (propMode === "portfolio") { els.propertyBoard.hidden = false; renderPortfolio(); }

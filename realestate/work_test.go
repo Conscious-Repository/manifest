@@ -84,7 +84,7 @@ func TestJoinWorkLedger(t *testing.T) {
 		{Type: "expense", Amount: 500, Status: "paid", WorkID: "rough-in"}, // stage-level tether
 		{Type: "expense", Amount: 77, Status: "paid"},                      // untethered — always legal
 	}
-	JoinWorkLedger(stages, ledger)
+	JoinWorkLedger(stages, ledger, nil)
 	st := stages[0]
 	if st.Paid != 8900 || st.Committed != 12150+500 {
 		t.Fatalf("stage rollup: paid=%v committed=%v (want 8900 / 12650)", st.Paid, st.Committed)
@@ -101,7 +101,7 @@ func TestJoinWorkLedger(t *testing.T) {
 	JoinWorkLedger(over, []LedgerRow{
 		{Type: "bid", Amount: 1000, Status: "accepted", WorkID: "s/t"},
 		{Type: "expense", Amount: 1400, Status: "paid", WorkID: "s/t"},
-	})
+	}, nil)
 	if over[0].Tasks[0].Committed != 1400 {
 		t.Fatalf("overpaid contract: committed=%v want 1400", over[0].Tasks[0].Committed)
 	}

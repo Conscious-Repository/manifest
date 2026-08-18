@@ -103,7 +103,7 @@ func main() {
 	// mutates its argument; callers always pass a throwaway tree).
 	snapshot := func(stages []realestate.WorkStage, ledger []realestate.LedgerRow) map[string]moneyRow {
 		out := map[string]moneyRow{}
-		realestate.JoinWorkLedger(stages, ledger)
+		realestate.JoinWorkLedger(stages, ledger, nil)
 		for _, st := range stages {
 			out[st.ID] = moneyRow{st.EstTotal, st.Paid, st.Committed, st.Recognized, st.Unreconciled}
 		}

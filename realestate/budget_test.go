@@ -12,7 +12,7 @@ func TestComputeProjectBudget(t *testing.T) {
 		{Type: "expense", Amount: 900, Cat: "carry"},         // legacy carry token → soft
 		{Type: "expense", Amount: 60000, Cat: "acquisition"}, // closing statement — over the 57k plan
 	}
-	pb := ComputeProjectBudget(src, work, ledger, false)
+	pb := ComputeProjectBudget(src, work, ledger, false, nil)
 
 	if len(pb.Categories) != 4 {
 		t.Fatalf("categories = %d, want 4", len(pb.Categories))
@@ -60,7 +60,7 @@ func TestRecognizedSpend(t *testing.T) {
 		{Type: "expense", Amount: 3000, WorkID: "demo/b"},
 		{Type: "expense", Amount: 1000, WorkID: "demo/c"},
 	}
-	JoinWorkLedger(stages, ledger)
+	JoinWorkLedger(stages, ledger, nil)
 	td := stages[0].Tasks
 	if td[0].Recognized != 5000 || td[0].Unreconciled != 5000 {
 		t.Fatalf("done+firm no cash: %+v", td[0])
@@ -82,14 +82,14 @@ func TestRecognizedSpend(t *testing.T) {
 	})
 	JoinWorkLedger(stages2, []LedgerRow{
 		{Type: "bid", Status: "accepted", Amount: 5000, WorkID: "demo/a", Doc: "receipt.pdf"},
-	})
+	}, nil)
 	if td2 := stages2[0].Tasks[0]; td2.Recognized != 5000 || td2.Unreconciled != 0 || !td2.Receipted {
 		t.Fatalf("receipted: %+v", td2)
 	}
 
 	// property level: hard spent = recognized + untethered cash; ⚑ total rides up
 	pb := ComputeProjectBudget(SourceMoney{}, stages, append(ledger,
-		LedgerRow{Type: "expense", Amount: 700}), false) // untethered hard cash
+		LedgerRow{Type: "expense", Amount: 700}), false, nil) // untethered hard cash
 	byKey := map[string]BudgetCatRow{}
 	for _, c := range pb.Categories {
 		byKey[c.Key] = c
@@ -106,7 +106,7 @@ func TestOwnedAcquisitionCountsAsSpent(t *testing.T) {
 	src := SourceMoney{PurchasePrice: 55000, ClosingCosts: 2000}
 
 	// owned, no ledger rows yet: the acquisition plan IS the spend
-	pb := ComputeProjectBudget(src, nil, nil, true)
+	pb := ComputeProjectBudget(src, nil, nil, true, nil)
 	byKey := map[string]BudgetCatRow{}
 	for _, c := range pb.Categories {
 		byKey[c.Key] = c
@@ -121,7 +121,7 @@ func TestOwnedAcquisitionCountsAsSpent(t *testing.T) {
 	// owned + closing statement already in the ledger: max, not double count
 	pb = ComputeProjectBudget(src, nil, []LedgerRow{
 		{Type: "expense", Amount: 60000, Cat: "acquisition"},
-	}, true)
+	}, true, nil)
 	for _, c := range pb.Categories {
 		if c.Key == CatAcquisition && (c.Paid != 60000 || !c.Over) {
 			t.Fatalf("owned acquisition with ledger row = %+v, want paid 60000 (no double count), over", c)
@@ -129,14 +129,14 @@ func TestOwnedAcquisitionCountsAsSpent(t *testing.T) {
 	}
 
 	// not owned: plan alone is not spend
-	pb = ComputeProjectBudget(src, nil, nil, false)
+	pb = ComputeProjectBudget(src, nil, nil, false, nil)
 	if pb.Paid != 0 {
 		t.Fatalf("tracked property paid = %v, want 0", pb.Paid)
 	}
 }
 
 func TestSourceMoneyFallbackHardCosts(t *testing.T) {
-	pb := ComputeProjectBudget(SourceMoney{HardCosts: 275000, ContingencyPct: 0.1}, nil, nil, false)
+	pb := ComputeProjectBudget(SourceMoney{HardCosts: 275000, ContingencyPct: 0.1}, nil, nil, false, nil)
 	for _, c := range pb.Categories {
 		if c.Key == CatHard && c.Budget != 275000 {
 			t.Fatalf("hard fallback = %v, want 275000", c.Budget)

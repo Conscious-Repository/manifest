@@ -233,6 +233,15 @@ func main() {
 			vaultwriter.Capability{Name: "realestate-approved", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
+			// RE overhaul pass 2 — narrower names for audit granularity:
+			// contract records (the committed-money source) and the CAS
+			// document store (one blob per document, sha256-addressed)
+			vaultwriter.Capability{Name: "re-contracts", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate", "contracts")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "re-files", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate", "files")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
 			// TODO PANEL — system/todo-plans/** records (todo-panel plan D2/D6).
 			// The owner's direct edits (description, plan) ride the user-action
 			// capability; the agent-plan MATERIALIZATION rides the standing-
@@ -408,6 +417,10 @@ func main() {
 		reSvc = realestate.New(vix)
 		srv.UseRealestate(reSvc, reRoot, cfg.DataDir)
 		srv.UseRePortal(cfg.RePortalPath)
+		// the CAS document store (overhaul §3.3) — capability-bound writes
+		srv.UseREFiles(realestate.NewFileStore(cfg.VaultPath, reRoot, func(rel string, data []byte) error {
+			return vw.WriteCap("re-files", rel, data)
+		}))
 		// Starter budget-mix template — write-once (goals.Seed precedent); the
 		// user edits or adds templates as plain records forever after.
 		if rel, err := vw.CreateRecord(reRoot+"/templates/gut-rehab.md", realestate.StarterTemplate); err == nil {

@@ -1,0 +1,376 @@
+// ---- CONTRACTS + CONTRACTOR surfaces (overhaul pass 2) ----
+// The contractor table mirrors the AION fundraising surface (owner amendment
+// 2026-08-18): table + aside inspector, row select → inspector, edits save
+// as you go, mobile sheet fallback. The contractor HISTORY page follows the
+// contact-page conventions — everything on it is DERIVED (contracts by
+// status, properties worked, committed/drawn/remaining, open tree tasks
+// owned); nothing stored. The CONTRACT page is the committed-money record:
+// total · allocations · Σ drawn · remaining, with the document one click away.
+
+let reContractsCache = null; // /api/realestate/contracts → {contracts:[…]}
+let reCtrSel = null;         // selected contractor slug (table inspector)
+
+async function loadReContracts() {
+  try { reContractsCache = await (await fetch("/api/realestate/contracts")).json(); }
+  catch (e) { reContractsCache = { contracts: [] }; }
+}
+
+function reContracts() { return (reContractsCache && reContractsCache.contracts) || []; }
+
+// reScopeVocab — the scope vocabulary is DRAWN from the rock templates +
+// milestones in use + every scope already on a contractor (§3.7): a join,
+// not a guess.
+function reScopeVocab() {
+  const vocab = new Set();
+  (templateCache || []).forEach((t) => (t.stages || []).forEach((st) => vocab.add(st.text.toLowerCase())));
+  (propertyCache || []).forEach((p) => (p.work || []).forEach((st) =>
+    (st.tasks || []).forEach(function walk(n) {
+      if (n.milestone) vocab.add((n.text || "").toLowerCase());
+      (n.children || []).forEach(walk);
+    })));
+  (((entitiesCache || {}).contractors) || []).forEach((c) => (c.scopes || []).forEach((s) => vocab.add(s)));
+  return [...vocab].filter(Boolean).sort();
+}
+
+// ---- the contractor table (Settings → Contractors) ----
+
+function reContractorsPane(host) {
+  if (reContractsCache === null) {
+    loadReContracts().then(() => renderREsettings());
+  }
+  const shell = el("div", "aion-backlog fr-shell re-ctr-shell");
+  const main = el("div", "aion-list fr-main");
+  const insp = el("aside", "aion-inspector fr-inspector");
+  shell.append(main, insp);
+  host.append(shell);
+
+  const rows = ((entitiesCache || {}).contractors) || [];
+  const byCtr = {};
+  reContracts().forEach((c) => {
+    const k = (c.contractor || "").toLowerCase();
+    byCtr[k] = byCtr[k] || { n: 0, committed: 0 };
+    byCtr[k].n++;
+    if (c.status === "accepted") byCtr[k].committed += c.total || 0;
+  });
+
+  const table = el("div", "fr-table");
+  table.append(ppCols("fr-cols re-ctr-cols", ["CONTRACTOR", "SCOPES", "CONTRACTS", "COMMITTED"]));
+  rows.forEach((c) => {
+    const row = el("div", "fr-row re-ctr-cols" + (reCtrSel === c.slug ? " sel" : ""));
+    row.append(el("span", "fr-firm", c.name));
+    row.append(el("span", "re-ctr-scopes", (c.scopes || []).join(" · ") || "—"));
+    const agg = byCtr[c.slug.toLowerCase()] || { n: 0, committed: 0 };
+    row.append(el("span", "", agg.n ? String(agg.n) : "·"));
+    row.append(el("span", "prop-col-r", agg.committed ? fmtMoney(agg.committed) : "·"));
+    row.onclick = () => {
+      reCtrSel = reCtrSel === c.slug ? null : c.slug;
+      renderREsettings();
+    };
+    table.append(row);
+  });
+  table.append(ghostInput("＋ contractor", "set-add", async (v) => {
+    try { await postJSONOk("/api/realestate/entities", { name: v, kind: "contractor" }); renderREsettings(); }
+    catch (err) { showToast("Couldn't create contractor"); }
+  }, "contractor name…"));
+  main.append(table);
+
+  const selected = rows.find((c) => c.slug === reCtrSel);
+  if (window.mf && window.mf.phone()) {
+    if (selected) {
+      window.mfSheet.open((body) => renderContractorInspector(body, selected), {
+        key: "re-contractor", onClose: () => { reCtrSel = null; }, reopen: true,
+      });
+    } else { window.mfSheet.closeIf("re-contractor"); }
+  } else if (selected) {
+    renderContractorInspector(insp, selected);
+  } else {
+    insp.append(el("div", "fr-empty", "select a contractor — edits save as you go"));
+  }
+}
+
+// renderContractorInspector — the fundraising quick-edit idiom: field(label,
+// node); text inputs commit on blur when dirty.
+function renderContractorInspector(host, c) {
+  host.innerHTML = "";
+  const patch = async (set) => {
+    try {
+      await postJSONOk("/api/realestate/contractors/" + encodeURIComponent(c.slug) + "/update", set);
+      await ensureEntities(true);
+      await loadReContracts();
+      renderREsettings();
+    } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
+  };
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field fr-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    host.append(f);
+  };
+  const text = (label, key, value, placeholder) => {
+    const n = inputEl(placeholder || "");
+    n.className = "pp-in fr-in";
+    n.value = value || "";
+    let old = n.value;
+    n.onblur = () => { if (n.value !== old) { old = n.value; patch({ [key]: n.value }); } };
+    field(label, n);
+    return n;
+  };
+  host.append(el("div", "fr-insp-head", c.name));
+  text("name", "name", c.name);
+  text("email", "email", c.email, "email…");
+  text("website", "website", c.website, "https://…");
+  // scopes: chips + typeahead over the template/milestone vocabulary (+ free)
+  const box = el("div", "re-scope-box");
+  const scopes = [...(c.scopes || [])];
+  const renderChips = () => {
+    box.innerHTML = "";
+    scopes.forEach((s, i) => {
+      const chip = el("span", "fr-person-chip", s);
+      const x = el("button", "fr-person-x", "✕");
+      x.onclick = () => { scopes.splice(i, 1); renderChips(); patch({ scopes }); };
+      chip.append(x);
+      box.append(chip);
+    });
+    const ta = typeahead({
+      placeholder: "add scope…", minChars: 1,
+      suggest: (q, add) => {
+        reScopeVocab().filter((v) => v.includes(q.toLowerCase()) && !scopes.includes(v))
+          .slice(0, 8).forEach((v) => add(v, () => commit(v)));
+      },
+      onEnter: (v) => commit(v.toLowerCase().trim()),
+    });
+    const commit = (v) => {
+      if (!v || scopes.includes(v)) return;
+      scopes.push(v);
+      renderChips();
+      patch({ scopes });
+    };
+    box.append(ta.el);
+  };
+  renderChips();
+  field("scopes", box);
+  const hist = el("button", "pp3-link", "history ↗");
+  hist.onclick = () => { location.hash = "#/properties/contractor/" + encodeURIComponent(c.slug); };
+  field("", hist);
+}
+
+// ---- the contractor HISTORY page (contact-page conventions; all derived) ----
+
+async function renderContractorPage(slug) {
+  const host = els.propertyBoard;
+  host.innerHTML = "";
+  let d = null;
+  try { d = await (await fetch("/api/realestate/contractors/" + encodeURIComponent(slug) + "/page")).json(); }
+  catch (e) {}
+  if (!d || !d.contractor) { host.append(emptyRow("Contractor not found.")); return; }
+  const c = d.contractor;
+
+  const shell = el("div", "aion-backlog fr-shell re-ctr-shell");
+  const main = el("div", "aion-list fr-main re-ctrp");
+  const insp = el("aside", "aion-inspector fr-inspector");
+  shell.append(main, insp);
+  host.append(shell);
+  renderContractorInspector(insp, c);
+
+  // header: name + scope chips
+  const head = el("div", "cp-head re-ctrp-head");
+  head.append(el("h2", "cp-name", c.name));
+  (c.scopes || []).forEach((s) => head.append(el("span", "cp-role", s)));
+  main.append(head);
+  if (c.email || c.website) {
+    const meta = el("div", "re-ctrp-meta");
+    if (c.email) meta.append(el("span", "", c.email));
+    if (c.website) {
+      const a = el("a", "pp3-link", c.website.replace(/^https?:\/\//, ""));
+      a.href = c.website; a.target = "_blank"; a.rel = "noopener";
+      meta.append(a);
+    }
+    main.append(meta);
+  }
+
+  // facts strip between hairlines: committed / drawn / remaining / contracts
+  const facts = el("div", "cp-facts re-ctrp-facts");
+  const fact = (label, val) => {
+    const f = el("div", "cp-fact");
+    f.append(el("div", "cp-fact-label", label), el("div", "cp-fact-val", val));
+    facts.append(f);
+  };
+  fact("COMMITTED", d.committed ? fmtMoney(d.committed) : "—");
+  fact("DRAWN", d.drawn ? fmtMoney(d.drawn) : "—");
+  fact("REMAINING", d.committed ? fmtMoney(d.remaining) : "—");
+  fact("CONTRACTS", String((d.contracts || []).length));
+  main.append(facts);
+
+  // contracts by status
+  const secHead = (t, n) => {
+    const h = el("div", "pp3-sec-head");
+    h.append(el("span", "pp3-sec-title", t));
+    if (n != null) h.append(el("span", "pp3-sec-count", String(n)));
+    return h;
+  };
+  const contracts = d.contracts || [];
+  main.append(secHead("CONTRACTS", contracts.length));
+  if (!contracts.length) main.append(el("div", "pp-empty", "No contracts yet."));
+  contracts.forEach((cv) => {
+    const row = el("div", "prop-row re-contract-row");
+    row.onclick = () => { location.hash = "#/properties/contract/" + encodeURIComponent(cv.slug); };
+    row.append(el("span", "re-contract-status s-" + cv.status, cv.status));
+    row.append(el("span", "prop-addr", cv.name));
+    row.append(el("span", "re-contract-money",
+      fmtMoney(cv.total) + (cv.drawn ? " · drawn " + fmtMoney(cv.drawn) : "")));
+    main.append(row);
+  });
+
+  // properties worked
+  if ((d.properties || []).length) {
+    main.append(secHead("PROPERTIES", d.properties.length));
+    const box = el("div", "re-ctrp-props");
+    d.properties.forEach((p) => {
+      const chip = el("button", "cp-firm", p.name);
+      chip.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
+      box.append(chip);
+    });
+    main.append(box);
+  }
+
+  // open tree tasks / decisions owned
+  if ((d.owned || []).length) {
+    main.append(secHead("OPEN — THEIRS", d.owned.length));
+    d.owned.forEach((t) => {
+      const row = el("div", "pp3-todo");
+      row.append(el("span", "tdo-check", t.decision ? "◇" : "○"),
+        el("span", "pp3-todo-text", t.text),
+        el("span", "pp3-dec-rock", t.property + " · " + t.rock));
+      main.append(row);
+    });
+  }
+
+  // free prose from the record
+  if (d.prose) {
+    main.append(secHead("NOTES", null));
+    main.append(el("div", "re-ctrp-prose", d.prose));
+  }
+}
+
+// ---- the CONTRACT page (overhaul §4: total · allocations · drawn · remaining) ----
+
+async function renderContractPage(slug) {
+  const host = els.propertyBoard;
+  host.innerHTML = "";
+  let d = null;
+  try { d = await (await fetch("/api/realestate/contracts/" + encodeURIComponent(slug))).json(); }
+  catch (e) {}
+  if (!d || !d.contract) { host.append(emptyRow("Contract not found.")); return; }
+  const c = d.contract;
+  const patch = async (set) => {
+    try {
+      await postJSONOk("/api/realestate/contracts/" + encodeURIComponent(slug) + "/update", set);
+      renderProperties();
+    } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
+  };
+
+  const page = el("div", "re-contract-page");
+  host.append(page);
+  const head = el("div", "pp3-head");
+  head.append(el("h2", "pp3-title", c.name));
+  // status select — save as you go
+  const sel = selectEl(["proposed", "accepted", "declined", "expired", "closed"]);
+  sel.value = c.status;
+  sel.className = "pp-in re-contract-statussel s-" + c.status;
+  sel.onchange = () => patch({ status: sel.value });
+  head.append(sel);
+  const openNote = el("button", "pp3-note", "note ↗");
+  openNote.onclick = () => { location.hash = "#/note/" + encodeURIComponent(c.path); };
+  head.append(openNote);
+  page.append(head);
+
+  const meta = el("div", "re-ctrp-meta");
+  const ctrBtn = el("button", "pp3-link", "@" + c.contractor);
+  ctrBtn.onclick = () => { location.hash = "#/properties/contractor/" + encodeURIComponent(c.contractor); };
+  meta.append(ctrBtn);
+  if (c.date) meta.append(el("span", "", c.date));
+  if (c.expires) meta.append(el("span", "", "expires " + c.expires));
+  if (c.doc) {
+    if (c.doc.startsWith("sha256:")) {
+      const a = el("a", "pp3-link", "document ↗");
+      a.href = "/api/realestate/files/" + c.doc.slice(7);
+      a.target = "_blank";
+      meta.append(a);
+    } else {
+      meta.append(el("span", "", "doc: " + c.doc));
+    }
+  }
+  page.append(meta);
+
+  // money strip: TOTAL (editable, optional reason — decision 16) · DRAWN · REMAINING
+  const strip = el("div", "pp3-strip");
+  const cell = (label, val, cls) => {
+    const box = el("div", "pp3-cell");
+    box.append(el("div", "pp3-cell-label", label), el("div", "pp3-cell-val" + (cls ? " " + cls : ""), val));
+    return box;
+  };
+  const totalCell = cell("TOTAL", fmtMoney(c.total));
+  totalCell.classList.add("click");
+  totalCell.title = "edit the committed total (a reason is optional — it logs to ## changes)";
+  totalCell.onclick = () => {
+    const v = prompt("Committed total:", String(c.total));
+    if (v === null) return;
+    const num = parseFloat(v.replace(/[$,]/g, ""));
+    if (!(num > 0)) { showToast("Total must be a positive number"); return; }
+    const reason = prompt("Reason (optional — logs to the change history):", "") || "";
+    const set = { total: num };
+    // single-allocation contracts re-balance automatically; multi needs the note view
+    if ((c.allocations || []).length === 1) {
+      const a = c.allocations[0];
+      set.allocations = [a.property + " | " + a.nodeId + " | " + num];
+    } else {
+      showToast("Multi-property contract — adjust allocations in the record (note ↗)");
+      return;
+    }
+    if (reason.trim()) set.changeNote = (num > c.total ? "+" : "") + (num - c.total) + " " + reason.trim();
+    patch(set);
+  };
+  strip.append(totalCell);
+  strip.append(cell("DRAWN", d.contract.drawn ? fmtMoney(d.contract.drawn) : "—"));
+  strip.append(cell("REMAINING", fmtMoney(d.remaining), d.remaining < 0 ? "over" : ""));
+  page.append(strip);
+
+  // allocations — cross-property by construction
+  const sh = el("div", "pp3-sec-head");
+  sh.append(el("span", "pp3-sec-title", "ALLOCATIONS"), el("span", "pp3-sec-count", String((c.allocations || []).length)));
+  page.append(sh);
+  (c.allocations || []).forEach((a) => {
+    const row = el("div", "prop-row re-alloc-row");
+    const pname = (d.propertyNames || {})[a.property] || a.property;
+    const link = el("span", "prop-addr", pname);
+    link.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(a.property); };
+    row.append(link);
+    row.append(el("span", "re-alloc-node", a.nodeId));
+    row.append(el("span", "prop-col-r", fmtMoney(a.amount)));
+    page.append(row);
+  });
+
+  // draws — expenses carrying [contract:: slug]
+  const dh = el("div", "pp3-sec-head");
+  dh.append(el("span", "pp3-sec-title", "DRAWS"), el("span", "pp3-sec-count", String((d.draws || []).length)));
+  page.append(dh);
+  if (!(d.draws || []).length) page.append(el("div", "pp-empty", "No draws yet — expenses tethered [contract:: " + slug + "] land here."));
+  (d.draws || []).forEach((r) => {
+    const row = el("div", "prop-row re-alloc-row");
+    row.append(el("span", "", r.date), el("span", "prop-addr", r.vendor + (r.note ? " · " + r.note : "")),
+      el("span", "prop-col-r", fmtMoney(r.amount)));
+    page.append(row);
+  });
+
+  // prose sections — display-only extracted terms
+  const prose = (title, lines) => {
+    if (!(lines || []).length) return;
+    const h = el("div", "pp3-sec-head");
+    h.append(el("span", "pp3-sec-title", title.toUpperCase()));
+    page.append(h);
+    lines.forEach((ln) => page.append(el("div", "re-contract-prose", "· " + ln)));
+  };
+  prose("terms", c.terms);
+  prose("exclusions", c.exclusions);
+  prose("risk items", c.riskItems);
+  prose("changes", c.changes);
+}

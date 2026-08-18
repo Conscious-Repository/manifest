@@ -17,8 +17,11 @@ import (
 type Entity struct {
 	Path            string   `json:"path"`
 	Slug            string   `json:"slug"`
-	Name            string   `json:"name"`            // frontmatter name, else the slug
-	Trade           string   `json:"trade,omitempty"` // contractors: masonry · roofing · plumbing …
+	Name            string   `json:"name"`             // frontmatter name, else the slug
+	Trade           string   `json:"trade,omitempty"`  // contractors: legacy single-trade string (scopes supersedes)
+	Email           string   `json:"email,omitempty"`  // contractors (overhaul §3.7)
+	Website         string   `json:"website,omitempty"`
+	Scopes          []string `json:"scopes,omitempty"` // contractor scopes ([trade] reads as fallback)
 	Owners          []Owner  `json:"owners,omitempty"`
 	AdminCategories []string `json:"adminCategories,omitempty"`
 	// Partnered splits the accountant handoff: personal books (Anderson
@@ -193,7 +196,10 @@ func (s *Service) Registry(category string) []Entity {
 	return out
 }
 
-// Contractors returns every contractor record (name + slug), for autocomplete.
+// Contractors returns every contractor record — the registry the contractor
+// table, autocompletes, and the intake match step read. Scopes supersede the
+// single trade string; a legacy [trade]-only record reads its trade as the
+// one scope (overhaul §3.7 — migrate into scopes on first edit).
 func (s *Service) Contractors() []Entity {
 	refs, err := s.ix.Category("contractor", vaultindex.SortNameAsc)
 	if err != nil {
@@ -211,6 +217,17 @@ func (s *Service) Contractors() []Entity {
 			e.Name = n
 		}
 		e.Trade = strings.ToLower(strings.TrimSpace(unquote(fm["trade"])))
+		e.Email = unquote(fm["email"])
+		e.Website = unquote(fm["website"])
+		for _, sc := range quotedList(fm["scopes"]) {
+			sc = strings.ToLower(strings.TrimSpace(sc))
+			if sc != "" {
+				e.Scopes = append(e.Scopes, sc)
+			}
+		}
+		if len(e.Scopes) == 0 && e.Trade != "" {
+			e.Scopes = []string{e.Trade} // legacy fallback
+		}
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })

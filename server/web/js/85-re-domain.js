@@ -423,6 +423,7 @@ async function renderREMoney() {
     moneyRows = d.rows || [];
     last = d.lastImport || "";
   } catch (e) { moneyRows = []; }
+  await loadReContracts(); // the third hop's picker (accepted contracts + remaining)
   const unfiled = moneyRows.filter((r) => r.state === "pending").length;
   host.append(el("div", "re-lane-head",
     "MONEY · " + moneyRows.length + " transactions" + (unfiled ? " · " + unfiled + " uncategorized" : "") +
@@ -524,6 +525,7 @@ function openMoneyAssignSheet(r) {
     rowOpt("", "unassigned");
     activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
     body.append(list);
+    moneyHopFields(r, body); // node + contract hops (native selects — mobile deviation)
   }, { key: "money:" + r.id });
 }
 
@@ -551,8 +553,73 @@ function renderMoneyInspector(r) {
   insp.append(fieldRow("state", r.state));
   insp.append(fieldRow("category", r.category));
   if (r.note) insp.append(fieldRow("note", r.note));
+  moneyHopFields(r, insp);
   insp.append(el("div", "pp3-insp-note",
     "assignment writes to the property ledger on apply; receipts + contractor attach on the ledger row (property page → spend)"));
+}
+
+// moneyHopFields — the §7 hops on an assigned row: property → NODE (the
+// rock-tree tether) → CONTRACT (accepted contracts allocating on that
+// property, remaining shown). Writes ride the assignment row; apply turns
+// them into [work::] + [contract::] note tokens.
+function moneyHopFields(r, host) {
+  const a = (r.assignments && r.assignments[0]) || null;
+  if (!a || !a.slug || a.slug.startsWith("admin:")) return;
+  if (r.state === "applied" || r.state === "skipped") return;
+  const prop = propertyCache.find((p) => p.slug === a.slug);
+  if (!prop) return;
+  const save = async (patch) => {
+    try {
+      await postJSONOk("/api/realestate/statements/row", {
+        id: r.id,
+        assignments: [{ ...a, ...patch }],
+        state: r.state === "split" ? "split" : "assigned",
+      });
+      Object.assign(a, patch);
+      showToast("Saved");
+    } catch (e) { showToast("Couldn't save"); }
+  };
+  const field = (label, node) => {
+    const f = el("div", "pp3-insp-field");
+    f.append(el("span", "pp3-insp-flabel", label), node);
+    host.append(f);
+  };
+  // node picker (hop 2)
+  const nodeSel = document.createElement("select");
+  nodeSel.className = "pp-in";
+  const nopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; nodeSel.append(o); };
+  nopt("", "— no tether —");
+  (prop.work || []).forEach((st) => {
+    nopt(st.id, st.text);
+    (st.tasks || []).forEach(function walk(n, prefix) {
+      const pre = typeof prefix === "string" ? prefix : "· ";
+      nopt(n.id, pre + n.text);
+      (n.children || []).forEach((c) => walk(c, pre + "· "));
+    });
+  });
+  nodeSel.value = a.workId || "";
+  nodeSel.onchange = () => save({ workId: nodeSel.value });
+  field("node", nodeSel);
+  // contract picker (hop 3)
+  const cSel = document.createElement("select");
+  cSel.className = "pp-in";
+  const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; cSel.append(o); };
+  copt("", "— no contract —");
+  reContracts()
+    .filter((c) => c.status === "accepted" && (c.allocations || []).some((al) => al.property === a.slug))
+    .forEach((c) => copt(c.slug, c.name + " · " + fmtMoneyShort(c.remaining != null ? c.remaining : c.total) + " left"));
+  cSel.value = a.contract || "";
+  cSel.onchange = () => {
+    const patch = { contract: cSel.value };
+    // picking a contract without a node prefills the node from its allocation
+    if (cSel.value && !nodeSel.value) {
+      const c = reContracts().find((x) => x.slug === cSel.value);
+      const al = c && (c.allocations || []).find((x) => x.property === a.slug);
+      if (al) { patch.workId = al.nodeId; nodeSel.value = al.nodeId; }
+    }
+    save(patch);
+  };
+  field("contract", cSel);
 }
 
 function moneyFooter() {

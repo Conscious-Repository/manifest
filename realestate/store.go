@@ -30,9 +30,10 @@ func (s *Service) Properties() ([]Property, error) {
 	if err != nil {
 		return nil, err
 	}
+	contracts := s.Contracts() // one load for the whole portfolio's committed source
 	out := make([]Property, 0, len(refs))
 	for _, r := range refs {
-		if p, ok := s.parse(r.Path, r.Name); ok {
+		if p, ok := s.parse(r.Path, r.Name, contracts); ok {
 			out = append(out, p)
 		}
 	}
@@ -53,7 +54,7 @@ func (s *Service) Properties() ([]Property, error) {
 func (s *Service) Get(slug string) (Property, bool) {
 	for _, r := range mustRefs(s.ix.Category("property", vaultindex.SortNameAsc)) {
 		if strings.EqualFold(r.Name, slug) {
-			p, ok := s.parse(r.Path, r.Name)
+			p, ok := s.parse(r.Path, r.Name, s.Contracts())
 			if ok {
 				p.Intel = s.parcelIntel()[AddrKey(p.Address)]
 			}
@@ -66,9 +67,10 @@ func (s *Service) Get(slug string) (Property, bool) {
 func mustRefs(refs []vaultindex.NoteRef, _ error) []vaultindex.NoteRef { return refs }
 
 // parse reads one record's frontmatter + `## budget`/`## log` sections + its
-// ledger csv sidecar into a Property, then derives the rollup. Tolerant: missing
+// ledger csv sidecar into a Property, then derives the rollup (committed from
+// the accepted-contract allocations targeting this property). Tolerant: missing
 // or garbled fields are simply omitted (a hand edit in Obsidian reads back the same).
-func (s *Service) parse(rel, name string) (Property, bool) {
+func (s *Service) parse(rel, name string, contracts []Contract) (Property, bool) {
 	full := filepath.Join(s.ix.VaultRoot(), filepath.FromSlash(rel))
 	raw, err := os.ReadFile(full)
 	if err != nil {
@@ -120,13 +122,29 @@ func (s *Service) parse(rel, name string) (Property, bool) {
 	p.Work = ParseWork(rockLines)
 	view := &PropertyTaskList{Stages: p.Work, Legacy: ParsePropertyTasks(sections["tasks"])}
 	p.Tasks = view.Tasks()
-	JoinWorkLedger(p.Work, p.Ledger)
-	// pass-5: the work list IS the hard-cost budget — the triplet derives from
-	// work est + the ledger. (parseBudget/computeRollup survive for migration.)
-	p.Rollup = computeMoneyRollup(p.Work, p.Ledger)
+	allocs := AllocationsFor(contracts, name)
+	// a draw carrying [contract::] but no [work::] attributes to the
+	// contract's first allocated node here (the workbench writes both; this
+	// covers hand-written rows deterministically — no double count)
+	for i := range p.Ledger {
+		if p.Ledger[i].Contract == "" || p.Ledger[i].WorkID != "" {
+			continue
+		}
+		for _, a := range allocs {
+			if strings.EqualFold(a.Contract, p.Ledger[i].Contract) {
+				p.Ledger[i].WorkID = a.NodeID
+				break
+			}
+		}
+	}
+	JoinWorkLedger(p.Work, p.Ledger, allocs)
+	// the work list IS the hard-cost budget — the triplet derives from work
+	// est + contracts + the ledger. (parseBudget/computeRollup survive for
+	// migration.)
+	p.Rollup = computeMoneyRollup(p.Work, p.Ledger, allocs)
 	p.Project = ComputeProjectBudget(
 		sourceMoney(record.Sidecar(full, record.SidecarSource)),
-		p.Work, p.Ledger, p.Control == "owned")
+		p.Work, p.Ledger, p.Control == "owned", allocs)
 	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {
 		if st.Current {

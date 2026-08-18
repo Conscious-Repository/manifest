@@ -595,6 +595,7 @@ func (s *Server) handlePropertyLedger(w http.ResponseWriter, r *http.Request) {
 	}
 	var b struct {
 		Date, Type, Category, Vendor, Contractor, Status, Note, Doc, WorkID string
+		Contract                                                            string
 		Amount                                                              float64
 	}
 	if err := decode(r, &b); err != nil {
@@ -622,10 +623,14 @@ func (s *Server) handlePropertyLedger(w http.ResponseWriter, r *http.Request) {
 	}
 	// tether: freeze the work id in the record first, then store the token in note
 	s.tetherWorkID(p, strings.TrimSpace(b.WorkID))
+	note := noteWithWork(b.Note, strings.TrimSpace(b.WorkID))
+	if c := strings.TrimSpace(b.Contract); c != "" {
+		note = strings.TrimSpace(note + " [contract:: " + c + "]") // draw-down tether (§7)
+	}
 	row := []string{
 		date, b.Type, strings.TrimSpace(b.Category), strings.TrimSpace(b.Vendor),
 		strings.TrimSpace(b.Contractor), strconv.FormatFloat(b.Amount, 'f', -1, 64),
-		status, noteWithWork(b.Note, strings.TrimSpace(b.WorkID)), strings.TrimSpace(b.Doc),
+		status, note, strings.TrimSpace(b.Doc),
 	}
 	if err := s.vault.AppendLedgerRow(realestate.LedgerRel(rel), realestate.LedgerHeader, row); err != nil {
 		httpError(w, err)

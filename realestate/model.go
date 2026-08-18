@@ -78,8 +78,9 @@ type LedgerRow struct {
 	Status     string  `json:"status"` // expense: paid · bid: requested|received|accepted|declined
 	Note       string  `json:"note"`   // display text — the [work:: id] tether token is stripped into WorkID
 	Doc        string  `json:"doc"`
-	WorkID     string  `json:"workId,omitempty"`  // tether to a `## work` stage/todo
-	PaidBy     string  `json:"paidBy,omitempty"`  // [paid-by:: entity] — the paying entity (statements workbench)
+	WorkID     string  `json:"workId,omitempty"`   // tether to a rock-tree node
+	Contract   string  `json:"contract,omitempty"` // [contract:: slug] — the contract this expense draws down
+	PaidBy     string  `json:"paidBy,omitempty"`   // [paid-by:: entity] — the paying entity (statements workbench)
 	Cat        string  `json:"cat,omitempty"`     // [cat:: soft|acquisition] — budget category (blank/tethered = hard; legacy carry → soft)
 	Stmt       string  `json:"stmt,omitempty"`    // [stmt:: label] — bank-statement provenance (written at workbench apply)
 	RawNote    string  `json:"rawNote,omitempty"` // note as stored on disk (token intact) — mutation matching
@@ -253,6 +254,8 @@ func parseLedger(raw []byte) []LedgerRow {
 			switch strings.ToLower(m[1]) {
 			case "work":
 				row.WorkID = strings.TrimSpace(m[2])
+			case "contract":
+				row.Contract = strings.TrimSpace(m[2])
 			case "paid-by":
 				row.PaidBy = strings.TrimSpace(m[2])
 			case "cat":
@@ -261,7 +264,7 @@ func parseLedger(raw []byte) []LedgerRow {
 				row.Stmt = strings.TrimSpace(m[2])
 			}
 		}
-		if row.WorkID != "" || row.PaidBy != "" || row.Cat != "" || row.Stmt != "" {
+		if row.WorkID != "" || row.Contract != "" || row.PaidBy != "" || row.Cat != "" || row.Stmt != "" {
 			row.Note = strings.Join(strings.Fields(workFieldRe.ReplaceAllString(row.Note, "")), " ")
 		}
 		if row.Date == "" && row.Type == "" && row.Amount == 0 {

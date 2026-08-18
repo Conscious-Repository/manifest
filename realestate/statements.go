@@ -21,10 +21,11 @@ import (
 // explicit parked-forever lane (personal spend), reversible.
 
 type Alloc struct {
-	Slug   string  `json:"slug"` // property slug, or "admin:<entity-slug>" for the admin lane
-	Amount float64 `json:"amount"`
-	WorkID string  `json:"workId,omitempty"` // optional stage/todo tether (hard lane only)
-	Cat    string  `json:"cat,omitempty"`    // budget category: soft | acquisition (blank = hard); inflows: rent | capital
+	Slug     string  `json:"slug"` // property slug, or "admin:<entity-slug>" for the admin lane
+	Amount   float64 `json:"amount"`
+	WorkID   string  `json:"workId,omitempty"`   // optional rock-tree tether (hard lane only)
+	Contract string  `json:"contract,omitempty"` // optional contract draw-down (overhaul §7 — the third hop)
+	Cat      string  `json:"cat,omitempty"`      // budget category: soft | acquisition (blank = hard); inflows: rent | capital
 }
 
 type StatementRow struct {
