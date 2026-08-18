@@ -184,6 +184,11 @@ func BacklogItemFromPayload(p ProposalPayload) *BacklogItem {
 	}
 	if p.Kind == KindDecision {
 		it.Plain = true // new decisions land as plain bullets (canon)
+		// A decision tethers to a rock exactly like a task: every rock-scoped
+		// surface (portal cone, scoped work/archive, "decided here") reads
+		// [rock::] for both kinds, and an untethered decision falls out of all
+		// of them (owner call 2026-08-18).
+		it.Rock = p.Rock
 		it.Status = p.Status
 		if it.Status == "" {
 			it.Status = StatusOpen

@@ -418,57 +418,58 @@ function buildAionEditor(a) {
         onChange: (v) => { if (v !== ownerPicked) p.owner = v; sync(); },
       });
       row("owner", ownerTa.el);
-      if (p.kind === "task") {
-        // rock: typeahead over THIS domain's ACTIVE rocks — picking stores the
-        // rock ID (displays its title); free text commits verbatim. RE cards
-        // also search PROPERTIES and DEALS live as you type — the rock slot
-        // tethers those too (renderer nests by slug on the Rocks/property
-        // views), so nothing has to be typed from memory.
-        const reg0 = isRe ? apprReReg : apprAionReg; // may already be cached for initial label
-        let rockPickedText = null;
-        const initialRock = (() => {
-          if (reg0) {
-            const hit = reg0.rocks.find((r) => r.id === p.rock);
-            if (hit) { rockPickedText = hit.label; return hit.label; }
-            if (isRe) {
-              const pr = reg0.properties.find((x) => x.slug === p.rock);
-              if (pr) { rockPickedText = pr.short || pr.address || pr.slug; return rockPickedText; }
-              const dl = reg0.deals.find((x) => x.slug === p.rock);
-              if (dl) { rockPickedText = dl.name || dl.slug; return rockPickedText; }
-            }
+      // rock: BOTH kinds tether — a decision filed without one falls out of
+      // every rock-scoped surface. Typeahead over THIS domain's ACTIVE rocks —
+      // picking stores the rock ID (displays its title); free text commits
+      // verbatim. RE cards also search PROPERTIES and DEALS live as you type —
+      // the rock slot tethers those too (renderer nests by slug on the
+      // Rocks/property views), so nothing has to be typed from memory.
+      const reg0 = isRe ? apprReReg : apprAionReg; // may already be cached for initial label
+      let rockPickedText = null;
+      const initialRock = (() => {
+        if (reg0) {
+          const hit = reg0.rocks.find((r) => r.id === p.rock);
+          if (hit) { rockPickedText = hit.label; return hit.label; }
+          if (isRe) {
+            const pr = reg0.properties.find((x) => x.slug === p.rock);
+            if (pr) { rockPickedText = pr.short || pr.address || pr.slug; return rockPickedText; }
+            const dl = reg0.deals.find((x) => x.slug === p.rock);
+            if (dl) { rockPickedText = dl.name || dl.slug; return rockPickedText; }
           }
-          return p.rock || "";
-        })();
-        const rockTa = typeahead({
-          placeholder: isRe ? "rock, property, or deal…" : "type to pick an active rock…",
-          initial: initialRock,
-          suggest: async (q, add, ta) => {
-            const reg = await apprRegistryFor(a.type);
-            const pick = (id, label) => () => {
-              p.rock = id; rockPickedText = label; ta.commit(label); sync();
-            };
-            reg.rocks
-              .filter((r) => !r.checked)
-              .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+        }
+        return p.rock || "";
+      })();
+      const rockTa = typeahead({
+        placeholder: isRe ? "rock, property, or deal…" : "type to pick an active rock…",
+        initial: initialRock,
+        suggest: async (q, add, ta) => {
+          const reg = await apprRegistryFor(a.type);
+          const pick = (id, label) => () => {
+            p.rock = id; rockPickedText = label; ta.commit(label); sync();
+          };
+          reg.rocks
+            .filter((r) => !r.checked)
+            .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+            .slice(0, 8)
+            .forEach((r) => add(r.label, isRe ? "rock" : "", pick(r.id, r.label)));
+          if (isRe) {
+            (reg.deals || [])
+              .filter((d) => q && ((d.name || "").toLowerCase().includes(q) || d.slug.includes(q)))
+              .slice(0, 4)
+              .forEach((d) => add(d.name || d.slug, "deal", pick(d.slug, d.name || d.slug)));
+            (reg.properties || [])
+              .filter((pr) => q && ((pr.address || "").toLowerCase().includes(q) || pr.slug.includes(q)))
               .slice(0, 8)
-              .forEach((r) => add(r.label, isRe ? "rock" : "", pick(r.id, r.label)));
-            if (isRe) {
-              (reg.deals || [])
-                .filter((d) => q && ((d.name || "").toLowerCase().includes(q) || d.slug.includes(q)))
-                .slice(0, 4)
-                .forEach((d) => add(d.name || d.slug, "deal", pick(d.slug, d.name || d.slug)));
-              (reg.properties || [])
-                .filter((pr) => q && ((pr.address || "").toLowerCase().includes(q) || pr.slug.includes(q)))
-                .slice(0, 8)
-                .forEach((pr) => add(pr.short || pr.address || pr.slug, "property", pick(pr.slug, pr.short || pr.address || pr.slug)));
-            }
-            if (p.rock) add("✕ no rock (unanchored)", "create", () => {
-              p.rock = ""; rockPickedText = ""; ta.commit(""); sync();
-            });
-          },
-          onChange: (v) => { if (v !== rockPickedText) p.rock = v; sync(); },
-        });
-        row("rock", rockTa.el);
+              .forEach((pr) => add(pr.short || pr.address || pr.slug, "property", pick(pr.slug, pr.short || pr.address || pr.slug)));
+          }
+          if (p.rock) add("✕ no rock (unanchored)", "create", () => {
+            p.rock = ""; rockPickedText = ""; ta.commit(""); sync();
+          });
+        },
+        onChange: (v) => { if (v !== rockPickedText) p.rock = v; sync(); },
+      });
+      row("rock", rockTa.el);
+      if (p.kind === "task") {
         textRow("due", "due");
       } else {
         textRow("needed by", "needed_by");
@@ -488,15 +489,14 @@ function buildAionEditor(a) {
     } else {
       const f = [];
       f.push("[kind:: " + p.kind + "]");
+      if (p.status) f.push("[status:: " + p.status + "]");
       if (p.kind === "task") {
-        if (p.rock) f.push("[rock:: " + p.rock + "]");
         if (p.due) f.push("[due:: " + p.due + "]");
-        if (p.status) f.push("[status:: " + p.status + "]");
       } else {
-        if (p.status) f.push("[status:: " + p.status + "]");
         if (p.needed_by) f.push("[needed_by:: " + p.needed_by + "]");
         if (p.outcome) f.push("[outcome:: " + p.outcome + "]");
       }
+      if (p.rock) f.push("[rock:: " + p.rock + "]");
       if (p.owner) f.push("[owner:: " + p.owner + "]");
       (p.sources || []).forEach((s) => f.push("[source:: [[" + s + "]]]"));
       if (p.captured) f.push("[captured:: " + p.captured + "]");

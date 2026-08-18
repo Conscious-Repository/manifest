@@ -459,3 +459,62 @@ func TestUpdateTaskWithStrayDecidedStatus(t *testing.T) {
 		t.Fatal("decided decision must refuse edits")
 	}
 }
+
+// A DECISION tethers to a rock exactly like a task: the payload carried Rock
+// only on the task branch, so an extraction that picked a rock for a decision
+// silently dropped it — and the decision then fell out of every rock-scoped
+// surface (portal cone, scoped work/archive).
+func TestDecisionPayloadKeepsItsRock(t *testing.T) {
+	p := ProposalPayload{
+		Kind: KindDecision, Title: "Adopt the three-generation MRI roadmap",
+		Owner: "RT", Status: StatusDecided, Decided: "2026-08-17",
+		Outcome: "Gen1 static, Gen2 field-cycling, Gen3 integrated",
+		Rock:    "aion/human-scale-spec",
+		Sources: []string{"2026-08-17 mri direction"}, Captured: "2026-08-17",
+	}
+	line := RenderItemLine(p)
+	if !strings.Contains(line, "[rock:: aion/human-scale-spec]") {
+		t.Fatalf("decision line lost its rock:\n%s", line)
+	}
+	out, err := AppendBacklogItem(fixtures["backlog.md"], p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	landed := ParseBacklog(out).Find(ItemID(KindDecision, p.Title))
+	if landed == nil || landed.Rock != "aion/human-scale-spec" {
+		t.Fatalf("rock did not survive the append: %+v", landed)
+	}
+	if SerializeBacklog(ParseBacklog(out)) != out {
+		t.Fatal("post-append not a fixpoint")
+	}
+}
+
+// A decided decision stays permanent in CONTENT, but its rock is linkage: an
+// extraction that filed it unanchored has to be re-tetherable from the
+// inspector, or it can never be seen on a rock-scoped surface again.
+func TestDecidedDecisionAcceptsRockAndNothingElse(t *testing.T) {
+	dir := t.TempDir()
+	raw := "# AION — backlog\n\n## inbox\n- Yashiro to co-lead both scanners [kind:: decision] [owner:: RT] [status:: decided] [decided:: 2026-08-17] [outcome:: both generations]\n"
+	if err := os.WriteFile(filepath.Join(dir, "backlog.md"), []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := NewStore(dir, "", func(p string, b []byte) error { return os.WriteFile(p, b, 0o644) })
+	id := ItemID(KindDecision, "Yashiro to co-lead both scanners")
+	if err := st.UpdateItem(id, map[string]string{"rock": "aion/human-scale-spec"}, time.Now()); err != nil {
+		t.Fatalf("rock edit refused on a decided decision: %v", err)
+	}
+	out, _ := os.ReadFile(filepath.Join(dir, "backlog.md"))
+	if !strings.Contains(string(out), "[rock:: aion/human-scale-spec]") {
+		t.Fatalf("rock not written:\n%s", out)
+	}
+	if !strings.Contains(string(out), "[outcome:: both generations]") {
+		t.Fatalf("the decided record was disturbed:\n%s", out)
+	}
+	// content edits stay refused — including a set that smuggles one alongside
+	if err := st.UpdateItem(id, map[string]string{"title": "Rewritten"}, time.Now()); err == nil {
+		t.Fatal("title edit accepted on a decided decision")
+	}
+	if err := st.UpdateItem(id, map[string]string{"rock": "aion/series-a-15m", "owner": "BA"}, time.Now()); err == nil {
+		t.Fatal("owner edit smuggled in beside a rock edit")
+	}
+}

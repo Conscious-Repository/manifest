@@ -301,14 +301,18 @@ function renderREBacklogInspector(insp) {
   });
   field("owner", ownerTa.el);
 
+  // rock: BOTH kinds tether (mirrors AION) — a decision filed without one
+  // falls out of every rock-scoped surface, and a decided decision keeps this
+  // one editable field: linkage, not content (owner call 2026-08-18).
+  const setRock = (v) => { if (v !== (it.rock || "")) patch({ rock: v }); };
+  const rockTa = typeahead({
+    placeholder: "rock or property",
+    initial: it.rock ? reRockLabel(it.rock) : "",
+    suggest: (q, add, ta) => reRockSuggest(q, add, ta, setRock),
+  });
+  field("rock", rockTa.el);
+
   if (it.kind === "task") {
-    const setRock = (v) => { if (v !== (it.rock || "")) patch({ rock: v }); };
-    const rockTa = typeahead({
-      placeholder: "rock or property",
-      initial: it.rock ? reRockLabel(it.rock) : "",
-      suggest: (q, add, ta) => reRockSuggest(q, add, ta, setRock),
-    });
-    field("rock", rockTa.el);
     const due = inputEl(""); due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
     due.onchange = () => patch({ due: due.value });
     field("due", due);

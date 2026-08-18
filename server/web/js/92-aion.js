@@ -314,6 +314,9 @@ function aionDecisionRow(it) {
   const main = el("div", "aion-main");
   main.append(el("div", "aion-dec-text", it.text));
   const bits = [];
+  // the rock leads the meta line (it survives the ellipsis) so an unanchored
+  // decision — invisible on every rock-scoped surface — is scannable here
+  bits.push(it.rock ? rockLabel(it.rock) : "no rock");
   if (!decided && it.neededBy) bits.push("needed by " + it.neededBy);
   if (it.owner) bits.push("@" + it.owner);
   if (decided) bits.push("decided " + (it.decided || "") + (it.outcome ? " → " + it.outcome : ""));
@@ -429,12 +432,17 @@ function renderAionInspector(insp, items) {
     }) });
   field("owner", ownerTa.el);
 
+  // rock: BOTH kinds tether. A decision without one falls out of every
+  // rock-scoped surface (the portal cone, scoped work/archive), and a decided
+  // decision keeps this one editable field — linkage, not content, so the
+  // record of what was decided stays permanent (owner call 2026-08-18).
+  const rockTa = typeahead({
+    placeholder: "type to pick a rock…", initial: rockLabel(it.rock),
+    suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id) => { if (id !== it.rock) patch({ rock: id }); }),
+  });
+  field("rock", rockTa.el);
+
   if (it.kind === "task") {
-    const rockTa = typeahead({
-      placeholder: "type to pick a rock…", initial: rockLabel(it.rock),
-      suggest: (q, add, ta) => aionRockSuggest(q, add, ta, (id) => { if (id !== it.rock) patch({ rock: id }); }),
-    });
-    field("rock", rockTa.el);
     const due = inputEl("");
     due.type = "date"; due.value = it.due || ""; due.className = "pp-in";
     due.onchange = () => patch({ due: due.value });

@@ -231,9 +231,19 @@ func (s *Store) UpdateItem(id string, set map[string]string, now time.Time) erro
 	}
 	// only a decided DECISION is permanent — a task that arrived with a stray
 	// [status:: decided] (extraction drift) must stay editable, or it locks
-	// forever behind an error about decisions
+	// forever behind an error about decisions.
+	//
+	// [rock::] is the one exception: it is linkage, not content. A decision the
+	// extractor filed without a rock is invisible on every rock-scoped surface,
+	// and the record of WHAT was decided is untouched by tethering it later
+	// (owner call 2026-08-18) — so a decided decision accepts a rock edit and
+	// nothing else.
 	if it.Kind == KindDecision && it.Status == StatusDecided {
-		return fmt.Errorf("a decided decision is permanent")
+		for key := range set {
+			if key != "rock" {
+				return fmt.Errorf("a decided decision is permanent — only its rock can still be set")
+			}
+		}
 	}
 	for key, val := range set {
 		switch key {
