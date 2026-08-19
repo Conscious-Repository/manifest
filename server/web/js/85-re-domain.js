@@ -533,10 +533,27 @@ const MONEY_PAGE_SIZE = 50;
 let moneyQuery = "";
 let moneyCut = "all"; // all | todo (no category yet) | expense | deposit
 let moneyMonth = "all";
-// the "categorize N more like this" offer: set when a category lands on a row
-// whose merchant recurs; dismissed keys stay quiet for the session
-let moneyPropose = null; // {key, category}
+// the "do the same for N more like this" offer: armed by any disposition
+// gesture (category set, property assigned, split filed) on a row whose
+// merchant recurs; dismissed keys stay quiet for the session
+let moneyPropose = null; // {key, sourceId, inflow, category, allocs, file}
 const moneyProposeDismissed = new Set();
+// the current render's paint closure — money mutations repaint in place
+// instead of re-rendering the whole tab (the "page refreshes every time I set
+// a category" complaint: renderProperties refetches three endpoints and
+// rebuilds from scratch, dropping scroll)
+let moneyRepaint = null;
+
+// moneyRefresh — refetch the lot, repaint in place, re-render the inspector
+async function moneyRefresh() {
+  try {
+    const d = await (await fetch("/api/realestate/statements")).json();
+    moneyRows = d.rows || [];
+  } catch (e) {}
+  if (moneyRepaint) moneyRepaint(); else { renderProperties(); return; }
+  const sel = moneySelId && moneyRows.find((r) => r.id === moneySelId);
+  renderMoneyInspector(sel || null);
+}
 
 // moneyVisible — the one predicate behind the toolbar (cut → month → text)
 function moneyVisible(r) {
@@ -711,31 +728,82 @@ function moneyCatSelect(r) {
       const res = await postJSONOk("/api/realestate/statements/row",
         { id: r.id, category: sel.value, file: true });
       r.category = sel.value;
-      proposeCategorySpread(r);
-      moneyFileToast(r, res, sel.value ? "Categorized" : "Category cleared");
-      renderProperties();
+      if (sel.value) moneyArmSpread(r, res);
+      if (moneyFileToast(r, res, sel.value ? "Categorized" : "Category cleared")) moneySelId = null;
+      moneyRefresh();
     } catch (e) { showToast("Couldn't save"); }
   };
   return sel;
 }
 
-// proposeCategorySpread — after a category lands on a row whose merchant
-// recurs, arm the "categorize N more like this" panel. Expense rows only
-// (vendor memory is expense-only by the same reasoning); the panel itself
-// re-derives the matches at paint time, so it never goes stale.
-function proposeCategorySpread(r) {
-  if (!r.category || r.inflow || !r.merchantKey) return;
-  if (moneyProposeDismissed.has(r.merchantKey)) return;
-  moneyPropose = { key: r.merchantKey, category: r.category };
+// moneyArmSpread — after any disposition gesture on a row whose merchant
+// recurs, arm the offer to replicate it: the category, the assignment (single
+// or split — replicated as PROPORTIONS of each row's own amount), and, when
+// the source row actually filed, the filing itself. Work/contract tethers are
+// deliberately NOT replicated — spreading a contract draw-down across a pile
+// of rows could over-draw it. The panel re-derives its matches at paint time,
+// so it never goes stale.
+function moneyArmSpread(r, res) {
+  if (!r.merchantKey || moneyProposeDismissed.has(r.merchantKey)) return;
+  const allocs = (r.assignments || []).filter((a) => a.slug);
+  if (!r.category && !allocs.length) return; // nothing to spread
+  moneyPropose = {
+    key: r.merchantKey, sourceId: r.id, inflow: !!r.inflow,
+    category: r.category || "",
+    allocs: allocs.length ? allocs.map((a) => ({ slug: a.slug, amount: a.amount || 0 })) : null,
+    file: !!(res && res.state === "applied"),
+  };
 }
 
-// moneyProposeMatches — the rows the armed offer would touch: still in play,
-// same merchant, expenses, category still blank
+// moneyProposeMatches — the rows the armed offer could touch: still in play,
+// same merchant, same direction (an expense disposition never spreads onto a
+// deposit), never the source row itself
 function moneyProposeMatches() {
   if (!moneyPropose) return [];
   return moneyRows.filter((r) =>
     r.state !== "applied" && r.state !== "skipped" &&
-    !r.inflow && !r.category && r.merchantKey === moneyPropose.key);
+    !!r.inflow === moneyPropose.inflow && r.id !== moneyPropose.sourceId &&
+    r.merchantKey === moneyPropose.key);
+}
+
+// moneyScaleAllocs — the source split as fractions of each match's own
+// amount, cents-exact (the remainder rides the last slice)
+function moneyScaleAllocs(allocs, total) {
+  const sum = allocs.reduce((s, a) => s + (a.amount || 0), 0) || 1;
+  let acc = 0;
+  return allocs.map((a, i) => {
+    if (i === allocs.length - 1) return { slug: a.slug, amount: Math.round((total - acc) * 100) / 100 };
+    const amt = Math.round((total * (a.amount || 0)) / sum * 100) / 100;
+    acc += amt;
+    return { slug: a.slug, amount: amt };
+  });
+}
+
+// moneyDispositionLabel — "4848 50% + 4852 50% · materials" / "736 · electric"
+function moneyDispositionLabel(pr) {
+  const bits = [];
+  if (pr.allocs) {
+    const sum = pr.allocs.reduce((s, a) => s + (a.amount || 0), 0) || 1;
+    bits.push(pr.allocs.map((a) => {
+      const name = a.slug.startsWith("admin:") ? "admin · " + a.slug.slice(6)
+        : (((propertyCache || []).find((p) => p.slug === a.slug) || {}).short || a.slug);
+      return pr.allocs.length > 1 ? name + " " + Math.round((a.amount || 0) / sum * 100) + "%" : name;
+    }).join(" + "));
+  }
+  if (pr.category) bits.push(pr.category);
+  return bits.join(" · ");
+}
+
+// moneyRowDisposition — what a match row already carries (shown in the
+// preview so an overwrite is a choice, never a surprise)
+function moneyRowDisposition(m) {
+  const bits = [];
+  if ((m.assignments || []).length) {
+    bits.push(m.assignments.map((a) => a.slug.startsWith("admin:") ? "admin" :
+      (((propertyCache || []).find((p) => p.slug === a.slug) || {}).short || a.slug)).join("+"));
+  }
+  if (m.category) bits.push(m.category);
+  return bits.join(" · ");
 }
 
 // ---- bid links (the QuickBooks receipt-attach): expense ↔ contract record ----
@@ -903,10 +971,12 @@ function moneySplitEditor(r, onDone) {
           file: true,
         });
         if (moneyFileToast(r, res, "Not filed — check the split")) {
+          r.assignments = allocs.filter((a) => a.slug);
+          moneyArmSpread(r, res); // offer the same split to the merchant's other rows
           moneySplitSeed = null;
           moneySelId = null;
           if (onDone) onDone();
-          renderProperties();
+          moneyRefresh();
         }
       } catch (e) { showToast("Couldn't file — " + (e.message || "")); }
     };
@@ -983,12 +1053,6 @@ async function renderREMoney() {
   await loadReContracts(); // the third hop's picker (accepted contracts + remaining)
   await ensureEntities();  // rows carry the entity SLUG — entityLabel needs the registry to read it back
   await ensureMoneyCats(); // the row category select reads the registry synchronously
-  // the split (owner call 2026-08-19): the TOP lane holds only what still
-  // needs filing; a filed row (applied — the PATCH auto-applies the moment
-  // property + category land) or a dismissed one lives in its entity's
-  // history fold below.
-  const work = moneyRows.filter((r) => r.state !== "applied" && r.state !== "skipped");
-  const filed = moneyRows.filter((r) => r.state === "applied" || r.state === "skipped");
   const laneHead = el("div", "re-lane-head");
   host.append(laneHead);
   // dead-simple statement upload (overhaul decision 15): drop the bank CSV —
@@ -1013,7 +1077,8 @@ async function renderREMoney() {
   monthSel.className = "pp-in re-money-month";
   const mopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; monthSel.append(o); };
   mopt("all", "all months");
-  [...new Set(work.map((r) => (r.date || "").slice(0, 7)).filter(Boolean))].sort().reverse()
+  [...new Set(moneyRows.filter((r) => r.state !== "applied" && r.state !== "skipped")
+    .map((r) => (r.date || "").slice(0, 7)).filter(Boolean))].sort().reverse()
     .forEach((m) => mopt(m, m));
   monthSel.value = moneyMonth;
   if (monthSel.value !== moneyMonth) { moneyMonth = "all"; monthSel.value = "all"; } // stale month filtered away
@@ -1028,12 +1093,18 @@ async function renderREMoney() {
       bar.append(b);
     });
   main.append(bar);
-  // durable containers — paint() only wipes contents
+  // durable containers — paint() only wipes contents. History lives in its
+  // own slot so a filed row moves lanes without a full re-render.
   const proposeSlot = el("div");
   const table = el("div", "fr-table");
   const pager = el("div", "re-money-pager");
-  main.append(proposeSlot, table, pager);
+  const histSlot = el("div");
+  main.append(proposeSlot, table, pager, histSlot);
   const paint = () => {
+    // the split (owner call 2026-08-19): the TOP lane holds only what still
+    // needs filing; a filed/dismissed row lives in its entity's history fold
+    const work = moneyRows.filter((r) => r.state !== "applied" && r.state !== "skipped");
+    const filed = moneyRows.filter((r) => r.state === "applied" || r.state === "skipped");
     Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", moneyCut === k));
     const rows = work.filter(moneyVisible);
     laneHead.textContent = "MONEY · " +
@@ -1069,33 +1140,46 @@ async function renderREMoney() {
         " · page " + (moneyPage + 1) + "/" + pages));
       btn("next →", moneyPage >= pages - 1, moneyPage + 1);
     }
+    // HISTORY — filed rows under the entity whose books they hit
+    histSlot.innerHTML = "";
+    if (filed.length) moneyHistory(histSlot, filed);
   };
   paint();
+  moneyRepaint = paint; // money mutations repaint in place from here on
   host.append(wrap);
   // a selected row survives re-renders (the split…/deal picks re-render to
   // open the editor — the inspector must come back up with them)
   const selRow = moneySelId && moneyRows.find((r) => r.id === moneySelId);
   renderMoneyInspector(selRow || null);
-  // HISTORY — filed rows under the entity whose books they hit (inside main,
-  // so the rail runs alongside)
-  if (filed.length) moneyHistory(main, filed);
   // footer: accountant handoffs by entity books, personal vs partnered
   main.append(moneyFooter());
 }
 
-// moneyProposePanel — the "categorize N more like this" offer, rendered into
-// its durable slot on every paint. Matches re-derive from the live rows, the
-// owner unchecks any strays, apply hits the bulk lane; dismiss stays quiet
-// for this merchant for the session. It proposes — it never acts alone.
+// moneyProposePanel — the "do the same for N more like this" offer, rendered
+// into its durable slot on every paint. Matches re-derive from the live rows;
+// each is a checkbox (rows that would be OVERWRITTEN start unchecked, with
+// their current disposition shown); apply replicates the category and the
+// assignment as proportions of each row's own amount — and files, when the
+// source row filed. Dismiss stays quiet for this merchant for the session.
+// It proposes — it never acts alone.
 function moneyProposePanel(slot) {
   slot.innerHTML = "";
   const matches = moneyProposeMatches();
   if (!moneyPropose || !matches.length) { moneyPropose = null; return; }
+  const pr = moneyPropose;
   const box = el("div", "re-money-propose");
   const head = el("div", "re-money-propose-head");
-  head.append(el("span", "", "Categorize " + matches.length + " more like this?"));
-  head.append(el("span", "re-money-propose-key", moneyPropose.category + " → " + moneyPropose.key));
+  const verb = pr.file ? "File" : (pr.allocs ? "Assign" : "Categorize");
+  head.append(el("span", "", verb + " " + matches.length + " more like this?"));
+  head.append(el("span", "re-money-propose-key", moneyDispositionLabel(pr) + " → " + pr.key));
   box.append(head);
+  // default-checked = rows this wouldn't overwrite; a row already carrying a
+  // different disposition is offered unchecked
+  const defaultOn = (m) => {
+    if ((m.assignments || []).length && pr.allocs) return false;
+    if (m.category && pr.category && m.category !== pr.category) return false;
+    return true;
+  };
   const checks = new Map(); // id → checkbox
   const listBox = el("div", "re-money-propose-list");
   const SHOW = 6;
@@ -1106,12 +1190,13 @@ function moneyProposePanel(slot) {
       const line = el("label", "re-money-propose-row");
       const cb = document.createElement("input");
       cb.type = "checkbox";
-      cb.checked = checks.has(m.id) ? checks.get(m.id).checked : true;
+      cb.checked = checks.has(m.id) ? checks.get(m.id).checked : defaultOn(m);
       checks.set(m.id, cb);
       line.append(cb,
         el("span", "re-money-propose-date", (m.date || "").slice(5)),
         el("span", "re-money-propose-amt", fmtMoneyExact(Math.abs(m.amount || 0))),
-        el("span", "re-money-propose-vendor", m.vendor || ""));
+        el("span", "re-money-propose-vendor", m.vendor || ""),
+        el("span", "re-money-propose-cur", moneyRowDisposition(m)));
       listBox.append(line);
     });
     if (revealed < matches.length) {
@@ -1125,20 +1210,51 @@ function moneyProposePanel(slot) {
   const acts = el("div", "re-money-propose-acts");
   const apply = el("button", "pill", "apply");
   apply.onclick = async () => {
-    // hidden rows default to checked — unseen ≠ unchecked
-    const ids = matches.filter((m) => !checks.has(m.id) || checks.get(m.id).checked).map((m) => m.id);
-    if (!ids.length) { moneyPropose = null; renderProperties(); return; }
+    // hidden rows keep their DEFAULT — unseen ≠ unchecked
+    const picked = matches.filter((m) => checks.has(m.id) ? checks.get(m.id).checked : defaultOn(m));
+    if (!picked.length) { moneyPropose = null; moneyRefresh(); return; }
+    apply.disabled = true;
+    apply.textContent = "applying…";
     try {
-      const res = await postJSONOk("/api/realestate/statements/categorize",
-        { ids, category: moneyPropose.category });
-      showToast("Categorized " + (res.updated || 0) + " × " + moneyPropose.category);
+      if (!pr.allocs) {
+        // category only — the bulk lane, one save
+        const res = await postJSONOk("/api/realestate/statements/categorize",
+          { ids: picked.map((m) => m.id), category: pr.category });
+        showToast("Categorized " + (res.updated || 0) + " × " + pr.category);
+      } else {
+        // full disposition — each row through the SAME row PATCH a hand-filed
+        // row takes (validation, auto-apply, vendor memory all identical)
+        let filed = 0, staged = 0, failed = 0;
+        for (const m of picked) {
+          const body = {
+            id: m.id,
+            assignments: moneyScaleAllocs(pr.allocs, Math.abs(m.amount || 0)),
+            state: pr.allocs.length > 1 ? "split" : "assigned",
+          };
+          if (pr.category) body.category = pr.category;
+          if (pr.file) body.file = true;
+          try {
+            const res = await postJSONOk("/api/realestate/statements/row", body);
+            if (res.state === "applied") filed++; else staged++;
+          } catch (e) { failed++; }
+        }
+        const bits = [];
+        if (filed) bits.push("filed " + filed);
+        if (staged) bits.push("staged " + staged);
+        if (failed) bits.push(failed + " failed");
+        showToast(bits.join(" · ") + " × " + moneyDispositionLabel(pr));
+      }
       moneyPropose = null;
-      renderProperties();
-    } catch (e) { showToast("Couldn't categorize — " + (e.message || "")); }
+      moneyRefresh();
+    } catch (e) {
+      showToast("Couldn't apply — " + (e.message || ""));
+      apply.disabled = false;
+      apply.textContent = "apply";
+    }
   };
   const dismiss = el("button", "pill light", "dismiss");
   dismiss.onclick = () => {
-    moneyProposeDismissed.add(moneyPropose.key);
+    moneyProposeDismissed.add(pr.key);
     moneyPropose = null;
     slot.innerHTML = "";
   };
@@ -1166,7 +1282,7 @@ function moneyHistory(host, filed) {
     rows.slice(0, shown).forEach((r) => body.append(moneyRow(r)));
     if (rows.length > shown) {
       const more = el("button", "o-ghost", "＋ show " + Math.min(MONEY_PAGE_SIZE, rows.length - shown) + " more");
-      more.onclick = () => { moneyHistShown[ent] = shown + MONEY_PAGE_SIZE; renderProperties(); };
+      more.onclick = () => { moneyHistShown[ent] = shown + MONEY_PAGE_SIZE; if (moneyRepaint) moneyRepaint(); else renderProperties(); };
       body.append(more);
     }
   });
@@ -1373,20 +1489,23 @@ function moneyRow(r) {
       moneySplitSeed = { id: r.id, allocs: seed };
       moneySelId = r.id;
       if (window.mf && window.mf.phone()) { openMoneyAssignSheet(r); return; }
-      renderProperties();
+      if (moneyRepaint) moneyRepaint();
+      renderMoneyInspector(r);
       return;
     }
     try {
+      const assigns = sel.value ? [{ slug: sel.value, amount: Math.abs(r.amount || 0) }] : [];
       const res = await postJSONOk("/api/realestate/statements/row", {
-        id: r.id,
-        assignments: sel.value ? [{ slug: sel.value, amount: Math.abs(r.amount || 0) }] : [],
+        id: r.id, assignments: assigns,
         state: sel.value ? "assigned" : "pending",
         file: true,
       });
+      r.assignments = assigns;
+      if (sel.value) moneyArmSpread(r, res);
       if (moneyFileToast(r, res, sel.value ? "Assigned — set a category to file it" : "Unassigned")) {
         moneySelId = null;
       }
-      renderProperties();
+      moneyRefresh();
     } catch (e) { showToast("Couldn't assign"); }
   };
   row.append(sel);
@@ -1433,7 +1552,7 @@ function openMoneyAssignSheet(r) {
       unfile.onclick = async () => {
         await refile({ unfile: true }, "Unfiled — back in the to-file lane");
         window.mfSheet.close();
-        renderProperties();
+        moneyRefresh();
       };
       body.append(unfile);
       return;
@@ -1447,9 +1566,11 @@ function openMoneyAssignSheet(r) {
           state: slug ? "assigned" : "pending",
           file: true,
         });
+        r.assignments = slug ? [{ slug, amount: Math.abs(r.amount || 0) }] : [];
+        if (slug) moneyArmSpread(r, res);
         moneyFileToast(r, res, slug ? "Assigned — set a category to file it" : "Unassigned");
         window.mfSheet.close();
-        renderProperties();
+        moneyRefresh();
       } catch (e) { showToast("Couldn't assign"); }
     };
     const rowOpt = (v, l, onPick) => {
@@ -1484,9 +1605,9 @@ function openMoneyAssignSheet(r) {
     // category — the chart-of-accounts typeahead (phone rows could never
     // complete filing without it); picking a category files the row
     const catTa = categoryTypeahead(r, (res) => {
-      proposeCategorySpread(r); // the offer shows in the list on re-render
+      moneyArmSpread(r, res); // the offer shows in the list on repaint
       moneyFileToast(r, res, "Saved");
-      if (res.state === "applied") { window.mfSheet.close(); renderProperties(); }
+      if (res.state === "applied") { window.mfSheet.close(); moneyRefresh(); }
     });
     body.append(catTa.el);
     if (!splitMode) moneyHopFields(r, body); // split rows hop per-allocation in the editor
@@ -1539,7 +1660,7 @@ function renderMoneyInspector(r) {
     try {
       await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", patch());
       showToast(okMsg || "Ledger row(s) updated");
-      renderProperties();
+      moneyRefresh();
     } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
   };
   // category + note are owner-editable until apply (bank plan §5): the bank
@@ -1564,7 +1685,7 @@ function renderMoneyInspector(r) {
         if (moneyFileToast(r, res, "Saved")) {
           // the category completed the filing — the row leaves the lot
           moneySelId = null;
-          renderProperties();
+          moneyRefresh();
         }
       } catch (e) { showToast("Couldn't save"); }
     };
@@ -1578,9 +1699,9 @@ function renderMoneyInspector(r) {
     // (or, on a filed row, rewrites the written ledger rows)
     const f = el("div", "aion-insp-field fr-insp-field");
     const ta = categoryTypeahead(r, (res) => {
-      proposeCategorySpread(r); // arm "categorize N more like this"
+      moneyArmSpread(r, res); // offer the disposition to the merchant's other rows
       if (moneyFileToast(r, res, "Saved")) moneySelId = null;
-      renderProperties();
+      moneyRefresh();
     }, isApplied ? async (name) => {
       r.category = name;
       await refileSave(() => ({ category: name }))();
@@ -1625,7 +1746,7 @@ function renderMoneyInspector(r) {
         await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", { unfile: true });
         showToast("Unfiled — back in the to-file lane");
         moneySelId = r.id;
-        renderProperties();
+        moneyRefresh();
       } catch (e) { showToast("Couldn't unfile — " + (e.message || "")); }
     };
     insp.append(unfile);
@@ -1637,7 +1758,8 @@ function renderMoneyInspector(r) {
       const splitLink = el("button", "pp3-link re-split-open", "split across properties…");
       splitLink.onclick = () => {
         moneySplitSeed = { id: r.id, allocs: moneySplitSeedFor(r, "__split") };
-        renderProperties();
+        if (moneyRepaint) moneyRepaint();
+        renderMoneyInspector(r);
       };
       insp.append(splitLink);
     }
@@ -1650,9 +1772,10 @@ function renderMoneyInspector(r) {
       try {
         const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, file: true });
         if (moneyFileToast(r, res, "Not filed — check the assignment")) {
+          moneyArmSpread(r, res);
           moneySelId = null;
-          renderProperties();
         }
+        moneyRefresh();
       } catch (e) { showToast("Couldn't file — " + (e.message || "")); }
     };
     insp.append(fileBtn);
@@ -1687,7 +1810,8 @@ function moneyClaimField(r, host) {
               await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field",
                 { key: "entity", value: entityLabel(r.entity) });
               showToast((p.short || p.slug) + " → " + entityLabel(r.entity));
-              renderProperties(); // reloads the property cache — the picker regroups
+              await loadProperties(); // the picker regroups off the fresh cache
+              moneyRefresh();
             } catch (e) { showToast("Couldn't claim — " + (e.message || "")); }
           }));
       },
@@ -1721,7 +1845,7 @@ function moneyHopFields(r, host) {
       Object.assign(a, patch);
       if (moneyFileToast(r, res, "Saved")) {
         moneySelId = null;
-        renderProperties();
+        moneyRefresh();
       }
     } catch (e) { showToast("Couldn't save"); }
   };

@@ -318,7 +318,8 @@
 .re-money-propose-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); font-size: var(--fs-sm); }
 .re-money-propose-key { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .re-money-propose-list { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-3) 0; }
-.re-money-propose-row { display: grid; grid-template-columns: auto 44px 84px minmax(0, 1fr); gap: var(--sp-4); align-items: baseline; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-60); cursor: pointer; }
+.re-money-propose-row { display: grid; grid-template-columns: auto 44px 84px minmax(0, 2fr) minmax(0, 1fr); gap: var(--sp-4); align-items: baseline; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-60); cursor: pointer; }
+.re-money-propose-cur { color: var(--base-40); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .re-money-propose-date { color: var(--base-40); }
 .re-money-propose-amt { text-align: right; }
 .re-money-propose-vendor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
