@@ -548,16 +548,23 @@ async function renderREMoney() {
     last = d.lastImport || "";
   } catch (e) { moneyRows = []; }
   await loadReContracts(); // the third hop's picker (accepted contracts + remaining)
-  const unfiled = moneyRows.filter((r) => r.state === "pending").length;
+  // the split (owner call 2026-08-19): the TOP lane holds only what still
+  // needs filing; a filed row (applied — the PATCH auto-applies the moment
+  // property + category land) or a dismissed one lives in its entity's
+  // history fold below.
+  const work = moneyRows.filter((r) => r.state !== "applied" && r.state !== "skipped");
+  const filed = moneyRows.filter((r) => r.state === "applied" || r.state === "skipped");
   host.append(el("div", "re-lane-head",
-    "MONEY · " + moneyRows.length + " transactions" + (unfiled ? " · " + unfiled + " uncategorized" : "") +
+    "MONEY · " + work.length + " to file · " + filed.length + " filed" +
     (last ? " · last import " + last : "")));
   // dead-simple statement upload (overhaul decision 15): drop the bank CSV —
   // the remembered column mapping + entity binding do the rest; a first-seen
   // format opens the one-time mapping strip.
   host.append(moneyUploadLane());
-  if (!moneyRows.length) {
-    host.append(el("div", "pp-empty", "No transactions yet — drop a bank statement CSV above."));
+  if (!work.length) {
+    host.append(el("div", "pp-empty", moneyRows.length
+      ? "Nothing left to file — everything lives in the entity histories below."
+      : "No transactions yet — link a bank account or drop a CSV above."));
   }
   const cols = el("div", "re-money-cols");
   ["DATE", "DESCRIPTION", "AMOUNT", "PROPERTY"].forEach((h, i) =>
@@ -566,10 +573,10 @@ async function renderREMoney() {
   const shell = el("div", "re-money-shell");
   const list = el("div", "re-money-list");
   // pagination — historic backfills run to hundreds of rows; 50 per page
-  const pages = Math.max(1, Math.ceil(moneyRows.length / MONEY_PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(work.length / MONEY_PAGE_SIZE));
   if (moneyPage >= pages) moneyPage = pages - 1;
   const start = moneyPage * MONEY_PAGE_SIZE;
-  moneyRows.slice(start, start + MONEY_PAGE_SIZE).forEach((r) => list.append(moneyRow(r)));
+  work.slice(start, start + MONEY_PAGE_SIZE).forEach((r) => list.append(moneyRow(r)));
   shell.append(list);
   const insp = el("div", "re-money-insp");
   insp.hidden = true; // starts closed — the list arrives full width
@@ -585,13 +592,40 @@ async function renderREMoney() {
     };
     btn("← prev", moneyPage === 0, moneyPage - 1);
     pager.append(el("span", "re-money-pageinfo",
-      (start + 1) + "–" + Math.min(start + MONEY_PAGE_SIZE, moneyRows.length) + " of " + moneyRows.length +
+      (start + 1) + "–" + Math.min(start + MONEY_PAGE_SIZE, work.length) + " of " + work.length +
       " · page " + (moneyPage + 1) + "/" + pages));
     btn("next →", moneyPage >= pages - 1, moneyPage + 1);
     host.append(pager);
   }
+  // HISTORY — filed rows under the entity whose books they hit
+  if (filed.length) moneyHistory(host, filed);
   // footer: accountant handoffs by entity books, personal vs partnered
   host.append(moneyFooter());
+}
+
+// moneyHistory — one collapsed fold per entity: every filed (applied) and
+// dismissed row, newest first, 50 at a time.
+const moneyHistShown = {}; // entity → rows revealed
+function moneyHistory(host, filed) {
+  host.append(el("div", "re-lane-head re-money-hist-head", "HISTORY — FILED BY ENTITY"));
+  const groups = {};
+  filed.forEach((r) => { (groups[r.entity || "(no entity)"] = groups[r.entity || "(no entity)"] || []).push(r); });
+  Object.keys(groups).sort().forEach((ent) => {
+    const rows = groups[ent];
+    rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const skipped = rows.filter((r) => r.state === "skipped").length;
+    const sum = rows.reduce((s, r) => s + (r.inflow ? 0 : r.amount || 0), 0);
+    const body = collapsibleSection(host, ent,
+      rows.length + " rows · " + fmtMoneyExact(sum) + " out" + (skipped ? " · " + skipped + " skipped" : ""),
+      !!moneyHistShown[ent]);
+    const shown = moneyHistShown[ent] || MONEY_PAGE_SIZE;
+    rows.slice(0, shown).forEach((r) => body.append(moneyRow(r)));
+    if (rows.length > shown) {
+      const more = el("button", "o-ghost", "＋ show " + Math.min(MONEY_PAGE_SIZE, rows.length - shown) + " more");
+      more.onclick = () => { moneyHistShown[ent] = shown + MONEY_PAGE_SIZE; renderProperties(); };
+      body.append(more);
+    }
+  });
 }
 
 // ---- the statement upload lane (overhaul decision 15) ----
@@ -748,12 +782,21 @@ function moneyRow(r) {
   sel.onclick = (e) => e.stopPropagation();
   sel.onchange = async () => {
     try {
-      await postJSONOk("/api/realestate/statements/row", {
+      const res = await postJSONOk("/api/realestate/statements/row", {
         id: r.id,
         assignments: sel.value ? [{ slug: sel.value, amount: Math.abs(r.amount || 0) }] : [],
         state: sel.value ? "assigned" : "pending",
+        file: true,
       });
-      showToast(sel.value ? "Assigned — apply writes it to the ledger" : "Unassigned");
+      if (res.state === "applied") {
+        showToast("Filed → " + (r.entity || "entity") + " history");
+        moneySelId = null;
+        renderProperties();
+      } else if (sel.value) {
+        showToast("Assigned — set a category to file it");
+      } else {
+        showToast("Unassigned");
+      }
     } catch (e) { showToast("Couldn't assign"); }
   };
   row.append(sel);
@@ -781,12 +824,14 @@ function openMoneyAssignSheet(r) {
     const list = el("div", "mf-assign");
     const assign = async (slug) => {
       try {
-        await postJSONOk("/api/realestate/statements/row", {
+        const res = await postJSONOk("/api/realestate/statements/row", {
           id: r.id,
           assignments: slug ? [{ slug, amount: Math.abs(r.amount || 0) }] : [],
           state: slug ? "assigned" : "pending",
+          file: true,
         });
-        showToast(slug ? "Assigned — apply writes it to the ledger" : "Unassigned");
+        showToast(res.state === "applied" ? "Filed → " + (r.entity || "entity") + " history"
+          : slug ? "Assigned — set a category to file it" : "Unassigned");
         window.mfSheet.close();
         renderProperties();
       } catch (e) { showToast("Couldn't assign"); }
@@ -848,11 +893,18 @@ function renderMoneyInspector(r) {
     inp.value = r[key] || "";
     inp.onchange = async () => {
       try {
-        const patch = { id: r.id };
+        const patch = { id: r.id, file: key === "category" };
         patch[key] = inp.value;
-        await postJSONOk("/api/realestate/statements/row", patch);
+        const res = await postJSONOk("/api/realestate/statements/row", patch);
         r[key] = inp.value;
-        showToast("Saved");
+        if (res.state === "applied") {
+          // the category completed the filing — the row leaves the lot
+          showToast("Filed → " + (r.entity || "entity") + " history");
+          moneySelId = null;
+          renderProperties();
+        } else {
+          showToast("Saved");
+        }
       } catch (e) { showToast("Couldn't save"); }
     };
     f.append(el("span", "pp3-insp-flabel", label), inp);
@@ -861,8 +913,24 @@ function renderMoneyInspector(r) {
   insp.append(editRow("category", "category", "category…"));
   insp.append(editRow("note", "note", "note — lands on the ledger row"));
   moneyHopFields(r, insp);
+  // explicit file gesture for the flows that patch without filing (hop
+  // tethers, vendor-memory prefills awaiting confirmation)
+  if (!locked && (r.state === "assigned" || r.state === "split") && (r.inflow || r.category)) {
+    const fileBtn = el("button", "pill-solid re-money-file", "file ✓ → ledger");
+    fileBtn.onclick = async () => {
+      try {
+        const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, file: true });
+        if (res.state === "applied") {
+          showToast("Filed → " + (r.entity || "entity") + " history");
+          moneySelId = null;
+          renderProperties();
+        } else { showToast("Not filed — " + (res.state || "check the assignment")); }
+      } catch (e) { showToast("Couldn't file — " + (e.message || "")); }
+    };
+    insp.append(fileBtn);
+  }
   insp.append(el("div", "pp3-insp-note",
-    "assignment writes to the property ledger on apply; receipts + contractor attach on the ledger row (property page → spend)"));
+    "picking a property with a category set files straight to the ledger; receipts + contractor attach on the ledger row (property page → spend)"));
 }
 
 // moneyHopFields — the §7 hops on an assigned row: property → NODE (the
@@ -877,13 +945,19 @@ function moneyHopFields(r, host) {
   if (!prop) return;
   const save = async (patch) => {
     try {
-      await postJSONOk("/api/realestate/statements/row", {
+      const res = await postJSONOk("/api/realestate/statements/row", {
         id: r.id,
         assignments: [{ ...a, ...patch }],
         state: r.state === "split" ? "split" : "assigned",
       });
       Object.assign(a, patch);
-      showToast("Saved");
+      if (res.state === "applied") {
+        showToast("Filed → " + (r.entity || "entity") + " history");
+        moneySelId = null;
+        renderProperties();
+      } else {
+        showToast("Saved");
+      }
     } catch (e) { showToast("Couldn't save"); }
   };
   const field = (label, node) => {

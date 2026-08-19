@@ -513,6 +513,10 @@
 .re-money-pager { display: flex; align-items: center; justify-content: center; gap: var(--sp-6); padding: var(--sp-5) 0; }
 .re-money-pageinfo { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
+/* filed-history folds + the explicit file gesture */
+.re-money-hist-head { margin-top: var(--sp-9); }
+.re-money-file { margin: var(--sp-4) 0; width: 100%; }
+
 /* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
 .re-publish-btn { margin-top: var(--sp-3); width: 100%; justify-content: center; }
 

@@ -151,6 +151,10 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 		Assignments *[]realestate.Alloc `json:"assignments"`
 		State       *string             `json:"state"`
 		Reason      *string             `json:"reason"`
+		// File marks a FILING gesture (property pick, category set, the
+		// explicit file button) — intermediate edits (node/contract hops,
+		// notes) patch without it so a half-tethered row never applies early.
+		File bool `json:"file"`
 	}
 	if err := decode(r, &b); err != nil || b.ID == "" {
 		httpError(w, errBadRequest("id is required"))
@@ -160,6 +164,21 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpError(w, err)
 		return
+	}
+	// filing IS the write (owner call 2026-08-19): on a filing gesture, a
+	// fully-filed row — assigned with a category (inflows need none) and sums
+	// matching — applies to the ledger and leaves the workbench for the
+	// entity's history fold. No separate bulk-apply step. Partially-filed
+	// rows (say, a property but no category yet) stay in the lot untouched.
+	if b.File && (row.State == "assigned" || row.State == "split") {
+		if rows, err := s.statements.Applicable([]string{row.ID}); err == nil {
+			if _, _, err := s.applyStatementRows(rows, vaultwriter.ActorUserAction); err != nil {
+				httpError(w, err)
+				return
+			}
+			s.statements.MarkApplied([]string{row.ID})
+			row.State = "applied"
+		}
 	}
 	writeJSON(w, row)
 }

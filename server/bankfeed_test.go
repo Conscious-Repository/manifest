@@ -266,3 +266,50 @@ func TestBankFeedBackfillIngestsWithoutAutoApply(t *testing.T) {
 		t.Fatalf("sync re-hauled %d backfilled row(s)", added)
 	}
 }
+
+// Filing IS the write (owner call 2026-08-19): a PATCH carrying file:true
+// applies a fully-filed row straight to the ledger; intermediate patches
+// (hop tethers, notes — no file flag) never apply early.
+func TestStatementsRowFilingGestureAutoApplies(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -5), Amount: -321.09, Description: "SUPPLIES", Payee: "Ace Hardware"},
+	}}}
+	srv, vault, dataDir := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := srv.statements.List()
+	id := rows[0].ID
+
+	// hop-style patch WITHOUT the file flag: assigned, categorized — no write
+	code, res := doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+id+`","category":"materials","assignments":[{"slug":"748-n-euclid","amount":321.09}]}`)
+	if code != 200 || res["state"] == "applied" {
+		t.Fatalf("no-file patch: %d %v — must stay unapplied", code, res["state"])
+	}
+	if _, err := os.Stat(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv")); !os.IsNotExist(err) {
+		t.Fatal("ledger written without a filing gesture")
+	}
+
+	// the filing gesture: file:true alone applies the now-complete row
+	code, res = doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+id+`","file":true}`)
+	if code != 200 || res["state"] != "applied" {
+		t.Fatalf("file gesture: %d %v — want applied", code, res["state"])
+	}
+	led, err := os.ReadFile(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(led), "321.09") || !strings.Contains(string(led), "materials") {
+		t.Fatalf("filed row missing from ledger:\n%s", led)
+	}
+	// audit actor stays user-action for owner filings
+	raw, err := os.ReadFile(filepath.Join(dataDir, "write-audit.log"))
+	if err != nil || !strings.Contains(string(raw), "user-action") {
+		t.Fatalf("audit log missing the user-action line: %v\n%s", err, raw)
+	}
+	if strings.Contains(string(raw), "bank-feed") {
+		t.Fatal("owner filing must not audit as bank-feed")
+	}
+}
