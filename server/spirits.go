@@ -8,6 +8,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/goals"
 	"manifest/record"
 	"manifest/secrets"
 	"manifest/spirits"
@@ -112,6 +113,13 @@ type approvalRow struct {
 	// ReContractPayload is the parsed intake payload of a re-contract proposal
 	// (nil otherwise) — the card renders the adjust-amounts editor over it.
 	ReContractPayload *approvals.ReContractPayload `json:"reContractPayload,omitempty"`
+	// GoalsPayload is the parsed placement of a goals-item proposal (nil
+	// otherwise). Proposed carries the exact post-confirm bytes when the
+	// placement currently applies cleanly — the card's diff IS the apply.
+	GoalsPayload *goals.PlacementPayload `json:"goalsPayload,omitempty"`
+	// GoalsErr says why the placement would refuse right now (stale anchor,
+	// duplicate, missing area) — the card shows it instead of a green diff.
+	GoalsErr string `json:"goalsErr,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -166,6 +174,27 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 				if payload, ok := approvals.AionPayload(p); ok {
 					rr.AionPayload = &payload
 					rr.AionLine = aion.RenderItemLine(payload)
+				} else {
+					rr.Allowed = false
+				}
+				rr.Body = maskSecrets(rr.Body)
+			case approvals.TypeGoalsItem:
+				// a goals placement (§12 2026-08-19): the diff shown is the exact
+				// write Confirm makes — computed fresh against the live file, so
+				// a stale anchor or a duplicate reads as a refusal BEFORE the click
+				rr.Allowed = approvals.GoalsPathAllowed(p.ApplyPath)
+				if cur, ok := store.CurrentContent(p); ok {
+					rr.Current = cur
+				}
+				if payload, ok := approvals.GoalsPayload(p); ok {
+					rr.GoalsPayload = &payload
+					if rr.Current != "" {
+						if next, err := goals.ApplyPlacement(rr.Current, payload, time.Now()); err == nil {
+							rr.Proposed = next
+						} else {
+							rr.GoalsErr = err.Error()
+						}
+					}
 				} else {
 					rr.Allowed = false
 				}
@@ -288,6 +317,26 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 			httpError(w, errBadRequest("approved, but enqueue failed: "+err.Error()))
 			return
 		}
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleSpiritsApprovalGoals rewrites a pending goals proposal's editable
+// placement (mode/level/area/parent/target/title/fields) — the pre-Confirm
+// edit lane. The id never changes.
+func (s *Server) handleSpiritsApprovalGoals(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var payload goals.PlacementPayload
+	if err := decode(r, &payload); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.approvalsFor(r.PathValue("id")).SetGoalsPayload(r.PathValue("id"), payload); err != nil {
+		httpError(w, err)
+		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

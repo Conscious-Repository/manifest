@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -428,4 +429,77 @@ func (s *Server) handleGoalRetro(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "quarter": quarter})
+}
+
+// handleGoalsMatch — GET /api/goals/match?q=: the audit ranker behind a
+// placement proposal ("does a rock/milestone for this already exist?").
+// Ranks over PARSED live goals only — frozen depth-2 history lines can carry
+// [goal::] pins that resolve to no goal, and a text-grep would surface those
+// phantoms as targets the edit lane cannot address.
+func (s *Server) handleGoalsMatch(w http.ResponseWriter, r *http.Request) {
+	q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	if q == "" {
+		httpError(w, errBadRequest("q is required"))
+		return
+	}
+	area := strings.TrimSpace(r.URL.Query().Get("area")) // optional scope
+	doc := s.goals.Load()
+	type hit struct {
+		ID     string `json:"id"`
+		Text   string `json:"text"`
+		Area   string `json:"area"`
+		Level  string `json:"level"` // rock | milestone | annual
+		RockID string `json:"rockId,omitempty"`
+		Score  int    `json:"score"`
+	}
+	qTokens := strings.Fields(q)
+	score := func(text string, aliases []string) int {
+		t := strings.ToLower(text)
+		n := 0
+		if t == q {
+			n += 8
+		} else if strings.Contains(t, q) {
+			n += 4
+		}
+		padded := " " + t + " "
+		for _, w := range qTokens {
+			if strings.Contains(padded, " "+w+" ") {
+				n += 2
+			} else if strings.Contains(t, w) {
+				n++
+			}
+		}
+		for _, al := range aliases {
+			if a := strings.ToLower(al); a == q || strings.Contains(q, a) {
+				n += 3 // the alias vocabulary exists exactly for this
+			}
+		}
+		return n
+	}
+	var hits []hit
+	for _, a := range doc.Areas {
+		if area != "" && !strings.EqualFold(a.Name, area) {
+			continue
+		}
+		for _, g := range a.Annuals {
+			if n := score(g.Text, g.Aliases); n > 0 {
+				hits = append(hits, hit{ID: g.ID, Text: g.Text, Area: a.Name, Level: "annual", Score: n})
+			}
+		}
+		for _, rock := range a.Rocks {
+			if n := score(rock.Text, rock.Aliases); n > 0 {
+				hits = append(hits, hit{ID: rock.ID, Text: rock.Text, Area: a.Name, Level: "rock", Score: n})
+			}
+			for _, st := range rock.Children {
+				if n := score(st.Text, st.Aliases); n > 0 {
+					hits = append(hits, hit{ID: st.ID, Text: st.Text, Area: a.Name, Level: "milestone", RockID: rock.ID, Score: n})
+				}
+			}
+		}
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
+	if len(hits) > 8 {
+		hits = hits[:8]
+	}
+	writeJSON(w, map[string]any{"matches": hits})
 }

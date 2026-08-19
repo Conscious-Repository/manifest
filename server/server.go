@@ -246,6 +246,7 @@ func (s *Server) Handler() http.Handler {
 	// Goals system (M1). /api/goals is now the read projection; the old
 	// period-note POST routes are retired in favor of structured editing.
 	mux.HandleFunc("/api/goals", s.handleGoalsGet)
+	mux.HandleFunc("GET /api/goals/match", s.handleGoalsMatch)
 	mux.HandleFunc("/api/myplate", s.handleMyPlate)
 	mux.HandleFunc("/api/areas", s.handleAreas)
 	mux.HandleFunc("/api/areas/reorder", s.handleAreasReorder)
@@ -359,6 +360,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/confirm", s.handleSpiritsApprovalConfirm)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/reject", s.handleSpiritsApprovalReject)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/aion", s.handleSpiritsApprovalAion)
+	mux.HandleFunc("POST /api/spirits/approvals/{id}/goals", s.handleSpiritsApprovalGoals)
 	mux.HandleFunc("POST /api/spirits/run-now", s.handleSpiritsRunNow)
 
 	// Chat with spirits (cmd-ctr import P2): sessions are harness files the
@@ -485,6 +487,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/bankfeed/claim", s.handleBankfeedClaim)
 	mux.HandleFunc("GET /api/bankfeed/accounts", s.handleBankfeedAccounts)
 	mux.HandleFunc("POST /api/bankfeed/accounts/{id}", s.handleBankfeedLink)
+	mux.HandleFunc("POST /api/bankfeed/accounts/{id}/backfill", s.handleBankfeedBackfill)
 	mux.HandleFunc("POST /api/bankfeed/sync", s.handleBankfeedSync)
 
 	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
