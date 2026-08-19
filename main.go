@@ -198,6 +198,13 @@ func main() {
 			vaultwriter.Capability{Name: "goals", Zone: record.ZoneKnowledge,
 				Pattern: strings.TrimSuffix(orDefault(cfg.GoalsFileName, "goals.md"), ".md") + "*",
 				Actor:   vaultwriter.ActorUserAction},
+			// goals.md ONLY, via a user-CONFIRMED placement proposal — the first
+			// knowledge-zone approved-proposal lane (§12 amendment 2026-08-19).
+			// The pattern is a basename match; the store's exact-path guard
+			// (approvals.GoalsPathAllowed) pins it to the vault root.
+			vaultwriter.Capability{Name: "goals-approved", Zone: record.ZoneKnowledge,
+				Pattern: orDefault(cfg.GoalsFileName, "goals.md"),
+				Actor:   vaultwriter.ActorApprovedProposal},
 			// tasks.md + "tasks archive.md" + .pre-* backups
 			vaultwriter.Capability{Name: "todos", Zone: record.ZoneKnowledge,
 				Pattern: strings.TrimSuffix(orDefault(cfg.TasksFileName, "tasks.md"), ".md") + "*",
@@ -546,6 +553,18 @@ func main() {
 	// approvals inbox is the excalibur surface (warden findings today, the
 	// goals-Phase-2 EA later). Save-to-vault stays the one vault write.
 	srv.UseVault(vw)
+	// goals-approved index-fork guard: the approved lane writes the vault-root
+	// goals.md by a FIXED path, while every read surface resolves through the
+	// index (a hand-moved goals.md is still found). If those ever disagree —
+	// the file moved, or GoalsFileName carries a folder — the lane goes dark
+	// rather than writing a file the app doesn't read.
+	goalsWritable := !strings.Contains(orDefault(cfg.GoalsFileName, "goals.md"), "/")
+	if idxPath := idx.GoalsPath(); goalsWritable && idxPath != "" && idxPath != orDefault(cfg.GoalsFileName, "goals.md") {
+		goalsWritable = false
+	}
+	if !goalsWritable {
+		log.Printf("goals-approved lane DARK: goals.md is not at the vault root — placement proposals will refuse")
+	}
 	if len(cfg.Harnesses) > 0 {
 		// Harness federation (big-change Phase 4): one store pair per tree,
 		// primary first. The primary keeps every write surface (spool, ritual
@@ -558,6 +577,9 @@ func main() {
 			}
 			ap := approvals.NewStore(filepath.Join(ref.Path, "artifacts")).
 				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved")
+			if goalsWritable {
+				ap = ap.WithGoalsCapability("goals-approved")
+			}
 			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
 		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too

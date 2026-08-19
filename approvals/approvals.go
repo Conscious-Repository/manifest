@@ -84,6 +84,7 @@ type Store struct {
 	vw        *vaultwriter.Writer // for guarded vault record writes (aion/re appends); nil disables them
 	aionCap   string              // approved-proposal capability for aion applies; "" disables them
 	reCap     string              // approved-proposal capability for real-estate applies; "" disables them
+	goalsCap  string              // approved-proposal capability for goals placements; "" disables them
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -192,12 +193,13 @@ func (s *Store) CurrentContent(p Proposal) (string, bool) {
 			return "", false
 		}
 		return string(b), true
-	case TypeAionBacklog, TypeAionHeuristic, TypeReBacklog, TypeAionResolve, TypeReResolve:
+	case TypeAionBacklog, TypeAionHeuristic, TypeReBacklog, TypeAionResolve, TypeReResolve, TypeGoalsItem:
 		// the current corpus file, so the UI can diff current vs current+line
 		if s.vaultRoot == "" ||
 			((p.Type == TypeAionBacklog || p.Type == TypeAionResolve) && !AionBacklogPathAllowed(p.ApplyPath)) ||
 			(p.Type == TypeAionHeuristic && !AionHeuristicPathAllowed(p.ApplyPath)) ||
-			((p.Type == TypeReBacklog || p.Type == TypeReResolve) && !ReBacklogPathAllowed(p.ApplyPath)) {
+			((p.Type == TypeReBacklog || p.Type == TypeReResolve) && !ReBacklogPathAllowed(p.ApplyPath)) ||
+			(p.Type == TypeGoalsItem && !GoalsPathAllowed(p.ApplyPath)) {
 			return "", false
 		}
 		b, err := os.ReadFile(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath)))
@@ -507,6 +509,8 @@ func (s *Store) apply(p Proposal) error {
 		return s.applyAionResolve(p)
 	case TypeReResolve:
 		return s.applyReResolve(p)
+	case TypeGoalsItem:
+		return s.applyGoalsItem(p)
 	}
 	if !ApplyPathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is outside the allow-list (spirits/*/cornerstone.md, spirits/*/rituals/*.md, chargebook.md)", p.ApplyPath)
