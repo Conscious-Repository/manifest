@@ -43,7 +43,14 @@ type Property struct {
 	Drive        string         `json:"drive,omitempty"` // artifact-canon folder URL (linked, never mirrored)
 	Agc          string         `json:"agc,omitempty"`   // AGC project URL (bids/new-construction, link-out)
 	Hidden       bool           `json:"hidden"`
-	Units        int            `json:"units,omitempty"` // total_units from the source sidecar
+	Units        int            `json:"units,omitempty"` // unit count: frontmatter unit mix, else source sidecar total_units
+	// measurables (overhaul §3.1): hand-editable frontmatter, progressively
+	// refined; the estimate-vintage lock freezes them (§3.6)
+	UnitMix     []Unit             `json:"unitMix,omitempty"`     // frontmatter units: list
+	RentMonthly float64            `json:"rentMonthly,omitempty"` // Σ unit rent ests
+	Measurables map[string]float64 `json:"measurables,omitempty"` // free numeric frontmatter keys
+	Locked      string             `json:"locked,omitempty"`      // frontmatter locked: date ("" = still estimating)
+	Underwrite  *UnderwriteLock    `json:"underwrite,omitempty"`  // the frozen sidecar (est-vs-canon source)
 	Lat          float64        `json:"lat,omitempty"`   // optional frontmatter map override
 	Lng          float64        `json:"lng,omitempty"`
 	Budget       []BudgetLine   `json:"budget"`

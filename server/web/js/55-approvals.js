@@ -81,9 +81,21 @@ function approvalCardEl(a) {
   // For an actionable proposal the ````proposed payload is rendered as a diff
   // below (and an aion payload as its editable form), so strip the fence from
   // the human-facing evidence body.
-  const bodyText = isReContract ? stripFence(a.body, "re-contract")
+  // A proposal whose body carries a payload fence its DECLARED type does not
+  // render is misfiled — the spirit named the type/apply_path in prose instead
+  // of passing them as write_approval arguments. Printing the raw JSON at the
+  // owner reads as a broken card; strip it and say what actually went wrong.
+  const strayFence = apprStrayFence(a, isReContract, isAion);
+  let bodyText = isReContract ? stripFence(a.body, "re-contract")
     : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
+  if (strayFence) bodyText = stripFence(bodyText, strayFence);
   if (bodyText && bodyText.trim() && !isReContract) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
+  if (strayFence) {
+    card.append(el("div", "appr-blocked",
+      "⚠ misfiled proposal — the body carries a \u2018" + strayFence + "\u2019 payload but the record is typed \u2018" +
+      (a.type || "approval") + "\u2019 with no apply-path, so there is nothing to apply. Reject it and re-run the intake; " +
+      "the engine now refuses this shape at the source."));
+  }
 
   let blocked = false, blockMsg = "";
   const isNewNote = a.type === "create-vault-note";
@@ -367,6 +379,17 @@ function collapsibleBlock(inner, lineCount) {
   };
   wrap.append(toggle);
   return wrap;
+}
+
+// apprStrayFence names a payload fence the card's declared type will NOT
+// render — the signature of a proposal filed with the wrong type (and so with
+// no apply-path). Returns "" when the body and the type agree.
+function apprStrayFence(a, isReContract, isAion) {
+  if (isReContract || isAion) return "";
+  for (const lang of ["re-contract", "aion", "re"]) {
+    if (stripFence(a.body, lang) !== (a.body || "").trim()) return lang;
+  }
+  return "";
 }
 
 // stripFence removes a ````<lang> … ```` block from an approval body (it is

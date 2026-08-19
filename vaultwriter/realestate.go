@@ -159,6 +159,34 @@ func (w *Writer) WriteSourceJSON(rel string, data []byte) error {
 	return w.commit(full, "re-source", data)
 }
 
+// WriteUnderwriteJSON writes a property's estimate-vintage lock snapshot
+// (overhaul §3.6) — pinned to `*.underwrite.json`. Overwrite is allowed at
+// THIS layer (the server gates re-lock behind an explicit confirm; the
+// deliberateness lives in the gesture, not the writer).
+func (w *Writer) WriteUnderwriteJSON(rel string, data []byte) error {
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	rel = filepath.ToSlash(rel)
+	if !strings.HasSuffix(rel, ".underwrite.json") {
+		return errors.New("underwrite writes are pinned to *.underwrite.json")
+	}
+	if err := w.Guard(rel, WriteDatabase); err != nil {
+		return err
+	}
+	if !json.Valid(data) {
+		return errors.New("refusing to write invalid JSON")
+	}
+	full := filepath.Join(w.vault, filepath.FromSlash(rel))
+	if !isUnder(full, w.vault) {
+		return errors.New("invalid underwrite path")
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return err
+	}
+	return w.commit(full, "re-underwrite", data)
+}
+
 // UpdateLedgerRow replaces one exact row in a ledger csv; DeleteLedgerRow
 // removes it. Both are FAIL-CLOSED on a stale match (the file changed
 // underneath — an Obsidian/Excel edit is never silently clobbered), matching

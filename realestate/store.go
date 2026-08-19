@@ -110,6 +110,16 @@ func (s *Service) parse(rel, name string, contracts []Contract) (Property, bool)
 		p.Ledger = parseLedger(led)
 	}
 	p.Units = sourceUnits(record.Sidecar(full, record.SidecarSource))
+	// measurables (overhaul §3.1): the frontmatter unit mix wins the unit
+	// count once present; free numeric keys read as measurables
+	p.UnitMix = ParseUnits(fm["units"])
+	if len(p.UnitMix) > 0 {
+		p.Units = len(p.UnitMix)
+		p.RentMonthly = RentMonthly(p.UnitMix)
+	}
+	p.Measurables = ParseMeasurables(fm)
+	p.Locked = strings.TrimSpace(fm["locked"])
+	p.Underwrite = ReadUnderwriteLock(record.Sidecar(full, record.SidecarUnderwrite))
 	// the rock tree: `## rocks`, tolerant-reading the legacy `## work` heading
 	// (writes go back to whichever heading the file has — RocksSection)
 	p.RocksSection = "rocks"

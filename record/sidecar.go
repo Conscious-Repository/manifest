@@ -5,9 +5,10 @@ import "strings"
 // Sidecar file kinds a record can declare: data that belongs to a record but
 // never lives in its markdown (money facts, geometry, verbatim source objects).
 const (
-	SidecarLedger = "ledger.csv"  // money facts, one csv row per entry
-	SidecarGeo    = "geo.json"    // verbatim GeoJSON Feature/FeatureCollection
-	SidecarSource = "source.json" // verbatim external source object (export contract)
+	SidecarLedger     = "ledger.csv"      // money facts, one csv row per entry
+	SidecarGeo        = "geo.json"        // verbatim GeoJSON Feature/FeatureCollection
+	SidecarSource     = "source.json"     // verbatim external source object (export contract)
+	SidecarUnderwrite = "underwrite.json" // the estimate-vintage lock snapshot (overhaul §3.6)
 )
 
 // Sidecar derives THE sidecar path for a record: `…/<slug>.md` →

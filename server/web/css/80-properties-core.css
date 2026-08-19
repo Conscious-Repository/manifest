@@ -309,7 +309,8 @@
 
 /* deal page */
 .re-deal-head { display: flex; align-items: center; gap: var(--sp-6); margin-bottom: var(--sp-2); }
-.re-deal-cols, .re-deal-row, .re-deal-totals { grid-template-columns: 1fr 54px 80px 76px 60px; }
+.re-deal-cols, .re-deal-row, .re-deal-totals { grid-template-columns: 1fr 54px 78px 80px 76px 60px; }
+.prop-row .prop-col-r.re-measured { color: var(--accent); }
 .re-deal-totals { border-top: 1px solid var(--base-100); font-weight: 500; cursor: default; }
 .re-deal-check { margin-top: var(--sp-8); max-width: 460px; }
 .re-check-row { display: flex; gap: var(--sp-4); align-items: baseline; padding: var(--sp-2) var(--sp-1); font-size: var(--fs-md); color: var(--base-60); }
@@ -412,6 +413,24 @@
 .re-cform .pp3-uw-actions { margin-top: var(--sp-5); }
 
 /* the FEED intake card lives with the other approval cards (55-approvals.css) */
+
+/* underwriting pass 4: measurables · the estimate-vintage lock · deal foot */
+.pp3-uw-lock { background: none; border: 1px solid var(--accent-soft); border-radius: var(--radius-lg); color: var(--accent); font-family: var(--mono); font-size: var(--fs-2xs); padding: var(--sp-1) var(--sp-4); cursor: pointer; }
+.pp3-uw-lock:hover { background: var(--base-20); }
+.pp3-uw-lock.locked { border-color: var(--base-25); color: var(--base-40); }
+.re-uw-unitmix { display: flex; flex-direction: column; gap: 2px; }
+.re-uw-unit { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); }
+.re-uw-unitsum { color: var(--accent); border-top: 1px solid var(--line-soft); padding-top: 2px; }
+.re-uw-measurables { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); margin: var(--sp-2) 0; }
+.re-uw-lockblock { margin-top: var(--sp-6); border-left: 2px solid var(--accent-soft); padding-left: var(--sp-5); }
+.re-uw-lockrow { display: flex; gap: var(--sp-5); align-items: baseline; padding: var(--sp-1) 0; font-size: var(--fs-sm); }
+.re-uw-lockname { flex: 1; min-width: 0; }
+.re-uw-lockwas { font-family: var(--mono); color: var(--base-40); }
+.re-uw-locknow { font-family: var(--mono); color: var(--base-40); }
+.re-uw-locknow.up { color: var(--over); }
+.re-uw-locknow.down { color: var(--accent); }
+.re-uw-lockextra { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.re-uw-dealfoot { margin-top: var(--sp-5); }
 
 /* GOALS tab: per-property rock trails */
 .re-proprocks-label { margin-top: var(--sp-8); }

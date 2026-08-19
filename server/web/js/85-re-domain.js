@@ -779,8 +779,10 @@ async function renderDealPage(slug) {
   // tier-1 inputs live on each member's source sidecar — fetch once per render
   await Promise.all(members.map(async (p) => {
     if (p.__source) return;
-    try { p.__source = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json(); }
-    catch (e) { p.__source = {}; }
+    try {
+      const d = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json();
+      p.__source = d.source || d; // the endpoint wraps: {source: {...}}
+    } catch (e) { p.__source = {}; }
   }));
   // stat strip from member source data (screening tier — the portal runs the
   // full engine; these are the three outputs the spec shows)
@@ -806,16 +808,20 @@ async function renderDealPage(slug) {
   strip.append(dc);
   host.append(strip);
 
-  // members table + totals row
+  // members table + totals row — RENT/MO reads the frontmatter unit mix when
+  // present (accented: a measured figure, not a sidecar assumption)
   const cols = el("div", "prop-cols re-deal-cols");
-  ["PROPERTY", "UNITS", "TDC", "NOI", "DSCR"].forEach((h, i) => cols.append(el("span", i ? "prop-col-r" : "", h)));
+  ["PROPERTY", "UNITS", "RENT/MO", "TDC", "NOI", "DSCR"].forEach((h, i) => cols.append(el("span", i ? "prop-col-r" : "", h)));
   host.append(cols);
+  const memberRent = (p) => p.rentMonthly ||
+    (reSrcNum(p.__source, "avg_rent_per_unit") * (((p.unitMix || []).length) || p.units || reSrcNum(p.__source, "total_units")));
   members.forEach((p) => {
     const uw = reScreeningCalc(p);
     const row = el("div", "prop-row re-deal-row");
     row.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
     row.append(el("span", "prop-addr", p.short || p.slug));
-    row.append(el("span", "prop-col-r", String(p.units || "—")));
+    row.append(el("span", "prop-col-r", String(((p.unitMix || []).length) || p.units || "—")));
+    row.append(el("span", "prop-col-r" + (p.rentMonthly ? " re-measured" : ""), memberRent(p) ? fmtMoneyShort(memberRent(p)) : "—"));
     row.append(el("span", "prop-col-r", fmtMoneyShort(uw.tdc || 0)));
     row.append(el("span", "prop-col-r", fmtMoneyShort(uw.noi || 0)));
     row.append(el("span", "prop-col-r" + (uw.dscr && uw.dscr < 1.25 ? " over" : ""), uw.dscr ? uw.dscr.toFixed(2) : "—"));
@@ -823,7 +829,8 @@ async function renderDealPage(slug) {
   });
   const totals = el("div", "prop-row re-deal-totals");
   totals.append(el("span", "prop-addr", "deal total"));
-  totals.append(el("span", "prop-col-r", String(members.reduce((n, p) => n + (p.units || 0), 0) || "—")));
+  totals.append(el("span", "prop-col-r", String(members.reduce((n, p) => n + (((p.unitMix || []).length) || p.units || 0), 0) || "—")));
+  totals.append(el("span", "prop-col-r", fmtMoneyShort(members.reduce((n, p) => n + memberRent(p), 0))));
   totals.append(el("span", "prop-col-r", fmtMoneyShort(tdc)));
   totals.append(el("span", "prop-col-r", fmtMoneyShort(noi)));
   totals.append(el("span", "prop-col-r" + (dscr && dscr < 1.25 ? " over" : ""), dscr ? dscr.toFixed(2) : "—"));
@@ -878,13 +885,24 @@ function reDebtService(loan, a) {
 // fetches) — here we work off the list payload's units + page-level source
 // fetches fill the rest; callers on the deal page get tdc/noi/dscr where the
 // inputs exist.
+// reSrcNum reads a source-sidecar number, tolerating BOTH shapes: the
+// property slice (flat keys) and the single-parcel full-deal object
+// (properties[0]) — the same fallback the Go sourceMoney applies.
+function reSrcNum(src, key) {
+  if (!src) return 0;
+  if (src[key] != null) return src[key] || 0;
+  return (((src.properties || [])[0] || {})[key]) || 0;
+}
+
 function reScreeningCalc(p) {
   const src = p.__source || {};
   const a = reAssumptions();
-  const units = p.units || src.total_units || 0;
-  const rent = src.avg_rent_per_unit || 0;
-  const purchase = src.purchase_price || 0;
-  const hard = src.hard_costs || 0;
+  // measurables win (overhaul §3.1): the frontmatter unit mix carries the
+  // unit count + per-unit rents; the source sidecar is the fallback
+  const units = ((p.unitMix || []).length) || p.units || reSrcNum(src, "total_units") || 0;
+  const rent = (p.rentMonthly && units) ? p.rentMonthly / units : reSrcNum(src, "avg_rent_per_unit");
+  const purchase = reSrcNum(src, "purchase_price");
+  const hard = reSrcNum(src, "hard_costs");
   if (!units || !rent) return { complete: false };
   const gross = units * rent * 12;
   const egi = gross * (1 - (a.vacancy_rate || 0));

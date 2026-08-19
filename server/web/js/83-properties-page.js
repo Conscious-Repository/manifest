@@ -1041,6 +1041,28 @@ function underwritingSection(p) {
   const sec = el("div", "pp3-sec pp3-uw-sec");
   const head = el("div", "pp3-sec-head");
   head.append(el("span", "pp3-sec-title", "UNDERWRITING"));
+  // the estimate-vintage lock (overhaul §3.6): everything is an ESTIMATE
+  // until the owner's one deliberate lock; after it, initial-vs-real reads
+  const LOCKABLE = ["under_contract", "pre_development", "construction"];
+  if (p.locked) {
+    const relock = el("button", "pp3-uw-lock locked", "locked " + p.locked + " · re-lock");
+    relock.title = "re-locking OVERWRITES the frozen snapshot — a deliberate do-over";
+    relock.onclick = async () => {
+      if (!confirm("Re-lock underwriting? The " + p.locked + " snapshot is overwritten — initial-vs-real resets to today.")) return;
+      try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/underwrite-lock", { relock: true }); renderProperties(); }
+      catch (e) { showToast("Couldn't re-lock — " + (e.message || "")); }
+    };
+    head.append(relock);
+  } else if (LOCKABLE.includes(p.status)) {
+    const lock = el("button", "pp3-uw-lock", "lock underwriting");
+    lock.title = "freeze measurables + rock ests + inputs as the initial underwrite (one deliberate moment)";
+    lock.onclick = async () => {
+      if (!confirm("Lock underwriting? Today's measurables, rock ests, and inputs freeze as the initial underwrite — the page then shows initial vs real.")) return;
+      try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/underwrite-lock", {}); renderProperties(); }
+      catch (e) { showToast("Couldn't lock — " + (e.message || "")); }
+    };
+    head.append(lock);
+  }
   const a = reAssumptions();
   const overrides = (a.__overrides || []).filter((o) => o.kind === "property" && o.slug === p.slug);
   const inherit = (a.__keys || []).length - overrides.length;
@@ -1059,8 +1081,10 @@ function underwritingSection(p) {
     if (!reAssumptionsCache) await loadReAssumptions();
     let src = p.__source;
     if (!src) {
-      try { src = p.__source = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json(); }
-      catch (e) { src = p.__source = {}; }
+      try {
+        const d = await (await fetch("/api/properties/" + encodeURIComponent(p.slug) + "/source")).json();
+        src = p.__source = d.source || d; // the endpoint wraps: {source: {...}}
+      } catch (e) { src = p.__source = {}; }
     }
     host.innerHTML = "";
     const grid = el("div", "re-uw-grid");
@@ -1083,13 +1107,30 @@ function underwritingSection(p) {
       f.append(inp);
       return f;
     };
-    grid.append(
-      input("purchase price", "purchase_price"),
-      input("hard costs", "hard_costs"),
-      input("units", "total_units"),
-      input("stabilized rent /unit/mo", "avg_rent_per_unit"),
-    );
+    grid.append(input("purchase price", "purchase_price"), input("hard costs", "hard_costs"));
+    if ((p.unitMix || []).length) {
+      // measured unit mix wins (frontmatter — hand-editable in Obsidian):
+      // the units/rent sidecar inputs retire behind the measured figures
+      const f = el("div", "re-uw-field re-uw-measured");
+      f.append(el("span", "re-uw-label", "unit mix (frontmatter)"));
+      const rows = el("div", "re-uw-unitmix");
+      p.unitMix.forEach((u) => rows.append(el("div", "re-uw-unit",
+        (u.label || "unit") + (u.beds ? " · " + u.beds + "bd/" + u.baths + "ba" : "") +
+        (u.sqft ? " · " + u.sqft + "sqft" : "") + (u.rent ? " · " + fmtMoney(u.rent) + "/mo" : ""))));
+      rows.append(el("div", "re-uw-unit re-uw-unitsum",
+        p.unitMix.length + " units · " + fmtMoney(p.rentMonthly || 0) + "/mo"));
+      f.append(rows);
+      grid.append(f);
+    } else {
+      grid.append(input("units", "total_units"), input("stabilized rent /unit/mo", "avg_rent_per_unit"));
+    }
     host.append(grid);
+    if (Object.keys(p.measurables || {}).length) {
+      const mline = el("div", "re-uw-measurables");
+      mline.append(el("span", "re-uw-label", "measurables  "));
+      mline.append(el("span", "", Object.entries(p.measurables).map(([k, v]) => k + " " + v).join(" · ")));
+      host.append(mline);
+    }
     const uw = reScreeningCalc(p);
     const outs = el("div", "pp3-strip re-uw-outs");
     const cell = (label, val, cls) => {
@@ -1105,6 +1146,69 @@ function underwritingSection(p) {
       outs.append(el("div", "re-foot-note", "fill units + rent for screening outputs (NOI · ARV · DSCR)"));
     }
     host.append(outs);
+    // initial vs real (decision 13): once locked, the frozen snapshot reads
+    // against today's canon — hard total, drifted rocks, drifted inputs
+    if (p.underwrite) {
+      host.append(underwriteDeltaBlock(p));
+    }
+    // the deal worksheet is the underwriting home (decision 11) — a solo
+    // property underwrites as its own deal
+    const dealFoot = el("div", "re-uw-dealfoot");
+    if (p.deal) {
+      const d = dealCache.find((x) => x.slug === p.deal || (x.name || "") === p.deal);
+      const go = el("button", "pp3-link", "deal worksheet: " + (d ? (d.name || d.slug) : p.deal) + " ↗");
+      go.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d ? d.slug : p.deal); };
+      dealFoot.append(go);
+    } else {
+      const mk = el("button", "pp3-link ghost", "＋ underwrite as its own deal");
+      mk.title = "a solo property is its own deal (creates the deal record + tethers this property)";
+      mk.onclick = async () => {
+        try {
+          const res = await postJSONOk("/api/deals", { property: p.slug });
+          location.hash = "#/properties/deal/" + encodeURIComponent(res.slug);
+        } catch (e) { showToast("Couldn't create the deal — " + (e.message || "")); }
+      };
+      dealFoot.append(mk);
+    }
+    host.append(dealFoot);
   })();
   return sec;
+}
+
+// underwriteDeltaBlock — the look-back seed: locked est vs today's canon.
+// Rows render only where something moved; committed reads beside the ests.
+function underwriteDeltaBlock(p) {
+  const lock = p.underwrite;
+  const box = el("div", "re-uw-lockblock");
+  const head = el("div", "re-lane-head", "INITIAL UNDERWRITE — locked " + (p.locked || (lock.locked_at || "").slice(0, 10)));
+  box.append(head);
+  const row = (label, was, now, extra) => {
+    const r = el("div", "re-uw-lockrow");
+    r.append(el("span", "re-uw-lockname", label));
+    const drift = Math.abs((now || 0) - (was || 0)) > 0.5;
+    r.append(el("span", "re-uw-lockwas", fmtMoneyShort(was || 0)));
+    r.append(el("span", "re-uw-locknow" + (drift ? (now > was ? " up" : " down") : ""),
+      drift ? "→ " + fmtMoneyShort(now || 0) : "· held"));
+    if (extra) r.append(el("span", "re-uw-lockextra", extra));
+    box.append(r);
+  };
+  const hardNow = (p.work || []).reduce((n, st) => n + (st.estTotal || 0), 0);
+  const committed = (p.rollup || {}).committed || 0;
+  row("hard costs (Σ rock ests)", lock.hard_total, hardNow, committed ? "committed " + fmtMoneyShort(committed) : "");
+  // per-rock drift, changed rows only
+  const nowByID = {};
+  (p.work || []).forEach((st) => { nowByID[st.id] = st.estTotal || 0; });
+  (lock.rocks || []).forEach((r0) => {
+    const now = nowByID[r0.id];
+    if (now === undefined || Math.abs(now - r0.estTotal) < 0.5) return;
+    row("· " + r0.text, r0.estTotal, now);
+  });
+  const srcNow = p.__source || {};
+  if (lock.source) {
+    const now = reSrcNum(srcNow, "purchase_price");
+    if (Math.abs(now - (lock.source.PurchasePrice || 0)) > 0.5) {
+      row("purchase price", lock.source.PurchasePrice, now);
+    }
+  }
+  return box;
 }
