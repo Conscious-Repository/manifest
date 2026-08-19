@@ -206,6 +206,15 @@ function renderEntitiesPanel(host, ents) {
   }, "entity name…"));
   host.append(list);
 
+  // BANK FEED — SimpleFIN claim + account↔entity links (bank plan §4b). The
+  // vault entity record stays the owner-facing binding; linking here also
+  // flips the matching account row's state via the normal entity save.
+  host.append(el("div", "pp-section-head", "BANK FEED"));
+  const feedBox = el("div", "set-bindings");
+  feedBox.id = "re-bankfeed";
+  host.append(feedBox);
+  renderBankFeedPanel(feedBox, ents);
+
   // ORG CHART — ownership tree read live from the records
   host.append(el("div", "pp-section-head", "ORG CHART"));
   host.append(orgChart(ents));
@@ -344,6 +353,139 @@ async function rePeoplePane(host) {
 
 }
 
+// ---- BANK FEED panel — claim once, then link each bridge account to the
+// entity that owns it. dataDir keeps the machine linkage; the entity record's
+// accounts row flips not-connected → live through the normal entity save.
+async function renderBankFeedPanel(box, ents) {
+  box.innerHTML = "";
+  box.append(el("div", "pp-empty", "loading…"));
+  let d = null;
+  try { d = await (await fetch("/api/bankfeed/accounts")).json(); } catch (e) {}
+  box.innerHTML = "";
+  if (!d) { box.append(el("div", "pp-empty", "Bank feed unavailable.")); return; }
+
+  // saveEntityAccountState upserts the label row on the entity record (the
+  // user-action vault write that makes the binding owner-visible).
+  const saveAcctState = async (entitySlug, label, state) => {
+    const ent = ents.find((x) => x.slug === entitySlug);
+    if (!ent || !label) return;
+    const accs = (ent.accounts || []).map((a) => ({ ...a }));
+    const hit = accs.find((a) => a.label.toLowerCase() === label.toLowerCase());
+    if (hit) hit.state = state;
+    else accs.push({ label, kind: "operating", state });
+    await postJSONOk("/api/realestate/entities/" + encodeURIComponent(entitySlug) + "/save", { accounts: accs });
+    ent.accounts = accs;
+  };
+
+  if (!d.claimed) {
+    box.append(el("div", "aion-section-note",
+      "Link real bank accounts through SimpleFIN: create a bridge account, generate ONE setup token, and paste it here. " +
+      "The claim is one-time — it mints a read-only access URL stored on this box only. Transactions land in the $ tab with the entity pre-set."));
+    const row = el("div", "set-bind-row");
+    const inp = inputEl("SimpleFIN setup token…");
+    row.append(inp);
+    row.append(pillLight("claim", async () => {
+      const token = (inp.value || "").trim();
+      if (!token) { showToast("Paste the setup token first"); return; }
+      try {
+        await postJSONOk("/api/bankfeed/claim", { token });
+        showToast("Claimed — link each account to its entity below");
+        renderBankFeedPanel(box, ents);
+      } catch (err) { showToast("Claim failed — " + (err.message || "")); }
+    }));
+    box.append(row);
+    return;
+  }
+
+  const strip = el("div", "set-bind-row");
+  strip.append(el("span", "stmt-vendor", (d.accounts || []).length + " account(s) on the bridge · daily sync"));
+  strip.append(pillLight("sync now", async () => {
+    try {
+      const r = await postJSONOk("/api/bankfeed/sync", {});
+      showToast("Synced — " + (r.added || 0) + " new row(s)" +
+        (r.autoApplied ? " · " + r.autoApplied + " reconciled" : "") +
+        ((r.added || 0) > 0 ? " → $ tab" : ""));
+      renderBankFeedPanel(box, ents);
+    } catch (err) { showToast("Sync failed — " + (err.message || "")); }
+  }));
+  box.append(strip);
+
+  if (!(d.accounts || []).length) {
+    box.append(el("div", "pp-empty", "The bridge reports no accounts yet — connect a bank on the SimpleFIN side, then sync."));
+    return;
+  }
+  if (!propertyCache || !propertyCache.length) await loadProperties();
+  const propSlugs = (propertyCache || []).map((p) => p.slug);
+
+  (d.accounts || []).forEach((a) => {
+    const link = a.link || null;
+    const row = el("div", "re-bankfeed-acct");
+    const head = el("div", "set-bind-row");
+    head.append(el("span", "stmt-vendor", (a.org ? a.org + " · " : "") + a.name + (a.balance ? "  ($" + a.balance + ")" : "")));
+    if (link && link.lastError) head.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
+    else if (link) head.append(el("span", "re-acct-state st-live", link.enabled ? "live" : "paused"));
+    else head.append(el("span", "re-acct-state st-not-connected", "not linked"));
+    row.append(head);
+
+    const ctl = el("div", "set-bind-row");
+    let entitySlug = link ? link.entitySlug : "";
+    const ac = recordAutocomplete("entity", "owning entity…", (rec) => { entitySlug = rec.slug; });
+    if (link) {
+      const ent = ents.find((x) => x.slug === link.entitySlug);
+      ac.setValue(ent ? ent.name : link.entitySlug);
+    }
+    ctl.append(ac.el);
+    const labelIn = inputEl("account label (row on the entity record)…");
+    labelIn.value = link ? link.accountLabel : a.name;
+    ctl.append(labelIn);
+    const propSel = selectEl([""].concat(propSlugs));
+    propSel.title = "optional default property — prefills the assignment on new rows (never auto-applies by itself)";
+    if (link && link.defaultProperty) propSel.value = link.defaultProperty;
+    ctl.append(propSel);
+    ctl.append(pillLight(link ? "save" : "link", async () => {
+      const label = (labelIn.value || "").trim();
+      if (!entitySlug) { showToast("Pick the owning entity first"); return; }
+      if (!label) { showToast("Name the account row (e.g. Midwest ····4821)"); return; }
+      try {
+        await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
+          entitySlug, accountLabel: label, defaultProperty: propSel.value,
+          enabled: true, orgName: a.org, accountName: a.name,
+        });
+        await saveAcctState(entitySlug, label, "live");
+        showToast("Linked — transactions land in the $ tab under " + entitySlug);
+        renderREsettings();
+      } catch (err) { showToast("Couldn't link — " + (err.message || "")); }
+    }));
+    if (link) {
+      ctl.append(pillLight(link.enabled ? "pause" : "resume", async () => {
+        try {
+          await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
+            entitySlug: link.entitySlug, accountLabel: link.accountLabel,
+            defaultProperty: link.defaultProperty || "", enabled: !link.enabled,
+            orgName: a.org, accountName: a.name,
+          });
+          renderREsettings();
+        } catch (err) { showToast("Couldn't update"); }
+      }));
+      ctl.append(pillLight("unlink", async () => {
+        try {
+          await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), { entitySlug: "" });
+          await saveAcctState(link.entitySlug, link.accountLabel, "not-connected");
+          showToast("Unlinked");
+          renderREsettings();
+        } catch (err) { showToast("Couldn't unlink"); }
+      }));
+    }
+    row.append(ctl);
+    if (link && (link.lastSync || link.lastError)) {
+      row.append(el("div", "re-foot-note",
+        (link.lastSync ? "last sync " + fmtWhen(link.lastSync) : "") +
+        (link.lastError ? (link.lastSync ? " · " : "") + link.lastError : "")));
+    }
+    box.append(row);
+  });
+}
+
 function entityCard(e, ents) {
   const card = el("div", "set-entity");
   const head = el("div", "set-entity-head");
@@ -369,8 +511,8 @@ function entityCard(e, ents) {
   head.append(pillLight("open →", () => { _noteReturn = "#/properties/settings"; openNoteByPath(e.path); }));
   card.append(head);
 
-  // bank-account rows (scaffold until a live pull exists — statements bind
-  // via STATEMENT ACCOUNTS below; state chips are informational)
+  // bank-account rows — the owner-facing half of the bank feed: BANK FEED
+  // below links each row to a real SimpleFIN account and flips its state
   const acctBox = el("div", "re-accts");
   const renderAccts = () => {
     acctBox.innerHTML = "";
@@ -379,9 +521,13 @@ function entityCard(e, ents) {
       row.append(el("span", "re-acct-label", a.label));
       row.append(el("span", "re-acct-kind", a.kind || "operating"));
       row.append(el("span", "re-acct-state st-" + (a.state || "not-connected"), (a.state || "not-connected").replace(/-/g, " ")));
-      const act = el("button", "re-acct-act", a.state === "live" ? "disconnect" : a.state === "needs-reauth" ? "re-authorize" : "connect");
-      act.title = "live bank pull is a later phase — this row names the account; statements bind by label";
-      act.onclick = () => showToast("Live pull comes later — statements bind by label today");
+      const act = el("button", "re-acct-act", a.state === "live" ? "manage" : a.state === "needs-reauth" ? "re-authorize" : "connect");
+      act.title = "link this row to a real bank account under BANK FEED (SimpleFIN)";
+      act.onclick = () => {
+        const fb = document.getElementById("re-bankfeed");
+        if (fb) { fb.scrollIntoView({ behavior: "smooth", block: "start" }); }
+        showToast("Link the account under BANK FEED below");
+      };
       row.append(act);
       const x = el("button", "uw-x", "✕");
       x.onclick = async () => {

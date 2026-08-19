@@ -18,13 +18,16 @@ import (
 // capability write is checked against its declaration and appends one line to
 // the append-only audit log. A violation is a loud error, never a silent skip.
 
-// Actor is WHO authorized a write: the owner acting directly in the UI, or an
-// approved proposal being applied (§4 — agents never write directly).
+// Actor is WHO authorized a write: the owner acting directly in the UI, an
+// approved proposal being applied (§4 — agents never write directly), or the
+// bank-feed auto-apply lane (bank-accounts plan §7 — machine ledger appends
+// whose standing authorization is the account link + the matching rule).
 type Actor string
 
 const (
 	ActorUserAction       Actor = "user-action"
 	ActorApprovedProposal Actor = "approved-proposal"
+	ActorBankFeed         Actor = "bank-feed"
 )
 
 // Capability is one declared write permission.

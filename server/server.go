@@ -18,6 +18,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/bankfeed"
 	"manifest/books"
 	"manifest/calendar"
 	"manifest/capture"
@@ -96,6 +97,9 @@ type Server struct {
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
 	portals *portals.Service
+	// Bank feeds (SimpleFIN → statement workbench; bank-accounts plan). Nilable.
+	bankFeed   *bankfeed.Service
+	bankfeedMu sync.Mutex // one sync at a time (ticker vs sync-now button)
 	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
 	realestate     *realestate.Service
 	realestateRoot string                // vault-relative records root (default "system/realestate")
@@ -478,6 +482,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/portals/{id}/poll", s.handlePortalPoll)
 	mux.HandleFunc("POST /api/portals/{id}/disconnect", s.handlePortalDisconnect)
 	mux.HandleFunc("POST /api/portals/item/dismiss", s.handlePortalDismiss)
+	mux.HandleFunc("POST /api/bankfeed/claim", s.handleBankfeedClaim)
+	mux.HandleFunc("GET /api/bankfeed/accounts", s.handleBankfeedAccounts)
+	mux.HandleFunc("POST /api/bankfeed/accounts/{id}", s.handleBankfeedLink)
+	mux.HandleFunc("POST /api/bankfeed/sync", s.handleBankfeedSync)
 
 	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 	// Reads are the Board + property pages; the writes (create, quick-add log,

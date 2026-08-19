@@ -43,6 +43,7 @@ type StatementRow struct {
 	Reason      string  `json:"reason,omitempty"` // dismiss reason when skipped: personal | transfer | duplicate | other:<note>
 	Assignments []Alloc `json:"assignments,omitempty"`
 	Remembered  bool    `json:"remembered,omitempty"` // prefilled from vendor memory
+	Source      string  `json:"source,omitempty"`     // "feed" = bank-feed sync (badge); "" = csv upload
 }
 
 type StatementStore struct {
@@ -132,10 +133,12 @@ func (s *StatementStore) List() ([]StatementRow, string) {
 	return out, s.st.LastImport
 }
 
-// Update patches one row's category/assignments/state/reason (the workbench's
-// row interactions). Applied rows are immutable. Skipping REQUIRES a reason —
-// every statement item must end assigned or dismissed-with-reason.
-func (s *StatementStore) Update(id string, category *string, assignments *[]Alloc, state, reason *string) (StatementRow, error) {
+// Update patches one row's category/note/assignments/state/reason (the
+// workbench's row interactions). The note starts as the bank memo; the owner
+// overwrites it freely before apply (bank-accounts plan §5) — it becomes the
+// ledger note verbatim. Applied rows are immutable. Skipping REQUIRES a
+// reason — every statement item must end assigned or dismissed-with-reason.
+func (s *StatementStore) Update(id string, category, note *string, assignments *[]Alloc, state, reason *string) (StatementRow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.st.Rows {
@@ -148,6 +151,9 @@ func (s *StatementStore) Update(id string, category *string, assignments *[]Allo
 		}
 		if category != nil {
 			r.Category = strings.TrimSpace(*category)
+		}
+		if note != nil {
+			r.Note = strings.TrimSpace(*note)
 		}
 		if assignments != nil {
 			r.Assignments = *assignments

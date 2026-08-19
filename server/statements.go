@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"manifest/realestate"
+	"manifest/vaultwriter"
 )
 
 // STATEMENT WORKBENCH (admin-portal plan §G) — the one place bank statements
@@ -146,6 +147,7 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		ID          string              `json:"id"`
 		Category    *string             `json:"category"`
+		Note        *string             `json:"note"` // owner-editable — becomes the ledger note (bank plan §5)
 		Assignments *[]realestate.Alloc `json:"assignments"`
 		State       *string             `json:"state"`
 		Reason      *string             `json:"reason"`
@@ -154,7 +156,7 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
-	row, err := s.statements.Update(b.ID, b.Category, b.Assignments, b.State, b.Reason)
+	row, err := s.statements.Update(b.ID, b.Category, b.Note, b.Assignments, b.State, b.Reason)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -181,6 +183,25 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	written, propsTouched, err := s.applyStatementRows(rows, vaultwriter.ActorUserAction)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.statements.MarkApplied(b.IDs)
+	list, last := s.statements.List()
+	writeJSON(w, map[string]any{
+		"applied": len(rows), "lines": written, "properties": len(propsTouched),
+		"rows": list, "lastImport": last,
+	})
+}
+
+// applyStatementRows is THE row-write (bank plan §6 prerequisite): token
+// assembly ([work::] [contract::] [cat::] [paid-by::] [stmt::]), split
+// annotation, income-vs-expense shaping, the audited append, and vendor
+// memory. Manual apply and the feed's auto-apply call the same code — only
+// the audit actor differs. Callers MarkApplied on success.
+func (s *Server) applyStatementRows(rows []realestate.StatementRow, actor vaultwriter.Actor) (written int, propsTouched map[string]bool, err error) {
 	// resolve targets → ledger csv paths up front (fail before any write).
 	// A slug of "admin:<entity>" routes to the entity's own admin ledger.
 	ledgers := map[string]string{}
@@ -191,22 +212,19 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 			}
 			if ent, isAdmin := strings.CutPrefix(a.Slug, "admin:"); isAdmin {
 				if strings.TrimSpace(ent) == "" {
-					httpError(w, errBadRequest("admin assignment needs an entity"))
-					return
+					return 0, nil, errBadRequest("admin assignment needs an entity")
 				}
 				ledgers[a.Slug] = s.realestateRootOr() + "/entities/" + slugify(ent) + ".ledger.csv"
 				continue
 			}
 			rel, ok := s.propertyRel(a.Slug)
 			if !ok {
-				httpError(w, errBadRequest("unknown property "+a.Slug))
-				return
+				return 0, nil, errBadRequest("unknown property " + a.Slug)
 			}
 			ledgers[a.Slug] = realestate.LedgerRel(rel)
 		}
 	}
-	written := 0
-	propsTouched := map[string]bool{}
+	propsTouched = map[string]bool{}
 	vendorCats, vendorProps, vendorWork := map[string]string{}, map[string]string{}, map[string]string{}
 	for _, row := range rows {
 		n := len(row.Assignments)
@@ -250,9 +268,8 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 				row.Date, rowType, cat, row.Vendor, "",
 				strconv.FormatFloat(a.Amount, 'f', -1, 64), status, note, "",
 			}
-			if err := s.vault.AppendLedgerRow(ledgers[a.Slug], realestate.LedgerHeader, rec); err != nil {
-				httpError(w, err)
-				return
+			if err := s.vault.AppendLedgerRowAs(ledgers[a.Slug], realestate.LedgerHeader, rec, actor); err != nil {
+				return written, propsTouched, err
 			}
 			written++
 			propsTouched[a.Slug] = true
@@ -267,12 +284,7 @@ func (s *Server) handleStatementsApply(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.statements.MarkApplied(b.IDs)
 	s.reImport.Remember("", nil, vendorCats, vendorProps)
 	s.reImport.RememberVendorWork(vendorWork)
-	list, last := s.statements.List()
-	writeJSON(w, map[string]any{
-		"applied": len(rows), "lines": written, "properties": len(propsTouched),
-		"rows": list, "lastImport": last,
-	})
+	return written, propsTouched, nil
 }

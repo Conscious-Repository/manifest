@@ -19,6 +19,13 @@ import (
 // AppendLedgerRow appends one row to a property's csv ledger sidecar, creating the
 // file with `header` when absent. Values are CSV-escaped (quotes/commas safe).
 func (w *Writer) AppendLedgerRow(rel string, header, row []string) error {
+	return w.AppendLedgerRowAs(rel, header, row, ActorUserAction)
+}
+
+// AppendLedgerRowAs is the actor-carrying append (bank-accounts plan §7):
+// manual workbench applies stay user-action; the feed's auto-apply lane
+// audits as bank-feed. Same write path, same guard, different forensic line.
+func (w *Writer) AppendLedgerRowAs(rel string, header, row []string, actor Actor) error {
 	full, err := w.resolveRecord(rel) // guards WriteDatabase + traversal
 	if err != nil {
 		return err
@@ -51,7 +58,7 @@ func (w *Writer) AppendLedgerRow(rel string, header, row []string) error {
 	// §A3: appends audit like every other vault write (updates/deletes already
 	// did via commit; the O_APPEND fast path needs its own line). Delta is the
 	// appended byte count by construction.
-	w.audit(filepath.ToSlash(rel), "re-ledger-append", string(ActorUserAction), int64(buf.Len()))
+	w.audit(filepath.ToSlash(rel), "re-ledger-append", string(actor), int64(buf.Len()))
 	return nil
 }
 

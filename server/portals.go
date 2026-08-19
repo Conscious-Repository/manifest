@@ -307,6 +307,12 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]bool{"ok": true})
 		return
 	}
+	// bank-feed digests dismiss into the feed's own cache (bank: prefix)
+	if s.bankFeed != nil && strings.HasPrefix(b.ID, "bank:") {
+		s.bankFeed.Store().Dismiss(b.ID)
+		writeJSON(w, map[string]bool{"ok": true})
+		return
+	}
 	svc, ok := s.portalService(w)
 	if !ok {
 		return
@@ -326,6 +332,7 @@ func (s *Server) portalCards() []portals.Card {
 	if s.teamBridge != nil {
 		cards = append(cards, s.teamBridge.Cards(time.Now())...)
 	}
+	cards = append(cards, s.bankFeedCards()...)
 	return cards
 }
 
@@ -338,5 +345,6 @@ func (s *Server) portalInboxCount() int {
 	if s.teamBridge != nil {
 		n += len(s.teamBridge.Cards(time.Now()))
 	}
+	n += len(s.bankFeedCards())
 	return n
 }

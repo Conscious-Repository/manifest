@@ -20,6 +20,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/bankfeed"
 	"manifest/books"
 	"manifest/calendar"
 	"manifest/capture"
@@ -526,6 +527,18 @@ func main() {
 	portalSvc.Start(ctx)
 	srv.UsePortals(portalSvc)
 	log.Printf("portals: enabled (clickup, benchling → FEED; creds under %s/portals)", cfg.DataDir)
+
+	// BANK FEEDS — linked SimpleFIN accounts → the statement workbench (bank-
+	// accounts plan). Self-enables once a setup token is claimed in SETTINGS;
+	// the access URL lives under DataDir/bankfeeds (0600, this box only).
+	bankSvc := bankfeed.New(cfg.DataDir, bankfeed.NewSimpleFIN())
+	srv.UseBankFeed(bankSvc)
+	srv.StartBankFeed(ctx)
+	if bankSvc.Claimed() {
+		log.Printf("bankfeed: claimed (%d linked account(s); daily sync)", len(bankSvc.Store().Links()))
+	} else {
+		log.Printf("bankfeed: not claimed yet (paste a SimpleFIN setup token in PROPERTIES → SETTINGS)")
+	}
 
 	// SPIRITS — the excalibur harness console (plan §2.5: this replaced the
 	// Hermes cockpit). The dashboard renders the sibling tree and records

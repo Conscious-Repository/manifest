@@ -501,6 +501,14 @@
 .re-acct-state.st-not-connected { color: var(--base-40); background: var(--base-25); }
 .re-acct-act { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; text-align: left; }
 
+/* BANK FEED (SimpleFIN) — settings panel: one block per bridge account */
+.re-bankfeed-acct { padding: var(--sp-3) 0; border-top: 1px solid var(--line-soft); }
+.re-bankfeed-acct .set-bind-row { border: none; padding: var(--sp-1) 0; }
+.re-bankfeed-acct .pp-in { max-width: 220px; }
+
+/* feed-source badge on workbench rows (bank plan §4c) */
+.re-money-src { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-lg); padding: 0 var(--sp-2); margin-left: var(--sp-3); }
+
 /* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
 .re-publish-btn { margin-top: var(--sp-3); width: 100%; justify-content: center; }
 

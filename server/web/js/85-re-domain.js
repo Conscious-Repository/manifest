@@ -681,6 +681,7 @@ function moneyRow(r) {
   const desc = el("span", "re-money-desc");
   desc.append(el("span", "", r.vendor || r.note || "(no description)"));
   if (r.entity) desc.append(el("span", "re-money-entity", r.entity));
+  if (r.source === "feed") desc.append(el("span", "re-money-src", "feed")); // bank-feed sync vs csv upload
   // phone meta line (desktop hides it): the assigned property, or the file
   // prompt in ink — the row tap opens the assignment sheet
   const curProp = cur ? activePortfolio().find((p) => p.slug === cur) : null;
@@ -753,6 +754,17 @@ function openMoneyAssignSheet(r) {
     activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
     body.append(list);
     moneyHopFields(r, body); // node + contract hops (native selects — mobile deviation)
+    // editable note (bank plan §5) — the phone half of the inspector field
+    const noteIn = inputEl("note — lands on the ledger row");
+    noteIn.value = r.note || "";
+    noteIn.onchange = async () => {
+      try {
+        await postJSONOk("/api/realestate/statements/row", { id: r.id, note: noteIn.value });
+        r.note = noteIn.value;
+        showToast("Saved");
+      } catch (e) { showToast("Couldn't save"); }
+    };
+    body.append(noteIn);
   }, { key: "money:" + r.id });
 }
 
@@ -776,10 +788,30 @@ function renderMoneyInspector(r) {
   };
   insp.append(fieldRow("amount", (r.inflow ? "+" : "") + "$" + Math.abs(r.amount || 0).toLocaleString()));
   insp.append(fieldRow("entity", r.entity));
-  insp.append(fieldRow("statement", r.statement));
+  insp.append(fieldRow("statement", r.statement + (r.source === "feed" ? " · feed" : "")));
   insp.append(fieldRow("state", r.state));
-  insp.append(fieldRow("category", r.category));
-  if (r.note) insp.append(fieldRow("note", r.note));
+  const locked = r.state === "applied" || r.state === "skipped";
+  // category + note are owner-editable until apply (bank plan §5): the bank
+  // memo arrives as the initial note; the row note IS the ledger note
+  const editRow = (label, key, placeholder) => {
+    if (locked) return fieldRow(label, r[key]);
+    const f = el("div", "pp3-insp-field");
+    const inp = inputEl(placeholder);
+    inp.value = r[key] || "";
+    inp.onchange = async () => {
+      try {
+        const patch = { id: r.id };
+        patch[key] = inp.value;
+        await postJSONOk("/api/realestate/statements/row", patch);
+        r[key] = inp.value;
+        showToast("Saved");
+      } catch (e) { showToast("Couldn't save"); }
+    };
+    f.append(el("span", "pp3-insp-flabel", label), inp);
+    return f;
+  };
+  insp.append(editRow("category", "category", "category…"));
+  insp.append(editRow("note", "note", "note — lands on the ledger row"));
   moneyHopFields(r, insp);
   insp.append(el("div", "pp3-insp-note",
     "assignment writes to the property ledger on apply; receipts + contractor attach on the ledger row (property page → spend)"));
