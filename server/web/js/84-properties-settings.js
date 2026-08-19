@@ -65,8 +65,10 @@ function ownerAutocomplete(placeholder, onSet) {
 }
 
 // The Settings view — the AION ORG mirror: a 176px registry sub-rail
-// (Assumptions · Entities · Partners · Contractors · Lenders · Tenants ·
-// People, each with a count + a File/⌘-raw box) over ONE pane at a time.
+// (Assumptions · Entities · People · Lenders · Tenants, each with a count +
+// a File/⌘-raw box) over ONE pane at a time. Contractors left this rail for
+// their own top-level tab (owner call 2026-08-18) — the counterparty ledger
+// needs the page width, not a 176px sub-pane.
 // Reuses the .aion-org* classes so the shape matches AION's Org tab. Existing
 // sections fold in: org chart + statement accounts + templates under Entities;
 // people.md is now its own registry item.
@@ -92,11 +94,19 @@ async function renderREsettings() {
   // 2026-08-12) — partners on top (aion-style people.md table), contractor
   // records below. Stale sub-tab keys from old links fold in.
   if (reSettingsTab === "partners") reSettingsTab = "people";
+  // Contractors graduated to #/properties/contractors — a stale rail key here
+  // would otherwise fall through to the Entities pane with nothing lit. Reset
+  // the key BEFORE redirecting: leaving it set would send every later visit to
+  // Settings straight back out again.
+  if (reSettingsTab === "contractors") {
+    reSettingsTab = "assumptions";
+    location.hash = "#/properties/contractors";
+    return;
+  }
   const items = [
     ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
     ["entities", "Entities", ents.length, "system/realestate/entities.md"],
     ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount), "system/realestate/people.md"],
-    ["contractors", "Contractors", (entitiesCache.contractors || []).length, "system/realestate/contractors/"],
     ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
     ["tenants", "Tenants", (entitiesCache.tenants || []).length, "system/realestate/entities.md"],
   ];
@@ -120,7 +130,6 @@ async function renderREsettings() {
   if (reSettingsTab === "lenders") { renderFlatRegistry(pane, "lender", entitiesCache.lenders || []); return; }
   if (reSettingsTab === "tenants") { renderFlatRegistry(pane, "tenant", entitiesCache.tenants || []); return; }
   if (reSettingsTab === "people") { await rePeoplePane(pane); return; }
-  if (reSettingsTab === "contractors") { reContractorsPane(pane); return; }
   renderEntitiesPanel(pane, ents);
 }
 

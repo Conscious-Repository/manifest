@@ -175,74 +175,233 @@ function renderContractForm() {
   page.append(form);
 }
 
-// ---- the contractor table (Settings → Contractors) ----
+// ---- CONTRACTORS — a top-level RE surface (owner call 2026-08-18) ----
+// Graduated out of the Settings registries: the counterparty ledger reads as
+// its own object, not a row in a 176px sub-pane. The shape is the AION
+// fundraising surface (94-aion-fundraising.js) pointed at a different record —
+// search + state chips over a four-column table, an aside inspector where
+// every field edits, mobile sheet fallback. One link leaves the row: the name
+// opens the derived HISTORY page below.
 
-function reContractorsPane(host) {
-  if (reContractsCache === null) {
-    loadReContracts().then(() => renderREsettings());
-  }
-  const shell = el("div", "aion-backlog fr-shell re-ctr-shell");
-  const main = el("div", "aion-list fr-main");
-  const insp = el("aside", "aion-inspector fr-inspector");
-  shell.append(main, insp);
-  host.append(shell);
+let reCtrQuery = "";
+let reCtrFilter = "all"; // all | working | bidding | quiet
 
-  const rows = ((entitiesCache || {}).contractors) || [];
-  const byCtr = {};
+// reContractorRollup — the per-contractor join over the contract records:
+// counts, committed/drawn/remaining (ACCEPTED contracts only — a proposal
+// commits nothing), the properties worked, the latest contract date. Derived
+// every render; none of it is stored on the contractor.
+function reContractorRollup() {
+  const by = {};
   reContracts().forEach((c) => {
     const k = (c.contractor || "").toLowerCase();
-    byCtr[k] = byCtr[k] || { n: 0, committed: 0 };
-    byCtr[k].n++;
-    if (c.status === "accepted") byCtr[k].committed += c.total || 0;
+    const a = by[k] || (by[k] = reCtrZero());
+    a.n++;
+    if (c.status === "proposed") { a.proposed++; a.bid += c.total || 0; }
+    if (c.status === "accepted") {
+      a.accepted++;
+      a.committed += c.total || 0;
+      a.drawn += c.drawn || 0;
+      a.remaining += c.remaining != null ? c.remaining : (c.total || 0) - (c.drawn || 0);
+    }
+    (c.allocations || []).forEach((al) => {
+      if (al.property && !a.props.includes(al.property)) a.props.push(al.property);
+    });
+    if ((c.date || "") > a.last) a.last = c.date || "";
   });
+  return by;
+}
+
+function reCtrZero() {
+  return { n: 0, proposed: 0, accepted: 0, committed: 0, drawn: 0, remaining: 0, bid: 0, props: [], last: "" };
+}
+
+function reCtrAgg(rollup, slug) { return rollup[(slug || "").toLowerCase()] || reCtrZero(); }
+
+// reCtrState — the one classification the filter chips read. WORKING is money
+// committed and not yet drawn (they owe you work); BIDDING is a proposal
+// outstanding (you owe them an answer); QUIET is everyone else.
+function reCtrState(a) {
+  if (a.accepted && a.remaining > 0) return "working";
+  if (a.proposed) return "bidding";
+  return "quiet";
+}
+
+function reCtrPropLabel(slug) {
+  const p = rePropBySlug(slug);
+  return p ? rePropLabel(p) : slug;
+}
+
+async function renderREContractors() {
+  const host = els.propertyBoard;
+  host.innerHTML = "";
+  await ensureEntities();
+  if (reContractsCache === null) await loadReContracts();
+
+  const wrap = el("div", "aion-backlog fr-shell");
+  const main = el("div", "aion-list fr-main");
+  const insp = el("aside", "aion-inspector fr-inspector");
+  wrap.append(main, insp);
+  host.append(wrap);
+
+  const rows = ((entitiesCache || {}).contractors) || [];
+  const rollup = reContractorRollup();
+
+  // toolbar — search + state chips. BOTH filter in place (paint below) rather
+  // than re-rendering the tab: a full render replaces the input node and takes
+  // the caret out of the search field after the first keystroke.
+  const bar = el("div", "fr-toolbar");
+  const search = el("input", "pp-in fr-search");
+  search.type = "search";
+  search.placeholder = "Search contractors, scopes, properties…";
+  search.value = reCtrQuery;
+  search.oninput = () => { reCtrQuery = search.value; paint(); };
+  bar.append(search);
+  const chips = {};
+  [["all", "ALL"], ["working", "WORKING"], ["bidding", "BIDDING"], ["quiet", "QUIET"]].forEach(([key, label]) => {
+    const b = el("button", "filter-chip", label);
+    b.onclick = () => { reCtrFilter = key; paint(); };
+    chips[key] = b;
+    bar.append(b);
+  });
+  main.append(bar);
+
+  main.append(ghostInput("＋ contractor", "aion-add fr-add", async (v) => {
+    try {
+      await postJSONOk("/api/realestate/entities", { name: v, kind: "contractor" });
+      await ensureEntities(true);
+      renderProperties();
+    } catch (err) { showToast("Couldn't create contractor"); }
+  }, "contractor name…"));
 
   const table = el("div", "fr-table");
-  table.append(ppCols("fr-cols re-ctr-cols", ["CONTRACTOR", "SCOPES", "CONTRACTS", "COMMITTED"]));
-  rows.forEach((c) => {
-    const row = el("div", "fr-row re-ctr-cols" + (reCtrSel === c.slug ? " sel" : ""));
-    row.append(el("span", "fr-firm", c.name));
-    row.append(el("span", "re-ctr-scopes", (c.scopes || []).join(" · ") || "—"));
-    const agg = byCtr[c.slug.toLowerCase()] || { n: 0, committed: 0 };
-    row.append(el("span", "", agg.n ? String(agg.n) : "·"));
-    row.append(el("span", "prop-col-r", agg.committed ? fmtMoney(agg.committed) : "·"));
-    row.onclick = () => {
-      reCtrSel = reCtrSel === c.slug ? null : c.slug;
-      renderREsettings();
-    };
-    table.append(row);
-  });
-  table.append(ghostInput("＋ contractor", "set-add", async (v) => {
-    try { await postJSONOk("/api/realestate/entities", { name: v, kind: "contractor" }); renderREsettings(); }
-    catch (err) { showToast("Couldn't create contractor"); }
-  }, "contractor name…"));
   main.append(table);
 
-  const selected = rows.find((c) => c.slug === reCtrSel);
-  if (window.mf && window.mf.phone()) {
-    if (selected) {
-      window.mfSheet.open((body) => renderContractorInspector(body, selected), {
-        key: "re-contractor", onClose: () => { reCtrSel = null; }, reopen: true,
+  const paint = () => {
+    Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", reCtrFilter === k));
+    table.innerHTML = "";
+    const head = el("div", "fr-row re-ctr-row fr-head");
+    ["CONTRACTOR", "SCOPES", "PROPERTIES", "COMMITTED"].forEach((h) => head.append(el("span", "micro-label", h)));
+    table.append(head);
+    const visible = rows.filter((c) => reCtrVisible(c, reCtrAgg(rollup, c.slug)));
+    if (!visible.length) {
+      table.append(emptyRow(rows.length ? "No contractors match." : "No contractor records yet."));
+    }
+    visible.forEach((c) => table.append(reCtrRow(c, reCtrAgg(rollup, c.slug), paint)));
+
+    const sel = rows.find((c) => c.slug === reCtrSel);
+    if (window.mf && window.mf.phone()) {
+      if (sel) {
+        window.mfSheet.open((body) => renderContractorInspector(body, sel, { agg: reCtrAgg(rollup, sel.slug) }), {
+          key: "re-contractor",
+          onClose: () => { if (reCtrSel) { reCtrSel = null; paint(); } },
+          reopen: () => { if (!els.propertiesView.hidden && propMode === "contractors") renderProperties(); },
+        });
+      } else {
+        window.mfSheet.closeIf("re-contractor");
+      }
+      return;
+    }
+    insp.innerHTML = "";
+    if (sel) {
+      renderContractorInspector(insp, sel, {
+        agg: reCtrAgg(rollup, sel.slug),
+        onClose: () => { reCtrSel = null; paint(); },
       });
-    } else { window.mfSheet.closeIf("re-contractor"); }
-  } else if (selected) {
-    renderContractorInspector(insp, selected);
-  } else {
-    insp.append(el("div", "fr-empty", "select a contractor — edits save as you go"));
+    } else {
+      insp.append(el("div", "aion-insp-empty", "select a contractor — edits save as you go"));
+    }
+  };
+  paint();
+}
+
+function reCtrVisible(c, a) {
+  if (reCtrFilter !== "all" && reCtrState(a) !== reCtrFilter) return false;
+  const q = reCtrQuery.trim().toLowerCase();
+  if (!q) return true;
+  return [c.name, c.slug, c.email, c.website]
+    .concat(c.scopes || [], a.props.map(reCtrPropLabel))
+    .join(" ").toLowerCase().includes(q);
+}
+
+function reCtrRow(c, a, paint) {
+  const row = el("div", "fr-row re-ctr-row" + (reCtrSel === c.slug ? " sel" : ""));
+
+  // the name is the one link out of the row (fundraising's people buttons
+  // navigate the same way); everywhere else selects into the inspector
+  const who = el("div", "fr-firm");
+  const name = el("button", "fr-firm-name re-ctr-name", c.name);
+  name.title = "open " + c.name + " — contracts, properties, money";
+  name.onclick = (ev) => {
+    ev.stopPropagation();
+    location.hash = "#/properties/contractor/" + encodeURIComponent(c.slug);
+  };
+  who.append(name);
+  if (c.website) {
+    const site = el("a", "fr-website-link", "↗");
+    site.href = c.website;
+    site.target = "_blank";
+    site.rel = "noopener";
+    site.title = "open website";
+    site.setAttribute("aria-label", "Open " + c.name + " website");
+    site.onclick = (ev) => ev.stopPropagation();
+    who.append(site);
   }
+  row.append(who);
+
+  const scopes = el("div", "fr-people");
+  (c.scopes || []).forEach((sc) => scopes.append(el("span", "re-ctr-scope", sc)));
+  if (!scopes.children.length) scopes.append(el("span", "fr-person-empty", "—"));
+  row.append(scopes);
+
+  const props = el("div", "fr-people re-ctr-props");
+  a.props.forEach((slug) => {
+    const b = el("button", "fr-person-name fr-person re-ctr-prop", reCtrPropLabel(slug));
+    b.onclick = (ev) => { ev.stopPropagation(); location.hash = "#/properties/" + encodeURIComponent(slug); };
+    props.append(b);
+  });
+  if (!props.children.length) props.append(el("span", "fr-person-empty", "—"));
+  row.append(props);
+
+  // money first (the RE convention): committed on top, the shape of it beneath
+  const money = el("div", "fr-stack");
+  money.append(el("span", "re-ctr-committed", a.committed ? fmtMoney(a.committed) : "—"));
+  const bits = [];
+  if (a.accepted) bits.push(a.accepted + " accepted");
+  if (a.drawn) bits.push(fmtMoneyShort(a.drawn) + " drawn");
+  if (a.bid) bits.push(fmtMoneyShort(a.bid) + " bid");
+  money.append(el("span", "fr-sub", bits.join(" · ")));
+  row.append(money);
+
+  row.onclick = () => { reCtrSel = reCtrSel === c.slug ? null : c.slug; paint(); };
+  return row;
 }
 
 // renderContractorInspector — the fundraising quick-edit idiom: field(label,
-// node); text inputs commit on blur when dirty.
-function renderContractorInspector(host, c) {
+// node); text inputs commit on blur when dirty. opts.onClose adds the ✕ (the
+// table's aside closes; the history page's copy has nothing to close).
+// opts.agg adds the derived money read — the history page carries the same
+// numbers in its own facts strip, so it passes none. opts.history:false drops
+// the link when you are already on that page.
+function renderContractorInspector(host, c, opts) {
+  opts = opts || {};
   host.innerHTML = "";
   const patch = async (set) => {
     try {
       await postJSONOk("/api/realestate/contractors/" + encodeURIComponent(c.slug) + "/update", set);
       await ensureEntities(true);
       await loadReContracts();
-      renderREsettings();
+      renderProperties();
     } catch (e) { showToast("Couldn't save — " + (e.message || "")); }
   };
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "Contractor"));
+  if (opts.onClose) {
+    const x = el("button", "aion-insp-x", "✕");
+    x.onclick = opts.onClose;
+    head.append(x);
+  }
+  host.append(head);
+
   const field = (label, node) => {
     const f = el("div", "aion-insp-field fr-insp-field");
     f.append(el("span", "aion-insp-flabel", label), node);
@@ -253,33 +412,46 @@ function renderContractorInspector(host, c) {
     n.className = "pp-in fr-in";
     n.value = value || "";
     let old = n.value;
+    n.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); n.blur(); } };
     n.onblur = () => { if (n.value !== old) { old = n.value; patch({ [key]: n.value }); } };
     field(label, n);
     return n;
   };
-  host.append(el("div", "fr-insp-head", c.name));
+
   text("name", "name", c.name);
   text("email", "email", c.email, "email…");
-  text("website", "website", c.website, "https://…");
-  // scopes: chips + typeahead over the template/milestone vocabulary (+ free)
+  // website — the field plus the way out of it (fundraising's editor)
+  const site = el("div", "fr-website-editor");
+  const siteIn = inputEl("https://…");
+  siteIn.className = "pp-in fr-in";
+  siteIn.value = c.website || "";
+  let oldSite = siteIn.value;
+  siteIn.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); siteIn.blur(); } };
+  siteIn.onblur = () => { if (siteIn.value !== oldSite) { oldSite = siteIn.value; patch({ website: siteIn.value }); } };
+  site.append(siteIn);
+  if (c.website) {
+    const open = el("a", "fr-website-open", "open ↗");
+    open.href = c.website;
+    open.target = "_blank";
+    open.rel = "noopener";
+    site.append(open);
+  }
+  field("website", site);
+
+  // scopes: chips + a typeahead over the template/milestone vocabulary (§3.7),
+  // free text accepted — the vocabulary is a join over what exists, not a list
+  // to be complete.
   const box = el("div", "re-scope-box");
   const scopes = [...(c.scopes || [])];
   const renderChips = () => {
     box.innerHTML = "";
-    scopes.forEach((s, i) => {
-      const chip = el("span", "fr-person-chip", s);
-      const x = el("button", "fr-person-x", "✕");
+    scopes.forEach((sc, i) => {
+      const chip = el("span", "fr-person-chip", sc);
+      const x = el("button", "fr-person-rm", "✕");
+      x.title = "remove scope";
       x.onclick = () => { scopes.splice(i, 1); renderChips(); patch({ scopes }); };
       chip.append(x);
       box.append(chip);
-    });
-    const ta = typeahead({
-      placeholder: "add scope…", minChars: 1,
-      suggest: (q, add) => {
-        reScopeVocab().filter((v) => v.includes(q.toLowerCase()) && !scopes.includes(v))
-          .slice(0, 8).forEach((v) => add(v, () => commit(v)));
-      },
-      onEnter: (v) => commit(v.toLowerCase().trim()),
     });
     const commit = (v) => {
       if (!v || scopes.includes(v)) return;
@@ -287,13 +459,46 @@ function renderContractorInspector(host, c) {
       renderChips();
       patch({ scopes });
     };
+    const ta = typeahead({
+      placeholder: "add scope…",
+      minChars: 1,
+      suggest: (q, add) => {
+        reScopeVocab().filter((v) => v.includes(q) && !scopes.includes(v))
+          .slice(0, 8).forEach((v) => add(v, "", () => commit(v)));
+      },
+      onEnter: (v) => commit(v.toLowerCase().trim()),
+    });
     box.append(ta.el);
   };
   renderChips();
   field("scopes", box);
-  const hist = el("button", "pp3-link", "history ↗");
-  hist.onclick = () => { location.hash = "#/properties/contractor/" + encodeURIComponent(c.slug); };
-  field("", hist);
+
+  // derived money — read-only, and only where nothing else on screen says it
+  const a = opts.agg;
+  if (a) {
+    field("committed", el("span", "aion-insp-ro", a.committed ? fmtMoney(a.committed) : "—"));
+    field("drawn", el("span", "aion-insp-ro", a.drawn ? fmtMoney(a.drawn) : "—"));
+    field("remaining", el("span", "aion-insp-ro", a.committed ? fmtMoney(a.remaining) : "—"));
+    field("contracts", el("span", "aion-insp-ro",
+      a.n ? a.accepted + " accepted · " + a.proposed + " proposed" : "none yet"));
+    if (a.bid) field("out to bid", el("span", "aion-insp-ro", fmtMoney(a.bid)));
+  }
+
+  const links = el("div", "re-ctr-insp-links");
+  if (opts.history !== false) {
+    const hist = el("button", "pp3-link", "history ↗");
+    hist.title = "contracts, properties worked, and what is still open";
+    hist.onclick = () => { location.hash = "#/properties/contractor/" + encodeURIComponent(c.slug); };
+    links.append(hist);
+  }
+  if (c.path) {
+    const rec = el("button", "pp3-link", "record ↗");
+    rec.title = c.path;
+    rec.onclick = () => { _noteReturn = "#/properties/contractors"; openNoteByPath(c.path); };
+    links.append(rec);
+  }
+  if (links.children.length) host.append(links);
+  host.append(el("div", "aion-insp-foot", "edits save as you go"));
 }
 
 // ---- the contractor HISTORY page (contact-page conventions; all derived) ----
@@ -312,7 +517,17 @@ async function renderContractorPage(slug) {
   const insp = el("aside", "aion-inspector fr-inspector");
   shell.append(main, insp);
   host.append(shell);
-  renderContractorInspector(insp, c);
+  // the aside is the SAME editor as the table's — minus the money block, which
+  // the facts strip below already says, and minus the link to this page
+  renderContractorInspector(insp, c, { history: false });
+
+  // a contractor page opens from a row, a contract, or a bid; give it the way
+  // back (the tab bar lights CONTRACTORS, which is only one of those doors)
+  const crumb = el("div", "pp3-crumb");
+  const back = el("button", "pp3-link", "← contractors");
+  back.onclick = () => { location.hash = "#/properties/contractors"; };
+  crumb.append(back);
+  main.append(crumb);
 
   // header: name + scope chips
   const head = el("div", "cp-head re-ctrp-head");

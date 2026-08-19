@@ -361,8 +361,26 @@
 .re-node-contract { flex: none; background: none; border: 1px solid var(--accent-soft); border-radius: var(--radius-lg); color: var(--accent); font-family: var(--mono); font-size: var(--fs-2xs); padding: 0 var(--sp-3); cursor: pointer; }
 .re-node-contract:hover { background: var(--base-20); }
 .re-ctr-shell { margin-top: var(--sp-4); }
-.re-ctr-cols { display: grid; grid-template-columns: 1fr 1fr 90px 110px; gap: var(--sp-5); }
-.re-ctr-scopes { color: var(--base-50); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* CONTRACTORS — the fundraising table read against contractor records. The
+   column widths must out-specify .fr-row's own grid: 94-aion-fundraising.css
+   loads AFTER this file, so a bare .re-ctr-row would silently lose and the
+   four columns would collapse onto fundraising's. */
+.fr-row.re-ctr-row { grid-template-columns: minmax(0,1.15fr) minmax(0,0.7fr) minmax(0,1.45fr) minmax(0,0.95fr); }
+/* money reads right, header label included */
+.fr-row.re-ctr-row > :last-child { justify-self: end; text-align: right; align-items: flex-end; }
+/* the name is a link, but a column of accent-blue is loud — it wakes on hover */
+.re-ctr-name { border: 0; background: none; padding: 0; color: var(--base-100); cursor: pointer; text-align: left; font-family: var(--sans); }
+.re-ctr-name:hover { color: var(--accent); text-decoration: underline; }
+/* scopes ride .fr-people's color/size; small-caps is the app's name-of-a-stage
+   treatment (.pp3-milestone-name), which is exactly what a scope is */
+.re-ctr-scope { font-variant-caps: all-small-caps; letter-spacing: 0.4px; }
+.re-ctr-scope:not(:last-child)::after { content: " ·"; color: var(--base-30); }
+/* addresses are long and similar — two on one line read as a single string
+   without separation. A wider gap does it; a "·" glyph would dangle at the end
+   of a wrapped line. Must out-specify .fr-people's gap (94 loads after 80). */
+.fr-people.re-ctr-props { gap: var(--sp-1) var(--sp-5); }
+.re-ctr-committed { font-family: var(--mono); font-size: var(--fs-md); color: var(--base-100); }
+.re-ctr-insp-links { display: flex; flex-wrap: wrap; gap: var(--sp-5); margin-top: var(--sp-6); }
 .re-scope-box { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .re-ctrp-head { display: flex; align-items: baseline; gap: var(--sp-4); flex-wrap: wrap; }
 .re-meta-row { display: flex; gap: var(--sp-6); font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); margin: var(--sp-2) 0 var(--sp-5); }

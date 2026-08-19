@@ -1,7 +1,9 @@
 // ---- REAL ESTATE — the domain surface, MIRRORING AION ----
-// A top tab-bar (BACKLOG · PORTFOLIO · ROCKS · MONEY · MAP · SETTINGS) over one
-// body. BACKLOG consolidates intake + decisions + owner-grouped tasks (aion's
-// backlog shape); PORTFOLIO folds in Deals; SETTINGS is the org-style registry
+// A top tab-bar (BACKLOG · PORTFOLIO · GOALS · MONEY · CONTRACTORS · MAP ·
+// SETTINGS) over one body. BACKLOG consolidates intake + decisions +
+// owner-grouped tasks (aion's backlog shape); PORTFOLIO folds in Deals;
+// CONTRACTORS is the counterparty ledger (graduated out of the Settings
+// registries, owner call 2026-08-18); SETTINGS is the org-style registry
 // sub-rail. PUBLISH rides the breadcrumb. Decision log = system/realestate/
 // backlog.md, the aion mirror. Bare #/properties = BACKLOG (like #/aion).
 let propertyCache = [];
@@ -10,7 +12,7 @@ let templateCache = [];
 let holdingsCache = {};      // entity name → {owned, acquiring} (derived server-side)
 let reBacklogCache = null;   // /api/re/backlog — {items, goalsArea, publish}
 let rePortalEnabled = false; // deals.json publish configured server-side
-let propMode = "backlog"; // backlog | portfolio | rocks | money | map | settings | page | deal
+let propMode = "backlog"; // backlog | portfolio | goals | money | contractors | map | settings | page | deal | contract | contractor
 let propSlug = "";    // the open property (page mode)
 let propDealSlug = ""; // the open deal (deal mode)
 let propTodosMeta = null; // /api/tasks payload — assignees + outstanding (one truth)
@@ -23,13 +25,13 @@ function showProperties(h) {
   if (els.propertySettings) els.propertySettings.hidden = true;
   closePropInspector();
   // legacy sub-tab routes fold into the current tabs
-  if (["work", "accounting", "statements", "contractors"].includes(tail)) { location.hash = "#/properties"; return; }
+  if (["work", "accounting", "statements"].includes(tail)) { location.hash = "#/properties"; return; }
   if (["decisions", "intake", "outstanding"].includes(tail)) { location.hash = "#/properties"; return; } // → BACKLOG
   if (["parcels", "all"].includes(tail)) { location.hash = "#/properties/portfolio"; return; }
   if (tail === "rocks") { location.hash = "#/properties/goals"; return; } // renamed tab (overhaul)
   propSlug = "";
   propDealSlug = "";
-  const VIEWS = ["backlog", "portfolio", "goals", "money", "settings", "map"];
+  const VIEWS = ["backlog", "portfolio", "goals", "money", "contractors", "settings", "map"];
   if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
   else if (tail === "contract-new") { propMode = "contract-new"; }
   else if (tail.startsWith("contract/")) { propMode = "contract"; propSlug = tail.slice(9); }
@@ -45,9 +47,9 @@ function showProperties(h) {
 
 // renderReToggle — mirror showAion's chip-active toggle. The record pages keep
 // the tab they open FROM lit: property/deal/contract come off PORTFOLIO, a
-// contractor record off SETTINGS. Without this a record page lights nothing
+// contractor record off CONTRACTORS. Without this a record page lights nothing
 // and the tab bar reads as "you are nowhere".
-const RE_TAB_OF = { page: "portfolio", deal: "portfolio", contract: "portfolio", "contract-new": "portfolio", contractor: "settings" };
+const RE_TAB_OF = { page: "portfolio", deal: "portfolio", contract: "portfolio", "contract-new": "portfolio", contractor: "contractors" };
 function renderReToggle() {
   const active = RE_TAB_OF[propMode] || propMode;
   els.reToggle && els.reToggle.querySelectorAll(".filter-chip").forEach((b) =>
@@ -112,6 +114,7 @@ async function renderProperties() {
   else if (propMode === "contractor") { els.propertyBoard.hidden = false; renderContractorPage(propSlug); }
   else if (propMode === "goals") { els.propertyBoard.hidden = false; renderREGoals(); }
   else if (propMode === "money") { els.propertyBoard.hidden = false; renderREMoney(); }
+  else if (propMode === "contractors") { els.propertyBoard.hidden = false; renderREContractors(); }
   else if (propMode === "portfolio") { els.propertyBoard.hidden = false; renderPortfolio(); }
   else { els.propertyBoard.hidden = false; renderREBacklog(); } // default = BACKLOG
 }
