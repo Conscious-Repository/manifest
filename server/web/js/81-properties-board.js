@@ -419,10 +419,29 @@ function mineOwner(owner) {
 
 // assigneeName resolves an owner value against the registries (contractor
 // slug → name; aion initials → name); anything that means ME reads "you".
+// reAssignee — the roster entry an owner key belongs to, resolving ALIASES: a
+// partner who is also a vendor carries [contractor:: <slug>] on her people.md
+// row, so both keys land on one entry (owner call 2026-08-19).
+function reAssignee(owner) {
+  const a = (propTodosMeta && propTodosMeta.assignees) || {};
+  const key = String(owner || "").toLowerCase();
+  return (a.realestate || []).find((e) =>
+    String(e.slug || "").toLowerCase() === key ||
+    String(e.name || "").toLowerCase() === key ||
+    (e.aliases || []).some((x) => String(x).toLowerCase() === key));
+}
+
+// reOwnerKey — the CANONICAL key for an owner: an alias resolves to the roster
+// entry's own slug, so work owned as "olga-sobkiv" and work owned as "OS"
+// group together instead of reading as two people.
+function reOwnerKey(owner) {
+  const e = reAssignee(owner);
+  return e ? e.slug : owner;
+}
+
 function assigneeName(owner) {
   if (mineOwner(owner)) return "you";
-  const a = (propTodosMeta && propTodosMeta.assignees) || {};
-  const c = (a.realestate || []).find((e) => e.slug === owner || e.name === owner);
+  const c = reAssignee(owner);
   if (c) return c.name + (c.trade ? " (" + c.trade + ")" : "");
   const p = (a.aion || []).find((e) => e.initials === owner);
   if (p) return p.name;

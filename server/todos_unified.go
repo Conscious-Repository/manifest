@@ -244,19 +244,37 @@ func (s *Server) assigneeLists() map[string]any {
 			Slug  string `json:"slug"`
 			Name  string `json:"name"`
 			Trade string `json:"trade,omitempty"`
+			// Aliases are other owner keys that mean this same assignee — a
+			// partner who is also a vendor carries [contractor:: <slug>] on her
+			// people.md row, so work owned as the person AND work owned as the
+			// contractor collect under one entry (owner call 2026-08-19).
+			Aliases []string `json:"aliases,omitempty"`
 		}
 		var list []ctr
+		claimed := map[string]bool{} // contractor slugs a person already speaks for
 		// the curated RE people registry — <reRoot>/people.md, aion-people
 		// grammar, kept SEPARATE from the aion roster (owner call 2026-08-09)
 		if s.index != nil && s.realestateRoot != "" {
 			raw, err := os.ReadFile(filepath.Join(s.index.VaultRoot(), filepath.FromSlash(s.realestateRoot), "people.md"))
 			if err == nil {
 				for _, p := range aion.ParsePeople(string(raw)).People() {
-					list = append(list, ctr{Slug: p.Initials, Name: p.Name, Trade: p.Role})
+					row := ctr{Slug: p.Initials, Name: p.Name, Trade: p.Role}
+					for _, f := range p.Unknown {
+						if strings.EqualFold(f.Key, "contractor") {
+							if v := strings.TrimSpace(f.Value); v != "" {
+								row.Aliases = append(row.Aliases, v)
+								claimed[strings.ToLower(v)] = true
+							}
+						}
+					}
+					list = append(list, row)
 				}
 			}
 		}
 		for _, e := range s.realestate.Contractors() {
+			if claimed[strings.ToLower(e.Slug)] {
+				continue // the person row above already speaks for this vendor
+			}
 			list = append(list, ctr{Slug: e.Slug, Name: e.Name, Trade: e.Trade})
 		}
 		out["realestate"] = list
