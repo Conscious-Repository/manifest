@@ -265,6 +265,10 @@ function renderPortfolioInspector(host, p) {
   entSel.onchange = () => pfPatch(p, "entity", entSel.value);
   field("entity", entSel);
   selectField("kind", PROPERTY_KINDS.map((k) => [k, k]), p.kind, (v) => pfPatch(p, "kind", v));
+  // control drives the money model: owned = the purchase happened, so the
+  // acquisition plan reads as spent before closing rows land in the ledger
+  selectField("control", [["owned", "owned"], ["tracked", "tracked"]], p.control,
+    (v) => pfPatch(p, "control", v));
   selectField("deal", [["", "—"]].concat(dealCache.map((d) => [d.slug, d.name || d.slug])),
     p.deal || "", (v) => pfPatch(p, "deal", v));
   if (f.cur) {

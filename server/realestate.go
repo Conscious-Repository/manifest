@@ -536,6 +536,14 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 	case "owner", "owner-addr", "owner-since": // owner of record — free text ("" clears)
 	case "from": // the seller while acquiring (RE spec §2 OWNER) — free text, "" once closed
 	case "until": // the exit condition — free text ("" clears)
+	case "control": // owned | tracked — owned recognizes the acquisition plan
+		// as spent (the purchase happened); a stale "tracked" was exactly why
+		// a bought property showed no SPENT (owner report 2026-08-19)
+		val = strings.ToLower(val)
+		if val != "owned" && val != "tracked" {
+			httpError(w, errBadRequest("control must be owned or tracked"))
+			return
+		}
 	case "address": // display identity (the slug never changes) — required
 		if val == "" {
 			httpError(w, errBadRequest("address cannot be empty"))
@@ -580,7 +588,7 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		httpError(w, errBadRequest("key must be status, kind, entity, deal, address, work-start, from, until, drive, agc, or owner/owner-addr/owner-since"))
+		httpError(w, errBadRequest("key must be status, kind, control, entity, deal, address, work-start, from, until, drive, agc, or owner/owner-addr/owner-since"))
 		return
 	}
 	rel, ok := s.propertyRel(r.PathValue("slug"))
