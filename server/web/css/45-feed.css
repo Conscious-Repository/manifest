@@ -76,6 +76,30 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 
 /* ===== redesign §11 (2026-08-09): neutral kind chips, dense cards, the
    signals lane as weight+dot, verdict stubs ===== */
+/* the feed reads as a work page: a list column the width of the AION backlog
+   with its inspector docked right (92-aion.css .aion-backlog is the source of
+   this geometry — same widths, same sticky, same 1100px cut-off) */
+.feed-split { display: flex; align-items: flex-start; gap: 0; }
+.feed-col { flex: 1; min-width: 0; padding-right: var(--sp-8); }
+.feed-inspector {
+  width: 300px; flex: none;
+  border-left: 1px solid var(--base-25); background: var(--base-05);
+  position: sticky; top: 0; align-self: flex-start;
+  padding: var(--sp-6) var(--sp-7); min-height: 220px;
+}
+@media (max-width: 1100px) { .feed-inspector { display: none; } .feed-col { padding-right: 0; } }
+
+/* every proposed record is clickable — it opens in the rail to be corrected
+   before Confirm writes it */
+.re-intake-write[data-sel-key], .re-intake-alloc[data-sel-key] { cursor: pointer; }
+.re-intake-write[data-sel-key]:hover, .re-intake-alloc[data-sel-key]:hover { background: var(--base-05); }
+.re-intake-write.sel, .re-intake-alloc.sel { background: var(--base-20); box-shadow: inset 2px 0 0 var(--accent); }
+.feed-inspector .aion-insp-foot.off { color: var(--over); }
+/* the panel's controls fill its width — a proposed task's text is long */
+.feed-inspector .aion-insp-field { align-items: start; }
+.feed-inspector .pp-in, .feed-inspector .ta-wrap, .feed-inspector .ta-in { width: 100%; box-sizing: border-box; }
+.feed-inspector .aion-insp-del { margin-top: var(--sp-5); }
+
 .feed-card { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
 .feed-card.pinned { border-color: var(--accent); background: var(--base-05); box-shadow: none; }
 .feed-title { font-size: var(--fs-lg); }

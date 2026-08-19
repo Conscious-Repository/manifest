@@ -3,6 +3,46 @@
 // RECORD the decision (a folder move on the excalibur tree). Nothing sends.
 let pendingApprovalFocus = null; // approval id to scroll to in FEED (deep-link "review →")
 
+// ---- the proposal draft store ----------------------------------------
+// renderFeed() empties the list and rebuilds every card, and a finishing agent
+// run triggers exactly that from the 3s poll. The editor's working copy used to
+// live in a closure, so an edited total could silently vanish mid-edit. The
+// draft outlives the repaint; the server's copy only replaces it when the owner
+// has nothing unsaved.
+const apprDrafts = new Map(); // approval id → {p, base, dirty, saving, err}
+function apprDraft(a) {
+  const base = JSON.stringify(a.reContractPayload || {});
+  let d = apprDrafts.get(a.id);
+  if (!d) { d = { p: JSON.parse(base), base, dirty: false, saving: false, err: "" }; apprDrafts.set(a.id, d); }
+  else if (d.base !== base && !d.dirty) { d.p = JSON.parse(base); d.base = base; }
+  return d;
+}
+// apprDraftsKeep — drop drafts whose proposal is gone (confirmed / rejected).
+function apprDraftsKeep(ids) {
+  const live = new Set(ids || []);
+  [...apprDrafts.keys()].forEach((id) => { if (!live.has(id)) apprDrafts.delete(id); });
+  if (apprSel && !live.has(apprSel.id)) apprSel = null;
+}
+
+// ---- the inspector selection -----------------------------------------
+// {id, kind, i} — kind is contract|contractor|milestone|task|alloc. Rows carry
+// the same key in data-sel-key, so a wholesale repaint restores the mark the
+// way the AION list does (aionSelId).
+let apprSel = null;
+const apprSelKey = (sel) => sel ? sel.id + "::" + sel.kind + "::" + (sel.i == null ? -1 : sel.i) : "";
+function apprSelect(sel) {
+  const same = apprSel && apprSelKey(apprSel) === apprSelKey(sel);
+  apprSel = same ? null : sel;
+  apprPaintSel();
+  renderApprovalInspector();
+}
+function apprPaintSel() {
+  const key = apprSelKey(apprSel);
+  (els.feedList ? els.feedList.querySelectorAll("[data-sel-key]") : []).forEach((n) => {
+    n.classList.toggle("sel", !!key && n.dataset.selKey === key);
+  });
+}
+
 // approvalCardEl: a pending approval as a first-class FEED card — evidence,
 // per-type guards, current-vs-proposed diff, and Confirm/Reject inline
 // (approvals-move-to-feed plan; formerly the SPIRITS approvals panel card).
@@ -386,8 +426,9 @@ async function apprReRegistry() {
       properties: (props.properties || []).filter((p) => !p.hidden),
       deals: props.deals || [],
       people: roster,
+      contractors: ents.contractors || [], // the contractor slot matches records, not the owner roster
     };
-  } catch (e) { apprReReg = { rocks: [], properties: [], deals: [], people: [] }; }
+  } catch (e) { apprReReg = { rocks: [], properties: [], deals: [], people: [], contractors: [] }; }
   return apprReReg;
 }
 
@@ -403,6 +444,82 @@ function apprRegistryFor(type) {
 // place (the id never changes; Confirm applies whatever was last saved).
 // Rock and owner hotload suggestions: active rocks from the goals ladder,
 // initials from people.md — free text still commits for one-offs.
+// apprCards — the live editor box per approval, so an inspector edit can
+// repaint the card it belongs to without re-rendering the whole feed (which
+// would blow away a focused field).
+const apprCards = new Map(); // id → {a, box, evidence}
+function apprRepaintCard(id) {
+  const c = apprCards.get(id);
+  if (!c || !c.box || !c.box.isConnected) return;
+  const next = buildReContractEditor(c.a, c.evidence);
+  c.box.replaceWith(next);
+  if (c.a.__gateFn) c.a.__gateBind(c.a.__gateFn);
+  apprPaintSel();
+}
+
+// apprValidate — the client mirror of ReContractPayload.Validate()
+// (approvals/recontract.go). It is a WHOLE-document invariant, not a field
+// check: the owner passes through invalid states on the way to a valid one
+// (clearing a task's text to retype it, re-splitting two allocations). So the
+// autosave holds rather than POSTing a payload the server would refuse.
+// Returns null when clean, else {msg, sel} pointing at the offending record.
+function apprValidate(a, p) {
+  const at = (kind, i) => ({ id: a.id, kind, i });
+  if (!["bid", "contract", "estimate"].includes(p.kind)) return { msg: "kind must be bid, contract or estimate", sel: at("contract") };
+  if (!String(p.contractor || "").trim() && !String(p.contractor_create || "").trim()) return { msg: "needs a contractor", sel: at("contractor") };
+  if (!String(p.name || "").trim()) return { msg: "the contract needs a name", sel: at("contract") };
+  if (!(p.total > 0)) return { msg: "total must be positive", sel: at("contract") };
+  const allocs = p.allocations || [];
+  if (!allocs.length) return { msg: "needs at least one allocation", sel: at("contract") };
+  for (let i = 0; i < allocs.length; i++) {
+    const al = allocs[i];
+    if (!String(al.property || "").trim() || !String(al.node || "").trim()) return { msg: "every split row needs a property and a node", sel: at("alloc", i) };
+    if (!(al.amount > 0)) return { msg: "split amounts must be positive", sel: at("alloc", i) };
+  }
+  const sum = allocs.reduce((n, al) => n + (al.amount || 0), 0);
+  if (Math.abs(sum - p.total) > 0.01) return { msg: "Σ " + fmtMoney(sum) + " ≠ total " + fmtMoney(p.total || 0), sel: at("contract") };
+  const tasks = p.tasks || [];
+  for (let i = 0; i < tasks.length; i++) {
+    if (!String(tasks[i].text || "").trim() || !String(tasks[i].property || "").trim()) return { msg: "every task needs text and a property", sel: at("task", i) };
+  }
+  const ms = p.new_milestones || [];
+  for (let i = 0; i < ms.length; i++) {
+    if (!String(ms[i].name || "").trim()) return { msg: "a milestone needs a name", sel: at("milestone", i) };
+  }
+  return null;
+}
+
+// apprSave — edits save as you go, gated on validity. Debounced so a typed
+// field is one write, and never POSTs a payload the server would refuse.
+const apprSaveTimers = new Map();
+function apprScheduleSave(a) {
+  const d = apprDraft(a);
+  d.dirty = true;
+  clearTimeout(apprSaveTimers.get(a.id));
+  apprSaveTimers.set(a.id, setTimeout(() => apprFlush(a), 800));
+  renderApprovalInspector();
+}
+async function apprFlush(a) {
+  clearTimeout(apprSaveTimers.get(a.id));
+  const d = apprDraft(a);
+  if (!d.dirty) return true;
+  const bad = apprValidate(a, d.p);
+  if (bad) { d.err = ""; renderApprovalInspector(); return false; }
+  d.saving = true; d.err = ""; renderApprovalInspector();
+  try {
+    const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/recontract", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d.p),
+    });
+    if (!r.ok) throw new Error((await r.text()).trim());
+    d.dirty = false; d.base = JSON.stringify(d.p);
+  } catch (e) {
+    d.err = String(e.message || e).slice(0, 120);
+  }
+  d.saving = false;
+  renderApprovalInspector();
+  return !d.err && !d.dirty;
+}
+
 // apprMoney parses a money field the way every RE amount input does.
 function apprMoney(v) { return parseFloat(String(v).replace(/[$,\s]/g, "")) || 0; }
 // apprDeslug is the immediate label for a slug the registry has not answered
@@ -416,7 +533,8 @@ function apprDeslug(v) { return String(v || "").replace(/^property\//, "").repla
 // terms and the extract, collapsed. Edits flush through the recontract
 // endpoint and RIDE the confirm (the __payloadFlush contract).
 function buildReContractEditor(a, evidence) {
-  const p = JSON.parse(JSON.stringify(a.reContractPayload)); // working copy
+  const draft = apprDraft(a);
+  const p = draft.p; // the draft survives the feed's repaints — see apprDraft
   const box = el("div", "re-intake-editor");
   const allocs = p.allocations || [];
 
@@ -477,7 +595,7 @@ function buildReContractEditor(a, evidence) {
   const bars = [];
   const reasons = [...new Set(allocs.map((al) => al.reason || ""))];
   const sharedReason = allocs.length > 1 && reasons.length === 1 && reasons[0] ? reasons[0] : "";
-  allocs.forEach((al) => {
+  allocs.forEach((al, ai) => {
     const row = el("div", "re-intake-alloc");
     const who = el("div", "re-intake-alloc-who");
     who.append(tie(el("div", "re-intake-alloc-prop"), () => names.prop(al.property)));
@@ -497,6 +615,10 @@ function buildReContractEditor(a, evidence) {
     amt.oninput = () => { al.amount = apprMoney(amt.value); dirty(); };
     amt.onblur = () => { amt.value = fmtMoney(al.amount); };
     row.append(amt);
+    row.dataset.selKey = apprSelKey({ id: a.id, kind: "alloc", i: ai });
+    if (apprSel && apprSelKey(apprSel) === row.dataset.selKey) row.classList.add("sel");
+    row.onclick = (e) => { if (e.target !== amt) apprSelect({ id: a.id, kind: "alloc", i: ai }); };
+    amt.onfocus = () => { if (!apprSel || apprSelKey(apprSel) !== row.dataset.selKey) apprSelect({ id: a.id, kind: "alloc", i: ai }); };
     splitSec.append(row);
     // one shared reasoning (an evenly-split combined scope) is one line, not
     // the same paragraph under every property
@@ -513,26 +635,33 @@ function buildReContractEditor(a, evidence) {
   const writesSec = el("div", "re-intake-sec");
   writesSec.append(el("div", "micro-label re-intake-sec-label", "confirm writes"));
   const rows = [];
-  const writeRow = (glyph, tag, render) => {
+  const writeRow = (glyph, tag, render, sel) => {
     const row = el("div", "re-intake-write");
     row.append(el("span", "re-intake-write-glyph g-" + tag, glyph));
     row.append(tie(el("span", "re-intake-write-text"), render));
     row.append(el("span", "micro-label re-intake-tag t-" + tag, tag.replace(/-/g, " · ")));
+    if (sel) {
+      row.dataset.selKey = apprSelKey(sel);
+      if (apprSel && apprSelKey(apprSel) === row.dataset.selKey) row.classList.add("sel");
+      row.onclick = () => apprSelect(sel);
+    }
     writesSec.append(row);
     rows.push(row);
   };
   if (!p.contractor && p.contractor_create) {
-    writeRow("＋", "new", () => p.contractor_create + " — contractor record");
+    writeRow("＋", "new", () => p.contractor_create + " — contractor record", { id: a.id, kind: "contractor" });
   }
-  (p.new_milestones || []).forEach((m) => {
-    writeRow("＋", "new", () => m.name + " — milestone under " + names.rock(m.rock) + ", " + names.prop(m.property));
+  (p.new_milestones || []).forEach((m, mi) => {
+    writeRow("＋", "new", () => m.name + " — milestone under " + names.rock(m.rock) + ", " + names.prop(m.property),
+      { id: a.id, kind: "milestone", i: mi });
   });
-  (p.tasks || []).forEach((t) => {
+  (p.tasks || []).forEach((t, ti) => {
     writeRow(t.decision ? "◇" : "○", t.decision ? "decision" : "task-" + (t.owner ? t.owner : "you"),
-      () => t.text + " → " + names.prop(t.property));
+      () => t.text + " → " + names.prop(t.property), { id: a.id, kind: "task", i: ti });
   });
-  writeRow("＋", p.kind || "contract", () => (p.name || "this contract") + " — " + (p.kind || "contract") + " record");
-  const recordCount = rows.length;
+  writeRow("＋", p.kind || "contract", () => (p.name || "this contract") + " — " + (p.kind || "contract") + " record",
+    { id: a.id, kind: "contract" });
+  const recordCount = () => rows.length;
   const ledgerText = tie(el("span", "re-intake-write-text"),
     () => fmtMoney(sumOf()) + (p.kind === "contract" ? " committed against " : " proposed against ") + propsPhrase());
   const ledgerRow = el("div", "re-intake-write");
@@ -593,23 +722,21 @@ function buildReContractEditor(a, evidence) {
     sumNote.classList.toggle("off", off);
     bars.forEach((b) => { b.fill.style.width = (total > 0 ? Math.max(0, Math.min(100, (b.al.amount / total) * 100)) : 0) + "%"; });
     tied.forEach((t) => { t.node.textContent = t.render(); });
-    gate.push(!off, off ? "● the split must reconcile" : "writes " + recordCount + " record" + (recordCount === 1 ? "" : "s"));
+    gate.push(!off, off ? "● the split must reconcile" : "writes " + recordCount() + " record" + (recordCount() === 1 ? "" : "s"));
     return !off;
   };
-  a.__gateBind = (fn) => { gate.push = fn; checkSum(); };
+  a.__gateBind = (fn) => { gate.push = fn; a.__gateFn = fn; checkSum(); };
   checkSum();
 
-  let isDirty = false;
-  const dirty = () => { isDirty = true; checkSum(); };
+  const dirty = () => { checkSum(); apprScheduleSave(a); };
+  // Confirm still rides the current state: flush now, and refuse if the
+  // payload is not one the server would take.
   a.__payloadFlush = async () => {
-    if (!checkSum()) throw new Error("Σ allocations must equal total");
-    if (!isDirty) return;
-    const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/recontract", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
-    });
-    if (!r.ok) throw new Error(await r.text());
-    isDirty = false;
+    const bad = apprValidate(a, p);
+    if (bad) throw new Error(bad.msg);
+    if (!(await apprFlush(a))) throw new Error(apprDraft(a).err || "the edit did not save");
   };
+  apprCards.set(a.id, { a, box, evidence });
   return box;
 }
 
@@ -898,3 +1025,199 @@ async function postApprovalDecision(id, kind, body) {
 
 if (els.feedRunNowBtn) els.feedRunNowBtn.addEventListener("click", spiritRunNow);
 if (els.feedAskBtn) els.feedAskBtn.addEventListener("click", spiritAskScout);
+
+// ---- the FEED inspector: one proposed record, editable ------------------
+// The card says what Confirm will write; this is where a line is corrected
+// before it is written. Edits land in the draft and save as you go (see
+// apprScheduleSave), so Confirm always applies what is on screen.
+function renderApprovalInspector() {
+  // phone: the rail is display:none — the same builder fills a bottom sheet.
+  // Keyed open re-fills in place, so the 3s feed poll never re-animates it.
+  if (window.mf && window.mf.phone() && window.mfSheet) {
+    if (apprSel) {
+      window.mfSheet.open((b) => apprInspectorInto(b), {
+        key: "appr",
+        onClose: () => { if (apprSel) { apprSel = null; apprPaintSel(); } },
+        reopen: () => { if (els.feedView && !els.feedView.hidden) renderApprovalInspector(); },
+      });
+    } else {
+      window.mfSheet.closeIf("appr");
+    }
+    return;
+  }
+  apprInspectorInto(els.feedInspector);
+}
+
+function apprInspectorInto(host) {
+  if (!host) return;
+  host.innerHTML = "";
+  const card = apprSel ? apprCards.get(apprSel.id) : null;
+  if (!apprSel || !card || !card.box.isConnected) {
+    host.append(el("div", "aion-insp-empty", "select a line in a proposal — edits save as you go"));
+    return;
+  }
+  const a = card.a, d = apprDraft(a), p = d.p, sel = apprSel;
+
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", sel.kind === "alloc" ? "Split" : sel.kind));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { apprSel = null; apprPaintSel(); renderApprovalInspector(); };
+  head.append(x);
+  host.append(head);
+
+  const commit = () => { apprRepaintCard(a.id); apprScheduleSave(a); };
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    host.append(f);
+    return node;
+  };
+  // a text field that writes into the payload on its own commit event
+  const textField = (label, get, set, placeholder) => {
+    const input = inputEl(placeholder || label);
+    input.className = "pp-in";
+    input.value = get() || "";
+    const save = () => { if ((get() || "") !== input.value) { set(input.value); commit(); } };
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") input.blur(); });
+    input.addEventListener("blur", save);
+    return field(label, input);
+  };
+  const pickField = (label, get, set, suggest) => {
+    const ta = typeahead({
+      placeholder: label, initial: get() || "",
+      suggest: (q, add, t) => suggest(q, add, t, (v) => { set(v); commit(); }),
+      onChange: (v) => { if ((get() || "") !== v) { set(v); commit(); } },
+    });
+    return field(label, ta.el);
+  };
+  const propSuggest = async (q, add, ta, pick) => {
+    const reg = await apprRegistryFor(a.type);
+    (reg.properties || [])
+      .filter((x) => !q || (x.slug + " " + (x.short || x.address || "")).toLowerCase().includes(q))
+      .slice(0, 8)
+      .forEach((x) => add(rePropLabel(x), "property", () => { ta.commit(rePropLabel(x)); pick(x.slug); }));
+  };
+  const rockSuggest = async (q, add, ta, pick) => {
+    const reg = await apprRegistryFor(a.type);
+    (reg.rocks || []).filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+      .slice(0, 8).forEach((r) => add(r.label, "rock", () => { ta.commit(r.label); pick(r.id); }));
+  };
+  const ownerSuggest = async (q, add, ta, pick) => {
+    const reg = await apprRegistryFor(a.type);
+    add("· you", "", () => { ta.commit(""); pick(""); });
+    (reg.people || []).filter((x) => !q || (x.initials + " " + (x.name || "")).toLowerCase().includes(q))
+      .slice(0, 8).forEach((x) => add(x.initials + " · " + (x.name || ""), "", () => { ta.commit(x.initials); pick(x.initials); }));
+  };
+  // the node id a milestone will be written under (recontract.go derives it the
+  // same way) — keeping allocations pointed at a renamed milestone depends on it
+  const milestoneNode = (m) => String(m.rock || "") + "/" + String(m.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  let removable = null;
+  if (sel.kind === "task") {
+    const t = (p.tasks || [])[sel.i];
+    if (!t) { apprSel = null; return apprInspectorInto(host); }
+    textField("text", () => t.text, (v) => { t.text = v; });
+    pickField("property", () => t.property, (v) => { t.property = v; }, propSuggest);
+    pickField("under", () => t.parent, (v) => { t.parent = v; }, rockSuggest);
+    pickField("owner", () => t.owner, (v) => { t.owner = v; }, ownerSuggest);
+    const kind = selectEl(["task", "decision"]);
+    kind.className = "pp-in";
+    kind.value = t.decision ? "decision" : "task";
+    kind.onchange = () => { t.decision = kind.value === "decision"; commit(); };
+    field("kind", kind);
+    removable = () => { p.tasks.splice(sel.i, 1); apprSel = null; };
+  } else if (sel.kind === "milestone") {
+    const m = (p.new_milestones || [])[sel.i];
+    if (!m) { apprSel = null; return apprInspectorInto(host); }
+    // renaming a milestone moves the node id its allocations point at; re-point
+    // them or the money lands on a node that will not exist (recontract.go
+    // writes alloc.node verbatim as the contract's NodeID)
+    const repoint = (before) => {
+      const after = milestoneNode(m);
+      if (after === before) return;
+      (p.allocations || []).forEach((al) => { if (al.property === m.property && al.node === before) al.node = after; });
+    };
+    textField("name", () => m.name, (v) => { const b = milestoneNode(m); m.name = v; repoint(b); });
+    pickField("rock", () => m.rock, (v) => { const b = milestoneNode(m); m.rock = v; repoint(b); }, rockSuggest);
+    pickField("property", () => m.property, (v) => { m.property = v; }, propSuggest);
+    const pointing = (p.allocations || []).filter((al) => al.property === m.property && al.node === milestoneNode(m)).length;
+    removable = () => {
+      if (pointing) { showToast(pointing + " split row" + (pointing === 1 ? "" : "s") + " point here — re-point them first"); return false; }
+      p.new_milestones.splice(sel.i, 1); apprSel = null;
+    };
+  } else if (sel.kind === "alloc") {
+    const al = (p.allocations || [])[sel.i];
+    if (!al) { apprSel = null; return apprInspectorInto(host); }
+    pickField("property", () => al.property, (v) => { al.property = v; }, propSuggest);
+    textField("node", () => al.node, (v) => { al.node = v; });
+    const amt = inputEl("amount");
+    amt.className = "pp-in";
+    amt.value = fmtMoney(al.amount);
+    amt.addEventListener("blur", () => { const v = apprMoney(amt.value); amt.value = fmtMoney(v); if (v !== al.amount) { al.amount = v; commit(); } });
+    amt.addEventListener("keydown", (ev) => { if (ev.key === "Enter") amt.blur(); });
+    field("amount", amt);
+    textField("reason", () => al.reason, (v) => { al.reason = v; });
+    if ((p.allocations || []).length > 1) removable = () => { p.allocations.splice(sel.i, 1); apprSel = null; };
+  } else if (sel.kind === "contractor") {
+    if (p.contractor_create) {
+      textField("name", () => p.contractor_create, (v) => { p.contractor_create = v; });
+      pickField("or match", () => "", (v) => { if (v) { p.contractor = v; p.contractor_create = ""; } }, async (q, add, ta, pick) => {
+        const reg = await apprRegistryFor(a.type);
+        (reg.contractors || []).filter((c) => !q || (c.slug + " " + (c.name || "")).toLowerCase().includes(q))
+          .slice(0, 8).forEach((c) => add(c.name || c.slug, "record", () => { ta.commit(c.name || c.slug); pick(c.slug); }));
+      });
+      host.append(el("div", "aion-insp-ro", "No record matches — Confirm creates one."));
+    } else {
+      host.append(el("div", "aion-insp-ro", "Matched to the existing record @" + p.contractor + "."));
+      const swap = el("button", "o-ghost", "create a new record instead");
+      swap.onclick = () => { p.contractor_create = p.contractor; p.contractor = ""; commit(); renderApprovalInspector(); };
+      host.append(swap);
+    }
+  } else { // the contract record itself
+    textField("name", () => p.name, (v) => { p.name = v; });
+    const kind = selectEl(["bid", "contract", "estimate"]);
+    kind.className = "pp-in";
+    kind.value = p.kind || "bid";
+    kind.onchange = () => { p.kind = kind.value; commit(); };
+    field("kind", kind);
+    const total = inputEl("total");
+    total.className = "pp-in";
+    total.value = fmtMoney(p.total);
+    total.addEventListener("blur", () => { const v = apprMoney(total.value); total.value = fmtMoney(v); if (v !== p.total) { p.total = v; commit(); } });
+    total.addEventListener("keydown", (ev) => { if (ev.key === "Enter") total.blur(); });
+    field("total", total);
+    ["date", "expires"].forEach((k) => {
+      const dt = inputEl(k);
+      dt.type = "date"; dt.className = "pp-in"; dt.value = p[k] || "";
+      dt.onchange = () => { p[k] = dt.value; commit(); };
+      field(k, dt);
+    });
+    host.append(el("div", "aion-insp-ro", "Lands at " + a.applyPath));
+  }
+
+  if (removable) {
+    const del = el("button", "aion-insp-del", "don't write this");
+    del.onclick = () => {
+      if (del.classList.contains("armed")) {
+        if (removable() === false) return;
+        apprRepaintCard(a.id); apprScheduleSave(a); renderApprovalInspector();
+        return;
+      }
+      del.classList.add("armed");
+      del.textContent = "remove from the proposal?";
+      setTimeout(() => { del.classList.remove("armed"); del.textContent = "don't write this"; }, 2500);
+    };
+    host.append(del);
+  }
+
+  const foot = el("div", "aion-insp-foot");
+  const bad = apprValidate(a, p);
+  if (d.err) { foot.textContent = "save failed — " + d.err; foot.classList.add("off"); }
+  else if (d.saving) foot.textContent = "saving…";
+  else if (bad) {
+    foot.textContent = "unsaved — " + bad.msg;
+    foot.classList.add("off");
+    if (bad.sel) { foot.style.cursor = "pointer"; foot.onclick = () => apprSelect(bad.sel); }
+  } else foot.textContent = "edits save as you go";
+  host.append(foot);
+}

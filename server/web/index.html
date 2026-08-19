@@ -187,8 +187,16 @@
         <button id="feedRunNowBtn" class="pill" title="Ask the engine to run a ritual now (spooled request — the engine picks it up)">▶ Run now</button>
       </div>
     </div>
-    <div id="feedSignals" class="feed-signals"></div>
-    <div id="feedList" class="feed-list"></div>
+    <!-- list + docked inspector, the AION backlog geometry. The rail is a
+         SIBLING of #feedList: renderFeed() empties the list on every repaint,
+         and the panel has to outlive that. -->
+    <div class="feed-split">
+      <div class="feed-col">
+        <div id="feedSignals" class="feed-signals"></div>
+        <div id="feedList" class="feed-list"></div>
+      </div>
+      <aside class="feed-inspector" id="feedInspector"></aside>
+    </div>
   </section>
 
   <!-- SPIRITS — ONE quiet page (redesign §12 / prototype): live strip →

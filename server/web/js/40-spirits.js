@@ -950,7 +950,11 @@ async function livePoll() {
   if (anyFinished) {
     refreshFeedBadge();                               // nav-pill inbox count
     if (location.hash.startsWith("#/spirits")) loadSpiritsStatus();
-    if (location.hash === "#/feed") loadFeed();       // new findings land in place
+    // never repaint the feed out from under a field being typed in — the poll
+    // fires whenever any agent run finishes (AION's list does the same)
+    const typing = els.feedView && els.feedView.contains(document.activeElement) &&
+      /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
+    if (location.hash === "#/feed" && !typing) loadFeed(); // new findings land in place
   }
   if (firstPoll || anyFinished) detectNewDigest();   // baseline on first look; then catch a landed digest
 

@@ -112,6 +112,7 @@ const els = {
   feedFilters: document.getElementById("feedFilters"),
   feedSignals: document.getElementById("feedSignals"),
   feedList: document.getElementById("feedList"),
+  feedInspector: document.getElementById("feedInspector"),
   feedErrandBtn: document.getElementById("feedErrandBtn"),
   feedAskBtn: document.getElementById("feedAskBtn"),
   feedRunNowBtn: document.getElementById("feedRunNowBtn"),

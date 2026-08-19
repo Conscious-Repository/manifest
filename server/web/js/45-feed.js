@@ -118,6 +118,11 @@ function renderFeed() {
     if (lane.inboxOnly && view !== "inbox") return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
+  // the rail: drafts and the selection outlive this repaint (the 3s poll can
+  // rebuild the list under an open edit), so re-mark and re-fill from them
+  apprDraftsKeep((feedCache.proposals || []).map((x) => x.id));
+  apprPaintSel();
+  renderApprovalInspector();
   if (pendingApprovalFocus) { // deep-linked ("review →")
     const target = host.querySelector(`[data-approval-id="${CSS.escape(pendingApprovalFocus)}"]`);
     pendingApprovalFocus = null;
