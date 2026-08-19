@@ -148,6 +148,8 @@
 .sprt-run-top { display: flex; align-items: baseline; gap: var(--sp-5); }
 .sprt-run-title { font-family: var(--mono); font-size: var(--fs-md); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-run-when { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); flex: none; }
+/* the failure's WHY, on the row — mono, quiet, one line */
+.sprt-run-why { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-1) 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* portals foot toggle */
 .sprt-portals-toggle { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: var(--sp-2) 0; }

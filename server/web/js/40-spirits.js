@@ -935,6 +935,13 @@ async function livePoll() {
         detail = r.itemsWritten
           ? ` · ${r.itemsWritten} item${r.itemsWritten === 1 ? "" : "s"}`
           : " · no changes"; // distinguish a clean no-op from a failure
+      } else if (r.outcomeDetail) {
+        // failures carry the WHY: "error (protocol)" alone reads as noise —
+        // the report's outcome line names the step and the actual error
+        let why = r.outcomeDetail;
+        const cut = why.indexOf(" — ");
+        if (cut >= 0) why = why.slice(cut + 3); // the outcome already leads
+        detail = " — " + (why.length > 110 ? why.slice(0, 110) + "…" : why);
       }
       showToast(`${r.spirit}/${r.ritual} — ${r.outcome}${detail}`,
         () => { location.hash = "#/spirits"; setTimeout(() => openSpiritRun(r.id), 120); });
@@ -1266,6 +1273,14 @@ function spiritRunRow(r) {
   top.append(el("span", "sprt-run-wrote", r.itemsWritten ? "wrote " + r.itemsWritten : "—"));
   top.append(el("span", "sprt-run-when", fmtWhen(r.started)));
   row.append(top);
+  // a failed run says WHY on the row itself — the outcome chip alone
+  // ("error (protocol)") forced a trip into the report to learn anything
+  if (r.outcome !== "completed" && r.outcome !== "running" && r.outcomeDetail) {
+    let why = r.outcomeDetail;
+    const cut = why.indexOf(" — ");
+    if (cut >= 0) why = why.slice(cut + 3);
+    row.append(el("div", "sprt-run-why", why));
+  }
   const pct = r.ceilingUsd > 0 ? Math.min(100, Math.round((r.spentUsd / r.ceilingUsd) * 100)) : 0;
   const bar = el("span", "charge-bar");
   const fill = el("span", "charge-fill" + (pct >= 100 ? " over" : ""));

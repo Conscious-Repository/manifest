@@ -3,6 +3,7 @@ package server
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"os/exec"
@@ -98,6 +99,20 @@ func (s *Server) intakeRequest(name, ref, extractRel string) string {
 			}
 			b.WriteString("- " + p.Slug + " — " + p.Address + "\n")
 		}
+	}
+	// Existing contract records, so the dedupe check is a lookup in the request
+	// rather than vault archaeology. The 20260818-233432 protocol failure
+	// started exactly there: the ritual said "read the contracts directory",
+	// vault.read refuses directories, and the run burned every step searching
+	// before collapsing. Data beats instructions.
+	b.WriteString("existing contract records (slug — contractor — status — total — properties):\n")
+	for _, c := range s.realestate.Contracts() {
+		var props []string
+		for _, a := range c.Allocations {
+			props = append(props, a.Property)
+		}
+		b.WriteString(fmt.Sprintf("- %s — %s — %s — $%.0f — %s\n",
+			c.Slug, c.Contractor, c.Status, c.Total, strings.Join(props, ", ")))
 	}
 	return b.String()
 }

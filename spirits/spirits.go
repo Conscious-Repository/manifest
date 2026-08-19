@@ -69,6 +69,11 @@ type RunSummary struct {
 	CeilingUSD   float64 `json:"ceilingUsd"`
 	Portal       string  `json:"portal"`
 	Model        string  `json:"model"`
+	// OutcomeDetail is the report body's "## Outcome" line — the human WHY of a
+	// failure ("step 8: 3 invalid protocol replies; last: unknown action …").
+	// The frontmatter outcome alone ("error (protocol)") told the owner nothing
+	// actionable, and the detail was already written one section down.
+	OutcomeDetail string `json:"outcomeDetail,omitempty"`
 }
 
 // QueuedRun is a spool file the engine hasn't picked up yet — the `queued`
@@ -190,7 +195,22 @@ func (s *Store) parseRun(path string) (RunSummary, string, error) {
 		CeilingUSD:   num("charge_ceiling_usd"),
 		Portal:       fm["portal"],
 		Model:        fm["model"],
+		OutcomeDetail: outcomeDetail(body),
 	}, strings.TrimSpace(body), nil
+}
+
+// outcomeDetail pulls the first line of the report's "## Outcome" section.
+func outcomeDetail(body string) string {
+	_, after, found := strings.Cut(body, "\n## Outcome\n")
+	if !found {
+		return ""
+	}
+	for _, ln := range strings.Split(after, "\n") {
+		if t := strings.TrimSpace(ln); t != "" {
+			return t
+		}
+	}
+	return ""
 }
 
 // PromptTurn is one preserved turn of a run's exact assembled prompt.

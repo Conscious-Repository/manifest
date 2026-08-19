@@ -246,6 +246,17 @@ func (e runFailEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 				continue
 			}
 			label := "run failed · " + key + " · " + r.Outcome
+			// the WHY, not just the kind — "error (protocol)" alone sent the
+			// owner into the artifacts; the report's outcome line says it all
+			if d := r.OutcomeDetail; d != "" {
+				if cut := strings.Index(d, " — "); cut >= 0 {
+					d = d[cut+len(" — "):] // the fm outcome already leads the label
+				}
+				if len(d) > 120 {
+					d = d[:120] + "…"
+				}
+				label += " — " + d
+			}
 			if tag := e.s.harnessTag(h.Name); tag != "" {
 				label += " · " + tag
 			}
