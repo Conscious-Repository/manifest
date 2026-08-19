@@ -840,6 +840,7 @@ async function renderREMoney() {
     last = d.lastImport || "";
   } catch (e) { moneyRows = []; }
   await loadReContracts(); // the third hop's picker (accepted contracts + remaining)
+  await ensureEntities();  // rows carry the entity SLUG — entityLabel needs the registry to read it back
   // the split (owner call 2026-08-19): the TOP lane holds only what still
   // needs filing; a filed row (applied — the PATCH auto-applies the moment
   // property + category land) or a dismissed one lives in its entity's
@@ -905,13 +906,13 @@ const moneyHistShown = {}; // entity → rows revealed
 function moneyHistory(host, filed) {
   host.append(el("div", "re-lane-head re-money-hist-head", "HISTORY — FILED BY ENTITY"));
   const groups = {};
-  filed.forEach((r) => { (groups[r.entity || "(no entity)"] = groups[r.entity || "(no entity)"] || []).push(r); });
+  filed.forEach((r) => { (groups[r.entity || ""] = groups[r.entity || ""] || []).push(r); });
   Object.keys(groups).sort().forEach((ent) => {
     const rows = groups[ent];
     rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
     const skipped = rows.filter((r) => r.state === "skipped").length;
     const sum = rows.reduce((s, r) => s + (r.inflow ? 0 : r.amount || 0), 0);
-    const body = collapsibleSection(host, ent,
+    const body = collapsibleSection(host, entityLabel(ent) || "(no entity)",
       rows.length + " rows · " + fmtMoneyExact(sum) + " out" + (skipped ? " · " + skipped + " skipped" : ""),
       !!moneyHistShown[ent]);
     const shown = moneyHistShown[ent] || MONEY_PAGE_SIZE;
@@ -1005,7 +1006,7 @@ async function moneyUpload(file, lane) {
   (async () => {
     try {
       const es = await (await fetch("/api/realestate/entities")).json();
-      (es.entities || []).forEach((x) => eopt(x.name, x.name));
+      (es.entities || []).forEach((x) => eopt(x.slug, x.name)); // value = slug, the stored identity
       ent.value = d.entity || "";
     } catch (e) {}
   })();
@@ -1074,7 +1075,7 @@ function moneyRow(r) {
   row.append(el("span", "re-money-date", (r.date || "").slice(5)));
   const desc = el("span", "re-money-desc");
   desc.append(el("span", "", r.vendor || r.note || "(no description)"));
-  if (r.entity) desc.append(el("span", "re-money-entity", r.entity));
+  if (r.entity) desc.append(el("span", "re-money-entity", entityLabel(r.entity)));
   if (r.source === "feed") desc.append(el("span", "re-money-src", "feed")); // bank-feed sync vs csv upload
   // phone meta line (desktop hides it): the assigned property, or the file
   // prompt in ink — the row tap opens the assignment sheet

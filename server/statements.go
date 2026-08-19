@@ -126,7 +126,12 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, errBadRequest("sign convention is required — which sign is a charge"))
 		return
 	}
-	s.reImport.BindLabel(b.Label, b.Entity)
+	// The bank feed stamps rows with the entity SLUG; the upload strip sends
+	// whatever the picker held. Canonicalize here so one entity is one entity
+	// however a row arrived — the $ tab groups filed history on this value and
+	// it is written verbatim as the ledger's [paid-by::] token.
+	entity := s.canonicalEntity(b.Entity)
+	s.reImport.BindLabel(b.Label, entity)
 	// every ledger line across the portfolio — no double entry, ever
 	ledgerKeys := map[string]int{}
 	props, _ := s.realestate.Properties()
@@ -177,7 +182,7 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 		}
 		rows = append(rows, realestate.StatementRow{
 			Date: date, Vendor: vendor, Note: note, Amount: amt, Inflow: inflow,
-			Entity: strings.TrimSpace(b.Entity),
+			Entity: entity,
 		})
 	}
 	// A same-day same-amount hit that the exact key missed is almost always the
@@ -580,4 +585,23 @@ func columnFloats(headers []string, rows [][]string, col string) []float64 {
 		out = append(out, v)
 	}
 	return out
+}
+
+// canonicalEntity resolves a display name or a slug to the entity's slug — the
+// one spelling every lane stores. An unknown name still slugifies, so a row
+// never silently loses the entity it was bound to.
+func (s *Server) canonicalEntity(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if s.realestate != nil {
+		want := strings.ToLower(v)
+		for _, e := range s.realestate.Entities() {
+			if strings.ToLower(e.Slug) == want || strings.ToLower(e.Name) == want {
+				return e.Slug
+			}
+		}
+	}
+	return slugify(v)
 }

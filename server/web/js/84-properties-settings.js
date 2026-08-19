@@ -13,6 +13,16 @@ async function ensureEntities(force) {
   return entitiesCache;
 }
 
+// entityLabel resolves the entity SLUG carried on statement rows and ledger
+// tokens back to the record's display name. Rows store the slug so the bank
+// feed and a CSV upload agree on one identity; only the reader prettifies it.
+function entityLabel(slug) {
+  const s = String(slug || "").trim();
+  if (!s) return "";
+  const hit = ((entitiesCache || {}).entities || []).find((e) => e.slug === s);
+  return (hit && hit.name) || s;
+}
+
 // recordAutocomplete: the typeahead engine over entity/contractor records with
 // a quiet `create "<name>" →` completion.
 function recordAutocomplete(kind, placeholder, onPick) {

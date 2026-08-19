@@ -181,3 +181,41 @@ func TestIngestKeepsGenuineSameDayRepeatsButNotReuploads(t *testing.T) {
 		t.Fatal("the two charges collapsed onto one id")
 	}
 }
+
+// The bank feed stamps rows with the entity slug and the upload strip used to
+// send the display name, so one entity split into two folds in the filed
+// history — and wrote two different [paid-by::] tokens into the ledger.
+func TestIngestCanonicalizesTheEntityToItsSlug(t *testing.T) {
+	srv, _, _ := bankFixture(t, &stubBridge{})
+	for i, sent := range []string{"Garden SPE", "garden-spe", "GARDEN SPE"} {
+		code, _ := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+			`{"label":"e.csv","entity":"`+sent+`","signature":"s","sign":"expense-negative","mapping":{"date":"Date"},
+			  "rows":[{"Date":"0`+string(rune('1'+i))+`/10/2026","Vendor":"Ameren","Amount":-10}]}`)
+		if code != 200 {
+			t.Fatalf("ingest %q: %d", sent, code)
+		}
+	}
+	rows, _ := srv.statements.List()
+	if len(rows) != 3 {
+		t.Fatalf("want 3 rows, got %d", len(rows))
+	}
+	for _, r := range rows {
+		if r.Entity != "garden-spe" {
+			t.Errorf("entity not canonicalized: %q", r.Entity)
+		}
+	}
+	// an entity with no record still resolves to a stable slug, never to ""
+	doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+		`{"label":"e.csv","entity":"Some New LLC","signature":"s","sign":"expense-negative","mapping":{"date":"Date"},
+		  "rows":[{"Date":"09/10/2026","Vendor":"X","Amount":-10}]}`)
+	rows, _ = srv.statements.List()
+	var found bool
+	for _, r := range rows {
+		if r.Entity == "some-new-llc" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("an unknown entity should still slugify")
+	}
+}
