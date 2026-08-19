@@ -109,13 +109,103 @@ async function resolveAndOpen(target) {
   } catch (e) {}
 }
 
-async function addBook() {
-  const title = prompt("Book title (a book you're starting):");
-  if (!title || !title.trim()) return;
-  const author = prompt("Author (optional):") || "";
-  const nb = await postJSON("/api/reading/book", { title: title.trim(), authors: author.trim() ? [author.trim()] : [], status: "reading" });
-  await loadReading();
-  if (nb && nb.path) { _noteReturn = "#/reading"; openNoteByPath(nb.path); } // open to add notes
+// ---- + book: name it, the catalogue fills the rest ----
+// The contacts location picker's shape: type, get candidates from an open
+// catalogue through our own server, pick one and the record is written with
+// its author attached. Typing something the catalogue has never heard of is
+// not a dead end — the last row always adds exactly what you typed.
+function addBook() {
+  const open = document.querySelector(".book-add");
+  if (open) { open.querySelector("input").focus(); return; }
+  const box = el("div", "book-add");
+  const head = el("div", "book-add-head");
+  head.append(el("span", "micro-label", "add a book"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => box.remove();
+  head.append(x);
+  const input = el("input", "book-add-input");
+  input.type = "search";
+  input.placeholder = "Title — or title and author…";
+  const results = el("div", "book-add-results");
+  const status = el("div", "book-add-status");
+  box.append(head, input, results, status);
+  els.bookShelf.before(box);
+  input.focus();
+
+  const create = async (title, authors, year, pages) => {
+    status.textContent = "adding…";
+    try {
+      const nb = await postJSON("/api/reading/book", {
+        title: title, authors: authors || [], year: year || "", pages: pages || 0, status: "reading",
+      });
+      box.remove();
+      await loadReading();
+      if (nb && nb.path) { _noteReturn = "#/reading"; openNoteByPath(nb.path); } // open to write in it
+    } catch (e) { status.textContent = "✕ " + ((e && e.message) || "couldn't add the book"); }
+  };
+
+  const manualRow = (q) => {
+    const row = el("button", "book-cand book-cand-manual");
+    row.append(el("span", "book-cand-title", "Add “" + q + "”"),
+      el("span", "book-cand-meta", "as typed — no catalogue match needed"));
+    row.onclick = () => create(q, []);
+    return row;
+  };
+
+  let seq = 0;
+  const run = async (q) => {
+    const mine = ++seq;
+    results.innerHTML = "";
+    if (q.length < 3) { status.textContent = ""; return; }
+    status.textContent = "searching the catalogue…";
+    let d = null;
+    try {
+      const res = await fetch("/api/reading/search?q=" + encodeURIComponent(q));
+      if (!res.ok) throw new Error((await res.text()).trim() || "lookup failed");
+      d = await res.json();
+    } catch (e) {
+      if (mine !== seq) return;
+      // a failed lookup is not "no such book" — say so, and still let it land
+      status.textContent = "✕ " + ((e && e.message) || "lookup failed");
+      results.append(manualRow(q));
+      return;
+    }
+    if (mine !== seq) return; // a later keystroke already owns the list
+    const found = (d && d.books) || [];
+    found.forEach((b) => {
+      const row = el("button", "book-cand");
+      row.append(el("span", "book-cand-title", b.title));
+      const bits = [];
+      if ((b.authors || []).length) bits.push(b.authors.join(", "));
+      if (b.year) bits.push(b.year);
+      if (b.pages) bits.push(b.pages + "pp");
+      row.append(el("span", "book-cand-meta", bits.join(" · ")));
+      row.onclick = () => create(b.title, b.authors || [], b.year, b.pages);
+      results.append(row);
+    });
+    results.append(manualRow(q));
+    status.textContent = found.length ? "" : "Nothing in the catalogue — add it as typed.";
+    if (found.length && d.attribution) {
+      const attr = el("a", "book-add-attr", d.attribution);
+      attr.href = "https://openlibrary.org/";
+      attr.target = "_blank"; attr.rel = "noopener";
+      results.append(attr);
+    }
+  };
+
+  let timer;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    timer = setTimeout(() => run(q), 300); // one lookup per pause, not per key
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") box.remove();
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const first = results.querySelector(".book-cand");
+    if (first) first.click(); else if (input.value.trim()) create(input.value.trim(), []);
+  });
 }
 
 if (els.bookSearch) els.bookSearch.addEventListener("input", renderShelf);

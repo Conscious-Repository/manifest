@@ -17,6 +17,22 @@
 .reading-card { display: flex; flex-direction: column; gap: var(--sp-3); border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); min-width: 220px; max-width: 300px; }
 .reading-card-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-100); cursor: pointer; }
 .reading-card .pill { align-self: flex-start; }
+/* + book: the catalogue picker (the contacts place-picker shape — a field,
+   candidates, an attribution line for someone else's data) */
+.book-add { display: flex; flex-direction: column; gap: var(--sp-4); border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); margin-bottom: var(--sp-6); background: var(--base-05); max-width: var(--measure); }
+.book-add-head { display: flex; align-items: baseline; justify-content: space-between; }
+.book-add-input { font-family: var(--sans); font-size: var(--fs-lg); color: var(--base-100); background: none; border: none; border-bottom: 1px solid var(--base-25); outline: none; padding: var(--sp-2) 0; }
+.book-add-input:focus { border-bottom-color: var(--accent); }
+.book-add-results { display: flex; flex-direction: column; }
+.book-cand { display: flex; align-items: baseline; gap: var(--sp-5); text-align: left; background: none; border: none; border-top: 1px solid var(--line-soft); padding: var(--sp-3) var(--sp-2); cursor: pointer; }
+.book-cand:hover { background: var(--base-00); }
+.book-cand-title { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100); }
+.book-cand-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; text-align: right; }
+.book-cand-manual .book-cand-title { color: var(--base-50); }
+.book-add-status { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.book-add-attr { font-family: var(--mono); font-size: var(--fs-3xs); color: var(--base-40); text-decoration: none; padding: var(--sp-3) var(--sp-2) 0; }
+.book-add-attr:hover { color: var(--accent); }
+
 /* the shelf */
 .book-shelf { display: flex; flex-direction: column; }
 .book-row { display: grid; grid-template-columns: minmax(200px, 3fr) minmax(120px, 2fr) 56px 92px 100px; gap: var(--sp-6); align-items: baseline; padding: var(--sp-4) var(--sp-2); border-bottom: 1px solid var(--line); }

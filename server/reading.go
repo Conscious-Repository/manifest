@@ -4,9 +4,11 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
+	"manifest/books"
 	"manifest/reading"
 )
 
@@ -31,6 +33,27 @@ var bookIllegal = regexp.MustCompile(`[/\\:*?"<>|]`)
 
 // handleReadingCreate is the "+ book" ghost row: title (lowercased slug),
 // optional authors/year/status → a new extrinsic/<slug>.md record.
+// handleReadingSearch — GET /api/reading/search?q=: the catalogue behind the
+// "+ book" field, proxied so the browser never talks to Open Library directly
+// and a repeated query costs nothing. Mirrors /api/contacts/places.
+func (s *Server) handleReadingSearch(w http.ResponseWriter, r *http.Request) {
+	if s.bookLookup == nil {
+		http.Error(w, "book lookup unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		httpError(w, errBadRequest("q is required"))
+		return
+	}
+	found, err := s.bookLookup.Search(r.Context(), q)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"books": found, "attribution": books.Attribution})
+}
+
 func (s *Server) handleReadingCreate(w http.ResponseWriter, r *http.Request) {
 	if s.reading == nil || s.vault == nil || s.index == nil {
 		http.Error(w, "reading not available", http.StatusServiceUnavailable)
@@ -40,6 +63,7 @@ func (s *Server) handleReadingCreate(w http.ResponseWriter, r *http.Request) {
 		Title   string   `json:"title"`
 		Authors []string `json:"authors"`
 		Year    string   `json:"year"`
+		Pages   int      `json:"pages"`
 		Status  string   `json:"status"`
 	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Title) == "" {
@@ -71,12 +95,22 @@ func (s *Server) handleReadingCreate(w http.ResponseWriter, r *http.Request) {
 
 	var fm strings.Builder
 	fm.WriteString("---\ncategories: [books]\n")
+	// the note NAME is the slug (a filename cannot hold ":" and keeps no case),
+	// so a real title is kept verbatim in full-title — the same field the
+	// importer writes, and the one the shelf reads first. Without it a picked
+	// "The Power Broker: Robert Moses…" would show as its flattened filename.
+	if title := strings.TrimSpace(b.Title); title != "" && title != slug {
+		fm.WriteString("full-title: " + strconv.Quote(title) + "\n")
+	}
 	if len(authorToks) > 0 {
 		fm.WriteString("authors: [" + strings.Join(authorToks, ", ") + "]\n")
 	}
 	fm.WriteString("status: " + status + "\n")
 	if y := strings.TrimSpace(b.Year); y != "" {
 		fm.WriteString("year-written: " + y + "\n")
+	}
+	if b.Pages > 0 {
+		fm.WriteString("pages: " + itoa(b.Pages) + "\n")
 	}
 	fm.WriteString("---\n\n#book\n")
 

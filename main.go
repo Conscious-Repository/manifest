@@ -20,6 +20,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/books"
 	"manifest/calendar"
 	"manifest/capture"
 	"manifest/chatthreads"
@@ -410,7 +411,10 @@ func main() {
 		}
 		// READING — the book shelf over the extrinsic zone (reading-plan §3).
 		srv.UseReading(reading.New(vix), cfg.ExtrinsicRoot)
-		log.Printf("reading: enabled (book shelf over %s/)", cfg.ExtrinsicRoot)
+		// the catalogue behind "+ book": one rate-limited, cached Open Library
+		// client, the reading twin of the geocoder (cache = derived state)
+		srv.UseBookLookup(books.New(cfg.DataDir))
+		log.Printf("reading: enabled (book shelf over %s/, Open Library lookup)", cfg.ExtrinsicRoot)
 
 		// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 		reRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate"))

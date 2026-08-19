@@ -18,6 +18,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/books"
 	"manifest/calendar"
 	"manifest/capture"
 	"manifest/chatthreads"
@@ -89,6 +90,7 @@ type Server struct {
 	contacts *contacts.Service
 	// Reading (book shelf) over the extrinsic zone. Nilable.
 	reading           *reading.Service
+	bookLookup        *books.Service
 	extrinsicRootName string // where "+ book" creates records (default "extrinsic")
 	// Signals (app-derived FEED cards: cold contacts, stalled Rocks). Nilable.
 	signals *signals.Service
@@ -96,10 +98,10 @@ type Server struct {
 	portals *portals.Service
 	// Real estate (PROPERTIES tab over system/realestate/ records). Nilable.
 	realestate     *realestate.Service
-	realestateRoot string // vault-relative records root (default "system/realestate")
+	realestateRoot string                // vault-relative records root (default "system/realestate")
 	reFiles        *realestate.FileStore // CAS document store (overhaul §3.3). Nilable.
-	bgParcelsPath  string // <dataDir>/realestate/bgParcels.json (map background layer)
-	rePortalPath   string // ooda site checkout for the deals.json publish ("" = disabled)
+	bgParcelsPath  string                // <dataDir>/realestate/bgParcels.json (map background layer)
+	rePortalPath   string                // ooda site checkout for the deals.json publish ("" = disabled)
 	reImport       *realestate.ImportMemory
 	geocoder       *geocode.Service
 	statements     *realestate.StatementStore
@@ -215,6 +217,10 @@ func (s *Server) UseFundraisingSync(sync *fundraising.SheetSync) { s.fundraising
 
 // UseReading wires the book shelf (READING tab). extrinsicRoot is where the
 // "+ book" action creates new records.
+// UseBookLookup wires the catalogue behind "+ book" (optional: without it the
+// shelf still adds a book from what the owner typed).
+func (s *Server) UseBookLookup(b *books.Service) { s.bookLookup = b }
+
 func (s *Server) UseReading(r *reading.Service, extrinsicRoot string) {
 	s.reading = r
 	s.extrinsicRootName = extrinsicRoot
@@ -253,8 +259,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/item", s.handleTaskAdd)
 	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)
 	mux.HandleFunc("POST /api/tasks/update", s.handleTaskUpdate)
-	mux.HandleFunc("POST /api/tasks/rank", s.handleTasksRank)                      // unified drag-to-rank (stage 4)
-	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)              // RE assignee registry
+	mux.HandleFunc("POST /api/tasks/rank", s.handleTasksRank)         // unified drag-to-rank (stage 4)
+	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet) // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
 	mux.HandleFunc("POST /api/tasks/drop", s.handleTaskDrop)
 	mux.HandleFunc("/api/tasks/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)
@@ -546,6 +552,7 @@ func (s *Server) Handler() http.Handler {
 
 	// READING — the book shelf over the extrinsic zone (reading-plan §3).
 	mux.HandleFunc("GET /api/reading", s.handleReadingList)
+	mux.HandleFunc("GET /api/reading/search", s.handleReadingSearch)
 	mux.HandleFunc("POST /api/reading/book", s.handleReadingCreate)
 	mux.HandleFunc("POST /api/reading/finish", s.handleReadingFinish)
 	mux.HandleFunc("POST /api/reading/rating", s.handleReadingRating)
