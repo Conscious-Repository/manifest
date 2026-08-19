@@ -17,19 +17,65 @@ async function loadReContracts() {
 
 function reContracts() { return (reContractsCache && reContractsCache.contracts) || []; }
 
-// reScopeVocab — the scope vocabulary is DRAWN from the rock templates +
-// milestones in use + every scope already on a contractor (§3.7): a join,
-// not a guess.
+// reScopeVocab — the scope vocabulary is the set of scopes IN USE on the
+// contractor records, nothing else (owner call 2026-08-18).
+//
+// It used to also join in the rock templates' stage names and every milestone
+// name in every property tree (§3.7). Those are not scopes: a template stage
+// is a project PHASE (pre-construction, demo, rough-in, close-out) and a
+// milestone is one deliverable on one property ("roof"). Suggesting them beside
+// real trades produced near-duplicate noise — "roof" (a 753 Bayard milestone)
+// sitting next to "roofing" (Bastin's actual trade) — and the phases leaked
+// onto real records: M&W Services still carries "demo" and "rough-in".
+//
+// Drawn this way the vocabulary is also MANAGEABLE, which a derived join never
+// was: every entry belongs to a contractor, so the scopes bar on this tab can
+// rename or retire one across every record that carries it. Free text still
+// commits, which is how a scope enters the vocabulary in the first place.
 function reScopeVocab() {
   const vocab = new Set();
-  (templateCache || []).forEach((t) => (t.stages || []).forEach((st) => vocab.add(st.text.toLowerCase())));
-  (propertyCache || []).forEach((p) => (p.work || []).forEach((st) =>
-    (st.tasks || []).forEach(function walk(n) {
-      if (n.milestone) vocab.add((n.text || "").toLowerCase());
-      (n.children || []).forEach(walk);
-    })));
-  (((entitiesCache || {}).contractors) || []).forEach((c) => (c.scopes || []).forEach((s) => vocab.add(s)));
+  (((entitiesCache || {}).contractors) || []).forEach((c) =>
+    (c.scopes || []).forEach((sc) => vocab.add(String(sc).toLowerCase().trim())));
   return [...vocab].filter(Boolean).sort();
+}
+
+// reScopeUsage — scope → the contractor records carrying it. The scopes bar
+// reads counts from here, and rename/retire walk exactly this list.
+function reScopeUsage() {
+  const by = {};
+  (((entitiesCache || {}).contractors) || []).forEach((c) =>
+    (c.scopes || []).forEach((sc) => {
+      const k = String(sc).toLowerCase().trim();
+      if (!k) return;
+      (by[k] = by[k] || []).push(c);
+    }));
+  return by;
+}
+
+// reScopeWriteAll — rename (to a value) or retire (to "") one scope across
+// every contractor that carries it. One POST per record, then one reload.
+async function reScopeWriteAll(scope, next) {
+  const holders = reScopeUsage()[scope] || [];
+  if (!holders.length) return;
+  const clean = String(next || "").toLowerCase().trim();
+  let failed = 0;
+  for (const c of holders) {
+    const scopes = [];
+    (c.scopes || []).forEach((sc) => {
+      const k = String(sc).toLowerCase().trim();
+      const v = k === scope ? clean : k;
+      if (v && !scopes.includes(v)) scopes.push(v);
+    });
+    try {
+      await postJSONOk("/api/realestate/contractors/" + encodeURIComponent(c.slug) + "/update", { scopes });
+    } catch (e) { failed++; }
+  }
+  await ensureEntities(true);
+  showToast(failed
+    ? "Couldn't update " + failed + " of " + holders.length + " records"
+    : (clean ? "Renamed to " + clean : "Retired " + scope) + " on " + holders.length +
+      " contractor" + (holders.length === 1 ? "" : "s"));
+  renderProperties();
 }
 
 // ---- the INTAKE lane (overhaul §5): one affordance on the RE overview ----
@@ -184,7 +230,9 @@ function renderContractForm() {
 // opens the derived HISTORY page below.
 
 let reCtrQuery = "";
-let reCtrFilter = "all"; // all | working | bidding | quiet
+let reCtrFilter = "all";  // all | working | bidding | quiet
+let reCtrScope = "";      // scopes-bar facet: "" = every scope
+let reScopeEdit = null;   // scope being renamed inline
 
 // reContractorRollup — the per-contractor join over the contract records:
 // counts, committed/drawn/remaining (ACCEPTED contracts only — a proposal
@@ -265,6 +313,12 @@ async function renderREContractors() {
   });
   main.append(bar);
 
+  // the scopes bar — the vocabulary, made visible and editable. Every chip is
+  // a scope in use; the count is how many records carry it. Click filters,
+  // ✎ renames it everywhere, ✕ retires it everywhere.
+  const scopeBar = el("div", "re-scope-bar");
+  main.append(scopeBar);
+
   main.append(ghostInput("＋ contractor", "aion-add fr-add", async (v) => {
     try {
       await postJSONOk("/api/realestate/entities", { name: v, kind: "contractor" });
@@ -278,6 +332,7 @@ async function renderREContractors() {
 
   const paint = () => {
     Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", reCtrFilter === k));
+    paintScopeBar(scopeBar, paint);
     table.innerHTML = "";
     const head = el("div", "fr-row re-ctr-row fr-head");
     ["CONTRACTOR", "SCOPES", "PROPERTIES", "COMMITTED"].forEach((h) => head.append(el("span", "micro-label", h)));
@@ -314,8 +369,68 @@ async function renderREContractors() {
   paint();
 }
 
+// paintScopeBar — the scope vocabulary as chips: name · count, the facet
+// state, and the two edits a derived list could never offer (rename across
+// every record, retire from every record).
+function paintScopeBar(host, paint) {
+  host.innerHTML = "";
+  const usage = reScopeUsage();
+  const scopes = Object.keys(usage).sort();
+  host.append(el("span", "micro-label re-scope-bar-label", "SCOPES"));
+  if (!scopes.length) {
+    host.append(el("span", "re-scope-none",
+      "none yet — add one on a contractor and it joins the vocabulary"));
+    return;
+  }
+  const all = el("button", "re-scope-chip" + (reCtrScope ? "" : " on"), "all");
+  all.onclick = () => { reCtrScope = ""; paint(); };
+  host.append(all);
+
+  scopes.forEach((sc) => {
+    if (reScopeEdit === sc) {
+      const inp = inputEl("rename scope…");
+      inp.className = "pp-in re-scope-rename";
+      inp.value = sc;
+      inp.onkeydown = (ev) => {
+        if (ev.key === "Enter") {
+          const v = inp.value.toLowerCase().trim();
+          reScopeEdit = null;
+          if (v && v !== sc) reScopeWriteAll(sc, v); else paint();
+        } else if (ev.key === "Escape") { reScopeEdit = null; paint(); }
+      };
+      host.append(inp);
+      setTimeout(() => { inp.focus(); inp.select(); }, 0);
+      return;
+    }
+    const wrap = el("span", "re-scope-chip-wrap");
+    const chip = el("button", "re-scope-chip" + (reCtrScope === sc ? " on" : ""));
+    chip.append(el("span", "", sc), el("span", "re-scope-count", String(usage[sc].length)));
+    chip.title = usage[sc].map((c) => c.name).join(", ");
+    chip.onclick = () => { reCtrScope = reCtrScope === sc ? "" : sc; paint(); };
+    const ren = el("button", "re-scope-act", "✎");
+    ren.title = "rename \u201c" + sc + "\u201d on every contractor that carries it";
+    ren.onclick = (ev) => { ev.stopPropagation(); reScopeEdit = sc; paint(); };
+    const rm = el("button", "re-scope-act", "✕");
+    rm.title = "retire \u201c" + sc + "\u201d from every contractor that carries it";
+    rm.onclick = (ev) => {
+      ev.stopPropagation();
+      const yes = el("button", "re-scope-act armed", "retire from " + usage[sc].length + "?");
+      yes.onclick = (e2) => {
+        e2.stopPropagation();
+        if (reCtrScope === sc) reCtrScope = "";
+        reScopeWriteAll(sc, "");
+      };
+      rm.replaceWith(yes);
+      setTimeout(() => { if (yes.parentNode) yes.replaceWith(rm); }, 2600);
+    };
+    wrap.append(chip, ren, rm);
+    host.append(wrap);
+  });
+}
+
 function reCtrVisible(c, a) {
   if (reCtrFilter !== "all" && reCtrState(a) !== reCtrFilter) return false;
+  if (reCtrScope && !(c.scopes || []).some((sc) => String(sc).toLowerCase().trim() === reCtrScope)) return false;
   const q = reCtrQuery.trim().toLowerCase();
   if (!q) return true;
   return [c.name, c.slug, c.email, c.website]

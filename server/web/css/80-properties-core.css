@@ -382,6 +382,23 @@
 .fr-people.re-ctr-props { gap: var(--sp-1) var(--sp-5); }
 .re-ctr-committed { font-family: var(--mono); font-size: var(--fs-md); color: var(--base-100); }
 .re-ctr-insp-links { display: flex; flex-wrap: wrap; gap: var(--sp-5); margin-top: var(--sp-6); }
+/* the scopes bar — the scope vocabulary made visible and editable. Quiet by
+   default; the rename/retire controls wake on hover, like the tree's ✕. */
+.re-scope-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-4) 0 var(--sp-2); }
+.re-scope-bar-label { flex: 0 0 auto; }
+.re-scope-none { color: var(--base-40); font-size: var(--fs-sm); }
+.re-scope-chip-wrap { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.re-scope-chip { display: inline-flex; align-items: baseline; gap: var(--sp-2); border: 1px solid var(--base-25); border-radius: var(--radius-lg); background: none; padding: var(--sp-1) var(--sp-4); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); cursor: pointer; }
+.re-scope-chip:hover { border-color: var(--accent); color: var(--accent); }
+.re-scope-chip.on { border-color: var(--accent); color: var(--accent); }
+.re-scope-count { color: var(--base-40); }
+.re-scope-chip.on .re-scope-count { color: var(--accent); }
+.re-scope-act { opacity: 0; border: 0; background: none; padding: 0 var(--sp-1); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; }
+.re-scope-chip-wrap:hover .re-scope-act, .re-scope-act:focus { opacity: 1; }
+.re-scope-act:hover { color: var(--over); }
+.re-scope-act.armed { opacity: 1; color: #fff; background: var(--over); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); }
+.re-scope-rename { width: 140px; font-family: var(--mono); font-size: var(--fs-2xs); }
+
 .re-scope-box { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .re-ctrp-head { display: flex; align-items: baseline; gap: var(--sp-4); flex-wrap: wrap; }
 .re-meta-row { display: flex; gap: var(--sp-6); font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); margin: var(--sp-2) 0 var(--sp-5); }

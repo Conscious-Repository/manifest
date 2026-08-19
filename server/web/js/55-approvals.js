@@ -90,14 +90,16 @@ function approvalCardEl(a) {
     : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (strayFence) bodyText = stripFence(bodyText, strayFence);
   if (bodyText && bodyText.trim() && !isReContract) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
-  if (strayFence) {
-    card.append(el("div", "appr-blocked",
-      "⚠ misfiled proposal — the body carries a \u2018" + strayFence + "\u2019 payload but the record is typed \u2018" +
-      (a.type || "approval") + "\u2019 with no apply-path, so there is nothing to apply. Reject it and re-run the intake; " +
-      "the engine now refuses this shape at the source."));
-  }
-
   let blocked = false, blockMsg = "";
+  if (strayFence) {
+    // Confirm on a misfiled proposal writes nothing and files it under
+    // approved/, burying it — block the button, not just annotate the card.
+    blocked = true;
+    blockMsg = "misfiled proposal — the body carries a \u2018" + strayFence +
+      "\u2019 payload but the record is typed \u2018" + (a.type || "approval") +
+      "\u2019 with no apply-path, so Confirm would write nothing. Reject it and re-run the intake; " +
+      "the engine now refuses this shape at the source.";
+  }
   const isNewNote = a.type === "create-vault-note";
   const isAppendNote = a.type === "append-vault-note"; // email-sync append the auto-apply refused
   let attendees = null; // create-vault-note: the editable people list sent on Confirm
