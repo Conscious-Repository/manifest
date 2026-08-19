@@ -240,7 +240,7 @@
 /* portfolio: property · stage bar · open · spent */
 /* PORTFOLIO — the fundraising shape (PORTFOLIO-LIST handoff 2026-08-19):
    four columns, fr-stack cells, no bars, no phase sections. */
-.pf4-grid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) 52px 96px; }
+.fr-row.pf4-grid, .fr-head.pf4-grid { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1.1fr) 52px 96px; }
 .pf4-addr { font-size: var(--fs-lg); font-weight: 500; }
 .pf4-rock { font-size: 13.5px; color: var(--base-70); }
 .pf4-num { font-family: var(--mono); font-size: 13px; text-align: right; color: var(--base-100); }
