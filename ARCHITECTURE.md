@@ -214,6 +214,23 @@ still the one bounded many-writer surface, its assignee/proposal authorization
 rules are unchanged, and the vault and every other Manifest surface remain
 single-writer.
 
+**2026-08-19 — approved goals placement (the first knowledge-zone proposal
+lane).** Owner decision (telegram→feed goals plan, approved 2026-08-19): a
+user-CONFIRMED `goals-item` proposal may write `goals.md` — exactly one
+placement (one line added, one line edited in place, or one line moved) per
+confirm, through vaultwriter under the `goals-approved` capability
+(`{ZoneKnowledge, ActorApprovedProposal}` — deliberately the first of its
+kind; aion/re/todo-plans are all system-zone). This reconciles both of §2's
+absolute clauses for this one lane: the WORDS are owner-sourced (spoken to his
+agent on Telegram or in a thread — the agent only places them, never authors
+them), and the "never new content" sweep rule yields to §4's user-approved
+proposal exactly as §4 always permitted mechanically. Guards: the only writable
+path is the vault-root goals.md; the transform is a whole-file fixpoint with a
+structural budget (a confirm that would change more than its one line refuses);
+edits/moves carry a staleness anchor and refuse when the file moved underneath;
+frozen history is byte-identical; never auto-applied; audited and git-trailed.
+§4 otherwise holds — agents only propose.
+
 **2026-08-15 — assign-to-agent plan lane (standing-consent materialization).**
 Owner decision (todo-panel plan, approved 2026-08-15): assigning a task to an
 agent is standing approval for materializing that agent's plan output into
