@@ -121,7 +121,6 @@ async function renderPropertyPage(slug) {
   // tree surfaces here with its rock context; the lines themselves stay under
   // their rock/milestone in the file. Never ages; resolves with a note.
   const decisions = [];
-  const walkNodes = (rock, nodes, fn) => (nodes || []).forEach((n) => { fn(rock, n); walkNodes(rock, n.children, fn); });
   (p.work || []).forEach((st) => walkNodes(st, st.tasks, (rock, n) => { if (n.decision) decisions.push({ rock, n }); }));
   const openDecs = decisions.filter((d) => !d.n.checked);
   const decidedDecs = decisions.filter((d) => d.n.checked);
@@ -199,6 +198,8 @@ async function renderPropertyPage(slug) {
       name.replaceWith(input); input.focus();
     };
     line.append(name);
+    // est money slot — the hard budget edits where it lives (audit fix)
+    line.append(estChip(p, st, (st.tasks || []).length > 0));
     // done-by chip — the schedule date (click to set; ink when past due)
     // an unset date is not information — the chip appears on hover to be set
     // (goals does the same with its until chip)
@@ -258,6 +259,7 @@ async function renderPropertyPage(slug) {
           setTimeout(() => { if (yes.parentNode) yes.replaceWith(mdel); }, 2500);
         };
         ml.append(mglyph, mname);
+        ml.append(estChip(p, n, (n.children || []).length > 0));
         appendContractChips(ml, n);
         ml.append(mdel);
         block.append(ml);
@@ -271,8 +273,12 @@ async function renderPropertyPage(slug) {
         }
         return;
       }
-      const row = propTodoRow(p, { id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "" }, "tree");
+      const row = propTodoRow(p, {
+        id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "",
+        waiting: n.waiting || "", since: n.since || "", workId: n.id,
+      }, "tree");
       if (depth > 0) row.classList.add("deep");
+      row.append(estChip(p, n, false));
       appendContractChips(row, n);
       block.append(row);
       appendBidLine(block, p, n);
@@ -314,6 +320,15 @@ async function renderPropertyPage(slug) {
 
   // SPEND — last 3 ledger rows + link to Money (full ledger stays below)
   main.append(ledgerSection(p));
+
+  // LOG — the record's running history (## log) + quick-add
+  main.append(logSection(p));
+
+  // LOOK-BACK (pass 5): a locked property that finished its plan reads
+  // initial-vs-final + unit costs
+  const finished = ["completed", "leased", "listed", "sold"].includes(p.status) ||
+    ((p.work || []).length > 0 && (p.work || []).every((st) => st.checked));
+  if (p.underwrite && finished) main.append(lookbackSection(p));
 
   // LINKS — artifacts are linked, never mirrored
   const links = el("div", "pp3-links");
@@ -734,7 +749,139 @@ function ledgerForm(p, r, i) {
   return form;
 }
 
+// walkNodes — depth-first over a rock's node tree (shared by the page + the
+// look-back derivations).
+function walkNodes(rock, nodes, fn) {
+  (nodes || []).forEach((n) => { fn(rock, n); walkNodes(rock, n.children, fn); });
+}
+
 function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }
+
+// estChip — the [est::] money slot on any tree line (the hard budget edits
+// where it lives — audit fix: the page used to say "edit in the record").
+// Parents display the ROLLED estTotal; the click edits the line's OWN est.
+function estChip(p, node, isParent) {
+  const rolled = node.estTotal != null ? node.estTotal : (node.est || 0);
+  const own = node.est || 0;
+  const chip = el("button", "re-est-chip" + (rolled ? "" : " unset"), rolled ? fmtMoneyShort(rolled) : "est —");
+  chip.title = isParent && rolled !== own
+    ? "Σ own + children — click edits this line's OWN est (" + fmtMoneyShort(own) + ")"
+    : "estimate — click to edit";
+  chip.onclick = (e) => {
+    e.stopPropagation();
+    const inp = inputEl("est $");
+    inp.className = "re-est-edit";
+    inp.value = own || "";
+    const commit = () => {
+      const v = inp.value.trim();
+      const n = parseFloat(v.replace(/[,$]/g, ""));
+      propWorkOp(p, { op: "set-field", id: node.id, field: "est", value: v === "" || isNaN(n) ? "" : String(n) });
+    };
+    inp.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") commit();
+      else if (ev.key === "Escape") inp.replaceWith(chip);
+    });
+    inp.addEventListener("blur", () => { if (inp.parentNode) inp.replaceWith(chip); });
+    chip.replaceWith(inp);
+    inp.focus();
+  };
+  return chip;
+}
+
+// logSection — the record's `## log` (audit fix: parsed + a dedicated writer
+// existed with zero rendering). Newest-first; quick-add prepends with today's
+// date; long histories fold.
+let propLogOpen = false;
+function logSection(p) {
+  const sec = el("div", "pp3-sec");
+  const head = el("div", "pp3-sec-head");
+  head.append(el("span", "pp3-sec-title", "LOG"), el("span", "pp3-sec-count", String((p.log || []).length)));
+  sec.append(head);
+  const lines = p.log || [];
+  const cap = propLogOpen ? lines.length : 5;
+  lines.slice(0, cap).forEach((ln) => sec.append(el("div", "re-log-line", ln)));
+  if (lines.length > 5) {
+    const t = el("button", "aion-done-toggle", (propLogOpen ? "▾" : "▸") + " " + (lines.length - 5) + " older");
+    t.onclick = () => { propLogOpen = !propLogOpen; renderPropertyPage(p.slug); };
+    sec.append(t);
+  }
+  sec.append(ghostInput("＋ log line", "re-log-add", async (v) => {
+    try {
+      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/log", { text: v });
+      renderProperties();
+    } catch (e) { showToast("Couldn't log — " + (e.message || "")); }
+  }, "what happened…"));
+  return sec;
+}
+
+// lookbackSection — pass 5 (§4 look-back): a finished property's initial-vs-
+// final picture. Per rock: est at lock · final committed · final paid; unit
+// costs derive from the frontmatter measurables (node totals ÷ measure) —
+// everything computed here, nothing stored.
+function lookbackSection(p) {
+  const lock = p.underwrite;
+  const sec = el("div", "pp3-sec re-lookback");
+  const head = el("div", "pp3-sec-head");
+  head.append(el("span", "pp3-sec-title", "LOOK-BACK"),
+    el("span", "pp3-sec-count", "locked " + (p.locked || "") + " → final"));
+  sec.append(head);
+  const cols = el("div", "re-lookback-cols");
+  ["ROCK", "EST @ LOCK", "COMMITTED", "PAID"].forEach((h, i) => cols.append(el("span", i ? "prop-col-r" : "", h)));
+  sec.append(cols);
+  const lockByID = {};
+  (lock.rocks || []).forEach((r) => { lockByID[r.id] = r.estTotal; });
+  let tLock = 0, tCom = 0, tPaid = 0;
+  (p.work || []).forEach((st) => {
+    const was = lockByID[st.id] != null ? lockByID[st.id] : 0;
+    tLock += was; tCom += st.committed || 0; tPaid += st.paid || 0;
+    if (!was && !st.committed && !st.paid) return;
+    const row = el("div", "re-lookback-row");
+    row.append(el("span", "", st.text));
+    row.append(el("span", "prop-col-r", fmtMoneyShort(was)));
+    row.append(el("span", "prop-col-r" + ((st.committed || 0) > was && was ? " over" : ""), fmtMoneyShort(st.committed || 0)));
+    row.append(el("span", "prop-col-r", fmtMoneyShort(st.paid || 0)));
+    sec.append(row);
+  });
+  const totals = el("div", "re-lookback-row re-lookback-totals");
+  totals.append(el("span", "", "total"));
+  totals.append(el("span", "prop-col-r", fmtMoneyShort(tLock)));
+  totals.append(el("span", "prop-col-r" + (tCom > tLock && tLock ? " over" : ""), fmtMoneyShort(tCom)));
+  totals.append(el("span", "prop-col-r", fmtMoneyShort(tPaid)));
+  sec.append(totals);
+  if (tLock) {
+    const acc = ((tCom - tLock) / tLock) * 100;
+    sec.append(el("div", "re-foot-note", "estimate accuracy: final committed " +
+      (acc >= 0 ? "+" : "") + acc.toFixed(1) + "% vs the locked underwrite"));
+  }
+  // unit costs — measurable-matched scopes ($/roof-square when a rock or
+  // milestone matches the measurable's stem) + the property-level figures
+  const costs = [];
+  const units = ((p.unitMix || []).length) || p.units || 0;
+  if (units && tCom) costs.push("$" + Math.round(tCom / units).toLocaleString() + "/unit");
+  const sqft = (p.unitMix || []).reduce((n, u) => n + (u.sqft || 0), 0);
+  if (sqft && tCom) costs.push("$" + (tCom / sqft).toFixed(0) + "/sqft");
+  Object.entries(p.measurables || {}).forEach(([k, v]) => {
+    if (!v) return;
+    const stem = k.split("-")[0];
+    let matched = null;
+    (p.work || []).forEach((st) => {
+      if ((st.text || "").toLowerCase().includes(stem) || st.id.includes(stem)) matched = matched || st;
+      walkNodes(st, st.tasks, (_, n) => {
+        if (!matched && n.milestone && ((n.text || "").toLowerCase().includes(stem) || (n.id || "").includes(stem))) matched = n;
+      });
+    });
+    if (matched && (matched.committed || 0) > 0) {
+      costs.push("$" + Math.round(matched.committed / v).toLocaleString() + "/" + k.replace(/s$/, "") +
+        " (" + (matched.text || "") + ")");
+    }
+  });
+  if (costs.length) {
+    const line = el("div", "re-uw-measurables");
+    line.append(el("span", "re-uw-label", "UNIT COSTS "), el("span", "", costs.join(" · ")));
+    sec.append(line);
+  }
+  return sec;
+}
 
 // appendContractChips — a node's accepted-contract slices (the committed
 // source) render as chips linking to the contract page.
@@ -1003,6 +1150,24 @@ function openPropInspector(p, sel) {
     };
     host.append(field("rock", stSel));
   }
+  // waiting — [waiting:: who] + [since:: today] on the tree line (audit fix:
+  // the board showed waiting state; nothing here could set it). Clearing
+  // re-opens; the aging fuse re-anchors to since (tasks conventions).
+  if (sel.kind !== "decision" && !t.checked) {
+    const wIn = inputEl("who / what it waits on…");
+    wIn.className = "pp-in";
+    wIn.value = t.waiting || "";
+    wIn.onblur = async () => {
+      const v = wIn.value.trim();
+      if (v === (t.waiting || "")) return;
+      const today = new Date().toISOString().slice(0, 10);
+      await propWorkOp(p, { op: "set-field", id: t.workId || t.id, field: "waiting", value: v }, true);
+      propWorkOp(p, { op: "set-field", id: t.workId || t.id, field: "since", value: v ? today : "" });
+    };
+    wIn.addEventListener("keydown", (ev) => { if (ev.key === "Enter") wIn.blur(); });
+    host.append(field("waiting on", wIn));
+    if (t.waiting && t.since) host.append(field("since", el("span", "pp3-insp-val", t.since)));
+  }
   host.append(field("property", el("span", "pp3-insp-val", p.short || p.address || p.slug)));
   if (t.added) host.append(field("added", el("span", "pp3-insp-val", t.added)));
   host.append(note);
@@ -1108,29 +1273,14 @@ function underwritingSection(p) {
       return f;
     };
     grid.append(input("purchase price", "purchase_price"), input("hard costs", "hard_costs"));
-    if ((p.unitMix || []).length) {
-      // measured unit mix wins (frontmatter — hand-editable in Obsidian):
-      // the units/rent sidecar inputs retire behind the measured figures
-      const f = el("div", "re-uw-field re-uw-measured");
-      f.append(el("span", "re-uw-label", "unit mix (frontmatter)"));
-      const rows = el("div", "re-uw-unitmix");
-      p.unitMix.forEach((u) => rows.append(el("div", "re-uw-unit",
-        (u.label || "unit") + (u.beds ? " · " + u.beds + "bd/" + u.baths + "ba" : "") +
-        (u.sqft ? " · " + u.sqft + "sqft" : "") + (u.rent ? " · " + fmtMoney(u.rent) + "/mo" : ""))));
-      rows.append(el("div", "re-uw-unit re-uw-unitsum",
-        p.unitMix.length + " units · " + fmtMoney(p.rentMonthly || 0) + "/mo"));
-      f.append(rows);
-      grid.append(f);
-    } else {
+    if (!(p.unitMix || []).length) {
+      // no measured mix yet — the sidecar figures still drive screening;
+      // the unit-mix editor below graduates them into the record
       grid.append(input("units", "total_units"), input("stabilized rent /unit/mo", "avg_rent_per_unit"));
     }
     host.append(grid);
-    if (Object.keys(p.measurables || {}).length) {
-      const mline = el("div", "re-uw-measurables");
-      mline.append(el("span", "re-uw-label", "measurables  "));
-      mline.append(el("span", "", Object.entries(p.measurables).map(([k, v]) => k + " " + v).join(" · ")));
-      host.append(mline);
-    }
+    host.append(unitMixEditor(p));
+    host.append(measurablesEditor(p));
     const uw = reScreeningCalc(p);
     const outs = el("div", "pp3-strip re-uw-outs");
     const cell = (label, val, cls) => {
@@ -1173,6 +1323,112 @@ function underwritingSection(p) {
     host.append(dealFoot);
   })();
   return sec;
+}
+
+// unitMixEditor — the frontmatter `units:` list, editable IN PLACE (owner
+// ask 2026-08-18: "# of units and cost/unit/mo — list is better"). Rows of
+// label · bd · ba · sqft · rent/mo; edits save on blur; the record stays
+// hand-editable in Obsidian (the endpoint writes the same line).
+function unitMixEditor(p) {
+  const box = el("div", "re-unitmix");
+  const head = el("div", "re-uw-label", "UNIT MIX");
+  box.append(head);
+  const rows = (p.unitMix || []).map((u) => ({ ...u }));
+  const save = async () => {
+    const clean = rows.filter((u) => (u.label || "").trim() || u.beds || u.sqft || u.rent);
+    try {
+      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables",
+        { setUnits: true, units: clean });
+      renderProperties();
+    } catch (e) { showToast("Couldn't save the unit mix — " + (e.message || "")); }
+  };
+  const body = el("div", "re-unitmix-rows");
+  const renderRows = () => {
+    body.innerHTML = "";
+    if (rows.length) {
+      const cols = el("div", "re-unitmix-cols");
+      ["UNIT", "BD", "BA", "SQFT", "RENT/MO", ""].forEach((h) => cols.append(el("span", "", h)));
+      body.append(cols);
+    }
+    rows.forEach((u, i) => {
+      const line = el("div", "re-unitmix-row");
+      const cell = (key, placeholder, numeric) => {
+        const inp = inputEl(placeholder);
+        inp.className = "pp-in re-unitmix-in";
+        inp.value = u[key] ? String(u[key]) : "";
+        inp.onblur = () => {
+          const raw = inp.value.trim();
+          const next = numeric ? (parseFloat(raw.replace(/[,$]/g, "")) || 0) : raw;
+          if (next === (u[key] || (numeric ? 0 : ""))) return;
+          u[key] = next;
+          save();
+        };
+        return inp;
+      };
+      line.append(cell("label", "A", false), cell("beds", "", true), cell("baths", "", true),
+        cell("sqft", "", true), cell("rent", "", true));
+      const x = el("button", "pp3-stage-x re-unitmix-x", "✕");
+      x.title = "remove unit";
+      x.onclick = () => { rows.splice(i, 1); save(); };
+      line.append(x);
+      body.append(line);
+    });
+    if (rows.length) {
+      body.append(el("div", "re-uw-unit re-uw-unitsum",
+        rows.length + " units · " + fmtMoney(rows.reduce((n, u) => n + (u.rent || 0), 0)) + "/mo — drives screening"));
+    }
+  };
+  renderRows();
+  box.append(body);
+  box.append(ghostInput("＋ unit", "re-unitmix-add", (v) => {
+    rows.push({ label: v.trim() || String.fromCharCode(65 + rows.length) });
+    save();
+  }, "unit label (A, B, garden studio…)"));
+  return box;
+}
+
+// measurablesEditor — the free numeric frontmatter keys as editable chips
+// (windows 14 · roof-squares 22 · …). "name value" adds one; the value is
+// click-to-edit; ✕ removes the line from the record.
+function measurablesEditor(p) {
+  const box = el("div", "re-uw-measurables");
+  box.append(el("span", "re-uw-label", "MEASURABLES "));
+  const post = async (body, failMsg) => {
+    try {
+      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables", body);
+      renderProperties();
+    } catch (e) { showToast(failMsg + " — " + (e.message || "")); }
+  };
+  Object.entries(p.measurables || {}).sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, v]) => {
+    const chip = el("span", "re-meas-chip");
+    chip.append(el("span", "re-meas-key", k));
+    const val = el("button", "re-meas-val", String(v));
+    val.title = "click to edit";
+    val.onclick = () => {
+      const inp = inputEl("");
+      inp.className = "pp-in re-meas-edit";
+      inp.value = String(v);
+      inp.onblur = () => {
+        const n = parseFloat(inp.value.replace(/[,$]/g, ""));
+        if (isNaN(n) || n === v) { if (inp.parentNode) inp.replaceWith(val); return; }
+        post({ set: { [k]: n } }, "Couldn't save " + k);
+      };
+      inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") inp.blur(); });
+      val.replaceWith(inp);
+      inp.focus();
+    };
+    const x = el("button", "re-meas-x", "✕");
+    x.title = "remove " + k;
+    x.onclick = () => post({ remove: [k] }, "Couldn't remove " + k);
+    chip.append(val, x);
+    box.append(chip);
+  });
+  box.append(ghostInput("＋ measurable", "re-meas-add", (v) => {
+    const m = v.trim().match(/^([a-z][a-z0-9-]*)\s+\$?([\d,.]+)$/i);
+    if (!m) { showToast("Format: name value — e.g. windows 14"); return; }
+    post({ set: { [m[1].toLowerCase()]: parseFloat(m[2].replace(/,/g, "")) } }, "Couldn't add " + m[1]);
+  }, "windows 14…"));
+  return box;
 }
 
 // underwriteDeltaBlock — the look-back seed: locked est vs today's canon.

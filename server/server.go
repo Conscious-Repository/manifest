@@ -536,6 +536,8 @@ func (s *Server) Handler() http.Handler {
 	// deal underwriting (overhaul pass 4): the lock + the solo-deal flow
 	mux.HandleFunc("POST /api/properties/{slug}/underwrite-lock", s.handleUnderwriteLock)
 	mux.HandleFunc("POST /api/deals", s.handleDealCreate)
+	// pass 5: the page-side measurables editor (frontmatter stays the record)
+	mux.HandleFunc("POST /api/properties/{slug}/measurables", s.handlePropertyMeasurables)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/recontract", s.handleApprovalReContract)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)

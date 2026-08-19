@@ -82,6 +82,42 @@ func ParseUnits(v string) []Unit {
 	return out
 }
 
+// EmitUnit renders one unit line in the canonical segment order (the shape
+// ParseUnits reads back — fixpoint for canonical lines).
+func EmitUnit(u Unit) string {
+	segs := []string{strings.TrimSpace(u.Label)}
+	if segs[0] == "" {
+		segs[0] = "unit"
+	}
+	if u.Beds > 0 || u.Baths > 0 {
+		segs = append(segs, strconv.FormatFloat(u.Beds, 'f', -1, 64)+"bd/"+strconv.FormatFloat(u.Baths, 'f', -1, 64)+"ba")
+	}
+	if u.Sqft > 0 {
+		segs = append(segs, strconv.FormatFloat(u.Sqft, 'f', -1, 64)+"sqft")
+	}
+	if u.Rent > 0 {
+		segs = append(segs, "rent "+strconv.FormatFloat(u.Rent, 'f', -1, 64))
+	}
+	return strings.Join(segs, " | ")
+}
+
+// EmitUnitsList renders the frontmatter inline flow list.
+func EmitUnitsList(units []Unit) string {
+	items := make([]string, 0, len(units))
+	for _, u := range units {
+		items = append(items, strconv.Quote(EmitUnit(u)))
+	}
+	return "[" + strings.Join(items, ", ") + "]"
+}
+
+// MeasurableKeyOK gates page-written measurable names: kebab-case, not a
+// reserved property field.
+var measurableKeyRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
+
+func MeasurableKeyOK(key string) bool {
+	return measurableKeyRe.MatchString(key) && !reservedPropertyKeys[key]
+}
+
 // RentMonthly is Σ unit rents (0 = not yet estimated).
 func RentMonthly(units []Unit) float64 {
 	var n float64

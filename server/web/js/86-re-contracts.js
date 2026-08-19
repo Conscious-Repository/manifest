@@ -688,6 +688,18 @@ async function renderContractorPage(slug) {
     row.onclick = () => { location.hash = "#/properties/contract/" + encodeURIComponent(cv.slug); };
     row.append(el("span", "re-contract-status s-" + cv.status, cv.status));
     row.append(el("span", "prop-addr", cv.name));
+    // look-back (pass 5): bid-vs-final once draws exist, schedule slip once
+    // the allocated rock closed against a done-by date
+    const marks = el("span", "re-contract-marks");
+    if (cv.finalDelta != null && Math.abs(cv.finalDelta) > 0.5) {
+      marks.append(el("span", "re-lb-mark" + (cv.finalDelta > 0 ? " over" : " under"),
+        (cv.finalDelta > 0 ? "+" : "−") + fmtMoneyShort(Math.abs(cv.finalDelta)) + " vs bid"));
+    }
+    if (cv.slipDays != null) {
+      marks.append(el("span", "re-lb-mark" + (cv.slipDays > 0 ? " over" : ""),
+        cv.slipDays > 0 ? "+" + cv.slipDays + "d late" : "on time"));
+    }
+    row.append(marks);
     row.append(el("span", "re-contract-money",
       fmtMoney(cv.total) + (cv.drawn ? " · drawn " + fmtMoney(cv.drawn) : "")));
     main.append(row);

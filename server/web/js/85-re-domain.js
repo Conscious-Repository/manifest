@@ -538,8 +538,12 @@ async function renderREMoney() {
   host.append(el("div", "re-lane-head",
     "MONEY · " + moneyRows.length + " transactions" + (unfiled ? " · " + unfiled + " uncategorized" : "") +
     (last ? " · last import " + last : "")));
+  // dead-simple statement upload (overhaul decision 15): drop the bank CSV —
+  // the remembered column mapping + entity binding do the rest; a first-seen
+  // format opens the one-time mapping strip.
+  host.append(moneyUploadLane());
   if (!moneyRows.length) {
-    host.append(el("div", "pp-empty", "No transactions — import a bank statement CSV (Settings → Entities names the accounts)."));
+    host.append(el("div", "pp-empty", "No transactions yet — drop a bank statement CSV above."));
   }
   const cols = el("div", "re-money-cols");
   ["DATE", "DESCRIPTION", "AMOUNT", "PROPERTY"].forEach((h, i) =>
@@ -555,6 +559,119 @@ async function renderREMoney() {
   host.append(shell);
   // footer: accountant handoffs by entity books, personal vs partnered
   host.append(moneyFooter());
+}
+
+// ---- the statement upload lane (overhaul decision 15) ----
+// Drop/browse a CSV → POST /statements/upload (pure parse + remembered
+// mapping/entity) → when everything is remembered, one confirm ingests; a
+// new format opens the mapping strip (date/vendor/amount/note columns +
+// paying entity), remembered for next time by header signature.
+function moneyUploadLane() {
+  const lane = el("div", "re-intake-lane re-money-upload");
+  const drop = el("div", "re-intake-drop");
+  drop.append(el("span", "re-intake-glyph", "⇪"));
+  drop.append(el("span", "", "drop a bank statement CSV — or "));
+  const browse = el("button", "pp3-link", "browse");
+  drop.append(browse);
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".csv,text/csv";
+  input.hidden = true;
+  drop.append(input);
+  browse.onclick = () => input.click();
+  input.onchange = () => { if (input.files && input.files[0]) moneyUpload(input.files[0], lane); };
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) moneyUpload(e.dataTransfer.files[0], lane);
+  };
+  lane.append(drop);
+  return lane;
+}
+
+async function moneyUpload(file, lane) {
+  const fd = new FormData();
+  fd.append("file", file);
+  let d;
+  try {
+    const r = await fetch("/api/realestate/statements/upload", { method: "POST", body: fd });
+    if (!r.ok) throw new Error(await r.text());
+    d = await r.json();
+  } catch (e) { showToast("Upload failed — " + String(e.message || e).slice(0, 120)); return; }
+  const mapping = d.mapping || {};
+  const ready = mapping.date && mapping.amount && mapping.vendor && d.entity;
+  if (ready && d.remembered) {
+    moneyIngest(d, mapping, d.entity);
+    return;
+  }
+  // one-time strip: column pickers + the paying entity — remembered after
+  lane.querySelectorAll(".re-money-mapstrip").forEach((n) => n.remove());
+  const strip = el("div", "re-money-mapstrip");
+  strip.append(el("div", "re-uw-label", d.label + " · " + (d.rows || []).length + " rows — map once, remembered by header signature"));
+  const grid = el("div", "re-money-mapgrid");
+  const sel = {};
+  ["date", "vendor", "amount", "note"].forEach((field) => {
+    const s = document.createElement("select");
+    s.className = "pp-in";
+    const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; s.append(o); };
+    opt("", field + (field === "note" ? " (optional)" : "") + "…");
+    (d.headers || []).forEach((h) => opt(h, h));
+    s.value = mapping[field] || "";
+    sel[field] = s;
+    const f = el("label", "pp3-lform-field");
+    f.append(el("span", "pp3-lform-label", field), s);
+    grid.append(f);
+  });
+  // paying entity — required (rides the [paid-by::] token on apply)
+  const ent = document.createElement("select");
+  ent.className = "pp-in";
+  const eopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; ent.append(o); };
+  eopt("", "paying entity…");
+  (async () => {
+    try {
+      const es = await (await fetch("/api/realestate/entities")).json();
+      (es.entities || []).forEach((x) => eopt(x.name, x.name));
+      ent.value = d.entity || "";
+    } catch (e) {}
+  })();
+  const ef = el("label", "pp3-lform-field");
+  ef.append(el("span", "pp3-lform-label", "paying entity"), ent);
+  grid.append(ef);
+  strip.append(grid);
+  const actions = el("div", "pp3-uw-actions");
+  const cancel = el("button", "pp3-uw-cancel", "cancel");
+  cancel.onclick = () => strip.remove();
+  const go = el("button", "pp3-compose-go", "ingest ↵");
+  go.onclick = () => {
+    const m = { date: sel.date.value, vendor: sel.vendor.value, amount: sel.amount.value, note: sel.note.value };
+    if (!m.date || !m.vendor || !m.amount) { showToast("Map date, vendor, and amount"); return; }
+    if (!ent.value) { showToast("Pick the paying entity"); return; }
+    moneyIngest(d, m, ent.value);
+  };
+  actions.append(cancel, go);
+  strip.append(actions);
+  lane.append(strip);
+}
+
+async function moneyIngest(d, mapping, entity) {
+  const idx = {};
+  (d.headers || []).forEach((h, i) => { idx[h] = i; });
+  const cell = (row, field) => (mapping[field] && idx[mapping[field]] != null ? String(row[idx[mapping[field]]] || "").trim() : "");
+  const rows = (d.rows || []).map((row) => ({
+    Date: cell(row, "date"), Vendor: cell(row, "vendor"), Note: cell(row, "note"),
+    Amount: parseFloat(cell(row, "amount").replace(/[$,()]/g, "")) *
+      (/^\(.*\)$/.test(cell(row, "amount")) ? -1 : 1) || 0,
+  })).filter((r) => r.Date && r.Amount);
+  if (!rows.length) { showToast("No usable rows after mapping"); return; }
+  try {
+    const res = await postJSONOk("/api/realestate/statements/ingest", {
+      label: d.label, entity, signature: d.signature, mapping, rows,
+    });
+    showToast("Ingested " + (res.added != null ? res.added : rows.length) + " rows — assign below, then apply");
+    renderProperties();
+  } catch (e) { showToast("Ingest failed — " + String(e.message || e).slice(0, 120)); }
 }
 
 function moneyRow(r) {

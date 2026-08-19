@@ -71,6 +71,70 @@ func (s *Server) handleUnderwriteLock(w http.ResponseWriter, r *http.Request) {
 	s.respondProperty(w, p.Slug)
 }
 
+// handlePropertyMeasurables — POST /api/properties/{slug}/measurables: the
+// page-side editor for the frontmatter measurables (overhaul §3.1 — the
+// record stays hand-editable in Obsidian; this writes the same lines).
+// Body: {"units":[{label,beds,baths,sqft,rent},…]} replaces the unit mix
+// ([] removes the key); {"set":{"windows":14}} upserts measurables;
+// {"remove":["windows"]} deletes them.
+func (s *Server) handlePropertyMeasurables(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "properties not available", http.StatusServiceUnavailable)
+		return
+	}
+	p, ok := s.realestate.Get(r.PathValue("slug"))
+	if !ok {
+		http.Error(w, "property not found", http.StatusNotFound)
+		return
+	}
+	var b struct {
+		Units  []realestate.Unit  `json:"units"`
+		SetU   bool               `json:"setUnits"` // distinguishes "replace with []" from "untouched"
+		Set    map[string]float64 `json:"set"`
+		Remove []string           `json:"remove"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	if b.SetU {
+		if len(b.Units) == 0 {
+			if err := s.vault.RemoveFrontmatterField(p.Path, "units"); err != nil {
+				httpError(w, err)
+				return
+			}
+		} else if err := s.vault.SetFrontmatterField(p.Path, "units", realestate.EmitUnitsList(b.Units)); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	for key, v := range b.Set {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if !realestate.MeasurableKeyOK(key) {
+			httpError(w, errBadRequest("measurable name must be kebab-case and not a reserved field: "+key))
+			return
+		}
+		if err := s.vault.SetFrontmatterField(p.Path, key, trimFloat(v)); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	for _, key := range b.Remove {
+		key = strings.ToLower(strings.TrimSpace(key))
+		if !realestate.MeasurableKeyOK(key) {
+			continue // never remove reserved fields through this lane
+		}
+		if err := s.vault.RemoveFrontmatterField(p.Path, key); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{p.Path})
+	}
+	s.respondProperty(w, p.Slug)
+}
+
 // handleDealCreate — POST /api/deals: {"property": "<slug>"} underwrites a
 // solo property as its own deal (decision 11 — a solo property IS a deal);
 // {"name": "...", "properties": ["<slug>", …]} creates a bundle.

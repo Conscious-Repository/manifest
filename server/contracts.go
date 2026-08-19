@@ -544,25 +544,67 @@ func (s *Server) handleContractorPage(w http.ResponseWriter, r *http.Request) {
 		}
 		prose = strings.TrimSpace(strings.Join(keep, "\n"))
 	}
-	// contracts + money
-	var contracts []contractView
+	// contracts + money — plus the look-back derivations (overhaul §4/17):
+	// bid-vs-final (drawn vs committed once draws exist) and schedule slip
+	// (the allocated rock's [done::] vs its [done-by::])
+	props, _ := s.realestate.Properties()
+	propBySlug := map[string]*realestate.Property{}
+	for i := range props {
+		propBySlug[props[i].Slug] = &props[i]
+	}
+	rockOf := func(propSlug, nodeID string) *realestate.WorkStage {
+		p := propBySlug[propSlug]
+		if p == nil {
+			return nil
+		}
+		for i := range p.Work {
+			if p.Work[i].ID == nodeID || strings.HasPrefix(nodeID, p.Work[i].ID+"/") {
+				return &p.Work[i]
+			}
+		}
+		return nil
+	}
+	type lookbackView struct {
+		contractView
+		FinalDelta *float64 `json:"finalDelta,omitempty"` // drawn − committed (only once drawn)
+		SlipDays   *int     `json:"slipDays,omitempty"`   // max rock [done::] − [done-by::] across allocations
+	}
+	var contracts []lookbackView
 	var committed, drawn float64
 	propsWorked := map[string]bool{}
 	for _, cv := range s.contractViews() {
 		if !strings.EqualFold(cv.Contractor, slug) {
 			continue
 		}
-		contracts = append(contracts, cv)
+		lv := lookbackView{contractView: cv}
+		if cv.Accepted() && cv.Drawn > 0 {
+			d := cv.Drawn - cv.Total
+			lv.FinalDelta = &d
+		}
+		for _, a := range cv.Allocations {
+			propsWorked[a.Property] = true
+			rock := rockOf(a.Property, a.NodeID)
+			if rock == nil || !rock.Checked || rock.Done == "" || rock.DoneBy == "" {
+				continue
+			}
+			done, err1 := time.Parse("2006-01-02", rock.Done)
+			by, err2 := time.Parse("2006-01-02", rock.DoneBy)
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			days := int(done.Sub(by).Hours() / 24)
+			if lv.SlipDays == nil || days > *lv.SlipDays {
+				lv.SlipDays = &days
+			}
+		}
+		contracts = append(contracts, lv)
 		if cv.Accepted() {
 			committed += cv.Total
 			drawn += cv.Drawn
 		}
-		for _, a := range cv.Allocations {
-			propsWorked[a.Property] = true
-		}
 	}
 	if contracts == nil {
-		contracts = []contractView{}
+		contracts = []lookbackView{}
 	}
 	// open tree tasks/decisions owned ([owner:: slug] across property trees)
 	type ownedRow struct {
@@ -574,21 +616,19 @@ func (s *Server) handleContractorPage(w http.ResponseWriter, r *http.Request) {
 	}
 	owned := []ownedRow{}
 	properties := []map[string]string{}
-	if props, err := s.realestate.Properties(); err == nil {
-		for _, p := range props {
-			if propsWorked[p.Slug] {
-				properties = append(properties, map[string]string{"slug": p.Slug, "name": orStr(p.Short, p.Name)})
-			}
-			realestate.WalkNodes(p.Work, func(st *realestate.WorkStage, n *realestate.WorkNode) {
-				if n.Task.Checked || !strings.EqualFold(n.Task.Owner, slug) {
-					return
-				}
-				owned = append(owned, ownedRow{
-					ID: "prop:" + p.Slug + "/" + n.TaskID(), Text: n.Task.Text,
-					Property: orStr(p.Short, p.Name), Decision: n.Decision, Rock: st.Text,
-				})
-			})
+	for _, p := range props { // the walk above already loaded them
+		if propsWorked[p.Slug] {
+			properties = append(properties, map[string]string{"slug": p.Slug, "name": orStr(p.Short, p.Name)})
 		}
+		realestate.WalkNodes(p.Work, func(st *realestate.WorkStage, n *realestate.WorkNode) {
+			if n.Task.Checked || !strings.EqualFold(n.Task.Owner, slug) {
+				return
+			}
+			owned = append(owned, ownedRow{
+				ID: "prop:" + p.Slug + "/" + n.TaskID(), Text: n.Task.Text,
+				Property: orStr(p.Short, p.Name), Decision: n.Decision, Rock: st.Text,
+			})
+		})
 	}
 	sort.SliceStable(contracts, func(i, j int) bool { return contracts[i].Date > contracts[j].Date })
 	writeJSON(w, map[string]any{

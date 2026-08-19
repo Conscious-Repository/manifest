@@ -61,6 +61,44 @@ func (w *Writer) SetFrontmatterField(rel, key, value string) error {
 	return w.commit(full, "record-frontmatter", []byte(next))
 }
 
+// RemoveFrontmatterField deletes one scalar line from a record's frontmatter
+// (a measurable retired from the property page). Missing key = no-op.
+func (w *Writer) RemoveFrontmatterField(rel, key string) error {
+	full, err := w.resolveRecord(rel)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		return err
+	}
+	s := string(raw)
+	if !strings.HasPrefix(s, "---\n") {
+		return nil
+	}
+	end := strings.Index(s[4:], "\n---")
+	if end < 0 {
+		return errors.New("unterminated frontmatter")
+	}
+	fmEnd := 4 + end
+	block, rest := s[4:fmEnd], s[fmEnd:]
+	lines := strings.Split(block, "\n")
+	out := lines[:0]
+	changed := false
+	for _, l := range lines {
+		k := strings.TrimSpace(strings.SplitN(l, ":", 2)[0])
+		if strings.EqualFold(k, key) {
+			changed = true
+			continue
+		}
+		out = append(out, l)
+	}
+	if !changed {
+		return nil
+	}
+	return w.commit(full, "record-frontmatter", []byte("---\n"+strings.Join(out, "\n")+rest))
+}
+
 // resolveRecord is resolve() for database-class edits.
 func (w *Writer) resolveRecord(rel string) (string, error) {
 	if !w.Enabled() {
