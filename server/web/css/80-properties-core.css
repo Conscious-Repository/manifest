@@ -539,3 +539,7 @@
 .re-money-upload { margin: var(--sp-3) 0 var(--sp-4); }
 .re-money-mapstrip { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-5); margin-top: var(--sp-3); }
 .re-money-mapgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-4) var(--sp-5); margin: var(--sp-3) 0; }
+
+/* underwriting inputs line — read-only, from the budget plan */
+.re-uw-frombudget { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); padding: var(--sp-2) 0; margin: var(--sp-2) 0; }
+.re-uw-frombudget:hover { color: var(--accent); }

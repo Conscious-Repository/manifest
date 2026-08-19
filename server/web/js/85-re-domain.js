@@ -1025,15 +1025,22 @@ function reScreeningCalc(p) {
   // unit count + per-unit rents; the source sidecar is the fallback
   const units = ((p.unitMix || []).length) || p.units || reSrcNum(src, "total_units") || 0;
   const rent = (p.rentMonthly && units) ? p.rentMonthly / units : reSrcNum(src, "avg_rent_per_unit");
+  // cost inputs = THE BUDGET's plan figures (owner call 2026-08-19 — the
+  // section had its own purchase/hard inputs that disagreed with the budget):
+  // hard = Σ rock ests once estimated (else the underwrite figure), plus
+  // closing, soft = carry when entered (else the screening approximation)
   const purchase = reSrcNum(src, "purchase_price");
-  const hard = reSrcNum(src, "hard_costs");
+  const closing = reSrcNum(src, "closing_costs");
+  const workEst = (p.work || []).reduce((n, st) => n + (st.estTotal || 0), 0);
+  const hard = workEst > 0 ? workEst : reSrcNum(src, "hard_costs");
   if (!units || !rent) return { complete: false };
   const gross = units * rent * 12;
   const egi = gross * (1 - (a.vacancy_rate || 0));
   const noi = egi * (1 - (a.opex_rate || 0));
-  const soft = hard * 0.15; // screening approximation; the engine itemizes
+  const carry = reSrcNum(src, "carry_cost");
+  const soft = carry > 0 ? carry : hard * 0.15; // budget's soft plan, else the screening approximation
   const contingency = hard * (a.contingency_pct || 0);
-  const tdc = purchase + hard + soft + contingency;
+  const tdc = purchase + closing + hard + soft + contingency;
   const arv = a.exit_cap_rate ? noi / a.exit_cap_rate : 0;
   // Loan sizing (owner report 2026-08-18 "DSCR is ALWAYS 1.22"): at the
   // LTV-max loan DSCR is a CONSTANT of the assumptions — loan = LTV·ARV and
@@ -1047,7 +1054,11 @@ function reScreeningCalc(p) {
   const loan = takeout > 0 ? Math.min(permMax, takeout) : permMax;
   const refiGap = takeout > permMax ? takeout - permMax : 0;
   const ads = reDebtService(loan, a);
-  return { complete: true, gross, egi, noi, tdc, arv, loan, permMax, refiGap, dscr: ads ? noi / ads : 0 };
+  return {
+    complete: true, gross, egi, noi, tdc, arv, loan, permMax, refiGap,
+    purchase, closing, hard, soft, contingency, hardFromWork: workEst > 0,
+    dscr: ads ? noi / ads : 0,
+  };
 }
 
 // ---- PUBLISH → oodagroup — the portal export effector (RE spec §4) ----

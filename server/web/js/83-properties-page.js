@@ -1227,8 +1227,9 @@ function underwritingSection(p) {
     const relock = el("button", "pp3-uw-lock locked", "locked " + p.locked + " · re-lock");
     relock.title = "re-locking OVERWRITES the frozen snapshot — a deliberate do-over";
     relock.onclick = async () => {
-      if (!confirm("Re-lock underwriting? The " + p.locked + " snapshot is overwritten — initial-vs-real resets to today.")) return;
-      try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/underwrite-lock", { relock: true }); renderProperties(); }
+      // no confirm dialog (owner call 2026-08-19) — the button just does it;
+      // the snapshot overwrites and initial-vs-real re-anchors to today
+      try { applyFreshProperty(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/underwrite-lock", { relock: true })); showToast("Re-locked — initial-vs-real re-anchored to today"); }
       catch (e) { showToast("Couldn't re-lock — " + (e.message || "")); }
     };
     head.append(relock);
@@ -1236,8 +1237,9 @@ function underwritingSection(p) {
     const lock = el("button", "pp3-uw-lock", "lock underwriting");
     lock.title = "freeze measurables + rock ests + inputs as the initial underwrite (one deliberate moment)";
     lock.onclick = async () => {
-      if (!confirm("Lock underwriting? Today's measurables, rock ests, and inputs freeze as the initial underwrite — the page then shows initial vs real.")) return;
-      try { await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/underwrite-lock", {}); renderProperties(); }
+      // no confirm dialog (owner call 2026-08-19) — one click freezes today's
+      // measurables + rock ests + inputs as the initial underwrite
+      try { applyFreshProperty(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/underwrite-lock", {})); showToast("Locked — the page now shows initial vs real"); }
       catch (e) { showToast("Couldn't lock — " + (e.message || "")); }
     };
     head.append(lock);
@@ -1286,16 +1288,29 @@ function underwritingSection(p) {
       f.append(inp);
       return f;
     };
-    grid.append(input("purchase price", "purchase_price"), input("hard costs", "hard_costs"));
     if (!(p.unitMix || []).length) {
       // no measured mix yet — the sidecar figures still drive screening;
       // the unit-mix editor below graduates them into the record
       grid.append(input("units", "total_units"), input("stabilized rent /unit/mo", "avg_rent_per_unit"));
+      host.append(grid);
     }
-    host.append(grid);
     host.append(unitMixEditor(p));
     host.append(measurablesEditor(p));
     const uw = reScreeningCalc(p);
+    // cost inputs come FROM THE BUDGET (owner call 2026-08-19 — no duplicate
+    // purchase/hard fields here): one read-only line names the figures in
+    // play; clicking it opens the budget's underwrite editor
+    if (uw.complete || uw.purchase || uw.hard) {
+      const inputsLine = el("button", "re-uw-frombudget");
+      inputsLine.append(el("span", "re-uw-label", "INPUTS · FROM THE BUDGET  "));
+      inputsLine.append(el("span", "", "purchase " + fmtMoneyShort(uw.purchase || 0) +
+        (uw.closing ? " + closing " + fmtMoneyShort(uw.closing) : "") +
+        " · hard " + fmtMoneyShort(uw.hard || 0) + (uw.hardFromWork ? " (Σ rock ests)" : " (underwrite)") +
+        " · soft " + fmtMoneyShort(uw.soft || 0) +
+        " · contingency " + fmtMoneyShort(uw.contingency || 0) + "  → edit ↗"));
+      inputsLine.onclick = () => { propUWOpen = true; renderPropertyPage(p.slug); };
+      host.append(inputsLine);
+    }
     const outs = el("div", "pp3-strip re-uw-outs");
     const cell = (label, val, cls) => {
       const c = el("div", "pp3-cell");
