@@ -192,6 +192,77 @@ func (s *StatementStore) Update(id string, category, note *string, assignments *
 	return StatementRow{}, fmt.Errorf("row not found")
 }
 
+// Get returns one row by id.
+func (s *StatementStore) Get(id string) (StatementRow, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range s.st.Rows {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return StatementRow{}, false
+}
+
+// Unfile returns an APPLIED row to the lot (assigned, edits allowed again).
+// Callers delete the written ledger rows FIRST — this only flips state.
+func (s *StatementStore) Unfile(id string) (StatementRow, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.st.Rows {
+		r := &s.st.Rows[i]
+		if r.ID != id {
+			continue
+		}
+		if r.State != "applied" {
+			return *r, fmt.Errorf("row is %s — only applied rows unfile", r.State)
+		}
+		r.State = "assigned"
+		s.save()
+		return *r, nil
+	}
+	return StatementRow{}, fmt.Errorf("row not found")
+}
+
+// UpdateApplied patches category/note/assignment-tethers on an APPLIED row —
+// the filed-edit lane (owner call 2026-08-19: history rows edit in place).
+// Assignment IDENTITY (slugs + amounts) must not change here; callers rewrote
+// the ledger rows first and moving money means unfile → refile.
+func (s *StatementStore) UpdateApplied(id string, category, note *string, assignments *[]Alloc) (StatementRow, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.st.Rows {
+		r := &s.st.Rows[i]
+		if r.ID != id {
+			continue
+		}
+		if r.State != "applied" {
+			return *r, fmt.Errorf("row is %s — not filed", r.State)
+		}
+		if category != nil {
+			r.Category = strings.TrimSpace(*category)
+		}
+		if note != nil {
+			r.Note = strings.TrimSpace(*note)
+		}
+		if assignments != nil {
+			if len(*assignments) != len(r.Assignments) {
+				return *r, fmt.Errorf("filed assignments can't change shape — unfile first")
+			}
+			for j, a := range *assignments {
+				old := r.Assignments[j]
+				if a.Slug != old.Slug || a.Amount != old.Amount {
+					return *r, fmt.Errorf("filed targets/amounts can't change — unfile first")
+				}
+			}
+			r.Assignments = *assignments
+		}
+		s.save()
+		return *r, nil
+	}
+	return StatementRow{}, fmt.Errorf("row not found")
+}
+
 // Applicable validates and returns the rows ready to write: state
 // assigned/split, category set, allocations sum to the amount (±1¢).
 func (s *StatementStore) Applicable(ids []string) ([]StatementRow, error) {

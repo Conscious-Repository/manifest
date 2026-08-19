@@ -49,6 +49,9 @@ async function renderPropertyPage(slug) {
     propPageSlug = slug;
     propUWOpen = false; propLedgerEdit = -1; propLedgerAdd = false;
   }
+  // the ledger editor's bid/contract picker + receipt links need the
+  // contracts cache — warm it before first paint
+  if (typeof reContractsCache !== "undefined" && reContractsCache === null) await loadReContracts();
   const p = propertyCache.find((x) => x.slug === slug);
   if (!p) { propPageEls = null; host.innerHTML = ""; host.append(el("div", "pp-empty", "Property not found.")); return; }
   const pg = propPageSkeleton(host, slug);
@@ -670,7 +673,22 @@ function ledgerRow(p, r, i) {
   row.append(el("span", "", r.date || ""));
   const bidTag = r.type === "bid" ? "bid " + (r.status || "") : "";
   row.append(el("span", "", r.category ? r.category + (bidTag ? " · " + bidTag : "") : (bidTag || r.type || "")));
-  row.append(el("span", "pp3-ledger-vendor", r.vendor || r.contractor || ""));
+  const vend = el("span", "pp3-ledger-vendor", r.vendor || r.contractor || "");
+  // the bid link (receipt-attach): a linked contract shows as a quiet chip;
+  // when the contract carries a doc, the chip opens the receipt file
+  if (r.contract) {
+    const c = (typeof reContracts === "function" ? reContracts() : []).find((x) => x.slug === r.contract);
+    if (c && c.doc && c.doc.startsWith("sha256:")) {
+      const a = el("a", "pp3-ledger-bidchip", "⎘ " + (c.name || r.contract));
+      a.href = "/api/realestate/files/" + encodeURIComponent(c.doc.slice(7));
+      a.target = "_blank"; a.rel = "noopener"; a.title = "open the bid's receipt file";
+      a.onclick = (e) => e.stopPropagation();
+      vend.append(a);
+    } else {
+      vend.append(el("span", "pp3-ledger-bidchip", "⎘ " + ((c && c.name) || r.contract)));
+    }
+  }
+  row.append(vend);
   // income reads as income — signed and accented, never expense-identical
   const isIncome = r.type === "income";
   row.append(el("span", "pp3-ledger-amt" + (isIncome ? " inflow" : ""),
@@ -730,40 +748,81 @@ function ledgerForm(p, r, i) {
   type.onchange = setStatusOpts;
   const category = inputEl("category"); category.className = "pp-in"; category.value = r ? (r.category || "") : "";
   const vendor = inputEl("vendor"); vendor.className = "pp-in"; vendor.value = r ? (r.vendor || "") : "";
-  const contractor = inputEl("contractor"); contractor.className = "pp-in"; contractor.value = r ? (r.contractor || "") : "";
+  // contractor autofills from the contractor records (owner ask 2026-08-19)
+  const contractorTa = recordAutocomplete("contractor", "contractor…");
+  contractorTa.setValue(r ? (r.contractor || "") : "");
   const amount = moneyInput("$", r ? r.amount : 0); amount.value = r && r.amount ? r.amount : "";
   const note = inputEl("note"); note.className = "pp-in"; note.value = r ? (r.note || "") : "";
   grid.append(labeled("date", date), labeled("type", type), labeled("status", status),
-    labeled("category", category), labeled("vendor", vendor), labeled("contractor", contractor),
+    labeled("category", category), labeled("vendor", vendor), labeled("contractor", contractorTa.el),
     labeled("amount", amount), labeled("note", note));
-  // quick-add hops (§7): property → node → contract. The contract list =
-  // accepted contracts with allocations on THIS property, showing remaining.
-  let nodeSel = null, contractSel = null;
-  if (!r) {
-    nodeSel = selectEl([]);
-    nodeSel.className = "pp-in";
-    const nopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; nodeSel.append(o); };
-    nopt("", "— no tether —");
-    (p.work || []).forEach((st) => {
-      nopt(st.id, st.text);
-      (st.tasks || []).forEach(function walk(n, prefix) {
-        const pre = typeof prefix === "string" ? prefix : "· ";
-        nopt(n.id, pre + n.text);
-        (n.children || []).forEach((c) => walk(c, pre + "· "));
-      });
+  // hops (§7): node tether + bid/contract link — on ADDS and EDITS alike
+  // (the QuickBooks receipt-attach: linking an expense to the bid it paid;
+  // a proposed bid offers to accept, a doc-carrying one shows its receipt)
+  const nodeSel = selectEl([]);
+  nodeSel.className = "pp-in";
+  const nopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; nodeSel.append(o); };
+  nopt("", "— no tether —");
+  (p.work || []).forEach((st) => {
+    nopt(st.id, st.text);
+    (st.tasks || []).forEach(function walk(n, prefix) {
+      const pre = typeof prefix === "string" ? prefix : "· ";
+      nopt(n.id, pre + n.text);
+      (n.children || []).forEach((c) => walk(c, pre + "· "));
     });
-    contractSel = selectEl([]);
-    contractSel.className = "pp-in";
-    const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; contractSel.append(o); };
-    copt("", "— no contract —");
-    (typeof reContracts === "function" ? reContracts() : [])
-      .filter((c) => c.status === "accepted" && (c.allocations || []).some((a) => a.property === p.slug))
-      .forEach((c) => copt(c.slug, c.name + " · " + fmtMoney(c.remaining != null ? c.remaining : c.total) + " left"));
-    grid.append(labeled("node", nodeSel), labeled("contract", contractSel));
-  }
+  });
+  if (r && r.workId) nodeSel.value = r.workId;
+  const contractSel = selectEl([]);
+  contractSel.className = "pp-in";
+  const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; contractSel.append(o); };
+  copt("", "— no bid / contract —");
+  const cs = typeof reContracts === "function" ? reContracts() : [];
+  cs.filter((c) => c.status === "accepted" && (c.allocations || []).some((a) => a.property === p.slug))
+    .forEach((c) => copt(c.slug, c.name + " · " + fmtMoney(c.remaining != null ? c.remaining : c.total) + " left"));
+  cs.filter((c) => c.status === "proposed" && (c.allocations || []).some((a) => a.property === p.slug))
+    .forEach((c) => copt(c.slug, c.name + " · proposed bid " + fmtMoney(c.total)));
+  if (r && r.contract) contractSel.value = r.contract;
+  contractSel.onchange = () => {
+    // picking a bid without a node prefills the node from its allocation
+    if (contractSel.value && !nodeSel.value) {
+      const c = cs.find((x) => x.slug === contractSel.value);
+      const al = c && (c.allocations || []).find((x) => x.property === p.slug);
+      if (al) nodeSel.value = al.nodeId;
+    }
+    ledgerBidExtras();
+  };
+  grid.append(labeled("node", nodeSel), labeled("bid / contract", contractSel));
   form.append(grid);
-  if (r && r.workId) form.append(el("div", "pp3-uw-note", "tethered to work [" + r.workId + "] — kept"));
-  if (r && r.contract) form.append(el("div", "pp3-uw-note", "draws contract [" + r.contract + "] — kept"));
+  // receipt link + proposed-accept offer under the grid, live to the pick
+  const bidExtras = el("div", "pp3-lform-bid");
+  form.append(bidExtras);
+  const ledgerBidExtras = () => {
+    bidExtras.innerHTML = "";
+    const c = cs.find((x) => x.slug === contractSel.value);
+    if (!c) return;
+    if (c.doc && c.doc.startsWith("sha256:")) {
+      const a = el("a", "pp3-link", "receipt ↗ (" + c.name + ")");
+      a.href = "/api/realestate/files/" + encodeURIComponent(c.doc.slice(7));
+      a.target = "_blank"; a.rel = "noopener";
+      bidExtras.append(a);
+    }
+    if (c.status === "proposed") {
+      const strip = el("div", "re-bid-accept");
+      strip.append(el("span", "", "accept this bid? (" + fmtMoney(c.total) + " becomes committed)"));
+      const yes = el("button", "pill light", "accept ✓");
+      yes.onclick = async () => {
+        try {
+          await postJSONOk("/api/realestate/contracts/" + encodeURIComponent(c.slug) + "/accept", {});
+          if (typeof loadReContracts === "function") await loadReContracts();
+          showToast("Bid accepted — " + fmtMoney(c.total) + " committed");
+          strip.remove();
+        } catch (e) { showToast("Couldn't accept — " + (e.message || "")); }
+      };
+      strip.append(yes, el("span", "pp3-uw-note", "or save to link without accepting"));
+      bidExtras.append(strip);
+    }
+  };
+  ledgerBidExtras();
 
   const actions = el("div", "pp3-uw-actions");
   const cancel = el("button", "pp3-uw-cancel", "cancel");
@@ -774,25 +833,26 @@ function ledgerForm(p, r, i) {
     if (!amt) { showToast("Amount is required"); return; }
     try {
       if (r) {
-        // rebuild the note with the row's hidden tokens intact — the server
-        // reconstructs the on-disk note from note+workId only
+        // rebuild the note with the row's hidden tokens intact — the bid/
+        // contract link and node tether come from the pickers (editable now),
+        // the rest of the token set is preserved verbatim
         let n = note.value.trim();
-        if (r.contract) n += " [contract:: " + r.contract + "]";
+        if (contractSel.value) n += " [contract:: " + contractSel.value + "]";
         if (r.cat) n += " [cat:: " + r.cat + "]";
         if (r.paidBy) n += " [paid-by:: " + r.paidBy + "]";
         if (r.stmt) n += " [stmt:: " + r.stmt + "]";
         const replacement = {
           date: date.value.trim(), type: type.value, category: category.value.trim(),
-          vendor: vendor.value.trim(), contractor: contractor.value.trim(), amount: amt,
-          status: status.value, note: n.trim(), doc: r.doc || "", workId: r.workId || "",
+          vendor: vendor.value.trim(), contractor: contractorTa.value(), amount: amt,
+          status: status.value, note: n.trim(), doc: r.doc || "", workId: nodeSel.value || "",
         };
         await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger/mutate", { original: r, replacement });
       } else {
         await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/ledger", {
           date: date.value.trim(), type: type.value, category: category.value.trim(),
-          vendor: vendor.value.trim(), contractor: contractor.value.trim(), amount: amt,
+          vendor: vendor.value.trim(), contractor: contractorTa.value(), amount: amt,
           status: status.value, note: note.value.trim(),
-          workId: nodeSel ? nodeSel.value : "", contract: contractSel ? contractSel.value : "",
+          workId: nodeSel.value, contract: contractSel.value,
         });
       }
       propLedgerEdit = -1; propLedgerAdd = false;

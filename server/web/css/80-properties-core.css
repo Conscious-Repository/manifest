@@ -518,6 +518,17 @@
 .re-money-hist-head { margin-top: var(--sp-9); }
 .re-money-file { margin: var(--sp-4) 0; width: 100%; }
 
+/* bid links (receipt-attach) + filed-edit lane */
+.pp3-ledger-bidchip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-lg); padding: 0 var(--sp-2); margin-left: var(--sp-3); text-decoration: none; }
+.re-bid-accept { display: flex; align-items: center; gap: var(--sp-4); font-size: var(--fs-xs); color: var(--base-40); padding: var(--sp-2) 0; }
+.re-bid-receipt { margin-left: var(--sp-3); }
+.pp3-lform-bid { padding: var(--sp-2) 0; }
+.re-money-split-label { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.re-filed-head { margin-top: var(--sp-4); color: var(--base-40); }
+.re-filed-slice { padding: var(--sp-2) 0 0; }
+.re-filed-target { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); }
+.re-money-unfile { margin-top: var(--sp-5); width: 100%; justify-content: center; }
+
 /* the split editor — N target+amount rows · ÷ even · Σ check · file */
 .re-split { display: flex; flex-direction: column; gap: var(--sp-3); margin: var(--sp-4) 0; }
 .re-split-row { display: grid; grid-template-columns: minmax(120px, 1fr) 96px 24px; gap: var(--sp-4); align-items: center; }

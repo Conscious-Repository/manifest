@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,5 +140,88 @@ func TestFilingErrorSurfaces(t *testing.T) {
 	}
 	if fe, _ := res["fileError"].(string); !strings.Contains(fe, "no category") {
 		t.Fatalf("fileError = %q, want the no-category reason", res["fileError"])
+	}
+}
+
+// refilePost drives handleStatementsRefile with the {id} path value set.
+func refilePost(t *testing.T, srv *Server, id, body string) (int, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/api/realestate/statements/"+id+"/refile", strings.NewReader(body))
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	srv.handleStatementsRefile(rec, req)
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return rec.Code, out
+}
+
+// The filed-edit lane (owner call 2026-08-19): category/note/bid links on a
+// FILED row rewrite the written ledger row(s) in place; unfile deletes them
+// and returns the row to the lot. Splits edit every slice.
+func TestRefileEditsAndUnfilesWrittenRows(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -4), Amount: -10131, Description: "CHECK 108", Payee: "Tree Court"},
+	}}}
+	srv, vault, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := srv.statements.List()
+	id := rows[0].ID
+	// file as a 2-way split
+	code, res := doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+id+`","category":"windows","note":"tree court check","state":"split","file":true,"assignments":[`+
+			`{"slug":"748-n-euclid","amount":5000},{"slug":"4852-fountain-ave","amount":5131}]}`)
+	if code != 200 || res["state"] != "applied" {
+		t.Fatalf("file: %d %v (%v)", code, res["state"], res["fileError"])
+	}
+
+	// edit in place: category + a bid link on slice 1 (the written rows rewrite)
+	code, res = refilePost(t, srv, id,
+		`{"category":"materials","assignments":[`+
+			`{"slug":"748-n-euclid","amount":5000,"workId":"shell/roof","contract":"olga-drawings"},`+
+			`{"slug":"4852-fountain-ave","amount":5131}]}`)
+	if code != 200 {
+		t.Fatalf("refile: %d %v", code, res)
+	}
+	led1, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv"))
+	if !strings.Contains(string(led1), "materials") || !strings.Contains(string(led1), "[contract:: olga-drawings]") ||
+		!strings.Contains(string(led1), "[work:: shell/roof]") {
+		t.Fatalf("refile didn't rewrite slice 1:\n%s", led1)
+	}
+	if strings.Contains(string(led1), "windows") {
+		t.Fatalf("old category survived the rewrite:\n%s", led1)
+	}
+	led2, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/4852-fountain-ave.ledger.csv"))
+	if !strings.Contains(string(led2), "materials") || strings.Contains(string(led2), "[contract::") {
+		t.Fatalf("slice 2 wrong after refile:\n%s", led2)
+	}
+
+	// identity is immutable through refile — moving money means unfile
+	code, _ = refilePost(t, srv, id,
+		`{"assignments":[{"slug":"748-n-euclid","amount":9000},{"slug":"4852-fountain-ave","amount":1131}]}`)
+	if code == 200 {
+		t.Fatal("amount change must be refused (unfile first)")
+	}
+
+	// unfile: both written rows deleted, the row returns to the lot assigned
+	code, res = refilePost(t, srv, id, `{"unfile":true}`)
+	if code != 200 || res["unfiled"] != true {
+		t.Fatalf("unfile: %d %v", code, res)
+	}
+	led1, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv"))
+	led2, _ = os.ReadFile(filepath.Join(vault, "system/realestate/properties/4852-fountain-ave.ledger.csv"))
+	if strings.Contains(string(led1), "Tree Court") || strings.Contains(string(led2), "Tree Court") {
+		t.Fatalf("unfile left ledger rows behind:\n%s\n%s", led1, led2)
+	}
+	row, _ := srv.statements.Get(id)
+	if row.State != "assigned" || len(row.Assignments) != 2 {
+		t.Fatalf("unfiled row: %+v", row)
+	}
+	// and it refiles cleanly (the round trip)
+	code, res = doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+id+`","file":true}`)
+	if code != 200 || res["state"] != "applied" {
+		t.Fatalf("refile after unfile: %d %v (%v)", code, res["state"], res["fileError"])
 	}
 }

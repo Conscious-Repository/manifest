@@ -551,15 +551,15 @@ async function ensureMoneyCats(force) {
 // sheet): suggests from the registry (income rows see income categories,
 // expenses see expense ones), quiet `create "internet" →` completion adds to
 // the chart of accounts, and picking a category IS a filing gesture.
-function categoryTypeahead(r, onResult) {
+function categoryTypeahead(r, onResult, saveFn) {
   const kind = r.inflow ? "income" : "expense";
-  const save = async (name) => {
+  const save = saveFn || (async (name) => {
     try {
       const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, category: name, file: true });
       r.category = name;
       onResult(res);
     } catch (e) { showToast("Couldn't save"); }
-  };
+  });
   const ta = typeahead({
     placeholder: "category…",
     suggest: async (q, add) => {
@@ -594,6 +594,54 @@ function categoryTypeahead(r, onResult) {
   return ta;
 }
 
+// ---- bid links (the QuickBooks receipt-attach): expense ↔ contract record ----
+// A contract record IS the bid (proposed or accepted); linking writes the
+// [contract:: slug] token. Accepted contracts draw down; linking a PROPOSED
+// bid offers to accept it (paying against a bid usually means you took it —
+// owner call 2026-08-19). A contract's doc (CAS file) is the receipt.
+
+// bidContractOptions fills a contract <select> for one property: accepted
+// first (remaining shown), then proposed bids.
+function bidContractOptions(copt, propSlug) {
+  const mine = reContracts().filter((c) => (c.allocations || []).some((al) => al.property === propSlug));
+  mine.filter((c) => c.status === "accepted").forEach((c) =>
+    copt(c.slug, c.name + " · " + fmtMoneyShort(c.remaining != null ? c.remaining : c.total) + " left"));
+  mine.filter((c) => c.status === "proposed").forEach((c) =>
+    copt(c.slug, c.name + " · proposed bid " + fmtMoneyShort(c.total)));
+}
+
+// bidReceiptLink — "receipt ↗" when the linked contract carries a doc file
+function bidReceiptLink(contractSlug) {
+  const c = reContracts().find((x) => x.slug === contractSlug);
+  if (!c || !c.doc || !c.doc.startsWith("sha256:")) return null;
+  const a = el("a", "pp3-link re-bid-receipt", "receipt ↗");
+  a.href = "/api/realestate/files/" + encodeURIComponent(c.doc.slice(7));
+  a.target = "_blank"; a.rel = "noopener";
+  a.onclick = (e) => e.stopPropagation();
+  return a;
+}
+
+// offerAcceptBid — inline confirm under the picker when a PROPOSED bid is
+// linked: accepting flips the contract (committed money + draw-down turn
+// on); declining leaves the link as a plain reference.
+function offerAcceptBid(contractSlug, host, onDone) {
+  const c = reContracts().find((x) => x.slug === contractSlug);
+  if (!c || c.status !== "proposed") { if (onDone) onDone(); return; }
+  const strip = el("div", "re-bid-accept");
+  strip.append(el("span", "", "accept this bid? (" + fmtMoneyShort(c.total) + " becomes committed)"));
+  strip.append(pillLight("accept ✓", async () => {
+    try {
+      await postJSONOk("/api/realestate/contracts/" + encodeURIComponent(contractSlug) + "/accept", {});
+      await loadReContracts();
+      showToast("Bid accepted — " + fmtMoneyShort(c.total) + " committed");
+      strip.remove();
+      if (onDone) onDone();
+    } catch (e) { showToast("Couldn't accept — " + (e.message || "")); }
+  }));
+  strip.append(pillLight("just link", () => { strip.remove(); if (onDone) onDone(); }));
+  host.append(strip);
+}
+
 // ---- splits (money-workbench v2): one bank line across N targets ----
 // The server has carried multi-target allocations from day one (Σ±1¢
 // validation, admin: lanes, per-target [work::]/[contract::], "split k/n"
@@ -608,6 +656,18 @@ function evenCents(total, n) {
   const out = [];
   for (let i = 0; i < n; i++) out.push((i === n - 1 ? cents - base * (n - 1) : base) / 100);
   return out;
+}
+
+// moneySplitLabel — how a multi-target row names itself in the list: the
+// deal it was split by when every slice is a member, else "split · N"
+function moneySplitLabel(r) {
+  const slugs = (r.assignments || []).map((a) => a.slug);
+  const hit = dealSplitTargets().find((x) => {
+    const members = x.members.map((p) => p.slug);
+    return slugs.every((s) => members.includes(s));
+  });
+  if (hit) return "◈ " + (hit.deal.name || hit.deal.slug) + " · " + slugs.length + "-way";
+  return "split · " + slugs.length + (slugs.some((s) => s.startsWith("admin:")) ? " (incl. admin)" : "");
 }
 
 // dealSplitTargets — active deals with ≥2 member properties (the client-side
@@ -736,10 +796,8 @@ function splitHopRow(a, prop) {
   const cSel = document.createElement("select");
   cSel.className = "pp-in";
   const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; cSel.append(o); };
-  copt("", "— no contract —");
-  reContracts()
-    .filter((c) => c.status === "accepted" && (c.allocations || []).some((al) => al.property === a.slug))
-    .forEach((c) => copt(c.slug, c.name + " · " + fmtMoneyShort(c.remaining != null ? c.remaining : c.total) + " left"));
+  copt("", "— no bid / contract —");
+  bidContractOptions(copt, a.slug);
   cSel.value = a.contract || "";
   cSel.onchange = () => {
     a.contract = cSel.value;
@@ -748,8 +806,11 @@ function splitHopRow(a, prop) {
       const al = c && (c.allocations || []).find((x) => x.property === a.slug);
       if (al) { a.workId = al.nodeId; nodeSel.value = al.nodeId; }
     }
+    if (cSel.value) offerAcceptBid(cSel.value, row.parentNode || row, null);
   };
   row.append(nodeSel, cSel);
+  const rec = a.contract && bidReceiptLink(a.contract);
+  if (rec) row.append(rec);
   return row;
 }
 
@@ -1003,6 +1064,19 @@ function moneyRow(r) {
   // exact to the cent — this is accounting, never the k-rounded display
   row.append(el("span", "re-money-amt" + (r.inflow ? " inflow" : ""),
     (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
+  // multi-target rows name their split instead of pretending one property
+  if ((r.assignments || []).length > 1) {
+    const lab = el("span", "re-money-split-label", moneySplitLabel(r));
+    lab.title = (r.assignments || []).map((a) =>
+      (a.slug.startsWith("admin:") ? "admin · " + a.slug.slice(6) : a.slug) + " " + fmtMoneyExact(a.amount)).join(" · ");
+    row.append(lab);
+    row.onclick = () => {
+      if (window.mf && window.mf.phone()) { openMoneyAssignSheet(r); return; }
+      moneySelId = moneySelId === r.id ? null : r.id;
+      renderMoneyInspector(r);
+    };
+    return row;
+  }
   // property select — assignment in place (single-target; splits via
   // inspector). The admin lane files against the entity's own books, no
   // property (server routes admin:<entity> to its ledger).
@@ -1063,7 +1137,31 @@ function openMoneyAssignSheet(r) {
       (r.vendor || r.note || "(no description)") + " · " + (r.date || "") + " · " +
       (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
     if (done) {
-      body.append(el("div", "pp3-insp-note", "already " + r.state + " — edits happen on the property ledger"));
+      if (r.state !== "applied") {
+        body.append(el("div", "pp3-insp-note", "skipped — unskip from the desktop workbench"));
+        return;
+      }
+      // filed-edit on phone: category + note write through to the ledger
+      // row(s); unfile pulls the transaction back for reassignment
+      const refile = async (patch, okMsg) => {
+        try {
+          await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", patch);
+          showToast(okMsg || "Ledger row(s) updated");
+        } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
+      };
+      const ta = categoryTypeahead(r, () => {}, async (name) => { r.category = name; await refile({ category: name }); });
+      body.append(ta.el);
+      const noteIn2 = inputEl("note — rewrites the ledger row(s)");
+      noteIn2.value = r.note || "";
+      noteIn2.onchange = () => { r.note = noteIn2.value; refile({ note: noteIn2.value }); };
+      body.append(noteIn2);
+      const unfile = el("button", "pill light re-money-unfile", "unfile ← back to the lot");
+      unfile.onclick = async () => {
+        await refile({ unfile: true }, "Unfiled — back in the to-file lane");
+        window.mfSheet.close();
+        renderProperties();
+      };
+      body.append(unfile);
       return;
     }
     const list = el("div", "mf-assign");
@@ -1149,7 +1247,18 @@ function renderMoneyInspector(r) {
   insp.append(fieldRow("entity", r.entity));
   insp.append(fieldRow("statement", r.statement + (r.source === "feed" ? " · feed" : "")));
   insp.append(fieldRow("state", r.state));
-  const locked = r.state === "applied" || r.state === "skipped";
+  // three edit modes: to-file rows edit freely; FILED rows edit in place
+  // through the refile lane (category/note/bid links rewrite the written
+  // ledger rows; unfile pulls them back); skipped rows stay read-only.
+  const isApplied = r.state === "applied";
+  const locked = r.state === "skipped";
+  const refileSave = (patch, okMsg) => async () => {
+    try {
+      await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", patch());
+      showToast(okMsg || "Ledger row(s) updated");
+      renderProperties();
+    } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
+  };
   // category + note are owner-editable until apply (bank plan §5): the bank
   // memo arrives as the initial note; the row note IS the ledger note
   const editRow = (label, key, placeholder) => {
@@ -1158,6 +1267,11 @@ function renderMoneyInspector(r) {
     const inp = inputEl(placeholder);
     inp.value = r[key] || "";
     inp.onchange = async () => {
+      if (isApplied) {
+        r[key] = inp.value;
+        await refileSave(() => ({ [key]: inp.value }))();
+        return;
+      }
       try {
         const patch = { id: r.id, file: key === "category" };
         patch[key] = inp.value;
@@ -1177,20 +1291,62 @@ function renderMoneyInspector(r) {
     insp.append(fieldRow("category", r.category));
   } else {
     // the chart-of-accounts typeahead — picking a category files the row
+    // (or, on a filed row, rewrites the written ledger rows)
     const f = el("div", "pp3-insp-field");
     const ta = categoryTypeahead(r, (res) => {
       if (moneyFileToast(r, res, "Saved")) {
         moneySelId = null;
         renderProperties();
       }
-    });
+    }, isApplied ? async (name) => {
+      r.category = name;
+      await refileSave(() => ({ category: name }))();
+    } : null);
     f.append(el("span", "pp3-insp-flabel", "category"), ta.el);
     insp.append(f);
   }
   insp.append(editRow("note", "note", "note — lands on the ledger row"));
-  const splitting = !locked &&
+  const splitting = !isApplied && !locked &&
     ((moneySplitSeed && moneySplitSeed.id === r.id) || (r.assignments || []).length > 1);
-  if (splitting) {
+  if (isApplied) {
+    // FILED TO — per-slice bid/node links edit in place; unfile to move money
+    insp.append(el("div", "micro-label re-filed-head", "FILED TO"));
+    r.assignments.forEach((a, j) => {
+      const line = el("div", "re-filed-slice");
+      const target = a.slug.startsWith("admin:") ? "admin · " + a.slug.slice(6)
+        : (((propertyCache || []).find((p) => p.slug === a.slug) || {}).short || a.slug);
+      line.append(el("span", "re-filed-target",
+        target + (r.assignments.length > 1 ? " · " + fmtMoneyExact(a.amount) : "")));
+      insp.append(line);
+      if (!a.slug.startsWith("admin:")) {
+        const prop = (propertyCache || []).find((p) => p.slug === a.slug);
+        if (prop) {
+          const work = { ...a };
+          const hopRow = splitHopRow(work, prop);
+          // any hop change on slice j refiles the FULL assignment set
+          [...hopRow.querySelectorAll("select")].forEach((selEl) => {
+            selEl.addEventListener("change", refileSave(() => {
+              const assignments = r.assignments.map((x, k) => (k === j ? { ...x, workId: work.workId || "", contract: work.contract || "" } : x));
+              r.assignments = assignments;
+              return { assignments };
+            }, "Bid link updated on the ledger row"));
+          });
+          insp.append(hopRow);
+        }
+      }
+    });
+    const unfile = el("button", "pill light re-money-unfile", "unfile ← back to the lot");
+    unfile.title = "deletes the written ledger row(s); the transaction returns to the to-file lane for reassignment";
+    unfile.onclick = async () => {
+      try {
+        await postJSONOk("/api/realestate/statements/" + encodeURIComponent(r.id) + "/refile", { unfile: true });
+        showToast("Unfiled — back in the to-file lane");
+        moneySelId = r.id;
+        renderProperties();
+      } catch (e) { showToast("Couldn't unfile — " + (e.message || "")); }
+    };
+    insp.append(unfile);
+  } else if (splitting) {
     insp.append(moneySplitEditor(r));
   } else {
     moneyHopFields(r, insp);
@@ -1274,10 +1430,8 @@ function moneyHopFields(r, host) {
   const cSel = document.createElement("select");
   cSel.className = "pp-in";
   const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; cSel.append(o); };
-  copt("", "— no contract —");
-  reContracts()
-    .filter((c) => c.status === "accepted" && (c.allocations || []).some((al) => al.property === a.slug))
-    .forEach((c) => copt(c.slug, c.name + " · " + fmtMoneyShort(c.remaining != null ? c.remaining : c.total) + " left"));
+  copt("", "— no bid / contract —");
+  bidContractOptions(copt, a.slug);
   cSel.value = a.contract || "";
   cSel.onchange = () => {
     const patch = { contract: cSel.value };
@@ -1288,8 +1442,11 @@ function moneyHopFields(r, host) {
       if (al) { patch.workId = al.nodeId; nodeSel.value = al.nodeId; }
     }
     save(patch);
+    if (cSel.value) offerAcceptBid(cSel.value, host, null);
   };
-  field("contract", cSel);
+  field("bid / contract", cSel);
+  const rec = a.contract && bidReceiptLink(a.contract);
+  if (rec) host.append(rec);
 }
 
 function moneyFooter() {

@@ -3,6 +3,8 @@ package server
 import (
 	"encoding/csv"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -269,51 +271,7 @@ func (s *Server) applyStatementRows(rows []realestate.StatementRow, actor vaultw
 	for _, row := range rows {
 		n := len(row.Assignments)
 		for i, a := range row.Assignments {
-			note := row.Note
-			if n > 1 {
-				// keep the owner's note — the split annotation APPENDS (it used
-				// to replace, discarding hand-written context on split rows)
-				note = strings.TrimSpace(note + " · split " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) +
-					" of $" + strconv.FormatFloat(row.Amount, 'f', 2, 64) + " · " + row.Vendor)
-				note = strings.TrimPrefix(note, "· ")
-			}
-			// tokens: work tether per alloc + budget category + the paying entity
-			// + statement provenance (the accountant CSV's bank reference)
-			if a.WorkID != "" {
-				note = strings.TrimSpace(note + " [work:: " + a.WorkID + "]")
-				if p, ok := s.realestate.Get(a.Slug); ok {
-					s.tetherWorkID(p, a.WorkID) // freeze the id in the record
-				}
-			}
-			if a.Contract != "" {
-				note = strings.TrimSpace(note + " [contract:: " + a.Contract + "]") // draw-down tether (§7)
-			}
-			if c := strings.ToLower(strings.TrimSpace(a.Cat)); !row.Inflow && (c == realestate.CatSoft ||
-				c == realestate.CatAcquisition) {
-				note = strings.TrimSpace(note + " [cat:: " + c + "]")
-			} else if !row.Inflow && classOf(row.Category) == "operating" {
-				// operating-class category (chart of accounts) → operating lane
-				note = strings.TrimSpace(note + " [cat:: " + realestate.CatOperating + "]")
-			}
-			if row.Entity != "" {
-				note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")
-			}
-			if row.Statement != "" {
-				note = strings.TrimSpace(note + " [stmt:: " + row.Statement + "]")
-			}
-			// inflows book as income rows (rent / capital) — rollups ignore them
-			// (expense-only math); they exist for the books + accountant CSV
-			rowType, status, cat := "expense", "paid", row.Category
-			if row.Inflow {
-				rowType, status = "income", "received"
-				if c := strings.ToLower(strings.TrimSpace(a.Cat)); c != "" {
-					cat = c
-				}
-			}
-			rec := []string{
-				row.Date, rowType, cat, row.Vendor, "",
-				strconv.FormatFloat(a.Amount, 'f', -1, 64), status, note, "",
-			}
+			rec := s.statementRec(row, a, i, n, classOf)
 			if err := s.vault.AppendLedgerRowAs(ledgers[a.Slug], realestate.LedgerHeader, rec, actor); err != nil {
 				return written, propsTouched, err
 			}
@@ -333,4 +291,175 @@ func (s *Server) applyStatementRows(rows []realestate.StatementRow, actor vaultw
 	s.reImport.Remember("", nil, vendorCats, vendorProps)
 	s.reImport.RememberVendorWork(vendorWork)
 	return written, propsTouched, nil
+}
+
+// statementRec assembles ONE ledger csv record for slice i of n — note text
+// (+ split annotation), the token set ([work::] [contract::] [cat::]
+// [paid-by::] [stmt::]), income-vs-expense shaping. Apply and the filed-edit
+// rewrite call the same code so a refile is byte-canonical.
+func (s *Server) statementRec(row realestate.StatementRow, a realestate.Alloc, i, n int, classOf func(string) string) []string {
+	note := row.Note
+	if n > 1 {
+		// keep the owner's note — the split annotation APPENDS (it used
+		// to replace, discarding hand-written context on split rows)
+		note = strings.TrimSpace(note + " · split " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) +
+			" of $" + strconv.FormatFloat(row.Amount, 'f', 2, 64) + " · " + row.Vendor)
+		note = strings.TrimPrefix(note, "· ")
+	}
+	// tokens: work tether per alloc + budget category + the paying entity
+	// + statement provenance (the accountant CSV's bank reference)
+	if a.WorkID != "" {
+		note = strings.TrimSpace(note + " [work:: " + a.WorkID + "]")
+		if p, ok := s.realestate.Get(a.Slug); ok {
+			s.tetherWorkID(p, a.WorkID) // freeze the id in the record
+		}
+	}
+	if a.Contract != "" {
+		note = strings.TrimSpace(note + " [contract:: " + a.Contract + "]") // draw-down tether (§7)
+	}
+	if c := strings.ToLower(strings.TrimSpace(a.Cat)); !row.Inflow && (c == realestate.CatSoft ||
+		c == realestate.CatAcquisition) {
+		note = strings.TrimSpace(note + " [cat:: " + c + "]")
+	} else if !row.Inflow && classOf(row.Category) == "operating" {
+		// operating-class category (chart of accounts) → operating lane
+		note = strings.TrimSpace(note + " [cat:: " + realestate.CatOperating + "]")
+	}
+	if row.Entity != "" {
+		note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")
+	}
+	if row.Statement != "" {
+		note = strings.TrimSpace(note + " [stmt:: " + row.Statement + "]")
+	}
+	// inflows book as income rows (rent / capital) — rollups ignore them
+	// (expense-only math); they exist for the books + accountant CSV
+	rowType, status, cat := "expense", "paid", row.Category
+	if row.Inflow {
+		rowType, status = "income", "received"
+		if c := strings.ToLower(strings.TrimSpace(a.Cat)); c != "" {
+			cat = c
+		}
+	}
+	return []string{
+		row.Date, rowType, cat, row.Vendor, "",
+		strconv.FormatFloat(a.Amount, 'f', -1, 64), status, note, "",
+	}
+}
+
+// statementLedgerRel resolves one assignment slug to its ledger csv path.
+func (s *Server) statementLedgerRel(slug string) (string, error) {
+	if ent, isAdmin := strings.CutPrefix(slug, "admin:"); isAdmin {
+		if strings.TrimSpace(ent) == "" {
+			return "", errBadRequest("admin assignment needs an entity")
+		}
+		return s.realestateRootOr() + "/entities/" + slugify(ent) + ".ledger.csv", nil
+	}
+	rel, ok := s.propertyRel(slug)
+	if !ok {
+		return "", errBadRequest("unknown property " + slug)
+	}
+	return realestate.LedgerRel(rel), nil
+}
+
+// locateFiledRec finds the ONE on-disk ledger record a filed slice wrote —
+// matched by statement provenance + date + vendor + slice amount. Ambiguity
+// or absence fails closed (the file changed underneath — reload and retry).
+func (s *Server) locateFiledRec(rel string, row realestate.StatementRow, a realestate.Alloc) ([]string, error) {
+	raw, err := os.ReadFile(filepath.Join(s.vault.VaultRoot(), filepath.FromSlash(rel)))
+	if err != nil {
+		return nil, errBadRequest("ledger not found for " + a.Slug)
+	}
+	var hit *realestate.LedgerRow
+	for _, lr := range realestate.ParseLedgerBytes(raw) {
+		if lr.Stmt == row.Statement && lr.Date == row.Date &&
+			strings.EqualFold(lr.Vendor, row.Vendor) && lr.Amount == a.Amount {
+			if hit != nil {
+				return nil, errBadRequest("two identical ledger rows match — edit them on the property page")
+			}
+			l := lr
+			hit = &l
+		}
+	}
+	if hit == nil {
+		return nil, errBadRequest("the written ledger row no longer matches (edited on the property page?) — edit it there or reload")
+	}
+	return ledgerRecord(*hit), nil
+}
+
+// handleStatementsRefile — POST /api/realestate/statements/{id}/refile: the
+// filed-edit lane (owner call 2026-08-19). Two modes:
+//   - {"unfile": true} deletes every written ledger row and returns the row
+//     to the to-file lane (assigned) for reassignment.
+//   - {category?/note?/assignments?} rewrites the written ledger row(s) in
+//     place — category, note, and per-slice bid/node tethers; target slugs
+//     and amounts are identity (unfile to move money).
+func (s *Server) handleStatementsRefile(w http.ResponseWriter, r *http.Request) {
+	if !s.statementsOK(w) {
+		return
+	}
+	var b struct {
+		Unfile      bool                `json:"unfile"`
+		Category    *string             `json:"category"`
+		Note        *string             `json:"note"`
+		Assignments *[]realestate.Alloc `json:"assignments"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	row, ok := s.statements.Get(r.PathValue("id"))
+	if !ok || row.State != "applied" {
+		httpError(w, errBadRequest("row is not filed"))
+		return
+	}
+	// locate every written record up front — fail before any write
+	type slice struct {
+		rel string
+		old []string
+	}
+	slices := make([]slice, 0, len(row.Assignments))
+	for _, a := range row.Assignments {
+		rel, err := s.statementLedgerRel(a.Slug)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		rec, err := s.locateFiledRec(rel, row, a)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		slices = append(slices, slice{rel: rel, old: rec})
+	}
+	if b.Unfile {
+		for _, sl := range slices {
+			if err := s.vault.DeleteLedgerRow(sl.rel, sl.old); err != nil {
+				httpError(w, err)
+				return
+			}
+		}
+		if _, err := s.statements.Unfile(row.ID); err != nil {
+			httpError(w, err)
+			return
+		}
+		list, last := s.statements.List()
+		writeJSON(w, map[string]any{"unfiled": true, "rows": list, "lastImport": last})
+		return
+	}
+	// edit in place: patch the store row, then rewrite each written record
+	// through the SAME assembly apply used (byte-canonical refile)
+	updated, err := s.statements.UpdateApplied(row.ID, b.Category, b.Note, b.Assignments)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	classOf := func(category string) string { return s.realestate.CategoryClass(category) }
+	n := len(updated.Assignments)
+	for i, a := range updated.Assignments {
+		rec := s.statementRec(updated, a, i, n, classOf)
+		if err := s.vault.UpdateLedgerRow(slices[i].rel, slices[i].old, rec); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	writeJSON(w, map[string]any{"row": updated, "state": updated.State})
 }
