@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/csv"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -68,9 +69,29 @@ func (s *Server) handleStatementsUpload(w http.ResponseWriter, r *http.Request) 
 	if mapping == nil {
 		mapping = realestate.SuggestMapping(headers)
 	}
+	// Which sign means "money left the account" is a property of the export,
+	// not of manifest — guessing it wrong inverts every row in the file. Recall
+	// the owner's answer for this format, or suggest one from the data and let
+	// the mapping strip put it in front of him.
+	amounts := columnFloats(headers, rows, mapping["amount"])
+	sign := s.reImport.SignFor(sig)
+	signRemembered := realestate.SignConventionOK(sign)
+	if !signRemembered {
+		sign = realestate.SuggestSign(amounts)
+	}
+	neg, pos := 0, 0
+	for _, a := range amounts {
+		if a < 0 {
+			neg++
+		} else if a > 0 {
+			pos++
+		}
+	}
 	writeJSON(w, map[string]any{
 		"label": fhs[0].Filename, "headers": headers, "rows": rows,
 		"signature": sig, "mapping": mapping, "remembered": remembered != nil,
+		"sign": sign, "signRemembered": signRemembered,
+		"signCounts": map[string]int{"negative": neg, "positive": pos},
 		// pass-5: uploads bind to a paying entity, remembered per source label
 		"entity": s.reImport.LabelEntityFor(fhs[0].Filename),
 	})
@@ -86,6 +107,7 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 		Label     string            `json:"label"`
 		Entity    string            `json:"entity"` // paying entity — required (pass-5)
 		Signature string            `json:"signature"`
+		Sign      string            `json:"sign"` // which sign is a charge (realestate.Sign*)
 		Mapping   map[string]string `json:"mapping"`
 		Rows      []struct {
 			Date, Vendor, Note string
@@ -100,37 +122,94 @@ func (s *Server) handleStatementsIngest(w http.ResponseWriter, r *http.Request) 
 		httpError(w, errBadRequest("paying entity is required"))
 		return
 	}
+	if !realestate.SignConventionOK(b.Sign) {
+		httpError(w, errBadRequest("sign convention is required — which sign is a charge"))
+		return
+	}
 	s.reImport.BindLabel(b.Label, b.Entity)
 	// every ledger line across the portfolio — no double entry, ever
-	ledgerKeys := map[string]bool{}
+	ledgerKeys := map[string]int{}
 	props, _ := s.realestate.Properties()
 	for _, p := range props {
 		for _, lr := range p.Ledger {
-			ledgerKeys[realestate.DedupeKey(lr.Date, lr.Amount, lr.Vendor)] = true
+			ledgerKeys[realestate.DedupeKey(lr.Date, lr.Amount, lr.Vendor)]++
 		}
 	}
+	// the whole date column decides DD/MM vs MM/DD — never a row at a time
+	raw := make([]string, 0, len(b.Rows))
+	for _, row := range b.Rows {
+		raw = append(raw, row.Date)
+	}
+	dayFirst := realestate.DateOrder(raw)
+
 	_, vendorCat, vendorProp := s.reImport.Lookup("")
 	rows := make([]realestate.StatementRow, 0, len(b.Rows))
+	unparsed := 0
 	for _, row := range b.Rows {
 		if strings.TrimSpace(row.Date) == "" || row.Amount == 0 {
 			continue
 		}
-		// deposits ride in NEGATIVE after the sign convention → inflow rows
-		// (rent / capital / transfer) that must also be reconciled
+		// ISO on the way in, so a CSV row and its bank-feed twin share a key
+		date, ok := realestate.NormalizeDate(row.Date, dayFirst)
+		if !ok {
+			unparsed++
+			continue
+		}
+		// the export says which sign is a charge; the lot stores unsigned
+		// amounts plus Inflow (deposits — rent / capital / transfer — still
+		// have to be reconciled)
 		amt, inflow := row.Amount, false
+		if b.Sign == realestate.SignExpenseNegative {
+			inflow = amt > 0
+		} else {
+			inflow = amt < 0
+		}
 		if amt < 0 {
-			amt, inflow = -amt, true
+			amt = -amt
+		}
+		// the tidied payee is what the workbench shows and vendor memory keys;
+		// the bank's raw description survives as the note when the format has
+		// no separate memo column
+		vendor := realestate.TidyVendor(row.Vendor)
+		note := strings.TrimSpace(row.Note)
+		if note == "" && vendor != strings.TrimSpace(row.Vendor) {
+			note = strings.Join(strings.Fields(row.Vendor), " ")
 		}
 		rows = append(rows, realestate.StatementRow{
-			Date: strings.TrimSpace(row.Date), Vendor: strings.TrimSpace(row.Vendor),
-			Note: strings.TrimSpace(row.Note), Amount: amt, Inflow: inflow,
+			Date: date, Vendor: vendor, Note: note, Amount: amt, Inflow: inflow,
 			Entity: strings.TrimSpace(b.Entity),
 		})
 	}
+	// A same-day same-amount hit that the exact key missed is almost always the
+	// same transaction wearing a different payee string (a CSV copy of a row
+	// the bank feed already delivered). Never dropped — the vendor text is the
+	// only thing distinguishing two real charges — but counted, so an import
+	// that overlaps a synced window says so instead of quietly doubling.
+	loose := map[string]int{}
+	existing, _ := s.statements.List()
+	for _, r := range existing {
+		loose[looseKey(r.Date, r.Amount)]++
+	}
+	for _, p := range props {
+		for _, lr := range p.Ledger {
+			loose[looseKey(lr.Date, lr.Amount)]++
+		}
+	}
+	suspects := 0
+	for _, r := range rows {
+		if loose[looseKey(r.Date, r.Amount)] > 0 {
+			suspects++
+		}
+	}
 	added, dups := s.statements.Ingest(b.Label, rows, ledgerKeys, vendorCat, vendorProp)
 	s.reImport.Remember(b.Signature, b.Mapping, nil, nil) // column mapping memory
+	s.reImport.RememberSign(b.Signature, b.Sign)
+	if suspects -= dups; suspects < 0 { // the ones already reported as exact dups
+		suspects = 0
+	}
 	list, last := s.statements.List()
-	writeJSON(w, map[string]any{"added": added, "duplicates": dups, "rows": list, "lastImport": last})
+	writeJSON(w, map[string]any{"added": added, "duplicates": dups, "suspects": suspects,
+		"unparsedDates": unparsed, "rows": list, "lastImport": last})
 }
 
 func (s *Server) handleStatementsList(w http.ResponseWriter, r *http.Request) {
@@ -462,4 +541,43 @@ func (s *Server) handleStatementsRefile(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	writeJSON(w, map[string]any{"row": updated, "state": updated.State})
+}
+
+// looseKey is the date+amount half of realestate.DedupeKey — the vendor-blind
+// probe behind the overlap warning.
+func looseKey(date string, amount float64) string {
+	return strings.TrimSpace(date) + "|" + fmt.Sprintf("%.2f", amount)
+}
+
+// columnFloats pulls one named column out of an uploaded grid as numbers,
+// tolerating $ , and (parenthesised negatives) the way the browser mapper does.
+func columnFloats(headers []string, rows [][]string, col string) []float64 {
+	idx := -1
+	for i, h := range headers {
+		if h == col {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return nil
+	}
+	out := make([]float64, 0, len(rows))
+	for _, r := range rows {
+		if idx >= len(r) {
+			continue
+		}
+		txt := strings.TrimSpace(r[idx])
+		neg := strings.HasPrefix(txt, "(") && strings.HasSuffix(txt, ")")
+		txt = strings.NewReplacer("$", "", ",", "", "(", "", ")", "").Replace(txt)
+		v, err := strconv.ParseFloat(strings.TrimSpace(txt), 64)
+		if err != nil {
+			continue
+		}
+		if neg {
+			v = -v
+		}
+		out = append(out, v)
+	}
+	return out
 }

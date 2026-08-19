@@ -203,12 +203,12 @@ func (s *Server) bankFeedSync(ctx context.Context) (added, autoApplied int, err 
 
 // bankLedgerKeys is every ledger line across the portfolio — no double
 // entry, ever (mirrors handleStatementsIngest).
-func (s *Server) bankLedgerKeys() map[string]bool {
-	ledgerKeys := map[string]bool{}
+func (s *Server) bankLedgerKeys() map[string]int {
+	ledgerKeys := map[string]int{}
 	props, _ := s.realestate.Properties()
 	for _, p := range props {
 		for _, lr := range p.Ledger {
-			ledgerKeys[realestate.DedupeKey(lr.Date, lr.Amount, lr.Vendor)] = true
+			ledgerKeys[realestate.DedupeKey(lr.Date, lr.Amount, lr.Vendor)]++
 		}
 	}
 	return ledgerKeys
@@ -216,7 +216,7 @@ func (s *Server) bankLedgerKeys() map[string]bool {
 
 // bankIngest lands one haul in the statement workbench (the CSV path's sign
 // convention + dedupe + vendor prefill).
-func (s *Server) bankIngest(haul bankfeed.NewTxns, ledgerKeys map[string]bool, vendorCat, vendorProp map[string]string) int {
+func (s *Server) bankIngest(haul bankfeed.NewTxns, ledgerKeys map[string]int, vendorCat, vendorProp map[string]string) int {
 	label := haul.Link.EntitySlug + ":" + haul.Link.AccountLabel
 	rows := make([]realestate.StatementRow, 0, len(haul.Txns))
 	for _, t := range haul.Txns {

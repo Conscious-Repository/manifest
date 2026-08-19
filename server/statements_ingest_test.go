@@ -1,0 +1,183 @@
+package server
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"manifest/bankfeed"
+	"manifest/realestate"
+)
+
+// A CSV row and its bank-feed twin are the SAME transaction: the feed stores
+// ISO dates, so the CSV's 08/18/2026 has to normalize on the way in or the
+// dedupe key can never match and the row lands twice.
+func TestCSVIngestDedupesAgainstTheBankFeed(t *testing.T) {
+	posted := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: posted, Amount: -1075, Description: "MY CPA GUY", Payee: "My Cpa Guy"},
+	}}}
+	srv, _, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := srv.statements.List()
+
+	// the same charge, as the bank's own CSV export spells it
+	code, res := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+		`{"label":"export.csv","entity":"Garden SPE","signature":"sig-a","sign":"expense-negative",
+		  "mapping":{"date":"Date","vendor":"Description","amount":"DebitCredit"},
+		  "rows":[{"Date":"08/18/2026","Vendor":"My Cpa Guy","Amount":-1075}]}`)
+	if code != 200 {
+		t.Fatalf("ingest: %d %v", code, res)
+	}
+	if res["added"] != float64(0) || res["duplicates"] != float64(1) {
+		t.Fatalf("the feed's own row must dedupe: added=%v duplicates=%v", res["added"], res["duplicates"])
+	}
+	after, _ := srv.statements.List()
+	if len(after) != len(before) {
+		t.Fatalf("lot grew from %d to %d on a duplicate", len(before), len(after))
+	}
+}
+
+// The convention says which sign is a charge. Reading it backwards books every
+// expense as income, which is worse than a duplicate — it moves money.
+func TestIngestHonoursTheSignConvention(t *testing.T) {
+	srv, _, _ := bankFixture(t, &stubBridge{})
+	// distinct months so the second ingest is not deduped as a repeat of the first
+	body := func(sign, month string) string {
+		return `{"label":"e.csv","entity":"Garden SPE","signature":"sig-` + sign + `","sign":"` + sign + `",
+		  "mapping":{"date":"Date"},"rows":[
+		    {"Date":"` + month + `/04/2026","Vendor":"Ameren","Amount":-937.21},
+		    {"Date":"` + month + `/05/2026","Vendor":"Rent","Amount":1750}]}`
+	}
+	code, _ := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest", body("expense-negative", "03"))
+	if code != 200 {
+		t.Fatal(code)
+	}
+	rows, _ := srv.statements.List()
+	var iso bool
+	for _, r := range rows {
+		if r.Date == "2026-03-04" {
+			iso = true
+		}
+	}
+	if !iso {
+		t.Fatalf("03/04/2026 did not normalize to ISO: %+v", rows)
+	}
+	for _, r := range rows {
+		switch r.Vendor {
+		case "Ameren":
+			if r.Date != "2026-03-04" {
+				continue
+			}
+			if r.Inflow || r.Amount != 937.21 {
+				t.Errorf("negative charge should be an expense of 937.21, got inflow=%v amount=%v", r.Inflow, r.Amount)
+			}
+		case "Rent":
+			if !r.Inflow {
+				t.Error("positive amount should be a deposit under expense-negative")
+			}
+		}
+	}
+	// the same rows read the other way round flip direction
+	code, _ = doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest", body("expense-positive", "04"))
+	if code != 200 {
+		t.Fatal(code)
+	}
+	rows, _ = srv.statements.List()
+	var seen bool
+	for _, r := range rows {
+		if r.Vendor == "Ameren" && r.Date == "2026-04-04" && r.Inflow {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Error("expense-positive should read the negative row as a deposit")
+	}
+	// and the convention is remembered for the format
+	if got := srv.reImport.SignFor("sig-expense-positive"); got != realestate.SignExpensePositive {
+		t.Errorf("sign not remembered, got %q", got)
+	}
+}
+
+// An ingest with no stated convention must refuse rather than fall back to a
+// default and silently invert the file.
+func TestIngestRefusesWithoutASignConvention(t *testing.T) {
+	srv, _, _ := bankFixture(t, &stubBridge{})
+	code, _ := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+		`{"label":"e.csv","entity":"Garden SPE","rows":[{"Date":"03/04/2026","Vendor":"X","Amount":-10}]}`)
+	if code == 200 {
+		t.Fatal("missing sign convention must refuse")
+	}
+}
+
+// Same day, same amount, different payee text: not provably the same charge,
+// so it lands — but the response says so instead of quietly doubling.
+func TestIngestWarnsOnUnprovableOverlap(t *testing.T) {
+	posted := time.Date(2026, 8, 17, 12, 0, 0, 0, time.UTC)
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: posted, Amount: -937.21, Description: "AMEREN", Payee: "Ameren"},
+	}}}
+	srv, _, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, res := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+		`{"label":"e.csv","entity":"Garden SPE","signature":"s","sign":"expense-negative","mapping":{"date":"Date"},
+		  "rows":[{"Date":"08/17/2026","Vendor":"SPI*AMERENUE      SAINT LOU IS  MOSPI*AMERE NU","Amount":-937.21}]}`)
+	if res["added"] != float64(1) || res["suspects"] != float64(1) {
+		t.Fatalf("expected 1 added and 1 flagged suspect, got added=%v suspects=%v", res["added"], res["suspects"])
+	}
+}
+
+// The raw description is the vendor AND the note: the workbench shows a name a
+// human can categorize, nothing the bank sent is lost.
+func TestIngestTidiesVendorAndKeepsTheRawDescription(t *testing.T) {
+	srv, _, _ := bankFixture(t, &stubBridge{})
+	code, _ := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+		`{"label":"e.csv","entity":"Garden SPE","signature":"s","sign":"expense-negative","mapping":{"date":"Date"},
+		  "rows":[{"Date":"02/10/2026","Vendor":"THE HOME DEPOT THE HOME DEPOT #   BRENTWOOD     MO","Amount":-39.83}]}`)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	rows, _ := srv.statements.List()
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %d", len(rows))
+	}
+	if rows[0].Vendor != "THE HOME DEPOT # BRENTWOOD MO" {
+		t.Errorf("vendor not tidied: %q", rows[0].Vendor)
+	}
+	if !strings.Contains(rows[0].Note, "THE HOME DEPOT THE HOME DEPOT # BRENTWOOD MO") {
+		t.Errorf("raw description lost: %q", rows[0].Note)
+	}
+}
+
+// A bank can post the same charge to the same payee twice in one day — the
+// owner's export shows two identical $26.55 lines with running balances
+// $26.55 apart. Both are real, so both must land; re-uploading that same file
+// must still add nothing.
+func TestIngestKeepsGenuineSameDayRepeatsButNotReuploads(t *testing.T) {
+	srv, _, _ := bankFixture(t, &stubBridge{})
+	body := `{"label":"e.csv","entity":"Garden SPE","signature":"s","sign":"expense-negative","mapping":{"date":"Date"},
+	  "rows":[{"Date":"07/08/2026","Vendor":"4TE*CITY OF ST. LOS","Amount":-26.55},
+	          {"Date":"07/08/2026","Vendor":"4TE*CITY OF ST. LOS","Amount":-26.55}]}`
+	if code, res := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest", body); code != 200 ||
+		res["added"] != float64(2) || res["duplicates"] != float64(0) {
+		t.Fatalf("both real charges must land: %d added=%v dups=%v", code, res["added"], res["duplicates"])
+	}
+	// the same file again adds nothing
+	if _, res := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest", body); res["added"] != float64(0) ||
+		res["duplicates"] != float64(2) {
+		t.Fatalf("re-upload must be a no-op: added=%v dups=%v", res["added"], res["duplicates"])
+	}
+	rows, _ := srv.statements.List()
+	if len(rows) != 2 {
+		t.Fatalf("want exactly 2 rows in the lot, got %d", len(rows))
+	}
+	// they are distinct rows, not one row written twice
+	if rows[0].ID == rows[1].ID {
+		t.Fatal("the two charges collapsed onto one id")
+	}
+}

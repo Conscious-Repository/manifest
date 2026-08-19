@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -71,25 +72,37 @@ func DedupeKey(date string, amount float64, vendor string) string {
 }
 
 // Ingest adds parsed statement rows to the lot, skipping duplicates of the
-// existing lot and of `ledgerKeys` (every ledger line across the portfolio).
-// prefill maps lower(vendor) → (category, propertySlug) from vendor memory —
-// remembered vendors land pre-assigned so the user's job is confirmation.
-func (s *StatementStore) Ingest(label string, rows []StatementRow, ledgerKeys map[string]bool, prefillCat, prefillProp map[string]string) (added, dups int) {
+// existing lot and of `ledgerKeys` (a COUNT per key — every ledger line across
+// the portfolio). prefill maps lower(vendor) → (category, propertySlug) from
+// vendor memory — remembered vendors land pre-assigned so the user's job is
+// confirmation.
+//
+// Dedupe is by MULTIPLICITY, not by presence: a bank legitimately posts the
+// same charge to the same payee twice in a day (proven by the running balance
+// in the owner's export), and a statement lists each of them, so a batch
+// carrying a key twice may add a second copy when the lot holds only one.
+// Re-uploading that same file still adds nothing, because by then the lot
+// holds both.
+func (s *StatementStore) Ingest(label string, rows []StatementRow, ledgerKeys map[string]int, prefillCat, prefillProp map[string]string) (added, dups int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	seen := map[string]bool{}
-	for _, r := range s.st.Rows {
-		seen[DedupeKey(r.Date, r.Amount, r.Vendor)] = true
+	have := map[string]int{}
+	for k, n := range ledgerKeys {
+		have[k] += n
 	}
+	for _, r := range s.st.Rows {
+		have[DedupeKey(r.Date, r.Amount, r.Vendor)]++
+	}
+	batch := map[string]int{}
 	today := time.Now().Format("2006-01-02")
 	for _, r := range rows {
 		key := DedupeKey(r.Date, r.Amount, r.Vendor)
-		if seen[key] || ledgerKeys[key] {
+		batch[key]++
+		if batch[key] <= have[key] {
 			dups++
 			continue
 		}
-		seen[key] = true
-		r.ID = stmtID(key, label)
+		r.ID = stmtID(key, label, batch[key]-1)
 		r.Statement = label
 		r.Imported = today
 		r.State = "pending"
@@ -325,7 +338,14 @@ func (s *StatementStore) save() {
 	_ = os.WriteFile(s.path, b, 0o644)
 }
 
-func stmtID(key, label string) string {
-	h := sha1.Sum([]byte(key + "|" + label))
+// stmtID is content-derived so an id survives a restart. seq disambiguates the
+// genuine same-day repeats the multiplicity rule now admits; seq 0 hashes
+// exactly as it always did, so every id already in the lot is unchanged.
+func stmtID(key, label string, seq int) string {
+	src := key + "|" + label
+	if seq > 0 {
+		src += "|" + strconv.Itoa(seq)
+	}
+	h := sha1.Sum([]byte(src))
 	return "stmt-" + hex.EncodeToString(h[:6])
 }

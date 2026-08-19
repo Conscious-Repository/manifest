@@ -972,9 +972,11 @@ async function moneyUpload(file, lane) {
     d = await r.json();
   } catch (e) { showToast("Upload failed — " + String(e.message || e).slice(0, 120)); return; }
   const mapping = d.mapping || {};
-  const ready = mapping.date && mapping.amount && mapping.vendor && d.entity;
+  // the sign convention has to be remembered too — a mapping learned before it
+  // existed re-opens the strip rather than risking an inverted file
+  const ready = mapping.date && mapping.amount && mapping.vendor && d.entity && d.signRemembered;
   if (ready && d.remembered) {
-    moneyIngest(d, mapping, d.entity);
+    moneyIngest(d, mapping, d.entity, d.sign);
     return;
   }
   // one-time strip: column pickers + the paying entity — remembered after
@@ -1010,7 +1012,22 @@ async function moneyUpload(file, lane) {
   const ef = el("label", "pp3-lform-field");
   ef.append(el("span", "pp3-lform-label", "paying entity"), ent);
   grid.append(ef);
+  // which sign is a charge — banks disagree, and guessing wrong books every
+  // expense as income. Suggested from the file, confirmed here, remembered.
+  const sign = document.createElement("select");
+  sign.className = "pp-in";
+  [["expense-negative", "charges are −, deposits +"], ["expense-positive", "charges are +, deposits −"]]
+    .forEach(([v, l]) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sign.append(o); });
+  sign.value = d.sign || "expense-negative";
+  const sf = el("label", "pp3-lform-field");
+  sf.append(el("span", "pp3-lform-label", "amount sign"), sign);
+  grid.append(sf);
   strip.append(grid);
+  const counts = d.signCounts || {};
+  if (counts.negative || counts.positive) {
+    strip.append(el("div", "re-foot-note",
+      "this file has " + (counts.negative || 0) + " negative and " + (counts.positive || 0) + " positive amounts"));
+  }
   const actions = el("div", "pp3-uw-actions");
   const cancel = el("button", "pp3-uw-cancel", "cancel");
   cancel.onclick = () => strip.remove();
@@ -1019,14 +1036,14 @@ async function moneyUpload(file, lane) {
     const m = { date: sel.date.value, vendor: sel.vendor.value, amount: sel.amount.value, note: sel.note.value };
     if (!m.date || !m.vendor || !m.amount) { showToast("Map date, vendor, and amount"); return; }
     if (!ent.value) { showToast("Pick the paying entity"); return; }
-    moneyIngest(d, m, ent.value);
+    moneyIngest(d, m, ent.value, sign.value);
   };
   actions.append(cancel, go);
   strip.append(actions);
   lane.append(strip);
 }
 
-async function moneyIngest(d, mapping, entity) {
+async function moneyIngest(d, mapping, entity, sign) {
   const idx = {};
   (d.headers || []).forEach((h, i) => { idx[h] = i; });
   const cell = (row, field) => (mapping[field] && idx[mapping[field]] != null ? String(row[idx[mapping[field]]] || "").trim() : "");
@@ -1038,9 +1055,15 @@ async function moneyIngest(d, mapping, entity) {
   if (!rows.length) { showToast("No usable rows after mapping"); return; }
   try {
     const res = await postJSONOk("/api/realestate/statements/ingest", {
-      label: d.label, entity, signature: d.signature, mapping, rows,
+      label: d.label, entity, signature: d.signature, sign, mapping, rows,
     });
-    showToast("Ingested " + (res.added != null ? res.added : rows.length) + " rows — assign below, then apply");
+    // duplicates are dropped silently by the dedupe key; suspects are same-day
+    // same-amount rows it could NOT confirm, and they DID land — say so
+    let msg = "Ingested " + (res.added != null ? res.added : rows.length) + " rows";
+    if (res.duplicates) msg += " · " + res.duplicates + " duplicate" + (res.duplicates === 1 ? "" : "s") + " skipped";
+    if (res.suspects) msg += " · " + res.suspects + " may already be here — check the dates";
+    if (res.unparsedDates) msg += " · " + res.unparsedDates + " unreadable date" + (res.unparsedDates === 1 ? "" : "s") + " dropped";
+    showToast(msg + " — assign below, then apply");
     renderProperties();
   } catch (e) { showToast("Ingest failed — " + String(e.message || e).slice(0, 120)); }
 }

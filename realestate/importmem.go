@@ -26,6 +26,7 @@ type importState struct {
 	VendorWork     map[string]string            `json:"vendorWork"`     // lower(vendor) → work tether id (pass-5)
 	LabelEntity    map[string]string            `json:"labelEntity"`    // statement source label → paying entity (pass-5 upload binding)
 	Mappings       map[string]map[string]string `json:"mappings"`       // header signature → {field: column}
+	Signs          map[string]string            `json:"signs"`          // header signature → amount sign convention
 }
 
 func NewImportMemory(dataDir string) *ImportMemory {
@@ -52,7 +53,31 @@ func NewImportMemory(dataDir string) *ImportMemory {
 	if m.st.Mappings == nil {
 		m.st.Mappings = map[string]map[string]string{}
 	}
+	if m.st.Signs == nil {
+		m.st.Signs = map[string]string{}
+	}
 	return m
+}
+
+// SignFor returns the remembered amount-sign convention for a header signature
+// ("" when the format has never been ingested). It is remembered separately
+// from the column mapping so a mapping learned before the convention existed
+// re-asks instead of silently inverting a file.
+func (m *ImportMemory) SignFor(sig string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.st.Signs[sig]
+}
+
+// RememberSign stores the convention the owner confirmed for this format.
+func (m *ImportMemory) RememberSign(sig, sign string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sig == "" || !SignConventionOK(sign) {
+		return
+	}
+	m.st.Signs[sig] = sign
+	m.save()
 }
 
 // LabelEntityFor returns the remembered paying entity for a statement source
