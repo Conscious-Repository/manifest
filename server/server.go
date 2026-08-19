@@ -520,6 +520,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/realestate/contracts", s.handleContractCreate)
 	mux.HandleFunc("GET /api/realestate/contracts/{slug}", s.handleContractGet)
 	mux.HandleFunc("POST /api/realestate/contracts/{slug}/update", s.handleContractUpdate)
+	mux.HandleFunc("POST /api/realestate/contracts/{slug}/accept", s.handleContractAccept)
 	mux.HandleFunc("POST /api/realestate/files", s.handleREFileUpload)
 	mux.HandleFunc("GET /api/realestate/files/{hash}", s.handleREFileGet)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}/update", s.handleContractorUpdate)

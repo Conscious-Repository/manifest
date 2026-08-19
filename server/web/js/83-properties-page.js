@@ -12,6 +12,7 @@ let propSel = null;       // {kind:"task"|"decision", id}
 let propDecidedOpen = false; // the "decided · N" fold
 let propPageSlug = null;  // page-local UI state resets when this changes
 let propPageEls = null;   // the page's stable frame — see propPageSkeleton
+const propBidsOpen = {};  // node id → its open-bids list is expanded
 let propUWOpen = false;   // underwrite editor visible
 let propLedgerEdit = -1;  // index of the ledger row being edited (-1 none)
 let propLedgerAdd = false;
@@ -199,7 +200,10 @@ async function renderPropertyPage(slug) {
     };
     line.append(name);
     // done-by chip — the schedule date (click to set; ink when past due)
-    const dbCls = "pp3-doneby" + (!st.checked && st.doneBy && st.doneBy < today ? " late" : "");
+    // an unset date is not information — the chip appears on hover to be set
+    // (goals does the same with its until chip)
+    const dbCls = "pp3-doneby" + (!st.checked && st.doneBy && st.doneBy < today ? " late" : "")
+      + (!st.checked && !st.doneBy ? " unset" : "");
     const db = el("button", dbCls, st.checked ? (st.done || "") : (st.doneBy ? "by " + st.doneBy : "by —"));
     db.title = st.checked ? "done date" : "done-by date (click to set)";
     if (!st.checked) db.onclick = (e) => {
@@ -257,18 +261,13 @@ async function renderPropertyPage(slug) {
         appendContractChips(ml, n);
         ml.append(mdel);
         block.append(ml);
+        appendBidLine(block, p, n);
         (n.children || []).forEach((c) => nodeRow(c, depth + 1));
         if (!n.checked) {
-          const add = el("div", "pp3-compose deep");
-          add.append(el("span", "pp3-compose-glyph", "○"));
-          const input = inputEl("add to " + (n.text || "milestone") + "…");
-          input.className = "pp3-compose-in";
-          input.addEventListener("keydown", (ev) => {
-            if (ev.key !== "Enter" || !input.value.trim()) return;
-            propWorkOp(p, { op: "add-task", stageId: n.id, text: input.value.trim() });
-          });
-          add.append(input);
-          block.append(add);
+          const adds = el("div", "pp3-adds deep");
+          adds.append(ghostInput("＋ task", "go-task-ghost", (v) =>
+            propWorkOp(p, { op: "add-task", stageId: n.id, text: v }), "task…"));
+          block.append(adds);
         }
         return;
       }
@@ -276,24 +275,21 @@ async function renderPropertyPage(slug) {
       if (depth > 0) row.classList.add("deep");
       appendContractChips(row, n);
       block.append(row);
+      appendBidLine(block, p, n);
       (n.children || []).forEach((c) => nodeRow(c, depth + 1));
     };
     (st.tasks || []).forEach((n) => nodeRow(n, 0));
     if (!st.checked) {
-      const add = el("div", "pp3-compose");
-      add.append(el("span", "pp3-compose-glyph", "○"));
-      const input = inputEl("add a task to " + (st.text || "this rock") + "…  (milestone: / decision: …)");
-      input.className = "pp3-compose-in";
-      const submit = () => {
-        const text = input.value.trim();
-        if (!text) return;
-        const m = text.match(/^milestone:\s*(.+)$/i);
-        if (m) propWorkOp(p, { op: "add-task", stageId: st.id, text: m[1], kind: "milestone" });
-        else propWorkOp(p, { op: "add-task", stageId: st.id, text });
-      };
-      input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submit(); });
-      add.append(input);
-      block.append(add);
+      // the goals page's affordance: two ghost buttons that open an input,
+      // rather than an always-open field repeating the rock's own name
+      const adds = el("div", "pp3-adds");
+      adds.append(ghostInput("＋ task", "go-task-ghost", (v) =>
+        propWorkOp(p, { op: "add-task", stageId: st.id, text: v }), "task…"));
+      adds.append(ghostInput("＋ milestone", "go-stage-ghost", (v) =>
+        propWorkOp(p, { op: "add-task", stageId: st.id, text: v, kind: "milestone" }), "milestone…"));
+      adds.append(ghostInput("＋ decision", "go-stage-ghost", (v) =>
+        propWorkOp(p, { op: "add-task", stageId: st.id, text: v, kind: "decision" }), "decision…"));
+      block.append(adds);
     }
   });
   if (stages.length) {
@@ -742,6 +738,54 @@ function compositeId(p, t) { return "prop:" + p.slug + "/" + t.id; }
 
 // appendContractChips — a node's accepted-contract slices (the committed
 // source) render as chips linking to the contract page.
+// appendBidLine — the open bids on a node. A bid is an option, not money: it
+// gets its own quiet line under the work it is for, with the range across the
+// bids, and each one accepts from there (accepting declines the others — one
+// decision, one call: /accept).
+function appendBidLine(host, p, n) {
+  const bids = n.openBids || [];
+  if (!bids.length) return;
+  const amounts = bids.map((b) => b.amount).sort((x, y) => x - y);
+  const range = amounts.length > 1
+    ? fmtMoney(amounts[0]) + "–" + fmtMoney(amounts[amounts.length - 1])
+    : fmtMoney(amounts[0]);
+  const wrap = el("div", "pp3-bids");
+  const head = el("button", "pp3-bids-head",
+    (propBidsOpen[n.id] ? "▾" : "▸") + " " + bids.length + " bid" + (bids.length === 1 ? "" : "s") + " · " + range);
+  head.title = "quoted, not committed — accept one to commit it";
+  head.onclick = (e) => {
+    e.stopPropagation();
+    propBidsOpen[n.id] = !propBidsOpen[n.id];
+    renderPropertyPage(p.slug);
+  };
+  wrap.append(head);
+  if (propBidsOpen[n.id]) {
+    bids.forEach((b) => {
+      const row = el("div", "pp3-bid-row");
+      const who = el("button", "pp3-bid-who", assigneeName(b.contractor) || b.contractor);
+      who.title = "open the record";
+      who.onclick = (e) => { e.stopPropagation(); location.hash = "#/properties/contract/" + encodeURIComponent(b.slug); };
+      row.append(who);
+      row.append(el("span", "pp3-bid-meta", [b.date, b.expires ? "expires " + b.expires : ""].filter(Boolean).join(" · ")));
+      row.append(el("span", "pp3-bid-amt", fmtMoney(b.amount)));
+      const take = el("button", "pp3-bid-accept", "accept");
+      take.title = bids.length > 1 ? "commit this bid and decline the others on this work" : "commit this bid";
+      take.onclick = async (e) => {
+        e.stopPropagation();
+        try {
+          const r = await postJSONOk("/api/realestate/contracts/" + encodeURIComponent(b.slug) + "/accept", {});
+          const n2 = (r && (r.declined || []).length) || 0;
+          showToast("Accepted" + (n2 ? " — " + n2 + " other bid" + (n2 === 1 ? "" : "s") + " declined" : ""));
+          renderProperties();
+        } catch (err) { showToast("Couldn't accept — " + (err.message || "")); }
+      };
+      row.append(take);
+      wrap.append(row);
+    });
+  }
+  host.append(wrap);
+}
+
 function appendContractChips(row, n) {
   (n.contracts || []).forEach((cc) => {
     const chip = el("button", "re-node-contract", cc.contractor + " " + fmtMoneyShort(cc.amount));

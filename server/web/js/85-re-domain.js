@@ -98,10 +98,16 @@ function renderREBacklog() {
   list.append(reIntakeLane());
 
   // -- decisions lane --
+  // Every decision in the domain, whoever owns it: the RE decision log AND the
+  // ones living in a property's rock tree. Tree decisions are absent from the
+  // task projection by design (they are not tasks), so without this they were
+  // visible only on their own property page.
   const items = reItems();
-  const decisions = items.filter((it) => it.kind === "decision");
-  const openDec = decisions.filter((it) => it.status !== "decided");
-  const decided = decisions.filter((it) => it.status === "decided");
+  const decisions = items.filter((it) => it.kind === "decision").map((it) => ({ src: "re", it }))
+    .concat(rePropDecisions().map((d) => ({ src: "propdec", it: d })));
+  const isDecided = (d) => (d.src === "re" ? d.it.status === "decided" : !!d.it.checked);
+  const openDec = decisions.filter((d) => !isDecided(d));
+  const decided = decisions.filter(isDecided);
   const lane = el("div", "aion-dec-lane");
   const lh = el("div", "aion-sec-label");
   lh.append(el("span", "aion-sec-title", "◇ Decisions"),
@@ -109,12 +115,12 @@ function renderREBacklog() {
   lh.append(ghostInput("＋ decision", "aion-add aion-sec-add", (v) =>
     rePost("/api/re/backlog/item", { kind: "decision", title: v }, "Decision added")));
   lane.append(lh);
-  openDec.forEach((it) => lane.append(reBacklogDecRow(it)));
+  openDec.forEach((d) => lane.append(d.src === "re" ? reBacklogDecRow(d.it) : rePropDecRow(d.it)));
   if (decided.length) {
     const t = el("button", "aion-done-toggle", (reDecidedOpen ? "▾" : "▸") + " decided · " + decided.length);
     t.onclick = () => { reDecidedOpen = !reDecidedOpen; renderProperties(); };
     lane.append(t);
-    if (reDecidedOpen) decided.forEach((it) => lane.append(reBacklogDecRow(it)));
+    if (reDecidedOpen) decided.forEach((d) => lane.append(d.src === "re" ? reBacklogDecRow(d.it) : rePropDecRow(d.it)));
   }
   list.append(lane);
 
@@ -189,6 +195,42 @@ function renderREBacklog() {
 
 function reTaskRow(t) { return t.src === "re" ? reBacklogTaskRow(t.it) : rePropTodoRow(t); }
 
+// rePropDecisions — every [decision::] node across the properties, flattened
+// with the context that makes it legible on a domain-wide list.
+function rePropDecisions() {
+  const out = [];
+  (propertyCache || []).forEach((p) => {
+    (p.work || []).forEach((st) => {
+      const walk = (nodes) => (nodes || []).forEach((n) => {
+        if (n.decision) out.push({ property: p, rock: st, n });
+        walk(n.children);
+      });
+      walk(st.tasks);
+    });
+  });
+  return out;
+}
+
+// rePropDecRow — the same row as a log decision; its meta carries the property
+// and rock instead of a needed-by, and it selects into the same inspector.
+function rePropDecRow(d) {
+  const n = d.n, decided = !!n.checked;
+  const sel = reBacklogSelId === n.id && reBacklogSelSrc === "propdec";
+  const row = el("div", "aion-dec-row" + (decided ? " decided" : "") + (sel ? " sel" : ""));
+  row.append(el("span", "aion-dec-glyph", "◇"));
+  const main = el("div", "aion-main");
+  main.append(el("div", "aion-dec-text", n.text));
+  const bits = [rePropLabel(d.property)];
+  if (d.rock && d.rock.text) bits.push(d.rock.text);
+  if (n.owner) bits.push("@" + String(assigneeName(n.owner)).replace(/\s*\(.*\)$/, ""));
+  if (decided && n.resolution) bits.push("→ " + n.resolution);
+  main.append(el("div", "aion-item-meta", bits.join(" · ")));
+  row.append(main);
+  row.append(el("span", "aion-status " + (decided ? "closed" : "open"), decided ? "DECIDED" : "OPEN"));
+  row.onclick = () => reBacklogSelect("propdec", n.id);
+  return row;
+}
+
 function reBacklogDecRow(it) {
   const decided = it.status === "decided";
   const sel = reBacklogSelId === it.id && reBacklogSelSrc === "re";
@@ -258,6 +300,7 @@ function rePropTodoRow(t) {
 // ---- the inspector (mirrors renderAionInspector; the list never reflows) ----
 function renderREBacklogInspector(insp) {
   if (reBacklogSelSrc === "prop") { rePropTodoInspector(insp); return; }
+  if (reBacklogSelSrc === "propdec") { rePropDecInspector(insp); return; }
   const it = reItems().find((x) => x.id === reBacklogSelId);
   if (!it) {
     insp.append(el("div", "aion-insp-empty", "select a row — edits save as you go"));
@@ -366,6 +409,67 @@ function renderREBacklogInspector(insp) {
 
 // property-todo inspector — read-only text/owner + a link to the property and
 // a done button (these are owed items; the property page owns their edits).
+// rePropDecInspector — a property-tree decision, decided from here. Same
+// controls as the property page's panel (outcome + decide ⏎, owner), so a
+// decision reads and resolves the same way wherever you meet it.
+function rePropDecInspector(insp) {
+  const hit = rePropDecisions().find((d) => d.n.id === reBacklogSelId);
+  if (!hit) {
+    insp.append(el("div", "aion-insp-empty", "select a row — edits save as you go"));
+    return;
+  }
+  const p = hit.property, n = hit.n;
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "Decision"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
+  head.append(x);
+  insp.append(head);
+  insp.append(el("div", "aion-insp-title", n.text));
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    insp.append(f);
+  };
+  const work = (body, quiet) => postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body)
+    .then((r) => { if (!quiet) renderProperties(); return r; })
+    .catch((e) => showToast("Couldn't save — " + (e.message || "")));
+  if (!n.checked) {
+    const outcome = inputEl("what was decided…");
+    outcome.className = "pp-in aion-insp-outcome";
+    const decide = el("button", "aion-decide-inline", "decide ⏎");
+    decide.disabled = true;
+    const doDecide = async () => {
+      const note = outcome.value.trim();
+      if (!note) return;
+      reBacklogSelId = null; reBacklogSelSrc = null;
+      await work({ op: "set-field", id: n.id, field: "resolution", value: note }, true);
+      work({ op: "check", id: n.id, checked: true });
+    };
+    outcome.addEventListener("input", () => { decide.disabled = !outcome.value.trim(); });
+    outcome.addEventListener("keydown", (ev) => { if (ev.key === "Enter") doDecide(); });
+    decide.onclick = doDecide;
+    field("outcome", outcome);
+    insp.append(decide);
+  } else if (n.resolution) {
+    field("outcome", el("span", "aion-insp-ro", n.resolution));
+  }
+  const ownerTa = typeahead({
+    placeholder: "person / partner / contractor", initial: n.owner || "",
+    suggest: (q, add, ta) => reOwnerSuggest(q, add, ta, (v) => {
+      if (v !== (n.owner || "")) work({ op: "set-field", id: n.id, field: "owner", value: v });
+    }),
+  });
+  field("owner", ownerTa.el);
+  field("rock", el("span", "aion-insp-ro", (hit.rock && hit.rock.text) || "—"));
+  const src = el("a", "aion-insp-src", "⧉ " + rePropLabel(p));
+  src.href = "#/properties/" + encodeURIComponent(p.slug);
+  insp.append(src);
+  const foot = el("div", "aion-insp-foot");
+  foot.append(el("span", "", "edits save as you go"));
+  insp.append(foot);
+}
+
 function rePropTodoInspector(insp) {
   const id = reBacklogSelId;
   let text = "", owner = "", container = null;

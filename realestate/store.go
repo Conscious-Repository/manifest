@@ -138,6 +138,7 @@ func (s *Service) parse(rel, name string, contracts []Contract) (Property, bool)
 		}
 	}
 	JoinWorkLedger(p.Work, p.Ledger, allocs)
+	JoinWorkBids(p.Work, ProposedFor(contracts, name)) // options, not money
 	// the work list IS the hard-cost budget — the triplet derives from work
 	// est + contracts + the ledger. (parseBudget/computeRollup survive for
 	// migration.)

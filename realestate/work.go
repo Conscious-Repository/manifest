@@ -64,6 +64,11 @@ type WorkNode struct {
 	Receipted    bool
 	Bids         []WorkBid      // legacy bid chips (pre-contract records only)
 	Contracts    []WorkContract // accepted-contract slices targeting this node
+	// OpenBids are PROPOSED contract records targeting this node — money that
+	// is quoted but not committed. They carry no budget weight (only an
+	// accepted contract commits); they exist so a bid is visible where the
+	// work is, and can be accepted from there.
+	OpenBids []WorkContract
 }
 
 // WorkContract is one accepted allocation chip on a node.
@@ -71,6 +76,8 @@ type WorkContract struct {
 	Slug       string  `json:"slug"`
 	Contractor string  `json:"contractor"`
 	Amount     float64 `json:"amount"`
+	Date       string  `json:"date,omitempty"`    // the quote's date — how competing bids are read
+	Expires    string  `json:"expires,omitempty"` // a bid goes stale; say when
 }
 
 // TaskID is the node's identity on the unified task surface: the explicit
@@ -138,6 +145,9 @@ func (n *WorkNode) MarshalJSON() ([]byte, error) {
 	}
 	if len(n.Contracts) > 0 {
 		obj["contracts"] = n.Contracts
+	}
+	if len(n.OpenBids) > 0 {
+		obj["openBids"] = n.OpenBids
 	}
 	return json.Marshal(obj)
 }
@@ -569,6 +579,23 @@ func FreezeWorkID(stages []WorkStage, id string) bool {
 // Σ expenses) per node; paid = expenses. Legacy fallback: with no contract
 // allocations at all, accepted BID rows still commit (pre-migration records
 // keep working — live rehabs must never break). Never stored.
+// JoinWorkBids attaches PROPOSED contract slices to their node. Separate from
+// JoinWorkLedger on purpose: an open bid is not money, it is an option — it
+// must never reach a sum.
+func JoinWorkBids(stages []WorkStage, bids []NodeAllocation) {
+	nodeByID := map[string]*WorkNode{}
+	WalkNodes(stages, func(_ *WorkStage, n *WorkNode) { nodeByID[n.ID] = n })
+	for _, b := range bids {
+		n, ok := nodeByID[b.NodeID]
+		if !ok {
+			continue // a bid on a node that no longer exists stays on the contract
+		}
+		n.OpenBids = append(n.OpenBids, WorkContract{
+			Slug: b.Contract, Contractor: b.Contractor, Amount: b.Amount, Date: b.Date, Expires: b.Expires,
+		})
+	}
+}
+
 func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow, allocs []NodeAllocation) {
 	type acc struct{ acceptedSum, expenseSum float64 }
 	legacyBids := len(allocs) == 0

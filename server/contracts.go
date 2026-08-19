@@ -327,6 +327,79 @@ func (s *Server) handleContractUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
+// handleContractAccept — POST /api/realestate/contracts/{slug}/accept.
+// Picking a bid is one decision with two consequences, so it is one call: this
+// record commits (status accepted — its allocations now count as hard cost),
+// and every OTHER proposed record targeting any of the same work nodes is
+// declined. Without the second half the losing bids sit "proposed" forever and
+// the node looks like it still has options.
+func (s *Server) handleContractAccept(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	slug := r.PathValue("slug")
+	win, ok := s.realestate.GetContract(slug)
+	if !ok {
+		http.Error(w, "contract not found", http.StatusNotFound)
+		return
+	}
+	nodes := map[string]bool{}
+	for _, a := range win.Allocations {
+		nodes[strings.ToLower(a.Property+"|"+a.NodeID)] = true
+	}
+	today := time.Now().Format("2006-01-02")
+	setStatus := func(c realestate.Contract, status, note string) error {
+		raw, err := os.ReadFile(filepath.Join(s.index.VaultRoot(), filepath.FromSlash(c.Path)))
+		if err != nil {
+			return err
+		}
+		st := status
+		next := realestate.PatchContractFrontmatter(raw, map[string]*string{"status": &st})
+		if note != "" {
+			line := "- " + today + " " + note
+			if strings.Contains(string(next), "\n## changes") {
+				next = []byte(strings.Replace(string(next), "## changes\n", "## changes\n"+line+"\n", 1))
+			} else {
+				next = []byte(strings.TrimRight(string(next), "\n") + "\n\n## changes\n" + line + "\n")
+			}
+		}
+		if err := s.vault.WriteCap("re-contracts", c.Path, next); err != nil {
+			return err
+		}
+		if s.index != nil {
+			_ = s.index.ReindexPaths([]string{c.Path})
+		}
+		return nil
+	}
+	if err := setStatus(win, "accepted", "accepted — committed against "+strconv.Itoa(len(win.Allocations))+" node(s)"); err != nil {
+		httpError(w, err)
+		return
+	}
+	declined := []string{}
+	for _, c := range s.realestate.Contracts() {
+		if c.Slug == win.Slug || !strings.EqualFold(c.Status, "proposed") {
+			continue
+		}
+		shares := false
+		for _, a := range c.Allocations {
+			if nodes[strings.ToLower(a.Property+"|"+a.NodeID)] {
+				shares = true
+				break
+			}
+		}
+		if !shares {
+			continue
+		}
+		if err := setStatus(c, "declined", "declined — "+win.Slug+" accepted for the same work"); err != nil {
+			httpError(w, err)
+			return
+		}
+		declined = append(declined, c.Slug)
+	}
+	writeJSON(w, map[string]any{"ok": true, "accepted": win.Slug, "declined": declined})
+}
+
 // ---- CAS uploads (overhaul §3.3) ----
 
 // handleREFileUpload — POST /api/realestate/files?name=<orig>: raw body →

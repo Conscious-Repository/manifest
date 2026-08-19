@@ -167,6 +167,25 @@
 /* the decisions lane reuses the backlog row; 92-aion.css loads after this file,
    so the page's own deltas must be scoped to beat it */
 .property-page .aion-dec-row { cursor: pointer; }
+/* the add row: goals' ghost buttons, side by side under the rock */
+.pp3-adds { display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: var(--sp-1) 0 var(--sp-2) var(--sp-6); }
+.pp3-adds.deep { padding-left: 34px; }
+/* an unset done-by date is noise on every rock — it wakes on hover */
+.pp3-doneby.unset { opacity: 0; transition: opacity 120ms ease; }
+.go-rock:hover .pp3-doneby.unset, .pp3-doneby.unset:focus { opacity: 1; }
+
+/* OPEN BIDS at a work node: quoted money, not committed money. The line reads
+   as options — the count and the range — and each one accepts from here. */
+.pp3-bids { display: flex; flex-direction: column; gap: var(--sp-1); padding: 0 0 var(--sp-2) 34px; }
+.pp3-bids-head { align-self: flex-start; background: none; border: none; padding: 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); cursor: pointer; }
+.pp3-bids-head:hover { color: var(--accent); }
+.pp3-bid-row { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-1) 0; border-top: 1px solid var(--line-soft); }
+.pp3-bid-who { background: none; border: none; padding: 0; font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100); cursor: pointer; text-align: left; }
+.pp3-bid-who:hover { color: var(--accent); }
+.pp3-bid-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.pp3-bid-amt { margin-left: auto; font-family: var(--mono); font-size: var(--fs-md); color: var(--base-100); }
+.pp3-bid-accept { background: none; border: 1px solid var(--base-25); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-1) var(--sp-4); cursor: pointer; flex: none; }
+.pp3-bid-accept:hover { border-color: var(--accent); color: var(--accent); }
 .pp-thumb, .pp-thumb-slot { width: 100%; height: 150px; background: var(--base-05); border: 1px solid var(--base-20); border-radius: var(--radius); cursor: pointer; overflow: hidden; }
 .pp-thumb .leaflet-tile-pane { filter: saturate(0.85); } /* keep the basemap quiet under the accent parcel */
 .pp-thumb polygon { fill: rgba(38, 90, 204, 0.08); stroke: var(--accent); stroke-width: 1.5; } /* SVG offline fallback */

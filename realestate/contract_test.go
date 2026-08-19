@@ -113,3 +113,51 @@ func TestJoinWorkLedgerContractMode(t *testing.T) {
 		}
 	}
 }
+
+// A BID is an option, not money: ProposedFor projects it so it can be seen and
+// accepted at the work node, while AllocationsFor (the budget's input) still
+// sees only accepted records.
+func TestProposedForAndBidJoin(t *testing.T) {
+	cs := []Contract{
+		{Slug: "wm-electric", Contractor: "wm-electric", Status: "proposed", Date: "2026-07-27",
+			Allocations: []ContractAllocation{{Property: "4852-fountain-ave", NodeID: "rough-in/electrical", Amount: 42150}}},
+		{Slug: "sparks-co", Contractor: "sparks-co", Status: "proposed", Date: "2026-08-02",
+			Allocations: []ContractAllocation{{Property: "4852-fountain-ave", NodeID: "rough-in/electrical", Amount: 39800}}},
+		{Slug: "twisted-brick", Contractor: "twisted-brick", Status: "accepted",
+			Allocations: []ContractAllocation{{Property: "4852-fountain-ave", NodeID: "exterior-structural/masonry", Amount: 4500}}},
+		{Slug: "old-quote", Contractor: "someone", Status: "declined",
+			Allocations: []ContractAllocation{{Property: "4852-fountain-ave", NodeID: "rough-in/electrical", Amount: 51000}}},
+	}
+	bids := ProposedFor(cs, "4852-fountain-ave")
+	if len(bids) != 2 {
+		t.Fatalf("expected the two proposed bids, got %d", len(bids))
+	}
+	if bids[0].Date != "2026-07-27" {
+		t.Fatalf("a bid carries its quote date for comparison, got %q", bids[0].Date)
+	}
+	// the accepted record must not leak into the bid list, and a bid must not
+	// leak into the allocation list the budget sums
+	for _, b := range bids {
+		if b.Contract == "twisted-brick" || b.Contract == "old-quote" {
+			t.Fatalf("only proposed records are bids, got %s", b.Contract)
+		}
+	}
+	for _, a := range AllocationsFor(cs, "4852-fountain-ave") {
+		if a.Contract != "twisted-brick" {
+			t.Fatalf("only accepted records are allocations, got %s", a.Contract)
+		}
+	}
+
+	stages := ParseWork([]string{
+		"- [ ] Rough-in",
+		"    - [ ] electrical [milestone::]",
+	})
+	JoinWorkBids(stages, bids)
+	n := stages[0].Tasks[0]
+	if len(n.OpenBids) != 2 {
+		t.Fatalf("both bids attach to the node they quote, got %d", len(n.OpenBids))
+	}
+	if n.Committed != 0 {
+		t.Fatalf("a bid must carry no committed weight, got %v", n.Committed)
+	}
+}

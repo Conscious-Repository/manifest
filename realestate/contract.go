@@ -263,14 +263,29 @@ type NodeAllocation struct {
 	Contractor string  `json:"contractor"`
 	NodeID     string  `json:"nodeId"`
 	Amount     float64 `json:"amount"`
-	Doc        string  `json:"doc,omitempty"` // the contract's doc ref — receipt evidence
+	Doc        string  `json:"doc,omitempty"`     // the contract's doc ref — receipt evidence
+	Date       string  `json:"date,omitempty"`    // the quote's date
+	Expires    string  `json:"expires,omitempty"` // when a bid goes stale
 }
 
 // AllocationsFor projects the accepted contracts' slices for ONE property.
 func AllocationsFor(contracts []Contract, propertySlug string) []NodeAllocation {
+	return allocationsWhere(contracts, propertySlug, func(c Contract) bool { return c.Accepted() })
+}
+
+// ProposedFor projects the OPEN BIDS for one property — proposed records, the
+// options on the table. They are deliberately not in AllocationsFor: a bid is
+// not committed money and must not reach a budget.
+func ProposedFor(contracts []Contract, propertySlug string) []NodeAllocation {
+	return allocationsWhere(contracts, propertySlug, func(c Contract) bool {
+		return strings.EqualFold(c.Status, "proposed")
+	})
+}
+
+func allocationsWhere(contracts []Contract, propertySlug string, keep func(Contract) bool) []NodeAllocation {
 	var out []NodeAllocation
 	for _, c := range contracts {
-		if !c.Accepted() {
+		if !keep(c) {
 			continue
 		}
 		for _, a := range c.Allocations {
@@ -280,6 +295,7 @@ func AllocationsFor(contracts []Contract, propertySlug string) []NodeAllocation 
 			out = append(out, NodeAllocation{
 				Contract: c.Slug, Contractor: c.Contractor,
 				NodeID: a.NodeID, Amount: a.Amount, Doc: c.Doc,
+				Date: c.Date, Expires: c.Expires,
 			})
 		}
 	}
