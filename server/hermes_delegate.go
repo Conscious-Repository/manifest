@@ -14,6 +14,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/goals"
 	"manifest/hermes"
 	"manifest/ledger"
 	"manifest/threads"
@@ -111,6 +112,10 @@ Allowed types (one JSON object per block; no other types exist):
 - {"type":"run-errand","errand":"<what to do>","account":"<optional>"} — a real-world errand the owner's effector runs
 - {"type":"aion-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>","due":"YYYY-MM-DD, optional"}
 - {"type":"re-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>"}
+- {"type":"goals-item","mode":"add|edit|move","level":"rock|milestone","area":"<## heading in goals.md>",
+   "title":"...","parentId":"<rock id, for milestone add/move>",
+   "targetId":"<goal id, edit/move>","anchorText":"<the goal's current text, edit/move>",
+   "until":"<finish line, optional>","verify":"<evidence, optional>"} — place/edit/move a goal line (owner's words only)
 
 Each block is filed for the OWNER'S APPROVAL — nothing happens until he
 confirms, so file the change and reference it in your brief rather than
@@ -278,10 +283,43 @@ func (s *Server) hermesProposal(taskID string, sp hermes.ProposalSpec) (approval
 		}
 		p.Body = evidence + "\n\n````" + fenceTag + "\n" + string(raw) + "\n````"
 		p.Action = sp.Type + " " + sp.Kind + ": " + payload.Title + token
+	case "goals-item":
+		payload := goals.PlacementPayload{
+			Mode: sp.Mode, Level: sp.Level, Area: strings.TrimSpace(sp.Area),
+			ParentID: strings.TrimSpace(sp.ParentID), TargetID: strings.TrimSpace(sp.TargetID),
+			AnchorText: strings.TrimSpace(sp.AnchorText),
+			Title:      strings.TrimSpace(sp.Title), Owner: strings.TrimSpace(sp.Owner),
+			Until: strings.TrimSpace(sp.Until), Verify: strings.TrimSpace(sp.Verify),
+			Kpi: strings.TrimSpace(sp.Kpi), Quarter: strings.TrimSpace(sp.Quarter),
+			Due: strings.TrimSpace(sp.Due), Serves: sp.Serves,
+		}
+		if err := payload.Validate(); err != nil {
+			return p, err
+		}
+		raw, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return p, err
+		}
+		evidence := strings.TrimSpace(sp.Body)
+		if evidence == "" {
+			evidence = "Hermes (go phase) proposed this placement while executing the fired plan."
+		}
+		p.Type, p.ApplyPath = approvals.TypeGoalsItem, approvals.GoalsPath
+		p.Body = evidence + "\n\n````" + goals.PayloadFence + "\n" + string(raw) + "\n````"
+		p.Action = "goals " + sp.Mode + " " + sp.Level + ": " + firstNonEmpty(payload.Title, payload.TargetID) + token
 	default: // unreachable — ParseProposals validated the type
 		return p, fmt.Errorf("unknown proposal type %q", sp.Type)
 	}
 	return p, nil
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // hermesInlineMax caps how big a text attachment we inline into the prompt;

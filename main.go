@@ -559,7 +559,9 @@ func main() {
 	// the file moved, or GoalsFileName carries a folder — the lane goes dark
 	// rather than writing a file the app doesn't read.
 	goalsWritable := !strings.Contains(orDefault(cfg.GoalsFileName, "goals.md"), "/")
-	if idxPath := idx.GoalsPath(); goalsWritable && idxPath != "" && idxPath != orDefault(cfg.GoalsFileName, "goals.md") {
+	// the index stores ABSOLUTE paths — compare against the vault-root shape
+	rootGoals := filepath.Join(cfg.VaultPath, orDefault(cfg.GoalsFileName, "goals.md"))
+	if idxPath := idx.GoalsPath(); goalsWritable && idxPath != "" && idxPath != rootGoals {
 		goalsWritable = false
 	}
 	if !goalsWritable {

@@ -40,6 +40,20 @@ type ProposalSpec struct {
 	Rock    string   `json:"rock"`
 	Due     string   `json:"due"`
 	Sources []string `json:"sources"`
+
+	// goals-item (§12 2026-08-19): a placement into the owner's goals.md.
+	// Title/Owner/Due are shared with the fields above.
+	Mode       string   `json:"mode"`       // add | edit | move
+	Level      string   `json:"level"`      // rock | milestone
+	Area       string   `json:"area"`       // "Home", "Real Estate", …
+	ParentID   string   `json:"parentId"`   // milestone add/move: the rock it goes under
+	TargetID   string   `json:"targetId"`   // edit/move: the goal being changed
+	AnchorText string   `json:"anchorText"` // edit/move: the target's current text (staleness guard)
+	Until      string   `json:"until"`
+	Verify     string   `json:"verify"`
+	Kpi        string   `json:"kpi"`
+	Quarter    string   `json:"quarter"`
+	Serves     []string `json:"serves"`
 }
 
 // specTypes is the v1 allowlist — every type maps onto an EXISTING confirm
@@ -49,6 +63,7 @@ var specTypes = map[string]bool{
 	"run-errand":        true,
 	"aion-backlog":      true,
 	"re-backlog":        true,
+	"goals-item":        true,
 }
 
 // validate enforces the per-type required fields. Errors are worded for the
@@ -73,8 +88,26 @@ func (p ProposalSpec) validate() error {
 		if p.Kind != "task" && p.Kind != "decision" {
 			return fmt.Errorf("%s kind must be task or decision (got %q)", p.Type, p.Kind)
 		}
+	case "goals-item":
+		switch p.Mode {
+		case "add", "edit", "move":
+		default:
+			return fmt.Errorf("goals-item mode must be add, edit or move (got %q)", p.Mode)
+		}
+		if p.Level != "rock" && p.Level != "milestone" {
+			return fmt.Errorf("goals-item level must be rock or milestone (got %q)", p.Level)
+		}
+		if strings.TrimSpace(p.Area) == "" {
+			return fmt.Errorf("goals-item needs the area (the ## heading in goals.md)")
+		}
+		if p.Mode == "add" && strings.TrimSpace(p.Title) == "" {
+			return fmt.Errorf("goals-item add needs a title")
+		}
+		if p.Mode != "add" && (strings.TrimSpace(p.TargetID) == "" || strings.TrimSpace(p.AnchorText) == "") {
+			return fmt.Errorf("goals-item %s needs targetId AND anchorText (the goal's current text)", p.Mode)
+		}
 	default:
-		return fmt.Errorf("unknown proposal type %q (allowed: create-vault-note, run-errand, aion-backlog, re-backlog)", p.Type)
+		return fmt.Errorf("unknown proposal type %q (allowed: create-vault-note, run-errand, aion-backlog, re-backlog, goals-item)", p.Type)
 	}
 	return nil
 }
@@ -134,6 +167,12 @@ func specLabel(p ProposalSpec) string {
 		return "AION " + p.Kind + " — " + snip(p.Title, 80)
 	case "re-backlog":
 		return "RE " + p.Kind + " — " + snip(p.Title, 80)
+	case "goals-item":
+		what := p.Title
+		if what == "" {
+			what = p.TargetID
+		}
+		return "goals " + p.Mode + " " + p.Level + " — " + snip(what, 80)
 	default:
 		return "vault note — " + snip(p.Title, 80)
 	}

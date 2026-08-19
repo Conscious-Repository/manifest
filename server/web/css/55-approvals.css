@@ -158,6 +158,9 @@
 .re-intake-row-val { font-size: var(--fs-sm); color: var(--base-70); line-height: 1.45; }
 .re-intake-source { border-left: 2px solid var(--base-25); border-radius: 0; }
 
+/* the goals card: the would-refuse note reads in ink, not accent */
+.appr-title-label.off { color: var(--over); }
+
 /* the gate note beside Confirm: the Σ rule, stated before the click */
 .appr-gate { margin-left: auto; align-self: center; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .appr-gate.off { color: var(--base-100); }

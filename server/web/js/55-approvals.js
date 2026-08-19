@@ -54,6 +54,7 @@ function approvalCardEl(a) {
   const isRe = a.type === "re-backlog" || a.type === "re-resolve"; // the real-estate domain twins (````re fence)
   const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe || isResolve;
   const isReContract = a.type === "re-contract"; // intake (overhaul §5): adjust-amounts card
+  const isGoals = a.type === "goals-item"; // goals placement (§12 2026-08-19)
   if (isReContract) {
     // the contract card leads with money, not prose: the head is the kind
     // chip, the provenance, and the document — the action line's content
@@ -87,6 +88,7 @@ function approvalCardEl(a) {
   // owner reads as a broken card; strip it and say what actually went wrong.
   const strayFence = apprStrayFence(a, isReContract, isAion);
   let bodyText = isReContract ? stripFence(a.body, "re-contract")
+    : isGoals ? stripFence(a.body, "goals")
     : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (strayFence) bodyText = stripFence(bodyText, strayFence);
   if (bodyText && bodyText.trim() && !isReContract) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
@@ -121,6 +123,8 @@ function approvalCardEl(a) {
         ? "apply-path is not a vault-root dated note (YYYY-MM-DD <title>.md) — Confirm is disabled."
         : isAppendNote
         ? "append target is not a log/ dated note or the proposal carries no thread id — Confirm is disabled."
+        : isGoals
+        ? "apply-path is not the vault-root goals.md or the payload is malformed — Confirm is disabled."
         : isReContract
         ? "apply-path is not a system/realestate/contracts/<slug>.md record or the payload is malformed — Confirm is disabled."
         : isRe
@@ -146,7 +150,12 @@ function approvalCardEl(a) {
       card.append(buildCategoryEditor(categories));
     }
 
-    if (isReContract && a.reContractPayload) {
+    if (isGoals && a.goalsPayload) {
+      // a goals placement: the editable payload + the EXACT diff Confirm
+      // writes (the server computes Proposed against the live file, so a
+      // stale anchor or duplicate reads as a refusal before the click)
+      card.append(buildGoalsEditor(a));
+    } else if (isReContract && a.reContractPayload) {
       // the intake card: the owner ALWAYS adjusts amounts before confirming
       card.append(buildReContractEditor(a, bodyText));
     } else if (isResolve && a.aionPayload) {
@@ -543,6 +552,36 @@ async function apprFlush(a) {
   d.saving = false;
   renderApprovalInspector();
   return !d.err && !d.dirty;
+}
+
+// apprWorkSlug — recontract.go's node-id slug, mirrored so a converted record
+// keeps the id its split rows already point at.
+function apprWorkSlug(text) {
+  return String(text || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+// apprMilestoneToTask — demote a proposed milestone to a plain task under the
+// SAME rock. The written node id is unchanged (<rock>/<slug>), so allocations
+// keep tethering to real work; only the shape changes, and with it whether the
+// line ever appears as work owed in the backlog.
+function apprMilestoneToTask(p, i) {
+  const m = (p.new_milestones || [])[i];
+  if (!m) return;
+  p.new_milestones.splice(i, 1);
+  p.tasks = p.tasks || [];
+  p.tasks.push({ property: m.property, parent: m.rock, text: m.name });
+  apprSel = { id: apprSel && apprSel.id, kind: "task", i: p.tasks.length - 1 };
+}
+
+// apprTaskToMilestone — the inverse, offered only for a task sitting directly
+// under a rock (milestones are depth-1). Same id, same money.
+function apprTaskToMilestone(p, i) {
+  const t = (p.tasks || [])[i];
+  if (!t || String(t.parent || "").includes("/")) return;
+  p.tasks.splice(i, 1);
+  p.new_milestones = p.new_milestones || [];
+  p.new_milestones.push({ property: t.property, rock: t.parent, name: t.text });
+  apprSel = { id: apprSel && apprSel.id, kind: "milestone", i: p.new_milestones.length - 1 };
 }
 
 // apprMoney parses a money field the way every RE amount input does.
@@ -1135,7 +1174,7 @@ function apprInspectorInto(host) {
   };
   // the node id a milestone will be written under (recontract.go derives it the
   // same way) — keeping allocations pointed at a renamed milestone depends on it
-  const milestoneNode = (m) => String(m.rock || "") + "/" + String(m.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const milestoneNode = (m) => String(m.rock || "") + "/" + apprWorkSlug(m.name);
 
   let removable = null;
   if (sel.kind === "task") {
@@ -1145,11 +1184,25 @@ function apprInspectorInto(host) {
     pickField("property", () => t.property, (v) => { t.property = v; }, propSuggest);
     pickField("under", () => t.parent, (v) => { t.parent = v; }, rockSuggest);
     pickField("owner", () => t.owner, (v) => { t.owner = v; }, ownerSuggest);
-    const kind = selectEl(["task", "decision"]);
+    // task ⇄ decision ⇄ milestone. A milestone is a CONTAINER of work and is
+    // deliberately absent from the task backlog, so which one a proposed line
+    // becomes decides whether it ever shows up as work owed (owner call
+    // 2026-08-19 — Olga's permit drawings landed as milestones and vanished).
+    // Promoting is only offered under a ROCK: milestones are depth-1 only.
+    const underRock = !String(t.parent || "").includes("/");
+    const kind = selectEl(underRock ? ["task", "decision", "milestone"] : ["task", "decision"]);
     kind.className = "pp-in";
     kind.value = t.decision ? "decision" : "task";
-    kind.onchange = () => { t.decision = kind.value === "decision"; commit(); };
+    kind.onchange = () => {
+      if (kind.value === "milestone") { apprTaskToMilestone(p, sel.i); commit(); apprPaintSel(); renderApprovalInspector(); return; }
+      t.decision = kind.value === "decision";
+      commit();
+    };
     field("kind", kind);
+    if (!underRock) {
+      host.append(el("div", "aion-insp-ro",
+        "nested under a milestone — move it to a rock to make it one"));
+    }
     removable = () => { p.tasks.splice(sel.i, 1); apprSel = null; };
   } else if (sel.kind === "milestone") {
     const m = (p.new_milestones || [])[sel.i];
@@ -1165,6 +1218,25 @@ function apprInspectorInto(host) {
     textField("name", () => m.name, (v) => { const b = milestoneNode(m); m.name = v; repoint(b); });
     pickField("rock", () => m.rock, (v) => { const b = milestoneNode(m); m.rock = v; repoint(b); }, rockSuggest);
     pickField("property", () => m.property, (v) => { m.property = v; }, propSuggest);
+    // THE fix the owner asked for: a proposed milestone is a container and
+    // never reaches the task backlog, so a scope that is really one piece of
+    // work has to be demotable BEFORE confirming. The node id is identical
+    // either way — a milestone is <rock>/<slug(name)> and a task under the
+    // same rock is <rock>/<slug(text)> — so the split rows keep pointing at
+    // real work and the money never moves.
+    const mkind = selectEl(["milestone", "task"]);
+    mkind.className = "pp-in";
+    mkind.value = "milestone";
+    mkind.onchange = () => {
+      if (mkind.value !== "task") return;
+      apprMilestoneToTask(p, sel.i);
+      commit();
+      apprPaintSel();
+      renderApprovalInspector();
+    };
+    field("kind", mkind);
+    host.append(el("div", "aion-insp-ro",
+      "a milestone groups work; only tasks reach the backlog as work owed"));
     const pointing = (p.allocations || []).filter((al) => al.property === m.property && al.node === milestoneNode(m)).length;
     removable = () => {
       if (pointing) { showToast(pointing + " split row" + (pointing === 1 ? "" : "s") + " point here — re-point them first"); return false; }
@@ -1245,4 +1317,142 @@ function apprInspectorInto(host) {
     if (bad.sel) { foot.style.cursor = "pointer"; foot.onclick = () => apprSelect(bad.sel); }
   } else foot.textContent = "edits save as you go";
   host.append(foot);
+}
+
+// ---- the goals placement card (§12 2026-08-19) --------------------------
+// One card per placement: mode/level/area, the typeahead-audited target, the
+// owner-sourced title, and the EXACT current→proposed diff the server computed
+// against the live goals.md. Edits ride Confirm (__payloadFlush), same as the
+// aion editor this clones.
+let apprGoalsReg = null;
+async function apprGoalsRegistry() {
+  if (apprGoalsReg) return apprGoalsReg;
+  try {
+    const d = await (await fetch("/api/goals")).json();
+    apprGoalsReg = (d.areas || []).map((ar) => ({
+      name: ar.name,
+      rocks: (ar.rocks || []).filter((r) => !r.checked).map((r) => ({ id: r.id, text: r.text })),
+    }));
+  } catch (e) { apprGoalsReg = []; }
+  return apprGoalsReg;
+}
+
+function buildGoalsEditor(a) {
+  const p = Object.assign({}, a.goalsPayload);
+  const wrap = el("div", "aion-appr");
+  wrap.append(el("div", "appr-diff-label", "Places into goals.md — edit before confirming"));
+  const form = el("div", "aion-appr-form");
+  wrap.append(form);
+  const note = el("div", "appr-title-label", "");
+
+  const row = (label, node) => form.append(el("span", "aion-vto-key", label), node);
+  const textRow = (label, key) => {
+    const input = inputEl(label);
+    input.className = "pp-in";
+    input.value = p[key] || "";
+    input.oninput = () => { p[key] = input.value; };
+    row(label, input);
+  };
+
+  const rebuild = () => {
+    form.innerHTML = "";
+    const modeSel = selectEl(["add", "edit", "move"]);
+    modeSel.value = p.mode || "add";
+    modeSel.onchange = () => { p.mode = modeSel.value; rebuild(); };
+    row("mode", modeSel);
+    const levelSel = selectEl(["rock", "milestone"]);
+    levelSel.value = p.level || "milestone";
+    levelSel.onchange = () => { p.level = levelSel.value; rebuild(); };
+    row("level", levelSel);
+    const areaSel = selectEl([p.area || ""]);
+    areaSel.className = "pp-in";
+    apprGoalsRegistry().then((reg) => {
+      areaSel.innerHTML = "";
+      reg.forEach((ar) => { const o = document.createElement("option"); o.value = ar.name; o.textContent = ar.name; areaSel.append(o); });
+      areaSel.value = p.area || (reg[0] && reg[0].name) || "";
+    });
+    areaSel.onchange = () => { p.area = areaSel.value; };
+    row("area", areaSel);
+
+    if (p.mode === "add" || p.mode === "move") {
+      if (p.level === "milestone") {
+        // the rock it lands under — from the live registry, scoped to the area
+        const parentTa = typeahead({
+          placeholder: "the rock it goes under…", initial: p.parentId || "",
+          suggest: async (q, add, ta) => {
+            const reg = await apprGoalsRegistry();
+            const ar = reg.find((x) => x.name === (p.area || "")) || reg[0];
+            ((ar && ar.rocks) || [])
+              .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+              .slice(0, 8)
+              .forEach((r) => add(r.text, "rock", () => { p.parentId = r.id; ta.commit(r.text); }));
+            if (p.mode === "move") add("✕ promote to a rock", "", () => { p.parentId = ""; ta.commit(""); });
+          },
+          onChange: (v) => { if (!v) p.parentId = ""; },
+        });
+        row("under", parentTa.el);
+      }
+    }
+    if (p.mode === "edit" || p.mode === "move") {
+      // the goal being changed — /api/goals/match audits live goals only, and
+      // a pick fills BOTH targetId and the staleness anchor
+      const targetTa = typeahead({
+        placeholder: "which existing goal…", initial: p.anchorText || p.targetId || "",
+        suggest: async (q, add, ta) => {
+          if (!q) return;
+          let d = { matches: [] };
+          try { d = await (await fetch("/api/goals/match?q=" + encodeURIComponent(q))).json(); } catch (e) {}
+          (d.matches || []).forEach((m) => add(m.text + "  · " + m.area + " " + m.level, "", () => {
+            p.targetId = m.id; p.anchorText = m.text; p.area = m.area || p.area;
+            ta.commit(m.text);
+          }));
+        },
+      });
+      row("target", targetTa.el);
+    }
+    if (p.mode !== "move") textRow("title", "title");
+    textRow("owner", "owner");
+    textRow("until", "until");
+    textRow("verify", "verify");
+    textRow("kpi", "kpi");
+    if (p.level === "rock") {
+      textRow("quarter", "quarter");
+      const due = inputEl("due");
+      due.type = "date"; due.className = "pp-in"; due.value = p.due || "";
+      due.onchange = () => { p.due = due.value; };
+      row("due", due);
+    }
+    sync();
+  };
+  const sync = () => {
+    note.textContent = a.goalsErr
+      ? "✕ would refuse right now: " + a.goalsErr
+      : "edits ride Confirm automatically — save edit persists them without confirming";
+    note.classList.toggle("off", !!a.goalsErr);
+  };
+  // the gate: a placement the server would refuse disables Confirm with the
+  // reason beside it (the re-contract card's mechanism); save-edit stays live
+  // so the owner can fix the payload and let the next feed load re-enable it
+  a.__gateBind = (fn) => fn(!a.goalsErr, a.goalsErr ? "● fix the placement first" : "places one line");
+  rebuild();
+  wrap.append(note);
+
+  const flush = async () => {
+    const r = await fetch("/api/spirits/approvals/" + encodeURIComponent(a.id) + "/goals", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(p),
+    });
+    if (!r.ok) throw new Error(await r.text());
+  };
+  a.__payloadFlush = flush;
+  const save = pillLight("save edit", async () => {
+    try { await flush(); showToast("Proposal updated"); loadFeed(); }
+    catch (e) { showToast(String(e.message || e).slice(0, 120)); }
+  });
+  wrap.append(save);
+  // the exact write Confirm makes, current → proposed (server-computed)
+  if (a.proposed && a.current) {
+    const diff = renderLineDiff(a.current, a.proposed);
+    wrap.append(collapsibleBlock(diff, diff.childElementCount));
+  }
+  return wrap;
 }
