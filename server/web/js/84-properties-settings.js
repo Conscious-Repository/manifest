@@ -106,6 +106,7 @@ async function renderREsettings() {
   const items = [
     ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
     ["entities", "Entities", ents.length, "system/realestate/entities.md"],
+    ["bankfeed", "Bank feed", null, "system/realestate/entities.md"],
     ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount), "system/realestate/people.md"],
     ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
     ["tenants", "Tenants", (entitiesCache.tenants || []).length, "system/realestate/entities.md"],
@@ -127,6 +128,14 @@ async function renderREsettings() {
   rail.append(fileBox);
 
   if (reSettingsTab === "assumptions") { renderAssumptionsPanel(pane); return; }
+  if (reSettingsTab === "bankfeed") {
+    pane.append(el("div", "pp-section-head", "BANK FEED — linked accounts sync into the $ tab daily"));
+    const feedBox = el("div", "set-bindings");
+    feedBox.id = "re-bankfeed";
+    pane.append(feedBox);
+    renderBankFeedPanel(feedBox, ents);
+    return;
+  }
   if (reSettingsTab === "lenders") { renderFlatRegistry(pane, "lender", entitiesCache.lenders || []); return; }
   if (reSettingsTab === "tenants") { renderFlatRegistry(pane, "tenant", entitiesCache.tenants || []); return; }
   if (reSettingsTab === "people") { await rePeoplePane(pane); return; }
@@ -205,15 +214,6 @@ function renderEntitiesPanel(host, ents) {
     catch (err) { showToast("Couldn't create entity"); }
   }, "entity name…"));
   host.append(list);
-
-  // BANK FEED — SimpleFIN claim + account↔entity links (bank plan §4b). The
-  // vault entity record stays the owner-facing binding; linking here also
-  // flips the matching account row's state via the normal entity save.
-  host.append(el("div", "pp-section-head", "BANK FEED"));
-  const feedBox = el("div", "set-bindings");
-  feedBox.id = "re-bankfeed";
-  host.append(feedBox);
-  renderBankFeedPanel(feedBox, ents);
 
   // ORG CHART — ownership tree read live from the records
   host.append(el("div", "pp-section-head", "ORG CHART"));
@@ -522,12 +522,8 @@ function entityCard(e, ents) {
       row.append(el("span", "re-acct-kind", a.kind || "operating"));
       row.append(el("span", "re-acct-state st-" + (a.state || "not-connected"), (a.state || "not-connected").replace(/-/g, " ")));
       const act = el("button", "re-acct-act", a.state === "live" ? "manage" : a.state === "needs-reauth" ? "re-authorize" : "connect");
-      act.title = "link this row to a real bank account under BANK FEED (SimpleFIN)";
-      act.onclick = () => {
-        const fb = document.getElementById("re-bankfeed");
-        if (fb) { fb.scrollIntoView({ behavior: "smooth", block: "start" }); }
-        showToast("Link the account under BANK FEED below");
-      };
+      act.title = "link this row to a real bank account in the Bank feed registry (SimpleFIN)";
+      act.onclick = () => { reSettingsTab = "bankfeed"; renderREsettings(); };
       row.append(act);
       const x = el("button", "uw-x", "✕");
       x.onclick = async () => {

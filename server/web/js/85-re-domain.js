@@ -588,6 +588,14 @@ function moneyUploadLane() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) moneyUpload(e.dataTransfer.files[0], lane);
   };
   lane.append(drop);
+  // the bank-feed pointer (bank plan §4): linked accounts sync in daily with
+  // the entity pre-set — the CSV drop stays for one-off statements
+  const feedNote = el("div", "re-foot-note");
+  feedNote.append(el("span", "", "linked bank accounts sync here automatically — manage them in "));
+  const link = el("button", "pp3-link", "SETTINGS → Bank feed");
+  link.onclick = () => { reSettingsTab = "bankfeed"; location.hash = "#/properties/settings"; };
+  feedNote.append(link);
+  lane.append(feedNote);
   return lane;
 }
 
