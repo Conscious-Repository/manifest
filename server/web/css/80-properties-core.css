@@ -238,12 +238,19 @@
 .re-intake-lane { margin-bottom: var(--sp-3); }
 
 /* portfolio: property · stage bar · open · spent */
-.pf-cols, .pf-row { grid-template-columns: 1fr 1.5fr 44px 70px; }
-.pf-stage { display: inline-flex; align-items: center; gap: var(--sp-4); min-width: 0; }
-.pf-bar { width: 44px; height: 4px; border-radius: var(--radius); background: var(--line-soft); flex: none; overflow: hidden; }
-.pf-bar-fill { display: block; height: 100%; background: var(--accent); }
-.pf-stage-name { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pf-spent { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-60); text-align: right; }
+/* PORTFOLIO — the fundraising shape (PORTFOLIO-LIST handoff 2026-08-19):
+   four columns, fr-stack cells, no bars, no phase sections. */
+.pf4-grid { grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.2fr) 52px 96px; }
+.pf4-addr { font-size: var(--fs-lg); font-weight: 500; }
+.pf4-rock { font-size: 13.5px; color: var(--base-70); }
+.pf4-num { font-family: var(--mono); font-size: 13px; text-align: right; color: var(--base-100); }
+.pf4-r { text-align: right; }
+.pf4-money { align-items: flex-end; }
+.pf4-ink { color: var(--base-100); }
+.pf4-spentline, .pf4-openpage { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-2) 0; }
+.pf4-spentline:hover, .pf4-openpage:hover { color: var(--accent); }
+.pf4-openpage { color: var(--accent); }
+.pf-spent { font-family: var(--mono); }
 .pf-spent.over { color: var(--over); }
 .pf-tracked-foot { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: var(--sp-4); }
 .pf-tracked-foot:hover { color: var(--accent); }

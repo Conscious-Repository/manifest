@@ -536,13 +536,51 @@ func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {
 	case "owner", "owner-addr", "owner-since": // owner of record — free text ("" clears)
 	case "from": // the seller while acquiring (RE spec §2 OWNER) — free text, "" once closed
 	case "until": // the exit condition — free text ("" clears)
+	case "address": // display identity (the slug never changes) — required
+		if val == "" {
+			httpError(w, errBadRequest("address cannot be empty"))
+			return
+		}
+	case "deal": // deal tether — a deal record's slug, "" unlinks
+		if val != "" {
+			found := false
+			if deals, err := s.realestate.Deals(); err == nil {
+				for _, d := range deals {
+					if strings.EqualFold(d.Slug, val) {
+						val = d.Slug
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				httpError(w, errBadRequest("no deal record "+val))
+				return
+			}
+			val = "\"[[" + val + "]]\""
+		} else {
+			rel, ok := s.propertyRel(r.PathValue("slug"))
+			if !ok {
+				http.Error(w, "property not found", http.StatusNotFound)
+				return
+			}
+			if err := s.vault.RemoveFrontmatterField(rel, "deal"); err != nil {
+				httpError(w, err)
+				return
+			}
+			if s.index != nil {
+				_ = s.index.ReindexPaths([]string{rel})
+			}
+			s.respondProperty(w, r.PathValue("slug"))
+			return
+		}
 	case "drive", "agc": // artifact links — URLs, linked never mirrored ("" clears)
 		if val != "" && !strings.HasPrefix(val, "http://") && !strings.HasPrefix(val, "https://") {
 			httpError(w, errBadRequest(key+" must be a URL"))
 			return
 		}
 	default:
-		httpError(w, errBadRequest("key must be status, kind, entity, work-start, from, until, drive, agc, or owner/owner-addr/owner-since"))
+		httpError(w, errBadRequest("key must be status, kind, entity, deal, address, work-start, from, until, drive, agc, or owner/owner-addr/owner-since"))
 		return
 	}
 	rel, ok := s.propertyRel(r.PathValue("slug"))

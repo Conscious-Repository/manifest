@@ -397,14 +397,14 @@
   .re-acct-state { grid-column: 2; grid-row: 1 / 3; }
   .re-acct-act { display: none; }
 
-  /* ---- PORTFOLIO: address 16px over the stage bar; spent right; the open
-     count keeps its dot column (the generic .prop-row ::after chevron rides) */
-  .prop-row.pf-row { grid-template-columns: minmax(0, 1fr) auto auto 14px; min-height: 56px; }
-  .pf-row .prop-addr { grid-column: 1; grid-row: 1; }
-  .pf-row .pf-stage { grid-column: 1; grid-row: 2; }
-  .pf-row .prop-count { grid-column: 2; grid-row: 1 / 3; }
-  .pf-row .pf-spent { grid-column: 3; grid-row: 1 / 3; }
-  .prop-row.pf-row::after { grid-column: 4; }
+  /* ---- PORTFOLIO (fr-shape): property stack over the rock stack; open +
+     spent ride right — four columns restack to a 2×2 ---- */
+  .fr-row.pf4-grid { grid-template-columns: minmax(0, 1fr) auto; min-height: 56px; }
+  .fr-row.pf4-grid > .fr-stack:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .fr-row.pf4-grid > .fr-stack:nth-child(2) { grid-column: 1; grid-row: 2; }
+  .fr-row.pf4-grid > .pf4-num { grid-column: 2; grid-row: 1; }
+  .fr-row.pf4-grid > .pf4-money { grid-column: 2; grid-row: 2; }
+  .fr-head.pf4-grid { display: none; }
 
   /* ---- the rest of the RE surfaces: touch scale only ---- */
   .re-decision { min-height: 52px; }
