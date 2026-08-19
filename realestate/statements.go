@@ -45,6 +45,10 @@ type StatementRow struct {
 	Assignments []Alloc `json:"assignments,omitempty"`
 	Remembered  bool    `json:"remembered,omitempty"` // prefilled from vendor memory
 	Source      string  `json:"source,omitempty"`     // "feed" = bank-feed sync (badge); "" = csv upload
+	// MerchantKey is DERIVED (MerchantKey(vendor)), stamped on the copies List
+	// returns and never persisted — the stored rows keep it zero. One
+	// definition of "same merchant" serves the client's grouping.
+	MerchantKey string `json:"merchantKey,omitempty"`
 }
 
 type StatementStore struct {
@@ -133,6 +137,9 @@ func (s *StatementStore) List() ([]StatementRow, string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := append([]StatementRow(nil), s.st.Rows...)
+	for i := range out {
+		out[i].MerchantKey = MerchantKey(out[i].Vendor)
+	}
 	rank := map[string]int{"pending": 0, "assigned": 1, "split": 1, "skipped": 2, "applied": 3}
 	sort.SliceStable(out, func(i, j int) bool {
 		if a, b := rank[out[i].State], rank[out[j].State]; a != b {
@@ -144,6 +151,34 @@ func (s *StatementStore) List() ([]StatementRow, string) {
 		return out[i].Date > out[j].Date
 	})
 	return out, s.st.LastImport
+}
+
+// SetCategory stamps one category across many rows at once — the "categorize
+// N more like this" gesture. It only touches rows still in play (pending /
+// assigned / split): applied rows are immutable here as everywhere, and a
+// skipped row was dismissed for a reason. It never files — the rows are being
+// categorized in bulk, not reviewed.
+func (s *StatementStore) SetCategory(ids []string, category string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	category = strings.TrimSpace(category)
+	n := 0
+	for i := range s.st.Rows {
+		r := &s.st.Rows[i]
+		if !want[r.ID] || (r.State != "pending" && r.State != "assigned" && r.State != "split") {
+			continue
+		}
+		r.Category = category
+		n++
+	}
+	if n > 0 {
+		s.save()
+	}
+	return n
 }
 
 // Update patches one row's category/note/assignments/state/reason (the

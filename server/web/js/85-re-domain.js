@@ -528,6 +528,80 @@ let moneyRows = [];
 let moneySelId = null;
 let moneyPage = 0;
 const MONEY_PAGE_SIZE = 50;
+// filter state (fr-toolbar idiom): filter in place via paint(), never a full
+// re-render — a re-render replaces the search input and drops the caret
+let moneyQuery = "";
+let moneyCut = "all"; // all | todo (no category yet) | expense | deposit
+let moneyMonth = "all";
+// the "categorize N more like this" offer: set when a category lands on a row
+// whose merchant recurs; dismissed keys stay quiet for the session
+let moneyPropose = null; // {key, category}
+const moneyProposeDismissed = new Set();
+
+// moneyVisible — the one predicate behind the toolbar (cut → month → text)
+function moneyVisible(r) {
+  if (moneyCut === "todo" && r.category) return false;
+  if (moneyCut === "expense" && r.inflow) return false;
+  if (moneyCut === "deposit" && !r.inflow) return false;
+  if (moneyMonth !== "all" && !(r.date || "").startsWith(moneyMonth)) return false;
+  const q = moneyQuery.trim().toLowerCase();
+  if (!q) return true;
+  return [r.vendor, r.note, r.category].join(" ").toLowerCase().includes(q);
+}
+
+// moneyTargetGroups — which properties a row's money may land on. A row is
+// paid by ONE entity (r.entity, the slug); its targets are that entity's own
+// properties plus the ones nobody has claimed yet. Another entity's property
+// is not a target for this entity's money — intercompany spend exists, but it
+// goes through the admin lane deliberately, not through a mispick.
+// (Property.entity is the display NAME — bridge via entitySlugFor.)
+function moneyTargetGroups(r) {
+  const mine = [], untagged = [], other = [];
+  activePortfolio().forEach((p) => {
+    if (!p.entity) { untagged.push(p); return; }
+    if (!r.entity || entitySlugFor(p.entity) === r.entity) mine.push(p);
+    else other.push(p);
+  });
+  return { mine, untagged, other };
+}
+
+// moneyDealTargets — deals whose every member passes the same entity test: a
+// deal spanning entities is not a coherent target for one entity's money
+function moneyDealTargets(r) {
+  const g = moneyTargetGroups(r);
+  const ok = new Set(g.mine.concat(g.untagged).map((p) => p.slug));
+  return dealSplitTargets().filter((x) => x.members.every((p) => ok.has(p.slug)));
+}
+
+// moneyTargetOptions — fills a target <select> with the scoped groups. Used
+// by the row select, the split editor, and (as groups) the phone sheet.
+function moneyTargetOptions(r, sel, withSplit, blankLabel) {
+  const opt = (parent, v, l) => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = l;
+    parent.append(o);
+  };
+  opt(sel, "", blankLabel || (r.state === "applied" ? "applied" : "unassigned"));
+  if (moneyAdminSlug(r)) opt(sel, moneyAdminSlug(r), "admin · " + entityLabel(r.entity));
+  const g = moneyTargetGroups(r);
+  if (g.mine.length) {
+    const og = document.createElement("optgroup");
+    og.label = r.entity ? entityLabel(r.entity) : "PROPERTIES";
+    g.mine.forEach((p) => opt(og, p.slug, p.short || p.slug));
+    sel.append(og);
+  }
+  if (g.untagged.length) {
+    const og = document.createElement("optgroup");
+    og.label = "UNASSIGNED OWNER (" + g.untagged.length + ")";
+    g.untagged.forEach((p) => opt(og, p.slug, p.short || p.slug));
+    sel.append(og);
+  }
+  if (withSplit) {
+    opt(sel, "__split", "split…");
+    moneyDealTargets(r).forEach((x) =>
+      opt(sel, "deal:" + x.deal.slug, "◈ " + (x.deal.name || x.deal.slug) + " (" + x.members.length + "-way)"));
+  }
+}
 
 // fmtMoneyExact — accounting cells: never rounded, always two decimals
 function fmtMoneyExact(v) {
@@ -592,6 +666,76 @@ function categoryTypeahead(r, onResult, saveFn) {
   });
   ta.setValue(r.category || "");
   return ta;
+}
+
+// moneyCatSelect — the category ON the row (workbench v3): filing no longer
+// needs the inspector. Registry options grouped by class; "＋ new category…"
+// hands off to the inspector's typeahead, so creation stays in one place.
+// Picking a category IS a filing gesture (same PATCH the typeahead sends).
+function moneyCatSelect(r) {
+  const sel = document.createElement("select");
+  sel.className = "pp-in re-money-cat";
+  const kind = r.inflow ? "income" : "expense";
+  const opt = (parent, v, l) => {
+    const o = document.createElement("option");
+    o.value = v; o.textContent = l;
+    parent.append(o);
+  };
+  opt(sel, "", "category…");
+  const cats = (moneyCatsCache || []).filter((c) => c.kind === kind);
+  ["operating", "project"].forEach((cls) => {
+    const mine = cats.filter((c) => c.class === cls);
+    if (!mine.length) return;
+    const og = document.createElement("optgroup");
+    og.label = cls.toUpperCase();
+    mine.forEach((c) => opt(og, c.name, c.name));
+    sel.append(og);
+  });
+  // a category set before the registry loaded (or retyped) still shows
+  if (r.category && !cats.some((c) => c.name === r.category)) opt(sel, r.category, r.category);
+  opt(sel, "__new", "＋ new category…");
+  sel.value = r.category || "";
+  sel.disabled = r.state === "applied" || r.state === "skipped";
+  sel.onclick = (e) => e.stopPropagation();
+  sel.onchange = async () => {
+    if (sel.value === "__new") {
+      // creation lives in the inspector's typeahead — select the row, focus it
+      sel.value = r.category || "";
+      moneySelId = r.id;
+      renderMoneyInspector(r);
+      const ta = document.querySelector(".re-money-insp .ta-in");
+      if (ta) ta.focus();
+      return;
+    }
+    try {
+      const res = await postJSONOk("/api/realestate/statements/row",
+        { id: r.id, category: sel.value, file: true });
+      r.category = sel.value;
+      proposeCategorySpread(r);
+      moneyFileToast(r, res, sel.value ? "Categorized" : "Category cleared");
+      renderProperties();
+    } catch (e) { showToast("Couldn't save"); }
+  };
+  return sel;
+}
+
+// proposeCategorySpread — after a category lands on a row whose merchant
+// recurs, arm the "categorize N more like this" panel. Expense rows only
+// (vendor memory is expense-only by the same reasoning); the panel itself
+// re-derives the matches at paint time, so it never goes stale.
+function proposeCategorySpread(r) {
+  if (!r.category || r.inflow || !r.merchantKey) return;
+  if (moneyProposeDismissed.has(r.merchantKey)) return;
+  moneyPropose = { key: r.merchantKey, category: r.category };
+}
+
+// moneyProposeMatches — the rows the armed offer would touch: still in play,
+// same merchant, expenses, category still blank
+function moneyProposeMatches() {
+  if (!moneyPropose) return [];
+  return moneyRows.filter((r) =>
+    r.state !== "applied" && r.state !== "skipped" &&
+    !r.inflow && !r.category && r.merchantKey === moneyPropose.key);
 }
 
 // ---- bid links (the QuickBooks receipt-attach): expense ↔ contract record ----
@@ -713,10 +857,7 @@ function moneySplitEditor(r, onDone) {
       const row = el("div", "re-split-row");
       const sel = document.createElement("select");
       sel.className = "pp-in re-split-sel";
-      const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
-      opt("", "— target —");
-      if (moneyAdminSlug(r)) opt(moneyAdminSlug(r), "admin · " + r.entity);
-      activePortfolio().forEach((p) => opt(p.slug, p.short || p.slug));
+      moneyTargetOptions(r, sel, false, "— target —"); // entity-scoped, no split/deal recursion
       sel.value = a.slug || "";
       sel.onchange = () => { a.slug = sel.value; a.workId = ""; a.contract = ""; render(); };
       const amt = inputEl("$");
@@ -841,63 +982,169 @@ async function renderREMoney() {
   } catch (e) { moneyRows = []; }
   await loadReContracts(); // the third hop's picker (accepted contracts + remaining)
   await ensureEntities();  // rows carry the entity SLUG — entityLabel needs the registry to read it back
+  await ensureMoneyCats(); // the row category select reads the registry synchronously
   // the split (owner call 2026-08-19): the TOP lane holds only what still
   // needs filing; a filed row (applied — the PATCH auto-applies the moment
   // property + category land) or a dismissed one lives in its entity's
   // history fold below.
   const work = moneyRows.filter((r) => r.state !== "applied" && r.state !== "skipped");
   const filed = moneyRows.filter((r) => r.state === "applied" || r.state === "skipped");
-  host.append(el("div", "re-lane-head",
-    "MONEY · " + work.length + " to file · " + filed.length + " filed" +
-    (last ? " · last import " + last : "")));
+  const laneHead = el("div", "re-lane-head");
+  host.append(laneHead);
   // dead-simple statement upload (overhaul decision 15): drop the bank CSV —
   // the remembered column mapping + entity binding do the rest; a first-seen
   // format opens the one-time mapping strip.
   host.append(moneyUploadLane());
-  if (!work.length) {
-    host.append(el("div", "pp-empty", moneyRows.length
-      ? "Nothing left to file — everything lives in the entity histories below."
-      : "No transactions yet — link a bank account or drop a CSV above."));
-  }
-  const cols = el("div", "re-money-cols");
-  ["DATE", "DESCRIPTION", "AMOUNT", "PROPERTY"].forEach((h, i) =>
-    cols.append(el("span", i === 2 ? "prop-col-r" : "", h)));
-  host.append(cols);
-  const shell = el("div", "re-money-shell");
-  const list = el("div", "re-money-list");
-  // pagination — historic backfills run to hundreds of rows; 50 per page
-  const pages = Math.max(1, Math.ceil(work.length / MONEY_PAGE_SIZE));
-  if (moneyPage >= pages) moneyPage = pages - 1;
-  const start = moneyPage * MONEY_PAGE_SIZE;
-  work.slice(start, start + MONEY_PAGE_SIZE).forEach((r) => list.append(moneyRow(r)));
-  shell.append(list);
-  const insp = el("div", "re-money-insp");
-  insp.hidden = true; // starts closed — the list arrives full width
-  shell.append(insp);
-  host.append(shell);
+  // the fr-shell triad (PORTFOLIO-LIST handoff): list + sticky right rail
+  const wrap = el("div", "aion-backlog fr-shell");
+  const main = el("div", "aion-list fr-main");
+  const insp = el("aside", "aion-inspector fr-inspector re-money-insp");
+  wrap.append(main, insp);
+  // toolbar — search · month · cuts. Filter state is module-level; changes
+  // repaint in place (a full render would take the caret out of the search).
+  const bar = el("div", "fr-toolbar");
+  const search = el("input", "pp-in fr-search");
+  search.type = "search";
+  search.placeholder = "Search description, note, category…";
+  search.value = moneyQuery;
+  search.oninput = () => { moneyQuery = search.value; moneyPage = 0; paint(); };
+  bar.append(search);
+  const monthSel = document.createElement("select");
+  monthSel.className = "pp-in re-money-month";
+  const mopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; monthSel.append(o); };
+  mopt("all", "all months");
+  [...new Set(work.map((r) => (r.date || "").slice(0, 7)).filter(Boolean))].sort().reverse()
+    .forEach((m) => mopt(m, m));
+  monthSel.value = moneyMonth;
+  if (monthSel.value !== moneyMonth) { moneyMonth = "all"; monthSel.value = "all"; } // stale month filtered away
+  monthSel.onchange = () => { moneyMonth = monthSel.value; moneyPage = 0; paint(); };
+  bar.append(monthSel);
+  const chips = {};
+  [["all", "ALL"], ["todo", "TO CATEGORIZE"], ["expense", "EXPENSES"], ["deposit", "DEPOSITS"]]
+    .forEach(([key, label]) => {
+      const b = el("button", "filter-chip", label);
+      b.onclick = () => { moneyCut = key; moneyPage = 0; paint(); };
+      chips[key] = b;
+      bar.append(b);
+    });
+  main.append(bar);
+  // durable containers — paint() only wipes contents
+  const proposeSlot = el("div");
+  const table = el("div", "fr-table");
+  const pager = el("div", "re-money-pager");
+  main.append(proposeSlot, table, pager);
+  const paint = () => {
+    Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", moneyCut === k));
+    const rows = work.filter(moneyVisible);
+    laneHead.textContent = "MONEY · " +
+      (rows.length === work.length ? work.length : rows.length + " of " + work.length) +
+      " to file · " + filed.length + " filed" + (last ? " · last import " + last : "");
+    moneyProposePanel(proposeSlot);
+    table.innerHTML = "";
+    const head = el("div", "fr-row fr-head re-money-grid");
+    ["DATE", "DESCRIPTION", "AMOUNT", "PROPERTY", "CATEGORY"].forEach((h, i) =>
+      head.append(el("span", "micro-label" + (i === 2 ? " re-money-r" : ""), h)));
+    table.append(head);
+    if (!rows.length) {
+      table.append(emptyRow(moneyRows.length
+        ? (work.length ? "No transactions match." : "Nothing left to file — everything lives in the entity histories below.")
+        : "No transactions yet — link a bank account or drop a CSV above."));
+    }
+    // pagination — historic backfills run to hundreds of rows; 50 per page
+    const pages = Math.max(1, Math.ceil(rows.length / MONEY_PAGE_SIZE));
+    if (moneyPage >= pages) moneyPage = pages - 1;
+    const start = moneyPage * MONEY_PAGE_SIZE;
+    rows.slice(start, start + MONEY_PAGE_SIZE).forEach((r) => table.append(moneyRow(r)));
+    pager.innerHTML = "";
+    if (pages > 1) {
+      const btn = (label, disabled, go) => {
+        const b = el("button", "pill light", label);
+        b.disabled = disabled;
+        b.onclick = () => { moneyPage = go; moneySelId = null; paint(); };
+        pager.append(b);
+      };
+      btn("← prev", moneyPage === 0, moneyPage - 1);
+      pager.append(el("span", "re-money-pageinfo",
+        (start + 1) + "–" + Math.min(start + MONEY_PAGE_SIZE, rows.length) + " of " + rows.length +
+        " · page " + (moneyPage + 1) + "/" + pages));
+      btn("next →", moneyPage >= pages - 1, moneyPage + 1);
+    }
+  };
+  paint();
+  host.append(wrap);
   // a selected row survives re-renders (the split…/deal picks re-render to
   // open the editor — the inspector must come back up with them)
   const selRow = moneySelId && moneyRows.find((r) => r.id === moneySelId);
-  if (selRow) renderMoneyInspector(selRow);
-  if (pages > 1) {
-    const pager = el("div", "re-money-pager");
-    const btn = (label, disabled, go) => {
-      const b = el("button", "pill light", label);
-      b.disabled = disabled;
-      b.onclick = () => { moneyPage = go; moneySelId = null; renderProperties(); };
-      pager.append(b);
-    };
-    btn("← prev", moneyPage === 0, moneyPage - 1);
-    pager.append(el("span", "re-money-pageinfo",
-      (start + 1) + "–" + Math.min(start + MONEY_PAGE_SIZE, work.length) + " of " + work.length +
-      " · page " + (moneyPage + 1) + "/" + pages));
-    btn("next →", moneyPage >= pages - 1, moneyPage + 1);
-    host.append(pager);
-  }
-  // HISTORY — filed rows under the entity whose books they hit
-  if (filed.length) moneyHistory(host, filed);
+  renderMoneyInspector(selRow || null);
+  // HISTORY — filed rows under the entity whose books they hit (inside main,
+  // so the rail runs alongside)
+  if (filed.length) moneyHistory(main, filed);
   // footer: accountant handoffs by entity books, personal vs partnered
-  host.append(moneyFooter());
+  main.append(moneyFooter());
+}
+
+// moneyProposePanel — the "categorize N more like this" offer, rendered into
+// its durable slot on every paint. Matches re-derive from the live rows, the
+// owner unchecks any strays, apply hits the bulk lane; dismiss stays quiet
+// for this merchant for the session. It proposes — it never acts alone.
+function moneyProposePanel(slot) {
+  slot.innerHTML = "";
+  const matches = moneyProposeMatches();
+  if (!moneyPropose || !matches.length) { moneyPropose = null; return; }
+  const box = el("div", "re-money-propose");
+  const head = el("div", "re-money-propose-head");
+  head.append(el("span", "", "Categorize " + matches.length + " more like this?"));
+  head.append(el("span", "re-money-propose-key", moneyPropose.category + " → " + moneyPropose.key));
+  box.append(head);
+  const checks = new Map(); // id → checkbox
+  const listBox = el("div", "re-money-propose-list");
+  const SHOW = 6;
+  let revealed = matches.length <= SHOW ? matches.length : SHOW;
+  const renderList = () => {
+    listBox.innerHTML = "";
+    matches.slice(0, revealed).forEach((m) => {
+      const line = el("label", "re-money-propose-row");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = checks.has(m.id) ? checks.get(m.id).checked : true;
+      checks.set(m.id, cb);
+      line.append(cb,
+        el("span", "re-money-propose-date", (m.date || "").slice(5)),
+        el("span", "re-money-propose-amt", fmtMoneyExact(Math.abs(m.amount || 0))),
+        el("span", "re-money-propose-vendor", m.vendor || ""));
+      listBox.append(line);
+    });
+    if (revealed < matches.length) {
+      const more = el("button", "o-ghost", "… show all " + matches.length);
+      more.onclick = () => { revealed = matches.length; renderList(); };
+      listBox.append(more);
+    }
+  };
+  renderList();
+  box.append(listBox);
+  const acts = el("div", "re-money-propose-acts");
+  const apply = el("button", "pill", "apply");
+  apply.onclick = async () => {
+    // hidden rows default to checked — unseen ≠ unchecked
+    const ids = matches.filter((m) => !checks.has(m.id) || checks.get(m.id).checked).map((m) => m.id);
+    if (!ids.length) { moneyPropose = null; renderProperties(); return; }
+    try {
+      const res = await postJSONOk("/api/realestate/statements/categorize",
+        { ids, category: moneyPropose.category });
+      showToast("Categorized " + (res.updated || 0) + " × " + moneyPropose.category);
+      moneyPropose = null;
+      renderProperties();
+    } catch (e) { showToast("Couldn't categorize — " + (e.message || "")); }
+  };
+  const dismiss = el("button", "pill light", "dismiss");
+  dismiss.onclick = () => {
+    moneyProposeDismissed.add(moneyPropose.key);
+    moneyPropose = null;
+    slot.innerHTML = "";
+  };
+  acts.append(apply, dismiss);
+  box.append(acts);
+  slot.append(box);
 }
 
 // moneyHistory — one collapsed fold per entity: every filed (applied) and
@@ -1071,12 +1318,20 @@ async function moneyIngest(d, mapping, entity, sign) {
 
 function moneyRow(r) {
   const cur = (r.assignments && r.assignments[0] && r.assignments[0].slug) || "";
-  const row = el("div", "re-money-row" + (moneySelId === r.id ? " sel" : ""));
+  const row = el("div", "fr-row re-money-grid" + (moneySelId === r.id ? " sel" : ""));
   row.append(el("span", "re-money-date", (r.date || "").slice(5)));
-  const desc = el("span", "re-money-desc");
-  desc.append(el("span", "", r.vendor || r.note || "(no description)"));
-  if (r.entity) desc.append(el("span", "re-money-entity", entityLabel(r.entity)));
-  if (r.source === "feed") desc.append(el("span", "re-money-src", "feed")); // bank-feed sync vs csv upload
+  // the fundraising two-line cell: vendor over its mono metadata
+  const desc = el("span", "fr-stack");
+  desc.append(el("span", "re-money-vendor", r.vendor || r.note || "(no description)"));
+  const bits = [];
+  if (r.entity) bits.push(entityLabel(r.entity));
+  if (r.source === "feed") bits.push("feed"); // bank-feed sync vs csv upload
+  if (r.note && r.note !== r.vendor) bits.push(r.note);
+  if (bits.length) {
+    const sub = el("span", "fr-sub", bits.join(" · "));
+    sub.title = bits.join(" · ");
+    desc.append(sub);
+  }
   // phone meta line (desktop hides it): the assigned property, or the file
   // prompt in ink — the row tap opens the assignment sheet
   const curProp = cur ? activePortfolio().find((p) => p.slug === cur) : null;
@@ -1093,7 +1348,7 @@ function moneyRow(r) {
     const lab = el("span", "re-money-split-label", moneySplitLabel(r));
     lab.title = (r.assignments || []).map((a) =>
       (a.slug.startsWith("admin:") ? "admin · " + a.slug.slice(6) : a.slug) + " " + fmtMoneyExact(a.amount)).join(" · ");
-    row.append(lab);
+    row.append(lab, moneyCatSelect(r));
     row.onclick = () => {
       if (window.mf && window.mf.phone()) { openMoneyAssignSheet(r); return; }
       moneySelId = moneySelId === r.id ? null : r.id;
@@ -1101,20 +1356,12 @@ function moneyRow(r) {
     };
     return row;
   }
-  // property select — assignment in place (single-target; splits via
-  // inspector). The admin lane files against the entity's own books, no
-  // property (server routes admin:<entity> to its ledger).
+  // property select — assignment in place, scoped to the paying entity's own
+  // properties + the unclaimed ones (workbench v3). The admin lane files
+  // against the entity's own books; splits/deals open the editor seeded.
   const sel = document.createElement("select");
   sel.className = "pp-in re-money-sel";
-  const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
-  opt("", r.state === "applied" ? "applied" : "unassigned");
-  if (moneyAdminSlug(r)) opt(moneyAdminSlug(r), "admin · " + r.entity);
-  activePortfolio().forEach((p) => opt(p.slug, p.short || p.slug));
-  // split targets: manual split… + one per multi-property deal (even split,
-  // pausing in the editor for confirmation — never files on the pick)
-  opt("__split", "split…");
-  dealSplitTargets().forEach((x) =>
-    opt("deal:" + x.deal.slug, "◈ " + (x.deal.name || x.deal.slug) + " (" + x.members.length + "-way)"));
+  moneyTargetOptions(r, sel, true);
   sel.value = cur;
   sel.disabled = r.state === "applied" || r.state === "skipped";
   sel.onclick = (e) => e.stopPropagation();
@@ -1138,11 +1385,14 @@ function moneyRow(r) {
       });
       if (moneyFileToast(r, res, sel.value ? "Assigned — set a category to file it" : "Unassigned")) {
         moneySelId = null;
-        renderProperties();
       }
+      renderProperties();
     } catch (e) { showToast("Couldn't assign"); }
   };
   row.append(sel);
+  // category ON the row — filing no longer needs the inspector; the inspector
+  // is for splits, hops, and notes
+  row.append(moneyCatSelect(r));
   row.onclick = () => {
     // phone (RE spec §8): the row tap IS the assignment gesture — a sheet of
     // tap-targets replaces the desktop's inline select + side inspector
@@ -1214,13 +1464,17 @@ function openMoneyAssignSheet(r) {
       body.append(moneySplitEditor(r, () => window.mfSheet.close()));
     } else {
       rowOpt("", "unassigned");
-      if (moneyAdminSlug(r)) rowOpt(moneyAdminSlug(r), "admin · " + r.entity);
-      activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
+      if (moneyAdminSlug(r)) rowOpt(moneyAdminSlug(r), "admin · " + entityLabel(r.entity));
+      // entity-scoped targets (workbench v3): the payer's own properties
+      // first, then the unclaimed ones — another entity's never listed
+      const groups = moneyTargetGroups(r);
+      groups.mine.forEach((p) => rowOpt(p.slug, p.short || p.slug));
+      groups.untagged.forEach((p) => rowOpt(p.slug, (p.short || p.slug) + " · unowned"));
       rowOpt("__split", "split…", () => {
         moneySplitSeed = { id: r.id, allocs: moneySplitSeedFor(r, "__split") };
         openMoneyAssignSheet(r);
       });
-      dealSplitTargets().forEach((x) => rowOpt("deal:" + x.deal.slug,
+      moneyDealTargets(r).forEach((x) => rowOpt("deal:" + x.deal.slug,
         "◈ " + (x.deal.name || x.deal.slug) + " (" + x.members.length + "-way)", () => {
           moneySplitSeed = { id: r.id, allocs: moneySplitSeedFor(r, "deal:" + x.deal.slug) };
           openMoneyAssignSheet(r);
@@ -1230,6 +1484,7 @@ function openMoneyAssignSheet(r) {
     // category — the chart-of-accounts typeahead (phone rows could never
     // complete filing without it); picking a category files the row
     const catTa = categoryTypeahead(r, (res) => {
+      proposeCategorySpread(r); // the offer shows in the list on re-render
       moneyFileToast(r, res, "Saved");
       if (res.state === "applied") { window.mfSheet.close(); renderProperties(); }
     });
@@ -1252,23 +1507,27 @@ function openMoneyAssignSheet(r) {
 function renderMoneyInspector(r) {
   const insp = document.querySelector(".re-money-insp");
   if (!insp) return;
-  if (moneySelId !== r.id) { insp.hidden = true; insp.innerHTML = ""; return; }
-  insp.hidden = false;
+  if (!r || moneySelId !== r.id) {
+    insp.innerHTML = "";
+    insp.append(el("div", "aion-insp-empty",
+      "select a transaction — splits, work tethers, and notes live here; property + category file straight from the row"));
+    return;
+  }
   insp.innerHTML = "";
-  const head = el("div", "pp3-insp-head");
-  head.append(el("span", "pp3-insp-label", "Transaction"));
-  const x = el("button", "pp3-insp-x", "✕");
-  x.onclick = () => { moneySelId = null; insp.hidden = true; };
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "TRANSACTION"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { moneySelId = null; renderMoneyInspector(null); };
   head.append(x);
   insp.append(head);
-  insp.append(el("div", "pp3-insp-text", (r.vendor || "") + " · " + (r.date || "")));
+  insp.append(el("div", "re-money-insp-title", (r.vendor || "") + " · " + (r.date || "")));
   const fieldRow = (label, val) => {
-    const f = el("div", "pp3-insp-field");
-    f.append(el("span", "pp3-insp-flabel", label), el("span", "pp3-insp-val", val || "—"));
+    const f = el("div", "aion-insp-field fr-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), el("span", "aion-insp-ro", val || "—"));
     return f;
   };
   insp.append(fieldRow("amount", (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
-  insp.append(fieldRow("entity", r.entity));
+  insp.append(fieldRow("entity", entityLabel(r.entity)));
   insp.append(fieldRow("statement", r.statement + (r.source === "feed" ? " · feed" : "")));
   insp.append(fieldRow("state", r.state));
   // three edit modes: to-file rows edit freely; FILED rows edit in place
@@ -1287,8 +1546,9 @@ function renderMoneyInspector(r) {
   // memo arrives as the initial note; the row note IS the ledger note
   const editRow = (label, key, placeholder) => {
     if (locked) return fieldRow(label, r[key]);
-    const f = el("div", "pp3-insp-field");
+    const f = el("div", "aion-insp-field fr-insp-field");
     const inp = inputEl(placeholder);
+    inp.className = "pp-in fr-in";
     inp.value = r[key] || "";
     inp.onchange = async () => {
       if (isApplied) {
@@ -1308,7 +1568,7 @@ function renderMoneyInspector(r) {
         }
       } catch (e) { showToast("Couldn't save"); }
     };
-    f.append(el("span", "pp3-insp-flabel", label), inp);
+    f.append(el("span", "aion-insp-flabel", label), inp);
     return f;
   };
   if (locked) {
@@ -1316,17 +1576,16 @@ function renderMoneyInspector(r) {
   } else {
     // the chart-of-accounts typeahead — picking a category files the row
     // (or, on a filed row, rewrites the written ledger rows)
-    const f = el("div", "pp3-insp-field");
+    const f = el("div", "aion-insp-field fr-insp-field");
     const ta = categoryTypeahead(r, (res) => {
-      if (moneyFileToast(r, res, "Saved")) {
-        moneySelId = null;
-        renderProperties();
-      }
+      proposeCategorySpread(r); // arm "categorize N more like this"
+      if (moneyFileToast(r, res, "Saved")) moneySelId = null;
+      renderProperties();
     }, isApplied ? async (name) => {
       r.category = name;
       await refileSave(() => ({ category: name }))();
     } : null);
-    f.append(el("span", "pp3-insp-flabel", "category"), ta.el);
+    f.append(el("span", "aion-insp-flabel", "category"), ta.el);
     insp.append(f);
   }
   insp.append(editRow("note", "note", "note — lands on the ledger row"));
@@ -1398,8 +1657,45 @@ function renderMoneyInspector(r) {
     };
     insp.append(fileBtn);
   }
-  insp.append(el("div", "pp3-insp-note",
+  // claim a property for the paying entity (workbench v3): the picker only
+  // offers this entity's own properties + the unclaimed ones — claiming
+  // writes `entity:` into the property record (the same hard-linked /field
+  // patch the board uses) and shrinks the unclaimed group for good. An
+  // explicit click, one property at a time, never inferred.
+  if (!isApplied && !locked && r.entity) moneyClaimField(r, insp);
+  insp.append(el("div", "re-money-insp-note",
     "picking a property with a category set files straight to the ledger; receipts + contractor attach on the ledger row (property page → spend)"));
+}
+
+// moneyClaimField — "⊕ claim a property for <entity>": a typeahead over the
+// owner-unassigned properties; picking one stamps its entity: frontmatter.
+function moneyClaimField(r, host) {
+  const untagged = moneyTargetGroups(r).untagged;
+  if (!untagged.length) return;
+  const open = el("button", "pp3-link re-money-claim", "⊕ claim a property for " + entityLabel(r.entity) + " …");
+  open.onclick = () => {
+    const ta = typeahead({
+      placeholder: "property to claim…",
+      minChars: 0,
+      suggest: async (q, add) => {
+        const needle = (q || "").toLowerCase();
+        untagged.filter((p) => !needle || (p.short || p.slug).toLowerCase().includes(needle) ||
+            (p.address || "").toLowerCase().includes(needle))
+          .slice(0, 8)
+          .forEach((p) => add(p.short || p.slug, "unowned", async () => {
+            try {
+              await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field",
+                { key: "entity", value: entityLabel(r.entity) });
+              showToast((p.short || p.slug) + " → " + entityLabel(r.entity));
+              renderProperties(); // reloads the property cache — the picker regroups
+            } catch (e) { showToast("Couldn't claim — " + (e.message || "")); }
+          }));
+      },
+    });
+    open.replaceWith(ta.el);
+    ta.focus();
+  };
+  host.append(open);
 }
 
 // moneyHopFields — the §7 hops on an assigned row: property → NODE (the

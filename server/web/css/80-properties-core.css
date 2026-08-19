@@ -4,7 +4,7 @@
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
-.pp-section-head, .pp-cols, .prop-cols, .prop-out-name, .prop-status-sel, .pp3-cell-label, .pp3-sec-title, .pp3-insp-label, .pp3-insp-flabel, .uw-label, .pp3-owner-label, .pp3-uw-title, .pp3-uw-label, .pp3-lform-label, .re-lane-head, .re-money-cols, .re-uw-label, .re-acct-state {
+.pp-section-head, .pp-cols, .prop-cols, .prop-out-name, .prop-status-sel, .pp3-cell-label, .pp3-sec-title, .pp3-insp-label, .pp3-insp-flabel, .uw-label, .pp3-owner-label, .pp3-uw-title, .pp3-uw-label, .pp3-lform-label, .re-lane-head, .re-uw-label, .re-acct-state {
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
 }
 
@@ -297,20 +297,32 @@
 
 /* money: date · description · amount · property select — the data column has
    a floor; the decoration compresses first */
-.re-money-cols { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 110px minmax(88px, 150px); gap: var(--sp-5); font-size: var(--fs-2xs); color: var(--base-40); padding: var(--sp-1) var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--base-25); }
-.re-money-shell { display: flex; gap: var(--sp-7); align-items: flex-start; }
-.re-money-list { flex: 1; min-width: 0; }
-.re-money-row { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 110px minmax(88px, 150px); gap: var(--sp-5); align-items: center; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
-.re-money-row:hover { background: var(--base-05); }
-.re-money-row.sel { background: var(--base-20); border-left: 2px solid var(--accent); padding-left: var(--sp-3); }
+/* MONEY (workbench v3) — the fr-shell idiom: fr-table rows with a stacked
+   description, property + category selects inline, always-present rail. The
+   grid must out-specify .fr-row's own (94 loads after this file) — compound,
+   and the modifier rides the head row too. */
+.fr-row.re-money-grid, .fr-head.re-money-grid { grid-template-columns: 44px minmax(150px, 1fr) 104px minmax(96px, 150px) minmax(96px, 140px); gap: var(--sp-4); }
+.re-money-r { text-align: right; }
 .re-money-date { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); }
-.re-money-desc { font-size: var(--fs-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.re-money-entity { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: var(--sp-4); }
+.re-money-vendor { font-size: var(--fs-md); }
 .re-money-amt { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); text-align: right; }
 .re-money-amt.inflow { color: var(--accent); }
-.re-money-sel { font-size: var(--fs-xs); }
-.re-money-insp { width: 254px; flex: none; position: sticky; top: 0; border-left: 1px solid var(--base-25); padding: var(--sp-2) 0 var(--sp-2) var(--sp-6); }
+.re-money-sel, .re-money-cat, .re-money-month { font-size: var(--fs-xs); min-width: 0; }
+.re-money-insp-title { font-size: var(--fs-md); margin-bottom: var(--sp-5); }
+.re-money-insp-note { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-top: var(--sp-6); line-height: 1.5; }
+.re-money-claim { display: block; background: none; border: none; padding: var(--sp-3) 0 0; text-align: left; }
 .re-money-foot { margin-top: var(--sp-8); }
+
+/* the "categorize N more like this" offer — proposes, never acts alone */
+.re-money-propose { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-5); margin: var(--sp-4) 0; }
+.re-money-propose-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); font-size: var(--fs-sm); }
+.re-money-propose-key { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.re-money-propose-list { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-3) 0; }
+.re-money-propose-row { display: grid; grid-template-columns: auto 44px 84px minmax(0, 1fr); gap: var(--sp-4); align-items: baseline; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-60); cursor: pointer; }
+.re-money-propose-date { color: var(--base-40); }
+.re-money-propose-amt { text-align: right; }
+.re-money-propose-vendor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.re-money-propose-acts { display: flex; gap: var(--sp-4); }
 .re-handoff-row { display: flex; align-items: baseline; gap: var(--sp-6); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line-soft); }
 .re-handoff-name { font-size: var(--fs-md); min-width: 180px; }
 .re-handoff-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); flex: 1; }
@@ -508,7 +520,6 @@
 .re-bankfeed-acct .pp-in { max-width: 220px; }
 
 /* feed-source badge on workbench rows (bank plan §4c) */
-.re-money-src { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-lg); padding: 0 var(--sp-2); margin-left: var(--sp-3); }
 
 /* money-page pagination (historic backfills → hundreds of rows) */
 .re-money-pager { display: flex; align-items: center; justify-content: center; gap: var(--sp-6); padding: var(--sp-5) 0; }

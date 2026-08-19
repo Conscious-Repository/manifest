@@ -219,3 +219,62 @@ func TestIngestCanonicalizesTheEntityToItsSlug(t *testing.T) {
 		t.Error("an unknown entity should still slugify")
 	}
 }
+
+// The bulk categorize lane: one category across many rows, never touching
+// applied/skipped rows, never filing.
+func TestCategorizeBulkSetsOnlyLiveRows(t *testing.T) {
+	srv, _, _ := bankFixture(t, &stubBridge{})
+	code, _ := doJSON(t, srv.handleStatementsIngest, "POST", "/api/realestate/statements/ingest",
+		`{"label":"e.csv","entity":"Garden SPE","signature":"s","sign":"expense-negative","mapping":{"date":"Date"},
+		  "rows":[{"Date":"02/14/2026","Vendor":"Ozark Electric WEB PMTS 3BJ92S","Amount":-198.45},
+		          {"Date":"03/14/2026","Vendor":"Ozark Electric WEB PMTS 5H216S","Amount":-237.07},
+		          {"Date":"04/13/2026","Vendor":"Ozark Electric WEB PMTS 7CLLNS","Amount":-201.19}]}`)
+	if code != 200 {
+		t.Fatal(code)
+	}
+	rows, _ := srv.statements.List()
+	if len(rows) != 3 {
+		t.Fatalf("want 3 rows, got %d", len(rows))
+	}
+	// every copy List returns carries the derived merchant key
+	for _, r := range rows {
+		if r.MerchantKey != "OZARK ELECTRIC" {
+			t.Fatalf("merchantKey not stamped: %q on %q", r.MerchantKey, r.Vendor)
+		}
+	}
+	// skip one row (with a reason), then categorize all three ids
+	skip, reason := "skipped", "personal"
+	if _, err := srv.statements.Update(rows[2].ID, nil, nil, nil, &skip, &reason); err != nil {
+		t.Fatal(err)
+	}
+	ids := `["` + rows[0].ID + `","` + rows[1].ID + `","` + rows[2].ID + `"]`
+	code, res := doJSON(t, srv.handleStatementsCategorize, "POST", "/api/realestate/statements/categorize",
+		`{"ids":`+ids+`,"category":"electric"}`)
+	if code != 200 || res["updated"] != float64(2) {
+		t.Fatalf("want 2 updated (skipped row untouched): %d %v", code, res["updated"])
+	}
+	after, _ := srv.statements.List()
+	for _, r := range after {
+		if r.State == "skipped" {
+			if r.Category == "electric" {
+				t.Error("bulk categorize touched a skipped row")
+			}
+			continue
+		}
+		if r.Category != "electric" {
+			t.Errorf("live row not categorized: %+v", r.State)
+		}
+		if r.State != "pending" {
+			t.Errorf("bulk categorize must not file or advance state, got %q", r.State)
+		}
+	}
+	// refusals: no ids, no category
+	if code, _ := doJSON(t, srv.handleStatementsCategorize, "POST", "/api/realestate/statements/categorize",
+		`{"ids":[],"category":"x"}`); code == 200 {
+		t.Error("empty ids must refuse")
+	}
+	if code, _ := doJSON(t, srv.handleStatementsCategorize, "POST", "/api/realestate/statements/categorize",
+		`{"ids":["stmt-x"],"category":"  "}`); code == 200 {
+		t.Error("blank category must refuse")
+	}
+}

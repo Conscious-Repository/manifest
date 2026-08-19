@@ -557,6 +557,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/realestate/statements/ingest", s.handleStatementsIngest)
 	mux.HandleFunc("GET /api/realestate/statements", s.handleStatementsList)
 	mux.HandleFunc("POST /api/realestate/statements/row", s.handleStatementsRow)
+	mux.HandleFunc("POST /api/realestate/statements/categorize", s.handleStatementsCategorize)
 	mux.HandleFunc("POST /api/realestate/statements/{id}/refile", s.handleStatementsRefile)
 	mux.HandleFunc("POST /api/realestate/statements/apply", s.handleStatementsApply)
 	mux.HandleFunc("GET /api/realestate/categories", s.handleCategoriesList)

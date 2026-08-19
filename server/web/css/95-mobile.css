@@ -365,21 +365,19 @@
   .re-stage { min-height: 44px; align-items: center; }
   .re-task { min-height: 48px; align-items: center; }
 
-  /* ---- MONEY: two lines, no grid — description 15px over its property in
-     mono 11px (unassigned reads in ink), amount right; the select and the
-     side inspector give way to the row-tap assignment sheet ---- */
-  .re-money-cols { display: none; }
-  .re-money-shell { display: block; }
+  /* ---- MONEY (workbench v3, fr-shell rows): two lines, no grid — vendor
+     over its property in mono (unassigned reads in ink), amount right; the
+     selects and the side rail give way to the row-tap assignment sheet ---- */
+  .fr-head.re-money-grid { display: none; }
   .re-money-insp { display: none; }
-  .re-money-row {
+  .fr-row.re-money-grid {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center; row-gap: 0; min-height: 52px;
   }
   .re-money-date { display: none; }
-  .re-money-sel { display: none; }
-  .re-money-desc { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-  .re-money-desc > :first-child { font-size: var(--fs-lg); }
-  .re-money-entity { display: none; }
+  .re-money-sel, .re-money-cat { display: none; }
+  .re-money-vendor { font-size: var(--fs-lg); }
+  .re-money-grid .fr-sub { display: none; }
   .re-money-meta { display: block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); }
   .re-money-meta.unfiled { color: var(--base-100); }
   .re-money-amt { grid-column: 2; font-size: var(--fs-lg); }

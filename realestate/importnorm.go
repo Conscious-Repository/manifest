@@ -215,3 +215,44 @@ func dropHeadRepeat(s string) string {
 func indexFold(s, needle string) int {
 	return strings.Index(strings.ToUpper(s), strings.ToUpper(needle))
 }
+
+// MerchantKey reduces a statement description to the identity of the MERCHANT,
+// for grouping recurring charges: Ozark Electric's WEB PMTS reference and
+// PayPal's transfer id change every month, so exact-string matching never sees
+// the repeat. Digits and punctuation go (store numbers, ACH refs), then the
+// leading two words name the merchant. Deliberately coarse — it exists to
+// PROPOSE a grouping the owner previews row by row, never to act alone.
+//
+// Returns "" — never groups — when the description's identity IS its digits:
+// bare check rows ("Check Paid 107") are distinct payees wearing one label.
+func MerchantKey(vendor string) string {
+	s := strings.ToUpper(strings.Join(strings.Fields(vendor), " "))
+	if s == "" || strings.HasPrefix(s, "CHECK ") || s == "CHECK" || s == "DEPOSIT" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'A' && r <= 'Z') || r == ' ' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune(' ')
+		}
+	}
+	words := make([]string, 0, 2)
+	for _, w := range strings.Fields(b.String()) {
+		if len(w) < 2 { // dropped-digit shrapnel ("4TE*CITY" → "TE CITY" keeps TE; single letters go)
+			continue
+		}
+		if len(words) == 0 && (w == "THE" || w == "AN") {
+			continue // a leading article wastes one of the two identity slots
+		}
+		words = append(words, w)
+		if len(words) == 2 {
+			break
+		}
+	}
+	if len(words) == 0 {
+		return ""
+	}
+	return strings.Join(words, " ")
+}

@@ -91,3 +91,49 @@ func TestTidyVendorStripsBankNoise(t *testing.T) {
 		t.Errorf("vendor should cap at 60, got %d", len(got))
 	}
 }
+
+func TestMerchantKeyGroupsRecurringCharges(t *testing.T) {
+	// each group: the SAME merchant wearing a different reference every month —
+	// all strings verbatim from the owner's Central Bank export
+	groups := [][]string{
+		{"Ozark Electric WEB PMTS 3BJ92S 9000268470", "Ozark Electric WEB PMTS 5H216S 9000268470"},
+		{"PAYPAL INST XFER 1049285513314 PAYPALSI77", "PAYPAL INST XFER CREDIT REPAYMENPAYPALSI77"},
+		{"CAPITAL ONE ONLINE PMTCA04E8754F111059279744391", "Capital One Credit Card"},
+		{"THE HOME DEPOT # BRENTWOOD MO", "THE HOME DEPOT # ST LOUIS MO", "The Home Depot",
+			"THE HOME DEPOT #30BRENTWOOD MOTHE HOME DE"},
+		{"WM SUPERCENTER 1900 MAPLEWOOD COM MAPLEWOOD MO", "WM SUPERCENTER 545 EL CAMINO ALTO SPRINGFIELD MO"},
+		{"4TE*CITY OF ST. LOST. LOUIS MO4TE*CITY OF", "4TE*CITY OF ST. LOST. LOUIS     MO4TE*CITY  OF"},
+		{"MY CPA GUY HIGHLANDV ILLEMOMY CPA GU Y", "My Cpa Guy Highlandv Illemomy Gu"},
+	}
+	for _, g := range groups {
+		key := MerchantKey(g[0])
+		if key == "" {
+			t.Errorf("MerchantKey(%q) = %q — a real merchant must key", g[0], key)
+			continue
+		}
+		for _, v := range g[1:] {
+			if got := MerchantKey(v); got != key {
+				t.Errorf("group split: %q → %q but %q → %q", g[0], key, v, got)
+			}
+		}
+	}
+	// the leading article never spends an identity slot
+	if got := MerchantKey("The Home Depot"); got != "HOME DEPOT" {
+		t.Errorf("leading article kept: %q", got)
+	}
+}
+
+func TestMerchantKeyNeverGroupsChecks(t *testing.T) {
+	// a check's identity IS its number — grouping them would smear one
+	// category across unrelated payees
+	for _, v := range []string{"Check Paid 107", "Check Paid 110", "Check", "Check Deposit", "", "   "} {
+		if got := MerchantKey(v); got != "" {
+			t.Errorf("MerchantKey(%q) = %q, must refuse to group", v, got)
+		}
+	}
+	// documented: the CSV's WAL-MART and the feed's Walmart key apart —
+	// cross-source grouping is out of scope, each source groups internally
+	if MerchantKey("WAL-MART #5150 1900 MAPLEWOOD COM MAPLEWOOD MO") == MerchantKey("Walmart") {
+		t.Error("cross-source keys unexpectedly merged — update the docs if intended")
+	}
+}

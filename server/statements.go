@@ -548,6 +548,31 @@ func (s *Server) handleStatementsRefile(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]any{"row": updated, "state": updated.State})
 }
 
+// handleStatementsCategorize is the bulk lane behind "categorize N more like
+// this": one category across many still-in-play rows, one save. It never
+// files — most of these rows have no property yet, and filing stays a
+// per-row, reviewed gesture.
+func (s *Server) handleStatementsCategorize(w http.ResponseWriter, r *http.Request) {
+	if !s.statementsOK(w) {
+		return
+	}
+	var b struct {
+		IDs      []string `json:"ids"`
+		Category string   `json:"category"`
+	}
+	if err := decode(r, &b); err != nil || len(b.IDs) == 0 {
+		httpError(w, errBadRequest("ids are required"))
+		return
+	}
+	if strings.TrimSpace(b.Category) == "" {
+		httpError(w, errBadRequest("a category is required"))
+		return
+	}
+	updated := s.statements.SetCategory(b.IDs, b.Category)
+	list, last := s.statements.List()
+	writeJSON(w, map[string]any{"updated": updated, "rows": list, "lastImport": last})
+}
+
 // looseKey is the date+amount half of realestate.DedupeKey — the vendor-blind
 // probe behind the overlap warning.
 func looseKey(date string, amount float64) string {

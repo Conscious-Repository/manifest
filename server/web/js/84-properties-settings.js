@@ -23,6 +23,19 @@ function entityLabel(slug) {
   return (hit && hit.name) || s;
 }
 
+// entitySlugFor — the other direction: a property's `entity:` frontmatter
+// holds the display NAME (the /field endpoint hard-links it), statement rows
+// hold the SLUG. Bridge through the registry, case-insensitive both ways —
+// never slugify(name): at least one record's slug isn't its name's slug
+// (north-pole-gp-llc / "North Pole SPE LLC"). "" when unknown.
+function entitySlugFor(nameOrSlug) {
+  const s = String(nameOrSlug || "").trim().toLowerCase();
+  if (!s) return "";
+  const hit = ((entitiesCache || {}).entities || [])
+    .find((e) => (e.name || "").toLowerCase() === s || (e.slug || "").toLowerCase() === s);
+  return (hit && hit.slug) || "";
+}
+
 // recordAutocomplete: the typeahead engine over entity/contractor records with
 // a quiet `create "<name>" →` completion.
 function recordAutocomplete(kind, placeholder, onPick) {
