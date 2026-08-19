@@ -183,47 +183,11 @@ func (s *Server) bankFeedSync(ctx context.Context) (added, autoApplied int, err 
 	if len(hauls) == 0 {
 		return 0, 0, nil
 	}
-	// every ledger line across the portfolio — no double entry, ever (mirrors
-	// handleStatementsIngest)
-	ledgerKeys := map[string]bool{}
-	props, _ := s.realestate.Properties()
-	for _, p := range props {
-		for _, lr := range p.Ledger {
-			ledgerKeys[realestate.DedupeKey(lr.Date, lr.Amount, lr.Vendor)] = true
-		}
-	}
 	_, vendorCat, vendorProp := s.reImport.Lookup("")
+	ledgerKeys := s.bankLedgerKeys()
 	var receipts []string
 	for _, haul := range hauls {
-		label := haul.Link.EntitySlug + ":" + haul.Link.AccountLabel
-		rows := make([]realestate.StatementRow, 0, len(haul.Txns))
-		for _, t := range haul.Txns {
-			if t.Amount == 0 {
-				continue
-			}
-			// SimpleFIN sign: negative = money out (expense), positive = deposit
-			amt, inflow := -t.Amount, false
-			if amt < 0 {
-				amt, inflow = -amt, true
-			}
-			vendor := strings.TrimSpace(t.Payee)
-			if vendor == "" {
-				vendor = strings.TrimSpace(t.Description)
-			}
-			row := realestate.StatementRow{
-				Date: t.Posted.Format("2006-01-02"), Vendor: vendor,
-				Note: strings.TrimSpace(t.Description), Amount: amt, Inflow: inflow,
-				Entity: haul.Link.EntitySlug, Source: "feed",
-			}
-			// the link's default property prefills ONE overridable assignment —
-			// it never auto-applies by itself (vendor memory may still win inside
-			// Ingest, same as the CSV path)
-			if haul.Link.DefaultProperty != "" {
-				row.Assignments = []realestate.Alloc{{Slug: haul.Link.DefaultProperty, Amount: amt}}
-			}
-			rows = append(rows, row)
-		}
-		a, _ := s.statements.Ingest(label, rows, ledgerKeys, vendorCat, vendorProp)
+		a := s.bankIngest(haul, ledgerKeys, vendorCat, vendorProp)
 		added += a
 		if a == 0 {
 			continue
@@ -235,6 +199,76 @@ func (s *Server) bankFeedSync(ctx context.Context) (added, autoApplied int, err 
 		s.bankFeedDigest(added, autoApplied, receipts)
 	}
 	return added, autoApplied, nil
+}
+
+// bankLedgerKeys is every ledger line across the portfolio — no double
+// entry, ever (mirrors handleStatementsIngest).
+func (s *Server) bankLedgerKeys() map[string]bool {
+	ledgerKeys := map[string]bool{}
+	props, _ := s.realestate.Properties()
+	for _, p := range props {
+		for _, lr := range p.Ledger {
+			ledgerKeys[realestate.DedupeKey(lr.Date, lr.Amount, lr.Vendor)] = true
+		}
+	}
+	return ledgerKeys
+}
+
+// bankIngest lands one haul in the statement workbench (the CSV path's sign
+// convention + dedupe + vendor prefill).
+func (s *Server) bankIngest(haul bankfeed.NewTxns, ledgerKeys map[string]bool, vendorCat, vendorProp map[string]string) int {
+	label := haul.Link.EntitySlug + ":" + haul.Link.AccountLabel
+	rows := make([]realestate.StatementRow, 0, len(haul.Txns))
+	for _, t := range haul.Txns {
+		if t.Amount == 0 {
+			continue
+		}
+		// SimpleFIN sign: negative = money out (expense), positive = deposit
+		amt, inflow := -t.Amount, false
+		if amt < 0 {
+			amt, inflow = -amt, true
+		}
+		vendor := strings.TrimSpace(t.Payee)
+		if vendor == "" {
+			vendor = strings.TrimSpace(t.Description)
+		}
+		row := realestate.StatementRow{
+			Date: t.Posted.Format("2006-01-02"), Vendor: vendor,
+			Note: strings.TrimSpace(t.Description), Amount: amt, Inflow: inflow,
+			Entity: haul.Link.EntitySlug, Source: "feed",
+		}
+		// the link's default property prefills ONE overridable assignment —
+		// it never auto-applies by itself (vendor memory may still win inside
+		// Ingest, same as the CSV path)
+		if haul.Link.DefaultProperty != "" {
+			row.Assignments = []realestate.Alloc{{Slug: haul.Link.DefaultProperty, Amount: amt}}
+		}
+		rows = append(rows, row)
+	}
+	a, _ := s.statements.Ingest(label, rows, ledgerKeys, vendorCat, vendorProp)
+	return a
+}
+
+// handleBankfeedBackfill pulls ONE account's ENTIRE bridge-held history into
+// the workbench — the bulk historic import for hand categorization. Auto-
+// apply never runs here: historic rows are the owner's to file.
+func (s *Server) handleBankfeedBackfill(w http.ResponseWriter, r *http.Request) {
+	if !s.bankfeedOK(w) {
+		return
+	}
+	s.bankfeedMu.Lock()
+	defer s.bankfeedMu.Unlock()
+	haul, err := s.bankFeed.FetchAll(r.Context(), r.PathValue("id"), time.Now())
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	_, vendorCat, vendorProp := s.reImport.Lookup("")
+	added := s.bankIngest(haul, s.bankLedgerKeys(), vendorCat, vendorProp)
+	if added > 0 {
+		s.bankFeedDigest(added, 0, []string{"full history · " + haul.Link.OrgName + " " + haul.Link.AccountName})
+	}
+	writeJSON(w, map[string]any{"fetched": len(haul.Txns), "added": added})
 }
 
 // bankAutoApply reconciles this link's freshly-synced rows that PROVABLY

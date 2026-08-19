@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,5 +221,41 @@ func TestBankFeedNoAutoApplyOnAmountMismatch(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv")); !os.IsNotExist(err) {
 		t.Fatal("a non-matching row must not touch the ledger")
+	}
+}
+
+// The full-history backfill is a bulk import for hand categorization: even a
+// perfect contract match stays pending, and the daily sync never re-hauls
+// what the backfill marked seen.
+func TestBankFeedBackfillIngestsWithoutAutoApply(t *testing.T) {
+	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "h1", Posted: day("2025-01-10"), Amount: -5500, Description: "CHECK 900", Payee: "Olga Sobkiv"},
+		{ID: "h2", Posted: day("2025-02-01"), Amount: 1200, Description: "DEPOSIT", Payee: "Tenant A"},
+	}}}
+	srv, vault, _ := bankFixture(t, bridge)
+
+	req := httptest.NewRequest("POST", "/api/bankfeed/accounts/act-1/backfill", strings.NewReader("{}"))
+	req.SetPathValue("id", "act-1")
+	rec := httptest.NewRecorder()
+	srv.handleBankfeedBackfill(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("backfill: %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"added":2`) {
+		t.Fatalf("backfill body: %s", rec.Body.String())
+	}
+	rows, _ := srv.statements.List()
+	for _, r := range rows {
+		if r.State == "applied" {
+			t.Fatalf("backfill auto-applied %+v", r)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv")); !os.IsNotExist(err) {
+		t.Fatal("backfill must not write the ledger")
+	}
+	// the daily sync sees nothing new — backfill marked the ids seen
+	if added, _, _ := srv.bankFeedSync(context.Background()); added != 0 {
+		t.Fatalf("sync re-hauled %d backfilled row(s)", added)
 	}
 }

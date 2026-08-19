@@ -76,7 +76,8 @@ function reOwnerSuggest(q, add, ta, onPick) {
   const roster = ((propTodosMeta && propTodosMeta.assignees) || {}).realestate || [];
   roster
     .filter((c) => !q || (c.slug || "").toLowerCase().includes(q) ||
-      (c.name || "").toLowerCase().includes(q) || (c.trade || "").toLowerCase().includes(q))
+      (c.name || "").toLowerCase().includes(q) || (c.trade || "").toLowerCase().includes(q) ||
+      (c.aliases || []).some((x) => String(x).toLowerCase().includes(q)))
     .slice(0, 8)
     .forEach((c) => add(c.name + (c.trade ? " · " + c.trade : ""), c.slug || "",
       () => { ta.commit(c.slug || ""); onPick(c.slug || ""); }));
@@ -137,7 +138,9 @@ function renderREBacklog() {
     tasks.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: g.container })));
 
   const ME = ((propTodosMeta && propTodosMeta.me) || "BA").toUpperCase();
-  const bucket = (owner) => (mineOwner(owner) ? ME : owner.toUpperCase());
+  // reOwnerKey collapses an aliased vendor key onto its person (olga-sobkiv → OS),
+  // so one human is one group however a given line spells her.
+  const bucket = (owner) => (mineOwner(owner) ? ME : reOwnerKey(owner).toUpperCase());
   const doneInPlace = tasks.filter((t) => t.done && t.src === "re" && reFreshDone.has(t.id));
   const doneTasks = tasks.filter((t) => t.done && !(t.src === "re" && reFreshDone.has(t.id)));
   const openTasks = tasks.filter((t) => !t.done);
@@ -523,6 +526,17 @@ async function rePost(url, body, msg) {
 // per-entity accountant handoffs split personal vs partnered.
 let moneyRows = [];
 let moneySelId = null;
+let moneyPage = 0;
+const MONEY_PAGE_SIZE = 50;
+
+// fmtMoneyExact — accounting cells: never rounded, always two decimals
+function fmtMoneyExact(v) {
+  return "$" + (v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// the admin lane's assignment slug for a row's paying entity (server routes
+// admin:<entity> to entities/<slug>.ledger.csv — entity books, no property)
+function moneyAdminSlug(r) { return r.entity ? "admin:" + r.entity : ""; }
 
 async function renderREMoney() {
   const host = els.propertyBoard;
@@ -551,12 +565,31 @@ async function renderREMoney() {
   host.append(cols);
   const shell = el("div", "re-money-shell");
   const list = el("div", "re-money-list");
-  moneyRows.forEach((r) => list.append(moneyRow(r)));
+  // pagination — historic backfills run to hundreds of rows; 50 per page
+  const pages = Math.max(1, Math.ceil(moneyRows.length / MONEY_PAGE_SIZE));
+  if (moneyPage >= pages) moneyPage = pages - 1;
+  const start = moneyPage * MONEY_PAGE_SIZE;
+  moneyRows.slice(start, start + MONEY_PAGE_SIZE).forEach((r) => list.append(moneyRow(r)));
   shell.append(list);
   const insp = el("div", "re-money-insp");
   insp.hidden = true; // starts closed — the list arrives full width
   shell.append(insp);
   host.append(shell);
+  if (pages > 1) {
+    const pager = el("div", "re-money-pager");
+    const btn = (label, disabled, go) => {
+      const b = el("button", "pill light", label);
+      b.disabled = disabled;
+      b.onclick = () => { moneyPage = go; moneySelId = null; renderProperties(); };
+      pager.append(b);
+    };
+    btn("← prev", moneyPage === 0, moneyPage - 1);
+    pager.append(el("span", "re-money-pageinfo",
+      (start + 1) + "–" + Math.min(start + MONEY_PAGE_SIZE, moneyRows.length) + " of " + moneyRows.length +
+      " · page " + (moneyPage + 1) + "/" + pages));
+    btn("next →", moneyPage >= pages - 1, moneyPage + 1);
+    host.append(pager);
+  }
   // footer: accountant handoffs by entity books, personal vs partnered
   host.append(moneyFooter());
 }
@@ -693,16 +726,22 @@ function moneyRow(r) {
   // phone meta line (desktop hides it): the assigned property, or the file
   // prompt in ink — the row tap opens the assignment sheet
   const curProp = cur ? activePortfolio().find((p) => p.slug === cur) : null;
+  const curLabel = cur.startsWith("admin:") ? "admin · " + cur.slice(6)
+    : ((curProp && (curProp.short || curProp.slug)) || cur);
   desc.append(el("span", "re-money-meta" + (cur ? "" : " unfiled"),
-    cur ? ((curProp && (curProp.short || curProp.slug)) || cur) : "unassigned — tap to file"));
+    cur ? curLabel : "unassigned — tap to file"));
   row.append(desc);
+  // exact to the cent — this is accounting, never the k-rounded display
   row.append(el("span", "re-money-amt" + (r.inflow ? " inflow" : ""),
-    (r.inflow ? "+" : "") + fmtMoneyShort(Math.abs(r.amount || 0))));
-  // property select — assignment in place (single-target; splits via inspector)
+    (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
+  // property select — assignment in place (single-target; splits via
+  // inspector). The admin lane files against the entity's own books, no
+  // property (server routes admin:<entity> to its ledger).
   const sel = document.createElement("select");
   sel.className = "pp-in re-money-sel";
   const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
   opt("", r.state === "applied" ? "applied" : "unassigned");
+  if (moneyAdminSlug(r)) opt(moneyAdminSlug(r), "admin · " + r.entity);
   activePortfolio().forEach((p) => opt(p.slug, p.short || p.slug));
   sel.value = cur;
   sel.disabled = r.state === "applied" || r.state === "skipped";
@@ -734,7 +773,7 @@ function openMoneyAssignSheet(r) {
   window.mfSheet.open((body) => {
     body.append(el("div", "pp3-insp-text",
       (r.vendor || r.note || "(no description)") + " · " + (r.date || "") + " · " +
-      (r.inflow ? "+" : "") + fmtMoneyShort(Math.abs(r.amount || 0))));
+      (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
     if (done) {
       body.append(el("div", "pp3-insp-note", "already " + r.state + " — edits happen on the property ledger"));
       return;
@@ -759,6 +798,7 @@ function openMoneyAssignSheet(r) {
       list.append(b);
     };
     rowOpt("", "unassigned");
+    if (moneyAdminSlug(r)) rowOpt(moneyAdminSlug(r), "admin · " + r.entity);
     activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
     body.append(list);
     moneyHopFields(r, body); // node + contract hops (native selects — mobile deviation)
@@ -794,7 +834,7 @@ function renderMoneyInspector(r) {
     f.append(el("span", "pp3-insp-flabel", label), el("span", "pp3-insp-val", val || "—"));
     return f;
   };
-  insp.append(fieldRow("amount", (r.inflow ? "+" : "") + "$" + Math.abs(r.amount || 0).toLocaleString()));
+  insp.append(fieldRow("amount", (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
   insp.append(fieldRow("entity", r.entity));
   insp.append(fieldRow("statement", r.statement + (r.source === "feed" ? " · feed" : "")));
   insp.append(fieldRow("state", r.state));

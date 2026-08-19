@@ -475,6 +475,19 @@ async function renderBankFeedPanel(box, ents) {
           renderREsettings();
         } catch (err) { showToast("Couldn't unlink"); }
       }));
+      // full-history backfill: everything the bridge holds for this account
+      // lands in the $ tab for hand categorization — never auto-applied
+      const bf = pillLight("pull full history", async () => {
+        bf.disabled = true;
+        bf.textContent = "pulling…";
+        try {
+          const r = await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id) + "/backfill", {});
+          showToast("History pulled — " + (r.added || 0) + " new row(s) of " + (r.fetched || 0) +
+            " fetched → $ tab (paged, 50/screen)");
+        } catch (err) { showToast("Backfill failed — " + (err.message || "")); }
+        renderREsettings();
+      });
+      ctl.append(bf);
     }
     row.append(ctl);
     if (link && (link.lastSync || link.lastError)) {

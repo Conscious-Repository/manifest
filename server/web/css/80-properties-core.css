@@ -296,10 +296,10 @@
 
 /* money: date · description · amount · property select — the data column has
    a floor; the decoration compresses first */
-.re-money-cols { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 82px minmax(88px, 150px); gap: var(--sp-5); font-size: var(--fs-2xs); color: var(--base-40); padding: var(--sp-1) var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--base-25); }
+.re-money-cols { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 110px minmax(88px, 150px); gap: var(--sp-5); font-size: var(--fs-2xs); color: var(--base-40); padding: var(--sp-1) var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--base-25); }
 .re-money-shell { display: flex; gap: var(--sp-7); align-items: flex-start; }
 .re-money-list { flex: 1; min-width: 0; }
-.re-money-row { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 82px minmax(88px, 150px); gap: var(--sp-5); align-items: center; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
+.re-money-row { display: grid; grid-template-columns: 56px minmax(130px, 1fr) 110px minmax(88px, 150px); gap: var(--sp-5); align-items: center; padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
 .re-money-row:hover { background: var(--base-05); }
 .re-money-row.sel { background: var(--base-20); border-left: 2px solid var(--accent); padding-left: var(--sp-3); }
 .re-money-date { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); }
@@ -508,6 +508,10 @@
 
 /* feed-source badge on workbench rows (bank plan §4c) */
 .re-money-src { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); background: var(--accent-soft); border-radius: var(--radius-lg); padding: 0 var(--sp-2); margin-left: var(--sp-3); }
+
+/* money-page pagination (historic backfills → hundreds of rows) */
+.re-money-pager { display: flex; align-items: center; justify-content: center; gap: var(--sp-6); padding: var(--sp-5) 0; }
+.re-money-pageinfo { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 /* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
 .re-publish-btn { margin-top: var(--sp-3); width: 100%; justify-content: center; }

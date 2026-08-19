@@ -13,6 +13,7 @@ package bankfeed
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -103,6 +104,38 @@ func (s *Service) Claim(ctx context.Context, setupToken string) error {
 // Accounts lists the bridge accounts (live call).
 func (s *Service) Accounts(ctx context.Context) ([]Account, error) {
 	return s.provider.Accounts(ctx, s.store.AccessURL())
+}
+
+// FetchAll pulls ONE link's entire history from the bridge (since epoch —
+// the bridge serves whatever the institution gave it), unseen rows only, and
+// marks them seen so the daily poll never re-hauls them. The backfill lane:
+// bulk historic import for hand categorization, never auto-applied.
+func (s *Service) FetchAll(ctx context.Context, simplefinID string, now time.Time) (NewTxns, error) {
+	link, ok := s.store.LinkFor(simplefinID)
+	if !ok {
+		return NewTxns{}, fmt.Errorf("account %s is not linked", simplefinID)
+	}
+	txns, err := s.provider.Transactions(ctx, s.store.AccessURL(), simplefinID, time.Unix(86400, 0))
+	if err != nil {
+		s.store.SetLinkHealth(simplefinID, "", err.Error())
+		return NewTxns{}, err
+	}
+	var fresh []Txn
+	var newest time.Time
+	ids := make([]string, 0, len(txns))
+	for _, t := range txns {
+		if t.Posted.After(newest) {
+			newest = t.Posted
+		}
+		if s.store.Seen(simplefinID, t.ID) {
+			continue
+		}
+		ids = append(ids, t.ID)
+		fresh = append(fresh, t)
+	}
+	s.store.MarkSeen(simplefinID, ids, newest)
+	s.store.SetLinkHealth(simplefinID, now.Format(time.RFC3339), "")
+	return NewTxns{Link: link, Txns: fresh}, nil
 }
 
 // FetchNew pulls every enabled link's unseen transactions. The cursor backs
