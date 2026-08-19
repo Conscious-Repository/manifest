@@ -132,6 +132,9 @@ func computeMoneyRollup(work []WorkStage, ledger []LedgerRow, allocs []NodeAlloc
 		touch(a.NodeID).acceptedSum += a.Amount // node existence irrelevant — committed is committed
 	}
 	for _, row := range ledger {
+		if normalizeCat(row.Cat) == CatOperating {
+			continue // operating lane — not project commitments or spend
+		}
 		isExpense := strings.EqualFold(row.Type, "expense")
 		accepted := legacyBids && strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
 		if isExpense {

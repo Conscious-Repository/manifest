@@ -103,83 +103,96 @@ function renderPortfolio() {
   wrap.append(main, inspector);
   host.append(wrap);
 
-  // toolbar: search first, then the cut chips (the grouping)
+  // toolbar — search + cut chips. BOTH filter in place (paint below) rather
+  // than re-rendering the tab: a full render replaces the input node and
+  // takes the caret out of the search field after the first keystroke (the
+  // contractors-tab fix, 86-re-contracts).
   const bar = el("div", "fr-toolbar");
   const search = el("input", "pp-in fr-search");
   search.type = "search";
   search.placeholder = "Search address, entity, deal, stage…";
   search.value = pfQuery;
-  search.oninput = () => { pfQuery = search.value; renderPortfolio(); };
+  search.oninput = () => { pfQuery = search.value; paint(); };
   bar.append(search);
   const attn = activePortfolio().filter(pfAttention).length;
   const cuts = [["open", "OPEN"], ["all", "ALL"]];
   if (attn) cuts.push(["attention", "ATTENTION " + attn]);
   cuts.push(["construction", "CONSTRUCTION"], ["pre-dev", "PRE-DEV"], ["pipeline", "PIPELINE"], ["stabilized", "HELD"]);
+  const chips = {};
   cuts.forEach(([key, label]) => {
-    const b = el("button", "filter-chip" + (pfCut === key ? " on" : ""), label);
-    b.onclick = () => { pfCut = key; renderPortfolio(); };
+    const b = el("button", "filter-chip", label);
+    b.onclick = () => { pfCut = key; paint(); };
+    chips[key] = b;
     bar.append(b);
   });
   main.append(bar);
   main.append(propertyComposer());
 
-  // the table — four columns, fr-stack cells, no bars, no sections
-  const all = activePortfolio();
-  const rows = all.filter(pfVisible);
+  // durable containers — paint() only wipes their contents
   const table = el("div", "fr-table");
-  const head = el("div", "fr-row fr-head pf4-grid");
-  ["PROPERTY", "ROCK", "OPEN", "SPENT"].forEach((h, i) =>
-    head.append(el("span", "micro-label" + (i >= 2 ? " pf4-r" : ""), h)));
-  table.append(head);
-  if (!rows.length) table.append(emptyRow("No properties match."));
-  rows.forEach((p) => table.append(pfRow(p)));
-  main.append(table);
-
-  // foot: N of M + the research tail — every count derived
-  const tracked = propertyCache.filter((p) => !p.hidden && !(p.control === "owned" || p.entity));
-  const foot = el("button", "pf-tracked-foot",
-    rows.length + " of " + all.length +
-    (tracked.length ? " · " + tracked.length + " tracked (research) — see Map" : ""));
+  const foot = el("button", "pf-tracked-foot");
   foot.onclick = () => { location.hash = "#/properties/map"; };
-  main.append(foot);
+  const dealsSec = el("div", "pf-deals");
+  main.append(table, foot, dealsSec);
 
-  // Deals keep their quiet fold (the deal pages open from here)
-  if (dealCache.length) {
-    const dealsSec = el("div", "pf-deals");
-    const dh = el("div", "aion-sec-label");
-    dh.append(el("span", "aion-sec-title", "◈ Deals"), el("span", "aion-sec-count", String(dealCache.length)));
-    dealsSec.append(dh);
-    dealCache.forEach((d) => {
-      const members = propertyCache.filter((p) => (p.deal || "") === (d.name || d.slug) || (p.deal || "") === d.slug);
-      const row = el("div", "prop-row pf-deal-row");
-      row.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); };
-      row.append(el("span", "prop-addr", d.name || d.slug));
-      row.append(el("span", "pf-deal-meta", members.length + " propert" + (members.length === 1 ? "y" : "ies")));
-      dealsSec.append(row);
-    });
-    main.append(dealsSec);
-  }
+  const paint = () => {
+    Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", pfCut === k));
 
-  // inspector — the fundraising contract: select a row, edits save as you go
-  const selected = all.find((p) => p.slug === pfSel);
-  if (window.mf && window.mf.phone()) {
-    if (selected) {
-      window.mfSheet.open((body) => renderPortfolioInspector(body, selected), {
-        key: "portfolio",
-        onClose: () => { if (pfSel) { pfSel = null; renderPortfolio(); } },
-        reopen: () => { if (propMode === "portfolio") renderPortfolio(); },
+    // the table — four columns, fr-stack cells, no bars, no sections
+    const all = activePortfolio();
+    const rows = all.filter(pfVisible);
+    table.innerHTML = "";
+    const head = el("div", "fr-row fr-head pf4-grid");
+    ["PROPERTY", "ROCK", "OPEN", "SPENT"].forEach((h, i) =>
+      head.append(el("span", "micro-label" + (i >= 2 ? " pf4-r" : ""), h)));
+    table.append(head);
+    if (!rows.length) table.append(emptyRow("No properties match."));
+    rows.forEach((p) => table.append(pfRow(p, paint)));
+
+    // foot: N of M + the research tail — every count derived
+    const tracked = propertyCache.filter((p) => !p.hidden && !(p.control === "owned" || p.entity));
+    foot.textContent = rows.length + " of " + all.length +
+      (tracked.length ? " · " + tracked.length + " tracked (research) — see Map" : "");
+
+    // Deals keep their quiet fold (the deal pages open from here)
+    dealsSec.innerHTML = "";
+    if (dealCache.length) {
+      const dh = el("div", "aion-sec-label");
+      dh.append(el("span", "aion-sec-title", "◈ Deals"), el("span", "aion-sec-count", String(dealCache.length)));
+      dealsSec.append(dh);
+      dealCache.forEach((d) => {
+        const members = propertyCache.filter((p) => (p.deal || "") === (d.name || d.slug) || (p.deal || "") === d.slug);
+        const row = el("div", "prop-row pf-deal-row");
+        row.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(d.slug); };
+        row.append(el("span", "prop-addr", d.name || d.slug));
+        row.append(el("span", "pf-deal-meta", members.length + " propert" + (members.length === 1 ? "y" : "ies")));
+        dealsSec.append(row);
       });
-    } else {
-      window.mfSheet.closeIf("portfolio");
     }
-  } else if (selected) {
-    renderPortfolioInspector(inspector, selected);
-  } else {
-    inspector.append(el("div", "aion-insp-empty", "select a property — edits save as you go"));
-  }
+
+    // inspector — the fundraising contract: select a row, edits save as you go
+    const selected = all.find((p) => p.slug === pfSel);
+    inspector.innerHTML = "";
+    if (window.mf && window.mf.phone()) {
+      if (selected) {
+        window.mfSheet.open((body) => renderPortfolioInspector(body, selected, paint), {
+          key: "portfolio",
+          onClose: () => { if (pfSel) { pfSel = null; paint(); } },
+          reopen: () => { if (propMode === "portfolio") renderPortfolio(); },
+        });
+      } else {
+        window.mfSheet.closeIf("portfolio");
+      }
+    } else if (selected) {
+      renderPortfolioInspector(inspector, selected, paint);
+    } else {
+      inspector.append(el("div", "aion-insp-empty", "select a property — edits save as you go"));
+    }
+  };
+  paint();
 }
 
-function pfRow(p) {
+function pfRow(p, paint) {
   const f = pfFacts(p);
   const row = el("div", "fr-row pf4-grid" + (pfSel === p.slug ? " sel" : ""));
   // PROPERTY: address over entity · status
@@ -207,20 +220,20 @@ function pfRow(p) {
   row.append(c4);
   row.onclick = () => {
     pfSel = pfSel === p.slug ? null : p.slug;
-    renderPortfolio();
+    paint();
   };
   return row;
 }
 
 // renderPortfolioInspector — field for field on the fundraising idiom:
 // aion-insp-field rows, patch on blur/change through /field (one store).
-function renderPortfolioInspector(host, p) {
+function renderPortfolioInspector(host, p, paint) {
   host.innerHTML = "";
   const f = pfFacts(p);
   const head = el("div", "aion-insp-head");
   head.append(el("span", "aion-insp-label", "Property"));
   const x = el("button", "aion-insp-x", "✕");
-  x.onclick = () => { pfSel = null; renderPortfolio(); };
+  x.onclick = () => { pfSel = null; (paint || renderPortfolio)(); };
   head.append(x);
   host.append(head);
 

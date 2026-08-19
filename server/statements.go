@@ -168,10 +168,15 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 	// filing IS the write (owner call 2026-08-19): on a filing gesture, a
 	// fully-filed row — assigned with a category (inflows need none) and sums
 	// matching — applies to the ledger and leaves the workbench for the
-	// entity's history fold. No separate bulk-apply step. Partially-filed
-	// rows (say, a property but no category yet) stay in the lot untouched.
+	// entity's history fold. No separate bulk-apply step. A row that can't
+	// file yet stays in the lot and the reason RIDES BACK on the response
+	// (fileError) — never a silent no-op (the 736 lesson: five rows sat
+	// "assigned" for weeks behind a success-shaped 200).
+	fileError := ""
 	if b.File && (row.State == "assigned" || row.State == "split") {
-		if rows, err := s.statements.Applicable([]string{row.ID}); err == nil {
+		if rows, err := s.statements.Applicable([]string{row.ID}); err != nil {
+			fileError = err.Error()
+		} else {
 			if _, _, err := s.applyStatementRows(rows, vaultwriter.ActorUserAction); err != nil {
 				httpError(w, err)
 				return
@@ -180,7 +185,7 @@ func (s *Server) handleStatementsRow(w http.ResponseWriter, r *http.Request) {
 			row.State = "applied"
 		}
 	}
-	writeJSON(w, row)
+	writeJSON(w, map[string]any{"row": row, "state": row.State, "fileError": fileError})
 }
 
 // handleStatementsApply writes the validated rows into their target property
@@ -245,13 +250,32 @@ func (s *Server) applyStatementRows(rows []realestate.StatementRow, actor vaultw
 	}
 	propsTouched = map[string]bool{}
 	vendorCats, vendorProps, vendorWork := map[string]string{}, map[string]string{}, map[string]string{}
+	// chart-of-accounts class lookup, memoized per apply batch: an
+	// operating-class category writes [cat:: operating] so the row joins the
+	// property's operating lane instead of its rehab budget
+	classMemo := map[string]string{}
+	classOf := func(category string) string {
+		key := strings.ToLower(strings.TrimSpace(category))
+		if key == "" {
+			return ""
+		}
+		if c, ok := classMemo[key]; ok {
+			return c
+		}
+		c := s.realestate.CategoryClass(key)
+		classMemo[key] = c
+		return c
+	}
 	for _, row := range rows {
 		n := len(row.Assignments)
 		for i, a := range row.Assignments {
 			note := row.Note
 			if n > 1 {
-				note = strings.TrimSpace("split " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) +
+				// keep the owner's note — the split annotation APPENDS (it used
+				// to replace, discarding hand-written context on split rows)
+				note = strings.TrimSpace(note + " · split " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) +
 					" of $" + strconv.FormatFloat(row.Amount, 'f', 2, 64) + " · " + row.Vendor)
+				note = strings.TrimPrefix(note, "· ")
 			}
 			// tokens: work tether per alloc + budget category + the paying entity
 			// + statement provenance (the accountant CSV's bank reference)
@@ -267,6 +291,9 @@ func (s *Server) applyStatementRows(rows []realestate.StatementRow, actor vaultw
 			if c := strings.ToLower(strings.TrimSpace(a.Cat)); !row.Inflow && (c == realestate.CatSoft ||
 				c == realestate.CatAcquisition) {
 				note = strings.TrimSpace(note + " [cat:: " + c + "]")
+			} else if !row.Inflow && classOf(row.Category) == "operating" {
+				// operating-class category (chart of accounts) → operating lane
+				note = strings.TrimSpace(note + " [cat:: " + realestate.CatOperating + "]")
 			}
 			if row.Entity != "" {
 				note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")

@@ -76,6 +76,20 @@ allocations: ["748-n-euclid | shell/permit-drawings | 5500"]
 # Olga drawings
 `)
 	write("system/realestate/entities/garden-spe.md", "---\ncategories: [entity]\nname: Garden SPE\n---\n")
+	// a second property (split targets) + the chart of accounts (class lookups)
+	write("system/realestate/properties/4852-fountain-ave.md", `---
+categories: [property]
+address: 4852 Fountain Ave, St. Louis
+entity: garden-spe
+status: construction
+control: owned
+---
+`)
+	write("system/realestate/categories.md", `---
+categories: [money-categories]
+items: ["internet | expense | operating", "rent | income | operating", "windows | expense | project", "materials | expense | project"]
+---
+`)
 
 	ix, err := vaultindex.Open(vaultindex.Config{VaultRoot: vault})
 	if err != nil {

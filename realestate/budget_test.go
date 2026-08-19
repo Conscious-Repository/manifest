@@ -11,6 +11,9 @@ func TestComputeProjectBudget(t *testing.T) {
 		{Type: "expense", Amount: 1200, Cat: "soft"},         // soft actual (interest etc.)
 		{Type: "expense", Amount: 900, Cat: "carry"},         // legacy carry token → soft
 		{Type: "expense", Amount: 60000, Cat: "acquisition"}, // closing statement — over the 57k plan
+		// operating-lane rows: MUST move no project figure (the safety pin)
+		{Type: "expense", Amount: 800, Cat: "operating", Category: "internet"},
+		{Type: "income", Amount: 1500, Category: "rent"},
 	}
 	pb := ComputeProjectBudget(src, work, ledger, false, nil)
 
@@ -59,6 +62,11 @@ func TestRecognizedSpend(t *testing.T) {
 		{Type: "bid", Status: "accepted", Amount: 8000, WorkID: "demo/b"},
 		{Type: "expense", Amount: 3000, WorkID: "demo/b"},
 		{Type: "expense", Amount: 1000, WorkID: "demo/c"},
+		// TETHERED operating row — the nasty case: if it joined node Paid while
+		// staying out of paid[hard], the hard accrual (rec + paid[hard] -
+		// tethCash) would understate. Both guards must stay symmetric; every
+		// assertion below holding is the pin.
+		{Type: "expense", Amount: 250, WorkID: "demo/c", Cat: "operating", Category: "electric"},
 	}
 	JoinWorkLedger(stages, ledger, nil)
 	td := stages[0].Tasks

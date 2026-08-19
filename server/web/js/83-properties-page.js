@@ -117,6 +117,12 @@ async function renderPropertyPage(slug) {
     renderUnderwrite(p, uw);
   }
 
+  // OPERATING — the stabilized lane (money-workbench v2): actual rent in vs
+  // operating expenses out, monthly, fed by income rows + [cat:: operating]
+  // expenses filed from the $ tab. Renders whenever the ledger has operating
+  // money (phone included — this is the leased property's living surface).
+  if (p.operating) main.append(operatingSection(p));
+
   // DECISIONS lane (overhaul decision 9): every open [decision::] node in the
   // tree surfaces here with its rock context; the lines themselves stay under
   // their rock/milestone in the file. Never ages; resolves with a note.
@@ -597,6 +603,47 @@ async function renderUnderwrite(p, uwHost) {
   uwHost.append(actions);
 }
 
+// ---- OPERATING — monthly income vs operating expenses (stabilized lane) ----
+
+function operatingSection(p) {
+  const o = p.operating;
+  const sec = el("div", "pp3-sec pp3-operating-sec");
+  const head = el("div", "pp3-sec-head");
+  head.append(el("span", "pp3-sec-title", "OPERATING"),
+    el("span", "pp3-sec-count", fmtMoney(o.income) + " in · " + fmtMoney(o.expenses) + " out"));
+  sec.append(head);
+  const cols = el("div", "pp3-op-cols");
+  ["MONTH", "INCOME", "OPEX", "NET"].forEach((h, i) =>
+    cols.append(el("span", "micro-label" + (i ? " pp3-op-r" : ""), h)));
+  sec.append(cols);
+  const months = (o.months || []).slice().reverse(); // newest first
+  months.forEach((m) => {
+    const row = el("div", "pp3-op-row");
+    row.append(el("span", "", m.month || "undated"));
+    row.append(el("span", "pp3-op-r pp3-op-in", m.income ? "+" + fmtMoney(m.income) : "—"));
+    row.append(el("span", "pp3-op-r", m.expenses ? fmtMoney(m.expenses) : "—"));
+    row.append(el("span", "pp3-op-r" + (m.net < 0 ? " over" : ""), fmtMoney(m.net)));
+    sec.append(row);
+    // the expense breakdown rides as a quiet sub-line of category chips
+    if (m.byCategory) {
+      const cats = Object.keys(m.byCategory).sort();
+      row.title = cats.map((c) => c + " " + fmtMoney(m.byCategory[c])).join(" · ");
+      const sub = el("div", "pp3-op-sub");
+      cats.forEach((c) => sub.append(el("span", "pp3-op-chip", c + " " + fmtMoney(m.byCategory[c]))));
+      sec.append(sub);
+    }
+  });
+  // actual rent vs the unit-mix screening estimate, when both exist
+  if (p.rentMonthly) {
+    const latest = months.find((m) => m.month && m.income > 0);
+    if (latest) {
+      sec.append(el("div", "pp3-uw-note",
+        "collecting " + fmtMoney(latest.income) + "/mo vs " + fmtMoney(p.rentMonthly) + "/mo unit-mix estimate"));
+    }
+  }
+  return sec;
+}
+
 // ---- ledger: rows edit in place, ✕ deletes, a composer adds ----
 
 function ledgerSection(p) {
@@ -624,7 +671,10 @@ function ledgerRow(p, r, i) {
   const bidTag = r.type === "bid" ? "bid " + (r.status || "") : "";
   row.append(el("span", "", r.category ? r.category + (bidTag ? " · " + bidTag : "") : (bidTag || r.type || "")));
   row.append(el("span", "pp3-ledger-vendor", r.vendor || r.contractor || ""));
-  row.append(el("span", "pp3-ledger-amt", r.amount ? fmtMoney(r.amount) : ""));
+  // income reads as income — signed and accented, never expense-identical
+  const isIncome = r.type === "income";
+  row.append(el("span", "pp3-ledger-amt" + (isIncome ? " inflow" : ""),
+    r.amount ? (isIncome ? "+" : "") + fmtMoney(r.amount) : ""));
   // hover ✕ — arm to confirm, then delete the csv row
   const x = el("button", "uw-x pp3-todo-x", "✕");
   x.title = "delete this row";
@@ -660,13 +710,18 @@ function ledgerForm(p, r, i) {
   const now = new Date();
   const localToday = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
   date.className = "pp-in"; date.value = r ? (r.date || "") : localToday;
-  const type = selectEl(["expense", "bid"]);
-  type.className = "pp-in"; type.value = r && r.type === "bid" ? "bid" : "expense";
+  const type = selectEl(["expense", "income", "bid"]);
+  // preserve the row's real type on open — coercing income → expense here
+  // silently converted rent rows into spend (the stray-click hazard)
+  type.className = "pp-in";
+  type.value = r && ["expense", "income", "bid"].includes(r.type) ? r.type : "expense";
   const status = selectEl([]);
   status.className = "pp-in";
   const setStatusOpts = () => {
     status.innerHTML = "";
-    (type.value === "bid" ? ["requested", "received", "accepted", "declined"] : ["paid"]).forEach((s) => {
+    const opts = type.value === "bid" ? ["requested", "received", "accepted", "declined"]
+      : type.value === "income" ? ["received"] : ["paid"];
+    opts.forEach((s) => {
       const o = document.createElement("option"); o.value = s; o.textContent = s; status.append(o);
     });
     if (r && r.status && [...status.options].some((o) => o.value === r.status)) status.value = r.status;

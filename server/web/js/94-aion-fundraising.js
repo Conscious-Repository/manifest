@@ -33,12 +33,16 @@ async function renderAionFundraising(host) {
   const inspector = el("aside", "aion-inspector fr-inspector");
   wrap.append(main, inspector); host.append(wrap);
 
+  // toolbar — search + status chips filter IN PLACE (paint below): a full
+  // render replaces the input node and takes the caret out of the search
+  // field after every keystroke (same fix as portfolio/contractors).
   const bar = el("div", "fr-toolbar");
   const search = el("input", "pp-in fr-search"); search.type = "search"; search.placeholder = "Search firms, people, next steps…"; search.value = frQuery;
-  search.oninput = () => { frQuery = search.value; renderAion(); };
+  search.oninput = () => { frQuery = search.value; paint(); };
   bar.append(search);
   const statuses = [["open", "OPEN"], ["all", "ALL"], ["prospect", "PROSPECT"], ["active", "ACTIVE"], ["committed", "COMMITTED"], ["passed", "PASSED"], ["archived", "ARCHIVED"]];
-  statuses.forEach(([key, label]) => { const b = el("button", "filter-chip" + (frStatus === key ? " on" : ""), label); b.onclick = () => { frStatus = key; renderAion(); }; bar.append(b); });
+  const chips = {};
+  statuses.forEach(([key, label]) => { const b = el("button", "filter-chip", label); b.onclick = () => { frStatus = key; paint(); }; chips[key] = b; bar.append(b); });
   const syncCount = ((frSync && frSync.conflicts) || []).length;
   const syncButton = el("button", "filter-chip fr-sync-toggle" + (frSyncOpen ? " on" : ""), frSync && frSync.enabled ? (syncCount ? "SYNC · " + syncCount : "SYNC") : "SHEET OFF");
   syncButton.onclick = () => { frSyncOpen = !frSyncOpen; renderAion(); };
@@ -51,31 +55,38 @@ async function renderAionFundraising(host) {
   });
   main.append(add);
 
-  let rows = (frCache.opportunities || []).filter(frVisible);
   const table = el("div", "fr-table");
-  const head = el("div", "fr-row fr-head");
-  ["FIRM", "PEOPLE", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
-  table.append(head);
-  if (!rows.length) table.append(emptyRow("No fundraising opportunities match."));
-  rows.forEach((op) => table.append(frRow(op)));
   main.append(table);
 
-  const selected = (frCache.opportunities || []).find((x) => x.id === frSel);
-  if (window.mf && window.mf.phone()) {
-    if (selected) {
-      window.mfSheet.open((body) => renderFundraisingInspector(body, selected), {
-        key: "fundraising",
-        onClose: () => { if (frSel) { frSel = null; renderAion(); } },
-        reopen: () => { if (!els.aionView.hidden && aionMode === "fundraising") renderAion(); },
-      });
+  const paint = () => {
+    Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", frStatus === k));
+    const rows = (frCache.opportunities || []).filter(frVisible);
+    table.innerHTML = "";
+    const head = el("div", "fr-row fr-head");
+    ["FIRM", "PEOPLE", "LAST TOUCHPOINT", "NEXT STEP"].forEach((x) => head.append(el("span", "micro-label", x)));
+    table.append(head);
+    if (!rows.length) table.append(emptyRow("No fundraising opportunities match."));
+    rows.forEach((op) => table.append(frRow(op, paint)));
+
+    const selected = (frCache.opportunities || []).find((x) => x.id === frSel);
+    inspector.innerHTML = "";
+    if (window.mf && window.mf.phone()) {
+      if (selected) {
+        window.mfSheet.open((body) => renderFundraisingInspector(body, selected), {
+          key: "fundraising",
+          onClose: () => { if (frSel) { frSel = null; paint(); } },
+          reopen: () => { if (!els.aionView.hidden && aionMode === "fundraising") renderAion(); },
+        });
+      } else {
+        window.mfSheet.closeIf("fundraising");
+      }
+    } else if (selected) {
+      renderFundraisingInspector(inspector, selected);
     } else {
-      window.mfSheet.closeIf("fundraising");
+      inspector.append(el("div", "aion-insp-empty", "select an opportunity — edits save as you go"));
     }
-  } else if (selected) {
-    renderFundraisingInspector(inspector, selected);
-  } else {
-    inspector.append(el("div", "aion-insp-empty", "select an opportunity — edits save as you go"));
-  }
+  };
+  paint();
 }
 
 function frVisible(op) {
@@ -88,7 +99,7 @@ function frVisible(op) {
   return [op.firm, op.website, frSourceLabel(op), op.lastTouchpoint, op.nextStep, op.notes].concat((op.people || []).map((p) => p.display), op.unlinkedPeople || []).join(" ").toLowerCase().includes(q);
 }
 
-function frRow(op) {
+function frRow(op, paint) {
   const row = el("div", "fr-row" + (frSel === op.id ? " sel" : "") + (op.importReview ? " review" : ""));
   const firm = el("div", "fr-firm"); firm.append(el("span", "fr-firm-name", op.firm));
   if (op.website) { const site = el("a", "fr-website-link", "↗"); site.href = op.website; site.target = "_blank"; site.rel = "noopener"; site.title = "open website"; site.setAttribute("aria-label", "Open " + op.firm + " website"); site.onclick = (e) => e.stopPropagation(); firm.append(site); }
@@ -103,7 +114,7 @@ function frRow(op) {
   if (op.computedLastTouchpoint) touch.append(el("span", "fr-sub", "contacts · " + op.computedLastTouchpoint));
   const next = el("div", "fr-stack"); next.append(el("span", "", op.nextStep || "—")); if (op.nextStepDue) next.append(el("span", "fr-sub", "due " + op.nextStepDue));
   row.append(firm, people, touch, next);
-  row.onclick = () => { frSel = frSel === op.id ? null : op.id; renderAion(); };
+  row.onclick = () => { frSel = frSel === op.id ? null : op.id; (paint || renderAion)(); };
   return row;
 }
 

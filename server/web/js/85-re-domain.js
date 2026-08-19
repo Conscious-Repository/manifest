@@ -538,6 +538,237 @@ function fmtMoneyExact(v) {
 // admin:<entity> to entities/<slug>.ledger.csv — entity books, no property)
 function moneyAdminSlug(r) { return r.entity ? "admin:" + r.entity : ""; }
 
+// ---- chart of accounts (money-workbench v2): the category autosuggest ----
+let moneyCatsCache = null;
+async function ensureMoneyCats(force) {
+  if (moneyCatsCache && !force) return moneyCatsCache;
+  try { moneyCatsCache = (await (await fetch("/api/realestate/categories")).json()).categories || []; }
+  catch (e) { moneyCatsCache = moneyCatsCache || []; }
+  return moneyCatsCache;
+}
+
+// categoryTypeahead — the category field everywhere (inspector + phone
+// sheet): suggests from the registry (income rows see income categories,
+// expenses see expense ones), quiet `create "internet" →` completion adds to
+// the chart of accounts, and picking a category IS a filing gesture.
+function categoryTypeahead(r, onResult) {
+  const kind = r.inflow ? "income" : "expense";
+  const save = async (name) => {
+    try {
+      const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, category: name, file: true });
+      r.category = name;
+      onResult(res);
+    } catch (e) { showToast("Couldn't save"); }
+  };
+  const ta = typeahead({
+    placeholder: "category…",
+    suggest: async (q, add) => {
+      const cats = await ensureMoneyCats();
+      cats.filter((c) => c.kind === kind && (!q || c.name.includes(q))).slice(0, 10)
+        .forEach((c) => add(c.name, c.class, () => { ta.commit(c.name); save(c.name); }));
+      const exact = cats.some((c) => c.kind === kind && c.name === q);
+      if (q && !exact) {
+        add('create "' + ta.value() + '" →', "create", async () => {
+          const name = ta.value().toLowerCase();
+          // class heuristic: income → operating; expense → operating on a
+          // stabilized/leased target, project otherwise. Retype any time by
+          // editing system/realestate/categories.md.
+          let cls = "operating";
+          if (!r.inflow) {
+            const slug = (r.assignments && r.assignments[0] && r.assignments[0].slug) || "";
+            const prop = (typeof propertyCache !== "undefined" ? propertyCache : []).find((p) => p.slug === slug);
+            cls = prop && ["leased", "stabilized", "closed"].includes(prop.status) ? "operating" : "project";
+          }
+          try {
+            await postJSONOk("/api/realestate/categories", { name, kind, class: cls });
+            await ensureMoneyCats(true);
+            ta.commit(name);
+            showToast("Category added to the chart of accounts (" + cls + ")");
+            save(name);
+          } catch (e) { showToast("Couldn't create category"); }
+        });
+      }
+    },
+  });
+  ta.setValue(r.category || "");
+  return ta;
+}
+
+// ---- splits (money-workbench v2): one bank line across N targets ----
+// The server has carried multi-target allocations from day one (Σ±1¢
+// validation, admin: lanes, per-target [work::]/[contract::], "split k/n"
+// annotations) — this is the missing editor. A deal target fans out an
+// even split across its member properties; both pause for confirmation.
+let moneySplitSeed = null; // {id, allocs} — set by the split…/deal picks
+
+// evenCents splits total across n rows to the cent (odd cents on the last)
+function evenCents(total, n) {
+  const cents = Math.round(total * 100);
+  const base = Math.floor(cents / n);
+  const out = [];
+  for (let i = 0; i < n; i++) out.push((i === n - 1 ? cents - base * (n - 1) : base) / 100);
+  return out;
+}
+
+// dealSplitTargets — active deals with ≥2 member properties (the client-side
+// membership idiom: tolerate wikilinks holding the display name or slug)
+function dealSplitTargets() {
+  return (dealCache || []).map((d) => ({
+    deal: d,
+    members: (propertyCache || []).filter((p) =>
+      !p.hidden && ((p.deal || "") === (d.name || d.slug) || (p.deal || "") === d.slug)),
+  })).filter((x) => x.members.length >= 2);
+}
+
+// moneySplitSeedFor builds the editor's starting allocation set for a pick
+function moneySplitSeedFor(r, value) {
+  const total = Math.abs(r.amount || 0);
+  if (value.startsWith("deal:")) {
+    const slug = value.slice(5);
+    const hit = dealSplitTargets().find((x) => x.deal.slug === slug);
+    if (!hit) return null;
+    const amounts = evenCents(total, hit.members.length);
+    return hit.members.map((p, i) => ({ slug: p.slug, amount: amounts[i] }));
+  }
+  // "split…": current single assignment (or blank) + one empty row to fill
+  const cur = ((r.assignments || [])[0] || {});
+  return [{ slug: cur.slug || "", amount: cur.amount || total, workId: cur.workId, contract: cur.contract },
+    { slug: "", amount: 0 }];
+}
+
+// moneySplitEditor — N target+amount rows · ÷ even · Σ check · file. Every
+// row can hop to a node/contract on its own property (per-allocation hops —
+// the old single-alloc hop editor destroyed splits).
+function moneySplitEditor(r, onDone) {
+  let allocs = (moneySplitSeed && moneySplitSeed.id === r.id)
+    ? moneySplitSeed.allocs.map((a) => ({ ...a }))
+    : (r.assignments || []).map((a) => ({ ...a }));
+  if (!allocs.length) allocs = [{ slug: "", amount: Math.abs(r.amount || 0) }];
+  const total = Math.abs(r.amount || 0);
+  const box = el("div", "re-split");
+  const render = () => {
+    box.innerHTML = "";
+    box.append(el("div", "micro-label", "SPLIT " + fmtMoneyExact(total) + " ACROSS"));
+    allocs.forEach((a, i) => {
+      const row = el("div", "re-split-row");
+      const sel = document.createElement("select");
+      sel.className = "pp-in re-split-sel";
+      const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
+      opt("", "— target —");
+      if (moneyAdminSlug(r)) opt(moneyAdminSlug(r), "admin · " + r.entity);
+      activePortfolio().forEach((p) => opt(p.slug, p.short || p.slug));
+      sel.value = a.slug || "";
+      sel.onchange = () => { a.slug = sel.value; a.workId = ""; a.contract = ""; render(); };
+      const amt = inputEl("$");
+      amt.type = "number"; amt.step = "0.01"; amt.className = "pp-in re-split-amt";
+      amt.value = a.amount || "";
+      amt.onchange = () => { a.amount = parseFloat(amt.value) || 0; render(); };
+      const x = el("button", "uw-x", "✕");
+      x.onclick = () => { allocs.splice(i, 1); render(); };
+      row.append(sel, amt, x);
+      box.append(row);
+      // per-allocation hops: node + contract on THIS target property
+      if (a.slug && !a.slug.startsWith("admin:")) {
+        const prop = (propertyCache || []).find((p) => p.slug === a.slug);
+        if (prop) box.append(splitHopRow(a, prop));
+      }
+    });
+    const acts = el("div", "re-split-acts");
+    const add = el("button", "o-ghost", "＋ target");
+    add.onclick = () => { allocs.push({ slug: "", amount: 0 }); render(); };
+    acts.append(add);
+    if (allocs.length > 1) {
+      const even = el("button", "o-ghost", "÷ even");
+      even.onclick = () => {
+        const amounts = evenCents(total, allocs.length);
+        allocs.forEach((a, i) => { a.amount = amounts[i]; });
+        render();
+      };
+      acts.append(even);
+    }
+    const sum = allocs.reduce((s, a) => s + (a.amount || 0), 0);
+    const ok = Math.abs(sum - total) <= 0.01 && allocs.every((a) => a.slug);
+    acts.append(el("span", "re-split-sum" + (ok ? " ok" : ""),
+      "Σ " + fmtMoneyExact(sum) + (ok ? " ✓" : " of " + fmtMoneyExact(total))));
+    box.append(acts);
+    const file = el("button", "pill-solid re-money-file", "file ✓ → " + allocs.filter((a) => a.slug).length + " ledger row(s)");
+    file.disabled = !ok;
+    file.onclick = async () => {
+      try {
+        const res = await postJSONOk("/api/realestate/statements/row", {
+          id: r.id,
+          assignments: allocs.filter((a) => a.slug),
+          state: allocs.filter((a) => a.slug).length > 1 ? "split" : "assigned",
+          file: true,
+        });
+        if (moneyFileToast(r, res, "Not filed — check the split")) {
+          moneySplitSeed = null;
+          moneySelId = null;
+          if (onDone) onDone();
+          renderProperties();
+        }
+      } catch (e) { showToast("Couldn't file — " + (e.message || "")); }
+    };
+    box.append(file);
+  };
+  render();
+  return box;
+}
+
+// splitHopRow — compact node+contract selects for one allocation (the per-
+// target refinement; blank = untethered)
+function splitHopRow(a, prop) {
+  const row = el("div", "re-split-hops");
+  const nodeSel = document.createElement("select");
+  nodeSel.className = "pp-in";
+  const nopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; nodeSel.append(o); };
+  nopt("", "— no tether —");
+  (prop.work || []).forEach((st) => {
+    nopt(st.id, st.text);
+    (st.tasks || []).forEach(function walk(n, prefix) {
+      const pre = typeof prefix === "string" ? prefix : "· ";
+      nopt(n.id, pre + n.text);
+      (n.children || []).forEach((c) => walk(c, pre + "· "));
+    });
+  });
+  nodeSel.value = a.workId || "";
+  nodeSel.onchange = () => { a.workId = nodeSel.value; };
+  const cSel = document.createElement("select");
+  cSel.className = "pp-in";
+  const copt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; cSel.append(o); };
+  copt("", "— no contract —");
+  reContracts()
+    .filter((c) => c.status === "accepted" && (c.allocations || []).some((al) => al.property === a.slug))
+    .forEach((c) => copt(c.slug, c.name + " · " + fmtMoneyShort(c.remaining != null ? c.remaining : c.total) + " left"));
+  cSel.value = a.contract || "";
+  cSel.onchange = () => {
+    a.contract = cSel.value;
+    if (cSel.value && !nodeSel.value) {
+      const c = reContracts().find((x) => x.slug === cSel.value);
+      const al = c && (c.allocations || []).find((x) => x.property === a.slug);
+      if (al) { a.workId = al.nodeId; nodeSel.value = al.nodeId; }
+    }
+  };
+  row.append(nodeSel, cSel);
+  return row;
+}
+
+// moneyFileToast — one voice for every filing gesture's outcome. The server
+// PATCH returns {state, fileError}; a non-empty fileError is the reason the
+// row could NOT file (e.g. no category) — always surfaced, never swallowed.
+function moneyFileToast(r, res, fallback) {
+  if (res.state === "applied") {
+    showToast("Filed → " + (r.entity || "entity") + " history");
+    return true;
+  }
+  if (res.fileError) {
+    showToast("Not filed — " + (/no category/.test(res.fileError) ? "set a category first" : res.fileError));
+    return false;
+  }
+  if (fallback) showToast(fallback);
+  return false;
+}
+
 async function renderREMoney() {
   const host = els.propertyBoard;
   host.innerHTML = "";
@@ -582,6 +813,10 @@ async function renderREMoney() {
   insp.hidden = true; // starts closed — the list arrives full width
   shell.append(insp);
   host.append(shell);
+  // a selected row survives re-renders (the split…/deal picks re-render to
+  // open the editor — the inspector must come back up with them)
+  const selRow = moneySelId && moneyRows.find((r) => r.id === moneySelId);
+  if (selRow) renderMoneyInspector(selRow);
   if (pages > 1) {
     const pager = el("div", "re-money-pager");
     const btn = (label, disabled, go) => {
@@ -777,10 +1012,25 @@ function moneyRow(r) {
   opt("", r.state === "applied" ? "applied" : "unassigned");
   if (moneyAdminSlug(r)) opt(moneyAdminSlug(r), "admin · " + r.entity);
   activePortfolio().forEach((p) => opt(p.slug, p.short || p.slug));
+  // split targets: manual split… + one per multi-property deal (even split,
+  // pausing in the editor for confirmation — never files on the pick)
+  opt("__split", "split…");
+  dealSplitTargets().forEach((x) =>
+    opt("deal:" + x.deal.slug, "◈ " + (x.deal.name || x.deal.slug) + " (" + x.members.length + "-way)"));
   sel.value = cur;
   sel.disabled = r.state === "applied" || r.state === "skipped";
   sel.onclick = (e) => e.stopPropagation();
   sel.onchange = async () => {
+    // split/deal picks open the editor seeded — they never file on the pick
+    if (sel.value === "__split" || sel.value.startsWith("deal:")) {
+      const seed = moneySplitSeedFor(r, sel.value);
+      if (!seed) { showToast("No members found for that deal"); sel.value = cur; return; }
+      moneySplitSeed = { id: r.id, allocs: seed };
+      moneySelId = r.id;
+      if (window.mf && window.mf.phone()) { openMoneyAssignSheet(r); return; }
+      renderProperties();
+      return;
+    }
     try {
       const res = await postJSONOk("/api/realestate/statements/row", {
         id: r.id,
@@ -788,14 +1038,9 @@ function moneyRow(r) {
         state: sel.value ? "assigned" : "pending",
         file: true,
       });
-      if (res.state === "applied") {
-        showToast("Filed → " + (r.entity || "entity") + " history");
+      if (moneyFileToast(r, res, sel.value ? "Assigned — set a category to file it" : "Unassigned")) {
         moneySelId = null;
         renderProperties();
-      } else if (sel.value) {
-        showToast("Assigned — set a category to file it");
-      } else {
-        showToast("Unassigned");
       }
     } catch (e) { showToast("Couldn't assign"); }
   };
@@ -830,23 +1075,44 @@ function openMoneyAssignSheet(r) {
           state: slug ? "assigned" : "pending",
           file: true,
         });
-        showToast(res.state === "applied" ? "Filed → " + (r.entity || "entity") + " history"
-          : slug ? "Assigned — set a category to file it" : "Unassigned");
+        moneyFileToast(r, res, slug ? "Assigned — set a category to file it" : "Unassigned");
         window.mfSheet.close();
         renderProperties();
       } catch (e) { showToast("Couldn't assign"); }
     };
-    const rowOpt = (v, l) => {
+    const rowOpt = (v, l, onPick) => {
       const b = el("button", "mf-opt" + (v === cur ? " on" : ""));
       b.append(el("span", "mf-opt-dot", v === cur ? "●" : "○"), el("span", "", l));
-      b.onclick = () => assign(v);
+      b.onclick = onPick || (() => assign(v));
       list.append(b);
     };
-    rowOpt("", "unassigned");
-    if (moneyAdminSlug(r)) rowOpt(moneyAdminSlug(r), "admin · " + r.entity);
-    activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
-    body.append(list);
-    moneyHopFields(r, body); // node + contract hops (native selects — mobile deviation)
+    // split mode: seeded by a split…/deal pick, or an existing multi-target row
+    const splitMode = (moneySplitSeed && moneySplitSeed.id === r.id) || (r.assignments || []).length > 1;
+    if (splitMode) {
+      body.append(moneySplitEditor(r, () => window.mfSheet.close()));
+    } else {
+      rowOpt("", "unassigned");
+      if (moneyAdminSlug(r)) rowOpt(moneyAdminSlug(r), "admin · " + r.entity);
+      activePortfolio().forEach((p) => rowOpt(p.slug, p.short || p.slug));
+      rowOpt("__split", "split…", () => {
+        moneySplitSeed = { id: r.id, allocs: moneySplitSeedFor(r, "__split") };
+        openMoneyAssignSheet(r);
+      });
+      dealSplitTargets().forEach((x) => rowOpt("deal:" + x.deal.slug,
+        "◈ " + (x.deal.name || x.deal.slug) + " (" + x.members.length + "-way)", () => {
+          moneySplitSeed = { id: r.id, allocs: moneySplitSeedFor(r, "deal:" + x.deal.slug) };
+          openMoneyAssignSheet(r);
+        }));
+      body.append(list);
+    }
+    // category — the chart-of-accounts typeahead (phone rows could never
+    // complete filing without it); picking a category files the row
+    const catTa = categoryTypeahead(r, (res) => {
+      moneyFileToast(r, res, "Saved");
+      if (res.state === "applied") { window.mfSheet.close(); renderProperties(); }
+    });
+    body.append(catTa.el);
+    if (!splitMode) moneyHopFields(r, body); // split rows hop per-allocation in the editor
     // editable note (bank plan §5) — the phone half of the inspector field
     const noteIn = inputEl("note — lands on the ledger row");
     noteIn.value = r.note || "";
@@ -897,34 +1163,57 @@ function renderMoneyInspector(r) {
         patch[key] = inp.value;
         const res = await postJSONOk("/api/realestate/statements/row", patch);
         r[key] = inp.value;
-        if (res.state === "applied") {
+        if (moneyFileToast(r, res, "Saved")) {
           // the category completed the filing — the row leaves the lot
-          showToast("Filed → " + (r.entity || "entity") + " history");
           moneySelId = null;
           renderProperties();
-        } else {
-          showToast("Saved");
         }
       } catch (e) { showToast("Couldn't save"); }
     };
     f.append(el("span", "pp3-insp-flabel", label), inp);
     return f;
   };
-  insp.append(editRow("category", "category", "category…"));
+  if (locked) {
+    insp.append(fieldRow("category", r.category));
+  } else {
+    // the chart-of-accounts typeahead — picking a category files the row
+    const f = el("div", "pp3-insp-field");
+    const ta = categoryTypeahead(r, (res) => {
+      if (moneyFileToast(r, res, "Saved")) {
+        moneySelId = null;
+        renderProperties();
+      }
+    });
+    f.append(el("span", "pp3-insp-flabel", "category"), ta.el);
+    insp.append(f);
+  }
   insp.append(editRow("note", "note", "note — lands on the ledger row"));
-  moneyHopFields(r, insp);
+  const splitting = !locked &&
+    ((moneySplitSeed && moneySplitSeed.id === r.id) || (r.assignments || []).length > 1);
+  if (splitting) {
+    insp.append(moneySplitEditor(r));
+  } else {
+    moneyHopFields(r, insp);
+    if (!locked) {
+      const splitLink = el("button", "pp3-link re-split-open", "split across properties…");
+      splitLink.onclick = () => {
+        moneySplitSeed = { id: r.id, allocs: moneySplitSeedFor(r, "__split") };
+        renderProperties();
+      };
+      insp.append(splitLink);
+    }
+  }
   // explicit file gesture for the flows that patch without filing (hop
   // tethers, vendor-memory prefills awaiting confirmation)
-  if (!locked && (r.state === "assigned" || r.state === "split") && (r.inflow || r.category)) {
+  if (!locked && !splitting && (r.state === "assigned" || r.state === "split")) {
     const fileBtn = el("button", "pill-solid re-money-file", "file ✓ → ledger");
     fileBtn.onclick = async () => {
       try {
         const res = await postJSONOk("/api/realestate/statements/row", { id: r.id, file: true });
-        if (res.state === "applied") {
-          showToast("Filed → " + (r.entity || "entity") + " history");
+        if (moneyFileToast(r, res, "Not filed — check the assignment")) {
           moneySelId = null;
           renderProperties();
-        } else { showToast("Not filed — " + (res.state || "check the assignment")); }
+        }
       } catch (e) { showToast("Couldn't file — " + (e.message || "")); }
     };
     insp.append(fileBtn);
@@ -938,6 +1227,9 @@ function renderMoneyInspector(r) {
 // property, remaining shown). Writes ride the assignment row; apply turns
 // them into [work::] + [contract::] note tokens.
 function moneyHopFields(r, host) {
+  // split rows edit per-allocation in the split editor — patching alloc 0
+  // alone from here used to DESTROY the other allocations
+  if ((r.assignments || []).length > 1) return;
   const a = (r.assignments && r.assignments[0]) || null;
   if (!a || !a.slug || a.slug.startsWith("admin:")) return;
   if (r.state === "applied" || r.state === "skipped") return;
@@ -951,12 +1243,9 @@ function moneyHopFields(r, host) {
         state: r.state === "split" ? "split" : "assigned",
       });
       Object.assign(a, patch);
-      if (res.state === "applied") {
-        showToast("Filed → " + (r.entity || "entity") + " history");
+      if (moneyFileToast(r, res, "Saved")) {
         moneySelId = null;
         renderProperties();
-      } else {
-        showToast("Saved");
       }
     } catch (e) { showToast("Couldn't save"); }
   };

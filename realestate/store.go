@@ -156,6 +156,7 @@ func (s *Service) parse(rel, name string, contracts []Contract) (Property, bool)
 	p.Project = ComputeProjectBudget(
 		sourceMoney(record.Sidecar(full, record.SidecarSource)),
 		p.Work, p.Ledger, p.Control == "owned", allocs)
+	p.Operating = ComputeOperating(p.Ledger)
 	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {
 		if st.Current {

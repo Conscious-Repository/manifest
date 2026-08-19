@@ -643,6 +643,13 @@ func JoinWorkLedger(stages []WorkStage, ledger []LedgerRow, allocs []NodeAllocat
 		if !isNode && !isStage {
 			continue // tether to a deleted node — money stays in the ledger, no crash
 		}
+		if normalizeCat(r.Cat) == CatOperating {
+			// operating money never tethers into rehab nodes. This guard must
+			// stay symmetric with ComputeProjectBudget's exclusion: a tethered
+			// operating row in node Paid but not paid[hard] would corrupt the
+			// hard accrual (rec + paid[hard] - tethCash) — negative SPENT.
+			continue
+		}
 		isExpense := strings.EqualFold(r.Type, "expense")
 		accepted := strings.EqualFold(r.Type, "bid") && strings.EqualFold(r.Status, "accepted")
 		if isExpense {

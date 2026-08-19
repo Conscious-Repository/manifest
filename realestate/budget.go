@@ -21,6 +21,10 @@ const (
 	CatHard        = "hard"
 	CatSoft        = "soft"
 	CatContingency = "contingency"
+	// CatOperating marks post-stabilization money (rent-period utilities,
+	// maintenance, management…) — the operating lane. NEVER a project
+	// category: excluded from every rehab-budget figure and from BudgetCats.
+	CatOperating = "operating"
 )
 
 // BudgetCats is the canonical category order.
@@ -119,6 +123,9 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 	}
 	for _, row := range ledger {
 		cat := normalizeCat(row.Cat)
+		if cat == CatOperating {
+			continue // operating lane — never project money
+		}
 		isExpense := strings.EqualFold(row.Type, "expense")
 		accepted := legacyBids && strings.EqualFold(row.Type, "bid") && strings.EqualFold(row.Status, "accepted")
 		if isExpense {
@@ -209,6 +216,8 @@ func normalizeCat(v string) string {
 		return CatAcquisition
 	case CatSoft, "carry": // legacy carry token folds into soft
 		return CatSoft
+	case CatOperating: // the operating lane — must never default into hard
+		return CatOperating
 	default:
 		return CatHard
 	}

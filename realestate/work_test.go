@@ -83,6 +83,9 @@ func TestJoinWorkLedger(t *testing.T) {
 		{Type: "bid", Amount: 9999, Status: "requested", Contractor: "Other", WorkID: "rough-in/plumbing"},
 		{Type: "expense", Amount: 500, Status: "paid", WorkID: "rough-in"}, // stage-level tether
 		{Type: "expense", Amount: 77, Status: "paid"},                      // untethered — always legal
+		// operating-lane rows join no node money — assertions below are the pin
+		{Type: "expense", Amount: 999, Status: "paid", WorkID: "rough-in/plumbing", Cat: "operating", Category: "electric"},
+		{Type: "income", Amount: 1750, Status: "received", Category: "rent"},
 	}
 	JoinWorkLedger(stages, ledger, nil)
 	st := stages[0]

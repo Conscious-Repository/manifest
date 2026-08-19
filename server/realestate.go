@@ -649,8 +649,8 @@ func (s *Server) handlePropertyLedger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b.Type = strings.ToLower(strings.TrimSpace(b.Type))
-	if b.Type != "expense" && b.Type != "bid" {
-		httpError(w, errBadRequest("type must be expense or bid"))
+	if b.Type != "expense" && b.Type != "bid" && b.Type != "income" {
+		httpError(w, errBadRequest("type must be expense, income, or bid"))
 		return
 	}
 	p, ok := s.realestate.Get(r.PathValue("slug"))
@@ -1414,8 +1414,8 @@ func (s *Server) handleLedgerMutate(w http.ResponseWriter, r *http.Request) {
 	if b.Replacement == nil {
 		err = s.vault.DeleteLedgerRow(realestate.LedgerRel(rel), orig)
 	} else {
-		if t := strings.ToLower(strings.TrimSpace(b.Replacement.Type)); t != "expense" && t != "bid" {
-			httpError(w, errBadRequest("type must be expense or bid"))
+		if t := strings.ToLower(strings.TrimSpace(b.Replacement.Type)); t != "expense" && t != "bid" && t != "income" {
+			httpError(w, errBadRequest("type must be expense, income, or bid"))
 			return
 		}
 		// replacement note is rebuilt canonically (never a stale echoed rawNote)
@@ -1640,6 +1640,75 @@ func (s *Server) handleTaxExport(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- entities & contractors (pass-5 §5/§6) ----
+
+// ---- chart of accounts (money-workbench v2) ----
+
+// handleCategoriesList serves the money-category registry (record-backed, or
+// built-in defaults until the first create gesture materializes the record).
+func (s *Server) handleCategoriesList(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		writeJSON(w, map[string]any{"categories": []any{}, "record": false})
+		return
+	}
+	cats, backed := s.realestate.MoneyCategories()
+	writeJSON(w, map[string]any{"categories": cats, "record": backed})
+}
+
+// handleCategoryCreate adds (or retypes) one category — the typeahead's
+// quiet `create "internet" →` completion. The first create materializes the
+// registry record with the defaults + the new entry (user-gesture write).
+func (s *Server) handleCategoryCreate(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct{ Name, Kind, Class string }
+	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Name) == "" {
+		httpError(w, errBadRequest("name is required"))
+		return
+	}
+	name := strings.ToLower(strings.TrimSpace(b.Name))
+	kind := strings.ToLower(strings.TrimSpace(b.Kind))
+	if kind != "income" {
+		kind = "expense"
+	}
+	class := strings.ToLower(strings.TrimSpace(b.Class))
+	if class != "operating" {
+		class = "project"
+	}
+	cats, backed := s.realestate.MoneyCategories()
+	found := false
+	for i := range cats {
+		if cats[i].Name == name {
+			cats[i].Kind, cats[i].Class = kind, class
+			found = true
+		}
+	}
+	if !found {
+		cats = append(cats, realestate.MoneyCategory{Name: name, Kind: kind, Class: class})
+	}
+	rel := realestate.MoneyCategoriesPath(s.realestateRootOr())
+	items := realestate.EmitMoneyCategoryItems(cats)
+	if backed {
+		if err := s.vault.SetFrontmatterField(rel, "items", items); err != nil {
+			httpError(w, err)
+			return
+		}
+	} else {
+		content := "---\ncategories: [money-categories]\nitems: " + items + "\n---\n\n# Chart of accounts\n\n" +
+			"One global category registry for the $ workbench. `name | kind | class` —\n" +
+			"kind income|expense; class operating|project (operating money stays out of\n" +
+			"rehab budgets). Hand-edit freely; the workbench autosuggests from this list.\n"
+		if _, err := s.vault.CreateRecord(rel, content); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{rel})
+	}
+	writeJSON(w, map[string]any{"name": name, "kind": kind, "class": class})
+}
 
 func (s *Server) handleEntitiesList(w http.ResponseWriter, r *http.Request) {
 	if s.realestate == nil {

@@ -91,6 +91,7 @@
 .pp3-ledger-row { display: grid; grid-template-columns: 90px 1fr 1.2fr auto; gap: var(--sp-5); font-family: var(--mono); font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-4); border-top: 1px solid var(--line-soft); color: var(--base-60); }
 .pp3-ledger-vendor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp3-ledger-amt { text-align: right; color: var(--base-100); }
+.pp3-ledger-amt.inflow { color: var(--accent); }
 
 /* ---- the assignment inspector ---- */
 .pp3-insp-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--sp-5); }
@@ -516,6 +517,27 @@
 /* filed-history folds + the explicit file gesture */
 .re-money-hist-head { margin-top: var(--sp-9); }
 .re-money-file { margin: var(--sp-4) 0; width: 100%; }
+
+/* the split editor — N target+amount rows · ÷ even · Σ check · file */
+.re-split { display: flex; flex-direction: column; gap: var(--sp-3); margin: var(--sp-4) 0; }
+.re-split-row { display: grid; grid-template-columns: minmax(120px, 1fr) 96px 24px; gap: var(--sp-4); align-items: center; }
+.re-split-amt { text-align: right; }
+.re-split-hops { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-left: var(--sp-5); }
+.re-split-acts { display: flex; align-items: center; gap: var(--sp-5); }
+.re-split-sum { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--over); }
+.re-split-sum.ok { color: var(--accent); }
+.re-split-open { background: none; border: none; padding: var(--sp-2) 0; text-align: left; }
+
+/* OPERATING — the stabilized property's monthly in/out (phone included) */
+.pp3-op-cols, .pp3-op-row { display: grid; grid-template-columns: minmax(72px, 1fr) 110px 110px 110px; gap: var(--sp-5); padding: var(--sp-2) var(--sp-4); }
+.pp3-op-cols { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px; font-size: var(--fs-2xs); color: var(--base-40); border-bottom: 1px solid var(--base-25); }
+.pp3-op-row { border-top: 1px solid var(--line-soft); align-items: baseline; }
+.pp3-op-row > span:not(.micro-label) { font-family: var(--mono); font-size: var(--fs-sm); }
+.pp3-op-r { text-align: right; }
+.pp3-op-in { color: var(--accent); }
+.pp3-op-row .over { color: var(--over); }
+.pp3-op-sub { display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: 0 var(--sp-4) var(--sp-2); }
+.pp3-op-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); background: var(--base-05); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); }
 
 /* PUBLISH in the RE rail foot — the aion button shape, rail-sized */
 .re-publish-btn { margin-top: var(--sp-3); width: 100%; justify-content: center; }

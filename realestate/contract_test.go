@@ -72,6 +72,9 @@ func TestJoinWorkLedgerContractMode(t *testing.T) {
 		// converted legacy bid row — must NOT count once contracts exist
 		{Type: "bid", Status: "accepted", Amount: 12750, WorkID: "exterior/masonry"},
 		{Type: "expense", Status: "paid", Amount: 5000, WorkID: "exterior/masonry", Contract: "tb"},
+		// operating lane — invisible to project rollups (assertions are the pin)
+		{Type: "expense", Status: "paid", Amount: 61, Cat: "operating", Category: "internet"},
+		{Type: "income", Status: "received", Amount: 1750, Category: "rent"},
 	}
 	allocs := []NodeAllocation{{Contract: "tb", Contractor: "twisted-brick", NodeID: "exterior/masonry", Amount: 12750}}
 	JoinWorkLedger(stages, ledger, allocs)

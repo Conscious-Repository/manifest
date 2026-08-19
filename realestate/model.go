@@ -38,34 +38,35 @@ type Property struct {
 	// on (required for owned AND acquiring); From = the seller, present only
 	// while acquiring. Holdings derive from these — owned and acquiring are
 	// counted separately, never summed.
-	From         string         `json:"from,omitempty"`  // seller (acquiring only; "" once closed)
-	Until        string         `json:"until,omitempty"` // the exit condition ("Refinanced at 75% LTV, DSCR ≥ 1.25")
-	Drive        string         `json:"drive,omitempty"` // artifact-canon folder URL (linked, never mirrored)
-	Agc          string         `json:"agc,omitempty"`   // AGC project URL (bids/new-construction, link-out)
-	Hidden       bool           `json:"hidden"`
-	Units        int            `json:"units,omitempty"` // unit count: frontmatter unit mix, else source sidecar total_units
+	From   string `json:"from,omitempty"`  // seller (acquiring only; "" once closed)
+	Until  string `json:"until,omitempty"` // the exit condition ("Refinanced at 75% LTV, DSCR ≥ 1.25")
+	Drive  string `json:"drive,omitempty"` // artifact-canon folder URL (linked, never mirrored)
+	Agc    string `json:"agc,omitempty"`   // AGC project URL (bids/new-construction, link-out)
+	Hidden bool   `json:"hidden"`
+	Units  int    `json:"units,omitempty"` // unit count: frontmatter unit mix, else source sidecar total_units
 	// measurables (overhaul §3.1): hand-editable frontmatter, progressively
 	// refined; the estimate-vintage lock freezes them (§3.6)
-	UnitMix     []Unit             `json:"unitMix,omitempty"`     // frontmatter units: list
-	RentMonthly float64            `json:"rentMonthly,omitempty"` // Σ unit rent ests
-	Measurables map[string]float64 `json:"measurables,omitempty"` // free numeric frontmatter keys
-	Locked      string             `json:"locked,omitempty"`      // frontmatter locked: date ("" = still estimating)
-	Underwrite  *UnderwriteLock    `json:"underwrite,omitempty"`  // the frozen sidecar (est-vs-canon source)
-	Lat          float64        `json:"lat,omitempty"`   // optional frontmatter map override
-	Lng          float64        `json:"lng,omitempty"`
-	Budget       []BudgetLine   `json:"budget"`
-	Log          []string       `json:"log"`    // free lines, newest-first as written
-	Ledger       []LedgerRow    `json:"ledger"` // money facts from the csv sidecar
-	Rollup       Rollup         `json:"rollup"` // derived paid/committed/%out
-	LastLog      string         `json:"lastLog"`
-	Work         []WorkStage    `json:"work"`                   // `## rocks` tree (management core; legacy `## work` reads through)
-	RocksSection string         `json:"-"`                      // heading the tree lives under ("rocks" | legacy "work") — write-back target
-	Tasks        []*tasks.Task  `json:"tasks"`                  // task-surface projection of the tree (+ legacy `## tasks` remainder)
-	CurrentStage string         `json:"currentStage,omitempty"` // first unchecked stage's text
-	WorkStart    string         `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
-	Schedule     []StageSpan    `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
-	Project      *ProjectBudget `json:"project,omitempty"`      // full-project budget (plan vs spend)
-	Intel        *ParcelIntel   `json:"intel,omitempty"`        // research-parcel join (assessor owner/tax facts)
+	UnitMix      []Unit             `json:"unitMix,omitempty"`     // frontmatter units: list
+	RentMonthly  float64            `json:"rentMonthly,omitempty"` // Σ unit rent ests
+	Measurables  map[string]float64 `json:"measurables,omitempty"` // free numeric frontmatter keys
+	Locked       string             `json:"locked,omitempty"`      // frontmatter locked: date ("" = still estimating)
+	Underwrite   *UnderwriteLock    `json:"underwrite,omitempty"`  // the frozen sidecar (est-vs-canon source)
+	Lat          float64            `json:"lat,omitempty"`         // optional frontmatter map override
+	Lng          float64            `json:"lng,omitempty"`
+	Budget       []BudgetLine       `json:"budget"`
+	Log          []string           `json:"log"`    // free lines, newest-first as written
+	Ledger       []LedgerRow        `json:"ledger"` // money facts from the csv sidecar
+	Rollup       Rollup             `json:"rollup"` // derived paid/committed/%out
+	LastLog      string             `json:"lastLog"`
+	Work         []WorkStage        `json:"work"`                   // `## rocks` tree (management core; legacy `## work` reads through)
+	RocksSection string             `json:"-"`                      // heading the tree lives under ("rocks" | legacy "work") — write-back target
+	Tasks        []*tasks.Task      `json:"tasks"`                  // task-surface projection of the tree (+ legacy `## tasks` remainder)
+	CurrentStage string             `json:"currentStage,omitempty"` // first unchecked stage's text
+	WorkStart    string             `json:"workStart,omitempty"`    // frontmatter work-start (schedule anchor)
+	Schedule     []StageSpan        `json:"schedule,omitempty"`     // derived spans (§3 — never stored)
+	Project      *ProjectBudget     `json:"project,omitempty"`      // full-project budget (plan vs spend)
+	Operating    *OperatingView     `json:"operating,omitempty"`    // operating lane (income + [cat:: operating]) — derived, never stored
+	Intel        *ParcelIntel       `json:"intel,omitempty"`        // research-parcel join (assessor owner/tax facts)
 }
 
 // BudgetLine is one `## budget` table row: a category and its budgeted amount.
@@ -88,9 +89,9 @@ type LedgerRow struct {
 	WorkID     string  `json:"workId,omitempty"`   // tether to a rock-tree node
 	Contract   string  `json:"contract,omitempty"` // [contract:: slug] — the contract this expense draws down
 	PaidBy     string  `json:"paidBy,omitempty"`   // [paid-by:: entity] — the paying entity (statements workbench)
-	Cat        string  `json:"cat,omitempty"`     // [cat:: soft|acquisition] — budget category (blank/tethered = hard; legacy carry → soft)
-	Stmt       string  `json:"stmt,omitempty"`    // [stmt:: label] — bank-statement provenance (written at workbench apply)
-	RawNote    string  `json:"rawNote,omitempty"` // note as stored on disk (token intact) — mutation matching
+	Cat        string  `json:"cat,omitempty"`      // [cat:: soft|acquisition] — budget category (blank/tethered = hard; legacy carry → soft)
+	Stmt       string  `json:"stmt,omitempty"`     // [stmt:: label] — bank-statement provenance (written at workbench apply)
+	RawNote    string  `json:"rawNote,omitempty"`  // note as stored on disk (token intact) — mutation matching
 }
 
 // LedgerHeader is the canonical csv column order (also the seed's empty-file header).
