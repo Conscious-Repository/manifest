@@ -1412,11 +1412,8 @@ function buildGoalsEditor(a) {
     }
     if (p.mode !== "move") textRow("title", "title");
     textRow("owner", "owner");
-    textRow("until", "until");
-    textRow("verify", "verify");
-    textRow("kpi", "kpi");
     if (p.level === "rock") {
-      textRow("quarter", "quarter");
+      // no quarter field — a new rock stamps the current quarter on confirm
       const due = inputEl("due");
       due.type = "date"; due.className = "pp-in"; due.value = p.due || "";
       due.onchange = () => { p.due = due.value; };

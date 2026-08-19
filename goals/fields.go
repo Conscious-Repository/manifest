@@ -80,19 +80,6 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 		}
 	}
 
-	// Finish-line fields (goals-finish-lines §1): until/verify on every role,
-	// kpi on Rocks + stages (not annuals). Emitted after the Rock metadata,
-	// before owner.
-	if g.Until != "" {
-		out = append(out, Field{Key: "until", Value: g.Until})
-	}
-	if g.Verify != "" {
-		out = append(out, Field{Key: "verify", Value: g.Verify})
-	}
-	if g.Kpi != "" && role != roleAnnual {
-		out = append(out, Field{Key: "kpi", Value: g.Kpi})
-	}
-
 	if g.Owner != "" && !record.OwnerIsMe(g.Owner) {
 		out = append(out, Field{Key: "owner", Value: g.Owner})
 	}
@@ -110,8 +97,12 @@ func canonicalFields(g *Goal, role fieldRole) []Field {
 // passed through as unknown). `start`/`due` are timeline dates on rocks (portal §7).
 func isRecognizedField(key string) bool {
 	switch strings.ToLower(key) {
-	case "owner", "goal", "quarter", "start", "due", "serves", "alias", "aliases", "status", "rolled-from", "moved",
-		"until", "verify", "kpi":
+	case "owner", "goal", "quarter", "start", "due", "serves", "alias", "aliases", "status", "rolled-from", "moved":
+		return true
+	case "until", "verify", "kpi":
+		// retired (owner call 2026-08-19): recognized so they NEVER pass
+		// through as unknown fields, rebuilt from nothing — a save drops them.
+		// The startup migration strips them from the live file once.
 		return true
 	}
 	return false

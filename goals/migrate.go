@@ -16,7 +16,23 @@ var legacy90Re = regexp.MustCompile(`(?m)^###[ \t]+90`)
 // legacy — it was re-activated as a rock's ISO timeline end, portal §7 — so only
 // the heading distinguishes a pre-v2 file that still needs the one-time upgrade.)
 func needsMigration(raw string) bool {
-	return legacy90Re.MatchString(raw)
+	return legacy90Re.MatchString(raw) || hasRetiredFields(raw)
+}
+
+// hasRetiredFields spots finish-line tokens (until/verify/kpi — retired
+// 2026-08-19) on LIVE goal lines. Parse recognizes-and-drops the keys, so a
+// round-trip removes exactly those tokens; frozen history lines are verbatim
+// text and keep theirs on both sides. A count mismatch therefore means a live
+// line still carries one, and one migration pass (backup + save) strips it.
+var retiredFieldRe = regexp.MustCompile(`\[(?:until|verify|kpi)::`)
+
+func hasRetiredFields(raw string) bool {
+	before := len(retiredFieldRe.FindAllString(raw, -1))
+	if before == 0 {
+		return false
+	}
+	after := len(retiredFieldRe.FindAllString(Serialize(Parse(raw)), -1))
+	return after != before
 }
 
 // CurrentQuarter formats a time as the "2026-Q3" quarter slug — the value stamped

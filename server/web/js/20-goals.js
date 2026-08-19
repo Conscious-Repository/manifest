@@ -296,22 +296,20 @@ function rockComposer(area) {
   ghost.addEventListener("click", () => {
     const box = el("div", "o-composer");
     const name = el("input", "o-edit o-composer-name"); name.placeholder = "name the rock…";
-    const verify = el("input", "o-edit"); verify.placeholder = "proven by…            (skippable)";
     const done = () => {
       const t = name.value.trim();
       if (!t) { box.replaceWith(ghost); return; }
       goalsApi("POST", "/api/goals/item", {
         area: area.name, parentId: "", section: "rock", text: t, owner: "me",
-        verify: verify.value.trim(),
       });
     };
-    [name, verify].forEach((i) => i.addEventListener("keydown", (e) => {
+    name.addEventListener("keydown", (e) => {
       if (e.key === "Enter") done();
       else if (e.key === "Escape") box.replaceWith(ghost);
-    }));
+    });
     const save = el("button", "o-composer-save", "add rock");
     save.addEventListener("click", done);
-    box.append(name, verify, save);
+    box.append(name, save);
     ghost.replaceWith(box);
     name.focus();
   });
@@ -695,34 +693,7 @@ function rockOutline(g, areaName) {
   return wrap;
 }
 
-// finishRow: a "LABEL   value" line; empty value renders the ghost (skippable);
-// non-empty value is click-to-edit. `right` is an optional right-aligned cell
-// (kpi). `sub` marks a stage-level (indented, quieter) row.
-function finishRow(label, value, ghostText, onSave, right, sub) {
-  const row = el("div", "o-fl-row" + (sub ? " sub" : ""));
-  if (label) row.append(el("span", "o-fl-label", label));
-  if (value) {
-    const v = el("span", "o-fl-val", value);
-    if (onSave) clickToEdit(v, () => value, onSave);
-    row.append(v);
-  } else if (ghostText && onSave) {
-    row.append(ghostInput(ghostText, "o-fl-ghost", onSave));
-  } else {
-    row.append(el("span", "o-fl-val", "")); // spacer so kpi keeps its column
-  }
-  if (right) row.append(right);
-  return row;
-}
 
-// finishKpi: the right-aligned gauge cell — value click-to-edit, empty a tiny ghost.
-function finishKpi(value, onSave) {
-  if (value) {
-    const v = el("span", "o-fl-kpi", value);
-    clickToEdit(v, () => value, onSave);
-    return v;
-  }
-  return ghostInput("＋ kpi", "o-fl-kpi o-fl-ghost", onSave);
-}
 
 // completeControl: §5 — a quiet "complete" that opens an inline confirm showing
 // the finish line + check verbatim and demanding evidence for a Win.
@@ -735,7 +706,6 @@ function completeControl(g) {
     btn.hidden = true;
     const panel = el("div", "o-confirm");
     panel.append(el("div", "o-confirm-q", "is this true?"));
-    if (g.verify) panel.append(el("div", "o-confirm-line", "PROOF   " + g.verify));
     const ev = el("input", "o-confirm-ev");
     ev.type = "text";
     ev.placeholder = "evidence — a line of proof or a [[wikilink]] (required to win)";

@@ -49,10 +49,6 @@ type ProposalSpec struct {
 	ParentID   string   `json:"parentId"`   // milestone add/move: the rock it goes under
 	TargetID   string   `json:"targetId"`   // edit/move: the goal being changed
 	AnchorText string   `json:"anchorText"` // edit/move: the target's current text (staleness guard)
-	Until      string   `json:"until"`
-	Verify     string   `json:"verify"`
-	Kpi        string   `json:"kpi"`
-	Quarter    string   `json:"quarter"`
 	Serves     []string `json:"serves"`
 }
 

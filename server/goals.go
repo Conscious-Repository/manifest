@@ -205,14 +205,6 @@ func (s *Server) handleAreasReorder(w http.ResponseWriter, r *http.Request) {
 	s.mutate(w, func(d *goals.Doc) bool { d.ReorderAreas(b.Order); return true })
 }
 
-// ptrIfSet returns a pointer to s when non-empty, else nil — so an omitted
-// creation field leaves the goal's value untouched rather than blanking it.
-func ptrIfSet(s string) *string {
-	if strings.TrimSpace(s) == "" {
-		return nil
-	}
-	return &s
-}
 
 func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -223,8 +215,6 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			Section  string `json:"section"`  // "annual" | "rock" (root only; default rock)
 			Text     string `json:"text"`
 			Owner    string `json:"owner"`
-			Until    string `json:"until"`  // optional finish line at creation (§2)
-			Verify   string `json:"verify"` // optional check at creation (§2)
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
@@ -235,8 +225,6 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return false
 			}
-			// Finish line / check may be set at creation (composer soft-gate).
-			d.EditGoal(g.ID, goals.GoalEdit{Until: ptrIfSet(b.Until), Verify: ptrIfSet(b.Verify)})
 			if b.ParentID == "" && !strings.EqualFold(b.Section, "annual") {
 				// A new Rock is stamped with the current quarter at creation (§1).
 				g.Quarter = goals.CurrentQuarter(time.Now())
@@ -259,9 +247,6 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 			Serves  *[]string `json:"serves"`  // full replacement list (1:many)
 			Aliases *[]string `json:"aliases"` // full replacement list (portal-matcher vocabulary)
 			Status  *string   `json:"status"`
-			Until   *string   `json:"until"`
-			Verify  *string   `json:"verify"`
-			Kpi     *string   `json:"kpi"`
 		}
 		if err := decode(r, &b); err != nil {
 			httpError(w, err)
@@ -270,7 +255,7 @@ func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 		s.mutate(w, func(d *goals.Doc) bool {
 			return d.EditGoal(b.ID, goals.GoalEdit{Text: b.Text, Owner: b.Owner, Quarter: b.Quarter,
 				Start: b.Start, Due: b.Due,
-				Serves: b.Serves, Aliases: b.Aliases, Status: b.Status, Until: b.Until, Verify: b.Verify, Kpi: b.Kpi})
+				Serves: b.Serves, Aliases: b.Aliases, Status: b.Status})
 		})
 	case http.MethodDelete:
 		var b struct {

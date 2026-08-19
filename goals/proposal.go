@@ -53,17 +53,11 @@ type PlacementPayload struct {
 	Title string `json:"title,omitempty"` // add: the new line; edit: the new text ("" = keep)
 	Owner string `json:"owner,omitempty"`
 
-	// Finish-line fields (any live level).
-	Until  string `json:"until,omitempty"`
-	Verify string `json:"verify,omitempty"`
-	Kpi    string `json:"kpi,omitempty"`
-
-	// Rock-only extras — all optional (live rocks often carry only quarter,
-	// which is stamped automatically on add).
-	Quarter string   `json:"quarter,omitempty"`
-	Start   string   `json:"start,omitempty"`
-	Due     string   `json:"due,omitempty"`
-	Serves  []string `json:"serves,omitempty"`
+	// Rock-only extras — all optional. The quarter is never carried: a new
+	// rock always stamps the CURRENT quarter (owner call 2026-08-19).
+	Start  string   `json:"start,omitempty"`
+	Due    string   `json:"due,omitempty"`
+	Serves []string `json:"serves,omitempty"`
 
 	// Proposal-display only.
 	Source     string  `json:"source,omitempty"`
@@ -102,8 +96,8 @@ func (p *PlacementPayload) Validate() error {
 			return fmt.Errorf("%s needs anchorText (the target's current text)", p.Mode)
 		}
 	}
-	if p.Level != LevelRock && (p.Quarter != "" || p.Start != "" || p.Due != "" || len(p.Serves) > 0) {
-		return errors.New("quarter/start/due/serves are rock-only fields")
+	if p.Level != LevelRock && (p.Start != "" || p.Due != "" || len(p.Serves) > 0) {
+		return errors.New("start/due/serves are rock-only fields")
 	}
 	for _, d := range []struct{ name, v string }{{"start", p.Start}, {"due", p.Due}} {
 		if d.v != "" && !isISO(d.v) {
@@ -216,12 +210,8 @@ func applyAdd(doc *Doc, area *Area, p PlacementPayload, now time.Time) error {
 	if !ok {
 		return fmt.Errorf("could not place %q under %q", title, parentID)
 	}
-	g.Until, g.Verify, g.Kpi = stripBracket(p.Until), stripBracket(p.Verify), stripBracket(p.Kpi)
 	if p.Level == LevelRock {
-		g.Quarter = strings.TrimSpace(p.Quarter)
-		if g.Quarter == "" {
-			g.Quarter = CurrentQuarter(now) // a new rock always lands in a quarter
-		}
+		g.Quarter = CurrentQuarter(now) // a new rock always lands in the current quarter
 		g.Start, g.Due = stripBracket(p.Start), stripBracket(p.Due)
 		g.Serves = dedupeNonEmpty(p.Serves)
 	}
@@ -241,19 +231,7 @@ func applyEdit(doc *Doc, p PlacementPayload) error {
 	if p.Owner != "" {
 		e.Owner = &p.Owner
 	}
-	if p.Until != "" {
-		e.Until = &p.Until
-	}
-	if p.Verify != "" {
-		e.Verify = &p.Verify
-	}
-	if p.Kpi != "" {
-		e.Kpi = &p.Kpi
-	}
 	if p.Level == LevelRock {
-		if p.Quarter != "" {
-			e.Quarter = &p.Quarter
-		}
 		if p.Start != "" {
 			e.Start = &p.Start
 		}

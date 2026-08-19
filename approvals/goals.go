@@ -123,7 +123,7 @@ func (s *Store) applyGoalsItem(p Proposal) error {
 // goalsScan is the secret gate over every owner-visible payload string (the
 // engine/agent scanned at authoring; the edit and apply paths scan again).
 func goalsScan(p goals.PlacementPayload) error {
-	text := strings.Join([]string{p.Title, p.Owner, p.Until, p.Verify, p.Kpi, p.AnchorText}, "\n")
+	text := strings.Join([]string{p.Title, p.Owner, p.AnchorText}, "\n")
 	if fs := secrets.Scan(text); len(fs) > 0 {
 		return fmt.Errorf("content matches secret pattern(s) %s", strings.Join(secrets.Classes(fs), ", "))
 	}

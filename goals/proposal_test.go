@@ -16,7 +16,7 @@ func canonicalFixture(t *testing.T) string {
 		"### 1-year — 2026\n" +
 		"- [ ] Back extension is enclosed [goal:: home/back-extension-is-enclosed]\n\n" +
 		"### Rocks (90-day)\n" +
-		"- [ ] Backyard [goal:: home/backyard] [quarter:: 2026-Q3] [until:: dinner party ready]\n" +
+		"- [ ] Backyard [goal:: home/backyard] [quarter:: 2026-Q3]\n" +
 		"    - [ ] Metal up\n" +
 		"        - [x] Grind concrete\n" +
 		"        - [x] pick-up tablesaw [goal:: home/backyard/metal-up/pick-up-tablesaw]\n" +
@@ -76,9 +76,11 @@ func TestAddMilestoneIsOneLine(t *testing.T) {
 func TestAddRockStampsQuarter(t *testing.T) {
 	next := mustApply(t, canonicalFixture(t), PlacementPayload{
 		Mode: ModeAdd, Level: LevelRock, Area: "Home",
-		Title: "Mini split upstairs", Until: "installed or picked out",
+		Title: "Mini split upstairs",
 	})
-	if !strings.Contains(next, "- [ ] Mini split upstairs [goal:: home/mini-split-upstairs] [quarter:: 2026-Q3] [until:: installed or picked out]") {
+	// the quarter is never carried by a payload — a new rock stamps the
+	// CURRENT quarter (owner call 2026-08-19)
+	if !strings.Contains(next, "- [ ] Mini split upstairs [goal:: home/mini-split-upstairs] [quarter:: 2026-Q3]") {
 		t.Fatalf("rock line wrong:\n%s", next)
 	}
 }
@@ -95,7 +97,7 @@ func TestAddRefusals(t *testing.T) {
 	// rock-only fields refused on milestones at validate time
 	mustRefuse(t, cur, PlacementPayload{
 		Mode: ModeAdd, Level: LevelMilestone, Area: "Home",
-		ParentID: "home/backyard", Title: "X", Quarter: "2026-Q3",
+		ParentID: "home/backyard", Title: "X", Due: "2026-09-30",
 	}, "rock-only")
 }
 

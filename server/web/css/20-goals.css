@@ -113,7 +113,6 @@
 .o-complete-wrap { margin: var(--sp-5) 0 var(--sp-1) var(--sp-4); }
 .o-confirm { border-left: 2px solid var(--blue-soft); padding: var(--sp-3) 0 var(--sp-3) var(--sp-6); }
 .o-confirm-q { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink); letter-spacing: 0.06em; }
-.o-confirm-line { font-family: var(--mono); font-size: var(--fs-sm); color: var(--streak-ink); margin-top: var(--sp-1); white-space: pre; }
 .o-confirm-ev { display: block; width: 100%; max-width: 460px; margin: var(--sp-4) 0; border: none; border-bottom: 1px solid var(--line); background: transparent; font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); outline: none; padding: var(--sp-2) 0; }
 .o-confirm-ev:focus { border-color: var(--blue-soft); }
 .o-confirm-acts { display: flex; gap: var(--sp-4); align-items: center; }

@@ -114,8 +114,7 @@ Allowed types (one JSON object per block; no other types exist):
 - {"type":"re-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>"}
 - {"type":"goals-item","mode":"add|edit|move","level":"rock|milestone","area":"<## heading in goals.md>",
    "title":"...","parentId":"<rock id, for milestone add/move>",
-   "targetId":"<goal id, edit/move>","anchorText":"<the goal's current text, edit/move>",
-   "until":"<finish line, optional>","verify":"<evidence, optional>"} — place/edit/move a goal line (owner's words only)
+   "targetId":"<goal id, edit/move>","anchorText":"<the goal's current text, edit/move>"} — place/edit/move a goal line (owner's words only)
 
 Each block is filed for the OWNER'S APPROVAL — nothing happens until he
 confirms, so file the change and reference it in your brief rather than
@@ -289,8 +288,6 @@ func (s *Server) hermesProposal(taskID string, sp hermes.ProposalSpec) (approval
 			ParentID: strings.TrimSpace(sp.ParentID), TargetID: strings.TrimSpace(sp.TargetID),
 			AnchorText: strings.TrimSpace(sp.AnchorText),
 			Title:      strings.TrimSpace(sp.Title), Owner: strings.TrimSpace(sp.Owner),
-			Until: strings.TrimSpace(sp.Until), Verify: strings.TrimSpace(sp.Verify),
-			Kpi: strings.TrimSpace(sp.Kpi), Quarter: strings.TrimSpace(sp.Quarter),
 			Due: strings.TrimSpace(sp.Due), Serves: sp.Serves,
 		}
 		if err := payload.Validate(); err != nil {
