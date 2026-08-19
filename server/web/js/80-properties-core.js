@@ -43,10 +43,13 @@ function showProperties(h) {
   renderProperties();
 }
 
-// renderReToggle — mirror showAion's chip-active toggle. page/deal keep
-// PORTFOLIO lit (they open from it).
+// renderReToggle — mirror showAion's chip-active toggle. The record pages keep
+// the tab they open FROM lit: property/deal/contract come off PORTFOLIO, a
+// contractor record off SETTINGS. Without this a record page lights nothing
+// and the tab bar reads as "you are nowhere".
+const RE_TAB_OF = { page: "portfolio", deal: "portfolio", contract: "portfolio", "contract-new": "portfolio", contractor: "settings" };
 function renderReToggle() {
-  const active = (propMode === "page" || propMode === "deal") ? "portfolio" : propMode;
+  const active = RE_TAB_OF[propMode] || propMode;
   els.reToggle && els.reToggle.querySelectorAll(".filter-chip").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === active));
 }

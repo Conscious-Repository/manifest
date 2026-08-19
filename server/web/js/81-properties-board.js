@@ -88,7 +88,7 @@ function renderREOrgRocks(host) {
   head.append(el("span", "aion-sec-title", "● Org rocks"), el("span", "aion-sec-count", String(rocks.length)));
   host.append(head);
   if (!rocks.length) {
-    host.append(emptyRow("No org rocks in the Real Estate area yet — add one in GOALS."));
+    host.append(el("div", "pp-empty", "No org rocks in the Real Estate area yet — add one in GOALS."));
     return;
   }
   rocks.forEach((g) => {
@@ -200,7 +200,10 @@ function assigneeName(owner) {
 // statusChip / statusSelect — the one in-place edit the table keeps.
 function statusSelect(p, onSaved) {
   const sel = selectEl(PROPERTY_STATUSES);
-  sel.classList.add("prop-status-sel");
+  // .pp-in re-declares --sans later in the sheet than the mono-label group, so
+  // it silently won and every status chip in the app rendered sans. The status
+  // control is a chip, not a form field — it carries its own box.
+  sel.className = "prop-status-sel";
   sel.value = p.status || "negotiating"; // options are mounted above — the value sticks
   sel.onchange = async () => {
     try { onSaved(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/field", { key: "status", value: sel.value })); }

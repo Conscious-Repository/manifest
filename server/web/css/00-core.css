@@ -37,6 +37,9 @@
   --blue: var(--accent);
   --blue-soft: var(--accent-soft);
   --line: var(--base-25);
+  /* --line-soft: the rule INSIDE a list (row separators). Quieter than --line,
+     which draws a section's edge. Replaces the hand-typed #f4f4f4 / #f0f0f0. */
+  --line-soft: #f4f4f4;
   --muted: var(--base-40);
   --icon: var(--base-30);
   --pill-bg: #171717;
@@ -82,6 +85,9 @@
      titles and content line up tab-to-tab (ui-conventions.md §page). */
   --page-max: 1180px;
   --page-gutter: 28px;
+  /* --measure: the readable column a section of content caps at, inside the
+     page width (a page may be wider than one column of prose). */
+  --measure: 780px;
 
   /* ── space scale (role-named) ── derived from the gap cadence already in use
      (8/10/6/12/2 cover ~63% of gaps). Odd values snap to nearest even. */

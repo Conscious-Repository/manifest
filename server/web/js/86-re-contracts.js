@@ -304,7 +304,7 @@ async function renderContractorPage(slug) {
   let d = null;
   try { d = await (await fetch("/api/realestate/contractors/" + encodeURIComponent(slug) + "/page")).json(); }
   catch (e) {}
-  if (!d || !d.contractor) { host.append(emptyRow("Contractor not found.")); return; }
+  if (!d || !d.contractor) { host.append(el("div", "pp-empty", "Contractor not found.")); return; }
   const c = d.contractor;
 
   const shell = el("div", "aion-backlog fr-shell re-ctr-shell");
@@ -320,7 +320,7 @@ async function renderContractorPage(slug) {
   (c.scopes || []).forEach((s) => head.append(el("span", "cp-role", s)));
   main.append(head);
   if (c.email || c.website) {
-    const meta = el("div", "re-ctrp-meta");
+    const meta = el("div", "re-meta-row");
     if (c.email) meta.append(el("span", "", c.email));
     if (c.website) {
       const a = el("a", "pp3-link", c.website.replace(/^https?:\/\//, ""));
@@ -402,7 +402,7 @@ async function renderContractPage(slug) {
   let d = null;
   try { d = await (await fetch("/api/realestate/contracts/" + encodeURIComponent(slug))).json(); }
   catch (e) {}
-  if (!d || !d.contract) { host.append(emptyRow("Contract not found.")); return; }
+  if (!d || !d.contract) { host.append(el("div", "pp-empty", "Contract not found.")); return; }
   const c = d.contract;
   const patch = async (set) => {
     try {
@@ -413,20 +413,53 @@ async function renderContractPage(slug) {
 
   const page = el("div", "re-contract-page");
   host.append(page);
+  // Every block is a .pp3-sec — the property page's rhythm and its --measure
+  // cap, instead of this page's own width and heads running into each other.
+  const section = (title, count) => {
+    const sec = el("div", "pp3-sec");
+    if (title) {
+      const h = el("div", "pp3-sec-head");
+      h.append(el("span", "pp3-sec-title", title));
+      if (count !== undefined) h.append(el("span", "pp3-sec-count", String(count)));
+      sec.append(h);
+    }
+    page.append(sec);
+    return sec;
+  };
+
+  const top = section();
+  // a contract opens from a property; give it the way back (the tab bar lights
+  // PORTFOLIO, which is not where you came from)
+  const propSlugs = [...new Set((c.allocations || []).map((a) => a.property))];
+  const crumb = el("div", "pp3-crumb");
+  const back = el("button", "pp3-link",
+    "← " + (propSlugs.length === 1 ? ((d.propertyNames || {})[propSlugs[0]] || propSlugs[0]) : "portfolio"));
+  back.onclick = () => {
+    location.hash = propSlugs.length === 1
+      ? "#/properties/" + encodeURIComponent(propSlugs[0]) : "#/properties/portfolio";
+  };
+  crumb.append(back);
+  top.append(crumb);
+
   const head = el("div", "pp3-head");
   head.append(el("h2", "pp3-title", c.name));
-  // status select — save as you go
+  // status select — save as you go. The chip control (mono, uppercase) rather
+  // than a sans form field; accent only while the contract is live.
+  const LIVE_STATUS = ["proposed", "accepted"];
   const sel = selectEl(["proposed", "accepted", "declined", "expired", "closed"]);
   sel.value = c.status;
-  sel.className = "pp-in re-contract-statussel s-" + c.status;
-  sel.onchange = () => patch({ status: sel.value });
+  const paintStatus = () => {
+    sel.className = "prop-status-sel" + (LIVE_STATUS.includes(sel.value) ? "" : " quiet");
+  };
+  paintStatus();
+  sel.onchange = () => { paintStatus(); patch({ status: sel.value }); };
   head.append(sel);
   const openNote = el("button", "pp3-note", "note ↗");
   openNote.onclick = () => { location.hash = "#/note/" + encodeURIComponent(c.path); };
   head.append(openNote);
-  page.append(head);
+  top.append(head);
 
-  const meta = el("div", "re-ctrp-meta");
+  const meta = el("div", "re-meta-row");
   const ctrBtn = el("button", "pp3-link", "@" + c.contractor);
   ctrBtn.onclick = () => { location.hash = "#/properties/contractor/" + encodeURIComponent(c.contractor); };
   meta.append(ctrBtn);
@@ -442,7 +475,7 @@ async function renderContractPage(slug) {
       meta.append(el("span", "", "doc: " + c.doc));
     }
   }
-  page.append(meta);
+  top.append(meta);
 
   // money strip: TOTAL (editable, optional reason — decision 16) · DRAWN · REMAINING
   const strip = el("div", "pp3-strip");
@@ -475,12 +508,10 @@ async function renderContractPage(slug) {
   strip.append(totalCell);
   strip.append(cell("DRAWN", d.contract.drawn ? fmtMoney(d.contract.drawn) : "—"));
   strip.append(cell("REMAINING", fmtMoney(d.remaining), d.remaining < 0 ? "over" : ""));
-  page.append(strip);
+  top.append(strip);
 
   // allocations — cross-property by construction
-  const sh = el("div", "pp3-sec-head");
-  sh.append(el("span", "pp3-sec-title", "ALLOCATIONS"), el("span", "pp3-sec-count", String((c.allocations || []).length)));
-  page.append(sh);
+  const allocSec = section("ALLOCATIONS", (c.allocations || []).length);
   (c.allocations || []).forEach((a) => {
     const row = el("div", "prop-row re-alloc-row");
     const pname = (d.propertyNames || {})[a.property] || a.property;
@@ -489,31 +520,39 @@ async function renderContractPage(slug) {
     row.append(link);
     row.append(el("span", "re-alloc-node", a.nodeId));
     row.append(el("span", "prop-col-r", fmtMoney(a.amount)));
-    page.append(row);
+    allocSec.append(row);
   });
 
   // draws — expenses carrying [contract:: slug]
-  const dh = el("div", "pp3-sec-head");
-  dh.append(el("span", "pp3-sec-title", "DRAWS"), el("span", "pp3-sec-count", String((d.draws || []).length)));
-  page.append(dh);
-  if (!(d.draws || []).length) page.append(el("div", "pp-empty", "No draws yet — expenses tethered [contract:: " + slug + "] land here."));
+  const drawSec = section("DRAWS", (d.draws || []).length);
+  if (!(d.draws || []).length) drawSec.append(el("div", "pp-empty", "No draws yet — expenses tethered [contract:: " + slug + "] land here."));
   (d.draws || []).forEach((r) => {
     const row = el("div", "prop-row re-alloc-row");
-    row.append(el("span", "", r.date), el("span", "prop-addr", r.vendor + (r.note ? " · " + r.note : "")),
+    row.append(el("span", "re-money-date", r.date), el("span", "prop-addr", r.vendor + (r.note ? " · " + r.note : "")),
       el("span", "prop-col-r", fmtMoney(r.amount)));
-    page.append(row);
+    drawSec.append(row);
   });
 
   // prose sections — display-only extracted terms
   const prose = (title, lines) => {
     if (!(lines || []).length) return;
-    const h = el("div", "pp3-sec-head");
-    h.append(el("span", "pp3-sec-title", title.toUpperCase()));
-    page.append(h);
-    lines.forEach((ln) => page.append(el("div", "re-contract-prose", "· " + ln)));
+    const sec = section(title.toUpperCase());
+    lines.forEach((ln) => sec.append(el("div", "re-contract-prose", "· " + ln)));
   };
   prose("terms", c.terms);
   prose("exclusions", c.exclusions);
   prose("risk items", c.riskItems);
-  prose("changes", c.changes);
+  // the change log is dated metadata (`- YYYY-MM-DD ±N reason`, contracts.go),
+  // not prose — it reads mono with the date in its own column
+  if ((c.changes || []).length) {
+    const sec = section("CHANGES", c.changes.length);
+    c.changes.forEach((ln) => {
+      const row = el("div", "re-change-row");
+      const m = String(ln).match(/^(\d{4}-\d{2}-\d{2})\s+([\s\S]*)$/);
+      if (m) row.append(el("span", "re-money-date", m[1]), el("span", "", m[2]));
+      else row.append(el("span", "", String(ln)));
+      sec.append(row);
+    });
+  }
 }
+

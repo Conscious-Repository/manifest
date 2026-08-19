@@ -435,7 +435,7 @@ async function renderREMoney() {
     "MONEY · " + moneyRows.length + " transactions" + (unfiled ? " · " + unfiled + " uncategorized" : "") +
     (last ? " · last import " + last : "")));
   if (!moneyRows.length) {
-    host.append(emptyRow("No transactions — import a bank statement CSV (Settings → Entities names the accounts)."));
+    host.append(el("div", "pp-empty", "No transactions — import a bank statement CSV (Settings → Entities names the accounts)."));
   }
   const cols = el("div", "re-money-cols");
   ["DATE", "DESCRIPTION", "AMOUNT", "PROPERTY"].forEach((h, i) =>
@@ -660,7 +660,7 @@ async function renderDealPage(slug) {
   const host = els.propertyBoard;
   host.innerHTML = "";
   const deal = dealCache.find((d) => d.slug === slug);
-  if (!deal) { host.append(emptyRow("No deal record named " + slug + ".")); return; }
+  if (!deal) { host.append(el("div", "pp-empty", "No deal record named " + slug + ".")); return; }
   if (!reAssumptionsCache) await loadReAssumptions();
   const head = el("div", "re-deal-head");
   const title = el("h2", "pp3-title", deal.name || deal.slug);
