@@ -60,7 +60,6 @@ const els = {
   reToggle: document.getElementById("reToggle"),
   reMeta: document.getElementById("reMeta"),
   rePublishRail: document.getElementById("rePublishRail"),
-  propInspector: document.getElementById("propInspector"),
   propertyPage: document.getElementById("propertyPage"),
   propertySettings: document.getElementById("propertySettings"),
   propertyMapWrap: document.getElementById("propertyMapWrap"),

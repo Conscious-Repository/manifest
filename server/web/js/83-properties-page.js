@@ -5,22 +5,57 @@
 // edit in place, ✕ deletes, a composer adds) · side card: parcel outline +
 // OWNER of record (assessor-stamped frontmatter, editable). Money: budget
 // derives from source.json underwrite + `## work` est; spent from the ledger.
-let propSelTaskId = null; // line-id of the inspector's todo
+// the inspector's selection. Tasks key on their task id (that is what
+// /api/tasks/* takes); decisions key on the work-tree node id — decisions are
+// not in the flat p.tasks projection, so they restore by walking p.work.
+let propSel = null;       // {kind:"task"|"decision", id}
+let propDecidedOpen = false; // the "decided · N" fold
 let propPageSlug = null;  // page-local UI state resets when this changes
+let propPageEls = null;   // the page's stable frame — see propPageSkeleton
 let propUWOpen = false;   // underwrite editor visible
 let propLedgerEdit = -1;  // index of the ledger row being edited (-1 none)
 let propLedgerAdd = false;
 let propGeoCache = {};    // slug → geo features (parcel polygon)
 
+// propPageSkeleton — the page's stable frame. It is rebuilt only when the
+// property changes (or something tore the DOM out from under us); a data
+// re-render refills the head and the main column and leaves the RAIL alone.
+// Every edit on this page re-renders it, and the rail holds the map and the
+// inspector: rebuilding it meant tearing down and re-creating Leaflet on every
+// keystroke-commit, and would destroy an open inspector mid-edit.
+function propPageSkeleton(host, slug) {
+  if (propPageEls && propPageEls.slug === slug && propPageEls.host === host && propPageEls.cols.isConnected) {
+    return propPageEls;
+  }
+  host.innerHTML = "";
+  const headWrap = el("div", "pp3-headwrap");
+  const cols = el("div", "pp3-cols");
+  const main = el("div", "pp3-main");
+  const side = el("div", "pp3-side");
+  const thumbHost = el("div", "pp3-thumb-host");
+  const ownerHost = el("div", "pp3-owner-host");
+  const inspSlot = el("div", "pp3-insp-slot");
+  side.append(thumbHost, ownerHost, inspSlot);
+  cols.append(main, side);
+  host.append(headWrap, cols);
+  propPageEls = { slug, host, headWrap, cols, main, side, thumbHost, ownerHost, inspSlot };
+  return propPageEls;
+}
+
 async function renderPropertyPage(slug) {
   const host = els.propertyPage;
-  host.innerHTML = "";
   if (slug !== propPageSlug) {
     propPageSlug = slug;
     propUWOpen = false; propLedgerEdit = -1; propLedgerAdd = false;
   }
   const p = propertyCache.find((x) => x.slug === slug);
-  if (!p) { host.append(el("div", "pp-empty", "Property not found.")); return; }
+  if (!p) { propPageEls = null; host.innerHTML = ""; host.append(el("div", "pp-empty", "Property not found.")); return; }
+  const pg = propPageSkeleton(host, slug);
+  pg.headWrap.innerHTML = "";
+  pg.main.innerHTML = "";
+  pg.ownerHost.innerHTML = "";
+  pg.ownerHost.append(ownerCard(p));
+  mountThumbOnce(pg.thumbHost, slug);
 
   // title row: address + status select
   const head = el("div", "pp3-head");
@@ -31,7 +66,7 @@ async function renderPropertyPage(slug) {
   openNote.title = "open the record (⌘/ edits raw)";
   openNote.onclick = () => { location.hash = "#/note/" + encodeURIComponent(p.path); };
   head.append(openNote);
-  host.append(head);
+  pg.headWrap.append(head);
 
   // owner line (RE spec §2 OWNER): the books it lands on; the seller while
   // acquiring reads in ink. Click-to-edit both.
@@ -52,13 +87,9 @@ async function renderPropertyPage(slug) {
     if (v !== null) propFieldSave(p.slug, "from", v.trim());
   };
   ownerLine.append(fromBtn);
-  host.append(ownerLine);
+  pg.headWrap.append(ownerLine);
 
-
-  const cols = el("div", "pp3-cols");
-  const main = el("div", "pp3-main");
-  cols.append(main, propSideCard(p));
-  host.append(cols);
+  const main = pg.main;
 
   // BUDGET · SPENT — two mono figures between hairlines
   const pm = projMoney(p);
@@ -92,35 +123,38 @@ async function renderPropertyPage(slug) {
   const walkNodes = (rock, nodes, fn) => (nodes || []).forEach((n) => { fn(rock, n); walkNodes(rock, n.children, fn); });
   (p.work || []).forEach((st) => walkNodes(st, st.tasks, (rock, n) => { if (n.decision) decisions.push({ rock, n }); }));
   const openDecs = decisions.filter((d) => !d.n.checked);
+  const decidedDecs = decisions.filter((d) => d.n.checked);
   if (decisions.length) {
-    const lane = el("div", "pp3-sec pp3-dec-lane");
+    // the same row the RE backlog uses — one decision shape in the app. The ◇
+    // is a glyph, not a button: a decision is resolved in the inspector, where
+    // the outcome is typed, not through a browser prompt.
+    const lane = el("div", "pp3-sec");
     const dh = el("div", "pp3-sec-head");
-    dh.append(el("span", "pp3-sec-title", "◇ DECISIONS"), el("span", "pp3-sec-count", openDecs.length + " open"));
+    dh.append(el("span", "pp3-sec-title", "◇ DECISIONS"),
+      el("span", "pp3-sec-count", openDecs.length + " open · " + decidedDecs.length + " decided"));
     lane.append(dh);
-    openDecs.forEach(({ rock, n }) => {
-      const row = el("div", "pp3-todo pp3-dec-row");
-      const resolve = el("button", "tdo-check", "◇");
-      resolve.title = "resolve with a note";
-      resolve.onclick = async (e) => {
-        e.stopPropagation();
-        const note = prompt("Resolution:", "");
-        if (note === null) return;
-        if (note.trim()) await propWorkOp(p, { op: "set-field", id: n.id, field: "resolution", value: note.trim() }, true);
-        propWorkOp(p, { op: "check", id: n.id, checked: true });
-      };
-      row.append(resolve, el("span", "pp3-todo-text", n.text));
-      row.append(el("span", "pp3-dec-rock", rock.text || ""));
-      row.append(el("span", "prop-owner" + (mineOwner(n.owner) ? " mine" : ""), assigneeName(n.owner)));
-      lane.append(row);
-    });
-    const decided = decisions.filter((d) => d.n.checked);
-    if (decided.length) {
-      const body = collapsibleSection(lane, "decided", String(decided.length), false);
-      decided.forEach(({ n }) => {
-        const row = el("div", "pp3-todo done pp3-dec-row");
-        row.append(el("span", "tdo-check on", "◆"), el("span", "pp3-todo-text", n.text + (n.resolution ? " — " + n.resolution : "")));
-        body.append(row);
-      });
+    const decRow = ({ rock, n }) => {
+      const row = el("div", "aion-dec-row" + (n.checked ? " decided" : "") + (propSelIs("decision", n.id) ? " sel" : ""));
+      row.dataset.selKey = "decision:" + n.id;
+      row.append(el("span", "aion-dec-glyph", "◇"));
+      const col = el("div", "aion-main");
+      col.append(el("div", "aion-dec-text", n.text));
+      const bits = [];
+      if (rock && rock.text) bits.push(rock.text);
+      if (n.owner) bits.push("@" + assigneeName(n.owner));
+      if (n.checked && n.resolution) bits.push("→ " + n.resolution);
+      col.append(el("div", "aion-item-meta", bits.join(" · ")));
+      row.append(col);
+      row.append(el("span", "aion-status " + (n.checked ? "closed" : "open"), n.checked ? "DECIDED" : "OPEN"));
+      row.onclick = () => propSelect(p, { kind: "decision", id: n.id, node: n, rock });
+      return row;
+    };
+    openDecs.forEach((d) => lane.append(decRow(d)));
+    if (decidedDecs.length) {
+      const fold = el("button", "aion-done-toggle", (propDecidedOpen ? "▾" : "▸") + " decided · " + decidedDecs.length);
+      fold.onclick = () => { propDecidedOpen = !propDecidedOpen; renderPropertyPage(slug); };
+      lane.append(fold);
+      if (propDecidedOpen) decidedDecs.forEach((d) => lane.append(decRow(d)));
     }
     main.append(lane);
   }
@@ -138,14 +172,21 @@ async function renderPropertyPage(slug) {
   const stages = p.work || [];
   const today = new Date().toISOString().slice(0, 10);
   stages.forEach((st) => {
-    const line = el("div", "pp3-stage" + (st.checked ? " done" : ""));
+    // the goals page's rock block: rock 14/500 over 13px milestones over 13px
+    // tasks, one indent ladder. `current` = has open work, `stalled` = past its
+    // done-by date — goals' own state semantics rather than a local late chip.
+    let stOpen = 0;
+    walkNodes(st, st.tasks, (_, n) => { if (!n.checked && !n.milestone && !n.decision) stOpen++; });
+    const stalled = !st.checked && st.doneBy && st.doneBy < today;
+    const block = el("div", "go-rock" + (st.checked ? " done" : "") + (stalled ? " stalled" : stOpen ? " current" : ""));
+    const line = el("div", "go-rock-line");
     // glyph doubles as the done toggle (server stamps [done:: date] on check)
-    const glyph = el("button", "pp3-stage-glyph pp3-stage-check", st.checked ? "✓" : "○");
+    const glyph = el("button", "go-check" + (st.checked ? " on" : ""), st.checked ? "✓" : "○");
     glyph.title = st.checked ? "mark rock not done" : "mark rock done";
     glyph.onclick = (e) => { e.stopPropagation(); propWorkOp(p, { op: "check", id: st.id, checked: !st.checked }); };
     line.append(glyph);
     // name — click to rename in place
-    const name = el("span", "pp3-stage-name", st.text || "");
+    const name = el("span", "go-rock-name" + (st.checked ? " done" : ""), st.text || "");
     name.title = "click to rename";
     name.onclick = () => {
       const input = inputEl(""); input.value = st.text || ""; input.classList.add("work-edit");
@@ -181,17 +222,18 @@ async function renderPropertyPage(slug) {
       setTimeout(() => { if (yes.parentNode) yes.replaceWith(del); }, 2500);
     };
     line.append(del);
-    stagesSec.append(line);
+    block.append(line);
+    stagesSec.append(block);
     // nodes: milestones render as sub-heads with their own children +
     // composer; tasks render as todo rows; decisions live in the lane above
     const nodeRow = (n, depth) => {
       if (n.decision) return;
       if (n.milestone) {
-        const ml = el("div", "pp3-milestone" + (n.checked ? " done" : ""));
-        const mglyph = el("button", "pp3-stage-glyph pp3-stage-check", n.checked ? "✓" : "◇");
+        const ml = el("div", "go-stage" + (n.checked ? " done" : ""));
+        const mglyph = el("button", "go-check" + (n.checked ? " on" : ""), n.checked ? "✓" : "◇");
         mglyph.title = n.checked ? "reopen milestone" : "mark milestone done";
         mglyph.onclick = (e) => { e.stopPropagation(); propWorkOp(p, { op: "check", id: n.id, checked: !n.checked }); };
-        const mname = el("span", "pp3-milestone-name", n.text || "");
+        const mname = el("span", "go-stage-text", n.text || "");
         mname.title = "click to rename";
         mname.onclick = () => {
           const input = inputEl(""); input.value = n.text || ""; input.classList.add("work-edit");
@@ -214,11 +256,10 @@ async function renderPropertyPage(slug) {
         ml.append(mglyph, mname);
         appendContractChips(ml, n);
         ml.append(mdel);
-        ml.classList.add("nested");
-        stagesSec.append(ml);
+        block.append(ml);
         (n.children || []).forEach((c) => nodeRow(c, depth + 1));
         if (!n.checked) {
-          const add = el("div", "pp3-compose nested deep");
+          const add = el("div", "pp3-compose deep");
           add.append(el("span", "pp3-compose-glyph", "○"));
           const input = inputEl("add to " + (n.text || "milestone") + "…");
           input.className = "pp3-compose-in";
@@ -227,20 +268,19 @@ async function renderPropertyPage(slug) {
             propWorkOp(p, { op: "add-task", stageId: n.id, text: input.value.trim() });
           });
           add.append(input);
-          stagesSec.append(add);
+          block.append(add);
         }
         return;
       }
-      const row = propTodoRow(p, { id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "" });
-      row.classList.add("nested");
+      const row = propTodoRow(p, { id: n.taskId, text: n.text, checked: !!n.checked, owner: n.owner || "" }, "tree");
       if (depth > 0) row.classList.add("deep");
       appendContractChips(row, n);
-      stagesSec.append(row);
+      block.append(row);
       (n.children || []).forEach((c) => nodeRow(c, depth + 1));
     };
     (st.tasks || []).forEach((n) => nodeRow(n, 0));
     if (!st.checked) {
-      const add = el("div", "pp3-compose nested");
+      const add = el("div", "pp3-compose");
       add.append(el("span", "pp3-compose-glyph", "○"));
       const input = inputEl("add a task to " + (st.text || "this rock") + "…  (milestone: / decision: …)");
       input.className = "pp3-compose-in";
@@ -253,7 +293,7 @@ async function renderPropertyPage(slug) {
       };
       input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") submit(); });
       add.append(input);
-      stagesSec.append(add);
+      block.append(add);
     }
   });
   if (stages.length) {
@@ -299,24 +339,33 @@ async function renderPropertyPage(slug) {
   linkBtn("AGC", "agc", p.agc);
   main.append(links);
 
-  // restore an open inspector across re-renders
-  if (propSelTaskId) {
-    const t = (p.tasks || []).find((x) => x.id === propSelTaskId);
-    if (t) openPropInspector(p, t); else closePropInspector();
+  // restore an open inspector across re-renders. A decision is not in the flat
+  // p.tasks projection, so it resolves against the tree it lives in.
+  if (propSel && propSel.kind === "task") {
+    const t = (p.tasks || []).find((x) => x.id === propSel.id);
+    if (t) openPropInspector(p, { kind: "task", id: t.id, task: t }); else closePropInspector();
+  } else if (propSel && propSel.kind === "decision") {
+    let hit = null;
+    (p.work || []).forEach((st) => walkNodes(st, st.tasks, (rock, n) => { if (n.id === propSel.id) hit = { rock, n }; }));
+    if (hit) openPropInspector(p, { kind: "decision", id: hit.n.id, node: hit.n, rock: hit.rock });
+    else closePropInspector();
   }
 }
 
 // ---- side card: located parcel thumb + owner of record ----
 
-let _thumbMap = null; // the live mini-map instance (rebuilt per render)
+let _thumbMap = null;  // the live mini-map instance
+let _thumbSlug = null; // the property it is showing
 
-function propSideCard(p) {
-  const side = el("div", "pp3-side");
+// mountThumbOnce — the map is per-property, not per-render: re-mounting it on
+// every edit rebuilt Leaflet (and made the rail flash) for no new information.
+function mountThumbOnce(hostEl, slug) {
+  if (_thumbSlug === slug && hostEl.firstChild) return;
+  _thumbSlug = slug;
+  hostEl.innerHTML = "";
   const thumbSlot = el("div", "pp-thumb-slot");
-  side.append(thumbSlot);
-  loadPropGeo(p.slug).then((features) => mountParcelThumb(thumbSlot, features));
-  side.append(ownerCard(p));
-  return side;
+  hostEl.append(thumbSlot);
+  loadPropGeo(slug).then((features) => mountParcelThumb(thumbSlot, features));
 }
 
 async function loadPropGeo(slug) {
@@ -718,17 +767,21 @@ async function propWorkOp(p, body, quiet) {
   } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
 }
 
-function propTodoRow(p, t) {
-  const row = el("div", "pp3-todo" + (t.checked ? " done" : "") + (propSelTaskId === t.id ? " sel" : ""));
-  const check = el("button", "tdo-check" + (t.checked ? " on" : ""), t.checked ? "✓" : "○");
+// propTodoRow — variant "tree" wears the goals task shape (this page's rock
+// tree); the default keeps .pp3-todo for the flat lists that still use it.
+function propTodoRow(p, t, variant) {
+  const tree = variant === "tree";
+  const row = el("div", (tree ? "go-task" : "pp3-todo") + (t.checked ? " done" : "") + (propSelIs("task", t.id) ? " sel" : ""));
+  row.dataset.selKey = "task:" + t.id;
+  const check = el("button", (tree ? "go-check" : "tdo-check") + (t.checked ? " on" : ""), t.checked ? "✓" : "○");
   check.title = t.checked ? "reopen" : "done";
   check.onclick = async (e) => {
     e.stopPropagation();
     try { await postJSONOk("/api/tasks/check", { id: compositeId(p, t), checked: !t.checked }); renderProperties(); }
     catch (err) { showToast("Couldn't update"); }
   };
-  row.append(check, el("span", "pp3-todo-text", t.text));
-  row.append(el("span", "prop-owner" + (mineOwner(t.owner) ? " mine" : ""), assigneeName(t.owner)));
+  row.append(check, el("span", tree ? "go-task-text" : "pp3-todo-text", t.text));
+  row.append(el("span", (tree ? "go-stage-owner" : "prop-owner") + (mineOwner(t.owner) ? " mine" : ""), assigneeName(t.owner)));
   // hover ✕ — delete the line from the property's ## todos (arm to confirm)
   const x = el("button", "uw-x pp3-todo-x", "✕");
   x.title = "delete this task";
@@ -744,14 +797,26 @@ function propTodoRow(p, t) {
     setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);
   };
   row.append(x);
-  row.onclick = () => {
-    propSelTaskId = propSelTaskId === t.id ? null : t.id;
-    propSelTaskId ? openPropInspector(p, t) : closePropInspector();
-    // repaint selection without a full reload
-    els.propertyPage.querySelectorAll(".pp3-todo.sel").forEach((n) => n.classList.remove("sel"));
-    if (propSelTaskId) row.classList.add("sel");
-  };
+  row.onclick = () => propSelect(p, { kind: "task", id: t.id, task: t });
   return row;
+}
+
+// propSelIs / propSelect — one selection for the rail inspector, shared by the
+// tree's tasks and the decisions lane. Selecting never re-renders the page (an
+// edit in flight would lose its field); it repaints the marks and re-fills the
+// panel, the way the AION list does.
+function propSelIs(kind, id) { return !!propSel && propSel.kind === kind && propSel.id === id; }
+
+function propSelect(p, sel) {
+  const same = propSelIs(sel.kind, sel.id);
+  propSel = same ? null : { kind: sel.kind, id: sel.id };
+  els.propertyPage.querySelectorAll(".go-task.sel, .pp3-todo.sel, .aion-dec-row.sel")
+    .forEach((n) => n.classList.remove("sel"));
+  if (!propSel) { closePropInspector(); return; }
+  els.propertyPage.querySelectorAll(".go-task, .pp3-todo, .aion-dec-row").forEach((n) => {
+    if (n.dataset.selKey === sel.kind + ":" + sel.id) n.classList.add("sel");
+  });
+  openPropInspector(p, sel);
 }
 
 // the always-present composer row — adding a todo is the page's primary action
@@ -775,18 +840,22 @@ function propTodoComposer(p) {
   return row;
 }
 
-// ---- the 280px assignment inspector (Rev 3's accountability half) ----
-function openPropInspector(p, t) {
-  // phone (Rev 4): the sticky 280px column is display:none — the same builder
-  // fills a bottom sheet. Desktop path identical.
+// ---- the rail inspector (Rev 3's accountability half) ----
+// It docks in the property page's own rail, UNDER the map — the map stays put
+// and the panel opens beneath it. sel is {kind:"task"|"decision", …}.
+function openPropInspector(p, sel) {
+  const t = sel.kind === "decision" ? { id: sel.id, text: sel.node.text, owner: sel.node.owner || "" } : sel.task;
+  // phone (Rev 4): the rail is stacked and the panel goes to a bottom sheet.
+  // The builder is the same either way.
   const phone = window.mf && window.mf.phone();
   const host = phone
-    ? window.mfSheet.body("prop", closePropInspector, () => openPropInspector(p, t))
-    : els.propInspector;
+    ? window.mfSheet.body("prop", closePropInspector, () => openPropInspector(p, sel))
+    : (propPageEls && propPageEls.inspSlot);
+  if (!host) return;
   host.innerHTML = "";
   if (!phone) host.hidden = false;
   const head = el("div", "pp3-insp-head");
-  head.append(el("span", "pp3-insp-label", "Inspector"));
+  head.append(el("span", "pp3-insp-label", sel.kind === "decision" ? "Decision" : "Inspector"));
   const x = el("button", "pp3-insp-x", "✕");
   x.onclick = closePropInspector;
   head.append(x);
@@ -798,31 +867,57 @@ function openPropInspector(p, t) {
     f.append(el("span", "pp3-insp-flabel", label), node);
     return f;
   };
+
+  // a decision is decided HERE — type the outcome, press Enter. Same two
+  // writes the ◇ prompt used to make, in the place the backlog makes them.
+  if (sel.kind === "decision" && !sel.node.checked) {
+    const outcome = inputEl("what was decided…");
+    outcome.className = "pp-in aion-insp-outcome";
+    const decide = el("button", "aion-decide-inline", "decide ⏎");
+    decide.title = "files the resolution and closes the decision";
+    decide.disabled = true;
+    const doDecide = async () => {
+      const note = outcome.value.trim();
+      if (!note) return;
+      propSel = null;
+      await propWorkOp(p, { op: "set-field", id: sel.id, field: "resolution", value: note }, true);
+      propWorkOp(p, { op: "check", id: sel.id, checked: true });
+    };
+    outcome.addEventListener("input", () => { decide.disabled = !outcome.value.trim(); });
+    outcome.addEventListener("keydown", (ev) => { if (ev.key === "Enter") doDecide(); });
+    decide.onclick = doDecide;
+    host.append(field("outcome", outcome));
+    host.append(decide);
+  } else if (sel.kind === "decision" && sel.node.resolution) {
+    host.append(field("outcome", el("span", "pp3-insp-val", sel.node.resolution)));
+  }
   // assignee: a real identity from the RE registry ONLY — system/realestate/
   // people.md + contractor records; the aion roster never reaches properties
-  const sel = document.createElement("select");
-  sel.className = "pp-in";
-  const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; sel.append(o); };
+  const ownerSel = document.createElement("select");
+  ownerSel.className = "pp-in";
+  const opt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; ownerSel.append(o); };
   opt("", "you");
   const a = (propTodosMeta && propTodosMeta.assignees) || {};
   (a.realestate || []).forEach((c) => opt(c.slug, c.name + (c.trade ? " (" + c.trade + ")" : "")));
-  sel.value = mineOwner(t.owner) ? "" : t.owner; // BA/me/empty all read as "you"
+  ownerSel.value = mineOwner(t.owner) ? "" : t.owner; // BA/me/empty all read as "you"
   const note = el("div", "pp3-insp-note");
   const setNote = () => {
-    note.textContent = sel.value
-      ? "Assigned to " + assigneeName(sel.value) + " — tracked here, never in your TASKS. It shows under Outstanding until they close it."
+    if (sel.kind === "decision") { note.textContent = "Decided here — the line stays under its rock in the record."; return; }
+    note.textContent = ownerSel.value
+      ? "Assigned to " + assigneeName(ownerSel.value) + " — tracked here, never in your TASKS. It shows under Outstanding until they close it."
       : "Yours — it shows in TASKS under Real Estate.";
   };
   setNote();
   const assign = async (owner) => {
     try {
-      await postJSONOk("/api/tasks/update", { id: compositeId(p, t), owner });
+      if (sel.kind === "decision") await propWorkOp(p, { op: "set-field", id: sel.id, field: "owner", value: owner }, true);
+      else await postJSONOk("/api/tasks/update", { id: compositeId(p, t), owner });
       t.owner = owner;
       setNote();
       renderProperties();
     } catch (e) { showToast("Couldn't assign"); }
   };
-  sel.onchange = () => assign(sel.value);
+  ownerSel.onchange = () => assign(ownerSel.value);
   if (phone) {
     // Rev 4: a tap-list, not a <select> — 48px rows, ● on the current one.
     const current = mineOwner(t.owner) ? "" : t.owner;
@@ -830,14 +925,14 @@ function openPropInspector(p, t) {
     const rowOpt = (v, l) => {
       const r = el("button", "mf-opt" + (v === current ? " on" : ""));
       r.append(el("span", "mf-opt-dot", v === current ? "●" : "○"), el("span", "", l));
-      r.onclick = () => assign(v).then(() => openPropInspector(p, t)); // re-fill in place (same key)
+      r.onclick = () => assign(v).then(() => openPropInspector(p, sel)); // re-fill in place (same key)
       list.append(r);
     };
     rowOpt("", "you");
     (a.realestate || []).forEach((c) => rowOpt(c.slug, c.name + (c.trade ? " (" + c.trade + ")" : "")));
     host.append(field("owner", list));
   } else {
-    host.append(field("owner", sel));
+    host.append(field("owner", ownerSel));
   }
   // rock: move the task under another of THIS property's rocks (the tree IS
   // the placement) — the server refuses names outside the pipeline
@@ -845,17 +940,22 @@ function openPropInspector(p, t) {
     const stSel = document.createElement("select");
     stSel.className = "pp-in";
     const sopt = (v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; stSel.append(o); };
+    const matchNode = (n) => (sel.kind === "decision" ? n.id === sel.id : n.taskId === t.id);
     const home = (p.work || []).find((st) =>
-      (st.tasks || []).some(function inTree(n) { return n.taskId === t.id || (n.children || []).some(inTree); }));
+      (st.tasks || []).some(function inTree(n) { return matchNode(n) || (n.children || []).some(inTree); }));
     sopt("", home ? home.text : "—");
     (p.work || []).filter((st) => !home || st.id !== home.id).forEach((st) => sopt(st.text, st.text));
     stSel.value = "";
     stSel.onchange = async () => {
       if (!stSel.value) return;
       try {
-        await postJSONOk("/api/tasks/update", { id: compositeId(p, t), stage: stSel.value });
+        // rocks only: the re-parent is a remove+append of the line, which would
+        // drop a node's children — decisions and tasks are leaves, milestones
+        // are not, and are never offered here
+        const id = sel.kind === "decision" ? "prop:" + p.slug + "/" + sel.id : compositeId(p, t);
+        await postJSONOk("/api/tasks/update", { id, stage: stSel.value });
         renderProperties();
-      } catch (e) { showToast("Couldn't move the task — " + (e.message || "")); }
+      } catch (e) { showToast("Couldn't move it — " + (e.message || "")); }
     };
     host.append(field("rock", stSel));
   }
@@ -865,8 +965,8 @@ function openPropInspector(p, t) {
 }
 
 function closePropInspector() {
-  propSelTaskId = null;
-  if (els.propInspector) { els.propInspector.hidden = true; els.propInspector.innerHTML = ""; }
+  propSel = null;
+  if (propPageEls && propPageEls.inspSlot) propPageEls.inspSlot.innerHTML = "";
   // phone: the ✕ inside the sheet routes here — close the sheet too. Safe both
   // ways: mfSheet.close() nulls its state before invoking onClose, so the
   // re-entrant call no-ops on closeIf.

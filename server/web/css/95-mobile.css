@@ -272,6 +272,7 @@
   .go-rock-line { align-items: center; min-height: 44px; }
   .go-until { flex-basis: 100%; align-self: flex-start; width: fit-content; margin-top: var(--sp-1); }
   .go-stage { align-items: center; min-height: 44px; padding-left: var(--sp-4); }
+  .go-task { align-items: center; min-height: 44px; }
   .go-check { min-width: 36px; min-height: 44px; font-size: var(--fs-lg); }
 
   /* ---- AION: rows to touch scale; org rail → chips; registry tables stack ---- */
@@ -349,9 +350,9 @@
      the ledger drops — reach spend from Money ---- */
   .pp3-cols { display: block; }                     /* side card stacks under */
   .pp3-side { position: static; flex: none; margin-top: var(--sp-7); }
-  .pp3-stage { min-height: 48px; align-items: center; }
-  .pp3-stage-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pp3-todo.nested { min-height: 52px; margin-left: 26px; }
+  /* stacked: the panel is a sheet on phone, so the rail slot never scrolls
+     (the tree's touch sizes come from the goals rules above — same rows) */
+  .pp3-insp-slot:not(:empty) { max-height: none; overflow: visible; }
   .re-uw-grid { display: none; }
   .re-uw-outs { grid-template-columns: repeat(3, 1fr); }
   .re-uw-outs .pp3-cell-val { font-size: var(--fs-2xl); }

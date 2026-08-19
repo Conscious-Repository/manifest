@@ -28,12 +28,8 @@
 .properties-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
 .prop-shell { display: flex; align-items: flex-start; padding: var(--sp-4) 0 80px; }
 .prop-pane { flex: 1; min-width: 0; }
-.prop-inspector {
-  width: 280px; flex: none;
-  border-left: 1px solid var(--base-25); background: var(--base-05);
-  padding: var(--sp-6) var(--sp-7); position: sticky; top: 0; align-self: flex-start;
-}
-@media (max-width: 1100px) { .prop-inspector { display: none; } }
+/* (the tab-level .prop-inspector aside is retired — the property page's
+   inspector docks in its own rail, under the map: .pp3-insp-slot) */
 @media (max-width: 860px) { .properties-view { padding: 0 var(--sp-7); } }
 
 /* ---- all-properties table: address · status · open todos ---- */
@@ -150,8 +146,28 @@
 /* ---- page columns + side card (parcel thumb · owner of record) ---- */
 .pp3-cols { display: flex; gap: 28px; align-items: flex-start; }
 .pp3-main { flex: 1 1 auto; min-width: 0; }
-.pp3-side { flex: 0 0 240px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: var(--sp-6); }
-.pp-thumb, .pp-thumb-slot { width: 240px; height: 150px; background: var(--base-05); border: 1px solid var(--base-20); border-radius: var(--radius); cursor: pointer; overflow: hidden; }
+/* the rail: map, owner card, then the inspector for whatever is selected. 280
+   matches the app's other inspectors, so the panel's field metrics fit. */
+.pp3-side { flex: 0 0 280px; position: sticky; top: 12px; display: flex; flex-direction: column; gap: var(--sp-6); }
+.pp3-thumb-host:empty, .pp3-owner-host:empty, .pp3-insp-slot:empty { display: none; }
+/* the inspector scrolls INSIDE the rail — never the rail itself, or the map
+   would scroll out of the frame it is pinned in */
+.pp3-insp-slot:not(:empty) { border-top: 1px solid var(--base-25); padding-top: var(--sp-6); max-height: calc(100vh - 260px); overflow-y: auto; }
+
+/* The property tree wears the GOALS row sizing (20-goals.css) — one indent
+   ladder, one set of sizes. A restyle there moves this page too. These are the
+   property-page-only deltas: a third indent level, the selection mark, and the
+   hover ✕ the goals tree does not have. */
+.property-page .go-task.deep { padding-left: 60px; }
+.property-page .go-task.sel, .property-page .aion-dec-row.sel { background: var(--base-20); box-shadow: inset 2px 0 0 var(--accent); }
+.property-page .go-task .pp3-todo-x { visibility: hidden; }
+.property-page .go-task:hover .pp3-todo-x { visibility: visible; }
+.property-page .go-rock .pp3-compose { padding-left: var(--sp-6); }
+.property-page .go-rock .pp3-compose.deep { padding-left: 34px; }
+/* the decisions lane reuses the backlog row; 92-aion.css loads after this file,
+   so the page's own deltas must be scoped to beat it */
+.property-page .aion-dec-row { cursor: pointer; }
+.pp-thumb, .pp-thumb-slot { width: 100%; height: 150px; background: var(--base-05); border: 1px solid var(--base-20); border-radius: var(--radius); cursor: pointer; overflow: hidden; }
 .pp-thumb .leaflet-tile-pane { filter: saturate(0.85); } /* keep the basemap quiet under the accent parcel */
 .pp-thumb polygon { fill: rgba(38, 90, 204, 0.08); stroke: var(--accent); stroke-width: 1.5; } /* SVG offline fallback */
 .pp-thumb:hover polygon { fill: rgba(38, 90, 204, 0.16); }

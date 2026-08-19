@@ -196,6 +196,8 @@
 @media (max-width: 860px) { .go-rail { display: none; } }
 
 /* one rock block — the left rule carries the state */
+/* NOTE: the property page's rock tree (80-properties-core.css) reuses these
+   .go-* row classes — a restyle here moves that surface too. */
 .go-rock { padding: var(--sp-6) var(--sp-6) var(--sp-5); border-top: 1px solid #f0f0f0; border-left: 2px solid var(--accent-soft); margin-bottom: var(--sp-1); }
 .go-rock.current { border-left-color: var(--accent); }
 .go-rock.stalled { border-left-color: var(--base-100); }
