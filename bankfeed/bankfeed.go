@@ -14,6 +14,7 @@ package bankfeed
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 )
 
@@ -42,8 +43,58 @@ type Provider interface {
 	Claim(ctx context.Context, setupToken string) (accessURL string, err error)
 	// Accounts lists the accounts the access URL can read.
 	Accounts(ctx context.Context, accessURL string) ([]Account, error)
-	// Transactions reads one account's transactions since a cursor.
-	Transactions(ctx context.Context, accessURL, accountID string, since time.Time) ([]Txn, error)
+	// Transactions reads one account's transactions in [start, end). A zero
+	// end means "through now".
+	Transactions(ctx context.Context, accessURL, accountID string, start, end time.Time) ([]Txn, error)
+}
+
+// The beta bridge truncates each response to its newest ~50 transactions and
+// caps ranges at 90 days back. fetchWindowed walks the range in windows and
+// splits any window that returns suspiciously many rows, so nothing is lost
+// to the cap; windows stay ≤30 days (the bridge recommends ≤45).
+const (
+	bridgeTxnCap  = 50
+	fetchWindow   = 30 * 24 * time.Hour
+	minWindow     = 24 * time.Hour
+	bridgeHistory = 90 // days the bridge can serve, total
+)
+
+func (s *Service) fetchWindowed(ctx context.Context, accountID string, since, now time.Time) ([]Txn, error) {
+	byID := map[string]Txn{}
+	var walk func(start, end time.Time) error
+	walk = func(start, end time.Time) error {
+		txns, err := s.provider.Transactions(ctx, s.store.AccessURL(), accountID, start, end)
+		if err != nil {
+			return err
+		}
+		if len(txns) >= bridgeTxnCap && end.Sub(start) > minWindow {
+			mid := start.Add(end.Sub(start) / 2)
+			if err := walk(start, mid); err != nil {
+				return err
+			}
+			return walk(mid, end)
+		}
+		for _, t := range txns {
+			byID[t.ID] = t
+		}
+		return nil
+	}
+	horizon := now.Add(24 * time.Hour) // inclusive of today's postings
+	for start := since; start.Before(horizon); start = start.Add(fetchWindow) {
+		end := start.Add(fetchWindow)
+		if end.After(horizon) {
+			end = horizon
+		}
+		if err := walk(start, end); err != nil {
+			return nil, err
+		}
+	}
+	out := make([]Txn, 0, len(byID))
+	for _, t := range byID {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Posted.Before(out[j].Posted) })
+	return out, nil
 }
 
 // Link binds one bridge account to an EntityAccount row on a vault entity
@@ -115,7 +166,7 @@ func (s *Service) FetchAll(ctx context.Context, simplefinID string, now time.Tim
 	if !ok {
 		return NewTxns{}, fmt.Errorf("account %s is not linked", simplefinID)
 	}
-	txns, err := s.provider.Transactions(ctx, s.store.AccessURL(), simplefinID, time.Unix(86400, 0))
+	txns, err := s.fetchWindowed(ctx, simplefinID, now.AddDate(0, 0, -bridgeHistory), now)
 	if err != nil {
 		s.store.SetLinkHealth(simplefinID, "", err.Error())
 		return NewTxns{}, err
@@ -150,11 +201,11 @@ func (s *Service) FetchNew(ctx context.Context, now time.Time) []NewTxns {
 		}
 		since := s.store.Cursor(link.SimplefinID)
 		if since.IsZero() {
-			since = now.AddDate(0, 0, -90) // the bridge's backfill window
+			since = now.AddDate(0, 0, -bridgeHistory) // the bridge's backfill window
 		} else {
 			since = since.AddDate(0, 0, -3)
 		}
-		txns, err := s.provider.Transactions(ctx, s.store.AccessURL(), link.SimplefinID, since)
+		txns, err := s.fetchWindowed(ctx, link.SimplefinID, since, now)
 		if err != nil {
 			s.store.SetLinkHealth(link.SimplefinID, "", err.Error())
 			continue

@@ -25,8 +25,15 @@ func (s *stubBridge) Claim(_ context.Context, _ string) (string, error) { return
 func (s *stubBridge) Accounts(_ context.Context, _ string) ([]bankfeed.Account, error) {
 	return []bankfeed.Account{{ID: "act-1", Name: "Checking ····4821", Org: "Midwest Bank"}}, nil
 }
-func (s *stubBridge) Transactions(_ context.Context, _, accountID string, _ time.Time) ([]bankfeed.Txn, error) {
-	return s.txns[accountID], nil
+func (s *stubBridge) Transactions(_ context.Context, _, accountID string, start, end time.Time) ([]bankfeed.Txn, error) {
+	// window-faithful like the real bridge: only [start, end) comes back
+	var out []bankfeed.Txn
+	for _, t := range s.txns[accountID] {
+		if !t.Posted.Before(start) && (end.IsZero() || t.Posted.Before(end)) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
 }
 
 // bankFixture: one owned property with a DONE node under an accepted $5,500
@@ -228,10 +235,10 @@ func TestBankFeedNoAutoApplyOnAmountMismatch(t *testing.T) {
 // perfect contract match stays pending, and the daily sync never re-hauls
 // what the backfill marked seen.
 func TestBankFeedBackfillIngestsWithoutAutoApply(t *testing.T) {
-	day := func(s string) time.Time { d, _ := time.Parse("2006-01-02", s); return d }
+	// posted inside the bridge's 90-day window (it can serve nothing older)
 	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
-		{ID: "h1", Posted: day("2025-01-10"), Amount: -5500, Description: "CHECK 900", Payee: "Olga Sobkiv"},
-		{ID: "h2", Posted: day("2025-02-01"), Amount: 1200, Description: "DEPOSIT", Payee: "Tenant A"},
+		{ID: "h1", Posted: time.Now().AddDate(0, 0, -80), Amount: -5500, Description: "CHECK 900", Payee: "Olga Sobkiv"},
+		{ID: "h2", Posted: time.Now().AddDate(0, 0, -70), Amount: 1200, Description: "DEPOSIT", Payee: "Tenant A"},
 	}}}
 	srv, vault, _ := bankFixture(t, bridge)
 

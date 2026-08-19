@@ -3,6 +3,7 @@ package bankfeed
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -130,5 +131,71 @@ func TestFetchNewDedupesAndFlagsErrors(t *testing.T) {
 	svc.FetchNew(context.Background(), now)
 	if l, _ := svc.Store().LinkFor("act-1"); l.LastError == "" {
 		t.Fatal("a failing sync must land on the link as lastError")
+	}
+}
+
+// cappedProvider truncates every response to its NEWEST 50 rows — the beta
+// bridge's behavior that silently loses history on a single wide pull.
+type cappedProvider struct {
+	txns []Txn
+}
+
+func (c *cappedProvider) Claim(_ context.Context, _ string) (string, error) { return "stub://a", nil }
+func (c *cappedProvider) Accounts(_ context.Context, _ string) ([]Account, error) {
+	return []Account{{ID: "act-1", Name: "Checking"}}, nil
+}
+func (c *cappedProvider) Transactions(_ context.Context, _, _ string, start, end time.Time) ([]Txn, error) {
+	var in []Txn
+	for _, t := range c.txns {
+		if !t.Posted.Before(start) && (end.IsZero() || t.Posted.Before(end)) {
+			in = append(in, t)
+		}
+	}
+	// newest 50 only, like the bridge
+	if len(in) > 50 {
+		newest := append([]Txn(nil), in...)
+		for i := range newest { // sort newest-first by posted (insertion is fine at this size)
+			for j := i + 1; j < len(newest); j++ {
+				if newest[j].Posted.After(newest[i].Posted) {
+					newest[i], newest[j] = newest[j], newest[i]
+				}
+			}
+		}
+		in = newest[:50]
+	}
+	return in, nil
+}
+
+// 180 txns over 60 days (3/day) — one uncapped pull would lose 130 of them.
+// The windowed walk must recover every single one.
+func TestFetchAllDefeatsResponseCap(t *testing.T) {
+	now := time.Unix(1755500000, 0)
+	var txns []Txn
+	for d := 0; d < 60; d++ {
+		for k := 0; k < 3; k++ {
+			txns = append(txns, Txn{
+				ID:     fmt.Sprintf("t-%d-%d", d, k),
+				Posted: now.AddDate(0, 0, -d).Add(time.Duration(k) * time.Hour),
+				Amount: -1, Description: "x", Payee: "y",
+			})
+		}
+	}
+	svc := New(t.TempDir(), &cappedProvider{txns: txns})
+	if err := svc.Store().SetAccessURL("stub://a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Store().Upsert(Link{SimplefinID: "act-1", EntitySlug: "e", AccountLabel: "l", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	haul, err := svc.FetchAll(context.Background(), "act-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(haul.Txns) != len(txns) {
+		t.Fatalf("windowed fetch got %d of %d txns — the cap ate history", len(haul.Txns), len(txns))
+	}
+	// FetchNew after FetchAll: everything seen, nothing re-hauled
+	if again := svc.FetchNew(context.Background(), now); len(again) != 0 {
+		t.Fatalf("re-sync hauled %+v", again)
 	}
 }

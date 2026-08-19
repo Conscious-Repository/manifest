@@ -132,9 +132,13 @@ func (s *SimpleFIN) Accounts(ctx context.Context, accessURL string) ([]Account, 
 	return out, nil
 }
 
-// Transactions reads one account's transactions since a time.
-func (s *SimpleFIN) Transactions(ctx context.Context, accessURL, accountID string, since time.Time) ([]Txn, error) {
-	query := "?start-date=" + strconv.FormatInt(since.Unix(), 10) + "&account=" + urlQueryEscape(accountID)
+// Transactions reads one account's transactions in [start, end) — zero end
+// means "through now" (no end-date param).
+func (s *SimpleFIN) Transactions(ctx context.Context, accessURL, accountID string, start, end time.Time) ([]Txn, error) {
+	query := "?start-date=" + strconv.FormatInt(start.Unix(), 10) + "&account=" + urlQueryEscape(accountID)
+	if !end.IsZero() {
+		query += "&end-date=" + strconv.FormatInt(end.Unix(), 10)
+	}
 	set, err := s.fetch(ctx, accessURL, query)
 	if err != nil {
 		return nil, err
