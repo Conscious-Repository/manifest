@@ -911,7 +911,13 @@ async function renderDealPage(slug) {
   });
   const a = reAssumptions();
   const arv = a.exit_cap_rate ? noi / a.exit_cap_rate : 0;
-  const ads = reDebtService(arv * (a.perm_ltv || 0), a);
+  // takeout-sized DSCR (see reScreeningCalc — the LTV-max loan makes DSCR a
+  // constant of the assumptions; the takeout loan is the deal-varying truth)
+  const dealPermMax = arv * (a.perm_ltv || 0);
+  const dealTakeout = tdc * (a.construction_loan_ltc || 0);
+  const dealLoan = dealTakeout > 0 ? Math.min(dealPermMax, dealTakeout) : dealPermMax;
+  const dealRefiGap = dealTakeout > dealPermMax ? dealTakeout - dealPermMax : 0;
+  const ads = reDebtService(dealLoan, a);
   const dscr = ads ? noi / ads : 0;
   const strip = el("div", "pp3-strip");
   [["TDC", tdc], ["NOI", noi], ["ARV", arv]].forEach(([label, v]) => {
@@ -920,8 +926,9 @@ async function renderDealPage(slug) {
     strip.append(c);
   });
   const dc = el("div", "pp3-cell");
-  dc.append(el("div", "pp3-cell-label", "DSCR"),
+  dc.append(el("div", "pp3-cell-label", "DSCR · at takeout"),
     el("div", "pp3-cell-val" + (dscr && dscr < 1.25 ? " over" : ""), dscr ? dscr.toFixed(2) : "—"));
+  if (dealRefiGap > 0) dc.append(el("div", "re-refi-gap", "refi gap " + fmtMoneyShort(dealRefiGap) + " — LTV caps the takeout"));
   strip.append(dc);
   host.append(strip);
 
@@ -1028,9 +1035,19 @@ function reScreeningCalc(p) {
   const contingency = hard * (a.contingency_pct || 0);
   const tdc = purchase + hard + soft + contingency;
   const arv = a.exit_cap_rate ? noi / a.exit_cap_rate : 0;
-  const loan = arv * (a.perm_ltv || 0);
+  // Loan sizing (owner report 2026-08-18 "DSCR is ALWAYS 1.22"): at the
+  // LTV-max loan DSCR is a CONSTANT of the assumptions — loan = LTV·ARV and
+  // ARV = NOI/cap, so NOI cancels: dscr = cap/(ltv·payment). The engine has
+  // the same identity; the deal-varying number is DSCR at the TAKEOUT loan —
+  // what the perm actually refinances (the construction loan, LTC·TDC),
+  // capped by what the appraisal supports (LTV·ARV). When the LTV cap binds
+  // the takeout, the shortfall is a refi gap — equity stays in the deal.
+  const permMax = arv * (a.perm_ltv || 0);
+  const takeout = tdc * (a.construction_loan_ltc || 0);
+  const loan = takeout > 0 ? Math.min(permMax, takeout) : permMax;
+  const refiGap = takeout > permMax ? takeout - permMax : 0;
   const ads = reDebtService(loan, a);
-  return { complete: true, gross, egi, noi, tdc, arv, loan, dscr: ads ? noi / ads : 0 };
+  return { complete: true, gross, egi, noi, tdc, arv, loan, permMax, refiGap, dscr: ads ? noi / ads : 0 };
 }
 
 // ---- PUBLISH → oodagroup — the portal export effector (RE spec §4) ----

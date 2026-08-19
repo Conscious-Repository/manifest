@@ -807,8 +807,7 @@ function logSection(p) {
   }
   sec.append(ghostInput("＋ log line", "re-log-add", async (v) => {
     try {
-      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/log", { text: v });
-      renderProperties();
+      applyFreshProperty(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/log", { text: v }));
     } catch (e) { showToast("Couldn't log — " + (e.message || "")); }
   }, "what happened…"));
   return sec;
@@ -953,9 +952,24 @@ function appendContractChips(row, n) {
 // chained ops like resolve-then-check).
 async function propWorkOp(p, body, quiet) {
   try {
-    await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body);
-    if (!quiet) renderProperties();
+    const fresh = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/work", body);
+    if (!quiet) applyFreshProperty(fresh);
   } catch (e) { showToast("Couldn't update — " + (e.message || "")); }
+}
+
+// applyFreshProperty — the property save endpoints answer with the freshly
+// re-parsed record: swap it into the cache and repaint ONLY the page (the
+// old path re-fetched the whole tab — three requests and a jarring full
+// redraw for a one-field edit; owner report 2026-08-18).
+function applyFreshProperty(p) {
+  if (!p || !p.slug) { renderProperties(); return; }
+  const i = propertyCache.findIndex((x) => x.slug === p.slug);
+  if (i >= 0) {
+    p.__source = propertyCache[i].__source; // keep the page's source cache warm
+    propertyCache[i] = p;
+  }
+  if (propMode === "page" && propSlug === p.slug) renderPropertyPage(p.slug);
+  else renderProperties();
 }
 
 // propTodoRow — variant "tree" wears the goals task shape (this page's rock
@@ -1291,7 +1305,10 @@ function underwritingSection(p) {
     if (uw.complete) {
       outs.append(cell("NOI", fmtMoneyShort(uw.noi)));
       outs.append(cell("ARV", fmtMoneyShort(uw.arv)));
-      outs.append(cell("DSCR", uw.dscr ? uw.dscr.toFixed(2) : "—", uw.dscr && uw.dscr < 1.25 ? "over" : ""));
+      const dcell = cell("DSCR · at takeout", uw.dscr ? uw.dscr.toFixed(2) : "—", uw.dscr && uw.dscr < 1.25 ? "over" : "");
+      dcell.title = "NOI ÷ debt service on the loan the perm actually refinances (LTC·TDC, capped by LTV·ARV) — at the LTV-max loan DSCR is a constant of the assumptions";
+      if (uw.refiGap > 0) dcell.append(el("div", "re-refi-gap", "refi gap " + fmtMoneyShort(uw.refiGap) + " — LTV caps the takeout"));
+      outs.append(dcell);
     } else {
       outs.append(el("div", "re-foot-note", "fill units + rent for screening outputs (NOI · ARV · DSCR)"));
     }
@@ -1337,9 +1354,9 @@ function unitMixEditor(p) {
   const save = async () => {
     const clean = rows.filter((u) => (u.label || "").trim() || u.beds || u.sqft || u.rent);
     try {
-      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables",
+      const fresh = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables",
         { setUnits: true, units: clean });
-      renderProperties();
+      applyFreshProperty(fresh);
     } catch (e) { showToast("Couldn't save the unit mix — " + (e.message || "")); }
   };
   const body = el("div", "re-unitmix-rows");
@@ -1395,8 +1412,7 @@ function measurablesEditor(p) {
   box.append(el("span", "re-uw-label", "MEASURABLES "));
   const post = async (body, failMsg) => {
     try {
-      await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables", body);
-      renderProperties();
+      applyFreshProperty(await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables", body));
     } catch (e) { showToast(failMsg + " — " + (e.message || "")); }
   };
   Object.entries(p.measurables || {}).sort((a, b) => a[0].localeCompare(b[0])).forEach(([k, v]) => {
