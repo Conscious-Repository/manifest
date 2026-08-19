@@ -9,23 +9,41 @@ let pendingApprovalFocus = null; // approval id to scroll to in FEED (deep-link 
 function approvalCardEl(a) {
   const card = el("div", "approval-card pinned");
   card.dataset.approvalId = a.id;
-  const head = el("div", "appr-head");
-  head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
-  if (a.harness) head.append(el("span", "harness-chip", a.harness)); // federation source
-  card.append(head);
-  if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
-
   const actionable = !!a.applyPath;
   const isResolve = a.type === "aion-resolve" || a.type === "re-resolve"; // closed-loop: flip one backlog line
   const isRe = a.type === "re-backlog" || a.type === "re-resolve"; // the real-estate domain twins (````re fence)
   const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe || isResolve;
   const isReContract = a.type === "re-contract"; // intake (overhaul §5): adjust-amounts card
+  if (isReContract) {
+    // the contract card leads with money, not prose: the head is the kind
+    // chip, the provenance, and the document — the action line's content
+    // (contractor, scope, amount) is the total block right below it
+    card.classList.add("re-intake-card");
+    const doc = (a.reContractPayload || {}).doc || "";
+    const head = el("div", "appr-head re-intake-head");
+    head.append(el("span", "type-chip micro-label type-company", (a.reContractPayload || {}).kind || "contract"));
+    head.append(el("span", "appr-agent", [a.agent, a.created ? fmtWhen(a.created) : ""].filter(Boolean).join(" · ")));
+    if (a.harness) head.append(el("span", "harness-chip", a.harness)); // federation source
+    if (doc.startsWith("sha256:")) {
+      const dl = el("a", "pp3-link re-intake-doc", "document ↗");
+      dl.href = "/api/realestate/files/" + doc.slice(7);
+      dl.target = "_blank";
+      head.append(dl);
+    }
+    card.append(head);
+  } else {
+    const head = el("div", "appr-head");
+    head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
+    if (a.harness) head.append(el("span", "harness-chip", a.harness)); // federation source
+    card.append(head);
+    if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
+  }
   // For an actionable proposal the ````proposed payload is rendered as a diff
   // below (and an aion payload as its editable form), so strip the fence from
   // the human-facing evidence body.
   const bodyText = isReContract ? stripFence(a.body, "re-contract")
     : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
-  if (bodyText && bodyText.trim()) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
+  if (bodyText && bodyText.trim() && !isReContract) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
 
   let blocked = false, blockMsg = "";
   const isNewNote = a.type === "create-vault-note";
@@ -37,7 +55,7 @@ function approvalCardEl(a) {
     card.classList.add("actionable");
     // create-vault-note shows its path via the editable title field below, so the
     // static APPLIES-TO chip is redundant (and would show the pre-edit title).
-    if (!isNewNote) {
+    if (!isNewNote && !isReContract) {
       const chip = el("div", "appr-apply");
       chip.append(el("span", "appr-apply-label", "APPLIES TO"), el("code", "appr-apply-path", a.applyPath));
       card.append(chip);
@@ -76,7 +94,7 @@ function approvalCardEl(a) {
 
     if (isReContract && a.reContractPayload) {
       // the intake card: the owner ALWAYS adjusts amounts before confirming
-      card.append(buildReContractEditor(a));
+      card.append(buildReContractEditor(a, bodyText));
     } else if (isResolve && a.aionPayload) {
       // a closed-loop resolve: the evidence is the body above; the editable
       // bits are the matching title and the outcome/date — kind is fixed
@@ -117,6 +135,19 @@ function approvalCardEl(a) {
     });
   if (blocked) { confirmBtn.disabled = true; confirmBtn.classList.add("disabled"); }
   actions.append(confirmBtn, pillLight("Reject", () => spiritApprovalAct(a.id, "reject")));
+  // a card whose payload can be internally inconsistent (the contract split
+  // vs its total) says so on the button, not only after the click: the
+  // editor's own check drives the disabled state and the note beside it
+  if (a.__gateBind) {
+    const note = el("span", "appr-gate");
+    actions.append(note);
+    a.__gateBind((ok, text) => {
+      confirmBtn.disabled = blocked || !ok;
+      confirmBtn.classList.toggle("disabled", blocked || !ok);
+      note.textContent = text;
+      note.classList.toggle("off", !ok);
+    });
+  }
   card.append(actions);
   return card;
 }
@@ -360,9 +391,10 @@ async function apprReRegistry() {
   return apprReReg;
 }
 
-// apprRegistryFor: the domain split — re-backlog cards get the RE registry.
+// apprRegistryFor: the domain split — the real-estate cards (a backlog
+// candidate, an intake contract) get the RE registry; everything else aion.
 function apprRegistryFor(type) {
-  return type === "re-backlog" ? apprReRegistry() : apprAionRegistry();
+  return type === "re-backlog" || type === "re-contract" ? apprReRegistry() : apprAionRegistry();
 }
 
 // buildAionEditor renders the editable aion payload form: kind flip
@@ -371,80 +403,204 @@ function apprRegistryFor(type) {
 // place (the id never changes; Confirm applies whatever was last saved).
 // Rock and owner hotload suggestions: active rocks from the goals ladder,
 // initials from people.md — free text still commits for one-offs.
-// buildReContractEditor — the intake card's structured view (overhaul §5):
-// contractor (match or create-new badge) · kind/total/date/expiry ·
-// EDITABLE allocation amounts + total · proposed milestones · extracted
-// tasks/decisions · terms. Edits flush through the recontract endpoint and
-// RIDE the confirm (same __payloadFlush contract as the aion editors).
-function buildReContractEditor(a) {
+// apprMoney parses a money field the way every RE amount input does.
+function apprMoney(v) { return parseFloat(String(v).replace(/[$,\s]/g, "")) || 0; }
+// apprDeslug is the immediate label for a slug the registry has not answered
+// for yet (it resolves async; the node upgrades in place).
+function apprDeslug(v) { return String(v || "").replace(/^property\//, "").replace(/-/g, " "); }
+
+// buildReContractEditor — the intake card (overhaul §5, redesigned per
+// FEED-CONTRACT-CARD 1b): money is the headline AND the input; the split
+// reconciles right under it against a live Σ that gates Confirm; then the
+// consequence — the records Confirm actually writes — and only then the
+// terms and the extract, collapsed. Edits flush through the recontract
+// endpoint and RIDE the confirm (the __payloadFlush contract).
+function buildReContractEditor(a, evidence) {
   const p = JSON.parse(JSON.stringify(a.reContractPayload)); // working copy
-  const box = el("div", "appr-aion re-intake-editor");
-  const line = (label, node) => {
-    const row = el("div", "appr-aion-row");
-    row.append(el("span", "appr-aion-label", label), node);
-    box.append(row);
-  };
-  // contractor
-  const ctr = p.contractor
-    ? el("span", "appr-aion-val", "@" + p.contractor)
-    : el("span", "appr-aion-val", (p.contractor_create || "?") + "  ");
-  if (!p.contractor) ctr.append(el("span", "appr-new-badge", "new record"));
-  line("contractor", ctr);
-  line("kind", el("span", "appr-aion-val", p.kind + (p.date ? " · " + p.date : "") + (p.expires ? " · expires " + p.expires : "")));
-  // total — editable
+  const box = el("div", "re-intake-editor");
+  const allocs = p.allocations || [];
+
+  // slug → label. Every slug renders de-slugged immediately and upgrades in
+  // place when the RE registry answers (properties carry the real address,
+  // rocks their text, contractors their name) — the card never blocks on it.
+  const names = { prop: apprDeslug, rock: apprDeslug, person: apprDeslug };
+  const tied = []; // {node, render} — re-run when the registry lands
+  const tie = (node, render) => { node.textContent = render(); tied.push({ node, render }); return node; };
+  apprRegistryFor(a.type).then((reg) => {
+    names.prop = (slug) => {
+      const hit = (reg.properties || []).find((x) => x.slug === slug);
+      return hit ? rePropLabel(hit) : apprDeslug(slug);
+    };
+    names.rock = (id) => {
+      const hit = (reg.rocks || []).find((r) => r.id === id);
+      return hit ? hit.label : apprDeslug(id);
+    };
+    names.person = (slug) => {
+      const hit = (reg.people || []).find((x) => x.initials === slug);
+      return hit ? hit.name.replace(/\s*\(.*\)$/, "") : apprDeslug(slug);
+    };
+    tied.forEach((t) => { t.node.textContent = t.render(); });
+  }).catch(() => {});
+
+  // ---- 1. the total: the largest thing on the card, and the field ----
+  const totalSec = el("div", "re-intake-total");
+  const totalCol = el("div", "re-intake-total-col");
+  totalCol.append(el("span", "micro-label", "total"));
   const totalIn = inputEl("total");
-  totalIn.className = "pp-in appr-money-in";
-  totalIn.value = p.total;
-  totalIn.oninput = () => { p.total = parseFloat(totalIn.value.replace(/[$,]/g, "")) || 0; dirty(); };
-  line("total $", totalIn);
-  // allocations — editable amounts (the owner always adjusts)
-  const allocBox = el("div", "re-intake-allocs");
-  (p.allocations || []).forEach((al) => {
+  totalIn.className = "re-intake-total-in";
+  totalIn.value = fmtMoney(p.total);
+  totalIn.oninput = () => { p.total = apprMoney(totalIn.value); dirty(); };
+  totalIn.onblur = () => { totalIn.value = fmtMoney(p.total); };
+  totalCol.append(totalIn);
+  const ident = el("div", "re-intake-ident");
+  ident.append(el("div", "re-intake-name", p.name || a.action));
+  const metaBits = [];
+  if (p.contractor) metaBits.push(tie(el("span"), () => names.person(p.contractor)));
+  else if (p.contractor_create) metaBits.push(el("span", "", p.contractor_create));
+  metaBits.push(tie(el("span"), propsPhrase));
+  if (p.kind) metaBits.push(el("span", "", p.kind));
+  if (p.date) metaBits.push(el("span", "", p.date));
+  if (p.expires) metaBits.push(el("span", "", "expires " + p.expires));
+  const meta = el("div", "re-intake-meta");
+  metaBits.forEach((b, i) => { if (i) meta.append(el("span", "re-intake-dot", "·")); meta.append(b); });
+  ident.append(meta);
+  totalSec.append(totalCol, ident);
+  box.append(totalSec);
+
+  // ---- 2. the split: the field the owner always adjusts, with a live Σ ----
+  const splitSec = el("div", "re-intake-sec");
+  const splitHead = el("div", "re-intake-sec-head");
+  splitHead.append(el("span", "micro-label re-intake-sec-label", "split"));
+  const sumNote = el("span", "re-intake-sum");
+  splitHead.append(sumNote);
+  splitSec.append(splitHead);
+  const bars = [];
+  const reasons = [...new Set(allocs.map((al) => al.reason || ""))];
+  const sharedReason = allocs.length > 1 && reasons.length === 1 && reasons[0] ? reasons[0] : "";
+  allocs.forEach((al) => {
     const row = el("div", "re-intake-alloc");
-    row.append(el("span", "re-intake-alloc-prop", al.property));
-    row.append(el("span", "re-alloc-node", al.node));
+    const who = el("div", "re-intake-alloc-who");
+    who.append(tie(el("div", "re-intake-alloc-prop"), () => names.prop(al.property)));
+    who.append(tie(el("div", "re-intake-alloc-node"), () => nodeLabel(al)));
+    row.append(who);
+    if (allocs.length > 1) {
+      // proportion of the total, so a multi-property split reads at a glance
+      const track = el("span", "re-intake-bar");
+      const fill = el("i", "");
+      track.append(fill);
+      row.append(track);
+      bars.push({ al, fill });
+    }
     const amt = inputEl("amount");
-    amt.className = "pp-in appr-money-in";
-    amt.value = al.amount;
-    amt.oninput = () => { al.amount = parseFloat(amt.value.replace(/[$,]/g, "")) || 0; dirty(); };
+    amt.className = "re-intake-amt-in";
+    amt.value = fmtMoney(al.amount);
+    amt.oninput = () => { al.amount = apprMoney(amt.value); dirty(); };
+    amt.onblur = () => { amt.value = fmtMoney(al.amount); };
     row.append(amt);
-    allocBox.append(row);
-    if (al.reason) allocBox.append(el("div", "re-intake-reason", "· " + al.reason));
+    splitSec.append(row);
+    // one shared reasoning (an evenly-split combined scope) is one line, not
+    // the same paragraph under every property
+    if (al.reason && !sharedReason) splitSec.append(el("div", "re-intake-reason", "· " + al.reason));
   });
-  const sumNote = el("div", "re-intake-sum");
-  allocBox.append(sumNote);
-  line("split", allocBox);
+  if (sharedReason) splitSec.append(el("div", "re-intake-reason", "· " + sharedReason));
+  box.append(splitSec);
+
+  // ---- 3. the consequence: what Confirm writes, in one list ----
+  // Derived from the apply lane itself (approvals/recontract.go): the
+  // contractor record when it is new, the new milestones, the extracted
+  // tasks/decisions, then the contract record. The ledger line is the money
+  // effect of those allocations — it re-reads as the split is edited.
+  const writesSec = el("div", "re-intake-sec");
+  writesSec.append(el("div", "micro-label re-intake-sec-label", "confirm writes"));
+  const rows = [];
+  const writeRow = (glyph, tag, render) => {
+    const row = el("div", "re-intake-write");
+    row.append(el("span", "re-intake-write-glyph g-" + tag, glyph));
+    row.append(tie(el("span", "re-intake-write-text"), render));
+    row.append(el("span", "micro-label re-intake-tag t-" + tag, tag.replace(/-/g, " · ")));
+    writesSec.append(row);
+    rows.push(row);
+  };
+  if (!p.contractor && p.contractor_create) {
+    writeRow("＋", "new", () => p.contractor_create + " — contractor record");
+  }
+  (p.new_milestones || []).forEach((m) => {
+    writeRow("＋", "new", () => m.name + " — milestone under " + names.rock(m.rock) + ", " + names.prop(m.property));
+  });
+  (p.tasks || []).forEach((t) => {
+    writeRow(t.decision ? "◇" : "○", t.decision ? "decision" : "task-" + (t.owner ? t.owner : "you"),
+      () => t.text + " → " + names.prop(t.property));
+  });
+  writeRow("＋", p.kind || "contract", () => (p.name || "this contract") + " — " + (p.kind || "contract") + " record");
+  const recordCount = rows.length;
+  const ledgerText = tie(el("span", "re-intake-write-text"),
+    () => fmtMoney(sumOf()) + (p.kind === "contract" ? " committed against " : " proposed against ") + propsPhrase());
+  const ledgerRow = el("div", "re-intake-write");
+  ledgerRow.append(el("span", "re-intake-write-glyph g-ledger", "$"), ledgerText,
+    el("span", "micro-label re-intake-tag t-ledger", "ledger"));
+  writesSec.append(ledgerRow);
+  box.append(writesSec);
+
+  // ---- 4. evidence, one click away: terms, risk, the extract, the path ----
+  const detail = el("div", "re-intake-detail");
+  const shutLabel = "terms, risk and the source ▾", openLabel = "hide terms, risk and the source ▴";
+  const toggle = el("button", "re-intake-toggle", shutLabel);
+  const body = el("div", "re-intake-detail-body");
+  body.hidden = true;
+  toggle.onclick = () => { body.hidden = !body.hidden; toggle.textContent = body.hidden ? shutLabel : openLabel; };
+  detail.append(toggle, body);
+  const line = (label, node) => {
+    const row = el("div", "re-intake-row");
+    row.append(el("span", "micro-label re-intake-row-label", label), node);
+    body.append(row);
+  };
+  ["terms", "exclusions", "risk_items"].forEach((k) => {
+    if ((p[k] || []).length) line(k.replace("_", " "), el("span", "re-intake-row-val", p[k].join(" · ")));
+  });
+  if (evidence && evidence.trim()) {
+    const pre = el("pre", "appr-body re-intake-source");
+    pre.textContent = evidence.trim();
+    body.append(pre);
+  }
+  const chip = el("div", "appr-apply");
+  chip.append(el("span", "appr-apply-label", "APPLIES TO"), el("code", "appr-apply-path", a.applyPath));
+  body.append(chip);
+  box.append(detail);
+
+  // ---- the Σ gate: checkSum()'s rule, visible before the click ----
+  function sumOf() { return allocs.reduce((n, al) => n + (al.amount || 0), 0); }
+  // an allocation's node id is <rock>/<slug(milestone)>; when that milestone
+  // is one this proposal creates, show the name it will be written under
+  function nodeLabel(al) {
+    const parts = String(al.node || "").split("/");
+    const tail = parts.slice(1).join("/");
+    const made = (p.new_milestones || []).find((m) =>
+      m.property === al.property && tail === String(m.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""));
+    return [names.rock(parts[0]), made ? made.name : apprDeslug(tail)].filter(Boolean).join(" / ");
+  }
+  function propsPhrase() {
+    const labels = [...new Set(allocs.map((al) => names.prop(al.property)))];
+    return labels.length > 2 ? labels.length + " properties" : labels.join(" + ");
+  }
+  const gate = { push: () => {} };
   const checkSum = () => {
-    const sum = (p.allocations || []).reduce((n, al) => n + (al.amount || 0), 0);
-    const off = Math.abs(sum - (p.total || 0)) > 0.01;
-    sumNote.textContent = off ? "Σ " + fmtMoney(sum) + " ≠ total " + fmtMoney(p.total || 0) + " — fix before confirm" : "";
+    const sum = sumOf(), total = p.total || 0;
+    const off = Math.abs(sum - total) > 0.01;
+    sumNote.textContent = off
+      ? "Σ " + fmtMoney(sum) + " ≠ total " + fmtMoney(total) + " — fix before confirm"
+      : allocs.length > 1 ? "reconciles · " + allocs.length + " properties, full amount"
+        : "reconciles · single property, full amount";
     sumNote.classList.toggle("off", off);
+    bars.forEach((b) => { b.fill.style.width = (total > 0 ? Math.max(0, Math.min(100, (b.al.amount / total) * 100)) : 0) + "%"; });
+    tied.forEach((t) => { t.node.textContent = t.render(); });
+    gate.push(!off, off ? "● the split must reconcile" : "writes " + recordCount + " record" + (recordCount === 1 ? "" : "s"));
     return !off;
   };
+  a.__gateBind = (fn) => { gate.push = fn; checkSum(); };
   checkSum();
-  // proposed structure + extractions — display (they apply as written)
-  if ((p.new_milestones || []).length) {
-    line("milestones", el("span", "appr-aion-val",
-      p.new_milestones.map((m) => m.property + ": " + m.name + " (under " + m.rock + ")").join(" · ")));
-  }
-  if ((p.tasks || []).length) {
-    const t = el("div", "");
-    p.tasks.forEach((tk) => t.append(el("div", "appr-aion-val",
-      (tk.decision ? "◇ " : "○ ") + tk.text + "  → " + tk.property + (tk.parent ? " / " + tk.parent : ""))));
-    line("tasks", t);
-  }
-  ["terms", "exclusions", "risk_items"].forEach((k) => {
-    if ((p[k] || []).length) line(k.replace("_", " "), el("span", "appr-aion-val", p[k].join(" · ")));
-  });
-  if (p.doc && p.doc.startsWith("sha256:")) {
-    const dl = el("a", "pp3-link", "document ↗");
-    dl.href = "/api/realestate/files/" + p.doc.slice(7);
-    dl.target = "_blank";
-    line("document", dl);
-  }
+
   let isDirty = false;
   const dirty = () => { isDirty = true; checkSum(); };
-  // edits ride the confirm (the __payloadFlush contract)
   a.__payloadFlush = async () => {
     if (!checkSum()) throw new Error("Σ allocations must equal total");
     if (!isDirty) return;

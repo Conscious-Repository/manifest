@@ -227,8 +227,14 @@
 
   /* ---- FEED: cards in the 16px gutter; verdicts full-width side by side ---- */
   .feed-card { border-radius: var(--radius-lg); }
-  .feed-card .appr-actions { display: flex; gap: var(--sp-4); }
+  .feed-card .appr-actions { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
   .feed-card .appr-actions .pill { flex: 1; min-height: 44px; justify-content: center; }
+  /* the contract card: the figure keeps the phone's full width, its scope
+     line wraps under it, the proportion bar drops, the gate note gets a row */
+  .re-intake-total { flex-wrap: wrap; gap: var(--sp-4); }
+  .re-intake-ident { padding-bottom: 0; }
+  .re-intake-bar { display: none; }
+  .appr-gate { margin-left: 0; width: 100%; }
 
   /* ---- CALENDAR: cells become day number + ≤3 accent dots; no titles ---- */
   .cal-grid { grid-auto-rows: minmax(56px, auto); }

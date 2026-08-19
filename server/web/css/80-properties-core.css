@@ -347,14 +347,7 @@
 .re-cform-alloc { display: grid; grid-template-columns: 1fr 1fr 120px; gap: var(--sp-4); padding: var(--sp-2) 0; }
 .re-cform .pp3-uw-actions { margin-top: var(--sp-5); }
 
-/* the FEED intake card (re-contract) */
-.re-intake-editor .appr-money-in { font-family: var(--mono); width: 110px; text-align: right; }
-.re-intake-alloc { display: flex; gap: var(--sp-4); align-items: baseline; padding: var(--sp-1) 0; }
-.re-intake-alloc-prop { font-weight: 500; }
-.re-intake-reason { font-size: var(--fs-2xs); color: var(--base-40); padding-left: var(--sp-4); }
-.re-intake-sum { font-family: var(--mono); font-size: var(--fs-2xs); }
-.re-intake-sum.off { color: var(--over); }
-.appr-new-badge { font-family: var(--mono); font-size: var(--fs-2xs); border: 1px solid var(--accent-soft); color: var(--accent); border-radius: var(--radius-lg); padding: 0 var(--sp-3); margin-left: var(--sp-2); }
+/* the FEED intake card lives with the other approval cards (55-approvals.css) */
 
 /* GOALS tab: per-property rock trails */
 .re-proprocks-label { margin-top: var(--sp-8); }
