@@ -302,10 +302,12 @@ func (s *Server) handlePortalDismiss(w http.ResponseWriter, r *http.Request) {
 	}
 	// team-portal notices dismiss into the bridge's own cache (same id-prefix
 	// routing the portals service uses internally for clickup/benchling)
-	if s.teamBridge != nil && s.teamBridge.Owns(b.ID) {
-		s.teamBridge.Dismiss(b.ID, time.Now())
-		writeJSON(w, map[string]bool{"ok": true})
-		return
+	for _, tb := range s.teamBridges {
+		if tb.Owns(b.ID) {
+			tb.Dismiss(b.ID, time.Now())
+			writeJSON(w, map[string]bool{"ok": true})
+			return
+		}
 	}
 	// bank-feed digests dismiss into the feed's own cache (bank: prefix)
 	if s.bankFeed != nil && strings.HasPrefix(b.ID, "bank:") {
@@ -329,8 +331,8 @@ func (s *Server) portalCards() []portals.Card {
 	if s.portals != nil {
 		cards = s.portals.Cards()
 	}
-	if s.teamBridge != nil {
-		cards = append(cards, s.teamBridge.Cards(time.Now())...)
+	for _, tb := range s.teamBridges {
+		cards = append(cards, tb.Cards(time.Now())...)
 	}
 	cards = append(cards, s.bankFeedCards()...)
 	return cards
@@ -342,8 +344,8 @@ func (s *Server) portalInboxCount() int {
 	if s.portals != nil {
 		n = s.portals.InboxCount()
 	}
-	if s.teamBridge != nil {
-		n += len(s.teamBridge.Cards(time.Now()))
+	for _, tb := range s.teamBridges {
+		n += len(tb.Cards(time.Now()))
 	}
 	n += len(s.bankFeedCards())
 	return n

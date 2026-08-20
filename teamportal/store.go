@@ -26,9 +26,15 @@ import (
 // backup; nothing here requires a commit at runtime) and disposable in the
 // architectural sense: it is portal team state, never vault truth.
 type Store struct {
-	dir string
-	mu  sync.Mutex
+	dir    string
+	policy Policy // zero value = the AION domain gate (ooda-portal plan, Stage A)
+	mu     sync.Mutex
 }
+
+// WithPolicy scopes the store's own identity check — today only the proposal
+// TARGET gate below. The zero value keeps AION's domain gate exactly, so every
+// existing New(dir) caller is unaffected. Fluent, mirroring Auth.WithTokens.
+func (s *Store) WithPolicy(p Policy) *Store { s.policy = p; return s }
 
 // New opens (creating if needed) the team-state directory.
 func New(dir string) (*Store, error) {
@@ -713,8 +719,16 @@ func (s *Store) Propose(actor Identity, target, targetOwner, kind, title, rock, 
 	if title == "" {
 		return Proposal{}, errors.New("empty title")
 	}
-	if !Authorized(target) {
-		return Proposal{}, fmt.Errorf("target must be an @%s account", Domain)
+	// NOTE (ooda-portal audit): this gate is the reason a portal policy has to
+	// reach the STORE and not just the Auth — without it, a partner with no
+	// address under the portal's domain cannot be proposed to at all. Kept
+	// ABOVE s.mu.Lock() below: EmailOverrides() (which AllowExtra reads) takes
+	// no lock, but keeping the gate lock-free is the invariant to preserve.
+	if !s.policy.Allows(target) {
+		if s.policy.AllowExtra == nil {
+			return Proposal{}, fmt.Errorf("target must be an @%s account", s.policy.DomainName())
+		}
+		return Proposal{}, fmt.Errorf("target must be an @%s account or an invited partner address", s.policy.DomainName())
 	}
 	if kind != "decision" {
 		kind = "task"

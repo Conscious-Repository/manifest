@@ -673,7 +673,12 @@ func main() {
 		}
 	}
 	if portalOpts.Live == nil {
-		portalOpts.Live = srv.AionLive()
+		// Live is an interface since the ooda-portal seam: assigning a nil
+		// *AionLive would make it non-nil, pass portal.go's nil check, and
+		// panic on the first data-file request. Only assign a real one.
+		if live := srv.AionLive(); live != nil {
+			portalOpts.Live = live
+		}
 	}
 	// TODO PANEL (todo-panel plan Phases 1-2): the plan-record layer over
 	// system/todo-plans + the three-way thread stores. The private store is

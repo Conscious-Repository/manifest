@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,8 +24,10 @@ import (
 // the clickup/benchling cache discipline, never in the shared team dir.
 type Bridge struct {
 	store *Store
-	dir   string // <dataDir>/portal-cache/aion-portal
+	dir   string // <dataDir>/portal-cache/<name>
 	admin string // the owner's email — his own writes never nag his own feed
+	name  string // card-id prefix + source tag; namespaces two portals' cards
+	link  string // deep link the card opens
 
 	mu sync.Mutex
 }
@@ -32,10 +35,19 @@ type Bridge struct {
 const noticeRetention = 14 * 24 * time.Hour
 
 func NewBridge(store *Store, dataDir, adminEmail string) *Bridge {
+	return NewBridgeNamed(store, dataDir, adminEmail, "aion-portal", "https://portal.aion.bio/#task")
+}
+
+// NewBridgeNamed namespaces a second portal's notices (ooda-portal plan,
+// Stage A): the card-id prefix, the Owns() claim, and the dismissal cache all
+// key on name, so one portal can never dismiss the other's cards.
+func NewBridgeNamed(store *Store, dataDir, adminEmail, name, deepLink string) *Bridge {
 	return &Bridge{
 		store: store,
-		dir:   filepath.Join(dataDir, "portal-cache", "aion-portal"),
+		dir:   filepath.Join(dataDir, "portal-cache", name),
 		admin: adminEmail,
+		name:  name,
+		link:  deepLink,
 	}
 }
 
@@ -51,7 +63,7 @@ func (b *Bridge) readDismissed() map[string]string {
 
 // Owns reports whether a feed card id belongs to this bridge.
 func (b *Bridge) Owns(cardID string) bool {
-	return len(cardID) > 12 && cardID[:12] == "aion-portal:"
+	return strings.HasPrefix(cardID, b.name+":")
 }
 
 // Dismiss records a card id (GC'd past retention on the next Cards read).
@@ -84,15 +96,15 @@ func (b *Bridge) Cards(now time.Time) []portals.Card {
 		if b.admin != "" && e.Actor == b.admin {
 			continue
 		}
-		id := fmt.Sprintf("aion-portal:%d:%s", e.TS.UnixNano(), e.Action)
+		id := fmt.Sprintf("%s:%d:%s", b.name, e.TS.UnixNano(), e.Action)
 		if _, ok := dismissed[id]; ok {
 			continue
 		}
 		title, detail := describe(e)
 		cards = append(cards, portals.Card{
-			ID: id, Type: "portal-item", Portal: "aion-portal",
+			ID: id, Type: "portal-item", Portal: b.name,
 			Title: title, Detail: detail, Change: e.Action, Actor: e.Actor,
-			URL:  "https://portal.aion.bio/#task",
+			URL:  b.link,
 			Date: e.TS.Format(time.RFC3339),
 		})
 	}

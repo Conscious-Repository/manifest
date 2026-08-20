@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -21,11 +22,19 @@ import (
 // process, so these are plain closures wired in main. All nil-safe: a nil
 // callback means the route isn't registered / the hook is skipped.
 type PortalOptions struct {
-	Auth       *teamportal.Auth       // Google OAuth + sessions (nil → no sign-in)
-	Tokens     *teamportal.TokenStore // revocable per-user API tokens (nil → no API access panel)
-	Store      *teamportal.Store      // team state on /shared (nil → no writes)
-	Live       *AionLive              // live vault base + team overlay (nil → embedded fallback)
-	AdminEmail string                 // the portal owner — may decide any proposal
+	Auth   *teamportal.Auth       // Google OAuth + sessions (nil → no sign-in)
+	Tokens *teamportal.TokenStore // revocable per-user API tokens (nil → no API access panel)
+	Store  *teamportal.Store      // team state on /shared (nil → no writes)
+	Live   PortalLive             // live base + team overlay (nil → embedded fallback)
+	// WebRoot is the embedded subtree this portal's app shell is served from
+	// ("" → "web/portal"). login.html and the anonymous /assets/ exemption
+	// follow it automatically.
+	WebRoot string
+	// ReadRoutes registers this portal's OWN read surface ("" → the AION
+	// data-file routes). The WRITE routes below are registered unconditionally
+	// and are never duplicated per portal — one copy of the permission model.
+	ReadRoutes func(mux *http.ServeMux, opt PortalOptions)
+	AdminEmail string // the portal owner — may decide any proposal
 	// OnComment runs after a member's comment is stored — the dialog hook
 	// (mention → auto-assign + relay; assigned item → every comment relays).
 	OnComment func(itemID string, mentions []string, text string)
@@ -74,21 +83,27 @@ type PortalOptions struct {
 // target-approved). Team state lives in opt.Store and AionLive composes it
 // server-side over the owner-authored base.
 func PortalHandler(opt PortalOptions) (http.Handler, error) {
-	sub, err := fs.Sub(webFiles, "web/portal")
+	// A typed-nil projection (a nil *AionLive stored in the interface) is
+	// NOT nil to `!= nil`, so it would pass the read-route check below and
+	// panic on the first request. Normalize it away here rather than trusting
+	// every caller to (ooda-portal plan, Stage A step 5).
+	opt.Live = liveOrNil(opt.Live)
+	webRoot := opt.WebRoot
+	if webRoot == "" {
+		webRoot = "web/portal"
+	}
+	sub, err := fs.Sub(webFiles, webRoot)
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/", noCache(etagFor(sub), http.FileServer(http.FS(sub))))
 	if opt.Live != nil {
-		for _, path := range []string{
-			"/data/finances.json", "/data/vto.json", "/data/goals.json", "/data/backlog.json",
-			"/data/heuristics.json", "/data/people.json", "/data/meta.json",
-			"/content/hiring.md", "/content/references.md",
-		} {
-			mux.HandleFunc("GET "+path, handleAionLiveFile(opt.Live, path))
+		if opt.ReadRoutes != nil {
+			opt.ReadRoutes(mux, opt)
+		} else {
+			aionReadRoutes(mux, opt.Live)
 		}
-		mux.HandleFunc("GET /api/live/revision", handleAionLiveRevision(opt.Live))
 	}
 
 	if opt.Auth != nil {
@@ -213,7 +228,7 @@ func requireSignIn(opt PortalOptions, inner http.Handler, loginPage []byte) http
 			http.Redirect(w, r, "/oauth2/login", http.StatusFound) // fallback if the page is missing
 			return
 		}
-		http.Error(w, "sign in with your @"+teamportal.Domain+" account to view this portal", http.StatusUnauthorized)
+		http.Error(w, "sign in with your @"+opt.Auth.Domain()+" account to view this portal", http.StatusUnauthorized)
 	})
 }
 
@@ -231,7 +246,7 @@ func isBrowserNav(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-func handleAionLiveFile(live *AionLive, path string) http.HandlerFunc {
+func handleAionLiveFile(live PortalLive, path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		b, rev, err := live.File(path)
 		if err != nil {
@@ -254,7 +269,7 @@ func handleAionLiveFile(live *AionLive, path string) http.HandlerFunc {
 	}
 }
 
-func handleAionLiveRevision(live *AionLive) http.HandlerFunc {
+func handleAionLiveRevision(live PortalLive) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		st := live.Status()
 		etag := `"` + st.EffectiveRevision + `"`
@@ -398,13 +413,21 @@ func (p *portalAPI) isAdmin(email string) bool {
 // identify authenticates a write request; 401 (with a clear message) when
 // anonymous or expired.
 func (p *portalAPI) identify(w http.ResponseWriter, r *http.Request) (teamportal.Identity, bool) {
-	if p.opt.Auth == nil {
+	return PortalIdentify(p.opt, w, r)
+}
+
+// PortalIdentify authenticates a portal request exactly the way every shared
+// write route does (cookie first, then bearer), writing the 401/503 itself.
+// Exported so a portal's own ReadRoutes can gate its routes without
+// re-implementing auth — the one thing that must never be copied.
+func PortalIdentify(opt PortalOptions, w http.ResponseWriter, r *http.Request) (teamportal.Identity, bool) {
+	if opt.Auth == nil {
 		http.Error(w, "sign-in is not configured", http.StatusServiceUnavailable)
 		return teamportal.Identity{}, false
 	}
-	id, ok := p.opt.Auth.IdentifyRequest(r)
+	id, ok := opt.Auth.IdentifyRequest(r)
 	if !ok {
-		http.Error(w, "sign in with your @"+teamportal.Domain+" account to write", http.StatusUnauthorized)
+		http.Error(w, "sign in with your @"+opt.Auth.Domain()+" account to write", http.StatusUnauthorized)
 		return teamportal.Identity{}, false
 	}
 	return id, true
@@ -519,7 +542,7 @@ func (p *portalAPI) handleState(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotModified)
 			return
 		}
-		writeJSON(w, p.opt.Live.TeamState())
+		writeJSON(w, p.opt.Live.TeamStateJSON())
 		return
 	}
 	writeJSON(w, p.opt.Store.Ext())
@@ -531,7 +554,7 @@ func (p *portalAPI) handleState(w http.ResponseWriter, r *http.Request) {
 // read on every request; otherwise the embedded published fallback is reused.
 func (p *portalAPI) handleSnapshot(w http.ResponseWriter, r *http.Request) {
 	if p.opt.Live != nil {
-		out := map[string]any{"team": p.opt.Live.TeamState()}
+		out := map[string]any{"team": p.opt.Live.TeamStateJSON()}
 		for key, path := range map[string]string{"backlog": "/data/backlog.json", "goals": "/data/goals.json", "people": "/data/people.json", "meta": "/data/meta.json"} {
 			if b, _, err := p.opt.Live.File(path); err == nil {
 				var value any
@@ -936,7 +959,14 @@ func (p *portalAPI) handleDecide(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "proposal not found", http.StatusNotFound)
 		return
 	}
-	if !p.isAdmin(id.Email) && !strings.EqualFold(id.Email, target) {
+	// The target arm compares IDENTITY, not just the address string: one person
+	// may hold two addresses that resolve to the same initials (an OODA partner
+	// with both an ooda.group and a personal address), and without this they
+	// would get a 403 on their own proposal when signed in as the other one.
+	// A widening for AION in principle — no such second address exists there —
+	// taken deliberately rather than branched on an unrelated policy field.
+	if !p.isAdmin(id.Email) && !strings.EqualFold(id.Email, target) &&
+		!strings.EqualFold(p.ownerToken(id.Email), p.ownerToken(target)) {
 		http.Error(w, "only "+target+" or the portal owner can decide this", http.StatusForbidden)
 		return
 	}
@@ -953,4 +983,51 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// PortalLiveStatus is the projection-status shape a portal's revision route
+// serves. An ALIAS, not a new type: AionLiveStatus keeps its name for the
+// cockpit and the FEED signal, so nothing outside this seam moves.
+type PortalLiveStatus = AionLiveStatus
+
+// PortalLive is the READ side of a portal (ooda-portal plan, Stage A). These
+// five methods are EXACTLY what this file calls on opt.Live — nothing more, so
+// a second portal can supply a completely different projection (real estate
+// rather than AION) while every WRITE route above stays shared and unforked.
+//
+// If a sixth call appears here, TestPortalLiveIsExactlyFiveMethods stops
+// compiling. That is the point: the seam should be widened deliberately.
+type PortalLive interface {
+	File(urlPath string) ([]byte, string, error)
+	Status() PortalLiveStatus
+	TeamStateJSON() any
+	People() []portalPerson
+	OwnerOf(itemID string) (string, bool)
+}
+
+var _ PortalLive = (*AionLive)(nil)
+
+// aionReadRoutes is the AION portal's read surface — the contract data files
+// and the revision poll. Lifted verbatim out of PortalHandler when the read
+// side became per-portal (ooda-portal plan, Stage A step 6).
+func aionReadRoutes(mux *http.ServeMux, live PortalLive) {
+	for _, path := range []string{
+		"/data/finances.json", "/data/vto.json", "/data/goals.json", "/data/backlog.json",
+		"/data/heuristics.json", "/data/people.json", "/data/meta.json",
+		"/content/hiring.md", "/content/references.md",
+	} {
+		mux.HandleFunc("GET "+path, handleAionLiveFile(live, path))
+	}
+	mux.HandleFunc("GET /api/live/revision", handleAionLiveRevision(live))
+}
+
+// liveOrNil collapses a typed-nil PortalLive to a true nil.
+func liveOrNil(l PortalLive) PortalLive {
+	if l == nil {
+		return nil
+	}
+	if v := reflect.ValueOf(l); v.Kind() == reflect.Ptr && v.IsNil() {
+		return nil
+	}
+	return l
 }

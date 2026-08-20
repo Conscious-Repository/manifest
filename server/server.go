@@ -133,7 +133,7 @@ type Server struct {
 	aionSink interface{ Notify([]string) }
 	// teamBridge surfaces AION team-portal writes as FEED notices (portal
 	// move Phase 4 — same notice kind as clickup/benchling). Nilable.
-	teamBridge *teamportal.Bridge
+	teamBridges []*teamportal.Bridge
 	// todoPlans: the todo-panel plan-record layer (system/todo-plans). Nilable.
 	todoPlans *todoPlansCfg
 	// threads: the todo-panel comment stores (private/RE-shared/aion). Nilable.
@@ -182,12 +182,24 @@ func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"date": date, "entries": entries, "days": s.ledgerStore.Days()})
 }
 
-// UseTeamPortal wires the team-portal → FEED notices bridge and live overlay.
+// UseTeamPortal wires the AION team-portal → FEED notices bridge and its live
+// overlay. The overlay wiring is AION-SPECIFIC and must not run for a second
+// portal — use AddPortalBridge for those (ooda-portal plan, Stage A step 7).
 func (s *Server) UseTeamPortal(b *teamportal.Bridge, st *teamportal.Store, adminEmail string) {
-	s.teamBridge = b
+	s.AddPortalBridge(b)
 	if s.aionLive != nil {
 		s.aionLive.UseTeam(st, teamportal.Identity{Email: adminEmail, Name: "Benjamin"})
 		_ = s.aionLive.recoverJournal()
+	}
+}
+
+// AddPortalBridge registers a portal's FEED-notice bridge. Every bridge
+// namespaces its own card ids, so cards route home by prefix and one portal
+// can never dismiss another's. A second UseTeamPortal used to OVERWRITE the
+// first, silently stopping AION's notices.
+func (s *Server) AddPortalBridge(b *teamportal.Bridge) {
+	if b != nil {
+		s.teamBridges = append(s.teamBridges, b)
 	}
 }
 

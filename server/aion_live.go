@@ -443,6 +443,11 @@ func (l *AionLive) ManifestItems() []map[string]any {
 	return out
 }
 
+// TeamStateJSON satisfies PortalLive: the same body TeamState returns, boxed
+// so a second portal can serve its own effective-item shape from the shared
+// /api/team/state route. TeamState keeps its concrete type for the cockpit.
+func (l *AionLive) TeamStateJSON() any { return l.TeamState() }
+
 func (l *AionLive) TeamState() aionTeamStateView {
 	ext := teamportal.Ext{Comments: map[string][]teamportal.Comment{}, Overrides: map[string]teamportal.Override{}}
 	if team, _ := l.teamStore(); team != nil {

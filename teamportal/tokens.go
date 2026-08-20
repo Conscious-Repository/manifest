@@ -44,12 +44,19 @@ type tokenFile struct {
 // TokenStore owns revocable per-user API tokens in the secrets tier:
 // <dataDir>/portals/aion-portal-tokens.json (0600).
 type TokenStore struct {
-	path string
-	mu   sync.Mutex
+	path   string
+	policy Policy // zero value = the AION file + prefix (ooda-portal plan, Stage A)
+	mu     sync.Mutex
 }
 
-func NewTokens(dataDir string) *TokenStore {
-	return &TokenStore{path: filepath.Join(dataDir, "portals", "aion-portal-tokens.json")}
+func NewTokens(dataDir string) *TokenStore { return NewTokensPolicy(dataDir, Policy{}) }
+
+// NewTokensPolicy namespaces the token file and prefix per portal, so two
+// portals in one process never share a token file (a shared file would leak
+// one portal's records into the other's List, and race two mutexes over one
+// path).
+func NewTokensPolicy(dataDir string, p Policy) *TokenStore {
+	return &TokenStore{path: p.tokenPath(dataDir), policy: p}
 }
 
 func (s *TokenStore) read() (tokenFile, error) {
@@ -106,8 +113,8 @@ func (s *TokenStore) Mint(id Identity, label string) (string, TokenRecord, error
 	}
 	id.Email = strings.ToLower(strings.TrimSpace(id.Email))
 	id.Name = strings.TrimSpace(id.Name)
-	if !Authorized(id.Email) {
-		return "", TokenRecord{}, fmt.Errorf("not an @%s account: %s", Domain, id.Email)
+	if !s.policy.Allows(id.Email) {
+		return "", TokenRecord{}, fmt.Errorf("not an @%s account: %s", s.policy.DomainName(), id.Email)
 	}
 	label = strings.TrimSpace(label)
 	if label == "" {
@@ -120,7 +127,7 @@ func (s *TokenStore) Mint(id Identity, label string) (string, TokenRecord, error
 	if _, err := rand.Read(raw); err != nil {
 		return "", TokenRecord{}, err
 	}
-	plain := tokenPrefix + base64.RawURLEncoding.EncodeToString(raw)
+	plain := s.policy.tokenPfx() + base64.RawURLEncoding.EncodeToString(raw)
 	sum := sha256.Sum256([]byte(plain))
 	rec := TokenRecord{
 		ID:      "tok_" + base64.RawURLEncoding.EncodeToString(sum[:9]),
@@ -151,7 +158,7 @@ func (s *TokenStore) Mint(id Identity, label string) (string, TokenRecord, error
 // Resolve verifies a plaintext token, rejects revoked/foreign-domain records,
 // and best-effort stamps last_used. Hash comparison is constant-time.
 func (s *TokenStore) Resolve(plaintext string) (Identity, bool) {
-	if s == nil || !strings.HasPrefix(plaintext, tokenPrefix) {
+	if s == nil || !strings.HasPrefix(plaintext, s.policy.tokenPfx()) {
 		return Identity{}, false
 	}
 	sum := sha256.Sum256([]byte(plaintext))
@@ -167,7 +174,7 @@ func (s *TokenStore) Resolve(plaintext string) (Identity, bool) {
 			continue
 		}
 		rec := &f.Tokens[i]
-		if rec.Revoked || !Authorized(rec.Email) {
+		if rec.Revoked || !s.policy.Allows(rec.Email) {
 			return Identity{}, false
 		}
 		now := time.Now().UTC()

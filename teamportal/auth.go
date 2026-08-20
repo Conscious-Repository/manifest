@@ -65,22 +65,26 @@ type Identity struct {
 type Auth struct {
 	clientPath string
 	keyPath    string
+	policy     Policy // set at construction, never mutated — no mu needed
 
 	mu     sync.Mutex
 	key    []byte // cached session HMAC key
 	tokens *TokenStore
 }
 
-// NewAuth resolves the credential paths under dataDir. AION_PORTAL_OAUTH_CLIENT
-// overrides the client file path (mirrors gmailauth's GMAIL_OAUTH_CLIENT).
-func NewAuth(dataDir string) *Auth {
-	cp := filepath.Join(dataDir, "portals", "aion-portal-oauth.json")
-	if p := strings.TrimSpace(os.Getenv("AION_PORTAL_OAUTH_CLIENT")); p != "" {
-		cp = p
-	}
+// NewAuth resolves the credential paths under dataDir for the AION portal.
+// AION_PORTAL_OAUTH_CLIENT overrides the client file path (mirrors gmailauth's
+// GMAIL_OAUTH_CLIENT).
+func NewAuth(dataDir string) *Auth { return NewAuthPolicy(dataDir, Policy{}) }
+
+// NewAuthPolicy is the multi-portal constructor (ooda-portal plan, Stage A):
+// the policy names this instance's domain, cookies, and credential files. The
+// ZERO policy is NewAuth exactly — same paths, same cookies, same gate.
+func NewAuthPolicy(dataDir string, p Policy) *Auth {
 	return &Auth{
-		clientPath: cp,
-		keyPath:    filepath.Join(dataDir, "portals", "aion-portal-session.key"),
+		clientPath: p.clientPath(dataDir),
+		keyPath:    p.keyPath(dataDir),
+		policy:     p,
 	}
 }
 
@@ -99,10 +103,19 @@ func (a *Auth) Enabled() bool {
 	return err == nil
 }
 
-// Authorized is THE domain gate: any @aion.bio account, nothing else.
-func Authorized(email string) bool {
-	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(email)), "@"+Domain)
-}
+// Authorized is THE domain gate for the AION portal: any @aion.bio account,
+// nothing else. Kept as a package func (and as the zero policy's behavior) so
+// every existing caller and test reads unchanged.
+func Authorized(email string) bool { return Policy{}.Allows(email) }
+
+// Authorized applies THIS instance's gate: its Workspace domain, or an address
+// its allow-list names (the OODA portal's partners, who have no ooda.group
+// address).
+func (a *Auth) Authorized(email string) bool { return a.policy.Allows(email) }
+
+// Domain is the Workspace domain this portal gates on — the hd= hint and the
+// user-facing "sign in with your @x account" strings both read it.
+func (a *Auth) Domain() string { return a.policy.DomainName() }
 
 // webClient is the Google "web application" client JSON shape (the file
 // downloaded from Google Cloud console; redacted example committed alongside).
@@ -235,8 +248,8 @@ func (a *Auth) verify(v string) ([]byte, bool) {
 // callback's own check. Exported for the server-side tests that exercise the
 // write endpoints without a live Google round-trip.
 func (a *Auth) SessionCookie(email, name string, secure bool, now time.Time) (*http.Cookie, error) {
-	if !Authorized(email) {
-		return nil, fmt.Errorf("not an @%s account: %s", Domain, email)
+	if !a.Authorized(email) {
+		return nil, fmt.Errorf("not an @%s account: %s", a.policy.DomainName(), email)
 	}
 	b, _ := json.Marshal(sessionPayload{Email: email, Name: name, Exp: now.Add(sessionTTL).Unix()})
 	v, err := a.sign(b)
@@ -244,7 +257,7 @@ func (a *Auth) SessionCookie(email, name string, secure bool, now time.Time) (*h
 		return nil, err
 	}
 	return &http.Cookie{
-		Name: sessionCookie, Value: v, Path: "/",
+		Name: a.policy.sessionCookieName(), Value: v, Path: "/",
 		Expires: now.Add(sessionTTL), MaxAge: int(sessionTTL / time.Second),
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode,
 	}, nil
@@ -253,7 +266,7 @@ func (a *Auth) SessionCookie(email, name string, secure bool, now time.Time) (*h
 // Identify returns the verified identity on r, if any. An expired, tampered,
 // or non-@aion.bio session is simply anonymous.
 func (a *Auth) Identify(r *http.Request) (Identity, bool) {
-	c, err := r.Cookie(sessionCookie)
+	c, err := r.Cookie(a.policy.sessionCookieName())
 	if err != nil || c.Value == "" {
 		return Identity{}, false
 	}
@@ -262,7 +275,7 @@ func (a *Auth) Identify(r *http.Request) (Identity, bool) {
 		return Identity{}, false
 	}
 	var p sessionPayload
-	if json.Unmarshal(body, &p) != nil || p.Exp < time.Now().Unix() || !Authorized(p.Email) {
+	if json.Unmarshal(body, &p) != nil || p.Exp < time.Now().Unix() || !a.Authorized(p.Email) {
 		return Identity{}, false
 	}
 	return Identity{Email: p.Email, Name: p.Name}, true
@@ -312,12 +325,12 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: stateCookie, Value: v, Path: "/", MaxAge: int(stateTTL / time.Second),
+		Name: a.policy.stateCookieName(), Value: v, Path: "/", MaxAge: int(stateTTL / time.Second),
 		HttpOnly: true, Secure: isSecure(r), SameSite: http.SameSiteLaxMode,
 	})
 	// hd biases Google's chooser to the workspace domain (advisory only — the
 	// callback still verifies the email itself).
-	opts := []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("hd", Domain)}
+	opts := []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("hd", a.policy.DomainName())}
 	// After an explicit sign-out (?switch=1) force the account chooser, else
 	// Google silently re-authenticates the still-live session and the user never
 	// leaves — "sign out" would look like it did nothing.
@@ -331,7 +344,7 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 // reads the identity from Google's id_token, enforces the @aion.bio gate, and
 // sets the session cookie.
 func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	sc, err := r.Cookie(stateCookie)
+	sc, err := r.Cookie(a.policy.stateCookieName())
 	if err != nil {
 		http.Error(w, "sign-in expired — start again at /oauth2/login", http.StatusBadRequest)
 		return
@@ -343,7 +356,7 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state mismatch — start again at /oauth2/login", http.StatusBadRequest)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: stateCookie, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: a.policy.stateCookieName(), Value: "", Path: "/", MaxAge: -1})
 	cfg, err := a.oauthConfig(r.Host)
 	if err != nil {
 		http.Error(w, "sign-in unavailable", http.StatusServiceUnavailable)
@@ -359,10 +372,16 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Google returned no verified email — please try again", http.StatusBadGateway)
 		return
 	}
-	if !Authorized(email) {
+	if !a.Authorized(email) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, "This portal accepts @%s accounts only.\nYou signed in as %s — switch Google accounts and try again.\n", Domain, email)
+		// Two arms, deliberately not one format string: the AION wording is
+		// live user-facing text and must stay byte-identical.
+		if a.policy.AllowExtra == nil {
+			fmt.Fprintf(w, "This portal accepts @%s accounts only.\nYou signed in as %s — switch Google accounts and try again.\n", a.policy.DomainName(), email)
+		} else {
+			fmt.Fprintf(w, "This portal accepts @%s accounts and invited partner addresses.\nYou signed in as %s — switch Google accounts, or ask for an invitation.\n", a.policy.DomainName(), email)
+		}
 		return
 	}
 	c, err := a.SessionCookie(email, name, isSecure(r), time.Now())
@@ -377,7 +396,7 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 // HandleLogout (POST /oauth2/logout) clears the session.
 func (a *Auth) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: "", Path: "/", MaxAge: -1,
+		Name: a.policy.sessionCookieName(), Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, Secure: isSecure(r), SameSite: http.SameSiteLaxMode,
 	})
 	w.WriteHeader(http.StatusNoContent)

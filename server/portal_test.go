@@ -1,10 +1,14 @@
 package server
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"manifest/teamportal"
 )
 
 // initialsFor resolves a Google email to the roster person via the explicit
@@ -120,4 +124,58 @@ func readAllString(t *testing.T, resp *http.Response) string {
 		}
 	}
 	return sb.String()
+}
+
+// fakeLive implements PortalLive and NOTHING else. If portal.go ever grows a
+// sixth call on opt.Live, this file stops compiling — which is the point: the
+// read seam between two portals should be widened deliberately, not by
+// accident (ooda-portal plan, Stage A step 5).
+type fakeLive struct{ owner string }
+
+func (f *fakeLive) File(string) ([]byte, string, error) { return nil, "", errNoFile }
+func (f *fakeLive) Status() PortalLiveStatus            { return PortalLiveStatus{BaseRevision: "fake"} }
+func (f *fakeLive) TeamStateJSON() any                  { return map[string]any{"fake": true} }
+func (f *fakeLive) People() []portalPerson              { return nil }
+func (f *fakeLive) OwnerOf(string) (string, bool)       { return f.owner, f.owner != "" }
+
+var errNoFile = errors.New("no such file")
+
+var _ PortalLive = (*fakeLive)(nil)
+
+// A portal driven by a NON-Aion projection serves the shared routes fine, and
+// a typed-nil *AionLive must never reach a handler (it would be a non-nil
+// interface and panic on the first data request).
+func TestPortalLiveSeamAcceptsAnyProjection(t *testing.T) {
+	store, err := teamportal.New(filepath.Join(t.TempDir(), "team"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := PortalHandler(PortalOptions{
+		Auth: teamportal.NewAuth(t.TempDir()), Store: store,
+		AdminEmail: "ben@ooda.group", Live: &fakeLive{owner: "BPA"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/team/state", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 401 && rec.Code != 200 {
+		t.Fatalf("team/state through a foreign projection: %d", rec.Code)
+	}
+
+	// typed-nil guard: main.go must never assign a nil *AionLive, and a
+	// handler built with one must not panic if it somehow does.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("typed-nil *AionLive panicked: %v", r)
+		}
+	}()
+	var nilLive *AionLive
+	h2, err := PortalHandler(PortalOptions{Live: nilLive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec2 := httptest.NewRecorder()
+	h2.ServeHTTP(rec2, httptest.NewRequest("GET", "/api/live/revision", nil))
 }
