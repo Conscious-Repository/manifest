@@ -144,6 +144,11 @@ type Proposal struct {
 	DecidedBy    string    `json:"decided_by,omitempty"`
 	DecidedAt    time.Time `json:"decided_at,omitempty"`
 	ItemID       string    `json:"item_id,omitempty"` // the team item minted on approval
+	// Payload carries a portal-specific proposal body the store never
+	// interprets — the OODA portal's bid form (property, node, contractor,
+	// amount, scope) rides here so a partner's bid can be reviewed and
+	// materialized by the owner without the store learning what a bid is.
+	Payload map[string]any `json:"payload,omitempty"`
 }
 
 // Ext is the whole extended store (items.ext.json).
@@ -715,6 +720,13 @@ func (s *Store) AddItem(actor Identity, owner, kind, title, rock, due string, no
 
 // Propose files an item suggestion for another person (approvals-model mirror).
 func (s *Store) Propose(actor Identity, target, targetOwner, kind, title, rock, due string, now time.Time) (Proposal, error) {
+	return s.ProposeFull(actor, target, targetOwner, kind, title, rock, due, nil, now)
+}
+
+// ProposeFull is Propose with an opaque payload. Added rather than widening
+// Propose's signature: the shared write layer must never change shape for one
+// portal's feature (ooda-portal plan, Stage C).
+func (s *Store) ProposeFull(actor Identity, target, targetOwner, kind, title, rock, due string, payload map[string]any, now time.Time) (Proposal, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return Proposal{}, errors.New("empty title")
@@ -730,7 +742,11 @@ func (s *Store) Propose(actor Identity, target, targetOwner, kind, title, rock, 
 		}
 		return Proposal{}, fmt.Errorf("target must be an @%s account or an invited partner address", s.policy.DomainName())
 	}
-	if kind != "decision" {
+	// The proposal vocabulary: task and decision are the AION portal's two
+	// kinds; "bid" is the OODA portal's (a partner's quote awaiting the
+	// owner's approval). Anything else coerces to task rather than inventing
+	// a kind the surfaces do not render.
+	if kind != "decision" && kind != "bid" {
 		kind = "task"
 	}
 	s.mu.Lock()
@@ -745,7 +761,7 @@ func (s *Store) Propose(actor Identity, target, targetOwner, kind, title, rock, 
 		Rock: strings.TrimSpace(rock), Due: strings.TrimSpace(due),
 		Target: strings.ToLower(strings.TrimSpace(target)), TargetOwner: targetOwner,
 		ProposedBy: actor.Email, ProposedName: actor.Name,
-		At: now.UTC(), Status: "pending",
+		At: now.UTC(), Status: "pending", Payload: payload,
 	}
 	ext.Proposals = append(ext.Proposals, p)
 	err := s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActPropose,

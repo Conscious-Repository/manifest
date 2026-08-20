@@ -77,6 +77,7 @@ function ViewPortfolio({ data }) {
 function PropertyDetail({ slug, onClose }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
+  const [bidNote, setBidNote] = React.useState("");
   React.useEffect(() => {
     let live = true;
     setD(null); setErr("");
@@ -146,6 +147,10 @@ function PropertyDetail({ slug, onClose }) {
         ))}
       </Section>
 
+      <BidForm slug={slug} property={p} onFiled={() => setBidNote("bid filed — it is waiting on Benjamin's approval")} note={bidNote} />
+
+      <Thread itemID={"prop/" + slug} title={p.short || p.address} />
+
       <Section title="LEDGER" count={ledger.length}>
         {!ledger.length ? <Empty>no money facts yet</Empty> : null}
         {Object.keys(groups).sort().map((key) => (
@@ -165,5 +170,131 @@ function PropertyDetail({ slug, onClose }) {
         ))}
       </Section>
     </div>
+  );
+}
+
+
+// Thread — comments on any item. ANY signed-in member may comment (the shared
+// layer's rule, unchanged); the trail is append-only in the team store and
+// never touches the vault.
+function Thread({ itemID, title }) {
+  const [items, setItems] = React.useState(null);
+  const [text, setText] = React.useState("");
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  const load = React.useCallback(() => {
+    teamAPI.state()
+      .then((st) => setItems(teamComments(st, itemID)))
+      .catch((e) => setErr(String(e.message || e)));
+  }, [itemID]);
+  React.useEffect(() => { setItems(null); setErr(""); load(); }, [load]);
+
+  const send = async () => {
+    const body = text.trim();
+    if (!body || busy) return;
+    setBusy(true); setErr("");
+    try {
+      await teamAPI.comment(itemID, body);
+      setText("");
+      load();
+    } catch (e) { setErr(String(e.message || e)); }
+    setBusy(false);
+  };
+
+  return (
+    <Section title="THREAD" count={items ? items.length : null}>
+      {err ? <div className="ooda-err">{err}</div> : null}
+      {items && !items.length ? <Empty>no comments yet</Empty> : null}
+      {(items || []).map((c) => (
+        <div key={c.id} className="ooda-comment">
+          <div className="ooda-comment-head">
+            <b>{c.author_name || c.author}</b>
+            <span className="ooda-sub">{String(c.at || "").slice(0, 10)}</span>
+          </div>
+          <div className="ooda-comment-body">{c.text}</div>
+        </div>
+      ))}
+      <div className="ooda-compose">
+        <textarea className="ooda-textarea" rows={2} value={text}
+          placeholder={"comment on " + (title || "this")}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }} />
+        <button className="ooda-send" onClick={send} disabled={busy || !text.trim()}>
+          {busy ? "…" : "comment"}
+        </button>
+      </div>
+    </Section>
+  );
+}
+
+// BidForm — a partner files a bid. It lands as a PROPOSAL, not a contract:
+// only Benjamin can materialize a contract record, so the form says so plainly
+// rather than implying the money is committed.
+function BidForm({ slug, property, onFiled, note }) {
+  const [open, setOpen] = React.useState(false);
+  const [f, setF] = React.useState({ contractor: "", amount: "", scope: "", workId: "", expires: "" });
+  const [err, setErr] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  const rocks = [];
+  (property.work || []).forEach((st) => {
+    rocks.push([st.id, st.text]);
+    (st.tasks || []).forEach((n) => rocks.push([n.id, "· " + n.text]));
+  });
+
+  const file = async () => {
+    const amount = parseFloat(f.amount);
+    if (!f.contractor.trim() || !amount) { setErr("a contractor and an amount are required"); return; }
+    setBusy(true); setErr("");
+    try {
+      await teamAPI.bid({
+        property: slug, contractor: f.contractor.trim(), amount,
+        workId: f.workId, scope: f.scope.trim(), expires: f.expires,
+      });
+      setF({ contractor: "", amount: "", scope: "", workId: "", expires: "" });
+      setOpen(false);
+      if (onFiled) onFiled();
+    } catch (e) { setErr(String(e.message || e)); }
+    setBusy(false);
+  };
+
+  if (!open) {
+    return (
+      <div className="ooda-bid-open">
+        <button className="ooda-ghost" onClick={() => setOpen(true)}>＋ bid</button>
+        {note ? <span className="ooda-sub ooda-bid-note">{note}</span> : null}
+      </div>
+    );
+  }
+  return (
+    <Section title="FILE A BID">
+      <div className="ooda-form">
+        <label><em>CONTRACTOR</em>
+          <input className="ooda-in" value={f.contractor} onChange={set("contractor")} placeholder="who is bidding" /></label>
+        <label><em>AMOUNT</em>
+          <input className="ooda-in" type="number" step="0.01" value={f.amount} onChange={set("amount")} placeholder="$" /></label>
+        <label><em>AGAINST</em>
+          <select className="ooda-in" value={f.workId} onChange={set("workId")}>
+            <option value="">— no rock —</option>
+            {rocks.map(([id, text]) => <option key={id} value={id}>{text}</option>)}
+          </select></label>
+        <label><em>EXPIRES</em>
+          <input className="ooda-in" type="date" value={f.expires} onChange={set("expires")} /></label>
+        <label className="wide"><em>SCOPE</em>
+          <textarea className="ooda-textarea" rows={2} value={f.scope} onChange={set("scope")}
+            placeholder="what the bid covers" /></label>
+      </div>
+      {err ? <div className="ooda-err">{err}</div> : null}
+      <div className="ooda-form-note">
+        Filing sends this to Benjamin for approval — it does not commit money.
+        Approved bids become real contracts and appear here on the next refresh.
+      </div>
+      <div className="ooda-form-acts">
+        <button className="ooda-ghost" onClick={() => setOpen(false)}>cancel</button>
+        <button className="ooda-send" onClick={file} disabled={busy}>{busy ? "…" : "file bid"}</button>
+      </div>
+    </Section>
   );
 }

@@ -2,7 +2,9 @@ package server
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // The OODA portal's READ surface (ooda-portal plan, Stage B). Everything here
@@ -34,6 +36,12 @@ func OodaReadRoutes(live *OodaLive) func(*http.ServeMux, PortalOptions) {
 		mux.HandleFunc("GET /api/ooda/property/{slug}", api.property)
 		mux.HandleFunc("GET /api/ooda/work", api.work)
 		mux.HandleFunc("GET /api/ooda/people", api.people)
+		// the one OODA-only WRITE (Stage C): a bid lands as a proposal, never
+		// as a contract record. Everything else a member can write comes from
+		// the shared layer in portal.go, unforked.
+		if opt.Store != nil && opt.Auth != nil {
+			mux.HandleFunc("POST /api/ooda/bid", api.bid)
+		}
 		// /data/meta.json keeps the AION client's revision-poll shape
 		mux.HandleFunc("GET /data/meta.json", handleAionLiveFile(live, "/data/meta.json"))
 	}
@@ -159,6 +167,77 @@ func (a *oodaAPI) people(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"people": a.live.People()})
+}
+
+// bid files a partner's bid as a PROPOSAL, never a contract record.
+//
+// A bid in this system is a vault record (system/realestate/contracts/<slug>.md,
+// written through vaultwriter under `re-contracts`), and §12's boundary is
+// absolute: a portal write lands in the derived store, never the vault. So the
+// partner's bid becomes a `kind:"bid"` proposal carrying the form as its
+// payload, renders immediately as a pending chip on the property, and cards
+// into the owner's FEED — where ONE approve click in the private cockpit is
+// the owner action that crosses vaultwriter and mints the real contract.
+//
+// Cost: one owner click per bid. Benefit: a partner can never silently commit
+// money against a property, and the doctrine invariant stays clean.
+func (a *oodaAPI) bid(w http.ResponseWriter, r *http.Request) {
+	id, ok := PortalIdentify(a.opt, w, r)
+	if !ok {
+		return
+	}
+	var b struct {
+		Property   string  `json:"property"`
+		WorkID     string  `json:"workId"`
+		Contractor string  `json:"contractor"`
+		Amount     float64 `json:"amount"`
+		Date       string  `json:"date"`
+		Expires    string  `json:"expires"`
+		Scope      string  `json:"scope"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	b.Property = strings.TrimSpace(b.Property)
+	b.Contractor = strings.TrimSpace(b.Contractor)
+	if b.Property == "" || b.Contractor == "" || b.Amount <= 0 {
+		httpError(w, errBadRequest("a bid needs a property, a contractor, and an amount"))
+		return
+	}
+	snap, ok := a.snap(w)
+	if !ok {
+		return
+	}
+	label, found := b.Property, false
+	for _, p := range snap.Properties {
+		if strings.EqualFold(p.Slug, b.Property) {
+			b.Property, found = p.Slug, true
+			if p.Short != "" {
+				label = p.Short
+			}
+			break
+		}
+	}
+	if !found {
+		httpError(w, errBadRequest("unknown property "+b.Property))
+		return
+	}
+	title := b.Contractor + " — " + label + " · $" +
+		strconv.FormatFloat(b.Amount, 'f', 2, 64)
+	// The bid is aimed at the OWNER: he is the only one who can materialize a
+	// contract record, so he is the only legitimate decider.
+	prop, err := a.opt.Store.ProposeFull(id, a.opt.AdminEmail, "BA", "bid", title,
+		"prop/"+b.Property, b.Expires, map[string]any{
+			"kind": "bid", "property": b.Property, "workId": b.WorkID,
+			"contractor": b.Contractor, "amount": b.Amount,
+			"date": b.Date, "expires": b.Expires, "scope": b.Scope,
+		}, time.Now())
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, prop)
 }
 
 // oodaLedgerTotals is a small helper the tests use to prove the portal's money

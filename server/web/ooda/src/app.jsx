@@ -14,7 +14,7 @@ function App() {
   else if (data.error) body = <Empty>{"could not load: " + data.error}</Empty>;
   else if (view === "dashboard") body = <ViewDashboard data={data} go={setView} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
-  else if (view === "work") body = <ViewWork data={data} />;
+  else if (view === "work") body = <ViewWork data={data} me={data.me} />;
   else body = <Empty>chat with zeck arrives with the agent — not wired yet</Empty>;
 
   return (

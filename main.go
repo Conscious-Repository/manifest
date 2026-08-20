@@ -801,6 +801,7 @@ func main() {
 			live := srv.NewOodaLive()
 			live.UseTeam(ts, teamportal.Identity{Email: cfg.Ooda.AdminEmail, Name: "Benjamin"})
 			srv.UseOoda(live)
+			srv.UseOodaBids(ts, cfg.Ooda.AdminEmail) // the cockpit's bid-accept lane
 			srv.AddPortalBridge(teamportal.NewBridgeNamed(ts, cfg.DataDir, cfg.Ooda.AdminEmail,
 				"ooda-portal", "https://portal.ooda.group/#work"))
 			oodaOpts := server.PortalOptions{

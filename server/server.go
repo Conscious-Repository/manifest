@@ -98,7 +98,9 @@ type Server struct {
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
 	portals *portals.Service
 	// OODA portal projection (real-estate team surface; ooda-portal plan). Nilable.
-	oodaLive *OodaLive
+	oodaLive  *OodaLive
+	oodaTeam  *teamportal.Store // the cockpit's read of the OODA team store (bid lane)
+	oodaAdmin string            // the OODA portal owner — the only bid decider
 	// Bank feeds (SimpleFIN → statement workbench; bank-accounts plan). Nilable.
 	bankFeed   *bankfeed.Service
 	bankfeedMu sync.Mutex // one sync at a time (ticker vs sync-now button)
@@ -547,6 +549,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/realestate/assumptions", s.handleAssumptionsPut)
 	mux.HandleFunc("POST /api/realestate/contractors/{slug}", s.handleContractorTrade)
 	// contracts + CAS + contractor surfaces (overhaul pass 2)
+	mux.HandleFunc("GET /api/realestate/ooda-bids", s.handleOodaBidsList)
+	mux.HandleFunc("POST /api/realestate/ooda-bids/{id}", s.handleOodaBidDecide)
 	mux.HandleFunc("GET /api/realestate/contracts", s.handleContractsList)
 	mux.HandleFunc("POST /api/realestate/contracts", s.handleContractCreate)
 	mux.HandleFunc("GET /api/realestate/contracts/{slug}", s.handleContractGet)
