@@ -773,6 +773,58 @@ func main() {
 			}()
 		}
 	}
+	// OODA PORTAL — a THIRD listener (ooda-portal plan, Stage B). Same shared
+	// write layer as AION's, but its own projection (real estate), its own
+	// team store on PRIVATE, and an identity gate that is domain-OR-allow-list
+	// so partners without an @ooda.group address are named, not wildcarded.
+	if cfg.Ooda.TeamDir != "" && cfg.Ooda.Port != 0 &&
+		cfg.Ooda.Port != cfg.Port && cfg.Ooda.Port != cfg.PortalPort {
+		if ts, err := teamportal.New(cfg.Ooda.TeamDir); err != nil {
+			log.Printf("ooda portal disabled: team store: %v", err)
+		} else {
+			// ONE file is the allow-list AND the email→initials map. Admitting
+			// an address that the map does not name would file its work under
+			// the address's local part — see teamportal.Policy.AllowExtra.
+			pol := teamportal.Policy{
+				Domain: cfg.Ooda.Domain, CookiePrefix: "ooda_portal",
+				ClientFile: "ooda-portal-oauth.json", ClientEnv: "OODA_PORTAL_OAUTH_CLIENT",
+				KeyFile: "ooda-portal-session.key", TokenFile: "ooda-portal-tokens.json",
+				TokenPrefix: "oodatok_",
+				AllowExtra: func(email string) bool {
+					_, ok := ts.EmailOverrides()[email]
+					return ok
+				},
+			}
+			ts.WithPolicy(pol)
+			tokens := teamportal.NewTokensPolicy(cfg.DataDir, pol)
+			auth := teamportal.NewAuthPolicy(cfg.DataDir, pol).WithTokens(tokens)
+			live := srv.NewOodaLive()
+			live.UseTeam(ts, teamportal.Identity{Email: cfg.Ooda.AdminEmail, Name: "Benjamin"})
+			srv.UseOoda(live)
+			srv.AddPortalBridge(teamportal.NewBridgeNamed(ts, cfg.DataDir, cfg.Ooda.AdminEmail,
+				"ooda-portal", "https://portal.ooda.group/#work"))
+			oodaOpts := server.PortalOptions{
+				Auth: auth, Tokens: tokens, Store: ts, Live: live,
+				AdminEmail: cfg.Ooda.AdminEmail,
+				WebRoot:    "web/ooda",
+				ReadRoutes: server.OodaReadRoutes(live),
+			}
+			oodaAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Ooda.Port)
+			if h, err := server.PortalHandler(oodaOpts); err != nil {
+				log.Printf("ooda portal disabled: %v", err)
+			} else {
+				go func() {
+					fmt.Printf("ooda portal → http://%s\n", oodaAddr)
+					if err := http.ListenAndServe(oodaAddr, h); err != nil {
+						log.Printf("ooda portal listener stopped: %v", err)
+					}
+				}()
+				log.Printf("ooda portal: enabled (@%s + allow-list; team state → %s)",
+					cfg.Ooda.Domain, cfg.Ooda.TeamDir)
+			}
+		}
+	}
+
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
 	log.Fatal(http.ListenAndServe(addr, srv.Handler()))

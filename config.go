@@ -115,6 +115,13 @@ type Config struct {
 	RealEstate struct {
 		TeamDir string `json:"teamDir"`
 	} `json:"realEstate"`
+	// Ooda configures the standalone OODA real-estate portal (ooda-portal plan):
+	// a THIRD listener over the realestate domain, served behind
+	// portal.ooda.group. Like AION it is a bounded many-writer surface — but its
+	// derived team state lives on PRIVATE (owner decision 2026-08-20), because
+	// the properties, ledgers, and partner names it composes are not
+	// shared-volume material. Port 0 (or equal to Port/PortalPort) disables it.
+	Ooda OodaConfig `json:"ooda"`
 	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
 	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
 	// src/data/deals.json from the vault's source sidecars for owner review
@@ -197,6 +204,17 @@ type FundraisingSheetsConfig struct {
 	SyncIntervalMinutes int    `json:"syncIntervalMinutes"`
 }
 
+// OodaConfig is the OODA portal's block. Domain is the Workspace gate; every
+// partner without an address under it is admitted by name through the team
+// store's emails.json (which is ALSO the email→initials map — one file, an
+// invariant: an admitted-but-unmapped address files work under a garbage owner).
+type OodaConfig struct {
+	Port       int    `json:"port"`       // default 7779
+	TeamDir    string `json:"teamDir"`    // /private/ooda/team — derived state, never the vault
+	AdminEmail string `json:"adminEmail"` // ben@ooda.group
+	Domain     string `json:"domain"`     // ooda.group
+}
+
 func defaultConfig() Config {
 	return Config{
 		VaultPath:       "",
@@ -209,6 +227,7 @@ func defaultConfig() Config {
 		ScheduleEnd:     18,
 		Port:            7777,
 		PortalPort:      7778,
+		Ooda:            OodaConfig{Port: 7779, Domain: "ooda.group"},
 		SystemRoot:      "system",
 		ExtrinsicRoot:   "extrinsic",
 	}
@@ -258,6 +277,12 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.PortalPort == 0 {
 		cfg.PortalPort = d.PortalPort
 	}
+	if cfg.Ooda.Port == 0 {
+		cfg.Ooda.Port = d.Ooda.Port
+	}
+	if strings.TrimSpace(cfg.Ooda.Domain) == "" {
+		cfg.Ooda.Domain = d.Ooda.Domain
+	}
 	if cfg.FundraisingSheets.SyncIntervalMinutes == 0 {
 		cfg.FundraisingSheets.SyncIntervalMinutes = 5
 	}
@@ -292,6 +317,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)
 	cfg.RePortalPath = expandHome(cfg.RePortalPath)
 	cfg.RealEstate.TeamDir = expandHome(cfg.RealEstate.TeamDir)
+	cfg.Ooda.TeamDir = expandHome(cfg.Ooda.TeamDir)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
 	cfg.AionPortal.TeamDir = expandHome(cfg.AionPortal.TeamDir)
 	if cfg.FundraisingSheets.CredentialsPath == "" {

@@ -97,6 +97,8 @@ type Server struct {
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
 	portals *portals.Service
+	// OODA portal projection (real-estate team surface; ooda-portal plan). Nilable.
+	oodaLive *OodaLive
 	// Bank feeds (SimpleFIN → statement workbench; bank-accounts plan). Nilable.
 	bankFeed   *bankfeed.Service
 	bankfeedMu sync.Mutex // one sync at a time (ticker vs sync-now button)

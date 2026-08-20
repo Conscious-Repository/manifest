@@ -1,0 +1,137 @@
+/* OODA portal — manifest-quiet (ARCHITECTURE §1): mono labels, hairlines,
+   accent reserved for live/positive, --over for anything past plan. Forked
+   from the AION portal's shape, not its brand. */
+
+:root {
+  --base-00: #fff;   --base-05: #fafafa; --base-20: #f0f0f0;
+  --base-25: #e3e3e3; --base-30: #c9c9c9; --base-40: #8a8a8a; --base-100: #16181d;
+  --line-soft: #eee;  --accent: #265ACC; --over: #b3261e;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--base-00); color: var(--base-100);
+  font-family: var(--sans); font-size: 14px; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+
+.ooda { max-width: 1080px; margin: 0 auto; padding: 0 28px 80px; }
+
+/* ---- header ---- */
+.ooda-head { display: flex; align-items: center; gap: 24px;
+  padding: 18px 0 14px; border-bottom: 1px solid var(--base-25); }
+.ooda-brand { font-family: var(--mono); font-size: 15px; letter-spacing: 3px; }
+.ooda-tabs { display: flex; gap: 6px; }
+.ooda-tab { font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px;
+  padding: 5px 12px; border: 1px solid transparent; border-radius: 14px;
+  background: none; color: var(--base-40); cursor: pointer; }
+.ooda-tab:hover { color: var(--base-100); }
+.ooda-tab.on { color: var(--accent); border-color: var(--accent); }
+.ooda-who { margin-left: auto; display: flex; align-items: center; gap: 10px;
+  font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.ooda-signout-form { margin: 0; }
+.ooda-signout { background: none; border: none; font-family: var(--mono);
+  font-size: 11px; color: var(--base-40); cursor: pointer; }
+.ooda-signout:hover { color: var(--accent); }
+.ooda-stale { font-family: var(--mono); font-size: 11px; color: var(--over);
+  padding: 8px 0; border-bottom: 1px solid var(--base-25); }
+.ooda-main { padding-top: 20px; }
+
+/* ---- dashboard tiles ---- */
+.ooda-tiles { display: grid; grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--base-25); border-bottom: 1px solid var(--base-25); }
+.ooda-tile { text-align: left; padding: 18px 24px 16px 0; border: none;
+  background: none; cursor: default; }
+.ooda-tile.click { cursor: pointer; }
+.ooda-tile.click:hover .ooda-tile-val { color: var(--accent); }
+.ooda-tile-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--base-40); }
+.ooda-tile-val { font-family: var(--mono); font-size: 26px; letter-spacing: -0.5px; }
+.ooda-tile.over .ooda-tile-val { color: var(--over); }
+.ooda-tile-sub { font-family: var(--mono); font-size: 10px; color: var(--base-40); min-height: 14px; }
+.ooda-cadence { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding: 8px 0 4px; }
+
+/* ---- sections + rows ---- */
+.ooda-sec { margin: 28px 0; }
+.ooda-sec.unassigned .ooda-sec-title { color: var(--over); }
+.ooda-sec-head { display: flex; align-items: baseline; gap: 10px;
+  padding: 4px 0 8px; border-bottom: 1px solid var(--base-25); }
+.ooda-sec-head.click { cursor: pointer; }
+.ooda-sec-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; }
+.ooda-sec-count { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.ooda-row { display: grid; gap: 16px; align-items: baseline;
+  padding: 7px 4px; border-top: 1px solid var(--line-soft); }
+.ooda-row.click { cursor: pointer; }
+.ooda-row.click:hover { background: var(--base-05); }
+.ooda-row.sel { background: var(--base-20); }
+.ooda-head-row { border-top: none; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.5px; color: var(--base-40); text-transform: uppercase; }
+.ooda-row .r { text-align: right; font-family: var(--mono); }
+.ooda-row .r.in { color: var(--accent); }
+.ooda-sub { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.ooda-stack { display: flex; flex-direction: column; min-width: 0; }
+.ooda-stack b { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ooda-stack em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; }
+.ooda-stack.r { align-items: flex-end; }
+.over { color: var(--over); }
+.ooda-unassigned { color: var(--over); font-family: var(--mono); font-size: 12px; }
+.ooda-empty { font-size: 13px; color: var(--base-40); padding: 12px 4px; }
+.ooda-foot { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding: 10px 4px; }
+.ooda-flags em { font-family: var(--mono); font-size: 10px; font-style: normal;
+  color: var(--base-40); margin-right: 8px; }
+.ooda-bar { background: var(--base-20); height: 4px; border-radius: 2px; align-self: center; }
+.ooda-bar i { display: block; height: 4px; border-radius: 2px; background: var(--accent); }
+
+.cols-entity { grid-template-columns: minmax(0,2fr) 60px 80px 110px 110px 60px; }
+.cols-attn   { grid-template-columns: minmax(0,1.6fr) minmax(0,1.4fr) minmax(0,1fr); }
+.cols-owner  { grid-template-columns: minmax(0,1.6fr) minmax(0,1fr) 60px 70px; }
+.cols-deal   { grid-template-columns: minmax(0,1.6fr) 110px 110px 110px 110px; }
+.cols-prop   { grid-template-columns: minmax(0,2.3fr) minmax(0,1.6fr) 52px 100px; }
+.cols-work   { grid-template-columns: minmax(0,2.4fr) minmax(0,1fr) 90px; }
+.cols-contract { grid-template-columns: minmax(0,2fr) 90px 100px; }
+.cols-ledger { grid-template-columns: 80px minmax(0,1.6fr) minmax(0,1fr) 110px; }
+
+/* ---- portfolio list + inspector ---- */
+.ooda-split { display: flex; gap: 28px; align-items: flex-start; }
+.ooda-list { flex: 1; min-width: 0; }
+.ooda-insp { width: 340px; flex: none; position: sticky; top: 16px;
+  max-height: calc(100vh - 40px); overflow: auto; }
+.ooda-insp-empty { font-family: var(--mono); font-size: 11px; color: var(--base-40); padding: 16px 0; }
+.ooda-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-bottom: 12px; }
+.ooda-search { flex: 1; min-width: 200px; font-family: var(--sans); font-size: 13px;
+  padding: 6px 10px; border: 1px solid var(--base-25); border-radius: 14px; background: var(--base-00); }
+.ooda-search:focus { outline: none; border-color: var(--accent); }
+.ooda-chip { font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px;
+  padding: 4px 10px; border: 1px solid var(--base-25); border-radius: 12px;
+  background: none; color: var(--base-40); cursor: pointer; }
+.ooda-chip.on { color: var(--accent); border-color: var(--accent); }
+
+/* ---- property detail ---- */
+.ooda-detail-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 2px; }
+.ooda-detail-head b { font-weight: 600; font-size: 15px; }
+.ooda-x { margin-left: auto; background: none; border: none; color: var(--base-40); cursor: pointer; }
+.ooda-detail-meta { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding-bottom: 12px; }
+.ooda-money { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px;
+  padding: 12px 0; border-top: 1px solid var(--base-25); border-bottom: 1px solid var(--base-25); }
+.ooda-money span { display: flex; flex-direction: column; }
+.ooda-money em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; }
+.ooda-money b { font-family: var(--mono); font-size: 16px; font-weight: 400; }
+.ooda-rock { padding: 6px 0; border-top: 1px solid var(--line-soft); }
+.ooda-rock-head { display: flex; gap: 10px; font-size: 13px; }
+.ooda-rock-head .r { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.ooda-node { display: flex; gap: 10px; font-size: 12px; padding: 2px 0 2px 14px; color: var(--base-100); }
+.ooda-node .ooda-sub { margin-left: auto; }
+.ooda-ledger-rock { font-family: var(--mono); font-size: 10px; color: var(--base-40);
+  padding: 8px 4px 2px; text-transform: uppercase; letter-spacing: 0.4px; }
+.ooda-lane { padding-bottom: 6px; }
+.ooda-lane-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;
+  color: var(--base-40); padding: 8px 4px 2px; }
+
+@media (max-width: 860px) {
+  .ooda { padding: 0 16px 60px; }
+  .ooda-tiles { grid-template-columns: repeat(2, 1fr); }
+  .ooda-split { flex-direction: column; }
+  .ooda-insp { width: 100%; position: static; max-height: none; }
+  .cols-entity, .cols-deal { grid-template-columns: minmax(0,1.4fr) 60px 90px; }
+  .cols-entity > :nth-child(n+4), .cols-deal > :nth-child(n+4) { display: none; }
+}
