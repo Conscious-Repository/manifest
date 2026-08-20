@@ -1,0 +1,50 @@
+# zeck — the OODA real-estate agent's runner (ooda-portal plan, Stage D).
+#
+# The SAME generic cmd/kairos-runner binary kairos uses; only the flags differ.
+# What makes this unit worth reading is the isolation: zeck runs on the same
+# box as the vault (owner decision 2026-08-20), so the distance kairos gets
+# from living on another host is bought back with hard limits here.
+#
+# THE INVARIANT, stated once: zeck reads NOTHING under /private/consciousrepo.
+# Not goals.md, not system/realestate, not any other record. Its grounding
+# arrives the way kairos's does — manifest, running as the owner, resolves
+# context ids into real content and spools THAT into the work order. The agent
+# sees the excerpt it was handed, never the tree.
+#
+# Anyone loosening ProtectSystem, InaccessiblePaths, or ReadWritePaths below is
+# undoing the bargain that allowed zeck onto metis in the first place.
+
+[Unit]
+Description=zeck OODA-agent runner (hermes-agent contract adapter)
+After=network-online.target
+# inert until the owner installs zeck's own hermes (its provider credentials
+# are zeck's, never a copy of benjamin's)
+ConditionPathExists=/home/zeck/.local/bin/hermes
+ConditionPathExists=/private/harnesses/zeck/vessel
+
+[Service]
+User=zeck
+Group=zeck
+Environment=TZ=America/Chicago
+ExecStart=/home/benjamin/.local/bin/kairos-runner \
+  -root /private/harnesses/zeck \
+  -bin /home/zeck/.local/bin/hermes \
+  -args "-z {request}" \
+  -model deepseek-v4-flash-0731 \
+  -timeout 10m
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+# the whole filesystem is read-only except ReadWritePaths below
+ProtectSystem=strict
+ProtectHome=read-only
+# the vault is ABSENT from this unit's mount namespace — not merely unreadable.
+# That is the property that survives a filesystem-permission mistake.
+InaccessiblePaths=/private/consciousrepo
+# the ONLY writable paths: its own harness tree and its own home
+ReadWritePaths=/private/harnesses/zeck /home/zeck
+
+[Install]
+WantedBy=multi-user.target

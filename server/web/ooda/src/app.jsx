@@ -15,7 +15,7 @@ function App() {
   else if (view === "dashboard") body = <ViewDashboard data={data} go={setView} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
   else if (view === "work") body = <ViewWork data={data} me={data.me} />;
-  else body = <Empty>chat with zeck arrives with the agent — not wired yet</Empty>;
+  else body = <ViewChat data={data} />;
 
   return (
     <Shell view={view} setView={setView} me={data.me} sync={data.sync}>

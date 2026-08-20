@@ -251,3 +251,7 @@ func oodaLedgerTotals(snap *oodaSnapshot) (paid, committed float64) {
 	}
 	return paid, committed
 }
+
+// OodaTeamAgents is the OODA surface's agent roster — rosterFor(surface) was
+// already generic, so a second agent is config, not code.
+func (s *Server) OodaTeamAgents() []map[string]any { return s.rosterFor("ooda") }

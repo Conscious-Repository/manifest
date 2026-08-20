@@ -150,7 +150,9 @@ type Server struct {
 	personasCfg *personasCfg
 	// chat: the native portal chat-with-kairos store (chat-kairos handoff;
 	// shared threads on /shared/apps/aion-portal/chat). Nilable.
-	chat        *chatthreads.Store
+	chat *chatthreads.Store
+	// oodaChat: the OODA portal's own chat store (zeck's threads). Nilable.
+	oodaChat    *chatthreads.Store
 	chatSweepMu sync.Mutex // one chat sweep at a time (ticker vs read-driven)
 }
 

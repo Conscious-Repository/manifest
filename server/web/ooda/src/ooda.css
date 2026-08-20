@@ -167,3 +167,14 @@ button { font: inherit; color: inherit; }
   padding: 4px 4px 8px; line-height: 1.5; }
 .ooda-form-acts { display: flex; gap: 8px; justify-content: flex-end; padding: 0 4px 8px; }
 .ooda-work-detail { padding: 4px 4px 12px 16px; border-left: 2px solid var(--base-20); margin-left: 4px; }
+
+/* ---- Stage D: chat with zeck ---- */
+.cols-thread { grid-template-columns: minmax(0,1fr) 40px; }
+.ooda-msg { padding: 8px 4px; border-top: 1px solid var(--line-soft); }
+.ooda-msg.agent { background: var(--base-05); border-radius: 6px; padding-left: 8px; }
+.ooda-chat-ctx { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 4px 0; }
+.ooda-engine { display: flex; flex-direction: column; gap: 8px; padding: 10px 4px; }
+.ooda-engine div { display: flex; flex-direction: column; }
+.ooda-engine em { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;
+  color: var(--base-40); font-style: normal; }
+.ooda-engine b { font-family: var(--mono); font-size: 12px; font-weight: 400; }

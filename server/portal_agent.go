@@ -155,17 +155,22 @@ func (s *Server) aionTodoID(itemID string) string {
 // AionChatThreads returns the whole chat surface payload — threads, their
 // messages, and the engine snapshot — running a read-driven sweep first so a
 // just-finished kairos run appears without waiting for the 60s ticker.
-func (s *Server) AionChatThreads() map[string]any {
+func (s *Server) AionChatThreads() map[string]any { return s.chatThreadsFor(s.kairosAgent()) }
+
+// OodaChatThreads is the same surface for zeck (ooda-portal plan, Stage D).
+func (s *Server) OodaChatThreads() map[string]any { return s.chatThreadsFor(s.zeckAgent()) }
+
+func (s *Server) chatThreadsFor(ag *chatAgent) map[string]any {
 	s.chatSweep()
-	out := map[string]any{"threads": []any{}, "messages": map[string]any{}, "engine": s.chatEngine()}
-	if s.chat == nil {
-		return out
+	if ag == nil {
+		return map[string]any{"threads": []any{}, "messages": map[string]any{}, "engine": map[string]any{}}
 	}
-	ths := s.chat.Threads()
+	out := map[string]any{"threads": []any{}, "messages": map[string]any{}, "engine": s.chatEngine(ag)}
+	ths := ag.Store.Threads()
 	out["threads"] = ths
 	msgs := map[string]any{}
 	for _, t := range ths {
-		msgs[t.ID] = s.chat.Messages(t.ID)
+		msgs[t.ID] = ag.Store.Messages(t.ID)
 	}
 	out["messages"] = msgs
 	return out
@@ -174,38 +179,47 @@ func (s *Server) AionChatThreads() map[string]any {
 // AionChatThread is the thread lifecycle: create | rename | rescope | archive |
 // reopen (author attributed).
 func (s *Server) AionChatThread(op, id, title, rock, memberEmail, memberName string) (map[string]any, error) {
-	if s.chat == nil {
+	return s.chatThreadFor(s.kairosAgent(), op, id, title, rock, memberEmail, memberName)
+}
+
+// OodaChatThread is zeck's thread lifecycle.
+func (s *Server) OodaChatThread(op, id, title, rock, memberEmail, memberName string) (map[string]any, error) {
+	return s.chatThreadFor(s.zeckAgent(), op, id, title, rock, memberEmail, memberName)
+}
+
+func (s *Server) chatThreadFor(ag *chatAgent, op, id, title, rock, memberEmail, memberName string) (map[string]any, error) {
+	if ag == nil {
 		return nil, errBadRequest("chat is not configured")
 	}
 	who := chatthreads.Identity{ID: memberEmail, Name: memberName}
 	now := time.Now()
 	switch op {
 	case "create":
-		if _, err := s.chat.CreateThread(id, strings.ToLower(strings.TrimSpace(title)), rock, who, now); err != nil {
+		if _, err := ag.Store.CreateThread(id, strings.ToLower(strings.TrimSpace(title)), rock, who, now); err != nil {
 			return nil, err
 		}
 	case "rename":
-		if _, err := s.chat.PatchThread(id, map[string]any{"title": strings.ToLower(strings.TrimSpace(title))}, who, now); err != nil {
+		if _, err := ag.Store.PatchThread(id, map[string]any{"title": strings.ToLower(strings.TrimSpace(title))}, who, now); err != nil {
 			return nil, err
 		}
 	case "rescope":
-		if _, err := s.chat.PatchThread(id, map[string]any{"rock": rock}, who, now); err != nil {
+		if _, err := ag.Store.PatchThread(id, map[string]any{"rock": rock}, who, now); err != nil {
 			return nil, err
 		}
 	case "archive":
-		if _, err := s.chat.PatchThread(id, map[string]any{"archived": true}, who, now); err != nil {
+		if _, err := ag.Store.PatchThread(id, map[string]any{"archived": true}, who, now); err != nil {
 			return nil, err
 		}
 	case "reopen":
-		if _, err := s.chat.PatchThread(id, map[string]any{"archived": false}, who, now); err != nil {
+		if _, err := ag.Store.PatchThread(id, map[string]any{"archived": false}, who, now); err != nil {
 			return nil, err
 		}
 	case "prune":
-		s.chat.PruneEmpty(id)
+		ag.Store.PruneEmpty(id)
 	default:
 		return nil, errBadRequest("unknown thread op " + op)
 	}
-	return s.AionChatThreads(), nil
+	return s.chatThreadsFor(ag), nil
 }
 
 var chatIntentRe = regexp.MustCompile(`@kairos::([a-z0-9-]+)`)
@@ -214,7 +228,16 @@ var chatIntentRe = regexp.MustCompile(`@kairos::([a-z0-9-]+)`)
 // runner's IsActive guard is the one-run-at-a-time gate); on success record the
 // member's message + the pending entry. ErrAlreadyActive passes through → 409.
 func (s *Server) AionChatAsk(thread, text, ritual string, context []string, memberEmail, memberName string) error {
-	if s.chat == nil {
+	return s.chatAskFor(s.kairosAgent(), thread, text, ritual, context, memberEmail, memberName)
+}
+
+// OodaChatAsk spools an ask/delegate run for zeck.
+func (s *Server) OodaChatAsk(thread, text, ritual string, context []string, memberEmail, memberName string) error {
+	return s.chatAskFor(s.zeckAgent(), thread, text, ritual, context, memberEmail, memberName)
+}
+
+func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context []string, memberEmail, memberName string) error {
+	if ag == nil {
 		return errBadRequest("chat is not configured")
 	}
 	ritual = strings.TrimSpace(ritual)
@@ -229,22 +252,22 @@ func (s *Server) AionChatAsk(thread, text, ritual string, context []string, memb
 		intent = m[1]
 	}
 	title := ""
-	for _, t := range s.chat.Threads() {
+	for _, t := range ag.Store.Threads() {
 		if t.ID == thread {
 			title = t.Title
 			break
 		}
 	}
-	orderID, err := s.spoolChatOrder(thread, title, ritual, intent, text, context, memberName)
+	orderID, err := s.spoolChatOrder(ag, thread, title, ritual, intent, text, context, memberName)
 	if err != nil {
 		return err // incl. spirits.ErrAlreadyActive → 409
 	}
 	now := time.Now()
-	_, _ = s.chat.AddMessage(chatthreads.Message{
+	_, _ = ag.Store.AddMessage(chatthreads.Message{
 		Thread: thread, Kind: "ask", Author: memberEmail, AuthName: memberName,
 		Text: text, Context: context, At: now,
 	}, now)
-	_ = s.chat.SetPending(chatthreads.Pending{
+	_ = ag.Store.SetPending(chatthreads.Pending{
 		OrderID: orderID, Thread: thread, By: memberName, ByEmail: memberEmail,
 		Ritual: ritual, Text: text, At: now,
 	}, now)
@@ -252,17 +275,38 @@ func (s *Server) AionChatAsk(thread, text, ritual string, context []string, memb
 }
 
 // AionChatEngine is the sidebar snapshot (heartbeat, active claim, pending).
-func (s *Server) AionChatEngine() map[string]any { return s.chatEngine() }
+func (s *Server) AionChatEngine() map[string]any { return s.chatEngineFor(s.kairosAgent()) }
+
+// OodaChatEngine is zeck's sidebar snapshot.
+func (s *Server) OodaChatEngine() map[string]any { return s.chatEngineFor(s.zeckAgent()) }
+
+func (s *Server) chatEngineFor(ag *chatAgent) map[string]any {
+	if ag == nil {
+		return map[string]any{"live": false, "beat": -1}
+	}
+	return s.chatEngine(ag)
+}
 
 // AionChatProposal applies or discards a chat proposal. Gate: admin or the
 // target item's assignee (the FIELDS rule). Apply routes through the SAME write
 // paths as a human edit — teamportal Patch (set-field) / writePlanSection
 // (replace-section) — so the ledger is identical except for the actor.
 func (s *Server) AionChatProposal(thread, msg string, index int, apply bool, memberEmail, memberName, memberInitials string, admin bool) error {
-	if s.chat == nil {
+	return s.chatProposalFor(s.kairosAgent(), thread, msg, index, apply, memberEmail, memberName, memberInitials, admin)
+}
+
+// OodaChatProposal applies or discards one of zeck's proposals. Same gate,
+// same write paths — zeck has no more authority than kairos: it proposes, a
+// person approves.
+func (s *Server) OodaChatProposal(thread, msg string, index int, apply bool, memberEmail, memberName, memberInitials string, admin bool) error {
+	return s.chatProposalFor(s.zeckAgent(), thread, msg, index, apply, memberEmail, memberName, memberInitials, admin)
+}
+
+func (s *Server) chatProposalFor(ag *chatAgent, thread, msg string, index int, apply bool, memberEmail, memberName, memberInitials string, admin bool) error {
+	if ag == nil {
 		return errBadRequest("chat is not configured")
 	}
-	p, ok := s.chat.Proposal(thread, msg, index)
+	p, ok := ag.Store.Proposal(thread, msg, index)
 	if !ok {
 		return errBadRequest("proposal not found")
 	}
@@ -290,7 +334,7 @@ func (s *Server) AionChatProposal(thread, msg string, index int, apply bool, mem
 			return errBadRequest("unknown proposal type")
 		}
 	}
-	if _, err := s.chat.DecideProposal(thread, msg, index, apply, who, time.Now()); err != nil {
+	if _, err := ag.Store.DecideProposal(thread, msg, index, apply, who, time.Now()); err != nil {
 		return err
 	}
 	if s.threads != nil && s.threads.aion != nil {

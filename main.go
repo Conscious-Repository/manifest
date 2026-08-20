@@ -810,6 +810,22 @@ func main() {
 				WebRoot:    "web/ooda",
 				ReadRoutes: server.OodaReadRoutes(live),
 			}
+			// zeck's chat (ooda-portal plan, Stage D): the same bridges the AION
+			// portal uses, pointed at a second agent + its own thread store. The
+			// routes register only when the harness is configured, so the CHAT
+			// tab degrades to "no agent" rather than erroring.
+			if oc, err := chatthreads.New(filepath.Join(cfg.Ooda.TeamDir, "chat")); err != nil {
+				log.Printf("ooda chat disabled: %v", err)
+			} else {
+				srv.UseOodaChat(oc)
+				oodaOpts.Agents = srv.OodaTeamAgents
+				oodaOpts.ChatThreads = srv.OodaChatThreads
+				oodaOpts.ChatThread = srv.OodaChatThread
+				oodaOpts.ChatAsk = srv.OodaChatAsk
+				oodaOpts.ChatEngine = srv.OodaChatEngine
+				oodaOpts.ChatProposal = srv.OodaChatProposal
+				log.Printf("ooda chat: enabled (writes → %s)", filepath.Join(cfg.Ooda.TeamDir, "chat"))
+			}
 			oodaAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Ooda.Port)
 			if h, err := server.PortalHandler(oodaOpts); err != nil {
 				log.Printf("ooda portal disabled: %v", err)
