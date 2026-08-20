@@ -256,7 +256,7 @@ func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
 	for _, g := range work {
 		d.Owners = append(d.Owners, oodaOwnerRow{
 			Owner: g.Owner, Name: names[strings.ToUpper(g.Owner)],
-			Open: len(g.Open) + len(g.Overdue) + len(g.DueThisWeek),
+			Open:      len(g.Open) + len(g.Overdue) + len(g.DueThisWeek),
 			Decisions: len(g.Decisions), Overdue: len(g.Overdue),
 		})
 	}
