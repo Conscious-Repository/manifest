@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"manifest/realestate"
 )
@@ -62,6 +63,11 @@ type oodaMapPayload struct {
 	Holdings []oodaMapHolding `json:"holdings"`
 	Parcels  []oodaMapParcel  `json:"parcels"`
 	Counts   map[string]int   `json:"counts"` // tax status → n, for the legend
+	// Study names the assessor snapshot behind the parcel layer. Partners are
+	// looking at other people's tax positions; how old the pull is changes what
+	// the map means, so the page says it.
+	Study    realestate.StudyMeta `json:"study"`
+	StudyAge string               `json:"studyAge,omitempty"`
 }
 
 // oodaMapCache memoizes the payload against the projection revision.
@@ -77,9 +83,16 @@ func (l *OodaLive) mapPayload() *oodaMapPayload {
 	if snap == nil || l.s == nil || l.s.realestate == nil {
 		return &oodaMapPayload{Counts: map[string]int{}}
 	}
+	// The study geojson lives in the re-portal checkout, OUTSIDE the vault the
+	// projection revision fingerprints — so a `git pull` that refreshes the
+	// assessor snapshot would otherwise never reach this page. Its own key
+	// rides in the cache key.
+	layer := l.s.studyLayer()
+	rev := snap.Revision + "|" + layer.Key
+
 	l.mapCache.mu.Lock()
 	defer l.mapCache.mu.Unlock()
-	if l.mapCache.pay != nil && l.mapCache.rev == snap.Revision {
+	if l.mapCache.pay != nil && l.mapCache.rev == rev {
 		return l.mapCache.pay
 	}
 
@@ -88,7 +101,10 @@ func (l *OodaLive) mapPayload() *oodaMapPayload {
 		geo = nil
 	}
 	bySlug := map[string]realestate.GeoRecord{}
-	held := map[string]bool{} // assessor parcel ids we already render as holdings
+	// every assessor parcel id already drawn by a richer layer — first the lots
+	// we hold, then each parcel as it is added, so the curated research records
+	// win over the wide study snapshot for the same lot
+	drawn := map[string]bool{}
 	for _, g := range geo {
 		if g.Type != "property" {
 			continue
@@ -96,7 +112,9 @@ func (l *OodaLive) mapPayload() *oodaMapPayload {
 		bySlug[strings.ToLower(g.Slug)] = g
 	}
 
-	pay := &oodaMapPayload{Revision: snap.Revision, Counts: map[string]int{}}
+	// the COMPOSITE revision, so the browser ETag also invalidates on a
+	// refreshed study snapshot
+	pay := &oodaMapPayload{Revision: rev, Counts: map[string]int{}}
 	today := oodaToday()
 	for _, p := range oodaVisibleProps(snap) {
 		f := oodaPropertyFacts(p, today)
@@ -112,21 +130,27 @@ func (l *OodaLive) mapPayload() *oodaMapPayload {
 				h.Lat, h.Lng = g.Lat, g.Lng
 			}
 			for _, id := range g.ParcelIDs {
-				held[strings.TrimSpace(id)] = true
+				drawn[strings.TrimSpace(id)] = true
 			}
 		}
 		pay.Holdings = append(pay.Holdings, h)
 	}
 
-	parcels, _ := l.s.realestate.Parcels()
-	for _, pc := range parcels {
-		// a lot we hold is drawn once, as a holding — never twice
-		if pc.ParcelID != "" && held[strings.TrimSpace(pc.ParcelID)] {
-			continue
+	// The owner's own RESEARCH records first — same facts as the study layer
+	// but curated, and the ones he re-pulls with his notes preserved. Then the
+	// wide study snapshot fills in every other lot on the three neighborhoods,
+	// so the portal shows the whole block the way ooda.group/parcels does.
+	records, _ := l.s.realestate.Parcels()
+	add := func(pc realestate.Parcel) {
+		if pc.ParcelID != "" && drawn[strings.TrimSpace(pc.ParcelID)] {
+			return // a lot we hold is drawn once, as a holding — never twice
 		}
 		status := pc.TaxStatus
 		if status == "" {
 			status = "current"
+		}
+		if pc.ParcelID != "" {
+			drawn[strings.TrimSpace(pc.ParcelID)] = true
 		}
 		pay.Counts[status]++
 		pay.Parcels = append(pay.Parcels, oodaMapParcel{
@@ -137,13 +161,21 @@ func (l *OodaLive) mapPayload() *oodaMapPayload {
 			Features: pc.Features,
 		})
 	}
+	for _, pc := range records {
+		add(pc)
+	}
+	for _, pc := range layer.Parcels {
+		add(pc)
+	}
+	pay.Study = layer.Meta
+	pay.StudyAge = layer.Meta.StudyAge(time.Now())
 	if pay.Holdings == nil {
 		pay.Holdings = []oodaMapHolding{}
 	}
 	if pay.Parcels == nil {
 		pay.Parcels = []oodaMapParcel{}
 	}
-	l.mapCache.rev, l.mapCache.pay = snap.Revision, pay
+	l.mapCache.rev, l.mapCache.pay = rev, pay
 	return pay
 }
 
@@ -163,5 +195,5 @@ func (a *oodaAPI) mapView(w http.ResponseWriter, r *http.Request) {
 	if pay.Revision != "" {
 		w.Header().Set("ETag", `"map-`+pay.Revision+`"`)
 	}
-	writeJSON(w, pay)
+	writeJSONZip(w, r, pay)
 }

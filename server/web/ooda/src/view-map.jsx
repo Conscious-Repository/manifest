@@ -140,6 +140,13 @@ function ViewMap() {
             <span className="ooda-legend-n">{(pay.counts || {})[k] || DASH}</span>
           </label>
         ))}
+        {/* these are other people's tax positions; how old the assessor pull
+            is changes what the colours mean, so the map says it out loud */}
+        {pay.study && pay.study.snapshot_date ? (
+          <div className="ooda-legend-src">
+            {"assessor " + pay.study.snapshot_date + (pay.studyAge ? " · " + pay.studyAge : "")}
+          </div>
+        ) : null}
       </div>
     </div>
   );

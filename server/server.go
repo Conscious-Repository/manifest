@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -110,9 +111,13 @@ type Server struct {
 	reFiles        *realestate.FileStore // CAS document store (overhaul §3.3). Nilable.
 	bgParcelsPath  string                // <dataDir>/realestate/bgParcels.json (map background layer)
 	rePortalPath   string                // ooda site checkout for the deals.json publish ("" = disabled)
-	reImport       *realestate.ImportMemory
-	geocoder       *geocode.Service
-	statements     *realestate.StatementStore
+	// studyFallback is where the parcel-study geojson lives on a host with no
+	// re-portal checkout. The checkout is preferred (studyParcelsPath) so the
+	// snapshot tracks the repo instead of needing a hand copy per deploy.
+	studyFallback string
+	reImport      *realestate.ImportMemory
+	geocoder      *geocode.Service
+	statements    *realestate.StatementStore
 	// Errands (the action layer — aside effector; records = FEED receipts).
 	// Nilable; dataDir state only, never the vault.
 	errands        *errands.Store
@@ -520,6 +525,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/properties/{slug}/ledger", s.handlePropertyLedger)
 	mux.HandleFunc("GET /api/parcels", s.handleParcelsList)
 	mux.HandleFunc("GET /api/parcels/export", s.handleParcelsExport)
+	mux.HandleFunc("GET /api/parcels/study", s.handleParcelsStudy)
 	mux.HandleFunc("POST /api/parcels/{slug}/log", s.handleParcelLog)
 	mux.HandleFunc("GET /api/properties/{slug}/docs", s.handlePropertyDocs)
 	mux.HandleFunc("POST /api/properties/{slug}/docs", s.handlePropertyDocUpload)
@@ -1122,6 +1128,26 @@ func (s *Server) handleDayFocusMilestone(w http.ResponseWriter, r *http.Request)
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeJSONZip is writeJSON for the payloads big enough that the wire matters —
+// the parcel layers are ~1.4 MB of polygon coordinates that gzip to ~210 KB.
+// Cloudflare compresses the public portal at the edge, but the cockpit is
+// reached straight over Tailscale, where a phone pays the full 1.4 MB.
+// Falls back to plain JSON when the client did not offer gzip.
+func writeJSONZip(w http.ResponseWriter, r *http.Request, v any) {
+	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		writeJSON(w, v)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Encoding", "gzip")
+	// Content-Length would be the uncompressed size and Vary keeps a shared
+	// cache from serving gzip bytes to a client that cannot read them
+	w.Header().Add("Vary", "Accept-Encoding")
+	zw := gzip.NewWriter(w)
+	defer zw.Close()
+	_ = json.NewEncoder(zw).Encode(v)
 }
 
 func httpError(w http.ResponseWriter, err error) {

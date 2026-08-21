@@ -3,10 +3,14 @@
 // map overlay + a spreadsheet, each parcel clickable for its data and a personal
 // notes log. SEPARATE from owned properties — read-only research, no money.
 let parcelCache = [];
+let studyCache = null; // {parcels, meta, age} — the wide layer, loaded once
 
 // tax status → color: distressed parcels shout, current parcels recede.
+// Identical to ooda.group/parcels and the OODA portal — three surfaces, one
+// palette, so a partner who has seen any of them recognizes the others.
 const PARCEL_TAX_COLOR = { delinquent: "#d9534f", lra: "#e0972f", current: "#8fb0a0" };
-const PARCEL_TAX_LABEL = { delinquent: "delinquent", lra: "LRA land-bank", current: "current" };
+const PARCEL_TAX_LABEL = { delinquent: "Tax delinquent", lra: "LRA land-bank", current: "Privately owned" };
+const PARCEL_TAX_ORDER = ["delinquent", "lra", "current"];
 
 async function loadParcels() {
   if (parcelCache.length) return parcelCache;
@@ -17,39 +21,70 @@ async function loadParcels() {
   return parcelCache;
 }
 
-// addParcelsOverlay draws the research parcels on the properties map as a
-// toggleable overlay group, colored by tax status, each clickable for facts +
-// its notes log. Called at the end of renderPropertyMap.
+// loadStudyParcels fetches the WIDE assessor layer — every lot in the three
+// study neighborhoods, the same set ooda.group/parcels renders. It is ~1.5 MB,
+// so it is its own lazy fetch and the map draws the records first.
+async function loadStudyParcels() {
+  if (studyCache) return studyCache;
+  try {
+    const d = await (await fetch("/api/parcels/study")).json();
+    studyCache = { parcels: d.parcels || [], meta: d.meta || {}, age: d.age || "" };
+  } catch (e) { studyCache = { parcels: [], meta: {}, age: "" }; }
+  return studyCache;
+}
+
+// addParcelsOverlay draws the parcel study on the properties map: the owner's
+// own research records (which carry his notes) plus every other lot on the
+// block from the wide snapshot, colored by tax status with ONE TOGGLE PER
+// STATUS — the shape ooda.group/parcels has, replacing a single combined
+// checkbox that could only turn the whole layer on or off.
 async function addParcelsOverlay(map) {
-  const parcels = await loadParcels();
-  if (!parcels.length || !window.L) return;
-  const group = L.featureGroup();
+  if (!window.L) return;
+  const [records, study] = await Promise.all([loadParcels(), loadStudyParcels()]);
+  const all = records.concat(study.parcels);
+  if (!all.length) return;
+
+  // one feature group per status, so each toggles independently
+  const groups = {};
   const counts = { delinquent: 0, lra: 0, current: 0 };
-  parcels.forEach((p) => {
+  PARCEL_TAX_ORDER.forEach((k) => { groups[k] = L.featureGroup(); });
+  all.forEach((p) => {
     if (!(p.features || []).length) return;
-    counts[p.taxStatus] = (counts[p.taxStatus] || 0) + 1;
-    const color = PARCEL_TAX_COLOR[p.taxStatus] || "#8fb0a0";
+    const status = PARCEL_TAX_COLOR[p.taxStatus] ? p.taxStatus : "current";
+    counts[status]++;
+    const color = PARCEL_TAX_COLOR[status];
     const base = { color, weight: 1, fillColor: color, fillOpacity: 0.35 };
     const layer = L.geoJSON({ type: "FeatureCollection", features: p.features }, { style: base });
     layer.on("mouseover", () => layer.setStyle({ weight: 2.5, fillOpacity: 0.55 }));
     layer.on("mouseout", () => layer.setStyle(base));
     layer.bindPopup(() => parcelPopup(p, layer), { minWidth: 250, maxWidth: 300, closeButton: true });
-    group.addLayer(layer);
+    layer.bindTooltip(p.address || "", { sticky: true });
+    groups[status].addLayer(layer);
   });
-  group.addTo(map);
 
-  // toggle + a small tax legend
-  L.control.layers(null, { ["Research parcels (" + parcels.length + ")"]: group },
-    { collapsed: false, position: "topright" }).addTo(map);
+  const overlays = {};
+  PARCEL_TAX_ORDER.forEach((k) => {
+    if (!counts[k]) return;
+    groups[k].addTo(map);
+    overlays[PARCEL_TAX_LABEL[k] + " · " + counts[k]] = groups[k];
+  });
+  L.control.layers(null, overlays, { collapsed: false, position: "topright" }).addTo(map);
+
   const legend = els.propertyMapLegend;
-  ["delinquent", "lra", "current"].forEach((k) => {
+  PARCEL_TAX_ORDER.forEach((k) => {
     if (!counts[k]) return;
     const chip = el("span", "map-legend-chip");
     const dot = el("span", "map-legend-dot");
     dot.style.background = PARCEL_TAX_COLOR[k];
-    chip.append(dot, el("span", "", PARCEL_TAX_LABEL[k] + " " + counts[k]));
+    chip.append(dot, el("span", "", PARCEL_TAX_LABEL[k].toLowerCase() + " " + counts[k]));
     legend.append(chip);
   });
+  // the assessor pull has a date, and how old it is changes what the tax
+  // colours mean — say so rather than implying the map is live
+  if (study.meta && study.meta.snapshot_date) {
+    legend.append(el("span", "map-legend-note",
+      "assessor " + study.meta.snapshot_date + (study.age ? " · " + study.age : "")));
+  }
 }
 
 // parcelPopup builds the click popup: parcel facts + the owner notes log + an
@@ -70,6 +105,14 @@ function parcelPopup(p, layer) {
   row("land use", p.landUse);
   row("parcel id", p.parcelId);
   box.append(facts);
+
+  // No slug means no vault record behind this lot — it comes from the wide
+  // study snapshot. Facts only: there is nothing to append a note to, and
+  // offering an input that silently fails is worse than not offering one.
+  if (!p.slug) {
+    box.append(el("div", "pp-note pp-empty", "study parcel — not in your research set"));
+    return box;
+  }
 
   const notes = el("div", "pp-notes");
   const renderNotes = () => {

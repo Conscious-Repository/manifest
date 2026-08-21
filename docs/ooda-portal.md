@@ -128,11 +128,37 @@ cached against the projection revision and fetched lazily on first MAP entry.
 Leaflet loads from cdnjs on demand; there is no build step and no API key,
 and the tiles are keyless CARTO.
 
-The parcel set is whatever `cmd/parcel-pull` has captured — **175 parcels,
-neighborhood 53 only**. `ooda.group/parcels` renders 2,448 because its
-static geojson covers neighborhoods 51, 53 and 54. To match it, widen
-`cmd/parcel-pull`'s query and re-run with `-apply`; that writes ~2,300 new
-parcel records into the vault, so it is an owner decision, not a deploy step.
+### Where the parcels come from — two layers, on purpose
+
+| layer | source | count | clickable for |
+|---|---|---|---|
+| **research records** | `system/realestate/parcels/*.md` (via `cmd/parcel-pull`) | 175 | assessor facts **+ the owner's `## log` notes** |
+| **study** | `<rePortalPath>/public/study-parcels.geojson` | the other ~2,270 | assessor facts only |
+
+Together they are the full 2,448 lots `ooda.group/parcels` renders — Fountain
+Park, Lewis Place, and west of Kingshighway north of Page. A lot we HOLD is
+drawn once, as a property; a lot that has a research record is drawn as the
+record, so the owner's notes always win. Nothing draws twice.
+
+The study half is a FILE, not vault records, and deliberately so: turning
+~2,270 un-annotated lots into records would put ~6,800 files in the vault to
+hold facts nobody has written a word about, and would bloat every index and
+mtime scan that walks the realestate root. `bgParcels.json` is the same
+pattern. The 175 stay records because they carry the owner's thinking.
+
+**Reading it from the re-portal checkout** (`rePortalPath`, already configured
+on metis) means both maps and the public page share one snapshot, and
+refreshing it is `git pull` in `~/re-portal` — not a hand copy per host.
+`<dataDir>/realestate/studyParcels.json` is the fallback for a host with no
+checkout. Missing on both → the map still works, just narrower.
+
+To refresh the assessor data, re-run `scripts/build-study-parcels.py` in the
+re-portal repo and commit the result; the portal picks it up on the next
+request (the file's mtime rides in the map's cache key and ETag).
+
+Both payloads gzip (`writeJSONZip`): 1.4 MB → ~200 KB. Cloudflare would have
+compressed the portal at the edge anyway, but the cockpit is reached straight
+over Tailscale where a phone pays the full weight.
 
 ## When things break
 

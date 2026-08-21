@@ -3,9 +3,13 @@ package server
 import (
 	"encoding/csv"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"manifest/realestate"
 )
 
 // PARCELS — the research-parcel layer over system/realestate/parcels/ (St. Louis
@@ -26,6 +30,80 @@ func (s *Server) handleParcelsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"parcels": parcels})
+}
+
+// studyParcelsPath resolves the parcel-study geojson. The re-portal CHECKOUT
+// wins: it is the file the public ooda.group/parcels page serves, so reading it
+// there keeps the two maps on one snapshot and makes refreshing it a `git pull`
+// rather than a hand copy onto every host. The dataDir path is the fallback for
+// a machine with no checkout.
+func (s *Server) studyParcelsPath() string {
+	if s.rePortalPath != "" {
+		p := filepath.Join(s.rePortalPath, "public", "study-parcels.geojson")
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	if s.studyFallback != "" {
+		if _, err := os.Stat(s.studyFallback); err == nil {
+			return s.studyFallback
+		}
+	}
+	return ""
+}
+
+// studyLayer loads the study snapshot (nil-safe, cached in the realestate pkg).
+func (s *Server) studyLayer() *realestate.StudyLayer {
+	l, err := realestate.LoadStudyParcels(s.studyParcelsPath())
+	if err != nil || l == nil {
+		return &realestate.StudyLayer{}
+	}
+	return l
+}
+
+// drawnParcelIDs is every assessor parcel already rendered by a RICHER layer:
+// the owner's own research records (they carry his notes) and the lots we hold
+// (they render as properties). One lot, one polygon.
+func (s *Server) drawnParcelIDs(records []realestate.Parcel) map[string]bool {
+	drawn := map[string]bool{}
+	for _, p := range records {
+		if id := strings.TrimSpace(p.ParcelID); id != "" {
+			drawn[id] = true
+		}
+	}
+	if s.realestate != nil {
+		if geo, err := s.realestate.GeoRecords(); err == nil {
+			for _, g := range geo {
+				for _, id := range g.ParcelIDs {
+					if id = strings.TrimSpace(id); id != "" {
+						drawn[id] = true
+					}
+				}
+			}
+		}
+	}
+	return drawn
+}
+
+// handleParcelsStudy returns the WIDE assessor layer — every lot in the three
+// study neighborhoods (~2,450), minus the ones a richer layer already draws.
+// Its own route rather than part of /api/parcels because it is ~1.5 MB and only
+// the map wants it; the spreadsheet and the CSV export stay on the records.
+func (s *Server) handleParcelsStudy(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil {
+		writeJSON(w, map[string]any{"parcels": []any{}, "meta": nil})
+		return
+	}
+	records, _ := s.realestate.Parcels()
+	layer := s.studyLayer()
+	out := realestate.StudyParcelsExcept(layer, s.drawnParcelIDs(records))
+	if out == nil {
+		out = []realestate.Parcel{}
+	}
+	writeJSONZip(w, r, map[string]any{
+		"parcels": out, "meta": layer.Meta,
+		"age": layer.Meta.StudyAge(time.Now()),
+	})
 }
 
 // handleParcelLog appends one owner note to a parcel's `## log` (newest-first),

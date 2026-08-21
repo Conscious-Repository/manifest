@@ -282,3 +282,5 @@ button { font: inherit; color: inherit; }
 .ooda-prop-body em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; }
 .ooda-prop-body pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--base-70); margin: 4px 0 0; }
 .ooda-prop-acts { display: flex; gap: 8px; margin-top: 8px; }
+.ooda-legend-src { font-family: var(--mono); font-size: 9px; color: var(--base-40);
+  padding-top: 6px; margin-top: 5px; border-top: 1px solid var(--line-soft); }

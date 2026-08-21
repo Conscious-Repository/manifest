@@ -27,6 +27,7 @@ func (s *Server) UseRealestate(svc *realestate.Service, root, dataDir string) {
 	s.realestate = svc
 	s.realestateRoot = root
 	s.bgParcelsPath = filepath.Join(dataDir, "realestate", "bgParcels.json")
+	s.studyFallback = filepath.Join(dataDir, "realestate", "studyParcels.json")
 	s.reImport = realestate.NewImportMemory(dataDir)
 	if s.geocoder == nil {
 		s.geocoder = realestate.NewGeocoder(dataDir)
@@ -305,6 +306,14 @@ func (s *Server) handlePropertiesGeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rendered := map[string]bool{}
+	// the study layer draws these lots in full colour with their assessor
+	// facts, so the grey background must not sit under them too — 1,167 of
+	// bgParcels' 1,613 features fall inside the study area
+	for _, p := range s.studyLayer().Parcels {
+		if p.ParcelID != "" {
+			rendered[p.ParcelID] = true
+		}
+	}
 	for i := range records {
 		for _, id := range records[i].ParcelIDs {
 			rendered[id] = true
