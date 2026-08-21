@@ -6,10 +6,12 @@
 // zeck answer real questions while having no access to the vault at all.
 
 function ViewChat({ data }) {
+  const me = (data && data.me) || {};
+  const canAct = !!(me.admin || me.canFire); // the server gates too (OodaChatProposal)
   const [state, setState] = React.useState(null);
   const [sel, setSel] = React.useState("");
   const [text, setText] = React.useState("");
-  const [ritual, setRitual] = React.useState("ask");
+  const [propOpen, setPropOpen] = React.useState(null);
   const [ctx, setCtx] = React.useState([]);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -48,17 +50,25 @@ function ViewChat({ data }) {
     } catch (e) { setErr(String(e.message || e)); }
   };
 
-  const send = async () => {
+  // send(key) — labelled by OUTPUT; ritualOf maps to the wire value.
+  const send = async (key) => {
     const body = text.trim();
     if (!body || !sel || busy) return;
+    const ritual = window.CHAT_ACTIONS.ritualOf(key);
     setBusy(true); setErr("");
     try {
       await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: ctx });
-      setText("");
-      load();
+      setText(""); load();
     } catch (e) { setErr(String(e.message || e)); }
     setBusy(false);
   };
+
+  // decide applies or discards one proposal — the endpoint has always been
+  // wired for this portal (main.go OodaChatProposal); the page just never used it.
+  const decide = (m, idx, apply) =>
+    postJSON("/api/chat/proposal", { thread: sel, msg: m.id, index: idx, apply })
+      .then(load)
+      .catch((e) => setErr(String(e.message || e)));
 
   const props = (data.portfolio && data.portfolio.properties) || [];
 
@@ -87,13 +97,46 @@ function ViewChat({ data }) {
             {msgs.map((m, i) => (
               <div key={i} className={"ooda-msg " + (m.kind === "ask" ? "mine" : "agent")}>
                 <div className="ooda-comment-head">
-                  <b>{m.authName || m.author}</b>
+                  <b>{m.author_name || m.author}</b>
                   <span className="ooda-sub">{String(m.at || "").slice(11, 16)}</span>
                 </div>
                 <div className="ooda-comment-body">{m.text}</div>
-                {(m.props || []).length ? (
-                  <div className="ooda-sub">{m.props.length} proposal(s) — approve in the cockpit</div>
-                ) : null}
+                {(m.proposals || []).map((p, idx) => {
+                  const key = m.id + "#" + idx;
+                  const open = propOpen === key;
+                  return (
+                    <div key={idx} className={"ooda-prop " + p.state}>
+                      <div className="ooda-prop-head">
+                        <em>PROPOSES</em>
+                        <b>{p.verb}</b>
+                        <span className="r ooda-sub">{p.state}</span>
+                      </div>
+                      <div className="ooda-prop-target">{p.target || p.item}</div>
+                      {(p.body || p.value) ? (
+                        <button className="ooda-prop-toggle"
+                          onClick={() => setPropOpen(open ? null : key)}>
+                          {open ? "hide" : (p.type === "replace-section" ? "show the plan" : "show the change")}
+                        </button>
+                      ) : null}
+                      {open ? (
+                        <div className="ooda-prop-body">
+                          {p.section ? <em>## {p.section}</em> : null}
+                          <pre>{p.body || (p.field + " → " + p.value)}</pre>
+                          {p.was ? <div className="ooda-sub">replaces · {p.was}</div> : null}
+                        </div>
+                      ) : null}
+                      {p.state === "pending" && canAct ? (
+                        <div className="ooda-prop-acts">
+                          <button className="ooda-send" onClick={() => decide(m, idx, true)}>apply</button>
+                          <button className="ooda-send secondary" onClick={() => decide(m, idx, false)}>discard</button>
+                        </div>
+                      ) : null}
+                      {p.state === "pending" && !canAct ? (
+                        <div className="ooda-sub">an admin applies this</div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             ))}
             <div className="ooda-chat-ctx">
@@ -110,17 +153,25 @@ function ViewChat({ data }) {
             </div>
             <div className="ooda-compose">
               <textarea className="ooda-textarea" rows={2} value={text}
-                placeholder={ritual === "ask" ? "ask zeck (read-only)" : "ask zeck to draft changes for approval"}
+                placeholder={window.CHAT_ACTIONS.placeholder}
                 onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }} />
-              <select className="ooda-in" value={ritual} onChange={(e) => setRitual(e.target.value)}>
-                <option value="ask">ask</option>
-                <option value="delegate">delegate</option>
-              </select>
-              <button className="ooda-send" onClick={send} disabled={busy || !text.trim()}>
-                {busy ? "…" : "send"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(e.shiftKey ? "delegate" : "ask");
+                }} />
+            </div>
+            <div className="ooda-compose-acts">
+              <button className="ooda-send" onClick={() => send("ask")} disabled={busy || !text.trim()}>
+                {busy ? "…" : window.CHAT_ACTIONS.ask.label}
+              </button>
+              <button className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
+                {window.CHAT_ACTIONS.propose.label}
               </button>
             </div>
+            <div className="ooda-form-note">
+              {window.CHAT_ACTIONS.ask.label} — {window.CHAT_ACTIONS.ask.sub}<br />
+              {window.CHAT_ACTIONS.propose.label} — {window.CHAT_ACTIONS.propose.sub}
+            </div>
+            <div className="ooda-assure">{window.CHAT_ACTIONS.assurance}</div>
             {err ? <div className="ooda-err">{err}</div> : null}
           </Section>
         ) : null}
@@ -141,7 +192,8 @@ function ViewChat({ data }) {
         </div>
         <div className="ooda-form-note">
           zeck reads only what the server hands it — it has no access to the
-          vault. On <b>delegate</b> it returns proposals; a person applies them.
+          vault. <b>send &amp; propose</b> comes back as proposals you apply or
+          discard on the message; nothing reaches the records until you do.
         </div>
       </aside>
     </div>

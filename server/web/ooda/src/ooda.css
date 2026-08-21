@@ -259,3 +259,26 @@ button { font: inherit; color: inherit; }
 .ooda-sec-you { font-family: var(--mono); font-size: 9px; font-style: normal;
   letter-spacing: 0.4px; color: var(--accent); background: #e8eefb;
   border-radius: 8px; padding: 1px 6px; margin-left: 7px; text-transform: none; }
+
+/* ---- chat composer: two output-labelled actions + proposal cards ----
+   The composer says what comes BACK, not which ritual it fires; proposals are
+   applied or discarded on the message itself (the /api/chat/proposal endpoint
+   was wired for this portal from the start, the page just never used it). */
+.ooda-compose-acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 4px 0; }
+.ooda-send.secondary { background: none; color: var(--accent); border: 1px solid var(--accent); }
+.ooda-send.secondary:hover { background: var(--base-05); }
+.ooda-assure { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding: 2px 4px 8px; }
+
+.ooda-prop { border: 1px solid var(--line); background: var(--base-02); padding: 8px 10px; margin-top: 8px; }
+.ooda-prop-head { display: flex; gap: 8px; align-items: baseline; }
+.ooda-prop-head em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; letter-spacing: .08em; }
+.ooda-prop-head b { color: var(--accent); font-weight: 500; }
+.ooda-prop.applied .ooda-prop-head b { color: var(--good); }
+.ooda-prop.discarded { opacity: .6; }
+.ooda-prop-target { font-size: 12px; margin-top: 3px; }
+.ooda-prop-toggle { background: none; border: 0; padding: 3px 0 0; font-family: var(--mono); font-size: 10px; color: var(--base-50); cursor: pointer; }
+.ooda-prop-toggle:hover { color: var(--accent); }
+.ooda-prop-body { border-left: 2px solid var(--line); padding-left: 9px; margin-top: 6px; }
+.ooda-prop-body em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; }
+.ooda-prop-body pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--base-70); margin: 4px 0 0; }
+.ooda-prop-acts { display: flex; gap: 8px; margin-top: 8px; }

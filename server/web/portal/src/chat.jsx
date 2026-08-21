@@ -11,7 +11,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   const [threadEdit, setThreadEdit] = React.useState(false);
   const [showArch, setShowArch] = React.useState(false);
   const [draft, setDraft] = React.useState('');
-  const [ritual, setRitual] = React.useState('ask');
+  const [lastRitual, setLastRitual] = React.useState('ask');
   const [ctx, setCtx] = React.useState([]);
   const [runSel, setRunSel] = React.useState(null);
   const [propOpen, setPropOpen] = React.useState(null);  // "msgId#idx"
@@ -83,10 +83,14 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
     setActive(id); setThreadEdit(false); setCtx([]); setRunSel(null); setPropOpen(null);
   };
 
-  const send = () => {
+  // send(key) — the composer labels by OUTPUT; ritualOf maps that to the wire
+  // value the API takes. lastRitual only records what went out (the waiting row
+  // reads it); it never gates the buttons.
+  const send = (key) => {
+    const rt = window.CHAT_ACTIONS.ritualOf(key);
     if (!thread || !draft.trim() || busy) return;
-    setErr('');
-    post('api/chat/ask', { thread: thread.id, text: draft.trim(), ritual: ritual, context: ctx.slice() })
+    setErr(''); setLastRitual(rt);
+    post('api/chat/ask', { thread: thread.id, text: draft.trim(), ritual: rt, context: ctx.slice() })
       .then(r => { if (r.ok) { setDraft(''); load(); } });
   };
 
@@ -174,7 +178,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 </div>
               )}
               <span title="chat build marker (temporary diagnostic)"
-                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 16</span>
+                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 17</span>
               <button className="v2-bare v2-hoverink" style={{ color: 'var(--ink-mute,#666)', fontSize: 11 }}
                 onClick={() => patchThread(thread.archived ? 'reopen' : 'archive')}>
                 {thread.archived ? 'reopen thread' : 'archive thread'}
@@ -205,7 +209,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                           </button>
                         )}
                         {failed && <button className="v2-btn v2-hoverline" style={{ color: 'var(--ink-faint,#888)', padding: '2px 9px' }}
-                          onClick={() => { setDraft('narrower re-run of ' + m.run + ' — '); setRitual(m.ritual || 'ask'); }}>re-run</button>}
+                          onClick={() => setDraft('narrower re-run of ' + m.run + ' — ')}>re-run</button>}
                       </div>
                       {m.text && <div style={{ fontSize: 12.5, lineHeight: 1.65, whiteSpace: 'pre-wrap',
                         overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0, maxWidth: '100%',
@@ -280,7 +284,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
               const pct = running ? '54%' : '12%';
               const text = running ? 'kairos is running · reports land when the turn finishes, there is no token stream'
                 : 'order written to vessel/spool · the runner polls every 3s';
-              const note = ritual === 'delegate' ? 'ceiling 10m · anything it would change comes back as a proposal'
+              const note = lastRitual === 'delegate' ? 'ceiling 10m · anything it would change comes back as a proposal'
                 : 'kairos answers from context · it is sandboxed and changes nothing';
               return (
                 <div style={{ display: 'grid', gridTemplateColumns: '78px minmax(0,1fr)', gap: 12, padding: '11px 2px' }}>
@@ -298,17 +302,6 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
 
             {/* composer */}
             <div style={{ marginTop: 'auto', paddingTop: 14 }}>
-              <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span className="v2-label">RITUAL</span>
-                <div style={{ display: 'flex', border: '1px solid var(--line,#3a3a3a)' }}>
-                  {['ask', 'delegate'].map(rt => (
-                    <button key={rt} className="v2-bare" onClick={() => setRitual(rt)}
-                      style={{ padding: '3px 11px', fontSize: 11,
-                        background: ritual === rt ? 'var(--ink,#d4d4d4)' : 'transparent',
-                        color: ritual === rt ? 'var(--bg-0,#262626)' : 'var(--ink-faint,#888)' }}>{rt}</button>
-                  ))}
-                </div>
-              </div>
               {(ctx.length > 0 || offers.length > 0) && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 9 }}>
                   <span className="v2-label">CONTEXT</span>
@@ -323,8 +316,11 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 </div>
               )}
               <div style={{ position: 'relative', marginTop: 9 }}>
-                <textarea className="v2-input" value={draft} rows={3} placeholder="ask kairos · @ to tag an intent"
-                  onChange={e => setDraft(e.target.value)} style={{ width: '100%', fontSize: 12.5, padding: 9, resize: 'vertical' }} />
+                <textarea className="v2-input" value={draft} rows={3}
+                  placeholder={window.CHAT_ACTIONS.placeholder + ' · @ to tag an intent'}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(e.shiftKey ? 'delegate' : 'ask'); } }}
+                  style={{ width: '100%', fontSize: 12.5, padding: 9, resize: 'vertical' }} />
                 {mentionOpen && mentions.length > 0 && (
                   <div style={{ border: '1px solid var(--line,#3a3a3a)', background: 'var(--bg-2,#1a1a1a)', marginTop: -1 }}>
                     {mentions.map(mm => (
@@ -337,18 +333,36 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 9, flexWrap: 'wrap' }}>
-                <button className="v2-btn v2-hoveraccent" disabled={busy}
-                  style={{ color: busy ? 'var(--ink-mute,#555)' : 'var(--ink,#d4d4d4)', padding: '4px 13px', cursor: busy ? 'not-allowed' : 'pointer' }}
-                  onClick={send}>
-                  {busy ? 'kairos is busy' : (ritual === 'delegate' ? 'delegate a run' : 'ask kairos')}
-                </button>
-                <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>
-                  {busy ? 'one run at a time — this queues behind the active one'
-                    : ritual === 'delegate' ? 'nothing is applied without a person' : 'nothing is written'}
-                </span>
-                {err && <span style={{ fontSize: 11, color: 'var(--warn,#a44)' }}>{err}</span>}
-              </div>
+              {/* two actions, each labelled by what comes BACK. No selected
+                  state to misread — you press the outcome you want. */}
+              {(() => {
+                const canSend = !busy && !!draft.trim();
+                const A = window.CHAT_ACTIONS;
+                return (
+                  <React.Fragment>
+                    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginTop: 9, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <button className="v2-btn v2-accentfill" disabled={!canSend}
+                          style={{ borderColor: 'var(--accent,#0091ea)', color: canSend ? 'var(--accent,#0091ea)' : 'var(--ink-mute,#555)',
+                            padding: '4px 13px', cursor: canSend ? 'pointer' : 'not-allowed' }}
+                          onClick={() => send('ask')}>{busy ? A.busyLabel : A.ask.label}</button>
+                        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.ask.sub}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <button className="v2-btn v2-hoveraccent" disabled={!canSend}
+                          style={{ color: canSend ? 'var(--ink,#d4d4d4)' : 'var(--ink-mute,#555)',
+                            padding: '4px 13px', cursor: canSend ? 'pointer' : 'not-allowed' }}
+                          onClick={() => send('delegate')}>{A.propose.label}</button>
+                        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.propose.sub}</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 8 }}>
+                      {busy ? A.busyNote(engine) : A.assurance}
+                    </div>
+                    {err && <div style={{ fontSize: 11, color: 'var(--warn,#a44)', marginTop: 4 }}>{err}</div>}
+                  </React.Fragment>
+                );
+              })()}
             </div>
           </React.Fragment>
         )}
