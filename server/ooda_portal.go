@@ -53,6 +53,9 @@ func OodaReadRoutes(live *OodaLive) func(*http.ServeMux, PortalOptions) {
 		// candidates → confirm into the shared artifact pool. Registers only
 		// when the lane is wired.
 		api.registerEmailRoutes(mux)
+		// the FEED approval lane (ooda_feed.go) + the ARCHIVE read
+		api.registerFeedRoutes(mux)
+		mux.HandleFunc("GET /api/ooda/archive", api.archive)
 		// /data/meta.json keeps the AION client's revision-poll shape
 		mux.HandleFunc("GET /data/meta.json", handleAionLiveFile(live, "/data/meta.json"))
 	}
