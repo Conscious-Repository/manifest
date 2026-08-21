@@ -63,12 +63,14 @@ control: owned
     - [ ] Roof [owner:: BPA] [work:: shell/roof]
 `)
 	write("system/realestate/people.md", `# Real Estate People
-- [initials:: BA] [name:: benjamin anderson] [role:: partner]
-- [initials:: BPA] [name:: brian anderson] [role:: partner]
-- [initials:: OS] [name:: olga sobkiv] [role:: partner] [contractor:: olga-sobkiv]
+- [initials:: BA] [name:: benjamin anderson] [role:: partner] [email:: ben@ooda.group]
+- [initials:: BPA] [name:: brian anderson] [role:: partner] [email:: bpabbassa@att.net]
+- [initials:: BF] [name:: brian fromal] [role:: partner] [email:: brian@ooda.group]
+- [initials:: OS] [name:: olga sobkiv] [role:: partner] [email:: me@olgasobkiv.com] [contractor:: olga-sobkiv]
 `)
+	// the REAL mapping (corrected 2026-08-21): brian@ooda.group = Brian FROMAL
 	if err := os.WriteFile(filepath.Join(teamDir, "emails.json"),
-		[]byte(`{"ben@ooda.group":"BA","brian@ooda.group":"BPA","bpabbassa@att.net":"BPA","me@olgasobkiv.com":"OS"}`),
+		[]byte(`{"ben@ooda.group":"BA","me@benjaminbanderson.com":"BA","brian@ooda.group":"BF","bpabbassa@att.net":"BPA","me@olgasobkiv.com":"OS"}`),
 		0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +260,7 @@ func TestOodaBidFilesAsAProposalForTheOwner(t *testing.T) {
 // of an admin override lane.
 func TestOodaAssigneeLockHoldsForAdminToo(t *testing.T) {
 	h, auth, store, _ := oodaPortalFixture(t)
-	brian, err := auth.SessionCookie("brian@ooda.group", "Brian", false, time.Now())
+	brian, err := auth.SessionCookie("bpabbassa@att.net", "Brian", false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,12 +289,22 @@ func TestOodaAssigneeLockHoldsForAdminToo(t *testing.T) {
 	if rec := oodaDo(t, h, brian, "PATCH", "/api/team/item/"+item.ID, `{"status":"done"}`); rec.Code != 200 {
 		t.Fatalf("assignee patch = %d %s", rec.Code, rec.Body)
 	}
-	// and Brian's OTHER address, resolving to the same initials, works too
-	brianAlt, err := auth.SessionCookie("bpabbassa@att.net", "Brian", false, time.Now())
+	// the same-person-two-addresses arm anchors on BA, who really has two:
+	// the admin adds his own item, and his NON-admin personal address may
+	// patch it — same initials, so the assignee lock recognizes one human.
+	rec = oodaDo(t, h, admin, "POST", "/api/team/items", `{"kind":"task","title":"ben's item"}`)
+	if rec.Code != 200 {
+		t.Fatalf("admin add: %d %s", rec.Code, rec.Body)
+	}
+	var benItem struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &benItem)
+	benAlt, err := auth.SessionCookie("me@benjaminbanderson.com", "Benjamin", false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := oodaDo(t, h, brianAlt, "PATCH", "/api/team/item/"+item.ID, `{"status":"open"}`); rec.Code != 200 {
+	if rec := oodaDo(t, h, benAlt, "PATCH", "/api/team/item/"+benItem.ID, `{"status":"done"}`); rec.Code != 200 {
 		t.Fatalf("the same person's second address = %d, want 200", rec.Code)
 	}
 }

@@ -36,10 +36,19 @@ owner `"me"` instead of `OS`).
 
 **Removing a seat:** delete the line. Effective on the next request.
 
-**Seats today:** BA, SM, BPA (two addresses), OS, SA. `IS` (Igor Sobkiv)
-and `BF` (Brian Fromal) have **no address and therefore no seat** — they
-stay assignable in `people.md` and appear as work owners, but cannot sign
-in until an address is added above.
+**Seats today:** BA (`ben@ooda.group`), SM (`stephen@ooda.group`),
+BPA (`bpabbassa@att.net`), BF (`brian@ooda.group`), OS
+(`me@olgasobkiv.com`), SA (`sydney5161@yahoo.com`). ⚠ The two Brians:
+**`brian@ooda.group` is Brian FROMAL (BF)**, and Brian ANDERSON (BPA) is
+`bpabbassa@att.net` — this mapping was wrong until 2026-08-21 (both
+resolved to BPA; no activity had come from the address, so nothing was
+misattributed). `IS` (Igor Sobkiv) has **no address and therefore no
+seat** — he stays assignable in `people.md` and appears as a work owner,
+but cannot sign in until an address is added above.
+
+Partner emails also live on the `people.md` rows as `[email:: …]` — that
+field feeds portal attribution AND the mailbox-sync relevance filter, so
+keep it and this file agreeing.
 
 ## What partners can see and do
 

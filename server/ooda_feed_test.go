@@ -238,7 +238,8 @@ func TestOodaApprovalAccessTable(t *testing.T) {
 	}{
 		{"ben@ooda.group", true, true, true},         // admin
 		{"me@olgasobkiv.com", false, true, true},     // owns into garden-spe via sobkiv holdings
-		{"brian@ooda.group", false, true, true},      // direct 40% owner
+		{"bpabbassa@att.net", false, true, true},     // Brian ANDERSON — direct 40% owner
+		{"brian@ooda.group", false, false, false},    // Brian FROMAL — a seat, but no ownership
 		{"stranger@ooda.group", false, false, false}, // domain member, no ownership
 	}
 	for _, c := range cases {

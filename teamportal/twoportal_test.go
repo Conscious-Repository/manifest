@@ -28,8 +28,11 @@ func oodaShapedPortal(t *testing.T, dataDir string) (*httptest.Server, *teamport
 	// invariant, not a convenience: ownerToken falls back to the address's
 	// local part, so an admitted-but-unmapped partner would file work under a
 	// garbage owner ("me@olgasobkiv.com" → "me" instead of "OS").
+	// The REAL mapping (corrected 2026-08-21): brian@ooda.group is Brian
+	// FROMAL (BF); Brian ANDERSON (BPA) is bpabbassa@att.net. BA carries two
+	// addresses — the same-person-two-addresses arm anchors on him.
 	if err := os.WriteFile(filepath.Join(teamDir, "emails.json"),
-		[]byte(`{"ben@ooda.group":"BA","brian@ooda.group":"BPA","bpabbassa@att.net":"BPA","me@olgasobkiv.com":"OS"}`),
+		[]byte(`{"ben@ooda.group":"BA","me@benjaminbanderson.com":"BA","brian@ooda.group":"BF","bpabbassa@att.net":"BPA","me@olgasobkiv.com":"OS"}`),
 		0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -211,12 +214,13 @@ func TestAllowListedPartnerIsAFullMember(t *testing.T) {
 // proposal from EITHER address (the audit's handleDecide finding).
 func TestDecideAcceptsTheTargetsOtherAddress(t *testing.T) {
 	srv, auth, store, _ := oodaShapedPortal(t, t.TempDir())
-	ben, err := auth.SessionCookie("ben@ooda.group", "Ben", false, time.Now())
+	olga, err := auth.SessionCookie("me@olgasobkiv.com", "Olga", false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res := post(t, srv, ben, "POST", "/api/team/proposals",
-		`{"target":"brian@ooda.group","kind":"task","title":"walk 4848"}`); res.StatusCode != http.StatusOK {
+	// Olga proposes FOR Ben (target = his admin address)…
+	if res := post(t, srv, olga, "POST", "/api/team/proposals",
+		`{"target":"ben@ooda.group","kind":"task","title":"walk 4848"}`); res.StatusCode != http.StatusOK {
 		t.Fatalf("propose: %d", res.StatusCode)
 	}
 	var propID string
@@ -226,22 +230,19 @@ func TestDecideAcceptsTheTargetsOtherAddress(t *testing.T) {
 	if propID == "" {
 		t.Fatal("no proposal")
 	}
-	// Brian signs in with his OTHER address; both map to BPA
-	brianAlt, err := auth.SessionCookie("bpabbassa@att.net", "Brian", false, time.Now())
+	// …and Ben decides it signed in with his OTHER, NON-admin address: both
+	// map to BA, so the ownerToken arm (not the admin arm) is what passes.
+	benAlt, err := auth.SessionCookie("me@benjaminbanderson.com", "Benjamin", false, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res := post(t, srv, brianAlt, "POST", "/api/team/proposals/decide",
+	if res := post(t, srv, benAlt, "POST", "/api/team/proposals/decide",
 		`{"id":"`+propID+`","approve":true}`); res.StatusCode != http.StatusOK {
 		t.Fatalf("target's second address got %d — it must be able to decide its own proposal", res.StatusCode)
 	}
-	// an unrelated member still cannot decide it
-	olga, err := auth.SessionCookie("me@olgasobkiv.com", "Olga", false, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res := post(t, srv, ben, "POST", "/api/team/proposals",
-		`{"target":"brian@ooda.group","kind":"task","title":"second"}`); res.StatusCode != http.StatusOK {
+	// an unrelated member (Brian Fromal) still cannot decide someone else's
+	if res := post(t, srv, olga, "POST", "/api/team/proposals",
+		`{"target":"ben@ooda.group","kind":"task","title":"second"}`); res.StatusCode != http.StatusOK {
 		t.Fatalf("propose 2: %d", res.StatusCode)
 	}
 	var second string
@@ -250,7 +251,11 @@ func TestDecideAcceptsTheTargetsOtherAddress(t *testing.T) {
 			second = p.ID
 		}
 	}
-	if res := post(t, srv, olga, "POST", "/api/team/proposals/decide",
+	fromal, err := auth.SessionCookie("brian@ooda.group", "Brian Fromal", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res := post(t, srv, fromal, "POST", "/api/team/proposals/decide",
 		`{"id":"`+second+`","approve":true}`); res.StatusCode != http.StatusForbidden {
 		t.Fatalf("a third party decided someone else's proposal: %d", res.StatusCode)
 	}
