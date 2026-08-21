@@ -165,25 +165,28 @@ type WorkBid struct {
 // WorkStage is one top-level ROCK line. (Type name kept from the `## work`
 // era — the whole package and client speak "stage"; the UI says rock.)
 type WorkStage struct {
-	ID           string      `json:"id"`
-	Explicit     bool        `json:"-"`
-	Text         string      `json:"text"`
-	Checked      bool        `json:"checked"`
-	Ready        bool        `json:"ready"` // all nodes checked (and at least one)
-	Current      bool        `json:"current"`
-	Est          float64     `json:"est"`         // the rock's OWN [est::] (not-yet-broken-down remainder)
-	EstTotal     float64     `json:"estTotal"`    // own + Σ node est totals
-	Unestimated  int         `json:"unestimated"` // open leaves carrying no est
-	Weeks        float64     `json:"weeks"`       // [weeks:: N] — done-by prefill hint (templates)
-	Done         string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at rock check
-	DoneBy       string      `json:"doneBy"`      // [done-by:: YYYY-MM-DD] — the schedule IS these dates
-	Fields       []WorkField `json:"fields,omitempty"`
-	Extra        []string    `json:"-"`
-	Tasks        []*WorkNode `json:"tasks"` // depth-1 nodes (milestones + loose tasks/decisions)
-	Committed    float64     `json:"committed"`
-	Paid         float64     `json:"paid"`
-	Recognized   float64     `json:"recognized"`             // Σ node recognized + rock-level recognition
-	Unreconciled float64     `json:"unreconciled,omitempty"` // Σ done-but-unlinked firm money
+	ID          string      `json:"id"`
+	Explicit    bool        `json:"-"`
+	Text        string      `json:"text"`
+	Checked     bool        `json:"checked"`
+	Ready       bool        `json:"ready"` // all nodes checked (and at least one)
+	Current     bool        `json:"current"`
+	Est         float64     `json:"est"`         // the rock's OWN [est::] (not-yet-broken-down remainder)
+	EstTotal    float64     `json:"estTotal"`    // own + Σ node est totals
+	Unestimated int         `json:"unestimated"` // open leaves carrying no est
+	Weeks       float64     `json:"weeks"`       // [weeks:: N] — done-by prefill hint (templates)
+	Done        string      `json:"done"`        // [done:: YYYY-MM-DD] — stamped at rock check
+	DoneBy      string      `json:"doneBy"`      // [done-by:: YYYY-MM-DD] — the schedule IS these dates
+	Fields      []WorkField `json:"fields,omitempty"`
+	Extra       []string    `json:"-"`
+	Tasks       []*WorkNode `json:"tasks"` // depth-1 nodes (milestones + loose tasks/decisions)
+	// OpenBids at ROCK level — a bid may allocate to the rock id itself
+	// (Hopke's foundation bids, 2026-08-21); options, never summed.
+	OpenBids     []WorkContract `json:"openBids,omitempty"`
+	Committed    float64        `json:"committed"`
+	Paid         float64        `json:"paid"`
+	Recognized   float64        `json:"recognized"`             // Σ node recognized + rock-level recognition
+	Unreconciled float64        `json:"unreconciled,omitempty"` // Σ done-but-unlinked firm money
 }
 
 var (
@@ -583,16 +586,27 @@ func FreezeWorkID(stages []WorkStage, id string) bool {
 // JoinWorkLedger on purpose: an open bid is not money, it is an option — it
 // must never reach a sum.
 func JoinWorkBids(stages []WorkStage, bids []NodeAllocation) {
+	// index BOTH tether kinds — mirroring JoinWorkLedger, which always
+	// accepted a rock id directly. Bids allocated at rock level (a foundation
+	// bid with no milestone under the rock yet) were silently dropped here
+	// until 2026-08-21: the node index missed, and the `continue` treated a
+	// perfectly live rock as "a node that no longer exists".
 	nodeByID := map[string]*WorkNode{}
+	stageByID := map[string]*WorkStage{}
+	for i := range stages {
+		stageByID[stages[i].ID] = &stages[i]
+	}
 	WalkNodes(stages, func(_ *WorkStage, n *WorkNode) { nodeByID[n.ID] = n })
 	for _, b := range bids {
-		n, ok := nodeByID[b.NodeID]
-		if !ok {
-			continue // a bid on a node that no longer exists stays on the contract
-		}
-		n.OpenBids = append(n.OpenBids, WorkContract{
+		wc := WorkContract{
 			Slug: b.Contract, Contractor: b.Contractor, Amount: b.Amount, Date: b.Date, Expires: b.Expires,
-		})
+		}
+		if n, ok := nodeByID[b.NodeID]; ok {
+			n.OpenBids = append(n.OpenBids, wc)
+		} else if st, ok := stageByID[b.NodeID]; ok {
+			st.OpenBids = append(st.OpenBids, wc)
+		}
+		// neither → the node was deleted; the bid stays on the contract record
 	}
 }
 

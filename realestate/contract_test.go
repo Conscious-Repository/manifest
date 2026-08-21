@@ -164,3 +164,32 @@ func TestProposedForAndBidJoin(t *testing.T) {
 		t.Fatalf("a bid must carry no committed weight, got %v", n.Committed)
 	}
 }
+
+// A bid may allocate to the ROCK id itself — a foundation bid on a rock with
+// no milestone under it yet (Hopke, 4924 Fountain, 2026-08-21). JoinWorkBids
+// silently dropped those: it indexed only child nodes, so a live rock read as
+// "a node that no longer exists". Mirrors JoinWorkLedger's stage arm.
+func TestBidsAllocatedAtRockLevelAttachToTheRock(t *testing.T) {
+	stages := ParseWork([]string{
+		"- [ ] Foundation [weeks:: 3]",
+		"    - [ ] Decide slab thickness [decision::]",
+	})
+	JoinWorkBids(stages, []NodeAllocation{
+		{Contract: "hopke-foundation", Contractor: "hopke-craftsmen", NodeID: "foundation", Amount: 57250, Date: "2026-02-02"},
+		{Contract: "hopke-basement", Contractor: "hopke-craftsmen", NodeID: "foundation", Amount: 102250, Date: "2026-02-02"},
+		{Contract: "gone", Contractor: "x", NodeID: "no-such-node", Amount: 1},
+	})
+	st := &stages[0]
+	if len(st.OpenBids) != 2 {
+		t.Fatalf("rock-level bids must attach to the rock, got %d", len(st.OpenBids))
+	}
+	if st.OpenBids[0].Slug != "hopke-foundation" || st.OpenBids[1].Amount != 102250 {
+		t.Fatalf("bids lost their identity: %+v", st.OpenBids)
+	}
+	if st.Committed != 0 {
+		t.Fatalf("a rock-level bid must carry no committed weight, got %v", st.Committed)
+	}
+	if got := len(stages[0].Tasks[0].OpenBids); got != 0 {
+		t.Fatalf("the decision child must not inherit the rock's bids, got %d", got)
+	}
+}

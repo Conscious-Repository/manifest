@@ -245,6 +245,9 @@ async function renderPropertyPage(slug) {
     };
     line.append(del);
     block.append(line);
+    // bids allocated at the ROCK id itself (no milestone under it yet) hang
+    // directly under the rock line — same affordance as a node's bids
+    appendBidLine(block, p, st);
     stagesSec.append(block);
     // nodes: milestones render as sub-heads with their own children +
     // composer; tasks render as todo rows; decisions live in the lane above
