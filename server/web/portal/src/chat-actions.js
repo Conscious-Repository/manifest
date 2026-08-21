@@ -18,6 +18,20 @@
     assurance: 'Nothing is applied to your records unless you approve it.',
     busyLabel: 'busy',
     placeholder: 'type your question',
+    // attachments — the composer's paperclip. Documents are read; images are
+    // looked at. Anything a browser would execute is refused server-side.
+    attach: {
+      label: '\uD83D\uDCCE attach',
+      accept: '.pdf,.docx,.xlsx,.csv,.tsv,.txt,.md,.json,.log,.png,.jpg,.jpeg,.heic,.webp,.gif',
+      hint: 'pdf · word · spreadsheet · image — up to 25 MB',
+      uploading: function (n) { return 'uploading ' + n + '\u2026'; },
+      failed: function (n, why) { return "couldn't attach " + n + (why ? ' \u2014 ' + why : ''); }
+    },
+    // bytes are shared, names are not: the same file sent twice is stored once
+    // and each sender keeps their own name for it.
+    attachID: function (hash) { return 'file/' + hash; },
+    isAttach: function (id) { return String(id || '').indexOf('file/') === 0; },
+    attachHash: function (id) { return String(id || '').slice(5); },
     // ritualOf maps a UI action key to the wire value the API takes. The server
     // re-normalizes anyway (portal_agent.go chatAskFor) — this is belt and braces.
     ritualOf: function (key) { return key === DELEGATE ? DELEGATE : ASK; },

@@ -12,6 +12,8 @@ function ViewChat({ data }) {
   const [sel, setSel] = React.useState("");
   const [text, setText] = React.useState("");
   const [propOpen, setPropOpen] = React.useState(null);
+  const [attachMeta, setAttachMeta] = React.useState({});
+  const [attaching, setAttaching] = React.useState("");
   const [ctx, setCtx] = React.useState([]);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
@@ -63,6 +65,25 @@ function ViewChat({ data }) {
     setBusy(false);
   };
 
+  // ATTACHMENTS — upload, then the hash rides the context array with the
+  // property chips, so the send path is unchanged.
+  const attachFile = async (file) => {
+    if (!file || !sel) return;
+    const A = window.CHAT_ACTIONS;
+    setAttaching(A.attach.uploading(file.name)); setErr("");
+    try {
+      const r = await fetch("/api/chat/attach?thread=" + encodeURIComponent(sel) +
+        "&name=" + encodeURIComponent(file.name), { method: "POST", body: file });
+      if (!r.ok) throw new Error((await r.text()).trim());
+      const d = await r.json();
+      setAttachMeta((m) => ({ ...m, [d.id]: d.file }));
+      setCtx((c) => (c.indexOf(d.id) < 0 ? c.concat([d.id]) : c));
+    } catch (e) {
+      setErr(A.attach.failed(file.name, String(e.message || e).slice(0, 140)));
+    }
+    setAttaching("");
+  };
+
   // decide applies or discards one proposal — the endpoint has always been
   // wired for this portal (main.go OodaChatProposal); the page just never used it.
   const decide = (m, idx, apply) =>
@@ -101,6 +122,15 @@ function ViewChat({ data }) {
                   <span className="ooda-sub">{String(m.at || "").slice(11, 16)}</span>
                 </div>
                 <div className="ooda-comment-body">{m.text}</div>
+                {(m.files || []).length ? (
+                  <div className="ooda-msg-files">
+                    {m.files.map((f) => (
+                      <a key={f.hash} className="ooda-chip"
+                        href={"/api/chat/attach/" + encodeURIComponent(f.hash)}
+                        target="_blank" rel="noopener">{f.name}</a>
+                    ))}
+                  </div>
+                ) : null}
                 {(m.proposals || []).map((p, idx) => {
                   const key = m.id + "#" + idx;
                   const open = propOpen === key;
@@ -148,7 +178,11 @@ function ViewChat({ data }) {
               </select>
               {ctx.map((c) => (
                 <button key={c} className="ooda-chip on"
-                  onClick={() => setCtx(ctx.filter((x) => x !== c))}>{c.replace("prop/", "")} ✕</button>
+                  onClick={() => setCtx(ctx.filter((x) => x !== c))}>
+                  {window.CHAT_ACTIONS.isAttach(c)
+                    ? ((attachMeta[c] || {}).name || "attachment")
+                    : c.replace("prop/", "")} ✕
+                </button>
               ))}
             </div>
             <div className="ooda-compose">
@@ -166,6 +200,12 @@ function ViewChat({ data }) {
               <button className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
                 {window.CHAT_ACTIONS.propose.label}
               </button>
+              <label className="ooda-attach" title={window.CHAT_ACTIONS.attach.hint}>
+                {attaching ? "…" : window.CHAT_ACTIONS.attach.label}
+                <input type="file" accept={window.CHAT_ACTIONS.attach.accept}
+                  disabled={!!attaching || !sel}
+                  onChange={(e) => { const f = e.target.files[0]; e.target.value = ""; attachFile(f); }} />
+              </label>
             </div>
             <div className="ooda-form-note">
               {window.CHAT_ACTIONS.ask.label} — {window.CHAT_ACTIONS.ask.sub}<br />

@@ -112,8 +112,34 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   });
   const pickMention = tok => setDraft(d => d.replace(/@[^\s]*$/, tok + ' '));
 
+  // ATTACHMENTS — upload first, then the returned hash rides the context array
+  // with everything else, so the send path below is untouched. attachMeta only
+  // exists so a chip can show a filename instead of a hash.
+  const [attachMeta, setAttachMeta] = React.useState({});
+  const [attaching, setAttaching] = React.useState('');
+  const attachFile = async (file) => {
+    if (!file || !thread) return;
+    const A = window.CHAT_ACTIONS;
+    setAttaching(A.attach.uploading(file.name)); setErr('');
+    try {
+      const r = await fetch('api/chat/attach?thread=' + encodeURIComponent(thread.id) +
+        '&name=' + encodeURIComponent(file.name), { method: 'POST', body: file });
+      if (!r.ok) throw new Error((await r.text()).trim());
+      const d = await r.json();
+      setAttachMeta(m => ({ ...m, [d.id]: d.file }));
+      setCtx(c => c.indexOf(d.id) < 0 ? c.concat([d.id]) : c);
+    } catch (e) {
+      setErr(A.attach.failed(file.name, String(e.message || e).slice(0, 140)));
+    }
+    setAttaching('');
+  };
+
   const wide = w >= 1080;
   const ctxLabel = id => {
+    if (window.CHAT_ACTIONS.isAttach(id)) {
+      const f = attachMeta[id];
+      return f ? f.name : 'attachment';
+    }
     if (id.indexOf('aion:') === 0) {
       const it = items.filter(x => x.id === id.slice(5))[0];
       return it ? it.title.slice(0, 32) : id;
@@ -178,7 +204,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 </div>
               )}
               <span title="chat build marker (temporary diagnostic)"
-                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 17</span>
+                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 18</span>
               <button className="v2-bare v2-hoverink" style={{ color: 'var(--ink-mute,#666)', fontSize: 11 }}
                 onClick={() => patchThread(thread.archived ? 'reopen' : 'archive')}>
                 {thread.archived ? 'reopen thread' : 'archive thread'}
@@ -225,6 +251,18 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                           <div>run · {m.run}</div>
                           {m.report && <div>report · {m.report}</div>}
                           {m.brief && <div>brief · {m.brief}</div>}
+                        </div>
+                      )}
+                      {(m.files || []).length > 0 && (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                          {m.files.map(f => (
+                            <a key={f.hash} className="v2-btn v2-hoveraccent"
+                              href={'api/chat/attach/' + encodeURIComponent(f.hash)}
+                              target="_blank" rel="noopener"
+                              style={{ color: 'var(--accent,#0091ea)', padding: '2px 8px', fontSize: 11, textDecoration: 'none' }}>
+                              {window.CHAT_ACTIONS.attach.label.slice(0, 2)} {f.name}
+                            </a>
+                          ))}
                         </div>
                       )}
                       {(m.proposals || []).map((p, idx) => {
@@ -354,6 +392,19 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                             padding: '4px 13px', cursor: canSend ? 'pointer' : 'not-allowed' }}
                           onClick={() => send('delegate')}>{A.propose.label}</button>
                         <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.propose.sub}</span>
+                      </div>
+                      {/* attach — the file becomes a context chip above, so it
+                          rides the send you were going to make anyway */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginLeft: 'auto' }}>
+                        <label className="v2-btn v2-hoveraccent"
+                          style={{ color: 'var(--ink-faint,#888)', padding: '4px 13px',
+                            cursor: attaching ? 'progress' : 'pointer' }}>
+                          {attaching ? A.busyLabel : A.attach.label}
+                          <input type="file" accept={A.attach.accept} style={{ display: 'none' }}
+                            disabled={!!attaching || !thread}
+                            onChange={e => { const f = e.target.files[0]; e.target.value = ''; attachFile(f); }} />
+                        </label>
+                        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.attach.hint}</span>
                       </div>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 8 }}>
