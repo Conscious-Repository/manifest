@@ -1,10 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"manifest/realestate"
 )
 
 // The OODA portal's READ surface (ooda-portal plan, Stage B). Everything here
@@ -148,12 +151,32 @@ func (a *oodaAPI) property(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		writeJSON(w, map[string]any{
+		out := map[string]any{
 			"property":  p,
 			"facts":     oodaPropertyFacts(p, oodaToday()),
 			"ledger":    p.Ledger, // FULL line items — flat by decision
 			"contracts": contracts,
-		})
+		}
+		// The underwriting the cockpit shows needs two things the composed
+		// Property does not carry: the LIVE source sidecar (an unlocked
+		// property's purchase/closing/hard/carry/contingency and its unit
+		// fallbacks) and the assumption set the screening outputs are computed
+		// against. Both are flat — identical for every member — and both ship
+		// by owner decision 2026-08-22: partners already see every ledger line,
+		// so withholding the inputs behind the numbers would be a strange place
+		// to start redacting.
+		if srv := a.live.server(); srv != nil {
+			if raw, ok := srv.realestate.Source(p.Path); ok {
+				out["source"] = json.RawMessage(raw)
+			}
+			out["assumptions"] = map[string]any{
+				"values":    srv.loadAssumptions().Values,
+				"keys":      realestate.AssumptionKeys,
+				"labels":    realestate.AssumptionLabels,
+				"overrides": srv.realestate.AssumptionOverrides(),
+			}
+		}
+		writeJSON(w, out)
 		return
 	}
 	http.Error(w, "property not found", http.StatusNotFound)

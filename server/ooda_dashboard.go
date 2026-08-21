@@ -189,6 +189,15 @@ type oodaDashboard struct {
 	Attention []oodaFacts     `json:"attention"`
 	Owners    []oodaOwnerRow  `json:"owners"`
 	Deals     []oodaDealRow   `json:"deals"`
+	// Week is what lands in the next seven days across the WHOLE portfolio,
+	// overdue first. The WORK tab has always had this per person; nobody could
+	// see the schedule across people, which is the question a construction
+	// programme actually asks.
+	Week []oodaWorkItem `json:"week"`
+	// Waiting is every item held up on somebody, from `[waiting:: who]`. The
+	// parser has populated it since the WORK tab shipped and no surface has
+	// ever shown it — it is the clearest "who is blocking whom" signal we have.
+	Waiting []oodaWorkItem `json:"waiting"`
 }
 
 // buildOodaDashboard computes every tile. Money sums the SAME Project rollup
@@ -314,8 +323,37 @@ func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
 			Open:      len(g.Open) + len(g.Overdue) + len(g.DueThisWeek),
 			Decisions: len(g.Decisions), Overdue: len(g.Overdue),
 		})
+		// the week is overdue + due-this-week, flattened across people. Overdue
+		// belongs in "this week" (AION's rule too): something that was due
+		// Monday is this week's problem, not last week's.
+		d.Week = append(d.Week, g.Overdue...)
+		d.Week = append(d.Week, g.DueThisWeek...)
+		d.Waiting = append(d.Waiting, g.Waiting...)
+	}
+	sortOodaWeek(d.Week)
+	sort.SliceStable(d.Waiting, func(i, j int) bool { return d.Waiting[i].Title < d.Waiting[j].Title })
+	// never nil: the client does .length on these
+	if d.Week == nil {
+		d.Week = []oodaWorkItem{}
+	}
+	if d.Waiting == nil {
+		d.Waiting = []oodaWorkItem{}
 	}
 	return d
+}
+
+// sortOodaWeek puts the soonest first and everything UNDATED last. An item
+// with no due date cannot be ranked against one that has one, and sorting ""
+// naturally would float all of them to the top of the week — crowding out the
+// dated work the section exists to show.
+func sortOodaWeek(items []oodaWorkItem) {
+	sort.SliceStable(items, func(i, j int) bool {
+		a, b := items[i].Due, items[j].Due
+		if (a == "") != (b == "") {
+			return b == ""
+		}
+		return a < b
+	})
 }
 
 // oodaToday is the local calendar date the late/overdue rules compare against.

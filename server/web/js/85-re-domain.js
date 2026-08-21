@@ -2040,69 +2040,12 @@ async function loadReAssumptions() {
   } catch (e) { reAssumptionsCache = {}; }
 }
 
-function reDebtService(loan, a) {
-  const r = (a.perm_interest_rate || 0) / 12;
-  const n = (a.perm_amort_years || 25) * 12;
-  if (!loan || !r || !n) return 0;
-  const m = loan * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-  return m * 12;
-}
-
-// reScreeningCalc reads a property's tier-1 inputs from its source sidecar
-// data (mirrored into the /api payload as units + the source cache the page
-// fetches) — here we work off the list payload's units + page-level source
-// fetches fill the rest; callers on the deal page get tdc/noi/dscr where the
-// inputs exist.
-// reSrcNum reads a source-sidecar number, tolerating BOTH shapes: the
-// property slice (flat keys) and the single-parcel full-deal object
-// (properties[0]) — the same fallback the Go sourceMoney applies.
-function reSrcNum(src, key) {
-  if (!src) return 0;
-  if (src[key] != null) return src[key] || 0;
-  return (((src.properties || [])[0] || {})[key]) || 0;
-}
-
+// reScreeningCalc — the cockpit's call shape. The math itself moved to
+// 77-re-screening.js so the OODA portal can run the SAME function rather than
+// a second implementation that would drift (see that file's header).
+// reSrcNum and reDebtService are globals from there too.
 function reScreeningCalc(p) {
-  const src = p.__source || {};
-  const a = reAssumptions();
-  // measurables win (overhaul §3.1): the frontmatter unit mix carries the
-  // unit count + per-unit rents; the source sidecar is the fallback
-  const units = ((p.unitMix || []).length) || p.units || reSrcNum(src, "total_units") || 0;
-  const rent = (p.rentMonthly && units) ? p.rentMonthly / units : reSrcNum(src, "avg_rent_per_unit");
-  // cost inputs = THE BUDGET's plan figures (owner call 2026-08-19 — the
-  // section had its own purchase/hard inputs that disagreed with the budget):
-  // hard = Σ rock ests once estimated (else the underwrite figure), plus
-  // closing, soft = carry when entered (else the screening approximation)
-  const purchase = reSrcNum(src, "purchase_price");
-  const closing = reSrcNum(src, "closing_costs");
-  const workEst = (p.work || []).reduce((n, st) => n + (st.estTotal || 0), 0);
-  const hard = workEst > 0 ? workEst : reSrcNum(src, "hard_costs");
-  if (!units || !rent) return { complete: false };
-  const gross = units * rent * 12;
-  const egi = gross * (1 - (a.vacancy_rate || 0));
-  const noi = egi * (1 - (a.opex_rate || 0));
-  const carry = reSrcNum(src, "carry_cost");
-  const soft = carry > 0 ? carry : hard * 0.15; // budget's soft plan, else the screening approximation
-  const contingency = hard * (a.contingency_pct || 0);
-  const tdc = purchase + closing + hard + soft + contingency;
-  const arv = a.exit_cap_rate ? noi / a.exit_cap_rate : 0;
-  // Loan sizing (owner report 2026-08-18 "DSCR is ALWAYS 1.22"): at the
-  // LTV-max loan DSCR is a CONSTANT of the assumptions — loan = LTV·ARV and
-  // ARV = NOI/cap, so NOI cancels: dscr = cap/(ltv·payment). The engine has
-  // the same identity; the deal-varying number is DSCR at the TAKEOUT loan —
-  // what the perm actually refinances (the construction loan, LTC·TDC),
-  // capped by what the appraisal supports (LTV·ARV). When the LTV cap binds
-  // the takeout, the shortfall is a refi gap — equity stays in the deal.
-  const permMax = arv * (a.perm_ltv || 0);
-  const takeout = tdc * (a.construction_loan_ltc || 0);
-  const loan = takeout > 0 ? Math.min(permMax, takeout) : permMax;
-  const refiGap = takeout > permMax ? takeout - permMax : 0;
-  const ads = reDebtService(loan, a);
-  return {
-    complete: true, gross, egi, noi, tdc, arv, loan, permMax, refiGap,
-    purchase, closing, hard, soft, contingency, hardFromWork: workEst > 0,
-    dscr: ads ? noi / ads : 0,
-  };
+  return reScreen(p, p.__source || {}, reAssumptions());
 }
 
 // ---- PUBLISH → oodagroup — the portal export effector (RE spec §4) ----

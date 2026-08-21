@@ -71,7 +71,13 @@ func (s *Server) assumptionsRel() string {
 }
 
 // loadAssumptions reads + parses the record (missing file → defaults).
+// No vault is the same case as no file: the defaults are the answer, not a
+// panic. Read paths reach this from the portals, which are configured
+// independently of the writer.
 func (s *Server) loadAssumptions() realestate.Assumptions {
+	if s.vault == nil {
+		return realestate.ParseAssumptions("")
+	}
 	raw, _ := os.ReadFile(filepath.Join(s.vault.VaultRoot(), filepath.FromSlash(s.assumptionsRel())))
 	return realestate.ParseAssumptions(string(raw))
 }

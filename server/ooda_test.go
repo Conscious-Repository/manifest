@@ -5,6 +5,7 @@ import (
 
 	"manifest/aion"
 	"manifest/realestate"
+	"manifest/tasks"
 )
 
 // oodaFixture: three properties spanning the phases + one that is over plan
@@ -150,6 +151,82 @@ func TestOodaRockLabel(t *testing.T) {
 		c, l := oodaRockLabel(tc.in, shorts)
 		if c != tc.container || l != tc.label {
 			t.Errorf("oodaRockLabel(%q) = %q / %q, want %q / %q", tc.in, c, l, tc.container, tc.label)
+		}
+	}
+}
+
+// THIS WEEK and WAITING ON are cross-person rollups the dashboard grew so a
+// partner can see the schedule and the blockages without opening WORK and
+// expanding every person. Both flatten lanes buildOodaWork already computes.
+func TestOodaDashboardWeekAndWaiting(t *testing.T) {
+	// two people, one rock each, with a mix of overdue / this-week / far-off
+	// and one task explicitly waiting on somebody
+	stageWith := func(id, text, doneBy string, nodes ...*realestate.WorkNode) realestate.WorkStage {
+		return realestate.WorkStage{ID: id, Text: text, DoneBy: doneBy, Tasks: nodes}
+	}
+	node := func(id, text, owner, waiting string) *realestate.WorkNode {
+		return &realestate.WorkNode{ID: id, Task: &tasks.Task{
+			Text: text, Owner: owner, Waiting: waiting}}
+	}
+	snap := &oodaSnapshot{
+		Properties: []realestate.Property{
+			{Slug: "a-st", Short: "1 A St", Entity: "E", Control: "owned", Status: "construction",
+				Work: []realestate.WorkStage{
+					stageWith("s1", "Roof", "2020-01-01", // long overdue
+						node("n1", "strip the deck", "SM", "")),
+					stageWith("s2", "Shell", "2030-01-01", // far future
+						node("n2", "order steel", "OS", ""),
+						node("n3", "await the survey", "SM", "the surveyor")),
+				}},
+		},
+		Backlog: []*aion.BacklogItem{},
+		People:  []*aion.Person{{Initials: "SM", Name: "Stephen"}, {Initials: "OS", Name: "Olga"}},
+	}
+	d := buildOodaDashboard(snap, "2026-08-22")
+
+	// the waiting task must be in WAITING and NOT double-counted into the week
+	if len(d.Waiting) != 1 {
+		t.Fatalf("waiting = %d, want 1: %+v", len(d.Waiting), d.Waiting)
+	}
+	if w := d.Waiting[0]; w.WaitingOn != "the surveyor" {
+		t.Fatalf("waitingOn = %q, want %q — the flag alone says nothing actionable",
+			w.WaitingOn, "the surveyor")
+	}
+	// week = overdue + due-this-week across everyone; "order steel" is due in
+	// 2030 so it is open, not this week, and the waiting one is in its own lane
+	if len(d.Week) != 1 || d.Week[0].Title != "strip the deck" {
+		t.Fatalf("week = %+v, want just the overdue roof task", d.Week)
+	}
+	// overdue is surfaced per person too — the field existed and never rendered
+	var sm *oodaOwnerRow
+	for i := range d.Owners {
+		if d.Owners[i].Owner == "SM" {
+			sm = &d.Owners[i]
+		}
+	}
+	if sm == nil || sm.Overdue != 1 {
+		t.Fatalf("SM row = %+v, want overdue 1", sm)
+	}
+	// never nil — the client calls .length on both
+	if d.Week == nil || d.Waiting == nil {
+		t.Fatal("week/waiting must marshal as [] not null")
+	}
+}
+
+// An item with no due date cannot be ranked against one that has a date, and
+// must not sort above it — otherwise undated work crowds out the actual week.
+func TestOodaWeekSortsUndatedLast(t *testing.T) {
+	d := oodaDashboard{Week: []oodaWorkItem{
+		{Title: "no date", Due: ""},
+		{Title: "later", Due: "2026-08-30"},
+		{Title: "sooner", Due: "2026-08-23"},
+	}}
+	sortOodaWeek(d.Week)
+	got := []string{d.Week[0].Title, d.Week[1].Title, d.Week[2].Title}
+	want := []string{"sooner", "later", "no date"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("week order = %v, want %v", got, want)
 		}
 	}
 }

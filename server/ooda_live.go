@@ -193,6 +193,15 @@ func (l *OodaLive) refresh(force bool) error {
 	return nil
 }
 
+// server exposes the owning Server to this package's OODA handlers, nil-safe
+// so a projection built without one degrades rather than panicking.
+func (l *OodaLive) server() *Server {
+	if l == nil || l.s == nil || l.s.realestate == nil {
+		return nil
+	}
+	return l.s
+}
+
 // Snapshot returns the current composed read (nil only before the first
 // successful compose with no cache on disk).
 func (l *OodaLive) Snapshot() *oodaSnapshot {

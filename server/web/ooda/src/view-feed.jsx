@@ -166,16 +166,16 @@ function ContractCard({ row, onDecide }) {
           {p.date ? " · " + p.date : ""}{p.expires ? " · expires " + p.expires : ""}
         </span>
       </div>
-      <div className="ooda-split">
+      <div className="ooda-alloc">
         {allocs.map((a, i) => (
-          <div className="ooda-split-row" key={i}>
-            <span className="ooda-split-prop">{a.property}</span>
+          <div className="ooda-alloc-row" key={i}>
+            <span className="ooda-alloc-prop">{a.property}</span>
             <span className="ooda-sub">{a.node}</span>
             {row.decidable ? (
               <input className="ooda-amt-in" type="number" value={a.amount || ""}
                 onChange={(e) => setAmount(i, e.target.value)} />
             ) : (
-              <span className="ooda-split-amt">{money(a.amount)}</span>
+              <span className="ooda-alloc-amt">{money(a.amount)}</span>
             )}
           </div>
         ))}

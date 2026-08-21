@@ -70,7 +70,7 @@ function App() {
   let body;
   if (data.loading) body = <Empty>loading the portfolio…</Empty>;
   else if (data.error) body = <Empty>{"could not load: " + data.error}</Empty>;
-  else if (view === "dashboard") body = <ViewDashboard data={data} go={setView} />;
+  else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={setView} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
   else if (view === "map") body = <ViewMap />;
   else if (view === "work") body = <ViewWork data={data} me={data.me} />;

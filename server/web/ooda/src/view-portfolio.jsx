@@ -141,22 +141,31 @@ function PropertyDetail({ slug, onClose }) {
         </div>
       ) : null}
 
+      <DecisionsLane work={p.work} />
+
       <Section title="ROCKS" count={(p.work || []).length}>
-        {(p.work || []).map((st) => (
-          <div key={st.id} className="ooda-rock">
-            <div className="ooda-rock-head">
-              <span>{st.checked ? "✓ " : ""}{st.text}</span>
-              <span className="r">{st.doneBy ? "by " + st.doneBy : DASH}</span>
-            </div>
-            {(st.tasks || []).filter((n) => !n.checked).map((n) => (
-              <div key={n.id} className="ooda-node">
-                <span>{n.text}</span>
-                <span className="ooda-sub">{orDash(n.owner)}</span>
-              </div>
-            ))}
-          </div>
-        ))}
+        {!(p.work || []).length ? <Empty>no work planned yet</Empty> : null}
+        {(p.work || []).map((st) => <Rock key={st.id} st={st} />)}
       </Section>
+
+      <Underwriting p={p} source={d.source} assumptions={d.assumptions} />
+
+      {p.operating && (p.operating.months || []).length ? (
+        <Section title="OPERATING" count={p.operating.months.length}>
+          <div className="ooda-row ooda-head-row cols-op">
+            <span>MONTH</span><span className="r">INCOME</span>
+            <span className="r">OPEX</span><span className="r">NET</span>
+          </div>
+          {p.operating.months.slice().reverse().slice(0, 12).map((m) => (
+            <div key={m.month} className="ooda-row cols-op">
+              <span className="ooda-sub">{m.month}</span>
+              <span className="r in">{money(m.income)}</span>
+              <span className="r">{money(m.expenses)}</span>
+              <span className={"r" + (m.net < 0 ? " over" : "")}>{money(m.net)}</span>
+            </div>
+          ))}
+        </Section>
+      ) : null}
 
       <Section title="CONTRACTS & BIDS" count={(d.contracts || []).length}>
         {!(d.contracts || []).length ? <Empty>none yet</Empty> : null}
@@ -191,7 +200,128 @@ function PropertyDetail({ slug, onClose }) {
           </div>
         ))}
       </Section>
+
+      {(p.log || []).length ? (
+        <Section title="LOG" count={p.log.length}>
+          {p.log.slice(0, 12).map((line, i) => (
+            <div key={i} className="ooda-logline">{line}</div>
+          ))}
+        </Section>
+      ) : null}
+
+      <OwnerCard p={p} f={f} />
+
+      {p.drive || p.agc ? (
+        <div className="ooda-links">
+          {p.drive ? <a href={p.drive} target="_blank" rel="noreferrer">Drive ↗</a> : null}
+          {p.agc ? <a href={p.agc} target="_blank" rel="noreferrer">AGC ↗</a> : null}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+// Rock — one stage of the tree with its money and its nested nodes.
+//
+// The cockpit deliberately has NO "current stage" marker (owner call
+// 2026-08-12: rocks are not sequential, they run in parallel and any of them
+// takes tasks). The schedule is each rock's own [done-by::], so that is what
+// carries the late ink here too.
+function Rock({ st }) {
+  const today = todayISO();
+  const late = !st.checked && st.doneBy && st.doneBy < today;
+  return (
+    <div className={"ooda-rock" + (st.checked ? " done" : "") + (late ? " late" : "")}>
+      <div className="ooda-rock-head">
+        <span className="ooda-rock-mark">{st.checked ? "✓" : "○"}</span>
+        <span className="ooda-rock-text">{st.text}</span>
+        {st.estTotal ? <span className="ooda-est">{money(st.estTotal)}</span> : null}
+        <span className={"r" + (late ? " over" : "")}>
+          {st.doneBy ? (late ? "late · " : "by ") + st.doneBy.slice(5) : DASH}
+        </span>
+      </div>
+      {/* per-rock money: what is contracted against it and what has been paid.
+          The cockpit shows this and the portal used to drop it entirely. */}
+      {st.committed || st.paid || st.unreconciled ? (
+        <div className="ooda-rock-money">
+          {st.committed ? <span>contracted {money(st.committed)}</span> : null}
+          {st.paid ? <span>paid {money(st.paid)}</span> : null}
+          {st.unreconciled ? (
+            <span className="over" title="done at a firm price with no expense row behind it">
+              ⚑ {money(st.unreconciled)} unreconciled
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {(st.tasks || []).map((n) => <WorkNode key={n.id} n={n} depth={0} />)}
+    </div>
+  );
+}
+
+// WorkNode recurses. The old inspector rendered depth-1 only, so every nested
+// task under a milestone was invisible — the tree looked emptier than it was.
+function WorkNode({ n, depth }) {
+  if (n.decision) return null; // decisions are hoisted into their own lane
+  // WorkNode marshals FLAT (realestate/work.go MarshalJSON): text/checked/
+  // owner sit at the top level, there is no nested task object.
+  const done = n.checked;
+  return (
+    <>
+      <div className={"ooda-node" + (done ? " done" : "") + (n.milestone ? " milestone" : "")}
+        style={{ paddingLeft: 14 + depth * 14 }}>
+        <span className="ooda-node-mark">{done ? "✓" : n.milestone ? "◆" : "○"}</span>
+        <span className="ooda-node-text">{n.text}</span>
+        {n.estTotal ? <span className="ooda-est">{money(n.estTotal)}</span> : null}
+        <span className="ooda-sub">{orDash(n.owner)}</span>
+      </div>
+      {(n.children || []).map((c) => <WorkNode key={c.id} n={c} depth={depth + 1} />)}
+    </>
+  );
+}
+
+// DecisionsLane — open decisions hoisted out of the rock tree, because a
+// decision nobody has made is blocking somebody, and buried three levels deep
+// in a stage nobody expands it may as well not exist.
+function DecisionsLane({ work }) {
+  const [showClosed, setShowClosed] = React.useState(false);
+  const open = [], closed = [];
+  const walk = (nodes, rock) => (nodes || []).forEach((n) => {
+    if (n.decision) {
+      (n.resolution || n.checked ? closed : open).push(
+        { id: n.id, text: n.text, rock, resolution: n.resolution, owner: n.owner });
+    }
+    walk(n.children, rock);
+  });
+  (work || []).forEach((st) => walk(st.tasks, st.text));
+  if (!open.length && !closed.length) return null;
+
+  return (
+    <Section title="DECISIONS" count={open.length}>
+      {!open.length ? <Empty>nothing open to decide here</Empty> : null}
+      {open.map((dn) => (
+        <div key={dn.id} className="ooda-row cols-dec">
+          <span className="ooda-stack">
+            <b>◇ {dn.text}</b>
+            <em>{orDash(dn.rock)}</em>
+          </span>
+          <span className="ooda-sub">{orDash(dn.owner)}</span>
+        </div>
+      ))}
+      {closed.length ? (
+        <div className="ooda-more" role="button" onClick={() => setShowClosed(!showClosed)}>
+          {(showClosed ? "hide" : "show") + " decided · " + closed.length}
+        </div>
+      ) : null}
+      {showClosed ? closed.map((dn) => (
+        <div key={dn.id} className="ooda-row cols-dec ooda-decided">
+          <span className="ooda-stack">
+            <b>{dn.text}</b>
+            <em>{[dn.rock, dn.resolution].filter(Boolean).join(" · ") || DASH}</em>
+          </span>
+          <span className="ooda-sub">{orDash(dn.owner)}</span>
+        </div>
+      )) : null}
+    </Section>
   );
 }
 
@@ -317,6 +447,177 @@ function BidForm({ slug, property, onFiled, note }) {
         <button className="ooda-ghost" onClick={() => setOpen(false)}>cancel</button>
         <button className="ooda-send" onClick={file} disabled={busy}>{busy ? "…" : "file bid"}</button>
       </div>
+    </Section>
+  );
+}
+
+// Underwriting — read-only parity with the cockpit's panel.
+//
+// READ-ONLY is doctrine, not an omission: ARCHITECTURE §12 says a portal write
+// lands in the derived team store, never the vault. The cockpit's unit-mix and
+// measurables editors POST straight through vaultwriter, so they cannot come
+// along. A partner sees every input and every output and changes none of them.
+//
+// The screening math is the SHARED reScreen() (src/re-screening.js, byte-
+// identical to the cockpit's copy), so these numbers cannot drift from the
+// ones Benjamin reads.
+function Underwriting({ p, source, assumptions }) {
+  const a = (assumptions && assumptions.values) || {};
+  const labels = (assumptions && assumptions.labels) || {};
+  const keys = (assumptions && assumptions.keys) || [];
+  const src = source || {};
+  const uw = (typeof reScreen === "function") ? reScreen(p, src, a) : { complete: false };
+  const mix = p.unitMix || [];
+  const meas = p.measurables || {};
+  const measKeys = Object.keys(meas);
+
+  // which assumptions this property overrides, from the derived index
+  const overridden = {};
+  ((assumptions && assumptions.overrides) || []).forEach((o) => {
+    if (o && o.kind === "property" && o.slug === p.slug) overridden[o.key] = o.value;
+  });
+
+  const pct = (v) => (v == null ? DASH : Math.round(v * 1000) / 10 + "%");
+
+  return (
+    <Section title="UNDERWRITING">
+      {p.locked ? (
+        <div className="ooda-sub" style={{ paddingBottom: 6 }}>
+          {"estimates locked " + p.locked + " — the figures below are today's; " +
+            "the frozen set is what the deal was underwritten against"}
+        </div>
+      ) : null}
+
+      {/* what it IS */}
+      <div className="ooda-uw-grid">
+        <span><em>UNITS</em><b>{(mix.length || p.units) || DASH}</b></span>
+        <span><em>RENT / MO</em><b>{money(p.rentMonthly)}</b></span>
+        <span><em>KIND</em><b>{orDash(p.kind)}</b></span>
+        <span><em>STATUS</em><b>{statusLabel(p.status)}</b></span>
+      </div>
+
+      {mix.length ? (
+        <>
+          <div className="ooda-row ooda-head-row cols-mix">
+            <span>UNIT</span><span className="r">BD</span><span className="r">BA</span>
+            <span className="r">SQFT</span><span className="r">RENT / MO</span>
+          </div>
+          {mix.map((u, i) => (
+            <div key={i} className="ooda-row cols-mix">
+              <span>{orDash(u.label)}</span>
+              <span className="r">{u.beds || DASH}</span>
+              <span className="r">{u.baths || DASH}</span>
+              <span className="r">{u.sqft || DASH}</span>
+              <span className="r">{money(u.rent)}</span>
+            </div>
+          ))}
+        </>
+      ) : <div className="ooda-sub">no measured unit mix — the source sidecar's totals are used</div>}
+
+      {measKeys.length ? (
+        <div className="ooda-chips" style={{ paddingTop: 8 }}>
+          {measKeys.map((k) => (
+            <span key={k} className="ooda-meas">{k.replace(/_/g, " ")} <b>{meas[k]}</b></span>
+          ))}
+        </div>
+      ) : null}
+
+      {/* what it COSTS — the same plan figures behind the BUDGET tile */}
+      <div className="ooda-uw-grid" style={{ marginTop: 12 }}>
+        <span><em>PURCHASE</em><b>{money(uw.purchase)}</b></span>
+        <span><em>CLOSING</em><b>{money(uw.closing)}</b></span>
+        <span>
+          <em>HARD{uw.hardFromWork ? " · Σ ROCKS" : ""}</em>
+          <b>{money(uw.hard)}</b>
+        </span>
+        <span><em>SOFT / CARRY</em><b>{money(uw.soft)}</b></span>
+        <span><em>CONTINGENCY</em><b>{money(uw.contingency)}</b></span>
+        <span><em>TOTAL COST</em><b>{money(uw.tdc)}</b></span>
+      </div>
+
+      {/* what it RETURNS */}
+      {uw.complete ? (
+        <>
+          <div className="ooda-uw-grid" style={{ marginTop: 12 }}>
+            <span><em>NOI</em><b>{money(uw.noi)}</b></span>
+            <span><em>ARV</em><b>{money(uw.arv)}</b></span>
+            <span><em>DSCR</em><b className={uw.dscr && uw.dscr < 1.2 ? "over" : ""}>
+              {uw.dscr ? Math.round(uw.dscr * 100) / 100 : DASH}</b></span>
+            <span><em>TAKEOUT LOAN</em><b>{money(uw.loan)}</b></span>
+          </div>
+          {uw.refiGap > 0 ? (
+            <div className="ooda-note">
+              {money(uw.refiGap) + " refi gap — the construction loan is bigger than " +
+                "the appraisal supports at " + pct(a.perm_ltv) + " LTV, so that much " +
+                "equity stays in the deal."}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="ooda-sub" style={{ paddingTop: 10 }}>
+          returns need a unit count and a rent — neither the unit mix nor the
+          source sidecar has both yet
+        </div>
+      )}
+
+      {/* the policy the returns were computed against */}
+      {keys.length ? (
+        <>
+          <div className="ooda-sub" style={{ paddingTop: 12 }}>ASSUMPTIONS</div>
+          <div className="ooda-chips">
+            {keys.map((k) => (
+              <span key={k} className={"ooda-assum" + (overridden[k] != null ? " override" : "")}
+                title={(labels[k] || k) + (overridden[k] != null ? " — overridden on this property" : " — portfolio default")}>
+                {(labels[k] || k.replace(/_/g, " "))} <b>
+                  {overridden[k] != null ? overridden[k] : (a[k] != null ? a[k] : DASH)}
+                </b>
+              </span>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </Section>
+  );
+}
+
+// OwnerCard — who holds title. `acq === "owned"` is the CLOSED test; control
+// is set at signing, so reading it here would name the entity as owner of
+// parcels it has only agreed to buy.
+function OwnerCard({ p, f }) {
+  const intel = p.intel || {};
+  const deed = p.owner || intel.owner || "";
+  return (
+    <Section title="OWNER">
+      {f.acq === "owned" && p.entity ? (
+        <>
+          <div className="ooda-owner-name">{p.entity}</div>
+          {deed && deed.toLowerCase() !== String(p.entity).toLowerCase() ? (
+            <div className="ooda-sub over">{"deed: " + deed}</div>
+          ) : null}
+          {p.ownerSince ? <div className="ooda-sub">{"since " + p.ownerSince}</div> : null}
+        </>
+      ) : (
+        <>
+          {f.acq === "under-contract" && p.entity ? (
+            <div className="ooda-sub">{"under contract to " + p.entity}</div>
+          ) : null}
+          <div className="ooda-owner-name">{deed || "no owner on record"}</div>
+          {(p.ownerAddr || intel.ownerAddr) ? (
+            <div className="ooda-sub">{p.ownerAddr || intel.ownerAddr}</div>
+          ) : null}
+          {(p.ownerSince || intel.saleDate) ? (
+            <div className="ooda-sub">{"theirs since " + (p.ownerSince || intel.saleDate)}</div>
+          ) : null}
+        </>
+      )}
+      {intel.taxStatus ? (
+        <div className={"ooda-sub" + (intel.taxStatus === "delinquent" ? " over" : "")}>
+          {intel.taxStatus === "delinquent"
+            ? "taxes DELINQUENT · " + money(intel.taxBalDue) + " owed"
+            : intel.taxStatus === "lra" ? "LRA land-bank" : "taxes current"}
+          {intel.assessed ? " · assessed " + money(intel.assessed) : ""}
+        </div>
+      ) : null}
     </Section>
   );
 }

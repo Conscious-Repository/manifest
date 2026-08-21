@@ -30,6 +30,52 @@ func TestChatActionsCopiesIdentical(t *testing.T) {
 	}
 }
 
+// The screening math (NOI · ARV · TDC · DSCR) is the second file that has to
+// exist twice for the same reason. It matters more than the composer's labels:
+// two implementations that drift would show a partner and the owner DIFFERENT
+// returns on the same property, and nothing would flag it.
+func TestScreeningCopiesIdentical(t *testing.T) {
+	a, err := fs.ReadFile(webFiles, "web/js/77-re-screening.js")
+	if err != nil {
+		t.Fatalf("cockpit copy: %v", err)
+	}
+	b, err := fs.ReadFile(webFiles, "web/ooda/src/re-screening.js")
+	if err != nil {
+		t.Fatalf("ooda copy: %v", err)
+	}
+	if !bytes.Equal(a, b) {
+		t.Fatalf("re-screening.js copies have drifted (%d vs %d bytes) — "+
+			"edit one and copy it over the other:\n"+
+			"  cp server/web/js/77-re-screening.js server/web/ooda/src/re-screening.js",
+			len(a), len(b))
+	}
+	for _, want := range []string{"reScreen", "reSrcNum", "reDebtService"} {
+		if !bytes.Contains(a, []byte("window."+want)) {
+			t.Errorf("re-screening.js does not export %s", want)
+		}
+	}
+	// the cockpit must DELEGATE, not keep a second body
+	dom, err := fs.ReadFile(webFiles, "web/js/85-re-domain.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(dom, []byte("reScreen(p, p.__source")) {
+		t.Error("85-re-domain.js no longer delegates to the shared reScreen")
+	}
+	if bytes.Contains(dom, []byte("function reDebtService")) {
+		t.Error("85-re-domain.js has its own reDebtService again — that is the drift")
+	}
+	// and the page that runs it must load it first
+	idx, err := fs.ReadFile(webFiles, "web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at, dep := bytes.Index(idx, []byte("77-re-screening.js")), bytes.Index(idx, []byte("85-re-domain.js"))
+	if at < 0 || dep < 0 || at > dep {
+		t.Error("index.html must load 77-re-screening.js before 85-re-domain.js")
+	}
+}
+
 // The composer labels by OUTPUT and maps to the wire in exactly one place.
 // These assertions stop a future edit from quietly restoring the mode toggle.
 func TestChatComposersLabelByOutcome(t *testing.T) {

@@ -84,7 +84,7 @@ button { font: inherit; color: inherit; }
 
 .cols-entity { grid-template-columns: minmax(0,2fr) 58px 106px 100px 110px 110px 52px; }
 .cols-attn   { grid-template-columns: minmax(0,1.6fr) minmax(0,1.4fr) minmax(0,1fr); }
-.cols-owner  { grid-template-columns: minmax(0,1.6fr) minmax(0,1fr) 60px 70px; }
+.cols-owner  { grid-template-columns: minmax(0,1.6fr) minmax(0,1fr) 60px 76px 82px; }
 .cols-deal   { grid-template-columns: minmax(0,1.6fr) 110px 110px 110px 110px; }
 .cols-prop   { grid-template-columns: minmax(0,2.3fr) minmax(0,1.6fr) 52px 100px; }
 .cols-work   { grid-template-columns: minmax(0,2.4fr) minmax(0,1fr) 90px; }
@@ -94,7 +94,7 @@ button { font: inherit; color: inherit; }
 /* ---- portfolio list + inspector ---- */
 .ooda-split { display: flex; gap: 28px; align-items: flex-start; }
 .ooda-list { flex: 1; min-width: 0; }
-.ooda-insp { width: 340px; flex: none; position: sticky; top: 16px;
+.ooda-insp { width: 420px; flex: none; position: sticky; top: 16px;
   max-height: calc(100vh - 40px); overflow: auto; }
 .ooda-insp-empty { font-family: var(--mono); font-size: 11px; color: var(--base-40); padding: 16px 0; }
 .ooda-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-bottom: 12px; }
@@ -335,14 +335,19 @@ button { font: inherit; color: inherit; }
 .ooda-amt-in { font-family: var(--mono); font-size: 12px; width: 110px; padding: 4px 6px;
   border: 1px solid var(--line-soft); border-radius: 4px; text-align: right; }
 .ooda-amt-in.big { font-size: 18px; width: 140px; font-weight: 700; }
-.ooda-split { display: flex; flex-direction: column; gap: 2px; }
-.ooda-split-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0;
+/* ALLOC — one contract amount divided across properties. Named -alloc, not
+   -split: `.ooda-split` was already taken by the list|inspector pane above
+   (:95), and this rule redefining it turned PORTFOLIO and CHAT into single
+   columns, stranding their inspectors ~1,400px below the fold. That read as
+   "clicking a property does nothing". */
+.ooda-alloc { display: flex; flex-direction: column; gap: 2px; }
+.ooda-alloc-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0;
   border-top: 1px solid var(--line-soft); }
-.ooda-split-prop { font-size: 12px; min-width: 130px; }
-.ooda-split-row .ooda-sub { flex: 1; }
-.ooda-split-amt { font-family: var(--mono); font-size: 12px; margin-left: auto;
+.ooda-alloc-prop { font-size: 12px; min-width: 130px; }
+.ooda-alloc-row .ooda-sub { flex: 1; }
+.ooda-alloc-amt { font-family: var(--mono); font-size: 12px; margin-left: auto;
   font-variant-numeric: tabular-nums; }
-.ooda-split-row .ooda-amt-in { margin-left: auto; }
+.ooda-alloc-row .ooda-amt-in { margin-left: auto; }
 .ooda-sub.over { color: var(--over); }
 .ooda-evidence { display: flex; flex-direction: column; gap: 4px; }
 .ooda-mini-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;
@@ -363,3 +368,66 @@ button { font: inherit; color: inherit; }
 a.ooda-archive-title { color: var(--accent); text-decoration: none; }
 a.ooda-archive-title:hover { text-decoration: underline; }
 .ooda-archive-row .ooda-sub { margin-left: auto; text-align: right; }
+
+/* ---- YOURS: what is on the reader, above every portfolio number ---- */
+.ooda-yours-counts { display: flex; flex-wrap: wrap; gap: 18px; padding: 8px 4px 4px;
+  font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.ooda-yours-counts .over { color: var(--over); }
+.ooda-yours-name { font-family: var(--sans); font-size: 12px; color: var(--base-100); }
+.ooda-lane-tag { font-family: var(--mono); font-size: 9px; letter-spacing: 0.6px;
+  color: var(--base-40); align-self: center; }
+.ooda-lane-tag.decide { color: var(--accent); }
+.ooda-more { font-family: var(--mono); font-size: 10px; color: var(--base-40);
+  padding: 8px 4px; cursor: pointer; }
+.ooda-more:hover { color: var(--accent); }
+.cols-yours   { grid-template-columns: 58px minmax(0,1fr) 130px; }
+.cols-week    { grid-template-columns: minmax(0,1.7fr) 130px 120px; }
+.cols-waiting { grid-template-columns: minmax(0,1.7fr) 110px 150px; }
+@media (max-width: 860px) {
+  .cols-yours   { grid-template-columns: 50px minmax(0,1fr) 92px; }
+  .cols-week, .cols-waiting { grid-template-columns: minmax(0,1fr) 92px; }
+  .cols-week > :nth-child(2), .cols-waiting > :nth-child(2) { display: none; }
+  .cols-owner { grid-template-columns: minmax(0,1.4fr) 48px 60px; }
+  .cols-owner > :nth-child(2), .cols-owner > :nth-child(5) { display: none; }
+}
+
+/* ---- property inspector: rocks tree, underwriting, owner ---- */
+.ooda-rock.done .ooda-rock-text { color: var(--base-40); text-decoration: line-through; }
+.ooda-rock.late .ooda-rock-text { color: var(--over); }
+.ooda-rock-mark { font-family: var(--mono); font-size: 11px; color: var(--base-40); }
+.ooda-rock-text { flex: 1; min-width: 0; }
+.ooda-est { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.ooda-rock-money { display: flex; flex-wrap: wrap; gap: 12px; padding: 2px 0 4px 22px;
+  font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.ooda-node.done .ooda-node-text { color: var(--base-40); text-decoration: line-through; }
+.ooda-node.milestone .ooda-node-text { font-weight: 500; }
+.ooda-node-mark { font-family: var(--mono); font-size: 10px; color: var(--base-40); }
+.ooda-node-text { flex: 1; min-width: 0; }
+.ooda-decided b { color: var(--base-40); }
+.cols-dec { grid-template-columns: minmax(0,1fr) 70px; }
+.cols-op  { grid-template-columns: 70px 1fr 1fr 1fr; }
+.cols-mix { grid-template-columns: minmax(0,1fr) 34px 34px 56px 90px; }
+
+.ooda-uw-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px;
+  padding: 8px 0; }
+.ooda-uw-grid span { display: flex; flex-direction: column; }
+.ooda-uw-grid em { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;
+  color: var(--base-40); font-style: normal; }
+.ooda-uw-grid b { font-family: var(--mono); font-size: 14px; font-weight: 400; }
+.ooda-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.ooda-meas, .ooda-assum { font-family: var(--mono); font-size: 9px; letter-spacing: 0.3px;
+  color: var(--base-40); background: var(--base-05); border: 1px solid var(--base-25);
+  border-radius: 9px; padding: 2px 7px; }
+.ooda-assum b { color: var(--base-100); font-weight: 400; }
+/* an override is a deliberate departure from portfolio policy — say so */
+.ooda-assum.override { border-color: var(--accent); color: var(--accent); }
+.ooda-assum.override b { color: var(--accent); }
+.ooda-owner-name { font-size: 14px; padding: 2px 0; }
+.ooda-logline { font-size: 12px; color: var(--base-40); padding: 4px 4px;
+  border-top: 1px solid var(--line-soft); }
+.ooda-links { display: flex; gap: 14px; padding: 12px 4px; font-family: var(--mono); font-size: 11px; }
+.ooda-links a { color: var(--accent); text-decoration: none; }
+@media (max-width: 860px) {
+  .ooda-uw-grid { grid-template-columns: repeat(2, 1fr); }
+  .cols-mix { grid-template-columns: minmax(0,1fr) 28px 28px 46px 74px; }
+}

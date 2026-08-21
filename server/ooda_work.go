@@ -28,7 +28,11 @@ type oodaWorkItem struct {
 	// Waiting comes from a rock-tree task's [waiting:: who] field. Backlog
 	// items have no such status — the aion vocabulary is exactly
 	// open|in_progress|done|decided.
-	Waiting bool `json:"waiting,omitempty"`
+	//
+	// WaitingOn carries WHO. The flag alone said an item was blocked without
+	// saying by whom, which is the only part anyone can act on.
+	Waiting   bool   `json:"waiting,omitempty"`
+	WaitingOn string `json:"waitingOn,omitempty"`
 }
 
 // oodaWorkGroup is one person's section. Empty Owner is the `— unassigned —`
@@ -205,7 +209,7 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 				ID: "prop/" + p.Slug + "#" + n.ID, Title: n.Task.Text, Kind: kind, Source: "rock",
 				Owner:     oodaOwner(n.Task.Owner, alias),
 				Container: label, Rock: st.Text, Due: st.DoneBy, Age: n.Task.Added,
-				Waiting: n.Task.Waiting != "",
+				Waiting: n.Task.Waiting != "", WaitingOn: strings.TrimSpace(n.Task.Waiting),
 			})
 		})
 	}
