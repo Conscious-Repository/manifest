@@ -13,6 +13,27 @@
 #
 # Anyone loosening ProtectSystem, InaccessiblePaths, or ReadWritePaths below is
 # undoing the bargain that allowed zeck onto metis in the first place.
+#
+# SHARED-TREE PREREQUISITE. Two parties work this tree: manifest (as benjamin)
+# writes orders into vessel/spool, and this runner (as zeck) claims them by
+# rename and writes artifacts/. They share it through a setgid GROUP, the same
+# pattern /shared/apps/kairos uses — NOT ACLs. ACLs were tried first and broke:
+# vessel/spool and vessel/state were created after the ACL was applied and
+# inherited nothing, so every spool write failed "permission denied". setgid
+# makes inheritance automatic for anything created later.
+#
+#   sudo groupadd -f zeckshare
+#   sudo usermod -aG zeckshare benjamin && sudo usermod -aG zeckshare zeck
+#   sudo chgrp -R zeckshare /private/harnesses/zeck
+#   sudo chmod -R g+rwX /private/harnesses/zeck
+#   sudo find /private/harnesses/zeck -type d -exec chmod g+s {} \;
+#   sudo chgrp zeckshare /private/harnesses && sudo chmod g+x /private/harnesses
+#   sudo systemctl restart manifest   # <-- REQUIRED: systemd resolves a unit's
+#                                     #     groups at process start, so a
+#                                     #     running manifest keeps the old set
+#
+# None of this touches the vault: zeck reaches /private only by an `x`-only ACL
+# for traversal, and /private/consciousrepo stays 0700 with no zeck entry.
 
 [Unit]
 Description=zeck OODA-agent runner (hermes-agent contract adapter)

@@ -68,6 +68,17 @@ accepting the CONTRACT, so no partner can commit money.
 
 ## zeck
 
+**The harness tree is shared by two parties** — manifest (as `benjamin`)
+writes orders into `vessel/spool`, zeck claims them by rename and writes
+`artifacts/`. They share it through the **`zeckshare` setgid group**, the same
+pattern `/shared/apps/kairos` uses. ACLs were tried first and failed: dirs
+created *after* the ACL was applied inherited nothing, so every spool write
+died "permission denied". setgid inherits automatically. Full recipe in
+`deploy/zeck-runner.service`. ⚠ **Adding benjamin to the group requires
+`systemctl restart manifest`** — systemd resolves a unit's groups at process
+start, so a running manifest keeps the old set and the fix looks like it did
+nothing.
+
 Inert until **its own** hermes is installed at `/home/zeck/.local/bin/hermes`
 with its own provider credentials under `/home/zeck/.hermes` (0600, owned
 by zeck) — never a copy of the owner's. Then:
