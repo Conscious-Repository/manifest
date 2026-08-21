@@ -674,6 +674,19 @@ func main() {
 			} else {
 				log.Printf("aion portal team layer: store ready, OAuth client missing (sign-in sealed until %s/portals/aion-portal-oauth.json exists)", cfg.DataDir)
 			}
+			// kairos's standing context pack (aion-context-pack plan,
+			// 2026-08-21): the same contract AionLive serves, exported as
+			// revision-stamped markdown into AION's /shared area — the
+			// cross-host mount lab-apps reads natively, so an open-ended
+			// ask finds real records. Regenerates with every recompose; the
+			// loop covers quiet hours when no portal read triggers a refresh.
+			if cfg.Aion.PackDir != "" {
+				if live := srv.AionLive(); live != nil {
+					live.UseAPack(cfg.Aion.PackDir)
+					go live.PackLoop(context.Background(), 5*time.Minute)
+					log.Printf("aion pack: enabled (→ %s)", cfg.Aion.PackDir)
+				}
+			}
 		}
 	}
 	if portalOpts.Live == nil {

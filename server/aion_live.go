@@ -37,6 +37,12 @@ type AionLive struct {
 	sourceAt    time.Time
 	cacheLoaded bool
 	opMu        sync.Mutex
+
+	// packDir is kairos's standing context-pack destination (aion_pack.go);
+	// "" = pack disabled. packErrRev keeps a failed export to one log line
+	// per revision.
+	packDir    string
+	packErrRev string
 }
 
 type aionLiveCache struct {
@@ -213,6 +219,9 @@ func (l *AionLive) refresh(force bool) error {
 	l.files, l.servingRev = files, rev
 	l.stale, l.lastError, l.lastGoodAt = false, "", now
 	l.saveLocked()
+	// the standing context pack rides the same recompose: a new revision
+	// here is exactly "the source moved", the only time the pack rewrites
+	l.syncPackLocked()
 	return nil
 }
 

@@ -134,6 +134,10 @@ type Config struct {
 	// remain readable for one transition release; only Path is consulted by
 	// the stable-ID migration, and runtime sync ignores all three.
 	AionPortal AionPortalConfig `json:"aionPortal"`
+	// Aion is the AION domain's own block (peer of Ooda's), today just
+	// kairos's standing context pack. Active only when the AION portal team
+	// layer above is enabled — the pack is that portal's contract, exported.
+	Aion AionConfig `json:"aion"`
 	// FundraisingSheets enables the private Markdown↔Google Sheet collaboration
 	// bridge. It remains disabled unless Enabled is explicitly true.
 	FundraisingSheets FundraisingSheetsConfig `json:"fundraisingSheets"`
@@ -196,6 +200,17 @@ type AionPortalConfig struct {
 	AdminEmail string `json:"adminEmail"`
 }
 
+// AionConfig mirrors OodaConfig's pack block for the AION domain. PackDir is
+// kairos's standing context pack — a flat markdown projection of the live
+// AionLive contract, regenerated when the source revision moves
+// (server/aion_pack.go). Unlike zeck's (which stays inside /private), it
+// lives in AION's own /shared area (owner decision 2026-08-21, item 2):
+// /shared is the cross-host mount lab-apps reads natively, so kairos reads
+// on lab-apps what manifest writes on metis.
+type AionConfig struct {
+	PackDir string `json:"packDir"` // default /shared/apps/kairos/aion-context
+}
+
 type FundraisingSheetsConfig struct {
 	Enabled             bool   `json:"enabled"`
 	SpreadsheetID       string `json:"spreadsheetId"`
@@ -232,6 +247,7 @@ func defaultConfig() Config {
 		Port:            7777,
 		PortalPort:      7778,
 		Ooda:            OodaConfig{Port: 7779, Domain: "ooda.group", PackDir: "/private/harnesses/zeck/realestate"},
+		Aion:            AionConfig{PackDir: "/shared/apps/kairos/aion-context"},
 		SystemRoot:      "system",
 		ExtrinsicRoot:   "extrinsic",
 	}
@@ -290,6 +306,9 @@ func LoadConfig(path string) (Config, error) {
 	if strings.TrimSpace(cfg.Ooda.PackDir) == "" {
 		cfg.Ooda.PackDir = d.Ooda.PackDir
 	}
+	if strings.TrimSpace(cfg.Aion.PackDir) == "" {
+		cfg.Aion.PackDir = d.Aion.PackDir
+	}
 	if cfg.FundraisingSheets.SyncIntervalMinutes == 0 {
 		cfg.FundraisingSheets.SyncIntervalMinutes = 5
 	}
@@ -326,6 +345,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.RealEstate.TeamDir = expandHome(cfg.RealEstate.TeamDir)
 	cfg.Ooda.TeamDir = expandHome(cfg.Ooda.TeamDir)
 	cfg.Ooda.PackDir = expandHome(cfg.Ooda.PackDir)
+	cfg.Aion.PackDir = expandHome(cfg.Aion.PackDir)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
 	cfg.AionPortal.TeamDir = expandHome(cfg.AionPortal.TeamDir)
 	if cfg.FundraisingSheets.CredentialsPath == "" {
