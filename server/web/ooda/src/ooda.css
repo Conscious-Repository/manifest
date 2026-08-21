@@ -310,3 +310,56 @@ button { font: inherit; color: inherit; }
 .ooda-broken { display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
   padding: 28px 4px; }
 .ooda-broken-h { font-size: 14px; }
+
+/* ---- FEED + ARCHIVE (ooda-portal email plan, phases 4–5) ---- */
+/* the inbox card — quiet border, the content carries it */
+.ooda-card { border: 1px solid var(--line-soft); border-radius: 6px; padding: 12px 14px;
+  margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ooda-card-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.ooda-card-title { font-size: 13px; font-weight: 600; }
+.ooda-card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.ooda-quiet { font-family: var(--mono); font-size: 11px; padding: 6px 10px; background: none;
+  border: 1px solid var(--line-soft); border-radius: 4px; color: var(--base-40); cursor: pointer; }
+.ooda-quiet:hover { color: var(--over); border-color: var(--over); }
+.ooda-quiet:disabled { opacity: 0.45; cursor: default; }
+.ooda-linkish { font-family: var(--mono); font-size: 10px; background: none; border: none;
+  color: var(--accent); cursor: pointer; padding: 0; text-align: left; }
+.ooda-gmail-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 1px solid var(--accent); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;
+  font-size: 12px; }
+.ooda-gmail-banner a.ooda-send { text-decoration: none; }
+/* the money card: the amount is the headline */
+.ooda-chip.money { color: var(--over); border-color: var(--over); }
+.ooda-money-total { display: flex; align-items: baseline; gap: 10px; }
+.ooda-money-big { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ooda-amt-in { font-family: var(--mono); font-size: 12px; width: 110px; padding: 4px 6px;
+  border: 1px solid var(--line-soft); border-radius: 4px; text-align: right; }
+.ooda-amt-in.big { font-size: 18px; width: 140px; font-weight: 700; }
+.ooda-split { display: flex; flex-direction: column; gap: 2px; }
+.ooda-split-row { display: flex; align-items: baseline; gap: 10px; padding: 3px 0;
+  border-top: 1px solid var(--line-soft); }
+.ooda-split-prop { font-size: 12px; min-width: 130px; }
+.ooda-split-row .ooda-sub { flex: 1; }
+.ooda-split-amt { font-family: var(--mono); font-size: 12px; margin-left: auto;
+  font-variant-numeric: tabular-nums; }
+.ooda-split-row .ooda-amt-in { margin-left: auto; }
+.ooda-sub.over { color: var(--over); }
+.ooda-evidence { display: flex; flex-direction: column; gap: 4px; }
+.ooda-mini-label { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;
+  color: var(--base-40); margin-top: 6px; }
+/* archive facets + rows */
+.ooda-facets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.ooda-facet { font-family: var(--mono); font-size: 10px; letter-spacing: 0.4px; padding: 5px 10px;
+  background: none; border: 1px solid var(--line-soft); border-radius: 999px; cursor: pointer;
+  color: var(--base-40); }
+.ooda-facet.on { color: var(--accent); border-color: var(--accent); }
+.ooda-facet b { font-weight: 600; margin-left: 4px; }
+.ooda-archive { display: flex; flex-direction: column; }
+.ooda-archive-row { display: flex; align-items: baseline; gap: 10px; padding: 8px 2px;
+  border-bottom: 1px solid var(--line-soft); }
+.ooda-archive-date { font-family: var(--mono); font-size: 10px; color: var(--base-40);
+  min-width: 78px; }
+.ooda-archive-title { font-size: 12px; color: inherit; }
+a.ooda-archive-title { color: var(--accent); text-decoration: none; }
+a.ooda-archive-title:hover { text-decoration: underline; }
+.ooda-archive-row .ooda-sub { margin-left: auto; text-align: right; }

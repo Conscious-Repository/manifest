@@ -1,4 +1,4 @@
-// The OODA shell: header + the four destinations. Deliberately quiet — the
+// The OODA shell: header + the destinations. Deliberately quiet — the
 // numbers carry the page, the chrome does not compete with them.
 
 function Shell({ view, setView, me, sync, children }) {
@@ -7,6 +7,8 @@ function Shell({ view, setView, me, sync, children }) {
     ["portfolio", "PORTFOLIO"],
     ["map", "MAP"],
     ["work", "WORK"],
+    ["feed", "FEED"],
+    ["archive", "ARCHIVE"],
     ["chat", "CHAT"],
   ];
   return (
