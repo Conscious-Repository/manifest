@@ -47,6 +47,12 @@ type OodaLive struct {
 	// (it carries every parcel polygon, so recomposing it per request would
 	// re-read ~175 geo sidecars).
 	mapCache oodaMapCache
+
+	// packDir is zeck's standing context-pack destination (ooda_pack.go);
+	// "" = pack disabled. packErrRev keeps a failed export to one log line
+	// per revision.
+	packDir    string
+	packErrRev string
 }
 
 // oodaSnapshot is one composed read of the whole domain. Everything the four
@@ -181,6 +187,9 @@ func (l *OodaLive) refresh(force bool) error {
 	l.snap, l.servingRev = snap, rev
 	l.stale, l.lastError, l.lastGoodAt = false, "", now
 	l.saveLocked()
+	// the standing context pack rides the same recompose: a new revision
+	// here is exactly "the source moved", the only time the pack rewrites
+	l.syncPackLocked()
 	return nil
 }
 

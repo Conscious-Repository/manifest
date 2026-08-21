@@ -213,6 +213,10 @@ type OodaConfig struct {
 	TeamDir    string `json:"teamDir"`    // /private/ooda/team — derived state, never the vault
 	AdminEmail string `json:"adminEmail"` // ben@ooda.group
 	Domain     string `json:"domain"`     // ooda.group
+	// PackDir is zeck's standing context pack — a flat markdown projection of
+	// the live snapshot, regenerated when the source revision moves (ooda_pack.go).
+	// Defaults under the zeck harness; stays INSIDE /private, never /shared.
+	PackDir string `json:"packDir"` // default /private/harnesses/zeck/realestate
 }
 
 func defaultConfig() Config {
@@ -227,7 +231,7 @@ func defaultConfig() Config {
 		ScheduleEnd:     18,
 		Port:            7777,
 		PortalPort:      7778,
-		Ooda:            OodaConfig{Port: 7779, Domain: "ooda.group"},
+		Ooda:            OodaConfig{Port: 7779, Domain: "ooda.group", PackDir: "/private/harnesses/zeck/realestate"},
 		SystemRoot:      "system",
 		ExtrinsicRoot:   "extrinsic",
 	}
@@ -283,6 +287,9 @@ func LoadConfig(path string) (Config, error) {
 	if strings.TrimSpace(cfg.Ooda.Domain) == "" {
 		cfg.Ooda.Domain = d.Ooda.Domain
 	}
+	if strings.TrimSpace(cfg.Ooda.PackDir) == "" {
+		cfg.Ooda.PackDir = d.Ooda.PackDir
+	}
 	if cfg.FundraisingSheets.SyncIntervalMinutes == 0 {
 		cfg.FundraisingSheets.SyncIntervalMinutes = 5
 	}
@@ -318,6 +325,7 @@ func LoadConfig(path string) (Config, error) {
 	cfg.RePortalPath = expandHome(cfg.RePortalPath)
 	cfg.RealEstate.TeamDir = expandHome(cfg.RealEstate.TeamDir)
 	cfg.Ooda.TeamDir = expandHome(cfg.Ooda.TeamDir)
+	cfg.Ooda.PackDir = expandHome(cfg.Ooda.PackDir)
 	cfg.AionPortal.Path = expandHome(cfg.AionPortal.Path)
 	cfg.AionPortal.TeamDir = expandHome(cfg.AionPortal.TeamDir)
 	if cfg.FundraisingSheets.CredentialsPath == "" {

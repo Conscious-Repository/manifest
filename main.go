@@ -842,6 +842,15 @@ func main() {
 			live := srv.NewOodaLive()
 			live.UseTeam(ts, teamportal.Identity{Email: cfg.Ooda.AdminEmail, Name: "Benjamin"})
 			srv.UseOoda(live)
+			// zeck's standing context pack (ooda-context-pack plan): the same
+			// snapshot the portal serves, exported as revision-stamped markdown
+			// into his readable tree. Regenerates with every recompose; the
+			// loop covers quiet hours when no portal read triggers a refresh.
+			if cfg.Ooda.PackDir != "" {
+				live.UsePack(cfg.Ooda.PackDir)
+				go live.PackLoop(context.Background(), 5*time.Minute)
+				log.Printf("ooda pack: enabled (→ %s)", cfg.Ooda.PackDir)
+			}
 			if emailCands != nil {
 				srv.UseOodaEmail(emailCands, gtok)
 				loop := &gmailsync.Loop{
