@@ -5,6 +5,7 @@ function Shell({ view, setView, me, sync, children }) {
   const tabs = [
     ["dashboard", "DASHBOARD"],
     ["portfolio", "PORTFOLIO"],
+    ["map", "MAP"],
     ["work", "WORK"],
     ["chat", "CHAT"],
   ];

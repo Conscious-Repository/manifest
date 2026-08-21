@@ -3,7 +3,7 @@
 function App() {
   const [view, setView] = React.useState(() => {
     const h = (window.location.hash || "").replace(/^#\/?/, "");
-    return ["dashboard", "portfolio", "work", "chat"].includes(h) ? h : "dashboard";
+    return ["dashboard", "portfolio", "map", "work", "chat"].includes(h) ? h : "dashboard";
   });
   const [data] = useOodaData();
 
@@ -14,6 +14,7 @@ function App() {
   else if (data.error) body = <Empty>{"could not load: " + data.error}</Empty>;
   else if (view === "dashboard") body = <ViewDashboard data={data} go={setView} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
+  else if (view === "map") body = <ViewMap />;
   else if (view === "work") body = <ViewWork data={data} me={data.me} />;
   else body = <ViewChat data={data} />;
 

@@ -36,6 +36,9 @@ func OodaReadRoutes(live *OodaLive) func(*http.ServeMux, PortalOptions) {
 		mux.HandleFunc("GET /api/ooda/property/{slug}", api.property)
 		mux.HandleFunc("GET /api/ooda/work", api.work)
 		mux.HandleFunc("GET /api/ooda/people", api.people)
+		// the MAP payload is ~1 MB of parcel geometry — its own route, fetched
+		// lazily on first MAP entry rather than riding the initial load
+		mux.HandleFunc("GET /api/ooda/map", api.mapView)
 		// the one OODA-only WRITE (Stage C): a bid lands as a proposal, never
 		// as a contract record. Everything else a member can write comes from
 		// the shared layer in portal.go, unforked.

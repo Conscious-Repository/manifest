@@ -34,7 +34,10 @@ type oodaWorkItem struct {
 // oodaWorkGroup is one person's section. Empty Owner is the `— unassigned —`
 // group, rendered last and highlighted: unassigned work is the finding.
 type oodaWorkGroup struct {
-	Owner       string         `json:"owner"`
+	Owner string `json:"owner"`
+	// Name is the person behind the initials. Partners do not memorize each
+	// other's owner tokens, and a section headed "OS" tells them nothing.
+	Name        string         `json:"name,omitempty"`
 	Overdue     []oodaWorkItem `json:"overdue"`
 	DueThisWeek []oodaWorkItem `json:"dueThisWeek"`
 	Open        []oodaWorkItem `json:"open"`
@@ -110,6 +113,36 @@ func oodaBacklogOpen(it *aion.BacklogItem) bool {
 	}
 }
 
+// oodaRockLabel turns a backlog item's `[rock::]` reference into the two
+// readable halves the WORK tab shows: where the work lives, and which rock
+// inside it. Backlog rocks are machine slugs — "ooda-group/operations-health",
+// "4924-fountain-ave" — and rendering them raw made a partner guess which
+// project a task belonged to. Rock-tree items already carry both halves.
+func oodaRockLabel(rock string, shortBySlug map[string]string) (container, label string) {
+	rock = strings.TrimSpace(rock)
+	if rock == "" {
+		return "", ""
+	}
+	head, tail, split := strings.Cut(rock, "/")
+	human := func(s string) string {
+		s = strings.TrimSpace(strings.ReplaceAll(s, "-", " "))
+		if s == "" {
+			return ""
+		}
+		return strings.ToUpper(s[:1]) + s[1:]
+	}
+	name := func(slug string) string {
+		if s, ok := shortBySlug[strings.ToLower(slug)]; ok {
+			return s
+		}
+		return human(slug)
+	}
+	if !split {
+		return name(rock), ""
+	}
+	return name(head), human(tail)
+}
+
 // buildOodaWork groups the domain's open work by assignee.
 func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 	if snap == nil {
@@ -119,6 +152,16 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 	weekOut := today
 	if t, err := time.Parse("2006-01-02", today); err == nil {
 		weekOut = t.AddDate(0, 0, 7).Format("2006-01-02")
+	}
+
+	// property slug → display name, so a backlog item filed against
+	// "4924-fountain-ave" reads as a place rather than a slug
+	shortBySlug := map[string]string{}
+	for i := range snap.Properties {
+		p := snap.Properties[i]
+		if s := strings.TrimSpace(p.Short); s != "" {
+			shortBySlug[strings.ToLower(p.Slug)] = s
+		}
 	}
 
 	var items []oodaWorkItem
@@ -131,10 +174,11 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 		if strings.EqualFold(it.Kind, "decision") {
 			kind = "decision"
 		}
+		container, rock := oodaRockLabel(it.Rock, shortBySlug)
 		items = append(items, oodaWorkItem{
 			ID: it.ID, Title: it.Text, Kind: kind, Source: "backlog",
-			Owner: oodaOwner(it.Owner, alias),
-			Rock:  it.Rock, Due: it.Due, Age: it.Captured,
+			Owner:     oodaOwner(it.Owner, alias),
+			Container: container, Rock: rock, Due: it.Due, Age: it.Captured,
 		})
 	}
 	// 2. property rock-tree nodes
@@ -193,8 +237,21 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 			g.Open = append(g.Open, it)
 		}
 	}
+	// put a face to each owner token: people.md first, then contractor records
+	names := map[string]string{}
+	for _, p := range snap.People {
+		if p != nil && strings.TrimSpace(p.Initials) != "" {
+			names[strings.ToUpper(p.Initials)] = p.Name
+		}
+	}
+	for _, c := range snap.Contractors {
+		if ini := contractorInitials(c.Name); ini != "" && names[ini] == "" {
+			names[ini] = c.Name
+		}
+	}
 	out := make([]oodaWorkGroup, 0, len(groups))
 	for _, g := range groups {
+		g.Name = names[strings.ToUpper(g.Owner)]
 		out = append(out, *g)
 	}
 	// partners and contractors alphabetically; the unassigned group LAST,

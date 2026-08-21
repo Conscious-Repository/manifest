@@ -97,6 +97,43 @@ Telegram for zeck is **not configured** — the owner's own channel lives
 inside `~/.hermes/config.yaml` / `.env` (0600, unread). zeck's would live
 in `/home/zeck/.hermes`, never in this repo.
 
+## What the money words mean
+
+The three dashboard figures are the owner's definitions, and the portal
+states them on the page so a partner never has to guess:
+
+| figure | counts |
+|---|---|
+| **committed** | the total budget of every project we already OWN, plus what it costs to close the ones under contract |
+| **paid** | cash we can verify left a bank account — ledger expense rows, plus the purchase price of a deal that actually closed |
+| **plan to go** | what remains on the projects we own, plus the whole budget of the ones we are closing on |
+
+Two figures ride alongside because "committed" used to blur them:
+**contracted** (Σ signed contract allocations — the auditable number) and
+**recognized** (paid plus work finished at a firm price that has no expense
+row yet).
+
+⚠ **`control: owned` does NOT mean the purchase happened.** The vault sets it
+the day a deal is signed. The closing test is STATUS — `realestate.AcqStateOf`
+is the single definition, and every surface reads `property.acq` rather than
+re-deriving it. Before that existed, 28 of the Garden SPE's 32 parcels reported
+as owned and their $558,000 of unclosed purchase prices counted as spent.
+
+## The map
+
+`GET /api/ooda/map` composes two layers from the live vault — our holdings
+(colored by acquisition state, filtered by `oodaVisibleProps` so the research
+tail never leaks) and the researched parcels with their assessor facts. It is
+cached against the projection revision and fetched lazily on first MAP entry.
+Leaflet loads from cdnjs on demand; there is no build step and no API key,
+and the tiles are keyless CARTO.
+
+The parcel set is whatever `cmd/parcel-pull` has captured — **175 parcels,
+neighborhood 53 only**. `ooda.group/parcels` renders 2,448 because its
+static geojson covers neighborhoods 51, 53 and 54. To match it, widen
+`cmd/parcel-pull`'s query and re-run with `-apply`; that writes ~2,300 new
+parcel records into the vault, so it is an owner decision, not a deploy step.
+
 ## When things break
 
 **`/private` not unlocked** → manifest does not start at all

@@ -42,6 +42,11 @@ type OodaLive struct {
 	lastGoodAt  time.Time
 	sourceAt    time.Time
 	cacheLoaded bool
+
+	// mapCache memoizes the heavy MAP payload against the projection revision
+	// (it carries every parcel polygon, so recomposing it per request would
+	// re-read ~175 geo sidecars).
+	mapCache oodaMapCache
 }
 
 // oodaSnapshot is one composed read of the whole domain. Everything the four
