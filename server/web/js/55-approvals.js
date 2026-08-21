@@ -1082,8 +1082,24 @@ async function postApprovalDecision(id, kind, body) {
   const card = document.querySelector(`[data-approval-id="${CSS.escape(id)}"]`);
   if (card) card.remove();
   setSaveState("saving");
-  try { await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); setSaveState("saved"); }
-  catch (e) { setSaveState("error"); }
+  try {
+    const r = await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    // fetch only rejects on a NETWORK failure, so a refused apply (400 with
+    // the reason in the body) used to read as "saved": the card vanished
+    // optimistically, loadFeed brought it back, and the reason was thrown
+    // away. The owner saw a card blink and nothing land.
+    if (!r.ok) {
+      const why = (await r.text().catch(() => "")).trim();
+      setSaveState("error");
+      showToast("Not applied — " + (why.replace(/^apply refused:\s*/i, "") || ("HTTP " + r.status)).slice(0, 160), null, "error");
+    } else {
+      setSaveState("saved");
+    }
+  } catch (e) {
+    setSaveState("error");
+    showToast("Couldn't reach the server — " + String(e.message || e).slice(0, 100), null, "error");
+  }
   loadFeed(); // approvals live in FEED — the decided card resolves in place
 }
 

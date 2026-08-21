@@ -197,3 +197,125 @@ func TestReContractPayloadEdit(t *testing.T) {
 		t.Fatal("Σ-mismatch edit accepted")
 	}
 }
+
+// bidPayload builds a single-property bid for the collision tests.
+func bidPayload(name, doc string, total float64, date string) ReContractPayload {
+	return ReContractPayload{
+		Kind: "bid", ContractorCreate: "WM Electric", Name: name,
+		Total: total, Date: date, Doc: doc,
+		Allocations: []ReContractAllocation{
+			{Property: "4852-fountain-ave", Node: "rough-in/electrical", Amount: total},
+		},
+		NewMilestones: []ReContractMilestone{
+			{Property: "4852-fountain-ave", Rock: "rough-in", Name: "electrical"},
+		},
+	}
+}
+
+// A second bid for the same scope is the normal case — the slug is derived
+// from contractor+scope+property, so competing bids collide by construction.
+// Refusing stranded two real WM Electric bids behind month-old records.
+func TestCompetingBidLandsBesideTheFirst(t *testing.T) {
+	s, vault, _ := reTestStore(t)
+	seedProperty(t, vault, "4852-fountain-ave", "- [ ] Rough in\n")
+	const rel = "system/realestate/contracts/wm-electric-electrical-4852-fountain.md"
+
+	first := reContractProposal(t, bidPayload("WM Electric — electrical, 4852", "sha256:aaa", 42150, "2026-07-27"), rel)
+	p1, err := s.Propose(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Confirm(p1.ID); err != nil {
+		t.Fatal(err)
+	}
+	// a DIFFERENT document for the same scope: a competing bid
+	second := reContractProposal(t, bidPayload("WM Electric — electrical rough-in, 4852", "sha256:bbb", 38500, "2026-08-20"), rel)
+	p2, err := s.Propose(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Confirm(p2.ID); err != nil {
+		t.Fatalf("a competing bid must land, got: %v", err)
+	}
+	sibling := filepath.Join(vault, "system/realestate/contracts/wm-electric-electrical-4852-fountain-2.md")
+	b, err := os.ReadFile(sibling)
+	if err != nil {
+		t.Fatalf("competing bid did not land beside the first: %v", err)
+	}
+	body := string(b)
+	if !strings.Contains(body, "total: 38500") || !strings.Contains(body, "sha256:bbb") {
+		t.Fatalf("sibling holds the wrong bid:\n%s", body)
+	}
+	// its slug must match its filename or the workbench can't address it
+	if !strings.Contains(body, "wm-electric-electrical-4852-fountain-2") &&
+		strings.Contains(body, "slug:") {
+		t.Fatalf("slug does not match the resolved filename:\n%s", body)
+	}
+	// the first bid is untouched — nothing was overwritten
+	orig, _ := os.ReadFile(filepath.Join(vault, filepath.FromSlash(rel)))
+	if !strings.Contains(string(orig), "total: 42150") {
+		t.Fatalf("the first bid was clobbered:\n%s", orig)
+	}
+	// and the decided proposal left pending
+	if got := s.List("pending"); len(got) != 0 {
+		t.Fatalf("confirmed proposals should not stay pending, got %d", len(got))
+	}
+}
+
+// Re-extracting ONE bid must never write it twice — same document, refuse.
+func TestSameDocumentRefusesInsteadOfDuplicating(t *testing.T) {
+	s, vault, _ := reTestStore(t)
+	seedProperty(t, vault, "4852-fountain-ave", "- [ ] Rough in\n")
+	const rel = "system/realestate/contracts/wm-electric-electrical-4852-fountain.md"
+	pay := bidPayload("WM Electric — electrical, 4852", "sha256:aaa", 42150, "2026-07-27")
+
+	p1, _ := s.Propose(reContractProposal(t, pay, rel))
+	if err := s.Confirm(p1.ID); err != nil {
+		t.Fatal(err)
+	}
+	// the SAME document proposed again (a re-extraction of one bid)
+	again := reContractProposal(t, pay, rel)
+	again.Action += " (re-extracted)" // a new id, same content
+	p2, err := s.Propose(again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.Confirm(p2.ID)
+	if err == nil {
+		t.Fatal("the same document must not write a second record")
+	}
+	if !strings.Contains(err.Error(), "same document") {
+		t.Fatalf("the refusal must say why, got: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "system/realestate/contracts/wm-electric-electrical-4852-fountain-2.md")); err == nil {
+		t.Fatal("a duplicate sibling was written")
+	}
+	// a refused apply leaves the proposal pending — it never silently vanishes
+	if got := s.List("pending"); len(got) != 1 {
+		t.Fatalf("refused proposal should stay pending, got %d", len(got))
+	}
+}
+
+// With no document hash on either side, money+date decide.
+func TestNoDocHashFallsBackToTotalAndDate(t *testing.T) {
+	s, vault, _ := reTestStore(t)
+	seedProperty(t, vault, "4852-fountain-ave", "- [ ] Rough in\n")
+	const rel = "system/realestate/contracts/wm-electric-electrical-4852-fountain.md"
+	p1, _ := s.Propose(reContractProposal(t, bidPayload("a", "", 42150, "2026-07-27"), rel))
+	if err := s.Confirm(p1.ID); err != nil {
+		t.Fatal(err)
+	}
+	// identical money AND date, no hash → the same bid arriving twice
+	same, _ := s.Propose(reContractProposal(t, bidPayload("a again", "", 42150, "2026-07-27"), rel))
+	if err := s.Confirm(same.ID); err == nil || !strings.Contains(err.Error(), "same document") {
+		t.Fatalf("identical total+date should refuse, got %v", err)
+	}
+	// a different total → a different bid, lands
+	diff, _ := s.Propose(reContractProposal(t, bidPayload("b", "", 38500, "2026-08-20"), rel))
+	if err := s.Confirm(diff.ID); err != nil {
+		t.Fatalf("a different total is a different bid: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(vault, "system/realestate/contracts/wm-electric-electrical-4852-fountain-2.md")); err != nil {
+		t.Fatal("the differing bid did not land")
+	}
+}

@@ -220,8 +220,16 @@ func (s *Store) applyReContract(p Proposal) error {
 	if err := payload.Validate(); err != nil {
 		return fmt.Errorf("apply refused: %w", err)
 	}
-	if _, err := os.Stat(filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))); err == nil {
-		return fmt.Errorf("apply refused: %s already exists", p.ApplyPath)
+	// A second bid for the SAME scope is the normal case, not an error: the
+	// slug is derived from contractor+scope+property, so competing bids
+	// collide by construction, and the workbench is built to hold several and
+	// accept one. Refusing outright stranded two real $38,500 WM Electric
+	// bids behind $42,150 records from a month earlier (2026-08-21). So:
+	// same source document → a true re-extraction, refuse; different document
+	// → a competing bid, land it beside the first.
+	applyPath, err := s.freeContractPath(p.ApplyPath, payload)
+	if err != nil {
+		return err
 	}
 
 	// 1) contractor — an existing slug must resolve; a create writes a thin
@@ -300,7 +308,7 @@ func (s *Store) applyReContract(p Proposal) error {
 
 	// 3) the contract record itself
 	c := realestate.Contract{
-		Slug: strings.TrimSuffix(path.Base(p.ApplyPath), ".md"),
+		Slug: strings.TrimSuffix(path.Base(applyPath), ".md"),
 		Name: payload.Name, Contractor: slug, Status: payload.Status(),
 		Total: payload.Total, Date: payload.Date, Expires: payload.Expires, Doc: payload.Doc,
 		Terms: payload.Terms, Exclusions: payload.Exclusions, RiskItems: payload.RiskItems,
@@ -310,10 +318,65 @@ func (s *Store) applyReContract(p Proposal) error {
 			Property: a.Property, NodeID: a.Node, Amount: a.Amount,
 		})
 	}
-	if err := s.vw.WriteCap(s.reCap, p.ApplyPath, []byte(realestate.NewContractRecord(c))); err != nil {
+	if err := s.vw.WriteCap(s.reCap, applyPath, []byte(realestate.NewContractRecord(c))); err != nil {
 		return fmt.Errorf("apply refused: contract write: %w", err)
 	}
 	return nil
+}
+
+// freeContractPath resolves where a confirmed contract record actually lands.
+// The happy path is the proposal's own apply-path. When that is taken it asks
+// whether this is the SAME document arriving twice (refuse — re-extracting one
+// bid must never write it twice) or a DIFFERENT one (a competing bid — give it
+// the next free -N slug). Identity is the document hash; with no hash on
+// either side it falls back to total+date, which is what distinguishes two
+// bids in practice.
+func (s *Store) freeContractPath(applyPath string, payload ReContractPayload) (string, error) {
+	full := func(rel string) string { return filepath.Join(s.vaultRoot, filepath.FromSlash(rel)) }
+	if _, err := os.Stat(full(applyPath)); err != nil {
+		return applyPath, nil // free
+	}
+	base := strings.TrimSuffix(applyPath, ".md")
+	for n := 1; n <= 20; n++ {
+		rel := applyPath
+		if n > 1 {
+			rel = fmt.Sprintf("%s-%d.md", base, n)
+		}
+		b, err := os.ReadFile(full(rel))
+		if err != nil {
+			if !ReContractPathAllowed(rel) { // a suffix must stay inside the allow-list
+				return "", fmt.Errorf("apply refused: %q is not a contracts-folder record path", rel)
+			}
+			return rel, nil // this slug is free
+		}
+		if sameContractDocument(string(b), payload) {
+			return "", fmt.Errorf("apply refused: %s already holds this same document — "+
+				"it was imported before (re-extracting one bid must not write it twice)", rel)
+		}
+	}
+	return "", fmt.Errorf("apply refused: %s and 20 numbered siblings are all taken", applyPath)
+}
+
+// sameContractDocument reports whether an existing contract record came from
+// the same source document as this payload.
+func sameContractDocument(existing string, payload ReContractPayload) bool {
+	fm, _ := mdfm.Split(existing)
+	have := strings.TrimSpace(strings.Trim(fm["doc"], `"`))
+	want := strings.TrimSpace(payload.Doc)
+	if have != "" && want != "" {
+		return strings.EqualFold(have, want) // the hash is the identity
+	}
+	// no hash to compare — two bids differing in money or date are different
+	// bids; identical on both is the same one arriving twice
+	return strings.TrimSpace(fm["total"]) == strings.TrimSpace(fmtContractTotal(payload.Total)) &&
+		strings.TrimSpace(fm["date"]) == strings.TrimSpace(payload.Date)
+}
+
+func fmtContractTotal(v float64) string {
+	if v == float64(int64(v)) {
+		return fmt.Sprintf("%d", int64(v))
+	}
+	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 }
 
 // rockSection picks the tree's section: `## rocks`, tolerating the legacy
