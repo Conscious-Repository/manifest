@@ -30,7 +30,11 @@ function ViewPortfolio({ data }) {
   });
 
   return (
-    <div className="ooda-split">
+    // has-sel drives the phone master-detail: with a property open the list is
+    // hidden and the detail takes the screen. Stacked, the 42-row list pushed
+    // the detail ~2,900px down — three screens below the fold, no scroll, which
+    // reads as "tapping does nothing".
+    <div className={"ooda-split" + (sel ? " has-sel" : "")}>
       <div className="ooda-list">
         <div className="ooda-toolbar">
           <input className="ooda-search" type="search" value={q}
@@ -114,6 +118,9 @@ function PropertyDetail({ slug, onClose }) {
 
   return (
     <div className="ooda-detail">
+      {/* phone-only: the ✕ is a fine desktop affordance and a poor thumb
+          target, and on a phone this IS the whole screen */}
+      <button className="ooda-back" onClick={onClose}>← all properties</button>
       <div className="ooda-detail-head">
         <b>{p.short || p.address}</b>
         <button className="ooda-x" onClick={onClose}>✕</button>

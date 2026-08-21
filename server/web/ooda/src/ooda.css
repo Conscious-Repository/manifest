@@ -110,6 +110,8 @@ button { font: inherit; color: inherit; }
 .ooda-detail-head { display: flex; align-items: baseline; gap: 10px; padding-bottom: 2px; }
 .ooda-detail-head b { font-weight: 600; font-size: 15px; }
 .ooda-x { margin-left: auto; background: none; border: none; color: var(--base-40); cursor: pointer; }
+/* phone-only affordance — the media query turns it on (see PHONE below) */
+.ooda-back { display: none; }
 .ooda-detail-meta { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding-bottom: 12px; }
 .ooda-money { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px;
   padding: 12px 0; border-top: 1px solid var(--base-25); border-bottom: 1px solid var(--base-25); }
@@ -135,6 +137,10 @@ button { font: inherit; color: inherit; }
   .ooda-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch;
     scrollbar-width: none; min-width: 0; }
   .ooda-tabs::-webkit-scrollbar { display: none; }
+  /* seven destinations, ~2.5 visible: without an edge fade the strip reads as
+     the whole nav rather than the start of it */
+  .ooda-tabs { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent);
+    mask-image: linear-gradient(to right, #000 82%, transparent); }
   .ooda-tab { padding: 5px 9px; white-space: nowrap; }
   .ooda-who { white-space: nowrap; }
   .ooda-tiles { grid-template-columns: repeat(2, 1fr); }
@@ -384,8 +390,14 @@ a.ooda-archive-title:hover { text-decoration: underline; }
 .cols-week    { grid-template-columns: minmax(0,1.7fr) 130px 120px; }
 .cols-waiting { grid-template-columns: minmax(0,1.7fr) 110px 150px; }
 @media (max-width: 860px) {
-  .cols-yours   { grid-template-columns: 50px minmax(0,1fr) 92px; }
-  .cols-week, .cols-waiting { grid-template-columns: minmax(0,1fr) 92px; }
+  /* the due cell must never break mid-token — "overdue · 08-19" wrapping to
+     "overdue · 08-" / "19" is worse than no label at all */
+  .cols-yours   { grid-template-columns: 42px minmax(0,1fr) 106px; gap: 10px; }
+  .cols-week, .cols-waiting { grid-template-columns: minmax(0,1fr) 106px; gap: 10px; }
+  .cols-yours .r, .cols-week .r, .cols-waiting .r { white-space: nowrap; }
+  /* with a wrapped multi-line title, a vertically centred tag floats away
+     from the line it labels */
+  .ooda-lane-tag { align-self: start; padding-top: 1px; }
   .cols-week > :nth-child(2), .cols-waiting > :nth-child(2) { display: none; }
   .cols-owner { grid-template-columns: minmax(0,1.4fr) 48px 60px; }
   .cols-owner > :nth-child(2), .cols-owner > :nth-child(5) { display: none; }
@@ -430,4 +442,74 @@ a.ooda-archive-title:hover { text-decoration: underline; }
 @media (max-width: 860px) {
   .ooda-uw-grid { grid-template-columns: repeat(2, 1fr); }
   .cols-mix { grid-template-columns: minmax(0,1fr) 28px 28px 46px 74px; }
+}
+
+/* ---- PHONE ----------------------------------------------------------------
+   Audited on a 390×844 viewport across all seven tabs. No horizontal overflow
+   anywhere; what was wrong was reachability and legibility, not layout width.
+   Three findings, in order of how much they hurt:
+
+   1. Tapping a property put its detail ~2,900px down the page — the stacked
+      inspector landed under all 42 rows. Fixed by master-detail below.
+   2. Every tap target was 15–32px. Apple and Material both want ~44; a 15px
+      "sign out" and a 25px money-confirm button are misses waiting to happen.
+   3. Row titles are nowrap+ellipsis, which loses ~400px of a work item's
+      title on a phone — a list of "Get neighborhood-association…" is not a
+      list. They wrap here instead.
+--------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  /* 1. MASTER-DETAIL — a chosen property owns the screen */
+  .ooda-split.has-sel .ooda-list { display: none; }
+  .ooda-back { display: block; width: 100%; text-align: left; background: none;
+    border: none; border-bottom: 1px solid var(--base-25); cursor: pointer;
+    font-family: var(--mono); font-size: 12px; color: var(--accent);
+    padding: 12px 4px; margin-bottom: 6px; }
+  .ooda-detail-head .ooda-x { display: none; } /* the back row replaces it */
+
+  /* 2. TAP TARGETS — ~44px, the platform minimum */
+  .ooda-tab { padding: 13px 14px; }
+  .ooda-signout { padding: 14px 2px; }
+  .ooda-chip, .ooda-facet { padding: 12px 15px; }
+  .ooda-send, .ooda-ghost, .ooda-quiet, .ooda-addbtn { min-height: 42px; padding: 10px 16px; }
+  .ooda-row.click, .ooda-sec-head.click { padding-top: 12px; padding-bottom: 12px; }
+  .ooda-more, .ooda-linkish { padding: 14px 4px; display: inline-block; }
+  .ooda-back { padding: 14px 4px; }
+  /* Leaflet ships 30px controls and the map is the one place a mis-tap
+     costs you your position. Leaflet's stylesheet is LAZY-LOADED from cdnjs
+     on first MAP entry, so it lands after this file and wins any tie — hence
+     the three-class selector rather than the obvious .leaflet-bar a. */
+  .ooda-mapwrap .leaflet-touch .leaflet-bar a,
+  .ooda-mapwrap .leaflet-bar a { width: 42px; height: 42px;
+    line-height: 42px; font-size: 20px; }
+  .ooda-legend-row { padding: 7px 0; }
+  .ooda-legend-row input[type="checkbox"] { width: 20px; height: 20px; }
+  /* 16px is not a style choice: iOS Safari zooms the page on focus for any
+     input under 16px, and the zoom does not come back on blur */
+  .ooda-search, .ooda-in, .ooda-amt-in, .ooda-textarea, input, select, textarea {
+    font-size: 16px; min-height: 42px; }
+  .ooda-amt-in { width: 120px; }
+
+  /* 3. TITLES WRAP rather than truncate */
+  .ooda-stack b { white-space: normal; overflow: visible; text-overflow: clip;
+    line-height: 1.35; }
+  .ooda-row { align-items: start; }
+
+  /* 4. ELEVEN IS THE FLOOR. The quiet 9–10px mono label is the house voice on
+     a desktop at 60cm; on a phone at arm's length it is decoration nobody
+     reads. Every label that carries meaning comes up to 11. */
+  .ooda-acqchip, .ooda-actdefs em, .ooda-archive-date, .ooda-assure,
+  .ooda-cadence, .ooda-chip, .ooda-defs em, .ooda-detail-meta, .ooda-engine em,
+  .ooda-est, .ooda-facet, .ooda-flags em, .ooda-foot, .ooda-form em,
+  .ooda-form-note, .ooda-head-row, .ooda-lane-label, .ooda-lane-tag,
+  .ooda-ledger-rock, .ooda-legend-h, .ooda-legend-n, .ooda-legend-src,
+  .ooda-linkish, .ooda-meas, .ooda-assum, .ooda-mini-label, .ooda-money em,
+  .ooda-more, .ooda-node-mark, .ooda-note, .ooda-pk, .ooda-prop-body em,
+  .ooda-prop-head em, .ooda-prop-toggle, .ooda-rock-head .r, .ooda-sec-count,
+  .ooda-sec-you, .ooda-stack em, .ooda-sub, .ooda-tile-label, .ooda-tile-sub,
+  .ooda-uw-grid em, .ooda-worksum em, .ooda-yours-counts { font-size: 11px; }
+
+  /* the inspector is the whole screen here, so let it breathe */
+  .ooda-detail-meta { font-size: 11px; line-height: 1.5; }
+  .ooda-money { grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
+  .ooda-money b { font-size: 18px; }
 }
