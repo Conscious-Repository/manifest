@@ -131,16 +131,18 @@ button { font: inherit; color: inherit; }
 
 @media (max-width: 860px) {
   .ooda { padding: 0 16px 60px; }
-  /* five destinations no longer fit one phone row: scroll the strip rather
-     than letting "sign out" wrap off the edge */
-  .ooda-head { gap: 12px; }
-  .ooda-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none; min-width: 0; }
-  .ooda-tabs::-webkit-scrollbar { display: none; }
-  /* seven destinations, ~2.5 visible: without an edge fade the strip reads as
-     the whole nav rather than the start of it */
-  .ooda-tabs { -webkit-mask-image: linear-gradient(to right, #000 82%, transparent);
-    mask-image: linear-gradient(to right, #000 82%, transparent); }
+  /* SEVEN DESTINATIONS, ALL VISIBLE.
+     This strip used to scroll horizontally with ~2.5 tabs in view. Scrolling
+     nav is only discoverable if you already know to try it — an edge fade
+     hints, it does not teach, and a partner who never swipes simply never
+     finds MAP, FEED, ARCHIVE or CHAT. So the strip takes its own full-width
+     row under the brand and WRAPS. Costs ~40px of height; buys a nav with no
+     hidden half. */
+  .ooda-head { gap: 8px 10px; flex-wrap: wrap; padding: 12px 0 8px; }
+  .ooda-brand { flex: none; }
+  .ooda-who { margin-left: auto; flex: none; }
+  .ooda-tabs { order: 3; flex-basis: 100%; flex-wrap: wrap; gap: 6px;
+    overflow: visible; min-width: 0; }
   .ooda-tab { padding: 5px 9px; white-space: nowrap; }
   .ooda-who { white-space: nowrap; }
   .ooda-tiles { grid-template-columns: repeat(2, 1fr); }
@@ -467,7 +469,7 @@ a.ooda-archive-title:hover { text-decoration: underline; }
   .ooda-detail-head .ooda-x { display: none; } /* the back row replaces it */
 
   /* 2. TAP TARGETS — ~44px, the platform minimum */
-  .ooda-tab { padding: 13px 14px; }
+  .ooda-tab { padding: 12px 13px; }
   .ooda-signout { padding: 14px 2px; }
   .ooda-chip, .ooda-facet { padding: 12px 15px; }
   .ooda-send, .ooda-ghost, .ooda-quiet, .ooda-addbtn { min-height: 42px; padding: 10px 16px; }
