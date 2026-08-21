@@ -32,25 +32,31 @@ func oodaSettled(phase string) bool { return phase == "stabilized" || phase == "
 // oodaFacts is one property's derived picture — every figure computed, none
 // stored (RE spec §2).
 type oodaFacts struct {
-	Slug      string  `json:"slug"`
-	Address   string  `json:"address"`
-	Short     string  `json:"short"`
-	Entity    string  `json:"entity"`
-	Status    string  `json:"status"`
-	Phase     string  `json:"phase"`
-	Deal      string  `json:"deal,omitempty"`
-	Rock      string  `json:"rock,omitempty"`
-	DoneBy    string  `json:"doneBy,omitempty"`
-	Open      int     `json:"open"`
-	PctDone   float64 `json:"pctDone"`
-	HasStages bool    `json:"hasStages"`
-	Plan      float64 `json:"plan"`
-	Paid      float64 `json:"paid"`
-	Committed float64 `json:"committed"`
-	ToGo      float64 `json:"toGo"`
-	Over      bool    `json:"over"`
-	Late      bool    `json:"late"`
-	Stalled   bool    `json:"stalled"`
+	Slug       string  `json:"slug"`
+	Address    string  `json:"address"`
+	Short      string  `json:"short"`
+	Entity     string  `json:"entity"`
+	Status     string  `json:"status"`
+	Phase      string  `json:"phase"`
+	Deal       string  `json:"deal,omitempty"`
+	Rock       string  `json:"rock,omitempty"`
+	DoneBy     string  `json:"doneBy,omitempty"`
+	Open       int     `json:"open"`
+	PctDone    float64 `json:"pctDone"`
+	HasStages  bool    `json:"hasStages"`
+	Plan       float64 `json:"plan"`
+	Paid       float64 `json:"paid"`                 // cash out the door
+	Recognized float64 `json:"recognized,omitempty"` // accrual: cash + done-at-firm-price work
+	Committed  float64 `json:"committed"`            // signed contracts (+ purchase price once committed)
+	ToClose    float64 `json:"toClose,omitempty"`    // purchase price + closing costs still to fund
+	ToGo       float64 `json:"toGo"`
+	// Acq is the honest ownership word for this row: owned | under-contract |
+	// pipeline. Partners read this column, so it must never say "owned" about
+	// a deal that has not closed.
+	Acq     string `json:"acq"`
+	Over    bool   `json:"over"`
+	Late    bool   `json:"late"`
+	Stalled bool   `json:"stalled"`
 }
 
 // Attention is the three-rule outlier test, cockpit-identical.
@@ -87,11 +93,17 @@ func oodaPropertyFacts(p realestate.Property, today string) oodaFacts {
 			f.Open++
 		}
 	})
+	acq := realestate.AcqStateOf(p.Control, p.Status)
+	f.Acq = acq.String()
 	if p.Project != nil {
 		f.Plan, f.Paid, f.Committed = p.Project.PlanTotal, p.Project.Paid, p.Project.Committed
+		f.Recognized = p.Project.Recognized
 		f.ToGo = f.Plan - f.Paid
+		if acq == realestate.AcqUnderContract {
+			f.ToClose = p.Project.CategoryBudget(realestate.CatAcquisition)
+		}
 	}
-	f.Over = f.Plan > 0 && f.Paid > f.Plan
+	f.Over = f.Plan > 0 && (f.Recognized > f.Plan || f.Committed > f.Plan)
 	f.Late = f.DoneBy != "" && f.DoneBy < today
 	// stalled needs a WORK PLAN to be stalled against — without the hasStages
 	// arm every under-contract parcel with no rocks lit the filter, which is
@@ -114,12 +126,17 @@ func oodaVisibleProps(snap *oodaSnapshot) []realestate.Property {
 	return out
 }
 
+// oodaEntityRow counts an entity's holdings in three separate buckets — they
+// are NEVER summed into one "properties" number. "The Garden SPE owns 32" was
+// exactly that error: 28 of those 32 are still under contract.
 type oodaEntityRow struct {
 	Entity    string  `json:"entity"`
-	Owned     int     `json:"owned"`
-	Acquiring int     `json:"acquiring"`
+	Owned     int     `json:"owned"`     // closed — on the books today
+	Acquiring int     `json:"acquiring"` // under contract — obligated to close
+	Pipeline  int     `json:"pipeline"`  // negotiating — no obligation yet
 	Committed float64 `json:"committed"`
 	Paid      float64 `json:"paid"`
+	ToClose   float64 `json:"toClose"` // purchase money still to fund
 	OpenWork  int     `json:"openWork"`
 }
 
@@ -142,16 +159,31 @@ type oodaOwnerRow struct {
 
 // oodaDashboard is the whole main surface in one payload.
 type oodaDashboard struct {
+	// The three money figures are the owner's definitions, verbatim:
+	//
+	//   committed = acquired projects' TOTAL budgets + under-contract budgets to close
+	//   paid      = money we can verify left a bank account (ledger expenses)
+	//   planToGo  = owned remaining + under-contract total, less what is spent
+	//
+	// Contracted and Recognized ride alongside because they answer the two
+	// questions "committed" used to blur: what have we actually signed, and
+	// what work is done but not yet paid for.
 	KPIs struct {
 		Committed     float64 `json:"committed"`
+		Contracted    float64 `json:"contracted"` // Σ signed contract allocations
 		Paid          float64 `json:"paid"`
+		Recognized    float64 `json:"recognized"`
 		PlanToGo      float64 `json:"planToGo"`
+		ToClose       float64 `json:"toClose"` // purchase money still to fund
 		OverPlan      int     `json:"overPlan"`
 		LiveProjects  int     `json:"liveProjects"`
 		Entities      int     `json:"entities"`
 		AsOf          string  `json:"asOf,omitempty"`
 		PaidTotal     float64 `json:"paidTotal"` // alias the cockpit cross-check reads
 		PortfolioSize int     `json:"portfolioSize"`
+		Owned         int     `json:"owned"`
+		UnderContract int     `json:"underContract"`
+		Pipeline      int     `json:"pipeline"`
 	} `json:"kpis"`
 	Entities  []oodaEntityRow `json:"entities"`
 	Attention []oodaFacts     `json:"attention"`
@@ -170,15 +202,36 @@ func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
 
 	for _, p := range props {
 		f := oodaPropertyFacts(p, today)
-		d.KPIs.Committed += f.Committed
+		// committed, the owner's definition: a project we already own commits
+		// us to its whole budget; one still under contract commits us only to
+		// what it takes to close.
+		switch f.Acq {
+		case "owned":
+			d.KPIs.Committed += f.Plan
+			d.KPIs.Owned++
+		case "under-contract":
+			d.KPIs.Committed += f.ToClose
+			d.KPIs.ToClose += f.ToClose
+			d.KPIs.UnderContract++
+		default:
+			d.KPIs.Pipeline++
+		}
+		d.KPIs.Contracted += f.Committed
 		d.KPIs.Paid += f.Paid
-		if f.ToGo > 0 {
+		d.KPIs.Recognized += f.Recognized
+		// plan-to-go covers deals we are actually on the hook for. A parcel
+		// still being negotiated has no budget to go — we have not agreed to
+		// spend anything on it.
+		if f.ToGo > 0 && f.Acq != "pipeline" {
 			d.KPIs.PlanToGo += f.ToGo
 		}
 		if f.Over {
 			d.KPIs.OverPlan++
 		}
-		if !oodaSettled(f.Phase) {
+		// a "live project" is one we own and are still working — a deal under
+		// contract has no project running on it yet, and counting 29 of those
+		// as live made the number meaningless
+		if f.Acq == "owned" && !oodaSettled(f.Phase) {
 			d.KPIs.LiveProjects++
 		}
 		if f.Attention() {
@@ -194,13 +247,17 @@ func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
 			row = &oodaEntityRow{Entity: key}
 			byEntity[key] = row
 		}
-		if p.From != "" {
-			row.Acquiring++
-		} else {
+		switch f.Acq {
+		case "owned":
 			row.Owned++
+		case "under-contract":
+			row.Acquiring++
+		default:
+			row.Pipeline++
 		}
 		row.Committed += f.Committed
 		row.Paid += f.Paid
+		row.ToClose += f.ToClose
 		row.OpenWork += f.Open
 		for _, lr := range p.Ledger {
 			if lr.Date > lastLedger {
@@ -246,16 +303,14 @@ func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
 	sort.Slice(d.Deals, func(i, j int) bool { return d.Deals[i].Name < d.Deals[j].Name })
 
 	// open work per person, from the same source the WORK tab groups
+	// buildOodaWork already resolves each owner token to a person or contractor
+	// record — reuse it rather than keeping a second, thinner name map here
+	// (the first version looked at people.md only, so contractors rendered as
+	// raw slugs: "M-W-SERVICES").
 	work := buildOodaWork(snap, today)
-	names := map[string]string{}
-	for _, p := range snap.People {
-		if p != nil {
-			names[strings.ToUpper(p.Initials)] = p.Name
-		}
-	}
 	for _, g := range work {
 		d.Owners = append(d.Owners, oodaOwnerRow{
-			Owner: g.Owner, Name: names[strings.ToUpper(g.Owner)],
+			Owner: g.Owner, Name: g.Name,
 			Open:      len(g.Open) + len(g.Overdue) + len(g.DueThisWeek),
 			Decisions: len(g.Decisions), Overdue: len(g.Overdue),
 		})

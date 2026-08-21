@@ -32,3 +32,12 @@ function pct(a, b) {
 function statusLabel(s) { return orDash((s || "").replace(/_/g, " ")); }
 
 function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+// acqLabel — the ownership word. "owned" means the deal CLOSED; a signed
+// contract is "under contract" and nothing more, because reading one as the
+// other is what made the portfolio claim 32 properties it did not own.
+function acqLabel(a) {
+  return a === "owned" ? "owned"
+    : a === "under-contract" ? "under contract"
+    : a === "pipeline" ? "negotiating" : DASH;
+}

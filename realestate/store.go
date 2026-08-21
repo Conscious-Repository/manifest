@@ -153,9 +153,11 @@ func (s *Service) parse(rel, name string, contracts []Contract) (Property, bool)
 	// est + contracts + the ledger. (parseBudget/computeRollup survive for
 	// migration.)
 	p.Rollup = computeMoneyRollup(p.Work, p.Ledger, allocs)
+	acq := AcqStateOf(p.Control, p.Status)
+	p.Acq = acq.String()
 	p.Project = ComputeProjectBudget(
 		sourceMoney(record.Sidecar(full, record.SidecarSource)),
-		p.Work, p.Ledger, p.Control == "owned", allocs)
+		p.Work, p.Ledger, acq, allocs)
 	p.Operating = ComputeOperating(p.Ledger)
 	p.Schedule = DeriveSchedule(p.WorkStart, p.Work)
 	for _, st := range p.Work {

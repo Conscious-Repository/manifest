@@ -2,7 +2,11 @@
 // alike: search, cut chips, one flat table, an em-dash for every missing
 // value, and no progress bars. Clicking a row opens the property detail.
 
+// OWNED and UNDER CONTRACT lead, because that is the cut a partner actually
+// wants: 29 of the 42 rows are one bundle of unclosed Bayard lots, and they
+// swamp the list they are read alongside.
 const OODA_CUTS = [
+  ["owned", "OWNED"], ["under-contract", "UNDER CONTRACT"],
   ["open", "OPEN"], ["all", "ALL"], ["attention", "ATTENTION"],
   ["construction", "CONSTRUCTION"], ["pre-dev", "PRE-DEV"],
   ["pipeline", "PIPELINE"], ["stabilized", "HELD"],
@@ -15,6 +19,7 @@ function ViewPortfolio({ data }) {
   const rows = (data.portfolio && data.portfolio.properties) || [];
 
   const visible = rows.filter((f) => {
+    if ((cut === "owned" || cut === "under-contract") && f.acq !== cut) return false;
     if (cut === "open" && (f.phase === "stabilized" || f.phase === "closed")) return false;
     if (cut === "attention" && !(f.over || f.late || f.stalled)) return false;
     if (["construction", "pre-dev", "pipeline", "stabilized"].includes(cut) && f.phase !== cut) return false;
@@ -44,7 +49,12 @@ function ViewPortfolio({ data }) {
           <div key={f.slug} className={"ooda-row cols-prop click" + (sel === f.slug ? " sel" : "")}
             onClick={() => setSel(sel === f.slug ? null : f.slug)} role="button">
             <span className="ooda-stack">
-              <b>{f.short}</b>
+              <b>
+                {f.short}
+                {/* the ownership word rides on the row itself: a partner
+                    scanning the list must not read "Garden SPE" as "owned" */}
+                <i className={"ooda-acqchip acq-" + f.acq}>{acqLabel(f.acq)}</i>
+              </b>
               <em>{orDash(f.entity) + " · " + statusLabel(f.status)}</em>
             </span>
             <span className="ooda-stack">
@@ -114,10 +124,22 @@ function PropertyDetail({ slug, onClose }) {
       </div>
       <div className="ooda-money">
         <span><em>PLAN</em><b>{money(f.plan)}</b></span>
-        <span><em>COMMITTED</em><b>{money(f.committed)}</b></span>
+        <span><em>CONTRACTED</em><b>{money(f.committed)}</b></span>
         <span><em>PAID</em><b className={f.over ? "over" : ""}>{money(f.paid)}</b></span>
         <span><em>TO GO</em><b>{money(f.toGo)}</b></span>
       </div>
+      {f.acq === "under-contract" ? (
+        <div className="ooda-note">
+          {"not closed yet — " + money(f.toClose) + " to close. Its purchase " +
+            "price is committed, not spent."}
+        </div>
+      ) : null}
+      {f.recognized > f.paid ? (
+        <div className="ooda-note">
+          {money(f.recognized - f.paid) + " of work is finished at a firm price " +
+            "but has no expense row yet, so it is not counted as paid."}
+        </div>
+      ) : null}
 
       <Section title="ROCKS" count={(p.work || []).length}>
         {(p.work || []).map((st) => (

@@ -42,22 +42,29 @@ type SourceMoney struct {
 
 // BudgetCatRow is one category line of the project budget.
 type BudgetCatRow struct {
-	Key       string  `json:"key"`
-	Budget    float64 `json:"budget"` // current plan (drifts with edits — it IS the budget)
-	Committed float64 `json:"committed"`
-	Paid      float64 `json:"paid"`
-	Over      bool    `json:"over"` // committed or paid exceeds the plan
+	Key        string  `json:"key"`
+	Budget     float64 `json:"budget"` // current plan (drifts with edits — it IS the budget)
+	Committed  float64 `json:"committed"`
+	Paid       float64 `json:"paid"`                 // cash out the door
+	Recognized float64 `json:"recognized,omitempty"` // accrual (hard lane only; == Paid elsewhere)
+	Over       bool    `json:"over"`                 // committed, recognized, or paid exceeds the plan
 }
 
 // ProjectBudget is the derived budget picture for one property: the current
 // plan vs actual spend (plan-vs-spend only — no frozen baseline; the plan
-// drifting with edits is the point). SPENT is accrual for the work list
-// (done + firm price = recognized) and cash for everything else.
+// drifting with edits is the point).
+//
+// PAID is CASH: money we can verify left a bank account (expense rows, plus
+// the acquisition plan once the deal actually closed). RECOGNIZED is the
+// accrual read — cash plus work that is done at a firm price but has no
+// expense row yet. They are separate fields because they answer different
+// questions, and conflating them made "spent" unauditable.
 type ProjectBudget struct {
 	Categories   []BudgetCatRow `json:"categories"`
 	PlanTotal    float64        `json:"planTotal"` // Σ category plans INCL contingency
 	Committed    float64        `json:"committed"`
-	Paid         float64        `json:"paid"`                   // recognized spend (hard accrual + cash rest)
+	Paid         float64        `json:"paid"`                   // cash out the door
+	Recognized   float64        `json:"recognized,omitempty"`   // accrual: cash + done-at-firm-price work
 	Unreconciled float64        `json:"unreconciled,omitempty"` // done-but-unlinked firm money (⚑)
 	Over         bool           `json:"over"`                   // any category over its plan
 }
@@ -93,11 +100,11 @@ func sourceMoney(path string) SourceMoney {
 }
 
 // ComputeProjectBudget derives the category table + totals (plan vs spend).
-// owned = the purchase already happened (control: owned), so the acquisition
-// plan is recognized as spent even before closing rows land in the ledger.
+// acq places the property relative to its own closing and decides how the
+// acquisition plan lands: committed once under contract, spent once closed.
 // Committed's hard lane comes from accepted-contract allocations (overhaul
 // decision 4); legacy fallback: with none, accepted bid rows still commit.
-func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow, owned bool, allocs []NodeAllocation) *ProjectBudget {
+func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow, acq AcqState, allocs []NodeAllocation) *ProjectBudget {
 	// actuals per category — the hard lane keeps the draw-aware max() semantics
 	// (an expense against a committed node draws DOWN the contract, not up committed)
 	type acc struct{ acceptedSum, expenseSum float64 }
@@ -175,30 +182,40 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 		if key != CatContingency {
 			row.Committed = committed[key]
 			row.Paid = paid[key]
-			if key == CatAcquisition && owned {
+			row.Recognized = row.Paid
+			if key == CatAcquisition && acq != AcqNone {
+				// Under contract, the purchase price is money we are OBLIGATED
+				// to bring to closing — committed, not spent. Only a closed
+				// deal has actually moved it.
+				//
 				// max, not +: a closing-statement expense row already in the
-				// ledger must not double count against the plan
-				if row.Budget > row.Paid {
-					row.Paid = row.Budget
-				}
+				// ledger must not double count against the plan.
 				if row.Budget > row.Committed {
 					row.Committed = row.Budget
 				}
+				if acq == AcqClosed && row.Budget > row.Paid {
+					row.Paid = row.Budget
+					row.Recognized = row.Budget
+				}
 			}
 			if key == CatHard {
-				// accrual for the work list: recognized (done+firm counts) for
-				// tethered money, cash for untethered/orphan-tethered rows
+				// The work list accrues: work done at a firm price is
+				// recognized even before its expense row lands. That is a real
+				// figure but it is not cash, so it rides in Recognized while
+				// Paid stays strictly what the ledger can prove.
 				var rec, tethCash float64
 				for _, st := range work {
 					rec += st.Recognized
 					tethCash += st.Paid
 					pb.Unreconciled += st.Unreconciled
 				}
-				row.Paid = rec + (paid[CatHard] - tethCash)
+				row.Recognized = rec + (paid[CatHard] - tethCash)
 			}
-			row.Over = row.Budget > 0 && (row.Committed > row.Budget || row.Paid > row.Budget)
+			row.Over = row.Budget > 0 &&
+				(row.Committed > row.Budget || row.Recognized > row.Budget || row.Paid > row.Budget)
 			pb.Committed += row.Committed
 			pb.Paid += row.Paid
+			pb.Recognized += row.Recognized
 			if row.Over {
 				pb.Over = true
 			}
@@ -207,6 +224,20 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 		pb.Categories = append(pb.Categories, row)
 	}
 	return pb
+}
+
+// CategoryBudget returns one category's plan (0 when absent) — the caller that
+// needs "what does it cost to close" asks for CatAcquisition.
+func (pb *ProjectBudget) CategoryBudget(key string) float64 {
+	if pb == nil {
+		return 0
+	}
+	for _, row := range pb.Categories {
+		if row.Key == key {
+			return row.Budget
+		}
+	}
+	return 0
 }
 
 // normalizeCat maps a `[cat::]` token value to a category key (default hard).

@@ -40,6 +40,8 @@ function pfFacts(p) {
     hasStages: stages.length > 0,
     plan: m.budget || 0,
     paid: m.paid || 0,
+    recognized: m.recognized || 0,
+    committed: m.committed || 0,
     phase: PF_PHASE[p.status] || "pipeline",
   };
 }
@@ -49,7 +51,9 @@ function pfFacts(p) {
 // excluded or every leased hold would light the filter forever.
 function pfAttention(p) {
   const f = pfFacts(p);
-  const over = f.plan > 0 && f.paid > f.plan;
+  // over-plan tests the ACCRUAL and the contracts, not cash: a project is over
+  // budget the moment it signs for more than it planned, not when it pays
+  const over = f.plan > 0 && (f.recognized > f.plan || f.committed > f.plan);
   const late = !!f.doneBy && f.doneBy < pfToday();
   // stalled needs a WORK PLAN to be stalled against — a pipeline parcel with
   // no rocks yet isn't "nothing queued", it's "not started" (without this,

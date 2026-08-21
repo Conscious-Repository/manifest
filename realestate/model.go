@@ -38,6 +38,10 @@ type Property struct {
 	// on (required for owned AND acquiring); From = the seller, present only
 	// while acquiring. Holdings derive from these — owned and acquiring are
 	// counted separately, never summed.
+	// Acq is DERIVED (AcqStateOf): owned | under-contract | pipeline. Every
+	// surface reads this rather than re-deriving ownership from control, which
+	// is set at signing and so can never mean "the purchase happened".
+	Acq    string `json:"acq,omitempty"`
 	From   string `json:"from,omitempty"`  // seller (acquiring only; "" once closed)
 	Until  string `json:"until,omitempty"` // the exit condition ("Refinanced at 75% LTV, DSCR ≥ 1.25")
 	Drive  string `json:"drive,omitempty"` // artifact-canon folder URL (linked, never mirrored)

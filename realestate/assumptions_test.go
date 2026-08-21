@@ -50,16 +50,17 @@ func TestAssumptionsEditPreservesProse(t *testing.T) {
 	}
 }
 
-// Holdings derive from {entity, from}: owned and acquiring never sum; hidden
-// and entity-less records count nowhere.
+// Holdings derive from {entity, control, status}: owned, acquiring and
+// pipeline never sum; hidden and entity-less records count nowhere.
 func TestHoldings(t *testing.T) {
 	props := []Property{
-		{Slug: "a", Entity: "The Garden SPE"},                  // owned
-		{Slug: "b", Entity: "IGS MO LLC", From: "J. Halloran"}, // acquiring
-		{Slug: "c", Entity: "ODA Group", From: "City LRA"},     // acquiring
-		{Slug: "d", Entity: "ODA Group"},                       // owned
-		{Slug: "e", Entity: "ODA Group", Hidden: true},         // hidden — skipped
-		{Slug: "f"}, // no destination — counts nowhere
+		{Slug: "a", Entity: "The Garden SPE", Control: "owned", Status: "construction"},    // owned
+		{Slug: "b", Entity: "IGS MO LLC", Control: "owned", Status: "under_contract"},      // acquiring
+		{Slug: "c", Entity: "ODA Group", Control: "owned", Status: "under_contract"},       // acquiring
+		{Slug: "d", Entity: "ODA Group", Control: "owned", Status: "leased"},               // owned
+		{Slug: "e", Entity: "ODA Group", Control: "owned", Status: "leased", Hidden: true}, // hidden — skipped
+		{Slug: "g", Entity: "ODA Group", Control: "owned", Status: "negotiating"},          // pipeline
+		{Slug: "f", Control: "tracked", Status: "negotiating"},                             // no destination — counts nowhere
 	}
 	h := Holdings(props)
 	if h["The Garden SPE"].Owned != 1 || h["The Garden SPE"].Acquiring != 0 {
@@ -68,8 +69,8 @@ func TestHoldings(t *testing.T) {
 	if h["IGS MO LLC"].Acquiring != 1 || h["IGS MO LLC"].Owned != 0 {
 		t.Fatalf("igs: %+v", h["IGS MO LLC"])
 	}
-	if h["ODA Group"].Owned != 1 || h["ODA Group"].Acquiring != 1 {
-		t.Fatalf("oda: %+v", h["ODA Group"])
+	if o := h["ODA Group"]; o.Owned != 1 || o.Acquiring != 1 || o.Pipeline != 1 {
+		t.Fatalf("oda: %+v", o)
 	}
 	if len(h) != 3 {
 		t.Fatalf("unexpected entities: %v", h)

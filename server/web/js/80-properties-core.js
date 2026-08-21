@@ -148,11 +148,16 @@ function openTodoCount(p) {
 //  #reToggle + renderRePublishRail replace it. Deals live in Portfolio, the
 //  per-property list is redundant with the Portfolio board, Parcels is gone.)
 
-// projMoney: one property's plan-vs-spend numbers (Rev 3's two figures).
+// projMoney: one property's plan-vs-spend numbers.
+//
+// paid is CASH — money the ledger can prove left a bank account, plus the
+// purchase price of a deal that actually closed. recognized adds the accrual
+// (work done at a firm price with no expense row yet). They differ, and SPENT
+// showing the accrual is what made it unauditable.
 function projMoney(p) {
   const pj = p.project || {};
   return { budget: pj.planTotal || 0, committed: pj.committed || 0,
-    paid: pj.paid || 0, over: !!pj.over };
+    paid: pj.paid || 0, recognized: pj.recognized || pj.paid || 0, over: !!pj.over };
 }
 
 // propertyTypeahead: the typeahead engine over all property records

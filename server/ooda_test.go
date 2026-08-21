@@ -54,8 +54,11 @@ func TestOodaDashboardMoneyMatchesTheRollup(t *testing.T) {
 	if d.KPIs.Paid != wantPaid || d.KPIs.PaidTotal != wantPaid {
 		t.Fatalf("paid = %v/%v, want %v", d.KPIs.Paid, d.KPIs.PaidTotal, wantPaid)
 	}
-	if d.KPIs.Committed != wantCommitted {
-		t.Fatalf("committed = %v, want %v", d.KPIs.Committed, wantCommitted)
+	// CONTRACTED is the Σ-of-signed-contracts figure that must match the
+	// cockpit. COMMITTED is a different question (capital we are on the hook
+	// for) and is asserted separately, in TestOodaCommittedIsCapitalOnTheHook.
+	if d.KPIs.Contracted != wantCommitted {
+		t.Fatalf("contracted = %v, want %v", d.KPIs.Contracted, wantCommitted)
 	}
 	// hidden and research-tail records are outside the shared portfolio
 	if d.KPIs.PortfolioSize != 3 {
@@ -75,6 +78,82 @@ func TestOodaDashboardMoneyMatchesTheRollup(t *testing.T) {
 }
 
 // The three attention rules, ported verbatim from the cockpit.
+// The Garden SPE shape, which is what made the old numbers wrong: every parcel
+// carries `control: owned` while most are still under contract. The board must
+// count them as ACQUIRING, and their purchase prices must land in committed
+// and to-close — never in paid.
+func TestOodaCommittedIsCapitalOnTheHook(t *testing.T) {
+	acqOnly := func(price float64) *realestate.ProjectBudget {
+		return &realestate.ProjectBudget{
+			PlanTotal:  price,
+			Categories: []realestate.BudgetCatRow{{Key: realestate.CatAcquisition, Budget: price}},
+		}
+	}
+	snap := &oodaSnapshot{
+		Properties: []realestate.Property{
+			// signed but not closed: $20k to close, nothing spent
+			{Slug: "uc-1", Short: "742 Bayard", Entity: "Garden SPE",
+				Control: "owned", Status: "under_contract", Project: acqOnly(20000)},
+			{Slug: "uc-2", Short: "744 Bayard", Entity: "Garden SPE",
+				Control: "owned", Status: "under_contract", Project: acqOnly(15000)},
+			// closed and building: committed to the WHOLE budget
+			{Slug: "own-1", Short: "751 Bayard", Entity: "Garden SPE",
+				Control: "owned", Status: "construction",
+				Project: &realestate.ProjectBudget{PlanTotal: 300000, Paid: 29000, Committed: 57000}},
+			// still negotiating: no obligation at all
+			{Slug: "pipe-1", Short: "760 Page", Entity: "Garden SPE",
+				Control: "owned", Status: "negotiating", Project: acqOnly(18000)},
+		},
+		Entities: []realestate.Entity{{Slug: "garden-spe", Name: "Garden SPE"}},
+		Backlog:  []*aion.BacklogItem{},
+	}
+	d := buildOodaDashboard(snap, "2026-08-21")
+
+	if d.KPIs.Owned != 1 || d.KPIs.UnderContract != 2 || d.KPIs.Pipeline != 1 {
+		t.Fatalf("counts = owned %d / under-contract %d / pipeline %d, want 1/2/1",
+			d.KPIs.Owned, d.KPIs.UnderContract, d.KPIs.Pipeline)
+	}
+	// committed = the closed project's total budget + the two budgets to close
+	if d.KPIs.Committed != 335000 {
+		t.Fatalf("committed = %v, want 335000 (300000 owned total + 35000 to close)", d.KPIs.Committed)
+	}
+	if d.KPIs.ToClose != 35000 {
+		t.Fatalf("to close = %v, want 35000", d.KPIs.ToClose)
+	}
+	// paid is cash only — the unclosed purchase prices are NOT spend
+	if d.KPIs.Paid != 29000 {
+		t.Fatalf("paid = %v, want 29000 (the one real ledger figure)", d.KPIs.Paid)
+	}
+	// plan to go = owned remaining (271000) + under-contract totals (35000)
+	if d.KPIs.PlanToGo != 306000 {
+		t.Fatalf("plan to go = %v, want 306000", d.KPIs.PlanToGo)
+	}
+	if len(d.Entities) != 1 {
+		t.Fatalf("entities = %+v", d.Entities)
+	}
+	if e := d.Entities[0]; e.Owned != 1 || e.Acquiring != 2 || e.Pipeline != 1 {
+		t.Fatalf("Garden SPE row = %+v, want owned 1 / acquiring 2 / pipeline 1", e)
+	}
+}
+
+// A backlog rock is a machine slug; the WORK tab must render a place and a
+// rock, not "ooda-group/operations-health".
+func TestOodaRockLabel(t *testing.T) {
+	shorts := map[string]string{"4924-fountain-ave": "4924 Fountain Ave"}
+	for _, tc := range []struct{ in, container, label string }{
+		{"ooda-group/operations-health", "Ooda group", "Operations health"},
+		{"4924-fountain-ave", "4924 Fountain Ave", ""},
+		{"4924-fountain-ave/roof-tear-off", "4924 Fountain Ave", "Roof tear off"},
+		{"", "", ""},
+		{"  ", "", ""},
+	} {
+		c, l := oodaRockLabel(tc.in, shorts)
+		if c != tc.container || l != tc.label {
+			t.Errorf("oodaRockLabel(%q) = %q / %q, want %q / %q", tc.in, c, l, tc.container, tc.label)
+		}
+	}
+}
+
 func TestOodaAttentionRules(t *testing.T) {
 	snap := oodaFixture()
 	d := buildOodaDashboard(snap, "2026-08-20")

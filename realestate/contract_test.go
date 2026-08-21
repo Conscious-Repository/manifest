@@ -109,7 +109,7 @@ func TestJoinWorkLedgerContractMode(t *testing.T) {
 	if r.Committed != 12750 || r.Paid != 5000 {
 		t.Fatalf("rollup: %+v", r)
 	}
-	pb := ComputeProjectBudget(SourceMoney{}, stages, ledger, false, allocs)
+	pb := ComputeProjectBudget(SourceMoney{}, stages, ledger, AcqNone, allocs)
 	for _, c := range pb.Categories {
 		if c.Key == CatHard && c.Committed != 12750 {
 			t.Fatalf("hard committed = %v, want 12750", c.Committed)

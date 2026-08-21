@@ -109,8 +109,16 @@ async function renderPropertyPage(slug) {
   bCell.onclick = () => { propUWOpen = !propUWOpen; renderPropertyPage(slug); };
   strip.append(bCell);
   const sCell = cell("SPENT", pm.paid ? fmtMoney(pm.paid) : "—", pm.over ? "over" : "");
-  sCell.title = "derived from the ledger below";
+  sCell.title = p.acq === "under-contract"
+    ? "cash out the door. This deal has not closed, so its purchase price is committed, not spent."
+    : "cash out the door — ledger expenses, plus the purchase price once the deal closed";
   strip.append(sCell);
+  // the accrual only earns a cell when it actually differs from cash
+  if (pm.recognized > pm.paid) {
+    const rCell = cell("RECOGNIZED", fmtMoney(pm.recognized));
+    rCell.title = "spent plus work done at a firm price that has no expense row yet";
+    strip.append(rCell);
+  }
   main.append(strip);
 
   if (propUWOpen) {
@@ -483,7 +491,10 @@ function ownerCard(p) {
   const intel = p.intel || null;
   const line = (txt, cls) => el("div", "pp3-owner-line" + (cls ? " " + cls : ""), txt);
 
-  if (p.control === "owned" && p.entity) {
+  // `acq === "owned"` is the CLOSED test. control:"owned" is set at signing,
+  // so reading it here named the entity as owner of parcels it has only
+  // agreed to buy — and then flagged the actual seller's deed as a warning.
+  if (p.acq === "owned" && p.entity) {
     card.append(el("div", "pp3-owner-name", p.entity));
     // title check: the deed vesting per the assessor, when it disagrees
     if (p.owner && p.owner.toLowerCase() !== p.entity.toLowerCase()) {
@@ -491,6 +502,9 @@ function ownerCard(p) {
     }
     if (p.ownerSince) card.append(line("since " + p.ownerSince));
   } else {
+    if (p.acq === "under-contract" && p.entity) {
+      card.append(line("under contract to " + p.entity, "acq"));
+    }
     const name = p.owner || (intel && intel.owner) || "";
     card.append(editableOwnerLine(p, "owner", name || "no owner on record", "pp3-owner-name" + (name ? "" : " missing")));
     const addr = p.ownerAddr || (intel && intel.ownerAddr) || "";

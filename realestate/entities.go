@@ -17,9 +17,9 @@ import (
 type Entity struct {
 	Path            string   `json:"path"`
 	Slug            string   `json:"slug"`
-	Name            string   `json:"name"`             // frontmatter name, else the slug
-	Trade           string   `json:"trade,omitempty"`  // contractors: legacy single-trade string (scopes supersedes)
-	Email           string   `json:"email,omitempty"`  // contractors (overhaul §3.7)
+	Name            string   `json:"name"`            // frontmatter name, else the slug
+	Trade           string   `json:"trade,omitempty"` // contractors: legacy single-trade string (scopes supersedes)
+	Email           string   `json:"email,omitempty"` // contractors (overhaul §3.7)
 	Website         string   `json:"website,omitempty"`
 	Scopes          []string `json:"scopes,omitempty"` // contractor scopes ([trade] reads as fallback)
 	Owners          []Owner  `json:"owners,omitempty"`
@@ -42,19 +42,24 @@ type EntityAccount struct {
 	State string `json:"state"`
 }
 
-// EntityHoldings are DERIVED from property records ({entity, from}), never
-// typed: owned = books it sits on today; acquiring = destination while under
-// contract (from names the seller). The two stay separate, never summed —
-// accountant reads owned; the pipeline stays visible via acquiring.
+// EntityHoldings are DERIVED from property records, never typed: owned = books
+// it sits on today; acquiring = under contract, destined for these books;
+// pipeline = still being negotiated. The three stay separate, never summed —
+// the accountant reads owned, and the deals not yet closed stay visible.
 type EntityHoldings struct {
 	Owned     int `json:"owned"`
 	Acquiring int `json:"acquiring"`
+	Pipeline  int `json:"pipeline,omitempty"`
 }
 
 // Holdings derives per-entity holdings (keyed by entity NAME) from the
 // property list. Hidden records are skipped; a property with no entity has no
 // destination and counts nowhere (the modelling gap the spec warns about —
 // surface those in the UI rather than papering over them here).
+//
+// The split reads STATUS, not the `from:` seller field it was written against:
+// `from:` is empty on every property record in the vault, so every entity
+// reported all of its deals as already owned.
 func Holdings(props []Property) map[string]EntityHoldings {
 	out := map[string]EntityHoldings{}
 	for _, p := range props {
@@ -62,10 +67,13 @@ func Holdings(props []Property) map[string]EntityHoldings {
 			continue
 		}
 		h := out[p.Entity]
-		if p.From != "" {
-			h.Acquiring++
-		} else {
+		switch AcqStateOf(p.Control, p.Status) {
+		case AcqClosed:
 			h.Owned++
+		case AcqUnderContract:
+			h.Acquiring++
+		default:
+			h.Pipeline++
 		}
 		out[p.Entity] = h
 	}
