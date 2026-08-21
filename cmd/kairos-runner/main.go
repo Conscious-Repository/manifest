@@ -43,11 +43,34 @@ type spoolOrder struct {
 }
 
 type runner struct {
-	root    string
-	bin     string
-	args    []string // {reqfile} substitutes a temp file path; otherwise request rides stdin
-	model   string
-	timeout time.Duration
+	root     string
+	bin      string
+	args     []string // {reqfile} substitutes a temp file path; otherwise request rides stdin
+	model    string
+	timeout  time.Duration            // default ceiling
+	byRitual map[string]time.Duration // per-ritual overrides (see defaultRitualTimeouts)
+}
+
+// defaultRitualTimeouts: the rituals do different KINDS of work, so one
+// ceiling cannot fit them. `ask` is a read-only question answered from the
+// tree (observed: ~60s). `delegate` executes an approved plan — it edits
+// files and verifies its work, and a flat 10m ceiling SIGKILLed a real one
+// mid-flight on 2026-08-20 (run 20260820-214338-e15d, dead at exactly
+// 10m00s). Overridable with -ritual-timeout.
+var defaultRitualTimeouts = map[string]time.Duration{
+	"delegate": 45 * time.Minute,
+}
+
+// timeoutFor returns the ceiling for a ritual: explicit override, else the
+// built-in per-ritual default, else the flat -timeout.
+func (r *runner) timeoutFor(ritual string) time.Duration {
+	if d, ok := r.byRitual[ritual]; ok && d > 0 {
+		return d
+	}
+	if d, ok := defaultRitualTimeouts[ritual]; ok {
+		return d
+	}
+	return r.timeout
 }
 
 func main() {
@@ -55,11 +78,24 @@ func main() {
 	bin := flag.String("bin", "hermes", "hermes-agent binary")
 	argStr := flag.String("args", "", "space-separated args for the headless invocation; {request} = the request text as one argv element, {reqfile} = a temp file carrying it; neither → the request is piped on stdin")
 	model := flag.String("model", "", "informational model label stamped on run reports")
-	timeout := flag.Duration("timeout", 10*time.Minute, "per-run ceiling")
+	timeout := flag.Duration("timeout", 10*time.Minute, "default per-run ceiling")
+	ritualTimeout := flag.String("ritual-timeout", "", "per-ritual ceilings, e.g. \"delegate=45m,ask=5m\" (overrides the built-in defaults)")
 	poll := flag.Duration("poll", 3*time.Second, "spool poll interval")
 	flag.Parse()
 
-	r := &runner{root: *root, bin: *bin, model: *model, timeout: *timeout}
+	r := &runner{root: *root, bin: *bin, model: *model, timeout: *timeout, byRitual: map[string]time.Duration{}}
+	for _, pair := range strings.Split(*ritualTimeout, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		name, dur, ok := strings.Cut(pair, "=")
+		d, err := time.ParseDuration(strings.TrimSpace(dur))
+		if !ok || err != nil || d <= 0 {
+			log.Fatalf("-ritual-timeout %q: want ritual=duration (e.g. delegate=45m)", pair)
+		}
+		r.byRitual[strings.TrimSpace(name)] = d
+	}
 	if strings.TrimSpace(*argStr) != "" {
 		r.args = strings.Fields(*argStr)
 	}
@@ -142,6 +178,9 @@ func (r *runner) failLingering() {
 			continue
 		}
 		next := strings.Replace(string(b), "outcome: running", "outcome: failed", 1)
+		if !strings.Contains(next, "\n## Outcome\n") {
+			next += "\n## Outcome\n\nfailed — the runner restarted while this run was in flight\n"
+		}
 		if os.WriteFile(p, []byte(next), 0o664) == nil {
 			log.Printf("kairos-runner: finalized crashed run %s as failed", e.Name())
 		}
@@ -162,29 +201,34 @@ func (r *runner) process(claimPath string) {
 	runID := started.Format("20060102-150405") + "-" + randHex(4)
 	reportPath := filepath.Join(r.root, "artifacts", "runs",
 		started.Format("2006-01-02")+"-kairos-"+runID+".md")
-	r.writeReport(reportPath, o, runID, started, time.Time{}, "running", "")
+	r.writeReport(reportPath, o, runID, started, time.Time{}, "running", "", "")
 	log.Printf("kairos-runner: run %s started (%s/%s)", runID, o.Spirit, o.Ritual)
 
-	answer, runErr := r.invoke(o.Request)
+	answer, runErr := r.invoke(o.Ritual, o.Request)
 	finished := time.Now()
-	outcome := "completed"
+	outcome, detail := "completed", ""
 	if runErr != nil || strings.TrimSpace(answer) == "" {
 		outcome = "failed"
-		if runErr != nil {
+		switch {
+		case runErr != nil:
+			detail = runErr.Error()
 			answer = strings.TrimSpace(answer + "\n\n[kairos-runner] agent invocation failed: " + runErr.Error())
+		default:
+			detail = "the agent returned no output"
 		}
 	}
 	if outcome == "completed" {
 		r.writeBrief(runID, started, answer)
 	}
-	r.writeReport(reportPath, o, runID, started, finished, outcome, answer)
+	r.writeReport(reportPath, o, runID, started, finished, outcome, answer, detail)
 	_ = os.Remove(claimPath)
 	log.Printf("kairos-runner: run %s %s (%.0fs)", runID, outcome, finished.Sub(started).Seconds())
 }
 
 // invoke runs the hermes-agent binary headless with the work-order text.
-func (r *runner) invoke(request string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
+func (r *runner) invoke(ritual, request string) (string, error) {
+	limit := r.timeoutFor(ritual)
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	args := make([]string, 0, len(r.args))
 	delivered := false // request already rides argv or a temp file → skip stdin
@@ -224,7 +268,12 @@ func (r *runner) invoke(request string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	err := cmd.Run()
-	if err != nil && errb.Len() > 0 {
+	// CommandContext SIGKILLs at the deadline, and the bare "signal: killed"
+	// that surfaces is indistinguishable from an OOM or a manual kill — it
+	// sent this exact failure to the FEED with no WHY. Name it.
+	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		err = fmt.Errorf("timed out after %s (raise -ritual-timeout %s=…)", limit, orStr(ritual, "delegate"))
+	} else if err != nil && errb.Len() > 0 {
 		err = fmt.Errorf("%v: %s", err, strings.TrimSpace(lastLines(errb.String(), 5)))
 	}
 	return strings.TrimSpace(out.String()), err
@@ -233,7 +282,7 @@ func (r *runner) invoke(request string) (string, error) {
 // writeReport writes the contract run report. The request rides frontmatter
 // in FULL on one line (we control the writer — no truncation, tokens intact)
 // and the body carries request + result verbatim.
-func (r *runner) writeReport(path string, o spoolOrder, runID string, started, finished time.Time, outcome, answer string) {
+func (r *runner) writeReport(path string, o spoolOrder, runID string, started, finished time.Time, outcome, answer, detail string) {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("run: " + runID + "\n")
@@ -252,6 +301,12 @@ func (r *runner) writeReport(path string, o spoolOrder, runID string, started, f
 	b.WriteString("---\n\n## request\n\n" + o.Request + "\n")
 	if answer != "" {
 		b.WriteString("\n## result\n\n" + answer + "\n")
+	}
+	// manifest lifts the first line under "## Outcome" as the signal's WHY
+	// (spirits.outcomeDetail). Omitting it is why a killed run reached the
+	// FEED as a bare "run failed · kairos/delegate · failed".
+	if detail != "" {
+		b.WriteString("\n## Outcome\n\n" + outcome + " — " + oneLine(detail) + "\n")
 	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o664); err == nil {
