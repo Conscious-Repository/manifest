@@ -20,6 +20,7 @@ import (
 	"manifest/aion"
 	"manifest/approvals"
 	"manifest/artifacts"
+	"manifest/gmailsync"
 	"manifest/bankfeed"
 	"manifest/books"
 	"manifest/calendar"
@@ -162,7 +163,12 @@ type Server struct {
 	// access list (artifacts/artifacts.go). Nilable.
 	artifacts *artifacts.Store
 	// oodaChat: the OODA portal's own chat store (zeck's threads). Nilable.
-	oodaChat    *chatthreads.Store
+	oodaChat *chatthreads.Store
+	// oodaEmail/oodaGmail: the portal email lane — pending candidates from
+	// members' own mailboxes + their per-member Gmail grants (ooda-portal
+	// email plan, 2026-08-21). Nilable.
+	oodaEmail   *gmailsync.Candidates
+	oodaGmail   *gmailsync.Tokens
 	chatSweepMu sync.Mutex // one chat sweep at a time (ticker vs read-driven)
 }
 

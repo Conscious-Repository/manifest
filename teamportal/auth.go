@@ -67,9 +67,10 @@ type Auth struct {
 	keyPath    string
 	policy     Policy // set at construction, never mutated — no mu needed
 
-	mu     sync.Mutex
-	key    []byte // cached session HMAC key
-	tokens *TokenStore
+	mu        sync.Mutex
+	key       []byte // cached session HMAC key
+	tokens    *TokenStore
+	tokenSink func(email string, tok *oauth2.Token) // receives the OAuth token when ExtraScopes minted one
 }
 
 // NewAuth resolves the credential paths under dataDir for the AION portal.
@@ -93,6 +94,19 @@ func NewAuthPolicy(dataDir string, p Policy) *Auth {
 func (a *Auth) WithTokens(tokens *TokenStore) *Auth {
 	a.mu.Lock()
 	a.tokens = tokens
+	a.mu.Unlock()
+	return a
+}
+
+// WithTokenSink registers the consumer of OAuth tokens minted at sign-in when
+// the policy carries ExtraScopes (the OODA portal's per-user Gmail store). The
+// sink only ever fires AFTER the identity gate passes, and only when the
+// exchange returned a refresh token — a sign-in where the member unticked the
+// Gmail checkbox mints a scope-less token Google refuses to refresh, and
+// storing it would masquerade as a connected mailbox.
+func (a *Auth) WithTokenSink(sink func(email string, tok *oauth2.Token)) *Auth {
+	a.mu.Lock()
+	a.tokenSink = sink
 	a.mu.Unlock()
 	return a
 }
@@ -169,7 +183,28 @@ func (a *Auth) oauthConfig(host string) (*oauth2.Config, error) {
 		ClientID:     wc.Web.ClientID,
 		ClientSecret: wc.Web.ClientSecret,
 		RedirectURL:  redirect,
-		Scopes:       []string{"openid", "email", "profile"},
+		Scopes:       append([]string{"openid", "email", "profile"}, a.policy.ExtraScopes...),
+		Endpoint:     oauth2.Endpoint{AuthURL: wc.Web.AuthURI, TokenURL: wc.Web.TokenURI},
+	}, nil
+}
+
+// OAuthConfig exposes the portal's oauth2 client config for TOKEN REFRESH
+// (the gmailsync loop renews per-member Gmail grants against it). Refresh
+// never uses the redirect URI, so the first registered one is fine.
+func (a *Auth) OAuthConfig() (*oauth2.Config, error) {
+	wc, err := a.client()
+	if err != nil {
+		return nil, err
+	}
+	redirect := ""
+	if len(wc.Web.RedirectURIs) > 0 {
+		redirect = wc.Web.RedirectURIs[0]
+	}
+	return &oauth2.Config{
+		ClientID:     wc.Web.ClientID,
+		ClientSecret: wc.Web.ClientSecret,
+		RedirectURL:  redirect,
+		Scopes:       append([]string{"openid", "email", "profile"}, a.policy.ExtraScopes...),
 		Endpoint:     oauth2.Endpoint{AuthURL: wc.Web.AuthURI, TokenURL: wc.Web.TokenURI},
 	}, nil
 }
@@ -332,10 +367,23 @@ func (a *Auth) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// callback still verifies the email itself).
 	opts := []oauth2.AuthCodeOption{oauth2.SetAuthURLParam("hd", a.policy.DomainName())}
 	// After an explicit sign-out (?switch=1) force the account chooser, else
-	// Google silently re-authenticates the still-live session and the user never
-	// leaves — "sign out" would look like it did nothing.
+	// Google silently re-authenticates the still-live session and the user
+	// never leaves — "sign out" would look like it did nothing.
+	prompt := ""
 	if r.URL.Query().Get("switch") != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
+		prompt = "select_account"
+	}
+	// ExtraScopes (per-user Gmail) need a refresh token, and Google only mints
+	// one on an explicit-consent round trip — so this portal's sign-in always
+	// asks for offline access with the consent screen. Identity-only portals
+	// keep the lighter silent re-auth flow. prompt takes space-separated
+	// values, so consent composes with the account chooser.
+	if len(a.policy.ExtraScopes) > 0 {
+		opts = append(opts, oauth2.AccessTypeOffline)
+		prompt = strings.TrimSpace(prompt + " consent")
+	}
+	if prompt != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", prompt))
 	}
 	http.Redirect(w, r, cfg.AuthCodeURL(state, opts...), http.StatusFound)
 }
@@ -383,6 +431,16 @@ func (a *Auth) HandleCallback(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "This portal accepts @%s accounts and invited partner addresses.\nYou signed in as %s — switch Google accounts, or ask for an invitation.\n", a.policy.DomainName(), email)
 		}
 		return
+	}
+	// The mailbox grant rides the sign-in (Policy.ExtraScopes): hand the token
+	// to the sink AFTER the gate — a stranger's mailbox must never be stored —
+	// and only when a refresh token was minted (unticking the Gmail checkbox
+	// yields none, and that member is simply "not connected").
+	a.mu.Lock()
+	sink := a.tokenSink
+	a.mu.Unlock()
+	if sink != nil && tok.RefreshToken != "" {
+		sink(strings.ToLower(email), tok)
 	}
 	c, err := a.SessionCookie(email, name, isSecure(r), time.Now())
 	if err != nil {

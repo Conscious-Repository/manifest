@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"manifest/artifacts"
+	"manifest/gmailsync"
 	"manifest/realestate"
 	"manifest/record"
 	"manifest/teamportal"
@@ -20,6 +22,23 @@ import (
 // oodaPortalFixture stands up a real OODA portal over a real (tiny) vault, so
 // the write tests exercise the SHARED layer exactly as production mounts it.
 func oodaPortalFixture(t *testing.T) (http.Handler, *teamportal.Auth, *teamportal.Store, string) {
+	f := oodaPortalFixtureFull(t)
+	return f.h, f.auth, f.store, f.vault
+}
+
+// oodaPortalHandles carries every handle the email-lane tests need beyond
+// the classic 4-tuple.
+type oodaPortalHandles struct {
+	h     http.Handler
+	auth  *teamportal.Auth
+	store *teamportal.Store
+	vault string
+	srv   *Server
+	cands *gmailsync.Candidates
+	live  *OodaLive
+}
+
+func oodaPortalFixtureFull(t *testing.T) *oodaPortalHandles {
 	t.Helper()
 	vault, dataDir, teamDir := t.TempDir(), t.TempDir(), t.TempDir()
 	write := func(rel, content string) {
@@ -82,6 +101,22 @@ control: owned
 	live := srv.NewOodaLive()
 	live.UseTeam(store, teamportal.Identity{Email: "ben@ooda.group", Name: "Benjamin"})
 
+	// the email lane + artifact pool, wired the way main.go wires production
+	arts, err := artifacts.New(filepath.Join(dataDir, "artifacts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseArtifacts(arts)
+	cands, err := gmailsync.NewCandidates(filepath.Join(teamDir, "email"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gtok, err := gmailsync.NewTokens(filepath.Join(dataDir, "portals", "ooda-gmail"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseOodaEmail(cands, gtok)
+
 	h, err := PortalHandler(PortalOptions{
 		Auth: auth, Store: store, Live: live, AdminEmail: "ben@ooda.group",
 		WebRoot: "web/ooda", ReadRoutes: OodaReadRoutes(live),
@@ -89,7 +124,7 @@ control: owned
 	if err != nil {
 		t.Fatal(err)
 	}
-	return h, auth, store, vault
+	return &oodaPortalHandles{h: h, auth: auth, store: store, vault: vault, srv: srv, cands: cands, live: live}
 }
 
 func oodaDo(t *testing.T, h http.Handler, c *http.Cookie, method, path, body string) *httptest.ResponseRecorder {

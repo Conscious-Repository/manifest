@@ -24,6 +24,15 @@ type Policy struct {
 	TokenFile    string //   ""                             ("" → aion-portal-tokens.json)
 	TokenPrefix  string // plaintext token prefix           ("" → tokenPrefix const)
 
+	// ExtraScopes are OAuth scopes requested at sign-in BEYOND identity
+	// (openid/email/profile). Empty = identity-only, byte-identical to the
+	// pre-refactor AION flow. The OODA portal bundles gmail.readonly here
+	// (owner decision 2026-08-21): signing in IS connecting your mailbox —
+	// the login flow then requests offline access and hands the minted token
+	// to the Auth's token sink. Google shows the extra consent checkbox; a
+	// member who unticks it still signs in, just with no mailbox connected.
+	ExtraScopes []string
+
 	// AllowExtra admits a NON-domain address. Nil → the domain gate is the
 	// whole rule (AION's wildcard-by-design, decided 2026-08-13).
 	//

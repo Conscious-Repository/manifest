@@ -14,8 +14,12 @@ import (
 // The reads are deliberately FLAT: every authorized member gets the same
 // bytes, ledger line items included (owner decision 2026-08-20 — the partners
 // are co-investors, so the boundary is the sign-in gate, not a redaction
-// inside it). TestOodaReadsAreFlat pins that; if admin and partner responses
-// ever differ, that is the bug.
+// inside it). ONE deliberate exception (owner decision 2026-08-21):
+// GET /api/ooda/email — a PENDING email candidate is its source member's own
+// mail, scoped to that member + the admin until confirmed; confirmed notes
+// are shared artifacts and flat again. TestOodaReadsAreFlat pins the rule,
+// TestPendingEmailNotesAreScopedToSourceAndAdmin pins the exception; any
+// other admin/partner divergence is the bug.
 
 // UseOoda wires the OODA projection (nil-safe: no projection, no portal).
 func (s *Server) UseOoda(l *OodaLive) { s.oodaLive = l }
@@ -45,6 +49,10 @@ func OodaReadRoutes(live *OodaLive) func(*http.ServeMux, PortalOptions) {
 		if opt.Store != nil && opt.Auth != nil {
 			mux.HandleFunc("POST /api/ooda/bid", api.bid)
 		}
+		// the EMAIL lane (ooda_email.go): members' own mailboxes → pending
+		// candidates → confirm into the shared artifact pool. Registers only
+		// when the lane is wired.
+		api.registerEmailRoutes(mux)
 		// /data/meta.json keeps the AION client's revision-poll shape
 		mux.HandleFunc("GET /data/meta.json", handleAionLiveFile(live, "/data/meta.json"))
 	}

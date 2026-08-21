@@ -32,6 +32,7 @@ import (
 	"manifest/fundraising"
 	"manifest/geocode"
 	"manifest/gmailauth"
+	"manifest/gmailsync"
 	"manifest/goals"
 	"manifest/hermes"
 	"manifest/ledger"
@@ -48,6 +49,8 @@ import (
 	"manifest/vault"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
+
+	"golang.org/x/oauth2"
 )
 
 func main() {
@@ -802,6 +805,11 @@ func main() {
 				ClientFile: "ooda-portal-oauth.json", ClientEnv: "OODA_PORTAL_OAUTH_CLIENT",
 				KeyFile: "ooda-portal-session.key", TokenFile: "ooda-portal-tokens.json",
 				TokenPrefix: "oodatok_",
+				// Signing in IS connecting your mailbox (owner decision
+				// 2026-08-21): the Gmail grant rides the portal consent, the
+				// token lands in the per-member store below, and the sync loop
+				// mines the mailbox for deal threads.
+				ExtraScopes: []string{"https://www.googleapis.com/auth/gmail.readonly"},
 				AllowExtra: func(email string) bool {
 					_, ok := ts.EmailOverrides()[email]
 					return ok
@@ -810,9 +818,43 @@ func main() {
 			ts.WithPolicy(pol)
 			tokens := teamportal.NewTokensPolicy(cfg.DataDir, pol)
 			auth := teamportal.NewAuthPolicy(cfg.DataDir, pol).WithTokens(tokens)
+			gtok, err := gmailsync.NewTokens(filepath.Join(cfg.DataDir, "portals", "ooda-gmail"))
+			if err != nil {
+				log.Printf("ooda gmail store disabled: %v", err)
+			} else {
+				auth.WithTokenSink(func(email string, tok *oauth2.Token) {
+					if err := gtok.Put(email, tok); err != nil {
+						log.Printf("ooda gmail: token store for %s: %v", email, err)
+					} else {
+						log.Printf("ooda gmail: mailbox connected for %s", email)
+					}
+				})
+			}
+			// the EMAIL lane: pending candidates beside the team store, the
+			// sync loop over every connected member's mailbox
+			var emailCands *gmailsync.Candidates
+			if gtok != nil {
+				if emailCands, err = gmailsync.NewCandidates(filepath.Join(cfg.Ooda.TeamDir, "email")); err != nil {
+					log.Printf("ooda email lane disabled: %v", err)
+					emailCands = nil
+				}
+			}
 			live := srv.NewOodaLive()
 			live.UseTeam(ts, teamportal.Identity{Email: cfg.Ooda.AdminEmail, Name: "Benjamin"})
 			srv.UseOoda(live)
+			if emailCands != nil {
+				srv.UseOodaEmail(emailCands, gtok)
+				loop := &gmailsync.Loop{
+					Tokens: gtok, Candidates: emailCands,
+					OAuthConfig: auth.OAuthConfig,
+					Roster:      func() gmailsync.Resolver { return srv.OodaEmailRoster(live, ts) },
+					OnConfirmRetry: func(cand gmailsync.Candidate) bool {
+						return srv.SpoolOodaEmailExtract(cand, cand.ArtifactHash)
+					},
+				}
+				go loop.Start(context.Background(), 10*time.Minute)
+				log.Printf("ooda email lane: enabled (candidates → %s)", filepath.Join(cfg.Ooda.TeamDir, "email"))
+			}
 			srv.UseOodaBids(ts, cfg.Ooda.AdminEmail) // the cockpit's bid-accept lane
 			srv.AddPortalBridge(teamportal.NewBridgeNamed(ts, cfg.DataDir, cfg.Ooda.AdminEmail,
 				"ooda-portal", "https://portal.ooda.group/#work"))
