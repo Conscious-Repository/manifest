@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -181,20 +182,20 @@ func (s *Store) parseRun(path string) (RunSummary, string, error) {
 	num := func(k string) float64 { f, _ := strconv.ParseFloat(fm[k], 64); return f }
 	n := func(k string) int { i, _ := strconv.Atoi(fm[k]); return i }
 	return RunSummary{
-		ID:           strings.TrimSuffix(filepath.Base(path), ".md"),
-		Run:          fm["run"],
-		Spirit:       fm["spirit"],
-		Ritual:       fm["ritual"],
-		Request:      fm["request"],
-		Started:      fm["started"],
-		Finished:     fm["finished"],
-		Outcome:      fm["outcome"],
-		Steps:        n("steps"),
-		ItemsWritten: n("items_written"),
-		SpentUSD:     num("charge_spent_usd"),
-		CeilingUSD:   num("charge_ceiling_usd"),
-		Portal:       fm["portal"],
-		Model:        fm["model"],
+		ID:            strings.TrimSuffix(filepath.Base(path), ".md"),
+		Run:           fm["run"],
+		Spirit:        fm["spirit"],
+		Ritual:        fm["ritual"],
+		Request:       fm["request"],
+		Started:       fm["started"],
+		Finished:      fm["finished"],
+		Outcome:       fm["outcome"],
+		Steps:         n("steps"),
+		ItemsWritten:  n("items_written"),
+		SpentUSD:      num("charge_spent_usd"),
+		CeilingUSD:    num("charge_ceiling_usd"),
+		Portal:        fm["portal"],
+		Model:         fm["model"],
 		OutcomeDetail: outcomeDetail(body),
 	}, strings.TrimSpace(body), nil
 }
@@ -265,8 +266,15 @@ func (s *Store) RunPrompts(spirit, run string) ([]PromptTurn, error) {
 	return out, nil
 }
 
-// maxRequestChars bounds a spooled request (mirrors the engine cap).
-const maxRequestChars = 4000
+// maxRequestChars bounds a spooled request. It was 4000, which silently ate
+// the tail of any longer order — and chat writes its `[chat:: thread#order]`
+// correlation token at the END, so an overrun didn't just lose words, it lost
+// the token and the agent's answer never found its way back to the thread
+// (live case: the 2026-08-20 delegate order, cut mid-word at "Other user's
+// sessio"). Raised to fit a real work order with an attachment excerpt; the
+// runner delivers the request as one argv element, and Linux MAX_ARG_STRLEN
+// is 128 KiB, so this stays well inside what exec can carry.
+const maxRequestChars = 60000
 
 // SpoolRunNow drops a run request for the engine to pick up (never a direct
 // invocation). Mirrors the engine's scheduler.SpoolRequest shape. request is
@@ -286,8 +294,14 @@ func (s *Store) SpoolRunNow(spirit, ritual, request, skill string) error {
 	if s.IsActive(spirit, ritual) {
 		return ErrAlreadyActive
 	}
+	// A cut here is a bug upstream — the caller should have budgeted. Say so
+	// rather than truncating in silence, and leave the mark in the text so
+	// whoever reads the run report can see what happened.
 	if len(request) > maxRequestChars {
-		request = request[:maxRequestChars]
+		log.Printf("spirits: %s/%s request truncated at %d of %d chars — the caller did not budget",
+			spirit, ritual, maxRequestChars, len(request))
+		request = request[:maxRequestChars] + "\n\n[TRUNCATED by the spool at " +
+			strconv.Itoa(maxRequestChars) + " chars — this order was composed over budget]"
 	}
 	dir := filepath.Join(s.root, "vessel", "spool")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
