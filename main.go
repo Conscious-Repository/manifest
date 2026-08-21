@@ -20,6 +20,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/artifacts"
 	"manifest/bankfeed"
 	"manifest/books"
 	"manifest/calendar"
@@ -687,6 +688,15 @@ func main() {
 	// threads.Store rooted at the same shared dir for attachments).
 	srv.UseTaskPlans(filepath.Join(cfg.SystemRoot, "todo-plans"))
 	{
+		// the shared attachment pool for BOTH portal chats — one set of blobs
+		// under DataDir (never the vault), a per-domain index that is also the
+		// access list. Failure is not fatal: chat still works, uploads don't.
+		if arts, err := artifacts.New(filepath.Join(cfg.DataDir, "artifacts")); err != nil {
+			log.Printf("chat attachments disabled: %v", err)
+		} else {
+			srv.UseArtifacts(arts)
+			log.Printf("chat attachments: pool at %s", filepath.Join(cfg.DataDir, "artifacts"))
+		}
 		private, err := threads.New(filepath.Join(cfg.DataDir, "todo-threads"))
 		if err != nil {
 			log.Printf("todo threads disabled: %v", err)
@@ -759,6 +769,8 @@ func main() {
 		portalOpts.ChatAsk = srv.AionChatAsk
 		portalOpts.ChatEngine = srv.AionChatEngine
 		portalOpts.ChatProposal = srv.AionChatProposal
+		portalOpts.ChatAttach = srv.AionChatAttach
+		portalOpts.ChatAttachGet = srv.AionChatAttachGet
 	}
 	if cfg.PortalPort != 0 && cfg.PortalPort != cfg.Port {
 		portalAddr := fmt.Sprintf("127.0.0.1:%d", cfg.PortalPort)
@@ -824,6 +836,8 @@ func main() {
 				oodaOpts.ChatAsk = srv.OodaChatAsk
 				oodaOpts.ChatEngine = srv.OodaChatEngine
 				oodaOpts.ChatProposal = srv.OodaChatProposal
+				oodaOpts.ChatAttach = srv.OodaChatAttach
+				oodaOpts.ChatAttachGet = srv.OodaChatAttachGet
 				log.Printf("ooda chat: enabled (writes → %s)", filepath.Join(cfg.Ooda.TeamDir, "chat"))
 			}
 			oodaAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Ooda.Port)

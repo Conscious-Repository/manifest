@@ -19,6 +19,7 @@ import (
 
 	"manifest/aion"
 	"manifest/approvals"
+	"manifest/artifacts"
 	"manifest/bankfeed"
 	"manifest/books"
 	"manifest/calendar"
@@ -156,6 +157,10 @@ type Server struct {
 	// chat: the native portal chat-with-kairos store (chat-kairos handoff;
 	// shared threads on /shared/apps/aion-portal/chat). Nilable.
 	chat *chatthreads.Store
+	// artifacts: the shared content-addressed pool behind chat attachments on
+	// BOTH portals — one blob store, a per-domain index that doubles as the
+	// access list (artifacts/artifacts.go). Nilable.
+	artifacts *artifacts.Store
 	// oodaChat: the OODA portal's own chat store (zeck's threads). Nilable.
 	oodaChat    *chatthreads.Store
 	chatSweepMu sync.Mutex // one chat sweep at a time (ticker vs read-driven)

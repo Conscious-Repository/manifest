@@ -265,7 +265,7 @@ func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context 
 	now := time.Now()
 	_, _ = ag.Store.AddMessage(chatthreads.Message{
 		Thread: thread, Kind: "ask", Author: memberEmail, AuthName: memberName,
-		Text: text, Context: context, At: now,
+		Text: text, Context: context, At: now, Files: s.chatMessageFiles(ag, context),
 	}, now)
 	_ = ag.Store.SetPending(chatthreads.Pending{
 		OrderID: orderID, Thread: thread, By: memberName, ByEmail: memberEmail,

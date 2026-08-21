@@ -1,18 +1,15 @@
 package server
 
 import (
-	"archive/zip"
-	"bytes"
 	"fmt"
 	"io"
 	"net/http"
-	"os/exec"
 	"path"
-	"regexp"
 	"strings"
 	"time"
 
 	"manifest/approvals"
+	"manifest/extract"
 	"manifest/realestate"
 	"manifest/spirits"
 )
@@ -51,7 +48,8 @@ func (s *Server) handleREIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// the text extract — the ritual's readable window into the document
-	text, how := extractDocText(name, data)
+	res := extract.Doc(name, data)
+	text, how := res.Text, res.Via
 	hash := strings.TrimPrefix(ref.Ref, "sha256:")
 	extractRel := path.Join(s.realestateRootOr(), "files", hash+".extract.md")
 	extract := "---\ncategories: [re-extract]\nsource: \"" + name + "\"\ndoc: \"" + ref.Ref + "\"\nextracted: " +
@@ -134,78 +132,4 @@ func (s *Server) handleApprovalReContract(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
-}
-
-// extractDocText pulls the readable text out of an uploaded document:
-// pdftotext for PDFs (when installed), the document.xml strip for docx,
-// UTF-8 passthrough for text. Images and failures yield a marker the ritual
-// treats as "no text layer — extract nothing you cannot read".
-func extractDocText(name string, data []byte) (string, string) {
-	const maxLen = 55000 // vault.read truncates at 60k — leave frontmatter room
-	clamp := func(s string) string {
-		if len(s) > maxLen {
-			return s[:maxLen] + "\n\n[truncated]"
-		}
-		return s
-	}
-	ext := strings.ToLower(path.Ext(name))
-	switch ext {
-	case ".pdf":
-		if pt, err := exec.LookPath("pdftotext"); err == nil {
-			cmd := exec.Command(pt, "-layout", "-", "-")
-			cmd.Stdin = bytes.NewReader(data)
-			var out bytes.Buffer
-			cmd.Stdout = &out
-			if cmd.Run() == nil && strings.TrimSpace(out.String()) != "" {
-				return clamp(out.String()), "pdftotext"
-			}
-		}
-		return "(no text could be extracted from this PDF — no pdftotext or empty text layer)", "none"
-	case ".docx":
-		if txt := docxText(data); strings.TrimSpace(txt) != "" {
-			return clamp(txt), "docx-xml"
-		}
-		return "(no text could be extracted from this docx)", "none"
-	case ".txt", ".md", ".csv":
-		return clamp(string(data)), "verbatim"
-	default:
-		return "(binary document — no text layer extracted; kind: " + ext + ")", "none"
-	}
-}
-
-var docxTagRe = regexp.MustCompile(`<[^>]+>`)
-
-// docxText unzips word/document.xml and strips the markup, preserving
-// paragraph and tab structure well enough for extraction.
-func docxText(data []byte) string {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return ""
-	}
-	for _, f := range zr.File {
-		if f.Name != "word/document.xml" {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return ""
-		}
-		raw, err := io.ReadAll(io.LimitReader(rc, 8<<20))
-		rc.Close()
-		if err != nil {
-			return ""
-		}
-		s := string(raw)
-		s = strings.ReplaceAll(s, "</w:p>", "\n")
-		s = strings.ReplaceAll(s, "<w:tab/>", "\t")
-		s = strings.ReplaceAll(s, "<w:br/>", "\n")
-		s = docxTagRe.ReplaceAllString(s, "")
-		s = strings.ReplaceAll(s, "&amp;", "&")
-		s = strings.ReplaceAll(s, "&lt;", "<")
-		s = strings.ReplaceAll(s, "&gt;", ">")
-		s = strings.ReplaceAll(s, "&quot;", "\"")
-		s = strings.ReplaceAll(s, "&apos;", "'")
-		return s
-	}
-	return ""
 }

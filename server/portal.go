@@ -64,6 +64,11 @@ type PortalOptions struct {
 	ChatAsk      func(thread, text, ritual string, context []string, memberEmail, memberName string) error
 	ChatEngine   func() map[string]any
 	ChatProposal func(thread, msg string, index int, apply bool, memberEmail, memberName, memberInitials string, admin bool) error
+	// ChatAttach stores an uploaded file as this portal's artifact;
+	// ChatAttachGet serves one back, but only when this portal owns the hash.
+	// Both take the raw request so the handler owns streaming + sniffing.
+	ChatAttach    func(w http.ResponseWriter, r *http.Request, memberEmail, memberName string)
+	ChatAttachGet func(w http.ResponseWriter, r *http.Request, hash string)
 }
 
 // PortalHandler serves the AION portal as a standalone site, rooted at the
@@ -171,6 +176,12 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			}
 			if opt.ChatProposal != nil {
 				mux.HandleFunc("POST /api/chat/proposal", api.handleChatProposal)
+			}
+			if opt.ChatAttach != nil {
+				mux.HandleFunc("POST /api/chat/attach", api.handleChatAttach)
+			}
+			if opt.ChatAttachGet != nil {
+				mux.HandleFunc("GET /api/chat/attach/{hash}", api.handleChatAttachGet)
 			}
 		}
 	}
@@ -738,6 +749,25 @@ func (p *portalAPI) handlePlanWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, p.opt.Panel(b.Item))
+}
+
+// handleChatAttach takes one uploaded file for a chat message. Any signed-in
+// member may attach; the store decides what is acceptable.
+func (p *portalAPI) handleChatAttach(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	p.opt.ChatAttach(w, r, id.Email, id.Name)
+}
+
+// handleChatAttachGet serves one back. Ownership is checked against THIS
+// portal's artifact index, so a hash from the other portal is a 404 here.
+func (p *portalAPI) handleChatAttachGet(w http.ResponseWriter, r *http.Request) {
+	if _, ok := p.identify(w, r); !ok {
+		return
+	}
+	p.opt.ChatAttachGet(w, r, r.PathValue("hash"))
 }
 
 // handleFileBlob serves a comment-attachment blob by hash.

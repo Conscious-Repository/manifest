@@ -26,9 +26,14 @@ import (
 	"time"
 )
 
-// MaxLen bounds one extract. 55k leaves room under the agents' 60k read cap
-// for the frontmatter and the header line.
+// MaxLen bounds an extract destined for a VAULT NOTE — 55k leaves room under
+// the agents' 60k read cap for the frontmatter and the header line.
 const MaxLen = 55000
+
+// MaxStored bounds an extract written as a plain file for an agent to open.
+// Nothing reads it through the 60k cap, so the only reason to bound it at all
+// is to keep one pathological document from filling a disk.
+const MaxStored = 4 << 20
 
 // pdfTimeout bounds pdftotext. It had none: a PDF crafted to make poppler spin
 // would have hung the HTTP request that uploaded it.
@@ -44,8 +49,13 @@ type Result struct {
 	HasText bool
 }
 
-// Doc extracts text from a document's bytes, dispatching on its filename.
-func Doc(name string, data []byte) Result {
+// Doc extracts text bounded for a vault note. Use DocLimit when the text is
+// going somewhere that can hold more.
+func Doc(name string, data []byte) Result { return DocLimit(name, data, MaxLen) }
+
+// DocLimit extracts text from a document's bytes, dispatching on its filename.
+func DocLimit(name string, data []byte, limit int) Result {
+	clamp := func(s string) string { return clampTo(s, limit) }
 	switch strings.ToLower(path.Ext(name)) {
 	case ".pdf":
 		if txt, ok := pdfText(data); ok {
@@ -69,16 +79,16 @@ func Doc(name string, data []byte) Result {
 	}
 }
 
-func clamp(s string) string {
-	if len(s) <= MaxLen {
+func clampTo(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
 	// cut on a rune boundary — a split multi-byte rune renders as garbage
-	cut := MaxLen
+	cut := limit
 	for cut > 0 && !utf8Start(s[cut]) {
 		cut--
 	}
-	return s[:cut] + "\n\n[extract truncated at " + strconv.Itoa(MaxLen) + " chars]"
+	return s[:cut] + "\n\n[extract truncated at " + strconv.Itoa(limit) + " chars]"
 }
 
 func utf8Start(b byte) bool { return b&0xC0 != 0x80 }
@@ -159,7 +169,7 @@ func xlsxText(data []byte) string {
 			b.WriteString(strings.Join(r, "\t"))
 			b.WriteString("\n")
 		}
-		if b.Len() > MaxLen {
+		if b.Len() > MaxStored {
 			break
 		}
 	}

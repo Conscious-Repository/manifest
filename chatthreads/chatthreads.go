@@ -63,6 +63,19 @@ type Message struct {
 	Report   string     `json:"report,omitempty"` // harness-relative report path
 	Brief    string     `json:"brief,omitempty"`  // harness-relative brief path
 	Props    []Proposal `json:"proposals,omitempty"`
+	// Files are the attachments that rode this message. Refs only — the bytes
+	// live in the artifact pool, and chat.json is rewritten whole on every
+	// message, so nothing large may live here.
+	Files []FileRef `json:"files,omitempty"`
+}
+
+// FileRef is one attachment as this thread sees it: the pool key plus the name
+// THIS sender used for it.
+type FileRef struct {
+	Hash string `json:"hash"`
+	Name string `json:"name"`
+	Size int64  `json:"size,omitempty"`
+	Mime string `json:"mime,omitempty"`
 }
 
 // Thread is a named, rock-scoped, archivable conversation.

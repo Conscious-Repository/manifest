@@ -19,6 +19,7 @@ import (
 	"manifest/chatthreads"
 	"manifest/ledger"
 	"manifest/realestate"
+	"manifest/spirits"
 )
 
 var chatTokenRe = regexp.MustCompile(`\[chat::\s*([^\]#]+)#([^\]]+)\]`)
@@ -53,6 +54,7 @@ type chatAgent struct {
 	Identity string // the preamble sentence, minus the thread clause
 	Host     string // engine sidebar: where it runs
 	Root     string // engine sidebar: its harness tree
+	Domain   string // artifact index / access scope — "aion" | "ooda"
 	Store    *chatthreads.Store
 }
 
@@ -64,7 +66,7 @@ func (s *Server) kairosAgent() *chatAgent {
 	return &chatAgent{
 		Name: "kairos", Display: "Kairos",
 		Identity: "You are kairos, the AION team agent, answering in the team portal chat",
-		Host:     "lab-apps · kairos", Root: "/shared/apps/kairos", Store: s.chat,
+		Host:     "lab-apps · kairos", Root: "/shared/apps/kairos", Domain: "aion", Store: s.chat,
 	}
 }
 
@@ -76,7 +78,7 @@ func (s *Server) zeckAgent() *chatAgent {
 	return &chatAgent{
 		Name: "zeck", Display: "Zeck",
 		Identity: "You are zeck, the OODA real-estate agent, answering in the OODA portal chat",
-		Host:     "metis · zeck", Root: "/private/harnesses/zeck", Store: s.oodaChat,
+		Host:     "metis · zeck", Root: "/private/harnesses/zeck", Domain: "ooda", Store: s.oodaChat,
 	}
 }
 
@@ -98,13 +100,14 @@ func (s *Server) resolveChatContext(ids []string) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("CONTEXT (what this ask is grounded in):\n")
 	for _, id := range ids {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			continue
 		}
 		switch {
+		case strings.HasPrefix(id, attachPrefix):
+			continue // attachments compose their own block (chat_attach.go)
 		case strings.HasPrefix(id, "aion:") && s.aion != nil:
 			bare := strings.TrimPrefix(id, "aion:")
 			if it := s.aion.LoadBacklog().Find(bare); it != nil {
@@ -138,7 +141,10 @@ func (s *Server) resolveChatContext(ids []string) string {
 			b.WriteString("- rock [" + id + "]: " + title + "\n")
 		}
 	}
-	return b.String()
+	if b.Len() == 0 {
+		return ""
+	}
+	return "CONTEXT (what this ask is grounded in):\n" + b.String()
 }
 
 func indent(s, pad string) string {
@@ -159,6 +165,11 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 	}
 	orderID := fmt.Sprintf("%d", time.Now().UnixNano())
 	var b strings.Builder
+	// The correlation token goes FIRST. sweepAgent matches it to route the
+	// answer back to this thread, and the spool truncates from the RIGHT — at
+	// the tail it was the first thing an over-long order lost, which orphaned
+	// the reply entirely (see spirits.maxRequestChars).
+	b.WriteString("[chat:: " + threadID + "#" + orderID + "]\n")
 	if p, ok := s.persona(intent); ok {
 		b.WriteString("PERSONA (how to respond):\n" + p.Prompt + "\n")
 	}
@@ -170,13 +181,23 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 	if ctx := s.resolveChatContext(contextIDs); ctx != "" {
 		b.WriteString(ctx)
 	}
+	// Attachments take whatever room is left after everything else, so the
+	// spool's blunt cut never fires — the preview shrinks instead, and the
+	// full text is a file in the agent's own tree either way.
+	// Reserve real slack, not a token amount: the message, the longest
+	// protocol, and room for the framing the attachment block writes.
+	fixed := b.Len() + len(text) + len(chatDelegateProtocol) + 1500
+	if budget := spirits.MaxRequestChars - fixed; budget > 600 {
+		if block, _ := s.chatAttachments(ag, contextIDs, budget); block != "" {
+			b.WriteString(block)
+		}
+	}
 	b.WriteString("MESSAGE (from " + orStr(who, "a teammate") + "):\n" + text + "\n")
 	if ritual == "delegate" {
 		b.WriteString(chatDelegateProtocol)
 	} else {
 		b.WriteString(chatAskProtocol)
 	}
-	b.WriteString("[chat:: " + threadID + "#" + orderID + "]")
 	if err := h.Spirits.SpoolRunNow(ag.Name, ritual, b.String(), ""); err != nil {
 		return "", err
 	}

@@ -276,6 +276,9 @@ func (s *Store) RunPrompts(spirit, run string) ([]PromptTurn, error) {
 // is 128 KiB, so this stays well inside what exec can carry.
 const maxRequestChars = 60000
 
+// MaxRequestChars lets composers budget a work order before spooling it.
+const MaxRequestChars = maxRequestChars
+
 // SpoolRunNow drops a run request for the engine to pick up (never a direct
 // invocation). Mirrors the engine's scheduler.SpoolRequest shape. request is
 // the summoner's free-form ask for on-demand spirits (options-scout); empty
