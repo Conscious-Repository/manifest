@@ -288,10 +288,17 @@ func (s *Store) applyReContract(p Proposal) error {
 		stages := realestate.ParseWork(lines)
 		list := &realestate.PropertyTaskList{Stages: stages, Section: section}
 		for _, m := range work.milestones {
+			// The extractor only PROPOSES a milestone as new — it reads the
+			// tree with fresh eyes each intake and gets it wrong (2026-08-21:
+			// a second WM Electric bid re-declared `electrical` under Rough-in
+			// on 4848, and the apply added a duplicate line). A milestone the
+			// rock already carries is the one we tether to, never a new one.
+			if existingMilestone(list.Stages, m.Rock, m.Name) {
+				continue
+			}
 			t := &tasks.Task{Text: strings.TrimSpace(m.Name)}
 			t.Fields = append(t.Fields, tasks.Field{Key: "milestone", Value: ""})
-			node := list.Append(t, strings.TrimSpace(m.Rock))
-			_ = node
+			list.Append(t, strings.TrimSpace(m.Rock))
 		}
 		list.Stages = realestate.ParseWork(strings.Split(strings.TrimRight(realestate.EmitWork(list.Stages), "\n"), "\n"))
 		for _, tk := range work.tasks {
@@ -322,6 +329,42 @@ func (s *Store) applyReContract(p Proposal) error {
 		return fmt.Errorf("apply refused: contract write: %w", err)
 	}
 	return nil
+}
+
+// existingMilestone reports whether the named rock already carries a direct
+// child with this text (case-insensitive). Rock is matched by id or text, the
+// same way PropertyTaskList.Append resolves a parent, so the check and the
+// write always agree on which rock they mean.
+func existingMilestone(stages []realestate.WorkStage, rock, name string) bool {
+	rock, name = strings.TrimSpace(rock), strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	match := func(kids []*realestate.WorkNode) bool {
+		for _, k := range kids {
+			if k.Task != nil && strings.EqualFold(strings.TrimSpace(k.Task.Text), name) {
+				return true
+			}
+		}
+		return false
+	}
+	if rock != "" {
+		if _, p := realestate.FindWorkNode(stages, rock); p != nil {
+			return match(p.Children)
+		}
+		for i := range stages {
+			if stages[i].ID == rock || strings.EqualFold(stages[i].Text, rock) {
+				return match(stages[i].Tasks)
+			}
+		}
+		return false // the rock does not exist yet — nothing to duplicate
+	}
+	for i := range stages { // no rock named: Append would drop it on the first open rock
+		if !stages[i].Checked {
+			return match(stages[i].Tasks)
+		}
+	}
+	return false
 }
 
 // freeContractPath resolves where a confirmed contract record actually lands.

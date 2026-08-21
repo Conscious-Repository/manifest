@@ -319,3 +319,53 @@ func TestNoDocHashFallsBackToTotalAndDate(t *testing.T) {
 		t.Fatal("the differing bid did not land")
 	}
 }
+
+// The extractor re-reads the tree each intake and mis-declares an existing
+// milestone as new. A second bid for the same scope must tether to the
+// milestone already there, never add a twin (2026-08-21: 4848 Fountain ended
+// up with `electrical` twice under Rough-in).
+func TestMilestoneAlreadyOnTheRockIsNotDuplicated(t *testing.T) {
+	s, vault, _ := reTestStore(t)
+	seedProperty(t, vault, "4852-fountain-ave", "- [ ] Rough-in\n    - [ ] electrical [milestone::]\n")
+	pay := bidPayload("WM Electric — electrical, 4852", "sha256:bbb", 38500, "2026-08-20")
+	pay.NewMilestones = []ReContractMilestone{{Property: "4852-fountain-ave", Rock: "Rough-in", Name: "electrical"}}
+	p, _ := s.Propose(reContractProposal(t, pay, "system/realestate/contracts/wm-e-4852.md"))
+	if err := s.Confirm(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/4852-fountain-ave.md"))
+	if n := strings.Count(string(b), "electrical [milestone::]"); n != 1 {
+		t.Fatalf("expected exactly 1 electrical milestone, got %d:\n%s", n, b)
+	}
+	// case and whitespace differences are still the same milestone
+	pay2 := bidPayload("third bid", "sha256:ccc", 41000, "2026-08-21")
+	pay2.NewMilestones = []ReContractMilestone{{Property: "4852-fountain-ave", Rock: "rough-in", Name: "  Electrical  "}}
+	p2, _ := s.Propose(reContractProposal(t, pay2, "system/realestate/contracts/wm-e-4852.md"))
+	if err := s.Confirm(p2.ID); err != nil {
+		t.Fatal(err)
+	}
+	b2, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/4852-fountain-ave.md"))
+	if n := strings.Count(strings.ToLower(string(b2)), "electrical [milestone::]"); n != 1 {
+		t.Fatalf("case-differing milestone duplicated, got %d:\n%s", n, b2)
+	}
+}
+
+// A genuinely new milestone still lands — the guard must not block real work.
+func TestGenuinelyNewMilestoneStillLands(t *testing.T) {
+	s, vault, _ := reTestStore(t)
+	seedProperty(t, vault, "4852-fountain-ave", "- [ ] Rough-in\n    - [ ] electrical [milestone::]\n")
+	pay := bidPayload("plumbing bid", "sha256:ddd", 21000, "2026-08-21")
+	pay.NewMilestones = []ReContractMilestone{{Property: "4852-fountain-ave", Rock: "Rough-in", Name: "plumbing"}}
+	p, _ := s.Propose(reContractProposal(t, pay, "system/realestate/contracts/wm-p-4852.md"))
+	if err := s.Confirm(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(vault, "system/realestate/properties/4852-fountain-ave.md"))
+	body := string(b)
+	if !strings.Contains(body, "plumbing [milestone::]") {
+		t.Fatalf("a new milestone must still land:\n%s", body)
+	}
+	if n := strings.Count(body, "electrical [milestone::]"); n != 1 {
+		t.Fatalf("the existing milestone was disturbed, got %d:\n%s", n, body)
+	}
+}
