@@ -200,16 +200,24 @@ function ViewChat({ data }) {
               <button className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
                 {window.CHAT_ACTIONS.propose.label}
               </button>
+            </div>
+            {/* one row per action, the name in mono and its consequence beside
+                it. Run together on one line these two read as a single
+                sentence, and the sub-labels already carry their own em-dash. */}
+            <div className="ooda-actdefs">
+              <span><em>{window.CHAT_ACTIONS.ask.label}</em>{window.CHAT_ACTIONS.ask.sub}</span>
+              <span><em>{window.CHAT_ACTIONS.propose.label}</em>{window.CHAT_ACTIONS.propose.sub}</span>
+            </div>
+            {/* attach is quieter and separate: the file becomes a context chip
+                above and rides the send you were going to make anyway */}
+            <div className="ooda-attach-row">
               <label className="ooda-attach" title={window.CHAT_ACTIONS.attach.hint}>
                 {attaching ? "…" : window.CHAT_ACTIONS.attach.label}
                 <input type="file" accept={window.CHAT_ACTIONS.attach.accept}
                   disabled={!!attaching || !sel}
                   onChange={(e) => { const f = e.target.files[0]; e.target.value = ""; attachFile(f); }} />
               </label>
-            </div>
-            <div className="ooda-form-note">
-              {window.CHAT_ACTIONS.ask.label} — {window.CHAT_ACTIONS.ask.sub}<br />
-              {window.CHAT_ACTIONS.propose.label} — {window.CHAT_ACTIONS.propose.sub}
+              <span className="ooda-sub">{window.CHAT_ACTIONS.attach.hint}</span>
             </div>
             <div className="ooda-assure">{window.CHAT_ACTIONS.assurance}</div>
             {err ? <div className="ooda-err">{err}</div> : null}

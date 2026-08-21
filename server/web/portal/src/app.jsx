@@ -9,6 +9,57 @@ function safe(name) {
   };
 }
 
+// safe() covers a MISSING component. It cannot cover a component that exists
+// and throws — and one React tree means that throw unmounts the whole portal,
+// white page, no rail, nothing saying why.
+//
+// The live case: index.html is no-cache but the scripts carry max-age, and the
+// `?v=` token only busts the BROWSER cache (the server ignores query strings
+// and returns current content for any version). A browser holding an older
+// index.html therefore loads the NEW content of its OLD <script> list, so a
+// file the deploy ADDED is never loaded and its global is undefined. That is
+// how the CHAT tab went blank after chat-actions.js was introduced.
+//
+// app.jsx is always fetched fresh, so it is the right place to notice: one
+// cache-busted reload, then stop and let the boundary explain rather than loop.
+(function healStaleShell() {
+  if (window.CHAT_ACTIONS) return;
+  const u = new URL(window.location.href);
+  if (u.searchParams.get('stale') === '1') return;
+  u.searchParams.set('stale', '1');
+  window.location.replace(u.toString());
+})();
+
+function portalHardReload() {
+  const u = new URL(window.location.href);
+  u.searchParams.set('r', String(Date.now()));
+  window.location.replace(u.toString());
+}
+
+class ViewBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { err: null };
+  }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error('portal view failed:', err, info); }
+  componentDidUpdate(prev) {
+    if (prev.viewKey !== this.props.viewKey && this.state.err) this.setState({ err: null });
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="no-data" style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+        <div style={{ color: 'var(--ink,#d4d4d4)' }}>this view could not load</div>
+        <div style={{ fontSize: 11 }}>{String(this.state.err.message || this.state.err)}</div>
+        <div style={{ fontSize: 11 }}>Usually a half-updated page. The other views still work.</div>
+        <button className="v2-btn v2-hoveraccent" style={{ padding: '4px 13px' }}
+          onClick={portalHardReload}>reload the page</button>
+      </div>
+    );
+  }
+}
+
 function parseHash() {
   const h = (location.hash || '').replace('#', '');
   if (h === 'gantt' || h === 'timeline') return { view: 'goals', anchor: 'sec-timeline' };
@@ -233,7 +284,7 @@ function PortalApp() {
           <div style={{ fontSize: 12, color: 'var(--ink-faint,#777)' }}>portal / <span style={{ color: 'var(--ink,#d4d4d4)' }}>{viewLabel}</span></div>
           <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', textAlign: 'right' }}>{metaLine}</div>
         </div>
-        {main}
+        <ViewBoundary viewKey={view}>{main}</ViewBoundary>
       </main>
 
       {themeModal && <ThemeModal activeId={themeId} onPick={setTheme} onClose={() => setThemeModal(false)} />}

@@ -267,7 +267,7 @@ button { font: inherit; color: inherit; }
 .ooda-compose-acts { display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap; padding: var(--sp-4) var(--sp-2) 0; }
 .ooda-send.secondary { background: none; color: var(--accent); border: 1px solid var(--accent); }
 .ooda-send.secondary:hover { background: var(--base-05); }
-.ooda-assure { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding: 2px 4px 8px; }
+.ooda-assure { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding: 10px 4px 8px; }
 
 .ooda-prop { border: 1px solid var(--line); background: var(--base-02); padding: 8px 10px; margin-top: 8px; }
 .ooda-prop-head { display: flex; gap: var(--sp-4); align-items: baseline; }
@@ -287,8 +287,26 @@ button { font: inherit; color: inherit; }
 
 /* the composer's paperclip — a label wrapping a hidden input, so it sits in
    the action row as a peer of the two send buttons */
-.ooda-attach { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); border: 1px dashed var(--base-30); border-radius: var(--radius); padding: var(--sp-2) var(--sp-4); cursor: pointer; margin-left: auto; }
+.ooda-attach { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); border: 1px dashed var(--base-30); border-radius: var(--radius); padding: var(--sp-2) var(--sp-4); cursor: pointer; }
 .ooda-attach:hover { color: var(--accent); border-color: var(--accent); }
 .ooda-attach input { display: none; }
 .ooda-msg-files { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-2); }
 .ooda-msg-files .ooda-chip { text-decoration: none; }
+
+/* the two actions, each named with the consequence of pressing it. One row
+   per action with a hairline between: side by side they read as one run-on
+   sentence, and each sub-label already carries its own em-dash. */
+.ooda-actdefs { display: flex; flex-direction: column; padding: 10px 4px 0; }
+.ooda-actdefs span { display: flex; gap: 10px; align-items: baseline; font-size: 12px;
+  line-height: 1.55; color: var(--base-40); padding: 5px 0; border-top: 1px solid var(--line-soft); }
+.ooda-actdefs em { flex: none; min-width: 96px; font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.4px; font-style: normal; color: var(--base-100); }
+/* attach: quieter, and on its own line rather than pinned to the right of the
+   send buttons where it floated far from anything it relates to */
+.ooda-attach-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  margin-top: 10px; padding: 10px 4px 0; border-top: 1px solid var(--line-soft); }
+
+/* a view that threw — legible, and never the whole portal (see app.jsx) */
+.ooda-broken { display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+  padding: 28px 4px; }
+.ooda-broken-h { font-size: 14px; }

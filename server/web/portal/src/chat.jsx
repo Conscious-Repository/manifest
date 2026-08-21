@@ -378,34 +378,45 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 const A = window.CHAT_ACTIONS;
                 return (
                   <React.Fragment>
-                    <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginTop: 9, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {/* Each action's explanation sits UNDER its own button and
+                        is bounded, with a rule between the two columns. Side by
+                        side in one unbroken row they read as a single run-on
+                        sentence: "…nothing is written comes back as a change…" */}
+                    <div style={{ display: 'flex', alignItems: 'stretch', marginTop: 9, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4,
+                        maxWidth: 232, paddingRight: 18 }}>
                         <button className="v2-btn v2-accentfill" disabled={!canSend}
                           style={{ borderColor: 'var(--accent,#0091ea)', color: canSend ? 'var(--accent,#0091ea)' : 'var(--ink-mute,#555)',
                             padding: '4px 13px', cursor: canSend ? 'pointer' : 'not-allowed' }}
                           onClick={() => send('ask')}>{busy ? A.busyLabel : A.ask.label}</button>
-                        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.ask.sub}</span>
+                        <span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--ink-mute,#666)' }}>{A.ask.sub}</span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4,
+                        maxWidth: 232, paddingLeft: 18, borderLeft: '1px solid var(--line,#3a3a3a)' }}>
                         <button className="v2-btn v2-hoveraccent" disabled={!canSend}
                           style={{ color: canSend ? 'var(--ink,#d4d4d4)' : 'var(--ink-mute,#555)',
                             padding: '4px 13px', cursor: canSend ? 'pointer' : 'not-allowed' }}
                           onClick={() => send('delegate')}>{A.propose.label}</button>
-                        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.propose.sub}</span>
+                        <span style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--ink-mute,#666)' }}>{A.propose.sub}</span>
                       </div>
-                      {/* attach — the file becomes a context chip above, so it
-                          rides the send you were going to make anyway */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginLeft: 'auto' }}>
-                        <label className="v2-btn v2-hoveraccent"
-                          style={{ color: 'var(--ink-faint,#888)', padding: '4px 13px',
-                            cursor: attaching ? 'progress' : 'pointer' }}>
-                          {attaching ? A.busyLabel : A.attach.label}
-                          <input type="file" accept={A.attach.accept} style={{ display: 'none' }}
-                            disabled={!!attaching || !thread}
-                            onChange={e => { const f = e.target.files[0]; e.target.value = ''; attachFile(f); }} />
-                        </label>
-                        <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.attach.hint}</span>
-                      </div>
+                    </div>
+                    {/* attach is a quieter, separate affordance — the file
+                        becomes a context chip above and rides the send you were
+                        going to make anyway. It was pinned right with
+                        marginLeft:auto in the same row, which on any real width
+                        wrapped it onto its own line already, floated oddly far
+                        from everything it relates to. */}
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
+                      marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line,#3a3a3a)' }}>
+                      <label className="v2-btn v2-hoveraccent"
+                        style={{ color: 'var(--ink-faint,#888)', padding: '4px 13px',
+                          cursor: attaching ? 'progress' : 'pointer' }}>
+                        {attaching ? A.busyLabel : A.attach.label}
+                        <input type="file" accept={A.attach.accept} style={{ display: 'none' }}
+                          disabled={!!attaching || !thread}
+                          onChange={e => { const f = e.target.files[0]; e.target.value = ''; attachFile(f); }} />
+                      </label>
+                      <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{A.attach.hint}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 8 }}>
                       {busy ? A.busyNote(engine) : A.assurance}
