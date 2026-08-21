@@ -176,3 +176,65 @@ func TestOodaNodeIDRoundTrip(t *testing.T) {
 		t.Fatal("a bare property anchor is not a node id")
 	}
 }
+
+// The WORK tab showed 56 settled decisions as live work (owner report,
+// 2026-08-21). Root cause: the open/closed test was a DENY-list ("not checked
+// and not done"), and RE decisions are not checkboxes — they close with
+// `[status:: decided]`. Every unrecognized status therefore read as open.
+// The rule is now an allow-list matching the AION portal's isOpen.
+func TestOodaBacklogOpenIsAnAllowList(t *testing.T) {
+	openCases := []*aion.BacklogItem{
+		{Status: aion.StatusOpen, Text: "open task"},
+		{Status: aion.StatusInProgress, Text: "in progress"},
+		{Status: "", Text: "no status at all"},
+		{Status: "OPEN", Text: "case-insensitive"},
+		{Status: " open ", Text: "whitespace"},
+	}
+	for _, it := range openCases {
+		if !oodaBacklogOpen(it) {
+			t.Fatalf("%q (status %q) should be open", it.Text, it.Status)
+		}
+	}
+	closedCases := []*aion.BacklogItem{
+		{Status: aion.StatusDone, Text: "done task"},
+		{Status: aion.StatusDecided, Kind: "decision", Text: "THE REGRESSION: a decided decision"},
+		{Status: "DECIDED", Text: "case-insensitive decided"},
+		{Checked: true, Text: "checked box, no status"},
+		{Status: aion.StatusOpen, Decided: "2026-03-20", Text: "carries its resolution date"},
+		{Status: aion.StatusOpen, Outcome: "went with option B", Text: "carries its outcome"},
+		{Status: "archived", Text: "a status nobody has invented yet must read CLOSED"},
+		nil,
+	}
+	for _, it := range closedCases {
+		if oodaBacklogOpen(it) {
+			t.Fatalf("%q (status %q) should be closed", it.Text, it.Status)
+		}
+	}
+}
+
+// End to end through the grouping: a decided decision never reaches a lane.
+func TestOodaWorkExcludesDecidedDecisions(t *testing.T) {
+	snap := oodaFixture()
+	snap.Backlog = []*aion.BacklogItem{
+		{ID: "aion-bl/live", Text: "still open", Owner: "BA", Kind: "decision", Status: aion.StatusOpen},
+		{ID: "aion-bl/settled", Text: "already decided", Owner: "BA", Kind: "decision",
+			Status: aion.StatusDecided, Decided: "2026-03-20"},
+		{ID: "aion-bl/donetask", Text: "finished", Owner: "BA", Kind: "task", Status: aion.StatusDone},
+	}
+	for _, g := range buildOodaWork(snap, "2026-08-21") {
+		for _, lane := range [][]oodaWorkItem{g.Open, g.Overdue, g.DueThisWeek, g.Decisions, g.Waiting} {
+			for _, it := range lane {
+				if it.ID != "aion-bl/live" {
+					t.Fatalf("closed item %q surfaced as work in %s's list", it.ID, g.Owner)
+				}
+			}
+		}
+	}
+	// and the dashboard's per-person counts inherit the same rule
+	d := buildOodaDashboard(snap, "2026-08-21")
+	for _, o := range d.Owners {
+		if o.Owner == "BA" && o.Decisions != 1 {
+			t.Fatalf("BA decisions = %d, want 1 (only the undecided one)", o.Decisions)
+		}
+	}
+}

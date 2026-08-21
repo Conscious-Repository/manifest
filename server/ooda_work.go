@@ -25,7 +25,10 @@ type oodaWorkItem struct {
 	Rock      string `json:"rock,omitempty"`
 	Due       string `json:"due,omitempty"`
 	Age       string `json:"age,omitempty"` // captured date, for "how long has this sat"
-	Waiting   bool   `json:"waiting,omitempty"`
+	// Waiting comes from a rock-tree task's [waiting:: who] field. Backlog
+	// items have no such status — the aion vocabulary is exactly
+	// open|in_progress|done|decided.
+	Waiting bool `json:"waiting,omitempty"`
 }
 
 // oodaWorkGroup is one person's section. Empty Owner is the `— unassigned —`
@@ -82,6 +85,31 @@ func oodaOwner(raw string, alias map[string]string) string {
 	return key
 }
 
+// oodaBacklogOpen decides whether one backlog item is still outstanding.
+//
+// This is an ALLOW-LIST on purpose, matching the AION portal's canonical rule
+// (web/portal/src/derive.js isOpen): open, in_progress, or no status at all.
+// The first version of this function was a DENY-list — "not checked and not
+// done" — and it failed open on every status it had not heard of. Decisions
+// are not checkboxes and close with `[status:: decided]`, so 56 of 61 settled
+// decisions rendered as live work. An unrecognized status means somebody
+// marked the item something; the safe reading is CLOSED, not open.
+func oodaBacklogOpen(it *aion.BacklogItem) bool {
+	if it == nil || it.Checked {
+		return false
+	}
+	// a decision carrying its resolution is closed whatever the status says
+	if strings.TrimSpace(it.Decided) != "" || strings.TrimSpace(it.Outcome) != "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(it.Status)) {
+	case "", aion.StatusOpen, aion.StatusInProgress:
+		return true
+	default: // done, decided, and anything new that appears later
+		return false
+	}
+}
+
 // buildOodaWork groups the domain's open work by assignee.
 func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 	if snap == nil {
@@ -96,7 +124,7 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 	var items []oodaWorkItem
 	// 1. the RE backlog (aion.Store over system/realestate)
 	for _, it := range snap.Backlog {
-		if it == nil || it.Checked || strings.EqualFold(it.Status, "done") {
+		if !oodaBacklogOpen(it) {
 			continue
 		}
 		kind := "task"
@@ -107,7 +135,6 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 			ID: it.ID, Title: it.Text, Kind: kind, Source: "backlog",
 			Owner: oodaOwner(it.Owner, alias),
 			Rock:  it.Rock, Due: it.Due, Age: it.Captured,
-			Waiting: strings.EqualFold(it.Status, "waiting"),
 		})
 	}
 	// 2. property rock-tree nodes
