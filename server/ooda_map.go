@@ -77,6 +77,18 @@ type oodaMapCache struct {
 	pay *oodaMapPayload
 }
 
+// oodaMapTaxStatus clamps a parcel's tax status to the three the view draws
+// and lists. Anything else — "" (the common case), "exempt", a typo in the
+// assessor pull — used to pass through: counted in the legend, never drawn,
+// a parcel silently missing from the map. "current" is the neutral reading.
+func oodaMapTaxStatus(s string) string {
+	switch s {
+	case "current", "delinquent", "lra":
+		return s
+	}
+	return "current"
+}
+
 // mapPayload composes (or returns the cached) map read.
 func (l *OodaLive) mapPayload() *oodaMapPayload {
 	snap := l.Snapshot()
@@ -145,10 +157,7 @@ func (l *OodaLive) mapPayload() *oodaMapPayload {
 		if pc.ParcelID != "" && drawn[strings.TrimSpace(pc.ParcelID)] {
 			return // a lot we hold is drawn once, as a holding — never twice
 		}
-		status := pc.TaxStatus
-		if status == "" {
-			status = "current"
-		}
+		status := oodaMapTaxStatus(pc.TaxStatus)
 		if pc.ParcelID != "" {
 			drawn[strings.TrimSpace(pc.ParcelID)] = true
 		}

@@ -222,7 +222,22 @@ func (s *Server) chatThreadFor(ag *chatAgent, op, id, title, rock, memberEmail, 
 	return s.chatThreadsFor(ag), nil
 }
 
-var chatIntentRe = regexp.MustCompile(`@kairos::([a-z0-9-]+)`)
+// chatIntentRe is domain-generic — the persona branch fires on a mention of
+// the ACTIVE agent (@kairos:: in the AION portal, @zeck:: in the OODA
+// portal), so chatIntent checks the captured name against its agent rather
+// than hard-coding kairos (audit B15: @zeck::brief never matched).
+var chatIntentRe = regexp.MustCompile(`@([a-z0-9-]+)::([a-z0-9-]+)`)
+
+// chatIntent extracts the persona intent from a message: the first mention
+// of the active agent. A mention of some OTHER agent is just prose here.
+func chatIntent(ag *chatAgent, text string) string {
+	for _, m := range chatIntentRe.FindAllStringSubmatch(text, -1) {
+		if m[1] == ag.Name {
+			return m[2]
+		}
+	}
+	return ""
+}
 
 // AionChatAsk spools an ask/delegate run for a chat message. Spool FIRST (the
 // runner's IsActive guard is the one-run-at-a-time gate); on success record the
@@ -247,10 +262,7 @@ func (s *Server) chatAskFor(ag *chatAgent, thread, text, ritual string, context 
 	if strings.TrimSpace(text) == "" {
 		return errBadRequest("empty message")
 	}
-	intent := ""
-	if m := chatIntentRe.FindStringSubmatch(text); m != nil {
-		intent = m[1]
-	}
+	intent := chatIntent(ag, text)
 	title := ""
 	for _, t := range ag.Store.Threads() {
 		if t.ID == thread {

@@ -415,11 +415,19 @@ func TestOodaBidBecomesAContractOnlyByTheOwnersHand(t *testing.T) {
 	}
 	bidID, _ := bids[0].(map[string]any)["id"].(string)
 
-	// accepting it — an OWNER action — mints the record
-	req := httptest.NewRequest("POST", "/api/realestate/ooda-bids/"+bidID, strings.NewReader(`{"accept":true}`))
-	req.SetPathValue("id", bidID)
+	// accepting it — an OWNER action — mints the record. Through the REAL
+	// route pattern: the id is `prop/<slug>` (one slash, from the uniqueID
+	// prefix; the slug itself is [a-z0-9-] only), and {id} matches a single
+	// segment — so a cockpit client must path-escape the id, exactly like the
+	// portal's team-api.js. %2F keeps it one segment; PathValue decodes it.
+	if !strings.HasPrefix(bidID, "prop/") {
+		t.Fatalf("bid id shape changed — the escaping contract below assumes prop/<slug>: %q", bidID)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/realestate/ooda-bids/{id}", srv.handleOodaBidDecide)
+	req := httptest.NewRequest("POST", "/api/realestate/ooda-bids/"+url.PathEscape(bidID), strings.NewReader(`{"accept":true}`))
 	rec := httptest.NewRecorder()
-	srv.handleOodaBidDecide(rec, req)
+	mux.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("accept: %d %s", rec.Code, rec.Body)
 	}

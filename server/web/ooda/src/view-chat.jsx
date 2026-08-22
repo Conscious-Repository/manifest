@@ -27,12 +27,18 @@ function ViewChat({ data }) {
       .catch((e) => setErr(String(e.message || e)));
   }, []);
   React.useEffect(() => { load(); }, [load]);
-  // a spooled run finishes out of band — poll while a turn is in flight
+  // a spooled run finishes out of band — poll fast (5s) while a turn is in
+  // flight. Idle, the store still moves without you: a teammate's message, or
+  // the reply to a run that started after your snapshot. Chat has its own
+  // store, so it never rides the global revision poll — a slow 20s reload on
+  // the same cadence (and the same visibility discipline) covers the idle case.
   React.useEffect(() => {
     const eng = (state && state.engine) || {};
-    if (!eng.active && !(eng.pending || []).length) return;
-    const h = setTimeout(load, 5000);
-    return () => clearTimeout(h);
+    const busy = !!eng.active || !!(eng.pending || []).length;
+    const h = setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, busy ? 5000 : 20000);
+    return () => clearInterval(h);
   }, [state, load]);
   // grounding is PER-MESSAGE: whatever was grounded in one thread must never
   // ride into another (brian, 2026-08-22 — 751 Bayard, grounded in a budget

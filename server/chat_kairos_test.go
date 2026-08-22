@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"manifest/chatthreads"
+	"manifest/ledger"
+	"manifest/spirits"
 )
 
 func chatFixture(t *testing.T) (*Server, string) {
@@ -164,18 +166,97 @@ func TestOodaChatProposalGatesAndAppliesInTheOodaDomain(t *testing.T) {
 	}
 }
 
+// A zeck chat run must ledger under ZECK's identity — sweepAgent hard-coded
+// Actor "agent:kairos" / Harness "kairos" for every agent it swept (audit
+// B14), so the trail credited kairos with chats it never saw. Kairos's own
+// values are pinned byte-identical.
+func TestChatSweepLedgersEachAgentsIdentity(t *testing.T) {
+	srv, _ := chatFixture(t)
+	oc, err := chatthreads.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseOodaChat(oc)
+	kair := srv.findHarness("kairos")
+	srv.UseHarnesses([]Harness{*kair, {Name: "zeck", Surface: "team", Spirits: spirits.NewStore(t.TempDir())}})
+	led, err := ledger.New(t.TempDir(), time.UTC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.ledgerStore = led
+
+	_, _ = srv.chat.CreateThread("th/k", "k", "", chatthreads.Identity{ID: "ben@aion.bio", Name: "Ben"}, time.Now())
+	_, _ = oc.CreateThread("th/z", "z", "", chatthreads.Identity{ID: "ben@ooda.group", Name: "Ben"}, time.Now())
+	fakeAgentChatRun(t, srv, "kairos", "rk", "th/k", "o1", "ask", "the kairos answer")
+	fakeAgentChatRun(t, srv, "zeck", "rz", "th/z", "o2", "ask", "the zeck answer")
+	srv.chatSweep()
+
+	entries, err := led.Day(led.Today())
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorToHarness := map[string]string{}
+	for _, e := range entries {
+		if e.Source == "chat" {
+			actorToHarness[e.Actor] = e.Harness
+		}
+	}
+	if actorToHarness["agent:kairos"] != "kairos" {
+		t.Fatalf("kairos entry must keep its identity: %+v", entries)
+	}
+	if actorToHarness["agent:zeck"] != "zeck" {
+		t.Fatalf("a zeck run must ledger as zeck, never kairos: %+v", entries)
+	}
+}
+
+// @zeck::brief in the OODA portal must reach the persona branch — the intent
+// regex hard-coded @kairos:: (audit B15). A mention of someone ELSE's agent
+// is prose, in both directions.
+func TestChatIntentMatchesTheActiveAgent(t *testing.T) {
+	srv, _ := chatFixture(t)
+	oc, err := chatthreads.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseOodaChat(oc)
+	kairos, zeck := srv.kairosAgent(), srv.zeckAgent()
+	for _, c := range []struct {
+		ag   *chatAgent
+		text string
+		want string
+	}{
+		{zeck, "@zeck::brief what's left on the roof?", "brief"},
+		{zeck, "@kairos::brief ping", ""},
+		{zeck, "ask @kairos::plan then @zeck::info", "info"},    // the first mention OF zeck wins
+		{kairos, "@kairos::brief what's the setback?", "brief"}, // the path that always worked
+		{kairos, "@zeck::brief ping", ""},
+		{kairos, "no mention at all", ""},
+	} {
+		if got := chatIntent(c.ag, c.text); got != c.want {
+			t.Errorf("%s / %q: intent = %q, want %q", c.ag.Name, c.text, got, c.want)
+		}
+	}
+}
+
 // fakeChatRun drops a completed kairos run report + brief carrying a [chat::] token.
 func fakeChatRun(t *testing.T, srv *Server, runID, thread, orderID, ritual, briefBody string) {
 	t.Helper()
-	root := srv.findHarness("kairos").Spirits.Root()
+	fakeAgentChatRun(t, srv, "kairos", runID, thread, orderID, ritual, briefBody)
+}
+
+// fakeAgentChatRun is the agent-generic form — the sweep serves every wired
+// agent, so its fixtures must too.
+func fakeAgentChatRun(t *testing.T, srv *Server, agent, runID, thread, orderID, ritual, briefBody string) {
+	t.Helper()
+	root := srv.findHarness(agent).Spirits.Root()
 	for _, d := range []string{"runs", "library"} {
 		if err := os.MkdirAll(filepath.Join(root, "artifacts", d), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
 	req := fmt.Sprintf("work [chat:: %s#%s] [ritual:: %s]", thread, orderID, ritual)
-	report := fmt.Sprintf("---\nrun: %s\nspirit: kairos\nritual: %s\nrequest: %q\nstarted: 2026-08-16T05:00:00Z\nfinished: 2026-08-16T05:01:00Z\noutcome: completed\n---\nran\n", runID, ritual, req)
-	if err := os.WriteFile(filepath.Join(root, "artifacts", "runs", "2026-08-16-kairos-"+runID+".md"), []byte(report), 0o644); err != nil {
+	report := fmt.Sprintf("---\nrun: %s\nspirit: %s\nritual: %s\nrequest: %q\nstarted: 2026-08-16T05:00:00Z\nfinished: 2026-08-16T05:01:00Z\noutcome: completed\n---\nran\n", runID, agent, ritual, req)
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "runs", "2026-08-16-"+agent+"-"+runID+".md"), []byte(report), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	brief := fmt.Sprintf("---\ntitle: brief\nrun: %s\ndate: 2026-08-16T05:01:00Z\n---\n%s\n", runID, briefBody)

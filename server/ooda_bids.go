@@ -57,6 +57,11 @@ func (s *Server) handleOodaBidsList(w http.ResponseWriter, r *http.Request) {
 // materializes the contract record and marks the proposal approved;
 // `{"accept":false}` rejects it. THE contract write is an owner action through
 // the cockpit — never the portal.
+//
+// The id is `prop/<slug>` (teamportal.uniqueID's prefix; the slug itself is
+// [a-z0-9-] only) and {id} matches ONE segment — a client must path-escape
+// the id (%2F), the same contract the portal's team-api.js follows. There is
+// no cockpit UI on this route yet; the write test pins the escaped form.
 func (s *Server) handleOodaBidDecide(w http.ResponseWriter, r *http.Request) {
 	if s.oodaTeam == nil || s.realestate == nil || s.vault == nil {
 		http.Error(w, "ooda bids not available", http.StatusServiceUnavailable)

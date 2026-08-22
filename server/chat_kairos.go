@@ -262,8 +262,11 @@ func (s *Server) sweepAgent(ag *chatAgent) {
 		if r.Outcome == "failed" {
 			kind = "chat.failed"
 		}
-		s.ledger(ledger.Entry{Source: "chat", Kind: kind, Actor: "agent:kairos",
-			Run: r.Run, Harness: "kairos", Text: ledger.Snip(body, 280)})
+		// the sweep serves every wired agent — the entry carries THAT agent's
+		// identity, not kairos's (a zeck run ledgered as kairos misattributed
+		// every OODA chat turn)
+		s.ledger(ledger.Entry{Source: "chat", Kind: kind, Actor: "agent:" + ag.Name,
+			Run: r.Run, Harness: ag.Name, Text: ledger.Snip(body, 280)})
 	}
 }
 

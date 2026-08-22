@@ -169,6 +169,21 @@ func oodaOverrideOpen(ov teamportal.Override) (open, set bool) {
 	}
 }
 
+// oodaOverrideDue reads an override's due-date patch. PatchFields accepts
+// due/needed_by (a member's PATCH, or an applied chat proposal), and the
+// overlay must win here exactly as its status does above — an accepted due
+// override that never projected left the overdue/this-week lanes sorting on
+// the base date, so the API said "changed" and the portal showed otherwise.
+// Dates are the ISO layout used everywhere else ("2006-01-02").
+func oodaOverrideDue(ov teamportal.Override, base string) string {
+	for _, k := range []string{"due", "needed_by"} {
+		if v := strings.TrimSpace(ov.Fields[k]); v != "" {
+			return v
+		}
+	}
+	return base
+}
+
 // oodaTeamItemOpen decides whether a portal-created team item is still
 // outstanding — the same allow-list reading as oodaBacklogOpen, over the team
 // store's own status vocabulary (open|in_progress|done, plus decided).
@@ -214,10 +229,12 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 	// 1. the RE backlog (aion.Store over system/realestate)
 	for _, it := range snap.Backlog {
 		open := oodaBacklogOpen(it)
+		due := it.Due
 		if ov, ok := overrides[it.ID]; ok {
 			if o, set := oodaOverrideOpen(ov); set {
 				open = o
 			}
+			due = oodaOverrideDue(ov, due)
 		}
 		if !open {
 			continue
@@ -230,7 +247,7 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 		items = append(items, oodaWorkItem{
 			ID: it.ID, Title: it.Text, Kind: kind, Source: "backlog",
 			Owner:     oodaOwner(it.Owner, alias),
-			Container: container, Rock: rock, Due: it.Due, Age: it.Captured,
+			Container: container, Rock: rock, Due: due, Age: it.Captured,
 		})
 	}
 	// 2. property rock-tree nodes
@@ -251,10 +268,12 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 			// a member marking a rock task done through the portal writes an
 			// override keyed prop/<slug>#<node-id>, never the vault checkbox
 			open := !n.Task.Checked
+			due := st.DoneBy
 			if ov, ok := overrides["prop/"+p.Slug+"#"+n.ID]; ok {
 				if o, set := oodaOverrideOpen(ov); set {
 					open = o
 				}
+				due = oodaOverrideDue(ov, due)
 			}
 			if !open {
 				return
@@ -268,7 +287,7 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 			items = append(items, oodaWorkItem{
 				ID: "prop/" + p.Slug + "#" + n.ID, Title: n.Task.Text, Kind: kind, Source: "rock",
 				Owner:     oodaOwner(n.Task.Owner, alias),
-				Container: label, Rock: st.Text, Due: st.DoneBy, Age: n.Task.Added,
+				Container: label, Rock: st.Text, Due: due, Age: n.Task.Added,
 				Waiting: n.Task.Waiting != "", WaitingOn: strings.TrimSpace(n.Task.Waiting),
 			})
 		})
@@ -277,10 +296,12 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 	// and same overrides as everything else, flagged source:"team"
 	for _, ti := range team {
 		open := oodaTeamItemOpen(ti)
+		due := ti.Due
 		if ov, ok := overrides[ti.ID]; ok {
 			if o, set := oodaOverrideOpen(ov); set {
 				open = o
 			}
+			due = oodaOverrideDue(ov, due)
 		}
 		if !open {
 			continue
@@ -293,7 +314,7 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 		items = append(items, oodaWorkItem{
 			ID: ti.ID, Title: ti.Title, Kind: kind, Source: "team",
 			Owner:     oodaOwner(ti.Owner, alias),
-			Container: container, Rock: rock, Due: ti.Due, Age: ti.Captured,
+			Container: container, Rock: rock, Due: due, Age: ti.Captured,
 		})
 	}
 	sort.SliceStable(items, func(a, b int) bool { return items[a].Title < items[b].Title })
