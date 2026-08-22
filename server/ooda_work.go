@@ -7,6 +7,7 @@ import (
 
 	"manifest/aion"
 	"manifest/realestate"
+	"manifest/teamportal"
 )
 
 // The WORK surface (ooda-portal plan §6.4): every open task and decision in
@@ -147,8 +148,33 @@ func oodaRockLabel(rock string, shortBySlug map[string]string) (container, label
 	return name(head), human(tail)
 }
 
-// buildOodaWork groups the domain's open work by assignee.
-func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
+// oodaOverrideOpen reads a team override's status field: (open, set). The
+// overlay is the authoritative runtime write for team-set state — a member
+// marking a vault item done through the portal lands in Overrides, never the
+// vault — so when an override carries a status it wins over the base item in
+// BOTH directions: done/decided closes, open/in_progress reopens. An override
+// that patched other fields only (due, done_on) carries no status and defers
+// to the base. Unknown statuses read CLOSED — the same allow-list philosophy
+// as oodaBacklogOpen: somebody marked the item something.
+func oodaOverrideOpen(ov teamportal.Override) (open, set bool) {
+	st := strings.ToLower(strings.TrimSpace(ov.Fields["status"]))
+	if st == "" {
+		return false, false
+	}
+	switch st {
+	case aion.StatusOpen, aion.StatusInProgress:
+		return true, true
+	default: // done, decided, and anything new that appears later
+		return false, true
+	}
+}
+
+// buildOodaWork groups the domain's open work by assignee. The overrides map
+// is the team store's overlay (items.ext.json): without it, an item a member
+// marked done through the portal PATCH stays open here forever, because the
+// base filter only ever sees the vault's own status (brian's report,
+// 2026-08-22 — item 33e6054b was marked done twice and never cleared).
+func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override) []oodaWorkGroup {
 	if snap == nil {
 		return nil
 	}
@@ -171,7 +197,13 @@ func buildOodaWork(snap *oodaSnapshot, today string) []oodaWorkGroup {
 	var items []oodaWorkItem
 	// 1. the RE backlog (aion.Store over system/realestate)
 	for _, it := range snap.Backlog {
-		if !oodaBacklogOpen(it) {
+		open := oodaBacklogOpen(it)
+		if ov, ok := overrides[it.ID]; ok {
+			if o, set := oodaOverrideOpen(ov); set {
+				open = o
+			}
+		}
+		if !open {
 			continue
 		}
 		kind := "task"

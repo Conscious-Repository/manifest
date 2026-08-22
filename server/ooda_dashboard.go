@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"manifest/realestate"
+	"manifest/teamportal"
 )
 
 // The OODA dashboard + work projections (ooda-portal plan, Stage B §6).
@@ -203,7 +204,9 @@ type oodaDashboard struct {
 // buildOodaDashboard computes every tile. Money sums the SAME Project rollup
 // the cockpit's SPENT figure reads, so /api/ooda/dashboard.kpis.paidTotal and
 // the cockpit's Σ rollup.paid must be identical — the correctness test.
-func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
+// The overrides map keeps the per-person counts and week lanes on the same
+// open/closed rule as the WORK tab (see buildOodaWork).
+func buildOodaDashboard(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override) oodaDashboard {
 	var d oodaDashboard
 	props := oodaVisibleProps(snap)
 	byEntity := map[string]*oodaEntityRow{}
@@ -316,7 +319,7 @@ func buildOodaDashboard(snap *oodaSnapshot, today string) oodaDashboard {
 	// record — reuse it rather than keeping a second, thinner name map here
 	// (the first version looked at people.md only, so contractors rendered as
 	// raw slugs: "M-W-SERVICES").
-	work := buildOodaWork(snap, today)
+	work := buildOodaWork(snap, today, overrides)
 	for _, g := range work {
 		d.Owners = append(d.Owners, oodaOwnerRow{
 			Owner: g.Owner, Name: g.Name,

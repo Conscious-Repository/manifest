@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"manifest/realestate"
+	"manifest/teamportal"
 )
 
 // The OODA portal's READ surface (ooda-portal plan, Stage B). Everything here
@@ -98,7 +99,19 @@ func (a *oodaAPI) dashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, buildOodaDashboard(snap, oodaToday()))
+	writeJSON(w, buildOodaDashboard(snap, oodaToday(), a.overrides()))
+}
+
+// overrides fetches the team overlay's field state (nil without a store) so
+// the read projections honor portal-set done/open marks. Fetched per request,
+// same as the WORK handler's Ext() read: the client's revision poll already
+// hashes the team revision (statusLocked), so a PATCH re-renders without any
+// extra subscription.
+func (a *oodaAPI) overrides() map[string]teamportal.Override {
+	if a.opt.Store == nil {
+		return nil
+	}
+	return a.opt.Store.Ext().Overrides
 }
 
 // portfolio is the list surface: one derived row per property, plus the
@@ -187,14 +200,16 @@ func (a *oodaAPI) work(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	groups := buildOodaWork(snap, oodaToday())
 	// the overlay's own items + pending proposals ride alongside, so the tab
-	// shows portal-created work too
+	// shows portal-created work too; its Overrides feed the grouping itself,
+	// so an item a member marked done through the portal actually clears
 	var teamItems, proposals any
+	var overrides map[string]teamportal.Override
 	if a.opt.Store != nil {
 		ext := a.opt.Store.Ext()
-		teamItems, proposals = ext.Items, ext.Proposals
+		teamItems, proposals, overrides = ext.Items, ext.Proposals, ext.Overrides
 	}
+	groups := buildOodaWork(snap, oodaToday(), overrides)
 	writeJSON(w, map[string]any{"groups": groups, "teamItems": teamItems, "proposals": proposals})
 }
 

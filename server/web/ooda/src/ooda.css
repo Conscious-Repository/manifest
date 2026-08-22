@@ -195,6 +195,11 @@ button { font: inherit; color: inherit; }
 .ooda-msg { padding: 8px 4px; border-top: 1px solid var(--line-soft); }
 .ooda-msg.agent { background: var(--base-05); border-radius: 6px; padding-left: 8px; }
 .ooda-chat-ctx { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 4px 0; }
+/* the chat composer is one bordered unit: the grounding row sits INSIDE it so
+   a chip reads as part of the message being written, not ambient thread state */
+.ooda-composer { margin-top: 10px; border: 1px solid var(--base-25); border-radius: 8px;
+  padding: 0 8px 10px; background: var(--base-05); }
+.ooda-composer .ooda-chat-ctx { padding-top: 8px; }
 .ooda-engine { display: flex; flex-direction: column; gap: 8px; padding: 10px 4px; }
 .ooda-engine div { display: flex; flex-direction: column; }
 .ooda-engine em { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;

@@ -34,6 +34,11 @@ function ViewChat({ data }) {
     const h = setTimeout(load, 5000);
     return () => clearTimeout(h);
   }, [state, load]);
+  // grounding is PER-MESSAGE: whatever was grounded in one thread must never
+  // ride into another (brian, 2026-08-22 — 751 Bayard, grounded in a budget
+  // thread, silently followed him into "monday sync topics"). Thread-local by
+  // construction: any thread switch or creation starts from nothing grounded.
+  React.useEffect(() => { setCtx([]); }, [sel]);
 
   if (err && !state) return <Empty>{err}</Empty>;
   if (!state) return <Empty>loading…</Empty>;
@@ -60,7 +65,10 @@ function ViewChat({ data }) {
     setBusy(true); setErr("");
     try {
       await postJSON("/api/chat/ask", { thread: sel, text: body, ritual, context: ctx });
-      setText(""); load();
+      // the grounding chips belonged to THAT message — the next one starts
+      // clean, or asking again silently re-attaches a property the user no
+      // longer sees themselves holding
+      setText(""); setCtx([]); load();
     } catch (e) { setErr(String(e.message || e)); }
     setBusy(false);
   };
@@ -169,37 +177,43 @@ function ViewChat({ data }) {
                 })}
               </div>
             ))}
-            <div className="ooda-chat-ctx">
-              <span className="ooda-sub">ground it in:</span>
-              <select className="ooda-in" value=""
-                onChange={(e) => { if (e.target.value) setCtx([...new Set([...ctx, e.target.value])]); }}>
-                <option value="">＋ a property</option>
-                {props.map((p) => <option key={p.slug} value={"prop/" + p.slug}>{p.short}</option>)}
-              </select>
-              {ctx.map((c) => (
-                <button key={c} className="ooda-chip on"
-                  onClick={() => setCtx(ctx.filter((x) => x !== c))}>
-                  {window.CHAT_ACTIONS.isAttach(c)
-                    ? ((attachMeta[c] || {}).name || "attachment")
-                    : c.replace("prop/", "")} ✕
+            {/* the composer is ONE unit: a grounding chip sits inside it,
+                directly above the textarea, so it visibly belongs to the one
+                message being written — it rides that send, clears with it,
+                and never carries into another message or thread */}
+            <div className="ooda-composer">
+              <div className="ooda-chat-ctx">
+                <span className="ooda-sub">ground this message in:</span>
+                <select className="ooda-in" value=""
+                  onChange={(e) => { if (e.target.value) setCtx([...new Set([...ctx, e.target.value])]); }}>
+                  <option value="">＋ a property</option>
+                  {props.map((p) => <option key={p.slug} value={"prop/" + p.slug}>{p.short}</option>)}
+                </select>
+                {ctx.map((c) => (
+                  <button key={c} className="ooda-chip on"
+                    onClick={() => setCtx(ctx.filter((x) => x !== c))}>
+                    {window.CHAT_ACTIONS.isAttach(c)
+                      ? ((attachMeta[c] || {}).name || "attachment")
+                      : c.replace("prop/", "")} ✕
+                  </button>
+                ))}
+              </div>
+              <div className="ooda-compose">
+                <textarea className="ooda-textarea" rows={2} value={text}
+                  placeholder={window.CHAT_ACTIONS.placeholder}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(e.shiftKey ? "delegate" : "ask");
+                  }} />
+              </div>
+              <div className="ooda-compose-acts">
+                <button className="ooda-send" onClick={() => send("ask")} disabled={busy || !text.trim()}>
+                  {busy ? "…" : window.CHAT_ACTIONS.ask.label}
                 </button>
-              ))}
-            </div>
-            <div className="ooda-compose">
-              <textarea className="ooda-textarea" rows={2} value={text}
-                placeholder={window.CHAT_ACTIONS.placeholder}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(e.shiftKey ? "delegate" : "ask");
-                }} />
-            </div>
-            <div className="ooda-compose-acts">
-              <button className="ooda-send" onClick={() => send("ask")} disabled={busy || !text.trim()}>
-                {busy ? "…" : window.CHAT_ACTIONS.ask.label}
-              </button>
-              <button className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
-                {window.CHAT_ACTIONS.propose.label}
-              </button>
+                <button className="ooda-send secondary" onClick={() => send("delegate")} disabled={busy || !text.trim()}>
+                  {window.CHAT_ACTIONS.propose.label}
+                </button>
+              </div>
             </div>
             {/* one row per action, the name in mono and its consequence beside
                 it. Run together on one line these two read as a single
