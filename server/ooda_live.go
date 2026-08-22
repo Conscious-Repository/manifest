@@ -303,17 +303,24 @@ func (l *OodaLive) People() []portalPerson {
 }
 
 // OwnerOf satisfies PortalLive — the assignee lock's oracle. Resolution order:
-// RE backlog item → property rock-tree node → portal-created team item.
+// RE backlog item → property rock-tree node → bare property anchor →
+// portal-created team item. Owners come back NORMALIZED through the same
+// alias map the WORK view groups by (oodaOwnerAliases): the vault names
+// people by initials, slug, or full name interchangeably, and the lock
+// compares against roster initials — a raw `olga-sobkiv` would 403 the very
+// member the WORK view shows the button to.
 func (l *OodaLive) OwnerOf(itemID string) (string, bool) {
 	itemID = strings.TrimSpace(itemID)
 	if itemID == "" {
 		return "", false
 	}
 	snap := l.Snapshot()
+	var alias map[string]string
 	if snap != nil {
+		alias = oodaOwnerAliases(snap.People)
 		for _, it := range snap.Backlog {
 			if it != nil && it.ID == itemID {
-				return it.Owner, true
+				return oodaOwner(it.Owner, alias), true
 			}
 		}
 		if prop, workID, ok := parseOodaNodeID(itemID); ok {
@@ -331,7 +338,17 @@ func (l *OodaLive) OwnerOf(itemID string) (string, bool) {
 					owner = n.Task.Owner
 				})
 				if found {
-					return owner, true
+					return oodaOwner(owner, alias), true
+				}
+			}
+		}
+		// a bare `prop/<slug>` is the property's own thread anchor (the
+		// detail page's comment thread). It exists — comments succeed — but
+		// nobody "holds" it, so state writes stay 403 (owner "").
+		if rest, found := strings.CutPrefix(itemID, "prop/"); found && !strings.Contains(rest, "#") {
+			for i := range snap.Properties {
+				if strings.EqualFold(snap.Properties[i].Slug, rest) {
+					return "", true
 				}
 			}
 		}
@@ -339,7 +356,7 @@ func (l *OodaLive) OwnerOf(itemID string) (string, bool) {
 	if team, _ := l.teamStore(); team != nil {
 		for _, it := range team.Ext().Items {
 			if it.ID == itemID {
-				return it.Owner, true
+				return oodaOwner(it.Owner, alias), true
 			}
 		}
 	}

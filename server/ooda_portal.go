@@ -99,19 +99,17 @@ func (a *oodaAPI) dashboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, buildOodaDashboard(snap, oodaToday(), a.overrides()))
-}
-
-// overrides fetches the team overlay's field state (nil without a store) so
-// the read projections honor portal-set done/open marks. Fetched per request,
-// same as the WORK handler's Ext() read: the client's revision poll already
-// hashes the team revision (statusLocked), so a PATCH re-renders without any
-// extra subscription.
-func (a *oodaAPI) overrides() map[string]teamportal.Override {
-	if a.opt.Store == nil {
-		return nil
+	// the team overlay's field state and items ride in (nil without a store)
+	// so the counts honor portal-set done/open marks and portal-created work.
+	// Fetched per request: the client's revision poll already hashes the team
+	// revision (statusLocked), so a PATCH re-renders without any subscription.
+	var overrides map[string]teamportal.Override
+	var team []teamportal.TeamItem
+	if a.opt.Store != nil {
+		ext := a.opt.Store.Ext()
+		overrides, team = ext.Overrides, ext.Items
 	}
-	return a.opt.Store.Ext().Overrides
+	writeJSON(w, buildOodaDashboard(snap, oodaToday(), overrides, team))
 }
 
 // portfolio is the list surface: one derived row per property, plus the
@@ -200,17 +198,19 @@ func (a *oodaAPI) work(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	// the overlay's own items + pending proposals ride alongside, so the tab
-	// shows portal-created work too; its Overrides feed the grouping itself,
-	// so an item a member marked done through the portal actually clears
-	var teamItems, proposals any
+	// the overlay's own items are folded INTO the groups (source:"team"), so
+	// the tab shows portal-created work; its Overrides feed the grouping too,
+	// so an item a member marked done through the portal actually clears.
+	// Proposals ride alongside for the property detail's pending-bid chips.
+	var proposals any
 	var overrides map[string]teamportal.Override
+	var teamItems []teamportal.TeamItem
 	if a.opt.Store != nil {
 		ext := a.opt.Store.Ext()
 		teamItems, proposals, overrides = ext.Items, ext.Proposals, ext.Overrides
 	}
-	groups := buildOodaWork(snap, oodaToday(), overrides)
-	writeJSON(w, map[string]any{"groups": groups, "teamItems": teamItems, "proposals": proposals})
+	groups := buildOodaWork(snap, oodaToday(), overrides, teamItems)
+	writeJSON(w, map[string]any{"groups": groups, "proposals": proposals})
 }
 
 func (a *oodaAPI) people(w http.ResponseWriter, r *http.Request) {

@@ -310,8 +310,30 @@ func (s *Server) chatProposalFor(ag *chatAgent, thread, msg string, index int, a
 	if !ok {
 		return errBadRequest("proposal not found")
 	}
+	// The agent's DOMAIN picks the owner oracle and the team store: zeck's
+	// proposals target OODA items and land in /private/ooda/team; kairos'
+	// target AION items and land in AION's store. The first version used the
+	// AION pair for both, so a zeck apply gated on the wrong oracle (only the
+	// admin ever passed) and wrote to the wrong portal's overlay.
+	ooda := ag.Domain == "ooda"
+	var team *teamportal.Store
+	var owner string
+	if ooda {
+		if s.oodaLive != nil {
+			team, _ = s.oodaLive.teamStore()
+			// OwnerOf returns alias-normalized initials — the same map the
+			// WORK view groups by, so the gate matches the visible assignee
+			if o, found := s.oodaLive.OwnerOf(p.ItemID); found {
+				owner = o
+			}
+		}
+	} else {
+		if s.threads != nil {
+			team = s.threads.aion
+		}
+		owner = s.itemOwnerInitials(p.ItemID)
+	}
 	// gate against the target item's owner (initials), same as FIELDS
-	owner := s.itemOwnerInitials(p.ItemID)
 	if !admin && (owner == "" || !strings.EqualFold(owner, memberInitials)) {
 		return errBadRequest("only the item's assignee (" + orDash(owner) + ") or an admin can apply this")
 	}
@@ -319,14 +341,17 @@ func (s *Server) chatProposalFor(ag *chatAgent, thread, msg string, index int, a
 	if apply {
 		switch p.Type {
 		case "set-field":
-			if s.threads == nil || s.threads.aion == nil {
+			if team == nil {
 				return errBadRequest("team store not available")
 			}
-			if _, err := s.threads.aion.Patch(teamportal.Identity{Email: memberEmail, Name: memberName},
+			if _, err := team.Patch(teamportal.Identity{Email: memberEmail, Name: memberName},
 				p.ItemID, map[string]string{p.Field: p.Value}, time.Now()); err != nil {
 				return err
 			}
 		case "replace-section":
+			if ooda {
+				return errBadRequest("plan sections are not editable from the OODA portal yet")
+			}
 			if err := s.writePlanSection("todo-plans", "aion:"+p.ItemID, p.Section, p.Body); err != nil {
 				return err
 			}
@@ -337,12 +362,12 @@ func (s *Server) chatProposalFor(ag *chatAgent, thread, msg string, index int, a
 	if _, err := ag.Store.DecideProposal(thread, msg, index, apply, who, time.Now()); err != nil {
 		return err
 	}
-	if s.threads != nil && s.threads.aion != nil {
+	if team != nil {
 		verb := "chat-proposal-applied"
 		if !apply {
 			verb = "chat-proposal-discarded"
 		}
-		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
+		_ = team.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
 			verb, map[string]any{"item": p.ItemID, "type": p.Type}, time.Now())
 	}
 	return nil

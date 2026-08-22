@@ -25,7 +25,10 @@ async function patchJSON(path, body) {
 const teamAPI = {
   comment: (item, text) => postJSON("/api/team/comment", { item, text }),
   addItem: (kind, title, rock, due) => postJSON("/api/team/items", { kind, title, rock, due }),
-  patch: (itemID, fields) => patchJSON("/api/team/item/" + itemID, fields),
+  // encodeURIComponent is load-bearing: rock work items carry ids like
+  // prop/748-n-euclid#shell/roof, and a raw `#` starts the URL FRAGMENT —
+  // fetch drops it and the server sees a truncated id it cannot resolve.
+  patch: (itemID, fields) => patchJSON("/api/team/item/" + encodeURIComponent(itemID), fields),
   propose: (target, kind, title, rock, due) =>
     postJSON("/api/team/proposals", { target, kind, title, rock, due }),
   decide: (id, approve) => postJSON("/api/team/proposals/decide", { id, approve }),

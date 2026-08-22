@@ -50,7 +50,7 @@ func oodaFixture() *oodaSnapshot {
 // from ever disagreeing about the portfolio.
 func TestOodaDashboardMoneyMatchesTheRollup(t *testing.T) {
 	snap := oodaFixture()
-	d := buildOodaDashboard(snap, "2026-08-20", nil)
+	d := buildOodaDashboard(snap, "2026-08-20", nil, nil)
 	wantPaid, wantCommitted := oodaLedgerTotals(snap)
 	if d.KPIs.Paid != wantPaid || d.KPIs.PaidTotal != wantPaid {
 		t.Fatalf("paid = %v/%v, want %v", d.KPIs.Paid, d.KPIs.PaidTotal, wantPaid)
@@ -108,7 +108,7 @@ func TestOodaCommittedIsCapitalOnTheHook(t *testing.T) {
 		Entities: []realestate.Entity{{Slug: "garden-spe", Name: "Garden SPE"}},
 		Backlog:  []*aion.BacklogItem{},
 	}
-	d := buildOodaDashboard(snap, "2026-08-21", nil)
+	d := buildOodaDashboard(snap, "2026-08-21", nil, nil)
 
 	if d.KPIs.Owned != 1 || d.KPIs.UnderContract != 2 || d.KPIs.Pipeline != 1 {
 		t.Fatalf("counts = owned %d / under-contract %d / pipeline %d, want 1/2/1",
@@ -182,7 +182,7 @@ func TestOodaDashboardWeekAndWaiting(t *testing.T) {
 		Backlog: []*aion.BacklogItem{},
 		People:  []*aion.Person{{Initials: "SM", Name: "Stephen"}, {Initials: "OS", Name: "Olga"}},
 	}
-	d := buildOodaDashboard(snap, "2026-08-22", nil)
+	d := buildOodaDashboard(snap, "2026-08-22", nil, nil)
 
 	// the waiting task must be in WAITING and NOT double-counted into the week
 	if len(d.Waiting) != 1 {
@@ -233,7 +233,7 @@ func TestOodaWeekSortsUndatedLast(t *testing.T) {
 
 func TestOodaAttentionRules(t *testing.T) {
 	snap := oodaFixture()
-	d := buildOodaDashboard(snap, "2026-08-20", nil)
+	d := buildOodaDashboard(snap, "2026-08-20", nil, nil)
 	got := map[string]oodaFacts{}
 	for _, f := range d.Attention {
 		got[f.Slug] = f
@@ -253,7 +253,7 @@ func TestOodaAttentionRules(t *testing.T) {
 		Slug: "raw-lot", Entity: "Garden SPE", Status: "under_contract", Control: "owned",
 		Project: &realestate.ProjectBudget{},
 	})
-	d2 := buildOodaDashboard(snap, "2026-08-20", nil)
+	d2 := buildOodaDashboard(snap, "2026-08-20", nil, nil)
 	for _, f := range d2.Attention {
 		if f.Slug == "raw-lot" {
 			t.Fatal("a parcel with no rock plan must not read as stalled")
@@ -269,7 +269,7 @@ func TestOodaEntityBoardKeepsUnassignedVisible(t *testing.T) {
 		Slug: "orphan", Control: "owned", Status: "construction",
 		Project: &realestate.ProjectBudget{Paid: 10},
 	})
-	d := buildOodaDashboard(snap, "2026-08-20", nil)
+	d := buildOodaDashboard(snap, "2026-08-20", nil, nil)
 	if len(d.Entities) == 0 || d.Entities[len(d.Entities)-1].Entity != "" {
 		t.Fatalf("the unassigned row must sort last: %+v", d.Entities)
 	}
@@ -290,7 +290,7 @@ func TestOodaWorkGroupsAndLanes(t *testing.T) {
 		{ID: "aion-bl/c", Text: "nobody owns me", Kind: "task"},
 		{ID: "aion-bl/done", Text: "finished", Owner: "BA", Kind: "task", Checked: true},
 	}
-	groups := buildOodaWork(snap, "2026-08-20", nil)
+	groups := buildOodaWork(snap, "2026-08-20", nil, nil)
 	byOwner := map[string]oodaWorkGroup{}
 	for _, g := range groups {
 		byOwner[g.Owner] = g
@@ -377,7 +377,7 @@ func TestOodaWorkExcludesDecidedDecisions(t *testing.T) {
 			Status: aion.StatusDecided, Decided: "2026-03-20"},
 		{ID: "aion-bl/donetask", Text: "finished", Owner: "BA", Kind: "task", Status: aion.StatusDone},
 	}
-	for _, g := range buildOodaWork(snap, "2026-08-21", nil) {
+	for _, g := range buildOodaWork(snap, "2026-08-21", nil, nil) {
 		for _, lane := range [][]oodaWorkItem{g.Open, g.Overdue, g.DueThisWeek, g.Decisions, g.Waiting} {
 			for _, it := range lane {
 				if it.ID != "aion-bl/live" {
@@ -387,7 +387,7 @@ func TestOodaWorkExcludesDecidedDecisions(t *testing.T) {
 		}
 	}
 	// and the dashboard's per-person counts inherit the same rule
-	d := buildOodaDashboard(snap, "2026-08-21", nil)
+	d := buildOodaDashboard(snap, "2026-08-21", nil, nil)
 	for _, o := range d.Owners {
 		if o.Owner == "BA" && o.Decisions != 1 {
 			t.Fatalf("BA decisions = %d, want 1 (only the undecided one)", o.Decisions)

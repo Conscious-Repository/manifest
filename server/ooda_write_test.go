@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +62,7 @@ control: owned
 ## rocks
 - [ ] Stabilize shell [work:: shell]
     - [ ] Roof [owner:: BPA] [work:: shell/roof]
+    - [ ] Windows [owner:: olga-sobkiv] [work:: shell/windows]
 `)
 	write("system/realestate/people.md", `# Real Estate People
 - [initials:: BA] [name:: benjamin anderson] [role:: partner] [email:: ben@ooda.group]
@@ -309,6 +311,78 @@ func TestOodaAssigneeLockHoldsForAdminToo(t *testing.T) {
 	}
 }
 
+// The assignee lock must recognize a person however the vault names them:
+// work owned as `olga-sobkiv` (her contractor slug) belongs to the OS member,
+// exactly as the WORK view's alias map already groups it. The item id travels
+// PATH-ENCODED (a raw `#` would be a URL fragment and fetch would drop it) —
+// the same encoding team-api.js applies.
+func TestOodaRockPatchMatchesAliasedOwner(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	olga, err := f.auth.SessionCookie("me@olgasobkiv.com", "Olga", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	brian, err := f.auth.SessionCookie("bpabbassa@att.net", "Brian", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc := url.PathEscape("prop/748-n-euclid#shell/windows")
+	// somebody else: 403, not 404 — the encoded id RESOLVES, the lock refuses
+	if rec := oodaDo(t, f.h, brian, "PATCH", "/api/team/item/"+enc, `{"status":"done"}`); rec.Code != 403 {
+		t.Fatalf("non-assignee = %d %s, want 403", rec.Code, rec.Body)
+	}
+	// the assignee, matched through the alias map (vault slug → roster OS)
+	if rec := oodaDo(t, f.h, olga, "PATCH", "/api/team/item/"+enc, `{"status":"done","done_on":"2026-08-22"}`); rec.Code != 200 {
+		t.Fatalf("assignee = %d %s, want 200", rec.Code, rec.Body)
+	}
+	if ov, ok := f.store.Ext().Overrides["prop/748-n-euclid#shell/windows"]; !ok || ov.Fields["status"] != "done" {
+		t.Fatalf("override must key the DECODED id: %+v", f.store.Ext().Overrides)
+	}
+	// ...and the WORK projection honors it: the marked rock task is gone
+	rec := oodaDo(t, f.h, olga, "GET", "/api/ooda/work", "")
+	if rec.Code != 200 {
+		t.Fatalf("work: %d %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "shell/windows") {
+		t.Fatalf("a rock task marked done through the portal is still in WORK: %s", rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "shell/roof") {
+		t.Fatal("the untouched rock task must stay in WORK")
+	}
+}
+
+// Comments on a property's own thread anchor (bare prop/<slug>) must resolve:
+// reading always worked, POSTING 404ed "unknown item" because OwnerOf knew
+// only full prop/<slug>#<work-id> node ids.
+func TestOodaPropertyThreadAcceptsComments(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	olga, err := f.auth.SessionCookie("me@olgasobkiv.com", "Olga", false, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := oodaDo(t, f.h, olga, "POST", "/api/team/comment", `{"item":"prop/748-n-euclid","text":"driveway quote came in"}`)
+	if rec.Code != 200 {
+		t.Fatalf("comment on property thread = %d %s", rec.Code, rec.Body)
+	}
+	if got := f.store.Ext().Comments["prop/748-n-euclid"]; len(got) != 1 {
+		t.Fatalf("comment not stored under the property anchor: %+v", f.store.Ext().Comments)
+	}
+	// an unknown property is still a 404, not an open comment lane
+	if rec := oodaDo(t, f.h, olga, "POST", "/api/team/comment", `{"item":"prop/not-a-place","text":"x"}`); rec.Code != 404 {
+		t.Fatalf("unknown property = %d, want 404", rec.Code)
+	}
+	// the anchor is a THREAD, not a work item — nobody holds it, so state
+	// writes stay shut (owner "", the lock's refusal)
+	if rec := oodaDo(t, f.h, olga, "PATCH", "/api/team/item/"+url.PathEscape("prop/748-n-euclid"), `{"status":"done"}`); rec.Code != 403 {
+		t.Fatalf("patch on the property anchor = %d, want 403", rec.Code)
+	}
+	// a real rock-node thread keeps working alongside
+	rec = oodaDo(t, f.h, olga, "POST", "/api/team/comment", `{"item":"prop/748-n-euclid#shell/roof","text":"roofer on site"}`)
+	if rec.Code != 200 {
+		t.Fatalf("comment on a rock item = %d %s", rec.Code, rec.Body)
+	}
+}
+
 // THE FULL BID LOOP: a partner files a bid (no vault write), the owner accepts
 // it in the COCKPIT, and only then does a contract record exist. This is the
 // trust boundary the whole lane is built around.
@@ -370,6 +444,12 @@ func TestOodaBidBecomesAContractOnlyByTheOwnersHand(t *testing.T) {
 	// committed until the owner accepts the contract itself
 	if strings.Contains(string(raw), "status: accepted") {
 		t.Fatal("a filed bid must not arrive pre-accepted — that would commit money on a partner's say-so")
+	}
+	// accepting the BID mints a CONTRACT record — never a team work item.
+	// The generic approve path used to mint one, leaving a phantom open
+	// `kind:"bid"` task in the team store for every accepted bid.
+	if items := store.Ext().Items; len(items) != 0 {
+		t.Fatalf("accepting a bid minted a team item: %+v", items)
 	}
 	// the proposal closed, so it cannot be double-materialized
 	for _, p := range store.Ext().Proposals {

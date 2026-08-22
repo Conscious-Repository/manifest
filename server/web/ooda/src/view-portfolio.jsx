@@ -78,7 +78,8 @@ function ViewPortfolio({ data }) {
         <div className="ooda-foot">{visible.length + " of " + rows.length}</div>
       </div>
       <aside className="ooda-insp">
-        {sel ? <PropertyDetail slug={sel} onClose={() => setSel(null)} />
+        {sel ? <PropertyDetail slug={sel} onClose={() => setSel(null)}
+          proposals={(data.work && data.work.proposals) || []} />
           : <div className="ooda-insp-empty">select a property</div>}
       </aside>
     </div>
@@ -88,7 +89,7 @@ function ViewPortfolio({ data }) {
 // PropertyDetail — money, rocks, contracts, and the FULL ledger. Every member
 // sees the same bytes here, vendor names and amounts included: the partners
 // are co-investors (owner decision 2026-08-20). No admin branch exists.
-function PropertyDetail({ slug, onClose }) {
+function PropertyDetail({ slug, onClose, proposals }) {
   const [d, setD] = React.useState(null);
   const [err, setErr] = React.useState("");
   const [bidNote, setBidNote] = React.useState("");
@@ -106,6 +107,10 @@ function PropertyDetail({ slug, onClose }) {
   const p = d.property || {};
   const f = d.facts || {};
   const ledger = d.ledger || [];
+
+  // bids filed against THIS property still waiting on the owner's decision
+  const pendingBids = (proposals || []).filter((b) =>
+    b.kind === "bid" && b.status === "pending" && b.payload && b.payload.property === slug);
 
   // group the ledger by the rock its rows are tethered to, so the per-rock
   // money above reconciles visibly to the rows below; untethered rows fall to
@@ -174,13 +179,22 @@ function PropertyDetail({ slug, onClose }) {
         </Section>
       ) : null}
 
-      <Section title="CONTRACTS & BIDS" count={(d.contracts || []).length}>
-        {!(d.contracts || []).length ? <Empty>none yet</Empty> : null}
+      <Section title="CONTRACTS & BIDS" count={(d.contracts || []).length + pendingBids.length}>
+        {!(d.contracts || []).length && !pendingBids.length ? <Empty>none yet</Empty> : null}
         {(d.contracts || []).map((c) => (
           <div key={c.slug} className="ooda-row cols-contract">
             <span>{c.name}</span>
             <span className="ooda-sub">{c.status}</span>
             <span className="r">{money(c.amount)}</span>
+          </div>
+        ))}
+        {/* bids filed here but not yet decided — a partner must see their own
+            bid land, not wonder whether the form worked */}
+        {pendingBids.map((b) => (
+          <div key={b.id} className="ooda-row cols-contract">
+            <span>{(b.payload.contractor || "?") + (b.payload.scope ? " — " + b.payload.scope : "")}</span>
+            <span className="ooda-sub">bid · pending Benjamin's approval</span>
+            <span className="r">{money(b.payload.amount)}</span>
           </div>
         ))}
       </Section>

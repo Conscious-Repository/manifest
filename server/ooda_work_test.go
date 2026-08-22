@@ -1,9 +1,12 @@
 package server
 
 import (
+	"strings"
 	"testing"
 
 	"manifest/aion"
+	"manifest/realestate"
+	"manifest/tasks"
 	"manifest/teamportal"
 )
 
@@ -46,7 +49,7 @@ func TestOodaWorkHonorsTeamOverrides(t *testing.T) {
 		// an override that never touched status defers to the base item
 		"aion-bl/due-only": {Fields: map[string]string{"due": "2026-09-01"}},
 	}
-	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides))
+	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides, nil))
 	for id, want := range map[string]bool{
 		"aion-bl/portal-done": false,
 		"aion-bl/reopened":    true,
@@ -61,13 +64,13 @@ func TestOodaWorkHonorsTeamOverrides(t *testing.T) {
 	}
 
 	// nil overrides (no team store) must reproduce the base-only projection
-	ids = oodaWorkIDs(buildOodaWork(snap, "2026-08-22", nil))
+	ids = oodaWorkIDs(buildOodaWork(snap, "2026-08-22", nil, nil))
 	if !ids["aion-bl/portal-done"] || ids["aion-bl/reopened"] {
 		t.Fatalf("nil overrides must fall back to the vault's own status: %v", ids)
 	}
 
 	// the dashboard's per-person counts and week lanes ride the same rule
-	d := buildOodaDashboard(snap, "2026-08-22", overrides)
+	d := buildOodaDashboard(snap, "2026-08-22", overrides, nil)
 	for _, it := range d.Week {
 		if it.ID == "aion-bl/portal-done" {
 			t.Fatal("a portal-done item leaked into the dashboard week lane")
@@ -76,6 +79,91 @@ func TestOodaWorkHonorsTeamOverrides(t *testing.T) {
 	for _, o := range d.Owners {
 		if o.Owner == "BA" && o.Open != 4 {
 			t.Fatalf("BA open = %d, want 4 (reopened, in-progress, due-only, untouched)", o.Open)
+		}
+	}
+}
+
+// A member marking a ROCK-TREE task done writes an override keyed
+// prop/<slug>#<node-id> — the rock walk must honor it exactly as the backlog
+// loop honors its ids, in both directions. It never did (the audit's B3), so
+// "mark done" on rock work looked accepted and never cleared from WORK or the
+// dashboard — re-arming brian's original complaint on a second id family.
+func TestOodaRockWorkHonorsTeamOverrides(t *testing.T) {
+	snap := oodaFixture()
+	node := func(id, text string, checked bool) *realestate.WorkNode {
+		return &realestate.WorkNode{ID: id, Task: &tasks.Task{Text: text, Owner: "BA", Checked: checked}}
+	}
+	snap.Properties = append(snap.Properties, realestate.Property{
+		Slug: "rock-st", Short: "rock-st", Entity: "Garden SPE", Status: "construction", Control: "owned",
+		Work: []realestate.WorkStage{{ID: "s1", Text: "Shell", Tasks: []*realestate.WorkNode{
+			node("shell/done-via-portal", "hang the joists", false),
+			node("shell/reopened", "regrade the pad", true),
+			node("shell/untouched", "order lumber", false),
+		}}},
+	})
+	overrides := map[string]teamportal.Override{
+		"prop/rock-st#shell/done-via-portal": {Fields: map[string]string{"status": "done", "done_on": "2026-08-22"}},
+		"prop/rock-st#shell/reopened":        {Fields: map[string]string{"status": "open"}},
+	}
+	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides, nil))
+	for id, want := range map[string]bool{
+		"prop/rock-st#shell/done-via-portal": false,
+		"prop/rock-st#shell/reopened":        true,
+		"prop/rock-st#shell/untouched":       true,
+	} {
+		if ids[id] != want {
+			t.Errorf("%s: shown = %v, want %v", id, ids[id], want)
+		}
+	}
+	// the dashboard's per-person counts ride the same walk
+	d := buildOodaDashboard(snap, "2026-08-22", overrides, nil)
+	for _, o := range d.Owners {
+		if o.Owner == "BA" && o.Open != 2 {
+			t.Fatalf("BA open = %d, want 2 (reopened + untouched)", o.Open)
+		}
+	}
+}
+
+// Portal-created team items fold into the WORK groups (source:"team"), on the
+// same status allow-list and the same overrides as everything else. They used
+// to ship in a dead `teamItems` field no client read, so portal-created work
+// was invisible everywhere.
+func TestOodaWorkIncludesTeamItems(t *testing.T) {
+	snap := oodaFixture()
+	team := []teamportal.TeamItem{
+		{ID: "team/walk-roof", Kind: "task", Title: "walk the roof", Owner: "BA", Status: "open", Captured: "2026-08-20"},
+		{ID: "team/pick-lender", Kind: "decision", Title: "pick a lender", Owner: "BA", Status: "open"},
+		{ID: "team/already-done", Kind: "task", Title: "done directly", Owner: "BA", Status: "done"},
+		{ID: "team/done-via-override", Kind: "task", Title: "done via patch", Owner: "BA", Status: "open"},
+	}
+	overrides := map[string]teamportal.Override{
+		"team/done-via-override": {Fields: map[string]string{"status": "done"}},
+	}
+	groups := buildOodaWork(snap, "2026-08-22", overrides, team)
+	ids := oodaWorkIDs(groups)
+	for id, want := range map[string]bool{
+		"team/walk-roof":         true,
+		"team/pick-lender":       true,
+		"team/already-done":      false,
+		"team/done-via-override": false,
+	} {
+		if ids[id] != want {
+			t.Errorf("%s: shown = %v, want %v", id, ids[id], want)
+		}
+	}
+	for _, g := range groups {
+		if g.Owner != "BA" {
+			continue
+		}
+		if len(g.Decisions) != 1 || g.Decisions[0].ID != "team/pick-lender" {
+			t.Fatalf("the team decision must land in the decisions lane: %+v", g.Decisions)
+		}
+		for _, lane := range [][]oodaWorkItem{g.Open, g.Decisions} {
+			for _, it := range lane {
+				if strings.HasPrefix(it.ID, "team/") && it.Source != "team" {
+					t.Fatalf("team item missing its source flag: %+v", it)
+				}
+			}
 		}
 	}
 }

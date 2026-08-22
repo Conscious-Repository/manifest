@@ -793,17 +793,22 @@ func (s *Store) Decide(actor Identity, proposalID string, approve bool, now time
 	p.DecidedBy, p.DecidedAt = actor.Email, now.UTC()
 	if approve {
 		p.Status = "approved"
-		taken := map[string]bool{}
-		for _, it := range ext.Items {
-			taken[it.ID] = true
+		// A bid does not become a work item: accepting one materializes a
+		// CONTRACT record through the owner's cockpit lane, and minting a
+		// team item too left a phantom open "bid" task for every accepted bid.
+		if p.Kind != "bid" {
+			taken := map[string]bool{}
+			for _, it := range ext.Items {
+				taken[it.ID] = true
+			}
+			it := TeamItem{
+				ID: uniqueID("team/", p.Title, taken), Kind: p.Kind, Title: p.Title,
+				Owner: p.TargetOwner, Captured: now.Format("2006-01-02"),
+				Rock: p.Rock, Due: p.Due, Status: "open", Team: true, AddedBy: p.ProposedBy,
+			}
+			ext.Items = append(ext.Items, it)
+			p.ItemID = it.ID
 		}
-		it := TeamItem{
-			ID: uniqueID("team/", p.Title, taken), Kind: p.Kind, Title: p.Title,
-			Owner: p.TargetOwner, Captured: now.Format("2006-01-02"),
-			Rock: p.Rock, Due: p.Due, Status: "open", Team: true, AddedBy: p.ProposedBy,
-		}
-		ext.Items = append(ext.Items, it)
-		p.ItemID = it.ID
 	} else {
 		p.Status = "rejected"
 	}

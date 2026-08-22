@@ -116,6 +116,54 @@ func TestChatProposalGateAndApply(t *testing.T) {
 	}
 }
 
+// A zeck proposal targets an OODA item, so the gate must ask the OODA owner
+// oracle (alias-normalized initials) and an apply must land in the OODA team
+// store. The shared helper used to consult AION's pair for both agents, so
+// only the admin ever passed zeck's gate and an "applied" change wrote to
+// AION's items.ext.json — nothing changed in the OODA portal.
+func TestOodaChatProposalGatesAndAppliesInTheOodaDomain(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	srv := f.srv
+	srv.UseOoda(f.live)
+	oc, err := chatthreads.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseOodaChat(oc)
+	if _, err := oc.CreateThread("th/o", "roof", "", chatthreads.Identity{ID: "ben@ooda.group", Name: "Ben"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// the fixture vault owns this node as `olga-sobkiv` — the OS member's slug
+	itemID := "prop/748-n-euclid#shell/windows"
+	m, err := oc.AddMessage(chatthreads.Message{
+		Thread: "th/o", Kind: "zeck", Author: "agent:zeck", AuthName: "Zeck", Text: "done", Run: "r1", Outcome: "completed",
+		Props: []chatthreads.Proposal{{Verb: "set status", Type: "set-field", ItemID: itemID, Field: "status", Value: "done", State: "pending"}},
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// not the assignee, not admin → refused by the OODA oracle
+	if err := srv.OodaChatProposal("th/o", m.ID, 0, true, "bpabbassa@att.net", "Brian", "BPA", false); err == nil {
+		t.Fatal("non-assignee non-admin must be refused")
+	}
+	// the assignee, matched through the alias map (vault slug → roster OS)
+	if err := srv.OodaChatProposal("th/o", m.ID, 0, true, "me@olgasobkiv.com", "Olga", "OS", false); err != nil {
+		t.Fatal(err)
+	}
+	if ov, ok := f.store.Ext().Overrides[itemID]; !ok || ov.Fields["status"] != "done" {
+		t.Fatalf("apply must land in the OODA team store: %+v", f.store.Ext().Overrides)
+	}
+	if oc.Messages("th/o")[0].Props[0].State != "applied" {
+		t.Fatal("proposal state not marked applied")
+	}
+	// the fixture wires NO AION store at all — the old code path would have
+	// errored (or worse, written elsewhere); passing proves the OODA pair is
+	// consulted for zeck
+	if srv.threads != nil {
+		t.Fatal("fixture sanity: this server must have no AION team store")
+	}
+}
+
 // fakeChatRun drops a completed kairos run report + brief carrying a [chat::] token.
 func fakeChatRun(t *testing.T, srv *Server, runID, thread, orderID, ritual, briefBody string) {
 	t.Helper()

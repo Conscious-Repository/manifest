@@ -11,10 +11,10 @@ import (
 )
 
 // The WORK surface (ooda-portal plan §6.4): every open task and decision in
-// the domain, grouped by the person who holds it. Four sources unified —
-// the RE backlog, property rock-tree nodes, portal-created team items, and
-// pending proposals — so a partner sees one list rather than four places to
-// look.
+// the domain, grouped by the person who holds it. Three sources unified —
+// the RE backlog, property rock-tree nodes, and portal-created team items —
+// so a partner sees one list rather than three places to look. Pending bid
+// proposals are property-scoped and render as chips on the property detail.
 
 type oodaWorkItem struct {
 	ID        string `json:"id"`
@@ -169,12 +169,28 @@ func oodaOverrideOpen(ov teamportal.Override) (open, set bool) {
 	}
 }
 
+// oodaTeamItemOpen decides whether a portal-created team item is still
+// outstanding — the same allow-list reading as oodaBacklogOpen, over the team
+// store's own status vocabulary (open|in_progress|done, plus decided).
+func oodaTeamItemOpen(it teamportal.TeamItem) bool {
+	if strings.TrimSpace(it.Decided) != "" || strings.TrimSpace(it.Outcome) != "" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(it.Status)) {
+	case "", aion.StatusOpen, aion.StatusInProgress:
+		return true
+	default: // done, decided, and anything new that appears later
+		return false
+	}
+}
+
 // buildOodaWork groups the domain's open work by assignee. The overrides map
 // is the team store's overlay (items.ext.json): without it, an item a member
 // marked done through the portal PATCH stays open here forever, because the
 // base filter only ever sees the vault's own status (brian's report,
 // 2026-08-22 — item 33e6054b was marked done twice and never cleared).
-func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override) []oodaWorkGroup {
+// team is the overlay's own member-added items, folded into the same groups.
+func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override, team []teamportal.TeamItem) []oodaWorkGroup {
 	if snap == nil {
 		return nil
 	}
@@ -228,7 +244,19 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 			label = p.Slug
 		}
 		realestate.WalkNodes(p.Work, func(st *realestate.WorkStage, n *realestate.WorkNode) {
-			if n.Task == nil || n.Task.Checked {
+			if n.Task == nil {
+				return
+			}
+			// the overlay wins here exactly as it does for the backlog above:
+			// a member marking a rock task done through the portal writes an
+			// override keyed prop/<slug>#<node-id>, never the vault checkbox
+			open := !n.Task.Checked
+			if ov, ok := overrides["prop/"+p.Slug+"#"+n.ID]; ok {
+				if o, set := oodaOverrideOpen(ov); set {
+					open = o
+				}
+			}
+			if !open {
 				return
 			}
 			kind := "task"
@@ -245,8 +273,29 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 			})
 		})
 	}
-	// 3 + 4. portal-created team items and pending proposals live in the
-	// overlay; the caller passes them through the snapshot-free path below.
+	// 3. portal-created team items — the overlay's own work, same open rule
+	// and same overrides as everything else, flagged source:"team"
+	for _, ti := range team {
+		open := oodaTeamItemOpen(ti)
+		if ov, ok := overrides[ti.ID]; ok {
+			if o, set := oodaOverrideOpen(ov); set {
+				open = o
+			}
+		}
+		if !open {
+			continue
+		}
+		kind := "task"
+		if strings.EqualFold(ti.Kind, "decision") {
+			kind = "decision"
+		}
+		container, rock := oodaRockLabel(ti.Rock, shortBySlug)
+		items = append(items, oodaWorkItem{
+			ID: ti.ID, Title: ti.Title, Kind: kind, Source: "team",
+			Owner:     oodaOwner(ti.Owner, alias),
+			Container: container, Rock: rock, Due: ti.Due, Age: ti.Captured,
+		})
+	}
 	sort.SliceStable(items, func(a, b int) bool { return items[a].Title < items[b].Title })
 
 	groups := map[string]*oodaWorkGroup{}
