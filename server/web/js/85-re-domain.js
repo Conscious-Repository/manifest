@@ -103,12 +103,21 @@ function renderREBacklog() {
   // ones living in a property's rock tree. Tree decisions are absent from the
   // task projection by design (they are not tasks), so without this they were
   // visible only on their own property page.
+  // `decided` is normalized HERE, at construction, the way the task lane below
+  // normalizes `done` — the two sources keep the flag in different places
+  // (a log item's status vs the tree NODE's checkbox, which sits one level
+  // down at d.n). Reading it later off the wrapper silently answered
+  // undefined for every tree decision, so decided ones sat in the open list
+  // wearing a DECIDED badge, and the counts disagreed with the rows.
   const items = reItems();
-  const decisions = items.filter((it) => it.kind === "decision").map((it) => ({ src: "re", it }))
-    .concat(rePropDecisions().map((d) => ({ src: "propdec", it: d })));
-  const isDecided = (d) => (d.src === "re" ? d.it.status === "decided" : !!d.it.checked);
-  const openDec = decisions.filter((d) => !isDecided(d));
-  const decided = decisions.filter(isDecided);
+  const decisions = items.filter((it) => it.kind === "decision")
+    .map((it) => ({ src: "re", it, decided: it.status === "decided", at: it.decided || "" }))
+    .concat(rePropDecisions().map((d) => ({ src: "propdec", it: d, decided: !!d.n.checked, at: "" })));
+  const openDec = decisions.filter((d) => !d.decided);
+  // the archive reads newest-first; tree decisions carry no decided date, so
+  // they settle under the dated ones rather than scattering through them
+  const decided = decisions.filter((d) => d.decided)
+    .sort((a, b) => (b.at || "").localeCompare(a.at || ""));
   const lane = el("div", "aion-dec-lane");
   const lh = el("div", "aion-sec-label");
   lh.append(el("span", "aion-sec-title", "◇ Decisions"),
