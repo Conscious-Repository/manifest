@@ -188,6 +188,27 @@ func (d *BacklogDoc) AllItems() []*BacklogItem {
 	return out
 }
 
+// Remove drops the line carrying this id, reporting whether it was there.
+// Doc-level rather than store-level so a caller batching several edits into
+// ONE SaveBacklog can delete as part of the batch — the portal→vault
+// reconciler does exactly that, and a second save would break the "one write
+// per pass" property the fixpoint round-trip test relies on.
+func (d *BacklogDoc) Remove(id string) bool {
+	found := false
+	for _, sec := range d.Sections {
+		out := sec.Lines[:0:0]
+		for _, ln := range sec.Lines {
+			if ln.Item != nil && ln.Item.ID == id {
+				found = true
+				continue
+			}
+			out = append(out, ln)
+		}
+		sec.Lines = out
+	}
+	return found
+}
+
 // Find returns the top-level item with the given derived id (nil if absent).
 func (d *BacklogDoc) Find(id string) *BacklogItem {
 	for _, it := range d.AllItems() {

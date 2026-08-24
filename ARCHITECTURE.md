@@ -198,10 +198,48 @@ field overrides; the overlay wins for its bounded fields; archives are kept
 with their attributed snapshot and thread but excluded from active views.
 Every vault backlog item carries a persisted `aion-bl/…` identity that is
 stable across title edits. Portal writes update only the shared team store and
-**never** materialize into Markdown. An explicit owner edit in Manifest still
+never materialize into Markdown (**superseded 2026-08-24 — see below**). An
+explicit owner edit in Manifest still
 crosses `vaultwriter`, supersedes only overlapping overlay keys, and records
 that resolution in team activity. Multi-store owner operations are journaled
 under dataDir and replay idempotently.
+
+**2026-08-24 — the team store materializes into the AION backlog.** Owner
+decision: the store stops being a parallel truth. It had become one — a
+member's new task lived only in `items.ext.json`, and a member marking the
+owner's task done wrote an override that Manifest applied at read time while
+`backlog.md` still said `open`. Two surfaces, two answers, and Obsidian — the
+actual record — heard about neither.
+
+A reconciler (`server/aion_sync_back.go`) now writes three things into
+`system/aion/backlog.md`: portal-created items, field edits on published
+items, and approved proposals. It runs after every portal write and on a slow
+ticker. Each pass ends with the store surrendering what it handed over — the
+item row is dropped once the line exists, the override cleared once the record
+carries it — so the overlay becomes a staging area that empties itself.
+Comments and the activity trail do **not** cross; they have no line grammar and
+remain the portal's own record.
+
+The write is bounded three ways: one new capability `aion-portal`, whose
+pattern is the single file rather than the `system/aion/**` subtree its
+neighbours hold; a new actor `portal-member`, distinct from
+`approved-proposal` because no owner approved the individual write — the
+standing consent is the capability itself; and a pre-flight that renders the
+candidate corpus and runs the same acceptance gate the projection will. That
+last one is load-bearing: an invalid corpus makes the projection serve its
+last-known-good snapshot, so without the check a member typing a rock name
+that resolves to no goal would take AION offline for everyone. The reconciler
+declines to write instead, leaves the state staged, and names the line in the
+log.
+
+The same amendment widens what an assignee may edit — title, owner
+(reassignment), `decided`, and a real `decided` status — and adds a delete that
+archives. **The assignee lock is unchanged and gained no admin override**: the
+owner considered one on this date and declined it, so the 2026-08-13 decision
+stands in full. A proposal for a teammate now also files an approvable card in
+the owner's FEED (`approvals.TypePortalProposal`) instead of a dismiss-only
+notice; either the owner or the target may still decide it, and whoever acts
+first settles it.
 
 The portal's compatible `data/*.json` and `content/*.md` contract is rendered
 and validated in-process. Valid revisions become visible immediately;
@@ -212,7 +250,9 @@ git, a deploy, and a PUBLISH gesture are not part of AION synchronization.
 This amendment preserves the 2026-08-14 exception exactly: the team portal is
 still the one bounded many-writer surface, its assignee/proposal authorization
 rules are unchanged, and the vault and every other Manifest surface remain
-single-writer.
+single-writer. (The 2026-08-24 amendment above widens what that surface may
+write and where it lands, and leaves the authorization rules themselves
+untouched.)
 
 **2026-08-19 — approved goals placement (the first knowledge-zone proposal
 lane).** Owner decision (telegram→feed goals plan, approved 2026-08-19): a

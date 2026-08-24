@@ -17,6 +17,19 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
   const [planDraft, setPlanDraft] = React.useState(null);
   const [status, setStatus] = React.useState(item.status || 'open');
   const [due, setDue] = React.useState(item.due || item.needed_by || '');
+  // 2026-08-24: an assignee edits the work they hold, not just its state
+  const [title, setTitle] = React.useState(item.title || '');
+  const [owner, setOwner] = React.useState(item.owner || '');
+  const [decided, setDecided] = React.useState(item.decided || '');
+  const [outcome, setOutcome] = React.useState(item.outcome || '');
+  React.useEffect(() => {
+    setStatus(item.status || 'open');
+    setDue(item.due || item.needed_by || '');
+    setTitle(item.title || '');
+    setOwner(item.owner || '');
+    setDecided(item.decided || '');
+    setOutcome(item.outcome || '');
+  }, [item.id]);
 
   const loadAll = React.useCallback(() => {
     PT.loadPanel(item.id).then(r => setPanel(r.ok ? r.value : null));
@@ -53,8 +66,32 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
       if (r.ok) { reloadTeam(); loadAll(); }
     });
   };
-  const saveFields = () => patch(item.kind === 'decision' ? { status: status, needed_by: due } : { status: status, due: due });
-  const markDone = () => patch({ status: 'done', done_on: today });
+  const isDecision = item.kind === 'decision';
+  const saveFields = () => {
+    const f = { status: status, title: title.trim() };
+    if (owner && owner !== item.owner) f.owner = owner;
+    if (isDecision) {
+      f.needed_by = due;
+      // a decided decision carries WHEN and WHAT — without them it leaves the
+      // open list and lands in no archive, which is how decisions used to
+      // disappear from this portal entirely
+      if (status === 'decided') f.decided = decided || today;
+      if (outcome.trim()) f.outcome = outcome.trim();
+    } else {
+      f.due = due;
+    }
+    patch(f);
+  };
+  // Closing a decision is not "done" — the archive selects on `decided`.
+  const markDone = () => patch(isDecision
+    ? { status: 'decided', decided: today, outcome: outcome.trim() }
+    : { status: 'done', done_on: today });
+  const deleteItem = () => {
+    if (!window.confirm('Delete "' + (item.title || item.id) + '"? It leaves every list; the archive keeps a copy.')) return;
+    TEAM_API.post('api/team/item/' + item.id, {}, 'DELETE').then(r => {
+      if (r.ok) { reloadTeam(); onBack(); } else setSaveNote(r.error);
+    });
+  };
 
   const savePlan = () => {
     const sections = {};
@@ -193,18 +230,44 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
           borderTop: '1px solid var(--line,#3a3a3a)', borderBottom: '1px solid var(--line,#3a3a3a)',
           padding: '10px 0', marginTop: 14 }}>
           <span className="v2-label">FIELDS</span>
+          <input className="v2-input" value={title} onChange={e => setTitle(e.target.value)}
+            placeholder="title" style={{ flex: '1 1 260px', minWidth: 180 }} />
           <select className="v2-input" value={status} onChange={e => setStatus(e.target.value)}>
             <option value="open">open</option>
             <option value="in_progress">in_progress</option>
-            <option value="done">done</option>
+            {isDecision ? <option value="decided">decided</option> : <option value="done">done</option>}
           </select>
-          <span style={{ fontSize: 11, color: 'var(--ink-faint,#888)' }}>{item.kind === 'decision' ? 'needed_by' : 'due'}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-faint,#888)' }}>{isDecision ? 'needed_by' : 'due'}</span>
           <input className="v2-input" type="date" value={due} onChange={e => setDue(e.target.value)} />
+          {/* reassignment: handing work on is an edit to the work, and the
+              person who holds it is the one who can do it */}
+          <span style={{ fontSize: 11, color: 'var(--ink-faint,#888)' }}>owner</span>
+          <select className="v2-input" value={owner} onChange={e => setOwner(e.target.value)}>
+            {(window.PORTAL_PEOPLE ? Object.keys(window.PORTAL_PEOPLE) : [item.owner]).map(ini => (
+              <option key={ini} value={ini}>{ini}</option>
+            ))}
+          </select>
           <button className="v2-btn v2-accentfill" onClick={saveFields}
             style={{ borderColor: 'var(--accent,#0091ea)', color: 'var(--accent,#0091ea)', padding: '3px 11px' }}>save</button>
           <button className="v2-btn v2-hoverline" onClick={markDone}
-            style={{ color: 'var(--ink-faint,#888)', padding: '3px 11px' }}>mark done</button>
+            style={{ color: 'var(--ink-faint,#888)', padding: '3px 11px' }}>
+            {isDecision ? 'record decision' : 'mark done'}
+          </button>
+          <button className="v2-btn v2-hoverline" onClick={deleteItem}
+            style={{ color: 'var(--warn,#a44)', padding: '3px 11px' }}>delete</button>
           <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{saveNote}</span>
+          {/* the two fields that make a decision closable. Shown for decisions
+              only, and only once one is being closed — an outcome box on an
+              open decision reads as a prompt to invent one. */}
+          {isDecision && (status === 'decided' || item.status === 'decided') && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', flexBasis: '100%' }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-faint,#888)' }}>decided</span>
+              <input className="v2-input" type="date" value={decided || today}
+                onChange={e => setDecided(e.target.value)} />
+              <input className="v2-input" value={outcome} onChange={e => setOutcome(e.target.value)}
+                placeholder="what was decided, and why" style={{ flex: '1 1 320px', minWidth: 200 }} />
+            </div>
+          )}
         </div>
       )}
       {!canEdit && teamOn && (

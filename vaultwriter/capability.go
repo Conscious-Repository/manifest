@@ -28,6 +28,13 @@ const (
 	ActorUserAction       Actor = "user-action"
 	ActorApprovedProposal Actor = "approved-proposal"
 	ActorBankFeed         Actor = "bank-feed"
+	// ActorPortalMember is a signed-in TEAM member's edit reaching the vault
+	// through the materialization lane (ARCHITECTURE §12, 2026-08-24). It is
+	// deliberately not ActorApprovedProposal: that word means the owner
+	// approved this one write, and here nobody did — the standing consent is
+	// the capability itself. The audit log should be able to say which of the
+	// two moved the bytes.
+	ActorPortalMember Actor = "portal-member"
 )
 
 // Capability is one declared write permission.

@@ -19,7 +19,13 @@ import (
 
 // AionLive owns the one live AION projection shared by the private cockpit
 // and team portal. The vault is the owner-authored base; team state is layered
-// at read time and is never materialized into the vault by a portal write.
+// at read time.
+//
+// Since the §12 amendment of 2026-08-24 that layer is a STAGING AREA, not a
+// parallel truth: aion_sync_back.go reconciles it into system/aion/backlog.md
+// and the override is cleared once the record carries it. What you see here is
+// the settled answer either way — before the sync, from the overlay; after it,
+// from the line itself.
 type AionLive struct {
 	s *Server
 
@@ -348,6 +354,16 @@ func (l *AionLive) effectiveItems() []AionEffectiveItem {
 				items[i].NeededBy = strPtr(val)
 			case "outcome":
 				items[i].Outcome = strPtr(val)
+			// widened 2026-08-24 with teamportal.PatchFields. The two must
+			// agree: a field a member can PATCH but this switch ignores would
+			// save, vanish from every read, and reappear only after the
+			// reconciler wrote it to the vault — an edit that looks lost.
+			case "title":
+				items[i].Title = val
+			case "owner":
+				items[i].Owner = strPtr(val)
+			case "decided":
+				items[i].Decided = strPtr(val)
 			}
 		}
 		items[i].OverrideBy, items[i].OverrideAt = ov.By, &ov.At

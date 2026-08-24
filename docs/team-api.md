@@ -27,7 +27,7 @@ The API does not currently send CORS headers. Command-line tools, server-side co
 - Errors are plain text with meaningful HTTP statuses: `400` invalid input, `401` missing/invalid/revoked credentials, `403` an assignee/admin lock, `404` unknown records, and `409` an already-running agent.
 - Item IDs commonly contain a slash, such as `team/calibrate-the-rig`. Query/body IDs should be sent unchanged. The update route is `PATCH /api/team/item/team/calibrate-the-rig`.
 - Dates are `YYYY-MM-DD`; timestamps are RFC 3339.
-- The team store is the portal's shared derived state. This API never writes the owner's private cockpit or vault.
+- The team store is the portal's shared derived state. **Since 2026-08-24 it is a staging area, not a parallel truth**: a reconciler writes portal-created items, field edits on published items, and approved proposals into `system/aion/backlog.md`, then clears what it handed over. Comments and the activity trail stay in the store. See ARCHITECTURE.md §12 (2026-08-24).
 
 ## Endpoint summary
 
@@ -39,6 +39,7 @@ The API does not currently send CORS headers. Command-line tools, server-side co
 | `POST` | `/api/team/comment` | Comment and optionally mention agents | Item must exist |
 | `DELETE` | `/api/team/comment` | Delete a comment | Comment author or portal admin |
 | `PATCH` | `/api/team/item/{id...}` | Change team-editable item fields | Item assignee only |
+| `DELETE` | `/api/team/item/{id...}` | Archive an item (leaves every list; the archive keeps a copy) | Item assignee only |
 | `POST` | `/api/team/items` | Add an item owned by the caller | None |
 | `POST` | `/api/team/proposals` | Propose an item for another teammate | Target must be `@aion.bio` |
 | `POST` | `/api/team/proposals/decide` | Approve/reject a proposal | Target or portal admin |
@@ -193,11 +194,25 @@ The response is the created team item.
 
 ### `PATCH /api/team/item/{id...}`
 
-Only the item's assignee may update it. The closed field set is `status`, `done_on`, `due`, `needed_by`, and `outcome`; status is `open`, `in_progress`, or `done`.
+Only the item's assignee may update it — **including the portal admin, who has no override** (decided 2026-08-13, reaffirmed 2026-08-24).
+
+The closed field set is `status`, `done_on`, `due`, `needed_by`, `outcome`, `title`, `owner`, and `decided`. Status is `open`, `in_progress`, `done`, or `decided`.
+
+Setting `owner` reassigns the item, after which the caller can no longer edit it — the lock follows the assignment.
 
 ```json
 {"status": "done", "outcome": "Calibration passed"}
 ```
+
+Closing a **decision** uses `decided`, not `done`: the archive selects on `status: decided` with a `decided` date, so a decision closed as `done` leaves the open list and reaches no archive.
+
+```json
+{"status": "decided", "decided": "2026-08-24", "outcome": "Ultrasound, MRI as fallback"}
+```
+
+### `DELETE /api/team/item/{id...}`
+
+Only the item's assignee. The item is archived, not erased: it leaves every live view, the team store keeps an attributed snapshot, and the reconciler removes the backlog line.
 
 Response:
 

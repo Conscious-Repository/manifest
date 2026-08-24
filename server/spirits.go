@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"manifest/record"
 	"manifest/secrets"
 	"manifest/spirits"
+	"manifest/teamportal"
 )
 
 // maskSecrets is the display-side defense for aion proposal bodies: any
@@ -119,7 +121,13 @@ type approvalRow struct {
 	GoalsPayload *goals.PlacementPayload `json:"goalsPayload,omitempty"`
 	// GoalsErr says why the placement would refuse right now (stale anchor,
 	// duplicate, missing area) — the card shows it instead of a green diff.
+	// It doubles as the generic "why Confirm is off" line for types with no
+	// diff of their own, which is how a portal-proposal explains staleness.
 	GoalsErr string `json:"goalsErr,omitempty"`
+	// PortalProposal is the parsed payload of a team-portal proposal card
+	// (nil otherwise): who proposed what to whom, and which proposal Confirm
+	// decides. There is no diff — the effect is a team-store write.
+	PortalProposal *approvals.PortalProposalPayload `json:"portalProposal,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -216,6 +224,27 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 					rr.Current = cur
 				}
 			}
+		} else if p.Type == approvals.TypePortalProposal {
+			// No ApplyPath: the effect is a team-store Decide, not a file write.
+			// Allowed asks whether Confirm can actually do anything, so it turns
+			// on the two things the dispatch needs — a readable payload and a
+			// configured portal — rather than on a path rule.
+			if payload, ok := approvals.ParsePortalProposal(p); ok {
+				rr.PortalProposal = &payload
+				rr.Allowed = s.teamStoreNamed(payload.Portal) != nil
+				if !rr.Allowed {
+					rr.GoalsErr = "portal " + payload.Portal + " is not configured on this host"
+				} else if st := s.teamStoreNamed(payload.Portal); st != nil {
+					// a proposal the target already settled in the portal: say so
+					// on the card instead of letting Confirm look available
+					for _, live := range st.Ext().Proposals {
+						if live.ID == payload.PropID && live.Status != "pending" {
+							rr.Allowed = false
+							rr.GoalsErr = "already " + live.Status + " in the portal — this card is stale"
+						}
+					}
+				}
+			}
 		}
 		rows = append(rows, rr)
 	}
@@ -308,6 +337,16 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 	if loadErr == nil && pending.Type == approvals.TypeAppendVaultNote && s.aionSink != nil {
 		s.aionSink.Notify([]string{approvals.AppendFinalPath(pending)})
 	}
+	// A portal proposal's effect lives in the TEAM STORE, not the vault, so
+	// like run-errand it carries no ApplyPath and the dispatch happens here
+	// after the folder move. Decide mints the item; the materialization lane
+	// then carries it into the backlog on its own.
+	if loadErr == nil && pending.Type == approvals.TypePortalProposal {
+		if err := s.decidePortalProposal(pending, true); err != nil {
+			httpError(w, errBadRequest("approved, but the proposal could not be applied: "+err.Error()))
+			return
+		}
+	}
 	if loadErr == nil && pending.Type == approvals.TypeRunErrand {
 		if s.errandExec == nil {
 			httpError(w, errBadRequest("approved, but errands are not available to enqueue"))
@@ -370,11 +409,71 @@ func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Requ
 		Reason string `json:"reason"`
 	}
 	_ = decode(r, &b) // reason is optional
-	if err := s.approvalsFor(r.PathValue("id")).Reject(r.PathValue("id"), b.Reason); err != nil {
+	id := r.PathValue("id")
+	// read BEFORE the move — Reject relocates the file and LoadPending would
+	// then miss it, the same ordering the confirm path uses
+	pending, loadErr := s.approvalsFor(id).LoadPending(id)
+	if err := s.approvalsFor(id).Reject(id, b.Reason); err != nil {
 		httpError(w, err)
 		return
 	}
+	// a rejected portal proposal must also close in the TEAM STORE, or the
+	// target still sees it pending in the portal and can approve what the
+	// owner just refused
+	if loadErr == nil && pending.Type == approvals.TypePortalProposal {
+		if err := s.decidePortalProposal(pending, false); err != nil {
+			log.Printf("portal proposal reject: card closed but the store did not: %v", err)
+		}
+	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// decidePortalProposal is the FEED card's effect: one call into the team store
+// that owns the proposal.
+//
+// A proposal has always been decidable by the target as well as the owner
+// (portal.go handleDecide), and that did not change — so by the time a card is
+// clicked the proposal may already be settled. Store.Decide refuses a
+// non-pending proposal, and that refusal is SUCCESS here: the question the card
+// asked has been answered, just not by this click. Treating it as an error
+// would leave a card the owner cannot clear by any means.
+func (s *Server) decidePortalProposal(p approvals.Proposal, approve bool) error {
+	payload, ok := approvals.ParsePortalProposal(p)
+	if !ok {
+		return errors.New("this card has no readable portal payload")
+	}
+	store := s.teamStoreNamed(payload.Portal)
+	if store == nil {
+		return errors.New("portal " + payload.Portal + " is not configured on this host")
+	}
+	admin := teamportal.Identity{Email: s.aionAdminEmail(), Name: "Benjamin"}
+	if _, err := store.Decide(admin, payload.PropID, approve, time.Now()); err != nil {
+		if strings.Contains(err.Error(), "already") {
+			return nil // settled in the portal first — the card was stale, not wrong
+		}
+		return err
+	}
+	if approve {
+		s.syncPortalToVault(time.Now()) // the minted item reaches the backlog now
+	}
+	return nil
+}
+
+// teamStoreNamed resolves a portal name to its team store. The name is the
+// bridge's card-id prefix, so it is already the stable identifier for "which
+// portal" everywhere else in the FEED.
+func (s *Server) teamStoreNamed(name string) *teamportal.Store {
+	switch strings.TrimSpace(name) {
+	case "", "aion-portal":
+		if s.aionLive == nil {
+			return nil
+		}
+		st, _ := s.aionLive.teamStore()
+		return st
+	case "ooda-portal":
+		return s.oodaTeam
+	}
+	return nil
 }
 
 // RITUALS board — every ritual across spirits with computed next-fire, last

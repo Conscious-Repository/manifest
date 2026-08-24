@@ -57,6 +57,16 @@ func (s *Server) UseAion(st *aion.Store, _ string, _ string, _ string, dataDir s
 	s.aionLive = newAionLive(s)
 }
 
+// UsePortalSync gives the portal→vault reconciler its OWN store handle, bound
+// to the `aion-portal` capability rather than the cockpit's `aion`.
+//
+// Same file, same parser, different actor: a line the owner typed and a line a
+// portal member's edit produced are both legitimate, and write-audit.log should
+// be able to tell them apart. Sharing s.aion would have worked and would have
+// logged every team edit as `user-action` — a small lie, told forever.
+// Nil-safe: no handle, no materialization, and the portal stays overlay-only.
+func (s *Server) UsePortalSync(st *aion.Store) { s.aionPortal = st }
+
 // handleAion is the aggregate read: all seven parsed corpora + the goals
 // Aion ladder (read-only) + the collaboration/live-sync state.
 func (s *Server) handleAion(w http.ResponseWriter, r *http.Request) {

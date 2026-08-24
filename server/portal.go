@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
 	"reflect"
 	"strings"
@@ -51,6 +52,20 @@ type PortalOptions struct {
 	// Panel plan-section write (portal v2 plan editor); handler gates
 	// assignee/admin before calling.
 	PlanWrite func(itemID, section, text string) error
+	// AfterWrite runs once after any mutating team-store write on this portal.
+	// AION binds it to the portal→vault reconciler so an edit reaches the
+	// backlog while the member is still looking at the page; nil elsewhere,
+	// which is what keeps the OODA portal overlay-only.
+	AfterWrite func()
+	// ArchiveSnapshot captures an item for the delete lane. A hook rather than
+	// a sixth PortalLive method: that seam is deliberately five, and only the
+	// AION portal has a delete today — OODA leaves this nil and the route
+	// answers "not available here" instead of half-working.
+	ArchiveSnapshot func(itemID string) (teamportal.ArchivedItem, bool)
+	// FileProposalCard turns a new proposal into an approvable FEED card in
+	// the owner's inbox. Nil leaves the pre-2026-08-24 behaviour: the proposal
+	// still reaches the FEED through the bridge, but only as a notice.
+	FileProposalCard func(prop teamportal.Proposal) error
 	// FileBlob resolves a comment-attachment hash to a served file path.
 	FileBlob func(hash string) string
 	// --- native chat with kairos (chat-kairos handoff) ---
@@ -133,6 +148,7 @@ func PortalHandler(opt PortalOptions) (http.Handler, error) {
 			mux.HandleFunc("POST /api/team/comment", api.handleComment)
 			mux.HandleFunc("DELETE /api/team/comment", api.handleDeleteComment)
 			mux.HandleFunc("PATCH /api/team/item/{id...}", api.handlePatch)
+			mux.HandleFunc("DELETE /api/team/item/{id...}", api.handleDeleteItem)
 			mux.HandleFunc("POST /api/team/items", api.handleAdd)
 			mux.HandleFunc("POST /api/team/proposals", api.handlePropose)
 			mux.HandleFunc("POST /api/team/proposals/decide", api.handleDecide)
@@ -406,7 +422,18 @@ func (p *portalAPI) ownerToken(email string) string {
 // ownerOf finds an item's assignee: published backlog first, then team items.
 func (p *portalAPI) ownerOf(itemID string) (string, bool) {
 	if p.opt.Live != nil {
-		return p.opt.Live.OwnerOf(itemID)
+		if owner, ok := p.opt.Live.OwnerOf(itemID); ok {
+			return owner, true
+		}
+		// the id may have moved under the caller — a materialized item is
+		// `aion-bl/…` where their page still says `team/…`. Follow the alias
+		// rather than 404 an edit that is perfectly valid.
+		if p.opt.Store != nil {
+			if live := p.opt.Store.ResolveID(itemID); live != itemID {
+				return p.opt.Live.OwnerOf(live)
+			}
+		}
+		return "", false
 	}
 	if o, ok := p.owners[itemID]; ok {
 		return o, true
@@ -893,6 +920,65 @@ func (p *portalAPI) handleDeleteComment(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// afterWrite fires the portal's post-write hook (nil-safe). Synchronous on
+// purpose: the member's next read should already show the settled state, and
+// the reconciler is a file read plus at most one write.
+func (p *portalAPI) afterWrite() {
+	if p.opt.AfterWrite != nil {
+		p.opt.AfterWrite()
+	}
+}
+
+// assigneeOf resolves an item's holder and reports whether the caller is it.
+// The lock has no admin arm and did not gain one on 2026-08-24 — the owner
+// considered an override and declined it (the 2026-08-13 decision stands).
+func (p *portalAPI) assigneeGate(w http.ResponseWriter, id teamportal.Identity, itemID string) bool {
+	owner, exists := p.ownerOf(itemID)
+	if !exists {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return false
+	}
+	if owner == "" || !strings.EqualFold(owner, p.ownerToken(id.Email)) {
+		http.Error(w, "only the assignee ("+orDash(owner)+") can change this item", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// handleDeleteItem retires an item the caller holds (owner decision
+// 2026-08-24). Same assignee gate as the patch — deletion is the strongest
+// edit, so it is the last place to relax who may do it.
+//
+// It archives rather than erases: the row leaves every live surface, the
+// snapshot survives in the team store, and the reconciler removes the backlog
+// line. That ordering means a delete is recoverable from the archive right up
+// until someone edits the vault by hand.
+func (p *portalAPI) handleDeleteItem(w http.ResponseWriter, r *http.Request) {
+	id, ok := p.identify(w, r)
+	if !ok {
+		return
+	}
+	itemID := r.PathValue("id")
+	if !p.assigneeGate(w, id, itemID) {
+		return
+	}
+	if p.opt.ArchiveSnapshot == nil {
+		http.Error(w, "deleting items is not available on this portal", http.StatusServiceUnavailable)
+		return
+	}
+	snap, ok := p.opt.ArchiveSnapshot(itemID)
+	if !ok {
+		http.Error(w, "unknown item", http.StatusNotFound)
+		return
+	}
+	if err := p.opt.Store.Archive(id, snap, time.Now()); err != nil {
+		httpError(w, errBadRequest(err.Error()))
+		return
+	}
+	p.afterWrite()
+	writeJSON(w, map[string]any{"ok": true, "id": itemID})
+}
+
 // handlePatch is the owner-lock write: ONLY the item's assignee may change its
 // status/fields (the admin included — no override lane, decided 2026-08-13).
 func (p *portalAPI) handlePatch(w http.ResponseWriter, r *http.Request) {
@@ -901,15 +987,11 @@ func (p *portalAPI) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	itemID := r.PathValue("id")
-	owner, exists := p.ownerOf(itemID)
-	if !exists {
-		http.Error(w, "unknown item", http.StatusNotFound)
+	if !p.assigneeGate(w, id, itemID) {
 		return
 	}
-	mine := p.ownerToken(id.Email)
-	if owner == "" || !strings.EqualFold(owner, mine) {
-		http.Error(w, "only the assignee ("+orDash(owner)+") can change this item", http.StatusForbidden)
-		return
+	if p.opt.Store != nil {
+		itemID = p.opt.Store.ResolveID(itemID) // write to where the item lives now
 	}
 	var fields map[string]string
 	if err := decode(r, &fields); err != nil {
@@ -921,6 +1003,7 @@ func (p *portalAPI) handlePatch(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
+	p.afterWrite()
 	writeJSON(w, map[string]any{"item": itemID, "override": ov})
 }
 
@@ -936,6 +1019,7 @@ func (p *portalAPI) handleAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, err := p.opt.Store.AddItem(id, p.ownerToken(id.Email), b.Kind, b.Title, b.Rock, b.Due, time.Now())
+	defer p.afterWrite()
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
@@ -959,6 +1043,16 @@ func (p *portalAPI) handlePropose(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
+	}
+	// The owner asked to approve proposals from the FEED "like any other card"
+	// (2026-08-24). Filing the approval is best-effort on purpose: a proposal
+	// is valid team state whether or not a card gets filed, and failing the
+	// member's request because the owner's inbox is unavailable would be the
+	// wrong trade. The target can still decide it in the portal either way.
+	if p.opt.FileProposalCard != nil {
+		if err := p.opt.FileProposalCard(prop); err != nil {
+			log.Printf("portal proposal %s: no FEED card filed: %v", prop.ID, err)
+		}
 	}
 	writeJSON(w, prop)
 }
@@ -1001,6 +1095,7 @@ func (p *portalAPI) handleDecide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prop, err := p.opt.Store.Decide(id, b.ID, b.Approve, time.Now())
+	defer p.afterWrite()
 	if err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return

@@ -102,7 +102,8 @@ function WorkLane({ label, items, tone, mine, owner }) {
 
 // WorkRow honours the ASSIGNEE LOCK the shared layer enforces: only the person
 // who holds an item may change its state — and there is no admin override lane
-// (the AION decision of 2026-08-13, mirrored). Everyone else sees WHY the
+// (the AION decision of 2026-08-13, mirrored — and reaffirmed 2026-08-24,
+// when an override was considered and declined). Everyone else sees WHY the
 // control is unavailable rather than a 403 on click, and can still comment.
 function WorkRow({ it, tone, isMine }) {
   const [open, setOpen] = React.useState(false);

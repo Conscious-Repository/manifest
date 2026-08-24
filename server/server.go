@@ -20,7 +20,6 @@ import (
 	"manifest/aion"
 	"manifest/approvals"
 	"manifest/artifacts"
-	"manifest/gmailsync"
 	"manifest/bankfeed"
 	"manifest/books"
 	"manifest/calendar"
@@ -32,6 +31,7 @@ import (
 	"manifest/fundraising"
 	"manifest/geocode"
 	"manifest/gmailauth"
+	"manifest/gmailsync"
 	"manifest/goals"
 	"manifest/ledger"
 	"manifest/portals"
@@ -134,6 +134,14 @@ type Server struct {
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
+	// syncBack serializes the portal→vault reconciler (aion_sync_back.go):
+	// portal writes land concurrently while a ticker also fires, and two
+	// read-modify-write passes over backlog.md interleaving would lose one.
+	syncBack aionSyncBack
+	// aionPortal writes backlog.md under the `aion-portal` capability — the
+	// materialization lane's own handle, so its writes audit as portal-member
+	// rather than borrowing the cockpit's user-action. Nilable.
+	aionPortal *aion.Store
 	// Real-estate decision log (system/realestate/backlog.md — an aion.Store
 	// pointed at the RE root; backlog methods ONLY). Nilable.
 	re          *aion.Store

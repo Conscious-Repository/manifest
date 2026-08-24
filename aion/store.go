@@ -324,19 +324,7 @@ func (s *Store) SetRanks(ranks map[string]string) error {
 // The live coordinator promotes collaborative deletion to an archive first.
 func (s *Store) DeleteItem(id string) error {
 	doc := s.LoadBacklog()
-	found := false
-	for _, sec := range doc.Sections {
-		out := sec.Lines[:0:0]
-		for _, ln := range sec.Lines {
-			if ln.Item != nil && ln.Item.ID == id {
-				found = true
-				continue
-			}
-			out = append(out, ln)
-		}
-		sec.Lines = out
-	}
-	if !found {
+	if !doc.Remove(id) {
 		return fmt.Errorf("item %q not found", id)
 	}
 	return s.SaveBacklog(doc)

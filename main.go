@@ -226,6 +226,15 @@ func main() {
 			vaultwriter.Capability{Name: "aion-approved", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
+			// The team-portal materialization lane (§12 amendment 2026-08-24):
+			// portal items, field edits and approved proposals become real
+			// backlog lines. Pattern is the EXACT file, not the `aion/**`
+			// subtree the two above hold — this is the only standing-consent
+			// writer in the AION zone and its blast radius should read as one
+			// path in the declaration, not one path by convention.
+			vaultwriter.Capability{Name: "aion-portal", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion", "backlog.md")),
+				Actor:   vaultwriter.ActorPortalMember},
 			// PRIVATE FUNDRAISING CRM — explicitly separate from AION's public
 			// live/export contract. Opportunity records and the shared note-less
 			// contact registry have separately bounded capabilities.
@@ -482,6 +491,8 @@ func main() {
 		log.Printf("aionPortal.path/remote/branch are deprecated; path was read only for stable-ID migration and live sync ignores git coordinates")
 	}
 	srv.UseAion(aionStore, cfg.AionPortal.Path, cfg.AionPortal.Remote, cfg.AionPortal.Branch, cfg.DataDir)
+	// the materialization lane's own writer (§12 amendment 2026-08-24)
+	srv.UsePortalSync(aion.NewStore(cfg.VaultPath, aionRoot, vw.BindAbs("aion-portal")))
 	srv.UseRe(reStore)
 	log.Printf("aion: enabled (program records over %s/)", aionRoot)
 
@@ -657,14 +668,30 @@ func main() {
 		} else {
 			tokens := teamportal.NewTokens(cfg.DataDir)
 			auth := teamportal.NewAuth(cfg.DataDir).WithTokens(tokens)
-			portalOpts = server.PortalOptions{Auth: auth, Tokens: tokens, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail, Live: srv.AionLive()}
+			portalOpts = server.PortalOptions{Auth: auth, Tokens: tokens, Store: ts, AdminEmail: cfg.AionPortal.AdminEmail, Live: srv.AionLive(),
+				// the materialization lane (§12 amendment 2026-08-24): every
+				// team write reconciles into system/aion/backlog.md before the
+				// member's next read, so the portal and Obsidian agree
+				AfterWrite:      func() { srv.SyncPortalToVault(time.Now()) },
+				ArchiveSnapshot: srv.AionArchiveSnapshot,
+				// a proposal for a teammate becomes an approvable card in the
+				// owner's FEED, not just a dismissible notice (2026-08-24)
+				FileProposalCard: srv.FileProposalCard("aion-portal"),
+			}
 			migrationActor := teamportal.Identity{Email: cfg.AionPortal.AdminEmail, Name: "Manifest migration"}
 			if n, migrateErr := ts.MigrateItemIDs(aionStore.LegacyIDMap(), migrationActor, time.Now()); migrateErr != nil {
 				log.Printf("aion collaboration id migration failed: %v", migrateErr)
 			} else if n > 0 {
 				log.Printf("aion: migrated collaboration for %d legacy item id(s)", n)
 			}
-			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail), ts, cfg.AionPortal.AdminEmail)
+			// SuppressProposeNotices because a proposal now files an APPROVABLE
+			// card; without it the owner sees the same event twice.
+			srv.UseTeamPortal(teamportal.NewBridge(ts, cfg.DataDir, cfg.AionPortal.AdminEmail).SuppressProposeNotices(),
+				ts, cfg.AionPortal.AdminEmail)
+			// the reconciler's safety net: AfterWrite covers the common path,
+			// this catches a write deferred by a busy vault or by the contract
+			// gate refusing a rock that did not exist yet
+			srv.StartPortalSync(ctx, 5*time.Minute)
 			if orphans := srv.AionLive().OrphanTeamIDs(); len(orphans) > 0 {
 				log.Printf("aion live sync: unresolved legacy collaboration ids (not guessed): %s", strings.Join(orphans, ", "))
 			}

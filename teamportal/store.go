@@ -181,6 +181,10 @@ const (
 	ActOwnerPatch    = "owner-patch"
 	ActArchive       = "archive-item"
 	ActMigrateID     = "migrate-item-id"
+	// the 2026-08-24 materialization lane: an item leaves the store for the
+	// vault (promote), or its staged fields have landed there (synced)
+	ActPromote = "promote-item"
+	ActSynced  = "synced-to-vault"
 )
 
 // Sentinel errors the delete path returns so the HTTP layer can map them to
@@ -191,12 +195,28 @@ var (
 )
 
 // PatchFields is the closed set a team PATCH may touch.
+//
+// `title` and `owner` joined it on 2026-08-24 (owner decision): a member may
+// reword and reassign the work they hold. They were refused before because an
+// overlay title would have disagreed forever with the vault line underneath —
+// that objection died when portal state started materializing into the backlog
+// (see server/aion_sync_back.go); the overlay is now a staging area, so an
+// edited title reaches the record rather than shadowing it.
 var PatchFields = map[string]bool{
 	"status": true, "done_on": true, "due": true, "needed_by": true, "outcome": true,
+	"title": true, "owner": true, "decided": true,
 }
 
 // PatchStatuses is the closed status vocabulary (matches the portal's marks).
-var PatchStatuses = map[string]bool{"open": true, "in_progress": true, "done": true}
+//
+// `decided` joined it on 2026-08-24 because its absence was a BUG, not a
+// boundary: a decision closed from the portal was written `status: done`, while
+// the archive selects on `status == "decided"` with a `decided` date. The
+// decision left the open list and never arrived anywhere — it simply vanished,
+// and its outcome could not be recorded at all.
+var PatchStatuses = map[string]bool{
+	"open": true, "in_progress": true, "done": true, "decided": true,
+}
 
 func (s *Store) readExt() Ext {
 	ext := Ext{Comments: map[string][]Comment{}, Overrides: map[string]Override{}}
@@ -276,61 +296,9 @@ func (s *Store) MigrateItemIDs(mapping map[string]string, actor Identity, now ti
 		if legacy == "" || stable == "" || legacy == stable || ext.IDMigrations[legacy] == stable {
 			continue
 		}
-		hasActivity := bytes.Contains(logBody, []byte(`"item":"`+legacy+`"`))
-		comments, hasComments := ext.Comments[legacy]
-		legacyOverride, hasOverride := ext.Overrides[legacy]
-		hasArchive := false
-		for _, archived := range ext.Archives {
-			if archived.ID == legacy {
-				hasArchive = true
-				break
-			}
+		if !rekeyItemID(&ext, legacy, stable, logBody, true) {
+			continue // nothing to carry across — do not persist an empty alias
 		}
-		if !hasActivity && !hasComments && !hasOverride && !hasArchive {
-			continue
-		}
-
-		if hasComments {
-			for i := range comments {
-				comments[i].Item = stable
-			}
-			ext.Comments[stable] = append(ext.Comments[stable], comments...)
-			sort.SliceStable(ext.Comments[stable], func(i, j int) bool {
-				return ext.Comments[stable][i].At.Before(ext.Comments[stable][j].At)
-			})
-			delete(ext.Comments, legacy)
-		}
-		if hasOverride {
-			if current, ok := ext.Overrides[stable]; ok {
-				older, newer := legacyOverride, current
-				if current.At.Before(legacyOverride.At) {
-					older, newer = current, legacyOverride
-				}
-				merged := map[string]string{}
-				for key, value := range older.Fields {
-					merged[key] = value
-				}
-				for key, value := range newer.Fields {
-					merged[key] = value
-				}
-				newer.Fields = merged
-				ext.Overrides[stable] = newer
-			} else {
-				ext.Overrides[stable] = legacyOverride
-			}
-			delete(ext.Overrides, legacy)
-		}
-		for i := range ext.Archives {
-			if ext.Archives[i].ID == legacy {
-				ext.Archives[i].ID = stable
-			}
-		}
-		for i := range ext.Proposals {
-			if ext.Proposals[i].ItemID == legacy {
-				ext.Proposals[i].ItemID = stable
-			}
-		}
-		ext.IDMigrations[legacy] = stable
 		changed++
 	}
 	if changed == 0 {
@@ -338,6 +306,161 @@ func (s *Store) MigrateItemIDs(mapping map[string]string, actor Identity, now ti
 	}
 	return changed, s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActMigrateID,
 		Payload: map[string]any{"count": changed}})
+}
+
+// rekeyItemID moves every piece of collaboration keyed by `legacy` onto
+// `stable` — comments, the field override, archive rows, proposal backlinks —
+// and records the alias. It does NOT touch ext.Items and does NOT write; the
+// caller holds the lock and persists.
+//
+// requireState is the difference between the two callers. A migration sweep
+// passes true: an id with nothing attached is skipped, so a startup pass over
+// hundreds of ids does not persist hundreds of meaningless aliases. Promotion
+// passes false: the alias is the POINT there — it is what keeps an old
+// `team/…` link resolving after the item becomes a vault record, whether or
+// not anyone had commented on it yet.
+func rekeyItemID(ext *Ext, legacy, stable string, logBody []byte, requireState bool) bool {
+	hasActivity := bytes.Contains(logBody, []byte(`"item":"`+legacy+`"`))
+	comments, hasComments := ext.Comments[legacy]
+	legacyOverride, hasOverride := ext.Overrides[legacy]
+	hasArchive := false
+	for _, archived := range ext.Archives {
+		if archived.ID == legacy {
+			hasArchive = true
+			break
+		}
+	}
+	if requireState && !hasActivity && !hasComments && !hasOverride && !hasArchive {
+		return false
+	}
+
+	if hasComments {
+		for i := range comments {
+			comments[i].Item = stable
+		}
+		ext.Comments[stable] = append(ext.Comments[stable], comments...)
+		sort.SliceStable(ext.Comments[stable], func(i, j int) bool {
+			return ext.Comments[stable][i].At.Before(ext.Comments[stable][j].At)
+		})
+		delete(ext.Comments, legacy)
+	}
+	if hasOverride {
+		if current, ok := ext.Overrides[stable]; ok {
+			older, newer := legacyOverride, current
+			if current.At.Before(legacyOverride.At) {
+				older, newer = current, legacyOverride
+			}
+			merged := map[string]string{}
+			for key, value := range older.Fields {
+				merged[key] = value
+			}
+			for key, value := range newer.Fields {
+				merged[key] = value
+			}
+			newer.Fields = merged
+			ext.Overrides[stable] = newer
+		} else {
+			ext.Overrides[stable] = legacyOverride
+		}
+		delete(ext.Overrides, legacy)
+	}
+	for i := range ext.Archives {
+		if ext.Archives[i].ID == legacy {
+			ext.Archives[i].ID = stable
+		}
+	}
+	for i := range ext.Proposals {
+		if ext.Proposals[i].ItemID == legacy {
+			ext.Proposals[i].ItemID = stable
+		}
+	}
+	if ext.IDMigrations == nil {
+		ext.IDMigrations = map[string]string{}
+	}
+	ext.IDMigrations[legacy] = stable
+	return true
+}
+
+// PromoteItem retires a portal-created item into the vault: the row leaves
+// ext.Items and every comment, override and backlink follows it onto the vault
+// id. Call it AFTER the backlog line is written — the vault record is the thing
+// that must exist first, or a crash between the two loses the item entirely.
+//
+// The row is REMOVED, never archived. Archiving would look equivalent and is
+// not: an archive row keyed on the team id gets rekeyed onto the vault id by
+// the very rekey above, and Archives suppress an id in BOTH composition loops
+// (server/aion_live.go) — so the archive would hide the backlog line we just
+// wrote. That failure is silent and looks exactly like "the sync dropped my
+// task".
+//
+// Leaving the row instead is the other trap: effectiveItems() concatenates the
+// vault base and ext.Items with no id-based dedup, so an un-dropped row shows
+// the item twice on every surface.
+func (s *Store) PromoteItem(actor Identity, teamID, vaultID string, now time.Time) error {
+	teamID, vaultID = strings.TrimSpace(teamID), strings.TrimSpace(vaultID)
+	if teamID == "" || vaultID == "" || teamID == vaultID {
+		return errors.New("promote needs a team id and a distinct vault id")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+
+	found := false
+	for i, it := range ext.Items {
+		if it.ID == teamID {
+			ext.Items = append(ext.Items[:i:i], ext.Items[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		// already promoted (or never existed) — idempotent by design, because
+		// the reconciler re-runs over whatever it finds
+		return nil
+	}
+	logBody, _ := os.ReadFile(s.logPath())
+	rekeyItemID(&ext, teamID, vaultID, logBody, false)
+	return s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActPromote,
+		Payload: map[string]any{"item": vaultID, "from": teamID}})
+}
+
+// ClearOverride drops the staged field state for one item, used once the
+// reconciler has written those fields into the vault line. Without it the
+// overlay would keep re-applying values the record already carries — harmless
+// while they agree, and a silent veto of the owner's next Obsidian edit the
+// moment they do not.
+func (s *Store) ClearOverride(actor Identity, itemID string, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	if _, ok := ext.Overrides[itemID]; !ok {
+		return nil
+	}
+	delete(ext.Overrides, itemID)
+	return s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActSynced,
+		Payload: map[string]any{"item": itemID}})
+}
+
+// ResolveID follows an id forward through the migration aliases, so a caller
+// holding a pre-migration id still lands on the live item.
+//
+// It matters most for materialization: a member with an item open when the
+// reconciler promotes it is still holding `team/<slug>` while the record is
+// now `aion-bl/<slug>`. Without this their next edit 404s once, for reasons
+// nothing on screen can explain. Chained migrations are followed, with a small
+// hop budget so a cycle cannot hang the request.
+func (s *Store) ResolveID(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ext := s.readExt()
+	for hops := 0; hops < 8; hops++ {
+		next, ok := ext.IDMigrations[id]
+		if !ok || next == "" || next == id {
+			return id
+		}
+		id = next
+	}
+	return id
 }
 
 // AliasesFor returns legacy ids whose activity belongs to stableID.

@@ -96,7 +96,9 @@ func TestStoreAppendOnlyActivityTrail(t *testing.T) {
 	}
 }
 
-// Patch accepts only the closed field + status vocabularies.
+// Patch accepts only the closed field + status vocabularies. The sets grew on
+// 2026-08-24 (title/owner/decided) — the point of the test is that they are
+// still CLOSED, not that they are small.
 func TestPatchValidatesFields(t *testing.T) {
 	s, err := New(t.TempDir())
 	if err != nil {
@@ -105,14 +107,109 @@ func TestPatchValidatesFields(t *testing.T) {
 	actor := Identity{Email: "hannah@aion.bio", Name: "Hannah"}
 	now := time.Now()
 
-	if _, err := s.Patch(actor, "x", map[string]string{"owner": "BA"}, now); err == nil {
-		t.Error("Patch accepted non-team-editable field owner")
+	// what a member may now change on the work they hold
+	for _, f := range []map[string]string{
+		{"title": "a better name"},
+		{"owner": "BA"},                                // reassign
+		{"status": "decided", "decided": "2026-08-24"}, // close a decision
+		{"outcome": "went with the tiered plan"},
+	} {
+		if _, err := s.Patch(actor, "x", f, now); err != nil {
+			t.Errorf("Patch refused %v: %v", f, err)
+		}
+	}
+
+	// and what it still refuses
+	if _, err := s.Patch(actor, "x", map[string]string{"rock": "aion/series-a"}, now); err == nil {
+		t.Error("Patch accepted rock — re-parenting is not a team edit")
+	}
+	if _, err := s.Patch(actor, "x", map[string]string{"captured": "2026-01-01"}, now); err == nil {
+		t.Error("Patch accepted captured — provenance is not editable")
 	}
 	if _, err := s.Patch(actor, "x", map[string]string{"status": "blocked"}, now); err == nil {
-		t.Error("Patch accepted status outside open|in_progress|done")
+		t.Error("Patch accepted a status outside the closed vocabulary")
 	}
 	if _, err := s.Patch(actor, "x", map[string]string{}, now); err == nil {
 		t.Error("Patch accepted an empty field set")
+	}
+}
+
+// Promotion is the hinge of the materialization lane, and its two failure
+// modes are both silent, so pin them here.
+func TestPromoteItemMovesStateAndLeavesNoDouble(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	actor := Identity{Email: "hannah@aion.bio", Name: "Hannah"}
+	now := time.Now()
+
+	it, err := s.AddItem(actor, "HB", "task", "wire the new sensor", "", "", now)
+	if err != nil {
+		t.Fatalf("AddItem: %v", err)
+	}
+	if _, err := s.AddComment(actor, it.ID, "starting on this", now); err != nil {
+		t.Fatalf("AddComment: %v", err)
+	}
+	if _, err := s.Patch(actor, it.ID, map[string]string{"status": "in_progress"}, now); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+
+	vaultID := "aion-bl/wire-the-new-sensor"
+	if err := s.PromoteItem(actor, it.ID, vaultID, now); err != nil {
+		t.Fatalf("PromoteItem: %v", err)
+	}
+	ext := s.Ext()
+
+	// 1. the row is GONE from ext.Items. Left behind, effectiveItems()
+	//    concatenates it with the new vault line and the item shows twice.
+	for _, row := range ext.Items {
+		if row.ID == it.ID || row.ID == vaultID {
+			t.Fatalf("the promoted row is still in ext.Items (%s) — that is the double", row.ID)
+		}
+	}
+	// 2. it is NOT archived. An archive row would be rekeyed onto the vault id
+	//    and would then suppress the backlog line we just wrote.
+	for _, a := range ext.Archives {
+		if a.ID == vaultID || a.ID == it.ID {
+			t.Fatalf("promotion archived %s — that hides the vault record", a.ID)
+		}
+	}
+	// 3. collaboration followed the id
+	if len(ext.Comments[vaultID]) != 1 || ext.Comments[it.ID] != nil {
+		t.Fatalf("comments did not move: %+v", ext.Comments)
+	}
+	if ext.Overrides[vaultID].Fields["status"] != "in_progress" {
+		t.Fatalf("override did not move: %+v", ext.Overrides)
+	}
+	if ext.IDMigrations[it.ID] != vaultID {
+		t.Fatalf("no alias recorded — old links stop resolving: %+v", ext.IDMigrations)
+	}
+	// 4. idempotent: the reconciler re-runs over whatever it finds
+	if err := s.PromoteItem(actor, it.ID, vaultID, now); err != nil {
+		t.Fatalf("second PromoteItem: %v", err)
+	}
+}
+
+// Once the reconciler has written staged fields into the vault line, the
+// override must go — otherwise it silently vetoes the owner's next edit.
+func TestClearOverrideIsIdempotent(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	actor := Identity{Email: "hannah@aion.bio", Name: "Hannah"}
+	now := time.Now()
+	if _, err := s.Patch(actor, "aion-bl/x", map[string]string{"status": "done"}, now); err != nil {
+		t.Fatalf("Patch: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.ClearOverride(actor, "aion-bl/x", now); err != nil {
+			t.Fatalf("ClearOverride #%d: %v", i+1, err)
+		}
+	}
+	if _, ok := s.Ext().Overrides["aion-bl/x"]; ok {
+		t.Fatal("the override survived")
 	}
 }
 

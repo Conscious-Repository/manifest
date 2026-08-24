@@ -23,11 +23,12 @@ import (
 // per-machine dataDir (portal-cache/aion-portal/dismissed.json), mirroring
 // the clickup/benchling cache discipline, never in the shared team dir.
 type Bridge struct {
-	store *Store
-	dir   string // <dataDir>/portal-cache/<name>
-	admin string // the owner's email — his own writes never nag his own feed
-	name  string // card-id prefix + source tag; namespaces two portals' cards
-	link  string // deep link the card opens
+	suppressPropose bool
+	store           *Store
+	dir             string // <dataDir>/portal-cache/<name>
+	admin           string // the owner's email — his own writes never nag his own feed
+	name            string // card-id prefix + source tag; namespaces two portals' cards
+	link            string // deep link the card opens
 
 	mu sync.Mutex
 }
@@ -83,6 +84,15 @@ func (b *Bridge) Dismiss(cardID string, now time.Time) {
 // Cards renders the live notices: one per team write inside the retention
 // window, minus dismissals and the owner's own writes. Deterministic ids
 // (timestamp + actor) keep dismissals stable across reloads.
+// SuppressProposeNotices stops this bridge emitting a dismiss-only notice for
+// an event that also files an approvable card. Set by the portal that files
+// them; a portal without the card lane keeps the notice, which is still the
+// only way it would reach the FEED at all.
+func (b *Bridge) SuppressProposeNotices() *Bridge {
+	b.suppressPropose = true
+	return b
+}
+
 func (b *Bridge) Cards(now time.Time) []portals.Card {
 	if b.store == nil {
 		return nil
@@ -94,6 +104,20 @@ func (b *Bridge) Cards(now time.Time) []portals.Card {
 	var cards []portals.Card
 	for _, e := range entries {
 		if b.admin != "" && e.Actor == b.admin {
+			continue
+		}
+		// A proposal now files its own APPROVABLE card in the FEED
+		// (approvals.TypePortalProposal, 2026-08-24). Emitting the notice too
+		// would show the owner the same event twice — once he can act on, once
+		// he can only dismiss — and dismissing the notice would look like
+		// declining the proposal.
+		if b.suppressPropose && e.Action == ActPropose {
+			continue
+		}
+		// The materialization lane's own bookkeeping is not news: promoting an
+		// item and clearing a spent override are the sync doing its job, and a
+		// notice per edit would bury the entries that mean something.
+		if e.Action == ActPromote || e.Action == ActSynced {
 			continue
 		}
 		id := fmt.Sprintf("%s:%d:%s", b.name, e.TS.UnixNano(), e.Action)
