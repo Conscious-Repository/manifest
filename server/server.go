@@ -142,6 +142,11 @@ type Server struct {
 	// materialization lane's own handle, so its writes audit as portal-member
 	// rather than borrowing the cockpit's user-action. Nilable.
 	aionPortal *aion.Store
+	// oodaSyncBack + oodaPortal are the OODA portal's materialization lane
+	// (ooda_sync_back.go) — the same reconciler discipline pointed at
+	// system/realestate/backlog.md under the `ooda-portal` capability. Nilable.
+	oodaSyncBack oodaSyncBack
+	oodaPortal   *aion.Store
 	// Real-estate decision log (system/realestate/backlog.md — an aion.Store
 	// pointed at the RE root; backlog methods ONLY). Nilable.
 	re          *aion.Store

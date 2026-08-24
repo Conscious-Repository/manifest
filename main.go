@@ -264,6 +264,15 @@ func main() {
 			vaultwriter.Capability{Name: "re-files", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate", "files")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			// The OODA team-portal materialization lane (§12 pattern, ported to
+			// the RE domain 2026-08-24): portal items, field edits and archives
+			// become real backlog lines. Same shape as `aion-portal` above —
+			// the ONE standing-consent writer in the RE zone, pinned to the ONE
+			// file the reconciler may touch, so its blast radius reads as one
+			// path in the declaration.
+			vaultwriter.Capability{Name: "ooda-portal", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "realestate", "backlog.md")),
+				Actor:   vaultwriter.ActorPortalMember},
 			// TODO PANEL — system/todo-plans/** records (todo-panel plan D2/D6).
 			// The owner's direct edits (description, plan) ride the user-action
 			// capability; the agent-plan MATERIALIZATION rides the standing-
@@ -882,6 +891,17 @@ func main() {
 			live := srv.NewOodaLive()
 			live.UseTeam(ts, teamportal.Identity{Email: cfg.Ooda.AdminEmail, Name: "Benjamin"})
 			srv.UseOoda(live)
+			// the OODA materialization lane (ooda_sync_back.go — the §12
+			// reconciler ported to the RE domain): every team write reconciles
+			// into system/realestate/backlog.md before the member's next read,
+			// so the portal and Obsidian agree. Its own store handle so writes
+			// audit as portal-member under `ooda-portal`, never as the
+			// cockpit's user-action.
+			srv.UseOodaPortalSync(aion.NewStore(cfg.VaultPath, reRootRel, vw.BindAbs("ooda-portal")))
+			// the reconciler's safety net: AfterWrite covers the common path,
+			// this catches a write deferred by a busy vault or refused by the
+			// pre-flight gate until the container it names exists
+			srv.StartOodaPortalSync(ctx, 5*time.Minute)
 			// zeck's standing context pack (ooda-context-pack plan): the same
 			// snapshot the portal serves, exported as revision-stamped markdown
 			// into his readable tree. Regenerates with every recompose; the
@@ -905,13 +925,23 @@ func main() {
 				log.Printf("ooda email lane: enabled (candidates → %s)", filepath.Join(cfg.Ooda.TeamDir, "email"))
 			}
 			srv.UseOodaBids(ts, cfg.Ooda.AdminEmail) // the cockpit's bid-accept lane
+			// SuppressProposeNotices because a proposal now files an APPROVABLE
+			// card (FileProposalCard below); without it the owner sees the same
+			// event twice — once he can act on, once he can only dismiss.
 			srv.AddPortalBridge(teamportal.NewBridgeNamed(ts, cfg.DataDir, cfg.Ooda.AdminEmail,
-				"ooda-portal", "https://portal.ooda.group/#work"))
+				"ooda-portal", "https://portal.ooda.group/#work").SuppressProposeNotices())
 			oodaOpts := server.PortalOptions{
 				Auth: auth, Tokens: tokens, Store: ts, Live: live,
 				AdminEmail: cfg.Ooda.AdminEmail,
 				WebRoot:    "web/ooda",
 				ReadRoutes: server.OodaReadRoutes(live),
+				// the materialization lane's hooks, mirroring the AION portal:
+				// every team write reconciles synchronously, deletes archive
+				// with a snapshot, and a proposal for a teammate cards into the
+				// owner's FEED as an approvable rather than a notice
+				AfterWrite:       func() { srv.SyncOodaPortalToVault(time.Now()) },
+				ArchiveSnapshot:  srv.OodaArchiveSnapshot,
+				FileProposalCard: srv.FileProposalCard("ooda-portal"),
 			}
 			// zeck's chat (ooda-portal plan, Stage D): the same bridges the AION
 			// portal uses, pointed at a second agent + its own thread store. The

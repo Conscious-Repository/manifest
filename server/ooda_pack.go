@@ -86,7 +86,7 @@ func oodaPackRender(snap *oodaSnapshot) map[string]string {
 	// VAULT revision moves, so overlay state baked in would go silently stale
 	// on every portal PATCH — worse than the vault-only view it replaces. The
 	// determinism guard also pins this: same snapshot, byte-identical pack.
-	d := buildOodaDashboard(snap, today, nil, nil)
+	d := buildOodaDashboard(snap, today, nil, nil, nil)
 	props := oodaVisibleProps(snap)
 	sort.Slice(props, func(i, j int) bool { return props[i].Slug < props[j].Slug })
 
@@ -276,7 +276,7 @@ func oodaPackRender(snap *oodaSnapshot) map[string]string {
 			fmt.Fprintf(&b, "- [ ] %s (%s%s)%s\n", it.Title, it.Kind,
 				map[bool]string{true: " · " + where, false: ""}[where != ""], note)
 		}
-		for _, g := range buildOodaWork(snap, today, nil, nil) {
+		for _, g := range buildOodaWork(snap, today, nil, nil, nil) {
 			name := orStr(g.Name, g.Owner)
 			if g.Owner == "" {
 				name = "— unassigned —"

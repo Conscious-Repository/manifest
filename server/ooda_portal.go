@@ -105,11 +105,12 @@ func (a *oodaAPI) dashboard(w http.ResponseWriter, r *http.Request) {
 	// revision (statusLocked), so a PATCH re-renders without any subscription.
 	var overrides map[string]teamportal.Override
 	var team []teamportal.TeamItem
+	var archived map[string]bool
 	if a.opt.Store != nil {
 		ext := a.opt.Store.Ext()
-		overrides, team = ext.Overrides, ext.Items
+		overrides, team, archived = ext.Overrides, ext.Items, oodaArchivedSet(ext)
 	}
-	writeJSON(w, buildOodaDashboard(snap, oodaToday(), overrides, team))
+	writeJSON(w, buildOodaDashboard(snap, oodaToday(), overrides, team, archived))
 }
 
 // portfolio is the list surface: one derived row per property, plus the
@@ -205,11 +206,13 @@ func (a *oodaAPI) work(w http.ResponseWriter, r *http.Request) {
 	var proposals any
 	var overrides map[string]teamportal.Override
 	var teamItems []teamportal.TeamItem
+	var archived map[string]bool
 	if a.opt.Store != nil {
 		ext := a.opt.Store.Ext()
 		teamItems, proposals, overrides = ext.Items, ext.Proposals, ext.Overrides
+		archived = oodaArchivedSet(ext)
 	}
-	groups := buildOodaWork(snap, oodaToday(), overrides, teamItems)
+	groups := buildOodaWork(snap, oodaToday(), overrides, teamItems, archived)
 	writeJSON(w, map[string]any{"groups": groups, "proposals": proposals})
 }
 
@@ -290,6 +293,19 @@ func (a *oodaAPI) bid(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, prop)
+}
+
+// oodaArchivedSet keys the store's archives by id — the suppression set the
+// WORK/dashboard builds take (AION's composition loops do the same).
+func oodaArchivedSet(ext teamportal.Ext) map[string]bool {
+	if len(ext.Archives) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(ext.Archives))
+	for _, a := range ext.Archives {
+		out[a.ID] = true
+	}
+	return out
 }
 
 // oodaLedgerTotals is a small helper the tests use to prove the portal's money

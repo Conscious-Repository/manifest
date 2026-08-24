@@ -205,7 +205,10 @@ func oodaTeamItemOpen(it teamportal.TeamItem) bool {
 // base filter only ever sees the vault's own status (brian's report,
 // 2026-08-22 — item 33e6054b was marked done twice and never cleared).
 // team is the overlay's own member-added items, folded into the same groups.
-func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override, team []teamportal.TeamItem) []oodaWorkGroup {
+// archived suppresses deleted items whose backlog line the reconciler has not
+// removed yet (or was refused) — an archive must leave every list at once,
+// not when the vault write happens to land.
+func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override, team []teamportal.TeamItem, archived map[string]bool) []oodaWorkGroup {
 	if snap == nil {
 		return nil
 	}
@@ -228,6 +231,9 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 	var items []oodaWorkItem
 	// 1. the RE backlog (aion.Store over system/realestate)
 	for _, it := range snap.Backlog {
+		if archived[it.ID] {
+			continue
+		}
 		open := oodaBacklogOpen(it)
 		due := it.Due
 		if ov, ok := overrides[it.ID]; ok {
@@ -295,6 +301,9 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 	// 3. portal-created team items — the overlay's own work, same open rule
 	// and same overrides as everything else, flagged source:"team"
 	for _, ti := range team {
+		if archived[ti.ID] {
+			continue
+		}
 		open := oodaTeamItemOpen(ti)
 		due := ti.Due
 		if ov, ok := overrides[ti.ID]; ok {

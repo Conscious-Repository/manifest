@@ -49,7 +49,7 @@ func TestOodaWorkHonorsTeamOverrides(t *testing.T) {
 		// an override that never touched status defers to the base item
 		"aion-bl/due-only": {Fields: map[string]string{"due": "2026-09-01"}},
 	}
-	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides, nil))
+	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides, nil, nil))
 	for id, want := range map[string]bool{
 		"aion-bl/portal-done": false,
 		"aion-bl/reopened":    true,
@@ -64,13 +64,13 @@ func TestOodaWorkHonorsTeamOverrides(t *testing.T) {
 	}
 
 	// nil overrides (no team store) must reproduce the base-only projection
-	ids = oodaWorkIDs(buildOodaWork(snap, "2026-08-22", nil, nil))
+	ids = oodaWorkIDs(buildOodaWork(snap, "2026-08-22", nil, nil, nil))
 	if !ids["aion-bl/portal-done"] || ids["aion-bl/reopened"] {
 		t.Fatalf("nil overrides must fall back to the vault's own status: %v", ids)
 	}
 
 	// the dashboard's per-person counts and week lanes ride the same rule
-	d := buildOodaDashboard(snap, "2026-08-22", overrides, nil)
+	d := buildOodaDashboard(snap, "2026-08-22", overrides, nil, nil)
 	for _, it := range d.Week {
 		if it.ID == "aion-bl/portal-done" {
 			t.Fatal("a portal-done item leaked into the dashboard week lane")
@@ -105,7 +105,7 @@ func TestOodaRockWorkHonorsTeamOverrides(t *testing.T) {
 		"prop/rock-st#shell/done-via-portal": {Fields: map[string]string{"status": "done", "done_on": "2026-08-22"}},
 		"prop/rock-st#shell/reopened":        {Fields: map[string]string{"status": "open"}},
 	}
-	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides, nil))
+	ids := oodaWorkIDs(buildOodaWork(snap, "2026-08-22", overrides, nil, nil))
 	for id, want := range map[string]bool{
 		"prop/rock-st#shell/done-via-portal": false,
 		"prop/rock-st#shell/reopened":        true,
@@ -116,7 +116,7 @@ func TestOodaRockWorkHonorsTeamOverrides(t *testing.T) {
 		}
 	}
 	// the dashboard's per-person counts ride the same walk
-	d := buildOodaDashboard(snap, "2026-08-22", overrides, nil)
+	d := buildOodaDashboard(snap, "2026-08-22", overrides, nil, nil)
 	for _, o := range d.Owners {
 		if o.Owner == "BA" && o.Open != 2 {
 			t.Fatalf("BA open = %d, want 2 (reopened + untouched)", o.Open)
@@ -167,7 +167,7 @@ func TestOodaWorkProjectsDueOverrides(t *testing.T) {
 		"prop/due-st#shell/late": {Fields: map[string]string{"due": "2026-08-01"}},
 		"team/pushed-out":        {Fields: map[string]string{"due": "2026-10-15"}},
 	}
-	groups := buildOodaWork(snap, "2026-08-22", overrides, team)
+	groups := buildOodaWork(snap, "2026-08-22", overrides, team, nil)
 	for id, want := range map[string]string{
 		"aion-bl/pulled-in":      "overdue",     // base 2026-10-01, override pulls it past due
 		"aion-bl/needed-by":      "dueThisWeek", // needed_by projects exactly like due
@@ -180,7 +180,7 @@ func TestOodaWorkProjectsDueOverrides(t *testing.T) {
 	}
 	// no due override → the base date still decides (the defers-to-base case
 	// TestOodaWorkHonorsTeamOverrides pins stays intact)
-	groups = buildOodaWork(snap, "2026-08-22", nil, team)
+	groups = buildOodaWork(snap, "2026-08-22", nil, team, nil)
 	if got := oodaWorkLaneOf(groups, "aion-bl/pulled-in"); got != "open" {
 		t.Errorf("no override: lane = %q, want open (base due 2026-10-01)", got)
 	}
@@ -204,7 +204,7 @@ func TestOodaWorkIncludesTeamItems(t *testing.T) {
 	overrides := map[string]teamportal.Override{
 		"team/done-via-override": {Fields: map[string]string{"status": "done"}},
 	}
-	groups := buildOodaWork(snap, "2026-08-22", overrides, team)
+	groups := buildOodaWork(snap, "2026-08-22", overrides, team, nil)
 	ids := oodaWorkIDs(groups)
 	for id, want := range map[string]bool{
 		"team/walk-roof":         true,

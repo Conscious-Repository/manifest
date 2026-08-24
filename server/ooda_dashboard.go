@@ -206,7 +206,7 @@ type oodaDashboard struct {
 // the cockpit's Σ rollup.paid must be identical — the correctness test.
 // The overrides map and team items keep the per-person counts and week lanes
 // on the same open/closed rule and sources as the WORK tab (see buildOodaWork).
-func buildOodaDashboard(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override, team []teamportal.TeamItem) oodaDashboard {
+func buildOodaDashboard(snap *oodaSnapshot, today string, overrides map[string]teamportal.Override, team []teamportal.TeamItem, archived map[string]bool) oodaDashboard {
 	var d oodaDashboard
 	props := oodaVisibleProps(snap)
 	byEntity := map[string]*oodaEntityRow{}
@@ -319,7 +319,7 @@ func buildOodaDashboard(snap *oodaSnapshot, today string, overrides map[string]t
 	// record — reuse it rather than keeping a second, thinner name map here
 	// (the first version looked at people.md only, so contractors rendered as
 	// raw slugs: "M-W-SERVICES").
-	work := buildOodaWork(snap, today, overrides, team)
+	work := buildOodaWork(snap, today, overrides, team, archived)
 	for _, g := range work {
 		d.Owners = append(d.Owners, oodaOwnerRow{
 			Owner: g.Owner, Name: g.Name,

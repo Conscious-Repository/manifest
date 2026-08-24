@@ -446,7 +446,12 @@ func (s *Server) decidePortalProposal(p approvals.Proposal, approve bool) error 
 	if store == nil {
 		return errors.New("portal " + payload.Portal + " is not configured on this host")
 	}
-	admin := teamportal.Identity{Email: s.aionAdminEmail(), Name: "Benjamin"}
+	isOoda := strings.TrimSpace(payload.Portal) == "ooda-portal"
+	adminEmail := s.aionAdminEmail()
+	if isOoda {
+		adminEmail = s.oodaAdminEmail()
+	}
+	admin := teamportal.Identity{Email: adminEmail, Name: "Benjamin"}
 	if _, err := store.Decide(admin, payload.PropID, approve, time.Now()); err != nil {
 		if strings.Contains(err.Error(), "already") {
 			return nil // settled in the portal first — the card was stale, not wrong
@@ -454,7 +459,12 @@ func (s *Server) decidePortalProposal(p approvals.Proposal, approve bool) error 
 		return err
 	}
 	if approve {
-		s.syncPortalToVault(time.Now()) // the minted item reaches the backlog now
+		// the minted item reaches its portal's backlog now
+		if isOoda {
+			s.syncOodaPortalToVault(time.Now())
+		} else {
+			s.syncPortalToVault(time.Now())
+		}
 	}
 	return nil
 }
