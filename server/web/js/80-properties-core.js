@@ -104,7 +104,9 @@ async function renderProperties() {
   await Promise.all([loadProperties(), loadPropTodosMeta(), loadReBacklog()]);
   renderReToggle();
   renderRePublishRail();
-  if (typeof railSetCount === "function") railSetCount("properties", propertyCache.length);
+  // the WORK rail counts WORK — open tasks + open decisions, the same
+  // derivation the BACKLOG page renders from (reOpenCount in 85-re-domain.js)
+  if (typeof railSetCount === "function") railSetCount("properties", reOpenCount());
   if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
   else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }

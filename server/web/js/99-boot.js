@@ -169,15 +169,33 @@ function railSetCount(key, n) {
   r.count.textContent = n > 0 ? String(n) : "";
 }
 
-// Boot-time derivation of the Plan/Work rail counts from the same endpoints
-// the surfaces read. Each surface keeps them honest as it loads (stages 5–8).
+// Boot-time derivation of the Plan/Work rail counts. Each surface keeps them
+// honest as it loads (stages 5–8); this is the same answer before you visit.
+//
+// The two WORK badges go through the surfaces' OWN loaders and their OWN
+// count functions rather than re-deriving here. Re-deriving is what broke
+// them: AION counted `!checked`, but an AION decision marks itself with
+// `status`, so all 140 read as open (154 shown against 17 real); real estate
+// counted PROPERTIES, which is not work at all.
 async function refreshRailCounts() {
   const j = (u) => fetch(u).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const [td, gl, ai, pr] = await Promise.all([j("/api/tasks"), j("/api/goals"), j("/api/aion"), j("/api/properties")]);
+  const [td, gl] = await Promise.all([j("/api/tasks"), j("/api/goals")]);
   if (td && td.counts) railSetCount("tasks", td.counts.tasks || 0); // same derivation as the surface — one truth
   if (gl && gl.areas) railSetCount("goals", gl.areas.reduce((n, a) => n + ((a.rocks || []).filter((r) => !r.checked).length), 0));
-  if (ai && ai.backlog) railSetCount("aion", ai.backlog.filter((b) => !b.checked).length);
-  if (pr && pr.properties) railSetCount("properties", pr.properties.length);
+  // fill the caches the two count functions read. loadAion() is deliberately
+  // NOT used here — it renders the AION surface as a side effect, and boot has
+  // no business painting a hidden panel.
+  const [ai] = await Promise.all([
+    j("/api/aion"),
+    typeof loadProperties === "function" ? loadProperties() : null,
+    typeof loadReBacklog === "function" ? loadReBacklog() : null,
+    typeof loadPropTodosMeta === "function" ? loadPropTodosMeta() : null,
+  ]);
+  if (ai && typeof aionCache !== "undefined") {
+    aionCache = ai;
+    railSetCount("aion", aionOpenCount());
+  }
+  if (typeof reOpenCount === "function") railSetCount("properties", reOpenCount());
 }
 
 // ---- in-app history: the crumb ‹ › drive these stacks, not window.history ----

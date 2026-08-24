@@ -83,6 +83,42 @@ function reOwnerSuggest(q, add, ta, onPick) {
       () => { ta.commit(c.slug || ""); onPick(c.slug || ""); }));
 }
 
+// reDecisionList / reTaskList — the ONE assembly of real-estate work, shared
+// by the BACKLOG page and the rail badge so a count can never drift from the
+// rows it claims to describe.
+//
+// Both lanes merge two sources that spell the same fact differently, which is
+// exactly where these counts have gone wrong before: a decision-log item marks
+// itself with `status`, while a decision living in a property's rock tree is a
+// checked NODE one level down at d.n. Resolve it here, once, where both shapes
+// are still in view.
+function reDecisionList() {
+  const items = reItems();
+  return items.filter((it) => it.kind === "decision")
+    .map((it) => ({ src: "re", it, decided: it.status === "decided", at: it.decided || "" }))
+    .concat(rePropDecisions().map((d) => ({ src: "propdec", it: d, decided: !!d.n.checked, at: "" })));
+}
+
+function reTaskList() {
+  const out = [];
+  reItems().filter((it) => it.kind === "task").forEach((it) =>
+    out.push({ src: "re", id: it.id, owner: it.owner || "", done: it.status === "done", it }));
+  ((propTodosMeta && propTodosMeta.rows) || []).forEach((r) => {
+    if (r.source === "property") out.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: r.container });
+  });
+  propOutstandingGroups().forEach((g) => (g.items || []).forEach((r) =>
+    out.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: g.container })));
+  return out;
+}
+
+// reOpenCount is the rail badge: open tasks + open decisions. It counted
+// PROPERTIES before (63 tracked parcels), which answered a question nobody
+// was asking of a WORK rail.
+function reOpenCount() {
+  return reTaskList().filter((t) => !t.done).length +
+    reDecisionList().filter((d) => !d.decided).length;
+}
+
 function renderREBacklog() {
   const host = els.propertyBoard;
   host.innerHTML = "";
@@ -109,10 +145,7 @@ function renderREBacklog() {
   // down at d.n). Reading it later off the wrapper silently answered
   // undefined for every tree decision, so decided ones sat in the open list
   // wearing a DECIDED badge, and the counts disagreed with the rows.
-  const items = reItems();
-  const decisions = items.filter((it) => it.kind === "decision")
-    .map((it) => ({ src: "re", it, decided: it.status === "decided", at: it.decided || "" }))
-    .concat(rePropDecisions().map((d) => ({ src: "propdec", it: d, decided: !!d.n.checked, at: "" })));
+  const decisions = reDecisionList();
   const openDec = decisions.filter((d) => !d.decided);
   // the archive reads newest-first; tree decisions carry no decided date, so
   // they settle under the dated ones rather than scattering through them
@@ -137,14 +170,7 @@ function renderREBacklog() {
   // -- owner-grouped tasks (the Outstanding fold): re-backlog tasks + property
   //    todos, mine and owed, grouped by owner exactly like AION. Non-"you"
   //    groups ARE Outstanding (work owed to you by others). --
-  const tasks = [];
-  items.filter((it) => it.kind === "task").forEach((it) =>
-    tasks.push({ src: "re", id: it.id, owner: it.owner || "", done: it.status === "done", it }));
-  ((propTodosMeta && propTodosMeta.rows) || []).forEach((r) => {
-    if (r.source === "property") tasks.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: r.container });
-  });
-  propOutstandingGroups().forEach((g) => (g.items || []).forEach((r) =>
-    tasks.push({ src: "prop", id: r.id, owner: r.owner || "", done: false, text: r.text, container: g.container })));
+  const tasks = reTaskList();
 
   const ME = ((propTodosMeta && propTodosMeta.me) || "BA").toUpperCase();
   // reOwnerKey collapses an aliased vendor key onto its person (olga-sobkiv → OS),

@@ -55,6 +55,10 @@ function approvalCardEl(a) {
   const isAion = a.type === "aion-backlog" || a.type === "aion-heuristic" || isRe || isResolve;
   const isReContract = a.type === "re-contract"; // intake (overhaul §5): adjust-amounts card
   const isGoals = a.type === "goals-item"; // goals placement (§12 2026-08-19)
+  // a team-portal proposal (§12 2026-08-24). It has NO applyPath — the effect
+  // is a team-store Decide, not a file write — so it renders as prose plus the
+  // standard Confirm/Reject, with no diff to show.
+  const isPortalProp = a.type === "portal-proposal";
   if (isReContract) {
     // the contract card leads with money, not prose: the head is the kind
     // chip, the provenance, and the document — the action line's content
@@ -88,11 +92,18 @@ function approvalCardEl(a) {
   // owner reads as a broken card; strip it and say what actually went wrong.
   const strayFence = apprStrayFence(a, isReContract, isAion);
   let bodyText = isReContract ? stripFence(a.body, "re-contract")
+    : isPortalProp ? stripFence(a.body, "portal")
     : isGoals ? stripFence(a.body, "goals")
     : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (strayFence) bodyText = stripFence(bodyText, strayFence);
   if (bodyText && bodyText.trim() && !isReContract) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
   let blocked = false, blockMsg = "";
+  if (isPortalProp && !a.allowed) {
+    // the server already worked out why (settled in the portal first, or that
+    // portal is not configured here) — say that rather than a generic refusal
+    blocked = true;
+    blockMsg = a.goalsErr || "this proposal can no longer be decided from here.";
+  }
   if (strayFence) {
     // Confirm on a misfiled proposal writes nothing and files it under
     // approved/, burying it — block the button, not just annotate the card.
@@ -397,6 +408,9 @@ function collapsibleBlock(inner, lineCount) {
 // no apply-path). Returns "" when the body and the type agree.
 function apprStrayFence(a, isReContract, isAion) {
   if (isReContract || isAion) return "";
+  // portal-proposal legitimately has no apply-path — its effect is a team-store
+  // write — so the "no apply-path means misfiled" inference does not hold here
+  if (a.type === "portal-proposal") return "";
   for (const lang of ["re-contract", "aion", "re"]) {
     if (stripFence(a.body, lang) !== (a.body || "").trim()) return lang;
   }

@@ -35,6 +35,17 @@ function showAion(h) {
   loadAion();
 }
 
+// aionOpenCount — what is still open in AION: the SAME two predicates the
+// backlog lanes render with (status, never `checked` — an AION decision never
+// sets checked, so counting !checked called all 140 of them open and the rail
+// badge read 154 against 17 real ones). One derivation, so the badge and the
+// page cannot disagree.
+function aionOpenCount() {
+  const items = (aionCache && aionCache.backlog) || [];
+  return items.filter((it) => it.kind === "task" && it.status !== "done").length +
+    items.filter((it) => it.kind === "decision" && it.status !== "decided").length;
+}
+
 async function loadAion() {
   try { aionCache = await (await fetch("/api/aion")).json(); }
   catch (e) { aionCache = null; }
@@ -43,6 +54,7 @@ async function loadAion() {
 
 function renderAion() {
   renderAionRail();
+  if (typeof railSetCount === "function") railSetCount("aion", aionOpenCount());
   const host = els.aionBody;
   host.innerHTML = "";
   if (!aionCache) { host.append(emptyRow("aion unavailable")); return; }
