@@ -8,6 +8,14 @@
   --line-soft: #eee;  --accent: #265ACC; --over: #b3261e;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  /* mirrored from css/00-core.css — this page loads ONLY this file, and a var()
+     with no definition invalidates its whole declaration (gap → 0, radius → 0),
+     which is what had the proposal cards and composer printing cramped */
+  --base-50: #737373; --base-70: #404040;
+  --line: var(--base-25); --good: #4d9d6a; --radius: 4px;
+  --fs-2xs: 10px; --fs-xs: 11px; --fs-sm: 12px;
+  --sp-1: 2px; --sp-2: 4px; --sp-3: 6px; --sp-4: 8px; --sp-5: 10px;
+  --sp-6: 12px; --sp-7: 16px; --sp-8: 20px;
 }
 
 * { box-sizing: border-box; }
@@ -192,16 +200,28 @@ button { font: inherit; color: inherit; }
 
 /* ---- Stage D: chat with zeck ---- */
 .cols-thread { grid-template-columns: minmax(0,1fr) 40px; }
-.ooda-msg { padding: 8px 4px; border-top: 1px solid var(--line-soft); }
-.ooda-msg.agent { background: var(--base-05); border-radius: 6px; padding-left: 8px; }
+.ooda-msg { padding: var(--sp-5) var(--sp-2); border-top: 1px solid var(--line-soft); }
+.ooda-msg.agent { background: var(--base-05); border-radius: 6px;
+  padding-left: var(--sp-5); padding-right: var(--sp-5); }
+/* chat bodies get reading rhythm; scoped to .ooda-msg so the work-detail
+   comment threads keep their denser default */
+.ooda-msg .ooda-comment-body { padding-top: var(--sp-2); line-height: 1.6; }
 .ooda-chat-ctx { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 4px 0; }
 /* the chat composer is one bordered unit: the grounding row sits INSIDE it so
    a chip reads as part of the message being written, not ambient thread state */
-.ooda-composer { margin-top: 10px; border: 1px solid var(--base-25); border-radius: 8px;
-  padding: 0 8px 10px; background: var(--base-05); }
-.ooda-composer .ooda-chat-ctx { padding-top: 8px; }
-.ooda-engine { display: flex; flex-direction: column; gap: 8px; padding: 10px 4px; }
-.ooda-engine div { display: flex; flex-direction: column; }
+.ooda-composer { margin-top: var(--sp-7); border: 1px solid var(--base-25); border-radius: 8px;
+  padding: var(--sp-2) var(--sp-5) var(--sp-5); background: var(--base-05); }
+.ooda-composer .ooda-chat-ctx { padding: var(--sp-4) 0 var(--sp-1); }
+.ooda-composer .ooda-compose { padding: var(--sp-4) 0 0; }
+.ooda-composer .ooda-compose-acts { padding: var(--sp-5) 0 0; }
+/* the two sends are THE action of the surface — a touch more presence,
+   still the house button */
+.ooda-compose-acts .ooda-send { padding: var(--sp-4) var(--sp-8); }
+/* ENGINE — a key/value list, one hairline per pair, eyebrow over value */
+.ooda-engine { display: flex; flex-direction: column; padding: var(--sp-2) var(--sp-2) var(--sp-5); }
+.ooda-engine div { display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-4) 0; border-top: 1px solid var(--line-soft); }
+.ooda-engine div:first-child { border-top: none; }
 .ooda-engine em { font-family: var(--mono); font-size: 9px; letter-spacing: 0.5px;
   color: var(--base-40); font-style: normal; }
 .ooda-engine b { font-family: var(--mono); font-size: 12px; font-weight: 400; }
@@ -280,21 +300,33 @@ button { font: inherit; color: inherit; }
 .ooda-compose-acts { display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap; padding: var(--sp-4) var(--sp-2) 0; }
 .ooda-send.secondary { background: none; color: var(--accent); border: 1px solid var(--accent); }
 .ooda-send.secondary:hover { background: var(--base-05); }
-.ooda-assure { font-family: var(--mono); font-size: 10px; color: var(--base-40); padding: 10px 4px 8px; }
+.ooda-assure { font-family: var(--mono); font-size: 10px; color: var(--base-40);
+  padding: var(--sp-6) var(--sp-2) var(--sp-4); line-height: 1.6; }
 
-.ooda-prop { border: 1px solid var(--line); background: var(--base-02); padding: 8px 10px; margin-top: 8px; }
-.ooda-prop-head { display: flex; gap: var(--sp-4); align-items: baseline; }
-.ooda-prop-head em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; letter-spacing: .08em; }
-.ooda-prop-head b { color: var(--accent); font-weight: 500; }
+/* PROPOSES card — eyebrow + state on a quiet meta line, the verb alone as the
+   title beneath it, then target, body, and a hairline-separated action row */
+.ooda-prop { border: 1px solid var(--line); background: var(--base-00); border-radius: var(--radius);
+  padding: var(--sp-5) var(--sp-6); margin-top: var(--sp-5); }
+.ooda-prop-head { display: grid; grid-template-columns: minmax(0,1fr) auto;
+  column-gap: var(--sp-4); row-gap: var(--sp-1); align-items: baseline; }
+.ooda-prop-head em { grid-row: 1; grid-column: 1; font-family: var(--mono);
+  font-size: var(--fs-2xs); color: var(--base-40); font-style: normal; letter-spacing: .08em; }
+.ooda-prop-head b { grid-row: 2; grid-column: 1; color: var(--accent); font-weight: 500; }
+.ooda-prop-head .ooda-sub { grid-row: 1; grid-column: 2; justify-self: end; }
 .ooda-prop.applied .ooda-prop-head b { color: var(--good); }
 .ooda-prop.discarded { opacity: .6; }
-.ooda-prop-target { font-size: var(--fs-sm); margin-top: var(--sp-2); }
-.ooda-prop-toggle { background: none; border: 0; padding: 3px 0 0; font-family: var(--mono); font-size: 10px; color: var(--base-50); cursor: pointer; }
+.ooda-prop-target { font-size: var(--fs-sm); color: var(--base-70); margin-top: var(--sp-2); }
+.ooda-prop-toggle { background: none; border: 0; padding: var(--sp-3) 0 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); cursor: pointer; }
 .ooda-prop-toggle:hover { color: var(--accent); }
-.ooda-prop-body { border-left: 2px solid var(--line); padding-left: 9px; margin-top: 6px; }
+.ooda-prop-body { border-left: 2px solid var(--line); padding-left: var(--sp-5); margin-top: var(--sp-4); }
 .ooda-prop-body em { font-family: var(--mono); font-size: 10px; color: var(--base-40); font-style: normal; }
 .ooda-prop-body pre { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 11px; line-height: 1.6; color: var(--base-70); margin: 4px 0 0; }
-.ooda-prop-acts { display: flex; gap: var(--sp-4); margin-top: var(--sp-4); }
+.ooda-prop-acts { display: flex; gap: var(--sp-4); margin-top: var(--sp-5);
+  padding-top: var(--sp-4); border-top: 1px solid var(--line-soft); }
+/* discard stays quiet next to apply — the composer's own .secondary
+   (send & propose) keeps its accent outline */
+.ooda-prop-acts .ooda-send.secondary { border-color: var(--base-30); color: var(--base-50); }
+.ooda-prop-acts .ooda-send.secondary:hover { color: var(--accent); border-color: var(--accent); }
 .ooda-legend-src { font-family: var(--mono); font-size: 9px; color: var(--base-40);
   padding-top: 6px; margin-top: 5px; border-top: 1px solid var(--line-soft); }
 
@@ -309,15 +341,15 @@ button { font: inherit; color: inherit; }
 /* the two actions, each named with the consequence of pressing it. One row
    per action with a hairline between: side by side they read as one run-on
    sentence, and each sub-label already carries its own em-dash. */
-.ooda-actdefs { display: flex; flex-direction: column; padding: 10px 4px 0; }
+.ooda-actdefs { display: flex; flex-direction: column; margin-top: var(--sp-6); padding: 0 var(--sp-2); }
 .ooda-actdefs span { display: flex; gap: 10px; align-items: baseline; font-size: 12px;
-  line-height: 1.55; color: var(--base-40); padding: 5px 0; border-top: 1px solid var(--line-soft); }
+  line-height: 1.55; color: var(--base-40); padding: var(--sp-3) 0; border-top: 1px solid var(--line-soft); }
 .ooda-actdefs em { flex: none; min-width: 96px; font-family: var(--mono); font-size: 10px;
   letter-spacing: 0.4px; font-style: normal; color: var(--base-100); }
 /* attach: quieter, and on its own line rather than pinned to the right of the
    send buttons where it floated far from anything it relates to */
 .ooda-attach-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-  margin-top: 10px; padding: 10px 4px 0; border-top: 1px solid var(--line-soft); }
+  margin-top: var(--sp-6); padding: var(--sp-5) var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
 
 /* a view that threw — legible, and never the whole portal (see app.jsx) */
 .ooda-broken { display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
