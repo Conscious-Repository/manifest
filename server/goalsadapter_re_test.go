@@ -63,3 +63,68 @@ func TestGoalsAdapterReRockOffersBacklogTasks(t *testing.T) {
 		t.Fatalf("offer wrong: %+v", got)
 	}
 }
+
+// The 2026-08-24 miss: the extractor tethers a task to whichever ladder node
+// it matched — a MILESTONE id, an alias, the plain title — and the picker's
+// exact rock-id equality dropped all of them. Every dialect must offer.
+func TestGoalsAdapterOffersTasksTetheredAnywhereOnTheLadder(t *testing.T) {
+	dir := t.TempDir()
+	goalsMD := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n" +
+		"- [ ] Series A 15M [goal:: aion/series-a-15m] [quarter:: 2026-Q3] [alias:: fundraising]\n" +
+		"    - [ ] Resources for raise ready [goal:: aion/series-a-15m/soft-lead-identified]\n" +
+		"    - [ ] Soft lead identified\n"
+	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(goalsMD), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := vault.NewIndex(vault.Config{Root: dir, GoalsName: "goals.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gs := goals.NewStore(idx, dir, "goals.md", testWrite)
+	if err := os.MkdirAll(filepath.Join(dir, "system", "aion"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "system", "aion", "backlog.md"), []byte(aion.SeedFiles["backlog.md"]), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ai := aion.NewStore(dir, "system/aion", func(abs string, data []byte) error {
+		return os.WriteFile(abs, data, 0o644)
+	})
+	add := func(text, rock string) {
+		t.Helper()
+		if err := ai.AddItem(&aion.BacklogItem{
+			Kind: aion.KindTask, Text: text, Rock: rock, Owner: "BA",
+			Status: aion.StatusOpen, Captured: "2026-08-24",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("tethered to the rock id", "aion/series-a-15m")
+	add("Finish investor portal market section", "aion/series-a-15m/soft-lead-identified") // the live miss
+	add("tethered via alias", "fundraising")
+	add("tethered via title", "Series A 15M")
+	add("someone else's rock", "aion/mri-prototype")
+
+	a := NewGoalsAdapter(gs, nil, ai, nil, "BA")
+	res, ok := a.ResolveFocus("aion/series-a-15m", "")
+	if !ok {
+		t.Fatal("rock not resolved")
+	}
+	texts := map[string]bool{}
+	for _, n := range res.Tasks {
+		texts[n.Text] = true
+	}
+	for _, want := range []string{
+		"tethered to the rock id",
+		"Finish investor portal market section",
+		"tethered via alias",
+		"tethered via title",
+	} {
+		if !texts[want] {
+			t.Errorf("picker missing %q; offers = %v", want, texts)
+		}
+	}
+	if texts["someone else's rock"] {
+		t.Error("a different rock's task leaked into the offers")
+	}
+}

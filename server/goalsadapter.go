@@ -64,7 +64,7 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 		if doc, err := a.tasks.Load(); err == nil {
 			for _, dom := range doc.Domains {
 				dom.AllTasks(func(_ *tasks.Bucket, t *tasks.Task) {
-					if t.Rock == g.ID && !t.Checked {
+					if rockLadderMatch(g, t.Rock) && !t.Checked {
 						res.Tasks = append(res.Tasks, daily.FocusNode{TaskID: t.ID, Text: t.Text})
 					}
 				})
@@ -83,7 +83,7 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 			continue
 		}
 		for _, it := range d.st.LoadBacklog().Items() {
-			if it.Kind != aion.KindTask || it.Checked || it.Rock != g.ID || !a.mine(it.Owner) {
+			if it.Kind != aion.KindTask || it.Checked || !rockLadderMatch(g, it.Rock) || !a.mine(it.Owner) {
 				continue
 			}
 			if it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "" {
@@ -93,6 +93,44 @@ func (a goalsAdapter) ResolveFocus(id, milestoneID string) (daily.FocusResolutio
 		}
 	}
 	return res, true
+}
+
+// rockLadderMatch reports whether a task's [rock::] token names this Rock or
+// anything on its ladder. The token is not one spelling: the extractor files
+// against whichever node it matched — the rock id, a MILESTONE id one level
+// down (aion/series-a-15m/soft-lead-identified), an alias, or the plain title
+// — and the portal cone resolves all of those. The day-task picker compared
+// `it.Rock != g.ID` and silently dropped everything tethered deeper than the
+// rock itself (found 2026-08-24: a due-this-week task, visible on the AION
+// page under its milestone, absent from the picker it was meant for).
+func rockLadderMatch(g *goals.Goal, token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false
+	}
+	if token == g.ID || strings.HasPrefix(token, g.ID+"/") {
+		return true // the rock, or any node of its ladder by id
+	}
+	names := func(x *goals.Goal) bool {
+		if strings.EqualFold(token, x.Text) {
+			return true
+		}
+		for _, al := range x.Aliases {
+			if strings.EqualFold(token, al) {
+				return true
+			}
+		}
+		return false
+	}
+	if names(g) {
+		return true
+	}
+	for _, c := range g.Children {
+		if c.ID == token || names(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // mine mirrors Server.isMine: empty / "me" / containing my initials.
