@@ -38,6 +38,28 @@ broken. Following WIRED would otherwise drop fifty articles on you at once.
 Those 14 are not marked "read" — that would be a lie, since you never opened
 them. They carry their own *archived* state and say so on the card.
 
+### Reading
+
+Clicking an article opens it on its own page (`#/read/<id>`) rather than
+expanding in the list. Keyboard, following the conventions every reader
+inherited from Google Reader:
+
+| key | |
+|---|---|
+| `j` / `k` | next / previous article |
+| `o` | open the original in a new tab |
+| `Esc` | back to the list |
+
+`←` `→` do the same as `j`/`k`, and the header shows your position (`3 of 20`).
+
+**Preview-only posts.** Some publishers put part of a post in the feed and keep
+the rest — Substack marks those with a trailing "Read more". Manifest detects
+that and tries to fetch the full article. When it succeeds you get the whole
+piece; when the article is behind a paywall it cannot, and the card is labelled
+**paid post** with a line at the end explaining that what you see is the whole
+preview the publisher shares, plus a link to the source. It never replaces a
+usable preview with a paywall notice.
+
 ### Finding something in the archive
 
 Two ways, both in FEED → CONSUME:

@@ -260,6 +260,10 @@ func textInto(b *strings.Builder, n *html.Node) {
 		if dropped[strings.ToLower(n.Data)] {
 			return
 		}
+	case html.DocumentNode:
+		// A whole parsed page, not a fragment. Recurse rather than bail —
+		// html.Parse returns one of these, and returning here made the text of
+		// every full page come back empty.
 	default:
 		return
 	}

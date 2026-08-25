@@ -125,6 +125,7 @@ function normHash(h) { return !h || h === "#" ? "#/" : h; }
 function sectionOf(h) {
   if (h.startsWith("#/note/")) return "note";
   if (h.startsWith("#/artifact/")) return "artifact";
+  if (h.startsWith("#/read/")) return "feed"; // the reader belongs to FEED in the rail
   const seg = h.replace(/^#\//, "").split("/")[0];
   return ["goals","tasks","calendar","feed","chat","capture","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
@@ -224,6 +225,10 @@ function renderCrumbs(h) {
     const p = decodeURIComponent(h.slice("#/note/".length));
     parts.push({ label: "NOTE", hash: null });
     parts.push({ label: p.split("/").pop().replace(/\.md$/, "") });
+  } else if (h.startsWith("#/read/")) {
+    // The id is opaque (consume:rss:sub:hash) — show where you are, not it.
+    parts.push({ label: "FEED", hash: "#/feed" });
+    parts.push({ label: "reading" });
   } else if (h.startsWith("#/artifact/")) {
     const seg = h.slice("#/artifact/".length).split("/");
     const label = seg[0] === "run" ? "run report"
@@ -298,7 +303,7 @@ function route() {
   // non-note route records itself as the return target. Explicit
   // _noteReturn sets (contact page → feed) still win — they happen
   // after the last non-note route, and note routes never overwrite.
-  if (!h.startsWith("#/note/") && !h.startsWith("#/artifact/")) _noteReturn = h === "#/" ? "#/" : h;
+  if (!h.startsWith("#/note/") && !h.startsWith("#/artifact/") && !h.startsWith("#/read/")) _noteReturn = h === "#/" ? "#/" : h;
   const goals = h === "#/goals" || h.startsWith("#/goals/"); // #/goals/<id> deep-links a Rock
   const todosTab = h === "#/tasks" || h.startsWith("#/tasks/");
   const cal = h === "#/calendar";
@@ -320,7 +325,8 @@ function route() {
   const aionTab = h === "#/aion" || h.startsWith("#/aion/");
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
-  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !terminalTab && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact;
+  const read = h.startsWith("#/read/"); // one article, full page (CONSUME)
+  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !terminalTab && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -336,12 +342,13 @@ function route() {
   els.aionView.hidden = !aionTab;
   els.noteView.hidden = !note;
   if (els.artifactView) els.artifactView.hidden = !artifact;
+  if (els.readView) els.readView.hidden = !read;
   els.dateNav.hidden = !day;
   // the crumb bar is redundant on top-level sections (each carries its own
   // title header); keep it only for the Day home (date-nav) and note/artifact
   // drill-downs (breadcrumb + Back). Desktop-only — on the phone band the crumb
   // bar IS the top bar (☰/⌕/＋), so 07-nav.css gates the hide to ≥861px.
-  els.appShell.classList.toggle("crumb-hidden", !(day || note || artifact));
+  els.appShell.classList.toggle("crumb-hidden", !(day || note || artifact || read));
   if (!aionTab && els.aionLiveRail) els.aionLiveRail.innerHTML = "";
   if (!properties && els.rePublishRail) els.rePublishRail.innerHTML = ""; // RE PUBLISH slot is properties-only
   els.contentScroll.scrollTop = 0;
@@ -368,7 +375,8 @@ function route() {
   else if (properties) showProperties(h); // real-estate cockpit: board / property page
   else if (aionTab) showAion(h); // aion program cockpit: backlog / heuristics / vto / …
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
-  else if (artifact) showArtifact(h.slice("#/artifact/".length)); // full-page agent-artifact reader
+  else if (artifact) showArtifact(h.slice("#/artifact/".length));
+  else if (read) showRead(decodeURIComponent(h.slice("#/read/".length))); // full-page agent-artifact reader
   else load(state.date); // reload so goal/calendar edits reflect in the day
 }
 window.addEventListener("hashchange", route);

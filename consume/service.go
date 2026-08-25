@@ -463,7 +463,8 @@ type Card struct {
 	Chars     int    `json:"chars"`
 	Published string `json:"published,omitempty"`
 	Read      bool   `json:"read"`
-	Seeded    bool   `json:"seeded"` // archived on subscribe, never actually read
+	Seeded    bool   `json:"seeded"`            // archived on subscribe, never actually read
+	Preview   string `json:"preview,omitempty"` // paid | partial — the rest cannot be had
 	Curated   bool   `json:"curated"`
 	Minutes   int    `json:"minutes"` // reading time, so a card says what it costs
 }
@@ -546,7 +547,7 @@ func card(it Item, sub Subscription, curated map[string]bool) Card {
 		// Read means ACTUALLY opened. A seeded item is out of the queue but was
 		// never read, and saying otherwise is the lie this state exists to
 		// avoid — the UI must be able to tell them apart.
-		Read: it.ReadAt != "", Seeded: it.Seeded(),
+		Read: it.ReadAt != "", Seeded: it.Seeded(), Preview: it.Preview,
 		Curated: curated[curateKey(it.URL)], Minutes: minutes,
 	}
 }

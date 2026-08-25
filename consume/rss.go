@@ -308,7 +308,9 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 		PublishedAt: parseDate(xi.PubDate, xi.Published, xi.Updated, xi.Date),
 		FetchedAt:   now,
 		Body:        body,
-		teaser:      full == "",
+		// Truncated by provenance OR by marker. The second half is what
+		// catches Substack, which withholds inside content:encoded.
+		teaser: full == "" || LooksTruncated(text),
 	}, true
 }
 

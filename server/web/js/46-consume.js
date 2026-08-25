@@ -15,7 +15,6 @@ const CONSUME_CAP = 5; // unread cards shown in the INBOX strip
 let consumeCache = { items: [], lists: [], unread: 0 };
 let consumeList = ""; // active group filter in the CONSUME view
 let consumeView = "unread"; // unread | all
-let consumeOpen = {}; // item id → true while its reader is expanded
 let consumeSubs = { subscriptions: [], xReady: false };
 let consumeManageOpen = false;
 let consumeSub = "";      // one subscription's archive ("" = all feeds)
@@ -44,11 +43,17 @@ function consumeCardEl(c) {
   if (c.curated) top.append(el("span", "consume-curated-chip micro-label", "curated"));
   // "archived" is not "read" — it arrived before you followed this feed.
   if (c.seeded) top.append(el("span", "consume-list-chip micro-label", "archived"));
+  // The publisher withholds the rest of this one — say so rather than letting
+  // a stub trail off into a bare "Read more".
+  if (c.preview) {
+    top.append(el("span", "read-preview-chip micro-label",
+      c.preview === "paid" ? "paid post" : "preview only"));
+  }
   if (c.published) top.append(el("span", "feed-date", fmtFeedDate(c.published)));
   card.append(top);
 
   const title = el("div", "feed-title consume-title", c.title || "(untitled)");
-  title.onclick = () => consumeToggleReader(c, card);
+  title.onclick = () => openRead(c.id);
   card.append(title);
 
   const meta = el("div", "feed-meta");
@@ -58,12 +63,8 @@ function consumeCardEl(c) {
 
   if (c.excerpt) card.append(el("div", "feed-why consume-excerpt", c.excerpt));
 
-  const body = el("div", "consume-body-wrap");
-  body.hidden = !consumeOpen[c.id];
-  card.append(body);
-
   const acts = el("div", "feed-actions");
-  const readBtn = pillLight(consumeOpen[c.id] ? "close" : "read →", () => consumeToggleReader(c, card));
+  const readBtn = pillLight("read →", () => openRead(c.id));
   readBtn.classList.add("verdict-primary");
   acts.append(readBtn);
   acts.append(consumeCurateBtn(c, card));
@@ -78,8 +79,6 @@ function consumeCardEl(c) {
   if (c.url) acts.append(pillLight("original ↗", () => window.open(c.url, "_blank", "noopener")));
   acts.append(pillLight("dismiss", () => consumeDismiss(c.id, card)));
   card.append(acts);
-
-  if (consumeOpen[c.id]) consumeFillReader(c, card);
   return card;
 }
 
@@ -143,7 +142,6 @@ function consumeRepaint(c, card) {
 async function consumeDismiss(id, card) {
   if (card) card.remove(); // optimistic
   consumeForget(id);
-  delete consumeOpen[id];
   const ok = await consumePost(`/api/consume/item/${encodeURIComponent(id)}/dismiss`);
   if (!ok) { await loadConsume(); return; } // the write failed — show the truth
   // showToast makes the WHOLE toast the click target, so the label has to say
@@ -166,48 +164,11 @@ async function consumeUndismiss(id) {
   showToast("restored");
 }
 
-// ---- the reader ----
-
-function consumeToggleReader(c, card) {
-  consumeOpen[c.id] = !consumeOpen[c.id];
-  if (!consumeOpen[c.id]) { consumeRepaint(c, card); return; }
-  c.read = true; // opening IS reading; the server agrees on the same request
-  consumeRepaint(c, card);
-}
-
-async function consumeFillReader(c, card) {
-  const wrap = card.querySelector(".consume-body-wrap");
-  if (!wrap || wrap.dataset.filled) return;
-  wrap.hidden = false;
-  wrap.dataset.filled = "1";
-  wrap.append(el("div", "consume-loading micro-label", "loading…"));
-  let d;
-  try {
-    d = await (await fetch(`/api/consume/item/${encodeURIComponent(c.id)}`)).json();
-  } catch (e) {
-    wrap.innerHTML = "";
-    wrap.append(el("div", "consume-loading micro-label", "could not load this one"));
-    return;
-  }
-  wrap.innerHTML = "";
-
-  const head = el("div", "consume-read-head micro-label");
-  head.append(el("span", "", [d.source, d.author].filter(Boolean).join(" · ")));
-  wrap.append(head);
-
-  // THE innerHTML sink. Server-sanitized at poll time — see the file header.
-  const body = el("div", "consume-body");
-  body.innerHTML = d.body || "";
-  if (!d.body) body.append(el("div", "consume-loading micro-label", "no body — open the original"));
-  wrap.append(body);
-
-  // The decision happens where the reading ends, so CURATE is repeated here.
-  const foot = el("div", "consume-read-foot");
-  c.curated = !!d.curated;
-  foot.append(consumeCurateBtn(c, card));
-  if (d.url) foot.append(pillLight("original ↗", () => window.open(d.url, "_blank", "noopener")));
-  wrap.append(foot);
-}
+// Reading happens on its own page (47-read.js), not inline. The inline
+// expansion lived here until 2026-08-25; it was cramped, and because the
+// article pushed the card's action row far above the fold it forced a SECOND
+// copy of CURATE and `original ↗` at the foot of the text. Both duplicates went
+// with it.
 
 // ---- the CONSUME view ----
 

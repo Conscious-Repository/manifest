@@ -67,7 +67,7 @@ func (s *Server) handleConsumeItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"id": it.ID, "title": it.Title, "url": it.URL, "author": it.Author,
 		"source": it.Source, "list": sub.List, "body": it.Body,
-		"published": it.PublishedAt, "chars": it.Chars,
+		"published": it.PublishedAt, "chars": it.Chars, "preview": it.Preview,
 		"curated": s.consumeCuratedFor(it.URL),
 		"note":    s.consumeNoteFor(it.URL),
 	})

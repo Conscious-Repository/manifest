@@ -464,6 +464,25 @@
     <div id="artifactRendered" class="note-rendered"></div>
   </section>
 
+  <!-- READ — one article, full page (consume plan, 2026-08-25). Borrows the
+       note view's chrome the way the artifact reader does. The body is
+       PRE-SANITIZED HTML from consume/sanitize.go, so it is assigned to
+       innerHTML rather than run through renderMarkdown. -->
+  <section class="note-view read-view" id="readView" hidden>
+    <div class="agent-head">
+      <button id="readBackBtn" class="pill light">‹ Back</button>
+      <span id="readTitle" class="note-title"></span>
+      <div class="agent-actions">
+        <span id="readPos" class="micro-label read-pos"></span>
+        <button id="readPrev" class="pill light" title="Previous (k)">←</button>
+        <button id="readNext" class="pill light" title="Next (j)">→</button>
+      </div>
+    </div>
+    <div id="readMeta" class="read-meta"></div>
+    <div id="readBody" class="consume-body"></div>
+    <div id="readFoot" class="read-foot"></div>
+  </section>
+
     </div><!-- /contentScroll -->
   </div><!-- /content-col -->
   </div><!-- /appShell -->
@@ -519,6 +538,7 @@
   <script src="js/40-spirits.js"></script>
   <script src="js/45-feed.js"></script>
   <script src="js/46-consume.js"></script>
+  <script src="js/47-read.js"></script>
   <script src="js/48-chat.js"></script>
   <script src="js/55-approvals.js"></script>
   <script src="js/58-rituals.js"></script>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -36,6 +37,49 @@ import (
 // maxArticle bounds one article fetch.
 const maxArticle = 8 << 20
 
+// paywallPhrases identify a page that is withholding the article behind a
+// subscription. Substack's is the first; the others are the common variants.
+var paywallPhrases = []string{
+	"this post is for paid subscribers",
+	"this post is for paying subscribers",
+	"subscribe to keep reading",
+	"paid subscribers only",
+	"this content is for paid",
+	"become a paid subscriber",
+	"upgrade to paid",
+	"for full access to this post",
+}
+
+// markerLinkTail matches a trailing "Read more"-style link — the affordance a
+// publisher appends to a withheld article.
+//
+// A regex is acceptable here precisely because the input is not arbitrary HTML:
+// it is OUR sanitizer's output, whose shape is normalized and predictable, and
+// the pattern is anchored to the very end of the string.
+var markerLinkTail = regexp.MustCompile(
+	`(?is)(<p>)?\s*<a[^>]*>\s*(read more|continue reading|read the rest|keep reading|read the full)\s*…?\s*</a>\s*(</p>)?\s*$`)
+
+// stripMarkerLink removes that trailing link. It runs ONLY on an item we have
+// labelled as a preview, where the reading page renders its own, clearer
+// explanation plus a link to the source — leaving both would give the reader
+// two identical ways out and no reason for either.
+//
+// The article's own words are never touched; this removes one navigation
+// affordance we have replaced, not content.
+func stripMarkerLink(body string) string {
+	return strings.TrimSpace(markerLinkTail.ReplaceAllString(body, ""))
+}
+
+func looksPaywalled(pageText string) bool {
+	t := strings.ToLower(pageText)
+	for _, p := range paywallPhrases {
+		if strings.Contains(t, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // negativeHints mark furniture: containers whose id/class say they are not the
 // article. Matched as substrings against lowercased id+class.
 var negativeHints = []string{
@@ -52,30 +96,33 @@ var positiveHints = []string{
 	"available-content", "body-text",
 }
 
-// fetchArticle downloads a page and returns its readable HTML, sanitized.
-func (s *Service) fetchArticle(ctx context.Context, pageURL string) string {
+// fetchArticle downloads a page and returns its readable HTML plus whether the
+// page announced a paywall. The second return is why a failed extraction can be
+// explained to the owner instead of silently leaving a stub.
+func (s *Service) fetchArticle(ctx context.Context, pageURL string) (string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
 	resp, err := s.hc.Do(req)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		// A paywall often answers 403 rather than a page saying so.
+		return "", resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusPaymentRequired
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "html") {
-		return ""
+		return "", false
 	}
 	doc, err := html.Parse(io.LimitReader(resp.Body, maxArticle))
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return Readable(doc)
+	return Readable(doc), looksPaywalled(nodeText(doc))
 }
 
 // Readable extracts the article from a parsed page and sanitizes it.
@@ -217,19 +264,32 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 		}
 		// Never let one slow site stall the rest of the poll.
 		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		body := s.fetchArticle(fetchCtx, it.URL)
+		body, paywalled := s.fetchArticle(fetchCtx, it.URL)
 		cancel()
-		if body == "" {
-			continue
-		}
+
 		text := Text(body)
 		// ⚠ Extraction may only improve an item. A page behind a paywall or a
 		// consent wall extracts to almost nothing, and silently replacing a
 		// good teaser with "Please enable JavaScript" would be worse than
 		// doing nothing at all.
-		if len([]rune(text)) <= it.Chars {
+		if body == "" || len([]rune(text)) <= it.Chars {
+			// We tried and could not complete it. If we KNOW it was truncated,
+			// that is worth recording — a 367-character stub ending "Read more"
+			// with no explanation reads like a bug in the reader rather than a
+			// decision by the publisher.
+			if it.teaser {
+				items[i].Preview = PreviewPartial
+				if paywalled {
+					items[i].Preview = PreviewPaid
+				}
+				// The reader now explains the truncation and offers the link
+				// itself, so the publisher's own trailing "Read more" is a
+				// duplicate route to the same place.
+				items[i].Body = stripMarkerLink(items[i].Body)
+			}
 			continue
 		}
+		items[i].Preview = "" // completed after all
 		items[i].Body = body
 		items[i].Chars = len([]rune(text))
 		items[i].Excerpt = Excerpt(text, 280)

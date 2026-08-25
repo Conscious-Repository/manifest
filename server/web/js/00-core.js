@@ -90,6 +90,17 @@ const els = {
   artifactRendered: document.getElementById("artifactRendered"),
   artifactBackBtn: document.getElementById("artifactBackBtn"),
   artifactCopy: document.getElementById("artifactCopy"),
+
+  // read view (one article, full page — the CONSUME reader)
+  readView: document.getElementById("readView"),
+  readTitle: document.getElementById("readTitle"),
+  readMeta: document.getElementById("readMeta"),
+  readBody: document.getElementById("readBody"),
+  readFoot: document.getElementById("readFoot"),
+  readBackBtn: document.getElementById("readBackBtn"),
+  readPrev: document.getElementById("readPrev"),
+  readNext: document.getElementById("readNext"),
+  readPos: document.getElementById("readPos"),
   // quick-lookup command bar
   cmdbar: document.getElementById("cmdbar"),
   cmdbarBackdrop: document.getElementById("cmdbarBackdrop"),

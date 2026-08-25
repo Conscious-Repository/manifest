@@ -613,3 +613,158 @@ func TestStatusesCountArchived(t *testing.T) {
 		}
 	}
 }
+
+// ---- truncation detection ----
+
+// ⚠ THE REGRESSION THIS EXISTS FOR. Experimental History sends
+// content:encoded for EVERY item and truncates inside it: a 367-character body
+// ending "Read more" beside a 20,000-character sibling. Keying on provenance —
+// "did this arrive as <description>" — misses every one of them.
+func TestTruncationDetectedByMarkerNotProvenance(t *testing.T) {
+	short := "The opening paragraph, and then the publisher stops. Read more"
+	long := strings.Repeat("A real paragraph of actual writing. ", 200)
+	body := `<rss><channel><title>EH</title>` +
+		`<item><title>Truncated</title><link>https://e.com/a</link><guid>a</guid>` +
+		`<content:encoded>` + short + `</content:encoded></item>` +
+		`<item><title>Whole</title><link>https://e.com/b</link><guid>b</guid>` +
+		`<content:encoded>` + long + `</content:encoded></item>` +
+		`</channel></rss>`
+	srv := serve(t, body, nil)
+	f := &rssFetcher{hc: srv.Client()}
+	items, _, err := f.Fetch(context.Background(), Subscription{ID: "eh", URL: srv.URL}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 items, got %d", len(items))
+	}
+	byTitle := map[string]Item{}
+	for _, it := range items {
+		byTitle[it.Title] = it
+	}
+	if !byTitle["Truncated"].teaser {
+		t.Error("a content:encoded body ending 'Read more' was not detected as truncated")
+	}
+	if byTitle["Whole"].teaser {
+		t.Error("a full 20k article was flagged truncated — auto would refetch every post")
+	}
+}
+
+func TestLooksTruncated(t *testing.T) {
+	yes := []string{
+		"Some opening text. Read more",
+		"Some opening text… Continue reading",
+		"opening. READ MORE",
+		"opening text Keep reading →",
+		"words words read the rest",
+	}
+	no := []string{
+		"A complete short post that simply ends.",
+		"He said we should read more books this year.", // mid-sentence, not a marker
+		"",
+		"Continue reading is a phrase I used at the start of this sentence.",
+	}
+	for _, s := range yes {
+		if !LooksTruncated(s) {
+			t.Errorf("should be truncated: %q", s)
+		}
+	}
+	for _, s := range no {
+		if LooksTruncated(s) {
+			t.Errorf("false positive: %q", s)
+		}
+	}
+}
+
+// A truncated item whose page is paywalled gets labelled, not silently left as
+// a stub that looks like a bug in the reader.
+func TestPaywalledTruncationIsLabelled(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/paid", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><div><h1>A Post</h1>
+		  <p>This post is for paid subscribers. Subscribe to keep reading.</p></div></body></html>`))
+	})
+	mux.HandleFunc("/stubborn", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><div><p>Enable JavaScript to continue.</p></div></body></html>`))
+	})
+	mux.HandleFunc("/free", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(articlePage))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	s := schedSvc(t)
+	s.hc = srv.Client()
+	stub := "The opening paragraph, and then it stops. Read more"
+	mk := func(id, path string) Item {
+		return Item{ID: id, URL: srv.URL + path, Body: "<p>" + stub + "</p>",
+			Chars: len([]rune(stub)), Excerpt: stub, teaser: true}
+	}
+	out := s.fillFullText(context.Background(), Subscription{Fulltext: FullTextAuto},
+		[]Item{mk("paid", "/paid"), mk("stubborn", "/stubborn"), mk("free", "/free")})
+
+	if out[0].Preview != PreviewPaid {
+		t.Errorf("paywalled post: Preview=%q, want %q", out[0].Preview, PreviewPaid)
+	}
+	if out[1].Preview != PreviewPartial {
+		t.Errorf("stubborn page: Preview=%q, want %q", out[1].Preview, PreviewPartial)
+	}
+	if out[2].Preview != "" {
+		t.Errorf("a post we DID complete must not be labelled: %q", out[2].Preview)
+	}
+	if !strings.Contains(out[2].Body, "particular kind of person") {
+		t.Error("the free article was not fetched")
+	}
+	// ⚠ And the teasers must survive — never downgraded to a paywall notice.
+	for _, i := range []int{0, 1} {
+		if !strings.Contains(out[i].Body, "and then it stops") {
+			t.Errorf("item %d lost its teaser: %q", i, out[i].Body)
+		}
+	}
+}
+
+// A short post published in full is NOT a preview.
+func TestShortFullPostIsNotLabelledPreview(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><p>nothing useful</p></body></html>`))
+	}))
+	defer srv.Close()
+	s := schedSvc(t)
+	s.hc = srv.Client()
+	short := "A genuinely short post, published whole."
+	out := s.fillFullText(context.Background(), Subscription{Fulltext: FullTextAuto},
+		[]Item{{ID: "a", URL: srv.URL, Body: "<p>" + short + "</p>", Chars: len([]rune(short)), teaser: false}})
+	if out[0].Preview != "" {
+		t.Errorf("a whole short post was labelled %q", out[0].Preview)
+	}
+}
+
+// The reading page renders its own explanation and its own link to the source,
+// so the publisher's trailing "Read more" would be a second route to the same
+// place. Only the link goes — never the article's words.
+func TestStripMarkerLink(t *testing.T) {
+	cases := map[string]string{
+		`<p>The opening.</p><p><a href="https://e.com/x">Read more</a></p>`:      `<p>The opening.</p>`,
+		`<p>The opening.</p> <p> <a href="https://e.com/x"> Read more </a> </p>`: `<p>The opening.</p>`,
+		`<p>The opening.</p><a href="https://e.com/x">Continue reading</a>`:      `<p>The opening.</p>`,
+	}
+	for in, want := range cases {
+		if got := stripMarkerLink(in); got != want {
+			t.Errorf("stripMarkerLink(%q)\n = %q\nwant %q", in, got, want)
+		}
+	}
+	// A link that merely CONTAINS the words mid-article is not the marker.
+	keep := `<p>You should <a href="https://e.com/x">read more books</a> this year.</p>`
+	if got := stripMarkerLink(keep); got != keep {
+		t.Errorf("stripped a mid-article link: %q", got)
+	}
+	// And a whole article is untouched.
+	whole := `<p>One.</p><p>Two.</p>`
+	if got := stripMarkerLink(whole); got != whole {
+		t.Errorf("touched a whole article: %q", got)
+	}
+}

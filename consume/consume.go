@@ -65,6 +65,40 @@ const (
 // article rather than publishing a genuinely short post.
 const teaserUnder = 1200
 
+// Preview classifications: what we learned when a truncated item could NOT be
+// completed. Empty means the item is whole (or we never had to find out).
+const (
+	PreviewPaid    = "paid"    // the page says it is for paying subscribers
+	PreviewPartial = "partial" // truncated, and the page yielded nothing better
+)
+
+// truncationMarkers are what a publisher appends when it is withholding the
+// rest of a piece. Matched at the very END of the plain text.
+//
+// ⚠ This is the signal that actually correlates, and provenance is not.
+// Substack sends `content:encoded` for every item and truncates INSIDE it — a
+// 367-character body ending "Read more" beside a 20,000-character sibling in
+// the same feed. Keying on "did this arrive as <description>" misses every one
+// of them.
+var truncationMarkers = []string{
+	"read more", "continue reading", "read the rest", "keep reading",
+	"read the full", "continue to the full",
+}
+
+// LooksTruncated reports whether a body's plain text ends the way a withheld
+// article ends. A 20,000-character post never does.
+func LooksTruncated(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	t = strings.TrimRight(t, ".!…â€¦ \t\n→>»")
+	t = strings.TrimSpace(t)
+	for _, m := range truncationMarkers {
+		if strings.HasSuffix(t, m) {
+			return true
+		}
+	}
+	return false
+}
+
 // defaultMinChars is the X length filter: below this, a post is a remark, not
 // writing. Only applies to KindX — an RSS feed is already curated by its author.
 const defaultMinChars = 350
@@ -151,11 +185,23 @@ type Item struct {
 	// one item (the reader, or a curate), never when listing the lane.
 	Body string `json:"-"`
 
+	// Preview records that this item cannot be completed: "paid" when the
+	// publisher's page says it is for subscribers, "partial" when the page
+	// simply yielded nothing better. Empty means whole.
+	//
+	// ⚠ Only ever set on an item we KNOW was truncated and then failed to
+	// improve. A short post published in full is not a preview, and saying so
+	// would be exactly the kind of lie SeededAt exists to avoid.
+	Preview string `json:"preview,omitempty"`
+
 	// teaser records that this item's body came from <description>/<summary>
 	// rather than <content:encoded>/<content>. That distinction is the honest
 	// signal for "the feed is withholding the article": a publisher who ships
 	// content:encoded is giving you everything they have, however short it is.
 	// Length alone would send us fetching every link post and open thread.
+	//
+	// It is ALSO set when the body ends in a truncation marker, whatever
+	// element carried it — see LooksTruncated.
 	teaser bool
 }
 
