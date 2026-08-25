@@ -831,7 +831,7 @@ func main() {
 		} else {
 			go func() {
 				fmt.Printf("aion portal → http://%s\n", portalAddr)
-				if err := http.ListenAndServe(portalAddr, h); err != nil {
+				if err := http.ListenAndServe(portalAddr, server.Gzip(h)); err != nil {
 					log.Printf("aion portal listener stopped: %v", err)
 				}
 			}()
@@ -967,7 +967,7 @@ func main() {
 			} else {
 				go func() {
 					fmt.Printf("ooda portal → http://%s\n", oodaAddr)
-					if err := http.ListenAndServe(oodaAddr, h); err != nil {
+					if err := http.ListenAndServe(oodaAddr, server.Gzip(h)); err != nil {
 						log.Printf("ooda portal listener stopped: %v", err)
 					}
 				}()
@@ -979,7 +979,7 @@ func main() {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
 	fmt.Printf("manifest → http://%s  (vault: %s)\n", addr, cfg.VaultPath)
-	log.Fatal(http.ListenAndServe(addr, srv.Handler()))
+	log.Fatal(http.ListenAndServe(addr, server.Gzip(srv.Handler())))
 }
 
 func orNone(s string) string {

@@ -59,10 +59,21 @@ function reRockSuggest(q, add, ta, onPick) {
       () => { ta.commit(rePropLabel(p)); onPick("property/" + p.slug); }));
 }
 
+// reBacklogRepaint — re-render the BACKLOG view from the caches already in
+// hand. Selection, fold toggles and inspector closes are pure VIEW state:
+// routing them through renderProperties() re-fetched three endpoints over the
+// tailnet (~300 KB) before the row would even highlight. Mutations still go
+// through renderProperties() — a write means the files moved, and the refetch
+// is what keeps the screen honest.
+function reBacklogRepaint() {
+  if (els.propertiesView.hidden || propMode !== "backlog") { renderProperties(); return; }
+  renderREBacklog();
+}
+
 function reBacklogSelect(src, id) {
   if (reBacklogSelId === id && reBacklogSelSrc === src) { reBacklogSelId = null; reBacklogSelSrc = null; }
   else { reBacklogSelId = id; reBacklogSelSrc = src; }
-  renderProperties();
+  reBacklogRepaint();
 }
 
 // reOwnerSuggest — owner typeahead over the RE roster (the AION mirror). The
@@ -161,7 +172,7 @@ function renderREBacklog() {
   openDec.forEach((d) => lane.append(d.src === "re" ? reBacklogDecRow(d.it) : rePropDecRow(d.it)));
   if (decided.length) {
     const t = el("button", "aion-done-toggle", (reDecidedOpen ? "▾" : "▸") + " decided · " + decided.length);
-    t.onclick = () => { reDecidedOpen = !reDecidedOpen; renderProperties(); };
+    t.onclick = () => { reDecidedOpen = !reDecidedOpen; reBacklogRepaint(); };
     lane.append(t);
     if (reDecidedOpen) decided.forEach((d) => lane.append(d.src === "re" ? reBacklogDecRow(d.it) : rePropDecRow(d.it)));
   }
@@ -210,7 +221,7 @@ function renderREBacklog() {
 
   if (doneTasks.length) {
     const t = el("button", "aion-done-toggle", (reDoneOpen ? "▾" : "▸") + " done · " + doneTasks.length);
-    t.onclick = () => { reDoneOpen = !reDoneOpen; renderProperties(); };
+    t.onclick = () => { reDoneOpen = !reDoneOpen; reBacklogRepaint(); };
     list.append(t);
     if (reDoneOpen) doneTasks.forEach((td) => list.append(reTaskRow(td)));
   }
@@ -220,7 +231,7 @@ function renderREBacklog() {
     if (reBacklogSelId) {
       window.mfSheet.open((b) => renderREBacklogInspector(b), {
         key: "re-backlog",
-        onClose: () => { if (reBacklogSelId) { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); } },
+        onClose: () => { if (reBacklogSelId) { reBacklogSelId = null; reBacklogSelSrc = null; reBacklogRepaint(); } },
         reopen: () => { if (!els.propertiesView.hidden) renderProperties(); },
       });
     } else {
@@ -347,7 +358,7 @@ function renderREBacklogInspector(insp) {
   const head = el("div", "aion-insp-head");
   head.append(el("span", "aion-insp-label", "Inspector"));
   const x = el("button", "aion-insp-x", "✕");
-  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
+  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; reBacklogRepaint(); };
   head.append(x);
   insp.append(head);
 
@@ -460,7 +471,7 @@ function rePropDecInspector(insp) {
   const head = el("div", "aion-insp-head");
   head.append(el("span", "aion-insp-label", "Decision"));
   const x = el("button", "aion-insp-x", "✕");
-  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
+  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; reBacklogRepaint(); };
   head.append(x);
   insp.append(head);
   insp.append(el("div", "aion-insp-title", n.text));
@@ -521,7 +532,7 @@ function rePropTodoInspector(insp) {
   const head = el("div", "aion-insp-head");
   head.append(el("span", "aion-insp-label", "Task"));
   const x = el("button", "aion-insp-x", "✕");
-  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; renderProperties(); };
+  x.onclick = () => { reBacklogSelId = null; reBacklogSelSrc = null; reBacklogRepaint(); };
   head.append(x);
   insp.append(head);
   insp.append(el("div", "aion-insp-title", text));

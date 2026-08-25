@@ -350,6 +350,13 @@ function aionTaskRow(it) {
     e.stopPropagation();
     if (done) aionFreshDone.delete(it.id);
     else aionFreshDone.add(it.id); // hold it in place for the regret window
+    // paint the flip NOW from the cache, then post; loadAion() inside
+    // aionPost converges on the file's truth either way — including the
+    // revert-with-toast when the server refuses. The click's feedback must
+    // not wait on a round-trip.
+    it.status = done ? "open" : "done";
+    it.checked = !done;
+    renderAion();
     aionPost("/api/aion/backlog/update/" + it.id, { status: done ? "open" : "done" });
   };
   row.append(c);
