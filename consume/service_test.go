@@ -56,8 +56,8 @@ func TestSubscribeThenReadTheLane(t *testing.T) {
 	if c.Curated {
 		t.Error("a freshly polled card should not be curated")
 	}
-	if s.Unread() != 2 {
-		t.Errorf("unread count: %d", s.Unread())
+	if s.Unread("") != 2 {
+		t.Errorf("unread count: %d", s.Unread(""))
 	}
 
 	// Read one; it leaves the unread view but stays in "all".
@@ -70,20 +70,33 @@ func TestSubscribeThenReadTheLane(t *testing.T) {
 	if n := len(s.Cards("all", "")); n != 2 {
 		t.Errorf("read item missing from the all view: %d", n)
 	}
-	if s.Unread() != 1 {
-		t.Errorf("unread count after reading: %d", s.Unread())
+	if s.Unread("") != 1 {
+		t.Errorf("unread count after reading: %d", s.Unread(""))
 	}
 
-	// Dismiss the other.
+	// Dismiss the other. ⚠ Dismissed means gone from EVERY view, not just
+	// unread — the bug the owner hit on 2026-08-25 was that it came back in ALL.
 	if !s.Dismiss(cards[1].ID) {
 		t.Fatal("dismiss failed")
 	}
 	if n := len(s.Cards("unread", "")); n != 0 {
-		t.Errorf("dismissed item still showing: %d", n)
+		t.Errorf("dismissed item still showing in unread: %d", n)
+	}
+	if n := len(s.Cards("all", "")); n != 1 {
+		t.Errorf("dismissed item came back in the all view: %d", n)
 	}
 
+	// Undo restores it, unread.
+	if !s.Undismiss(cards[1].ID) {
+		t.Fatal("undismiss failed")
+	}
+	if n := len(s.Cards("unread", "")); n != 1 {
+		t.Errorf("undo did not restore the item: %d", n)
+	}
+	s.Dismiss(cards[1].ID)
+
 	// List filter.
-	if n := len(s.Cards("all", "essays")); n != 2 {
+	if n := len(s.Cards("all", "essays")); n != 1 {
 		t.Errorf("list filter dropped items: %d", n)
 	}
 	if n := len(s.Cards("all", "nonexistent")); n != 0 {
@@ -200,7 +213,7 @@ func TestServiceIsInertWithoutAWriteCapability(t *testing.T) {
 		t.Error("curating without a write capability should fail loudly")
 	}
 	// Reads still work and return nothing rather than panicking.
-	if len(s.Cards("all", "")) != 0 || s.Unread() != 0 || len(s.Curated()) != 0 {
+	if len(s.Cards("all", "")) != 0 || s.Unread("") != 0 || len(s.Curated()) != 0 {
 		t.Error("read paths should be empty, not broken")
 	}
 }

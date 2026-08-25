@@ -28,6 +28,10 @@ import (
 const (
 	readRetention = 90 * 24 * time.Hour // read/dismissed items age out
 	unreadCap     = 200                 // newest-N unread kept per subscription
+	// tombstoneCap bounds the dismissed-forever set. Ids are 12 hex chars, so
+	// 2,000 of them is ~50KB — cheap enough to keep long after the item record
+	// itself has been pruned.
+	tombstoneCap = 2000
 )
 
 // Store owns the dataDir tree.
@@ -40,11 +44,26 @@ type Store struct {
 func NewStore(dataDir string) *Store { return &Store{root: filepath.Join(dataDir, "consume")} }
 
 type cacheState struct {
-	Cursors  map[string]string `json:"cursors"`
-	Items    []Item            `json:"items"`
-	LastPoll string            `json:"lastPoll"`
-	LastOK   string            `json:"lastOK"`
-	LastErr  string            `json:"lastErr"`
+	Cursors map[string]string `json:"cursors"`
+	Items   []Item            `json:"items"`
+
+	// Tombstones are the ids of items dismissed forever. They MUST outlive the
+	// item records they refer to: prune drops a dismissed item after 90 days,
+	// but plenty of feeds still list a post a year later, and without a
+	// tombstone that post would arrive again as brand new. Dismiss means gone.
+	Tombstones []string `json:"tombstones,omitempty"`
+
+	LastPoll string `json:"lastPoll"`
+	LastOK   string `json:"lastOK"`
+	LastErr  string `json:"lastErr"`
+
+	// Fails counts consecutive failed polls, and drives the backoff that stops
+	// us retrying a dead feed hourly forever.
+	Fails int `json:"fails,omitempty"`
+	// RetryAfter is a publisher's explicit "not before" (429/503 Retry-After).
+	RetryAfter string `json:"retryAfter,omitempty"`
+	// TTLMinutes is the feed's own <ttl> / sy:updatePeriod hint, if it gave one.
+	TTLMinutes int `json:"ttlMinutes,omitempty"`
 }
 
 func (s *Store) cacheFile(subID string) string {
@@ -117,29 +136,75 @@ func (s *Store) Cursors(subID string) map[string]string {
 // failure ≠ empty discipline (portals/store.go). A feed that 500s for a day
 // must not empty the lane and read as "you are all caught up".
 func (s *Store) Commit(subID string, now time.Time, ok bool, items []Item, cursors map[string]string, errMsg string) {
+	s.commit(subID, now, ok, items, cursors, errMsg, PollMeta{})
+}
+
+// PollMeta is what a fetcher learned about SCHEDULING during a poll, as opposed
+// to about content: the feed's own refresh hint and any explicit back-off the
+// publisher asked for.
+type PollMeta struct {
+	TTLMinutes int       // <ttl> / sy:updatePeriod, 0 = none offered
+	RetryAfter time.Time // from a 429/503 Retry-After header; zero = none
+}
+
+func (s *Store) commit(subID string, now time.Time, ok bool, items []Item, cursors map[string]string, errMsg string, meta PollMeta) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	st := s.read(subID)
 	st.LastPoll = now.UTC().Format(time.RFC3339)
+	if meta.TTLMinutes > 0 {
+		st.TTLMinutes = meta.TTLMinutes
+	}
+	st.RetryAfter = ""
+	if !meta.RetryAfter.IsZero() {
+		st.RetryAfter = meta.RetryAfter.UTC().Format(time.RFC3339)
+	}
 	if !ok {
 		st.LastErr = errMsg
+		// Each consecutive failure pushes the next attempt further out. A feed
+		// that has been dead for a week should not still be polled hourly.
+		st.Fails++
 		s.write(subID, st)
 		return
 	}
 	st.LastErr = ""
+	st.Fails = 0
 	st.LastOK = st.LastPoll
 	for k, v := range cursors {
 		st.Cursors[k] = v
 	}
 
+	tomb := map[string]bool{}
+	for _, id := range st.Tombstones {
+		tomb[id] = true
+	}
 	at := map[string]int{}
+	byLink := map[string]int{}
 	for i, it := range st.Items {
 		at[it.ID] = i
+		if k := curateKey(it.URL); k != "" {
+			byLink[k] = i
+		}
 	}
 	for _, in := range items {
+		if tomb[in.ID] {
+			continue // dismissed forever — the feed re-listing it changes nothing
+		}
 		body := in.Body
 		in.Body = "" // bodies live in their own files, never in the cache
+		// ⚠ Second dedupe axis. Item identity prefers the canonical link, but
+		// ~41% of feeds regenerate their guid on every fetch, and a feed that
+		// also rewrites its links would otherwise produce a fresh "new" item
+		// every hour. Matching on the NORMALIZED url (tracking params stripped)
+		// collapses those before they reach the lane.
+		if _, known := at[in.ID]; !known {
+			if k := curateKey(in.URL); k != "" {
+				if i, dup := byLink[k]; dup {
+					in.ID = st.Items[i].ID // adopt the identity we already hold
+				}
+			}
+		}
 		if i, ok := at[in.ID]; ok {
 			// ⚠ An upsert must NOT clobber lifecycle state. portals/ replaces
 			// the whole event because a notice has none; here, re-polling a
@@ -156,6 +221,9 @@ func (s *Store) Commit(subID string, now time.Time, ok bool, items []Item, curso
 		} else {
 			st.Items = append(st.Items, in)
 			at[in.ID] = len(st.Items) - 1
+			if k := curateKey(in.URL); k != "" {
+				byLink[k] = len(st.Items) - 1
+			}
 		}
 		if body != "" {
 			s.putBody(in.ID, body)
@@ -255,11 +323,87 @@ func (s *Store) Mark(subID, itemID string, read, dismissed bool, now time.Time) 
 			if st.Items[i].ReadAt == "" {
 				st.Items[i].ReadAt = ts
 			}
+			st.Tombstones = addTombstone(st.Tombstones, itemID)
 		}
 		s.write(subID, st)
 		return true
 	}
 	return false
+}
+
+// Undismiss reverses a dismissal — both the item's own state and the tombstone,
+// or the next poll would silently re-suppress it.
+func (s *Store) Undismiss(subID, itemID string, now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	found := false
+	for i, it := range st.Items {
+		if it.ID == itemID {
+			st.Items[i].DismissedAt = ""
+			st.Items[i].ReadAt = "" // undo puts it back where it was: unread
+			found = true
+			break
+		}
+	}
+	kept := st.Tombstones[:0]
+	for _, id := range st.Tombstones {
+		if id != itemID {
+			kept = append(kept, id)
+		}
+	}
+	st.Tombstones = kept
+	s.write(subID, st)
+	return found
+}
+
+// MarkAllRead marks every unread item read. Returns how many it touched.
+func (s *Store) MarkAllRead(subID string, now time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	ts := now.UTC().Format(time.RFC3339)
+	n := 0
+	for i, it := range st.Items {
+		if it.Unread() {
+			st.Items[i].ReadAt = ts
+			n++
+		}
+	}
+	if n > 0 {
+		s.write(subID, st)
+	}
+	return n
+}
+
+// addTombstone appends an id, keeping the set bounded and duplicate-free.
+func addTombstone(ids []string, id string) []string {
+	for _, x := range ids {
+		if x == id {
+			return ids
+		}
+	}
+	ids = append(ids, id)
+	if len(ids) > tombstoneCap {
+		ids = ids[len(ids)-tombstoneCap:]
+	}
+	return ids
+}
+
+// Schedule reports what the poll loop needs to decide whether a subscription is
+// due: when it last ran, how many consecutive failures it has, the feed's own
+// refresh hint, and any publisher-requested back-off.
+func (s *Store) Schedule(subID string) (lastPoll time.Time, fails int, ttl time.Duration, retryAfter time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	if st.LastPoll != "" {
+		lastPoll, _ = time.Parse(time.RFC3339, st.LastPoll)
+	}
+	if st.RetryAfter != "" {
+		retryAfter, _ = time.Parse(time.RFC3339, st.RetryAfter)
+	}
+	return lastPoll, st.Fails, time.Duration(st.TTLMinutes) * time.Minute, retryAfter
 }
 
 // Get returns one item with its body loaded — the reader's fetch.

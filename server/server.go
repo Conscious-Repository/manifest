@@ -544,6 +544,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/consume/item/{id}", s.handleConsumeItem)
 	mux.HandleFunc("POST /api/consume/item/{id}/read", s.handleConsumeRead)
 	mux.HandleFunc("POST /api/consume/item/{id}/dismiss", s.handleConsumeDismiss)
+	mux.HandleFunc("POST /api/consume/item/{id}/undismiss", s.handleConsumeUndismiss)
+	mux.HandleFunc("POST /api/consume/read-all", s.handleConsumeReadAll)
+	mux.HandleFunc("POST /api/consume/poll-all", s.handleConsumePollAll)
 	mux.HandleFunc("POST /api/consume/item/{id}/curate", s.handleConsumeCurate)
 	mux.HandleFunc("POST /api/consume/item/{id}/uncurate", s.handleConsumeUncurate)
 

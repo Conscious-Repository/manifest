@@ -191,7 +191,7 @@ func TestConsumeReaderRoundTrip(t *testing.T) {
 	if item.Curated {
 		t.Error("not curated yet")
 	}
-	if h.svc.Unread() != 0 {
+	if h.svc.Unread("") != 0 {
 		t.Error("opening the reader should mark the item read")
 	}
 
@@ -368,5 +368,50 @@ func TestConsumeCardCarriesReadingTime(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, cards[0].Published); err != nil {
 		t.Errorf("published is not RFC3339: %q", cards[0].Published)
+	}
+}
+
+// The new lifecycle routes: undo, mark-all-read, refresh-all.
+func TestConsumeBacklogRoutes(t *testing.T) {
+	h := newConsumeHarness(t)
+	h.subscribe(t)
+	id := h.svc.Cards("all", "")[0].ID
+
+	// Dismiss → gone from every view, not just unread.
+	if code := h.do(t, http.MethodPost, "/api/consume/item/"+id+"/dismiss", "").Code; code != http.StatusOK {
+		t.Fatalf("dismiss: %d", code)
+	}
+	if n := len(h.svc.Cards("all", "")); n != 0 {
+		t.Errorf("dismissed item still in the all view: %d", n)
+	}
+	// ⚠ And it stays gone across a re-poll, which is the whole point of the
+	// tombstone — feeds keep listing a post long after you are done with it.
+	if err := h.svc.PollNow(context.Background(), "test-letter"); err != nil {
+		t.Logf("re-poll: %v", err)
+	}
+	if n := len(h.svc.Cards("all", "")); n != 0 {
+		t.Errorf("a re-poll resurrected a dismissed item: %d", n)
+	}
+
+	// Undo brings it back, unread.
+	if code := h.do(t, http.MethodPost, "/api/consume/item/"+id+"/undismiss", "").Code; code != http.StatusOK {
+		t.Fatalf("undismiss: %d", code)
+	}
+	if h.svc.Unread("") != 1 {
+		t.Errorf("undo did not restore it unread: %d", h.svc.Unread(""))
+	}
+
+	// Mark all read.
+	w := h.do(t, http.MethodPost, "/api/consume/read-all", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("read-all: %d", w.Code)
+	}
+	if h.svc.Unread("") != 0 {
+		t.Errorf("mark-all-read left %d unread", h.svc.Unread(""))
+	}
+
+	// Refresh all.
+	if code := h.do(t, http.MethodPost, "/api/consume/poll-all", "").Code; code != http.StatusOK {
+		t.Errorf("poll-all: %d", code)
 	}
 }

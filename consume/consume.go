@@ -49,6 +49,22 @@ const (
 	MirrorExcerpt = "excerpt"
 )
 
+// FullText modes decide whether a teaser-only feed gets its article fetched.
+//
+//	auto — fetch when the feed body is clearly a teaser (the default)
+//	on   — always fetch the article page
+//	off  — never; show exactly what the feed published
+const (
+	FullTextAuto = "auto"
+	FullTextOn   = "on"
+	FullTextOff  = "off"
+)
+
+// teaserUnder is the "this is a teaser" threshold in characters of plain text.
+// Roughly two paragraphs — below it, a feed is almost certainly withholding the
+// article rather than publishing a genuinely short post.
+const teaserUnder = 1200
+
 // defaultMinChars is the X length filter: below this, a post is a remark, not
 // writing. Only applies to KindX — an RSS feed is already curated by its author.
 const defaultMinChars = 350
@@ -63,6 +79,7 @@ type Subscription struct {
 	List     string `json:"list"`     // group ("essays"); "" = ungrouped
 	Mirror   string `json:"mirror"`   // full | excerpt
 	MinChars int    `json:"minChars"` // x only; 0 = defaultMinChars
+	Fulltext string `json:"fulltext"` // auto | on | off
 	Added    string `json:"added"`    // ISO date
 
 	// Unknown carries inline fields this build does not recognize, so a
@@ -77,6 +94,18 @@ type Field struct{ Key, Value string }
 // Mirrors reports whether this subscription's curated items carry their full
 // body into the public feed.
 func (s Subscription) Mirrors() bool { return !strings.EqualFold(s.Mirror, MirrorExcerpt) }
+
+// FullText returns the effective full-text mode.
+func (s Subscription) FullText() string {
+	switch strings.ToLower(strings.TrimSpace(s.Fulltext)) {
+	case FullTextOn:
+		return FullTextOn
+	case FullTextOff:
+		return FullTextOff
+	default:
+		return FullTextAuto
+	}
+}
 
 // Min returns the effective minimum length for an X post.
 func (s Subscription) Min() int {
@@ -110,6 +139,13 @@ type Item struct {
 	// Body is the sanitized HTML. It is populated only when a caller asks for
 	// one item (the reader, or a curate), never when listing the lane.
 	Body string `json:"-"`
+
+	// teaser records that this item's body came from <description>/<summary>
+	// rather than <content:encoded>/<content>. That distinction is the honest
+	// signal for "the feed is withholding the article": a publisher who ships
+	// content:encoded is giving you everything they have, however short it is.
+	// Length alone would send us fetching every link post and open thread.
+	teaser bool
 }
 
 // Unread reports whether the item still wants reading.

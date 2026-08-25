@@ -123,6 +123,8 @@ func parseSubLine(trimmed, group string) (Subscription, bool) {
 			sub.Mirror = strings.ToLower(f.Value)
 		case "min-chars":
 			sub.MinChars, _ = strconv.Atoi(f.Value)
+		case "fulltext":
+			sub.Fulltext = strings.ToLower(f.Value)
 		case "added":
 			sub.Added = f.Value
 		default:
@@ -311,6 +313,7 @@ func renderSubLine(prior string, sub Subscription) string {
 		{"handle", sub.Handle},
 		{"mirror", sub.Mirror},
 		{"min-chars", minCharsValue(sub)},
+		{"fulltext", fulltextValue(sub)},
 		{"added", sub.Added},
 	}
 	if strings.TrimSpace(prior) == "" {
@@ -347,6 +350,15 @@ func renderSubLine(prior string, sub Subscription) string {
 		out = strings.TrimSpace(sub.Title) + " " + strings.TrimSpace(out)
 	}
 	return indent + "- " + strings.TrimSpace(out)
+}
+
+// fulltextValue writes the field only when it is not the default, so an
+// ordinary line stays uncluttered.
+func fulltextValue(sub Subscription) string {
+	if v := sub.FullText(); v != FullTextAuto {
+		return v
+	}
+	return ""
 }
 
 func minCharsValue(sub Subscription) string {

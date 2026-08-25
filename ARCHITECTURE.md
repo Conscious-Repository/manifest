@@ -97,8 +97,13 @@ Everything that wants the owner's attention flows through the FEED as one
 of exactly four kinds, each with a declared lifecycle behind a single
 `AttentionSource` interface:
 
-* **findings** — spirit/engine items; markdown files; Keep/Discard feeds
-  the tune loop; may be saved to vault.
+* **findings** — spirit/engine items; markdown files; verdicts feed the tune
+  loop; may be saved to vault. **Amended 2026-08-25:** the Keep BUTTON is gone
+  — over eight weeks it was pressed twice against 128 discards, and both
+  cornerstone rewrites the loop produced were derived from discard patterns
+  alone. The `kept` status remains and is still read by `tuning.evidence`, but
+  it is now written only by acting on an item (`→ task`, save-to-vault), which
+  is the more honest positive signal. Discard is the primary verb.
 * **signals** — app-derived conditions; virtual; auto-clear on resolution;
   Act/Snooze/Dismiss; never enter kept/discarded. A signal card MAY carry
   domain quick-actions that resolve its condition (e.g. a stale task's

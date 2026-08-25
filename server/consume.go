@@ -32,10 +32,14 @@ func (s *Server) handleConsumeList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := r.URL.Query().Get("view")
+	list := r.URL.Query().Get("list")
 	writeJSON(w, map[string]any{
-		"items":  s.consume.Cards(view, r.URL.Query().Get("list")),
-		"lists":  s.consume.Lists(),
-		"unread": s.consume.Unread(),
+		"items": s.consume.Cards(view, list),
+		"lists": s.consume.Lists(),
+		// Scoped to the active group so it agrees with the scoped
+		// "mark all read" sitting next to it.
+		"unread": s.consume.Unread(list),
+		"total":  s.consume.Unread(""),
 	})
 }
 
@@ -107,6 +111,33 @@ func (s *Server) handleConsumeDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleConsumeUndismiss is the undo behind the dismiss toast.
+func (s *Server) handleConsumeUndismiss(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil || !s.consume.Undismiss(r.PathValue("id")) {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleConsumeReadAll clears the unread backlog, optionally for one group.
+func (s *Server) handleConsumeReadAll(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "marked": s.consume.MarkAllRead(r.URL.Query().Get("list"))})
+}
+
+// handleConsumePollAll refreshes every subscription now, ignoring intervals.
+func (s *Server) handleConsumePollAll(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "polled": s.consume.PollAll(r.Context())})
 }
 
 // handleConsumeCurate — THE button. Writes an extrinsic/ note under the
@@ -194,6 +225,7 @@ func (s *Server) handleConsumeSubUpdate(w http.ResponseWriter, r *http.Request) 
 		List     string `json:"list"`
 		Mirror   string `json:"mirror"`
 		MinChars int    `json:"minChars"`
+		Fulltext string `json:"fulltext"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -201,7 +233,7 @@ func (s *Server) handleConsumeSubUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	err := s.consume.UpdateSub(consume.Subscription{
 		ID: r.PathValue("id"), Title: body.Title, List: body.List,
-		Mirror: body.Mirror, MinChars: body.MinChars,
+		Mirror: body.Mirror, MinChars: body.MinChars, Fulltext: body.Fulltext,
 	})
 	if err != nil {
 		httpError(w, err)

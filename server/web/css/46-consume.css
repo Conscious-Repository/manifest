@@ -63,9 +63,14 @@
 .consume-note-row { display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; margin-top: var(--sp-3); }
 .consume-note-input { flex: 1; min-width: 12rem; }
 
-/* ---- the CONSUME view header ---- */
+/* ---- the CONSUME view header ----
+   Its chips are SUBORDINATE to the top-level filter row: with only APPROVALS
+   and CONSUME above, a same-weight second row would read as a competing set
+   rather than as this view's own sub-filters. */
 .consume-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-5); margin-bottom: var(--sp-6); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--line); }
 .consume-head-left { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.consume-head-left .filter-chip { font-size: var(--fs-xs); padding: 1px var(--sp-4); opacity: 0.85; }
+.consume-head-left .filter-chip.on { opacity: 1; }
 .consume-head-right { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; }
 .consume-count { color: var(--muted); }
 

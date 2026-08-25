@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +42,41 @@ import (
 // maxFeed bounds one feed response. A poll is bounded work.
 const maxFeed = 16 << 20
 
-type rssFetcher struct{ hc *http.Client }
+type rssFetcher struct {
+	hc *http.Client
+	// lastTTL is the refresh hint the most recent poll read out of the feed,
+	// in minutes. Surfaced through LastTTL so the scheduler can honour it.
+	lastTTL int
+}
+
+// LastTTL implements metaFetcher.
+func (r *rssFetcher) LastTTL() int { return r.lastTTL }
+
+// retryAfterError is a publisher explicitly telling us when to come back
+// (429/503 + Retry-After). It is an error — the poll did fail — but it carries
+// a schedule the store honours instead of the usual back-off.
+type retryAfterError struct {
+	msg string
+	at  time.Time
+}
+
+func (e *retryAfterError) Error() string { return e.msg }
+
+// parseRetryAfter reads the header in both its legal forms: delta-seconds, or
+// an HTTP date.
+func parseRetryAfter(v string, now time.Time) (time.Time, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}, false
+	}
+	if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+		return now.Add(time.Duration(secs) * time.Second), true
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
+}
 
 // xmlLink serves both dialects: RSS puts the URL in the element text, Atom in
 // an href attribute with a rel that says what kind of link it is.
@@ -85,8 +120,11 @@ type xmlFeed struct {
 	XMLName xml.Name
 	Title   string `xml:"title"` // Atom
 	Channel struct {
-		Title string    `xml:"title"`
-		Items []xmlItem `xml:"item"`
+		Title  string    `xml:"title"`
+		TTL    string    `xml:"ttl"`             // RSS <ttl>, in minutes
+		Period string    `xml:"updatePeriod"`    // sy:updatePeriod
+		Freq   string    `xml:"updateFrequency"` // sy:updateFrequency
+		Items  []xmlItem `xml:"item"`
 	} `xml:"channel"` // RSS
 	Entries []xmlItem `xml:"entry"` // Atom
 }
@@ -109,6 +147,28 @@ func (f *xmlFeed) title() string {
 	return strings.TrimSpace(f.Title)
 }
 
+// ttlMinutes reads the feed's own refresh hint. <ttl> is minutes outright;
+// the syndication module expresses it as period+frequency ("hourly", 2 = twice
+// an hour). A feed asking for less frequent polling gets it.
+func (f *xmlFeed) ttlMinutes() int {
+	if n, err := strconv.Atoi(strings.TrimSpace(f.Channel.TTL)); err == nil && n > 0 {
+		return n
+	}
+	per := strings.ToLower(strings.TrimSpace(f.Channel.Period))
+	if per == "" {
+		return 0
+	}
+	base := map[string]int{"hourly": 60, "daily": 1440, "weekly": 10080, "monthly": 43200, "yearly": 525600}[per]
+	if base == 0 {
+		return 0
+	}
+	freq := 1
+	if n, err := strconv.Atoi(strings.TrimSpace(f.Channel.Freq)); err == nil && n > 0 {
+		freq = n
+	}
+	return base / freq
+}
+
 func (f *xmlFeed) items() []xmlItem {
 	if len(f.Channel.Items) > 0 {
 		return f.Channel.Items
@@ -119,7 +179,7 @@ func (f *xmlFeed) items() []xmlItem {
 // Fetch polls one feed. Conditional GET means an unchanged feed costs one 304
 // and no parsing; the ETag/Last-Modified pair rides in the cursor map so it
 // persists across restarts like any other cursor.
-func (r rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string]string) ([]Item, map[string]string, error) {
+func (r *rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string]string) ([]Item, map[string]string, error) {
 	if strings.TrimSpace(sub.URL) == "" {
 		return nil, nil, fmt.Errorf("subscription %q has no feed url", sub.ID)
 	}
@@ -147,6 +207,15 @@ func (r rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string]
 	if resp.StatusCode == http.StatusNotModified {
 		return nil, cur, nil
 	}
+	// A publisher asking us to back off is obeyed to the second, rather than
+	// being treated as a generic failure and retried on our own schedule.
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
+		msg := fmt.Sprintf("%s: %s", sub.URL, resp.Status)
+		if at, ok := parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()); ok {
+			return nil, nil, &retryAfterError{msg: msg + " (retrying after " + at.Format(time.RFC822) + ")", at: at}
+		}
+		return nil, nil, fmt.Errorf("%s", msg)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("%s: %s", sub.URL, resp.Status)
 	}
@@ -167,6 +236,8 @@ func (r rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string]
 		next["lastModified"] = v
 	}
 
+	r.lastTTL = feed.ttlMinutes()
+
 	now := time.Now().UTC()
 	feedTitle := feed.title()
 	out := make([]Item, 0, len(feed.items()))
@@ -182,12 +253,21 @@ func (r rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string]
 // nor a body is dropped: it is a tracking pixel or a malformed row, not
 // something to read.
 func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (Item, bool) {
-	link := bestLink(xi.Links)
+	link := cleanLink(bestLink(xi.Links))
 
-	// Identity, in order of trustworthiness: an explicit guid/id, then the
-	// permalink, then the title. The first two are stable across re-polls; the
-	// third is the last resort before giving up on dedupe.
-	external := firstNonEmpty(strings.TrimSpace(xi.GUID), strings.TrimSpace(xi.ID), link, strings.TrimSpace(xi.Title))
+	// ⚠ Identity prefers the canonical LINK, not the guid.
+	//
+	// The spec says guid is the identifier, and for a well-behaved feed it is.
+	// But ~41% of feeds in the wild regenerate their guid on every fetch (and
+	// ~29% emit duplicate ones), which would turn every poll into a fresh batch
+	// of "new" items — a duplicate flood, hourly, forever. A permalink is the
+	// thing that actually stays put. Guid is the fallback for feeds that
+	// publish no link at all, and title the last resort.
+	//
+	// Commit also collapses items whose normalized URL matches one already
+	// held, which is what silently migrates ids from the old guid-first scheme
+	// without resurfacing anything as unread.
+	external := firstNonEmpty(link, strings.TrimSpace(xi.GUID), strings.TrimSpace(xi.ID), strings.TrimSpace(xi.Title))
 	if external == "" {
 		return Item{}, false
 	}
@@ -195,7 +275,8 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 	// content:encoded and Atom <content> carry the FULL post; description and
 	// summary usually carry a teaser. Prefer the long one — the whole point of
 	// the reader is not having to leave for the rest of the article.
-	raw := firstNonEmpty(xi.Encoded, xi.Content.Text, xi.Desc, xi.Summary)
+	full := firstNonEmpty(xi.Encoded, xi.Content.Text)
+	raw := firstNonEmpty(full, xi.Desc, xi.Summary)
 	body := Sanitize(raw)
 	text := Text(raw)
 
@@ -227,6 +308,7 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 		PublishedAt: parseDate(xi.PubDate, xi.Published, xi.Updated, xi.Date),
 		FetchedAt:   now,
 		Body:        body,
+		teaser:      full == "",
 	}, true
 }
 
@@ -290,6 +372,43 @@ func parseDate(candidates ...string) time.Time {
 	return time.Time{}
 }
 
+// trackingParams are the query keys that identify the reader rather than the
+// article. Stripping them from the STORED url (not just the dedupe key) is the
+// Miniflux habit: it stops a click leaking where the link was found, and it
+// makes two copies of the same essay collapse into one.
+var trackingParams = []string{
+	"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "utm_id",
+	"fbclid", "gclid", "dclid", "msclkid", "twclid", "igshid", "mc_cid", "mc_eid",
+	"ref", "ref_src", "referrer", "source", "spm", "yclid", "_hsenc", "_hsmi",
+}
+
+// cleanLink strips tracking parameters and the fragment while leaving the URL
+// otherwise exactly as the publisher wrote it (scheme and host untouched —
+// unlike curateKey, which normalizes aggressively because it is only ever
+// compared, never displayed or followed).
+func cleanLink(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	q := u.Query()
+	for _, k := range trackingParams {
+		q.Del(k)
+	}
+	for k := range q {
+		if strings.HasPrefix(strings.ToLower(k), "utm_") {
+			q.Del(k)
+		}
+	}
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	return u.String()
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -305,7 +424,7 @@ func firstNonEmpty(vals ...string) string {
 // own title. It accepts a feed URL, a site URL, or a bare hostname, because
 // nobody knows where their favourite blog hides its RSS link and being made to
 // find it is exactly the friction that stops a reader being used.
-func (r rssFetcher) Discover(ctx context.Context, input string) (feedURL, title string, err error) {
+func (r *rssFetcher) Discover(ctx context.Context, input string) (feedURL, title string, err error) {
 	raw := strings.TrimSpace(input)
 	if raw == "" {
 		return "", "", fmt.Errorf("nothing to subscribe to")
@@ -333,7 +452,7 @@ func (r rssFetcher) Discover(ctx context.Context, input string) (feedURL, title 
 }
 
 // probe fetches a candidate URL and reports whether it parsed as a feed.
-func (r rssFetcher) probe(ctx context.Context, u string) (string, string, error) {
+func (r *rssFetcher) probe(ctx context.Context, u string) (string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return "", "", err
@@ -360,7 +479,7 @@ func (r rssFetcher) probe(ctx context.Context, u string) (string, string, error)
 // autodiscover pulls the first RSS/Atom <link rel="alternate"> out of an HTML
 // page — the standard every blog engine emits and no reader should make a
 // person hunt for by hand.
-func (r rssFetcher) autodiscover(ctx context.Context, pageURL string) (string, error) {
+func (r *rssFetcher) autodiscover(ctx context.Context, pageURL string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return "", err

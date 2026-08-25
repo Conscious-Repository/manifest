@@ -113,11 +113,37 @@ function consumeRepaint(c, card) {
   card.replaceWith(fresh);
 }
 
+// consumeDismiss — gone from every view, with a brief undo.
+//
+// ⚠ The bug this replaces: it removed the card, POSTed, then called
+// renderConsume(), which repaints from consumeCache — a cache that still held
+// the item. The card came straight back, which read as "dismiss does nothing
+// but flicker". Anything that removes an item must remove it from the CACHE
+// too, or the next repaint undoes the work.
 async function consumeDismiss(id, card) {
   if (card) card.remove(); // optimistic
-  await consumePost(`/api/consume/item/${encodeURIComponent(id)}/dismiss`);
+  consumeForget(id);
   delete consumeOpen[id];
-  if (state.tab === "consume" || consumeIsActiveView()) renderConsume();
+  const ok = await consumePost(`/api/consume/item/${encodeURIComponent(id)}/dismiss`);
+  if (!ok) { await loadConsume(); return; } // the write failed — show the truth
+  // showToast makes the WHOLE toast the click target, so the label has to say
+  // what clicking it does.
+  showToast("dismissed · undo", () => consumeUndismiss(id));
+  if (consumeIsActiveView()) renderConsume();
+}
+
+// consumeForget drops an item from the in-memory lane so a repaint cannot
+// resurrect it.
+function consumeForget(id) {
+  consumeCache.items = (consumeCache.items || []).filter((x) => x.id !== id);
+  consumeCache.unread = (consumeCache.items || []).filter((x) => !x.read).length;
+  feedCache.consumeItems = (feedCache.consumeItems || []).filter((x) => x.id !== id);
+}
+
+async function consumeUndismiss(id) {
+  if (!(await consumePost(`/api/consume/item/${encodeURIComponent(id)}/undismiss`))) return;
+  await loadConsume();
+  showToast("restored");
 }
 
 // ---- the reader ----
@@ -165,14 +191,14 @@ async function consumeFillReader(c, card) {
 
 // ---- the CONSUME view ----
 
-function consumeIsActiveView() { return (state.feedView || "inbox") === "consume"; }
+function consumeIsActiveView() { return feedFilter() === "consume"; }
 
 async function loadConsume() {
   const q = new URLSearchParams({ view: consumeView });
   if (consumeList) q.set("list", consumeList);
   try {
     consumeCache = await (await fetch("/api/consume?" + q)).json();
-  } catch (e) { consumeCache = { items: [], lists: [], unread: 0 }; }
+  } catch (e) { consumeCache = { items: [], lists: [], unread: 0, total: 0 }; }
   renderConsume();
 }
 
@@ -210,7 +236,31 @@ function consumeHeader() {
   head.append(left);
 
   const right = el("div", "consume-head-right");
-  right.append(el("span", "micro-label consume-count", (consumeCache.unread || 0) + " unread"));
+  // Scoped to the active group, matching the "mark all read" beside it.
+  const unread = consumeCache.unread || 0;
+  const label = consumeList && consumeCache.total > unread
+    ? unread + " unread in " + consumeList
+    : unread + " unread";
+  right.append(el("span", "micro-label consume-count", label));
+
+  right.append(pillLight("refresh", async (e) => {
+    const btn = e && e.currentTarget;
+    if (btn) { btn.disabled = true; btn.textContent = "refreshing…"; }
+    await consumePost("/api/consume/poll-all");
+    await loadConsumeSubs();
+    await loadConsume();
+  }));
+
+  // The escape hatch after a week away. Scoped to the active group when one is
+  // filtered, so "mark all read" never quietly clears more than you can see.
+  if (unread > 0) {
+    right.append(pillLight("mark all read", async () => {
+      const q = consumeList ? "?list=" + encodeURIComponent(consumeList) : "";
+      if (!(await consumePost("/api/consume/read-all" + q))) return;
+      await loadConsume();
+    }));
+  }
+
   const manage = pillLight(consumeManageOpen ? "close" : "MANAGE", async () => {
     consumeManageOpen = !consumeManageOpen;
     if (consumeManageOpen) await loadConsumeSubs();
@@ -315,12 +365,19 @@ function consumeEditSub(s, row) {
     if ((s.mirror || "full") === v) o.selected = true;
     mirror.append(o);
   });
+  // Full text: what to do when this publisher only ships a teaser.
+  const ft = el("select", "consume-mirror");
+  [["auto", "full text: when truncated"], ["on", "full text: always fetch"], ["off", "full text: never fetch"]].forEach(([v, label]) => {
+    const o = el("option", "", label); o.value = v;
+    if ((s.fulltext || "auto") === v) o.selected = true;
+    ft.append(o);
+  });
   const save = async () => {
     await consumePost(`/api/consume/subscriptions/${encodeURIComponent(s.id)}/update`,
-      { title: title.value.trim(), list: list.value.trim(), mirror: mirror.value, minChars: s.minChars || 0 });
+      { title: title.value.trim(), list: list.value.trim(), mirror: mirror.value, fulltext: ft.value, minChars: s.minChars || 0 });
     await loadConsumeSubs(); await loadConsume();
   };
-  box.append(title, list, mirror, pillLight("save", save), pillLight("cancel", () => box.remove()));
+  box.append(title, list, mirror, ft, pillLight("save", save), pillLight("cancel", () => box.remove()));
   row.append(box);
   title.focus();
 }

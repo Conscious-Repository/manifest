@@ -1,7 +1,19 @@
 // ---- FEED: manifest's one inbox (top-level tab, feed-central §1/§4) ----
-// INBOX (default) = items awaiting a verdict (new + lapsed snoozes). Keep endorses
-// and moves the item to KEPT. Chips are INBOX/KEPT/ALL.
-const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"], ["consume", "CONSUME"]];
+//
+// The chips are KIND filters, not status filters (owner decision 2026-08-25).
+// The old row mixed the two — INBOX/KEPT/ALL selected a status while CONSUME
+// selected a kind — which is what made it read as incoherent. Now: nothing lit
+// means every lane; a lit chip means only that lane; clicking a lit chip clears
+// it. There is no status the user can pick.
+//
+// ⚠ The request status is therefore PINNED to "inbox". It used to be whatever
+// the chip said, piped straight into ?status= — and feed.Store.List's default
+// branch does an EXACT status match, so any value outside its vocabulary
+// returns zero findings silently, with no error (feed/feed.go:108). Sending a
+// kind name down that path would have emptied the feed and looked like a bug in
+// the data.
+const FEED_FILTERS = [["proposal", "APPROVALS"], ["consume", "CONSUME"]];
+const FEED_STATUS = "inbox"; // never user-selectable — see above
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
 let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [] };
@@ -52,23 +64,25 @@ function showFeed() {
 }
 
 async function loadFeed() {
-  const view = state.feedView || "inbox";
   // CONSUME is its own surface over its own endpoint — the reading backlog is
-  // not an inbox and does not want the inbox's filters or empty states.
-  if (view === "consume") { renderFeedFilters(); await loadConsume(); refreshFeedBadge(); return; }
+  // not an inbox and does not want the inbox's empty states.
+  if (feedFilter() === "consume") { renderFeedFilters(); await loadConsume(); refreshFeedBadge(); return; }
   // Drop the cached approval registries so the next card built pulls the LIVE
   // rock ladder (goals edited elsewhere in-session must not serve a stale
   // rock list into the payload editor's typeahead).
   apprAionReg = null; apprReReg = null;
   try {
-    const d = await (await fetch("/api/feed?status=" + view)).json();
+    const d = await (await fetch("/api/feed?status=" + FEED_STATUS)).json();
     feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [] };
     setBadge(els.feedNavBadge, d.badge || 0);
-    if (view === "inbox") diffDigests(feedCache.items); // catch digests landed while unpolled
+    diffDigests(feedCache.items); // catch digests landed while unpolled
   } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [] }; }
   renderFeedFilters();
   renderFeed();
 }
+
+// feedFilter is the active lane kind ("" = show everything).
+function feedFilter() { return state.feedFilter || ""; }
 
 // refreshFeedBadge keeps the nav pill honest from anywhere (boot, route, verdicts,
 // run-finish). Always async — the count can touch the contacts calendar cache.
@@ -81,22 +95,27 @@ async function refreshFeedBadge() {
 
 function renderFeedFilters() {
   const host = els.feedFilters; host.innerHTML = "";
-  const cur = state.feedView || "inbox";
-  FEED_VIEWS.forEach(([val, label]) => {
+  const cur = feedFilter();
+  FEED_FILTERS.forEach(([val, label]) => {
     const b = el("button", "filter-chip" + (cur === val ? " on" : ""), label);
-    b.onclick = () => { state.feedView = val; loadFeed(); };
+    // A lit chip is a filter you can take off by clicking it again — no
+    // separate "ALL" button to reach for.
+    b.onclick = () => { state.feedFilter = cur === val ? "" : val; loadFeed(); };
     host.appendChild(b);
   });
 }
 function renderFeed() {
   const host = els.feedList; host.innerHTML = "";
   const sigHost = els.feedSignals; sigHost.innerHTML = ""; // collapses when empty
-  const view = state.feedView || "inbox";
-  // signals lane: app-derived nudges, INBOX only, tight one-line chips. Never
-  // under KEPT/ALL (conditions, not items). Capped so a long neglect backlog
-  // doesn't bury the findings — the most-overdue lead, the rest fold away.
+  const filter = feedFilter();
+  // laneVisible replaces the old `inboxOnly && view !== "inbox"` gate: with no
+  // filter every lane paints, and with one only that lane does.
+  const laneVisible = (kind) => !filter || filter === kind;
+  // signals lane: app-derived nudges, tight one-line chips. Capped so a long
+  // neglect backlog doesn't bury the findings — the most-overdue lead, the rest
+  // fold away.
   const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg) && !isPlanReady(sg) && !isAgentQuestions(sg));
-  if (view === "inbox" && stripSignals.length) {
+  if (!filter && stripSignals.length) {
     const total = stripSignals.length;
     sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
     const shown = signalsExpanded ? total : Math.min(SIGNAL_CAP, total);
@@ -113,24 +132,24 @@ function renderFeed() {
   // deterministic + script-rendered). Both INBOX only — they are not
   // kept/discarded items and never touch the tune loop.
   FEED_LANES.forEach((lane) => {
-    if (lane.inboxOnly && view !== "inbox") return;
+    if (!laneVisible(lane.kind)) return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
   // the tail button for the capped consume lane, before the empty-state check
   const unreadConsume = (feedCache.consumeItems || []).filter((x) => !x.read).length;
-  if (view === "inbox" && unreadConsume > CONSUME_CAP) {
+  if (!filter && unreadConsume > CONSUME_CAP) {
     const more = el("button", "signal-more", `▾ ${unreadConsume - CONSUME_CAP} more in CONSUME`);
-    more.onclick = () => { state.feedView = "consume"; loadFeed(); };
+    more.onclick = () => { state.feedFilter = "consume"; loadFeed(); };
     host.appendChild(more);
   }
-  if (!feedCache.items.length && !feedCache.receipts.length && !host.children.length) {
-    host.appendChild(emptyRow(view === "inbox"
-      ? "Inbox zero — nothing awaiting a verdict."
-      : view === "kept" ? "Nothing kept yet." : "No feed items yet."));
+  if (!host.children.length && (!laneVisible("finding") || !feedCache.items.length)) {
+    host.appendChild(emptyRow(
+      filter === "proposal" ? "Nothing awaiting approval."
+        : filter ? "Nothing here." : "Inbox zero — nothing awaiting you."));
     return;
   }
   FEED_TAIL_LANES.forEach((lane) => {
-    if (lane.inboxOnly && view !== "inbox") return;
+    if (!laneVisible(lane.kind)) return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
   // the rail: drafts and the selection outlive this repaint (the 3s poll can
@@ -381,10 +400,18 @@ function feedCard(it) {
   // picks the medium; a card with neither ref falls through with no "view →")
   if (it.artifactPath || it.artifactRef) actions.append(pillLight("view →", () => openResult(it, it.title)));
   if (it.status !== "discarded") {
-    const keep = pillLight("Keep", () => feedVerdict(card, it, "kept", "kept"));
-    keep.classList.add("verdict-primary");
-    actions.append(keep);
-    if (it.status !== "kept") actions.append(pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded")));
+    // ⚠ No Keep button (owner decision 2026-08-25). The `kept` STATUS still
+    // exists and the weekly tune ritual still reads it — but it is now written
+    // only by "→ task" and save-to-vault, i.e. by acting on the item rather
+    // than by tapping approval at it. Over eight weeks Keep was pressed twice
+    // against 128 discards, and both cornerstone rewrites the loop produced
+    // were derived from discard patterns alone.
+    //
+    // Discard is now the ONLY way to clear something you don't want, and
+    // findings never age out — so it is the primary verb and never hidden.
+    const discard = pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded"));
+    discard.classList.add("verdict-primary");
+    actions.append(discard);
     actions.append(pillLight("→ task", () => feedToTodo(it.id))); // catch it on the TASKS board (Inbox)
     if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
   } else {

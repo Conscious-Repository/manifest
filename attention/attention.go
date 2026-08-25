@@ -21,6 +21,9 @@ type Lifecycle string
 const (
 	// LifecycleKeptDiscarded: findings — kept/discarded/snoozed verdicts,
 	// written to item frontmatter; the tune ritual reads them as quality signal.
+	// ⚠ 2026-08-25: `kept` is no longer reachable by a button. It is written by
+	// acting on an item (→ task, save-to-vault); Discard is the explicit verb.
+	// The lifecycle name still describes the STATUS set, which is unchanged.
 	LifecycleKeptDiscarded Lifecycle = "kept-discarded"
 	// LifecycleDismissSnoozeAutoclear: signals — dismiss re-arms on hash
 	// change, snooze lapses, and the card clears ITSELF when the condition
@@ -83,7 +86,7 @@ type EmptySource struct {
 	L Lifecycle
 }
 
-func (e EmptySource) Kind() string                            { return e.K }
-func (e EmptySource) Lifecycle() Lifecycle                    { return e.L }
-func (e EmptySource) Active(time.Time, url.Values) []Card     { return []Card{} }
-func (e EmptySource) Count(time.Time) int                     { return 0 }
+func (e EmptySource) Kind() string                        { return e.K }
+func (e EmptySource) Lifecycle() Lifecycle                { return e.L }
+func (e EmptySource) Active(time.Time, url.Values) []Card { return []Card{} }
+func (e EmptySource) Count(time.Time) int                 { return 0 }

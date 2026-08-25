@@ -161,7 +161,7 @@ func (s *Service) Subscribe(ctx context.Context, input, title, list, mirror stri
 			sub.Title = "@" + sub.Handle
 		}
 	} else {
-		feedURL, feedTitle, err := rssFetcher{hc: s.hc}.Discover(ctx, raw)
+		feedURL, feedTitle, err := (&rssFetcher{hc: s.hc}).Discover(ctx, raw)
 		if err != nil {
 			return Subscription{}, err
 		}
@@ -233,6 +233,10 @@ func (s *Service) UpdateSub(in Subscription) error {
 	if in.MinChars >= 0 {
 		cur.MinChars = in.MinChars
 	}
+	switch strings.ToLower(strings.TrimSpace(in.Fulltext)) {
+	case FullTextAuto, FullTextOn, FullTextOff:
+		cur.Fulltext = strings.ToLower(strings.TrimSpace(in.Fulltext))
+	}
 	if !d.Update(cur) {
 		return fmt.Errorf("no subscription %q", in.ID)
 	}
@@ -294,20 +298,46 @@ func (s *Service) pollDue(ctx context.Context) {
 	}
 }
 
+// maxBackoff caps the failure back-off. Past a day, retrying more often will
+// not fix a feed that moved or died — but the subscription stays visible in
+// MANAGE with its reason, so it is never silently forgotten.
+const maxBackoff = 24 * time.Hour
+
+// due decides whether to poll, honouring three things beyond the configured
+// interval: the feed's own <ttl> hint, an explicit Retry-After, and an
+// exponential back-off on consecutive failures.
 func (s *Service) due(sub Subscription, now time.Time) bool {
-	interval := s.cfg.RSSInterval
+	lastPoll, fails, ttl, retryAfter := s.store.Schedule(sub.ID)
+	if !retryAfter.IsZero() && now.Before(retryAfter) {
+		return false // the publisher told us when to come back
+	}
+	if lastPoll.IsZero() {
+		return true
+	}
+	return now.Sub(lastPoll) >= s.interval(sub, ttl, fails)
+}
+
+// interval is the effective gap between polls for one subscription.
+func (s *Service) interval(sub Subscription, ttl time.Duration, fails int) time.Duration {
+	base := s.cfg.RSSInterval
 	if sub.Kind == KindX {
-		interval = s.cfg.XInterval
+		base = s.cfg.XInterval
 	}
-	st := s.store.read(sub.ID)
-	if st.LastPoll == "" {
-		return true
+	// A feed asking to be polled at most every 6h gets that, not hourly.
+	if ttl > base {
+		base = ttl
 	}
-	last, err := time.Parse(time.RFC3339, st.LastPoll)
-	if err != nil {
-		return true
+	if fails <= 0 {
+		return base
 	}
-	return now.Sub(last) >= interval
+	backoff := base
+	for i := 0; i < fails && backoff < maxBackoff; i++ {
+		backoff *= 2
+	}
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+	return backoff
 }
 
 // PollNow forces one subscription to poll, for the manage panel's button.
@@ -331,17 +361,48 @@ func (s *Service) pollOne(ctx context.Context, sub Subscription) error {
 
 	f, err := s.fetcher(sub)
 	if err != nil {
-		s.store.Commit(sub.ID, s.now(), false, nil, nil, err.Error())
+		s.store.commit(sub.ID, s.now(), false, nil, nil, err.Error(), PollMeta{})
 		return err
 	}
 	items, cursors, err := f.Fetch(ctx, sub, s.store.Cursors(sub.ID))
+	meta := pollMetaOf(err)
 	if err != nil {
-		s.store.Commit(sub.ID, s.now(), false, nil, nil, err.Error())
+		s.store.commit(sub.ID, s.now(), false, nil, nil, cleanErr(err), meta)
 		log.Printf("consume: poll %s: %v", sub.ID, err)
 		return err
 	}
-	s.store.Commit(sub.ID, s.now(), true, items, cursors, "")
+	if m, ok := f.(metaFetcher); ok {
+		meta.TTLMinutes = m.LastTTL()
+	}
+	// Full text for feeds that publish only a teaser — a second fetch, on new
+	// items only, never for X (a post is already whole).
+	if sub.Kind != KindX && sub.FullText() != FullTextOff {
+		items = s.fillFullText(ctx, sub, items)
+	}
+	s.store.commit(sub.ID, s.now(), true, items, cursors, "", meta)
 	return nil
+}
+
+// metaFetcher is the optional half of the Fetcher seam: a fetcher that learned
+// a refresh hint from the feed itself.
+type metaFetcher interface{ LastTTL() int }
+
+// pollMetaOf lifts a publisher's Retry-After out of a failed poll.
+func pollMetaOf(err error) PollMeta {
+	var ra *retryAfterError
+	if errors.As(err, &ra) {
+		return PollMeta{RetryAfter: ra.at}
+	}
+	return PollMeta{}
+}
+
+// cleanErr is what the manage panel shows: the message without the wrapper.
+func cleanErr(err error) string {
+	var ra *retryAfterError
+	if errors.As(err, &ra) {
+		return ra.msg
+	}
+	return err.Error()
 }
 
 // Fetcher turns one subscription into items.
@@ -366,7 +427,7 @@ func (s *Service) fetcher(sub Subscription) (Fetcher, error) {
 		}
 		return &xFetcher{hc: s.hc, token: token}, nil
 	default:
-		return rssFetcher{hc: s.hc}, nil
+		return &rssFetcher{hc: s.hc}, nil
 	}
 }
 
@@ -411,7 +472,10 @@ func (s *Service) Cards(view, list string) []Card {
 			continue
 		}
 		for _, it := range s.store.Items(sub.ID) {
-			if it.DismissedAt != "" && view != "all" {
+			// Dismissed means GONE — from unread, from all, from the lane.
+			// (Before 2026-08-25 this leaked back into the "all" view, which
+			// read as dismiss not working at all.)
+			if it.DismissedAt != "" {
 				continue
 			}
 			if view != "all" && !it.Unread() {
@@ -444,9 +508,16 @@ func card(it Item, sub Subscription, curated map[string]bool) Card {
 
 // Unread counts what is waiting, for the lane's own header. It is NOT the FEED
 // badge: reading is not attention debt (§5 amendment).
-func (s *Service) Unread() int {
+//
+// ⚠ It is SCOPED to the same list the caller is looking at. "Mark all read" is
+// scoped to the active group, so a global count beside it would still read 66
+// after clearing that group — which looks exactly like the button failing.
+func (s *Service) Unread(list string) int {
 	n := 0
 	for _, sub := range s.Subscriptions() {
+		if list != "" && !strings.EqualFold(sub.List, list) {
+			continue
+		}
 		for _, it := range s.store.Items(sub.ID) {
 			if it.Unread() {
 				n++
@@ -484,9 +555,58 @@ func (s *Service) Get(itemID string) (Item, Subscription, bool) {
 	return it, sub, ok
 }
 
-// MarkRead / Dismiss are the lane's lifecycle verbs.
+// MarkRead / Dismiss / Undismiss are the lane's lifecycle verbs.
 func (s *Service) MarkRead(itemID string) bool { return s.mark(itemID, true, false) }
 func (s *Service) Dismiss(itemID string) bool  { return s.mark(itemID, false, true) }
+
+// Undismiss restores a dismissed item — the undo behind the toast. It clears
+// the tombstone too, or the next poll would immediately re-suppress it.
+func (s *Service) Undismiss(itemID string) bool {
+	subID, ok := subOf(itemID)
+	if !ok {
+		return false
+	}
+	return s.store.Undismiss(subID, itemID, s.now())
+}
+
+// MarkAllRead clears the unread backlog, optionally scoped to one group. The
+// standard escape hatch after a week away.
+func (s *Service) MarkAllRead(list string) int {
+	n := 0
+	for _, sub := range s.Subscriptions() {
+		if list != "" && !strings.EqualFold(sub.List, list) {
+			continue
+		}
+		n += s.store.MarkAllRead(sub.ID, s.now())
+	}
+	return n
+}
+
+// PollAll refreshes every subscription regardless of when it is next due, for
+// the "refresh now" button. Bounded concurrency: a reader with thirty feeds
+// should not open thirty sockets at once.
+func (s *Service) PollAll(ctx context.Context) int {
+	subs := s.Subscriptions()
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	ok := 0
+	for _, sub := range subs {
+		wg.Add(1)
+		go func(sub Subscription) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if err := s.pollOne(ctx, sub); err == nil {
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		}(sub)
+	}
+	wg.Wait()
+	return ok
+}
 
 func (s *Service) mark(itemID string, read, dismissed bool) bool {
 	subID, ok := subOf(itemID)
