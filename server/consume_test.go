@@ -434,3 +434,61 @@ func TestConsumeBacklogRoutes(t *testing.T) {
 		t.Errorf("poll-all: %d", code)
 	}
 }
+
+// ⚠ A session cookie is the owner logged in. It must never come back in a
+// response — mirrors TestConsumeXPortalRow, the existing precedent.
+func TestConsumeSiteSignInNeverEchoesTheCookie(t *testing.T) {
+	h := newConsumeHarness(t)
+	h.subscribe(t)
+	const cookie = "substack.sid=s%3ATOTALLYSECRETSESSION.zzzz9999"
+
+	w := h.do(t, http.MethodPost, "/api/consume/sites",
+		`{"host":"substack.com","cookie":"`+cookie+`"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("set site cookie: %d %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "TOTALLYSECRETSESSION") {
+		t.Fatalf("THE SESSION COOKIE WAS ECHOED BACK: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "9999") {
+		t.Errorf("expected a last-four mask: %s", w.Body.String())
+	}
+
+	// Nor from the list, nor from the portals panel.
+	for _, path := range []string{"/api/consume/sites", "/api/portals", "/api/consume/subscriptions"} {
+		body := h.do(t, http.MethodGet, path, "").Body.String()
+		if strings.Contains(body, "TOTALLYSECRETSESSION") {
+			t.Errorf("%s leaked the cookie: %s", path, body)
+		}
+	}
+
+	// The portals panel shows it as a manageable row.
+	var resp struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	_ = json.Unmarshal(h.do(t, http.MethodGet, "/api/portals", "").Body.Bytes(), &resp)
+	found := false
+	for _, r := range resp.Rows {
+		if r["id"] == "site:substack.com" {
+			found = true
+			if r["state"] != "open" {
+				t.Errorf("state: %v", r["state"])
+			}
+		}
+	}
+	if !found {
+		t.Error("the sign-in did not appear in the portals panel")
+	}
+
+	// And it can be removed.
+	if code := h.do(t, http.MethodPost, "/api/consume/sites/site:substack.com/remove", "").Code; code != http.StatusOK {
+		t.Errorf("remove: %d", code)
+	}
+	var after struct {
+		Sites []map[string]any `json:"sites"`
+	}
+	_ = json.Unmarshal(h.do(t, http.MethodGet, "/api/consume/sites", "").Body.Bytes(), &after)
+	if len(after.Sites) != 0 {
+		t.Errorf("sign-in survived removal: %+v", after.Sites)
+	}
+}

@@ -117,6 +117,12 @@
 .consume-edit { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; padding: var(--sp-4) 0; }
 .consume-mirror { font-family: var(--mono); font-size: var(--fs-sm); }
 
+/* paid-publication sign-in */
+.consume-signin { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; padding-top: var(--sp-3); }
+.consume-signin-why { color: var(--muted); }
+.consume-signin-form { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; padding: var(--sp-4) 0; }
+.consume-signin-input { flex: 1; min-width: 16rem; }
+
 /* status dot: idle / polled ok / degraded — the manage panel's whole health UI */
 .consume-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--base-25); }
 .consume-dot.ok { background: var(--accent); }

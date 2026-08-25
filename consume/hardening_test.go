@@ -823,7 +823,7 @@ func TestSubstackAudienceMarkupIsAPaywallSignal(t *testing.T) {
 
 	s := schedSvc(t)
 	s.hc = srv.Client()
-	_, paywalled := s.fetchArticle(context.Background(), srv.URL)
+	_, paywalled := s.fetchArticle(context.Background(), srv.URL, "")
 	if !paywalled {
 		t.Error(`audience\":\"only_paid\" in the page source was not read as a paywall`)
 	}
@@ -834,7 +834,7 @@ func TestSubstackAudienceMarkupIsAPaywallSignal(t *testing.T) {
 	}))
 	defer free.Close()
 	s.hc = free.Client()
-	body, paywalled := s.fetchArticle(context.Background(), free.URL)
+	body, paywalled := s.fetchArticle(context.Background(), free.URL, "")
 	if paywalled {
 		t.Error("a free article was flagged as paywalled")
 	}

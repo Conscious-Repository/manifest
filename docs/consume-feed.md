@@ -60,6 +60,37 @@ piece; when the article is behind a paywall it cannot, and the card is labelled
 preview the publisher shares, plus a link to the source. It never replaces a
 usable preview with a paywall notice.
 
+### Publications you pay for
+
+A paid publication truncates its feed, so anonymously you get a preview and a
+`paid post` label. If you subscribe, you can sign in and read it here in full.
+
+In **MANAGE**, a subscription whose posts are previews shows `paid posts · sign
+in`. Paste the session cookie from your browser — DevTools → Application →
+Cookies → the publication's domain → copy `substack.sid`. One paste covers
+**every publication on that domain**, because that is how the cookie itself is
+scoped; a publication on its own domain needs its own.
+
+⚠ **This is a bigger credential than an API key.** It is your logged-in session:
+whoever holds it can act as you on that site, not merely read. So:
+
+- it is stored at `<dataDir>/consume/sites/<domain>.json`, mode 0600, and
+  **never** in your vault — the subscription list is a synced git repo
+- it is never logged, never echoed back, and shown only as `····last4`
+- it is **dropped if a redirect leaves the site** it belongs to
+- a feed URL that itself carries a token is refused at subscribe time, because
+  `[url:: …]` *is* written to the vault
+- delete it from MANAGE or Portals and the next poll is anonymous again
+
+It expires after about three months. When it does, paid posts quietly become
+previews again — so the subscription goes degraded with `sign-in expired` and a
+FEED nudge asks for a fresh one. That judgement is only ever made after a
+*successful* poll; a feed that is merely down never triggers it.
+
+⚠ **Curated items from a paid source are excerpt-only**, whatever
+`[mirror::]` says. Mirroring a paid post to your public feed would republish
+what the publisher sells.
+
 ### Finding something in the archive
 
 Two ways, both in FEED → CONSUME:

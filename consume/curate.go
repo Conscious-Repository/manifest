@@ -167,7 +167,7 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 	}
 	w.Set(curatedField, now.Format("2006-01-02"))
 	w.Set("item", it.ID)
-	w.Set("mirror", mirrorOf(sub))
+	w.Set("mirror", s.mirrorFor(sub))
 	if note != "" {
 		w.Set("note", yamlScalar(note))
 	}
@@ -186,7 +186,18 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 	return w.String(strings.TrimRight(b.String(), "\n"))
 }
 
-func mirrorOf(sub Subscription) string {
+// mirrorFor decides how much of a curated item the PUBLIC feed carries.
+//
+// ⚠ A signed-in source is a PAID one, and mirroring a paid post republishes
+// something the publisher sells to their subscribers — a different act from
+// mirroring a free post, and the strongest form of the concern the owner
+// already weighed once. Paid sources are excerpt-only regardless of the
+// subscription's setting; the link still points at the original, so a reader
+// who wants it can subscribe as he did.
+func (s *Service) mirrorFor(sub Subscription) string {
+	if s.cookieFor(sub.URL) != "" {
+		return MirrorExcerpt
+	}
 	if sub.Mirrors() {
 		return MirrorFull
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"manifest/record"
+	"manifest/secrets"
 )
 
 // Service is the lane: the subscription list in the vault, the poll caches in
@@ -53,6 +54,9 @@ type Service struct {
 	// xToken returns the API bearer token ("" when the portal is sealed).
 	xToken func() string
 
+	// sites holds the per-domain session cookies that unlock paid publications.
+	sites *SiteCreds
+
 	nowFn func() time.Time
 	mu    sync.Mutex
 }
@@ -78,6 +82,7 @@ func New(dataDir string, io VaultIO, cfg Config) *Service {
 	}
 	return &Service{
 		store:      NewStore(dataDir),
+		sites:      NewSiteCreds(dataDir),
 		hc:         httpClient(),
 		cfg:        cfg,
 		readVault:  io.Read,
@@ -90,6 +95,18 @@ func New(dataDir string, io VaultIO, cfg Config) *Service {
 // UseXToken supplies the X API token source (Phase 3). Without it, X
 // subscriptions report a sealed portal instead of failing obscurely.
 func (s *Service) UseXToken(f func() string) { s.xToken = f }
+
+// Sites exposes the site-credential store (the server layer's panel reads it).
+func (s *Service) Sites() *SiteCreds { return s.sites }
+
+// cookieFor returns the stored session for a URL's site, or "".
+// ⚠ The result is a credential: never log it, never put it in an error.
+func (s *Service) cookieFor(rawURL string) string {
+	if s.sites == nil {
+		return ""
+	}
+	return s.sites.Cookie(rawURL)
+}
 
 func (s *Service) now() time.Time { return s.nowFn().UTC() }
 
@@ -164,6 +181,17 @@ func (s *Service) Subscribe(ctx context.Context, input, title, list, mirror stri
 		feedURL, feedTitle, err := (&rssFetcher{hc: s.hc}).Discover(ctx, raw)
 		if err != nil {
 			return Subscription{}, err
+		}
+		// ⚠ [url:: …] is written into extrinsic/feeds.md — the owner's VAULT,
+		// a git repo that auto-commits and pushes. A private-feed URL with an
+		// embedded token (Substack's podcast feeds are exactly that shape)
+		// would put a live credential into version history, where it cannot be
+		// recalled. Refuse, and point at the sign-in that keeps the secret in
+		// the secrets tier where it belongs.
+		if findings := secrets.Scan(feedURL); len(findings) > 0 {
+			return Subscription{}, errors.New(
+				"that URL carries what looks like a secret, and the subscription list lives in your vault — " +
+					"subscribe to the public feed instead and sign in to the site to unlock paid posts")
 		}
 		sub.Kind = KindRSS
 		sub.URL = feedURL
@@ -382,7 +410,7 @@ func (s *Service) pollOne(ctx context.Context, sub Subscription) error {
 	meta := pollMetaOf(err)
 	if err != nil {
 		s.store.commit(sub.ID, s.now(), false, nil, nil, cleanErr(err), meta)
-		log.Printf("consume: poll %s: %v", sub.ID, err)
+		log.Printf("consume: poll %s: %v", sub.ID, err) // errors are pre-redacted
 		return err
 	}
 	if m, ok := f.(metaFetcher); ok {
@@ -394,7 +422,40 @@ func (s *Service) pollOne(ctx context.Context, sub Subscription) error {
 		items = s.fillFullText(ctx, sub, items)
 	}
 	s.store.commit(sub.ID, s.now(), true, items, cursors, "", meta)
+	s.judgeSession(sub, items)
 	return nil
+}
+
+// judgeSession decides whether a stored sign-in is still working.
+//
+// The evidence is already in hand: if this subscription HAS a credential and
+// the poll STILL came back with preview-only items, the session is dead —
+// signing in is precisely what should have prevented that. If any item came
+// back whole, it is alive.
+//
+// ⚠ Only ever called after a SUCCESSFUL poll. A network failure, a 500, a parse
+// error — none of those say anything about the session, and telling the owner
+// to re-authenticate because a feed was briefly down would be worse than
+// staying quiet.
+func (s *Service) judgeSession(sub Subscription, items []Item) {
+	if s.sites == nil || sub.Kind == KindX || len(items) == 0 {
+		return
+	}
+	if s.cookieFor(sub.URL) == "" {
+		return // nothing signed in here; nothing to judge
+	}
+	previews, whole := 0, 0
+	for _, it := range items {
+		if it.Preview != "" {
+			previews++
+		} else if !it.teaser {
+			whole++
+		}
+	}
+	if previews == 0 && whole == 0 {
+		return // nothing conclusive in this batch
+	}
+	s.sites.MarkResult(SiteKey(sub.URL), whole == 0 && previews > 0, s.now())
 }
 
 // metaFetcher is the optional half of the Fetcher seam: a fetcher that learned
@@ -441,7 +502,7 @@ func (s *Service) fetcher(sub Subscription) (Fetcher, error) {
 		}
 		return &xFetcher{hc: s.hc, token: token}, nil
 	default:
-		return &rssFetcher{hc: s.hc}, nil
+		return &rssFetcher{hc: s.hc, cookie: s.cookieFor(sub.URL)}, nil
 	}
 }
 
@@ -674,11 +735,19 @@ func (s *Service) mark(itemID string, read, dismissed bool) bool {
 // SubStatus is one row of the manage panel.
 type SubStatus struct {
 	Subscription
-	LastOK   string `json:"lastOk,omitempty"`
-	LastErr  string `json:"lastErr,omitempty"`
-	Unread   int    `json:"unread"`
-	Archived int    `json:"archived"` // seeded or read — browsable, not queued
-	Total    int    `json:"total"`
+	LastOK  string `json:"lastOk,omitempty"`
+	LastErr string `json:"lastErr,omitempty"`
+	// Site is the credential domain this subscription would use, and how that
+	// sign-in is doing. NEVER the cookie itself.
+	Site          string `json:"site,omitempty"`
+	SignedIn      bool   `json:"signedIn"`
+	SignInExpired bool   `json:"signInExpired,omitempty"`
+	// Paid marks a subscription whose items are preview-only — the cue to
+	// offer signing in.
+	Paid     bool `json:"paid,omitempty"`
+	Unread   int  `json:"unread"`
+	Archived int  `json:"archived"` // seeded or read — browsable, not queued
+	Total    int  `json:"total"`
 }
 
 // Statuses returns the manage panel's rows: the subscription plus how its last
@@ -701,6 +770,14 @@ func (s *Service) Statuses() []SubStatus {
 			} else {
 				st.Archived++
 			}
+			if it.Preview != "" {
+				st.Paid = true
+			}
+		}
+		if sub.Kind != KindX {
+			st.Site = SiteKey(sub.URL)
+			st.SignedIn = s.cookieFor(sub.URL) != ""
+			st.SignInExpired = s.sites != nil && s.sites.Expired(sub.URL)
 		}
 		out = append(out, st)
 	}

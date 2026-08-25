@@ -23,7 +23,9 @@ package consume
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -232,4 +234,56 @@ func snapshotName(itemID string) string {
 
 // httpClient is the shared fetch client. 20s matches portals/; feeds are small
 // and a slow one must not hold a poll goroutine open indefinitely.
-func httpClient() *http.Client { return &http.Client{Timeout: 20 * time.Second} }
+//
+// ⚠ CheckRedirect strips the Cookie header whenever a redirect leaves the host
+// it was set for. Go copies most headers across redirects, so without this one
+// sloppy redirect — an http→https bounce onto a CDN, a shortener, a hijacked
+// domain — would hand somebody else the owner's full session. A credential is
+// scoped to a site; the transport has to enforce that, not the caller.
+func httpClient() *http.Client {
+	return &http.Client{
+		Timeout: 20 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return http.ErrUseLastResponse
+			}
+			if len(via) > 0 && !sameSite(via[0].URL, req.URL) {
+				req.Header.Del("Cookie")
+			}
+			return nil
+		},
+	}
+}
+
+// sameSite reports whether two URLs share a registrable domain — the same rule
+// a browser uses to decide whether a cookie travels.
+func sameSite(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	ka, kb := SiteKey(a.String()), SiteKey(b.String())
+	return ka != "" && ka == kb
+}
+
+// redactURL is what any error, log line or cached status may say about a URL.
+//
+// ⚠ Scheme, host and path only. Query strings and userinfo are where tokens
+// live — Substack's podcast private feeds put one straight in the path/query —
+// and consume's failure paths flow into THREE places that are not the secrets
+// tier: the process log, the 0644 poll cache, and the /api response the manage
+// panel renders. Redacting at the source is the only place that covers all
+// three.
+func redactURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return "the feed"
+	}
+	out := u.Scheme + "://" + u.Host + u.Path
+	if u.RawQuery != "" {
+		out += "?…"
+	}
+	return out
+}
+
+// errNoHost is returned when a credential is offered with no site to attach to.
+var errNoHost = errors.New("no site for that credential")

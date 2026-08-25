@@ -66,6 +66,7 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	rows = append(rows, s.gmailPortalRow())
 	rows = append(rows, s.heypocketPortalRow())
 	rows = append(rows, s.consumeXPortalRow())
+	rows = append(rows, s.consumeSiteRows()...)
 	rows = append(rows, s.deepseekPortalRow()) // the testable lab conduit (Phase 5a)
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())
@@ -189,6 +190,10 @@ func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
 		s.handleConsumeXKey(w, r)
 		return
 	}
+	if strings.HasPrefix(r.PathValue("id"), consumeSitePrefix) {
+		s.handleConsumeSiteKey(w, r)
+		return
+	}
 	if r.PathValue("id") == deepseekID {
 		s.handleDeepseekKey(w, r)
 		return
@@ -221,6 +226,10 @@ func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.PathValue("id") == consumeXID {
 		s.handleConsumeXTest(w, r)
+		return
+	}
+	if strings.HasPrefix(r.PathValue("id"), consumeSitePrefix) {
+		s.handleConsumeSites(w, r) // nothing to "test" without spending a poll
 		return
 	}
 	if r.PathValue("id") == deepseekID {
@@ -283,6 +292,10 @@ func (s *Server) handlePortalDisconnect(w http.ResponseWriter, r *http.Request) 
 	}
 	if r.PathValue("id") == consumeXID {
 		s.handleConsumeXDisconnect(w, r)
+		return
+	}
+	if strings.HasPrefix(r.PathValue("id"), consumeSitePrefix) {
+		s.handleConsumeSiteClear(w, r)
 		return
 	}
 	svc, ok := s.portalService(w)

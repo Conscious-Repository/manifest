@@ -122,13 +122,17 @@ var positiveHints = []string{
 // fetchArticle downloads a page and returns its readable HTML plus whether the
 // page announced a paywall. The second return is why a failed extraction can be
 // explained to the owner instead of silently leaving a stub.
-func (s *Service) fetchArticle(ctx context.Context, pageURL string) (string, bool) {
+func (s *Service) fetchArticle(ctx context.Context, pageURL, cookie string) (string, bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return "", false
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5")
+	// Signed in: the article page renders in full instead of a subscribe box.
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
 	resp, err := s.hc.Do(req)
 	if err != nil {
 		return "", false
@@ -291,7 +295,7 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 		}
 		// Never let one slow site stall the rest of the poll.
 		fetchCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		body, paywalled := s.fetchArticle(fetchCtx, it.URL)
+		body, paywalled := s.fetchArticle(fetchCtx, it.URL, s.cookieFor(it.URL))
 		cancel()
 
 		text := Text(body)

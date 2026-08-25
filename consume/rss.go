@@ -44,6 +44,12 @@ const maxFeed = 16 << 20
 
 type rssFetcher struct {
 	hc *http.Client
+	// cookie is the site session, when the owner has signed in to this
+	// publisher. Empty for the ordinary anonymous case.
+	//
+	// ⚠ Never formatted into an error, a log line or a response. The only
+	// place it appears is the request header below.
+	cookie string
 	// lastTTL is the refresh hint the most recent poll read out of the feed,
 	// in minutes. Surfaced through LastTTL so the scheduler can honour it.
 	lastTTL int
@@ -189,6 +195,11 @@ func (r *rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/rss+xml, application/atom+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5")
+	// Signed in: a paid publication returns full content:encoded rather than a
+	// teaser. The transport drops this if a redirect leaves the site.
+	if r.cookie != "" {
+		req.Header.Set("Cookie", r.cookie)
+	}
 	if v := cur["etag"]; v != "" {
 		req.Header.Set("If-None-Match", v)
 	}
@@ -210,19 +221,19 @@ func (r *rssFetcher) Fetch(ctx context.Context, sub Subscription, cur map[string
 	// A publisher asking us to back off is obeyed to the second, rather than
 	// being treated as a generic failure and retried on our own schedule.
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
-		msg := fmt.Sprintf("%s: %s", sub.URL, resp.Status)
+		msg := fmt.Sprintf("%s: %s", redactURL(sub.URL), resp.Status)
 		if at, ok := parseRetryAfter(resp.Header.Get("Retry-After"), time.Now()); ok {
 			return nil, nil, &retryAfterError{msg: msg + " (retrying after " + at.Format(time.RFC822) + ")", at: at}
 		}
 		return nil, nil, fmt.Errorf("%s", msg)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("%s: %s", sub.URL, resp.Status)
+		return nil, nil, fmt.Errorf("%s: %s", redactURL(sub.URL), resp.Status)
 	}
 
 	feed, err := decodeFeed(resp.Body)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse %s: %w", sub.URL, err)
+		return nil, nil, fmt.Errorf("parse %s: %w", redactURL(sub.URL), err)
 	}
 
 	next := map[string]string{}
@@ -466,14 +477,14 @@ func (r *rssFetcher) probe(ctx context.Context, u string) (string, string, error
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("%s: %s", u, resp.Status)
+		return "", "", fmt.Errorf("%s: %s", redactURL(u), resp.Status)
 	}
 	feed, err := decodeFeed(resp.Body)
 	if err != nil {
-		return "", "", fmt.Errorf("%s is not a feed", u)
+		return "", "", fmt.Errorf("%s is not a feed", redactURL(u))
 	}
 	if len(feed.items()) == 0 && feed.title() == "" {
-		return "", "", fmt.Errorf("%s is not a feed", u)
+		return "", "", fmt.Errorf("%s is not a feed", redactURL(u))
 	}
 	return u, feed.title(), nil
 }
@@ -493,15 +504,15 @@ func (r *rssFetcher) autodiscover(ctx context.Context, pageURL string) (string, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s: %s", pageURL, resp.Status)
+		return "", fmt.Errorf("%s: %s", redactURL(pageURL), resp.Status)
 	}
 	doc, err := html.Parse(io.LimitReader(resp.Body, maxFeed))
 	if err != nil {
-		return "", fmt.Errorf("could not read %s", pageURL)
+		return "", fmt.Errorf("could not read %s", redactURL(pageURL))
 	}
 	href := findFeedLink(doc)
 	if href == "" {
-		return "", fmt.Errorf("no RSS or Atom feed advertised at %s", pageURL)
+		return "", fmt.Errorf("no RSS or Atom feed advertised at %s", redactURL(pageURL))
 	}
 	return resolveRef(pageURL, href), nil
 }

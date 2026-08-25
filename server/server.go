@@ -548,6 +548,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/consume/item/{id}/unread", s.handleConsumeUnread)
 	mux.HandleFunc("POST /api/consume/read-all", s.handleConsumeReadAll)
 	mux.HandleFunc("POST /api/consume/poll-all", s.handleConsumePollAll)
+	// site sign-ins — the session cookies for paid publications (0600, dataDir)
+	mux.HandleFunc("GET /api/consume/sites", s.handleConsumeSites)
+	mux.HandleFunc("POST /api/consume/sites", s.handleConsumeSiteKey)
+	mux.HandleFunc("POST /api/consume/sites/{id}/remove", s.handleConsumeSiteClear)
 	mux.HandleFunc("POST /api/consume/item/{id}/curate", s.handleConsumeCurate)
 	mux.HandleFunc("POST /api/consume/item/{id}/uncurate", s.handleConsumeUncurate)
 

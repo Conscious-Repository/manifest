@@ -390,7 +390,63 @@ function consumeSubRow(s) {
   row.append(acts);
 
   if (s.lastErr) row.append(el("div", "consume-sub-err micro-label", s.lastErr));
+
+  // ⚠ Paid publications: the cue to sign in belongs where the problem shows up.
+  if (s.paid || s.signedIn) row.append(consumeSignInRow(s));
   return row;
+}
+
+// consumeSignInRow — paste a session cookie so paid posts arrive whole.
+//
+// The cookie is stored server-side in the secrets tier and scoped to the
+// publication's DOMAIN, so one paste covers every publication there. It is
+// never written to the vault and never comes back in a response.
+function consumeSignInRow(s) {
+  const wrap = el("div", "consume-signin");
+  if (s.signedIn && !s.signInExpired) {
+    wrap.append(el("span", "micro-label", "signed in to " + (s.site || "this site")));
+    wrap.append(pillLight("sign out", async () => {
+      if (!(await consumePost(`/api/consume/sites/${encodeURIComponent(s.site)}/remove`))) return;
+      showToast("signed out of " + s.site);
+      await loadConsumeSubs(); renderConsume();
+    }));
+    return wrap;
+  }
+  const why = s.signInExpired
+    ? "sign-in expired — paid posts are previews again"
+    : "paid posts · sign in to read them here";
+  wrap.append(el("span", "micro-label consume-signin-why", why));
+  wrap.append(pillLight(s.signInExpired ? "paste a fresh cookie" : "sign in", () => consumeSignIn(s, wrap)));
+  return wrap;
+}
+
+function consumeSignIn(s, wrap) {
+  if (wrap.querySelector(".consume-signin-form")) return;
+  const form = el("div", "consume-signin-form");
+  const input = inputEl("substack.sid=… (from your browser's cookies)");
+  input.className = "consume-signin-input";
+  input.type = "password"; // it is a live session, not a setting
+  form.append(el("div", "consume-hint micro-label",
+    "In your browser: DevTools → Application → Cookies → " + (s.site || "the site") +
+    " → copy substack.sid. It covers every publication on " + (s.site || "that domain") +
+    ", is stored outside your vault, and is never shared."));
+  const save = async () => {
+    const cookie = input.value.trim();
+    if (!cookie) return;
+    if (!(await consumePost("/api/consume/sites", { host: s.site, cookie }))) return;
+    input.value = "";
+    form.remove();
+    showToast("signed in to " + s.site + " — paid posts arrive on the next poll");
+    await consumePost(`/api/consume/subscriptions/${encodeURIComponent(s.id)}/poll`);
+    await loadConsumeSubs(); await loadConsume();
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); save(); }
+    if (e.key === "Escape") { e.stopPropagation(); form.remove(); }
+  };
+  form.append(input, pillLight("save", save), pillLight("cancel", () => form.remove()));
+  wrap.append(form);
+  input.focus();
 }
 
 function consumeEditSub(s, row) {
