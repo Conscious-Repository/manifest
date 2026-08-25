@@ -67,6 +67,32 @@ type siteFile struct {
 
 var envUnsafe = regexp.MustCompile(`[^A-Z0-9]`)
 
+// cookiePair matches a real Cookie header: one or more name=value pairs.
+var cookiePair = regexp.MustCompile(`^[A-Za-z0-9!#$%&'*+\-.^_` + "`" + `|~]+=`)
+
+// defaultCookieName is what a bare pasted value is assumed to be.
+//
+// ⚠ DevTools shows a cookie as NAME and VALUE in separate columns, so copying
+// "the substack.sid cookie" gets you the value alone. Sending that as a Cookie
+// header produces a malformed header the server ignores, and the only symptom
+// is that nothing changes — which is exactly what happened the first time this
+// shipped. Accept both forms rather than making the owner know the difference.
+const defaultCookieName = "substack.sid"
+
+// normalizeCookie turns whatever was pasted into a valid Cookie header value.
+func normalizeCookie(raw string) string {
+	v := strings.TrimSpace(raw)
+	v = strings.TrimPrefix(v, "Cookie:")
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if cookiePair.MatchString(v) {
+		return v // already name=value (possibly several)
+	}
+	return defaultCookieName + "=" + v
+}
+
 // envKey builds MANIFEST_CONSUME_COOKIE_<HOST>, following portals/store.go.
 func envKey(host string) string {
 	return "MANIFEST_CONSUME_COOKIE_" + envUnsafe.ReplaceAllString(strings.ToUpper(host), "_")
@@ -125,11 +151,13 @@ func (s *SiteCreds) Cookie(rawURL string) string {
 		return ""
 	}
 	if v := strings.TrimSpace(os.Getenv(envKey(host))); v != "" {
-		return v
+		return normalizeCookie(v)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return strings.TrimSpace(s.load(host).Cookie)
+	// Normalized on READ as well as write, so a value stored before this
+	// existed starts working without being re-pasted.
+	return normalizeCookie(s.load(host).Cookie)
 }
 
 // Set stores a cookie for a site. An empty value clears it.
@@ -146,7 +174,7 @@ func (s *SiteCreds) Set(host, cookie string) error {
 	}
 	f := s.load(host)
 	f.Host = host
-	f.Cookie = strings.TrimSpace(cookie)
+	f.Cookie = normalizeCookie(cookie)
 	f.Added = time.Now().UTC().Format("2006-01-02")
 	f.Expired = false // a fresh paste is innocent until a poll proves otherwise
 	return s.save(host, f)

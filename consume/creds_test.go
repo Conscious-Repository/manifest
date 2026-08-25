@@ -284,7 +284,9 @@ func TestSiteCredsEnvOverride(t *testing.T) {
 	c := NewSiteCreds(t.TempDir())
 	_ = c.Set("substack.com", "from-file")
 	t.Setenv(envKey("substack.com"), "from-env")
-	if got := c.Cookie("https://a.substack.com/x"); got != "from-env" {
+	// Normalized like any other value — an env-injected bare value has the
+	// same DevTools-copy problem.
+	if got := c.Cookie("https://a.substack.com/x"); got != "substack.sid=from-env" {
 		t.Errorf("env override not applied: %q", got)
 	}
 }
@@ -403,5 +405,36 @@ func TestPaidSourcesAreNeverFullyMirrored(t *testing.T) {
 	note := v.read(t, entry.Path)
 	if !strings.Contains(note, "mirror: excerpt") {
 		t.Errorf("the curated note does not record excerpt-only:\n%s", note)
+	}
+}
+
+// ⚠ THE FIRST-USE FAILURE. DevTools shows a cookie as NAME and VALUE in
+// separate columns, so "copy substack.sid" gets you the value alone. Sent as a
+// Cookie header that is malformed, the server ignores it, and the only symptom
+// is that nothing changes — which is what happened live.
+func TestBarePastedCookieValueIsNormalized(t *testing.T) {
+	bare := "s%3AAbCdEf1234567890.QwErTyUiOp" // what the Value column gives you
+	cases := map[string]string{
+		bare:                           "substack.sid=" + bare,
+		"substack.sid=" + bare:         "substack.sid=" + bare, // already a pair
+		"Cookie: substack.sid=" + bare: "substack.sid=" + bare, // pasted with the header name
+		"a=1; b=2":                     "a=1; b=2",             // several pairs, untouched
+		"  " + bare + "  ":             "substack.sid=" + bare, // whitespace
+		"":                             "",
+	}
+	for in, want := range cases {
+		if got := normalizeCookie(in); got != want {
+			t.Errorf("normalizeCookie(%q)\n = %q\nwant %q", in, got, want)
+		}
+	}
+
+	// And it applies through the store, including to a value stored before
+	// normalization existed.
+	c := NewSiteCreds(t.TempDir())
+	if err := c.Set("substack.com", bare); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Cookie("https://a.substack.com/feed"); got != "substack.sid="+bare {
+		t.Errorf("stored cookie not normalized: %q", got)
 	}
 }

@@ -423,12 +423,16 @@ function consumeSignInRow(s) {
 function consumeSignIn(s, wrap) {
   if (wrap.querySelector(".consume-signin-form")) return;
   const form = el("div", "consume-signin-form");
-  const input = inputEl("substack.sid=… (from your browser's cookies)");
+  const input = inputEl("paste the substack.sid value");
   input.className = "consume-signin-input";
   input.type = "password"; // it is a live session, not a setting
+  // ⚠ DevTools shows NAME and VALUE in separate columns, so "copy substack.sid"
+  // reads as "copy the value" — which is what happened, and the malformed
+  // header failed silently. Say plainly that either form works.
   form.append(el("div", "consume-hint micro-label",
-    "In your browser: DevTools → Application → Cookies → " + (s.site || "the site") +
-    " → copy substack.sid. It covers every publication on " + (s.site || "that domain") +
+    "DevTools → Application → Cookies → " + (s.site || "the site") +
+    " → copy the VALUE of substack.sid and paste it here (name=value works too). " +
+    "It covers every publication on " + (s.site || "that domain") +
     ", is stored outside your vault, and is never shared."));
   const save = async () => {
     const cookie = input.value.trim();

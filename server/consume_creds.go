@@ -45,7 +45,7 @@ func (s *Server) consumeSiteRows() []panelRow {
 			State: "open", Masked: site.Masked,
 			Fields: []portals.CredField{{
 				Key: "cookie", Label: "session cookie", Secret: true,
-				Hint: "substack.sid=… from your browser's cookies for this site",
+				Hint: "the VALUE of substack.sid from this site's cookies (name=value also works)",
 			}},
 		}
 		row.Note = "unlocks " + plural(feeds[site.Host], "1 feed", " feeds")
