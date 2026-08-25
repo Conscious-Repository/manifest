@@ -842,3 +842,47 @@ func TestSubstackAudienceMarkupIsAPaywallSignal(t *testing.T) {
 		t.Error("the free article did not extract")
 	}
 }
+
+// ⚠ THE HABSBURG WAY REGRESSION. A publisher can write a 10,000-character
+// preview and still stop at "Read more". Gating the fetch on length meant the
+// reader never tried to complete those and never said they were partial —
+// so a publication the owner PAYS for looked like it needed nothing.
+func TestLongPreviewsAreStillFetched(t *testing.T) {
+	hits := 0
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(articlePage))
+	}))
+	defer page.Close()
+
+	s := schedSvc(t)
+	s.hc = page.Client()
+	long := strings.Repeat("A generous preview that goes on at real length. ", 200) + "Read more"
+
+	// 9,000+ characters, ending in a marker: withheld, and must be fetched.
+	s.fillFullText(context.Background(), Subscription{Fulltext: FullTextAuto},
+		[]Item{{ID: "a", URL: page.URL, Body: "<p>" + long + "</p>",
+			Chars: len([]rune(long)), teaser: true, truncated: true}})
+	if hits != 1 {
+		t.Errorf("a long truncated preview was not fetched (%d hits) — the length gate suppressed it", hits)
+	}
+
+	// A long post with NO marker is whole; it must not be refetched.
+	hits = 0
+	whole := strings.Repeat("A complete essay that simply ends. ", 200)
+	s.fillFullText(context.Background(), Subscription{Fulltext: FullTextAuto},
+		[]Item{{ID: "b", URL: page.URL, Body: "<p>" + whole + "</p>", Chars: len([]rune(whole))}})
+	if hits != 0 {
+		t.Errorf("a whole long post was refetched (%d hits)", hits)
+	}
+
+	// And the short-provenance path still works.
+	hits = 0
+	short := "Two lines only."
+	s.fillFullText(context.Background(), Subscription{Fulltext: FullTextAuto},
+		[]Item{{ID: "c", URL: page.URL, Body: "<p>" + short + "</p>", Chars: len([]rune(short)), teaser: true}})
+	if hits != 1 {
+		t.Errorf("a short description-only teaser was not fetched (%d hits)", hits)
+	}
+}

@@ -62,9 +62,13 @@ const (
 	FullTextOff  = "off"
 )
 
-// teaserUnder is the "this is a teaser" threshold in characters of plain text.
-// Roughly two paragraphs — below it, a feed is almost certainly withholding the
-// article rather than publishing a genuinely short post.
+// teaserUnder is the length below which a body that arrived as <description>
+// is assumed to be a teaser rather than a genuinely short post.
+//
+// ⚠ It applies ONLY to that provenance guess. A body ending in a truncation
+// MARKER is withheld at any length — The Habsburg Way publishes 10,000-character
+// previews that still stop at "Read more", and gating those on length meant the
+// reader never even tried to complete them and never said they were partial.
 const teaserUnder = 1200
 
 // Preview classifications: what we learned when a truncated item could NOT be
@@ -205,6 +209,12 @@ type Item struct {
 	// It is ALSO set when the body ends in a truncation marker, whatever
 	// element carried it — see LooksTruncated.
 	teaser bool
+
+	// truncated is the DEFINITIVE half of that: the body ends in a truncation
+	// marker, so the publisher is demonstrably withholding the rest. Unlike the
+	// provenance guess, this needs no length test — a long preview is still a
+	// preview.
+	truncated bool
 }
 
 // Unread reports whether the item still wants reading.

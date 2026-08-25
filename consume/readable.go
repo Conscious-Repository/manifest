@@ -287,10 +287,15 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 		if it.URL == "" {
 			continue
 		}
-		if mode == FullTextAuto && (!it.teaser || it.Chars >= teaserUnder) {
-			// auto fetches only when the feed WITHHELD the article: a short
-			// body that arrived as content:encoded is a short post, not a
-			// teaser, and refetching it would be pure waste.
+		if mode == FullTextAuto && !it.truncated && !(it.teaser && it.Chars < teaserUnder) {
+			// auto fetches when the feed demonstrably WITHHELD the article —
+			// it ends in a truncation marker, at ANY length — or when a short
+			// body arrived as <description> and is probably a teaser.
+			//
+			// ⚠ The length test guards only the second, weaker case. Applying
+			// it to the first suppressed exactly the publishers who write a
+			// generous preview and stop: 10,000 characters ending "Read more"
+			// is still a withheld article.
 			continue
 		}
 		// Never let one slow site stall the rest of the poll.
