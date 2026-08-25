@@ -403,8 +403,20 @@ function consumeSubRow(s) {
 // never written to the vault and never comes back in a response.
 function consumeSignInRow(s) {
   const wrap = el("div", "consume-signin");
-  if (s.signedIn && !s.signInExpired) {
-    wrap.append(el("span", "micro-label", "signed in to " + (s.site || "this site")));
+  if (s.signedIn) {
+    wrap.append(el("span", "micro-label",
+      (s.signInExpired ? "⚠ sign-in not working for " : "signed in to ") + (s.site || "this site")));
+    // ⚠ A pasted cookie either works or silently does nothing. Answer that
+    // directly instead of leaving it to be inferred from a label after a poll.
+    wrap.append(pillLight("check", async (e) => {
+      const btn = e && e.currentTarget;
+      if (btn) { btn.disabled = true; btn.textContent = "checking…"; }
+      const res = await consumePostJSON(`/api/consume/sites/${encodeURIComponent(s.site)}/verify`);
+      if (btn) { btn.disabled = false; btn.textContent = "check"; }
+      if (!res) return;
+      showToast((res.ok ? "✓ " : "✗ ") + res.reason);
+      await loadConsumeSubs(); renderConsume();
+    }));
     wrap.append(pillLight("sign out", async () => {
       if (!(await consumePost(`/api/consume/sites/${encodeURIComponent(s.site)}/remove`))) return;
       showToast("signed out of " + s.site);

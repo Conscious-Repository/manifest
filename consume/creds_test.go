@@ -438,3 +438,70 @@ func TestBarePastedCookieValueIsNormalized(t *testing.T) {
 		t.Errorf("stored cookie not normalized: %q", got)
 	}
 }
+
+// A pasted cookie either works or silently does nothing. VerifySignIn answers
+// that in one request pair rather than leaving it to be inferred.
+func TestVerifySignIn(t *testing.T) {
+	full := strings.Repeat("The whole article, unlocked for a subscriber. ", 40)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		if strings.Contains(r.Header.Get("Cookie"), "GOODSESSION") {
+			_, _ = w.Write([]byte(`<html><body><article><p>` + full + `</p></article></body></html>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<html><body><article><p>` +
+			strings.Repeat("A teaser paragraph and nothing else here. ", 5) +
+			`</p><p>This post is for paid subscribers.</p></article></body></html>`))
+	}))
+	defer srv.Close()
+
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	s.hc = srv.Client()
+	host := SiteKey(srv.URL)
+
+	d := ParseFeeds("")
+	d.Add(Subscription{Title: "Paid", Kind: KindRSS, URL: srv.URL + "/feed"})
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	sub := s.Subscriptions()[0]
+	s.store.Commit(sub.ID, time.Now().UTC(), true,
+		[]Item{{ID: "consume:rss:" + sub.ID + ":x", URL: srv.URL + "/p/a", Preview: PreviewPaid, Chars: 40}}, nil, "")
+
+	// No credential yet.
+	res, err := s.VerifySignIn(context.Background(), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.OK || !strings.Contains(res.Reason, "no sign-in") {
+		t.Errorf("with no cookie: %+v", res)
+	}
+
+	// A cookie that does nothing must be reported as doing nothing.
+	_ = s.sites.Set(host, "substack.sid=WRONGVALUE")
+	res, _ = s.VerifySignIn(context.Background(), host)
+	if res.OK {
+		t.Errorf("a useless cookie reported as working: %+v", res)
+	}
+	if !s.sites.Expired(srv.URL + "/feed") {
+		t.Error("a failed check should mark the sign-in as not working")
+	}
+
+	// A working one.
+	_ = s.sites.Set(host, "substack.sid=GOODSESSION")
+	res, _ = s.VerifySignIn(context.Background(), host)
+	if !res.OK {
+		t.Fatalf("a working cookie reported as broken: %+v", res)
+	}
+	if res.SignedIn <= res.Anon {
+		t.Errorf("counts do not support the verdict: %+v", res)
+	}
+	if s.sites.Expired(srv.URL + "/feed") {
+		t.Error("a successful check should clear the not-working flag")
+	}
+	// ⚠ The result must never carry the credential.
+	if strings.Contains(fmt.Sprintf("%+v", res), "GOODSESSION") {
+		t.Errorf("the verify result leaked the cookie: %+v", res)
+	}
+}

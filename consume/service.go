@@ -426,6 +426,79 @@ func (s *Service) pollOne(ctx context.Context, sub Subscription) error {
 	return nil
 }
 
+// VerifySignIn answers "is this cookie actually doing anything" directly,
+// instead of making the owner wait for a poll and infer it from a label.
+//
+// It fetches one of the site's own paid posts twice — once anonymously, once
+// with the credential — and compares how much readable text comes back. That is
+// the only question that matters, and it is answerable in one request pair.
+//
+// ⚠ Costs two page fetches and nothing else. It never polls, so it cannot
+// disturb read state.
+func (s *Service) VerifySignIn(ctx context.Context, host string) (VerifyResult, error) {
+	res := VerifyResult{Host: host}
+	if s.sites == nil {
+		return res, errors.New("no credential store")
+	}
+	// A paid post on this site is the sharpest test; any item will do otherwise.
+	var target Item
+	for _, sub := range s.Subscriptions() {
+		if sub.Kind == KindX || !strings.EqualFold(SiteKey(sub.URL), host) {
+			continue
+		}
+		for _, it := range s.store.Items(sub.ID) {
+			if it.URL == "" {
+				continue
+			}
+			if it.Preview != "" {
+				target = it
+				break
+			}
+			if target.URL == "" {
+				target = it
+			}
+		}
+		if target.Preview != "" {
+			break
+		}
+	}
+	if target.URL == "" {
+		res.Reason = "no posts fetched yet from this site — poll it first"
+		return res, nil
+	}
+	res.Sample = redactURL(target.URL)
+
+	cookie := s.sites.Cookie(target.URL)
+	if cookie == "" {
+		res.Reason = "no sign-in stored for " + host
+		return res, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+	anonBody, _ := s.fetchArticle(ctx, target.URL, "")
+	inBody, paywalled := s.fetchArticle(ctx, target.URL, cookie)
+	res.Anon = len([]rune(Text(anonBody)))
+	res.SignedIn = len([]rune(Text(inBody)))
+
+	// A working session returns materially more of the article. A little more
+	// is personalised chrome (a nav that now says your name), not the piece.
+	res.OK = res.SignedIn > res.Anon+200
+	switch {
+	case res.OK:
+		res.Reason = "working — signed in returns more of the article"
+	case res.SignedIn == res.Anon:
+		res.Reason = "no effect: the site returns exactly the same page with and without this cookie. " +
+			"Check you copied the VALUE of substack.sid for this exact domain, and that you subscribe to this publication."
+	case paywalled:
+		res.Reason = "still paywalled while signed in — this account may not have access to this publication"
+	default:
+		res.Reason = "little difference — the cookie may be for a different domain or no longer valid"
+	}
+	s.sites.MarkResult(host, !res.OK, s.now())
+	return res, nil
+}
+
 // judgeSession decides whether a stored sign-in is still working.
 //
 // The evidence is already in hand: if this subscription HAS a credential and

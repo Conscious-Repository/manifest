@@ -278,3 +278,17 @@ func maskTail(s string) string {
 	}
 	return "····" + s[len(s)-4:]
 }
+
+// ---- verifying a sign-in ----
+
+// VerifyResult is what a sign-in check learned. It is deliberately concrete:
+// "did pasting this actually change what the publisher sends us", answered with
+// the two numbers it was decided from.
+type VerifyResult struct {
+	Host     string `json:"host"`
+	OK       bool   `json:"ok"`
+	Anon     int    `json:"anonChars"`
+	SignedIn int    `json:"signedInChars"`
+	Sample   string `json:"sample,omitempty"` // the post it tried, redacted
+	Reason   string `json:"reason"`
+}

@@ -131,6 +131,22 @@ func (s *Server) handleConsumeSiteClear(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, map[string]any{"ok": true, "sites": s.consume.Sites().Sites()})
 }
 
+// handleConsumeSiteVerify answers "did that cookie actually do anything",
+// rather than leaving the owner to infer it from a label after the next poll.
+func (s *Server) handleConsumeSiteVerify(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil {
+		http.NotFound(w, r)
+		return
+	}
+	host := strings.TrimPrefix(r.PathValue("id"), consumeSitePrefix)
+	res, err := s.consume.VerifySignIn(r.Context(), host)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, res)
+}
+
 // handleConsumeSites lists the stored sign-ins (masked).
 func (s *Server) handleConsumeSites(w http.ResponseWriter, r *http.Request) {
 	if s.consume == nil {
