@@ -65,6 +65,7 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	rows = append(rows, s.calendarPortalRow())
 	rows = append(rows, s.gmailPortalRow())
 	rows = append(rows, s.heypocketPortalRow())
+	rows = append(rows, s.consumeXPortalRow())
 	rows = append(rows, s.deepseekPortalRow()) // the testable lab conduit (Phase 5a)
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())
@@ -184,6 +185,10 @@ func (s *Server) handlePortalKey(w http.ResponseWriter, r *http.Request) {
 		s.handleHeypocketKey(w, r)
 		return
 	}
+	if r.PathValue("id") == consumeXID {
+		s.handleConsumeXKey(w, r)
+		return
+	}
 	if r.PathValue("id") == deepseekID {
 		s.handleDeepseekKey(w, r)
 		return
@@ -214,6 +219,10 @@ func (s *Server) handlePortalTest(w http.ResponseWriter, r *http.Request) {
 		s.handleHeypocketTest(w, r)
 		return
 	}
+	if r.PathValue("id") == consumeXID {
+		s.handleConsumeXTest(w, r)
+		return
+	}
 	if r.PathValue("id") == deepseekID {
 		s.handleDeepseekTest(w, r)
 		return
@@ -236,6 +245,13 @@ func (s *Server) handlePortalPoll(w http.ResponseWriter, r *http.Request) {
 	if r.PathValue("id") == heypocketID {
 		// engine-synced — nothing for manifest to poll; just refresh the row
 		writeJSON(w, s.heypocketPortalRow())
+		return
+	}
+	if r.PathValue("id") == consumeXID {
+		// Polling X costs money per post returned, so the panel's poll button
+		// is NOT a live call — subscriptions poll on their own interval and
+		// the CONSUME view has a per-subscription "poll now".
+		writeJSON(w, s.consumeXPortalRow())
 		return
 	}
 	if r.PathValue("id") == deepseekID {
@@ -263,6 +279,10 @@ func (s *Server) handlePortalDisconnect(w http.ResponseWriter, r *http.Request) 
 	}
 	if r.PathValue("id") == heypocketID {
 		s.handleHeypocketDisconnect(w, r)
+		return
+	}
+	if r.PathValue("id") == consumeXID {
+		s.handleConsumeXDisconnect(w, r)
 		return
 	}
 	svc, ok := s.portalService(w)

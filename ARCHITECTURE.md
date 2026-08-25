@@ -108,8 +108,17 @@ of exactly four kinds, each with a declared lifecycle behind a single
   never enter kept/discarded.
 * **receipts** — outcomes of actions the system took (errands); permanent
   audit trail; never expire, never kept/discarded.
+* **consume** — externally-sourced long-form reading the owner subscribed to
+  (RSS/Atom feeds, X accounts); polled deterministically, no LLM in the loop.
+  Lifecycle read-curate-dismiss: **unread never expires** (an essay not yet
+  read is still wanted — this is what disqualified notices), read/dismissed age
+  out at 90d, and consume items never enter kept/discarded. Contributes **0**
+  to the FEED badge: reading is not attention debt. CURATE is a domain write,
+  not a lifecycle verb (the 2026-07-28 quick-action clarification, extended) —
+  it writes an `extrinsic/` note, and those notes are the sole contract the
+  public curation feed reads. (Added 2026-08-24 — see the amendment below.)
 
-Adding a fifth kind requires amending this file, deliberately.
+Adding a sixth kind requires amending this file, deliberately.
 
 The FEED also renders a **proposals lane** — the §4 approvals inbox
 surfaced for authorization. It is an authorization queue, not an attention
@@ -311,3 +320,49 @@ never the owner's records. Manifest reads that store back as FEED
 single-writer; §1 holds everywhere except this named surface. Auth is
 Google OAuth (web client in the secrets tier) with signed cookie sessions;
 open read stays.
+
+**2026-08-24 — CONSUME: the fifth attention kind, and the first public
+surface.** Owner decision (consume-feed plan, 2026-08-24): manifest polls the
+writing the owner subscribed to — RSS/Atom feeds and X accounts — renders it in
+a reader inside the FEED, and gives each item one button, CURATE, that promotes
+it to a public feed he can share.
+
+Three parts of this are new, and each is deliberate:
+
+*§5 grows to five kinds.* **consume** is declared above with lifecycle
+`read-curate-dismiss`. It could not be absorbed as **notices** (the 2026-08-14
+precedent) on two specifics: notices expire at 14 days, and unread reading must
+not silently vanish; and notices carry dismiss only, with no read state and no
+approve verb. Its badge contribution is **0** — the FEED badge counts what wants
+something *from* the owner, and an unread essay does not. The lane shows its own
+unread total instead.
+
+*The tier split follows §2 rather than convenience.* What the owner authored is
+irreplaceable and lives in the **vault's extrinsic zone** — `extrinsic/feeds.md`
+(the subscription list, one record-kernel line per source, under the fixpoint
+guarantee) and one `categories: [articles]` note per curated item, beside his
+books. What can be re-fetched is disposable and lives in **dataDir** — poll
+caches, sanitized article bodies, the X token (0600, secrets tier). Deleting
+dataDir costs a re-poll and nothing else. Two capabilities carry the writes:
+`consume-feeds` (one exact file) and `consume-curate` (`extrinsic/**`), both
+actor `user-action`, because subscribing and curating are the owner clicking in
+his own cockpit. **Removing those two grants is the feature's rollback:** the
+lane keeps reading and curation goes read-only.
+
+*A public listener exists for the first time.* Everything else in this system is
+loopback + Tailscale or OAuth-gated. The curation feed is served on its own
+loopback port behind the existing cloudflared tunnel, and it is **opt-in** —
+`Consume.PublicPort` is deliberately not backfilled from the defaults, so a
+public port never appears because a binary was upgraded. Its handler is
+constructed holding `consume.CuratedFeed`, a **one-method interface**
+(`Entries()`), and nothing else: no server, no vault, no cache. Serving a
+private item is not something it declines to do, it is something it cannot
+express. The projection behind that interface selects only extrinsic notes that
+declare `categories: [articles]` **and** carry a `curated:` date — reading
+something is not publishing it. A compile-time canary plus an isolation test
+that stuffs the vault with private notes keep both claims honest.
+
+Mirroring full third-party text was the owner's explicit choice, made against a
+stated objection (attribution is not a license). Every entry's `<link>` is the
+original, the index is `noindex`, and mirror-vs-excerpt is per-subscription so a
+single objecting writer is a one-field edit.

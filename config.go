@@ -122,6 +122,13 @@ type Config struct {
 	// the properties, ledgers, and partner names it composes are not
 	// shared-volume material. Port 0 (or equal to Port/PortalPort) disables it.
 	Ooda OodaConfig `json:"ooda"`
+
+	// Consume configures the CONSUME lane (the fifth attention kind): poll
+	// intervals, and the PUBLIC curation feed's listener + channel identity.
+	// PublicPort 0 (or equal to any other listener's port) disables the public
+	// surface entirely; the private reading lane is unaffected by that and
+	// keeps working.
+	Consume ConsumeConfig `json:"consume"`
 	// RePortalPath is the absolute path to the ooda site checkout (the re-portal
 	// repo). When set, PROPERTIES gains "publish → deals.json": recompose
 	// src/data/deals.json from the vault's source sidecars for owner review
@@ -223,6 +230,24 @@ type FundraisingSheetsConfig struct {
 // partner without an address under it is admitted by name through the team
 // store's emails.json (which is ALSO the email→initials map — one file, an
 // invariant: an admitted-but-unmapped address files work under a garbage owner).
+// ConsumeConfig is the CONSUME lane's block.
+//
+// ⚠ PublicPort is the only port in this system that is meant to be reachable
+// from the open internet (behind the metis cloudflared tunnel). Everything it
+// can serve comes from consume.CuratedFeed, a one-method interface over
+// curated extrinsic/ notes — see consume/public.go.
+type ConsumeConfig struct {
+	PublicPort  int    `json:"publicPort"`  // 0 = no public feed (the default); conventionally 7780
+	FeedTitle   string `json:"feedTitle"`   // channel title, e.g. "reading"
+	FeedURL     string `json:"feedURL"`     // public base URL, for <link> and the self-reference
+	Description string `json:"description"` // channel description
+
+	RSSIntervalMinutes int `json:"rssIntervalMinutes"` // default 60
+	// XIntervalMinutes defaults to 360. X reads are billed per post returned,
+	// so this interval is a spending decision, not just a freshness one.
+	XIntervalMinutes int `json:"xIntervalMinutes"`
+}
+
 type OodaConfig struct {
 	Port       int    `json:"port"`       // default 7779
 	TeamDir    string `json:"teamDir"`    // /private/ooda/team — derived state, never the vault
@@ -248,8 +273,12 @@ func defaultConfig() Config {
 		PortalPort:      7778,
 		Ooda:            OodaConfig{Port: 7779, Domain: "ooda.group", PackDir: "/private/harnesses/zeck/realestate"},
 		Aion:            AionConfig{PackDir: "/shared/apps/kairos/aion-context"},
-		SystemRoot:      "system",
-		ExtrinsicRoot:   "extrinsic",
+		// Consume.PublicPort stays 0: the public curation feed is opt-in, set
+		// explicitly (conventionally 7780). The private reading lane needs no
+		// config at all.
+		Consume:       ConsumeConfig{FeedTitle: "reading", RSSIntervalMinutes: 60, XIntervalMinutes: 360},
+		SystemRoot:    "system",
+		ExtrinsicRoot: "extrinsic",
 	}
 }
 
@@ -305,6 +334,20 @@ func LoadConfig(path string) (Config, error) {
 	}
 	if strings.TrimSpace(cfg.Ooda.PackDir) == "" {
 		cfg.Ooda.PackDir = d.Ooda.PackDir
+	}
+	// ⚠ PublicPort is deliberately NOT backfilled from the defaults. It is the
+	// one internet-facing listener in this system, so it must be switched on by
+	// an explicit act — a config edit — and never appear because a binary was
+	// upgraded. Backfilling would also make `"publicPort": 0` (the documented
+	// way to turn it off) silently restore itself on the next start.
+	if strings.TrimSpace(cfg.Consume.FeedTitle) == "" {
+		cfg.Consume.FeedTitle = d.Consume.FeedTitle
+	}
+	if cfg.Consume.RSSIntervalMinutes == 0 {
+		cfg.Consume.RSSIntervalMinutes = d.Consume.RSSIntervalMinutes
+	}
+	if cfg.Consume.XIntervalMinutes == 0 {
+		cfg.Consume.XIntervalMinutes = d.Consume.XIntervalMinutes
 	}
 	if strings.TrimSpace(cfg.Aion.PackDir) == "" {
 		cfg.Aion.PackDir = d.Aion.PackDir

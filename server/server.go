@@ -25,6 +25,7 @@ import (
 	"manifest/calendar"
 	"manifest/capture"
 	"manifest/chatthreads"
+	"manifest/consume"
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
@@ -100,6 +101,12 @@ type Server struct {
 	signals *signals.Service
 	// Portals (external realms — ClickUp, Benchling — polled into the FEED). Nilable.
 	portals *portals.Service
+	// CONSUME (subscribed reading → the fifth attention kind; §5 amendment
+	// 2026-08-24). Nilable. consumePublicURL is the public curation feed's
+	// address, for display only — this server never serves it.
+	consume           *consume.Service
+	consumeXTokenPath string // <dataDir>/consume/x-creds, injected (0600)
+	consumePublicURL  string
 	// OODA portal projection (real-estate team surface; ooda-portal plan). Nilable.
 	oodaLive  *OodaLive
 	oodaTeam  *teamportal.Store // the cockpit's read of the OODA team store (bid lane)
@@ -521,6 +528,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig) // "dig →"
 	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
 	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
+
+	// CONSUME — subscribed reading (§5 fifth kind). Its own route family:
+	// the per-kind split at handleFeedStatus is deliberate, so a consume item
+	// can never fall into feed.Store.SetStatus and acquire a findings verdict.
+	// Item ids use colons and never slashes, so plain {id} segments work.
+	mux.HandleFunc("GET /api/consume", s.handleConsumeList)
+	mux.HandleFunc("GET /api/consume/curated", s.handleConsumeCurated)
+	mux.HandleFunc("GET /api/consume/subscriptions", s.handleConsumeSubs)
+	mux.HandleFunc("POST /api/consume/subscriptions", s.handleConsumeSubscribe)
+	mux.HandleFunc("POST /api/consume/subscriptions/{id}/update", s.handleConsumeSubUpdate)
+	mux.HandleFunc("POST /api/consume/subscriptions/{id}/remove", s.handleConsumeUnsubscribe)
+	mux.HandleFunc("POST /api/consume/subscriptions/{id}/poll", s.handleConsumePoll)
+	mux.HandleFunc("GET /api/consume/item/{id}", s.handleConsumeItem)
+	mux.HandleFunc("POST /api/consume/item/{id}/read", s.handleConsumeRead)
+	mux.HandleFunc("POST /api/consume/item/{id}/dismiss", s.handleConsumeDismiss)
+	mux.HandleFunc("POST /api/consume/item/{id}/curate", s.handleConsumeCurate)
+	mux.HandleFunc("POST /api/consume/item/{id}/uncurate", s.handleConsumeUncurate)
 
 	// PORTALS — external realms (ClickUp, Benchling, calendar, the engine's LLM
 	// conduits, docusign-v2) as one panel: list, (re)connect via pasted key, test,

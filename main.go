@@ -26,6 +26,7 @@ import (
 	"manifest/calendar"
 	"manifest/capture"
 	"manifest/chatthreads"
+	"manifest/consume"
 	"manifest/contacts"
 	"manifest/daily"
 	"manifest/errands"
@@ -289,6 +290,25 @@ func main() {
 			// personas are guidance TO agents, never agent working state.
 			vaultwriter.Capability{Name: "agent-personas", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "agents")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
+
+			// CONSUME (§5 fifth kind, 2026-08-24). Two narrow grants in the
+			// EXTRINSIC zone — the vault's home for content the owner did not
+			// originate, where his books already live (owner decision).
+			//
+			// consume-feeds is the subscription list: one exact file.
+			// consume-curate writes one note per curated item, so it needs the
+			// subtree — the same shape cmd/goodreads-import uses to file books.
+			//
+			// Actor is user-action, NOT approved-proposal: subscribing and
+			// curating are the owner clicking in his own cockpit, and there is
+			// no proposal involved. Removing these two grants is the feature's
+			// rollback — the lane keeps reading, curation goes read-only.
+			vaultwriter.Capability{Name: "consume-feeds", Zone: record.ZoneExtrinsic,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.ExtrinsicRoot, "feeds.md")),
+				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "consume-curate", Zone: record.ZoneExtrinsic,
+				Pattern: filepath.ToSlash(cfg.ExtrinsicRoot) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
 		)
 
@@ -557,6 +577,50 @@ func main() {
 	portalSvc := portals.New(cfg.DataDir, portalLoc)
 	portalSvc.Start(ctx)
 	srv.UsePortals(portalSvc)
+
+	// CONSUME — subscribed reading (§7: a poller, mechanical and unmetered on
+	// the RSS side; the X side is metered by X itself, which is why it runs on
+	// its own slower interval).
+	//
+	// The vault reaches the service as three injected closures, two of them
+	// bound to declared capabilities. Reads are unrestricted by design — the
+	// projection only ever asks for extrinsic/ — but every write goes through
+	// the chokepoint and lands in write-audit.log.
+	consumeSvc := consume.New(cfg.DataDir, consume.VaultIO{
+		Read: vw.ReadVaultFile,
+		Write: func(rel string, data []byte) error {
+			if rel == filepath.ToSlash(filepath.Join(cfg.ExtrinsicRoot, "feeds.md")) {
+				return vw.WriteCap("consume-feeds", rel, data)
+			}
+			return vw.WriteCap("consume-curate", rel, data)
+		},
+		List: func(dir string) ([]string, error) {
+			entries, err := os.ReadDir(filepath.Join(cfg.VaultPath, filepath.FromSlash(dir)))
+			if err != nil {
+				return nil, err
+			}
+			out := make([]string, 0, len(entries))
+			for _, e := range entries {
+				if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+					out = append(out, dir+"/"+e.Name())
+				}
+			}
+			return out, nil
+		},
+	}, consume.Config{
+		RSSInterval: time.Duration(cfg.Consume.RSSIntervalMinutes) * time.Minute,
+		XInterval:   time.Duration(cfg.Consume.XIntervalMinutes) * time.Minute,
+	})
+	xTokenPath := filepath.Join(cfg.DataDir, "consume", "x-creds")
+	consumeSvc.UseXToken(func() string {
+		if v := strings.TrimSpace(os.Getenv("MANIFEST_PORTAL_X_TOKEN")); v != "" {
+			return v
+		}
+		b, _ := os.ReadFile(xTokenPath)
+		return strings.TrimSpace(string(b))
+	})
+	consumeSvc.Start(ctx)
+	srv.UseConsume(consumeSvc, xTokenPath, cfg.Consume.FeedURL)
 	log.Printf("portals: enabled (clickup, benchling → FEED; creds under %s/portals)", cfg.DataDir)
 
 	// BANK FEEDS — linked SimpleFIN accounts → the statement workbench (bank-
@@ -975,6 +1039,42 @@ func main() {
 					cfg.Ooda.Domain, cfg.Ooda.TeamDir)
 			}
 		}
+	}
+
+	// ---- the PUBLIC curation feed (the fourth listener) ----
+	//
+	// ⚠ This is the ONLY surface in this system meant to be reachable from the
+	// open internet. Everything else is loopback + Tailscale, or OAuth-gated.
+	// Three things make that safe, and all three are deliberate:
+	//
+	//  1. It is opt-in. PublicPort is not backfilled from the defaults, so a
+	//     public port never appears because a binary was upgraded.
+	//  2. The handler is constructed holding consume.CuratedFeed — ONE method,
+	//     Entries() — and nothing else. It has no server, no vault, no cache
+	//     and no config beyond its own channel identity, so serving a private
+	//     item is not something it declines to do, it is something it cannot
+	//     express. (consume/public.go; pinned by the isolation test.)
+	//  3. Entries() selects only extrinsic/ notes that declare
+	//     categories: [articles] AND carry a curated: date.
+	//
+	// The operator step is out of band and unchanged from the other portals:
+	// one cloudflared ingress rule mapping the hostname → this loopback port,
+	// plus the DNS record. See docs/consume-feed.md.
+	if p := cfg.Consume.PublicPort; p != 0 && p != cfg.Port && p != cfg.PortalPort && p != cfg.Ooda.Port {
+		publicAddr := fmt.Sprintf("127.0.0.1:%d", p)
+		h := consume.PublicHandler(consumeSvc, consume.PublicConfig{
+			Title:       cfg.Consume.FeedTitle,
+			Description: cfg.Consume.Description,
+			BaseURL:     cfg.Consume.FeedURL,
+		})
+		go func() {
+			fmt.Printf("curation feed (PUBLIC) → http://%s/feed.xml\n", publicAddr)
+			if err := http.ListenAndServe(publicAddr, h); err != nil {
+				log.Printf("curation feed listener stopped: %v", err)
+			}
+		}()
+	} else if cfg.Consume.PublicPort != 0 {
+		log.Printf("curation feed disabled: port %d collides with another listener", cfg.Consume.PublicPort)
 	}
 
 	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)

@@ -1,10 +1,10 @@
 // ---- FEED: manifest's one inbox (top-level tab, feed-central §1/§4) ----
 // INBOX (default) = items awaiting a verdict (new + lapsed snoozes). Keep endorses
 // and moves the item to KEPT. Chips are INBOX/KEPT/ALL.
-const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"]];
+const FEED_VIEWS = [["inbox", "INBOX"], ["kept", "KEPT"], ["all", "ALL"], ["consume", "CONSUME"]];
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
-let feedCache = { items: [], signals: [], proposals: [], portalItems: [], receipts: [] };
+let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [] };
 
 // ---- the §5 card registry: ONE renderer per attention kind, plus the
 // proposals lane (an authorization queue, not an attention kind). renderFeed
@@ -18,6 +18,7 @@ const FEED_CARD = {
   agentQuestions: (sg) => agentQuestionsCard(sg),
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
+  consume: (c) => consumeCardEl(c),
   finding: (it) => feedCard(it),
   receipt: (rc) => receiptCardEl(rc),
 };
@@ -35,6 +36,10 @@ const FEED_LANES = [
   { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone), inboxOnly: true },
   { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
   { kind: "notice", slice: (c) => c.portalItems, inboxOnly: true },
+  // CONSUME: subscribed reading. Capped like the signals strip — a week of
+  // newsletters must not bury the things that actually want a decision. The
+  // rest live behind the CONSUME view, which is where reading belongs anyway.
+  { kind: "consume", slice: (c) => (c.consumeItems || []).filter((x) => !x.read).slice(0, CONSUME_CAP), inboxOnly: true },
 ];
 const FEED_TAIL_LANES = [ // after the empty-state check, like today
   { kind: "finding", slice: (c) => c.items, inboxOnly: false },
@@ -48,16 +53,19 @@ function showFeed() {
 
 async function loadFeed() {
   const view = state.feedView || "inbox";
+  // CONSUME is its own surface over its own endpoint — the reading backlog is
+  // not an inbox and does not want the inbox's filters or empty states.
+  if (view === "consume") { renderFeedFilters(); await loadConsume(); refreshFeedBadge(); return; }
   // Drop the cached approval registries so the next card built pulls the LIVE
   // rock ladder (goals edited elsewhere in-session must not serve a stale
   // rock list into the payload editor's typeahead).
   apprAionReg = null; apprReReg = null;
   try {
     const d = await (await fetch("/api/feed?status=" + view)).json();
-    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], receipts: d.receipts || [] };
+    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [] };
     setBadge(els.feedNavBadge, d.badge || 0);
     if (view === "inbox") diffDigests(feedCache.items); // catch digests landed while unpolled
-  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], receipts: [] }; }
+  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [] }; }
   renderFeedFilters();
   renderFeed();
 }
@@ -108,6 +116,13 @@ function renderFeed() {
     if (lane.inboxOnly && view !== "inbox") return;
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
+  // the tail button for the capped consume lane, before the empty-state check
+  const unreadConsume = (feedCache.consumeItems || []).filter((x) => !x.read).length;
+  if (view === "inbox" && unreadConsume > CONSUME_CAP) {
+    const more = el("button", "signal-more", `▾ ${unreadConsume - CONSUME_CAP} more in CONSUME`);
+    more.onclick = () => { state.feedView = "consume"; loadFeed(); };
+    host.appendChild(more);
+  }
   if (!feedCache.items.length && !feedCache.receipts.length && !host.children.length) {
     host.appendChild(emptyRow(view === "inbox"
       ? "Inbox zero — nothing awaiting a verdict."

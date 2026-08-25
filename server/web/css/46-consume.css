@@ -1,0 +1,99 @@
+/* 46-consume — the CONSUME lane (§5 fifth kind, 2026-08-24).
+   Loads AFTER 45-feed.css, so every selector here is written to COMPOUND with
+   the feed's own (.feed-card.consume-card, never a bare .consume-card that
+   redefines card structure). The load-order rule the RE overhaul learned the
+   hard way: a later same-specificity selector silently wins. */
+
+/* ---- the card ---- */
+.feed-card.consume-card { gap: var(--sp-3); }
+.feed-card.consume-card.consume-read { border-color: var(--line); opacity: 0.72; }
+.feed-card.consume-card .feed-date { margin-left: auto; }
+.consume-title { cursor: pointer; }
+.consume-title:hover { color: var(--blue); }
+/* .type-chip.type-consume / .consume-list-chip / .consume-curated-chip are
+   structural only — the mono/uppercase recipe comes from .micro-label */
+.type-chip.type-consume { color: var(--base-50); border-color: var(--base-25); }
+.type-chip.type-x { color: var(--muted); }
+.consume-list-chip { color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); }
+.consume-curated-chip { color: var(--accent); border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 1px var(--sp-3); }
+.consume-excerpt { color: var(--muted); font-size: var(--fs-md); overflow-wrap: anywhere; }
+.consume-curated-on { color: var(--accent); }
+
+/* ---- the reader: the one place long-form prose gets real typography ---- */
+.consume-body-wrap { border-top: 1px solid var(--line); margin-top: var(--sp-4); padding-top: var(--sp-6); }
+.consume-read-head { color: var(--muted); margin-bottom: var(--sp-5); }
+.consume-loading { color: var(--muted); }
+.consume-body {
+  font-family: var(--serif, Georgia, 'Iowan Old Style', ui-serif, serif);
+  font-size: 1.05rem;
+  line-height: 1.68;
+  color: var(--text);
+  /* A measure, not a column width — the reason to read here rather than there. */
+  max-width: 36em;
+  overflow-wrap: anywhere;
+}
+.consume-body p { margin: 0 0 1.1em; }
+.consume-body h1, .consume-body h2, .consume-body h3, .consume-body h4 {
+  font-family: var(--sans); font-weight: 600; line-height: 1.3;
+  margin: 1.6em 0 0.5em; color: var(--text);
+}
+.consume-body h1 { font-size: 1.35rem; } .consume-body h2 { font-size: 1.2rem; }
+.consume-body h3 { font-size: 1.08rem; } .consume-body h4 { font-size: 1rem; }
+.consume-body a { color: var(--blue); text-decoration: underline; text-underline-offset: 2px; }
+.consume-body blockquote {
+  margin: 1.2em 0; padding-left: var(--sp-6);
+  border-left: 2px solid var(--line); color: var(--streak-ink);
+}
+.consume-body ul, .consume-body ol { margin: 0 0 1.1em; padding-left: 1.4em; }
+.consume-body li { margin: 0.3em 0; }
+.consume-body img { max-width: 100%; height: auto; border-radius: var(--radius); margin: 1em 0; }
+.consume-body figure { margin: 1.4em 0; }
+.consume-body figcaption { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-top: var(--sp-3); }
+.consume-body pre {
+  background: var(--streak-bg); border-radius: var(--radius);
+  padding: var(--sp-5) var(--sp-6); overflow-x: auto;
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5;
+}
+.consume-body code { font-family: var(--mono); font-size: 0.92em; }
+.consume-body pre code { font-size: inherit; }
+.consume-body hr { border: none; border-top: 1px solid var(--line); margin: 2em 0; }
+.consume-read-foot { display: flex; flex-wrap: wrap; gap: var(--sp-4); margin-top: var(--sp-7); padding-top: var(--sp-5); border-top: 1px solid var(--line); }
+
+/* ---- the curate note row ---- */
+.consume-note-row { display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; margin-top: var(--sp-3); }
+.consume-note-input { flex: 1; min-width: 12rem; }
+
+/* ---- the CONSUME view header ---- */
+.consume-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-5); margin-bottom: var(--sp-6); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--line); }
+.consume-head-left { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.consume-head-right { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; }
+.consume-count { color: var(--muted); }
+
+/* ---- the manage panel ---- */
+.consume-manage { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-6); margin-bottom: var(--sp-7); display: flex; flex-direction: column; gap: var(--sp-4); }
+.consume-manage-head { color: var(--muted); }
+.consume-add { display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; padding-bottom: var(--sp-5); border-bottom: 1px solid var(--line); }
+.consume-add-input { flex: 2; min-width: 14rem; }
+.consume-add-list { flex: 1; min-width: 8rem; }
+.consume-hint { flex-basis: 100%; color: var(--muted); }
+.consume-group { color: var(--muted); margin-top: var(--sp-4); }
+.consume-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-3) 0; border-bottom: 1px solid var(--line); }
+.consume-sub-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); overflow-wrap: anywhere; }
+.consume-sub-kind, .consume-sub-count { color: var(--muted); }
+.consume-sub-acts { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+.consume-sub-err { flex-basis: 100%; color: var(--danger, var(--muted)); }
+.consume-edit { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; padding: var(--sp-4) 0; }
+.consume-mirror { font-family: var(--mono); font-size: var(--fs-sm); }
+
+/* status dot: idle / polled ok / degraded — the manage panel's whole health UI */
+.consume-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--base-25); }
+.consume-dot.ok { background: var(--accent); }
+.consume-dot.bad { background: var(--danger, var(--base-50)); }
+
+/* ---- phone (<860, the mobile-pass band) ---- */
+@media (max-width: 859px) {
+  .consume-body { font-size: 1.02rem; max-width: 100%; }
+  .consume-head-right { margin-left: 0; width: 100%; justify-content: space-between; }
+  .consume-sub-acts { margin-left: 0; width: 100%; }
+  .consume-add-input, .consume-add-list { flex-basis: 100%; }
+}

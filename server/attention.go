@@ -23,6 +23,7 @@ func (s *Server) attentionRegistry() *attention.Registry {
 	r.Register(findingsSource{s})
 	r.Register(signalsSource{s})
 	r.Register(noticesSource{s})
+	r.Register(consumeSource{s})
 	r.Register(receiptsSource{s})
 	return r
 }
@@ -33,6 +34,7 @@ var kindField = map[string]string{
 	"finding": "items",
 	"signal":  "signals",
 	"notice":  "portalItems",
+	"consume": "consumeItems",
 	"receipt": "receipts",
 }
 
@@ -108,3 +110,28 @@ func (n noticesSource) Active(_ time.Time, _ url.Values) []attention.Card {
 	return out
 }
 func (n noticesSource) Count(time.Time) int { return n.s.portalInboxCount() }
+
+// consumeSource: subscribed reading — RSS/Atom feeds and X accounts (§5
+// amendment 2026-08-24, the fifth kind). Lifecycle read-curate-dismiss.
+//
+// ⚠ Count is deliberately ZERO. Reading is not attention debt: the FEED badge
+// counts things that want something FROM the owner, and an unread essay does
+// not. The lane shows its own unread total instead, so a growing backlog is
+// visible without ever making the nav pill nag.
+type consumeSource struct{ s *Server }
+
+func (c consumeSource) Kind() string { return "consume" }
+func (c consumeSource) Lifecycle() attention.Lifecycle {
+	return attention.LifecycleReadCurateDismiss
+}
+func (c consumeSource) Active(_ time.Time, q url.Values) []attention.Card {
+	out := []attention.Card{}
+	if c.s.consume == nil {
+		return out
+	}
+	for _, card := range c.s.consume.Cards(q.Get("view"), q.Get("list")) {
+		out = append(out, card)
+	}
+	return out
+}
+func (c consumeSource) Count(time.Time) int { return 0 }

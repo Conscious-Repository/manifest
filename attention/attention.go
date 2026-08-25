@@ -32,6 +32,12 @@ const (
 	// LifecyclePermanent: receipts — an append-only trail of autonomous work;
 	// never dismissed, only read.
 	LifecyclePermanent Lifecycle = "permanent"
+	// LifecycleReadCurateDismiss: consume — subscribed reading (§5 amendment
+	// 2026-08-24). Unread NEVER expires: an essay the owner has not got to yet
+	// is still wanted, which is exactly what disqualified the notices
+	// lifecycle. Read and dismissed items age out at 90d. CURATE is a domain
+	// write, not a lifecycle verb.
+	LifecycleReadCurateDismiss Lifecycle = "read-curate-dismiss"
 )
 
 // Card is one attention card. Each kind keeps its own card shape (they render

@@ -1,0 +1,275 @@
+package consume
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func liveSvc(t *testing.T) (*Service, *fakeVault, *httptest.Server) {
+	t.Helper()
+	v := newVault(t)
+	feed := serve(t, substackish, nil)
+	s := New(t.TempDir(), v.io(), Config{})
+	s.hc = feed.Client()
+	return s, v, feed
+}
+
+func TestSubscribeThenReadTheLane(t *testing.T) {
+	s, v, feed := liveSvc(t)
+
+	sub, err := s.Subscribe(context.Background(), feed.URL, "", "essays", MirrorFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.Title != "Melissa's Newsletter" {
+		t.Errorf("feed title not adopted as the default name: %q", sub.Title)
+	}
+	if sub.List != "essays" {
+		t.Errorf("list: %q", sub.List)
+	}
+	// The subscription is in the VAULT, not in dataDir.
+	if !strings.Contains(v.read(t, feedsPath), "Melissa") {
+		t.Errorf("subscription not written to extrinsic/feeds.md:\n%s", v.read(t, feedsPath))
+	}
+
+	if err := s.PollNow(context.Background(), sub.ID); err != nil {
+		t.Fatal(err)
+	}
+	cards := s.Cards("unread", "")
+	if len(cards) != 2 {
+		t.Fatalf("want 2 cards, got %d", len(cards))
+	}
+	c := cards[0]
+	if c.Kind != "consume" || c.Type != KindRSS {
+		t.Errorf("card kind/type: %+v", c)
+	}
+	if c.Source != "Melissa's Newsletter" || c.List != "essays" {
+		t.Errorf("card provenance: %+v", c)
+	}
+	if c.Minutes < 1 {
+		t.Errorf("reading time should always be at least a minute: %+v", c)
+	}
+	if c.Curated {
+		t.Error("a freshly polled card should not be curated")
+	}
+	if s.Unread() != 2 {
+		t.Errorf("unread count: %d", s.Unread())
+	}
+
+	// Read one; it leaves the unread view but stays in "all".
+	if !s.MarkRead(cards[0].ID) {
+		t.Fatal("mark read failed")
+	}
+	if n := len(s.Cards("unread", "")); n != 1 {
+		t.Errorf("read item still in the unread lane: %d", n)
+	}
+	if n := len(s.Cards("all", "")); n != 2 {
+		t.Errorf("read item missing from the all view: %d", n)
+	}
+	if s.Unread() != 1 {
+		t.Errorf("unread count after reading: %d", s.Unread())
+	}
+
+	// Dismiss the other.
+	if !s.Dismiss(cards[1].ID) {
+		t.Fatal("dismiss failed")
+	}
+	if n := len(s.Cards("unread", "")); n != 0 {
+		t.Errorf("dismissed item still showing: %d", n)
+	}
+
+	// List filter.
+	if n := len(s.Cards("all", "essays")); n != 2 {
+		t.Errorf("list filter dropped items: %d", n)
+	}
+	if n := len(s.Cards("all", "nonexistent")); n != 0 {
+		t.Errorf("list filter matched the wrong group: %d", n)
+	}
+	if lists := s.Lists(); len(lists) != 1 || lists[0] != "essays" {
+		t.Errorf("lists: %v", lists)
+	}
+}
+
+func TestSubscribeRejectsDuplicates(t *testing.T) {
+	s, _, feed := liveSvc(t)
+	if _, err := s.Subscribe(context.Background(), feed.URL, "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Subscribe(context.Background(), feed.URL+"/", "", "", ""); err == nil {
+		t.Error("subscribing twice to the same feed should be refused")
+	}
+	if _, err := s.Subscribe(context.Background(), "  ", "", "", ""); err == nil {
+		t.Error("empty input should be refused")
+	}
+}
+
+func TestSubscribeAnXHandle(t *testing.T) {
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	sub, err := s.Subscribe(context.Background(), "@melissa", "", "people", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sub.Kind != KindX || sub.Handle != "melissa" {
+		t.Fatalf("handle not recognized: %+v", sub)
+	}
+	// With no token the poll must fail with something actionable, not silently.
+	err = s.PollNow(context.Background(), sub.ID)
+	if err == nil || !strings.Contains(err.Error(), "PORTALS") {
+		t.Errorf("sealed X portal should say where to fix it: %v", err)
+	}
+	if _, lastErr := s.store.Status(sub.ID); lastErr == "" {
+		t.Error("the failure should be recorded as the subscription's degraded reason")
+	}
+}
+
+func TestUnsubscribeForgetsTheCacheButNotTheVault(t *testing.T) {
+	s, v, feed := liveSvc(t)
+	sub, _ := s.Subscribe(context.Background(), feed.URL, "", "", MirrorFull)
+	_ = s.PollNow(context.Background(), sub.ID)
+	if len(s.Cards("all", "")) == 0 {
+		t.Fatal("setup: no items")
+	}
+	// Curate one first — that note must survive unsubscribing.
+	cards := s.Cards("all", "")
+	entry, err := s.Curate(cards[0].ID, "keeping this")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Unsubscribe(sub.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Subscriptions()) != 0 {
+		t.Error("subscription line survived")
+	}
+	if len(s.store.Items(sub.ID)) != 0 {
+		t.Error("cache survived")
+	}
+	if v.read(t, entry.Path) == "" {
+		t.Error("unsubscribing deleted a curated note — that note is the owner's")
+	}
+	if err := s.Unsubscribe("nope"); err == nil {
+		t.Error("unsubscribing an unknown id should error")
+	}
+}
+
+func TestUpdateSubEditsOnlyOwnerFields(t *testing.T) {
+	s, _, feed := liveSvc(t)
+	sub, _ := s.Subscribe(context.Background(), feed.URL, "", "essays", MirrorFull)
+
+	err := s.UpdateSub(Subscription{
+		ID: sub.ID, Title: "Renamed", List: "ai", Mirror: MirrorExcerpt, MinChars: 500,
+		URL: "https://attacker.example/feed", // must be ignored
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.doc()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur, found := d.Find(sub.ID)
+	if !found {
+		t.Fatal("subscription vanished")
+	}
+	if cur.Title != "Renamed" || cur.List != "ai" || cur.Mirrors() {
+		t.Errorf("owner edits did not apply: %+v", cur)
+	}
+	if cur.URL != feed.URL {
+		t.Errorf("the source URL was repointed by an update: %q", cur.URL)
+	}
+}
+
+// The rollback story: without a write capability the lane must degrade
+// gracefully, not panic or half-write.
+func TestServiceIsInertWithoutAWriteCapability(t *testing.T) {
+	v := newVault(t)
+	io := v.io()
+	io.Write = nil
+	s := New(t.TempDir(), io, Config{})
+
+	if _, err := s.Subscribe(context.Background(), "@someone", "", "", ""); err == nil {
+		t.Error("subscribing without a write capability should fail loudly")
+	}
+	if _, err := s.Curate("consume:rss:a:b", ""); err == nil {
+		t.Error("curating without a write capability should fail loudly")
+	}
+	// Reads still work and return nothing rather than panicking.
+	if len(s.Cards("all", "")) != 0 || s.Unread() != 0 || len(s.Curated()) != 0 {
+		t.Error("read paths should be empty, not broken")
+	}
+}
+
+// A failing feed must show as degraded, not as an empty subscription.
+func TestPollFailureSurfacesInTheManagePanel(t *testing.T) {
+	v := newVault(t)
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+
+	s := New(t.TempDir(), v.io(), Config{})
+	s.hc = bad.Client()
+	d := ParseFeeds("")
+	d.Add(Subscription{Title: "Broken", Kind: KindRSS, URL: bad.URL})
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	sub := s.Subscriptions()[0]
+	_ = s.PollNow(context.Background(), sub.ID)
+
+	st := s.Statuses()
+	if len(st) != 1 {
+		t.Fatalf("want 1 status row, got %d", len(st))
+	}
+	if st[0].LastErr == "" {
+		t.Error("a broken feed must say so, not just go quiet")
+	}
+	if st[0].LastOK != "" {
+		t.Error("a never-succeeded feed should have no lastOK")
+	}
+}
+
+func TestDueRespectsIntervals(t *testing.T) {
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{RSSInterval: time.Hour, XInterval: 6 * time.Hour})
+	now := time.Now().UTC()
+	sub := Subscription{ID: "s", Kind: KindRSS, URL: "https://e.com/f"}
+
+	if !s.due(sub, now) {
+		t.Error("a never-polled subscription is due")
+	}
+	s.store.Commit("s", now, true, nil, nil, "")
+	if s.due(sub, now.Add(30*time.Minute)) {
+		t.Error("polled 30m ago with a 1h interval should not be due")
+	}
+	if !s.due(sub, now.Add(2*time.Hour)) {
+		t.Error("polled 2h ago with a 1h interval should be due")
+	}
+	// X is on its own, slower clock — it costs money per poll.
+	xs := Subscription{ID: "s", Kind: KindX, Handle: "h"}
+	if s.due(xs, now.Add(2*time.Hour)) {
+		t.Error("X should not poll hourly")
+	}
+	if !s.due(xs, now.Add(7*time.Hour)) {
+		t.Error("X should poll after its own interval")
+	}
+}
+
+func TestSubOfParsesItemIDs(t *testing.T) {
+	id := itemID(KindRSS, "melissa", "guid")
+	got, ok := subOf(id)
+	if !ok || got != "melissa" {
+		t.Errorf("subOf(%q) = %q, %v", id, got, ok)
+	}
+	for _, bad := range []string{"", "nope", "consume:rss", "other:rss:a:b", "consume:rss:a:b:c"} {
+		if _, ok := subOf(bad); ok {
+			t.Errorf("subOf accepted %q", bad)
+		}
+	}
+}
