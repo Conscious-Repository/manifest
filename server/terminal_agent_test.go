@@ -45,6 +45,7 @@ func TestAgentTermSessionShell(t *testing.T) {
 	if !s.terminal.liveSet()[tn] {
 		t.Fatalf("tmux %s not live", tn)
 	}
+
 }
 
 // A claude agent session mints the resume handle up front and, once spawned,

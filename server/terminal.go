@@ -287,7 +287,7 @@ func (s *Server) createAgentTermSession(kind, cwd, name string) (termSession, st
 	err := s.terminal.tmux(
 		"set", "-g", "default-terminal", "tmux-256color", ";",
 		"set", "-ga", "terminal-features", "xterm-256color:RGB,clipboard", ";",
-		"new-session", "-d", "-s", tn, "bash", "-lc", inner, ";",
+		"new-session", "-d", "-s", tn, "-x", "120", "-y", "32", "bash", "-lc", inner, ";",
 		"set-option", "-t", tn, "status", "off", ";",
 		"set-option", "-t", tn, "mouse", "on", ";",
 		"set-option", "-t", tn, "set-titles", "on", ";",
