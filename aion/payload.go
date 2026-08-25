@@ -232,8 +232,13 @@ func AppendBacklogItem(current string, p ProposalPayload) (string, error) {
 	}
 	doc := ParseBacklog(current)
 	it := BacklogItemFromPayload(p)
-	if existing := doc.Find(it.ID); existing != nil {
-		return "", fmt.Errorf("item already in backlog: %q", it.Text)
+	// Dupe-check by kind+title, which is what the check MEANS. It used to
+	// lean on Find(legacy-hash) colliding — which stopped holding the moment
+	// AppendItem started minting persisted portal ids.
+	for _, have := range doc.AllItems() {
+		if have.Kind == it.Kind && NormalizeTitle(have.Text) == NormalizeTitle(it.Text) {
+			return "", fmt.Errorf("item already in backlog: %q", it.Text)
+		}
 	}
 	doc.AppendItem(it)
 	return SerializeBacklog(doc), nil

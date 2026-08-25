@@ -93,9 +93,14 @@ func (s *Server) syncPortalToVault(now time.Time) {
 		if strings.HasPrefix(id, "team/") {
 			continue // pass 1 carries its own fields across; nothing staged yet
 		}
-		item := doc.Find(id)
-		if item == nil {
-			continue // an override for a line we cannot see: leave it staged
+		// Resolve, not Find: a token-less line is served to the portal under a
+		// TRANSIENT id, and a member's staged edit on it would otherwise sit
+		// staged forever (the loud twin of this bug was the owner's "item not
+		// found" toast). A resolve also stamps the id, so the write below
+		// persists the token.
+		item, rerr := doc.Resolve(id)
+		if rerr != nil {
+			continue // a line we cannot see (or an ambiguous one): leave it staged
 		}
 		if applyOverrideToItem(item, ov.Fields) {
 			dirty = true

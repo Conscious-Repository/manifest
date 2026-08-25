@@ -70,7 +70,7 @@ func TestReAcceptWritesExactlyOneLine(t *testing.T) {
 	if strings.Count(string(after), "\n") != strings.Count(string(before), "\n")+1 {
 		t.Fatalf("expected exactly one added line:\n%s", after)
 	}
-	if !strings.Contains(string(after), "Take the across-street lab BATNA at $17k/mo [kind:: decision] [owner:: BA] [source:: [[2026-08-12 brian sync]]] [captured:: 2026-08-12] [status:: open]") {
+	if !strings.Contains(string(after), "Take the across-street lab BATNA at $17k/mo [id:: aion-bl/take-the-across-street-lab-batna-at-17k-mo] [kind:: decision] [owner:: BA] [source:: [[2026-08-12 brian sync]]] [captured:: 2026-08-12] [status:: open]") {
 		t.Fatalf("line wrong:\n%s", after)
 	}
 	if strings.Contains(string(after), "let's lock the BATNA") || strings.Contains(string(after), "0.9") {

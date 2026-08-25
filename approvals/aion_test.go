@@ -74,7 +74,7 @@ func TestAionAcceptWritesExactlyOneLine(t *testing.T) {
 	if strings.Count(string(after), "\n") != strings.Count(string(before), "\n")+1 {
 		t.Fatalf("expected exactly one added line:\n%s", after)
 	}
-	if !strings.Contains(string(after), "- [ ] Secure the Deep Tech Week venue [kind:: task] [owner:: JR] [source:: [[2026-07-31 jack ruhl sync]]] [captured:: 2026-07-31] [status:: open]") {
+	if !strings.Contains(string(after), "- [ ] Secure the Deep Tech Week venue [id:: aion-bl/secure-the-deep-tech-week-venue] [kind:: task] [owner:: JR] [source:: [[2026-07-31 jack ruhl sync]]] [captured:: 2026-07-31] [status:: open]") {
 		t.Fatalf("line wrong:\n%s", after)
 	}
 	// quote/confidence never persisted

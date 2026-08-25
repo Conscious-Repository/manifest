@@ -225,9 +225,9 @@ func legacyPortalIDs(root string) map[string][]string {
 // `decided` is unreachable here — only Decide sets it.
 func (s *Store) UpdateItem(id string, set map[string]string, now time.Time) error {
 	doc := s.LoadBacklog()
-	it := doc.Find(id)
-	if it == nil {
-		return fmt.Errorf("item %q not found", id)
+	it, err := doc.Resolve(id)
+	if err != nil {
+		return err
 	}
 	// only a decided DECISION is permanent — a task that arrived with a stray
 	// [status:: decided] (extraction drift) must stay editable, or it locks
@@ -305,8 +305,8 @@ func (s *Store) SetRanks(ranks map[string]string) error {
 	doc := s.LoadBacklog()
 	changed := false
 	for id, rank := range ranks {
-		it := doc.Find(id)
-		if it == nil || (it.Kind == KindDecision && it.Status == StatusDecided) {
+		it, err := doc.Resolve(id)
+		if err != nil || (it.Kind == KindDecision && it.Status == StatusDecided) {
 			continue
 		}
 		if it.Rank != rank {
@@ -324,6 +324,11 @@ func (s *Store) SetRanks(ranks map[string]string) error {
 // The live coordinator promotes collaborative deletion to an archive first.
 func (s *Store) DeleteItem(id string) error {
 	doc := s.LoadBacklog()
+	// Resolve first so a transient projection id deletes the line it names
+	// (the stamped id is what Remove then matches on).
+	if _, err := doc.Resolve(id); err != nil {
+		return err
+	}
 	if !doc.Remove(id) {
 		return fmt.Errorf("item %q not found", id)
 	}
@@ -493,8 +498,8 @@ func (s *Store) Decide(id, outcome string, now time.Time) error {
 		return fmt.Errorf("an outcome is required")
 	}
 	doc := s.LoadBacklog()
-	it := doc.Find(id)
-	if it == nil {
+	it, err := doc.Resolve(id)
+	if err != nil {
 		return fmt.Errorf("decision %q not found", id)
 	}
 	if it.Kind != KindDecision {

@@ -69,7 +69,7 @@ func TestResolveTaskMarksDone(t *testing.T) {
 		t.Fatal("evidence quote leaked into the record")
 	}
 	// untouched decision line stays byte-stable
-	if !strings.Contains(string(after), "Pick the lab HVAC vendor [kind:: decision]") {
+	if !strings.Contains(string(after), "Pick the lab HVAC vendor [id:: aion-bl/pick-the-lab-hvac-vendor] [kind:: decision]") {
 		t.Fatalf("unrelated line disturbed:\n%s", after)
 	}
 }

@@ -22,9 +22,9 @@ func ResolveBacklogItem(current string, p ProposalPayload, now time.Time) (strin
 		return "", fmt.Errorf("heuristics are reinforced, not resolved")
 	}
 	doc := ParseBacklog(current)
-	it := doc.Find(ItemID(p.Kind, strings.TrimSpace(p.Title)))
-	if it == nil {
-		return "", fmt.Errorf("item not found in backlog: %q — edit the title to match the backlog line", p.Title)
+	it, err := doc.FindByTitle(p.Kind, p.Title)
+	if err != nil {
+		return "", err
 	}
 	switch p.Kind {
 	case KindTask:

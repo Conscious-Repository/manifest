@@ -146,7 +146,14 @@ func emitBacklogItem(it *BacklogItem, depth int) []string {
 // lands at the TOP of the list (newest first — the corpus convention),
 // after any leading non-item lines.
 func (d *BacklogDoc) AppendItem(it *BacklogItem) {
-	if it.ID == "" {
+	// Mint whenever the item does not carry a PERSISTED id — not just when the
+	// id is empty. The approval lane arrives here with the legacy derived hash
+	// already stamped (BacklogItemFromPayload), which defeated an empty-only
+	// guard: the line landed with no [id::] token, the live projection papered
+	// over it with a transient aion-bl/<slug> the write path didn't recognize,
+	// and the item was visible everywhere but editable nowhere until the next
+	// boot migration ("item not found", 2026-08-24).
+	if it.ID == "" || !it.IDPersisted {
 		taken := map[string]bool{}
 		for _, have := range d.AllItems() {
 			if have.IDPersisted {

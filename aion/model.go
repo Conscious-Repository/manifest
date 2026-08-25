@@ -9,7 +9,12 @@
 // boundary — main binds it to a vaultwriter capability).
 package aion
 
-import "manifest/record"
+import (
+	"fmt"
+	"strings"
+
+	"manifest/record"
+)
 
 // Field is the kernel's inline-field pair.
 type Field = record.Field
@@ -217,6 +222,64 @@ func (d *BacklogDoc) Find(id string) *BacklogItem {
 		}
 	}
 	return nil
+}
+
+// Resolve finds an item by ANY of its identity dialects. Exact id first
+// (persisted [id::] token, or the legacy derived hash a token-less line reads
+// as). Failing that, a portal-style id is matched against each un-persisted
+// item's TRANSIENT export id — the aion-bl/<slug> the live projection mints in
+// memory for lines that lack a token (export.go). That transient identity is
+// what a client is holding when it says "done" on an item some writer appended
+// without an id; refusing it as "not found" made the item visible everywhere
+// and editable nowhere. A resolve through the fallback STAMPS the id as
+// persisted, so the caller's save writes the token and the line never needs
+// the fallback again. Ambiguity (two un-persisted items, one slug) refuses —
+// guessing between two lines is how the wrong task gets checked done.
+func (d *BacklogDoc) Resolve(id string) (*BacklogItem, error) {
+	if it := d.Find(id); it != nil {
+		return it, nil
+	}
+	if !strings.HasPrefix(id, "aion-bl/") {
+		return nil, fmt.Errorf("item %q not found", id)
+	}
+	var hits []*BacklogItem
+	for _, it := range d.AllItems() {
+		if !it.IDPersisted && "aion-bl/"+record.Slug(it.Text, 60) == id {
+			hits = append(hits, it)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return nil, fmt.Errorf("item %q not found", id)
+	case 1:
+		hits[0].ID = id
+		hits[0].IDPersisted = true // the save persists the token — self-healing
+		return hits[0], nil
+	default:
+		return nil, fmt.Errorf("item %q is ambiguous (%d lines share the title) — reload and retry", id, len(hits))
+	}
+}
+
+// FindByTitle returns the item matching kind + normalized title, refusing
+// ambiguity. The resolve lane (email-sync) identifies items by their WORDS —
+// its payloads carry no id — and used to lean on the legacy title-hash
+// colliding into Find; this says what it means.
+func (d *BacklogDoc) FindByTitle(kind, title string) (*BacklogItem, error) {
+	want := NormalizeTitle(title)
+	var hits []*BacklogItem
+	for _, it := range d.AllItems() {
+		if it.Kind == kind && NormalizeTitle(it.Text) == want {
+			hits = append(hits, it)
+		}
+	}
+	switch len(hits) {
+	case 0:
+		return nil, fmt.Errorf("item not found in backlog: %q — edit the title to match the backlog line", title)
+	case 1:
+		return hits[0], nil
+	default:
+		return nil, fmt.Errorf("%d backlog lines share the title %q — resolve it by hand", len(hits), title)
+	}
 }
 
 // ---- heuristics.md ----

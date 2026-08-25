@@ -302,7 +302,9 @@ func TestAppendBacklogItemExactlyOneLine(t *testing.T) {
 	if strings.Count(out, "\n") != strings.Count(current, "\n")+1 {
 		t.Fatalf("expected exactly one added line")
 	}
-	if !strings.Contains(out, "- [ ] Test spheroids in the ultrasound setup [kind:: task] [owner:: HZ] [source:: [[2026-08-03 aion sync]]] [captured:: 2026-08-03] [status:: open]") {
+	// the appended line carries a PERSISTED portal id — the 2026-08-24 bug was
+	// exactly this token missing (visible in the projection, invisible to Find)
+	if !strings.Contains(out, "- [ ] Test spheroids in the ultrasound setup [id:: aion-bl/test-spheroids-in-the-ultrasound-setup] [kind:: task] [owner:: HZ] [source:: [[2026-08-03 aion sync]]] [captured:: 2026-08-03] [status:: open]") {
 		t.Fatalf("rendered line wrong:\n%s", out)
 	}
 	// idempotency: same payload again refuses
@@ -480,7 +482,7 @@ func TestDecisionPayloadKeepsItsRock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	landed := ParseBacklog(out).Find(ItemID(KindDecision, p.Title))
+	landed, _ := ParseBacklog(out).FindByTitle(KindDecision, p.Title)
 	if landed == nil || landed.Rock != "aion/human-scale-spec" {
 		t.Fatalf("rock did not survive the append: %+v", landed)
 	}
