@@ -36,6 +36,19 @@ const chatDelegateProtocol = "\nCHANGES PROTOCOL: you have NO write access — n
 const chatAskProtocol = "\nPROTOCOL: answer from the CONTEXT above and your read-only tools. Cite the files/records you drew on. " +
 	"Do NOT propose or make changes — this is a read-only ask.\n"
 
+// oodaDelegateProtocol is zeck's OWN change vocabulary. It differs from
+// kairos's on purpose: it states the value enums (the shared protocol left
+// "<v>" open, so zeck proposed property statuses the task enum then refused),
+// names the one property field that IS applicable, and omits replace-section
+// entirely — the apply path refuses it for ooda, and a vocabulary that invites
+// refusals manufactures dead cards.
+const oodaDelegateProtocol = "\nCHANGES PROTOCOL: you have NO write access — nothing you say is applied until a person approves it. " +
+	"For anything you would change, emit a fenced ```manifest-proposal``` block (one per change), JSON, exactly these shapes:\n" +
+	"  {\"type\":\"set-field\",\"item\":\"prop/<slug>#<node-id>\",\"field\":\"status\",\"value\":\"open|in_progress|done\"}  — a work item in a property's tree\n" +
+	"  {\"type\":\"set-field\",\"item\":\"<backlog-item-id>\",\"field\":\"status|due|needed_by|owner\",\"value\":\"<v>\"}  — a backlog task (status: open|in_progress|done)\n" +
+	"  {\"type\":\"set-field\",\"item\":\"<property-slug>\",\"field\":\"status\",\"value\":\"negotiating|under_contract|pre_development|construction|completed|leased|listed|sold\"}  — a property's lifecycle (admin applies)\n" +
+	"Use the exact item ids from the CONTEXT above. Put your reasoning in prose; put every change in a block. Propose nothing you cannot ground in the context.\n"
+
 // UseChatThreads wires the AION chat store.
 func (s *Server) UseChatThreads(store *chatthreads.Store) { s.chat = store }
 
@@ -186,7 +199,7 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 	// full text is a file in the agent's own tree either way.
 	// Reserve real slack, not a token amount: the message, the longest
 	// protocol, and room for the framing the attachment block writes.
-	fixed := b.Len() + len(text) + len(chatDelegateProtocol) + 1500
+	fixed := b.Len() + len(text) + max(len(chatDelegateProtocol), len(oodaDelegateProtocol)) + 1500
 	if budget := spirits.MaxRequestChars - fixed; budget > 600 {
 		if block, _ := s.chatAttachments(ag, contextIDs, budget); block != "" {
 			b.WriteString(block)
@@ -194,7 +207,11 @@ func (s *Server) spoolChatOrder(ag *chatAgent, threadID, threadTitle, ritual, in
 	}
 	b.WriteString("MESSAGE (from " + orStr(who, "a teammate") + "):\n" + text + "\n")
 	if ritual == "delegate" {
-		b.WriteString(chatDelegateProtocol)
+		if ag.Domain == "ooda" {
+			b.WriteString(oodaDelegateProtocol)
+		} else {
+			b.WriteString(chatDelegateProtocol)
+		}
 	} else {
 		b.WriteString(chatAskProtocol)
 	}

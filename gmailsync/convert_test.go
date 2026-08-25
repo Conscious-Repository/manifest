@@ -44,9 +44,9 @@ func TestThreadNoteShape(t *testing.T) {
 	}
 	note := ThreadNote(msgs, res, "ben@ooda.group")
 	for _, want := range []string{
-		"olga sobkiv\n",                  // participants line, owner excluded
-		"## 2026-08-11 — olga sobkiv\n",  // resolved sender
-		"## 2026-08-18 — Benjamin\n",     // header display-name fallback
+		"olga sobkiv\n",                 // participants line, owner excluded
+		"## 2026-08-11 — olga sobkiv\n", // resolved sender
+		"## 2026-08-18 — Benjamin\n",    // header display-name fallback
 		"Permit sets attached.",
 	} {
 		if !strings.Contains(note, want) {

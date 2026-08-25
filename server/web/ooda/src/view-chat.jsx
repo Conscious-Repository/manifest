@@ -12,6 +12,11 @@ function ViewChat({ data }) {
   const [sel, setSel] = React.useState("");
   const [text, setText] = React.useState("");
   const [propOpen, setPropOpen] = React.useState(null);
+  // per-card decide feedback, keyed msgId#idx — the shared bottom error node
+  // sits a full screen below a mid-thread card, which is how a refused apply
+  // read as "nothing happens" (owner report 2026-08-25)
+  const [decideErr, setDecideErr] = React.useState({});
+  const [deciding, setDeciding] = React.useState("");
   const [attachMeta, setAttachMeta] = React.useState({});
   const [attaching, setAttaching] = React.useState("");
   const [ctx, setCtx] = React.useState([]);
@@ -100,10 +105,17 @@ function ViewChat({ data }) {
 
   // decide applies or discards one proposal — the endpoint has always been
   // wired for this portal (main.go OodaChatProposal); the page just never used it.
-  const decide = (m, idx, apply) =>
+  const decide = (m, idx, apply) => {
+    const key = m.id + "#" + idx;
+    setDecideErr((d) => ({ ...d, [key]: "" }));
+    setDeciding(key);
     postJSON("/api/chat/proposal", { thread: sel, msg: m.id, index: idx, apply })
-      .then(load)
-      .catch((e) => setErr(String(e.message || e)));
+      .then(() => { setDeciding(""); load(); })
+      .catch((e) => {
+        setDeciding("");
+        setDecideErr((d) => ({ ...d, [key]: String(e.message || e) }));
+      });
+  };
 
   const props = (data.portfolio && data.portfolio.properties) || [];
 
@@ -135,7 +147,9 @@ function ViewChat({ data }) {
                   <b>{m.author_name || m.author}</b>
                   <span className="ooda-sub">{String(m.at || "").slice(11, 16)}</span>
                 </div>
-                <div className="ooda-comment-body">{m.text}</div>
+                <div className="ooda-comment-body">
+                  {m.kind === "ask" ? m.text : window.CHAT_MD.render(m.text, React)}
+                </div>
                 {(m.files || []).length ? (
                   <div className="ooda-msg-files">
                     {m.files.map((f) => (
@@ -171,10 +185,13 @@ function ViewChat({ data }) {
                       ) : null}
                       {p.state === "pending" && canAct ? (
                         <div className="ooda-prop-acts">
-                          <button className="ooda-send" onClick={() => decide(m, idx, true)}>apply</button>
-                          <button className="ooda-send secondary" onClick={() => decide(m, idx, false)}>discard</button>
+                          <button className="ooda-send" disabled={deciding === key}
+                            onClick={() => decide(m, idx, true)}>{deciding === key ? "…" : "apply"}</button>
+                          <button className="ooda-send secondary" disabled={deciding === key}
+                            onClick={() => decide(m, idx, false)}>discard</button>
                         </div>
                       ) : null}
+                      {decideErr[key] ? <div className="ooda-prop-err">{decideErr[key]}</div> : null}
                       {p.state === "pending" && !canAct ? (
                         <div className="ooda-sub">an admin applies this</div>
                       ) : null}

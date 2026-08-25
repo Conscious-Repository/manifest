@@ -11,7 +11,9 @@ import (
 
 	"manifest/chatthreads"
 	"manifest/ledger"
+	"manifest/record"
 	"manifest/spirits"
+	"manifest/vaultwriter"
 )
 
 func chatFixture(t *testing.T) (*Server, string) {
@@ -262,5 +264,79 @@ func fakeAgentChatRun(t *testing.T, srv *Server, agent, runID, thread, orderID, 
 	brief := fmt.Sprintf("---\ntitle: brief\nrun: %s\ndate: 2026-08-16T05:01:00Z\n---\n%s\n", runID, briefBody)
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "library", runID+"-brief.md"), []byte(brief), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The 2026-08-25 "apply does nothing": zeck proposes PROPERTY changes (its
+// context advertises property statuses), but the apply funneled every
+// set-field into the team store's task enum — "pre_development" 400'd into an
+// off-screen error node. A property set-field now applies through the same
+// write the dashboard's status chip uses, admin-gated.
+func TestOodaChatProposalAppliesPropertyStatus(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	srv := f.srv
+	srv.UseOoda(f.live)
+	// the fixture's vault field is the DIRECTORY; the writer needs the same
+	// capability shape production grants for property field edits
+	srv.UseVault(vaultwriter.New(f.vault).WithZoneRoots("system", "extrinsic").Grant(
+		vaultwriter.Capability{Name: "realestate", Zone: record.ZoneSystem,
+			Pattern: "system/realestate/**", Actor: vaultwriter.ActorUserAction}))
+	oc, err := chatthreads.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseOodaChat(oc)
+	if _, err := oc.CreateThread("th/p", "status", "", chatthreads.Identity{ID: "ben@ooda.group", Name: "Ben"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	// the exact live shape: a BARE property slug, a property-lifecycle value
+	m, err := oc.AddMessage(chatthreads.Message{
+		Thread: "th/p", Kind: "zeck", Author: "agent:zeck", AuthName: "Zeck", Text: "flip it", Run: "r9", Outcome: "completed",
+		Props: []chatthreads.Proposal{{Verb: "set status", Type: "set-field", ItemID: "748-n-euclid", Field: "status", Value: "pre_development", State: "pending"}},
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a non-admin member is refused with a message that names the remedy
+	err = srv.OodaChatProposal("th/p", m.ID, 0, true, "me@olgasobkiv.com", "Olga", "OS", false)
+	if err == nil || !strings.Contains(err.Error(), "admin") {
+		t.Fatalf("non-admin must be refused clearly, got %v", err)
+	}
+	// the admin applies — and the PROPERTY record actually changes
+	if err := srv.OodaChatProposal("th/p", m.ID, 0, true, "ben@ooda.group", "Ben", "BA", true); err != nil {
+		t.Fatalf("admin apply: %v", err)
+	}
+	if p, ok := srv.realestate.Get("748-n-euclid"); !ok || p.Status != "pre_development" {
+		t.Fatalf("property status not written: %+v", p.Status)
+	}
+	if oc.Messages("th/p")[0].Props[0].State != "applied" {
+		t.Fatal("card not marked applied")
+	}
+	// a bad value refuses with the enum in the message, and stays pending
+	m2, _ := oc.AddMessage(chatthreads.Message{
+		Thread: "th/p", Kind: "zeck", Author: "agent:zeck", AuthName: "Zeck", Text: "x", Run: "r10", Outcome: "completed",
+		Props: []chatthreads.Proposal{{Verb: "set status", Type: "set-field", ItemID: "prop/748-n-euclid", Field: "status", Value: "warp-speed", State: "pending"}},
+	}, time.Now())
+	err = srv.OodaChatProposal("th/p", m2.ID, 0, true, "ben@ooda.group", "Ben", "BA", true)
+	if err == nil || !strings.Contains(err.Error(), "unknown status") {
+		t.Fatalf("bad value must refuse with the enum, got %v", err)
+	}
+	// a non-status property field refuses with guidance
+	m3, _ := oc.AddMessage(chatthreads.Message{
+		Thread: "th/p", Kind: "zeck", Author: "agent:zeck", AuthName: "Zeck", Text: "x", Run: "r11", Outcome: "completed",
+		Props: []chatthreads.Proposal{{Verb: "set entity", Type: "set-field", ItemID: "748-n-euclid", Field: "entity", Value: "x", State: "pending"}},
+	}, time.Now())
+	err = srv.OodaChatProposal("th/p", m3.ID, 0, true, "ben@ooda.group", "Ben", "BA", true)
+	if err == nil || !strings.Contains(err.Error(), "only a property's status") {
+		t.Fatalf("non-status field must refuse with guidance, got %v", err)
+	}
+	// replace-section for ooda refuses with the discard guidance
+	m4, _ := oc.AddMessage(chatthreads.Message{
+		Thread: "th/p", Kind: "zeck", Author: "agent:zeck", AuthName: "Zeck", Text: "x", Run: "r12", Outcome: "completed",
+		Props: []chatthreads.Proposal{{Verb: "replace ## description", Type: "replace-section", ItemID: "748-n-euclid", Section: "description", Body: "b", State: "pending"}},
+	}, time.Now())
+	err = srv.OodaChatProposal("th/p", m4.ID, 0, true, "ben@ooda.group", "Ben", "BA", true)
+	if err == nil || !strings.Contains(err.Error(), "aren't applicable") {
+		t.Fatalf("section rewrite must refuse with guidance, got %v", err)
 	}
 }

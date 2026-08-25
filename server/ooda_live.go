@@ -314,6 +314,22 @@ func (l *OodaLive) OwnerOf(itemID string) (string, bool) {
 	if itemID == "" {
 		return "", false
 	}
+	// A staged owner override IS the item's holder until the base catches up
+	// (or forever, for overlay-only rock items). Without this, someone
+	// assigned from the portal could SEE their name on the item (buildOodaWork
+	// reads the override) while every edit still 403'd against the base's
+	// empty owner — the display and the gate must consult the same truth.
+	if team, _ := l.teamStore(); team != nil {
+		if ov, ok := team.Ext().Overrides[itemID]; ok {
+			if v := strings.TrimSpace(ov.Fields["owner"]); v != "" {
+				var alias map[string]string
+				if snap := l.Snapshot(); snap != nil {
+					alias = oodaOwnerAliases(snap.People)
+				}
+				return oodaOwner(v, alias), true
+			}
+		}
+	}
 	snap := l.Snapshot()
 	var alias map[string]string
 	if snap != nil {

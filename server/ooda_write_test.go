@@ -498,3 +498,64 @@ func oodaCockpitFor(t *testing.T, vault string, store *teamportal.Store) *Server
 	srv.UseOodaBids(store, "ben@ooda.group")
 	return srv
 }
+
+// The 2026-08-25 owner decision: work NOBODY holds may be claimed for anyone,
+// by any member — before this the empty owner 403'd everyone (admin included)
+// and unassigned items were permanently unassignable from the portal.
+func TestAnyMemberAssignsAnOwnerToUnownedWork(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	olga, _ := f.auth.SessionCookie("me@olgasobkiv.com", "Olga", false, time.Now())
+
+	// an unowned team item (the fixture's rock nodes all carry owners) plus
+	// the same claim exercised against a rock node below
+	created, err := f.store.AddItem(teamportal.Identity{Email: "ben@ooda.group", Name: "Ben"},
+		"", "task", "contractor for roof repair", "", "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID := created.ID
+	if owner, ok := f.live.OwnerOf(itemID); !ok || owner != "" {
+		t.Fatalf("created item should be unowned, got %q ok=%v", owner, ok)
+	}
+	// a non-admin member assigns it
+	rec := oodaDo(t, f.h, olga, "PATCH", "/api/team/item/"+itemID, `{"owner":"SM"}`)
+	if rec.Code != 200 {
+		t.Fatalf("member assigning unowned work: %d %s", rec.Code, rec.Body)
+	}
+	// the WORK view shows the new owner immediately (override read), and the
+	// gate now treats SM as the holder
+	if owner, ok := f.live.OwnerOf(itemID); !ok || owner != "SM" {
+		t.Fatalf("owner oracle after assign: %q ok=%v", owner, ok)
+	}
+	ext := f.store.Ext()
+	work := buildOodaWork(f.live.Snapshot(), oodaToday(), ext.Overrides, ext.Items, oodaArchivedSet(ext))
+	found := ""
+	for _, g := range work {
+		for _, it := range append(append(append([]oodaWorkItem{}, g.Overdue...), g.DueThisWeek...), g.Open...) {
+			if it.ID == itemID {
+				found = g.Owner
+			}
+		}
+	}
+	if found != "SM" {
+		t.Fatalf("WORK groups the item under %q, want SM", found)
+	}
+	// the carve-out is owner-only: on a DIFFERENT unowned item, an owner
+	// change smuggling a second field keeps the full lock
+	other, err := f.store.AddItem(teamportal.Identity{Email: "ben@ooda.group", Name: "Ben"},
+		"", "task", "roof replacement", "", "", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := oodaDo(t, f.h, olga, "PATCH", "/api/team/item/"+other.ID, `{"owner":"OS","status":"done"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("multi-field patch on unowned work must keep the lock, got %d", rec.Code)
+	}
+	// and an OWNED item still refuses a non-assignee's owner change — both
+	// the just-assigned team item and a vault rock node with a real holder
+	if rec := oodaDo(t, f.h, olga, "PATCH", "/api/team/item/"+itemID, `{"owner":"OS"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("reassigning an owned item must keep the assignee lock, got %d", rec.Code)
+	}
+	if rec := oodaDo(t, f.h, olga, "PATCH", "/api/team/item/prop/748-n-euclid#shell/roof", `{"owner":"OS"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("reassigning BPA's rock node must keep the assignee lock, got %d", rec.Code)
+	}
+}

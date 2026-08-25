@@ -107,23 +107,68 @@ func (a *oodaAPI) gmailStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// oodaEmailCard is one FEED card: a conversation, not a mailbox's copy of
+// one. The face candidate is the one a decide should target (a member's own
+// copy when they hold one); Mailboxes lists every account holding a copy.
+type oodaEmailCard struct {
+	gmailsync.Candidate
+	Mailboxes []string `json:"mailboxes,omitempty"`
+	GroupSize int      `json:"groupSize"`
+}
+
+// oodaPendingEmailCards is THE pending-email read, shared by /api/ooda/email
+// and the FEED aggregate so the two can never disagree. One card per
+// conversation (fingerprint), folded across mailboxes; the visibility rule is
+// unchanged — a member gets a card iff their own mailbox holds a copy, the
+// admin gets everything.
+func oodaPendingEmailCards(cands []gmailsync.Candidate, admin bool, email string) []*oodaEmailCard {
+	out := []*oodaEmailCard{}
+	seen := map[string]int{}
+	for _, c := range cands {
+		fp := gmailsync.FingerprintOf(c)
+		if at, ok := seen[fp]; ok {
+			card := out[at]
+			card.Mailboxes = append(card.Mailboxes, c.Account)
+			card.GroupSize++
+			// a member's own copy becomes the card face, so their decide
+			// targets their mailbox's candidate id
+			if !admin && strings.EqualFold(c.Account, email) {
+				card.Candidate = c
+			}
+			continue
+		}
+		if admin || strings.EqualFold(c.Account, email) {
+			seen[fp] = len(out)
+			out = append(out, &oodaEmailCard{Candidate: c, Mailboxes: []string{c.Account}, GroupSize: 1})
+		} else {
+			// a foreign copy seen FIRST still anchors the group, invisibly,
+			// so the member's later copy folds instead of duplicating —
+			// marked by a sentinel the second pass prunes
+			seen[fp] = len(out)
+			out = append(out, &oodaEmailCard{Candidate: gmailsync.Candidate{}, Mailboxes: []string{c.Account}, GroupSize: 1})
+		}
+	}
+	// prune anchors whose group never gained a visible face
+	vis := out[:0]
+	for _, card := range out {
+		if card.ID != "" {
+			vis = append(vis, card)
+		}
+	}
+	return vis
+}
+
 // emailPending lists pending candidates — the admin sees all, a member sees
-// exactly their own mailbox's. The scoping happens HERE, not in the store:
-// the store is shared state, the boundary is the read.
+// exactly their own mailbox's conversations. The scoping happens HERE, not in
+// the store: the store is shared state, the boundary is the read.
 func (a *oodaAPI) emailPending(w http.ResponseWriter, r *http.Request) {
 	id, ok := PortalIdentify(a.opt, w, r)
 	if !ok {
 		return
 	}
 	s := a.live.s
-	all := s.oodaEmail.List(gmailsync.StatusPending)
 	admin := a.isOodaAdmin(id.Email)
-	out := make([]gmailsync.Candidate, 0, len(all))
-	for _, c := range all {
-		if admin || strings.EqualFold(c.Account, id.Email) {
-			out = append(out, c)
-		}
-	}
+	out := oodaPendingEmailCards(s.oodaEmail.List(gmailsync.StatusPending), admin, id.Email)
 	writeJSON(w, map[string]any{"pending": out, "admin": admin})
 }
 
@@ -153,12 +198,30 @@ func (a *oodaAPI) emailDecide(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not your mailbox", http.StatusForbidden)
 		return
 	}
+	// The decision settles the CONVERSATION, not one mailbox's copy of it:
+	// gmail thread ids are mailbox-local, so the same thread pends once per
+	// member and deciding one copy used to leave its twins in the feed (and a
+	// second confirm minted a second artifact + second extractor spool,
+	// because the note text is mailbox-relative). The clicked copy is decided
+	// exactly as before; its fingerprint-siblings follow.
+	siblings := func() []gmailsync.Candidate {
+		var out []gmailsync.Candidate
+		for _, twin := range s.oodaEmail.PendingGroup(gmailsync.FingerprintOf(*cand)) {
+			if twin.ID != cand.ID {
+				out = append(out, twin)
+			}
+		}
+		return out
+	}
 	switch b.Action {
 	case "dismiss":
 		decided, err := s.oodaEmail.Decide(cand.ID, id.Email, false, "", false)
 		if err != nil {
 			httpError(w, err)
 			return
+		}
+		for _, twin := range siblings() {
+			_, _ = s.oodaEmail.Decide(twin.ID, id.Email, false, "", false)
 		}
 		writeJSON(w, decided)
 	case "confirm":
@@ -186,6 +249,11 @@ func (a *oodaAPI) emailDecide(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			httpError(w, err)
 			return
+		}
+		// the twins confirm pointing at the SAME artifact and never spool —
+		// one conversation, one artifact, one extraction
+		for _, twin := range siblings() {
+			_, _ = s.oodaEmail.Decide(twin.ID, id.Email, true, ref.Hash, false)
 		}
 		writeJSON(w, decided)
 	default:

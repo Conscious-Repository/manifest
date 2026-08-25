@@ -30,6 +30,8 @@ import (
 
 	"manifest/approvals"
 	"manifest/realestate"
+
+	"manifest/gmailsync"
 )
 
 // oodaFeedTypes: only the RE extraction types surface on the portal — the
@@ -71,13 +73,8 @@ func (a *oodaAPI) feed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.oodaEmail != nil {
-		var pending []any
-		for _, c := range s.oodaEmail.List("pending") {
-			if admin || strings.EqualFold(c.Account, id.Email) {
-				pending = append(pending, c)
-			}
-		}
-		out["emailPending"] = pending
+		out["emailPending"] = oodaPendingEmailCards(
+			s.oodaEmail.List(gmailsync.StatusPending), admin, id.Email)
 	}
 
 	var approvals []oodaApprovalView

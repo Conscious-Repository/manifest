@@ -497,6 +497,32 @@ var propertyStatuses = map[string]bool{
 }
 var propertyKinds = map[string]bool{"rehab": true, "new-construction": true, "mixed": true, "hold": true}
 
+// patchPropertyStatus is the one property write reachable from a portal chat
+// proposal (owner decision 2026-08-25: apply reaches property FIELDS, status
+// only, admin-gated at the caller). Identical validation and write path to
+// handlePropertyField's "status" arm — the portal write must be byte-identical
+// to the dashboard's, never a second dialect.
+func (s *Server) patchPropertyStatus(slug, status string) error {
+	if s.realestate == nil || s.vault == nil {
+		return errBadRequest("properties not available")
+	}
+	p, ok := s.realestate.Get(slug)
+	if !ok {
+		return errBadRequest("no property " + slug)
+	}
+	status = strings.ToLower(strings.TrimSpace(status))
+	if !propertyStatuses[status] {
+		return errBadRequest("unknown status " + status + " — one of negotiating, under_contract, pre_development, construction, completed, leased, listed, sold")
+	}
+	if err := s.vault.SetFrontmatterField(p.Path, "status", status); err != nil {
+		return err
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{p.Path})
+	}
+	return nil
+}
+
 // handlePropertyField is the quick-edit path (Board status chip, page chips):
 // one scalar frontmatter field per call, allow-listed keys, enum-checked values.
 func (s *Server) handlePropertyField(w http.ResponseWriter, r *http.Request) {

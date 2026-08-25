@@ -53,7 +53,13 @@ function PendingEmail({ cand, admin, onDecide }) {
       <div className="ooda-card-head">
         <span className="ooda-chip">email</span>
         <span className="ooda-card-title">{cand.subject || cand.filename}</span>
-        {admin ? <span className="ooda-sub">{cand.account}</span> : null}
+        {admin ? (
+          <span className="ooda-sub">
+            {cand.groupSize > 1
+              ? "in " + cand.groupSize + " mailboxes: " + (cand.mailboxes || []).join(", ")
+              : cand.account}
+          </span>
+        ) : null}
       </div>
       <div className="ooda-sub">
         {(cand.participants || []).join(" · ") || DASH}
@@ -73,6 +79,9 @@ function PendingEmail({ cand, admin, onDecide }) {
           {busy === "dismiss" ? "…" : "dismiss — never ask about this thread again"}
         </button>
       </div>
+      {cand.groupSize > 1 ? (
+        <div className="ooda-sub">one decision settles all {cand.groupSize} copies of this conversation</div>
+      ) : null}
     </div>
   );
 }
@@ -250,6 +259,11 @@ function ViewFeed() {
     <>
       <GmailBanner gmail={feed.gmail} />
       <Section title={feed.admin ? "PENDING EMAIL — ALL MEMBERS" : "PENDING EMAIL — YOUR MAILBOX"} count={pending.length}>
+        <div className="ooda-sub ooda-sec-note">
+          one card per conversation — confirm files the thread note as an OODA
+          artifact (ARCHIVE tab) and mines it for tasks &amp; money proposals;
+          dismiss mutes the conversation for good
+        </div>
         {pending.length ? pending.map((c) => (
           <PendingEmail key={c.id} cand={c} admin={feed.admin} onDecide={reload} />
         )) : <Empty>nothing waiting — deal threads land here after your mailbox syncs</Empty>}

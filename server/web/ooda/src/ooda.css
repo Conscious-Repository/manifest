@@ -552,3 +552,26 @@ a.ooda-archive-title:hover { text-decoration: underline; }
   .ooda-money { grid-template-columns: repeat(2, 1fr); gap: 12px 16px; }
   .ooda-money b { font-size: 18px; }
 }
+
+/* ---- chat markdown (CHAT_MD.render) — agent replies carry structure ---- */
+.md-body { min-width: 0; }
+.md-p { line-height: 1.6; }
+.md-gap { height: var(--sp-4); }
+.md-h1, .md-h2, .md-h3, .md-h4 { font-weight: 600; margin-top: var(--sp-4); line-height: 1.5; }
+.md-h1 { font-size: var(--fs-lg); }
+.md-h2, .md-h3, .md-h4 { font-size: var(--fs-md); }
+.md-list { margin: var(--sp-2) 0 var(--sp-2) var(--sp-7); padding: 0; }
+.md-list li { line-height: 1.6; margin: var(--sp-1) 0; }
+.md-code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--base-05); border-radius: var(--radius); padding: 0 var(--sp-2); }
+.md-pre { font-family: var(--mono); font-size: var(--fs-sm); background: var(--base-05); border-radius: var(--radius); padding: var(--sp-4); overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.md-link { color: var(--accent); overflow-wrap: anywhere; }
+
+/* per-card decide feedback — the shared bottom error node sat a screen below
+   the proposal card, which is how a refused apply read as "nothing happens" */
+.ooda-prop-err { font-family: var(--mono); font-size: var(--fs-xs); color: var(--over); margin-top: var(--sp-3); overflow-wrap: anywhere; }
+
+/* the unassigned row's one control */
+.ooda-assign-row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* the feed section's what-does-this-do line */
+.ooda-sec-note { margin-bottom: var(--sp-4); line-height: 1.5; }

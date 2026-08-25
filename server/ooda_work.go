@@ -184,6 +184,18 @@ func oodaOverrideDue(ov teamportal.Override, base string) string {
 	return base
 }
 
+// oodaOverrideOwner reads an override's owner patch. Without this, an owner
+// assigned from the portal displayed only after the vault reconciler landed —
+// and on a rock item (overlay-only by design, sync-back skips prop/ ids)
+// NEVER displayed: the override staged forever, invisibly. The override wins
+// until the base item catches up, same as open/due.
+func oodaOverrideOwner(ov teamportal.Override, base string) string {
+	if v := strings.TrimSpace(ov.Fields["owner"]); v != "" {
+		return v
+	}
+	return base
+}
+
 // oodaTeamItemOpen decides whether a portal-created team item is still
 // outstanding — the same allow-list reading as oodaBacklogOpen, over the team
 // store's own status vocabulary (open|in_progress|done, plus decided).
@@ -236,11 +248,13 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 		}
 		open := oodaBacklogOpen(it)
 		due := it.Due
+		owner := it.Owner
 		if ov, ok := overrides[it.ID]; ok {
 			if o, set := oodaOverrideOpen(ov); set {
 				open = o
 			}
 			due = oodaOverrideDue(ov, due)
+			owner = oodaOverrideOwner(ov, owner)
 		}
 		if !open {
 			continue
@@ -252,7 +266,7 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 		container, rock := oodaRockLabel(it.Rock, shortBySlug)
 		items = append(items, oodaWorkItem{
 			ID: it.ID, Title: it.Text, Kind: kind, Source: "backlog",
-			Owner:     oodaOwner(it.Owner, alias),
+			Owner:     oodaOwner(owner, alias),
 			Container: container, Rock: rock, Due: due, Age: it.Captured,
 		})
 	}
@@ -275,11 +289,13 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 			// override keyed prop/<slug>#<node-id>, never the vault checkbox
 			open := !n.Task.Checked
 			due := st.DoneBy
+			rockOwner := n.Task.Owner
 			if ov, ok := overrides["prop/"+p.Slug+"#"+n.ID]; ok {
 				if o, set := oodaOverrideOpen(ov); set {
 					open = o
 				}
 				due = oodaOverrideDue(ov, due)
+				rockOwner = oodaOverrideOwner(ov, rockOwner)
 			}
 			if !open {
 				return
@@ -292,7 +308,7 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 			// is the date it is measured against, same as the cockpit shows
 			items = append(items, oodaWorkItem{
 				ID: "prop/" + p.Slug + "#" + n.ID, Title: n.Task.Text, Kind: kind, Source: "rock",
-				Owner:     oodaOwner(n.Task.Owner, alias),
+				Owner:     oodaOwner(rockOwner, alias),
 				Container: label, Rock: st.Text, Due: due, Age: n.Task.Added,
 				Waiting: n.Task.Waiting != "", WaitingOn: strings.TrimSpace(n.Task.Waiting),
 			})
@@ -306,11 +322,13 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 		}
 		open := oodaTeamItemOpen(ti)
 		due := ti.Due
+		teamOwner := ti.Owner
 		if ov, ok := overrides[ti.ID]; ok {
 			if o, set := oodaOverrideOpen(ov); set {
 				open = o
 			}
 			due = oodaOverrideDue(ov, due)
+			teamOwner = oodaOverrideOwner(ov, teamOwner)
 		}
 		if !open {
 			continue
@@ -322,7 +340,7 @@ func buildOodaWork(snap *oodaSnapshot, today string, overrides map[string]teampo
 		container, rock := oodaRockLabel(ti.Rock, shortBySlug)
 		items = append(items, oodaWorkItem{
 			ID: ti.ID, Title: ti.Title, Kind: kind, Source: "team",
-			Owner:     oodaOwner(ti.Owner, alias),
+			Owner:     oodaOwner(teamOwner, alias),
 			Container: container, Rock: rock, Due: due, Age: ti.Captured,
 		})
 	}

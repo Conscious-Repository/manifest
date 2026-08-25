@@ -46,10 +46,14 @@ type Candidate struct {
 	LastMsgID    string    `json:"lastMsgId"`
 	Note         string    `json:"note"`     // rendered markdown (ThreadNote)
 	Filename     string    `json:"filename"` // suggested artifact name (NoteFilename)
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"createdAt"`
-	DecidedAt    time.Time `json:"decidedAt,omitempty"`
-	DecidedBy    string    `json:"decidedBy,omitempty"`
+	// Fingerprint identifies the CONVERSATION across mailboxes: the RFC
+	// Message-ID of the thread's first message. Empty on candidates minted
+	// before 2026-08-25 — FingerprintOf computes a fallback for those.
+	Fingerprint string    `json:"fingerprint,omitempty"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"createdAt"`
+	DecidedAt   time.Time `json:"decidedAt,omitempty"`
+	DecidedBy   string    `json:"decidedBy,omitempty"`
 	// ArtifactHash ties a confirmed candidate to its artifacts-store entry.
 	ArtifactHash string `json:"artifactHash,omitempty"`
 	// SpoolPending marks a confirmed candidate whose extractor spool was
@@ -245,6 +249,54 @@ func (c *Candidates) Decide(id, by string, confirm bool, artifactHash string, sp
 	}
 	cp := *cand
 	return &cp, nil
+}
+
+// FingerprintOf is a candidate's cross-mailbox identity: the stored RFC
+// Message-ID when the sync captured one, else a fallback over what every
+// mailbox's copy shares — the subject (Re:/Fwd: stripped), the resolved
+// participant set, and the first-message date. The fallback exists for the
+// backlog minted before fingerprints; it can over-merge two same-day
+// same-subject conversations between the same people, which for a dedupe
+// prompt is the better failure than three cards for one thread.
+func FingerprintOf(c Candidate) string {
+	if strings.TrimSpace(c.Fingerprint) != "" {
+		return "mid:" + strings.TrimSpace(c.Fingerprint)
+	}
+	subj := strings.ToLower(strings.Join(strings.Fields(c.Subject), " "))
+	for {
+		switch {
+		case strings.HasPrefix(subj, "re:"):
+			subj = strings.TrimSpace(subj[3:])
+		case strings.HasPrefix(subj, "fwd:"):
+			subj = strings.TrimSpace(subj[4:])
+		case strings.HasPrefix(subj, "fw:"):
+			subj = strings.TrimSpace(subj[3:])
+		default:
+			people := append([]string(nil), c.Participants...)
+			for i := range people {
+				people[i] = strings.ToLower(strings.TrimSpace(people[i]))
+			}
+			sort.Strings(people)
+			return "fp:" + subj + "|" + strings.Join(people, ",") + "|" + c.FirstMsgAt.UTC().Format("2006-01-02")
+		}
+	}
+}
+
+// PendingGroup returns every PENDING candidate sharing fp — the copies of one
+// conversation across member mailboxes. The decide cascade uses it so one
+// person's confirm/dismiss settles the conversation everywhere.
+func (c *Candidates) PendingGroup(fp string) []Candidate {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	st := c.load()
+	var out []Candidate
+	for _, cand := range st.Candidates {
+		if cand.Status == StatusPending && FingerprintOf(*cand) == fp {
+			out = append(out, *cand)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // ClearSpoolPending records that a confirmed candidate's extractor spool

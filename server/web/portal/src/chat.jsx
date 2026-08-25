@@ -204,7 +204,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 </div>
               )}
               <span title="chat build marker (temporary diagnostic)"
-                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 18</span>
+                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 19</span>
               <button className="v2-bare v2-hoverink" style={{ color: 'var(--ink-mute,#666)', fontSize: 11 }}
                 onClick={() => patchThread(thread.archived ? 'reopen' : 'archive')}>
                 {thread.archived ? 'reopen thread' : 'archive thread'}
@@ -240,7 +240,9 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                       {m.text && <div style={{ fontSize: 12.5, lineHeight: 1.65, whiteSpace: 'pre-wrap',
                         overflowWrap: 'anywhere', wordBreak: 'break-word', minWidth: 0, maxWidth: '100%',
                         overflowX: 'auto', marginTop: 3,
-                        color: isK ? 'var(--ink,#d4d4d4)' : 'var(--ink,#d4d4d4)' }}>{m.text}</div>}
+                        color: isK ? 'var(--ink,#d4d4d4)' : 'var(--ink,#d4d4d4)' }}>
+                        {isK ? window.CHAT_MD.render(m.text, React) : m.text}
+                      </div>}
                       {(m.context && m.context.length > 0) && (
                         <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', marginTop: 4 }}>
                           ↳ context · {m.context.map(ctxLabel).join(' · ')}

@@ -12,21 +12,30 @@ import (
 // fs.Sub over web/portal | web/ooda), so a shared file has to be two physical
 // copies. This is the guard that keeps them one file in practice.
 func TestChatActionsCopiesIdentical(t *testing.T) {
-	a, err := fs.ReadFile(webFiles, "web/portal/src/chat-actions.js")
-	if err != nil {
-		t.Fatalf("aion copy: %v", err)
+	for _, name := range []string{"chat-actions.js", "chat-md.js"} {
+		a, err := fs.ReadFile(webFiles, "web/portal/src/"+name)
+		if err != nil {
+			t.Fatalf("aion copy of %s: %v", name, err)
+		}
+		b, err := fs.ReadFile(webFiles, "web/ooda/src/"+name)
+		if err != nil {
+			t.Fatalf("ooda copy of %s: %v", name, err)
+		}
+		if !bytes.Equal(a, b) {
+			t.Fatalf("%s copies have drifted (%d vs %d bytes) — "+
+				"edit one and copy it over the other:\n"+
+				"  cp server/web/portal/src/%s server/web/ooda/src/%s", name, len(a), len(b), name, name)
+		}
 	}
-	b, err := fs.ReadFile(webFiles, "web/ooda/src/chat-actions.js")
-	if err != nil {
-		t.Fatalf("ooda copy: %v", err)
-	}
-	if !bytes.Equal(a, b) {
-		t.Fatalf("chat-actions.js copies have drifted (%d vs %d bytes) — "+
-			"edit one and copy it over the other:\n"+
-			"  cp server/web/portal/src/chat-actions.js server/web/ooda/src/chat-actions.js", len(a), len(b))
-	}
+	a, _ := fs.ReadFile(webFiles, "web/portal/src/chat-actions.js")
 	if !bytes.Contains(a, []byte("ritualOf")) {
 		t.Fatal("chat-actions.js lost ritualOf — the UI-key → wire-ritual mapping")
+	}
+	// the md renderer must stay innerHTML-free — element construction IS its
+	// safety story
+	md, _ := fs.ReadFile(webFiles, "web/portal/src/chat-md.js")
+	if bytes.Contains(md, []byte("innerHTML")) || bytes.Contains(md, []byte("dangerouslySetInnerHTML")) {
+		t.Fatal("chat-md.js must never touch innerHTML")
 	}
 }
 

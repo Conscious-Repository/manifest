@@ -1,8 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
@@ -932,6 +934,31 @@ func (p *portalAPI) afterWrite() {
 // assigneeOf resolves an item's holder and reports whether the caller is it.
 // The lock has no admin arm and did not gain one on 2026-08-24 — the owner
 // considered an override and declined it (the 2026-08-13 decision stands).
+// assignUnownedGate is the patch gate with ONE carve-out (owner decision
+// 2026-08-25): an item NOBODY holds may be given an owner by any member — and
+// only given an owner; every other field keeps the assignee lock. Before this
+// the "" owner 403'd everyone including the admin, so unassigned work was
+// permanently unassignable from the portal. The body is decoded here and
+// re-attached for the handler, since deciding needs to see the fields.
+func (p *portalAPI) assignUnownedGate(w http.ResponseWriter, r *http.Request, id teamportal.Identity, itemID string) bool {
+	owner, exists := p.ownerOf(itemID)
+	if exists && owner == "" {
+		var fields map[string]string
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+		if err != nil {
+			httpError(w, err)
+			return false
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		if json.Unmarshal(body, &fields) == nil && len(fields) == 1 {
+			if v, has := fields["owner"]; has && strings.TrimSpace(v) != "" {
+				return true // claiming unowned work is open to every member
+			}
+		}
+	}
+	return p.assigneeGate(w, id, itemID)
+}
+
 func (p *portalAPI) assigneeGate(w http.ResponseWriter, id teamportal.Identity, itemID string) bool {
 	owner, exists := p.ownerOf(itemID)
 	if !exists {
@@ -987,7 +1014,7 @@ func (p *portalAPI) handlePatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	itemID := r.PathValue("id")
-	if !p.assigneeGate(w, id, itemID) {
+	if !p.assignUnownedGate(w, r, id, itemID) {
 		return
 	}
 	if p.opt.Store != nil {

@@ -183,3 +183,18 @@ textarea.v2-input { line-height: 1.6; }
   .v2-rail { border-right: 0; border-bottom: 1px solid var(--line, #3a3a3a); }
   .v2-main { padding: 16px 16px 60px; }
 }
+
+/* chat markdown (CHAT_MD.render) — kairos replies carry structure. This
+   page's palette is its own (v2 tokens), so the rules are local, not copied
+   from ooda.css. */
+.md-body { min-width: 0; }
+.md-p { line-height: 1.65; }
+.md-gap { height: 8px; }
+.md-h1, .md-h2, .md-h3, .md-h4 { font-weight: 600; margin-top: 8px; color: var(--ink, #d4d4d4); }
+.md-h1 { font-size: 14px; }
+.md-h2, .md-h3, .md-h4 { font-size: 13px; }
+.md-list { margin: 4px 0 4px 18px; padding: 0; }
+.md-list li { line-height: 1.65; margin: 2px 0; }
+.md-code { font-family: ui-monospace, monospace; font-size: 11.5px; background: var(--bg-2, #1a1a1a); border-radius: 3px; padding: 0 4px; }
+.md-pre { font-family: ui-monospace, monospace; font-size: 11.5px; background: var(--bg-2, #1a1a1a); border-radius: 3px; padding: 8px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.md-link { color: var(--accent, #0091ea); overflow-wrap: anywhere; }

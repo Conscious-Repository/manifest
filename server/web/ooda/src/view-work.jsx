@@ -113,6 +113,46 @@ function loadPeople() {
   return peopleCache;
 }
 
+// AssignRow is the ONE control on work nobody holds: give it an owner. Open
+// to every member (owner decision 2026-08-25) — the server's carve-out admits
+// exactly {owner} on an unowned item and nothing else. The old copy here sent
+// people to "propose instead", a control this portal never shipped.
+function AssignRow({ it, setState, setErr }) {
+  const [people, setPeople] = React.useState(null);
+  const [busy, setBusy] = React.useState(false);
+  React.useEffect(() => {
+    let on = true;
+    loadPeople().then((p) => { if (on) setPeople(p); });
+    return () => { on = false; };
+  }, []);
+  const assign = async (initials) => {
+    if (!initials) return;
+    setErr(""); setBusy(true);
+    try {
+      await teamAPI.patch(it.id, { owner: initials });
+      setState("assigned to " + initials + " ✓ — regroups on the next refresh");
+    } catch (e) {
+      setErr(String(e.message || e));
+    }
+    setBusy(false);
+  };
+  return (
+    <div className="ooda-assign-row">
+      <span className="ooda-sub">nobody holds this — </span>
+      <select className="ooda-in" disabled={busy || !people} defaultValue=""
+        onChange={(e) => assign(e.target.value)}>
+        <option value="" disabled>{people ? "assign to…" : "loading roster…"}</option>
+        {(people || []).map((p) => (
+          <option key={p.initials} value={p.initials}>
+            {p.initials + (p.name ? " — " + p.name : "")}
+          </option>
+        ))}
+      </select>
+      <span className="ooda-sub"> or comment below</span>
+    </div>
+  );
+}
+
 // WorkRow honours the ASSIGNEE LOCK the shared layer enforces: only the person
 // who holds an item may change its state — and there is no admin override lane
 // (the AION decision of 2026-08-13, mirrored — and reaffirmed 2026-08-24,
@@ -213,9 +253,11 @@ function WorkRow({ it, tone, isMine }) {
       </div>
       {open ? (
         <div className="ooda-work-detail">
-          {!isMine ? (
+          {!isMine && !it.owner ? (
+            <AssignRow it={it} setState={setState} setErr={setErr} />
+          ) : !isMine ? (
             <div className="ooda-sub">
-              {(it.owner || "nobody") + " holds this — comment or propose instead"}
+              {it.owner + " holds this — comment below, or ask them"}
             </div>
           ) : state ? (
             <div className="ooda-sub">{state}</div>

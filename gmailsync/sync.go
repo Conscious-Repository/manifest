@@ -189,6 +189,9 @@ func (l *Loop) upsertFrom(email, threadID, subject string, msgs []Msg, res Resol
 		Note:       ThreadNote(msgs, res, email),
 		Filename:   NoteFilename(msgs, subject),
 		Seq:        seq,
+		// the first message's RFC id is identical in every member's mailbox —
+		// the cross-mailbox conversation identity the FEED dedupes on
+		Fingerprint: msgs[0].MessageID,
 	}
 	if line := ParticipantsLine(msgs, res, email); line != "" {
 		cand.Participants = strings.Split(line, " · ")

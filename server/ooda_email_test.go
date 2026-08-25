@@ -155,3 +155,116 @@ func TestPendingEmailNotesAreScopedToSourceAndAdmin(t *testing.T) {
 		t.Fatal("email decide touched the vault")
 	}
 }
+
+// seedCandidateFP seeds a candidate with an explicit cross-mailbox fingerprint.
+func seedCandidateFP(t *testing.T, f *oodaPortalHandles, account, thread, subject, fp string) gmailsync.Candidate {
+	t.Helper()
+	cand := gmailsync.Candidate{
+		Account: account, ThreadID: thread, Subject: subject, Fingerprint: fp,
+		FirstMsgAt: time.Now().Add(-time.Hour), LastMsgAt: time.Now(),
+		LastMsgID: "m1", Note: "note as seen from " + account + "\n\n" + subject + "\n",
+		Filename: "2026-08-25 " + strings.ToLower(subject) + ".md",
+	}
+	if err := f.cands.Upsert(cand); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.cands.List(gmailsync.StatusPending) {
+		if c.ThreadID == thread && strings.EqualFold(c.Account, account) {
+			return c
+		}
+	}
+	t.Fatalf("seeded candidate not listed")
+	return gmailsync.Candidate{}
+}
+
+// One conversation, three mailboxes: the feed folds the copies onto one card,
+// and a single decision settles all of them — one artifact, one spool, no
+// twins left pending (the 2026-08-25 "duplicates in PENDING EMAIL" report).
+func TestEmailFeedGroupsAndDecidesTheWholeConversation(t *testing.T) {
+	f := oodaPortalFixtureFull(t)
+	admin, _ := f.auth.SessionCookie("ben@ooda.group", "Benjamin", false, time.Now())
+
+	// the same thread as it appears in three member mailboxes — mailbox-local
+	// gmail thread ids, one shared RFC message id
+	const fp = "CAX1=permit-set-review@mail.gmail.com"
+	a := seedCandidateFP(t, f, "ben@ooda.group", "tb1", "Draft Permit Set Review – 751 Bayard Ave", fp)
+	seedCandidateFP(t, f, "brian@ooda.group", "tb2", "Draft Permit Set Review – 751 Bayard Ave", fp)
+	seedCandidateFP(t, f, "stephen@ooda.group", "tb3", "Re: Draft Permit Set Review – 751 Bayard Ave", fp)
+	// an unrelated pending thread stays its own card
+	seedCandidate(t, f, "ben@ooda.group", "tz", "Fwd: Bill # 118527")
+
+	// the admin's feed shows TWO conversations, not four rows
+	body := oodaDo(t, f.h, admin, "GET", "/api/ooda/email", "").Body.String()
+	var resp struct {
+		Pending []struct {
+			gmailsync.Candidate
+			Mailboxes []string `json:"mailboxes"`
+			GroupSize int      `json:"groupSize"`
+		} `json:"pending"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Pending) != 2 {
+		t.Fatalf("want 2 conversation cards, got %d: %s", len(resp.Pending), body)
+	}
+	var grouped *struct {
+		gmailsync.Candidate
+		Mailboxes []string `json:"mailboxes"`
+		GroupSize int      `json:"groupSize"`
+	}
+	for i := range resp.Pending {
+		if resp.Pending[i].GroupSize == 3 {
+			grouped = &resp.Pending[i]
+		}
+	}
+	if grouped == nil || len(grouped.Mailboxes) != 3 {
+		t.Fatalf("the 3-mailbox conversation did not fold: %s", body)
+	}
+
+	// one confirm settles all three copies
+	rec := oodaDo(t, f.h, admin, "POST", "/api/ooda/email/"+a.ID, `{"action":"confirm"}`)
+	if rec.Code != 200 {
+		t.Fatalf("confirm: %d %s", rec.Code, rec.Body)
+	}
+	var decided gmailsync.Candidate
+	_ = json.Unmarshal(rec.Body.Bytes(), &decided)
+	confirmed := f.cands.List(gmailsync.StatusConfirmed)
+	if len(confirmed) != 3 {
+		t.Fatalf("want all 3 copies confirmed, got %d", len(confirmed))
+	}
+	// every copy points at the SAME artifact — one conversation, one blob
+	for _, c := range confirmed {
+		if c.ArtifactHash != decided.ArtifactHash {
+			t.Fatalf("copy %s points at %s, want %s", c.ID, c.ArtifactHash, decided.ArtifactHash)
+		}
+	}
+	if got := len(f.srv.artifacts.List("ooda")); got != 1 {
+		t.Fatalf("want exactly 1 artifact, got %d", got)
+	}
+	// only the clicked copy may carry a pending spool — the twins never spool
+	spoolers := 0
+	for _, c := range confirmed {
+		if c.SpoolPending {
+			spoolers++
+		}
+	}
+	if spoolers > 1 {
+		t.Fatalf("%d copies queued extractor spools — the conversation must extract once", spoolers)
+	}
+	// the unrelated thread is untouched
+	if got := len(f.cands.List(gmailsync.StatusPending)); got != 1 {
+		t.Fatalf("unrelated thread should still pend, got %d pending", got)
+	}
+
+	// and a dismiss cascades the same way (fresh group, pre-fingerprint
+	// candidates matching by the FALLBACK: same subject+participants+day)
+	b1 := seedCandidate(t, f, "ben@ooda.group", "ty1", "Lender call notes")
+	seedCandidate(t, f, "brian@ooda.group", "ty2", "Lender call notes")
+	if rec := oodaDo(t, f.h, admin, "POST", "/api/ooda/email/"+b1.ID, `{"action":"dismiss"}`); rec.Code != 200 {
+		t.Fatalf("dismiss: %d %s", rec.Code, rec.Body)
+	}
+	if got := len(f.cands.List(gmailsync.StatusDismissed)); got != 2 {
+		t.Fatalf("fallback-fingerprint dismiss should mute both copies, got %d dismissed", got)
+	}
+}

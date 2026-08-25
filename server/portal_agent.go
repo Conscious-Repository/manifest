@@ -345,14 +345,43 @@ func (s *Server) chatProposalFor(ag *chatAgent, thread, msg string, index int, a
 		}
 		owner = s.itemOwnerInitials(p.ItemID)
 	}
-	// gate against the target item's owner (initials), same as FIELDS
-	if !admin && (owner == "" || !strings.EqualFold(owner, memberInitials)) {
+	// A zeck set-field can target a PROPERTY (its context advertises them, so
+	// its proposals name them): bare slug or prop/<slug> with no #node. Those
+	// never had a writer — the old path funneled everything into the team
+	// store's task-status enum, so "status → pre_development" 400'd into an
+	// off-screen error node and apply looked dead (owner report 2026-08-25).
+	propertyTarget := ""
+	if ooda && p.Type == "set-field" && s.realestate != nil {
+		slug := strings.TrimPrefix(p.ItemID, "prop/")
+		if !strings.Contains(slug, "#") {
+			if _, found := s.realestate.Get(slug); found {
+				propertyTarget = slug
+			}
+		}
+	}
+	if propertyTarget != "" {
+		// a property has no assignee by design (OwnerOf → "") — the gate is
+		// the admin, and the refusal says so instead of naming a dash
+		if !admin {
+			return errBadRequest("only the admin can apply a property change — comment or ask Ben")
+		}
+	} else if !admin && (owner == "" || !strings.EqualFold(owner, memberInitials)) {
+		// gate against the target item's owner (initials), same as FIELDS
 		return errBadRequest("only the item's assignee (" + orDash(owner) + ") or an admin can apply this")
 	}
 	who := chatthreads.Identity{ID: memberEmail, Name: memberName}
 	if apply {
 		switch p.Type {
 		case "set-field":
+			if propertyTarget != "" {
+				if !strings.EqualFold(strings.TrimSpace(p.Field), "status") {
+					return errBadRequest("only a property's status can be applied from the portal — discard this, or ask in chat")
+				}
+				if err := s.patchPropertyStatus(propertyTarget, p.Value); err != nil {
+					return err
+				}
+				break
+			}
 			if team == nil {
 				return errBadRequest("team store not available")
 			}
@@ -362,7 +391,7 @@ func (s *Server) chatProposalFor(ag *chatAgent, thread, msg string, index int, a
 			}
 		case "replace-section":
 			if ooda {
-				return errBadRequest("plan sections are not editable from the OODA portal yet")
+				return errBadRequest("section rewrites aren't applicable from the portal — discard this, or ask Ben to land it")
 			}
 			if err := s.writePlanSection("todo-plans", "aion:"+p.ItemID, p.Section, p.Body); err != nil {
 				return err

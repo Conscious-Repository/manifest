@@ -33,6 +33,11 @@ type Msg struct {
 	Internal    time.Time
 	Body        string
 	HasCalendar bool // carries a text/calendar MIME part (invite/RSVP machinery)
+	// MessageID is the RFC 822 Message-ID header — the ONLY identity that is
+	// the same in every mailbox holding a copy of this message. Gmail thread
+	// ids are mailbox-local, which is why the same conversation used to
+	// surface once per member in the FEED.
+	MessageID string
 }
 
 // Client is one member's read-only mailbox handle.
@@ -124,6 +129,7 @@ func (c *Client) ThreadFull(ctx context.Context, id string) (string, []Msg, erro
 			To:          m.header("To"),
 			Cc:          m.header("Cc"),
 			Subject:     m.header("Subject"),
+			MessageID:   strings.Trim(strings.TrimSpace(m.header("Message-Id")), "<>"),
 			Internal:    when,
 			Body:        partPlainText(m.Payload),
 			HasCalendar: hasPartType(m.Payload, "text/calendar"),
