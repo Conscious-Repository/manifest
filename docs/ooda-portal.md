@@ -38,7 +38,10 @@ owner `"me"` instead of `OS`).
 
 **Seats today:** BA (`ben@ooda.group`), SM (`stephen@ooda.group`),
 BPA (`bpabbassa@att.net`), BF (`brian@ooda.group`), OS
-(`me@olgasobkiv.com`), SA (`sydney5161@yahoo.com`). ⚠ The two Brians:
+(`me@olgasobkiv.com` AND `olga.sobkiv1999@gmail.com` — she signs in with
+the Gmail; the O365 address stays for contact/attribution; both map to
+OS, which is fine — the map is many-emails → one-initials), SA
+(`sydney5161@yahoo.com`). ⚠ The two Brians:
 **`brian@ooda.group` is Brian FROMAL (BF)**, and Brian ANDERSON (BPA) is
 `bpabbassa@att.net` — this mapping was wrong until 2026-08-21 (both
 resolved to BPA; no activity had come from the address, so nothing was
