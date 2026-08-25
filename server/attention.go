@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"manifest/attention"
+	"manifest/consume"
 	"manifest/feed"
 )
 
@@ -129,7 +130,7 @@ func (c consumeSource) Active(_ time.Time, q url.Values) []attention.Card {
 	if c.s.consume == nil {
 		return out
 	}
-	for _, card := range c.s.consume.Cards(q.Get("view"), q.Get("list")) {
+	for _, card := range c.s.consume.Cards(consume.Query{View: q.Get("view"), List: q.Get("list")}) {
 		out = append(out, card)
 	}
 	return out

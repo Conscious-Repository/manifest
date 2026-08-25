@@ -18,6 +18,16 @@ let consumeView = "unread"; // unread | all
 let consumeOpen = {}; // item id → true while its reader is expanded
 let consumeSubs = { subscriptions: [], xReady: false };
 let consumeManageOpen = false;
+let consumeSub = "";      // one subscription's archive ("" = all feeds)
+let consumeQuery = "";    // search text
+let consumeShowAll = false; // the ▾ N more expander
+let consumeSearchEl = null; // ⚠ built ONCE — see renderConsume
+
+const CONSUME_PAGE = 50; // rows before the expander
+
+// consumeQueued — is this card still waiting to be read? Read and archived are
+// different states and BOTH sit outside the queue.
+const consumeQueued = (c) => !c.read && !c.seeded;
 
 // ---- the FEED lane ----
 
@@ -32,6 +42,8 @@ function consumeCardEl(c) {
   if (c.type === "x") top.append(el("span", "type-chip micro-label type-x", "X"));
   if (c.list) top.append(el("span", "consume-list-chip micro-label", c.list));
   if (c.curated) top.append(el("span", "consume-curated-chip micro-label", "curated"));
+  // "archived" is not "read" — it arrived before you followed this feed.
+  if (c.seeded) top.append(el("span", "consume-list-chip micro-label", "archived"));
   if (c.published) top.append(el("span", "feed-date", fmtFeedDate(c.published)));
   card.append(top);
 
@@ -55,6 +67,14 @@ function consumeCardEl(c) {
   readBtn.classList.add("verdict-primary");
   acts.append(readBtn);
   acts.append(consumeCurateBtn(c, card));
+  // Anything out of the queue can be pulled back into it.
+  if (c.read || c.seeded) {
+    acts.append(pillLight("→ unread", async () => {
+      if (!(await consumePost(`/api/consume/item/${encodeURIComponent(c.id)}/unread`))) return;
+      showToast("moved to unread");
+      await loadConsume();
+    }));
+  }
   if (c.url) acts.append(pillLight("original ↗", () => window.open(c.url, "_blank", "noopener")));
   acts.append(pillLight("dismiss", () => consumeDismiss(c.id, card)));
   card.append(acts);
@@ -136,7 +156,7 @@ async function consumeDismiss(id, card) {
 // resurrect it.
 function consumeForget(id) {
   consumeCache.items = (consumeCache.items || []).filter((x) => x.id !== id);
-  consumeCache.unread = (consumeCache.items || []).filter((x) => !x.read).length;
+  consumeCache.unread = (consumeCache.items || []).filter(consumeQueued).length;
   feedCache.consumeItems = (feedCache.consumeItems || []).filter((x) => x.id !== id);
 }
 
@@ -196,11 +216,23 @@ function consumeIsActiveView() { return feedFilter() === "consume"; }
 async function loadConsume() {
   const q = new URLSearchParams({ view: consumeView });
   if (consumeList) q.set("list", consumeList);
+  if (consumeSub) q.set("sub", consumeSub);
+  if (consumeQuery.trim()) q.set("q", consumeQuery.trim());
   try {
     consumeCache = await (await fetch("/api/consume?" + q)).json();
   } catch (e) { consumeCache = { items: [], lists: [], unread: 0, total: 0 }; }
   renderConsume();
 }
+
+// consumeFilterChanged resets the expander and reloads. Every filter goes
+// through here so "show more" can never survive into a different list.
+function consumeFilterChanged() {
+  consumeShowAll = false;
+  loadConsume();
+}
+
+// consumeSearch is debounced so a query costs one request per pause.
+const consumeSearch = debounce(() => consumeFilterChanged(), 200);
 
 function renderConsume() {
   const host = els.feedList; host.innerHTML = "";
@@ -208,15 +240,35 @@ function renderConsume() {
 
   host.append(consumeHeader());
   if (consumeManageOpen) host.append(consumeManagePanel());
+  if (consumeSub) host.append(consumeSubBanner());
 
   const items = consumeCache.items || [];
   if (!items.length) {
-    host.append(emptyRow(consumeView === "unread"
-      ? "Nothing unread — everything you follow is read."
-      : "Nothing here yet. Add a feed with MANAGE."));
+    // ⚠ "nothing matches" and "nothing exists" are different messages, and
+    // with a search box the difference IS the message.
+    const filtered = consumeQuery.trim() || consumeSub || consumeList;
+    host.append(emptyRow(
+      filtered ? "Nothing matches — clear the filters to see everything."
+        : consumeView === "unread" ? "Nothing unread. Older posts live under ALL."
+          : "Nothing here yet. Add a feed with MANAGE."));
     return;
   }
-  items.forEach((c) => host.append(consumeCardEl(c)));
+  const shown = consumeShowAll ? items.length : Math.min(CONSUME_PAGE, items.length);
+  items.slice(0, shown).forEach((c) => host.append(consumeCardEl(c)));
+  if (items.length > shown) {
+    const more = el("button", "signal-more", `▾ ${items.length - shown} more`);
+    more.onclick = () => { consumeShowAll = true; renderConsume(); };
+    host.append(more);
+  }
+}
+
+// consumeSubBanner names the feed whose archive is open, with the way out.
+function consumeSubBanner() {
+  const sub = (consumeSubs.subscriptions || []).find((x) => x.id === consumeSub);
+  const bar = el("div", "consume-subbar");
+  bar.append(el("span", "micro-label", (sub ? sub.title : consumeSub) + " · everything we have"));
+  bar.append(pillLight("× all feeds", () => { consumeSub = ""; consumeFilterChanged(); }));
+  return bar;
 }
 
 function consumeHeader() {
@@ -225,15 +277,27 @@ function consumeHeader() {
   const left = el("div", "consume-head-left");
   [["unread", "UNREAD"], ["all", "ALL"]].forEach(([val, label]) => {
     const b = el("button", "filter-chip" + (consumeView === val ? " on" : ""), label);
-    b.onclick = () => { consumeView = val; loadConsume(); };
+    b.onclick = () => { consumeView = val; consumeFilterChanged(); };
     left.append(b);
   });
   (consumeCache.lists || []).forEach((l) => {
     const b = el("button", "filter-chip" + (consumeList === l ? " on" : ""), l);
-    b.onclick = () => { consumeList = consumeList === l ? "" : l; loadConsume(); };
+    b.onclick = () => { consumeList = consumeList === l ? "" : l; consumeFilterChanged(); };
     left.append(b);
   });
   head.append(left);
+
+  // ⚠ THE CARET TRAP. renderConsume wipes els.feedList on every repaint, so a
+  // freshly built input would be replaced mid-typing and the caret would jump
+  // out after the first character — the bug the contractors tab and the
+  // properties board both had to fix. The node is built ONCE and re-appended.
+  if (!consumeSearchEl) {
+    consumeSearchEl = el("input", "pp-in consume-search");
+    consumeSearchEl.type = "search";
+    consumeSearchEl.placeholder = "search titles and excerpts…";
+    consumeSearchEl.oninput = () => { consumeQuery = consumeSearchEl.value; consumeSearch(); };
+  }
+  left.append(consumeSearchEl);
 
   const right = el("div", "consume-head-right");
   // Scoped to the active group, matching the "mark all read" beside it.
@@ -306,12 +370,18 @@ function consumeAddRow() {
     const value = input.value.trim();
     if (!value) return;
     input.disabled = list.disabled = true;
-    const ok = await consumePost("/api/consume/subscriptions",
+    const res = await consumePostJSON("/api/consume/subscriptions",
       { input: value, list: list.value.trim(), mirror: "full" });
     input.disabled = list.disabled = false;
-    if (!ok) return;
+    if (!res) return;
     input.value = ""; list.value = "";
-    showToast("subscribed");
+    // ⚠ A new subscription is deliberately EMPTY of unread — everything the
+    // feed already published is archived. Without saying so, zero unread reads
+    // exactly like the bug this rule was written to fix.
+    const name = (res.subscription && res.subscription.title) || "the feed";
+    showToast(res.archived
+      ? `following ${name} — ${res.archived} earlier posts archived; new ones arrive as they publish`
+      : `following ${name}`);
     await loadConsumeSubs();
     await loadConsume();
   };
@@ -332,10 +402,18 @@ function consumeSubRow(s) {
   dot.title = s.lastErr || (s.lastOk ? "last polled " + fmtFeedDate(s.lastOk) : "not polled yet");
   row.append(dot);
 
-  const name = el("span", "consume-sub-name", s.title || s.id);
+  // Clicking the name opens this feed's whole history.
+  const name = el("button", "consume-sub-name", s.title || s.id);
+  name.onclick = () => {
+    consumeSub = consumeSub === s.id ? "" : s.id;
+    consumeView = "all"; // an archive you cannot see is not an archive
+    consumeFilterChanged();
+  };
   row.append(name);
   row.append(el("span", "consume-sub-kind micro-label", s.kind === "x" ? "X" : "rss"));
-  row.append(el("span", "consume-sub-count micro-label", s.unread + "/" + s.total));
+  // ⚠ "0/14" read as a failure. Say what the numbers mean.
+  const counts = s.unread + " unread" + (s.archived ? " · " + s.archived + " archived" : "");
+  row.append(el("span", "consume-sub-count micro-label", counts));
   if (s.mirror === "excerpt") row.append(el("span", "consume-sub-kind micro-label", "excerpt"));
 
   const acts = el("div", "consume-sub-acts");
@@ -385,6 +463,25 @@ function consumeEditSub(s, row) {
 // consumePost is the shared write: it surfaces a server refusal as a toast
 // instead of letting a failed fetch look like success (the FEED-confirm class
 // of bug — fetch does not reject on 4xx).
+// consumePostJSON is consumePost for the calls whose RESPONSE matters.
+async function consumePostJSON(url, body) {
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    if (!r.ok) {
+      showToast((await r.text()).trim().slice(0, 160) || "that didn't work");
+      return null;
+    }
+    return await r.json();
+  } catch (e) {
+    showToast("network error");
+    return null;
+  }
+}
+
 async function consumePost(url, body) {
   try {
     const r = await fetch(url, {

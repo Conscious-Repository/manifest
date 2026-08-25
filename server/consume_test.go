@@ -97,11 +97,29 @@ func (h *consumeHarness) subscribe(t *testing.T) consume.Subscription {
 	return sub
 }
 
+// bump pulls the first archived item back into the queue. Subscribing seeds
+// rather than floods (2026-08-25), so a test that needs an UNREAD item has to
+// ask for one.
+func (h *consumeHarness) bump(t *testing.T) string {
+	t.Helper()
+	all := h.svc.Cards(consume.Query{View: "all"})
+	if len(all) == 0 {
+		t.Fatal("no items to bump")
+	}
+	if !h.svc.MarkUnread(all[0].ID) {
+		t.Fatal("bump failed")
+	}
+	return all[0].ID
+}
+
 // The registry contract: consume appears in /api/feed under its own field and
 // contributes ZERO to the badge.
 func TestConsumeIsRegisteredAndDoesNotBadge(t *testing.T) {
 	h := newConsumeHarness(t)
 	h.subscribe(t)
+	// Subscribing archives rather than floods, so the lane starts empty —
+	// bump one item to have something to assert the contract against.
+	h.bump(t)
 
 	w := h.do(t, http.MethodGet, "/api/feed", "")
 	if w.Code != http.StatusOK {
@@ -135,7 +153,7 @@ func TestConsumeIsRegisteredAndDoesNotBadge(t *testing.T) {
 func TestConsumeItemsCannotUseFindingsVerbs(t *testing.T) {
 	h := newConsumeHarness(t)
 	h.subscribe(t)
-	id := h.svc.Cards("all", "")[0].ID
+	id := h.svc.Cards(consume.Query{View: "all"})[0].ID
 
 	for _, path := range []string{
 		"/api/feed/" + id + "/status",
@@ -152,6 +170,7 @@ func TestConsumeItemsCannotUseFindingsVerbs(t *testing.T) {
 func TestConsumeReaderRoundTrip(t *testing.T) {
 	h := newConsumeHarness(t)
 	h.subscribe(t)
+	h.bump(t)
 
 	list := h.do(t, http.MethodGet, "/api/consume?view=unread", "")
 	var lr struct {
@@ -356,7 +375,7 @@ func TestConsumeXPortalRow(t *testing.T) {
 func TestConsumeCardCarriesReadingTime(t *testing.T) {
 	h := newConsumeHarness(t)
 	h.subscribe(t)
-	cards := h.svc.Cards("all", "")
+	cards := h.svc.Cards(consume.Query{View: "all"})
 	if len(cards) != 1 {
 		t.Fatalf("cards: %d", len(cards))
 	}
@@ -375,13 +394,13 @@ func TestConsumeCardCarriesReadingTime(t *testing.T) {
 func TestConsumeBacklogRoutes(t *testing.T) {
 	h := newConsumeHarness(t)
 	h.subscribe(t)
-	id := h.svc.Cards("all", "")[0].ID
+	id := h.bump(t)
 
 	// Dismiss → gone from every view, not just unread.
 	if code := h.do(t, http.MethodPost, "/api/consume/item/"+id+"/dismiss", "").Code; code != http.StatusOK {
 		t.Fatalf("dismiss: %d", code)
 	}
-	if n := len(h.svc.Cards("all", "")); n != 0 {
+	if n := len(h.svc.Cards(consume.Query{View: "all", List: ""})); n != 0 {
 		t.Errorf("dismissed item still in the all view: %d", n)
 	}
 	// ⚠ And it stays gone across a re-poll, which is the whole point of the
@@ -389,7 +408,7 @@ func TestConsumeBacklogRoutes(t *testing.T) {
 	if err := h.svc.PollNow(context.Background(), "test-letter"); err != nil {
 		t.Logf("re-poll: %v", err)
 	}
-	if n := len(h.svc.Cards("all", "")); n != 0 {
+	if n := len(h.svc.Cards(consume.Query{View: "all", List: ""})); n != 0 {
 		t.Errorf("a re-poll resurrected a dismissed item: %d", n)
 	}
 

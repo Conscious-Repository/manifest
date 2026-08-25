@@ -71,6 +71,10 @@
 .consume-head-left { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .consume-head-left .filter-chip { font-size: var(--fs-xs); padding: 1px var(--sp-4); opacity: 0.85; }
 .consume-head-left .filter-chip.on { opacity: 1; }
+.consume-search { flex: 1; min-width: 10rem; max-width: 20rem; font-size: var(--fs-sm); }
+/* the open-archive banner */
+.consume-subbar { display: flex; align-items: center; gap: var(--sp-4); margin-bottom: var(--sp-5); }
+.consume-subbar .micro-label { color: var(--muted); }
 .consume-head-right { display: flex; align-items: center; gap: var(--sp-4); margin-left: auto; }
 .consume-count { color: var(--muted); }
 
@@ -83,7 +87,13 @@
 .consume-hint { flex-basis: 100%; color: var(--muted); }
 .consume-group { color: var(--muted); margin-top: var(--sp-4); }
 .consume-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-3) 0; border-bottom: 1px solid var(--line); }
-.consume-sub-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); overflow-wrap: anywhere; }
+/* the subscription name is a button — clicking it opens that feed's archive */
+.consume-sub-name {
+  font-family: var(--sans); font-size: var(--fs-lg); color: var(--text);
+  overflow-wrap: anywhere; background: none; border: none; padding: 0;
+  cursor: pointer; text-align: left;
+}
+.consume-sub-name:hover { color: var(--blue); }
 .consume-sub-kind, .consume-sub-count { color: var(--muted); }
 .consume-sub-acts { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .consume-sub-err { flex-basis: 100%; color: var(--danger, var(--muted)); }
@@ -101,4 +111,5 @@
   .consume-head-right { margin-left: 0; width: 100%; justify-content: space-between; }
   .consume-sub-acts { margin-left: 0; width: 100%; }
   .consume-add-input, .consume-add-list { flex-basis: 100%; }
+  .consume-search { max-width: 100%; flex-basis: 100%; }
 }

@@ -26,7 +26,33 @@ In FEED → CONSUME → **MANAGE**, paste any of:
 The optional second box is a **group** (`essays`, `ai`, …), which becomes a
 `## heading` in `extrinsic/feeds.md` and a filter chip in the view.
 
-Subscribing polls immediately, so items are there when the button returns.
+### What happens when you follow something
+
+**Subscribing does not fill your queue.** Everything the feed has already
+published is *archived* — kept, browsable and searchable, but never counted as
+unread. Only posts published after you subscribed arrive as unread.
+
+So a brand-new subscription reading `0 unread · 14 archived` is correct, not
+broken. Following WIRED would otherwise drop fifty articles on you at once.
+
+Those 14 are not marked "read" — that would be a lie, since you never opened
+them. They carry their own *archived* state and say so on the card.
+
+### Finding something in the archive
+
+Two ways, both in FEED → CONSUME:
+
+- **Per feed** — open MANAGE and click a subscription's name. That feed's whole
+  history opens, with a banner naming it and an `× all feeds` way out.
+- **Search** — the box in the CONSUME header matches titles, excerpts, authors
+  and sources across every feed, case-insensitively. (Article *bodies* are
+  stored separately and are not searched.)
+
+Anything out of the queue — archived or read — carries **→ unread**, which puts
+it back at the top of your reading list. A later poll will not undo that.
+
+Dismissed items are the exception: they are terminal and never appear in the
+archive or in search.
 
 ### Editing by hand
 

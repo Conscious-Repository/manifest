@@ -168,6 +168,13 @@ func (s *Store) commit(subID string, now time.Time, ok bool, items []Item, curso
 		s.write(subID, st)
 		return
 	}
+	// ⚠ THE BACKFILL RULE. An empty LastOK means this is the first successful
+	// poll of this subscription, so everything it returns was published before
+	// the owner subscribed. Those items are SEEDED — kept and searchable, never
+	// unread. Following a feed that serves fifty articles must not drop fifty
+	// articles into the queue.
+	seeding := st.LastOK == ""
+
 	st.LastErr = ""
 	st.Fails = 0
 	st.LastOK = st.LastPoll
@@ -205,6 +212,9 @@ func (s *Store) commit(subID string, now time.Time, ok bool, items []Item, curso
 				}
 			}
 		}
+		if seeding {
+			in.SeededAt = st.LastPoll
+		}
 		if i, ok := at[in.ID]; ok {
 			// ⚠ An upsert must NOT clobber lifecycle state. portals/ replaces
 			// the whole event because a notice has none; here, re-polling a
@@ -214,6 +224,10 @@ func (s *Store) commit(subID string, now time.Time, ok bool, items []Item, curso
 			prior := st.Items[i]
 			in.ReadAt = prior.ReadAt
 			in.DismissedAt = prior.DismissedAt
+			// Seeded state survives a re-poll for the same reason read state
+			// does: the feed re-listing an item is not news about it. It also
+			// must not be re-applied to something the owner bumped back.
+			in.SeededAt = prior.SeededAt
 			if in.FetchedAt.IsZero() {
 				in.FetchedAt = prior.FetchedAt
 			}
@@ -271,8 +285,14 @@ func itemTime(it Item) time.Time {
 }
 
 // stamp is when the owner finished with the item — the clock retention runs on.
+//
+// ⚠ SeededAt comes FIRST and its absence is why this matters: with no
+// timestamp, stamp falls back to the PUBLISHED date, so a backfilled post from
+// three years ago would be pruned the moment it arrived. The archive would be
+// empty for exactly the feeds worth browsing. Retention runs from when we saw
+// it, not when it was written.
 func stamp(it Item) time.Time {
-	for _, s := range []string{it.DismissedAt, it.ReadAt} {
+	for _, s := range []string{it.DismissedAt, it.ReadAt, it.SeededAt} {
 		if s == "" {
 			continue
 		}
@@ -331,6 +351,27 @@ func (s *Store) Mark(subID, itemID string, read, dismissed bool, now time.Time) 
 	return false
 }
 
+// SetUnread bumps an item back into the queue — the archive's "→ unread".
+//
+// It clears ReadAt and SeededAt but deliberately leaves DismissedAt alone:
+// dismissed is terminal and has its own verb (Undismiss). Store.Mark can only
+// ever SET ReadAt, so this is the only path that clears it outside undo.
+func (s *Store) SetUnread(subID, itemID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	for i, it := range st.Items {
+		if it.ID != itemID || it.DismissedAt != "" {
+			continue
+		}
+		st.Items[i].ReadAt = ""
+		st.Items[i].SeededAt = ""
+		s.write(subID, st)
+		return true
+	}
+	return false
+}
+
 // Undismiss reverses a dismissal — both the item's own state and the tombstone,
 // or the next poll would silently re-suppress it.
 func (s *Store) Undismiss(subID, itemID string, now time.Time) bool {
@@ -342,6 +383,7 @@ func (s *Store) Undismiss(subID, itemID string, now time.Time) bool {
 		if it.ID == itemID {
 			st.Items[i].DismissedAt = ""
 			st.Items[i].ReadAt = "" // undo puts it back where it was: unread
+			st.Items[i].SeededAt = ""
 			found = true
 			break
 		}

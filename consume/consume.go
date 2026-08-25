@@ -136,6 +136,17 @@ type Item struct {
 	ReadAt      string `json:"readAt,omitempty"`
 	DismissedAt string `json:"dismissedAt,omitempty"`
 
+	// SeededAt marks an item that arrived in a subscription's FIRST poll —
+	// published before the owner subscribed. It is kept, browsable and
+	// searchable, but never counted as unread: following a new feed should not
+	// drop fifty articles into the queue.
+	//
+	// It is deliberately its own state rather than a back-dated ReadAt. Marking
+	// something "read" that was never opened is a lie the UI would then repeat
+	// back forever; the archive can honestly say "arrived before you
+	// subscribed" instead.
+	SeededAt string `json:"seededAt,omitempty"`
+
 	// Body is the sanitized HTML. It is populated only when a caller asks for
 	// one item (the reader, or a curate), never when listing the lane.
 	Body string `json:"-"`
@@ -149,7 +160,11 @@ type Item struct {
 }
 
 // Unread reports whether the item still wants reading.
-func (i Item) Unread() bool { return i.ReadAt == "" && i.DismissedAt == "" }
+func (i Item) Unread() bool { return i.ReadAt == "" && i.DismissedAt == "" && i.SeededAt == "" }
+
+// Seeded reports whether the item came from the backfill rather than from a
+// poll that ran while the owner was subscribed.
+func (i Item) Seeded() bool { return i.SeededAt != "" && i.ReadAt == "" && i.DismissedAt == "" }
 
 // itemID is the stable identity of one piece of writing. It is deterministic —
 // the same post re-polled forever yields the same id, which is what makes

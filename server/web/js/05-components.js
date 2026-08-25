@@ -29,6 +29,17 @@ function splitList(s) { return (s || "").split(",").map((x) => x.trim()).filter(
 
 // ---- pill factory ----
 function pill(text, onclick) { const b = el("button", "pill", text); b.addEventListener("click", onclick); return b; }
+// debounce — one call per pause, not per keystroke. Four hand-rolled copies of
+// this existed (reading lookup, contact search, wikilink popup, ⌘K) before it
+// was worth naming.
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 function pillLight(text, onclick) { const b = el("button", "pill light", text); b.addEventListener("click", onclick); return b; }
 
 // ---- relative timestamp ----

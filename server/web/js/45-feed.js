@@ -51,7 +51,7 @@ const FEED_LANES = [
   // CONSUME: subscribed reading. Capped like the signals strip — a week of
   // newsletters must not bury the things that actually want a decision. The
   // rest live behind the CONSUME view, which is where reading belongs anyway.
-  { kind: "consume", slice: (c) => (c.consumeItems || []).filter((x) => !x.read).slice(0, CONSUME_CAP), inboxOnly: true },
+  { kind: "consume", slice: (c) => (c.consumeItems || []).filter(consumeQueued).slice(0, CONSUME_CAP), inboxOnly: true },
 ];
 const FEED_TAIL_LANES = [ // after the empty-state check, like today
   { kind: "finding", slice: (c) => c.items, inboxOnly: false },
@@ -136,7 +136,7 @@ function renderFeed() {
     lane.slice(feedCache).forEach((c) => host.appendChild(FEED_CARD[lane.kind](c)));
   });
   // the tail button for the capped consume lane, before the empty-state check
-  const unreadConsume = (feedCache.consumeItems || []).filter((x) => !x.read).length;
+  const unreadConsume = (feedCache.consumeItems || []).filter(consumeQueued).length;
   if (!filter && unreadConsume > CONSUME_CAP) {
     const more = el("button", "signal-more", `▾ ${unreadConsume - CONSUME_CAP} more in CONSUME`);
     more.onclick = () => { state.feedFilter = "consume"; loadFeed(); };

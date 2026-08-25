@@ -36,12 +36,31 @@ func TestSubscribeThenReadTheLane(t *testing.T) {
 		t.Errorf("subscription not written to extrinsic/feeds.md:\n%s", v.read(t, feedsPath))
 	}
 
+	// ⚠ THE BACKFILL RULE. Subscribing archives what the feed already
+	// published — it must not drop a feed's whole back catalogue into the
+	// queue. Zero unread here is correct, not a bug.
+	if n := s.Unread(""); n != 0 {
+		t.Fatalf("subscribing flooded the queue with %d unread", n)
+	}
+	if n := s.Seeded(sub.ID); n != 2 {
+		t.Fatalf("want 2 archived on subscribe, got %d", n)
+	}
+	if n := len(s.Cards(Query{View: "all"})); n != 2 {
+		t.Fatalf("archived items should still be browsable, got %d", n)
+	}
+
+	// Bump them into the queue so the rest of the lifecycle can be exercised.
+	for _, c := range s.Cards(Query{View: "all"}) {
+		if !s.MarkUnread(c.ID) {
+			t.Fatalf("bump %s failed", c.ID)
+		}
+	}
 	if err := s.PollNow(context.Background(), sub.ID); err != nil {
 		t.Fatal(err)
 	}
-	cards := s.Cards("unread", "")
+	cards := s.Cards(Query{View: "unread", List: ""})
 	if len(cards) != 2 {
-		t.Fatalf("want 2 cards, got %d", len(cards))
+		t.Fatalf("want 2 cards after bumping, got %d", len(cards))
 	}
 	c := cards[0]
 	if c.Kind != "consume" || c.Type != KindRSS {
@@ -64,10 +83,10 @@ func TestSubscribeThenReadTheLane(t *testing.T) {
 	if !s.MarkRead(cards[0].ID) {
 		t.Fatal("mark read failed")
 	}
-	if n := len(s.Cards("unread", "")); n != 1 {
+	if n := len(s.Cards(Query{View: "unread", List: ""})); n != 1 {
 		t.Errorf("read item still in the unread lane: %d", n)
 	}
-	if n := len(s.Cards("all", "")); n != 2 {
+	if n := len(s.Cards(Query{View: "all", List: ""})); n != 2 {
 		t.Errorf("read item missing from the all view: %d", n)
 	}
 	if s.Unread("") != 1 {
@@ -79,10 +98,10 @@ func TestSubscribeThenReadTheLane(t *testing.T) {
 	if !s.Dismiss(cards[1].ID) {
 		t.Fatal("dismiss failed")
 	}
-	if n := len(s.Cards("unread", "")); n != 0 {
+	if n := len(s.Cards(Query{View: "unread", List: ""})); n != 0 {
 		t.Errorf("dismissed item still showing in unread: %d", n)
 	}
-	if n := len(s.Cards("all", "")); n != 1 {
+	if n := len(s.Cards(Query{View: "all", List: ""})); n != 1 {
 		t.Errorf("dismissed item came back in the all view: %d", n)
 	}
 
@@ -90,16 +109,16 @@ func TestSubscribeThenReadTheLane(t *testing.T) {
 	if !s.Undismiss(cards[1].ID) {
 		t.Fatal("undismiss failed")
 	}
-	if n := len(s.Cards("unread", "")); n != 1 {
+	if n := len(s.Cards(Query{View: "unread", List: ""})); n != 1 {
 		t.Errorf("undo did not restore the item: %d", n)
 	}
 	s.Dismiss(cards[1].ID)
 
 	// List filter.
-	if n := len(s.Cards("all", "essays")); n != 1 {
+	if n := len(s.Cards(Query{View: "all", List: "essays"})); n != 1 {
 		t.Errorf("list filter dropped items: %d", n)
 	}
-	if n := len(s.Cards("all", "nonexistent")); n != 0 {
+	if n := len(s.Cards(Query{View: "all", List: "nonexistent"})); n != 0 {
 		t.Errorf("list filter matched the wrong group: %d", n)
 	}
 	if lists := s.Lists(); len(lists) != 1 || lists[0] != "essays" {
@@ -144,11 +163,11 @@ func TestUnsubscribeForgetsTheCacheButNotTheVault(t *testing.T) {
 	s, v, feed := liveSvc(t)
 	sub, _ := s.Subscribe(context.Background(), feed.URL, "", "", MirrorFull)
 	_ = s.PollNow(context.Background(), sub.ID)
-	if len(s.Cards("all", "")) == 0 {
+	if len(s.Cards(Query{View: "all", List: ""})) == 0 {
 		t.Fatal("setup: no items")
 	}
 	// Curate one first — that note must survive unsubscribing.
-	cards := s.Cards("all", "")
+	cards := s.Cards(Query{View: "all", List: ""})
 	entry, err := s.Curate(cards[0].ID, "keeping this")
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +232,7 @@ func TestServiceIsInertWithoutAWriteCapability(t *testing.T) {
 		t.Error("curating without a write capability should fail loudly")
 	}
 	// Reads still work and return nothing rather than panicking.
-	if len(s.Cards("all", "")) != 0 || s.Unread("") != 0 || len(s.Curated()) != 0 {
+	if len(s.Cards(Query{View: "all", List: ""})) != 0 || s.Unread("") != 0 || len(s.Curated()) != 0 {
 		t.Error("read paths should be empty, not broken")
 	}
 }

@@ -31,10 +31,12 @@ func (s *Server) handleConsumeList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"items": []any{}, "lists": []any{}, "unread": 0})
 		return
 	}
-	view := r.URL.Query().Get("view")
-	list := r.URL.Query().Get("list")
+	q := r.URL.Query()
+	list := q.Get("list")
 	writeJSON(w, map[string]any{
-		"items": s.consume.Cards(view, list),
+		"items": s.consume.Cards(consume.Query{
+			View: q.Get("view"), List: list, Sub: q.Get("sub"), Q: q.Get("q"),
+		}),
 		"lists": s.consume.Lists(),
 		// Scoped to the active group so it agrees with the scoped
 		// "mark all read" sitting next to it.
@@ -116,6 +118,15 @@ func (s *Server) handleConsumeDismiss(w http.ResponseWriter, r *http.Request) {
 // handleConsumeUndismiss is the undo behind the dismiss toast.
 func (s *Server) handleConsumeUndismiss(w http.ResponseWriter, r *http.Request) {
 	if s.consume == nil || !s.consume.Undismiss(r.PathValue("id")) {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleConsumeUnread bumps an archived item back into the queue.
+func (s *Server) handleConsumeUnread(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil || !s.consume.MarkUnread(r.PathValue("id")) {
 		http.NotFound(w, r)
 		return
 	}
@@ -212,7 +223,7 @@ func (s *Server) handleConsumeSubscribe(w http.ResponseWriter, r *http.Request) 
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "subscription": sub})
+	writeJSON(w, map[string]any{"ok": true, "subscription": sub, "archived": s.consume.Seeded(sub.ID)})
 }
 
 func (s *Server) handleConsumeSubUpdate(w http.ResponseWriter, r *http.Request) {

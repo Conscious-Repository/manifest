@@ -11,6 +11,19 @@ func testStore(t *testing.T) *Store {
 	return NewStore(t.TempDir())
 }
 
+// primed returns a store whose subscription is PAST its first poll, so items
+// committed to it arrive unread in the normal way.
+//
+// A fresh subscription seeds instead: everything its first poll returns is
+// archived, never queued (2026-08-25). Tests about ordinary unread behaviour
+// have to say which side of that line they are on.
+func primed(t *testing.T, subID string) *Store {
+	t.Helper()
+	s := NewStore(t.TempDir())
+	s.Commit(subID, time.Now().UTC().Add(-time.Hour), true, nil, nil, "")
+	return s
+}
+
 func item(id string, published time.Time) Item {
 	return Item{ID: id, SubID: "s", Title: id, PublishedAt: published, FetchedAt: published, Body: "<p>" + id + "</p>"}
 }
@@ -20,7 +33,7 @@ func item(id string, published time.Time) Item {
 // lifecycle state — do that here and the next poll marks everything the owner
 // already read as unread again, forever.
 func TestRepollDoesNotResurrectReadItems(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	items := []Item{item("a", now), item("b", now.Add(-time.Hour))}
 	s.Commit("s", now, true, items, nil, "")
@@ -76,7 +89,7 @@ func TestFailedPollKeepsTheCache(t *testing.T) {
 // Unread reading is a promise, not a notice: it does not expire. What the
 // owner already handled does.
 func TestPruneKeepsUnreadAndExpiresHandled(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	old := now.Add(-200 * 24 * time.Hour)
 
@@ -102,7 +115,7 @@ func TestPruneKeepsUnreadAndExpiresHandled(t *testing.T) {
 }
 
 func TestUnreadBacklogIsCapped(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	many := make([]Item, 0, unreadCap+50)
 	for i := 0; i < unreadCap+50; i++ {

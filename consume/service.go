@@ -202,6 +202,20 @@ func (s *Service) Subscribe(ctx context.Context, input, title, list, mirror stri
 	return added, nil
 }
 
+// Seeded counts the items a subscription archived on subscribe. The UI says
+// this out loud: a brand-new subscription showing zero unread is correct and
+// expected, and without a sentence saying so it reads exactly like the bug
+// that prompted the backfill rule.
+func (s *Service) Seeded(subID string) int {
+	n := 0
+	for _, it := range s.store.Items(subID) {
+		if it.Seeded() {
+			n++
+		}
+	}
+	return n
+}
+
 func sameSource(a, b Subscription) bool {
 	if a.Kind != b.Kind {
 		return false
@@ -437,8 +451,9 @@ func (s *Service) fetcher(sub Subscription) (Fetcher, error) {
 // (kindField maps this kind to "consumeItems").
 type Card struct {
 	ID        string `json:"id"`
-	Kind      string `json:"kind"` // always "consume" — the card type chip
-	Type      string `json:"type"` // rss | x, the source flavour
+	SubID     string `json:"subId"` // which subscription — the client cannot parse ids
+	Kind      string `json:"kind"`  // always "consume" — the card type chip
+	Type      string `json:"type"`  // rss | x, the source flavour
 	Source    string `json:"source"`
 	List      string `json:"list,omitempty"`
 	Author    string `json:"author,omitempty"`
@@ -448,6 +463,7 @@ type Card struct {
 	Chars     int    `json:"chars"`
 	Published string `json:"published,omitempty"`
 	Read      bool   `json:"read"`
+	Seeded    bool   `json:"seeded"` // archived on subscribe, never actually read
 	Curated   bool   `json:"curated"`
 	Minutes   int    `json:"minutes"` // reading time, so a card says what it costs
 }
@@ -456,19 +472,30 @@ type Card struct {
 // is what makes "read now or later" answerable at a glance.
 const readingWPM = 235
 
-// Cards returns the lane. view is "unread" (default) or "all"; list filters to
-// one group.
-func (s *Service) Cards(view, list string) []Card {
-	subs := s.Subscriptions()
-	byID := map[string]Subscription{}
-	for _, sub := range subs {
-		byID[sub.ID] = sub
-	}
+// Query is what the lane is being asked for. A struct rather than four
+// positional arguments, which is where this was heading.
+type Query struct {
+	View string // "unread" (default) | "all" — all means everything not dismissed
+	List string // group filter
+	Sub  string // one subscription's history
+	Q    string // free text over title, excerpt, author, source
+}
+
+// Cards returns the lane.
+//
+// "all" includes SEEDED items — the archive of things published before the
+// owner subscribed — which is what makes the history browsable. Dismissed is
+// excluded from every view; it is terminal by decision (2026-08-25).
+func (s *Service) Cards(q Query) []Card {
 	curated := s.curatedURLs()
+	needle := strings.ToLower(strings.TrimSpace(q.Q))
 
 	out := []Card{}
-	for _, sub := range subs {
-		if list != "" && !strings.EqualFold(sub.List, list) {
+	for _, sub := range s.Subscriptions() {
+		if q.Sub != "" && !strings.EqualFold(sub.ID, q.Sub) {
+			continue
+		}
+		if q.List != "" && !strings.EqualFold(sub.List, q.List) {
 			continue
 		}
 		for _, it := range s.store.Items(sub.ID) {
@@ -478,7 +505,10 @@ func (s *Service) Cards(view, list string) []Card {
 			if it.DismissedAt != "" {
 				continue
 			}
-			if view != "all" && !it.Unread() {
+			if q.View != "all" && !it.Unread() {
+				continue
+			}
+			if needle != "" && !matches(it, sub, needle) {
 				continue
 			}
 			out = append(out, card(it, sub, curated))
@@ -488,7 +518,18 @@ func (s *Service) Cards(view, list string) []Card {
 	return out
 }
 
+// matches is the search predicate. Bodies live in their own snapshot files and
+// are never loaded for a list, so search covers what the card actually shows:
+// title, excerpt, author and source.
+func matches(it Item, sub Subscription, needle string) bool {
+	hay := strings.ToLower(strings.Join([]string{
+		it.Title, it.Excerpt, it.Author, it.Source, sub.Title,
+	}, " "))
+	return strings.Contains(hay, needle)
+}
+
 func card(it Item, sub Subscription, curated map[string]bool) Card {
+	_ = sub
 	published := ""
 	if !it.PublishedAt.IsZero() {
 		published = it.PublishedAt.Format(time.RFC3339)
@@ -498,11 +539,15 @@ func card(it Item, sub Subscription, curated map[string]bool) Card {
 		minutes = 1
 	}
 	return Card{
-		ID: it.ID, Kind: "consume", Type: sub.Kind,
+		ID: it.ID, SubID: sub.ID, Kind: "consume", Type: sub.Kind,
 		Source: firstNonEmpty(it.Source, sub.Title), List: sub.List,
 		Author: it.Author, Title: it.Title, URL: it.URL,
 		Excerpt: it.Excerpt, Chars: it.Chars, Published: published,
-		Read: !it.Unread(), Curated: curated[curateKey(it.URL)], Minutes: minutes,
+		// Read means ACTUALLY opened. A seeded item is out of the queue but was
+		// never read, and saying otherwise is the lie this state exists to
+		// avoid — the UI must be able to tell them apart.
+		Read: it.ReadAt != "", Seeded: it.Seeded(),
+		Curated: curated[curateKey(it.URL)], Minutes: minutes,
 	}
 }
 
@@ -558,6 +603,15 @@ func (s *Service) Get(itemID string) (Item, Subscription, bool) {
 // MarkRead / Dismiss / Undismiss are the lane's lifecycle verbs.
 func (s *Service) MarkRead(itemID string) bool { return s.mark(itemID, true, false) }
 func (s *Service) Dismiss(itemID string) bool  { return s.mark(itemID, false, true) }
+
+// MarkUnread bumps an item out of the archive and back into the queue.
+func (s *Service) MarkUnread(itemID string) bool {
+	subID, ok := subOf(itemID)
+	if !ok {
+		return false
+	}
+	return s.store.SetUnread(subID, itemID)
+}
 
 // Undismiss restores a dismissed item — the undo behind the toast. It clears
 // the tombstone too, or the next poll would immediately re-suppress it.
@@ -619,10 +673,11 @@ func (s *Service) mark(itemID string, read, dismissed bool) bool {
 // SubStatus is one row of the manage panel.
 type SubStatus struct {
 	Subscription
-	LastOK  string `json:"lastOk,omitempty"`
-	LastErr string `json:"lastErr,omitempty"`
-	Unread  int    `json:"unread"`
-	Total   int    `json:"total"`
+	LastOK   string `json:"lastOk,omitempty"`
+	LastErr  string `json:"lastErr,omitempty"`
+	Unread   int    `json:"unread"`
+	Archived int    `json:"archived"` // seeded or read — browsable, not queued
+	Total    int    `json:"total"`
 }
 
 // Statuses returns the manage panel's rows: the subscription plus how its last
@@ -636,9 +691,14 @@ func (s *Service) Statuses() []SubStatus {
 			st.LastOK = lastOK.UTC().Format(time.RFC3339)
 		}
 		for _, it := range s.store.Items(sub.ID) {
+			if it.DismissedAt != "" {
+				continue // dismissed is gone, not archived
+			}
 			st.Total++
 			if it.Unread() {
 				st.Unread++
+			} else {
+				st.Archived++
 			}
 		}
 		out = append(out, st)

@@ -16,7 +16,7 @@ import (
 // tombstone that outlives the item record, a dismissal is undone by the next
 // poll — which is exactly what "gone forever" must not mean.
 func TestDismissSurvivesRepollAndPrune(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	it := item("a", now)
 	s.Commit("s", now, true, []Item{it, item("b", now)}, nil, "")
@@ -47,7 +47,7 @@ func TestDismissSurvivesRepollAndPrune(t *testing.T) {
 }
 
 func TestUndismissClearsTheTombstone(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	s.Commit("s", now, true, []Item{item("a", now)}, nil, "")
 	s.Mark("s", "a", false, true, now)
@@ -81,7 +81,7 @@ func TestGuidChurnDoesNotDuplicate(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	st := testStore(t)
+	st := primed(t, "churn")
 	f := &rssFetcher{hc: srv.Client()}
 	sub := Subscription{ID: "churn", Kind: KindRSS, URL: srv.URL}
 	for i := 0; i < 3; i++ {
@@ -99,7 +99,7 @@ func TestGuidChurnDoesNotDuplicate(t *testing.T) {
 // Read state must survive the id migration from the old guid-first scheme:
 // Commit adopts the existing id when the normalized link already matches.
 func TestLinkDedupePreservesReadState(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	old := Item{ID: "consume:rss:s:oldid", SubID: "s", Title: "One",
 		URL: "https://e.com/one?utm_source=feed", PublishedAt: now, FetchedAt: now}
@@ -121,7 +121,7 @@ func TestLinkDedupePreservesReadState(t *testing.T) {
 }
 
 func TestMarkAllRead(t *testing.T) {
-	s := testStore(t)
+	s := primed(t, "s")
 	now := time.Now().UTC()
 	s.Commit("s", now, true, []Item{item("a", now), item("b", now), item("c", now)}, nil, "")
 	if n := s.MarkAllRead("s", now); n != 3 {
@@ -408,5 +408,208 @@ func TestFulltextFieldRoundTrips(t *testing.T) {
 	}
 	if ParseFeeds(d.String()).String() != d.String() {
 		t.Error("not a fixpoint after the edit")
+	}
+}
+
+// ---- the backfill rule ----
+
+// ⚠ THE FLOOD TEST. Following a feed that serves fifty articles must not put
+// fifty articles in the queue. Everything from the first poll is archived.
+func TestSubscribeSeedsRatherThanFloods(t *testing.T) {
+	var extra string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<rss><channel><title>Busy</title>`)
+		for i := 0; i < 20; i++ {
+			fmt.Fprintf(w, `<item><title>Post %d</title><link>https://e.com/%d</link><guid>%d</guid>
+			  <pubDate>Mon, 18 Aug 2026 09:00:00 GMT</pubDate></item>`, i, i, i)
+		}
+		fmt.Fprint(w, extra)
+		fmt.Fprint(w, `</channel></rss>`)
+	}))
+	defer srv.Close()
+
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	s.hc = srv.Client()
+
+	sub, err := s.Subscribe(context.Background(), srv.URL, "Busy", "", MirrorFull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := s.Unread(""); n != 0 {
+		t.Fatalf("subscribe put %d items in the queue; it must put none", n)
+	}
+	if n := s.Seeded(sub.ID); n != 20 {
+		t.Fatalf("archived %d of 20", n)
+	}
+	// Archived, not read — the distinction the UI depends on to tell the truth.
+	all := s.Cards(Query{View: "all"})
+	if len(all) != 20 {
+		t.Fatalf("archive not browsable: %d", len(all))
+	}
+	for _, c := range all {
+		if !c.Seeded {
+			t.Errorf("%s is not flagged seeded", c.ID)
+		}
+	}
+
+	// A post published AFTER subscribing is the first real unread.
+	extra = `<item><title>Brand New</title><link>https://e.com/new</link><guid>new</guid>
+	  <pubDate>Tue, 25 Aug 2026 09:00:00 GMT</pubDate></item>`
+	if err := s.PollNow(context.Background(), sub.ID); err != nil {
+		t.Fatal(err)
+	}
+	unread := s.Cards(Query{View: "unread"})
+	if len(unread) != 1 || unread[0].Title != "Brand New" {
+		t.Fatalf("want exactly the new post unread, got %+v", unread)
+	}
+}
+
+// ⚠ THE ARCHIVE-RETENTION TEST. stamp() falls back to the PUBLISHED date when
+// no lifecycle timestamp is set, so a seeded post from years ago would be
+// pruned the instant it arrived — the archive would be empty for exactly the
+// feeds worth browsing.
+func TestSeededItemsSurviveRetention(t *testing.T) {
+	s := testStore(t) // fresh: this first commit seeds
+	now := time.Now().UTC()
+	ancient := now.Add(-3 * 365 * 24 * time.Hour)
+	s.Commit("s", now, true, []Item{item("ancient", ancient)}, nil, "")
+
+	got := s.Items("s")
+	if len(got) != 1 {
+		t.Fatalf("a three-year-old seeded post was pruned on arrival: %+v", got)
+	}
+	if !got[0].Seeded() {
+		t.Errorf("not seeded: %+v", got[0])
+	}
+
+	// It still ages out eventually — 90 days after WE saw it, not after it was
+	// written.
+	s.Commit("s", now.Add(100*24*time.Hour), true, nil, nil, "")
+	if n := len(s.Items("s")); n != 0 {
+		t.Errorf("seeded item never expires: %d", n)
+	}
+}
+
+func TestSeededSurvivesRepoll(t *testing.T) {
+	s := testStore(t)
+	now := time.Now().UTC()
+	s.Commit("s", now, true, []Item{item("a", now)}, nil, "")
+	s.Commit("s", now.Add(time.Hour), true, []Item{item("a", now)}, nil, "")
+
+	got := s.Items("s")
+	if len(got) != 1 || got[0].Unread() {
+		t.Fatalf("a seeded item became unread on re-poll: %+v", got)
+	}
+}
+
+// Bumping pulls an item out of the archive, and a re-poll must not put it back.
+func TestBumpToUnread(t *testing.T) {
+	s := testStore(t)
+	now := time.Now().UTC()
+	s.Commit("s", now, true, []Item{item("a", now)}, nil, "")
+
+	if !s.SetUnread("s", "a") {
+		t.Fatal("bump failed")
+	}
+	got := s.Items("s")
+	if !got[0].Unread() {
+		t.Fatalf("bump did not take: %+v", got[0])
+	}
+	s.Commit("s", now.Add(time.Hour), true, []Item{item("a", now)}, nil, "")
+	if !s.Items("s")[0].Unread() {
+		t.Error("a re-poll re-archived a bumped item")
+	}
+
+	// A dismissed item is terminal — bumping must not resurrect it.
+	s.Mark("s", "a", false, true, now)
+	if s.SetUnread("s", "a") {
+		t.Error("bump revived a dismissed item; that is undismiss's job")
+	}
+}
+
+// ---- search and the per-feed archive ----
+
+func searchSvc(t *testing.T) *Service {
+	t.Helper()
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	d := ParseFeeds("")
+	d.Add(Subscription{Title: "Alpha", Kind: KindRSS, URL: "https://a.example/f", List: "essays"})
+	d.Add(Subscription{Title: "Beta", Kind: KindRSS, URL: "https://b.example/f", List: "news"})
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	mk := func(sub, id, title, excerpt string) Item {
+		return Item{ID: "consume:rss:" + sub + ":" + id, SubID: sub, Title: title,
+			Excerpt: excerpt, PublishedAt: now, FetchedAt: now}
+	}
+	s.store.Commit("alpha", now, true, []Item{
+		mk("alpha", "1", "Mitochondria and you", "a piece about cell biology"),
+		mk("alpha", "2", "Something else entirely", "unrelated musings"),
+	}, nil, "")
+	s.store.Commit("beta", now, true, []Item{
+		mk("beta", "1", "Market report", "MITOCHONDRIA get a mention here"),
+	}, nil, "")
+	return s
+}
+
+func TestSearchAcrossFeeds(t *testing.T) {
+	s := searchSvc(t)
+	got := s.Cards(Query{View: "all", Q: "mitochondria"})
+	if len(got) != 2 {
+		t.Fatalf("search matched %d, want 2 (title + excerpt, case-insensitive)", len(got))
+	}
+	if n := len(s.Cards(Query{View: "all", Q: "MITOCHONDRIA"})); n != 2 {
+		t.Errorf("search is case-sensitive: %d", n)
+	}
+	if n := len(s.Cards(Query{View: "all", Q: "nothing here"})); n != 0 {
+		t.Errorf("search matched something it shouldn't: %d", n)
+	}
+	// Dismissed stays out of search — it is terminal.
+	s.Dismiss("consume:rss:alpha:1")
+	if n := len(s.Cards(Query{View: "all", Q: "mitochondria"})); n != 1 {
+		t.Errorf("a dismissed item is still searchable: %d", n)
+	}
+}
+
+func TestPerSubscriptionArchive(t *testing.T) {
+	s := searchSvc(t)
+	if n := len(s.Cards(Query{View: "all", Sub: "alpha"})); n != 2 {
+		t.Errorf("alpha's history: %d, want 2", n)
+	}
+	if n := len(s.Cards(Query{View: "all", Sub: "beta"})); n != 1 {
+		t.Errorf("beta's history: %d, want 1", n)
+	}
+	if n := len(s.Cards(Query{View: "all", Sub: "nope"})); n != 0 {
+		t.Errorf("unknown sub returned %d", n)
+	}
+	// Sub and query compose.
+	if n := len(s.Cards(Query{View: "all", Sub: "alpha", Q: "mitochondria"})); n != 1 {
+		t.Errorf("sub+query: %d, want 1", n)
+	}
+	// Every card knows its subscription now.
+	for _, c := range s.Cards(Query{View: "all"}) {
+		if c.SubID == "" {
+			t.Errorf("card has no subId: %+v", c)
+		}
+	}
+}
+
+func TestStatusesCountArchived(t *testing.T) {
+	s := searchSvc(t)
+	for _, st := range s.Statuses() {
+		if st.ID == "alpha" {
+			if st.Unread != 0 || st.Archived != 2 || st.Total != 2 {
+				t.Errorf("alpha counts: unread=%d archived=%d total=%d", st.Unread, st.Archived, st.Total)
+			}
+		}
+	}
+	s.MarkUnread("consume:rss:alpha:1")
+	for _, st := range s.Statuses() {
+		if st.ID == "alpha" && (st.Unread != 1 || st.Archived != 1) {
+			t.Errorf("after bump: unread=%d archived=%d", st.Unread, st.Archived)
+		}
 	}
 }
