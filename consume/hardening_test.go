@@ -768,3 +768,77 @@ func TestStripMarkerLink(t *testing.T) {
 		t.Errorf("touched a whole article: %q", got)
 	}
 }
+
+// ⚠ THE BUILDING-OPTIMISM REGRESSION. Length alone does not prove an
+// extraction improved anything.
+//
+// Substack's subscribe box — "…get 7 days of free access to the full post
+// archives. Already a paid subscriber? Sign in" — is LONGER than the
+// 369-character teaser it replaces, so a length-only guard accepts it and the
+// reader shows a sales pitch where the article should be. That is what shipped,
+// and what the owner hit: a body of pure subscribe copy, with no label saying
+// why. A paywalled page must disqualify its own extraction however long it is.
+func TestPaywallBlockNeverReplacesATeaser(t *testing.T) {
+	// Deliberately longer than the teaser, and rich enough in <p> text to win
+	// the readability scoring — exactly the shape that defeated the old guard.
+	subscribeBox := `<html><body><div class="available-content"><article>
+	  <p>Keep reading with a 7-day free trial. Subscribe to Building Optimism to keep reading this post and get 7 days of free access to the full post archives.</p>
+	  <p>Already a paid subscriber? Sign in. A subscription gets you every post, the full archive, and the comment threads.</p>
+	  <p>Thousands of readers get this in their inbox every week and we would love for you to join them today.</p>
+	</article></div></body></html>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(subscribeBox))
+	}))
+	defer srv.Close()
+
+	s := schedSvc(t)
+	s.hc = srv.Client()
+	teaser := "The opening of a real essay about Florence, and then the publisher stops. Read more"
+	out := s.fillFullText(context.Background(), Subscription{Fulltext: FullTextAuto},
+		[]Item{{ID: "a", URL: srv.URL, Body: "<p>" + teaser + "</p>",
+			Chars: len([]rune(teaser)), Excerpt: teaser, teaser: true}})
+
+	if strings.Contains(out[0].Body, "free trial") || strings.Contains(out[0].Body, "Already a paid subscriber") {
+		t.Fatalf("a subscribe box replaced the article:\n%s", out[0].Body)
+	}
+	if !strings.Contains(out[0].Body, "real essay about Florence") {
+		t.Errorf("the teaser was lost: %q", out[0].Body)
+	}
+	if out[0].Preview != PreviewPaid {
+		t.Errorf("Preview=%q, want %q — the reader must say why it is short", out[0].Preview, PreviewPaid)
+	}
+}
+
+// Substack states the answer in its own embedded JSON. That beats guessing at
+// the subscribe box's wording, which changes.
+func TestSubstackAudienceMarkupIsAPaywallSignal(t *testing.T) {
+	page := `<html><head><script>window._preloads = {\"post\":{\"audience\":\"only_paid\"}}</script></head>
+	  <body><div><p>` + strings.Repeat("Plenty of visible prose that says nothing about subscribing. ", 12) + `</p></div></body></html>`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(page))
+	}))
+	defer srv.Close()
+
+	s := schedSvc(t)
+	s.hc = srv.Client()
+	_, paywalled := s.fetchArticle(context.Background(), srv.URL)
+	if !paywalled {
+		t.Error(`audience\":\"only_paid\" in the page source was not read as a paywall`)
+	}
+	// And a page without it is not flagged.
+	free := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(articlePage))
+	}))
+	defer free.Close()
+	s.hc = free.Client()
+	body, paywalled := s.fetchArticle(context.Background(), free.URL)
+	if paywalled {
+		t.Error("a free article was flagged as paywalled")
+	}
+	if !strings.Contains(body, "particular kind of person") {
+		t.Error("the free article did not extract")
+	}
+}

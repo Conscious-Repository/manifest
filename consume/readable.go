@@ -1,6 +1,7 @@
 package consume
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -43,11 +44,25 @@ var paywallPhrases = []string{
 	"this post is for paid subscribers",
 	"this post is for paying subscribers",
 	"subscribe to keep reading",
+	"keep reading with a 7-day free trial",
 	"paid subscribers only",
 	"this content is for paid",
 	"become a paid subscriber",
+	"already a paid subscriber",
+	"days of free access to the full post archives",
 	"upgrade to paid",
 	"for full access to this post",
+	"subscribe to read",
+	"this post is for subscribers",
+}
+
+// paywallMarkup are machine signals in the page SOURCE rather than prose.
+// Substack states the answer outright in its embedded JSON, which beats
+// guessing at whatever wording the subscribe box happens to use this month.
+var paywallMarkup = []string{
+	`audience\":\"only_paid\"`,
+	`"audience":"only_paid"`,
+	`audience\":\"founding\"`,
 }
 
 // markerLinkTail matches a trailing "Read more"-style link — the affordance a
@@ -70,10 +85,18 @@ func stripMarkerLink(body string) string {
 	return strings.TrimSpace(markerLinkTail.ReplaceAllString(body, ""))
 }
 
-func looksPaywalled(pageText string) bool {
+// looksPaywalled reports whether a fetched page is withholding its article.
+// rawHTML may be empty (when only extracted text is available); pageText is the
+// visible text.
+func looksPaywalled(pageText, rawHTML string) bool {
 	t := strings.ToLower(pageText)
 	for _, p := range paywallPhrases {
 		if strings.Contains(t, p) {
+			return true
+		}
+	}
+	for _, m := range paywallMarkup {
+		if strings.Contains(rawHTML, m) {
 			return true
 		}
 	}
@@ -118,11 +141,15 @@ func (s *Service) fetchArticle(ctx context.Context, pageURL string) (string, boo
 	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "html") {
 		return "", false
 	}
-	doc, err := html.Parse(io.LimitReader(resp.Body, maxArticle))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxArticle))
 	if err != nil {
 		return "", false
 	}
-	return Readable(doc), looksPaywalled(nodeText(doc))
+	doc, err := html.Parse(bytes.NewReader(raw))
+	if err != nil {
+		return "", false
+	}
+	return Readable(doc), looksPaywalled(nodeText(doc), string(raw))
 }
 
 // Readable extracts the article from a parsed page and sanitizes it.
@@ -268,11 +295,20 @@ func (s *Service) fillFullText(ctx context.Context, sub Subscription, items []It
 		cancel()
 
 		text := Text(body)
-		// ⚠ Extraction may only improve an item. A page behind a paywall or a
-		// consent wall extracts to almost nothing, and silently replacing a
-		// good teaser with "Please enable JavaScript" would be worse than
-		// doing nothing at all.
-		if body == "" || len([]rune(text)) <= it.Chars {
+		// ⚠ Extraction may only improve an item, and LENGTH ALONE DOES NOT
+		// PROVE IT DID.
+		//
+		// A Substack subscribe box — "…get 7 days of free access to the full
+		// post archives. Already a paid subscriber? Sign in" — is longer than
+		// the 369-character teaser it replaces, so a length-only guard accepts
+		// it and the reader shows a sales pitch where the article should be.
+		// That is exactly what happened to Building Optimism, whose every post
+		// carries audience:"only_paid".
+		//
+		// So a page that announces a paywall disqualifies its own extraction
+		// outright, however much text came back: whatever we scraped is the
+		// wrapper, not the writing.
+		if body == "" || paywalled || looksPaywalled(text, body) || len([]rune(text)) <= it.Chars {
 			// We tried and could not complete it. If we KNOW it was truncated,
 			// that is worth recording — a 367-character stub ending "Read more"
 			// with no explanation reads like a bug in the reader rather than a
