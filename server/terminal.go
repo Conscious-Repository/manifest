@@ -242,6 +242,101 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, se)
 }
 
+// --- agent-launched sessions ---
+
+// createAgentTermSession is the agent-facing create: it registers the session
+// (so it appears in the SESSIONS rail like any other row) AND spawns the tmux
+// backend detached — an agent has no browser attach to boot the session, and
+// needs the live tmux up before it starts driving it. Local box only.
+// The spawn mirrors the WS attach path exactly (same socket dir via c.tmux,
+// same tmux name, same option order), so a later browser attach's
+// `new-session -A` lands on this same session.
+func (s *Server) createAgentTermSession(kind, cwd, name string) (termSession, string, error) {
+	if s.terminal == nil {
+		return termSession{}, "", fmt.Errorf("terminal disabled")
+	}
+	if kind != "claude" && kind != "codex" {
+		kind = "shell"
+	}
+	idb := make([]byte, 8)
+	_, _ = rand.Read(idb)
+	now := time.Now().Format(time.RFC3339)
+	se := termSession{
+		ID: hex.EncodeToString(idb), Kind: kind,
+		Cwd: strings.TrimSpace(cwd), Name: strings.TrimSpace(name),
+		CreatedAt: now, LastUsed: now,
+	}
+	if se.Name == "" {
+		se.Name = s.terminal.shortName(kind)
+	}
+	// mint claude's resume handle up front, same as handleTermCreate — the
+	// caller drives the conversation via `claude --resume <id>`.
+	if kind == "claude" {
+		u := make([]byte, 16)
+		_, _ = rand.Read(u)
+		se.ResumeID = fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
+	}
+	s.terminal.upsert(se)
+
+	tn := tmuxName(se.ID)
+	wd := se.Cwd
+	if wd == "" {
+		wd = s.terminal.defaultWd
+	}
+	inner := fmt.Sprintf("cd %s 2>/dev/null; exec %s", shQuote(wd), se.launchCmd())
+	err := s.terminal.tmux(
+		"set", "-g", "default-terminal", "tmux-256color", ";",
+		"set", "-ga", "terminal-features", "xterm-256color:RGB,clipboard", ";",
+		"new-session", "-d", "-s", tn, "bash", "-lc", inner, ";",
+		"set-option", "-t", tn, "status", "off", ";",
+		"set-option", "-t", tn, "mouse", "on", ";",
+		"set-option", "-t", tn, "set-titles", "on", ";",
+		"set-option", "-t", tn, "set-titles-string", "#T",
+	)
+	if err != nil {
+		// the row stays: it's now an ordinary not-yet-started session the
+		// browser attach path can still boot.
+		return se, tn, fmt.Errorf("tmux spawn: %w", err)
+	}
+	// claude has now booted under --session-id → future reopens must --resume.
+	se.Started = true
+	se.LastUsed = time.Now().Format(time.RFC3339)
+	s.terminal.upsert(se)
+	return se, tn, nil
+}
+
+// handleTermAgentCreate (POST /api/terminal/agent-session) accepts
+// {kind, cwd, name} and returns the registry row plus its tmux name, so a
+// local agent can create a session and drive it from the shell.
+func (s *Server) handleTermAgentCreate(w http.ResponseWriter, r *http.Request) {
+	if s.terminal == nil {
+		http.Error(w, "terminal disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct {
+		Kind string `json:"kind"`
+		Cwd  string `json:"cwd"`
+		Name string `json:"name"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	kind := b.Kind
+	if kind == "" {
+		kind = "claude"
+	}
+	se, tn, err := s.createAgentTermSession(kind, b.Cwd, b.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSON(w, struct {
+		termSession
+		Tmux string `json:"tmux"`
+	}{se, tn})
+}
+
 func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
 	if s.terminal == nil {
 		http.Error(w, "terminal disabled", http.StatusServiceUnavailable)
