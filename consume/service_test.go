@@ -286,3 +286,25 @@ func TestSubOfParsesItemIDs(t *testing.T) {
 		}
 	}
 }
+
+// "unfiled" is the scaffold's heading for ungrouped feeds, not a group the
+// owner named. It must never become a filter chip.
+func TestUnfiledIsNotAGroup(t *testing.T) {
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	d := ParseFeeds("")
+	d.Add(Subscription{Title: "No Group", Kind: KindRSS, URL: "https://e.com/f"})
+	d.Add(Subscription{Title: "Real Group", Kind: KindRSS, URL: "https://e.com/g", List: "essays"})
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	lists := s.Lists()
+	for _, l := range lists {
+		if strings.EqualFold(l, ungrouped) {
+			t.Errorf("the scaffold heading leaked into the filter chips: %v", lists)
+		}
+	}
+	if len(lists) != 1 || lists[0] != "essays" {
+		t.Errorf("lists: %v", lists)
+	}
+}

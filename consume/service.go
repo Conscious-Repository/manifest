@@ -651,7 +651,9 @@ func (s *Service) Lists() []string {
 	seen := map[string]bool{}
 	out := []string{}
 	for _, sub := range s.Subscriptions() {
-		if sub.List == "" || seen[sub.List] {
+		// "unfiled" is the scaffold's heading for ungrouped feeds, not a group
+		// the owner named — it must not appear as a filter chip.
+		if sub.List == "" || strings.EqualFold(sub.List, ungrouped) || seen[sub.List] {
 			continue
 		}
 		seen[sub.List] = true
