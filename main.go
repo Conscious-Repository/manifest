@@ -610,6 +610,7 @@ func main() {
 	}, consume.Config{
 		RSSInterval: time.Duration(cfg.Consume.RSSIntervalMinutes) * time.Minute,
 		XInterval:   time.Duration(cfg.Consume.XIntervalMinutes) * time.Minute,
+		RSSHubBase:  cfg.Consume.RSSHubBase,
 	})
 	xTokenPath := filepath.Join(cfg.DataDir, "consume", "x-creds")
 	consumeSvc.UseXToken(func() string {

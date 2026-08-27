@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -36,7 +37,16 @@ const (
 type Config struct {
 	RSSInterval time.Duration
 	XInterval   time.Duration
+	// RSSHubBase is where @handle subscriptions resolve: a self-hosted RSSHub
+	// whose /twitter/user/<handle> route emits ordinary RSS. Empty means the
+	// conventional local install.
+	RSSHubBase string
 }
+
+// defaultRSSHubBase is the conventional self-hosted install: RSSHub as a
+// systemd service on this box, holding the X session token so manifest never
+// has to.
+const defaultRSSHubBase = "http://127.0.0.1:1200"
 
 // Service holds the lane.
 type Service struct {
@@ -110,6 +120,14 @@ func (s *Service) cookieFor(rawURL string) string {
 
 func (s *Service) now() time.Time { return s.nowFn().UTC() }
 
+// rsshubBase is the bridge @handle subscriptions route through.
+func (s *Service) rsshubBase() string {
+	if b := strings.TrimRight(strings.TrimSpace(s.cfg.RSSHubBase), "/"); b != "" {
+		return b
+	}
+	return defaultRSSHubBase
+}
+
 // Store exposes the cache for the server layer's reads.
 func (s *Service) Store() *Store { return s.store }
 
@@ -171,36 +189,40 @@ func (s *Service) Subscribe(ctx context.Context, input, title, list, mirror stri
 		sub.Mirror = MirrorFull
 	}
 
+	// An @handle (or bare word) is an X account. It does NOT become KindX —
+	// the native API is metered and token-gated — it becomes the self-hosted
+	// RSSHub's feed for that account, and from here on it is an ordinary RSS
+	// subscription: same discovery, same poller, same curation. (KindX stays
+	// parseable for a hand-edited [kind:: x] line; see fetcher.)
 	if strings.HasPrefix(raw, "@") || (!strings.Contains(raw, ".") && !strings.Contains(raw, "/")) {
-		sub.Kind = KindX
-		sub.Handle = strings.TrimPrefix(raw, "@")
+		handle := strings.TrimPrefix(raw, "@")
 		if sub.Title == "" {
-			sub.Title = "@" + sub.Handle
+			sub.Title = "@" + handle
 		}
-	} else {
-		feedURL, feedTitle, err := (&rssFetcher{hc: s.hc}).Discover(ctx, raw)
-		if err != nil {
-			return Subscription{}, err
-		}
-		// ⚠ [url:: …] is written into extrinsic/feeds.md — the owner's VAULT,
-		// a git repo that auto-commits and pushes. A private-feed URL with an
-		// embedded token (Substack's podcast feeds are exactly that shape)
-		// would put a live credential into version history, where it cannot be
-		// recalled. Refuse, and point at the sign-in that keeps the secret in
-		// the secrets tier where it belongs.
-		if findings := secrets.Scan(feedURL); len(findings) > 0 {
-			return Subscription{}, errors.New(
-				"that URL carries what looks like a secret, and the subscription list lives in your vault — " +
-					"subscribe to the public feed instead and sign in to the site to unlock paid posts")
-		}
-		sub.Kind = KindRSS
-		sub.URL = feedURL
-		if sub.Title == "" {
-			sub.Title = feedTitle
-		}
-		if sub.Title == "" {
-			sub.Title = raw
-		}
+		raw = s.rsshubBase() + "/twitter/user/" + url.PathEscape(handle)
+	}
+	feedURL, feedTitle, err := (&rssFetcher{hc: s.hc}).Discover(ctx, raw)
+	if err != nil {
+		return Subscription{}, err
+	}
+	// ⚠ [url:: …] is written into extrinsic/feeds.md — the owner's VAULT,
+	// a git repo that auto-commits and pushes. A private-feed URL with an
+	// embedded token (Substack's podcast feeds are exactly that shape)
+	// would put a live credential into version history, where it cannot be
+	// recalled. Refuse, and point at the sign-in that keeps the secret in
+	// the secrets tier where it belongs.
+	if findings := secrets.Scan(feedURL); len(findings) > 0 {
+		return Subscription{}, errors.New(
+			"that URL carries what looks like a secret, and the subscription list lives in your vault — " +
+				"subscribe to the public feed instead and sign in to the site to unlock paid posts")
+	}
+	sub.Kind = KindRSS
+	sub.URL = feedURL
+	if sub.Title == "" {
+		sub.Title = feedTitle
+	}
+	if sub.Title == "" {
+		sub.Title = raw
 	}
 
 	for _, ex := range d.Subs() {

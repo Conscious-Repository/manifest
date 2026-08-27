@@ -246,6 +246,10 @@ type ConsumeConfig struct {
 	// XIntervalMinutes defaults to 360. X reads are billed per post returned,
 	// so this interval is a spending decision, not just a freshness one.
 	XIntervalMinutes int `json:"xIntervalMinutes"`
+	// RSSHubBase is the self-hosted RSSHub that turns an @handle into an
+	// ordinary RSS subscription. Empty = http://127.0.0.1:1200 (the local
+	// systemd install).
+	RSSHubBase string `json:"rsshubBase"`
 }
 
 type OodaConfig struct {

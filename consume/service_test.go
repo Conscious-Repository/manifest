@@ -139,18 +139,50 @@ func TestSubscribeRejectsDuplicates(t *testing.T) {
 	}
 }
 
-func TestSubscribeAnXHandle(t *testing.T) {
+// An @handle routes through the self-hosted RSSHub and becomes an ORDINARY
+// RSS subscription — no X API, no token, the existing poller end to end
+// (decision 2026-08-27; the native KindX path needs a paid bearer token).
+func TestSubscribeAnXHandleRoutesThroughRSSHub(t *testing.T) {
 	v := newVault(t)
-	s := New(t.TempDir(), v.io(), Config{})
+	hub := serve(t, substackish, nil) // plays RSSHub: any path yields a feed
+	s := New(t.TempDir(), v.io(), Config{RSSHubBase: hub.URL + "/"})
+	s.hc = hub.Client()
+
 	sub, err := s.Subscribe(context.Background(), "@melissa", "", "people", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sub.Kind != KindX || sub.Handle != "melissa" {
-		t.Fatalf("handle not recognized: %+v", sub)
+	if sub.Kind != KindRSS || sub.Handle != "" {
+		t.Fatalf("an @handle should become a plain RSS subscription: %+v", sub)
 	}
-	// With no token the poll must fail with something actionable, not silently.
-	err = s.PollNow(context.Background(), sub.ID)
+	if sub.URL != hub.URL+"/twitter/user/melissa" {
+		t.Fatalf("not routed through RSSHub: %q", sub.URL)
+	}
+	if sub.Title != "@melissa" {
+		t.Errorf("default title should stay the handle, not the bridge feed's: %q", sub.Title)
+	}
+	// It polled on subscribe like any feed — with no X token anywhere.
+	if n := s.Seeded(sub.ID); n != 2 {
+		t.Errorf("want 2 items seeded through the bridge, got %d", n)
+	}
+	// Same handle again, with or without the @, is the same source.
+	if _, err := s.Subscribe(context.Background(), "melissa", "", "", ""); err == nil {
+		t.Error("re-subscribing the same handle should be refused")
+	}
+}
+
+// A hand-edited [kind:: x] line still takes the native API path, which stays
+// token-gated: without one the poll must fail actionably, not silently.
+func TestHandEditedXKindStillWantsAToken(t *testing.T) {
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	d := ParseFeeds("")
+	d.Add(Subscription{Title: "@melissa", Kind: KindX, Handle: "melissa", List: "people"})
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	sub := s.Subscriptions()[0]
+	err := s.PollNow(context.Background(), sub.ID)
 	if err == nil || !strings.Contains(err.Error(), "PORTALS") {
 		t.Errorf("sealed X portal should say where to fix it: %v", err)
 	}
@@ -223,7 +255,11 @@ func TestServiceIsInertWithoutAWriteCapability(t *testing.T) {
 	v := newVault(t)
 	io := v.io()
 	io.Write = nil
-	s := New(t.TempDir(), io, Config{})
+	// The fake hub keeps the @handle path off the network: discovery succeeds,
+	// so the failure below is the write capability and nothing else.
+	hub := serve(t, substackish, nil)
+	s := New(t.TempDir(), io, Config{RSSHubBase: hub.URL})
+	s.hc = hub.Client()
 
 	if _, err := s.Subscribe(context.Background(), "@someone", "", "", ""); err == nil {
 		t.Error("subscribing without a write capability should fail loudly")
