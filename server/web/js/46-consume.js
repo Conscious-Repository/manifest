@@ -17,6 +17,8 @@ let consumeList = ""; // active group filter in the CONSUME view
 let consumeView = "unread"; // unread | all
 let consumeSubs = { subscriptions: [], xReady: false };
 let consumeManageOpen = false;
+let consumeCuratedOpen = false;
+let consumeCurated = { entries: [], public: "" }; // the private mirror of the public feed
 let consumeSub = "";      // one subscription's archive ("" = all feeds)
 let consumeQuery = "";    // search text
 let consumeShowAll = false; // the ▾ N more expander
@@ -214,6 +216,7 @@ function renderConsume() {
 
   host.append(consumeHeader());
   if (consumeManageOpen) host.append(consumeManagePanel());
+  if (consumeCuratedOpen) host.append(consumeCuratedPanel());
   if (consumeSub) host.append(consumeSubBanner());
 
   const items = consumeCache.items || [];
@@ -298,6 +301,15 @@ function consumeHeader() {
       await loadConsume();
     }));
   }
+
+  // "close curated", not "close" — MANAGE beside it toggles the same way, and
+  // two bare "close" pills would not say which panel each one closes.
+  const curated = pillLight(consumeCuratedOpen ? "close curated" : "CURATED", async () => {
+    consumeCuratedOpen = !consumeCuratedOpen;
+    if (consumeCuratedOpen) await loadConsumeCurated();
+    renderConsume();
+  });
+  right.append(curated);
 
   const manage = pillLight(consumeManageOpen ? "close" : "MANAGE", async () => {
     consumeManageOpen = !consumeManageOpen;
@@ -504,6 +516,94 @@ function consumeEditSub(s, row) {
   box.append(title, list, mirror, ft, pillLight("save", save), pillLight("cancel", () => box.remove()));
   row.append(box);
   title.focus();
+}
+
+// ---- the curated panel ----
+//
+// The owner's audit surface: exactly what the public feed serves, as a list,
+// with the note editable in place. It reads /api/consume/curated (the private
+// mirror) and writes ONLY through the existing curate/uncurate endpoints — the
+// note is frontmatter in the vault note, and re-curating with a new note is
+// the edit path; the body is never touched.
+
+async function loadConsumeCurated() {
+  try {
+    consumeCurated = await (await fetch("/api/consume/curated")).json();
+  } catch (e) { consumeCurated = { entries: [], public: "" }; }
+}
+
+function consumeCuratedPanel() {
+  const panel = el("div", "consume-manage consume-curated");
+  panel.append(el("div", "consume-manage-head micro-label", "curated → public feed"));
+
+  if (consumeCurated.public) {
+    const pub = el("div", "consume-public");
+    pub.append(el("span", "micro-label", "public feed"));
+    pub.append(el("span", "consume-public-url", consumeCurated.public));
+    pub.append(pillLight("open public feed ↗", () => window.open(consumeCurated.public, "_blank", "noopener")));
+    panel.append(pub);
+  } else {
+    // publicPort off ≠ nothing curated — say which one it is.
+    panel.append(el("div", "consume-hint micro-label",
+      "the public feed is not being served yet — these entries are staged for it"));
+  }
+
+  const entries = consumeCurated.entries || [];
+  entries.forEach((en) => panel.append(consumeCuratedRow(en)));
+  if (!entries.length) panel.append(emptyRow("Nothing curated yet — → CURATE on any card puts it here."));
+  return panel;
+}
+
+function consumeCuratedRow(en) {
+  const row = el("div", "consume-sub consume-curated-row");
+  row.append(el("span", "consume-curated-title", en.title || "(untitled)"));
+  const meta = [en.source, en.author, en.curated ? "curated " + fmtFeedDate(en.curated) : ""]
+    .filter(Boolean).join(" · ");
+  if (meta) row.append(el("span", "consume-sub-count micro-label", meta));
+
+  const acts = el("div", "consume-sub-acts");
+  if (en.url) acts.append(pillLight("original ↗", () => window.open(en.url, "_blank", "noopener")));
+  acts.append(pillLight("edit note", () => consumeCuratedEditNote(en, row)));
+  acts.append(pillLight("un-curate", async () => {
+    if (!(await consumePost(`/api/consume/item/${encodeURIComponent(en.itemId)}/uncurate`))) return;
+    showToast("un-curated — the note stays in your vault");
+    await loadConsumeCurated();
+    await loadConsume(); // the card's "curated" chip changes too
+  }));
+  row.append(acts);
+
+  row.append(el("div", "consume-curated-note micro-label",
+    en.note ? "“" + en.note + "”" : "(no note)"));
+  return row;
+}
+
+function consumeCuratedEditNote(en, row) {
+  if (row.querySelector(".consume-note-row")) return;
+  const form = el("div", "consume-note-row");
+  const input = inputEl("why this one? (optional)");
+  input.className = "consume-note-input";
+  input.value = en.note || "";
+  const save = async () => {
+    const note = input.value.trim();
+    // ⚠ The endpoint treats an empty note as "keep what's there" — that is
+    // what stops a bare re-curate from erasing a note. So clearing one is a
+    // vault edit, and a silent no-op here must not be reported as "saved".
+    if (!note && en.note) {
+      showToast("an empty save keeps the note — to clear it, edit the note file in your vault");
+      return;
+    }
+    if (!(await consumePost(`/api/consume/item/${encodeURIComponent(en.itemId)}/curate`, { note }))) return;
+    showToast("note saved");
+    await loadConsumeCurated();
+    renderConsume();
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter") { e.preventDefault(); save(); }
+    if (e.key === "Escape") form.remove();
+  };
+  form.append(input, pillLight("save", save), pillLight("cancel", () => form.remove()));
+  row.append(form);
+  input.focus();
 }
 
 // consumePost is the shared write: it surfaces a server refusal as a toast
