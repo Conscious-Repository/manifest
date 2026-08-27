@@ -163,7 +163,7 @@ func (s *Server) handleConsumeCurate(w http.ResponseWriter, r *http.Request) {
 		Note string `json:"note"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body) // a note is optional
-	entry, err := s.consume.Curate(r.PathValue("id"), body.Note)
+	entry, err := s.consume.Curate(r.Context(), r.PathValue("id"), body.Note)
 	if err != nil {
 		httpError(w, err)
 		return

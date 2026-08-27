@@ -366,9 +366,12 @@ func TestStatusesReportSignInWithoutTheSecret(t *testing.T) {
 	_ = sub
 }
 
-// ⚠ Mirroring a PAID post into the public feed republishes what the publisher
-// sells. A signed-in source is excerpt-only whatever the subscription says.
-func TestPaidSourcesAreNeverFullyMirrored(t *testing.T) {
+// Curation is deliberate amplification: a signed-in (paid) source mirrors in
+// full like any other, because the owner weighed the republishing question at
+// the moment he clicked and the subscription's own setting decides. This
+// REVERSES the earlier paid-source rule; the attribution header keeping credit
+// and traffic pointed home is what he judged sufficient.
+func TestCuratedPaidSourceMirrorsInFull(t *testing.T) {
 	v := newVault(t)
 	feed := serve(t, substackish, nil)
 	s := New(t.TempDir(), v.io(), Config{})
@@ -378,33 +381,44 @@ func TestPaidSourcesAreNeverFullyMirrored(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := s.mirrorFor(sub); got != MirrorFull {
-		t.Fatalf("a free source with mirror:full should mirror: %q", got)
-	}
-
-	// Sign in — now it is a paid source.
+	// Sign in — a paid source, and it still mirrors in full.
 	if err := s.sites.Set(SiteKey(feed.URL), secretCookie); err != nil {
 		t.Fatal(err)
 	}
 	d, _ := s.doc()
 	sub, _ = d.Find(sub.ID)
-	if got := s.mirrorFor(sub); got != MirrorExcerpt {
-		t.Errorf("a PAID source was set to mirror in full: %q", got)
+	if got := s.mirrorFor(Item{}, sub); got != MirrorFull {
+		t.Errorf("a curated paid source should mirror in full: %q", got)
+	}
+	// The owner's per-subscription excerpt setting still holds — that choice
+	// was his, not the cookie's.
+	excerptSub := sub
+	excerptSub.Mirror = MirrorExcerpt
+	if got := s.mirrorFor(Item{}, excerptSub); got != MirrorExcerpt {
+		t.Errorf("mirror:excerpt subscription should stay excerpt: %q", got)
+	}
+	// A still-partial body has nothing full to publish, whatever the sub says.
+	if got := s.mirrorFor(Item{Preview: PreviewPaid}, sub); got != MirrorExcerpt {
+		t.Errorf("a preview item must not claim mirror:full: %q", got)
 	}
 
-	// And the curated note records that.
+	// And the curated note records full, so the public feed carries the body.
 	_ = s.PollNow(context.Background(), sub.ID)
 	cards := s.Cards(Query{View: "all"})
 	if len(cards) == 0 {
 		t.Fatal("no items")
 	}
-	entry, err := s.Curate(cards[0].ID, "")
+	entry, err := s.Curate(context.Background(), cards[0].ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	note := v.read(t, entry.Path)
-	if !strings.Contains(note, "mirror: excerpt") {
-		t.Errorf("the curated note does not record excerpt-only:\n%s", note)
+	if !strings.Contains(note, "mirror: full") {
+		t.Errorf("the curated note does not record mirror:full:\n%s", note)
+	}
+	out := FeedXML(s.Entries(), PublicConfig{Title: "reading"})
+	if !strings.Contains(out, "any</em> position sound reasonable") {
+		t.Errorf("the public feed does not carry the paid post inline:\n%s", out)
 	}
 }
 

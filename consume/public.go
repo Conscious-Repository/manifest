@@ -170,7 +170,7 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 			Source:      e.Source,
 			Description: description(e),
 		}
-		if body := strings.TrimSpace(e.HTML); body != "" && !strings.EqualFold(e.Mirror, MirrorExcerpt) {
+		if body := bodyHTML(e); body != "" {
 			it.Encoded = &rssCDATA{Value: attribution(e) + body}
 		}
 		ch.Items = append(ch.Items, it)
@@ -188,6 +188,33 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 			html.EscapeString(cfg.Title) + "</title></channel></rss>\n"
 	}
 	return xml.Header + string(out) + "\n"
+}
+
+// bodyHTML is the whole piece, ready to render, and it is what makes "carry
+// the content" a property of the FEED rather than of the cache underneath it.
+//
+// Two sources, in order:
+//
+//	the dataDir snapshot   sanitized at fetch time, the publisher's own markup
+//	the curated note       markdown in the vault, rendered by ToHTML
+//
+// The second is the durable one. A snapshot is disposable — pruned at 90 days,
+// gone with the directory, absent for anything polled before this cache
+// existed — while the note is versioned in the owner's vault and holds the
+// same article. Reaching for it means a wiped dataDir costs the feed nothing
+// but the publisher's exact markup; before, it cost the reader the piece.
+//
+// mirror: excerpt is the one thing that stops both: the owner said carry a
+// link and an excerpt for this source, and neither source of body overrides
+// that.
+func bodyHTML(e CuratedEntry) string {
+	if strings.EqualFold(e.Mirror, MirrorExcerpt) {
+		return ""
+	}
+	if h := strings.TrimSpace(e.HTML); h != "" {
+		return h // already allowlisted; Sanitize is idempotent, not free
+	}
+	return ToHTML(e.Body)
 }
 
 // description is what a reader shows in the list: the owner's note if he wrote
@@ -232,9 +259,15 @@ func pubDate(stored string) string {
 	return ""
 }
 
-// indexHTML is a deliberately plain page: a list of what the owner is reading,
-// each linking to the original, plus the feed. No JavaScript, no tracking, no
-// styling ambition.
+// indexHTML is a deliberately plain page, and it carries the WHOLE piece the
+// way the feed does: a reader who follows a link from anywhere should land on
+// the writing, not on a table of contents pointing back out. No JavaScript, no
+// tracking, no styling ambition — one document per curated note, in order.
+//
+// The surface stays exactly two routes. There is no per-entry permalink here
+// on purpose: every additional path on the one listener that faces the open
+// internet is a thing the isolation test has to re-argue, and an index that
+// already holds the bodies does not need one.
 func indexHTML(entries []CuratedEntry, cfg PublicConfig) string {
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8">`)
@@ -251,13 +284,18 @@ h1{font-size:1.25rem;letter-spacing:.02em;text-transform:uppercase;
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600}
 .sub{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.75rem;
   opacity:.6;margin-bottom:3rem}
-li{margin:0 0 1.75rem;list-style:none}
+li{margin:0 0 4.5rem;list-style:none}
 ul{padding:0}
 a{color:inherit}
 .meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   font-size:.7rem;opacity:.6;text-transform:uppercase;letter-spacing:.04em}
 .note{margin:.35rem 0 0;opacity:.85}
-.t{font-weight:600}
+.t{font-size:1.1rem;font-weight:600;margin:0}
+.body{margin:1.5rem 0}
+.body img{max-width:100%;height:auto}
+.body pre{overflow-x:auto;font-size:.85rem;white-space:pre-wrap}
+.body blockquote{margin:1rem 0;padding-left:1rem;border-left:2px solid;opacity:.85}
+.body h1,.body h2,.body h3,.body h4{font-size:1rem;margin:1.75rem 0 .5rem}
 </style></head><body>`)
 	b.WriteString(`<h1>` + html.EscapeString(cfg.Title) + `</h1>`)
 	b.WriteString(`<p class="sub">` + html.EscapeString(firstNonEmpty(cfg.Description, "Things worth reading.")) +
@@ -270,8 +308,8 @@ a{color:inherit}
 		if i >= feedCap {
 			break
 		}
-		b.WriteString(`<li><a class="t" href="` + html.EscapeString(e.URL) + `">` +
-			html.EscapeString(e.Title) + `</a>`)
+		b.WriteString(`<li><h2 class="t"><a href="` + html.EscapeString(e.URL) + `">` +
+			html.EscapeString(e.Title) + `</a></h2>`)
 		meta := firstNonEmpty(e.Author, e.Source)
 		if e.Curated != "" {
 			meta = strings.TrimPrefix(meta+" · "+e.Curated, " · ")
@@ -282,6 +320,16 @@ a{color:inherit}
 		if n := strings.TrimSpace(e.Note); n != "" {
 			b.WriteString(`<p class="note">` + html.EscapeString(n) + `</p>`)
 		}
+		if body := bodyHTML(e); body != "" {
+			b.WriteString(`<div class="body">` + body + `</div>`)
+		} else if x := strings.TrimSpace(e.Body); x != "" {
+			// mirror: excerpt — the owner asked for a taste and a link.
+			b.WriteString(`<p>` + html.EscapeString(Excerpt(collapse(x), 280)) + `</p>`)
+		}
+		if e.URL != "" {
+			b.WriteString(`<p class="meta"><a href="` + html.EscapeString(e.URL) +
+				`">read at the source</a></p>`)
+		}
 		b.WriteString(`</li>`)
 	}
 	b.WriteString(`</ul></body></html>`)
@@ -291,10 +339,11 @@ a{color:inherit}
 // Entries implements CuratedFeed: the curated notes with their bodies
 // resolved.
 //
-// The body comes from the dataDir snapshot when it is still there. When it is
-// not — dataDir was wiped, or the item aged out of the cache — the entry keeps
-// its metadata and its note and the feed degrades to a link. Losing a cache
-// must never silently drop something the owner published.
+// This resolves the SNAPSHOT — the publisher's own markup, sanitized at fetch
+// time — and only that. When it is gone (dataDir wiped, item aged out of the
+// cache) the entry travels with its markdown body from the note, and bodyHTML
+// renders that instead, so what the feed carries is the piece either way.
+// Losing a cache must never cost a reader something the owner published.
 func (s *Service) Entries() []CuratedEntry {
 	out := s.curatedEntries()
 	resolved := make([]CuratedEntry, 0, len(out))

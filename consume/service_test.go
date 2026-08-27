@@ -239,7 +239,7 @@ func TestUnsubscribeForgetsTheCacheButNotTheVault(t *testing.T) {
 	}
 	// Curate one first — that note must survive unsubscribing.
 	cards := s.Cards(Query{View: "all", List: ""})
-	entry, err := s.Curate(cards[0].ID, "keeping this")
+	entry, err := s.Curate(context.Background(), cards[0].ID, "keeping this")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +303,7 @@ func TestServiceIsInertWithoutAWriteCapability(t *testing.T) {
 	if _, err := s.Subscribe(context.Background(), "@someone", "", "", ""); err == nil {
 		t.Error("subscribing without a write capability should fail loudly")
 	}
-	if _, err := s.Curate("consume:rss:a:b", ""); err == nil {
+	if _, err := s.Curate(context.Background(), "consume:rss:a:b", ""); err == nil {
 		t.Error("curating without a write capability should fail loudly")
 	}
 	// Reads still work and return nothing rather than panicking.

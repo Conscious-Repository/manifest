@@ -87,9 +87,16 @@ previews again — so the subscription goes degraded with `sign-in expired` and 
 FEED nudge asks for a fresh one. That judgement is only ever made after a
 *successful* poll; a feed that is merely down never triggers it.
 
-⚠ **Curated items from a paid source are excerpt-only**, whatever
-`[mirror::]` says. Mirroring a paid post to your public feed would republish
-what the publisher sells.
+**Curating a paid post mirrors it like any other.** Signing in used to force
+`mirror: excerpt` whatever `[mirror::]` said; it no longer does. Curating is
+deliberate amplification — you weighed the republishing question when you
+clicked — so the subscription's own setting decides, and the attribution header
+keeps credit and traffic pointed at the original. If that is not what you want
+for a publication, set `[mirror:: excerpt]` on it.
+
+One honesty rule remains: an item whose body is still a *preview* has nothing
+full to mirror. Curating one fetches the whole article first (signed in, where
+you have a session) and only then writes the note.
 
 ### Finding something in the archive
 
@@ -140,6 +147,12 @@ Two guarantees worth knowing:
 Per subscription, `[mirror:: full]` (default) carries the whole body into the
 public feed and `[mirror:: excerpt]` carries only an excerpt and the link. If a
 writer ever asks you not to mirror them, change that one field.
+
+`full` means full on **both** public surfaces: the whole piece rides inline in
+`<content:encoded>` in `feed.xml`, and the index page renders it inline too, so
+somebody who follows a link lands on the writing rather than on a list pointing
+back out. Every entry still carries the original `<link>`, the author and the
+source, and a *read at the source* line above the mirrored body.
 
 ## Turning on the public feed
 
@@ -226,9 +239,17 @@ server-side at poll time; a publisher wrapping its prose in unusual markup can
 lose formatting. The original link is always on the card.
 
 **The public feed is missing something you curated.** Check the note still has
-its `curated:` field. If `<dataDir>` was wiped, entries survive with their
-metadata and note but degrade to excerpt-and-link until the item is re-polled —
-losing a cache never drops something you published.
+its `curated:` field. Losing `<dataDir>` does not cost you the body: the note
+in `extrinsic/` holds the same article as markdown, and the feed renders that
+when the snapshot is gone. What a wiped cache costs is the publisher's exact
+markup, not the piece.
+
+**Something you curated is still only an excerpt.** That is a note the old
+paid-source rule stamped `mirror: excerpt`. Manifest re-checks those once at
+startup, captures the full body where it can, and flips that one field —
+everything you wrote in the note is left alone. A capture that fails (a real
+paywall, an expired session) stays excerpt-only and is retried on the next
+boot. Re-clicking **CURATE** on the item does the same thing immediately.
 
 ## Rollback
 

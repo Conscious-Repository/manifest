@@ -461,6 +461,29 @@ func (s *Store) Get(subID, itemID string) (Item, bool) {
 	return Item{}, false
 }
 
+// Complete records that an item once delivered partial now has its whole
+// body — the curate-time capture's write-back. The snapshot gets the body; the
+// cached record takes the new length and drops its preview label so the reader
+// stops calling it one.
+func (s *Store) Complete(subID string, it Item) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	for i := range st.Items {
+		if st.Items[i].ID != it.ID {
+			continue
+		}
+		st.Items[i].Preview = it.Preview
+		st.Items[i].Chars = it.Chars
+		st.Items[i].Excerpt = it.Excerpt
+		s.write(subID, st)
+		break
+	}
+	if it.Body != "" {
+		s.putBody(it.ID, it.Body)
+	}
+}
+
 // Body returns one item's stored HTML ("" when the snapshot is gone).
 func (s *Store) Body(itemID string) string {
 	s.mu.Lock()

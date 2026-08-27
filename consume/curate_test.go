@@ -1,6 +1,9 @@
 package consume
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,7 +90,7 @@ func TestCurateWritesAnExtrinsicNote(t *testing.T) {
 	v := newVault(t)
 	s, it := svcWithItem(t, v)
 
-	entry, err := s.Curate(it.ID, "the middle third is the whole argument")
+	entry, err := s.Curate(context.Background(), it.ID, "the middle third is the whole argument")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +132,7 @@ func TestCurateWritesAnExtrinsicNote(t *testing.T) {
 func TestRecurateDoesNotClobberTheOwnersEdits(t *testing.T) {
 	v := newVault(t)
 	s, it := svcWithItem(t, v)
-	entry, err := s.Curate(it.ID, "first take")
+	entry, err := s.Curate(context.Background(), it.ID, "first take")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +144,7 @@ func TestRecurateDoesNotClobberTheOwnersEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Curate(it.ID, "second take"); err != nil {
+	if _, err := s.Curate(context.Background(), it.ID, "second take"); err != nil {
 		t.Fatal(err)
 	}
 	after := v.read(t, entry.Path)
@@ -157,7 +160,7 @@ func TestRecurateDoesNotClobberTheOwnersEdits(t *testing.T) {
 func TestUncurateKeepsTheNote(t *testing.T) {
 	v := newVault(t)
 	s, it := svcWithItem(t, v)
-	entry, err := s.Curate(it.ID, "a note")
+	entry, err := s.Curate(context.Background(), it.ID, "a note")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +180,7 @@ func TestUncurateKeepsTheNote(t *testing.T) {
 		t.Error("un-curated note still selected by the feed")
 	}
 	// And it can be curated again.
-	if _, err := s.Curate(it.ID, "back on"); err != nil {
+	if _, err := s.Curate(context.Background(), it.ID, "back on"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.Curated()) != 1 {
@@ -232,7 +235,7 @@ func TestCuratedAreNewestFirst(t *testing.T) {
 func TestCollidingTitlesGetDistinctNotes(t *testing.T) {
 	v := newVault(t)
 	s, it := svcWithItem(t, v)
-	first, err := s.Curate(it.ID, "")
+	first, err := s.Curate(context.Background(), it.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +244,7 @@ func TestCollidingTitlesGetDistinctNotes(t *testing.T) {
 	other.ID = itemID(KindRSS, "melissa", "guid-2")
 	other.URL = "https://other.example/p/same-title"
 	s.store.Commit("melissa", time.Now().UTC(), true, []Item{other}, nil, "")
-	second, err := s.Curate(other.ID, "")
+	second, err := s.Curate(context.Background(), other.ID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +267,7 @@ func TestTitlesWithColonsAndQuotesSurvive(t *testing.T) {
 	updated.Source = `Someone's: Newsletter`
 	s.store.Commit(it.SubID, time.Now().UTC(), true, []Item{updated}, nil, "")
 
-	entry, err := s.Curate(it.ID, `he said "no" — twice`)
+	entry, err := s.Curate(context.Background(), it.ID, `he said "no" — twice`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,11 +305,154 @@ func TestCurateKeyIgnoresTrackingParams(t *testing.T) {
 func TestCurateUnknownItemFails(t *testing.T) {
 	v := newVault(t)
 	s, _ := svcWithItem(t, v)
-	if _, err := s.Curate("consume:rss:nope:deadbeef", ""); err == nil {
+	if _, err := s.Curate(context.Background(), "consume:rss:nope:deadbeef", ""); err == nil {
 		t.Error("curating a nonexistent item should fail")
 	}
 	if err := s.Uncurate("consume:rss:nope:deadbeef"); err == nil {
 		t.Error("un-curating a nonexistent item should fail")
+	}
+}
+
+// fullArticlePage is a full article page for the curate-time completion fetch.
+// Long real paragraphs, a bit of furniture, no subscribe-box prose.
+const fullArticlePage = `<!doctype html><html><head><title>t</title></head><body>
+<nav><a href="/">home</a> <a href="/about">about</a></nav>
+<article>
+<p>The first paragraph of the full essay, which runs long enough to count as real prose for the extractor.</p>
+<p>The second paragraph continues the argument with enough characters to matter to the scoring heuristic.</p>
+<p>The third paragraph closes the piece and repeats nothing about signing anywhere at all.</p>
+</article>
+</body></html>`
+
+// Curating a preview must capture the WHOLE piece: the owner is amplifying it,
+// so the note, the snapshot, and therefore the public feed get the full body —
+// even when the source is paid and fillFullText had already given up on it.
+func TestCurateCompletesAPreviewItem(t *testing.T) {
+	v := newVault(t)
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(fullArticlePage))
+	}))
+	defer page.Close()
+
+	s := New(t.TempDir(), v.io(), Config{})
+	s.hc = page.Client()
+	sub := Subscription{ID: "paidsub", Kind: KindRSS, Title: "Paid Thing", URL: page.URL + "/feed", Mirror: MirrorFull}
+	d := ParseFeeds("")
+	d.Add(sub)
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	sub = d.Subs()[0]
+
+	it := Item{
+		ID: itemID(KindRSS, sub.ID, "guid-paid"), SubID: sub.ID,
+		Source: "Paid Thing", Title: "A Paid Essay",
+		URL:  page.URL + "/p/essay",
+		Body: "<p>Just the teaser.</p>", Excerpt: "Just the teaser.", Chars: 16,
+		Preview:     PreviewPaid,
+		PublishedAt: time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC),
+		FetchedAt:   time.Now().UTC(),
+	}
+	s.store.Commit(sub.ID, time.Now().UTC(), true, []Item{it}, nil, "")
+
+	entry, err := s.Curate(context.Background(), it.ID, "worth amplifying")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := v.read(t, entry.Path)
+	for _, want := range []string{
+		"mirror: full",
+		"The first paragraph of the full essay",
+		"The third paragraph closes the piece",
+	} {
+		if !strings.Contains(note, want) {
+			t.Errorf("note missing %q — the full body was not captured:\n%s", want, note)
+		}
+	}
+	// The snapshot serves the feed; it must hold the full body too.
+	if body := s.store.Body(it.ID); !strings.Contains(body, "The second paragraph continues") {
+		t.Errorf("snapshot still holds the teaser: %q", body)
+	}
+	// The cached record stops calling it a preview.
+	for _, got := range s.store.Items(sub.ID) {
+		if got.ID == it.ID && got.Preview != "" {
+			t.Errorf("completed item still labelled preview %q", got.Preview)
+		}
+	}
+	// And the public feed carries it inline.
+	out := FeedXML(s.Entries(), PublicConfig{Title: "reading"})
+	if !strings.Contains(out, "The first paragraph of the full essay") {
+		t.Errorf("public feed does not carry the completed body inline:\n%s", out)
+	}
+	if !strings.Contains(out, "read at the source") {
+		t.Error("attribution header missing from the mirrored body")
+	}
+}
+
+// Notes the retired paid-source rule stamped `mirror: excerpt` get their one
+// frontmatter field flipped at startup — and nothing else: the body, including
+// anything the owner wrote, is his.
+func TestBackfillFlipsWronglyExcerptedNotes(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithItem(t, v)
+	entry, err := s.Curate(context.Background(), it.ID, "kept")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate what the old rule left behind: mirror: excerpt on a mirror:full
+	// subscription, plus the owner's own writing under the article.
+	raw := strings.Replace(v.read(t, entry.Path), "mirror: full", "mirror: excerpt", 1)
+	raw += "\n\n## my response\n\nstill thinking about this\n"
+	if err := v.io().Write(entry.Path, []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	s.invalidateCurated()
+
+	if n := s.BackfillCurated(context.Background()); n != 1 {
+		t.Fatalf("backfill flipped %d notes, want 1", n)
+	}
+	after := v.read(t, entry.Path)
+	if !strings.Contains(after, "mirror: full") {
+		t.Errorf("note not flipped to mirror:full:\n%s", after)
+	}
+	if !strings.Contains(after, "still thinking about this") {
+		t.Fatalf("backfill destroyed the owner's writing:\n%s", after)
+	}
+	out := FeedXML(s.Entries(), PublicConfig{Title: "reading"})
+	if !strings.Contains(out, "<strong>strong</strong>") {
+		t.Errorf("backfilled entry does not mirror its full body:\n%s", out)
+	}
+	// A second pass finds nothing left to do.
+	if n := s.BackfillCurated(context.Background()); n != 0 {
+		t.Errorf("backfill is not idempotent: flipped %d more", n)
+	}
+}
+
+// mirror:excerpt on the SUBSCRIPTION is the owner's own choice, and the
+// backfill must not override it.
+func TestBackfillRespectsOwnersExcerptChoice(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithItem(t, v)
+	entry, err := s.Curate(context.Background(), it.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateSub(Subscription{ID: it.SubID, Mirror: MirrorExcerpt}); err != nil {
+		t.Fatal(err)
+	}
+	raw := strings.Replace(v.read(t, entry.Path), "mirror: full", "mirror: excerpt", 1)
+	if err := v.io().Write(entry.Path, []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+	s.invalidateCurated()
+
+	if n := s.BackfillCurated(context.Background()); n != 0 {
+		t.Fatalf("backfill overrode the owner's excerpt setting on %d notes", n)
+	}
+	if !strings.Contains(v.read(t, entry.Path), "mirror: excerpt") {
+		t.Error("note no longer records excerpt")
 	}
 }
 

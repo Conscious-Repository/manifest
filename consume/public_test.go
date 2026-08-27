@@ -1,6 +1,7 @@
 package consume
 
 import (
+	"context"
 	"encoding/xml"
 	"net/http"
 	"net/http/httptest"
@@ -48,7 +49,7 @@ func TestPublicFeedServesOnlyCuratedItems(t *testing.T) {
 		"---\ncategories: [articles]\ncurated:\nurl: https://e.com/empty\n---\n# CANARY-EMPTYFIELD\n")
 
 	// One thing IS curated.
-	if _, err := s.Curate(it.ID, "the note"); err != nil {
+	if _, err := s.Curate(context.Background(), it.ID, "the note"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -171,27 +172,40 @@ func TestFeedXMLIsDeterministic(t *testing.T) {
 	}
 }
 
-// Losing dataDir must degrade the feed to links, never drop what was
-// published.
-func TestFeedDegradesWhenTheSnapshotIsGone(t *testing.T) {
+// ⚠ THE DURABILITY TEST. dataDir is disposable and the vault is not, so losing
+// the snapshot cache must cost the reader the publisher's exact markup and
+// NOTHING ELSE: the note holds the same article as markdown and the feed
+// renders that instead. This used to degrade to a title and a link — the piece
+// was in the vault the whole time, and the feed could not read it.
+func TestTheNoteCarriesTheBodyWhenTheSnapshotIsGone(t *testing.T) {
 	v := newVault(t)
 	s, it := svcWithItem(t, v)
-	if _, err := s.Curate(it.ID, "still worth reading"); err != nil {
+	if _, err := s.Curate(context.Background(), it.ID, "still worth reading"); err != nil {
 		t.Fatal(err)
 	}
 	// Simulate a wiped dataDir: the note survives, the body cache does not.
 	s.store.Forget(it.SubID)
 	s.invalidateCurated()
+	if body := s.store.Body(it.ID); body != "" {
+		t.Fatalf("the snapshot is still there; this test proves nothing: %q", body)
+	}
 
-	out := FeedXML(s.Entries(), PublicConfig{Title: "reading"})
-	if !strings.Contains(out, "The Dictatorship of the Articulate") {
-		t.Fatalf("entry vanished with its cache:\n%s", out)
+	entries := s.Entries()
+	out := FeedXML(entries, PublicConfig{Title: "reading"})
+	for _, want := range []string{
+		"The Dictatorship of the Articulate",
+		"still worth reading",
+		"https://m.example/p/dictatorship",
+		"A <strong>strong</strong> claim.", // the body, rendered from the note
+		"read at the source",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the feed lost %q with the cache:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "still worth reading") {
-		t.Error("the note vanished with the cache")
-	}
-	if !strings.Contains(out, "https://m.example/p/dictatorship") {
-		t.Error("the link vanished with the cache")
+	index := indexHTML(entries, PublicConfig{Title: "reading"})
+	if !strings.Contains(index, "A <strong>strong</strong> claim.") {
+		t.Errorf("the index lost the body with the cache:\n%s", index)
 	}
 }
 
@@ -207,6 +221,46 @@ func TestExcerptModeDoesNotMirror(t *testing.T) {
 	}
 	if !strings.Contains(out, "the whole article in markdown") {
 		t.Error("excerpt-mode entry should still carry an excerpt")
+	}
+	index := indexHTML(entries, PublicConfig{Title: "r"})
+	if strings.Contains(index, "THE WHOLE ARTICLE") {
+		t.Errorf("excerpt-mode entry mirrored its full body on the index:\n%s", index)
+	}
+	if !strings.Contains(index, "the whole article in markdown") {
+		t.Error("the index should still carry the excerpt and the link")
+	}
+}
+
+// ⚠ THE POINT OF THE PUBLIC PAGE. Somebody who follows a link here should land
+// on the writing, not on a table of contents pointing back out — the index
+// carries every mirrored body inline, exactly as the feed does.
+func TestIndexCarriesFullBodiesInline(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithItem(t, v)
+	if _, err := s.Curate(context.Background(), it.ID, "the middle third is the argument"); err != nil {
+		t.Fatal(err)
+	}
+	h := PublicHandler(s, PublicConfig{Title: "reading", BaseURL: "https://reading.example"})
+	index := get(t, h, "/").Body.String()
+
+	for _, want := range []string{
+		"The Dictatorship of the Articulate",     // the title
+		"the middle third is the argument",       // the owner's note
+		"A <strong>strong</strong> claim.",       // the BODY, inline
+		"<blockquote>Quoted.</blockquote>",       // …with its structure
+		`href="https://m.example/p/dictatorship`, // and the way back to the source
+		"read at the source",
+	} {
+		if !strings.Contains(index, want) {
+			t.Errorf("the index is missing %q:\n%s", want, index)
+		}
+	}
+	// Still exactly two routes: an index that holds the bodies needs no
+	// per-entry permalink, and every extra path here is public surface.
+	for _, path := range []string{"/p/the-dictatorship-of-the-articulate", "/1", "/entry/0"} {
+		if w := get(t, h, path); w.Code != http.StatusNotFound {
+			t.Errorf("%s returned %d; the public surface is / and /feed.xml", path, w.Code)
+		}
 	}
 }
 

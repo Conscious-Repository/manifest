@@ -340,6 +340,10 @@ func (s *Service) Unsubscribe(id string) error {
 // Start runs the poll loop until ctx is cancelled.
 func (s *Service) Start(ctx context.Context) {
 	go func() {
+		// One pass to heal curated notes the retired paid-source rule left
+		// excerpt-only — see BackfillCurated. Before the ticker: the public
+		// feed should carry full bodies from the first request after boot.
+		s.BackfillCurated(ctx)
 		t := time.NewTicker(tickEvery)
 		defer t.Stop()
 		for {

@@ -1,6 +1,7 @@
 package consume
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -79,13 +80,21 @@ func curateKey(raw string) string {
 }
 
 // Curate writes (or refreshes) the note for one item.
-func (s *Service) Curate(itemID, note string) (CuratedEntry, error) {
+func (s *Service) Curate(ctx context.Context, itemID, note string) (CuratedEntry, error) {
 	if s.writeVault == nil {
 		return CuratedEntry{}, errors.New("consume: no write capability for curation")
 	}
 	it, sub, ok := s.Get(itemID)
 	if !ok {
 		return CuratedEntry{}, fmt.Errorf("no item %q", itemID)
+	}
+	// Curating means amplifying the WHOLE piece. If what we hold is a preview —
+	// or the snapshot is gone — this is the moment to complete it: one fetch,
+	// signed in where a session exists, before anything is written. Done before
+	// taking the lock; a slow page must not stall the lane.
+	if got, improved := s.captureFull(ctx, it, sub); improved {
+		it = got
+		s.store.Complete(sub.ID, it)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,9 +106,13 @@ func (s *Service) Curate(itemID, note string) (CuratedEntry, error) {
 	var content string
 	if prior, err := s.readVault(rel); err == nil && len(prior) > 0 {
 		// The note already exists — refresh its metadata, keep the owner's
-		// body and any fields he added.
+		// body and any fields he added. Mirror is machine-owned metadata
+		// derived from the subscription's setting, so refreshing it here is
+		// how a re-click heals a note the retired paid-source rule stamped
+		// excerpt.
 		content = string(prior)
 		content = setFrontmatter(content, curatedField, now.Format("2006-01-02"))
+		content = setFrontmatter(content, "mirror", s.mirrorFor(it, sub))
 		if note != "" {
 			content = setFrontmatter(content, "note", yamlScalar(note))
 		}
@@ -167,7 +180,7 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 	}
 	w.Set(curatedField, now.Format("2006-01-02"))
 	w.Set("item", it.ID)
-	w.Set("mirror", s.mirrorFor(sub))
+	w.Set("mirror", s.mirrorFor(it, sub))
 	if note != "" {
 		w.Set("note", yamlScalar(note))
 	}
@@ -188,20 +201,110 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 
 // mirrorFor decides how much of a curated item the PUBLIC feed carries.
 //
-// ⚠ A signed-in source is a PAID one, and mirroring a paid post republishes
-// something the publisher sells to their subscribers — a different act from
-// mirroring a free post, and the strongest form of the concern the owner
-// already weighed once. Paid sources are excerpt-only regardless of the
-// subscription's setting; the link still points at the original, so a reader
-// who wants it can subscribe as he did.
-func (s *Service) mirrorFor(sub Subscription) string {
-	if s.cookieFor(sub.URL) != "" {
+// Curation is deliberate amplification: the owner picked this piece to carry
+// in his own feed, paid source or not, and weighed the republishing question
+// at the moment he clicked. So the subscription's own mirror setting decides —
+// this used to force excerpt for any signed-in source, and the attribution
+// header keeping credit and traffic pointed home is what the owner judged
+// sufficient when he retired that rule. One honesty carve-out remains: an item
+// whose body is still a preview has nothing full to mirror, and stamping
+// `full` on a stub would publish the stub as if it were the piece. The startup
+// backfill retries those captures and flips the note once the full body lands.
+func (s *Service) mirrorFor(it Item, sub Subscription) string {
+	if it.Preview != "" {
 		return MirrorExcerpt
 	}
 	if sub.Mirrors() {
 		return MirrorFull
 	}
 	return MirrorExcerpt
+}
+
+// captureFull completes an item that is about to be published with less than
+// its whole body, returning the completed item and whether anything improved.
+//
+// It exists because fillFullText serves the READER and lets a page's paywall
+// MARKUP veto its own extraction — Substack embeds audience:"only_paid" in the
+// page source whether or not the session unlocked it, so a signed-in fetch
+// that returned the whole article still gets thrown away there. At curate time
+// the veto keys on what the page visibly SAYS instead: subscribe-box prose
+// means the fetch got the wrapper rather than the writing, and a body that is
+// no longer than what we already hold proves nothing was gained.
+func (s *Service) captureFull(ctx context.Context, it Item, sub Subscription) (Item, bool) {
+	if !s.needsCapture(it, sub) {
+		return it, false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	body, _ := s.fetchArticle(ctx, it.URL, s.cookieFor(it.URL))
+	text := Text(body)
+	if body == "" || looksPaywalled(text, "") || LooksTruncated(text) {
+		return it, false
+	}
+	if it.Body != "" && len([]rune(text)) <= it.Chars {
+		return it, false
+	}
+	it.Body = body
+	it.Chars = len([]rune(text))
+	it.Excerpt = Excerpt(text, 280)
+	it.Preview = ""
+	return it, true
+}
+
+// needsCapture reports whether a curate-time completion fetch is worth making:
+// the item is a known preview, its snapshot is gone, or its body still ends in
+// a truncation marker. An X post (bridge included) is already whole, and
+// fulltext:off is the owner saying never fetch this publisher's pages —
+// honoured here as everywhere.
+func (s *Service) needsCapture(it Item, sub Subscription) bool {
+	if it.URL == "" || sub.Kind == KindX || s.fromRSSHub(sub) || sub.FullText() == FullTextOff {
+		return false
+	}
+	return it.Preview != "" || it.Body == "" || LooksTruncated(Text(it.Body))
+}
+
+// BackfillCurated repairs curated notes the retired paid-source rule left
+// excerpt-only. mirrorFor used to stamp `mirror: excerpt` on anything from a
+// signed-in site whatever the subscription said, and a note does not rewrite
+// itself when a rule does. For every curated note still marked excerpt whose
+// subscription says full, this completes the item's body if it needs it and
+// flips that one frontmatter field — the body and everything else in the note
+// is the owner's and stays untouched. A capture that fails (a real paywall,
+// no working session) leaves the note excerpt-only for the next boot to retry.
+func (s *Service) BackfillCurated(ctx context.Context) int {
+	if s.writeVault == nil {
+		return 0
+	}
+	n := 0
+	for _, e := range s.Curated() {
+		if !strings.EqualFold(e.Mirror, MirrorExcerpt) {
+			continue
+		}
+		it, sub, ok := s.Get(e.ItemID)
+		if !ok || !sub.Mirrors() {
+			continue // item gone, or excerpt is the owner's own setting
+		}
+		if got, improved := s.captureFull(ctx, it, sub); improved {
+			it = got
+			s.store.Complete(sub.ID, it)
+		}
+		if s.mirrorFor(it, sub) != MirrorFull {
+			continue // still a preview — nothing full to publish
+		}
+		s.mu.Lock()
+		raw, err := s.readVault(e.Path)
+		if err == nil {
+			err = s.writeVault(e.Path, []byte(setFrontmatter(string(raw), "mirror", MirrorFull)))
+		}
+		s.mu.Unlock()
+		if err == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		s.invalidateCurated()
+	}
+	return n
 }
 
 // yamlScalar quotes a value that would otherwise break the block. Titles carry
