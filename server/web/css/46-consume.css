@@ -19,6 +19,15 @@
 .consume-excerpt { color: var(--muted); font-size: var(--fs-md); overflow-wrap: anywhere; }
 .consume-curated-on { color: var(--accent); }
 
+/* ---- X post cards (RSSHub bridge) ----
+   The post text leads and reads as the content, not as an excerpt of one. */
+.consume-x-author { font-family: var(--mono); font-size: var(--fs-sm); font-weight: 600; color: var(--text); }
+.consume-x-text {
+  font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55;
+  color: var(--text); overflow-wrap: anywhere; cursor: pointer;
+}
+.consume-x-text:hover { color: var(--blue); }
+
 /* ---- the reading page (#/read/<id>) ----
    .consume-body is shared with nothing else now: reading moved out of the card
    on 2026-08-25, so this typography belongs to the page. */

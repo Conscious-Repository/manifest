@@ -128,6 +128,15 @@ func (s *Service) rsshubBase() string {
 	return defaultRSSHubBase
 }
 
+// fromRSSHub reports whether a subscription is an X account riding the RSSHub
+// bridge. Those items carry the WHOLE post in <description> — there is no
+// fuller article page behind an x.com status link — so article completion
+// never applies, "preview" can never honestly be said of one, and a sub of
+// free short-form posts must never be presented as a paid publication.
+func (s *Service) fromRSSHub(sub Subscription) bool {
+	return strings.HasPrefix(sub.URL, s.rsshubBase()+"/")
+}
+
 // Store exposes the cache for the server layer's reads.
 func (s *Service) Store() *Store { return s.store }
 
@@ -439,8 +448,10 @@ func (s *Service) pollOne(ctx context.Context, sub Subscription) error {
 		meta.TTLMinutes = m.LastTTL()
 	}
 	// Full text for feeds that publish only a teaser — a second fetch, on new
-	// items only, never for X (a post is already whole).
-	if sub.Kind != KindX && sub.FullText() != FullTextOff {
+	// items only, never for X (a post is already whole). That includes X via
+	// the RSSHub bridge: fetching an x.com link can never beat the feed body,
+	// so the loop used to conclude "partial" about every post it saw.
+	if sub.Kind != KindX && !s.fromRSSHub(sub) && sub.FullText() != FullTextOff {
 		items = s.fillFullText(ctx, sub, items)
 	}
 	s.store.commit(sub.ID, s.now(), true, items, cursors, "", meta)
@@ -655,6 +666,7 @@ func (s *Service) Cards(q Query) []Card {
 		if q.List != "" && !strings.EqualFold(sub.List, q.List) {
 			continue
 		}
+		xPost := s.fromRSSHub(sub)
 		for _, it := range s.store.Items(sub.ID) {
 			// Dismissed means GONE — from unread, from all, from the lane.
 			// (Before 2026-08-25 this leaked back into the "all" view, which
@@ -668,7 +680,7 @@ func (s *Service) Cards(q Query) []Card {
 			if needle != "" && !matches(it, sub, needle) {
 				continue
 			}
-			out = append(out, card(it, sub, curated))
+			out = append(out, card(it, sub, curated, xPost))
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Published > out[j].Published })
@@ -685,8 +697,11 @@ func matches(it Item, sub Subscription, needle string) bool {
 	return strings.Contains(hay, needle)
 }
 
-func card(it Item, sub Subscription, curated map[string]bool) Card {
-	_ = sub
+// xPost marks an item from the RSSHub bridge: the source flavour is "x"
+// however the subscription is plumbed, and Preview is masked — a post that
+// arrived whole in <description> was mislabelled "partial" by earlier polls,
+// and repeating that from the store would keep a free account looking paid.
+func card(it Item, sub Subscription, curated map[string]bool, xPost bool) Card {
 	published := ""
 	if !it.PublishedAt.IsZero() {
 		published = it.PublishedAt.Format(time.RFC3339)
@@ -695,15 +710,21 @@ func card(it Item, sub Subscription, curated map[string]bool) Card {
 	if minutes < 1 {
 		minutes = 1
 	}
+	kind := sub.Kind
+	preview := it.Preview
+	if xPost {
+		kind = KindX
+		preview = ""
+	}
 	return Card{
-		ID: it.ID, SubID: sub.ID, Kind: "consume", Type: sub.Kind,
+		ID: it.ID, SubID: sub.ID, Kind: "consume", Type: kind,
 		Source: firstNonEmpty(it.Source, sub.Title), List: sub.List,
 		Author: it.Author, Title: it.Title, URL: it.URL,
 		Excerpt: it.Excerpt, Chars: it.Chars, Published: published,
 		// Read means ACTUALLY opened. A seeded item is out of the queue but was
 		// never read, and saying otherwise is the lie this state exists to
 		// avoid — the UI must be able to tell them apart.
-		Read: it.ReadAt != "", Seeded: it.Seeded(), Preview: it.Preview,
+		Read: it.ReadAt != "", Seeded: it.Seeded(), Preview: preview,
 		Curated: curated[curateKey(it.URL)], Minutes: minutes,
 	}
 }
@@ -754,6 +775,11 @@ func (s *Service) Get(itemID string) (Item, Subscription, bool) {
 		return Item{}, Subscription{}, false
 	}
 	it, ok := s.store.Get(subID, itemID)
+	// An X post via RSSHub is whole by construction; a stored "partial" label
+	// is a leftover from when article completion ran on these feeds.
+	if ok && s.fromRSSHub(sub) {
+		it.Preview = ""
+	}
 	return it, sub, ok
 }
 
@@ -855,6 +881,7 @@ func (s *Service) Statuses() []SubStatus {
 		if !lastOK.IsZero() {
 			st.LastOK = lastOK.UTC().Format(time.RFC3339)
 		}
+		xPost := s.fromRSSHub(sub)
 		for _, it := range s.store.Items(sub.ID) {
 			if it.DismissedAt != "" {
 				continue // dismissed is gone, not archived
@@ -865,7 +892,10 @@ func (s *Service) Statuses() []SubStatus {
 			} else {
 				st.Archived++
 			}
-			if it.Preview != "" {
+			// One preview item marks the whole sub paid — the cue to sign in.
+			// Never for an X account: its posts are whole, and any stored
+			// preview label there is stale mislabelling, not a paywall.
+			if it.Preview != "" && !xPost {
 				st.Paid = true
 			}
 		}

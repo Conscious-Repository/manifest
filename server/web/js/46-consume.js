@@ -33,35 +33,48 @@ const consumeQueued = (c) => !c.read && !c.seeded;
 // consumeCardEl renders one card. `compact` is the INBOX strip; the CONSUME
 // view uses the same card so the two surfaces never drift apart.
 function consumeCardEl(c) {
-  const card = el("div", "feed-card consume-card" + (c.read ? " consume-read" : ""));
+  // An X post (via the RSSHub bridge) is not an article: it has no headline,
+  // no reading time worth stating, and its text IS the content. It gets a
+  // post-shaped card; everything else keeps the article shape.
+  const xPost = c.type === "x";
+  const card = el("div", "feed-card consume-card"
+    + (xPost ? " consume-x-card" : "") + (c.read ? " consume-read" : ""));
   card.dataset.consumeId = c.id;
 
   const top = el("div", "feed-top");
   top.append(el("span", "type-chip micro-label type-consume", c.source || "feed"));
-  if (c.type === "x") top.append(el("span", "type-chip micro-label type-x", "X"));
+  if (xPost) top.append(el("span", "type-chip micro-label type-x", "X"));
   if (c.list) top.append(el("span", "consume-list-chip micro-label", c.list));
   if (c.curated) top.append(el("span", "consume-curated-chip micro-label", "curated"));
   // "archived" is not "read" — it arrived before you followed this feed.
   if (c.seeded) top.append(el("span", "consume-list-chip micro-label", "archived"));
   // The publisher withholds the rest of this one — say so rather than letting
-  // a stub trail off into a bare "Read more".
-  if (c.preview) {
+  // a stub trail off into a bare "Read more". Never on an X post: the feed
+  // carries the whole thing, there is nothing to withhold.
+  if (c.preview && !xPost) {
     top.append(el("span", "read-preview-chip micro-label",
       c.preview === "paid" ? "paid post" : "preview only"));
   }
   if (c.published) top.append(el("span", "feed-date", fmtFeedDate(c.published)));
   card.append(top);
 
-  const title = el("div", "feed-title consume-title", c.title || "(untitled)");
-  title.onclick = () => openRead(c.id);
-  card.append(title);
+  if (xPost) {
+    if (c.author) card.append(el("div", "consume-x-author", c.author));
+    const text = el("div", "consume-x-text", c.excerpt || c.title || "(empty post)");
+    text.onclick = () => openRead(c.id);
+    card.append(text);
+  } else {
+    const title = el("div", "feed-title consume-title", c.title || "(untitled)");
+    title.onclick = () => openRead(c.id);
+    card.append(title);
 
-  const meta = el("div", "feed-meta");
-  if (c.author) meta.append(el("span", "", c.author));
-  if (c.minutes) meta.append(el("span", "", c.minutes + " min read"));
-  card.append(meta);
+    const meta = el("div", "feed-meta");
+    if (c.author) meta.append(el("span", "", c.author));
+    if (c.minutes) meta.append(el("span", "", c.minutes + " min read"));
+    card.append(meta);
 
-  if (c.excerpt) card.append(el("div", "feed-why consume-excerpt", c.excerpt));
+    if (c.excerpt) card.append(el("div", "feed-why consume-excerpt", c.excerpt));
+  }
 
   const acts = el("div", "feed-actions");
   const readBtn = pillLight("read →", () => openRead(c.id));

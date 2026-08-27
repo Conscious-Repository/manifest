@@ -171,6 +171,45 @@ func TestSubscribeAnXHandleRoutesThroughRSSHub(t *testing.T) {
 	}
 }
 
+// A bridge post is whole by construction — completing it against an x.com
+// link can never beat the feed body, and the loop used to conclude "partial"
+// about every post, which flagged the whole free account as PAID. The rule is
+// enforced at read time too, so stored labels from before the rule stay dead.
+func TestRSSHubPostsAreNeverPreviewsOrPaid(t *testing.T) {
+	v := newVault(t)
+	hub := serve(t, substackish, nil)
+	s := New(t.TempDir(), v.io(), Config{RSSHubBase: hub.URL})
+	s.hc = hub.Client()
+
+	sub, err := s.Subscribe(context.Background(), "@melissa", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Plant the mislabel an earlier build wrote to the cache.
+	items := s.store.Items(sub.ID)
+	for i := range items {
+		items[i].Preview = PreviewPartial
+	}
+	s.store.commit(sub.ID, s.now(), true, items, nil, "", PollMeta{})
+
+	for _, c := range s.Cards(Query{View: "all"}) {
+		if c.Preview != "" {
+			t.Errorf("an X post can never be a preview: %+v", c)
+		}
+		if c.Type != KindX {
+			t.Errorf("a bridge item should read as an X post, got type %q", c.Type)
+		}
+		if it, _, ok := s.Get(c.ID); !ok || it.Preview != "" {
+			t.Errorf("the reader still says preview: %+v", it)
+		}
+	}
+	for _, st := range s.Statuses() {
+		if st.ID == sub.ID && st.Paid {
+			t.Error("a free X account presented as a paid publication")
+		}
+	}
+}
+
 // A hand-edited [kind:: x] line still takes the native API path, which stays
 // token-gated: without one the poll must fail actionably, not silently.
 func TestHandEditedXKindStillWantsAToken(t *testing.T) {
