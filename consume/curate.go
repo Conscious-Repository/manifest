@@ -96,6 +96,14 @@ func (s *Service) Curate(ctx context.Context, itemID, note string) (CuratedEntry
 		it = got
 		s.store.Complete(sub.ID, it)
 	}
+	return s.writeCurated(it, sub, note)
+}
+
+// writeCurated is THE vault write behind curation, and the only one. Both the
+// lane's own button and the bridge in external.go land here, so "curating is
+// one note under extrinsic/, refreshed rather than clobbered" is a property of
+// this function instead of a convention two call sites have to keep.
+func (s *Service) writeCurated(it Item, sub Subscription, note string) (CuratedEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

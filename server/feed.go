@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"manifest/attention"
+	"manifest/consume"
 	"manifest/feed"
 	"manifest/signals"
 	"manifest/spirits"
@@ -339,4 +340,83 @@ func (s *Server) handleFeedSaveToVault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, updated)
+}
+
+// ---- curate: the bridge from a research card into the public feed ----
+//
+// A domain-scout paper and a subscribed essay are the same kind of thing once
+// the owner decides subscribers should read it, so "curate" on a FEED card
+// must land in the same place the CONSUME lane's button lands: one extrinsic/
+// note, written under the consume-curate capability, projected by the public
+// feed. The bridge lives in consume.CurateExternal — this handler only reads
+// the card and hands it over, so there is no second write path to the vault
+// and no second source for the feed.
+//
+// It is a NEW action beside Discard / → task / dig →, not a stage of any of
+// them: curating says nothing about whether the finding still wants a verdict.
+func (s *Server) handleFeedCurate(w http.ResponseWriter, r *http.Request) {
+	if s.spirits == nil {
+		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if s.consume == nil {
+		http.Error(w, "curation unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	fh, ok := s.feedHarnessFor(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "item not found", http.StatusNotFound)
+		return
+	}
+	it, _ := fh.Spirits.Feed.Get(r.PathValue("id"))
+	var body struct {
+		Note string `json:"note"`
+	}
+	_ = decode(r, &body) // a note is optional, and so is the request body
+	entry, err := s.consume.CurateExternal(r.Context(), consume.ExternalRef{
+		ID:          it.ID,
+		Title:       it.Title,
+		URL:         it.Link,
+		Source:      firstNonEmpty(it.Source, it.Domain),
+		Fallback:    it.Why,
+		PublishedAt: feedItemDate(it),
+	}, body.Note)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":     true,
+		"path":   entry.Path,
+		"note":   entry.Note,
+		"mirror": entry.Mirror,
+		// full says whether the fetch got the whole piece; the client tells the
+		// owner which of the two he just published.
+		"full":   strings.EqualFold(entry.Mirror, consume.MirrorFull),
+		"public": s.consumePublicURL,
+	})
+}
+
+// handleFeedUncurate clears the curated marker on the note this card produced.
+// The note survives — un-curating is not a delete, here or in the lane.
+func (s *Server) handleFeedUncurate(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil {
+		http.Error(w, "curation unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if err := s.consume.Uncurate(consume.ExternalItemID(r.PathValue("id"))); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// feedItemDate reads a card's RFC3339 date; a card without one publishes with
+// its curation date alone.
+func feedItemDate(it feed.Item) time.Time {
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(it.Date))
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }

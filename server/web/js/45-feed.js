@@ -414,11 +414,69 @@ function feedCard(it) {
     actions.append(discard);
     actions.append(pillLight("→ task", () => feedToTodo(it.id))); // catch it on the TASKS board (Inbox)
     if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
+    // curate → the public feed. A NEW action, not a verdict: it says
+    // "subscribers should read this", and leaves the card's status alone.
+    // Only for a card that points at a real article — there is nothing to
+    // fetch, and nothing to link subscribers to, without one.
+    if (external) actions.append(curatePill(it));
   } else {
     actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
   }
   card.append(actions);
   return card;
+}
+
+// curatePill — the bridge into the public curation feed. One click fetches the
+// whole article behind the card's link and writes it as an extrinsic/ note,
+// exactly as the CONSUME lane's curate does; the note is what feed.xml serves.
+// The prompt is the annotation subscribers read above the piece — skipping it
+// still curates, and Cancel means cancel.
+function curatePill(it) {
+  const pill = pillLight("curate", () => feedCurate(it, pill));
+  return pill;
+}
+
+async function feedCurate(it, pill) {
+  const note = prompt("A note for subscribers (optional):", "");
+  if (note === null) return; // cancelled — nothing published
+  pill.disabled = true;
+  pill.textContent = "curating…";
+  try {
+    const r = await fetch(`/api/feed/${encodeURIComponent(it.id)}/curate`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: note.trim() }),
+    });
+    if (!r.ok) throw new Error((await r.text()) || r.status);
+    const d = await r.json().catch(() => ({}));
+    // Say WHICH of the two landed: the whole piece, or a link and the note
+    // because the fetch came back with a subscribe box instead of an article.
+    showToast(d.full ? "Curated in full → " + (d.path || "extrinsic/")
+                     : "Curated as a link — the article page didn't yield its text",
+      null, "info");
+    pill.replaceWith(uncuratePill(it));
+  } catch (e) {
+    pill.disabled = false;
+    pill.textContent = "curate";
+    showToast("Curate failed: " + (e.message || e), null, "error");
+  }
+}
+
+// uncuratePill clears the curated marker. The note itself survives — this
+// unpublishes, it does not delete.
+function uncuratePill(it) {
+  const pill = pillLight("uncurate", async () => {
+    pill.disabled = true;
+    try {
+      const r = await fetch(`/api/feed/${encodeURIComponent(it.id)}/uncurate`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.text()) || r.status);
+      showToast("Removed from the public feed — the note stays");
+      pill.replaceWith(curatePill(it));
+    } catch (e) {
+      pill.disabled = false;
+      showToast("Uncurate failed: " + (e.message || e), null, "error");
+    }
+  });
+  return pill;
 }
 
 // ---- receipts: the fourth attention kind, backed by <dataDir>/errands/

@@ -527,6 +527,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feed/{id}/save-to-vault", s.handleFeedSaveToVault)
 	mux.HandleFunc("POST /api/feed/{id}/to-task", s.handleFeedToTask)
 	mux.HandleFunc("POST /api/feed/{id}/dig", s.handleFeedDig) // "dig →"
+	// curate → the public feed, via the same extrinsic/ note the CONSUME lane writes
+	mux.HandleFunc("POST /api/feed/{id}/curate", s.handleFeedCurate)
+	mux.HandleFunc("POST /api/feed/{id}/uncurate", s.handleFeedUncurate)
 	mux.HandleFunc("POST /api/feed/signal/dismiss", s.handleSignalDismiss)
 	mux.HandleFunc("POST /api/feed/signal/snooze", s.handleSignalSnooze)
 
