@@ -50,7 +50,14 @@ type CuratedEntry struct {
 	Published string `json:"published"`
 	Curated   string `json:"curated"`
 	Mirror    string `json:"mirror"`
-	Body      string `json:"-"` // markdown, the mirrored article
+	// Bibliographic fields, present only on a PAPER — a curated piece whose
+	// URL resolved to a DOI at Crossref (see crossref.go). They are what the
+	// public feed emits as Dublin Core and PRISM, and DOI is the flag: an
+	// entry with one is a paper, an entry without one is a post.
+	DOI     string   `json:"doi,omitempty"`
+	Journal string   `json:"journal,omitempty"`
+	Authors []string `json:"authors,omitempty"`
+	Body    string   `json:"-"` // markdown, the mirrored article
 	// HTML is the sanitized body, resolved from the dataDir snapshot at serve
 	// time. It is deliberately NOT stored in the note: the note is the
 	// archive, in markdown, for a person to read in Obsidian.
@@ -88,6 +95,14 @@ func (s *Service) Curate(ctx context.Context, itemID, note string) (CuratedEntry
 	if !ok {
 		return CuratedEntry{}, fmt.Errorf("no item %q", itemID)
 	}
+	// A PAPER is asked of the registry, not of the page. Its whole text is a
+	// typeset PDF behind a publisher's furniture, and the scholarly convention
+	// is abstract + citation + link — so the completion fetch below is skipped
+	// entirely and the note is built from the Crossref record. Everything that
+	// is not a paper takes the path it always did.
+	if paper, ok := s.paperFor(ctx, it.URL); ok {
+		return s.writeCurated(it, sub, note, &paper)
+	}
 	// Curating means amplifying the WHOLE piece. If what we hold is a preview —
 	// or the snapshot is gone — this is the moment to complete it: one fetch,
 	// signed in where a session exists, before anything is written. Done before
@@ -96,20 +111,31 @@ func (s *Service) Curate(ctx context.Context, itemID, note string) (CuratedEntry
 		it = got
 		s.store.Complete(sub.ID, it)
 	}
-	return s.writeCurated(it, sub, note)
+	return s.writeCurated(it, sub, note, nil)
 }
 
 // writeCurated is THE vault write behind curation, and the only one. Both the
 // lane's own button and the bridge in external.go land here, so "curating is
 // one note under extrinsic/, refreshed rather than clobbered" is a property of
 // this function instead of a convention two call sites have to keep.
-func (s *Service) writeCurated(it Item, sub Subscription, note string) (CuratedEntry, error) {
+//
+// paper is the Crossref record when the piece is one, nil when it is not. It
+// changes what the note SAYS (abstract + citation instead of a mirrored body)
+// and nothing about where or how it is written.
+func (s *Service) writeCurated(it Item, sub Subscription, note string, paper *PaperMeta) (CuratedEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	note = collapseSpaces(strings.ReplaceAll(strings.TrimSpace(note), "\n", " "))
 	now := s.now()
 	rel := s.notePath(it, sub)
+	mirror := s.mirrorFor(it, sub)
+	if paper != nil {
+		// A paper's note carries the registry's abstract and citation — it is
+		// whole in the only sense a paper is ever whole in a feed, whatever the
+		// page fetch did or didn't return.
+		mirror = MirrorFull
+	}
 
 	var content string
 	if prior, err := s.readVault(rel); err == nil && len(prior) > 0 {
@@ -120,12 +146,15 @@ func (s *Service) writeCurated(it Item, sub Subscription, note string) (CuratedE
 		// excerpt.
 		content = string(prior)
 		content = setFrontmatter(content, curatedField, now.Format("2006-01-02"))
-		content = setFrontmatter(content, "mirror", s.mirrorFor(it, sub))
+		content = setFrontmatter(content, "mirror", mirror)
 		if note != "" {
 			content = setFrontmatter(content, "note", yamlScalar(note))
 		}
+		if paper != nil {
+			content = applyPaper(content, *paper, it.Title, firstNonEmpty(it.Source, sub.Title), it.URL)
+		}
 	} else {
-		content = s.buildNote(it, sub, note, now)
+		content = s.buildNote(it, sub, note, now, paper, mirror)
 	}
 
 	if err := s.writeVault(rel, []byte(content)); err != nil {
@@ -176,21 +205,39 @@ func (s *Service) notePath(it Item, sub Subscription) string {
 }
 
 // buildNote renders a fresh curated note.
-func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Time) string {
+func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Time, paper *PaperMeta, mirror string) string {
 	w := (&mdfm.Writer{}).SetList("categories", []string{articlesCategory})
 	w.Set("source", yamlScalar(firstNonEmpty(it.Source, sub.Title)))
 	if it.Author != "" {
 		w.Set("author", yamlScalar(it.Author))
 	}
 	w.Set("url", it.URL)
+	published := ""
 	if !it.PublishedAt.IsZero() {
-		w.Set("published", it.PublishedAt.Format("2006-01-02"))
+		published = it.PublishedAt.Format("2006-01-02")
 	}
+	if paper != nil {
+		// The registry's date is the PAPER's date. A card's date is the day
+		// the scout noticed it, which is not what a citation means by it.
+		published = firstNonEmpty(paper.Published, published)
+	}
+	w.Set("published", published)
 	w.Set(curatedField, now.Format("2006-01-02"))
 	w.Set("item", it.ID)
-	w.Set("mirror", s.mirrorFor(it, sub))
+	w.Set("mirror", mirror)
+	if paper != nil {
+		w.Set("doi", paper.DOI)
+		w.Set("journal", yamlScalar(paper.Journal))
+		w.SetList("authors", paper.Authors)
+	}
 	if note != "" {
 		w.Set("note", yamlScalar(note))
+	}
+
+	if paper != nil {
+		return w.String(strings.TrimRight(
+			paperNoteBody("", it.Title, paperWhy(it), *paper,
+				firstNonEmpty(it.Source, sub.Title), it.URL), "\n"))
 	}
 
 	var b strings.Builder
@@ -226,6 +273,179 @@ func (s *Service) mirrorFor(it Item, sub Subscription) string {
 		return MirrorFull
 	}
 	return MirrorExcerpt
+}
+
+// ---- the paper format ----
+//
+// A paper's note has two halves, and the split is the whole point:
+//
+//	above the marker   the owner's — his heading, the sentence he curated it for
+//	below the marker   the registry's — abstract, citation, source link
+//
+// Everything below paperMarker is machine-owned and rewritten on every curate;
+// everything above it is never touched. That is the same fixpoint discipline
+// setFrontmatter applies to one key, applied to one section of the body — and
+// it is what makes re-curating a paper, or retrofitting one written before this
+// format existed, safe to run repeatedly.
+const paperMarker = "<!-- crossref -->"
+
+// paperKeepMax bounds what a note written BEFORE the marker existed can
+// contribute as owner prose. A curated sentence is a sentence; a scraped
+// article page is a hundred kilobytes of navigation, ORCID markers and figure
+// captions, which is exactly what the paper format exists to stop publishing.
+// Above the bound, the prior body is the mirrored page and the abstract
+// replaces it; below it, it is prose and it is kept.
+const paperKeepMax = 1200
+
+// paperWhy is the leading prose of a fresh paper note.
+//
+// The bridge's referring sentence (a scout card's `why`) is the reason this
+// paper is in the feed and belongs at the top. A LANE item's excerpt is the
+// publisher's own summary of the paper — which is the abstract, said worse, and
+// the abstract is already below. An item with no body is the first case.
+func paperWhy(it Item) string {
+	if strings.TrimSpace(it.Body) != "" {
+		return ""
+	}
+	return strings.TrimSpace(it.Excerpt)
+}
+
+// paperNoteBody renders a paper note's body, preserving the owner's half.
+//
+// prior is the existing note body ("" for a fresh note). why is the referring
+// sentence, used only when there is no prior note to preserve.
+func paperNoteBody(prior, title, why string, m PaperMeta, source, link string) string {
+	section := paperSection(m, source, link)
+	if strings.TrimSpace(prior) != "" {
+		if i := strings.Index(prior, paperMarker); i >= 0 {
+			return strings.TrimRight(prior[:i], " \t\n") + "\n\n" + section + "\n"
+		}
+		// First upgrade of a note written the old way. Its own heading is the
+		// owner's title — the registry's may be the formal one he paraphrased.
+		if h := headingOf(prior); h != "" {
+			title = h
+		}
+		why = stripSourceFooter(stripLeadingHeading(prior))
+		if len([]rune(why)) > paperKeepMax {
+			why = ""
+		}
+	}
+	var b strings.Builder
+	b.WriteString("#article\n\n# " + strings.TrimSpace(title) + "\n\n")
+	if w := strings.TrimSpace(why); w != "" {
+		b.WriteString(w + "\n\n")
+	}
+	b.WriteString(section + "\n")
+	return b.String()
+}
+
+// paperSection is the registry's half: what Crossref knows, as a person reads
+// it. The DOI is rendered as a link because that is the citable address of the
+// work — the publisher URL beside it is one route to it, not its identity.
+func paperSection(m PaperMeta, source, link string) string {
+	var b strings.Builder
+	b.WriteString(paperMarker + "\n")
+	if m.Abstract != "" {
+		b.WriteString("\n## Abstract\n\n" + m.Abstract + "\n")
+	}
+	if c := citation(m); c != "" {
+		b.WriteString("\n## Citation\n\n" + c + "\n")
+	}
+	if link != "" {
+		b.WriteString("\nSource: [" + firstNonEmpty(source, m.Journal, link) + "](" + link + ")\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// citation is the one-line reference: authors, title, journal, year, DOI.
+func citation(m PaperMeta) string {
+	var parts []string
+	if len(m.Authors) > 0 {
+		who := strings.Join(m.Authors, ", ")
+		if len(m.Authors) >= maxAuthors {
+			who += ", et al."
+		}
+		parts = append(parts, who)
+	}
+	if m.Title != "" {
+		parts = append(parts, "\u201c"+strings.TrimRight(m.Title, ".")+".\u201d")
+	}
+	if venue := firstNonEmpty(m.Journal, m.Publisher); venue != "" {
+		if y := m.Year(); y != "" {
+			venue += ", " + y
+		}
+		parts = append(parts, "*"+venue+"*")
+	} else if y := m.Year(); y != "" {
+		parts = append(parts, y)
+	}
+	if m.DOI != "" {
+		parts = append(parts, "DOI: ["+m.DOI+"]("+m.DOIURL()+")")
+	}
+	return strings.Join(parts, ". ")
+}
+
+// applyPaper rewrites one existing note into the paper format: the
+// bibliographic frontmatter, then the registry's half of the body.
+func applyPaper(content string, m PaperMeta, title, source, link string) string {
+	content = setFrontmatter(content, "doi", m.DOI)
+	if m.Journal != "" {
+		content = setFrontmatter(content, "journal", yamlScalar(m.Journal))
+	}
+	if len(m.Authors) > 0 {
+		content = setFrontmatter(content, "authors", "["+strings.Join(m.Authors, ", ")+"]")
+	}
+	if m.Published != "" {
+		content = setFrontmatter(content, "published", m.Published)
+	}
+	_, body := mdfm.Split(content)
+	return replaceBody(content, paperNoteBody(body, title, "", m, source, link))
+}
+
+// replaceBody swaps a note's body, leaving its frontmatter block byte-for-byte
+// alone. A note with no frontmatter has no metadata to keep.
+func replaceBody(content, body string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
+		return strings.TrimSpace(body) + "\n"
+	}
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			return strings.Join(lines[:i+1], "\n") + "\n\n" + strings.TrimSpace(body) + "\n"
+		}
+	}
+	return content // unterminated frontmatter: not a document we can edit safely
+}
+
+// stripSourceFooter drops the trailing `---` / `Source: [...]` block buildNote
+// appends. The paper section renders its own.
+func stripSourceFooter(body string) string {
+	lines := strings.Split(strings.TrimSpace(body), "\n")
+	for len(lines) > 0 {
+		t := strings.TrimSpace(lines[len(lines)-1])
+		if t == "" || t == "---" || strings.HasPrefix(t, "Source: [") {
+			lines = lines[:len(lines)-1]
+			continue
+		}
+		break
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// stripPaperMarker removes the marker line from a PROJECTED body. It is a seam
+// in the file, not content: a reader should never see it, and the excerpt a
+// feed builds from the body should never start with it.
+func stripPaperMarker(body string) string {
+	if !strings.Contains(body, paperMarker) {
+		return body
+	}
+	out := make([]string, 0, 8)
+	for _, ln := range strings.Split(body, "\n") {
+		if strings.TrimSpace(ln) == paperMarker {
+			continue
+		}
+		out = append(out, ln)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }
 
 // captureFull completes an item that is about to be published with less than
@@ -279,11 +499,16 @@ func (s *Service) needsCapture(it Item, sub Subscription) bool {
 // flips that one frontmatter field — the body and everything else in the note
 // is the owner's and stays untouched. A capture that fails (a real paywall,
 // no working session) leaves the note excerpt-only for the next boot to retry.
+//
+// It also RETROFITS papers — see backfillPapers. Same argument, newer rule: a
+// note written before the paper format existed carries a scraped page (or a
+// bare sentence) where an abstract and a citation belong, and a note does not
+// rewrite itself when a rule does.
 func (s *Service) BackfillCurated(ctx context.Context) int {
 	if s.writeVault == nil {
 		return 0
 	}
-	n := 0
+	n := s.backfillPapers(ctx)
 	for _, e := range s.Curated() {
 		if !strings.EqualFold(e.Mirror, MirrorExcerpt) {
 			continue
@@ -303,6 +528,45 @@ func (s *Service) BackfillCurated(ctx context.Context) int {
 		raw, err := s.readVault(e.Path)
 		if err == nil {
 			err = s.writeVault(e.Path, []byte(setFrontmatter(string(raw), "mirror", MirrorFull)))
+		}
+		s.mu.Unlock()
+		if err == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		s.invalidateCurated()
+	}
+	return n
+}
+
+// backfillPapers brings already-curated papers into the paper format.
+//
+// The selection rule is the cheap one first: a note that already carries a
+// `doi:` is done, and asks the registry nothing ever again. Of the rest, only
+// a URL that yields a DOI is looked up at all — so an ordinary boot with a
+// vault full of essays makes no network call, and one that fails (Crossref
+// down, a DOI it has never seen) simply leaves the note as it was for the next
+// boot to retry.
+//
+// The write is applyPaper's, so a retrofitted note and a freshly curated one
+// are the same document produced by the same code, and the owner's half above
+// the marker survives both.
+func (s *Service) backfillPapers(ctx context.Context) int {
+	n := 0
+	for _, e := range s.Curated() {
+		if strings.TrimSpace(e.DOI) != "" {
+			continue
+		}
+		paper, ok := s.paperFor(ctx, e.URL)
+		if !ok {
+			continue
+		}
+		s.mu.Lock()
+		raw, err := s.readVault(e.Path)
+		if err == nil {
+			content := applyPaper(string(raw), paper, e.Title, e.Source, e.URL)
+			err = s.writeVault(e.Path, []byte(setFrontmatter(content, "mirror", MirrorFull)))
 		}
 		s.mu.Unlock()
 		if err == nil {
@@ -450,7 +714,10 @@ func parseCurated(rel, content string) (CuratedEntry, bool) {
 		Published: record.Unquote(strings.TrimSpace(fm["published"])),
 		Curated:   curated,
 		Mirror:    strings.TrimSpace(fm["mirror"]),
-		Body:      stripLeadingHeading(body),
+		DOI:       strings.TrimSpace(fm["doi"]),
+		Journal:   record.Unquote(strings.TrimSpace(fm["journal"])),
+		Authors:   mdfm.List(fm["authors"]),
+		Body:      stripPaperMarker(stripLeadingHeading(body)),
 	}, true
 }
 

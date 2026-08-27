@@ -67,6 +67,10 @@ type Service struct {
 	// sites holds the per-domain session cookies that unlock paid publications.
 	sites *SiteCreds
 
+	// crossref overrides the bibliographic registry's base URL. Empty means
+	// the real api.crossref.org; only tests set it.
+	crossref string
+
 	nowFn func() time.Time
 	mu    sync.Mutex
 }

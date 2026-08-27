@@ -80,15 +80,29 @@ func PublicHandler(feed CuratedFeed, cfg PublicConfig) http.Handler {
 // ---- RSS 2.0 ----
 
 type rssChannelItem struct {
-	XMLName     xml.Name  `xml:"item"`
-	Title       string    `xml:"title"`
-	Link        string    `xml:"link"`
-	GUID        rssGUID   `xml:"guid"`
-	PubDate     string    `xml:"pubDate"`
-	Creator     string    `xml:"dc:creator,omitempty"`
+	XMLName xml.Name `xml:"item"`
+	Title   string   `xml:"title"`
+	Link    string   `xml:"link"`
+	GUID    rssGUID  `xml:"guid"`
+	PubDate string   `xml:"pubDate"`
+	// dc:creator repeats, one element per author — the Dublin Core way to say
+	// "eight people wrote this", and the reason a paper's byline survives into
+	// a citation manager instead of collapsing to one string.
+	Creators    []string  `xml:"dc:creator,omitempty"`
 	Source      string    `xml:"source,omitempty"`
 	Description string    `xml:"description"`
 	Encoded     *rssCDATA `xml:"content:encoded,omitempty"`
+	// The bibliographic fields, emitted only for PAPERS (see paperFields).
+	// Crossref's recommendation names exactly these; a reader that knows none
+	// of them ignores them and still renders title, link and description.
+	DCTitle      string `xml:"dc:title,omitempty"`
+	DCPublisher  string `xml:"dc:publisher,omitempty"`
+	DCDate       string `xml:"dc:date,omitempty"`
+	DCIdentifier string `xml:"dc:identifier,omitempty"`
+	PrismDOI     string `xml:"prism:doi,omitempty"`
+	PrismURL     string `xml:"prism:url,omitempty"`
+	PrismPubName string `xml:"prism:publicationName,omitempty"`
+	PrismPubDate string `xml:"prism:publicationDate,omitempty"`
 }
 
 type rssGUID struct {
@@ -123,6 +137,7 @@ type rssRoot struct {
 	Version   string   `xml:"version,attr"`
 	ContentNS string   `xml:"xmlns:content,attr"`
 	DCNS      string   `xml:"xmlns:dc,attr"`
+	PrismNS   string   `xml:"xmlns:prism,attr"`
 	AtomNS    string   `xml:"xmlns:atom,attr"`
 	Channel   rssChannel
 }
@@ -166,10 +181,11 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 			Link:        e.URL,
 			GUID:        rssGUID{IsPermaLink: "false", Value: firstNonEmpty(e.ItemID, e.URL, e.Path)},
 			PubDate:     pubDate(firstNonEmpty(e.Curated, e.Published)),
-			Creator:     e.Author,
+			Creators:    creators(e),
 			Source:      e.Source,
 			Description: description(e),
 		}
+		paperFields(&it, e)
 		if body := bodyHTML(e); body != "" {
 			it.Encoded = &rssCDATA{Value: attribution(e) + body}
 		}
@@ -180,6 +196,7 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 		Version:   "2.0",
 		ContentNS: "http://purl.org/rss/1.0/modules/content/",
 		DCNS:      "http://purl.org/dc/elements/1.1/",
+		PrismNS:   "http://prismstandard.org/namespaces/basic/2.0/",
 		AtomNS:    "http://www.w3.org/2005/Atom",
 		Channel:   ch,
 	}, "", "  ")
@@ -188,6 +205,46 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 			html.EscapeString(cfg.Title) + "</title></channel></rss>\n"
 	}
 	return xml.Header + string(out) + "\n"
+}
+
+// creators is the item's byline as Dublin Core. A paper's is its author list;
+// everything else has the one name the note recorded.
+func creators(e CuratedEntry) []string {
+	if len(e.Authors) > 0 {
+		return e.Authors
+	}
+	if a := strings.TrimSpace(e.Author); a != "" {
+		return []string{a}
+	}
+	return nil
+}
+
+// paperFields adds the bibliographic elements Crossref's recommendation for
+// scholarly feeds asks for — and adds them ONLY to papers.
+//
+// The DOI is the flag and the identity. A post has none, gets none of these,
+// and its item is byte-identical to what this feed emitted before papers were
+// a category: a blog or an X post is still title + link + description + the
+// whole text in content:encoded.
+//
+// <link> stays the publisher's URL. The DOI is the work's IDENTITY, which is
+// what dc:identifier and prism:doi are for; <link> is where a reader is being
+// sent, and sending them to the page the owner actually read keeps this file's
+// standing rule — credit and traffic go to the source.
+func paperFields(it *rssChannelItem, e CuratedEntry) {
+	doi := strings.TrimSpace(e.DOI)
+	if doi == "" {
+		return
+	}
+	date := firstNonEmpty(e.Published, e.Curated)
+	it.DCTitle = e.Title
+	it.DCPublisher = e.Journal
+	it.DCDate = date
+	it.DCIdentifier = "doi:" + doi
+	it.PrismDOI = doi
+	it.PrismURL = firstNonEmpty(e.URL, "https://doi.org/"+doi)
+	it.PrismPubName = e.Journal
+	it.PrismPubDate = date
 }
 
 // bodyHTML is the whole piece, ready to render, and it is what makes "carry

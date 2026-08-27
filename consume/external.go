@@ -66,6 +66,16 @@ func (s *Service) CurateExternal(ctx context.Context, ref ExternalRef, note stri
 		return CuratedEntry{}, errors.New("consume: nothing to curate")
 	}
 	it, sub := ref.item(), ref.subscription()
+	// A PAPER is looked up, not scraped. A journal article's page is a wrapper
+	// around a PDF — fetching it readable-style yields navigation, ORCID
+	// markers and figure captions, which is what the ultrasound and
+	// sub-millivolt notes carried before this branch existed. The registry has
+	// the abstract and the citation, which is what a scholarly feed carries.
+	// No DOI, or no record for it: not a paper, and the fetch below runs.
+	if paper, ok := s.paperFor(ctx, it.URL); ok {
+		it.Excerpt = collapseSpaces(strings.TrimSpace(ref.Fallback))
+		return s.writeCurated(it, sub, note, &paper)
+	}
 	if body, ok := s.fetchExternal(ctx, it.URL); ok {
 		text := Text(body)
 		it.Body = body
@@ -78,7 +88,7 @@ func (s *Service) CurateExternal(ctx context.Context, ref ExternalRef, note stri
 		it.Preview = "partial"
 		it.Excerpt = collapseSpaces(strings.TrimSpace(ref.Fallback))
 	}
-	return s.writeCurated(it, sub, note)
+	return s.writeCurated(it, sub, note, nil)
 }
 
 // item is the synthetic polled item. It is never stored in the lane's cache —
