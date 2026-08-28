@@ -48,10 +48,10 @@ func TestSyncChecks(t *testing.T) {
 	if rock := doc.RockOf("aion/rock/stage"); rock == nil || rock.Moved != "2026-07-15" {
 		t.Fatalf("Rock moved not stamped: %+v", rock)
 	}
-	// the frozen task line survives verbatim through the sync save
+	// the live task's tick is written back to the file
 	raw, _ := os.ReadFile(st.Path())
-	if !strings.Contains(string(raw), "        - [ ] Task [goal:: aion/rock/stage/task]") {
-		t.Fatalf("frozen line lost on save:\n%s", raw)
+	if !strings.Contains(string(raw), "        - [x] Task [goal:: aion/rock/stage/task]") {
+		t.Fatalf("live task check not written back:\n%s", raw)
 	}
 }
 

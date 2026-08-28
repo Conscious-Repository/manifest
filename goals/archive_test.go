@@ -39,7 +39,8 @@ func TestCloseGoalArchivesAndRemoves(t *testing.T) {
 	goalsMD := "# Goals\n\n## Aion\n\n### 1-year — 2026\n- [ ] Series A closed [goal:: aion/2026]\n\n### Rocks (90-day)\n" +
 		"- [ ] Series A 15M [goal:: aion/series-a-15m] [quarter:: 2026-Q3] [serves:: aion/2026]\n" +
 		"    - [x] Soft lead\n" +
-		"        - [x] frozen done task\n" +
+		"        - [x] live task\n" +
+		"            - [x] frozen done task\n" +
 		"    - [ ] Term sheet\n"
 	if err := os.WriteFile(filepath.Join(dir, "goals.md"), []byte(goalsMD), 0o644); err != nil {
 		t.Fatal(err)
@@ -74,7 +75,7 @@ func TestCloseGoalArchivesAndRemoves(t *testing.T) {
 		}
 	}
 	// frozen task history travels with the Rock (task-substrate split)
-	if !strings.Contains(string(arch), "        - [x] frozen done task") {
+	if !strings.Contains(string(arch), "            - [x] frozen done task") {
 		t.Fatalf("frozen history missing from archive:\n%s", arch)
 	}
 	all := st.LoadAllArchives()

@@ -53,12 +53,14 @@ func TestFixpoint(t *testing.T) {
 }
 
 // TestRockStageTaskDepth pins the literal depth rule: under a Rock, one level is a
-// stage and two is a task; a lone checkbox under a Rock parses as a (small) stage.
+// stage and two is a task (both LIVE goals); anything deeper is frozen history.
+// A lone checkbox under a Rock parses as a (small) stage.
 func TestRockStageTaskDepth(t *testing.T) {
 	in := "# Goals\n\n## Aion\n\n### Rocks (90-day)\n" +
 		"- [ ] Series A 15M\n" +
 		"    - [ ] Term sheet\n" +
 		"        - [ ] Send deck\n" +
+		"            - [x] pre-split frozen note\n" +
 		"- [ ] Lonely rock\n" +
 		"    - [ ] just one checkbox\n"
 	a := Parse(in).FindArea("Aion")
@@ -69,18 +71,29 @@ func TestRockStageTaskDepth(t *testing.T) {
 	if len(rock.Children) != 1 || rock.Children[0].Text != "Term sheet" {
 		t.Fatalf("Rock should own one stage, got %+v", rock.Children)
 	}
-	// task-substrate split: depth-2 lines are FROZEN history, never goals
+	// a stage owns LIVE task goals (goals task level)
 	st := rock.Children[0]
-	if len(st.Children) != 0 {
-		t.Fatalf("stage must own no task goals, got %+v", st.Children)
+	if len(st.Children) != 1 || st.Children[0].Text != "Send deck" {
+		t.Fatalf("stage should own one live task, got %+v", st.Children)
 	}
-	if len(st.Frozen) != 1 || st.Frozen[0] != "        - [ ] Send deck" {
-		t.Fatalf("depth-2 line should freeze verbatim, got %q", st.Frozen)
+	if len(st.Frozen) != 0 {
+		t.Fatalf("a depth-2 task must not freeze on its stage, got %q", st.Frozen)
+	}
+	// task-substrate split: only lines BELOW a task are FROZEN history, never goals
+	task := st.Children[0]
+	if len(task.Children) != 0 {
+		t.Fatalf("task must own no goals, got %+v", task.Children)
+	}
+	if len(task.Frozen) != 1 || task.Frozen[0] != "            - [x] pre-split frozen note" {
+		t.Fatalf("sub-task line should freeze verbatim, got %q", task.Frozen)
 	}
 	// frozen lines round-trip byte-identical
 	out := Serialize(Parse(in))
-	if Serialize(Parse(out)) != out || !strings.Contains(out, "        - [ ] Send deck\n") {
+	if Serialize(Parse(out)) != out || !strings.Contains(out, "            - [x] pre-split frozen note\n") {
 		t.Fatalf("frozen history not byte-stable:\n%s", out)
+	}
+	if !strings.Contains(out, "        - [ ] Send deck\n") {
+		t.Fatalf("live task lost on round-trip:\n%s", out)
 	}
 	// The lone checkbox under the second Rock is a stage, not lost.
 	if len(a.Rocks[1].Children) != 1 || a.Rocks[1].Children[0].Text != "just one checkbox" {
@@ -219,6 +232,7 @@ func TestMyPlateAndPool(t *testing.T) {
 		"    - [ ] mineStage [owner:: me]\n" +
 		"        - [ ] mineTask\n" +
 		"        - [x] doneTask\n" +
+		"            - [ ] frozenNote\n" +
 		"- [ ] teamRock [owner:: team]\n"
 	doc := Parse(in)
 
@@ -229,13 +243,14 @@ func TestMyPlateAndPool(t *testing.T) {
 		}
 	}
 	joined := strings.Join(plate, "|")
-	for _, want := range []string{"mineRock", "mineStage"} {
+	// tasks are live goals now, so an open owner==me task is on the plate
+	for _, want := range []string{"mineRock", "mineStage", "mineTask"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("MyPlate missing %q: %v", want, plate)
 		}
 	}
-	// task-substrate split: depth-2 lines freeze — they never enter the plate
-	if strings.Contains(joined, "teamRock") || strings.Contains(joined, "doneTask") || strings.Contains(joined, "mineTask") {
+	// task-substrate split: only lines below a task freeze — they never enter the plate
+	if strings.Contains(joined, "teamRock") || strings.Contains(joined, "doneTask") || strings.Contains(joined, "frozenNote") {
 		t.Fatalf("non-me, checked, or frozen item leaked into My Plate: %v", plate)
 	}
 
@@ -286,14 +301,15 @@ func TestRetiredFinishLineFieldsStripOnSave(t *testing.T) {
 		"\n### Rocks (90-day)\n" +
 		"- [ ] Series A [goal:: aion/series-a] [quarter:: 2026-Q3] [until:: countersigned] [verify:: PDF] [kpi:: LOIs 4/10]\n" +
 		"    - [ ] LOIs [verify:: 10 signed emails]\n" +
-		"        - [x] frozen history keeps its tokens [until:: forever]\n"
+		"        - [ ] Countersign [verify:: scanned PDF]\n" +
+		"            - [x] frozen history keeps its tokens [until:: forever]\n"
 	out := Serialize(Parse(in))
-	for _, tok := range []string{"[until:: shipped", "[verify:: users", "[until:: countersigned", "[verify:: PDF", "[kpi::", "[verify:: 10 signed"} {
+	for _, tok := range []string{"[until:: shipped", "[verify:: users", "[until:: countersigned", "[verify:: PDF", "[kpi::", "[verify:: 10 signed", "[verify:: scanned"} {
 		if strings.Contains(out, tok) {
 			t.Fatalf("retired token %q survived a live line:\n%s", tok, out)
 		}
 	}
-	if !strings.Contains(out, "- [x] frozen history keeps its tokens [until:: forever]") {
+	if !strings.Contains(out, "            - [x] frozen history keeps its tokens [until:: forever]") {
 		t.Fatalf("frozen line must stay byte-identical:\n%s", out)
 	}
 	// the migration detector: fires on the live tokens, quiet once stripped,

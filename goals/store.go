@@ -83,17 +83,27 @@ func (s *Store) CloseGoal(id, outcome, note, evidence string, now time.Time) err
 	return s.appendArchive(CurrentQuarter(now), entry)
 }
 
-// frozenHistory collects a closing Rock's frozen task lines, each preceded by
-// its stage line for context (verbatim indentation preserved) — checked
-// pre-split history archives with the Rock instead of being discarded.
+// frozenHistory collects a closing Rock's frozen lines, each preceded by the
+// live line above it for context (verbatim indentation preserved) — checked
+// pre-split history archives with the Rock instead of being discarded. Under
+// the task-substrate split frozen history hangs off a TASK (depth >= 3), so the
+// walk descends the stage tier and the task tier beneath it.
 func frozenHistory(rock *Goal) []string {
 	var out []string
 	for _, st := range rock.Children {
-		if len(st.Frozen) == 0 {
+		body := append([]string(nil), st.Frozen...)
+		for _, task := range st.Children {
+			if len(task.Frozen) == 0 {
+				continue
+			}
+			body = append(body, "        "+goalLine(task, roleStageTask))
+			body = append(body, task.Frozen...)
+		}
+		if len(body) == 0 {
 			continue
 		}
 		out = append(out, "    "+goalLine(st, roleStageTask))
-		out = append(out, st.Frozen...)
+		out = append(out, body...)
 	}
 	return out
 }
