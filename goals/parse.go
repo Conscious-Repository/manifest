@@ -137,7 +137,7 @@ func Parse(content string) *Doc {
 					// task-substrate split: goals.md nests ONE level under a
 					// Rock (the stage). Anything deeper is FROZEN history —
 					// preserved verbatim on the stage, never parsed as a goal.
-					if root == &a.Rocks && depth >= 2 {
+					if root == &a.Rocks && depth >= 3 {
 						parent.Frozen = append(parent.Frozen, line)
 						continue
 					}

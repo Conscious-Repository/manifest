@@ -31,17 +31,18 @@ const (
 	ModeMove = "move"
 
 	LevelRock      = "rock"
-	LevelMilestone = "milestone" // depth 1 under a rock — the only live child level
+	LevelMilestone = "milestone" // depth 1 under a rock
+	LevelTask      = "task"      // under ANY existing goal, at any depth
 )
 
 // PlacementPayload is the ```goals fence's JSON object. quote/confidence are
 // proposal-display only and never reach goals.md.
 type PlacementPayload struct {
 	Mode  string `json:"mode"`  // add | edit | move
-	Level string `json:"level"` // rock | milestone
+	Level string `json:"level"` // rock | milestone | task
 	Area  string `json:"area"`  // "## <Area>" heading text, e.g. "Home"
 
-	ParentID string `json:"parentId,omitempty"` // milestone add/move: the rock that takes it ("" on move = promote to rock)
+	ParentID string `json:"parentId,omitempty"` // milestone add/move: the rock that takes it; task add: any existing goal ("" on move = promote to rock)
 	TargetID string `json:"targetId,omitempty"` // edit/move: the goal being changed
 	// AnchorText is the staleness guard on edit/move: the target's CURRENT
 	// text as the proposer saw it. A mismatch refuses the apply — the file
@@ -73,9 +74,9 @@ func (p *PlacementPayload) Validate() error {
 		return fmt.Errorf("mode must be add, edit or move (got %q)", p.Mode)
 	}
 	switch p.Level {
-	case LevelRock, LevelMilestone:
+	case LevelRock, LevelMilestone, LevelTask:
 	default:
-		return fmt.Errorf("level must be rock or milestone (got %q)", p.Level)
+		return fmt.Errorf("level must be rock, milestone or task (got %q)", p.Level)
 	}
 	if strings.TrimSpace(p.Area) == "" {
 		return errors.New("area is required")
@@ -85,8 +86,8 @@ func (p *PlacementPayload) Validate() error {
 		if strings.TrimSpace(p.Title) == "" {
 			return errors.New("add needs a title")
 		}
-		if p.Level == LevelMilestone && strings.TrimSpace(p.ParentID) == "" {
-			return errors.New("a milestone add needs the rock it goes under (parentId)")
+		if p.Level != LevelRock && strings.TrimSpace(p.ParentID) == "" {
+			return fmt.Errorf("a %s add needs the goal it goes under (parentId)", p.Level)
 		}
 	case ModeEdit, ModeMove:
 		if strings.TrimSpace(p.TargetID) == "" {
@@ -196,14 +197,26 @@ func applyAdd(doc *Doc, area *Area, p PlacementPayload, now time.Time) error {
 		}
 	}
 	parentID := strings.TrimSpace(p.ParentID)
-	if p.Level == LevelRock {
+	// the depth rule, checked before AddGoal ever runs. It is level-shaped: a
+	// milestone still hangs only off a top-level rock (MoveGoal enforces the
+	// same for moves); a TASK hangs off any goal that ALREADY EXISTS in the
+	// same area. Neither ever creates the structure it needs — a proposal
+	// places one line into a shape the owner already wrote.
+	switch p.Level {
+	case LevelRock:
 		parentID = ""
-	} else {
-		// the depth rule, checked before AddGoal ever runs: a milestone hangs
-		// only off a top-level rock (MoveGoal enforces the same for moves)
+	case LevelMilestone:
 		rock := doc.RockOf(parentID)
 		if rock == nil || rock.ID != parentID {
 			return fmt.Errorf("parent %q is not a top-level rock — milestones hang off rocks only", parentID)
+		}
+	case LevelTask:
+		pArea, parent := doc.FindGoal(parentID)
+		if parent == nil {
+			return fmt.Errorf("no goal %q in goals.md — a task hangs off a goal that already exists", parentID)
+		}
+		if pArea.Name != area.Name {
+			return fmt.Errorf("parent %q is not in area %s", parentID, area.Name)
 		}
 	}
 	g, ok := doc.AddGoal(area.Name, parentID, "rocks", title, p.Owner)
