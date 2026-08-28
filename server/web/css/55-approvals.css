@@ -176,3 +176,26 @@
 /* provenance sits on one line: agent · when · source, then the apply path */
 .goals-appr-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-5); }
 .goals-appr-meta .appr-apply { gap: var(--sp-3); }
+
+/* the placement itself, as an action row on the card (2026-08-28). It replaced
+   the `aion-appr` form grid — a labelled two-column block under the card read
+   as a second, heavier thing and broke the extractor resemblance. Here the
+   controls wrap on one line like `.feed-actions` pills, each label riding
+   inside its own chip. */
+.goals-place { display: flex; flex-direction: column; gap: var(--sp-3); }
+.goals-place-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3) var(--sp-4); }
+.gp-chip { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.gp-k { color: var(--muted); }
+/* compact against the default .pp-in: a chip is sized by its content, and a
+   select must not carry the form field's 90px floor */
+.goals-place-row .pp-in { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-2); min-width: 0; max-width: 200px; }
+.goals-place-row select.pp-in { max-width: 260px; }
+.goals-place-row .gp-parent { max-width: 300px; }
+.goals-place-row .ta-wrap { position: relative; }
+.goals-place-row .ta-in { font-size: var(--fs-xs); padding: var(--sp-1) var(--sp-2); min-width: 0; width: 180px; }
+.gp-save { margin-left: auto; }
+.goals-place-note { font-size: var(--fs-2xs); color: var(--muted); }
+/* the diff keeps its own chrome but sits tight under the row */
+.goals-place .appr-diff { font-size: var(--fs-xs); }
+/* Confirm/Reject read as the card's action pills, wrapping like feed-actions */
+.goals-appr-card .appr-actions { flex-wrap: wrap; }

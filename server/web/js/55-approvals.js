@@ -1375,19 +1375,34 @@ function apprInspectorInto(host) {
 }
 
 // ---- the goals placement card (§12 2026-08-19) --------------------------
-// One card per placement: mode/level/area, the typeahead-audited target, the
-// owner-sourced title, and the EXACT current→proposed diff the server computed
-// against the live goals.md. Edits ride Confirm (__payloadFlush), same as the
-// aion editor this clones.
+// One card per placement: mode/level/area, the parent picked off the live
+// ladder, the owner-sourced title, and the EXACT current→proposed diff the
+// server computed against the live goals.md. Edits ride Confirm
+// (__payloadFlush), same as the aion editor this clones.
 let apprGoalsReg = null;
+// apprGoalsRegistry — the live goals ladder per area, flattened WITH a level so
+// the placement picker can offer the owner the ACTUAL rock or milestone a new
+// line lands under (owner call 2026-08-28). /api/goals already carries the
+// hierarchy (every GoalView has .children); the level is positional and matches
+// the depth rule goals/proposal.go enforces on apply — a top-level entry is a
+// rock, its child a milestone, anything deeper a task. `rocks` stays on each
+// area (live rocks only) so the milestone parent pick reads unchanged.
 async function apprGoalsRegistry() {
   if (apprGoalsReg) return apprGoalsReg;
   try {
     const d = await (await fetch("/api/goals")).json();
-    apprGoalsReg = (d.areas || []).map((ar) => ({
-      name: ar.name,
-      rocks: (ar.rocks || []).filter((r) => !r.checked).map((r) => ({ id: r.id, text: r.text })),
-    }));
+    apprGoalsReg = (d.areas || []).map((ar) => {
+      const goals = [];
+      const walk = (list, level, parent) => (list || []).forEach((g) => {
+        goals.push({
+          id: g.id, text: g.text, level, checked: !!g.checked,
+          label: parent ? parent + " › " + g.text : g.text,
+        });
+        walk(g.children, level === "rock" ? "milestone" : "task", g.text);
+      });
+      walk(ar.rocks, "rock", "");
+      return { name: ar.name, goals, rocks: goals.filter((g) => g.level === "rock" && !g.checked) };
+    });
   } catch (e) { apprGoalsReg = []; }
   return apprGoalsReg;
 }
@@ -1416,62 +1431,110 @@ function goalsCardSource(a) {
   return /telegram/i.test(a.action || "") ? "telegram" : "";
 }
 
+// buildGoalsEditor — the placement, spoken in the extractor card's own action
+// language (owner call 2026-08-28: "a card just like the email and transcript
+// extractor ones, and on them i can choose which rock/milestones the new task
+// goes under"). It is ONE wrapping row of light chip controls sitting with the
+// card's actions — not the labelled form grid that used to stack a second block
+// under the card and break the resemblance. The one substantive addition: the
+// `under` control is a picker over the LIVE ladder, so a milestone chooses its
+// real rock and a task chooses its real milestone (or rock) by its own text.
 function buildGoalsEditor(a) {
   const p = Object.assign({}, a.goalsPayload);
-  const wrap = el("div", "aion-appr");
-  wrap.append(el("div", "appr-diff-label", "Places into goals.md — edit before confirming"));
-  const form = el("div", "aion-appr-form");
-  wrap.append(form);
-  const note = el("div", "appr-title-label", "");
+  const wrap = el("div", "goals-place");
+  const row = el("div", "goals-place-row");
+  wrap.append(row);
+  const note = el("div", "appr-title-label goals-place-note", "");
 
-  const row = (label, node) => form.append(el("span", "aion-vto-key", label), node);
-  const textRow = (label, key) => {
-    const input = inputEl(label);
-    input.className = "pp-in";
-    input.value = p[key] || "";
-    input.oninput = () => { p[key] = input.value; };
-    row(label, input);
+  // the ladder arrives async once per session; the row renders immediately off
+  // the cached copy and repaints itself when the first fetch lands
+  let reg = apprGoalsReg;
+  if (!reg) apprGoalsRegistry().then((r) => { reg = r; rebuild(); });
+
+  // chip — a labelled control that reads as a pill in the action row, so the
+  // picker is an affordance ON the card rather than a form beneath it
+  const chip = (label, node) => {
+    const c = el("label", "gp-chip");
+    c.append(el("span", "gp-k micro-label", label), node);
+    row.append(c);
+  };
+  const areaOf = () => (reg || []).find((x) => x.name === (p.area || "")) || (reg || [])[0] || null;
+  // parentOptions — what an existing parent may BE at this level, mirroring the
+  // two shapes applyAdd accepts: a milestone hangs off a top-level rock, a task
+  // off any rock or milestone in the same area. Done goals are never offered.
+  const parentOptions = () => {
+    const ar = areaOf();
+    if (!ar) return [];
+    return (ar.goals || []).filter((g) => !g.checked && (p.level === "milestone"
+      ? g.level === "rock"
+      : g.level === "rock" || g.level === "milestone"));
   };
 
+  const gate = { push: () => {} };
+  const save = pillLight("save edit", async () => {
+    try { await flush(); showToast("Proposal updated"); loadFeed(); }
+    catch (e) { showToast(String(e.message || e).slice(0, 120)); }
+  });
+  save.classList.add("gp-save");
+
   const rebuild = () => {
-    form.innerHTML = "";
+    row.innerHTML = "";
     const modeSel = selectEl(["add", "edit", "move"]);
     modeSel.value = p.mode || "add";
+    p.mode = modeSel.value;
     modeSel.onchange = () => { p.mode = modeSel.value; rebuild(); };
-    row("mode", modeSel);
-    const levelSel = selectEl(["rock", "milestone"]);
-    levelSel.value = p.level || "milestone";
-    levelSel.onchange = () => { p.level = levelSel.value; rebuild(); };
-    row("level", levelSel);
-    const areaSel = selectEl([p.area || ""]);
-    areaSel.className = "pp-in";
-    apprGoalsRegistry().then((reg) => {
-      areaSel.innerHTML = "";
-      reg.forEach((ar) => { const o = document.createElement("option"); o.value = ar.name; o.textContent = ar.name; areaSel.append(o); });
-      areaSel.value = p.area || (reg[0] && reg[0].name) || "";
-    });
-    areaSel.onchange = () => { p.area = areaSel.value; };
-    row("area", areaSel);
+    chip("mode", modeSel);
 
-    if (p.mode === "add" || p.mode === "move") {
-      if (p.level === "milestone") {
-        // the rock it lands under — from the live registry, scoped to the area
-        const parentTa = typeahead({
-          placeholder: "the rock it goes under…", initial: p.parentId || "",
-          suggest: async (q, add, ta) => {
-            const reg = await apprGoalsRegistry();
-            const ar = reg.find((x) => x.name === (p.area || "")) || reg[0];
-            ((ar && ar.rocks) || [])
-              .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
-              .slice(0, 8)
-              .forEach((r) => add(r.text, "rock", () => { p.parentId = r.id; ta.commit(r.text); }));
-            if (p.mode === "move") add("✕ promote to a rock", "", () => { p.parentId = ""; ta.commit(""); });
-          },
-          onChange: (v) => { if (!v) p.parentId = ""; },
-        });
-        row("under", parentTa.el);
+    const levelSel = selectEl(["rock", "milestone", "task"]);
+    levelSel.value = p.level || "milestone";
+    p.level = levelSel.value;
+    // the parent is level-shaped — a rock has none, and a rock picked for a
+    // milestone is not a legal parent for a task under a milestone
+    levelSel.onchange = () => { p.level = levelSel.value; p.parentId = ""; rebuild(); };
+    chip("level", levelSel);
+
+    // the area's own name always stays selectable, even before the ladder
+    // loads, so a repaint can never silently blank the payload's area
+    const names = (reg || []).map((ar) => ar.name);
+    if (p.area && !names.includes(p.area)) names.unshift(p.area);
+    const areaSel = selectEl(names.length ? names : [""]);
+    areaSel.value = p.area || names[0] || "";
+    if (areaSel.value) p.area = areaSel.value;
+    areaSel.onchange = () => { p.area = areaSel.value; p.parentId = ""; rebuild(); };
+    chip("area", areaSel);
+
+    if ((p.mode === "add" || p.mode === "move") && p.level !== "rock") {
+      const opts = parentOptions();
+      const sel = selectEl([]);
+      sel.classList.add("gp-parent");
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = !reg ? "loading the ladder…"
+        : !opts.length ? "— no " + (p.level === "milestone" ? "rock" : "rock or milestone") + " in " + (p.area || "this area") + " —"
+        : p.mode === "move" ? "— promote to a rock —"
+        : "— pick the parent —";
+      sel.append(blank);
+      opts.forEach((g) => {
+        const o = document.createElement("option");
+        o.value = g.id;
+        // the ladder's own shape, in the option text: rocks lead, milestones
+        // sit under the rock they belong to
+        o.textContent = (g.level === "rock" ? "◆ " : "  › ") + g.text;
+        sel.append(o);
+      });
+      if (p.parentId && !opts.some((g) => g.id === p.parentId)) {
+        // a parent the live ladder no longer offers (closed, re-parented, or
+        // wrong level for this pick) — show it rather than silently re-point
+        const o = document.createElement("option");
+        o.value = p.parentId;
+        o.textContent = "⚠ " + p.parentId;
+        sel.append(o);
       }
+      sel.value = p.parentId || "";
+      sel.onchange = () => { p.parentId = sel.value; sync(); };
+      chip("under", sel);
     }
+
     if (p.mode === "edit" || p.mode === "move") {
       // the goal being changed — /api/goals/match audits live goals only, and
       // a pick fills BOTH targetId and the staleness anchor
@@ -1483,33 +1546,54 @@ function buildGoalsEditor(a) {
           try { d = await (await fetch("/api/goals/match?q=" + encodeURIComponent(q))).json(); } catch (e) {}
           (d.matches || []).forEach((m) => add(m.text + "  · " + m.area + " " + m.level, "", () => {
             p.targetId = m.id; p.anchorText = m.text; p.area = m.area || p.area;
-            ta.commit(m.text);
+            ta.commit(m.text); sync();
           }));
         },
       });
-      row("target", targetTa.el);
+      chip("target", targetTa.el);
     }
-    if (p.mode !== "move") textRow("title", "title");
-    textRow("owner", "owner");
+    if (p.mode !== "move") {
+      const t = inputEl("title");
+      t.value = p.title || "";
+      t.oninput = () => { p.title = t.value; sync(); };
+      chip("title", t);
+    }
+    const ow = inputEl("owner");
+    ow.value = p.owner || "";
+    ow.oninput = () => { p.owner = ow.value; };
+    chip("owner", ow);
     if (p.level === "rock") {
       // no quarter field — a new rock stamps the current quarter on confirm
       const due = inputEl("due");
-      due.type = "date"; due.className = "pp-in"; due.value = p.due || "";
+      due.type = "date"; due.value = p.due || "";
       due.onchange = () => { p.due = due.value; };
-      row("due", due);
+      chip("due", due);
     }
+    // save-edit rides with the controls: edits ride Confirm anyway, so this
+    // only persists them without deciding
+    row.append(save);
     sync();
   };
+  // sync — the one place the card says whether Confirm would land. The server's
+  // own refusal (goalsErr, recomputed each feed load) is the hard gate; the
+  // client adds the two the owner can fix without a round trip.
+  const localBad = () => {
+    if ((p.mode === "add" || p.mode === "move") && p.level !== "rock" && !String(p.parentId || "").trim()) {
+      return p.mode === "move" ? "" : "pick which " + (p.level === "milestone" ? "rock" : "rock or milestone") + " it goes under";
+    }
+    if (p.mode === "add" && !String(p.title || "").trim()) return "give it a title";
+    return "";
+  };
   const sync = () => {
-    note.textContent = a.goalsErr
-      ? "✕ would refuse right now: " + a.goalsErr
-      : "edits ride Confirm automatically — save edit persists them without confirming";
-    note.classList.toggle("off", !!a.goalsErr);
+    const bad = a.goalsErr ? "would refuse right now: " + a.goalsErr : localBad();
+    note.textContent = bad ? "✕ " + bad : "edits ride Confirm automatically — save edit persists them without confirming";
+    note.classList.toggle("off", !!bad);
+    gate.push(!bad, bad ? "● fix the placement first" : "places one line");
   };
   // the gate: a placement the server would refuse disables Confirm with the
   // reason beside it (the re-contract card's mechanism); save-edit stays live
   // so the owner can fix the payload and let the next feed load re-enable it
-  a.__gateBind = (fn) => fn(!a.goalsErr, a.goalsErr ? "● fix the placement first" : "places one line");
+  a.__gateBind = (fn) => { gate.push = fn; a.__gateFn = fn; sync(); };
   rebuild();
   wrap.append(note);
 
@@ -1520,12 +1604,8 @@ function buildGoalsEditor(a) {
     if (!r.ok) throw new Error(await r.text());
   };
   a.__payloadFlush = flush;
-  const save = pillLight("save edit", async () => {
-    try { await flush(); showToast("Proposal updated"); loadFeed(); }
-    catch (e) { showToast(String(e.message || e).slice(0, 120)); }
-  });
-  wrap.append(save);
-  // the exact write Confirm makes, current → proposed (server-computed)
+  // the exact write Confirm makes, current → proposed (server-computed) — one
+  // collapsed block, the same shape a feed card's body takes
   if (a.proposed && a.current) {
     const diff = renderLineDiff(a.current, a.proposed);
     wrap.append(collapsibleBlock(diff, diff.childElementCount));
