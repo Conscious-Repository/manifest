@@ -28,10 +28,12 @@ func TestSyncChecks(t *testing.T) {
 		"    - [ ] Stage\n"+
 		"        - [ ] Task [goal:: aion/rock/stage/task]\n")
 
-	// task-substrate split: task depth is frozen history — a legacy daily
-	// [goal:: task-id] tick MISSES (→ approvals note upstream), never a guess.
+	// task-substrate split: TRUE frozen history is depth >= 4. A depth-3 task
+	// is now a LIVE goal (goals task level), so its daily [goal:: task-id] tick
+	// syncs; only a depth >= 4 legacy frozen line (or a genuinely-absent id)
+	// MISSES (→ approvals note upstream), never a guess.
 	missed := st.SyncChecks(map[string]bool{"aion/rock/stage/task": true, "aion/gone": true}, jul15)
-	if !missed["aion/gone"] || !missed["aion/rock/stage/task"] {
+	if !missed["aion/gone"] || missed["aion/rock/stage/task"] {
 		t.Fatalf("missed set wrong: %+v", missed)
 	}
 	// stage-level ids still sync (stages remain live goals)

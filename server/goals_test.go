@@ -120,22 +120,28 @@ func TestSyncGoalTasksWriteBackAndMiss(t *testing.T) {
 
 	s.syncGoalTasks([]daily.Task{
 		{Text: "Stage", Done: true, GoalID: "aion/rock/stage"},
-		{Text: "Task", Done: true, GoalID: "aion/rock/stage/task"}, // frozen post-split → miss
+		{Text: "Task", Done: true, GoalID: "aion/rock/stage/task"}, // live depth-3 task → checks through
 		{Text: "Ghost task", Done: true, GoalID: "aion/removed"},
 	})
 
-	// The stage-linked tick is checked in goals.md; the legacy TASK tick is a
-	// no-op (task depth is frozen history now) and lands an inbox note.
+	// The stage AND the (now-live) depth-3 task are checked in goals.md; only
+	// the genuinely-removed goal is a no-op and lands an inbox note.
 	if r := findRock(getView(t, s), "Aion", "aion/rock"); r == nil || !r.Children[0].Checked {
 		t.Fatalf("linked stage not checked via write-back: %+v", r)
 	}
-	pend := s.approvals.List("pending")
-	if len(pend) != 2 {
-		t.Fatalf("expected 2 miss notes (legacy task + removed), got %+v", pend)
+	if r := findRock(getView(t, s), "Aion", "aion/rock"); r == nil || len(r.Children) < 1 ||
+		r.Children[0].Children == nil || len(r.Children[0].Children) == 0 || !r.Children[0].Children[0].Checked {
+		t.Fatalf("live depth-3 task not checked via write-back: %+v", r)
 	}
-	joined := pend[0].Body + pend[1].Body
-	if !strings.Contains(joined, "aion/removed") || !strings.Contains(joined, "aion/rock/stage/task") {
-		t.Fatalf("miss notes wrong: %s", joined)
+	pend := s.approvals.List("pending")
+	if len(pend) != 1 {
+		t.Fatalf("expected 1 miss note (removed goal only), got %+v", pend)
+	}
+	if !strings.Contains(pend[0].Body, "aion/removed") {
+		t.Fatalf("miss notes wrong: %s", pend[0].Body)
+	}
+	if strings.Contains(pend[0].Body, "aion/rock/stage/task") {
+		t.Fatalf("live task should not have been missed: %s", pend[0].Body)
 	}
 }
 
