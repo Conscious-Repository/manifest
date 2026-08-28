@@ -229,6 +229,14 @@ func applyAdd(doc *Doc, area *Area, p PlacementPayload, now time.Time) error {
 		g.Serves = dedupeNonEmpty(p.Serves)
 	}
 	doc.assignIDs()
+	// a milestone or task placed by proposal must carry its own id so it shows up
+	// in the tasks list — canonicalFields only emits a stage/task id when it is
+	// explicit, and the derived id Set by assignIDs would otherwise be dropped.
+	// Write it as an explicit field (owner call 2026-08-28) so the line
+	// round-trips with its identity without re-classifying any existing line.
+	if p.Level != LevelRock && g.ID != "" && g.explicitID() == "" {
+		g.Fields = append(g.Fields, Field{Key: "goal", Value: g.ID})
+	}
 	return nil
 }
 

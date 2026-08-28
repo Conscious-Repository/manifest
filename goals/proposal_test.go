@@ -60,7 +60,7 @@ func TestAddMilestoneIsOneLine(t *testing.T) {
 	if strings.Count(next, "\n") != strings.Count(cur, "\n")+1 {
 		t.Fatalf("add must be exactly one line:\n%s", next)
 	}
-	if !strings.Contains(next, "    - [ ] Back pad complete\n") {
+	if !strings.Contains(next, "    - [ ] Back pad complete [goal:: home/backyard/back-pad-complete]\n") {
 		t.Fatalf("milestone not placed under the rock:\n%s", next)
 	}
 	// the result is itself a fixpoint and re-appliable state
