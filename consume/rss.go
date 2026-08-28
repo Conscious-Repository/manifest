@@ -103,6 +103,26 @@ type xmlContent struct {
 	Text string `xml:",chardata"`
 }
 
+// xmlEnclosure is RSS's <enclosure url= type= length=>: the media file
+// attached to an item. For a podcast it IS the episode — the title and the
+// description are notes ABOUT the file, and without the file there is no
+// episode. Feeds also attach images and PDFs, which is why the type is read
+// rather than assumed (see audioEnclosure).
+type xmlEnclosure struct {
+	URL    string `xml:"url,attr"`
+	Type   string `xml:"type,attr"`
+	Length string `xml:"length,attr"`
+}
+
+// xmlImage carries <itunes:image href="…">, the episode's own artwork. The
+// chardata/url fallbacks cover the handful of feeds that put a plain <image>
+// in an item instead.
+type xmlImage struct {
+	Href string `xml:"href,attr"`
+	URL  string `xml:"url"`
+	Text string `xml:",chardata"`
+}
+
 // xmlItem is one <item> (RSS) or <entry> (Atom). Every field either dialect
 // might use is present; extraction picks the best available.
 type xmlItem struct {
@@ -120,6 +140,18 @@ type xmlItem struct {
 	Summary   string     `xml:"summary"`
 	Creator   string     `xml:"creator"` // dc:creator
 	Author    xmlAuthor  `xml:"author"`
+
+	// ---- podcast ----
+	//
+	// Local-name matching (see the file header) is what reads the itunes:
+	// namespace without a namespace-aware decoder, exactly as dc:creator is
+	// read above. A feed that carries none of these parses precisely as it did
+	// before and yields precisely the article it did before.
+	Enclosures []xmlEnclosure `xml:"enclosure"`
+	Duration   string         `xml:"duration"` // itunes:duration
+	Episode    string         `xml:"episode"`  // itunes:episode
+	Season     string         `xml:"season"`   // itunes:season
+	Image      xmlImage       `xml:"image"`    // itunes:image
 }
 
 type xmlFeed struct {
@@ -291,11 +323,16 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 	body := Sanitize(raw)
 	text := Text(raw)
 
+	// The episode's media file, if this item has one. Read here — before the
+	// keep/drop test — because an enclosure is content in its own right: an
+	// episode whose feed ships no show notes is still something to listen to.
+	enc, isEpisode := audioEnclosure(xi.Enclosures)
+
 	title := collapse(html.UnescapeString(strings.TrimSpace(xi.Title)))
 	if title == "" {
 		title = Excerpt(text, 80)
 	}
-	if title == "" && body == "" {
+	if title == "" && body == "" && !isEpisode {
 		return Item{}, false
 	}
 
@@ -306,7 +343,7 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 		strings.TrimSpace(xi.Author.Text),
 	))
 
-	return Item{
+	it := Item{
 		ID:          itemID(KindRSS, sub.ID, external),
 		SubID:       sub.ID,
 		Source:      source,
@@ -323,7 +360,139 @@ func itemFrom(xi xmlItem, sub Subscription, feedTitle string, now time.Time) (It
 		// catches Substack, which withholds inside content:encoded.
 		teaser:    full == "" || LooksTruncated(text),
 		truncated: LooksTruncated(text),
-	}, true
+	}
+	if isEpisode {
+		it.Audio = enc.URL
+		it.AudioType = firstNonEmpty(strings.TrimSpace(enc.Type), "audio/mpeg")
+		it.AudioBytes = parseBytes(enc.Length)
+		it.Duration = parseSeconds(xi.Duration)
+		it.Episode = positiveInt(xi.Episode)
+		it.Season = positiveInt(xi.Season)
+		it.Image = cleanLink(firstNonEmpty(
+			strings.TrimSpace(xi.Image.Href),
+			strings.TrimSpace(xi.Image.URL),
+			strings.TrimSpace(xi.Image.Text),
+		))
+		// ⚠ An episode is never a teaser. Show notes ARE what the publisher
+		// publishes as text, so the full-text fetch (readable.go) must not go
+		// scrape the episode page and overwrite them with a player widget's
+		// worth of markup. The audio is the piece; the notes are complete.
+		it.teaser = false
+	}
+	return it, true
+}
+
+// audioExts are what podcast hosts actually serve. They matter because a large
+// minority of feeds ship <enclosure> with no type attribute at all, or with
+// application/octet-stream, and dropping those would lose the episode over a
+// missing string.
+var audioExts = []string{".mp3", ".m4a", ".mpga", ".aac", ".ogg", ".opus", ".wav", ".m4b"}
+
+// audioEnclosure picks the item's episode file: the first enclosure the
+// publisher CALLS audio, or — when it declares no type at all — whose url
+// plainly is one.
+//
+// The negative half is the point. Newspapers and photoblogs attach images and
+// PDFs to ordinary items, and an item with one of those is an article that
+// happens to have a file, not an episode. A declared type is therefore taken
+// at its word in BOTH directions: image/jpeg is never audio, however the url
+// ends. Nothing here infers audio from the feed's namespaces or from the
+// show's genre — no enclosure, no player.
+func audioEnclosure(encs []xmlEnclosure) (xmlEnclosure, bool) {
+	for _, e := range encs {
+		u := strings.TrimSpace(e.URL)
+		if u == "" {
+			continue
+		}
+		typ := strings.ToLower(strings.TrimSpace(e.Type))
+		switch {
+		case strings.HasPrefix(typ, "audio/"):
+		case typ == "" || strings.HasSuffix(typ, "/octet-stream"):
+			// No usable type — a real and common state. The url decides.
+			if !looksAudio(u) {
+				continue
+			}
+		default:
+			continue
+		}
+		e.URL = u
+		return e, true
+	}
+	return xmlEnclosure{}, false
+}
+
+// looksAudio tests the url's PATH, not the whole string: every podcast host
+// hangs tracking segments and query parameters off the media url, and
+// ".mp3?src=itunes" must still read as an mp3.
+func looksAudio(raw string) bool {
+	path := strings.ToLower(raw)
+	if u, err := url.Parse(raw); err == nil && u.Path != "" {
+		path = strings.ToLower(u.Path)
+	}
+	for _, ext := range audioExts {
+		if strings.HasSuffix(path, ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseSeconds reads <itunes:duration>. The spec says HH:MM:SS; publishers
+// also ship MM:SS and a bare count of seconds, and all three are common enough
+// that accepting only one would drop the length from a large share of shows.
+// Anything else yields 0 — no duration reads better than a wrong one.
+func parseSeconds(raw string) int {
+	parts := strings.Split(strings.TrimSpace(raw), ":")
+	if len(parts) == 0 || len(parts) > 3 || parts[0] == "" {
+		return 0
+	}
+	total := 0
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if i := strings.IndexByte(p, '.'); i >= 0 {
+			p = p[:i] // "1801.5"
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return 0
+		}
+		total = total*60 + n
+	}
+	return total
+}
+
+// FormatDuration renders seconds the way a listener reads them — 42:10 for a
+// three-quarter-hour show, 1:12:33 for a long one. It is also a valid
+// <itunes:duration>, which is what the public feed emits.
+func FormatDuration(secs int) string {
+	if secs <= 0 {
+		return ""
+	}
+	h, m, s := secs/3600, (secs%3600)/60, secs%60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%d:%02d", m, s)
+}
+
+// parseBytes reads the enclosure's length attribute, which RSS requires and
+// publishers routinely leave at 0 or omit.
+func parseBytes(raw string) int64 {
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// positiveInt reads an itunes episode/season number. Zero means "not stated",
+// which is why a malformed one is not an error: the card simply says nothing.
+func positiveInt(raw string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
 }
 
 // bestLink picks the human permalink: Atom's rel="alternate" first, then any

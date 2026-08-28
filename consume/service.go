@@ -642,6 +642,17 @@ type Card struct {
 	Preview   string `json:"preview,omitempty"` // paid | partial — the rest cannot be had
 	Curated   bool   `json:"curated"`
 	Minutes   int    `json:"minutes"` // reading time, so a card says what it costs
+
+	// An EPISODE's fields. Audio is the url the card's player points at, and
+	// its presence is what makes the card a podcast card at all — Duration
+	// (seconds) then replaces the reading time, which is meaningless for a
+	// forty-line set of show notes over an hour of audio.
+	Audio     string `json:"audio,omitempty"`
+	AudioType string `json:"audioType,omitempty"`
+	Duration  int    `json:"duration,omitempty"`
+	Episode   int    `json:"episode,omitempty"`
+	Season    int    `json:"season,omitempty"`
+	Image     string `json:"image,omitempty"`
 }
 
 // readingWPM is the conventional silent-reading rate. The number on the card
@@ -720,6 +731,12 @@ func card(it Item, sub Subscription, curated map[string]bool, xPost bool) Card {
 	}
 	kind := sub.Kind
 	preview := it.Preview
+	// An episode is its own flavour of card. The subscription is still an
+	// ordinary RSS one — nothing about polling or storage changes — but what
+	// arrived has audio attached, and the client shapes the card around that.
+	if it.Podcast() {
+		kind = TypePodcast
+	}
 	if xPost {
 		kind = KindX
 		preview = ""
@@ -734,6 +751,8 @@ func card(it Item, sub Subscription, curated map[string]bool, xPost bool) Card {
 		// avoid — the UI must be able to tell them apart.
 		Read: it.ReadAt != "", Seeded: it.Seeded(), Preview: preview,
 		Curated: curated[curateKey(it.URL)], Minutes: minutes,
+		Audio: it.Audio, AudioType: it.AudioType, Duration: it.Duration,
+		Episode: it.Episode, Season: it.Season, Image: it.Image,
 	}
 }
 

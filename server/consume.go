@@ -64,13 +64,25 @@ func (s *Server) handleConsumeItem(w http.ResponseWriter, r *http.Request) {
 	// Opening the reader IS reading it — no separate call, no way to leave a
 	// read item looking unread because a second request failed.
 	s.consume.MarkRead(id)
-	writeJSON(w, map[string]any{
+	out := map[string]any{
 		"id": it.ID, "title": it.Title, "url": it.URL, "author": it.Author,
 		"source": it.Source, "list": sub.List, "body": it.Body,
 		"published": it.PublishedAt, "chars": it.Chars, "preview": it.Preview,
 		"curated": s.consumeCuratedFor(it.URL),
 		"note":    s.consumeNoteFor(it.URL),
-	})
+	}
+	// An episode: the reader shows a player above the show notes. Sent only
+	// when the item actually carries audio, so a text article's payload is
+	// byte-identical to what it was.
+	if it.Podcast() {
+		out["audio"] = it.Audio
+		out["audioType"] = it.AudioType
+		out["duration"] = it.Duration
+		out["episode"] = it.Episode
+		out["season"] = it.Season
+		out["image"] = it.Image
+	}
+	writeJSON(w, out)
 }
 
 // consumeCuratedFor / consumeNoteFor let the reader show the current curation

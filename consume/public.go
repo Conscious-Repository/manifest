@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"html"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -103,6 +104,24 @@ type rssChannelItem struct {
 	PrismURL     string `xml:"prism:url,omitempty"`
 	PrismPubName string `xml:"prism:publicationName,omitempty"`
 	PrismPubDate string `xml:"prism:publicationDate,omitempty"`
+	// The EPISODE fields, emitted only for a curated PODCAST (see
+	// episodeFields). <enclosure> is what makes the item playable in every
+	// podcast client and every RSS reader with a player; the itunes: elements
+	// are what make it say "episode 412, 1:12:33" instead of "an attachment".
+	Enclosure      *rssEnclosure `xml:"enclosure,omitempty"`
+	ItunesDuration string        `xml:"itunes:duration,omitempty"`
+	ItunesEpisode  string        `xml:"itunes:episode,omitempty"`
+	ItunesSeason   string        `xml:"itunes:season,omitempty"`
+}
+
+// rssEnclosure is the attached media file. RSS requires all three attributes,
+// and length is the one publishers omit — a reader that pre-allocates on it
+// copes with 0, so an unknown size is stated as 0 rather than guessed.
+type rssEnclosure struct {
+	XMLName xml.Name `xml:"enclosure"`
+	URL     string   `xml:"url,attr"`
+	Type    string   `xml:"type,attr"`
+	Length  string   `xml:"length,attr"`
 }
 
 type rssGUID struct {
@@ -139,6 +158,7 @@ type rssRoot struct {
 	DCNS      string   `xml:"xmlns:dc,attr"`
 	PrismNS   string   `xml:"xmlns:prism,attr"`
 	AtomNS    string   `xml:"xmlns:atom,attr"`
+	ItunesNS  string   `xml:"xmlns:itunes,attr"`
 	Channel   rssChannel
 }
 
@@ -186,6 +206,7 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 			Description: description(e),
 		}
 		paperFields(&it, e)
+		episodeFieldsXML(&it, e)
 		if body := bodyHTML(e); body != "" {
 			it.Encoded = &rssCDATA{Value: attribution(e) + body}
 		}
@@ -198,6 +219,7 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 		DCNS:      "http://purl.org/dc/elements/1.1/",
 		PrismNS:   "http://prismstandard.org/namespaces/basic/2.0/",
 		AtomNS:    "http://www.w3.org/2005/Atom",
+		ItunesNS:  "http://www.itunes.com/dtds/podcast-1.0.dtd",
 		Channel:   ch,
 	}, "", "  ")
 	if err != nil {
@@ -245,6 +267,40 @@ func paperFields(it *rssChannelItem, e CuratedEntry) {
 	it.PrismURL = firstNonEmpty(e.URL, "https://doi.org/"+doi)
 	it.PrismPubName = e.Journal
 	it.PrismPubDate = date
+}
+
+// episodeFieldsXML attaches the audio to a curated PODCAST, and only to one.
+//
+// Audio is the flag and the payload, the way DOI is for a paper. An entry
+// without it gets no enclosure and no itunes: element, and its item is
+// byte-identical to what this feed emitted before podcasts were a thing here.
+//
+// The channel is deliberately NOT dressed as a podcast feed — no
+// itunes:category, no channel artwork, no owner block. This is a linkblog that
+// sometimes carries an episode, and claiming to be a show would be a claim
+// about every other item in it. A subscriber's client plays the episode from
+// the enclosure regardless; that is what the element is for.
+func episodeFieldsXML(it *rssChannelItem, e CuratedEntry) {
+	audio := strings.TrimSpace(e.Audio)
+	if audio == "" {
+		return
+	}
+	length := "0"
+	if e.AudioBytes > 0 {
+		length = strconv.FormatInt(e.AudioBytes, 10)
+	}
+	it.Enclosure = &rssEnclosure{
+		URL:    audio,
+		Type:   firstNonEmpty(strings.TrimSpace(e.AudioType), "audio/mpeg"),
+		Length: length,
+	}
+	it.ItunesDuration = FormatDuration(e.Duration)
+	if e.Episode > 0 {
+		it.ItunesEpisode = strconv.Itoa(e.Episode)
+	}
+	if e.Season > 0 {
+		it.ItunesSeason = strconv.Itoa(e.Season)
+	}
 }
 
 // bodyHTML is the whole piece, ready to render, and it is what makes "carry
@@ -353,6 +409,7 @@ a{color:inherit}
 .body pre{overflow-x:auto;font-size:.85rem;white-space:pre-wrap}
 .body blockquote{margin:1rem 0;padding-left:1rem;border-left:2px solid;opacity:.85}
 .body h1,.body h2,.body h3,.body h4{font-size:1rem;margin:1.75rem 0 .5rem}
+.ep{width:100%;margin:.75rem 0 .25rem}
 </style></head><body>`)
 	b.WriteString(`<h1>` + html.EscapeString(cfg.Title) + `</h1>`)
 	b.WriteString(`<p class="sub">` + html.EscapeString(firstNonEmpty(cfg.Description, "Things worth reading.")) +
@@ -376,6 +433,15 @@ a{color:inherit}
 		}
 		if n := strings.TrimSpace(e.Note); n != "" {
 			b.WriteString(`<p class="note">` + html.EscapeString(n) + `</p>`)
+		}
+		// An episode plays here too — the index carries the piece, and for a
+		// podcast the piece is the audio.
+		if audio := strings.TrimSpace(e.Audio); audio != "" {
+			b.WriteString(`<audio class="ep" controls preload="none" src="` +
+				html.EscapeString(audio) + `"></audio>`)
+			if d := FormatDuration(e.Duration); d != "" {
+				b.WriteString(`<div class="meta">` + html.EscapeString(d) + `</div>`)
+			}
 		}
 		if body := bodyHTML(e); body != "" {
 			b.WriteString(`<div class="body">` + body + `</div>`)

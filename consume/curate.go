@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -57,7 +58,19 @@ type CuratedEntry struct {
 	DOI     string   `json:"doi,omitempty"`
 	Journal string   `json:"journal,omitempty"`
 	Authors []string `json:"authors,omitempty"`
-	Body    string   `json:"-"` // markdown, the mirrored article
+	// The EPISODE fields, present only on a curated podcast — the enclosure
+	// the publisher attached, carried through the note so the public feed can
+	// re-attach it. Audio is the flag, exactly as DOI is for a paper: an entry
+	// with one is an episode, an entry without one is a piece of writing and
+	// its feed item is byte-identical to what it was before podcasts existed
+	// here.
+	Audio      string `json:"audio,omitempty"`
+	AudioType  string `json:"audioType,omitempty"`
+	AudioBytes int64  `json:"audioBytes,omitempty"`
+	Duration   int    `json:"duration,omitempty"` // seconds
+	Episode    int    `json:"episode,omitempty"`
+	Season     int    `json:"season,omitempty"`
+	Body       string `json:"-"` // markdown, the mirrored article
 	// HTML is the sanitized body, resolved from the dataDir snapshot at serve
 	// time. It is deliberately NOT stored in the note: the note is the
 	// archive, in markdown, for a person to read in Obsidian.
@@ -153,6 +166,9 @@ func (s *Service) writeCurated(it Item, sub Subscription, note string, paper *Pa
 		if paper != nil {
 			content = applyPaper(content, *paper, it.Title, firstNonEmpty(it.Source, sub.Title), it.URL)
 		}
+		// An episode's enclosure is machine-owned metadata like mirror, so a
+		// re-click heals a note written before the lane knew about audio.
+		content = applyEpisode(content, it)
 	} else {
 		content = s.buildNote(it, sub, note, now, paper, mirror)
 	}
@@ -230,6 +246,9 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 		w.Set("journal", yamlScalar(paper.Journal))
 		w.SetList("authors", paper.Authors)
 	}
+	for k, v := range episodeFields(it) {
+		w.Set(k, v)
+	}
 	if note != "" {
 		w.Set("note", yamlScalar(note))
 	}
@@ -248,10 +267,60 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 	} else if it.Excerpt != "" {
 		b.WriteString(it.Excerpt + "\n\n")
 	}
+	// The episode itself, written into the note so the archive holds the thing
+	// and not only words about it. It is also what the public feed falls back
+	// to when the snapshot is gone (see bodyHTML).
+	if it.Podcast() {
+		line := "\nAudio: [listen](" + it.Audio + ")"
+		if it.Duration > 0 {
+			line += " · " + FormatDuration(it.Duration)
+		}
+		b.WriteString(line + "\n")
+	}
 	if it.URL != "" {
 		b.WriteString("\n---\n\nSource: [" + firstNonEmpty(it.Source, sub.Title, it.URL) + "](" + it.URL + ")\n")
 	}
 	return w.String(strings.TrimRight(b.String(), "\n"))
+}
+
+// episodeFields is the note's frontmatter for one episode — empty for
+// everything that is not one, which is what keeps an article's note exactly
+// the note it was.
+//
+// Duration is written as a plain count of SECONDS. Writing it 1:12:33 would
+// read better and would also be a YAML sexagesimal literal — the kind of trap
+// that turns an hour into the number 4353 in whatever else reads the vault.
+// The human-readable form goes in the note's body instead, where it is text.
+// parseSeconds accepts both, so a hand-edited note reads back either way.
+func episodeFields(it Item) map[string]string {
+	if !it.Podcast() {
+		return nil
+	}
+	out := map[string]string{"audio": it.Audio}
+	if it.AudioType != "" {
+		out["audioType"] = it.AudioType
+	}
+	if it.AudioBytes > 0 {
+		out["audioBytes"] = strconv.FormatInt(it.AudioBytes, 10)
+	}
+	if it.Duration > 0 {
+		out["duration"] = strconv.Itoa(it.Duration)
+	}
+	if it.Episode > 0 {
+		out["episode"] = strconv.Itoa(it.Episode)
+	}
+	if it.Season > 0 {
+		out["season"] = strconv.Itoa(it.Season)
+	}
+	return out
+}
+
+// applyEpisode refreshes an existing note's episode fields in place.
+func applyEpisode(content string, it Item) string {
+	for k, v := range episodeFields(it) {
+		content = setFrontmatter(content, k, v)
+	}
+	return content
 }
 
 // mirrorFor decides how much of a curated item the PUBLIC feed carries.
@@ -717,7 +786,16 @@ func parseCurated(rel, content string) (CuratedEntry, bool) {
 		DOI:       strings.TrimSpace(fm["doi"]),
 		Journal:   record.Unquote(strings.TrimSpace(fm["journal"])),
 		Authors:   mdfm.List(fm["authors"]),
-		Body:      stripPaperMarker(stripLeadingHeading(body)),
+		// Audio present ⇒ this note is an episode, and the public feed
+		// re-attaches the enclosure. parseSeconds accepts both 01:12:33 and a
+		// bare count, so a hand-edited note reads back the same.
+		Audio:      strings.TrimSpace(fm["audio"]),
+		AudioType:  strings.TrimSpace(fm["audioType"]),
+		AudioBytes: parseBytes(fm["audioBytes"]),
+		Duration:   parseSeconds(record.Unquote(strings.TrimSpace(fm["duration"]))),
+		Episode:    positiveInt(fm["episode"]),
+		Season:     positiveInt(fm["season"]),
+		Body:       stripPaperMarker(stripLeadingHeading(body)),
 	}, true
 }
 

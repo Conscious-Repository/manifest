@@ -43,6 +43,13 @@ const (
 	KindX   = "x"
 )
 
+// TypePodcast is a CARD type, deliberately not a subscription kind: a podcast
+// is an ordinary RSS subscription whose items happen to carry audio, and
+// giving it its own kind would mean a second fetcher, a second cursor scheme
+// and a discovery question ("is this feed a podcast?") that no one has to ask.
+// The enclosure answers it per item, at render time.
+const TypePodcast = "podcast"
+
 // Mirror modes decide how much of an item the PUBLIC feed carries once curated.
 // Per-subscription rather than global, so one publisher asking to be excerpted
 // is a one-field edit and not a redesign.
@@ -170,6 +177,25 @@ type Item struct {
 	Excerpt string `json:"excerpt"`
 	Chars   int    `json:"chars"` // rune count of the plain text
 
+	// ---- the episode fields ----
+	//
+	// An item carrying an audio enclosure is a PODCAST EPISODE, and that
+	// is the whole test: the url is read off the publisher's own <enclosure>
+	// and is never inferred, so no text feed can grow a play button. Everything
+	// else about the item is unchanged — an episode still has a title, a link
+	// and show notes, and a feed without enclosures yields exactly the article
+	// it always did.
+	//
+	// Duration is SECONDS. The feed states it as HH:MM:SS or MM:SS or a count;
+	// one canonical unit here means every surface formats it the same way.
+	Audio      string `json:"audio,omitempty"`      // enclosure url — the media file
+	AudioType  string `json:"audioType,omitempty"`  // its mime type
+	AudioBytes int64  `json:"audioBytes,omitempty"` // its length in bytes, 0 when unstated
+	Duration   int    `json:"duration,omitempty"`   // itunes:duration, in seconds
+	Episode    int    `json:"episode,omitempty"`    // itunes:episode
+	Season     int    `json:"season,omitempty"`     // itunes:season
+	Image      string `json:"image,omitempty"`      // itunes:image — episode artwork
+
 	PublishedAt time.Time `json:"publishedAt"`
 	FetchedAt   time.Time `json:"fetchedAt"`
 
@@ -216,6 +242,10 @@ type Item struct {
 	// preview.
 	truncated bool
 }
+
+// Podcast reports whether this item is an episode — something to play rather
+// than only something to read.
+func (i Item) Podcast() bool { return strings.TrimSpace(i.Audio) != "" }
 
 // Unread reports whether the item still wants reading.
 func (i Item) Unread() bool { return i.ReadAt == "" && i.DismissedAt == "" && i.SeededAt == "" }

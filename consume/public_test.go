@@ -291,3 +291,95 @@ func TestFeedIsCapped(t *testing.T) {
 		t.Errorf("want %d items, got %d", feedCap, n)
 	}
 }
+
+// svcWithEpisode is svcWithItem's podcast twin: one polled item that carries
+// an audio enclosure, ready to curate.
+func svcWithEpisode(t *testing.T, v *fakeVault) (*Service, Item) {
+	t.Helper()
+	s := New(t.TempDir(), v.io(), Config{})
+	d := ParseFeeds("")
+	d.Add(Subscription{ID: "tjl", Kind: KindRSS, Title: "This Jungian Life",
+		URL: "https://anchor.fm/s/fc8f2a44/podcast/rss", Mirror: MirrorFull, List: "listening"})
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	sub, _ := d.Find(d.Subs()[0].ID)
+
+	it := Item{
+		ID: itemID(KindRSS, sub.ID, "anchor-412"), SubID: sub.ID,
+		Source: "This Jungian Life", Author: "Lisa, Deb and Joseph",
+		Title:   "Episode 412: The Shadow",
+		URL:     "https://thisjungianlife.com/e/412",
+		Body:    "<p>What we refuse to see in ourselves.</p>",
+		Excerpt: "What we refuse to see in ourselves.", Chars: 35,
+		Audio:       "https://anchor.fm/media/412.mp3",
+		AudioType:   "audio/mpeg",
+		AudioBytes:  48213504,
+		Duration:    4353,
+		Episode:     412,
+		Season:      2,
+		PublishedAt: time.Date(2026, 8, 27, 6, 0, 0, 0, time.UTC),
+		FetchedAt:   time.Now().UTC(),
+	}
+	s.store.Commit(sub.ID, time.Now().UTC(), true, []Item{it}, nil, "")
+	return s, it
+}
+
+// THE PODCAST EXPORT TEST. Curating an episode has to hand a subscriber
+// something they can PLAY: the enclosure survives the round trip through the
+// vault note — which is the only thing the public feed reads — and comes back
+// out as <enclosure> plus the itunes: fields that name it an episode.
+func TestCuratedEpisodeCarriesItsAudio(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithEpisode(t, v)
+
+	entry, err := s.Curate(context.Background(), it.ID, "the shadow one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := v.read(t, entry.Path)
+	for _, want := range []string{
+		"audio: https://anchor.fm/media/412.mp3",
+		"duration: 4353", // SECONDS, never 1:12:33 — that is a YAML sexagesimal
+		"episode: 412",
+		"season: 2",
+	} {
+		if !strings.Contains(note, want) {
+			t.Errorf("the note lost %q:\n%s", want, note)
+		}
+	}
+	// The note also holds the episode for a person reading it in Obsidian.
+	if !strings.Contains(note, "[listen](https://anchor.fm/media/412.mp3)") {
+		t.Errorf("the note has no way to play the episode:\n%s", note)
+	}
+
+	feed := get(t, PublicHandler(s, PublicConfig{Title: "reading", BaseURL: "https://reading.example"}),
+		"/feed.xml").Body.String()
+	for _, want := range []string{
+		`<enclosure url="https://anchor.fm/media/412.mp3" type="audio/mpeg" length="48213504">`,
+		"<itunes:duration>1:12:33</itunes:duration>",
+		"<itunes:episode>412</itunes:episode>",
+		"<itunes:season>2</itunes:season>",
+		`xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"`,
+	} {
+		if !strings.Contains(feed, want) {
+			t.Errorf("the public feed is missing %q:\n%s", want, feed)
+		}
+	}
+}
+
+// The other half of the same claim: a piece of WRITING gets no enclosure and
+// no itunes: element, so nothing about the feed's existing items changed.
+func TestCuratedArticleGetsNoEnclosure(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithItem(t, v)
+	if _, err := s.Curate(context.Background(), it.ID, "the note"); err != nil {
+		t.Fatal(err)
+	}
+	feed := get(t, PublicHandler(s, PublicConfig{Title: "reading"}), "/feed.xml").Body.String()
+	for _, unwanted := range []string{"<enclosure", "<itunes:duration", "<itunes:episode"} {
+		if strings.Contains(feed, unwanted) {
+			t.Errorf("an article grew %q:\n%s", unwanted, feed)
+		}
+	}
+}

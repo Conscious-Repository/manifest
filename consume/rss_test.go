@@ -314,3 +314,111 @@ func TestParseDate(t *testing.T) {
 		t.Error("nonsense date should yield the zero time")
 	}
 }
+
+// A podcast feed, shaped the way the hosts actually emit one: the episode is
+// the <enclosure>, the show notes are the description, and the length, number
+// and artwork come from the itunes: namespace. The second item is the case
+// that must NOT become an episode — an ordinary post with an image attached.
+const podcastish = `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel>
+  <title>This Jungian Life</title>
+  <link>https://thisjungianlife.com</link>
+  <itunes:image href="https://cdn.example/show.jpg"/>
+  <item>
+    <title>Episode 412: The Shadow</title>
+    <link>https://thisjungianlife.com/e/412</link>
+    <guid isPermaLink="false">anchor-412</guid>
+    <pubDate>Thu, 27 Aug 2026 06:00:00 GMT</pubDate>
+    <description>What we refuse to see in ourselves.</description>
+    <enclosure url="https://anchor.fm/media/412.mp3?src=itunes" length="48213504" type="audio/mpeg"/>
+    <itunes:duration>1:12:33</itunes:duration>
+    <itunes:episode>412</itunes:episode>
+    <itunes:season>2</itunes:season>
+    <itunes:image href="https://cdn.example/412.jpg"/>
+  </item>
+  <item>
+    <title>A written post with a picture</title>
+    <link>https://thisjungianlife.com/p/written</link>
+    <guid isPermaLink="false">written-1</guid>
+    <pubDate>Wed, 26 Aug 2026 06:00:00 GMT</pubDate>
+    <description>Not an episode.</description>
+    <enclosure url="https://cdn.example/photo.jpg" length="1024" type="image/jpeg"/>
+  </item>
+</channel>
+</rss>`
+
+// THE PODCAST TEST. An enclosure is the whole difference between a card you
+// read and a card you play, so this asserts both directions: the episode gets
+// its audio, and the item with a picture attached stays exactly the article it
+// was before this code existed.
+func TestFetchRSSReadsTheAudioEnclosure(t *testing.T) {
+	srv := serve(t, podcastish, nil)
+	f := rssFetcher{hc: srv.Client()}
+	items, _, err := f.Fetch(context.Background(),
+		Subscription{ID: "tjl", Kind: KindRSS, URL: srv.URL, Title: "This Jungian Life"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 items, got %d", len(items))
+	}
+
+	ep := items[0]
+	if !ep.Podcast() {
+		t.Fatalf("the episode has no audio: %+v", ep)
+	}
+	if ep.Audio != "https://anchor.fm/media/412.mp3?src=itunes" {
+		t.Errorf("enclosure url: %q", ep.Audio)
+	}
+	if ep.AudioType != "audio/mpeg" {
+		t.Errorf("enclosure type: %q", ep.AudioType)
+	}
+	if ep.AudioBytes != 48213504 {
+		t.Errorf("enclosure length: %d", ep.AudioBytes)
+	}
+	if ep.Duration != 4353 {
+		t.Errorf("itunes:duration 1:12:33 should be 4353s, got %d", ep.Duration)
+	}
+	if ep.Episode != 412 || ep.Season != 2 {
+		t.Errorf("episode/season: %d/%d", ep.Episode, ep.Season)
+	}
+	if ep.Image != "https://cdn.example/412.jpg" {
+		t.Errorf("itunes:image: %q", ep.Image)
+	}
+	// Show notes ARE the publisher's whole text for an episode — never a
+	// teaser to go scrape the episode page over.
+	if ep.teaser {
+		t.Error("an episode must not be treated as a teaser")
+	}
+	if ep.Title != "Episode 412: The Shadow" || ep.URL != "https://thisjungianlife.com/e/412" {
+		t.Errorf("the ordinary fields must still be read: %q %q", ep.Title, ep.URL)
+	}
+
+	post := items[1]
+	if post.Podcast() || post.Audio != "" {
+		t.Errorf("an image enclosure is not an episode: %+v", post)
+	}
+	if post.Duration != 0 || post.Episode != 0 {
+		t.Errorf("no itunes fields to read here: %d %d", post.Duration, post.Episode)
+	}
+}
+
+func TestParseSecondsAcceptsWhatPublishersActuallyEmit(t *testing.T) {
+	for raw, want := range map[string]int{
+		"1:12:33": 4353, "42:10": 2530, "3600": 3600, "01:02:03": 3723,
+		"1801.5": 1801, "": 0, "unknown": 0, "1:2:3:4": 0, "-5": 0,
+	} {
+		if got := parseSeconds(raw); got != want {
+			t.Errorf("parseSeconds(%q) = %d, want %d", raw, got, want)
+		}
+	}
+}
+
+func TestFormatDurationReadsLikeAListenerSaysIt(t *testing.T) {
+	for secs, want := range map[int]string{4353: "1:12:33", 2530: "42:10", 61: "1:01", 0: ""} {
+		if got := FormatDuration(secs); got != want {
+			t.Errorf("FormatDuration(%d) = %q, want %q", secs, got, want)
+		}
+	}
+}
