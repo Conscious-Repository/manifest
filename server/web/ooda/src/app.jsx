@@ -58,28 +58,50 @@ class ViewBoundary extends React.Component {
   }
 }
 
+const OODA_VIEWS = ["dashboard", "portfolio", "map", "work", "feed", "archive", "chat"];
+
+// #/item/<id> is the shareable deep link to one work item. Item ids carry
+// slashes (aion-bl/x), so everything past the prefix is the id.
+function parseOodaHash() {
+  const h = (window.location.hash || "").replace(/^#\/?/, "");
+  const m = /^item\/(.+)$/.exec(h);
+  if (m) {
+    let id = m[1];
+    try { id = decodeURIComponent(id); } catch (e) { /* keep it raw */ }
+    return { view: "work", item: id };
+  }
+  return { view: OODA_VIEWS.includes(h) ? h : "dashboard", item: null };
+}
+
 function App() {
-  const [view, setView] = React.useState(() => {
-    const h = (window.location.hash || "").replace(/^#\/?/, "");
-    return ["dashboard", "portfolio", "map", "work", "feed", "archive", "chat"].includes(h) ? h : "dashboard";
-  });
+  const [route] = React.useState(parseOodaHash);   // read once, at mount
+  const [view, setView] = React.useState(route.view);
+  const [openItem, setOpenItem] = React.useState(route.item);
   const [data] = useOodaData();
 
-  React.useEffect(() => { window.location.hash = "#/" + view; }, [view]);
+  // One writer for the hash: an open item owns the URL, otherwise the tab
+  // does. replaceState keeps expanding a row out of the back button.
+  React.useEffect(() => {
+    const h = openItem ? "#/item/" + openItem : "#/" + view;
+    if (window.location.hash !== h) history.replaceState(null, "", h);
+  }, [view, openItem]);
+
+  // leaving work drops the open item, so its link cannot outlive the view
+  const go = React.useCallback((v) => { setOpenItem(null); setView(v); }, []);
 
   let body;
   if (data.loading) body = <Empty>loading the portfolio…</Empty>;
   else if (data.error) body = <Empty>{"could not load: " + data.error}</Empty>;
-  else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={setView} />;
+  else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={go} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
   else if (view === "map") body = <ViewMap />;
-  else if (view === "work") body = <ViewWork data={data} me={data.me} />;
+  else if (view === "work") body = <ViewWork data={data} me={data.me} openItem={openItem} onOpenItem={setOpenItem} />;
   else if (view === "feed") body = <ViewFeed />;
   else if (view === "archive") body = <ViewArchive />;
   else body = <ViewChat data={data} />;
 
   return (
-    <Shell view={view} setView={setView} me={data.me} sync={data.sync}>
+    <Shell view={view} setView={go} me={data.me} sync={data.sync}>
       <ViewBoundary viewKey={view}>{body}</ViewBoundary>
     </Shell>
   );

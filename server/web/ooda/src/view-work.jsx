@@ -2,7 +2,8 @@
 // them. Partners and contractors first, then `— unassigned —` LAST and
 // highlighted, because work nobody holds is the finding this tab exists for.
 
-function ViewWork({ data, me }) {
+function ViewWork({ data, me, openItem, onOpenItem }) {
+  const onOpen = onOpenItem || function () {};
   const groups = (data.work && data.work.groups) || [];
   const mine = ((me && me.initials) || "").toUpperCase();
   const [open, setOpen] = React.useState({});
@@ -74,11 +75,11 @@ function ViewWork({ data, me }) {
             </div>
             {isOpen ? (
               <>
-                <WorkLane label="OVERDUE" items={g.overdue} tone="over" mine={mine} owner={g.owner} />
-                <WorkLane label="DUE THIS WEEK" items={g.dueThisWeek} mine={mine} owner={g.owner} />
-                <WorkLane label="OPEN" items={g.open} mine={mine} owner={g.owner} />
-                <WorkLane label="DECISIONS" items={g.decisions} mine={mine} owner={g.owner} />
-                <WorkLane label="WAITING" items={g.waiting} mine={mine} owner={g.owner} />
+                <WorkLane label="OVERDUE" items={g.overdue} tone="over" mine={mine} owner={g.owner} openItem={openItem} onOpen={onOpen} />
+                <WorkLane label="DUE THIS WEEK" items={g.dueThisWeek} mine={mine} owner={g.owner} openItem={openItem} onOpen={onOpen} />
+                <WorkLane label="OPEN" items={g.open} mine={mine} owner={g.owner} openItem={openItem} onOpen={onOpen} />
+                <WorkLane label="DECISIONS" items={g.decisions} mine={mine} owner={g.owner} openItem={openItem} onOpen={onOpen} />
+                <WorkLane label="WAITING" items={g.waiting} mine={mine} owner={g.owner} openItem={openItem} onOpen={onOpen} />
               </>
             ) : null}
           </section>
@@ -88,13 +89,14 @@ function ViewWork({ data, me }) {
   );
 }
 
-function WorkLane({ label, items, tone, mine, owner }) {
+function WorkLane({ label, items, tone, mine, owner, openItem, onOpen }) {
   if (!items || !items.length) return null;
   return (
     <div className="ooda-lane">
       <div className="ooda-lane-label">{label}</div>
       {items.map((it) => (
-        <WorkRow key={it.id} it={it} tone={tone} isMine={!!mine && mine === (owner || "").toUpperCase()} />
+        <WorkRow key={it.id} it={it} tone={tone} isMine={!!mine && mine === (owner || "").toUpperCase()}
+          linked={!!openItem && openItem === it.id} onOpen={onOpen} />
       ))}
     </div>
   );
@@ -161,10 +163,24 @@ function AssignRow({ it, setState, setErr }) {
 //
 // The holder gets the AION item editor's moves, quiet: close (done, or
 // decided-with-outcome for a decision), retitle, hand on, delete-to-archive.
-function WorkRow({ it, tone, isMine }) {
-  const [open, setOpen] = React.useState(false);
+function WorkRow({ it, tone, isMine, linked, onOpen }) {
+  // `linked` means the URL points here (#/item/<id>): the row starts open and
+  // scrolls itself into view, so a shared link lands on the work, not the top
+  // of the board. Opening any row hands the URL to it.
+  const [open, setOpen] = React.useState(!!linked);
   const [state, setState] = React.useState("");
   const [err, setErr] = React.useState("");
+  const rowRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (linked && rowRef.current) rowRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [linked]);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (onOpen) onOpen(next ? it.id : null);
+  };
 
   const isDecision = it.kind === "decision";
   const [editing, setEditing] = React.useState(false);
@@ -239,7 +255,8 @@ function WorkRow({ it, tone, isMine }) {
 
   return (
     <>
-      <div className="ooda-row cols-work click" onClick={() => setOpen(!open)} role="button">
+      <div ref={rowRef} className={"ooda-row cols-work click" + (linked ? " sel" : "")}
+        onClick={toggle} role="button">
         <span className="ooda-stack">
           <b>{it.title}</b>
           {it.kind === "decision" ? <em>decision</em> : null}

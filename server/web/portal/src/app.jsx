@@ -60,8 +60,15 @@ class ViewBoundary extends React.Component {
   }
 }
 
+function decodeHashID(raw) {
+  try { return decodeURIComponent(raw); } catch (e) { return raw; }
+}
+
 function parseHash() {
   const h = (location.hash || '').replace('#', '');
+  // #item/<id> is the shareable deep link to one item. Item ids carry slashes
+  // (aion-bl/x), so everything after the prefix is the id.
+  if (/^item\//.test(h)) return { view: 'work', anchor: null, itemId: decodeHashID(h.slice(5)) };
   if (h === 'gantt' || h === 'timeline') return { view: 'goals', anchor: 'sec-timeline' };
   if (h === 'decisions' || h === 'proposals') return { view: 'work', anchor: 'sec-proposals' };
   if (h === 'todo' || h === 'task' || h === 'tasks' || h === 'work') return { view: 'work', anchor: null };
@@ -82,6 +89,7 @@ function PortalApp() {
   const [view, setView] = React.useState((initial && initial.view) || CONFIG.defaultView || 'field');
   const [filter, setFilter] = React.useState(null);
   const [sel, setSel] = React.useState(null);       // {kind:'item'|'person'|'goal'|'decision'} | 'add' | null
+  const [deepItem, setDeepItem] = React.useState((initial && initial.itemId) || null);
   const [libTab, setLibTab] = React.useState('all');
   const [addOpen, setAddOpen] = React.useState(false);
   const [themeId, setThemeId] = React.useState(T.load);
@@ -167,21 +175,37 @@ function PortalApp() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const pin = React.useCallback((id) => { setFilter(f => f === id ? null : id); }, []);
+
+  // Selecting an item puts it in the URL, so the address bar is always a link
+  // someone else can open. Clearing the selection hands the hash back to the
+  // view — #item/<id> must not outlive the item being on screen.
+  const select = React.useCallback((kind, id) => {
+    setSel({ kind: kind, id: id });
+    if (kind === 'item') history.replaceState(null, '', '#item/' + id);
+  }, []);
+  const clearSel = React.useCallback((toView) => {
+    setSel(null);
+    setDeepItem(null);
+    if (/^#item\//.test(location.hash)) history.replaceState(null, '', '#' + (toView || view));
+  }, [view]);
+
   // Esc: close modal first, else clear selection
   React.useEffect(() => {
     const onKey = e => {
       if (e.key !== 'Escape') return;
       if (apiModal) { setApiModal(false); return; }
       if (themeModal) { setThemeModal(false); return; }
-      setSel(null);
+      clearSel();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [apiModal, themeModal]);
+  }, [apiModal, themeModal, clearSel]);
 
   const go = React.useCallback((toView, anchorId, tab) => {
     setView(toView);
     setSel(null);
+    setDeepItem(null);
     if (tab) setLibTab(tab);
     const hash = anchorId === 'sec-timeline' ? '#timeline'
       : anchorId === 'sec-proposals' ? '#proposals' : '#' + toView;
@@ -193,8 +217,6 @@ function PortalApp() {
     }));
   }, []);
 
-  const pin = React.useCallback((id) => { setFilter(f => f === id ? null : id); }, []);
-  const select = React.useCallback((kind, id) => { setSel({ kind: kind, id: id }); }, []);
 
   const goalsIndex = React.useMemo(
     () => (data && data.goals ? U.buildGoalIndex(data.goals) : null), [data]);
@@ -203,6 +225,15 @@ function PortalApp() {
     const merged = D.mergedBacklog(data.backlog, data.team);
     return (merged && merged.items) || [];
   }, [data]);
+
+  // A #item/<id> link arrives before the backlog does, so the selection waits
+  // for the data. An id that is not in the list is dropped and the visitor
+  // simply lands on work — a stale link must never be a blank page.
+  React.useEffect(() => {
+    if (!deepItem || !items.length) return;
+    if (items.some(i => i.id === deepItem)) setSel({ kind: 'item', id: deepItem });
+    setDeepItem(null);
+  }, [deepItem, items]);
 
   const setTheme = id => { setThemeId(id); T.save(id); setThemeModal(false); };
 
@@ -232,12 +263,12 @@ function PortalApp() {
   if (selItem) {
     const ItemView = safe('ItemView');
     main = <ItemView item={selItem} me={me} team={data.team} teamOn={teamOn}
-      goalsIndex={goalsIndex} filter={filter} onBack={() => { setSel(null); setView('work'); }}
+      goalsIndex={goalsIndex} filter={filter} onBack={() => { clearSel('work'); setView('work'); }}
       pin={pin} reloadTeam={reloadTeam} onDiscuss={onDiscuss} />;
   } else if (view === 'field') {
     const FieldView = safe('FieldView');
     main = <FieldView data={data} items={items} goalsIndex={goalsIndex} me={me} filter={filter}
-      sel={sel} w={w} onSelect={select} onClearSel={() => setSel(null)} pin={pin} go={go}
+      sel={sel} w={w} onSelect={select} onClearSel={() => clearSel()} pin={pin} go={go}
       openFile={hash => window.open('api/team/file/' + hash, '_blank')} />;
   } else if (view === 'work') {
     const WorkView = safe('WorkView');
@@ -275,7 +306,7 @@ function PortalApp() {
         filterExplain={D.filterExplain(items, goalsIndex, filter)}
         onClearFilter={() => setFilter(null)} teamOn={teamOn} pendingCount={pendingCount}
         agentProposals={agentProps} chatLive={chatLive}
-        onAdd={() => { setView('work'); setSel(null); setAddOpen(true); }}
+        onAdd={() => { setView('work'); clearSel('work'); setAddOpen(true); }}
         onProposals={() => go('work', 'sec-proposals')} me={me} themeName={T.byId(themeId).name}
         onThemes={() => setThemeModal(true)} onAPI={() => setApiModal(true)} />
 
