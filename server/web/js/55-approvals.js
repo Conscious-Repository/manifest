@@ -59,6 +59,20 @@ function approvalCardEl(a) {
   // is a team-store Decide, not a file write — so it renders as prose plus the
   // standard Confirm/Reject, with no diff to show.
   const isPortalProp = a.type === "portal-proposal";
+  let goalsMeta = null; // the goals card's feed-meta row — the applies chip joins it
+  // For an actionable proposal the ````proposed payload is rendered as a diff
+  // below (and an aion payload as its editable form), so strip the fence from
+  // the human-facing evidence body.
+  // A proposal whose body carries a payload fence its DECLARED type does not
+  // render is misfiled — the spirit named the type/apply_path in prose instead
+  // of passing them as write_approval arguments. Printing the raw JSON at the
+  // owner reads as a broken card; strip it and say what actually went wrong.
+  const strayFence = apprStrayFence(a, isReContract, isAion);
+  let bodyText = isReContract ? stripFence(a.body, "re-contract")
+    : isPortalProp ? stripFence(a.body, "portal")
+    : isGoals ? stripFence(a.body, "goals")
+    : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
+  if (strayFence) bodyText = stripFence(bodyText, strayFence);
   if (isReContract) {
     // the contract card leads with money, not prose: the head is the kind
     // chip, the provenance, and the document — the action line's content
@@ -76,6 +90,27 @@ function approvalCardEl(a) {
       head.append(dl);
     }
     card.append(head);
+  } else if (isGoals) {
+    // the goals placement card speaks the FEED's card language (owner call
+    // 2026-08-28): kind chip + the placement's own title, the evidence as the
+    // why line, one mono meta row. ONLY the shell changes — the editable
+    // placement, the current→proposed diff and Confirm/Reject still follow
+    // below exactly as every other approval renders them.
+    card.classList.add("feed-card", "goals-appr-card");
+    const top = el("div", "feed-top");
+    top.append(el("span", "type-chip micro-label type-goals", "goals-item"));
+    top.append(el("span", "feed-title", goalsCardTitle(a)));
+    if (a.harness) top.append(el("span", "harness-chip", a.harness)); // federation source
+    card.append(top);
+    if (bodyText && bodyText.trim()) card.append(el("div", "feed-why", bodyText.trim()));
+    const gp = a.goalsPayload || {};
+    goalsMeta = el("div", "feed-meta goals-appr-meta");
+    // mode+level carry the one thing the stripped action line said that the
+    // title does not — what the placement DOES
+    const bits = [[gp.mode, gp.level].filter(Boolean).join(" "), a.agent,
+      a.created ? fmtWhen(a.created) : "", goalsCardSource(a)].filter(Boolean).join("  ·  ");
+    goalsMeta.append(el("span", null, bits));
+    card.append(goalsMeta);
   } else {
     const head = el("div", "appr-head");
     head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
@@ -83,20 +118,8 @@ function approvalCardEl(a) {
     card.append(head);
     if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
   }
-  // For an actionable proposal the ````proposed payload is rendered as a diff
-  // below (and an aion payload as its editable form), so strip the fence from
-  // the human-facing evidence body.
-  // A proposal whose body carries a payload fence its DECLARED type does not
-  // render is misfiled — the spirit named the type/apply_path in prose instead
-  // of passing them as write_approval arguments. Printing the raw JSON at the
-  // owner reads as a broken card; strip it and say what actually went wrong.
-  const strayFence = apprStrayFence(a, isReContract, isAion);
-  let bodyText = isReContract ? stripFence(a.body, "re-contract")
-    : isPortalProp ? stripFence(a.body, "portal")
-    : isGoals ? stripFence(a.body, "goals")
-    : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
-  if (strayFence) bodyText = stripFence(bodyText, strayFence);
-  if (bodyText && bodyText.trim() && !isReContract) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
+  // the goals card already rendered its evidence as the feed-style why line
+  if (bodyText && bodyText.trim() && !isReContract && !isGoals) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
   let blocked = false, blockMsg = "";
   if (isPortalProp && !a.allowed) {
     // the server already worked out why (settled in the portal first, or that
@@ -125,7 +148,9 @@ function approvalCardEl(a) {
     if (!isNewNote && !isReContract) {
       const chip = el("div", "appr-apply");
       chip.append(el("span", "appr-apply-label", "APPLIES TO"), el("code", "appr-apply-path", a.applyPath));
-      card.append(chip);
+      // the goals card folds the path into its meta row — a feed card's
+      // provenance sits on one line, it does not stack blocks
+      if (goalsMeta) goalsMeta.append(chip); else card.append(chip);
     }
 
     if (!a.allowed) {
@@ -1365,6 +1390,30 @@ async function apprGoalsRegistry() {
     }));
   } catch (e) { apprGoalsReg = []; }
   return apprGoalsReg;
+}
+
+// goalsCardTitle — the feed-style title of a goals-item card: the placement's
+// own text, never the raw action line. The payload is the truth; the fallback
+// strips the "goals <mode> <level>:" prefix and the [todo:: <id>] token the
+// delegate rides on the action.
+function goalsCardTitle(a) {
+  const p = a.goalsPayload || {};
+  const fromPayload = String(p.title || p.targetId || "").trim();
+  if (fromPayload) return fromPayload;
+  const stripped = String(a.action || "")
+    .replace(/^\s*goals\s+\S+\s+\S+\s*:\s*/i, "")
+    .replace(/\s*\[todo::[^\]]*\]\s*$/i, "")
+    .trim();
+  return stripped || a.action || "goals placement";
+}
+
+// goalsCardSource — where the placement came from, for the meta row: the
+// payload's own source when the proposer set one, else the channel named on
+// the action (a task filed from telegram carries it in the todo token).
+function goalsCardSource(a) {
+  const src = String((a.goalsPayload || {}).source || "").trim();
+  if (src) return src;
+  return /telegram/i.test(a.action || "") ? "telegram" : "";
 }
 
 function buildGoalsEditor(a) {

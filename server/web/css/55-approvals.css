@@ -164,3 +164,15 @@
 /* the gate note beside Confirm: the Σ rule, stated before the click */
 .appr-gate { margin-left: auto; align-self: center; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .appr-gate.off { color: var(--base-100); }
+
+/* ---- the goals-item card in the FEED's own card language (2026-08-28) ----
+   ONLY this approval type: the kind chip, title, why line and meta row are the
+   extractor card's (45-feed.css owns their recipe — nothing is re-declared
+   here), while the placement editor, diff and Confirm/Reject below stay
+   exactly as every other approval renders them. */
+.approval-card.goals-appr-card { padding: var(--sp-4) var(--sp-6); gap: var(--sp-3); }
+.goals-appr-card .feed-title { font-size: var(--fs-lg); }
+.type-chip.type-goals { color: var(--base-50); border-color: var(--base-25); }
+/* provenance sits on one line: agent · when · source, then the apply path */
+.goals-appr-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-5); }
+.goals-appr-meta .appr-apply { gap: var(--sp-3); }
