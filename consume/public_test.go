@@ -85,6 +85,8 @@ func TestPublicFeedServesOnlyCuratedItems(t *testing.T) {
 		"/api/consume", "/api/feed", "/api/day", "/js/app.js", "/index.html",
 		"/extrinsic/private-research.md", "/feed.xml/../api/feed", "/curated",
 		"/feed.xml/", "/subscriptions",
+		// The artwork route is ONE path, not an asset directory.
+		"/assets/", "/assets/feed.png/x", "/assets/logo.png", "/assets/feed.PNG",
 	} {
 		w := get(t, h, path)
 		if loc := w.Header().Get("Location"); w.Code >= 300 && w.Code < 400 && loc != "" {
@@ -255,11 +257,64 @@ func TestIndexCarriesFullBodiesInline(t *testing.T) {
 			t.Errorf("the index is missing %q:\n%s", want, index)
 		}
 	}
-	// Still exactly two routes: an index that holds the bodies needs no
+	// Still exactly three routes: an index that holds the bodies needs no
 	// per-entry permalink, and every extra path here is public surface.
 	for _, path := range []string{"/p/the-dictatorship-of-the-articulate", "/1", "/entry/0"} {
 		if w := get(t, h, path); w.Code != http.StatusNotFound {
-			t.Errorf("%s returned %d; the public surface is / and /feed.xml", path, w.Code)
+			t.Errorf("%s returned %d; the public surface is /, /feed.xml and %s",
+				path, w.Code, feedImagePath)
+		}
+	}
+}
+
+// The channel has a face: the feed names artwork, and the same handler serves
+// it. A reader that shows a logo makes exactly one extra request, to a path
+// this listener actually answers.
+func TestChannelArtworkIsNamedAndServed(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithItem(t, v)
+	if _, err := s.Curate(context.Background(), it.ID, "the note"); err != nil {
+		t.Fatal(err)
+	}
+	h := PublicHandler(s, PublicConfig{Title: "reading", BaseURL: "https://reading.example/"})
+
+	art := "https://reading.example" + feedImagePath
+	feed := get(t, h, "/feed.xml").Body.String()
+	for _, want := range []string{
+		"<image>", "<url>" + art + "</url>", "<title>reading</title>",
+		`<itunes:image href="` + art + `">`,
+	} {
+		if !strings.Contains(feed, want) {
+			t.Errorf("the feed is missing %q:\n%s", want, feed)
+		}
+	}
+	// The index unfurls with the same picture.
+	if index := get(t, h, "/").Body.String(); !strings.Contains(index,
+		`<meta property="og:image" content="`+art+`">`) {
+		t.Errorf("the index carries no og:image:\n%s", index)
+	}
+
+	w := get(t, h, feedImagePath)
+	if w.Code != http.StatusOK {
+		t.Fatalf("%s returned %d; the feed names artwork it must be able to serve",
+			feedImagePath, w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("artwork Content-Type = %q, want image/png", ct)
+	}
+	// A real PNG, not an empty embed.
+	if body := w.Body.Bytes(); len(body) < 1024 || string(body[1:4]) != "PNG" {
+		t.Errorf("artwork is %d bytes and does not start with a PNG header", len(body))
+	}
+}
+
+// Without a base URL there is no URL the artwork could be fetched from, so the
+// channel claims none — the empty-config feed stays byte-stable.
+func TestNoBaseURLMeansNoArtwork(t *testing.T) {
+	feed := get(t, PublicHandler(onlyEntries{}, PublicConfig{}), "/feed.xml").Body.String()
+	for _, unwanted := range []string{"<image>", "itunes:image"} {
+		if strings.Contains(feed, unwanted) {
+			t.Errorf("a feed with no base URL emitted %q:\n%s", unwanted, feed)
 		}
 	}
 }

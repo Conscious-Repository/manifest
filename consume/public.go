@@ -1,6 +1,7 @@
 package consume
 
 import (
+	_ "embed"
 	"encoding/xml"
 	"html"
 	"net/http"
@@ -52,6 +53,19 @@ type PublicConfig struct {
 // the recent past.
 const feedCap = 50
 
+// The channel's cover art. It lives HERE, inside the package that serves the
+// public feed, rather than in the dashboard's asset tree: the isolation
+// argument is that this listener holds a CuratedFeed and its own identity and
+// reaches nothing else, and an image it reads out of another package's
+// embedded filesystem would be a second thing it reaches.
+//
+//go:embed assets/feed.png
+var feedImage []byte
+
+// feedImagePath is the ONE asset path this listener serves, and the same
+// string the channel points <image> and itunes:image at.
+const feedImagePath = "/assets/feed.png"
+
 // PublicHandler serves the curated feed and nothing else.
 func PublicHandler(feed CuratedFeed, cfg PublicConfig) http.Handler {
 	if strings.TrimSpace(cfg.Title) == "" {
@@ -63,6 +77,14 @@ func PublicHandler(feed CuratedFeed, cfg PublicConfig) http.Handler {
 		w.Header().Set("Content-Type", "application/rss+xml; charset=utf-8")
 		w.Header().Set("Cache-Control", "public, max-age=300")
 		_, _ = w.Write([]byte(FeedXML(feed.Entries(), cfg)))
+	})
+
+	// The third route, and the only one that is not text: the cover art the
+	// channel names in <image>. A reader that shows a feed logo fetches this.
+	mux.HandleFunc("GET "+feedImagePath, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=300")
+		_, _ = w.Write(feedImage)
 	})
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +170,27 @@ type rssChannel struct {
 	Generator     string   `xml:"generator"`
 	LastBuildDate string   `xml:"lastBuildDate,omitempty"`
 	AtomLink      *rssAtomLink
-	Items         []rssChannelItem
+	// The channel artwork, twice: <image> is the RSS 2.0 element every reader
+	// has understood for twenty years, itunes:image is the one podcast clients
+	// and most modern readers actually look at. Both are nil without a
+	// BaseURL, because artwork the reader cannot fetch is worse than none.
+	Image       *rssImage
+	ItunesImage *rssItunesImage
+	Items       []rssChannelItem
+}
+
+// rssImage is the channel's logo. <width>/<height> are optional and omitted;
+// readers scale the file they get.
+type rssImage struct {
+	XMLName xml.Name `xml:"image"`
+	URL     string   `xml:"url"`
+	Title   string   `xml:"title"`
+	Link    string   `xml:"link"`
+}
+
+type rssItunesImage struct {
+	XMLName xml.Name `xml:"itunes:image"`
+	Href    string   `xml:"href,attr"`
 }
 
 type rssRoot struct {
@@ -184,6 +226,12 @@ func FeedXML(entries []CuratedEntry, cfg PublicConfig) string {
 	}
 	if base != "" {
 		ch.AtomLink = &rssAtomLink{Href: base + "/feed.xml", Rel: "self", Type: "application/rss+xml"}
+		// Derived from the channel's own identity — the artwork is served by
+		// the same handler that serves this document, so there is nothing to
+		// configure and nothing to keep in step.
+		art := base + feedImagePath
+		ch.Image = &rssImage{URL: art, Title: ch.Title, Link: ch.Link}
+		ch.ItunesImage = &rssItunesImage{Href: art}
 	}
 	if len(entries) > feedCap {
 		entries = entries[:feedCap]
@@ -275,9 +323,10 @@ func paperFields(it *rssChannelItem, e CuratedEntry) {
 // without it gets no enclosure and no itunes: element, and its item is
 // byte-identical to what this feed emitted before podcasts were a thing here.
 //
-// The channel is deliberately NOT dressed as a podcast feed — no
-// itunes:category, no channel artwork, no owner block. This is a linkblog that
-// sometimes carries an episode, and claiming to be a show would be a claim
+// The channel is still deliberately NOT dressed as a podcast feed — no
+// itunes:category, no owner block, no explicit flag. It has artwork, which any
+// feed may have and which is the linkblog's own logo; what it does not have is
+// the metadata that would claim to be a SHOW, because that would be a claim
 // about every other item in it. A subscriber's client plays the episode from
 // the enclosure regardless; that is what the element is for.
 func episodeFieldsXML(it *rssChannelItem, e CuratedEntry) {
@@ -377,8 +426,9 @@ func pubDate(stored string) string {
 // the writing, not on a table of contents pointing back out. No JavaScript, no
 // tracking, no styling ambition — one document per curated note, in order.
 //
-// The surface stays exactly two routes. There is no per-entry permalink here
-// on purpose: every additional path on the one listener that faces the open
+// The surface stays exactly three routes — this page, the feed, and the
+// channel artwork the feed names. There is no per-entry permalink here on
+// purpose: every additional path on the one listener that faces the open
 // internet is a thing the isolation test has to re-argue, and an index that
 // already holds the bodies does not need one.
 func indexHTML(entries []CuratedEntry, cfg PublicConfig) string {
@@ -389,6 +439,14 @@ func indexHTML(entries []CuratedEntry, cfg PublicConfig) string {
 	b.WriteString(`<title>` + html.EscapeString(cfg.Title) + `</title>`)
 	b.WriteString(`<link rel="alternate" type="application/rss+xml" title="` +
 		html.EscapeString(cfg.Title) + `" href="feed.xml">`)
+	// The same artwork the channel names, for anything that unfurls a link.
+	// Absolute, because a preview fetcher does not resolve against this page.
+	if base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"); base != "" {
+		art := html.EscapeString(base + feedImagePath)
+		b.WriteString(`<link rel="icon" href="` + art + `">`)
+		b.WriteString(`<meta property="og:title" content="` + html.EscapeString(cfg.Title) + `">`)
+		b.WriteString(`<meta property="og:image" content="` + art + `">`)
+	}
 	b.WriteString(`<style>
 :root{color-scheme:light dark}
 body{max-width:38rem;margin:4rem auto;padding:0 1.25rem;
