@@ -1479,9 +1479,12 @@ function buildGoalsEditor(a) {
 
   const rebuild = () => {
     row.innerHTML = "";
-    const modeSel = selectEl(["add", "edit", "move"]);
+    const modeSel = selectEl(["add", "edit", "move", "delete"]);
     modeSel.value = p.mode || "add";
-    p.mode = modeSel.value;
+    // a mode the select can't represent (or a blank select) must never clobber
+    // the payload — an empty mode reads "mode must be add, edit, move or delete
+    // (got \"\")" on Confirm (2026-08-29 delete-card bug)
+    if (modeSel.value) p.mode = modeSel.value;
     modeSel.onchange = () => { p.mode = modeSel.value; rebuild(); };
     chip("mode", modeSel);
 
@@ -1535,7 +1538,7 @@ function buildGoalsEditor(a) {
       chip("under", sel);
     }
 
-    if (p.mode === "edit" || p.mode === "move") {
+    if (p.mode === "edit" || p.mode === "move" || p.mode === "delete") {
       // the goal being changed — /api/goals/match audits live goals only, and
       // a pick fills BOTH targetId and the staleness anchor
       const targetTa = typeahead({
@@ -1552,7 +1555,7 @@ function buildGoalsEditor(a) {
       });
       chip("target", targetTa.el);
     }
-    if (p.mode !== "move") {
+    if (p.mode !== "move" && p.mode !== "delete") {
       const t = inputEl("title");
       t.value = p.title || "";
       t.oninput = () => { p.title = t.value; sync(); };
