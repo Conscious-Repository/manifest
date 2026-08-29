@@ -8,7 +8,8 @@ import (
 
 // The fixture mirrors the live file's shape: two areas, a rock with a
 // milestone and frozen depth-2 history (one frozen line carrying a phantom
-// [goal::] pin — the live file has one at goals.md:58).
+// [goal::] pin — the live file has one at goals.md:58), plus one depth-3 line
+// the parser keeps as FROZEN history under "Grind concrete".
 func canonicalFixture(t *testing.T) string {
 	t.Helper()
 	raw := "# Goals\n\n" +
@@ -19,6 +20,7 @@ func canonicalFixture(t *testing.T) string {
 		"- [ ] Backyard [goal:: home/backyard] [quarter:: 2026-Q3]\n" +
 		"    - [ ] Metal up\n" +
 		"        - [x] Grind concrete\n" +
+		"            - [x] haul the spoil away\n" +
 		"        - [x] pick-up tablesaw [goal:: home/backyard/metal-up/pick-up-tablesaw]\n" +
 		"    - [x] Yard done [goal:: home/backyard/yard-done]\n" +
 		"- [ ] Basement plan [quarter:: 2026-Q3]\n\n" +
@@ -210,4 +212,101 @@ func TestParsePlacementFence(t *testing.T) {
 	if _, ok := ParsePlacement("no fence here"); ok {
 		t.Fatal("no-fence body must not parse")
 	}
+}
+
+func TestDeleteGoal(t *testing.T) {
+	cur := canonicalFixture(t)
+	next := mustApply(t, cur, PlacementPayload{
+		Mode: ModeDelete, Level: LevelMilestone, Area: "Home",
+		TargetID: "home/backyard/yard-done", AnchorText: "Yard done",
+	})
+	if strings.Contains(next, "Yard done") {
+		t.Fatalf("the goal is still there:\n%s", next)
+	}
+	// exactly one line left the file and nothing arrived
+	if strings.Count(next, "\n") != strings.Count(cur, "\n")-1 {
+		t.Fatalf("delete must remove exactly one line:\n%s", next)
+	}
+	if Serialize(Parse(next)) != next {
+		t.Fatal("post-delete not a fixpoint")
+	}
+	// everything else is byte-identical
+	if !strings.Contains(next, "    - [ ] Metal up\n        - [x] Grind concrete\n") {
+		t.Fatalf("delete disturbed the rest of the ladder:\n%s", next)
+	}
+}
+
+func TestDeleteRefusals(t *testing.T) {
+	cur := canonicalFixture(t)
+	// not found — the id may have been renamed since the proposal was written
+	mustRefuse(t, cur, PlacementPayload{
+		Mode: ModeDelete, Level: LevelRock, Area: "Home",
+		TargetID: "home/gone", AnchorText: "whatever",
+	}, "no goal")
+	// stale anchor: the line reads differently now, so the owner re-reviews
+	mustRefuse(t, cur, PlacementPayload{
+		Mode: ModeDelete, Level: LevelRock, Area: "Home",
+		TargetID: "home/basement-plan", AnchorText: "Basement scheme (renamed since)",
+	}, "re-review it")
+	// a delete may not cross areas
+	mustRefuse(t, cur, PlacementPayload{
+		Mode: ModeDelete, Level: LevelRock, Area: "Personal",
+		TargetID: "home/basement-plan", AnchorText: "Basement plan",
+	}, "not in area")
+	// DeleteGoal takes the subtree with it — anything wider than one line is
+	// refused with the reason, not with the budget's arithmetic
+	mustRefuse(t, cur, PlacementPayload{
+		Mode: ModeDelete, Level: LevelMilestone, Area: "Home",
+		TargetID: "home/backyard/metal-up", AnchorText: "Metal up",
+	}, "move or delete those first")
+	// targetId/anchorText are required at validate time
+	for _, p := range []PlacementPayload{
+		{Mode: ModeDelete, Level: LevelRock, Area: "Home", AnchorText: "x"},
+		{Mode: ModeDelete, Level: LevelRock, Area: "Home", TargetID: "home/x"},
+		{Mode: ModeDelete, Level: "stage", Area: "Home", TargetID: "home/x", AnchorText: "x"},
+	} {
+		if err := p.Validate(); err == nil {
+			t.Fatalf("should refuse: %+v", p)
+		}
+	}
+}
+
+// Frozen history under a deleted goal is never lost: the verbatim lines hand
+// off to the sibling at the same depth, so they still print (and still re-parse)
+// as history rather than coming back as live goals.
+func TestDeletePreservesFrozenHistory(t *testing.T) {
+	cur := canonicalFixture(t)
+	const frozen = "            - [x] haul the spoil away"
+	next := mustApply(t, cur, PlacementPayload{
+		Mode: ModeDelete, Level: LevelTask, Area: "Home",
+		TargetID: "home/backyard/metal-up/grind-concrete", AnchorText: "Grind concrete",
+	})
+	if strings.Contains(next, "Grind concrete") {
+		t.Fatalf("the goal is still there:\n%s", next)
+	}
+	if !strings.Contains(next, frozen+"\n") {
+		t.Fatalf("frozen history was lost:\n%s", next)
+	}
+	if strings.Count(next, "\n") != strings.Count(cur, "\n")-1 {
+		t.Fatalf("delete must remove exactly one line:\n%s", next)
+	}
+	if Serialize(Parse(next)) != next {
+		t.Fatalf("post-delete not a fixpoint:\n%s", next)
+	}
+	// and it is still HISTORY, not a live goal the tasks list would pick up
+	_, keeper := Parse(next).FindGoal("home/backyard/metal-up/pick-up-tablesaw")
+	if keeper == nil || len(keeper.Frozen) != 1 || keeper.Frozen[0] != frozen {
+		t.Fatalf("frozen history did not stay frozen: %+v", keeper)
+	}
+	// the last goal under a parent has no sibling to hold its history — that
+	// delete refuses rather than writing history back as live lines
+	raw := Serialize(Parse("# Goals\n\n## Home\n\n### Rocks (90-day)\n" +
+		"- [ ] Backyard [quarter:: 2026-Q3]\n" +
+		"    - [ ] Metal up\n" +
+		"        - [x] Grind concrete\n" +
+		frozen + "\n"))
+	mustRefuse(t, raw, PlacementPayload{
+		Mode: ModeDelete, Level: LevelTask, Area: "Home",
+		TargetID: "home/backyard/metal-up/grind-concrete", AnchorText: "Grind concrete",
+	}, "frozen history")
 }

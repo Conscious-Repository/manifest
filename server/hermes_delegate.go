@@ -112,9 +112,9 @@ Allowed types (one JSON object per block; no other types exist):
 - {"type":"run-errand","errand":"<what to do>","account":"<optional>"} — a real-world errand the owner's effector runs
 - {"type":"aion-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>","due":"YYYY-MM-DD, optional"}
 - {"type":"re-backlog","kind":"task|decision","title":"...","owner":"<initials, optional>"}
-- {"type":"goals-item","mode":"add|edit|move","level":"rock|milestone","area":"<## heading in goals.md>",
+- {"type":"goals-item","mode":"add|edit|move|delete","level":"rock|milestone","area":"<## heading in goals.md>",
    "title":"...","parentId":"<rock id, for milestone add/move>",
-   "targetId":"<goal id, edit/move>","anchorText":"<the goal's current text, edit/move>"} — place/edit/move a goal line (owner's words only)
+   "targetId":"<goal id, edit/move/delete>","anchorText":"<the goal's current text, edit/move/delete>"} — place/edit/move/remove a goal line (owner's words only)
 
 Each block is filed for the OWNER'S APPROVAL — nothing happens until he
 confirms, so file the change and reference it in your brief rather than

@@ -43,12 +43,12 @@ type ProposalSpec struct {
 
 	// goals-item (§12 2026-08-19): a placement into the owner's goals.md.
 	// Title/Owner/Due are shared with the fields above.
-	Mode       string   `json:"mode"`       // add | edit | move
+	Mode       string   `json:"mode"`       // add | edit | move | delete
 	Level      string   `json:"level"`      // rock | milestone
 	Area       string   `json:"area"`       // "Home", "Real Estate", …
 	ParentID   string   `json:"parentId"`   // milestone add/move: the rock it goes under
-	TargetID   string   `json:"targetId"`   // edit/move: the goal being changed
-	AnchorText string   `json:"anchorText"` // edit/move: the target's current text (staleness guard)
+	TargetID   string   `json:"targetId"`   // edit/move/delete: the goal being changed
+	AnchorText string   `json:"anchorText"` // edit/move/delete: the target's current text (staleness guard)
 	Serves     []string `json:"serves"`
 }
 
@@ -86,9 +86,9 @@ func (p ProposalSpec) validate() error {
 		}
 	case "goals-item":
 		switch p.Mode {
-		case "add", "edit", "move":
+		case "add", "edit", "move", "delete":
 		default:
-			return fmt.Errorf("goals-item mode must be add, edit or move (got %q)", p.Mode)
+			return fmt.Errorf("goals-item mode must be add, edit, move or delete (got %q)", p.Mode)
 		}
 		if p.Level != "rock" && p.Level != "milestone" {
 			return fmt.Errorf("goals-item level must be rock or milestone (got %q)", p.Level)

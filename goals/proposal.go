@@ -6,8 +6,9 @@
 // This file is deliberately I/O-free: ApplyPlacement is bytes→bytes, the
 // approvals store owns the read and the capability-gated write, exactly like
 // aion.AppendBacklogItem. All mutation goes through the Doc's own semantic
-// methods (EditGoal, MoveGoal) so pin-before-rename, alias-on-rename and the
-// only-rocks-take-children rule are inherited, never re-implemented.
+// methods (EditGoal, MoveGoal, DeleteGoal) so pin-before-rename,
+// alias-on-rename and the only-rocks-take-children rule are inherited, never
+// re-implemented.
 package goals
 
 import (
@@ -29,6 +30,11 @@ const (
 	ModeAdd  = "add"
 	ModeEdit = "edit"
 	ModeMove = "move"
+	// ModeDelete removes one goal line the owner no longer wants. It carries
+	// the same targetId + anchorText staleness guard as edit/move — a delete
+	// is the one placement that cannot be undone by reading the next card, so
+	// it never fires against a line that has changed since it was proposed.
+	ModeDelete = "delete"
 
 	LevelRock      = "rock"
 	LevelMilestone = "milestone" // depth 1 under a rock
@@ -38,13 +44,13 @@ const (
 // PlacementPayload is the ```goals fence's JSON object. quote/confidence are
 // proposal-display only and never reach goals.md.
 type PlacementPayload struct {
-	Mode  string `json:"mode"`  // add | edit | move
+	Mode  string `json:"mode"`  // add | edit | move | delete
 	Level string `json:"level"` // rock | milestone | task
 	Area  string `json:"area"`  // "## <Area>" heading text, e.g. "Home"
 
 	ParentID string `json:"parentId,omitempty"` // milestone add/move: the rock that takes it; task add: any existing goal ("" on move = promote to rock)
-	TargetID string `json:"targetId,omitempty"` // edit/move: the goal being changed
-	// AnchorText is the staleness guard on edit/move: the target's CURRENT
+	TargetID string `json:"targetId,omitempty"` // edit/move/delete: the goal being changed
+	// AnchorText is the staleness guard on edit/move/delete: the target's CURRENT
 	// text as the proposer saw it. A mismatch refuses the apply — the file
 	// moved under the proposal, and the owner re-reviews rather than the app
 	// guessing. (New invention: aion-resolve matches by title-derived id and
@@ -69,9 +75,9 @@ type PlacementPayload struct {
 // Validate checks the closed vocabularies and per-mode required fields.
 func (p *PlacementPayload) Validate() error {
 	switch p.Mode {
-	case ModeAdd, ModeEdit, ModeMove:
+	case ModeAdd, ModeEdit, ModeMove, ModeDelete:
 	default:
-		return fmt.Errorf("mode must be add, edit or move (got %q)", p.Mode)
+		return fmt.Errorf("mode must be add, edit, move or delete (got %q)", p.Mode)
 	}
 	switch p.Level {
 	case LevelRock, LevelMilestone, LevelTask:
@@ -89,7 +95,10 @@ func (p *PlacementPayload) Validate() error {
 		if p.Level != LevelRock && strings.TrimSpace(p.ParentID) == "" {
 			return fmt.Errorf("a %s add needs the goal it goes under (parentId)", p.Level)
 		}
-	case ModeEdit, ModeMove:
+	case ModeEdit, ModeMove, ModeDelete:
+		// delete asks for no title — the level it carries is informational
+		// (what the card SAYS it is removing); the target and its anchor are
+		// what actually resolve the line.
 		if strings.TrimSpace(p.TargetID) == "" {
 			return fmt.Errorf("%s needs targetId", p.Mode)
 		}
@@ -171,6 +180,10 @@ func ApplyPlacement(current string, p PlacementPayload, now time.Time) (string, 
 		}
 	case ModeMove:
 		if err := applyMove(doc, area, p); err != nil {
+			return "", err
+		}
+	case ModeDelete:
+		if err := applyDelete(doc, area, p); err != nil {
 			return "", err
 		}
 	}
@@ -293,6 +306,68 @@ func applyMove(doc *Doc, area *Area, p PlacementPayload) error {
 	return nil
 }
 
+// applyDelete removes ONE goal line the owner approved removing. The target
+// resolves through the same anchor as edit/move, and the removal itself is
+// DeleteGoal's — never re-implemented here.
+func applyDelete(doc *Doc, area *Area, p PlacementPayload) error {
+	g, err := anchoredTarget(doc, p)
+	if err != nil {
+		return err
+	}
+	if a, _ := doc.FindGoal(g.ID); a == nil || a.Name != area.Name {
+		return fmt.Errorf("%q is not in area %s", p.TargetID, area.Name)
+	}
+	// DeleteGoal splices the target out WITH its subtree, and the budget below
+	// is exactly one line — so a goal that still carries live goals under it is
+	// refused HERE, with the reason, rather than as an arithmetic complaint.
+	if n := len(g.Children); n > 0 {
+		return fmt.Errorf("%q still has %d goal(s) under it — move or delete those first", p.TargetID, n)
+	}
+	// Frozen history under the target is never silently lost with it. Those
+	// lines are verbatim pre-split task history and only re-parse AS history
+	// when they sit one level deeper than a live goal — so they hand off to a
+	// sibling at the target's own depth, which keeps them under the same
+	// parent, byte-identical, and keeps the file a Serialize fixpoint. With no
+	// sibling to hold them there is nowhere in the parent's subtree deep
+	// enough: the delete refuses rather than write history back as live lines.
+	if len(g.Frozen) > 0 {
+		keeper := frozenKeeper(doc, g)
+		if keeper == nil {
+			return fmt.Errorf("%q carries %d line(s) of frozen history and is the only goal under its parent — deleting it would re-read that history as live goals; clear the history first", p.TargetID, len(g.Frozen))
+		}
+		keeper.Frozen = append(keeper.Frozen, g.Frozen...)
+		g.Frozen = nil
+	}
+	if !doc.DeleteGoal(g.ID) {
+		return fmt.Errorf("delete of %q failed", p.TargetID)
+	}
+	doc.assignIDs()
+	return nil
+}
+
+// frozenKeeper picks the sibling that inherits a deleted goal's frozen history:
+// the one printed just before it when there is one (the history stays where it
+// reads), otherwise the one just after. nil when the goal has no sibling.
+func frozenKeeper(doc *Doc, g *Goal) *Goal {
+	_, cp, _ := doc.container(g.ID)
+	if cp == nil {
+		return nil
+	}
+	for i, x := range *cp {
+		if x != g {
+			continue
+		}
+		if i > 0 {
+			return (*cp)[i-1]
+		}
+		if i+1 < len(*cp) {
+			return (*cp)[i+1]
+		}
+		return nil
+	}
+	return nil
+}
+
 // anchoredTarget resolves TargetID and enforces the staleness anchor.
 func anchoredTarget(doc *Doc, p PlacementPayload) (*Goal, error) {
 	_, g := doc.FindGoal(strings.TrimSpace(p.TargetID))
@@ -322,9 +397,9 @@ func areaLiveGoals(a *Area) []*Goal {
 }
 
 // assertMinimalDiff is the structural budget: a confirmed placement is ONE
-// line added (add), one line replaced in position (edit), or one line
-// relocated (move). Anything wider means the transform did more than the
-// owner approved, and the write is refused.
+// line added (add), one line replaced in position (edit), one line relocated
+// (move), or one line removed (delete). Anything wider means the transform did
+// more than the owner approved, and the write is refused.
 func assertMinimalDiff(current, next, mode string) error {
 	if next == current {
 		return errors.New("the placement changed nothing")
@@ -350,6 +425,12 @@ func assertMinimalDiff(current, next, mode string) error {
 		}
 		if len(cur) != len(nxt) {
 			return fmt.Errorf("move must preserve the line count (%d → %d)", len(cur), len(nxt))
+		}
+	case ModeDelete:
+		// exactly one line leaves the file and nothing arrives — a delete that
+		// re-wrote anything else did more than the owner approved
+		if removed != 1 || added != 0 {
+			return fmt.Errorf("delete must remove exactly one line (got +%d/-%d)", added, removed)
 		}
 	}
 	return nil
