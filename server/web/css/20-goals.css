@@ -222,6 +222,8 @@
 
 /* tasks under the current stage */
 .go-task { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0 var(--sp-1) 34px; }
+.go-goal-task { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0 var(--sp-1) 50px; }
+.go-goal-task.done .go-task-text { color: var(--base-40); text-decoration: line-through; }
 .go-task-text { font-family: var(--sans); font-size: var(--fs-md); min-width: 0; }
 .go-task-age { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .go-task-ghost { margin-left: 34px; font-size: var(--fs-xs); }

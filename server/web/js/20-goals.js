@@ -585,6 +585,41 @@ function goTaskRow(t, areaName) {
   return row;
 }
 
+// goGoalTaskRow — a live goals.md TASK (the milestone's own child, depth 3):
+// checkbox + click-to-edit text + owner + delete, all through the goals API.
+// Visually one indent deeper than a milestone (go-goal-task), distinct from the
+// substrate todo rows above it.
+function goGoalTaskRow(c, areaName, stage) {
+  const row = el("div", "go-goal-task" + (c.checked ? " done" : ""));
+  row.dataset.goalId = c.id;
+  const check = el("button", "go-check" + (c.checked ? " on" : ""), c.checked ? "✓" : "○");
+  check.title = c.checked ? "reopen this task" : "mark this task complete";
+  check.onclick = (e) => { e.stopPropagation(); goalsApi("POST", "/api/goals/check", { id: c.id, checked: !c.checked }); };
+  row.append(check);
+  const label = el("span", "go-task-text" + (c.checked ? " done" : ""), c.text);
+  clickToEdit(label, () => c.text, (v) => goalsApi("PATCH", "/api/goals/item", { id: c.id, text: v }));
+  row.append(label);
+  const hasOwner = c.owner && c.owner !== "me";
+  const ownerNode = hasOwner ? el("span", "go-stage-owner", "@" + c.owner)
+    : el("button", "o-ghost go-owner-ghost", "＋@");
+  ownerEditable(ownerNode, () => (hasOwner ? c.owner : ""),
+    (v) => goalsApi("PATCH", "/api/goals/item", { id: c.id, owner: v }), ownerRegistryFor(areaName));
+  row.append(ownerNode);
+  const x = el("button", "go-task-x", "✕");
+  x.title = "remove this goal task";
+  x.onclick = (e) => {
+    e.stopPropagation();
+    if (!x.classList.contains("armed")) {
+      x.classList.add("armed");
+      setTimeout(() => x.classList.remove("armed"), 2500);
+      return;
+    }
+    goalsApi("DELETE", "/api/goals/item", { id: c.id });
+  };
+  row.append(x);
+  return row;
+}
+
 // rockOutline (Rev 2): the whole rock inline — name (15px/500) with UNTIL as
 // a quiet tag and the ● lint meta on the rock's own line, the stage trail
 // (→ marks current), and the current stage's tasks from the substrate. Left
@@ -647,11 +682,19 @@ function rockOutline(g, areaName) {
     // tasks whose [stage::] names this milestone nest here; each milestone
     // has its own composer (add work anywhere, any time)
     (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t, areaName)));
+    // live goal tasks — the milestone's own children in goals.md (depth 3,
+    // the task level). Distinct from substrate todos above: these ARE goal
+    // lines with ids, so they render as goal rows with checkbox + owner.
+    (st.children || []).forEach((c) => wrap.append(goGoalTaskRow(c, areaName, st)));
     if (!g.checked && !st.checked) {
       wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
         try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
         loadGoals();
       }, "what advances " + st.text + "…"));
+      wrap.append(ghostInput("＋ goal task", "go-task-ghost", async (v) => {
+        try { await goalsApi("POST", "/api/goals/item", { area: areaName, parentId: st.id, text: v, owner: "me" }); } catch (err) {}
+        loadGoals();
+      }, "a goals.md task under " + st.text + "…"));
     }
     // frozen pre-split history — collapsed, muted, read-only
     if ((st.frozen || []).length) {
