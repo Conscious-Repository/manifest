@@ -203,6 +203,24 @@ function renderAionBacklog(host) {
   // for the current session (an accidental check must be reversible where it
   // happened, never vanish). A reload moves it into the quiet done section.
   const tasks = items.filter((it) => it.kind === "task");
+  // live goal tasks — goals.md task-level lines under the Aion ladder (the
+  // task level, 2026-08-29). They are NOT backlog items: they project INTO
+  // this board (owner call: "why don't i see it in my tasks") so the owner
+  // sees everything assigned to him in one place, but check through the
+  // goals API and never write backlog.md.
+  const goalTasks = [];
+  ((aionCache.goalsArea || {}).rocks || []).forEach((r) => {
+    if (r.checked) return;
+    (r.children || []).forEach((st) => {
+      if (st.checked) return;
+      (st.children || []).forEach((c) => goalTasks.push({
+        id: "goal:" + c.id, text: c.text, owner: c.owner || "",
+        checked: !!c.checked, status: c.checked ? "done" : "open",
+        rock: r.id, rockText: r.text, stageText: st.text,
+        captured: "", goalTask: true,
+      }));
+    });
+  });
   const openTasks = tasks.filter((it) => it.status !== "done");
   const freshDone = (it) => aionFreshDone.has(it.id);
   const doneInPlace = tasks.filter((it) => it.status === "done" && freshDone(it));
@@ -211,7 +229,7 @@ function renderAionBacklog(host) {
   (aionCache.people || []).forEach((p) => { people[p.initials] = p.name || ""; });
   const groups = {};
   const order = [];
-  openTasks.concat(doneInPlace).forEach((it) => {
+  openTasks.concat(doneInPlace).concat(goalTasks.filter((g) => !g.checked)).forEach((it) => {
     const key = (it.owner || "").toUpperCase() || "—";
     if (!groups[key]) { groups[key] = []; order.push(key); }
     groups[key].push(it);
@@ -348,6 +366,12 @@ function aionTaskRow(it) {
   c.title = done ? "unmark done" : "mark done (held here for this session so it is easy to undo)";
   c.onclick = (e) => {
     e.stopPropagation();
+    if (it.goalTask) {
+      // a live goals.md task: flip the paint now, write through the goals API
+      it.checked = !done; it.status = done ? "open" : "done"; renderAion();
+      aionPost("/api/goals/check", { id: it.id.replace(/^goal:/, ""), checked: !done });
+      return;
+    }
     if (done) aionFreshDone.delete(it.id);
     else aionFreshDone.add(it.id); // hold it in place for the regret window
     // paint the flip NOW from the cache, then post; loadAion() inside
@@ -376,7 +400,7 @@ function aionTaskRow(it) {
   }
   main.append(meta);
   row.append(main);
-  const rockTag = el("span", "aion-rock-tag" + (it.rock && !rockResolved(it.rock) ? " stale" : ""), it.rock ? rockLabel(it.rock) : "");
+  const rockTag = el("span", "aion-rock-tag" + (it.goalTask ? " goal" : "") + (it.rock && !rockResolved(it.rock) ? " stale" : ""), it.goalTask ? ((it.stageText || "") + " · goal") : (it.rock ? rockLabel(it.rock) : ""));
   if (it.rock && !rockResolved(it.rock)) rockTag.title = "closed/historic rock — reattach to a live rock";
   row.append(rockTag);
   // no status chip on tasks — the checkbox IS the state (open/in-progress
@@ -396,6 +420,17 @@ function aionProvenanceBits(it) {
 
 // ---- the inspector (replaces the inline drawer — the list never reflows) ----
 function renderAionInspector(insp, items) {
+  // a live goals.md task projects into the list but has no backlog inspector —
+  // say so plainly instead of an empty "select a row" (the GOALS page owns its
+  // editing surface; the board row's checkbox is the interaction here)
+  if (String(aionSelId || "").startsWith("goal:")) {
+    const gt = ((aionCache.goalsArea || {}).rocks || []).flatMap((r) => (r.children || []).flatMap((st) => st.children || [])).find((c) => "goal:" + c.id === aionSelId);
+    if (gt) {
+      insp.append(el("div", "aion-insp-title", gt.text));
+      insp.append(el("div", "aion-item-meta", "goals.md task" + (gt.owner ? " · @" + gt.owner : "") + " · edit it on GOALS"));
+    }
+    return;
+  }
   const it = items.find((x) => x.id === aionSelId);
   if (!it) {
     insp.append(el("div", "aion-insp-empty", "select a row — edits save as you go"));

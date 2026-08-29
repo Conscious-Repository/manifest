@@ -213,6 +213,7 @@
 .aion-check.off { color: var(--base-40); }
 .aion-rock-tag { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
 .aion-rock-tag.stale { color: var(--base-40); font-style: italic; } /* closed/historic rock — not a live goals rock */
+.aion-rock-tag.goal { color: var(--base-55, var(--base-40)); font-style: italic; } /* goals.md task projection — milestone · goal */
 .aion-done-toggle { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: var(--sp-4) 0; }
 .aion-done-toggle:hover { color: var(--base-100); }
 
