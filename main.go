@@ -551,6 +551,9 @@ func main() {
 		// "your result is ready" (opens the report in place)
 		emitters = append(emitters, srv.DelegationDoneEmitter())
 		emitters = append(emitters, srv.PlanReadyEmitter()) // todo-panel Phase 4: materialize + page
+		// a linked bank account whose bridge connection needs re-auth, or
+		// that quietly stopped syncing — both page instead of rotting silent
+		emitters = append(emitters, srv.BankFeedAttentionEmitter())
 		deepseekState := filepath.Join(cfg.DataDir, "portals", "deepseek.state.json")
 		srv.UseDeepseekState(deepseekState)
 		emitters = append(emitters, signals.DegradedPortal(deepseekState))

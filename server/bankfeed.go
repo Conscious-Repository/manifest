@@ -13,6 +13,7 @@ import (
 	"manifest/bankfeed"
 	"manifest/portals"
 	"manifest/realestate"
+	"manifest/signals"
 	"manifest/vaultwriter"
 )
 
@@ -150,8 +151,13 @@ func (s *Server) StartBankFeed(ctx context.Context) {
 			return
 		case <-time.After(30 * time.Second): // let the index warm before the boot poll
 		}
-		if added, applied, err := s.bankFeedSync(ctx); err == nil && (added > 0 || applied > 0) {
-			log.Printf("bankfeed: boot sync — %d new row(s), %d auto-applied", added, applied)
+		// log the boot sync ALWAYS — a silent zero was indistinguishable from
+		// a silent failure, which is how an 11-day bank-side auth outage went
+		// unnoticed (2026-08-31)
+		if added, applied, err := s.bankFeedSync(ctx); err != nil {
+			log.Printf("bankfeed: boot sync failed: %v", err)
+		} else {
+			log.Printf("bankfeed: boot sync — %d new row(s), %d auto-applied%s", added, applied, s.bankFeedHealthNote())
 		}
 		t := time.NewTicker(24 * time.Hour)
 		defer t.Stop()
@@ -162,12 +168,31 @@ func (s *Server) StartBankFeed(ctx context.Context) {
 			case <-t.C:
 				if added, applied, err := s.bankFeedSync(ctx); err != nil {
 					log.Printf("bankfeed: sync failed: %v", err)
-				} else if added > 0 || applied > 0 {
-					log.Printf("bankfeed: %d new row(s), %d auto-applied", added, applied)
+				} else {
+					log.Printf("bankfeed: %d new row(s), %d auto-applied%s", added, applied, s.bankFeedHealthNote())
 				}
 			}
 		}
 	}()
+}
+
+// bankFeedHealthNote summarizes link errors for the sync log line — the
+// bridge's "auth required" advisories must reach the journal, not just the
+// SETTINGS panel.
+func (s *Server) bankFeedHealthNote() string {
+	if s.bankFeed == nil {
+		return ""
+	}
+	var bits []string
+	for _, l := range s.bankFeed.Store().Links() {
+		if l.Enabled && strings.TrimSpace(l.LastError) != "" {
+			bits = append(bits, l.AccountLabel+": "+l.LastError)
+		}
+	}
+	if len(bits) == 0 {
+		return ""
+	}
+	return " · ATTENTION — " + strings.Join(bits, " · ")
 }
 
 // bankFeedSync pulls every enabled link, ingests through the statement
@@ -447,4 +472,98 @@ func moneyStr(v float64) string {
 		return whole + "." + frac
 	}
 	return whole
+}
+
+// BankFeedAttentionEmitter pages when a linked account's bridge connection
+// needs the bank's attention — SimpleFIN keeps answering 200 with the stale
+// account while its `errors` array says "Auth required", which looked like
+// eleven healthy zero-row syncs until 2026-08-31. Auto-clears when the next
+// sync stores an empty lastError. Also pages when a LIVE link has synced
+// nothing for staleAfter — a feed that quietly stopped is the same emergency
+// with no advisory attached.
+func (s *Server) BankFeedAttentionEmitter() signals.Emitter { return bankAttnEmitter{s} }
+
+type bankAttnEmitter struct{ s *Server }
+
+const bankFeedStaleAfter = 3 * 24 * time.Hour
+
+func (e bankAttnEmitter) Emit(now time.Time) ([]signals.Signal, error) {
+	out := []signals.Signal{}
+	if e.s.bankFeed == nil {
+		return out, nil
+	}
+	for _, l := range e.s.bankFeed.Store().Links() {
+		if !l.Enabled {
+			continue
+		}
+		label, kind := "", ""
+		switch {
+		case strings.TrimSpace(l.LastError) != "":
+			kind = "bank-feed-attention"
+			label = "bank feed · " + l.AccountLabel + " · " + l.LastError
+		default:
+			at, err := time.Parse(time.RFC3339, l.LastSync)
+			if err != nil || now.Sub(at) <= bankFeedStaleAfter {
+				continue
+			}
+			kind = "bank-feed-stale"
+			label = "bank feed · " + l.AccountLabel + " · no sync since " + at.Format("Jan 2")
+		}
+		age := 0
+		if at, err := time.Parse(time.RFC3339, l.LastSync); err == nil {
+			age = int(now.Sub(at).Hours() / 24)
+		}
+		out = append(out, signals.Signal{
+			ID:      "bank-feed:" + l.SimplefinID,
+			Kind:    kind,
+			Entity:  l.AccountLabel,
+			Label:   label,
+			Age:     age,
+			ActHref: "#/properties/settings",
+			Hash:    l.LastError + "|" + l.LastSync, // a NEW failure re-arms a dismissal
+		})
+	}
+	return out, nil
+}
+
+// bankPendingRow is the FEED's compact view of one unfiled bank transaction —
+// just what the inline property/category pickers need, never the whole
+// statement row.
+type bankPendingRow struct {
+	ID       string  `json:"id"`
+	Date     string  `json:"date"`
+	Vendor   string  `json:"vendor"`
+	Amount   float64 `json:"amount"`
+	Inflow   bool    `json:"inflow,omitempty"`
+	Entity   string  `json:"entity,omitempty"`
+	State    string  `json:"state"`
+	Category string  `json:"category,omitempty"`
+	Slug     string  `json:"slug,omitempty"` // current single assignment, if any
+}
+
+// bankPendingRows lists the bank-feed transactions still awaiting filing, for
+// the global FEED (owner ask 2026-08-31: new transactions land in the feed and
+// are addressable there). Same store the $ tab reads; filing from the FEED
+// goes through the same /statements/row PATCH, so the two surfaces cannot
+// disagree.
+func (s *Server) bankPendingRows() []bankPendingRow {
+	if s.statements == nil {
+		return []bankPendingRow{}
+	}
+	out := []bankPendingRow{}
+	rows, _ := s.statements.List()
+	for _, r := range rows {
+		if r.Source != "feed" || (r.State != "pending" && r.State != "assigned" && r.State != "split") {
+			continue
+		}
+		slug := ""
+		if len(r.Assignments) == 1 {
+			slug = r.Assignments[0].Slug
+		}
+		out = append(out, bankPendingRow{
+			ID: r.ID, Date: r.Date, Vendor: r.Vendor, Amount: r.Amount, Inflow: r.Inflow,
+			Entity: r.Entity, State: r.State, Category: r.Category, Slug: slug,
+		})
+	}
+	return out
 }

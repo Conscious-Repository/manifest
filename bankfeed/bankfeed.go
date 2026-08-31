@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -44,8 +45,12 @@ type Provider interface {
 	// Accounts lists the accounts the access URL can read.
 	Accounts(ctx context.Context, accessURL string) ([]Account, error)
 	// Transactions reads one account's transactions in [start, end). A zero
-	// end means "through now".
-	Transactions(ctx context.Context, accessURL, accountID string, start, end time.Time) ([]Txn, error)
+	// end means "through now". notices carries the bridge's advisory errors —
+	// SimpleFIN returns HTTP 200 with an `errors` array when a BANK connection
+	// has expired, still serving the stale account. Dropping those (as this
+	// interface originally did) made an 11-day auth outage look like eleven
+	// healthy zero-row syncs (found 2026-08-31).
+	Transactions(ctx context.Context, accessURL, accountID string, start, end time.Time) (txns []Txn, notices []string, err error)
 }
 
 // The beta bridge truncates each response to its newest ~50 transactions and
@@ -59,11 +64,19 @@ const (
 	bridgeHistory = 90 // days the bridge can serve, total
 )
 
-func (s *Service) fetchWindowed(ctx context.Context, accountID string, since, now time.Time) ([]Txn, error) {
+func (s *Service) fetchWindowed(ctx context.Context, accountID string, since, now time.Time) ([]Txn, []string, error) {
 	byID := map[string]Txn{}
+	noticeSet := map[string]bool{}
+	var notices []string
 	var walk func(start, end time.Time) error
 	walk = func(start, end time.Time) error {
-		txns, err := s.provider.Transactions(ctx, s.store.AccessURL(), accountID, start, end)
+		txns, ns, err := s.provider.Transactions(ctx, s.store.AccessURL(), accountID, start, end)
+		for _, n := range ns {
+			if !noticeSet[n] {
+				noticeSet[n] = true
+				notices = append(notices, n)
+			}
+		}
 		if err != nil {
 			return err
 		}
@@ -86,7 +99,7 @@ func (s *Service) fetchWindowed(ctx context.Context, accountID string, since, no
 			end = horizon
 		}
 		if err := walk(start, end); err != nil {
-			return nil, err
+			return nil, notices, err
 		}
 	}
 	out := make([]Txn, 0, len(byID))
@@ -94,7 +107,7 @@ func (s *Service) fetchWindowed(ctx context.Context, accountID string, since, no
 		out = append(out, t)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Posted.Before(out[j].Posted) })
-	return out, nil
+	return out, notices, nil
 }
 
 // Link binds one bridge account to an EntityAccount row on a vault entity
@@ -166,10 +179,13 @@ func (s *Service) FetchAll(ctx context.Context, simplefinID string, now time.Tim
 	if !ok {
 		return NewTxns{}, fmt.Errorf("account %s is not linked", simplefinID)
 	}
-	txns, err := s.fetchWindowed(ctx, simplefinID, now.AddDate(0, 0, -bridgeHistory), now)
+	txns, notices, err := s.fetchWindowed(ctx, simplefinID, now.AddDate(0, 0, -bridgeHistory), now)
 	if err != nil {
 		s.store.SetLinkHealth(simplefinID, "", err.Error())
 		return NewTxns{}, err
+	}
+	if len(notices) > 0 {
+		s.store.SetLinkHealth(simplefinID, "", strings.Join(notices, "; "))
 	}
 	var fresh []Txn
 	var newest time.Time
@@ -205,11 +221,17 @@ func (s *Service) FetchNew(ctx context.Context, now time.Time) []NewTxns {
 		} else {
 			since = since.AddDate(0, 0, -3)
 		}
-		txns, err := s.fetchWindowed(ctx, link.SimplefinID, since, now)
+		txns, notices, err := s.fetchWindowed(ctx, link.SimplefinID, since, now)
 		if err != nil {
 			s.store.SetLinkHealth(link.SimplefinID, "", err.Error())
 			continue
 		}
+		// The bridge answers 200 with an `errors` array when the BANK-side
+		// connection needs re-auth — while still serving the stale account.
+		// That is a health fact, not a fetch failure: lastSync advances (we
+		// did reach the bridge), lastError carries the bridge's own words so
+		// SETTINGS shows "needs re-auth" instead of eleven quiet days.
+		health := strings.Join(notices, "; ")
 		var fresh []Txn
 		var newest time.Time
 		for _, t := range txns {
@@ -226,7 +248,7 @@ func (s *Service) FetchNew(ctx context.Context, now time.Time) []NewTxns {
 			ids = append(ids, t.ID)
 		}
 		s.store.MarkSeen(link.SimplefinID, ids, newest)
-		s.store.SetLinkHealth(link.SimplefinID, now.Format(time.RFC3339), "")
+		s.store.SetLinkHealth(link.SimplefinID, now.Format(time.RFC3339), health)
 		if len(fresh) > 0 {
 			out = append(out, NewTxns{Link: link, Txns: fresh})
 		}

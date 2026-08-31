@@ -18,14 +18,15 @@ import (
 
 // stubBridge implements bankfeed.Provider in-process (the §9.1 fake).
 type stubBridge struct {
-	txns map[string][]bankfeed.Txn
+	txns    map[string][]bankfeed.Txn
+	notices []string // the bridge's advisory `errors` array
 }
 
 func (s *stubBridge) Claim(_ context.Context, _ string) (string, error) { return "stub://access", nil }
 func (s *stubBridge) Accounts(_ context.Context, _ string) ([]bankfeed.Account, error) {
 	return []bankfeed.Account{{ID: "act-1", Name: "Checking ····4821", Org: "Midwest Bank"}}, nil
 }
-func (s *stubBridge) Transactions(_ context.Context, _, accountID string, start, end time.Time) ([]bankfeed.Txn, error) {
+func (s *stubBridge) Transactions(_ context.Context, _, accountID string, start, end time.Time) ([]bankfeed.Txn, []string, error) {
 	// window-faithful like the real bridge: only [start, end) comes back
 	var out []bankfeed.Txn
 	for _, t := range s.txns[accountID] {
@@ -33,7 +34,7 @@ func (s *stubBridge) Transactions(_ context.Context, _, accountID string, start,
 			out = append(out, t)
 		}
 	}
-	return out, nil
+	return out, s.notices, nil
 }
 
 // bankFixture: one owned property with a DONE node under an accepted $5,500
@@ -325,5 +326,95 @@ func TestStatementsRowFilingGestureAutoApplies(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "bank-feed") {
 		t.Fatal("owner filing must not audit as bank-feed")
+	}
+}
+
+// SimpleFIN answers 200 with an `errors` advisory when the BANK connection
+// expired — while still serving the stale account. Dropping that made an
+// 11-day auth outage look like healthy zero-row syncs (2026-08-31). The
+// advisory now lands in link health and pages as a signal; a clean sync
+// clears both.
+func TestBridgeAdvisorySurfacesAndClears(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -20), Amount: -10, Payee: "Old"},
+	}}, notices: []string{"Connection to Central Bank Business may need attention. Auth required"}}
+	srv, _, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	links := srv.bankFeed.Store().Links()
+	if len(links) != 1 || !strings.Contains(links[0].LastError, "Auth required") {
+		t.Fatalf("advisory did not land in link health: %+v", links)
+	}
+	if links[0].LastSync == "" {
+		t.Fatal("lastSync must still advance — the bridge WAS reachable")
+	}
+	// the signal pages, pointing at settings
+	sigs, err := srv.BankFeedAttentionEmitter().Emit(time.Now())
+	if err != nil || len(sigs) != 1 {
+		t.Fatalf("want 1 attention signal, got %d (%v)", len(sigs), err)
+	}
+	if sigs[0].Kind != "bank-feed-attention" || !strings.Contains(sigs[0].Label, "Auth required") {
+		t.Fatalf("signal wrong: %+v", sigs[0])
+	}
+	// the bank fixes their side; the next sync clears health and the signal
+	bridge.notices = nil
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if links := srv.bankFeed.Store().Links(); links[0].LastError != "" {
+		t.Fatalf("clean sync should clear the advisory, got %q", links[0].LastError)
+	}
+	if sigs, _ := srv.BankFeedAttentionEmitter().Emit(time.Now()); len(sigs) != 0 {
+		t.Fatalf("signal should clear, got %+v", sigs)
+	}
+}
+
+// A LIVE link that has synced nothing for days pages too — a feed that
+// quietly stopped is the same emergency with no advisory attached.
+func TestStaleBankFeedPages(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{}}
+	srv, _, _ := bankFixture(t, bridge)
+	srv.bankFeed.Store().SetLinkHealth("act-1", time.Now().AddDate(0, 0, -5).Format(time.RFC3339), "")
+	sigs, _ := srv.BankFeedAttentionEmitter().Emit(time.Now())
+	if len(sigs) != 1 || sigs[0].Kind != "bank-feed-stale" {
+		t.Fatalf("want a stale signal, got %+v", sigs)
+	}
+}
+
+// The FEED's bank lane serves the compact unfiled slice — feed-source rows
+// only, and a filed row leaves it.
+func TestBankPendingRowsFeedTheGlobalFeed(t *testing.T) {
+	posted := time.Now().AddDate(0, 0, -2)
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: posted, Amount: -63.20, Description: "HOME DEPOT", Payee: "Home Depot X"},
+	}}}
+	srv, _, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows := srv.bankPendingRows()
+	if len(rows) == 0 {
+		t.Fatal("synced row missing from the feed slice")
+	}
+	var hd *bankPendingRow
+	for i := range rows {
+		if rows[i].Vendor == "Home Depot X" {
+			hd = &rows[i]
+		}
+	}
+	if hd == nil || hd.Amount != 63.20 || hd.Entity == "" || hd.ID == "" {
+		t.Fatalf("row shape wrong: %+v", rows)
+	}
+	// filing it through the same PATCH the FEED card uses removes it
+	code, res := doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+hd.ID+`","category":"materials","assignments":[{"slug":"748-n-euclid","amount":63.20}],"state":"assigned","file":true}`)
+	if code != 200 || res["state"] != "applied" {
+		t.Fatalf("file from feed: %d %v (%v)", code, res["state"], res["fileError"])
+	}
+	for _, r := range srv.bankPendingRows() {
+		if r.ID == hd.ID {
+			t.Fatal("filed row still in the feed slice")
+		}
 	}
 }

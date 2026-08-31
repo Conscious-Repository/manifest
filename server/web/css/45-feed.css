@@ -119,3 +119,10 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 
 /* (the harness-artifact modal was replaced by the full-page artifact reader —
    see #artifactView / showArtifact in 70-note.js) */
+
+/* ---- BANK lane: unfiled linked-account transactions, filed in place ----
+   The row reuses the $ tab's cell classes (date/vendor/amount/selects) so the
+   two surfaces read identically; only the grid is local. */
+.bank-pending-rows { margin-top: var(--sp-4); }
+.bank-pending-row { display: grid; grid-template-columns: 44px minmax(140px, 1fr) 96px minmax(90px, 140px) minmax(90px, 130px); gap: var(--sp-4); align-items: center; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
+.bank-pending-card .pp3-link { margin-left: auto; }

@@ -134,14 +134,14 @@ func (s *SimpleFIN) Accounts(ctx context.Context, accessURL string) ([]Account, 
 
 // Transactions reads one account's transactions in [start, end) — zero end
 // means "through now" (no end-date param).
-func (s *SimpleFIN) Transactions(ctx context.Context, accessURL, accountID string, start, end time.Time) ([]Txn, error) {
+func (s *SimpleFIN) Transactions(ctx context.Context, accessURL, accountID string, start, end time.Time) ([]Txn, []string, error) {
 	query := "?start-date=" + strconv.FormatInt(start.Unix(), 10) + "&account=" + urlQueryEscape(accountID)
 	if !end.IsZero() {
 		query += "&end-date=" + strconv.FormatInt(end.Unix(), 10)
 	}
 	set, err := s.fetch(ctx, accessURL, query)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var out []Txn
 	for _, a := range set.Accounts {
@@ -162,7 +162,7 @@ func (s *SimpleFIN) Transactions(ctx context.Context, accessURL, accountID strin
 			})
 		}
 	}
-	return out, nil
+	return out, set.Errors, nil
 }
 
 // urlQueryEscape covers the account-id charset without importing net/url's

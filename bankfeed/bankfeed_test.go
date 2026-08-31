@@ -144,7 +144,7 @@ func (c *cappedProvider) Claim(_ context.Context, _ string) (string, error) { re
 func (c *cappedProvider) Accounts(_ context.Context, _ string) ([]Account, error) {
 	return []Account{{ID: "act-1", Name: "Checking"}}, nil
 }
-func (c *cappedProvider) Transactions(_ context.Context, _, _ string, start, end time.Time) ([]Txn, error) {
+func (c *cappedProvider) Transactions(_ context.Context, _, _ string, start, end time.Time) ([]Txn, []string, error) {
 	var in []Txn
 	for _, t := range c.txns {
 		if !t.Posted.Before(start) && (end.IsZero() || t.Posted.Before(end)) {
@@ -163,7 +163,7 @@ func (c *cappedProvider) Transactions(_ context.Context, _, _ string, start, end
 		}
 		in = newest[:50]
 	}
-	return in, nil
+	return in, nil, nil
 }
 
 // 180 txns over 60 days (3/day) — one uncapped pull would lose 130 of them.

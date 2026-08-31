@@ -71,8 +71,9 @@ var libraryRefRe = regexp.MustCompile(`artifacts/library/[^\s)"']+\.md`)
 func (s *Server) handleFeedList(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	resp := map[string]any{
-		"proposals": s.feedProposals(),
-		"badge":     s.feedInboxCount(now),
+		"proposals":   s.feedProposals(),
+		"badge":       s.feedInboxCount(now),
+		"bankPending": s.bankPendingRows(),
 	}
 	for _, src := range s.attentionRegistry().Sources() {
 		field := kindField[src.Kind()]

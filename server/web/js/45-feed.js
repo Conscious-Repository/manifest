@@ -16,7 +16,7 @@ const FEED_FILTERS = [["proposal", "APPROVALS"], ["consume", "CONSUME"]];
 const FEED_STATUS = "inbox"; // never user-selectable — see above
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
-let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [] };
+let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
 
 // ---- the §5 card registry: ONE renderer per attention kind, plus the
 // proposals lane (an authorization queue, not an attention kind). renderFeed
@@ -30,6 +30,7 @@ const FEED_CARD = {
   agentQuestions: (sg) => agentQuestionsCard(sg),
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
+  bank: (rows) => bankPendingCardEl(rows),
   consume: (c) => consumeCardEl(c),
   finding: (it) => feedCard(it),
   receipt: (rc) => receiptCardEl(rc),
@@ -47,6 +48,9 @@ const FEED_LANES = [
   { kind: "planReady", slice: (c) => (c.signals || []).filter(isPlanReady), inboxOnly: true },
   { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone), inboxOnly: true },
   { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
+  // BANK: unfiled transactions from the linked accounts — ONE card holding
+  // the inline pickers (owner ask 2026-08-31: address them from the feed too)
+  { kind: "bank", slice: (c) => ((c.bankPending || []).length ? [c.bankPending] : []), inboxOnly: true },
   { kind: "notice", slice: (c) => c.portalItems, inboxOnly: true },
   // CONSUME: subscribed reading. Capped like the signals strip — a week of
   // newsletters must not bury the things that actually want a decision. The
@@ -73,10 +77,10 @@ async function loadFeed() {
   apprAionReg = null; apprReReg = null;
   try {
     const d = await (await fetch("/api/feed?status=" + FEED_STATUS)).json();
-    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [] };
+    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [] };
     setBadge(els.feedNavBadge, d.badge || 0);
     diffDigests(feedCache.items); // catch digests landed while unpolled
-  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [] }; }
+  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] }; }
   renderFeedFilters();
   renderFeed();
 }
@@ -657,3 +661,90 @@ async function composeErrand() {
   ta.focus();
 }
 if (els.feedErrandBtn) els.feedErrandBtn.addEventListener("click", composeErrand);
+
+// ---- BANK lane: unfiled linked-account transactions, addressable in place --
+// One card, the $ tab's exact machinery: moneyTargetOptions scopes the
+// property picker to the paying entity, the category select reads the chart
+// of accounts, and filing goes through the same /statements/row PATCH — so a
+// row filed here and a row filed on the $ tab are indistinguishable. The
+// caches those pickers read (properties, entities, categories) load lazily
+// the first time the card paints on this page.
+const BANK_FEED_CAP = 8;
+function bankPendingCardEl(rows) {
+  const card = el("div", "approval-card bank-pending-card");
+  const head = el("div", "appr-head");
+  head.append(el("span", "appr-action", "Bank feed — " + rows.length + " transaction" + (rows.length === 1 ? "" : "s") + " to file"));
+  const open = el("button", "pp3-link", "$ workbench →");
+  open.onclick = () => { location.hash = "#/properties/money"; };
+  head.append(open);
+  card.append(head);
+  const body = el("div", "bank-pending-rows");
+  body.append(el("div", "micro-label", "loading pickers…"));
+  card.append(body);
+  Promise.all([
+    ensureMoneyCats(),
+    ensureEntities(),
+    (typeof propertyCache !== "undefined" && propertyCache.length) ? null : loadProperties(),
+  ]).then(() => {
+    body.innerHTML = "";
+    rows.slice(0, BANK_FEED_CAP).forEach((r) => body.append(bankPendingRowEl(r)));
+    if (rows.length > BANK_FEED_CAP) {
+      const more = el("button", "signal-more", "▾ " + (rows.length - BANK_FEED_CAP) + " more in the $ workbench");
+      more.onclick = () => { location.hash = "#/properties/money"; };
+      body.append(more);
+    }
+  });
+  return card;
+}
+
+function bankPendingRowEl(r) {
+  const row = el("div", "bank-pending-row");
+  row.append(el("span", "re-money-date", (r.date || "").slice(5)));
+  const desc = el("span", "fr-stack");
+  desc.append(el("span", "re-money-vendor", r.vendor || "(no description)"));
+  if (r.entity) desc.append(el("span", "fr-sub", entityLabel(r.entity)));
+  row.append(desc);
+  row.append(el("span", "re-money-amt" + (r.inflow ? " inflow" : ""),
+    (r.inflow ? "+" : "") + fmtMoneyExact(Math.abs(r.amount || 0))));
+  // the $ tab's row shape drives the pickers; state/assignments mirror what
+  // moneyTargetOptions and the file PATCH expect
+  const m = { id: r.id, entity: r.entity, state: r.state, inflow: r.inflow,
+    category: r.category || "", amount: r.amount,
+    assignments: r.slug ? [{ slug: r.slug, amount: Math.abs(r.amount || 0) }] : [] };
+  const patch = async (bodyPatch, sel) => {
+    sel.disabled = true;
+    try {
+      const res = await postJSONOk("/api/realestate/statements/row", bodyPatch);
+      if (res.state === "applied") showToast("Filed → " + (entityLabel(r.entity) || "entity") + " history");
+      loadFeed(); // the row leaves the card when it files; counts refresh
+    } catch (e) { showToast("Couldn't save — " + String(e.message || e).slice(0, 120)); sel.disabled = false; }
+  };
+  const propSel = document.createElement("select");
+  propSel.className = "pp-in re-money-sel";
+  moneyTargetOptions(m, propSel, false);
+  propSel.value = r.slug || "";
+  propSel.onchange = () => patch({
+    id: r.id,
+    assignments: propSel.value ? [{ slug: propSel.value, amount: Math.abs(r.amount || 0) }] : [],
+    state: propSel.value ? "assigned" : "pending", file: true,
+  }, propSel);
+  row.append(propSel);
+  const catSel = document.createElement("select");
+  catSel.className = "pp-in re-money-cat";
+  const copt = (parent, v, l) => { const o = document.createElement("option"); o.value = v; o.textContent = l; parent.append(o); };
+  copt(catSel, "", "category…");
+  const kind = r.inflow ? "income" : "expense";
+  ["operating", "project"].forEach((cls) => {
+    const mine = (moneyCatsCache || []).filter((c) => c.kind === kind && c.class === cls);
+    if (!mine.length) return;
+    const og = document.createElement("optgroup");
+    og.label = cls.toUpperCase();
+    mine.forEach((c) => copt(og, c.name, c.name));
+    catSel.append(og);
+  });
+  if (r.category && !(moneyCatsCache || []).some((c) => c.name === r.category)) copt(catSel, r.category, r.category);
+  catSel.value = r.category || "";
+  catSel.onchange = () => patch({ id: r.id, category: catSel.value, file: true }, catSel);
+  row.append(catSel);
+  return row;
+}
