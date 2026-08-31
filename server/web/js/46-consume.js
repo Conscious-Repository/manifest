@@ -39,61 +39,57 @@ function consumeCardEl(c) {
   // no reading time worth stating, and its text IS the content. It gets a
   // post-shaped card; everything else keeps the article shape.
   const xPost = c.type === "x";
-  const card = el("div", "feed-card consume-card"
-    + (xPost ? " consume-x-card" : "") + (c.read ? " consume-read" : ""));
-  card.dataset.consumeId = c.id;
+  const chips = [
+    el("span", "type-chip micro-label type-consume", c.source || "feed"),
+    xPost ? el("span", "type-chip micro-label type-x", "X") : null,
+    c.list ? el("span", "consume-list-chip micro-label", c.list) : null,
+    c.curated ? el("span", "consume-curated-chip micro-label", "curated") : null,
+    // "archived" is not "read" — it arrived before you followed this feed.
+    c.seeded ? el("span", "consume-list-chip micro-label", "archived") : null,
+    // The publisher withholds the rest of this one — say so rather than
+    // letting a stub trail off into a bare "Read more". Never on an X post:
+    // the feed carries the whole thing, there is nothing to withhold.
+    c.preview && !xPost
+      ? el("span", "read-preview-chip micro-label", c.preview === "paid" ? "paid post" : "preview only")
+      : null,
+  ];
 
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip micro-label type-consume", c.source || "feed"));
-  if (xPost) top.append(el("span", "type-chip micro-label type-x", "X"));
-  if (c.list) top.append(el("span", "consume-list-chip micro-label", c.list));
-  if (c.curated) top.append(el("span", "consume-curated-chip micro-label", "curated"));
-  // "archived" is not "read" — it arrived before you followed this feed.
-  if (c.seeded) top.append(el("span", "consume-list-chip micro-label", "archived"));
-  // The publisher withholds the rest of this one — say so rather than letting
-  // a stub trail off into a bare "Read more". Never on an X post: the feed
-  // carries the whole thing, there is nothing to withhold.
-  if (c.preview && !xPost) {
-    top.append(el("span", "read-preview-chip micro-label",
-      c.preview === "paid" ? "paid post" : "preview only"));
-  }
-  if (c.published) top.append(el("span", "feed-date", fmtFeedDate(c.published)));
-  card.append(top);
-
+  let title = null, why = null, meta = null, body = null;
   if (xPost) {
-    if (c.author) card.append(el("div", "consume-x-author", c.author));
-    const text = el("div", "consume-x-text", c.excerpt || c.title || "(empty post)");
-    text.onclick = () => openRead(c.id);
-    card.append(text);
+    body = [
+      c.author ? el("div", "consume-x-author", c.author) : null,
+      Object.assign(el("div", "consume-x-text", c.excerpt || c.title || "(empty post)"), { onclick: () => openRead(c.id) }),
+    ];
   } else {
-    const title = el("div", "feed-title consume-title", c.title || "(untitled)");
+    title = el("span", "consume-title", c.title || "(untitled)");
     title.onclick = () => openRead(c.id);
-    card.append(title);
-
-    const meta = el("div", "feed-meta");
-    if (c.author) meta.append(el("span", "", c.author));
-    if (c.minutes) meta.append(el("span", "", c.minutes + " min read"));
-    card.append(meta);
-
-    if (c.excerpt) card.append(el("div", "feed-why consume-excerpt", c.excerpt));
+    const metaEl = el("div", "feed-meta");
+    if (c.author) metaEl.append(el("span", "", c.author));
+    if (c.minutes) metaEl.append(el("span", "", c.minutes + " min read"));
+    meta = metaEl;
+    why = c.excerpt ? el("div", "feed-why consume-excerpt", c.excerpt) : null;
   }
 
-  const acts = el("div", "feed-actions");
+  const card = cardShell({
+    kind: "consume-card" + (xPost ? " consume-x-card" : "") + (c.read ? " consume-read" : ""),
+    dataset: { consumeId: c.id },
+    chips, title, date: c.published, why, body, meta,
+  });
+
   const readBtn = pillLight("read →", () => openRead(c.id));
   readBtn.classList.add("verdict-primary");
-  acts.append(readBtn);
-  acts.append(consumeCurateBtn(c, card));
+  const acts = [readBtn, consumeCurateBtn(c, card)];
   // Anything out of the queue can be pulled back into it.
   if (c.read || c.seeded) {
-    acts.append(pillLight("→ unread", async () => {
+    acts.push(pillLight("→ unread", async () => {
       if (!(await consumePost(`/api/consume/item/${encodeURIComponent(c.id)}/unread`))) return;
       showToast("moved to unread");
       await loadConsume();
     }));
   }
-  if (c.url) acts.append(pillLight("original ↗", () => window.open(c.url, "_blank", "noopener")));
-  acts.append(pillLight("dismiss", () => consumeDismiss(c.id, card)));
-  card.append(acts);
+  if (c.url) acts.push(pillLight("original ↗", () => window.open(c.url, "_blank", "noopener")));
+  acts.push(pillLight("dismiss", () => consumeDismiss(c.id, card)));
+  card.append(cardActions(acts));
   return card;
 }
 
@@ -153,11 +149,12 @@ function consumeRepaint(c, card) {
 // renderConsume(), which repaints from consumeCache — a cache that still held
 // the item. The card came straight back, which read as "dismiss does nothing
 // but flicker". Anything that removes an item must remove it from the CACHE
-// too, or the next repaint undoes the work.
+// too, or the next repaint undoes the work. Routed through cardDecide/feedPost
+// (A2's one decision helper) now: consumeForget only runs once the write is
+// actually confirmed, and a refused dismiss restores the card instead of
+// leaving it forgotten in cache until the next loadConsume() papers over it.
 async function consumeDismiss(id, card) {
-  if (card) card.remove(); // optimistic
-  consumeForget(id);
-  const ok = await consumePost(`/api/consume/item/${encodeURIComponent(id)}/dismiss`);
+  const ok = await cardDecide(card, `/api/consume/item/${encodeURIComponent(id)}/dismiss`, {}, () => consumeForget(id));
   if (!ok) { await loadConsume(); return; } // the write failed — show the truth
   // showToast makes the WHOLE toast the click target, so the label has to say
   // what clicking it does.
@@ -385,7 +382,7 @@ function consumeSubRow(s) {
   const row = el("div", "consume-sub");
 
   const dot = el("span", "consume-dot " + (s.lastErr ? "bad" : s.lastOk ? "ok" : "idle"));
-  dot.title = s.lastErr || (s.lastOk ? "last polled " + fmtFeedDate(s.lastOk) : "not polled yet");
+  dot.title = s.lastErr || (s.lastOk ? "last polled " + fmtWhen(s.lastOk) : "not polled yet");
   row.append(dot);
 
   // Clicking the name opens this feed's whole history.
@@ -557,7 +554,7 @@ function consumeCuratedPanel() {
 function consumeCuratedRow(en) {
   const row = el("div", "consume-sub consume-curated-row");
   row.append(el("span", "consume-curated-title", en.title || "(untitled)"));
-  const meta = [en.source, en.author, en.curated ? "curated " + fmtFeedDate(en.curated) : ""]
+  const meta = [en.source, en.author, en.curated ? "curated " + fmtWhen(en.curated) : ""]
     .filter(Boolean).join(" · ");
   if (meta) row.append(el("span", "consume-sub-count micro-label", meta));
 

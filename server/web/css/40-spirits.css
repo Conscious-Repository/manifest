@@ -65,7 +65,6 @@
 /* ---- SPIRITS: digest feed items (EA waiting-on), pinned + expanded ---- */
 .feed-card.digest { border-color: var(--blue-soft); background: var(--status-info-bg); }
 .feed-card.pinned { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
-.pin-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue); letter-spacing: 0.3px; }
 .feed-card.digest .feed-body { white-space: pre-wrap; font-family: var(--sans); font-size: var(--fs-md); line-height: 1.5; color: var(--text); }
 
 /* ===== SPIRITS UX pass: live runs, toasts, inbox, timing ===== */

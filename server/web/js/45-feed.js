@@ -17,6 +17,7 @@ const FEED_STATUS = "inbox"; // never user-selectable — see above
 const SIGNAL_CAP = 8; // most-overdue signals shown; the rest fold behind "N more"
 let signalsExpanded = false;
 let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
+let feedLoadError = false; // a network failure must render as an error, not a fake "inbox zero" (§C2)
 
 // ---- the §5 card registry: ONE renderer per attention kind, plus the
 // proposals lane (an authorization queue, not an attention kind). renderFeed
@@ -44,22 +45,22 @@ const isPlanReady = (sg) => sg.kind === "plan-ready";
 const isAgentQuestions = (sg) => sg.kind === "agent-questions";
 // main-list lanes in render order (other signals render into their own strip).
 const FEED_LANES = [
-  { kind: "agentQuestions", slice: (c) => (c.signals || []).filter(isAgentQuestions), inboxOnly: true },
-  { kind: "planReady", slice: (c) => (c.signals || []).filter(isPlanReady), inboxOnly: true },
-  { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone), inboxOnly: true },
-  { kind: "proposal", slice: (c) => c.proposals, inboxOnly: true },
+  { kind: "agentQuestions", slice: (c) => (c.signals || []).filter(isAgentQuestions) },
+  { kind: "planReady", slice: (c) => (c.signals || []).filter(isPlanReady) },
+  { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone) },
+  { kind: "proposal", slice: (c) => c.proposals },
   // BANK: unfiled transactions from the linked accounts — ONE card holding
   // the inline pickers (owner ask 2026-08-31: address them from the feed too)
-  { kind: "bank", slice: (c) => ((c.bankPending || []).length ? [c.bankPending] : []), inboxOnly: true },
-  { kind: "notice", slice: (c) => c.portalItems, inboxOnly: true },
+  { kind: "bank", slice: (c) => ((c.bankPending || []).length ? [c.bankPending] : []) },
+  { kind: "notice", slice: (c) => c.portalItems },
   // CONSUME: subscribed reading. Capped like the signals strip — a week of
   // newsletters must not bury the things that actually want a decision. The
   // rest live behind the CONSUME view, which is where reading belongs anyway.
-  { kind: "consume", slice: (c) => (c.consumeItems || []).filter(consumeQueued).slice(0, CONSUME_CAP), inboxOnly: true },
+  { kind: "consume", slice: (c) => (c.consumeItems || []).filter(consumeQueued).slice(0, CONSUME_CAP) },
 ];
 const FEED_TAIL_LANES = [ // after the empty-state check, like today
-  { kind: "finding", slice: (c) => c.items, inboxOnly: false },
-  { kind: "receipt", slice: (c) => c.receipts, inboxOnly: false },
+  { kind: "finding", slice: (c) => c.items },
+  { kind: "receipt", slice: (c) => c.receipts },
 ];
 
 function showFeed() {
@@ -76,11 +77,17 @@ async function loadFeed() {
   // rock list into the payload editor's typeahead).
   apprAionReg = null; apprReReg = null;
   try {
-    const d = await (await fetch("/api/feed?status=" + FEED_STATUS)).json();
+    const r = await fetch("/api/feed?status=" + FEED_STATUS);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
     feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [] };
+    feedLoadError = false;
     setBadge(els.feedNavBadge, d.badge || 0);
     diffDigests(feedCache.items); // catch digests landed while unpolled
-  } catch (e) { feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] }; }
+  } catch (e) {
+    feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
+    feedLoadError = true;
+  }
   renderFeedFilters();
   renderFeed();
 }
@@ -146,10 +153,23 @@ function renderFeed() {
     more.onclick = () => { state.feedFilter = "consume"; loadFeed(); };
     host.appendChild(more);
   }
-  if (!host.children.length && (!laneVisible("finding") || !feedCache.items.length)) {
-    host.appendChild(emptyRow(
-      filter === "proposal" ? "Nothing awaiting approval."
-        : filter ? "Nothing here." : "Inbox zero — nothing awaiting you."));
+  // ⚠ the empty check used to look ONLY at the "finding" lane — a receipts-only
+  // inbox (nothing else pending, findings empty) still had errand cards waiting
+  // in FEED_TAIL_LANES, and this returned before ever painting them: "Inbox
+  // zero" while the nav badge disagreed. It must ask whether ANY tail lane has
+  // something, not just findings.
+  const tailHasCards = FEED_TAIL_LANES.some((lane) => laneVisible(lane.kind) && lane.slice(feedCache).length);
+  if (!host.children.length && !tailHasCards) {
+    if (feedLoadError) {
+      const err = el("div", "ro-row empty feed-load-error");
+      err.append(el("span", null, "Couldn't load the feed — check the connection."));
+      err.append(pillLight("retry", loadFeed));
+      host.appendChild(err);
+    } else {
+      host.appendChild(emptyRow(
+        filter === "proposal" ? "Nothing awaiting approval."
+          : filter ? "Nothing here." : "Inbox zero — nothing awaiting you."));
+    }
     return;
   }
   FEED_TAIL_LANES.forEach((lane) => {
@@ -199,51 +219,48 @@ function signalRow(sg) {
 // Done ✓ quick-action that resolves the condition (§5 amendment C4). Never
 // Keep/Discard: a condition must not pollute the findings quality signal.
 function delegationDoneCard(sg) {
-  const card = el("div", "feed-card artifact delegation-done");
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip micro-label type-artifact", "delegated"));
-  if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
-  const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
+  const title = el("span", "cp-clickable", sg.entity || sg.label);
   title.title = "open it on the TASKS board";
   title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
-  top.append(title);
-  card.append(top);
-  card.append(el("div", "feed-why", sg.artifactRef || sg.artifactPath
-    ? "delegated work came back with an artifact — read it, then close the task or send it back out"
-    : "delegated work finished — read the run report, then close the task or send it back out"));
-  const meta = el("div", "feed-meta");
-  meta.append(el("span", null, ["ready for review", sg.harness].filter(Boolean).join("  ·  ")));
-  card.append(meta);
-  const actions = el("div", "feed-actions");
+  const card = cardShell({
+    kind: "artifact delegation-done",
+    chips: [el("span", "type-chip micro-label type-artifact", "delegated"),
+      sg.harness ? el("span", "harness-chip micro-label", sg.harness) : null],
+    title,
+    why: sg.artifactRef || sg.artifactPath
+      ? "delegated work came back with an artifact — read it, then close the task or send it back out"
+      : "delegated work finished — read the run report, then close the task or send it back out",
+    meta: ["ready for review", sg.harness].filter(Boolean).join("  ·  "),
+  });
   const view = pillLight("view →", () => openResult(sg, sg.entity));
   view.classList.add("verdict-primary");
-  actions.append(view);
-  actions.append(pillLight("open task →", () => { location.hash = sg.actHref || "#/tasks"; }));
-  actions.append(pillLight("Done ✓", () => signalAction("/api/tasks/check", { id: sg.goalId, checked: true }, card)));
-  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
-  card.append(actions);
+  card.append(cardActions([
+    view,
+    pillLight("open task →", () => { location.hash = sg.actHref || "#/tasks"; }),
+    pillLight("Done ✓", () => signalAction("/api/tasks/check", { id: sg.goalId, checked: true }, card)),
+    pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)),
+  ]));
   return card;
 }
 // planReadyCard (todo-panel Phase 4): the assigned agent's PLAN landed in the
 // todo's record — review it in the panel, edit by hand, then fire. The card
 // auto-clears when the go-phase run outranks plan-ready (or the todo closes).
 function planReadyCard(sg) {
-  const card = el("div", "feed-card artifact plan-ready");
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip micro-label type-artifact", "plan"));
-  if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
-  const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
+  const title = el("span", "cp-clickable", sg.entity || sg.label);
   title.title = "review the plan in the task panel";
   title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
-  top.append(title);
-  card.append(top);
-  card.append(el("div", "feed-why", "the agent drafted a plan — review it, edit it in place if needed, then fire to execute"));
-  const actions = el("div", "feed-actions");
+  const card = cardShell({
+    kind: "artifact plan-ready",
+    chips: [el("span", "type-chip micro-label type-artifact", "plan"),
+      sg.harness ? el("span", "harness-chip micro-label", sg.harness) : null],
+    title,
+    why: "the agent drafted a plan — review it, edit it in place if needed, then fire to execute",
+  });
   const review = pillLight("review plan →", () => { location.hash = sg.actHref || "#/tasks"; });
   review.classList.add("verdict-primary");
-  actions.append(review);
-  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
-  card.append(actions);
+  card.append(cardActions([review,
+    pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)),
+  ]));
   return card;
 }
 
@@ -251,29 +268,32 @@ function planReadyCard(sg) {
 // questions are IN the todo's thread. Auto-clears when you answer (the ball
 // moves) or a newer brief lands.
 function agentQuestionsCard(sg) {
-  const card = el("div", "feed-card artifact agent-questions");
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip micro-label type-artifact", "questions"));
-  if (sg.harness) top.append(el("span", "harness-chip", sg.harness));
-  const title = el("span", "feed-title cp-clickable", sg.entity || sg.label);
+  const title = el("span", "cp-clickable", sg.entity || sg.label);
   title.title = "open the thread";
   title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
-  top.append(title);
-  card.append(top);
-  card.append(el("div", "feed-why", "the agent has questions before it can plan — answer them in the task's thread"));
-  const actions = el("div", "feed-actions");
+  const card = cardShell({
+    kind: "artifact agent-questions",
+    chips: [el("span", "type-chip micro-label type-artifact", "questions"),
+      sg.harness ? el("span", "harness-chip micro-label", sg.harness) : null],
+    title,
+    why: "the agent has questions before it can plan — answer them in the task's thread",
+  });
   const ans = pillLight("answer in the thread →", () => { location.hash = sg.actHref || "#/tasks"; });
   ans.classList.add("verdict-primary");
-  actions.append(ans);
-  actions.append(pillLight("Snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)));
-  actions.append(pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)));
-  card.append(actions);
+  card.append(cardActions([
+    ans,
+    pillLight("snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)),
+    pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)),
+  ]));
   return card;
 }
 
+// signalAction — a signal card's clearing verb (Done ✓ / dismiss / snooze).
+// The condition itself is recomputed server-side, so loadFeed() always
+// converges to truth; cardDecide only makes a REFUSED write visible instead
+// of the card silently vanishing then quietly reappearing on the next poll.
 async function signalAction(url, body, cardEl) {
-  if (cardEl) cardEl.remove(); // optimistic — the condition clears server-side next
-  try { await postJSON(url, body); } catch (e) {}
+  if (cardEl) await cardDecide(cardEl, url, body);
   loadFeed();
 }
 
@@ -282,20 +302,18 @@ async function signalAction(url, body, cardEl) {
 // count stays honest without the item vanishing irreversibly.
 async function feedVerdict(card, it, verb, status) {
   // optimistic: the stub swaps in the instant you click — the write follows
-  // behind it; a failed write reloads the list so the card comes back honest.
+  // behind it. feedPost's r.ok check is what fixes the swallowed-4xx bug this
+  // used to have: a raw fetch() here never threw on a refused write, so a
+  // blocked verdict read as "saved" (the stub stayed, the item was never
+  // actually re-statused). A refusal now puts the card back and says why.
   const stub = el("div", "feed-stub");
   stub.append(el("span", "feed-stub-verb micro-label", verb), el("span", "feed-stub-title", it.title));
   const undo = el("button", "feed-stub-undo", "undo");
   undo.onclick = () => feedAction(it.id, { status: "new" });
   stub.append(undo);
   card.replaceWith(stub);
-  setSaveState("saving");
-  try {
-    await fetch(`/api/feed/${encodeURIComponent(it.id)}/status`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
-    });
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); loadFeed(); return; }
+  const ok = await feedPost(`/api/feed/${encodeURIComponent(it.id)}/status`, { status });
+  if (!ok) { stub.replaceWith(card); loadFeed(); return; }
   refreshFeedBadge();
 }
 
@@ -306,15 +324,19 @@ async function feedVerdict(card, it, verb, status) {
 // jump, for items) are the only actions — portals are read-only to their source.
 function portalCardEl(pc) {
   const isDigest = pc.type === "portal-digest";
-  const card = el("div", "feed-card portal-card" + (pc.pinned ? " pinned" : ""));
-  card.dataset.portalId = pc.id;
-  const top = el("div", "feed-top");
-  if (pc.pinned) top.append(el("span", "pin-chip", "pinned"));
-  top.append(el("span", "type-chip micro-label type-portal", pc.portal)); // muted source tag
-  if (pc.change) top.append(el("span", "portal-change-chip micro-label change-" + pc.change, pc.change)); // new / edited
-  if (pc.date) top.append(el("span", "feed-date", fmtFeedDate(pc.date)));
-  card.append(top);
-  card.append(el("div", "feed-title", pc.title));
+  const card = cardShell({
+    kind: "portal-card" + (pc.pinned ? " pinned" : ""),
+    dataset: { portalId: pc.id },
+    chips: [
+      pc.pinned ? el("span", "pin-chip micro-label", "pinned") : null,
+      el("span", "type-chip micro-label type-portal", pc.portal), // muted source tag
+      pc.change ? el("span", "portal-change-chip micro-label " + portalChangeClass(pc.change), pc.change) : null,
+    ],
+    title: pc.title,
+    date: pc.date,
+    why: !isDigest && pc.detail ? pc.detail : null,
+    meta: !isDigest && pc.actor ? "by " + pc.actor : null,
+  });
 
   if (isDigest) {
     if ((pc.forYou || []).length) {
@@ -325,18 +347,21 @@ function portalCardEl(pc) {
       card.append(el("div", "portal-subhead micro-label", g.list));
       (g.lines || []).forEach((ln) => card.append(portalLineRow(ln)));
     });
-  } else {
-    if (pc.detail) card.append(el("div", "feed-why", pc.detail));
-    const meta = el("div", "feed-meta");
-    if (pc.actor) meta.append(el("span", "", "by " + pc.actor));
-    card.append(meta);
   }
 
-  const acts = el("div", "feed-actions");
-  if (!isDigest && pc.url) acts.append(pillLight("jump →", () => window.open(pc.url, "_blank")));
-  acts.append(pillLight("Dismiss", () => portalDismiss(pc.id, card)));
-  card.append(acts);
+  const acts = [];
+  if (!isDigest && pc.url) acts.push(pillLight("jump →", () => window.open(pc.url, "_blank")));
+  acts.push(pillLight("Dismiss", () => portalDismiss(pc.id, card)));
+  card.append(cardActions(acts));
   return card;
+}
+
+// portalChangeClass — an arbitrary status transition ("Backlog → In Progress")
+// must never become a raw CSS class (a literal "change-Backlog → In Progress"
+// selector); only the two states this card actually distinguishes get their
+// own class, every other change value shares .change-status.
+function portalChangeClass(change) {
+  return /^(new|edited)$/.test(change) ? "change-" + change : "change-status";
 }
 
 // portalLineRow is one digest line: the task, linking to the source app.
@@ -350,15 +375,10 @@ function portalLineRow(ln) {
 }
 
 async function portalDismiss(id, cardEl) {
-  if (cardEl) cardEl.remove(); // optimistic — the dismissal lands server-side next
-  try { await postJSON("/api/portals/item/dismiss", { id }); } catch (e) {}
+  if (cardEl) await cardDecide(cardEl, "/api/portals/item/dismiss", { id });
   loadFeed();
 }
-function fmtFeedDate(iso) {
-  const d = new Date(iso);
-  if (isNaN(d)) return "";
-  return d.toLocaleDateString([], { month: "short", day: "numeric" });
-}
+
 
 function faviconFor(link) {
   try {
@@ -372,12 +392,6 @@ function faviconFor(link) {
 }
 function feedCard(it) {
   const pinned = it.type === "digest" && it.status === "new";
-  const card = el("div", "feed-card" + (it.type === "artifact" ? " artifact" : "") + (it.type === "digest" ? " digest" : "") +
-    (pinned ? " pinned" : "") + (it.status === "discarded" ? " discarded" : ""));
-  const top = el("div", "feed-top");
-  if (pinned) top.append(el("span", "pin-chip", "pinned"));
-  top.append(el("span", "type-chip micro-label type-" + it.type, it.type));
-  if (it.harness) top.append(el("span", "harness-chip", it.harness)); // federation source
   // only a real external URL makes the title a link; an artifact's local
   // `artifacts/library/…` reference opens in the note view via "view →" instead.
   const external = /^https?:\/\//i.test(it.link || "");
@@ -385,24 +399,35 @@ function feedCard(it) {
   if (external) title = linkEl(it.title, it.link);
   else if (it.artifactPath || it.artifactRef) { title = el("span", "cp-clickable", it.title); title.onclick = () => openResult(it, it.title); }
   else title = el("span", null, it.title);
-  title.classList.add("feed-title");
-  top.append(title);
-  if (it.confidence) top.append(el("span", "conf micro-label conf-" + it.confidence, it.confidence));
-  card.append(top);
-  // the why line is written to be the reason you care — lead with it, emphasized
-  if (it.why) card.append(el("div", "feed-why", it.why));
+
   const meta = el("div", "feed-meta");
   const fav = external ? faviconFor(it.link) : null;
   if (fav) meta.append(fav);
-  const bits = [it.source || it.domain, it.agent, (it.date || "").slice(0, 10)].filter(Boolean).join("  ·  ");
-  meta.append(el("span", null, bits));
-  card.append(meta);
-  if (it.body && (pinned || it.type === "artifact")) { const b = el("pre", "feed-body"); b.textContent = it.body; card.append(b); }
-  if (it.vaultNote) card.append(el("div", "feed-saved", "✓ saved to " + it.vaultNote));
-  const actions = el("div", "feed-actions");
+  meta.append(el("span", null, [it.source || it.domain, it.agent].filter(Boolean).join("  ·  ")));
+
+  const card = cardShell({
+    kind: [it.type === "artifact" && "artifact", it.type === "digest" && "digest",
+      pinned && "pinned", it.status === "discarded" && "discarded"].filter(Boolean).join(" "),
+    chips: [
+      pinned ? el("span", "pin-chip micro-label", "pinned") : null,
+      el("span", "type-chip micro-label type-" + it.type, it.type),
+      it.harness ? el("span", "harness-chip micro-label", it.harness) : null, // federation source
+      it.confidence ? el("span", "conf micro-label conf-" + it.confidence, it.confidence) : null,
+    ],
+    title,
+    date: it.date,
+    why: it.why, // the reason you care — lead with it, emphasized
+    body: [
+      it.body && (pinned || it.type === "artifact") ? Object.assign(el("pre", "feed-body"), { textContent: it.body }) : null,
+      it.vaultNote ? el("div", "feed-saved", "✓ saved to " + it.vaultNote) : null,
+    ],
+    meta,
+  });
+
+  const acts = [];
   // the full brief, rendered legibly (harness file or vault note — openResult
   // picks the medium; a card with neither ref falls through with no "view →")
-  if (it.artifactPath || it.artifactRef) actions.append(pillLight("view →", () => openResult(it, it.title)));
+  if (it.artifactPath || it.artifactRef) acts.push(pillLight("view →", () => openResult(it, it.title)));
   if (it.status !== "discarded") {
     // ⚠ No Keep button (owner decision 2026-08-25). The `kept` STATUS still
     // exists and the weekly tune ritual still reads it — but it is now written
@@ -415,40 +440,53 @@ function feedCard(it) {
     // findings never age out — so it is the primary verb and never hidden.
     const discard = pillLight("Discard", () => feedVerdict(card, it, "discarded", "discarded"));
     discard.classList.add("verdict-primary");
-    actions.append(discard);
-    actions.append(pillLight("→ task", () => feedToTodo(it.id))); // catch it on the TASKS board (Inbox)
-    if (it.type !== "digest") actions.append(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
+    acts.push(discard);
+    acts.push(pillLight("→ task", () => feedToTodo(it.id))); // catch it on the TASKS board (Inbox)
+    if (it.type !== "digest") acts.push(pillLight("dig →", () => feedDig(it.id))); // spool a deeper run
     // curate → the public feed. A NEW action, not a verdict: it says
     // "subscribers should read this", and leaves the card's status alone.
     // Only for a card that points at a real article — there is nothing to
     // fetch, and nothing to link subscribers to, without one.
-    if (external) actions.append(curatePill(it));
+    if (external) acts.push(curatePill(it, card));
   } else {
-    actions.append(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
+    acts.push(pillLight("Restore", () => feedAction(it.id, { status: "new" })));
   }
-  card.append(actions);
+  card.append(cardActions(acts));
   return card;
 }
 
 // curatePill — the bridge into the public curation feed. One click fetches the
 // whole article behind the card's link and writes it as an extrinsic/ note,
 // exactly as the CONSUME lane's curate does; the note is what feed.xml serves.
-// The prompt is the annotation subscribers read above the piece — skipping it
-// still curates, and Cancel means cancel.
-function curatePill(it) {
-  const pill = pillLight("curate", () => feedCurate(it, pill));
+// The note is the annotation subscribers read above the piece — asked for via
+// the inline .consume-note-row affordance CONSUME already uses (same verb,
+// same UI everywhere — replacing FEED's old native dialog; skipping it
+// still curates.
+function curatePill(it, card) {
+  const pill = pillLight("curate", () => {
+    if (card.querySelector(".consume-note-row")) return;
+    const row = el("div", "consume-note-row");
+    const input = inputEl("a note for subscribers? (optional)");
+    input.className = "consume-note-input";
+    const submit = () => { row.remove(); feedCurate(it, pill, card, input.value.trim()); };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") { e.preventDefault(); submit(); }
+      if (e.key === "Escape") row.remove();
+    };
+    row.append(input, pillLight("curate", submit), pillLight("cancel", () => row.remove()));
+    card.append(row);
+    input.focus();
+  });
   return pill;
 }
 
-async function feedCurate(it, pill) {
-  const note = prompt("A note for subscribers (optional):", "");
-  if (note === null) return; // cancelled — nothing published
+async function feedCurate(it, pill, card, note) {
   pill.disabled = true;
   pill.textContent = "curating…";
   try {
     const r = await fetch(`/api/feed/${encodeURIComponent(it.id)}/curate`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: note.trim() }),
+      body: JSON.stringify({ note: note || "" }),
     });
     if (!r.ok) throw new Error((await r.text()) || r.status);
     const d = await r.json().catch(() => ({}));
@@ -457,7 +495,7 @@ async function feedCurate(it, pill) {
     showToast(d.full ? "Curated in full → " + (d.path || "extrinsic/")
                      : "Curated as a link — the article page didn't yield its text",
       null, "info");
-    pill.replaceWith(uncuratePill(it));
+    pill.replaceWith(uncuratePill(it, card));
   } catch (e) {
     pill.disabled = false;
     pill.textContent = "curate";
@@ -467,14 +505,14 @@ async function feedCurate(it, pill) {
 
 // uncuratePill clears the curated marker. The note itself survives — this
 // unpublishes, it does not delete.
-function uncuratePill(it) {
+function uncuratePill(it, card) {
   const pill = pillLight("uncurate", async () => {
     pill.disabled = true;
     try {
       const r = await fetch(`/api/feed/${encodeURIComponent(it.id)}/uncurate`, { method: "POST" });
       if (!r.ok) throw new Error((await r.text()) || r.status);
       showToast("Removed from the public feed — the note stays");
-      pill.replaceWith(curatePill(it));
+      pill.replaceWith(curatePill(it, card));
     } catch (e) {
       pill.disabled = false;
       showToast("Uncurate failed: " + (e.message || e), null, "error");
@@ -488,43 +526,43 @@ function uncuratePill(it) {
 // no expiry; queued shows its place in line, running shows a live dot,
 // failed/cancelled offer retry (no continue — the CLI emits no session ids).
 function receiptCardEl(rc) {
-  const card = el("div", "feed-card receipt status-" + rc.status);
-  const top = el("div", "feed-top");
-  top.append(el("span", "type-chip micro-label type-receipt", "errand"));
-  top.append(el("span", "type-chip micro-label type-portal", "aside")); // muted source tag
-  const status = el("span", "receipt-status micro-label rc-" + rc.status,
-    rc.status === "queued" && rc.queuePos ? "queued · #" + rc.queuePos : rc.status);
-  top.append(status);
-  if (rc.created) top.append(el("span", "feed-date", fmtFeedDate(rc.created)));
-  card.append(top);
-  card.append(el("div", "feed-title", rc.text));
-  const meta = el("div", "feed-meta");
   const bits = ["account " + rc.account];
   if (rc.durationS) bits.push(rc.durationS + "s");
   if (rc.source === "proposal") bits.push("via approved proposal");
-  meta.append(el("span", null, bits.join("  ·  ")));
-  card.append(meta);
+
+  const card = cardShell({
+    kind: "receipt status-" + rc.status,
+    chips: [
+      el("span", "type-chip micro-label type-receipt", "errand"),
+      el("span", "type-chip micro-label type-portal", "aside"), // muted source tag
+      el("span", "receipt-status micro-label rc-" + rc.status,
+        rc.status === "queued" && rc.queuePos ? "queued · #" + rc.queuePos : rc.status),
+    ],
+    title: rc.text,
+    date: rc.created,
+    meta: bits.join("  ·  "),
+  });
   if (rc.outcome) card.append(receiptOutcomeEl(rc.outcome));
   if (rc.goalId) {
     const g = el("span", "work-chip cp-clickable", "⚑ " + rc.goalId);
     g.onclick = () => { location.hash = "#/goals/" + encodeURIComponent(rc.goalId); };
     card.append(g);
   }
-  const acts = el("div", "feed-actions");
-  if (rc.transcript) acts.append(pillLight("transcript →", () => showErrandTranscript(rc)));
+  const acts = [];
+  if (rc.transcript) acts.push(pillLight("transcript →", () => showErrandTranscript(rc)));
   if (rc.status === "queued" || rc.status === "running") {
-    acts.append(pillLight("Cancel", () => errandAction("/api/errands/" + rc.id + "/cancel")));
+    acts.push(pillLight("Cancel", () => errandAction("/api/errands/" + rc.id + "/cancel")));
   }
   if (rc.status === "failed" || rc.status === "cancelled") {
-    acts.append(pillLight("Retry", () => errandAction("/api/errands/" + rc.id + "/retry")));
+    acts.push(pillLight("Retry", () => errandAction("/api/errands/" + rc.id + "/retry")));
   }
   // Clear = acknowledged read-state, not a verdict: the card leaves the inbox
   // and the badge; the record + transcript persist under ALL (§5 audit trail).
   const finished = rc.status === "done" || rc.status === "failed" || rc.status === "cancelled";
   if (finished && !rc.acknowledged) {
-    acts.append(pillLight("Clear", () => errandAction("/api/errands/" + rc.id + "/ack")));
+    acts.push(pillLight("Clear", () => errandAction("/api/errands/" + rc.id + "/ack")));
   }
-  if (acts.children.length) card.append(acts);
+  if (acts.length) card.append(cardActions(acts));
   return card;
 }
 
@@ -671,13 +709,10 @@ if (els.feedErrandBtn) els.feedErrandBtn.addEventListener("click", composeErrand
 // the first time the card paints on this page.
 const BANK_FEED_CAP = 8;
 function bankPendingCardEl(rows) {
-  const card = el("div", "approval-card bank-pending-card");
-  const head = el("div", "appr-head");
-  head.append(el("span", "appr-action", "Bank feed — " + rows.length + " transaction" + (rows.length === 1 ? "" : "s") + " to file"));
-  const open = el("button", "pp3-link", "$ workbench →");
-  open.onclick = () => { location.hash = "#/properties/money"; };
-  head.append(open);
-  card.append(head);
+  const card = cardShell({
+    kind: "bank-pending-card",
+    title: "Bank feed — " + rows.length + " transaction" + (rows.length === 1 ? "" : "s") + " to file",
+  });
   const body = el("div", "bank-pending-rows");
   body.append(el("div", "micro-label", "loading pickers…"));
   card.append(body);
@@ -693,7 +728,16 @@ function bankPendingCardEl(rows) {
       more.onclick = () => { location.hash = "#/properties/money"; };
       body.append(more);
     }
+  }).catch(() => {
+    // ⚠ this used to have no .catch at all — a picker cache that failed to
+    // load left the card stuck on "loading pickers…" forever, with no way to
+    // tell the difference between "still loading" and "never going to load".
+    body.innerHTML = "";
+    body.append(el("div", "micro-label", "couldn't load the pickers — file these from the $ workbench instead"));
   });
+  const open = el("button", "linkish", "$ workbench →");
+  open.onclick = () => { location.hash = "#/properties/money"; };
+  card.append(cardActions([open]));
   return card;
 }
 

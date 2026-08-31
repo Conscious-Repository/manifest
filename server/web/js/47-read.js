@@ -77,7 +77,7 @@ function renderRead() {
   els.readMeta.innerHTML = "";
   const bits = [d.source, d.author].filter(Boolean).join(" · ");
   if (bits) els.readMeta.append(el("span", "", bits));
-  if (d.published) els.readMeta.append(el("span", "", fmtFeedDate(d.published)));
+  if (d.published) els.readMeta.append(el("span", "", fmtWhen(d.published)));
   if (d.preview) {
     els.readMeta.append(el("span", "read-preview-chip micro-label",
       d.preview === "paid" ? "paid post" : "preview only"));

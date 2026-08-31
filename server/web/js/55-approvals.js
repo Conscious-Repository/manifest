@@ -47,8 +47,6 @@ function apprPaintSel() {
 // per-type guards, current-vs-proposed diff, and Confirm/Reject inline
 // (approvals-move-to-feed plan; formerly the SPIRITS approvals panel card).
 function approvalCardEl(a) {
-  const card = el("div", "approval-card pinned");
-  card.dataset.approvalId = a.id;
   const actionable = !!a.applyPath;
   const isResolve = a.type === "aion-resolve" || a.type === "re-resolve"; // closed-loop: flip one backlog line
   const isRe = a.type === "re-backlog" || a.type === "re-resolve"; // the real-estate domain twins (````re fence)
@@ -73,36 +71,36 @@ function approvalCardEl(a) {
     : isGoals ? stripFence(a.body, "goals")
     : isAion ? stripFence(a.body, isRe ? "re" : "aion") : actionable ? stripProposedFence(a.body) : a.body;
   if (strayFence) bodyText = stripFence(bodyText, strayFence);
+  let card;
   if (isReContract) {
-    // the contract card leads with money, not prose: the head is the kind
-    // chip, the provenance, and the document — the action line's content
-    // (contractor, scope, amount) is the total block right below it
-    card.classList.add("re-intake-card");
+    // the contract card leads with money, not prose: the head carries only
+    // provenance — kind chip, agent · when, harness, the document link — the
+    // action line's content (contractor, scope, amount) is the total block
+    // buildReContractEditor renders right below it, as the body slot.
     const doc = (a.reContractPayload || {}).doc || "";
-    const head = el("div", "appr-head re-intake-head");
-    head.append(el("span", "type-chip micro-label type-company", (a.reContractPayload || {}).kind || "contract"));
-    head.append(el("span", "appr-agent", [a.agent, a.created ? fmtWhen(a.created) : ""].filter(Boolean).join(" · ")));
-    if (a.harness) head.append(el("span", "harness-chip", a.harness)); // federation source
+    let docLink = null;
     if (doc.startsWith("sha256:")) {
-      const dl = el("a", "pp3-link re-intake-doc", "document ↗");
-      dl.href = "/api/realestate/files/" + doc.slice(7);
-      dl.target = "_blank";
-      head.append(dl);
+      docLink = el("a", "linkish re-intake-doc", "document ↗");
+      docLink.href = "/api/realestate/files/" + doc.slice(7);
+      docLink.target = "_blank";
     }
-    card.append(head);
+    card = cardShell({
+      kind: "pinned re-intake-card",
+      approval: true,
+      dataset: { approvalId: a.id },
+      chips: [
+        el("span", "type-chip micro-label type-company", (a.reContractPayload || {}).kind || "contract"),
+        el("span", "appr-agent micro-label", [a.agent, a.created ? fmtWhen(a.created) : ""].filter(Boolean).join(" · ")),
+        a.harness ? el("span", "harness-chip micro-label", a.harness) : null, // federation source
+      ],
+      date: docLink, // the doc link is the trailing right-aligned element, same slot a date would take
+    });
   } else if (isGoals) {
     // the goals placement card speaks the FEED's card language (owner call
     // 2026-08-28): kind chip + the placement's own title, the evidence as the
     // why line, one mono meta row. ONLY the shell changes — the editable
     // placement, the current→proposed diff and Confirm/Reject still follow
     // below exactly as every other approval renders them.
-    card.classList.add("feed-card", "goals-appr-card");
-    const top = el("div", "feed-top");
-    top.append(el("span", "type-chip micro-label type-goals", "goals-item"));
-    top.append(el("span", "feed-title", goalsCardTitle(a)));
-    if (a.harness) top.append(el("span", "harness-chip", a.harness)); // federation source
-    card.append(top);
-    if (bodyText && bodyText.trim()) card.append(el("div", "feed-why", bodyText.trim()));
     const gp = a.goalsPayload || {};
     goalsMeta = el("div", "feed-meta goals-appr-meta");
     // mode+level carry the one thing the stripped action line said that the
@@ -110,13 +108,30 @@ function approvalCardEl(a) {
     const bits = [[gp.mode, gp.level].filter(Boolean).join(" "), a.agent,
       a.created ? fmtWhen(a.created) : "", goalsCardSource(a)].filter(Boolean).join("  ·  ");
     goalsMeta.append(el("span", null, bits));
-    card.append(goalsMeta);
+    card = cardShell({
+      kind: "pinned goals-appr-card",
+      approval: true,
+      dataset: { approvalId: a.id },
+      chips: [
+        el("span", "type-chip micro-label type-goals", "goals-item"),
+        a.harness ? el("span", "harness-chip micro-label", a.harness) : null, // federation source
+      ],
+      title: goalsCardTitle(a),
+      why: bodyText && bodyText.trim() ? bodyText.trim() : null,
+      meta: goalsMeta,
+    });
   } else {
-    const head = el("div", "appr-head");
-    head.append(el("span", "appr-action", a.action), el("span", "appr-agent", a.agent || ""));
-    if (a.harness) head.append(el("span", "harness-chip", a.harness)); // federation source
-    card.append(head);
-    if (a.created) card.append(el("div", "feed-meta", fmtWhen(a.created)));
+    card = cardShell({
+      kind: "pinned",
+      approval: true,
+      dataset: { approvalId: a.id },
+      chips: [
+        a.agent ? el("span", "appr-agent micro-label", a.agent) : null,
+        a.harness ? el("span", "harness-chip micro-label", a.harness) : null, // federation source
+      ],
+      title: a.action,
+      date: a.created,
+    });
   }
   // the goals card already rendered its evidence as the feed-style why line
   if (bodyText && bodyText.trim() && !isReContract && !isGoals) { const b = el("pre", "appr-body"); b.textContent = bodyText.trim(); card.append(b); }
@@ -221,14 +236,12 @@ function approvalCardEl(a) {
   if (isPortalProp && a.portalSettled) {
     card.append(el("div", "appr-settled",
       (a.portalSettled === "approved" ? "✓ approved" : "✕ rejected") + " in the portal — nothing to decide here"));
-    const actions = el("div", "appr-actions");
-    actions.append(pillLight("Dismiss", () => postApprovalDecision(a.id, "dismiss", {})));
-    card.append(actions);
+    card.append(cardActions([pillLight("Dismiss", () => postApprovalDecision(a.id, "dismiss", {}))]));
     return card;
   }
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 
-  const actions = el("div", "appr-actions");
+  const actions = cardActions([]);
   const confirmBtn = pill(actionable ? "Confirm & apply" : "Confirm",
     async () => {
       // aion/re payload editors: whatever is in the form RIDES the confirm —

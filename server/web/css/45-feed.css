@@ -5,6 +5,7 @@
 /* ---- Feed ---- */
 .feed-filters { display: inline-flex; flex-wrap: wrap; gap: var(--sp-3); }
 .feed-list { display: flex; flex-direction: column; gap: var(--sp-6); }
+.feed-load-error { justify-content: space-between; gap: var(--sp-6); }
 .feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
 .feed-card.artifact { border-color: var(--blue-soft); background: var(--base-05); }
 .feed-card.pinned { border-color: var(--accent); background: var(--base-05); box-shadow: none; }
@@ -15,7 +16,6 @@
 .type-chip.type-artifact { color: var(--accent); border-color: var(--accent-soft); }
 .feed-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); font-weight: 500; text-decoration: none; }
 a.feed-title:hover { color: var(--blue); text-decoration: underline; }
-.conf { margin-left: auto; }
 .conf-high { color: var(--base-40); } .conf-medium { color: var(--base-40); } .conf-low { color: var(--muted); }
 .feed-why { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); line-height: 1.45; }
 .feed-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: 0.2px; }
@@ -42,7 +42,6 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 
 /* ---- portal feed cards (the third card kind): digest + itemized notices ---- */
 .type-chip.type-portal { }
-.feed-card.portal-card .feed-date { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-left: auto; }
 /* .portal-subhead / .portal-change-chip: structural only — recipe from .micro-label */
 .portal-subhead { margin: var(--sp-4) 0 var(--sp-1); }
 .portal-line { display: flex; align-items: baseline; gap: var(--sp-5); padding: var(--sp-1) 0; }
@@ -51,6 +50,10 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .portal-change-chip { border-radius: var(--radius); padding: 1px var(--sp-3); }
 .portal-change-chip.change-new { color: var(--base-50); border: 1px solid var(--base-25); }
 .portal-change-chip.change-edited { color: var(--muted); border: 1px solid var(--line); }
+/* an arbitrary status transition ("Backlog → In Progress") never becomes its
+   own class (portalChangeClass in 45-feed.js) — it shares this one instead */
+.portal-change-chip.change-status { color: var(--blue); border: 1px solid var(--blue-soft); }
+.pin-chip { color: var(--blue); }
 
 /* ---- receipts (errands-aside §5): the fourth attention kind ---- */
 .type-chip.type-receipt { }
@@ -124,4 +127,3 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
    two surfaces read identically; only the grid is local. */
 .bank-pending-rows { margin-top: var(--sp-4); }
 .bank-pending-row { display: grid; grid-template-columns: 44px minmax(140px, 1fr) 96px minmax(90px, 140px) minmax(90px, 130px); gap: var(--sp-4); align-items: center; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
-.bank-pending-card .pp3-link { margin-left: auto; }

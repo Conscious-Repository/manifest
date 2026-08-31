@@ -13,20 +13,20 @@
   <!-- Styles (§11): core tokens first, then the shared primitives, then one
        file per tab — cascade order matters, keep it aligned with js/. -->
   <link rel="stylesheet" href="css/00-core.css" />
-  <link rel="stylesheet" href="css/05-primitives.css" />
+  <link rel="stylesheet" href="css/05-primitives.css?v=2" />
   <link rel="stylesheet" href="css/07-nav.css" />
   <link rel="stylesheet" href="css/10-day.css" />
   <link rel="stylesheet" href="css/20-goals.css?v=3" />
   <link rel="stylesheet" href="css/30-calendar.css" />
-  <link rel="stylesheet" href="css/40-spirits.css" />
-  <link rel="stylesheet" href="css/45-feed.css" />
-  <link rel="stylesheet" href="css/46-consume.css?v=3" />
+  <link rel="stylesheet" href="css/40-spirits.css?v=2" />
+  <link rel="stylesheet" href="css/45-feed.css?v=2" />
+  <link rel="stylesheet" href="css/46-consume.css?v=4" />
   <link rel="stylesheet" href="css/48-chat.css" />
   <link rel="stylesheet" href="css/74-files.css" />
   <link rel="stylesheet" href="vendor/xterm.css" />
   <link rel="stylesheet" href="css/72-activity.css" />
   <link rel="stylesheet" href="css/73-terminal.css" />
-  <link rel="stylesheet" href="css/55-approvals.css?v=4" />
+  <link rel="stylesheet" href="css/55-approvals.css?v=5" />
   <link rel="stylesheet" href="css/60-contacts.css" />
   <link rel="stylesheet" href="css/65-reading.css" />
   <link rel="stylesheet" href="css/70-note.css" />
@@ -38,7 +38,7 @@
   <link rel="stylesheet" href="css/92-aion.css?v=2" />
   <link rel="stylesheet" href="css/94-aion-fundraising.css" />
   <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
-  <link rel="stylesheet" href="css/95-mobile.css" />
+  <link rel="stylesheet" href="css/95-mobile.css?v=2" />
 </head>
 <body>
   <div id="appShell" class="app-shell">
@@ -517,16 +517,16 @@
   <!-- Userland modules (§11): one file per tab over a shared core, loaded in
        order into one scope — no framework, no build step. -->
   <script src="js/00-core.js"></script>
-  <script src="js/05-components.js"></script>
+  <script src="js/05-components.js?v=2"></script>
   <script src="js/10-day.js"></script>
   <script src="js/20-goals.js?v=3"></script>
   <script src="js/30-calendar.js"></script>
   <script src="js/40-spirits.js"></script>
-  <script src="js/45-feed.js"></script>
-  <script src="js/46-consume.js?v=3"></script>
+  <script src="js/45-feed.js?v=2"></script>
+  <script src="js/46-consume.js?v=4"></script>
   <script src="js/47-read.js"></script>
   <script src="js/48-chat.js"></script>
-  <script src="js/55-approvals.js?v=4"></script>
+  <script src="js/55-approvals.js?v=5"></script>
   <script src="js/58-rituals.js"></script>
   <script src="js/60-contacts.js"></script>
   <script src="js/65-reading.js"></script>

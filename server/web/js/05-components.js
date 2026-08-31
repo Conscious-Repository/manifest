@@ -54,6 +54,96 @@ function fmtWhen(iso) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+// ---- cardShell: THE card factory (A1). Every FEED-rendered card is
+// .feed-card + a kind modifier, built through this one function. Anatomy in
+// order: .feed-top (chips → title → right-aligned .feed-date) · optional
+// .feed-why · optional body slot(s) · optional .feed-meta (why always
+// precedes meta) · .feed-actions (via cardActions) last. A builder with
+// interior content too particular for one declarative call (the re-contract
+// and goals-item editors) still uses cardShell for the header/actions and
+// appends its own body straight onto the returned card before finishing with
+// cardActions — the frame unifies, the unique content stays.
+//
+//   opts.kind      extra class(es) after "feed-card", e.g. "artifact pinned"
+//   opts.dataset   {attr: value} set on the card root
+//   opts.chips     elements for .feed-top, before the title (falsy entries skipped)
+//   opts.title     element or string for .feed-title
+//   opts.date      an ISO string (rendered via fmtWhen) or a pre-built element
+//   opts.why       string or element for .feed-why
+//   opts.body      element or array of elements, appended after .feed-why
+//   opts.meta      string or element for .feed-meta
+//   opts.actions   array of button elements → .feed-actions (cardActions)
+function cardShell(opts) {
+  opts = opts || {};
+  // opts.approval (not a plain string in opts.kind) keeps the "approval-card"
+  // identity class — like "feed-card" itself — decided in exactly one place.
+  const card = el("div", ["feed-card", opts.approval ? "approval-card" : "", opts.kind].filter(Boolean).join(" "));
+  if (opts.dataset) Object.keys(opts.dataset).forEach((k) => { card.dataset[k] = opts.dataset[k]; });
+  const top = el("div", "feed-top");
+  (opts.chips || []).forEach((c) => c && top.append(c));
+  if (opts.title != null) {
+    const t = opts.title.nodeType ? opts.title : el("span", "", opts.title);
+    t.classList.add("feed-title");
+    top.append(t);
+  }
+  if (opts.date) top.append(opts.date.nodeType ? opts.date : el("span", "feed-date", fmtWhen(opts.date)));
+  card.append(top);
+  if (opts.why) card.append(opts.why.nodeType ? opts.why : el("div", "feed-why", opts.why));
+  (Array.isArray(opts.body) ? opts.body : opts.body ? [opts.body] : []).forEach((b) => b && card.append(b));
+  if (opts.meta) card.append(opts.meta.nodeType ? opts.meta : el("div", "feed-meta", opts.meta));
+  if (opts.actions) card.append(cardActions(opts.actions));
+  return card;
+}
+
+// cardActions — the .feed-actions row (A1: always last). Exposed separately
+// so a card that appends custom content between its header and its actions
+// (an editor, a diff, a blocked-reason line) can still finish through the one
+// shared row instead of hand-rolling `el("div", "feed-actions")`.
+function cardActions(buttons) {
+  const actions = el("div", "feed-actions");
+  (buttons || []).forEach((b) => b && actions.append(b));
+  return actions;
+}
+
+// ---- the one feed-card write discipline (A2) ----
+// feedPost does the actual write: POST with an r.ok check, an explicit-kind
+// error toast on refusal, setSaveState throughout. It replaces raw fetch()
+// calls and postJSON (which never checks r.ok, so a refused 4xx silently
+// read as success) across the four card decision bodies this stage unifies.
+async function feedPost(url, body) {
+  setSaveState("saving");
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    if (!r.ok) {
+      const why = (await r.text().catch(() => "")).trim();
+      setSaveState("error");
+      showToast("Not applied — " + (why.replace(/^apply refused:\s*/i, "") || ("HTTP " + r.status)).slice(0, 160), null, "error");
+      return false;
+    }
+    setSaveState("saved");
+    return true;
+  } catch (e) {
+    setSaveState("error");
+    showToast("Couldn't reach the server — " + String(e.message || e).slice(0, 100), null, "error");
+    return false;
+  }
+}
+
+// cardDecide — the standard optimistic-write shape a feed card's clearing
+// verb takes: pull the card out of the DOM, feedPost the decision, and put it
+// right back if the write was refused or the network failed — a refused
+// decision must be visible, never a silent no-op (the swallowed-4xx class
+// this replaces). onOk runs only once the write is confirmed; the caller
+// still decides whether/how to reload the list afterward.
+async function cardDecide(card, url, body, onOk) {
+  const next = card.nextSibling, parent = card.parentNode;
+  card.remove();
+  const ok = await feedPost(url, body);
+  if (!ok) { if (next) next.before(card); else if (parent) parent.append(card); return false; }
+  if (onOk) onOk();
+  return true;
+}
+
 // ---- ghost input (goals-lineage): a quiet ＋ button that swaps into an input;
 // Enter/blur commits, Escape restores the ghost ----
 function ghostInput(label, cls, onSubmit, placeholder) {
@@ -101,84 +191,19 @@ function collapsibleSection(host, title, summary, open) {
   return body;
 }
 
-// ---- THE money slot (§11 family #6) ----
-// One place for how money renders and how a money field edits. Display
-// precision is decided HERE once: whole dollars, thousands-separated.
-// The semantic model is encoded once — est=plan, committed=accepted bid,
-// paid=expense, unreconciled=done-but-unlinked — as the value shape
-// moneySlot takes; sites declare their SEMANTICS (endpoints, branch
-// actions) in callbacks, never the shell.
-
+// ---- money display (§11 family #6) ----
+// fmtMoney is the one place display precision is decided: whole dollars,
+// thousands-separated. moneyInput is the one numeric money field (.est-in,
+// step 1). The old click-to-edit money shell had zero call sites and was
+// deleted 2026-08-31; see ARCHITECTURE.md §11.
 function fmtMoney(n) { return "$" + Math.round(n || 0).toLocaleString(); }
 function fmtPct(x) { return Math.round((x || 0) * 100) + "%"; }
 
-// moneyInput is the one numeric money field (.est-in, step 1).
 function moneyInput(placeholder, initial) {
   const i = inputEl(placeholder);
   i.type = "number"; i.step = "1"; i.classList.add("est-in");
   if (initial > 0) i.value = initial;
   return i;
-}
-
-// moneySlotState derives the slot's class + label from the semantic value
-// shape {paid, committed, est, firm:{amount,who}, checked, unreconciled}.
-// The cascade: paid → firm bid → committed → est → empty.
-function moneySlotState(v, emptyLabel) {
-  let cls = "est-slot", label;
-  if (v.paid > 0) { cls += " firm"; label = fmtMoney(v.paid) + " paid / " + fmtMoney(v.committed || v.paid); }
-  else if (v.firm && v.firm.amount > 0) { cls += " firm"; label = fmtMoney(v.firm.amount) + (v.firm.who ? " · " + v.firm.who : ""); }
-  else if (v.committed > 0) { cls += " firm"; label = fmtMoney(v.committed) + " committed"; }
-  else if (v.est > 0) label = "est " + fmtMoney(v.est);
-  else { cls += " empty"; label = emptyLabel || "$ —"; }
-  if (v.checked && (v.unreconciled || 0) > 0) { cls += " unrec"; label = "⚑ " + label; }
-  return { cls, label };
-}
-
-// moneySlot: the click-to-edit slot. opts:
-//   value       the semantic shape above
-//   emptyLabel  what an empty slot reads ("$ —" / "est —")
-//   title       hover text (string, or (value) => string)
-//   editor      (commit, revert) => {el, focus} — builds the open editor;
-//               call revert() to restore the slot, commit is the site's save.
-//               Wire Enter/Escape inside via moneyEditKeys.
-// Returns the slot button. Sites re-render after save as they do today.
-function moneySlot(opts) {
-  const st = moneySlotState(opts.value || {}, opts.emptyLabel);
-  const slot = el("button", st.cls, st.label);
-  if (opts.title) slot.title = typeof opts.title === "function" ? opts.title(opts.value) : opts.title;
-  if (opts.editor) {
-    slot.onclick = (e) => {
-      e.stopPropagation();
-      let ed;
-      const revert = () => { if (ed.el.parentNode) ed.el.replaceWith(slot); };
-      ed = opts.editor(opts.commit, revert);
-      slot.replaceWith(ed.el);
-      if (ed.focus) ed.focus();
-    };
-  }
-  return slot;
-}
-
-// moneyEditKeys wires the standard keys on an editor input: Enter saves,
-// Escape reverts. Blur policy stays the site's (estSlot reverts on blur;
-// priceSlot deliberately doesn't — blur would kill the typeahead pick).
-function moneyEditKeys(input, save, revert) {
-  input.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") save();
-    else if (ev.key === "Escape") revert();
-  });
-}
-
-// moneyTripletRow: one plan/committed/paid table row (.pp-money-row) —
-// first amount renders an em-dash when absent, the rest blank, matching
-// the MONEY block's tables.
-function moneyTripletRow(colsClass, label, a, b, c, over) {
-  const row = el("div", "pp-money-row " + colsClass + (over ? " over" : ""));
-  row.append(el("span", "", label),
-    el("span", "pp-amt", a ? fmtMoney(a) : "—"),
-    el("span", "pp-amt", b ? fmtMoney(b) : ""),
-    el("span", "pp-amt", c ? fmtMoney(c) : ""));
-  return row;
 }
 
 // ---- ppCols: a one-line row of mono micro-labels sharing the exact grid of

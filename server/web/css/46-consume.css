@@ -7,7 +7,6 @@
 /* ---- the card ---- */
 .feed-card.consume-card { gap: var(--sp-3); }
 .feed-card.consume-card.consume-read { border-color: var(--line); opacity: 0.72; }
-.feed-card.consume-card .feed-date { margin-left: auto; }
 .consume-title { cursor: pointer; }
 .consume-title:hover { color: var(--blue); }
 /* .type-chip.type-consume / .consume-list-chip / .consume-curated-chip are

@@ -371,3 +371,12 @@ Mirroring full third-party text was the owner's explicit choice, made against a
 stated objection (attribution is not a license). Every entry's `<link>` is the
 original, the index is `noindex`, and mirror-vs-excerpt is per-subscription so a
 single objecting writer is a one-field edit.
+
+**2026-08-31 — §11 component list: old click-to-edit money shell deleted, `cardShell` added.**
+The legacy click-to-edit money helper family (~80 lines in `05-components.js`)
+had zero call sites — every money field in the app edits through `moneyInput`
+directly instead — and is
+deleted; `fmtMoney`/`fmtPct`/`moneyInput` stay, they have live callers. In its
+place, the UI-conventions pass (`plans/manifest-ui-conventions.md` C2) adds
+`cardShell`/`cardActions`, the one factory every FEED-rendered card (findings,
+signals, portal notices, receipts, approvals) now builds through.

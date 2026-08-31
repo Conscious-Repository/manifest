@@ -169,10 +169,13 @@
 .linkish:hover, .pill-solid:hover { text-decoration: underline; }
 .linkish:disabled, .pill-solid:disabled { opacity: 0.6; cursor: default; }
 
-/* ---- .feed-date — base rule for every card's right-aligned date (A1).
-   Kind-specific descendant rules (e.g. .portal-card .feed-date) may still
-   override margin/position, never the font recipe. */
-.feed-date { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
+/* ---- .feed-date — base rule for every card's right-aligned date (A1: date
+   always trails .feed-top, right-aligned). margin-left:auto lives here once —
+   it used to be re-declared per kind (portal-card, consume-card) and simply
+   missing on the rest, so half the card kinds never right-aligned their date
+   at all. Kind-specific descendant rules may still override the font recipe
+   for a special case, never re-add the margin. */
+.feed-date { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; margin-left: auto; }
 
 /* ---- .view-tabs — the one tab-bar idiom (absorbs .prop-toggle, .feed-filters
    usage). A row of quiet text tabs, one active. */
