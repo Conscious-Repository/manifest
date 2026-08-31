@@ -445,7 +445,12 @@ async function renderBankFeedPanel(box, ents) {
 
   // banks mangle their own names (encoding replacement chars, duplicated
   // last-fours) — display cleans, the link payload keeps the raw name
-  const cleanName = (s) => (s || "").replace(/�/g, "").replace(/\s+/g, " ").trim();
+  const cleanName = (s) => {
+    const t = (s || "").replace(/�/g, "").replace(/\s+/g, " ").trim();
+    // banks repeat the last-four: "EVERYDAY CHECKING …6631 (6631)" — drop the
+    // parenthetical only when its digits already appear in the name
+    return t.replace(/\s*\((\d{2,4})\)$/, (m, d) => (t.slice(0, t.length - m.length).includes(d) ? "" : m));
+  };
   const fmtBal = (s) => {
     const v = parseFloat(s);
     if (!isFinite(v)) return "";
@@ -458,10 +463,12 @@ async function renderBankFeedPanel(box, ents) {
     const link = a.link || null;
     const wrap = el("div", "re-bank-acct");
     const row = el("div", "re-bank-row");
-    row.append(el("span", "re-bank-name", cleanName(a.name)));
+    const stack = el("div", "re-bank-stack");
+    stack.append(el("span", "re-bank-name", cleanName(a.name)));
     const entName = link ? ((ents.find((x) => x.slug === link.entitySlug) || {}).name || link.entitySlug) : "";
-    row.append(el("span", "re-bank-ent",
-      link ? "→ " + entName + (link.defaultProperty ? " · " + link.defaultProperty : "") : ""));
+    if (link) stack.append(el("span", "re-bank-ent",
+      "→ " + entName + (link.defaultProperty ? " · " + link.defaultProperty : "")));
+    row.append(stack);
     row.append(el("span", "re-bank-bal", fmtBal(a.balance)));
     if (link && link.lastError) row.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
     else if (link) row.append(el("span", "re-acct-state " + (link.enabled ? "st-live" : "st-not-connected"), link.enabled ? "live" : "paused"));
@@ -587,7 +594,8 @@ async function renderBankFeedPanel(box, ents) {
       const head = el("div", "re-bank-head");
       head.append(el("span", "wv-addr", org));
       const linked = liveIn(accts);
-      if (attnIn(accts)) head.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
+      // the row already chips a lone account — the head chip is a rollup
+      if (attnIn(accts) && accts.length > 1) head.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
       head.append(el("span", "re-acct-rollup" + (attnIn(accts) ? " attn" : ""),
         linked ? linked + " of " + accts.length + " linked" : "not linked"));
       card.append(head);

@@ -523,7 +523,8 @@
 .re-bank-card { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6) var(--sp-3); }
 .re-bank-head { display: flex; align-items: baseline; gap: var(--sp-5); padding-bottom: var(--sp-2); }
 .re-bank-head .wv-addr { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 500; }
-.re-bank-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 240px) 110px 96px 56px; gap: var(--sp-5); align-items: baseline; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
+.re-bank-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 96px 56px; gap: var(--sp-5); align-items: baseline; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
+.re-bank-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .re-bank-name { font-size: var(--fs-md); overflow-wrap: anywhere; }
 .re-bank-ent { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); overflow-wrap: anywhere; }
 .re-bank-bal { font-family: var(--mono); font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
