@@ -108,8 +108,6 @@ function mountMics() {
   const spots = [
     // chat tab composer
     { sel: "#chatComposer", input: () => document.querySelector("#chatComposer textarea") },
-    // capture tray composer
-    { sel: "#captureComposer", input: () => document.querySelector(".capture-input") },
     // ⌘K palette (mic sits inside the card, after the input)
     { sel: "#cmdbar .cmdbar-card", input: () => els.cmdbarInput },
   ];

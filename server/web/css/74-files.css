@@ -66,7 +66,7 @@ img.fs-card-ico { width: 56px; height: 56px; object-fit: cover; border-radius: v
 
 /* preview lightbox */
 .fs-lightbox { position: fixed; inset: 0; background: rgba(23, 23, 23, 0.55); z-index: 60; display: flex; align-items: center; justify-content: center; gap: var(--sp-5); padding: 30px; }
-.fs-lb-panel { background: var(--bg); border-radius: var(--radius-lg); max-width: min(1100px, 88vw); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 8px 40px rgba(0,0,0,0.25); }
+.fs-lb-panel { background: var(--bg); border-radius: var(--radius-lg); max-width: min(1100px, 88vw); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow-2); }
 .fs-lb-head { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-6); border-bottom: 1px solid var(--line); }
 .fs-lb-title { font-size: var(--fs-sm); color: var(--base-100); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .fs-lb-count { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); font-variant-numeric: tabular-nums; }

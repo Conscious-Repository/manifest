@@ -74,7 +74,7 @@ async function renderPropertyPage(slug) {
 
   // owner line (RE spec §2 OWNER): the books it lands on; the seller while
   // acquiring reads in ink. Click-to-edit both.
-  const ownerLine = el("div", "pp3-owner-line" + (p.from ? " acquiring" : ""));
+  const ownerLine = el("div", "pp3-owner-entline" + (p.from ? " acquiring" : ""));
   const entLabel = el("span", "pp3-owner-ent", p.entity ? p.entity : "＋ set the entity (its books)");
   entLabel.title = "the entity whose books this lands on";
   entLabel.onclick = () => {

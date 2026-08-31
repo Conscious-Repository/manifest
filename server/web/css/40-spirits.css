@@ -19,7 +19,7 @@
 .run-outcome { font-size: var(--fs-2xs); border: 1px solid var(--line); border-radius: 12px; padding: var(--sp-1) var(--sp-4); }
 .oc-completed { color: var(--accent); border-color: var(--accent-soft); }
 .oc-stopped-charge, .oc-stopped-steps { color: var(--base-50); border-color: var(--base-25); }
-.oc-error, .oc-errorprotocol { color: var(--danger); border-color: #eec3c3; }
+.oc-error, .oc-errorprotocol { color: var(--danger); border-color: var(--status-danger-border); }
 .run-title { font-family: var(--mono); font-size: var(--fs-md); color: var(--ink); letter-spacing: 0.2px; }
 .charge-row { display: flex; align-items: center; gap: var(--sp-5); }
 .charge-bar { flex: 1; height: 6px; background: var(--streak-bg); border: 1px solid var(--streak-bd); border-radius: var(--radius); overflow: hidden; }
@@ -30,14 +30,14 @@
 .run-detail-head { display: flex; align-items: center; gap: var(--sp-4); }
 .run-detail-head .run-title { margin-right: auto; }
 .run-report { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-6) var(--sp-6); white-space: pre-wrap; overflow-x: auto; margin: 0; }
-.run-report.prompt { background: #fbfcff; border: 1px solid var(--blue-soft); }
+.run-report.prompt { background: var(--status-info-bg); border: 1px solid var(--blue-soft); }
 .run-prompts { display: flex; flex-direction: column; gap: var(--sp-4); }
 
 /* ---- SPIRITS: RITUALS board + markdown editor ---- */
 .ritual-board { display: flex; flex-direction: column; gap: var(--sp-1); }
-.ritual-row { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; align-items: baseline; gap: var(--sp-6); padding: var(--sp-2) var(--sp-4); border-top: 1px solid #f0f0f0; cursor: pointer; }
+.ritual-row { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; align-items: baseline; gap: var(--sp-6); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
 .ritual-row:hover { background: var(--base-05); }
-.ritual-row.invalid { border-color: #eec3c3; background: #fdf6f6; }
+.ritual-row.invalid { border-color: var(--status-danger-border); background: var(--status-danger-bg); }
 .ritual-name { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-spirit { cursor: pointer; }
 .sprt-spirit:hover { color: var(--accent); }
@@ -49,7 +49,7 @@
 .ritual-outcome .run-outcome { cursor: default; }
 .run-outcome.linky { cursor: pointer; } .run-outcome.linky:hover { border-color: var(--blue); }
 .oc-never, .oc-invalid { color: var(--muted); border-color: var(--line); }
-.oc-invalid { color: var(--danger); border-color: #eec3c3; }
+.oc-invalid { color: var(--danger); border-color: var(--status-danger-border); }
 .ritual-ceiling { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); text-align: right; }
 .ritual-ceiling.muted { color: var(--muted); }
 .ritual-error { grid-column: 1 / -1; font-family: var(--mono); font-size: var(--fs-xs); color: var(--danger); margin-top: var(--sp-1); }
@@ -63,7 +63,7 @@
 .lint-err { color: var(--danger); } .lint-warn { color: var(--base-100); font-weight: 500; } .lint-note { color: var(--muted); }
 
 /* ---- SPIRITS: digest feed items (EA waiting-on), pinned + expanded ---- */
-.feed-card.digest { border-color: var(--blue-soft); background: #fbfcff; }
+.feed-card.digest { border-color: var(--blue-soft); background: var(--status-info-bg); }
 .feed-card.pinned { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue-soft) inset; }
 .pin-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue); letter-spacing: 0.3px; }
 .feed-card.digest .feed-body { white-space: pre-wrap; font-family: var(--sans); font-size: var(--fs-md); line-height: 1.5; color: var(--text); }
@@ -110,10 +110,9 @@
 .portal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-6); padding: var(--sp-5); margin: var(--sp-1) 0 var(--sp-3); border: 1px dashed var(--blue-soft); border-radius: var(--radius); background: var(--hover); }
 .portal-field { display: flex; flex-direction: column; gap: var(--sp-1); }
 .portal-field-label { font-size: var(--fs-2xs); color: var(--muted); }
-.portal-input { font-family: var(--mono); font-size: var(--fs-md); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); min-width: 240px; background: var(--bg, #fff); color: var(--text); }
+.portal-input { font-family: var(--mono); font-size: var(--fs-md); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); min-width: 240px; background: var(--bg); color: var(--text); }
 .portal-input:focus { outline: none; border-color: var(--blue); }
-.pill-solid { font-family: var(--sans); font-size: var(--fs-sm); padding: var(--sp-3) var(--sp-6); border: none; border-radius: var(--radius-lg); background: var(--blue); color: #fff; cursor: pointer; }
-.pill-solid:disabled { opacity: 0.6; cursor: default; }
+/* .pill-solid moved to 05-primitives.css 2026-08-31 (now the linkish alias) */
 
 /* ===== SPIRITS one-page (§12 / prototype, 2026-08-10) ===== */
 .spirits-page { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); display: flex; flex-direction: column; gap: 26px; }
@@ -143,7 +142,7 @@
 .sprt-live-elapsed { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); flex: none; }
 
 /* recent runs — quiet rows over charge bars */
-.sprt-run { border-top: 1px solid #f0f0f0; padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-4); cursor: pointer; }
+.sprt-run { border-top: 1px solid var(--line-soft); padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-4); cursor: pointer; }
 .sprt-run:hover { background: var(--base-05); }
 .sprt-run-top { display: flex; align-items: baseline; gap: var(--sp-5); }
 .sprt-run-title { font-family: var(--mono); font-size: var(--fs-md); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -171,7 +170,7 @@
 .harness-engine.off { color: var(--base-40); }
 .harness-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin: var(--sp-1) 0 var(--sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .harness-hint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); background: var(--base-05); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); }
-.harness-spirit { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-1) 0; border-top: 1px solid #f4f4f4; }
+.harness-spirit { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-1) 0; border-top: 1px solid var(--line-soft); }
 .harness-spirit-name { font-family: var(--sans); font-size: var(--fs-md); flex: 1; }
 .harness-portal-sel { width: 150px; }
 

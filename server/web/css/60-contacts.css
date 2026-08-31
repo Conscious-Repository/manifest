@@ -8,9 +8,7 @@
 
 /* ===== CONTACTS — the people layer ===== */
 .contacts-view { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
-.agent-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-6); padding: var(--sp-6) 0 var(--sp-5); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
-.agent-title { font-family: var(--mono); font-size: var(--fs-md); letter-spacing: 0.08em; color: var(--ink); }
-.agent-actions { display: flex; gap: var(--sp-4); align-items: center; }
+/* .agent-head/.agent-title/.agent-actions moved to 05-primitives.css 2026-08-31 */
 .contact-search { font-family: var(--sans); font-size: var(--fs-md); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-5); min-width: 220px; color: var(--text); }
 .contact-search:focus { outline: none; border-color: var(--blue-soft); }
 
@@ -35,7 +33,9 @@
 .contact-dot { color: var(--icon); font-size: var(--fs-2xs); } /* quiet no-note indicator */
 .contact-row-right { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
 .contact-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); min-width: 96px; text-align: right; }
+.contact-row.cold .contact-meta { color: var(--danger); }
 .contact-meta.muted { font-style: italic; color: var(--icon); } /* mentioned-only: not calendar-verified */
+.contact-loops { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 0 var(--sp-2); }
 .contact-submeta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--icon); text-align: right; } /* note "mentioned" under calendar "met" */
 .contact-upcoming { font-family: var(--mono); font-size: var(--fs-xs); color: var(--blue); }
 .contact-nearby { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-5); margin-bottom: var(--sp-6); }
@@ -94,6 +94,14 @@
 .cp-section-head { font-size: var(--fs-xs); color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: var(--sp-2); margin-bottom: var(--sp-4); }
 .cp-count { color: var(--icon); }
 .cp-empty { font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); font-style: italic; }
+/* open loops (grouped by source, most recent first) */
+.cp-loop-group { margin-bottom: var(--sp-6); }
+.cp-loop-src { display: flex; gap: var(--sp-5); align-items: baseline; cursor: pointer; padding: var(--sp-1) 0; }
+.cp-loop-src:hover { background: var(--hover); }
+.cp-loop-note { font-family: var(--sans); font-size: var(--fs-sm); color: var(--muted); }
+.cp-loop-row { display: flex; gap: var(--sp-4); align-items: flex-start; padding: var(--sp-2) 0 var(--sp-2) var(--sp-6); }
+.cp-loop-dot { color: var(--icon); }
+.cp-loop-text { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
 .cp-tl-row { display: flex; align-items: baseline; gap: var(--sp-6); padding: var(--sp-2) 0; }
 .cp-date { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); flex: 0 0 88px; }
 .cp-src { font-size: var(--fs-2xs); color: var(--muted); flex: 0 0 84px; }
@@ -128,7 +136,6 @@
 .cp-fact-val { font-family: var(--mono); font-size: var(--fs-lg); color: var(--base-100); padding: var(--sp-1) 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cp-fact-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
 .cp-cold { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); font-weight: 500; margin: 0 0 var(--sp-6); }
-.contact-cold { color: var(--base-100); }
 
 /* §13: list cold marker + the role chip */
 .contact-cold { font-family: var(--mono); font-size: var(--fs-2xs); font-weight: 500; color: var(--base-100); white-space: nowrap; }

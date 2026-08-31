@@ -8,8 +8,8 @@
 
 /* ===== quick-lookup command bar (⌘K) ===== */
 .cmdbar { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-start; justify-content: center; }
-.cmdbar-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.28); }
-.cmdbar-card { position: relative; margin-top: 12vh; width: 560px; max-width: 92vw; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 20px 60px rgba(0,0,0,0.22); overflow: hidden; }
+.cmdbar-backdrop { position: absolute; inset: 0; background: var(--scrim); }
+.cmdbar-card { position: relative; margin-top: 12vh; width: 560px; max-width: 92vw; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); overflow: hidden; }
 .cmdbar-input { width: 100%; border: none; border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: var(--fs-xl); padding: var(--sp-7) var(--sp-7); outline: none; color: var(--text); box-sizing: border-box; }
 .cmdbar-results { max-height: 320px; overflow-y: auto; }
 .cmd-result { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-6); padding: var(--sp-5) var(--sp-7); cursor: pointer; }
@@ -21,7 +21,7 @@
 /* cast command bar (press /) */
 .cmd-empty { padding: var(--sp-6) var(--sp-7); font-family: var(--sans); font-size: var(--fs-md); color: var(--muted); }
 .cast-kind { font-size: var(--fs-2xs); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); flex: none; }
-.cast-kind-skill { background: var(--blue); color: #fff; }
+.cast-kind-skill { background: var(--blue); color: var(--on-accent); }
 .cast-kind-ritual { background: var(--hover); color: var(--muted); border: 1px solid var(--line); }
 .cast-desc { font-family: var(--sans); font-size: var(--fs-xs); color: var(--muted); flex: 1 1 auto; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .castbar-arg { border-top: 1px solid var(--line); padding: var(--sp-6) var(--sp-7); }
@@ -30,7 +30,7 @@
 .castbar-arg-input:focus { border-color: var(--blue); }
 .castbar-arg-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-6); margin-top: var(--sp-5); }
 .castbar-arg-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
-.castbar-cast-btn { background: var(--blue); border-color: var(--blue); color: #fff; }
+.castbar-cast-btn { background: var(--blue); border-color: var(--blue); color: var(--on-accent); }
 .castbar-cast-btn:disabled { opacity: 0.5; cursor: default; }
 .cmd-card-head { display: flex; align-items: baseline; gap: var(--sp-5); margin-bottom: var(--sp-5); }
 .cmd-card-name { font-family: var(--sans); font-size: var(--fs-2xl); font-weight: 500; color: var(--ink); }
@@ -39,13 +39,15 @@
 .cmd-fact { display: flex; gap: var(--sp-6); }
 .cmd-fact-label { font-size: var(--fs-xs); color: var(--muted); flex: 0 0 130px; }
 .cmd-fact-val { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
+.cmd-fact-link { cursor: pointer; }
+.cmd-fact-link:hover .cmd-fact-val { color: var(--blue); text-decoration: underline; }
 
 /* ===== ⌘/ raw-markdown overlay (redesign §2) ===== */
 .rawbar-card {
   position: relative; margin-top: 8vh;
   width: 760px; max-width: 94vw; height: 70vh;
   background: var(--base-00); border: 1px solid var(--base-25); border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-2);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .rawbar-head { display: flex; align-items: baseline; gap: var(--sp-6); padding: var(--sp-6) var(--sp-7); border-bottom: 1px solid var(--base-25); }
@@ -61,11 +63,11 @@
 }
 .rawbar-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-6); padding: var(--sp-5) var(--sp-7); border-top: 1px solid var(--base-25); }
 .rawbar-fixpoint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
-.rawbar-save { background: var(--accent); border: 1px solid var(--accent); color: #fff; font-family: var(--mono); font-size: var(--fs-xs); border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-6); cursor: pointer; }
+.rawbar-save { background: var(--accent); border: 1px solid var(--accent); color: var(--on-accent); font-family: var(--mono); font-size: var(--fs-xs); border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-6); cursor: pointer; }
 .rawbar-save:disabled { opacity: 0.5; cursor: default; }
 
 /* floating windows — ⌘J quick-chat · ⌘I sticky (cmd-ctr import P4) */
-.float-win { position: fixed; z-index: 340; width: 400px; height: 380px; min-width: 280px; min-height: 220px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); resize: both; overflow: hidden; }
+.float-win { position: fixed; z-index: 340; width: 400px; height: 380px; min-width: 280px; min-height: 220px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); resize: both; overflow: hidden; }
 .float-head { display: flex; align-items: center; padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
 .float-title { font-size: var(--fs-xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); flex: 1; }
 .float-close { border: 0; background: none; color: var(--base-40); cursor: pointer; font-size: var(--fs-sm); }
@@ -84,5 +86,5 @@
 /* mic dictation button (cmd-ctr import P6) */
 .mic-btn { border: 1px solid var(--line); background: none; color: var(--base-40); border-radius: var(--radius); padding: var(--sp-2) var(--sp-4); cursor: pointer; font-size: var(--fs-md); }
 .mic-btn:hover { color: var(--base-100); border-color: var(--base-40); }
-.mic-btn.recording { color: #d33; border-color: #d33; animation: mic-pulse 1.2s ease-in-out infinite; }
+.mic-btn.recording { color: var(--danger); border-color: var(--danger); animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity: 0.45; } }

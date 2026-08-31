@@ -21,7 +21,7 @@
   justify-content: center;
 }
 .pill.arrow { padding: var(--sp-2) var(--sp-4); }
-.pill:hover { color: #d4d4d4; }
+.pill:hover { color: var(--base-30); }
 
 /* ---- .micro-label — THE mono uppercase metadata label (ui-conventions.md §labels).
    manifest's signature idiom, one class in place of ~70 copied recipes. Put it on any
@@ -89,6 +89,11 @@
 .pill.light { background: var(--bg); border-color: var(--line); color: var(--streak-ink); }
 .pill.light:hover { border-color: var(--blue-soft); color: var(--blue); }
 .pill.light:disabled { opacity: 0.5; cursor: default; }
+.pill.light.on { background: var(--streak-bg); color: var(--ink); }
+
+/* ---- .cp-clickable — generic clickable-row utility (cross-tab: Contacts, FEED). */
+.cp-clickable { cursor: pointer; border-radius: var(--radius); }
+.cp-clickable:hover { background: var(--hover); }
 .filter-chip { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; color: var(--base-50); background: var(--base-00); border: 1px solid var(--base-25); border-radius: 12px; padding: var(--sp-1) var(--sp-6); cursor: pointer; text-decoration: none; }
 .filter-chip:hover { border-color: var(--accent-soft); color: var(--accent); }
 .filter-chip.on { background: var(--base-00); border-color: var(--accent); color: var(--accent); }
@@ -96,11 +101,11 @@
 .pill:disabled:hover { color: var(--pill-ink); }
 /* ---- reusable picker modal ---- */
 .modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
-.modal-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.28); }
+.modal-backdrop { position: absolute; inset: 0; background: var(--scrim); }
 .modal-card {
   position: relative; background: var(--bg); border: 1px solid var(--line);
   border-radius: var(--radius); width: min(440px, 92vw); max-height: 76vh;
-  display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  display: flex; flex-direction: column; box-shadow: var(--shadow-2);
 }
 .modal-head {
   display: flex; justify-content: space-between; align-items: center;
@@ -125,23 +130,75 @@
 
 /* in-app toasts (bottom-right, auto-dismiss) */
 .toast-host { position: fixed; right: 18px; bottom: 18px; z-index: 300; display: flex; flex-direction: column; gap: var(--sp-4); max-width: 360px; }
-.toast { display: flex; align-items: center; gap: var(--sp-5); background: var(--text); color: #fff; border-radius: var(--radius-lg); padding: var(--sp-5) var(--sp-6); box-shadow: 0 10px 30px rgba(0,0,0,0.25); font-family: var(--sans); font-size: var(--fs-md); animation: toastIn 0.18s ease-out; }
+.toast { display: flex; align-items: center; gap: var(--sp-5); background: var(--text); color: var(--on-accent); border-radius: var(--radius-lg); padding: var(--sp-5) var(--sp-6); box-shadow: var(--shadow-2); font-family: var(--sans); font-size: var(--fs-md); animation: toastIn 0.18s ease-out; }
 @keyframes toastIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 .toast.clickable { cursor: pointer; }
 .toast.clickable:hover { filter: brightness(1.1); }
 .toast-msg { flex: 1; }
-.toast-x { background: none; border: none; color: rgba(255,255,255,0.6); cursor: pointer; font-size: var(--fs-sm); padding: 0 var(--sp-1); }
-.toast-x:hover { color: #fff; }
-.toast-error { background: #7f1d2b; }
+.toast-x { background: none; border: none; color: var(--on-accent-dim); cursor: pointer; font-size: var(--fs-sm); padding: 0 var(--sp-1); }
+.toast-x:hover { color: var(--on-accent); }
+.toast-error { background: var(--status-danger-deep); }
 .toast-digest { background: var(--blue); }
 .pp-section-head.toggle { cursor: pointer; display: flex; align-items: baseline; gap: var(--sp-4); }
 .sec-caret { color: var(--icon); font-size: var(--fs-3xs); }
 .sec-summary { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); text-transform: none; letter-spacing: 0; }
 .sec-body { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-5); }
 .ta-wrap { position: relative; display: inline-block; }
-.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0,0,0,0.12); min-width: 240px; max-height: 220px; overflow-y: auto; }
+.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); min-width: 240px; max-height: 220px; overflow-y: auto; }
 .ta-item { padding: var(--sp-3) var(--sp-5); font-size: var(--fs-sm); cursor: pointer; }
 .ta-item:hover { background: var(--hover); color: var(--blue); }
 .ta-create { color: var(--blue); font-style: italic; }
 .ta-kind { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); padding-left: var(--sp-6); }
 .ta-item { display: flex; align-items: baseline; }
+
+/* ---- .agent-head / .agent-title / .agent-actions — the shared page header
+   (ui-conventions.md §page). Moved here 2026-08-31 from 60-contacts.css, which
+   is where every other tab picked it up from by coincidence of load order. */
+.agent-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-6); padding: var(--sp-6) 0 var(--sp-5); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
+.agent-title { font-family: var(--mono); font-size: var(--fs-md); letter-spacing: 0.08em; color: var(--ink); }
+.agent-actions { display: flex; gap: var(--sp-4); align-items: center; }
+
+/* ---- linkish — the third button variant: tertiary / navigation. Text-weight,
+   no chrome. Absorbs .pill-solid (moved here 2026-08-31 from 40-spirits.css,
+   kept as an alias below); later stages fold .o-ghost/.pp3-link/signal-more in. */
+.linkish, .pill-solid {
+  font-family: var(--sans); font-size: var(--fs-sm);
+  background: none; border: none; padding: 0;
+  color: var(--accent); cursor: pointer; text-decoration: none;
+}
+.linkish:hover, .pill-solid:hover { text-decoration: underline; }
+.linkish:disabled, .pill-solid:disabled { opacity: 0.6; cursor: default; }
+
+/* ---- .feed-date — base rule for every card's right-aligned date (A1).
+   Kind-specific descendant rules (e.g. .portal-card .feed-date) may still
+   override margin/position, never the font recipe. */
+.feed-date { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; }
+
+/* ---- .view-tabs — the one tab-bar idiom (absorbs .prop-toggle, .feed-filters
+   usage). A row of quiet text tabs, one active. */
+.view-tabs { display: flex; gap: var(--sp-6); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
+.view-tab {
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; text-transform: uppercase;
+  color: var(--muted); background: none; border: none; cursor: pointer;
+  padding: var(--sp-4) var(--sp-1) var(--sp-5); border-bottom: 2px solid transparent;
+}
+.view-tab:hover { color: var(--text); }
+.view-tab.on { color: var(--text); border-bottom-color: var(--accent); }
+@media (max-width: 860px) {
+  .view-tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .view-tab { white-space: nowrap; }
+}
+
+/* ---- .page-frame — the standard column every top-level view shares
+   (ui-conventions.md §page). Never a per-view max-width/margin. */
+.page-frame { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); }
+
+/* ---- .inspector — the shared right-rail primitive (A4). 300px, sticky,
+   own scroll region so a tall list doesn't strand it, hidden on tablet/phone
+   (a surface may bottom-sheet it instead via its own modifier). */
+.inspector {
+  width: var(--inspector-w); flex: none;
+  position: sticky; top: 0; align-self: flex-start;
+  max-height: calc(100vh - 120px); overflow-y: auto;
+}
+@media (max-width: 1100px) { .inspector { display: none; } }

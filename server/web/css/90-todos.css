@@ -32,7 +32,7 @@
 .tdo-main { margin-bottom: var(--sp-7); }
 .tdo-row {
   display: flex; align-items: baseline; gap: var(--sp-5);
-  padding: var(--sp-2) var(--sp-4); border-top: 1px solid #f4f4f4;
+  padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft);
 }
 .tdo-row:hover { background: var(--base-05); }
 .tdo-row.dragging { opacity: 0.4; }
@@ -105,7 +105,7 @@
 .tdo-col { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-4); min-height: 220px; display: flex; flex-direction: column; gap: var(--sp-3); }
 .tdo-col.dragging-over { border-color: var(--accent); background: var(--base-05); }
 .tdo-col-head { display: flex; align-items: baseline; gap: var(--sp-3); padding: 0 var(--sp-1) var(--sp-3); border-bottom: 1px solid var(--base-20); }
-.tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--bg, #fff); cursor: grab; }
+.tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--bg); cursor: grab; }
 .tdo-card:active { cursor: grabbing; }
 .tdo-card.done .tdo-card-text { text-decoration: line-through; color: var(--base-40); }
 .tdo-card-text { font-family: var(--sans); font-size: var(--fs-md); line-height: 1.35; cursor: text; }

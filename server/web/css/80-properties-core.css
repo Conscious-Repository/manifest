@@ -88,7 +88,7 @@
 .pp3-compose-in { flex: 1; border: none; border-bottom: 1px dashed var(--base-25); outline: none; font-family: var(--sans); font-size: var(--fs-lg); padding: var(--sp-1) 0; background: none; color: var(--base-100); }
 .pp3-compose-in:focus { border-bottom-color: var(--accent); }
 .pp3-compose-go { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); cursor: pointer; }
-.pp3-ledger-row { display: grid; grid-template-columns: 90px 1fr 1.2fr auto; gap: var(--sp-5); font-family: var(--mono); font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-4); border-top: 1px solid var(--line-soft); color: var(--base-60); }
+.pp3-ledger-row { display: grid; grid-template-columns: 90px 1fr 1.2fr auto auto; gap: var(--sp-5); font-family: var(--mono); font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-4); border-top: 1px solid var(--line-soft); color: var(--base-60); cursor: pointer; }
 .pp3-ledger-vendor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pp3-ledger-amt { text-align: right; color: var(--base-100); }
 .pp3-ledger-amt.inflow { color: var(--accent); }
@@ -219,7 +219,6 @@
 .pp3-uw-cancel:hover { color: var(--base-100); }
 
 /* ---- ledger editing ---- */
-.pp3-ledger-row { grid-template-columns: 90px 1fr 1.2fr auto auto; cursor: pointer; }
 .pp3-ledger-row:hover { background: var(--base-05); }
 .pp3-ledger-row .pp3-todo-x { visibility: hidden; }
 .pp3-ledger-row:hover .pp3-todo-x { visibility: visible; }
@@ -237,15 +236,14 @@
 
 /* backlog: the intake lane sits above the decisions lane */
 .re-intake-lane:empty { display: none; }
-.re-intake-lane { margin-bottom: var(--sp-3); }
 
 /* portfolio: property · stage bar · open · spent */
 /* PORTFOLIO — the fundraising shape (PORTFOLIO-LIST handoff 2026-08-19):
    four columns, fr-stack cells, no bars, no phase sections. */
 .fr-row.pf4-grid, .fr-head.pf4-grid { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1.1fr) 52px 96px; }
 .pf4-addr { font-size: var(--fs-lg); font-weight: 500; }
-.pf4-rock { font-size: 13.5px; color: var(--base-70); }
-.pf4-num { font-family: var(--mono); font-size: 13px; text-align: right; color: var(--base-100); }
+.pf4-rock { font-size: var(--fs-lg); color: var(--base-70); }
+.pf4-num { font-family: var(--mono); font-size: var(--fs-md); text-align: right; color: var(--base-100); }
 .pf4-r { text-align: right; }
 .pf4-money { align-items: flex-end; }
 .pf4-ink { color: var(--base-100); }
@@ -340,8 +338,8 @@
 .re-check-glyph { font-family: var(--mono); flex: none; }
 
 /* property page: owner line · UNTIL · stages · underwriting · links */
-.pp3-owner-line { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin: -2px 0 var(--sp-2); display: flex; align-items: baseline; gap: var(--sp-4); }
-.pp3-owner-line.acquiring .pp3-owner-ent, .pp3-owner-from { color: var(--base-100); }
+.pp3-owner-entline { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin: -2px 0 var(--sp-2); display: flex; align-items: baseline; gap: var(--sp-4); }
+.pp3-owner-entline.acquiring .pp3-owner-ent, .pp3-owner-from { color: var(--base-100); }
 .pp3-owner-ent { cursor: pointer; }
 .pp3-owner-ent:hover { color: var(--accent); }
 .pp3-owner-frombtn { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); cursor: pointer; }
@@ -418,7 +416,7 @@
 .re-scope-act { opacity: 0; border: 0; background: none; padding: 0 var(--sp-1); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; }
 .re-scope-chip-wrap:hover .re-scope-act, .re-scope-act:focus { opacity: 1; }
 .re-scope-act:hover { color: var(--over); }
-.re-scope-act.armed { opacity: 1; color: #fff; background: var(--over); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); }
+.re-scope-act.armed { opacity: 1; color: var(--on-accent); background: var(--over); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); }
 .re-scope-rename { width: 140px; font-family: var(--mono); font-size: var(--fs-2xs); }
 
 .re-scope-box { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
@@ -459,7 +457,7 @@
 .pp3-uw-lock.locked { border-color: var(--base-25); color: var(--base-40); }
 .re-uw-unitmix { display: flex; flex-direction: column; gap: 2px; }
 .re-uw-unit { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); }
-.re-uw-unitsum { color: var(--accent); border-top: 1px solid var(--line-soft); padding-top: 2px; }
+.re-uw-unitsum { color: var(--accent); border-top: 1px solid var(--line-soft); padding-top: 2px; margin-top: var(--sp-1); }
 .re-uw-measurables { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); margin: var(--sp-5) 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2) 0; }
 .re-uw-measurables .re-uw-label { margin-right: var(--sp-4); }
 .re-uw-lockblock { margin-top: var(--sp-6); border-left: 2px solid var(--accent-soft); padding-left: var(--sp-5); }
@@ -512,7 +510,7 @@
 .re-acct-kind { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .re-acct-state { font-size: var(--fs-2xs); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); text-align: center; }
 .re-acct-state.st-live { color: var(--accent); background: var(--accent-soft); }
-.re-acct-state.st-needs-reauth { color: #fff; background: var(--base-100); }
+.re-acct-state.st-needs-reauth { color: var(--on-accent); background: var(--base-100); }
 .re-acct-state.st-not-connected { color: var(--base-40); background: var(--base-25); }
 .re-acct-act { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; text-align: left; }
 
@@ -600,7 +598,6 @@
 .re-unitmix-in { min-width: 0; font-family: var(--mono); font-size: var(--fs-sm); }
 .re-unitmix-x { opacity: 0; }
 .re-unitmix-row:hover .re-unitmix-x { opacity: 1; }
-.re-uw-unitsum { margin-top: var(--sp-1); }
 .re-unitmix-add { margin-top: var(--sp-3); }
 .re-refi-gap { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--over); margin-top: 2px; }
 .re-meas-chip { display: inline-flex; align-items: baseline; gap: var(--sp-2); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: 0 var(--sp-3); margin-right: var(--sp-3); font-family: var(--mono); font-size: var(--fs-2xs); }

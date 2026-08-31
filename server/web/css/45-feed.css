@@ -5,18 +5,21 @@
 /* ---- Feed ---- */
 .feed-filters { display: inline-flex; flex-wrap: wrap; gap: var(--sp-3); }
 .feed-list { display: flex; flex-direction: column; gap: var(--sp-6); }
-.feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-7) var(--sp-7); display: flex; flex-direction: column; gap: var(--sp-4); }
+.feed-card { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
 .feed-card.artifact { border-color: var(--blue-soft); background: var(--base-05); }
+.feed-card.pinned { border-color: var(--accent); background: var(--base-05); box-shadow: none; }
 .feed-top { display: flex; align-items: baseline; gap: var(--sp-5); }
 /* .type-chip: structural only — the mono/size/uppercase recipe comes from .micro-label */
 .type-chip { color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); }
 .type-chip.type-company { color: var(--base-50); border-color: var(--base-25); }
-.feed-title { font-family: var(--sans); font-size: var(--fs-xl); color: var(--text); font-weight: 500; text-decoration: none; }
+.type-chip.type-artifact { color: var(--accent); border-color: var(--accent-soft); }
+.feed-title { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); font-weight: 500; text-decoration: none; }
 a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .conf { margin-left: auto; }
 .conf-high { color: var(--base-40); } .conf-medium { color: var(--base-40); } .conf-low { color: var(--muted); }
-.feed-why { font-family: var(--sans); font-size: var(--fs-lg); color: var(--streak-ink); line-height: 1.5; }
+.feed-why { font-family: var(--sans); font-size: var(--fs-md); color: var(--streak-ink); line-height: 1.45; }
 .feed-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: 0.2px; }
+.work-chip { color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); }
 .feed-body { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); white-space: pre-wrap; overflow-x: auto; margin: 0; }
 .feed-saved { font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); }
 .feed-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
@@ -100,10 +103,6 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .feed-inspector .pp-in, .feed-inspector .ta-wrap, .feed-inspector .ta-in { width: 100%; box-sizing: border-box; }
 .feed-inspector .aion-insp-del { margin-top: var(--sp-5); }
 
-.feed-card { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
-.feed-card.pinned { border-color: var(--accent); background: var(--base-05); box-shadow: none; }
-.feed-title { font-size: var(--fs-lg); }
-.feed-why { font-size: var(--fs-md); line-height: 1.45; }
 .signal-label { color: var(--base-100); }
 .signal-label::before { content: "\25cf  "; font-size: var(--fs-3xs); vertical-align: 1px; }
 .signal-actions .pill { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); padding: 0 var(--sp-1); height: auto; }
@@ -114,8 +113,8 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .feed-stub-verb { color: var(--base-40); flex: none; }
 .feed-stub-title { font-size: var(--fs-md); color: var(--base-40); text-decoration: line-through; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .feed-stub-undo { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); cursor: pointer; padding: 0; }
-.pill.verdict-primary, .pill.light.verdict-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.pill.verdict-primary:hover, .pill.light.verdict-primary:hover { background: var(--accent); color: #fff; }
+.pill.verdict-primary, .pill.light.verdict-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.pill.verdict-primary:hover, .pill.light.verdict-primary:hover { background: var(--accent); color: var(--on-accent); }
 
 /* (the harness-artifact modal was replaced by the full-page artifact reader —
    see #artifactView / showArtifact in 70-note.js) */

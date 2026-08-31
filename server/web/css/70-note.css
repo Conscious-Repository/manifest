@@ -46,28 +46,18 @@ h1.md-h { font-size: var(--fs-2xl); } h2.md-h { font-size: var(--fs-2xl); } h3.m
 .note-bl-date { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); flex: 0 0 88px; }
 .note-bl-name { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
 
-/* contact page — clickable items + neglect + open loops */
-.cp-clickable { cursor: pointer; border-radius: var(--radius); }
-.cp-clickable:hover { background: var(--hover); }
-.cp-cold { font-family: var(--mono); font-size: var(--fs-xs); color: var(--danger); margin-left: var(--sp-5); }
-.cp-loop-group { margin-bottom: var(--sp-6); }
-.cp-loop-src { display: flex; gap: var(--sp-5); align-items: baseline; cursor: pointer; padding: var(--sp-1) 0; }
-.cp-loop-src:hover { background: var(--hover); }
-.cp-loop-note { font-family: var(--sans); font-size: var(--fs-sm); color: var(--muted); }
-.cp-loop-row { display: flex; gap: var(--sp-4); align-items: flex-start; padding: var(--sp-2) 0 var(--sp-2) var(--sp-6); }
-.cp-loop-dot { color: var(--icon); }
-.cp-loop-text { font-family: var(--sans); font-size: var(--fs-md); color: var(--text); }
-
-/* contacts list — neglect + open-loop chips */
-.contact-cold { color: var(--danger); font-size: var(--fs-2xs); }
-.contact-loops { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--blue); border: 1px solid var(--blue-soft); border-radius: var(--radius); padding: 0 var(--sp-2); }
-.contact-row.cold .contact-meta { color: var(--danger); }
-.pill.light.on { background: var(--streak-bg); color: var(--ink); }
-.cmd-fact-link { cursor: pointer; }
-.cmd-fact-link:hover .cmd-fact-val { color: var(--blue); text-decoration: underline; }
+/* 2026-08-31: the contacts-page block that lived here (.cp-cold, .cp-loop-*,
+   .contact-cold, .contact-loops, .contact-row.cold, .pill.light.on,
+   .cmd-fact-link) was a stray leftover from the 2026-07-29 style.css split —
+   it shadowed 60-contacts.css's own (different) .cp-cold/.contact-cold rules
+   by load order, which is why the Contacts cold chip rendered red instead of
+   ink. Moved to 60-contacts.css / 05-primitives.css / 75-bars.css, whichever
+   actually owns each class; .cp-clickable is cross-tab (also used by FEED) so
+   it lives in 05-primitives.css. G1 (cross-file duplicate selectors) guards
+   against this recurring. */
 
 /* [[wikilink]] autocomplete popup */
-.wl-popup { position: fixed; z-index: 300; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,0.16); min-width: 220px; max-width: 360px; max-height: 260px; overflow-y: auto; }
+.wl-popup { position: fixed; z-index: 300; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); min-width: 220px; max-width: 360px; max-height: 260px; overflow-y: auto; }
 .wl-item { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-6); padding: var(--sp-3) var(--sp-6); cursor: pointer; }
 .wl-item.sel, .wl-item:hover { background: var(--hover); }
 .wl-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }

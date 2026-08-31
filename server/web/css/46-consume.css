@@ -51,7 +51,7 @@
 .read-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 .consume-loading { color: var(--muted); }
 .consume-body {
-  font-family: var(--serif, Georgia, 'Iowan Old Style', ui-serif, serif);
+  font-family: var(--serif);
   font-size: 1.05rem;
   line-height: 1.68;
   color: var(--text);

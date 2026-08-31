@@ -104,7 +104,6 @@ const NAV_SECTIONS = [
   ]},
   { label: "SIGNAL", items: [
     { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
-    { key: "capture", label: "Capture", glyph: "⊕", hash: "#/capture" }, // count = open tray cards
     { key: "terminal", label: "Terminal", glyph: "❯", hash: "#/terminal" },
     { key: "spirits", label: "Spirits", glyph: "✦", hash: "#/spirits" },
     { key: "contacts", label: "Contacts", glyph: "◍", hash: "#/contacts" },
@@ -127,7 +126,7 @@ function sectionOf(h) {
   if (h.startsWith("#/artifact/")) return "artifact";
   if (h.startsWith("#/read/")) return "feed"; // the reader belongs to FEED in the rail
   const seg = h.replace(/^#\//, "").split("/")[0];
-  return ["goals","tasks","calendar","feed","chat","capture","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  return ["goals","tasks","calendar","feed","chat","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -147,7 +146,6 @@ function buildRail() {
       const count = el("span", "rail-count");
       a.append(el("span", "rail-glyph", it.glyph), el("span", "rail-label", it.label), count);
       if (it.key === "feed") { count.id = "feedNavBadge"; count.hidden = true; els.feedNavBadge = count; }
-      if (it.key === "capture") { count.id = "captureNavBadge"; count.hidden = true; }
       grp.append(a);
       railItems[it.key] = { a, count, counted: !!it.counted };
     });
@@ -309,7 +307,6 @@ function route() {
   const cal = h === "#/calendar";
   const fd = h === "#/feed";
   const chat = h === "#/chat" || h.startsWith("#/chat/");
-  const capture = h === "#/capture";
   // FILES lives inside the terminal cockpit now (its stage tab)
   if (h === "#/files") {
     try { localStorage.setItem("manifest.termStage", "files"); } catch (e) {}
@@ -326,14 +323,13 @@ function route() {
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
   const read = h.startsWith("#/read/"); // one article, full page (CONSUME)
-  const day = !goals && !todosTab && !cal && !fd && !chat && !capture && !terminalTab && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read;
+  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
   els.calendarView.hidden = !cal;
   els.feedView.hidden = !fd;
   if (els.chatView) els.chatView.hidden = !chat;
-  if (els.captureView) els.captureView.hidden = !capture;
   if (els.terminalView) els.terminalView.hidden = !terminalTab;
   els.spiritsView.hidden = !sp;
   els.contactsView.hidden = !contacts;
@@ -367,7 +363,6 @@ function route() {
   else if (cal) loadCalendar();
   else if (fd) showFeed(); // manifest's one inbox
   else if (chat) showChat(h); // conversations with chattable spirits
-  else if (capture) showCapture(); // the tray — triage into todos/chat
   else if (terminalTab) showTerminal(); // the cockpit: terminal / files / activity
   else if (sp) showSpirits(h); // spirits cockpit: rituals / runs / settings / spirit pages
   else if (contacts) showContacts(); // people layer: list / page

@@ -48,7 +48,7 @@
 /* controls, ordered after the textarea: quiet mic, then solid accent send */
 .chat-composer .mic-btn { order: 2; flex: none; border: 0; background: none; color: var(--base-40); width: 34px; height: 34px; padding: 0; font-size: var(--fs-lg); border-radius: var(--radius-lg); }
 .chat-composer .mic-btn:hover { color: var(--accent); background: var(--hover); }
-.chat-send { order: 3; flex: none; width: 34px; height: 34px; border: 0; border-radius: var(--radius-lg); background: var(--accent); color: #fff; font-size: var(--fs-xl); line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.chat-send { order: 3; flex: none; width: 34px; height: 34px; border: 0; border-radius: var(--radius-lg); background: var(--accent); color: var(--on-accent); font-size: var(--fs-xl); line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .chat-send:hover { filter: brightness(1.08); }
 .chat-send:disabled { opacity: 0.4; cursor: default; filter: none; }
 

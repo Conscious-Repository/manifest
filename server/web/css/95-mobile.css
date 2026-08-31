@@ -41,7 +41,7 @@
   .app-shell.drawer-open .rail { transform: none; }
   .app-shell.drawer-open .mf-scrim {
     display: block; position: fixed; inset: 0; z-index: 50;
-    background: rgba(0, 0, 0, 0.34); touch-action: none;
+    background: var(--scrim); touch-action: none;
   }
   /* touch metrics — same groups/order/counts as desktop, bigger rows */
   .rail-item { min-height: 46px; padding: 0 var(--sp-7); font-size: var(--fs-xl); }
@@ -88,7 +88,7 @@
   .mf-search { grid-area: 1 / 3; }
   .mf-add {
     grid-area: 1 / 4;
-    background: var(--accent); color: #fff; border-radius: 22px; font-size: var(--fs-2xl);
+    background: var(--accent); color: var(--on-accent); border-radius: 22px; font-size: var(--fs-2xl);
   }
   /* title = the LAST crumb segment only, over the meta line */
   .crumb-bar .crumb-path { grid-area: 1 / 2; font-size: var(--fs-lg); }
@@ -104,14 +104,14 @@
   .mf-sheet-wrap:not([hidden]) { display: block; }
   .mf-sheet-scrim {
     position: fixed; inset: 0; z-index: 69;
-    background: rgba(0, 0, 0, 0.34); touch-action: none;
+    background: var(--scrim); touch-action: none;
   }
   .mf-sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
     background: var(--base-00);
     border-radius: 18px 18px 0 0;
     border-top: 1px solid var(--base-30);
-    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--shadow-sheet);
     padding: 8px 18px calc(30px + env(safe-area-inset-bottom));
     animation: sheetUp 0.24s cubic-bezier(0.32, 0.72, 0, 1);
     max-height: 80dvh; display: flex; flex-direction: column;
@@ -147,7 +147,7 @@
     margin: 0; width: 100%; max-width: 100%;
     border-radius: 18px 18px 0 0;
     border-top: 1px solid var(--base-30);
-    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.16);
+    box-shadow: var(--shadow-sheet);
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
     animation: sheetUp 0.24s cubic-bezier(0.32, 0.72, 0, 1);
   }
@@ -160,7 +160,7 @@
   #todoQuickAdd select.pp-in { min-height: 44px; width: 100%; font-size: var(--fs-xl); }
   #todoQuickAdd .pill.qa-add {
     width: 100%; min-height: 44px; justify-content: center;
-    background: var(--accent); color: #fff; border-color: var(--accent);
+    background: var(--accent); color: var(--on-accent); border-color: var(--accent);
     font-size: var(--fs-lg);
   }
 
@@ -255,7 +255,7 @@
   .mf-agenda-ev { display: flex; align-items: baseline; gap: var(--sp-5); min-height: 44px; padding: var(--sp-2) 0; border-bottom: 1px solid var(--base-20); }
   .mf-agenda-time { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-50); flex: none; min-width: 52px; }
   .mf-agenda-title { font-family: var(--sans); font-size: var(--fs-lg); min-width: 0; }
-  .mf-agenda-open { margin-top: var(--sp-6); width: 100%; min-height: 44px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.3px; cursor: pointer; }
+  .mf-agenda-open { margin-top: var(--sp-6); width: 100%; min-height: 44px; background: var(--accent); color: var(--on-accent); border: none; border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.3px; cursor: pointer; }
 
   /* ---- GOALS: area rail → chip strip; outline touch scale; UNTIL 2nd line ---- */
   .go-shell { display: block; }
