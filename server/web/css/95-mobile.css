@@ -395,6 +395,17 @@
   .re-acct-state { grid-column: 2; grid-row: 1 / 3; }
   .re-acct-act { display: none; }
 
+  /* ---- BANK FEED cards: name over entity target, balance + chip right;
+     the link…/manage action keeps a full-width 44px target (it is the only
+     way into the editor, unlike the entity rows above) ---- */
+  .re-bank-row { grid-template-columns: minmax(0, 1fr) auto auto; row-gap: var(--sp-1); align-items: center; min-height: 52px; }
+  .re-bank-name { grid-column: 1; grid-row: 1; font-size: var(--fs-lg); }
+  .re-bank-ent { grid-column: 1; grid-row: 2; }
+  .re-bank-bal { grid-column: 2; grid-row: 1 / 3; }
+  .re-bank-row .re-acct-state { grid-column: 3; grid-row: 1 / 3; }
+  .re-bank-row .re-acct-act { display: block; grid-column: 1 / -1; grid-row: 3; min-height: 32px; text-align: left; }
+  .re-bank-ed { flex-direction: column; align-items: stretch; }
+
   /* ---- PORTFOLIO (fr-shape): property stack over the rock stack; open +
      spent ride right — four columns restack to a 2×2 ---- */
   .fr-row.pf4-grid { grid-template-columns: minmax(0, 1fr) auto; min-height: 56px; }

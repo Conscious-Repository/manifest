@@ -421,7 +421,10 @@ async function renderBankFeedPanel(box, ents) {
   }
 
   const strip = el("div", "set-bind-row");
-  strip.append(el("span", "stmt-vendor", (d.accounts || []).length + " account(s) on the bridge · daily sync"));
+  const nAcct = (d.accounts || []).length;
+  const nLinked = (d.accounts || []).filter((a) => a.link).length;
+  strip.append(el("span", "stmt-vendor",
+    nAcct + (nAcct === 1 ? " account" : " accounts") + " on the bridge · " + nLinked + " linked · daily sync"));
   strip.append(pillLight("sync now", async () => {
     try {
       const r = await postJSONOk("/api/bankfeed/sync", {});
@@ -440,86 +443,160 @@ async function renderBankFeedPanel(box, ents) {
   if (!propertyCache || !propertyCache.length) await loadProperties();
   const propSlugs = (propertyCache || []).map((p) => p.slug);
 
-  (d.accounts || []).forEach((a) => {
-    const link = a.link || null;
-    const row = el("div", "re-bankfeed-acct");
-    const head = el("div", "set-bind-row");
-    head.append(el("span", "stmt-vendor", (a.org ? a.org + " · " : "") + a.name + (a.balance ? "  ($" + a.balance + ")" : "")));
-    if (link && link.lastError) head.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
-    else if (link) head.append(el("span", "re-acct-state st-live", link.enabled ? "live" : "paused"));
-    else head.append(el("span", "re-acct-state st-not-connected", "not linked"));
-    row.append(head);
+  // banks mangle their own names (encoding replacement chars, duplicated
+  // last-fours) — display cleans, the link payload keeps the raw name
+  const cleanName = (s) => (s || "").replace(/�/g, "").replace(/\s+/g, " ").trim();
+  const fmtBal = (s) => {
+    const v = parseFloat(s);
+    if (!isFinite(v)) return "";
+    return (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
 
-    const ctl = el("div", "set-bind-row");
-    let entitySlug = link ? link.entitySlug : "";
-    const ac = recordAutocomplete("entity", "owning entity…", (rec) => { entitySlug = rec.slug; });
-    if (link) {
-      const ent = ents.find((x) => x.slug === link.entitySlug);
-      ac.setValue(ent ? ent.name : link.entitySlug);
-    }
-    ctl.append(ac.el);
-    const labelIn = inputEl("account label (row on the entity record)…");
-    labelIn.value = link ? link.accountLabel : a.name;
-    ctl.append(labelIn);
-    const propSel = selectEl([""].concat(propSlugs));
-    propSel.title = "optional default property — prefills the assignment on new rows (never auto-applies by itself)";
-    if (link && link.defaultProperty) propSel.value = link.defaultProperty;
-    ctl.append(propSel);
-    ctl.append(pillLight(link ? "save" : "link", async () => {
-      const label = (labelIn.value || "").trim();
-      if (!entitySlug) { showToast("Pick the owning entity first"); return; }
-      if (!label) { showToast("Name the account row (e.g. Midwest ····4821)"); return; }
-      try {
-        await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
-          entitySlug, accountLabel: label, defaultProperty: propSel.value,
-          enabled: true, orgName: a.org, accountName: a.name,
-        });
-        await saveAcctState(entitySlug, label, "live");
-        showToast("Linked — transactions land in the $ tab under " + entitySlug);
-        renderREsettings();
-      } catch (err) { showToast("Couldn't link — " + (err.message || "")); }
-    }));
-    if (link) {
-      ctl.append(pillLight(link.enabled ? "pause" : "resume", async () => {
+  // one account = one compact row; the entity-binding editor folds out
+  // behind the row's action so nine accounts read as a table, not nine forms
+  const acctRow = (a) => {
+    const link = a.link || null;
+    const wrap = el("div", "re-bank-acct");
+    const row = el("div", "re-bank-row");
+    row.append(el("span", "re-bank-name", cleanName(a.name)));
+    const entName = link ? ((ents.find((x) => x.slug === link.entitySlug) || {}).name || link.entitySlug) : "";
+    row.append(el("span", "re-bank-ent",
+      link ? "→ " + entName + (link.defaultProperty ? " · " + link.defaultProperty : "") : ""));
+    row.append(el("span", "re-bank-bal", fmtBal(a.balance)));
+    if (link && link.lastError) row.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
+    else if (link) row.append(el("span", "re-acct-state " + (link.enabled ? "st-live" : "st-not-connected"), link.enabled ? "live" : "paused"));
+    else row.append(el("span", "re-acct-state st-not-connected", "not linked"));
+
+    const buildEditor = () => {
+      const ed = el("div", "re-bank-ed");
+      let entitySlug = link ? link.entitySlug : "";
+      const ac = recordAutocomplete("entity", "owning entity…", (rec) => { entitySlug = rec.slug; });
+      if (link) ac.setValue(entName);
+      const labelIn = inputEl("bank + last four, e.g. Midwest ····4821");
+      labelIn.value = link ? link.accountLabel : cleanName(a.name);
+      const propSel = selectEl([""].concat(propSlugs));
+      if (link && link.defaultProperty) propSel.value = link.defaultProperty;
+      const field = (name, ctl, hint) => {
+        const f = el("div", "re-bank-field");
+        const l = el("span", "re-bank-flabel", name);
+        if (hint) { l.title = hint; ctl.title = hint; }
+        f.append(l, ctl);
+        return f;
+      };
+      ed.append(
+        field("owning entity", ac.el, "transactions file under this entity's books"),
+        field("account row", labelIn, "the row name on the entity record"),
+        field("default property", propSel, "prefills the assignment on new rows — never auto-applies by itself"),
+      );
+      const acts = el("div", "re-bank-acts");
+      acts.append(pillLight(link ? "save" : "link", async () => {
+        const label = (labelIn.value || "").trim();
+        if (!entitySlug) { showToast("Pick the owning entity first"); return; }
+        if (!label) { showToast("Name the account row (e.g. Midwest ····4821)"); return; }
         try {
           await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
-            entitySlug: link.entitySlug, accountLabel: link.accountLabel,
-            defaultProperty: link.defaultProperty || "", enabled: !link.enabled,
-            orgName: a.org, accountName: a.name,
+            entitySlug, accountLabel: label, defaultProperty: propSel.value,
+            enabled: true, orgName: a.org, accountName: a.name,
           });
+          await saveAcctState(entitySlug, label, "live");
+          showToast("Linked — transactions land in the $ tab under " + entitySlug);
           renderREsettings();
-        } catch (err) { showToast("Couldn't update"); }
+        } catch (err) { showToast("Couldn't link — " + (err.message || "")); }
       }));
-      ctl.append(pillLight("unlink", async () => {
-        try {
-          await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), { entitySlug: "" });
-          await saveAcctState(link.entitySlug, link.accountLabel, "not-connected");
-          showToast("Unlinked");
+      if (link) {
+        acts.append(pillLight(link.enabled ? "pause" : "resume", async () => {
+          try {
+            await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
+              entitySlug: link.entitySlug, accountLabel: link.accountLabel,
+              defaultProperty: link.defaultProperty || "", enabled: !link.enabled,
+              orgName: a.org, accountName: a.name,
+            });
+            renderREsettings();
+          } catch (err) { showToast("Couldn't update"); }
+        }));
+        acts.append(pillLight("unlink", async () => {
+          try {
+            await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), { entitySlug: "" });
+            await saveAcctState(link.entitySlug, link.accountLabel, "not-connected");
+            showToast("Unlinked");
+            renderREsettings();
+          } catch (err) { showToast("Couldn't unlink"); }
+        }));
+        // full-history backfill: everything the bridge holds for this account
+        // lands in the $ tab for hand categorization — never auto-applied
+        const bf = pillLight("pull full history", async () => {
+          bf.disabled = true;
+          bf.textContent = "pulling…";
+          try {
+            const r = await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id) + "/backfill", {});
+            showToast("History pulled — " + (r.added || 0) + " new row(s) of " + (r.fetched || 0) +
+              " fetched → $ tab (paged, 50/screen)");
+          } catch (err) { showToast("Backfill failed — " + (err.message || "")); }
           renderREsettings();
-        } catch (err) { showToast("Couldn't unlink"); }
-      }));
-      // full-history backfill: everything the bridge holds for this account
-      // lands in the $ tab for hand categorization — never auto-applied
-      const bf = pillLight("pull full history", async () => {
-        bf.disabled = true;
-        bf.textContent = "pulling…";
-        try {
-          const r = await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id) + "/backfill", {});
-          showToast("History pulled — " + (r.added || 0) + " new row(s) of " + (r.fetched || 0) +
-            " fetched → $ tab (paged, 50/screen)");
-        } catch (err) { showToast("Backfill failed — " + (err.message || "")); }
-        renderREsettings();
-      });
-      ctl.append(bf);
-    }
-    row.append(ctl);
+        });
+        acts.append(bf);
+      }
+      ed.append(acts);
+      return ed;
+    };
+
+    let ed = null;
+    const act = el("button", "re-acct-act", link ? "manage" : "link…");
+    act.onclick = () => {
+      if (!ed) { ed = buildEditor(); row.after(ed); act.textContent = "close"; return; }
+      const open = ed.style.display !== "none";
+      ed.style.display = open ? "none" : "";
+      act.textContent = open ? (link ? "manage" : "link…") : "close";
+    };
+    row.append(act);
+    wrap.append(row);
+
     if (link && (link.lastSync || link.lastError)) {
-      row.append(el("div", "re-foot-note",
+      const note = el("div", "re-bank-note" + (link.lastError ? " attn" : ""));
+      note.append(document.createTextNode(
         (link.lastSync ? "last sync " + fmtWhen(link.lastSync) : "") +
-        (link.lastError ? (link.lastSync ? " · " : "") + link.lastError : "")));
+        (link.lastError ? (link.lastSync ? " · " : "") + link.lastError + " — " : "")));
+      if (link.lastError) {
+        const fix = document.createElement("a");
+        fix.href = "https://beta-bridge.simplefin.org/";
+        fix.target = "_blank";
+        fix.rel = "noopener";
+        fix.textContent = "re-authorize on the bridge →";
+        note.append(fix);
+      }
+      wrap.append(note);
     }
-    box.append(row);
+    return wrap;
+  };
+
+  // one card per institution (the registry convention: bordered card, name
+  // head, compact rows) — attention floats to the top, then linked banks
+  const groups = new Map();
+  (d.accounts || []).forEach((a) => {
+    const k = a.org || "Other";
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(a);
   });
+  const attnIn = (as) => as.filter((x) => x.link && x.link.lastError).length;
+  const liveIn = (as) => as.filter((x) => x.link).length;
+  const cards = el("div", "re-bank-cards");
+  [...groups.entries()]
+    .sort((x, y) => (attnIn(y[1]) - attnIn(x[1])) || (liveIn(y[1]) - liveIn(x[1])) || x[0].localeCompare(y[0]))
+    .forEach(([org, accts]) => {
+      const card = el("div", "re-bank-card");
+      const head = el("div", "re-bank-head");
+      head.append(el("span", "wv-addr", org));
+      const linked = liveIn(accts);
+      if (attnIn(accts)) head.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
+      head.append(el("span", "re-acct-rollup" + (attnIn(accts) ? " attn" : ""),
+        linked ? linked + " of " + accts.length + " linked" : "not linked"));
+      card.append(head);
+      accts
+        .sort((x, y) => ((y.link ? 1 : 0) - (x.link ? 1 : 0)) || cleanName(x.name).localeCompare(cleanName(y.name)))
+        .forEach((a) => card.append(acctRow(a)));
+      cards.append(card);
+    });
+  box.append(cards);
 }
 
 function entityCard(e, ents) {

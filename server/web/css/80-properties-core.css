@@ -4,7 +4,7 @@
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
-.pp-section-head, .pp-cols, .prop-cols, .prop-out-name, .prop-status-sel, .pp3-cell-label, .pp3-sec-title, .pp3-insp-label, .pp3-insp-flabel, .uw-label, .pp3-owner-label, .pp3-uw-title, .pp3-uw-label, .pp3-lform-label, .re-lane-head, .re-uw-label, .re-acct-state {
+.pp-section-head, .pp-cols, .prop-cols, .prop-out-name, .prop-status-sel, .pp3-cell-label, .pp3-sec-title, .pp3-insp-label, .pp3-insp-flabel, .uw-label, .pp3-owner-label, .pp3-uw-title, .pp3-uw-label, .pp3-lform-label, .re-lane-head, .re-uw-label, .re-acct-state, .re-bank-flabel {
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
 }
 
@@ -517,9 +517,24 @@
 .re-acct-act { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; text-align: left; }
 
 /* BANK FEED (SimpleFIN) — settings panel: one block per bridge account */
-.re-bankfeed-acct { padding: var(--sp-3) 0; border-top: 1px solid var(--line-soft); }
-.re-bankfeed-acct .set-bind-row { border: none; padding: var(--sp-1) 0; }
-.re-bankfeed-acct .pp-in { max-width: 220px; }
+/* BANK FEED registry — one card per institution, compact account rows; the
+   entity-binding editor folds out behind the row action (link… / manage). */
+.re-bank-cards { display: flex; flex-direction: column; gap: var(--sp-5); margin-top: var(--sp-5); }
+.re-bank-card { border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6) var(--sp-3); }
+.re-bank-head { display: flex; align-items: baseline; gap: var(--sp-5); padding-bottom: var(--sp-2); }
+.re-bank-head .wv-addr { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 500; }
+.re-bank-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(0, 240px) 110px 96px 56px; gap: var(--sp-5); align-items: baseline; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
+.re-bank-name { font-size: var(--fs-md); overflow-wrap: anywhere; }
+.re-bank-ent { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); overflow-wrap: anywhere; }
+.re-bank-bal { font-family: var(--mono); font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
+.re-bank-ed { display: flex; flex-wrap: wrap; gap: var(--sp-5); align-items: flex-end; padding: var(--sp-2) 0 var(--sp-3); }
+.re-bank-field { display: flex; flex-direction: column; gap: var(--sp-1); }
+.re-bank-flabel { font-size: var(--fs-2xs); color: var(--base-40); }
+.re-bank-acts { display: flex; gap: var(--sp-3); align-items: center; padding-bottom: 1px; }
+.re-bank-note { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); padding: 0 0 var(--sp-2); }
+.re-bank-note.attn { color: var(--base-100); }
+.re-bank-note a { color: var(--accent); text-decoration: none; }
+.re-bank-note a:hover { text-decoration: underline; }
 
 /* feed-source badge on workbench rows (bank plan §4c) */
 
