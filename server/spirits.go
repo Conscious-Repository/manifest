@@ -128,6 +128,11 @@ type approvalRow struct {
 	// (nil otherwise): who proposed what to whom, and which proposal Confirm
 	// decides. There is no diff — the effect is a team-store write.
 	PortalProposal *approvals.PortalProposalPayload `json:"portalProposal,omitempty"`
+	// PortalSettled is the live status ("approved" | "rejected") when the
+	// portal already decided this proposal — the target acted first. The card
+	// then renders the outcome with a lone Dismiss (owner ask 2026-08-31: a
+	// settled card must not keep offering Reject as the only way out).
+	PortalSettled string `json:"portalSettled,omitempty"`
 }
 
 // approvalRows returns the enriched pending approvals, skipping any types in
@@ -240,6 +245,7 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 					for _, live := range st.Ext().Proposals {
 						if live.ID == payload.PropID && live.Status != "pending" {
 							rr.Allowed = false
+							rr.PortalSettled = live.Status
 							rr.GoalsErr = "already " + live.Status + " in the portal — this card is stale"
 						}
 					}
@@ -424,6 +430,57 @@ func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Requ
 		if err := s.decidePortalProposal(pending, false); err != nil {
 			log.Printf("portal proposal reject: card closed but the store did not: %v", err)
 		}
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// handleSpiritsApprovalDismiss clears a SETTLED portal-proposal card: the
+// target decided it in the portal first, so there is nothing left to decide
+// here — the card only needs to leave the feed.
+//
+// ⚠ Deliberately narrow. It re-verifies against the LIVE team store and
+// refuses anything still pending, so dismiss can never become a silent
+// discard lane for real decisions — Confirm and Reject stay the only verbs
+// that decide. The pending file is archived under the outcome that actually
+// happened; nothing is dispatched.
+func (s *Server) handleSpiritsApprovalDismiss(w http.ResponseWriter, r *http.Request) {
+	if s.approvals == nil {
+		http.Error(w, "approvals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	pending, err := s.approvalsFor(id).LoadPending(id)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if pending.Type != approvals.TypePortalProposal {
+		httpError(w, errBadRequest("only a settled portal-proposal card can be dismissed — use Confirm or Reject"))
+		return
+	}
+	payload, ok := approvals.ParsePortalProposal(pending)
+	if !ok {
+		httpError(w, errBadRequest("this card has no readable portal payload"))
+		return
+	}
+	st := s.teamStoreNamed(payload.Portal)
+	if st == nil {
+		httpError(w, errBadRequest("portal "+payload.Portal+" is not configured on this host"))
+		return
+	}
+	settled := ""
+	for _, live := range st.Ext().Proposals {
+		if live.ID == payload.PropID && live.Status != "pending" {
+			settled = live.Status
+		}
+	}
+	if settled == "" {
+		httpError(w, errBadRequest("this proposal is still pending in the portal — decide it with Confirm or Reject"))
+		return
+	}
+	if err := s.approvalsFor(id).Settle(id, settled); err != nil {
+		httpError(w, err)
+		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

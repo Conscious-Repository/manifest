@@ -215,6 +215,17 @@ function approvalCardEl(a) {
       card.append(collapsibleBlock(diff, diff.childElementCount));
     }
   }
+  // A portal proposal the target already settled: nothing is left to decide
+  // here, so the card says what happened and offers only the way out — the
+  // owner asked (2026-08-31) not to be handed Reject as a pseudo-dismiss.
+  if (isPortalProp && a.portalSettled) {
+    card.append(el("div", "appr-settled",
+      (a.portalSettled === "approved" ? "✓ approved" : "✕ rejected") + " in the portal — nothing to decide here"));
+    const actions = el("div", "appr-actions");
+    actions.append(pillLight("Dismiss", () => postApprovalDecision(a.id, "dismiss", {})));
+    card.append(actions);
+    return card;
+  }
   if (blocked && blockMsg) card.append(el("div", "appr-blocked", "⚠ " + blockMsg));
 
   const actions = el("div", "appr-actions");

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -517,5 +518,95 @@ func TestEditsSurviveThePromotionRekey(t *testing.T) {
 	// an id with no alias resolves to itself — never to something else
 	if got := team.ResolveID("aion-bl/never-migrated"); got != "aion-bl/never-migrated" {
 		t.Errorf("ResolveID invented a mapping: %s", got)
+	}
+}
+
+// A card whose proposal the target already settled offers ONE verb: Dismiss
+// (owner ask 2026-08-31 — Reject-as-pseudo-dismiss made him afraid to click).
+// Dismiss archives under the outcome that actually happened and dispatches
+// nothing; on a still-pending proposal it refuses, so it can never become a
+// silent discard lane for real decisions.
+func TestSettledPortalProposalCardDismisses(t *testing.T) {
+	srv, _, team, _, _ := syncFixture(t)
+	srv.UseApprovals(approvals.NewStore(t.TempDir()))
+	now := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
+	proposer := teamportal.Identity{Email: "hannah@aion.bio", Name: "Hannah"}
+
+	prop, err := team.Propose(proposer, "ellie@aion.bio", "EZ", "task",
+		"Run GCaMP6f on the ultrasound set-up", "", "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.FileProposalCard("aion-portal")(prop); err != nil {
+		t.Fatal(err)
+	}
+
+	// The target approves in the PORTAL before the owner touches the card.
+	if _, err := team.Decide(teamportal.Identity{Email: "ellie@aion.bio", Name: "Ellie"}, prop.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := srv.approvalRows(nil)
+	var card *approvalRow
+	for i := range rows {
+		if rows[i].Type == approvals.TypePortalProposal {
+			card = &rows[i]
+		}
+	}
+	if card == nil {
+		t.Fatal("no card")
+	}
+	if card.PortalSettled != "approved" {
+		t.Fatalf("portalSettled = %q, want approved — the card cannot render the outcome without it", card.PortalSettled)
+	}
+	if card.Allowed {
+		t.Error("Confirm still reads available on a settled card")
+	}
+
+	// Dismiss clears it — archived under what actually happened.
+	h := srv.Handler()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/spirits/approvals/"+card.ID+"/dismiss", strings.NewReader("{}")))
+	if w.Code != 200 {
+		t.Fatalf("dismiss: %d %s", w.Code, w.Body.String())
+	}
+	for _, r := range srv.approvalRows(nil) {
+		if r.ID == card.ID {
+			t.Fatal("the card is still in the inbox after dismiss")
+		}
+	}
+	if _, err := srv.approvals.LoadApproved(card.ID); err != nil {
+		t.Errorf("dismissed card is not filed under approved/: %v", err)
+	}
+
+	// ⚠ The refusal half: a still-pending proposal cannot be dismissed.
+	prop2, err := team.Propose(proposer, "ellie@aion.bio", "EZ", "task",
+		"Second, still-pending proposal", "", "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.FileProposalCard("aion-portal")(prop2); err != nil {
+		t.Fatal(err)
+	}
+	var card2 *approvalRow
+	for _, r := range srv.approvalRows(nil) {
+		if r.Type == approvals.TypePortalProposal {
+			rr := r
+			card2 = &rr
+		}
+	}
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, httptest.NewRequest("POST", "/api/spirits/approvals/"+card2.ID+"/dismiss", strings.NewReader("{}")))
+	if w2.Code == 200 {
+		t.Fatal("a still-pending proposal was dismissed — dismiss became a silent discard lane")
+	}
+	found := false
+	for _, r := range srv.approvalRows(nil) {
+		if r.ID == card2.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the refused dismiss still removed the card")
 	}
 }

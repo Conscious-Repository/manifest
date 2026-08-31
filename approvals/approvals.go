@@ -608,6 +608,17 @@ func rawFrontmatter(content string) string {
 // It applies NOTHING — an actionable proposal's target file is left untouched.
 func (s *Store) Reject(id, reason string) error { return s.move(id, "rejected", reason) }
 
+// Settle archives a pending card whose question was answered SOMEWHERE ELSE —
+// a portal proposal the target decided before the owner clicked. The card was
+// stale, not wrong: it files under the outcome that actually happened, applies
+// nothing, and dispatches nothing. status must be that outcome.
+func (s *Store) Settle(id, status string) error {
+	if status != "approved" && status != "rejected" {
+		return fmt.Errorf("settle status must be approved or rejected, not %q", status)
+	}
+	return s.move(id, status, "")
+}
+
 // Materialize parses ea-coordinator's proposed actions (the last fenced JSON array of
 // {action, body}) into pending proposals. Returns the newly created ones.
 func (s *Store) Materialize(raw, agent string, now time.Time) ([]Proposal, error) {

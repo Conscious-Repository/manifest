@@ -272,7 +272,13 @@ func (r *runner) invoke(ritual, request string) (string, error) {
 	// that surfaces is indistinguishable from an OOM or a manual kill — it
 	// sent this exact failure to the FEED with no WHY. Name it.
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
+		// Keep the agent's last words: the 2026-08-31 kairos/ask death carried
+		// no stderr into the report, and the actual cause (the lab model
+		// server slowed to ~60s per call) had to be dug out of journals.
 		err = fmt.Errorf("timed out after %s (raise -ritual-timeout %s=…)", limit, orStr(ritual, "delegate"))
+		if errb.Len() > 0 {
+			err = fmt.Errorf("%v — last stderr: %s", err, strings.TrimSpace(lastLines(errb.String(), 3)))
+		}
 	} else if err != nil && errb.Len() > 0 {
 		err = fmt.Errorf("%v: %s", err, strings.TrimSpace(lastLines(errb.String(), 5)))
 	}

@@ -62,6 +62,7 @@
 .diff-del .diff-gutter { color: var(--base-40); }
 .diff-del .diff-text { color: var(--base-40); text-decoration: line-through; }
 .diff-ctx .diff-text { color: var(--streak-ink); }
+.appr-settled { font-family: var(--mono); font-size: var(--fs-sm); color: var(--accent); }
 .appr-blocked { font-family: var(--mono); font-size: var(--fs-sm); color: var(--danger); background: #fbe9eb; border-radius: var(--radius); padding: var(--sp-4) var(--sp-5); }
 
 /* collapsible proposed-note block (long create-vault-note transcripts) */
