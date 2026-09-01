@@ -41,6 +41,12 @@ type Config struct {
 	// whose /twitter/user/<handle> route emits ordinary RSS. Empty means the
 	// conventional local install.
 	RSSHubBase string
+	// AllowPrivateCurateFetch relaxes the pasted-link guard (fetchguard.go) so
+	// it will dial loopback and private addresses. It exists so a test can put
+	// an httptest server where the open web would be; main.go never sets it,
+	// and setting it in production would hand any pasted link the inside of
+	// this box.
+	AllowPrivateCurateFetch bool
 }
 
 // defaultRSSHubBase is the conventional self-hosted install: RSSHub as a
@@ -52,7 +58,11 @@ const defaultRSSHubBase = "http://127.0.0.1:1200"
 type Service struct {
 	store *Store
 	hc    *http.Client
-	cfg   Config
+	// curateHC is the SECOND client, guarded against private addresses, used
+	// only for links the owner pasted (fetchguard.go). s.hc stays unguarded
+	// because RSSHub answers on loopback.
+	curateHC *http.Client
+	cfg      Config
 
 	// vault access, injected — capability-checked and audited upstream.
 	readVault  func(rel string) ([]byte, error)
@@ -98,6 +108,7 @@ func New(dataDir string, io VaultIO, cfg Config) *Service {
 		store:      NewStore(dataDir),
 		sites:      NewSiteCreds(dataDir),
 		hc:         httpClient(),
+		curateHC:   guardedClient(cfg.AllowPrivateCurateFetch),
 		cfg:        cfg,
 		readVault:  io.Read,
 		writeVault: io.Write,

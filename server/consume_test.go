@@ -39,6 +39,13 @@ const testFeed = `<?xml version="1.0" encoding="UTF-8"?>
 </rss>`
 
 func newConsumeHarness(t *testing.T) *consumeHarness {
+	return newConsumeHarnessWith(t, consume.Config{})
+}
+
+// newConsumeHarnessWith is the same wiring with the lane's config supplied —
+// the pasted-link tests need AllowPrivateCurateFetch so an httptest server can
+// stand in for the open web (consume/fetchguard.go).
+func newConsumeHarnessWith(t *testing.T, cfg consume.Config) *consumeHarness {
 	t.Helper()
 	vault := t.TempDir()
 	feed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +75,7 @@ func newConsumeHarness(t *testing.T) *consumeHarness {
 			}
 			return out, nil
 		},
-	}, consume.Config{})
+	}, cfg)
 
 	s := New(nil, nil, nil)
 	s.UseConsume(svc, filepath.Join(t.TempDir(), "x-creds"), "https://reading.example")

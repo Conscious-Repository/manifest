@@ -50,6 +50,37 @@ type ExternalRef struct {
 	Author      string
 	Fallback    string
 	PublishedAt time.Time
+
+	// Optional media, set only when a REAL media file URL was found (see
+	// linkmeta.go's gate). Every existing caller leaves them zero, so
+	// Item.Podcast() is false and episodeFields returns nil — a FEED card's
+	// note is byte-identical to the note it produced before these existed.
+	Audio      string
+	AudioType  string
+	AudioBytes int64
+	Duration   int
+	Episode    int
+	Season     int
+	Image      string
+	// Embed is the allowlisted `provider:kind:id` descriptor for a platform
+	// link. It reaches the note's frontmatter and the private reader; the
+	// public feed has no vocabulary for it and emits nothing.
+	Embed string
+
+	// ---- set only inside this package ----
+
+	// itemID overrides the derived id. Re-curating a URL that is ALREADY a
+	// curated note must land on that note, and identity is what notePath
+	// compares; without this, a piece first curated from the lane would fork
+	// into a second note the first time it was curated from a pasted link.
+	itemID string
+	// body is a readable article the caller already fetched. Curating a
+	// pasted link reads the page once for its metadata; re-fetching it here
+	// would be a second request for bytes we are holding.
+	body string
+	// paper is a Crossref record the caller already resolved, so the registry
+	// is asked once per curate rather than twice.
+	paper *PaperMeta
 }
 
 // CurateExternal fetches the piece at ref.URL and curates it.
@@ -60,23 +91,29 @@ type ExternalRef struct {
 // 403 would lose the choice as well as the article.
 func (s *Service) CurateExternal(ctx context.Context, ref ExternalRef, note string) (CuratedEntry, error) {
 	if s.writeVault == nil {
-		return CuratedEntry{}, errors.New("consume: no write capability for curation")
+		return CuratedEntry{}, errNoCurateCapability
 	}
 	if strings.TrimSpace(ref.Title) == "" && externalURL(ref.URL) == "" {
 		return CuratedEntry{}, errors.New("consume: nothing to curate")
 	}
 	it, sub := ref.item(), ref.subscription()
+	paper, isPaper := ref.paper, ref.paper != nil
 	// A PAPER is looked up, not scraped. A journal article's page is a wrapper
 	// around a PDF — fetching it readable-style yields navigation, ORCID
 	// markers and figure captions, which is what the ultrasound and
 	// sub-millivolt notes carried before this branch existed. The registry has
 	// the abstract and the citation, which is what a scholarly feed carries.
 	// No DOI, or no record for it: not a paper, and the fetch below runs.
-	if paper, ok := s.paperFor(ctx, it.URL); ok {
-		it.Excerpt = collapseSpaces(strings.TrimSpace(ref.Fallback))
-		return s.writeCurated(it, sub, note, &paper)
+	if !isPaper {
+		if got, ok := s.paperFor(ctx, it.URL); ok {
+			paper, isPaper = &got, true
+		}
 	}
-	if body, ok := s.fetchExternal(ctx, it.URL); ok {
+	if isPaper {
+		it.Excerpt = collapseSpaces(strings.TrimSpace(ref.Fallback))
+		return s.writeCurated(it, sub, note, paper)
+	}
+	if body, ok := s.fetchExternal(ctx, it.URL, ref); ok {
 		text := Text(body)
 		it.Body = body
 		it.Chars = len([]rune(text))
@@ -95,13 +132,25 @@ func (s *Service) CurateExternal(ctx context.Context, ref ExternalRef, note stri
 // the piece was not subscribed to, and pretending otherwise would put a
 // research finding in the reading queue.
 func (r ExternalRef) item() Item {
+	id := ExternalItemID(r.ID)
+	if r.itemID != "" {
+		id = r.itemID
+	}
 	return Item{
-		ID:          ExternalItemID(r.ID),
+		ID:          id,
 		Source:      firstNonEmpty(strings.TrimSpace(r.Source), hostOf(r.URL)),
 		Author:      strings.TrimSpace(r.Author),
 		Title:       strings.TrimSpace(r.Title),
 		URL:         externalURL(r.URL),
 		PublishedAt: r.PublishedAt,
+		Audio:       strings.TrimSpace(r.Audio),
+		AudioType:   strings.TrimSpace(r.AudioType),
+		AudioBytes:  r.AudioBytes,
+		Duration:    r.Duration,
+		Episode:     r.Episode,
+		Season:      r.Season,
+		Image:       strings.TrimSpace(r.Image),
+		Embed:       strings.TrimSpace(r.Embed),
 	}
 }
 
@@ -120,13 +169,16 @@ func (r ExternalRef) subscription() Subscription {
 // fetchExternal is the readable-link fetch, held to the same honesty rules
 // captureFull applies: a subscribe box is not the article, and a page that
 // still ends in a truncation marker is still a preview.
-func (s *Service) fetchExternal(ctx context.Context, pageURL string) (string, bool) {
+func (s *Service) fetchExternal(ctx context.Context, pageURL string, ref ExternalRef) (string, bool) {
 	if pageURL == "" {
 		return "", false
 	}
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	body, _ := s.fetchArticle(ctx, pageURL, s.cookieFor(pageURL))
+	body := ref.body
+	if body == "" {
+		ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		body, _ = s.fetchArticle(ctx, pageURL, s.cookieFor(pageURL))
+	}
 	text := Text(body)
 	if body == "" || looksPaywalled(text, "") || LooksTruncated(text) {
 		return "", false

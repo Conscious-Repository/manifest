@@ -100,15 +100,10 @@ func (s *Server) consumeNoteFor(url string) string {
 }
 
 func (s *Server) consumeEntryFor(url string) (consume.CuratedEntry, bool) {
-	if s.consume == nil || strings.TrimSpace(url) == "" {
+	if s.consume == nil {
 		return consume.CuratedEntry{}, false
 	}
-	for _, e := range s.consume.Curated() {
-		if consume.SameLink(e.URL, url) {
-			return e, true
-		}
-	}
-	return consume.CuratedEntry{}, false
+	return s.consume.CuratedFor(url)
 }
 
 func (s *Server) handleConsumeRead(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +176,54 @@ func (s *Server) handleConsumeCurate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "path": entry.Path, "note": entry.Note})
+}
+
+// handleConsumeCurateURL — the FEED header's ＋ curate: a pasted address, an
+// optional note, published now.
+//
+// It is a CONSUME route rather than a FEED one because the write is a CONSUME
+// domain write; the FEED is only where the button lives. The answer is the
+// shape handleFeedCurate answers, so the client tells the owner which of the
+// kinds he just published with one convention instead of two.
+func (s *Server) handleConsumeCurateURL(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil {
+		http.Error(w, "curation unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		URL  string `json:"url"`
+		Note string `json:"note"`
+	}
+	if err := decode(r, &body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(body.URL) == "" {
+		http.Error(w, "paste a link to curate", http.StatusBadRequest)
+		return
+	}
+	entry, err := s.consume.CurateURL(r.Context(), body.URL, body.Note)
+	if err != nil {
+		// A rejected link is the OWNER's mistake to fix — an unsupported
+		// scheme, a private address, a port that is not the web's — so it
+		// answers 400 with the guard's own sentence rather than a 500.
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"ok":     true,
+		"path":   entry.Path,
+		"note":   entry.Note,
+		"mirror": entry.Mirror,
+		"full":   strings.EqualFold(entry.Mirror, consume.MirrorFull),
+		"public": s.consumePublicURL,
+		// What it turned out to BE — paper, episode, platform or article. The
+		// toast says which, the way the FEED card's does.
+		"kind":  consume.LinkKind(entry),
+		"title": entry.Title,
+		"audio": entry.Audio != "",
+		"embed": entry.Embed,
+	})
 }
 
 func (s *Server) handleConsumeUncurate(w http.ResponseWriter, r *http.Request) {

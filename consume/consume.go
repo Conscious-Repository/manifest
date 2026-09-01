@@ -196,6 +196,13 @@ type Item struct {
 	Season     int    `json:"season,omitempty"`     // itunes:season
 	Image      string `json:"image,omitempty"`      // itunes:image — episode artwork
 
+	// Embed is an allowlisted `provider:kind:id` descriptor (spotify:episode:…,
+	// youtube:video:…) parsed from a PASTED platform link, never from a
+	// provider's own markup. It is private-side only: the reader builds a
+	// player from a hardcoded template, and the public feed has no vocabulary
+	// for it. Zero for every polled item.
+	Embed string `json:"embed,omitempty"`
+
 	PublishedAt time.Time `json:"publishedAt"`
 	FetchedAt   time.Time `json:"fetchedAt"`
 

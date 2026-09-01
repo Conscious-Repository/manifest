@@ -125,6 +125,7 @@ const els = {
   feedList: document.getElementById("feedList"),
   feedInspector: document.getElementById("feedInspector"),
   feedErrandBtn: document.getElementById("feedErrandBtn"),
+  feedCurateBtn: document.getElementById("feedCurateBtn"),
   feedAskBtn: document.getElementById("feedAskBtn"),
   feedRunNowBtn: document.getElementById("feedRunNowBtn"),
   // spirits (excalibur harness) view

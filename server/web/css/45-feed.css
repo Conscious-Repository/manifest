@@ -65,6 +65,10 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
 .rc-failed { color: var(--danger); }
 .errand-transcript { font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; white-space: pre-wrap; max-height: 60vh; overflow-y: auto; margin: 0; color: var(--text); }
 
+/* curate compose: the two fields stack full-width, the link field first */
+.curate-fields { display: flex; flex-direction: column; gap: var(--sp-4); }
+.curate-fields .pp-in { width: 100%; box-sizing: border-box; font-size: var(--fs-lg); padding: var(--sp-4) var(--sp-5); }
+
 /* errand compose: the Run pill never wraps or shrinks; a multi-account
    picker stays compact with the label ellipsized */
 .errand-actions .pill { white-space: nowrap; flex: none; }

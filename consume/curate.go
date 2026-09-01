@@ -38,6 +38,11 @@ const (
 	curatedField     = "curated"
 )
 
+// errNoCurateCapability is what every entrance to the verb fails with when the
+// service was built without a vault write. One sentinel because it is one
+// condition, whichever surface asked.
+var errNoCurateCapability = errors.New("consume: no write capability for curation")
+
 // CuratedEntry is one note, projected. It is the entire vocabulary the public
 // feed has — see public.go.
 type CuratedEntry struct {
@@ -70,7 +75,11 @@ type CuratedEntry struct {
 	Duration   int    `json:"duration,omitempty"` // seconds
 	Episode    int    `json:"episode,omitempty"`
 	Season     int    `json:"season,omitempty"`
-	Body       string `json:"-"` // markdown, the mirrored article
+	// Embed is the private side's player descriptor for a curated platform
+	// link (see Item.Embed). public.go emits nothing for it — the public feed
+	// carries the link, the title and the note, and no third-party markup.
+	Embed string `json:"embed,omitempty"`
+	Body  string `json:"-"` // markdown, the mirrored article
 	// HTML is the sanitized body, resolved from the dataDir snapshot at serve
 	// time. It is deliberately NOT stored in the note: the note is the
 	// archive, in markdown, for a person to read in Obsidian.
@@ -102,7 +111,7 @@ func curateKey(raw string) string {
 // Curate writes (or refreshes) the note for one item.
 func (s *Service) Curate(ctx context.Context, itemID, note string) (CuratedEntry, error) {
 	if s.writeVault == nil {
-		return CuratedEntry{}, errors.New("consume: no write capability for curation")
+		return CuratedEntry{}, errNoCurateCapability
 	}
 	it, sub, ok := s.Get(itemID)
 	if !ok {
@@ -246,7 +255,7 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 		w.Set("journal", yamlScalar(paper.Journal))
 		w.SetList("authors", paper.Authors)
 	}
-	for k, v := range episodeFields(it) {
+	for k, v := range mediaFields(it) {
 		w.Set(k, v)
 	}
 	if note != "" {
@@ -315,9 +324,23 @@ func episodeFields(it Item) map[string]string {
 	return out
 }
 
+// mediaFields is episodeFields plus the private-side embed descriptor — the
+// machine-owned metadata a re-click heals. Empty for everything that is
+// neither an episode nor a platform link.
+func mediaFields(it Item) map[string]string {
+	out := episodeFields(it)
+	if embed := strings.TrimSpace(it.Embed); embed != "" {
+		if out == nil {
+			out = map[string]string{}
+		}
+		out["embed"] = embed
+	}
+	return out
+}
+
 // applyEpisode refreshes an existing note's episode fields in place.
 func applyEpisode(content string, it Item) string {
-	for k, v := range episodeFields(it) {
+	for k, v := range mediaFields(it) {
 		content = setFrontmatter(content, k, v)
 	}
 	return content
@@ -795,6 +818,7 @@ func parseCurated(rel, content string) (CuratedEntry, bool) {
 		Duration:   parseSeconds(record.Unquote(strings.TrimSpace(fm["duration"]))),
 		Episode:    positiveInt(fm["episode"]),
 		Season:     positiveInt(fm["season"]),
+		Embed:      strings.TrimSpace(fm["embed"]),
 		Body:       stripPaperMarker(stripLeadingHeading(body)),
 	}, true
 }
@@ -851,6 +875,25 @@ func sortCurated(in []CuratedEntry) {
 
 // Curated returns the curated notes, newest first.
 func (s *Service) Curated() []CuratedEntry { return s.curatedEntries() }
+
+// CuratedFor answers "is the piece at this URL already curated, and which note
+// is it?" — the lookup behind both the reader's curated chip and the pasted
+// link's identity check.
+//
+// It lives here rather than in the server layer because the answer is
+// curateKey's, and a caller that has to know how two URLs are compared is a
+// caller that will one day compare them differently.
+func (s *Service) CuratedFor(rawURL string) (CuratedEntry, bool) {
+	if strings.TrimSpace(rawURL) == "" {
+		return CuratedEntry{}, false
+	}
+	for _, e := range s.curatedEntries() {
+		if SameLink(e.URL, rawURL) {
+			return e, true
+		}
+	}
+	return CuratedEntry{}, false
+}
 
 // curatedURLs is the lane's "already curated" lookup.
 func (s *Service) curatedURLs() map[string]bool {

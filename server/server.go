@@ -557,6 +557,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/consume/sites", s.handleConsumeSiteKey)
 	mux.HandleFunc("POST /api/consume/sites/{id}/remove", s.handleConsumeSiteClear)
 	mux.HandleFunc("POST /api/consume/sites/{id}/verify", s.handleConsumeSiteVerify)
+	// curate a PASTED link — the FEED header's ＋ curate. Same verb, same
+	// extrinsic/ note, no subscription behind it (consume/curateurl.go).
+	mux.HandleFunc("POST /api/consume/curate-url", s.handleConsumeCurateURL)
 	mux.HandleFunc("POST /api/consume/item/{id}/curate", s.handleConsumeCurate)
 	mux.HandleFunc("POST /api/consume/item/{id}/uncurate", s.handleConsumeUncurate)
 

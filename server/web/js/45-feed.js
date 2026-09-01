@@ -700,6 +700,62 @@ async function composeErrand() {
 }
 if (els.feedErrandBtn) els.feedErrandBtn.addEventListener("click", composeErrand);
 
+// composeCurate: the ＋ curate affordance — the SECOND entrance to the curate
+// verb the cards already carry. Paste a link from anywhere, say why, and it is
+// published to the public feed now: no subscription to the source, no queue in
+// between. It lands on the same extrinsic/ note curatePill() writes, through
+// the same capability — see consume/curateurl.go.
+function composeCurate() {
+  els.pickerTitle.textContent = "Curate a link → the public feed";
+  const body = els.pickerBody; body.innerHTML = "";
+  const fields = el("div", "curate-fields");
+  const url = inputEl("paste a link");
+  url.type = "url";
+  const why = inputEl("why this one? (optional)");
+  fields.append(url, why);
+  const actions = el("div", "asktext-actions errand-actions");
+  const submit = pill("curate →", async () => {
+    const link = url.value.trim();
+    if (!link) { url.focus(); return; }
+    // This call fetches the open web and can take twenty seconds. Say so,
+    // rather than leaving a pressed button that looks hung.
+    submit.disabled = true; submit.textContent = "curating…";
+    try {
+      const r = await fetch("/api/consume/curate-url", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: link, note: why.value.trim() }),
+      });
+      if (!r.ok) throw new Error((await r.text()).trim() || r.status);
+      const d = await r.json().catch(() => ({}));
+      closePicker();
+      showToast(curatedToast(d), null, "info");
+    } catch (e) {
+      submit.disabled = false; submit.textContent = "curate →";
+      showToast(("Curate failed: " + (e.message || e)).slice(0, 140), null, "error");
+    }
+  });
+  actions.append(el("span", "asktext-hint", "publishes immediately · full text when the page gives it up"), submit);
+  body.append(fields, actions);
+  [url, why].forEach((f) => f.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !submit.disabled) { e.preventDefault(); submit.click(); }
+    else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+  }));
+  els.pickerModal.hidden = false;
+  url.focus();
+}
+if (els.feedCurateBtn) els.feedCurateBtn.addEventListener("click", composeCurate);
+
+// curatedToast says WHICH of the kinds landed — the two-message convention
+// feedCurate() uses, extended to the three a pasted link can also be.
+function curatedToast(d) {
+  const where = " → " + (d.path || "extrinsic/");
+  if (d.kind === "paper") return "Curated as a paper — abstract + citation" + where;
+  if (d.kind === "episode") return "Curated as an episode — audio attached" + where;
+  if (d.kind === "platform") return "Curated as a link with a player" + where;
+  if (d.full) return "Curated in full" + where;
+  return "Curated as a link — the page didn't yield its text";
+}
+
 // ---- BANK lane: unfiled linked-account transactions, addressable in place --
 // One card, the $ tab's exact machinery: moneyTargetOptions scopes the
 // property picker to the paying entity, the category select reads the chart

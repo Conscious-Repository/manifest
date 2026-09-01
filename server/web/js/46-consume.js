@@ -560,6 +560,11 @@ function consumeCuratedRow(en) {
 
   const acts = el("div", "consume-sub-acts");
   if (en.url) acts.append(pillLight("original ↗", () => window.open(en.url, "_blank", "noopener")));
+  // A curated platform link plays HERE, on the private side. The public feed
+  // carries the link and the note and no third-party markup — feed readers
+  // strip frames, and public.go's isolation argument is worth more than a
+  // player nobody would see (plan §5.5).
+  if (en.embed) acts.append(playPill(en.embed, row));
   acts.append(pillLight("edit note", () => consumeCuratedEditNote(en, row)));
   acts.append(pillLight("un-curate", async () => {
     if (!(await consumePost(`/api/consume/item/${encodeURIComponent(en.itemId)}/uncurate`))) return;
@@ -572,6 +577,45 @@ function consumeCuratedRow(en) {
   row.append(el("div", "consume-curated-note micro-label",
     en.note ? "“" + en.note + "”" : "(no note)"));
   return row;
+}
+
+// EMBED_TEMPLATES is the whole allowlist. The server parses a
+// `provider:kind:id` descriptor out of the canonical URL (consume/linkmeta.go)
+// and never carries the provider's own `html`; the frame address is built here
+// from these templates, so what loads is an origin this file names.
+const EMBED_TEMPLATES = {
+  spotify: (kind, id) => "https://open.spotify.com/embed/" + kind + "/" + id,
+  youtube: (kind, id) => "https://www.youtube.com/embed/" + id,
+  vimeo: (kind, id) => "https://player.vimeo.com/video/" + id,
+};
+
+function embedFrame(descriptor) {
+  const parts = String(descriptor || "").split(":");
+  if (parts.length !== 3) return null;
+  const [provider, kind, id] = parts;
+  const tmpl = EMBED_TEMPLATES[provider];
+  if (!tmpl || !/^[a-z]{1,16}$/.test(kind) || !/^[A-Za-z0-9_-]{1,64}$/.test(id)) return null;
+  const f = document.createElement("iframe");
+  f.className = provider === "spotify" ? "consume-embed" : "consume-embed consume-embed-video";
+  f.src = tmpl(kind, id);
+  f.loading = "lazy";
+  f.allow = "encrypted-media; clipboard-write; picture-in-picture";
+  f.referrerPolicy = "no-referrer";
+  return f;
+}
+
+// playPill loads the player on demand — a curated list is an audit surface,
+// and forty frames phoning four providers on open is not one.
+function playPill(descriptor, row) {
+  const pill = pillLight("▶ play", () => {
+    const open = row.querySelector(".consume-embed");
+    if (open) { open.remove(); pill.textContent = "▶ play"; return; }
+    const frame = embedFrame(descriptor);
+    if (!frame) { showToast("no player for that link — open the original"); return; }
+    row.append(frame);
+    pill.textContent = "▾ hide";
+  });
+  return pill;
 }
 
 function consumeCuratedEditNote(en, row) {
