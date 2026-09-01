@@ -3,7 +3,7 @@
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
-.aion-edit-btn, .aion-vto-key, .aion-pub-status, .aion-sec-title, .aion-owner-ini, .aion-insp-label, .aion-insp-flabel, .aion-org-label, .aion-rec-dlabel {
+.aion-edit-btn, .aion-vto-key, .aion-pub-status, .aion-sec-title, .aion-owner-ini, .aion-insp-label, .aion-insp-flabel, .aion-rec-dlabel {
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
 }
 /* page frame: same convention as every other view — bounded width, auto
@@ -243,18 +243,9 @@
 .aion-raw-link { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; white-space: nowrap; }
 .aion-raw-link:hover { color: var(--accent); }
 
-/* org: 176px registry rail + one table */
-.aion-org { display: flex; align-items: flex-start; gap: var(--sp-8); }
-.aion-org-rail { width: 176px; flex: none; border-right: 1px solid var(--base-25); padding: var(--sp-3) 0 var(--sp-6); }
-.aion-org-label { font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-5) var(--sp-2); }
-.aion-org-item { display: flex; align-items: baseline; gap: var(--sp-4); width: 100%; background: none; border: none; text-align: left; cursor: pointer; padding: var(--sp-2) var(--sp-5); font-family: var(--sans); font-size: var(--fs-md); color: var(--base-70); }
-.aion-org-item:hover { background: var(--base-20); }
-.aion-org-item.active { color: var(--accent); background: var(--base-20); }
-.aion-org-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
-.aion-org-file { margin-top: var(--sp-7); padding: var(--sp-5) var(--sp-5) 0; border-top: 1px solid var(--base-25); }
-.aion-org-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); word-break: break-all; padding-bottom: var(--sp-2); }
-.aion-org-raw { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; padding: 0; }
-.aion-org-pane { flex: 1; min-width: 0; }
+/* org: 176px registry rail + one table — moved to css/05-primitives.css
+   (ui-conventions §C3): borrowed verbatim by Spirits Settings and
+   Properties Settings, not Aion-specific. */
 
 /* heuristics reinforcement bar */
 .aion-heur-bar { height: 4px; background: var(--accent); border-radius: var(--radius); flex: none; align-self: center; }

@@ -509,3 +509,7 @@ async function saveRawOverlay() {
 }
 
 function toggleRawOverlay() { rawOpen ? closeRawOverlay() : openRawOverlay(); }
+{
+  const rawEditBtn = document.getElementById("rawEditBtn");
+  if (rawEditBtn) rawEditBtn.addEventListener("click", () => toggleRawOverlay());
+}

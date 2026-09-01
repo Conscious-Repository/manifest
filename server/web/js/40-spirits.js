@@ -40,7 +40,7 @@ function showSpirits(h) {
 function renderSpToggle() {
   const active = (spMode === "spirit" || spMode === "editor") ? "rituals" : spMode;
   const tog = document.getElementById("spToggle");
-  if (tog) tog.querySelectorAll(".filter-chip").forEach((b) =>
+  if (tog) tog.querySelectorAll(".view-tab").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === active));
 }
 
@@ -626,9 +626,20 @@ function buildPortalActions(p, acts, wrap) {
     acts.append(pillLight("test", () => portalAction("/api/portals/" + p.id + "/test")));
     // engine-managed portals (heypocket) are polled by the excalibur ritual, not manifest
     if (!p.engine) acts.append(pillLight("poll", () => portalAction("/api/portals/" + p.id + "/poll")));
+    // arm-then-confirm (ui-conventions.md §buttons): no confirm(), the button
+    // itself swaps to a second-click confirm state and auto-reverts.
+    let disconnect;
+    const armDisconnect = () => {
+      const yes = pillLight(p.engine ? "remove key?" : "disconnect — cached items stay?",
+        () => portalAction("/api/portals/" + p.id + "/disconnect"));
+      yes.classList.add("armed");
+      disconnect.replaceWith(yes);
+      setTimeout(() => { if (yes.parentNode) yes.replaceWith(disconnect); }, 2500);
+    };
+    disconnect = pillLight("disconnect", armDisconnect);
     acts.append(
       pillLight("replace", () => togglePortalForm(p, wrap)),
-      pillLight("disconnect", () => { if (confirm((p.engine ? "Remove the " + p.name + " key?" : "Disconnect " + p.name + "? Its cached items stay until they age out."))) portalAction("/api/portals/" + p.id + "/disconnect"); }),
+      disconnect,
     );
     return;
   }
@@ -671,8 +682,8 @@ function togglePortalForm(p, wrap) {
   const form = el("div", "portal-form");
   const inputs = {};
   (p.fields || []).forEach((f) => {
-    const label = el("label", "portal-field");
-    label.append(el("span", "portal-field-label", f.label));
+    const label = el("label", "pp3-lform-field");
+    label.append(el("span", "pp3-lform-label", f.label));
     const input = el("input", "portal-input");
     input.type = f.secret ? "password" : "text";
     input.placeholder = f.hint || "";
@@ -781,12 +792,18 @@ async function renderGmailAccounts(form) {
         showToast(a.email + " routing saved", null, "info");
       } catch (e) { showToast("Couldn't save — " + (e.message || "error")); }
     };
-    const drop = pillLight("disconnect", async () => {
-      if (!confirm("Disconnect " + a.email + "?" + (a.primary ? " The waiting-on digest stops until you reconnect." : ""))) return;
-      try { await postJSONOk("/api/gmail/accounts/disconnect", { email: a.email }); } catch (e) {}
-      renderGmailAccounts(form);
-      loadPortals();
-    });
+    let drop;
+    const armDrop = () => {
+      const yes = pillLight(a.primary ? "disconnect — digest stops?" : "disconnect — sure?", async () => {
+        try { await postJSONOk("/api/gmail/accounts/disconnect", { email: a.email }); } catch (e) {}
+        renderGmailAccounts(form);
+        loadPortals();
+      });
+      yes.classList.add("armed");
+      drop.replaceWith(yes);
+      setTimeout(() => { if (yes.parentNode) yes.replaceWith(drop); }, 2500);
+    };
+    drop = pillLight("disconnect", armDrop);
     ctl.append(drop);
     row.append(ctl);
     form.append(row);
@@ -1115,23 +1132,6 @@ async function fetchSpiritRuns() {
   } catch (e) { return { data: [], queued: [] }; }
 }
 
-// askText — a small inline text dialog (reuses the picker modal chrome), the
-// replacement for prompt() in spirits flows (plan §6).
-function askText(title, placeholder, onSubmit) {
-  els.pickerTitle.textContent = title;
-  const body = els.pickerBody; body.innerHTML = "";
-  const ta = el("textarea", "asktext-area"); ta.placeholder = placeholder; ta.rows = 3;
-  const actions = el("div", "asktext-actions");
-  const submit = pill("Send →", () => { closePicker(); onSubmit(ta.value); });
-  actions.append(el("span", "asktext-hint", "⌘↵ to send"), submit);
-  body.append(ta, actions);
-  ta.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); closePicker(); onSubmit(ta.value); }
-    else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
-  });
-  els.pickerModal.hidden = false;
-  ta.focus();
-}
 
 // ---- run reports (artifacts/runs/) — live strip + finished list ----
 async function loadSpiritRuns() {

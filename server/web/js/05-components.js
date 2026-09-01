@@ -42,6 +42,24 @@ function debounce(fn, ms) {
 
 function pillLight(text, onclick) { const b = el("button", "pill light", text); b.addEventListener("click", onclick); return b; }
 
+// askText — a small inline text dialog (reuses the picker modal chrome), the
+// sanctioned replacement for prompt() app-wide (ui-conventions.md §buttons).
+function askText(title, placeholder, onSubmit) {
+  els.pickerTitle.textContent = title;
+  const body = els.pickerBody; body.innerHTML = "";
+  const ta = el("textarea", "asktext-area"); ta.placeholder = placeholder; ta.rows = 3;
+  const actions = el("div", "asktext-actions");
+  const submit = pill("send →", () => { closePicker(); onSubmit(ta.value); });
+  actions.append(el("span", "asktext-hint", "⌘↵ to send"), submit);
+  body.append(ta, actions);
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); closePicker(); onSubmit(ta.value); }
+    else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+  });
+  els.pickerModal.hidden = false;
+  ta.focus();
+}
+
 // ---- relative timestamp ----
 function fmtWhen(iso) {
   if (!iso) return "";

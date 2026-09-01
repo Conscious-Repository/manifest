@@ -277,8 +277,10 @@
   .go-task { align-items: center; min-height: 44px; }
   .go-check { min-width: 36px; min-height: 44px; font-size: var(--fs-lg); }
 
-  /* ---- AION: rows to touch scale; org rail → chips; registry tables stack ---- */
+  /* ---- AION: rows to touch scale; registry tables stack ---- */
   .aion-row { min-height: 52px; }
+  /* org rail → chips: shared primitive (05-primitives.css), also used by
+     Spirits Settings + Properties Settings — not Aion-specific. */
   .aion-org { display: block; }
   .aion-org-rail {
     display: flex; width: auto; border-right: none; padding: 0 0 var(--sp-5);

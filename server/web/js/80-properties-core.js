@@ -52,7 +52,7 @@ function showProperties(h) {
 const RE_TAB_OF = { page: "portfolio", deal: "portfolio", contract: "portfolio", "contract-new": "portfolio", contractor: "contractors" };
 function renderReToggle() {
   const active = RE_TAB_OF[propMode] || propMode;
-  els.reToggle && els.reToggle.querySelectorAll(".filter-chip").forEach((b) =>
+  els.reToggle && els.reToggle.querySelectorAll(".view-tab").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === active));
 }
 

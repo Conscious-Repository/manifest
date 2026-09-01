@@ -90,6 +90,10 @@
 .pill.light:hover { border-color: var(--blue-soft); color: var(--blue); }
 .pill.light:disabled { opacity: 0.5; cursor: default; }
 .pill.light.on { background: var(--streak-bg); color: var(--ink); }
+/* ---- arm-then-confirm pill: the "click again to confirm" state (replaces
+   confirm() on destructive pill actions, ui-conventions.md §buttons). */
+.pill.armed { background: var(--over); border-color: var(--over); color: var(--on-accent); }
+.pill.armed:hover { color: var(--on-accent); }
 
 /* ---- .cp-clickable — generic clickable-row utility (cross-tab: Contacts, FEED). */
 .cp-clickable { cursor: pointer; border-radius: var(--radius); }
@@ -177,7 +181,7 @@
    for a special case, never re-add the margin. */
 .feed-date { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); white-space: nowrap; margin-left: auto; }
 
-/* ---- .view-tabs — the one tab-bar idiom (absorbs .prop-toggle, .feed-filters
+/* ---- .view-tabs — the one tab-bar idiom (absorbs legacy property tabs, .feed-filters
    usage). A row of quiet text tabs, one active. */
 .view-tabs { display: flex; gap: var(--sp-6); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
 .view-tab {
@@ -191,6 +195,25 @@
   .view-tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
   .view-tab { white-space: nowrap; }
 }
+
+/* ---- .aion-org-rail — the settings-registry rail idiom: 176px rail of
+   items + a "file" footer beside one pane. Originated in Aion, borrowed
+   verbatim by Spirits Settings and Properties Settings (C3) — one
+   definition, three consumers. */
+.aion-org-label {
+  font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
+}
+.aion-org { display: flex; align-items: flex-start; gap: var(--sp-8); }
+.aion-org-rail { width: 176px; flex: none; border-right: 1px solid var(--base-25); padding: var(--sp-3) 0 var(--sp-6); }
+.aion-org-label { font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-5) var(--sp-2); }
+.aion-org-item { display: flex; align-items: baseline; gap: var(--sp-4); width: 100%; background: none; border: none; text-align: left; cursor: pointer; padding: var(--sp-2) var(--sp-5); font-family: var(--sans); font-size: var(--fs-md); color: var(--base-70); }
+.aion-org-item:hover { background: var(--base-20); }
+.aion-org-item.active { color: var(--accent); background: var(--base-20); }
+.aion-org-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.aion-org-file { margin-top: var(--sp-7); padding: var(--sp-5) var(--sp-5) 0; border-top: 1px solid var(--base-25); }
+.aion-org-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); word-break: break-all; padding-bottom: var(--sp-2); }
+.aion-org-raw { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); cursor: pointer; padding: 0; }
+.aion-org-pane { flex: 1; min-width: 0; }
 
 /* ---- .page-frame — the standard column every top-level view shares
    (ui-conventions.md §page). Never a per-view max-width/margin. */

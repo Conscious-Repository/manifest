@@ -30,7 +30,7 @@ function showAion(h) {
   // no-store reload whenever the owner enters the tab so hand-edited Markdown
   // records are visible without coupling them to the global portal poller.
   if (aionMode === "fundraising") frCache = null;
-  els.aionToggle.querySelectorAll(".filter-chip").forEach((b) =>
+  els.aionToggle.querySelectorAll(".view-tab").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === aionMode));
   loadAion();
 }

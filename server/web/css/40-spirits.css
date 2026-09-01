@@ -2,7 +2,7 @@
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
-.run-outcome, .portal-head, .portal-field-label, .sprt-title, .sprt-cols, .sprt-live-state, .harness-chip, .portal-group-label, .cadb-label, .rit-fig-label, .cb-group {
+.run-outcome, .portal-head, .sprt-title, .sprt-cols, .sprt-live-state, .harness-chip, .portal-group-label, .cadb-label, .rit-fig-label, .cb-group {
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.4px;
 }
 
@@ -107,8 +107,6 @@
 .portal-err { font-family: var(--mono); font-size: var(--fs-xs); color: var(--danger); padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 .portal-note { font-size: var(--fs-sm); color: var(--muted); padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 .portal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-6); padding: var(--sp-5); margin: var(--sp-1) 0 var(--sp-3); border: 1px dashed var(--blue-soft); border-radius: var(--radius); background: var(--hover); }
-.portal-field { display: flex; flex-direction: column; gap: var(--sp-1); }
-.portal-field-label { font-size: var(--fs-2xs); color: var(--muted); }
 .portal-input { font-family: var(--mono); font-size: var(--fs-md); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); min-width: 240px; background: var(--bg); color: var(--text); }
 .portal-input:focus { outline: none; border-color: var(--blue); }
 /* .pill-solid moved to 05-primitives.css 2026-08-31 (now the linkish alias) */
