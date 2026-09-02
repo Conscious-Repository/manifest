@@ -81,6 +81,10 @@ type Service struct {
 	// the real api.crossref.org; only tests set it.
 	crossref string
 
+	// apple overrides the podcast directory's base URL. Empty means the real
+	// itunes.apple.com; only tests set it.
+	apple string
+
 	nowFn func() time.Time
 	mu    sync.Mutex
 }
@@ -355,6 +359,10 @@ func (s *Service) Unsubscribe(id string) error {
 // Start runs the poll loop until ctx is cancelled.
 func (s *Service) Start(ctx context.Context) {
 	go func() {
+		// Re-read the feeds whose cache predates the current extraction, so
+		// the backfill below has the fields it is about to look for. Runs at
+		// most once per subscription ever — see itemSchema.
+		s.refreshStale(ctx)
 		// One pass to heal curated notes the retired paid-source rule left
 		// excerpt-only — see BackfillCurated. Before the ticker: the public
 		// feed should carry full bodies from the first request after boot.
@@ -370,6 +378,23 @@ func (s *Service) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// refreshStale re-polls every subscription whose cached items were extracted
+// by an older reader (Store.Stale). It ignores the schedule on purpose: the
+// point is to have the cache CORRECT before anything reads it, and the cost is
+// one unconditional fetch per subscription, once, on the first boot after the
+// extraction changed. A failure is the ordinary poll failure and is recorded
+// as one.
+func (s *Service) refreshStale(ctx context.Context) {
+	for _, sub := range s.Subscriptions() {
+		if ctx.Err() != nil {
+			return
+		}
+		if s.store.Stale(sub.ID) {
+			_ = s.pollOne(ctx, sub)
+		}
+	}
 }
 
 // pollDue polls the subscriptions whose interval has elapsed, at most

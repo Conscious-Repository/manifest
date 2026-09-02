@@ -102,6 +102,27 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 	}
 
 	m := s.resolveLink(ctx, clean)
+
+	// A PLATFORM LINK IS NOT THE PIECE. An open.spotify.com episode, an Apple
+	// Podcasts episode, a YouTube watch link — each is one platform's name for
+	// something a publisher published somewhere else, and the ladder above can
+	// only ever recover that platform's account of it: a title, a thumbnail, a
+	// player, and on Spotify a sixty-second preview clip shaped exactly like an
+	// episode file. feedresolve.go goes and finds the publisher's own feed item
+	// instead, and what it returns came out of that feed's XML.
+	//
+	// It is allowed to fail and says so by returning false — no match, no
+	// enclosure, and the note is the honest platform entry it would have been.
+	if canon, ok := s.resolveCanonicalFeedItem(ctx, clean, m); ok {
+		m.applyCanonical(canon)
+		// The canonical LINK is where a reader should be sent — the publisher's
+		// page, not the platform's. `embed` survives in the frontmatter, so the
+		// private reader still builds the player the owner pasted.
+		if canonURL := externalURL(canon.Item.URL); canonURL != "" {
+			ref.URL = canonURL
+		}
+	}
+
 	ref.Title = firstNonEmpty(ref.Title, m.Title)
 	ref.Source = firstNonEmpty(m.Source, ref.Source)
 	ref.Author = firstNonEmpty(ref.Author, m.Author)

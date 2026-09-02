@@ -152,6 +152,11 @@ type xmlItem struct {
 	Episode    string         `xml:"episode"`  // itunes:episode
 	Season     string         `xml:"season"`   // itunes:season
 	Image      xmlImage       `xml:"image"`    // itunes:image
+
+	// VideoID is YouTube's <yt:videoId>, read by the same local-name rule as
+	// the itunes: fields above. It is the only way to say "this entry is that
+	// watch link" without parsing a URL, and feedresolve.go matches on it.
+	VideoID string `xml:"videoId"`
 }
 
 type xmlFeed struct {

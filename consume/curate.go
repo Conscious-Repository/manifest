@@ -180,6 +180,11 @@ func (s *Service) writeCurated(it Item, sub Subscription, note string, paper *Pa
 		// how a re-click heals a note the retired paid-source rule stamped
 		// excerpt.
 		content = string(prior)
+		// FIRST, because its gate reads the note as it stands: a note whose
+		// body is a PLATFORM STUB, written when all the lane could see of this
+		// piece was Spotify's account of it, and which the canonical feed can
+		// now replace outright.
+		content = applyCanonicalMirror(content, it, sub.Title)
 		content = setFrontmatter(content, curatedField, now.Format("2006-01-02"))
 		content = setFrontmatter(content, "mirror", mirror)
 		if note != "" {
@@ -357,6 +362,18 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 				firstNonEmpty(it.Source, sub.Title), it.URL), "\n"))
 	}
 
+	return w.String(articleBody(it, sub.Title))
+}
+
+// articleBody renders the machine's half of an ordinary curated note: the tag
+// line, the heading, the mirrored piece, the episode's own link, the source
+// footer.
+//
+// It is its own function rather than four blocks inside buildNote because the
+// canonical repair below writes THE SAME document. A note healed from a
+// platform stub and a note freshly written from the same feed item are
+// byte-identical, which is what makes the repair safe to run more than once.
+func articleBody(it Item, subTitle string) string {
 	var b strings.Builder
 	b.WriteString("#article\n\n")
 	b.WriteString("# " + strings.TrimSpace(it.Title) + "\n\n")
@@ -376,9 +393,9 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 		b.WriteString(line + "\n")
 	}
 	if it.URL != "" {
-		b.WriteString("\n---\n\nSource: [" + firstNonEmpty(it.Source, sub.Title, it.URL) + "](" + it.URL + ")\n")
+		b.WriteString("\n---\n\nSource: [" + firstNonEmpty(it.Source, subTitle, it.URL) + "](" + it.URL + ")\n")
 	}
-	return w.String(strings.TrimRight(b.String(), "\n"))
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // episodeFields is the note's frontmatter for one episode — empty for
@@ -433,6 +450,93 @@ func applyEpisode(content string, it Item) string {
 		content = setFrontmatter(content, k, v)
 	}
 	return content
+}
+
+// ---- the platform stub, and replacing it ----
+//
+// A pasted platform link used to produce a note with nothing in it: a title,
+// one line of the platform's own blurb, and — on Spotify — a link to a sixty
+// second preview clip presented as "the audio". Now that feedresolve.go can
+// find the publisher's feed item, that note can carry the episode.
+//
+// Rewriting a body the owner may have written in is the thing this codebase
+// refuses to do, so the rewrite is gated four ways and every gate must pass:
+//
+//	the item is an EPISODE            we hold a real enclosure to put there
+//	the note's audio is not that one  the note still points at the clip (or nothing)
+//	the note says `mirror: excerpt`   the machine itself says it carries no piece
+//	the body is a STUB                nothing in it but the machine's own furniture
+//
+// Anything else comes back untouched, and what runs instead is the ordinary
+// refresh: the frontmatter heals, the body is his.
+
+// platformStubMax bounds the one paragraph a stub may hold — the platform's
+// og:description, published as an excerpt because there was nothing else. Real
+// prose is longer than this, and prose that is not is protected by the count:
+// a stub is ONE paragraph, and a note with two has been written in.
+const platformStubMax = 400
+
+// applyCanonicalMirror replaces a platform stub with the canonical feed item.
+//
+// What it writes is articleBody — the same renderer buildNote uses — so a
+// healed note and a freshly written one are the same document, and running
+// this on its own output changes nothing.
+func applyCanonicalMirror(content string, it Item, subTitle string) string {
+	if !it.Podcast() {
+		return content
+	}
+	fm, body := mdfm.Split(content)
+	if fm == nil {
+		return content
+	}
+	if SameLink(strings.TrimSpace(fm["audio"]), it.Audio) {
+		return content // already the canonical enclosure — nothing to repair
+	}
+	if !strings.EqualFold(strings.TrimSpace(fm["mirror"]), MirrorExcerpt) {
+		return content // the note claims to carry the piece; believe it
+	}
+	if !platformStub(body) {
+		return content // somebody wrote in here
+	}
+	source := firstNonEmpty(it.Source, subTitle)
+	if source != "" {
+		content = setFrontmatter(content, "source", yamlScalar(source))
+	}
+	if it.URL != "" {
+		content = setFrontmatter(content, "url", it.URL)
+	}
+	if it.Author != "" {
+		content = setFrontmatter(content, "author", yamlScalar(it.Author))
+	}
+	if !it.PublishedAt.IsZero() {
+		content = setFrontmatter(content, "published", it.PublishedAt.Format("2006-01-02"))
+	}
+	return replaceBody(content, articleBody(it, subTitle))
+}
+
+// platformStub reports whether a note's body is the machine's own and only the
+// machine's: the #article tag, one heading, an Audio: link, the source footer,
+// and at most one short paragraph where the platform's blurb went.
+func platformStub(body string) bool {
+	heading := false
+	var kept []string
+	for _, ln := range strings.Split(stripSourceFooter(body), "\n") {
+		t := strings.TrimSpace(ln)
+		switch {
+		case t == "" || t == "#article" || t == "---":
+			continue
+		case strings.HasPrefix(t, "Audio: [listen]("):
+			continue
+		case !heading && strings.HasPrefix(t, "# "):
+			heading = true // the note's own title, written by buildNote
+			continue
+		}
+		kept = append(kept, t)
+	}
+	if len(kept) > 1 {
+		return false
+	}
+	return len(kept) == 0 || len([]rune(kept[0])) <= platformStubMax
 }
 
 // mirrorFor decides how much of a curated item the PUBLIC feed carries.
@@ -688,6 +792,7 @@ func (s *Service) BackfillCurated(ctx context.Context) int {
 	n := s.backfillPapers(ctx)
 	n += s.backfillXPosts()
 	n += s.backfillXBodies(ctx)
+	n += s.backfillEpisodes()
 	for _, e := range s.Curated() {
 		if !strings.EqualFold(e.Mirror, MirrorExcerpt) {
 			continue
@@ -718,6 +823,56 @@ func (s *Service) BackfillCurated(ctx context.Context) int {
 	}
 	return n
 }
+
+// backfillEpisodes gives a curated EPISODE its enclosure back.
+//
+// A podcast curated before the lane could read an <enclosure> wrote a note
+// with no `audio:` in it, and a note does not rewrite itself when a rule does —
+// so the public feed carried that episode as an article, with no file to play.
+// The cached item has the enclosure (refreshStale saw to that); this copies it
+// into the note.
+//
+// What it writes is applyEpisode, the same call a fresh curate makes, over the
+// same machine-owned frontmatter keys. The body is not touched: an episode's
+// note body is show notes and the owner's, and adding a line of audio metadata
+// is not a reason to rewrite it. A note already carrying the enclosure comes
+// back byte-identical and is not written at all.
+//
+// It asks the network nothing.
+func (s *Service) backfillEpisodes() int {
+	n := 0
+	for _, e := range s.Curated() {
+		if strings.TrimSpace(e.Audio) != "" {
+			continue // already an episode, as far as the note is concerned
+		}
+		it, _, ok := s.Get(e.ItemID)
+		if !ok || !it.Podcast() {
+			continue // not an episode, or the item aged out — nothing to copy
+		}
+		s.mu.Lock()
+		raw, err := s.readVault(e.Path)
+		if err == nil {
+			if out := applyEpisode(string(raw), it); out != string(raw) {
+				err = s.writeVault(e.Path, []byte(out))
+			} else {
+				err = errNoChange
+			}
+		}
+		s.mu.Unlock()
+		if err == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		s.invalidateCurated()
+	}
+	return n
+}
+
+// errNoChange marks a retrofit that found nothing to do. It never leaves the
+// package and is never returned to a caller — it only keeps a no-op out of the
+// repaired count.
+var errNoChange = errors.New("consume: nothing to change")
 
 // backfillXPosts brings X notes curated before the handle convention onto it.
 //

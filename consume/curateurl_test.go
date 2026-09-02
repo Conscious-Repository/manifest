@@ -455,6 +455,139 @@ func TestMacrophageNoteRepairSticks(t *testing.T) {
 	}
 }
 
+// ⚠ A PLATFORM EPISODE LINK IS NOT THE EPISODE. Spotify can state a title and
+// offer an iframe, but the canonical audio/show notes live in the publisher's
+// RSS feed. The link dropper should use Apple only as a directory to find that
+// feed, then mirror the item read from the feed itself.
+func TestCurateSpotifyEpisodeFindsCanonicalPodcastFeed(t *testing.T) {
+	feed := serve(t, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:dc="http://purl.org/dc/elements/1.1/">
+<channel>
+  <title>This Jungian Life Podcast</title>
+  <link>https://thisjungianlife.com</link>
+  <item>
+    <title>Did Jung and Tolkien visit the same psychic realms???</title>
+    <link>https://podcasters.spotify.com/pod/show/thisjungianlifepodcast/episodes/Did-Jung-and-Tolkien-visit-the-same-psychic-realms-e2ptn90</link>
+    <guid isPermaLink="false">e8c1e0fe-3cef-4ed5-84a7-1d43d9d01c82</guid>
+    <pubDate>Thu, 11 Jul 2024 03:10:00 GMT</pubDate>
+    <dc:creator>Joseph Lee, Deborah Stewart, Lisa Marchiano</dc:creator>
+    <description><![CDATA[<p>How can the shared imaginal realms of Jung and Tolkien empower us to navigate our personal journeys?</p><p>In exploring the uncanny shared imaginal realms, Becca Tarnas uncovers a profound intersection of depth psychology and mythopoeic literature.</p>]]></description>
+    <enclosure url="https://anchor.fm/s/fc8f2a44/podcast/play/93297376/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2024-9-20%2F388415886-44100-2-00839d5905a4e94c.mp3" length="98536877" type="audio/mpeg"/>
+    <itunes:duration>01:42:12</itunes:duration>
+  </item>
+</channel>
+</rss>`, nil)
+	oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"rich","provider_name":"Spotify","title":"Did Jung and Tolkien visit the same psychic realms???","html":"<iframe src=\"https://open.spotify.com/embed/episode/5vOrCLPaezy61FYE417CTp\"></iframe>"}`))
+	}))
+	defer oembed.Close()
+	apple := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/search" {
+			t.Fatalf("unexpected apple path: %s", r.URL.String())
+		}
+		_, _ = w.Write([]byte(`{"resultCount":1,"results":[{"wrapperType":"podcastEpisode","kind":"podcast-episode","collectionId":1376929139,"collectionName":"This Jungian Life Podcast","trackName":"Did Jung and Tolkien visit the same psychic realms???","feedUrl":"` + feed.URL + `","episodeGuid":"e8c1e0fe-3cef-4ed5-84a7-1d43d9d01c82","episodeUrl":"https://anchor.fm/s/fc8f2a44/podcast/play/93297376/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2024-9-20%2F388415886-44100-2-00839d5905a4e94c.mp3"}]}`))
+	}))
+	defer apple.Close()
+	withProviders(t, oembedProvider{hosts: []string{"open.spotify.com"}, endpoint: oembed.URL, kind: linkPlatform, skipPage: true, embed: spotifyEmbed})
+
+	v := newVault(t)
+	s := curateSvc(t, v)
+	s.apple = apple.URL
+	entry, err := s.CurateURL(context.Background(), "https://open.spotify.com/episode/5vOrCLPaezy61FYE417CTp?si=f458abbf6e7248a3", "rob suggested the curt jaimungal interview")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Mirror != MirrorFull {
+		t.Fatalf("mirror: %q", entry.Mirror)
+	}
+	if entry.Source != "This Jungian Life Podcast" {
+		t.Fatalf("source: %q", entry.Source)
+	}
+	if entry.Audio == "" || strings.Contains(entry.Audio, "podz-content.spotifycdn.com") {
+		t.Fatalf("not the canonical enclosure: %q", entry.Audio)
+	}
+	if entry.Duration != 6132 {
+		t.Fatalf("duration: %d", entry.Duration)
+	}
+	if entry.URL != "https://podcasters.spotify.com/pod/show/thisjungianlifepodcast/episodes/Did-Jung-and-Tolkien-visit-the-same-psychic-realms-e2ptn90" {
+		t.Fatalf("url: %q", entry.URL)
+	}
+	if entry.Embed != "spotify:episode:5vOrCLPaezy61FYE417CTp" {
+		t.Fatalf("embed was not preserved for private UI: %q", entry.Embed)
+	}
+	note := v.read(t, entry.Path)
+	for _, want := range []string{
+		"source: This Jungian Life Podcast",
+		"published: 2024-07-11",
+		"mirror: full",
+		"audio: https://anchor.fm/s/fc8f2a44/podcast/play/93297376/",
+		"duration: 6132",
+		"rob suggested the curt jaimungal interview",
+		"How can the shared imaginal realms of Jung and Tolkien",
+	} {
+		if !strings.Contains(note, want) {
+			t.Errorf("canonical podcast note missing %q:\n%s", want, note)
+		}
+	}
+	if strings.Contains(note, "podz-content.spotifycdn.com") {
+		t.Errorf("Spotify preview clip reached the note:\n%s", note)
+	}
+
+	feedXML := get(t, PublicHandler(s, PublicConfig{Title: "reading"}), "/feed.xml").Body.String()
+	for _, want := range []string{"<enclosure", "anchor.fm/s/fc8f2a44/podcast/play/93297376", "<itunes:duration>1:42:12</itunes:duration>"} {
+		if !strings.Contains(feedXML, want) {
+			t.Errorf("public feed missing %q:\n%s", want, feedXML)
+		}
+	}
+	if strings.Contains(feedXML, "podz-content.spotifycdn.com") {
+		t.Errorf("public feed published the Spotify preview clip:\n%s", feedXML)
+	}
+}
+
+func TestCurateSpotifyEpisodeRefusesAmbiguousAppleTitle(t *testing.T) {
+	oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"rich","provider_name":"Spotify","title":"Episode 12","html":"<iframe src=\"https://open.spotify.com/embed/episode/4rOoJ6Egrf8K2\"></iframe>"}`))
+	}))
+	defer oembed.Close()
+	apple := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"resultCount":2,"results":[{"wrapperType":"podcastEpisode","kind":"podcast-episode","collectionName":"Show A","trackName":"Episode 12","feedUrl":"https://a.example/feed.xml"},{"wrapperType":"podcastEpisode","kind":"podcast-episode","collectionName":"Show B","trackName":"Episode 12","feedUrl":"https://b.example/feed.xml"}]}`))
+	}))
+	defer apple.Close()
+	withProviders(t, oembedProvider{hosts: []string{"open.spotify.com"}, endpoint: oembed.URL, kind: linkPlatform, skipPage: true, embed: spotifyEmbed})
+
+	v := newVault(t)
+	s := curateSvc(t, v)
+	s.apple = apple.URL
+	entry, err := s.CurateURL(context.Background(), "https://open.spotify.com/episode/4rOoJ6Egrf8K2", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Source != "Spotify" || entry.Mirror != MirrorExcerpt || entry.Audio != "" {
+		t.Fatalf("ambiguous title should stay an honest platform entry, got source=%q mirror=%q audio=%q", entry.Source, entry.Mirror, entry.Audio)
+	}
+}
+
+func TestSpotifyPreviewClipIsNotAnEnclosure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		htmlPage(w, `<!doctype html><html><head>
+<meta property="og:title" content="Did Jung and Tolkien visit the same psychic realms???" />
+<meta property="og:site_name" content="Spotify" />
+<meta property="og:audio" content="https://podz-content.spotifycdn.com/audio/clips/3mmZcjGMkkUXcP8YK0m7Wx/clip_530826_590826.mp3" />
+<meta property="og:audio:type" content="audio/mpeg" />
+</head><body></body></html>`)
+	}))
+	defer srv.Close()
+
+	m := curateSvc(t, newVault(t)).resolveLink(context.Background(), srv.URL+"/episode/5vOrCLPaezy61FYE417CTp")
+	if m.Audio != "" {
+		t.Fatalf("Spotify preview clip became audio: %q", m.Audio)
+	}
+}
+
 // ---- the public feed ----
 
 // ⚠ The negative case, asserted where it actually matters: in the XML a

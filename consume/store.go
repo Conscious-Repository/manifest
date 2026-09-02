@@ -64,7 +64,29 @@ type cacheState struct {
 	RetryAfter string `json:"retryAfter,omitempty"`
 	// TTLMinutes is the feed's own <ttl> / sy:updatePeriod hint, if it gave one.
 	TTLMinutes int `json:"ttlMinutes,omitempty"`
+
+	// Schema is the version of the EXTRACTION this cache was written by — see
+	// itemSchema. Zero means "before there was one".
+	Schema int `json:"schema,omitempty"`
 }
+
+// itemSchema is the version of what itemFrom reads out of a feed entry.
+//
+// ⚠ THE STALE-CACHE TRAP, and why a number lives here. Polling is conditional:
+// an unchanged feed answers 304 and the cached items are kept untouched, which
+// is exactly right — until the day extraction learns a NEW FIELD. Then every
+// item already in the cache is frozen without it, and stays frozen until the
+// publisher happens to change the feed. That is how a subscribed podcast's
+// episodes sat in the cache with no enclosure for a week after the lane
+// learned to read one: nothing was broken, nothing would ever fix itself.
+//
+// Bumping this number retires the conditional-GET cursors ONCE. The next poll
+// is unconditional, every item is re-extracted with the current reader, and
+// the version is stamped so it never happens again. Bump it when itemFrom
+// starts reading something it did not read before.
+//
+//	1  the podcast fields: enclosure, itunes duration/episode/season/image
+const itemSchema = 1
 
 func (s *Store) cacheFile(subID string) string {
 	return filepath.Join(s.root, "cache", safeName(subID)+".json")
@@ -119,15 +141,31 @@ func (s *Store) write(subID string, st cacheState) {
 	_ = os.WriteFile(path, b, 0o644)
 }
 
-// Cursors returns the stored poll cursors for a subscription.
+// Cursors returns the stored poll cursors for a subscription — or none, when
+// the cache was written by an older extraction (see itemSchema). Withholding
+// the ETag here rather than deleting it in a migration keeps the retirement to
+// one place and makes it a no-op the moment the next poll stamps the version.
 func (s *Store) Cursors(subID string) map[string]string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	st := s.read(subID)
 	out := map[string]string{}
-	for k, v := range s.read(subID).Cursors {
+	if st.Schema < itemSchema {
+		return out
+	}
+	for k, v := range st.Cursors {
 		out[k] = v
 	}
 	return out
+}
+
+// Stale reports whether a subscription's cached items predate the current
+// extraction and have not been re-read yet.
+func (s *Store) Stale(subID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st := s.read(subID)
+	return st.LastOK != "" && st.Schema < itemSchema
 }
 
 // Commit merges one poll's result.
@@ -178,6 +216,7 @@ func (s *Store) commit(subID string, now time.Time, ok bool, items []Item, curso
 	st.LastErr = ""
 	st.Fails = 0
 	st.LastOK = st.LastPoll
+	st.Schema = itemSchema
 	for k, v := range cursors {
 		st.Cursors[k] = v
 	}

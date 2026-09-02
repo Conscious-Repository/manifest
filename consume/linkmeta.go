@@ -72,6 +72,12 @@ type LinkMeta struct {
 	// rather than two. Empty for platform pages, where "readable content" is
 	// navigation furniture around a player.
 	body string
+
+	// feedHref is the RSS/Atom feed the page advertised, absolute — the same
+	// <link rel="alternate"> subscribing follows. It is read out of the head
+	// scan the ladder already made and is used by feedresolve.go to look for
+	// the piece in the publisher's own feed; nothing else reads it.
+	feedHref string
 }
 
 // The kinds. They name what the piece IS, which is what decides how the note
@@ -115,6 +121,9 @@ func (s *Service) resolveLink(ctx context.Context, pageURL string) LinkMeta {
 				if od, ok := s.fetchOEmbedAt(ctx, resolveRef(pageURL, head.oembed)); ok {
 					m.applyOEmbed(od, oembedProvider{}, pageURL)
 				}
+			}
+			if head.feed != "" {
+				m.feedHref = resolveRef(pageURL, head.feed)
 			}
 			m.applyOpenGraph(head)     // step 3
 			m.applyJSONLD(head.jsonLD) // step 4
@@ -352,6 +361,7 @@ func (m *LinkMeta) applyOEmbed(d oembedDoc, p oembedProvider, pageURL string) {
 type headMeta struct {
 	meta   map[string]string // og:*/twitter:*/name=… → content, first wins
 	oembed string            // <link rel=alternate type=application/json+oembed>
+	feed   string            // <link rel=alternate type=application/rss+xml>
 	title  string
 	jsonLD []string
 }
@@ -418,6 +428,14 @@ func scanHead(n *html.Node) headMeta {
 				if h.oembed == "" && href != "" && strings.Contains(typ, "oembed") &&
 					(rel == "" || strings.Contains(rel, "alternate")) {
 					h.oembed = href
+				}
+				// The same walk, one more property: the feed a publisher
+				// advertises. findFeedLink (rss.go) is the subscribe-time
+				// reader of exactly this element; collecting it here costs no
+				// second traversal.
+				if h.feed == "" && href != "" && strings.Contains(rel, "alternate") &&
+					(strings.Contains(typ, "rss") || strings.Contains(typ, "atom")) {
+					h.feed = href
 				}
 			case "title":
 				if h.title == "" {
@@ -489,6 +507,13 @@ func (m *LinkMeta) setAudio(raw, mime string, size int64) {
 	if raw == "" || externalURL(raw) == "" {
 		return
 	}
+	// ⚠ A PREVIEW IS NOT THE PIECE. Spotify's episode page declares a clip —
+	// a real mp3, sixty seconds cut out of the middle — and every test above
+	// says yes to it. Publishing that as an <enclosure> hands a subscriber a
+	// minute of an hour and calls it the episode.
+	if previewClip(raw) {
+		return
+	}
 	mime = strings.ToLower(strings.TrimSpace(mime))
 	isAudio := strings.HasPrefix(mime, "audio/")
 	if !isAudio && !mediaFilePath(raw) {
@@ -520,6 +545,30 @@ func mimeIf(ok bool, mime string) string {
 // including mid-path, which is how the redirect-prefix hosts (podtrac and
 // friends) write a URL.
 var mediaExt = regexp.MustCompile(`(?i)\.(mp3|m4a|m4b|aac|ogg|oga|opus|wav|flac|mpga)($|/)`)
+
+// previewClip reports whether a media URL is a platform's SAMPLE of a piece
+// rather than the piece.
+//
+// Two rules, both narrow and both about hosts that serve samples only:
+// Spotify's podz CDN, which exists to serve the clips its web player teases an
+// episode with and never carries a third party's full episode; and any
+// /clips/ path, which is the convention those URLs are written with
+// (…/audio/clips/<id>/clip_530826_590826.mp3 — the numbers are the offsets
+// into the episode the clip was cut at).
+//
+// Anything not matched here is treated exactly as it was before, which is what
+// keeps this from becoming a general guess about what audio is real.
+func previewClip(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "spotifycdn.com" || strings.HasSuffix(host, ".spotifycdn.com") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(u.Path), "/clips/")
+}
 
 func mediaFilePath(raw string) bool {
 	u, err := url.Parse(raw)
