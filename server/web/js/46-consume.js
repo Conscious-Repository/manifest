@@ -186,14 +186,21 @@ async function consumeUndismiss(id) {
 
 function consumeIsActiveView() { return feedFilter() === "consume"; }
 
-async function loadConsume() {
+// `token` is the FEED render token (45-feed.js). loadFeed passes its own so the
+// two surfaces order as one; every other caller claims a fresh one. Either way a
+// response that lands after the user has left CONSUME paints nothing.
+async function loadConsume(token) {
+  if (token === undefined) token = feedClaimRender();
   const q = new URLSearchParams({ view: consumeView });
   if (consumeList) q.set("list", consumeList);
   if (consumeSub) q.set("sub", consumeSub);
   if (consumeQuery.trim()) q.set("q", consumeQuery.trim());
+  let next;
   try {
-    consumeCache = await (await fetch("/api/consume?" + q)).json();
-  } catch (e) { consumeCache = { items: [], lists: [], unread: 0, total: 0 }; }
+    next = await (await fetch("/api/consume?" + q)).json();
+  } catch (e) { next = { items: [], lists: [], unread: 0, total: 0 }; }
+  if (feedRenderStale(token)) return;
+  consumeCache = next;
   renderConsume();
 }
 
@@ -208,6 +215,7 @@ function consumeFilterChanged() {
 const consumeSearch = debounce(() => consumeFilterChanged(), 200);
 
 function renderConsume() {
+  if (!consumeIsActiveView()) return; // the chip is off — FEED owns the list now
   const host = els.feedList; host.innerHTML = "";
   els.feedSignals.innerHTML = "";
 

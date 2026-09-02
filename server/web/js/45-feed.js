@@ -19,6 +19,19 @@ let signalsExpanded = false;
 let feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
 let feedLoadError = false; // a network failure must render as an error, not a fake "inbox zero" (§C2)
 
+// ⚠ THE STALE-PAINT RACE. /api/feed is the slow endpoint of the two and CONSUME
+// is one chip-click away, painting off /api/consume instead. Without a token the
+// in-flight inbox response lands AFTER the consume render, sees
+// state.feedFilter === "consume", finds the consume lane empty (its unread count
+// is 0 the moment you've read everything) and paints "Nothing here." over the
+// whole CONSUME surface — with a hard reload the only way back. So: every async
+// load CLAIMS a token before it awaits, and a load whose token has since been
+// superseded returns without touching feedCache or the DOM. loadConsume takes
+// the same token (46-consume.js) so the two surfaces share one ordering.
+let feedRenderToken = 0;
+function feedClaimRender() { return ++feedRenderToken; }
+function feedRenderStale(token) { return token !== feedRenderToken; }
+
 // ---- the §5 card registry: ONE renderer per attention kind, plus the
 // proposals lane (an authorization queue, not an attention kind). renderFeed
 // dispatches through this table — adding a kind = one renderer + one lane row.
@@ -69,22 +82,33 @@ function showFeed() {
 }
 
 async function loadFeed() {
+  const token = feedClaimRender();
   // CONSUME is its own surface over its own endpoint — the reading backlog is
   // not an inbox and does not want the inbox's empty states.
-  if (feedFilter() === "consume") { renderFeedFilters(); await loadConsume(); refreshFeedBadge(); return; }
+  if (feedFilter() === "consume") { renderFeedFilters(); await loadConsume(token); refreshFeedBadge(); return; }
   // Drop the cached approval registries so the next card built pulls the LIVE
   // rock ladder (goals edited elsewhere in-session must not serve a stale
   // rock list into the payload editor's typeahead).
   apprAionReg = null; apprReReg = null;
+  let next = null, badge = 0;
   try {
     const r = await fetch("/api/feed?status=" + FEED_STATUS);
     if (!r.ok) throw new Error("HTTP " + r.status);
     const d = await r.json();
-    feedCache = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [] };
-    feedLoadError = false;
-    setBadge(els.feedNavBadge, d.badge || 0);
-    diffDigests(feedCache.items); // catch digests landed while unpolled
+    next = { items: d.items || [], signals: d.signals || [], proposals: d.proposals || [], portalItems: d.portalItems || [], consumeItems: d.consumeItems || [], receipts: d.receipts || [], bankPending: d.bankPending || [] };
+    badge = d.badge || 0;
   } catch (e) {
+    next = null;
+  }
+  // Someone else owns the surface now (the CONSUME chip, another loadFeed).
+  // Nothing below this line may run — not the cache write, not the paint.
+  if (feedRenderStale(token)) return;
+  if (next) {
+    feedCache = next;
+    feedLoadError = false;
+    setBadge(els.feedNavBadge, badge);
+    diffDigests(feedCache.items); // catch digests landed while unpolled
+  } else {
     feedCache = { items: [], signals: [], proposals: [], portalItems: [], consumeItems: [], receipts: [], bankPending: [] };
     feedLoadError = true;
   }
@@ -116,6 +140,10 @@ function renderFeedFilters() {
   });
 }
 function renderFeed() {
+  // CONSUME owns els.feedList whenever its chip is lit — renderConsume paints
+  // there instead. Even with the token above, renderFeed must be structurally
+  // incapable of writing the inbox's empty state over that surface.
+  if (feedFilter() === "consume") return;
   const host = els.feedList; host.innerHTML = "";
   const sigHost = els.feedSignals; sigHost.innerHTML = ""; // collapses when empty
   const filter = feedFilter();
