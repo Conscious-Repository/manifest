@@ -270,7 +270,7 @@ func TestCurateXPostUsesOEmbed(t *testing.T) {
 	if m.Kind != linkPost {
 		t.Errorf("kind: %q", m.Kind)
 	}
-	if m.Title != "melissa on X" {
+	if m.Title != "@melissa on X" {
 		t.Errorf("title: %q", m.Title)
 	}
 	if !strings.Contains(m.body, "the whole post") {

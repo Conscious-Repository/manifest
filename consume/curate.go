@@ -150,7 +150,20 @@ func (s *Service) writeCurated(it Item, sub Subscription, note string, paper *Pa
 
 	note = collapseSpaces(strings.ReplaceAll(strings.TrimSpace(note), "\n", " "))
 	now := s.now()
-	rel := s.notePath(it, sub)
+	// An X POST is titled by its handle, whichever entrance wrote it — see
+	// xpost.go. The rename happens BEFORE the note is built and AFTER the
+	// filename is chosen, because the two want different strings: `@melissa
+	// on X` is the same title for every post that account ever wrote, and
+	// slugging it would pile a whole feed into one note. The post's own words
+	// are what tell two apart, which is what the RSSHub side always slugged.
+	xTitle := ""
+	if paper == nil && s.isXPost(it, sub) {
+		xTitle = xPostTitle(it.URL, it.Author, firstNonEmpty(it.Source, sub.Title))
+	}
+	rel := s.notePath(it, sub, xSlugBase(it, xTitle))
+	if xTitle != "" {
+		it.Title = xTitle
+	}
 	mirror := s.mirrorFor(it, sub)
 	if paper != nil {
 		// A paper's note carries the registry's abstract and citation — it is
@@ -180,6 +193,14 @@ func (s *Service) writeCurated(it Item, sub Subscription, note string, paper *Pa
 		content = applyEpisode(content, it)
 	} else {
 		content = s.buildNote(it, sub, note, now, paper, mirror)
+	}
+	// Both branches, one rule: a fresh note already carries the handle heading
+	// and this only cleans the mirrored blockquote; a note written before the
+	// convention existed gets retitled here. It is the same call the retrofit
+	// makes, and it is a fixpoint — running it on its own output changes
+	// nothing, which is what makes re-clicking curate safe.
+	if xTitle != "" {
+		content = applyXPost(content, xTitle)
 	}
 
 	if err := s.writeVault(rel, []byte(content)); err != nil {
@@ -212,14 +233,54 @@ func (s *Service) Uncurate(itemID string) error {
 	return fmt.Errorf("%q is not curated", itemID)
 }
 
+// isXPost reports whether this curate is of an X post.
+//
+// The canonical address settles it on its own. The subscription is the second
+// answer, for a post reached through a mirror — and it is narrowed to the
+// bridge's /twitter/ route, because RSSHub carries a hundred other sites and
+// none of them are X.
+func (s *Service) isXPost(it Item, sub Subscription) bool {
+	if IsXStatusURL(it.URL) {
+		return true
+	}
+	if sub.Kind == KindX {
+		return true
+	}
+	return s.fromRSSHub(sub) && strings.Contains(strings.ToLower(sub.URL), "/twitter/")
+}
+
+// xSlugBase is what an X note's FILENAME is made of: the post's own words,
+// since its title is no longer unique to it. Empty xTitle means this is not an
+// X post and the title is the base, as it always was.
+func xSlugBase(it Item, xTitle string) string {
+	if xTitle == "" {
+		return it.Title
+	}
+	if text := collapseSpaces(Text(it.Body)); text != "" {
+		return text
+	}
+	if t := strings.TrimSpace(it.Title); t != "" && t != xTitle {
+		return t
+	}
+	return firstNonEmpty(collapseSpaces(it.Excerpt), xTitle)
+}
+
 // notePath is where one item's note lives. Titles collide (every newsletter
 // has a "Weekly Roundup"), so a colliding slug gets the source appended rather
 // than two different essays sharing one note.
-func (s *Service) notePath(it Item, sub Subscription) string {
-	base := slugFor(it.Title)
-	if base == "" {
-		base = slugFor(sub.Title + " item")
+//
+// base is what to slug, which is the item's title for everything but an X post
+// (see xSlugBase).
+func (s *Service) notePath(it Item, sub Subscription, base string) string {
+	// A piece ALREADY curated keeps the note it is in, whatever its title has
+	// since become. Titles move — a publisher re-titles a post, and the X
+	// convention renamed every one of them at once — and a filename derived
+	// from a title that moved would fork the note in silence, which is the one
+	// failure here the owner would never see.
+	if rel, ok := s.curatedNotePath(it); ok {
+		return rel
 	}
+	base = firstNonEmpty(slugFor(base), slugFor(it.Title), slugFor(sub.Title+" item"))
 	rel := "extrinsic/" + base + ".md"
 	if prior, err := s.readVault(rel); err == nil {
 		if e, ok := parseCurated(rel, string(prior)); ok && e.ItemID != it.ID {
@@ -227,6 +288,21 @@ func (s *Service) notePath(it Item, sub Subscription) string {
 		}
 	}
 	return rel
+}
+
+// curatedNotePath finds the note this piece is already curated in, by the
+// identity notePath's caller would otherwise have to guess at: the item id
+// first, then the link.
+func (s *Service) curatedNotePath(it Item) (string, bool) {
+	for _, e := range s.curatedEntries() {
+		if it.ID != "" && e.ItemID == it.ID {
+			return e.Path, true
+		}
+		if SameLink(e.URL, it.URL) {
+			return e.Path, true
+		}
+	}
+	return "", false
 }
 
 // buildNote renders a fresh curated note.
@@ -592,7 +668,8 @@ func (s *Service) needsCapture(it Item, sub Subscription) bool {
 // is the owner's and stays untouched. A capture that fails (a real paywall,
 // no working session) leaves the note excerpt-only for the next boot to retry.
 //
-// It also RETROFITS papers — see backfillPapers. Same argument, newer rule: a
+// It also retrofits X POSTS onto the handle title convention (backfillXPosts)
+// and papers into the paper format (backfillPapers). Same argument, newer rule: a
 // note written before the paper format existed carries a scraped page (or a
 // bare sentence) where an abstract and a citation belong, and a note does not
 // rewrite itself when a rule does.
@@ -601,6 +678,7 @@ func (s *Service) BackfillCurated(ctx context.Context) int {
 		return 0
 	}
 	n := s.backfillPapers(ctx)
+	n += s.backfillXPosts()
 	for _, e := range s.Curated() {
 		if !strings.EqualFold(e.Mirror, MirrorExcerpt) {
 			continue
@@ -625,6 +703,41 @@ func (s *Service) BackfillCurated(ctx context.Context) int {
 		if err == nil {
 			n++
 		}
+	}
+	if n > 0 {
+		s.invalidateCurated()
+	}
+	return n
+}
+
+// backfillXPosts brings X notes curated before the handle convention onto it.
+//
+// The selection rule is IsXStatusURL and nothing else: a note whose `url:` is
+// not one X post's canonical address is never read past its frontmatter, which
+// is what keeps a retrofit out of the rest of the owner's extrinsic/. What it
+// writes is applyXPost — the same call a fresh curate makes — so a retrofitted
+// note and a newly written one are the same document, and a note already on
+// the convention comes back byte-identical and is not written at all.
+//
+// It asks the network nothing. The handle is in the URL the note already
+// carries, so this is deterministic, offline, and safe to run on every boot.
+func (s *Service) backfillXPosts() int {
+	n := 0
+	for _, e := range s.Curated() {
+		if !IsXStatusURL(e.URL) {
+			continue
+		}
+		want := xPostTitle(e.URL, e.Author, e.Source)
+		s.mu.Lock()
+		raw, err := s.readVault(e.Path)
+		if err == nil {
+			if content := applyXPost(string(raw), want); content != string(raw) {
+				if err = s.writeVault(e.Path, []byte(content)); err == nil {
+					n++
+				}
+			}
+		}
+		s.mu.Unlock()
 	}
 	if n > 0 {
 		s.invalidateCurated()

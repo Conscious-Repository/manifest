@@ -101,7 +101,7 @@ func (s *Service) resolveLink(ctx context.Context, pageURL string) LinkMeta {
 		m.Embed = p.embed(pageURL)
 		if p.endpoint != "" {
 			if doc, ok := s.fetchOEmbed(ctx, p.endpoint, pageURL); ok {
-				m.applyOEmbed(doc, p)
+				m.applyOEmbed(doc, p, pageURL)
 			}
 		}
 	}
@@ -113,7 +113,7 @@ func (s *Service) resolveLink(ctx context.Context, pageURL string) LinkMeta {
 			// Step 2 — oEmbed by discovery, for a provider we do not know.
 			if !isProvider && head.oembed != "" {
 				if od, ok := s.fetchOEmbedAt(ctx, resolveRef(pageURL, head.oembed)); ok {
-					m.applyOEmbed(od, oembedProvider{})
+					m.applyOEmbed(od, oembedProvider{}, pageURL)
 				}
 			}
 			m.applyOpenGraph(head)     // step 3
@@ -321,7 +321,7 @@ func (s *Service) fetchOEmbedAt(ctx context.Context, endpoint string) (oembedDoc
 	return doc, true
 }
 
-func (m *LinkMeta) applyOEmbed(d oembedDoc, p oembedProvider) {
+func (m *LinkMeta) applyOEmbed(d oembedDoc, p oembedProvider, pageURL string) {
 	m.Title = firstNonEmpty(m.Title, strings.TrimSpace(d.Title))
 	m.Author = firstNonEmpty(m.Author, strings.TrimSpace(d.AuthorName))
 	m.Source = firstNonEmpty(strings.TrimSpace(d.ProviderName), m.Source)
@@ -330,13 +330,18 @@ func (m *LinkMeta) applyOEmbed(d oembedDoc, p oembedProvider) {
 		m.Kind = linkVideo
 	}
 	// A POST is short enough that the provider's own rendering IS the piece.
-	// Sanitize strips the script tag X ships beside the blockquote.
+	// Sanitize strips the script tag X ships beside the blockquote; xPostHTML
+	// then narrows what is left to the post's own paragraphs, dropping the
+	// byline the provider appends — the note carries a Source: footer and the
+	// public feed renders its own attribution, so a third copy of the writer's
+	// name inside the body is furniture.
 	if p.kind == linkPost && strings.TrimSpace(d.HTML) != "" {
-		if body := strings.TrimSpace(Sanitize(d.HTML)); body != "" {
+		if body := strings.TrimSpace(xPostHTML(Sanitize(d.HTML))); body != "" {
 			m.body = body
-			if m.Author != "" {
-				m.Title = firstNonEmpty(m.Title, m.Author+" on "+firstNonEmpty(m.Source, "X"))
-			}
+			// The HANDLE is the title, and the URL is where it is stated
+			// exactly — see xpost.go. author_name is X's DISPLAY name, which
+			// is the fallback rung and not the convention.
+			m.Title = xPostTitle(pageURL, m.Author, m.Source)
 		}
 	}
 }

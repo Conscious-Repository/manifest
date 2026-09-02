@@ -472,3 +472,93 @@ func TestSetFrontmatter(t *testing.T) {
 		t.Errorf("no-op case rewrote the file: %q", got)
 	}
 }
+
+func TestCurateRSSHubXPostUsesHandleTitleAndFullBody(t *testing.T) {
+	v := newVault(t)
+	s := New(t.TempDir(), v.io(), Config{})
+	sub := Subscription{ID: "melissa-2", Kind: KindRSS, Title: "@melissa", URL: defaultRSSHubBase + "/twitter/user/melissa", Mirror: MirrorFull, List: "people"}
+	d := ParseFeeds("")
+	d.Add(sub)
+	if err := s.save(d); err != nil {
+		t.Fatal(err)
+	}
+	sub, _ = d.Find(d.Subs()[0].ID)
+
+	post := "i'm not sure ai detectors need to exist. it does not super matter if you're not using ai if you sound like ai\n\ni want to see people talk to their robots."
+	it := Item{
+		ID: itemID(KindRSS, sub.ID, "2091877437294666036"), SubID: sub.ID,
+		Source: "@melissa", Author: "@melissa",
+		Title: "i'm not sure ai detectors need to exist. it does not super matter if you're not using ai if you sound like ai i want to see people talk to their robot...",
+		URL:   "https://x.com/melissa/status/2091877437294666036",
+		Body:  xBody(post, xPost{}), Excerpt: post, Chars: len([]rune(post)),
+		PublishedAt: time.Date(2026, 8, 24, 0, 0, 0, 0, time.UTC),
+		FetchedAt:   time.Now().UTC(),
+	}
+	s.store.Commit(sub.ID, time.Now().UTC(), true, []Item{it}, nil, "")
+
+	entry, err := s.Curate(context.Background(), it.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Title != "@melissa on X" {
+		t.Fatalf("title = %q", entry.Title)
+	}
+	note := v.read(t, entry.Path)
+	if !strings.Contains(note, "# @melissa on X") {
+		t.Fatalf("note heading not normalized:\n%s", note)
+	}
+	if !strings.Contains(note, "i want to see people talk to their robots") {
+		t.Fatalf("full post body missing:\n%s", note)
+	}
+	if strings.Contains(note, "# i'm not sure ai detectors") {
+		t.Fatalf("post text is still the note title:\n%s", note)
+	}
+}
+
+func TestBackfillXPostsRetitlesExistingCuratedNotes(t *testing.T) {
+	v := newVault(t)
+	s, _ := svcWithItem(t, v)
+	old := `---
+categories: [articles]
+source: "@melissa"
+author: "@melissa"
+url: https://x.com/melissa/status/2091877437294666036
+published: 2026-08-24
+curated: 2026-08-27
+item: consume:rss:melissa-2:a148b2dad743
+mirror: full
+---
+
+#article
+
+# i'm not sure ai detectors need to exist. it does not super matter if you're not using ai if you sound like ai i want to see people talk to their robot...
+
+i'm not sure ai detectors need to exist.
+
+i want to see people talk to their robots.
+
+---
+
+Source: [@melissa](https://x.com/melissa/status/2091877437294666036)
+`
+	if err := v.io().Write("extrinsic/old-melissa.md", []byte(old)); err != nil {
+		t.Fatal(err)
+	}
+	s.invalidateCurated()
+	if n := s.BackfillCurated(context.Background()); n != 1 {
+		t.Fatalf("backfilled %d notes, want 1", n)
+	}
+	after := v.read(t, "extrinsic/old-melissa.md")
+	if !strings.Contains(after, "# @melissa on X") {
+		t.Fatalf("heading not normalized:\n%s", after)
+	}
+	if !strings.Contains(after, "i want to see people talk to their robots") {
+		t.Fatalf("post body was lost:\n%s", after)
+	}
+	if strings.Contains(after, "# i'm not sure ai detectors") {
+		t.Fatalf("old text-title survived:\n%s", after)
+	}
+	if n := s.BackfillCurated(context.Background()); n != 0 {
+		t.Fatalf("backfill is not a fixpoint; second run changed %d notes", n)
+	}
+}
