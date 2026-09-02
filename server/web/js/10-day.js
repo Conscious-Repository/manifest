@@ -1,9 +1,15 @@
 // ---- day: load + render ----
 async function load(date) {
-  state.date = date;
-  const today = date === isoToday();
-  els.dateLabel.textContent = today ? "TODAY" : prettyDate(date);
-  const r = await fetch(`/api/day?date=${date}`);
+  state.date = date || isoToday();
+  const today = state.date === isoToday();
+  els.dateLabel.textContent = today ? "TODAY" : prettyDate(state.date);
+  const r = await fetch(`/api/day?date=${state.date}`);
+  // a blank Day is worse than a loud one: without this the non-JSON error body
+  // throws inside load() and every panel stays at its static heading, silently.
+  if (!r.ok) {
+    showToast(((await r.text()) || "couldn't load the day").slice(0, 120), null, "error");
+    return;
+  }
   state.day = await r.json();
   renderDay();
   loadBriefingCard(today);

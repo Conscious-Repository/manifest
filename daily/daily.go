@@ -592,7 +592,19 @@ func regionBetween(content, start, end string) (string, bool) {
 
 // ----- public read / write -----
 
+// orToday resolves an empty date to today. A READ of "the day" with no date has
+// exactly one safe meaning and every caller wants it — a bare `GET /api/day`, a
+// client whose date state was never seeded. The write paths stay strict on
+// purpose: a dropped date must never silently rewrite today's note.
+func orToday(date string) string {
+	if date == "" {
+		return time.Now().Format(dateLayout)
+	}
+	return date
+}
+
 func (s *Service) Load(date string) (Day, error) {
+	date = orToday(date)
 	d, err := time.Parse(dateLayout, date)
 	if err != nil {
 		return Day{}, fmt.Errorf("bad date %q: %w", date, err)

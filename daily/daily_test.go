@@ -354,3 +354,39 @@ func TestFocusMilestoneSelectionCascadesTasks(t *testing.T) {
 		t.Fatalf("milestone selection didn't persist: %+v", day3.Focus[0])
 	}
 }
+
+// A bare `GET /api/day` (no date) used to 400 with `bad date ""` — a plain-text
+// body that the cockpit's load() then fed to r.json(), throwing before a single
+// panel rendered. Reading "the day" with no date has one safe meaning.
+func TestLoadEmptyDateIsToday(t *testing.T) {
+	s, _ := testService(t)
+	day, err := s.Load("")
+	if err != nil {
+		t.Fatalf("Load(\"\"): %v", err)
+	}
+	if want := time.Now().Format(dateLayout); day.Date != want {
+		t.Fatalf("Load(\"\").Date = %q, want today %q", day.Date, want)
+	}
+	// a date that was actually supplied and is junk still has to be rejected
+	if _, err := s.Load("not-a-date"); err == nil {
+		t.Fatal("Load(\"not-a-date\") must stay an error — only the EMPTY date defaults")
+	}
+}
+
+// The write paths stay strict on purpose: a client that lost its date state must
+// not silently rewrite today's note.
+func TestWritesRejectEmptyDate(t *testing.T) {
+	s, _ := testService(t)
+	if err := s.SaveDay("", nil, nil); err == nil {
+		t.Error("SaveDay(\"\") must not default to today")
+	}
+	if _, err := s.SetFocus("", 0, "x"); err == nil {
+		t.Error("SetFocus(\"\") must not default to today")
+	}
+	if _, err := s.SetMilestone("", 0, "x"); err == nil {
+		t.Error("SetMilestone(\"\") must not default to today")
+	}
+	if _, err := s.AddTask("", Task{Text: "x"}); err == nil {
+		t.Error("AddTask(\"\") must not default to today")
+	}
+}
