@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"manifest/mdfm"
 )
@@ -31,8 +32,9 @@ import (
 
 // xStatusPath is the canonical shape of a post's address: /<handle>/status/<id>.
 // A handle is 1–15 of [A-Za-z0-9_]; the id is digits. `/statuses/` is the older
-// spelling and still redirects.
-var xStatusPath = regexp.MustCompile(`^/([A-Za-z0-9_]{1,15})/status(?:es)?/[0-9]+`)
+// spelling and still redirects. Both parts are captured: the handle titles the
+// note, the id is what the bridge's timeline is searched for (xrecover.go).
+var xStatusPath = regexp.MustCompile(`^/([A-Za-z0-9_]{1,15})/status(?:es)?/([0-9]+)`)
 
 // xHandleWord is a handle standing on its own, as `@melissa` does in the
 // source and author lines an RSSHub subscription writes.
@@ -246,4 +248,136 @@ func applyXPost(content, title string) string {
 		_, body = mdfm.Split(content)
 	}
 	return replaceBody(content, xNoteBody(body, title))
+}
+
+// ---- the clipped mirror, and repairing it ----
+//
+// A note written from X's oEmbed carries a PREVIEW where the post should be:
+// the provider cuts the blockquote at roughly a screenful and marks the cut
+// with an ellipsis. xrecover.go can fetch the whole post from the bridge; what
+// follows decides whether swapping one for the other is safe, and does it.
+//
+// Two conditions, both required, and they are the reason this can be run over
+// the owner's extrinsic/ without reading it as an invitation to rewrite:
+//
+//	the mirror ENDS clipped   a body that runs to its own end is whole, and a
+//	                          body the owner wrote under does not end in the
+//	                          provider's ellipsis — so neither is touched
+//	the post BEGINS with it   the recovered text must open with the words the
+//	                          note already holds. A bridge that answered with
+//	                          a different post repairs nothing; missing text is
+//	                          never invented.
+
+// xStatusID reads the post id out of a canonical status path.
+func xStatusID(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	m := xStatusPath.FindStringSubmatch(u.Path)
+	if m == nil {
+		return ""
+	}
+	return m[2]
+}
+
+// xClipTail is the furniture X leaves AFTER the cut: the media or t.co link
+// the provider appends to the blockquote, in markdown or as bare text. It is
+// stripped before the ellipsis is looked for, because the ellipsis is what
+// marks the cut and the link is what follows it.
+var xClipTail = regexp.MustCompile(`(?:\[[^\]]*\]\([^)]*\)|https?://\S+|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:/\S*)?|[\s>])+$`)
+
+// xLooksClipped reports whether a mirrored post ends where the provider cut it.
+func xLooksClipped(mirror string) bool {
+	t := strings.TrimSpace(xClipTail.ReplaceAllString(strings.TrimSpace(mirror), ""))
+	return strings.HasSuffix(t, "…") || strings.HasSuffix(t, "...")
+}
+
+// xMatchRunes is how much of the opening has to agree before a recovered post
+// is accepted as the same post. Five or six words of one X account's writing
+// do not collide with another post of the same account.
+const xMatchRunes = 24
+
+// xSamePost reports whether full is the whole of the post the clipped mirror
+// holds the front of.
+func xSamePost(mirror, full string) bool {
+	a, b := xFingerprint(mirror), xFingerprint(full)
+	if len([]rune(a)) < xMatchRunes || len(b) <= len(a) {
+		return false
+	}
+	return strings.HasPrefix(b, string([]rune(a)[:xMatchRunes]))
+}
+
+// xFingerprint is a comparison form for two renderings of one post: letters
+// and digits, lowercased. Markdown, HTML entities and the provider's link
+// rewriting all disagree about the punctuation and none of them about this.
+func xFingerprint(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+// xMirrorLines locates the mirrored post inside a note's body: everything
+// below the tag line and the heading, above the `---` the source footer opens
+// with. Anything outside that span is the owner's or the writer's attribution,
+// and is never rewritten.
+func xMirrorLines(body string) (lines []string, start, end int) {
+	lines = strings.Split(strings.TrimSpace(strings.ReplaceAll(body, "\r\n", "\n")), "\n")
+	skipBlank := func(i int) int {
+		for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+			i++
+		}
+		return i
+	}
+	start = skipBlank(0)
+	if start < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[start]), "#article") {
+		start = skipBlank(start + 1)
+	}
+	if start < len(lines) && strings.HasPrefix(strings.TrimSpace(lines[start]), "# ") {
+		start = skipBlank(start + 1)
+	}
+	end = len(lines)
+	for i := start; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "---" {
+			end = i
+			break
+		}
+	}
+	return lines, start, end
+}
+
+// xMirrorText is the mirrored post as the note holds it.
+func xMirrorText(body string) string {
+	lines, start, end := xMirrorLines(body)
+	if start >= end {
+		return ""
+	}
+	return strings.TrimSpace(strings.Join(lines[start:end], "\n"))
+}
+
+// applyXBody swaps a clipped mirror for the whole post. A note that is not
+// clipped, or a recovery that is not the same post, comes back byte-identical
+// — which is what makes this safe to run on every curate and every boot.
+func applyXBody(content, full string) string {
+	full = strings.TrimSpace(full)
+	if full == "" {
+		return content
+	}
+	_, body := mdfm.Split(content)
+	lines, start, end := xMirrorLines(body)
+	if start >= end {
+		return content
+	}
+	mirror := strings.TrimSpace(strings.Join(lines[start:end], "\n"))
+	if !xLooksClipped(mirror) || !xSamePost(mirror, full) {
+		return content
+	}
+	out := append([]string{}, lines[:start]...)
+	out = append(out, "", full, "")
+	out = append(out, lines[end:]...)
+	return replaceBody(content, strings.TrimSpace(strings.Join(squeezeBlanks(out), "\n")))
 }

@@ -191,6 +191,14 @@ func (s *Service) writeCurated(it Item, sub Subscription, note string, paper *Pa
 		// An episode's enclosure is machine-owned metadata like mirror, so a
 		// re-click heals a note written before the lane knew about audio.
 		content = applyEpisode(content, it)
+		// An X note whose mirror is the provider's PREVIEW — cut at an
+		// ellipsis — is repaired when this curate holds the whole post. It is
+		// the narrowest write this branch makes: a mirror that does not end
+		// clipped, or a body that is not the same post, comes back untouched,
+		// so the owner's own words under a note are never at risk.
+		if xTitle != "" {
+			content = applyXBody(content, ToMarkdown(it.Body))
+		}
 	} else {
 		content = s.buildNote(it, sub, note, now, paper, mirror)
 	}
@@ -679,6 +687,7 @@ func (s *Service) BackfillCurated(ctx context.Context) int {
 	}
 	n := s.backfillPapers(ctx)
 	n += s.backfillXPosts()
+	n += s.backfillXBodies(ctx)
 	for _, e := range s.Curated() {
 		if !strings.EqualFold(e.Mirror, MirrorExcerpt) {
 			continue
@@ -738,6 +747,61 @@ func (s *Service) backfillXPosts() int {
 			}
 		}
 		s.mu.Unlock()
+	}
+	if n > 0 {
+		s.invalidateCurated()
+	}
+	return n
+}
+
+// backfillXBodies repairs X notes that carry the oEmbed PREVIEW instead of the
+// post — the notes this entrance wrote before it asked the bridge first.
+//
+// The gate is two cheap offline tests before any network at all: the note's
+// `url:` is one canonical X status (IsXStatusURL), and its mirrored body ends
+// where the provider cut it (xLooksClipped). A vault of whole notes therefore
+// makes no request on boot, and the ones that do ask are asking the local
+// bridge for the account's own timeline.
+//
+// What it writes is applyXBody, which refuses the swap unless the recovered
+// post OPENS with the words the note already holds — so a bridge that cannot
+// page back far enough to reach an old post leaves that note exactly as it
+// was, rather than filling it with a different one. Nothing is invented, and
+// the next boot retries.
+func (s *Service) backfillXBodies(ctx context.Context) int {
+	n := 0
+	for _, e := range s.Curated() {
+		if !IsXStatusURL(e.URL) {
+			continue
+		}
+		s.mu.Lock()
+		raw, err := s.readVault(e.Path)
+		s.mu.Unlock()
+		if err != nil {
+			continue
+		}
+		_, body := mdfm.Split(string(raw))
+		if !xLooksClipped(xMirrorText(body)) {
+			continue
+		}
+		post, ok := s.recoverXPost(ctx, e.URL)
+		if !ok {
+			continue
+		}
+		content := applyXBody(string(raw), ToMarkdown(post.Body))
+		if content == string(raw) {
+			continue
+		}
+		// The note now carries the whole post, so the field that said it did
+		// not is stale. It is the same machine-owned metadata a re-click
+		// heals, written here for the same reason.
+		content = setFrontmatter(content, "mirror", MirrorFull)
+		s.mu.Lock()
+		err = s.writeVault(e.Path, []byte(content))
+		s.mu.Unlock()
+		if err == nil {
+			n++
+		}
 	}
 	if n > 0 {
 		s.invalidateCurated()

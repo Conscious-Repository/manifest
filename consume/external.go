@@ -81,6 +81,11 @@ type ExternalRef struct {
 	// paper is a Crossref record the caller already resolved, so the registry
 	// is asked once per curate rather than twice.
 	paper *PaperMeta
+	// partial marks a body the caller knows is not the whole piece — an X
+	// oEmbed render cut at the provider's ellipsis. The body is still
+	// published; what changes is that the note says `mirror: excerpt` instead
+	// of claiming to carry the whole of something it does not.
+	partial bool
 }
 
 // CurateExternal fetches the piece at ref.URL and curates it.
@@ -118,6 +123,9 @@ func (s *Service) CurateExternal(ctx context.Context, ref ExternalRef, note stri
 		it.Body = body
 		it.Chars = len([]rune(text))
 		it.Excerpt = Excerpt(text, 280)
+		if ref.partial {
+			it.Preview = PreviewPartial
+		}
 	} else {
 		// Nothing whole to mirror. Preview is the field that says so, and
 		// mirrorFor reads it — the public feed then carries the link and the

@@ -56,11 +56,32 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 	// publisher who re-titles a post between two pastes would otherwise fork
 	// the note silently, which is the one bug this entrance could ship that
 	// the owner would never see.
-	if prior, ok := s.CuratedFor(clean); ok {
+	prior, isRefresh := s.CuratedFor(clean)
+	if isRefresh {
 		ref.itemID = firstNonEmpty(prior.ItemID, ExternalURLID(clean))
 		ref.Title = prior.Title
 		ref.Source = firstNonEmpty(prior.Source, ref.Source)
 		ref.Author = prior.Author
+	}
+
+	// AN X POST is asked of the bridge before it is asked of X. The oEmbed
+	// endpoint below truncates a long post at roughly a screenful; RSSHub's
+	// timeline carries the whole text, which is why the same post curated from
+	// the lane has always been whole and this entrance's was not. Recovered or
+	// not, the fetch stops here: oEmbed is the FALLBACK (xrecover.go).
+	if IsXStatusURL(clean) {
+		if post, ok := s.recoverXPost(ctx, clean); ok {
+			ref.Title = xPostTitle(clean, firstNonEmpty(ref.Author, post.Author), ref.Source)
+			ref.Author = firstNonEmpty(ref.Author, post.Author)
+			if !isRefresh {
+				ref.Source = firstNonEmpty(post.Source, ref.Source)
+			}
+			if !post.PublishedAt.IsZero() {
+				ref.PublishedAt = post.PublishedAt
+			}
+			ref.body = post.Body
+			return s.CurateExternal(ctx, ref, note)
+		}
 	}
 
 	// A PAPER is looked up, not scraped — crossref.go's rule, and the reason
@@ -93,6 +114,14 @@ func (s *Service) CurateURL(ctx context.Context, rawURL, note string) (CuratedEn
 	ref.Duration, ref.Episode, ref.Season = m.Duration, m.Episode, m.Season
 	ref.Image, ref.Embed = m.Image, m.Embed
 	ref.body = m.body
+	// The bridge had nothing and the provider's render is a PREVIEW — it ends
+	// where X cut it. The note still carries what was recovered, because a
+	// preview of a post the owner chose to amplify is better than a bare link,
+	// but `mirror: excerpt` is what says so and the public feed reads it. We
+	// do not call a clipped body whole.
+	if m.Kind == linkPost && xLooksClipped(Text(m.body)) {
+		ref.partial = true
+	}
 	return s.CurateExternal(ctx, ref, note)
 }
 
