@@ -562,6 +562,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/consume/curate-url", s.handleConsumeCurateURL)
 	mux.HandleFunc("POST /api/consume/item/{id}/curate", s.handleConsumeCurate)
 	mux.HandleFunc("POST /api/consume/item/{id}/uncurate", s.handleConsumeUncurate)
+	// edit the note on an ALREADY curated piece, by note path — the curated
+	// panel audits notes, some of which no live item stands behind.
+	mux.HandleFunc("POST /api/consume/curated/note", s.handleConsumeCuratedNote)
 
 	// PORTALS — external realms (ClickUp, Benchling, calendar, the engine's LLM
 	// conduits, docusign-v2) as one panel: list, (re)connect via pasted key, test,

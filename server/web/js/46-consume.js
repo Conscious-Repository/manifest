@@ -626,14 +626,20 @@ function consumeCuratedEditNote(en, row) {
   input.value = en.note || "";
   const save = async () => {
     const note = input.value.trim();
-    // ⚠ The endpoint treats an empty note as "keep what's there" — that is
-    // what stops a bare re-curate from erasing a note. So clearing one is a
-    // vault edit, and a silent no-op here must not be reported as "saved".
-    if (!note && en.note) {
-      showToast("an empty save keeps the note — to clear it, edit the note file in your vault");
+    // ⚠ An empty save is refused, here and at the endpoint: clearing a note
+    // deletes the owner's own words, which is a vault edit rather than a save,
+    // and a silent no-op must not be reported as "saved" either.
+    if (!note) {
+      showToast(en.note
+        ? "an empty save keeps the note — to clear it, edit the note file in your vault"
+        : "type a note, or cancel");
       return;
     }
-    if (!(await consumePost(`/api/consume/item/${encodeURIComponent(en.itemId)}/curate`, { note }))) return;
+    // The curated panel edits NOTES, not items: an entry curated from a pasted
+    // link or an external bridge carries an `ext-…` item id no live store
+    // holds, and the item route answered `no item "ext-…"`. The note's path is
+    // the identity the projection actually names.
+    if (!(await consumePost("/api/consume/curated/note", { path: en.path, item: en.itemId, note }))) return;
     showToast("note saved");
     await loadConsumeCurated();
     renderConsume();

@@ -499,3 +499,83 @@ func TestConsumeSiteSignInNeverEchoesTheCookie(t *testing.T) {
 		t.Errorf("sign-in survived removal: %+v", after.Sites)
 	}
 }
+
+// The curated panel's "edit note" edits a NOTE, by path. The regression it
+// covers: entries whose `item:` id is an `ext-…` no live store holds — a
+// pasted link, a one-off, a paper — failed with `no item "ext-…"` because the
+// panel posted to the item's curate route.
+func TestConsumeCuratedNoteEditsANoteWithNoLiveItem(t *testing.T) {
+	h := newConsumeHarness(t)
+	const rel = "extrinsic/sub-millivolt-voltage-imaging.md"
+	const itemID = "ext-sub-millivolt-voltage-imaging-reveals-ga-19621d17"
+	const body = `---
+categories: [articles]
+item: ` + itemID + `
+source: Nature Communications
+url: https://www.nature.com/articles/s41467-026-1
+note: the first pass
+curated: 2026-08-15
+---
+
+#article
+
+# Sub-millivolt voltage imaging
+
+The abstract, mirrored, plus what the owner wrote underneath it.
+`
+	if err := os.MkdirAll(filepath.Join(h.vault, "extrinsic"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.vault, rel), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The old route stays what it is: an item route, for items. Nothing here
+	// pretends an id the store never held resolves.
+	if w := h.do(t, "POST", "/api/consume/item/"+itemID+"/curate", `{"note":"x"}`); w.Code == http.StatusOK {
+		t.Fatalf("the item curate route accepted %q", itemID)
+	}
+
+	w := h.do(t, "POST", "/api/consume/curated/note",
+		`{"path":"`+rel+`","item":"`+itemID+`","note":"this is the v2 of a voltage report"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("curated note edit: %d %s", w.Code, w.Body.String())
+	}
+	var out struct {
+		OK   bool   `json:"ok"`
+		Path string `json:"path"`
+		Note string `json:"note"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.OK || out.Path != rel || out.Note != "this is the v2 of a voltage report" {
+		t.Fatalf("answer = %+v", out)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(h.vault, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := string(raw)
+	if !strings.Contains(after, "note: this is the v2 of a voltage report") || strings.Contains(after, "the first pass") {
+		t.Fatalf("note not replaced:\n%s", after)
+	}
+	if !strings.Contains(after, "The abstract, mirrored, plus what the owner wrote underneath it.") {
+		t.Fatalf("body changed:\n%s", after)
+	}
+
+	// The panel reads the new note back from the projection it renders.
+	list := h.do(t, "GET", "/api/consume/curated", "")
+	if !strings.Contains(list.Body.String(), "this is the v2 of a voltage report") {
+		t.Fatalf("curated list stale: %s", list.Body.String())
+	}
+
+	// A path outside the projection is refused, and writes nothing.
+	for _, p := range []string{"extrinsic/../secrets/keys.md", "private/journal.md", "extrinsic/missing.md"} {
+		bad := h.do(t, "POST", "/api/consume/curated/note", `{"path":"`+p+`","note":"sneaky"}`)
+		if bad.Code == http.StatusOK {
+			t.Errorf("edited %q", p)
+		}
+	}
+}

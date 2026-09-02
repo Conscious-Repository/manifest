@@ -238,6 +238,35 @@ func (s *Server) handleConsumeUncurate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// handleConsumeCuratedNote — "edit note" in the curated panel.
+//
+// Deliberately NOT /api/consume/item/{id}/curate. That route resolves a live
+// store item, and the curated panel lists NOTES: a note curated from a pasted
+// link or an external bridge carries an `item:` id no store holds, so editing
+// its note through the item route answered `no item "ext-…"`. The identity
+// here is the note's path, which is what the projection names.
+func (s *Server) handleConsumeCuratedNote(w http.ResponseWriter, r *http.Request) {
+	if s.consume == nil {
+		http.NotFound(w, r)
+		return
+	}
+	var body struct {
+		Path string `json:"path"`
+		Item string `json:"item"`
+		Note string `json:"note"`
+	}
+	if err := decode(r, &body); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	entry, err := s.consume.UpdateCuratedNote(body.Item, body.Path, body.Note)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "path": entry.Path, "note": entry.Note})
+}
+
 // handleConsumeCurated — the private mirror of exactly what the public feed
 // serves, so the owner can audit it without leaving the app.
 func (s *Server) handleConsumeCurated(w http.ResponseWriter, r *http.Request) {

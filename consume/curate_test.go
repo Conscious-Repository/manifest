@@ -562,3 +562,106 @@ Source: [@melissa](https://x.com/melissa/status/2091877437294666036)
 		t.Fatalf("backfill is not a fixpoint; second run changed %d notes", n)
 	}
 }
+
+// The curated panel's "edit note" must work on a note whose `item:` id no live
+// store holds — an `ext-…` from a pasted link, a one-off, a paper. That is the
+// bug: routing it through Curate answered `no item "ext-…"`.
+func TestUpdateCuratedNoteOnNoteWithNoLiveItem(t *testing.T) {
+	v := newVault(t)
+	s, _ := svcWithItem(t, v)
+	const rel = "extrinsic/sub-millivolt-voltage-imaging.md"
+	const body = `---
+categories: [articles]
+item: ext-sub-millivolt-voltage-imaging-reveals-ga-19621d17
+source: Nature Communications
+url: https://www.nature.com/articles/s41467-026-1
+note: the first pass
+curated: 2026-08-15
+---
+
+#article
+
+# Sub-millivolt voltage imaging
+
+The abstract, mirrored, plus what the owner wrote underneath it.
+`
+	if err := v.io().Write(rel, []byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	s.invalidateCurated()
+
+	// The item route cannot serve this: there is no such item, and pretending
+	// otherwise would erase the distinction the note path exists to carry.
+	if _, err := s.Curate(context.Background(), "ext-sub-millivolt-voltage-imaging-reveals-ga-19621d17", "x"); err == nil {
+		t.Fatal("Curate accepted an id no store holds")
+	}
+
+	entry, err := s.UpdateCuratedNote("ext-sub-millivolt-voltage-imaging-reveals-ga-19621d17", rel, "this is the v2 of a voltage report")
+	if err != nil {
+		t.Fatalf("UpdateCuratedNote: %v", err)
+	}
+	if entry.Note != "this is the v2 of a voltage report" {
+		t.Errorf("entry note = %q", entry.Note)
+	}
+	after := v.read(t, rel)
+	if !strings.Contains(after, "note: this is the v2 of a voltage report") {
+		t.Errorf("note not written:\n%s", after)
+	}
+	if strings.Contains(after, "the first pass") {
+		t.Errorf("old note survived:\n%s", after)
+	}
+	// The body — the mirror and the owner's own words — is untouched.
+	if !strings.Contains(after, "The abstract, mirrored, plus what the owner wrote underneath it.") ||
+		!strings.Contains(after, "# Sub-millivolt voltage imaging") {
+		t.Errorf("body changed:\n%s", after)
+	}
+	if !strings.Contains(after, "curated: 2026-08-15") {
+		t.Errorf("curated date changed:\n%s", after)
+	}
+	// And it reads back through the projection the panel renders.
+	got := s.Curated()
+	if len(got) != 1 || got[0].Note != "this is the v2 of a voltage report" {
+		t.Errorf("projection stale: %+v", got)
+	}
+}
+
+// A note the projection does not list is not editable here, whatever the path
+// says — outside extrinsic/, climbing out of it, or simply not curated.
+func TestUpdateCuratedNoteRefusesWhatIsNotCurated(t *testing.T) {
+	v := newVault(t)
+	s, _ := svcWithItem(t, v)
+	if err := v.io().Write("extrinsic/read-not-curated.md",
+		[]byte("---\ncategories: [articles]\nurl: https://e.com/1\n---\n# Read, not curated\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.io().Write("extrinsic/curated.md",
+		[]byte("---\ncategories: [articles]\nitem: ext-curated-1\nurl: https://e.com/2\ncurated: 2026-08-24\n---\n# Curated\n")); err != nil {
+		t.Fatal(err)
+	}
+	s.invalidateCurated()
+
+	for _, rel := range []string{
+		"extrinsic/read-not-curated.md",     // not curated
+		"extrinsic/../secrets/passwords.md", // climbing out
+		"../extrinsic/curated.md",           // climbing out the other way
+		"private/journal.md",                // another tier entirely
+		"extrinsic/nested/curated.md",       // not directly under extrinsic/
+		"extrinsic/missing.md",              // no such note
+		"",                                  // nothing at all
+	} {
+		if _, err := s.UpdateCuratedNote("", rel, "sneaky"); err == nil {
+			t.Errorf("edited %q", rel)
+		}
+	}
+	// An empty note is a delete of the owner's words, not a save.
+	if _, err := s.UpdateCuratedNote("", "extrinsic/curated.md", "  "); err == nil {
+		t.Error("an empty note was accepted")
+	}
+	// And a stale id from a list that has moved on does not write.
+	if _, err := s.UpdateCuratedNote("some-other-item", "extrinsic/curated.md", "hi"); err == nil {
+		t.Error("a mismatched item id was accepted")
+	}
+	if writes := v.writes; writes != 3 {
+		t.Errorf("refusals wrote to the vault: %d writes (want the 3 setup writes)", writes)
+	}
+}

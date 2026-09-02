@@ -1092,3 +1092,84 @@ func SameLink(a, b string) bool {
 	}
 	return curateKey(a) == curateKey(b)
 }
+
+// UpdateCuratedNote edits the `note:` line of one curated note and nothing
+// else.
+//
+// It exists because Curate is the wrong verb for this. Curate resolves an
+// ACTIVE store item — it may fetch the whole piece, rebuild the body, restamp
+// the mirror — and the curated panel lists notes, not items. A note curated
+// from a pasted link, an external bridge or a subscription long since retired
+// carries an `item:` id (`ext-…`) that no store holds, so routing the panel's
+// "edit note" through Curate failed with `no item "ext-…"` for exactly the
+// entries the panel exists to audit. The identity here is therefore the note's
+// PATH, which is the thing the projection actually names.
+//
+// The write is the narrowest one in this file: one frontmatter key, through
+// the same vault writer curation uses, on a note the projection already agrees
+// is curated. The body — the mirrored article and whatever the owner wrote
+// under it — is never touched.
+func (s *Service) UpdateCuratedNote(itemID, path, note string) (CuratedEntry, error) {
+	if s.writeVault == nil {
+		return CuratedEntry{}, errNoCurateCapability
+	}
+	note = collapseSpaces(strings.ReplaceAll(strings.TrimSpace(note), "\n", " "))
+	if note == "" {
+		// Clearing a note is a deletion of the owner's words, and the curate
+		// path has always treated an empty note as "keep what's there". Saying
+		// so is better than a silent no-op the panel would report as saved.
+		return CuratedEntry{}, errors.New("a note is required — to clear one, edit the note in your vault")
+	}
+	rel := strings.TrimSpace(path)
+	if !curatedNotePathOK(rel) {
+		return CuratedEntry{}, fmt.Errorf("not a curated note %q", path)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// The projection is the authority on what may be edited here: a path it
+	// does not list is either outside extrinsic/, not an article, or not
+	// curated, and all three are the same refusal.
+	var entry CuratedEntry
+	found := false
+	for _, e := range s.curatedEntries() {
+		if e.Path == rel {
+			entry, found = e, true
+			break
+		}
+	}
+	if !found {
+		return CuratedEntry{}, fmt.Errorf("not a curated note %q", path)
+	}
+	// The id is a cross-check, never the lookup — the panel sends what it
+	// rendered, and a mismatch means the list it rendered from has moved on.
+	if itemID != "" && entry.ItemID != "" && entry.ItemID != itemID {
+		return CuratedEntry{}, fmt.Errorf("%q is not the note at %q — reload the curated list", itemID, rel)
+	}
+
+	raw, err := s.readVault(rel)
+	if err != nil {
+		return CuratedEntry{}, err
+	}
+	content := setFrontmatter(string(raw), "note", yamlScalar(note))
+	if err := s.writeVault(rel, []byte(content)); err != nil {
+		return CuratedEntry{}, err
+	}
+	s.invalidateCurated()
+	out, _ := parseCurated(rel, content)
+	return out, nil
+}
+
+// curatedNotePathOK is the path guard: a vault-relative markdown note directly
+// under extrinsic/, with nothing that could climb out of it. The projection
+// check above would refuse a stray path anyway; this refuses it before a read.
+func curatedNotePathOK(rel string) bool {
+	if rel == "" || !strings.HasSuffix(rel, ".md") {
+		return false
+	}
+	if strings.Contains(rel, "..") || strings.Contains(rel, `\`) || strings.HasPrefix(rel, "/") {
+		return false
+	}
+	base, ok := strings.CutPrefix(rel, "extrinsic/")
+	return ok && base != "" && !strings.Contains(base, "/")
+}
