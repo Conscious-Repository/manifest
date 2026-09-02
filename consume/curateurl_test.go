@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"manifest/mdfm"
 )
 
 // CURATING A PASTED LINK, end to end: the address → the ladder → the same
@@ -316,6 +318,140 @@ func TestCurateJournalPageWithEmbeddedDOI(t *testing.T) {
 	}
 	if entry.URL != "https://www.nature.com/articles/s41467-026-76758-z" {
 		t.Errorf("the <link> should stay the page the owner read: %q", entry.URL)
+	}
+}
+
+// ⚠ THE OWNER'S RULE. A curated paper carries the source's own material and
+// the owner's commentary — nothing a machine wrote about it. The bridge's card
+// arrives with a `why` (a scout's referring sentence); it used to lead the note
+// body, one paragraph above the abstract, where it read as if he had written
+// it. It must not appear in the note at all.
+func TestCuratedPaperBodyExcludesTheCardsWhy(t *testing.T) {
+	const doi = "10.1038/s41467-026-76758-z"
+	const why = "A primary paper directly on the central coupling bet, shown working in a device."
+	cr := stubCrossref(t, doi)
+
+	v := newVault(t)
+	s := curateSvc(t, v)
+	s.crossref = cr.URL
+
+	entry, err := s.CurateExternal(context.Background(), ExternalRef{
+		ID: "card-paper-1", Title: "Sub-millivolt Signalling in Cortical Microcircuits",
+		URL: "https://doi.org/" + doi, Source: "Nature Communications",
+		Fallback: why,
+	}, "collaborating on the same question with patterned fields")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := v.read(t, entry.Path)
+	if strings.Contains(note, why) {
+		t.Errorf("the scout's sentence reached the paper note:\n%s", note)
+	}
+	// The registry's half, and only it, under the heading.
+	_, body := mdfm.Split(note)
+	head, _, ok := strings.Cut(body, paperMarker)
+	if !ok {
+		t.Fatalf("no crossref marker in the note:\n%s", note)
+	}
+	want := "#article\n\n# Sub-millivolt Signalling in Cortical Microcircuits\n\n"
+	if strings.TrimLeft(head, "\n") != want {
+		t.Errorf("prose above the marker in a fresh paper note: %q", head)
+	}
+	for _, w := range []string{"## Abstract", "## Citation", "Source: ["} {
+		if !strings.Contains(note, w) {
+			t.Errorf("paper note missing %q:\n%s", w, note)
+		}
+	}
+	// The owner's commentary is a field, and it is projected as one.
+	if !strings.Contains(note, "note: collaborating on the same question with patterned fields") {
+		t.Errorf("the owner's note is not in the frontmatter:\n%s", note)
+	}
+	if entry.Note != "collaborating on the same question with patterned fields" {
+		t.Errorf("entry.Note: %q", entry.Note)
+	}
+}
+
+// The other half of the same rule: prose the OWNER wrote above the marker is
+// his, and re-curating the paper leaves it exactly where he put it.
+func TestRecuratePaperKeepsTheOwnersProse(t *testing.T) {
+	const doi = "10.1038/s41467-026-76758-z"
+	cr := stubCrossref(t, doi)
+
+	v := newVault(t)
+	s := curateSvc(t, v)
+	s.crossref = cr.URL
+
+	entry, err := s.CurateURL(context.Background(), "https://doi.org/"+doi, "first take")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const mine = "I read this the week Nirosha sent it, and the device is the interesting part."
+	edited := strings.Replace(v.read(t, entry.Path), paperMarker, mine+"\n\n"+paperMarker, 1)
+	if err := v.io().Write(entry.Path, []byte(edited)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CurateURL(context.Background(), "https://doi.org/"+doi, "second take"); err != nil {
+		t.Fatal(err)
+	}
+	note := v.read(t, entry.Path)
+	if !strings.Contains(note, mine) {
+		t.Fatalf("re-curating took the owner's writing with it:\n%s", note)
+	}
+	if !strings.Contains(note, "note: second take") {
+		t.Errorf("the note field was not refreshed:\n%s", note)
+	}
+}
+
+// ⚠ THE LIVE NOTE. The macrophage paper was curated from a FEED card before
+// the rule above existed, so its body carries one generated sentence. The
+// repair is a one-line deletion — this pins that the deletion STICKS (nothing
+// puts the sentence back) and that it costs nothing else in the note.
+func TestMacrophageNoteRepairSticks(t *testing.T) {
+	const slop = "A primary paper directly on AION's central coupling bet — external acoustic fields producing specific, reversible biological change (M-phenotype switch) — the exact \"coupling\" challenge Aion chose at founding, shown working in a controllable device."
+	const link = "https://onlinelibrary.wiley.com/doi/10.1002/inmd.70076"
+	const source = "Interdisciplinary Medicine (Wiley), Jan 6 2026"
+	const owner = "Working on a collaboration to achieve the same primary goal with Nirosha Murugan using patterned magnetic fields--a less invasive modality than ultrasound for patient user experience."
+	meta := PaperMeta{
+		DOI:       "10.1002/inmd.70076",
+		Title:     "Sequential ultrasound‐driven dynamic control of macrophage polarization combined with hydrogel for mechano‐chemical synergistic tissue repair.",
+		Authors:   []string{"Fulong Man", "Kun Wang", "Zichen Yang"},
+		Journal:   "Interdisciplinary Medicine",
+		Published: "2026-01-06",
+		Abstract:  "Precise regulation of macrophage fate is crucial for effective management of inflammation.",
+	}
+	const title = "Ultrasound can remotely and reversibly steer macrophage phenotypic fate"
+	live := "---\ncategories: [articles]\nsource: \"" + source + "\"\nurl: " + link +
+		"\ncurated: 2026-08-27\nitem: ext-ultrasound-driven-macrophage-fate-switch-7d1c92b0\nmirror: full\n" +
+		"note: " + owner + "\n---\n\n#article\n\n# " + title + "\n\n" + slop + "\n\n" +
+		paperMarker + "\n\n## Abstract\n\n" + meta.Abstract + "\n"
+
+	// Curating again does NOT delete it on its own: above the marker is the
+	// owner's half, and no heuristic here decides what he did or didn't write.
+	if got := applyPaper(live, meta, title, source, link); !strings.Contains(got, slop) {
+		t.Fatalf("re-curation deleted above-marker prose on its own:\n%s", got)
+	}
+	// The repair itself: drop the line, keep the note.
+	repaired := strings.Replace(live, slop+"\n\n", "", 1)
+	got := applyPaper(repaired, meta, title, source, link)
+	if strings.Contains(got, slop) {
+		t.Fatalf("the generated sentence came back:\n%s", got)
+	}
+	for _, want := range []string{
+		"note: " + owner,
+		"url: " + link,
+		"item: ext-ultrasound-driven-macrophage-fate-switch-7d1c92b0",
+		"#article\n\n# " + title + "\n\n" + paperMarker,
+		"## Abstract",
+		"## Citation",
+		"Source: [" + source + "](" + link + ")",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the repair cost the note %q:\n%s", want, got)
+		}
+	}
+	// And it is a fixpoint: curating the repaired note again changes nothing.
+	if again := applyPaper(got, meta, title, source, link); again != got {
+		t.Errorf("re-curating the repaired note changed it:\n%s", again)
 	}
 }
 

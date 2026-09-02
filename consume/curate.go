@@ -347,8 +347,13 @@ func (s *Service) buildNote(it Item, sub Subscription, note string, now time.Tim
 	}
 
 	if paper != nil {
+		// No leading prose. A fresh paper note is the registry's record and
+		// nothing else — the referring surface's sentence about the paper is
+		// machine-written, and the owner's own words reach the note through
+		// `note:` (frontmatter, rendered as his commentary), never as body
+		// text that reads like the paper's.
 		return w.String(strings.TrimRight(
-			paperNoteBody("", it.Title, paperWhy(it), *paper,
+			paperNoteBody("", it.Title, *paper,
 				firstNonEmpty(it.Source, sub.Title), it.URL), "\n"))
 	}
 
@@ -455,8 +460,14 @@ func (s *Service) mirrorFor(it Item, sub Subscription) string {
 //
 // A paper's note has two halves, and the split is the whole point:
 //
-//	above the marker   the owner's — his heading, the sentence he curated it for
+//	above the marker   the owner's — his heading, and only prose he wrote
 //	below the marker   the registry's — abstract, citation, source link
+//
+// Above the marker is OWNER-AUTHORED ONLY. Nothing generated goes there: not a
+// scout card's `why`, not a digest sentence, not a publisher's blurb. A note
+// the owner has written nothing into leaves that half blank, which is what a
+// fresh paper note is. His commentary on a piece lives in `note:` — one field,
+// one meaning, and the public feed renders it as his.
 //
 // Everything below paperMarker is machine-owned and rewritten on every curate;
 // everything above it is never touched. That is the same fixpoint discipline
@@ -473,25 +484,14 @@ const paperMarker = "<!-- crossref -->"
 // replaces it; below it, it is prose and it is kept.
 const paperKeepMax = 1200
 
-// paperWhy is the leading prose of a fresh paper note.
-//
-// The bridge's referring sentence (a scout card's `why`) is the reason this
-// paper is in the feed and belongs at the top. A LANE item's excerpt is the
-// publisher's own summary of the paper — which is the abstract, said worse, and
-// the abstract is already below. An item with no body is the first case.
-func paperWhy(it Item) string {
-	if strings.TrimSpace(it.Body) != "" {
-		return ""
-	}
-	return strings.TrimSpace(it.Excerpt)
-}
-
 // paperNoteBody renders a paper note's body, preserving the owner's half.
 //
-// prior is the existing note body ("" for a fresh note). why is the referring
-// sentence, used only when there is no prior note to preserve.
-func paperNoteBody(prior, title, why string, m PaperMeta, source, link string) string {
+// prior is the existing note body ("" for a fresh note). A fresh note gets no
+// prose above the marker at all; the only prose that ever appears there is
+// what the owner already wrote, carried across from prior.
+func paperNoteBody(prior, title string, m PaperMeta, source, link string) string {
 	section := paperSection(m, source, link)
+	owner := ""
 	if strings.TrimSpace(prior) != "" {
 		if i := strings.Index(prior, paperMarker); i >= 0 {
 			return strings.TrimRight(prior[:i], " \t\n") + "\n\n" + section + "\n"
@@ -501,14 +501,14 @@ func paperNoteBody(prior, title, why string, m PaperMeta, source, link string) s
 		if h := headingOf(prior); h != "" {
 			title = h
 		}
-		why = stripSourceFooter(stripLeadingHeading(prior))
-		if len([]rune(why)) > paperKeepMax {
-			why = ""
+		owner = stripSourceFooter(stripLeadingHeading(prior))
+		if len([]rune(owner)) > paperKeepMax {
+			owner = ""
 		}
 	}
 	var b strings.Builder
 	b.WriteString("#article\n\n# " + strings.TrimSpace(title) + "\n\n")
-	if w := strings.TrimSpace(why); w != "" {
+	if w := strings.TrimSpace(owner); w != "" {
 		b.WriteString(w + "\n\n")
 	}
 	b.WriteString(section + "\n")
@@ -574,7 +574,7 @@ func applyPaper(content string, m PaperMeta, title, source, link string) string 
 		content = setFrontmatter(content, "published", m.Published)
 	}
 	_, body := mdfm.Split(content)
-	return replaceBody(content, paperNoteBody(body, title, "", m, source, link))
+	return replaceBody(content, paperNoteBody(body, title, m, source, link))
 }
 
 // replaceBody swaps a note's body, leaving its frontmatter block byte-for-byte

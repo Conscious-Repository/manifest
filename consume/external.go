@@ -41,7 +41,8 @@ func ExternalItemID(id string) string {
 
 // ExternalRef is a piece of writing noticed somewhere other than the lane.
 // Fallback is the referring surface's own words about it (a feed card's `why`)
-// — used as the body only when the article itself cannot be fetched.
+// — used as the body only when the article itself cannot be fetched, and never
+// for a paper, whose note is the registry's record alone.
 type ExternalRef struct {
 	ID          string
 	Title       string
@@ -115,7 +116,10 @@ func (s *Service) CurateExternal(ctx context.Context, ref ExternalRef, note stri
 		}
 	}
 	if isPaper {
-		it.Excerpt = collapseSpaces(strings.TrimSpace(ref.Fallback))
+		// Fallback stays out of it. A card's `why` is the SCOUT's sentence
+		// about the paper, not the paper and not the owner — it used to lead
+		// the note body and read like his commentary. The registry's abstract
+		// is what the note says; his own words reach it through `note:`.
 		return s.writeCurated(it, sub, note, paper)
 	}
 	if body, ok := s.fetchExternal(ctx, it.URL, ref); ok {
