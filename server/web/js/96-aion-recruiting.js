@@ -1,0 +1,506 @@
+// ---- AION / RECRUITING ----
+// The private scout board over system/aion/recruiting/. It fetches routes
+// outside the AionLive contract that portal.aion.bio renders, and it is
+// deliberately never mounted on the portal listener: these records carry
+// candidate PII.
+//
+// Shape follows 94-aion-fundraising.js exactly — module-level state, an async
+// loader with {cache: "no-store"}, an entry that paints "loading…" then
+// re-renders, and an in-place paint() for filter/search so a render never
+// replaces the focused input node.
+let recCache = null;      // {roles, candidates, seeds, network, stages, …}
+let recRole = null;       // selected role slug, null = all lanes
+let recStage = "active";  // stage filter chip
+let recSel = null;        // inspector selection (candidate id)
+let recQuery = "";        // search box
+let recSeedsOpen = false; // seeds rail expanded
+
+async function loadRecruiting() {
+  try {
+    const r = await fetch("/api/aion/recruiting", { cache: "no-store" });
+    if (!r.ok) throw new Error(await r.text());
+    recCache = await r.json();
+  } catch (_) {
+    recCache = { roles: [], candidates: [], seeds: [], network: { people: [], edges: [] }, stages: [] };
+  }
+}
+
+async function recPost(url, body, okMsg) {
+  try {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    recCache = await r.json();
+    if (okMsg) showToast(okMsg);
+    renderAion();
+  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+}
+
+async function renderAionRecruiting(host) {
+  host.innerHTML = "";
+  if (!recCache) {
+    host.append(emptyRow("loading…"));
+    await loadRecruiting();
+    if (aionMode === "recruiting") renderAion();
+    return;
+  }
+
+  const wrap = el("div", "aion-backlog rec-shell");
+  const rail = el("nav", "rec-rail");
+  const main = el("div", "aion-list rec-main");
+  const inspector = el("aside", "aion-inspector rec-inspector");
+  wrap.append(rail, main, inspector);
+  host.append(wrap);
+
+  // toolbar — search + stage chips filter IN PLACE, so the caret stays in the
+  // search field between keystrokes
+  const bar = el("div", "rec-toolbar");
+  const search = el("input", "pp-in rec-search");
+  search.type = "search";
+  search.placeholder = "search names, orgs, evidence…";
+  search.value = recQuery;
+  search.oninput = () => { recQuery = search.value; paint(); };
+  bar.append(search);
+  const chips = {};
+  [["active", "ACTIVE"], ["all", "ALL"], ["shortlist", "SHORTLIST"], ["archived", "ARCHIVED"]]
+    .forEach(([key, label]) => {
+      const b = el("button", "filter-chip", label);
+      b.onclick = () => { recStage = key; paint(); };
+      chips[key] = b;
+      bar.append(b);
+    });
+  main.append(bar);
+
+  main.append(ghostInput("＋ candidate url, name, or note", "aion-add rec-add", (text) =>
+    recPost("/api/aion/recruiting/candidate", { text, role: recRoleId() }, "candidate added")));
+
+  const board = el("div", "rec-board");
+  main.append(board);
+
+  const paint = () => {
+    Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", recStage === k));
+    paintRail(rail);
+    paintBoard(board);
+    paintInspector(inspector);
+  };
+  paint();
+}
+
+// recRoleId is the role a new candidate is filed under: the selected lane, or
+// nothing when the board is showing every lane.
+function recRoleId() {
+  if (!recRole) return "";
+  const role = (recCache.roles || []).find((r) => r.slug === recRole);
+  return role ? role.id || "role/" + role.slug : "";
+}
+
+// ---- roles rail ----
+
+function paintRail(rail) {
+  rail.innerHTML = "";
+  const roles = recCache.roles || [];
+  const all = el("button", "rec-role" + (recRole ? "" : " on"));
+  all.append(el("span", "rec-role-name", "all roles"));
+  all.append(el("span", "rec-role-count", String(roles.reduce((n, r) => n + (r.openCount || 0), 0))));
+  all.onclick = () => { recRole = null; renderAion(); };
+  rail.append(all);
+
+  roles.forEach((role) => {
+    const b = el("button", "rec-role" + (recRole === role.slug ? " on" : ""));
+    b.append(el("span", "rec-role-name", role.title || role.slug));
+    // the count comes from the SAME predicate the board filters on — one
+    // derivation, so the badge and the page cannot disagree
+    b.append(el("span", "rec-role-count", String(role.openCount || 0)));
+    b.onclick = () => { recRole = recRole === role.slug ? null : role.slug; renderAion(); };
+    rail.append(b);
+  });
+  if (!roles.length) rail.append(emptyRow("no roles yet"));
+
+  rail.append(paintSeeds());
+}
+
+function paintSeeds() {
+  const seeds = recCache.seeds || [];
+  const box = el("section", "rec-seeds");
+  const head = el("button", "rec-seeds-head");
+  head.append(el("span", "sec-caret", recSeedsOpen ? "▾" : "▸"));
+  head.append(el("span", "micro-label", "SEEDS"));
+  head.append(el("span", "rec-role-count", String(seeds.length)));
+  head.onclick = () => { recSeedsOpen = !recSeedsOpen; renderAion(); };
+  box.append(head);
+  if (!recSeedsOpen) return box;
+
+  const list = el("div", "rec-seed-list");
+  (recCache.seedClasses || []).forEach((cls) => {
+    const inClass = seeds.filter((s) => s.class === cls);
+    if (!inClass.length) return;
+    list.append(el("div", "micro-label rec-seed-class", cls));
+    inClass.forEach((s) => {
+      const row = el("div", "rec-seed");
+      if (s.url) {
+        const a = linkEl(s.name, s.url);
+        a.className = "rec-seed-name";
+        row.append(a);
+      } else {
+        row.append(el("span", "rec-seed-name", s.name));
+      }
+      if (s.org) row.append(el("span", "rec-seed-sub", s.org));
+      list.append(row);
+    });
+  });
+  if (!seeds.length) list.append(emptyRow("no seeds yet"));
+  box.append(list);
+
+  // a seed is typed as `class: name` so all four D11 classes share one input
+  box.append(ghostInput("＋ seed: person, lab, company, repo, or paper", "aion-add rec-seed-add", (raw) => {
+    const at = raw.indexOf(":");
+    const cls = at > 0 ? raw.slice(0, at).trim().toLowerCase() : "";
+    const name = at > 0 ? raw.slice(at + 1).trim() : raw.trim();
+    if (!cls) { showToast("prefix the class, e.g. lab: WashU BME"); return; }
+    return recPost("/api/aion/recruiting/seed", { class: cls, name }, "seed added");
+  }));
+  return box;
+}
+
+// ---- candidate board ----
+
+function recVisible(c) {
+  if (recRole) {
+    const role = (recCache.roles || []).find((r) => r.slug === recRole);
+    const want = role ? role.id || "role/" + role.slug : recRole;
+    if (c.role !== want) return false;
+  }
+  const archived = c.stage === "archived";
+  if (recStage === "active" && archived) return false;
+  if (recStage === "all" && archived) return false;
+  if (recStage === "archived" && !archived) return false;
+  if (recStage === "shortlist" && c.stage !== "shortlist") return false;
+  const q = recQuery.trim().toLowerCase();
+  if (!q) return true;
+  const p = c.profile || {};
+  return [c.name, c.stage, p.title, p.org, p.location]
+    .concat((c.evidence || []).map((e) => (e.snippet || "") + " " + (e.url || "")))
+    .join(" ").toLowerCase().includes(q);
+}
+
+function paintBoard(board) {
+  board.innerHTML = "";
+  const rows = (recCache.candidates || []).filter(recVisible);
+  if (!rows.length) { board.append(emptyRow("no candidates match.")); return; }
+  const stages = (recCache.stages || []).filter((st) => rows.some((c) => c.stage === st));
+  stages.forEach((stage) => {
+    const lane = el("section", "rec-lane");
+    const head = el("div", "aion-sec-label");
+    head.append(el("span", "aion-sec-title", stage));
+    head.append(el("span", "aion-sec-count", String(rows.filter((c) => c.stage === stage).length)));
+    lane.append(head);
+    rows.filter((c) => c.stage === stage).forEach((c) => lane.append(recCard(c)));
+    board.append(lane);
+  });
+}
+
+function recCard(c) {
+  const p = c.profile || {};
+  const sub = [p.title, p.org, p.location].filter(Boolean).join(" · ");
+  const card = cardShell({
+    kind: "rec-card" + (recSel === c.id ? " sel" : ""),
+    chips: [recGateChip(c), c.evidence && c.evidence.length ? el("span", "micro-label rec-ev", c.evidence.length + " EV") : null],
+    title: c.name,
+    date: c.created,
+    meta: sub || null,
+  });
+  card.onclick = () => { recSel = recSel === c.id ? null : c.id; renderAion(); };
+  return card;
+}
+
+// The gate chip renders the D6 state and says WHICH musts are unevidenced —
+// a chip that only said "blocked" would send the owner back to the record to
+// find out why.
+function recGateChip(c) {
+  const g = c.gate || {};
+  let label = "unscored";
+  let cls = "rec-gate";
+  if (g.passed && g.overridden) { label = "overridden"; cls += " overridden"; }
+  else if (g.passed) { label = "gate ok"; cls += " ok"; }
+  else if (g.disqualifiers && g.disqualifiers.length) { label = "disqualified"; cls += " blocked"; }
+  else if (g.musts) { label = (g.satisfied || 0) + "/" + g.musts + " musts"; }
+  const chip = el("span", "micro-label " + cls, label);
+  if (g.reason) chip.title = g.reason;
+  return chip;
+}
+
+// ---- inspector ----
+// Sections in the order the card has to answer: fit + evidence → network
+// paths → next action → outreach → ashby state.
+
+function paintInspector(host) {
+  host.innerHTML = "";
+  const c = (recCache.candidates || []).find((x) => x.id === recSel);
+  if (!c) {
+    host.append(el("div", "aion-insp-empty", "select a candidate — edits save as you go"));
+    return;
+  }
+  const head = el("div", "aion-insp-head");
+  head.append(el("span", "aion-insp-label", "Candidate"));
+  const x = el("button", "aion-insp-x", "✕");
+  x.onclick = () => { recSel = null; renderAion(); };
+  head.append(x);
+  host.append(head);
+
+  const patch = (set) => recPost("/api/aion/recruiting/candidate/update/" + c.id, set);
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field rec-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    host.append(f);
+    return node;
+  };
+  const text = (label, key, value) => {
+    const n = el("input", "pp-in rec-in");
+    n.type = "text";
+    n.value = value || "";
+    const old = n.value;
+    n.onblur = () => { if (n.value !== old) patch({ [key]: n.value }); };
+    n.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); n.blur(); } };
+    return field(label, n);
+  };
+
+  const p = c.profile || {};
+  text("name", "name", c.name);
+  const role = el("select", "pp-in rec-in");
+  const none = el("option", "", "—"); none.value = ""; role.append(none);
+  (recCache.roles || []).forEach((r) => {
+    const id = r.id || "role/" + r.slug;
+    const o = el("option", "", r.title || r.slug);
+    o.value = id;
+    o.selected = c.role === id;
+    role.append(o);
+  });
+  role.onchange = () => patch({ role: role.value });
+  field("role", role);
+
+  const stage = el("select", "pp-in rec-in");
+  (recCache.stages || []).filter((st) => st !== "archived").forEach((st) => {
+    const o = el("option", "", st); o.value = st; o.selected = c.stage === st; stage.append(o);
+  });
+  stage.disabled = c.stage === "archived";
+  stage.onchange = () => recPost("/api/aion/recruiting/candidate/stage/" + c.id, { stage: stage.value }, "stage saved");
+  field("stage", stage);
+
+  text("title", "title", p.title);
+  text("org", "org", p.org);
+  text("location", "location", p.location);
+  text("website", "website", p.website);
+  text("linkedin", "linkedin", p.linkedin);
+  text("github", "github", p.github);
+  // contact is manual-only (D15): nothing in this app ever fills these in
+  text("email", "email", p.email);
+  text("phone", "phone", p.phone);
+
+  host.append(recFitSection(c));
+  host.append(recEvidenceSection(c));
+  host.append(recNetworkSection(c));
+  host.append(recNextSection(c));
+  host.append(recOutreachSection(c));
+  host.append(recAshbySection(c));
+
+  const archive = el("button", "aion-insp-del rec-archive",
+    c.stage === "archived" ? "restore candidate" : "archive");
+  archive.onclick = () => {
+    if (c.stage === "archived") {
+      recPost("/api/aion/recruiting/candidate/archive/" + c.id, { archived: false }, "candidate restored");
+      return;
+    }
+    // archiving retains the record but takes it off the board — arm, then
+    // confirm (native confirm() is banned app-wide)
+    const armed = el("button", "aion-insp-del rec-archive armed", "confirm archive?");
+    armed.onclick = () => recPost("/api/aion/recruiting/candidate/archive/" + c.id, { archived: true }, "candidate archived");
+    archive.replaceWith(armed);
+    armed.focus();
+  };
+  host.append(archive);
+}
+
+function recSection(title, summary) {
+  const sec = el("section", "rec-insp-sec");
+  const head = el("div", "aion-sec-label");
+  head.append(el("span", "aion-sec-title", title));
+  if (summary) head.append(el("span", "aion-sec-count", summary));
+  sec.append(head);
+  return sec;
+}
+
+// fit — the role's criteria, each scored against this candidate, with the
+// evidence ids that back the score.
+function recFitSection(c) {
+  const role = (recCache.roles || []).find((r) => (r.id || "role/" + r.slug) === c.role);
+  const g = c.gate || {};
+  const sec = recSection("fit", g.reason || "");
+  if (!role) { sec.append(emptyRow("tether a role to score fit")); return sec; }
+  if (!(role.criteria || []).length) { sec.append(emptyRow("this role has no criteria yet")); return sec; }
+
+  const byCriterion = {};
+  (c.fit || []).forEach((f) => { byCriterion[(f.criterion || "").trim().toLowerCase()] = f; });
+
+  (role.criteria || []).forEach((crit) => {
+    const have = byCriterion[(crit.criterion || "").trim().toLowerCase()] || {};
+    const row = el("div", "rec-fit-row");
+    row.append(el("span", "micro-label rec-class " + crit.class, crit.class));
+    row.append(el("span", "rec-fit-name", crit.criterion));
+    if (crit.class === "disqualifier") {
+      const box = el("input", "rec-fit-present");
+      box.type = "checkbox";
+      box.checked = !!have.present;
+      box.title = "confirmed present";
+      box.onchange = () => recPost("/api/aion/recruiting/candidate/fit/" + c.id,
+        { criterion: crit.criterion, score: "unknown", present: box.checked }, "fit saved");
+      row.append(box);
+      sec.append(row);
+      return;
+    }
+    const score = el("select", "pp-in rec-score");
+    ["unknown", "0", "1", "2", "3", "4", "5"].forEach((v) => {
+      const o = el("option", "", v); o.value = v;
+      o.selected = (have.score || "unknown") === v;
+      score.append(o);
+    });
+    const ev = el("input", "pp-in rec-ev-in");
+    ev.type = "text";
+    ev.placeholder = "ev1, ev2";
+    ev.value = (have.evidence || []).join(", ");
+    const commit = () => recPost("/api/aion/recruiting/candidate/fit/" + c.id, {
+      criterion: crit.criterion,
+      score: score.value,
+      evidence: splitList(ev.value),
+    }, "fit saved");
+    score.onchange = commit;
+    ev.onblur = () => { if ((have.evidence || []).join(", ") !== ev.value) commit(); };
+    ev.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); ev.blur(); } };
+    row.append(score, ev);
+    sec.append(row);
+  });
+
+  // the recorded override (D6) — never silent: it carries a reason and a date
+  const ov = c.override || {};
+  if (ov.by) {
+    const line = el("div", "rec-override");
+    line.append(el("span", "", "overridden by " + ov.by + (ov.at ? " · " + ov.at : "")));
+    if (ov.reason) line.append(el("span", "rec-override-why", ov.reason));
+    const clear = el("button", "pill light", "clear override");
+    clear.onclick = () => recPost("/api/aion/recruiting/candidate/override/" + c.id, { by: "", reason: "" }, "override cleared");
+    line.append(clear);
+    sec.append(line);
+  } else if (!g.passed) {
+    const b = el("button", "pill light", "override gate");
+    b.onclick = () => askText("override the fit gate", "why is this candidate through anyway?", (reason) => {
+      if (!reason.trim()) { showToast("an override needs a reason"); return; }
+      recPost("/api/aion/recruiting/candidate/override/" + c.id,
+        { by: recCache.owner || "benjamin", reason: reason.trim() }, "override recorded");
+    });
+    sec.append(b);
+  }
+  return sec;
+}
+
+// evidence — the citations. A URL, a quote and a date, kept verbatim, because
+// a citation is what outlives every cache and every adapter.
+function recEvidenceSection(c) {
+  const sec = recSection("evidence", String((c.evidence || []).length));
+  (c.evidence || []).forEach((e) => {
+    const row = el("div", "rec-ev-row");
+    const top = el("div", "rec-ev-top");
+    top.append(el("span", "micro-label", e.id));
+    if (e.kind) top.append(el("span", "micro-label rec-ev-kind", e.kind));
+    if (e.url) { const a = linkEl(e.url, e.url); a.className = "rec-ev-url"; top.append(a); }
+    if (e.collected) top.append(el("span", "rec-ev-when", e.collected));
+    row.append(top);
+    if (e.snippet) row.append(el("blockquote", "rec-ev-quote", e.snippet));
+    sec.append(row);
+  });
+  if (!(c.evidence || []).length) sec.append(emptyRow("no evidence yet"));
+
+  const form = el("div", "rec-ev-form");
+  const url = inputEl("https://… (or leave blank for a note)");
+  url.classList.add("rec-in");
+  const kind = selectEl(["publication", "repo", "grant", "affiliation", "page",
+    "conference", "ats_record", "contact_published", "owner_note"]);
+  kind.classList.add("rec-in");
+  const quote = el("textarea", "pp-in rec-in rec-quote");
+  quote.placeholder = "verbatim quote — never paraphrased";
+  const add = el("button", "pill light", "add evidence");
+  add.onclick = () => {
+    if (!url.value.trim() && !quote.value.trim()) { showToast("evidence needs a url or a quote"); return; }
+    recPost("/api/aion/recruiting/candidate/evidence/" + c.id, {
+      url: url.value.trim(), kind: kind.value, snippet: quote.value,
+    }, "evidence captured");
+  };
+  form.append(url, kind, quote, add);
+  sec.append(form);
+  return sec;
+}
+
+// network — intro paths, with inferred edges labelled at the PATH level too,
+// never presented as a real relationship.
+function recNetworkSection(c) {
+  const paths = c.paths || [];
+  const sec = recSection("network", String(paths.length));
+  paths.forEach((p) => {
+    const row = el("div", "rec-path");
+    row.append(el("span", "rec-path-hops", p.path));
+    if (p.kind) row.append(el("span", "micro-label", p.kind));
+    if (p.confidence) row.append(el("span", "rec-path-conf", p.confidence));
+    if (p.inferred) row.append(el("span", "micro-label rec-inferred", "inferred"));
+    sec.append(row);
+  });
+  const edges = ((recCache.network || {}).edges || []).filter((e) => e.to === c.id || e.from === c.id);
+  edges.forEach((e) => {
+    const row = el("div", "rec-edge");
+    row.append(el("span", "rec-edge-ends", e.from + " → " + e.to));
+    row.append(el("span", "micro-label", e.kind));
+    if (e.basis) row.append(el("span", "rec-edge-basis", e.basis));
+    if (e.confidence) row.append(el("span", "rec-path-conf", e.confidence));
+    if (e.inferred) row.append(el("span", "micro-label rec-inferred", "inferred"));
+    sec.append(row);
+  });
+  if (!paths.length && !edges.length) sec.append(emptyRow("no sourced paths yet"));
+  return sec;
+}
+
+function recNextSection(c) {
+  const sec = recSection("next", "");
+  (c.next || []).forEach((n) => {
+    const row = el("div", "rec-next");
+    row.append(el("span", "", n.action));
+    if (n.due) row.append(el("span", "rec-ev-when", "due " + n.due));
+    if (n.owner) row.append(el("span", "micro-label", n.owner));
+    sec.append(row);
+  });
+  if (!(c.next || []).length) sec.append(emptyRow("no next action"));
+  return sec;
+}
+
+// outreach and ashby are read-only placeholders in this phase: drafting and
+// sending are approval-gated (D5) and the private Ashby client is later. The
+// sections exist so the inspector's order is the one the record answers in.
+function recOutreachSection(c) {
+  const sec = recSection("outreach", "");
+  (c.outreach || []).forEach((o) => {
+    const row = el("div", "rec-next");
+    row.append(el("span", "", o.log));
+    if (o.status) row.append(el("span", "micro-label", o.status));
+    if (o.last) row.append(el("span", "rec-ev-when", o.last));
+    sec.append(row);
+  });
+  if (!(c.outreach || []).length) sec.append(emptyRow("outreach is approval-gated — not in this phase"));
+  return sec;
+}
+
+function recAshbySection(c) {
+  const sec = recSection("ashby", "");
+  if (c.ashbyCandidateId) sec.append(el("div", "rec-next", "candidate " + c.ashbyCandidateId));
+  if (c.ashbyApplicationId) sec.append(el("div", "rec-next", "application " + c.ashbyApplicationId));
+  if (!c.ashbyCandidateId && !c.ashbyApplicationId) sec.append(emptyRow("not handed off"));
+  return sec;
+}

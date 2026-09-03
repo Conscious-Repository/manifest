@@ -4,7 +4,7 @@
 // Both this cockpit and portal.aion.bio render the same live projection:
 // owner-authored vault base + attributed team overlay.
 let aionCache = null;
-let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | fundraising | settings
+let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | fundraising | recruiting | settings
 let aionSelId = null;     // inspector selection (redesign §4 — replaces the drawer)
 let aionOrgSel = "people"; // org registry rail selection
 let aionDoneOpen = false;    // backlog: done-tasks section expanded
@@ -30,6 +30,11 @@ function showAion(h) {
   // no-store reload whenever the owner enters the tab so hand-edited Markdown
   // records are visible without coupling them to the global portal poller.
   if (aionMode === "fundraising") frCache = null;
+  // Recruiting lives outside the AionLive revision contract for the same
+  // reason, with higher stakes: these records carry candidate PII and must
+  // never be coupled to the global portal poller. Entering the tab forces a
+  // private no-store reload.
+  if (aionMode === "recruiting") recCache = null;
   els.aionToggle.querySelectorAll(".view-tab").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === aionMode));
   loadAion();
@@ -59,6 +64,7 @@ function renderAion() {
   host.innerHTML = "";
   if (!aionCache) { host.append(emptyRow("aion unavailable")); return; }
   if (aionMode === "fundraising") renderAionFundraising(host);
+  else if (aionMode === "recruiting") renderAionRecruiting(host);
   else if (aionMode === "heuristics") renderAionHeuristics(host);
   else if (aionMode === "vto") renderAionVTO(host);
   else if (aionMode === "goals") renderAionGoals(host);

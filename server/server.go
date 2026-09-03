@@ -38,6 +38,7 @@ import (
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
+	"manifest/recruiting"
 	"manifest/signals"
 	"manifest/spirits"
 	"manifest/tasks"
@@ -138,6 +139,12 @@ type Server struct {
 	// the portal export contract.
 	fundraising     *fundraising.Store
 	fundraisingSync *fundraising.SheetSync
+	// The PRIVATE recruiting scout records (aion-recruiting-scout plan). Held
+	// beside fundraising for the same reason: it is a private domain that
+	// happens to live on the AION surface. It is deliberately NOT reachable
+	// from aionLive or the export contract — these records carry candidate
+	// PII, and the nine-file portal contract gains no input from here.
+	recruiting *recruiting.Store
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
@@ -382,6 +389,24 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /api/aion/fundraising/sync", s.handleFundraisingSyncStatus)
 		mux.HandleFunc("POST /api/aion/fundraising/sync", s.handleFundraisingSyncNow)
 		mux.HandleFunc("POST /api/aion/fundraising/sync/resolve", s.handleFundraisingSyncResolve)
+		// RECRUITING — the private scout board. Same shape as fundraising: a
+		// private domain on the AION surface, wired ONLY when the recruiting
+		// store is present. {id...} multi-segment wildcards throughout,
+		// because a candidate id carries a slash (cand/jane-smith).
+		if s.recruiting != nil {
+			mux.HandleFunc("GET /api/aion/recruiting", s.handleRecruitingView)
+			mux.HandleFunc("GET /api/aion/recruiting/seeds", s.handleRecruitingSeeds)
+			mux.HandleFunc("POST /api/aion/recruiting/seed", s.handleRecruitingSeedAdd)
+			mux.HandleFunc("GET /api/aion/recruiting/roles/{slug}", s.handleRecruitingRole)
+			mux.HandleFunc("PUT /api/aion/recruiting/roles/{slug}/criteria", s.handleRecruitingRoleCriteria)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate", s.handleRecruitingCandidateAdd)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate/update/{id...}", s.handleRecruitingCandidateUpdate)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate/stage/{id...}", s.handleRecruitingCandidateStage)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate/archive/{id...}", s.handleRecruitingCandidateArchive)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate/evidence/{id...}", s.handleRecruitingCandidateEvidence)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate/fit/{id...}", s.handleRecruitingCandidateFit)
+			mux.HandleFunc("POST /api/aion/recruiting/candidate/override/{id...}", s.handleRecruitingCandidateOverride)
+		}
 	}
 
 	// Google Calendar (M3, read-only).

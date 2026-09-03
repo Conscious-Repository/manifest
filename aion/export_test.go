@@ -13,6 +13,13 @@ import (
 const (
 	canaryFinances = "CANARY-private-finances-body"
 	canaryQuote    = "CANARY-transcript-quote"
+	// The private recruiting domain (system/aion/recruiting/**) shares this
+	// package's capability PATTERN but nothing else: `aion` takes no
+	// recruiting input, and a candidate name reaching a contract file would be
+	// public at portal.aion.bio before any sign-in gate. The guard lives in
+	// both packages — server/aion_recruiting_leak_test.go asserts it from the
+	// wiring side, this asserts it from the render side.
+	canaryRecruiting = "CANARY-recruiting-candidate-name"
 )
 
 func exportFixture() ExportInput {
@@ -74,6 +81,7 @@ note: seed round
 ---
 
 ` + canaryFinances + `
+` + canaryRecruiting + `
 `),
 		HiringMD:     []byte("# AION — hiring\n- [role:: lab engineer] [stage:: sourcing]\n"),
 		ReferencesMD: []byte("# AION — references\n- primer [url:: https://example.com] [source:: arXiv] [date:: 2026-05-01]\n"),
@@ -221,9 +229,17 @@ func TestRenderContractLeakCanary(t *testing.T) {
 		t.Fatal(err)
 	}
 	for p, b := range out {
-		for _, canary := range []string{canaryFinances, canaryQuote} {
+		for _, canary := range []string{canaryFinances, canaryQuote, canaryRecruiting} {
 			if strings.Contains(string(b), canary) {
 				t.Fatalf("%s leaked %q", p, canary)
+			}
+		}
+		// and no contract file may carry the private recruiting vocabulary at
+		// all — an id prefix or a record path here means a private surface
+		// found its way into a published one.
+		for _, token := range []string{"aion/recruiting/", "cand/", "aion-net/"} {
+			if strings.Contains(string(b), token) {
+				t.Fatalf("%s carries the private recruiting token %q", p, token)
 			}
 		}
 	}

@@ -9,6 +9,7 @@ package record_test
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"manifest/daily"
 	"manifest/goals"
 	"manifest/realestate"
+	"manifest/recruiting"
 	"manifest/tasks"
 )
 
@@ -173,6 +175,47 @@ func TestCorpusAion(t *testing.T) {
 		t.Skip("no system/aion files in corpus yet — refresh the snapshot after seeding")
 	}
 	t.Logf("aion corpus: %d/%d files", found, len(aion.Files))
+}
+
+// TestCorpusRecruiting registers the PRIVATE recruiting records with the
+// heartbeat, in the shape of TestCorpusAion. Unlike aion's seven fixed
+// corpora, roles and candidates are one file per record, so the walk routes
+// each file through recruiting.RoundTrip's shape registry. Skips when the
+// corpus snapshot predates the domain.
+func TestCorpusRecruiting(t *testing.T) {
+	dir := corpusDir(t)
+	root := filepath.Join(dir, "system", "aion", "recruiting")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("no system/aion/recruiting files in corpus yet — refresh the snapshot after seeding")
+	}
+	found, skipped := 0, 0
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		fn := recruiting.RoundTrip(filepath.ToSlash(rel))
+		if fn == nil {
+			skipped++
+			return nil // a file shape the domain does not declare (yet)
+		}
+		found++
+		raw := read(t, p)
+		if out := fn(raw); out != raw {
+			t.Fatalf("system/aion/recruiting/%s round-trip diverged:\n%s", rel, firstDiff(raw, out))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Skip("no recognized recruiting records in corpus yet")
+	}
+	t.Logf("recruiting corpus: %d files (%d unrecognized shapes)", found, skipped)
 }
 
 // section extracts the body lines of `## <name>` (until the next ## or EOF).

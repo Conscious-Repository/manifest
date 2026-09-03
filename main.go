@@ -41,6 +41,7 @@ import (
 	"manifest/reading"
 	"manifest/realestate"
 	"manifest/record"
+	"manifest/recruiting"
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
@@ -236,6 +237,28 @@ func main() {
 			vaultwriter.Capability{Name: "aion-portal", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion", "backlog.md")),
 				Actor:   vaultwriter.ActorPortalMember},
+			// AION RECRUITING — the private scout records (aion-recruiting-scout
+			// plan §4.3, owner decision Q4 = Option A). A separate capability
+			// from `aion` so write-audit.log says which surface moved the bytes,
+			// and so the grant is revocable on its own: dropping it makes the
+			// RECRUITING tab read-only without touching the AION cockpit.
+			//
+			// The `aion` grant above declares system/aion/** and therefore
+			// nominally INCLUDES this subtree. That overlap is accepted rather
+			// than papered over: in practice nothing can reach it, because
+			// aion.Store.Path joins a BARE FILENAME onto its root and is only
+			// ever called with a member of aion.Files. The practical boundary is
+			// pinned by test instead of by declaration
+			// (server/aion_recruiting_leak_test.go: TestAionFilesCannotAddressRecruiting).
+			// Option B — a Capability.Except field — is a vaultwriter kernel
+			// pass and stays a follow-up.
+			//
+			// Actor is user-action ONLY. Nothing in this domain is
+			// agent-proposed; if a spirit ever proposes candidates, that is a
+			// deliberate second grant, not a widened pattern.
+			vaultwriter.Capability{Name: "aion-recruiting", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion", "recruiting")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
 			// PRIVATE FUNDRAISING CRM — explicitly separate from AION's public
 			// live/export contract. Opportunity records and the shared note-less
 			// contact registry have separately bounded capabilities.
@@ -360,6 +383,14 @@ func main() {
 	if err := frStore.Ensure(); err != nil {
 		log.Printf("fundraising CRM registry unavailable: %v", err)
 	}
+	// The private recruiting scout records. BindAbs because the store holds
+	// absolute paths like every other record store; the narrow grant above is
+	// the whole of its authority.
+	recRoot := filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion", "recruiting"))
+	recStore := recruiting.NewStore(cfg.VaultPath, recRoot, vw.BindAbs("aion-recruiting"))
+	if err := recStore.Ensure(); err != nil {
+		log.Printf("recruiting records: %v", err)
+	}
 	// The real-estate decision log reuses the aion store/grammar pointed at
 	// system/realestate — ONLY backlog methods are wired (server/re.go);
 	// the other corpus methods must never touch this root.
@@ -385,6 +416,7 @@ func main() {
 	// limit cannot be exceeded by contacts and properties independently.
 	srv.UseGeocoder(geocode.New(cfg.DataDir))
 	srv.UseFundraising(frStore)
+	srv.UseRecruiting(recStore)
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)

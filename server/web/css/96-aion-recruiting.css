@@ -1,0 +1,129 @@
+/* 96-aion-recruiting — the private scout board (#/aion/recruiting).
+   Tokens only: no raw hex, no raw px (docs/ui-conventions.md, "the one rule").
+   Geometry is borrowed from .aion-backlog / .aion-list / .aion-inspector in
+   92-aion.css rather than reinvented; everything here is the rec- prefix. */
+
+.rec-shell { min-width: 0; }
+.rec-main { min-width: 0; overflow: hidden; }
+
+/* roles rail — the four lanes, pinned first, each with its open count */
+.rec-rail {
+  width: 190px; flex: none; align-self: flex-start;
+  padding: var(--sp-2) var(--sp-6) var(--sp-8) 0;
+  border-right: 1px solid var(--base-25);
+  display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.rec-role {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  width: 100%; padding: var(--sp-3) var(--sp-4);
+  border: 0; border-left: 2px solid transparent; background: none;
+  font-family: var(--sans); font-size: var(--fs-md); color: var(--base-70);
+  text-align: left; cursor: pointer;
+}
+.rec-role:hover { background: var(--base-05); }
+.rec-role.on { background: var(--base-20); border-left-color: var(--accent); color: var(--base-100); }
+.rec-role-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-role-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+
+/* seeds rail — the four D11 classes in one collapsible box */
+.rec-seeds { margin-top: var(--sp-7); border-top: 1px solid var(--base-25); padding-top: var(--sp-4); }
+.rec-seeds-head {
+  display: flex; align-items: baseline; gap: var(--sp-3); width: 100%;
+  border: 0; background: none; padding: var(--sp-2) var(--sp-4);
+  color: var(--base-60); cursor: pointer; text-align: left;
+}
+.rec-seeds-head:hover { background: var(--base-05); }
+.rec-seed-list { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3) var(--sp-4); }
+.rec-seed-class { color: var(--base-40); padding-top: var(--sp-3); }
+.rec-seed { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+.rec-seed-name { font-size: var(--fs-sm); color: var(--base-80); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.rec-seed-name { color: var(--accent); text-decoration: none; }
+a.rec-seed-name:hover { text-decoration: underline; }
+.rec-seed-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-seed-add { margin-top: var(--sp-3); }
+
+/* toolbar + quick add */
+.rec-toolbar {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20);
+}
+.rec-search { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); }
+.rec-add { margin: var(--sp-4) 0; }
+
+/* board — one lane per stage the filtered set actually uses */
+.rec-board { display: flex; flex-direction: column; gap: var(--sp-7); }
+.rec-lane { min-width: 0; }
+.rec-card { cursor: pointer; }
+.rec-card.sel { box-shadow: inset 2px 0 0 var(--accent); background: var(--base-05); }
+
+/* the D6 gate chip — status hues are a closed set, so an overridden gate is
+   warn (a judgment was made) and a disqualified one is danger */
+.rec-gate { border: 1px solid var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
+.rec-gate.ok { border-color: var(--good); color: var(--good); }
+.rec-gate.blocked { border-color: var(--danger); color: var(--danger); }
+.rec-gate.overridden { border-color: var(--warn); color: var(--warn); }
+.rec-ev { color: var(--base-40); }
+
+/* inspector */
+.rec-inspector { overflow-y: auto; max-height: 100vh; }
+.rec-insp-field { align-items: flex-start; }
+.rec-insp-field .aion-insp-flabel { padding-top: var(--sp-3); }
+.rec-in { flex: 1; min-width: 0; }
+.rec-insp-sec { margin-top: var(--sp-7); }
+
+/* fit rows */
+.rec-fit-row {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-soft);
+}
+.rec-fit-name { flex: 1 1 100%; min-width: 0; font-size: var(--fs-sm); color: var(--base-80); }
+.rec-class { border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
+.rec-class.must { border-color: var(--base-70); color: var(--base-80); }
+.rec-class.disqualifier { border-color: var(--danger); color: var(--danger); }
+.rec-score { flex: 0 0 auto; width: var(--sp-9); min-width: 76px; }
+.rec-ev-in { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: var(--fs-xs); }
+.rec-fit-present { flex: 0 0 auto; }
+.rec-override {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  margin-top: var(--sp-4); padding: var(--sp-3); border: 1px solid var(--warn);
+  border-radius: var(--radius); font-size: var(--fs-sm); color: var(--base-80);
+}
+.rec-override-why { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
+
+/* evidence — the citation, kept visible rather than collapsed away */
+.rec-ev-row { padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); }
+.rec-ev-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.rec-ev-kind { color: var(--base-50); }
+.rec-ev-url { flex: 1 1 100%; min-width: 0; color: var(--accent); font-family: var(--mono); font-size: var(--fs-2xs); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-ev-url:hover { text-decoration: underline; }
+.rec-ev-when { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-ev-quote {
+  margin: var(--sp-2) 0 0; padding-left: var(--sp-4);
+  border-left: 2px solid var(--base-25); color: var(--base-60);
+  font-size: var(--fs-sm); white-space: pre-wrap;
+}
+.rec-ev-form { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-4); }
+.rec-quote { min-height: calc(var(--sp-9) + var(--sp-9)); resize: vertical; }
+
+/* network — a list, not a canvas. An inferred claim says so, in words. */
+.rec-path, .rec-edge {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2);
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-sm); color: var(--base-80);
+}
+.rec-path-hops, .rec-edge-ends { flex: 1 1 100%; min-width: 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); word-break: break-all; }
+.rec-edge-basis { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
+.rec-path-conf { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-inferred { color: var(--base-40); border: 1px dashed var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); }
+
+.rec-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; font-size: var(--fs-sm); color: var(--base-80); }
+.rec-archive { display: block; margin-top: var(--sp-7); }
+.rec-archive.armed { color: var(--danger); }
+
+@media (max-width: 1100px) {
+  .rec-rail { width: 150px; }
+}
+@media (max-width: 860px) {
+  .rec-shell { flex-direction: column; }
+  .rec-rail { width: 100%; border-right: 0; border-bottom: 1px solid var(--base-25); padding-right: 0; }
+}
