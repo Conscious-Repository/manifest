@@ -207,6 +207,10 @@ type OutreachRef struct {
 	Log    string `json:"log"`
 	Last   string `json:"last,omitempty"`
 	Status string `json:"status,omitempty"`
+	// MessageID / ThreadID are the Gmail ids of the last send (Phase 5) —
+	// the join a later reply sync matches on. Never the message bytes.
+	MessageID string `json:"messageId,omitempty"`
+	ThreadID  string `json:"threadId,omitempty"`
 }
 
 // Override is the recorded D6 gate override. It is written ONTO the record so

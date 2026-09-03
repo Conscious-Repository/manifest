@@ -14,7 +14,7 @@ var (
 	evidenceKeys = []string{"id", "url", "file", "collected", "kind", "source"}
 	pathKeys     = []string{"path", "kind", "confidence", "inferred"}
 	nextKeys     = []string{"action", "due", "owner"}
-	outreachKeys = []string{"log", "last", "status"}
+	outreachKeys = []string{"log", "last", "status", "message", "thread"}
 	overrideKeys = []string{"override", "override_reason", "override_at"}
 )
 
@@ -280,9 +280,40 @@ func (d *CandidateDoc) Paths() []PathClaim {
 func (d *CandidateDoc) Outreach() []OutreachRef {
 	out := []OutreachRef{}
 	for _, r := range rows(section(d.Sections, "outreach")) {
-		out = append(out, OutreachRef{Log: r.Get("log"), Last: r.Get("last"), Status: r.Get("status")})
+		out = append(out, OutreachRef{Log: r.Get("log"), Last: r.Get("last"), Status: r.Get("status"),
+			MessageID: r.Get("message"), ThreadID: r.Get("thread")})
 	}
 	return out
+}
+
+// SetOutreach upserts the pointer row for one log: the row is found by its
+// [log::] and rewritten in place (the owner's field order survives), or
+// appended. Message bytes never land here — only the ids Gmail answered.
+func (d *CandidateDoc) SetOutreach(ref OutreachRef) {
+	if strings.TrimSpace(ref.Log) == "" {
+		return
+	}
+	sec := ensureSection(&d.Sections, "outreach")
+	var row *Row
+	for _, r := range rows(sec) {
+		if strings.EqualFold(strings.TrimSpace(r.Get("log")), strings.TrimSpace(ref.Log)) {
+			row = r
+			break
+		}
+	}
+	if row == nil {
+		row = newRow("log", ref.Log, "last", ref.Last, "status", ref.Status)
+		appendRow(sec, row)
+	} else {
+		row.Set("last", ref.Last)
+		row.Set("status", ref.Status)
+	}
+	if ref.MessageID != "" {
+		row.Set("message", ref.MessageID)
+	}
+	if ref.ThreadID != "" {
+		row.Set("thread", ref.ThreadID)
+	}
 }
 
 // Next collects the `## next` action rows.

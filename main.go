@@ -33,6 +33,7 @@ import (
 	"manifest/fundraising"
 	"manifest/geocode"
 	"manifest/gmailauth"
+	"manifest/gmailsend"
 	"manifest/gmailsync"
 	"manifest/goals"
 	"manifest/hermes"
@@ -454,6 +455,18 @@ func main() {
 	} else {
 		srv.UseAshbySync(as)
 	}
+	// The webhook receiver's signing secret (Phase 7): same ONE-source rule,
+	// ASHBY_WEBHOOK_SECRET in the environment. Absent, deliveries are
+	// processed unverified; nothing logs or echoes it.
+	srv.UseAshbyWebhookSecret(os.Getenv("ASHBY_WEBHOOK_SECRET"))
+	// Approval-gated Gmail outreach (Phase 5): a SEND-ONLY client for exactly
+	// one From address (GMAIL_SEND_FROM, default ben@aion.bio). The OAuth
+	// client is the shared one (GMAIL_OAUTH_CLIENT, as gmailauth reads it);
+	// the send token is its own file under dataDir (GMAIL_SEND_TOKEN
+	// override) — never the engine's read-only GMAIL_TOKEN, never the vault,
+	// never config.json. Absent, the probe answers sendCapable:false and
+	// every send refuses. Nothing logs or echoes the token.
+	srv.UseGmailSend(gmailsend.New(os.Getenv("GMAIL_SEND_FROM"), gmailsend.TokenPath(cfg.DataDir)))
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)

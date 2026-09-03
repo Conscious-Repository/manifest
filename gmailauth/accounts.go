@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 // Multi-account Gmail (email-sync workspaces): the PRIMARY account keeps the
@@ -151,7 +152,7 @@ func (c *Client) Accounts(now time.Time) []AccountRow {
 		sync, extract, ws := EffectiveSettings(sf.Accounts[st.Email], true)
 		rows = append(rows, AccountRow{
 			Email: st.Email, Primary: true,
-			Connected: st.Connected || (st.HasToken && !st.NeedsReauth),
+			Connected:   st.Connected || (st.HasToken && !st.NeedsReauth),
 			NeedsReauth: st.NeedsReauth, Detail: st.Detail,
 			Sync: sync, Extract: extract, Workspace: ws,
 		})
@@ -330,3 +331,35 @@ func parsePasted(pasted string) (code, state string, err error) {
 	}
 	return code, state, nil
 }
+
+// ---- shared with gmailsend (Phase 5) ----
+//
+// The send-only client reuses this package's OAuth client file and paste-back
+// mechanics rather than forking them. Nothing below changes what THIS package
+// requests: the read-only engine token is still minted at gmail.readonly and
+// only ever at gmail.readonly. gmailsend holds its own token file, its own
+// scope, and its own pending-state map.
+
+// CredPath is the shared OAuth client file (GMAIL_OAUTH_CLIENT override).
+func CredPath() string { return credPath() }
+
+// PasteRedirectURI is the registered loopback shape the paste-back flow uses.
+const PasteRedirectURI = pasteRedirectURI
+
+// ClientConfig reads the shared OAuth client at the given scopes. It is the
+// only way another package gets an *oauth2.Config from the client file, and
+// it takes the scopes explicitly so the caller's consent is visible at the
+// call site.
+func ClientConfig(scopes ...string) (*oauth2.Config, error) {
+	b, err := os.ReadFile(credPath())
+	if err != nil {
+		return nil, fmt.Errorf("gmail: OAuth client not found (%s)", credPath())
+	}
+	return google.ConfigFromJSON(b, scopes...)
+}
+
+// ParsePasted digs code+state out of a pasted redirect URL (or query string).
+func ParsePasted(pasted string) (code, state string, err error) { return parsePasted(pasted) }
+
+// RandState mints an OAuth state token.
+func RandState() string { return randState() }

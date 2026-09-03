@@ -32,6 +32,7 @@ import (
 	"manifest/fundraising"
 	"manifest/geocode"
 	"manifest/gmailauth"
+	"manifest/gmailsend"
 	"manifest/gmailsync"
 	"manifest/goals"
 	"manifest/ledger"
@@ -152,6 +153,13 @@ type Server struct {
 	// only when it is wired; without a key it answers configured:false and
 	// every write refuses (recruiting_ashby_private.go).
 	ashbySync *recruiting.AshbySync
+	// ashbyWebhookSecret signs inbound deliveries (ASHBY_WEBHOOK_SECRET);
+	// empty means unverified processing (recruiting_ashby_webhook.go).
+	ashbyWebhookSecret string
+	// The send-only Gmail client behind …/recruiting/outreach (Phase 5).
+	// Nil is the unconfigured posture: the probe answers sendCapable:false
+	// and every send refuses (recruiting_outreach.go). Never a poller.
+	gmailSend *gmailsend.Client
 	// The source-run cache behind …/recruiting/sources (Phase 3a): dataDir
 	// state, never the vault. Routes mount only when BOTH stores are present.
 	recruitingRuns *recruiting.RunStore
@@ -411,7 +419,9 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("PUT /api/aion/recruiting/roles/{slug}/criteria", s.handleRecruitingRoleCriteria)
 			mux.HandleFunc("POST /api/aion/recruiting/roles/sync", s.handleRecruitingRolesSync)
 			// the private client (Phase 6): probe, proposal, approved push,
-			// stage change, user-actioned sync-back — no poller, no webhook
+			// stage change, user-actioned sync-back — no poller. The webhook
+			// receiver (Phase 7) is the only other trigger, and it funnels
+			// into the same sync-back.
 			if s.ashbySync != nil {
 				mux.HandleFunc("GET /api/aion/recruiting/ashby/probe", s.handleRecruitingAshbyProbe)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/probe", s.handleRecruitingAshbyProbe)
@@ -420,7 +430,19 @@ func (s *Server) Handler() http.Handler {
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/push/{id...}", s.handleRecruitingAshbyPush)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/stage/{id...}", s.handleRecruitingAshbyStage)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/sync", s.handleRecruitingAshbySync)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/webhook", s.handleRecruitingAshbyWebhook)
 			}
+			// approval-gated Gmail outreach (Phase 5): probe, paste-back
+			// connect, log, draft, preflight, approved send — the send is the
+			// only route that reaches Gmail, and only with approve:true
+			mux.HandleFunc("GET /api/aion/recruiting/outreach/probe", s.handleRecruitingOutreachProbe)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/probe", s.handleRecruitingOutreachProbe)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/connect", s.handleRecruitingOutreachConnect)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/connect/finish", s.handleRecruitingOutreachConnectFinish)
+			mux.HandleFunc("GET /api/aion/recruiting/outreach/{id...}", s.handleRecruitingOutreach)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/draft/{id...}", s.handleRecruitingOutreachDraft)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/prepare/{id...}", s.handleRecruitingOutreachPrepare)
+			mux.HandleFunc("POST /api/aion/recruiting/outreach/send/{id...}", s.handleRecruitingOutreachSend)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate", s.handleRecruitingCandidateAdd)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/update/{id...}", s.handleRecruitingCandidateUpdate)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/stage/{id...}", s.handleRecruitingCandidateStage)
