@@ -864,9 +864,15 @@ type AshbySyncState struct {
 	LastSync   string                         `json:"lastSync,omitempty"`
 	Candidates map[string]AshbyCandidateState `json:"candidates"`
 	Audit      []AshbyAudit                   `json:"audit"`
+	// Webhooks is the bounded set of delivery keys the receiver (Phase 7)
+	// already applied, oldest first — a redelivery is skipped, not re-run.
+	Webhooks []string `json:"webhooks,omitempty"`
 }
 
-const maxAshbyAudit = 500
+const (
+	maxAshbyAudit    = 500
+	maxAshbyWebhooks = 1000
+)
 
 // AshbySync owns the write path and the sync-back trigger. It holds the
 // record store (ids and audit lines land on records through the same
@@ -935,6 +941,9 @@ func (a *AshbySync) save(st AshbySyncState) error {
 	if len(st.Audit) > maxAshbyAudit {
 		st.Audit = st.Audit[len(st.Audit)-maxAshbyAudit:]
 	}
+	if len(st.Webhooks) > maxAshbyWebhooks {
+		st.Webhooks = st.Webhooks[len(st.Webhooks)-maxAshbyWebhooks:]
+	}
 	// The derived sync state (<dataDir>/recruiting/ashby.json) is a direct file
 	// write like the run cache, so it is rooted in runs.go via writeJSONDir0600
 	// rather than calling os.* here. The writeless test enforces this.
@@ -948,6 +957,10 @@ func (a *AshbySync) State() AshbySyncState {
 	defer a.mu.Unlock()
 	return a.load()
 }
+
+// StatePath exposes the derived sync-state file path (dataDir outside the
+// vault). Tests seed the file directly; production code never needs it.
+func (a *AshbySync) StatePath() string { return a.path }
 
 // ---- capability probe ----
 
@@ -1491,7 +1504,9 @@ type AshbySyncBackResult struct {
 //
 // `full` ignores stored syncTokens; otherwise the incremental tokens from
 // the last run are used where the endpoint returned one. There is no timer
-// calling this — it runs when the owner hits the route.
+// calling this — it runs when the owner hits the route, or when a verified
+// webhook delivery lands (HandleWebhook), which is the same reconciliation
+// with a dedupe key recorded beside it.
 func (a *AshbySync) SyncBack(ctx context.Context, full bool, now time.Time) (AshbySyncBackResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1499,6 +1514,16 @@ func (a *AshbySync) SyncBack(ctx context.Context, full bool, now time.Time) (Ash
 		return AshbySyncBackResult{}, ErrAshbyUnconfigured
 	}
 	st := a.load()
+	res, err := a.syncBack(ctx, &st, full, now)
+	if err != nil {
+		return res, err
+	}
+	return res, a.save(st)
+}
+
+// syncBack is SyncBack's body under the lock: it mutates st and leaves the
+// save to the caller, so a webhook can record its key in the same write.
+func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool, now time.Time) (AshbySyncBackResult, error) {
 	res := AshbySyncBackResult{Full: full, Synced: now.UTC().Format(time.RFC3339),
 		RolesLinked: []string{}, Updated: []string{}, Drifted: []string{}, Conflicts: []string{}}
 	token := func(method string) string {
@@ -1622,5 +1647,49 @@ func (a *AshbySync) SyncBack(ctx context.Context, full bool, now time.Time) (Ash
 	if full || st.LastFull == "" {
 		st.LastFull = res.Synced
 	}
+	return res, nil
+}
+
+// ---- webhook receiver (Phase 7) ----
+
+// AshbyWebhookResult is what one verified delivery did. A redelivery of a
+// key already in the state answers Duplicate:true with no sync.
+type AshbyWebhookResult struct {
+	Key       string               `json:"key"`
+	Action    string               `json:"action,omitempty"`
+	Duplicate bool                 `json:"duplicate"`
+	Sync      *AshbySyncBackResult `json:"sync,omitempty"`
+}
+
+// HandleWebhook is the receiver's funnel: a delivery is a SIGNAL that
+// something changed, never the change itself. Whatever the payload says,
+// the only effect is an incremental SyncBack — the same reconciliation the
+// owner's route runs — and the key is recorded in the derived state so a
+// redelivery is skipped instead of applied twice. A failed sync records
+// nothing, so the sender's retry runs it again.
+func (a *AshbySync) HandleWebhook(ctx context.Context, key, action string, now time.Time) (AshbyWebhookResult, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return AshbyWebhookResult{}, errf("recruiting: webhook delivery has no key")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	res := AshbyWebhookResult{Key: key, Action: action}
+	if !a.client.Configured() {
+		return res, ErrAshbyUnconfigured
+	}
+	st := a.load()
+	for _, k := range st.Webhooks {
+		if k == key {
+			res.Duplicate = true
+			return res, nil
+		}
+	}
+	sync, err := a.syncBack(ctx, &st, false, now)
+	if err != nil {
+		return res, err
+	}
+	res.Sync = &sync
+	st.Webhooks = append(st.Webhooks, key)
 	return res, a.save(st)
 }

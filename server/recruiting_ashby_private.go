@@ -14,7 +14,8 @@ import (
 // aion-recruiting-ashby-mirroring.md). Every route here is a user action,
 // mounted inside server.go's `if s.recruiting != nil` block and never on the
 // portal listener. There is no poller: the sync-back is a route the owner
-// hits, and the webhook receiver is Phase 7.
+// hits, and the webhook receiver (recruiting_ashby_webhook.go, Phase 7)
+// funnels into the same sync-back.
 //
 // Route naming mirrors recruiting_ashby.go:
 //
