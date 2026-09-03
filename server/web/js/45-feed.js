@@ -193,10 +193,16 @@ function renderFeed() {
       err.append(el("span", null, "Couldn't load the feed — check the connection."));
       err.append(pillLight("retry", loadFeed));
       host.appendChild(err);
+    } else if (filter) {
+      // an empty FILTERED lane names what the filter is hiding — it must never
+      // read as an empty inbox (the hard-refresh bait of 2026-09-03)
+      const row = el("div", "ro-row empty feed-empty-filtered");
+      row.append(el("span", null, filter === "proposal" ? "Nothing awaiting approval." : "Nothing here."));
+      const hidden = FEED_LANES.concat(FEED_TAIL_LANES).reduce((n, l) => n + l.slice(feedCache).length, 0) + stripSignals.length;
+      if (hidden) row.append(pillLight("show all (" + hidden + ")", () => { state.feedFilter = ""; loadFeed(); }));
+      host.appendChild(row);
     } else {
-      host.appendChild(emptyRow(
-        filter === "proposal" ? "Nothing awaiting approval."
-          : filter ? "Nothing here." : "Inbox zero — nothing awaiting you."));
+      host.appendChild(emptyRow("Inbox zero — nothing awaiting you."));
     }
     return;
   }

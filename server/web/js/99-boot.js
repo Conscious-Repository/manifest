@@ -292,6 +292,11 @@ function route() {
   if (h !== _curHash) {
     if (_navInternal) _navInternal = false;
     else { uiHistory.push(_curHash); uiForward.length = 0; }
+    // leaving FEED sheds its lane filter: a chip toggled during one visit must
+    // not greet the next navigation as a near-empty inbox (a stale APPROVALS
+    // filter reads as "the feed is broken"). readBack() re-sets consume AFTER
+    // this, so the reading list's return path keeps its filter.
+    if (_curHash === "#/feed" && h !== "#/feed") state.feedFilter = "";
     _curHash = h;
   }
   updateCrumbNav();
