@@ -145,6 +145,9 @@ type Server struct {
 	// from aionLive or the export contract — these records carry candidate
 	// PII, and the nine-file portal contract gains no input from here.
 	recruiting *recruiting.Store
+	// The public Ashby job-board client behind POST …/roles/sync. Nil means
+	// the real AION board; tests bind it to httptest (recruiting_ashby.go).
+	ashbyPublic *recruiting.AshbyPublic
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
@@ -399,6 +402,7 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/seed", s.handleRecruitingSeedAdd)
 			mux.HandleFunc("GET /api/aion/recruiting/roles/{slug}", s.handleRecruitingRole)
 			mux.HandleFunc("PUT /api/aion/recruiting/roles/{slug}/criteria", s.handleRecruitingRoleCriteria)
+			mux.HandleFunc("POST /api/aion/recruiting/roles/sync", s.handleRecruitingRolesSync)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate", s.handleRecruitingCandidateAdd)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/update/{id...}", s.handleRecruitingCandidateUpdate)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/stage/{id...}", s.handleRecruitingCandidateStage)

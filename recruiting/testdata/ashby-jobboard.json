@@ -1,0 +1,129 @@
+{
+  "jobs": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Mechanical Engineer",
+      "department": "Technical Staff",
+      "team": "Technical Staff",
+      "employmentType": "FullTime",
+      "location": "St. Louis",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-03-05T17:46:58.413+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Missouri",
+          "addressCountry": "United States",
+          "addressLocality": "St. Louis"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000001",
+      "applyUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000001/application",
+      "descriptionHtml": "<p>At AION, we're building sci-fi medical devices.</p><h2>The role</h2><p>As a Mechanical Engineer at AION, you will:</p><ul><li>Design and build custom hardware for biological experiments</li><li>Own the work end to end: requirements, prototypes, validation</li></ul><h2>Details</h2><p>St. Louis, MO (on-site).</p><p>Equity for the right person.</p><p>hiring@example.test</p>",
+      "descriptionPlain": "At AION, we're building sci-fi medical devices.\n\nThe role\n\nAs a Mechanical Engineer at AION, you will:\n\n - Design and build custom hardware for biological experiments\n\n - Own the work end to end: requirements, prototypes, validation\n\nDetails\n\nSt. Louis, MO (on-site).\n\nEquity for the right person.\n\nhiring@example.test",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "title": "Biomedical Engineer",
+      "department": "Technical Staff",
+      "team": "Technical Staff",
+      "employmentType": "FullTime",
+      "location": "St. Louis",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-03-05T17:49:55.334+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Missouri",
+          "addressCountry": "United States",
+          "addressLocality": "St. Louis"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000002",
+      "applyUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000002/application",
+      "descriptionHtml": "<p>At AION, we're building sci-fi medical devices.</p><h2>The role</h2><p>As a Biomedical Engineer at AION, you will:</p><ul><li>Design and build custom hardware for biological experiments</li><li>Own the work end to end: requirements, prototypes, validation</li></ul><h2>Details</h2><p>St. Louis, MO (on-site).</p><p>Equity for the right person.</p><p>hiring@example.test</p>",
+      "descriptionPlain": "At AION, we're building sci-fi medical devices.\n\nThe role\n\nAs a Biomedical Engineer at AION, you will:\n\n - Design and build custom hardware for biological experiments\n\n - Own the work end to end: requirements, prototypes, validation\n\nDetails\n\nSt. Louis, MO (on-site).\n\nEquity for the right person.\n\nhiring@example.test",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "title": "MRI Engineer",
+      "department": "Technical Staff",
+      "team": "Technical Staff",
+      "employmentType": "FullTime",
+      "location": "St. Louis",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-06-24T19:45:15.614+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Missouri",
+          "addressCountry": "United States",
+          "addressLocality": "St. Louis"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000003",
+      "applyUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000003/application",
+      "descriptionHtml": "<p>At AION, we're building sci-fi medical devices.</p><h2>The role</h2><p>As a MRI Engineer at AION, you will:</p><ul><li>Design and build custom hardware for biological experiments</li><li>Own the work end to end: requirements, prototypes, validation</li></ul><h2>Details</h2><p>St. Louis, MO (on-site).</p><p>Equity for the right person.</p><p>hiring@example.test</p>",
+      "descriptionPlain": "At AION, we're building sci-fi medical devices.\n\nThe role\n\nAs a MRI Engineer at AION, you will:\n\n - Design and build custom hardware for biological experiments\n\n - Own the work end to end: requirements, prototypes, validation\n\nDetails\n\nSt. Louis, MO (on-site).\n\nEquity for the right person.\n\nhiring@example.test",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "title": "Scientist: Microscopy",
+      "department": "Technical Staff",
+      "team": "Technical Staff",
+      "employmentType": "FullTime",
+      "location": "St. Louis",
+      "shouldDisplayCompensationOnJobPostings": false,
+      "secondaryLocations": [],
+      "publishedAt": "2026-08-18T16:59:03.771+00:00",
+      "isListed": true,
+      "isRemote": false,
+      "workplaceType": "OnSite",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "Missouri",
+          "addressCountry": "United States",
+          "addressLocality": "St. Louis"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000004",
+      "applyUrl": "https://jobs.ashbyhq.com/AION%20Biosciences/00000000-0000-4000-8000-000000000004/application",
+      "descriptionHtml": "<p>At AION, we're building sci-fi medical devices.</p><h2>The role</h2><p>As a Scientist: Microscopy at AION, you will:</p><ul><li>Design and build custom hardware for biological experiments</li><li>Own the work end to end: requirements, prototypes, validation</li></ul><h2>Details</h2><p>St. Louis, MO (on-site).</p><p>Equity for the right person.</p><p>hiring@example.test</p>",
+      "descriptionPlain": "At AION, we're building sci-fi medical devices.\n\nThe role\n\nAs a Scientist: Microscopy at AION, you will:\n\n - Design and build custom hardware for biological experiments\n\n - Own the work end to end: requirements, prototypes, validation\n\nDetails\n\nSt. Louis, MO (on-site).\n\nEquity for the right person.\n\nhiring@example.test",
+      "compensation": {
+        "compensationTierSummary": null,
+        "scrapeableCompensationSalarySummary": null,
+        "compensationTiers": [],
+        "summaryComponents": []
+      }
+    }
+  ],
+  "apiVersion": "1"
+}

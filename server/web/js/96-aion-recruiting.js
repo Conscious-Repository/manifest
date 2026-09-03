@@ -119,7 +119,49 @@ function paintRail(rail) {
   });
   if (!roles.length) rail.append(emptyRow("no roles yet"));
 
+  rail.append(paintRoleSync(roles));
   rail.append(paintSeeds());
+}
+
+// ---- public Ashby role mirror (Phase 2) ----
+// One button, one explicit user action: mirror the public AION job board
+// onto the role records. No key, no poller, nothing written toward Ashby.
+// The server owns which fields move; `## criteria` is never touched.
+let recSyncing = false;
+
+function paintRoleSync(roles) {
+  const box = el("div", "rec-sync");
+  const b = el("button", "pill light rec-sync-btn", recSyncing ? "syncing…" : "sync roles");
+  b.disabled = recSyncing;
+  b.title = "mirror the public Ashby job board onto the role records";
+  b.onclick = () => recSyncRoles();
+  box.append(b);
+  const synced = roles.map((r) => r.synced || "").filter(Boolean).sort().pop();
+  if (synced) box.append(el("span", "micro-label rec-sync-when", "ashby · " + synced));
+  return box;
+}
+
+async function recSyncRoles() {
+  if (recSyncing) return;
+  recSyncing = true;
+  renderAion();
+  try {
+    const r = await fetch("/api/aion/recruiting/roles/sync", { method: "POST" });
+    if (!r.ok) throw new Error(await r.text());
+    const body = await r.json();
+    if (body.view) recCache = body.view;
+    const s = body.sync || {};
+    const parts = [(s.postings || 0) + " posting" + (s.postings === 1 ? "" : "s")];
+    if ((s.updated || []).length) parts.push((s.updated || []).length + " updated");
+    if ((s.created || []).length) parts.push((s.created || []).length + " new");
+    if ((s.unlisted || []).length) parts.push((s.unlisted || []).length + " not on the board");
+    showToast("ashby: " + parts.join(" · "));
+  } catch (e) {
+    showToast(String(e.message || e).slice(0, 140));
+  } finally {
+    recSyncing = false;
+    renderAion();
+  }
 }
 
 function paintSeeds() {
