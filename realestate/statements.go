@@ -352,6 +352,25 @@ func (s *StatementStore) Applicable(ids []string) ([]StatementRow, error) {
 	return out, nil
 }
 
+// RenameCategory rewrites the category on every row carrying the old name —
+// all states, applied included, so a later refile of a renamed row still
+// reassembles the record the ledger now holds.
+func (s *StatementStore) RenameCategory(from, to string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for i := range s.st.Rows {
+		if strings.EqualFold(strings.TrimSpace(s.st.Rows[i].Category), from) {
+			s.st.Rows[i].Category = to
+			n++
+		}
+	}
+	if n > 0 {
+		s.save()
+	}
+	return n
+}
+
 // MarkApplied flips rows to applied after their ledger writes succeeded.
 func (s *StatementStore) MarkApplied(ids []string) {
 	s.mu.Lock()

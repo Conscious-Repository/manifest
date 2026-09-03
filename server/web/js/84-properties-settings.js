@@ -126,10 +126,12 @@ async function renderREsettings() {
     location.hash = "#/properties/contractors";
     return;
   }
+  const moneyCats = await ensureMoneyCats();
   const items = [
     ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
     ["entities", "Entities", ents.length, "system/realestate/entities.md"],
     ["bankfeed", "Bank feed", null, "system/realestate/entities.md"],
+    ["categories", "Categories", moneyCats.length, "system/realestate/categories.md"],
     ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount), "system/realestate/people.md"],
     ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
     ["tenants", "Tenants", (entitiesCache.tenants || []).length, "system/realestate/entities.md"],
@@ -159,6 +161,7 @@ async function renderREsettings() {
     renderBankFeedPanel(feedBox, ents);
     return;
   }
+  if (reSettingsTab === "categories") { await renderCategoriesPanel(pane); return; }
   if (reSettingsTab === "lenders") { renderFlatRegistry(pane, "lender", entitiesCache.lenders || []); return; }
   if (reSettingsTab === "tenants") { renderFlatRegistry(pane, "tenant", entitiesCache.tenants || []); return; }
   if (reSettingsTab === "people") { await rePeoplePane(pane); return; }
@@ -223,6 +226,101 @@ function renderFlatRegistry(pane, kind, rows) {
     try { await postJSONOk("/api/realestate/entities", { name: v, kind }); renderREsettings(); }
     catch (err) { showToast("Couldn't create " + kind); }
   }, kind + " name…"));
+  pane.append(list);
+}
+
+// ---- CATEGORIES — the chart of accounts (money-workbench v2 registry) ----
+// One global `name | kind | class` list behind the $ tab's category select.
+// Class is the routing axis (operating money stays out of rehab budgets), so
+// it's editable here; rename sweeps EVERY ledger row, workbench row, and the
+// vendor memory through /categories/rename — the name is data, not a key.
+async function renderCategoriesPanel(pane) {
+  const cats = await ensureMoneyCats(true);
+  pane.append(el("div", "pp-section-head",
+    "CHART OF ACCOUNTS — class routes money: operating stays out of rehab budgets"));
+  const list = el("div", "set-entities");
+  const retype = async (c, cls) => {
+    try {
+      await postJSONOk("/api/realestate/categories", { name: c.name, kind: c.kind, class: cls });
+      await ensureMoneyCats(true);
+      showToast(c.name + " → " + cls);
+      renderREsettings();
+    } catch (e) { showToast("Couldn't retype — " + (e.message || ""), null, "error"); }
+  };
+  const rename = async (c, to) => {
+    to = (to || "").trim().toLowerCase();
+    if (!to || to === c.name) { renderREsettings(); return; }
+    try {
+      const res = await postJSONOk("/api/realestate/categories/rename", { from: c.name, to });
+      await ensureMoneyCats(true);
+      showToast('renamed "' + res.from + '" → "' + res.to + '" · ' + (res.ledgerRows || 0) +
+        " ledger row(s) · " + (res.workbenchRows || 0) + " workbench row(s)" +
+        (res.failed ? " — " + res.failed.length + " file(s) FAILED" : ""),
+        null, res.failed ? "error" : "info");
+      renderREsettings();
+    } catch (e) { showToast("Couldn't rename — " + (e.message || ""), null, "error"); }
+  };
+  ["expense", "income"].forEach((kind) => {
+    const mine = cats.filter((c) => c.kind === kind);
+    if (!mine.length) return;
+    list.append(el("div", "micro-label", kind.toUpperCase()));
+    mine.forEach((c) => {
+      const row = el("div", "set-bind-row");
+      const name = el("span", "stmt-vendor", c.name);
+      row.append(name);
+      const cls = document.createElement("select");
+      cls.className = "pp-in";
+      ["operating", "project"].forEach((v) => {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        cls.append(o);
+      });
+      cls.value = c.class;
+      cls.onchange = () => retype(c, cls.value);
+      row.append(cls);
+      row.append(pillLight("rename", () => {
+        const inp = inputEl("new name…");
+        inp.className = "pp-in";
+        inp.value = c.name;
+        name.replaceWith(inp);
+        inp.focus(); inp.select();
+        inp.onkeydown = (ev) => {
+          if (ev.key === "Enter") { inp.onblur = null; rename(c, inp.value); }
+          if (ev.key === "Escape") { inp.onblur = null; renderREsettings(); }
+        };
+        inp.onblur = () => rename(c, inp.value);
+      }));
+      list.append(row);
+    });
+  });
+  // create with an EXPLICIT class — the $ tab's quiet-create guesses from the
+  // property's status (project on a rehab), which is exactly what this fixes
+  const add = el("div", "set-bind-row");
+  const nameIn = inputEl("new category…");
+  nameIn.className = "pp-in";
+  const kindSel = document.createElement("select");
+  kindSel.className = "pp-in";
+  const clsSel = document.createElement("select");
+  clsSel.className = "pp-in";
+  [["expense", "income"], ["operating", "project"]].forEach((vals, i) => {
+    const sel = i ? clsSel : kindSel;
+    vals.forEach((v) => {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = v;
+      sel.append(o);
+    });
+  });
+  add.append(nameIn, kindSel, clsSel, pillLight("＋ add", async () => {
+    const name = nameIn.value.trim().toLowerCase();
+    if (!name) return;
+    try {
+      await postJSONOk("/api/realestate/categories", { name, kind: kindSel.value, class: clsSel.value });
+      await ensureMoneyCats(true);
+      showToast("Category added (" + clsSel.value + ")");
+      renderREsettings();
+    } catch (e) { showToast("Couldn't create category", null, "error"); }
+  }));
+  list.append(add);
   pane.append(list);
 }
 

@@ -173,6 +173,71 @@ func TestSplitRefusesZeroSlice(t *testing.T) {
 	}
 }
 
+// Renaming a chart-of-accounts category sweeps everywhere the name lives:
+// the registry, written ledger rows, and workbench rows. Renaming onto an
+// existing name is refused (never a silent merge).
+func TestCategoryRenameSweeps(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -4), Amount: -500, Description: "CHECK 9", Payee: "Crew Co"},
+		{ID: "t2", Posted: time.Now().AddDate(0, 0, -3), Amount: -80, Description: "CHECK 10", Payee: "Crew Co"},
+	}}}
+	srv, vault, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := srv.statements.List()
+	byAmount := map[float64]string{}
+	for _, r := range rows {
+		byAmount[r.Amount] = r.ID
+	}
+	// file the $500 row under "windows" (a written ledger row); leave the $80
+	// row categorized but unfiled (a workbench row)
+	code, res := doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+byAmount[500]+`","category":"windows","file":true,"assignments":[{"slug":"748-n-euclid","amount":500}]}`)
+	if code != 200 || res["state"] != "applied" {
+		t.Fatalf("file: %d %v (%v)", code, res["state"], res["fileError"])
+	}
+	code, _ = doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+byAmount[80]+`","category":"windows"}`)
+	if code != 200 {
+		t.Fatalf("categorize: %d", code)
+	}
+
+	code, res = doJSON(t, srv.handleCategoryRename, "POST", "/api/realestate/categories/rename",
+		`{"from":"windows","to":"crew"}`)
+	if code != 200 {
+		t.Fatalf("rename: %d %v", code, res)
+	}
+	if res["ledgerRows"] != float64(1) || res["workbenchRows"] != float64(2) {
+		t.Fatalf("counts: ledgerRows=%v workbenchRows=%v", res["ledgerRows"], res["workbenchRows"])
+	}
+	led, err := os.ReadFile(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(led), "windows") || !strings.Contains(string(led), ",crew,") {
+		t.Fatalf("ledger not renamed:\n%s", led)
+	}
+	reg, err := os.ReadFile(filepath.Join(vault, "system/realestate/categories.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reg), "crew | expense | project") || strings.Contains(string(reg), `"windows`) {
+		t.Fatalf("registry not renamed:\n%s", reg)
+	}
+	after, _ := srv.statements.List()
+	for _, r := range after {
+		if r.Category == "windows" {
+			t.Fatal("workbench row kept the old name")
+		}
+	}
+	// renaming onto an existing name is refused
+	if code, _ = doJSON(t, srv.handleCategoryRename, "POST", "/api/realestate/categories/rename",
+		`{"from":"materials","to":"crew"}`); code == 200 {
+		t.Fatal("rename onto an existing category must be refused")
+	}
+}
+
 // refilePost drives handleStatementsRefile with the {id} path value set.
 func refilePost(t *testing.T, srv *Server, id, body string) (int, map[string]any) {
 	t.Helper()

@@ -1751,6 +1751,127 @@ func (s *Server) handleCategoryCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"name": name, "kind": kind, "class": class})
 }
 
+// handleCategoryRename renames one chart-of-accounts category EVERYWHERE the
+// name lives (SETTINGS → Categories): the registry record, every property and
+// entity ledger row, every workbench row (all states), the vendor memory, and
+// entity admin-category lists. Renaming onto an existing name is refused —
+// a merge is a different, deliberate gesture.
+func (s *Server) handleCategoryRename(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	var b struct{ From, To string }
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	from := strings.ToLower(strings.TrimSpace(b.From))
+	to := strings.ToLower(strings.TrimSpace(b.To))
+	if from == "" || to == "" {
+		httpError(w, errBadRequest("from and to are required"))
+		return
+	}
+	if from == to {
+		httpError(w, errBadRequest("that's already the name"))
+		return
+	}
+	cats, backed := s.realestate.MoneyCategories()
+	fromAt := -1
+	for i := range cats {
+		if cats[i].Name == to {
+			httpError(w, errBadRequest(`"`+to+`" already exists — renames never merge categories`))
+			return
+		}
+		if cats[i].Name == from {
+			fromAt = i
+		}
+	}
+	if fromAt < 0 {
+		httpError(w, errBadRequest(`"`+from+`" isn't in the chart of accounts`))
+		return
+	}
+	// registry first — if this write fails nothing else has moved
+	cats[fromAt].Name = to
+	rel := realestate.MoneyCategoriesPath(s.realestateRootOr())
+	items := realestate.EmitMoneyCategoryItems(cats)
+	if backed {
+		if err := s.vault.SetFrontmatterField(rel, "items", items); err != nil {
+			httpError(w, err)
+			return
+		}
+	} else {
+		content := "---\ncategories: [money-categories]\nitems: " + items + "\n---\n\n# Chart of accounts\n"
+		if _, err := s.vault.CreateRecord(rel, content); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	if s.index != nil {
+		_ = s.index.ReindexPaths([]string{rel})
+	}
+	// ledger sweep: every property + entity book. Partial failure reports —
+	// the registry already renamed, so retrying the same rename is safe (the
+	// sweep matches the OLD name only; already-renamed rows don't match).
+	ledgerRows, files := 0, 0
+	var failed []string
+	sweep := func(ledRel string) {
+		n, err := s.vault.RenameLedgerCategory(ledRel, from, to)
+		if err != nil {
+			failed = append(failed, ledRel)
+			return
+		}
+		if n > 0 {
+			ledgerRows += n
+			files++
+		}
+	}
+	if props, err := s.realestate.Properties(); err == nil {
+		for _, p := range props {
+			sweep(realestate.LedgerRel(p.Path))
+		}
+	}
+	ents := s.realestate.Entities()
+	for _, e := range ents {
+		sweep(realestate.LedgerRel(e.Path))
+	}
+	// workbench rows + vendor memory
+	stmtRows := 0
+	if s.statements != nil {
+		stmtRows = s.statements.RenameCategory(from, to)
+	}
+	if s.reImport != nil {
+		s.reImport.RenameCategory(from, to)
+	}
+	// entity admin-category lists (the admin-lane routing vocabulary)
+	for _, e := range ents {
+		hit := false
+		out := make([]string, 0, len(e.AdminCategories))
+		for _, c := range e.AdminCategories {
+			if strings.EqualFold(strings.TrimSpace(c), from) {
+				hit = true
+				c = to
+			}
+			if strings.TrimSpace(c) != "" {
+				out = append(out, strings.TrimSpace(c))
+			}
+		}
+		if hit {
+			if err := s.vault.SetFrontmatterField(e.Path, "admin-categories", "["+strings.Join(out, ", ")+"]"); err != nil {
+				failed = append(failed, e.Path)
+			}
+		}
+	}
+	resp := map[string]any{
+		"from": from, "to": to,
+		"ledgerRows": ledgerRows, "ledgers": files, "workbenchRows": stmtRows,
+	}
+	if len(failed) > 0 {
+		resp["failed"] = failed
+	}
+	writeJSON(w, resp)
+}
+
 func (s *Server) handleEntitiesList(w http.ResponseWriter, r *http.Request) {
 	if s.realestate == nil {
 		writeJSON(w, map[string]any{"entities": []any{}, "contractors": []any{}})

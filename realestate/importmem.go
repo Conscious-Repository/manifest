@@ -192,6 +192,23 @@ func (m *ImportMemory) Remember(sig string, mapping, vendorCats, vendorProps map
 	m.save()
 }
 
+// RenameCategory follows a chart-of-accounts rename into the vendor memory,
+// so future ingests suggest the new name instead of resurrecting the old one.
+func (m *ImportMemory) RenameCategory(from, to string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	changed := false
+	for k, v := range m.st.VendorCategory {
+		if strings.EqualFold(strings.TrimSpace(v), from) {
+			m.st.VendorCategory[k] = to
+			changed = true
+		}
+	}
+	if changed {
+		m.save()
+	}
+}
+
 func (m *ImportMemory) save() {
 	b, err := json.MarshalIndent(m.st, "", "  ")
 	if err != nil {

@@ -252,6 +252,53 @@ func (w *Writer) editLedger(rel string, original []string, replacement *[]string
 	return w.commit(full, "re-ledger", buf.Bytes())
 }
 
+// RenameLedgerCategory rewrites the category column (LedgerHeader index 2) on
+// every row whose category equals from (case-insensitive) — the chart-of-
+// accounts rename sweep. A missing ledger is 0 changes, not an error (most
+// properties have no books yet); a file with no matches is left untouched.
+func (w *Writer) RenameLedgerCategory(rel, from, to string) (int, error) {
+	full, err := w.resolveRecord(rel)
+	if err != nil {
+		return 0, err
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	rd := csv.NewReader(bytes.NewReader(raw))
+	rd.FieldsPerRecord = -1
+	records, err := rd.ReadAll()
+	if err != nil {
+		return 0, err
+	}
+	changed := 0
+	for i, rec := range records {
+		if i == 0 && len(rec) > 0 && strings.EqualFold(strings.TrimSpace(rec[0]), "date") {
+			continue // header
+		}
+		if len(rec) > 2 && strings.EqualFold(strings.TrimSpace(rec[2]), from) {
+			rec[2] = to
+			changed++
+		}
+	}
+	if changed == 0 {
+		return 0, nil
+	}
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	if err := cw.WriteAll(records); err != nil {
+		return 0, err
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		return 0, err
+	}
+	return changed, w.commit(full, "re-ledger", buf.Bytes())
+}
+
 // rowsEqual compares csv rows field-by-field, padding the shorter (ragged rows
 // from hand edits still match their parsed projection).
 func rowsEqual(a, b []string) bool {
