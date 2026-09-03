@@ -1,0 +1,11 @@
+{
+  "header": {"type": "esearch", "version": "0.3"},
+  "esearchresult": {
+    "count": "4",
+    "retmax": "4",
+    "retstart": "0",
+    "idlist": ["39000001", "39000002", "39000003", "39000004"],
+    "translationset": [],
+    "querytranslation": "diffusion mri reconstruction[All Fields]"
+  }
+}

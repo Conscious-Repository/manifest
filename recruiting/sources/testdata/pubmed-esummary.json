@@ -1,0 +1,100 @@
+{
+  "header": {"type": "esummary", "version": "0.3"},
+  "result": {
+    "uids": ["39000001", "39000002", "39000003", "39000004"],
+    "39000001": {
+      "uid": "39000001",
+      "pubdate": "2026 Mar 12",
+      "epubdate": "2026 Feb 28",
+      "source": "Magn Reson Med",
+      "authors": [
+        {"name": "Reyes DM", "authtype": "Author", "clusterid": "", "email": "dana@example.test"},
+        {"name": "Okafor S", "authtype": "Author", "clusterid": ""},
+        {"name": "Natarajan P", "authtype": "Author", "clusterid": ""}
+      ],
+      "lastauthor": "Natarajan P",
+      "title": "Self-supervised reconstruction of diffusion MRI with learned priors.",
+      "sorttitle": "self supervised reconstruction of diffusion mri with learned priors",
+      "volume": "95",
+      "issue": "3",
+      "pages": "1101-1115",
+      "lang": ["eng"],
+      "nlmuniqueid": "8505245",
+      "issn": "0740-3194",
+      "essn": "1522-2594",
+      "pubtype": ["Journal Article"],
+      "recordstatus": "PubMed - indexed for MEDLINE",
+      "pubstatus": "4",
+      "articleids": [
+        {"idtype": "pubmed", "idtypen": 1, "value": "39000001"},
+        {"idtype": "doi", "idtypen": 3, "value": "10.1002/mrm.00001"}
+      ],
+      "fulljournalname": "Magnetic resonance in medicine",
+      "elocationid": "doi: 10.1002/mrm.00001",
+      "sortfirstauthor": "Reyes DM",
+      "sortpubdate": "2026/03/12 00:00"
+    },
+    "39000002": {
+      "uid": "39000002",
+      "pubdate": "2025 Nov",
+      "epubdate": "",
+      "source": "J Magn Reson Imaging",
+      "authors": [
+        {"name": "Okafor S", "authtype": "Author", "clusterid": ""},
+        {"name": "Reyes DM", "authtype": "Author", "clusterid": ""}
+      ],
+      "lastauthor": "Reyes DM",
+      "title": "Compressed sensing for low-field MRI: a prospective study",
+      "sorttitle": "compressed sensing for low field mri a prospective study",
+      "volume": "62",
+      "issue": "5",
+      "pages": "e210-e219",
+      "lang": ["eng"],
+      "pubtype": ["Journal Article"],
+      "articleids": [
+        {"idtype": "pubmed", "idtypen": 1, "value": "39000002"}
+      ],
+      "fulljournalname": "Journal of magnetic resonance imaging : JMRI",
+      "elocationid": "",
+      "sortfirstauthor": "Okafor S",
+      "sortpubdate": "2025/11/01 00:00"
+    },
+    "39000003": {
+      "uid": "39000003",
+      "pubdate": "2024",
+      "epubdate": "",
+      "source": "",
+      "authors": [],
+      "lastauthor": "",
+      "title": "Editorial: the year in imaging.",
+      "fulljournalname": "",
+      "sortfirstauthor": "",
+      "sortpubdate": "2024/01/01 00:00"
+    },
+    "39000004": {
+      "uid": "39000004",
+      "pubdate": "2026 Jan 5",
+      "epubdate": "2025 Dec 20",
+      "source": "Radiology",
+      "authors": [
+        {"name": "Radiology Consortium", "authtype": "CollectiveName", "clusterid": ""},
+        {"name": "Reyes DM", "authtype": "Author", "clusterid": ""}
+      ],
+      "lastauthor": "Reyes DM",
+      "title": "Multicenter evaluation of an accelerated pulse sequence.",
+      "volume": "318",
+      "issue": "1",
+      "pages": "e250001",
+      "lang": ["eng"],
+      "pubtype": ["Journal Article", "Multicenter Study"],
+      "articleids": [
+        {"idtype": "pubmed", "idtypen": 1, "value": "39000004"},
+        {"idtype": "doi", "idtypen": 3, "value": "10.1148/radiol.250001"}
+      ],
+      "fulljournalname": "Radiology",
+      "elocationid": "doi: 10.1148/radiol.250001",
+      "sortfirstauthor": "Radiology Consortium",
+      "sortpubdate": "2026/01/05 00:00"
+    }
+  }
+}
