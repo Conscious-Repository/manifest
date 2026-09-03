@@ -392,14 +392,18 @@ func main() {
 	if err := recStore.Ensure(); err != nil {
 		log.Printf("recruiting records: %v", err)
 	}
-	// The source-run cache (D14): dataDir, never the vault, 0600. Only the
-	// manual adapter is registered in Phase 3a; a later adapter that is
-	// absent or misconfigured leaves the tab working with fewer sources.
+	// The source-run cache (D14): dataDir, never the vault, 0600. Manual
+	// (Phase 3a) and OpenAlex (Phase 3b.1) are registered here; OpenAlex is
+	// keyless and touches the network only when a run asks it to, so it is
+	// always on the rail — no network at startup means no startup failure.
+	// A later adapter that is absent or misconfigured leaves the tab working
+	// with fewer sources.
 	var recRuns *recruiting.RunStore
 	if rs, err := recruiting.NewRunStore(filepath.Join(cfg.DataDir, "recruiting", "runs"), recStore); err != nil {
 		log.Printf("recruiting source runs unavailable: %v", err)
 	} else {
 		rs.Register(sources.Manual{Owner: recStore.Owner()})
+		rs.Register(sources.OpenAlex{Client: http.Client{Timeout: 20 * time.Second}})
 		recRuns = rs
 	}
 	// The real-estate decision log reuses the aion store/grammar pointed at

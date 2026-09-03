@@ -1,0 +1,57 @@
+{
+  "meta": {"count": 3, "db_response_time_ms": 12, "page": 1, "per_page": 25},
+  "results": [
+    {
+      "id": "https://openalex.org/A5023888391",
+      "orcid": "https://orcid.org/0000-0002-1825-0097",
+      "display_name": "Dana Reyes",
+      "display_name_alternatives": ["D. Reyes", "Dana M. Reyes"],
+      "works_count": 312,
+      "cited_by_count": 8841,
+      "summary_stats": {"2yr_mean_citedness": 4.1, "h_index": 41, "i10_index": 120},
+      "last_known_institution": {
+        "id": "https://openalex.org/I136199984",
+        "display_name": "Example Institute of Technology",
+        "country_code": "US",
+        "type": "education"
+      },
+      "affiliations": [
+        {"institution": {"display_name": "Example Institute of Technology", "country_code": "US"}, "years": [2024, 2023]}
+      ],
+      "topics": [
+        {"display_name": "Diffusion MRI Reconstruction", "count": 80},
+        {"display_name": "Compressed Sensing", "count": 55},
+        {"display_name": "Pulse Sequence Design", "count": 30}
+      ],
+      "email": "dana@example.test",
+      "updated_date": "2026-08-30T00:00:00.000000"
+    },
+    {
+      "id": "https://openalex.org/A5011111111",
+      "orcid": null,
+      "display_name": "Sam Okafor",
+      "display_name_alternatives": [],
+      "works_count": 27,
+      "cited_by_count": 410,
+      "summary_stats": {"2yr_mean_citedness": 1.9, "h_index": 9, "i10_index": 8},
+      "last_known_institution": null,
+      "last_known_institutions": [
+        {"display_name": "Northern Imaging Lab", "country_code": "CA"}
+      ],
+      "affiliations": [],
+      "topics": [{"display_name": "RF Coil Design", "count": 12}]
+    },
+    {
+      "id": "https://openalex.org/A5099999999",
+      "orcid": "0000-0001-5000-0007",
+      "display_name": "Marlow Finch",
+      "display_name_alternatives": ["M. Finch"],
+      "works_count": 0,
+      "cited_by_count": 0,
+      "summary_stats": {"h_index": 0},
+      "last_known_institution": null,
+      "affiliations": [],
+      "topics": []
+    }
+  ]
+}
