@@ -19,6 +19,7 @@ var Corpora = map[string]func(raw string) string{
 	"network/edges.md":  func(raw string) string { return SerializeEdges(ParseEdges(raw)) },
 	"roles/*.md":        func(raw string) string { return SerializeRole(ParseRole(raw)) },
 	"candidates/*.md":   func(raw string) string { return SerializeCandidate(ParseCandidate(raw)) },
+	"outreach/*.md":     func(raw string) string { return SerializeOutreach(ParseOutreach(raw)) },
 }
 
 // Files are the fixed, non-glob records — the ones Ensure seeds by name.

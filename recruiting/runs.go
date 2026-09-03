@@ -76,8 +76,8 @@ type RunState struct {
 	Pinned    bool          `json:"pinned"`
 	// TriagedAt is set once nothing in the queue is still `new` (or at once
 	// for a dry run, which has nothing to decide). It starts the D14 clock.
-	TriagedAt time.Time `json:"triagedAt,omitempty"`
-	ExpiresAt time.Time `json:"expiresAt,omitempty"`
+	TriagedAt time.Time `json:"triagedAt,omitzero"`
+	ExpiresAt time.Time `json:"expiresAt,omitzero"`
 }
 
 // Draft is one review-queue entry: the adapter's draft plus what the owner
@@ -88,7 +88,7 @@ type Draft struct {
 	Status      string                 `json:"status"`
 	Reason      string                 `json:"reason,omitempty"`
 	CandidateID string                 `json:"candidateId,omitempty"`
-	DecidedAt   time.Time              `json:"decidedAt,omitempty"`
+	DecidedAt   time.Time              `json:"decidedAt,omitzero"`
 	Draft       sources.CandidateDraft `json:"draft"`
 }
 

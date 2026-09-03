@@ -121,8 +121,12 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-path.derived .rec-path-hops { color: var(--base-50); }
 
 .rec-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; font-size: var(--fs-sm); color: var(--base-80); }
+/* the armed state is .aion-insp-del.armed from 92-aion.css (accent text on
+   the --over fill) — no override here, or the text goes danger-on-danger */
 .rec-archive { display: block; margin-top: var(--sp-7); }
-.rec-archive.armed { color: var(--danger); }
+
+/* the rail's sync box: the mirror button(s) and the last-synced stamp */
+.rec-sync { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
 
 /* sources — the scout-run panel (Phase 3a). One adapter over one explicit
    scope, one draft accepted at a time: there is no accept-all button because

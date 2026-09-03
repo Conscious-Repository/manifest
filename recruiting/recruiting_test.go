@@ -30,6 +30,7 @@ func TestFixpointPerRecordKind(t *testing.T) {
 		{"seeds.md", "seeds.md"},
 		{"network-people.md", "network/people.md"},
 		{"network-edges.md", "network/edges.md"},
+		{"outreach-log.md", "outreach/x.md"},
 	} {
 		raw := read(t, tc.file)
 		fn := RoundTrip(tc.shape)

@@ -353,7 +353,9 @@ func (c *Client) Send(ctx context.Context, msg Message) (Ref, error) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := hc.Do(req)
 	if err != nil {
-		return Ref{}, c.redactErr(err, tok.Token)
+		// the "gmail send:" prefix is what the outreach route maps to a 502:
+		// a transport failure is Gmail's, not the owner's request
+		return Ref{}, c.redactErr(fmt.Errorf("gmail send: %w", err), tok.Token)
 	}
 	defer resp.Body.Close()
 	out, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

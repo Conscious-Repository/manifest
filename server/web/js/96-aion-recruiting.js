@@ -139,7 +139,21 @@ async function renderAionRecruiting(host) {
     Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", recStage === k));
     paintRail(rail);
     paintBoard(board);
-    paintInspector(inspector);
+    // on a phone the aside is display:none (92-aion.css), so the inspector
+    // goes into the bottom sheet — the same route fundraising takes
+    if (window.mf && window.mf.phone()) {
+      if (recSel) {
+        window.mfSheet.open((body) => paintInspector(body), {
+          key: "recruiting",
+          onClose: () => { if (recSel) { recSel = null; paint(); } },
+          reopen: () => { if (!els.aionView.hidden && aionMode === "recruiting") renderAion(); },
+        });
+      } else {
+        window.mfSheet.closeIf("recruiting");
+      }
+    } else {
+      paintInspector(inspector);
+    }
   };
   paint();
 }
@@ -258,11 +272,13 @@ function paintSeeds() {
   box.append(list);
 
   // a seed is typed as `class: name` so all four D11 classes share one input
-  box.append(ghostInput("＋ seed: person, lab, company, repo, or paper", "aion-add rec-seed-add", (raw) => {
+  box.append(ghostInput("＋ seed: person, company, lab, work, or repo", "aion-add rec-seed-add", (raw) => {
     const at = raw.indexOf(":");
     const cls = at > 0 ? raw.slice(0, at).trim().toLowerCase() : "";
     const name = at > 0 ? raw.slice(at + 1).trim() : raw.trim();
-    if (!cls) { showToast("prefix the class, e.g. lab: WashU BME"); return; }
+    // ghostInput has already settled the input, so a refused entry must
+    // repaint or the dead input stays on screen
+    if (!cls) { showToast("prefix the class, e.g. lab: WashU BME"); renderAion(); return; }
     return recPost("/api/aion/recruiting/seed", { class: cls, name }, "seed added");
   }));
   return box;
@@ -571,7 +587,9 @@ function recCard(c) {
     kind: "rec-card" + (recSel === c.id ? " sel" : ""),
     chips: [recGateChip(c), c.evidence && c.evidence.length ? el("span", "micro-label rec-ev", c.evidence.length + " EV") : null],
     title: c.name,
-    date: c.created,
+    // created is a date-only string; through fmtWhen it would parse as UTC
+    // midnight and print the day before west of Greenwich, so it goes raw
+    date: c.created ? el("span", "feed-date", c.created) : null,
     meta: sub || null,
   });
   card.onclick = () => { recSel = recSel === c.id ? null : c.id; renderAion(); };
@@ -874,7 +892,7 @@ function recOutreachSection(c) {
     if (o.last) row.append(el("span", "rec-ev-when", o.last));
     sec.append(row);
   });
-  if (!(c.outreach || []).length) sec.append(emptyRow("outreach is approval-gated — not in this phase"));
+  if (!(c.outreach || []).length) sec.append(emptyRow("no outreach yet"));
   return sec;
 }
 
@@ -985,7 +1003,9 @@ function recAshbySection(c) {
   (prop.diff || []).forEach((d) => {
     if (d.action === "keep" || d.action === "skip") return;
     const row = el("div", "rec-next");
-    row.append(el("span", "micro-label" + (d.action === "conflict" ? " rec-archive armed" : ""), d.action));
+    // a conflict chip borrows the gate's blocked recipe (danger border +
+    // text); rec-archive is the block-level button, not a chip
+    row.append(el("span", "micro-label" + (d.action === "conflict" ? " rec-gate blocked" : ""), d.action));
     row.append(el("span", "", d.field + ": " + (d.manifest || "—") + (d.ashby ? " ⇄ " + d.ashby : "")));
     sec.append(row);
   });
@@ -999,6 +1019,11 @@ function recAshbySection(c) {
   approve.onclick = () => {
     const armed = el("button", "aion-insp-del rec-archive armed", "confirm push?");
     armed.onclick = async () => {
+      // the push is not idempotent (candidate.create → project/application →
+      // note), so the confirmed button goes inert for the whole round-trip
+      if (armed.disabled) return;
+      armed.disabled = true;
+      armed.textContent = "pushing…";
       try {
         const out = await recAshbyCall("/api/aion/recruiting/ashby/push/" + c.id, Object.assign(req(), { approve: true }));
         if (out.proposal && !out.push) { recAshbyProposal[c.id] = out.proposal; showToast(out.error || "push refused"); renderAion(); return; }
@@ -1006,7 +1031,13 @@ function recAshbySection(c) {
         delete recAshbyProposal[c.id];
         showToast("ashby: candidate " + ((out.push || {}).ashbyCandidateId || "") + ((out.push || {}).ashbyApplicationId ? " · application " + out.push.ashbyApplicationId : ""));
         renderAion();
-      } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+      } catch (e) {
+        showToast(String(e.message || e).slice(0, 140));
+        // a failed push leaves the proposal on screen; re-arm so the owner
+        // can retry after reading the toast
+        armed.disabled = false;
+        armed.textContent = "confirm push?";
+      }
     };
     approve.replaceWith(armed);
     armed.focus();
