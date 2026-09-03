@@ -339,6 +339,109 @@ func (s *Store) saveDraftEdges(d sources.CandidateDraft, candidateID string) err
 	return s.SaveEdges(edges)
 }
 
+// AdoptAshbyApplicant lands one Ashby-side applicant on the board (owner
+// decision 2026-09-03: Manifest is the single management surface; Ashby is
+// the distribution channel that collects applicants). An existing UNLINKED
+// record with the same email or name is linked rather than duplicated — the
+// scouted person who then applied — keeping their owner-authored profile;
+// otherwise a fresh record lands straight in the `ashby` column with the ATS
+// stage on `ashby_stage`. Contact details are copied on create and onto
+// EMPTY slots on adopt: the D15 empty-slot rule exists because adapters
+// scrape, and the owner's own ATS is first-party — the applicant typed that
+// address to us. Returns the record id and whether it was newly created.
+func (s *Store) AdoptAshbyApplicant(c AshbyCandidate, appID, ashbyStage, role string, now time.Time) (string, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		return "", false, errf("ashby candidate %s carries no name", c.ID)
+	}
+	emails := map[string]bool{}
+	for _, e := range append([]string{c.PrimaryEmail}, c.Emails...) {
+		if e = strings.ToLower(strings.TrimSpace(e)); e != "" {
+			emails[e] = true
+		}
+	}
+	taken := map[string]bool{}
+	var matchSlug string
+	var match *CandidateDoc
+	for _, slug := range s.CandidateSlugs() {
+		taken[slug] = true
+		d := s.LoadCandidate(slug)
+		if strings.TrimSpace(d.Get("ashby_candidate_id")) == c.ID {
+			return d.Get("id"), false, nil // already ours
+		}
+		// only unlinked records are adoption candidates — a record linked to
+		// a DIFFERENT Ashby person is someone else with the same name
+		if match != nil || strings.TrimSpace(d.Get("ashby_candidate_id")) != "" {
+			continue
+		}
+		if emails[strings.ToLower(strings.TrimSpace(d.Profile()["email"]))] ||
+			strings.EqualFold(strings.TrimSpace(d.Get("name")), name) {
+			matchSlug, match = slug, d
+		}
+	}
+	if match != nil {
+		match.Set("ashby_candidate_id", c.ID)
+		if appID != "" {
+			match.Set("ashby_application_id", appID)
+		}
+		match.Set("ashby_stage", ashbyStage)
+		match.Set("ashby_synced", now.UTC().Format("2006-01-02"))
+		if match.Get("stage") != StageArchived {
+			match.Set("stage", StageAshby)
+		}
+		p := match.Profile()
+		if strings.TrimSpace(p["email"]) == "" && strings.TrimSpace(c.PrimaryEmail) != "" {
+			if err := match.SetProfile("email", strings.TrimSpace(c.PrimaryEmail)); err != nil {
+				return "", false, err
+			}
+		}
+		if strings.TrimSpace(p["phone"]) == "" && strings.TrimSpace(c.PrimaryPhone) != "" {
+			if err := match.SetProfile("phone", strings.TrimSpace(c.PrimaryPhone)); err != nil {
+				return "", false, err
+			}
+		}
+		if err := s.SaveCandidate(matchSlug, match); err != nil {
+			return "", false, err
+		}
+		return match.Get("id"), false, nil
+	}
+
+	slug := NewCandidateSlug(name, taken)
+	doc := &CandidateDoc{Slug: slug}
+	doc.FMBlank = true
+	for _, kv := range [][2]string{
+		{"id", CandidateID(slug)}, {"name", name}, {"role", role},
+		{"stage", StageAshby}, {"owner", ""}, {"pii", "true"},
+		{"ashby_candidate_id", c.ID}, {"ashby_application_id", appID},
+		{"ashby_stage", ashbyStage}, {"ashby_synced", now.UTC().Format("2006-01-02")},
+		{"created", now.UTC().Format("2006-01-02")}, {"archived", ""},
+	} {
+		doc.Set(kv[0], kv[1])
+	}
+	profile := ensureSection(&doc.Sections, "profile")
+	appendRow(profile, newRow("title", strings.TrimSpace(c.Position), "org", strings.TrimSpace(c.Company), "location", strings.TrimSpace(c.Location)))
+	links := newRow()
+	for _, kv := range [][2]string{{"linkedin", c.LinkedInURL}, {"github", c.GitHubURL}, {"website", c.Website}} {
+		if v := strings.TrimSpace(kv[1]); v != "" {
+			links.Fields = append(links.Fields, Field{Key: kv[0], Value: v})
+		}
+	}
+	if len(links.Fields) > 0 {
+		appendRow(profile, links)
+	}
+	appendRow(profile, newRow("email", strings.TrimSpace(c.PrimaryEmail), "phone", strings.TrimSpace(c.PrimaryPhone)))
+	ensureSection(&doc.Sections, "fit")
+	ensureSection(&doc.Sections, "evidence")
+	ensureSection(&doc.Sections, "network")
+	ensureSection(&doc.Sections, "next")
+	if err := s.SaveCandidate(slug, doc); err != nil {
+		return "", false, err
+	}
+	return CandidateID(slug), true, nil
+}
+
 // newCandidateDoc builds the record shell for an accepted draft. `pii: true`
 // is stamped because it is: these records carry a real person's details, and
 // the file should say so to anything that reads it.
@@ -554,8 +657,10 @@ func (s *Store) Archive(id string, archived bool, now time.Time) (Candidate, err
 }
 
 // UpdateCandidate edits the name, the role tether, and the profile fields.
-// `email` and `phone` are editable HERE and only here: contact discovery is
-// manual (D15), so the owner may type one and no machine may.
+// `email` and `phone` are editable HERE and via the Ashby import only:
+// contact discovery from SCOUTED sources stays manual (D15) — the import is
+// the one machine writer, and only with first-party applicant data the
+// person typed into the owner's own ATS (decision 2026-09-03).
 func (s *Store) UpdateCandidate(id string, set map[string]string) (Candidate, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

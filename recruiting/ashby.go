@@ -1560,17 +1560,26 @@ type AshbySyncBackResult struct {
 	Updated      []string `json:"updated"`
 	Drifted      []string `json:"drifted"`
 	Conflicts    []string `json:"conflicts"`
+	// Imported are records CREATED from Ashby-only applicants this sync;
+	// Adopted are existing unlinked records the sync linked to their Ashby
+	// person (the scouted candidate who then applied). Phase 8 import.
+	Imported []string `json:"imported"`
+	Adopted  []string `json:"adopted"`
 }
 
-// SyncBack mirrors Ashby-authoritative state INBOUND for records already
-// linked to Ashby, and nothing else:
+// SyncBack mirrors Ashby-authoritative state INBOUND:
 //
 //   - jobPosting.list (listedOnly:false, explicit) fills `ashby_job_id` on
 //     roles whose `ashby_posting_id` the Phase 2 mirror wrote;
 //   - candidate.list refreshes each linked candidate's base snapshot, and
 //     reports shared fields where Ashby moved (`drifted`) or both moved
 //     (`conflicts`) — it never rewrites a Manifest profile field;
-//   - application.list mirrors the official stage onto `ashby_stage`.
+//   - application.list mirrors the official stage onto `ashby_stage`;
+//   - and (Phase 8, owner decision 2026-09-03) an applicant existing only in
+//     Ashby with a live application to a mirrored role becomes a record here
+//     — created into the `ashby` column, or adopted onto a matching unlinked
+//     record (see Store.AdoptAshbyApplicant). Manifest manages; Ashby
+//     distributes.
 //
 // `full` ignores stored syncTokens; otherwise the incremental tokens from
 // the last run are used where the endpoint returned one. There is no timer
@@ -1595,7 +1604,8 @@ func (a *AshbySync) SyncBack(ctx context.Context, full bool, now time.Time) (Ash
 // save to the caller, so a webhook can record its key in the same write.
 func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool, now time.Time) (AshbySyncBackResult, error) {
 	res := AshbySyncBackResult{Full: full, Synced: now.UTC().Format(time.RFC3339),
-		RolesLinked: []string{}, Updated: []string{}, Drifted: []string{}, Conflicts: []string{}}
+		RolesLinked: []string{}, Updated: []string{}, Drifted: []string{}, Conflicts: []string{},
+		Imported: []string{}, Adopted: []string{}}
 	token := func(method string) string {
 		if full {
 			return ""
@@ -1720,9 +1730,63 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 			return res, err
 		}
 	}
+
+	// Import (Phase 8, owner decision 2026-09-03): Manifest is the single
+	// management surface and Ashby the distribution channel, so an applicant
+	// who exists only in Ashby lands here on their own — when their
+	// application is LIVE and to a job a Manifest role mirrors. Archived
+	// applications and unmirrored jobs stay out; a candidate with no
+	// application at all (a raw ATS import) stays out too. The driver is
+	// applications: on a webhook sync the incremental application.list
+	// carries the new applicant, and their candidate object is fetched by id
+	// when the candidate batch missed them (a candidate deleted in Ashby
+	// since is skipped, not an error — the next full sync is the healer).
+	roleByJob := map[string]string{}
+	for _, slug := range a.store.RoleSlugs() {
+		if id := strings.TrimSpace(a.store.LoadRole(slug).Get("ashby_job_id")); id != "" {
+			roleByJob[id] = slug
+		}
+	}
+	candByID := map[string]AshbyCandidate{}
+	for _, c := range cands {
+		candByID[c.ID] = c
+	}
+	for _, app := range apps {
+		if _, ok := linked[app.CandidateID]; ok {
+			continue
+		}
+		roleSlug, ok := roleByJob[app.JobID]
+		if !ok || strings.EqualFold(app.Status, "Archived") {
+			continue
+		}
+		c, ok := candByID[app.CandidateID]
+		if !ok {
+			got, err := a.client.GetCandidate(ctx, app.CandidateID)
+			if err != nil {
+				continue
+			}
+			c = got
+		}
+		id, created, err := a.store.AdoptAshbyApplicant(c, app.ID, ashbyStageOf(app), "role/"+roleSlug, now)
+		if err != nil {
+			return res, err
+		}
+		// a second application of the same person later in the list is
+		// "not ours", same as the linked loop above
+		linked[app.CandidateID] = CandidateSlug(id)
+		st.Candidates[id] = AshbyCandidateState{AshbyID: c.ID, Base: ashbySide(c), SyncedAt: res.Synced}
+		if created {
+			res.Imported = append(res.Imported, id)
+		} else {
+			res.Adopted = append(res.Adopted, id)
+		}
+	}
+
 	sort.Strings(res.Updated)
 	sort.Strings(res.Drifted)
 	sort.Strings(res.Conflicts)
+	sort.Strings(res.Imported)
+	sort.Strings(res.Adopted)
 
 	if ctoken != "" {
 		st.SyncTokens["candidate.list"] = ctoken

@@ -870,7 +870,8 @@ func TestAshbySyncBackMirrorsInboundOnly(t *testing.T) {
 	// Ashby moves the application and the candidate's profile
 	h.fake.apps[res.ApplicationID]["currentInterviewStage"] = map[string]any{"id": "st_2", "title": "Onsite"}
 	h.fake.candidates[res.CandidateID]["socialLinks"] = []map[string]any{{"type": "LinkedIn", "url": "https://linkedin.example/in/dana-moved"}}
-	// an unlinked Ashby candidate must not become a record
+	// an Ashby candidate with NO application must not become a record — the
+	// Phase 8 import is driven by live applications to mirrored roles only
 	h.fake.candidates["cand_stranger"] = wireCandidate("cand_stranger", "Some Stranger", "s@example.test", "")
 
 	before := len(h.store.CandidateSlugs())
@@ -932,6 +933,103 @@ func TestAshbySyncBackMirrorsInboundOnly(t *testing.T) {
 	}
 	if c, _ := h.fake.last("candidate.list"); c.Body["syncToken"] != nil {
 		t.Fatalf("full sync sent a token: %v", c.Body)
+	}
+}
+
+// ---- Phase 8: applicants existing only in Ashby land on the board ----
+
+// Owner decision 2026-09-03: Manifest is the single management surface,
+// Ashby the distribution channel. A live application to a mirrored role
+// imports its candidate (created into the `ashby` column, contact included —
+// first-party applicant data, not a scrape); a matching unlinked record is
+// ADOPTED instead of duplicated; archived applications, unmirrored jobs and
+// application-less candidates stay out; and a second sync imports nothing
+// twice.
+func TestAshbySyncBackImportsApplicants(t *testing.T) {
+	h := newAshbyHarness(t)
+	appFor := func(id, cand, job, status string) map[string]any {
+		return map[string]any{"id": id, "status": status,
+			"candidate": map[string]any{"id": cand}, "job": map[string]any{"id": job},
+			"currentInterviewStage": map[string]any{"id": "st_1", "title": "Application Review"}}
+	}
+	// a stranger who applied to the mirrored job — imports
+	ava := wireCandidate("cand_ava", "Ava Applicant", "ava@example.test", "https://linkedin.example/in/ava")
+	ava["position"] = "MRI Physicist"
+	ava["company"] = "Fieldline"
+	ava["primaryPhoneNumber"] = map[string]any{"value": "+1 314 555 0100"}
+	h.fake.candidates["cand_ava"] = ava
+	h.fake.apps["app_ava"] = appFor("app_ava", "cand_ava", "job_mri", "Active")
+	// rejected in Ashby — stays out
+	h.fake.candidates["cand_rex"] = wireCandidate("cand_rex", "Rex Rejected", "rex@example.test", "")
+	h.fake.apps["app_rex"] = appFor("app_rex", "cand_rex", "job_mri", "Archived")
+	// live application, but to a job no Manifest role mirrors — stays out
+	h.fake.candidates["cand_fay"] = wireCandidate("cand_fay", "Fay Foreign", "fay@example.test", "")
+	h.fake.apps["app_fay"] = appFor("app_fay", "cand_fay", "job_elsewhere", "Active")
+	// the scouted person who then applied: Dana is on the board, unlinked,
+	// with her email typed by the owner — the import must LINK, not duplicate
+	h.fake.candidates["cand_dana"] = wireCandidate("cand_dana", "Dana Reyes", "dana@example.test", "")
+	h.fake.apps["app_dana"] = appFor("app_dana", "cand_dana", "job_mri", "Active")
+
+	before := len(h.store.CandidateSlugs())
+	out, err := h.sync.SyncBack(context.Background(), true, testNow.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(out.Imported, ",") != "cand/ava-applicant" {
+		t.Fatalf("imported: %+v", out)
+	}
+	if strings.Join(out.Adopted, ",") != h.cand.ID {
+		t.Fatalf("adopted: %+v", out)
+	}
+	if got := len(h.store.CandidateSlugs()); got != before+1 {
+		t.Fatalf("records: %d → %d (rex/fay must stay out)", before, got)
+	}
+	// the created record: ashby column, role tether, ATS stage, contact
+	b, err := os.ReadFile(filepath.Join(h.vault, "system/aion/recruiting/candidates/ava-applicant.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := string(b)
+	for _, want := range []string{"stage: ashby", "role: role/mri-engineer",
+		"ashby_candidate_id: cand_ava", "ashby_application_id: app_ava",
+		"ashby_stage: Application Review", "pii: true",
+		"ava@example.test", "+1 314 555 0100", "https://linkedin.example/in/ava", "MRI Physicist"} {
+		if !strings.Contains(rec, want) {
+			t.Fatalf("imported record lacks %q:\n%s", want, rec)
+		}
+	}
+	// the adopted record gained the link and moved to the ashby column, and
+	// the owner-typed profile survived
+	drec := h.record(t)
+	for _, want := range []string{"ashby_candidate_id: cand_dana", "ashby_application_id: app_dana", "stage: ashby", "dana@example.test"} {
+		if !strings.Contains(drec, want) {
+			t.Fatalf("adopted record lacks %q:\n%s", want, drec)
+		}
+	}
+	// both got base snapshots, so the next sync diffs instead of re-importing
+	st := h.stateFile(t)
+	if st.Candidates["cand/ava-applicant"].AshbyID != "cand_ava" || st.Candidates[h.cand.ID].AshbyID != "cand_dana" {
+		t.Fatalf("state: %+v", st.Candidates)
+	}
+
+	// idempotent: the second full sync creates and adopts nothing
+	out2, err := h.sync.SyncBack(context.Background(), true, testNow.Add(2*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out2.Imported) != 0 || len(out2.Adopted) != 0 {
+		t.Fatalf("second sync imported again: %+v", out2)
+	}
+	if got := len(h.store.CandidateSlugs()); got != before+1 {
+		t.Fatalf("second sync changed the board: %d", got)
+	}
+
+	// a dangling application (its candidate deleted in Ashby since) is
+	// skipped, never a sync failure
+	delete(h.fake.candidates, "cand_ava")
+	h.fake.apps["app_ghost"] = appFor("app_ghost", "cand_gone", "job_mri", "Active")
+	if _, err := h.sync.SyncBack(context.Background(), true, testNow.Add(3*time.Hour)); err != nil {
+		t.Fatalf("dangling application failed the sync: %v", err)
 	}
 }
 

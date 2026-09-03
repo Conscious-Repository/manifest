@@ -1299,6 +1299,8 @@ async function recAshbySyncBack(full) {
     if (out.view) recCache = out.view;
     const s = out.sync || {};
     showToast("ashby sync: " + (s.candidates || 0) + " candidates · " + (s.applications || 0) + " applications" +
+      ((s.imported || []).length ? " · " + s.imported.length + " imported ← ashby" : "") +
+      ((s.adopted || []).length ? " · " + s.adopted.length + " linked ← ashby" : "") +
       ((s.updated || []).length ? " · " + s.updated.length + " updated" : "") +
       ((s.conflicts || []).length ? " · " + s.conflicts.length + " conflicts" : ""));
     renderAion();
