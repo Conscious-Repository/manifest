@@ -141,3 +141,80 @@ func TestOodaSplitStaysARow(t *testing.T) {
 			"media query, where .ooda-insp is widened to match", rule)
 	}
 }
+
+// The cockpit's own sheets are the larger, faster-moving half of the same
+// hazard the portal test above describes, and until now nothing guarded them:
+// index.html loads 26 stylesheets into ONE cascade, and the next tab to ship
+// adds another. A name reused inside a single sheet loses the earlier rule
+// exactly the way `.ooda-split` did.
+//
+// Same narrow detector, so the same things stay legal: @media overrides,
+// compound selectors, and a name that two DIFFERENT sheets each define — that
+// is cross-file layering, which the load order in index.html makes deliberate.
+// What fails is one sheet defining one bare selector twice.
+func TestCockpitCSSHasNoDuplicateSelectors(t *testing.T) {
+	ents, err := fs.ReadDir(webFiles, "web/css")
+	if err != nil {
+		t.Fatalf("read web/css: %v", err)
+	}
+	sheets := 0
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".css") {
+			continue
+		}
+		sheet := "web/css/" + e.Name()
+		b, err := fs.ReadFile(webFiles, sheet)
+		if err != nil {
+			t.Fatalf("read %s: %v", sheet, err)
+		}
+		sheets++
+		found := duplicateSelectors(string(b))
+		for sel, lines := range found {
+			if cockpitDuplicateBaseline[sheet][sel] {
+				continue
+			}
+			t.Errorf("%s: %q is defined %d times (lines %v) — the last one wins, "+
+				"silently. Rename the newcomer or merge the rules.",
+				sheet, sel, len(lines), lines)
+		}
+		// and the baseline only ever shrinks: a fixed sheet must drop its entry,
+		// or the exemption outlives the reason for it
+		for sel := range cockpitDuplicateBaseline[sheet] {
+			if _, still := found[sel]; !still {
+				t.Errorf("%s: %q is no longer duplicated — delete it from "+
+					"cockpitDuplicateBaseline so the guard covers it again.", sheet, sel)
+			}
+		}
+	}
+	if sheets == 0 {
+		t.Fatal("no cockpit stylesheets were scanned — the embed layout moved")
+	}
+}
+
+// cockpitDuplicateBaseline is what was already in the tree the day this guard
+// was written, exempted so the check can go in without a CSS rewrite riding
+// along. It is not a blessing — it is a list, and the test above makes it
+// shrink-only.
+//
+// Two kinds are in here:
+//
+//   - the documented mono-label idiom (`ui-conventions.md §labels`): the
+//     invariant recipe stated once at the top of the sheet, then the same
+//     selector again lower down carrying only its own size/colour/padding.
+//     `.rail-group-label`, `.aion-org-label`, `.reading-strip-head`,
+//     `.note-bl-head`, `.o-st` and `.ta-item` are all this shape. Deliberate,
+//     and the detector cannot tell it apart from the accident.
+//   - genuine later-in-file overrides — `.cad-raw` (45 → 194),
+//     `.signal-label` (34 → 113), `.cols-aion-people` (101 → 133). These read
+//     as drift and should be merged the next time those sheets are opened;
+//     they are grandfathered, not endorsed.
+var cockpitDuplicateBaseline = map[string]map[string]bool{
+	"web/css/05-primitives.css": {".aion-org-label": true, ".ta-item": true},
+	"web/css/07-nav.css":        {".rail-group-label": true},
+	"web/css/20-goals.css":      {".o-st": true},
+	"web/css/40-spirits.css":    {".cad-raw": true},
+	"web/css/45-feed.css":       {".signal-label": true},
+	"web/css/65-reading.css":    {".reading-strip-head": true},
+	"web/css/70-note.css":       {".note-bl-head": true},
+	"web/css/92-aion.css":       {".cols-aion-people": true},
+}
