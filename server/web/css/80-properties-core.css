@@ -583,6 +583,10 @@
 /* the money row's phone meta line — desktop keeps the 4-column grid instead */
 .re-money-meta { display: none; }
 
+/* transfer suggestion — a server-matched cross-entity mirror, approvable in place */
+.re-xfer-hint { display: flex; gap: var(--sp-3); align-items: baseline; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); }
+.re-xfer-link { flex: none; }
+
 /* pass 5: est slots · unit-mix + measurables editors · log · look-back · upload */
 .re-est-chip { flex: none; background: none; border: none; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
 .re-est-chip:hover { color: var(--accent); }

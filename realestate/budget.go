@@ -193,7 +193,11 @@ func ComputeProjectBudget(src SourceMoney, work []WorkStage, ledger []LedgerRow,
 				if row.Budget > row.Committed {
 					row.Committed = row.Budget
 				}
-				if acq == AcqClosed && row.Budget > row.Paid {
+				// PAID fills from the plan only while the ledger is SILENT
+				// (owner call 2026-09-03): the moment real acquisition money
+				// is attributed, actuals replace the hard-coded price — the
+				// plan number stays as the budget line, never as spend.
+				if acq == AcqClosed && row.Paid == 0 && row.Budget > 0 {
 					row.Paid = row.Budget
 					row.Recognized = row.Budget
 				}

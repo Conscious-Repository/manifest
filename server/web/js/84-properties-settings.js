@@ -237,7 +237,7 @@ function renderFlatRegistry(pane, kind, rows) {
 async function renderCategoriesPanel(pane) {
   const cats = await ensureMoneyCats(true);
   pane.append(el("div", "pp-section-head",
-    "CHART OF ACCOUNTS — class routes money: operating stays out of rehab budgets"));
+    "CHART OF ACCOUNTS — class routes money: operating stays out of rehab budgets · acquisition counts toward the purchase price · soft joins carry costs · project = the hard lane"));
   const list = el("div", "set-entities");
   const retype = async (c, cls) => {
     try {
@@ -270,7 +270,7 @@ async function renderCategoriesPanel(pane) {
       row.append(name);
       const cls = document.createElement("select");
       cls.className = "pp-in";
-      ["operating", "project"].forEach((v) => {
+      ["operating", "project", "soft", "acquisition"].forEach((v) => {
         const o = document.createElement("option");
         o.value = v; o.textContent = v;
         cls.append(o);
@@ -302,7 +302,7 @@ async function renderCategoriesPanel(pane) {
   kindSel.className = "pp-in";
   const clsSel = document.createElement("select");
   clsSel.className = "pp-in";
-  [["expense", "income"], ["operating", "project"]].forEach((vals, i) => {
+  [["expense", "income"], ["operating", "project", "soft", "acquisition"]].forEach((vals, i) => {
     const sel = i ? clsSel : kindSel;
     vals.forEach((v) => {
       const o = document.createElement("option");

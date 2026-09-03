@@ -27,8 +27,18 @@ import (
 type MoneyCategory struct {
 	Name  string `json:"name"`
 	Kind  string `json:"kind"`  // income | expense
-	Class string `json:"class"` // operating | project
+	Class string `json:"class"` // operating | project | soft | acquisition
 }
+
+// ValidCategoryClass gates the class axis: project (= the hard lane) and
+// operating from day one; soft and acquisition added 2026-09-03 so a filed
+// row can land in those plan lines (acquisition actuals meeting the purchase
+// price instead of inflating hard).
+func validCategoryClass(c string) bool {
+	return c == "operating" || c == "project" || c == CatSoft || c == CatAcquisition
+}
+
+func ValidCategoryClass(c string) bool { return validCategoryClass(c) }
 
 // DefaultMoneyCategories is the day-one vocabulary (also the seed content
 // the first create gesture writes into the record).
@@ -45,8 +55,9 @@ func DefaultMoneyCategories() []MoneyCategory {
 	all = append(all, mk("expense", "operating",
 		"internet", "electric", "gas", "water-sewer", "trash", "insurance",
 		"property-tax", "maintenance", "lawn-snow", "management", "legal", "hoa")...)
+	all = append(all, mk("expense", "acquisition", "closing")...)
 	all = append(all, mk("expense", "project",
-		"materials", "labor", "closing", "drawings", "permits", "demo",
+		"materials", "labor", "drawings", "permits", "demo",
 		"roof", "windows", "plumbing", "electrical", "hvac", "framing",
 		"drywall", "paint", "flooring", "appliances", "landscaping")...)
 	return all
@@ -71,7 +82,7 @@ func ParseMoneyCategories(raw string) []MoneyCategory {
 			}
 		}
 		if len(parts) > 2 {
-			if cl := strings.ToLower(strings.TrimSpace(parts[2])); cl == "operating" || cl == "project" {
+			if cl := strings.ToLower(strings.TrimSpace(parts[2])); validCategoryClass(cl) {
 				c.Class = cl
 			}
 		}

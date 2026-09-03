@@ -155,6 +155,17 @@ func TestAcquisitionSpendFollowsClosing(t *testing.T) {
 		t.Fatalf("closed acquisition with ledger row = %+v, want paid 60000 (no double count), over", a)
 	}
 
+	// closed + acquisition actuals BELOW the plan: the ledger wins — the
+	// hard-coded price stops back-filling PAID the moment real money is
+	// attributed (owner call 2026-09-03), while committed keeps the max
+	// (the price remains the obligation/plan, never counted as spend twice)
+	pb = ComputeProjectBudget(src, nil, []LedgerRow{
+		{Type: "expense", Amount: 18000, Cat: "acquisition"},
+	}, AcqClosed, nil)
+	if a := cats(pb)[CatAcquisition]; a.Paid != 18000 || a.Recognized != 18000 || a.Committed != 57000 {
+		t.Fatalf("closed acquisition with partial actuals = %+v, want paid/recognized 18000 and committed 57000", a)
+	}
+
 	// an earnest-money deposit under contract is real cash and still counts
 	pb = ComputeProjectBudget(src, nil, []LedgerRow{
 		{Type: "expense", Amount: 2500, Cat: "acquisition"},

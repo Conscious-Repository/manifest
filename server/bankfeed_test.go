@@ -88,7 +88,7 @@ control: owned
 `)
 	write("system/realestate/categories.md", `---
 categories: [money-categories]
-items: ["internet | expense | operating", "rent | income | operating", "windows | expense | project", "materials | expense | project"]
+items: ["internet | expense | operating", "rent | income | operating", "windows | expense | project", "materials | expense | project", "closing | expense | acquisition"]
 ---
 `)
 

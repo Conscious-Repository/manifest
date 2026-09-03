@@ -49,6 +49,9 @@ type StatementRow struct {
 	// returns and never persisted — the stored rows keep it zero. One
 	// definition of "same merchant" serves the client's grouping.
 	MerchantKey string `json:"merchantKey,omitempty"`
+	// Transfer is DERIVED the same way (MatchTransfers, stamped server-side on
+	// List copies): the cross-entity row this one appears to mirror.
+	Transfer *TransferMatch `json:"transfer,omitempty"`
 }
 
 type StatementStore struct {

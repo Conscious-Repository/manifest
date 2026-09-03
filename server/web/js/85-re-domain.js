@@ -613,10 +613,12 @@ function moneyVisible(r) {
 }
 
 // moneyTargetGroups — which properties a row's money may land on. A row is
-// paid by ONE entity (r.entity, the slug); its targets are that entity's own
-// properties plus the ones nobody has claimed yet. Another entity's property
-// is not a target for this entity's money — intercompany spend exists, but it
-// goes through the admin lane deliberately, not through a mispick.
+// paid by ONE entity (r.entity, the slug); its own properties and the
+// unclaimed ones lead, but OTHER entities' properties are reachable too
+// (owner call 2026-09-03 — Garden SPE paying 4924 Fountain's architect is
+// real intercompany spend, not a mispick). The relationship survives on the
+// backend: every ledger row carries [paid-by:: <payer>], so a row landing in
+// another entity's property still names whose money it was.
 // (Property.entity is the display NAME — bridge via entitySlugFor.)
 function moneyTargetGroups(r) {
   const mine = [], untagged = [], other = [];
@@ -658,6 +660,17 @@ function moneyTargetOptions(r, sel, withSplit, blankLabel) {
     og.label = "UNASSIGNED OWNER (" + g.untagged.length + ")";
     g.untagged.forEach((p) => opt(og, p.slug, p.short || p.slug));
     sel.append(og);
+  }
+  if (g.other.length) {
+    // grouped per owning entity so a cross-entity pick is a visible choice
+    const byEnt = {};
+    g.other.forEach((p) => { (byEnt[p.entity] = byEnt[p.entity] || []).push(p); });
+    Object.keys(byEnt).sort().forEach((ent) => {
+      const og = document.createElement("optgroup");
+      og.label = ent.toUpperCase() + " (other entity)";
+      byEnt[ent].forEach((p) => opt(og, p.slug, p.short || p.slug));
+      sel.append(og);
+    });
   }
   if (withSplit) {
     opt(sel, "__split", "split…");
@@ -746,7 +759,7 @@ function moneyCatSelect(r) {
   };
   opt(sel, "", "category…");
   const cats = (moneyCatsCache || []).filter((c) => c.kind === kind);
-  ["operating", "project"].forEach((cls) => {
+  ["operating", "project", "soft", "acquisition"].forEach((cls) => {
     const mine = cats.filter((c) => c.class === cls);
     if (!mine.length) return;
     const og = document.createElement("optgroup");
@@ -1497,6 +1510,29 @@ function moneyRow(r) {
     const sub = el("span", "fr-sub", bits.join(" · "));
     sub.title = bits.join(" · ");
     desc.append(sub);
+  }
+  // transfer suggestion (server-matched cross-entity mirror): approvable in
+  // place — one click books BOTH sides to their entity admin ledgers
+  if (r.transfer && (r.state === "pending" || r.state === "assigned")) {
+    const hint = el("span", "re-xfer-hint");
+    hint.append(el("span", "", "↔ transfer? " + r.transfer.why + " · mirrors " +
+      r.transfer.peerEntity + " " + (r.transfer.peerDate || "").slice(5)));
+    const link = el("button", "pp3-link re-xfer-link", "link both ✓");
+    link.onclick = async (e) => {
+      e.stopPropagation();
+      link.disabled = true; link.textContent = "linking…";
+      try {
+        await postJSONOk("/api/realestate/statements/link-transfer",
+          { id: r.id, peerId: r.transfer.peerId });
+        showToast("Transfer booked to both entities' books");
+        moneyRefresh();
+      } catch (err) {
+        link.disabled = false; link.textContent = "link both ✓";
+        showToast("Couldn't link — " + (err.message || ""), null, "error");
+      }
+    };
+    hint.append(link);
+    desc.append(hint);
   }
   // phone meta line (desktop hides it): the assigned property, or the file
   // prompt in ink — the row tap opens the assignment sheet

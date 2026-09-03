@@ -1714,7 +1714,7 @@ func (s *Server) handleCategoryCreate(w http.ResponseWriter, r *http.Request) {
 		kind = "expense"
 	}
 	class := strings.ToLower(strings.TrimSpace(b.Class))
-	if class != "operating" {
+	if !realestate.ValidCategoryClass(class) {
 		class = "project"
 	}
 	cats, backed := s.realestate.MoneyCategories()

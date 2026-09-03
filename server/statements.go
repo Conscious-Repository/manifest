@@ -222,7 +222,90 @@ func (s *Server) handleStatementsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	list, last := s.statements.List()
+	s.stampTransfers(list)
 	writeJSON(w, map[string]any{"rows": list, "lastImport": last})
+}
+
+// stampTransfers marks cross-entity mirror pairs on List copies (derived,
+// never persisted — the MerchantKey pattern). The client renders each match
+// as an approvable suggestion; nothing books until the owner links the pair.
+func (s *Server) stampTransfers(list []realestate.StatementRow) {
+	names := map[string]string{}
+	if s.realestate != nil {
+		for _, e := range s.realestate.Entities() {
+			names[e.Slug] = e.Name
+		}
+	}
+	matches := realestate.MatchTransfers(list, names)
+	for i := range list {
+		if m, ok := matches[list[i].ID]; ok {
+			mm := m
+			list[i].Transfer = &mm
+		}
+	}
+}
+
+// handleStatementsLinkTransfer books an approved transfer pair: both rows
+// file into their entity ADMIN ledgers as category "transfer" with an
+// [xfer::] token naming the counterparty — intercompany movement lands in
+// both books and disappears from the lot in one gesture. The pair is
+// re-validated live (amounts equal, opposite direction, different entities,
+// both still in play); this never becomes a book-anything lane.
+func (s *Server) handleStatementsLinkTransfer(w http.ResponseWriter, r *http.Request) {
+	if !s.statementsOK(w) {
+		return
+	}
+	var b struct{ ID, PeerID string }
+	if err := decode(r, &b); err != nil || b.ID == "" || b.PeerID == "" || b.ID == b.PeerID {
+		httpError(w, errBadRequest("id and peerId are required"))
+		return
+	}
+	a, okA := s.statements.Get(b.ID)
+	p, okP := s.statements.Get(b.PeerID)
+	if !okA || !okP {
+		httpError(w, errBadRequest("row not found"))
+		return
+	}
+	inPlay := func(r realestate.StatementRow) bool { return r.State == "pending" || r.State == "assigned" }
+	switch {
+	case !inPlay(a) || !inPlay(p):
+		httpError(w, errBadRequest("both rows must still be in play"))
+		return
+	case a.Amount != p.Amount:
+		httpError(w, errBadRequest("amounts differ — not a transfer pair"))
+		return
+	case a.Inflow == p.Inflow:
+		httpError(w, errBadRequest("a transfer pair is one withdrawal and one deposit"))
+		return
+	case a.Entity == "" || p.Entity == "" || a.Entity == p.Entity:
+		httpError(w, errBadRequest("a transfer pair crosses two entities"))
+		return
+	}
+	// stage both rows through the normal filing lane: category transfer,
+	// admin-lane assignment, the peer named on the ledger note
+	cat, state := "transfer", "assigned"
+	for _, pair := range [][2]realestate.StatementRow{{a, p}, {p, a}} {
+		row, peer := pair[0], pair[1]
+		note := strings.TrimSpace(row.Note + " [xfer:: " + peer.Entity + "]")
+		allocs := []realestate.Alloc{{Slug: "admin:" + row.Entity, Amount: row.Amount}}
+		if _, err := s.statements.Update(row.ID, &cat, &note, &allocs, &state, nil); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	rows, err := s.statements.Applicable([]string{a.ID, p.ID})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if _, _, err := s.applyStatementRows(rows, vaultwriter.ActorUserAction); err != nil {
+		httpError(w, err)
+		return
+	}
+	s.statements.MarkApplied([]string{a.ID, p.ID})
+	list, last := s.statements.List()
+	s.stampTransfers(list)
+	writeJSON(w, map[string]any{"linked": true, "rows": list, "lastImport": last})
 }
 
 // handleStatementsRow patches one row (category / assignments / state).
@@ -404,9 +487,19 @@ func (s *Server) statementRec(row realestate.StatementRow, a realestate.Alloc, i
 	if c := strings.ToLower(strings.TrimSpace(a.Cat)); !row.Inflow && (c == realestate.CatSoft ||
 		c == realestate.CatAcquisition) {
 		note = strings.TrimSpace(note + " [cat:: " + c + "]")
-	} else if !row.Inflow && classOf(row.Category) == "operating" {
-		// operating-class category (chart of accounts) → operating lane
-		note = strings.TrimSpace(note + " [cat:: " + realestate.CatOperating + "]")
+	} else if !row.Inflow {
+		// chart-of-accounts class → budget lane (blank/project = hard):
+		// operating leaves project money alone; soft and acquisition land in
+		// their plan lines instead of inflating hard (owner ask 2026-09-03 —
+		// acquisition money must meet the purchase price, not sit beside it)
+		switch classOf(row.Category) {
+		case "operating":
+			note = strings.TrimSpace(note + " [cat:: " + realestate.CatOperating + "]")
+		case realestate.CatSoft:
+			note = strings.TrimSpace(note + " [cat:: " + realestate.CatSoft + "]")
+		case realestate.CatAcquisition:
+			note = strings.TrimSpace(note + " [cat:: " + realestate.CatAcquisition + "]")
+		}
 	}
 	if row.Entity != "" {
 		note = strings.TrimSpace(note + " [paid-by:: " + row.Entity + "]")

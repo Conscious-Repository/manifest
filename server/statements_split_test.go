@@ -238,6 +238,115 @@ func TestCategoryRenameSweeps(t *testing.T) {
 	}
 }
 
+// An acquisition-class category (chart of accounts) writes [cat:: acquisition]
+// so the row lands in the property's acquisition line, not the hard lane.
+func TestAcquisitionClassWritesToken(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -2), Amount: -18297.84, Description: "WIRE OUT", Payee: "Title Co"},
+	}}}
+	srv, vault, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := srv.statements.List()
+	code, res := doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+rows[0].ID+`","category":"closing","file":true,"assignments":[{"slug":"748-n-euclid","amount":18297.84}]}`)
+	if code != 200 || res["state"] != "applied" {
+		t.Fatalf("file: %d %v (%v)", code, res["state"], res["fileError"])
+	}
+	led, err := os.ReadFile(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(led), "[cat:: acquisition]") {
+		t.Fatalf("acquisition token missing:\n%s", led)
+	}
+}
+
+// A cross-entity mirror pair (same amount, opposite direction, shared bank
+// REF) is suggested on the list, and one approval books BOTH sides into their
+// entity admin ledgers as transfers. A non-pair is refused.
+func TestTransferMatchSuggestsAndLinksBothSides(t *testing.T) {
+	day := time.Now().AddDate(0, 0, -2)
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{
+		"act-1": {{ID: "d1", Posted: day, Amount: 12750,
+			Description: "Online banking Deposit Transfer from LP OODA Development fund I REF # 1662260"}},
+		"act-2": {{ID: "w1", Posted: day.AddDate(0, 0, -1), Amount: -12750,
+			Description: "Online banking Withdrawal Transfer to THE GARDEN SPE LLC REF # 1662260"}},
+	}}
+	srv, vault, _ := bankFixture(t, bridge)
+	entPath := filepath.Join(vault, "system/realestate/entities/ooda-fund.md")
+	if err := os.WriteFile(entPath, []byte("---\ncategories: [entity]\nname: OODA Fund I\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.index.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.bankFeed.Store().Upsert(bankfeed.Link{
+		SimplefinID: "act-2", EntitySlug: "ooda-fund", AccountLabel: "checking", Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	code, res := doJSON(t, srv.handleStatementsList, "GET", "/api/realestate/statements", "")
+	if code != 200 {
+		t.Fatalf("list: %d", code)
+	}
+	ids := map[string]string{} // entity → row id
+	peers := map[string]string{}
+	for _, raw := range res["rows"].([]any) {
+		row := raw.(map[string]any)
+		ent, _ := row["entity"].(string)
+		ids[ent] = row["id"].(string)
+		if tr, ok := row["transfer"].(map[string]any); ok {
+			peers[ent] = tr["peerId"].(string)
+			if why, _ := tr["why"].(string); !strings.Contains(why, "REF") {
+				t.Fatalf("match should cite the shared REF, got %q", why)
+			}
+		}
+	}
+	if peers["garden-spe"] != ids["ooda-fund"] || peers["ooda-fund"] != ids["garden-spe"] {
+		t.Fatalf("pair not mutual: ids=%v peers=%v", ids, peers)
+	}
+
+	code, res = doJSON(t, srv.handleStatementsLinkTransfer, "POST", "/api/realestate/statements/link-transfer",
+		`{"id":"`+ids["garden-spe"]+`","peerId":"`+ids["ooda-fund"]+`"}`)
+	if code != 200 || res["linked"] != true {
+		t.Fatalf("link: %d %v", code, res)
+	}
+	garden, err := os.ReadFile(filepath.Join(vault, "system/realestate/entities/garden-spe.ledger.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ooda, err := os.ReadFile(filepath.Join(vault, "system/realestate/entities/ooda-fund.ledger.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"income", "transfer", "[xfer:: ooda-fund]", "12750"} {
+		if !strings.Contains(string(garden), want) {
+			t.Fatalf("garden admin ledger missing %q:\n%s", want, garden)
+		}
+	}
+	for _, want := range []string{"expense", "transfer", "[xfer:: garden-spe]", "12750"} {
+		if !strings.Contains(string(ooda), want) {
+			t.Fatalf("ooda admin ledger missing %q:\n%s", want, ooda)
+		}
+	}
+	for _, id := range ids {
+		if row, _ := srv.statements.Get(id); row.State != "applied" {
+			t.Fatalf("row %s = %s, want applied", id, row.State)
+		}
+	}
+	// an already-booked row can never link again
+	if code, _ = doJSON(t, srv.handleStatementsLinkTransfer, "POST", "/api/realestate/statements/link-transfer",
+		`{"id":"`+ids["garden-spe"]+`","peerId":"`+ids["ooda-fund"]+`"}`); code == 200 {
+		t.Fatal("linking applied rows must be refused")
+	}
+}
+
 // refilePost drives handleStatementsRefile with the {id} path value set.
 func refilePost(t *testing.T, srv *Server, id, body string) (int, map[string]any) {
 	t.Helper()
