@@ -183,8 +183,10 @@ type Evidence struct {
 	Snippet   string `json:"snippet,omitempty"`
 }
 
-// PathClaim is one `## network` row — a ranked intro path. Phase 1 stores and
-// renders them; the deriving BFS is Phase 4.
+// PathClaim is one ranked intro path: either a hand-authored `## network` row
+// (owner evidence, kind as written) or one DerivePaths computed from the
+// network graph (Kind == PathKindDerived). Derived paths are never stored on
+// the record — they are recomputed on every view from the edges that exist.
 type PathClaim struct {
 	Path       string `json:"path"`
 	Kind       string `json:"kind"`

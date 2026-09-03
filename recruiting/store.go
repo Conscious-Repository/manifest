@@ -184,9 +184,14 @@ func (s *Store) View() View {
 			roleDocs[id] = d
 		}
 	}
+	// The network is loaded ONCE and every candidate's intro paths derive
+	// from that same graph — the inspector cannot show a route the network
+	// pane does not.
+	v.Network = NetworkView{People: s.LoadNetworkPeople().People(), Edges: s.LoadEdges().Edges()}
 	for _, slug := range s.CandidateSlugs() {
 		d := s.LoadCandidate(slug)
-		v.Candidates = append(v.Candidates, d.View(slug, roleDocs[roleKey(d.Get("role"))]))
+		c := d.View(slug, roleDocs[roleKey(d.Get("role"))])
+		v.Candidates = append(v.Candidates, withDerivedPaths(c, v.Network))
 	}
 	sortCandidates(v.Candidates)
 
@@ -215,7 +220,6 @@ func (s *Store) View() View {
 	})
 
 	v.Seeds = s.LoadSeeds().Seeds()
-	v.Network = NetworkView{People: s.LoadNetworkPeople().People(), Edges: s.LoadEdges().Edges()}
 	return v
 }
 
@@ -309,7 +313,7 @@ func (s *Store) acceptDraft(d sources.CandidateDraft, now time.Time) (Candidate,
 	if err := s.SaveCandidate(slug, doc); err != nil {
 		return Candidate{}, err
 	}
-	return doc.View(slug, s.roleDocFor(doc.Get("role"))), nil
+	return s.candidateView(slug, doc), nil
 }
 
 // saveDraftEdges appends the draft's relationship claims, filling in the `to`
@@ -482,8 +486,21 @@ func (s *Store) roleDocFor(role string) *RoleDoc {
 }
 
 // candidateView is the post-write projection every mutating action returns.
+// It carries the same derived intro paths the board view does, so a
+// post-write inspector never differs from the next full load.
 func (s *Store) candidateView(slug string, doc *CandidateDoc) Candidate {
-	return doc.View(slug, s.roleDocFor(doc.Get("role")))
+	c := doc.View(slug, s.roleDocFor(doc.Get("role")))
+	net := NetworkView{People: s.LoadNetworkPeople().People(), Edges: s.LoadEdges().Edges()}
+	return withDerivedPaths(c, net)
+}
+
+// withDerivedPaths merges the Phase 4 derived intro paths (DerivePaths, seeded
+// from the owner-consent people) after the record's hand-authored `## network`
+// rows. Hand-written rows are owner evidence and pass through untouched.
+func withDerivedPaths(c Candidate, net NetworkView) Candidate {
+	derived := DerivePaths(net.People, net.Edges, c.ID, nil, DefaultTopPaths)
+	c.Paths = MergePaths(c.Paths, derived)
+	return c
 }
 
 // SetStage moves a candidate between board columns. The stage set is closed,
