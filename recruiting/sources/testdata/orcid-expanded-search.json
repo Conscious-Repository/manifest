@@ -1,0 +1,50 @@
+{
+  "num-found": 3,
+  "expanded-result": [
+    {
+      "orcid-id": "0000-0002-1825-0097",
+      "given-names": "Dana",
+      "family-names": "Reyes",
+      "credit-name": "Dana M. Reyes",
+      "other-name": ["D. Reyes", "Dana Reyes"],
+      "email": ["dana@example.test"],
+      "institution-name": ["Example Institute of Technology", "Northern Imaging Lab"]
+    },
+    {
+      "orcid-id": "0000-0001-5000-0007",
+      "given-names": "Sam",
+      "family-names": "Okafor",
+      "credit-name": null,
+      "other-name": [],
+      "email": [],
+      "institution-name": ["Northern Imaging Lab"]
+    },
+    {
+      "orcid-id": "0000-0003-4444-2222",
+      "given-names": "Priya",
+      "family-names": "Natarajan",
+      "credit-name": "",
+      "other-name": null,
+      "email": null,
+      "institution-name": []
+    },
+    {
+      "orcid-id": "0000-0004-9999-0000",
+      "given-names": "",
+      "family-names": "",
+      "credit-name": "",
+      "other-name": null,
+      "email": ["nobody@example.test"],
+      "institution-name": ["Unnamed Institute"]
+    },
+    {
+      "orcid-id": "",
+      "given-names": "No",
+      "family-names": "Id",
+      "credit-name": "No Id",
+      "other-name": null,
+      "email": null,
+      "institution-name": []
+    }
+  ]
+}
