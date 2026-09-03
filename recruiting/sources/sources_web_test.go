@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 // webNet is an in-process internet: a map from host to handler, served
@@ -695,6 +697,21 @@ func TestWebPersonName(t *testing.T) {
 		"Principal Investigator": false, "Skip to main content": false, "Our Team": false, "": false,
 		"A B C D E": false, "Postdoctoral Fellow": false, "PhD Student": false, "Facebook X Twitter Instagram": false,
 		"X Y": false, "Sales Manager": false, "Alex Kim": true,
+		// chrome, service and section labels are never names
+		"Imaging Services": false, "Internal Resources": false, "Research Domains": false,
+		"Loading Comments...": false, "More About Us": false, "Administrative Staff": false,
+		"Clinical Services": false, "Method & Technology Development": false, "Neuroimaging Core": false,
+		"Learning Resources": false, "Parking Information": false, "Housing Options": false,
+		"Education Programs": false, "Core Facilities": false, "News Events": false,
+		// generic-noun suffixes
+		"Radiology Department": false, "Genomics Platform": false, "Computing Software": false,
+		// the initials-plus-surname shape may close on a role word; a bare
+		// role pair may not
+		"Jane Q. Researcher": true, "Q. Researcher": false, "Jane Researcher": false,
+		"Jane Q. Postdoctoral Fellow": false, "Ying Chen": true, "Sion Davies": true,
+		// a long "-ing" first token reads as a gerund ("Imaging", "Housing");
+		// the rare given name of that shape is the price, surnames are not
+		"Fleming Okafor": false, "Mary Fleming": true, "Irving Lee": true,
 	} {
 		if webPersonName(s) != want {
 			t.Errorf("webPersonName(%q)=%v want %v", s, !want, want)
@@ -717,4 +734,208 @@ func TestWebEnrichAndEdgesAreInert(t *testing.T) {
 	if len(n.requests()) != 0 {
 		t.Errorf("requests: %v", n.requests())
 	}
+}
+
+// Regression for the Martinos live smoke: a WordPress page whose menus,
+// sidebar and section headings read as capitalised pairs ("Imaging
+// Services", "Internal Resources", "Research Domains") yields no draft at
+// all. The labels are refused three ways — by chrome region, by vocabulary
+// and by the title line being a bare label — and a copy of the menu placed
+// in a plain <ul> outside any chrome region is still refused.
+func TestWebRefusesChromeAndServiceLabels(t *testing.T) {
+	menu := `<ul class="primary-menu-ul nav-ul menu-desktop">
+<li class="menu-item"><div class="wrap"><a href="/impact/">Impact</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="/partnerships/">Partnerships</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="/imaging-services/">Imaging Services</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="#"><span>More About Us</span></a></div>
+<ul class="sub-menu">
+<li class="menu-item"><div class="wrap"><a href="/center-leadership/">Leadership</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="/faculty/">Faculty</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="/administrative-staff/">Administrative Staff</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="/research-domains/">Research</a></div></li>
+<li class="menu-item"><div class="wrap"><a href="/conferences/">Conferences</a></div></li>
+</ul></li>
+<li class="menu-item"><div class="wrap"><a href="/internal-resources/">Internal Resources</a></div></li>
+</ul>`
+	labels := `<ul>
+<li><a href="/cores/">Cores</a></li><li><a href="/facilities/">Facilities</a></li>
+<li><a href="/education/">Education</a></li><li><a href="/publications/">Publications</a></li>
+<li><a href="/resources/">Resources</a></li><li><a href="/services/">Services</a></li>
+<li><a href="/contact/">Contact</a></li><li><a href="/news/">News</a></li>
+<li><a href="/about-us/">About Us</a></li><li><a href="/research-domains/">Research Domains</a></li>
+<li><a href="/imaging-services/">Imaging Services</a></li><li><a href="/faculty/">Faculty</a></li>
+<li><a href="/internal-resources/">Internal Resources</a></li><li><a href="/clinical-services/">Clinical Services</a></li>
+</ul>`
+	body := `<html><head><title>Research Domains – Martinos Center for Biomedical Imaging</title></head><body>
+<header><div class="hfg-slot right"><div class="builder-item has-nav"><div class="nv-nav-wrap">
+<div role="navigation" class="nav-menu-primary" aria-label="Primary Menu">` + menu + `</div></div></div></div></header>
+<main>
+<h1>Research Domains</h1>
+<p>Research in the Martinos Center is organized around two complementary domain categories that together drive innovation in biomedical imaging and its real-world impact.</p>
+<h5>Method &amp; Technology Development</h5>
+<p>Method &amp; Technology Development focuses on creating the tools that make new discoveries possible. Investigators build magnetic resonance imaging hardware and pulse sequences.</p>
+<h5>Applications</h5>
+<p>Applications use those tools in the lab and the clinic.</p>
+<h2>Explore the Center</h2>
+` + labels + `
+<div class="sidebar"><h4>Quick Links</h4>` + labels + `</div>
+</main>
+<footer><div class="footer-menu">` + menu + `</div><h2>Loading Comments...</h2><p>Principal Investigator</p></footer>
+</body></html>`
+	n := newWebNet().site("martinos.example", map[string]string{"/research/": body})
+	got, err := n.adapter().Search(context.Background(), Scope{
+		Role: "role/mri-engineer", Query: "magnetic resonance imaging lab researcher", Max: 3,
+		Fields: map[string]string{"seed_url": "https://martinos.example/research/", "max_pages": "5", "depth": "0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("drafts from a page that names nobody: %+v", got)
+	}
+	for _, d := range got {
+		for _, bad := range []string{"Imaging Services", "Internal Resources", "Research Domains", "Research", "Faculty", "Administrative Staff", "Loading Comments...", "More About Us", "Cores", "Facilities", "About Us"} {
+			if d.Name == bad {
+				t.Errorf("label became a draft: %q", bad)
+			}
+		}
+	}
+	// the menu links were still discovered: refusing chrome as a name
+	// source does not shrink the traversal
+	if !n.requested("https://martinos.example/research/") {
+		t.Errorf("seed not fetched: %v", n.requests())
+	}
+	n = newWebNet().site("martinos.example", map[string]string{"/research/": body})
+	if _, err := n.adapter().Search(context.Background(), webScope("https://martinos.example/research/", map[string]string{"depth": "1", "max_pages": "3"})); err != nil {
+		t.Fatal(err)
+	}
+	if !n.requested("https://martinos.example/impact/") {
+		t.Errorf("chrome links not traversed: %v", n.pages())
+	}
+
+	// the same labels, one per line, followed by a line with a role cue that
+	// is itself a bare label ("Faculty", "Staff", "Research"): still nothing
+	n = newWebNet().site("labels.example", map[string]string{"/": `<html><head><title>mri lab</title></head><body>
+<div><p>Imaging Services</p><p>Faculty</p></div>
+<div><p>Internal Resources</p><p>Research Domains</p></div>
+<div><p>Clinical Services</p><p>Staff</p></div>
+<div><p>Core Facilities</p><p>Principal Investigator</p></div>
+<div><p>Education Programs</p><p>Research Fellow Resources</p></div>
+</body></html>`})
+	got, err = n.adapter().Search(context.Background(), webScope("https://labels.example/", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("drafts from labels: %+v", got)
+	}
+
+	// the extractor marks chrome lines and whole-link lines
+	p := &webPage{url: mustURL(t, "https://x.example/")}
+	doc, err := html.Parse(strings.NewReader(`<html><body><nav><ul><li><a href="/a">Nav Item</a></li></ul></nav>
+<div class="menu-item"><a href="/b">Menu Item</a></div>
+<ul id="sidebar-x"><li>Side Item</li></ul>
+<div><a href="/c">Link Item</a></div>
+<div><a href="/d">Link</a> and prose</div>
+<header><h1>Page Title</h1></header></body></html>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.extract(doc)
+	want := map[string][2]bool{ // chrome, allLink
+		"Nav Item": {true, true}, "Menu Item": {true, true}, "Side Item": {true, false},
+		"Link Item": {false, true}, "Link and prose": {false, false}, "Page Title": {false, false},
+	}
+	for _, l := range p.lines {
+		w, ok := want[l.text]
+		if !ok {
+			continue
+		}
+		delete(want, l.text)
+		if l.chrome != w[0] || l.allLink != w[1] {
+			t.Errorf("%q: chrome=%v allLink=%v want %v %v", l.text, l.chrome, l.allLink, w[0], w[1])
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("lines not extracted: %v", want)
+	}
+}
+
+// Real people on clear cards are still extracted: a heading-plus-role card,
+// a card wrapped whole in one anchor, an inline "Name — Role" line, and a
+// card whose final row is CV / website links. A name with only an
+// organisation under it, or only a bare "Faculty" label, is not enough.
+func TestWebExtractsClearPersonCards(t *testing.T) {
+	n := newWebNet().site("lab.example", map[string]string{"/people": `<html><head><title>People · MRI Lab</title></head><body>
+<nav role="navigation"><a href="/">Home</a> <a href="/people">People</a> <a href="/imaging-services">Imaging Services</a></nav>
+<h1>Our People</h1>
+<div class="person-card">
+  <h3>Jane Q. Researcher</h3>
+  <p>Principal Investigator, MRI Lab</p>
+  <p>Quantitative MRI and tissue imaging.</p>
+</div>
+<a class="card" href="/people/tomas"><div><h3>Tomás Ferreira-Lima</h3><p>Assistant Professor of Radiology</p><p>Massachusetts General Hospital</p></div></a>
+<div class="person-card"><h3>Priya Natarajan</h3><p>Research Scientist</p><p>Imaging Lab</p><p><a href="/cv/priya.pdf">CV</a> <a href="https://priya.example/">Website</a></p></div>
+<p><a href="/people/dana">Dana Reyes</a> — Postdoctoral Fellow, MRI reconstruction</p>
+<div class="person-card"><h3>Alex Kim</h3><p>Boston University</p></div>
+<div class="person-card"><h3>Sam Okafor</h3><p>Faculty</p></div>
+<div class="person-card"><h3>Lee Park</h3><p><a href="/imaging-services">Imaging Services</a></p><p><a href="/professor-info">Professor</a></p></div>
+<div class="person-card"><h3>Director of Imaging Services</h3><p>Professor</p></div>
+<h3>Robin Achebe</h3><h4>Associate Professor</h4>
+<footer><h3>Casey Morgan</h3><p>Web Developer</p></footer>
+</body></html>`})
+	got, err := n.adapter().Search(context.Background(), webScope("https://lab.example/people", map[string]string{"depth": "0"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]CandidateDraft{}
+	for _, d := range got {
+		names[d.Name] = d
+	}
+	if j, ok := names["Jane Q. Researcher"]; !ok {
+		t.Errorf("person-card not extracted: %v", names)
+	} else if j.Title != "Principal Investigator" || j.Org != "MRI Lab" {
+		t.Errorf("Jane cues: title=%q org=%q", j.Title, j.Org)
+	} else if !strings.Contains(j.Evidence[0].Snippet, "Jane Q. Researcher · Principal Investigator, MRI Lab · Quantitative MRI and tissue imaging.") {
+		t.Errorf("Jane snippet: %q", j.Evidence[0].Snippet)
+	}
+	if tf, ok := names["Tomás Ferreira-Lima"]; !ok {
+		t.Errorf("anchor-wrapped card not extracted: %v", names)
+	} else if tf.Title != "Assistant Professor of Radiology" || tf.Org != "Massachusetts General Hospital" {
+		t.Errorf("Tomás cues: title=%q org=%q", tf.Title, tf.Org)
+	}
+	if p, ok := names["Priya Natarajan"]; !ok {
+		t.Errorf("card with link row not extracted: %v", names)
+	} else if p.Title != "Research Scientist" || p.Org != "Imaging Lab" {
+		t.Errorf("Priya cues: title=%q org=%q", p.Title, p.Org)
+	} else if len(p.Links) != 2 || p.Links[0] != "https://lab.example/cv/priya.pdf" || p.Links[1] != "https://priya.example/" {
+		t.Errorf("Priya links kept from the link row: %v", p.Links)
+	}
+	if d, ok := names["Dana Reyes"]; !ok || d.Title != "Postdoctoral Fellow" {
+		t.Errorf("inline card: %+v", d)
+	}
+	if r, ok := names["Robin Achebe"]; !ok || r.Title != "Associate Professor" {
+		t.Errorf("sub-heading role: %+v", r)
+	}
+	for _, none := range []string{"Alex Kim", "Sam Okafor", "Lee Park", "Director of Imaging Services", "Casey Morgan", "Imaging Services", "Our People", "Faculty"} {
+		if _, ok := names[none]; ok {
+			t.Errorf("%q became a draft: %+v", none, names[none])
+		}
+	}
+	if len(got) != 5 {
+		t.Errorf("drafts=%d: %v", len(got), names)
+	}
+	if webLabelish("Research Domains") != true || webLabelish("Faculty") != true || webLabelish("News & Events") != true ||
+		webLabelish("Principal Investigator") != false || webLabelish("Director of Imaging Services") != false || webLabelish("Research Scientist") != false {
+		t.Error("webLabelish")
+	}
+}
+
+func mustURL(t *testing.T, s string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }

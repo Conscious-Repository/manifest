@@ -37,9 +37,14 @@ import (
 //
 // Candidate extraction is deliberately conservative: a draft is emitted only
 // for a person-shaped name line followed (within the same card) by a line
-// with a title or organisation cue. A page that names nobody that plainly
-// yields zero drafts; the adapter never invents an identity. Loose page
-// text is TrustLow.
+// with a human-role title cue, an organisation line being recorded when
+// present but never sufficient on its own. A name line is never taken from
+// site chrome (nav, menu, footer, aside), never a word that is a service,
+// resource or section label ("Imaging Services", "Internal Resources",
+// "Research Domains"), and a title line that is itself a menu link to
+// somewhere else is a menu item, not a role. A page that names nobody that
+// plainly yields zero drafts; when in doubt the adapter returns nothing
+// rather than invent an identity. Loose page text is TrustLow.
 type Web struct {
 	// Client is held BY VALUE (rule 1: no pointer or interface field on an
 	// adapter). A zero Client is the default transport; a Timeout of zero
@@ -131,13 +136,16 @@ var webLabSignals = []string{
 // webTitleCues are the words that make a line read as a title or role.
 var webTitleCues = map[string]bool{
 	"phd": true, "postdoc": true, "postdoctoral": true, "professor": true, "student": true,
-	"engineer": true, "scientist": true, "researcher": true, "research": true, "director": true,
+	"engineer": true, "scientist": true, "researcher": true, "director": true,
 	"fellow": true, "candidate": true, "lead": true, "investigator": true, "principal": true,
 	"founder": true, "co-founder": true, "cofounder": true, "associate": true, "assistant": true,
 	"physicist": true, "technician": true, "developer": true, "faculty": true, "staff": true,
 	"manager": true, "head": true, "chair": true, "md": true, "msc": true, "mba": true,
 	"intern": true, "ceo": true, "cto": true, "pi": true, "lecturer": true, "instructor": true,
 	"specialist": true, "analyst": true, "architect": true, "programmer": true,
+	"coordinator": true, "physician": true, "radiologist": true, "clinician": true,
+	"technologist": true, "trainee": true, "neuroscientist": true, "biologist": true,
+	"chemist": true, "statistician": true, "mathematician": true, "biostatistician": true,
 }
 
 // webOrgCues are the words that make a line read as an organisation.
@@ -147,6 +155,64 @@ var webOrgCues = map[string]bool{
 	"corp": true, "company": true, "center": true, "centre": true, "department": true,
 	"clinic": true, "foundation": true, "group": true, "gmbh": true, "labs": true,
 }
+
+// webChromeWords are the nouns a site's chrome is made of: services,
+// resources, sections, disciplines, calls to action. A line containing one
+// is never a person's name, and a line made only of them (plus function
+// words) is a label, never a role. A title such as "Director of Imaging
+// Services" still reads as a role because "director" is not a chrome word.
+// Nothing here is a plausible given name or surname (so no months, no
+// "Meg", no "Park").
+var webChromeWords = map[string]bool{
+	"service": true, "services": true, "resource": true, "resources": true, "internal": true,
+	"external": true, "imaging": true, "neuroimaging": true, "education": true, "publications": true,
+	"publication": true, "domain": true, "domains": true, "core": true, "cores": true,
+	"facility": true, "facilities": true, "about": true, "contact": true, "news": true,
+	"research": true, "events": true, "event": true, "careers": true, "career": true, "jobs": true,
+	"directory": true, "overview": true, "mission": true, "history": true, "support": true,
+	"tools": true, "data": true, "software": true, "hardware": true, "training": true,
+	"courses": true, "course": true, "seminars": true, "seminar": true, "calendar": true,
+	"links": true, "help": true, "faq": true, "faqs": true, "donate": true, "giving": true,
+	"apply": true, "admissions": true, "funding": true, "opportunities": true, "opportunity": true,
+	"clinical": true, "technology": true, "technologies": true, "methods": true, "equipment": true,
+	"instruments": true, "instrumentation": true, "applications": true, "systems": true,
+	"platform": true, "portal": true, "dashboard": true, "access": true, "request": true,
+	"schedule": true, "scheduling": true, "billing": true, "rates": true, "policies": true,
+	"forms": true, "documents": true, "downloads": true, "gallery": true, "media": true,
+	"press": true, "blog": true, "archive": true, "archives": true, "highlights": true,
+	"spotlight": true, "welcome": true, "learn": true, "explore": true, "discover": true,
+	"view": true, "browse": true, "back": true, "next": true, "previous": true, "top": true,
+	"index": true, "sitemap": true, "list": true, "section": true, "centers": true,
+	"centres": true, "groups": true, "programs": true, "initiatives": true, "initiative": true,
+	"partners": true, "partnerships": true, "collaborations": true, "collaborators": true,
+	"sponsors": true, "community": true, "outreach": true, "library": true, "libraries": true,
+	"computing": true, "spectroscopy": true, "radiology": true, "neurology": true,
+	"physics": true, "engineering": true, "science": true, "sciences": true, "biology": true,
+	"chemistry": true, "medicine": true, "health": true, "healthcare": true, "general": true,
+	"public": true, "private": true, "quick": true, "useful": true, "related": true, "other": true,
+	"additional": true, "latest": true, "recent": true, "upcoming": true, "past": true,
+	"featured": true, "popular": true, "leadership": true, "administrative": true,
+	"administration": true, "conferences": true, "conference": true, "workshops": true,
+	"workshop": true, "impact": true, "development": true, "innovation": true, "loading": true,
+	"comments": true, "share": true, "subscribe": true, "newsletter": true, "search": true,
+	"home": true, "people": true, "team": true, "staff": true, "faculty": true, "members": true,
+	"students": true, "alumni": true, "positions": true, "projects": true, "menu": true,
+}
+
+// webFunctionWords may join chrome words in a label ("Center for Imaging",
+// "News & Events") without making it read as anything else.
+var webFunctionWords = map[string]bool{
+	"of": true, "and": true, "&": true, "the": true, "for": true, "at": true, "in": true,
+	"on": true, "to": true, "or": true, "a": true, "an": true, "our": true, "your": true,
+	"all": true, "more": true, "us": true, "with": true, "by": true, "from": true,
+}
+
+// webGenericSuffixes end nouns, never names: "Publications", "Admission",
+// "Radiology", "Physics", "Software", "Facilities". Applied to tokens of at
+// least webSuffixMinRunes so a short name ("Sion") is untouched.
+var webGenericSuffixes = []string{"tion", "tions", "sion", "sions", "ology", "ologies", "ics", "ware", "ities"}
+
+const webSuffixMinRunes = 6
 
 // webNameStop are capitalised words that disqualify a line from being a
 // person's name: section headings, org words, nav labels.
@@ -534,6 +600,13 @@ type webLine struct {
 	// level is the heading level (1 for h1) when the line is a heading,
 	// else 0. Only an h1 makes a page "about" the person it names.
 	level int
+	// chrome is set when the line sits inside site chrome — nav, menu,
+	// footer, aside, or an element whose role or class says as much. A
+	// chrome line never starts a card; its links are still traversed.
+	chrome bool
+	// allLink is set when every character of the line is anchor text: the
+	// line is a link, not prose about a person.
+	allLink bool
 }
 
 type webLink struct {
@@ -647,32 +720,76 @@ var webSkipTags = map[string]bool{
 	"iframe": true, "object": true, "canvas": true, "select": true, "textarea": true,
 }
 
+// webChromeTags are site chrome by element: nothing inside them names a
+// candidate. <header> is deliberately absent — a person page's own <h1>
+// commonly sits in one.
+var webChromeTags = map[string]bool{"nav": true, "menu": true, "footer": true, "aside": true}
+
+// webChromeRoles are ARIA roles that mark chrome.
+var webChromeRoles = map[string]bool{"navigation": true, "menu": true, "menubar": true, "contentinfo": true}
+
+// webChromeClassHints are substrings of a class or id token that mark
+// chrome ("nav-menu-primary", "menu-item", "sidebar", "breadcrumbs").
+var webChromeClassHints = []string{"nav", "menu", "breadcrumb", "sidebar", "footer"}
+
+// webChromeNode reports whether an element is site chrome by tag, role,
+// class or id.
+func webChromeNode(n *html.Node) bool {
+	if webChromeTags[n.Data] {
+		return true
+	}
+	if webChromeRoles[strings.ToLower(strings.TrimSpace(webAttr(n, "role")))] {
+		return true
+	}
+	for _, attr := range []string{"class", "id"} {
+		for _, tok := range strings.Fields(strings.ToLower(webAttr(n, attr))) {
+			for _, hint := range webChromeClassHints {
+				if strings.Contains(tok, hint) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // extract linearises the document into lines and collects every resolvable
 // http(s) link in document order.
 func (p *webPage) extract(doc *html.Node) {
-	var cur strings.Builder
+	var cur, curAnchor strings.Builder
 	var curLinks []string
 	curLevel := 0
+	curChrome := false
 	flush := func() {
 		text := strings.Join(strings.Fields(cur.String()), " ")
 		if text != "" {
-			p.lines = append(p.lines, webLine{text: text, links: curLinks, level: curLevel})
+			anchor := strings.Join(strings.Fields(curAnchor.String()), " ")
+			p.lines = append(p.lines, webLine{text: text, links: curLinks, level: curLevel, chrome: curChrome, allLink: anchor == text})
 		}
 		cur.Reset()
+		curAnchor.Reset()
 		curLinks = nil
 		curLevel = 0
+		curChrome = false
 	}
-	var walk func(n *html.Node, level int)
-	walk = func(n *html.Node, level int) {
+	var walk func(n *html.Node, level int, chrome, inAnchor bool)
+	walk = func(n *html.Node, level int, chrome, inAnchor bool) {
 		switch n.Type {
 		case html.TextNode:
 			cur.WriteString(" ")
 			cur.WriteString(n.Data)
+			if inAnchor {
+				curAnchor.WriteString(" ")
+				curAnchor.WriteString(n.Data)
+			}
+			if chrome {
+				curChrome = true
+			}
 			return
 		case html.ElementNode:
 		default:
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				walk(c, level)
+				walk(c, level, chrome, inAnchor)
 			}
 			return
 		}
@@ -689,6 +806,10 @@ func (p *webPage) extract(doc *html.Node) {
 				curLinks = append(curLinks, href.String())
 				p.links = append(p.links, webLink{url: href, text: strings.Join(strings.Fields(webText(n)), " ")})
 			}
+			inAnchor = true
+		}
+		if !chrome && webChromeNode(n) {
+			chrome = true
 		}
 		if webBlockTags[tag] {
 			flush()
@@ -700,13 +821,13 @@ func (p *webPage) extract(doc *html.Node) {
 			curLevel = level
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c, level)
+			walk(c, level, chrome, inAnchor)
 		}
 		if webBlockTags[tag] {
 			flush()
 		}
 	}
-	walk(doc, 0)
+	walk(doc, 0, false, false)
 	flush()
 }
 
@@ -790,11 +911,18 @@ func webMentions(text string, terms []string) bool {
 // ---- candidate extraction ----
 
 // drafts scans the page's lines for person cards: a person-shaped name line
-// followed, within webCardLines and before the next name line, by a line
-// with a title or organisation cue. Anything less is not a candidate.
+// outside site chrome, followed within webCardLines and before the next
+// name line or sibling heading by a line with a human-role title cue. An
+// organisation line is recorded when present but does not make a card on
+// its own, and a line that is wholly a link to somewhere the name line
+// does not link is a menu item, not a role. Anything less is not a
+// candidate.
 func (w Web) drafts(page *webPage, item webFrontierItem, role string) []CandidateDraft {
 	var out []CandidateDraft
 	for i, line := range page.lines {
+		if line.chrome {
+			continue
+		}
 		name, inline := webNameLine(line.text)
 		if name == "" {
 			continue
@@ -804,20 +932,53 @@ func (w Web) drafts(page *webPage, item webFrontierItem, role string) []Candidat
 		links := append([]string(nil), line.links...)
 		for j := i + 1; j < len(page.lines) && j <= i+webCardLines; j++ {
 			next := page.lines[j]
+			if next.chrome {
+				break
+			}
 			if n, _ := webNameLine(next.text); n != "" {
 				break
 			}
+			// a heading at the name's own level or above starts the next
+			// card (a sub-heading under the name may still be its role)
+			if next.level > 0 && (line.level == 0 || next.level <= line.level) {
+				break
+			}
 			card = append(card, next.text)
-			cues = append(cues, next.text)
 			links = append(links, next.links...)
+			if !webMenuLink(next, line) {
+				cues = append(cues, webSplitInline(next.text)...)
+			}
 		}
 		title, org := webCues(cues)
-		if title == "" && org == "" {
+		if title == "" {
 			continue
 		}
 		out = append(out, w.draft(page, item, role, name, title, org, card, links, line.level == 1))
 	}
 	return out
+}
+
+// webMenuLink reports whether a card line is a standalone link somewhere
+// the name line does not itself link: the shape of a menu item or a "CV /
+// Website" row, never of a role. A card wrapped whole in one anchor shares
+// its href across lines and is not a menu.
+func webMenuLink(next, name webLine) bool {
+	if !next.allLink || len(next.links) == 0 {
+		return false
+	}
+	for _, l := range next.links {
+		shared := false
+		for _, nl := range name.links {
+			if nl == l {
+				shared = true
+				break
+			}
+		}
+		if !shared {
+			return true
+		}
+	}
+	return false
 }
 
 // webNameLine returns the person-shaped name a line starts with, and the
@@ -857,7 +1018,10 @@ func webSplitInline(text string) []string {
 
 // webPersonName is the conservative name shape: two to four words, each
 // capitalised (or an initial, or a lower-case particle in the middle),
-// letters only, none a stop word, at most webMaxNameRunes long.
+// letters only, none a stop, chrome or generic-noun word, at most
+// webMaxNameRunes long. One concession to the initials-plus-surname shape:
+// a role word may close a name that carries an initial and three or more
+// tokens ("Jane Q. Researcher"), since no menu label is written that way.
 func webPersonName(s string) bool {
 	if s == "" || len([]rune(s)) > webMaxNameRunes {
 		return false
@@ -866,6 +1030,12 @@ func webPersonName(s string) bool {
 	if len(words) < 2 || len(words) > 4 {
 		return false
 	}
+	initials := 0
+	for _, wd := range words {
+		if r := []rune(strings.Trim(wd, ".,")); len(r) == 1 && unicode.IsUpper(r[0]) && strings.HasSuffix(wd, ".") {
+			initials++
+		}
+	}
 	caps := 0
 	for i, wd := range words {
 		clean := strings.Trim(wd, ".,")
@@ -873,8 +1043,16 @@ func webPersonName(s string) bool {
 			return false
 		}
 		lower := strings.ToLower(clean)
-		// a title, org or nav word is never part of a name
-		if webNameStop[lower] || webTitleCues[lower] || webOrgCues[lower] {
+		// a stop, org, nav, chrome or function word is never part of a name
+		if webNameStop[lower] || webOrgCues[lower] || webChromeWords[lower] || webFunctionWords[lower] {
+			return false
+		}
+		// a role word is not either, except as the surname of an
+		// initialled name
+		if webTitleCues[lower] && !(i == len(words)-1 && initials > 0 && len(words) >= 3) {
+			return false
+		}
+		if webGenericToken(lower, i == 0) {
 			return false
 		}
 		if i > 0 && i < len(words)-1 && webNameParticles[lower] {
@@ -902,9 +1080,49 @@ func webPersonName(s string) bool {
 	return caps >= 2
 }
 
+// webGenericToken reports whether a lower-cased word has the shape of a
+// common noun rather than a name: a generic suffix on a word of at least
+// webSuffixMinRunes, or (for the first word only) a long "-ing" form such
+// as "Imaging", "Learning", "Housing". Surnames in -ing ("Fleming") stay
+// valid because the rule is not applied past the first word.
+func webGenericToken(lower string, first bool) bool {
+	n := len([]rune(lower))
+	if n < webSuffixMinRunes {
+		return false
+	}
+	for _, suf := range webGenericSuffixes {
+		if strings.HasSuffix(lower, suf) {
+			return true
+		}
+	}
+	return first && n >= 7 && strings.HasSuffix(lower, "ing")
+}
+
+// webLabelish reports whether a line is made only of chrome and function
+// words: "Research Domains", "Internal Resources", "Faculty", "News &
+// Events". Such a line is a section label and never a role, whatever cue
+// words it happens to contain.
+func webLabelish(l string) bool {
+	words := strings.Fields(strings.ToLower(l))
+	if len(words) == 0 {
+		return true
+	}
+	for _, wd := range words {
+		wd = strings.Trim(wd, ".,;:()&")
+		if wd == "" {
+			continue
+		}
+		if !webChromeWords[wd] && !webFunctionWords[wd] {
+			return false
+		}
+	}
+	return true
+}
+
 // webCues picks the title and organisation lines out of a card, if any.
-// The first line with a title cue is the title; the first other line with
-// an org cue is the org. A line carrying an address is never used (D15).
+// The first line with a human-role title cue that is not a bare label is
+// the title; the first other line with an org cue is the org. A line
+// carrying an address is never used (D15).
 func webCues(lines []string) (title, org string) {
 	for _, l := range lines {
 		l = strings.TrimSpace(l)
@@ -922,7 +1140,7 @@ func webCues(lines []string) (title, org string) {
 				hasOrg = true
 			}
 		}
-		if hasTitle && title == "" {
+		if hasTitle && title == "" && !webLabelish(l) {
 			title = l
 			continue
 		}
