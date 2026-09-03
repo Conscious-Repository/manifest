@@ -336,6 +336,12 @@ func (s *StatementStore) Applicable(ids []string) ([]StatementRow, error) {
 			if strings.TrimSpace(a.Slug) == "" {
 				return nil, fmt.Errorf("row %s has an empty property", r.ID)
 			}
+			// a $0 slice on a split is always a mistake — the editor seeds
+			// new slices at 0 and the Σ check alone can't see one left behind
+			// (total + 0 still sums)
+			if len(r.Assignments) > 1 && a.Amount == 0 {
+				return nil, fmt.Errorf("row %s has a $0 slice for %s — set every amount or use ÷ even", r.ID, a.Slug)
+			}
 			sum += a.Amount
 		}
 		if diff := sum - r.Amount; diff > 0.01 || diff < -0.01 {

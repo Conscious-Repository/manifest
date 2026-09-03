@@ -1002,9 +1002,13 @@ function moneySplitEditor(r, onDone) {
       acts.append(even);
     }
     const sum = allocs.reduce((s, a) => s + (a.amount || 0), 0);
-    const ok = Math.abs(sum - total) <= 0.01 && allocs.every((a) => a.slug);
+    // a $0 slice never files: the seed leaves new rows at 0 and the Σ check
+    // alone can't catch one (total + 0 still sums — a real 12750/0 filing)
+    const zeroSlice = allocs.length > 1 && allocs.some((a) => a.slug && !(a.amount > 0));
+    const ok = Math.abs(sum - total) <= 0.01 && allocs.every((a) => a.slug) && !zeroSlice;
     acts.append(el("span", "re-split-sum" + (ok ? " ok" : ""),
-      "Σ " + fmtMoneyExact(sum) + (ok ? " ✓" : " of " + fmtMoneyExact(total))));
+      zeroSlice ? "a slice is $0 — type amounts or ÷ even"
+        : "Σ " + fmtMoneyExact(sum) + (ok ? " ✓" : " of " + fmtMoneyExact(total))));
     box.append(acts);
     const file = el("button", "pill-solid re-money-file", "file ✓ → " + allocs.filter((a) => a.slug).length + " ledger row(s)");
     file.disabled = !ok;

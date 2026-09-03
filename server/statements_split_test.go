@@ -143,6 +143,36 @@ func TestFilingErrorSurfaces(t *testing.T) {
 	}
 }
 
+// A split slice left at $0 must refuse to file (the live 2026-09-03 masonry
+// filing: the editor seeds the second row at 0, and 12750+0 still sums, so a
+// 50/50 intent filed as 12750/0 — the Σ check alone can't see it).
+func TestSplitRefusesZeroSlice(t *testing.T) {
+	bridge := &stubBridge{txns: map[string][]bankfeed.Txn{"act-1": {
+		{ID: "t1", Posted: time.Now().AddDate(0, 0, -4), Amount: -12750, Description: "CHECK 1001", Payee: "Twisted Brick"},
+	}}}
+	srv, vault, _ := bankFixture(t, bridge)
+	if _, _, err := srv.bankFeedSync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := srv.statements.List()
+	code, res := doJSON(t, srv.handleStatementsRow, "POST", "/api/realestate/statements/row",
+		`{"id":"`+rows[0].ID+`","category":"labor","state":"split","file":true,"assignments":[`+
+			`{"slug":"748-n-euclid","amount":12750},`+
+			`{"slug":"4852-fountain-ave","amount":0}]}`)
+	if code != 200 {
+		t.Fatalf("patch: %d", code)
+	}
+	if res["state"] == "applied" {
+		t.Fatal("a $0 slice must not file")
+	}
+	if fe, _ := res["fileError"].(string); !strings.Contains(fe, "$0 slice") {
+		t.Fatalf("fileError = %q, want the $0-slice reason", res["fileError"])
+	}
+	if _, err := os.ReadFile(filepath.Join(vault, "system/realestate/properties/748-n-euclid.ledger.csv")); err == nil {
+		t.Fatal("refused filing must write no ledger rows")
+	}
+}
+
 // refilePost drives handleStatementsRefile with the {id} path value set.
 func refilePost(t *testing.T, srv *Server, id, body string) (int, map[string]any) {
 	t.Helper()
