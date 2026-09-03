@@ -148,3 +148,15 @@ body {
   letter-spacing: 0.4px;
   -webkit-font-smoothing: antialiased;
 }
+
+/* boot veil — on a cold load the scripts arrive after the HTML, and the
+   static Day skeleton must not pose as a broken page meanwhile. 99-boot
+   lifts the veil once the rail is built and the route applied; an inline
+   8s timer in index.html is the safety valve if a script never arrives. */
+body.booting .content-col { visibility: hidden; }
+body.booting::after {
+  content: "loading…";
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase;
+  letter-spacing: 0.4px; color: var(--base-40); pointer-events: none;
+}

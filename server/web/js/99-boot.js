@@ -402,4 +402,5 @@ document.getElementById("nextBtn").addEventListener("click", () => load(shiftDat
 document.getElementById("todayBtn").addEventListener("click", () => load(isoToday()));
 
 route();
+document.body.classList.remove("booting"); // lift the boot veil — rail built, route applied
 refreshRailCounts();

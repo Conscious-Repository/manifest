@@ -41,7 +41,11 @@
   <!-- phone band (<860px) only — every rule is width- or hover-gated; desktop untouched -->
   <link rel="stylesheet" href="css/95-mobile.css?v=3" />
 </head>
-<body>
+<body class="booting">
+  <!-- the boot veil (00-core.css) hides the static Day skeleton until 99-boot
+       builds the rail and applies the route; this timer is the safety valve if
+       a script fails to arrive — a broken page beats a permanent veil -->
+  <script>setTimeout(function () { document.body.classList.remove("booting"); }, 8000);</script>
   <div id="appShell" class="app-shell">
 
   <!-- LEFT RAIL — persistent nav (redesign §2). Groups render from NAV_SECTIONS in 99-boot.js. -->
