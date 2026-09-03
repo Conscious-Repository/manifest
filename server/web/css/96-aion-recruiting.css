@@ -137,6 +137,8 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-run-source, .rec-run-role { flex: 0 1 auto; min-width: 0; }
 .rec-run-q { flex: 1 1 100%; min-width: 0; }
 .rec-run-max { flex: 0 0 auto; width: calc(var(--sp-9) * 2); min-width: 0; font-family: var(--mono); font-size: var(--fs-xs); }
+.rec-run-extra { flex: 1 1 30%; min-width: 0; font-size: var(--fs-sm); }
+.rec-run-f-seed_url { flex: 1 1 100%; }
 .rec-run-dry { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
 .rec-run-btn { margin-left: auto; }
 

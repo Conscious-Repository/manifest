@@ -24,7 +24,10 @@ let recRunOpen = {};        // run id → queue expanded
 let recRunning = false;     // a run is in flight
 // the form survives a re-render: every action repaints the whole tab, and a
 // half-typed query must not vanish because a draft was rejected
-const recRunForm = { source: "manual", role: "", query: "", max: "", dryRun: true };
+const recRunForm = { source: "manual", role: "", query: "", max: "", dryRun: true, fields: {} };
+// scope fields every adapter shares; anything else an adapter declares is
+// rendered generically from its metadata and sent as `fields`
+const REC_RUN_COMMON_FIELDS = ["role", "query", "max"];
 
 async function loadRecruiting() {
   try {
@@ -346,6 +349,19 @@ function recRunFormEl() {
   max.oninput = () => { recRunForm.max = max.value; };
   form.append(max);
 
+  // adapter-specific scope fields (e.g. web: seed_url / max_pages / depth),
+  // one text input each, keyed by the adapter's own field key
+  (adapter.fields || []).filter((f) => f.key && !REC_RUN_COMMON_FIELDS.includes(f.key)).forEach((f) => {
+    const input = el("input", "pp-in rec-in rec-run-extra rec-run-f-" + f.key.replace(/[^a-z0-9_-]/gi, ""));
+    input.type = "text";
+    input.placeholder = (f.label || f.key) + (f.placeholder ? " · " + f.placeholder : "") + (f.required ? " *" : "");
+    input.title = (f.label || f.key) + (f.placeholder ? " — " + f.placeholder : "") + (f.required ? " (required)" : "");
+    input.value = recRunForm.fields[f.key] || "";
+    input.oninput = () => { recRunForm.fields[f.key] = input.value; };
+    input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); recRunSource(); } };
+    form.append(input);
+  });
+
   const dry = el("label", "rec-run-dry");
   const box = el("input", "");
   box.type = "checkbox";
@@ -366,6 +382,14 @@ async function recRunSource() {
   if (recRunning) return;
   const query = (recRunForm.query || "").trim();
   if (!query) { showToast("a run needs a query"); return; }
+  const adapter = ((recSources || {}).sources || []).find((a) => a.id === recRunForm.source) || {};
+  const extras = (adapter.fields || []).filter((f) => f.key && !REC_RUN_COMMON_FIELDS.includes(f.key));
+  const fields = {};
+  for (const f of extras) {
+    const v = (recRunForm.fields[f.key] || "").trim();
+    if (v) fields[f.key] = v;
+    else if (f.required) { showToast("a " + recRunForm.source + " run needs " + (f.label || f.key)); return; }
+  }
   const body = {
     source: recRunForm.source,
     role: recRunForm.role || recRoleId(),
@@ -374,6 +398,7 @@ async function recRunSource() {
   };
   const max = parseInt(recRunForm.max, 10);
   if (max > 0) body.max = max;
+  if (Object.keys(fields).length) body.fields = fields;
   recRunning = true;
   renderAion();
   try {

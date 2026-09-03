@@ -18,7 +18,7 @@ var testNow = time.Date(2026, 9, 2, 15, 4, 5, 0, time.UTC)
 // implementation may carry a func field (an injected writer), a pointer to a
 // store, or anything that could persist. It returns DTOs and stops.
 func TestNoAdapterHoldsAWriter(t *testing.T) {
-	for _, a := range []Adapter{Manual{}, OpenAlex{}} {
+	for _, a := range []Adapter{Manual{}, OpenAlex{}, ORCID{}, GitHub{}, PubMed{}, NIHRePORTER{}, Web{}} {
 		ty := reflect.TypeOf(a)
 		for ty.Kind() == reflect.Ptr {
 			ty = ty.Elem()
