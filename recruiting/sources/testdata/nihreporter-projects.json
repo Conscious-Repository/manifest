@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "search_id": "fixture",
+    "total": 4,
+    "offset": 0,
+    "limit": 25,
+    "sort_field": null,
+    "sort_order": null,
+    "sorted_by_relevance": true,
+    "properties": {}
+  },
+  "results": [
+    {
+      "appl_id": 10900001,
+      "project_num": "5R01EB030001-03",
+      "project_title": "Self-supervised reconstruction of diffusion MRI with learned priors",
+      "abstract_text": "PROJECT SUMMARY\nDiffusion MRI is limited by long acquisition times. This project develops self-supervised reconstruction methods that learn image priors directly from undersampled k-space data, removing the need for fully sampled training sets.",
+      "organization": {
+        "org_name": "STANFORD UNIVERSITY",
+        "org_city": "STANFORD",
+        "org_state": "CA",
+        "org_country": "UNITED STATES"
+      },
+      "principal_investigators": [
+        {
+          "profile_id": 7000001,
+          "first_name": "DANA",
+          "middle_name": "M",
+          "last_name": "REYES",
+          "is_contact_pi": true,
+          "full_name": "DANA M REYES",
+          "title": "ASSOCIATE PROFESSOR",
+          "email": "dana.reyes@example.test"
+        },
+        {
+          "profile_id": 7000002,
+          "first_name": "KAI",
+          "middle_name": "",
+          "last_name": "OKONKWO",
+          "is_contact_pi": false,
+          "full_name": "KAI OKONKWO",
+          "title": "ASSISTANT PROFESSOR"
+        }
+      ],
+      "agency_ic_admin": {
+        "code": "EB",
+        "abbreviation": "NIBIB",
+        "name": "National Institute of Biomedical Imaging and Bioengineering"
+      },
+      "fiscal_year": 2026,
+      "project_start_date": "2024-04-01T12:04:00Z",
+      "project_end_date": "2028-03-31T12:03:00Z",
+      "project_detail_url": "https://reporter.nih.gov/project-details/10900001"
+    },
+    {
+      "appl_id": 10900002,
+      "project_num": "1R21EB030002-01",
+      "project_title": "Fast fiber tractography from undersampled diffusion data",
+      "abstract_text": "Tractography quality depends on angular sampling. We propose a reconstruction pipeline that recovers fiber orientation distributions from sparse acquisitions.",
+      "organization": {
+        "org_name": "STANFORD UNIVERSITY",
+        "org_city": "STANFORD",
+        "org_state": "CA",
+        "org_country": "UNITED STATES"
+      },
+      "principal_investigators": [
+        {
+          "profile_id": 7000001,
+          "first_name": "DANA",
+          "middle_name": "M",
+          "last_name": "REYES",
+          "is_contact_pi": true,
+          "full_name": "DANA M REYES",
+          "title": "ASSOCIATE PROFESSOR"
+        }
+      ],
+      "agency_ic_admin": {
+        "code": "EB",
+        "abbreviation": "NIBIB",
+        "name": "National Institute of Biomedical Imaging and Bioengineering"
+      },
+      "fiscal_year": 2026,
+      "project_start_date": "2026-01-15T12:01:00Z",
+      "project_end_date": "2027-12-31T12:12:00Z",
+      "project_detail_url": ""
+    },
+    {
+      "appl_id": 10900003,
+      "project_num": "5P41EB030003-10",
+      "project_title": "Center for Advanced MRI Technology",
+      "abstract_text": "A resource center with no listed investigators in this fixture.",
+      "organization": {
+        "org_name": "UNIVERSITY OF NOWHERE",
+        "org_city": "NOWHERE",
+        "org_state": "ZZ",
+        "org_country": "UNITED STATES"
+      },
+      "principal_investigators": [],
+      "agency_ic_admin": {
+        "code": "EB",
+        "abbreviation": "NIBIB",
+        "name": "National Institute of Biomedical Imaging and Bioengineering"
+      },
+      "fiscal_year": 2025,
+      "project_start_date": "2016-09-01T12:09:00Z",
+      "project_end_date": "2026-08-31T12:08:00Z",
+      "project_detail_url": "https://reporter.nih.gov/project-details/10900003"
+    },
+    {
+      "appl_id": null,
+      "project_num": "5R01NS030004-02",
+      "project_title": "Deep learning reconstruction for low-field diffusion MRI",
+      "abstract_text": "",
+      "organization": {
+        "org_name": "  MASSACHUSETTS GENERAL   HOSPITAL ",
+        "org_city": "BOSTON",
+        "org_state": "MA",
+        "org_country": "UNITED STATES"
+      },
+      "principal_investigators": [
+        {
+          "profile_id": null,
+          "first_name": "PRIYA",
+          "middle_name": null,
+          "last_name": "NARAYAN",
+          "is_contact_pi": true,
+          "full_name": null,
+          "title": null
+        }
+      ],
+      "agency_ic_admin": {
+        "code": "NS",
+        "abbreviation": "",
+        "name": "National Institute of Neurological Disorders and Stroke"
+      },
+      "fiscal_year": 2026,
+      "project_start_date": "2025-07-01T12:07:00Z",
+      "project_end_date": "2030-06-30T12:06:00Z",
+      "project_detail_url": null
+    }
+  ]
+}
