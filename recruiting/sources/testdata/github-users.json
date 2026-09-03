@@ -1,0 +1,54 @@
+{
+  "total_count": 6,
+  "incomplete_results": false,
+  "items": [
+    {
+      "login": "dreyes",
+      "id": 1234567,
+      "node_id": "MDQ6VXNlcjEyMzQ1Njc=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/1234567?v=4",
+      "html_url": "https://github.com/dreyes",
+      "type": "User",
+      "site_admin": false,
+      "score": 42.5
+    },
+    {
+      "login": "sokafor",
+      "id": 7654321,
+      "node_id": "MDQ6VXNlcjc2NTQzMjE=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/7654321?v=4",
+      "html_url": "https://github.com/sokafor",
+      "type": "User",
+      "site_admin": false,
+      "score": 31.0
+    },
+    {
+      "login": "pnatarajan",
+      "id": 2468135,
+      "html_url": "https://github.com/pnatarajan",
+      "type": "User",
+      "score": 12.75
+    },
+    {
+      "login": "imaging-lab",
+      "id": 99999,
+      "html_url": "https://github.com/imaging-lab",
+      "type": "Organization",
+      "score": 11.0
+    },
+    {
+      "login": "",
+      "id": 5,
+      "html_url": "https://github.com/",
+      "type": "User",
+      "score": 1.0
+    },
+    {
+      "login": "nolink",
+      "id": 6,
+      "html_url": "",
+      "type": "User",
+      "score": 1.0
+    }
+  ]
+}

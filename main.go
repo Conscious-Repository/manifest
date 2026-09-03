@@ -393,8 +393,9 @@ func main() {
 		log.Printf("recruiting records: %v", err)
 	}
 	// The source-run cache (D14): dataDir, never the vault, 0600. Manual
-	// (Phase 3a), OpenAlex (Phase 3b.1) and ORCID (Phase 3b.2) are registered
-	// here; the network adapters are keyless and touch the network only when
+	// (Phase 3a), OpenAlex (Phase 3b.1), ORCID (Phase 3b.2) and GitHub
+	// (Phase 3b.3) are registered here; the network adapters are keyless and
+	// touch the network only when
 	// a run asks them to, so they are always on the rail — no network at
 	// startup means no startup failure.
 	// A later adapter that is absent or misconfigured leaves the tab working
@@ -406,6 +407,7 @@ func main() {
 		rs.Register(sources.Manual{Owner: recStore.Owner()})
 		rs.Register(sources.OpenAlex{Client: http.Client{Timeout: 20 * time.Second}})
 		rs.Register(sources.ORCID{Client: http.Client{Timeout: 20 * time.Second}})
+		rs.Register(sources.GitHub{Client: http.Client{Timeout: 20 * time.Second}})
 		recRuns = rs
 	}
 	// The real-estate decision log reuses the aion store/grammar pointed at

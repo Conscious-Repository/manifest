@@ -1,0 +1,49 @@
+{
+  "dreyes": {
+    "login": "dreyes",
+    "id": 1234567,
+    "html_url": "https://github.com/dreyes",
+    "type": "User",
+    "name": "Dana M. Reyes",
+    "company": "@example-institute",
+    "blog": "https://dreyes.example.org",
+    "location": "Boston, MA",
+    "email": "dana@example.test",
+    "hireable": true,
+    "bio": "MRI reconstruction, diffusion models, open-source imaging tooling.",
+    "twitter_username": "dreyes_mri",
+    "public_repos": 48,
+    "public_gists": 3,
+    "followers": 512,
+    "following": 40,
+    "created_at": "2012-03-04T05:06:07Z"
+  },
+  "sokafor": {
+    "login": "sokafor",
+    "id": 7654321,
+    "html_url": "https://github.com/sokafor",
+    "type": "User",
+    "name": null,
+    "company": null,
+    "blog": "sokafor.example.org",
+    "location": null,
+    "email": null,
+    "bio": "Reach me at sam@example.test for collaborations.",
+    "public_repos": 7,
+    "followers": 3
+  },
+  "pnatarajan": {
+    "login": "pnatarajan",
+    "id": 2468135,
+    "html_url": "https://github.com/pnatarajan",
+    "type": "User",
+    "name": "Priya Natarajan",
+    "company": "Northern Imaging Lab",
+    "blog": "mailto:priya@example.test",
+    "location": "",
+    "email": "priya@example.test",
+    "bio": "",
+    "public_repos": 0,
+    "followers": 0
+  }
+}
