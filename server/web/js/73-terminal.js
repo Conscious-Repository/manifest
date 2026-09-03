@@ -14,6 +14,8 @@ let termDevOpen = false;          // device list expanded?
 let termHistQuery = "";
 let termPollTimer = null;
 let termBrowseOpen = false, termBrowsePath = "";
+let termKeepPref = true; // ☕ keep-alive default ON (cmd-ctr)
+try { termKeepPref = localStorage.getItem("manifest.termKeep") !== "0"; } catch (e) {}
 
 const TERM_STAGES = [
   { stage: "term", glyph: "❯", label: "term" },
@@ -143,6 +145,11 @@ function termSessionRow(se) {
   row.append(name);
   const badges = el("span", "term-sess-badges");
   if (se.resumeId) badges.append(el("span", "term-badge", "⟳"));
+  if (se.keep) {
+    const c = el("span", "term-badge caff", "☕");
+    c.title = "caffeinated — also runs in a tmux on " + (se.device || "the box") + "; survives ssh drops";
+    badges.append(c);
+  }
   row.append(badges);
   const pen = el("button", "term-x", "✎");
   pen.title = "Rename";
@@ -184,7 +191,8 @@ function termRenameInline(row, nameEl, se) {
 // (forgetting is history's ✕). A dead-but-open row just closes.
 async function termKill(se) {
   if (se.live) {
-    if (!confirm("End this session? It moves to history" + (se.resumeId ? " (resumable)" : "") + ".")) return;
+    if (!confirm("End this session" + (se.keep ? " (also ends the kept tmux on " + (se.device || "the box") + ")" : "") +
+      "? It moves to history" + (se.resumeId ? " (resumable)" : "") + ".")) return;
     try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id) + "/kill", { method: "POST" }); } catch (e) {}
   }
   if (termOpenId === se.id) { termOpenId = ""; detachTerm(); renderTermEmpty(); }
@@ -235,6 +243,18 @@ function renderTermLauncher(enabled) {
   host.append(browse);
   host.append(el("div", "term-browse-slot"));
 
+  // keep-alive (☕ caffeination, cmd-ctr): remote sessions also run inside a
+  // tmux ON the target box, surviving ssh drops and metis restarts. Local
+  // sessions are inherently kept (they are the metis tmux). Default ON.
+  const keep = el("button", "term-keep");
+  keep.id = "termKeepToggle";
+  keep.onclick = () => {
+    termKeepPref = !termKeepPref;
+    try { localStorage.setItem("manifest.termKeep", termKeepPref ? "1" : "0"); } catch (e) {}
+    termSyncLauncher();
+  };
+  host.append(keep);
+
   // actions — Open is the accent primary, Resume its quiet twin
   const acts = el("div", "term-launch-acts");
   acts.id = "termLaunchActs";
@@ -259,6 +279,18 @@ function termSyncLauncher() {
   if (res) res.hidden = termLaunch.kind === "shell";
   const inp = host.querySelector("#termCwdInput");
   if (inp) inp.placeholder = termLaunch.kind === "shell" ? "~ (home)" : "~/project";
+  const keep = host.querySelector("#termKeepToggle");
+  if (keep) {
+    const sel = termSelectedDevice();
+    const local = !sel || sel.self;
+    const can = !local && sel.caffeinate;
+    keep.disabled = local || !can;
+    keep.classList.toggle("on", local || (can && termKeepPref));
+    keep.textContent = "☕ keep alive · " + (local ? "inherent here" : can ? (termKeepPref ? "on" : "off") : "n/a");
+    keep.title = local ? "Every local session already lives in a persistent tmux"
+      : can ? "Also run inside a tmux on " + sel.name + " — the session survives ssh drops and reattaches"
+        : "Keep-alive needs tmux installed on " + sel.name;
+  }
 }
 
 // --- fleet device selector (cmd-ctr model: dot + badges + gear override) ---
@@ -267,6 +299,7 @@ async function loadTermDevices() {
   try { termDevices = ((await (await fetch("/api/terminal/devices")).json()).devices) || []; }
   catch (e) { termDevices = []; }
   renderTermDevices();
+  termSyncLauncher(); // caffeinate flags land with the fleet data
 }
 
 function termSelectedDevice() {
@@ -305,6 +338,11 @@ function renderTermDevices() {
     row.append(el("span", "term-dev-name", d.name));
     if (d.self) row.append(el("span", "term-badge", "this box"));
     else {
+      if (d.caffeinate) {
+        const c = el("span", "term-badge caff", "☕");
+        c.title = "caffeinatable — sessions here can run in a tmux on the box and survive disconnects";
+        row.append(c);
+      }
       if (d.status === "needs-key") row.append(el("span", "term-badge warn", "needs key"));
       if (d.status === "offline") row.append(el("span", "term-badge", "offline"));
       if (d.overridden) row.append(el("span", "term-badge", d.user + "@"));
@@ -322,6 +360,7 @@ function renderTermDevices() {
       const bbtn = document.querySelector("#termLauncher .term-browse");
       if (bbtn) bbtn.textContent = "▸ browse folders";
       renderTermDevices();
+      termSyncLauncher(); // the ☕ toggle tracks the picked device
     };
     list.append(row);
   });
@@ -468,6 +507,8 @@ async function termCreate(kind, resume) {
   try {
     const body = { kind, cwd: termLaunch.cwd, device: termLaunch.device };
     if (resume) body.resumePicker = true;
+    const sel = termSelectedDevice();
+    if (sel && !sel.self && sel.caffeinate && termKeepPref) body.keep = true;
     const se = await postJSONOk("/api/terminal/session", body);
     termOpenId = se.id;
     termSetStage("term");
@@ -620,6 +661,33 @@ function attachTerm(id) {
   });
   const fit = new FitAddon.FitAddon();
   term.loadAddon(fit);
+
+  // OSC 52 → clipboard (cmd-ctr): tmux advertises set-clipboard, so an inner
+  // app's copy (Claude Code's `c`, vim "+y) reaches the system clipboard.
+  term.parser.registerOscHandler(52, (data) => {
+    try {
+      const b64 = data.slice(data.indexOf(";") + 1);
+      const text = decodeURIComponent(escape(atob(b64)));
+      if (text && navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text);
+    } catch (e) {}
+    return true;
+  });
+
+  // auto-name (cmd-ctr): the CLI's OSC title names the session row — the
+  // server only applies it while the row still wears a minted placeholder.
+  let titleTimer = null;
+  term.onTitleChange((t) => {
+    clearTimeout(titleTimer);
+    titleTimer = setTimeout(() => {
+      const clean = (t || "").replace(/^[\s✳✶✻●◐○•·*—–-]+/, "").replace(/\s+/g, " ").trim();
+      if (!clean) return;
+      fetch("/api/terminal/session/" + encodeURIComponent(id), {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoName: clean }),
+      }).then(() => loadTermSessions(true)).catch(() => {});
+    }, 2500);
+  });
+
   term.open(mount);
   try { fit.fit(); } catch (e) {}
 
@@ -674,7 +742,7 @@ function attachTerm(id) {
       }));
     }
   }
-  buildTermKeys(ws);
+  buildTermKeys();
   term.focus();
 }
 
@@ -683,12 +751,16 @@ function sendTermResize() {
   termInst.ws.send(JSON.stringify({ t: "r", c: termInst.term.cols, r: termInst.term.rows }));
 }
 
-// mobile soft-key bar (cmd-ctr TermKeyBar shape): keys the touch keyboard lacks
-function buildTermKeys(ws) {
+// mobile soft-key bar (cmd-ctr TermKeyBar shape): keys the touch keyboard lacks.
+// Sends via the LIVE termInst.ws — the bar builds once, sessions come and go
+// (wiring it to the first socket left the keys dead after any reattach).
+function buildTermKeys() {
   const bar = document.getElementById("termKeys");
   if (!bar || bar.dataset.built) return;
   bar.dataset.built = "1";
-  const send = (d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); };
+  const send = (d) => {
+    if (termInst && termInst.ws.readyState === 1) termInst.ws.send(JSON.stringify({ t: "i", d }));
+  };
   const keys = [
     ["esc", "\x1b"], ["tab", "\t"], ["ctrl-c", "\x03"], ["ctrl-d", "\x04"],
     ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"],

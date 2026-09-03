@@ -45,6 +45,7 @@ type devOverride struct {
 
 type devProbe struct {
 	status string // ok | needs-key | offline
+	tmux   bool   // tmux present on the box → sessions there are caffeinatable
 	at     time.Time
 }
 
@@ -206,9 +207,13 @@ func (c *devCfg) effective(name string) (TermDevice, bool) {
 // has passed the config/override regexes; nothing user-typed lands here raw.
 func (c *devCfg) sshArgs(d TermDevice) []string {
 	args := []string{
-		"-tt",
+		"-tt", // one-shot callers strip this via args[1:] — keep it FIRST
 		"-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=4",
+		// a silently-dropped path dies in ~45 s instead of hanging until TCP
+		// gives up; with remote keep (☕) the reattach then self-heals
+		"-o", "ServerAliveInterval=15",
+		"-o", "ServerAliveCountMax=3",
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", "UserKnownHostsFile=" + c.knownHosts,
 	}
@@ -223,36 +228,42 @@ func (c *devCfg) sshArgs(d TermDevice) []string {
 
 // probe returns the cached status or runs a fresh probe (singleflight).
 func (c *devCfg) probe(name string) string {
+	st, _ := c.probeFull(name)
+	return st
+}
+
+// probeFull also answers whether the box has tmux (the caffeination gate).
+func (c *devCfg) probeFull(name string) (string, bool) {
 	c.mu.Lock()
 	if p, ok := c.probes[name]; ok && time.Since(p.at) < 30*time.Second {
 		c.mu.Unlock()
-		return p.status
+		return p.status, p.tmux
 	}
 	if ch, running := c.inFly[name]; running {
 		c.mu.Unlock()
 		<-ch
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		return c.probes[name].status
+		return c.probes[name].status, c.probes[name].tmux
 	}
 	ch := make(chan struct{})
 	c.inFly[name] = ch
 	c.mu.Unlock()
 
-	status := c.runProbe(name)
+	status, tmux := c.runProbe(name)
 
 	c.mu.Lock()
-	c.probes[name] = devProbe{status: status, at: time.Now()}
+	c.probes[name] = devProbe{status: status, tmux: tmux, at: time.Now()}
 	delete(c.inFly, name)
 	close(ch)
 	c.mu.Unlock()
-	return status
+	return status, tmux
 }
 
-func (c *devCfg) runProbe(name string) string {
+func (c *devCfg) runProbe(name string) (string, bool) {
 	d, ok := c.effective(name)
 	if !ok {
-		return "offline"
+		return "offline", false
 	}
 	port := d.Port
 	if port == 0 {
@@ -260,18 +271,20 @@ func (c *devCfg) runProbe(name string) string {
 	}
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(d.Host, strconv.Itoa(port)), 2*time.Second)
 	if err != nil {
-		return "offline"
+		return "offline", false
 	}
 	_ = conn.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	args := append(c.sshArgs(d), "exit")
+	// one round-trip answers both "can we ssh" and "is tmux there" — the
+	// tmux presence gates the ☕ keep-alive toggle (cmd-ctr's caffeinatable)
+	args := append(c.sshArgs(d), "command -v tmux >/dev/null 2>&1 && echo has-tmux || echo no-tmux")
 	// -tt needs no pty for the probe; strip it to avoid "no tty" noise
-	cmd := exec.CommandContext(ctx, "ssh", args[1:]...)
-	if cmd.Run() == nil {
-		return "ok"
+	out, err := exec.CommandContext(ctx, "ssh", args[1:]...).Output()
+	if err != nil {
+		return "needs-key", false
 	}
-	return "needs-key"
+	return "ok", strings.Contains(string(out), "has-tmux")
 }
 
 func (c *devCfg) invalidate(name string) {
@@ -299,12 +312,14 @@ func (s *Server) handleTermDevices(w http.ResponseWriter, r *http.Request) {
 		Status     string `json:"status"`
 		Overridden bool   `json:"overridden,omitempty"`
 		Discovered bool   `json:"discovered,omitempty"`
+		Caffeinate bool   `json:"caffeinate,omitempty"` // tmux on the box → ☕ keep-alive available
 	}
 	self := "metis"
 	if s.devices != nil {
 		self = s.devices.selfName
 	}
-	rows := []row{{Name: self, Self: true, Status: "self"}}
+	// self is always caffeinatable — every session IS a metis tmux
+	rows := []row{{Name: self, Self: true, Status: "self", Caffeinate: true}}
 	if s.devices != nil {
 		ovr := s.devices.loadOverrides()
 		// the whole visible fleet: configured devices + tailnet-discovered
@@ -338,9 +353,9 @@ func (s *Server) handleTermDevices(w http.ResponseWriter, r *http.Request) {
 			go func(i int, t target) {
 				d, _ := s.devices.effective(t.name)
 				_, hasOvr := ovr[t.name]
-				status := "offline"
+				status, tmux := "offline", false
 				if t.online {
-					status = s.devices.probe(t.name)
+					status, tmux = s.devices.probeFull(t.name)
 					// tailnet says it's up — no ssh path just means no key/port
 					if status == "offline" && t.discovered {
 						status = "needs-key"
@@ -350,6 +365,7 @@ func (s *Server) handleTermDevices(w http.ResponseWriter, r *http.Request) {
 					Name: d.Name, Host: d.Host, User: d.User, Port: d.Port,
 					Identity: d.Identity, Agent: d.Agent, OS: t.os,
 					Status: status, Overridden: hasOvr, Discovered: t.discovered,
+					Caffeinate: tmux,
 				}}
 			}(i, t)
 		}

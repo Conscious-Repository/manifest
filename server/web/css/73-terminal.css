@@ -47,6 +47,7 @@
 .term-sess-badges { display: flex; gap: var(--sp-2); flex: none; }
 .term-badge { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); line-height: 1.6; background: var(--bg); }
 .term-badge.warn { color: var(--warn); border-color: var(--warn); background: var(--status-warn-bg); }
+.term-badge.caff { color: var(--warn); border-color: var(--base-25); }
 .term-x { border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); opacity: 0; flex: none; }
 .term-sess:hover .term-x, .term-hist-row:hover .term-x, .term-dev-row:hover .term-x { opacity: 1; }
 .term-x:hover { color: var(--base-100); }
@@ -117,6 +118,11 @@
 .term-dirpick-name:hover { color: var(--accent); }
 
 /* launch actions — solid accent primary + quiet outline twin */
+/* ☕ keep-alive toggle — quiet chip; .on borrows the badge warmth */
+.term-keep { display: block; width: 100%; margin-top: var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); color: var(--base-40); font-family: var(--mono); font-size: var(--fs-2xs); padding: var(--sp-3) var(--sp-4); cursor: pointer; text-align: left; }
+.term-keep.on { color: var(--warn); border-color: var(--warn); background: var(--status-warn-bg); }
+.term-keep:disabled { cursor: default; opacity: 0.7; }
+
 .term-launch-acts { display: flex; gap: var(--sp-4); margin-top: var(--sp-6); }
 .term-primary { flex: 1.4; border: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: var(--fs-md); font-weight: 600; height: 36px; border-radius: var(--radius-lg); cursor: pointer; }
 .term-primary:hover { filter: brightness(1.08); }
