@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -26,6 +28,10 @@ import (
 //
 // What it will not do, by construction rather than by policy text:
 //   - fetch anything but http(s);
+//   - fetch localhost, a loopback / private / link-local / unspecified IP
+//     literal, or — through the dialer, so a DNS name resolving there is
+//     caught too — any such address (the SSRF guard: a seed is owner
+//     input, and the server sits beside things a browser cannot reach);
 //   - touch LinkedIn or the social-graph hosts in webBlockedHosts, at any
 //     depth, including via redirect;
 //   - fetch a login / session / auth URL, by path segment or query key;
@@ -436,6 +442,9 @@ func webRefuse(u *url.URL) string {
 	if u.User != nil {
 		return "credentials in URL"
 	}
+	if webPrivateHost(host) {
+		return "local/private host " + host + " is never fetched"
+	}
 	for _, b := range webBlockedHosts {
 		if host == b || strings.HasSuffix(host, "."+b) {
 			return "social-graph host " + b + " is never fetched"
@@ -459,6 +468,68 @@ func webRefuse(u *url.URL) string {
 	}
 	return ""
 }
+
+// ---- SSRF guard ----
+// A seed URL is owner input and every link on a fetched page is stranger
+// input; the adapter runs on a host that can reach loopback services, the
+// LAN and cloud metadata endpoints a browser never could. Two layers, both
+// refusing rather than rewriting: webPrivateHost on the URL (literal IPs and
+// localhost, in webRefuse so seeds, links and redirect hops all pass it) and
+// webDialControl on the address the dialer actually resolved (a public name
+// that resolves to 127.0.0.1 or 169.254.169.254 — DNS rebinding — is refused
+// at the socket).
+
+// webPrivateHost reports whether a URL host is localhost or an IP literal
+// in a loopback, private, link-local, unspecified or multicast range.
+func webPrivateHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	// url.Hostname() has already stripped IPv6 brackets; a zone suffix
+	// (fe80::1%eth0) is dropped so the address still parses.
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		host = host[:i]
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return webPrivateIP(ip)
+}
+
+// webPrivateIP is the address policy: 127/8, ::1, 10/8, 172.16/12,
+// 192.168/16, fc00::/7, 169.254/16, fe80::/10, 0.0.0.0, ::, multicast.
+// IPv4-mapped IPv6 (::ffff:127.0.0.1) is unwrapped by net.IP's own checks.
+func webPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() ||
+		ip.IsUnspecified() || ip.IsMulticast()
+}
+
+// webDialControl runs after DNS resolution and before connect: the address
+// is the literal IP:port the socket is about to reach.
+func webDialControl(_ string, address string, _ syscall.RawConn) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("web: refused dial to %q: %v", address, err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || webPrivateIP(ip) {
+		return fmt.Errorf("web: refused dial to local/private address %s", address)
+	}
+	return nil
+}
+
+// webTransport is the default transport with the dial guard installed. It
+// is used only when the adapter's Client carries no Transport of its own
+// (tests inject an in-process one, which never dials).
+var webTransport = func() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: webDialControl}
+	t.DialContext = d.DialContext
+	return t
+}()
 
 // ---- robots ----
 
@@ -649,6 +720,9 @@ func (w Web) get(ctx context.Context, target string, maxBody int64) ([]byte, str
 		defer cancel()
 	}
 	client := w.Client
+	if client.Transport == nil {
+		client.Transport = webTransport
+	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= webMaxRedirects {
 			return errors.New("too many redirects")

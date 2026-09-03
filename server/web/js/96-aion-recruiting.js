@@ -37,7 +37,7 @@ async function loadRecruiting() {
   } catch (_) {
     recCache = { roles: [], candidates: [], seeds: [], network: { people: [], edges: [] }, stages: [] };
   }
-  await loadRecruitingSources();
+  await Promise.all([loadRecruitingSources(), recOutreachLoadProbe()]);
 }
 
 // The sources panel is its own fetch: a board whose run cache is not wired
@@ -880,20 +880,265 @@ function recNextSection(c) {
   return sec;
 }
 
-// outreach and ashby are read-only placeholders in this phase: drafting and
-// sending are approval-gated (D5) and the private Ashby client is later. The
-// sections exist so the inspector's order is the one the record answers in.
+// ---- approval-gated Gmail outreach (Phase 5) ----
+// The inspector over server/recruiting_outreach.go. The probe paints the
+// sender posture — connected, or not, with the paste-back connect; the
+// candidate's append-only log is fetched when the inspector opens; a draft
+// is generated on the server and captured editable on blur (an edit is a
+// new log row through the same route — the log is append-only); prepare
+// renders the readiness reasons; and the send is armed then confirmed,
+// shown only when the sender can send. Nothing here reaches Gmail except
+// the send route, and only with approve:true (D5).
+let recOutreachProbe = null;         // {configured, sendCapable, sender, detail, people} | {unavailable: true}
+let recOutreachLog = { id: null };   // the selected candidate's log: {id, entries, loading?, error?}
+let recOutreachReady = {};           // candidate id → last readiness (from prepare, or a refused send)
+let recOutreachForm = {};            // candidate id → {kind, via}
+let recOutreachConnect = null;       // paste-back in progress: {sender}
+
+async function recOutreachLoadProbe() {
+  try {
+    const r = await fetch("/api/aion/recruiting/outreach/probe", { cache: "no-store" });
+    if (!r.ok) throw new Error(await r.text());
+    recOutreachProbe = await r.json();
+  } catch (_) {
+    recOutreachProbe = { unavailable: true, sendCapable: false, people: [] };
+  }
+}
+
+// The log is fetched once per selection; a draft or a send appends the row
+// the response carries, so no second round trip follows a write.
+async function recOutreachLoadLog(id) {
+  recOutreachLog = { id, entries: [], loading: true };
+  try {
+    const r = await fetch("/api/aion/recruiting/outreach/" + id, { cache: "no-store" });
+    if (!r.ok) throw new Error(await r.text());
+    recOutreachLog = { id, entries: (await r.json()).entries || [] };
+  } catch (e) {
+    recOutreachLog = { id, entries: [], error: String(e.message || e) };
+  }
+  if (recSel === id && aionMode === "recruiting") renderAion();
+}
+
+// recOutreachCall is recAshbyCall for the outreach routes: a 409 carries
+// {error, readiness} — a refusal is a state the section paints, not an
+// exception.
+async function recOutreachCall(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const text = await r.text();
+  let out = {};
+  try { out = JSON.parse(text); } catch (_) { out = { error: text }; }
+  if (!r.ok && !out.readiness) throw new Error(out.error || text);
+  return out;
+}
+
+// the current draft is the LAST row, when it is a draft — the same rule the
+// server's readiness reads (recruiting.OutreachDoc.CurrentDraft)
+function recOutreachCurrentDraft(entries) {
+  const last = entries[entries.length - 1];
+  return last && (last.status === "draft" || last.status === "ready") ? last : null;
+}
+
+async function recOutreachDraft(c, body) {
+  try {
+    const out = await recOutreachCall("/api/aion/recruiting/outreach/draft/" + c.id, body);
+    if (out.view) recCache = out.view;
+    if (out.entry && recOutreachLog.id === c.id) recOutreachLog.entries = (recOutreachLog.entries || []).concat([out.entry]);
+    delete recOutreachReady[c.id];
+    showToast(body.subject || body.body ? "draft captured" : "draft written");
+    renderAion();
+  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+}
+
 function recOutreachSection(c) {
-  const sec = recSection("outreach", "");
-  (c.outreach || []).forEach((o) => {
+  const probe = recOutreachProbe || {};
+  const capable = !!probe.sendCapable;
+  const sec = recSection("outreach", capable ? "sender " + (probe.sender || "") : "sender not connected");
+  const field = (label, node) => {
+    const f = el("div", "aion-insp-field rec-insp-field");
+    f.append(el("span", "aion-insp-flabel", label), node);
+    sec.append(f);
+    return node;
+  };
+
+  // the sender posture — drafts work without it; a send refuses
+  if (!capable) {
+    sec.append(emptyRow(probe.unavailable ? "outreach unavailable"
+      : (probe.detail || "sender not connected") + " — drafts still work; a send refuses"));
+    if (!probe.unavailable) sec.append(recOutreachConnectEl());
+  }
+
+  // the append-only log
+  if (recOutreachLog.id !== c.id) { recOutreachLoadLog(c.id); sec.append(emptyRow("loading…")); return sec; }
+  if (recOutreachLog.loading) { sec.append(emptyRow("loading…")); return sec; }
+  if (recOutreachLog.error) sec.append(emptyRow("log unavailable: " + recOutreachLog.error.slice(0, 120)));
+  const entries = recOutreachLog.entries || [];
+  entries.forEach((e) => {
     const row = el("div", "rec-next");
-    row.append(el("span", "", o.log));
-    if (o.status) row.append(el("span", "micro-label", o.status));
-    if (o.last) row.append(el("span", "rec-ev-when", o.last));
+    row.append(el("span", "micro-label" + (e.status === "sent" ? " rec-gate ok" : ""), e.status));
+    row.append(el("span", "micro-label", e.kind + (e.via ? " via " + e.via : "")));
+    row.append(el("span", "", (e.subject || "(no subject)") + ((e.to || []).length ? " → " + e.to.join(", ") : "")));
+    row.append(el("span", "rec-ev-when", e.sentAt ? fmtWhen(e.sentAt) : e.at || ""));
+    if (e.messageId) row.append(el("span", "rec-ev-when", "message " + e.messageId + (e.threadId ? " · thread " + e.threadId : "")));
     sec.append(row);
   });
-  if (!(c.outreach || []).length) sec.append(emptyRow("no outreach yet"));
+  if (!entries.length) sec.append(emptyRow("no outreach yet"));
+  if (c.stage === "archived") return sec;
+
+  // drafting — the kind, and the mutual a warm/referral goes through
+  const form = recOutreachForm[c.id] || (recOutreachForm[c.id] = { kind: "direct", via: "" });
+  const kind = el("select", "pp-in rec-in");
+  [["direct", "direct — to the candidate"], ["warm", "warm intro — via a mutual"], ["referral", "referral ask — via a mutual"]]
+    .forEach(([v, label]) => { const o = el("option", "", label); o.value = v; o.selected = form.kind === v; kind.append(o); });
+  kind.onchange = () => { form.kind = kind.value; renderAion(); };
+  field("kind", kind);
+  if (form.kind !== "direct") {
+    const via = el("select", "pp-in rec-in");
+    const none = el("option", "", "via — choose a mutual"); none.value = ""; via.append(none);
+    (probe.people || []).forEach((p) => {
+      const o = el("option", "", p.name + (p.email ? " · " + p.email : " · no address"));
+      o.value = p.id; o.selected = form.via === p.id; via.append(o);
+    });
+    via.onchange = () => { form.via = via.value; };
+    field("via", via);
+  }
+  const draftBtn = el("button", "pill light", "draft");
+  draftBtn.title = "generate a draft on the server from the record's evidence — reaches no network";
+  draftBtn.onclick = () => {
+    const body = { kind: form.kind };
+    if (form.kind !== "direct") {
+      if (!form.via) { showToast("a " + form.kind + " outreach needs the mutual it goes through"); return; }
+      body.via = form.via;
+    }
+    recOutreachDraft(c, body);
+  };
+  sec.append(draftBtn);
+
+  // the current draft, editable — captured on blur through the same route
+  const draft = recOutreachCurrentDraft(entries);
+  if (draft) {
+    const subject = el("input", "pp-in rec-in");
+    subject.type = "text";
+    subject.value = draft.subject || "";
+    const body = el("textarea", "pp-in rec-in rec-quote");
+    body.value = draft.body || "";
+    const capture = () => {
+      if (subject.value === (draft.subject || "") && body.value === (draft.body || "")) return;
+      recOutreachDraft(c, { kind: draft.kind, via: draft.via || "", to: draft.to || [], subject: subject.value, body: body.value });
+    };
+    subject.onblur = capture;
+    subject.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); subject.blur(); } };
+    body.onblur = capture;
+    field("to", el("span", "", (draft.to || []).join(", ") || "— no address on the record"));
+    field("subject", subject);
+    field("body", body);
+  }
+
+  // readiness — prepare paints the reasons; a refused send does too
+  const prepare = el("button", "pill light", "prepare");
+  prepare.title = "the send preflight: sender, draft, recipients, evidence, fit gate — writes nothing";
+  prepare.onclick = async () => {
+    try {
+      const out = await recOutreachCall("/api/aion/recruiting/outreach/prepare/" + c.id, {});
+      recOutreachReady[c.id] = out.readiness;
+      renderAion();
+    } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+  };
+  sec.append(prepare);
+  const ready = recOutreachReady[c.id];
+  if (ready) {
+    if (ready.ready) sec.append(el("div", "rec-next", "ready to send" + (ready.sender ? " as " + ready.sender : "")));
+    (ready.reasons || []).forEach((why) => {
+      const row = el("div", "rec-next");
+      // the blocked recipe is the gate chip's (danger border + text)
+      row.append(el("span", "micro-label rec-gate blocked", "not ready"), el("span", "", why));
+      sec.append(row);
+    });
+  }
+
+  // the approved send: only with a capable sender and a draft to send, and
+  // armed then confirmed (native confirm() is banned app-wide)
+  if (!capable || !draft) return sec;
+  const send = el("button", "aion-insp-del rec-archive", "send as " + (probe.sender || "sender"));
+  send.onclick = () => {
+    const armed = el("button", "aion-insp-del rec-archive armed", "confirm send?");
+    armed.onclick = async () => {
+      // a send is not idempotent; the confirmed button goes inert for the
+      // whole round-trip
+      if (armed.disabled) return;
+      armed.disabled = true;
+      armed.textContent = "sending…";
+      try {
+        const out = await recOutreachCall("/api/aion/recruiting/outreach/send/" + c.id, { approve: true });
+        if (out.readiness && !out.send) {
+          recOutreachReady[c.id] = out.readiness;
+          showToast(out.error || "send refused");
+          renderAion();
+          return;
+        }
+        if (out.view) recCache = out.view;
+        if ((out.send || {}).entry && recOutreachLog.id === c.id) recOutreachLog.entries = entries.concat([out.send.entry]);
+        delete recOutreachReady[c.id];
+        showToast("sent · message " + ((out.send || {}).messageId || ""));
+        renderAion();
+      } catch (e) {
+        showToast(String(e.message || e).slice(0, 140));
+        // a failed send leaves the draft on screen; re-arm so the owner can
+        // retry after reading the toast
+        armed.disabled = false;
+        armed.textContent = "confirm send?";
+      }
+    };
+    send.replaceWith(armed);
+    armed.focus();
+  };
+  sec.append(send);
   return sec;
+}
+
+// The paste-back connect at gmail.send: the consent tab opens, the owner
+// pastes the address it lands on — the same route calendar and gmail take.
+// The probe the finish answers becomes the section's posture.
+function recOutreachConnectEl() {
+  const box = el("div", "rec-next");
+  if (!recOutreachConnect) {
+    const b = el("button", "pill light", "connect gmail");
+    b.title = "sign in as the sender at gmail.send only; the token lives under dataDir, never the vault";
+    b.onclick = async () => {
+      try {
+        const out = await recOutreachCall("/api/aion/recruiting/outreach/connect", {});
+        window.open(out.url, "_blank", "noopener");
+        recOutreachConnect = { sender: out.sender };
+        showToast("approve in the Google tab, then paste the address it lands on", null, "info");
+        renderAion();
+      } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+    };
+    box.append(b);
+    return box;
+  }
+  const input = el("input", "pp-in rec-in");
+  input.type = "text";
+  input.placeholder = "paste the address the sign-in tab landed on";
+  const fin = el("button", "pill light", "finish connect");
+  fin.onclick = async () => {
+    if (fin.disabled) return;
+    fin.disabled = true;
+    fin.textContent = "connecting…";
+    try {
+      recOutreachProbe = await recOutreachCall("/api/aion/recruiting/outreach/connect/finish", { pasted: input.value });
+      recOutreachConnect = null;
+      showToast(recOutreachProbe.sendCapable ? "connected " + (recOutreachProbe.sender || "")
+        : recOutreachProbe.detail || "connected, but not send-capable", null, "info");
+      renderAion();
+    } catch (e) {
+      fin.disabled = false;
+      fin.textContent = "finish connect";
+      showToast(String(e.message || e).slice(0, 140));
+    }
+  };
+  const cancel = el("button", "pill light", "cancel");
+  cancel.onclick = () => { recOutreachConnect = null; renderAion(); };
+  box.append(input, fin, cancel);
+  return box;
 }
 
 // ---- private Ashby handoff (Phase 6) ----

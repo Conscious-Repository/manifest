@@ -127,6 +127,7 @@ var FieldAuthority = map[string]Authority{
 	"ashby_stage":          AuthorityAshby, // official application stage
 	"ashby_source_id":      AuthorityAshby,
 	"ashby_pipeline":       AuthorityAshby,
+	"ashby_synced":         AuthorityAshby, // the last push/sync-back date stamp
 
 	// role — shared posting fields, Ashby ids, Manifest criteria
 	"role.title":            AuthorityShared,
@@ -809,20 +810,25 @@ type AshbyPushRequest struct {
 // AshbyProposal is the rendered preflight: matches, the diff, the conflict
 // flag, and what a push would do. It is what the owner approves.
 type AshbyProposal struct {
-	Candidate   string           `json:"candidate"`
-	Name        string           `json:"name"`
-	Linked      string           `json:"linked,omitempty"` // ashby_candidate_id already on the record
-	Matches     []AshbyCandidate `json:"matches"`
-	Decision    string           `json:"decision,omitempty"`
-	Handoff     string           `json:"handoff,omitempty"`
-	JobID       string           `json:"jobId,omitempty"`
-	ProjectID   string           `json:"projectId,omitempty"`
-	SourceID    string           `json:"sourceId,omitempty"`
-	Diff        []AshbyDiff      `json:"diff"`
-	Conflict    bool             `json:"conflict"`
-	Writes      []string         `json:"writes"` // the Ashby methods a push would call, in order
-	NeedsChoice []string         `json:"needsChoice"`
-	Note        string           `json:"note,omitempty"`
+	Candidate string `json:"candidate"`
+	Name      string `json:"name"`
+	Linked    string `json:"linked,omitempty"` // ashby_candidate_id already on the record
+	// ApplicationID is the ashby_application_id already on the record. When
+	// set, an application handoff has nothing to create: application.create
+	// leaves the write list and a push skips it instead of filing a second
+	// application for the same person.
+	ApplicationID string           `json:"applicationId,omitempty"`
+	Matches       []AshbyCandidate `json:"matches"`
+	Decision      string           `json:"decision,omitempty"`
+	Handoff       string           `json:"handoff,omitempty"`
+	JobID         string           `json:"jobId,omitempty"`
+	ProjectID     string           `json:"projectId,omitempty"`
+	SourceID      string           `json:"sourceId,omitempty"`
+	Diff          []AshbyDiff      `json:"diff"`
+	Conflict      bool             `json:"conflict"`
+	Writes        []string         `json:"writes"` // the Ashby methods a push would call, in order
+	NeedsChoice   []string         `json:"needsChoice"`
+	Note          string           `json:"note,omitempty"`
 }
 
 // AshbyPushResult is what an approved push did.
@@ -1075,7 +1081,8 @@ func (a *AshbySync) preflight(ctx context.Context, req AshbyPushRequest) (AshbyP
 	st := a.load()
 	prop := AshbyProposal{
 		Candidate: CandidateID(slug), Name: doc.Get("name"), Linked: doc.Get("ashby_candidate_id"),
-		Matches: []AshbyCandidate{}, Diff: []AshbyDiff{}, Writes: []string{}, NeedsChoice: []string{},
+		ApplicationID: strings.TrimSpace(doc.Get("ashby_application_id")),
+		Matches:       []AshbyCandidate{}, Diff: []AshbyDiff{}, Writes: []string{}, NeedsChoice: []string{},
 		Handoff: strings.ToLower(strings.TrimSpace(req.Handoff)), Decision: strings.ToLower(strings.TrimSpace(req.Decision)),
 		Note: strings.TrimSpace(req.Note),
 	}
@@ -1179,7 +1186,8 @@ func (a *AshbySync) preflight(ctx context.Context, req AshbyPushRequest) (AshbyP
 	}
 	switch prop.Handoff {
 	case HandoffApplication:
-		if prop.JobID == "" {
+		// an application already on the record needs no job to file under
+		if prop.JobID == "" && prop.ApplicationID == "" {
 			prop.NeedsChoice = append(prop.NeedsChoice, "jobId")
 		}
 	case HandoffProject:
@@ -1206,7 +1214,9 @@ func (a *AshbySync) preflight(ctx context.Context, req AshbyPushRequest) (AshbyP
 	case HandoffProject:
 		prop.Writes = append(prop.Writes, "candidate.addProject")
 	case HandoffApplication:
-		prop.Writes = append(prop.Writes, "application.create")
+		if prop.ApplicationID == "" {
+			prop.Writes = append(prop.Writes, "application.create")
+		}
 	}
 	if prop.Note != "" {
 		prop.Writes = append(prop.Writes, "candidate.createNote")
@@ -1293,14 +1303,20 @@ func (a *AshbySync) Push(ctx context.Context, req AshbyPushRequest, now time.Tim
 	switch prop.Handoff {
 	case HandoffProject:
 		if err := a.client.AddProject(ctx, res.CandidateID, prop.ProjectID); err != nil {
-			a.persistPartial(st, slug, doc, res, now)
+			a.persistPartial(st, slug, res)
 			return res, err
 		}
 		audit("candidate.addProject", prop.ProjectID, "")
 	case HandoffApplication:
+		if prop.ApplicationID != "" {
+			// the record already carries its application (a re-push of a
+			// linked candidate): nothing to create, nothing to audit
+			res.ApplicationID = prop.ApplicationID
+			break
+		}
 		app, err := a.client.CreateApplication(ctx, res.CandidateID, prop.JobID, prop.SourceID)
 		if err != nil {
-			a.persistPartial(st, slug, doc, res, now)
+			a.persistPartial(st, slug, res)
 			return res, err
 		}
 		res.ApplicationID = app.ID
@@ -1311,7 +1327,7 @@ func (a *AshbySync) Push(ctx context.Context, req AshbyPushRequest, now time.Tim
 	if prop.Note != "" {
 		id, err := a.client.CreateNote(ctx, res.CandidateID, prop.Note)
 		if err != nil {
-			a.persistPartial(st, slug, doc, res, now)
+			a.persistPartial(st, slug, res)
 			return res, err
 		}
 		res.NoteID = id
@@ -1321,22 +1337,21 @@ func (a *AshbySync) Push(ctx context.Context, req AshbyPushRequest, now time.Tim
 	// 7. immediate re-fetch
 	fetched, err := a.client.GetCandidate(ctx, res.CandidateID)
 	if err != nil {
-		a.persistPartial(st, slug, doc, res, now)
+		a.persistPartial(st, slug, res)
 		return res, err
 	}
 	res.Fetched = fetched
 
-	// 8. persist ids + audit on the record and the base snapshot in state
-	doc.Set("ashby_candidate_id", res.CandidateID)
+	// 8. persist ids + audit on the record and the base snapshot in state.
+	// The record is re-read under the store lock: `doc` above is as old as
+	// the network round-trips, and an edit the owner made meanwhile must
+	// not be overwritten by it.
+	set := map[string]string{"ashby_candidate_id": res.CandidateID, "ashby_synced": now.UTC().Format("2006-01-02")}
 	if res.ApplicationID != "" {
-		doc.Set("ashby_application_id", res.ApplicationID)
+		set["ashby_application_id"] = res.ApplicationID
 	}
-	doc.Set("ashby_synced", now.UTC().Format("2006-01-02"))
-	if doc.Get("stage") != StageArchived {
-		doc.Set("stage", StageAshby)
-	}
-	appendAshbyAudit(doc, res.Audit)
-	if err := a.store.SaveCandidate(slug, doc); err != nil {
+	doc, err = a.applyToCandidate(slug, ashbyRecordPatch{set: set, stage: StageAshby, audit: res.Audit})
+	if err != nil {
 		return res, err
 	}
 	base := ashbySide(fetched)
@@ -1352,18 +1367,74 @@ func (a *AshbySync) Push(ctx context.Context, req AshbyPushRequest, now time.Tim
 // persistPartial records what DID land when a multi-write push fails
 // midway: a created candidate id must not be lost just because the note
 // after it failed, or the next push would create a duplicate.
-func (a *AshbySync) persistPartial(st AshbySyncState, slug string, doc *CandidateDoc, res AshbyPushResult, now time.Time) {
+func (a *AshbySync) persistPartial(st AshbySyncState, slug string, res AshbyPushResult) {
 	if res.CandidateID == "" {
 		return
 	}
-	doc.Set("ashby_candidate_id", res.CandidateID)
+	set := map[string]string{"ashby_candidate_id": res.CandidateID}
 	if res.ApplicationID != "" {
-		doc.Set("ashby_application_id", res.ApplicationID)
+		set["ashby_application_id"] = res.ApplicationID
 	}
-	appendAshbyAudit(doc, res.Audit)
-	_ = a.store.SaveCandidate(slug, doc)
+	_, _ = a.applyToCandidate(slug, ashbyRecordPatch{set: set, audit: res.Audit})
 	st.Audit = append(st.Audit, res.Audit...)
 	_ = a.save(st)
+}
+
+// ---- record writes: the ONE way this file touches a record ----
+
+// ashbyRecordPatch is everything a push, a stage change or a sync-back may
+// put on a candidate record: Ashby-owned keys, the board-stage move a push
+// makes, and audit lines. A Manifest-owned or shared field has no slot
+// here, so field authority holds by construction on the inbound side too.
+type ashbyRecordPatch struct {
+	set   map[string]string // AuthorityAshby keys only; anything else is refused
+	stage string            // board stage to move to ("" leaves it); never applied to an archived record
+	audit []AshbyAudit
+}
+
+// applyToCandidate is the lost-update guard. Every caller in this file has
+// spent seconds in the network on a document it loaded before; instead of
+// saving that stale copy it hands the patch here, which takes the STORE
+// lock (the one every owner edit route holds), re-reads the record as it
+// is now, applies only the patch, and saves. The owner's concurrent edit
+// to a profile field is on disk by then and survives beside the ids.
+func (a *AshbySync) applyToCandidate(slug string, p ashbyRecordPatch) (*CandidateDoc, error) {
+	for k := range p.set {
+		if AuthorityOf(k) != AuthorityAshby {
+			return nil, errf("ashby: %q is not an Ashby-owned field — nothing inbound may set it", k)
+		}
+	}
+	a.store.mu.Lock()
+	defer a.store.mu.Unlock()
+	doc := a.store.LoadCandidate(slug)
+	for k, v := range p.set {
+		doc.Set(k, v)
+	}
+	if p.stage != "" && doc.Get("stage") != StageArchived {
+		doc.Set("stage", p.stage)
+	}
+	appendAshbyAudit(doc, p.audit)
+	if err := a.store.SaveCandidate(slug, doc); err != nil {
+		return doc, err
+	}
+	return doc, nil
+}
+
+// applyToRole is applyToCandidate for a role record: Ashby-owned role keys
+// only (`role.` in the authority map), re-read and saved under the lock.
+func (a *AshbySync) applyToRole(slug string, set map[string]string) error {
+	for k := range set {
+		if AuthorityOf("role."+k) != AuthorityAshby {
+			return errf("ashby: role %q is not an Ashby-owned field — nothing inbound may set it", k)
+		}
+	}
+	a.store.mu.Lock()
+	defer a.store.mu.Unlock()
+	role := a.store.LoadRole(slug)
+	for k, v := range set {
+		role.Set(k, v)
+	}
+	return a.store.SaveRole(slug, role)
 }
 
 // appendAshbyAudit writes audit rows into the record's `## ashby` section.
@@ -1454,9 +1525,7 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 	}
 	line := AshbyAudit{At: now.UTC().Format(time.RFC3339), Actor: actor, Candidate: doc.Get("id"),
 		Method: "application.changeStage", AshbyID: appID, Detail: detail}
-	setAshbyStage(doc, app)
-	appendAshbyAudit(doc, []AshbyAudit{line})
-	if err := a.store.SaveCandidate(slug, doc); err != nil {
+	if _, err := a.applyToCandidate(slug, ashbyRecordPatch{set: map[string]string{"ashby_stage": ashbyStageOf(app)}, audit: []AshbyAudit{line}}); err != nil {
 		return app, err
 	}
 	st := a.load()
@@ -1464,9 +1533,10 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 	return app, a.save(st)
 }
 
-// setAshbyStage mirrors the official application state onto the record —
-// the one inbound write an Ashby-authoritative field gets.
-func setAshbyStage(doc *CandidateDoc, app AshbyApplication) {
+// ashbyStageOf is the official application state as the record's
+// `ashby_stage` carries it — the one inbound value an Ashby-authoritative
+// field gets.
+func ashbyStageOf(app AshbyApplication) string {
 	stage := strings.TrimSpace(app.Stage)
 	if strings.EqualFold(app.Status, "Archived") {
 		stage = "archived"
@@ -1474,7 +1544,7 @@ func setAshbyStage(doc *CandidateDoc, app AshbyApplication) {
 			stage += ": " + app.ArchiveReason
 		}
 	}
-	doc.Set("ashby_stage", stage)
+	return stage
 }
 
 // ---- sync-back trigger (user-actioned; the receiver is Phase 7) ----
@@ -1549,8 +1619,7 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		if !ok || p.JobID == "" || role.Get("ashby_job_id") == p.JobID {
 			continue
 		}
-		role.Set("ashby_job_id", p.JobID)
-		if err := a.store.SaveRole(slug, role); err != nil {
+		if err := a.applyToRole(slug, map[string]string{"ashby_job_id": p.JobID}); err != nil {
 			return res, err
 		}
 		res.RolesLinked = append(res.RolesLinked, slug)
@@ -1572,7 +1641,17 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		return res, err
 	}
 	res.Candidates = len(cands)
+	// what each touched record gets, decided against the docs loaded above
+	// and applied afterwards through applyToCandidate against the record as
+	// it is then
 	touched := map[string]bool{}
+	patches := map[string]map[string]string{}
+	patch := func(slug string) map[string]string {
+		if patches[slug] == nil {
+			patches[slug] = map[string]string{}
+		}
+		return patches[slug]
+	}
 	for _, c := range cands {
 		slug, ok := linked[c.ID]
 		if !ok {
@@ -1616,20 +1695,28 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		if have != "" && have != app.ID {
 			continue // a different application of the same person; not ours
 		}
-		before := SerializeCandidate(doc)
+		changed := false
 		if have == "" {
+			// the in-memory doc advances too, so a second application of the
+			// same person later in the list reads as "not ours"
 			doc.Set("ashby_application_id", app.ID)
+			patch(slug)["ashby_application_id"] = app.ID
+			changed = true
 		}
-		setAshbyStage(doc, app)
-		if SerializeCandidate(doc) != before {
+		if stage := ashbyStageOf(app); doc.Get("ashby_stage") != stage {
+			doc.Set("ashby_stage", stage)
+			patch(slug)["ashby_stage"] = stage
+			changed = true
+		}
+		if changed {
 			touched[slug] = true
 			res.Updated = append(res.Updated, doc.Get("id"))
 		}
 	}
 	for slug := range touched {
-		doc := docs[slug]
-		doc.Set("ashby_synced", now.UTC().Format("2006-01-02"))
-		if err := a.store.SaveCandidate(slug, doc); err != nil {
+		set := patch(slug)
+		set["ashby_synced"] = now.UTC().Format("2006-01-02")
+		if _, err := a.applyToCandidate(slug, ashbyRecordPatch{set: set}); err != nil {
 			return res, err
 		}
 	}

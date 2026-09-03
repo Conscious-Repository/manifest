@@ -42,6 +42,9 @@ type fakeAshby struct {
 	failWith   string // every call answers 401 with this text
 	denyAdd    bool   // candidate.addProject answers 404
 	nextID     int
+	// onCall runs inside the handler before it answers: a test hooks it
+	// to do something (edit the record) while a push is mid-flight.
+	onCall func(method string)
 }
 
 func newFakeAshby(t *testing.T) *fakeAshby {
@@ -93,6 +96,9 @@ func (f *fakeAshby) serve(w http.ResponseWriter, r *http.Request) {
 	call.User, call.Pass, call.HasAuth = r.BasicAuth()
 	_ = json.NewDecoder(r.Body).Decode(&call.Body)
 	f.calls = append(f.calls, call)
+	if f.onCall != nil {
+		f.onCall(call.Method)
+	}
 	if r.Method != http.MethodPost {
 		f.fail(w, http.StatusMethodNotAllowed, "POST only")
 		return
@@ -953,5 +959,119 @@ func TestAshbyHasNoBackgroundWritePath(t *testing.T) {
 	// and the state file refuses to live in the vault
 	if _, err := NewAshbySync(filepath.Join(h.vault, "system", "ashby.json"), h.store, h.fake.client()); err == nil {
 		t.Fatal("sync state accepted inside the vault")
+	}
+}
+
+// ---- lost-update guard: a record edited mid-push keeps the edit ----
+
+// A push spends its network round-trips on a document loaded before them.
+// The owner edits the record meanwhile (a profile field, through the
+// store's own locked route); when the push persists its ids it must
+// re-read the record, not save the stale copy over the edit.
+func TestAshbyPushKeepsAConcurrentEdit(t *testing.T) {
+	h := newAshbyHarness(t)
+	h.fake.onCall = func(method string) {
+		if method != "candidate.create" {
+			return
+		}
+		if _, err := h.store.UpdateCandidate(h.cand.ID, map[string]string{"title": "Staff Scientist"}); err != nil {
+			t.Error(err)
+		}
+	}
+	res, err := h.sync.Push(context.Background(), AshbyPushRequest{Candidate: h.cand.ID, Handoff: HandoffProject, Approve: true}, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := h.record(t)
+	for _, want := range []string{"Staff Scientist", "ashby_candidate_id: cand_1", "stage: ashby", "[method:: candidate.create]"} {
+		if !strings.Contains(rec, want) {
+			t.Errorf("record lacks %q after a push over a concurrent edit:\n%s", want, rec)
+		}
+	}
+	if res.Record.Profile["title"] != "Staff Scientist" {
+		t.Fatalf("returned record: %+v", res.Record.Profile)
+	}
+
+	// the same guard on a stage change and a sync-back
+	h.fake.onCall = func(method string) {
+		if method == "application.changeStage" || method == "candidate.list" {
+			if _, err := h.store.UpdateCandidate(h.cand.ID, map[string]string{"org": "Example Imaging Group · " + method}); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	if _, err := h.sync.Push(context.Background(), AshbyPushRequest{Candidate: h.cand.ID, Handoff: HandoffApplication, Approve: true}, testNow); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sync.ChangeStage(context.Background(), h.cand.ID, "st_screen", "", "", testNow); err != nil {
+		t.Fatal(err)
+	}
+	if rec := h.record(t); !strings.Contains(rec, "application.changeStage]") || !strings.Contains(rec, "ashby_stage: Phone Screen") {
+		t.Fatalf("stage change lost the edit or the stage:\n%s", rec)
+	}
+	if _, err := h.sync.SyncBack(context.Background(), true, testNow.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if rec := h.record(t); !strings.Contains(rec, "candidate.list") || !strings.Contains(rec, "ashby_synced:") {
+		t.Fatalf("sync-back lost the edit:\n%s", rec)
+	}
+	// and the inbound writer refuses a field Ashby does not own
+	if _, err := h.sync.applyToCandidate(CandidateSlug(h.cand.ID), ashbyRecordPatch{set: map[string]string{"title": "x"}}); err == nil {
+		t.Fatal("applyToCandidate accepted a shared field")
+	}
+	if err := h.sync.applyToRole("mri-engineer", map[string]string{"title": "x"}); err == nil {
+		t.Fatal("applyToRole accepted a shared field")
+	}
+}
+
+// ---- a linked candidate with an application is not re-applied ----
+
+// A second application-handoff push of a record that already carries its
+// ashby_application_id drops application.create from the proposal and
+// skips it in the push: the note and the re-fetch still run, the
+// application count on the Ashby side stays at one.
+func TestAshbyRepushWithApplicationDoesNotDuplicate(t *testing.T) {
+	h := newAshbyHarness(t)
+	first, err := h.sync.Push(context.Background(), AshbyPushRequest{Candidate: h.cand.ID, Handoff: HandoffApplication, Approve: true}, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ApplicationID == "" {
+		t.Fatalf("first push: %+v", first)
+	}
+	prop, err := h.sync.Preflight(context.Background(), AshbyPushRequest{Candidate: h.cand.ID, Handoff: HandoffApplication})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prop.ApplicationID != first.ApplicationID || strings.Join(prop.Writes, ",") != "candidate.info" || len(prop.NeedsChoice) != 0 {
+		t.Fatalf("linked-with-application proposal: %+v", prop)
+	}
+	// even with the role's job id gone, the existing application needs none
+	role := h.store.LoadRole("mri-engineer")
+	role.Set("ashby_job_id", "")
+	if err := h.store.SaveRole("mri-engineer", role); err != nil {
+		t.Fatal(err)
+	}
+	before := len(h.fake.calls)
+	res, err := h.sync.Push(context.Background(), AshbyPushRequest{Candidate: h.cand.ID, Handoff: HandoffApplication, Approve: true, Note: "second look"}, testNow.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ApplicationID != first.ApplicationID || res.CandidateID != first.CandidateID {
+		t.Fatalf("re-push: %+v", res)
+	}
+	for _, c := range h.fake.calls[before:] {
+		if c.Method == "application.create" || c.Method == "candidate.create" {
+			t.Fatalf("the re-push duplicated: %v", h.fake.methods()[before:])
+		}
+	}
+	if len(h.fake.apps) != 1 {
+		t.Fatalf("applications on the Ashby side: %d", len(h.fake.apps))
+	}
+	if note, ok := h.fake.last("candidate.createNote"); !ok || note.Body["candidateId"] != first.CandidateID {
+		t.Fatalf("the note did not travel: %v", h.fake.methods()[before:])
+	}
+	if rec := h.record(t); strings.Count(rec, "ashby_application_id:") != 1 || strings.Count(rec, "[method:: application.create]") != 1 {
+		t.Fatalf("record:\n%s", rec)
 	}
 }

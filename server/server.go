@@ -154,7 +154,7 @@ type Server struct {
 	// every write refuses (recruiting_ashby_private.go).
 	ashbySync *recruiting.AshbySync
 	// ashbyWebhookSecret signs inbound deliveries (ASHBY_WEBHOOK_SECRET);
-	// empty means unverified processing (recruiting_ashby_webhook.go).
+	// empty means the receiver answers 503 (recruiting_ashby_webhook.go).
 	ashbyWebhookSecret string
 	// The send-only Gmail client behind …/recruiting/outreach (Phase 5).
 	// Nil is the unconfigured posture: the probe answers sendCapable:false

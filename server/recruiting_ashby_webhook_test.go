@@ -125,19 +125,23 @@ func TestRecruitingAshbyWebhookRejectsBadSignature(t *testing.T) {
 	}
 }
 
-// No secret installed: verification is skipped (absent config is a state,
-// not a failure) and the delivery is processed, signed or not.
-func TestRecruitingAshbyWebhookNoSecretProcesses(t *testing.T) {
+// No secret installed: the receiver FAILS CLOSED. Signed or not, a
+// delivery is a 503, nothing reaches Ashby, and nothing is recorded — an
+// unauthenticated route that triggers reads and record writes is not a
+// posture to run in.
+func TestRecruitingAshbyWebhookNoSecretIsClosed(t *testing.T) {
 	s, fake, _, _ := testAshbyServer(t, testPrivateKey)
-	w := webhookPost(t, s, stageDelivery, "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("unsigned without secret: %d %s", w.Code, w.Body.String())
+	for name, sig := range map[string]string{"unsigned": "", "signed": sign(testWebhookSecret, []byte(stageDelivery))} {
+		w := webhookPost(t, s, stageDelivery, sig)
+		if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "not configured") {
+			t.Fatalf("%s without secret: %d %s", name, w.Code, w.Body.String())
+		}
 	}
-	if res := decodeWebhook(t, w); res.Duplicate || res.Sync == nil {
-		t.Fatalf("result: %+v", res)
+	if len(fake.calls) != 0 {
+		t.Fatalf("processed without a secret: %v", fake.calls)
 	}
-	if !fake.has("candidate.list") {
-		t.Fatalf("not processed: %v", fake.calls)
+	if st := s.ashbySync.State(); len(st.Webhooks) != 0 || st.LastSync != "" {
+		t.Fatalf("touched the state without a secret: %+v", st)
 	}
 }
 
@@ -224,8 +228,9 @@ func TestRecruitingAshbyWebhookSyncFailureIs5xx(t *testing.T) {
 // is acknowledged (a retry could not help) and nothing is recorded.
 func TestRecruitingAshbyWebhookUnconfiguredClientAcks(t *testing.T) {
 	s, fake, _, _ := testAshbyServer(t, "")
+	s.UseAshbyWebhookSecret(testWebhookSecret)
 	captureLog(t)
-	w := webhookPost(t, s, stageDelivery, "")
+	w := webhookPost(t, s, stageDelivery, sign(testWebhookSecret, []byte(stageDelivery)))
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ignored":"unconfigured"`) {
 		t.Fatalf("unconfigured: %d %s", w.Code, w.Body.String())
 	}
@@ -262,6 +267,7 @@ func TestRecruitingAshbyWebhookPingAndBadBody(t *testing.T) {
 // The recorded key set is bounded like the audit tail.
 func TestRecruitingAshbyWebhookKeySetIsBounded(t *testing.T) {
 	s, _, _, _ := testAshbyServer(t, testPrivateKey)
+	s.UseAshbyWebhookSecret(testWebhookSecret)
 	path := s.ashbySync.StatePath()
 	st := s.ashbySync.State()
 	for i := 0; i < 1000; i++ {
@@ -274,7 +280,7 @@ func TestRecruitingAshbyWebhookKeySetIsBounded(t *testing.T) {
 	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if w := webhookPost(t, s, stageDelivery, ""); w.Code != http.StatusOK {
+	if w := webhookPost(t, s, stageDelivery, sign(testWebhookSecret, []byte(stageDelivery))); w.Code != http.StatusOK {
 		t.Fatalf("webhook: %d %s", w.Code, w.Body.String())
 	}
 	got := s.ashbySync.State().Webhooks

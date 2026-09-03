@@ -939,3 +939,78 @@ func mustURL(t *testing.T, s string) *url.URL {
 	}
 	return u
 }
+
+// The SSRF guard: localhost and loopback / private / link-local /
+// unspecified IP literals are refused as a seed, never followed as a link
+// (the transport never sees them), and — for a public name that resolves
+// there — refused again at the socket by the default transport's dialer.
+func TestWebRefusesLocalAndPrivateHosts(t *testing.T) {
+	n := newWebNet()
+	n.site("seed.example", map[string]string{
+		"/": `<html><head><title>Example Imaging Group</title></head><body>
+<h1>Example Imaging Group</h1><p>We build MRI imaging software.</p>
+<a href="http://127.0.0.1:9/x">A</a> <a href="http://localhost/admin">B</a> <a href="http://10.0.0.5/">C</a>
+<a href="http://[::1]:8080/">D</a> <a href="http://169.254.169.254/latest/meta-data/">E</a>
+<a href="http://192.168.1.1/imaging">F</a> <a href="http://0.0.0.0/">G</a>
+<a href="https://lab.example/imaging">Imaging Lab</a>
+</body></html>`,
+	})
+	n.site("lab.example", map[string]string{"/imaging": `<html><body><h1>Imaging Lab</h1><p>mri</p></body></html>`})
+	if _, err := n.adapter().Search(context.Background(), webScope("https://seed.example/", nil)); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range n.requests() {
+		if webPrivateHost(mustURL(t, r).Hostname()) {
+			t.Errorf("a local/private URL reached the transport: %s", r)
+		}
+	}
+	if !n.requested("https://lab.example/imaging") {
+		t.Errorf("the public linkout was not followed: %v", n.requests())
+	}
+
+	// as a seed, each is refused before anything is fetched
+	for _, seed := range []string{
+		"http://127.0.0.1:9/x", "http://localhost:7777/", "http://a.localhost/", "http://10.1.2.3/", "http://172.16.0.1/",
+		"http://192.168.1.1/", "http://169.254.169.254/", "http://[::1]/", "http://[fe80::1]/", "http://[fc00::1]/",
+		"http://0.0.0.0/", "http://[::]/", "http://[::ffff:127.0.0.1]/",
+	} {
+		before := len(n.requests())
+		_, err := n.adapter().Search(context.Background(), webScope(seed, nil))
+		if err == nil || !strings.Contains(err.Error(), "local/private") {
+			t.Errorf("seed %q: %v", seed, err)
+		}
+		if len(n.requests()) != before {
+			t.Errorf("seed %q was fetched", seed)
+		}
+	}
+
+	// the policy helper both ways: public literals and names stay allowed
+	for raw, want := range map[string]bool{
+		"https://93.184.216.34/": true, "https://example.org/": true, "https://[2606:2800:220:1:248:1893:25c8:1946]/": true,
+		"https://172.15.0.1/": true, "https://172.32.0.1/": true, "https://localhost.example/": true,
+		"http://127.0.0.1/": false, "http://LOCALHOST/": false, "http://[fe80::1%25eth0]/": false, "http://224.0.0.1/": false,
+	} {
+		if got := webRefuse(mustURL(t, raw)) == ""; got != want {
+			t.Errorf("webRefuse(%s): allowed=%v want %v", raw, got, want)
+		}
+	}
+
+	// the dialer's control sees the resolved address, so a public name that
+	// resolves to a private address (DNS rebinding) is refused at the socket
+	for addr, ok := range map[string]bool{
+		"127.0.0.1:9": false, "[::1]:80": false, "10.0.0.1:80": false, "169.254.169.254:80": false, "0.0.0.0:80": false,
+		"93.184.216.34:443": true, "[2606:2800:220:1:248:1893:25c8:1946]:443": true,
+	} {
+		if err := webDialControl("tcp", addr, nil); (err == nil) != ok {
+			t.Errorf("webDialControl(%s): %v", addr, err)
+		}
+	}
+	// and the zero-value adapter (no injected transport) carries it: a
+	// loopback server is unreachable through Web{}.get even though get
+	// itself runs no URL policy
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html></html>")) }))
+	defer srv.Close()
+	if _, _, _, err := (Web{Delay: -1}).get(context.Background(), srv.URL+"/", 1024); err == nil || !strings.Contains(err.Error(), "refused dial") {
+		t.Errorf("loopback dial through the default transport: %v", err)
+	}
+}

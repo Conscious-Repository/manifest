@@ -30,10 +30,12 @@ import (
 // Admin → Integrations → Webhooks. The secret's ONE source is the
 // ASHBY_WEBHOOK_SECRET environment variable (main.go, beside ASHBY_API_KEY);
 // with it installed, a missing or mismatching signature is a 401 and the
-// body is never decoded. Without it, deliveries are processed unverified —
-// the same posture as the client's Configured()==false: absent config is a
-// state, not a failure. The secret is never logged, echoed, or compared
-// with anything but hmac.Equal.
+// body is never decoded. Without it the receiver FAILS CLOSED: every
+// delivery is a 503 "webhook receiver not configured", the body is not
+// read, and nothing runs — an unauthenticated POST that could trigger
+// Ashby reads and record writes is not a posture, it is a hole. The
+// secret is never logged, echoed, or compared with anything but
+// hmac.Equal.
 //
 // Idempotency: each delivery has a key (Ashby's own id when the payload
 // carries one, else the body's SHA-256), recorded in the derived sync
@@ -52,7 +54,7 @@ const maxAshbyWebhookBody = 1 << 20
 const ashbySignatureHeader = "Ashby-Signature"
 
 // UseAshbyWebhookSecret installs the delivery-signing secret (from
-// ASHBY_WEBHOOK_SECRET). Empty leaves the receiver unverified.
+// ASHBY_WEBHOOK_SECRET). Empty leaves the receiver closed (503).
 func (s *Server) UseAshbyWebhookSecret(secret string) { s.ashbyWebhookSecret = secret }
 
 // ashbySignatureOK checks `sha256=<hex>` (the prefix is optional) against
@@ -95,6 +97,7 @@ func ashbyWebhookKey(env ashbyWebhookEnvelope, raw []byte) string {
 
 // POST …/ashby/webhook → verify, dedupe, sync-back. Answers:
 //
+//	503  no signing secret installed (fail closed; body not read)
 //	401  signature missing/mismatched (secret installed; nothing processed)
 //	400  not JSON
 //	200  {"webhook":{key,action,duplicate,sync?}} — also for a ping and for
@@ -102,6 +105,10 @@ func ashbyWebhookKey(env ashbyWebhookEnvelope, raw []byte) string {
 //	5xx  the sync failed; nothing recorded, so a retry re-runs it
 func (s *Server) handleRecruitingAshbyWebhook(w http.ResponseWriter, r *http.Request) {
 	if !s.ashbyReady(w) {
+		return
+	}
+	if s.ashbyWebhookSecret == "" {
+		http.Error(w, "webhook receiver not configured", http.StatusServiceUnavailable)
 		return
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxAshbyWebhookBody+1))
@@ -113,12 +120,10 @@ func (s *Server) handleRecruitingAshbyWebhook(w http.ResponseWriter, r *http.Req
 		http.Error(w, "webhook body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
-	if s.ashbyWebhookSecret != "" {
-		if !ashbySignatureOK(s.ashbyWebhookSecret, raw, r.Header.Get(ashbySignatureHeader)) {
-			log.Printf("recruiting ashby webhook: rejected delivery (bad or missing %s)", ashbySignatureHeader)
-			http.Error(w, "invalid webhook signature", http.StatusUnauthorized)
-			return
-		}
+	if !ashbySignatureOK(s.ashbyWebhookSecret, raw, r.Header.Get(ashbySignatureHeader)) {
+		log.Printf("recruiting ashby webhook: rejected delivery (bad or missing %s)", ashbySignatureHeader)
+		http.Error(w, "invalid webhook signature", http.StatusUnauthorized)
+		return
 	}
 	var env ashbyWebhookEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {

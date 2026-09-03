@@ -456,8 +456,8 @@ func main() {
 		srv.UseAshbySync(as)
 	}
 	// The webhook receiver's signing secret (Phase 7): same ONE-source rule,
-	// ASHBY_WEBHOOK_SECRET in the environment. Absent, deliveries are
-	// processed unverified; nothing logs or echoes it.
+	// ASHBY_WEBHOOK_SECRET in the environment. Absent, the receiver fails
+	// closed (503, nothing processed); nothing logs or echoes it.
 	srv.UseAshbyWebhookSecret(os.Getenv("ASHBY_WEBHOOK_SECRET"))
 	// Approval-gated Gmail outreach (Phase 5): a SEND-ONLY client for exactly
 	// one From address (GMAIL_SEND_FROM, default ben@aion.bio). The OAuth
