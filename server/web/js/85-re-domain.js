@@ -720,11 +720,14 @@ function categoryTypeahead(r, onResult, saveFn) {
       if (q && !exact) {
         add('create "' + ta.value() + '" →', "create", async () => {
           const name = ta.value().toLowerCase();
-          // class heuristic: income → operating; expense → operating on a
-          // stabilized/leased target, project otherwise. Retype any time by
-          // editing system/realestate/categories.md.
+          // class heuristic: the NAME wins when it names a lane (a category
+          // called "acquisition" classed project routed real purchase wires
+          // into the hard lane — the 2026-09-03 double count); else income →
+          // operating; expense → operating on a stabilized/leased target,
+          // project otherwise. Retype any time in SETTINGS → Categories.
           let cls = "operating";
-          if (!r.inflow) {
+          if (["acquisition", "closing", "purchase", "earnest-money"].includes(name)) cls = "acquisition";
+          else if (!r.inflow) {
             const slug = (r.assignments && r.assignments[0] && r.assignments[0].slug) || "";
             const prop = (typeof propertyCache !== "undefined" ? propertyCache : []).find((p) => p.slug === slug);
             cls = prop && ["leased", "stabilized", "closed"].includes(prop.status) ? "operating" : "project";
