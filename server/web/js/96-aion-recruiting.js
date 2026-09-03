@@ -799,13 +799,32 @@ function recEvidenceSection(c) {
 
 // network — intro paths, with inferred edges labelled at the PATH level too,
 // never presented as a real relationship.
+//
+// Three kinds of row, each labelled in words so none reads as a confirmed
+// relationship it isn't:
+//   hand-authored        owner evidence from `## network`, shown as written;
+//   derived              a route the server computed over the graph
+//                        (recruiting.PathKindDerived) — the owner has not
+//                        confirmed it;
+//   derived + inferred   a computed route that crosses at least one inferred
+//                        edge — weakest of the three, both chips shown.
+const REC_PATH_KIND_DERIVED = "derived"; // mirrors recruiting.PathKindDerived
 function recNetworkSection(c) {
   const paths = c.paths || [];
   const sec = recSection("network", String(paths.length));
   paths.forEach((p) => {
-    const row = el("div", "rec-path");
+    const derived = p.kind === REC_PATH_KIND_DERIVED;
+    const row = el("div", "rec-path" + (derived ? " derived" : ""));
     row.append(el("span", "rec-path-hops", p.path));
-    if (p.kind) row.append(el("span", "micro-label", p.kind));
+    if (derived) {
+      const chip = el("span", "micro-label rec-derived", "derived");
+      chip.title = p.inferred
+        ? "computed from the network graph over at least one inferred edge — not owner-confirmed"
+        : "computed from the network graph — not owner-confirmed";
+      row.append(chip);
+    } else if (p.kind) {
+      row.append(el("span", "micro-label", p.kind));
+    }
     if (p.confidence) row.append(el("span", "rec-path-conf", p.confidence));
     if (p.inferred) row.append(el("span", "micro-label rec-inferred", "inferred"));
     sec.append(row);

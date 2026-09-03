@@ -115,6 +115,10 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-edge-basis { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
 .rec-path-conf { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rec-inferred { color: var(--base-40); border: 1px dashed var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); }
+/* a derived path is a computed route, not owner evidence: solid chip in the
+   accent, hops dimmed a step. Inferred keeps its own dashed chip beside it. */
+.rec-derived { color: var(--accent); border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 0 var(--sp-2); }
+.rec-path.derived .rec-path-hops { color: var(--base-50); }
 
 .rec-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; font-size: var(--fs-sm); color: var(--base-80); }
 .rec-archive { display: block; margin-top: var(--sp-7); }
