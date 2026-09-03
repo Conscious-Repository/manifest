@@ -193,6 +193,12 @@ function paintRoleSync(roles) {
   box.append(b);
   const synced = roles.map((r) => r.synced || "").filter(Boolean).sort().pop();
   if (synced) box.append(el("span", "micro-label rec-sync-when", "ashby · " + synced));
+  if (recAshbyProbe && recAshbyProbe.configured && !recAshbyProbe.error) {
+    const sb = el("button", "pill light rec-sync-btn", "sync back");
+    sb.title = "pull Ashby-owned state (job ids, official stages) onto linked records — a user action, never a poller";
+    sb.onclick = () => recAshbySyncBack(false);
+    box.append(sb);
+  }
   return box;
 }
 
@@ -872,10 +878,153 @@ function recOutreachSection(c) {
   return sec;
 }
 
+// ---- private Ashby handoff (Phase 6) ----
+// The approved write path, in the inspector: preflight renders the proposal
+// (matches → link vs create; the diff; conflicts), the owner picks the
+// handoff (project vs application — never preset) and approves, then the
+// push runs and the record carries the returned ids. Without a key the
+// probe says so and the buttons stay away.
+let recAshbyProbe = null;   // {configured, scopes, error} once fetched
+let recAshbyProposal = {};  // candidate id → last rendered proposal
+let recAshbyChoice = {};    // candidate id → {handoff, decision, ashbyCandidateId, note, includeContact}
+
+async function recAshbyLoadProbe() {
+  try {
+    const r = await fetch("/api/aion/recruiting/ashby/probe", { cache: "no-store" });
+    recAshbyProbe = r.ok ? await r.json() : { configured: false, scopes: [], error: await r.text() };
+  } catch (e) { recAshbyProbe = { configured: false, scopes: [], error: String(e.message || e) }; }
+  if (aionMode === "recruiting") renderAion();
+}
+
+async function recAshbyCall(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const text = await r.text();
+  let out = {};
+  try { out = JSON.parse(text); } catch (_) { out = { error: text }; }
+  if (!r.ok && !out.proposal) throw new Error(out.error || text);
+  return out;
+}
+
 function recAshbySection(c) {
-  const sec = recSection("ashby", "");
+  const sec = recSection("ashby", recAshbyProbe && recAshbyProbe.configured ? "key installed" : "");
   if (c.ashbyCandidateId) sec.append(el("div", "rec-next", "candidate " + c.ashbyCandidateId));
   if (c.ashbyApplicationId) sec.append(el("div", "rec-next", "application " + c.ashbyApplicationId));
   if (!c.ashbyCandidateId && !c.ashbyApplicationId) sec.append(emptyRow("not handed off"));
+  if (recAshbyProbe === null) { recAshbyLoadProbe(); return sec; }
+  if (!recAshbyProbe.configured) {
+    sec.append(emptyRow("no Ashby key installed — set ASHBY_API_KEY on the server to hand off"));
+    return sec;
+  }
+  if (recAshbyProbe.error) { sec.append(emptyRow("ashby key rejected: " + recAshbyProbe.error.slice(0, 120))); return sec; }
+  if (c.stage === "archived") return sec;
+
+  const choice = recAshbyChoice[c.id] || (recAshbyChoice[c.id] = { handoff: "", decision: "", ashbyCandidateId: "", note: "", includeContact: false });
+  const prop = recAshbyProposal[c.id];
+  const req = () => ({ handoff: choice.handoff, decision: choice.decision, ashbyCandidateId: choice.ashbyCandidateId,
+    note: choice.note, includeContact: choice.includeContact });
+
+  // the explicit per-candidate handoff choice — no default
+  const handoff = el("select", "pp-in rec-in");
+  [["", "handoff — choose"], ["project", "sourcing project"], ["application", "formal application"]].forEach(([v, label]) => {
+    const o = el("option", "", label); o.value = v; o.selected = choice.handoff === v; handoff.append(o);
+  });
+  handoff.onchange = () => { choice.handoff = handoff.value; };
+  sec.append(handoff);
+
+  const note = el("input", "pp-in rec-in");
+  note.type = "text"; note.placeholder = "scout note (posted as Manifest Scout)"; note.value = choice.note;
+  note.onblur = () => { choice.note = note.value; };
+  sec.append(note);
+
+  const contact = el("label", "rec-next");
+  const cb = el("input", ""); cb.type = "checkbox"; cb.checked = choice.includeContact;
+  cb.onchange = () => { choice.includeContact = cb.checked; };
+  contact.append(cb, el("span", "", "include email/phone in this push"));
+  sec.append(contact);
+
+  const preflight = el("button", "pill light", prop ? "re-run preflight" : "preflight push");
+  preflight.title = "read Ashby, dedupe by email/name, and render the proposal — writes nothing";
+  preflight.onclick = async () => {
+    try {
+      const out = await recAshbyCall("/api/aion/recruiting/ashby/preflight/" + c.id, req());
+      recAshbyProposal[c.id] = out.proposal;
+      if (out.proposal && out.proposal.decision) choice.decision = out.proposal.decision;
+      renderAion();
+    } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+  };
+  sec.append(preflight);
+
+  if (!prop) return sec;
+
+  // matches → link vs create, explicit
+  if ((prop.matches || []).length && !prop.linked) {
+    sec.append(el("div", "rec-next", "found in Ashby:"));
+    prop.matches.forEach((m) => {
+      const row = el("div", "rec-next");
+      row.append(el("span", "", m.name + (m.primaryEmail ? " · " + m.primaryEmail : "")), el("span", "micro-label", m.id));
+      sec.append(row);
+    });
+    const decision = el("select", "pp-in rec-in");
+    [["", "decision — choose"], ["link", "link to the found candidate"], ["create", "create anyway (namesake)"]].forEach(([v, label]) => {
+      const o = el("option", "", label); o.value = v; o.selected = choice.decision === v; decision.append(o);
+    });
+    decision.onchange = () => {
+      choice.decision = decision.value;
+      if (decision.value === "link" && prop.matches.length === 1) choice.ashbyCandidateId = prop.matches[0].id;
+    };
+    sec.append(decision);
+    if (prop.matches.length > 1) {
+      const which = el("select", "pp-in rec-in");
+      prop.matches.forEach((m) => { const o = el("option", "", m.name + " " + m.id); o.value = m.id; o.selected = choice.ashbyCandidateId === m.id; which.append(o); });
+      which.onchange = () => { choice.ashbyCandidateId = which.value; };
+      sec.append(which);
+    }
+  }
+
+  // the diff
+  (prop.diff || []).forEach((d) => {
+    if (d.action === "keep" || d.action === "skip") return;
+    const row = el("div", "rec-next");
+    row.append(el("span", "micro-label" + (d.action === "conflict" ? " rec-archive armed" : ""), d.action));
+    row.append(el("span", "", d.field + ": " + (d.manifest || "—") + (d.ashby ? " ⇄ " + d.ashby : "")));
+    sec.append(row);
+  });
+  const writes = el("div", "rec-next", "would call: " + (prop.writes || []).join(" → "));
+  sec.append(writes);
+  if (prop.conflict) { sec.append(emptyRow("both sides changed — resolve before pushing")); return sec; }
+  if ((prop.needsChoice || []).length) { sec.append(emptyRow("choose: " + prop.needsChoice.join(", "))); }
+
+  // approval, armed then confirmed (native confirm() is banned app-wide)
+  const approve = el("button", "aion-insp-del rec-archive", "approve & push to Ashby");
+  approve.onclick = () => {
+    const armed = el("button", "aion-insp-del rec-archive armed", "confirm push?");
+    armed.onclick = async () => {
+      try {
+        const out = await recAshbyCall("/api/aion/recruiting/ashby/push/" + c.id, Object.assign(req(), { approve: true }));
+        if (out.proposal && !out.push) { recAshbyProposal[c.id] = out.proposal; showToast(out.error || "push refused"); renderAion(); return; }
+        if (out.view) recCache = out.view;
+        delete recAshbyProposal[c.id];
+        showToast("ashby: candidate " + ((out.push || {}).ashbyCandidateId || "") + ((out.push || {}).ashbyApplicationId ? " · application " + out.push.ashbyApplicationId : ""));
+        renderAion();
+      } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
+    };
+    approve.replaceWith(armed);
+    armed.focus();
+  };
+  sec.append(approve);
   return sec;
+}
+
+// The user-actioned sync-back (no poller): pull Ashby-authoritative state
+// onto linked records — job ids, official stages, base snapshots.
+async function recAshbySyncBack(full) {
+  try {
+    const out = await recAshbyCall("/api/aion/recruiting/ashby/sync", { full: !!full });
+    if (out.view) recCache = out.view;
+    const s = out.sync || {};
+    showToast("ashby sync: " + (s.candidates || 0) + " candidates · " + (s.applications || 0) + " applications" +
+      ((s.updated || []).length ? " · " + s.updated.length + " updated" : "") +
+      ((s.conflicts || []).length ? " · " + s.conflicts.length + " conflicts" : ""));
+    renderAion();
+  } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
 }

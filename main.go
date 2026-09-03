@@ -443,6 +443,17 @@ func main() {
 	if recRuns != nil {
 		srv.UseRecruitingRuns(recRuns)
 	}
+	// The PRIVATE Ashby client (Phase 6). ONE key source: ASHBY_API_KEY in
+	// the process environment (on metis, an EnvironmentFile= drop-in, 0600 —
+	// never the unit file, never config.json). Absent, the probe answers
+	// configured:false and every write refuses; nothing here logs the key.
+	// Sync state is dataDir-derived (<dataDir>/recruiting/ashby.json).
+	ashbyClient := recruiting.NewAshby("", os.Getenv("ASHBY_API_KEY"), nil)
+	if as, err := recruiting.NewAshbySync(filepath.Join(cfg.DataDir, "recruiting", "ashby.json"), recStore, ashbyClient); err != nil {
+		log.Printf("recruiting ashby sync unavailable: %v", err)
+	} else {
+		srv.UseAshbySync(as)
+	}
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)

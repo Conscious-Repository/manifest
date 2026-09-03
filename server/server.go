@@ -148,6 +148,10 @@ type Server struct {
 	// The public Ashby job-board client behind POST …/roles/sync. Nil means
 	// the real AION board; tests bind it to httptest (recruiting_ashby.go).
 	ashbyPublic *recruiting.AshbyPublic
+	// The PRIVATE Ashby client + approved write path (Phase 6). Routes mount
+	// only when it is wired; without a key it answers configured:false and
+	// every write refuses (recruiting_ashby_private.go).
+	ashbySync *recruiting.AshbySync
 	// The source-run cache behind …/recruiting/sources (Phase 3a): dataDir
 	// state, never the vault. Routes mount only when BOTH stores are present.
 	recruitingRuns *recruiting.RunStore
@@ -406,6 +410,17 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("GET /api/aion/recruiting/roles/{slug}", s.handleRecruitingRole)
 			mux.HandleFunc("PUT /api/aion/recruiting/roles/{slug}/criteria", s.handleRecruitingRoleCriteria)
 			mux.HandleFunc("POST /api/aion/recruiting/roles/sync", s.handleRecruitingRolesSync)
+			// the private client (Phase 6): probe, proposal, approved push,
+			// stage change, user-actioned sync-back — no poller, no webhook
+			if s.ashbySync != nil {
+				mux.HandleFunc("GET /api/aion/recruiting/ashby/probe", s.handleRecruitingAshbyProbe)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/probe", s.handleRecruitingAshbyProbe)
+				mux.HandleFunc("GET /api/aion/recruiting/ashby/state", s.handleRecruitingAshbyState)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/preflight/{id...}", s.handleRecruitingAshbyPreflight)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/push/{id...}", s.handleRecruitingAshbyPush)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/stage/{id...}", s.handleRecruitingAshbyStage)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/sync", s.handleRecruitingAshbySync)
+			}
 			mux.HandleFunc("POST /api/aion/recruiting/candidate", s.handleRecruitingCandidateAdd)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/update/{id...}", s.handleRecruitingCandidateUpdate)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/stage/{id...}", s.handleRecruitingCandidateStage)

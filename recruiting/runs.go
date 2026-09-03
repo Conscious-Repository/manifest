@@ -512,6 +512,18 @@ func writeJSON0600(path string, v any) error {
 	return os.Rename(tmp, path)
 }
 
+// writeJSONDir0600 is the sandboxed variant of writeJSON0600 that also creates
+// the parent directory. Every direct file write in the recruiting package is
+// rooted here (in runs.go) so the "only runs.go may open a file to write"
+// invariant the writeless test enforces holds for the derived Ashby sync state
+// (<dataDir>/recruiting/ashby.json) too.
+func writeJSONDir0600(path string, v any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return writeJSON0600(path, v)
+}
+
 func readJSON(path string, v any) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
