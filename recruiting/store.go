@@ -53,6 +53,9 @@ func (s *Store) UseOwner(owner string) {
 // Root returns the vault-relative record root ("system/aion/recruiting").
 func (s *Store) Root() string { return s.root }
 
+// Owner returns who quick-adds and manual-source runs are attributed to.
+func (s *Store) Owner() string { return s.owner }
+
 // Rel returns the vault-relative slash path of a record.
 func (s *Store) Rel(name string) string { return s.root + "/" + name }
 
@@ -275,6 +278,7 @@ func (s *Store) AcceptDraft(d sources.CandidateDraft, now time.Time) (Candidate,
 }
 
 func (s *Store) acceptDraft(d sources.CandidateDraft, now time.Time) (Candidate, error) {
+	d = SanitizeDraft(d)
 	if err := ValidateDraft(d); err != nil {
 		return Candidate{}, err
 	}
@@ -345,6 +349,11 @@ func newCandidateDoc(slug string, d sources.CandidateDraft, now time.Time) *Cand
 	} {
 		doc.Set(kv[0], kv[1])
 	}
+	// the adapter's own id for this person, so a later run of the same
+	// source dedupes against the record instead of the name
+	if ref := SourceRef(d); ref != "" {
+		doc.Set("source_ref", ref)
+	}
 	profile := ensureSection(&doc.Sections, "profile")
 	appendRow(profile, newRow("title", d.Title, "org", d.Org, "location", d.Location))
 	links := newRow()
@@ -375,6 +384,27 @@ func linkKey(url string) string {
 	default:
 		return "website"
 	}
+}
+
+// SanitizeDraft is the D15 half of the converter: whatever contact detail an
+// adapter set is DROPPED before anything is written. The draft's Contact map
+// is cleared and a mailto:/tel: link is removed from Links. A published
+// address survives only as an Evidence row of kind contact_published — a
+// citation the owner may promote onto the profile by hand, never a field.
+func SanitizeDraft(d sources.CandidateDraft) sources.CandidateDraft {
+	d.Contact = nil
+	if len(d.Links) > 0 {
+		kept := make([]string, 0, len(d.Links))
+		for _, l := range d.Links {
+			low := strings.ToLower(strings.TrimSpace(l))
+			if strings.HasPrefix(low, "mailto:") || strings.HasPrefix(low, "tel:") || strings.HasPrefix(low, "sms:") {
+				continue
+			}
+			kept = append(kept, l)
+		}
+		d.Links = kept
+	}
+	return d
 }
 
 // ValidateDraft is the converter gate (plan §4.9): no fact without a source,

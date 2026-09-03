@@ -148,6 +148,9 @@ type Server struct {
 	// The public Ashby job-board client behind POST …/roles/sync. Nil means
 	// the real AION board; tests bind it to httptest (recruiting_ashby.go).
 	ashbyPublic *recruiting.AshbyPublic
+	// The source-run cache behind …/recruiting/sources (Phase 3a): dataDir
+	// state, never the vault. Routes mount only when BOTH stores are present.
+	recruitingRuns *recruiting.RunStore
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
@@ -410,6 +413,16 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/evidence/{id...}", s.handleRecruitingCandidateEvidence)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/fit/{id...}", s.handleRecruitingCandidateFit)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/override/{id...}", s.handleRecruitingCandidateOverride)
+			// SOURCES — scout runs and the per-draft review queue. Accept and
+			// reject name ONE draft each; there is no accept-all route.
+			if s.recruitingRuns != nil {
+				mux.HandleFunc("GET /api/aion/recruiting/sources", s.handleRecruitingSources)
+				mux.HandleFunc("GET /api/aion/recruiting/sources/runs", s.handleRecruitingSourceRuns)
+				mux.HandleFunc("POST /api/aion/recruiting/sources/run", s.handleRecruitingSourceRun)
+				mux.HandleFunc("POST /api/aion/recruiting/sources/accept/{run}/{draft}", s.handleRecruitingSourceAccept)
+				mux.HandleFunc("POST /api/aion/recruiting/sources/reject/{run}/{draft}", s.handleRecruitingSourceReject)
+				mux.HandleFunc("POST /api/aion/recruiting/sources/pin/{run}", s.handleRecruitingSourcePin)
+			}
 		}
 	}
 

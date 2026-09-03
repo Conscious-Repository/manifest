@@ -366,6 +366,7 @@ func (d *CandidateDoc) View(slug string, role *RoleDoc) Candidate {
 		PII:                boolField(d.Get("pii")),
 		AshbyCandidateID:   d.Get("ashby_candidate_id"),
 		AshbyApplicationID: d.Get("ashby_application_id"),
+		SourceRef:          d.Get("source_ref"),
 		Created:            d.Get("created"),
 		Archived:           d.Get("archived"),
 		Profile:            d.Profile(),

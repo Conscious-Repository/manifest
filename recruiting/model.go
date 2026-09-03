@@ -12,7 +12,9 @@
 //
 // Every byte written to the vault goes through the injected write func, bound
 // in main to the narrow `aion-recruiting` vaultwriter capability (§A3 write
-// boundary). This package never opens a file to write.
+// boundary). This package never opens a vault file to write. The one direct
+// write path it holds is the source-run cache (runs.go), rooted under
+// dataDir — outside the vault by construction, and refused inside it.
 package recruiting
 
 import (
@@ -226,6 +228,7 @@ type Candidate struct {
 	PII                bool              `json:"pii"`
 	AshbyCandidateID   string            `json:"ashbyCandidateId,omitempty"`
 	AshbyApplicationID string            `json:"ashbyApplicationId,omitempty"`
+	SourceRef          string            `json:"sourceRef,omitempty"`
 	Created            string            `json:"created"`
 	Archived           string            `json:"archived,omitempty"`
 	Profile            map[string]string `json:"profile"`

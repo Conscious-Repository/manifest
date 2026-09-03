@@ -42,6 +42,7 @@ import (
 	"manifest/realestate"
 	"manifest/record"
 	"manifest/recruiting"
+	"manifest/recruiting/sources"
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
@@ -391,6 +392,16 @@ func main() {
 	if err := recStore.Ensure(); err != nil {
 		log.Printf("recruiting records: %v", err)
 	}
+	// The source-run cache (D14): dataDir, never the vault, 0600. Only the
+	// manual adapter is registered in Phase 3a; a later adapter that is
+	// absent or misconfigured leaves the tab working with fewer sources.
+	var recRuns *recruiting.RunStore
+	if rs, err := recruiting.NewRunStore(filepath.Join(cfg.DataDir, "recruiting", "runs"), recStore); err != nil {
+		log.Printf("recruiting source runs unavailable: %v", err)
+	} else {
+		rs.Register(sources.Manual{Owner: recStore.Owner()})
+		recRuns = rs
+	}
 	// The real-estate decision log reuses the aion store/grammar pointed at
 	// system/realestate — ONLY backlog methods are wired (server/re.go);
 	// the other corpus methods must never touch this root.
@@ -417,6 +428,9 @@ func main() {
 	srv.UseGeocoder(geocode.New(cfg.DataDir))
 	srv.UseFundraising(frStore)
 	srv.UseRecruiting(recStore)
+	if recRuns != nil {
+		srv.UseRecruitingRuns(recRuns)
+	}
 	srv.UseTasks(tasksStore)
 	srv.UseSticky(filepath.Join(cfg.DataDir, "sticky.md")) // ⌘I floating post-it (scratch, never the vault)
 	srv.UseCapture(capture.NewStore(cfg.DataDir))          // the tray (cmd-ctr Stage; dataDir until promoted)
