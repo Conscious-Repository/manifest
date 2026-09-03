@@ -1034,19 +1034,23 @@ function openResult(d, title) {
 }
 
 // feedDig: "dig →" — spool a deeper run for the originating spirit; findings
-// come back as new inbox items. Never navigates away from the feed.
+// come back as new inbox items. Never navigates away from the feed. A card
+// from the do-bot (alfred) answers with `runtime` — that dig is a Hermes turn
+// with no run report to watch, so the toast points at the inbox, not RUNS.
 async function feedDig(id) {
   let r;
   try { r = await fetch(`/api/feed/${encodeURIComponent(id)}/dig`, { method: "POST" }); }
   catch (e) { showToast("Dig failed: " + (e.message || e), null, "error"); return; }
   if (r.status === 409) {
     const d = await r.json().catch(() => ({}));
+    if (d.runtime) { showToast(`${d.spirit || "alfred"} is already digging this one`, null, "info"); return; }
     showToast(`${d.spirit || "spirit"}/${d.ritual || "ritual"} is already running — view`, () => { location.hash = "#/spirits/runs"; }, "info");
     return;
   }
   if (!r.ok) { showToast("Dig failed: " + ((await r.text()) || r.status), null, "error"); return; }
   const d = await r.json().catch(() => ({}));
-  showToast(`${d.spirit}/${d.ritual} queued — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+  if (d.runtime) showToast(`${d.spirit} is digging — the brief lands back in the inbox`, null, "info");
+  else showToast(`${d.spirit}/${d.ritual} queued — view`, () => { location.hash = "#/spirits/runs"; }, "info");
   ensureLivePoll(); // watch it land back in the inbox
 }
 async function feedAction(id, body) {

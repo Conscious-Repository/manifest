@@ -175,7 +175,9 @@ func (s *Server) handleFeedStatus(w http.ResponseWriter, r *http.Request) {
 // line carrying the item — findings arrive as new feed items, closing the
 // loop in the feed itself. The target is the spirit's ON-DEMAND ritual
 // (cadence-less + valid, exactly the castables rule); a spirit without one
-// (ea-coordinator's digests) is un-diggable.
+// (ea-coordinator's digests) is un-diggable. The do-bot's own cards (alfred)
+// have no spirit behind them at all — they dig over the Hermes runner instead
+// (hermes_dig.go), same agent that wrote the card.
 func (s *Server) handleFeedDig(w http.ResponseWriter, r *http.Request) {
 	if s.spirits == nil {
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
@@ -187,6 +189,20 @@ func (s *Server) handleFeedDig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it, _ := fh.Spirits.Feed.Get(r.PathValue("id"))
+	if s.hermesDigAgent(it.Agent) {
+		if err := s.startHermesDig(fh, it); err != nil {
+			if errors.Is(err, spirits.ErrAlreadyActive) {
+				w.WriteHeader(http.StatusConflict)
+				writeJSON(w, map[string]any{"active": true, "spirit": it.Agent, "ritual": "dig", "runtime": "hermes-agent"})
+				return
+			}
+			httpError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		writeJSON(w, map[string]any{"spooled": true, "spirit": it.Agent, "ritual": "dig", "runtime": "hermes-agent"})
+		return
+	}
 	// dig spools into the PRIMARY engine; a non-primary item whose agent isn't
 	// a primary spirit falls out below with an honest 422.
 	ritual := s.onDemandRitual(it.Agent)

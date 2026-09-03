@@ -8,10 +8,12 @@
 // `hermes -z PROMPT` is one-shot mode: it runs a full agent turn (tools +
 // memory) and prints ONLY the final reply on stdout — no tool previews, no
 // session-id line. Flags we lean on:
-//   --resume <session>   per-thread continuity (a todo's thread ↔ one session)
-//   -m <model>           model override for this invocation
-//   -t <toolsets>        scope the tools available — the approval-gate lever
-//   --usage-file <path>  write a JSON cost/token report after the run
+//
+//	--resume <session>   per-thread continuity (a todo's thread ↔ one session)
+//	-m <model>           model override for this invocation
+//	-t <toolsets>        scope the tools available — the approval-gate lever
+//	--skills <names>     preload skills for the turn (a cron job's `skills`)
+//	--usage-file <path>  write a JSON cost/token report after the run
 //
 // The manifest process runs on the same box as the Hermes CLI (metis), so this
 // is a local exec. On any box without the binary (e.g. the Mac dev twin) the
@@ -74,6 +76,7 @@ type Request struct {
 	Session  string // --resume target (per-todo continuity); "" → a fresh session
 	Model    string // -m override for this turn; "" → the runner default
 	Toolsets string // -t override for this turn; "" → the runner default
+	Skills   string // --skills preload (comma-separated); "" → none
 }
 
 // Result is a completed turn.
@@ -96,6 +99,9 @@ func (r *Runner) buildArgs(req Request, usageFile string) []string {
 	}
 	if s := strings.TrimSpace(req.Session); s != "" {
 		args = append(args, "--resume", s)
+	}
+	if k := strings.TrimSpace(req.Skills); k != "" {
+		args = append(args, "--skills", k)
 	}
 	if usageFile != "" {
 		args = append(args, "--usage-file", usageFile)

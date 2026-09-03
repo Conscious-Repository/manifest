@@ -11,8 +11,8 @@ import (
 func TestBuildArgs(t *testing.T) {
 	r := NewRunner(Config{Enabled: true, Model: "cfg-model", Toolsets: "cfg-tools"})
 	// per-request overrides win; session + usage file appended.
-	got := r.buildArgs(Request{Prompt: "do the thing", Session: "todo-42", Model: "req-model"}, "/tmp/u.json")
-	want := []string{"-z", "do the thing", "-m", "req-model", "-t", "cfg-tools", "--resume", "todo-42", "--usage-file", "/tmp/u.json"}
+	got := r.buildArgs(Request{Prompt: "do the thing", Session: "todo-42", Model: "req-model", Skills: "scout,bio"}, "/tmp/u.json")
+	want := []string{"-z", "do the thing", "-m", "req-model", "-t", "cfg-tools", "--resume", "todo-42", "--skills", "scout,bio", "--usage-file", "/tmp/u.json"}
 	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
 		t.Errorf("buildArgs =\n  %v\nwant\n  %v", got, want)
 	}

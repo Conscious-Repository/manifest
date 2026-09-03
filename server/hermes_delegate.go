@@ -35,8 +35,9 @@ import (
 type hermesCfg struct {
 	runner    *hermes.Runner
 	readTools string            // -t scope for plan/comment (read-only)
-	mu        sync.Mutex        // guards running
+	mu        sync.Mutex        // guards running + digging
 	running   map[string]string // taskID → phase currently executing
+	digging   map[string]bool   // feed item id → a "dig →" turn in flight (hermes_dig.go)
 }
 
 // UseHermes wires the do-bot runner. readTools is the read-only toolset scope
@@ -45,7 +46,7 @@ func (s *Server) UseHermes(r *hermes.Runner, readTools string) {
 	if r == nil || !r.Enabled() {
 		return
 	}
-	s.hermes = &hermesCfg{runner: r, readTools: readTools, running: map[string]string{}}
+	s.hermes = &hermesCfg{runner: r, readTools: readTools, running: map[string]string{}, digging: map[string]bool{}}
 }
 
 // hermesForked reports whether this delegation should route to the do-bot CLI
