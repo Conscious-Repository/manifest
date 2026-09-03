@@ -402,3 +402,29 @@ func TestUnfiledIsNotAGroup(t *testing.T) {
 		t.Errorf("lists: %v", lists)
 	}
 }
+
+// A Nostr naddr in a feed URL is a public ADDRESS, not a credential — the
+// vault-protecting secret guard must not refuse it (live refusal 2026-09-03:
+// drss.io/rss/naddr1…). A URL carrying an actual token assignment stays
+// refused.
+func TestSubscribeAllowsNostrAddressRefusesRealTokens(t *testing.T) {
+	s, v, feed := liveSvc(t)
+
+	naddr := "/rss/naddr1qqxkgunnwvkhqmmyvdshxarnqy28wumn8ghj7un9d3shjtnwdaehgu3wd9hsygxasx5t4jatpdwrqp73vuhmsvqnsw6wjkpagvvrtxzs2u3rav5c55psgqqqw56qcr2h9e"
+	sub, err := s.Subscribe(context.Background(), feed.URL+naddr, "", "", "")
+	if err != nil {
+		t.Fatalf("naddr subscribe refused: %v", err)
+	}
+	if !strings.Contains(sub.URL, "naddr1") {
+		t.Fatalf("subscription lost the address: %q", sub.URL)
+	}
+	if !strings.Contains(v.read(t, feedsPath), "naddr1") {
+		t.Fatal("subscription not written to the vault list")
+	}
+
+	// the guard still refuses a URL with a credential assignment in it
+	if _, err := s.Subscribe(context.Background(),
+		feed.URL+"/feed?api_key=sk9F2jQ7xWm4bTz8LpV3hYr6", "", "", ""); err == nil {
+		t.Fatal("a tokened URL must still be refused")
+	}
+}

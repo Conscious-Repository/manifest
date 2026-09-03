@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -15,6 +16,10 @@ import (
 	"manifest/record"
 	"manifest/secrets"
 )
+
+// nostrIDRe — public NIP-19 identifiers (bech32 hrp + payload). Matched so
+// the subscribe guard can tell a Nostr ADDRESS from a pasted credential.
+var nostrIDRe = regexp.MustCompile(`\b(?:naddr|nevent|nprofile|npub|note)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{20,}`)
 
 // Service is the lane: the subscription list in the vault, the poll caches in
 // dataDir, and the fetchers between them.
@@ -239,7 +244,13 @@ func (s *Service) Subscribe(ctx context.Context, input, title, list, mirror stri
 	// would put a live credential into version history, where it cannot be
 	// recalled. Refuse, and point at the sign-in that keeps the secret in
 	// the secrets tier where it belongs.
-	if findings := secrets.Scan(feedURL); len(findings) > 0 {
+	//
+	// Public NIP-19 Nostr identifiers (naddr/nevent/… + bech32 payload) are
+	// ADDRESSES, not credentials — long and high-entropy by design, which
+	// reads to the scanner exactly like a pasted key (live refusal
+	// 2026-09-03: drss.io/rss/naddr1…). Scrub them first; the guard stands
+	// for everything else.
+	if findings := secrets.Scan(nostrIDRe.ReplaceAllString(feedURL, "nostr-id")); len(findings) > 0 {
 		return Subscription{}, errors.New(
 			"that URL carries what looks like a secret, and the subscription list lives in your vault — " +
 				"subscribe to the public feed instead and sign in to the site to unlock paid posts")
