@@ -1401,6 +1401,15 @@ function underwritingSection(p) {
     }
     host.innerHTML = "";
     const grid = el("div", "re-uw-grid");
+    // the same hold-the-repaint discipline as unitMixEditor: a blur-save
+    // must not destroy the sibling input the user just clicked into
+    let gridPending = false;
+    grid.addEventListener("focusout", (e) => {
+      if (gridPending && !grid.contains(e.relatedTarget)) {
+        gridPending = false;
+        renderPropertyPage(p.slug);
+      }
+    });
     const input = (label, key) => {
       const f = el("label", "re-uw-field");
       f.append(el("span", "re-uw-label", label));
@@ -1414,7 +1423,9 @@ function underwritingSection(p) {
         try {
           await putJSON("/api/properties/" + encodeURIComponent(p.slug) + "/source", next);
           p.__source = next;
-          renderPropertyPage(p.slug); // recompute outputs
+          src = next;
+          if (grid.contains(document.activeElement)) gridPending = true;
+          else renderPropertyPage(p.slug); // recompute outputs
         } catch (e) { showToast("Couldn't save " + key); }
       };
       f.append(inp);
@@ -1498,14 +1509,36 @@ function unitMixEditor(p) {
   const head = el("div", "re-uw-label", "UNIT MIX");
   box.append(head);
   const rows = (p.unitMix || []).map((u) => ({ ...u }));
-  const save = async () => {
+  // Field edits save on blur, but the full-page repaint applyFreshProperty
+  // triggers would destroy the NEXT input the user just clicked (bd → ba
+  // needed a second click to survive — owner report 2026-09-03). So while
+  // focus stays inside the editor, hold the fresh record and apply it when
+  // focus leaves; structural edits (add/remove row) still repaint at once.
+  let pendingFresh = null;
+  const save = async (structural) => {
     const clean = rows.filter((u) => (u.label || "").trim() || u.beds || u.sqft || u.rent);
     try {
       const fresh = await postJSONOk("/api/properties/" + encodeURIComponent(p.slug) + "/measurables",
         { setUnits: true, units: clean });
-      applyFreshProperty(fresh);
+      if (!structural && box.contains(document.activeElement)) {
+        pendingFresh = fresh;
+        sumLine.textContent = sumText();
+      } else {
+        pendingFresh = null;
+        applyFreshProperty(fresh);
+      }
     } catch (e) { showToast("Couldn't save the unit mix — " + (e.message || "")); }
   };
+  box.addEventListener("focusout", (e) => {
+    if (pendingFresh && !box.contains(e.relatedTarget)) {
+      const fresh = pendingFresh;
+      pendingFresh = null;
+      applyFreshProperty(fresh);
+    }
+  });
+  const sumText = () =>
+    rows.length + " units · " + fmtMoney(rows.reduce((n, u) => n + (u.rent || 0), 0)) + "/mo — drives screening";
+  const sumLine = el("div", "re-uw-unit re-uw-unitsum");
   const body = el("div", "re-unitmix-rows");
   const renderRows = () => {
     body.innerHTML = "";
@@ -1533,20 +1566,20 @@ function unitMixEditor(p) {
         cell("sqft", "", true), cell("rent", "", true));
       const x = el("button", "pp3-stage-x re-unitmix-x", "✕");
       x.title = "remove unit";
-      x.onclick = () => { rows.splice(i, 1); save(); };
+      x.onclick = () => { rows.splice(i, 1); save(true); };
       line.append(x);
       body.append(line);
     });
     if (rows.length) {
-      body.append(el("div", "re-uw-unit re-uw-unitsum",
-        rows.length + " units · " + fmtMoney(rows.reduce((n, u) => n + (u.rent || 0), 0)) + "/mo — drives screening"));
+      sumLine.textContent = sumText();
+      body.append(sumLine);
     }
   };
   renderRows();
   box.append(body);
   box.append(ghostInput("＋ unit", "re-unitmix-add", (v) => {
     rows.push({ label: v.trim() || String.fromCharCode(65 + rows.length) });
-    save();
+    save(true);
   }, "unit label (A, B, garden studio…)"));
   return box;
 }
