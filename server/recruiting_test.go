@@ -243,7 +243,10 @@ func TestRecruitingSeedAndCriteriaRoutes(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &seedsView); err != nil {
 		t.Fatal(err)
 	}
-	if len(seedsView.Seeds) != 3 || len(seedsView.SeedClasses) != 5 {
+	// the class list is the store's closed set, not a number typed here — the
+	// vocabulary widens by decision (media, 2026-09-04) and a magic count
+	// turns that into a spurious failure
+	if len(seedsView.Seeds) != 3 || len(seedsView.SeedClasses) != len(recruiting.SeedClasses) {
 		t.Fatalf("seeds view: %+v", seedsView)
 	}
 

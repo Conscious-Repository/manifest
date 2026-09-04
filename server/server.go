@@ -422,6 +422,10 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("GET /api/aion/recruiting", s.handleRecruitingView)
 			mux.HandleFunc("GET /api/aion/recruiting/seeds", s.handleRecruitingSeeds)
 			mux.HandleFunc("POST /api/aion/recruiting/seed", s.handleRecruitingSeedAdd)
+			// the one front door: resolve a paste, then commit the resolution
+			// the owner corrected (recruiting_intake.go)
+			mux.HandleFunc("POST /api/aion/recruiting/intake/resolve", s.handleRecruitingIntakeResolve)
+			mux.HandleFunc("POST /api/aion/recruiting/intake", s.handleRecruitingIntake)
 			// the applicant's own submitted file, by artifact hash. `{hash...}`
 			// is a wildcard so ".../{hash}/text" reaches the same handler.
 			mux.HandleFunc("GET /api/aion/recruiting/resume/{hash...}", s.handleRecruitingResume)

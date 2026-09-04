@@ -69,16 +69,20 @@ var CriterionClasses = []string{ClassMust, ClassNice, ClassDisqualifier}
 func ValidCriterionClass(s string) bool { return inSet(CriterionClasses, s) }
 
 // Seed classes — the four D11 seed classes, with lab and company split
-// because they resolve through different adapters.
+// because they resolve through different adapters, and `media` added
+// 2026-09-04 (intake plan Q2) for a show or blog: a standing publication with
+// a feed, whose EPISODES stay `work` like any other single piece. The split
+// matters because a feed is swept on a cadence and a paper is read once.
 const (
 	SeedPerson  = "person"
 	SeedCompany = "company"
 	SeedLab     = "lab"
 	SeedWork    = "work"
 	SeedRepo    = "repo"
+	SeedMedia   = "media"
 )
 
-var SeedClasses = []string{SeedPerson, SeedCompany, SeedLab, SeedWork, SeedRepo}
+var SeedClasses = []string{SeedPerson, SeedCompany, SeedLab, SeedWork, SeedRepo, SeedMedia}
 
 func ValidSeedClass(s string) bool { return inSet(SeedClasses, s) }
 
@@ -261,8 +265,11 @@ type ResumeRef struct {
 // ProfileKeys is the closed profile vocabulary, in emit order. `email` and
 // `phone` are here because the OWNER may type them by hand (D15) — no adapter
 // and no converter ever fills them in.
+// `x` joined the set 2026-09-04 (intake plan Q2): an X profile is a link we
+// RECORD on a person, never a source anything crawls — X's API is paid and the
+// web adapter blocks the host outright.
 var ProfileKeys = []string{"title", "org", "location", "linkedin", "github",
-	"website", "email", "phone"}
+	"website", "x", "email", "phone"}
 
 // ContactKeys are the profile fields no adapter may ever set (D15). The
 // draft converter drops them; a published address arrives as evidence.
