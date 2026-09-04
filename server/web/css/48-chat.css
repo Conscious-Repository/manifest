@@ -26,7 +26,7 @@
 .chat-rail-row .inline-rename { font-size: var(--fs-md); }
 
 .chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.chat-shell.task-thread { max-width: 1000px; margin: 0 auto; }
+.chat-shell.task-thread { max-width: var(--page-narrow); width: 100%; margin: 0 auto; }
 .chat-shell.task-thread .chat-rail { display: none; }
 .chat-shell.task-thread .chat-transcript { padding-left: var(--sp-4); }
 .chat-shell.task-thread .task-composer { margin-top: var(--sp-6); }
@@ -51,6 +51,25 @@
 .chat-say .md-p { margin: var(--sp-3) 0; }
 .chat-turn-when, .chat-turn-usd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); font-variant-numeric: tabular-nums; }
 .chat-thinking { color: var(--accent); font-size: var(--fs-sm); padding: var(--sp-4) 0; }
+
+/* A task conversation is a reading surface: an agent reply needs the same
+   visual boundary as an outgoing message, without changing the cockpit's
+   shared .chat-spirit turns.  The narrower shell plus this card measure keeps
+   a rich reply legible instead of letting it dissolve into the transcript. */
+.chat-shell.task-thread .chat-spirit {
+  max-width: min(72ch, 100%);
+  background: var(--base-05);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5) var(--sp-6);
+}
+.chat-shell.task-thread .chat-spirit .chat-say > :first-child { margin-top: 0; }
+.chat-shell.task-thread .chat-spirit .chat-say > :last-child { margin-bottom: 0; }
+.chat-shell.task-thread .chat-spirit .md-h { font-size: var(--fs-md); margin: var(--sp-5) 0 var(--sp-2); }
+.chat-shell.task-thread .chat-spirit .md-li { margin: var(--sp-2) 0; }
+.chat-shell.task-thread .chat-spirit .md-pre { margin: var(--sp-4) 0; padding: var(--sp-4) var(--sp-5); overflow-x: auto; background: var(--base-10); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; }
+.chat-shell.task-thread .chat-spirit .md-code { padding: 0 var(--sp-1); background: var(--base-10); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); }
+.chat-shell.task-thread .chat-spirit .md-bq { margin: var(--sp-4) 0; padding-left: var(--sp-5); border-left: 2px solid var(--base-30); color: var(--base-60); }
 
 /* the composer is ONE rounded container (target aesthetic): a borderless
    auto-growing textarea with a quiet attach and a solid accent send tucked at
