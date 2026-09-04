@@ -171,6 +171,41 @@ holds only the rare component-local grid tweak.
 
 ---
 
+## Patterns promoted from the recruiting redesign (2026-09-04)
+
+Adopted app-wide when the shape recurs; recruiting (`96-aion-recruiting`) is
+the reference implementation.
+
+**Two axes, two controls.** When a list cuts on ORIGIN/type *and* on
+state/stage, origin is a segmented control on its own line (`.rec-seg` shape:
+one bordered track, mono chips, `.on` = `--base-20` + accent text) and state
+is the `.filter-chip` row beneath. Never merge them into one chip strip —
+they answer different questions.
+
+**Disclosure folds with derived metas.** Secondary inspector sections render
+as one-line disclosure rows: caret · micro-label · a DERIVED meta string
+right-aligned, which goes ink (`--base-100`, weight 500) when the section
+wants attention (`● none yet`, `not handed off`). The working section stays
+expanded; everything else folds. Meta strings are derived, never literals.
+
+**Error ≠ empty ≠ no-match.** Every list distinguishes three states: a fetch
+failure names itself and offers retry (never a silent empty board); a
+genuinely empty collection invites the first action; a filter that hides
+everything says the pipeline itself is fine.
+
+**One state table.** When a status drives a chip, a summary line, and a
+primary action, all three read ONE resolution function (recruiting's
+`recGateTable`) — two adjacent conditionals deriving the same state is how
+contradictory UI ships.
+
+**Design-handoff overrides.** Where a Claude Design handoff differs from this
+contract, the contract wins: selection is `--base-20` + accent (never a
+black/ink fill); attention counts are ink `● N` (the alarm idiom, dot
+first); breadcrumbs inside a tab's content are not used — the tab bar plus
+the header meta carry location.
+
+---
+
 *This contract systematizes discipline, not a frozen look. The tokens are the
 vocabulary; the aesthetic they express stays open to refinement. When you change
 a token value, you restyle the whole platform at once — which is the point.*

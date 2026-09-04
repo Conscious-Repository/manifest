@@ -1739,6 +1739,21 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 			patch(slug)["ashby_stage"] = stage
 			changed = true
 		}
+		// heal a missing `inbound` stamp on records this sync itself imported
+		// before the stamp existed (2026-09-04): stage `ashby` with a live
+		// application and NO work history is unambiguously an untriaged
+		// applicant — a pushed-outbound candidate was worked before it ever
+		// reached that column. Idempotent; the untriaged queue reads this.
+		if doc.Get("inbound") == "" && doc.Get("stage") == StageAshby &&
+			len(doc.Fit()) == 0 && len(doc.Evidence()) == 0 && len(doc.Outreach()) == 0 {
+			stamp := doc.Get("created")
+			if stamp == "" {
+				stamp = now.UTC().Format("2006-01-02")
+			}
+			doc.Set("inbound", stamp)
+			patch(slug)["inbound"] = stamp
+			changed = true
+		}
 		if changed {
 			touched[slug] = true
 			res.Updated = append(res.Updated, doc.Get("id"))

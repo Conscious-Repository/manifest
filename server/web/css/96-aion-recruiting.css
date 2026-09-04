@@ -27,7 +27,9 @@
 .rec-role.on { background: var(--base-20); border-left-color: var(--accent); color: var(--accent); }
 .rec-role-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-role-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
-.rec-count-live { color: var(--accent); }
+/* attention counts (to triage / to review): the house alarm idiom — ink +
+   a leading ● — over the design's trailing dot */
+.rec-count-attn { color: var(--base-100); font-weight: 500; }
 .rec-linkish {
   border: 0; background: none; padding: var(--sp-1) var(--sp-4); text-align: left; cursor: pointer;
   font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent);
@@ -103,9 +105,9 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-gate.blocked { border-color: var(--base-100); color: var(--base-100); }
 .rec-gate.muted { border-color: var(--base-25); color: var(--base-40); }
 .rec-ev { color: var(--base-40); }
-.rec-gate-summary { padding: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-sm); color: var(--base-60); }
-.rec-gate-summary.blocked { color: var(--base-100); font-weight: 500; }
-.rec-gate-summary.ok { color: var(--accent); }
+
+/* board row right cluster: the state cell + the gate chip together */
+.rec-right { display: inline-flex; align-items: baseline; gap: var(--sp-3); }
 
 /* the ONE primary action — accent fill, names the actual next step */
 .rec-primary {
@@ -131,7 +133,8 @@ a.rec-seed-name:hover { text-decoration: underline; }
 /* triage — the verdict block above the primary, on an ink top rule */
 .rec-triage { margin: var(--sp-4) 0 var(--sp-6); border-top: 2px solid var(--base-100); padding-top: var(--sp-4); }
 .rec-triage-label { color: var(--base-100); padding-bottom: var(--sp-3); }
-.rec-triage .rec-primary { margin-bottom: var(--sp-3); }
+.rec-triage-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.rec-triage-row .rec-primary, .rec-triage-row .rec-ask-btn { margin: 0; }
 .rec-reject-reason { width: 100%; margin-top: var(--sp-3); }
 
 /* inspector */

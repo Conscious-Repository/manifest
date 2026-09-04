@@ -16,6 +16,9 @@ let recView = "board";    // board | sources | network | role
 let recRoleView = "";     // role slug when recView === "role"
 let recRole = null;       // board's role lane filter, null = all lanes
 let recOrigin = "inbound"; // inbound | sourced | both — the default cut is the day-to-day
+let recOriginSet = false;  // the default follows the data until the owner picks: INBOUND
+                           // when applicants wait, else BOTH (an empty-looking tab on
+                           // entry taught us the hard way, 2026-09-04)
 let recCut = "open";      // open | archived | all
 let recSel = null;        // inspector selection (candidate id)
 let recQuery = "";        // board search
@@ -173,7 +176,9 @@ function recHeaderMeta() {
     default: {
       const open = cs.filter((c) => c.stage !== "archived").length;
       const tri = recUntriagedCount();
-      return open + " candidates" + (tri ? " · " + tri + " to triage" : "");
+      const drafts = recPendingDrafts();
+      return (tri ? tri + " to triage · " : "") + open + " candidates" +
+        (drafts ? " · " + drafts + " drafts to review" : "");
     }
   }
 }
@@ -199,6 +204,7 @@ async function renderAionRecruiting(host) {
   // ONE repaint path: view rows, role clicks, search, cuts and the origin
   // control all route through paint() — never a full-tab re-render for a
   // filter (problem 8), and the search caret survives between keystrokes.
+  if (!recOriginSet) recOrigin = recUntriagedCount() > 0 ? "inbound" : "both";
   const paint = () => {
     paintRail(rail);
     paintMain(main);
@@ -241,7 +247,7 @@ function paintRail(rail) {
   views.forEach(([key, label, count]) => {
     const b = el("button", "rec-role" + (recView === key ? " on" : ""));
     b.append(el("span", "rec-role-name", label));
-    if (count) b.append(el("span", "rec-role-count rec-count-live", String(count)));
+    if (count) b.append(el("span", "rec-role-count rec-count-attn", "● " + count));
     b.onclick = () => recNav(key);
     rail.append(b);
   });
@@ -293,7 +299,7 @@ function paintSyncFooter(roles) {
   b.onclick = () => recSyncRoles();
   box.append(b);
   if (recAshbyProbe && recAshbyProbe.configured && !recAshbyProbe.error) {
-    const sb = el("button", "pill light rec-sync-btn", "sync back");
+    const sb = el("button", "pill light rec-sync-btn", "sync back from ashby");
     sb.title = "pull Ashby-owned state (applicants, official stages) onto records — a user action, never a poller";
     sb.onclick = () => recAshbySyncBack(false);
     box.append(sb);
@@ -404,7 +410,7 @@ function paintBoardView(main) {
       const n = recUntriagedCount();
       if (n) b.append(el("span", "rec-seg-count", String(n)));
     }
-    b.onclick = () => { recOrigin = key; if (recPaint) recPaint(); };
+    b.onclick = () => { recOrigin = key; recOriginSet = true; if (recPaint) recPaint(); };
     seg.append(b);
   });
   bar.append(seg);
@@ -476,9 +482,11 @@ function paintBoardBody() {
     return;
   }
   if (!rows.length) {
-    board.append(emptyRow(all.length
-      ? "No candidate matches — the pipeline itself is fine."
-      : "no candidates yet — paste a link above, or run a source"));
+    board.append(emptyRow(!all.length
+      ? "no candidates yet — paste a link above, or run a source"
+      : recOrigin === "inbound"
+        ? "no applicants waiting to triage — SOURCED and BOTH show the pipeline"
+        : "No candidate matches — the pipeline itself is fine."));
   } else if (recOrigin === "inbound") {
     // the triage queue: every row is an untriaged applicant at stage `ashby`,
     // so stage lanes carry no signal — one queue, oldest application first
@@ -520,22 +528,29 @@ function recStateCell(c) {
   return el("span", "rec-state dim", "—");
 }
 
-// A board row is two facts and one state: name over title · org, the state
-// that wants you, and the gate chip. Everything else moved into the
-// inspector — extra columns that changed no decision while scanning.
+// A board row is two facts and one state: name over origin/title · org, the
+// state that wants you + the gate chip on the right. Everything else moved
+// into the inspector — extra columns that changed no decision while scanning.
+function recRoleTitle(roleId) {
+  const r = (recCache.roles || []).find((x) => (x.id || "role/" + x.slug) === roleId);
+  return r ? (r.title || r.slug) : "";
+}
 function recCard(c) {
   const p = c.profile || {};
-  const sub = [p.title, p.org].filter(Boolean).join(" · ");
+  const origin = c.inbound ? "Applicant — " + (recRoleTitle(c.role) || p.title || "") : (p.title || "");
+  const sub = [origin, p.org].filter(Boolean).join(" · ");
   const gate = recGateTable(c);
+  const right = el("span", "rec-right");
+  right.append(recStateCell(c));
+  const chip = el("span", "micro-label rec-gate " + gate.chipCls, gate.chipLabel);
+  if (gate.reason) chip.title = gate.reason;
+  right.append(chip);
   const card = cardShell({
     kind: "rec-card" + (recSel === c.id ? " sel" : ""),
-    chips: [el("span", "micro-label rec-gate " + gate.chipCls, gate.chipLabel)],
     title: c.name,
-    date: recStateCell(c),
+    date: right,
     meta: sub || null,
   });
-  const chip = card.querySelector(".rec-gate");
-  if (chip && gate.reason) chip.title = gate.reason;
   card.onclick = () => { recSel = recSel === c.id ? null : c.id; if (recPaint) recPaint(); };
   return card;
 }
@@ -1183,10 +1198,9 @@ function paintInspector(host) {
   const untriaged = recUntriaged(c);
   const gate = recGateTable(c);
 
-  // gate summary + ONE primary action — both read the same table the chip
-  // does. While an applicant is untriaged the verdict row IS the action, so
-  // the gate primary is withheld, not demoted beneath it.
-  host.append(el("div", "rec-gate-summary " + gate.chipCls, gate.summary));
+  // ONE primary action — it reads the same table the chip does. While an
+  // applicant is untriaged the verdict row IS the action, so the gate
+  // primary is withheld, not demoted beneath it.
   if (untriaged) {
     host.append(recTriageBlock(c));
   } else if (gate.primary) {
@@ -1195,16 +1209,18 @@ function paintInspector(host) {
     host.append(primary);
   }
 
-  // FIT — the working surface, always expanded
-  host.append(recFitSection(c));
+  // FIT — the working surface, always expanded; its head carries the gate
+  // summary (the design's "FIT unscored — score to unblock a send" line)
+  host.append(recFitSection(c, gate));
 
   // folds
   host.append(recFold("details", recDetailsMeta(c), () => recDetailsBody(c, field, text)));
   host.append(recFold("evidence", (c.evidence || []).length
-    ? String((c.evidence || []).length) : { text: "no evidence", alarm: true },
+    ? String((c.evidence || []).length) : { text: "● none yet", alarm: true },
     () => recEvidenceBody(c)));
   host.append(recFold("network", (c.paths || []).length
-    ? (c.paths || []).length + " paths" : { text: "no paths", alarm: false },
+    ? (c.paths || []).length + " warm path" + ((c.paths || []).length === 1 ? "" : "s")
+    : { text: "no paths", alarm: false },
     () => recNetworkBody(c)));
   host.append(recFold("activity", recActivityMeta(c), () => recActivityBody(c)));
   host.append(recFold("ashby", recAshbyMeta(c), () => recAshbySection(c)));
@@ -1248,12 +1264,10 @@ function recFold(key, meta, build) {
 
 function recDetailsMeta(c) {
   const p = c.profile || {};
-  const links = ["website", "linkedin", "github"].filter((k) => p[k]).length;
-  const contact = ["email", "phone"].filter((k) => p[k]).length;
   const bits = [];
-  if (links) bits.push(links + " link" + (links === 1 ? "" : "s"));
-  if (contact) bits.push(contact === 2 ? "email · phone" : (p.email ? "email" : "phone"));
-  return { text: bits.join(" · ") || "no links", alarm: false };
+  if (["website", "linkedin", "github"].some((k) => p[k])) bits.push("links");
+  if (p.email || p.phone) bits.push("contact");
+  return { text: bits.join(" · ") || "empty", alarm: false };
 }
 
 function recDetailsBody(c, field, text) {
@@ -1274,6 +1288,7 @@ function recActivityMeta(c) {
   const sent = (c.outreach || []).filter((o) => o.status === "sent");
   const last = sent[sent.length - 1];
   if (last) return { text: "sent " + (last.last || ""), alarm: false };
+  if (c.inbound) return { text: "applied " + c.inbound, alarm: false };
   if ((c.next || []).length) return { text: (c.next || []).length + " next", alarm: false };
   return { text: "no log yet", alarm: true };
 }
@@ -1318,19 +1333,20 @@ let recReasons = null; // archiveReason.list, fetched once per tab load
 
 function recTriageBlock(c) {
   const box = el("div", "rec-triage");
-  box.append(el("div", "micro-label rec-triage-label", "TRIAGE — applied " + (c.inbound || "") +
+  box.append(el("div", "micro-label rec-triage-label", "● TRIAGE · applied " + (c.inbound || "") +
     (c.ashbyStage ? " · ashby: " + c.ashbyStage : "")));
 
+  const row = el("div", "rec-triage-row");
   const advance = el("button", "rec-primary", "advance");
   advance.title = "into the sourced pipeline at reviewing";
   advance.onclick = () => recPost("/api/aion/recruiting/candidate/stage/" + c.id,
     { stage: "reviewing" }, "advanced to reviewing");
-  box.append(advance);
-
-  const ask = el("button", "pill light", "ask for more");
+  row.append(advance);
+  const ask = el("button", "rec-quiet-btn rec-ask-btn", "ask for more");
   ask.title = "a screening question — drafted and logged like any outreach";
   ask.onclick = () => { recInspOpen.activity = true; if (recPaint) recPaint(); };
-  box.append(ask);
+  row.append(ask);
+  box.append(row);
 
   // archive & reject — the verdict with a consequence: it hides here AND
   // writes the rejection there, so it says so and stays arm-then-confirm.
@@ -1378,11 +1394,12 @@ async function recLoadReasons() {
 // ---- fit — the working surface. Evidence is a PICKER over the candidate's
 // collected citations, never a free-text id field (problem 15); an uncited
 // must wears the ink border, because that is the thing blocking the send.
-function recFitSection(c) {
+function recFitSection(c, gate) {
   const role = (recCache.roles || []).find((r) => (r.id || "role/" + r.slug) === c.role);
   const sec = el("section", "rec-insp-sec");
   const label = el("div", "aion-sec-label");
   label.append(el("span", "aion-sec-title", "fit"));
+  if (gate) label.append(el("span", "rec-fold-meta" + (gate.chipCls === "blocked" ? " alarm" : ""), gate.summary));
   sec.append(label);
   if (!role) { sec.append(emptyRow("tether a role to score fit")); return sec; }
   if (!(role.criteria || []).length) {
