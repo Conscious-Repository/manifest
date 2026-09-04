@@ -470,7 +470,7 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 	cron["list"] = jobs
 	out["cron"] = cron
 	// profiles (shell, read-only, bounded)
-	if profiles, err := hermesProfiles(r.Context(), s.hermesBin()); err == nil {
+	if profiles, err := hermesProfiles(r.Context(), s.hermesBin(), s.hermesEnv()); err == nil {
 		out["profiles"] = profiles
 	} else {
 		out["profiles"] = []hermesProfile{}
@@ -481,10 +481,11 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 
 // hermesProfiles parses `hermes profile list` (a column table: Profile ·
 // Model · Gateway · Alias · Distribution; the active row is marked ◆).
-func hermesProfiles(ctx context.Context, bin string) ([]hermesProfile, error) {
+func hermesProfiles(ctx context.Context, bin string, env []string) ([]hermesProfile, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, "profile", "list")
+	cmd.Env = env
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &bytes.Buffer{}

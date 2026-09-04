@@ -429,19 +429,115 @@ function alfredCard(hz) {
     row.append(open);
     card.append(row);
   });
-  const profiles = hz.profiles || [];
-  card.append(el("div", "portal-note", profiles.length + " profile" + (profiles.length === 1 ? "" : "s") + (hz.profilesErr ? " · list unavailable: " + hz.profilesErr : "")));
-  profiles.forEach((p) => {
-    const row = el("div", "harness-spirit");
-    row.append(el("span", "harness-spirit-name", (p.active ? "◆ " : "") + p.name));
-    row.append(el("span", "harness-spirit-model", [p.model || "—", p.gateway || "", p.alias ? "alias " + p.alias : ""].filter(Boolean).join(" · ")));
-    card.append(row);
-  });
-  const add = el("button", "sprt-ghost", "＋ profile");
-  add.disabled = true;
-  add.title = "wired in a later phase — create profiles with `hermes profile create` for now";
-  card.append(add);
+  // PROFILES (Phase 5): the list is exactly `hermes profile list` — re-asked
+  // on every paint through /api/profiles, never held; ＋ profile creates one
+  // through `hermes profile create` (immediate-apply, the alias + -p line in
+  // the toast). Rows open the profile's agent page.
+  const profilesHost = el("div", "harness-profiles");
+  card.append(profilesHost);
+  paintProfilesSection(profilesHost, hz.profiles || []);
   return card;
+}
+
+// paintProfilesSection — the Profiles rows + the ＋ profile flow, refreshed
+// from /api/profiles (the `hermes profile list` projection). `seed` paints
+// what /api/agents/hermes already reported until the fresh list answers.
+async function paintProfilesSection(host, seed) {
+  const paint = (list, degraded) => {
+    host.innerHTML = "";
+    const note = el("div", "portal-note", list.length + " profile" + (list.length === 1 ? "" : "s") + " · from `hermes profile list`" + (degraded ? " · list unavailable: " + degraded : ""));
+    host.append(note);
+    list.forEach((p) => {
+      const row = el("div", "harness-spirit");
+      const name = el("span", "harness-spirit-name", (p.active ? "◆ " : "") + p.name);
+      name.title = (p.active ? "the active profile · " : "") + "open the agent page";
+      row.append(name);
+      row.append(el("span", "harness-spirit-model", [p.model || "no model", p.gateway ? "gateway " + p.gateway : "", p.alias ? "alias " + p.alias : "no alias", p.distribution ? "dist " + p.distribution : ""].filter(Boolean).join(" · ")));
+      const target = el("span", "harness-spirit-model", "-p " + p.name);
+      target.title = "runner targeting: hermes -p " + p.name + " -z …";
+      row.append(target);
+      const open = el("button", "sprt-quiet", "page →");
+      open.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(p.name); };
+      row.append(open);
+      host.append(row);
+    });
+    const add = el("button", "sprt-ghost", "＋ profile");
+    add.title = "hermes profile create <name> [--clone-from <src>] [--description …]";
+    add.onclick = () => { add.hidden = true; host.append(profileCreateForm(list, () => refresh(), () => { add.hidden = false; })); };
+    host.append(add);
+  };
+  const refresh = async () => {
+    try {
+      const d = await (await fetch("/api/profiles")).json();
+      paint(d.data || [], d.degraded || "");
+    } catch (e) { paint(seed, "/api/profiles did not answer"); }
+  };
+  paint(seed, "");
+  await refresh();
+}
+
+// profileCreateForm — name · clone-from · description → POST /api/profiles.
+// The slug rule is the CLI's (lowercase letters, digits, hyphens) and is
+// refused here before the server refuses it again.
+function profileCreateForm(existing, onDone, onCancel) {
+  const form = el("div", "sp-capability");
+  const row1 = el("div", "sp-cap-row");
+  row1.append(el("span", "cadb-label", "name"));
+  const name = inputEl("lowercase, e.g. recruiter");
+  name.maxLength = 32;
+  row1.append(name);
+  const hint = el("span", "cad-raw", "");
+  row1.append(hint);
+  form.append(row1);
+  const row2 = el("div", "sp-cap-row");
+  row2.append(el("span", "cadb-label", "clone from"));
+  const clone = selectEl(["(fresh — bundled skills, no keys)"].concat(existing.map((p) => p.name)));
+  clone.title = "--clone-from <src>: copies config.yaml, .env, SOUL.md and skills from that profile";
+  row2.append(clone);
+  form.append(row2);
+  const row3 = el("div", "sp-cap-row");
+  row3.append(el("span", "cadb-label", "description"));
+  const desc = inputEl("one or two sentences on what this profile is good at (kanban routing)");
+  desc.style.flex = "1";
+  row3.append(desc);
+  form.append(row3);
+  const acts = el("div", "sp-cap-row");
+  const slugOk = () => /^[a-z0-9][a-z0-9-]{0,31}$/.test(name.value.trim());
+  const check = () => {
+    const v = name.value.trim();
+    const dup = existing.some((p) => p.name === v);
+    hint.textContent = !v ? "" : dup ? "already exists" : slugOk() ? "hermes -p " + v : "lowercase letters, digits, hyphens only";
+    create.disabled = !v || dup || !slugOk();
+  };
+  const create = pill("create profile", async () => {
+    if (!slugOk()) return;
+    create.disabled = true;
+    setSaveState("saving");
+    try {
+      const body = { name: name.value.trim(), description: desc.value.trim() };
+      if (clone.selectedIndex > 0) body.cloneFrom = clone.value;
+      const r = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.ok === false) throw new Error(d.error || d.output || ("HTTP " + r.status));
+      setSaveState("saved");
+      showToast((d.command || "hermes profile create") + " — " + (d.alias ? "alias `" + d.alias + "` · " : "") + "target `hermes " + (d.target || "-p " + body.name) + "` — open",
+        () => { location.hash = "#/agents/" + encodeURIComponent(body.name); }, "info");
+      form.remove();
+      onDone();
+    } catch (e) {
+      setSaveState("error");
+      create.disabled = false;
+      showToast("Couldn't create profile: " + (e.message || e), null, "error");
+    }
+  });
+  create.disabled = true;
+  const cancel = pillLight("cancel", () => { form.remove(); onCancel(); });
+  acts.append(create, cancel);
+  form.append(acts);
+  name.addEventListener("input", check);
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter" && !create.disabled) create.click(); if (e.key === "Escape") cancel.click(); });
+  setTimeout(() => name.focus(), 0);
+  return form;
 }
 
 // 3. Team agents (D8): kairos + zeck — status only, never scheduled from here.

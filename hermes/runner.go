@@ -77,6 +77,11 @@ type Request struct {
 	Model    string // -m override for this turn; "" → the runner default
 	Toolsets string // -t override for this turn; "" → the runner default
 	Skills   string // --skills preload (comma-separated); "" → none
+	// Profile targets a named Hermes profile (`hermes -p <name>`, agents plan
+	// Phase 5): the turn runs under that profile's own ~/.hermes/profiles/<name>
+	// state — its model, keys, SOUL.md, skills, sessions. "" → the default
+	// profile, argv unchanged.
+	Profile string
 }
 
 // Result is a completed turn.
@@ -88,9 +93,15 @@ type Result struct {
 
 // buildArgs assembles the argv for one turn (pure, unit-tested). The prompt
 // rides as the -z value — no shell is involved (exec, not sh -c), so arbitrary
-// text is safe. usageFile, when non-empty, adds --usage-file.
+// text is safe. usageFile, when non-empty, adds --usage-file. A Profile goes
+// FIRST (`-p <name>` selects the state root before anything else is parsed);
+// without one the argv is exactly what it was before profiles existed.
 func (r *Runner) buildArgs(req Request, usageFile string) []string {
-	args := []string{"-z", req.Prompt}
+	var args []string
+	if p := strings.TrimSpace(req.Profile); p != "" {
+		args = append(args, "-p", p)
+	}
+	args = append(args, "-z", req.Prompt)
 	if m := firstNonEmpty(req.Model, r.cfg.Model); m != "" {
 		args = append(args, "-m", m)
 	}

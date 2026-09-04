@@ -676,6 +676,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agents/hermes/runs", s.handleAgentsHermesRuns)
 	mux.HandleFunc("GET /api/agents/hermes/run", s.handleAgentsHermesRun)
 	mux.HandleFunc("POST /api/agents/hermes/job/{id}/{action}", s.handleAgentsHermesJobAction)
+	// Hermes PROFILES (plan Phase 5, hermes_profiles.go): every route shells
+	// out to `hermes profile …` and projects its answer — no stored state.
+	mux.HandleFunc("GET /api/profiles", s.handleProfilesList)
+	mux.HandleFunc("POST /api/profiles", s.handleProfileCreate)
+	mux.HandleFunc("GET /api/profiles/{name}", s.handleProfileShow)
+	mux.HandleFunc("GET /api/profiles/{name}/soul", s.handleProfileSoul)
+	mux.HandleFunc("POST /api/profiles/{name}/describe", s.handleProfileDescribe)
+	mux.HandleFunc("POST /api/profiles/{name}/export", s.handleProfileExport)
 
 	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 	// Reads are the Board + property pages; the writes (create, quick-add log,

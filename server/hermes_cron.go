@@ -443,7 +443,15 @@ type hermesUsageLine struct {
 // ±2 min timestamp match), then appends the ledger's run.* lines for hermes
 // turns. `notes` names what degraded (a missing file) so the page can say so.
 func (s *Server) hermesFires(since time.Time, jobsByID map[string]hermesJob) (fires []hermesFire, notes []string) {
-	cronDir := filepath.Join(s.hermesHome(), "cron")
+	return s.hermesFiresIn(s.hermesHome(), since, jobsByID, true)
+}
+
+// hermesFiresIn is hermesFires over an explicit Hermes state root — a
+// profile's own ~/.hermes/profiles/<name> tree (Phase 5) reads the same way.
+// withLedger adds manifest's in-process turns, which belong to the default
+// profile only (the runner targets it unless a Request names a Profile).
+func (s *Server) hermesFiresIn(home string, since time.Time, jobsByID map[string]hermesJob, withLedger bool) (fires []hermesFire, notes []string) {
+	cronDir := filepath.Join(home, "cron")
 	fires = []hermesFire{}
 
 	// 1. the output files — one per fire, the durable narration
@@ -578,7 +586,7 @@ func (s *Server) hermesFires(since time.Time, jobsByID map[string]hermesJob) (fi
 	}
 
 	// 3. manifest's own ledger: run.* lines for in-process hermes turns
-	if s.ledgerStore != nil {
+	if withLedger && s.ledgerStore != nil {
 		for _, day := range s.ledgerStore.Days() {
 			if !since.IsZero() && day < since.Add(-24*time.Hour).Format("2006-01-02") {
 				continue

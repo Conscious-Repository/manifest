@@ -24,6 +24,27 @@ func TestBuildArgs(t *testing.T) {
 	}
 }
 
+// TestBuildArgsProfile: a Profile prepends `-p <name>` before -z (the CLI
+// selects the state root first); the no-profile argv is byte-identical to
+// the pre-profiles shape.
+func TestBuildArgsProfile(t *testing.T) {
+	r := NewRunner(Config{Enabled: true})
+	got := r.buildArgs(Request{Prompt: "ping", Profile: "scratch", Session: "todo-7"}, "/tmp/u.json")
+	want := []string{"-p", "scratch", "-z", "ping", "--resume", "todo-7", "--usage-file", "/tmp/u.json"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Errorf("buildArgs(profile) =\n  %v\nwant\n  %v", got, want)
+	}
+	if got[0] != "-p" || got[1] != "scratch" {
+		t.Errorf("-p must lead the argv, got %v", got)
+	}
+	// whitespace-only profile → no targeting, default path untouched
+	got2 := r.buildArgs(Request{Prompt: "ping", Profile: "  "}, "")
+	want2 := []string{"-z", "ping"}
+	if strings.Join(got2, "\x00") != strings.Join(want2, "\x00") {
+		t.Errorf("buildArgs(blank profile) = %v, want %v", got2, want2)
+	}
+}
+
 func TestEnabled(t *testing.T) {
 	if NewRunner(Config{Enabled: false}).Enabled() {
 		t.Error("disabled runner reports Enabled")

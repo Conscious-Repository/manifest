@@ -25,6 +25,34 @@ function renderSpiritIndex() {
     b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(name); };
     host.append(b);
   });
+  // then alfred + every Hermes profile (Phase 5) — the roster spans runtimes;
+  // the count is the profile's cron jobs when known (default = the board's)
+  const hermesJobs = (typeof hermesJobList === "function") ? hermesJobList().length : 0;
+  profileIndex.forEach((p) => {
+    const b = el("button", "spirit-index-item hermes");
+    b.append(el("span", "spirit-index-name", (p.active ? "alfred · " : "") + p.name));
+    b.append(el("span", "spirit-index-count", p.active ? String(hermesJobs) : "-p"));
+    b.title = "Hermes profile — hermes -p " + p.name;
+    b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(p.name); };
+    host.append(b);
+  });
+  loadProfileIndex();
+}
+
+// profileIndex — the last `hermes profile list` (via /api/profiles), display
+// only; refreshed on every index paint and repainted once when it changes.
+let profileIndex = [];
+let profileIndexLoading = false;
+async function loadProfileIndex() {
+  if (profileIndexLoading) return;
+  profileIndexLoading = true;
+  try {
+    const d = await (await fetch("/api/profiles")).json();
+    const next = d.data || [];
+    const key = (l) => l.map((p) => p.name + (p.active ? "*" : "")).join(",");
+    if (key(next) !== key(profileIndex)) { profileIndex = next; renderSpiritIndex(); }
+  } catch (e) { /* the strip stays as it was */ }
+  profileIndexLoading = false;
 }
 
 // ---- SPIRIT PAGE (SPIRITS.md §4): identity + cornerstone capability
@@ -70,6 +98,12 @@ async function renderSpiritPage(name) {
   ]);
   host.innerHTML = "";
   if (!idF || !coF) {
+    // not an excalibur spirit on the primary harness — a Hermes profile?
+    // (Phase 5: `hermes profile show <name>` projected by /api/profiles/<name>)
+    if (/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) {
+      const pr = await fetch("/api/profiles/" + encodeURIComponent(name)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (pr && pr.ok && pr.profile) { renderProfilePage(host, pr); return; }
+    }
     // non-primary-harness spirit (or missing files): read-only stance —
     // writes are primary-only by the federation contract
     host.append(el("div", "sprt-head")).append(el("span", "sprt-title", name));
@@ -84,6 +118,163 @@ async function renderSpiritPage(name) {
     catalog, mems, rits,
   };
   paintSpiritPage(host);
+}
+
+// ---- PROFILE PAGE (agents plan §4.3, Phase 5): the `hermes profile show`
+// projection — path · model · gateway · skills · SOUL.md — its cron jobs and
+// recent fires from the profile's own tree, the alias + `-p` targeting line,
+// the description (the one editable field: `hermes profile describe`), and
+// export. SOUL.md opens in the raw drawer read-only: Hermes owns writes. ----
+function renderProfilePage(host, d) {
+  host.innerHTML = "";
+  const p = d.profile;
+  const isDefault = !!d.isDefault;
+  const alias = p.alias || "";
+  const head = el("div", "sprt-head");
+  head.append(el("span", "sprt-title", (isDefault ? "alfred · " : "") + p.name), el("span", "sprt-sub", p.path || "hermes profile " + p.name));
+  const acts = el("span", "sprt-head-acts");
+  const chip = el("span", "harness-chip alfred", isDefault ? "alfred" : p.name);
+  chip.title = "Hermes profile" + (isDefault ? " — the default (~/.hermes)" : "");
+  acts.append(chip);
+  const soulB = el("button", "sprt-quiet", "⌘/ SOUL.md");
+  soulB.title = p.soulFile ? "open read-only — Hermes owns writes (edit at " + (p.path || "~/.hermes") + "/SOUL.md)" : "no SOUL.md in this profile";
+  soulB.disabled = !p.soulFile;
+  soulB.onclick = async () => {
+    try {
+      const s = await (await fetch("/api/profiles/" + encodeURIComponent(p.name) + "/soul")).json();
+      openReadOnlyEditor((s.path || p.name + "/SOUL.md"), s.exists ? s.content : "(no SOUL.md)");
+    } catch (e) { showToast("Couldn't read SOUL.md: " + (e.message || e), null, "error"); }
+  };
+  const exportB = el("button", "sprt-quiet", "export");
+  exportB.title = "hermes profile export " + p.name + " -o <dataDir>/profile-exports/" + p.name + "-<ts>.tar.gz";
+  exportB.onclick = async () => {
+    exportB.disabled = true;
+    setSaveState("saving");
+    try {
+      const r = await fetch("/api/profiles/" + encodeURIComponent(p.name) + "/export", { method: "POST" });
+      const res = await r.json().catch(() => ({}));
+      if (!r.ok || res.ok === false) throw new Error(res.error || res.output || ("HTTP " + r.status));
+      setSaveState("saved");
+      showToast((res.command || "exported") + " → " + res.path + (res.bytes ? " (" + Math.round(res.bytes / 1024) + " KB)" : "") + (res.warning ? " · " + res.warning : ""));
+    } catch (e) { setSaveState("error"); showToast("Export failed: " + (e.message || e), null, "error"); }
+    exportB.disabled = false;
+  };
+  const settingsB = el("button", "sprt-quiet", "settings →");
+  settingsB.title = "Settings › Agents — the Alfred card and the profile list";
+  settingsB.onclick = () => { location.hash = "#/settings/agents"; };
+  acts.append(soulB, exportB, settingsB);
+  head.append(acts);
+  host.append(head);
+
+  // the description is the one field Hermes lets us set — derived dirty bar
+  let descDraft = p.description || "";
+  const bar = derivedDirtyBar(host, {
+    compute: () => {
+      const dirty = descDraft.trim() !== (p.description || "").trim();
+      return { dirty, blocked: dirty && !descDraft.trim(), msg: dirty ? (descDraft.trim() ? "unsaved description · hermes profile describe " + p.name + " --text …" : "the CLI has no clear op — leave a sentence") : "no changes" };
+    },
+    onSave: async () => {
+      setSaveState("saving");
+      try {
+        const r = await fetch("/api/profiles/" + encodeURIComponent(p.name) + "/describe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: descDraft.trim() }) });
+        const res = await r.json().catch(() => ({}));
+        if (!r.ok || res.ok === false) throw new Error(res.error || res.output || ("HTTP " + r.status));
+        p.description = res.description != null ? res.description : descDraft.trim();
+        descDraft = p.description;
+        descTa.value = descDraft;
+        setSaveState("saved");
+        showToast(res.command || ("hermes profile describe " + p.name));
+        bar.refresh();
+      } catch (e) { setSaveState("error"); showToast("Couldn't set description: " + (e.message || e), null, "error"); }
+    },
+    onDiscard: () => { descDraft = p.description || ""; descTa.value = descDraft; bar.refresh(); },
+  });
+
+  // IDENTITY — what `hermes profile show` reports, nothing more
+  host.append(el("div", "pp-section-head", "PROFILE — hermes profile show " + p.name));
+  const box = el("div", "sp-capability");
+  const line = (k, v, title) => {
+    const row = el("div", "sp-cap-row");
+    row.append(el("span", "cadb-label", k));
+    const val = el("span", "harness-spirit-model", v);
+    if (title) val.title = title;
+    row.append(val);
+    box.append(row);
+    return row;
+  };
+  line("path", p.path || "—");
+  line("model", p.model || "not set — inherits the shell / global default", p.model ? "" : "hermes -p " + p.name + " model … to set one");
+  line("gateway", p.gateway || "unknown");
+  line("skills", p.skills != null ? String(p.skills) : "—");
+  line("files", [(p.soulFile ? "SOUL.md present" : "no SOUL.md"), (p.envFile ? ".env present" : "no .env")].join(" · "));
+  const tgt = el("div", "sp-cap-row");
+  tgt.append(el("span", "cadb-label", "targeting"));
+  const t = el("div", "harness-hint");
+  t.style.marginBottom = "0";
+  t.textContent = (alias ? alias + " chat   ·   " : "") + "hermes " + (p.target || "-p " + p.name) + ' -z "…"' + (isDefault ? "   ·   the runner's default (no -p)" : "   ·   runner Request.Profile = " + JSON.stringify(p.name));
+  t.title = alias ? "wrapper " + (p.aliasPath || alias) : "no wrapper alias (--no-alias)";
+  tgt.append(t);
+  box.append(tgt);
+  host.append(box);
+
+  host.append(el("div", "pp-section-head", "DESCRIPTION — kanban routing"));
+  const descTa = el("textarea", "editor-area sp-identity");
+  descTa.spellcheck = false;
+  descTa.rows = 2;
+  descTa.placeholder = "one or two sentences on what this profile is good at — hermes profile describe " + p.name;
+  descTa.value = descDraft;
+  descTa.addEventListener("input", () => { descDraft = descTa.value; bar.refresh(); });
+  host.append(descTa);
+
+  // CRON JOBS — the profile's own cron/jobs.json. The default profile's rows
+  // carry the D5 controls (they run `hermes cron …` against ~/.hermes); any
+  // other profile's rows are status only — its controls are `<alias> cron …`.
+  const jobs = d.jobs || [];
+  host.append(el("div", "pp-section-head", "CRON JOBS — " + jobs.length));
+  (d.degraded || []).forEach((n) => host.append(el("div", "sched-degraded", n)));
+  if (!jobs.length) host.append(emptyRow("No cron jobs in " + (p.path || "this profile") + "/cron/jobs.json."));
+  else if (isDefault && typeof hermesJobRow === "function") {
+    const board = el("div", "ritual-board");
+    jobs.forEach((j) => board.append(hermesJobRow(j)));
+    host.append(board);
+  } else {
+    const memBox = el("div", "sp-mems");
+    jobs.forEach((j) => {
+      const row = el("div", "sp-mem-row");
+      row.append(el("span", "sp-mem-name", (j.enabled === false ? "⏸ " : "") + (j.name || j.id)));
+      const bits = [j.scheduleHuman || j.schedule || "—"];
+      if (j.enabled !== false && j.nextRunAt) bits.push("next " + fmtWhen(j.nextRunAt));
+      if (j.enabled === false) bits.push(j.state === "completed" ? "completed" : "paused");
+      if (j.lastStatus) bits.push("last " + j.lastStatus);
+      bits.push(j.model || "unpinned");
+      const meta = el("span", "sp-mem-meta", bits.join(" · "));
+      meta.title = "controls: " + (alias || "hermes -p " + p.name) + " cron pause|resume|run " + j.id;
+      row.append(meta);
+      memBox.append(row);
+    });
+    host.append(memBox);
+  }
+
+  // RECENT FIRES — the last 7 days from this profile's cron/output
+  const fires = d.fires || [];
+  host.append(el("div", "pp-section-head", "RECENT FIRES — 7d"));
+  if (!fires.length) host.append(emptyRow("No fires in the last 7 days."));
+  else {
+    const list = el("div", "runs-list");
+    fires.forEach((f) => {
+      const r = {
+        id: f.id, hermes: f, runtime: "alfred", harness: isDefault ? "alfred" : p.name, spirit: isDefault ? "alfred" : p.name,
+        ritual: f.jobName || f.job || "turn", outcome: f.outcome || "unknown", outcomeDetail: f.why || "",
+        started: f.started, finished: f.finished || "", spentUsd: f.usd != null ? f.usd : 0,
+        itemsWritten: f.itemsWritten != null ? f.itemsWritten : 0,
+      };
+      const row = (typeof spiritRunRow === "function") ? spiritRunRow(r) : el("div", "sprt-run", r.outcome + " · " + r.ritual + " · " + fmtWhen(r.started));
+      if (!isDefault) { row.onclick = null; row.title = "narration: " + (f.file || (p.path + "/cron/output/" + f.job)); }
+      list.append(row);
+    });
+    host.append(list);
+  }
+  bar.refresh();
 }
 
 function spPageDirty() {
@@ -284,6 +475,16 @@ async function saveSpiritPage(host, lint) {
 // ---- markdown editor drawer (rituals / identity / cornerstone / chargebook) ----
 let editorState = null; // { files:[{path,loaded,content}], active }
 function openSpiritEditor(sp) { openEditor([`spirits/${sp}/identity.md`, `spirits/${sp}/cornerstone.md`], 1); }
+// openReadOnlyEditor — the same drawer over text manifest must not write
+// (a profile's SOUL.md — Hermes owns it): no Save, the area is read-only.
+function openReadOnlyEditor(label, content) {
+  editorState = { files: [{ path: label, loaded: content, readOnly: true }], active: 0 };
+  els.spiritEditor.hidden = false;
+  els.spiritEditorSave.hidden = true;
+  els.spiritEditorArea.readOnly = true;
+  selectEditorFile(0);
+  els.spiritEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 async function openEditor(paths, active = 0) {
   editorState = { files: paths.map((p) => ({ path: p, loaded: null })), active };
   els.spiritEditor.hidden = false;
@@ -321,7 +522,7 @@ function updateEditorDirty() {
 }
 async function saveEditor() {
   const f = currentEditorFile();
-  if (!f) return;
+  if (!f || f.readOnly) return;
   setSaveState("saving");
   els.spiritEditorLint.hidden = true;
   try {
@@ -349,7 +550,11 @@ function showEditorLint(errors, warnings, savedOK) {
   warnings.forEach((m) => host.append(el("div", "lint-warn", "⚠ " + m)));
   if (savedOK && warnings.length) host.insertBefore(el("div", "lint-note", "saved with warnings:"), host.firstChild);
 }
-function closeEditor() { els.spiritEditor.hidden = true; editorState = null; }
+function closeEditor() {
+  els.spiritEditor.hidden = true; editorState = null;
+  if (els.spiritEditorSave) els.spiritEditorSave.hidden = false;
+  if (els.spiritEditorArea) els.spiritEditorArea.readOnly = false;
+}
 
 // ＋ ritual mirrors ScaffoldRitual (on demand · chargebook-default ceiling ·
 // 12 steps) and lands in the structured editor; ＋ spirit mirrors
