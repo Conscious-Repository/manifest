@@ -91,26 +91,6 @@
 .asktext-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-6); margin-top: var(--sp-5); }
 .asktext-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 
-/* ---- PORTALS panel (SPIRITS sub-tab): the external-realms table + reconnect form ---- */
-.portal-board { display: flex; flex-direction: column; gap: var(--sp-1); }
-.portal-wrap { display: flex; flex-direction: column; }
-.portal-row { display: grid; grid-template-columns: 1.3fr 0.8fr 1.2fr 0.9fr auto; align-items: baseline; gap: var(--sp-6); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); }
-.portal-head { border: none; padding: var(--sp-2) var(--sp-5); font-size: var(--fs-2xs); color: var(--muted); }
-.portal-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); font-weight: 500; }
-.portal-state { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); }
-.portal-row.state-open .portal-state { color: var(--base-50); }
-.portal-row.state-degraded .portal-state { color: var(--base-100); font-weight: 500; }
-.portal-cross { font-family: var(--mono); font-size: var(--fs-sm); color: var(--ink); }
-.portal-key { font-family: var(--mono); font-size: var(--fs-sm); color: var(--muted); letter-spacing: 0.5px; }
-.portal-acts { display: flex; flex-wrap: wrap; gap: var(--sp-3); justify-self: end; }
-.portal-dim { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
-.portal-err { font-family: var(--mono); font-size: var(--fs-xs); color: var(--danger); padding: var(--sp-1) var(--sp-5) var(--sp-3); }
-.portal-note { font-size: var(--fs-sm); color: var(--muted); padding: var(--sp-1) var(--sp-5) var(--sp-3); }
-.portal-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-6); padding: var(--sp-5); margin: var(--sp-1) 0 var(--sp-3); border: 1px dashed var(--blue-soft); border-radius: var(--radius); background: var(--hover); }
-.portal-input { font-family: var(--mono); font-size: var(--fs-md); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); min-width: 240px; background: var(--bg); color: var(--text); }
-.portal-input:focus { outline: none; border-color: var(--blue); }
-/* .pill-solid moved to 05-primitives.css 2026-08-31 (now the linkish alias) */
-
 /* ===== SPIRITS one-page (§12 / prototype, 2026-08-10) ===== */
 .spirits-page { max-width: var(--page-max); margin: var(--sp-4) auto 64px; padding: 0 var(--page-gutter); display: flex; flex-direction: column; gap: 26px; }
 .sprt-block { display: flex; flex-direction: column; }
@@ -147,29 +127,8 @@
 /* the failure's WHY, on the row — mono, quiet, one line */
 .sprt-run-why { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-1) 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* portals foot toggle */
-.sprt-portals-toggle { background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: var(--sp-2) 0; }
-.sprt-portals-toggle:hover { color: var(--base-100); }
-#sp-portals .portal-board { margin-top: var(--sp-4); }
-.sprt-more { align-self: flex-start; background: none; border: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; padding: var(--sp-3) var(--sp-4); }
-.sprt-more:hover { color: var(--base-100); }
-
 /* federation: the muted source chip on non-primary harness rows (§11 idiom) */
 .harness-chip { font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); white-space: nowrap; }
-
-/* harnesses settings — engine status per tree + per-spirit conduit switch */
-.harness-board { display: flex; flex-direction: column; gap: var(--sp-6); margin-top: var(--sp-4); }
-.harness-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); }
-.harness-head { display: flex; align-items: baseline; gap: var(--sp-4); }
-.harness-name { font-family: var(--sans); font-size: var(--fs-lg); font-weight: 600; }
-.harness-engine { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); }
-.harness-engine.on { color: var(--accent); }
-.harness-engine.off { color: var(--base-40); }
-.harness-path { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin: var(--sp-1) 0 var(--sp-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.harness-hint { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); background: var(--base-05); border-radius: var(--radius); padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); }
-.harness-spirit { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-1) 0; border-top: 1px solid var(--line-soft); }
-.harness-spirit-name { font-family: var(--sans); font-size: var(--fs-md); flex: 1; }
-.harness-portal-sel { width: 150px; }
 
 /* ---- SPIRITS.md §1: chips hierarchy · spirit index · settings pane ---- */
 /* settings-chip degraded badge — damage reported without portals taking a slot */
@@ -185,10 +144,6 @@
 .spirit-index-item:hover { border-color: var(--base-40); }
 .spirit-index-name { font-weight: 500; }
 .spirit-index-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
-
-/* settings pane groupings */
-.portal-group-label { font-size: var(--fs-2xs); color: var(--base-40); margin: var(--sp-6) 0 var(--sp-2); }
-.aion-org-count.attn { color: var(--base-100); font-weight: 500; }
 
 /* the cadence cron sub-line must be LEGIBLE (spec §4): meta text, not ghost */
 .cad-raw { color: var(--base-40); font-size: var(--fs-2xs); }
@@ -259,13 +214,6 @@
 .run-trace-usd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; }
 .run-trace .pill { align-self: flex-start; margin-top: var(--sp-3); }
 
-/* chargebook form */
-.cb-grid { display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-3) 0; max-width: 560px; }
-.cb-group { font-size: var(--fs-2xs); color: var(--base-40); margin: var(--sp-6) 0 var(--sp-2); }
-.cb-row { display: flex; gap: var(--sp-6); align-items: center; min-height: 30px; border-bottom: 1px solid var(--base-20); }
-.cb-key { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); flex: 1; min-width: 0; }
-.cb-in { width: 110px; font-family: var(--mono); font-size: var(--fs-sm); text-align: right; }
-
 /* paused rituals: muted rows, a paused pill in the editor head */
 .ritual-row.paused .ritual-name, .ritual-row.paused .cad-human,
 .ritual-row.paused .ritual-next, .ritual-row.paused .ritual-ceiling { color: var(--base-40); }
@@ -274,16 +222,3 @@
 /* armed destructive action: quiet until armed, then ink */
 .sprt-delete.armed { color: var(--base-100); font-weight: 500; border-color: var(--base-100); }
 
-/* Gmail multi-account panel (email-sync workspaces) */
-.portal-form.gmail-accounts { display: block; }
-.gmail-acct-row { padding: var(--sp-4) 0; border-bottom: 1px solid var(--line); }
-.gmail-acct-row:last-of-type { border-bottom: 0; }
-.gmail-acct-head { display: flex; align-items: baseline; gap: var(--sp-4); }
-.gmail-acct-email { font-weight: 500; color: var(--base-100); }
-.gmail-acct-primary { font-size: var(--fs-2xs); letter-spacing: 0.4px; text-transform: uppercase; color: var(--base-40); }
-.gmail-acct-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); margin-top: var(--sp-3); }
-.gmail-acct-toggle { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
-.gmail-acct-ws { font: inherit; font-size: var(--fs-sm); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); }
-.gmail-acct-add { margin-top: var(--sp-5); }
-.gmail-acct-paste { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
-.gmail-acct-paste .portal-input { width: 100%; }

@@ -1,3 +1,7 @@
+// ================= Agents · SCHEDULE (the ALL RITUALS board) =================
+// Split from 58-rituals.js (phase 0): board rows, the cadence builder and the
+// structured ritual editor. The shell (route, poll, toasts) is 40-agents.js.
+
 // ---- RITUALS board + in-app markdown editing ----
 // The board reads every ritual (next-fire, last outcome, ceiling, validity);
 // clicking a row opens the raw markdown editor. Edits round-trip to the
@@ -106,128 +110,6 @@ function relPhrase(iso) {
   const h = Math.round(m / 60);
   if (h < 48) return "in " + h + "h";
   return "in " + Math.round(h / 24) + "d";
-}
-
-// ---- markdown editor drawer (rituals / identity / cornerstone / chargebook) ----
-let editorState = null; // { files:[{path,loaded,content}], active }
-function openSpiritEditor(sp) { openEditor([`spirits/${sp}/identity.md`, `spirits/${sp}/cornerstone.md`], 1); }
-async function openEditor(paths, active = 0) {
-  editorState = { files: paths.map((p) => ({ path: p, loaded: null })), active };
-  els.spiritEditor.hidden = false;
-  await selectEditorFile(active);
-  els.spiritEditor.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-async function selectEditorFile(i) {
-  editorState.active = i;
-  const f = editorState.files[i];
-  renderEditorTabs();
-  els.spiritEditorLint.hidden = true; els.spiritEditorLint.innerHTML = "";
-  if (f.loaded == null) {
-    els.spiritEditorArea.value = "loading…"; els.spiritEditorArea.disabled = true;
-    try { f.loaded = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(f.path))).json()).content || ""; }
-    catch (e) { f.loaded = ""; }
-  }
-  els.spiritEditorArea.disabled = false;
-  els.spiritEditorArea.value = f.loaded;
-  updateEditorDirty();
-}
-function renderEditorTabs() {
-  const host = els.spiritEditorTabs; host.innerHTML = "";
-  editorState.files.forEach((f, i) => {
-    const b = el("button", "editor-tab" + (i === editorState.active ? " active" : ""), f.path.replace(/^spirits\//, ""));
-    b.onclick = () => { if (i !== editorState.active) selectEditorFile(i); };
-    host.append(b);
-  });
-}
-function currentEditorFile() { return editorState && editorState.files[editorState.active]; }
-function updateEditorDirty() {
-  const f = currentEditorFile();
-  const dirty = f && f.loaded != null && els.spiritEditorArea.value !== f.loaded;
-  els.spiritEditorDirty.hidden = !dirty;
-  return dirty;
-}
-async function saveEditor() {
-  const f = currentEditorFile();
-  if (!f) return;
-  setSaveState("saving");
-  els.spiritEditorLint.hidden = true;
-  try {
-    const r = await fetch("/api/spirits/file?path=" + encodeURIComponent(f.path), {
-      method: "PUT", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: els.spiritEditorArea.value }),
-    });
-    const res = await r.json();
-    if (r.status === 422 || res.ok === false) {
-      setSaveState("error");
-      showEditorLint(res.errors || ["save blocked"], res.warnings || [], false);
-      return; // keep dirty; do not update loaded
-    }
-    f.loaded = els.spiritEditorArea.value; // saved
-    setSaveState("saved");
-    updateEditorDirty();
-    if ((res.warnings || []).length) showEditorLint([], res.warnings, true);
-    loadSpiritRituals(); // refresh board (cadence/ceiling/validity may have changed)
-  } catch (e) { setSaveState("error"); showEditorLint(["save failed: " + (e.message || e)], [], false); }
-}
-function showEditorLint(errors, warnings, savedOK) {
-  const host = els.spiritEditorLint; host.innerHTML = ""; host.hidden = false;
-  host.classList.toggle("lint-ok", savedOK && !errors.length);
-  errors.forEach((m) => host.append(el("div", "lint-err", "✕ " + m)));
-  warnings.forEach((m) => host.append(el("div", "lint-warn", "⚠ " + m)));
-  if (savedOK && warnings.length) host.insertBefore(el("div", "lint-note", "saved with warnings:"), host.firstChild);
-}
-function closeEditor() { els.spiritEditor.hidden = true; editorState = null; }
-
-// ＋ ritual mirrors ScaffoldRitual (on demand · chargebook-default ceiling ·
-// 12 steps) and lands in the structured editor; ＋ spirit mirrors
-// ScaffoldSpirit (claude-sub · no spellbooks · writes artifacts/runs only)
-// and lands on the new spirit's page (SPIRITS.md §4 Creating).
-function newRitual(sp) {
-  askText(`New ritual for ${sp}`, 'lowercase name, e.g. "weekly-review"', async (name) => {
-    if (!name.trim()) return;
-    try {
-      const r = await fetch("/api/spirits/ritual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: sp, name: name.trim() }) });
-      if (!r.ok) throw new Error(await r.text());
-      await loadSpiritRituals();
-      location.hash = "#/spirits/ritual/" + encodeURIComponent(sp) + "/" + encodeURIComponent(name.trim());
-    } catch (e) { showToast("Couldn't create ritual: " + (e.message || e), null, "error"); }
-  });
-}
-function newSpirit() {
-  askText("New spirit", 'lowercase name, e.g. "news-scout"', async (name) => {
-    if (!name.trim()) return;
-    try {
-      const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
-      if (!r.ok) throw new Error(await r.text());
-      loadSpiritsStatus();
-      location.hash = "#/spirits/" + encodeURIComponent(name.trim());
-    } catch (e) { showToast("Couldn't create spirit: " + (e.message || e), null, "error"); }
-  });
-}
-
-if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateEditorDirty);
-if (els.spiritEditorSave) els.spiritEditorSave.addEventListener("click", saveEditor);
-if (els.spiritEditorClose) els.spiritEditorClose.addEventListener("click", closeEditor);
-
-// armedDelete — the destructive-action pattern: first click ARMS (ink
-// "confirm?" label), second click within 4s executes; it disarms itself.
-// No browser dialogs (owner call, spirits UX pass).
-function armedDelete(label, armedLabel, onConfirm) {
-  const b = el("button", "sprt-quiet sprt-delete", label);
-  let armed = false, timer = null;
-  b.onclick = () => {
-    if (!armed) {
-      armed = true;
-      b.textContent = armedLabel;
-      b.classList.add("armed");
-      timer = setTimeout(() => { armed = false; b.textContent = label; b.classList.remove("armed"); }, 4000);
-      return;
-    }
-    clearTimeout(timer);
-    b.disabled = true;
-    onConfirm();
-  };
-  return b;
 }
 
 // ---- SPIRITS.md §2: the cadence builder ----

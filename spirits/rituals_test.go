@@ -35,7 +35,7 @@ func TestHumanCadence(t *testing.T) {
 }
 
 // TestBuilderVocabulary is the grammar CONTRACT with the client cadence
-// builder (server/web/js/58-rituals.js cadCompile/cadParse — SPIRITS.md §2):
+// builder (server/web/js/41-agents-schedule.js cadCompile/cadParse — SPIRITS.md §2):
 // every cron the builder can EMIT phrases through humanCadence exactly as the
 // builder's own phrase, and every shape the builder must REFUSE (cadParse →
 // null, raw-only editing) phrases as "custom". Change either side only with
