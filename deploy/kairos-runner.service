@@ -19,7 +19,7 @@ ConditionPathExists=/shared/apps/kairos/vessel
 User=kairos
 Group=kairos
 UMask=0002
-ExecStart=/home/kairos/.local/bin/kairos-runner -root /shared/apps/kairos -bin /home/kairos/.local/bin/hermes -args "-z {request}" -model deepseek-v4-flash-0731 -probe http://192.168.87.11:8000 -timeout 10m
+ExecStart=/home/kairos/.local/bin/kairos-runner -root /shared/apps/kairos -bin /home/kairos/.local/bin/hermes -args "-z {request}" -model deepseek-v4-flash-vision-exp -probe http://192.168.87.11:8000 -timeout 10m
 Restart=always
 RestartSec=5
 
