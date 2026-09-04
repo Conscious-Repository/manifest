@@ -42,6 +42,7 @@ const FEED_CARD = {
   delegationDone: (sg) => delegationDoneCard(sg),
   planReady: (sg) => planReadyCard(sg),
   agentQuestions: (sg) => agentQuestionsCard(sg),
+  taskAgentReply: (sg) => taskAgentReplyCard(sg),
   proposal: (p) => approvalCardEl(p),
   notice: (pc) => portalCardEl(pc),
   bank: (rows) => bankPendingCardEl(rows),
@@ -56,9 +57,11 @@ const FEED_CARD = {
 const isDelegationDone = (sg) => sg.kind === "delegation-done";
 const isPlanReady = (sg) => sg.kind === "plan-ready";
 const isAgentQuestions = (sg) => sg.kind === "agent-questions";
+const isTaskAgentReply = (sg) => sg.kind === "task-agent-reply";
 // main-list lanes in render order (other signals render into their own strip).
 const FEED_LANES = [
   { kind: "agentQuestions", slice: (c) => (c.signals || []).filter(isAgentQuestions) },
+  { kind: "taskAgentReply", slice: (c) => (c.signals || []).filter(isTaskAgentReply) },
   { kind: "planReady", slice: (c) => (c.signals || []).filter(isPlanReady) },
   { kind: "delegationDone", slice: (c) => (c.signals || []).filter(isDelegationDone) },
   { kind: "proposal", slice: (c) => c.proposals },
@@ -153,7 +156,7 @@ function renderFeed() {
   // signals lane: app-derived nudges, tight one-line chips. Capped so a long
   // neglect backlog doesn't bury the findings — the most-overdue lead, the rest
   // fold away.
-  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg) && !isPlanReady(sg) && !isAgentQuestions(sg));
+  const stripSignals = feedCache.signals.filter((sg) => !isDelegationDone(sg) && !isPlanReady(sg) && !isAgentQuestions(sg) && !isTaskAgentReply(sg));
   if (!filter && stripSignals.length) {
     const total = stripSignals.length;
     sigHost.appendChild(el("div", "reading-strip-head", "Signals — " + total));
@@ -317,6 +320,33 @@ function agentQuestionsCard(sg) {
   card.append(cardActions([
     ans,
     pillLight("snooze 7d", () => signalAction("/api/feed/signal/snooze", { id: sg.id, days: 7 }, card)),
+    pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)),
+  ]));
+  return card;
+}
+
+// taskAgentReplyCard keeps the reply in the thread as truth, but makes the
+// newest unanswered agent answer visible where attention is managed. Markdown
+// is the shared read-only renderer, matching CHAT and the task-panel preview.
+function taskAgentReplyCard(sg) {
+  const title = el("span", "cp-clickable", sg.entity || sg.label);
+  title.title = "open the task thread";
+  title.onclick = () => { location.hash = sg.actHref || "#/tasks"; };
+  const reply = el("div", "feed-agent-reply");
+  try { reply.append(renderMarkdown(sg.reply || "", "", { readOnly: true })); }
+  catch (e) { reply.textContent = sg.reply || ""; }
+  const card = cardShell({
+    kind: "artifact task-agent-reply",
+    chips: [el("span", "type-chip micro-label type-artifact", "agent reply"),
+      sg.replyPersona ? el("span", "harness-chip micro-label", sg.replyPersona) : null],
+    title,
+    why: (sg.replyAuthor || "agent") + " replied" + (sg.replyAt ? " · " + fmtWhen(sg.replyAt) : ""),
+    body: [reply],
+  });
+  const open = pillLight("open thread →", () => { location.hash = sg.actHref || "#/tasks"; });
+  open.classList.add("verdict-primary");
+  card.append(cardActions([
+    open,
     pillLight("dismiss", () => signalAction("/api/feed/signal/dismiss", { id: sg.id, hash: sg.hash }, card)),
   ]));
   return card;

@@ -21,6 +21,13 @@ a.feed-title:hover { color: var(--blue); text-decoration: underline; }
 .feed-meta { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); letter-spacing: 0.2px; }
 .work-chip { color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); }
 .feed-body { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); background: var(--streak-bg); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); white-space: pre-wrap; overflow-x: auto; margin: 0; }
+.feed-agent-reply { font-size: var(--fs-md); line-height: 1.45; color: var(--text); }
+.feed-agent-reply > :first-child { margin-top: 0; }
+.feed-agent-reply > :last-child { margin-bottom: 0; }
+.feed-agent-reply h1, .feed-agent-reply h2, .feed-agent-reply h3 { font-size: var(--fs-md); margin: var(--sp-5) 0 var(--sp-2); }
+.feed-agent-reply ul, .feed-agent-reply ol { padding-left: var(--sp-7); margin: var(--sp-2) 0; }
+.feed-agent-reply p { margin: var(--sp-2) 0; }
+.feed-agent-reply code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--streak-bg); padding: 0 var(--sp-1); border-radius: var(--radius); }
 .feed-saved { font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); }
 .feed-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
 

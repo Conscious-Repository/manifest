@@ -53,6 +53,13 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-c-act { font-size: var(--fs-2xs); color: var(--accent); }
 .tdo-p-c-when { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; font-variant-numeric: tabular-nums; }
 .tdo-p-c-text { font-size: var(--fs-md); line-height: 1.45; color: var(--base-100); margin-top: var(--sp-1); white-space: pre-wrap; word-break: break-word; }
+.tdo-p-c-text.agent-reply { white-space: normal; }
+.tdo-p-c-text.agent-reply > :first-child { margin-top: 0; }
+.tdo-p-c-text.agent-reply > :last-child { margin-bottom: 0; }
+.tdo-p-c-text.agent-reply h1, .tdo-p-c-text.agent-reply h2, .tdo-p-c-text.agent-reply h3 { font-size: var(--fs-md); margin: var(--sp-5) 0 var(--sp-2); }
+.tdo-p-c-text.agent-reply ul, .tdo-p-c-text.agent-reply ol { padding-left: var(--sp-7); margin: var(--sp-2) 0; }
+.tdo-p-c-text.agent-reply p { margin: var(--sp-2) 0; }
+.tdo-p-c-text.agent-reply code { font-family: var(--mono); font-size: var(--fs-sm); background: var(--base-10); padding: 0 var(--sp-1); border-radius: var(--radius); }
 .tdo-p-comment.structural .tdo-p-c-text { color: var(--base-50); font-size: var(--fs-sm); }
 .tdo-p-c-file { display: inline-block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); text-decoration: none; margin-top: var(--sp-2); margin-right: var(--sp-4); }
 .tdo-p-c-file:hover { text-decoration: underline; }

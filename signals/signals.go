@@ -34,6 +34,13 @@ type Signal struct {
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
 	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
 	Harness      string `json:"harness,omitempty"`      // federation source tag
+	// Agent reply signals carry the thread comment itself. The comment remains
+	// the source of truth; this is only the computed FEED projection that lets
+	// the owner see and open an unanswered reply without hunting for its task.
+	Reply        string `json:"reply,omitempty"`
+	ReplyAuthor  string `json:"replyAuthor,omitempty"`
+	ReplyPersona string `json:"replyPersona,omitempty"`
+	ReplyAt      string `json:"replyAt,omitempty"`
 }
 
 // Emitter computes the currently-active conditions of one kind. An emitter that

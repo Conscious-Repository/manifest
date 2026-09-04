@@ -56,6 +56,9 @@ function chatBase() { return chatBaseFor(chatAgent); }
 function chatHash(id) {
   return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/" + encodeURIComponent(id) : "#/chat/" + encodeURIComponent(id);
 }
+// Task links always include the id so routing loads the board and opens its
+// panel in one gesture; never send a conversation back to the TASKS list.
+function chatTaskThreadHash(id) { return "#/tasks/" + encodeURIComponent(id); }
 function chatSectionHash(agent) { return agent ? "#/chat/a/" + encodeURIComponent(agent) : "#/chat/spirits"; }
 function chatNewHash() { return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/new" : "#/chat/new"; }
 function chatCurrentSessions() {
@@ -327,7 +330,7 @@ function chatRailTasks(agent) {
     if (t.state) meta.push(t.state.replace(/-/g, " "));
     if (meta.length) row.append(el("span", "chat-rail-task-meta", meta.join(" · ")));
     row.title = (t.chatId ? "promoted from a conversation here · " : "") + "open the task thread";
-    row.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(t.id); };
+    row.onclick = () => { location.hash = chatTaskThreadHash(t.id); };
     wrap.append(row);
   });
   if (tasks.length > chatRailTasksMax) {
@@ -349,7 +352,7 @@ function chatPromoteTurn(session, turnN) {
   askText("Task from this conversation — " + chatAgentLabel(agent) + " takes it", title ? "the todo line · empty = “" + title + "”" : "the todo line…", async (t) => {
     try {
       const r = await postJSONOk(chatBase() + "/" + encodeURIComponent(session.id) + "/promote", { turn: turnN, text: (t || "").trim() });
-      const where = "#/tasks/" + encodeURIComponent(r.created);
+      const where = chatTaskThreadHash(r.created);
       showToast("Task created" + (r.assigned ? " — " + (r.name || chatAgentLabel(agent)) + " holds it" : "") + " · open", () => { location.hash = where; }, "info");
       if (chatOpenId === session.id) { refetchChatSession(session.id); loadChatSessions().then(renderChatRail); }
     } catch (e) { showToast("Couldn't create the task — " + (e.message || "error")); }
@@ -818,9 +821,9 @@ function chatHead(s) {
   acts.append(ren);
   // the task this conversation became (§3.4f) — the link back to the board
   if (s.task) {
-    const task = el("button", "sprt-quiet chat-head-task", "☐ task ↗");
-    task.title = "open the task this conversation was promoted into";
-    task.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(s.task); };
+    const task = el("button", "sprt-quiet chat-head-task", "open task thread ↗");
+    task.title = "open this task's thread in its panel";
+    task.onclick = () => { location.hash = chatTaskThreadHash(s.task); };
     acts.append(task);
   }
   // a portal thread is a shared team object: the cockpit's delete ARCHIVES it

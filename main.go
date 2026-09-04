@@ -635,6 +635,9 @@ func main() {
 		// "your result is ready" (opens the report in place)
 		emitters = append(emitters, srv.DelegationDoneEmitter())
 		emitters = append(emitters, srv.PlanReadyEmitter()) // todo-panel Phase 4: materialize + page
+		// newest unanswered agent thread reply — a rich, direct jump into the
+		// task panel; computed from the thread store, never another writer
+		emitters = append(emitters, srv.TaskAgentReplyEmitter())
 		// a linked bank account whose bridge connection needs re-auth, or
 		// that quietly stopped syncing — both page instead of rotting silent
 		emitters = append(emitters, srv.BankFeedAttentionEmitter())

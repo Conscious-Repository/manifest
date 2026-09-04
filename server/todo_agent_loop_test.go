@@ -114,6 +114,37 @@ func TestQuestionsBriefBecomesComment(t *testing.T) {
 	}
 }
 
+func TestTaskAgentReplySignalTracksNewestUnansweredReply(t *testing.T) {
+	srv := loopFixture(t)
+	id := "inbox/research-zoning"
+	_, err := srv.addThreadEntry(agentTokenIdentity("agent:alfred"), id, threads.ActComment,
+		"## Zoning answer\n\nThe parcel is **R-2**.", nil, nil, map[string]any{"persona": "info"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigs, err := (taskAgentReplyEmitter{srv}).Emit(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sigs) != 1 || sigs[0].Kind != "task-agent-reply" || sigs[0].GoalID != id ||
+		sigs[0].Reply != "## Zoning answer\n\nThe parcel is **R-2**." || sigs[0].ActHref != "#/tasks/inbox%2Fresearch-zoning" {
+		t.Fatalf("agent reply signal: %+v", sigs)
+	}
+	// The owner's next comment resolves the condition. The reply remains in its
+	// thread, but FEED no longer treats it as unseen attention.
+	_, err = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "thanks", nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigs, err = (taskAgentReplyEmitter{srv}).Emit(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sigs) != 0 {
+		t.Fatalf("owner reply must clear agent-reply signal: %+v", sigs)
+	}
+}
+
 func TestCommentPhasePlanMaterializes(t *testing.T) {
 	srv := loopFixture(t)
 	id := "inbox/research-zoning"

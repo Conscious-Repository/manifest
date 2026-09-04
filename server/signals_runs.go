@@ -7,11 +7,13 @@ package server
 // auto-clearing rule); a dismissal re-arms on the NEXT failure (hash = run id).
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"manifest/signals"
+	"manifest/threads"
 )
 
 // runFailureWindow: failures older than this stop paging (the run list still
@@ -38,6 +40,54 @@ func (s *Server) DelegationDoneEmitter() signals.Emitter { return delegDoneEmitt
 // pages "review the plan →". Auto-clears on fire (the go-phase run outranks
 // plan-ready) or when the todo closes.
 func (s *Server) PlanReadyEmitter() signals.Emitter { return planReadyEmitter{s} }
+
+// TaskAgentReplyEmitter projects the newest unanswered agent comment on each
+// open task into FEED. It is deliberately computed on the existing signals
+// read/sweep cadence: thread files stay canonical, and no third scheduler or
+// second transcript writer is introduced.
+func (s *Server) TaskAgentReplyEmitter() signals.Emitter { return taskAgentReplyEmitter{s} }
+
+type taskAgentReplyEmitter struct{ s *Server }
+
+func (e taskAgentReplyEmitter) Emit(now time.Time) ([]signals.Signal, error) {
+	if e.s.tasksStore == nil || e.s.threads == nil {
+		return []signals.Signal{}, nil
+	}
+	doc, err := e.s.tasksStore.Load()
+	if err != nil {
+		return nil, err
+	}
+	out := []signals.Signal{}
+	for _, row := range e.s.unifiedRows(doc, now) {
+		thread := e.s.listThread(row.ID)
+		if len(thread) == 0 {
+			continue
+		}
+		last := thread[len(thread)-1]
+		// A reply is actionable until the owner writes back. Promoted chat
+		// history is context, not a new task reply, and stays out of FEED.
+		if last.Action != threads.ActComment || !strings.HasPrefix(last.Author, "agent:") ||
+			last.Text == "" || threadCommentFromChat(last) {
+			continue
+		}
+		persona, _ := last.Meta["persona"].(string)
+		out = append(out, signals.Signal{
+			ID:   "task-agent-reply:" + row.ID,
+			Kind: "task-agent-reply", Entity: row.Text,
+			Label:   "agent replied · " + row.Text,
+			ActHref: "#/tasks/" + url.PathEscape(row.ID),
+			Hash:    last.ID, GoalID: row.ID,
+			Reply: last.Text, ReplyAuthor: orStr(last.AuthorName, strings.TrimPrefix(last.Author, "agent:")),
+			ReplyPersona: persona, ReplyAt: last.At.Format(time.RFC3339),
+		})
+	}
+	return out, nil
+}
+
+func threadCommentFromChat(c threads.Comment) bool {
+	from, _ := c.Meta["from"].(string)
+	return from == "chat"
+}
 
 type planReadyEmitter struct{ s *Server }
 

@@ -222,10 +222,10 @@ async function renderTodoPanel(refetch) {
   const kindTag = { aion: "team-visible", re: "shared · RE", private: "private" };
   thHead.append(document.createTextNode("thread"));
   const thActs = el("span", "tdo-p-sec-acts");
-  // "open in chat" (agent-chat plan §3.4f): the conversation this task came
-  // from — or, for an agent-held task, the agent's section in CHAT
+  // "open conversation" is one gesture: when the task came from chat, land
+  // directly in that exact transcript; otherwise land in its agent section.
   if (d.chat && d.chat.agent) {
-    const open = el("button", "tdo-p-linky", "open in chat ↗");
+    const open = el("button", "tdo-p-linky", d.chat.id ? "open conversation ↗" : "open in chat ↗");
     open.title = d.chat.id
       ? "the conversation with " + (d.chat.label || d.chat.agent) + " this task came from" + (d.chat.title ? " — “" + d.chat.title + "”" : "")
       : (d.chat.label || d.chat.agent) + "'s conversations in CHAT";
@@ -321,7 +321,18 @@ function todoThreadEntry(c) {
   if (c.meta && c.meta.from === "chat") { const f = el("span", "tdo-p-c-persona", "from chat"); f.title = "copied from the conversation this task was promoted from"; head.append(f); }
   head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
   e.append(head);
-  if (c.text) e.append(el("div", "tdo-p-c-text", c.text));
+  if (c.text) {
+    const body = el("div", "tdo-p-c-text");
+    // Agent replies carry intentful Markdown (brief/info/plan personas). Keep
+    // owner comments literal, but give the agent's answer the same read-only
+    // renderer used by CHAT and plan previews.
+    if ((c.author || "").startsWith("agent:")) {
+      body.classList.add("agent-reply");
+      try { body.append(renderMarkdown(c.text, "", { readOnly: true })); }
+      catch (e) { body.textContent = c.text; }
+    } else body.textContent = c.text;
+    e.append(body);
+  }
   // an agent comment that references its brief carries a view chip
   if (c.meta && c.meta.artifactRef && typeof openResult === "function") {
     const v = el("button", "tdo-p-c-file", "view brief →");
