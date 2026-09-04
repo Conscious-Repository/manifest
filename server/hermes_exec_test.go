@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"manifest/approvals"
 	"manifest/threads"
@@ -126,6 +127,26 @@ func TestHermesGoBadBlocksWarnOnly(t *testing.T) {
 	th := srv.listThread(taskID)
 	if len(th) != 1 || !strings.Contains(th[0].Text, "⚠") {
 		t.Fatalf("expected warnings in thread: %+v", th)
+	}
+}
+
+// A hard cut (no paragraph or line seam in reach) must not split a multibyte
+// character: every part stays valid UTF-8 and nothing is lost.
+func TestSplitBriefHardCutOnRuneBoundary(t *testing.T) {
+	text := strings.Repeat("é", 100) // 200 bytes, no seams
+	parts := splitBrief(text, 33)    // 33 is not a multiple of 2
+	joined := ""
+	for _, p := range parts {
+		if !utf8.ValidString(p) {
+			t.Fatalf("part %q is not valid UTF-8", p)
+		}
+		if len(p) > 33 {
+			t.Fatalf("part over the cap: %d bytes", len(p))
+		}
+		joined += p
+	}
+	if joined != text {
+		t.Fatalf("hard-cut parts lost text: %d parts, %d bytes", len(parts), len(joined))
 	}
 }
 

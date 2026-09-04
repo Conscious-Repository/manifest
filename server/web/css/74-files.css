@@ -33,6 +33,9 @@ img.fs-ico { width: 20px; height: 20px; object-fit: cover; border-radius: var(--
 .fs-acts { display: none; gap: var(--sp-1); flex: none; }
 .fs-row:hover .fs-acts { display: flex; }
 .fs-acts .fs-tool { min-width: 0; height: auto; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-xs); border: 0; background: none; line-height: 1.4; }
+/* an armed "delete?" (armedDelete) stays visible and inked until it disarms */
+.fs-row:has(.fs-tool.armed) .fs-acts { display: flex; }
+.fs-acts .fs-tool.armed { color: var(--base-100); font-weight: 500; }
 .fs-size, .fs-mtime { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); flex: none; font-variant-numeric: tabular-nums; }
 .fs-size { width: 52px; text-align: right; }
 .fs-mtime { width: 88px; text-align: right; }

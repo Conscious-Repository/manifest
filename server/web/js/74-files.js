@@ -275,7 +275,12 @@ function fsRow(e) {
     acts.append(dl);
   }
   acts.append(fsTool("✎", "Rename", (ev) => { ev.stopPropagation(); fsRenameInline(row, name, e); }));
-  acts.append(fsTool("✕", "Delete", (ev) => { ev.stopPropagation(); fsDelete(e); }));
+  // delete is arm-then-confirm on the row (armedDelete — no native confirm,
+  // banned app-wide); the keyboard path asks through a clickable toast
+  const x = armedDelete("✕", "delete?", () => fsDelete(e, true));
+  x.className = "fs-tool";
+  x.title = "Delete";
+  acts.append(x);
   row.append(acts);
   if (!e.dir) row.append(el("span", "fs-size", fmtBytes(e.size)));
   row.append(el("span", "fs-mtime", e.mtime ? fmtWhen(new Date(e.mtime * 1000).toISOString()) : ""));
@@ -347,21 +352,32 @@ function fsRenameInline(row, nameEl, e) {
   inp.setSelectionRange(0, dot > 0 ? dot : inp.value.length);
 }
 
-async function fsDelete(e) {
-  if (!confirm("Delete " + e.name + "?")) return;
-  let q = "/api/files/delete?host=" + encodeURIComponent(fsHost) + "&path=" + encodeURIComponent(fsFull(e.name));
+// fsDelete — confirmed=true from the row's armed ✕; the keyboard path
+// (Delete/Backspace) confirms through a clickable toast instead. A non-empty
+// folder asks once more the same way before recursing.
+async function fsDelete(e, confirmed) {
+  if (!confirmed) { showToast("Delete " + e.name + "? · click to confirm", () => fsDelete(e, true), "info"); return; }
+  const q = "/api/files/delete?host=" + encodeURIComponent(fsHost) + "&path=" + encodeURIComponent(fsFull(e.name));
   let res;
   try { res = await fetch(q, { method: "POST" }); } catch (err) { showToast("unreachable"); return; }
   if (!res.ok) {
     const msg = await res.text();
     if (e.dir && /not empty|directory/i.test(msg)) {
-      if (!confirm(e.name + " isn't empty — delete the folder AND everything inside it?")) return;
-      try {
-        res = await fetch(q + "&recursive=1", { method: "POST" });
-        if (!res.ok) throw new Error((await res.text()).slice(0, 120));
-      } catch (err) { showToast("Couldn't delete — " + (err.message || "error")); return; }
-    } else { showToast("Couldn't delete — " + msg.slice(0, 120)); return; }
+      showToast(e.name + " isn't empty — click to delete the folder and everything inside it", () => fsDeleteRecursive(e, q));
+      return;
+    }
+    showToast("Couldn't delete — " + msg.slice(0, 120));
+    return;
   }
+  if (fsSel === e.name) fsSel = "";
+  fsLoad();
+}
+
+async function fsDeleteRecursive(e, q) {
+  try {
+    const res = await fetch(q + "&recursive=1", { method: "POST" });
+    if (!res.ok) throw new Error((await res.text()).slice(0, 120));
+  } catch (err) { showToast("Couldn't delete — " + (err.message || "error")); return; }
   if (fsSel === e.name) fsSel = "";
   fsLoad();
 }
@@ -385,7 +401,7 @@ function fsUpload(files, destDir, overwrite) {
     xhr.onload = () => {
       if (xhr.status === 409) {
         rowEl.remove();
-        if (confirm(f.name + " already exists — overwrite it?")) fsUpload([f], destDir, true);
+        showToast(f.name + " already exists — click to overwrite it", () => fsUpload([f], destDir, true));
         return;
       }
       if (xhr.status >= 300) {

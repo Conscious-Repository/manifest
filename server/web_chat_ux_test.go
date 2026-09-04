@@ -40,9 +40,19 @@ func TestChatUXConventions(t *testing.T) {
 			}
 		}
 	}
-	for _, f := range []string{"web/js/48-chat.js", "web/js/73-terminal.js"} {
-		if strings.Contains(read(f), "confirm(") {
-			t.Errorf("%s uses a native confirm() — armedDelete is the idiom", f)
+	for _, f := range []string{"web/js/48-chat.js", "web/js/73-terminal.js", "web/js/74-files.js", "web/js/05-components.js"} {
+		for n, line := range strings.Split(read(f), "\n") {
+			code := strings.TrimSpace(line)
+			if i := strings.Index(code, "//"); i >= 0 {
+				code = code[:i] // a comment may name the banned call
+			}
+			for _, native := range []string{"confirm(", "alert(", "prompt("} {
+				// window.prompt/alert/confirm — the idioms are armedDelete, a
+				// clickable showToast, and askText
+				if strings.Contains(code, " "+native) || strings.Contains(code, "!"+native) || strings.Contains(code, "("+native) {
+					t.Errorf("%s:%d uses a native %s — armedDelete / a clickable toast is the idiom", f, n+1, native)
+				}
+			}
 		}
 	}
 	// the page anatomy: CHAT carries the shared head like every top-level view

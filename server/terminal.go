@@ -155,6 +155,10 @@ func (c *termCfg) load() []termSession {
 func (c *termCfg) save(list []termSession) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.saveLocked(list)
+}
+
+func (c *termCfg) saveLocked(list []termSession) {
 	b, _ := json.MarshalIndent(list, "", "  ")
 	tmp := c.regPath + ".tmp"
 	if os.WriteFile(tmp, b, 0o644) == nil {
@@ -171,7 +175,13 @@ func (c *termCfg) find(id string) (termSession, bool) {
 	return termSession{}, false
 }
 
+// upsert is a read-modify-write of the whole registry: it holds the lock
+// across the load too, so two handlers landing together (a chat send touching
+// lastUsed while the WS attach marks Started, an autoName PUT beside a kill)
+// cannot each rewrite the file from a stale copy and drop the other's row.
 func (c *termCfg) upsert(s termSession) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	list := c.load()
 	found := false
 	for i := range list {
@@ -184,7 +194,21 @@ func (c *termCfg) upsert(s termSession) {
 	if !found {
 		list = append([]termSession{s}, list...)
 	}
-	c.save(list)
+	c.saveLocked(list)
+}
+
+// remove forgets a row (history's ✕), under the same lock as upsert.
+func (c *termCfg) remove(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	list := c.load()
+	out := list[:0]
+	for _, se := range list {
+		if se.ID != id {
+			out = append(out, se)
+		}
+	}
+	c.saveLocked(out)
 }
 
 // tmuxName is the session's tmux identity.
@@ -647,14 +671,7 @@ func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 	if se, ok := s.terminal.find(id); ok {
 		s.killRemoteKeep(se)
 	}
-	list := s.terminal.load()
-	out := list[:0]
-	for _, se := range list {
-		if se.ID != id {
-			out = append(out, se)
-		}
-	}
-	s.terminal.save(out)
+	s.terminal.remove(id)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

@@ -235,7 +235,12 @@ func splitBrief(text string, max int) []string {
 			cut = strings.LastIndex(text[:max], "\n")
 		}
 		if cut < max/2 {
+			// a hard cut lands on a rune boundary — a byte cut through a
+			// multibyte character would post an invalid-UTF-8 part
 			cut = max
+			for cut > 0 && !utf8.RuneStart(text[cut]) {
+				cut--
+			}
 		}
 		parts = append(parts, strings.TrimSpace(text[:cut]))
 		text = strings.TrimSpace(text[cut:])

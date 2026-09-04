@@ -843,7 +843,15 @@ function chatHead(s) {
 // transcript and its scroll position stay.
 function chatRepaintHead() {
   const cur = document.querySelector("#chatTranscript .chat-head");
-  if (cur && chatCurSession) cur.replaceWith(chatHead(chatCurSession));
+  if (cur && chatCurSession && !chatHeadRenaming(cur)) cur.replaceWith(chatHead(chatCurSession));
+}
+
+// chatHeadRenaming — the head's title is mid-rename (the inline input has
+// focus): a poll-driven repaint would pull the input out from under the
+// typing (the rail's activeElement guard, for the head)
+function chatHeadRenaming(head) {
+  const a = document.activeElement;
+  return !!(a && a.classList.contains("inline-rename") && head.contains(a));
 }
 
 // chatTurnBlocks — one block shape for every backend: a spirit/agent turn's
@@ -1501,7 +1509,7 @@ function chatTermHead(o) {
 
 function chatTermRepaintHead() {
   const cur = document.querySelector("#chatTranscript .chat-head");
-  if (cur && chatTermOpen) cur.replaceWith(chatTermHead(chatTermOpen));
+  if (cur && chatTermOpen && !chatHeadRenaming(cur)) cur.replaceWith(chatTermHead(chatTermOpen));
 }
 
 function renderChatTermTranscript() {
@@ -1583,9 +1591,12 @@ function chatTermPaintStrip() {
 async function chatTermScreenFetch() {
   const o = chatTermOpen;
   if (!o) return;
+  // the tick and a quick key both ask; the newest reply wins — an older one
+  // landing later must not paint a stale pane over the current one
+  const seq = o.screenSeq = (o.screenSeq || 0) + 1;
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/screen")).json(); } catch (e) { return; }
-  if (chatTermOpen !== o) return;
+  if (chatTermOpen !== o || seq !== o.screenSeq) return;
   const sig = JSON.stringify(d.lines || []);
   const flipped = !!d.live !== o.live;
   if (sig === o.screenSig && !flipped) return;
@@ -1622,10 +1633,20 @@ function ensureChatTermFast() {
   chatTermFast = setInterval(chatTermTick, 1500);
 }
 
+// one tail in flight: a slow reply (tmux list-sessions under load) must not
+// let the next tick re-ask from the same offset — two identical tails would
+// merge the same turns twice
+let chatTermTailing = false;
+
 async function chatTermTick() {
   const o = chatTermOpen;
   if (!o || !chatIsTerm() || chatOpenId !== o.id) { chatTermLeave(); return; }
-  if (!els.chatView || els.chatView.hidden || document.hidden || !o.live) return; // the 5 s registry poll flips live back on
+  if (!els.chatView || els.chatView.hidden || document.hidden || !o.live || chatTermTailing) return; // the 5 s registry poll flips live back on
+  chatTermTailing = true;
+  try { await chatTermTail(o); } finally { chatTermTailing = false; }
+}
+
+async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
@@ -1687,19 +1708,22 @@ async function chatTermSend(text) {
   chatTermSending = true;
   renderChatComposer(chatTermComposerSession());
   try {
-    if (!chatOpenId) {
+    let id = chatOpenId, created = false;
+    if (!id) {
       const cwd = chatRecall("manifest.chatTermCwd." + chatAgent);
       const se = await postJSONOk("/api/terminal/session", { kind: chatAgent, cwd });
       chatTermSessions.unshift(Object.assign({ live: false }, se));
-      chatOpenId = se.id;
+      chatOpenId = id = se.id;
       chatLanding = false;
-      await postJSONOk(chatTermBase(se.id) + "/input", { text });
-      location.hash = chatHash(se.id);
-      return true;
+      created = true;
+      // the row exists now whatever the delivery does: route to it first so a
+      // failed first send leaves the thread open (text back in the composer),
+      // not a landing with a hidden open id
+      location.hash = chatHash(id);
     }
-    const id = chatOpenId;
     const r = await postJSONOk(chatTermBase(id) + "/input", { text });
-    if (r.relaunched) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
+    // a virgin row's first send boots its tmux — that is a start, not a relaunch
+    if (r.relaunched && !created) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
     if (chatTermOpen && chatTermOpen.id === id) {
       if (!chatTermOpen.live) { chatTermOpen.live = true; chatTermRepaintHead(); }
