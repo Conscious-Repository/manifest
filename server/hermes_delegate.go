@@ -17,6 +17,7 @@ import (
 	"manifest/goals"
 	"manifest/hermes"
 	"manifest/ledger"
+	"manifest/spirits"
 	"manifest/threads"
 )
 
@@ -34,10 +35,18 @@ import (
 // hermesCfg holds the runner + in-flight bookkeeping (one field on Server).
 type hermesCfg struct {
 	runner    *hermes.Runner
-	readTools string            // -t scope for plan/comment (read-only)
-	mu        sync.Mutex        // guards running + digging
-	running   map[string]string // taskID → phase currently executing
-	digging   map[string]bool   // feed item id → a "dig →" turn in flight (hermes_dig.go)
+	readTools string                // -t scope for plan/comment (read-only)
+	mu        sync.Mutex            // guards running + digging
+	running   map[string]hermesTurn // taskID → the turn in flight (presence, agent-chat plan §3.4d)
+	digging   map[string]bool       // feed item id → a "dig →" turn in flight (hermes_dig.go)
+}
+
+// hermesTurn is one in-flight do-bot turn on a todo — derived presence for
+// the thread ("✦ Alfred is working… since 14:02 (plan)"), never stored.
+type hermesTurn struct {
+	Phase string
+	Agent string // the agent token the turn runs as (agent:alfred | agent:<profile>)
+	Since time.Time
 }
 
 // UseHermes wires the do-bot runner. readTools is the read-only toolset scope
@@ -46,7 +55,7 @@ func (s *Server) UseHermes(r *hermes.Runner, readTools string) {
 	if r == nil || !r.Enabled() {
 		return
 	}
-	s.hermes = &hermesCfg{runner: r, readTools: readTools, running: map[string]string{}, digging: map[string]bool{}}
+	s.hermes = &hermesCfg{runner: r, readTools: readTools, running: map[string]hermesTurn{}, digging: map[string]bool{}}
 }
 
 // hermesForked reports whether this delegation should route to the do-bot CLI
@@ -74,13 +83,21 @@ func (s *Server) hermesRealHarness() bool {
 // startHermesTurn kicks off one agent turn in the background (a turn is slow —
 // the tool loop). It coalesces: a second call while a turn is in flight for the
 // same todo is refused, mirroring the harness double-spool guard.
-func (s *Server) startHermesTurn(taskID, phase, intent, prompt string) error {
+//
+// agent is the token the turn runs as: agent:alfred (the default profile) or
+// agent:<profile> (`hermes -p <profile>`); "" means Alfred. A busy todo returns
+// an error wrapping spirits.ErrAlreadyActive — the same signal the harness
+// spool gives, so relays and fire treat both transports alike.
+func (s *Server) startHermesTurn(taskID, agent, phase, intent, prompt string) error {
+	if agent == "" || s.hermesProfileOf(agent) == "" {
+		agent = "agent:" + alfredAgent
+	}
 	s.hermes.mu.Lock()
 	if _, busy := s.hermes.running[taskID]; busy {
 		s.hermes.mu.Unlock()
-		return errBadRequest("Hermes is already working on this — wait for it to finish")
+		return fmt.Errorf("%s is already working on this — wait for it to finish: %w", agentDisplayName(agent), spirits.ErrAlreadyActive)
 	}
-	s.hermes.running[taskID] = phase
+	s.hermes.running[taskID] = hermesTurn{Phase: phase, Agent: agent, Since: time.Now()}
 	s.hermes.mu.Unlock()
 	// let the do-bot SEE what the owner attached on the thread — text files
 	// inlined, images handed their path (vision reads them; already in scope).
@@ -93,7 +110,7 @@ func (s *Server) startHermesTurn(taskID, phase, intent, prompt string) error {
 	if phase == "go" {
 		prompt += "\n" + hermesGoProtocol
 	}
-	go s.runHermesTurn(taskID, phase, intent, prompt)
+	go s.runHermesTurn(taskID, agent, phase, intent, prompt)
 	return nil
 }
 
@@ -124,23 +141,24 @@ claiming it is done. Everything else in your reply is the RESULT brief.
 
 // runHermesTurn invokes the CLI and materializes the reply. Always clears the
 // in-flight marker.
-func (s *Server) runHermesTurn(taskID, phase, intent, prompt string) {
+func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
 	defer func() {
 		s.hermes.mu.Lock()
 		delete(s.hermes.running, taskID)
 		s.hermes.mu.Unlock()
 	}()
-	who := agentIdentity("hermes")
+	who := agentTokenIdentity(agent)
 	// Every turn is a fresh Hermes session (hermes -z has no working resume —
 	// see package hermes); the prompt itself carries the thread's context.
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
 		Prompt:   prompt,
 		Toolsets: s.hermes.readTools, // read-only scope until Phase 2's gated execution
+		Profile:  s.hermesProfileOf(agent),
 	})
 	if err != nil {
 		log.Printf("hermes turn %s (%s): %v", taskID, phase, err)
 		_, _ = s.addThreadEntry(who, taskID, threads.ActComment,
-			"⚠ Hermes couldn't finish that — "+err.Error(), nil, nil, map[string]any{"hermes": true})
+			"⚠ "+who.Name+" couldn't finish that — "+err.Error(), nil, nil, map[string]any{"hermes": true})
 		return
 	}
 	// The run record carries the Hermes-side session id and the spend, so the
@@ -152,7 +170,19 @@ func (s *Server) runHermesTurn(taskID, phase, intent, prompt string) {
 	if p, ok := s.persona(intent); ok {
 		persona = p.Intent
 	}
-	s.materializeHermesBrief(taskID, phase, persona, res.Reply)
+	s.materializeHermesBrief(taskID, agent, phase, persona, res.Reply)
+}
+
+// agentTokenIdentity is the thread author for a Hermes-family agent token:
+// alfred/hermes speak as Alfred under the canonical `agent:hermes` id (the
+// relay/ingestion checks key on the `agent:` prefix, and existing threads
+// carry that id); a profile speaks under its own token.
+func agentTokenIdentity(agent string) threads.Identity {
+	name := strings.TrimPrefix(agent, "agent:")
+	if name == "" || name == alfredAgent || name == "hermes" {
+		return threads.Identity{ID: "agent:hermes", Name: "Alfred"}
+	}
+	return threads.Identity{ID: "agent:" + name, Name: agentDisplayName(agent)}
 }
 
 // materializeHermesBrief turns the CLI's reply into the same surfaces the
@@ -160,16 +190,19 @@ func (s *Server) runHermesTurn(taskID, phase, intent, prompt string) {
 // reply rather than a harness run report): a plan brief → the plan record + a
 // thread note; a questions brief → a thread question; a non-plan persona reply
 // or a fired result → a thread comment.
-func (s *Server) materializeHermesBrief(taskID, phase, persona, brief string) {
+func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief string) {
 	brief = strings.TrimSpace(brief)
 	if brief == "" || s.threads == nil || s.todoPlans == nil || s.vault == nil {
 		return
 	}
-	who := agentIdentity("hermes")
+	if agent == "" {
+		agent = "agent:" + alfredAgent
+	}
+	who := agentTokenIdentity(agent)
 	meta := map[string]any{"hermes": true}
 	rec := s.readPlanRecord(taskID)
 	if rec.Assignee == "" { // engagement implies assignment (mirrors the sweep)
-		_ = s.setPlanAssignee(taskID, "agent:hermes")
+		_ = s.setPlanAssignee(taskID, agent)
 	}
 
 	// go phase → the deliverable lands in the thread, and any manifest-proposal
@@ -418,11 +451,11 @@ func (s *Server) overlayHermesRunning(out map[string]delegationView) {
 	}
 	s.hermes.mu.Lock()
 	defer s.hermes.mu.Unlock()
-	for id, phase := range s.hermes.running {
+	for id, t := range s.hermes.running {
 		state := "plan-running"
-		if phase == "go" {
+		if t.Phase == "go" {
 			state = "go-queued"
 		}
-		out[id] = delegationView{State: state, Phase: phase, Harness: "hermes", Started: time.Now()}
+		out[id] = delegationView{State: state, Phase: t.Phase, Harness: "hermes", Agent: t.Agent, Started: t.Since}
 	}
 }

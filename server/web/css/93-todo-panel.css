@@ -101,3 +101,27 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 
 /* persona chip on a persona-gated agent reply (persona plan Phase 1) */
 .tdo-p-c-persona { font-size: var(--fs-2xs); color: var(--muted); }
+
+/* description (plan D2) — click to edit in place */
+.tdo-p-desc { font-size: var(--fs-md); line-height: 1.45; color: var(--base-100); white-space: pre-wrap; word-break: break-word; cursor: text; border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-3); margin: -4px -6px; }
+.tdo-p-desc:hover { background: var(--base-10); }
+.tdo-p-desc.empty { color: var(--base-30); font-style: italic; }
+
+/* composer modes (agent-chat plan §3.4a): Comment · Ask ✦ · Do ✦ */
+.tdo-p-modebar { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.tdo-p-modes { display: flex; border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; width: max-content; }
+.tdo-p-mode { border: 0; background: var(--bg); color: var(--base-50); font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; padding: var(--sp-2) var(--sp-4); cursor: pointer; }
+.tdo-p-mode + .tdo-p-mode { border-left: 1px solid var(--line); }
+.tdo-p-mode.on { background: var(--accent-soft); color: var(--accent); }
+.tdo-p-mode:disabled { opacity: 0.5; cursor: default; }
+.tdo-p-agent { font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-3); }
+.tdo-p-replying { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); margin-left: auto; }
+
+/* presence (§3.4d): the live "✦ Alfred is working…" entry */
+.tdo-p-inflight { display: flex; gap: var(--sp-3); align-items: baseline; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-50); border-style: dashed; }
+.tdo-p-inflight-dot { color: var(--accent); animation: tdo-pulse 1.6s ease-in-out infinite; }
+@keyframes tdo-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* ⚑ proposals pointer (§3.4e) — FEED stays the inbox */
+.tdo-p-proposals { color: var(--warn); align-self: flex-start; }
+.tdo-p-proposals:hover { color: var(--accent); }

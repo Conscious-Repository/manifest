@@ -32,12 +32,17 @@ func assignFixture(t *testing.T) (*Server, string) {
 
 func TestAgentsRoster(t *testing.T) {
 	srv, _ := assignFixture(t)
+	// the do-bot is addressed as Alfred (agent-chat plan Q2); agent:hermes
+	// stays a resolving alias for existing [owner::] data
 	roster := srv.agentRoster()
-	if len(roster) != 1 || roster[0]["id"] != "agent:hermes" || roster[0]["name"] != "Hermes" {
+	if len(roster) != 1 || roster[0]["id"] != "agent:alfred" || roster[0]["name"] != "Alfred" || roster[0]["harness"] != "hermes" {
 		t.Fatalf("roster: %+v", roster)
 	}
-	if srv.agentHarness("agent:hermes") != "hermes" {
-		t.Fatal("agent:hermes must resolve")
+	if srv.agentHarness("agent:hermes") != "hermes" || srv.agentHarness("agent:alfred") != "hermes" {
+		t.Fatal("agent:hermes and agent:alfred must both resolve to the hermes harness")
+	}
+	if srv.defaultAgentToken() != "agent:alfred" {
+		t.Fatalf("default agent: %q", srv.defaultAgentToken())
 	}
 	if srv.agentHarness("agent:zeus") != "" {
 		t.Fatal("unknown agent must not resolve")

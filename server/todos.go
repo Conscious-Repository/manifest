@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -151,6 +152,30 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("text is required"))
 		return
 	}
+	// the one-keystroke "hey agent" path (agent-chat plan §3.4c): a trailing
+	// `@alfred` posts the line as the opening Ask, `@alfred::plan` / `!do`
+	// opens the Do lifecycle. The address never lands in the todo text.
+	clean, agent, mode := s.captureDispatch(b.Text)
+	if clean == "" {
+		httpError(w, errBadRequest("text is required"))
+		return
+	}
+	b.Text = clean
+	dispatch := func(id string) map[string]any {
+		extra := map[string]any{"created": id}
+		if mode == "" {
+			return extra
+		}
+		if pinned, ok := s.pinTaskID(id); ok {
+			id = pinned
+		}
+		if _, err := s.postAndDispatch(id, mode, agent, nil, nil, clean); err != nil {
+			extra["dispatchError"] = err.Error()
+		} else {
+			extra["dispatched"] = map[string]any{"mode": mode, "agent": agent, "name": agentDisplayName(agent)}
+		}
+		return extra
+	}
 	switch b.Container.Kind {
 	case "property":
 		if s.propTaskMutate(w, b.Container.Slug, func(list *realestate.PropertyTaskList) (bool, error) {
@@ -181,44 +206,118 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, b.Container.Kind+" backlog not available", http.StatusServiceUnavailable)
 			return
 		}
-		if err := store.AddItem(&aion.BacklogItem{
+		it := &aion.BacklogItem{
 			Kind:     aion.KindTask,
 			Text:     strings.Join(strings.Fields(b.Text), " "),
 			Owner:    strings.TrimSpace(b.Owner),
 			Status:   aion.StatusOpen,
 			Captured: time.Now().Format("2006-01-02"),
-		}); err != nil {
+		}
+		if err := store.AddItem(it); err != nil {
 			httpError(w, err)
 			return
 		}
-		writeJSON(w, s.tasksView())
+		view := s.tasksView()
+		for k, v := range dispatch(b.Container.Kind + ":" + it.ID) {
+			view[k] = v
+		}
+		writeJSON(w, view)
 		return
 	}
 	domain := strings.TrimSpace(b.Domain)
 	if domain == "" {
 		domain = tasks.InboxName
 	}
-	s.tasksMutate(w, func(d *tasks.Doc) (bool, error) {
-		dom := d.EnsureDomain(domain)
-		t := &tasks.Task{
-			Text:  strings.Join(strings.Fields(b.Text), " "),
-			Rock:  strings.TrimSpace(b.Rock),
-			Stage: strings.TrimSpace(b.Stage),
-			Issue: strings.TrimSpace(b.Issue),
-			Owner: strings.TrimSpace(b.Owner),
-			Added: time.Now().Format("2006-01-02"),
-		}
-		if bk := strings.TrimSpace(b.Bucket); bk != "" {
-			bucket := dom.EnsureBucket(bk)
-			bucket.Tasks = append(bucket.Tasks, t)
-		} else {
-			dom.Tasks = append(dom.Tasks, t)
-		}
-		return true, nil
-	})
+	text := strings.Join(strings.Fields(b.Text), " ")
+	bucketName := strings.TrimSpace(b.Bucket)
+	doc, err := s.tasksStore.Load()
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	dom := doc.EnsureDomain(domain)
+	t := &tasks.Task{
+		Text:  text,
+		Rock:  strings.TrimSpace(b.Rock),
+		Stage: strings.TrimSpace(b.Stage),
+		Issue: strings.TrimSpace(b.Issue),
+		Owner: strings.TrimSpace(b.Owner),
+		Added: time.Now().Format("2006-01-02"),
+	}
+	if bucketName != "" {
+		bucket := dom.EnsureBucket(bucketName)
+		bucket.Tasks = append(bucket.Tasks, t)
+	} else {
+		dom.Tasks = append(dom.Tasks, t)
+	}
+	if err := s.tasksStore.Save(doc); err != nil {
+		httpError(w, err)
+		return
+	}
 	if b.Rock != "" {
 		s.stampRockMoved(strings.TrimSpace(b.Rock)) // new tethered work = movement
 	}
+	view := s.tasksView()
+	// the new line's derived id (ids assign on load): the LAST task in the
+	// domain/bucket carrying this exact text is the one just appended
+	if fresh, err := s.tasksStore.Load(); err == nil {
+		if d := fresh.Domain(domain); d != nil {
+			list := d.Tasks
+			if bucketName != "" {
+				if bk := d.EnsureBucket(bucketName); bk != nil {
+					list = bk.Tasks
+				}
+			}
+			for i := len(list) - 1; i >= 0; i-- {
+				if list[i].Text == text {
+					for k, v := range dispatch(list[i].ID) {
+						view[k] = v
+					}
+					break
+				}
+			}
+		}
+	}
+	writeJSON(w, view)
+}
+
+// captureAddressRe matches an agent address in a capture line: `@name`,
+// `@name::intent`, or the `!do` shorthand (word-bounded, anywhere).
+var captureAddressRe = regexp.MustCompile(`(?i)(?:^|\s)(@([a-z0-9-]+)(?:::([a-z0-9-]+))?|!do)\b`)
+
+// captureDispatch splits a capture line into the todo text and its dispatch:
+// agent token + mode ("" when the line addresses nobody). Unknown @names stay
+// in the text (fail closed); `!do` alone addresses the default agent.
+func (s *Server) captureDispatch(text string) (clean, agent, mode string) {
+	clean = text
+	for _, m := range captureAddressRe.FindAllStringSubmatch(text, -1) {
+		whole, name, intent := m[1], strings.ToLower(m[2]), strings.ToLower(m[3])
+		if strings.EqualFold(whole, "!do") {
+			mode = "do"
+		} else {
+			tok := "agent:" + name
+			if s.agentHarness(tok) == "" {
+				continue // prose, not an address
+			}
+			if agent == "" {
+				agent = tok
+			}
+			if intent == "plan" {
+				mode = "do"
+			} else if mode == "" {
+				mode = "ask"
+			}
+		}
+		clean = strings.Replace(clean, whole, " ", 1)
+	}
+	clean = strings.Join(strings.Fields(clean), " ")
+	if mode != "" && agent == "" {
+		agent = s.defaultAgentToken()
+		if agent == "" {
+			mode = ""
+		}
+	}
+	return clean, agent, mode
 }
 
 // handleBucketRename — edit a bucket's display name in place; its slug pins

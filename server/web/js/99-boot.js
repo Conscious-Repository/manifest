@@ -5,7 +5,9 @@ function openTodoQuickAdd(prefill) {
   overlay.id = "todoQuickAdd";
   const back = el("div", "cmdbar-backdrop");
   const panel = el("div", "cmdbar-card");
-  const input = inputEl("what must happen…");
+  // the one-keystroke "hey agent" path (agent-chat plan §3.4c): a trailing
+  // @alfred posts the line as the opening Ask; @alfred::plan or !do delegates
+  const input = inputEl("what must happen…  (@alfred asks · @alfred::plan or !do delegates)");
   input.className = "cmdbar-input";
   if (prefill) input.value = prefill;
   const chips = el("div", "tdo-qa-chips");
@@ -64,10 +66,23 @@ function openTodoQuickAdd(prefill) {
     else if (tv.startsWith("issue:")) body.issue = tv.slice(6);
     else if (tv.startsWith("bucket:")) body.bucket = tv.slice(7);
     try {
-      await postJSONOk("/api/tasks/item", body);
-      showToast("Task captured → " + (propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox")));
+      const res = await postJSONOk("/api/tasks/item", body);
+      const disp = res && res.dispatched;
+      const where = propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox");
+      if (disp) {
+        showToast("Captured → " + where + " · " + (disp.mode === "do" ? disp.name + " is drafting the plan" : "asked " + disp.name), null, "info");
+      } else if (res && res.dispatchError) {
+        showToast("Captured → " + where + " — but the agent wasn't reached: " + res.dispatchError, null, "error");
+      } else {
+        showToast("Task captured → " + where);
+      }
       close();
       if (!els.todosView.hidden) loadTodos();
+      // an addressed capture opens its thread so the answer is watched
+      if (disp && res.created && typeof openTodoPanel === "function") {
+        if (els.todosView.hidden) location.hash = "#/tasks/" + encodeURIComponent(res.created);
+        else openTodoPanel(res.created);
+      }
     } catch (e) { showToast("Couldn't capture"); }
   };
   // Enter/Escape work from ANYWHERE in the dialog — picking a domain chip or

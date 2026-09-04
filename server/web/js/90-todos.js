@@ -375,42 +375,18 @@ function delegationFor(id) {
   return (todosCache && todosCache.delegations && todosCache.delegations[id]) || null;
 }
 
-// openDelegatePicker (Phase 6): pick a dispatch target (harness · on-demand
-// ritual), then an optional brief; POST /api/tasks/delegate spools the work
-// order and stamps [waiting::]. The chip appears on the next render from the
-// trace projection.
+// openDelegatePicker (Phase 6 → agent-chat plan §3.4f): the ⇢ row button and
+// the board's → DELEGATED drags are SHORTCUTS into the ONE lifecycle — the
+// panel's composer in Do mode with the agent picker focused (assign → plan →
+// fire). The old target picker + /api/tasks/delegate spool path stays on the
+// API for compatibility; the UI no longer has a second state machine.
 //
 // redelegate=true is the REVIEW → DELEGATED path (owner ask 2026-08-12): the
-// owner read the result and is sending it back out, so the box asks for the
-// comment and the comment travels as `comment` — labelled for the agent as a
-// steer on the previous result, never confused with the original brief.
-async function openDelegatePicker(r, redelegate) {
-  let targets = [];
-  try { targets = (await (await fetch("/api/tasks/delegate/targets")).json()).targets || []; }
-  catch (e) { showToast("Couldn't load delegate targets"); return; }
-  if (!targets.length) { showToast("No dispatch targets — no harness has an on-demand ritual"); return; }
-  const byId = new Map(targets.map((t, i) => [String(i), t]));
-  const cur = r.delegation || delegationFor(r.id);
-  const title = (redelegate ? "Send back out: " : "Delegate: ") + r.text.slice(0, 60);
-  openPicker(title, [{ area: redelegate ? "send it back to…" : "dispatch to…", items:
-    targets.map((t, i) => ({ id: String(i), text: t.label + (cur && cur.harness === t.harness ? "  ·  last run here" : "") })) }],
-    (id) => {
-      const t = byId.get(id);
-      if (!t) return;
-      const send = async (note) => {
-        const text = (note || "").trim();
-        if (redelegate && !text) { showToast("A comment is what makes this a re-delegation — nothing sent", null, "error"); return; }
-        const body = { id: r.id, harness: t.harness, spirit: t.spirit, ritual: t.ritual, brief: "", comment: "" };
-        if (redelegate) body.comment = text; else body.brief = text;
-        try {
-          await postJSONOk("/api/tasks/delegate", body);
-          showToast((redelegate ? "Sent back with your comment → " : "Delegated → ") + t.label);
-          loadTodos();
-        } catch (e) { showToast("Delegate failed: " + (e.message || e), null, "error"); }
-      };
-      if (redelegate) askText("Your comment for " + t.label, "what to fix, change or go deeper on — this goes to the agent with the task", send);
-      else askText("Brief for " + t.label, "optional — defaults to the task text", send);
-    });
+// owner read the result and is sending it back out — the Do text is the
+// steer, and it lands in the thread as the record before the re-plan.
+function openDelegatePicker(r, redelegate) {
+  openTodoPanel(r, { mode: "do", focusAgent: true });
+  if (redelegate) showToast("Tell the agent what to change — Do sends it back out as a fresh plan", null, "info");
 }
 
 // Shared by the TODOS rows (⧗) and the GOALS unanchored foot. Picking writes

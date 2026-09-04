@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"manifest/approvals"
 	"manifest/mdfm"
 	"manifest/record"
 )
@@ -41,11 +42,12 @@ func (c *todoPlansCfg) rel(id string) string { return c.root + "/" + planSlug(id
 
 // planRecord is the parsed record.
 type planRecord struct {
-	Exists   bool   `json:"exists"`
-	Plan     string `json:"plan"`
-	Assignee string `json:"assignee,omitempty"`
-	State    string `json:"state,omitempty"`
-	Rel      string `json:"rel"` // vault-relative path (the "plan file →" link)
+	Exists      bool   `json:"exists"`
+	Description string `json:"description"` // `## description` (plan D2 — the owner's context; rides every work order)
+	Plan        string `json:"plan"`
+	Assignee    string `json:"assignee,omitempty"`
+	State       string `json:"state,omitempty"`
+	Rel         string `json:"rel"` // vault-relative path (the "plan file →" link)
 }
 
 // sectionBody extracts one `## name` body from a markdown body — the read
@@ -87,6 +89,7 @@ func (s *Server) readPlanRecord(id string) planRecord {
 	}
 	fm, body := mdfm.Split(string(raw))
 	out.Exists = true
+	out.Description = sectionBody(body, "description")
 	out.Plan = sectionBody(body, "plan")
 	out.Assignee = fm["assignee"]
 	out.State = fm["state"]
@@ -104,7 +107,7 @@ func (s *Server) ensurePlanRecord(id, assignee string) error {
 		return nil // already a record
 	}
 	w := (&mdfm.Writer{}).Set("todo", id).Set("assignee", assignee).SetRaw("state", "open")
-	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## plan\n")))
+	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## description\n\n## plan\n")))
 }
 
 // setPlanAssignee rewrites the record's frontmatter assignee (creating the
@@ -141,22 +144,84 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("id is required"))
 		return
 	}
+	rec := s.readPlanRecord(id)
 	out := map[string]any{
 		"id":         id,
-		"record":     s.readPlanRecord(id),
+		"record":     rec,
 		"thread":     s.listThread(id),
 		"threadKind": s.threadKind(id),
+		"proposals":  s.taskProposals(id),
 	}
 	if d, ok := s.delegationIndex()[id]; ok {
 		out["delegation"] = d
+		// presence (agent-chat plan §3.4d): derived from the live index, never
+		// stored — the thread renders "✦ Alfred is working… since 14:02 (plan)"
+		if activeDelegation(d.State) {
+			agent := d.Agent
+			if agent == "" {
+				agent = "agent:" + d.Harness
+				if s.agentHarness(rec.Assignee) == d.Harness && rec.Assignee != "" {
+					agent = rec.Assignee
+				}
+			}
+			inflight := map[string]any{"agent": agent, "name": agentDisplayName(agent), "phase": orStr(d.Phase, "comment"), "state": d.State}
+			if !d.Started.IsZero() {
+				inflight["since"] = d.Started
+			}
+			out["inflight"] = inflight
+		}
 	}
 	writeJSON(w, out)
+}
+
+// taskProposal is one pending approval filed against a todo — the panel's
+// "⚑ N changes proposed — review" link deep-links to these FEED cards.
+type taskProposal struct {
+	ID     string `json:"id"`
+	Action string `json:"action"`
+}
+
+// taskProposals lists the PENDING approvals carrying this todo's token,
+// across every harness inbox (the do-bot files into the primary's). FEED
+// stays the one approvals surface — this is a pointer, not a second inbox.
+func (s *Server) taskProposals(id string) []taskProposal {
+	out := []taskProposal{}
+	seen := map[string]bool{}
+	scan := func(st interface {
+		List(status string) []approvals.Proposal
+	}) {
+		for _, p := range st.List("pending") {
+			if seen[p.ID] {
+				continue
+			}
+			if m := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body); m != nil && strings.TrimSpace(m[1]) == id {
+				seen[p.ID] = true
+				out = append(out, taskProposal{ID: p.ID, Action: strings.TrimSpace(todoTokenRe.ReplaceAllString(p.Action, ""))})
+			}
+		}
+	}
+	for _, h := range s.eachHarness() {
+		if h.Approvals != nil {
+			scan(h.Approvals)
+		}
+	}
+	if s.approvals != nil {
+		scan(s.approvals)
+	}
+	return out
 }
 
 // handleTaskPlan — the owner's direct section edit.
 // The FIRST panel artifact pins the todo's identity (plan D1).
 func (s *Server) handleTaskPlan(w http.ResponseWriter, r *http.Request) {
 	s.handlePlanSectionWrite(w, r, "plan")
+}
+
+// handleTaskDescription — the `## description` section (plan D2, gap D): the
+// owner's context for the task. Rides every work order and the plan-context
+// hash, so a changed description re-plans like a changed title.
+func (s *Server) handleTaskDescription(w http.ResponseWriter, r *http.Request) {
+	s.handlePlanSectionWrite(w, r, "description")
 }
 
 func (s *Server) handlePlanSectionWrite(w http.ResponseWriter, r *http.Request, section string) {

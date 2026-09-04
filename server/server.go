@@ -364,6 +364,7 @@ func (s *Server) Handler() http.Handler {
 	// TODO PANEL (todo-panel plan): record + thread + attachments.
 	mux.HandleFunc("GET /api/tasks/panel", s.handleTaskPanel)
 	mux.HandleFunc("POST /api/tasks/plan", s.handleTaskPlan)
+	mux.HandleFunc("POST /api/tasks/description", s.handleTaskDescription) // plan D2 (agent-chat plan gap D)
 	mux.HandleFunc("POST /api/tasks/assign", s.handleTaskAssign)
 	mux.HandleFunc("POST /api/tasks/fire", s.handleTaskFire)
 	mux.HandleFunc("GET /api/tasks/thread", s.handleTaskThreadGet)

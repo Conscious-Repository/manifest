@@ -28,7 +28,7 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 		"```manifest-proposal\n" +
 		`{"type":"run-errand","errand":"email the acme rep for a quote"}` + "\n" +
 		"```\n"
-	srv.materializeHermesBrief(taskID, "go", "", reply)
+	srv.materializeHermesBrief(taskID, "", "go", "", reply)
 
 	pending := store.List("pending")
 	if len(pending) != 2 {
@@ -90,7 +90,7 @@ func TestHermesGoFilesProposalsAndConfirmApplies(t *testing.T) {
 	}
 
 	// re-filing the same reply dedupes (same action|body → same id, already decided elsewhere or pending)
-	srv.materializeHermesBrief(taskID, "go", "", reply)
+	srv.materializeHermesBrief(taskID, "", "go", "", reply)
 	if got := len(store.List("pending")); got != 1 { // errand still pending; note already approved → re-filed? id exists in approved
 		// Propose dedupes only against pending; an approved twin refiling is
 		// acceptable — assert no THIRD distinct proposal appeared.
@@ -118,7 +118,7 @@ func TestHermesGoBadBlocksWarnOnly(t *testing.T) {
 	taskID := "inbox/bad-blocks"
 	reply := "result\n```manifest-proposal\n{nope\n```\n" +
 		"```manifest-proposal\n" + `{"type":"delete-everything"}` + "\n```\n"
-	srv.materializeHermesBrief(taskID, "go", "", reply)
+	srv.materializeHermesBrief(taskID, "", "go", "", reply)
 	if got := len(store.List("pending")); got != 0 {
 		t.Fatalf("pending = %d, want 0", got)
 	}

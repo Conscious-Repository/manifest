@@ -42,9 +42,11 @@ func kairosFixture(t *testing.T) (*Server, string) {
 
 func TestSurfaceScopedRosters(t *testing.T) {
 	srv, _ := kairosFixture(t)
+	// personal board: Alfred first, team-surface agents addressable after him
+	// (agent-chat plan Q5 — never the default)
 	personal := srv.agentRoster()
-	if len(personal) != 1 || personal[0]["id"] != "agent:hermes" {
-		t.Fatalf("personal roster must exclude team-surface agents: %+v", personal)
+	if len(personal) != 2 || personal[0]["id"] != "agent:alfred" || personal[1]["id"] != "agent:kairos" {
+		t.Fatalf("personal roster must lead with Alfred then reach kairos: %+v", personal)
 	}
 	team := srv.teamAgentRoster()
 	if len(team) != 1 || team[0]["id"] != "agent:kairos" {

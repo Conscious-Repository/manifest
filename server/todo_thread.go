@@ -2,7 +2,9 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -293,11 +295,24 @@ func (s *Server) handleTaskThreadGet(w http.ResponseWriter, r *http.Request) {
 // (handleTaskThreadFile) and posts their refs here. Mentions are structural
 // roster tokens (typeahead-inserted — no new syntax); a mentioned agent
 // triggers the comment-phase spool (Phase 4 hook).
+//
+// Agent-chat plan §3.4 (2026-09-04): the composer posts a MODE —
+//
+//	comment  record only; never spends a turn (the reply guard, Q6) unless
+//	         the text itself addresses an agent (`@alfred …`, structural or
+//	         typed), which makes it an Ask (`@alfred::plan` → a Do)
+//	ask      one turn, answered in this thread (the `info` persona relay)
+//	do       the full lifecycle: assign → plan persona → ## plan → fire
+//
+// and an optional AGENT token (the roster; default = the assignee, else
+// Alfred). The comment stays the record either way, with meta.mode/agent.
 func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		ID, Text string
 		Mentions []string
 		Files    []threads.FileRef
+		Mode     string
+		Agent    string
 	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
 		httpError(w, errBadRequest("id is required"))
@@ -308,61 +323,215 @@ func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return
 	}
-	c, err := s.addThreadEntry(s.ownerIdentity(), id, threads.ActComment, b.Text, b.Mentions, b.Files, nil)
+	c, err := s.postAndDispatch(id, b.Mode, b.Agent, b.Mentions, b.Files, b.Text)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	s.threadDialogHook(id, b.Mentions, b.Text)
 	writeJSON(w, map[string]any{"ok": true, "comment": c, "thread": s.listThread(id)})
 }
 
-// threadDialogHook — the dialog semantics (owner decisions 2026-08-15):
-//   - agent-assigned todo: EVERY owner comment relays (the thread IS the
-//     channel; no re-mentioning). A missed relay (agent mid-run) is retried
-//     by the sweep.
-//   - unassigned todo + an agent MENTION: auto-assign to that agent and relay
-//     the comment as the opening ask.
-//   - mentioned people stay record-only.
-func (s *Server) threadDialogHook(taskID string, mentions []string, text string) {
-	rec := s.readPlanRecord(taskID)
-	// an intent may ride a mention token (agent:hermes::brief) — per-message,
-	// never per-assignment; the owner field only ever holds the base token
-	intent, mentionBase := "", ""
-	for _, m := range mentions {
-		base, in := splitAgentToken(m)
-		if s.agentHarness(base) != "" {
-			mentionBase, intent = base, in
-			break
+// postAndDispatch records the owner's text as a thread comment (the record,
+// with meta.mode/agent on Ask/Do) and then resolves the mode into at most
+// one turn. Shared by the panel composer and the capture bar.
+func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, files []threads.FileRef, text string) (threads.Comment, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "ask" && mode != "do" {
+		mode = "comment"
+	}
+	agent = strings.TrimSpace(agent)
+	if mode != "comment" && agent != "" && s.agentHarness(agent) == "" {
+		return threads.Comment{}, errBadRequest("unknown agent " + agent + " — pick one from the roster")
+	}
+	mentions = mergeMentions(mentions, s.textMentions(text))
+	var meta map[string]any
+	if mode != "comment" {
+		meta = map[string]any{"mode": mode}
+		if agent != "" {
+			meta["agent"] = agent
 		}
 	}
-	if harness := s.agentHarness(rec.Assignee); harness != "" {
-		s.relayToAgent(taskID, harness, text, intent)
-		return
+	// assignment lands BEFORE the ask in the thread — "assigned to Alfred
+	// (asked)" then the question, the order a reader expects
+	plan := s.resolveDispatch(id, mode, agent, mentions)
+	s.dispatchAssign(id, plan)
+	c, err := s.addThreadEntry(s.ownerIdentity(), id, threads.ActComment, text, mentions, files, meta)
+	if err != nil {
+		return c, err
 	}
-	if mentionBase != "" {
-		s.autoAssignAgent(taskID, mentionBase, s.agentHarness(mentionBase), text, intent)
-	}
+	s.dispatchRelay(id, plan, text)
+	return c, nil
 }
 
-// relayToAgent forwards an owner comment as a work order (comment-phase, or
-// plan-phase when the ::plan intent asks for a draft) and writes the relay
-// marker; ErrAlreadyActive is tolerated (sweep retries).
-func (s *Server) relayToAgent(taskID, harness, text, intent string) {
-	err := s.spoolTaskWorkOrder(s.findHarness(harness), taskID, personaPhase(intent), text, intent)
+// threadDialogHook is the portal's (and any structural caller's) comment
+// entry, called AFTER the comment is on record: a plain comment with the
+// reply guard, where only an agent mention spends a turn. Same semantics as
+// the dashboard composer's Comment mode.
+func (s *Server) threadDialogHook(taskID string, mentions []string, text string) {
+	plan := s.resolveDispatch(taskID, "comment", "", mergeMentions(mentions, s.textMentions(text)))
+	s.dispatchAssign(taskID, plan)
+	s.dispatchRelay(taskID, plan, text)
+}
+
+// textMentionRe finds `@name` / `@name::intent` in free text (the portal's
+// chatIntent grammar, widened to the bare form). Names are matched against
+// the roster; anything unknown stays prose (fail closed — Buzz identity rule).
+var textMentionRe = regexp.MustCompile(`(?:^|[^\w@])@([a-z0-9-]+)(?:::([a-z0-9-]+))?`)
+
+// textMentions parses the roster mentions typed into a comment, as
+// structural tokens (`agent:alfred`, `agent:alfred::plan`).
+func (s *Server) textMentions(text string) []string {
+	var out []string
+	for _, m := range textMentionRe.FindAllStringSubmatch(strings.ToLower(text), -1) {
+		tok := "agent:" + m[1]
+		if s.agentHarness(tok) == "" {
+			continue
+		}
+		if m[2] != "" {
+			tok += "::" + m[2]
+		}
+		out = append(out, tok)
+	}
+	return out
+}
+
+// mergeMentions appends the typed mentions the structural list doesn't
+// already carry (order preserved, duplicates dropped).
+func mergeMentions(structural, typed []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range [][]string{structural, typed} {
+		for _, m := range list {
+			m = strings.TrimSpace(m)
+			if m == "" || seen[m] {
+				continue
+			}
+			seen[m] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// dispatchPlan is a resolved request for ONE turn: who, in which mode, with
+// which persona intent — and whether the todo must change hands first.
+type dispatchPlan struct {
+	Agent  string // roster token (agent:alfred | agent:<profile> | agent:kairos …)
+	Mode   string // ask | do
+	Intent string // persona intent (info / brief / … for ask; plan for do)
+	Assign string // "" = keep the assignment; else the reason the agent takes the todo
+}
+
+// resolveDispatch turns a posted comment's mode into at most ONE turn (nil =
+// record only, the reply guard):
+//
+//   - comment: the first agent mention (structural or typed) makes it an
+//     Ask (intent from the token, default `info`), `::plan` makes it a Do;
+//     no mention → nil. Mentioned people stay record-only.
+//   - ask: the agent (given, else the assignee, else Alfred) takes one
+//     comment-phase turn; an unassigned todo is auto-assigned first.
+//   - do: the agent is assigned if it doesn't hold the todo, then takes the
+//     plan-phase turn with the text as the opening brief; fire stays explicit.
+func (s *Server) resolveDispatch(taskID, mode, agent string, mentions []string) *dispatchPlan {
+	intent := ""
+	if mode == "comment" {
+		for _, m := range mentions {
+			base, in := splitAgentToken(m)
+			if s.agentHarness(base) != "" {
+				agent, intent = base, in
+				break
+			}
+		}
+		if agent == "" {
+			return nil // record only — never a turn
+		}
+		mode = "ask"
+		if intent == "plan" {
+			mode = "do"
+		}
+	}
+	rec := s.readPlanRecord(taskID)
+	if agent == "" {
+		if s.agentHarness(rec.Assignee) != "" {
+			agent = rec.Assignee
+		} else {
+			agent = s.defaultAgentToken()
+		}
+	}
+	if s.agentHarness(agent) == "" {
+		return nil
+	}
+	p := &dispatchPlan{Agent: agent, Mode: mode, Intent: intent}
+	switch mode {
+	case "do":
+		p.Intent = "plan"
+		if rec.Assignee != agent {
+			p.Assign = "do"
+		}
+	default:
+		if p.Intent == "" {
+			p.Intent = "info"
+		}
+		if s.agentHarness(rec.Assignee) == "" {
+			p.Assign = "asked"
+		}
+	}
+	return p
+}
+
+// dispatchAssign is the plan's assignment write — without assignAgentHook's
+// empty plan order, because the dispatch that follows carries the owner's
+// text as the brief (agent-chat plan §3.4a: "the ask text as the opening
+// brief"). No-op when the plan keeps the assignment.
+func (s *Server) dispatchAssign(taskID string, p *dispatchPlan) {
+	if p == nil || p.Assign == "" {
+		return
+	}
+	_ = s.setTaskOwner(taskID, p.Agent)
+	_ = s.setPlanAssignee(taskID, p.Agent)
+	_, _ = s.addThreadEntry(s.ownerIdentity(), taskID, threads.ActAssign,
+		"assigned to "+p.Agent+" ("+p.Assign+")", nil, nil, map[string]any{"assignee": p.Agent})
+}
+
+// dispatchRelay spends the plan's one turn.
+func (s *Server) dispatchRelay(taskID string, p *dispatchPlan, text string) {
+	if p == nil {
+		return
+	}
+	s.relayToAgent(taskID, p.Agent, text, p.Intent)
+}
+
+// actRelayPending is the private marker a refused relay leaves (agent busy):
+// the sweep retries it and the closing ActRelay marker supersedes it.
+const actRelayPending = "relay-pending"
+
+// relay spools one turn for an agent token: comment-phase (or plan-phase
+// on the `plan` intent) with the owner's text, and writes the ActRelay
+// marker on success. Errors surface to the caller.
+func (s *Server) relay(taskID, agent, text, intent string) error {
+	harness := s.agentHarness(agent)
+	if harness == "" {
+		return errBadRequest("unknown agent " + agent)
+	}
+	err := s.spoolTaskWorkOrderAs(s.findHarness(harness), agent, taskID, personaPhase(intent), text, intent)
 	if err == nil {
 		s.markerAdd(taskID, threads.ActRelay, "")
 	}
+	return err
 }
 
-// autoAssignAgent — a work-requesting mention on an unassigned todo assigns
-// it (full lifecycle engages) with the comment as the opening ask.
-func (s *Server) autoAssignAgent(taskID, ownerToken, harness, text, intent string) {
-	_ = s.setTaskOwner(taskID, ownerToken)
-	_ = s.setPlanAssignee(taskID, ownerToken)
-	_, _ = s.addThreadEntry(s.ownerIdentity(), taskID, threads.ActAssign,
-		"assigned to "+ownerToken+" (mentioned)", nil, nil, map[string]any{"assignee": ownerToken})
-	s.relayToAgent(taskID, harness, text, intent)
+// relayToAgent is relay for the request path: a busy agent (ErrAlreadyActive
+// on either transport) parks the ask as a relay-pending marker the sweep
+// retries; other failures are logged (the comment is still on record).
+func (s *Server) relayToAgent(taskID, agent, text, intent string) {
+	err := s.relay(taskID, agent, text, intent)
+	switch {
+	case err == nil:
+	case errors.Is(err, spirits.ErrAlreadyActive):
+		s.markerAddMeta(taskID, actRelayPending, "", map[string]any{"agent": agent, "intent": intent, "text": text})
+	default:
+		log.Printf("todo relay %s → %s: %v", taskID, agent, err)
+	}
 }
 
 // assignAgentHook: an explicit assignment (no comment) spools the PLAN-phase

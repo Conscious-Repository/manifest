@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"manifest/spirits"
-	"manifest/threads"
 	"manifest/tasks"
+	"manifest/threads"
 )
 
 // loopFixture: fire fixture + helpers that fake completed hermes runs (trace
@@ -170,17 +170,24 @@ func TestRelayAlwaysAndAutoAssign(t *testing.T) {
 	if !strings.Contains(string(raw), "[owner:: agent:hermes]") {
 		t.Fatalf("owner token missing:\n%s", raw)
 	}
-	// drain the spool (simulate the engine consuming it), then a PLAIN comment
-	// (no mention) must relay because the todo is agent-assigned
+	// drain the spool (simulate the engine consuming it). A PLAIN comment on
+	// the assigned todo is the record only — the reply guard (agent-chat plan
+	// Q6) never spends a turn on it
 	for _, f := range mustGlob(t, filepath.Join(hermes.Root(), "vessel", "spool", "*.json")) {
 		_ = os.Remove(f)
 	}
 	srv.threadDialogHook(id, nil, "prefer the cheaper vendor")
-	q = hermes.Queued()
-	if len(q) != 1 || !strings.Contains(q[0].Request, "prefer the cheaper vendor") {
-		t.Fatalf("plain comment must relay on assigned todo: %+v", q)
+	if q = hermes.Queued(); len(q) != 0 {
+		t.Fatalf("plain comment must NOT relay (reply guard): %+v", q)
 	}
-	// context rides along: description + protocol
+	// a typed @mention in free text IS an ask — one comment-phase turn
+	srv.threadDialogHook(id, nil, "@hermes prefer the cheaper vendor")
+	q = hermes.Queued()
+	if len(q) != 1 || !strings.Contains(q[0].Request, "prefer the cheaper vendor") ||
+		!strings.Contains(q[0].Request, "[phase:: comment]") {
+		t.Fatalf("typed mention must relay as an ask: %+v", q)
+	}
+	// context rides along: protocol
 	if !strings.Contains(q[0].Request, "PROTOCOL:") {
 		t.Fatalf("relay missing protocol: %s", q[0].Request)
 	}
@@ -196,14 +203,24 @@ func TestRelaySweepRetries(t *testing.T) {
 	if err := srv.setPlanAssignee(id, "agent:hermes"); err != nil {
 		t.Fatal(err)
 	}
-	// a queued spool makes SpoolRunNow refuse → the owner's comment relay drops
+	// a queued spool makes SpoolRunNow refuse → the owner's ASK relay drops
+	// (parked as a relay-pending marker)
 	if err := srv.spoolTaskWorkOrder(srv.findHarness("hermes"), id, "plan", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	_, _ = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "answer: use vendor B", nil, nil, nil)
-	srv.threadDialogHook(id, nil, "answer: use vendor B") // immediate attempt → ErrAlreadyActive
+	if _, err := srv.postAndDispatch(id, "ask", "", nil, nil, "answer: use vendor B"); err != nil {
+		t.Fatal(err)
+	}
 	if n := len(hermes.Queued()); n != 1 {
 		t.Fatalf("refused relay should leave one spool, got %d", n)
+	}
+	if !srv.threads.private.HasAction(id, actRelayPending, "") {
+		t.Fatal("refused ask must leave a relay-pending marker")
+	}
+	// while the spool is still queued the sweep waits (agent busy)
+	sweep(srv)
+	if n := len(hermes.Queued()); n != 1 {
+		t.Fatalf("sweep must not double-spool while busy, got %d", n)
 	}
 	// engine consumes the old spool; the sweep retries the missed relay
 	for _, f := range mustGlob(t, filepath.Join(hermes.Root(), "vessel", "spool", "*.json")) {
@@ -211,8 +228,17 @@ func TestRelaySweepRetries(t *testing.T) {
 	}
 	sweep(srv)
 	q := hermes.Queued()
-	if len(q) != 1 || !strings.Contains(q[0].Request, "[phase:: comment]") {
+	if len(q) != 1 || !strings.Contains(q[0].Request, "[phase:: comment]") ||
+		!strings.Contains(q[0].Request, "answer: use vendor B") {
 		t.Fatalf("sweep must retry the relay: %+v", q)
+	}
+	// and only once: the closing relay marker supersedes the pending one
+	for _, f := range mustGlob(t, filepath.Join(hermes.Root(), "vessel", "spool", "*.json")) {
+		_ = os.Remove(f)
+	}
+	sweep(srv)
+	if n := len(hermes.Queued()); n != 0 {
+		t.Fatalf("a retried relay must not repeat, got %d", n)
 	}
 }
 

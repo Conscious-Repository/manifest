@@ -47,6 +47,7 @@ type delegationView struct {
 	Phase   string `json:"phase,omitempty"`
 	Persona string `json:"persona,omitempty"` // recovered [persona::] intent (persona plan Phase 1)
 	Harness string `json:"harness"`
+	Agent   string `json:"agent,omitempty"` // the agent token an in-flight do-bot turn runs as (presence)
 	RunID   string `json:"runId,omitempty"`
 	// the result, ready to open: exactly one of these is ever set (§8 two media)
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
@@ -236,6 +237,15 @@ func (s *Server) findHarness(name string) *Harness {
 // stamps a recoverable [persona::] token; an unknown/disabled intent degrades
 // to today's request byte-for-byte.
 func (s *Server) spoolTaskWorkOrder(harness *Harness, taskID, phase, extra, intent string) error {
+	return s.spoolTaskWorkOrderAs(harness, "", taskID, phase, extra, intent)
+}
+
+// spoolTaskWorkOrderAs is spoolTaskWorkOrder addressed to one agent token
+// (agent-chat plan §3.4): on the Hermes fork the token picks the profile the
+// turn runs as (agent:alfred → default, agent:<profile> → `-p`); "" falls
+// back to the record's assignee. Harness spools ignore it — the harness IS
+// the agent there.
+func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, extra, intent string) error {
 	if harness == nil {
 		return errBadRequest("harness not available")
 	}
@@ -254,6 +264,9 @@ func (s *Server) spoolTaskWorkOrder(harness *Harness, taskID, phase, extra, inte
 		b.WriteString("PERSONA (how to respond — this governs your reply's shape and length):\n" + p.Prompt + "\n")
 	}
 	b.WriteString("TASK (from your todo board): " + text + "\n")
+	if d := strings.TrimSpace(rec.Description); d != "" {
+		b.WriteString("DESCRIPTION (the owner's context for this task):\n" + d + "\n")
+	}
 	protocol := agentProtocolReminder
 	if hasPersona && p.Intent != "plan" {
 		protocol = "PROTOCOL: reply in ONE library brief that IS your answer. Do not write a plan. Do not execute anything.\n"
@@ -286,7 +299,10 @@ func (s *Server) spoolTaskWorkOrder(harness *Harness, taskID, phase, extra, inte
 	// Hermes runs on the owner's real do-bot (the Hermes Agent CLI), not the
 	// excalibur harness — intercept and route the composed work order there.
 	if s.hermesForked(harness) {
-		return s.startHermesTurn(taskID, phase, intent, b.String())
+		if agent == "" {
+			agent = rec.Assignee
+		}
+		return s.startHermesTurn(taskID, agent, phase, intent, b.String())
 	}
 	spirit, ritual := delegateTargetFor(harness)
 	return harness.Spirits.SpoolRunNow(spirit, ritual, b.String(), "")
@@ -569,59 +585,58 @@ func (s *Server) markerAddMeta(id, action, runID string, extra map[string]any) {
 // agent saw the same world; if it did, the current plan may be stale.
 func (s *Server) planCtxHash(id string) string {
 	text, _ := s.openTaskText(id)
-	sum := sha256.Sum256([]byte(text))
+	sum := sha256.Sum256([]byte(text + "\n\n" + strings.TrimSpace(s.readPlanRecord(id).Description)))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// relaySweep retries owner comments that missed their relay (the agent was
-// mid-run when they posted — SpoolRunNow refuses while active).
+// relaySweep retries asks that missed their relay (the agent was mid-run when
+// the owner posted — the spool refuses while active). Since the reply guard
+// (agent-chat plan Q6) only Ask/Do/@-mention requests spend a turn, the
+// retry is driven by the `relay-pending` marker such a request leaves behind
+// when refused — never by "the owner said something" (a plain comment is the
+// record, not a request).
 func (s *Server) relaySweep(index map[string]delegationView) {
 	priv := s.threads.private
-	// candidate ids: anything with private entries, shared-RE entries, or an
-	// active delegation — agent-assigned todos always land in at least one
-	ids := map[string]bool{}
 	for _, id := range priv.TaskIDs() {
-		ids[id] = true
-	}
-	if s.threads.re != nil {
-		for _, id := range s.threads.re.TaskIDs() {
-			ids[id] = true
-		}
-	}
-	for id := range index {
-		ids[id] = true
-	}
-	for id := range ids {
-		rec := s.readPlanRecord(id)
-		harness := s.agentHarness(rec.Assignee)
-		if harness == "" {
-			continue
-		}
-		var lastOwner time.Time
-		for _, c := range s.listThread(id) {
-			if c.Action == threads.ActComment && !strings.HasPrefix(c.Author, "agent:") && c.At.After(lastOwner) {
-				lastOwner = c.At
-			}
-		}
-		if lastOwner.IsZero() {
-			continue
-		}
-		var lastAct time.Time
+		var pending *threads.Comment
+		var lastRelay time.Time
 		for _, c := range priv.Thread(id) {
-			if c.Action == threads.ActRelay && c.At.After(lastAct) {
-				lastAct = c.At
+			switch c.Action {
+			case actRelayPending:
+				if pending == nil || c.At.After(pending.At) {
+					cc := c
+					pending = &cc
+				}
+			case threads.ActRelay:
+				if c.At.After(lastRelay) {
+					lastRelay = c.At
+				}
 			}
 		}
-		if d, ok := index[id]; ok && d.Started.After(lastAct) {
-			lastAct = d.Started
+		if pending == nil || !pending.At.After(lastRelay) {
+			continue // nothing owed, or the relay already went through
 		}
-		if !lastOwner.After(lastAct) {
-			continue // the dialog is caught up
+		if d, ok := index[id]; ok && activeDelegation(d.State) {
+			continue // still busy — next sweep
 		}
-		if err := s.spoolTaskWorkOrder(s.findHarness(harness), id, "comment", "", ""); err == nil {
-			s.markerAdd(id, threads.ActRelay, "")
+		agent, _ := pending.Meta["agent"].(string)
+		intent, _ := pending.Meta["intent"].(string)
+		text, _ := pending.Meta["text"].(string)
+		if s.agentHarness(agent) == "" {
+			continue
 		}
+		_ = s.relay(id, agent, text, intent) // success writes the closing ActRelay marker
 	}
+}
+
+// activeDelegation reports a delegation state that means "a turn is in
+// flight or queued" — presence in the thread, and the sweep's busy check.
+func activeDelegation(state string) bool {
+	switch state {
+	case "queued", "plan-queued", "go-queued", "running", "plan-running":
+		return true
+	}
+	return false
 }
 
 // replanSweep (persona plan Phase 2): the system-initiated trigger of the §12

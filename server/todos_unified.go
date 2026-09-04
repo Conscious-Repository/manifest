@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/agentchat"
 	"manifest/aion"
 	"manifest/realestate"
 	"manifest/record"
@@ -365,6 +367,12 @@ func (s *Server) propTaskMutate(w http.ResponseWriter, slug string, fn func(list
 // prefix so the raw markdown token `[owner:: agent:hermes]` is visually
 // unambiguous. Each row carries the enabled persona intents (persona plan
 // Phase 1) so the mention typeahead can offer `agent:hermes::brief` variants.
+//
+// Agent-chat plan (2026-09-04, Q2/Q5): the Hermes do-bot is addressed as
+// `agent:alfred` (display "Alfred"; `agent:hermes` stays a resolving alias
+// for existing data), every non-default Hermes profile is `agent:<profile>`,
+// and the team-surface agents (kairos, zeck) are addressable from the
+// personal board too — listed after Alfred, never the default.
 func (s *Server) rosterFor(surface string) []map[string]any {
 	out := []map[string]any{}
 	var intents []string
@@ -374,12 +382,17 @@ func (s *Server) rosterFor(surface string) []map[string]any {
 		}
 	}
 	sort.Strings(intents)
+	row := func(id, name, harness string) map[string]any {
+		r := map[string]any{"id": id, "name": name, "harness": harness}
+		if len(intents) > 0 {
+			r["personas"] = intents
+		}
+		return r
+	}
 	hs := s.eachHarness()
+	var others []map[string]any // team-surface agents, personal-board tail (Q5)
 	for i, h := range hs {
 		if i == 0 { // the primary runs the house; delegation targets are the rest
-			continue
-		}
-		if h.Surface != surface {
 			continue
 		}
 		name := h.Name
@@ -387,22 +400,96 @@ func (s *Server) rosterFor(surface string) []map[string]any {
 			continue
 		}
 		display := strings.ToUpper(name[:1]) + name[1:]
-		row := map[string]any{"id": "agent:" + name, "name": display, "harness": name}
-		if len(intents) > 0 {
-			row["personas"] = intents
+		if strings.EqualFold(name, "hermes") {
+			if surface == "" {
+				out = append(out, row("agent:"+alfredAgent, "Alfred", "hermes"))
+			}
+			continue
 		}
-		out = append(out, row)
+		switch {
+		case h.Surface == surface:
+			out = append(out, row("agent:"+name, display, name))
+		case surface == "":
+			others = append(others, row("agent:"+name, display, name))
+		}
 	}
 	// the virtual Hermes: the runner-backed do-bot identity, offered on the
 	// personal surface even with no `hermes` harness tree (Phase 1c retired it).
 	if surface == "" && s.hermesEnabled() && !s.hermesRealHarness() {
-		row := map[string]any{"id": "agent:hermes", "name": "Hermes", "harness": "hermes"}
-		if len(intents) > 0 {
-			row["personas"] = intents
+		out = append(out, row("agent:"+alfredAgent, "Alfred", "hermes"))
+	}
+	if surface == "" {
+		for _, p := range s.hermesProfileNames() {
+			out = append(out, row("agent:"+p, strings.ToUpper(p[:1])+p[1:], "hermes"))
 		}
-		out = append(out, row)
+		out = append(out, others...)
 	}
 	return out
+}
+
+// hermesProfileNames lists the non-default Hermes profiles (cached 30s in the
+// agent-chat layer). Empty when the runner or the chat store is not wired —
+// the roster then carries Alfred alone.
+func (s *Server) hermesProfileNames() []string {
+	if s.agentChat == nil || !s.hermesEnabled() {
+		return nil
+	}
+	profiles, _ := s.hermesProfilesCached(context.Background())
+	var out []string
+	for _, p := range profiles {
+		name := strings.ToLower(strings.TrimSpace(p.Name))
+		if name == "" || name == "default" || name == alfredAgent || name == "hermes" {
+			continue
+		}
+		if !agentchat.ValidAgent(name) {
+			continue
+		}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// hermesProfileOf maps an agent token to the Hermes profile its turns run
+// under: `agent:<profile>` → the profile; alfred/hermes → "" (the default).
+func (s *Server) hermesProfileOf(token string) string {
+	want := strings.TrimPrefix(token, "agent:")
+	if want == alfredAgent || want == "hermes" {
+		return ""
+	}
+	for _, p := range s.hermesProfileNames() {
+		if p == want {
+			return p
+		}
+	}
+	return ""
+}
+
+// defaultAgentToken is the "hey agent" default: Alfred when the do-bot
+// resolves, else the first roster entry ("" when nobody is assignable).
+func (s *Server) defaultAgentToken() string {
+	if s.agentHarness("agent:"+alfredAgent) != "" {
+		return "agent:" + alfredAgent
+	}
+	for _, r := range s.agentRoster() {
+		if id, _ := r["id"].(string); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+// agentDisplayName renders an agent token for humans: alfred/hermes → Alfred,
+// anything else capitalized.
+func agentDisplayName(token string) string {
+	name := strings.TrimPrefix(token, "agent:")
+	if name == "" {
+		return ""
+	}
+	if name == alfredAgent || name == "hermes" {
+		return "Alfred"
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
 }
 
 // agentRoster is the PERSONAL surface's roster (team-surface harnesses like
@@ -422,6 +509,13 @@ func (s *Server) agentHarness(owner string) string {
 		return ""
 	}
 	want := strings.TrimPrefix(owner, "agent:")
+	if want == "" || strings.Contains(want, "::") {
+		return ""
+	}
+	// Alfred is the do-bot (alias of hermes); profiles run on the same runner.
+	if want == alfredAgent || s.hermesProfileOf(owner) != "" {
+		want = "hermes"
+	}
 	hs := s.eachHarness()
 	for i := range hs {
 		if i > 0 && hs[i].Name == want {
