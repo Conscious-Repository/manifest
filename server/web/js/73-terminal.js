@@ -565,7 +565,7 @@ function renderTermHistory() {
     const name = el("span", "term-sess-name", se.name || se.kind);
     name.ondblclick = (e) => { e.stopPropagation(); termRename(name, se); };
     row.append(name);
-    row.append(el("span", "term-hist-when", (se.device || "metis") + " · " + termRelTime(se.lastUsed)));
+    row.append(el("span", "term-hist-when", (se.device || "metis") + " · " + fmtWhen(se.lastUsed)));
     const acts = el("span", "term-hist-acts");
     const pin = el("button", "term-x" + (se.pinned ? " pinned" : ""), se.pinned ? "★" : "☆");
     pin.title = se.pinned ? "Unpin" : "Pin (floats to top, survives cleanup)";
@@ -720,7 +720,14 @@ function attachTerm(id) {
   };
   term.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); });
 
-  const ro = new ResizeObserver(() => { try { fit.fit(); sendTermResize(); } catch (e) {} });
+  // a hidden view collapses the mount to 0×0: fitting then would shrink the
+  // tmux window to a few columns (the CLI redraws at that width for every
+  // other reader — the chat's live strip, Alfred's capture-pane) — so only a
+  // mount with real size drives the pty size
+  const ro = new ResizeObserver(() => {
+    if (!mount.clientWidth || !mount.clientHeight) return;
+    try { fit.fit(); sendTermResize(); } catch (e) {}
+  });
   ro.observe(mount);
   termInst.ro = ro;
 
@@ -742,6 +749,14 @@ function sendTermResize() {
   termInst.ws.send(JSON.stringify({ t: "r", c: termInst.term.cols, r: termInst.term.rows }));
 }
 
+// TERM_KEY_CODES — the raw bytes behind the soft keys: the terminal's key bar
+// below and the chat surface's live-strip quick keys (48-chat.js, Stage S)
+// send the same codes, one definition.
+const TERM_KEY_CODES = {
+  esc: "\x1b", tab: "\t", enter: "\r", "ctrl-c": "\x03", "ctrl-d": "\x04",
+  "↑": "\x1b[A", "↓": "\x1b[B", "←": "\x1b[D", "→": "\x1b[C",
+};
+
 // mobile soft-key bar (cmd-ctr TermKeyBar shape): keys the touch keyboard lacks.
 // Sends via the LIVE termInst.ws — the bar builds once, sessions come and go
 // (wiring it to the first socket left the keys dead after any reattach).
@@ -753,8 +768,8 @@ function buildTermKeys() {
     if (termInst && termInst.ws.readyState === 1) termInst.ws.send(JSON.stringify({ t: "i", d }));
   };
   const keys = [
-    ["esc", "\x1b"], ["tab", "\t"], ["ctrl-c", "\x03"], ["ctrl-d", "\x04"],
-    ["↑", "\x1b[A"], ["↓", "\x1b[B"], ["←", "\x1b[D"], ["→", "\x1b[C"],
+    ["esc", TERM_KEY_CODES.esc], ["tab", TERM_KEY_CODES.tab], ["ctrl-c", TERM_KEY_CODES["ctrl-c"]], ["ctrl-d", TERM_KEY_CODES["ctrl-d"]],
+    ["↑", TERM_KEY_CODES["↑"]], ["↓", TERM_KEY_CODES["↓"]], ["←", TERM_KEY_CODES["←"]], ["→", TERM_KEY_CODES["→"]],
     ["|", "|"], ["~", "~"], ["/", "/"],
   ];
   keys.forEach(([label, code]) => {

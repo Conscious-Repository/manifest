@@ -38,7 +38,10 @@ type termTurn struct {
 
 // termBlock: t = say (markdown text) | think (thinking text) | step (a tool
 // call: cast = tool name, input = one-line summary, result = the paired
-// tool_result, trimmed; error when the tool reported one).
+// tool_result, trimmed; error when the tool reported one). ID is the tool_use
+// id: a result whose call fell before ?after= arrives as a step with cast
+// "result" and the same id, so the tailing client can pair it with the chip
+// it already painted.
 type termBlock struct {
 	T      string `json:"t"`
 	Text   string `json:"text,omitempty"`
@@ -46,7 +49,7 @@ type termBlock struct {
 	Input  string `json:"input,omitempty"`
 	Result string `json:"result,omitempty"`
 	Error  bool   `json:"error,omitempty"`
-	id     string // tool_use id, to pair the result
+	ID     string `json:"id,omitempty"`
 }
 
 // termTranscript is the projection of one session file (or its tail).
@@ -114,7 +117,7 @@ func (b *transcriptBuilder) user(ts, text string) {
 
 func (b *transcriptBuilder) step(ts, id, cast, input string) {
 	t := b.assistant(ts)
-	t.Blocks = append(t.Blocks, termBlock{T: "step", Cast: cast, Input: input, id: id})
+	t.Blocks = append(t.Blocks, termBlock{T: "step", Cast: cast, Input: input, ID: id})
 }
 
 // result pairs a tool result with the most recent step carrying its id.
@@ -125,16 +128,17 @@ func (b *transcriptBuilder) result(ts, id, text string, isErr bool) {
 			continue
 		}
 		for bi := range t.Blocks {
-			if t.Blocks[bi].T == "step" && t.Blocks[bi].id == id {
+			if t.Blocks[bi].T == "step" && t.Blocks[bi].ID == id {
 				t.Blocks[bi].Result = clip(text, termStepResultMax)
 				t.Blocks[bi].Error = isErr
 				return
 			}
 		}
 	}
-	// a result whose call fell before ?after= — still worth a chip
+	// a result whose call fell before ?after= — still worth a chip; the id
+	// lets a tailing client pair it with the step it already holds
 	t := b.assistant(ts)
-	t.Blocks = append(t.Blocks, termBlock{T: "step", Cast: "result", Result: clip(text, termStepResultMax), Error: isErr})
+	t.Blocks = append(t.Blocks, termBlock{T: "step", Cast: "result", Result: clip(text, termStepResultMax), Error: isErr, ID: id})
 }
 
 func (b *transcriptBuilder) text(ts, kind, text string) {

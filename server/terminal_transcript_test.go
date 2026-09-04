@@ -181,6 +181,46 @@ func TestTranscriptTailAndCache(t *testing.T) {
 	}
 }
 
+// A tail cut between a tool_use and its tool_result: the head's step carries
+// the call id (no result yet); the tail's orphan result arrives as a
+// cast-"result" step with the SAME id, so the tailing client (48-chat.js
+// chatTermMerge) pairs it onto the chip it already painted.
+func TestTailOrphanResultCarriesID(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("testdata", "claude_session.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.SplitAfter(strings.TrimRight(string(src), "\n")+"\n", "\n")
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	head := strings.Join(lines[:9], "") // …through the assistant tool_use row
+	if err := os.WriteFile(path, []byte(head), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr, ok := readTranscript("claude", path, 0)
+	if !ok || len(tr.Turns) != 2 {
+		t.Fatalf("head = %+v", tr.Turns)
+	}
+	step := tr.Turns[1].Blocks[len(tr.Turns[1].Blocks)-1]
+	if step.T != "step" || step.Cast != "Bash" || step.ID == "" || step.Result != "" {
+		t.Fatalf("head step = %+v", step)
+	}
+	if err := os.WriteFile(path, []byte(head+strings.Join(lines[9:], "")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tail, ok := readTranscript("claude", path, tr.Offset)
+	if !ok || len(tail.Turns) != 1 || tail.Turns[0].Who != "assistant" {
+		t.Fatalf("tail = %+v", tail.Turns)
+	}
+	orphan := tail.Turns[0].Blocks[0]
+	if orphan.T != "step" || orphan.Cast != "result" || orphan.ID != step.ID || orphan.Result == "" {
+		t.Fatalf("orphan result = %+v (want cast=result id=%s)", orphan, step.ID)
+	}
+	b, _ := json.Marshal(orphan)
+	if !strings.Contains(string(b), `"id":"`+step.ID+`"`) {
+		t.Fatalf("id not on the wire: %s", b)
+	}
+}
+
 // The endpoint locates the file by (cwd-encoded, resumeId) under the
 // projects root and reports live from the tmux runner.
 func TestTranscriptEndpoint(t *testing.T) {

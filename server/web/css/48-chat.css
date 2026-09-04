@@ -152,3 +152,32 @@
 .chat-rail-task-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .chat-rail-tasks .sprt-quiet { margin: var(--sp-2) 0 0 var(--sp-6); }
 .chat-landing-desc { font-size: var(--fs-sm); color: var(--base-40); max-width: 52ch; line-height: 1.45; }
+
+/* CLAUDE CODE · CODEX sections (agent-chat plan §3, Stage S): the rows are the
+   shared rail rows (⟳ resumable, ✦ live — accent only for live); "history"
+   folds the older rows. The live strip sits between the transcript and the
+   composer (the pane's last lines, mono, + quick keys) so a prompt stays in
+   view while the transcript scrolls. A step's paired tool result opens as a
+   disclosure under its chip. Tokens only. */
+.chat-rail-resume { font-size: var(--fs-xs); color: var(--base-40); }
+.chat-rail-x.armed { opacity: 1; color: var(--base-100); } /* an armed "end — sure?" must not fade on mouse-out */
+.chat-rail-hist { margin: var(--sp-3) 0 var(--sp-2) var(--sp-6); }
+.chat-term-strip { flex: none; margin-top: var(--sp-6); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--base-05); padding: var(--sp-4) var(--sp-6); }
+.chat-term-strip[hidden], .chat-main.landing .chat-term-strip { display: none; }
+.chat-term-strip-head { display: flex; align-items: baseline; gap: var(--sp-4); }
+.chat-term-screen { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.45; color: var(--base-70); white-space: pre; overflow: auto; margin: var(--sp-3) 0 0; max-height: 14em; }
+.chat-term-keys { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+.chat-term-key { font: inherit; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-4); cursor: pointer; }
+.chat-term-key:hover { color: var(--accent); border-color: var(--accent); }
+.chat-term-key:active { background: var(--hover); }
+.chat-step-details > summary { list-style: none; cursor: pointer; }
+.chat-step-details > summary::-webkit-details-marker { display: none; }
+.chat-step-details > summary .run-trace-cast::before { content: "▸ "; color: var(--base-30); }
+.chat-step-details[open] > summary .run-trace-cast::before { content: "▾ "; }
+.chat-step-details[open] > summary .run-trace-cast { color: var(--base-100); }
+.chat-step-err { color: var(--danger); margin-left: var(--sp-3); }
+.chat-step-result { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: pre-wrap; word-break: break-word; margin: var(--sp-2) 0 var(--sp-3) var(--sp-7); padding-left: var(--sp-5); border-left: 2px solid var(--line); max-height: 18em; overflow: auto; }
+.chat-step-result.err { color: var(--danger); }
+.chat-landing-cwd { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-5); width: min(440px, 90vw); text-align: center; }
+.chat-landing-cwd:focus { outline: none; border-color: var(--accent); }
+.chat-landing-cwd::placeholder { color: var(--base-30); }
