@@ -139,10 +139,12 @@ function showChat(h) {
 let chatTaskID = "";
 let chatTaskData = null;
 let chatTaskPollTimer = null;
+let chatTaskRailKey = "";
 
 function leaveTaskChat() {
   chatTaskID = "";
   chatTaskData = null;
+  chatTaskRailKey = "";
   if (chatTaskPollTimer) { clearInterval(chatTaskPollTimer); chatTaskPollTimer = null; }
   const shell = document.querySelector(".chat-shell");
   if (shell) shell.classList.remove("task-thread");
@@ -154,12 +156,30 @@ function leaveTaskChat() {
   }
 }
 
+// A task may be linked to the conversation that created it or simply to its
+// assignee's chat section.  In either case, keep the task view in the same
+// sectioned rail as ordinary chats, with that agent expanded.
+function taskChatAgent(data) {
+  return data && data.chat && data.chat.agent ? data.chat.agent : "";
+}
+
+async function renderTaskChatRail(data) {
+  const agent = taskChatAgent(data);
+  const key = chatTaskID + "\u0000" + agent;
+  if (key === chatTaskRailKey) return;
+  chatTaskRailKey = key;
+  chatAgent = agent;
+  chatOpenId = "";
+  await loadChatRoster();
+  if (chatTaskID === "") return;
+  await Promise.all([loadChatSessions(), loadChatTermSessions(false)]);
+  if (chatTaskID !== "") renderChatRail();
+}
+
 async function renderTaskChat(taskID, refetch) {
   if (chatTaskID !== taskID) { leaveTaskChat(); chatTaskID = taskID; }
   const shell = document.querySelector(".chat-shell");
   if (shell) shell.classList.add("task-thread");
-  const rail = document.getElementById("chatRail");
-  if (rail) rail.innerHTML = "";
   const host = document.getElementById("chatTranscript");
   const composer = document.getElementById("chatComposer");
   if (!host || !composer) return;
@@ -178,11 +198,17 @@ async function renderTaskChat(taskID, refetch) {
     }
   }
   const d = chatTaskData;
+  await renderTaskChatRail(d);
+  if (chatTaskID !== taskID) return;
   host.innerHTML = "";
   const rec = d.record || {};
-  const head = el("div", "sprt-head chat-head chat-task-head");
+  // Keep the task context in the normal thread-head anatomy: title, agent
+  // context and task id, then the task-specific return action.
+  const head = el("div", "sprt-head chat-head");
   head.append(el("span", "sprt-title chat-head-title", rec.Title || rec.title || taskID));
-  head.append(el("span", "sprt-sub chat-head-sub", "task conversation"));
+  const agent = taskChatAgent(d);
+  head.append(el("span", "sprt-sub chat-head-sub", ["task conversation", agent ? chatAgentLabel(agent) : "unassigned"].join(" · ")));
+  head.append(el("span", "sprt-head-meta chat-head-meta", taskID));
   const acts = el("span", "chat-head-acts");
   const back = el("button", "sprt-quiet", "open task ↗");
   back.title = "open this task in TASKS";
