@@ -409,6 +409,7 @@ func (d *CandidateDoc) View(slug string, role *RoleDoc) Candidate {
 		Outreach:           d.Outreach(),
 		Next:               d.Next(),
 		Override:           d.Override(),
+		Resume:             ResumeRef{Hash: d.Get("ashby_resume"), Name: d.Get("ashby_resume_name")},
 	}
 	if c.ID == "" {
 		c.ID = CandidateID(slug)

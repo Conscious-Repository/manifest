@@ -128,6 +128,8 @@ var FieldAuthority = map[string]Authority{
 	"ashby_source_id":      AuthorityAshby,
 	"ashby_pipeline":       AuthorityAshby,
 	"ashby_synced":         AuthorityAshby, // the last push/sync-back date stamp
+	"ashby_resume":         AuthorityAshby, // artifact hash of the applicant's own file
+	"ashby_resume_name":    AuthorityAshby, // their filename, kept on the reference
 	"inbound":              AuthorityAshby, // applied-as-applicant stamp — the sync-back import writes it (untriaged queue)
 
 	// role — shared posting fields, Ashby ids, Manifest criteria
@@ -331,6 +333,12 @@ type AshbyApplication struct {
 	InterviewPlanID string `json:"interviewPlanId,omitempty"`
 	ArchiveReason   string `json:"archiveReason,omitempty"`
 	UpdatedAt       string `json:"updatedAt,omitempty"`
+	// Resume and CustomFields come back from application.INFO only — the list
+	// projection omits both (see the detail block above).
+	Resume       AshbyFileHandle    `json:"resume,omitempty"`
+	CustomFields []AshbyCustomField `json:"customFields,omitempty"`
+	AppliedAt    string             `json:"appliedAt,omitempty"`
+	JobTitle     string             `json:"jobTitle,omitempty"`
 }
 
 func (a *AshbyApplication) UnmarshalJSON(b []byte) error {
@@ -342,7 +350,8 @@ func (a *AshbyApplication) UnmarshalJSON(b []byte) error {
 			ID string `json:"id"`
 		} `json:"candidate"`
 		Job struct {
-			ID string `json:"id"`
+			ID    string `json:"id"`
+			Title string `json:"title"`
 		} `json:"job"`
 		CurrentInterviewStage struct {
 			ID              string `json:"id"`
@@ -352,9 +361,23 @@ func (a *AshbyApplication) UnmarshalJSON(b []byte) error {
 		ArchiveReason struct {
 			Text string `json:"text"`
 		} `json:"archiveReason"`
+		CreatedAt        string          `json:"createdAt"`
+		ResumeFileHandle AshbyFileHandle `json:"resumeFileHandle"`
+		CustomFields     []struct {
+			ID    string          `json:"id"`
+			Title string          `json:"title"`
+			Value json.RawMessage `json:"value"`
+		} `json:"customFields"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
+	}
+	a.Resume, a.AppliedAt = raw.ResumeFileHandle, raw.CreatedAt
+	a.JobTitle = raw.Job.Title
+	for _, f := range raw.CustomFields {
+		if v := ashbyFieldValue(f.Value); v != "" {
+			a.CustomFields = append(a.CustomFields, AshbyCustomField{ID: f.ID, Title: strings.TrimSpace(f.Title), Value: v})
+		}
 	}
 	a.ID, a.Status, a.UpdatedAt = raw.ID, raw.Status, raw.UpdatedAt
 	a.CandidateID, a.JobID = raw.Candidate.ID, raw.Job.ID
@@ -743,6 +766,94 @@ func (c *Ashby) ChangeStage(ctx context.Context, in AshbyStageChange) (AshbyAppl
 	var out AshbyApplication
 	err := c.callInto(ctx, "application.changeStage", in, &out)
 	return out, err
+}
+
+// ---- what the applicant themself submitted (2026-09-04) ----
+//
+// ⚠ application.list IS A SLIMMER PROJECTION THAN application.info. The list
+// endpoint the sync runs on omits resumeFileHandle and customFields entirely
+// (probed: 0 of 40 rows carried a resume that info returns), so this detail is
+// fetched PER CANDIDATE and on the owner's action — never bulk-mirrored. That
+// also keeps ~60 applicants' resumes off this box until he opens one.
+//
+// ⚠ THERE IS NO APPLICATION-FORM ENDPOINT. applicationForm.*,
+// applicationFormSubmission.* and application.listFormSubmissions all answer
+// "Not Found". The only structured answers Ashby exposes are customFields —
+// empty for this org today, populated the moment application questions are
+// mapped to custom fields in Ashby. So the fields lane is built and simply
+// renders nothing until then, rather than promising what the API cannot give.
+
+// AshbyFileHandle names one stored file. `Handle` is the opaque signed token
+// file.info trades for a temporary download URL; it is NOT a URL itself and
+// expires, so what a record keeps is the artifact, never this.
+type AshbyFileHandle struct {
+	ID     string `json:"id,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Handle string `json:"handle,omitempty"`
+}
+
+// AshbyCustomField is one customFields entry, flattened to what a person
+// reads. Value arrives as arbitrary JSON (string, number, list, object).
+type AshbyCustomField struct {
+	ID    string `json:"id,omitempty"`
+	Title string `json:"title"`
+	Value string `json:"value"`
+}
+
+// ashbyFieldValue renders a custom field's arbitrary JSON value as text. A
+// bare string stays itself (no quotes); everything else keeps its JSON shape
+// rather than being guessed at.
+func ashbyFieldValue(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return strings.TrimSpace(s)
+	}
+	var list []string
+	if json.Unmarshal(raw, &list) == nil {
+		return strings.Join(list, ", ")
+	}
+	return strings.TrimSpace(string(raw))
+}
+
+// FileURL trades a file handle for its temporary download URL (file.info).
+// The URL is short-lived and signed: it is fetched at the moment of use and
+// never stored.
+func (c *Ashby) FileURL(ctx context.Context, handle string) (string, error) {
+	if strings.TrimSpace(handle) == "" {
+		return "", errf("ashby file.info: a file handle is required")
+	}
+	var out struct {
+		URL string `json:"url"`
+	}
+	if err := c.callInto(ctx, "file.info", map[string]any{"fileHandle": handle}, &out); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(out.URL) == "" {
+		return "", errf("ashby file.info: no download url came back")
+	}
+	return out.URL, nil
+}
+
+// GetCandidateFull is candidate.info — the candidate-side record, which
+// carries fileHandles/resumeFileHandle that candidate.list omits.
+func (c *Ashby) GetCandidateFull(ctx context.Context, id string) (AshbyCandidateDetail, error) {
+	var out AshbyCandidateDetail
+	if strings.TrimSpace(id) == "" {
+		return out, errf("ashby candidate.info: an id is required")
+	}
+	err := c.callInto(ctx, "candidate.info", map[string]any{"id": id}, &out)
+	return out, err
+}
+
+// AshbyCandidateDetail is candidate.info reduced to the file-bearing fields.
+type AshbyCandidateDetail struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Resume      AshbyFileHandle   `json:"resumeFileHandle"`
+	FileHandles []AshbyFileHandle `json:"fileHandles"`
 }
 
 // AshbyInterviewStage is one interviewStage.list row. Type is the closed
@@ -1614,6 +1725,99 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 	st := a.load()
 	st.Audit = append(st.Audit, line)
 	return app, a.save(st)
+}
+
+// AshbyDetail is everything the APPLICANT submitted that Ashby will part
+// with, for one linked candidate: the resume file (a name and a live download
+// URL, minted at read time), the structured answers Ashby holds as custom
+// fields, and the application facts worth reading beside them.
+type AshbyDetail struct {
+	ApplicationID string             `json:"applicationId,omitempty"`
+	JobTitle      string             `json:"jobTitle,omitempty"`
+	Status        string             `json:"status,omitempty"`
+	Stage         string             `json:"stage,omitempty"`
+	AppliedAt     string             `json:"appliedAt,omitempty"`
+	ResumeName    string             `json:"resumeName,omitempty"`
+	ResumeURL     string             `json:"-"` // signed, short-lived — never serialized to a client
+	Fields        []AshbyCustomField `json:"fields,omitempty"`
+	// FormsUnavailable states the API limit in the surface itself, so an
+	// empty fields lane is never mistaken for a candidate who answered nothing.
+	FormsUnavailable bool `json:"formsUnavailable"`
+}
+
+// Detail reads one linked candidate's application in full. The resume handle
+// is traded for a download URL here and nowhere else, because the URL expires:
+// whoever wants the bytes must fetch them now.
+func (a *AshbySync) Detail(ctx context.Context, candidate string) (AshbyDetail, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.client.Configured() {
+		return AshbyDetail{}, ErrAshbyUnconfigured
+	}
+	_, doc, err := a.store.resolve(candidate)
+	if err != nil {
+		return AshbyDetail{}, err
+	}
+	out := AshbyDetail{FormsUnavailable: true}
+	appID := strings.TrimSpace(doc.Get("ashby_application_id"))
+	candID := strings.TrimSpace(doc.Get("ashby_candidate_id"))
+	if appID == "" && candID == "" {
+		return out, errf("%s is not linked to Ashby", candidate)
+	}
+	var handle string
+	if appID != "" {
+		app, err := a.client.GetApplication(ctx, appID)
+		if err != nil {
+			return out, err
+		}
+		out.ApplicationID, out.JobTitle = app.ID, app.JobTitle
+		out.Status, out.Stage, out.AppliedAt = app.Status, app.Stage, app.AppliedAt
+		out.Fields = app.CustomFields
+		handle, out.ResumeName = app.Resume.Handle, app.Resume.Name
+	}
+	// the candidate record is the fallback for the file: a resume uploaded to
+	// the PERSON rather than attached to this application still belongs to them
+	if handle == "" && candID != "" {
+		cand, err := a.client.GetCandidateFull(ctx, candID)
+		if err == nil {
+			if cand.Resume.Handle != "" {
+				handle, out.ResumeName = cand.Resume.Handle, cand.Resume.Name
+			} else {
+				for _, f := range cand.FileHandles {
+					if f.Handle != "" {
+						handle, out.ResumeName = f.Handle, f.Name
+						break
+					}
+				}
+			}
+		}
+	}
+	if handle != "" {
+		if url, err := a.client.FileURL(ctx, handle); err == nil {
+			out.ResumeURL = url
+		} else if out.ResumeName != "" {
+			return out, err // Ashby says there IS a file and would not hand it over
+		}
+	}
+	return out, nil
+}
+
+// RecordResume stamps the stored artifact onto the record. The vault keeps a
+// REFERENCE (hash + the applicant's own filename) — never the bytes, which
+// live in the artifacts pool outside the vault like every other attachment.
+func (a *AshbySync) RecordResume(candidate, name, hash string, now time.Time) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	slug, _, err := a.store.resolve(candidate)
+	if err != nil {
+		return err
+	}
+	_, err = a.applyToCandidate(slug, ashbyRecordPatch{set: map[string]string{
+		"ashby_resume":      hash,
+		"ashby_resume_name": name,
+		"ashby_synced":      now.UTC().Format("2006-01-02"),
+	}})
+	return err
 }
 
 // archivedStageFor answers "where does archiving this application send it?" —

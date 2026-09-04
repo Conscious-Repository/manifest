@@ -198,6 +198,23 @@ a.rec-seed-name:hover { text-decoration: underline; }
 }
 .rec-override-why { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
 
+/* submission — the applicant's own file and answers. The resume renders as
+   TEXT in the pane (a PDF viewer is a download, not a read), scrollable so a
+   three-page CV cannot push the rest of the inspector off the screen. */
+.rec-submission { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rec-sub-file { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); }
+.rec-sub-name { flex: 1 1 100%; min-width: 0; font-size: var(--fs-sm); color: var(--base-100); overflow-wrap: anywhere; }
+.rec-resume-text {
+  margin: 0; max-height: 40vh; overflow: auto;
+  padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--base-05); color: var(--base-70);
+  font-family: var(--mono); font-size: var(--fs-2xs); line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.rec-sub-field { display: flex; flex-direction: column; gap: 0; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
+.rec-sub-flabel { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }
+.rec-sub-fval { font-size: var(--fs-sm); color: var(--base-80); overflow-wrap: anywhere; }
+
 /* evidence — the citation, verbatim */
 .rec-ev-row { padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); }
 .rec-ev-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); min-width: 0; }

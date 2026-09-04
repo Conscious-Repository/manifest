@@ -1242,7 +1242,9 @@ function paintInspector(host) {
   // summary (the design's "FIT unscored — score to unblock a send" line)
   host.append(recFitSection(c, gate));
 
-  // folds
+  // folds — the applicant's own submission leads: on an inbound applicant it
+  // is the evidence the triage verdict above is actually made on
+  host.append(recFold("submission", recSubmissionMeta(c), () => recSubmissionBody(c)));
   host.append(recFold("details", recDetailsMeta(c), () => recDetailsBody(c, field, text)));
   host.append(recFold("evidence", (c.evidence || []).length
     ? String((c.evidence || []).length) : { text: "● none yet", alarm: true },
@@ -1809,6 +1811,99 @@ async function recAshbyCall(url, body) {
   try { out = JSON.parse(text); } catch (_) { out = { error: text }; }
   if (!r.ok && !out.proposal) throw new Error(out.error || text);
   return out;
+}
+
+// ---- SUBMISSION — what the applicant themself sent (owner ask 2026-09-04).
+//
+// The resume is pulled on this click, not mirrored by the sync: Ashby's
+// application.list omits the file handle entirely, so mirroring would cost one
+// API call per applicant per sync AND copy sixty strangers' resumes onto this
+// box before anyone opened one. The bytes land in the artifacts pool; the
+// record keeps the reference.
+let recAshbyDetail = {};  // candidate id → the live application detail
+let recResumeText = {};   // artifact hash → extracted text ("" = no text layer)
+
+function recSubmissionMeta(c) {
+  const r = c.resume || {};
+  if (r.hash) return { text: r.name || "resume", alarm: false };
+  if (c.ashbyApplicationId || c.ashbyCandidateId) return { text: "not pulled", alarm: false };
+  return { text: "not linked", alarm: false };
+}
+
+async function recLoadResumeText(hash) {
+  recResumeText[hash] = null; // in flight — never re-request on the next paint
+  try {
+    const d = await (await fetch("/api/aion/recruiting/resume/" + hash + "/text")).json();
+    recResumeText[hash] = d.hasText ? (d.text || "") : "";
+  } catch (e) { recResumeText[hash] = ""; }
+  if (recPaint) recPaint();
+}
+
+function recSubmissionBody(c) {
+  const box = el("div", "rec-submission");
+  if (!c.ashbyApplicationId && !c.ashbyCandidateId) {
+    box.append(emptyRow("linked Ashby applicants only — this record was never handed off"));
+    return box;
+  }
+  const r = c.resume || {};
+  const det = recAshbyDetail[c.id];
+
+  const pull = el("button", "rec-quiet-btn", r.hash ? "re-pull from ashby" : "pull resume & answers from ashby");
+  pull.title = "reads this application in full — the file and any structured answers";
+  pull.onclick = async () => {
+    pull.disabled = true;
+    pull.textContent = "pulling…";
+    try {
+      const out = await recAshbyCall("/api/aion/recruiting/ashby/detail/" + c.id, {});
+      recAshbyDetail[c.id] = out.detail || {};
+      if (out.view) recCache = out.view;
+      if (out.resumeError) showToast("resume: " + String(out.resumeError).slice(0, 120), null, "error");
+      else if (out.resume) showToast("pulled " + out.resume.name + (out.resume.hasText ? "" : " · no text layer"));
+      else showToast("no file on this application");
+      recInspOpen.submission = true;
+      renderAion();
+    } catch (e) {
+      showToast(String(e.message || e).slice(0, 140), null, "error");
+      pull.disabled = false;
+      pull.textContent = r.hash ? "re-pull from ashby" : "pull resume & answers from ashby";
+    }
+  };
+  box.append(pull);
+
+  if (r.hash) {
+    const row = el("div", "rec-sub-file");
+    row.append(el("span", "rec-sub-name", r.name || "resume"));
+    const open = linkEl("open →", "/api/aion/recruiting/resume/" + r.hash);
+    open.className = "rec-linkish";
+    const dl = linkEl("download", "/api/aion/recruiting/resume/" + r.hash + "?dl=1");
+    dl.className = "rec-linkish";
+    row.append(open, dl);
+    box.append(row);
+
+    const txt = recResumeText[r.hash];
+    if (txt === undefined) { recLoadResumeText(r.hash); box.append(el("div", "rec-foot", "reading…")); }
+    else if (txt === null) box.append(el("div", "rec-foot", "reading…"));
+    else if (txt) box.append(el("pre", "rec-resume-text", txt));
+    else box.append(el("div", "rec-foot", "no text layer — a scanned PDF; open it to read"));
+  }
+
+  const fields = (det && det.fields) || [];
+  fields.forEach((f) => {
+    const row = el("div", "rec-sub-field");
+    row.append(el("span", "rec-sub-flabel", f.title || "field"));
+    row.append(el("span", "rec-sub-fval", f.value || ""));
+    box.append(row);
+  });
+  // ⚠ an empty answers lane must not read as "this applicant answered nothing"
+  if (det && !fields.length) {
+    box.append(el("div", "rec-foot",
+      "no structured answers — Ashby's API exposes application-form responses only where they are mapped to custom fields"));
+  }
+  if (det && (det.jobTitle || det.appliedAt)) {
+    box.append(el("div", "rec-foot",
+      (det.jobTitle ? "applied to " + det.jobTitle : "") + (det.appliedAt ? " · " + fmtWhen(det.appliedAt) : "")));
+  }
+  return box;
 }
 
 function recAshbyMeta(c) {

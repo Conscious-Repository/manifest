@@ -422,6 +422,9 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("GET /api/aion/recruiting", s.handleRecruitingView)
 			mux.HandleFunc("GET /api/aion/recruiting/seeds", s.handleRecruitingSeeds)
 			mux.HandleFunc("POST /api/aion/recruiting/seed", s.handleRecruitingSeedAdd)
+			// the applicant's own submitted file, by artifact hash. `{hash...}`
+			// is a wildcard so ".../{hash}/text" reaches the same handler.
+			mux.HandleFunc("GET /api/aion/recruiting/resume/{hash...}", s.handleRecruitingResume)
 			mux.HandleFunc("GET /api/aion/recruiting/roles/{slug}", s.handleRecruitingRole)
 			mux.HandleFunc("PUT /api/aion/recruiting/roles/{slug}/criteria", s.handleRecruitingRoleCriteria)
 			mux.HandleFunc("POST /api/aion/recruiting/roles/sync", s.handleRecruitingRolesSync)
@@ -437,6 +440,7 @@ func (s *Server) Handler() http.Handler {
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/preflight/{id...}", s.handleRecruitingAshbyPreflight)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/push/{id...}", s.handleRecruitingAshbyPush)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/stage/{id...}", s.handleRecruitingAshbyStage)
+				mux.HandleFunc("POST /api/aion/recruiting/ashby/detail/{id...}", s.handleRecruitingAshbyDetail)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/sync", s.handleRecruitingAshbySync)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/webhook", s.handleRecruitingAshbyWebhook)
 			}

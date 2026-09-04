@@ -213,6 +213,12 @@ func (f *fakeAshby) serve(w http.ResponseWriter, r *http.Request) {
 			app["archiveReason"] = map[string]any{"id": reason, "text": "Not a fit"}
 		}
 		f.ok(w, app, nil)
+	case "file.info":
+		if str("fileHandle") == "" {
+			f.invalidInput(w, "fileHandle: Invalid input: expected string, received undefined")
+			return
+		}
+		f.ok(w, map[string]any{"url": f.srv.URL + "/blob/" + str("fileHandle")}, nil)
 	case "source.list":
 		f.ok(w, f.sources, map[string]any{"moreDataAvailable": false})
 	case "jobPosting.list":
@@ -922,6 +928,94 @@ func TestAshbyErrorCarriesTheAPIsOwnMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid_input") {
 		t.Fatalf("the code was dropped: %v", err)
+	}
+}
+
+// ⚠ THE APPLICANT'S OWN SUBMISSION. application.list omits resumeFileHandle
+// and customFields — only application.info carries them — so Detail reads the
+// application in full, mints a SHORT-LIVED download url from the file handle
+// (never storing the handle), and reports honestly that Ashby exposes no
+// application-form endpoint. RecordResume keeps a reference on the record; the
+// bytes belong to the artifacts pool, never the vault.
+func TestAshbyDetailReadsResumeAndFields(t *testing.T) {
+	h := newAshbyHarness(t)
+	res, err := h.sync.Push(context.Background(), AshbyPushRequest{Candidate: h.cand.ID, Handoff: HandoffApplication, Approve: true}, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := h.fake.apps[res.ApplicationID]
+	app["createdAt"] = "2026-09-03T10:00:00Z"
+	app["job"] = map[string]any{"id": "job_mri", "title": "MRI Engineer"}
+	app["resumeFileHandle"] = map[string]any{"id": "file_1", "name": "Dana_Reyes_CV.pdf", "handle": "handle_abc"}
+	app["customFields"] = []map[string]any{
+		{"id": "cf_1", "title": "Why this role?", "value": "low-field MRI is the whole reason I applied"},
+		{"id": "cf_2", "title": "Willing to relocate", "value": true},
+		{"id": "cf_3", "title": "Blank", "value": ""},
+	}
+
+	det, err := h.sync.Detail(context.Background(), h.cand.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if det.ResumeName != "Dana_Reyes_CV.pdf" {
+		t.Fatalf("resume name: %q", det.ResumeName)
+	}
+	if !strings.HasSuffix(det.ResumeURL, "/blob/handle_abc") {
+		t.Fatalf("the file handle was not traded for a url: %q", det.ResumeURL)
+	}
+	if det.JobTitle != "MRI Engineer" || det.AppliedAt != "2026-09-03T10:00:00Z" {
+		t.Fatalf("application facts: %+v", det)
+	}
+	if !det.FormsUnavailable {
+		t.Fatal("the API's form-response limit must be stated, not implied by an empty lane")
+	}
+	// a blank value is not an answer, and a non-string value still reads
+	if len(det.Fields) != 2 {
+		t.Fatalf("fields: %+v", det.Fields)
+	}
+	if det.Fields[0].Title != "Why this role?" || !strings.Contains(det.Fields[0].Value, "low-field MRI") {
+		t.Fatalf("field 0: %+v", det.Fields[0])
+	}
+	if det.Fields[1].Value != "true" {
+		t.Fatalf("a boolean answer must still render: %+v", det.Fields[1])
+	}
+
+	// the URL is short-lived, so it is never serialized to a client
+	blob, err := json.Marshal(det)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(blob), "/blob/") || strings.Contains(string(blob), "handle_abc") {
+		t.Fatalf("the signed url reached the client payload: %s", blob)
+	}
+
+	// the record keeps a REFERENCE — hash and their filename, no bytes
+	if err := h.sync.RecordResume(h.cand.ID, "Dana_Reyes_CV.pdf", strings.Repeat("a", 64), testNow); err != nil {
+		t.Fatal(err)
+	}
+	rec := h.record(t)
+	if !strings.Contains(rec, "ashby_resume: "+strings.Repeat("a", 64)) ||
+		!strings.Contains(rec, "ashby_resume_name: Dana_Reyes_CV.pdf") {
+		t.Fatalf("record:\n%s", rec)
+	}
+	// and it reaches the board projection the inspector renders from
+	var got Candidate
+	for _, c := range h.store.View().Candidates {
+		if c.ID == h.cand.ID {
+			got = c
+		}
+	}
+	if got.Resume.Name != "Dana_Reyes_CV.pdf" || got.Resume.Hash == "" {
+		t.Fatalf("projection: %+v", got.Resume)
+	}
+}
+
+// A record that was never handed off has no application to read.
+func TestAshbyDetailRefusesAnUnlinkedRecord(t *testing.T) {
+	h := newAshbyHarness(t)
+	if _, err := h.sync.Detail(context.Background(), h.cand.ID); err == nil ||
+		!strings.Contains(err.Error(), "not linked") {
+		t.Fatalf("unlinked: %v", err)
 	}
 }
 

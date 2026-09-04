@@ -247,6 +247,15 @@ type Candidate struct {
 	Next               []NextAction      `json:"next"`
 	Override           Override          `json:"override"`
 	Gate               GateState         `json:"gate"`
+	// Resume is the applicant's own file as the record REFERENCES it: the
+	// artifact-pool hash and their filename. The bytes never enter the vault.
+	Resume ResumeRef `json:"resume"`
+}
+
+// ResumeRef is a stored resume by reference.
+type ResumeRef struct {
+	Hash string `json:"hash,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 // ProfileKeys is the closed profile vocabulary, in emit order. `email` and
