@@ -95,6 +95,13 @@
 .chat-main.landing .chat-transcript { flex: 0 1 auto; overflow: visible; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: var(--sp-6); }
 .chat-greeting { font-size: var(--fs-2xl); font-weight: 600; color: var(--base-100); }
 .chat-landing-hint { font-size: var(--fs-xs); color: var(--base-30); }
+/* a NAMED thread that refused to load: said out loud above the landing, so a
+   failed open never reads as "nothing happened" */
+.chat-load-error {
+  font-size: var(--fs-sm); color: var(--danger);
+  background: var(--status-danger-bg); border: 1px solid var(--status-danger-border);
+  border-radius: var(--radius); padding: var(--sp-3) var(--sp-5); max-width: 680px;
+}
 .chat-main.landing .chat-spirit-pick { justify-content: center; }
 .chat-main.landing .chat-composer { max-width: 680px; width: 100%; margin: var(--sp-7) auto 0; }
 .chat-spirit-pick .sprt-quiet.on { color: var(--accent); border-color: var(--accent); }

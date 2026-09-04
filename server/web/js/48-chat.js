@@ -56,9 +56,10 @@ function chatBase() { return chatBaseFor(chatAgent); }
 function chatHash(id) {
   return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/" + encodeURIComponent(id) : "#/chat/" + encodeURIComponent(id);
 }
-// Task links always include the id so routing loads the board and opens its
-// panel in one gesture; never send a conversation back to the TASKS list.
-function chatTaskThreadHash(id) { return "#/tasks/" + encodeURIComponent(id); }
+// A task's conversation opens IN CHAT — the dedicated task-thread stage
+// (#/chat/task/<id>), not the board's panel. The stage's own head keeps the
+// "open task ↗" escape back to TASKS for the record itself.
+function chatTaskThreadHash(id) { return "#/chat/task/" + encodeURIComponent(id); }
 function chatSectionHash(agent) { return agent ? "#/chat/a/" + encodeURIComponent(agent) : "#/chat/spirits"; }
 function chatNewHash() { return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/new" : "#/chat/new"; }
 function chatCurrentSessions() {
@@ -74,13 +75,31 @@ function chatAttachBase() { return "/api/agents/chat/" + encodeURIComponent(chat
 function chatFileHref(hash) { return chatIsPortal() ? chatAttachBase() + "/" + hash : "/api/tasks/thread/file/" + hash + "?id=agentchat"; }
 let chatRitual = "ask"; // portal sends: ask | delegate (the portals' two outcomes)
 
+// chatRouteSegments splits a #/chat/… tail into its ENCODED segments and
+// decodes each one on its own. A portal thread id carries a slash of its own
+// (`th/new-1786943020701`), so decoding the whole tail first cut those ids in
+// half — the route then asked for a session called "th" and painted the empty
+// stage. Legacy hashes that spelled such an id raw still work: the caller
+// rejoins the segments past the ones it consumed.
+function chatRouteSegments(h) {
+  const raw = h && h.startsWith("#/chat/") ? h.slice("#/chat/".length) : "";
+  if (!raw) return [];
+  return raw.split("/").map((s) => { try { return decodeURIComponent(s); } catch (e) { return s; } });
+}
+
 function showChat(h) {
-  const tail = h && h.startsWith("#/chat/") ? decodeURIComponent(h.slice("#/chat/".length)) : "";
-  if (tail.startsWith("cmp/")) { leaveTaskChat(); renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
+  const seg = chatRouteSegments(h);
+  const head = seg[0] || "";
+  const rest = seg.slice(1).join("/"); // one id, whether it was encoded or raw
+  if (head === "cmp") {
+    leaveTaskChat();
+    renderCompare(rest.split(",").filter(Boolean));
+    return;
+  }
   // A task's native thread has no agent-chat session to load. Give it the
   // same full CHAT stage (rather than sending it to an agent landing page).
-  if (tail.startsWith("task/")) {
-    const taskID = tail.slice("task/".length);
+  if (head === "task") {
+    const taskID = rest;
     if (taskID) {
       renderChatHeadActions();
       renderTaskChat(taskID);
@@ -96,14 +115,13 @@ function showChat(h) {
   // landing; a thread opens only when the hash names one, or on bare #/chat
   // (the remembered thread of the remembered section).
   let restore = false;
-  if (tail.startsWith("a/")) {
-    const parts = tail.slice(2).split("/");
-    chatAgent = parts[0] || "alfred";
-    const sub = parts[1] || "";
+  if (head === "a") {
+    chatAgent = seg[1] || "alfred";
+    const sub = seg.slice(2).join("/");
     if (sub && sub !== "new") { chatOpenId = sub; chatLanding = false; }
     else { chatOpenId = ""; chatLanding = true; }
-  } else if (tail === "spirits" || tail === "new") { chatAgent = ""; chatOpenId = ""; chatLanding = true; }
-  else if (tail) { chatAgent = ""; chatOpenId = tail; chatLanding = false; }
+  } else if (head === "spirits" || head === "new") { chatAgent = ""; chatOpenId = ""; chatLanding = true; }
+  else if (head) { chatAgent = ""; chatOpenId = seg.join("/"); chatLanding = false; }
   else { restore = true; chatOpenId = ""; chatLanding = false; }
   renderChatHeadActions();
   loadChatRoster().then(async () => {
@@ -457,8 +475,9 @@ function chatRename(nameEl, s, agent) {
 }
 
 // chatRailTasks — the reverse bridge (§3.4f): the open todos this agent holds,
-// under its threads, each a jump to the task's thread on the board. Quiet
-// when it holds none.
+// under its threads, each opening that task's conversation on the CHAT task
+// stage (the record itself stays one "open task ↗" away). Quiet when it holds
+// none.
 const chatRailTasksMax = 8;
 function chatRailTasks(agent) {
   const wrap = el("div", "chat-rail-tasks");
@@ -700,7 +719,17 @@ async function renderCompare(ids) {
 
 // ---- transcript ----
 
-function renderChatEmpty() { renderChatLanding(); }
+// A thread the hash NAMED but the backend would not give back is an error,
+// not an empty stage (error ≠ empty, conventions §"three list states"): the
+// landing still greets, with the refusal said out loud above it. Painting the
+// bare landing is what hid the split-id routing bug — a click looked like it
+// did nothing.
+async function renderChatEmpty(note) {
+  await renderChatLanding();
+  if (!note) return;
+  const host = document.getElementById("chatTranscript");
+  if (host) host.prepend(el("div", "chat-load-error", note));
+}
 
 async function loadChatSession(id) {
   if (chatIsTerm()) { loadChatTermSession(id); return; }
@@ -708,9 +737,14 @@ async function loadChatSession(id) {
   const base = chatBase();
   try {
     const res = await fetch(base + "/" + encodeURIComponent(id));
-    if (!res.ok) { renderChatEmpty(); return; }
+    if (!res.ok) {
+      renderChatEmpty(res.status === 404
+        ? "that conversation is no longer here — it may have been deleted or archived"
+        : "that conversation didn't load (" + res.status + ")");
+      return;
+    }
     d = await res.json();
-  } catch (e) { return; }
+  } catch (e) { renderChatEmpty("that conversation didn't load — no answer from the server"); return; }
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
@@ -962,10 +996,10 @@ function chatHead(s) {
   if (!agent && s.status === "thinking") { ren.disabled = true; ren.title = "rename after the turn finishes"; }
   ren.onclick = () => chatRename(title, s, agent);
   acts.append(ren);
-  // the task this conversation became (§3.4f) — the link back to the board
+  // the task this conversation became (§3.4f) — into its conversation, here
   if (s.task) {
     const task = el("button", "sprt-quiet chat-head-task", "open task thread ↗");
-    task.title = "open this task's thread in its panel";
+    task.title = "open this task's conversation";
     task.onclick = () => { location.hash = chatTaskThreadHash(s.task); };
     acts.append(task);
   }
