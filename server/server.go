@@ -218,6 +218,9 @@ type Server struct {
 	oodaEmail   *gmailsync.Candidates
 	oodaGmail   *gmailsync.Tokens
 	chatSweepMu sync.Mutex // one chat sweep at a time (ticker vs read-driven)
+	// agentChat: the Hermes-family chat store (Alfred + profiles) in the
+	// primary harness tree — agent-chat plan Phase 1 (agentchat.go). Nilable.
+	agentChat *agentChatCfg
 }
 
 // UseLedger wires the daily ledger.
@@ -511,6 +514,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/chat/sessions/{id}", s.handleChatDelete)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/events", s.handleChatEvents)
 	mux.HandleFunc("GET /api/chat/sessions/{id}/stream", s.handleChatStream)
+	// Agents chat (agent-chat plan Phase 1): the same verbs over the Hermes-
+	// family store — Alfred + profiles — under /api/agents/chat/<agent>/…
+	mux.HandleFunc("GET /api/agents/chat/roster", s.handleAgentChatRoster)
+	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions", s.handleAgentChatSessions)
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions", s.handleAgentChatSessionCreate)
+	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}", s.handleAgentChatSession)
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/messages", s.handleAgentChatMessage)
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/rename", s.handleAgentChatRename)
+	mux.HandleFunc("DELETE /api/agents/chat/{agent}/sessions/{id}", s.handleAgentChatDelete)
 
 	// TERMINAL — in-app PTY over tmux (metis-local; claude/codex presets).
 	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)

@@ -38,7 +38,7 @@
 /* the composer is ONE rounded container (target aesthetic): a borderless
    auto-growing textarea with a quiet mic and a solid accent send tucked at its
    bottom-right. The standalone .chat-input (compare prompt) keeps its own box. */
-.chat-composer { flex: none; display: flex; gap: var(--sp-4); align-items: flex-end; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-6); margin-top: var(--sp-6); }
+.chat-composer { flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: flex-end; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-6); margin-top: var(--sp-6); }
 .chat-composer:focus-within { border-color: var(--accent-soft); }
 .chat-input { flex: 1; resize: vertical; min-height: 44px; font: inherit; font-size: var(--fs-md); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4) var(--sp-5); }
 .chat-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }
@@ -87,3 +87,25 @@
 .chat-thinking-block summary { font-size: var(--fs-xs); color: var(--base-40); cursor: pointer; list-style: none; }
 .chat-thinking-text { font-size: var(--fs-sm); color: var(--base-40); line-height: 1.5; white-space: pre-wrap; padding: var(--sp-3) 0 0 var(--sp-6); border-left: 2px solid var(--line); margin-top: var(--sp-2); }
 .chat-cursor { color: var(--accent); animation: chat-spin-blink 0.9s step-end infinite; }
+
+/* agent sections (agent-chat plan Phase 1): the rail is a list of agent
+   identities — ALFRED, each profile, SPIRITS — each a header that selects the
+   section and, when open, its ＋new + threads. Modifier classes on the
+   existing rail idiom; no new tokens. */
+.chat-rail-group { font-size: var(--fs-2xs); color: var(--base-30); letter-spacing: 0.08em; text-transform: uppercase; padding: var(--sp-5) var(--sp-6) var(--sp-1); }
+.chat-rail-section { flex: none; padding-bottom: var(--sp-3); }
+.chat-rail-section-head { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-4) var(--sp-6); border-radius: var(--radius-lg); cursor: pointer; }
+.chat-rail-section-head:hover { background: var(--base-10); }
+.chat-rail-section.open > .chat-rail-section-head { cursor: default; }
+.chat-rail-section-name { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--base-100); }
+.chat-rail-section.off .chat-rail-section-name { color: var(--base-40); }
+.chat-rail-section-meta { margin-left: auto; font-size: var(--fs-2xs); color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.chat-rail-section .chat-new { margin: var(--sp-2) 0 var(--sp-4); }
+.chat-rail-section .chat-rail-row { margin-left: var(--sp-2); }
+
+/* attachments on an agent-chat turn / pending in the composer */
+.chat-attach-chips { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); }
+.chat-attach-chip { font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); text-decoration: none; }
+.chat-composer .chat-attach-chips { flex: 1 1 100%; order: -1; margin: 0 0 var(--sp-2); }
+.chat-composer .chat-attach { order: 2; }
+.chat-composer .chat-attach[hidden] { display: none; }

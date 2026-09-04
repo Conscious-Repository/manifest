@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/agentchat"
 	"manifest/aion"
 	"manifest/approvals"
 	"manifest/artifacts"
@@ -760,6 +761,12 @@ func main() {
 			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
 		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
+		// Agents chat (agent-chat plan Phase 1, Q7): Alfred/profile sessions
+		// live in the PRIMARY harness tree beside the spirit sessions so they
+		// sync across devices — artifacts/chats/<agent>/<id>.md.
+		if len(hs) > 0 && hs[0].Spirits != nil && hs[0].Spirits.Root() != "" {
+			srv.UseAgentChat(agentchat.New(filepath.Join(hs[0].Spirits.Root(), "artifacts", "chats")))
+		}
 		// Hermes routes off the excalibur harness onto the owner's REAL do-bot
 		// (the local Hermes Agent CLI) when enabled; plan/comment turns run with
 		// a read-only toolset scope (the approval-gate pre-stage). Off → the

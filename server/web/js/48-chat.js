@@ -1,11 +1,18 @@
-// ---- CHAT: conversations with chattable spirits (cmd-ctr import P2) ----
-// The ENGINE owns every turn (casts, warding, charge); this surface reads the
-// session file it rewrites step-by-step and spools user messages. The 1.5s
-// poll while a session is thinking is the live progress channel — the file IS
-// the stream (run-report idiom). Globals chatOpenSession/chatCompose are the
-// hooks the palette, floating chat (P4), and capture handoff (P5) drive.
+// ---- CHAT: Agents chat — one tab, a rail grouped by agent ----
+// (agent-chat plan §3.1/§3.2; cmd-ctr import P2 underneath.) The rail is a
+// list of AGENT SECTIONS, each with its own thread list: ALFRED (the default
+// Hermes profile), PROFILES (one per `hermes profile`), SPIRITS (chattable
+// excalibur spirits). One transcript renderer + one composer serve all of them;
+// what differs per section is the BACKEND — a base URL and whether an SSE
+// stream exists:
+//   spirits          /api/chat/sessions               engine writes, SSE + poll
+//   alfred/profiles  /api/agents/chat/<agent>/sessions manifest writes, poll only
+// The 1.5s poll while a session is thinking is the live progress channel for
+// every backend — the file IS the stream (run-report idiom). Globals
+// chatOpenSession/chatCompose are the hooks the palette, floating chat (P4),
+// and capture handoff (P5) drive.
 
-let chatSessions = [];      // last /api/chat/sessions fetch
+let chatSessions = [];      // last /api/chat/sessions fetch (spirits)
 let chatOpenId = "";        // the open session id ("" = none)
 let chatSpiritsCache = null;
 let chatPollTimer = null;
@@ -15,16 +22,54 @@ let chatLanding = false;            // ＋new → lazy landing (session created 
 let chatPendingSpirit = "concierge"; // spirit/model the landing's first send uses
 let chatPendingModel = "";
 
+// agent sections (Phase 1): "" = the SPIRITS section; else an agent slug
+// (alfred | <profile>) whose threads come from /api/agents/chat/<agent>/…
+let chatAgent = "";
+let chatRoster = [];         // last /api/agents/chat/roster fetch
+let chatAgentSessions = {};  // agent slug → its session list
+let chatAgentPicked = false; // a section was chosen at least once this visit
+
+// ---- backend switch: everything below asks these, never a literal URL ----
+function chatBase() {
+  return chatAgent ? "/api/agents/chat/" + encodeURIComponent(chatAgent) + "/sessions" : "/api/chat/sessions";
+}
+function chatHash(id) {
+  return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/" + encodeURIComponent(id) : "#/chat/" + encodeURIComponent(id);
+}
+function chatSectionHash(agent) { return agent ? "#/chat/a/" + encodeURIComponent(agent) : "#/chat/spirits"; }
+function chatNewHash() { return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/new" : "#/chat/new"; }
+function chatCurrentSessions() { return chatAgent ? (chatAgentSessions[chatAgent] || []) : chatSessions; }
+function chatRosterEntry(name) { return chatRoster.find((a) => a.name === name) || null; }
+function chatAgentLabel(name) { const a = chatRosterEntry(name); return a ? a.label : name; }
+
 function showChat(h) {
   const tail = h && h.startsWith("#/chat/") ? decodeURIComponent(h.slice("#/chat/".length)) : "";
   if (tail.startsWith("cmp/")) { renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
-  if (tail === "new") { chatOpenId = ""; chatLanding = true; }
-  else { chatOpenId = tail; chatLanding = false; }
-  loadChatSessions().then(() => {
-    // no explicit session → most recent; none at all → the landing
-    if (!chatOpenId && !chatLanding && chatSessions.length) {
-      chatOpenId = chatSessions[0].id;
+  // route → section + thread. Agent routes: a/<agent>[/new|/<id>]; spirit
+  // routes keep their old shapes (new, <id>, "spirits" = the section itself).
+  if (tail.startsWith("a/")) {
+    const parts = tail.slice(2).split("/");
+    chatAgent = parts[0] || "alfred";
+    chatAgentPicked = true;
+    const sub = parts[1] || "";
+    if (sub === "new") { chatOpenId = ""; chatLanding = true; }
+    else { chatOpenId = sub; chatLanding = false; }
+  } else if (tail === "spirits") { chatAgent = ""; chatAgentPicked = true; chatOpenId = ""; chatLanding = false; }
+  else if (tail === "new") { chatAgent = ""; chatAgentPicked = true; chatOpenId = ""; chatLanding = true; }
+  else if (tail) { chatAgent = ""; chatAgentPicked = true; chatOpenId = tail; chatLanding = false; }
+  else { chatOpenId = ""; chatLanding = false; }
+  loadChatRoster().then(async () => {
+    // bare #/chat → the last section, else ALFRED when it can take a turn,
+    // else spirits (the pre-Phase-1 behaviour)
+    if (!tail && !chatAgentPicked) {
+      const alfred = chatRosterEntry("alfred");
+      chatAgent = alfred && alfred.enabled ? "alfred" : "";
+      chatAgentPicked = true;
     }
+    await loadChatSessions();
+    // no explicit session → most recent; none at all → the landing
+    const list = chatCurrentSessions();
+    if (!chatOpenId && !chatLanding && list.length) chatOpenId = list[0].id;
     renderChatRail();
     renderChatComposer();
     if (chatOpenId) loadChatSession(chatOpenId);
@@ -46,7 +91,24 @@ function chatFitShell() {
   shell.style.height = Math.max(320, window.innerHeight - top - 14) + "px";
 }
 
+async function loadChatRoster() {
+  try {
+    const res = await fetch("/api/agents/chat/roster");
+    chatRoster = res.ok ? (((await res.json()).agents) || []) : [];
+  } catch (e) { chatRoster = []; }
+  if (chatAgent && !chatRosterEntry(chatAgent)) {
+    // the section vanished (profile deleted / runner off) → fall back
+    chatAgentSessions[chatAgent] = chatAgentSessions[chatAgent] || [];
+  }
+}
+
+// loadChatSessions refreshes the OPEN section's list (spirits or one agent).
 async function loadChatSessions() {
+  if (chatAgent) {
+    try { chatAgentSessions[chatAgent] = ((await (await fetch(chatBase())).json()).sessions) || []; }
+    catch (e) { chatAgentSessions[chatAgent] = []; }
+    return;
+  }
   try { chatSessions = ((await (await fetch("/api/chat/sessions")).json()).sessions) || []; }
   catch (e) { chatSessions = []; }
 }
@@ -58,41 +120,71 @@ async function chatSpiritList() {
   return chatSpiritsCache;
 }
 
-// ---- rail ----
+// ---- rail: agent sections ----
 
 function renderChatRail() {
   const host = document.getElementById("chatRail");
   if (!host) return;
   host.innerHTML = "";
-  // ＋ new is LAZY (cmd-ctr model): it opens the greeting landing — nothing
-  // is created until the first message sends. The landing carries the
-  // spirit/model chooser.
-  const newBtn = el("button", "pill chat-new", "＋ new conversation");
-  newBtn.onclick = () => { location.hash = "#/chat/new"; };
-  host.append(newBtn);
-  if (!chatSessions.length) {
-    host.append(emptyRow("No conversations yet."));
-    return;
+  const alfred = chatRosterEntry("alfred");
+  const profiles = chatRoster.filter((a) => a.name !== "alfred");
+  if (alfred) host.append(chatRailSection(alfred.name, alfred.label, alfred));
+  if (profiles.length) {
+    host.append(el("div", "chat-rail-group", "profiles"));
+    profiles.forEach((p) => host.append(chatRailSection(p.name, p.label, p)));
   }
-  chatSessions.forEach((s) => {
+  host.append(chatRailSection("", "spirits", null));
+}
+
+// chatRailSection — one agent identity: a header (name · model · live mark)
+// that selects the section, and, when open, ＋new + its threads.
+function chatRailSection(agent, label, info) {
+  const open = agent === chatAgent;
+  const sec = el("div", "chat-rail-section" + (open ? " open" : ""));
+  const head = el("div", "chat-rail-section-head");
+  head.append(el("span", "chat-rail-section-name", label));
+  const sessions = agent ? (chatAgentSessions[agent] || []) : chatSessions;
+  if (sessions.some((s) => s.status === "thinking")) head.append(el("span", "chat-rail-live", "✦"));
+  const meta = el("span", "chat-rail-section-meta");
+  if (info && info.model) meta.textContent = info.model.replace(/^claude-/, "");
+  else if (!open && info && info.sessions) meta.textContent = info.sessions + " thread" + (info.sessions === 1 ? "" : "s");
+  if (info && !info.enabled) { meta.textContent = "runner off"; sec.classList.add("off"); }
+  head.append(meta);
+  if (info && info.description) head.title = info.description;
+  head.onclick = () => { if (!open) location.hash = chatSectionHash(agent); };
+  sec.append(head);
+  if (!open) return sec;
+
+  // ＋ new is LAZY (cmd-ctr model): it opens the greeting landing — nothing
+  // is created until the first message sends.
+  const newBtn = el("button", "pill chat-new", "＋ new conversation");
+  newBtn.onclick = () => { location.hash = chatNewHash(); };
+  sec.append(newBtn);
+  if (!sessions.length) {
+    sec.append(emptyRow("No conversations yet."));
+    return sec;
+  }
+  sessions.forEach((s) => {
     const row = el("div", "chat-rail-row" + (s.id === chatOpenId ? " open" : ""));
     const top = el("div", "chat-rail-top");
     top.append(el("span", "chat-rail-title", s.title || s.id));
     if (s.status === "thinking") top.append(el("span", "chat-rail-live", "✦"));
     row.append(top);
-    const meta = el("div", "chat-rail-meta");
-    meta.append(el("span", "chat-rail-spirit", s.spirit));
-    meta.append(el("span", "chat-rail-when", fmtWhen(s.updated || s.created)));
-    row.append(meta);
-    row.onclick = () => { location.hash = "#/chat/" + encodeURIComponent(s.id); };
-    host.append(row);
+    const rm = el("div", "chat-rail-meta");
+    rm.append(el("span", "chat-rail-spirit", s.spirit || s.agent || label));
+    rm.append(el("span", "chat-rail-when", fmtWhen(s.updated || s.created)));
+    row.append(rm);
+    row.onclick = () => { location.hash = chatHash(s.id); };
+    sec.append(row);
   });
+  return sec;
 }
 
 // renderChatLanding — the lazy new-chat landing (cmd-ctr model): a time-aware
-// greeting, spirit/model chips that set what the FIRST SEND creates, and the
-// centered composer. No session exists until the first message goes out, so
-// "new conversation" can never feel dead.
+// greeting, the identity the FIRST SEND creates under (spirit/model chips for
+// the spirits section; the agent's name + model for an agent section), and
+// the centered composer. No session exists until the first message goes out,
+// so "new conversation" can never feel dead.
 function chatGreeting() {
   const h = new Date().getHours();
   const pool = h < 5 ? ["Late one. What's on your mind?", "Still going — what do you need?"]
@@ -110,6 +202,22 @@ async function renderChatLanding() {
   host.innerHTML = "";
   host.append(el("div", "chat-spark", "✦"));
   host.append(el("div", "chat-greeting", chatGreeting()));
+
+  if (chatAgent) {
+    const a = chatRosterEntry(chatAgent);
+    const who = el("div", "chat-spirit-pick");
+    who.append(el("span", "pill light on", a ? a.label : chatAgent));
+    if (a && a.model) who.append(el("span", "sprt-quiet", a.model.replace(/^claude-/, "")));
+    if (a && a.profile) who.append(el("span", "chat-landing-hint", "hermes -p " + a.profile));
+    host.append(who);
+    if (a && !a.enabled) {
+      host.append(emptyRow("The Hermes runner is not enabled on this box — turns can't run here."));
+      return;
+    }
+    host.append(el("div", "chat-landing-hint", "type below — Enter sends, the conversation starts then"));
+    focusChatInput();
+    return;
+  }
 
   const spirits = (await chatSpiritList()).filter((s) => s.enabled);
   if (!spirits.length) {
@@ -155,7 +263,7 @@ function focusChatInput() {
   if (ta) ta.focus();
 }
 
-// ---- Compare: one prompt → N model lanes (UI-level fan-out) ----
+// ---- Compare: one prompt → N model lanes (UI-level fan-out; spirits only) ----
 
 function openComparePrompt(spirit) {
   const host = document.getElementById("chatTranscript");
@@ -208,7 +316,7 @@ async function renderCompare(ids) {
   if (rail) {
     rail.innerHTML = "";
     const back = el("button", "pill chat-new", "‹ back to chat");
-    back.onclick = () => { location.hash = "#/chat"; if (comp) comp.hidden = false; };
+    back.onclick = () => { location.hash = "#/chat/spirits"; if (comp) comp.hidden = false; };
     rail.append(back);
   }
   if (!host) return;
@@ -261,12 +369,13 @@ function renderChatEmpty() { renderChatLanding(); }
 
 async function loadChatSession(id) {
   let d;
+  const base = chatBase();
   try {
-    const res = await fetch("/api/chat/sessions/" + encodeURIComponent(id));
+    const res = await fetch(base + "/" + encodeURIComponent(id));
     if (!res.ok) { renderChatEmpty(); return; }
     d = await res.json();
   } catch (e) { return; }
-  if (id !== chatOpenId) return; // navigated away mid-fetch
+  if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
   renderChatTranscript(d);
@@ -276,15 +385,22 @@ async function loadChatSession(id) {
 }
 
 // ---- live stream layer (A2): EventSource over the engine's event log ----
-// The transcript render covers history from the session file; this layer
-// paints the CURRENT turn as it happens — tool chips lighting up, thinking,
-// and (once the engine streams deltas) the reply typing out with constant-
-// speed reveal. On turn.completed the session refetches and the layer clears.
+// SPIRITS ONLY — the Hermes-family backends have no event log; their turn
+// paints from the file poll. The transcript render covers history from the
+// session file; this layer paints the CURRENT turn as it happens — tool chips
+// lighting up, thinking, and (once the engine streams deltas) the reply typing
+// out with constant-speed reveal. On turn.completed the session refetches and
+// the layer clears.
 let chatES = null, chatESFor = "";
 let chatLive = null; // {tools:[], thinking:"", thinkTok:0, say:"", revealed:0, open:true}
 let chatRevealTimer = null, chatLastMd = 0;
 
 function ensureChatStream(session) {
+  if (chatAgent) { // no SSE for Hermes-family sessions: close any spirit stream
+    if (chatES) { chatES.close(); chatES = null; chatESFor = ""; }
+    chatLive = null;
+    return;
+  }
   if (chatESFor === session.id && chatES) return;
   if (chatES) { chatES.close(); chatES = null; }
   chatESFor = session.id;
@@ -323,7 +439,7 @@ function ensureChatStream(session) {
 
 async function refetchChatSession(id) {
   try {
-    const res = await fetch("/api/chat/sessions/" + encodeURIComponent(id));
+    const res = await fetch(chatBase() + "/" + encodeURIComponent(id));
     if (!res.ok || id !== chatOpenId) return;
     const d = await res.json();
     renderChatTranscript(d);
@@ -422,7 +538,9 @@ function chatPin() {
   if (host && chatStick) host.scrollTop = host.scrollHeight;
 }
 
-// parseChatTurns splits the session body into turn blocks.
+// parseChatTurns splits the session body into turn blocks. The grammar is
+// shared by spirit sessions (engine-written) and agent sessions (manifest-
+// written, agentchat package) — one parser, one renderer.
 function parseChatTurns(body) {
   const turns = [];
   const re = /^## Turn (\d+) — (.+?) · (\S+)( · \$([\d.]+))?$/gm;
@@ -450,6 +568,36 @@ function parseChatSteps(text) {
   return steps;
 }
 
+// chatFileTokenRe — an attachment on an agent-chat user turn rides as its own
+// line `[file:: <sha256> <name>]` (server agentchat.go); the renderer turns it
+// into a download chip. Spirit turns never carry one.
+const chatFileTokenRe = /^\[file:: ([0-9a-f]{64}) (.+?)\]$/;
+
+// chatUserTurn renders a user turn: the text, then any attachment chips.
+function chatUserTurn(text) {
+  const b = el("div", "chat-turn chat-user");
+  const lines = (text || "").split("\n");
+  const files = [], keep = [];
+  lines.forEach((ln) => {
+    const m = ln.match(chatFileTokenRe);
+    if (m) files.push({ hash: m[1], name: m[2] }); else keep.push(ln);
+  });
+  b.textContent = keep.join("\n").trim();
+  if (files.length) {
+    const chips = el("div", "chat-attach-chips");
+    files.forEach((f) => {
+      const a = document.createElement("a");
+      a.className = "chat-attach-chip";
+      a.textContent = "⤓ " + f.name;
+      a.href = "/api/tasks/thread/file/" + f.hash + "?id=agentchat";
+      a.target = "_blank";
+      chips.append(a);
+    });
+    b.append(chips);
+  }
+  return b;
+}
+
 function renderChatTranscript(d) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
@@ -460,31 +608,31 @@ function renderChatTranscript(d) {
 
   const head = el("div", "chat-head");
   head.append(el("span", "chat-head-title", s.title || s.id));
-  head.append(el("span", "chat-head-spirit", s.spirit + (s.model ? " · " + s.model : "")));
-  const spent = el("span", "chat-head-charge", "$" + s.spentUsd.toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
+  const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
+  head.append(el("span", "chat-head-spirit", who + (s.model ? " · " + s.model : "")));
+  const spent = el("span", "chat-head-charge", "$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
   head.append(spent);
+  const base = chatBase();
   const ren = el("button", "sprt-quiet", "rename");
   ren.onclick = () => askText("Rename conversation", s.title || "", async (t) => {
     if (!t.trim()) return;
-    try { await postJSONOk("/api/chat/sessions/" + encodeURIComponent(s.id) + "/rename", { title: t.trim() }); loadChat(); } catch (e) { showToast(e.message || "rename failed"); }
+    try { await postJSONOk(base + "/" + encodeURIComponent(s.id) + "/rename", { title: t.trim() }); loadChat(); } catch (e) { showToast(e.message || "rename failed"); }
   });
-  const del = el("button", "sprt-quiet", "delete");
-  del.onclick = async () => {
-    if (!confirm("Delete this conversation?")) return;
+  const del = armedDelete("delete", "delete — sure?", async () => {
     try {
-      await fetch("/api/chat/sessions/" + encodeURIComponent(s.id), { method: "DELETE" });
+      const res = await fetch(base + "/" + encodeURIComponent(s.id), { method: "DELETE" });
+      if (!res.ok) { showToast((await res.text()).slice(0, 120) || "delete failed"); return; }
       chatOpenId = "";
-      location.hash = "#/chat";
-    } catch (e) {}
-  };
+      location.hash = chatSectionHash(chatAgent);
+      loadChat();
+    } catch (e) { showToast("delete failed"); }
+  });
   head.append(ren, del);
   host.append(head);
 
   parseChatTurns(d.body || "").forEach((t) => {
     if (t.who === "user") {
-      const b = el("div", "chat-turn chat-user");
-      b.textContent = t.text;
-      host.append(b);
+      host.append(chatUserTurn(t.text));
       return;
     }
     if (t.who === "system") {
@@ -515,12 +663,13 @@ function renderChatTranscript(d) {
   });
 
   (d.queued || []).forEach((q) => {
-    const b = el("div", "chat-turn chat-user chat-queued");
-    b.textContent = q;
+    const b = chatUserTurn(q);
+    b.classList.add("chat-queued");
     host.append(b);
   });
   // the live layer's mount point (turn.started paints into it); when the ES
-  // hasn't caught the turn yet, the status flag still shows a quiet indicator
+  // hasn't caught the turn yet — or there is no ES at all (agent sessions) —
+  // the status flag still shows a quiet indicator
   const area = el("div", "chat-live-area");
   area.id = "chatLiveArea";
   host.append(area);
@@ -532,16 +681,32 @@ function renderChatTranscript(d) {
 }
 
 // ---- composer ----
+// One composer for every section. Attachments (agent sections only) reuse the
+// todo-thread file store: upload first, the refs ride the send as `files` and
+// land on the user turn as [file::] tokens.
+
+let chatPendingFiles = [];
 
 function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
+  const syncAttach = () => {
+    const btn = host.querySelector(".chat-attach");
+    if (btn) btn.hidden = !chatAgent;
+    const chips = host.querySelector(".chat-attach-chips");
+    if (chips) {
+      chips.innerHTML = "";
+      chips.hidden = !chatPendingFiles.length;
+      chatPendingFiles.forEach((f) => chips.append(el("span", "chat-attach-chip", "⤓ " + f.name)));
+    }
+  };
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
     const busy = session && session.status === "thinking";
     if (ta) ta.placeholder = busy ? "✦ thinking — messages queue…" : "Message…";
     if (send) send.disabled = false;
+    syncAttach();
     return;
   }
   host.dataset.built = "1";
@@ -553,16 +718,46 @@ function renderChatComposer(session) {
   // clamped so a long paste scrolls inside instead of shoving the transcript.
   const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + "px"; };
   ta.addEventListener("input", grow);
+  const chips = el("div", "chat-attach-chips");
+  chips.hidden = true;
+  const fi = document.createElement("input");
+  fi.type = "file";
+  fi.multiple = true;
+  fi.hidden = true;
+  fi.onchange = async () => {
+    for (const f of [...fi.files]) {
+      try {
+        const res = await fetch("/api/tasks/thread/file?id=agentchat&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+        if (!res.ok) throw new Error((await res.text()).slice(0, 120));
+        chatPendingFiles.push((await res.json()).file);
+      } catch (e) { showToast("Upload failed — " + (e.message || "error")); }
+    }
+    fi.value = "";
+    syncAttach();
+  };
+  const attach = el("button", "mic-btn chat-attach", "＋");
+  attach.title = "Attach a file";
+  attach.onclick = () => fi.click();
   const send = el("button", "chat-send", "↑");
   send.title = "Send  ·  Enter";
   const submit = async () => {
     const text = ta.value.trim();
-    if (!text) return;
+    const files = chatPendingFiles.slice();
+    if (!text && !files.length) return;
     ta.value = "";
     grow();
+    chatPendingFiles = [];
+    syncAttach();
     try {
       if (chatOpenId) {
-        await postJSONOk("/api/chat/sessions/" + encodeURIComponent(chatOpenId) + "/messages", { text });
+        await postJSONOk(chatBase() + "/" + encodeURIComponent(chatOpenId) + "/messages", chatAgent ? { text, files } : { text });
+      } else if (chatAgent) {
+        // lazy create under the open agent section: the first send creates
+        const r = await postJSONOk(chatBase(), { text, files });
+        chatOpenId = r.id;
+        chatLanding = false;
+        location.hash = chatHash(r.id);
+        return;
       } else {
         // lazy create (cmd-ctr model): the landing's chosen spirit/model
         const r = await postJSONOk("/api/chat/sessions", {
@@ -570,21 +765,22 @@ function renderChatComposer(session) {
         });
         chatOpenId = r.id;
         chatLanding = false;
-        location.hash = "#/chat/" + encodeURIComponent(r.id);
+        location.hash = chatHash(r.id);
         return;
       }
       loadChatSession(chatOpenId);
       loadChatSessions().then(renderChatRail);
-    } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; grow(); }
+    } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
   };
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
   });
   send.onclick = submit;
-  host.append(ta, send);
+  host.append(chips, ta, fi, attach, send);
+  syncAttach();
 }
 
-// ---- live poll (file-derived; stops when idle) ----
+// ---- live poll (file-derived; stops when idle; every backend) ----
 
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || queued > 0);
@@ -596,7 +792,7 @@ function ensureChatPoll(session, queued) {
     }
     let d;
     try {
-      const res = await fetch("/api/chat/sessions/" + encodeURIComponent(chatOpenId));
+      const res = await fetch(chatBase() + "/" + encodeURIComponent(chatOpenId));
       if (!res.ok) return;
       d = await res.json();
     } catch (e) { return; }
@@ -616,7 +812,10 @@ function loadChat() { showChat(location.hash); }
 
 // ---- hooks for the palette / floating chat / capture handoff ----
 
+// chatOpenSession opens a SPIRIT session by id (the palette/floating chat
+// callers index spirit sessions); agent threads route through their section.
 function chatOpenSession(id) { location.hash = "#/chat/" + encodeURIComponent(id); }
+function chatOpenAgentSession(agent, id) { location.hash = "#/chat/a/" + encodeURIComponent(agent) + "/" + encodeURIComponent(id); }
 
 // chatCompose opens (or creates) a session with a spirit and pre-fills text.
 async function chatCompose(spirit, prefill) {
@@ -639,16 +838,30 @@ cmdRegistry.register(async (q) => {
   if (!sessions.length) {
     try { sessions = ((await (await fetch("/api/chat/sessions")).json()).sessions) || []; } catch (e) { sessions = []; }
   }
-  return sessions.slice(0, 30).map((s) => ({
+  const out = sessions.slice(0, 30).map((s) => ({
     id: "chat:" + s.id,
     name: "Chat · " + (s.title || s.id),
     hint: s.spirit + " · conversation",
     keywords: "chat conversation " + s.spirit,
     act: () => { closeCmdbar(); chatOpenSession(s.id); },
   }));
+  Object.keys(chatAgentSessions).forEach((agent) => {
+    (chatAgentSessions[agent] || []).slice(0, 20).forEach((s) => out.push({
+      id: "chat:" + agent + ":" + s.id,
+      name: "Chat · " + (s.title || s.id),
+      hint: chatAgentLabel(agent) + " · conversation",
+      keywords: "chat conversation " + agent + " alfred hermes",
+      act: () => { closeCmdbar(); chatOpenAgentSession(agent, s.id); },
+    }));
+  });
+  return out;
 });
 cmdRegistry.register(() => [{
-  id: "act:new-chat", name: "New chat with an agent", hint: "chat · action",
-  keywords: "chat talk converse ask concierge",
+  id: "act:new-chat-alfred", name: "New chat with Alfred", hint: "chat · action",
+  keywords: "chat talk converse ask alfred hermes agent",
+  act: () => { closeCmdbar(); location.hash = "#/chat/a/alfred/new"; },
+}, {
+  id: "act:new-chat", name: "New chat with a spirit", hint: "chat · action",
+  keywords: "chat talk converse ask concierge spirit",
   act: () => { closeCmdbar(); chatCompose("concierge", ""); },
 }]);
