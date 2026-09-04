@@ -293,11 +293,11 @@ func (s *Service) notePath(it Item, sub Subscription, base string) string {
 	if rel, ok := s.curatedNotePath(it); ok {
 		return rel
 	}
-	base = firstNonEmpty(slugFor(base), slugFor(it.Title), slugFor(sub.Title+" item"))
+	base = firstNonEmpty(noteNameFor(base), noteNameFor(it.Title), noteNameFor(sub.Title+" item"))
 	rel := "extrinsic/" + base + ".md"
 	if prior, err := s.readVault(rel); err == nil {
 		if e, ok := parseCurated(rel, string(prior)); ok && e.ItemID != it.ID {
-			rel = "extrinsic/" + base + "-" + slugFor(firstNonEmpty(sub.Title, sub.ID)) + ".md"
+			rel = "extrinsic/" + base + " " + noteNameFor(firstNonEmpty(sub.Title, sub.ID)) + ".md"
 		}
 	}
 	return rel

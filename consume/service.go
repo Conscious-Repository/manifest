@@ -1000,5 +1000,12 @@ func (s *Service) Lists() []string {
 	return out
 }
 
-// slugFor is the shared title→filename rule for curated notes.
+// slugFor is the hyphen slug rule kept for ids (subscription ids, dedupe
+// keys). It no longer names note FILES: see noteNameFor.
 func slugFor(title string) string { return record.Slug(title, 60) }
+
+// noteNameFor is the title→FILENAME rule for curated notes: lowercase, words
+// separated by single spaces, apostrophes kept, no dashes — the shape the
+// owner's own notes have ("being a lizard.md"). Same cap as slugFor so an X
+// post's body-derived name stays short.
+func noteNameFor(title string) string { return record.SlugSpaces(title, 60) }

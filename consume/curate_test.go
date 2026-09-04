@@ -254,6 +254,37 @@ func TestCollidingTitlesGetDistinctNotes(t *testing.T) {
 	if len(s.Curated()) != 2 {
 		t.Errorf("want 2 curated notes, got %d", len(s.Curated()))
 	}
+	// The filename rule: lowercase title, spaces, no dashes — and the
+	// disambiguator joins with a space too.
+	if first.Path != "extrinsic/the dictatorship of the articulate.md" {
+		t.Errorf("first note path %q", first.Path)
+	}
+	if second.Path != "extrinsic/the dictatorship of the articulate melissa's newsletter.md" {
+		t.Errorf("second note path %q", second.Path)
+	}
+}
+
+// A curated note is named like the owner's own notes ("being a lizard.md"):
+// the title lowercased, words separated by spaces, apostrophes kept, and no
+// dash anywhere — a hyphenated title loses its hyphens too.
+func TestCuratedNoteFilenameIsLowercaseSpaces(t *testing.T) {
+	v := newVault(t)
+	s, it := svcWithItem(t, v)
+	it.ID = itemID(KindRSS, "melissa", "guid-hyphen")
+	it.Title = "Value's Daily-Manifest: 100 Days, Re-examined!"
+	it.URL = "https://m.example/p/daily-manifest"
+	s.store.Commit("melissa", time.Now().UTC(), true, []Item{it}, nil, "")
+
+	entry, err := s.Curate(context.Background(), it.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Path != "extrinsic/value's daily manifest 100 days re examined.md" {
+		t.Errorf("path %q", entry.Path)
+	}
+	if strings.Contains(entry.Path, "-") {
+		t.Errorf("a dash in a note filename: %q", entry.Path)
+	}
 }
 
 // A colon in a title breaks an unquoted YAML block and silently truncates the

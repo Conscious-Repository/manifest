@@ -277,8 +277,9 @@ func TestCurateDOIURLProducesPaperMetadata(t *testing.T) {
 	if LinkKind(entry) != "paper" {
 		t.Errorf("kind: %q", LinkKind(entry))
 	}
-	// The registry's title, not the URL's host — this is what notePath slugs.
-	if !strings.Contains(entry.Path, "sub-millivolt") {
+	// The registry's title, not the URL's host — this is what notePath names
+	// the file after (lowercase, spaces, no dashes).
+	if !strings.Contains(entry.Path, "sub millivolt") {
 		t.Errorf("the note is not named after the paper: %s", entry.Path)
 	}
 	note := v.read(t, entry.Path)
@@ -663,9 +664,9 @@ func TestTitleKeyBare(t *testing.T) {
 		{"Episode 42: Loops", "loops"},
 		{"E42 Loops", "loops"},
 		{"The Terahertz Frontier", "the terahertz frontier"},
-		{"Episode 12", "episode 12"},                          // the number IS the title — nothing bare to compare
-		{"10 Things About Radar", "things about radar"},       // stripped, but only ever matched uniquely
-		{"E&M Reality Emerges", "e m reality emerges"},        // a bare "e" without digits is not a numbering
+		{"Episode 12", "episode 12"},                    // the number IS the title — nothing bare to compare
+		{"10 Things About Radar", "things about radar"}, // stripped, but only ever matched uniquely
+		{"E&M Reality Emerges", "e m reality emerges"},  // a bare "e" without digits is not a numbering
 		{"2001 A Space Odyssey Revisited", "a space odyssey revisited"},
 	} {
 		if got := titleKeyBare(tc[0]); got != tc[1] {

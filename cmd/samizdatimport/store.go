@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"manifest/record"
 	"manifest/vaultwriter"
 )
 
@@ -30,6 +31,7 @@ type vaultStore struct {
 
 	index     map[string]string // original image URL → attachments/<sha>.<ext>
 	indexPath string
+	byURL     map[string]string // canonical post URL → existing note name (stem) in folder
 }
 
 type imageStatus int
@@ -39,17 +41,112 @@ const (
 	imgReused
 )
 
-// writeNote writes folder/<slug>.md, replacing from source. Returns whether
+// noteName is the FILENAME a post's note gets: the title lowercased, words
+// separated by single spaces, apostrophes kept, no dashes — the shape of the
+// owner's own notes ("being a lizard.md"), not the URL slug. A post with no
+// usable title falls back to its URL slug run through the same rule.
+func noteName(title, slug string) string {
+	if n := record.SlugSpaces(title, 0); n != "" {
+		return n
+	}
+	return record.SlugSpaces(slug, 0)
+}
+
+// noteFor resolves which file in the folder holds this post: the title-named
+// file when it exists (or nothing does), else the note already carrying the
+// post's URL in its frontmatter — so a re-titled post, or a mirror made under
+// an older naming rule, is updated in place rather than duplicated.
+func (s *vaultStore) noteFor(name string, urls ...string) (string, bool) {
+	if _, err := os.Stat(filepath.Join(s.vault, filepath.FromSlash(s.folder), name+".md")); err == nil {
+		return name, false
+	}
+	s.loadURLs()
+	for _, u := range urls {
+		if u == "" {
+			continue
+		}
+		if have, ok := s.byURL[canonURL(u)]; ok && have != name {
+			return have, true
+		}
+	}
+	return name, false
+}
+
+// loadURLs indexes the folder's notes by their `url:` frontmatter, once.
+func (s *vaultStore) loadURLs() {
+	if s.byURL != nil {
+		return
+	}
+	s.byURL = map[string]string{}
+	entries, err := os.ReadDir(filepath.Join(s.vault, filepath.FromSlash(s.folder)))
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(s.vault, filepath.FromSlash(s.folder), e.Name()))
+		if err != nil {
+			continue
+		}
+		if u := noteURL(string(raw)); u != "" {
+			s.byURL[canonURL(u)] = strings.TrimSuffix(e.Name(), ".md")
+		}
+	}
+}
+
+// noteURL reads the `url:` line of a note's frontmatter ("" when absent).
+func noteURL(content string) string {
+	block, _, ok := record.SplitFrontmatter(content)
+	if !ok {
+		return ""
+	}
+	for _, ln := range block {
+		if k, v, ok := strings.Cut(ln, ":"); ok && strings.TrimSpace(k) == "url" {
+			return record.Unquote(strings.TrimSpace(v))
+		}
+	}
+	return ""
+}
+
+// canonURL makes two spellings of one post URL compare equal: scheme, host
+// case, a trailing slash and a query string do not make a different post.
+func canonURL(u string) string {
+	u = strings.TrimSpace(u)
+	if i := strings.Index(u, "://"); i >= 0 {
+		u = u[i+3:]
+	}
+	u = strings.TrimPrefix(u, "www.")
+	if i := strings.IndexAny(u, "?#"); i >= 0 {
+		u = u[:i]
+	}
+	u = strings.TrimSuffix(u, "/")
+	if i := strings.Index(u, "/"); i >= 0 {
+		return strings.ToLower(u[:i]) + u[i:]
+	}
+	return strings.ToLower(u)
+}
+
+// writeNote writes folder/<name>.md, replacing from source. Returns whether
 // the bytes changed (an identical note is left alone: no write, no audit line).
-func (s *vaultStore) writeNote(slug, content string) (bool, error) {
-	rel := path.Join(s.folder, slug+".md")
+func (s *vaultStore) writeNote(name, content string) (bool, error) {
+	rel := path.Join(s.folder, name+".md")
 	if old, err := os.ReadFile(filepath.Join(s.vault, filepath.FromSlash(rel))); err == nil && string(old) == content {
 		return false, nil
 	}
 	if s.dryRun {
 		return true, nil
 	}
-	return true, s.vw.WriteCap(capNotes, rel, []byte(content))
+	if err := s.vw.WriteCap(capNotes, rel, []byte(content)); err != nil {
+		return true, err
+	}
+	if s.byURL != nil {
+		if u := noteURL(content); u != "" {
+			s.byURL[canonURL(u)] = name
+		}
+	}
+	return true, nil
 }
 
 // saveImage mirrors one image into attachments/<sha256>.<ext> and returns the

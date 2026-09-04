@@ -4,6 +4,11 @@
 // attachments/, uniform frontmatter (owner decisions 2026-09-04, plan
 // system/workbench/plans/2026-09-04-samizdat-mirror-and-authoring.md).
 //
+// A note is named after the post's TITLE the way the owner names notes —
+// lowercase, spaces between words, apostrophes kept, no dashes
+// ("100 days with visualize value's daily manifest.md") — not after the URL
+// slug. The URL slug stays the post's identity for -only and the page cache.
+//
 // It is repeatable and safe:
 //   - enumeration is the SITEMAP (the RSS feed exposes only the latest 20);
 //     with the sitemap unavailable it falls back to feed.xml + the archive API.
@@ -171,7 +176,14 @@ func main() {
 			post.Markdown = strings.ReplaceAll(post.Markdown, "("+im.Src+")", "("+local+")")
 		}
 		note := renderNote(post)
-		wrote, err := store.writeNote(e.Slug, note)
+		// The note is named after the TITLE (lowercase, spaces, no dashes).
+		// A note already holding this post's URL under another name — an
+		// older naming rule, or a post re-titled since — is updated in place.
+		name, kept := store.noteFor(noteName(post.Title, e.Slug), post.URL, e.URL)
+		if kept {
+			log.Printf("  keeping existing note %s/%s.md (title now %q)", store.folder, name, post.Title)
+		}
+		wrote, err := store.writeNote(name, note)
 		if err != nil {
 			log.Printf("  FAIL write: %v", err)
 			rep.Failed = append(rep.Failed, e.Slug)
@@ -180,10 +192,10 @@ func main() {
 		rep.Imported++
 		if wrote {
 			rep.Written++
-			log.Printf("  wrote %s/%s.md (%d images, published %s)", store.folder, e.Slug, len(post.Images), post.Published)
+			log.Printf("  wrote %s/%s.md (%d images, published %s)", store.folder, name, len(post.Images), post.Published)
 		} else {
 			rep.Unchanged++
-			log.Printf("  unchanged %s/%s.md", store.folder, e.Slug)
+			log.Printf("  unchanged %s/%s.md", store.folder, name)
 		}
 		// Dedupe: an existing top-level note that is this post → archive/.
 		for _, c := range candidates {
