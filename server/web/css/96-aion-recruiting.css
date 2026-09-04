@@ -6,7 +6,11 @@
    ink + a leading ●, absent reads muted. Red is not used on this surface. */
 
 .rec-shell { min-width: 0; }
-.rec-main { min-width: 0; overflow: hidden; }
+/* The rail keeps sp-6 of air INSIDE its own border; the pane had none after
+   it, so every card's left border landed a hair off the rail's divider and
+   read as a doubled line. The pane takes the wider half of the gutter, which
+   is the usual asymmetry: the rule belongs to the rail it separates. */
+.rec-main { min-width: 0; overflow: hidden; padding-left: var(--sp-8); }
 
 /* rail — VIEWS over ROLES over SEEDS, sync footer at the foot */
 .rec-rail {
@@ -388,4 +392,5 @@ a.rec-seed-name:hover { text-decoration: underline; }
 @media (max-width: 860px) {
   .rec-shell { flex-direction: column; }
   .rec-rail { width: 100%; border-right: 0; border-bottom: 1px solid var(--base-25); padding-right: 0; }
+  .rec-main { padding-left: 0; } /* stacked: the divider is horizontal now */
 }
