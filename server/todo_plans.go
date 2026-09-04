@@ -158,6 +158,11 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	if link := s.taskChatLink(id, thread, rec.Assignee); link != nil {
 		out["chat"] = link
 	}
+	// coordination (P1 Phase 1): blocked-by / depends-on / dependents, derived
+	// across every source on this read — the panel's "depends on · blocks" rows
+	if c := s.taskCoord(id); c != nil {
+		out["coord"] = c
+	}
 	if d, ok := s.delegationIndex()[id]; ok {
 		out["delegation"] = d
 		// presence (agent-chat plan §3.4d): derived from the live index, never

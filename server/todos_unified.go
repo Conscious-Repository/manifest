@@ -74,6 +74,14 @@ type unifiedRow struct {
 	Waiting   string           `json:"waiting,omitempty"` // [waiting:: who] (personal) — the board's Waiting column
 	// Delegation (Phase 6): derived from harness traces carrying [todo:: id].
 	Delegation *delegationView `json:"delegation,omitempty"`
+	// Coordination (P1 Phase 1): the stored fields ride the row; blocked /
+	// dependents derive across EVERY source (todo_coord.go) on each read.
+	State      string   `json:"state"`                // open | waiting | blocked
+	Priority   string   `json:"priority,omitempty"`   // [priority:: high|med|low]
+	Depends    []string `json:"depends,omitempty"`    // [depends:: id, id]
+	BlockedBy  []string `json:"blockedBy,omitempty"`  // the open dependencies
+	Unresolved []string `json:"unresolved,omitempty"` // dependencies no source knows
+	Dependents []string `json:"dependents,omitempty"` // open rows that depend on this one
 }
 
 type outstandingGroup struct {
@@ -86,10 +94,14 @@ type outstandingGroup struct {
 // callers split it into the me-projection and the Outstanding grouping.
 func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 	var rows []unifiedRow
+	// known is the cross-source dependency resolver's memory: every task id
+	// any source can see (done ones included) → still open?
+	known := map[string]bool{}
 	if doc != nil {
 		for _, dom := range doc.Domains {
 			c := unifiedContainer{Kind: "domain", Name: dom.Name}
 			dom.AllTasks(func(_ *tasks.Bucket, t *tasks.Task) {
+				known[t.ID] = !t.Checked
 				if t.Checked {
 					return
 				}
@@ -97,8 +109,12 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 					ID: t.ID, Text: t.Text, Owner: t.Owner, Rank: t.RankN(),
 					Added: t.Added, Rock: t.Rock, Source: "personal",
 					Container: c, AgeDays: t.AgeDays(now), Waiting: t.Waiting,
+					Priority: t.Priority, Depends: t.Depends,
 				})
 			})
+			for _, is := range dom.Issues { // a task may wait on a decision
+				known[is.ID] = !is.Checked
+			}
 		}
 	}
 	if s.realestate != nil {
@@ -106,13 +122,16 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 			for _, p := range props {
 				c := unifiedContainer{Kind: "property", Slug: p.Slug, Name: orStr(p.Short, p.Name)}
 				for _, t := range p.Tasks {
+					id := "prop:" + p.Slug + "/" + t.ID
+					known[id] = !t.Checked
 					if t.Checked {
 						continue
 					}
 					rows = append(rows, unifiedRow{
-						ID: "prop:" + p.Slug + "/" + t.ID, Text: t.Text, Owner: t.Owner,
+						ID: id, Text: t.Text, Owner: t.Owner,
 						Rank: t.RankN(), Added: t.Added, Source: "property",
 						Container: c, AgeDays: t.AgeDays(now),
+						Priority: t.Priority, Depends: t.Depends,
 					})
 				}
 			}
@@ -135,8 +154,12 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 			continue
 		}
 		for _, it := range b.store.LoadBacklog().Items() {
-			if it.Kind != aion.KindTask || it.Checked ||
-				(it.Status != aion.StatusOpen && it.Status != aion.StatusInProgress && it.Status != "") {
+			if it.Kind != aion.KindTask {
+				continue
+			}
+			open := !it.Checked && (it.Status == aion.StatusOpen || it.Status == aion.StatusInProgress || it.Status == "")
+			known[b.prefix+it.ID] = open
+			if !open {
 				continue
 			}
 			rank, _ := strconv.Atoi(it.Rank)
@@ -153,6 +176,7 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 			rows[i].Delegation = &d
 		}
 	}
+	coordinateRows(rows, known)
 	return rows
 }
 

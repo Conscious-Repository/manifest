@@ -116,6 +116,10 @@ func (n *WorkNode) MarshalJSON() ([]byte, error) {
 	set("waiting", t.Waiting)
 	set("since", t.Since)
 	set("rank", t.Rank)
+	set("priority", t.Priority)
+	if len(t.Depends) > 0 {
+		obj["depends"] = t.Depends
+	}
 	set("resolution", n.Resolution)
 	if n.Milestone {
 		obj["milestone"] = true
@@ -420,6 +424,12 @@ func SetNodeField(n *WorkNode, key, value string) {
 		t.Rank = value
 	case "stage":
 		t.Stage = value
+	case "priority":
+		if p, ok := tasks.NormalizePriority(value); ok {
+			t.Priority = p
+		}
+	case "depends":
+		t.SetDepends(strings.Split(value, ","))
 	default:
 		var fs []tasks.Field
 		found := false

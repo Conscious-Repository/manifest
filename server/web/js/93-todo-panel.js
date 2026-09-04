@@ -92,6 +92,7 @@ async function renderTodoPanel(refetch) {
   const metaBits = [];
   if (row && row.container && row.container.name) metaBits.push(row.container.name);
   if (rec.State) metaBits.push(rec.State);
+  if ((d.coord && d.coord.state === "blocked") || (row && row.state === "blocked")) metaBits.push("blocked");
   if (metaBits.length) titleWrap.append(el("div", "tdo-p-meta", metaBits.join(" · ")));
   head.append(titleWrap);
   const x = el("button", "aion-insp-x", "✕");
@@ -111,6 +112,9 @@ async function renderTodoPanel(refetch) {
   asg.append(el("div", "tdo-p-sec-label", "assignee"));
   asg.append(todoAssigneeControl(d, row));
   host.append(asg);
+
+  // --- coordination (P1 Phase 1): priority · depends on · blocks ---
+  host.append(todoCoordSection(d, row));
 
   // --- description (plan D2, agent-chat plan gap D): the owner's context.
   // Rides every work order and the plan-context hash; click to edit in place.
@@ -277,6 +281,114 @@ function todoInflightEntry(f) {
   e.append(el("span", null, (f.name || "agent") + " is working…" +
     (hm ? " since " + hm : "") + (f.phase ? " (" + f.phase + ")" : "")));
   return e;
+}
+
+// todoCoordSection — the coordination state (P1 Phase 1). Priority is the
+// closed set as a segmented control ("none" clears). "depends on" lists the
+// stored [depends::] ids as chips whose look is the DERIVED state (open =
+// blocks this · done · unresolved), ✕ arms then confirms; the add picker is
+// a typeahead over the live rows, or a pasted id (unknown ids are tolerated
+// and surface as unresolved). "blocks" is the reverse edge — read-only,
+// click opens that task. Backlog items (aion:/re:) carry neither field yet.
+const TODO_PRIORITIES = [["", "none"], ["low", "low"], ["med", "med"], ["high", "high"]];
+function todoCoordSection(d, row) {
+  const sec = el("div", "tdo-p-sec tdo-p-coord");
+  const coord = (d && d.coord) || {};
+  const pick = (k) => coord[k] || (row && row[k]) || [];
+  const depends = (row && row.depends) || [];
+  const blockedBy = pick("blockedBy"), unresolved = pick("unresolved"), dependents = pick("dependents");
+  const canEdit = !/^(aion|re):/.test(todoSelId);
+  const refresh = async (body) => {
+    await todosApi("/api/tasks/depends", body);
+    renderTodoPanel(true);
+  };
+
+  // priority
+  sec.append(el("div", "tdo-p-sec-label", "priority"));
+  const seg = el("div", "tdo-p-modes");
+  const cur = (row && row.priority) || "";
+  TODO_PRIORITIES.forEach(([val, label]) => {
+    const b = el("button", "tdo-p-mode" + (cur === val ? " on" : ""), label);
+    b.disabled = !canEdit;
+    b.title = canEdit ? (val ? "priority " + val : "clear the priority") : "backlog items don't carry priority yet";
+    b.onclick = async () => {
+      if (val === cur) return;
+      await todosApi("/api/tasks/priority", { id: todoSelId, priority: val });
+      renderTodoPanel(true);
+    };
+    seg.append(b);
+  });
+  sec.append(seg);
+
+  // depends on
+  const dh = el("div", "tdo-p-sec-label");
+  dh.append(document.createTextNode("depends on"));
+  const dActs = el("span", "tdo-p-sec-acts");
+  const addBtn = el("button", "tdo-p-linky", "＋ add");
+  addBtn.title = "a task that must finish first";
+  addBtn.hidden = !canEdit;
+  dActs.append(addBtn);
+  dh.append(dActs);
+  sec.append(dh);
+  const chips = el("div", "tdo-p-chips");
+  depends.forEach((id) => {
+    const state = blockedBy.includes(id) ? "open" : unresolved.includes(id) ? "unresolved" : "done";
+    const chip = el("span", "tdo-p-chip dep " + state);
+    const name = el("span", "tdo-p-dep-name", coordName(id));
+    name.title = id + (state === "open" ? " — still open, blocks this" : state === "unresolved" ? " — no source knows this id" : " — done");
+    if (todoRowInfo(id)) { name.classList.add("linky"); name.onclick = () => openTodoPanel(id); }
+    chip.append(name);
+    if (canEdit) {
+      const x = el("button", "tdo-p-dep-x", "✕");
+      x.title = "remove this dependency";
+      x.onclick = () => {
+        const yes = el("button", "tdo-p-dep-x arm", "remove?");
+        yes.onclick = () => refresh({ id: todoSelId, remove: id });
+        x.replaceWith(yes);
+        setTimeout(() => { if (yes.parentNode) yes.replaceWith(x); }, 2500);
+      };
+      chip.append(x);
+    }
+    chips.append(chip);
+  });
+  sec.append(chips);
+  if (!depends.length) sec.append(el("div", "tdo-p-empty", "nothing — this can start now"));
+  const addHost = el("div", "tdo-p-deps-add");
+  sec.append(addHost);
+  addBtn.onclick = () => {
+    if (addHost.children.length) return;
+    let done = false;
+    const close = () => { if (!done) { done = true; addHost.innerHTML = ""; } };
+    const commit = (id) => { if (done) return; done = true; addHost.innerHTML = ""; refresh({ id: todoSelId, add: id }); };
+    const ta = typeahead({
+      placeholder: "task this waits on… (or paste an id)",
+      minChars: 0,
+      onEnter: commit,
+      onEscape: close,
+      onBlurGone: close,
+      suggest: (q, add) => {
+        ((todosCache && todosCache.rows) || [])
+          .filter((r) => r.id !== todoSelId && !depends.includes(r.id))
+          .filter((r) => !q || r.text.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
+          .slice(0, 8)
+          .forEach((r) => add(r.text, (r.container && r.container.name) || r.source, () => commit(r.id)));
+      },
+    });
+    addHost.append(ta.el);
+    ta.focus();
+  };
+
+  // blocks — the reverse edge, derived
+  if (dependents.length) {
+    sec.append(el("div", "tdo-p-sec-label", "blocks"));
+    dependents.forEach((id) => {
+      const e = el("div", "tdo-p-dependent", coordName(id));
+      e.title = id + " — waits on this";
+      e.onclick = () => openTodoPanel(id);
+      sec.append(e);
+    });
+  }
+  return sec;
 }
 
 // todoAssigneeControl — the uniform roster picker (Phase 3): people from the

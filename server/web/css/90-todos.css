@@ -89,6 +89,15 @@
 .tdo-right .ta-wrap { display: inline-block; position: relative; }
 .tdo-right .ta-in { font-size: var(--fs-sm); min-width: 220px; }
 
+/* coordination (P1 Phase 1): the priority word + the derived blocked chip —
+   weight, not color (the row-alarm rule) */
+.tdo-prio { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: 0 var(--sp-3); white-space: nowrap; flex: none; }
+.tdo-prio.high { color: var(--base-100); border-color: var(--base-100); font-weight: 600; }
+.tdo-prio.low { color: var(--base-30); }
+.tdo-blocked { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-100); font-weight: 600; border: 1px dashed var(--base-100); border-radius: var(--radius); padding: 0 var(--sp-2); white-space: nowrap; flex: none; }
+.tdo-blocked.soft { color: var(--base-40); border-color: var(--base-25); font-weight: 400; }
+.tdo-row.blocked .tdo-text { color: var(--base-50); }
+
 /* delegation (Phase 6): dispatch affordance + the trace-derived state chip */
 .tdo-delegate { visibility: hidden; }
 .tdo-row:hover .tdo-delegate { visibility: visible; }

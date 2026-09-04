@@ -206,7 +206,7 @@ function rankedRow(r, idx) {
     return row;
   }
   const stale = r.ageDays >= 14;
-  const row = el("div", "tdo-row" + (stale ? " stale" : "") +
+  const row = el("div", "tdo-row" + (stale ? " stale" : "") + (r.state === "blocked" ? " blocked" : "") +
     (typeof todoSelId !== "undefined" && todoSelId === r.id ? " panel-sel" : ""));
   row.dataset.id = r.id;
   // background click opens the PANEL; every interactive child stops
@@ -274,6 +274,10 @@ function rankedRow(r, idx) {
   if (r.owner && r.owner.startsWith("agent:")) {
     row.append(el("span", "tdo-agent-chip", "✦ " + r.owner.slice(6)));
   }
+  // coordination (P1 Phase 1): the priority word + the derived blocked chip
+  if (r.priority) row.append(prioMark(r.priority));
+  const bc = blockedChip(r);
+  if (bc) row.append(bc);
 
   const right = el("span", "tdo-right");
   const age = el("span", "tdo-age" + (stale ? " stale" : ""),
@@ -325,6 +329,40 @@ function rankedRow(r, idx) {
   }
   row.append(right);
   return row;
+}
+
+// ---- coordination markers (P1 Phase 1) ----
+// prioMark: the priority word as a mono chip — importance, not position (rank
+// is the drag order). Weight carries "high"; nothing is colored.
+function prioMark(p) {
+  const m = el("span", "tdo-prio " + p, p);
+  m.title = "priority " + p + " — importance, not list position";
+  return m;
+}
+// coordName: a dependency id rendered as its row text when the row is live
+// (open, in the projection), else the raw id.
+function coordName(id) {
+  const r = ((todosCache && todosCache.rows) || []).find((x) => x.id === id);
+  return r ? r.text : id;
+}
+// blockedChip: derived state only — `blocked` while a dependency is still
+// open (the tooltip names the blockers); a quiet `depends?` when the only
+// dependencies are ids no source knows. Null when neither applies.
+function blockedChip(r) {
+  const blockedBy = r.blockedBy || [];
+  const unresolved = r.unresolved || [];
+  if (blockedBy.length) {
+    const c = el("span", "tdo-blocked", "blocked");
+    c.title = "blocked by " + blockedBy.map(coordName).join(" · ") +
+      (unresolved.length ? " · unresolved: " + unresolved.join(", ") : "");
+    return c;
+  }
+  if (unresolved.length) {
+    const c = el("span", "tdo-blocked soft", "depends?");
+    c.title = "depends on ids no source knows: " + unresolved.join(", ");
+    return c;
+  }
+  return null;
 }
 
 // commitRank — reposition draggedId before targetId in the GLOBAL row order
@@ -544,6 +582,8 @@ function boardCard(r, colKey) {
   const meta = el("div", "tdo-card-meta");
   meta.append(el("span", "", r.container && r.container.name || ""));
   if (r.owner && r.owner.startsWith("agent:")) meta.append(el("span", "tdo-agent-chip", "✦ " + r.owner.slice(6)));
+  if (r.priority) meta.append(prioMark(r.priority));
+  { const bc = blockedChip(r); if (bc) meta.append(bc); }
   if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));
   // delegation: inline for open cards, looked up by id for the Done column
   const dg = r.delegation || delegationFor(r.id);

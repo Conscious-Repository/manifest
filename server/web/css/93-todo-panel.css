@@ -135,3 +135,19 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 
 /* the suggest-agent hint (§2.5) — a quiet link on the mode bar, never a route */
 .tdo-p-suggest { color: var(--accent); }
+
+/* coordination (P1 Phase 1): depends-on chips carry the DERIVED state;
+   "blocks" is the reverse edge */
+.tdo-p-chip.dep { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
+.tdo-p-chip.dep.open { color: var(--base-100); border-color: var(--base-100); }
+.tdo-p-chip.dep.done { text-decoration: line-through; color: var(--base-40); }
+.tdo-p-chip.dep.unresolved { border-style: dashed; color: var(--base-40); }
+.tdo-p-dep-name.linky { cursor: pointer; }
+.tdo-p-dep-name.linky:hover { color: var(--accent); }
+.tdo-p-dep-x { border: 0; background: none; color: var(--base-30); cursor: pointer; padding: 0; font-family: var(--mono); font-size: var(--fs-2xs); }
+.tdo-p-dep-x:hover, .tdo-p-dep-x.arm { color: var(--base-100); }
+.tdo-p-dependent { font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
+.tdo-p-dependent:hover { color: var(--accent); }
+.tdo-p-deps-add:empty { display: none; }
+.tdo-p-deps-add .ta-wrap { width: 100%; }
+.tdo-p-deps-add .ta-in { width: 100%; font-size: var(--fs-sm); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-4); background: var(--bg); }

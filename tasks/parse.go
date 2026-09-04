@@ -144,12 +144,23 @@ func parseTask(checked bool, rest string) *Task {
 			t.Owner = val
 		case "rank":
 			t.Rank = val
+		case "priority":
+			// closed set: anything else stays verbatim as an unknown field
+			// (never dropped, never guessed) and reads as no priority
+			if p, ok := NormalizePriority(val); ok {
+				t.Priority = p
+			} else {
+				unknown = append(unknown, Field{Key: sm[1], Value: val})
+			}
+		case "depends":
+			t.Depends = append(t.Depends, splitDepends(val)...)
 		default:
 			unknown = append(unknown, Field{Key: sm[1], Value: val})
 		}
 		return ""
 	})
 	t.Fields = unknown
+	t.Depends = cleanDepends(t.Depends) // two [depends::] fields merge, duplicates drop
 	t.Text = strings.Join(strings.Fields(clean), " ")
 	return t
 }

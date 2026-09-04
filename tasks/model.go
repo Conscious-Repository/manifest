@@ -4,8 +4,11 @@
 //
 // A todo is deliberately small: one line of text · a domain (## heading) ·
 // a state (open → done, plus waiting-on carrying who + since-when). No
-// projects, no subtasks, no priorities, no due dates — deep structured work
-// belongs to the domains (todos-surface-scope §"The object").
+// projects, no subtasks, no due dates — deep structured work belongs to the
+// domains (todos-surface-scope §"The object"). The one cross-cutting
+// exception is coordination STATE (P1 Phase 1, coord.go): a `[depends::]`
+// id list and a closed-set `[priority::]`, with `blocked` derived — never
+// stored — from the dependencies' own state.
 package tasks
 
 import (
@@ -33,9 +36,13 @@ type Task struct {
 	Issue string `json:"issue,omitempty"` // [issue:: issue-id] — works an issue
 	Stage string `json:"stage,omitempty"` // [stage:: name] — then-current stage, stamped at completion
 	// assignment model (redesign Rev 3): unassigned means the owner's
-	Owner  string  `json:"owner,omitempty"`  // [owner:: initials|name] — who owes this ("" = me)
-	Rank   string  `json:"rank,omitempty"`   // [rank:: n] — drag-to-rank position (raw, round-trips)
-	Fields []Field `json:"fields,omitempty"` // unrecognized fields, verbatim
+	Owner string `json:"owner,omitempty"` // [owner:: initials|name] — who owes this ("" = me)
+	Rank  string `json:"rank,omitempty"`  // [rank:: n] — drag-to-rank position (raw, round-trips)
+	// coordination state (P1 Phase 1, coord.go): rank is WHERE in a list,
+	// priority is HOW MUCH it matters; depends names what must finish first
+	Priority string   `json:"priority,omitempty"` // [priority:: high|med|low] — closed set
+	Depends  []string `json:"depends,omitempty"`  // [depends:: id, id] — open ones derive `blocked`
+	Fields   []Field  `json:"fields,omitempty"`   // unrecognized fields, verbatim
 }
 
 // Bucket is a standing task grouping that is NOT a goal (partnerships,
@@ -62,7 +69,8 @@ type Issue struct {
 	explicit   bool    // carried an explicit [issue:: id]
 }
 
-// State reports open | waiting | done.
+// State reports open | waiting | done — the task-local view. StateWith /
+// Doc.StateOf add `blocked`, which needs the other tasks' state to derive.
 func (t *Task) State() string {
 	switch {
 	case t.Checked:
@@ -234,7 +242,7 @@ type IssueView struct {
 type TaskView struct {
 	ID      string `json:"id"`
 	Text    string `json:"text"`
-	State   string `json:"state"`
+	State   string `json:"state"` // open | waiting | blocked | done (doc-resolved)
 	Added   string `json:"added,omitempty"`
 	Waiting string `json:"waiting,omitempty"`
 	Since   string `json:"since,omitempty"`
@@ -245,6 +253,12 @@ type TaskView struct {
 	Owner   string `json:"owner,omitempty"`  // assignee ("" = me)
 	Rank    int    `json:"rank,omitempty"`   // parsed [rank:: n] (0 = unranked)
 	AgeDays int    `json:"ageDays"`
+	// coordination (P1 Phase 1): the stored fields + what derives from them
+	Priority   string   `json:"priority,omitempty"`
+	Depends    []string `json:"depends,omitempty"`
+	BlockedBy  []string `json:"blockedBy,omitempty"`  // open dependencies (state == blocked)
+	Unresolved []string `json:"unresolved,omitempty"` // dependencies this file cannot see
+	Dependents []string `json:"dependents,omitempty"` // open tasks that depend on this one
 }
 
 // View projects the doc for the client (done items included until the sweep
@@ -260,13 +274,18 @@ func (d *Doc) View(now time.Time) View {
 			}
 		})
 	}
+	resolve := d.Resolver()
+	dependents := d.dependentsIndex()
 	tv := func(t *Task, bucket string) TaskView {
+		blockedBy, unresolved := t.BlockedBy(resolve)
 		return TaskView{
-			ID: t.ID, Text: t.Text, State: t.State(),
+			ID: t.ID, Text: t.Text, State: t.StateWith(resolve),
 			Added: t.Added, Waiting: t.Waiting, Since: t.Since,
 			Rock: t.Rock, Stage: t.Stage, Issue: t.Issue, Bucket: bucket,
 			Owner: t.Owner, Rank: t.RankN(),
-			AgeDays: t.AgeDays(now),
+			AgeDays:  t.AgeDays(now),
+			Priority: t.Priority, Depends: t.Depends,
+			BlockedBy: blockedBy, Unresolved: unresolved, Dependents: dependents[t.ID],
 		}
 	}
 	for _, dom := range d.Domains {
