@@ -42,24 +42,13 @@ type panelRow struct {
 func (s *Server) UsePortals(p *portals.Service) { s.portals = p }
 
 // handlePortals assembles the full panel: source portals (from the service),
-// the calendar row (from s.cal), the discovered LLM rows (from the spirit
-// cornerstones), and docusign last (dormant).
+// the calendar row (from s.cal), and the discovered LLM rows (from the spirit
+// cornerstones).
 func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	rows := []panelRow{}
-	var dormant []panelRow
 	if s.portals != nil {
 		for _, pr := range s.portals.Rows() {
-			row := panelRow{
-				ID: pr.ID, Name: pr.Name, Kind: string(pr.Kind), State: string(pr.State),
-				Err: pr.Err, Masked: pr.Masked, LastCrossing: pr.LastCrossing,
-				Fields: pr.Fields, Have: pr.Have,
-			}
-			if pr.State == portals.StateDormant {
-				row.Note = "not connected — v2"
-				dormant = append(dormant, row)
-				continue
-			}
-			rows = append(rows, row)
+			rows = append(rows, s.portalRowView(pr))
 		}
 	}
 	rows = append(rows, s.calendarPortalRow())
@@ -70,7 +59,6 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	rows = append(rows, s.deepseekPortalRow()) // the testable lab conduit (Phase 5a)
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())
-	rows = append(rows, dormant...) // docusign at the bottom
 	writeJSON(w, map[string]any{"rows": rows})
 }
 
@@ -310,17 +298,14 @@ func (s *Server) handlePortalDisconnect(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, s.portalRowView(row))
 }
 
-// portalRowView adapts a service Row into the panel shape for single-row replies.
+// portalRowView adapts a service Row into the panel shape (the list and the
+// single-row replies share it).
 func (s *Server) portalRowView(pr portals.Row) panelRow {
-	row := panelRow{
+	return panelRow{
 		ID: pr.ID, Name: pr.Name, Kind: string(pr.Kind), State: string(pr.State),
 		Err: pr.Err, Masked: pr.Masked, LastCrossing: pr.LastCrossing,
 		Fields: pr.Fields, Have: pr.Have,
 	}
-	if pr.State == portals.StateDormant {
-		row.Note = "not connected — v2"
-	}
-	return row
 }
 
 // ---- portal feed items (the third card kind) ----

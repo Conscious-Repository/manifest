@@ -236,8 +236,8 @@ function cmdDestinations() {
   NAV_SECTIONS.forEach((g) => g.items.forEach((it) =>
     _cmdDests.push({ name: it.label, hint: g.label.toLowerCase() + " · view", hash: it.hash })));
   [["Backlog", "#/aion"], ["Heuristics", "#/aion/heuristics"], ["V/TO", "#/aion/vto"],
-   ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Fundraising", "#/aion/fundraising"], ["Reconcile", "#/aion/reconcile"],
-   ["Settings", "#/aion/settings"]].forEach(([n, h]) =>
+   ["Goals", "#/aion/goals"], ["Org", "#/aion/org"], ["Fundraising", "#/aion/fundraising"],
+   ["Recruiting", "#/aion/recruiting"]].forEach(([n, h]) =>
     _cmdDests.push({ name: "Aion · " + n, hint: "aion tab", hash: h }));
   [["Backlog", "#/properties"], ["Portfolio", "#/properties/portfolio"], ["Rocks", "#/properties/rocks"],
    ["Money", "#/properties/money"], ["Map", "#/properties/map"], ["Settings", "#/properties/settings"]].forEach(([n, h]) =>
@@ -408,7 +408,7 @@ function rawPathsForRoute() {
     const orgFile = "system/aion/" + ((typeof aionOrgSel !== "undefined" && aionOrgSel) || "people") + ".md";
     const map = { "": "system/aion/backlog.md", heuristics: "system/aion/heuristics.md",
                   vto: "system/aion/vto.md", goals: "goals.md", // the aion GOALS tab reads the goals area
-                  org: orgFile, reconcile: "system/aion/backlog.md" };
+                  org: orgFile };
     const f = map[sub[0] || ""];
     return f ? [f] : [];
   }
@@ -509,7 +509,3 @@ async function saveRawOverlay() {
 }
 
 function toggleRawOverlay() { rawOpen ? closeRawOverlay() : openRawOverlay(); }
-{
-  const rawEditBtn = document.getElementById("rawEditBtn");
-  if (rawEditBtn) rawEditBtn.addEventListener("click", () => toggleRawOverlay());
-}

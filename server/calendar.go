@@ -59,28 +59,10 @@ func (s *Server) handleCalEvents(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"configured": true, "events": views})
 }
 
-// handleCalConnect runs the loopback OAuth flow for ONE Google account (the
-// browser account chooser lets you pick a different account each time), then adds
-// it. Safe to call repeatedly to connect multiple accounts.
-func (s *Server) handleCalConnect(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
-	defer cancel()
-	email, err := s.cal.AddAccount(ctx)
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, map[string]any{"connected": email, "accounts": s.cal.Accounts()})
-}
-
-// handleCalConnectStart begins the paste-back OAuth flow. Manifest runs headless
-// on metis, so the loopback listener in handleCalConnect can't reach the owner's
-// browser — this returns the consent URL for the owner to approve in their own
-// browser, then paste the redirect back to handleCalConnectFinish.
+// handleCalConnectStart begins the paste-back OAuth flow — the ONE connect path.
+// Manifest runs headless on metis, so a loopback OAuth listener can't reach the
+// owner's browser — this returns the consent URL for the owner to approve in
+// their own browser, then paste the redirect back to handleCalConnectFinish.
 func (s *Server) handleCalConnectStart(w http.ResponseWriter, r *http.Request) {
 	authURL, err := s.cal.StartConnect()
 	if err != nil {

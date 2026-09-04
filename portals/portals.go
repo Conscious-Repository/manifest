@@ -1,5 +1,5 @@
 // Package portals is manifest's registry of external realms — ClickUp, Benchling,
-// and (v2) Docusign — as credentialed, polled connections that feed the FEED.
+// as credentialed, polled connections that feed the FEED.
 //
 // "Portal" is already excalibur canon (spirit cornerstones declare
 // `portal:: claude-sub`); this package widens the term to every external service
@@ -39,7 +39,7 @@ const (
 	StateOpen     State = "open"     // last test/poll succeeded
 	StateDegraded State = "degraded" // last attempt failed (Err carries the reason)
 	StateSealed   State = "sealed"   // no credentials present
-	StateDormant  State = "dormant"  // registered but not wired (docusign v2)
+	StateDormant  State = "dormant"  // registered but not wired (Polled: false)
 )
 
 // CredField is one credential the panel form collects for an api-key portal.
@@ -51,8 +51,8 @@ type CredField struct {
 	Hint   string `json:"hint"`   // placeholder / help text
 }
 
-// Def is a portal definition — pure data, so github/docusign register later
-// without code. The registry below is the whole v1 source-portal set.
+// Def is a portal definition — pure data, so a new source portal registers
+// later without code. The registry below is the whole v1 source-portal set.
 type Def struct {
 	ID       string      `json:"id"`
 	Name     string      `json:"name"`
@@ -87,10 +87,6 @@ var Registry = []Def{
 			{Key: "tenant", Label: "Tenant subdomain", Secret: false, Hint: "e.g. specialt  (from specialt.benchling.com)"},
 			{Key: "apiKey", Label: "API key", Secret: true, Hint: "sk_…  (Benchling → Account → API keys)"},
 		},
-	},
-	{
-		// Docusign registers now but is dormant — nothing polls, no key form.
-		ID: "docusign", Name: "Docusign", Kind: KindAPIKey, Polled: false,
 	},
 }
 

@@ -19,7 +19,6 @@ let spSettingsTab = "portals"; // settings inner-rail selection
 
 function showSpirits(h) {
   const tail = h && h.startsWith("#/spirits/") ? decodeURIComponent(h.slice("#/spirits/".length)) : "";
-  if (tail === "portals") { spSettingsTab = "portals"; location.hash = "#/spirits/settings"; return; } // legacy deep-link
   spSpirit = ""; spRitualPath = "";
   if (tail === "") spMode = "rituals";
   else if (tail === "runs") spMode = "runs";
@@ -93,8 +92,8 @@ function renderSpiritIndex() {
 // benchling) take a pasted key → save → auto-test; the oauth portal (calendar)
 // runs its existing sign-in; the engine's LLM conduits are read-only. This is
 // also the seed of app-wide settings — the row renderer is generic over the
-// server's portal definition (fields drive the form), so github/docusign appear
-// later as pure data.
+// server's portal definition (fields drive the form), so a new source portal
+// appears later as pure data.
 async function loadPortals() {
   const host = document.getElementById("portalList"); if (!host) return;
   if (!host.children.length) host.textContent = "loading…";
@@ -581,7 +580,7 @@ async function renderChargebookPane(pane) {
   bar.refresh();
 }
 
-const PORTAL_STATE_LABEL = { open: "open", degraded: "degraded", sealed: "—", dormant: "—" };
+const PORTAL_STATE_LABEL = { open: "open", degraded: "degraded", sealed: "—" };
 
 function portalRowEl(p) {
   const wrap = el("div", "portal-wrap");
@@ -618,7 +617,6 @@ function portalCrossing(p) {
 
 function buildPortalActions(p, acts, wrap) {
   if (p.kind === "apikey") {
-    if (p.state === "dormant") { acts.append(el("span", "portal-dim", "(v2)")); return; }
     if (p.state === "sealed") {
       acts.append(pillLight("connect", () => togglePortalForm(p, wrap)));
       return;
@@ -655,11 +653,12 @@ function buildPortalActions(p, acts, wrap) {
       acts.append(pill);
       return;
     }
+    // calendar connects from the CALENDAR tab (the headless paste-back flow);
+    // this row only shows what is connected and lets one account go.
     if ((p.accounts || []).length) {
-      acts.append(pillLight("add", () => portalConnectCalendar()));
       p.accounts.forEach((email) => acts.append(pillLight("disconnect", () => portalDisconnectCalendar(email))));
     } else {
-      acts.append(pillLight("connect", () => portalConnectCalendar()));
+      acts.append(el("span", "portal-dim", "connect from CALENDAR"));
     }
     return;
   }
@@ -721,13 +720,8 @@ async function portalAction(url) {
   } catch (e) { showToast("Portal action failed"); }
 }
 
-// Calendar keeps its own OAuth endpoints — the portal row just drives them, then
-// reloads the panel so its state reflects the new connection.
-async function portalConnectCalendar() {
-  showToast("Opening Google sign-in… (check your browser)", null, "info");
-  try { await postJSON("/api/calendar/connect", {}); } catch (e) {}
-  loadPortals();
-}
+// Calendar keeps its own OAuth endpoints — the portal row drives disconnect,
+// then reloads the panel so its state reflects the change.
 async function portalDisconnectCalendar(email) {
   try { await postJSON("/api/calendar/disconnect", { account: email }); } catch (e) {}
   loadPortals();

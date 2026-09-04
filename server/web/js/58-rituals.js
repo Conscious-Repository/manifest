@@ -96,11 +96,6 @@ function ritualRow(r) {
   row.onclick = () => { location.hash = "#/spirits/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
   return row;
 }
-// relFuture: " · in 9h" / " · in 3d" / " · due"
-function relFuture(iso) {
-  const p = relPhrase(iso);
-  return p ? " · " + p : "";
-}
 // relPhrase: "in 9h" / "in 3d" / "due now"
 function relPhrase(iso) {
   const d = new Date(iso), ms = d - new Date();

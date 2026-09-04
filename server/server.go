@@ -466,7 +466,6 @@ func (s *Server) Handler() http.Handler {
 	// Google Calendar (M3, read-only).
 	mux.HandleFunc("/api/calendar/status", s.handleCalStatus)
 	mux.HandleFunc("/api/calendar/events", s.handleCalEvents)
-	mux.HandleFunc("/api/calendar/connect", s.handleCalConnect)
 	mux.HandleFunc("/api/calendar/disconnect", s.handleCalDisconnect)
 	mux.HandleFunc("POST /api/calendar/connect/start", s.handleCalConnectStart)
 	mux.HandleFunc("POST /api/calendar/connect/finish", s.handleCalConnectFinish)
@@ -646,7 +645,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/consume/curated/note", s.handleConsumeCuratedNote)
 
 	// PORTALS — external realms (ClickUp, Benchling, calendar, the engine's LLM
-	// conduits, docusign-v2) as one panel: list, (re)connect via pasted key, test,
+	// conduits) as one panel: list, (re)connect via pasted key, test,
 	// poll, disconnect; portal feed items dismiss / promote-to-today.
 	mux.HandleFunc("GET /api/portals", s.handlePortals)
 	mux.HandleFunc("POST /api/portals/{id}/key", s.handlePortalKey)

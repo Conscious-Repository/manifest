@@ -279,7 +279,7 @@ func (e gmailReauthEmitter) Emit(now time.Time) ([]Signal, error) {
 		Entity:  who,
 		Label:   "reconnect Gmail · " + who + " · " + detail,
 		Age:     9000, // pins near the top — a broken integration is urgent
-		ActHref: "#/spirits/portals",
+		ActHref: "#/spirits/settings",
 		Hash:    "needs-reauth", // stable while the condition holds; re-arms on fix
 	}}, nil
 }

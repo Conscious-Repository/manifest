@@ -4,7 +4,7 @@
 // Both this cockpit and portal.aion.bio render the same live projection:
 // owner-authored vault base + attributed team overlay.
 let aionCache = null;
-let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | fundraising | recruiting | settings
+let aionMode = "backlog"; // backlog | heuristics | vto | goals | org | fundraising | recruiting
 let aionSelId = null;     // inspector selection (redesign §4 — replaces the drawer)
 let aionOrgSel = "people"; // org registry rail selection
 let aionDoneOpen = false;    // backlog: done-tasks section expanded
@@ -69,8 +69,6 @@ function renderAion() {
   else if (aionMode === "vto") renderAionVTO(host);
   else if (aionMode === "goals") renderAionGoals(host);
   else if (aionMode === "org") renderAionOrg(host);
-  // reconcile + settings tabs retired (owner calls) — inbound lives in FEED
-  else if (aionMode === "reconcile" || aionMode === "settings") { location.hash = "#/aion"; return; }
   else renderAionBacklog(host);
 }
 

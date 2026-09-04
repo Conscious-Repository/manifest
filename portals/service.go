@@ -65,7 +65,7 @@ func defByID(id string) (Def, bool) {
 
 // ---- panel rows ----
 
-// Rows returns the source-portal rows (clickup, benchling, docusign).
+// Rows returns the source-portal rows (clickup, benchling).
 func (svc *Service) Rows() []Row {
 	var rows []Row
 	for _, d := range Registry {
@@ -76,7 +76,7 @@ func (svc *Service) Rows() []Row {
 
 func (svc *Service) row(d Def) Row {
 	r := Row{Def: d}
-	if !d.Polled { // docusign — registered, dormant
+	if !d.Polled { // registered, dormant — nothing polls, no key form
 		r.State = StateDormant
 		return r
 	}
