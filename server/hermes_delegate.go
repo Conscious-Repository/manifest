@@ -194,6 +194,58 @@ func agentTokenIdentity(agent string) threads.Identity {
 // reply rather than a harness run report): a plan brief → the plan record + a
 // thread note; a questions brief → a thread question; a non-plan persona reply
 // or a fired result → a thread comment.
+// postAgentBrief lands an agent's reply in the thread COMPLETELY: a reply
+// longer than the destination store's comment cap is split into numbered
+// parts at paragraph seams instead of being refused — a completed turn must
+// never vanish (2026-09-04: an ask answer over the 8000-byte cap was
+// silently dropped by a discarded error; the ledger said run.completed and
+// the owner saw nothing). Any residual post failure surfaces as a visible
+// ⚠ comment plus a log line — never a silent no-op.
+func (s *Server) postAgentBrief(who threads.Identity, taskID, text string, meta map[string]any) {
+	max := threads.MaxCommentLen - 200 // headroom for the part prefix
+	if s.threadKind(taskID) == "aion" {
+		max = 3800 // teamportal comments cap at 4000
+	}
+	parts := splitBrief(text, max)
+	for i, p := range parts {
+		if len(parts) > 1 {
+			p = fmt.Sprintf("(part %d/%d)\n%s", i+1, len(parts), p)
+		}
+		if _, err := s.addThreadEntry(who, taskID, threads.ActComment, p, nil, nil, meta); err != nil {
+			log.Printf("agent brief post %s (part %d/%d): %v", taskID, i+1, len(parts), err)
+			_, _ = s.addThreadEntry(who, taskID, threads.ActComment,
+				"⚠ "+who.Name+" finished, but the reply could not be posted — "+err.Error(),
+				nil, nil, meta)
+			return
+		}
+	}
+}
+
+// splitBrief cuts text into ≤max-byte pieces, preferring paragraph seams,
+// then line seams, then a hard cut.
+func splitBrief(text string, max int) []string {
+	text = strings.TrimSpace(text)
+	if len(text) <= max {
+		return []string{text}
+	}
+	var parts []string
+	for len(text) > max {
+		cut := strings.LastIndex(text[:max], "\n\n")
+		if cut < max/2 {
+			cut = strings.LastIndex(text[:max], "\n")
+		}
+		if cut < max/2 {
+			cut = max
+		}
+		parts = append(parts, strings.TrimSpace(text[:cut]))
+		text = strings.TrimSpace(text[cut:])
+	}
+	if text != "" {
+		parts = append(parts, text)
+	}
+	return parts
+}
+
 func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief string) {
 	brief = strings.TrimSpace(brief)
 	if brief == "" || s.threads == nil || s.todoPlans == nil || s.vault == nil {
@@ -237,18 +289,18 @@ func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief str
 		for _, w := range warns {
 			text += "\n⚠ " + w
 		}
-		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, text, nil, nil, meta)
+		s.postAgentBrief(who, taskID, text, meta)
 		return
 	}
 	// non-plan persona (brief/info/…) → the whole reply IS the answer.
 	if persona != "" && persona != "plan" {
-		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, brief, nil, nil, meta)
+		s.postAgentBrief(who, taskID, brief, meta)
 		return
 	}
 	// questions-only → post them as dialog, leave the plan untouched.
 	questions, questionsOnly := briefQuestions(brief)
 	if questionsOnly && questions != "" {
-		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, questions, nil, nil, meta)
+		s.postAgentBrief(who, taskID, questions, meta)
 		return
 	}
 	// plan brief → attach/update the canon plan + a thread note.
@@ -263,9 +315,9 @@ func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief str
 	}
 	s.ledger(ledger.Entry{Source: "plan", Kind: "plan.materialized",
 		Actor: who.ID, Task: taskID, Harness: "hermes", Ref: s.readPlanRecord(taskID).Rel})
-	_, _ = s.addThreadEntry(who, taskID, threads.ActComment, verb, nil, nil, meta)
+	s.postAgentBrief(who, taskID, verb, meta)
 	if questions != "" { // drift guard: embedded questions still surface as dialog
-		_, _ = s.addThreadEntry(who, taskID, threads.ActComment, questions, nil, nil, meta)
+		s.postAgentBrief(who, taskID, questions, meta)
 	}
 }
 

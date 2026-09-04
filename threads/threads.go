@@ -72,6 +72,10 @@ const (
 
 const maxCommentLen = 8000
 
+// MaxCommentLen is the store's comment cap, exported so callers posting
+// generated text (agent briefs) can chunk instead of being refused.
+const MaxCommentLen = maxCommentLen
+
 // MaxBlobSize caps one attachment (plan D4).
 const MaxBlobSize = 25 << 20
 

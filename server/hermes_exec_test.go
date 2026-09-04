@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"manifest/approvals"
+	"manifest/threads"
 )
 
 // Phase 2 hermetic proof: a fired ("go") Hermes reply carrying
@@ -125,5 +126,40 @@ func TestHermesGoBadBlocksWarnOnly(t *testing.T) {
 	th := srv.listThread(taskID)
 	if len(th) != 1 || !strings.Contains(th[0].Text, "⚠") {
 		t.Fatalf("expected warnings in thread: %+v", th)
+	}
+}
+
+// An ask answer LONGER than the thread store's comment cap must land whole,
+// chunked across numbered comments — never silently dropped (the 2026-09-04
+// vance-ai-task ask: run.completed in the ledger, nothing in the thread).
+func TestLongAskAnswerChunksIntoThread(t *testing.T) {
+	srv, _ := panelFixture(t)
+	taskID := "inbox/long-answer"
+	para := strings.Repeat("insight sentence with real words in it. ", 40) // ~1.6k
+	brief := ""
+	for i := 0; i < 8; i++ { // ~13k, over the 8000 cap
+		brief += "## section " + string(rune('a'+i)) + "\n" + para + "\n\n"
+	}
+	srv.materializeHermesBrief(taskID, "", "comment", "info", brief)
+
+	th := srv.listThread(taskID)
+	var joined string
+	parts := 0
+	for _, c := range th {
+		if c.Action == threads.ActComment && strings.Contains(c.Text, "insight sentence") {
+			parts++
+			joined += c.Text + "\n"
+		}
+	}
+	if parts < 2 {
+		t.Fatalf("long answer should chunk into multiple comments, got %d", parts)
+	}
+	for i := 0; i < 8; i++ {
+		if !strings.Contains(joined, "## section "+string(rune('a'+i))) {
+			t.Fatalf("chunked answer lost section %c:\n%d parts", 'a'+i, parts)
+		}
+	}
+	if !strings.Contains(joined, "(part 1/") {
+		t.Fatalf("parts are not labeled:\n%s", joined[:200])
 	}
 }
