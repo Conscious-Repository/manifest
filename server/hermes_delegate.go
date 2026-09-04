@@ -131,10 +131,11 @@ func (s *Server) runHermesTurn(taskID, phase, intent, prompt string) {
 		s.hermes.mu.Unlock()
 	}()
 	who := agentIdentity("hermes")
+	// Every turn is a fresh Hermes session (hermes -z has no working resume —
+	// see package hermes); the prompt itself carries the thread's context.
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
 		Prompt:   prompt,
-		Session:  hermesSession(taskID), // per-thread continuity, shared with the CLI/Telegram store
-		Toolsets: s.hermes.readTools,    // read-only scope until Phase 2's gated execution
+		Toolsets: s.hermes.readTools, // read-only scope until Phase 2's gated execution
 	})
 	if err != nil {
 		log.Printf("hermes turn %s (%s): %v", taskID, phase, err)
@@ -142,6 +143,11 @@ func (s *Server) runHermesTurn(taskID, phase, intent, prompt string) {
 			"⚠ Hermes couldn't finish that — "+err.Error(), nil, nil, map[string]any{"hermes": true})
 		return
 	}
+	// The run record carries the Hermes-side session id and the spend, so the
+	// turn can be found again (`hermes sessions search`) and costed.
+	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: who.ID, Task: taskID, Harness: "hermes",
+		Text: phase + " turn on " + taskID + ": " + ledger.Snip(res.Reply, 280),
+		Meta: map[string]any{"task": taskID, "phase": phase, "sessionId": res.SessionID, "spentUsd": res.SpentUSD, "model": res.Model}})
 	persona := ""
 	if p, ok := s.persona(intent); ok {
 		persona = p.Intent
@@ -419,12 +425,4 @@ func (s *Server) overlayHermesRunning(out map[string]delegationView) {
 		}
 		out[id] = delegationView{State: state, Phase: phase, Harness: "hermes", Started: time.Now()}
 	}
-}
-
-// hermesSession maps a todo to a stable Hermes session name (--resume target),
-// so a plan refined across the thread is one continuous conversation. Slashes
-// and spaces in composite ids (aion:…, team/…) are flattened.
-func hermesSession(taskID string) string {
-	r := strings.NewReplacer("/", "-", ":", "-", " ", "-")
-	return "manifest-todo-" + strings.Trim(r.Replace(strings.TrimSpace(taskID)), "-")
 }

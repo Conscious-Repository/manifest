@@ -141,12 +141,17 @@ printf 'they do, slowly — clocks-dig-abc123.md'
 			t.Errorf("prompt missing %q:\n%s", want, prompt)
 		}
 	}
-	rest := strings.Join(args[2:], " ")
-	if !strings.Contains(rest, "--skills "+digSkills) {
-		t.Errorf("skills not preloaded: %q", rest)
+	// skills ride at the TOP of the prompt (hermes -z drops --skills), and the
+	// turn is a fresh session — no --resume, which -z drops too.
+	if !strings.HasPrefix(prompt, "Before anything else, load and follow these skills") ||
+		!strings.Contains(prompt, "`aion-domain-scout`, `aion-biosciences`") {
+		t.Errorf("skills not named at the top of the prompt:\n%s", prompt)
 	}
-	if !strings.Contains(rest, "--resume manifest-feed-dig-epigenetic-clocks-58f7e088") {
-		t.Errorf("no per-card session: %q", rest)
+	rest := strings.Join(args[2:], " ")
+	for _, dead := range []string{"--skills", "--resume"} {
+		if strings.Contains(rest, dead) {
+			t.Errorf("%s is ignored by hermes -z and must not be passed: %q", dead, rest)
+		}
 	}
 	if strings.Contains(rest, "-t web,memory") {
 		t.Errorf("dig must run with the default toolsets, not the read-only plan scope: %q", rest)

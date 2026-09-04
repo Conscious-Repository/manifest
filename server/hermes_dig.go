@@ -34,7 +34,9 @@ import (
 const alfredAgent = "alfred"
 
 // digSkills mirrors the daily cron job's preload, so a dig is the same scan
-// aimed at one item rather than a bare model turn.
+// aimed at one item rather than a bare model turn. The runner names them at
+// the top of the prompt (hermes -z has no working --skills flag) and Hermes
+// loads them on demand.
 const digSkills = "aion-domain-scout,aion-biosciences"
 
 // hermesDigAgent reports whether a feed card's agent is the do-bot — its dig
@@ -74,10 +76,11 @@ func (s *Server) runHermesDig(h Harness, it feed.Item) {
 	before := feedIDs(h)
 	actor := agentIdentity(it.Agent).ID
 	meta := map[string]any{"feed": it.ID}
+	// Each dig is a fresh Hermes session; the prompt carries the card in full,
+	// so a re-dig has everything it needs without a resume.
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
-		Prompt:  hermesDigPrompt(h.Spirits.Root(), it),
-		Session: hermesDigSession(it.ID), // a re-dig continues the same conversation
-		Skills:  digSkills,
+		Prompt: hermesDigPrompt(h.Spirits.Root(), it),
+		Skills: digSkills,
 	})
 	if err != nil {
 		log.Printf("feed dig %s (%s): %v", it.ID, it.Agent, err)
@@ -94,7 +97,7 @@ func (s *Server) runHermesDig(h Harness, it feed.Item) {
 	if written == 0 {
 		log.Printf("feed dig %s (%s): the turn finished but no card landed in the feed — reply: %s", it.ID, it.Agent, ledger.Snip(res.Reply, 200))
 	}
-	meta["itemsWritten"], meta["spentUsd"], meta["model"] = written, res.SpentUSD, res.Model
+	meta["itemsWritten"], meta["spentUsd"], meta["model"], meta["sessionId"] = written, res.SpentUSD, res.Model, res.SessionID
 	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: actor, Harness: "hermes",
 		Text: fmt.Sprintf("dig on %s → %d card(s): %s", ledger.Snip(it.Title, 120), written, ledger.Snip(res.Reply, 280)), Meta: meta})
 }
@@ -161,11 +164,4 @@ exist before you answer, and never claim a write you did not make.
 Reply with ONE line: the So-what and the card's filename.
 `, root, it.Agent)
 	return b.String()
-}
-
-// hermesDigSession maps a card to a stable Hermes session name (--resume
-// target), so digging the same card twice continues one conversation.
-func hermesDigSession(id string) string {
-	r := strings.NewReplacer("/", "-", ":", "-", " ", "-")
-	return "manifest-feed-dig-" + strings.Trim(r.Replace(strings.TrimSpace(id)), "-")
 }
