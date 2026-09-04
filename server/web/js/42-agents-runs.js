@@ -3,18 +3,25 @@
 // §4.3 RUNS): a 7-day window grouped by day, an `internal` chip that hides the
 // sink-driven spirits, a why-line on every row, duration + cost figures, the
 // failing step auto-expanded in the trace, and a "deliverable" link on the
-// report when the run wrote a feed card or a library brief. Excalibur runs
-// only — Alfred fires and Hermes turns join in phase 4. `spiritRuns` /
-// `openRunId` (the only run state) and the live poll stay in 40-agents.js.
+// report when the run wrote a feed card or a library brief. Phase 4 merges
+// the alfred runtime in: Hermes cron fires (usage_audit.jsonl joined to the
+// output file) and manifest's ledger run.* turns, from
+// /api/agents/hermes/runs — tokens instead of dollars unless the chargebook
+// prices the model, the fire's Error/Response first line as the why, and a
+// week-spend header split by runtime. `spiritRuns` / `openRunId` (the only
+// run state) and the live poll stay in 40-agents.js; `hermesRuns` lives in
+// 41-agents-schedule.js (the board's strip reads it too).
 
 // ---- run reports (artifacts/runs/) — live strip + finished list ----
 async function loadSpiritRuns() {
-  spiritRuns = await fetchSpiritRuns();
+  const [runs, hr] = await Promise.all([fetchSpiritRuns(), fetchHermesRuns(spRunWindow)]);
+  spiritRuns = runs;
+  hermesRuns = hr.data; hermesRunsDegraded = hr.degraded;
   renderSpiritRuns();
   ensureLivePoll();
 }
-// spiritWeekSpend — Σ spentUsd over runs started in the last 7 days (the
-// section head + crumb meta both read this; no endpoint involved).
+// spiritWeekSpend — Σ spentUsd over excalibur runs started in the last 7 days
+// (the section head + crumb meta both read this; no endpoint involved).
 function spiritWeekSpend() {
   const cutoff = Date.now() - 7 * 86400000;
   let sum = 0;
@@ -23,6 +30,37 @@ function spiritWeekSpend() {
     if (!isNaN(t) && t >= cutoff) sum += r.spentUsd || 0;
   });
   return sum;
+}
+// hermesWeekFigures — the alfred side of the header: priced dollars (only
+// where the chargebook prices the model) and raw tokens, last 7 days.
+function hermesWeekFigures() {
+  const cutoff = Date.now() - 7 * 86400000;
+  let usd = 0, tokens = 0, unknown = 0;
+  (hermesRuns || []).forEach((f) => {
+    const t = new Date(f.started).getTime();
+    if (isNaN(t) || t < cutoff) return;
+    if (f.usd != null) usd += f.usd;
+    if (f.tokens != null) tokens += f.tokens; else if (f.source !== "ledger") unknown++;
+  });
+  return { usd, tokens, unknown };
+}
+function fmtTokens(n) {
+  if (n == null) return "?";
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+  if (n >= 1e3) return Math.round(n / 1e3) + "k";
+  return String(n);
+}
+// hermesRunRows — the alfred fires in the log's row shape (spirit · ritual ·
+// outcome · outcomeDetail · started · spentUsd), the fire itself as `hermes`.
+function hermesRunRows() {
+  return (hermesRuns || []).map((f) => ({
+    id: f.id, hermes: f, runtime: "alfred", harness: "alfred", spirit: "alfred",
+    ritual: f.jobName || f.job || "turn",
+    outcome: f.outcome || "unknown", outcomeDetail: f.why || "",
+    started: f.started, finished: f.finished || "",
+    spentUsd: f.usd != null ? f.usd : 0,
+    itemsWritten: f.itemsWritten != null ? f.itemsWritten : 0,
+  }));
 }
 
 // ---- the log's view state (derived filters; nothing persists) ----
@@ -37,6 +75,7 @@ const runDayOpen = {};         // day carets survive a repaint (all open by defa
 // kairos/zeck are the team-chat spirits whose turns are not "runs" a person
 // scheduled. Retired extractor spirits (re-extractor, aion-extractor) count.
 function runIsInternal(r) {
+  if (r.hermes) return false; // a person scheduled the cron job or asked for the dig
   const sp = r.spirit || "";
   if (sp === "extractor" || sp === "sage" || sp === "kairos" || sp === "zeck") return true;
   if (/-extractor$/.test(sp)) return true;
@@ -54,7 +93,9 @@ function renderSpiritRuns() {
   const host = els.spiritRunsList; host.innerHTML = "";
   const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
   const queued = spiritRuns.queued || [];
-  const finished = (spiritRuns.data || []).filter((r) => r.outcome !== "running");
+  // excalibur reports ∪ alfred fires, newest first (both arrive newest-first)
+  const finished = (spiritRuns.data || []).filter((r) => r.outcome !== "running").concat(hermesRunRows())
+    .sort((a, b) => String(b.started || "").localeCompare(String(a.started || "")));
 
   // the live strip: one line per running/queued item, at the very top (§12)
   const liveHost = document.getElementById("spiritLive");
@@ -64,15 +105,24 @@ function renderSpiritRuns() {
     queued.forEach((q) => liveHost.append(liveRunRow(q, false)));
   }
 
-  // week spend — the 7-day total, excalibur only until phase 4 splits by runtime
+  // week spend — the 7-day total split by runtime (§4.3): dollars per
+  // runtime, tokens for alfred (dollars only where the chargebook prices the model)
   const ws = document.getElementById("spiritWeekSpend");
-  if (ws) ws.textContent = "$" + spiritWeekSpend().toFixed(2) + " excalibur · last 7 days";
+  if (ws) {
+    const hf = hermesWeekFigures();
+    const bits = ["$" + spiritWeekSpend().toFixed(2) + " excalibur", "$" + hf.usd.toFixed(2) + " alfred", fmtTokens(hf.tokens) + " tokens alfred"];
+    if (hf.unknown) bits.push(hf.unknown + " fire" + (hf.unknown === 1 ? "" : "s") + " untallied");
+    ws.textContent = bits.join(" · ") + " · last 7 days";
+    ws.title = hf.unknown ? "untallied: fires with no usage_audit line (a drift skip makes no inference call; or the audit file is missing)" : "";
+  }
   if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
 
   // the schedule board also calls this for the live strip; the log itself
   // only paints when RUNS is the open view
   const wrap = document.getElementById("spRunsWrap");
   if (wrap && wrap.hidden) return;
+  // what the alfred projection could not read (D4) — one quiet line, never an error
+  (hermesRunsDegraded || []).forEach((n) => host.append(el("div", "runs-degraded", "alfred: " + n)));
 
   // window → internal → spirit → outcome; chips derive from what survives
   // the first two so no chip ever filters to nothing
@@ -135,7 +185,9 @@ function runDayGroup(host, key, list) {
   head.append(caret, el("span", "aion-sec-title", runDayLabel(key)), el("span", "aion-sec-count", String(list.length)));
   const spent = list.reduce((s, r) => s + (r.spentUsd || 0), 0);
   const failed = list.filter((r) => (r.outcome || "").startsWith("error")).length;
+  const tokens = list.reduce((s, r) => s + ((r.hermes && r.hermes.tokens) || 0), 0);
   const bits = ["$" + spent.toFixed(2)];
+  if (tokens) bits.push(fmtTokens(tokens) + " tokens");
   if (failed) bits.push(failed + " failed");
   head.append(el("span", "sched-group-note", bits.join(" · ")));
   const body = el("div", "runs-day-body");
@@ -177,6 +229,7 @@ function fmtRunSeconds(s) {
 }
 // runDuration — derived from started/finished per paint; no stored state.
 function runDuration(r) {
+  if (r.hermes && r.hermes.durationMs != null) return fmtRunSeconds(Math.max(0, Math.round(r.hermes.durationMs / 1000)));
   const a = new Date(r.started), b = new Date(r.finished);
   if (isNaN(a) || isNaN(b)) return "";
   return fmtRunSeconds(Math.max(0, Math.round((b - a) / 1000)));
@@ -208,8 +261,10 @@ function renderRunFilters(visible, hiddenInternal) {
     if (title) b.title = title;
     host.append(b);
   };
+  // a window change refetches the alfred fires for that window (the
+  // excalibur list is already complete; the fires are read per window)
   ["7d", "30d", "all"].forEach((w) =>
-    chip(w, spRunWindow === w, () => { spRunWindow = w; renderSpiritRuns(); },
+    chip(w, spRunWindow === w, () => { spRunWindow = w; loadSpiritRuns(); },
       w === "all" ? "every run report, no recency cap" : "runs started in the last " + w.replace("d", " days")));
   host.append(el("span", "run-filter-sep"));
   chip("all", !spRunFilterSpirit && !spRunFilterOutcome, () => { spRunFilterSpirit = ""; spRunFilterOutcome = ""; renderSpiritRuns(); });
@@ -288,13 +343,24 @@ function spiritRunRow(r) {
   const row = el("div", "sprt-run");
   const top = el("div", "sprt-run-top");
   top.append(el("span", "run-outcome " + outcomeClass(r.outcome), r.outcome || "never run"));
-  top.append(el("span", "harness-chip", r.harness || "excalibur")); // runtime (federation source)
-  top.append(el("span", "sprt-run-title", `${r.spirit} / ${r.ritual}`));
+  const chip = el("span", "harness-chip" + (r.hermes ? " alfred" : ""), r.harness || "excalibur"); // runtime
+  if (r.hermes) chip.title = r.hermes.source === "ledger" ? "an in-process Hermes turn (manifest's ledger)" : "Hermes cron fire · " + (r.hermes.source || "") + (r.hermes.model ? " · " + r.hermes.model : "");
+  top.append(chip);
+  top.append(el("span", "sprt-run-title", r.hermes ? `agent:alfred / ${r.ritual}` : `${r.spirit} / ${r.ritual}`));
   const figs = el("span", "sprt-run-figs");
   figs.append(el("span", "sprt-run-wrote", r.itemsWritten ? "wrote " + r.itemsWritten : "—"));
   const dur = runDuration(r);
   if (dur) figs.append(el("span", "sprt-run-dur", dur));
-  figs.append(el("span", "sprt-run-cost", "$" + (r.spentUsd || 0).toFixed(4)));
+  if (r.hermes) {
+    // tokens are the honest figure; dollars only when the chargebook prices the model
+    const f = r.hermes;
+    const cost = el("span", "sprt-run-cost", f.usd != null ? "$" + f.usd.toFixed(4) : f.tokens != null ? fmtTokens(f.tokens) + " tokens" : "tokens unknown");
+    cost.title = f.tokens != null ? (f.promptTokens || 0) + " in · " + (f.completionTokens || 0) + " out" + (f.usd != null ? " · priced by the chargebook" : " · " + (f.model || "model") + " not priced in chargebook.md")
+      : (f.source === "ledger" ? "an in-process turn — no token count" : "no usage_audit line for this fire");
+    figs.append(cost);
+  } else {
+    figs.append(el("span", "sprt-run-cost", "$" + (r.spentUsd || 0).toFixed(4)));
+  }
   top.append(figs);
   top.append(el("span", "sprt-run-when", fmtWhen(r.started)));
   row.append(top);
@@ -320,6 +386,7 @@ function spiritRunRow(r) {
 async function toggleRunTrace(row, r) {
   const open = row.nextElementSibling && row.nextElementSibling.classList.contains("run-trace");
   if (open) { row.nextElementSibling.remove(); return; }
+  if (r.hermes) { row.after(await hermesFireTrace(r)); return; }
   let body = "";
   try { body = ((await (await fetch("/api/spirits/runs/" + encodeURIComponent(r.id))).json()) || {}).body || ""; }
   catch (e) {}
@@ -358,6 +425,41 @@ async function toggleRunTrace(row, r) {
   box.append(full);
   row.after(box);
   if (firstFailed) firstFailed.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+// hermesFireTrace — the inline detail for an alfred row: the why up front,
+// then the fire's narration from its output file (the Response or Error
+// section first; the prompt dump stays behind a button — level two). A
+// ledger turn has no file, so it shows its ledger line only.
+async function hermesFireTrace(r) {
+  const f = r.hermes;
+  const box = el("div", "run-trace");
+  box.onclick = (e) => e.stopPropagation();
+  const why = r.outcomeDetail || "";
+  if (why) box.append(el("div", "run-trace-why " + outcomeClass(r.outcome), (r.outcome || "") + " — " + why));
+  const meta = [f.model ? "model " + f.model : "", f.tokens != null ? fmtTokens(f.tokens) + " tokens" : "", f.job ? "job " + f.job : "", f.source ? "source " + f.source : ""].filter(Boolean);
+  if (meta.length) box.append(el("div", "sprt-run-why", meta.join(" · ")));
+  if (!f.job || !f.file) {
+    box.append(emptyRow(f.source === "ledger" ? "An in-process Hermes turn — manifest's ledger line is the whole record." : "No output file for this fire (usage_audit line only)."));
+    return box;
+  }
+  let d = null;
+  try { d = await (await fetch("/api/agents/hermes/run?job=" + encodeURIComponent(f.job) + "&file=" + encodeURIComponent(f.file))).json(); } catch (e) {}
+  const body = (d && d.body) || "";
+  if (!body) { box.append(emptyRow("Output file unreadable" + (d && d.why ? " — " + d.why : "") + ".")); return box; }
+  // the narration: everything from the first Response / Error heading; the prompt is level two
+  const cut = body.search(/^## (Response|Error|Output)\b/m);
+  const pre = el("pre", "run-report");
+  pre.textContent = cut >= 0 ? body.slice(cut) : body;
+  box.append(pre);
+  if (cut > 0) {
+    const promptBtn = pillLight("Show prompt", () => {
+      const showing = pre.textContent.length === body.length;
+      pre.textContent = showing ? body.slice(cut) : body;
+      promptBtn.textContent = showing ? "Show prompt" : "Hide prompt";
+    });
+    box.append(promptBtn);
+  }
+  return box;
 }
 async function openSpiritRun(id) {
   openRunId = id;

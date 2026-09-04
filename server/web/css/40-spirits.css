@@ -273,4 +273,16 @@
 .ritual-health { white-space: nowrap; }
 .sched-ok { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }
 .ritual-acts { display: inline-flex; gap: var(--sp-4); white-space: nowrap; justify-self: end; }
+
+/* ---- Alfred on the board (agents plan §4.3, Phase 4) — modifier classes only ---- */
+/* the alfred runtime chip: a shade darker than a federation source so the two runtimes read apart */
+.harness-chip.alfred { color: var(--base-70); border-color: var(--base-40); }
+/* vocabulary additions: unpinned → warn (fails closed on drift); unknown → muted (a file we couldn't read) */
+.oc-unpinned { color: var(--warn); border-color: var(--warn); background: var(--status-warn-bg); }
+.oc-unknown { color: var(--muted); border-color: var(--line); }
+.ritual-health .run-outcome + .run-outcome { margin-left: var(--sp-2); }
+/* a Hermes row has no editor behind it */
+.ritual-row.hermes { cursor: default; }
+/* the one-line degrade notes (D4): what the projection could not read */
+.sched-degraded, .runs-degraded { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-1) var(--sp-4); }
 .harness-add { align-self: flex-start; margin-top: var(--sp-3); }

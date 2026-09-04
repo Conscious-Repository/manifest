@@ -8,13 +8,45 @@
 // strip, a health chip and run / pause actions. Nothing here is stored:
 // groups, health (late / silent / invalid — plan §3.2) and the strip are
 // computed from /api/spirits/rituals + /api/spirits/runs on every paint.
+//
+// Phase 4 (§4.3 + D4/D5): Alfred's Hermes cron jobs sit on the same board —
+// enabled jobs in Yours, paused ones in Paused — projected from ~/.hermes/cron
+// by /api/agents/hermes (files first, `hermes cron list` only as fallback).
+// Their controls are REAL: run now / pause / resume shell out to `hermes cron
+// <cmd> <id>` through /api/agents/hermes/job/*, and the row's tooltip shows
+// the verbatim command. Manifest never edits jobs.json.
 
 let spiritRitualRows = []; // the crumb meta's ritual count reads this
 let spiritModels = {};     // spirit → conduit name (from /api/harnesses; display only)
+let hermesInfo = null;     // last /api/agents/hermes — the jobs list + degrade notes (display only)
+let hermesRuns = [];       // last /api/agents/hermes/runs rows — the strip + health on Hermes rows
+let hermesRunsDegraded = []; // what the fires projection could not read (usage_audit.jsonl gone…)
 const schedOpen = { yours: true, internal: false, paused: false }; // group carets survive a repaint
 
 async function fetchSpiritRituals() {
   try { return (await (await fetch("/api/spirits/rituals")).json()).data || []; } catch (e) { return []; }
+}
+async function fetchHermes() {
+  try { return await (await fetch("/api/agents/hermes")).json(); } catch (e) { return null; }
+}
+async function fetchHermesRuns(since) {
+  try {
+    const d = await (await fetch("/api/agents/hermes/runs?since=" + encodeURIComponent(since || "7d"))).json();
+    return { data: d.data || [], degraded: d.degraded || [] };
+  } catch (e) { return { data: [], degraded: ["/api/agents/hermes/runs did not answer"] }; }
+}
+function hermesJobList() {
+  return ((hermesInfo && hermesInfo.cron && hermesInfo.cron.list) || []);
+}
+// hermesRowOf — a Hermes job in the board's row shape (the group / sort /
+// next-up code reads spirit · ritual · cadence · nextFire · enabled · valid);
+// the job itself rides along as `hermes` for the row painter.
+function hermesRowOf(j) {
+  return {
+    runtime: "alfred", hermes: j, spirit: "alfred", ritual: j.name || j.id,
+    cadence: j.scheduleKind === "cron" ? j.schedule : "", nextFire: j.nextRunAt || "",
+    enabled: j.enabled !== false, valid: j.outcome !== "unknown", path: "",
+  };
 }
 async function loadSpiritModels() {
   try {
@@ -28,23 +60,30 @@ async function loadSpiritModels() {
 // loadSchedule — entering #/agents: rituals + runs together (the strip, the
 // health chips and the next-up line read both), then one paint.
 async function loadSchedule() {
-  const [rows, runs] = await Promise.all([fetchSpiritRituals(), fetchSpiritRuns(), loadSpiritModels()]);
+  const [rows, runs, hz, hr] = await Promise.all([
+    fetchSpiritRituals(), fetchSpiritRuns(), fetchHermes(), fetchHermesRuns("30d"), loadSpiritModels(),
+  ]);
   spiritRuns = runs;
+  hermesInfo = hz; hermesRuns = hr.data; hermesRunsDegraded = hr.degraded;
   renderSpiritRuns();        // the live strip (and the hidden RUNS list — harmless)
   renderSpiritRituals(rows);
   ensureLivePoll();
 }
-// loadSpiritRituals — rituals only; the runs are whatever the last poll saw.
+// loadSpiritRituals — rituals + the Hermes jobs list (a pause / resume / run
+// repaints through here); the runs are whatever the last poll saw.
 async function loadSpiritRituals() {
-  renderSpiritRituals(await fetchSpiritRituals());
+  const [rows, hz] = await Promise.all([fetchSpiritRituals(), fetchHermes()]);
+  hermesInfo = hz;
+  renderSpiritRituals(rows);
 }
 
 // ---- classification (derived, never stored — plan §4.3) ----
-// paused   enabled: false
+// paused   enabled: false (a Hermes job: enabled false / state paused)
 // internal no cadence — spooled by a transcript sink or the / bar
-// yours    on a clock
+// yours    on a clock (every enabled Hermes job counts — a person scheduled it)
 function schedGroupOf(r) {
   if (r.enabled === false) return "paused";
+  if (r.hermes) return "yours";
   if (!r.cadence) return "internal";
   return "yours";
 }
@@ -109,17 +148,29 @@ function openRunOnRuns(id) {
   location.hash = "#/agents/runs";
   setTimeout(() => openSpiritRun(id), 120);
 }
+// openHermesOnRuns — a Hermes fire has no report pane; RUNS filtered to the
+// alfred runtime is where its rows (and their inline narration) live.
+function openHermesOnRuns() {
+  if (typeof spRunFilterSpirit !== "undefined") { spRunFilterSpirit = "alfred"; spRunFilterOutcome = ""; }
+  location.hash = "#/agents/runs";
+}
 
 // ---- the board ----
 function renderSpiritRituals(rows) {
   spiritRitualRows = rows;
   const host = els.spiritRitualBoard; host.innerHTML = "";
-  renderNextUp(rows);
+  const all = rows.concat(hermesJobList().map(hermesRowOf));
+  renderNextUp(all);
   const byName = (a, b) => (a.spirit + "/" + a.ritual).localeCompare(b.spirit + "/" + b.ritual);
   const fireAt = (r) => { const t = new Date(r.nextFire || "").getTime(); return isNaN(t) ? Infinity : t; };
   const groups = { yours: [], internal: [], paused: [] };
-  rows.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
+  all.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
   groups.yours.sort((a, b) => (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
+  // what the Hermes projection could not read (D4 graceful degrade) — said once, quietly
+  const cron = (hermesInfo && hermesInfo.cron) || null;
+  if (hermesInfo === null) host.append(el("div", "sched-degraded", "alfred: /api/agents/hermes did not answer — Hermes jobs not shown"));
+  else if (cron && cron.outcome === "unknown") host.append(el("div", "sched-degraded", "alfred: jobs unknown — " + (cron.why || "jobs.json unreadable")));
+  else if (cron && cron.source === "cli") host.append(el("div", "sched-degraded", "alfred: jobs.json missing — read from `hermes cron list`"));
   schedGroup(host, "yours", "YOURS", groups.yours, {
     empty: "Nothing on a clock — give a ritual a cadence from its editor.",
   });
@@ -146,9 +197,11 @@ function renderNextUp(rows) {
   host.append(el("span", "sched-nextup-label", "next up"));
   soon.forEach(({ r }) => {
     const item = el("span", "sched-nextup-item");
-    item.append(el("span", "sched-nextup-when", nextUpWhen(r.nextFire)), document.createTextNode(" " + r.ritual));
+    // a Hermes fire reads "alfred/<job>" so the runtime is never ambiguous
+    item.append(el("span", "sched-nextup-when", nextUpWhen(r.nextFire)), document.createTextNode(" " + (r.hermes ? "alfred/" : "") + r.ritual));
     item.title = r.spirit + "/" + r.ritual + " · " + relPhrase(r.nextFire);
-    item.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
+    item.onclick = r.hermes ? () => openHermesOnRuns()
+      : () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
     host.append(item);
   });
 }
@@ -173,8 +226,147 @@ function schedGroup(host, key, title, list, opts) {
     caret.textContent = schedOpen[key] ? "▾" : "▸";
   };
   if (!list.length) body.append(emptyRow(opts.empty));
-  else list.forEach((r) => body.append(ritualRow(r)));
+  else list.forEach((r) => body.append(r.hermes ? hermesJobRow(r.hermes) : ritualRow(r)));
   host.append(head, body);
+}
+
+// ---- Hermes rows (Phase 4) ----
+// hermesJobRuns — this job's fires, newest first, in the strip's shape.
+function hermesJobRuns(j) {
+  return (hermesRuns || []).filter((x) => x.job === j.id)
+    .map((x) => ({ id: x.id, runtime: "alfred", outcome: x.outcome, started: x.started, itemsWritten: x.itemsWritten }));
+}
+// hermesJobHealth — the same ladder as ritualHealth plus `unpinned` (Hermes
+// only): a job with no model pin fails CLOSED when the global inference
+// config drifts — the 08-30..09-01 skips — so it's a --warn chip, never a
+// silent detail. Both may show; late is the current state, unpinned the risk.
+function hermesJobHealth(j, runs) {
+  const out = [];
+  if (j.outcome === "unknown") return [{ state: "invalid", why: "a reshaped jobs.json entry — id or name missing" }];
+  if (j.enabled === false) return [{ state: "paused", why: j.pausedReason || (j.state === "completed" ? "a one-shot job that already ran" : "paused in Hermes") }];
+  if (j.scheduleKind === "cron" && j.lastRunAt) {
+    const lastAt = new Date(j.lastRunAt).getTime();
+    const fires = cronPrevFires(j.schedule, new Date(), 2);
+    if (!isNaN(lastAt) && fires.length === 2) {
+      const interval = fires[0] - fires[1];
+      if (Date.now() - lastAt > 1.5 * interval) {
+        out.push({ state: "late", why: "last fire " + fmtAgo(j.lastRunAt) + " · expected every " + schedDur(interval) + " (1.5× grace passed)" });
+      }
+    }
+  }
+  if (!j.model) out.push({ state: "unpinned", why: "model: null in jobs.json — Hermes skips the fire (fails closed) whenever the global model drifts. Pin it: hermes cron edit " + j.id + " --model <name>" });
+  return out;
+}
+// hermesCmd — the verbatim command a control runs (shown in the tooltip so
+// the operator sees exactly what will happen before it does — D5).
+function hermesCmd(j, action) {
+  const bin = (hermesInfo && hermesInfo.runner && hermesInfo.runner.bin) || "hermes";
+  return bin.split("/").pop() + " cron " + action + " " + j.id;
+}
+// hermesJobRow — the ritual row anatomy for a Hermes job: alfred chip · name
+// · cadence phrase over cron (or Hermes' own display) · next · last outcome
+// (last_status + last_error) · last-5 strip · health · model pin · actions.
+function hermesJobRow(j) {
+  const paused = j.enabled === false;
+  const runs = hermesJobRuns(j);
+  const health = hermesJobHealth(j, runs);
+  const row = el("div", "ritual-row hermes" + (paused ? " paused" : "") + (j.outcome === "unknown" ? " invalid" : ""));
+  const chip = el("span", "harness-chip ritual-runtime alfred", "alfred");
+  chip.title = "Hermes cron job " + j.id + " — projected from ~/.hermes/cron/jobs.json";
+  row.append(chip);
+  // name — alfred (its Settings card) · job name; the prompt rides the tooltip
+  const name = el("span", "ritual-name");
+  const sp = el("span", "sprt-spirit", "alfred");
+  sp.title = "Alfred (Hermes) — Settings › Agents";
+  sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/settings/agents"; };
+  name.append(sp, document.createTextNode(" · " + (j.name || j.id)));
+  name.title = [j.prompt ? "prompt: " + j.prompt : "", (j.skills || []).length ? "skills: " + j.skills.join(", ") : "", j.deliver ? "deliver: " + j.deliver : ""].filter(Boolean).join("\n");
+  row.append(name);
+  // cadence — the builder's phrase when the cron is one it can say, else Hermes' display
+  const cad = el("span", "ritual-cadence");
+  const parsed = j.scheduleKind === "cron" ? cadParse(j.schedule) : null;
+  const phrase = parsed ? cadCompile(parsed).phrase : (j.scheduleHuman || j.schedule || "custom");
+  if (paused) {
+    cad.append(el("span", "cad-human", "paused" + (phrase ? " · " + phrase : "")));
+  } else {
+    cad.append(el("span", "cad-human", phrase));
+  }
+  cad.append(el("span", "cad-raw", j.scheduleKind === "cron" ? j.schedule : (j.scheduleKind || "schedule") + (j.repeatTimes != null ? " · " + (j.repeatCompleted || 0) + "/" + j.repeatTimes : "")));
+  row.append(cad);
+  // next fire
+  const next = el("span", "ritual-next");
+  if (!paused && j.nextRunAt) {
+    next.append(document.createTextNode(fmtWhen(j.nextRunAt) + " "));
+    next.append(el("span", "next-rel", relPhrase(j.nextRunAt)));
+  } else {
+    next.textContent = "—";
+  }
+  row.append(next);
+  // last outcome — last_status ok/error, last_error as the why (→ RUNS)
+  const oc = el("span", "ritual-outcome");
+  if (j.lastStatus) {
+    const word = j.lastStatus === "ok" ? "completed" : j.lastStatus === "error" ? "error" : j.lastStatus;
+    const c = el("span", "run-outcome linky oc-" + word.replace(/[^a-z-]/g, ""), word);
+    c.title = (j.lastError ? j.lastError + "\n" : "") + (j.lastRunAt ? "last fire " + fmtAgo(j.lastRunAt) : "") + " · open on RUNS";
+    c.onclick = (e) => { e.stopPropagation(); openHermesOnRuns(); };
+    oc.append(c);
+  } else {
+    oc.append(el("span", "run-outcome oc-never", "never run"));
+  }
+  row.append(oc);
+  row.append(outcomeStrip(runs));
+  // health chips (late / unpinned / paused / invalid); an enabled, healthy job says ok
+  const hc = el("span", "ritual-health");
+  if (health.length) {
+    health.forEach((h) => { const c = el("span", "run-outcome oc-" + h.state, h.state); c.title = h.why; hc.append(c); });
+  } else {
+    hc.append(el("span", "sched-ok", "ok"));
+  }
+  row.append(hc);
+  // the model pin column (Hermes' answer to the ceiling): pinned model, or unpinned
+  const pin = el("span", "ritual-ceiling" + (j.model ? "" : " muted"));
+  pin.append(el("span", "ceil-usd", j.model || "unpinned"));
+  pin.append(el("span", "ceil-model", (j.deliver ? "→ " + j.deliver : "") + ((j.skills || []).length ? " · " + j.skills.length + " skill" + (j.skills.length === 1 ? "" : "s") : "")));
+  pin.title = (j.model ? "model pinned in jobs.json: " + j.model : "no model pin — last fire used " + (j.modelSnapshot || "the global default"))
+    + (j.provider ? " · provider " + j.provider : "");
+  row.append(pin);
+  // actions — the D5 controls; each tooltip is the verbatim command
+  const acts = el("span", "ritual-acts");
+  const run = el("button", "sprt-quiet", "run now");
+  run.title = hermesCmd(j, "run") + " — fires on the next scheduler tick";
+  run.onclick = (e) => { e.stopPropagation(); hermesJobAction(j, "run"); };
+  acts.append(run);
+  const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
+  tog.title = hermesCmd(j, paused ? "resume" : "pause");
+  tog.onclick = (e) => { e.stopPropagation(); hermesJobAction(j, paused ? "resume" : "pause"); };
+  acts.append(tog);
+  row.append(acts);
+  if (paused && (j.pausedReason || j.state === "completed")) {
+    row.append(el("div", "ritual-note", j.pausedReason || ("completed — ran " + (j.repeatCompleted || 0) + " of " + (j.repeatTimes != null ? j.repeatTimes : "∞"))));
+  } else if (j.lastStatus === "error" && j.lastError) {
+    row.append(el("div", "ritual-error", j.lastError));
+  }
+  return row;
+}
+// hermesJobAction — POST /api/agents/hermes/job/<id>/<action>: the server
+// runs `hermes cron <action> <id>` and echoes the command; the board repaints
+// from files (jobs.json is what the CLI wrote — no local state).
+async function hermesJobAction(j, action) {
+  setSaveState("saving");
+  let d = {};
+  try {
+    const r = await fetch("/api/agents/hermes/job/" + encodeURIComponent(j.id) + "/" + action, { method: "POST" });
+    d = await r.json().catch(() => ({}));
+    if (!r.ok || d.ok === false) throw new Error(d.output || d.error || ("HTTP " + r.status));
+    setSaveState("saved");
+    const cmd = d.command || hermesCmd(j, action);
+    if (action === "run") showToast(cmd + " — fires on the next scheduler tick; watch RUNS", () => openHermesOnRuns(), "info");
+    else showToast(cmd + " — " + (j.name || j.id) + (action === "pause" ? " paused" : " resumed"));
+  } catch (e) {
+    setSaveState("error");
+    showToast("Couldn't " + action + " " + (j.name || j.id) + ": " + (e.message || e), null, "error");
+  }
+  loadSpiritRituals();
 }
 
 // ritualRow — runtime chip · name · cadence over cron · next · last outcome
@@ -279,10 +471,12 @@ function outcomeStrip(runs) {
     strip.append(d);
   }
   five.forEach((x) => {
-    const items = x.outcome === "completed" ? " · " + (x.itemsWritten || 0) + " item" + (x.itemsWritten === 1 ? "" : "s") : "";
+    // a Hermes fire has no item count unless the ledger recorded one
+    const items = x.outcome === "completed" && (x.itemsWritten != null || !x.runtime)
+      ? " · " + (x.itemsWritten || 0) + " item" + (x.itemsWritten === 1 ? "" : "s") : "";
     const d = statusDot(false, x.outcome + " · " + fmtWhen(x.started) + items);
     d.classList.add("od-" + outcomeClass(x.outcome));
-    d.onclick = (e) => { e.stopPropagation(); openRunOnRuns(x.id); };
+    d.onclick = (e) => { e.stopPropagation(); if (x.runtime === "alfred") openHermesOnRuns(); else openRunOnRuns(x.id); };
     strip.append(d);
   });
   return strip;

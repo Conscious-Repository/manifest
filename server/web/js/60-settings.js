@@ -399,7 +399,36 @@ function alfredCard(hz) {
   }
   const cron = hz.cron || {};
   cardLine(card, "cron", (cron.heartbeat ? "ticker heartbeat " + fmtAgo(cron.heartbeat) : "no ticker heartbeat")
+    + (cron.lastSuccess ? " · last tick ok " + fmtAgo(cron.lastSuccess) : "")
     + (cron.jobs != null ? " · " + cron.jobs + " job" + (cron.jobs === 1 ? "" : "s") + " (" + (cron.enabled || 0) + " enabled)" : ""));
+  // the jobs themselves (Phase 4): name · schedule · next · model pin — an
+  // unpinned enabled job is the --warn chip (it fails closed on model drift)
+  if (cron.outcome === "unknown") {
+    card.append(el("div", "portal-note", "jobs unknown — " + (cron.why || "jobs.json unreadable")));
+  } else if (cron.source === "cli") {
+    card.append(el("div", "portal-note", "jobs.json missing — list read from `hermes cron list`"));
+  }
+  if (cron.unpinned) {
+    const warn = el("div", "harness-hint");
+    warn.append(el("span", "run-outcome oc-unpinned", "unpinned"), document.createTextNode(" " + cron.unpinned + " enabled job" + (cron.unpinned === 1 ? " has" : "s have") + " no model pin — Hermes skips the fire whenever the global model drifts (the 08-30..09-01 skips)."));
+    card.append(warn);
+  }
+  (cron.list || []).forEach((j) => {
+    const row = el("div", "harness-spirit");
+    row.append(el("span", "harness-spirit-name", (j.enabled === false ? "⏸ " : "") + (j.name || j.id)));
+    const bits = [j.scheduleHuman || j.schedule || "—"];
+    if (j.enabled !== false && j.nextRunAt) bits.push("next " + fmtWhen(j.nextRunAt));
+    if (j.enabled === false) bits.push(j.state === "completed" ? "completed" : "paused");
+    if (j.lastStatus) bits.push("last " + j.lastStatus);
+    row.append(el("span", "harness-spirit-model", bits.join(" · ")));
+    if (j.model) { const m = el("span", "harness-spirit-model", j.model); m.title = "model pinned in jobs.json"; row.append(m); }
+    else if (j.enabled !== false) { const u = el("span", "run-outcome oc-unpinned", "unpinned"); u.title = "model: null in jobs.json — pin it: hermes cron edit " + j.id + " --model <name>"; row.append(u); }
+    const open = el("button", "sprt-quiet", "board →");
+    open.title = "the SCHEDULE board carries this job's run / pause / resume controls";
+    open.onclick = () => { location.hash = "#/agents"; };
+    row.append(open);
+    card.append(row);
+  });
   const profiles = hz.profiles || [];
   card.append(el("div", "portal-note", profiles.length + " profile" + (profiles.length === 1 ? "" : "s") + (hz.profilesErr ? " · list unavailable: " + hz.profilesErr : "")));
   profiles.forEach((p) => {

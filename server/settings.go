@@ -55,6 +55,7 @@ type HostsInfo struct {
 		Enabled        bool   `json:"enabled"`
 		Bin            string `json:"bin"`
 		TimeoutSeconds int    `json:"timeoutSeconds"`
+		Home           string `json:"home,omitempty"` // config.hermes.home (optional)
 	} `json:"hermes"`
 	Fundraising struct {
 		Enabled             bool   `json:"enabled"`
@@ -125,13 +126,28 @@ func settingsEnv() []envPresence {
 	return out
 }
 
-// hermesHome is the owner's Hermes state root: $HERMES_HOME, else ~/.hermes.
-func hermesHome() string {
+// hermesHome is the owner's Hermes state root: config.hermes.home if set,
+// else $HERMES_HOME, else ~/.hermes (agents plan §8).
+func (s *Server) hermesHome() string {
+	if s != nil && s.hosts != nil {
+		if v := strings.TrimSpace(s.hosts.Hermes.Home); v != "" {
+			return v
+		}
+	}
 	if v := strings.TrimSpace(os.Getenv("HERMES_HOME")); v != "" {
 		return v
 	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".hermes")
+}
+
+// hermesBin is the CLI the projections and the D5 controls shell out to:
+// config.hermes.bin, else "hermes" on $PATH.
+func (s *Server) hermesBin() string {
+	if s != nil && s.hosts != nil && strings.TrimSpace(s.hosts.Hermes.Bin) != "" {
+		return s.hosts.Hermes.Bin
+	}
+	return "hermes"
 }
 
 // GET /api/settings/hosts → the config projection + env presence.
@@ -160,7 +176,7 @@ func (s *Server) handleSettingsHosts(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"config":                  info,
-		"hermesHome":              hermesHome(),
+		"hermesHome":              s.hermesHome(),
 		"fundraisingCredsPresent": credsPresent,
 		"env":                     settingsEnv(),
 		"file":                    "config.json (read-only — edit on metis and restart)",
@@ -391,15 +407,15 @@ type hermesProfile struct {
 }
 
 func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
-	home := hermesHome()
+	home := s.hermesHome()
 	out := map[string]any{
 		"home":   home,
-		"runner": map[string]any{"enabled": s.hermes != nil},
+		"runner": map[string]any{"enabled": s.hermes != nil, "bin": s.hermesBin()},
 	}
 	if s.hosts != nil {
 		out["runner"] = map[string]any{
 			"enabled": s.hosts.Hermes.Enabled && s.hermes != nil,
-			"bin":     s.hosts.Hermes.Bin, "timeoutSeconds": s.hosts.Hermes.TimeoutSeconds,
+			"bin":     s.hermesBin(), "timeoutSeconds": s.hosts.Hermes.TimeoutSeconds,
 		}
 	}
 	// gateway
@@ -424,36 +440,37 @@ func (s *Server) handleAgentsHermes(w http.ResponseWriter, r *http.Request) {
 			out["gateway"] = map[string]any{"state": gs.State, "activeAgents": gs.ActiveAgents, "updatedAt": gs.UpdatedAt, "platforms": platforms}
 		}
 	}
-	// cron ticker heartbeat (mtime) + jobs
+	// cron ticker heartbeat + last success (mtimes) + the jobs list (Phase 4:
+	// files first, `hermes cron list` only when jobs.json is missing — D4)
 	cron := map[string]any{}
 	if st, err := os.Stat(filepath.Join(home, "cron", "ticker_heartbeat")); err == nil {
 		cron["heartbeat"] = st.ModTime().UTC().Format(time.RFC3339)
 	}
-	if b, err := os.ReadFile(filepath.Join(home, "cron", "jobs.json")); err == nil {
-		var jf struct {
-			Jobs []struct {
-				Name    string `json:"name"`
-				Enabled *bool  `json:"enabled"`
-			} `json:"jobs"`
-		}
-		if json.Unmarshal(b, &jf) == nil {
-			enabled := 0
-			for _, j := range jf.Jobs {
-				if j.Enabled == nil || *j.Enabled {
-					enabled++
-				}
+	if st, err := os.Stat(filepath.Join(home, "cron", "ticker_last_success")); err == nil {
+		cron["lastSuccess"] = st.ModTime().UTC().Format(time.RFC3339)
+	}
+	jobs, source, jerr := s.hermesJobs(r.Context())
+	enabled, unpinned := 0, 0
+	for _, j := range jobs {
+		if j.Enabled {
+			enabled++
+			if j.Model == "" {
+				unpinned++
 			}
-			cron["jobs"] = len(jf.Jobs)
-			cron["enabled"] = enabled
 		}
 	}
+	cron["jobs"] = len(jobs)
+	cron["enabled"] = enabled
+	cron["unpinned"] = unpinned
+	cron["source"] = source
+	if jerr != "" {
+		cron["outcome"] = "unknown"
+		cron["why"] = jerr
+	}
+	cron["list"] = jobs
 	out["cron"] = cron
 	// profiles (shell, read-only, bounded)
-	bin := "hermes"
-	if s.hosts != nil && s.hosts.Hermes.Bin != "" {
-		bin = s.hosts.Hermes.Bin
-	}
-	if profiles, err := hermesProfiles(r.Context(), bin); err == nil {
+	if profiles, err := hermesProfiles(r.Context(), s.hermesBin()); err == nil {
 		out["profiles"] = profiles
 	} else {
 		out["profiles"] = []hermesProfile{}

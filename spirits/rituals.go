@@ -434,6 +434,52 @@ func (s *Store) chargebookDefault() float64 {
 	return f
 }
 
+// ModelPrice reads the chargebook's `price.<model>.input_per_mtok` /
+// `.output_per_mtok` pair for one model (case-insensitive on the model name,
+// which may itself carry dots). ok is false when the chargebook does not
+// price the model — callers then show tokens, never a made-up dollar figure
+// (agents plan §4.3 RUNS). Per-request file read; nothing cached.
+func (s *Store) ModelPrice(model string) (inPerMTok, outPerMTok float64, ok bool) {
+	model = strings.TrimSpace(model)
+	if s == nil || model == "" {
+		return 0, 0, false
+	}
+	b, err := os.ReadFile(filepath.Join(s.root, "chargebook.md"))
+	if err != nil {
+		return 0, 0, false
+	}
+	fm, _ := mdfm.Split(string(b))
+	var haveIn, haveOut bool
+	for k, v := range fm {
+		if !strings.HasPrefix(k, "price.") {
+			continue
+		}
+		rest := strings.TrimPrefix(k, "price.")
+		var name, which string
+		switch {
+		case strings.HasSuffix(rest, ".input_per_mtok"):
+			name, which = strings.TrimSuffix(rest, ".input_per_mtok"), "in"
+		case strings.HasSuffix(rest, ".output_per_mtok"):
+			name, which = strings.TrimSuffix(rest, ".output_per_mtok"), "out"
+		default:
+			continue
+		}
+		if !strings.EqualFold(name, model) {
+			continue
+		}
+		f, perr := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if perr != nil {
+			continue
+		}
+		if which == "in" {
+			inPerMTok, haveIn = f, true
+		} else {
+			outPerMTok, haveOut = f, true
+		}
+	}
+	return inPerMTok, outPerMTok, haveIn && haveOut
+}
+
 func (s *Store) portalExists(name string) bool {
 	if !validSlugDot(name) {
 		return false

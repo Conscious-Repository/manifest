@@ -670,6 +670,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/settings/gmail-send/connect/finish", s.handleSettingsGmailSendFinish)
 	mux.HandleFunc("POST /api/settings/gmail-send/disconnect", s.handleSettingsGmailSendDisconnect)
 	mux.HandleFunc("GET /api/agents/hermes", s.handleAgentsHermes) // the Alfred card (~/.hermes projection)
+	// AGENTS › Alfred on the board (plan Phase 4, hermes_cron.go): the cron
+	// fires for RUNS, one fire's narration, and the D5 controls (pause /
+	// resume / run through the `hermes` CLI — never a jobs.json edit).
+	mux.HandleFunc("GET /api/agents/hermes/runs", s.handleAgentsHermesRuns)
+	mux.HandleFunc("GET /api/agents/hermes/run", s.handleAgentsHermesRun)
+	mux.HandleFunc("POST /api/agents/hermes/job/{id}/{action}", s.handleAgentsHermesJobAction)
 
 	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 	// Reads are the Board + property pages; the writes (create, quick-add log,

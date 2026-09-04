@@ -120,3 +120,26 @@ func indexOf(hay, needle string) int {
 	}
 	return -1
 }
+
+// ModelPrice reads the chargebook's price.<model>.* pair (case-insensitive,
+// dots in the model name allowed) and reports ok=false for an unpriced
+// model so the RUNS log shows tokens rather than an invented dollar figure.
+func TestModelPriceFromChargebook(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "chargebook.md"), []byte("---\ndefault_run_ceiling_usd: 0.50\nprice.gpt-5.6-terra.input_per_mtok: 2.50\nprice.gpt-5.6-terra.output_per_mtok: 15.00\nprice.GLM-5.3-Flash-EXL3.input_per_mtok: 0\nprice.GLM-5.3-Flash-EXL3.output_per_mtok: 0\nprice.half.input_per_mtok: 1\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := NewStore(root)
+	if in, out, ok := s.ModelPrice("gpt-5.6-terra"); !ok || in != 2.5 || out != 15 {
+		t.Fatalf("dotted model: %v %v %v", in, out, ok)
+	}
+	if _, _, ok := s.ModelPrice("glm-5.3-flash-exl3"); !ok {
+		t.Fatal("case-insensitive match expected")
+	}
+	if _, _, ok := s.ModelPrice("half"); ok {
+		t.Fatal("a model with only an input price is not priced")
+	}
+	if _, _, ok := s.ModelPrice("unknown-model"); ok {
+		t.Fatal("unpriced model must report ok=false")
+	}
+}

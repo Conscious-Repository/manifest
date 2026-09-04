@@ -178,6 +178,9 @@ type HermesConfig struct {
 	// default (web/search/memory/skills; no code_execution/terminal/file/…).
 	ReadToolsets   string `json:"readToolsets"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
+	// Home is the Hermes state root the Agents surfaces project (cron files,
+	// gateway state). Empty → $HERMES_HOME, else ~/.hermes (agents plan §8).
+	Home string `json:"home"`
 }
 
 // DefaultHermesReadToolsets is the read-only scope for plan/comment turns —
@@ -547,6 +550,7 @@ func hostsInfo(cfg Config) server.HostsInfo {
 	h.Consume.RSSIntervalMinutes, h.Consume.XIntervalMinutes = cfg.Consume.RSSIntervalMinutes, cfg.Consume.XIntervalMinutes
 	h.Consume.RSSHubBase = cfg.Consume.RSSHubBase
 	h.Hermes.Enabled, h.Hermes.Bin, h.Hermes.TimeoutSeconds = cfg.Hermes.Enabled, orDefault(cfg.Hermes.Bin, "hermes"), cfg.Hermes.TimeoutSeconds
+	h.Hermes.Home = cfg.Hermes.Home
 	h.Fundraising.Enabled, h.Fundraising.SpreadsheetID = cfg.FundraisingSheets.Enabled, cfg.FundraisingSheets.SpreadsheetID
 	h.Fundraising.CredentialsPath, h.Fundraising.SyncIntervalMinutes = cfg.FundraisingSheets.CredentialsPath, cfg.FundraisingSheets.SyncIntervalMinutes
 	return h
