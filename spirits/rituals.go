@@ -405,8 +405,10 @@ func allowedEditPath(rel string) (string, bool) {
 	return "", false
 }
 
-// allowedReadPath is allowedEditPath plus the read-only artifact briefs:
-// artifacts/library/<name>.md. Never writable through the editor.
+// allowedReadPath is allowedEditPath plus the read-only deliverables a run
+// writes: artifacts/library/<name>.md (briefs) and artifacts/feed/<name>.md
+// (feed cards — the RUNS log's "deliverable" link opens them in the artifact
+// reader). Never writable through the editor.
 func allowedReadPath(rel string) (string, bool) {
 	if clean, ok := allowedEditPath(rel); ok {
 		return clean, true
@@ -416,7 +418,7 @@ func allowedReadPath(rel string) (string, bool) {
 		return "", false
 	}
 	p := strings.Split(clean, "/")
-	if len(p) == 3 && p[0] == "artifacts" && p[1] == "library" && strings.HasSuffix(p[2], ".md") {
+	if len(p) == 3 && p[0] == "artifacts" && (p[1] == "library" || p[1] == "feed") && strings.HasSuffix(p[2], ".md") {
 		return clean, true
 	}
 	return "", false

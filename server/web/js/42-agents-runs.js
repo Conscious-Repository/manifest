@@ -1,6 +1,10 @@
 // ================= Agents · RUNS (the global run log) =================
-// Split from 40-spirits.js (phase 0): the finished list, its filters, the inline
-// step trace, the full report and the assembled-prompt viewer. `spiritRuns` /
+// Split from 40-spirits.js (phase 0); made legible in phase 3 (agents plan
+// §4.3 RUNS): a 7-day window grouped by day, an `internal` chip that hides the
+// sink-driven spirits, a why-line on every row, duration + cost figures, the
+// failing step auto-expanded in the trace, and a "deliverable" link on the
+// report when the run wrote a feed card or a library brief. Excalibur runs
+// only — Alfred fires and Hermes turns join in phase 4. `spiritRuns` /
 // `openRunId` (the only run state) and the live poll stay in 40-agents.js.
 
 // ---- run reports (artifacts/runs/) — live strip + finished list ----
@@ -21,6 +25,29 @@ function spiritWeekSpend() {
   return sum;
 }
 
+// ---- the log's view state (derived filters; nothing persists) ----
+let spRunWindow = "7d";        // 7d | 30d | all — the default is the week (§3.2)
+let spRunInternal = false;     // OFF hides the sink-driven spirits + chat turns
+let spRunFilterSpirit = "";
+let spRunFilterOutcome = "";   // "" | error | stopped
+const runDayOpen = {};         // day carets survive a repaint (all open by default)
+
+// runIsInternal — the log's noise rule, derived from names alone (plan §4.3):
+// extractor/* and sage/* are spooled by the transcript sinks and the / bar;
+// kairos/zeck are the team-chat spirits whose turns are not "runs" a person
+// scheduled. Retired extractor spirits (re-extractor, aion-extractor) count.
+function runIsInternal(r) {
+  const sp = r.spirit || "";
+  if (sp === "extractor" || sp === "sage" || sp === "kairos" || sp === "zeck") return true;
+  if (/-extractor$/.test(sp)) return true;
+  return (r.ritual || "") === "chat";
+}
+function runWindowCutoff() {
+  if (spRunWindow === "7d") return Date.now() - 7 * 86400000;
+  if (spRunWindow === "30d") return Date.now() - 30 * 86400000;
+  return 0; // all — no recency cap
+}
+
 // Re-renders the LIST only; never touches the open report detail (so a live
 // re-render doesn't close what you're reading).
 function renderSpiritRuns() {
@@ -37,24 +64,89 @@ function renderSpiritRuns() {
     queued.forEach((q) => liveHost.append(liveRunRow(q, false)));
   }
 
+  // week spend — the 7-day total, excalibur only until phase 4 splits by runtime
   const ws = document.getElementById("spiritWeekSpend");
-  if (ws) { const n = spiritWeekSpend(); ws.textContent = n > 0 ? "$" + n.toFixed(2) + " this week" : ""; }
+  if (ws) ws.textContent = "$" + spiritWeekSpend().toFixed(2) + " excalibur · last 7 days";
   if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
 
-  // the RUNS view is the one global log (SPIRITS.md §4): every run, newest
-  // first, filterable by spirit and outcome — no recency cap
-  renderRunFilters(finished);
-  let list = finished;
+  // the schedule board also calls this for the live strip; the log itself
+  // only paints when RUNS is the open view
+  const wrap = document.getElementById("spRunsWrap");
+  if (wrap && wrap.hidden) return;
+
+  // window → internal → spirit → outcome; chips derive from what survives
+  // the first two so no chip ever filters to nothing
+  const cutoff = runWindowCutoff();
+  const inWindow = finished.filter((r) => {
+    if (!cutoff) return true;
+    const t = new Date(r.started).getTime();
+    return isNaN(t) || t >= cutoff;
+  });
+  const visible = spRunInternal ? inWindow : inWindow.filter((r) => !runIsInternal(r));
+  renderRunFilters(visible, inWindow.length - visible.length);
+  let list = visible;
   if (spRunFilterSpirit) list = list.filter((r) => r.spirit === spRunFilterSpirit);
-  if (spRunFilterOutcome === "error") list = list.filter((r) => r.outcome === "error");
+  if (spRunFilterOutcome === "error") list = list.filter((r) => (r.outcome || "").startsWith("error"));
   if (spRunFilterOutcome === "stopped") list = list.filter((r) => (r.outcome || "").startsWith("stopped"));
-  if (!list.length && !running.length && !queued.length) {
-    host.appendChild(emptyRow(finished.length
-      ? "No runs match the filter."
-      : "No runs yet — cast a skill (press /) or wait for a scheduled ritual."));
+  if (!list.length) {
+    if (running.length || queued.length) return; // the live strip is the content
+    host.appendChild(emptyRow(
+      !finished.length ? "No runs yet — cast a skill (press /) or wait for a scheduled ritual."
+      : visible.length ? "No runs match the filter."
+      : inWindow.length ? "Only internal runs in this window — turn on internal to see them."
+      : spRunWindow === "all" ? "No runs match the filter."
+      : "No runs in the last " + spRunWindow.replace("d", " days") + " — widen to 30d or all."));
     return;
   }
-  list.forEach((r) => host.append(spiritRunRow(r)));
+  // grouped by day, newest day first (the list arrives newest-first)
+  const days = [];
+  const byDay = {};
+  list.forEach((r) => {
+    const k = runDayKey(r.started);
+    if (!byDay[k]) { byDay[k] = []; days.push(k); }
+    byDay[k].push(r);
+  });
+  days.forEach((k) => runDayGroup(host, k, byDay[k]));
+}
+
+// runDayKey — the local calendar day of the start timestamp; unparsable
+// timestamps group under the report's own date prefix.
+function runDayKey(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return String(iso || "").slice(0, 10) || "undated";
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+function runDayLabel(key) {
+  const today = runDayKey(new Date().toISOString());
+  if (key === today) return "TODAY";
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  if (key === runDayKey(y.toISOString())) return "YESTERDAY";
+  const d = new Date(key + "T12:00:00");
+  if (isNaN(d)) return key.toUpperCase();
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }).replace(",", "").toUpperCase();
+}
+// runDayGroup — the schedule board's .aion-sec-label heading (caret · day ·
+// count · the day's spend + failures) over the day's rows.
+function runDayGroup(host, key, list) {
+  if (!(key in runDayOpen)) runDayOpen[key] = true;
+  const head = el("div", "aion-sec-label sched-group run-day");
+  const caret = el("span", "sec-caret", runDayOpen[key] ? "▾" : "▸");
+  head.append(caret, el("span", "aion-sec-title", runDayLabel(key)), el("span", "aion-sec-count", String(list.length)));
+  const spent = list.reduce((s, r) => s + (r.spentUsd || 0), 0);
+  const failed = list.filter((r) => (r.outcome || "").startsWith("error")).length;
+  const bits = ["$" + spent.toFixed(2)];
+  if (failed) bits.push(failed + " failed");
+  head.append(el("span", "sched-group-note", bits.join(" · ")));
+  const body = el("div", "runs-day-body");
+  body.hidden = !runDayOpen[key];
+  head.onclick = () => {
+    runDayOpen[key] = !runDayOpen[key];
+    body.hidden = !runDayOpen[key];
+    caret.textContent = runDayOpen[key] ? "▾" : "▸";
+  };
+  list.forEach((r) => body.append(spiritRunRow(r)));
+  host.append(head, body);
 }
 
 // liveRunRow — ONE line (prototype): dot · RUNNING · spirit · ritual — request · elapsed
@@ -75,34 +167,69 @@ function liveRunRow(item, running) {
 }
 function elapsedSince(iso) {
   const d = new Date(iso); if (isNaN(d)) return "";
-  let s = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+  return fmtRunSeconds(Math.max(0, Math.round((Date.now() - d.getTime()) / 1000)));
+}
+function fmtRunSeconds(s) {
+  const h = Math.floor(s / 3600); s -= h * 3600;
   const m = Math.floor(s / 60); s = s % 60;
+  if (h) return `${h}h ${String(m).padStart(2, "0")}m`;
   return m ? `${m}m ${s}s` : `${s}s`;
 }
+// runDuration — derived from started/finished per paint; no stored state.
+function runDuration(r) {
+  const a = new Date(r.started), b = new Date(r.finished);
+  if (isNaN(a) || isNaN(b)) return "";
+  return fmtRunSeconds(Math.max(0, Math.round((b - a) / 1000)));
+}
+// runWhy — the first line of "## Outcome" without its "<outcome> — " echo.
+function runWhy(r) {
+  let why = r.outcomeDetail || "";
+  const oc = r.outcome || "";
+  if (oc && why.startsWith(oc + " — ")) why = why.slice(oc.length + 3);
+  else if (oc && why === oc) why = "";
+  return why.trim();
+}
+function outcomeClass(outcome) {
+  const oc = outcome || "";
+  let cls = "oc-" + oc.replace(/[^a-z-]/g, "");
+  if (oc.startsWith("error")) cls += " oc-error";
+  return cls;
+}
 
-// ---- the runs-view filters: ALL · one chip per spirit · ERROR · STOPPED ----
+// ---- the filters: 7d · 30d · all │ all · <spirit>… · error · stopped │ internal ----
 // (a ceiling stop is the system working — STOPPED folds stopped-charge/-steps)
-let spRunFilterSpirit = "";
-let spRunFilterOutcome = "";
-function renderRunFilters(finished) {
+function renderRunFilters(visible, hiddenInternal) {
   const host = document.getElementById("spiritRunFilters");
   if (!host) return;
   host.innerHTML = "";
-  const chip = (label, on, cb) => {
+  const chip = (label, on, cb, title) => {
     const b = el("button", "cadb-chip" + (on ? " on" : ""), label);
     b.onclick = cb;
+    if (title) b.title = title;
     host.append(b);
   };
+  ["7d", "30d", "all"].forEach((w) =>
+    chip(w, spRunWindow === w, () => { spRunWindow = w; renderSpiritRuns(); },
+      w === "all" ? "every run report, no recency cap" : "runs started in the last " + w.replace("d", " days")));
+  host.append(el("span", "run-filter-sep"));
   chip("all", !spRunFilterSpirit && !spRunFilterOutcome, () => { spRunFilterSpirit = ""; spRunFilterOutcome = ""; renderSpiritRuns(); });
-  [...new Set(finished.map((r) => r.spirit))].sort().forEach((sp) =>
+  const spirits = new Set(visible.map((r) => r.spirit));
+  if (spRunFilterSpirit) spirits.add(spRunFilterSpirit); // the picked chip stays until unpicked
+  [...spirits].sort().forEach((sp) =>
     chip(sp, spRunFilterSpirit === sp, () => { spRunFilterSpirit = spRunFilterSpirit === sp ? "" : sp; renderSpiritRuns(); }));
   chip("error", spRunFilterOutcome === "error", () => { spRunFilterOutcome = spRunFilterOutcome === "error" ? "" : "error"; renderSpiritRuns(); });
   chip("stopped", spRunFilterOutcome === "stopped", () => { spRunFilterOutcome = spRunFilterOutcome === "stopped" ? "" : "stopped"; renderSpiritRuns(); });
+  host.append(el("span", "run-filter-sep"));
+  chip("internal" + (!spRunInternal && hiddenInternal ? " · " + hiddenInternal : ""), spRunInternal,
+    () => { spRunInternal = !spRunInternal; if (!spRunInternal && spRunFilterSpirit && runIsInternal({ spirit: spRunFilterSpirit })) spRunFilterSpirit = ""; renderSpiritRuns(); },
+    "extractor/*, sage/* and team-chat turns — run by the transcript sinks and the / bar, not by you");
 }
 
 // parseRunSteps — the client-side step trace over the report's stable shape
-// ("### Step N — <cast>" + rationale/result/summary bullets + the charge
+// ("### Step N — <cast>" + rationale/args/result/summary bullets + the charge
 // ledger table). Returns [] on any miss → callers fall back to the full body.
+// Each step also carries its raw block and whether its result FAILED, so the
+// trace can open the failing step expanded (plan §3.2).
 function parseRunSteps(body) {
   const steps = [];
   const re = /^### Step (\d+) — (.+)$/gm;
@@ -115,7 +242,13 @@ function parseRunSteps(body) {
       const mm = block.match(new RegExp("^- " + key + ": (.*)$", "m"));
       return mm ? mm[1].trim() : "";
     };
-    steps.push({ n: parseInt(m[1], 10), cast: m[2].trim(), detail: line("result") || line("summary") || line("rationale") });
+    const result = line("result");
+    steps.push({
+      n: parseInt(m[1], 10), cast: m[2].trim(),
+      detail: result || line("summary") || line("rationale"),
+      failed: /^FAILED\b/.test(result),
+      block: block.trim(),
+    });
   }
   if (!steps.length) return [];
   // join per-step cost from the charge-ledger table
@@ -130,40 +263,60 @@ function parseRunSteps(body) {
   steps.forEach((s) => { s.usd = costs[s.n] || ""; });
   return steps;
 }
+// parseRunWrites — the "## Writes" list; the report's own line is dropped.
+function parseRunWrites(body) {
+  const m = (body || "").match(/\n## Writes\n([\s\S]*?)(\n## |$)/);
+  if (!m) return [];
+  return m[1].split("\n")
+    .map((ln) => ln.replace(/^- /, "").trim())
+    .filter((ln) => ln && !/\(this report\)$/.test(ln))
+    .map((ln) => ln.replace(/\s+\(.*\)$/, ""));
+}
+// runDeliverables — feed cards + library briefs the run wrote (the things a
+// person reads; approvals and memories are not deliverables).
+function runDeliverables(body) {
+  return parseRunWrites(body).filter((p) => /^artifacts\/(feed|library)\/[^/]+\.md$/.test(p));
+}
 
-// spiritRunRow — the prototype's quiet row: chip · title · when · what it
-// wrote, over a 6px charge bar + $spent / $ceiling. Click expands the step
-// trace inline; "open full report" keeps the prompt affordance.
+// spiritRunRow — one log line (plan §4.3): outcome word · runtime chip ·
+// agent / job · figures (wrote · duration · $cost) · when, then the WHY line
+// (the first line of "## Outcome") on every run that has one. The charge bar
+// only paints when something was actually spent — an empty bar says nothing.
+// Click expands the step trace inline; "open full report" keeps the prompt
+// affordance behind the detail pane.
 function spiritRunRow(r) {
   const row = el("div", "sprt-run");
   const top = el("div", "sprt-run-top");
-  top.append(el("span", "run-outcome oc-" + (r.outcome || "").replace(/[^a-z-]/g, ""), r.outcome || "never run"));
-  if (r.harness) top.append(el("span", "harness-chip", r.harness)); // federation source
+  top.append(el("span", "run-outcome " + outcomeClass(r.outcome), r.outcome || "never run"));
+  top.append(el("span", "harness-chip", r.harness || "excalibur")); // runtime (federation source)
   top.append(el("span", "sprt-run-title", `${r.spirit} / ${r.ritual}`));
-  top.append(el("span", "sprt-run-wrote", r.itemsWritten ? "wrote " + r.itemsWritten : "—"));
+  const figs = el("span", "sprt-run-figs");
+  figs.append(el("span", "sprt-run-wrote", r.itemsWritten ? "wrote " + r.itemsWritten : "—"));
+  const dur = runDuration(r);
+  if (dur) figs.append(el("span", "sprt-run-dur", dur));
+  figs.append(el("span", "sprt-run-cost", "$" + (r.spentUsd || 0).toFixed(4)));
+  top.append(figs);
   top.append(el("span", "sprt-run-when", fmtWhen(r.started)));
   row.append(top);
-  // a failed run says WHY on the row itself — the outcome chip alone
-  // ("error (protocol)") forced a trip into the report to learn anything
-  if (r.outcome !== "completed" && r.outcome !== "running" && r.outcomeDetail) {
-    let why = r.outcomeDetail;
-    const cut = why.indexOf(" — ");
-    if (cut >= 0) why = why.slice(cut + 3);
-    row.append(el("div", "sprt-run-why", why));
+  const why = runWhy(r);
+  if (why) { const w = el("div", "sprt-run-why", why); w.title = why; row.append(w); }
+  if (r.spentUsd > 0 && r.ceilingUsd > 0) {
+    const pct = Math.min(100, Math.round((r.spentUsd / r.ceilingUsd) * 100));
+    const bar = el("span", "charge-bar");
+    const fill = el("span", "charge-fill" + (pct >= 100 ? " over" : ""));
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    const cr = el("div", "charge-row");
+    cr.append(bar, el("span", "charge-label", `$${r.spentUsd.toFixed(4)} / $${r.ceilingUsd.toFixed(2)}`));
+    row.append(cr);
   }
-  const pct = r.ceilingUsd > 0 ? Math.min(100, Math.round((r.spentUsd / r.ceilingUsd) * 100)) : 0;
-  const bar = el("span", "charge-bar");
-  const fill = el("span", "charge-fill" + (pct >= 100 ? " over" : ""));
-  fill.style.width = pct + "%";
-  bar.appendChild(fill);
-  const cr = el("div", "charge-row");
-  cr.append(bar, el("span", "charge-label", `$${r.spentUsd.toFixed(4)} / $${r.ceilingUsd.toFixed(2)}`));
-  row.append(cr);
   row.onclick = () => toggleRunTrace(row, r);
   return row;
 }
 
 // toggleRunTrace — inline expand: the parsed step trace (fallback: full body).
+// Failed steps open with their full block showing and the first one scrolls
+// into view; any other step's block toggles on click.
 async function toggleRunTrace(row, r) {
   const open = row.nextElementSibling && row.nextElementSibling.classList.contains("run-trace");
   if (open) { row.nextElementSibling.remove(); return; }
@@ -171,15 +324,23 @@ async function toggleRunTrace(row, r) {
   try { body = ((await (await fetch("/api/spirits/runs/" + encodeURIComponent(r.id))).json()) || {}).body || ""; }
   catch (e) {}
   const box = el("div", "run-trace");
+  box.onclick = (e) => e.stopPropagation(); // reading the trace never collapses it
   const steps = parseRunSteps(body);
+  let firstFailed = null;
   if (steps.length) {
     steps.forEach((s) => {
-      const ln = el("div", "run-trace-step");
+      const ln = el("div", "run-trace-step" + (s.failed ? " failed" : ""));
       ln.append(el("span", "run-trace-n", String(s.n)));
       ln.append(el("span", "run-trace-cast", s.cast));
       ln.append(el("span", "run-trace-detail", s.detail || ""));
       if (s.usd) ln.append(el("span", "run-trace-usd", "$" + s.usd));
-      box.append(ln);
+      const block = el("pre", "run-report run-trace-block");
+      block.textContent = s.block;
+      block.hidden = !s.failed;
+      ln.onclick = () => { block.hidden = !block.hidden; };
+      ln.title = block.hidden ? "show this step's rationale · args · result" : "";
+      box.append(ln, block);
+      if (s.failed && !firstFailed) firstFailed = ln;
     });
   } else if (body) {
     const pre = el("pre", "run-report");
@@ -188,9 +349,15 @@ async function toggleRunTrace(row, r) {
   } else {
     box.append(emptyRow("No report yet."));
   }
+  // a run that died before its first decision still says why, up front
+  const why = runWhy(r);
+  if (why && (!steps.length || (r.outcome || "").startsWith("error") || (r.outcome || "").startsWith("stopped"))) {
+    box.prepend(el("div", "run-trace-why " + outcomeClass(r.outcome), (r.outcome || "") + " — " + why));
+  }
   const full = pillLight("open full report", () => openSpiritRun(r.id));
   box.append(full);
   row.after(box);
+  if (firstFailed) firstFailed.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 async function openSpiritRun(id) {
   openRunId = id;
@@ -204,6 +371,19 @@ async function openSpiritRun(id) {
   const closeBtn = pillLight("✕ Close", () => { host.hidden = true; openRunId = null; });
   head.append(promptBtn, closeBtn);
   host.append(head);
+  // the deliverable first (plan §4.3): the feed card / library brief the run
+  // wrote, opened through openResult — the narration below is level two
+  const outs = runDeliverables(run.body || "");
+  if (outs.length) {
+    const box = el("div", "run-deliverables");
+    box.append(el("span", "cadb-label", outs.length === 1 ? "deliverable" : "deliverables"));
+    outs.forEach((p) => {
+      const b = pillLight(p.replace(/^artifacts\//, "") + " →",
+        () => openResult({ artifactRef: p, harness: run.harness || "" }, artifactTitleFromRef(p)));
+      box.append(b);
+    });
+    host.append(box);
+  }
   const body = el("pre", "run-report"); body.id = "runReportBody";
   body.textContent = run.body || "";
   host.append(body);

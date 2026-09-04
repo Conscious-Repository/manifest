@@ -214,12 +214,30 @@
 .run-filters { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-1) 0 var(--sp-5); }
 .sprt-run-wrote { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; padding-right: var(--sp-6); }
 .run-trace { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-4) var(--sp-5) var(--sp-5) 26px; border-bottom: 1px solid var(--base-20); background: var(--base-05); }
-.run-trace-step { display: flex; gap: var(--sp-5); align-items: baseline; min-height: 24px; }
+.run-trace-step { display: flex; gap: var(--sp-5); align-items: baseline; min-height: 24px; cursor: pointer; }
 .run-trace-n { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 16px; text-align: right; }
 .run-trace-cast { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); min-width: 150px; }
 .run-trace-detail { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-70); min-width: 0; }
 .run-trace-usd { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); margin-left: auto; }
 .run-trace .pill { align-self: flex-start; margin-top: var(--sp-3); }
+
+/* ---- RUNS log (agents plan §4.3, Phase 3): day groups · figures · the
+   failing step expanded · the deliverable link ---- */
+.run-filter-sep { width: 1px; align-self: stretch; margin: var(--sp-1) var(--sp-2); background: var(--base-25); }
+.runs-day-body { display: flex; flex-direction: column; }
+.run-day .aion-sec-count { margin-right: var(--sp-4); }
+/* the row's figures: wrote · duration · $cost, mono meta, right-aligned before `when` */
+.sprt-run-figs { margin-left: auto; display: inline-flex; gap: var(--sp-6); white-space: nowrap; flex: none; }
+.sprt-run-figs .sprt-run-wrote { margin-left: 0; padding-right: 0; }
+.sprt-run-dur, .sprt-run-cost { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.sprt-run-figs + .sprt-run-when { margin-left: 0; }
+/* the failing step reads in danger ink and opens with its block showing */
+.run-trace-step.failed .run-trace-cast, .run-trace-step.failed .run-trace-detail { color: var(--danger); }
+.run-trace-block { margin: 0 0 var(--sp-3) 26px; font-size: var(--fs-xs); padding: var(--sp-4) var(--sp-5); }
+.run-trace-why { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); padding: 0 0 var(--sp-3); }
+.run-trace-why.oc-error { color: var(--danger); }
+.run-trace-why.oc-stopped-charge, .run-trace-why.oc-stopped-steps { color: var(--muted); }
+.run-deliverables { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }
 
 /* paused rituals: muted rows, a paused pill in the editor head */
 .ritual-row.paused .ritual-name, .ritual-row.paused .cad-human,
