@@ -1010,6 +1010,82 @@ func TestAshbyDetailReadsResumeAndFields(t *testing.T) {
 	}
 }
 
+// ⚠ AN ASHBY-SIDE ARCHIVE LANDS ON THE BOARD. Mirroring only `ashby_stage`
+// left thirteen archived applicants still sitting in the triage queue
+// (2026-09-04) — the board column is what the owner sees. A record still in
+// the `ashby` column follows the ATS archive; a record the owner moved into
+// his own funnel does not; and the reverse (un-archive in Ashby) never
+// resurrects a locally archived record.
+func TestAshbySyncBackMirrorsAshbyArchiveOntoTheBoard(t *testing.T) {
+	h := newAshbyHarness(t)
+	appFor := func(id, cand, job, status string) map[string]any {
+		return map[string]any{"id": id, "status": status,
+			"candidate": map[string]any{"id": cand}, "job": map[string]any{"id": job},
+			"currentInterviewStage": map[string]any{"id": "st_1", "title": "Application Review", "interviewPlanId": "plan_1"}}
+	}
+	// two applicants land in the triage queue
+	h.fake.candidates["cand_ava"] = wireCandidate("cand_ava", "Ava Applicant", "ava@example.test", "")
+	h.fake.apps["app_ava"] = appFor("app_ava", "cand_ava", "job_mri", "Active")
+	h.fake.candidates["cand_moved"] = wireCandidate("cand_moved", "Mona Moved", "mona@example.test", "")
+	h.fake.apps["app_moved"] = appFor("app_moved", "cand_moved", "job_mri", "Active")
+	if _, err := h.sync.SyncBack(context.Background(), true, testNow); err != nil {
+		t.Fatal(err)
+	}
+	// the owner pulls Mona into his own funnel — she is his to archive now
+	if _, err := h.store.SetStage("cand/mona-moved", "reviewing"); err != nil {
+		t.Fatal(err)
+	}
+
+	// both get archived IN ASHBY
+	for _, id := range []string{"app_ava", "app_moved"} {
+		h.fake.apps[id]["status"] = "Archived"
+		h.fake.apps[id]["archiveReason"] = map[string]any{"id": "r1", "text": "Not a fit"}
+	}
+	out, err := h.sync.SyncBack(context.Background(), true, testNow.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(out.Archived, ",") != "cand/ava-applicant" {
+		t.Fatalf("archived: %+v", out)
+	}
+	ava, err := os.ReadFile(filepath.Join(h.vault, "system/aion/recruiting/candidates/ava-applicant.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"stage: archived", "archived: " + testNow.Add(time.Hour).UTC().Format("2006-01-02"), "ashby_stage: archived: Not a fit"} {
+		if !strings.Contains(string(ava), want) {
+			t.Fatalf("ava lacks %q:\n%s", want, ava)
+		}
+	}
+	mona, err := os.ReadFile(filepath.Join(h.vault, "system/aion/recruiting/candidates/mona-moved.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mona), "stage: reviewing") || !strings.Contains(string(mona), "ashby_stage: archived: Not a fit") {
+		t.Fatalf("the owner's funnel stage was not his own:\n%s", mona)
+	}
+
+	// idempotent — a second sync archives nothing again
+	out2, err := h.sync.SyncBack(context.Background(), true, testNow.Add(2*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out2.Archived) != 0 {
+		t.Fatalf("second sync re-archived: %+v", out2)
+	}
+
+	// un-archiving in Ashby never resurrects the record here
+	h.fake.apps["app_ava"]["status"] = "Active"
+	delete(h.fake.apps["app_ava"], "archiveReason")
+	if _, err := h.sync.SyncBack(context.Background(), true, testNow.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	ava, _ = os.ReadFile(filepath.Join(h.vault, "system/aion/recruiting/candidates/ava-applicant.md"))
+	if !strings.Contains(string(ava), "stage: archived") {
+		t.Fatalf("an Ashby un-archive resurrected the record:\n%s", ava)
+	}
+}
+
 // A record that was never handed off has no application to read.
 func TestAshbyDetailRefusesAnUnlinkedRecord(t *testing.T) {
 	h := newAshbyHarness(t)

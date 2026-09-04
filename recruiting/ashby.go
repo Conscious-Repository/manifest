@@ -1573,7 +1573,11 @@ func (a *AshbySync) persistPartial(st AshbySyncState, slug string, res AshbyPush
 type ashbyRecordPatch struct {
 	set   map[string]string // AuthorityAshby keys only; anything else is refused
 	stage string            // board stage to move to ("" leaves it); never applied to an archived record
-	audit []AshbyAudit
+	// archivedOn stamps the archived date when the stage move IS an archive
+	// mirrored from the ATS side; applied only onto an empty slot, so an
+	// owner-stamped date is never rewritten.
+	archivedOn string
+	audit      []AshbyAudit
 }
 
 // applyToCandidate is the lost-update guard. Every caller in this file has
@@ -1596,6 +1600,9 @@ func (a *AshbySync) applyToCandidate(slug string, p ashbyRecordPatch) (*Candidat
 	}
 	if p.stage != "" && doc.Get("stage") != StageArchived {
 		doc.Set("stage", p.stage)
+	}
+	if p.archivedOn != "" && doc.Get("stage") == StageArchived && strings.TrimSpace(doc.Get("archived")) == "" {
+		doc.Set("archived", p.archivedOn)
 	}
 	appendAshbyAudit(doc, p.audit)
 	if err := a.store.SaveCandidate(slug, doc); err != nil {
@@ -1876,6 +1883,9 @@ type AshbySyncBackResult struct {
 	// person (the scouted candidate who then applied). Phase 8 import.
 	Imported []string `json:"imported"`
 	Adopted  []string `json:"adopted"`
+	// Archived are records the sync moved to the archived column because
+	// their application was archived on the ATS side (one-way — see syncBack).
+	Archived []string `json:"archived"`
 }
 
 // SyncBack mirrors Ashby-authoritative state INBOUND:
@@ -1916,7 +1926,7 @@ func (a *AshbySync) SyncBack(ctx context.Context, full bool, now time.Time) (Ash
 func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool, now time.Time) (AshbySyncBackResult, error) {
 	res := AshbySyncBackResult{Full: full, Synced: now.UTC().Format(time.RFC3339),
 		RolesLinked: []string{}, Updated: []string{}, Drifted: []string{}, Conflicts: []string{},
-		Imported: []string{}, Adopted: []string{}}
+		Imported: []string{}, Adopted: []string{}, Archived: []string{}}
 	token := func(method string) string {
 		if full {
 			return ""
@@ -1967,6 +1977,7 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 	// it is then
 	touched := map[string]bool{}
 	patches := map[string]map[string]string{}
+	archiveHere := map[string]bool{} // slugs whose ATS-side archive lands on the board too
 	patch := func(slug string) map[string]string {
 		if patches[slug] == nil {
 			patches[slug] = map[string]string{}
@@ -2044,6 +2055,22 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 			patch(slug)["inbound"] = stamp
 			changed = true
 		}
+		// An application archived ON THE ATS SIDE archives the record here too
+		// — the board column is what the owner sees, and a mirror he cannot
+		// see is not a mirror (2026-09-04: thirteen Ashby archives left
+		// thirteen records still sitting in the triage queue, their
+		// ashby_stage dutifully updated). Only a record still LIVING in the
+		// ATS pipeline (board stage `ashby`) follows: a candidate the owner
+		// moved into his own funnel is his to archive. The reverse direction
+		// is deliberately absent — un-archiving in Ashby never resurrects a
+		// record here, because a local archive beside a live application is a
+		// decision the owner made on purpose.
+		if strings.EqualFold(app.Status, "Archived") && doc.Get("stage") == StageAshby {
+			doc.Set("stage", StageArchived) // the in-memory doc advances, like the app id above
+			archiveHere[slug] = true
+			res.Archived = append(res.Archived, doc.Get("id"))
+			changed = true
+		}
 		if changed {
 			touched[slug] = true
 			res.Updated = append(res.Updated, doc.Get("id"))
@@ -2052,7 +2079,12 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 	for slug := range touched {
 		set := patch(slug)
 		set["ashby_synced"] = now.UTC().Format("2006-01-02")
-		if _, err := a.applyToCandidate(slug, ashbyRecordPatch{set: set}); err != nil {
+		p := ashbyRecordPatch{set: set}
+		if archiveHere[slug] {
+			p.stage = StageArchived
+			p.archivedOn = now.UTC().Format("2006-01-02")
+		}
+		if _, err := a.applyToCandidate(slug, p); err != nil {
 			return res, err
 		}
 	}
@@ -2113,6 +2145,7 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 	sort.Strings(res.Conflicts)
 	sort.Strings(res.Imported)
 	sort.Strings(res.Adopted)
+	sort.Strings(res.Archived)
 
 	if ctoken != "" {
 		st.SyncTokens["candidate.list"] = ctoken

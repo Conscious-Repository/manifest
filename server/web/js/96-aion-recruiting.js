@@ -2074,6 +2074,7 @@ async function recAshbySyncBack(full) {
     showToast("ashby sync: " + (s.candidates || 0) + " candidates · " + (s.applications || 0) + " applications" +
       ((s.imported || []).length ? " · " + s.imported.length + " imported ← ashby" : "") +
       ((s.adopted || []).length ? " · " + s.adopted.length + " linked ← ashby" : "") +
+      ((s.archived || []).length ? " · " + s.archived.length + " archived ← ashby" : "") +
       ((s.updated || []).length ? " · " + s.updated.length + " updated" : "") +
       ((s.conflicts || []).length ? " · " + s.conflicts.length + " conflicts" : ""));
     renderAion();
