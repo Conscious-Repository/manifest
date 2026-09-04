@@ -188,6 +188,7 @@ async function renderTaskChatRail(data) {
   chatTaskRailKey = key;
   chatAgent = agent;
   chatOpenId = "";
+  chatTermSurface(false); // a task thread is a chat, whichever section it hangs under
   await loadChatRoster();
   if (chatTaskID === "") return;
   await Promise.all([loadChatSessions(), loadChatTermSessions(false)]);
@@ -1214,7 +1215,7 @@ function renderChatComposer(session) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
     if (ta) ta.placeholder = placeholder();
-    if (send) send.disabled = busy;
+    if (send) { send.disabled = busy; send.textContent = chatIsTerm() ? "↵" : "↑"; } // a prompt line ends in enter
     syncAttach();
     return;
   }
@@ -1296,7 +1297,7 @@ function renderChatComposer(session) {
     c.onclick = () => { chatRitual = key; syncAttach(); ta.focus(); };
     ritual.append(c);
   });
-  const send = el("button", "chat-send", "↑");
+  const send = el("button", "chat-send", chatIsTerm() ? "↵" : "↑");
   send.title = "send · Enter (Shift+Enter for a new line)";
   send.disabled = busy;
   const submit = async () => {
@@ -1596,6 +1597,7 @@ async function loadChatTermSession(id) {
   chatLive = null;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
+  chatTermSurface(true);
   chatRemember(chatAgent, id);
   chatTermOpen = {
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
@@ -1621,17 +1623,19 @@ function chatTermLeave() {
   if (chatTermFast) { clearInterval(chatTermFast); chatTermFast = null; }
   const strip = document.getElementById("chatTermStrip");
   if (strip) strip.hidden = true;
+  chatTermSurface(false);
 }
 
 function chatTermComposerSession() {
   return { busy: chatTermSending, live: !!(chatTermOpen && chatTermOpen.live) };
 }
 
+// the prompt line's hint reads like a shell's, lowercase
 function chatTermPlaceholder() {
   if (chatTermSending) return "✦ sending" + (chatTermOpen && !chatTermOpen.live ? " — relaunching the session first…" : "…");
-  if (!chatOpenId) return "Message… · Enter starts a new " + chatTermKinds[chatAgent] + " session there and sends";
-  if (chatTermOpen && chatTermOpen.live) return "Message… · Enter sends to the live session (Shift+Enter for a new line)";
-  return "Message… · resumes the session, then sends";
+  if (!chatOpenId) return "enter starts a new " + chatTermKinds[chatAgent] + " session there and sends";
+  if (chatTermOpen && chatTermOpen.live) return "enter sends to the live session · shift+enter for a new line";
+  return "enter resumes the session, then sends";
 }
 
 // chatTermSyncOpen — after a registry poll: the open row's liveness/name may
@@ -1713,13 +1717,95 @@ function chatTermPaintTurns() {
   const o = chatTermOpen;
   if (!body || !o) return;
   body.innerHTML = "";
-  chatPaintTurns(body, o.turns, null);
+  chatTermPaintLines(body, o.turns);
   if (!o.turns.length) {
-    body.append(el("div", "chat-landing-hint", o.se.kind === "codex"
-      ? "codex keeps its rollout under ~/.codex/sessions — not wired to this row yet; the live strip below is the session"
+    body.append(el("div", "chat-term-line chat-term-sys", o.se.kind === "codex"
+      ? "codex keeps its rollout under ~/.codex/sessions — not wired to this row yet; the screen below is the session"
       : (o.live ? "no turns in the session file yet" : "nothing in the session file — a send starts it")));
   }
   chatPin();
+}
+
+// ---- the terminal painter ----
+// A claude/codex thread is a CLI session, so it paints as one: the user's
+// turns are commands behind a prompt glyph, the agent's turns are raw output
+// lines, its tool calls are step markers — no bubbles, no cards, mono
+// throughout, on the terminal's dark surface (.chat-main.term, 48-chat.css).
+// The block grammar is the shared one (chatTurnBlocks); only the paint
+// differs, so the Alfred/Kairos/Zeck/spirits sections keep chatPaintTurns.
+const chatTermPromptGlyph = "❯";
+const chatTermStepGlyph = "→";
+const chatTermResultGlyph = "⎿";
+
+// chatTermSurface — the .chat-main.term context class the terminal styling
+// hangs on (transcript · screen strip · composer read as one surface).
+function chatTermSurface(on) {
+  const main = document.querySelector(".chat-main");
+  if (main) main.classList.toggle("term", !!on);
+}
+
+function chatTermPaintLines(host, turns) {
+  turns.forEach((t) => {
+    if (t.who === "user") { host.append(chatTermCmdLine(t)); return; }
+    if (t.who === "system") {
+      host.append(el("div", "chat-term-line chat-term-sys", t.text || ""));
+      return;
+    }
+    const out = el("div", "chat-term-out");
+    chatTurnBlocks(t).forEach((b) => out.append(chatTermBlockEl(b)));
+    const meta = [];
+    if (t.ts) meta.push(fmtWhen(t.ts));
+    if (t.usd) meta.push("$" + t.usd);
+    if (meta.length) out.append(el("div", "chat-term-meta", meta.join(" · ")));
+    host.append(out);
+  });
+}
+
+// chatTermCmdLine — what you sent, as the command it was: `❯ text`, the time
+// it landed as a dim trailing note. A [file::] token (never on these turns —
+// a tmux takes keys, not files) would show as its bare text.
+function chatTermCmdLine(t) {
+  const line = el("div", "chat-term-line chat-term-cmd");
+  line.append(el("span", "chat-term-glyph", chatTermPromptGlyph));
+  line.append(el("span", "chat-term-cmd-text", (t.text || "").trim()));
+  if (t.ts) line.append(el("span", "chat-term-meta", fmtWhen(t.ts)));
+  return line;
+}
+
+// chatTermBlockEl — one block as terminal lines: say → the output (markdown
+// keeps its structure, the surface makes it mono), think → a folded dim
+// disclosure, step → `→ cast input`, its paired result folded under `⎿`.
+function chatTermBlockEl(b) {
+  if (b.t === "say") {
+    const say = el("div", "chat-term-say");
+    if (b.plain) { say.textContent = b.text || ""; return say; }
+    try { say.append(renderMarkdown(b.text || "", "", { readOnly: true })); }
+    catch (e) { say.textContent = b.text || ""; }
+    return say;
+  }
+  if (b.t === "think") {
+    const det = document.createElement("details");
+    det.className = "chat-term-think";
+    const sum = document.createElement("summary");
+    sum.append(el("span", "chat-term-glyph", "▸"), el("span", "chat-term-cast", "thinking"));
+    det.append(sum, el("div", "chat-term-think-text", b.text || ""));
+    return det;
+  }
+  const ln = el("div", "chat-term-step" + (b.error ? " err" : ""));
+  ln.append(el("span", "chat-term-glyph", chatTermStepGlyph));
+  ln.append(el("span", "chat-term-cast", b.cast || "step"));
+  ln.append(el("span", "chat-term-step-input", b.input || ""));
+  if (!b.result) return ln;
+  const det = document.createElement("details");
+  det.className = "chat-term-step-details";
+  const sum = document.createElement("summary");
+  sum.append(ln);
+  ln.append(el("span", "chat-term-step-fold", b.error ? "· error" : "▸"));
+  const res = el("div", "chat-term-result" + (b.error ? " err" : ""));
+  res.append(el("span", "chat-term-glyph", chatTermResultGlyph));
+  res.append(el("pre", "chat-term-result-text", b.result));
+  det.append(sum, res);
+  return det;
 }
 
 // ---- the live strip: the pane's last lines + quick keys ----
@@ -1922,6 +2008,7 @@ async function chatTermSend(text) {
 // ---- landing: a new session on metis, in the folder typed here ----
 function renderChatTermLanding(host) {
   const kind = chatAgent;
+  chatTermSurface(true); // the composer is the prompt of the session to come
   const who = el("div", "chat-spirit-pick");
   who.append(el("span", "pill light on", chatTermKinds[kind]));
   who.append(el("span", "chat-landing-hint", "metis · tmux"));

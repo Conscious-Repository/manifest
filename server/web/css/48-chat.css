@@ -195,3 +195,99 @@
 .chat-landing-cwd { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-5); width: min(440px, 90vw); text-align: center; }
 .chat-landing-cwd:focus { outline: none; border-color: var(--accent); }
 .chat-landing-cwd::placeholder { color: var(--base-30); }
+
+/* THE TERMINAL SURFACE (.chat-main.term — a claude/codex thread or landing,
+   chatTermSurface in 48-chat.js). A CLI session reads as a terminal, not an
+   IM thread: the transcript, the screen strip and the composer are ONE dark
+   surface (the cockpit's --term-* chrome, the xterm's own palette), mono
+   throughout, no bubbles/cards. What you sent is a command behind ❯; the
+   agent's turn is raw output; a tool call is a → step line, its result folded
+   under ⎿; the pane's last lines are the surface's scrollback and the
+   composer is its prompt line. Only these sections get it — the Alfred /
+   portal / spirits threads keep the light bubbles above. */
+.chat-main.term:not(.landing) .chat-transcript {
+  background: var(--term-bg); color: var(--term-ink);
+  font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.55;
+  border: 1px solid var(--term-line); border-bottom: 0;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: var(--sp-5) var(--sp-7) var(--sp-7);
+}
+/* the head on the dark surface: same anatomy, the terminal's inks */
+.chat-main.term .chat-head { border-bottom-color: var(--term-line); margin-bottom: var(--sp-6); }
+.chat-main.term .chat-head-title { font-family: var(--mono); font-weight: 600; color: var(--term-ink); }
+.chat-main.term .chat-head .sprt-sub, .chat-main.term .chat-head .sprt-head-meta { color: var(--term-dim); }
+.chat-main.term .chat-head .sprt-quiet { color: var(--term-dim); }
+.chat-main.term .chat-head .sprt-quiet:hover { color: var(--accent-soft); }
+.chat-main.term .chat-head .sprt-delete.armed { color: var(--term-ink); }
+.chat-main.term .chat-head .inline-rename { background: transparent; color: var(--term-ink); border-color: var(--term-muted); font-family: var(--mono); }
+
+/* lines */
+.chat-term-line { display: flex; gap: var(--sp-3); align-items: baseline; white-space: pre-wrap; word-break: break-word; margin: var(--sp-5) 0 var(--sp-3); }
+.chat-term-glyph { flex: none; width: 1.2ch; color: var(--term-dim); user-select: none; }
+.chat-term-cmd .chat-term-glyph { color: var(--accent-soft); }
+.chat-term-cmd-text { flex: 1 1 auto; min-width: 0; color: var(--term-ink); font-weight: 600; }
+.chat-term-sys { color: var(--term-dim); }
+.chat-term-sys::before { content: "#"; flex: none; width: 1.2ch; color: var(--term-muted); }
+.chat-term-meta { flex: none; margin-left: auto; font-size: var(--fs-2xs); color: var(--term-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the agent's output — indented to the command text's column, no box */
+.chat-term-out { padding-left: calc(1.2ch + var(--sp-3)); margin: 0 0 var(--sp-5); }
+.chat-term-out > .chat-term-meta { display: block; margin: var(--sp-2) 0 0; text-align: right; }
+.chat-term-say { color: var(--term-ink); }
+.chat-term-say .md-p { margin: var(--sp-3) 0; }
+.chat-term-say > :first-child, .chat-term-say .md-p:first-child { margin-top: 0; }
+.chat-term-say .md-h { font-family: var(--mono); font-size: var(--fs-sm); font-weight: 600; color: var(--term-ink); margin: var(--sp-5) 0 var(--sp-2); }
+.chat-term-say .md-h::before { content: "## "; color: var(--term-muted); }
+.chat-term-say .md-li { margin: var(--sp-1) 0; }
+.chat-term-say .md-bullet { color: var(--term-dim); }
+.chat-term-say .md-pre { margin: var(--sp-3) 0; padding: var(--sp-3) var(--sp-5); overflow-x: auto; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--term-line); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.5; color: var(--term-ink); }
+.chat-term-say .md-code { padding: 0 var(--sp-1); background: rgba(255, 255, 255, 0.06); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-sm); color: var(--term-ink); }
+.chat-term-say .md-bq { margin: var(--sp-3) 0; padding-left: var(--sp-4); border-left: 2px solid var(--term-line); color: var(--term-dim); }
+.chat-term-say .md-link, .chat-term-say .md-cite { color: var(--accent-soft); border-bottom-color: var(--term-line); }
+.chat-term-say .md-hr { border: 0; border-top: 1px dashed var(--term-line); margin: var(--sp-4) 0; }
+.chat-term-say .md-table th, .chat-term-say .md-table td { border-color: var(--term-line); }
+.chat-term-say .md-table th { color: var(--term-ink); background: transparent; }
+/* step markers: → cast input ▸ — the cast is a mono chip, the input the rest
+   of the line; the paired result folds under ⎿ */
+.chat-term-step { display: flex; gap: var(--sp-3); align-items: baseline; min-width: 0; margin: var(--sp-2) 0; margin-left: calc(-1 * (1.2ch + var(--sp-3))); font-size: var(--fs-xs); color: var(--term-dim); }
+.chat-term-cast { flex: none; padding: 0 var(--sp-2); border: 1px solid var(--term-line); border-radius: var(--radius); color: var(--term-ink); font-size: var(--fs-2xs); line-height: 1.6; }
+.chat-term-step-input { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-term-step-fold { flex: none; color: var(--term-muted); font-size: var(--fs-2xs); }
+.chat-term-step.err .chat-term-step-fold, .chat-term-step.err .chat-term-cast { color: var(--danger); border-color: var(--danger); }
+.chat-term-step-details > summary { list-style: none; cursor: pointer; }
+.chat-term-step-details > summary::-webkit-details-marker { display: none; }
+.chat-term-step-details[open] > summary .chat-term-step-fold { color: var(--term-dim); }
+.chat-term-step-details[open] > summary .chat-term-step-input { white-space: pre-wrap; overflow: visible; }
+.chat-term-result { display: flex; gap: var(--sp-3); align-items: baseline; margin: 0 0 var(--sp-3); }
+.chat-term-result-text { flex: 1 1 auto; min-width: 0; margin: 0; font-family: var(--mono); font-size: var(--fs-2xs); line-height: 1.5; color: var(--term-dim); white-space: pre-wrap; word-break: break-word; max-height: 18em; overflow: auto; }
+.chat-term-result.err .chat-term-result-text { color: var(--danger); }
+/* the folded thinking: dim, one line until opened */
+.chat-term-think { margin: var(--sp-2) 0; margin-left: calc(-1 * (1.2ch + var(--sp-3))); font-size: var(--fs-xs); color: var(--term-dim); }
+.chat-term-think > summary { display: flex; gap: var(--sp-3); align-items: baseline; list-style: none; cursor: pointer; }
+.chat-term-think > summary::-webkit-details-marker { display: none; }
+.chat-term-think[open] > summary .chat-term-glyph { transform: rotate(90deg); display: inline-block; }
+.chat-term-think-text { margin: var(--sp-2) 0 var(--sp-3) calc(1.2ch + var(--sp-3)); padding-left: var(--sp-4); border-left: 2px solid var(--term-line); white-space: pre-wrap; color: var(--term-dim); line-height: 1.5; }
+/* the pane's last lines + quick keys: the surface's scrollback region, a
+   hairline above it, no box of its own */
+.chat-main.term .chat-term-strip { margin-top: 0; border: 1px solid var(--term-line); border-top: 1px dashed var(--term-line); border-bottom: 0; border-radius: 0; background: var(--term-bg); padding: var(--sp-3) var(--sp-7) var(--sp-4); }
+.chat-main.term .chat-term-strip-head .micro-label { color: var(--term-muted); }
+.chat-main.term .chat-term-strip-head .chat-landing-hint { color: var(--term-muted); }
+.chat-main.term .chat-term-screen { color: var(--term-ink); }
+.chat-main.term .chat-term-keys { margin-top: var(--sp-3); }
+.chat-main.term .chat-term-key { background: transparent; color: var(--term-dim); border-color: var(--term-line); border-radius: var(--radius); }
+.chat-main.term .chat-term-key:hover { color: var(--term-ink); border-color: var(--term-dim); }
+.chat-main.term .chat-term-key:active { background: rgba(255, 255, 255, 0.06); }
+/* the prompt line: ❯ then the command, mono, on the same surface; the send
+   is a quiet ↵ (enter sends) — the box is the surface's last row */
+.chat-main.term .chat-composer { margin-top: 0; background: var(--term-bg); border: 1px solid var(--term-line); border-radius: 0 0 var(--radius-lg) var(--radius-lg); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-7); align-items: flex-start; }
+.chat-main.term .chat-composer:focus-within { border-color: var(--term-dim); }
+.chat-main.term .chat-composer::before { content: "❯"; flex: none; font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55; color: var(--accent-soft); padding-top: var(--sp-3); user-select: none; }
+.chat-main.term .chat-composer .chat-input { font-family: var(--mono); font-size: var(--fs-md); line-height: 1.55; color: var(--term-ink); caret-color: var(--accent-soft); padding-left: 0; }
+.chat-main.term .chat-composer .chat-input::placeholder { color: var(--term-muted); }
+.chat-main.term .chat-send { background: transparent; color: var(--term-dim); border: 1px solid var(--term-line); font-family: var(--mono); font-size: var(--fs-md); width: 30px; height: 30px; border-radius: var(--radius); align-self: flex-end; }
+.chat-main.term .chat-send:hover { filter: none; color: var(--term-ink); border-color: var(--term-dim); }
+.chat-main.term .chat-send:disabled { color: var(--term-muted); border-color: var(--term-line); }
+/* the dictation mic (75-bars.css) sits in this composer too: same quiet chrome */
+.chat-main.term .chat-composer .mic-btn { order: 2; align-self: flex-end; border-color: var(--term-line); color: var(--term-dim); }
+.chat-main.term .chat-composer .mic-btn:hover { color: var(--term-ink); border-color: var(--term-dim); }
+/* the landing keeps the light greeting; its composer is already the prompt */
+.chat-main.term.landing .chat-composer { border-radius: var(--radius-lg); }
