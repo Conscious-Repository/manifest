@@ -255,8 +255,16 @@ func TestOpenAlexTransportFailureIsAnError(t *testing.T) {
 		!strings.HasPrefix(err.Error(), "openalex:") {
 		t.Errorf("closed server: err=%v", err)
 	}
-	if got := (OpenAlex{}).Scope(); len(got) == 0 || got[1].Key != "query" || !got[1].Required {
-		t.Errorf("scope fields must require the query: %+v", got)
+	// query is no longer flagged Required because a run may name ONE PAPER
+	// instead (the works path). The adapter still refuses a scope with
+	// neither — the requirement moved from a UI flag to the adapter itself.
+	got := (OpenAlex{}).Scope()
+	if len(got) == 0 || got[1].Key != "query" || got[2].Key != "work" {
+		t.Errorf("scope offers a query or a paper: %+v", got)
+	}
+	if _, err := s.adapter().Search(context.Background(), Scope{Max: 5}); err == nil ||
+		!strings.Contains(err.Error(), "query") {
+		t.Errorf("a scope with neither a query nor a paper must be refused: %v", err)
 	}
 	if (OpenAlex{}).ID() != "openalex" || (OpenAlex{}).Kind() != KindScholarly {
 		t.Error("id/kind")

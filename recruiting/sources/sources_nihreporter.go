@@ -223,6 +223,14 @@ func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, err
 		if link == "" {
 			continue
 		}
+		// who else is named on THIS grant — collected before the draft loop so
+		// each PI's claims can name the others (see nihGrantEdges)
+		var team []nihTeammate
+		for _, pi := range proj.PrincipalInvestigators {
+			if name, ok := pi.name(); ok {
+				team = append(team, nihTeammate{name: name, key: pi.key(name), ext: nihExtKey(pi, name)})
+			}
+		}
 		for _, pi := range proj.PrincipalInvestigators {
 			name, ok := pi.name()
 			if !ok {
@@ -230,11 +238,13 @@ func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, err
 			}
 			ev := n.evidence(proj, name, link, retrieved)
 			key := pi.key(name)
+			edges := nihGrantEdges(n.ID(), team, key, name, proj)
 			if i, seen := byKey[key]; seen {
 				if !containsString(out[i].Links, link) {
 					out[i].Links = append(out[i].Links, link)
 				}
 				out[i].Evidence = append(out[i].Evidence, ev)
+				out[i].Edges = append(out[i].Edges, edges...)
 				continue
 			}
 			if len(out) >= max {
@@ -250,6 +260,7 @@ func (n NIHRePORTER) Search(ctx context.Context, s Scope) ([]CandidateDraft, err
 				Role:       strings.TrimSpace(s.Role),
 				Links:      []string{link},
 				Evidence:   []Evidence{ev},
+				Edges:      edges,
 			})
 		}
 	}
@@ -337,10 +348,58 @@ func (n NIHRePORTER) evidence(p nihProject, name, link string, retrieved time.Ti
 // search response, and nothing more is read in this phase.
 func (NIHRePORTER) Enrich(_ context.Context, d CandidateDraft) (CandidateDraft, error) { return d, nil }
 
-// GraphEdges returns what the draft already carries — nothing, in 3b.5. The
-// co-PI list is read but not turned into same_grant claims; that is Phase 4.
+// GraphEdges returns what the draft already carries: the same_grant claims
+// built during the search, when the project named more than one PI.
 func (NIHRePORTER) GraphEdges(_ context.Context, d CandidateDraft) ([]EdgeClaim, error) {
 	return d.Edges, nil
+}
+
+// SAME-GRANT EDGES. Two people named as principal investigators on one
+// project are running it together — a stronger working relationship than
+// coauthorship, and the registry states it outright. The same two guards as
+// coauthorship apply: a durable key for the far endpoint (RePORTER's own
+// profile_id), and a cap, because a centre grant lists a whole department and
+// "co-signed a P30" is not a working relationship.
+const (
+	nihMaxEdgePIs           = 8
+	nihSameGrantConfidence  = 0.6
+	nihMultiPIProjectMinPIs = 2
+)
+
+// nihTeammate is one named PI on a project, with the key an edge can use.
+type nihTeammate struct{ name, key, ext string }
+
+// nihExtKey is the durable graph key for a PI: RePORTER's profile_id. A PI
+// the registry gives no profile id cannot be pointed at again, so nothing
+// points at them.
+func nihExtKey(p nihInvestigator, name string) string {
+	if id := strings.TrimSpace(p.ProfileID.String()); id != "" && id != "0" {
+		return ExtNodePrefix + "nih/" + id
+	}
+	return ""
+}
+
+func nihGrantEdges(sourceID string, team []nihTeammate, key, name string, proj nihProject) []EdgeClaim {
+	if len(team) < nihMultiPIProjectMinPIs || len(team) > nihMaxEdgePIs {
+		return nil
+	}
+	title := strings.Join(strings.Fields(proj.ProjectTitle), " ")
+	num := strings.TrimSpace(proj.ProjectNum)
+	var out []EdgeClaim
+	for _, m := range team {
+		if m.key == key || m.ext == "" {
+			continue
+		}
+		out = append(out, EdgeClaim{
+			From:       m.ext,
+			Type:       EdgeSameGrant,
+			SourceID:   sourceID,
+			Basis:      m.name + " and " + name + " are both principal investigators on " + num + " — " + title,
+			Confidence: nihSameGrantConfidence,
+			Inferred:   false,
+		})
+	}
+	return out
 }
 
 // post performs one JSON POST against the API root with the polite

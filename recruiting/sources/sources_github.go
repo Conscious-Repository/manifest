@@ -71,7 +71,8 @@ func (GitHub) Kind() Kind { return KindCode }
 func (GitHub) Scope() []ScopeField {
 	return []ScopeField{
 		{Key: "role", Label: "role"},
-		{Key: "query", Label: "GitHub user search", Placeholder: "e.g. location:boston language:python mri", Required: true},
+		{Key: "query", Label: "GitHub user search", Placeholder: "e.g. location:boston language:python mri"},
+		{Key: "repo", Label: "or one repo", Placeholder: "owner/repo, or its link"},
 		{Key: "max", Label: "max results", Placeholder: strconv.Itoa(githubDefaultMax)},
 	}
 }
@@ -114,9 +115,12 @@ type githubSearchResponse struct {
 // degrades that one hit to what the search said — login, id, page, score —
 // rather than failing the run: the draft is still cited, just thinner.
 func (g GitHub) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+	if ref := strings.TrimSpace(s.Fields["repo"]); ref != "" {
+		return g.searchRepo(ctx, ref, s)
+	}
 	query := strings.TrimSpace(s.Query)
 	if query == "" {
-		return nil, errors.New("github: a search needs a query")
+		return nil, errors.New("github: a search needs a query, or one repo")
 	}
 	max := s.Max
 	if max <= 0 {

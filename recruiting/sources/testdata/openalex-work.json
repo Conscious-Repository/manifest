@@ -1,0 +1,109 @@
+{
+  "id": "https://openalex.org/W3035965352",
+  "doi": "https://doi.org/10.1038/s41586-020-2649-2",
+  "title": "Array programming with NumPy",
+  "display_name": "Array programming with NumPy",
+  "publication_year": 2020,
+  "publication_date": "2020-09-16",
+  "type": "article",
+  "primary_location": {
+    "source": {
+      "display_name": "Nature"
+    }
+  },
+  "authorships": [
+    {
+      "author_position": "first",
+      "author": {
+        "id": null,
+        "display_name": "Charles R. Harris",
+        "orcid": null
+      },
+      "institutions": [],
+      "raw_author_name": "Charles R. Harris",
+      "raw_affiliation_strings": [
+        "Independent researcher, Logan, UT, USA"
+      ],
+      "raw_orcid": null
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": null,
+        "display_name": "K. Jarrod Millman",
+        "orcid": "https://orcid.org/0000-0002-5263-5070"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I134446601",
+          "display_name": "Berkeley College",
+          "country_code": "US"
+        },
+        {
+          "id": "https://openalex.org/I95457486",
+          "display_name": "University of California, Berkeley",
+          "country_code": "US"
+        }
+      ],
+      "raw_author_name": "K. Jarrod Millman",
+      "raw_affiliation_strings": [
+        "Berkeley Institute for Data Science, University of California, Berkeley, Berkeley, CA, USA. millman@berkeley.edu",
+        "Brain Imaging Center, University of California, Berkeley, Berkeley, CA, USA. millman@berkeley.edu",
+        "Division of Biostatistics, University of California, Berkeley, Berkeley, CA, USA. millman@berkeley.edu"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-5263-5070"
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": null,
+        "display_name": "St\u00e9fan J. van der Walt",
+        "orcid": "https://orcid.org/0000-0001-9276-1891"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I134446601",
+          "display_name": "Berkeley College",
+          "country_code": "US"
+        },
+        {
+          "id": "https://openalex.org/I26092322",
+          "display_name": "Stellenbosch University",
+          "country_code": "ZA"
+        },
+        {
+          "id": "https://openalex.org/I95457486",
+          "display_name": "University of California, Berkeley",
+          "country_code": "US"
+        }
+      ],
+      "raw_author_name": "St\u00e9fan J. van der Walt",
+      "raw_affiliation_strings": [
+        "Applied Mathematics, Stellenbosch University, Stellenbosch, South Africa. stefanv@berkeley.edu",
+        "Berkeley Institute for Data Science, University of California, Berkeley, Berkeley, CA, USA. stefanv@berkeley.edu",
+        "Brain Imaging Center, University of California, Berkeley, Berkeley, CA, USA. stefanv@berkeley.edu"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-9276-1891"
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": null,
+        "display_name": "Ralf Gommers",
+        "orcid": "https://orcid.org/0000-0002-0300-3333"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210098317",
+          "display_name": "Quansight (United States)",
+          "country_code": "US"
+        }
+      ],
+      "raw_author_name": "Ralf Gommers",
+      "raw_affiliation_strings": [
+        "Quansight, Austin, TX, USA. ralf.gommers@gmail.com"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-0300-3333"
+    }
+  ]
+}

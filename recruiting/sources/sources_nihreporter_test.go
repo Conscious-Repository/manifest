@@ -169,8 +169,20 @@ func TestNIHRePORTERParsesFixtureIntoCitedDrafts(t *testing.T) {
 	}
 
 	for _, d := range got {
-		if len(d.Edges) != 0 {
-			t.Errorf("%s: edges emitted in 3b.5: %+v", d.Name, d.Edges)
+		// same_grant claims arrived with the intake build: two people named
+		// as PIs on one project ARE running it together, and the registry
+		// says so. What is still forbidden is an unnameable endpoint or an
+		// unexplained claim.
+		for _, e := range d.Edges {
+			if e.Type != EdgeSameGrant {
+				t.Errorf("%s: unexpected edge kind %q", d.Name, e.Type)
+			}
+			if !strings.HasPrefix(e.From, ExtNodePrefix) || e.To != "" {
+				t.Errorf("%s: endpoints: %+v", d.Name, e)
+			}
+			if !strings.Contains(e.Basis, "principal investigators on") || e.Inferred {
+				t.Errorf("%s: a stated co-PI claim: %+v", d.Name, e)
+			}
 		}
 		for _, ev := range d.Evidence {
 			if strings.TrimSpace(ev.URLOrFile) == "" || ev.RetrievedAt.IsZero() {
@@ -431,7 +443,10 @@ func TestNIHRePORTEREnrichChangesNothing(t *testing.T) {
 	if enriched.Name != got[0].Name || len(enriched.Evidence) != len(got[0].Evidence) || len(enriched.Links) != len(got[0].Links) {
 		t.Errorf("Enrich changed the draft:\n%+v\n%+v", got[0], enriched)
 	}
-	if edges, err := s.adapter().GraphEdges(context.Background(), got[0]); err != nil || len(edges) != 0 {
+	// GraphEdges hands back what the search already built — it must not go
+	// and fetch anything of its own
+	if edges, err := s.adapter().GraphEdges(context.Background(), got[0]); err != nil ||
+		len(edges) != len(got[0].Edges) {
 		t.Errorf("edges=%+v err=%v", edges, err)
 	}
 	if n := len(s.requests()); n != before {

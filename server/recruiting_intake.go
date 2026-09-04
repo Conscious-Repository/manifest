@@ -1,11 +1,13 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
 
 	"manifest/recruiting"
+	"manifest/recruiting/sources"
 )
 
 // RECRUITING INTAKE — the one front door (intake plan §5).
@@ -46,6 +48,114 @@ func (s *Server) handleRecruitingIntakeResolve(w http.ResponseWriter, r *http.Re
 		"classes":    recruiting.SeedClasses,
 		"people":     s.recruiting.View().Network.People,
 	})
+}
+
+// intakePreviewTimeout bounds the one or two GETs a preview costs. It is well
+// under the request's own patience: a preview that has to be waited on is a
+// run, and runs have a queue.
+const intakePreviewTimeout = 20 * time.Second
+
+// POST /api/aion/recruiting/intake/preview {text, class?}
+//
+// The deterministic scaffold fill (owner's Q3: extractors first, a model only
+// for what is left). When the paste names ONE thing — this DOI, this account,
+// this repo — the source's own record answers what it is, field by field,
+// each with the URL it came from. When the paste names a SEARCH (a bare name,
+// a lab site), there is nothing to preview: the answer is a sweep with a
+// queue to triage, and the scaffold says so rather than pretending.
+func (s *Server) handleRecruitingIntakePreview(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingReady(w) {
+		return
+	}
+	var b struct {
+		Text string `json:"text"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, errBadRequest("paste a link or a name"))
+		return
+	}
+	res := recruiting.ResolveIntake(b.Text)
+	out := map[string]any{"resolution": res}
+	if s.recruitingRuns == nil {
+		out["note"] = "the source adapters are not wired here — nothing to look up"
+		writeJSON(w, out)
+		return
+	}
+
+	id, ref := intakePreviewTarget(res)
+	if id == "" {
+		out["note"] = intakeNoPreviewNote(res)
+		writeJSON(w, out)
+		return
+	}
+	adapter, ok := s.recruitingRuns.Adapter(id)
+	if !ok {
+		out["note"] = "the " + id + " source is not wired here"
+		writeJSON(w, out)
+		return
+	}
+	prev, ok := adapter.(sources.Previewer)
+	if !ok {
+		out["note"] = "the " + id + " source answers searches, not single references"
+		writeJSON(w, out)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), intakePreviewTimeout)
+	defer cancel()
+	facts, err := prev.Preview(ctx, ref)
+	if err != nil {
+		// a lookup that fails is said out loud and the scaffold still opens:
+		// the owner can name the thing by hand, which is how this worked
+		// before anything could be looked up at all
+		out["error"] = strings.TrimSpace(err.Error())
+		writeJSON(w, out)
+		return
+	}
+	out["preview"] = facts
+	out["source"] = id
+	writeJSON(w, out)
+}
+
+// intakePreviewTarget maps a resolution onto the adapter that can answer it
+// with ONE record, and the reference to ask about. ("" = nothing to preview.)
+func intakePreviewTarget(res recruiting.Resolution) (id, ref string) {
+	switch res.Kind {
+	case "doi", "pubmed":
+		if res.DOI != "" {
+			return "openalex", res.DOI
+		}
+		return "openalex", res.URL
+	case "openalex":
+		return "openalex", res.URL
+	case "orcid":
+		if res.ORCID != "" {
+			return "openalex", res.ORCID
+		}
+		return "openalex", res.URL
+	case "grant":
+		return "", "" // RePORTER answers project searches, not one project by id
+	case "github-user":
+		return "github", res.Handle
+	case "github-repo":
+		return "github", res.Name
+	case "feed":
+		return "feed", res.URL
+	}
+	return "", ""
+}
+
+// intakeNoPreviewNote says WHY there is nothing to look up, in the terms the
+// owner is thinking in.
+func intakeNoPreviewNote(res recruiting.Resolution) string {
+	switch {
+	case res.LinkOnly:
+		return "nothing here reads " + res.Kind + " profiles — the link is recorded on the person, and that is all it is"
+	case res.Kind == "site":
+		return "a page is swept, not looked up: name it, then run the crawler over it"
+	case res.Kind == "name":
+		return "a name is a search — add it, then sweep the sources for it"
+	}
+	return "nothing to look up for this one"
 }
 
 // POST /api/aion/recruiting/intake — commit a (corrected) resolution.

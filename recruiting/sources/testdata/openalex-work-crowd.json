@@ -1,0 +1,295 @@
+{
+  "id": "https://openalex.org/W9000001",
+  "doi": "https://doi.org/10.1234/consortium.2026",
+  "title": "A consortium paper with far too many authors",
+  "display_name": "A consortium paper with far too many authors",
+  "publication_year": 2026,
+  "type": "article",
+  "primary_location": {
+    "source": {
+      "display_name": "Journal of Everything"
+    }
+  },
+  "authorships": [
+    {
+      "author_position": "first",
+      "author": {
+        "id": "https://openalex.org/A9000001",
+        "display_name": "Author 01",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 01",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000002",
+        "display_name": "Author 02",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 02",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000003",
+        "display_name": "Author 03",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 03",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000004",
+        "display_name": "Author 04",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 04",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000005",
+        "display_name": "Author 05",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 05",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000006",
+        "display_name": "Author 06",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 06",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000007",
+        "display_name": "Author 07",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 07",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000008",
+        "display_name": "Author 08",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 08",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000009",
+        "display_name": "Author 09",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 09",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000010",
+        "display_name": "Author 10",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 10",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000011",
+        "display_name": "Author 11",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 11",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000012",
+        "display_name": "Author 12",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 12",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000013",
+        "display_name": "Author 13",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 13",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000014",
+        "display_name": "Author 14",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 14",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000015",
+        "display_name": "Author 15",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 15",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000016",
+        "display_name": "Author 16",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 16",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000017",
+        "display_name": "Author 17",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 17",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000018",
+        "display_name": "Author 18",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 18",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A9000019",
+        "display_name": "Author 19",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 19",
+          "country_code": "US"
+        }
+      ]
+    },
+    {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A9000020",
+        "display_name": "Author 20",
+        "orcid": null
+      },
+      "institutions": [
+        {
+          "display_name": "Institute 20",
+          "country_code": "US"
+        }
+      ]
+    }
+  ]
+}

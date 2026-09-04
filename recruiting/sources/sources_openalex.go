@@ -66,7 +66,8 @@ func (OpenAlex) Kind() Kind { return KindScholarly }
 func (OpenAlex) Scope() []ScopeField {
 	return []ScopeField{
 		{Key: "role", Label: "role"},
-		{Key: "query", Label: "author name or keyword", Placeholder: "e.g. diffusion MRI reconstruction", Required: true},
+		{Key: "query", Label: "author name or keyword", Placeholder: "e.g. diffusion MRI reconstruction"},
+		{Key: "work", Label: "or one paper", Placeholder: "DOI, OpenAlex id, or link"},
 		{Key: "max", Label: "max results", Placeholder: strconv.Itoa(openAlexDefaultMax)},
 	}
 }
@@ -116,9 +117,12 @@ type openAlexAuthorsResponse struct {
 // author into a cited draft. It never paginates: the scope's Max is both the
 // per-page it asks for and the most it will return, whatever the server sent.
 func (oa OpenAlex) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+	if ref := strings.TrimSpace(s.Fields["work"]); ref != "" {
+		return oa.searchWork(ctx, ref, s)
+	}
 	query := strings.TrimSpace(s.Query)
 	if query == "" {
-		return nil, errors.New("openalex: a search needs a query")
+		return nil, errors.New("openalex: a search needs a query, or one paper")
 	}
 	max := s.Max
 	if max <= 0 {

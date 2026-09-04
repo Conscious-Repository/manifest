@@ -622,3 +622,11 @@ func normalizeKey(s string) string {
 func isSpaceOrPunct(c rune) bool {
 	return strings.ContainsRune(" \t\n\r.,;:'\"()[]{}-_/\\|·•", c)
 }
+
+// Adapter returns one registered adapter by id. The intake's preview needs to
+// ask ONE source about ONE reference without recording a run — a preview is
+// not a search, so it leaves no cache behind.
+func (r *RunStore) Adapter(id string) (sources.Adapter, bool) {
+	a, ok := r.adapters[strings.TrimSpace(id)]
+	return a, ok
+}

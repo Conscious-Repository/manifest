@@ -307,34 +307,69 @@ func (s *Store) acceptDraft(d sources.CandidateDraft, now time.Time) (Candidate,
 			return Candidate{}, err
 		}
 	}
-	if err := s.saveDraftEdges(d, doc.Get("id")); err != nil {
+	// the RECORD lands first: edges pointing at a candidate whose file failed
+	// to write are orphans, and the graph would carry a person who does not
+	// exist. Edges are recoverable (re-accept re-derives them); a half-written
+	// graph is not.
+	if err := s.SaveCandidate(slug, doc); err != nil {
 		return Candidate{}, err
 	}
-	if err := s.SaveCandidate(slug, doc); err != nil {
+	if err := s.saveDraftEdges(d, doc.Get("id")); err != nil {
 		return Candidate{}, err
 	}
 	return s.candidateView(slug, doc), nil
 }
 
 // saveDraftEdges appends the draft's relationship claims, filling in the `to`
-// endpoint (the candidate that did not exist when the adapter ran).
+// endpoint (the candidate that did not exist when the adapter ran), resolving
+// external keys onto records that already exist, repointing edges that named
+// THIS person by an external key, and refusing a claim already on file.
 func (s *Store) saveDraftEdges(d sources.CandidateDraft, candidateID string) error {
-	if len(d.Edges) == 0 {
+	mine := extKeysOfDraft(d)
+	if len(d.Edges) == 0 && len(mine) == 0 {
 		return nil
 	}
 	edges := s.LoadEdges()
-	for _, e := range d.Edges {
-		to := strings.TrimSpace(e.To)
-		if to == "" {
-			to = candidateID
+	// the person just accepted is no longer external: every edge that named
+	// them by an ORCID or an OpenAlex id now names their record
+	changed := repointEdges(edges, mine, candidateID) > 0
+
+	if len(d.Edges) > 0 {
+		index := s.extIndex()
+		for _, k := range mine {
+			index[k] = candidateID
 		}
-		if _, err := edges.Add(Edge{
-			From: e.From, To: to, Kind: string(e.Type), Basis: e.Basis,
-			Confidence: FormatConfidence(e.Confidence), Inferred: e.Inferred,
-			Source: e.SourceID,
-		}); err != nil {
-			return err
+		have := map[string]bool{}
+		for _, e := range edges.Edges() {
+			have[edgeKey(e.From, e.To, e.Kind)] = true
 		}
+		for _, e := range d.Edges {
+			from := strings.TrimSpace(e.From)
+			if id, ok := index[from]; ok && id != "" {
+				from = id
+			}
+			to := strings.TrimSpace(e.To)
+			if to == "" {
+				to = candidateID
+			} else if id, ok := index[to]; ok && id != "" {
+				to = id
+			}
+			if from == to || have[edgeKey(from, to, string(e.Type))] {
+				continue // the same claim, already on file
+			}
+			if _, err := edges.Add(Edge{
+				From: from, To: to, Kind: string(e.Type), Basis: e.Basis,
+				Confidence: FormatConfidence(e.Confidence), Inferred: e.Inferred,
+				Source: e.SourceID,
+			}); err != nil {
+				return err
+			}
+			have[edgeKey(from, to, string(e.Type))] = true
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
 	}
 	return s.SaveEdges(edges)
 }

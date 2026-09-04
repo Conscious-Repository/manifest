@@ -425,6 +425,7 @@ func (s *Server) Handler() http.Handler {
 			// the one front door: resolve a paste, then commit the resolution
 			// the owner corrected (recruiting_intake.go)
 			mux.HandleFunc("POST /api/aion/recruiting/intake/resolve", s.handleRecruitingIntakeResolve)
+			mux.HandleFunc("POST /api/aion/recruiting/intake/preview", s.handleRecruitingIntakePreview)
 			mux.HandleFunc("POST /api/aion/recruiting/intake", s.handleRecruitingIntake)
 			// the applicant's own submitted file, by artifact hash. `{hash...}`
 			// is a wildcard so ".../{hash}/text" reaches the same handler.
