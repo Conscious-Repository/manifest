@@ -210,8 +210,8 @@
        rituals table → recent runs; engine status + week spend live in the
        breadcrumb meta; portals fold into a closed section at the foot. -->
   <!-- SPIRITS — mirrors AION/RE: a top tab-bar over one body (SPIRITS.md §1).
-       ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
-       SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
+       SCHEDULE (next-up · Yours / Internal / Paused groups) · RUNS (global
+       filterable log) · the parked SETTINGS chip (removed in a later phase). Spirit
        pages route #/agents/<name>; the ritual editor #/agents/ritual/<s>/<r>. -->
   <!-- TERMINAL — the cockpit (cmd-ctr terminal-module parity): a rail of
        SESSIONS / NEW SESSION / HISTORY with an icon tab bar at its foot, and a
@@ -264,7 +264,7 @@
       <span class="agent-title">AGENTS</span>
       <div class="agent-actions">
         <nav class="view-tabs" id="spToggle">
-          <a class="view-tab on" data-mode="rituals" href="#/agents">ALL RITUALS</a>
+          <a class="view-tab on" data-mode="rituals" href="#/agents">SCHEDULE</a>
           <a class="view-tab" data-mode="runs" href="#/agents/runs">RUNS</a>
           <a class="view-tab" data-mode="settings" href="#/agents/settings">SETTINGS<span id="spSettingsBadge" class="sp-badge" hidden></span></a>
         </nav>
@@ -274,11 +274,13 @@
     <!-- live strip — only renders while something is queued/running -->
     <div id="spiritLive"></div>
 
-    <!-- ALL RITUALS — spirit index strip over the flat board -->
+    <!-- SCHEDULE — next-up line · spirit index strip · the grouped board
+         (Yours / Internal / Paused, derived per paint in 41-agents-schedule.js) -->
     <div class="sprt-block" id="spRitualsWrap">
+      <div id="spiritNextUp" class="sched-nextup"></div>
       <div id="spiritIndex" class="spirit-index"></div>
-      <div class="sprt-cols"><span>Ritual</span><span>Cadence</span><span>Next</span><span>Last</span><span class="r">Ceiling</span></div>
-      <div id="spiritRitualBoard" class="ritual-board"></div>
+      <div class="sprt-cols"><span></span><span>Ritual</span><span>Cadence</span><span>Next</span><span>Last</span><span>History</span><span>Health</span><span class="r">Ceiling</span><span></span></div>
+      <div id="spiritRitualBoard" class="sched-board"></div>
     </div>
 
     <!-- RITUAL EDITOR — #/agents/ritual/<spirit>/<name> -->

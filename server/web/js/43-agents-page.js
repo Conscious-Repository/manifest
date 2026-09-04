@@ -4,9 +4,10 @@
 // markdown drawer (⌘/ raw — rituals / identity / cornerstone / chargebook).
 // (renderRitualEditor — the structured editor — lives in 41-agents-schedule.js)
 
-// The spirit index strip over the ALL RITUALS board: one quiet row per spirit
+// The spirit index strip over the SCHEDULE board: one quiet row per spirit
 // (name · N rituals — count derived from the board rows), click → the spirit
-// page, `＋ spirit` at the end (SPIRITS.md §1's "SPIRITS" group, chips-era shape).
+// page. `＋ spirit` lives on the Settings › Agents card (agents plan §4.3: the
+// board stays a schedule); `＋ ritual` on the spirit page.
 function renderSpiritIndex() {
   const host = document.getElementById("spiritIndex");
   if (!host) return;
@@ -24,9 +25,6 @@ function renderSpiritIndex() {
     b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(name); };
     host.append(b);
   });
-  const add = el("button", "sprt-ghost", "＋ spirit");
-  add.onclick = () => newSpirit();
-  host.append(add);
 }
 
 // ---- SPIRIT PAGE (SPIRITS.md §4): identity + cornerstone capability

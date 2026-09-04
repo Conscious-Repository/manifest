@@ -357,6 +357,13 @@ function excaliburCard(h, portalRows) {
     row.append(el("span", "harness-spirit-name", sp.name), el("span", "harness-spirit-model", sp.portal || "—"));
     card.append(row);
   });
+  // ＋ spirit moved here from the SCHEDULE board (agents plan §4.3, Phase 2):
+  // the board stays a schedule; the scaffold lands on the new spirit's page
+  if (h.primary !== false && typeof newSpirit === "function") {
+    const add = el("button", "sprt-ghost harness-add", "＋ spirit");
+    add.onclick = () => newSpirit();
+    card.append(add);
+  }
   // the engine's conduits (formerly the Portals pane's "via engine" rows)
   const conduits = portalRows.filter((r) => r.kind === "llm" || /deepseek/i.test(r.id || ""));
   if (conduits.length) {

@@ -319,6 +319,9 @@
   }
   .ritual-cadence { display: none; }
   .ritual-ceiling { display: none; }
+  .ritual-runtime, .outcome-strip, .ritual-health, .ritual-acts { display: none; }
+  .sprt-cols { display: none; }
+  .sched-group-note { display: none; }
   .ritual-name { grid-column: 1; grid-row: 1; font-size: var(--fs-lg); }
   .ritual-next { grid-column: 1; grid-row: 2; font-size: var(--fs-sm); color: var(--base-50); }
   .ritual-outcome { grid-column: 2; grid-row: 1 / 3; }

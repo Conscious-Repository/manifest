@@ -171,19 +171,38 @@ func TestRitualsPausedRow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("scheduled.md", "---\nritual: scheduled\ncadence: 0 7 * * *\nenabled: false\n---\nx\n")
+	write("scheduled.md", "---\nritual: scheduled\ncadence: 0 7 * * *\nenabled: false\npaused_reason: waiting on the mailbox\n---\nx\n")
 	write("ondemand.md", "---\nritual: ondemand\nenabled: false\n---\nx\n")
+	write("live.md", "---\nritual: live\ncadence: 0 7 * * *\npaused_reason: stale line, ritual is enabled\n---\nx\n")
 	rows := st.Rituals(time.Now())
-	if len(rows) != 2 {
+	if len(rows) != 3 {
 		t.Fatalf("rows = %d", len(rows))
 	}
 	for _, r := range rows {
+		if r.Ritual == "live" {
+			// the reason is a projection of a PAUSED file only — an enabled
+			// ritual never shows one (the SCHEDULE board's Paused group reads it)
+			if !r.Enabled || r.PausedReason != "" {
+				t.Errorf("live: Enabled=%v PausedReason=%q, want enabled with no reason", r.Enabled, r.PausedReason)
+			}
+			continue
+		}
 		if r.Enabled {
 			t.Errorf("%s: Enabled = true, want paused", r.Ritual)
 		}
 		if r.NextFire != "" {
 			t.Errorf("%s: paused row carries next-fire %q", r.Ritual, r.NextFire)
 		}
+	}
+	reason := map[string]string{}
+	for _, r := range rows {
+		reason[r.Ritual] = r.PausedReason
+	}
+	if reason["scheduled"] != "waiting on the mailbox" {
+		t.Errorf("scheduled: PausedReason = %q", reason["scheduled"])
+	}
+	if reason["ondemand"] != "" {
+		t.Errorf("ondemand: PausedReason = %q, want empty", reason["ondemand"])
 	}
 	for _, c := range st.Castables(time.Now()) {
 		if c.Kind == "ritual" && c.Ritual == "ondemand" {

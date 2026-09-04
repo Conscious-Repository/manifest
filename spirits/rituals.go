@@ -40,6 +40,10 @@ type RitualRow struct {
 	Valid          bool    `json:"valid"`
 	Error          string  `json:"error"`
 	Enabled        bool    `json:"enabled"` // false = paused (unscheduled; run-now still allowed)
+	// PausedReason is the ritual file's optional `paused_reason:` line — the one
+	// line the SCHEDULE board's Paused group shows beside a paused row. A
+	// projection of the file, never stored anywhere else.
+	PausedReason string `json:"pausedReason,omitempty"`
 }
 
 // Rituals builds the board: every ritual across all spirits, joined with the
@@ -111,6 +115,9 @@ func (s *Store) ritualRow(spirit, rdir, file string, def float64, now time.Time,
 	}
 
 	row.Enabled = ritualEnabled(fm)
+	if !row.Enabled {
+		row.PausedReason = strings.TrimSpace(fm["paused_reason"])
+	}
 	switch {
 	case row.Cadence == "":
 		row.CadenceHuman = "on-demand"

@@ -1,69 +1,207 @@
-// ================= Agents · SCHEDULE (the ALL RITUALS board) =================
+// ================= Agents · SCHEDULE (the board) =================
 // Split from 58-rituals.js (phase 0): board rows, the cadence builder and the
 // structured ritual editor. The shell (route, poll, toasts) is 40-agents.js.
+//
+// Phase 2 (agents plan §4.3): the ALL RITUALS table became the SCHEDULE — a
+// next-up line, then three DERIVED groups (Yours · Internal · Paused) of the
+// same .ritual-row grid; every row carries a runtime chip, the last-5 outcome
+// strip, a health chip and run / pause actions. Nothing here is stored:
+// groups, health (late / silent / invalid — plan §3.2) and the strip are
+// computed from /api/spirits/rituals + /api/spirits/runs on every paint.
 
-// ---- RITUALS board + in-app markdown editing ----
-// The board reads every ritual (next-fire, last outcome, ceiling, validity);
-// clicking a row opens the raw markdown editor. Edits round-trip to the
-// excalibur tree via /api/spirits/file (allow-listed); the engine hot-reloads.
 let spiritRitualRows = []; // the crumb meta's ritual count reads this
+let spiritModels = {};     // spirit → conduit name (from /api/harnesses; display only)
+const schedOpen = { yours: true, internal: false, paused: false }; // group carets survive a repaint
 
-async function loadSpiritRituals() {
-  let rows = [];
-  try { rows = (await (await fetch("/api/spirits/rituals")).json()).data || []; } catch (e) {}
+async function fetchSpiritRituals() {
+  try { return (await (await fetch("/api/spirits/rituals")).json()).data || []; } catch (e) { return []; }
+}
+async function loadSpiritModels() {
+  try {
+    const hz = (await (await fetch("/api/harnesses")).json()).harnesses || [];
+    const h = hz.find((x) => x.primary) || hz[0];
+    const out = {};
+    ((h && h.spirits) || []).forEach((sp) => { out[sp.name] = sp.portal || ""; });
+    spiritModels = out;
+  } catch (e) {}
+}
+// loadSchedule — entering #/agents: rituals + runs together (the strip, the
+// health chips and the next-up line read both), then one paint.
+async function loadSchedule() {
+  const [rows, runs] = await Promise.all([fetchSpiritRituals(), fetchSpiritRuns(), loadSpiritModels()]);
+  spiritRuns = runs;
+  renderSpiritRuns();        // the live strip (and the hidden RUNS list — harmless)
   renderSpiritRituals(rows);
+  ensureLivePoll();
+}
+// loadSpiritRituals — rituals only; the runs are whatever the last poll saw.
+async function loadSpiritRituals() {
+  renderSpiritRituals(await fetchSpiritRituals());
 }
 
-// ONE flat table (§12 / prototype): spirit · ritual / cadence-over-cron /
-// next / outcome chip / ceiling. Row click edits the ritual; the spirit name
-// inside the cell edits identity+cornerstone.
+// ---- classification (derived, never stored — plan §4.3) ----
+// paused   enabled: false
+// internal no cadence — spooled by a transcript sink or the / bar
+// yours    on a clock
+function schedGroupOf(r) {
+  if (r.enabled === false) return "paused";
+  if (!r.cadence) return "internal";
+  return "yours";
+}
+function internalNote(r) {
+  if (r.spirit === "extractor") return "run by the transcript sinks";
+  if (r.spirit === "sage") return "run by the / bar";
+  return "on demand — run with /";
+}
+// ritualRuns — this ritual's run reports, newest first (spiritRuns is the
+// only run state; nothing is held per row).
+function ritualRuns(r) {
+  return (spiritRuns.data || []).filter((x) => x.spirit === r.spirit && x.ritual === r.ritual);
+}
+
+// ---- health (plan §3.2) ----
+// invalid  the existing lint / engine verdict
+// paused   enabled: false (the file's paused_reason line, if any, is the why)
+// late     enabled, on a clock, has run: now − lastRun > 1.5 × interval, where
+//          interval = the gap between the two most recent scheduled fires (the
+//          0.5 is the grace; an irregular cadence gets the gap that just
+//          passed). A running run is never late.
+// silent   the three newest runs all completed with itemsWritten 0
+// Both late and silent are --warn, never --danger.
+function ritualHealth(r, runs) {
+  if (!r.valid) return { state: "invalid", why: r.error || "invalid frontmatter" };
+  if (r.enabled === false) return { state: "paused", why: r.pausedReason || "enabled: false — run now stays a manual override" };
+  const last = runs[0];
+  if (r.cadence && last && last.outcome !== "running") {
+    const lastAt = new Date(last.started).getTime();
+    const fires = cronPrevFires(r.cadence, new Date(), 2);
+    if (!isNaN(lastAt) && fires.length === 2) {
+      const interval = fires[0] - fires[1];
+      if (Date.now() - lastAt > 1.5 * interval) {
+        return { state: "late", why: "last run " + fmtAgo(last.started) + " · expected every " + schedDur(interval) + " (1.5× grace passed)" };
+      }
+    }
+  }
+  if (runs.length >= 3 && runs.slice(0, 3).every((x) => x.outcome === "completed" && !(x.itemsWritten > 0))) {
+    return { state: "silent", why: "the last three runs completed with nothing written" };
+  }
+  return { state: "ok", why: "" };
+}
+function schedDur(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return m + "m";
+  const h = Math.round(m / 60);
+  if (h < 48) return h + "h";
+  return Math.round(h / 24) + "d";
+}
+// outcomeClass — the strip's dot vocabulary (completed / error / stopped /
+// running / other), folding "error (protocol)" and stopped-charge/-steps.
+function outcomeClass(outcome) {
+  const o = outcome || "";
+  if (o === "completed" || o === "running") return o;
+  if (o.startsWith("error")) return "error";
+  if (o.startsWith("stopped")) return "stopped";
+  return "other";
+}
+// openRunOnRuns — the run detail lives on RUNS; from the board, go there first
+// (the same two-step the completion toast uses).
+function openRunOnRuns(id) {
+  location.hash = "#/agents/runs";
+  setTimeout(() => openSpiritRun(id), 120);
+}
+
+// ---- the board ----
 function renderSpiritRituals(rows) {
   spiritRitualRows = rows;
   const host = els.spiritRitualBoard; host.innerHTML = "";
-  if (!rows.length) {
-    host.appendChild(emptyRow("No rituals yet — add a spirit, then a ritual."));
-  } else {
-    rows.slice().sort((a, b) => (a.spirit + "/" + a.ritual).localeCompare(b.spirit + "/" + b.ritual))
-      .forEach((r) => host.append(ritualRow(r)));
-  }
-  // ＋ ritual — pick the spirit inline, then the existing create path
-  const spirits = [...new Set(rows.map((r) => r.spirit))].sort();
-  const ghost = el("button", "sprt-ghost sprt-add-ritual", "＋ ritual");
-  ghost.onclick = () => {
-    if (spirits.length === 1) { newRitual(spirits[0]); return; }
-    if (!spirits.length) { showToast("Add a spirit first"); return; }
-    const sel = selectEl(spirits);
-    sel.className = "pp-in";
-    const go = el("button", "sprt-quiet", "add →");
-    go.onclick = () => newRitual(sel.value);
-    const wrap = el("span", "sprt-add-wrap");
-    wrap.append(sel, go);
-    ghost.replaceWith(wrap);
-    sel.focus();
-  };
-  host.append(ghost);
+  renderNextUp(rows);
+  const byName = (a, b) => (a.spirit + "/" + a.ritual).localeCompare(b.spirit + "/" + b.ritual);
+  const fireAt = (r) => { const t = new Date(r.nextFire || "").getTime(); return isNaN(t) ? Infinity : t; };
+  const groups = { yours: [], internal: [], paused: [] };
+  rows.slice().sort(byName).forEach((r) => groups[schedGroupOf(r)].push(r));
+  groups.yours.sort((a, b) => (fireAt(a) - fireAt(b)) || byName(a, b)); // soonest first; invalid (no fire) last
+  schedGroup(host, "yours", "YOURS", groups.yours, {
+    empty: "Nothing on a clock — give a ritual a cadence from its editor.",
+  });
+  schedGroup(host, "internal", "INTERNAL", groups.internal, {
+    note: "no cadence — spooled by the transcript sinks or the / bar",
+    empty: "No sink-driven rituals.",
+  });
+  schedGroup(host, "paused", "PAUSED", groups.paused, {
+    empty: "Nothing paused. domain scouting moved to Alfred (Hermes cron 0 7 * * *) on 2026-08-24.",
+  });
   if (typeof renderSpiritIndex === "function") renderSpiritIndex(); // counts derive from these rows
   if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
 }
 
+// renderNextUp — the soonest three next-fires across the board, one line.
+function renderNextUp(rows) {
+  const host = document.getElementById("spiritNextUp");
+  if (!host) return;
+  host.innerHTML = "";
+  const soon = rows.filter((r) => r.valid && r.enabled !== false && r.nextFire)
+    .map((r) => ({ r, t: new Date(r.nextFire).getTime() })).filter((x) => !isNaN(x.t))
+    .sort((a, b) => a.t - b.t).slice(0, 3);
+  if (!soon.length) return;
+  host.append(el("span", "sched-nextup-label", "next up"));
+  soon.forEach(({ r }) => {
+    const item = el("span", "sched-nextup-item");
+    item.append(el("span", "sched-nextup-when", nextUpWhen(r.nextFire)), document.createTextNode(" " + r.ritual));
+    item.title = r.spirit + "/" + r.ritual + " · " + relPhrase(r.nextFire);
+    item.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
+    host.append(item);
+  });
+}
+function nextUpWhen(iso) {
+  const d = new Date(iso);
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toDateString() === new Date().toDateString() ? t : d.toLocaleDateString([], { weekday: "short" }) + " " + t;
+}
+
+// schedGroup — an .aion-sec-label heading with a caret and the count over a
+// .ritual-board body; Internal and Paused start collapsed (plan §4.3).
+function schedGroup(host, key, title, list, opts) {
+  const head = el("div", "aion-sec-label sched-group");
+  const caret = el("span", "sec-caret", schedOpen[key] ? "▾" : "▸");
+  head.append(caret, el("span", "aion-sec-title", title), el("span", "aion-sec-count", String(list.length)));
+  if (opts.note) head.append(el("span", "sched-group-note", opts.note));
+  const body = el("div", "ritual-board sched-group-body");
+  body.hidden = !schedOpen[key];
+  head.onclick = () => {
+    schedOpen[key] = !schedOpen[key];
+    body.hidden = !schedOpen[key];
+    caret.textContent = schedOpen[key] ? "▾" : "▸";
+  };
+  if (!list.length) body.append(emptyRow(opts.empty));
+  else list.forEach((r) => body.append(ritualRow(r)));
+  host.append(head, body);
+}
+
+// ritualRow — runtime chip · name · cadence over cron · next · last outcome
+// chip (→ the run) · last-5 strip · health chip · ceiling/model · actions.
+// Row click edits the ritual; the spirit name inside the cell opens its page.
 function ritualRow(r) {
   const paused = r.enabled === false;
+  const runs = ritualRuns(r);
+  const health = ritualHealth(r, runs);
   const row = el("div", "ritual-row" + (r.valid ? "" : " invalid") + (paused ? " paused" : ""));
-  // name — spirit (its own editor) · ritual
+  // runtime — excalibur only until Phase 4 puts Hermes jobs on the board
+  row.append(el("span", "harness-chip ritual-runtime", "excalibur"));
+  // name — spirit (its own page) · ritual
   const name = el("span", "ritual-name");
   const sp = el("span", "sprt-spirit", r.spirit);
   sp.title = "Open " + r.spirit + "'s page";
   sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/agents/" + encodeURIComponent(r.spirit); };
   name.append(sp, document.createTextNode(" · " + r.ritual));
   row.append(name);
-  // cadence — human phrase over the raw cron (both visible, prototype)
+  // cadence — human phrase over the raw cron (both visible)
   const cad = el("span", "ritual-cadence");
   if (paused) {
     cad.append(el("span", "cad-human", "paused" + (r.cadenceHuman && r.cadence ? " · " + r.cadenceHuman : "")));
-    cad.append(el("span", "cad-raw", r.cadence || "run with /"));
-  } else if (r.cadence === "") {
-    cad.append(el("span", "cad-human", "on-demand"));
-    cad.append(el("span", "cad-raw", "run with /"));
+    cad.append(el("span", "cad-raw", r.cadence || internalNote(r)));
+  } else if (!r.cadence) {
+    cad.append(el("span", "cad-human", "on demand"));
+    cad.append(el("span", "cad-raw", internalNote(r)));
   } else {
     cad.append(el("span", "cad-human", r.cadenceHuman || "custom"));
     cad.append(el("span", "cad-raw", r.cadence));
@@ -78,7 +216,7 @@ function ritualRow(r) {
     next.textContent = "—";
   }
   row.append(next);
-  // last outcome chip → run report
+  // last outcome chip → the run (on RUNS)
   const oc = el("span", "ritual-outcome");
   if (!r.valid) {
     const chip = el("span", "run-outcome oc-invalid", "invalid");
@@ -86,19 +224,96 @@ function ritualRow(r) {
     oc.append(chip);
   } else if (r.lastOutcome) {
     const chip = el("span", "run-outcome oc-" + r.lastOutcome.replace(/[^a-z-]/g, ""), r.lastOutcome);
-    if (r.lastRunId) { chip.classList.add("linky"); chip.onclick = (e) => { e.stopPropagation(); openSpiritRun(r.lastRunId); }; }
+    if (r.lastRunId) { chip.classList.add("linky"); chip.title = "open the run"; chip.onclick = (e) => { e.stopPropagation(); openRunOnRuns(r.lastRunId); }; }
     oc.append(chip);
   } else {
     oc.append(el("span", "run-outcome oc-never", "never run"));
   }
   row.append(oc);
-  // ceiling
-  const ceil = el("span", "ritual-ceiling" + (r.ceilingDefault ? " muted" : ""), "$" + Number(r.ceilingUsd).toFixed(2));
-  ceil.title = r.ceilingDefault ? "chargebook default" : "ritual charge_usd";
+  // last-5 outcomes
+  row.append(outcomeStrip(runs));
+  // health — a chip only when there is something to say; scheduled rows say ok
+  const hc = el("span", "ritual-health");
+  if (health.state !== "ok") {
+    const chip = el("span", "run-outcome oc-" + health.state, health.state);
+    chip.title = health.why;
+    hc.append(chip);
+  } else if (r.cadence) {
+    hc.append(el("span", "sched-ok", "ok"));
+  }
+  row.append(hc);
+  // ceiling / model
+  const ceil = el("span", "ritual-ceiling" + (r.ceilingDefault ? " muted" : ""));
+  ceil.append(el("span", "ceil-usd", "$" + Number(r.ceilingUsd).toFixed(2)));
+  if (spiritModels[r.spirit]) ceil.append(el("span", "ceil-model", spiritModels[r.spirit]));
+  ceil.title = (r.ceilingDefault ? "chargebook default" : "ritual charge_usd") + (spiritModels[r.spirit] ? " · conduit " + spiritModels[r.spirit] : "");
   row.append(ceil);
+  // actions — run now (the spool), pause / resume (enabled: line surgery)
+  const acts = el("span", "ritual-acts");
+  const run = el("button", "sprt-quiet", "run now");
+  run.title = "spool a run — the engine picks it up within ~5s";
+  run.onclick = (e) => { e.stopPropagation(); spiritSpool(r.spirit, r.ritual, "", { stay: true }); };
+  acts.append(run);
+  if (r.cadence || paused) {
+    const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
+    tog.title = paused ? "delete the enabled: false line — the engine reschedules it"
+      : "write enabled: false — the engine unschedules it; run now stays a manual override";
+    tog.onclick = (e) => { e.stopPropagation(); setRitualEnabled(r, paused); };
+    acts.append(tog);
+  }
+  row.append(acts);
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
+  else if (paused && r.pausedReason) row.append(el("div", "ritual-note", r.pausedReason));
   row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
   return row;
+}
+
+// outcomeStrip — five 8px dots, oldest → newest, hollow where no run exists
+// yet; each dot is titled and opens its run.
+function outcomeStrip(runs) {
+  const strip = el("span", "outcome-strip");
+  const five = runs.slice(0, 5).reverse();
+  for (let i = five.length; i < 5; i++) {
+    const d = statusDot(false, "no run yet");
+    d.classList.add("od-none");
+    strip.append(d);
+  }
+  five.forEach((x) => {
+    const items = x.outcome === "completed" ? " · " + (x.itemsWritten || 0) + " item" + (x.itemsWritten === 1 ? "" : "s") : "";
+    const d = statusDot(false, x.outcome + " · " + fmtWhen(x.started) + items);
+    d.classList.add("od-" + outcomeClass(x.outcome));
+    d.onclick = (e) => { e.stopPropagation(); openRunOnRuns(x.id); };
+    strip.append(d);
+  });
+  return strip;
+}
+
+// setRitualEnabled — the pause toggle: `enabled:` line surgery on the ritual
+// file through the lint-gated PUT (the writer the editor uses); the engine
+// hot-reloads and reports paused: true in ritual-status.json. Absent = enabled
+// (canonical), so resume DELETES the line (and any paused_reason) rather than
+// writing true.
+async function setRitualEnabled(r, enabled) {
+  setSaveState("saving");
+  try {
+    const raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent(r.path))).json()).content || "";
+    const { fmLines, body, hasFM } = splitFM(raw);
+    if (!hasFM) throw new Error("no frontmatter in " + r.path);
+    let fm = fmSurgery(fmLines, "enabled", enabled ? null : "false");
+    if (enabled) fm = fmSurgery(fm, "paused_reason", null);
+    const content = "---\n" + fm.join("\n") + "\n---\n" + body;
+    const res = await fetch("/api/spirits/file?path=" + encodeURIComponent(r.path), {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (res.status === 422 || j.ok === false) throw new Error((j.errors || ["lint blocked the save"]).join("; "));
+    setSaveState("saved");
+    showToast(r.spirit + "/" + r.ritual + (enabled ? " resumed" : " paused — run now stays a manual override"));
+  } catch (e) {
+    setSaveState("error");
+    showToast("Couldn't " + (enabled ? "resume" : "pause") + ": " + (e.message || e), null, "error");
+  }
+  loadSpiritRituals();
 }
 // relPhrase: "in 9h" / "in 3d" / "due now"
 function relPhrase(iso) {
@@ -220,30 +435,54 @@ function cadParse(cron) {
 // ("0 18,8 * * *" must open clean).
 function canonCron(cad) { return cad ? cadCompile(cad).cron : null; }
 
-// cadNextFire — client next-fire for the receipt's `next:` line. Minute-scan
-// over the builder vocabulary (exact / list / */N / 1-5 range); 8-day horizon.
+// cron matching over the builder vocabulary (exact / list / */N / a-b range),
+// shared by the receipt's next-fire and the board's late derivation.
+function cronFieldMatch(field, v) {
+  if (field === "*") return true;
+  if (field.startsWith("*/")) { const n = parseInt(field.slice(2), 10); return n > 0 && v % n === 0; }
+  return field.split(",").some((p) => {
+    const r = p.split("-");
+    if (r.length === 2) return v >= parseInt(r[0], 10) && v <= parseInt(r[1], 10);
+    return parseInt(p, 10) === v;
+  });
+}
+function cronMatches(f, d) {
+  return cronFieldMatch(f[0], d.getMinutes()) && cronFieldMatch(f[1], d.getHours()) &&
+    cronFieldMatch(f[2], d.getDate()) && cronFieldMatch(f[3], d.getMonth() + 1) && cronFieldMatch(f[4], d.getDay());
+}
+
+// cadNextFire — client next-fire for the receipt's `next:` line. Minute-scan;
+// 8-day horizon.
 function cadNextFire(cron) {
   if (!cron) return null;
   const f = cron.trim().split(/\s+/);
   if (f.length !== 5) return null;
-  const match = (field, v) => {
-    if (field === "*") return true;
-    if (field.startsWith("*/")) { const n = parseInt(field.slice(2), 10); return n > 0 && v % n === 0; }
-    return field.split(",").some((p) => {
-      const r = p.split("-");
-      if (r.length === 2) return v >= parseInt(r[0], 10) && v <= parseInt(r[1], 10);
-      return parseInt(p, 10) === v;
-    });
-  };
   const d = new Date();
   d.setSeconds(0, 0);
   d.setMinutes(d.getMinutes() + 1);
   for (let i = 0; i < 60 * 24 * 8; i++) {
-    if (match(f[0], d.getMinutes()) && match(f[1], d.getHours()) &&
-        match(f[2], d.getDate()) && match(f[3], d.getMonth() + 1) && match(f[4], d.getDay())) return d;
+    if (cronMatches(f, d)) return d;
     d.setMinutes(d.getMinutes() + 1);
   }
   return null;
+}
+
+// cronPrevFires — the newest `n` scheduled fires at or before `from`, newest
+// first, scanning back at most 15 days (a weekly cadence needs two fires).
+// Hours that can't match are skipped whole, so the scan stays cheap.
+function cronPrevFires(cron, from, n) {
+  const f = (cron || "").trim().split(/\s+/);
+  if (f.length !== 5) return [];
+  const d = new Date(from);
+  d.setSeconds(0, 0);
+  const floor = d.getTime() - 15 * 86400000;
+  const out = [];
+  while (out.length < n && d.getTime() >= floor) {
+    if (!cronFieldMatch(f[1], d.getHours())) { d.setMinutes(0); d.setMinutes(-1); continue; }
+    if (cronMatches(f, d)) out.push(new Date(d));
+    d.setMinutes(d.getMinutes() - 1);
+  }
+  return out;
 }
 
 // renderCadenceBuilder(host, cad, {custom, rawCron, onEdit}) — kind chips →

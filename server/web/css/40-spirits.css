@@ -17,7 +17,12 @@
 /* ---- SPIRITS: run reports + charge bars (excalibur harness console) ---- */
 .runs-list { display: flex; flex-direction: column; gap: var(--sp-5); }
 .run-outcome { font-size: var(--fs-2xs); border: 1px solid var(--line); border-radius: 12px; padding: var(--sp-1) var(--sp-4); }
-.oc-completed { color: var(--accent); border-color: var(--accent-soft); }
+/* status vocabulary (agents plan §3.2): running → accent (LIVE only); completed →
+   neutral ink; late / silent → warn, never danger; failed → danger; paused → muted */
+.oc-completed { color: var(--base-70); border-color: var(--base-25); }
+.oc-running { color: var(--accent); border-color: var(--accent-soft); }
+.oc-late, .oc-silent { color: var(--warn); border-color: var(--warn); background: var(--status-warn-bg); }
+.oc-paused { color: var(--muted); border-color: var(--line); }
 .oc-stopped-charge, .oc-stopped-steps { color: var(--base-50); border-color: var(--base-25); }
 .oc-error, .oc-errorprotocol { color: var(--danger); border-color: var(--status-danger-border); }
 .run-title { font-family: var(--mono); font-size: var(--fs-md); color: var(--ink); letter-spacing: 0.2px; }
@@ -35,7 +40,8 @@
 
 /* ---- SPIRITS: RITUALS board + markdown editor ---- */
 .ritual-board { display: flex; flex-direction: column; gap: var(--sp-1); }
-.ritual-row { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; align-items: baseline; gap: var(--sp-6); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
+/* the schedule row: runtime · name · cadence · next · last · history · health · ceiling · actions */
+.ritual-row { display: grid; grid-template-columns: auto 1.3fr 1.5fr 1.1fr auto auto auto 0.6fr auto; align-items: baseline; gap: var(--sp-5); padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft); cursor: pointer; }
 .ritual-row:hover { background: var(--base-05); }
 .ritual-row.invalid { border-color: var(--status-danger-border); background: var(--status-danger-bg); }
 .ritual-name { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -50,8 +56,10 @@
 .run-outcome.linky { cursor: pointer; } .run-outcome.linky:hover { border-color: var(--blue); }
 .oc-never, .oc-invalid { color: var(--muted); border-color: var(--line); }
 .oc-invalid { color: var(--danger); border-color: var(--status-danger-border); }
-.ritual-ceiling { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); text-align: right; }
+.ritual-ceiling { font-family: var(--mono); font-size: var(--fs-sm); color: var(--text); text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.ceil-model { font-size: var(--fs-2xs); color: var(--muted); }
 .ritual-ceiling.muted { color: var(--muted); }
+.ritual-note { grid-column: 1 / -1; font-size: var(--fs-xs); color: var(--base-50); margin-top: var(--sp-1); }
 .ritual-error { grid-column: 1 / -1; font-family: var(--mono); font-size: var(--fs-xs); color: var(--danger); margin-top: var(--sp-1); }
 .editor-tabs { display: flex; gap: var(--sp-2); margin-right: auto; }
 .editor-tab { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); background: none; border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-4); cursor: pointer; }
@@ -103,9 +111,8 @@
 .sprt-quiet:hover { color: var(--accent); }
 .sprt-ghost { background: transparent; border: 1px dashed var(--base-25); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); padding: var(--sp-1) var(--sp-4); cursor: pointer; }
 .sprt-ghost:hover { color: var(--accent); border-color: var(--accent-soft); }
-.sprt-add-ritual { align-self: flex-start; margin-top: var(--sp-4); }
-.sprt-add-wrap { display: inline-flex; gap: var(--sp-4); align-items: center; margin-top: var(--sp-4); }
-.sprt-cols { display: grid; grid-template-columns: 1.3fr 1.6fr 1.4fr 1fr 0.7fr; gap: var(--sp-6); font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-4) var(--sp-3); }
+.sprt-cols { display: grid; grid-template-columns: auto 1.3fr 1.5fr 1.1fr auto auto auto 0.6fr auto; gap: var(--sp-5); font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-4) var(--sp-3); }
+.sprt-cols span:first-child { min-width: 62px; } /* the runtime-chip column */
 .sprt-cols .r { text-align: right; }
 
 /* live strip — one line per running/queued item */
@@ -134,7 +141,7 @@
 /* settings-chip degraded badge — damage reported without portals taking a slot */
 .sp-badge { margin-left: var(--sp-3); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); font-weight: 500; }
 
-/* the spirit index strip over the ALL RITUALS board */
+/* the spirit index strip over the SCHEDULE board */
 .spirit-index { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; margin: var(--sp-1) 0 var(--sp-6); }
 .spirit-index-item {
   display: inline-flex; align-items: center; gap: var(--sp-3); min-height: 30px;
@@ -222,3 +229,30 @@
 /* armed destructive action: quiet until armed, then ink */
 .sprt-delete.armed { color: var(--base-100); font-weight: 500; border-color: var(--base-100); }
 
+
+/* ---- SCHEDULE board (agents plan §4.3, Phase 2) ---- */
+.sched-board { display: flex; flex-direction: column; }
+.sched-nextup { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-5); margin: 0 0 var(--sp-5); font-size: var(--fs-md); color: var(--base-100); }
+.sched-nextup:empty { display: none; }
+.sched-nextup-label { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }
+.sched-nextup-item { cursor: pointer; white-space: nowrap; }
+.sched-nextup-item:hover { color: var(--accent); }
+.sched-nextup-item + .sched-nextup-item::before { content: "·"; color: var(--base-40); margin-right: var(--sp-5); }
+.sched-nextup-when { font-family: var(--mono); font-size: var(--fs-sm); }
+.sched-group { cursor: pointer; margin-top: var(--sp-7); user-select: none; }
+.sched-group:first-child { margin-top: 0; }
+.sched-group-note { margin-left: auto; font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+.sched-group-body { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ritual-runtime { align-self: center; min-width: 62px; text-align: center; }
+.outcome-strip { display: inline-flex; align-items: center; gap: 3px; }
+.outcome-strip .status-dot { cursor: pointer; }
+.outcome-strip .od-none { background: transparent; border: 1px solid var(--base-25); box-sizing: border-box; cursor: default; }
+.outcome-strip .od-completed { background: var(--base-70); }
+.outcome-strip .od-error { background: var(--danger); }
+.outcome-strip .od-stopped { background: var(--muted); }
+.outcome-strip .od-running { background: var(--accent); animation: pulse 1.3s ease-in-out infinite; }
+.outcome-strip .od-other { background: var(--base-40); }
+.ritual-health { white-space: nowrap; }
+.sched-ok { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }
+.ritual-acts { display: inline-flex; gap: var(--sp-4); white-space: nowrap; justify-self: end; }
+.harness-add { align-self: flex-start; margin-top: var(--sp-3); }

@@ -9,10 +9,11 @@ let spiritStatusCache = null;
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
-// SPIRITS.md §1: a top tab-bar over one body — ALL RITUALS · RUNS · SETTINGS —
-// and the spirit as the rail object: #/agents/<name> is a spirit page,
-// #/agents/ritual/<spirit>/<name> the ritual editor. Legacy tails fold in.
-let spMode = "rituals"; // rituals | runs | settings | spirit | editor
+// Agents plan §4.3: a top tab-bar over one body — SCHEDULE · RUNS (· the
+// parked SETTINGS chip until a later phase) — and the spirit as the rail
+// object: #/agents/<name> is a spirit page, #/agents/ritual/<spirit>/<name>
+// the ritual editor. Legacy tails fold in.
+let spMode = "rituals"; // rituals (= SCHEDULE) | runs | settings | spirit | editor
 let spSpirit = "";      // the open spirit (spirit/editor modes)
 let spRitualPath = "";  // the open ritual file (editor mode)
 let spSettingsTab = "portals"; // settings inner-rail selection
@@ -55,10 +56,14 @@ function renderSpirits() {
   loadSpiritsStatus();
   ensureLivePoll(); // resume watching queued/running runs, derived from files
   loadPortalsBadge();
-  if (spMode === "rituals") { loadSpiritRituals(); loadSpiritRuns(); }
+  if (spMode === "rituals") { loadSchedule(); }
   else if (spMode === "runs") { loadSpiritRuns(); }
   else if (spMode === "settings") { renderSpiritSettings(); }
-  else if (spMode === "spirit") { renderSpiritPage(spSpirit); }
+  else if (spMode === "spirit") {
+    // the page's ritual rows carry the schedule anatomy (strip, health), so
+    // the runs + conduit names load first
+    Promise.all([loadSpiritRuns(), loadSpiritModels()]).then(() => renderSpiritPage(spSpirit));
+  }
   else if (spMode === "editor") { renderRitualEditor(spRitualPath); }
 }
 
@@ -135,6 +140,7 @@ let runOutcomes = {};       // runId → last-seen outcome (transition detection
 let liveBaselined = false;  // don't toast runs that were already finished on first look
 let liveIdleTicks = 0;      // consecutive polls with nothing active (grace before stop)
 let knownDigestIds = null;  // feed digest ids seen, for the digest-landed toast
+let liveRunSig = "";        // running run ids at the last tick — a change repaints the SCHEDULE board
 
 function pollScopeOpen() {
   return location.hash.startsWith("#/agents") || location.hash === "#/feed";
@@ -200,6 +206,11 @@ async function livePoll() {
   // re-render whatever is open, from files alone (ONE page now)
   if (location.hash.startsWith("#/agents")) renderSpiritRuns();
   if (openRunId) refreshOpenRun(); // includes the finishing tick, so the report shows the terminal outcome
+  // the SCHEDULE board's outcome chips / strip / health follow the run files:
+  // repaint when a run starts or finishes (never on a quiet tick)
+  const sig = (spiritRuns.data || []).filter((r) => r.outcome === "running").map((r) => r.id).join(",");
+  if (spMode === "rituals" && location.hash === "#/agents" && liveBaselined && (anyFinished || sig !== liveRunSig)) loadSpiritRituals();
+  liveRunSig = sig;
 
   if (anyFinished) {
     refreshFeedBadge();                               // nav-pill inbox count
@@ -327,20 +338,23 @@ async function loadSpiritsStatusCacheOnly() {
 // lives in the files (queued spool → running report). A 409 means the same
 // spirit/ritual is already active (the double-spool guard). From FEED the user
 // is never yanked away (feed-central §3: the loop closes in the feed) — a toast
-// links to the live row instead; from SPIRITS we jump to RUNS as before.
-async function spiritSpool(spirit, ritual, request) {
-  const onFeed = location.hash === "#/feed";
+// links to the live row instead; from SPIRITS we jump to RUNS as before. The
+// SCHEDULE board's per-row "run now" passes {stay: true} — the live strip on
+// the board is where that run is watched.
+async function spiritSpool(spirit, ritual, request, opts) {
+  const stay = location.hash === "#/feed" || !!(opts && opts.stay);
   let r;
   try { r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) }); }
   catch (e) { showToast("Run request failed: " + (e.message || e), null, "error"); return; }
   if (r.status === 409) {
     showToast(`${spirit}/${ritual} is already running — view`, () => { location.hash = "#/agents/runs"; }, "info");
-    if (!onFeed) location.hash = "#/agents/runs";
+    if (!stay) location.hash = "#/agents/runs";
     return;
   }
   if (!r.ok) { showToast("Run request failed (" + r.status + ")", null, "error"); return; }
-  if (onFeed) {
+  if (stay) {
     showToast(`${spirit}/${ritual} queued — view`, () => { location.hash = "#/agents/runs"; }, "info");
+    if (location.hash.startsWith("#/agents")) loadSpiritRuns(); // the board's live strip shows the queued row
   } else {
     location.hash = "#/agents/runs";
     loadSpiritRuns(); // show the queued row immediately
