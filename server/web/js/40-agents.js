@@ -1,29 +1,30 @@
 // ================= Agents panel =================
 // (small DOM helpers live in 05-components.js — the §11 component library)
 
-// ---- SPIRITS: the excalibur harness console ----
-// Purely the engine console: RUNS · RITUALS — checking + instigating runs.
-// The feed (incl. the approvals inbox) lives one level up as its own tab; the
-// ENGINE owns execution — the only write toward it is a spooled run-now request.
+// ---- AGENTS: the operating surface over both runtimes ----
+// SCHEDULE · RUNS over excalibur spirits and Hermes (alfred + profiles), plus
+// the agent pages, the ritual editor and the new-agent wizard. The feed (incl.
+// the approvals inbox) lives one level up as its own tab; the ENGINE owns
+// execution — the only writes toward it are spooled run-now requests and the
+// lint-gated file edits.
 let spiritStatusCache = null;
 let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs — the ONLY run state; nothing else is held
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
-// Agents plan §4.3: a top tab-bar over one body — SCHEDULE · RUNS (· the
-// parked SETTINGS chip until a later phase) — and the spirit as the rail
-// object: #/agents/<name> is a spirit page, #/agents/ritual/<spirit>/<name>
-// the ritual editor. Legacy tails fold in.
-let spMode = "rituals"; // rituals (= SCHEDULE) | runs | settings | spirit | editor
+// Agents plan §4.3: a top tab-bar over one body — SCHEDULE · RUNS — and the
+// agent as the rail object: #/agents/<name> is an agent page (spirit or
+// profile), #/agents/ritual/<spirit>/<name> the ritual editor, #/agents/new
+// the wizard. Legacy tails (#/spirits*, #/agents/settings) redirect in route().
+let spMode = "rituals"; // rituals (= SCHEDULE) | runs | new | spirit | editor
 let spSpirit = "";      // the open spirit (spirit/editor modes)
 let spRitualPath = "";  // the open ritual file (editor mode)
-let spSettingsTab = "portals"; // settings inner-rail selection
 
 function showSpirits(h) {
   const tail = h && h.startsWith("#/agents/") ? decodeURIComponent(h.slice("#/agents/".length)) : "";
   spSpirit = ""; spRitualPath = "";
   if (tail === "") spMode = "rituals";
   else if (tail === "runs") spMode = "runs";
-  else if (tail === "settings") spMode = "settings";
+  else if (tail === "new") spMode = "new";
   else if (tail.startsWith("ritual/")) {
     const rest = tail.slice("ritual/".length);
     const i = rest.indexOf("/");
@@ -35,10 +36,10 @@ function showSpirits(h) {
   renderSpirits();
 }
 
-// renderSpToggle — chip-active mirror of renderReToggle: spirit page and the
-// ritual editor keep ALL RITUALS lit (they open from it).
+// renderSpToggle — chip-active mirror of renderReToggle: the agent page and
+// the ritual editor keep SCHEDULE lit (they open from it); the wizard lights none.
 function renderSpToggle() {
-  const active = (spMode === "spirit" || spMode === "editor") ? "rituals" : spMode;
+  const active = (spMode === "spirit" || spMode === "editor") ? "rituals" : spMode === "new" ? "" : spMode;
   const tog = document.getElementById("spToggle");
   if (tog) tog.querySelectorAll(".view-tab").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === active));
@@ -51,14 +52,14 @@ function renderSpirits() {
   show("spEditorWrap", spMode === "editor");
   show("spSpiritWrap", spMode === "spirit");
   show("spRunsWrap", spMode === "runs");
-  show("spSettingsWrap", spMode === "settings");
+  show("spNewWrap", spMode === "new");
   if (typeof closeEditor === "function") closeEditor(); // no stale raw drawer under another view (renderers reopen it deliberately)
   loadSpiritsStatus();
   ensureLivePoll(); // resume watching queued/running runs, derived from files
   loadPortalsBadge();
   if (spMode === "rituals") { loadSchedule(); }
   else if (spMode === "runs") { loadSpiritRuns(); }
-  else if (spMode === "settings") { renderSpiritSettings(); }
+  else if (spMode === "new") { renderAgentWizard(); }
   else if (spMode === "spirit") {
     // the page's ritual rows carry the schedule anatomy (strip, health), so
     // the runs + conduit names load first
@@ -67,16 +68,11 @@ function renderSpirits() {
   else if (spMode === "editor") { renderRitualEditor(spRitualPath); }
 }
 
-// The SETTINGS chip's degraded count (`n ●`) — derived from the last portal
-// rows on every fetch/action, never stored.
-let spPortalRows = []; // last /api/portals fetch (badge + settings rail count)
+// The rail's Settings count (`n ●` degraded connections) — derived from the
+// last portal rows on every fetch/action, never stored.
+let spPortalRows = []; // last /api/portals fetch (the rail's Settings count)
 function updateSettingsBadge() {
-  const badge = document.getElementById("spSettingsBadge");
   const degraded = spPortalRows.filter((p) => p.state === "degraded").length;
-  if (badge) {
-    badge.hidden = !degraded;
-    badge.textContent = degraded ? degraded + " ●" : "";
-  }
   if (typeof railSetCount === "function") railSetCount("settings", degraded ? degraded + " ●" : "", !!degraded);
 }
 async function loadPortalsBadge() {
@@ -131,7 +127,7 @@ function showToast(msg, onClick, kind) {
 }
 
 // ---- file-derived live run polling (replaces watchForNewRun) ----
-// A single ~3s poll while the SPIRITS or FEED tab is open AND some run is
+// A single ~3s poll while the AGENTS or FEED tab is open AND some run is
 // queued/running (dig-from-feed needs run-watching without leaving the feed).
 // Everything shown derives from the runs+queued files, so a refresh mid-run
 // loses nothing. Transitions raise toasts; the open report body refreshes live.
@@ -250,7 +246,7 @@ function diffDigests(items) {
   });
 }
 
-// ── spirits-runs + feed action helpers (relocated from 50-studio.js when
+// ── agent-runs + feed action helpers (relocated from 50-studio.js when
 //    Content Studio was removed; shared by feed/chat/rituals/todos/bars) ──
 
 // openArtifact opens an artifact's library file in the universal note view —
@@ -312,12 +308,12 @@ async function feedToTodo(id) {
 }
 
 // ---- run now / ask a scout (spooled request; engine picks it up within ~5s) ----
-// spiritPick opens the spirit/ritual picker (one area per spirit, its rituals
+// spiritPick opens the agent/ritual picker (one area per spirit, its rituals
 // as items) and calls onPick("spirit","ritual"). askRitual, when given, is
 // picked automatically if present so "Ask a scout" lands on options-scout's
 // research ritual without a needless second tap.
 async function spiritPick(onPick) {
-  // the catalog can be needed before SPIRITS was ever opened (Ask-a-scout lives
+  // the catalog can be needed before AGENTS was ever opened (Ask-a-scout lives
   // in FEED now) — load it lazily.
   if (!spiritStatusCache) await loadSpiritsStatusCacheOnly();
   const spirits = (spiritStatusCache || {}).spirits || {};
@@ -325,7 +321,7 @@ async function spiritPick(onPick) {
     area: sp,
     items: (spirits[sp] || []).map((rit) => ({ id: sp + "/" + rit, text: rit })),
   })).filter((g) => g.items.length);
-  if (!groups.length) { showToast("No spirit/ritual found in the excalibur tree.", null, "error"); return; }
+  if (!groups.length) { showToast("No agent/ritual found in the excalibur tree.", null, "error"); return; }
   openPicker("Run a ritual now", groups, (id) => {
     const [sp, rit] = id.split("/");
     onPick(sp, rit);
@@ -338,7 +334,7 @@ async function loadSpiritsStatusCacheOnly() {
 // lives in the files (queued spool → running report). A 409 means the same
 // spirit/ritual is already active (the double-spool guard). From FEED the user
 // is never yanked away (feed-central §3: the loop closes in the feed) — a toast
-// links to the live row instead; from SPIRITS we jump to RUNS as before. The
+// links to the live row instead; from AGENTS we jump to RUNS as before. The
 // SCHEDULE board's per-row "run now" passes {stay: true} — the live strip on
 // the board is where that run is watched.
 async function spiritSpool(spirit, ritual, request, opts) {
@@ -383,7 +379,7 @@ async function fetchSpiritRuns() {
 // ---- shared: the destructive-action button (spirit page + ritual editor) ----
 // armedDelete — the destructive-action pattern: first click ARMS (ink
 // "confirm?" label), second click within 4s executes; it disarms itself.
-// No browser dialogs (owner call, spirits UX pass).
+// No browser dialogs (owner call, agents UX pass).
 function armedDelete(label, armedLabel, onConfirm) {
   const b = el("button", "sprt-quiet sprt-delete", label);
   let armed = false, timer = null;

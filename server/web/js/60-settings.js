@@ -5,10 +5,9 @@
 // localStorage); the tab never stores anything of its own. The rail counts are
 // DERIVED on every render — problems, never row counts.
 //
-// Phase 0 parked the old Spirits › SETTINGS chip panels (Portals · Chargebook ·
-// Harnesses) in this file; they stay reachable at #/agents/settings until a
-// later phase removes the chip. The row renderer, the paste-back OAuth flow,
-// the Gmail accounts form and the chargebook form are SHARED between the two.
+// The old Agents › SETTINGS chip (Portals · Chargebook · Harnesses) is gone
+// (Phase 6): #/agents/settings redirects here. The row renderer, the paste-back
+// OAuth flow, the Gmail accounts form and the chargebook form live on below.
 
 let settingsGroup = "connections";   // rail selection: connections | agents | hosts | display
 let settingsArg = "";                // route tail after the group (e.g. "site/<host>" opens the add-site form)
@@ -123,14 +122,10 @@ function connSort(rows) {
   return rows.slice().sort((a, b) => rank(a) - rank(b) || (a.name || "").localeCompare(b.name || ""));
 }
 
-// reloadConnections re-derives the row list wherever it is showing — the
-// Settings tab, or the parked Agents › SETTINGS chip panel.
+// reloadConnections re-derives the Settings › Connections row list when it
+// is showing (a portal action from anywhere else has nothing to repaint).
 function reloadConnections() {
-  if (els.settingsView && !els.settingsView.hidden) {
-    if (document.getElementById("settingsConnList")) loadSettingsConnections();
-    return;
-  }
-  loadPortals();
+  if (document.getElementById("settingsConnList")) loadSettingsConnections();
 }
 
 // replaceRow swaps one rendered row for the server's re-derived one.
@@ -298,8 +293,39 @@ async function renderSettingsAgents(pane) {
   if (typeof setCrumbMeta === "function") {
     setCrumbMeta(settingsEnginesDown ? settingsEnginesDown + " engine" + (settingsEnginesDown === 1 ? "" : "s") + " down" : "all engines live");
   }
+  await renderReplyStyles(pane);
   pane.append(el("div", "pp-section-head", "BUDGET"));
-  renderChargebookPane(pane, { budget: true });
+  renderChargebookPane(pane);
+}
+
+// ---- REPLY STYLES — the intent-tagged response personas (brief · info ·
+// plan): how an agent answers an `agent:hermes::<style>` mention. Records
+// are vault notes (system/agents/personas/<style>.md) edited in the note
+// view or Obsidian — listed here, never edited here. (D1: no new personas
+// are created in this pass; §6 of the agents plan stays the reference.) ----
+async function renderReplyStyles(pane) {
+  pane.append(el("div", "pp-section-head", "REPLY STYLES — how an agent answers an ::style mention"));
+  let list = null;
+  try { list = (await (await fetch("/api/agents/personas")).json()).personas || []; } catch (e) {}
+  if (list === null) { pane.append(emptyRow("reply styles unavailable")); return; }
+  if (!list.length) { pane.append(emptyRow("no reply styles — the persona layer is not wired (system/agents/personas/)")); return; }
+  const box = el("div", "harness-card");
+  list.forEach((p) => {
+    const row = el("div", "harness-spirit");
+    const name = el("span", "harness-spirit-name", (p.enabled ? "" : "⏸ ") + p.intent);
+    name.title = "agent:hermes::" + p.intent;
+    row.append(name);
+    row.append(el("span", "harness-spirit-model", [p.enabled ? "enabled" : "disabled", p.model ? "model " + p.model : "model: inherits", "@hermes::" + p.intent].join(" · ")));
+    if (p.rel && typeof openNoteByPath === "function") {
+      const open = el("button", "sprt-quiet", "note →");
+      open.title = p.rel;
+      open.onclick = () => openNoteByPath(p.rel);
+      row.append(open);
+    }
+    box.append(row);
+  });
+  box.append(el("div", "portal-note", "edited as vault notes — the mention token `agent:hermes::brief` picks the style per message"));
+  pane.append(box);
 }
 
 function engineChip(alive, heartbeat, queued, word) {
@@ -351,17 +377,18 @@ function excaliburCard(h, portalRows) {
     card.append(hint);
   }
   const spirits = h.spirits || [];
-  card.append(el("div", "portal-note", spirits.length + " spirit" + (spirits.length === 1 ? "" : "s") + " · model per spirit (switch it on the agent page)"));
+  card.append(el("div", "portal-note", spirits.length + " agent" + (spirits.length === 1 ? "" : "s") + " on the engine (spirits/) · model per agent (switch it on the agent page)"));
   spirits.forEach((sp) => {
     const row = el("div", "harness-spirit");
     row.append(el("span", "harness-spirit-name", sp.name), el("span", "harness-spirit-model", sp.portal || "—"));
     card.append(row);
   });
-  // ＋ spirit moved here from the SCHEDULE board (agents plan §4.3, Phase 2):
-  // the board stays a schedule; the scaffold lands on the new spirit's page
-  if (h.primary !== false && typeof newSpirit === "function") {
-    const add = el("button", "sprt-ghost harness-add", "＋ spirit");
-    add.onclick = () => newSpirit();
+  // ＋ agent opens the wizard (agents plan §4.3, Phase 6): a spirit arrives
+  // with its first ritual, never as an empty folder
+  if (h.primary !== false && typeof newAgent === "function") {
+    const add = el("button", "sprt-ghost harness-add", "＋ agent");
+    add.title = "the new-agent wizard — name → runtime → first ritual → review";
+    add.onclick = () => newAgent();
     card.append(add);
   }
   // the engine's conduits (formerly the Portals pane's "via engine" rows)
@@ -649,160 +676,13 @@ function renderSettingsDisplay(pane) {
   pane.append(el("div", "portal-note", "Theme: not built — the portal SPA has its own."));
 }
 
-// ================= parked: the Agents › SETTINGS chip panels (Phase 0) =================
-// Reached via #/agents/settings until a later phase removes the chip.
-// `spPortalRows` and the chip badge stay in 40-agents.js (shell chrome).
-
-// ---- PORTALS sub-tab: every external realm, (re)connectable in place ----
-async function loadPortals() {
-  if (els.settingsView && !els.settingsView.hidden) { loadSettingsConnections(); return; } // the tab owns the rows now
-  const host = document.getElementById("portalList"); if (!host) return;
-  if (!host.children.length) host.textContent = "loading…";
-  try {
-    const rows = (await (await fetch("/api/portals")).json()).rows || [];
-    renderPortals(rows);
-  } catch (e) { host.innerHTML = ""; host.append(emptyRow("Portals unavailable.")); }
-}
-
-// ---- HARNESSES settings: each federated tree's engine + which conduit each
-// spirit routes to, switchable in place. Renders into the Settings pane. ----
-async function loadHarnesses() {
-  const board = document.getElementById("harnessBoard");
-  if (!board) return;
-  let harnesses = [];
-  try { harnesses = (await (await fetch("/api/harnesses")).json()).harnesses || []; }
-  catch (e) { return; }
-  renderHarnesses(harnesses);
-}
-
-function renderHarnesses(harnesses) {
-  const board = document.getElementById("harnessBoard");
-  if (!board) return;
-  board.hidden = false;
-  board.innerHTML = "";
-  harnesses.forEach((h) => {
-    const card = el("div", "harness-card");
-    const head = el("div", "harness-head");
-    head.append(el("span", "harness-name", h.name));
-    if (h.primary) head.append(el("span", "harness-chip", "primary"));
-    const dot = el("span", "harness-engine " + (h.engineAlive ? "on" : "off"),
-      h.engineAlive ? "engine live" : "engine down");
-    if (h.queued) dot.textContent += " · " + h.queued + " queued";
-    head.append(dot);
-    card.append(head);
-    card.append(el("div", "harness-path", h.path));
-    if (!h.engineAlive && h.engineHint) {
-      const hint = el("div", "harness-hint", h.engineHint);
-      card.append(hint);
-    }
-    (h.spirits || []).forEach((sp) => {
-      const row = el("div", "harness-spirit");
-      row.append(el("span", "harness-spirit-name", sp.name));
-      const sel = selectEl(h.portals || []);
-      sel.className = "pp-in harness-portal-sel";
-      sel.value = sp.portal;
-      sel.onchange = async () => {
-        try {
-          const r = await fetch("/api/harnesses/spirit/portal", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ harness: h.name, spirit: sp.name, portal: sel.value }),
-          });
-          if (!r.ok) throw new Error(await r.text());
-          showToast(sp.name + " → " + sel.value);
-        } catch (e) { showToast("Couldn't switch conduit: " + (e.message || e), null, "error"); sel.value = sp.portal; }
-      };
-      row.append(sel);
-      card.append(row);
-    });
-    board.append(card);
-  });
-}
-
-// renderPortals — the parked Settings→Portals pane: Connections over Conduits.
-function renderPortals(rows) {
-  spPortalRows = rows;
-  const host = document.getElementById("portalList");
-  if (!host) return;
-  host.hidden = false;
-  host.innerHTML = "";
-  const groups = [
-    ["CONNECTIONS", rows.filter((p) => p.kind !== "llm")],
-    ["CONDUITS", rows.filter((p) => p.kind === "llm")],
-  ];
-  groups.forEach(([label, list]) => {
-    if (!list.length) return;
-    host.append(el("div", "portal-group-label", label));
-    const head = el("div", "portal-row portal-head");
-    ["PORTAL", "STATE", "LAST CROSSING", "KEY", ""].forEach((h) => head.append(el("span", "", h)));
-    host.append(head);
-    list.forEach((p) => host.append(portalRowEl(p)));
-  });
-  updateSettingsBadge(); // repairing a portal clears the chip badge in place
-}
-
-// ---- the parked chip page: Portals · Chargebook · Harnesses behind the inner rail ----
-function renderSpiritSettings() {
-  const host = document.getElementById("spSettingsWrap");
-  if (!host) return;
-  host.innerHTML = "";
-  const wrap = el("div", "aion-org");
-  const rail = el("div", "aion-org-rail");
-  const pane = el("div", "aion-org-pane");
-  wrap.append(rail, pane);
-  host.append(wrap);
-
-  rail.append(el("div", "aion-org-label", "Settings"));
-  const degraded = spPortalRows.filter((p) => p.state === "degraded").length;
-  const items = [
-    ["portals", "Portals", degraded ? degraded + " ●" : String(spPortalRows.length || "")],
-    ["chargebook", "Chargebook", ""],
-    ["harnesses", "Harnesses", ""],
-  ];
-  items.forEach(([key, label, n]) => {
-    const b = el("button", "aion-org-item" + (spSettingsTab === key ? " active" : ""));
-    b.append(el("span", "", label));
-    if (n) b.append(el("span", "aion-org-count" + (key === "portals" && degraded ? " attn" : ""), n));
-    b.onclick = () => { spSettingsTab = key; renderSpiritSettings(); };
-    rail.append(b);
-  });
-  // the app-wide tab is where these live now — say so on the way out
-  const link = el("button", "aion-org-item");
-  link.append(el("span", "", "app Settings →"));
-  link.onclick = () => { location.hash = "#/settings/connections"; };
-  rail.append(link);
-  const fileBox = el("div", "aion-org-file");
-  const rel = { portals: "grimoire/portals/", chargebook: "chargebook.md", harnesses: "config.json harnesses[]" }[spSettingsTab];
-  fileBox.append(el("div", "aion-org-label", "File"), el("div", "aion-org-path", rel));
-  rail.append(fileBox);
-
-  if (spSettingsTab === "portals") {
-    pane.append(el("div", "pp-section-head", "PORTALS"));
-    const list = el("div", "portal-board");
-    list.id = "portalList";
-    pane.append(list);
-    loadPortals();
-  } else if (spSettingsTab === "chargebook") {
-    renderChargebookPane(pane);
-  } else {
-    pane.append(el("div", "pp-section-head", "HARNESSES"));
-    const board = el("div", "harness-board");
-    board.id = "harnessBoard";
-    pane.append(board);
-    loadHarnesses();
-  }
-}
-
-// The chargebook form (SPIRITS.md §4 Settings): the default every keyless
+// The chargebook form (Settings › Agents › Budget): the default every keyless
 // ritual inherits + one row per price.*/cast.* key. Values compared against
 // the record for a derived dirty bar; save = line surgery → the lint-gated
-// PUT; the board's inherited ceilings re-derive after.
-//
-// opts.budget (Settings › Agents › Budget): the default ceiling is level one,
-// prices + casts fold behind a collapsed "advanced" section (progressive
-// disclosure level two, never level one).
-async function renderChargebookPane(pane, opts) {
-  opts = opts || {};
-  if (!opts.budget) pane.append(el("div", "pp-section-head", "CHARGEBOOK"));
+// PUT; the board's inherited ceilings re-derive after. The default ceiling is
+// level one; prices + casts fold behind a collapsed "advanced" section
+// (progressive disclosure level two, never level one).
+async function renderChargebookPane(pane) {
   let raw = "";
   try { raw = (await (await fetch("/api/spirits/file?path=" + encodeURIComponent("chargebook.md"))).json()).content || ""; }
   catch (e) { pane.append(emptyRow("chargebook.md unavailable")); return; }
@@ -813,7 +693,7 @@ async function renderChargebookPane(pane, opts) {
     .map((m) => ({ key: m[1], val: m[2].trim() }));
   const open = {};
   keys.forEach((k) => { open[k.key] = k.val; });
-  const rerender = () => (opts.budget ? renderSettings() : renderSpiritSettings());
+  const rerender = () => renderSettings();
 
   const lint = el("div", "editor-lint");
   lint.hidden = true;
@@ -863,20 +743,17 @@ async function renderChargebookPane(pane, opts) {
   if (def) {
     section(pane, "the ceiling every keyless ritual inherits (USD)");
     grid.append(rowFor(def, "default_run_ceiling_usd"));
-  } else if (opts.budget) {
+  } else {
     grid.append(emptyRow("chargebook.md has no default_run_ceiling_usd"));
   }
   pane.append(grid);
 
-  // prices + casts: level one on the parked chip page, level two here
-  let advGrid = grid;
-  if (opts.budget) {
-    const body = collapsibleSection(pane, "advanced — model prices & cast costs",
-      prices.length + " price" + (prices.length === 1 ? "" : "s") + " · " + casts.length + " cast" + (casts.length === 1 ? "" : "s"), false);
-    advGrid = el("div", "cb-grid");
-    body.append(advGrid);
-    body.append(el("div", "portal-note", "File: chargebook.md — prices in $/mtok, casts in base $ per call"));
-  }
+  // prices + casts: level two, behind the disclosure
+  const body = collapsibleSection(pane, "advanced — model prices & cast costs",
+    prices.length + " price" + (prices.length === 1 ? "" : "s") + " · " + casts.length + " cast" + (casts.length === 1 ? "" : "s"), false);
+  const advGrid = el("div", "cb-grid");
+  body.append(advGrid);
+  body.append(el("div", "portal-note", "File: chargebook.md — prices in $/mtok, casts in base $ per call"));
   if (prices.length) {
     advGrid.append(el("div", "cb-group", "PRICES — $/mtok"));
     prices.forEach((k) => advGrid.append(rowFor(k)));
@@ -884,11 +761,6 @@ async function renderChargebookPane(pane, opts) {
   if (casts.length) {
     advGrid.append(el("div", "cb-group", "CASTS — base $ per call"));
     casts.forEach((k) => advGrid.append(rowFor(k)));
-  }
-  if (!opts.budget) {
-    const rawB = el("button", "sprt-quiet", "⌘/ edit raw");
-    rawB.onclick = () => openEditor(["chargebook.md"]);
-    pane.append(rawB);
   }
   bar.refresh();
 }
@@ -1048,7 +920,7 @@ async function portalAction(url, wrap) {
   try {
     const row = await postJSON(url, {});
     if (!wrap) {
-      const host = document.getElementById("settingsConnList") || document.getElementById("portalList");
+      const host = document.getElementById("settingsConnList");
       wrap = host && host.querySelector(`[data-portal-id="${CSS.escape(row.id)}"]`)?.closest(".portal-wrap");
     }
     replaceRow(wrap, row);

@@ -1,13 +1,15 @@
-// ================= Agents · the spirit page =================
-// Split from 40-spirits.js + 58-rituals.js (phase 0): the spirit index strip
-// over the board, the spirit page (identity + cornerstone), and the raw
-// markdown drawer (⌘/ raw — rituals / identity / cornerstone / chargebook).
-// (renderRitualEditor — the structured editor — lives in 41-agents-schedule.js)
+// ================= Agents · the agent page =================
+// Split from 40-spirits.js + 58-rituals.js (phase 0): the agent index strip
+// over the board, the spirit page (identity + cornerstone), the profile page,
+// and the raw markdown drawer (⌘/ raw — rituals / identity / cornerstone /
+// chargebook). (renderRitualEditor — the structured editor — lives in
+// 41-agents-schedule.js; the new-agent wizard in 44-agents-new.js.)
 
-// The spirit index strip over the SCHEDULE board: one quiet row per spirit
-// (name · N rituals — count derived from the board rows), click → the spirit
-// page. `＋ spirit` lives on the Settings › Agents card (agents plan §4.3: the
-// board stays a schedule); `＋ ritual` on the spirit page.
+// The agent index strip over the SCHEDULE board: one quiet row per agent
+// (name · N rituals — count derived from the board rows), click → the agent
+// page. `＋ agent` (the wizard) lives in the Agents header and on the
+// Settings › Agents card (agents plan §4.3: the board stays a schedule);
+// `＋ ritual` on the spirit page.
 function renderSpiritIndex() {
   const host = document.getElementById("spiritIndex");
   if (!host) return;
@@ -107,7 +109,7 @@ async function renderSpiritPage(name) {
     // non-primary-harness spirit (or missing files): read-only stance —
     // writes are primary-only by the federation contract
     host.append(el("div", "sprt-head")).append(el("span", "sprt-title", name));
-    host.append(emptyRow("This spirit's files aren't editable from here (non-primary harness or missing records)."));
+    host.append(emptyRow("This agent's files aren't editable from here (non-primary harness or missing records)."));
     return;
   }
   const idRec = splitFM(idF.content || "");
@@ -295,7 +297,7 @@ function paintSpiritPage(host) {
   const rawB = el("button", "sprt-quiet", "⌘/ raw");
   rawB.onclick = () => openSpiritEditor(name);
   const nRits = (spPg.rits || []).length;
-  const del = armedDelete("delete spirit",
+  const del = armedDelete("delete agent",
     "deletes " + nRits + " ritual" + (nRits === 1 ? "" : "s") + " + memories — confirm?",
     async () => {
       try {
@@ -395,8 +397,8 @@ function paintSpiritPage(host) {
     capBox.append(row3);
     // LIVE fail-closed warnings (the lint's own words — spec §4)
     const warn = el("div", "sp-cap-warnings");
-    if (!corner.spellbooks.length) warn.append(el("div", "sp-warn", "no spellbooks — this spirit can run but read nothing."));
-    if (!corner.writable.length) warn.append(el("div", "sp-warn", "writable is empty — this spirit can write nothing (fails closed)."));
+    if (!corner.spellbooks.length) warn.append(el("div", "sp-warn", "no spellbooks — this agent can run but read nothing."));
+    if (!corner.writable.length) warn.append(el("div", "sp-warn", "writable is empty — this agent can write nothing (fails closed)."));
     corner.writable.filter(widened).forEach((w) =>
       warn.append(el("div", "sp-warn ink", "writable includes " + w + " — outside artifacts/ and questbook/; the warden's next audit reviews this widening.")));
     if (warn.children.length) capBox.append(warn);
@@ -557,9 +559,10 @@ function closeEditor() {
 }
 
 // ＋ ritual mirrors ScaffoldRitual (on demand · chargebook-default ceiling ·
-// 12 steps) and lands in the structured editor; ＋ spirit mirrors
-// ScaffoldSpirit (claude-sub · no spellbooks · writes artifacts/runs only)
-// and lands on the new spirit's page (SPIRITS.md §4 Creating).
+// 12 steps) and lands in the structured editor. (＋ agent — a spirit WITH its
+// first ritual, or a Hermes profile — is the wizard in 44-agents-new.js; the
+// bare newSpirit() prompt it replaced is gone: an empty scaffold is no longer
+// a reachable outcome.)
 function newRitual(sp) {
   askText(`New ritual for ${sp}`, 'lowercase name, e.g. "weekly-review"', async (name) => {
     if (!name.trim()) return;
@@ -571,18 +574,6 @@ function newRitual(sp) {
     } catch (e) { showToast("Couldn't create ritual: " + (e.message || e), null, "error"); }
   });
 }
-function newSpirit() {
-  askText("New spirit", 'lowercase name, e.g. "news-scout"', async (name) => {
-    if (!name.trim()) return;
-    try {
-      const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
-      if (!r.ok) throw new Error(await r.text());
-      loadSpiritsStatus();
-      location.hash = "#/agents/" + encodeURIComponent(name.trim());
-    } catch (e) { showToast("Couldn't create spirit: " + (e.message || e), null, "error"); }
-  });
-}
-
 if (els.spiritEditorArea) els.spiritEditorArea.addEventListener("input", updateEditorDirty);
 if (els.spiritEditorSave) els.spiritEditorSave.addEventListener("click", saveEditor);
 if (els.spiritEditorClose) els.spiritEditorClose.addEventListener("click", closeEditor);

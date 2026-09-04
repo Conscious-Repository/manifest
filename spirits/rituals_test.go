@@ -3,6 +3,7 @@ package spirits
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -252,5 +253,95 @@ func TestDeleteRitualAndSpirit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "spirits", "scout")); err == nil {
 		t.Fatal("spirit tree survived")
+	}
+}
+
+// The wizard's order (Phase 6): a spirit arrives with its purpose, catalog-
+// checked spellbooks and a first ritual; a scheduled ritual with no
+// instructions is written paused; a refused order leaves no folder behind.
+func TestScaffoldSpiritWith(t *testing.T) {
+	root := t.TempDir()
+	st := NewStore(root)
+	mk := func(rel string) {
+		if err := osMkdirAllFile(root, rel); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("grimoire/spellbooks/web/SPELLBOOK.md")
+	mk("grimoire/spellbooks/feed/SPELLBOOK.md")
+	if err := os.WriteFile(filepath.Join(root, "chargebook.md"), []byte("---\ndefault_run_ceiling_usd: 0.50\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read := func(rel string) string {
+		b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		return string(b)
+	}
+
+	// refused orders write nothing
+	for name, o := range map[string]SpiritScaffold{
+		"bad spellbook": {Name: "scout", Spellbooks: []string{"nope"}, Ritual: &RitualScaffold{Name: "daily"}},
+		"bad cadence":   {Name: "scout", Ritual: &RitualScaffold{Name: "daily", Cadence: "not cron"}},
+		"bad ritual":    {Name: "scout", Ritual: &RitualScaffold{Name: "Bad Name"}},
+		"bad name":      {Name: "Bad Name"},
+	} {
+		if _, err := st.ScaffoldSpiritWith(o); err == nil {
+			t.Fatalf("%s: accepted", name)
+		}
+		if _, err := os.Stat(filepath.Join(root, "spirits", "scout")); err == nil {
+			t.Fatalf("%s: half-made folder left behind", name)
+		}
+	}
+
+	// a scheduled ritual with no instructions lands paused
+	rel, err := st.ScaffoldSpiritWith(SpiritScaffold{
+		Name: "scout", Purpose: "watches the trade press", Spellbooks: []string{"web", "feed", "web"},
+		Ritual: &RitualScaffold{Name: "morning-scan", Cadence: "0 7 * * 1-5"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel != "spirits/scout/rituals/morning-scan.md" {
+		t.Fatalf("ritual path = %q", rel)
+	}
+	rit := read(rel)
+	for _, want := range []string{"ritual: morning-scan\n", "cadence: 0 7 * * 1-5\n", "enabled: false\n", "charge_usd: 0.50\n", ritualPlaceholder} {
+		if !strings.Contains(rit, want) {
+			t.Fatalf("ritual missing %q:\n%s", want, rit)
+		}
+	}
+	id := read("spirits/scout/identity.md")
+	if !strings.Contains(id, "available_spellbooks: [web, feed]\n") || !strings.Contains(id, "watches the trade press") {
+		t.Fatalf("identity:\n%s", id)
+	}
+	corner := read("spirits/scout/cornerstone.md")
+	if !strings.Contains(corner, "available_spellbooks: [web, feed]\n") || strings.Contains(corner, "fails closed") {
+		t.Fatalf("cornerstone:\n%s", corner)
+	}
+	rows := st.Rituals(time.Now())
+	if len(rows) != 1 || rows[0].Spirit != "scout" || rows[0].Ritual != "morning-scan" || rows[0].Enabled || !rows[0].Valid {
+		t.Fatalf("board rows = %+v", rows)
+	}
+
+	// instructions + on demand: enabled, no cadence key, the text is the body
+	rel, err = st.ScaffoldSpiritWith(SpiritScaffold{Name: "helper", Ritual: &RitualScaffold{Name: "ask", Instructions: "Answer the request."}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rit = read(rel)
+	if strings.Contains(rit, "cadence:") || strings.Contains(rit, "enabled:") || !strings.HasSuffix(rit, "# ask\n\nAnswer the request.\n") {
+		t.Fatalf("on-demand ritual:\n%s", rit)
+	}
+	if strings.Contains(read("spirits/helper/cornerstone.md"), "widen") == false {
+		t.Fatal("no-spellbook cornerstone should carry the fail-closed note")
+	}
+	// the bare form still works and orders no ritual
+	if rel, err := st.ScaffoldSpiritWith(SpiritScaffold{Name: "bare"}); err != nil || rel != "" {
+		t.Fatalf("bare = %q, %v", rel, err)
+	}
+	if err := st.ScaffoldSpirit("bare"); err == nil {
+		t.Fatal("duplicate accepted")
 	}
 }

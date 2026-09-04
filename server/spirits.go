@@ -649,18 +649,33 @@ func (s *Server) handleSpiritsNewSpirit(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "spirits disabled", http.StatusServiceUnavailable)
 		return
 	}
+	// The "new agent" wizard's order (Phase 6): purpose + spellbooks + a
+	// first ritual ride along so a spirit never lands as an empty folder.
+	// A bare {name} still works (the old quick-create contract).
 	var b struct {
-		Name string `json:"name"`
+		Name       string   `json:"name"`
+		Purpose    string   `json:"purpose"`
+		Spellbooks []string `json:"spellbooks"`
+		Ritual     *struct {
+			Name         string `json:"name"`
+			Cadence      string `json:"cadence"`
+			Instructions string `json:"instructions"`
+		} `json:"ritual"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
-	if err := s.spirits.ScaffoldSpirit(b.Name); err != nil {
+	order := spirits.SpiritScaffold{Name: b.Name, Purpose: b.Purpose, Spellbooks: b.Spellbooks}
+	if b.Ritual != nil {
+		order.Ritual = &spirits.RitualScaffold{Name: b.Ritual.Name, Cadence: b.Ritual.Cadence, Instructions: b.Ritual.Instructions}
+	}
+	ritualPath, err := s.spirits.ScaffoldSpiritWith(order)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, map[string]any{"path": "spirits/" + b.Name + "/cornerstone.md"})
+	writeJSON(w, map[string]any{"path": "spirits/" + b.Name + "/cornerstone.md", "ritualPath": ritualPath})
 }
 
 func (s *Server) handleSpiritsRunNow(w http.ResponseWriter, r *http.Request) {

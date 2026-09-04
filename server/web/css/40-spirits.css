@@ -138,9 +138,6 @@
 .harness-chip { font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); white-space: nowrap; }
 
 /* ---- SPIRITS.md §1: chips hierarchy · spirit index · settings pane ---- */
-/* settings-chip degraded badge — damage reported without portals taking a slot */
-.sp-badge { margin-left: var(--sp-3); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); font-weight: 500; }
-
 /* the spirit index strip over the SCHEDULE board */
 .spirit-index { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; margin: var(--sp-1) 0 var(--sp-6); }
 .spirit-index-item {
@@ -286,3 +283,25 @@
 /* the one-line degrade notes (D4): what the projection could not read */
 .sched-degraded, .runs-degraded { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); padding: var(--sp-1) var(--sp-4); }
 .harness-add { align-self: flex-start; margin-top: var(--sp-3); }
+
+/* ---- the "new agent" wizard (#/agents/new — agents plan §4.3, Phase 6) ---- */
+.wiz-steps { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: 0 0 var(--sp-6); }
+.wiz-steps .cadb-chip:disabled { cursor: default; opacity: 0.6; }
+.wiz-body { display: flex; flex-direction: column; gap: var(--sp-4); }
+.wiz-in { max-width: 420px; }
+.wiz-ta { min-height: 140px; }
+.wiz-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sp-5); }
+.wiz-option { text-align: left; background: transparent; border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-3); font-family: inherit; color: inherit; }
+.wiz-option:hover { border-color: var(--base-40); }
+.wiz-option.on { border-color: var(--accent); }
+.wiz-option-title { font-size: var(--fs-md); color: var(--base-100); font-weight: 500; }
+.wiz-option.on .wiz-option-title { color: var(--accent); }
+.wiz-option-text { font-family: var(--sans); font-size: var(--fs-sm); color: var(--base-50); line-height: 1.45; }
+.wiz-option-note { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-100); }
+.wiz-nav { display: flex; gap: var(--sp-4); align-items: center; margin-top: var(--sp-4); }
+.wiz-hint { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); text-align: right; }
+.wiz-summary { display: flex; flex-direction: column; }
+.wiz-sum-row { display: flex; gap: var(--sp-6); align-items: baseline; min-height: 30px; padding: var(--sp-1) 0; border-bottom: 1px solid var(--base-20); }
+.wiz-sum-key { font-size: var(--fs-2xs); color: var(--base-40); min-width: 110px; flex: none; }
+.wiz-sum-val { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); word-break: break-word; }
+.wiz-plain { font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100); font-weight: 500; padding-left: var(--sp-5); border-left: 2px solid var(--base-100); margin: var(--sp-3) 0; }

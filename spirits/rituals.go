@@ -225,56 +225,177 @@ func (s *Store) ScaffoldRitual(spirit, name string) (string, error) {
 	return filepath.ToSlash(filepath.Join("spirits", spirit, "rituals", name+".md")), nil
 }
 
+// identityTemplate: name · spellbook list · purpose line.
 const identityTemplate = `---
 name: %s
-available_spellbooks: []
+available_spellbooks: %s
 ---
 # %s
 
-TODO: describe what this spirit is and what it watches.
+%s
 `
 
+// cornerstoneTemplate: spellbook list · name · the fail-closed note (which
+// changes wording once spellbooks are actually granted).
 const cornerstoneTemplate = `---
 portal:: claude-sub
 writable: [artifacts/runs]
-available_spellbooks: []
+available_spellbooks: %s
 ---
 # Cornerstone — how %s behaves
 
-TODO: describe behavior. This spirit fails closed: with no spellbooks and only
-artifacts/runs writable, it can run but produce nothing until you deliberately
-widen ` + "`available_spellbooks`" + ` and ` + "`writable`" + ` above. The
-warden's next audit reviews any widening.
+%s
 `
 
+const cornerstoneClosedNote = `TODO: describe behavior. This spirit fails closed: with no spellbooks and only
+artifacts/runs writable, it can run but produce nothing until you deliberately
+widen ` + "`available_spellbooks`" + ` and ` + "`writable`" + ` above. The
+warden's next audit reviews any widening.`
+
+const cornerstoneOpenNote = `TODO: describe behavior. Only artifacts/runs is writable — widen ` + "`writable`" + `
+above deliberately when this spirit should publish somewhere else. The
+warden's next audit reviews any widening.`
+
+// ritualPlaceholder is the body a wizard-created ritual carries when no
+// instructions were typed: the ritual exists on the board but is created
+// PAUSED when it has a cadence, so an instruction-less file never fires.
+const ritualPlaceholder = "TODO: describe what this ritual should do.\n"
+
+// SpiritScaffold is the "new agent" wizard's order (agents plan §4.3, Phase
+// 6): a spirit is never created as an empty folder anymore — it arrives with
+// a purpose, its spellbooks, and a first ritual.
+type SpiritScaffold struct {
+	Name       string
+	Purpose    string   // one line → the identity body
+	Spellbooks []string // must exist in grimoire/spellbooks (the catalog)
+	Ritual     *RitualScaffold
+}
+
+// RitualScaffold is the first ritual of a wizard-created spirit.
+type RitualScaffold struct {
+	Name         string
+	Cadence      string // 5-field cron, or "" = on demand
+	Instructions string // the body; blank + a cadence ⇒ written `enabled: false`
+}
+
+func fmListYAML(list []string) string {
+	if len(list) == 0 {
+		return "[]"
+	}
+	return "[" + strings.Join(list, ", ") + "]"
+}
+
 // ScaffoldSpirit creates the standard tree for a new spirit with fail-closed
-// defaults (claude-sub portal, only artifacts/runs writable, no spellbooks).
+// defaults (claude-sub portal, only artifacts/runs writable, no spellbooks)
+// and no ritual — the bare form, kept for callers that wire the rest
+// themselves. The wizard goes through ScaffoldSpiritWith.
 func (s *Store) ScaffoldSpirit(name string) error {
+	_, err := s.ScaffoldSpiritWith(SpiritScaffold{Name: name})
+	return err
+}
+
+// ScaffoldSpiritWith creates the spirit tree AND its first ritual in one
+// order, validating everything before the first write so a refused order
+// leaves no half-made folder. Returns the ritual's repo-relative path ("" when
+// no ritual was ordered). Rules: spellbooks must be catalog names; the cadence
+// must parse as 5-field cron; a scheduled ritual with no instructions is
+// written paused (`enabled: false`) so a TODO never fires on a clock.
+func (s *Store) ScaffoldSpiritWith(o SpiritScaffold) (string, error) {
+	name := strings.TrimSpace(o.Name)
 	if !validSlug(name) {
-		return fmt.Errorf("name must be lowercase letters, digits, - or _")
+		return "", fmt.Errorf("name must be lowercase letters, digits, - or _")
 	}
 	sdir := filepath.Join(s.root, "spirits", name)
 	if _, err := os.Stat(sdir); err == nil {
-		return fmt.Errorf("spirit %q already exists", name)
+		return "", fmt.Errorf("spirit %q already exists", name)
+	}
+	catalog := s.Spellbooks()
+	var books []string
+	for _, b := range o.Spellbooks {
+		b = strings.TrimSpace(b)
+		if b == "" {
+			continue
+		}
+		found := false
+		for _, c := range catalog {
+			if c == b {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "", fmt.Errorf("spellbook %q is not in grimoire/spellbooks", b)
+		}
+		dup := false
+		for _, have := range books {
+			if have == b {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			books = append(books, b)
+		}
+	}
+	var ritualRel, ritualBody string
+	if o.Ritual != nil {
+		rn := strings.TrimSpace(o.Ritual.Name)
+		if !validSlug(rn) {
+			return "", fmt.Errorf("ritual name must be lowercase letters, digits, - or _")
+		}
+		cadence := strings.TrimSpace(o.Ritual.Cadence)
+		if cadence != "" {
+			if _, err := cron.ParseStandard(cadence); err != nil {
+				return "", fmt.Errorf("cadence %q is not a valid 5-field cron: %v", cadence, err)
+			}
+		}
+		instructions := strings.TrimSpace(o.Ritual.Instructions)
+		var fm strings.Builder
+		fm.WriteString("---\nritual: " + rn + "\n")
+		if cadence != "" {
+			fm.WriteString("cadence: " + cadence + "\n")
+			if instructions == "" {
+				fm.WriteString("enabled: false\n") // no instructions ⇒ never fires until someone writes them
+			}
+		}
+		fm.WriteString(fmt.Sprintf("charge_usd: %.2f\nmax_steps: 12\n---\n# %s\n\n", s.chargebookDefault(), rn))
+		if instructions == "" {
+			fm.WriteString(ritualPlaceholder)
+		} else {
+			fm.WriteString(instructions + "\n")
+		}
+		ritualBody = fm.String()
+		ritualRel = filepath.ToSlash(filepath.Join("spirits", name, "rituals", rn+".md"))
+	}
+	purpose := strings.TrimSpace(o.Purpose)
+	if purpose == "" {
+		purpose = "TODO: describe what this spirit is and what it watches."
+	}
+	cornerNote := cornerstoneClosedNote
+	if len(books) > 0 {
+		cornerNote = cornerstoneOpenNote
 	}
 	for _, d := range []string{"rituals", "memories/window", "memories/archive"} {
 		if err := os.MkdirAll(filepath.Join(sdir, d), 0o755); err != nil {
-			return err
+			return "", err
 		}
 	}
 	files := map[string]string{
-		"identity.md":               fmt.Sprintf(identityTemplate, name, name),
-		"cornerstone.md":            fmt.Sprintf(cornerstoneTemplate, name),
+		"identity.md":               fmt.Sprintf(identityTemplate, name, fmListYAML(books), name, purpose),
+		"cornerstone.md":            fmt.Sprintf(cornerstoneTemplate, fmListYAML(books), name, cornerNote),
 		"memories/long-term.md":     fmt.Sprintf("# long-term memory — %s\n", name),
 		"memories/window/.gitkeep":  "",
 		"memories/archive/.gitkeep": "",
 	}
+	if ritualRel != "" {
+		files["rituals/"+strings.TrimSpace(o.Ritual.Name)+".md"] = ritualBody
+	}
 	for rel, content := range files {
 		if err := os.WriteFile(filepath.Join(sdir, filepath.FromSlash(rel)), []byte(content), 0o644); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+	return ritualRel, nil
 }
 
 // --- lint (mirrors the engine's per-ritual validity) ---

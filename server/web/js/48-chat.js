@@ -113,7 +113,7 @@ async function renderChatLanding() {
 
   const spirits = (await chatSpiritList()).filter((s) => s.enabled);
   if (!spirits.length) {
-    host.append(emptyRow("No chattable spirits (add a chat.md)."));
+    host.append(emptyRow("No chattable agents (add a chat.md)."));
     return;
   }
   if (!spirits.some((s) => s.name === chatPendingSpirit)) {
@@ -648,7 +648,7 @@ cmdRegistry.register(async (q) => {
   }));
 });
 cmdRegistry.register(() => [{
-  id: "act:new-chat", name: "New chat with a spirit", hint: "chat · action",
+  id: "act:new-chat", name: "New chat with an agent", hint: "chat · action",
   keywords: "chat talk converse ask concierge",
   act: () => { closeCmdbar(); chatCompose("concierge", ""); },
 }]);
