@@ -1166,9 +1166,20 @@ function paintInspector(host) {
   }
   const head = el("div", "aion-insp-head");
   head.append(el("span", "aion-insp-label", "Candidate"));
+  const right = el("span", "rec-head-right");
+  // the one thing manifest cannot render is Ashby's application FORM — the
+  // profile link is deterministic from the candidate id, so it costs nothing
+  if (c.ashbyCandidateId) {
+    const a = linkEl("view in ashby →",
+      "https://app.ashbyhq.com/candidate-searches/new/right-side/candidates/" + encodeURIComponent(c.ashbyCandidateId));
+    a.className = "rec-linkish";
+    a.title = "the full Ashby profile — application form answers live there";
+    right.append(a);
+  }
   const x = el("button", "aion-insp-x", "✕");
   x.onclick = () => { recSel = null; if (recPaint) recPaint(); };
-  head.append(x);
+  right.append(x);
+  head.append(right);
   host.append(head);
 
   const patch = (set) => recPost("/api/aion/recruiting/candidate/update/" + c.id, set);
@@ -1238,13 +1249,17 @@ function paintInspector(host) {
     host.append(primary);
   }
 
+  // THE VETTING ORDER (owner ask 2026-09-04): what they submitted, then how
+  // they score, then everything else. The resume renders as an open section —
+  // it is the material the verdict above is actually made on, and a collapsed
+  // "not pulled" row was the clutter that hid it.
+  if (c.ashbyCandidateId || c.ashbyApplicationId) host.append(recSubmissionSection(c));
+
   // FIT — the working surface, always expanded; its head carries the gate
   // summary (the design's "FIT unscored — score to unblock a send" line)
   host.append(recFitSection(c, gate));
 
-  // folds — the applicant's own submission leads: on an inbound applicant it
-  // is the evidence the triage verdict above is actually made on
-  host.append(recFold("submission", recSubmissionMeta(c), () => recSubmissionBody(c)));
+  // folds
   host.append(recFold("details", recDetailsMeta(c), () => recDetailsBody(c, field, text)));
   host.append(recFold("evidence", (c.evidence || []).length
     ? String((c.evidence || []).length) : { text: "● none yet", alarm: true },
@@ -1383,22 +1398,27 @@ function recTriageBlock(c) {
   // writes the rejection there, so it says so and stays arm-then-confirm.
   const linked = !!c.ashbyApplicationId && recAshbyProbe && recAshbyProbe.configured;
   if (linked) {
+    // one row: the reason picker and the verdict beside it — two stacked
+    // full-width controls read as two separate decisions, and are not
+    const row2 = el("div", "rec-reject-row");
     const reasons = el("select", "pp-in rec-in rec-reject-reason");
     const none = el("option", "", "reject reason — choose"); none.value = ""; reasons.append(none);
     (recReasons || []).forEach((r) => {
       const o = el("option", "", r.text); o.value = r.id; reasons.append(o);
     });
     if (recReasons === null) recLoadReasons();
-    box.append(reasons);
-    const rej = el("button", "rec-quiet-btn", "archive & reject in ashby…");
+    row2.append(reasons);
+    const rej = el("button", "rec-quiet-btn", "reject…");
+    rej.title = "archive here AND write the rejection in Ashby";
     rej.onclick = () => {
       if (!reasons.value) { showToast("pick the reject reason first"); return; }
-      const armed = el("button", "rec-quiet-btn armed", "confirm — reject in ashby?");
+      const armed = el("button", "rec-quiet-btn armed", "confirm?");
       armed.onclick = () => recArchive(c, true, { rejectInAshby: true, archiveReasonId: reasons.value });
       rej.replaceWith(armed);
       armed.focus();
     };
-    box.append(rej);
+    row2.append(rej);
+    box.append(row2);
     // ⚠ mono meta, not body copy: a consequence note that renders at reading
     // size outweighs the buttons it qualifies (the .rec-foot class carries it)
     box.append(el("div", "rec-foot rec-archive-note",
@@ -1822,12 +1842,24 @@ async function recAshbyCall(url, body) {
 // record keeps the reference.
 let recAshbyDetail = {};  // candidate id → the live application detail
 let recResumeText = {};   // artifact hash → extracted text ("" = no text layer)
+let recAshbyPulling = {}; // candidate id → a pull ran (or is running) this session
 
-function recSubmissionMeta(c) {
-  const r = c.resume || {};
-  if (r.hash) return { text: r.name || "resume", alarm: false };
-  if (c.ashbyApplicationId || c.ashbyCandidateId) return { text: "not pulled", alarm: false };
-  return { text: "not linked", alarm: false };
+// recAutoPull fetches one candidate's submission by itself: clicking a linked
+// candidate to vet them IS the request for their material, so no second click
+// is asked for. Once per candidate per session; the stored artifact serves
+// every later open without touching Ashby.
+async function recAutoPull(c) {
+  if (recAshbyPulling[c.id]) return;
+  recAshbyPulling[c.id] = true;
+  try {
+    const out = await recAshbyCall("/api/aion/recruiting/ashby/detail/" + c.id, {});
+    recAshbyDetail[c.id] = out.detail || {};
+    if (out.resumeError) recAshbyDetail[c.id].resumeError = out.resumeError;
+    if (out.view) recCache = out.view;
+  } catch (e) {
+    recAshbyDetail[c.id] = { error: String(e.message || e) };
+  }
+  renderAion();
 }
 
 async function recLoadResumeText(hash) {
@@ -1839,36 +1871,33 @@ async function recLoadResumeText(hash) {
   if (recPaint) recPaint();
 }
 
-function recSubmissionBody(c) {
-  const box = el("div", "rec-submission");
-  if (!c.ashbyApplicationId && !c.ashbyCandidateId) {
-    box.append(emptyRow("linked Ashby applicants only — this record was never handed off"));
-    return box;
-  }
+function recSubmissionSection(c) {
+  const sec = el("section", "rec-insp-sec");
   const r = c.resume || {};
   const det = recAshbyDetail[c.id];
 
-  const pull = el("button", "rec-quiet-btn", r.hash ? "re-pull from ashby" : "pull resume & answers from ashby");
-  pull.title = "reads this application in full — the file and any structured answers";
-  pull.onclick = async () => {
-    pull.disabled = true;
-    pull.textContent = "pulling…";
-    try {
-      const out = await recAshbyCall("/api/aion/recruiting/ashby/detail/" + c.id, {});
-      recAshbyDetail[c.id] = out.detail || {};
-      if (out.view) recCache = out.view;
-      if (out.resumeError) showToast("resume: " + String(out.resumeError).slice(0, 120), null, "error");
-      else if (out.resume) showToast("pulled " + out.resume.name + (out.resume.hasText ? "" : " · no text layer"));
-      else showToast("no file on this application");
-      recInspOpen.submission = true;
-      renderAion();
-    } catch (e) {
-      showToast(String(e.message || e).slice(0, 140), null, "error");
-      pull.disabled = false;
-      pull.textContent = r.hash ? "re-pull from ashby" : "pull resume & answers from ashby";
-    }
-  };
-  box.append(pull);
+  const label = el("div", "aion-sec-label");
+  label.append(el("span", "aion-sec-title", "resume"));
+  if (det && (det.jobTitle || det.appliedAt)) {
+    label.append(el("span", "rec-fold-meta",
+      (det.jobTitle ? "→ " + det.jobTitle : "") + (det.appliedAt ? " · " + fmtWhen(det.appliedAt) : "")));
+  }
+  const re = el("button", "rec-linkish rec-repull", "↻");
+  re.title = "re-pull this application from Ashby";
+  re.onclick = () => { delete recAshbyDetail[c.id]; delete recAshbyPulling[c.id]; recAutoPull(c); };
+  label.append(re);
+  sec.append(label);
+
+  const box = el("div", "rec-submission");
+  sec.append(box);
+
+  if (!r.hash && !det) {
+    recAutoPull(c);
+    box.append(el("div", "rec-foot", "pulling from ashby…"));
+    return sec;
+  }
+  if (det && det.error) box.append(el("div", "rec-foot", "couldn't read ashby — " + det.error.slice(0, 120)));
+  if (det && det.resumeError) box.append(el("div", "rec-foot", "resume: " + String(det.resumeError).slice(0, 120)));
 
   if (r.hash) {
     const row = el("div", "rec-sub-file");
@@ -1885,6 +1914,8 @@ function recSubmissionBody(c) {
     else if (txt === null) box.append(el("div", "rec-foot", "reading…"));
     else if (txt) box.append(el("pre", "rec-resume-text", txt));
     else box.append(el("div", "rec-foot", "no text layer — a scanned PDF; open it to read"));
+  } else if (det && !det.error) {
+    box.append(el("div", "rec-foot", "no file on this application"));
   }
 
   const fields = (det && det.fields) || [];
@@ -1894,16 +1925,18 @@ function recSubmissionBody(c) {
     row.append(el("span", "rec-sub-fval", f.value || ""));
     box.append(row);
   });
-  // ⚠ an empty answers lane must not read as "this applicant answered nothing"
-  if (det && !fields.length) {
-    box.append(el("div", "rec-foot",
-      "no structured answers — Ashby's API exposes application-form responses only where they are mapped to custom fields"));
+  // ⚠ an empty answers lane must not read as "this applicant answered
+  // nothing" — the form answers live in Ashby, one link away
+  if (det && !det.error && !fields.length && c.ashbyCandidateId) {
+    const note = el("div", "rec-foot");
+    note.append(document.createTextNode("form answers aren't exposed by Ashby's API — "));
+    const a = linkEl("read them in ashby →",
+      "https://app.ashbyhq.com/candidate-searches/new/right-side/candidates/" + encodeURIComponent(c.ashbyCandidateId));
+    a.className = "rec-linkish";
+    note.append(a);
+    box.append(note);
   }
-  if (det && (det.jobTitle || det.appliedAt)) {
-    box.append(el("div", "rec-foot",
-      (det.jobTitle ? "applied to " + det.jobTitle : "") + (det.appliedAt ? " · " + fmtWhen(det.appliedAt) : "")));
-  }
-  return box;
+  return sec;
 }
 
 function recAshbyMeta(c) {

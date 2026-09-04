@@ -198,10 +198,19 @@ a.rec-seed-name:hover { text-decoration: underline; }
 }
 .rec-override-why { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
 
+/* head cluster: the ashby link rides beside the close button */
+.rec-head-right { display: inline-flex; align-items: baseline; gap: var(--sp-5); }
+
+/* the reject verdict is ONE row: reason picker + the button beside it */
+.rec-reject-row { display: flex; align-items: stretch; gap: var(--sp-3); margin-top: var(--sp-3); }
+.rec-reject-row .rec-reject-reason { flex: 1; min-width: 0; margin-top: 0; }
+.rec-reject-row .rec-quiet-btn { width: auto; flex: none; margin-top: 0; padding: var(--sp-3) var(--sp-5); }
+
 /* submission — the applicant's own file and answers. The resume renders as
    TEXT in the pane (a PDF viewer is a download, not a read), scrollable so a
    three-page CV cannot push the rest of the inspector off the screen. */
-.rec-submission { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rec-submission { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-2); }
+.rec-repull { margin-left: auto; padding: 0; }
 .rec-sub-file { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); }
 .rec-sub-name { flex: 1 1 100%; min-width: 0; font-size: var(--fs-sm); color: var(--base-100); overflow-wrap: anywhere; }
 .rec-resume-text {
