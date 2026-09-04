@@ -83,6 +83,20 @@ func (f *fakeAshby) ok(w http.ResponseWriter, results any, extra map[string]any)
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// invalidInput is Ashby's parameter-validation refusal, verbatim in shape:
+// HTTP 200, success:false, a bare code in `errors`, and the sentence that
+// actually names the offending field in errorInfo.message.
+func (f *fakeAshby) invalidInput(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": false,
+		"errors":  []string{"invalid_input"},
+		"errorInfo": map[string]any{
+			"code": "invalid_input", "message": msg, "requestId": "test-request",
+		},
+	})
+}
+
 func (f *fakeAshby) fail(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -152,9 +166,20 @@ func (f *fakeAshby) serve(w http.ResponseWriter, r *http.Request) {
 	case "application.create":
 		id := f.id("app")
 		app := map[string]any{"id": id, "status": "Active", "candidate": map[string]any{"id": str("candidateId")},
-			"job": map[string]any{"id": str("jobId")}, "currentInterviewStage": map[string]any{"id": "st_1", "title": "Application Review"}}
+			"job": map[string]any{"id": str("jobId")},
+			"currentInterviewStage": map[string]any{"id": "st_1", "title": "Application Review", "interviewPlanId": "plan_1"}}
 		f.apps[id] = app
 		f.ok(w, app, nil)
+	case "interviewStage.list":
+		if str("interviewPlanId") != "plan_1" {
+			f.fail(w, http.StatusNotFound, "no such interview plan")
+			return
+		}
+		f.ok(w, []map[string]any{
+			{"id": "st_1", "title": "Application Review", "type": "PreInterviewScreen", "interviewPlanId": "plan_1", "orderInInterviewPlan": 0},
+			{"id": "st_screen", "title": "Phone Screen", "type": "Active", "interviewPlanId": "plan_1", "orderInInterviewPlan": 1},
+			{"id": "st_archived", "title": "Archived", "type": "Archived", "interviewPlanId": "plan_1", "orderInInterviewPlan": 2},
+		}, map[string]any{"moreDataAvailable": false})
 	case "application.info":
 		app, ok := f.apps[str("applicationId")]
 		if !ok {
@@ -163,16 +188,29 @@ func (f *fakeAshby) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		f.ok(w, app, nil)
 	case "application.changeStage":
+		// ⚠ THE REAL CONTRACT (probed 2026-09-04). Ashby requires
+		// interviewStageId on EVERY changeStage — archiving is a move to the
+		// plan's Archived stage carrying a reason, not a verb of its own — and
+		// it refuses with HTTP 200 + errorInfo, not an HTTP error code. This
+		// fixture was looser than the API, which is exactly how an archive that
+		// could never work passed its test.
+		if str("interviewStageId") == "" {
+			f.invalidInput(w, "interviewStageId: Invalid input: expected string, received undefined")
+			return
+		}
 		app, ok := f.apps[str("applicationId")]
 		if !ok {
 			f.fail(w, http.StatusNotFound, "no such application")
 			return
 		}
+		title := "Phone Screen"
+		if str("interviewStageId") == "st_archived" {
+			title = "Archived"
+		}
+		app["currentInterviewStage"] = map[string]any{"id": str("interviewStageId"), "title": title, "interviewPlanId": "plan_1"}
 		if reason := str("archiveReasonId"); reason != "" {
 			app["status"] = "Archived"
 			app["archiveReason"] = map[string]any{"id": reason, "text": "Not a fit"}
-		} else {
-			app["currentInterviewStage"] = map[string]any{"id": str("interviewStageId"), "title": "Phone Screen"}
 		}
 		f.ok(w, app, nil)
 	case "source.list":
@@ -833,28 +871,57 @@ func TestAshbyChangeStageAdvanceAndArchive(t *testing.T) {
 	if app.Status != "Archived" || app.ArchiveReason != "Not a fit" {
 		t.Fatalf("archive: %+v", app)
 	}
+	// ⚠ AN ARCHIVE CARRIES BOTH IDS. The owner names only a reason; the sync
+	// resolves the archived stage of this application's own interview plan and
+	// sends the pair, because a reason alone is what Ashby refuses.
 	call, _ = h.fake.last("application.changeStage")
 	if call.Body["archiveReasonId"] != "reason_nofit" {
 		t.Fatalf("archive body: %v", call.Body)
 	}
-	if _, has := call.Body["interviewStageId"]; has {
-		t.Fatalf("stage id sent on an archive: %v", call.Body)
+	if call.Body["interviewStageId"] != "st_archived" {
+		t.Fatalf("archive did not move to the plan's archived stage: %v", call.Body)
+	}
+	if !h.fake.has("interviewStage.list") {
+		t.Fatal("the archived stage was guessed rather than read from the plan")
 	}
 	rec := h.record(t)
 	if !strings.Contains(rec, "ashby_stage: archived: Not a fit") || !strings.Contains(rec, "[detail:: archived: reason_nofit]") {
 		t.Fatalf("record:\n%s", rec)
 	}
-	// both-or-neither is refused locally
+	// a move with no stage named is refused locally, before the round trip
 	if _, err := h.fake.client().ChangeStage(context.Background(), AshbyStageChange{ApplicationID: "app_2"}); err == nil {
 		t.Fatal("changeStage with no move accepted")
 	}
-	if _, err := h.fake.client().ChangeStage(context.Background(), AshbyStageChange{ApplicationID: "app_2", InterviewStageID: "a", ArchiveReasonID: "b"}); err == nil {
-		t.Fatal("changeStage with both accepted")
+	if _, err := h.fake.client().ChangeStage(context.Background(), AshbyStageChange{ApplicationID: "app_2", ArchiveReasonID: "b"}); err == nil {
+		t.Fatal("changeStage with a reason but no stage accepted — that is the call Ashby refuses")
 	}
 	// a candidate never handed off has nothing to move
 	c2, _ := h.store.AddCandidate(QuickAdd{Text: "https://example.test/x", Name: "Nobody Yet"}, testNow)
 	if _, err := h.sync.ChangeStage(context.Background(), c2.ID, "st_1", "", "", testNow); err == nil || !strings.Contains(err.Error(), "no Ashby application") {
 		t.Fatalf("unlinked: %v", err)
+	}
+}
+
+// ⚠ A REFUSAL MUST ARRIVE WITH ITS REASON. Ashby answers a bad call with
+// HTTP 200, a bare code in `errors` ("invalid_input") and the sentence naming
+// the offending field in errorInfo.message. Reporting only the code is what
+// turned a one-line contract bug into an afternoon of guessing (2026-09-04).
+func TestAshbyErrorCarriesTheAPIsOwnMessage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":false,"errors":["invalid_input"],"errorInfo":{"code":"invalid_input","message":"interviewStageId: Invalid input: expected string, received undefined","requestId":"01M1"}}`))
+	}))
+	defer srv.Close()
+
+	_, err := NewAshby(srv.URL, testAshbyKey, srv.Client()).GetApplication(context.Background(), "app_1")
+	if err == nil {
+		t.Fatal("a failed call returned no error")
+	}
+	if !strings.Contains(err.Error(), "interviewStageId: Invalid input") {
+		t.Fatalf("the API's explanation was dropped: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid_input") {
+		t.Fatalf("the code was dropped: %v", err)
 	}
 }
 

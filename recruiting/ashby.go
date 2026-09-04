@@ -175,12 +175,20 @@ var ashbyProfileFields = []string{"name", "linkedin", "github", "website", "emai
 // errors. List endpoints add the cursor pair and, where supported, a
 // syncToken.
 type ashbyEnvelope struct {
-	Success           bool            `json:"success"`
-	Errors            []string        `json:"errors"`
-	Results           json.RawMessage `json:"results"`
-	MoreDataAvailable bool            `json:"moreDataAvailable"`
-	NextCursor        string          `json:"nextCursor"`
-	SyncToken         string          `json:"syncToken"`
+	Success bool            `json:"success"`
+	Errors  []string        `json:"errors"`
+	Results json.RawMessage `json:"results"`
+	// ErrorInfo is where Ashby puts the SENTENCE. `errors` carries only a
+	// code ("invalid_input"), which is what a failed archive showed the owner
+	// for a whole afternoon while the API had been saying exactly which field
+	// was missing (2026-09-04). A failure must arrive with its reason.
+	ErrorInfo struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"errorInfo"`
+	MoreDataAvailable bool   `json:"moreDataAvailable"`
+	NextCursor        string `json:"nextCursor"`
+	SyncToken         string `json:"syncToken"`
 }
 
 // AshbyKeyInfo is apiKey.info reduced to what the probe reports. The key
@@ -311,14 +319,18 @@ type AshbySource struct {
 // AshbyApplication is application.* reduced: the id, whose it is, and the
 // official stage — Ashby-authoritative, mirrored inbound only.
 type AshbyApplication struct {
-	ID            string `json:"id"`
-	CandidateID   string `json:"candidateId"`
-	JobID         string `json:"jobId"`
-	Status        string `json:"status"`
-	Stage         string `json:"stage,omitempty"`
-	StageID       string `json:"stageId,omitempty"`
-	ArchiveReason string `json:"archiveReason,omitempty"`
-	UpdatedAt     string `json:"updatedAt,omitempty"`
+	ID          string `json:"id"`
+	CandidateID string `json:"candidateId"`
+	JobID       string `json:"jobId"`
+	Status      string `json:"status"`
+	Stage       string `json:"stage,omitempty"`
+	StageID     string `json:"stageId,omitempty"`
+	// InterviewPlanID is the plan the current stage belongs to — the address
+	// of the Archived stage this application would move to (jobs may run
+	// different plans, so it is read per application, never cached globally).
+	InterviewPlanID string `json:"interviewPlanId,omitempty"`
+	ArchiveReason   string `json:"archiveReason,omitempty"`
+	UpdatedAt       string `json:"updatedAt,omitempty"`
 }
 
 func (a *AshbyApplication) UnmarshalJSON(b []byte) error {
@@ -333,8 +345,9 @@ func (a *AshbyApplication) UnmarshalJSON(b []byte) error {
 			ID string `json:"id"`
 		} `json:"job"`
 		CurrentInterviewStage struct {
-			ID    string `json:"id"`
-			Title string `json:"title"`
+			ID              string `json:"id"`
+			Title           string `json:"title"`
+			InterviewPlanID string `json:"interviewPlanId"`
 		} `json:"currentInterviewStage"`
 		ArchiveReason struct {
 			Text string `json:"text"`
@@ -346,6 +359,7 @@ func (a *AshbyApplication) UnmarshalJSON(b []byte) error {
 	a.ID, a.Status, a.UpdatedAt = raw.ID, raw.Status, raw.UpdatedAt
 	a.CandidateID, a.JobID = raw.Candidate.ID, raw.Job.ID
 	a.Stage, a.StageID = raw.CurrentInterviewStage.Title, raw.CurrentInterviewStage.ID
+	a.InterviewPlanID = raw.CurrentInterviewStage.InterviewPlanID
 	a.ArchiveReason = raw.ArchiveReason.Text
 	return nil
 }
@@ -450,9 +464,13 @@ func (c *Ashby) call(ctx context.Context, method string, params any) (*ashbyEnve
 		}
 	}
 	if resp.StatusCode != http.StatusOK || !env.Success {
-		errs := make([]string, 0, len(env.Errors))
+		errs := make([]string, 0, len(env.Errors)+1)
 		for _, e := range env.Errors {
 			errs = append(errs, c.redact(e))
+		}
+		// the code alone names nothing actionable — carry Ashby's own sentence
+		if msg := strings.TrimSpace(env.ErrorInfo.Message); msg != "" {
+			errs = append(errs, c.redact(msg))
 		}
 		return nil, &AshbyError{Method: method, Status: resp.StatusCode, Errors: errs}
 	}
@@ -698,24 +716,57 @@ func (c *Ashby) CreateNote(ctx context.Context, candidateID, note string) (strin
 	return out.ID, err
 }
 
-// AshbyStageChange is the application.changeStage body. Exactly one of the
-// two ids is the move: a stage id advances, an archive reason id archives.
+// AshbyStageChange is the application.changeStage body.
+//
+// ⚠ ARCHIVING IS A STAGE MOVE, NOT A SEPARATE VERB. There is no
+// application.archive / .reject / .changeStatus endpoint (probed 2026-09-04 —
+// all three answer "Not Found"). Ashby archives by moving the application to
+// the Archived-TYPE stage of its own interview plan and carrying the reason
+// alongside, so `interviewStageId` is required on EVERY call. Sending a
+// reason alone is what the API answered with
+// "interviewStageId: Invalid input: expected string, received undefined".
 type AshbyStageChange struct {
 	ApplicationID    string `json:"applicationId"`
-	InterviewStageID string `json:"interviewStageId,omitempty"`
+	InterviewStageID string `json:"interviewStageId"`
 	ArchiveReasonID  string `json:"archiveReasonId,omitempty"`
 }
 
-// ChangeStage is application.changeStage, including the archive-reason path.
+// ChangeStage is application.changeStage — an advance, or an archive when a
+// reason rides along with the plan's archived stage.
 func (c *Ashby) ChangeStage(ctx context.Context, in AshbyStageChange) (AshbyApplication, error) {
 	if strings.TrimSpace(in.ApplicationID) == "" {
 		return AshbyApplication{}, errf("ashby application.changeStage: applicationId is required")
 	}
-	if (in.InterviewStageID == "") == (in.ArchiveReasonID == "") {
-		return AshbyApplication{}, errf("ashby application.changeStage: exactly one of interviewStageId or archiveReasonId")
+	if strings.TrimSpace(in.InterviewStageID) == "" {
+		return AshbyApplication{}, errf("ashby application.changeStage: interviewStageId is required (archiving moves to the plan's archived stage)")
 	}
 	var out AshbyApplication
 	err := c.callInto(ctx, "application.changeStage", in, &out)
+	return out, err
+}
+
+// AshbyInterviewStage is one interviewStage.list row. Type is the closed
+// lifecycle class ("Lead", "PreInterviewScreen", "Active", "Offer",
+// "Archived", "Hired") — the ONLY stable way to find the archived stage,
+// since its title is whatever the org renamed it to.
+type AshbyInterviewStage struct {
+	ID              string `json:"id"`
+	Title           string `json:"title"`
+	Type            string `json:"type"`
+	InterviewPlanID string `json:"interviewPlanId,omitempty"`
+	Order           int    `json:"orderInInterviewPlan,omitempty"`
+}
+
+// AshbyArchivedStageType is the interview-stage type that means "archived".
+const AshbyArchivedStageType = "Archived"
+
+// ListInterviewStages is interviewStage.list for one interview plan.
+func (c *Ashby) ListInterviewStages(ctx context.Context, interviewPlanID string) ([]AshbyInterviewStage, error) {
+	if strings.TrimSpace(interviewPlanID) == "" {
+		return nil, errf("ashby interviewStage.list: interviewPlanId is required")
+	}
+	out, _, err := listAll[AshbyInterviewStage](ctx, c, "interviewStage.list",
+		map[string]any{"interviewPlanId": interviewPlanID}, "")
 	return out, err
 }
 
@@ -1531,6 +1582,16 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 	if appID == "" {
 		return AshbyApplication{}, errf("%s has no Ashby application to move", candidate)
 	}
+	// An archive with no stage named is the owner's "reject in ashby": resolve
+	// the archived stage of THIS application's own interview plan, because
+	// that — plus the reason — is how Ashby archives (see AshbyStageChange).
+	if interviewStageID == "" && archiveReasonID != "" {
+		stageID, err := a.archivedStageFor(ctx, appID)
+		if err != nil {
+			return AshbyApplication{}, err
+		}
+		interviewStageID = stageID
+	}
 	if _, err := a.client.ChangeStage(ctx, AshbyStageChange{ApplicationID: appID, InterviewStageID: interviewStageID, ArchiveReasonID: archiveReasonID}); err != nil {
 		return AshbyApplication{}, err
 	}
@@ -1553,6 +1614,30 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 	st := a.load()
 	st.Audit = append(st.Audit, line)
 	return app, a.save(st)
+}
+
+// archivedStageFor answers "where does archiving this application send it?" —
+// the Archived-TYPE stage of the interview plan the application is currently
+// running. Resolved per application and never guessed: a plan without one is
+// a refusal, not a fallback to some other plan's stage.
+func (a *AshbySync) archivedStageFor(ctx context.Context, appID string) (string, error) {
+	app, err := a.client.GetApplication(ctx, appID)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(app.InterviewPlanID) == "" {
+		return "", errf("ashby: application %s names no interview plan, so its archived stage cannot be found", appID)
+	}
+	stages, err := a.client.ListInterviewStages(ctx, app.InterviewPlanID)
+	if err != nil {
+		return "", err
+	}
+	for _, st := range stages {
+		if strings.EqualFold(strings.TrimSpace(st.Type), AshbyArchivedStageType) {
+			return st.ID, nil
+		}
+	}
+	return "", errf("ashby: interview plan %s has no archived stage — archive this one in Ashby", app.InterviewPlanID)
 }
 
 // ashbyStageOf is the official application state as the record's
