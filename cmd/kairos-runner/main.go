@@ -26,6 +26,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,8 +48,48 @@ type runner struct {
 	bin      string
 	args     []string // {reqfile} substitutes a temp file path; otherwise request rides stdin
 	model    string
+	probeURL string                   // OpenAI-compatible base; failures ask /v1/models and name model drift
 	timeout  time.Duration            // default ceiling
 	byRitual map[string]time.Duration // per-ritual overrides (see defaultRitualTimeouts)
+}
+
+// servedModel asks the inference box what it ACTUALLY serves. Both silent
+// delegate deaths (2026-08-31 GLM swap, 2026-09-04 vision-exp swap) traced
+// to the lab box swapping models while vllm kept accepting the stale name —
+// the report said the config's model and the truth had to be dug out by
+// hand. On failure the runner now names the drift itself.
+func servedModel(base string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(base, "/")+"/v1/models", nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&body) != nil || len(body.Data) == 0 {
+		return ""
+	}
+	return body.Data[0].ID
+}
+
+// nameDrift appends the served-vs-configured model mismatch to a failure.
+func (r *runner) nameDrift(err error) error {
+	if err == nil || r.probeURL == "" || r.model == "" {
+		return err
+	}
+	if served := servedModel(r.probeURL); served != "" && served != r.model {
+		return fmt.Errorf("%v — ⚠ the box serves model %q, config expects %q (silent model swap)", err, served, r.model)
+	}
+	return err
 }
 
 // defaultRitualTimeouts: the rituals do different KINDS of work, so one
@@ -78,12 +119,13 @@ func main() {
 	bin := flag.String("bin", "hermes", "hermes-agent binary")
 	argStr := flag.String("args", "", "space-separated args for the headless invocation; {request} = the request text as one argv element, {reqfile} = a temp file carrying it; neither → the request is piped on stdin")
 	model := flag.String("model", "", "informational model label stamped on run reports")
+	probe := flag.String("probe", "", "OpenAI-compatible base URL (e.g. http://192.168.87.11:8000) — on failure, /v1/models is asked and model drift is named in the report")
 	timeout := flag.Duration("timeout", 10*time.Minute, "default per-run ceiling")
 	ritualTimeout := flag.String("ritual-timeout", "", "per-ritual ceilings, e.g. \"delegate=45m,ask=5m\" (overrides the built-in defaults)")
 	poll := flag.Duration("poll", 3*time.Second, "spool poll interval")
 	flag.Parse()
 
-	r := &runner{root: *root, bin: *bin, model: *model, timeout: *timeout, byRitual: map[string]time.Duration{}}
+	r := &runner{root: *root, bin: *bin, model: *model, probeURL: *probe, timeout: *timeout, byRitual: map[string]time.Duration{}}
 	for _, pair := range strings.Split(*ritualTimeout, ",") {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
@@ -282,7 +324,7 @@ func (r *runner) invoke(ritual, request string) (string, error) {
 	} else if err != nil && errb.Len() > 0 {
 		err = fmt.Errorf("%v: %s", err, strings.TrimSpace(lastLines(errb.String(), 5)))
 	}
-	return strings.TrimSpace(out.String()), err
+	return strings.TrimSpace(out.String()), r.nameDrift(err)
 }
 
 // writeReport writes the contract run report. The request rides frontmatter
