@@ -187,7 +187,7 @@ async function castSubmit() {
   else if (!res.ok) { els.castbarArgHint.textContent = "spool failed — is the engine configured?"; return; }
   closeCastbar();
   // Jump to the runs board; the file-derived live poll picks it up (no watcher).
-  location.hash = "#/spirits/runs";
+  location.hash = "#/agents/runs";
   loadSpiritRuns();
   ensureLivePoll();
 }

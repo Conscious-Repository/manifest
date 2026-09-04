@@ -53,7 +53,8 @@ func (s *Server) consumeSiteRows() []panelRow {
 			row.LastCrossing = site.Added
 		}
 		if site.FromEnv {
-			row.Note = "from " + strings.ToUpper("MANIFEST_CONSUME_COOKIE") + " env"
+			row.Env = "MANIFEST_CONSUME_COOKIE_" + strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(site.Host))
+			row.Note = "from " + row.Env + " env"
 		}
 		if site.Expired {
 			row.State = "degraded"

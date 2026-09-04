@@ -105,10 +105,15 @@ const NAV_SECTIONS = [
   { label: "SIGNAL", items: [
     { key: "feed", label: "Feed", glyph: "≋", hash: "#/feed" }, // count = the inbox badge (feedNavBadge)
     { key: "terminal", label: "Terminal", glyph: "❯", hash: "#/terminal" },
-    { key: "spirits", label: "Spirits", glyph: "✦", hash: "#/spirits" },
     { key: "contacts", label: "Contacts", glyph: "◍", hash: "#/contacts" },
     { key: "calendar", label: "Calendar", glyph: "▦", hash: "#/calendar" },
     { key: "reading", label: "Reading", glyph: "▢", hash: "#/reading" },
+  ]},
+  // SYSTEM (agents plan §4.1, D2): the agent runtime + app-wide settings.
+  // Settings' count is the degraded-connection tally (`n ●`), never a row count.
+  { label: "SYSTEM", items: [
+    { key: "agents", label: "Agents", glyph: "✦", hash: "#/agents" },
+    { key: "settings", label: "Settings", glyph: "⚙", hash: "#/settings", counted: true },
   ]},
 ];
 
@@ -126,7 +131,8 @@ function sectionOf(h) {
   if (h.startsWith("#/artifact/")) return "artifact";
   if (h.startsWith("#/read/")) return "feed"; // the reader belongs to FEED in the rail
   const seg = h.replace(/^#\//, "").split("/")[0];
-  return ["goals","tasks","calendar","feed","chat","terminal","spirits","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  if (seg === "spirits") return "agents"; // legacy hash (redirected in route)
+  return ["goals","tasks","calendar","feed","chat","terminal","agents","settings","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -162,10 +168,11 @@ function setRailActive() {
   if (brand) brand.classList.toggle("brand-active", active === "chat");
 }
 
-function railSetCount(key, n) {
+function railSetCount(key, n, attn) {
   const r = railItems[key];
   if (!r || !r.counted) return;
-  r.count.textContent = n > 0 ? String(n) : "";
+  r.count.textContent = typeof n === "string" ? n : (n > 0 ? String(n) : "");
+  r.count.classList.toggle("attn", !!attn); // "n ●" problem tallies (Settings) read in ink
 }
 
 // Boot-time derivation of the Plan/Work rail counts. Each surface keeps them
@@ -195,6 +202,7 @@ async function refreshRailCounts() {
     railSetCount("aion", aionOpenCount());
   }
   if (typeof reOpenCount === "function") railSetCount("properties", reOpenCount());
+  if (typeof loadPortalsBadge === "function") loadPortalsBadge(); // Settings rail: degraded connections
 }
 
 // ---- in-app history: the crumb ‹ › drive these stacks, not window.history ----
@@ -289,6 +297,13 @@ function route() {
     _navInternal = true;
     try { history.replaceState(null, "", h); } catch (e) {}
   }
+  // D2: #/spirits* → #/agents* (the tab is AGENTS now; old links + feed
+  // actHrefs keep working). Same replaceState discipline as the todos move.
+  if (h === "#/spirits" || h.startsWith("#/spirits/")) {
+    h = "#/agents" + h.slice("#/spirits".length);
+    _navInternal = true;
+    try { history.replaceState(null, "", h); } catch (e) {}
+  }
   if (h !== _curHash) {
     if (_navInternal) _navInternal = false;
     else { uiHistory.push(_curHash); uiForward.length = 0; }
@@ -319,8 +334,9 @@ function route() {
     return;
   }
   const terminalTab = h === "#/terminal";
-  if (h === "#/spirits/approvals") { location.hash = "#/feed"; return; } // approvals live in FEED now
-  const sp = h === "#/spirits" || h.startsWith("#/spirits/");
+  if (h === "#/agents/approvals") { location.hash = "#/feed"; return; } // approvals live in FEED now
+  const sp = h === "#/agents" || h.startsWith("#/agents/");
+  const settings = h === "#/settings" || h.startsWith("#/settings/"); // app-wide settings: #/settings/<group>
   const contacts = h === "#/contacts" || h.startsWith("#/contacts/");
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const properties = h === "#/properties" || h.startsWith("#/properties/");
@@ -328,7 +344,7 @@ function route() {
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
   const read = h.startsWith("#/read/"); // one article, full page (CONSUME)
-  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read;
+  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !settings && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -337,6 +353,7 @@ function route() {
   if (els.chatView) els.chatView.hidden = !chat;
   if (els.terminalView) els.terminalView.hidden = !terminalTab;
   els.spiritsView.hidden = !sp;
+  if (els.settingsView) els.settingsView.hidden = !settings;
   els.contactsView.hidden = !contacts;
   els.readingView.hidden = !reading;
   els.propertiesView.hidden = !properties;
@@ -369,7 +386,8 @@ function route() {
   else if (fd) showFeed(); // manifest's one inbox
   else if (chat) showChat(h); // conversations with chattable spirits
   else if (terminalTab) showTerminal(); // the cockpit: terminal / files / activity
-  else if (sp) showSpirits(h); // spirits cockpit: rituals / runs / settings / spirit pages
+  else if (sp) showSpirits(h); // agents cockpit: rituals / runs / (legacy settings chip) / spirit pages
+  else if (settings) showSettings(h); // app-wide settings: connections / agents / hosts / display
   else if (contacts) showContacts(); // people layer: list / page
   else if (reading) loadReading(); // book shelf over the extrinsic zone
   else if (properties) showProperties(h); // real-estate cockpit: board / property page

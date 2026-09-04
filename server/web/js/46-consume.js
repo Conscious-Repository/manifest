@@ -380,8 +380,11 @@ function consumeAddRow() {
   row.append(input, list, pillLight("+ follow", add));
 
   if (!consumeSubs.xReady) {
-    row.append(el("div", "consume-hint micro-label",
-      "to follow an X account, add a bearer token in SPIRITS → Settings → Portals"));
+    const hint = el("div", "consume-hint micro-label", "to follow an X account, add a bearer token in ");
+    const a = el("a", "", "Settings › Connections");
+    a.href = "#/settings/connections";
+    hint.append(a);
+    row.append(hint);
   }
   return row;
 }
@@ -447,52 +450,23 @@ function consumeSignInRow(s) {
       showToast((res.ok ? "✓ " : "✗ ") + res.reason);
       await loadConsumeSubs(); renderConsume();
     }));
-    wrap.append(pillLight("sign out", async () => {
-      if (!(await consumePost(`/api/consume/sites/${encodeURIComponent(s.site)}/remove`))) return;
-      showToast("signed out of " + s.site);
-      await loadConsumeSubs(); renderConsume();
-    }));
+    // sign-out (clearing the cookie) lives with every other credential in
+    // Settings › Connections (agents plan §5)
+    const manage = el("a", "consume-signin-link", "manage →");
+    manage.href = "#/settings/connections/site/" + encodeURIComponent(s.site || "");
+    wrap.append(manage);
     return wrap;
   }
   const why = s.signInExpired
     ? "sign-in expired — paid posts are previews again"
     : "paid posts · sign in to read them here";
   wrap.append(el("span", "micro-label consume-signin-why", why));
-  wrap.append(pillLight(s.signInExpired ? "paste a fresh cookie" : "sign in", () => consumeSignIn(s, wrap)));
+  // the cookie is pasted in Settings › Connections; this inline link opens the
+  // add-site form there with the host prefilled
+  const go = el("a", "consume-signin-link", s.signInExpired ? "paste a fresh cookie → Settings" : "sign in → Settings");
+  go.href = "#/settings/connections/site/" + encodeURIComponent(s.site || "");
+  wrap.append(go);
   return wrap;
-}
-
-function consumeSignIn(s, wrap) {
-  if (wrap.querySelector(".consume-signin-form")) return;
-  const form = el("div", "consume-signin-form");
-  const input = inputEl("paste the substack.sid value");
-  input.className = "consume-signin-input";
-  input.type = "password"; // it is a live session, not a setting
-  // ⚠ DevTools shows NAME and VALUE in separate columns, so "copy substack.sid"
-  // reads as "copy the value" — which is what happened, and the malformed
-  // header failed silently. Say plainly that either form works.
-  form.append(el("div", "consume-hint micro-label",
-    "DevTools → Application → Cookies → " + (s.site || "the site") +
-    " → copy the VALUE of substack.sid and paste it here (name=value works too). " +
-    "It covers every publication on " + (s.site || "that domain") +
-    ", is stored outside your vault, and is never shared."));
-  const save = async () => {
-    const cookie = input.value.trim();
-    if (!cookie) return;
-    if (!(await consumePost("/api/consume/sites", { host: s.site, cookie }))) return;
-    input.value = "";
-    form.remove();
-    showToast("signed in to " + s.site + " — paid posts arrive on the next poll");
-    await consumePost(`/api/consume/subscriptions/${encodeURIComponent(s.id)}/poll`);
-    await loadConsumeSubs(); await loadConsume();
-  };
-  input.onkeydown = (e) => {
-    if (e.key === "Enter") { e.preventDefault(); save(); }
-    if (e.key === "Escape") { e.stopPropagation(); form.remove(); }
-  };
-  form.append(input, pillLight("save", save), pillLight("cancel", () => form.remove()));
-  wrap.append(form);
-  input.focus();
 }
 
 function consumeEditSub(s, row) {

@@ -44,7 +44,7 @@ func (e portalEmitter) Emit(now time.Time) ([]Signal, error) {
 		Entity:  st.Portal,
 		Label:   "portal degraded · " + st.Portal + " — tell RJ (don't restart the serving stack)",
 		Age:     age,
-		ActHref: "#/spirits",
+		ActHref: "#/agents",
 		Hash:    st.At.Format(time.RFC3339),
 	}}, nil
 }

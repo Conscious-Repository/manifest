@@ -436,6 +436,7 @@ func main() {
 	svc.UseGoals(server.NewGoalsAdapter(goalsStore, tasksStore, aionStore, reStore, orDefault(cfg.OwnerInitials, "BA")))
 	svc.UseEvents(calSource)
 	srv := server.New(svc, goalsStore, calClient)
+	srv.UseHosts(hostsInfo(cfg)) // Settings › Hosts & paths: the read-only config projection
 	// One geocoder instance serves every feature so the provider's global rate
 	// limit cannot be exceeded by contacts and properties independently.
 	srv.UseGeocoder(geocode.New(cfg.DataDir))

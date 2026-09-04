@@ -21,7 +21,7 @@ function renderSpiritIndex() {
     const b = el("button", "spirit-index-item");
     b.append(el("span", "spirit-index-name", name));
     b.append(el("span", "spirit-index-count", String(counts[name] || 0)));
-    b.onclick = () => { location.hash = "#/spirits/" + encodeURIComponent(name); };
+    b.onclick = () => { location.hash = "#/agents/" + encodeURIComponent(name); };
     host.append(b);
   });
   const add = el("button", "sprt-ghost", "＋ spirit");
@@ -114,7 +114,7 @@ function paintSpiritPage(host) {
           body: JSON.stringify({ name }) });
         if (!r.ok) throw new Error(await r.text());
         showToast("Deleted " + name + " — git history is the undo");
-        location.hash = "#/spirits";
+        location.hash = "#/agents";
       } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
     });
   acts.append(addR, rawB, del);
@@ -364,7 +364,7 @@ function newRitual(sp) {
       const r = await fetch("/api/spirits/ritual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit: sp, name: name.trim() }) });
       if (!r.ok) throw new Error(await r.text());
       await loadSpiritRituals();
-      location.hash = "#/spirits/ritual/" + encodeURIComponent(sp) + "/" + encodeURIComponent(name.trim());
+      location.hash = "#/agents/ritual/" + encodeURIComponent(sp) + "/" + encodeURIComponent(name.trim());
     } catch (e) { showToast("Couldn't create ritual: " + (e.message || e), null, "error"); }
   });
 }
@@ -375,7 +375,7 @@ function newSpirit() {
       const r = await fetch("/api/spirits/spirit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim() }) });
       if (!r.ok) throw new Error(await r.text());
       loadSpiritsStatus();
-      location.hash = "#/spirits/" + encodeURIComponent(name.trim());
+      location.hash = "#/agents/" + encodeURIComponent(name.trim());
     } catch (e) { showToast("Couldn't create spirit: " + (e.message || e), null, "error"); }
   });
 }

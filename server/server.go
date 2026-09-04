@@ -160,6 +160,9 @@ type Server struct {
 	// Nil is the unconfigured posture: the probe answers sendCapable:false
 	// and every send refuses (recruiting_outreach.go). Never a poller.
 	gmailSend *gmailsend.Client
+	// hosts is the read-only config.json projection behind Settings › Hosts
+	// & paths (settings.go). Nil until main.go wires it; paths only.
+	hosts *HostsInfo
 	// The source-run cache behind …/recruiting/sources (Phase 3a): dataDir
 	// state, never the vault. Routes mount only when BOTH stores are present.
 	recruitingRuns *recruiting.RunStore
@@ -658,6 +661,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/bankfeed/accounts/{id}", s.handleBankfeedLink)
 	mux.HandleFunc("POST /api/bankfeed/accounts/{id}/backfill", s.handleBankfeedBackfill)
 	mux.HandleFunc("POST /api/bankfeed/sync", s.handleBankfeedSync)
+
+	// SETTINGS — the app-wide tab (plan §4.2, Phase 1). Projections of files
+	// and process state; never a secret value (settings.go).
+	mux.HandleFunc("GET /api/settings/hosts", s.handleSettingsHosts)
+	mux.HandleFunc("GET /api/settings/connections", s.handleSettingsConnections)
+	mux.HandleFunc("POST /api/settings/gmail-send/connect/start", s.handleSettingsGmailSendStart)
+	mux.HandleFunc("POST /api/settings/gmail-send/connect/finish", s.handleSettingsGmailSendFinish)
+	mux.HandleFunc("POST /api/settings/gmail-send/disconnect", s.handleSettingsGmailSendDisconnect)
+	mux.HandleFunc("GET /api/agents/hermes", s.handleAgentsHermes) // the Alfred card (~/.hermes projection)
 
 	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
 	// Reads are the Board + property pages; the writes (create, quick-add log,

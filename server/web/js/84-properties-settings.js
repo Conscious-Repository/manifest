@@ -130,7 +130,6 @@ async function renderREsettings() {
   const items = [
     ["assumptions", "Assumptions", (reAssumptions().__keys || []).length, "system/realestate/assumptions.md"],
     ["entities", "Entities", ents.length, "system/realestate/entities.md"],
-    ["bankfeed", "Bank feed", null, "system/realestate/entities.md"],
     ["categories", "Categories", moneyCats.length, "system/realestate/categories.md"],
     ["people", "People", (_rePeopleCount == null ? 0 : _rePeopleCount), "system/realestate/people.md"],
     ["lenders", "Lenders", (entitiesCache.lenders || []).length, "system/realestate/entities.md"],
@@ -145,6 +144,12 @@ async function renderREsettings() {
     b.onclick = () => { reSettingsTab = key; renderREsettings(); };
     rail.append(b);
   });
+  // the bank feed lives in Settings › Connections now — the rail keeps a link
+  const bankLink = el("button", "aion-org-item");
+  bankLink.append(el("span", "", "Bank feed →"));
+  bankLink.title = "SimpleFIN bank feed — Settings › Connections";
+  bankLink.onclick = () => { location.hash = "#/settings/connections"; };
+  rail.append(bankLink);
   const fileBox = el("div", "aion-org-file");
   fileBox.append(el("div", "aion-org-label", "File"), el("div", "aion-org-path", rel));
   const rawBtn = el("button", "aion-org-raw", "⌘/ edit raw");
@@ -153,12 +158,11 @@ async function renderREsettings() {
   rail.append(fileBox);
 
   if (reSettingsTab === "assumptions") { renderAssumptionsPanel(pane); return; }
+  // Bank feed (SimpleFIN) moved to Settings › Connections (agents plan §5);
+  // a stale rail key from an old link lands there too.
   if (reSettingsTab === "bankfeed") {
-    pane.append(el("div", "pp-section-head", "BANK FEED — linked accounts sync into the $ tab daily"));
-    const feedBox = el("div", "set-bindings");
-    feedBox.id = "re-bankfeed";
-    pane.append(feedBox);
-    renderBankFeedPanel(feedBox, ents);
+    reSettingsTab = "assumptions";
+    location.hash = "#/settings/connections";
     return;
   }
   if (reSettingsTab === "categories") { await renderCategoriesPanel(pane); return; }
@@ -474,237 +478,6 @@ async function rePeoplePane(host) {
 
 }
 
-// ---- BANK FEED panel — claim once, then link each bridge account to the
-// entity that owns it. dataDir keeps the machine linkage; the entity record's
-// accounts row flips not-connected → live through the normal entity save.
-async function renderBankFeedPanel(box, ents) {
-  box.innerHTML = "";
-  box.append(el("div", "pp-empty", "loading…"));
-  let d = null;
-  try { d = await (await fetch("/api/bankfeed/accounts")).json(); } catch (e) {}
-  box.innerHTML = "";
-  if (!d) { box.append(el("div", "pp-empty", "Bank feed unavailable.")); return; }
-
-  // saveEntityAccountState upserts the label row on the entity record (the
-  // user-action vault write that makes the binding owner-visible).
-  const saveAcctState = async (entitySlug, label, state) => {
-    const ent = ents.find((x) => x.slug === entitySlug);
-    if (!ent || !label) return;
-    const accs = (ent.accounts || []).map((a) => ({ ...a }));
-    const hit = accs.find((a) => a.label.toLowerCase() === label.toLowerCase());
-    if (hit) hit.state = state;
-    else accs.push({ label, kind: "operating", state });
-    await postJSONOk("/api/realestate/entities/" + encodeURIComponent(entitySlug) + "/save", { accounts: accs });
-    ent.accounts = accs;
-  };
-
-  if (!d.claimed) {
-    box.append(el("div", "aion-section-note",
-      "Link real bank accounts through SimpleFIN: create a bridge account, generate ONE setup token, and paste it here. " +
-      "The claim is one-time — it mints a read-only access URL stored on this box only. Transactions land in the $ tab with the entity pre-set."));
-    const row = el("div", "set-bind-row");
-    const inp = inputEl("SimpleFIN setup token…");
-    row.append(inp);
-    row.append(pillLight("claim", async () => {
-      const token = (inp.value || "").trim();
-      if (!token) { showToast("Paste the setup token first"); return; }
-      try {
-        await postJSONOk("/api/bankfeed/claim", { token });
-        showToast("Claimed — link each account to its entity below");
-        renderBankFeedPanel(box, ents);
-      } catch (err) { showToast("Claim failed — " + (err.message || "")); }
-    }));
-    box.append(row);
-    return;
-  }
-
-  const strip = el("div", "set-bind-row");
-  const nAcct = (d.accounts || []).length;
-  const nLinked = (d.accounts || []).filter((a) => a.link).length;
-  strip.append(el("span", "stmt-vendor",
-    nAcct + (nAcct === 1 ? " account" : " accounts") + " on the bridge · " + nLinked + " linked · daily sync"));
-  strip.append(pillLight("sync now", async () => {
-    try {
-      const r = await postJSONOk("/api/bankfeed/sync", {});
-      showToast("Synced — " + (r.added || 0) + " new row(s)" +
-        (r.autoApplied ? " · " + r.autoApplied + " reconciled" : "") +
-        ((r.added || 0) > 0 ? " → $ tab" : ""));
-      renderBankFeedPanel(box, ents);
-    } catch (err) { showToast("Sync failed — " + (err.message || "")); }
-  }));
-  box.append(strip);
-
-  if (!(d.accounts || []).length) {
-    box.append(el("div", "pp-empty", "The bridge reports no accounts yet — connect a bank on the SimpleFIN side, then sync."));
-    return;
-  }
-  if (!propertyCache || !propertyCache.length) await loadProperties();
-  const propSlugs = (propertyCache || []).map((p) => p.slug);
-
-  // banks mangle their own names (encoding replacement chars, duplicated
-  // last-fours) — display cleans, the link payload keeps the raw name
-  const cleanName = (s) => {
-    const t = (s || "").replace(/�/g, "").replace(/\s+/g, " ").trim();
-    // banks repeat the last-four: "EVERYDAY CHECKING …6631 (6631)" — drop the
-    // parenthetical only when its digits already appear in the name
-    return t.replace(/\s*\((\d{2,4})\)$/, (m, d) => (t.slice(0, t.length - m.length).includes(d) ? "" : m));
-  };
-  const fmtBal = (s) => {
-    const v = parseFloat(s);
-    if (!isFinite(v)) return "";
-    return (v < 0 ? "−$" : "$") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  };
-
-  // one account = one compact row; the entity-binding editor folds out
-  // behind the row's action so nine accounts read as a table, not nine forms
-  const acctRow = (a) => {
-    const link = a.link || null;
-    const wrap = el("div", "re-bank-acct");
-    const row = el("div", "re-bank-row");
-    const stack = el("div", "re-bank-stack");
-    stack.append(el("span", "re-bank-name", cleanName(a.name)));
-    const entName = link ? ((ents.find((x) => x.slug === link.entitySlug) || {}).name || link.entitySlug) : "";
-    if (link) stack.append(el("span", "re-bank-ent",
-      "→ " + entName + (link.defaultProperty ? " · " + link.defaultProperty : "")));
-    row.append(stack);
-    row.append(el("span", "re-bank-bal", fmtBal(a.balance)));
-    if (link && link.lastError) row.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
-    else if (link) row.append(el("span", "re-acct-state " + (link.enabled ? "st-live" : "st-not-connected"), link.enabled ? "live" : "paused"));
-    else row.append(el("span", "re-acct-state st-not-connected", "not linked"));
-
-    const buildEditor = () => {
-      const ed = el("div", "re-bank-ed");
-      let entitySlug = link ? link.entitySlug : "";
-      const ac = recordAutocomplete("entity", "owning entity…", (rec) => { entitySlug = rec.slug; });
-      if (link) ac.setValue(entName);
-      const labelIn = inputEl("bank + last four, e.g. Midwest ····4821");
-      labelIn.value = link ? link.accountLabel : cleanName(a.name);
-      const propSel = selectEl([""].concat(propSlugs));
-      if (link && link.defaultProperty) propSel.value = link.defaultProperty;
-      const field = (name, ctl, hint) => {
-        const f = el("div", "re-bank-field");
-        const l = el("span", "re-bank-flabel", name);
-        if (hint) { l.title = hint; ctl.title = hint; }
-        f.append(l, ctl);
-        return f;
-      };
-      ed.append(
-        field("owning entity", ac.el, "transactions file under this entity's books"),
-        field("account row", labelIn, "the row name on the entity record"),
-        field("default property", propSel, "prefills the assignment on new rows — never auto-applies by itself"),
-      );
-      const acts = el("div", "re-bank-acts");
-      acts.append(pillLight(link ? "save" : "link", async () => {
-        const label = (labelIn.value || "").trim();
-        if (!entitySlug) { showToast("Pick the owning entity first"); return; }
-        if (!label) { showToast("Name the account row (e.g. Midwest ····4821)"); return; }
-        try {
-          await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
-            entitySlug, accountLabel: label, defaultProperty: propSel.value,
-            enabled: true, orgName: a.org, accountName: a.name,
-          });
-          await saveAcctState(entitySlug, label, "live");
-          showToast("Linked — transactions land in the $ tab under " + entitySlug);
-          renderREsettings();
-        } catch (err) { showToast("Couldn't link — " + (err.message || "")); }
-      }));
-      if (link) {
-        acts.append(pillLight(link.enabled ? "pause" : "resume", async () => {
-          try {
-            await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), {
-              entitySlug: link.entitySlug, accountLabel: link.accountLabel,
-              defaultProperty: link.defaultProperty || "", enabled: !link.enabled,
-              orgName: a.org, accountName: a.name,
-            });
-            renderREsettings();
-          } catch (err) { showToast("Couldn't update"); }
-        }));
-        acts.append(pillLight("unlink", async () => {
-          try {
-            await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id), { entitySlug: "" });
-            await saveAcctState(link.entitySlug, link.accountLabel, "not-connected");
-            showToast("Unlinked");
-            renderREsettings();
-          } catch (err) { showToast("Couldn't unlink"); }
-        }));
-        // full-history backfill: everything the bridge holds for this account
-        // lands in the $ tab for hand categorization — never auto-applied
-        const bf = pillLight("pull full history", async () => {
-          bf.disabled = true;
-          bf.textContent = "pulling…";
-          try {
-            const r = await postJSONOk("/api/bankfeed/accounts/" + encodeURIComponent(a.id) + "/backfill", {});
-            showToast("History pulled — " + (r.added || 0) + " new row(s) of " + (r.fetched || 0) +
-              " fetched → $ tab (paged, 50/screen)");
-          } catch (err) { showToast("Backfill failed — " + (err.message || "")); }
-          renderREsettings();
-        });
-        acts.append(bf);
-      }
-      ed.append(acts);
-      return ed;
-    };
-
-    let ed = null;
-    const act = el("button", "re-acct-act", link ? "manage" : "link…");
-    act.onclick = () => {
-      if (!ed) { ed = buildEditor(); row.after(ed); act.textContent = "close"; return; }
-      const open = ed.style.display !== "none";
-      ed.style.display = open ? "none" : "";
-      act.textContent = open ? (link ? "manage" : "link…") : "close";
-    };
-    row.append(act);
-    wrap.append(row);
-
-    if (link && (link.lastSync || link.lastError)) {
-      const note = el("div", "re-bank-note" + (link.lastError ? " attn" : ""));
-      note.append(document.createTextNode(
-        (link.lastSync ? "last sync " + fmtWhen(link.lastSync) : "") +
-        (link.lastError ? (link.lastSync ? " · " : "") + link.lastError + " — " : "")));
-      if (link.lastError) {
-        const fix = document.createElement("a");
-        fix.href = "https://beta-bridge.simplefin.org/";
-        fix.target = "_blank";
-        fix.rel = "noopener";
-        fix.textContent = "re-authorize on the bridge →";
-        note.append(fix);
-      }
-      wrap.append(note);
-    }
-    return wrap;
-  };
-
-  // one card per institution (the registry convention: bordered card, name
-  // head, compact rows) — attention floats to the top, then linked banks
-  const groups = new Map();
-  (d.accounts || []).forEach((a) => {
-    const k = a.org || "Other";
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(a);
-  });
-  const attnIn = (as) => as.filter((x) => x.link && x.link.lastError).length;
-  const liveIn = (as) => as.filter((x) => x.link).length;
-  const cards = el("div", "re-bank-cards");
-  [...groups.entries()]
-    .sort((x, y) => (attnIn(y[1]) - attnIn(x[1])) || (liveIn(y[1]) - liveIn(x[1])) || x[0].localeCompare(y[0]))
-    .forEach(([org, accts]) => {
-      const card = el("div", "re-bank-card");
-      const head = el("div", "re-bank-head");
-      head.append(el("span", "wv-addr", org));
-      const linked = liveIn(accts);
-      // the row already chips a lone account — the head chip is a rollup
-      if (attnIn(accts) && accts.length > 1) head.append(el("span", "re-acct-state st-needs-reauth", "needs re-auth"));
-      head.append(el("span", "re-acct-rollup" + (attnIn(accts) ? " attn" : ""),
-        linked ? linked + " of " + accts.length + " linked" : "not linked"));
-      card.append(head);
-      accts
-        .sort((x, y) => ((y.link ? 1 : 0) - (x.link ? 1 : 0)) || cleanName(x.name).localeCompare(cleanName(y.name)))
-        .forEach((a) => card.append(acctRow(a)));
-      cards.append(card);
-    });
-  box.append(cards);
-}
-
 function entityCard(e, ents) {
   const card = el("div", "set-entity");
   const head = el("div", "set-entity-head");
@@ -741,8 +514,8 @@ function entityCard(e, ents) {
       row.append(el("span", "re-acct-kind", a.kind || "operating"));
       row.append(el("span", "re-acct-state st-" + (a.state || "not-connected"), (a.state || "not-connected").replace(/-/g, " ")));
       const act = el("button", "re-acct-act", a.state === "live" ? "manage" : a.state === "needs-reauth" ? "re-authorize" : "connect");
-      act.title = "link this row to a real bank account in the Bank feed registry (SimpleFIN)";
-      act.onclick = () => { reSettingsTab = "bankfeed"; renderREsettings(); };
+      act.title = "link this row to a real bank account — SimpleFIN bank feed in Settings › Connections";
+      act.onclick = () => { location.hash = "#/settings/connections"; };
       row.append(act);
       const x = el("button", "uw-x", "✕");
       x.onclick = async () => {

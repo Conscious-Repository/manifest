@@ -69,3 +69,20 @@
 .gmail-acct-add { margin-top: var(--sp-5); }
 .gmail-acct-paste { display: flex; flex-direction: column; gap: var(--sp-3); margin-top: var(--sp-4); }
 .gmail-acct-paste .portal-input { width: 100%; }
+
+/* ---- SETTINGS tab (app-wide, #/settings/<group>) — agents plan §4.2 ---- */
+.settings-view .aion-org { margin-top: var(--sp-4); }
+.rail-count.attn { color: var(--base-100); font-weight: 500; }
+.set-kv { display: flex; flex-direction: column; margin: var(--sp-3) 0 var(--sp-2); max-width: 820px; }
+.set-kv-row { display: grid; grid-template-columns: 200px 1fr; gap: var(--sp-6); align-items: baseline; min-height: 28px; border-bottom: 1px solid var(--base-20); padding: var(--sp-1) 0; }
+.set-kv-key { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); overflow-wrap: anywhere; }
+.set-kv-val { font-family: var(--mono); font-size: var(--fs-sm); color: var(--base-100); overflow-wrap: anywhere; display: inline-flex; flex-wrap: wrap; gap: var(--sp-3); align-items: baseline; }
+.set-kv-val.dim { color: var(--base-40); }
+.harness-spirit-model { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-70); }
+.harness-spirit .harness-engine { margin-left: auto; }
+.harness-line { display: flex; flex-wrap: wrap; gap: var(--sp-5); align-items: baseline; padding: var(--sp-1) 0; font-size: var(--fs-sm); color: var(--base-70); border-top: 1px solid var(--line-soft); }
+.harness-line .k { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 72px; }
+.harness-hint .pill { margin-left: var(--sp-3); }
+.portal-form.connect-flow, .portal-form.bank-accounts { display: block; }
+.portal-row.state-sealed .portal-state { color: var(--base-40); }
+.consume-signin-link { font-size: var(--fs-sm); color: var(--accent); }

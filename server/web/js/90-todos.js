@@ -364,7 +364,7 @@ function delegationChip(d, asSpan, taskId) {
     if (planState && taskId && typeof openTodoPanel === "function") { openTodoPanel(taskId); return; }
     if (d.state === "proposed") { location.hash = "#/feed"; return; }
     if (hasResult) { openResult(d); return; }
-    location.hash = "#/spirits";
+    location.hash = "#/agents";
   };
   return chip;
 }

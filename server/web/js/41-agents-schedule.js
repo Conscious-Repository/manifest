@@ -53,7 +53,7 @@ function ritualRow(r) {
   const name = el("span", "ritual-name");
   const sp = el("span", "sprt-spirit", r.spirit);
   sp.title = "Open " + r.spirit + "'s page";
-  sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/spirits/" + encodeURIComponent(r.spirit); };
+  sp.onclick = (e) => { e.stopPropagation(); location.hash = "#/agents/" + encodeURIComponent(r.spirit); };
   name.append(sp, document.createTextNode(" · " + r.ritual));
   row.append(name);
   // cadence — human phrase over the raw cron (both visible, prototype)
@@ -97,7 +97,7 @@ function ritualRow(r) {
   ceil.title = r.ceilingDefault ? "chargebook default" : "ritual charge_usd";
   row.append(ceil);
   if (!r.valid && r.error) row.append(el("div", "ritual-error", r.error));
-  row.onclick = () => { location.hash = "#/spirits/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
+  row.onclick = () => { location.hash = "#/agents/ritual/" + encodeURIComponent(r.spirit) + "/" + encodeURIComponent(r.ritual); };
   return row;
 }
 // relPhrase: "in 9h" / "in 3d" / "due now"
@@ -483,7 +483,7 @@ function paintRitualEditor(host) {
         body: JSON.stringify({ spirit: ritEd.spirit, name: ritEd.name }) });
       if (!r.ok) throw new Error(await r.text());
       showToast("Deleted " + ritEd.spirit + "/" + ritEd.name + " — git history is the undo");
-      location.hash = "#/spirits";
+      location.hash = "#/agents";
     } catch (e) { showToast("Couldn't delete: " + (e.message || e), null, "error"); }
   });
   acts.append(pause, run, rawT, del);
@@ -584,7 +584,7 @@ function paintRitualEditor(host) {
       cap.append(el("span", "rit-cap-sum",
         portal + " · " + count(sbRaw) + " spellbook" + (count(sbRaw) === 1 ? "" : "s") + " · writes " + (wrRaw.replace(/[\[\]]/g, "") || "nothing")));
       const link = el("a", "aion-open", "edit " + ritEd.spirit + " →");
-      link.href = "#/spirits/" + encodeURIComponent(ritEd.spirit);
+      link.href = "#/agents/" + encodeURIComponent(ritEd.spirit);
       cap.append(link);
     }).catch(() => { cap.textContent = ""; });
 

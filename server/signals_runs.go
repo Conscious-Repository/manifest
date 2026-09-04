@@ -212,7 +212,7 @@ func (e engineDownEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 			Entity:  h.Name,
 			Label:   "engine down · " + h.Name + " · " + strconv.Itoa(queued) + " queued",
 			Age:     age,
-			ActHref: "#/spirits",
+			ActHref: "#/agents",
 			Hash:    at.Format(time.RFC3339) + ":" + strconv.Itoa(queued),
 		})
 	}
@@ -266,7 +266,7 @@ func (e runFailEmitter) Emit(now time.Time) ([]signals.Signal, error) {
 				Entity:  key,
 				Label:   label,
 				Age:     int(now.Sub(started).Hours() / 24),
-				ActHref: "#/spirits",
+				ActHref: "#/agents",
 				Hash:    r.ID, // a NEW failure re-arms a dismissal
 			})
 		}

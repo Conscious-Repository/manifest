@@ -37,6 +37,14 @@ type panelRow struct {
 	Have         []string            `json:"have,omitempty"`         // keys currently set (names only)
 	Accounts     []string            `json:"accounts,omitempty"`     // oauth: connected identities
 	Engine       bool                `json:"engine,omitempty"`       // engine-managed apikey (heypocket): no manifest poll
+	// Env names the environment variable that currently supplies the
+	// credential (Settings › Connections renders the row read-only: "set via
+	// environment (VAR)"). Never the value.
+	Env string `json:"env,omitempty"`
+	// Extra carries kind-specific facts for the composed Settings rows
+	// (bankfeed counts, gmail-send posture, fundraising config) — display
+	// data only, never a credential.
+	Extra map[string]any `json:"extra,omitempty"`
 }
 
 func (s *Server) UsePortals(p *portals.Service) { s.portals = p }
@@ -45,6 +53,12 @@ func (s *Server) UsePortals(p *portals.Service) { s.portals = p }
 // the calendar row (from s.cal), and the discovered LLM rows (from the spirit
 // cornerstones).
 func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{"rows": s.portalRows()})
+}
+
+// portalRows is the composed list behind /api/portals; Settings ›
+// Connections composes over it again (settings.go) rather than re-deriving.
+func (s *Server) portalRows() []panelRow {
 	rows := []panelRow{}
 	if s.portals != nil {
 		for _, pr := range s.portals.Rows() {
@@ -59,7 +73,7 @@ func (s *Server) handlePortals(w http.ResponseWriter, r *http.Request) {
 	rows = append(rows, s.deepseekPortalRow()) // the testable lab conduit (Phase 5a)
 	rows = append(rows, s.llmPortalRows()...)
 	rows = append(rows, s.asidePortalRow())
-	writeJSON(w, map[string]any{"rows": rows})
+	return rows
 }
 
 // asidePortalRow surfaces the Aside browser as the first EFFECTOR portal

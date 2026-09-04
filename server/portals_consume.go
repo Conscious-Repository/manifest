@@ -60,6 +60,7 @@ func (s *Server) consumeXPortalRow() panelRow {
 	row.Masked = maskKey(token)
 	if strings.TrimSpace(os.Getenv(xTokenEnv)) != "" {
 		row.Note = "token from " + xTokenEnv
+		row.Env = xTokenEnv
 	}
 
 	if s.consume == nil {

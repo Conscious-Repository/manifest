@@ -10,15 +10,15 @@ let spiritRuns = { data: [], queued: [] }; // last poll of /api/spirits/runs —
 let openRunId = null;                       // which run's report detail is expanded (for live body refresh)
 
 // SPIRITS.md §1: a top tab-bar over one body — ALL RITUALS · RUNS · SETTINGS —
-// and the spirit as the rail object: #/spirits/<name> is a spirit page,
-// #/spirits/ritual/<spirit>/<name> the ritual editor. Legacy tails fold in.
+// and the spirit as the rail object: #/agents/<name> is a spirit page,
+// #/agents/ritual/<spirit>/<name> the ritual editor. Legacy tails fold in.
 let spMode = "rituals"; // rituals | runs | settings | spirit | editor
 let spSpirit = "";      // the open spirit (spirit/editor modes)
 let spRitualPath = "";  // the open ritual file (editor mode)
 let spSettingsTab = "portals"; // settings inner-rail selection
 
 function showSpirits(h) {
-  const tail = h && h.startsWith("#/spirits/") ? decodeURIComponent(h.slice("#/spirits/".length)) : "";
+  const tail = h && h.startsWith("#/agents/") ? decodeURIComponent(h.slice("#/agents/".length)) : "";
   spSpirit = ""; spRitualPath = "";
   if (tail === "") spMode = "rituals";
   else if (tail === "runs") spMode = "runs";
@@ -26,7 +26,7 @@ function showSpirits(h) {
   else if (tail.startsWith("ritual/")) {
     const rest = tail.slice("ritual/".length);
     const i = rest.indexOf("/");
-    if (i <= 0) { location.hash = "#/spirits"; return; }
+    if (i <= 0) { location.hash = "#/agents"; return; }
     spMode = "editor";
     spSpirit = rest.slice(0, i);
     spRitualPath = "spirits/" + spSpirit + "/rituals/" + rest.slice(i + 1) + ".md";
@@ -72,6 +72,7 @@ function updateSettingsBadge() {
     badge.hidden = !degraded;
     badge.textContent = degraded ? degraded + " ●" : "";
   }
+  if (typeof railSetCount === "function") railSetCount("settings", degraded ? degraded + " ●" : "", !!degraded);
 }
 async function loadPortalsBadge() {
   try { spPortalRows = (await (await fetch("/api/portals")).json()).rows || []; } catch (e) { return; }
@@ -136,7 +137,7 @@ let liveIdleTicks = 0;      // consecutive polls with nothing active (grace befo
 let knownDigestIds = null;  // feed digest ids seen, for the digest-landed toast
 
 function pollScopeOpen() {
-  return location.hash.startsWith("#/spirits") || location.hash === "#/feed";
+  return location.hash.startsWith("#/agents") || location.hash === "#/feed";
 }
 function activeRuns() {
   const running = (spiritRuns.data || []).filter((r) => r.outcome === "running");
@@ -190,19 +191,19 @@ async function livePoll() {
         detail = " — " + (why.length > 110 ? why.slice(0, 110) + "…" : why);
       }
       showToast(`${r.spirit}/${r.ritual} — ${r.outcome}${detail}`,
-        () => { location.hash = "#/spirits"; setTimeout(() => openSpiritRun(r.id), 120); });
+        () => { location.hash = "#/agents"; setTimeout(() => openSpiritRun(r.id), 120); });
     }
     runOutcomes[r.id] = r.outcome;
   });
   liveBaselined = true;
 
   // re-render whatever is open, from files alone (ONE page now)
-  if (location.hash.startsWith("#/spirits")) renderSpiritRuns();
+  if (location.hash.startsWith("#/agents")) renderSpiritRuns();
   if (openRunId) refreshOpenRun(); // includes the finishing tick, so the report shows the terminal outcome
 
   if (anyFinished) {
     refreshFeedBadge();                               // nav-pill inbox count
-    if (location.hash.startsWith("#/spirits")) loadSpiritsStatus();
+    if (location.hash.startsWith("#/agents")) loadSpiritsStatus();
     // never repaint the feed out from under a field being typed in — the poll
     // fires whenever any agent run finishes (AION's list does the same)
     const typing = els.feedView && els.feedView.contains(document.activeElement) &&
@@ -273,13 +274,13 @@ async function feedDig(id) {
   if (r.status === 409) {
     const d = await r.json().catch(() => ({}));
     if (d.runtime) { showToast(`${d.spirit || "alfred"} is already digging this one`, null, "info"); return; }
-    showToast(`${d.spirit || "spirit"}/${d.ritual || "ritual"} is already running — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+    showToast(`${d.spirit || "spirit"}/${d.ritual || "ritual"} is already running — view`, () => { location.hash = "#/agents/runs"; }, "info");
     return;
   }
   if (!r.ok) { showToast("Dig failed: " + ((await r.text()) || r.status), null, "error"); return; }
   const d = await r.json().catch(() => ({}));
   if (d.runtime) showToast(`${d.spirit} is digging — the brief lands back in the inbox`, null, "info");
-  else showToast(`${d.spirit}/${d.ritual} queued — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+  else showToast(`${d.spirit}/${d.ritual} queued — view`, () => { location.hash = "#/agents/runs"; }, "info");
   ensureLivePoll(); // watch it land back in the inbox
 }
 async function feedAction(id, body) {
@@ -333,15 +334,15 @@ async function spiritSpool(spirit, ritual, request) {
   try { r = await fetch("/api/spirits/run-now", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ spirit, ritual, request: request || "" }) }); }
   catch (e) { showToast("Run request failed: " + (e.message || e), null, "error"); return; }
   if (r.status === 409) {
-    showToast(`${spirit}/${ritual} is already running — view`, () => { location.hash = "#/spirits/runs"; }, "info");
-    if (!onFeed) location.hash = "#/spirits/runs";
+    showToast(`${spirit}/${ritual} is already running — view`, () => { location.hash = "#/agents/runs"; }, "info");
+    if (!onFeed) location.hash = "#/agents/runs";
     return;
   }
   if (!r.ok) { showToast("Run request failed (" + r.status + ")", null, "error"); return; }
   if (onFeed) {
-    showToast(`${spirit}/${ritual} queued — view`, () => { location.hash = "#/spirits/runs"; }, "info");
+    showToast(`${spirit}/${ritual} queued — view`, () => { location.hash = "#/agents/runs"; }, "info");
   } else {
-    location.hash = "#/spirits/runs";
+    location.hash = "#/agents/runs";
     loadSpiritRuns(); // show the queued row immediately
   }
   ensureLivePoll();   // and watch it through to done

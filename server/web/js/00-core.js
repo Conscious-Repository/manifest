@@ -130,6 +130,7 @@ const els = {
   feedRunNowBtn: document.getElementById("feedRunNowBtn"),
   // spirits (excalibur harness) view
   spiritsView: document.getElementById("spiritsView"),
+  settingsView: document.getElementById("settingsView"),
   chatView: document.getElementById("chatView"),
   terminalView: document.getElementById("terminalView"),
   spiritsStatus: document.getElementById("spiritsStatus"),

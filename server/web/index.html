@@ -168,11 +168,11 @@
     </div>
     <div id="calConnect" class="cal-connect" hidden>
       <p>Connect a Google account (read-only) to see your events and auto-fill your schedule.</p>
-      <button id="calConnectBtn" class="pill">Connect Google Calendar</button>
+      <button id="calConnectBtn" class="pill">Connect in Settings →</button>
     </div>
     <div id="calAccounts" class="cal-accounts" hidden>
       <div id="calAccountRows"></div>
-      <button id="calAddAccount" class="pill add-account">+ Add Google account</button>
+      <button id="calAddAccount" class="pill add-account">Manage accounts in Settings →</button>
     </div>
     <div class="cal-weekdays">
       <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
@@ -212,7 +212,7 @@
   <!-- SPIRITS — mirrors AION/RE: a top tab-bar over one body (SPIRITS.md §1).
        ALL RITUALS (spirit index + board) · RUNS (global filterable log) ·
        SETTINGS (portals / chargebook / harnesses behind an inner rail). Spirit
-       pages route #/spirits/<name>; the ritual editor #/spirits/ritual/<s>/<r>. -->
+       pages route #/agents/<name>; the ritual editor #/agents/ritual/<s>/<r>. -->
   <!-- TERMINAL — the cockpit (cmd-ctr terminal-module parity): a rail of
        SESSIONS / NEW SESSION / HISTORY with an icon tab bar at its foot, and a
        stage that swaps Terminal (PTY over metis tmux) / Files (fleet browser,
@@ -261,12 +261,12 @@
   <section class="spirits-page" id="spiritsView" hidden>
     <span id="spiritsStatus" hidden></span><!-- status text feeds the crumb meta -->
     <div class="agent-head">
-      <span class="agent-title">SPIRITS</span>
+      <span class="agent-title">AGENTS</span>
       <div class="agent-actions">
         <nav class="view-tabs" id="spToggle">
-          <a class="view-tab on" data-mode="rituals" href="#/spirits">ALL RITUALS</a>
-          <a class="view-tab" data-mode="runs" href="#/spirits/runs">RUNS</a>
-          <a class="view-tab" data-mode="settings" href="#/spirits/settings">SETTINGS<span id="spSettingsBadge" class="sp-badge" hidden></span></a>
+          <a class="view-tab on" data-mode="rituals" href="#/agents">ALL RITUALS</a>
+          <a class="view-tab" data-mode="runs" href="#/agents/runs">RUNS</a>
+          <a class="view-tab" data-mode="settings" href="#/agents/settings">SETTINGS<span id="spSettingsBadge" class="sp-badge" hidden></span></a>
         </nav>
       </div>
     </div>
@@ -281,10 +281,10 @@
       <div id="spiritRitualBoard" class="ritual-board"></div>
     </div>
 
-    <!-- RITUAL EDITOR — #/spirits/ritual/<spirit>/<name> -->
+    <!-- RITUAL EDITOR — #/agents/ritual/<spirit>/<name> -->
     <div class="sprt-block" id="spEditorWrap" hidden></div>
 
-    <!-- SPIRIT PAGE — #/spirits/<name> -->
+    <!-- SPIRIT PAGE — #/agents/<name> -->
     <div class="sprt-block" id="spSpiritWrap" hidden></div>
 
     <!-- RUNS — the global log -->
@@ -314,6 +314,16 @@
       <textarea id="spiritEditorArea" class="editor-area" spellcheck="false"></textarea>
     </div>
 
+  </section>
+
+  <!-- SETTINGS — the app-wide tab (#/settings/<group>): Connections · Agents ·
+       Hosts & paths · Display behind the .aion-org inner rail (60-settings.js) -->
+  <section class="settings-view" id="settingsView" hidden>
+    <div class="agent-head">
+      <span class="agent-title">SETTINGS</span>
+      <div class="agent-actions"><span id="settingsMeta" class="panel-meta"></span></div>
+    </div>
+    <div class="sprt-block" id="settingsWrap"></div>
   </section>
 
   <!-- CONTACTS — the people layer over the vault index -->

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"manifest/server"
 )
 
 // Config controls where the vault is and how the schedule is laid out. It is
@@ -512,4 +514,40 @@ func expandHome(p string) string {
 		}
 	}
 	return p
+}
+
+// hostsInfo is the read-only projection of the loaded config that Settings ›
+// Hosts & paths renders (server.HostsInfo). Paths, ports, intervals and the
+// harness list — never a credential; TerminalDevice.Identity is a key path.
+func hostsInfo(cfg Config) server.HostsInfo {
+	var h server.HostsInfo
+	h.Vault.VaultPath, h.Vault.SystemRoot = cfg.VaultPath, cfg.SystemRoot
+	h.Vault.ExtrinsicRoot, h.Vault.NewDailyDir = cfg.ExtrinsicRoot, cfg.NewDailyDir
+	h.Data.DataDir = cfg.DataDir
+	h.Harnesses = []server.HostsHarness{}
+	if len(cfg.Harnesses) == 0 && cfg.ExcaliburPath != "" {
+		h.Harnesses = append(h.Harnesses, server.HostsHarness{Name: "excalibur", Path: cfg.ExcaliburPath})
+	}
+	for _, ref := range cfg.Harnesses {
+		h.Harnesses = append(h.Harnesses, server.HostsHarness{Name: ref.Name, Path: ref.Path, Surface: ref.Surface})
+	}
+	h.Files.Roots = append([]string{}, cfg.FilesRoots...)
+	h.Files.Agents = []server.HostsAgent{}
+	for _, a := range cfg.FilesAgents {
+		h.Files.Agents = append(h.Files.Agents, server.HostsAgent{Name: a.Name, URL: a.URL})
+	}
+	h.TerminalDevices = []server.HostsDevice{}
+	for _, d := range cfg.TerminalDevices {
+		h.TerminalDevices = append(h.TerminalDevices, server.HostsDevice{
+			Name: d.Name, Host: d.Host, User: d.User, Port: d.Port, Identity: d.Identity, Agent: d.Agent,
+		})
+	}
+	h.Listeners.Port, h.Listeners.PortalPort = cfg.Port, cfg.PortalPort
+	h.Listeners.OodaPort, h.Listeners.ConsumePublicPort = cfg.Ooda.Port, cfg.Consume.PublicPort
+	h.Consume.RSSIntervalMinutes, h.Consume.XIntervalMinutes = cfg.Consume.RSSIntervalMinutes, cfg.Consume.XIntervalMinutes
+	h.Consume.RSSHubBase = cfg.Consume.RSSHubBase
+	h.Hermes.Enabled, h.Hermes.Bin, h.Hermes.TimeoutSeconds = cfg.Hermes.Enabled, orDefault(cfg.Hermes.Bin, "hermes"), cfg.Hermes.TimeoutSeconds
+	h.Fundraising.Enabled, h.Fundraising.SpreadsheetID = cfg.FundraisingSheets.Enabled, cfg.FundraisingSheets.SpreadsheetID
+	h.Fundraising.CredentialsPath, h.Fundraising.SyncIntervalMinutes = cfg.FundraisingSheets.CredentialsPath, cfg.FundraisingSheets.SyncIntervalMinutes
+	return h
 }

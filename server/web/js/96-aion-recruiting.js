@@ -893,7 +893,6 @@ let recOutreachProbe = null;         // {configured, sendCapable, sender, detail
 let recOutreachLog = { id: null };   // the selected candidate's log: {id, entries, loading?, error?}
 let recOutreachReady = {};           // candidate id → last readiness (from prepare, or a refused send)
 let recOutreachForm = {};            // candidate id → {kind, via}
-let recOutreachConnect = null;       // paste-back in progress: {sender}
 
 async function recOutreachLoadProbe() {
   try {
@@ -1095,49 +1094,14 @@ function recOutreachSection(c) {
   return sec;
 }
 
-// The paste-back connect at gmail.send: the consent tab opens, the owner
-// pastes the address it lands on — the same route calendar and gmail take.
-// The probe the finish answers becomes the section's posture.
+// The sender connects in Settings › Connections (the one paste-back flow,
+// 60-settings.js); recruiting keeps this empty-state link only.
 function recOutreachConnectEl() {
   const box = el("div", "rec-next");
-  if (!recOutreachConnect) {
-    const b = el("button", "pill light", "connect gmail");
-    b.title = "sign in as the sender at gmail.send only; the token lives under dataDir, never the vault";
-    b.onclick = async () => {
-      try {
-        const out = await recOutreachCall("/api/aion/recruiting/outreach/connect", {});
-        window.open(out.url, "_blank", "noopener");
-        recOutreachConnect = { sender: out.sender };
-        showToast("approve in the Google tab, then paste the address it lands on", null, "info");
-        renderAion();
-      } catch (e) { showToast(String(e.message || e).slice(0, 140)); }
-    };
-    box.append(b);
-    return box;
-  }
-  const input = el("input", "pp-in rec-in");
-  input.type = "text";
-  input.placeholder = "paste the address the sign-in tab landed on";
-  const fin = el("button", "pill light", "finish connect");
-  fin.onclick = async () => {
-    if (fin.disabled) return;
-    fin.disabled = true;
-    fin.textContent = "connecting…";
-    try {
-      recOutreachProbe = await recOutreachCall("/api/aion/recruiting/outreach/connect/finish", { pasted: input.value });
-      recOutreachConnect = null;
-      showToast(recOutreachProbe.sendCapable ? "connected " + (recOutreachProbe.sender || "")
-        : recOutreachProbe.detail || "connected, but not send-capable", null, "info");
-      renderAion();
-    } catch (e) {
-      fin.disabled = false;
-      fin.textContent = "finish connect";
-      showToast(String(e.message || e).slice(0, 140));
-    }
-  };
-  const cancel = el("button", "pill light", "cancel");
-  cancel.onclick = () => { recOutreachConnect = null; renderAion(); };
-  box.append(input, fin, cancel);
+  const a = el("a", "", "connect the sender → Settings › Connections");
+  a.href = "#/settings/connections";
+  a.title = "sign in as the sender at gmail.send only; the token lives under dataDir, never the vault";
+  box.append(a);
   return box;
 }
 

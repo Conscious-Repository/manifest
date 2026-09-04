@@ -70,6 +70,7 @@ func (s *Server) heypocketPortalRow() panelRow {
 	row.Masked = maskKey(key)
 	if strings.TrimSpace(os.Getenv("POCKET_API_KEY")) != "" {
 		row.Note = "engine-synced (9a/6p) · key from POCKET_API_KEY env"
+		row.Env = "POCKET_API_KEY"
 	} else {
 		row.Note = "engine-synced (9a/6p) · key at ~/.config/excalibur/pocket_key"
 	}

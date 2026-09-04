@@ -60,12 +60,11 @@ function renderCalAccounts(accounts, hasCreds, statuses) {
   const has = accounts.length > 0;
   els.calAccounts.hidden = !has;
   els.calConnect.hidden = has;
-  document.getElementById("calPasteBack")?.remove();
   if (!has) {
     els.calConnectBtn.hidden = !hasCreds;
     els.calConnect.querySelector("p").textContent = hasCreds
-      ? "Connect a Google account (read-only) to see your events and auto-fill your schedule."
-      : "Add google_credentials.json to ~/.config/manifest/ to connect Google Calendar.";
+      ? "Connect a Google account (read-only) in Settings › Connections to see your events and auto-fill your schedule."
+      : "Add google_credentials.json to ~/.config/manifest/, then connect Google Calendar in Settings › Connections.";
     return;
   }
   const byEmail = {};
@@ -85,24 +84,21 @@ function renderCalAccounts(accounts, hasCreds, statuses) {
     if (st.needsReauth) {
       const warn = document.createElement("span");
       warn.className = "cal-account-warn";
-      warn.textContent = "sign-in expired — reconnect to restore your events";
+      warn.textContent = "sign-in expired — reconnect in Settings to restore your events";
       main.appendChild(warn);
     }
 
+    // connect / reconnect / disconnect live in Settings › Connections (agents
+    // plan §5); the calendar keeps the read-only list + this one link.
     const ctl = document.createElement("div");
     ctl.className = "cal-account-ctl";
     if (st.needsReauth) {
       const rc = document.createElement("button");
       rc.className = "cal-reconnect";
-      rc.textContent = "Reconnect";
-      rc.addEventListener("click", () => startCalConnect(rc));
+      rc.textContent = "Reconnect →";
+      rc.addEventListener("click", () => { location.hash = "#/settings/connections"; });
       ctl.appendChild(rc);
     }
-    const dc = document.createElement("button");
-    dc.className = "cal-disconnect";
-    dc.textContent = "Disconnect";
-    dc.addEventListener("click", () => disconnectAccount(email));
-    ctl.appendChild(dc);
 
     row.append(main, ctl);
     els.calAccountRows.appendChild(row);
@@ -118,23 +114,10 @@ function renderCalError(eventsError, statuses) {
   const anyReauth = (statuses || []).some((s) => s.needsReauth);
   if (!eventsError || anyReauth) return;
   const banner = el("div", "cal-err-banner",
-    "Couldn't load your events — your Google sign-in may have expired. Reconnect below to restore them.");
+    "Couldn't load your events — your Google sign-in may have expired. Reconnect in Settings › Connections to restore them.");
   banner.id = "calErrBanner";
   const host = els.calAccounts.hidden ? els.calConnect : els.calAccounts;
   host.prepend(banner);
-}
-
-async function disconnectAccount(email) {
-  setSaveState("saving");
-  try {
-    await fetch("/api/calendar/disconnect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ account: email }),
-    });
-    setSaveState("saved");
-  } catch (e) { setSaveState("error"); }
-  loadCalendar();
 }
 
 const MAX_PER_DAY = 4;
@@ -228,56 +211,10 @@ function shiftCalMonth(delta) {
   loadCalendar();
 }
 
-// Connect (or reconnect) a Google account via the PASTE-BACK flow. Manifest runs
-// headless on metis, so the old loopback listener never reaches the owner's
-// browser; instead we open Google's consent URL, the owner approves, and pastes
-// the resulting redirect address back. Safe to call repeatedly — Google shows
-// the account chooser so you can pick a different account each time.
-async function startCalConnect(anchor) {
-  if (anchor) anchor.disabled = true;
-  try {
-    const r = await postJSONOk("/api/calendar/connect/start", {});
-    window.open(r.authUrl, "_blank");
-    showCalPasteBack();
-    showToast("Approve in the Google tab, then paste the address it lands on", null, "info");
-  } catch (e) {
-    showToast("Couldn't start sign-in — " + (e.message || "error"));
-  }
-  if (anchor) anchor.disabled = false;
-}
-
-// showCalPasteBack renders step 2 of the flow (the paste box) into whichever
-// account container is currently visible, replacing any earlier one.
-function showCalPasteBack() {
-  document.getElementById("calPasteBack")?.remove();
-  const box = el("div", "cal-paste");
-  box.id = "calPasteBack";
-  box.append(el("div", "cal-paste-note",
-    "after approving, the tab lands on an unreachable 127.0.0.1 page — copy its FULL address and paste it here"));
-  const input = el("input", "cal-paste-input");
-  input.type = "text";
-  input.placeholder = "http://127.0.0.1:8123/oauth/callback?state=…&code=…";
-  input.spellcheck = false;
-  const fin = el("button", "cal-paste-finish", "finish connect");
-  fin.onclick = async () => {
-    fin.disabled = true; fin.textContent = "connecting…";
-    try {
-      const r = await postJSONOk("/api/calendar/connect/finish", { redirect: input.value });
-      showToast("Connected " + r.connected, null, "info");
-      loadCalendar();
-    } catch (e) {
-      fin.disabled = false; fin.textContent = "finish connect";
-      showToast("Connect failed — " + (e.message || "check the pasted URL").slice(0, 140));
-    }
-  };
-  box.append(input, fin);
-  const host = els.calAccounts.hidden ? els.calConnect : els.calAccounts;
-  host.appendChild(box);
-  input.focus();
-}
-
-els.calConnectBtn.addEventListener("click", () => startCalConnect(els.calConnectBtn));
-els.calAddAccount.addEventListener("click", () => startCalConnect(els.calAddAccount));
+// Connect / add account / disconnect moved to Settings › Connections (the one
+// paste-back flow lives in 60-settings.js); both buttons here are links.
+els.calConnectBtn.addEventListener("click", () => { location.hash = "#/settings/connections"; });
+els.calAddAccount.addEventListener("click", () => { location.hash = "#/settings/connections"; });
 els.calPrev.addEventListener("click", () => shiftCalMonth(-1));
 els.calNext.addEventListener("click", () => shiftCalMonth(1));
 
