@@ -137,11 +137,29 @@ func (s *Service) canonicalCandidates(ctx context.Context, hint feedHint) []cand
 			add(candidate{feedURL: hit.FeedURL})
 		}
 		// A show link with no episode id still resolves the show; the title
-		// rung below is what picks the item, and only if it is unique.
-		for _, hit := range s.appleShowEpisodes(ctx, hint.collectionID) {
+		// rung below is what picks the item, and only if it is unique. Strict
+		// spelling first; the bare tier only when it names exactly ONE row —
+		// a guid from the wrong episode would resolve the wrong audio.
+		eps := s.appleShowEpisodes(ctx, hint.collectionID)
+		matched := eps[:0:0]
+		for _, hit := range eps {
 			if titleKey(hit.TrackName) == titleKey(hint.title) {
-				add(candidate{feedURL: hit.FeedURL, guid: hit.EpisodeGUID, audio: hit.EpisodeURL})
+				matched = append(matched, hit)
 			}
+		}
+		if len(matched) == 0 {
+			bare := titleKeyBare(hint.title)
+			for _, hit := range eps {
+				if titleKeyBare(hit.TrackName) == bare {
+					matched = append(matched, hit)
+				}
+			}
+			if len(matched) > 1 {
+				matched = nil
+			}
+		}
+		for _, hit := range matched {
+			add(candidate{feedURL: hit.FeedURL, guid: hit.EpisodeGUID, audio: hit.EpisodeURL})
 		}
 	case hintSpotifyEpisode:
 		// Spotify states a title and nothing a feed can be found by. The
@@ -196,12 +214,20 @@ func (s *Service) matchSubscribedFeed(ctx context.Context, hint feedHint) (canon
 }
 
 // hintNamesItem is the cheap cache-side test: does this cached item look like
-// the thing the pasted link named?
+// the thing the pasted link named? Bare-tier equality is safe here — this
+// only CHOOSES a subscription (two claiming is still a refusal above), and
+// the item itself is then re-matched inside the fetched feed.
 func hintNamesItem(hint feedHint, wantTitle string, it Item) bool {
 	if hint.videoID != "" && strings.Contains(it.URL, hint.videoID) {
 		return true
 	}
-	return wantTitle != "" && titleKey(it.Title) == wantTitle
+	if wantTitle == "" {
+		return false
+	}
+	if titleKey(it.Title) == wantTitle {
+		return true
+	}
+	return titleKeyBare(it.Title) == titleKeyBare(hint.title)
 }
 
 // matchFeedURL fetches one feed and reads the pasted link's item out of it.
@@ -295,20 +321,33 @@ func matchFeedItem(feed *xmlFeed, c candidate, hint feedHint) (xmlItem, bool) {
 		}
 	}
 	// The last rung, and the only one that can be wrong: a title must be the
-	// feed's ONLY item with that title to count.
+	// feed's ONLY item with that title to count. Strict spelling first; then
+	// the bare tier, so a platform's "#729 – X" still finds the feed's "X" —
+	// under the same only-one-item rule, which is what keeps "5 things" from
+	// ever answering for "10 things".
 	if want := titleKey(hint.title); want != "" {
-		var hit xmlItem
-		n := 0
-		for _, xi := range items {
-			if titleKey(xi.Title) == want {
-				hit, n = xi, n+1
-			}
+		if xi, ok := uniqueItemByTitle(items, titleKey, want); ok {
+			return xi, true
 		}
-		if n == 1 {
-			return hit, true
+		// the bare pass runs even when the hint itself is unnumbered — the
+		// numbering may sit on the FEED side ("729: X" for a pasted "X")
+		if xi, ok := uniqueItemByTitle(items, titleKeyBare, titleKeyBare(hint.title)); ok {
+			return xi, true
 		}
 	}
 	return xmlItem{}, false
+}
+
+// uniqueItemByTitle finds the ONE item whose key equals want, or nothing.
+func uniqueItemByTitle(items []xmlItem, keyOf func(string) string, want string) (xmlItem, bool) {
+	var hit xmlItem
+	n := 0
+	for _, xi := range items {
+		if keyOf(xi.Title) == want {
+			hit, n = xi, n+1
+		}
+	}
+	return hit, n == 1
 }
 
 // ---- reading the hint off a pasted link ----
@@ -385,6 +424,31 @@ func spotifyShow(m LinkMeta) string {
 		}
 	}
 	return ""
+}
+
+// titleNumPrefix is a LEADING episode-number designation on a normalized
+// title key: "729 ", "ep 42 ", "episode 42 ", "e42 ". Publishers number
+// episodes on one surface and not another — The Amp Hour's Spotify page says
+// "#729 – The Terahertz Frontier…" while its own RSS says "The Terahertz
+// Frontier…" — and exact equality across those two spellings is a miss.
+var titleNumPrefix = regexp.MustCompile(`^(?:episode |ep |e)?\d{1,5} `)
+
+// titleKeyBare is titleKey with a leading episode-number designation removed.
+// It is a FALLBACK tier only: everywhere it is used, strict titleKey equality
+// is tried first, and the bare tier keeps (or tightens) the same uniqueness
+// refusals — so it widens recall across numbering styles but never picks
+// between two live candidates. A title that IS only its number ("Episode 12")
+// keeps its key: there is nothing bare left to compare.
+func titleKeyBare(raw string) string {
+	key := titleKey(raw)
+	m := titleNumPrefix.FindString(key)
+	if m == "" {
+		return key
+	}
+	if rest := strings.TrimSpace(key[len(m):]); rest != "" {
+		return rest
+	}
+	return key
 }
 
 // titleKey normalizes a title for comparison across a platform, a directory

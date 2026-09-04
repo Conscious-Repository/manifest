@@ -571,6 +571,109 @@ func TestCurateSpotifyEpisodeRefusesAmbiguousAppleTitle(t *testing.T) {
 	}
 }
 
+// ⚠ PUBLISHERS NUMBER EPISODES ON ONE SURFACE AND NOT THE OTHER. The Amp Hour
+// case (2026-09-04): Spotify titles the episode "#729 – The Terahertz
+// Frontier…" while the publisher's RSS and Apple's directory both say "The
+// Terahertz Frontier…" — strict title equality refused a perfectly
+// unambiguous episode. The bare tier strips the leading numbering and must
+// resolve it, under the same one-feed/one-guid refusals.
+func TestCurateSpotifyNumberedTitleFindsUnnumberedFeedItem(t *testing.T) {
+	feed := serve(t, `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<channel>
+  <title>The Amp Hour</title>
+  <link>https://theamphour.com</link>
+  <item>
+    <title>The Terahertz Frontier with Greg Charvat of Teradar</title>
+    <link>https://theamphour.com/729-the-terahertz-frontier/</link>
+    <guid isPermaLink="false">amp-729-guid</guid>
+    <pubDate>Mon, 01 Sep 2026 03:10:00 GMT</pubDate>
+    <description><![CDATA[Greg Charvat joins to talk terahertz imaging radar.]]></description>
+    <enclosure url="https://media.example/theamphour-729.mp3" length="55555555" type="audio/mpeg"/>
+    <itunes:duration>01:12:00</itunes:duration>
+  </item>
+</channel>
+</rss>`, nil)
+	oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"rich","provider_name":"Spotify","title":"#729 – The Terahertz Frontier with Greg Charvat of Teradar","html":"<iframe src=\"https://open.spotify.com/embed/episode/6zXAmp729xYz\"></iframe>"}`))
+	}))
+	defer oembed.Close()
+	apple := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// the directory, like the feed, does not number the episode
+		_, _ = w.Write([]byte(`{"resultCount":1,"results":[{"wrapperType":"podcastEpisode","kind":"podcast-episode","collectionId":428001231,"collectionName":"The Amp Hour","trackName":"The Terahertz Frontier with Greg Charvat of Teradar","feedUrl":"` + feed.URL + `","episodeGuid":"amp-729-guid","episodeUrl":"https://media.example/theamphour-729.mp3"}]}`))
+	}))
+	defer apple.Close()
+	withProviders(t, oembedProvider{hosts: []string{"open.spotify.com"}, endpoint: oembed.URL, kind: linkPlatform, skipPage: true, embed: spotifyEmbed})
+
+	v := newVault(t)
+	s := curateSvc(t, v)
+	s.apple = apple.URL
+	entry, err := s.CurateURL(context.Background(), "https://open.spotify.com/episode/6zXAmp729xYz", "greg on terahertz radar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Source != "The Amp Hour" || entry.Mirror != MirrorFull {
+		t.Fatalf("numbered platform title did not resolve to the feed: source=%q mirror=%q", entry.Source, entry.Mirror)
+	}
+	if entry.Audio != "https://media.example/theamphour-729.mp3" {
+		t.Fatalf("audio: %q", entry.Audio)
+	}
+	if entry.URL != "https://theamphour.com/729-the-terahertz-frontier/" {
+		t.Fatalf("url: %q", entry.URL)
+	}
+}
+
+// The bare tier keeps the refusal discipline: two DIFFERENT episodes of one
+// show whose titles differ only in their numbering must resolve to nothing —
+// picking either would attach the wrong hour of audio.
+func TestCurateSpotifyBareTitleCollisionRefuses(t *testing.T) {
+	oembed := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"type":"rich","provider_name":"Spotify","title":"Ep 5 - Listener Questions","html":"<iframe src=\"https://open.spotify.com/embed/episode/5CollideXYZab\"></iframe>"}`))
+	}))
+	defer oembed.Close()
+	apple := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"resultCount":2,"results":[
+			{"wrapperType":"podcastEpisode","kind":"podcast-episode","collectionName":"One Show","trackName":"12 Listener Questions","feedUrl":"https://one.example/feed.xml","episodeGuid":"guid-12"},
+			{"wrapperType":"podcastEpisode","kind":"podcast-episode","collectionName":"One Show","trackName":"31 Listener Questions","feedUrl":"https://one.example/feed.xml","episodeGuid":"guid-31"}]}`))
+	}))
+	defer apple.Close()
+	withProviders(t, oembedProvider{hosts: []string{"open.spotify.com"}, endpoint: oembed.URL, kind: linkPlatform, skipPage: true, embed: spotifyEmbed})
+
+	v := newVault(t)
+	s := curateSvc(t, v)
+	s.apple = apple.URL
+	entry, err := s.CurateURL(context.Background(), "https://open.spotify.com/episode/5CollideXYZab", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Source != "Spotify" || entry.Mirror != MirrorExcerpt || entry.Audio != "" {
+		t.Fatalf("bare-title collision should stay a platform entry, got source=%q mirror=%q audio=%q", entry.Source, entry.Mirror, entry.Audio)
+	}
+}
+
+func TestTitleKeyBare(t *testing.T) {
+	for _, tc := range [][2]string{
+		{"#729 – The Terahertz Frontier with Greg Charvat of Teradar", "the terahertz frontier with greg charvat of teradar"},
+		{"729: The Terahertz Frontier", "the terahertz frontier"},
+		{"Ep. 42 - Loops", "loops"},
+		{"Episode 42: Loops", "loops"},
+		{"E42 Loops", "loops"},
+		{"The Terahertz Frontier", "the terahertz frontier"},
+		{"Episode 12", "episode 12"},                          // the number IS the title — nothing bare to compare
+		{"10 Things About Radar", "things about radar"},       // stripped, but only ever matched uniquely
+		{"E&M Reality Emerges", "e m reality emerges"},        // a bare "e" without digits is not a numbering
+		{"2001 A Space Odyssey Revisited", "a space odyssey revisited"},
+	} {
+		if got := titleKeyBare(tc[0]); got != tc[1] {
+			t.Errorf("titleKeyBare(%q) = %q, want %q", tc[0], got, tc[1])
+		}
+	}
+}
+
 func TestSpotifyPreviewClipIsNotAnEnclosure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		htmlPage(w, `<!doctype html><html><head>

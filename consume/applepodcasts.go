@@ -215,20 +215,47 @@ func (s *Service) appleSearchPodcastEpisode(ctx context.Context, title, show str
 	if show = strings.TrimSpace(show); show != "" {
 		term += " " + show
 	}
-	rows := s.appleGet(ctx, "/search", url.Values{
-		"term":   {term},
-		"media":  {"podcast"},
-		"entity": {"podcastEpisode"},
-		"limit":  {"25"},
-	})
-
-	var exact []applePodcastHit
-	for _, r := range rows {
-		hit := r.hit()
-		if hit.FeedURL == "" || titleKey(hit.TrackName) != want {
-			continue
+	search := func(term string) []appleResult {
+		return s.appleGet(ctx, "/search", url.Values{
+			"term":   {term},
+			"media":  {"podcast"},
+			"entity": {"podcastEpisode"},
+			"limit":  {"25"},
+		})
+	}
+	rows := search(term)
+	// a numbered prefix ("#729 – …") can cost the fuzzy search its rows too —
+	// one retry with the bare title, only when the first term found nothing
+	if len(rows) == 0 {
+		if bare := titleKeyBare(title); bare != titleKey(title) {
+			if show != "" {
+				bare += " " + show
+			}
+			rows = search(bare)
 		}
-		exact = append(exact, hit)
+	}
+
+	collect := func(keyOf func(string) string, want string) []applePodcastHit {
+		var out []applePodcastHit
+		for _, r := range rows {
+			hit := r.hit()
+			if hit.FeedURL == "" || keyOf(hit.TrackName) != want {
+				continue
+			}
+			out = append(out, hit)
+		}
+		return out
+	}
+	exact := collect(titleKey, want)
+	// The bare tier: publishers number episodes on one surface and not the
+	// other (Spotify's "#729 – X" against the directory's "X", or the
+	// reverse). Same discipline, one extra refusal below: bare rows must
+	// agree on the episode's guid, so two DIFFERENT numbered episodes whose
+	// bare titles collide resolve to nothing.
+	loose := false
+	if len(exact) == 0 {
+		exact = collect(titleKeyBare, titleKeyBare(title))
+		loose = true
 	}
 	if len(exact) == 0 {
 		return applePodcastHit{}, false
@@ -253,6 +280,9 @@ func (s *Service) appleSearchPodcastEpisode(ctx context.Context, title, show str
 	for _, hit := range exact[1:] {
 		if !SameLink(hit.FeedURL, best.FeedURL) {
 			return applePodcastHit{}, false
+		}
+		if loose && hit.EpisodeGUID != "" && best.EpisodeGUID != "" && hit.EpisodeGUID != best.EpisodeGUID {
+			return applePodcastHit{}, false // same feed, different episodes — the bare tier refuses
 		}
 		if best.EpisodeGUID == "" && hit.EpisodeGUID != "" {
 			best = hit
