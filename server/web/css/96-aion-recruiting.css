@@ -83,14 +83,50 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-seg-count { font-family: var(--mono); color: var(--accent); }
 .rec-cuts { display: flex; gap: var(--sp-3); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20); }
 
-/* paste-to-expand — the everyday sourcing gesture, one underlined field */
-.rec-paste {
-  width: 100%; margin: var(--sp-5) 0 var(--sp-3); padding: var(--sp-3) var(--sp-2);
-  border: 0; border-bottom: 1px dashed var(--base-30); background: none; outline: none;
+/* INTAKE — the one front door: an underlined field that opens a correctable
+   scaffold beneath it. The field keeps the old paste box's quiet shape; the
+   scaffold is a card, because it is a thing you read before you commit. */
+.rec-intake { margin-bottom: var(--sp-6); }
+.rec-intake-in {
+  width: 100%; padding: var(--sp-3) var(--sp-2);
+  border: 0; border-bottom: 1px dashed var(--base-30); border-radius: 0; background: none; outline: none;
   font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100);
 }
-.rec-paste::placeholder { color: var(--base-40); }
-.rec-paste:focus { border-bottom-color: var(--accent-soft); }
+.rec-intake-in::placeholder { color: var(--base-40); }
+.rec-intake-in:focus { border-bottom-color: var(--accent-soft); }
+
+.rec-scaffold {
+  margin-top: var(--sp-4); padding: var(--sp-5) var(--sp-6);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--base-05);
+  display: flex; flex-direction: column; gap: var(--sp-4);
+}
+.rec-scaffold-why { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--base-60); }
+.rec-scaffold-paste { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); overflow-wrap: anywhere; }
+.rec-scaffold-note { font-size: var(--fs-sm); color: var(--base-60); }
+.rec-scaffold-err { font-size: var(--fs-sm); color: var(--danger); overflow-wrap: anywhere; }
+.rec-scaffold-classes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+.rec-scaffold-fields { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.rec-scaffold-field { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1 1 200px; min-width: 0; }
+.rec-scaffold-link { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.rec-scaffold-slot { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-scaffold-facts { display: flex; flex-direction: column; gap: var(--sp-1); }
+/* one filled field and where it came from (.rec-fact is the role console's
+   facts strip — a different thing, and CSS has one namespace) */
+.rec-srcfact { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--fs-sm); min-width: 0; }
+.rec-srcfact-key { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); min-width: 84px; }
+.rec-srcfact-val { color: var(--base-100); overflow-wrap: anywhere; }
+.rec-srcfact-src { color: var(--accent); text-decoration: none; flex: none; }
+.rec-scaffold-people { display: flex; flex-direction: column; gap: var(--sp-1); }
+.rec-scaffold-names { font-size: var(--fs-sm); color: var(--base-60); overflow-wrap: anywhere; }
+.rec-scaffold-known { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }
+.rec-scaffold-knownlab { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); }
+.rec-scaffold-via, .rec-scaffold-role { max-width: 260px; }
+.rec-scaffold-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding-top: var(--sp-2); }
+/* .rec-primary is the inspector's full-width single action; in a row of
+   choices it is one button among them (compound modifier — a later file's
+   bare class would otherwise win by load order) */
+.rec-scaffold-acts .rec-primary { display: inline-flex; width: auto; margin: 0; padding: var(--sp-3) var(--sp-7); }
+.rec-seed-sweep { margin-top: var(--sp-1); }
 
 /* board — one lane per stage in use; the INBOUND cut is one triage queue */
 .rec-board { display: flex; flex-direction: column; gap: var(--sp-7); }
@@ -394,3 +430,7 @@ a.rec-seed-name:hover { text-decoration: underline; }
   .rec-rail { width: 100%; border-right: 0; border-bottom: 1px solid var(--base-25); padding-right: 0; }
   .rec-main { padding-left: 0; } /* stacked: the divider is horizontal now */
 }
+
+/* the model's pass, and what it said that nothing supports */
+.rec-scaffold-ask { display: flex; flex-direction: column; gap: var(--sp-2); border-top: 1px solid var(--line-soft); padding-top: var(--sp-4); }
+.rec-scaffold-dropped { font-size: var(--fs-xs); color: var(--base-40); overflow-wrap: anywhere; }

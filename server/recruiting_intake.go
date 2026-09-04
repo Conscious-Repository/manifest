@@ -140,6 +140,9 @@ func intakePreviewTarget(res recruiting.Resolution) (id, ref string) {
 		return "github", res.Name
 	case "feed":
 		return "feed", res.URL
+	case "site":
+		// ONE page, not a crawl: enough to name the lab from its own title
+		return "web", res.URL
 	}
 	return "", ""
 }
@@ -150,10 +153,10 @@ func intakeNoPreviewNote(res recruiting.Resolution) string {
 	switch {
 	case res.LinkOnly:
 		return "nothing here reads " + res.Kind + " profiles — the link is recorded on the person, and that is all it is"
-	case res.Kind == "site":
-		return "a page is swept, not looked up: name it, then run the crawler over it"
 	case res.Kind == "name":
 		return "a name is a search — add it, then sweep the sources for it"
+	case res.Kind == "grant":
+		return "RePORTER answers project searches, not one project by id — sweep it"
 	}
 	return "nothing to look up for this one"
 }

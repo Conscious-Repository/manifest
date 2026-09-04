@@ -166,6 +166,11 @@ type Server struct {
 	// The source-run cache behind …/recruiting/sources (Phase 3a): dataDir
 	// state, never the vault. Routes mount only when BOTH stores are present.
 	recruitingRuns *recruiting.RunStore
+	// scaffolds holds the intake's in-flight model passes (recruiting_scaffold.go).
+	// In memory on purpose: a suggestion that dies with the process costs a
+	// re-ask, and nothing was written.
+	scaffolds    *scaffoldJobs
+	scaffoldOnce sync.Once
 	// aionLive is the shared vault-base + team-overlay projection served by
 	// both listeners. AION has no git/deploy effector.
 	aionLive *AionLive
@@ -426,6 +431,9 @@ func (s *Server) Handler() http.Handler {
 			// the owner corrected (recruiting_intake.go)
 			mux.HandleFunc("POST /api/aion/recruiting/intake/resolve", s.handleRecruitingIntakeResolve)
 			mux.HandleFunc("POST /api/aion/recruiting/intake/preview", s.handleRecruitingIntakePreview)
+			// the model's pass over what the sources fetched, and its poll
+			mux.HandleFunc("POST /api/aion/recruiting/intake/ask", s.handleRecruitingScaffoldAsk)
+			mux.HandleFunc("GET /api/aion/recruiting/intake/ask/{id}", s.handleRecruitingScaffoldPoll)
 			mux.HandleFunc("POST /api/aion/recruiting/intake", s.handleRecruitingIntake)
 			// the applicant's own submitted file, by artifact hash. `{hash...}`
 			// is a wildcard so ".../{hash}/text" reaches the same handler.

@@ -211,8 +211,12 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 			scope.Fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
 	}
-	if scope.Query == "" {
-		return Run{}, errf("a run needs a query")
+	// A run must SAY what it is scoped to — but a query is no longer the only
+	// way to say it. Naming one paper, one repo or one feed is a scope too,
+	// and a stricter rule here refused exactly those runs ("a run needs a
+	// query" on a DOI). The adapter still refuses a scope IT cannot use.
+	if scope.Query == "" && len(scope.Fields) == 0 {
+		return Run{}, errf("a run needs a query, or one thing to scope it to")
 	}
 
 	drafts, err := adapter.Search(ctx, scope)

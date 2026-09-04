@@ -1303,3 +1303,54 @@ func webSlug(s string) string {
 	}
 	return strings.Trim(b.String(), "-")
 }
+
+// Preview fetches ONE page — no traversal, no frontier — and reports what the
+// page says it is: its title, the first lines of prose under it, and how many
+// outbound links it carries. It is the deterministic half of naming a lab or
+// a company from its own site; the crawl that finds PEOPLE is still a run,
+// because it costs somebody else's bandwidth and belongs behind a queue.
+//
+// Every guard the crawl has applies here too — the refuse list, the SSRF
+// check, robots.txt, the honest User-Agent — because "one page" is exactly
+// how a fetcher talks itself into being a crawler.
+func (w Web) Preview(ctx context.Context, ref string) (PreviewFacts, error) {
+	out := PreviewFacts{Ref: strings.TrimSpace(ref), Kind: "page"}
+	u, err := url.Parse(strings.TrimSpace(ref))
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return out, fmt.Errorf("web: %q is not an http(s) URL", ref)
+	}
+	if reason := webRefuse(u); reason != "" {
+		return out, fmt.Errorf("web: %s", reason)
+	}
+	if !w.allowedByRobots(ctx, map[string]*webRobots{}, u) {
+		return out, fmt.Errorf("web: %s asks not to be fetched (robots.txt)", u.Host)
+	}
+	page, err := w.fetch(ctx, u)
+	if err != nil {
+		return out, err
+	}
+	final := page.url.String()
+	out.URL = final
+	out.Name = strings.TrimSpace(page.title)
+	if out.Name == "" {
+		out.Name = strings.TrimPrefix(page.url.Host, "www.")
+	}
+	out.Links = []string{final}
+	out.fact("name", out.Name, w.ID(), final)
+	out.fact("site", strings.TrimPrefix(page.url.Host, "www."), w.ID(), final)
+
+	// the first substantial lines, verbatim — what a person reads at the top
+	// of the page, and what a model would be given to read later
+	var prose []string
+	for _, ln := range page.lines {
+		t := strings.TrimSpace(ln.text)
+		if len(t) < 40 || len(prose) >= 4 {
+			continue
+		}
+		prose = append(prose, t)
+	}
+	out.Note = clip(strings.Join(prose, " "), 600)
+	out.Total = len(page.links)
+	out.fact("links on the page", strconv.Itoa(len(page.links)), w.ID(), final)
+	return out, nil
+}

@@ -348,6 +348,440 @@ async function recSyncRoles() {
   }
 }
 
+// ---- INTAKE: paste a thing, approve a scaffold ----
+//
+// One box replaces three (a rail seed demanding a `class: name` prefix, a
+// board paste that made an empty record, a network add promising an editor
+// that does not exist). Enter asks the server what the paste IS and, when it
+// names ONE thing, fills the scaffold from that source's own record — every
+// field carrying the URL it came from. Nothing is written until the owner
+// has seen it and can correct it.
+
+// recSeedSweep maps a seed onto the run that sweeps it, or null when nothing
+// can. This is also what the intake's "sweep it" uses, so a seed row and a
+// fresh paste can never disagree about which source speaks for a thing.
+function recSeedSweep(seed) {
+  const url = (seed.url || "").trim();
+  const name = (seed.name || "").trim();
+  const feed = ((seed.unknown || []).find((f) => f.key === "feed") || {}).value || "";
+  switch (seed.class) {
+    case "work":
+      return { source: "openalex", fields: { work: url || name } };
+    case "repo":
+      return { source: "github", fields: { repo: url || name } };
+    case "media":
+      return feed || url ? { source: "feed", fields: { feed_url: feed || url } } : null;
+    case "lab":
+    case "company":
+      return url ? { source: "web", fields: { seed_url: url }, query: name } : null;
+    case "person":
+      return { source: "openalex", query: name };
+  }
+  return null;
+}
+
+// recLoadRun prefills the run form and shows it. It never RUNS: a sweep costs
+// somebody else's rate limit, so the last gesture stays the owner's.
+function recLoadRun(target) {
+  recRunForm.source = target.source;
+  recRunForm.query = target.query || "";
+  recRunForm.fields = Object.assign({}, target.fields || {});
+  recRunForm.role = recRoleId();
+  recNav("sources");
+  showToast("scoped to the " + target.source + " source — run it when you're ready");
+}
+
+function recIntakeReset() { recIntake = null; }
+
+// recIntakeLook asks the server what this is. One call: it resolves the paste
+// and, when the paste names one thing, looks that thing up.
+async function recIntakeLook(text) {
+  recIntake = { text, busy: true, res: null, preview: null, note: "", err: "" };
+  if (recPaint) recPaint();
+  try {
+    const r = await fetch("/api/aion/recruiting/intake/preview", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    const res = d.resolution || {};
+    const p = d.preview || null;
+    recIntake = {
+      text, busy: false, res, preview: p, note: d.note || "", err: d.error || "",
+      // the looked-up name WINS over the one derived from the URL — that was
+      // the whole point of looking it up
+      name: (p && p.name) || (res.provisional ? "" : res.name) || "",
+      org: (p && p.org) || res.org || "",
+      url: (p && p.url) || res.url || "",
+      feed: (p && p.feed) || "",
+      class: res.class || "",
+      dest: res.dest || "seed",
+      role: recRoleId(),
+      known: false, knownVia: "",
+      profileField: recIntakeProfileField(res),
+    };
+  } catch (e) {
+    recIntake = { text, busy: false, res: null, err: String(e.message || e).slice(0, 200) };
+  }
+  if (recPaint) recPaint();
+}
+
+// recIntakeProfileField says which profile slot a resolved URL belongs in, so
+// an X or LinkedIn link lands somewhere findable instead of only in the note.
+function recIntakeProfileField(res) {
+  if (!res || !res.url) return "";
+  const u = res.url.toLowerCase();
+  if (u.includes("x.com/") || u.includes("twitter.com/")) return "x";
+  if (u.includes("linkedin.com/")) return "linkedin";
+  if (u.includes("github.com/")) return "github";
+  if (res.kind === "orcid" || res.kind === "openalex") return "website";
+  return "";
+}
+
+async function recIntakeCommit() {
+  const st = recIntake;
+  if (!st || st.busy) return;
+  if (st.dest === "seed" && !st.class) { showToast("say what this is first", null, "error"); return; }
+  if (!(st.name || "").trim()) { showToast("give it a name — the one from the link is a slug", null, "error"); return; }
+  st.busy = true;
+  if (recPaint) recPaint();
+  try {
+    const r = await fetch("/api/aion/recruiting/intake", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: st.text, dest: st.dest, class: st.class, name: st.name, org: st.org,
+        url: st.url, feed: st.feed, role: st.role || "", profile: st.profileField || "",
+        known: !!st.known, knownVia: st.knownVia || "",
+      }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const d = await r.json();
+    if (d.view) recCache = d.view;
+    const made = d.created || {};
+    const sweep = st.dest === "seed" ? recSeedSweep({
+      class: st.class, name: st.name, url: st.url,
+      unknown: st.feed ? [{ key: "feed", value: st.feed }] : [],
+    }) : null;
+    recIntakeReset();
+    if (made.kind === "candidate" && made.id) { recSel = made.id; recView = "board"; }
+    renderAion();
+    if (sweep) showToast(made.name + " added — sweep it", () => recLoadRun(sweep), "info");
+    else showToast(made.name + " added");
+  } catch (e) {
+    st.busy = false;
+    st.err = String(e.message || e).slice(0, 200);
+    if (recPaint) recPaint();
+  }
+}
+
+// recScaffoldAsk — Alfred reads what the sources fetched and proposes the
+// rest. The server enforces the rule that makes this safe (a filled field
+// must appear in the fetched material) and reports what it dropped, so the
+// UI can show BOTH: what survived, and what the model said that nothing we
+// hold supports. That second list is the point — it is how you learn whether
+// to trust the first.
+function recScaffoldAsk() {
+  const wrap = el("div", "rec-scaffold-ask");
+  const st = recIntake || {};
+  const ask = st.ask;
+  if (!ask) {
+    const b = el("button", "rec-linkish", "ask alfred to read it →");
+    b.title = "a model pass over the fetched material only — never over what it remembers";
+    b.onclick = () => recScaffoldAskStart();
+    wrap.append(b);
+    return wrap;
+  }
+  if (ask.status === "running") {
+    wrap.append(el("span", "rec-scaffold-note", "✦ alfred is reading what we fetched…"));
+    return wrap;
+  }
+  if (ask.status === "failed" || ask.error) {
+    wrap.append(el("span", "rec-scaffold-err", "alfred: " + (ask.error || "the turn failed")));
+    const again = el("button", "rec-linkish", "try again");
+    again.onclick = () => recScaffoldAskStart();
+    wrap.append(again);
+    return wrap;
+  }
+  const sug = ask.suggestion || {};
+  const head = el("div", "rec-scaffold-classes");
+  head.append(el("span", "micro-label", "ALFRED READ IT"));
+  const use = el("button", "rec-linkish", "use this");
+  use.onclick = () => {
+    if (sug.name) recIntake.name = sug.name;
+    if (sug.org) recIntake.org = sug.org;
+    if (sug.class) {
+      recIntake.class = sug.class;
+      recIntake.dest = sug.class === "person" ? "candidate" : "seed";
+    }
+    if (recPaint) recPaint();
+  };
+  head.append(use);
+  wrap.append(head);
+  [["class", sug.class], ["name", sug.name], ["org", sug.org], ["title", sug.title]].forEach(([k, v]) => {
+    if (!v) return;
+    const row = el("div", "rec-srcfact");
+    row.append(el("span", "rec-srcfact-key", k));
+    row.append(el("span", "rec-srcfact-val", v));
+    wrap.append(row);
+  });
+  if (sug.note) wrap.append(el("div", "rec-scaffold-note", "“" + sug.note + "” — alfred's words, not a field"));
+  if ((sug.people || []).length) {
+    wrap.append(el("div", "rec-scaffold-names", "names it found: " + sug.people.join(" · ")));
+  }
+  (ask.dropped || []).forEach((d) => {
+    wrap.append(el("div", "rec-scaffold-dropped", "dropped — " + d));
+  });
+  if (!sug.name && !sug.org && !sug.class && !(sug.people || []).length) {
+    wrap.append(el("div", "rec-scaffold-note", "nothing survived the check — what we fetched does not support it"));
+  }
+  return wrap;
+}
+
+async function recScaffoldAskStart() {
+  const st = recIntake;
+  if (!st) return;
+  st.ask = { status: "running" };
+  if (recPaint) recPaint();
+  try {
+    const r = await fetch("/api/aion/recruiting/intake/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: st.text }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const { id } = await r.json();
+    recScaffoldPoll(id, st.text);
+  } catch (e) {
+    if (recIntake && recIntake.text === st.text) {
+      recIntake.ask = { status: "failed", error: String(e.message || e).slice(0, 200) };
+      if (recPaint) recPaint();
+    }
+  }
+}
+
+// The turn is minutes long, so this polls — the same shape the agent chat and
+// the spirits runs use. It stops the moment the scaffold it belongs to is
+// gone, so a cancelled intake stops costing anything.
+function recScaffoldPoll(id, forText) {
+  const tick = async () => {
+    if (!recIntake || recIntake.text !== forText || !recIntake.ask) return;
+    try {
+      const r = await fetch("/api/aion/recruiting/intake/ask/" + encodeURIComponent(id));
+      if (!r.ok) throw new Error(await r.text());
+      const job = await r.json();
+      if (!recIntake || recIntake.text !== forText) return;
+      recIntake.ask = job;
+      if (recPaint) recPaint();
+      if (job.status === "running") setTimeout(tick, 3000);
+    } catch (e) {
+      if (recIntake && recIntake.text === forText) {
+        recIntake.ask = { status: "failed", error: String(e.message || e).slice(0, 200) };
+        if (recPaint) recPaint();
+      }
+    }
+  };
+  setTimeout(tick, 2500);
+}
+
+function recIntakeBox() {
+  const box = el("section", "rec-intake");
+  const input = el("input", "pp-in rec-intake-in");
+  input.type = "text";
+  input.placeholder = "＋ add a person, lab, paper, podcast or profile — paste a link or a name";
+  input.value = recIntake && !recIntake.res && !recIntake.busy ? recIntake.text || "" : "";
+  input.onkeydown = (e) => {
+    if (e.key === "Escape") { recIntakeReset(); if (recPaint) recPaint(); return; }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const v = input.value.trim();
+    if (v) recIntakeLook(v);
+  };
+  box.append(input);
+  if (!recIntake) return box;
+
+  const card = el("div", "rec-scaffold");
+  if (recIntake.busy && !recIntake.res) {
+    card.append(el("div", "rec-scaffold-why", "looking it up…"));
+    box.append(card);
+    return box;
+  }
+  if (recIntake.err && !recIntake.res) {
+    card.append(el("div", "rec-scaffold-err", recIntake.err));
+    const again = el("button", "rec-linkish", "try again");
+    again.onclick = () => recIntakeLook(recIntake.text);
+    card.append(again);
+    box.append(card);
+    return box;
+  }
+  const res = recIntake.res || {};
+
+  // what it decided, and why — never a toast telling you to retype
+  const why = el("div", "rec-scaffold-why");
+  why.append(el("span", "rec-scaffold-paste", recIntake.text));
+  why.append(el("span", "", res.why || ""));
+  card.append(why);
+  if (recIntake.err) card.append(el("div", "rec-scaffold-err", recIntake.err));
+  else if (recIntake.note) card.append(el("div", "rec-scaffold-note", recIntake.note));
+
+  // class — the resolved one is on; every other class is one click away
+  const classes = el("div", "rec-scaffold-classes");
+  classes.append(el("span", "micro-label", "IS A"));
+  (recCache.seedClasses || []).forEach((cls) => {
+    const b = el("button", "filter-chip" + (recIntake.class === cls ? " on" : ""), cls);
+    b.onclick = () => {
+      recIntake.class = cls;
+      recIntake.dest = cls === "person" ? "candidate" : "seed";
+      if (recPaint) recPaint();
+    };
+    classes.append(b);
+  });
+  card.append(classes);
+
+  // where it lands. Only a person has a choice to make.
+  if (recIntake.class === "person") {
+    const dest = el("div", "rec-scaffold-classes");
+    dest.append(el("span", "micro-label", "LANDS IN"));
+    [["candidate", "the board"], ["network", "my people"], ["seed", "seeds"]].forEach(([key, label]) => {
+      const b = el("button", "filter-chip" + (recIntake.dest === key ? " on" : ""), label);
+      b.title = key === "candidate" ? "a candidate record with fit, evidence and paths"
+        : key === "network" ? "someone you know — a node intro paths route through"
+        : "a person to sweep FROM, not a candidate";
+      b.onclick = () => { recIntake.dest = key; if (recPaint) recPaint(); };
+      dest.append(b);
+    });
+    card.append(dest);
+  }
+
+  // the fields, with the provisional name called out for what it is
+  const fields = el("div", "rec-scaffold-fields");
+  const field = (label, key, hint) => {
+    const wrap = el("label", "rec-scaffold-field");
+    wrap.append(el("span", "micro-label", label));
+    const inp = el("input", "pp-in");
+    inp.type = "text";
+    inp.value = recIntake[key] || "";
+    if (hint) inp.placeholder = hint;
+    inp.oninput = () => { recIntake[key] = inp.value; };
+    wrap.append(inp);
+    return wrap;
+  };
+  fields.append(field("name", "name", res.provisional && !recIntake.name ? "from the link — name it" : ""));
+  fields.append(field("org", "org"));
+  if (recIntake.class === "media") fields.append(field("feed", "feed"));
+  card.append(fields);
+  if (recIntake.url) {
+    const link = el("div", "rec-scaffold-link");
+    link.append(linkEl(recIntake.url, recIntake.url));
+    if (recIntake.profileField && recIntake.dest === "candidate") {
+      link.append(el("span", "rec-scaffold-slot", "kept as " + recIntake.profileField));
+    }
+    card.append(link);
+  }
+
+  // what the source actually said, field by field, with where it came from
+  const facts = (recIntake.preview || {}).facts || [];
+  if (facts.length) {
+    const list = el("div", "rec-scaffold-facts");
+    list.append(el("span", "micro-label", "FROM " + ((recIntake.preview || {}).facts[0].source || "").toUpperCase()));
+    facts.forEach((f) => {
+      const row = el("div", "rec-srcfact");
+      row.append(el("span", "rec-srcfact-key", f.field));
+      row.append(el("span", "rec-srcfact-val", f.value));
+      if (f.url) {
+        const a = linkEl("↗", f.url);
+        a.className = "rec-srcfact-src";
+        a.title = f.url;
+        row.append(a);
+      }
+      list.append(row);
+    });
+    card.append(list);
+  }
+
+  // who the thing names — the drafts a sweep would bring in
+  const people = (recIntake.preview || {}).people || [];
+  if (people.length) {
+    const total = (recIntake.preview || {}).total || people.length;
+    const who = el("div", "rec-scaffold-people");
+    who.append(el("span", "micro-label", total + (total === 1 ? " person on it" : " people on it")));
+    who.append(el("span", "rec-scaffold-names",
+      people.slice(0, 8).map((p) => p.name + (p.org ? " (" + p.org + ")" : "")).join(" · ") +
+      (people.length > 8 ? " · +" + (people.length - 8) + " more" : "")));
+    card.append(who);
+  }
+
+  // the owner's own word — the strongest edge in the system, and until now
+  // the one thing the UI could not say
+  if (recIntake.dest === "candidate") {
+    const known = el("div", "rec-scaffold-known");
+    const box2 = el("input", "");
+    box2.type = "checkbox";
+    box2.checked = !!recIntake.known;
+    box2.onchange = () => { recIntake.known = box2.checked; if (recPaint) recPaint(); };
+    const lab = el("label", "rec-scaffold-knownlab");
+    lab.append(box2, el("span", "", "I know them"));
+    known.append(lab);
+    if (recIntake.known) {
+      const via = el("select", "pp-in rec-scaffold-via");
+      const none = el("option", "", "who knows them…");
+      none.value = "";
+      via.append(none);
+      ((recCache.network || {}).people || []).forEach((p) => {
+        const o = el("option", "", p.name);
+        o.value = p.id;
+        if (recIntake.knownVia === p.id) o.selected = true;
+        via.append(o);
+      });
+      via.onchange = () => { recIntake.knownVia = via.value; };
+      known.append(via);
+      known.append(el("span", "rec-scaffold-note", "an intro path starts from the person asserting it"));
+    }
+    card.append(known);
+
+    const roles = (recCache.roles || []);
+    if (roles.length) {
+      const sel = el("select", "pp-in rec-scaffold-role");
+      const none = el("option", "", "no role yet");
+      none.value = "";
+      sel.append(none);
+      roles.forEach((r) => {
+        const o = el("option", "", r.title || r.slug);
+        o.value = r.id || "role/" + r.slug;
+        if ((recIntake.role || "") === o.value) o.selected = true;
+        sel.append(o);
+      });
+      sel.onchange = () => { recIntake.role = sel.value; };
+      card.append(sel);
+    }
+  }
+
+  // the model's pass — over the bytes we fetched, and nothing else
+  card.append(recScaffoldAsk());
+
+  const acts = el("div", "rec-scaffold-acts");
+  const add = el("button", "pill rec-primary", recIntake.busy ? "adding…" : "add");
+  add.disabled = !!recIntake.busy;
+  add.onclick = () => recIntakeCommit();
+  acts.append(add);
+  const sweepTarget = recSeedSweep({
+    class: recIntake.class, name: recIntake.name || res.name, url: recIntake.url,
+    unknown: recIntake.feed ? [{ key: "feed", value: recIntake.feed }] : [],
+  });
+  if (sweepTarget) {
+    const sw = el("button", "pill light", "sweep without adding →");
+    sw.title = "load the " + sweepTarget.source + " run for this, and skip the record";
+    sw.onclick = () => { const t = sweepTarget; recIntakeReset(); recLoadRun(t); };
+    acts.append(sw);
+  }
+  const cancel = el("button", "rec-linkish", "cancel");
+  cancel.onclick = () => { recIntakeReset(); if (recPaint) recPaint(); };
+  acts.append(cancel);
+  card.append(acts);
+
+  box.append(card);
+  return box;
+}
+
 function paintSeeds() {
   const seeds = recCache.seeds || [];
   const box = el("section", "rec-seeds");
@@ -374,19 +808,34 @@ function paintSeeds() {
         row.append(el("span", "rec-seed-name", s.name));
       }
       if (s.org) row.append(el("span", "rec-seed-sub", s.org));
+      // a seed is something we sweep FROM: one click loads the run that does
+      // it. Before this, a seed row was a dead end — the thing it existed for
+      // was three clicks away in a form it never touched.
+      const target = recSeedSweep(s);
+      if (target) {
+        const go = el("button", "rec-linkish rec-seed-sweep", "sweep →");
+        go.title = "load the " + target.source + " run scoped to this seed";
+        go.onclick = () => recLoadRun(target);
+        row.append(go);
+      }
       list.append(row);
     });
   });
-  if (!seeds.length) list.append(emptyRow("no seeds yet"));
+  if (!seeds.length) list.append(emptyRow("nothing seeded yet — paste a lab, a paper or a show above"));
   box.append(list);
 
-  box.append(ghostInput("＋ seed: person, company, lab, work, or repo", "aion-add rec-seed-add", (raw) => {
-    const at = raw.indexOf(":");
-    const cls = at > 0 ? raw.slice(0, at).trim().toLowerCase() : "";
-    const name = at > 0 ? raw.slice(at + 1).trim() : raw.trim();
-    if (!cls) { showToast("prefix the class, e.g. lab: WashU BME"); renderAion(); return; }
-    return recPost("/api/aion/recruiting/seed", { class: cls, name }, "seed added");
-  }));
+  // the rail is 190px: too narrow for a scaffold, so the add gesture LIVES in
+  // the main column and this is the way to it
+  const add = el("button", "rec-linkish rec-seed-add", "＋ add");
+  add.title = "the intake at the top of the view — paste a link or a name";
+  add.onclick = () => {
+    if (recView === "role") recNav("board");
+    setTimeout(() => {
+      const input = document.querySelector(".rec-intake-in");
+      if (input) { input.focus(); input.scrollIntoView({ block: "center" }); }
+    }, 30);
+  };
+  box.append(add);
   return box;
 }
 
@@ -394,6 +843,10 @@ function paintSeeds() {
 
 function paintMain(main) {
   main.innerHTML = "";
+  // the front door is in reach from every view — a lab you want to seed does
+  // not care which tab you are standing on. The role console is the exception:
+  // it is a rubric editor, not a place things arrive.
+  if (recView !== "role") main.append(recIntakeBox());
   if (recView === "sources") { paintSourcesView(main); return; }
   if (recView === "network") { paintNetworkView(main); return; }
   if (recView === "role") { paintRoleView(main); return; }
@@ -436,31 +889,8 @@ function paintBoardView(main) {
   });
   main.append(cuts);
 
-  // paste a person, a lab, or a profile URL — the everyday sourcing gesture,
-  // one field on the board instead of three clicks into the run form. The
-  // action follows the content: a bare name adds one record; a URL offers to
-  // expand into a web-crawl run.
-  const paste = el("input", "rec-paste");
-  paste.type = "text";
-  paste.placeholder = "Paste a person, a lab, or a profile URL…   ↵ adds · a URL offers to expand";
-  paste.onkeydown = (e) => {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    const v = paste.value.trim();
-    if (!v) return;
-    if (/^https?:\/\//i.test(v)) {
-      recRunForm.source = "web";
-      recRunForm.fields.seed_url = v;
-      recRunForm.role = recRoleId();
-      paste.value = "";
-      showToast("seed loaded — scope the crawl and run it");
-      recNav("sources");
-      return;
-    }
-    paste.value = "";
-    recPost("/api/aion/recruiting/candidate", { text: v, role: recRoleId() }, "candidate added");
-  };
-  main.append(paste);
+  // (the paste field that used to sit here is the intake now — one front
+  // door, mounted by paintMain above the toolbar of every view)
 
   const board = el("div", "rec-board");
   board.id = "recBoard";
@@ -942,11 +1372,23 @@ function paintNetworkView(main) {
         host.append(row);
       });
       if (!people.length) host.append(emptyRow("no curated people yet"));
-      host.append(ghostInput("＋ someone I know", "aion-add", (raw) => {
+      // one WRITE path: the same intake route the front door uses, with the
+      // destination already known (you are standing in MY PEOPLE)
+      host.append(ghostInput("＋ someone I know", "aion-add", async (raw) => {
         const name = raw.trim();
         if (!name) return;
-        return recPost("/api/aion/recruiting/network/person", { name }, "added to your people");
-      }, "name — email/org are edited in the record"));
+        try {
+          const r = await fetch("/api/aion/recruiting/intake", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dest: "network", name }),
+          });
+          if (!r.ok) throw new Error(await r.text());
+          const d = await r.json();
+          if (d.view) recCache = d.view;
+          showToast(name + " added to your people");
+          renderAion();
+        } catch (e) { showToast(String(e.message || e).slice(0, 140), null, "error"); }
+      }, "their name — org and email are yours to fill in"));
       return;
     }
     if (recNetTab === "edges") {
@@ -1021,7 +1463,7 @@ function paintRoleView(main) {
   [["status", role.status], ["location", role.location], ["type", role.employment],
     ["handoff", role.handoffMode], ["ashby job", role.ashbyJobId]].forEach(([k, v]) => {
     if (!v) return;
-    const cell = el("span", "rec-fact");
+    const cell = el("span", "rec-srcfact");
     cell.append(el("span", "micro-label", k), el("span", "rec-fact-v", v));
     facts.append(cell);
   });

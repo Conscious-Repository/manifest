@@ -124,8 +124,10 @@ func TestIntakePreviewSaysWhyWhenThereIsNothingToLookUp(t *testing.T) {
 	_, mux := testIntakeServer(t, nil)
 	for _, tc := range []struct{ paste, want string }{
 		{`https://x.com/someone`, "profiles"},
-		{`https://bme.washu.edu/people`, "swept"},
 		{`Jane Q Smith`, "search"},
+		// a lab page CAN be looked up (one page, no crawl) — but only when the
+		// web source is wired, and this server registers none
+		{`https://bme.washu.edu/people`, "web source is not wired"},
 	} {
 		got := intakeJSON(t, mux, "/api/aion/recruiting/intake/preview", `{"text":"`+tc.paste+`"}`)
 		note := string(got["note"])
