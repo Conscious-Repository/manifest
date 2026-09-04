@@ -21,11 +21,11 @@ func TestInitialsForEmailField(t *testing.T) {
 		{Initials: "JR", Name: "Jack Ruhl"}, // no email — heuristic fallback
 	}}
 	cases := []struct{ email, want string }{
-		{"ben@aion.bio", "BA"},        // exact email field
-		{"BEN@AION.BIO", "BA"},        // case-insensitive
-		{"yashiro@aion.bio", "YA"},    // name ≠ local-part, resolved by email
-		{"jack@aion.bio", "JR"},       // fallback: first-name heuristic
-		{"nobody@aion.bio", ""},       // unmapped
+		{"ben@aion.bio", "BA"},     // exact email field
+		{"BEN@AION.BIO", "BA"},     // case-insensitive
+		{"yashiro@aion.bio", "YA"}, // name ≠ local-part, resolved by email
+		{"jack@aion.bio", "JR"},    // fallback: first-name heuristic
+		{"nobody@aion.bio", ""},    // unmapped
 	}
 	for _, c := range cases {
 		if got := api.initialsFor(c.email); got != c.want {

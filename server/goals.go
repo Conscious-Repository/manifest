@@ -205,7 +205,6 @@ func (s *Server) handleAreasReorder(w http.ResponseWriter, r *http.Request) {
 	s.mutate(w, func(d *goals.Doc) bool { d.ReorderAreas(b.Order); return true })
 }
 
-
 func (s *Server) handleGoalItem(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:

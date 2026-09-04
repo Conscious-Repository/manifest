@@ -155,4 +155,3 @@ func (s *Server) serveResumeText(w http.ResponseWriter, hash string) {
 		"hash": hash, "name": meta.Name, "hasText": ok, "text": text,
 	})
 }
-

@@ -122,8 +122,8 @@ func TestLedgerThreadHookSkipsMarkers(t *testing.T) {
 	if _, err := srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActComment, "a real comment", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	srv.markerAdd(id, threads.ActRelay, "")                                                       // hidden marker via the private store
-	_, _ = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActRelay, "", nil, nil, nil)       // relay action is a marker
+	srv.markerAdd(id, threads.ActRelay, "")                                                 // hidden marker via the private store
+	_, _ = srv.addThreadEntry(srv.ownerIdentity(), id, threads.ActRelay, "", nil, nil, nil) // relay action is a marker
 	es := allLedgerEntries(t, led)
 	if len(es) != 1 || es[0].Kind != "thread.comment" || es[0].Task != id || es[0].Actor != "owner" {
 		t.Fatalf("want exactly the one comment line: %+v", es)
