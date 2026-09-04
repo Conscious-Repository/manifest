@@ -80,7 +80,10 @@ func TestPromoteChatToTask(t *testing.T) {
 	if link == nil || link["agent"] != "alfred" || link["id"] != id || link["title"] != "gutter contractors" {
 		t.Fatalf("first entry must carry the chat link: %+v", first.Meta)
 	}
-	if second.Author != "agent:alfred" || second.AuthorName != "Alfred" || second.Text != "Here are three to start: A, B, C." {
+	// the agent's turn posts under the id its LIVE replies use (agent:hermes
+	// is Alfred's canonical thread id, agentTokenIdentity), so one thread never
+	// shows the same agent under two ids
+	if second.Author != "agent:hermes" || second.AuthorName != "Alfred" || second.Text != "Here are three to start: A, B, C." {
 		t.Fatalf("second entry must be the agent's say body, as the agent: %+v", second)
 	}
 	if third.Action != threads.ActAssign || third.Meta["assignee"] != "agent:alfred" {

@@ -340,20 +340,21 @@ func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, file
 		mode = "comment"
 	}
 	agent = strings.TrimSpace(agent)
-	if mode != "comment" && agent != "" && s.agentHarness(agent) == "" {
+	if mode == "comment" {
+		agent = "" // a comment addresses nobody unless its text does (the reply guard)
+	} else if agent != "" && s.agentHarness(agent) == "" {
 		return threads.Comment{}, errBadRequest("unknown agent " + agent + " — pick one from the roster")
 	}
 	mentions = mergeMentions(mentions, s.textMentions(text))
-	var meta map[string]any
-	if mode != "comment" {
-		meta = map[string]any{"mode": mode}
-		if agent != "" {
-			meta["agent"] = agent
-		}
-	}
 	// assignment lands BEFORE the ask in the thread — "assigned to Alfred
 	// (asked)" then the question, the order a reader expects
 	plan := s.resolveDispatch(id, mode, agent, mentions)
+	// the record says what actually happened: the RESOLVED mode + agent (a
+	// `@alfred::plan` typed into a Comment is recorded as the Do it became)
+	var meta map[string]any
+	if plan != nil {
+		meta = map[string]any{"mode": plan.Mode, "agent": plan.Agent}
+	}
 	s.dispatchAssign(id, plan)
 	c, err := s.addThreadEntry(s.ownerIdentity(), id, threads.ActComment, text, mentions, files, meta)
 	if err != nil {

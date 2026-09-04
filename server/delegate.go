@@ -255,8 +255,15 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 	}
 	p, hasPersona := s.persona(intent)
 	if intent != "" && !hasPersona {
-		log.Printf("todo work order: unknown or disabled persona %q — spooling without it", intent)
+		log.Printf("todo work order: unknown or disabled persona %q — spooling without its prompt", intent)
 	}
+	// an Ask (any non-plan intent) is answered IN THE THREAD whether or not
+	// its persona is enabled: the persona prompt only shapes the reply. Without
+	// it the reply protocol still replaces the plan protocol and the
+	// [persona::] token still rides, so ingestion posts the answer as a
+	// comment and never writes ## plan (the Ask contract, agent-chat plan
+	// §3.4a). An empty intent is today's request byte-for-byte.
+	reply := intent != "" && intent != "plan"
 	text, _ := s.openTaskText(taskID)
 	rec := s.readPlanRecord(taskID)
 	var b strings.Builder
@@ -268,7 +275,7 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 		b.WriteString("DESCRIPTION (the owner's context for this task):\n" + d + "\n")
 	}
 	protocol := agentProtocolReminder
-	if hasPersona && p.Intent != "plan" {
+	if reply {
 		protocol = "PROTOCOL: reply in ONE library brief that IS your answer. Do not write a plan. Do not execute anything.\n"
 	}
 	switch phase {
@@ -293,8 +300,8 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 		b.WriteString(protocol)
 	}
 	b.WriteString("For this todo: [todo:: " + taskID + "] [phase:: " + phase + "]")
-	if hasPersona {
-		b.WriteString(" [persona:: " + p.Intent + "]")
+	if hasPersona || reply {
+		b.WriteString(" [persona:: " + intent + "]")
 	}
 	// Hermes runs on the owner's real do-bot (the Hermes Agent CLI), not the
 	// excalibur harness — intercept and route the composed work order there.

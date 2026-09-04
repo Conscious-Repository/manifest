@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"manifest/approvals"
+	"manifest/spirits"
 	"manifest/threads"
 )
 
@@ -184,6 +185,117 @@ func TestCaptureDispatch(t *testing.T) {
 	}
 	th := srv.listThread(id)
 	if len(th) == 0 || th[len(th)-1].Text != "find me 10 gutter contractor options" || th[len(th)-1].Meta["mode"] != "ask" {
+		t.Fatalf("opening ask must be the thread record: %+v", th)
+	}
+}
+
+// Audit 2026-09-04: a Comment is record-only even when a client sends an
+// agent with it (the API contract, not just the composer's habit); an Ask is
+// answered in the thread whether or not its persona is enabled — the reply
+// protocol and the [persona::] token ride regardless, so the reply never
+// materializes as ## plan.
+func TestCommentIgnoresAgentAndAskNeverPlans(t *testing.T) {
+	srv := loopFixture(t) // NO personas seeded
+	id := "inbox/research-zoning"
+	hermes := srv.eachHarness()[1].Spirits
+
+	if _, err := srv.postAndDispatch(id, "comment", "agent:alfred", nil, nil, "note to self"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(hermes.Queued()); n != 0 {
+		t.Fatalf("comment with a stray agent must not spool, got %d", n)
+	}
+	if a := srv.readPlanRecord(id).Assignee; a != "" {
+		t.Fatalf("comment with a stray agent must not assign: %q", a)
+	}
+	th := srv.listThread(id)
+	if last := th[len(th)-1]; last.Meta != nil && last.Meta["mode"] != nil {
+		t.Fatalf("a plain comment carries no mode: %+v", last.Meta)
+	}
+
+	if _, err := srv.postAndDispatch(id, "ask", "", nil, nil, "what zoning applies?"); err != nil {
+		t.Fatal(err)
+	}
+	q := hermes.Queued()
+	if len(q) != 1 {
+		t.Fatalf("ask must spool once: %+v", q)
+	}
+	req := q[0].Request
+	if !strings.Contains(req, "[persona:: info]") || !strings.Contains(req, "[phase:: comment]") {
+		t.Fatalf("ask must carry the info intent even unseeded:\n%s", req)
+	}
+	if strings.Contains(req, "PERSONA (how to respond") {
+		t.Fatalf("no persona prompt when the persona is not enabled:\n%s", req)
+	}
+	if strings.Contains(req, "numbered plan") || !strings.Contains(req, "IS your answer") {
+		t.Fatalf("ask must use the reply protocol, never the plan protocol:\n%s", req)
+	}
+	// the record names the resolved agent
+	th = srv.listThread(id)
+	if last := th[len(th)-1]; last.Meta["mode"] != "ask" || last.Meta["agent"] != "agent:alfred" {
+		t.Fatalf("ask record must name mode + resolved agent: %+v", last.Meta)
+	}
+	// the reply lands as a thread comment; ## plan stays empty
+	drainHermesSpool(t, srv)
+	fakeRunReq(t, srv, "r-ask", "ask [todo:: "+id+"] [phase:: comment] [persona:: info]", "Mixed-use zoning, per the county map.")
+	sweep(srv)
+	if p := srv.readPlanRecord(id).Plan; strings.TrimSpace(p) != "" {
+		t.Fatalf("an ask reply must never write the plan: %q", p)
+	}
+	th = srv.listThread(id)
+	if last := th[len(th)-1]; last.Author != "agent:hermes" || !strings.Contains(last.Text, "Mixed-use zoning") {
+		t.Fatalf("ask reply must land in the thread: %+v", last)
+	}
+
+	// a `@alfred::plan` typed into a Comment is recorded as the Do it became
+	drainHermesSpool(t, srv)
+	if _, err := srv.postAndDispatch(id, "comment", "", nil, nil, "@alfred::plan draft it"); err != nil {
+		t.Fatal(err)
+	}
+	th = srv.listThread(id)
+	if last := th[len(th)-1]; last.Meta["mode"] != "do" || last.Meta["agent"] != "agent:alfred" {
+		t.Fatalf("mention-turned-Do must be recorded as such: %+v", last.Meta)
+	}
+}
+
+// A property capture strips the address like any other — and must dispatch
+// it too (the first cut swallowed it: text cleaned, no ask posted).
+func TestCaptureDispatchOnPropertyLine(t *testing.T) {
+	srv, _ := unifiedHarness(t)
+	hermes := spirits.NewStore(t.TempDir())
+	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes", Spirits: hermes}})
+	private, err := threads.New(filepath.Join(t.TempDir(), "todo-threads"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.UseThreads(private, nil, nil, nil, "")
+
+	req := httptest.NewRequest("POST", "/api/tasks/item", strings.NewReader(
+		`{"text":"get a gutter bid @alfred","container":{"kind":"property","slug":"761-maple"}}`))
+	w := httptest.NewRecorder()
+	srv.handleTaskAdd(w, req)
+	if w.Code != 200 {
+		t.Fatalf("add: %d %s", w.Code, w.Body.String())
+	}
+	var res map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res["created"].(string)
+	if !strings.HasPrefix(id, "prop:761-maple/") || !strings.HasSuffix(id, "/get-a-gutter-bid") {
+		t.Fatalf("created id: %q (%v)", id, res["dispatchError"])
+	}
+	if res["dispatched"] == nil {
+		t.Fatalf("property capture must dispatch: %+v", res)
+	}
+	q := hermes.Queued()
+	if len(q) != 1 || !strings.Contains(q[0].Request, "[todo:: "+id+"]") ||
+		!strings.Contains(q[0].Request, "[phase:: comment]") ||
+		!strings.Contains(q[0].Request, "TASK (from your todo board): get a gutter bid") {
+		t.Fatalf("property capture ask spool: %+v", q)
+	}
+	th := srv.listThread(id)
+	if len(th) == 0 || th[len(th)-1].Text != "get a gutter bid" {
 		t.Fatalf("opening ask must be the thread record: %+v", th)
 	}
 }

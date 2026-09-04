@@ -56,6 +56,7 @@ func (s *Server) UseHermes(r *hermes.Runner, readTools string) {
 		return
 	}
 	s.hermes = &hermesCfg{runner: r, readTools: readTools, running: map[string]hermesTurn{}, digging: map[string]bool{}}
+	s.agentChatRecover() // the chat store may have been wired first (main.go order)
 }
 
 // hermesForked reports whether this delegation should route to the do-bot CLI
@@ -166,9 +167,12 @@ func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
 	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: who.ID, Task: taskID, Harness: "hermes",
 		Text: phase + " turn on " + taskID + ": " + ledger.Snip(res.Reply, 280),
 		Meta: map[string]any{"task": taskID, "phase": phase, "sessionId": res.SessionID, "spentUsd": res.SpentUSD, "model": res.Model}})
+	// the intent decides where the reply lands: any non-plan intent (an Ask)
+	// is a thread answer, whether or not its persona is enabled — an Ask must
+	// never write ## plan (spoolTaskWorkOrderAs stamps the same rule)
 	persona := ""
-	if p, ok := s.persona(intent); ok {
-		persona = p.Intent
+	if _, ok := s.persona(intent); ok || (intent != "" && intent != "plan") {
+		persona = intent
 	}
 	s.materializeHermesBrief(taskID, agent, phase, persona, res.Reply)
 }

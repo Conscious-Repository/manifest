@@ -325,9 +325,18 @@ func (s *Server) handlePortalChatSessionCreate(ag *chatAgent, w http.ResponseWri
 		return
 	}
 	sending := strings.TrimSpace(b.Text) != "" || len(b.Files) > 0
-	if sending && s.chatBusy(ag) {
-		portalChatErr(ag, w, spirits.ErrAlreadyActive)
-		return
+	if sending {
+		// refuse BEFORE the thread exists: a harness that cannot take the
+		// order (not configured here) or is busy must not leave an empty
+		// shared thread behind in the portal
+		if h := s.findHarness(ag.Name); h == nil || h.Spirits == nil {
+			httpError(w, errBadRequest(ag.Name+" is not configured"))
+			return
+		}
+		if s.chatBusy(ag) {
+			portalChatErr(ag, w, spirits.ErrAlreadyActive)
+			return
+		}
 	}
 	title := strings.TrimSpace(b.Title)
 	if title == "" && strings.TrimSpace(b.Text) != "" {

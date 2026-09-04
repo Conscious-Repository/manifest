@@ -178,6 +178,7 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	switch b.Container.Kind {
 	case "property":
+		lineText := ""
 		if s.propTaskMutate(w, b.Container.Slug, func(list *realestate.PropertyTaskList) (bool, error) {
 			// the line lands IN the tree: under the named rock/milestone, else
 			// loose under the current rock. "decision:" converts (capture sugar).
@@ -192,9 +193,22 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 				t.Fields = append(t.Fields, tasks.Field{Key: "decision", Value: ""})
 			}
 			list.Append(t, strings.TrimSpace(b.Stage))
+			lineText = t.Text
 			return true, nil
 		}) {
-			writeJSON(w, s.tasksView())
+			view := s.tasksView()
+			// an addressed capture dispatches here too — the address was
+			// stripped above, so swallowing it would lose the ask silently
+			if mode != "" {
+				if id := s.propTaskIDByText(b.Container.Slug, lineText); id != "" {
+					for k, v := range dispatch(id) {
+						view[k] = v
+					}
+				} else {
+					view["dispatchError"] = "the line was written but its id could not be resolved"
+				}
+			}
+			writeJSON(w, view)
 		}
 		return
 	case "aion", "re":
@@ -307,6 +321,30 @@ func (s *Server) addPersonalTask(in personalTaskAdd) (string, error) {
 		}
 	}
 	return "", nil
+}
+
+// propTaskIDByText resolves a just-appended property line to its composite
+// id (`prop:<slug>/<node-id>`): node ids assign on load, so the tree is
+// re-read and the LAST node carrying this exact text is the one appended.
+// "" when it cannot be resolved.
+func (s *Server) propTaskIDByText(slug, text string) string {
+	if s.realestate == nil || text == "" {
+		return ""
+	}
+	list, _, ok := s.realestate.LoadTasks(slug)
+	if !ok {
+		return ""
+	}
+	id := ""
+	realestate.WalkNodes(list.Stages, func(_ *realestate.WorkStage, n *realestate.WorkNode) {
+		if n.Task != nil && n.Task.Text == text {
+			id = n.TaskID()
+		}
+	})
+	if id == "" {
+		return ""
+	}
+	return "prop:" + slug + "/" + id
 }
 
 // captureAddressRe matches an agent address in a capture line: `@name`,

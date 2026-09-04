@@ -172,7 +172,9 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 		if t.Who == "user" {
 			body, files = s.chatTurnFiles(agent, body)
 		} else {
-			author = threads.Identity{ID: token, Name: label}
+			// the same author id the agent's live turns post under (Alfred's
+			// canonical thread id is agent:hermes) — one identity per thread
+			author = agentTokenIdentity(token)
 			body = agentchat.SayBody(body)
 		}
 		body = strings.TrimSpace(body)

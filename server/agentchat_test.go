@@ -272,6 +272,51 @@ fi
 	}
 }
 
+// Audit 2026-09-04: with the runner off, a first send is refused BEFORE the
+// session file exists (no empty "new conversation" in the rail), and the
+// startup repair never runs — the store syncs across devices, so a box that
+// cannot own a turn must not rewrite a session another box has in flight.
+func TestAgentChatRunnerOffRefusesCreateAndSkipsRecover(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "chats")
+	seed := agentchat.New(root)
+	id, err := seed.Create("alfred", "", "in flight elsewhere", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = seed.AppendTurn("alfred", id, "user", "hello", 0)
+	_ = seed.SetStatus("alfred", id, agentchat.StatusThinking)
+
+	s := New(nil, nil, nil)
+	st := agentchat.New(root)
+	s.UseAgentChat(st) // runner NOT wired
+	if sess, _, _, _ := st.Get("alfred", id); sess.Status != agentchat.StatusThinking || sess.Turns != 1 {
+		t.Fatalf("recover must not run with the runner off: %+v", sess)
+	}
+	code, _ := agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions", map[string]any{"text": "hi"})
+	if code != 400 {
+		t.Fatalf("create with text, runner off = %d, want 400", code)
+	}
+	if l := st.List("alfred"); len(l) != 1 {
+		t.Fatalf("a refused first send must not leave a session behind: %+v", l)
+	}
+	// the roster still answers (never a 503) and says the runner is off
+	code, r := agentChatJSON(t, s, "GET", "/api/agents/chat/roster", nil)
+	if code != 200 || r["agents"].([]any)[0].(map[string]any)["enabled"] != false {
+		t.Fatalf("roster: %d %+v", code, r)
+	}
+
+	// wiring the runner afterwards runs the repair once
+	stub := filepath.Join(t.TempDir(), "hermes")
+	if err := os.WriteFile(stub, []byte(echoStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s.UseHermes(hermes.NewRunner(hermes.Config{Enabled: true, Bin: stub}), "web")
+	sess, _, _, _ := st.Get("alfred", id)
+	if sess.Status != agentchat.StatusIdle || sess.Turns != 2 {
+		t.Fatalf("recover must run once the runner is wired: %+v", sess)
+	}
+}
+
 func TestAgentChatRunnerFailureLandsSystemTurn(t *testing.T) {
 	s, st, _ := agentChatFixture(t, "#!/bin/sh\necho 'boom' >&2\nexit 3\n")
 	_, r := agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions", map[string]any{"text": "hi"})

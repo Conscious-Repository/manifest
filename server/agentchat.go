@@ -48,6 +48,8 @@ type agentChatCfg struct {
 	descs    map[string]string
 	descAt   time.Time
 	descBusy bool // a background refresh is running
+
+	recovered bool // the startup repair ran (agentChatRecover)
 }
 
 // hermesDescribeEvery bounds how often the descriptions are re-asked.
@@ -123,15 +125,28 @@ func (s *Server) agentDescription(token string) string {
 
 // UseAgentChat wires the Hermes-family chat store (the primary harness's
 // artifacts/chats root). Sessions left thinking by a dead process are repaired
-// here, before any request can start a turn.
+// before any request can start a turn — but ONLY on a box whose runner can
+// own a turn (agentChatRecover): the store syncs across devices (plan Q7), so
+// a dev twin with the runner off must never rewrite a session metis has in
+// flight (one writer per transcript).
 func (s *Server) UseAgentChat(st *agentchat.Store) {
 	if st == nil {
 		return
 	}
-	if fixed := st.Recover(); len(fixed) > 0 {
+	s.agentChat = &agentChatCfg{store: st}
+	s.agentChatRecover()
+}
+
+// agentChatRecover runs the store's startup repair once both the store and
+// the runner are wired (either may be wired first).
+func (s *Server) agentChatRecover() {
+	if s.agentChat == nil || !s.hermesEnabled() || s.agentChat.recovered {
+		return
+	}
+	s.agentChat.recovered = true
+	if fixed := s.agentChat.store.Recover(); len(fixed) > 0 {
 		log.Printf("agent chat: repaired %d interrupted session(s): %s", len(fixed), strings.Join(fixed, ", "))
 	}
-	s.agentChat = &agentChatCfg{store: st}
 }
 
 // The rail's default identity is alfredAgent (hermes_dig.go) — an alias of the
@@ -284,6 +299,12 @@ func (s *Server) handleAgentChatSessionCreate(w http.ResponseWriter, r *http.Req
 		httpError(w, err)
 		return
 	}
+	// a first send the runner cannot take is refused BEFORE the file exists,
+	// so a refused create never leaves an empty "new conversation" in the rail
+	if (strings.TrimSpace(b.Text) != "" || len(b.Files) > 0) && !s.hermesEnabled() {
+		httpError(w, errBadRequest("the Hermes runner is not enabled here"))
+		return
+	}
 	title := strings.TrimSpace(b.Title)
 	if title == "" && strings.TrimSpace(b.Text) != "" {
 		title = firstLine(b.Text, 60)
@@ -425,16 +446,26 @@ func (s *Server) agentChatSend(agent, id, text string, files []threads.FileRef) 
 // runAgentChatTurns runs the in-flight turn and every send queued behind it,
 // one Hermes invocation each, then flips the file back to idle. Always
 // releases the claim.
+//
+// Ordering matters: the file flips to idle WHILE this goroutine still holds
+// the claim, and only then does Next release it. Releasing first would let a
+// send land in between (claim → append → `thinking`) and the stale idle
+// write would then clobber it — the file would say idle for the whole of a
+// live turn and the poll would stop. If a send does arrive between the idle
+// write and Next, Next hands it back and the file flips to thinking again.
 func (s *Server) runAgentChatTurns(agent, id string) {
 	st := s.agentChat.store
 	defer st.Release(agent, id)
 	for {
 		s.runAgentChatTurn(agent, id)
+		if len(st.Queued(agent, id)) == 0 {
+			_ = st.SetStatus(agent, id, agentchat.StatusIdle)
+		}
 		next, more := st.Next(agent, id)
 		if !more {
-			_ = st.SetStatus(agent, id, agentchat.StatusIdle)
 			return
 		}
+		_ = st.SetStatus(agent, id, agentchat.StatusThinking)
 		if _, err := st.AppendTurn(agent, id, "user", next, 0); err != nil {
 			log.Printf("agent chat %s/%s: append queued turn: %v", agent, id, err)
 		}
