@@ -335,8 +335,24 @@ func (s *Server) handleProfileDescribe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true, "command": command, "description": desc, "output": snipRunes(out, 1000)})
 }
 
-// POST /api/profiles/{name}/export → `hermes profile export <name> -o
-// <dataDir>/profile-exports/<name>-<ts>.tar.gz`; returns the archive path.
+// POST /api/profiles/{name}/delete → `hermes profile delete -y <name>`.
+// -y skips the interactive "type the name to confirm" prompt the CLI shows.
+func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if !profileNameOr400(w, name) {
+		return
+	}
+	bin := s.hermesBin()
+	args := []string{"delete", "-y", name}
+	command := hermesProfileCommand(bin, args...)
+	out, err := hermesProfileCmd(r.Context(), bin, s.hermesEnv(), 30*time.Second, args...)
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		writeJSON(w, map[string]any{"ok": false, "command": command, "output": snipRunes(out, 1000), "error": err.Error()})
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "command": command, "output": snipRunes(out, 1000), "deleted": name})
+}
 func (s *Server) handleProfileExport(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if !profileNameOr400(w, name) {

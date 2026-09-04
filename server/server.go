@@ -683,6 +683,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/profiles/{name}", s.handleProfileShow)
 	mux.HandleFunc("GET /api/profiles/{name}/soul", s.handleProfileSoul)
 	mux.HandleFunc("POST /api/profiles/{name}/describe", s.handleProfileDescribe)
+	mux.HandleFunc("POST /api/profiles/{name}/delete", s.handleProfileDelete)
 	mux.HandleFunc("POST /api/profiles/{name}/export", s.handleProfileExport)
 
 	// PROPERTIES — the real-estate cockpit over system/realestate/ records.
