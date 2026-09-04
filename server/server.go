@@ -540,6 +540,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/terminal/session/{id}", s.handleTermUpdate)
 	mux.HandleFunc("DELETE /api/terminal/session/{id}", s.handleTermDelete)
 	mux.HandleFunc("POST /api/terminal/session/{id}/kill", s.handleTermKill)
+	// agent-chat Stage S: read a claude/codex session (its own jsonl + the
+	// tmux screen tail) and write to it (send-keys; relaunch when history).
+	mux.HandleFunc("GET /api/terminal/session/{id}/transcript", s.handleTermTranscript)
+	mux.HandleFunc("GET /api/terminal/session/{id}/screen", s.handleTermScreen)
+	mux.HandleFunc("POST /api/terminal/session/{id}/input", s.handleTermInput)
 	mux.HandleFunc("GET /api/terminal/ws", s.handleTermWS)
 	mux.HandleFunc("GET /api/terminal/ls", s.handleTermLs)
 	mux.HandleFunc("GET /api/terminal/devices", s.handleTermDevices)

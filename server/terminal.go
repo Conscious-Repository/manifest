@@ -62,6 +62,16 @@ type termCfg struct {
 	rlMu  sync.Mutex
 	rlive map[string]remoteLiveEnt
 	rlFly map[string]bool
+
+	// claudeProjects overrides ~/.claude/projects (tests); "" = the home dir.
+	claudeProjects string
+	// run executes a tmux control command against the sandbox socket dir and
+	// returns its stdout. Tests inject a recorder — no real tmux.
+	run func(args ...string) ([]byte, error)
+	// spawnMu serialises relaunch-on-input per session id (two sends to a
+	// dead session within seconds must not spawn two tmuxes).
+	spawnMu sync.Mutex
+	spawnIn map[string]*sync.Mutex
 }
 
 type remoteLiveEnt struct {
@@ -428,15 +438,7 @@ func (s *Server) createAgentTermSession(kind, cwd, name string) (termSession, st
 	s.terminal.upsert(se)
 
 	tn := tmuxName(se.ID)
-	wd := se.Cwd
-	if wd == "" {
-		wd = s.terminal.defaultWd
-	}
-	inner := cdGuard(wd) + se.execLaunch()
-	err := s.terminal.tmux(append(append(append([]string{}, tmuxPreludeArgs...),
-		"new-session", "-d", "-s", tn, "-x", "120", "-y", "32", "bash", "-lc", inner),
-		tmuxSessionOptArgs(tn)...)...)
-	if err != nil {
+	if err := s.spawnTermTmux(se); err != nil {
 		// the row stays: it's now an ordinary not-yet-started session the
 		// browser attach path can still boot.
 		return se, tn, fmt.Errorf("tmux spawn: %w", err)
@@ -446,6 +448,66 @@ func (s *Server) createAgentTermSession(kind, cwd, name string) (termSession, st
 	se.LastUsed = time.Now().Format(time.RFC3339)
 	s.terminal.upsert(se)
 	return se, tn, nil
+}
+
+// termInner is the bash -lc command a session's tmux pane runs: cd guard +
+// tool guard + launch for a local row; exec ssh to the box for a device
+// row. ok=false when the device is unknown.
+func (s *Server) termInner(se termSession) (string, bool) {
+	if se.Device != "" {
+		// remote session: the tmux inner command is ssh to the box. The remote
+		// side gets ONE shQuoted command string its login shell runs; the metis
+		// side (bash -lc) sees every ssh arg individually shQuoted.
+		var dev TermDevice
+		ok := false
+		if s.devices != nil {
+			dev, ok = s.devices.effective(se.Device)
+		}
+		if !ok {
+			return "", false
+		}
+		parts := []string{"exec", "ssh"}
+		for _, a := range s.devices.sshArgs(dev) {
+			parts = append(parts, shQuote(a))
+		}
+		parts = append(parts, shQuote(remoteInner(se)))
+		return strings.Join(parts, " "), true
+	}
+	cwd := se.Cwd
+	if cwd == "" {
+		cwd = s.terminal.defaultWd
+	}
+	return cdGuard(cwd) + se.execLaunch(), true
+}
+
+// termLaunchArgs is THE tmux argv for a session (cmd-ctr's exact option
+// order: default-terminal BEFORE new-session, status off, mouse on,
+// set-titles). attach=true is the WS create-or-attach (`new-session -A`,
+// runs inside a PTY); attach=false spawns detached (`-d`, fixed size) for
+// the agent-create and relaunch-on-input paths. One definition, three
+// callers, so a later browser attach lands on the same session.
+func (s *Server) termLaunchArgs(se termSession, attach bool) ([]string, error) {
+	inner, ok := s.termInner(se)
+	if !ok {
+		return nil, fmt.Errorf("unknown device %s", se.Device)
+	}
+	tn := tmuxName(se.ID)
+	var ns []string
+	if attach {
+		ns = []string{"new-session", "-A", "-s", tn, "bash", "-lc", inner}
+	} else {
+		ns = []string{"new-session", "-d", "-s", tn, "-x", "120", "-y", "32", "bash", "-lc", inner}
+	}
+	return append(append(append([]string{}, tmuxPreludeArgs...), ns...), tmuxSessionOptArgs(tn)...), nil
+}
+
+// spawnTermTmux boots a session's tmux detached (no browser, no PTY).
+func (s *Server) spawnTermTmux(se termSession) error {
+	args, err := s.termLaunchArgs(se, false)
+	if err != nil {
+		return err
+	}
+	return s.terminal.tmux(args...)
 }
 
 // handleTermAgentCreate (POST /api/terminal/agent-session) accepts
@@ -688,19 +750,27 @@ func (s *Server) handleTermLsRemote(w http.ResponseWriter, r *http.Request, devi
 	writeJSON(w, map[string]any{"path": resolved, "device": device, "dirs": dirs})
 }
 
-// tmux runs a tmux control command against the sandbox socket dir.
-func (c *termCfg) tmux(args ...string) error {
+// tmuxOut runs a tmux control command against the sandbox socket dir and
+// returns its stdout (the injected runner in tests).
+func (c *termCfg) tmuxOut(args ...string) ([]byte, error) {
+	if c.run != nil {
+		return c.run(args...)
+	}
 	cmd := exec.Command("tmux", args...)
 	cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+c.tmuxTmp)
-	return cmd.Run()
+	return cmd.Output()
+}
+
+// tmux runs a tmux control command, status only.
+func (c *termCfg) tmux(args ...string) error {
+	_, err := c.tmuxOut(args...)
+	return err
 }
 
 // liveSet returns which tmux sessions currently exist.
 func (c *termCfg) liveSet() map[string]bool {
 	out := map[string]bool{}
-	cmd := exec.Command("tmux", "list-sessions", "-F", "#{session_name}")
-	cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+c.tmuxTmp)
-	b, err := cmd.Output()
+	b, err := c.tmuxOut("list-sessions", "-F", "#{session_name}")
 	if err != nil {
 		return out
 	}
@@ -741,39 +811,12 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	defer c.CloseNow()
 	ctx := r.Context()
 
-	// build the tmux create-or-attach command (cmd-ctr's exact option order:
-	// default-terminal BEFORE new-session, status off, mouse on, set-titles).
-	name := tmuxName(id)
-	var inner string
-	if se.Device != "" {
-		// remote session: the tmux inner command is ssh to the box. The remote
-		// side gets ONE shQuoted command string its login shell runs; the metis
-		// side (bash -lc) sees every ssh arg individually shQuoted.
-		var dev TermDevice
-		ok := false
-		if s.devices != nil {
-			dev, ok = s.devices.effective(se.Device)
-		}
-		if !ok {
-			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] unknown device "+se.Device+"\r\n"))
-			return
-		}
-		parts := []string{"exec", "ssh"}
-		for _, a := range s.devices.sshArgs(dev) {
-			parts = append(parts, shQuote(a))
-		}
-		parts = append(parts, shQuote(remoteInner(se)))
-		inner = strings.Join(parts, " ")
-	} else {
-		cwd := se.Cwd
-		if cwd == "" {
-			cwd = s.terminal.defaultWd
-		}
-		inner = cdGuard(cwd) + se.execLaunch()
+	// the tmux create-or-attach command — the shared definition (termLaunchArgs)
+	full, err := s.termLaunchArgs(se, true)
+	if err != nil {
+		c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
+		return
 	}
-	full := append(append([]string{}, tmuxPreludeArgs...),
-		append([]string{"new-session", "-A", "-s", name, "bash", "-lc", inner},
-			tmuxSessionOptArgs(name)...)...)
 
 	cmd := exec.CommandContext(ctx, "tmux", full...)
 	cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+s.terminal.tmuxTmp, "TERM=xterm-256color")
