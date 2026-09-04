@@ -387,6 +387,10 @@ func (s *Server) rosterFor(surface string) []map[string]any {
 		if len(intents) > 0 {
 			r["personas"] = intents
 		}
+		// the tooltip + suggest-agent hint text (§2.5/§3.5) — never routing
+		if d := s.agentDescription(id); d != "" {
+			r["description"] = d
+		}
 		return r
 	}
 	hs := s.eachHarness()

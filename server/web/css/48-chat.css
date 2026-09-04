@@ -119,3 +119,21 @@
 .chat-mention-note { color: var(--base-40); }
 .chat-composer .chat-attach { order: 2; }
 .chat-composer .chat-attach[hidden] { display: none; }
+
+/* the chat ↔ task bridges (agent-chat plan Phase 4, §3.4f): "→ task" on an
+   agent turn (hover-revealed, the turn's quiet foot), the "☐ task ↗" head
+   link, the ☐ mark on a promoted thread row, and the TASKS list under an
+   agent's threads — all modifiers on the rail/turn idioms, no new tokens. */
+.chat-turn-foot { display: flex; align-items: baseline; gap: var(--sp-5); margin-top: var(--sp-2); }
+.chat-turn-act { border: 0; background: none; padding: 0; cursor: pointer; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-30); opacity: 0; transition: opacity 0.12s; }
+.chat-turn:hover .chat-turn-act, .chat-turn-act:focus { opacity: 1; }
+.chat-turn-act:hover { color: var(--accent); }
+.chat-head-task { flex: none; }
+.chat-rail-task-mark { font-size: var(--fs-2xs); color: var(--base-40); }
+.chat-rail-tasks { margin-top: var(--sp-3); }
+.chat-rail-task { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3) var(--sp-6); margin-left: var(--sp-2); border-radius: var(--radius-lg); cursor: pointer; }
+.chat-rail-task:hover { background: var(--base-10); }
+.chat-rail-task-text { font-size: var(--fs-sm); color: var(--base-70); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-rail-task-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.chat-rail-tasks .sprt-quiet { margin: var(--sp-2) 0 0 var(--sp-6); }
+.chat-landing-desc { font-size: var(--fs-sm); color: var(--base-40); max-width: 52ch; line-height: 1.45; }

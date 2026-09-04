@@ -125,3 +125,6 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 /* ⚑ proposals pointer (§3.4e) — FEED stays the inbox */
 .tdo-p-proposals { color: var(--warn); align-self: flex-start; }
 .tdo-p-proposals:hover { color: var(--accent); }
+
+/* the suggest-agent hint (§2.5) — a quiet link on the mode bar, never a route */
+.tdo-p-suggest { color: var(--accent); }

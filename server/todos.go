@@ -224,24 +224,55 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, view)
 		return
 	}
-	domain := strings.TrimSpace(b.Domain)
-	if domain == "" {
-		domain = tasks.InboxName
-	}
-	text := strings.Join(strings.Fields(b.Text), " ")
-	bucketName := strings.TrimSpace(b.Bucket)
-	doc, err := s.tasksStore.Load()
+	id, err := s.addPersonalTask(personalTaskAdd{Domain: b.Domain, Bucket: b.Bucket, Text: b.Text,
+		Rock: b.Rock, Stage: b.Stage, Issue: b.Issue, Owner: b.Owner})
 	if err != nil {
 		httpError(w, err)
 		return
 	}
+	view := s.tasksView()
+	if id != "" {
+		for k, v := range dispatch(id) {
+			view[k] = v
+		}
+	}
+	writeJSON(w, view)
+}
+
+// personalTaskAdd is one line for the personal task file (the capture path's
+// core, shared with the chat → task bridge).
+type personalTaskAdd struct {
+	Domain, Bucket, Text, Rock, Stage, Issue, Owner string
+}
+
+// addPersonalTask appends the line (Inbox when no domain is named) and returns
+// the new todo's derived id ("" when it could not be resolved — ids assign on
+// load, so the LAST task in the domain/bucket carrying this exact text is the
+// one just appended).
+func (s *Server) addPersonalTask(in personalTaskAdd) (string, error) {
+	if s.tasksStore == nil {
+		return "", errBadRequest("todos not available")
+	}
+	domain := strings.TrimSpace(in.Domain)
+	if domain == "" {
+		domain = tasks.InboxName
+	}
+	text := strings.Join(strings.Fields(in.Text), " ")
+	if text == "" {
+		return "", errBadRequest("text is required")
+	}
+	bucketName := strings.TrimSpace(in.Bucket)
+	doc, err := s.tasksStore.Load()
+	if err != nil {
+		return "", err
+	}
 	dom := doc.EnsureDomain(domain)
 	t := &tasks.Task{
 		Text:  text,
-		Rock:  strings.TrimSpace(b.Rock),
-		Stage: strings.TrimSpace(b.Stage),
-		Issue: strings.TrimSpace(b.Issue),
-		Owner: strings.TrimSpace(b.Owner),
+		Rock:  strings.TrimSpace(in.Rock),
+		Stage: strings.TrimSpace(in.Stage),
+		Issue: strings.TrimSpace(in.Issue),
+		Owner: strings.TrimSpace(in.Owner),
 		Added: time.Now().Format("2006-01-02"),
 	}
 	if bucketName != "" {
@@ -251,34 +282,31 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 		dom.Tasks = append(dom.Tasks, t)
 	}
 	if err := s.tasksStore.Save(doc); err != nil {
-		httpError(w, err)
-		return
+		return "", err
 	}
-	if b.Rock != "" {
-		s.stampRockMoved(strings.TrimSpace(b.Rock)) // new tethered work = movement
+	if t.Rock != "" {
+		s.stampRockMoved(t.Rock) // new tethered work = movement
 	}
-	view := s.tasksView()
-	// the new line's derived id (ids assign on load): the LAST task in the
-	// domain/bucket carrying this exact text is the one just appended
-	if fresh, err := s.tasksStore.Load(); err == nil {
-		if d := fresh.Domain(domain); d != nil {
-			list := d.Tasks
-			if bucketName != "" {
-				if bk := d.EnsureBucket(bucketName); bk != nil {
-					list = bk.Tasks
-				}
-			}
-			for i := len(list) - 1; i >= 0; i-- {
-				if list[i].Text == text {
-					for k, v := range dispatch(list[i].ID) {
-						view[k] = v
-					}
-					break
-				}
-			}
+	fresh, err := s.tasksStore.Load()
+	if err != nil {
+		return "", nil
+	}
+	d := fresh.Domain(domain)
+	if d == nil {
+		return "", nil
+	}
+	list := d.Tasks
+	if bucketName != "" {
+		if bk := d.EnsureBucket(bucketName); bk != nil {
+			list = bk.Tasks
 		}
 	}
-	writeJSON(w, view)
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Text == text {
+			return list[i].ID, nil
+		}
+	}
+	return "", nil
 }
 
 // captureAddressRe matches an agent address in a capture line: `@name`,

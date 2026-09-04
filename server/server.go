@@ -529,6 +529,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/agents/chat/{agent}/attach", s.portalChatRoute(s.handlePortalChatAttach, portalChatNoHermes))
 	mux.HandleFunc("GET /api/agents/chat/{agent}/attach/{hash}", s.portalChatRoute(s.handlePortalChatAttachGet, portalChatNoHermes))
 	mux.HandleFunc("GET /api/agents/chat/{agent}/engine", s.portalChatRoute(s.handlePortalChatEngine, portalChatNoHermes))
+	// the chat ↔ task bridges (Phase 4, §3.4f) — both backends, one handler each
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/promote", s.handleAgentChatPromote)
+	mux.HandleFunc("GET /api/agents/chat/{agent}/tasks", s.handleAgentChatTasks)
 
 	// TERMINAL — in-app PTY over tmux (metis-local; claude/codex presets).
 	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)

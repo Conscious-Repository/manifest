@@ -78,13 +78,7 @@ function termApplyStage() {
   // the WS stays attached when leaving the term stage — scrollback keeps warm
   if (termStage === "term" && termInst) { try { termInst.fit.fit(); sendTermResize(); } catch (e) {} }
   if (termStage === "files" && typeof showFilesStage === "function") showFilesStage();
-  if (termStage === "activity") {
-    if (typeof showActivityStage === "function") showActivityStage();
-    else {
-      const p = document.getElementById("termStageActivity");
-      if (p && !p.childElementCount) p.append(emptyRow("Activity lands in a later phase."));
-    }
-  }
+  if (termStage === "activity") showActivityStage();
 }
 
 let termLastPayload = "";

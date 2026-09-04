@@ -166,3 +166,19 @@ func TestRecoverRepairsStaleThinking(t *testing.T) {
 		t.Errorf("turns = %+v", turns)
 	}
 }
+
+// SayBody finds the say step wherever it sits (a portal reply puts a trace
+// step first) and stops at the next step.
+func TestSayBodyAnyStep(t *testing.T) {
+	cases := map[string]string{
+		"### Step 1 — say\n\nHere are ten.":                                                "Here are ten.",
+		"### Step 1 — ask\n\n- result: completed · 41s\n\n### Step 2 — say\n\nFifty feet.": "Fifty feet.",
+		"### Step 1 — say\n\nFirst.\n\n### Step 2 — search\n\n- result: x":                 "First.",
+		"plain reply, no steps": "plain reply, no steps",
+	}
+	for in, want := range cases {
+		if got := SayBody(in); got != want {
+			t.Errorf("SayBody(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -110,11 +110,17 @@ func (s *Server) portalChatRoster() []agentChatRosterEntry {
 		}
 		out = append(out, agentChatRosterEntry{
 			Name: ag.Name, Label: ag.Display, Backend: "portal", Domain: ag.Domain,
-			Description: ag.Display + " — " + portalChatDomainLabel(ag.Domain) + " · spools an order to " + ag.Host + " · one run at a time",
+			Description: portalAgentDescription(ag),
 			Enabled:     enabled, Sessions: n, Busy: enabled && s.chatBusy(ag), Personas: intents,
 		})
 	}
 	return out
+}
+
+// portalAgentDescription is a portal agent's standing roster line (its
+// tooltip on every surface — the portals have no `describe`).
+func portalAgentDescription(ag *chatAgent) string {
+	return ag.Display + " — " + portalChatDomainLabel(ag.Domain) + " · spools an order to " + ag.Host + " · one run at a time"
 }
 
 func portalChatDomainLabel(domain string) string {

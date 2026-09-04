@@ -372,6 +372,48 @@ stated objection (attribution is not a license). Every entry's `<link>` is the
 original, the index is `noindex`, and mirror-vs-excerpt is per-subscription so a
 single objecting writer is a one-field edit.
 
+**2026-09-04 — agent chat: one tab, one adapter, three transports.** Owner
+decision (agent-chat collaboration plan, Qs 1–8 resolved 2026-09-04): the
+CHAT tab is the one place the owner talks to every agent, and the task
+board is the one place work is assigned. Neither gained a scheduler or a
+transport — §7's "two schedulers, never three" holds, and manifest still
+reaches Hermes only through `hermes …` execs. The rail is grouped by agent;
+what differs per section is the backend behind one transcript renderer and
+one composer:
+
+| Agent | List threads | Send | Reply arrives | Transcript truth | Writer |
+|---|---|---|---|---|---|
+| concierge (spirit) | `ChatSessions()` | spool `kind: chat` | engine rewrites the session file; SSE + poll | `artifacts/chats/<id>.md` | engine |
+| kairos / zeck | `chatthreads.Store.List` | `chatAskFor` → `SpoolRunNow` (one order at a time) | `chatSweep` (60 s ticker + on read); poll | `<portal dir>/chat.json` | manifest |
+| alfred + `hermes profile` rows | `agentchat.Store` | `hermes.Runner.Run` on the request goroutine, in-flight marker | the goroutine appends the reply turn; poll | `<primary harness>/artifacts/chats/<agent>/<id>.md` | manifest (one writer, per-thread lock) |
+
+The Hermes turn is honest about continuity: every turn is a fresh `hermes -z`
+(no `--resume` — the flag was silently dropped), so manifest composes the
+conversation window into the prompt, keeps spend and the Hermes-side
+`session_id` in the ledger, and the file stays the truth. Agent sessions use
+the spirit session grammar (`## Turn N — who · time`, `### Step N — cast`) so
+one parser serves all three; a second send while a turn runs queues in the
+file (`queued`), mirroring the spirit contract. Chat turns run on read-only
+toolsets — §4 holds, world changes stay `manifest-proposal` blocks in FEED.
+
+**The task board's agent entry points** (plan §3.4): the thread composer has
+three modes — Comment (record only, never a turn), Ask ✦ (one turn, answered
+in the thread), Do ✦ (assign → plan → fire) — plus `@name` / `@name::intent`
+parsed server-side against the roster (unknown names stay prose) and the
+capture bar's `… @alfred` / `!do`. The reply guard is the invariant: nothing
+spends a turn without an explicit Ask, Do, mention, or reply-to-agent. The
+roster is explicit addressing (`agent:alfred` aliasing `agent:hermes`,
+`agent:<profile>`, `agent:kairos`, `agent:zeck`); profile descriptions are
+tooltips and a non-binding "suggest agent" hint — never silent routing.
+
+**Bridges.** "→ task" on any agent chat turn creates a todo through the
+capture path, pins it, copies the conversation window into its thread
+(owner turns as the owner, agent turns as the agent, `meta.from: chat`, the
+first entry carrying `meta.chat`), assigns the agent record-only, and stamps
+`task:` on the session. "Open in chat" reads that link back; an agent's rail
+section lists the open todos it holds. dataDir never syncs, so Alfred chats
+and personal task threads are metis-only (accepted, Q7).
+
 **2026-08-31 — §11 component list: old click-to-edit money shell deleted, `cardShell` added.**
 The legacy click-to-edit money helper family (~80 lines in `05-components.js`)
 had zero call sites — every money field in the app edits through `moneyInput`

@@ -1,9 +1,10 @@
-// ================= TODO PANEL (todo-panel plan Phase 2) =================
+// ================= TODO PANEL =================
 // Click a list row or board card → a sticky right panel (the AION-inspector
 // idiom: the list never reflows) carrying the todo's DESCRIPTION, its PLAN
 // (the system/todo-plans record — agent-writable via the §12 lane), the
-// ASSIGNEE row (Phase 3), and the comment THREAD with @-mentions and
-// content-addressed attachments. Under 1100px the panel becomes a sheet.
+// ASSIGNEE row (the roster picker), and the comment THREAD with the
+// Comment / Ask ✦ / Do ✦ composer, @-mentions and content-addressed
+// attachments. Under 1100px the panel becomes a sheet.
 
 let todoSelId = null;      // selected todo id ("" = none)
 let todoPanelData = null;  // last /api/tasks/panel payload
@@ -105,7 +106,7 @@ async function renderTodoPanel(refetch) {
     host.append(dg);
   }
 
-  // --- assignee row (Phase 3 fills the roster picker; owner text now) ---
+  // --- assignee row: the roster picker ---
   const asg = el("div", "tdo-p-sec");
   asg.append(el("div", "tdo-p-sec-label", "assignee"));
   asg.append(todoAssigneeControl(d, row));
@@ -220,7 +221,21 @@ async function renderTodoPanel(refetch) {
   const thHead = el("div", "tdo-p-sec-label");
   const kindTag = { aion: "team-visible", re: "shared · RE", private: "private" };
   thHead.append(document.createTextNode("thread"));
-  thHead.append(el("span", "tdo-p-sec-acts tdo-p-thread-kind", kindTag[d.threadKind] || ""));
+  const thActs = el("span", "tdo-p-sec-acts");
+  // "open in chat" (agent-chat plan §3.4f): the conversation this task came
+  // from — or, for an agent-held task, the agent's section in CHAT
+  if (d.chat && d.chat.agent) {
+    const open = el("button", "tdo-p-linky", "open in chat ↗");
+    open.title = d.chat.id
+      ? "the conversation with " + (d.chat.label || d.chat.agent) + " this task came from" + (d.chat.title ? " — “" + d.chat.title + "”" : "")
+      : (d.chat.label || d.chat.agent) + "'s conversations in CHAT";
+    open.onclick = () => {
+      location.hash = "#/chat/a/" + encodeURIComponent(d.chat.agent) + (d.chat.id ? "/" + encodeURIComponent(d.chat.id) : "");
+    };
+    thActs.append(open);
+  }
+  thActs.append(el("span", "tdo-p-thread-kind", kindTag[d.threadKind] || ""));
+  thHead.append(thActs);
   th.append(thHead);
   // ⚑ proposals in place (§3.4e): the agent's changes wait in FEED — this is
   // a pointer to those cards, never a second approvals surface
@@ -302,6 +317,8 @@ function todoThreadEntry(c) {
   head.append(el("span", "tdo-p-c-author", who));
   if (c.action && c.action !== "comment") head.append(el("span", "tdo-p-c-act", c.action));
   if (c.meta && c.meta.persona) head.append(el("span", "tdo-p-c-persona", c.meta.persona));
+  // an entry copied in by "→ task" (§3.4f) says so
+  if (c.meta && c.meta.from === "chat") { const f = el("span", "tdo-p-c-persona", "from chat"); f.title = "copied from the conversation this task was promoted from"; head.append(f); }
   head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
   e.append(head);
   if (c.text) e.append(el("div", "tdo-p-c-text", c.text));
@@ -352,24 +369,41 @@ function todoComposer(d) {
     agents.find((a) => /^agent:(alfred|hermes)$/.test(a.id)) || agents[0];
   const agentSel = document.createElement("select");
   agentSel.className = "pp-in tdo-p-agent";
-  agentSel.title = "which agent";
   agents.forEach((a) => {
     const o = document.createElement("option");
     o.value = a.id; o.textContent = "✦ " + a.name;
+    if (a.description) o.title = a.description;
     agentSel.append(o);
   });
   if (defAgent) agentSel.value = defAgent.id;
   const seg = el("div", "tdo-p-modes");
   const modeBar = el("div", "tdo-p-modebar");
   const agentName = () => (agentSel.selectedOptions[0] ? agentSel.selectedOptions[0].textContent.replace(/^✦ /, "") : "the agent");
+  // the picked agent's profile description is the picker's tooltip (§3.5)
+  const agentTip = () => { const a = agents.find((x) => x.id === agentSel.value); agentSel.title = (a && a.description) || "which agent"; };
+  // "suggest agent" (§2.5): a NON-BINDING hint when the text reads like
+  // another agent's description — click adopts it; nothing routes on its own
+  const suggest = el("button", "tdo-p-linky tdo-p-suggest");
+  suggest.hidden = true;
+  const paintSuggest = () => {
+    const hit = mode === "comment" ? null : todoSuggestAgent(ta.value, agents);
+    suggest.hidden = !hit || hit.id === agentSel.value;
+    if (suggest.hidden) return;
+    suggest.textContent = "suggest ✦ " + hit.name;
+    suggest.title = "reads like " + hit.name + "'s brief — " + hit.description + " · click to pick (a hint, never automatic)";
+    suggest.onclick = () => { agentSel.value = hit.id; paint(); ta.focus(); };
+  };
   const paint = () => {
     seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
     agentSel.hidden = mode === "comment";
+    agentTip();
     ta.placeholder = mode === "ask" ? "ask " + agentName() + " — one turn, answered in this thread…"
       : mode === "do" ? "tell " + agentName() + " what to do — it assigns, drafts the plan; you fire…"
       : "comment… (@ to mention · @alfred asks · @alfred::plan delegates)";
     send.textContent = mode === "ask" ? "ask" : mode === "do" ? "do" : "comment";
+    paintSuggest();
   };
+  ta.addEventListener("input", paintSuggest);
   TODO_COMPOSER_MODES.forEach(([val, label]) => {
     const b = el("button", "tdo-p-mode", label);
     b.dataset.mode = val;
@@ -381,7 +415,7 @@ function todoComposer(d) {
     seg.append(b);
   });
   agentSel.onchange = paint;
-  modeBar.append(seg, agentSel);
+  modeBar.append(seg, agentSel, suggest);
   // "replying to Alfred" — the cue that the last word was the agent's
   const th = (d && d.thread) || [];
   const last = th.length ? th[th.length - 1] : null;
@@ -458,20 +492,46 @@ function todoComposer(d) {
   return box;
 }
 
-// todoRoster — merged assignee groups from the /api/tasks payload
-// (Phase 3 adds the agents group server-side; this reads whatever is there).
-// Agents expand into their base token plus one intent-tagged entry per
-// enabled persona (persona plan Phase 1): `agent:hermes::brief` — the intent
-// rides the mention, never the assignment.
+// todoRoster — merged assignee groups from the /api/tasks payload (people
+// from the aion/RE groups, agents from the server-side roster). Agents
+// expand into their base token plus one intent-tagged entry per enabled
+// persona: `agent:alfred::brief` — the intent rides the mention, never the
+// assignment. An agent's description (its `hermes profile describe` text)
+// rides along for tooltips and the suggest hint.
 function todoRoster() {
   const a = (todosCache && todosCache.assignees) || {};
   const out = [];
   (a.agents || []).forEach((x) => {
-    out.push({ id: x.id, name: x.name, kind: "agent" });
+    out.push({ id: x.id, name: x.name, kind: "agent", description: x.description || "" });
     (x.personas || []).forEach((pi) =>
       out.push({ id: x.id + "::" + pi, name: x.name + " · " + pi, kind: "agent" }));
   });
   (a.aion || []).forEach((x) => out.push({ id: x.id || x.initials || x.name, name: x.name || x.initials, kind: "aion" }));
   (a.realestate || []).forEach((x) => out.push({ id: x.id || x.name, name: x.name, kind: "re" }));
   return out;
+}
+
+// todoSuggestAgent — the §2.5 hint: the agent whose description shares the
+// most distinctive words with the text (≥ 2 hits, a clear lead over the
+// runner-up), or null. Pure; the caller decides what to show. Descriptions
+// are the only signal — an agent without one is never suggested.
+const todoSuggestStop = new Set(["this", "that", "with", "from", "have", "what", "when", "will", "your", "about", "into", "them", "then", "than", "they", "were", "been", "does", "make", "just", "like", "also", "over", "some", "more", "most", "very", "here", "there", "which", "their", "would", "could", "should", "please", "need", "want", "find", "agent", "profile", "hermes", "default"]);
+function todoSuggestWords(text) {
+  const out = new Set();
+  String(text || "").toLowerCase().split(/[^a-z0-9]+/).forEach((w) => {
+    if (w.length >= 4 && !todoSuggestStop.has(w)) out.add(w.replace(/(ings?|es|s|ed)$/, ""));
+  });
+  return out;
+}
+function todoSuggestAgent(text, agents) {
+  const words = todoSuggestWords(text);
+  if (words.size < 2) return null;
+  const scored = (agents || []).filter((a) => a.description).map((a) => {
+    let n = 0;
+    todoSuggestWords(a.description).forEach((w) => { if (words.has(w)) n++; });
+    return { a, n };
+  }).sort((x, y) => y.n - x.n);
+  if (!scored.length || scored[0].n < 2) return null;
+  if (scored.length > 1 && scored[1].n === scored[0].n) return null; // a tie is not a hint
+  return scored[0].a;
 }

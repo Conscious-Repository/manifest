@@ -145,12 +145,18 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rec := s.readPlanRecord(id)
+	thread := s.listThread(id)
 	out := map[string]any{
 		"id":         id,
 		"record":     rec,
-		"thread":     s.listThread(id),
+		"thread":     thread,
 		"threadKind": s.threadKind(id),
 		"proposals":  s.taskProposals(id),
+	}
+	// "open in chat" (§3.4f): the conversation this task came from, else the
+	// assignee's rail section
+	if link := s.taskChatLink(id, thread, rec.Assignee); link != nil {
+		out["chat"] = link
 	}
 	if d, ok := s.delegationIndex()[id]; ok {
 		out["delegation"] = d

@@ -81,6 +81,10 @@ type Session struct {
 	// report session_id) — a pointer for `hermes sessions search`, never fed
 	// back in (see package hermes).
 	HermesSession string `json:"hermesSession,omitempty"`
+	// Task is the todo this conversation was promoted into ("→ task", plan
+	// §3.4f) — the transcript's link back to the board. One per session: a
+	// second promote overwrites it (the newest task is the live one).
+	Task string `json:"task,omitempty"`
 }
 
 // Turn is one parsed turn block.
@@ -137,7 +141,7 @@ func parse(content string) (Session, string) {
 	sess := Session{
 		ID: fm["session"], Agent: fm["agent"], Profile: fm["profile"], Title: fm["title"],
 		Created: fm["created"], Updated: fm["updated"], Status: fm["status"],
-		Model: fm["model"], HermesSession: fm["hermes_session"],
+		Model: fm["model"], HermesSession: fm["hermes_session"], Task: fm["task"],
 	}
 	sess.Turns, _ = strconv.Atoi(fm["turns"])
 	sess.SpentUSD, _ = strconv.ParseFloat(fm["charge_spent_usd"], 64)
@@ -160,6 +164,7 @@ func render(sess Session, body string) string {
 		SetRaw("charge_spent_usd", fmt.Sprintf("%.4f", sess.SpentUSD)).
 		Set("model", sess.Model).
 		Set("hermes_session", sess.HermesSession).
+		Set("task", sess.Task).
 		String(body)
 }
 
@@ -186,14 +191,24 @@ func ParseTurns(body string) []Turn {
 	return out
 }
 
+var (
+	sayStepRe = regexp.MustCompile(`(?m)^### Step \d+ — say[ \t]*$`)
+	anyStepRe = regexp.MustCompile(`(?m)^### Step \d+ — `)
+)
+
 // SayBody returns the reply text of an assistant turn: the body of its `say`
-// step when present, else the whole text.
+// step when present (whatever its number — a portal reply puts a trace step
+// first), up to the next step, else the whole text.
 func SayBody(text string) string {
-	const marker = "### Step 1 — say"
-	if i := strings.Index(text, marker); i >= 0 {
-		return strings.TrimSpace(text[i+len(marker):])
+	loc := sayStepRe.FindStringIndex(text)
+	if loc == nil {
+		return strings.TrimSpace(text)
 	}
-	return strings.TrimSpace(text)
+	rest := text[loc[1]:]
+	if next := anyStepRe.FindStringIndex(rest); next != nil {
+		rest = rest[:next[0]]
+	}
+	return strings.TrimSpace(rest)
 }
 
 func (s *Store) read(agent, id string) (Session, string, error) {
@@ -367,6 +382,15 @@ func (s *Store) SetStatus(agent, id, status string) error {
 func (s *Store) SetHermesSession(agent, id, hermesSession string) error {
 	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
 		sess.HermesSession = strings.TrimSpace(hermesSession)
+		return nil
+	})
+	return err
+}
+
+// SetTask records the todo this session was promoted into.
+func (s *Store) SetTask(agent, id, task string) error {
+	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
+		sess.Task = strings.TrimSpace(task)
 		return nil
 	})
 	return err

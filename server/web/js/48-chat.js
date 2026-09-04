@@ -31,6 +31,7 @@ let chatPendingModel = "";
 let chatAgent = "";
 let chatRoster = [];         // last /api/agents/chat/roster fetch
 let chatAgentSessions = {};  // agent slug → its session list
+let chatAgentTasks = {};     // agent slug → the open todos it holds (Phase 4 bridge)
 let chatAgentPicked = false; // a section was chosen at least once this visit
 
 // ---- backend switch: everything below asks these, never a literal URL ----
@@ -115,8 +116,14 @@ async function loadChatRoster() {
 // loadChatSessions refreshes the OPEN section's list (spirits or one agent).
 async function loadChatSessions() {
   if (chatAgent) {
-    try { chatAgentSessions[chatAgent] = ((await (await fetch(chatBase())).json()).sessions) || []; }
-    catch (e) { chatAgentSessions[chatAgent] = []; }
+    const agent = chatAgent;
+    const tasks = fetch("/api/agents/chat/" + encodeURIComponent(agent) + "/tasks")
+      .then((r) => (r.ok ? r.json() : { tasks: [] }))
+      .then((d) => { chatAgentTasks[agent] = d.tasks || []; })
+      .catch(() => { chatAgentTasks[agent] = []; });
+    try { chatAgentSessions[agent] = ((await (await fetch(chatBase())).json()).sessions) || []; }
+    catch (e) { chatAgentSessions[agent] = []; }
+    await tasks;
     return;
   }
   try { chatSessions = ((await (await fetch("/api/chat/sessions")).json()).sessions) || []; }
@@ -176,6 +183,7 @@ function chatRailSection(agent, label, info) {
   sec.append(newBtn);
   if (!sessions.length) {
     sec.append(emptyRow("No conversations yet."));
+    if (agent) sec.append(chatRailTasks(agent));
     return sec;
   }
   sessions.forEach((s) => {
@@ -183,6 +191,7 @@ function chatRailSection(agent, label, info) {
     const top = el("div", "chat-rail-top");
     top.append(el("span", "chat-rail-title", s.title || s.id));
     if (s.status === "thinking") top.append(el("span", "chat-rail-live", "✦"));
+    if (s.task) { const t = el("span", "chat-rail-task-mark", "☐"); t.title = "promoted to a task"; top.append(t); }
     row.append(top);
     const rm = el("div", "chat-rail-meta");
     rm.append(el("span", "chat-rail-spirit", s.spirit || s.agent || label));
@@ -191,7 +200,54 @@ function chatRailSection(agent, label, info) {
     row.onclick = () => { location.hash = chatHash(s.id); };
     sec.append(row);
   });
+  if (agent) sec.append(chatRailTasks(agent));
   return sec;
+}
+
+// chatRailTasks — the reverse bridge (§3.4f): the open todos this agent holds,
+// under its threads, each a jump to the task's thread on the board. Quiet
+// when it holds none.
+const chatRailTasksMax = 8;
+function chatRailTasks(agent) {
+  const wrap = el("div", "chat-rail-tasks");
+  const tasks = chatAgentTasks[agent] || [];
+  if (!tasks.length) return wrap;
+  wrap.append(el("div", "chat-rail-group", "tasks · " + tasks.length));
+  tasks.slice(0, chatRailTasksMax).forEach((t) => {
+    const row = el("div", "chat-rail-task");
+    row.append(el("span", "chat-rail-task-text", t.text));
+    const meta = [];
+    if (t.container) meta.push(t.container);
+    if (t.state) meta.push(t.state.replace(/-/g, " "));
+    if (meta.length) row.append(el("span", "chat-rail-task-meta", meta.join(" · ")));
+    row.title = (t.chatId ? "promoted from a conversation here · " : "") + "open the task thread";
+    row.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(t.id); };
+    wrap.append(row);
+  });
+  if (tasks.length > chatRailTasksMax) {
+    const more = el("button", "sprt-quiet", "＋" + (tasks.length - chatRailTasksMax) + " more on the board");
+    more.onclick = () => { location.hash = "#/tasks"; };
+    wrap.append(more);
+  }
+  return wrap;
+}
+
+// chatPromoteTurn — "→ task" (§3.4f): the todo line is asked for (the title
+// is the default), then the server creates it through the capture path,
+// copies the conversation up to this turn into its thread and assigns the
+// agent — record-only, no turn spent.
+function chatPromoteTurn(session, turnN) {
+  const agent = chatAgent;
+  if (!agent) return;
+  const title = session.title || "";
+  askText("Task from this conversation — " + chatAgentLabel(agent) + " takes it", title ? "the todo line · empty = “" + title + "”" : "the todo line…", async (t) => {
+    try {
+      const r = await postJSONOk(chatBase() + "/" + encodeURIComponent(session.id) + "/promote", { turn: turnN, text: (t || "").trim() });
+      const where = "#/tasks/" + encodeURIComponent(r.created);
+      showToast("Task created" + (r.assigned ? " — " + (r.name || chatAgentLabel(agent)) + " holds it" : "") + " · open", () => { location.hash = where; }, "info");
+      if (chatOpenId === session.id) { refetchChatSession(session.id); loadChatSessions().then(renderChatRail); }
+    } catch (e) { showToast("Couldn't create the task — " + (e.message || "error")); }
+  });
 }
 
 // renderChatLanding — the lazy new-chat landing (cmd-ctr model): a time-aware
@@ -225,6 +281,8 @@ async function renderChatLanding() {
     if (a && a.profile) who.append(el("span", "chat-landing-hint", "hermes -p " + a.profile));
     if (a && a.backend === "portal") who.append(el("span", "chat-landing-hint", a.domain === "ooda" ? "OODA portal chat" : "AION team portal chat"));
     host.append(who);
+    // what this agent is for — its `hermes profile describe` text (§3.5)
+    if (a && a.description) host.append(el("div", "chat-landing-desc", a.description));
     if (a && !a.enabled) {
       host.append(emptyRow(a.backend === "portal"
         ? (a.label + "'s harness is not configured on this box — orders can't spool here.")
@@ -653,6 +711,13 @@ function renderChatTranscript(d) {
       loadChat();
     } catch (e) { showToast("delete failed"); }
   });
+  // the task this conversation became (§3.4f) — the link back to the board
+  if (s.task) {
+    const task = el("button", "sprt-quiet chat-head-task", "☐ task ↗");
+    task.title = "open the task this conversation was promoted into";
+    task.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(s.task); };
+    head.append(task);
+  }
   head.append(ren, del);
   host.append(head);
 
@@ -684,7 +749,16 @@ function renderChatTranscript(d) {
       }
     });
     if (!steps.length && t.text) { const p = el("div", "chat-say"); p.textContent = t.text; wrap.append(p); }
-    if (t.usd) wrap.append(el("div", "chat-turn-usd", "$" + t.usd));
+    const foot = el("div", "chat-turn-foot");
+    if (t.usd) foot.append(el("span", "chat-turn-usd", "$" + t.usd));
+    // → task (§3.4f): every agent turn in an agent section can become work
+    if (chatAgent) {
+      const promote = el("button", "chat-turn-act", "→ task");
+      promote.title = "make a task from this conversation (up to this turn) — " + who + " takes it";
+      promote.onclick = () => chatPromoteTurn(s, t.n);
+      foot.append(promote);
+    }
+    if (foot.childElementCount) wrap.append(foot);
     host.append(wrap);
   });
 

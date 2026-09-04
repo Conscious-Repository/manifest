@@ -42,6 +42,83 @@ type agentChatCfg struct {
 	profiles []hermesProfile
 	profAt   time.Time
 	profErr  string
+	// descriptions (`hermes profile describe`) by profile name, "default"
+	// included — the roster tooltip and the suggest-agent hint (§2.5, §3.5).
+	// Refreshed less often than the list: one exec per profile.
+	descs    map[string]string
+	descAt   time.Time
+	descBusy bool // a background refresh is running
+}
+
+// hermesDescribeEvery bounds how often the descriptions are re-asked.
+const hermesDescribeEvery = 5 * time.Minute
+
+// hermesProfileDescriptions returns profile name → description text. The CLI
+// is one process start per profile, so a stale map is served at once and
+// refreshed in the background (at most every hermesDescribeEvery) — the
+// first roster after boot carries no descriptions, the next one does. Nil
+// when the runner is off.
+func (s *Server) hermesProfileDescriptions(ctx context.Context) map[string]string {
+	if s.agentChat == nil || !s.hermesEnabled() {
+		return nil
+	}
+	profiles, _ := s.hermesProfilesCached(ctx)
+	c := s.agentChat
+	c.pmu.Lock()
+	defer c.pmu.Unlock()
+	if c.descBusy || (c.descs != nil && time.Since(c.descAt) < hermesDescribeEvery) {
+		return c.descs
+	}
+	names := []string{"default"}
+	for _, p := range profiles {
+		if n := strings.ToLower(strings.TrimSpace(p.Name)); n != "" && n != "default" && agentchat.ValidAgent(n) {
+			names = append(names, n)
+		}
+	}
+	c.descBusy = true
+	bin, env := s.hermesBin(), s.hermesEnv()
+	go func() {
+		out := map[string]string{}
+		for _, n := range names {
+			if d, err := hermesProfileCmd(context.Background(), bin, env, 5*time.Second, "describe", n); err == nil {
+				if text := parseHermesDescribe(d); text != "" {
+					out[n] = text
+				}
+			}
+		}
+		c.pmu.Lock()
+		c.descs, c.descAt, c.descBusy = out, time.Now(), false
+		c.pmu.Unlock()
+	}()
+	return c.descs
+}
+
+// alfredDescription is the default profile's description, else the standing
+// one-liner (Alfred is the house do-bot whether or not a description is set).
+const alfredDefaultDescription = "the default Hermes profile — the house do-bot; answers, digs, drafts plans; changes go through FEED approvals"
+
+// agentDescription is the tooltip text for a roster token ("" = none): the
+// Hermes family from `hermes profile describe`, the portal agents from their
+// standing line, people none.
+func (s *Server) agentDescription(token string) string {
+	name := strings.TrimPrefix(token, "agent:")
+	if name == token || name == "" {
+		return ""
+	}
+	if ag, isPortal := s.portalChatAgent(name); isPortal {
+		if ag == nil {
+			return ""
+		}
+		return portalAgentDescription(ag)
+	}
+	descs := s.hermesProfileDescriptions(context.Background())
+	if name == alfredAgent || name == "hermes" {
+		if d := descs["default"]; d != "" {
+			return d
+		}
+		return alfredDefaultDescription
+	}
+	return descs[name]
 }
 
 // UseAgentChat wires the Hermes-family chat store (the primary harness's
@@ -105,7 +182,8 @@ func (s *Server) agentChatRoster(ctx context.Context) []agentChatRosterEntry {
 		profiles, _ = s.hermesProfilesCached(ctx)
 	}
 	out := []agentChatRosterEntry{{Name: alfredAgent, Label: "Alfred", Backend: "hermes", Enabled: enabled,
-		Sessions: len(s.agentChat.store.List(alfredAgent))}}
+		Sessions: len(s.agentChat.store.List(alfredAgent)), Description: s.agentDescription("agent:" + alfredAgent)}}
+	descs := s.hermesProfileDescriptions(ctx)
 	for _, p := range profiles {
 		name := strings.ToLower(strings.TrimSpace(p.Name))
 		if name == "default" || name == alfredAgent {
@@ -118,7 +196,7 @@ func (s *Server) agentChatRoster(ctx context.Context) []agentChatRosterEntry {
 			continue
 		}
 		out = append(out, agentChatRosterEntry{Name: name, Label: name, Backend: "hermes", Profile: name,
-			Model: p.Model, Enabled: enabled, Sessions: len(s.agentChat.store.List(name))})
+			Model: p.Model, Enabled: enabled, Sessions: len(s.agentChat.store.List(name)), Description: descs[name]})
 	}
 	sort.SliceStable(out[1:], func(i, j int) bool { return out[1+i].Name < out[1+j].Name })
 	return out
@@ -381,7 +459,7 @@ func (s *Server) runAgentChatTurn(agent, id string) {
 	})
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
-		_, _ = st.AppendTurn(agent, id, "system", "⚠ "+strings.TrimSpace(strings.TrimPrefix(agent, "agent:"))+" couldn't finish that — "+err.Error(), 0)
+		_, _ = st.AppendTurn(agent, id, "system", "⚠ "+agentDisplayName("agent:"+agent)+" couldn't finish that — "+err.Error(), 0)
 		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Session: id, Harness: "hermes",
 			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": agent, "profile": sess.Profile}})
 		return
