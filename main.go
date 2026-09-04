@@ -414,6 +414,7 @@ func main() {
 		rs.Register(sources.PubMed{Client: http.Client{Timeout: 20 * time.Second}})
 		rs.Register(sources.NIHRePORTER{Client: http.Client{Timeout: 20 * time.Second}})
 		rs.Register(sources.Web{Client: http.Client{Timeout: 20 * time.Second}})
+		rs.Register(sources.Feed{Client: http.Client{Timeout: 20 * time.Second}})
 		recRuns = rs
 	}
 	// The real-estate decision log reuses the aion store/grammar pointed at
