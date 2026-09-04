@@ -96,10 +96,10 @@ type Turn struct {
 type Store struct {
 	root string
 
-	mu      sync.Mutex             // guards locks, inflight, queued
-	locks   map[string]*sync.Mutex // per-thread file mutex
-	inflight map[string]bool       // thread key → a turn goroutine owns it
-	queued  map[string][]string    // thread key → sends waiting for the goroutine
+	mu       sync.Mutex             // guards locks, inflight, queued
+	locks    map[string]*sync.Mutex // per-thread file mutex
+	inflight map[string]bool        // thread key → a turn goroutine owns it
+	queued   map[string][]string    // thread key → sends waiting for the goroutine
 }
 
 // New opens a store rooted at dir (e.g. <harness>/artifacts/chats). The
