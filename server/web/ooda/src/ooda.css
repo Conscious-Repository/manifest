@@ -212,7 +212,14 @@ button { font: inherit; color: inherit; }
 .ooda-composer { margin-top: var(--sp-7); border: 1px solid var(--base-25); border-radius: 8px;
   padding: var(--sp-2) var(--sp-5) var(--sp-5); background: var(--base-05); }
 .ooda-composer .ooda-chat-ctx { padding: var(--sp-4) 0 var(--sp-1); }
-.ooda-composer .ooda-compose { padding: var(--sp-4) 0 0; }
+.ooda-composer .ooda-compose { padding: var(--sp-4) 0 0; position: relative; }
+/* @-mention list (persona intents) floats above the textarea */
+.ooda-mention { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 5; background: var(--base-00);
+  border: 1px solid var(--base-25); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); overflow: hidden; }
+.ooda-mention-row { display: flex; gap: 10px; width: 100%; padding: 6px 10px; border: 0; background: none;
+  text-align: left; cursor: pointer; font-family: var(--sans); font-size: 12px; align-items: baseline; }
+.ooda-mention-row:hover { background: var(--base-05); }
+.ooda-mention-tok { font-family: var(--mono); color: var(--accent); }
 .ooda-composer .ooda-compose-acts { padding: var(--sp-5) 0 0; }
 /* the two sends are THE action of the surface — a touch more presence,
    still the house button */

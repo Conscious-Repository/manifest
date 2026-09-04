@@ -22,6 +22,13 @@ function ViewChat({ data }) {
   const [ctx, setCtx] = React.useState([]);
   const [err, setErr] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  // the surface's agent roster ({harness, personas}) feeds the @-mention list
+  // — @zeck::brief is parsed server-side (chatIntent); this is the UI the
+  // AION portal always had and this one lacked (agent-chat plan §1.1)
+  const [agents, setAgents] = React.useState([]);
+  React.useEffect(() => {
+    getJSON("/api/team/agents").then((d) => setAgents((d && d.agents) || [])).catch(() => {});
+  }, []);
 
   const load = React.useCallback(() => {
     getJSON("/api/chat/threads")
@@ -83,6 +90,16 @@ function ViewChat({ data }) {
     } catch (e) { setErr(String(e.message || e)); }
     setBusy(false);
   };
+
+  // mention list from the roster (@zeck + persona variants) — the AION
+  // portal's rule verbatim: open while the draft ends in an @-word
+  const mentionOpen = /@[^\s]*$/.test(text) && text.slice(-1) !== " ";
+  const mentions = [];
+  agents.forEach((a) => {
+    mentions.push({ token: "@" + a.harness, note: "no intent tag · it decides how to answer" });
+    (a.personas || []).forEach((p) => mentions.push({ token: "@" + a.harness + "::" + p, note: p }));
+  });
+  const pickMention = (tok) => setText((d) => d.replace(/@[^\s]*$/, tok + " "));
 
   // ATTACHMENTS — upload, then the hash rides the context array with the
   // property chips, so the send path is unchanged.
@@ -223,11 +240,25 @@ function ViewChat({ data }) {
               </div>
               <div className="ooda-compose">
                 <textarea className="ooda-textarea" rows={2} value={text}
-                  placeholder={window.CHAT_ACTIONS.placeholder}
+                  placeholder={window.CHAT_ACTIONS.placeholder + (mentions.length ? " · @ to tag an intent" : "")}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {
+                    if (mentionOpen && mentions.length && (e.key === "Tab" || e.key === "Enter") && !e.metaKey && !e.ctrlKey) {
+                      e.preventDefault(); pickMention(mentions[0].token); return;
+                    }
                     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(e.shiftKey ? "delegate" : "ask");
                   }} />
+                {mentionOpen && mentions.length > 0 ? (
+                  <div className="ooda-mention">
+                    {mentions.map((mm) => (
+                      <button key={mm.token} className="ooda-mention-row"
+                        onMouseDown={(e) => { e.preventDefault(); pickMention(mm.token); }}>
+                        <span className="ooda-mention-tok">{mm.token}</span>
+                        <span className="ooda-sub">{mm.note}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <div className="ooda-compose-acts">
                 <button className="ooda-send" onClick={() => send("ask")} disabled={busy || !text.trim()}>

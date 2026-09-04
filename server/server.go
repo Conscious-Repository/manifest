@@ -516,13 +516,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/chat/sessions/{id}/stream", s.handleChatStream)
 	// Agents chat (agent-chat plan Phase 1): the same verbs over the Hermes-
 	// family store — Alfred + profiles — under /api/agents/chat/<agent>/…
+	// Phase 2: the slugs kairos|zeck route the SAME verbs over the portal
+	// chat stores (agentchat_portal.go); attach/engine exist only there.
 	mux.HandleFunc("GET /api/agents/chat/roster", s.handleAgentChatRoster)
-	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions", s.handleAgentChatSessions)
-	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions", s.handleAgentChatSessionCreate)
-	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}", s.handleAgentChatSession)
-	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/messages", s.handleAgentChatMessage)
-	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/rename", s.handleAgentChatRename)
-	mux.HandleFunc("DELETE /api/agents/chat/{agent}/sessions/{id}", s.handleAgentChatDelete)
+	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions", s.portalChatRoute(s.handlePortalChatSessions, s.handleAgentChatSessions))
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions", s.portalChatRoute(s.handlePortalChatSessionCreate, s.handleAgentChatSessionCreate))
+	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}", s.portalChatRoute(s.handlePortalChatSession, s.handleAgentChatSession))
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/messages", s.portalChatRoute(s.handlePortalChatMessage, s.handleAgentChatMessage))
+	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/rename", s.portalChatRoute(s.handlePortalChatRename, s.handleAgentChatRename))
+	mux.HandleFunc("DELETE /api/agents/chat/{agent}/sessions/{id}", s.portalChatRoute(s.handlePortalChatDelete, s.handleAgentChatDelete))
+	mux.HandleFunc("POST /api/agents/chat/{agent}/attach", s.portalChatRoute(s.handlePortalChatAttach, portalChatNoHermes))
+	mux.HandleFunc("GET /api/agents/chat/{agent}/attach/{hash}", s.portalChatRoute(s.handlePortalChatAttachGet, portalChatNoHermes))
+	mux.HandleFunc("GET /api/agents/chat/{agent}/engine", s.portalChatRoute(s.handlePortalChatEngine, portalChatNoHermes))
 
 	// TERMINAL — in-app PTY over tmux (metis-local; claude/codex presets).
 	mux.HandleFunc("GET /api/terminal/sessions", s.handleTermSessions)

@@ -62,14 +62,19 @@ func (s *Server) UseAgentChat(st *agentchat.Store) {
 
 // agentChatRosterEntry is one addressable agent for the rail.
 type agentChatRosterEntry struct {
-	Name        string `json:"name"`    // rail/route slug: alfred | <profile>
+	Name        string `json:"name"`    // rail/route slug: alfred | <profile> | kairos | zeck
 	Label       string `json:"label"`   // display
-	Backend     string `json:"backend"` // "hermes"
+	Backend     string `json:"backend"` // "hermes" | "portal" (agentchat_portal.go)
 	Profile     string `json:"profile"` // -p value ("" = default)
 	Model       string `json:"model"`
 	Description string `json:"description,omitempty"`
 	Enabled     bool   `json:"enabled"` // the runner can take a turn
 	Sessions    int    `json:"sessions"`
+	// portal agents only: the artifact/access domain, the one-run gate, and
+	// the persona intents the composer's @-typeahead offers (@kairos::brief)
+	Domain   string   `json:"domain,omitempty"`
+	Busy     bool     `json:"busy,omitempty"`
+	Personas []string `json:"personas,omitempty"`
 }
 
 // hermesProfilesCached re-asks `hermes profile list` at most every 30s — the
@@ -154,12 +159,16 @@ func (s *Server) agentChatReady(w http.ResponseWriter) bool {
 	return true
 }
 
-// GET /api/agents/chat/roster
+// GET /api/agents/chat/roster — the Hermes family (when its store is wired),
+// then the portal agents (Phase 2). Never a 503: the rail still needs the
+// portal sections on a box with no primary harness.
 func (s *Server) handleAgentChatRoster(w http.ResponseWriter, r *http.Request) {
-	if !s.agentChatReady(w) {
-		return
+	agents := []agentChatRosterEntry{}
+	if s.agentChat != nil {
+		agents = append(agents, s.agentChatRoster(r.Context())...)
 	}
-	writeJSON(w, map[string]any{"agents": s.agentChatRoster(r.Context())})
+	agents = append(agents, s.portalChatRoster()...)
+	writeJSON(w, map[string]any{"agents": agents})
 }
 
 // GET /api/agents/chat/{agent}/sessions

@@ -38,7 +38,7 @@
 /* the composer is ONE rounded container (target aesthetic): a borderless
    auto-growing textarea with a quiet mic and a solid accent send tucked at its
    bottom-right. The standalone .chat-input (compare prompt) keeps its own box. */
-.chat-composer { flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: flex-end; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-6); margin-top: var(--sp-6); }
+.chat-composer { position: relative; flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: flex-end; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--bg); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-6); margin-top: var(--sp-6); }
 .chat-composer:focus-within { border-color: var(--accent-soft); }
 .chat-input { flex: 1; resize: vertical; min-height: 44px; font: inherit; font-size: var(--fs-md); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4) var(--sp-5); }
 .chat-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }
@@ -107,5 +107,15 @@
 .chat-attach-chips { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-3); }
 .chat-attach-chip { font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--line); border-radius: var(--radius); padding: 1px var(--sp-3); text-decoration: none; }
 .chat-composer .chat-attach-chips { flex: 1 1 100%; order: -1; margin: 0 0 var(--sp-2); }
+/* portal sections (kairos/zeck): the ask|propose pill sits with the controls;
+   the @-mention list floats above the composer (Phase 2; .chat-composer is
+   position: relative for it) */
+.chat-composer .chat-ritual { order: 2; flex: none; align-self: center; }
+.chat-composer .chat-ritual.on { color: var(--accent); border-color: var(--accent); }
+.chat-mention { position: absolute; left: var(--sp-6); right: var(--sp-6); bottom: calc(100% + 4px); z-index: 5; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); overflow: hidden; }
+.chat-mention-row { display: flex; gap: var(--sp-5); width: 100%; padding: var(--sp-3) var(--sp-5); border: 0; background: none; text-align: left; cursor: pointer; font: inherit; font-size: var(--fs-xs); }
+.chat-mention-row:hover { background: var(--hover); }
+.chat-mention-tok { color: var(--accent); font-family: var(--mono, monospace); }
+.chat-mention-note { color: var(--base-40); }
 .chat-composer .chat-attach { order: 2; }
 .chat-composer .chat-attach[hidden] { display: none; }

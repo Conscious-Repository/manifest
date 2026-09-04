@@ -1,14 +1,18 @@
 // ---- CHAT: Agents chat — one tab, a rail grouped by agent ----
 // (agent-chat plan §3.1/§3.2; cmd-ctr import P2 underneath.) The rail is a
 // list of AGENT SECTIONS, each with its own thread list: ALFRED (the default
-// Hermes profile), PROFILES (one per `hermes profile`), SPIRITS (chattable
+// Hermes profile), PROFILES (one per `hermes profile`), KAIROS (AION team) and
+// ZECK (OODA) over the portals' own chat stores (Phase 2), SPIRITS (chattable
 // excalibur spirits). One transcript renderer + one composer serve all of them;
 // what differs per section is the BACKEND — a base URL and whether an SSE
 // stream exists:
 //   spirits          /api/chat/sessions               engine writes, SSE + poll
 //   alfred/profiles  /api/agents/chat/<agent>/sessions manifest writes, poll only
-// The 1.5s poll while a session is thinking is the live progress channel for
-// every backend — the file IS the stream (run-report idiom). Globals
+//   kairos/zeck      /api/agents/chat/<agent>/sessions portal store + spool; the
+//                    reply returns via the server's chatSweep on read; poll only;
+//                    one order at a time (a send while one runs is a 409)
+// The poll while a session is thinking is the live progress channel for every
+// backend — the file IS the stream (run-report idiom). Globals
 // chatOpenSession/chatCompose are the hooks the palette, floating chat (P4),
 // and capture handoff (P5) drive.
 
@@ -41,6 +45,12 @@ function chatNewHash() { return chatAgent ? "#/chat/a/" + encodeURIComponent(cha
 function chatCurrentSessions() { return chatAgent ? (chatAgentSessions[chatAgent] || []) : chatSessions; }
 function chatRosterEntry(name) { return chatRoster.find((a) => a.name === name) || null; }
 function chatAgentLabel(name) { const a = chatRosterEntry(name); return a ? a.label : name; }
+// portal sections (kairos/zeck): attachments go to the agent's own artifact
+// domain, sends carry a ritual, and @-mentions tag a persona intent
+function chatIsPortal(name) { const a = chatRosterEntry(name === undefined ? chatAgent : name); return !!(a && a.backend === "portal"); }
+function chatAttachBase() { return "/api/agents/chat/" + encodeURIComponent(chatAgent) + "/attach"; }
+function chatFileHref(hash) { return chatIsPortal() ? chatAttachBase() + "/" + hash : "/api/tasks/thread/file/" + hash + "?id=agentchat"; }
+let chatRitual = "ask"; // portal sends: ask | delegate (the portals' two outcomes)
 
 function showChat(h) {
   const tail = h && h.startsWith("#/chat/") ? decodeURIComponent(h.slice("#/chat/".length)) : "";
@@ -127,12 +137,15 @@ function renderChatRail() {
   if (!host) return;
   host.innerHTML = "";
   const alfred = chatRosterEntry("alfred");
-  const profiles = chatRoster.filter((a) => a.name !== "alfred");
+  const profiles = chatRoster.filter((a) => a.backend !== "portal" && a.name !== "alfred");
+  const portals = chatRoster.filter((a) => a.backend === "portal");
   if (alfred) host.append(chatRailSection(alfred.name, alfred.label, alfred));
   if (profiles.length) {
     host.append(el("div", "chat-rail-group", "profiles"));
     profiles.forEach((p) => host.append(chatRailSection(p.name, p.label, p)));
   }
+  // KAIROS · ZECK — their own sections, never the default (Q2/Q5)
+  portals.forEach((p) => host.append(chatRailSection(p.name, p.label, p)));
   host.append(chatRailSection("", "spirits", null));
 }
 
@@ -146,9 +159,10 @@ function chatRailSection(agent, label, info) {
   const sessions = agent ? (chatAgentSessions[agent] || []) : chatSessions;
   if (sessions.some((s) => s.status === "thinking")) head.append(el("span", "chat-rail-live", "✦"));
   const meta = el("span", "chat-rail-section-meta");
-  if (info && info.model) meta.textContent = info.model.replace(/^claude-/, "");
+  if (info && info.backend === "portal") meta.textContent = info.busy ? "✦ running" : (info.domain === "ooda" ? "ooda" : "aion team");
+  else if (info && info.model) meta.textContent = info.model.replace(/^claude-/, "");
   else if (!open && info && info.sessions) meta.textContent = info.sessions + " thread" + (info.sessions === 1 ? "" : "s");
-  if (info && !info.enabled) { meta.textContent = "runner off"; sec.classList.add("off"); }
+  if (info && !info.enabled) { meta.textContent = info.backend === "portal" ? "not configured" : "runner off"; sec.classList.add("off"); }
   head.append(meta);
   if (info && info.description) head.title = info.description;
   head.onclick = () => { if (!open) location.hash = chatSectionHash(agent); };
@@ -209,10 +223,19 @@ async function renderChatLanding() {
     who.append(el("span", "pill light on", a ? a.label : chatAgent));
     if (a && a.model) who.append(el("span", "sprt-quiet", a.model.replace(/^claude-/, "")));
     if (a && a.profile) who.append(el("span", "chat-landing-hint", "hermes -p " + a.profile));
+    if (a && a.backend === "portal") who.append(el("span", "chat-landing-hint", a.domain === "ooda" ? "OODA portal chat" : "AION team portal chat"));
     host.append(who);
     if (a && !a.enabled) {
-      host.append(emptyRow("The Hermes runner is not enabled on this box — turns can't run here."));
+      host.append(emptyRow(a.backend === "portal"
+        ? (a.label + "'s harness is not configured on this box — orders can't spool here.")
+        : "The Hermes runner is not enabled on this box — turns can't run here."));
       return;
+    }
+    if (a && a.backend === "portal") {
+      // the portal rules, said once: the thread is shared with the team, the
+      // agent takes one order at a time, @name::intent picks a persona
+      host.append(el("div", "chat-landing-hint", "shared with the portal · one order at a time · @" + a.name + "::brief tags an intent"));
+      if (a.busy) host.append(el("div", "chat-thinking", "✦ " + a.label + " is running — a send now is refused until it finishes"));
     }
     host.append(el("div", "chat-landing-hint", "type below — Enter sends, the conversation starts then"));
     focusChatInput();
@@ -589,7 +612,7 @@ function chatUserTurn(text) {
       const a = document.createElement("a");
       a.className = "chat-attach-chip";
       a.textContent = "⤓ " + f.name;
-      a.href = "/api/tasks/thread/file/" + f.hash + "?id=agentchat";
+      a.href = chatFileHref(f.hash);
       a.target = "_blank";
       chips.append(a);
     });
@@ -609,8 +632,10 @@ function renderChatTranscript(d) {
   const head = el("div", "chat-head");
   head.append(el("span", "chat-head-title", s.title || s.id));
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
-  head.append(el("span", "chat-head-spirit", who + (s.model ? " · " + s.model : "")));
-  const spent = el("span", "chat-head-charge", "$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
+  const portal = chatIsPortal();
+  head.append(el("span", "chat-head-spirit", who + (s.model ? " · " + s.model : portal ? " · " + (s.domain === "ooda" ? "ooda portal" : "aion portal") + (s.busy ? " · ✦ running" : "") : "")));
+  // portal runs are metered in the agent's own ledger, not per thread
+  const spent = el("span", "chat-head-charge", portal ? "" : "$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
   head.append(spent);
   const base = chatBase();
   const ren = el("button", "sprt-quiet", "rename");
@@ -618,7 +643,8 @@ function renderChatTranscript(d) {
     if (!t.trim()) return;
     try { await postJSONOk(base + "/" + encodeURIComponent(s.id) + "/rename", { title: t.trim() }); loadChat(); } catch (e) { showToast(e.message || "rename failed"); }
   });
-  const del = armedDelete("delete", "delete — sure?", async () => {
+  // a portal thread is a shared team object: the cockpit's delete ARCHIVES it
+  const del = armedDelete(portal ? "archive" : "delete", portal ? "archive — sure?" : "delete — sure?", async () => {
     try {
       const res = await fetch(base + "/" + encodeURIComponent(s.id), { method: "DELETE" });
       if (!res.ok) { showToast((await res.text()).slice(0, 120) || "delete failed"); return; }
@@ -674,18 +700,31 @@ function renderChatTranscript(d) {
   area.id = "chatLiveArea";
   host.append(area);
   if (s.status === "thinking" && !chatLive) {
-    area.append(el("div", "chat-thinking", "✦ thinking…"));
+    area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ thinking…"));
   }
   chatStick = true;
   chatPin();
 }
 
 // ---- composer ----
-// One composer for every section. Attachments (agent sections only) reuse the
-// todo-thread file store: upload first, the refs ride the send as `files` and
-// land on the user turn as [file::] tokens.
+// One composer for every section. Attachments (agent sections only) upload
+// first and ride the send as `files`: Hermes sections use the todo-thread file
+// store, portal sections the agent's own artifact domain (chat_attach.go).
+// Both land on the user turn as [file::] tokens. Portal sections add the
+// ask|propose ritual pill and the @-mention typeahead (persona intents).
 
 let chatPendingFiles = [];
+
+// chatMentionOptions — the tokens the typeahead offers for the open portal
+// agent: @name (it decides how to answer) + @name::intent per persona.
+function chatMentionOptions(prefix) {
+  const a = chatRosterEntry(chatAgent);
+  if (!a || a.backend !== "portal") return [];
+  const out = [{ token: "@" + a.name, note: "no intent tag · it decides how to answer" }];
+  (a.personas || []).forEach((p) => out.push({ token: "@" + a.name + "::" + p, note: p }));
+  const q = (prefix || "").toLowerCase();
+  return out.filter((o) => o.token.slice(1).startsWith(q) || o.token.startsWith(q));
+}
 
 function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
@@ -693,6 +732,8 @@ function renderChatComposer(session) {
   const syncAttach = () => {
     const btn = host.querySelector(".chat-attach");
     if (btn) btn.hidden = !chatAgent;
+    const rit = host.querySelector(".chat-ritual");
+    if (rit) { rit.hidden = !chatIsPortal(); rit.textContent = chatRitual === "delegate" ? "propose" : "ask"; rit.classList.toggle("on", chatRitual === "delegate"); }
     const chips = host.querySelector(".chat-attach-chips");
     if (chips) {
       chips.innerHTML = "";
@@ -700,11 +741,19 @@ function renderChatComposer(session) {
       chatPendingFiles.forEach((f) => chips.append(el("span", "chat-attach-chip", "⤓ " + f.name)));
     }
   };
+  const placeholder = () => {
+    const a = chatRosterEntry(chatAgent);
+    if (chatIsPortal()) {
+      if (session && session.busy) return "✦ " + (a ? a.label : chatAgent) + " is running — one order at a time";
+      if (session && session.status === "thinking") return "✦ waiting on " + (a ? a.label : chatAgent) + "…";
+      return "Message… · @ to tag an intent";
+    }
+    return session && session.status === "thinking" ? "✦ thinking — messages queue…" : "Message…";
+  };
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
-    const busy = session && session.status === "thinking";
-    if (ta) ta.placeholder = busy ? "✦ thinking — messages queue…" : "Message…";
+    if (ta) ta.placeholder = placeholder();
     if (send) send.disabled = false;
     syncAttach();
     return;
@@ -713,11 +762,44 @@ function renderChatComposer(session) {
   const ta = document.createElement("textarea");
   ta.className = "chat-input";
   ta.rows = 1;
-  ta.placeholder = "Message…";
+  ta.placeholder = placeholder();
   // auto-grow with content (target feel): reset then snap to scrollHeight,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
   const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + "px"; };
   ta.addEventListener("input", grow);
+  // @-mention typeahead (portal sections): the word at the caret starting
+  // with @ opens the list; click/Tab/Enter inserts, Escape closes.
+  const mention = el("div", "chat-mention");
+  mention.hidden = true;
+  const mentionPrefix = () => {
+    if (!chatIsPortal()) return null;
+    const head = ta.value.slice(0, ta.selectionStart);
+    const m = head.match(/(^|\s)@([a-z0-9:-]*)$/i);
+    return m ? m[2] : null;
+  };
+  const pickMention = (tok) => {
+    const at = ta.selectionStart;
+    const head = ta.value.slice(0, at).replace(/@[a-z0-9:-]*$/i, tok + " ");
+    ta.value = head + ta.value.slice(at);
+    ta.selectionStart = ta.selectionEnd = head.length;
+    mention.hidden = true;
+    grow();
+    ta.focus();
+  };
+  const syncMention = () => {
+    const prefix = mentionPrefix();
+    const opts = prefix === null ? [] : chatMentionOptions(prefix);
+    mention.innerHTML = "";
+    mention.hidden = !opts.length;
+    opts.forEach((o) => {
+      const row = el("button", "chat-mention-row");
+      row.append(el("span", "chat-mention-tok", o.token), el("span", "chat-mention-note", o.note));
+      row.onmousedown = (e) => { e.preventDefault(); pickMention(o.token); };
+      mention.append(row);
+    });
+  };
+  ta.addEventListener("input", syncMention);
+  ta.addEventListener("blur", () => { mention.hidden = true; });
   const chips = el("div", "chat-attach-chips");
   chips.hidden = true;
   const fi = document.createElement("input");
@@ -727,9 +809,13 @@ function renderChatComposer(session) {
   fi.onchange = async () => {
     for (const f of [...fi.files]) {
       try {
-        const res = await fetch("/api/tasks/thread/file?id=agentchat&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
+        const url = chatIsPortal()
+          ? chatAttachBase() + "?name=" + encodeURIComponent(f.name) + (chatOpenId ? "&thread=" + encodeURIComponent(chatOpenId) : "")
+          : "/api/tasks/thread/file?id=agentchat&name=" + encodeURIComponent(f.name);
+        const res = await fetch(url, { method: "POST", body: f });
         if (!res.ok) throw new Error((await res.text()).slice(0, 120));
-        chatPendingFiles.push((await res.json()).file);
+        const d = await res.json();
+        chatPendingFiles.push({ hash: d.file.hash, name: d.file.name, size: d.file.size });
       } catch (e) { showToast("Upload failed — " + (e.message || "error")); }
     }
     fi.value = "";
@@ -738,6 +824,12 @@ function renderChatComposer(session) {
   const attach = el("button", "mic-btn chat-attach", "＋");
   attach.title = "Attach a file";
   attach.onclick = () => fi.click();
+  // ask | propose — the portals' two outcomes; propose = the delegate ritual
+  // (proposals a person approves in the portal), ask = read-only
+  const ritual = el("button", "sprt-quiet chat-ritual", "ask");
+  ritual.hidden = true;
+  ritual.title = "ask — answers, changes nothing · propose — returns proposals you approve in the portal";
+  ritual.onclick = () => { chatRitual = chatRitual === "delegate" ? "ask" : "delegate"; syncAttach(); ta.focus(); };
   const send = el("button", "chat-send", "↑");
   send.title = "Send  ·  Enter";
   const submit = async () => {
@@ -746,14 +838,16 @@ function renderChatComposer(session) {
     if (!text && !files.length) return;
     ta.value = "";
     grow();
+    mention.hidden = true;
     chatPendingFiles = [];
     syncAttach();
+    const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
     try {
       if (chatOpenId) {
-        await postJSONOk(chatBase() + "/" + encodeURIComponent(chatOpenId) + "/messages", chatAgent ? { text, files } : { text });
+        await postJSONOk(chatBase() + "/" + encodeURIComponent(chatOpenId) + "/messages", chatAgent ? payload : { text });
       } else if (chatAgent) {
         // lazy create under the open agent section: the first send creates
-        const r = await postJSONOk(chatBase(), { text, files });
+        const r = await postJSONOk(chatBase(), payload);
         chatOpenId = r.id;
         chatLanding = false;
         location.hash = chatHash(r.id);
@@ -773,19 +867,27 @@ function renderChatComposer(session) {
     } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
   };
   ta.addEventListener("keydown", (e) => {
+    if (!mention.hidden && (e.key === "Escape")) { e.preventDefault(); mention.hidden = true; return; }
+    if (!mention.hidden && (e.key === "Tab" || e.key === "Enter")) {
+      const first = mention.querySelector(".chat-mention-tok");
+      if (first) { e.preventDefault(); pickMention(first.textContent); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
   });
   send.onclick = submit;
-  host.append(chips, ta, fi, attach, send);
+  host.append(chips, mention, ta, fi, attach, ritual, send);
   syncAttach();
 }
 
 // ---- live poll (file-derived; stops when idle; every backend) ----
+// Portal sections poll slower (4s, the portals' own cadence): every read
+// there runs the server's chatSweep over the agent's run reports.
 
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || queued > 0);
   if (!active) { if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; } return; }
   if (chatPollTimer) return;
+  const every = chatIsPortal() ? 4000 : 1500;
   chatPollTimer = setInterval(async () => {
     if (els.chatView.hidden || !chatOpenId) {
       clearInterval(chatPollTimer); chatPollTimer = null; return;
@@ -805,7 +907,7 @@ function ensureChatPoll(session, queued) {
     if (d.session.status !== "thinking" && !(d.queued || []).length) {
       clearInterval(chatPollTimer); chatPollTimer = null;
     }
-  }, 1500);
+  }, every);
 }
 
 function loadChat() { showChat(location.hash); }
@@ -850,7 +952,7 @@ cmdRegistry.register(async (q) => {
       id: "chat:" + agent + ":" + s.id,
       name: "Chat · " + (s.title || s.id),
       hint: chatAgentLabel(agent) + " · conversation",
-      keywords: "chat conversation " + agent + " alfred hermes",
+      keywords: "chat conversation " + agent + (chatIsPortal(agent) ? " portal team" : " alfred hermes"),
       act: () => { closeCmdbar(); chatOpenAgentSession(agent, s.id); },
     }));
   });
