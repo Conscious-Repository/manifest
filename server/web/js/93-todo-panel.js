@@ -230,7 +230,12 @@ async function renderTodoPanel(refetch) {
       ? "the conversation with " + (d.chat.label || d.chat.agent) + " this task came from" + (d.chat.title ? " — “" + d.chat.title + "”" : "")
       : (d.chat.label || d.chat.agent) + "'s conversations in CHAT";
     open.onclick = () => {
-      location.hash = "#/chat/a/" + encodeURIComponent(d.chat.agent) + (d.chat.id ? "/" + encodeURIComponent(d.chat.id) : "");
+      // Promoted conversations retain their exact source session. Native task
+      // threads have no session, so their dedicated CHAT route renders the
+      // task thread itself in the full panel.
+      location.hash = d.chat.id
+        ? "#/chat/a/" + encodeURIComponent(d.chat.agent) + "/" + encodeURIComponent(d.chat.id)
+        : "#/chat/task/" + encodeURIComponent(todoSelId);
     };
     thActs.append(open);
   }
@@ -253,11 +258,11 @@ async function renderTodoPanel(refetch) {
     th.append(link);
   }
   const list = el("div", "tdo-p-thread");
-  (d.thread || []).forEach((c) => list.append(todoThreadEntry(c)));
+  (d.thread || []).forEach((c) => list.append(todoThreadEntry(c, todoSelId)));
   if (d.inflight) list.append(todoInflightEntry(d.inflight));
   if (!(d.thread || []).length && !d.inflight) list.append(el("div", "tdo-p-empty", "no comments yet"));
   th.append(list);
-  th.append(todoComposer(d));
+  th.append(todoComposer(d, { taskID: todoSelId }));
   host.append(th);
   list.scrollTop = list.scrollHeight;
 }
@@ -310,7 +315,8 @@ async function todoAssign(ownerToken, taRef) {
   }
 }
 
-function todoThreadEntry(c) {
+function todoThreadEntry(c, taskID) {
+  taskID = taskID || todoSelId;
   const e = el("div", "tdo-p-comment" + (c.action && c.action !== "comment" ? " structural act-" + c.action : ""));
   const head = el("div", "tdo-p-c-head");
   const who = c.author_name || c.authorName || c.author || "?";
@@ -343,7 +349,7 @@ function todoThreadEntry(c) {
     const a = document.createElement("a");
     a.className = "tdo-p-c-file";
     a.textContent = "⤓ " + f.name;
-    a.href = "/api/tasks/thread/file/" + f.hash + "?id=" + encodeURIComponent(todoSelId);
+    a.href = "/api/tasks/thread/file/" + f.hash + "?id=" + encodeURIComponent(taskID);
     a.target = "_blank";
     e.append(a);
   });
@@ -357,7 +363,9 @@ function todoThreadEntry(c) {
 // attachments (upload first, refs ride the comment POST). Every mode posts
 // the text as a thread comment: the thread stays the record.
 const TODO_COMPOSER_MODES = [["comment", "Comment"], ["ask", "Ask ✦"], ["do", "Do ✦"]];
-function todoComposer(d) {
+function todoComposer(d, opts) {
+  opts = opts || {};
+  const taskID = opts.taskID || todoSelId;
   const box = el("div", "tdo-p-composer");
   const pendingFiles = [];
   const mentions = [];
@@ -441,7 +449,7 @@ function todoComposer(d) {
   fi.onchange = async () => {
     for (const f of [...fi.files]) {
       try {
-        const res = await fetch("/api/tasks/thread/file?id=" + encodeURIComponent(todoSelId) +
+        const res = await fetch("/api/tasks/thread/file?id=" + encodeURIComponent(taskID) +
           "&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
         if (!res.ok) throw new Error((await res.text()).slice(0, 120));
         const ref = (await res.json()).file;
@@ -480,7 +488,7 @@ function todoComposer(d) {
     if (mode !== "comment" && !text) { showToast("Say what you want " + agentName() + " to do"); return; }
     const agent = mode === "comment" ? "" : agentSel.value;
     try {
-      await postJSONOk("/api/tasks/thread", { id: todoSelId, text, mentions, files: pendingFiles, mode, agent });
+      await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent });
       if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
       else if (mode === "do") showToast(agentName() + " is drafting the plan — fire it when it's right", null, "info");
       ta.value = "";
@@ -488,7 +496,8 @@ function todoComposer(d) {
       mentions.length = 0;
       chips.innerHTML = "";
       loadTodos(); // Ask/Do may have assigned — rows re-project the owner chip
-      renderTodoPanel(true);
+      if (opts.onPosted) opts.onPosted();
+      else renderTodoPanel(true);
     } catch (e) { showToast("Couldn't " + (mode === "comment" ? "comment" : mode) + " — " + (e.message || "error")); }
   });
   ta.onkeydown = (ev) => {

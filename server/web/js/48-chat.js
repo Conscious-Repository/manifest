@@ -76,7 +76,20 @@ let chatRitual = "ask"; // portal sends: ask | delegate (the portals' two outcom
 
 function showChat(h) {
   const tail = h && h.startsWith("#/chat/") ? decodeURIComponent(h.slice("#/chat/".length)) : "";
-  if (tail.startsWith("cmp/")) { renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
+  if (tail.startsWith("cmp/")) { leaveTaskChat(); renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
+  // A task's native thread has no agent-chat session to load. Give it the
+  // same full CHAT stage (rather than sending it to an agent landing page).
+  if (tail.startsWith("task/")) {
+    const taskID = tail.slice("task/".length);
+    if (taskID) {
+      renderChatHeadActions();
+      renderTaskChat(taskID);
+      requestAnimationFrame(chatFitShell);
+      if (!chatFitBound) { window.addEventListener("resize", chatFitShell); chatFitBound = true; }
+      return;
+    }
+  }
+  leaveTaskChat();
   // route → section + thread. Agent routes: a/<agent>[/new|/<id>]; spirit
   // routes keep their old shapes (new, <id>, "spirits" = the section itself).
   // A section route (a/<agent> or "spirits") shows the section's list + its
@@ -121,6 +134,110 @@ function showChat(h) {
   });
   requestAnimationFrame(chatFitShell);
   if (!chatFitBound) { window.addEventListener("resize", chatFitShell); chatFitBound = true; }
+}
+
+let chatTaskID = "";
+let chatTaskData = null;
+let chatTaskPollTimer = null;
+
+function leaveTaskChat() {
+  chatTaskID = "";
+  chatTaskData = null;
+  if (chatTaskPollTimer) { clearInterval(chatTaskPollTimer); chatTaskPollTimer = null; }
+  const shell = document.querySelector(".chat-shell");
+  if (shell) shell.classList.remove("task-thread");
+  const composer = document.getElementById("chatComposer");
+  if (composer) {
+    composer.classList.remove("task-composer");
+    composer.innerHTML = "";
+    composer.dataset.built = "";
+  }
+}
+
+async function renderTaskChat(taskID, refetch) {
+  if (chatTaskID !== taskID) { leaveTaskChat(); chatTaskID = taskID; }
+  const shell = document.querySelector(".chat-shell");
+  if (shell) shell.classList.add("task-thread");
+  const rail = document.getElementById("chatRail");
+  if (rail) rail.innerHTML = "";
+  const host = document.getElementById("chatTranscript");
+  const composer = document.getElementById("chatComposer");
+  if (!host || !composer) return;
+  if (refetch || !chatTaskData) {
+    try {
+      const res = await fetch("/api/tasks/panel?id=" + encodeURIComponent(taskID));
+      if (!res.ok) throw new Error("task not found");
+      const data = await res.json();
+      if (chatTaskID !== taskID) return;
+      chatTaskData = data;
+    } catch (e) {
+      host.innerHTML = "";
+      host.append(emptyRow("task conversation unavailable"));
+      composer.innerHTML = "";
+      return;
+    }
+  }
+  const d = chatTaskData;
+  host.innerHTML = "";
+  const rec = d.record || {};
+  const head = el("div", "sprt-head chat-head chat-task-head");
+  head.append(el("span", "sprt-title chat-head-title", rec.Title || rec.title || taskID));
+  head.append(el("span", "sprt-sub chat-head-sub", "task conversation"));
+  const acts = el("span", "chat-head-acts");
+  const back = el("button", "sprt-quiet", "open task ↗");
+  back.title = "open this task in TASKS";
+  back.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(taskID); };
+  acts.append(back);
+  head.append(acts);
+  host.append(head);
+  (d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
+  if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
+  if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
+  composer.innerHTML = "";
+  composer.dataset.built = "";
+  composer.classList.add("task-composer");
+  composer.append(todoComposer(d, { taskID, onPosted: () => renderTaskChat(taskID, true) }));
+  if (!chatTaskPollTimer) {
+    chatTaskPollTimer = setInterval(async () => {
+      if (document.hidden || chatTaskID !== taskID || !location.hash.startsWith("#/chat/task/")) return;
+      if (composer.contains(document.activeElement)) return;
+      try {
+        const fresh = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(taskID))).json();
+        if (chatTaskID === taskID && JSON.stringify(fresh) !== JSON.stringify(chatTaskData)) {
+          chatTaskData = fresh;
+          renderTaskChat(taskID, false);
+        }
+      } catch (e) {}
+    }, 2000);
+  }
+  host.scrollTop = host.scrollHeight;
+}
+
+function chatTaskThreadEntry(c, taskID) {
+  const mine = !(c.author || "").startsWith("agent:");
+  const wrap = el("div", "chat-turn " + (mine ? "chat-user" : "chat-spirit"));
+  if (c.text) {
+    if (mine) wrap.textContent = c.text;
+    else {
+      const say = el("div", "chat-say");
+      try { say.append(renderMarkdown(c.text, "", { readOnly: true })); }
+      catch (e) { say.textContent = c.text; }
+      wrap.append(say);
+    }
+  }
+  (c.files || []).forEach((f) => {
+    const a = document.createElement("a");
+    a.className = "chat-attach-chip";
+    a.textContent = "⤓ " + f.name;
+    a.href = "/api/tasks/thread/file/" + f.hash + "?id=" + encodeURIComponent(taskID);
+    a.target = "_blank";
+    wrap.append(a);
+  });
+  const foot = el("div", "chat-turn-foot");
+  foot.append(el("span", "chat-turn-when", (c.author_name || c.authorName || c.author || "?") + " · " + fmtWhen(c.at)));
+  if (c.action && c.action !== "comment") foot.append(el("span", "chat-turn-usd", c.action));
+  wrap.append(foot);
+  return wrap;
 }
 
 // chatFitShell sizes the shell to exactly the space below its top edge (mirrors

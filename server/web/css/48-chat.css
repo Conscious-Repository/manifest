@@ -26,6 +26,10 @@
 .chat-rail-row .inline-rename { font-size: var(--fs-md); }
 
 .chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chat-shell.task-thread { max-width: 1000px; margin: 0 auto; }
+.chat-shell.task-thread .chat-rail { display: none; }
+.chat-shell.task-thread .chat-transcript { padding-left: var(--sp-4); }
+.chat-shell.task-thread .task-composer { margin-top: var(--sp-6); }
 .chat-transcript { flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-7) var(--sp-1); }
 /* thread head — the .sprt-head anatomy (title · sub · meta · actions); the
    title is user prose, so it keeps the sans face over .sprt-title's mono */
