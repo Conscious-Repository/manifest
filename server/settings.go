@@ -159,11 +159,11 @@ func (s *Server) handleSettingsHosts(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{
-		"config":                 info,
-		"hermesHome":             hermesHome(),
+		"config":                  info,
+		"hermesHome":              hermesHome(),
 		"fundraisingCredsPresent": credsPresent,
-		"env":                    settingsEnv(),
-		"file":                   "config.json (read-only — edit on metis and restart)",
+		"env":                     settingsEnv(),
+		"file":                    "config.json (read-only — edit on metis and restart)",
 	})
 }
 
