@@ -174,7 +174,8 @@ func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
 	}
 	// The run record carries the Hermes-side session id and the spend, so the
 	// turn can be found again (`hermes sessions search`) and costed.
-	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: who.ID, Task: taskID, Harness: "hermes",
+	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: who.ID,
+		Object: ledger.Object{Kind: ledger.ObjTask, ID: taskID}, Task: taskID, Harness: "hermes",
 		Text: phase + " turn on " + taskID + ": " + ledger.Snip(res.Reply, 280),
 		Meta: map[string]any{"task": taskID, "phase": phase, "sessionId": res.SessionID, "spentUsd": res.SpentUSD, "model": res.Model}})
 	// the intent decides where the reply lands: any non-plan intent (an Ask)
@@ -329,7 +330,8 @@ func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief str
 		verb = "plan updated on this task — answer in the thread to refine it, edit it directly, or fire to execute"
 	}
 	s.ledger(ledger.Entry{Source: "plan", Kind: "plan.materialized",
-		Actor: who.ID, Task: taskID, Harness: "hermes", Ref: s.readPlanRecord(taskID).Rel})
+		Actor: who.ID, Object: ledger.Object{Kind: ledger.ObjTask, ID: taskID}, Task: taskID,
+		Harness: "hermes", Ref: s.readPlanRecord(taskID).Rel})
 	s.postAgentBrief(who, taskID, verb, meta)
 	if questions != "" { // drift guard: embedded questions still surface as dialog
 		s.postAgentBrief(who, taskID, questions, meta)

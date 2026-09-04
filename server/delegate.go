@@ -537,8 +537,8 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			verb = "plan updated on this task — answer in the thread to refine it, edit it directly, or fire to execute"
 		}
 		s.ledger(ledger.Entry{Source: "plan", Kind: kind,
-			Actor: hermes.ID, Task: id, Run: d.RunID, Harness: d.Harness,
-			Ref: s.readPlanRecord(id).Rel})
+			Actor: hermes.ID, Object: ledger.Object{Kind: ledger.ObjTask, ID: id}, Task: id,
+			Run: d.RunID, Harness: d.Harness, Ref: s.readPlanRecord(id).Rel})
 		_, _ = s.addThreadEntry(hermes, id, threads.ActComment, verb, nil, nil, meta)
 		if questions != "" { // drift guard: embedded questions still surface as dialog
 			_, _ = s.addThreadEntry(hermes, id, threads.ActComment, questions, nil, nil, meta)

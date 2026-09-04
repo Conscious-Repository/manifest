@@ -161,7 +161,7 @@ func (s *Server) addThreadEntry(author threads.Identity, taskID, action, text st
 			return threads.Comment{}, err
 		}
 		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
-			Actor: author.ID, Task: taskID, Text: ledger.Snip(text, 280)})
+			Actor: author.ID, Object: ledger.Object{Kind: ledger.ObjTask, ID: taskID}, Task: taskID, Text: ledger.Snip(text, 280)})
 		return threads.Comment{ID: c.ID, TaskID: taskID, Action: threads.ActComment,
 			Author: c.Author, AuthorName: c.AuthorName, Text: c.Text, Files: files, At: c.At}, nil
 	}
@@ -172,7 +172,7 @@ func (s *Server) addThreadEntry(author threads.Identity, taskID, action, text st
 	c, err := s.threadStore(kind).Add(author, taskID, action, text, mentions, files, meta, now)
 	if err == nil && !isMarker(c) {
 		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
-			Actor: author.ID, Task: taskID, Text: ledger.Snip(text, 280)})
+			Actor: author.ID, Object: ledger.Object{Kind: ledger.ObjTask, ID: taskID}, Task: taskID, Text: ledger.Snip(text, 280)})
 	}
 	return c, err
 }

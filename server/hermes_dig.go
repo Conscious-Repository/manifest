@@ -76,6 +76,7 @@ func (s *Server) runHermesDig(h Harness, it feed.Item) {
 	before := feedIDs(h)
 	actor := agentIdentity(it.Agent).ID
 	meta := map[string]any{"feed": it.ID}
+	obj := ledger.Object{Kind: ledger.ObjFeed, ID: it.ID} // the dig is about the card
 	// Each dig is a fresh Hermes session; the prompt carries the card in full,
 	// so a re-dig has everything it needs without a resume.
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
@@ -84,7 +85,7 @@ func (s *Server) runHermesDig(h Harness, it feed.Item) {
 	})
 	if err != nil {
 		log.Printf("feed dig %s (%s): %v", it.ID, it.Agent, err)
-		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: actor, Harness: "hermes",
+		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: actor, Object: obj, Harness: "hermes",
 			Text: "dig on " + ledger.Snip(it.Title, 120) + " — " + err.Error(), Meta: meta})
 		return
 	}
@@ -98,7 +99,7 @@ func (s *Server) runHermesDig(h Harness, it feed.Item) {
 		log.Printf("feed dig %s (%s): the turn finished but no card landed in the feed — reply: %s", it.ID, it.Agent, ledger.Snip(res.Reply, 200))
 	}
 	meta["itemsWritten"], meta["spentUsd"], meta["model"], meta["sessionId"] = written, res.SpentUSD, res.Model, res.SessionID
-	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: actor, Harness: "hermes",
+	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: actor, Object: obj, Harness: "hermes",
 		Text: fmt.Sprintf("dig on %s → %d card(s): %s", ledger.Snip(it.Title, 120), written, ledger.Snip(res.Reply, 280)), Meta: meta})
 }
 

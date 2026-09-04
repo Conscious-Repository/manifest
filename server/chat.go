@@ -65,7 +65,7 @@ func (s *Server) handleChatSessionCreate(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
-			Session: id, Text: ledger.Snip(b.Text, 280)})
+			Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Text: ledger.Snip(b.Text, 280)})
 	}
 	writeJSON(w, map[string]any{"id": id})
 }
@@ -109,7 +109,7 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
-		Session: sum.ID, Text: ledger.Snip(b.Text, 280)})
+		Object: ledger.Object{Kind: ledger.ObjSession, ID: sum.ID}, Session: sum.ID, Text: ledger.Snip(b.Text, 280)})
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

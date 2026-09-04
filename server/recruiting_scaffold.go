@@ -164,6 +164,7 @@ func (s *Server) runScaffoldAsk(job *scaffoldJob) {
 		return
 	}
 	s.ledger(ledger.Entry{Source: "run", Kind: "run.completed", Actor: "agent:" + alfredAgent,
+		Object:  ledger.Object{Kind: ledger.ObjJob, ID: job.ID},
 		Harness: "hermes", Text: "recruiting scaffold for " + ledger.Snip(job.Text, 100),
 		Meta: map[string]any{"spentUsd": out.SpentUSD, "model": out.Model, "sessionId": out.SessionID}})
 

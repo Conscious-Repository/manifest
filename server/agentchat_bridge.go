@@ -211,7 +211,10 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 			_ = s.agentChat.store.SetTask(agent, id, taskID)
 		}
 	}
-	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.promoted", Actor: "owner", Session: id, Task: taskID,
+	// the event happens to the SESSION (it was promoted); the new task rides as
+	// the related ref, so both histories carry it
+	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.promoted", Actor: "owner",
+		Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Task: taskID,
 		Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent, "copied": copied, "assigned": assigned}})
 	writeJSON(w, map[string]any{"created": taskID, "agent": token, "name": label, "assigned": assigned, "copied": copied})
 }

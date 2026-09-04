@@ -283,6 +283,7 @@ func (s *Server) sweepAgent(ag *chatAgent) {
 		// identity, not kairos's (a zeck run ledgered as kairos misattributed
 		// every OODA chat turn)
 		s.ledger(ledger.Entry{Source: "chat", Kind: kind, Actor: "agent:" + ag.Name,
+			Object: ledger.Object{Kind: ledger.ObjSession, ID: threadID}, Session: threadID,
 			Run: r.Run, Harness: ag.Name, Text: ledger.Snip(body, 280)})
 	}
 }

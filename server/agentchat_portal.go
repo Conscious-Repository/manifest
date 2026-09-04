@@ -274,7 +274,8 @@ func (s *Server) portalChatSend(ag *chatAgent, threadID, text, ritual string, co
 	if err := s.chatAskFor(ag, threadID, text, ritual, context, email, name); err != nil {
 		return err
 	}
-	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner", Session: threadID,
+	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
+		Object: ledger.Object{Kind: ledger.ObjSession, ID: threadID}, Session: threadID,
 		Harness: ag.Name, Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": ag.Name, "ritual": orStr(ritual, "ask"), "via": "cockpit"}})
 	return nil
 }

@@ -71,7 +71,7 @@ func (s *Server) ledgerSweep() {
 		}
 		e := ledger.Entry{
 			TS: started, Source: "run", Kind: kind,
-			Actor: r.Spirit, Run: r.ID,
+			Actor: r.Spirit, Object: ledger.Object{Kind: ledger.ObjRun, ID: r.ID}, Run: r.ID,
 			Harness: orStr(r.Harness, s.primaryHarnessName()),
 			Text:    firstLine(r.Request, 280),
 		}
@@ -110,7 +110,8 @@ func (s *Server) ledgerSweep() {
 					continue
 				}
 				s.ledger(ledger.Entry{TS: ev.TS, Source: "chat", Kind: "chat.assistant",
-					Actor: sess.Spirit, Session: sess.ID, Text: ledger.Snip(ev.Data.Text, 280)})
+					Actor: sess.Spirit, Object: ledger.Object{Kind: ledger.ObjSession, ID: sess.ID}, Session: sess.ID,
+					Text: ledger.Snip(ev.Data.Text, 280)})
 			}
 			if maxSeq != after {
 				cur.Chat[sess.ID] = maxSeq

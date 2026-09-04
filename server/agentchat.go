@@ -430,7 +430,8 @@ func (s *Server) agentChatSend(agent, id, text string, files []threads.FileRef) 
 		return errBadRequest("the Hermes runner is not enabled here")
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
-		Session: id, Harness: "hermes", Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent}})
+		Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Harness: "hermes",
+		Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent}})
 	if !s.agentChat.store.Submit(agent, id, text) {
 		return nil // queued behind the turn in flight; the goroutine drains it
 	}
@@ -481,6 +482,7 @@ func (s *Server) runAgentChatTurn(agent, id string) {
 		return
 	}
 	who := "agent:" + agent
+	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
 	prompt := s.composeAgentChatPrompt(agent, sess, body)
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
 		Prompt:   prompt,
@@ -491,7 +493,7 @@ func (s *Server) runAgentChatTurn(agent, id string) {
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
 		_, _ = st.AppendTurn(agent, id, "system", "⚠ "+agentDisplayName("agent:"+agent)+" couldn't finish that — "+err.Error(), 0)
-		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Session: id, Harness: "hermes",
+		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Object: obj, Session: id, Harness: "hermes",
 			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": agent, "profile": sess.Profile}})
 		return
 	}
@@ -503,7 +505,7 @@ func (s *Server) runAgentChatTurn(agent, id string) {
 	if res.SessionID != "" {
 		_ = st.SetHermesSession(agent, id, res.SessionID)
 	}
-	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Session: id, Harness: "hermes",
+	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Object: obj, Session: id, Harness: "hermes",
 		Text: ledger.Snip(reply, 280),
 		Meta: map[string]any{"agent": agent, "profile": sess.Profile, "sessionId": res.SessionID,
 			"spentUsd": res.SpentUSD, "model": firstNonEmpty(res.Model, sess.Model)}})

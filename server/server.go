@@ -242,24 +242,6 @@ func (s *Server) ledger(e ledger.Entry) {
 	_ = s.ledgerStore.Append(e)
 }
 
-// handleLedger serves one day's entries (default: today in the owner's tz).
-func (s *Server) handleLedger(w http.ResponseWriter, r *http.Request) {
-	if s.ledgerStore == nil {
-		writeJSON(w, map[string]any{"date": "", "entries": []any{}, "days": []any{}})
-		return
-	}
-	date := strings.TrimSpace(r.URL.Query().Get("date"))
-	if date == "" {
-		date = s.ledgerStore.Today()
-	}
-	entries, err := s.ledgerStore.Day(date)
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, map[string]any{"date": date, "entries": entries, "days": s.ledgerStore.Days()})
-}
-
 // UseTeamPortal wires the AION team-portal → FEED notices bridge and its live
 // overlay. The overlay wiring is AION-SPECIFIC and must not run for a second
 // portal — use AddPortalBridge for those (ooda-portal plan, Stage A step 7).
@@ -575,6 +557,9 @@ func (s *Server) Handler() http.Handler {
 
 	// LEDGER — the daily shared thread (tier-3 projection; persona plan Phase 0).
 	mux.HandleFunc("GET /api/ledger", s.handleLedger)
+	// P0 Phase 1: the object-scoped read surface (ledger.go).
+	mux.HandleFunc("GET /api/ledger/events", s.handleLedgerEvents)   // ?kind=&source=&actor=&object=&objectKind=&since=&until=&limit=
+	mux.HandleFunc("GET /api/ledger/history", s.handleLedgerHistory) // ?object=&objectKind=
 
 	// Sticky note (⌘I floating post-it — dataDir scratch, never the vault).
 	mux.HandleFunc("GET /api/sticky", s.handleStickyGet)
