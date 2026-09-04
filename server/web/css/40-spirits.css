@@ -107,8 +107,7 @@
 .sprt-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sprt-head-acts { margin-left: auto; display: inline-flex; gap: var(--sp-4); align-items: baseline; }
 .sprt-head-meta { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
-.sprt-quiet { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
-.sprt-quiet:hover { color: var(--accent); }
+/* .sprt-quiet / .sprt-delete moved to 05-primitives.css 2026-09-04 (library) */
 .sprt-ghost { background: transparent; border: 1px dashed var(--base-25); border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); padding: var(--sp-1) var(--sp-4); cursor: pointer; }
 .sprt-ghost:hover { color: var(--accent); border-color: var(--accent-soft); }
 .sprt-cols { display: grid; grid-template-columns: auto 1.3fr 1.5fr 1.1fr auto auto auto 0.6fr auto; gap: var(--sp-5); font-size: var(--fs-2xs); color: var(--base-40); padding: 0 var(--sp-4) var(--sp-3); }
@@ -240,9 +239,6 @@
 .ritual-row.paused .ritual-name, .ritual-row.paused .cad-human,
 .ritual-row.paused .ritual-next, .ritual-row.paused .ritual-ceiling { color: var(--base-40); }
 .rit-pause.paused { color: var(--base-100); font-weight: 500; }
-
-/* armed destructive action: quiet until armed, then ink */
-.sprt-delete.armed { color: var(--base-100); font-weight: 500; border-color: var(--base-100); }
 
 
 /* ---- SCHEDULE board (agents plan §4.3, Phase 2) ---- */

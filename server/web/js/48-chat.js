@@ -32,12 +32,24 @@ let chatAgent = "";
 let chatRoster = [];         // last /api/agents/chat/roster fetch
 let chatAgentSessions = {};  // agent slug → its session list
 let chatAgentTasks = {};     // agent slug → the open todos it holds (Phase 4 bridge)
-let chatAgentPicked = false; // a section was chosen at least once this visit
+let chatCurSession = null;   // the open session object as last fetched (head repaint after rename)
+
+// the last section + last-open thread per section survive a reload
+// (manifest.termStage precedent) — bare #/chat restores them; a SECTION switch
+// never auto-opens a thread (plan §7 Q9: list + landing, no silent open)
+function chatRemember(section, id) {
+  try {
+    localStorage.setItem("manifest.chatSection", section);
+    if (id !== undefined) localStorage.setItem("manifest.chatLast." + (section || "spirits"), id);
+  } catch (e) {}
+}
+function chatRecall(key) { try { return localStorage.getItem(key) || ""; } catch (e) { return ""; } }
 
 // ---- backend switch: everything below asks these, never a literal URL ----
-function chatBase() {
-  return chatAgent ? "/api/agents/chat/" + encodeURIComponent(chatAgent) + "/sessions" : "/api/chat/sessions";
+function chatBaseFor(agent) {
+  return agent ? "/api/agents/chat/" + encodeURIComponent(agent) + "/sessions" : "/api/chat/sessions";
 }
+function chatBase() { return chatBaseFor(chatAgent); }
 function chatHash(id) {
   return chatAgent ? "#/chat/a/" + encodeURIComponent(chatAgent) + "/" + encodeURIComponent(id) : "#/chat/" + encodeURIComponent(id);
 }
@@ -58,29 +70,38 @@ function showChat(h) {
   if (tail.startsWith("cmp/")) { renderCompare(tail.slice(4).split(",").filter(Boolean)); return; }
   // route → section + thread. Agent routes: a/<agent>[/new|/<id>]; spirit
   // routes keep their old shapes (new, <id>, "spirits" = the section itself).
+  // A section route (a/<agent> or "spirits") shows the section's list + its
+  // landing; a thread opens only when the hash names one, or on bare #/chat
+  // (the remembered thread of the remembered section).
+  let restore = false;
   if (tail.startsWith("a/")) {
     const parts = tail.slice(2).split("/");
     chatAgent = parts[0] || "alfred";
-    chatAgentPicked = true;
     const sub = parts[1] || "";
-    if (sub === "new") { chatOpenId = ""; chatLanding = true; }
-    else { chatOpenId = sub; chatLanding = false; }
-  } else if (tail === "spirits") { chatAgent = ""; chatAgentPicked = true; chatOpenId = ""; chatLanding = false; }
-  else if (tail === "new") { chatAgent = ""; chatAgentPicked = true; chatOpenId = ""; chatLanding = true; }
-  else if (tail) { chatAgent = ""; chatAgentPicked = true; chatOpenId = tail; chatLanding = false; }
-  else { chatOpenId = ""; chatLanding = false; }
+    if (sub && sub !== "new") { chatOpenId = sub; chatLanding = false; }
+    else { chatOpenId = ""; chatLanding = true; }
+  } else if (tail === "spirits" || tail === "new") { chatAgent = ""; chatOpenId = ""; chatLanding = true; }
+  else if (tail) { chatAgent = ""; chatOpenId = tail; chatLanding = false; }
+  else { restore = true; chatOpenId = ""; chatLanding = false; }
+  renderChatHeadActions();
   loadChatRoster().then(async () => {
-    // bare #/chat → the last section, else ALFRED when it can take a turn,
-    // else spirits (the pre-Phase-1 behaviour)
-    if (!tail && !chatAgentPicked) {
+    if (restore) {
+      // bare #/chat → the remembered section, else ALFRED when it can take a
+      // turn, else spirits (the pre-Phase-1 behaviour)
+      const remembered = chatRecall("manifest.chatSection");
       const alfred = chatRosterEntry("alfred");
-      chatAgent = alfred && alfred.enabled ? "alfred" : "";
-      chatAgentPicked = true;
+      if (remembered === "spirits") chatAgent = "";
+      else if (remembered && chatRosterEntry(remembered)) chatAgent = remembered;
+      else chatAgent = alfred && alfred.enabled ? "alfred" : "";
     }
     await loadChatSessions();
-    // no explicit session → most recent; none at all → the landing
     const list = chatCurrentSessions();
-    if (!chatOpenId && !chatLanding && list.length) chatOpenId = list[0].id;
+    if (restore) {
+      const last = chatRecall("manifest.chatLast." + (chatAgent || "spirits"));
+      if (last && list.some((s) => s.id === last)) chatOpenId = last;
+      else chatLanding = true;
+    }
+    chatRemember(chatAgent || "spirits", chatOpenId || undefined);
     renderChatRail();
     renderChatComposer();
     if (chatOpenId) loadChatSession(chatOpenId);
@@ -137,18 +158,46 @@ async function chatSpiritList() {
   return chatSpiritsCache;
 }
 
+// ---- page head: CHAT · ＋ new · mic (the shared .agent-head anatomy) ----
+// ＋ new acts on the SELECTED section and is lazy (cmd-ctr model): it opens
+// the landing — nothing is created until the first message sends. The mic
+// (voice → chat) dictates into the composer, as the terminal's does into
+// the pty.
+function renderChatHeadActions() {
+  const host = document.getElementById("chatHeadActions");
+  if (!host || host.dataset.built) return;
+  host.dataset.built = "1";
+  const add = el("button", "sprt-ghost", "＋ new");
+  add.title = "new conversation in the open section";
+  add.onclick = () => { location.hash = chatNewHash(); };
+  host.append(add);
+  if (typeof micButton === "function") {
+    host.append(micButton((text) => {
+      const ta = document.querySelector("#chatComposer textarea");
+      if (!ta) return;
+      ta.value = (ta.value ? ta.value.replace(/\s*$/, " ") : "") + text;
+      ta.dispatchEvent(new Event("input"));
+      ta.focus();
+    }));
+  }
+}
+
 // ---- rail: agent sections ----
 
 function renderChatRail() {
   const host = document.getElementById("chatRail");
   if (!host) return;
+  // a rename in progress must not be rebuilt from under the user (the
+  // terminal's termRailBusy idiom); chatRename re-paints once it settles
+  const a = document.activeElement;
+  if (a && a.classList.contains("inline-rename") && host.contains(a)) return;
   host.innerHTML = "";
   const alfred = chatRosterEntry("alfred");
   const profiles = chatRoster.filter((a) => a.backend !== "portal" && a.name !== "alfred");
   const portals = chatRoster.filter((a) => a.backend === "portal");
   if (alfred) host.append(chatRailSection(alfred.name, alfred.label, alfred));
   if (profiles.length) {
-    host.append(el("div", "chat-rail-group", "profiles"));
+    host.append(el("div", "micro-label chat-rail-group", "profiles"));
     profiles.forEach((p) => host.append(chatRailSection(p.name, p.label, p)));
   }
   // KAIROS · ZECK — their own sections, never the default (Q2/Q5)
@@ -156,52 +205,96 @@ function renderChatRail() {
   host.append(chatRailSection("", "spirits", null));
 }
 
-// chatRailSection — one agent identity: a header (name · model · live mark)
-// that selects the section, and, when open, ＋new + its threads.
+// shortModel — one model id shortener for the rail, the head and the landing.
+function shortModel(m) { return (m || "").replace(/^claude-/, ""); }
+
+// chatRailSection — one agent identity: a header (name · ✦ while a turn runs ·
+// status dot · thread count) that selects the section, and, when open, a
+// quiet ＋ new + its threads. Model/domain live in the head's title and on
+// the landing's identity line, not in the rail.
 function chatRailSection(agent, label, info) {
   const open = agent === chatAgent;
   const sec = el("div", "chat-rail-section" + (open ? " open" : ""));
   const head = el("div", "chat-rail-section-head");
-  head.append(el("span", "chat-rail-section-name", label));
+  head.append(el("span", "micro-label chat-rail-section-name", label));
   const sessions = agent ? (chatAgentSessions[agent] || []) : chatSessions;
-  if (sessions.some((s) => s.status === "thinking")) head.append(el("span", "chat-rail-live", "✦"));
-  const meta = el("span", "chat-rail-section-meta");
-  if (info && info.backend === "portal") meta.textContent = info.busy ? "✦ running" : (info.domain === "ooda" ? "ooda" : "aion team");
-  else if (info && info.model) meta.textContent = info.model.replace(/^claude-/, "");
-  else if (!open && info && info.sessions) meta.textContent = info.sessions + " thread" + (info.sessions === 1 ? "" : "s");
-  if (info && !info.enabled) { meta.textContent = info.backend === "portal" ? "not configured" : "runner off"; sec.classList.add("off"); }
-  head.append(meta);
-  if (info && info.description) head.title = info.description;
+  // ✦ = a turn is running here (a thread thinking, or a portal order out)
+  if (sessions.some((s) => s.status === "thinking") || (info && info.busy)) head.append(el("span", "chat-rail-live", "✦"));
+  const enabled = info ? !!info.enabled : true;
+  if (info) head.append(statusDot(enabled, enabled ? "ready" : (info.backend === "portal" ? "not configured" : "runner off")));
+  const n = open || !info ? sessions.length : (info.sessions || 0);
+  if (n) head.append(el("span", "aion-org-count", String(n)));
+  if (!enabled) sec.classList.add("off");
+  const tip = [];
+  if (info && info.description) tip.push(info.description);
+  if (info && info.backend === "portal") tip.push(info.domain === "ooda" ? "OODA portal chat" : "AION team portal chat");
+  else if (info && info.model) tip.push(shortModel(info.model));
+  if (info && !enabled) tip.push(info.backend === "portal" ? "not configured on this box" : "runner off");
+  if (tip.length) head.title = tip.join(" · ");
   head.onclick = () => { if (!open) location.hash = chatSectionHash(agent); };
   sec.append(head);
   if (!open) return sec;
 
-  // ＋ new is LAZY (cmd-ctr model): it opens the greeting landing — nothing
-  // is created until the first message sends.
-  const newBtn = el("button", "pill chat-new", "＋ new conversation");
-  newBtn.onclick = () => { location.hash = chatNewHash(); };
-  sec.append(newBtn);
+  const add = el("button", "o-ghost chat-rail-new", "＋ new");
+  add.onclick = () => { location.hash = chatNewHash(); };
+  sec.append(add);
   if (!sessions.length) {
-    sec.append(emptyRow("No conversations yet."));
+    sec.append(emptyRow("no conversations yet"));
     if (agent) sec.append(chatRailTasks(agent));
     return sec;
   }
-  sessions.forEach((s) => {
-    const row = el("div", "chat-rail-row" + (s.id === chatOpenId ? " open" : ""));
-    const top = el("div", "chat-rail-top");
-    top.append(el("span", "chat-rail-title", s.title || s.id));
-    if (s.status === "thinking") top.append(el("span", "chat-rail-live", "✦"));
-    if (s.task) { const t = el("span", "chat-rail-task-mark", "☐"); t.title = "promoted to a task"; top.append(t); }
-    row.append(top);
-    const rm = el("div", "chat-rail-meta");
-    rm.append(el("span", "chat-rail-spirit", s.spirit || s.agent || label));
-    rm.append(el("span", "chat-rail-when", fmtWhen(s.updated || s.created)));
-    row.append(rm);
-    row.onclick = () => { location.hash = chatHash(s.id); };
-    sec.append(row);
-  });
+  sessions.forEach((s) => sec.append(chatRailRow(s, agent)));
   if (agent) sec.append(chatRailTasks(agent));
   return sec;
+}
+
+// chatRailRow — one thread row, shared by every section: title (dblclick or
+// hover ✎ → inline rename) · ✦ while thinking · ☐ when promoted; meta shows
+// who only where it varies (spirits) and always the time.
+function chatRailRow(s, agent) {
+  const row = el("div", "chat-rail-row" + (s.id === chatOpenId ? " open" : ""));
+  const top = el("div", "chat-rail-top");
+  const title = el("span", "chat-rail-title", s.title || s.id);
+  title.title = "double-click to rename";
+  title.ondblclick = (e) => { e.stopPropagation(); chatRename(title, s, agent); };
+  top.append(title);
+  if (s.status === "thinking") top.append(el("span", "chat-rail-live", "✦"));
+  if (s.task) { const t = el("span", "chat-rail-task-mark", "☐"); t.title = "promoted to a task"; top.append(t); }
+  const pen = el("button", "chat-rail-x", "✎");
+  pen.title = "rename";
+  // a spirit rename is refused by the engine mid-turn — say so before the click
+  if (!agent && s.status === "thinking") { pen.disabled = true; pen.title = "rename after the turn finishes"; }
+  pen.onclick = (e) => { e.stopPropagation(); chatRename(title, s, agent); };
+  top.append(pen);
+  row.append(top);
+  const rm = el("div", "chat-rail-meta");
+  if (!agent) rm.append(el("span", "chat-rail-spirit", s.spirit + (s.model ? " · " + shortModel(s.model) : "")));
+  rm.append(el("span", "chat-rail-when", fmtWhen(s.updated || s.created)));
+  row.append(rm);
+  row.onclick = () => { location.hash = chatHash(s.id); };
+  return row;
+}
+
+// chatRename — the library's inlineRename over the section's rename route
+// (spirits: engine file rewrite; alfred/profiles: agentchat store; kairos/
+// zeck: the portal thread — all four exist, plan §2.1). After the commit the
+// cached list and the open head are patched in place — no loadChat() reload,
+// so the transcript's scroll position survives.
+function chatRename(nameEl, s, agent) {
+  const inp = inlineRename(nameEl, s.title || "", async (v) => {
+    try {
+      await postJSONOk(chatBaseFor(agent) + "/" + encodeURIComponent(s.id) + "/rename", { title: v });
+    } catch (e) { showToast(e.message || "rename failed"); renderChatRail(); return; }
+    s.title = v;
+    const list = agent ? (chatAgentSessions[agent] || []) : chatSessions;
+    const cached = list.find((x) => x.id === s.id);
+    if (cached) cached.title = v;
+    if (chatCurSession && chatCurSession.id === s.id) { chatCurSession.title = v; chatRepaintHead(); }
+    renderChatRail();
+  });
+  // settled without a change (Escape / unchanged blur): a rail paint that was
+  // skipped while the input had focus still owes the current state
+  inp.addEventListener("blur", () => setTimeout(renderChatRail, 0));
 }
 
 // chatRailTasks — the reverse bridge (§3.4f): the open todos this agent holds,
@@ -212,7 +305,7 @@ function chatRailTasks(agent) {
   const wrap = el("div", "chat-rail-tasks");
   const tasks = chatAgentTasks[agent] || [];
   if (!tasks.length) return wrap;
-  wrap.append(el("div", "chat-rail-group", "tasks · " + tasks.length));
+  wrap.append(el("div", "micro-label chat-rail-group", "tasks · " + tasks.length));
   tasks.slice(0, chatRailTasksMax).forEach((t) => {
     const row = el("div", "chat-rail-task");
     row.append(el("span", "chat-rail-task-text", t.text));
@@ -251,10 +344,10 @@ function chatPromoteTurn(session, turnN) {
 }
 
 // renderChatLanding — the lazy new-chat landing (cmd-ctr model): a time-aware
-// greeting, the identity the FIRST SEND creates under (spirit/model chips for
-// the spirits section; the agent's name + model for an agent section), and
-// the centered composer. No session exists until the first message goes out,
-// so "new conversation" can never feel dead.
+// greeting (small, no accent spark — plan §7 Q7), the identity the FIRST SEND
+// creates under (spirit/model chips for the spirits section; the agent's name
+// + model for an agent section), and the centered composer. No session exists
+// until the first message goes out, so "new conversation" can never feel dead.
 function chatGreeting() {
   const h = new Date().getHours();
   const pool = h < 5 ? ["Late one. What's on your mind?", "Still going — what do you need?"]
@@ -270,14 +363,13 @@ async function renderChatLanding() {
   if (!host) return;
   if (main) main.classList.add("landing");
   host.innerHTML = "";
-  host.append(el("div", "chat-spark", "✦"));
   host.append(el("div", "chat-greeting", chatGreeting()));
 
   if (chatAgent) {
     const a = chatRosterEntry(chatAgent);
     const who = el("div", "chat-spirit-pick");
     who.append(el("span", "pill light on", a ? a.label : chatAgent));
-    if (a && a.model) who.append(el("span", "sprt-quiet", a.model.replace(/^claude-/, "")));
+    if (a && a.model) who.append(el("span", "sprt-quiet", shortModel(a.model)));
     if (a && a.profile) who.append(el("span", "chat-landing-hint", "hermes -p " + a.profile));
     if (a && a.backend === "portal") who.append(el("span", "chat-landing-hint", a.domain === "ooda" ? "OODA portal chat" : "AION team portal chat"));
     host.append(who);
@@ -302,7 +394,7 @@ async function renderChatLanding() {
 
   const spirits = (await chatSpiritList()).filter((s) => s.enabled);
   if (!spirits.length) {
-    host.append(emptyRow("No chattable agents (add a chat.md)."));
+    host.append(emptyRow("no chattable spirits (add a chat.md)"));
     return;
   }
   if (!spirits.some((s) => s.name === chatPendingSpirit)) {
@@ -459,6 +551,7 @@ async function loadChatSession(id) {
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
+  chatRemember(chatAgent || "spirits", id);
   renderChatTranscript(d);
   renderChatComposer(d.session);
   ensureChatStream(d.session);
@@ -679,47 +772,74 @@ function chatUserTurn(text) {
   return b;
 }
 
+// chatHead — the thread head in the .sprt-head anatomy every detail head
+// follows: title (inline-rename target: dblclick or ✎) · sub (who · model) ·
+// meta (fmtWhen(updated) · charge) · trailing actions (☐ task ↗ · delete).
+function chatHead(s) {
+  const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
+  const portal = chatIsPortal();
+  const agent = chatAgent;
+  const head = el("div", "sprt-head chat-head");
+  const title = el("span", "sprt-title chat-head-title", s.title || s.id);
+  title.title = "double-click to rename";
+  title.ondblclick = () => chatRename(title, s, agent);
+  head.append(title);
+  const sub = [who];
+  if (s.model) sub.push(shortModel(s.model));
+  else if (portal) sub.push(s.domain === "ooda" ? "ooda portal" : "aion portal");
+  if (portal && s.busy) sub.push("✦ running");
+  head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
+  // portal runs are metered in the agent's own ledger, not per thread
+  const meta = [fmtWhen(s.updated || s.created)];
+  if (!portal) meta.push("$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
+  head.append(el("span", "sprt-head-meta chat-head-meta", meta.filter(Boolean).join(" · ")));
+  const acts = el("span", "chat-head-acts");
+  const ren = el("button", "sprt-quiet", "✎");
+  ren.title = "rename";
+  if (!agent && s.status === "thinking") { ren.disabled = true; ren.title = "rename after the turn finishes"; }
+  ren.onclick = () => chatRename(title, s, agent);
+  acts.append(ren);
+  // the task this conversation became (§3.4f) — the link back to the board
+  if (s.task) {
+    const task = el("button", "sprt-quiet chat-head-task", "☐ task ↗");
+    task.title = "open the task this conversation was promoted into";
+    task.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(s.task); };
+    acts.append(task);
+  }
+  // a portal thread is a shared team object: the cockpit's delete ARCHIVES it
+  const base = chatBase();
+  acts.append(armedDelete(portal ? "archive" : "delete", portal ? "archive — sure?" : "delete — sure?", async () => {
+    try {
+      const res = await fetch(base + "/" + encodeURIComponent(s.id), { method: "DELETE" });
+      if (!res.ok) { showToast((await res.text()).slice(0, 120) || "delete failed"); return; }
+      chatOpenId = "";
+      chatRemember(agent || "spirits", "");
+      location.hash = chatSectionHash(agent);
+      loadChat();
+    } catch (e) { showToast("delete failed"); }
+  }));
+  head.append(acts);
+  return head;
+}
+
+// chatRepaintHead swaps the open head in place (after a rename) — the
+// transcript and its scroll position stay.
+function chatRepaintHead() {
+  const cur = document.querySelector("#chatTranscript .chat-head");
+  if (cur && chatCurSession) cur.replaceWith(chatHead(chatCurSession));
+}
+
 function renderChatTranscript(d) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
   bindChatScroll();
   host.innerHTML = "";
   const s = d.session;
+  chatCurSession = s;
   chatLastUpdated = s.updated + "|" + s.status + "|" + (d.queued || []).length;
-
-  const head = el("div", "chat-head");
-  head.append(el("span", "chat-head-title", s.title || s.id));
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();
-  head.append(el("span", "chat-head-spirit", who + (s.model ? " · " + s.model : portal ? " · " + (s.domain === "ooda" ? "ooda portal" : "aion portal") + (s.busy ? " · ✦ running" : "") : "")));
-  // portal runs are metered in the agent's own ledger, not per thread
-  const spent = el("span", "chat-head-charge", portal ? "" : "$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
-  head.append(spent);
-  const base = chatBase();
-  const ren = el("button", "sprt-quiet", "rename");
-  ren.onclick = () => askText("Rename conversation", s.title || "", async (t) => {
-    if (!t.trim()) return;
-    try { await postJSONOk(base + "/" + encodeURIComponent(s.id) + "/rename", { title: t.trim() }); loadChat(); } catch (e) { showToast(e.message || "rename failed"); }
-  });
-  // a portal thread is a shared team object: the cockpit's delete ARCHIVES it
-  const del = armedDelete(portal ? "archive" : "delete", portal ? "archive — sure?" : "delete — sure?", async () => {
-    try {
-      const res = await fetch(base + "/" + encodeURIComponent(s.id), { method: "DELETE" });
-      if (!res.ok) { showToast((await res.text()).slice(0, 120) || "delete failed"); return; }
-      chatOpenId = "";
-      location.hash = chatSectionHash(chatAgent);
-      loadChat();
-    } catch (e) { showToast("delete failed"); }
-  });
-  // the task this conversation became (§3.4f) — the link back to the board
-  if (s.task) {
-    const task = el("button", "sprt-quiet chat-head-task", "☐ task ↗");
-    task.title = "open the task this conversation was promoted into";
-    task.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(s.task); };
-    head.append(task);
-  }
-  head.append(ren, del);
-  host.append(head);
+  host.append(chatHead(s));
 
   parseChatTurns(d.body || "").forEach((t) => {
     if (t.who === "user") {
@@ -750,6 +870,9 @@ function renderChatTranscript(d) {
     });
     if (!steps.length && t.text) { const p = el("div", "chat-say"); p.textContent = t.text; wrap.append(p); }
     const foot = el("div", "chat-turn-foot");
+    // when the turn landed — a conversation with no times reads as stalled
+    // while Alfred's turn takes minutes
+    if (t.ts) foot.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
     if (t.usd) foot.append(el("span", "chat-turn-usd", "$" + t.usd));
     // → task (§3.4f): every agent turn in an agent section can become work
     if (chatAgent) {
@@ -807,12 +930,23 @@ function renderChatComposer(session) {
     const btn = host.querySelector(".chat-attach");
     if (btn) btn.hidden = !chatAgent;
     const rit = host.querySelector(".chat-ritual");
-    if (rit) { rit.hidden = !chatIsPortal(); rit.textContent = chatRitual === "delegate" ? "propose" : "ask"; rit.classList.toggle("on", chatRitual === "delegate"); }
+    if (rit) {
+      rit.hidden = !chatIsPortal();
+      rit.querySelectorAll(".filter-chip").forEach((c) => c.classList.toggle("on", c.dataset.ritual === chatRitual));
+    }
     const chips = host.querySelector(".chat-attach-chips");
     if (chips) {
       chips.innerHTML = "";
       chips.hidden = !chatPendingFiles.length;
-      chatPendingFiles.forEach((f) => chips.append(el("span", "chat-attach-chip", "⤓ " + f.name)));
+      // each pending chip drops with its ✕ — a wrongly picked file never has to send
+      chatPendingFiles.forEach((f, i) => {
+        const chip = el("span", "chat-attach-chip", "⤓ " + f.name);
+        const x = el("button", "chat-attach-x", "✕");
+        x.title = "drop this attachment";
+        x.onclick = () => { chatPendingFiles.splice(i, 1); syncAttach(); };
+        chip.append(x);
+        chips.append(chip);
+      });
     }
   };
   const placeholder = () => {
@@ -824,11 +958,14 @@ function renderChatComposer(session) {
     }
     return session && session.status === "thinking" ? "✦ thinking — messages queue…" : "Message…";
   };
+  // a portal agent takes one order at a time: a send while it runs 409s, so
+  // the button says so instead (the placeholder already says why)
+  const busy = !!(session && session.busy);
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
     if (ta) ta.placeholder = placeholder();
-    if (send) send.disabled = false;
+    if (send) send.disabled = busy;
     syncAttach();
     return;
   }
@@ -895,21 +1032,29 @@ function renderChatComposer(session) {
     fi.value = "";
     syncAttach();
   };
-  const attach = el("button", "mic-btn chat-attach", "＋");
-  attach.title = "Attach a file";
+  const attach = el("button", "chat-attach", "＋");
+  attach.title = "attach a file";
   attach.onclick = () => fi.click();
-  // ask | propose — the portals' two outcomes; propose = the delegate ritual
-  // (proposals a person approves in the portal), ask = read-only
-  const ritual = el("button", "sprt-quiet chat-ritual", "ask");
+  // ask | propose — the portals' two outcomes as a filter-chip pair, one on;
+  // propose = the delegate ritual (proposals a person approves in the
+  // portal), ask = read-only
+  const ritual = el("span", "chat-ritual");
   ritual.hidden = true;
-  ritual.title = "ask — answers, changes nothing · propose — returns proposals you approve in the portal";
-  ritual.onclick = () => { chatRitual = chatRitual === "delegate" ? "ask" : "delegate"; syncAttach(); ta.focus(); };
+  [["ask", "ask", "answers, changes nothing"], ["delegate", "propose", "returns proposals you approve in the portal"]].forEach(([key, label, tip]) => {
+    const c = el("button", "filter-chip", label);
+    c.dataset.ritual = key;
+    c.title = tip;
+    c.onclick = () => { chatRitual = key; syncAttach(); ta.focus(); };
+    ritual.append(c);
+  });
   const send = el("button", "chat-send", "↑");
-  send.title = "Send  ·  Enter";
+  send.title = "send · Enter (Shift+Enter for a new line)";
+  send.disabled = busy;
   const submit = async () => {
     const text = ta.value.trim();
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
+    if (send.disabled) return;
     ta.value = "";
     grow();
     mention.hidden = true;

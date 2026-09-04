@@ -14,18 +14,11 @@
 .term-shell { display: flex; gap: var(--sp-8); height: calc(100vh - 200px); padding: 0 var(--page-gutter); }
 
 /* --- rail ------------------------------------------------------------- */
-.term-rail { width: 284px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding-right: var(--sp-8); min-height: 0; }
-/* page header — the standard agent-head/agent-title convention (TERMINAL in
-   uppercase mono, like every other tab). Aligned to --page-gutter and given the
-   same vertical rhythm as other tabs' headers (agent-head's own sp-6 top / sp-5
-   bottom padding + sp-6 margin below the rule), so the full-width rule and the
-   content below it breathe the way SPIRITS/GOALS do. The mic (voice → terminal)
-   lands in its actions slot when a session attaches.
-   NB: .agent-head (05-primitives.css) sets a `padding` shorthand that resets
-   left/right to 0 — the horizontal gutter here needs the higher specificity
-   of .term-page .term-head to win regardless of load order. */
-.term-page .term-head { padding-left: var(--page-gutter); padding-right: var(--page-gutter); margin-top: var(--sp-4); }
-.term-head .mic-btn { margin: -4px 0; }
+.term-rail { width: var(--rail-w); flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--line); padding-right: var(--sp-8); min-height: 0; }
+/* page header — the standard agent-head/agent-title convention; the gutter
+   alignment is the shared .cockpit-head rule (05-primitives.css). The mic
+   (voice → terminal) lands in its actions slot when a session attaches. */
+.term-head .mic-btn { margin: calc(-1 * var(--sp-2)) 0; }
 .term-rail-scroll { flex: 1; overflow-y: auto; min-height: 0; padding: var(--sp-1); margin: -2px; }
 .rail-sec + .rail-sec { margin-top: 30px; }
 .rail-sec-label { font-size: var(--fs-2xs); color: var(--base-40); margin-bottom: var(--sp-6); }
@@ -51,7 +44,8 @@
 .term-x { border: 0; background: none; color: var(--base-30); cursor: pointer; font-size: var(--fs-sm); padding: var(--sp-1) var(--sp-2); opacity: 0; flex: none; }
 .term-sess:hover .term-x, .term-hist-row:hover .term-x, .term-dev-row:hover .term-x { opacity: 1; }
 .term-x:hover { color: var(--base-100); }
-.term-rename { font: inherit; font-size: var(--fs-lg); flex: 1; min-width: 0; border: 1px solid var(--accent-soft); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); }
+.term-x.armed { opacity: 1; color: var(--base-100); } /* an armed "end — sure?" must not fade on mouse-out */
+.term-sess .inline-rename, .term-hist-row .inline-rename { font-size: var(--fs-lg); }
 
 /* history — quiet rows under a search field */
 .term-hist-search { width: 100%; font: inherit; font-size: var(--fs-md); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-4) var(--sp-6); margin-bottom: var(--sp-5); background: var(--bg); color: var(--base-100); }
@@ -163,7 +157,6 @@
 @media (max-width: 860px) {
   .term-shell { flex-direction: column; height: auto; padding-left: 0; padding-right: 0; }
   .term-rail { width: auto; border-right: 0; padding-right: 0; flex-direction: column-reverse; }
-  .term-page .term-head { padding-left: 0; padding-right: 0; }
   .term-tabbar { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 var(--sp-5); margin: 0 0 var(--sp-6); }
   .term-rail-scroll { overflow: visible; }
   #termSessionRows { display: flex; gap: var(--sp-3); overflow-x: auto; padding-bottom: var(--sp-2); }

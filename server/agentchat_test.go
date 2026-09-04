@@ -194,9 +194,17 @@ func TestAgentChatSecondSendQueuesAndDrains(t *testing.T) {
 	if q := r["queued"].([]any); len(q) != 1 || q[0] != "second" {
 		t.Errorf("queued mid-turn = %v", q)
 	}
-	// delete/rename-while-thinking guards
+	// delete-while-thinking is refused; rename-while-thinking is NOT (the
+	// store's update holds the per-thread lock, so a title edit mid-turn is
+	// safe — the chat surface's inline rename relies on this landing 200)
 	if code, _ := agentChatJSON(t, s, "DELETE", "/api/agents/chat/alfred/sessions/"+id, nil); code != 400 {
 		t.Errorf("delete while thinking = %d, want 400", code)
+	}
+	if code, _ := agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions/"+id+"/rename", map[string]any{"title": "mid-turn"}); code != 200 {
+		t.Errorf("rename while thinking = %d, want 200", code)
+	}
+	if _, r := agentChatJSON(t, s, "GET", "/api/agents/chat/alfred/sessions/"+id, nil); r["session"].(map[string]any)["title"] != "mid-turn" {
+		t.Errorf("title after mid-turn rename = %v", r["session"].(map[string]any)["title"])
 	}
 	sess := waitIdle(t, st, "alfred", id)
 	if sess.Turns != 4 {

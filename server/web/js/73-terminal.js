@@ -87,7 +87,7 @@ let termLastPayload = "";
 // search / rename) — the quiet poll must NOT rebuild the DOM under them.
 function termRailBusy() {
   const a = document.activeElement;
-  return !!(a && (a.classList.contains("term-rename") || a.classList.contains("term-hist-search") ||
+  return !!(a && (a.classList.contains("inline-rename") || a.classList.contains("term-hist-search") ||
     a.classList.contains("term-cwd")) );
 }
 
@@ -135,7 +135,7 @@ function termSessionRow(se) {
   name.append(document.createTextNode(se.name || se.kind));
   name.append(el("span", "term-sess-host", " · " + (se.device || "metis")));
   name.title = (se.name || se.kind) + (se.cwd ? " — " + se.cwd : "");
-  name.ondblclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
+  name.ondblclick = (e) => { e.stopPropagation(); termRename(name, se); };
   row.append(name);
   const badges = el("span", "term-sess-badges");
   if (se.resumeId) badges.append(el("span", "term-badge", "⟳"));
@@ -147,23 +147,28 @@ function termSessionRow(se) {
   row.append(badges);
   const pen = el("button", "term-x", "✎");
   pen.title = "Rename";
-  pen.onclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
-  const x = el("button", "term-x", "✕");
-  x.title = se.live ? "End session (kills the tmux)" : "Close";
-  x.onclick = (e) => { e.stopPropagation(); termKill(se); };
+  pen.onclick = (e) => { e.stopPropagation(); termRename(name, se); };
+  // ending a LIVE session is destructive: arm-then-confirm on the row (no
+  // native confirm — banned app-wide); a dead-but-open row just closes
+  let x;
+  if (se.live) {
+    x = armedDelete("✕", "end — sure?", () => termKill(se));
+    x.className = "term-x";
+    x.title = "End session (kills the tmux" + (se.keep ? ", also the kept one on " + (se.device || "the box") : "") + ") — it moves to history" + (se.resumeId ? ", resumable" : "");
+  } else {
+    x = el("button", "term-x", "✕");
+    x.title = "Close";
+    x.onclick = (e) => { e.stopPropagation(); termKill(se); };
+  }
   row.append(pen, x);
   row.onclick = () => { termOpenId = se.id; termSetStage("term"); renderTermSessions(true); attachTerm(se.id); };
   return row;
 }
 
-function termRenameInline(row, nameEl, se) {
-  const inp = document.createElement("input");
-  inp.className = "term-rename";
-  inp.value = se.name || "";
-  const commit = async () => {
-    const v = inp.value.trim();
-    inp.replaceWith(nameEl);
-    if (!v || v === se.name) return;
+// termRename — the library's inlineRename over the registry's PUT (an
+// owner-typed name freezes; autoName applies only to placeholders).
+function termRename(nameEl, se) {
+  inlineRename(nameEl, se.name || "", async (v) => {
     try {
       await fetch("/api/terminal/session/" + encodeURIComponent(se.id), {
         method: "PUT", headers: { "Content-Type": "application/json" },
@@ -171,22 +176,14 @@ function termRenameInline(row, nameEl, se) {
       });
       loadTermSessions(true);
     } catch (e) {}
-  };
-  inp.onblur = commit;
-  inp.onkeydown = (e) => {
-    if (e.key === "Enter") inp.blur();
-    if (e.key === "Escape") { inp.value = se.name || ""; inp.blur(); }
-  };
-  nameEl.replaceWith(inp);
-  inp.focus(); inp.select();
+  });
 }
 
 // termKill ends a session's backend — the row survives into HISTORY
-// (forgetting is history's ✕). A dead-but-open row just closes.
+// (forgetting is history's ✕). The live case is reached through the row's
+// armed ✕ (confirmed there); a dead-but-open row just closes.
 async function termKill(se) {
   if (se.live) {
-    if (!confirm("End this session" + (se.keep ? " (also ends the kept tmux on " + (se.device || "the box") + ")" : "") +
-      "? It moves to history" + (se.resumeId ? " (resumable)" : "") + ".")) return;
     try { await fetch("/api/terminal/session/" + encodeURIComponent(se.id) + "/kill", { method: "POST" }); } catch (e) {}
   }
   if (termOpenId === se.id) { termOpenId = ""; detachTerm(); renderTermEmpty(); }
@@ -566,7 +563,7 @@ function renderTermHistory() {
     row.append(el("span", "term-dot k-" + se.kind));
     if (resumable) row.append(el("span", "term-hist-resume", "⟳"));
     const name = el("span", "term-sess-name", se.name || se.kind);
-    name.ondblclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
+    name.ondblclick = (e) => { e.stopPropagation(); termRename(name, se); };
     row.append(name);
     row.append(el("span", "term-hist-when", (se.device || "metis") + " · " + termRelTime(se.lastUsed)));
     const acts = el("span", "term-hist-acts");
@@ -584,7 +581,7 @@ function renderTermHistory() {
     };
     const ren = el("button", "term-x", "✎");
     ren.title = "Rename";
-    ren.onclick = (e) => { e.stopPropagation(); termRenameInline(row, name, se); };
+    ren.onclick = (e) => { e.stopPropagation(); termRename(name, se); };
     const x = el("button", "term-x", "✕");
     x.title = "Forget this session (leaves nothing running)";
     x.onclick = async (e) => {

@@ -378,25 +378,6 @@ async function fetchSpiritRuns() {
   } catch (e) { return { data: [], queued: [] }; }
 }
 
-// ---- shared: the destructive-action button (spirit page + ritual editor) ----
-// armedDelete — the destructive-action pattern: first click ARMS (ink
-// "confirm?" label), second click within 4s executes; it disarms itself.
-// No browser dialogs (owner call, agents UX pass).
-function armedDelete(label, armedLabel, onConfirm) {
-  const b = el("button", "sprt-quiet sprt-delete", label);
-  let armed = false, timer = null;
-  b.onclick = () => {
-    if (!armed) {
-      armed = true;
-      b.textContent = armedLabel;
-      b.classList.add("armed");
-      timer = setTimeout(() => { armed = false; b.textContent = label; b.classList.remove("armed"); }, 4000);
-      return;
-    }
-    clearTimeout(timer);
-    b.disabled = true;
-    onConfirm();
-  };
-  return b;
-}
+// armedDelete (the destructive-action button) lives in 05-components.js since
+// 2026-09-04 — it is consumed by ten tab files.
 

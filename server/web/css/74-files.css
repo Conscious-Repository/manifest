@@ -50,9 +50,10 @@ img.fs-card-ico { width: 56px; height: 56px; object-fit: cover; border-radius: v
 .fs-card-name { font-size: var(--fs-sm); color: var(--base-100); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-card-meta { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
-/* inline new-folder / rename input */
+/* inline new-folder input (rename is the library's .inline-rename) */
 .fs-newrow { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-2) var(--sp-4); }
 .fs-newname { font: inherit; font-size: var(--fs-md); flex: 1; min-width: 0; border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); }
+.fs-row .inline-rename { font-size: var(--fs-md); }
 
 /* upload progress (bottom-right of the pane) */
 .fs-uplist { position: absolute; right: 18px; bottom: 16px; display: flex; flex-direction: column; gap: var(--sp-2); z-index: 5; }

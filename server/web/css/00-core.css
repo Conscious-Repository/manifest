@@ -122,6 +122,9 @@
   --page-narrow: 820px;
   /* --inspector-w: the shared right-rail inspector width (Feed, Aion, todo panel). */
   --inspector-w: 300px;
+  /* --rail-w: the cockpit left rail (TERMINAL sessions, CHAT threads) — one
+     width so the two cockpits' stages line up. */
+  --rail-w: 284px;
 
   /* ── space scale (role-named) ── derived from the gap cadence already in use
      (8/10/6/12/2 cover ~63% of gaps). Odd values snap to nearest even. */

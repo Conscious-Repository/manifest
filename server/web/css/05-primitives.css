@@ -95,6 +95,27 @@
 .pill.armed { background: var(--over); border-color: var(--over); color: var(--on-accent); }
 .pill.armed:hover { color: var(--on-accent); }
 
+/* ---- .sprt-quiet — the quiet mono text button (rename, open ↗, model chips);
+   .sprt-delete is its armed destructive variant (armedDelete, 05-components.js):
+   quiet until armed, then ink. Moved here 2026-09-04 from 40-spirits.css —
+   eleven files consume them; the names stay for the call sites. */
+.sprt-quiet { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
+.sprt-quiet:hover { color: var(--accent); }
+.sprt-delete.armed { color: var(--base-100); font-weight: 500; border-color: var(--base-100); }
+
+/* ---- .inline-rename — the input inlineRename() swaps in for a name node
+   (terminal rail, files rail, chat head/rows). font: inherit so it takes the
+   row's own size; a tab may set font-size only. */
+.inline-rename { font: inherit; flex: 1; min-width: 0; border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); color: var(--base-100); background: var(--bg); }
+.inline-rename:focus { outline: none; }
+
+/* ---- .cockpit-head — the .agent-head of a full-height cockpit (TERMINAL,
+   CHAT): those shells set their own gutter instead of a .page-frame, so the
+   head aligns to the same --page-gutter. (.agent-head's padding shorthand
+   resets left/right to 0; this compound selector wins regardless of order.) */
+.agent-head.cockpit-head { padding-left: var(--page-gutter); padding-right: var(--page-gutter); margin-top: var(--sp-4); }
+@media (max-width: 860px) { .agent-head.cockpit-head { padding-left: 0; padding-right: 0; } }
+
 /* ---- .cp-clickable — generic clickable-row utility (cross-tab: Contacts, FEED). */
 .cp-clickable { cursor: pointer; border-radius: var(--radius); }
 .cp-clickable:hover { background: var(--hover); }

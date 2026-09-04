@@ -60,6 +60,61 @@ function askText(title, placeholder, onSubmit) {
   ta.focus();
 }
 
+// inlineRename — THE rename idiom (ui-conventions.md §buttons): the name node
+// swaps for an input prefilled with the current value; Enter commits, Escape
+// restores, blur commits. onCommit(v) fires only when the trimmed value is
+// non-empty and changed. Promoted 2026-09-04 from the terminal + files rails
+// (two tab-local copies) so the chat head/rows use the same behaviour.
+// Returns the input (a caller may adjust the selection, e.g. up to the ext).
+function inlineRename(nameEl, value, onCommit) {
+  const inp = document.createElement("input");
+  inp.className = "inline-rename";
+  inp.value = value || "";
+  inp.spellcheck = false;
+  let settled = false;
+  const settle = (commit) => {
+    if (settled) return;
+    settled = true;
+    const v = inp.value.trim();
+    inp.replaceWith(nameEl);
+    if (commit && v && v !== (value || "")) onCommit(v);
+  };
+  inp.onkeydown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") { e.preventDefault(); settle(true); }
+    else if (e.key === "Escape") { e.preventDefault(); settle(false); }
+  };
+  inp.onblur = () => settle(true);
+  inp.onclick = (e) => e.stopPropagation();
+  nameEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  return inp;
+}
+
+// armedDelete — the destructive-action pattern: first click ARMS (ink
+// "confirm?" label), second click within 4s executes; it disarms itself.
+// No browser dialogs (owner call, agents UX pass). Library since 2026-09-04
+// (was in 40-agents.js; ten files consume it).
+function armedDelete(label, armedLabel, onConfirm) {
+  const b = el("button", "sprt-quiet sprt-delete", label);
+  let armed = false, timer = null;
+  b.onclick = (e) => {
+    if (e) e.stopPropagation(); // rows that open on click must not open on arm
+    if (!armed) {
+      armed = true;
+      b.textContent = armedLabel;
+      b.classList.add("armed");
+      timer = setTimeout(() => { armed = false; b.textContent = label; b.classList.remove("armed"); }, 4000);
+      return;
+    }
+    clearTimeout(timer);
+    b.disabled = true;
+    onConfirm();
+  };
+  return b;
+}
+
 // ---- relative timestamp ----
 function fmtWhen(iso) {
   if (!iso) return "";

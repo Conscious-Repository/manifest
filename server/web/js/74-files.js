@@ -330,15 +330,11 @@ function fsNewFolderRow() {
   inp.focus();
 }
 
+// fsRenameInline — the library's inlineRename over the files rename route;
+// the selection starts on the stem (the extension is rarely what changes).
 function fsRenameInline(row, nameEl, e) {
-  const inp = document.createElement("input");
-  inp.className = "fs-newname";
-  inp.value = e.name;
-  inp.spellcheck = false;
-  const commit = async () => {
-    const v = inp.value.trim();
-    inp.replaceWith(nameEl);
-    if (!v || v === e.name || /[\/\\]/.test(v)) return;
+  const inp = inlineRename(nameEl, e.name, async (v) => {
+    if (/[\/\\]/.test(v)) return;
     try {
       const res = await fetch("/api/files/rename?host=" + encodeURIComponent(fsHost) +
         "&from=" + encodeURIComponent(fsFull(e.name)) + "&to=" + encodeURIComponent(fsFull(v)), { method: "POST" });
@@ -346,12 +342,7 @@ function fsRenameInline(row, nameEl, e) {
       fsSel = v;
       fsLoad();
     } catch (err) { showToast("Couldn't rename — " + (err.message || "error")); }
-  };
-  inp.onkeydown = (ev) => { ev.stopPropagation(); if (ev.key === "Enter") inp.blur(); if (ev.key === "Escape") { inp.value = e.name; inp.blur(); } };
-  inp.onblur = commit;
-  inp.onclick = (ev) => ev.stopPropagation();
-  nameEl.replaceWith(inp);
-  inp.focus();
+  });
   const dot = inp.value.lastIndexOf(".");
   inp.setSelectionRange(0, dot > 0 ? dot : inp.value.length);
 }

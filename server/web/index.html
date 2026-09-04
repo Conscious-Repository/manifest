@@ -12,21 +12,21 @@
   <link rel="stylesheet" href="css/99-local-fonts.css" />
   <!-- Styles (§11): core tokens first, then the shared primitives, then one
        file per tab — cascade order matters, keep it aligned with js/. -->
-  <link rel="stylesheet" href="css/00-core.css" />
-  <link rel="stylesheet" href="css/05-primitives.css?v=3" />
+  <link rel="stylesheet" href="css/00-core.css?v=2" />
+  <link rel="stylesheet" href="css/05-primitives.css?v=4" />
   <link rel="stylesheet" href="css/07-nav.css" />
   <link rel="stylesheet" href="css/10-day.css" />
   <link rel="stylesheet" href="css/20-goals.css?v=3" />
   <link rel="stylesheet" href="css/30-calendar.css" />
-  <link rel="stylesheet" href="css/40-spirits.css?v=4" />
+  <link rel="stylesheet" href="css/40-spirits.css?v=5" />
   <link rel="stylesheet" href="css/60-settings.css" />
   <link rel="stylesheet" href="css/45-feed.css?v=3" />
   <link rel="stylesheet" href="css/46-consume.css?v=5" />
-  <link rel="stylesheet" href="css/48-chat.css" />
-  <link rel="stylesheet" href="css/74-files.css" />
+  <link rel="stylesheet" href="css/48-chat.css?v=2" />
+  <link rel="stylesheet" href="css/74-files.css?v=2" />
   <link rel="stylesheet" href="vendor/xterm.css" />
   <link rel="stylesheet" href="css/72-activity.css" />
-  <link rel="stylesheet" href="css/73-terminal.css" />
+  <link rel="stylesheet" href="css/73-terminal.css?v=2" />
   <link rel="stylesheet" href="css/55-approvals.css?v=5" />
   <link rel="stylesheet" href="css/60-contacts.css" />
   <link rel="stylesheet" href="css/65-reading.css" />
@@ -216,7 +216,7 @@
        stage that swaps Terminal (PTY over metis tmux) / Files (fleet browser,
        absorbed from the old top-level tab) / Activity (fleet stats). -->
   <section class="term-page" id="terminalView" hidden>
-    <div class="agent-head term-head">
+    <div class="agent-head cockpit-head term-head">
       <span class="agent-title">TERMINAL</span>
       <div class="agent-actions" id="termHeadActions"></div>
     </div>
@@ -243,10 +243,16 @@
     </div>
   </section>
 
-  <!-- CHAT (cmd-ctr import P2): conversations with chattable spirits. The
-       ENGINE writes the session files; this surface reads them + spools
-       messages. Session rail · transcript · composer, all built in 48-chat.js. -->
+  <!-- CHAT — the agents chat cockpit: a rail grouped by agent (ALFRED ·
+       profiles · KAIROS · ZECK · SPIRITS), one transcript, one composer, all
+       built in 48-chat.js. The backend per section writes the thread files;
+       this surface reads them + spools messages. The head is the shared
+       .agent-head; ＋ new and the mic land in its actions slot. -->
   <section class="chat-page" id="chatView" hidden>
+    <div class="agent-head cockpit-head">
+      <span class="agent-title">CHAT</span>
+      <div class="agent-actions" id="chatHeadActions"></div>
+    </div>
     <div class="chat-shell">
       <aside class="chat-rail" id="chatRail"></aside>
       <div class="chat-main">
@@ -534,11 +540,11 @@
   <!-- Userland modules (§11): one file per tab over a shared core, loaded in
        order into one scope — no framework, no build step. -->
   <script src="js/00-core.js?v=2"></script>
-  <script src="js/05-components.js?v=3"></script>
+  <script src="js/05-components.js?v=4"></script>
   <script src="js/10-day.js"></script>
   <script src="js/20-goals.js?v=3"></script>
   <script src="js/30-calendar.js"></script>
-  <script src="js/40-agents.js"></script>
+  <script src="js/40-agents.js?v=2"></script>
   <script src="js/41-agents-schedule.js"></script>
   <script src="js/42-agents-runs.js"></script>
   <script src="js/43-agents-page.js"></script>
@@ -546,7 +552,7 @@
   <script src="js/45-feed.js?v=4"></script>
   <script src="js/46-consume.js?v=7"></script>
   <script src="js/47-read.js"></script>
-  <script src="js/48-chat.js"></script>
+  <script src="js/48-chat.js?v=2"></script>
   <script src="js/55-approvals.js?v=5"></script>
   <script src="js/60-settings.js"></script>
   <script src="js/60-contacts.js"></script>
@@ -555,8 +561,8 @@
   <script src="vendor/xterm.js"></script>
   <script src="vendor/addon-fit.js"></script>
   <script src="js/72-activity.js"></script>
-  <script src="js/73-terminal.js"></script>
-  <script src="js/74-files.js"></script>
+  <script src="js/73-terminal.js?v=2"></script>
+  <script src="js/74-files.js?v=2"></script>
   <script src="js/75-bars.js?v=2"></script>
   <script src="js/77-re-screening.js"></script>
   <script src="js/78-floating.js"></script>
