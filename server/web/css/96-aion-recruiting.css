@@ -171,7 +171,12 @@ a.rec-seed-name:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
   padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-soft);
 }
-.rec-fit-name { flex: 1 1 100%; min-width: 0; font-size: var(--fs-sm); color: var(--base-80); }
+/* the class chip belongs BESIDE its criterion, not stacked above it — a 100%
+   basis gave every must two lines before a score was even offered */
+.rec-fit-name { flex: 1 1 auto; min-width: 0; font-size: var(--fs-sm); color: var(--base-80); }
+/* the gate verdict reads as part of the section title ("FIT unscored — score
+   to unblock a send"), so it does not get pushed to the far margin */
+.aion-sec-label .rec-fold-meta { margin-left: 0; }
 .rec-class { border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
 .rec-class.must { border-color: var(--base-70); color: var(--base-80); }
 .rec-class.disqualifier { border-color: var(--base-100); color: var(--base-100); }
@@ -244,36 +249,70 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-crit-row:hover .rec-crit-x { opacity: 1; }
 .rec-gate-rule { padding: var(--sp-4) 0; font-size: var(--fs-xs); color: var(--base-50); font-style: italic; }
 
-/* sources view */
+/* sources view — the run console is ONE row of controls over a stack of run
+   cards. The query shares the row (a 100% basis is what broke it into three),
+   and the rules of the console are stated once beneath it. */
 .rec-run-form {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-3) 0 var(--sp-5); border-bottom: 1px solid var(--base-20);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) 0 var(--sp-4);
 }
 .rec-run-source, .rec-run-role { flex: 0 1 auto; min-width: 0; }
-.rec-run-q { flex: 1 1 100%; min-width: 0; }
-.rec-run-max { flex: 0 0 auto; width: calc(var(--sp-9) * 2); min-width: 0; font-family: var(--mono); font-size: var(--fs-xs); }
-.rec-run-extra { flex: 1 1 30%; min-width: 0; font-size: var(--fs-sm); }
-.rec-run-f-seed_url { flex: 1 1 100%; }
-.rec-run-dry { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
-.rec-run-btn { margin-left: auto; }
+.rec-run-q { flex: 4 1 30%; min-width: 0; }
+.rec-run-max {
+  flex: 0 0 auto; width: calc(var(--sp-9) * 2); min-width: 0;
+  font-family: var(--mono); font-size: var(--fs-xs); text-align: right;
+}
+.rec-run-extra { flex: 1 1 18%; min-width: 0; font-size: var(--fs-sm); }
+.rec-run-f-seed_url { flex: 2 1 30%; }
+.rec-run-dry { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; white-space: nowrap; }
+/* the one filled control on the surface — running IS the action here.
+   Compound with .pill so it beats .pill.light's own background (§CSS
+   load-order: a bare modifier loses to a compound selector, not to file order). */
+.pill.rec-run-btn { flex: none; border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.pill.rec-run-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--on-accent); filter: brightness(1.08); }
+.rec-run-rule {
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40);
+  padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20);
+}
 
-.rec-run-list { display: flex; flex-direction: column; }
-.rec-run { padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); min-width: 0; }
-.rec-run:last-child { border-bottom: 0; }
-.rec-run.pinned { box-shadow: inset 2px 0 0 var(--accent); padding-left: var(--sp-3); }
-.rec-run-head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+/* run cards — a run is an object with a lifetime (it expires, it holds a
+   queue), so it reads as a card, not as a row in a ledger. */
+.rec-run-list { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-5); }
+.rec-run {
+  min-width: 0; padding: var(--sp-3) var(--sp-5);
+  border: 1px solid var(--base-25); border-radius: var(--radius);
+}
+.rec-run.pinned { box-shadow: inset 2px 0 0 var(--accent); }
+.rec-run-head { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
 .rec-run-toggle {
-  flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2);
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--sp-3);
   border: 0; background: none; padding: 0; text-align: left; cursor: pointer;
   font-family: var(--sans); font-size: var(--fs-md); color: var(--base-80);
 }
+/* the adapter names itself in its own lowercase — "openalex", not "OPENALEX" */
+.rec-run-src { flex: none; font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-100); }
 .rec-run-scope { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rec-run-chip { border: 1px solid var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
+.rec-run-toggle .rec-draft-sub { flex: none; }
+.rec-run-chip {
+  flex: none; border: 1px solid var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2);
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50);
+}
 .rec-run-chip.pinned { border-color: var(--accent); color: var(--accent); }
-.rec-run-pin { flex: none; }
-.rec-run-counts { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); padding-top: var(--sp-2); }
-.rec-run-count { color: var(--base-40); }
-.rec-run-count.has { color: var(--base-70); }
+/* what the run still wants — ink when it wants something, muted when done */
+.rec-run-status { flex: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); white-space: nowrap; }
+.rec-run-status.attn { color: var(--base-100); font-weight: 500; }
+.rec-run-pin {
+  flex: none; border: 0; background: none; padding: 0 0 0 var(--sp-2); cursor: pointer;
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40);
+}
+.rec-run-pin:hover { color: var(--accent); text-decoration: underline; }
+.rec-run-counts {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4);
+  padding-top: var(--sp-1); font-family: var(--mono); font-size: var(--fs-2xs);
+}
+.rec-run-count { color: var(--base-30); }
+.rec-run-count.has { color: var(--base-60); }
+.rec-run-when, .rec-run-expiry { color: var(--base-40); }
 .rec-run-expiry { margin-left: auto; }
 
 /* the draft queue — accepted reads accent (it reached the board), rejected

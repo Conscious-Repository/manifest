@@ -638,6 +638,11 @@ function paintSourcesView(main) {
     return;
   }
   main.append(recRunFormEl());
+  // the rules of this console, stated once under its controls rather than
+  // hidden in six tooltips — what a run may fetch, and what a dry run cannot do
+  main.append(el("div", "rec-run-rule",
+    "max " + (recSources.maxMax || 100) + " · dry runs show drafts but cannot accept · " +
+    "one record per accept, no accept-all"));
   const list = el("div", "rec-run-list");
   recRuns.forEach((run) => list.append(recRunCard(run)));
   if (!recRuns.length) list.append(emptyRow("no runs yet — a run is a dry run until you say otherwise"));
@@ -765,6 +770,17 @@ async function recRunSource() {
   }
 }
 
+// recUntil — an expiry reads as a DISTANCE, not a date: what a run is worth is
+// how long you still have to triage it. "in 27d" / "in 6h" / "expired".
+function recUntil(iso) {
+  const t = Date.parse(iso);
+  if (!isFinite(t)) return "";
+  const ms = t - Date.now();
+  if (ms <= 0) return "expired";
+  const h = Math.round(ms / 3600000);
+  return h < 48 ? "in " + Math.max(1, h) + "h" : "in " + Math.round(h / 24) + "d";
+}
+
 function recRunCard(run) {
   const scope = run.scope || {};
   const c = run.counts || {};
@@ -774,28 +790,41 @@ function recRunCard(run) {
   const head = el("div", "rec-run-head");
   const toggle = el("button", "rec-run-toggle");
   toggle.append(el("span", "sec-caret", open ? "▾" : "▸"));
-  toggle.append(el("span", "micro-label", run.source));
-  if (scope.dryRun) toggle.append(el("span", "micro-label rec-run-chip", "dry run"));
-  if (run.pinned) toggle.append(el("span", "micro-label rec-run-chip pinned", "pinned"));
+  toggle.append(el("span", "rec-run-src", run.source));
+  if (scope.dryRun) toggle.append(el("span", "rec-run-chip", "dry run"));
+  if (run.pinned) toggle.append(el("span", "rec-run-chip pinned", "pinned"));
   toggle.append(el("span", "rec-run-scope", scope.query || ((scope.fields || {}).seed_url || "")));
   const role = (recCache.roles || []).find((r) => (r.id || "role/" + r.slug) === scope.role);
   if (role) toggle.append(el("span", "rec-draft-sub", role.title || role.slug));
-  toggle.append(el("span", "rec-ev-when", fmtWhen(run.startedAt)));
   toggle.onclick = () => { recRunOpen[run.id] = !open; renderAion(); };
   head.append(toggle);
-  const pin = el("button", "pill light rec-run-pin", run.pinned ? "unpin" : "pin");
+  // what this run still WANTS: the one thing worth reading across nine rows.
+  // A dry run has nothing to accept, so it reports its draft count instead.
+  const waiting = (run.drafts || []).filter((d) => d.status === "new").length;
+  if (scope.dryRun) {
+    head.append(el("span", "rec-run-status", waiting ? waiting + " draft" + (waiting === 1 ? "" : "s") : "nothing"));
+  } else if (waiting) {
+    head.append(el("span", "rec-run-status attn", waiting + " to review"));
+  } else {
+    head.append(el("span", "rec-run-status", "cleared"));
+  }
+  const pin = el("button", "rec-run-pin", run.pinned ? "unpin" : "pin");
   pin.title = run.pinned ? "let the sweep take this run after it expires" : "keep this run past its expiry";
-  pin.onclick = () => recSourcesPost("/api/aion/recruiting/sources/pin/" + run.id,
-    { pinned: !run.pinned }, run.pinned ? "run unpinned" : "run pinned");
+  pin.onclick = (e) => {
+    e.stopPropagation();
+    recSourcesPost("/api/aion/recruiting/sources/pin/" + run.id,
+      { pinned: !run.pinned }, run.pinned ? "run unpinned" : "run pinned");
+  };
   head.append(pin);
   card.append(head);
 
   const counts = el("div", "rec-run-counts");
-  [["fetched", c.fetched], ["new", c.new], ["duplicate", c.duplicate], ["accepted", c.accepted], ["rejected", c.rejected]]
-    .forEach(([k, n]) => counts.append(el("span", "micro-label rec-run-count" + (n ? " has" : ""), (n || 0) + " " + k)));
+  [["fetched", c.fetched], ["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["rejected", c.rejected]]
+    .forEach(([k, n]) => counts.append(el("span", "rec-run-count" + (n ? " has" : ""), (n || 0) + " " + k)));
+  counts.append(el("span", "rec-run-when", fmtWhen(run.startedAt)));
   let expiry = "kept until triaged";
-  if (run.expiresAt) expiry = (run.pinned ? "pinned past " : "expires ") + fmtWhen(run.expiresAt);
-  counts.append(el("span", "rec-ev-when rec-run-expiry", expiry));
+  if (run.expiresAt) expiry = (run.pinned ? "pinned past " : "expires ") + recUntil(run.expiresAt);
+  counts.append(el("span", "rec-run-expiry", expiry));
   card.append(counts);
   if (!open) return card;
 
@@ -1368,7 +1397,10 @@ function recTriageBlock(c) {
       armed.focus();
     };
     box.append(rej);
-    box.append(el("div", "rec-archive-note", "reversible here, and it writes the rejection there — restoring does not un-reject"));
+    // ⚠ mono meta, not body copy: a consequence note that renders at reading
+    // size outweighs the buttons it qualifies (the .rec-foot class carries it)
+    box.append(el("div", "rec-foot rec-archive-note",
+      "reversible here, and it writes the rejection there — restoring does not un-reject"));
   } else {
     const arch = el("button", "rec-quiet-btn", "archive…");
     arch.onclick = () => {
