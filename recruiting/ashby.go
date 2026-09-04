@@ -1886,6 +1886,11 @@ type AshbySyncBackResult struct {
 	// Archived are records the sync moved to the archived column because
 	// their application was archived on the ATS side (one-way — see syncBack).
 	Archived []string `json:"archived"`
+	// SkippedJobs counts LIVE applicants the import left out because no
+	// Manifest role mirrors their job, by job title. Correct to skip, wrong
+	// to hide: without this the owner cannot tell "nobody applied" from
+	// "eight people applied to a job you never mirrored".
+	SkippedJobs map[string]int `json:"skippedJobs,omitempty"`
 }
 
 // SyncBack mirrors Ashby-authoritative state INBOUND:
@@ -1978,6 +1983,8 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 	touched := map[string]bool{}
 	patches := map[string]map[string]string{}
 	archiveHere := map[string]bool{} // slugs whose ATS-side archive lands on the board too
+	skippedJobs := map[string]int{}  // job title → live applicants no role mirrors
+	skippedSeen := map[string]bool{} // application ids already counted as skipped
 	patch := func(slug string) map[string]string {
 		if patches[slug] == nil {
 			patches[slug] = map[string]string{}
@@ -2113,8 +2120,25 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		if _, ok := linked[app.CandidateID]; ok {
 			continue
 		}
+		if strings.EqualFold(app.Status, "Archived") {
+			continue
+		}
 		roleSlug, ok := roleByJob[app.JobID]
-		if !ok || strings.EqualFold(app.Status, "Archived") {
+		if !ok {
+			// ⚠ A SKIP MUST BE COUNTED. A live applicant to a job no Manifest
+			// role mirrors is correctly left out — there is nothing to file
+			// them under — but doing it silently hides them completely
+			// (2026-09-04: eight active Ultrasound Engineer applicants, a job
+			// closed in Ashby with no posting for `sync roles` to mirror).
+			// The sync now says how many and to which job.
+			title := strings.TrimSpace(app.JobTitle)
+			if title == "" {
+				title = app.JobID
+			}
+			if !skippedSeen[app.ID] {
+				skippedSeen[app.ID] = true
+				skippedJobs[title]++
+			}
 			continue
 		}
 		c, ok := candByID[app.CandidateID]
@@ -2146,6 +2170,9 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 	sort.Strings(res.Imported)
 	sort.Strings(res.Adopted)
 	sort.Strings(res.Archived)
+	if len(skippedJobs) > 0 {
+		res.SkippedJobs = skippedJobs
+	}
 
 	if ctoken != "" {
 		st.SyncTokens["candidate.list"] = ctoken

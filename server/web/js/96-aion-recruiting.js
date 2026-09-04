@@ -27,6 +27,12 @@ let recNetQuery = "";     // network view search
 let recNetTab = "paths";  // paths | people | edges
 let recInspOpen = { details: false, evidence: false, network: false, activity: false, ashby: false };
 
+// INTAKE — the one front door (intake plan §5). One paste, resolved by the
+// server, shown as a CORRECTABLE scaffold before anything is written. `at`
+// names which mount owns the open scaffold, so the rail copy and the board
+// copy are the same control rather than two competing boxes.
+let recIntake = null; // {at, text, res, name, org, class, dest, known, knownVia, busy}
+
 // sources / scout runs — a run is a cache of a search, never a record
 let recSources = null;      // {sources, defaultMax, maxMax, ttlDays} | {unavailable: true}
 let recRuns = [];           // every run, newest first, each with its draft queue
@@ -291,25 +297,29 @@ function paintRail(rail) {
 
 // The sync footer ALWAYS renders (problem 2 — "sync back" used to appear
 // only after a candidate had been opened, because its probe loaded lazily).
+// The rail is 190px (150px under 1100px), so a footer label longer than about
+// two short words wraps mid-phrase inside its own border and reads as broken
+// chrome ("sync back from / ashby"). These say what they do in the width they
+// have; the sentence lives in the tooltip.
 function paintSyncFooter(roles) {
   const box = el("div", "rec-sync rec-rail-foot");
-  const b = el("button", "pill light rec-sync-btn", recSyncing ? "syncing…" : "sync roles");
+  const b = el("button", "pill light rec-sync-btn", recSyncing ? "syncing…" : "roles");
   b.disabled = recSyncing;
-  b.title = "mirror the public Ashby job board onto the role records — never touches criteria";
+  b.title = "sync roles — mirror the public Ashby job board onto the role records; never touches criteria";
   b.onclick = () => recSyncRoles();
   box.append(b);
   if (recAshbyProbe && recAshbyProbe.configured && !recAshbyProbe.error) {
-    const sb = el("button", "pill light rec-sync-btn", "sync back from ashby");
-    sb.title = "pull Ashby-owned state (applicants, official stages) onto records — a user action, never a poller";
+    const sb = el("button", "pill light rec-sync-btn", "applicants");
+    sb.title = "sync back from Ashby — pull applicants and official stages onto records; a user action, never a poller";
     sb.onclick = () => recAshbySyncBack(false);
     box.append(sb);
-    const full = el("button", "rec-linkish", "full re-sync");
+    const full = el("button", "rec-linkish rec-sync-full", "full re-sync");
     full.title = "ignore the incremental sync tokens and re-read everything";
     full.onclick = () => recAshbySyncBack(true);
     box.append(full);
   }
   const synced = roles.map((r) => r.synced || "").filter(Boolean).sort().pop();
-  if (synced) box.append(el("span", "micro-label rec-sync-when", "ashby · " + synced));
+  if (synced) box.append(el("span", "rec-sync-when", "ashby · " + synced));
   return box;
 }
 
@@ -1862,6 +1872,25 @@ async function recAutoPull(c) {
   renderAion();
 }
 
+// recResumeDisplay makes pdftotext's -layout output readable in a 300px pane.
+// That flag preserves the PDF's COLUMN geometry with runs of spaces, which is
+// right for an agent reading a table and wrong for a person reading a CV in a
+// narrow column: it arrives as ragged indentation. So for DISPLAY only —
+// the stored extract stays verbatim — leading indentation goes, column
+// gutters collapse to a single space, and runs of blank lines become one.
+function recResumeDisplay(raw) {
+  const lines = (raw || "").split("\n").map((ln) =>
+    ln.replace(/\s+$/, "").replace(/^\s+/, "").replace(/ {2,}/g, "  "));
+  const out = [];
+  for (const ln of lines) {
+    if (!ln && !out.length) continue;              // no leading blank block
+    if (!ln && !out[out.length - 1]) continue;     // never two blanks in a row
+    out.push(ln);
+  }
+  while (out.length && !out[out.length - 1]) out.pop();
+  return out.join("\n");
+}
+
 async function recLoadResumeText(hash) {
   recResumeText[hash] = null; // in flight — never re-request on the next paint
   try {
@@ -1912,7 +1941,7 @@ function recSubmissionSection(c) {
     const txt = recResumeText[r.hash];
     if (txt === undefined) { recLoadResumeText(r.hash); box.append(el("div", "rec-foot", "reading…")); }
     else if (txt === null) box.append(el("div", "rec-foot", "reading…"));
-    else if (txt) box.append(el("pre", "rec-resume-text", txt));
+    else if (txt) box.append(el("pre", "rec-resume-text", recResumeDisplay(txt)));
     else box.append(el("div", "rec-foot", "no text layer — a scanned PDF; open it to read"));
   } else if (det && !det.error) {
     box.append(el("div", "rec-foot", "no file on this application"));
@@ -2075,6 +2104,10 @@ async function recAshbySyncBack(full) {
       ((s.imported || []).length ? " · " + s.imported.length + " imported ← ashby" : "") +
       ((s.adopted || []).length ? " · " + s.adopted.length + " linked ← ashby" : "") +
       ((s.archived || []).length ? " · " + s.archived.length + " archived ← ashby" : "") +
+      // a live applicant nobody can see is worth a sentence, not a silence
+      (Object.keys(s.skippedJobs || {}).length
+        ? " · skipped " + Object.entries(s.skippedJobs).map(([j, n]) => n + " for " + j + " (no role)").join(", ")
+        : "") +
       ((s.updated || []).length ? " · " + s.updated.length + " updated" : "") +
       ((s.conflicts || []).length ? " · " + s.conflicts.length + " conflicts" : ""));
     renderAion();

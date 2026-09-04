@@ -53,7 +53,12 @@ a.rec-seed-name { color: var(--accent); text-decoration: none; }
 a.rec-seed-name:hover { text-decoration: underline; }
 .rec-seed-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rec-seed-add { margin-top: var(--sp-3); }
-.rec-sync { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
+/* sync footer — two short pills side by side, then the quiet full re-sync and
+   the stamp on their own lines. Nothing here may wrap inside its own border. */
+.rec-sync { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); }
+.rec-sync-btn { white-space: nowrap; }
+.rec-sync-full, .rec-sync-when { flex: 1 1 100%; padding-left: 0; }
+.rec-sync-when { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 
 /* toolbar — search first and full-width, then the ORIGIN segmented control;
    the stage cuts are the chip row beneath. Two axes, two controls. */
@@ -213,12 +218,18 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-repull { margin-left: auto; padding: 0; }
 .rec-sub-file { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); }
 .rec-sub-name { flex: 1 1 100%; min-width: 0; font-size: var(--fs-sm); color: var(--base-100); overflow-wrap: anywhere; }
+/* ⚠ A RESUME IS PROSE, NOT A LOG. Rendering pdftotext output in 10px mono
+   with its -layout column padding intact made a readable CV unreadable: mono
+   is a third wider per character, the gutter spacing became ragged
+   indentation, and 10px is a size for chips. It reads as a document now —
+   sans, body size, generous line height — and the extract is normalized for
+   display (recResumeDisplay) while the STORED text stays verbatim. */
 .rec-resume-text {
-  margin: 0; max-height: 40vh; overflow: auto;
-  padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line-soft); border-radius: var(--radius);
-  background: var(--base-05); color: var(--base-70);
-  font-family: var(--mono); font-size: var(--fs-2xs); line-height: 1.5;
-  white-space: pre-wrap; overflow-wrap: anywhere;
+  margin: 0; max-height: 46vh; overflow: auto;
+  padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line-soft); border-radius: var(--radius);
+  background: var(--base-05); color: var(--base-80);
+  font-family: var(--sans); font-size: var(--fs-md); line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: break-word;
 }
 .rec-sub-field { display: flex; flex-direction: column; gap: 0; padding: var(--sp-2) 0; border-top: 1px solid var(--line-soft); }
 .rec-sub-flabel { font-family: var(--mono); font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.4px; color: var(--base-40); }

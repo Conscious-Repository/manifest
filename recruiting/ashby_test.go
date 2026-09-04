@@ -1086,6 +1086,41 @@ func TestAshbySyncBackMirrorsAshbyArchiveOntoTheBoard(t *testing.T) {
 	}
 }
 
+// ⚠ A SKIPPED APPLICANT IS COUNTED, NOT HIDDEN. A live application to a job no
+// Manifest role mirrors is correctly left off the board — there is nothing to
+// file it under — but silently, the owner cannot tell "nobody applied" from
+// "eight people applied to a job you never mirrored" (2026-09-04, Ultrasound
+// Engineer: a job closed in Ashby with no posting for `sync roles` to mirror).
+func TestAshbySyncBackCountsApplicantsItCannotFile(t *testing.T) {
+	h := newAshbyHarness(t)
+	appFor := func(id, cand, job, status string) map[string]any {
+		return map[string]any{"id": id, "status": status,
+			"candidate": map[string]any{"id": cand}, "job": map[string]any{"id": job, "title": "Ultrasound Engineer"},
+			"currentInterviewStage": map[string]any{"id": "st_1", "title": "Application Review", "interviewPlanId": "plan_1"}}
+	}
+	h.fake.candidates["cand_uma"] = wireCandidate("cand_uma", "Uma Unmirrored", "uma@example.test", "")
+	h.fake.apps["app_uma"] = appFor("app_uma", "cand_uma", "job_closed", "Active")
+	// an ARCHIVED application to the same unmirrored job is not a skip worth
+	// reporting — nothing was lost
+	h.fake.candidates["cand_old"] = wireCandidate("cand_old", "Otto Old", "otto@example.test", "")
+	h.fake.apps["app_old"] = appFor("app_old", "cand_old", "job_closed", "Archived")
+
+	before := len(h.store.CandidateSlugs())
+	out, err := h.sync.SyncBack(context.Background(), true, testNow.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(h.store.CandidateSlugs()) != before {
+		t.Fatal("an applicant to an unmirrored job reached the board")
+	}
+	if out.SkippedJobs["Ultrasound Engineer"] != 1 {
+		t.Fatalf("the live applicant nobody can see was not reported: %+v", out.SkippedJobs)
+	}
+	if len(out.SkippedJobs) != 1 {
+		t.Fatalf("an archived application counted as a skip: %+v", out.SkippedJobs)
+	}
+}
+
 // A record that was never handed off has no application to read.
 func TestAshbyDetailRefusesAnUnlinkedRecord(t *testing.T) {
 	h := newAshbyHarness(t)
