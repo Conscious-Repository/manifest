@@ -339,6 +339,18 @@ func (s *Store) saveDraftEdges(d sources.CandidateDraft, candidateID string) err
 	return s.SaveEdges(edges)
 }
 
+// AddNetworkPerson appends one curated node to network/people.md ("＋ someone
+// I know" — the MY PEOPLE core the derived intro paths route through).
+func (s *Store) AddNetworkPerson(p NetworkPerson) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	doc := s.LoadNetworkPeople()
+	if _, err := doc.Add(p); err != nil {
+		return err
+	}
+	return s.SaveNetworkPeople(doc)
+}
+
 // AdoptAshbyApplicant lands one Ashby-side applicant on the board (owner
 // decision 2026-09-03: Manifest is the single management surface; Ashby is
 // the distribution channel that collects applicants). An existing UNLINKED
@@ -388,6 +400,9 @@ func (s *Store) AdoptAshbyApplicant(c AshbyCandidate, appID, ashbyStage, role st
 		}
 		match.Set("ashby_stage", ashbyStage)
 		match.Set("ashby_synced", now.UTC().Format("2006-01-02"))
+		// an applicant needs triage even when we already scouted them —
+		// `inbound` + stage `ashby` is the untriaged queue the board renders
+		match.Set("inbound", now.UTC().Format("2006-01-02"))
 		if match.Get("stage") != StageArchived {
 			match.Set("stage", StageAshby)
 		}
@@ -416,6 +431,7 @@ func (s *Store) AdoptAshbyApplicant(c AshbyCandidate, appID, ashbyStage, role st
 		{"stage", StageAshby}, {"owner", ""}, {"pii", "true"},
 		{"ashby_candidate_id", c.ID}, {"ashby_application_id", appID},
 		{"ashby_stage", ashbyStage}, {"ashby_synced", now.UTC().Format("2006-01-02")},
+		{"inbound", now.UTC().Format("2006-01-02")},
 		{"created", now.UTC().Format("2006-01-02")}, {"archived", ""},
 	} {
 		doc.Set(kv[0], kv[1])

@@ -993,6 +993,7 @@ func TestAshbySyncBackImportsApplicants(t *testing.T) {
 	for _, want := range []string{"stage: ashby", "role: role/mri-engineer",
 		"ashby_candidate_id: cand_ava", "ashby_application_id: app_ava",
 		"ashby_stage: Application Review", "pii: true",
+		"inbound: ", // the untriaged-applicant stamp the board's INBOUND cut reads
 		"ava@example.test", "+1 314 555 0100", "https://linkedin.example/in/ava", "MRI Physicist"} {
 		if !strings.Contains(rec, want) {
 			t.Fatalf("imported record lacks %q:\n%s", want, rec)

@@ -112,49 +112,6 @@ func (s *Server) handleRecruitingOutreachProbe(w http.ResponseWriter, _ *http.Re
 	writeJSON(w, s.outreachProbe())
 }
 
-// POST …/outreach/connect → {url}: the gmail.send consent link. The owner
-// approves in a browser and pastes the landing URL to connect/finish.
-func (s *Server) handleRecruitingOutreachConnect(w http.ResponseWriter, _ *http.Request) {
-	if !s.recruitingReady(w) {
-		return
-	}
-	if s.gmailSend == nil {
-		http.Error(w, "sending unavailable — no Gmail send client wired", http.StatusServiceUnavailable)
-		return
-	}
-	u, err := s.gmailSend.StartConnect()
-	if err != nil {
-		httpError(w, errBadRequest(err.Error()))
-		return
-	}
-	writeJSON(w, map[string]any{"url": u, "sender": s.gmailSend.Sender()})
-}
-
-// POST …/outreach/connect/finish {pasted} → the probe after the exchange.
-func (s *Server) handleRecruitingOutreachConnectFinish(w http.ResponseWriter, r *http.Request) {
-	if !s.recruitingReady(w) {
-		return
-	}
-	if s.gmailSend == nil {
-		http.Error(w, "sending unavailable — no Gmail send client wired", http.StatusServiceUnavailable)
-		return
-	}
-	var b struct {
-		Pasted string `json:"pasted"`
-	}
-	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Pasted) == "" {
-		httpError(w, errBadRequest("paste the address the sign-in tab landed on"))
-		return
-	}
-	ctx, cancel := outreachCtx(r)
-	defer cancel()
-	if _, err := s.gmailSend.FinishConnect(ctx, b.Pasted); err != nil {
-		httpError(w, errBadRequest(err.Error()))
-		return
-	}
-	writeJSON(w, s.outreachProbe())
-}
-
 // GET …/outreach/{id} → {entries}: the append-only log.
 func (s *Server) handleRecruitingOutreach(w http.ResponseWriter, r *http.Request) {
 	if !s.recruitingReady(w) {

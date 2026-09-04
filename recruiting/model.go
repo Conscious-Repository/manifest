@@ -235,6 +235,8 @@ type Candidate struct {
 	AshbyCandidateID   string            `json:"ashbyCandidateId,omitempty"`
 	AshbyApplicationID string            `json:"ashbyApplicationId,omitempty"`
 	SourceRef          string            `json:"sourceRef,omitempty"`
+	AshbyStage         string            `json:"ashbyStage,omitempty"` // Ashby-authoritative official stage
+	Inbound            string            `json:"inbound,omitempty"`    // date this record arrived AS AN APPLICANT (sync-back import); untriaged while stage is still `ashby`
 	Created            string            `json:"created"`
 	Archived           string            `json:"archived,omitempty"`
 	Profile            map[string]string `json:"profile"`

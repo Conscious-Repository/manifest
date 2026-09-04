@@ -1,18 +1,21 @@
-/* 96-aion-recruiting — the private scout board (#/aion/recruiting).
+/* 96-aion-recruiting — the private scout cockpit (#/aion/recruiting/…).
    Tokens only: no raw hex, no raw px (docs/ui-conventions.md, "the one rule").
    Geometry is borrowed from .aion-backlog / .aion-list / .aion-inspector in
-   92-aion.css rather than reinvented; everything here is the rec- prefix. */
+   92-aion.css rather than reinvented; everything here is the rec- prefix.
+   Redesign 2026-09-04: one accent — permitted reads accent, blocked reads
+   ink + a leading ●, absent reads muted. Red is not used on this surface. */
 
 .rec-shell { min-width: 0; }
 .rec-main { min-width: 0; overflow: hidden; }
 
-/* roles rail — the four lanes, pinned first, each with its open count */
+/* rail — VIEWS over ROLES over SEEDS, sync footer at the foot */
 .rec-rail {
   width: 190px; flex: none; align-self: flex-start;
   padding: var(--sp-2) var(--sp-6) var(--sp-8) 0;
   border-right: 1px solid var(--base-25);
   display: flex; flex-direction: column; gap: var(--sp-1);
 }
+.rec-rail-label { color: var(--base-40); padding: var(--sp-4) var(--sp-4) var(--sp-1); }
 .rec-role {
   display: flex; align-items: baseline; gap: var(--sp-3);
   width: 100%; padding: var(--sp-3) var(--sp-4);
@@ -21,11 +24,18 @@
   text-align: left; cursor: pointer;
 }
 .rec-role:hover { background: var(--base-05); }
-.rec-role.on { background: var(--base-20); border-left-color: var(--accent); color: var(--base-100); }
+.rec-role.on { background: var(--base-20); border-left-color: var(--accent); color: var(--accent); }
 .rec-role-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-role-count { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-count-live { color: var(--accent); }
+.rec-linkish {
+  border: 0; background: none; padding: var(--sp-1) var(--sp-4); text-align: left; cursor: pointer;
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent);
+}
+.rec-linkish:hover { text-decoration: underline; }
+.rec-rail-foot { margin-top: var(--sp-6); border-top: 1px solid var(--base-25); padding-top: var(--sp-4); }
 
-/* seeds rail — the four D11 classes in one collapsible box */
+/* seeds rail — the four classes in one collapsible box */
 .rec-seeds { margin-top: var(--sp-7); border-top: 1px solid var(--base-25); padding-top: var(--sp-4); }
 .rec-seeds-head {
   display: flex; align-items: baseline; gap: var(--sp-3); width: 100%;
@@ -41,28 +51,88 @@ a.rec-seed-name { color: var(--accent); text-decoration: none; }
 a.rec-seed-name:hover { text-decoration: underline; }
 .rec-seed-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rec-seed-add { margin-top: var(--sp-3); }
+.rec-sync { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
 
-/* toolbar + quick add */
+/* toolbar — search first and full-width, then the ORIGIN segmented control;
+   the stage cuts are the chip row beneath. Two axes, two controls. */
 .rec-toolbar {
-  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
-  padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20);
+  display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap;
+  padding-bottom: var(--sp-4);
 }
 .rec-search { flex: 1 1 auto; min-width: 0; font-size: var(--fs-md); }
-.rec-add { margin: var(--sp-4) 0; }
+.rec-seg { display: flex; border: 1px solid var(--base-25); border-radius: var(--radius-lg); overflow: hidden; flex: none; }
+.rec-seg-btn {
+  display: flex; align-items: center; gap: var(--sp-2);
+  border: 0; background: none; padding: var(--sp-2) var(--sp-5); cursor: pointer;
+  font-family: var(--mono); font-size: var(--fs-2xs); letter-spacing: 0.4px; color: var(--base-50);
+}
+.rec-seg-btn + .rec-seg-btn { border-left: 1px solid var(--base-25); }
+.rec-seg-btn:hover { color: var(--base-100); }
+.rec-seg-btn.on { background: var(--base-20); color: var(--accent); }
+.rec-seg-count { font-family: var(--mono); color: var(--accent); }
+.rec-cuts { display: flex; gap: var(--sp-3); padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20); }
 
-/* board — one lane per stage the filtered set actually uses */
+/* paste-to-expand — the everyday sourcing gesture, one underlined field */
+.rec-paste {
+  width: 100%; margin: var(--sp-5) 0 var(--sp-3); padding: var(--sp-3) var(--sp-2);
+  border: 0; border-bottom: 1px dashed var(--base-30); background: none; outline: none;
+  font-family: var(--sans); font-size: var(--fs-md); color: var(--base-100);
+}
+.rec-paste::placeholder { color: var(--base-40); }
+.rec-paste:focus { border-bottom-color: var(--accent-soft); }
+
+/* board — one lane per stage in use; the INBOUND cut is one triage queue */
 .rec-board { display: flex; flex-direction: column; gap: var(--sp-7); }
 .rec-lane { min-width: 0; }
 .rec-card { cursor: pointer; }
 .rec-card.sel { box-shadow: inset 2px 0 0 var(--accent); background: var(--base-05); }
+.rec-state { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); white-space: nowrap; }
+.rec-state.alarm { color: var(--base-100); font-weight: 500; }
+.rec-state.dim { color: var(--base-30); }
+.rec-foot { padding: var(--sp-5) 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-error {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-5); border: 1px solid var(--base-100); border-radius: var(--radius);
+  font-size: var(--fs-sm); color: var(--base-100);
+}
 
-/* the D6 gate chip — status hues are a closed set, so an overridden gate is
-   warn (a judgment was made) and a disqualified one is danger */
+/* the gate chip — ONE accent: permitted = accent, blocked = ink (the ● rides
+   in the summary/label text), absent = muted. Never a second hue. */
 .rec-gate { border: 1px solid var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
-.rec-gate.ok { border-color: var(--good); color: var(--good); }
-.rec-gate.blocked { border-color: var(--danger); color: var(--danger); }
-.rec-gate.overridden { border-color: var(--warn); color: var(--warn); }
+.rec-gate.ok { border-color: var(--accent); color: var(--accent); }
+.rec-gate.blocked { border-color: var(--base-100); color: var(--base-100); }
+.rec-gate.muted { border-color: var(--base-25); color: var(--base-40); }
 .rec-ev { color: var(--base-40); }
+.rec-gate-summary { padding: var(--sp-4) 0 var(--sp-2); font-size: var(--fs-sm); color: var(--base-60); }
+.rec-gate-summary.blocked { color: var(--base-100); font-weight: 500; }
+.rec-gate-summary.ok { color: var(--accent); }
+
+/* the ONE primary action — accent fill, names the actual next step */
+.rec-primary {
+  display: block; width: 100%; margin: var(--sp-3) 0 var(--sp-5);
+  border: 0; border-radius: var(--radius-lg); background: var(--accent); color: var(--on-accent);
+  font: inherit; font-size: var(--fs-md); font-weight: 600; padding: var(--sp-4); cursor: pointer;
+}
+.rec-primary:hover { filter: brightness(1.08); }
+
+/* quiet bordered buttons — archive, send, push. Arm-then-confirm turns the
+   border ink; nothing here is red (archive is reversible, send/push are
+   deliberate but not destructive). */
+.rec-quiet-btn {
+  display: block; width: 100%; margin-top: var(--sp-4);
+  border: 1px solid var(--base-30); border-radius: var(--radius-lg); background: var(--bg);
+  font: inherit; font-size: var(--fs-sm); color: var(--base-70); padding: var(--sp-3); cursor: pointer;
+}
+.rec-quiet-btn:hover { border-color: var(--base-70); color: var(--base-100); }
+.rec-quiet-btn.armed { border-color: var(--base-100); color: var(--base-100); font-weight: 600; }
+.rec-archive-btn { margin-top: var(--sp-8); }
+.rec-archive-note { padding-top: var(--sp-2); }
+
+/* triage — the verdict block above the primary, on an ink top rule */
+.rec-triage { margin: var(--sp-4) 0 var(--sp-6); border-top: 2px solid var(--base-100); padding-top: var(--sp-4); }
+.rec-triage-label { color: var(--base-100); padding-bottom: var(--sp-3); }
+.rec-triage .rec-primary { margin-bottom: var(--sp-3); }
+.rec-reject-reason { width: 100%; margin-top: var(--sp-3); }
 
 /* inspector */
 .rec-inspector { overflow-y: auto; max-height: 100vh; }
@@ -70,8 +140,30 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-insp-field .aion-insp-flabel { padding-top: var(--sp-3); }
 .rec-in { flex: 1; min-width: 0; }
 .rec-insp-sec { margin-top: var(--sp-7); }
+.rec-name-in {
+  width: 100%; border: 0; border-bottom: 1px solid var(--accent-soft); background: none; outline: none;
+  font-family: var(--sans); font-size: var(--fs-xl); color: var(--base-100); padding: var(--sp-2) 0;
+}
+.rec-insp-pair { display: flex; gap: var(--sp-3); padding: var(--sp-4) 0; }
+.rec-insp-pair select { flex: 1; min-width: 0; }
+.rec-profile { display: flex; flex-direction: column; }
 
-/* fit rows */
+/* folds — disclosure rows with a derived meta that goes ink for attention */
+.rec-fold-head {
+  display: flex; align-items: baseline; gap: var(--sp-3); width: 100%;
+  border: 0; background: none; padding: var(--sp-3) 0; cursor: pointer; text-align: left;
+  border-top: 1px solid var(--line-soft);
+}
+.rec-fold-head:hover { background: var(--base-05); }
+.rec-fold-meta { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-fold-meta.alarm { color: var(--base-100); font-weight: 500; }
+.rec-fold-body { padding: var(--sp-2) 0 var(--sp-4); }
+
+/* the PII contact pair — an ink dashed rule and the doctrine, visible */
+.rec-contact { margin-top: var(--sp-4); border-top: 1px dashed var(--base-100); padding-top: var(--sp-3); }
+.rec-contact-note { font-family: var(--mono); font-size: var(--fs-3xs); color: var(--base-100); padding-bottom: var(--sp-2); }
+
+/* fit rows — class chip + criterion, then score + the citation picker */
 .rec-fit-row {
   display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
   padding: var(--sp-2) 0; border-bottom: 1px solid var(--line-soft);
@@ -79,18 +171,26 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-fit-name { flex: 1 1 100%; min-width: 0; font-size: var(--fs-sm); color: var(--base-80); }
 .rec-class { border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
 .rec-class.must { border-color: var(--base-70); color: var(--base-80); }
-.rec-class.disqualifier { border-color: var(--danger); color: var(--danger); }
-.rec-score { flex: 0 0 auto; width: var(--sp-9); min-width: 76px; }
-.rec-ev-in { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: var(--fs-xs); }
+.rec-class.disqualifier { border-color: var(--base-100); color: var(--base-100); }
+.rec-score { flex: 0 0 auto; min-width: 76px; }
 .rec-fit-present { flex: 0 0 auto; }
+.rec-cites { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
+.rec-cite {
+  border: 1px solid var(--accent-soft); border-radius: var(--radius); background: none; cursor: pointer;
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); padding: 0 var(--sp-2);
+}
+.rec-cite:hover { border-color: var(--accent); }
+.rec-cite-pick { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: var(--fs-2xs); }
+/* an uncited must is the thing blocking the send — it looks unfinished */
+.rec-uncited { border-color: var(--base-100); }
 .rec-override {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
-  margin-top: var(--sp-4); padding: var(--sp-3); border: 1px solid var(--warn);
+  margin-top: var(--sp-4); padding: var(--sp-3); border: 1px solid var(--base-100);
   border-radius: var(--radius); font-size: var(--fs-sm); color: var(--base-80);
 }
 .rec-override-why { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
 
-/* evidence — the citation, kept visible rather than collapsed away */
+/* evidence — the citation, verbatim */
 .rec-ev-row { padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); }
 .rec-ev-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .rec-ev-kind { color: var(--base-50); }
@@ -115,32 +215,36 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-edge-basis { flex: 1 1 100%; color: var(--base-60); font-size: var(--fs-xs); }
 .rec-path-conf { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rec-inferred { color: var(--base-40); border: 1px dashed var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); }
-/* a derived path is a computed route, not owner evidence: solid chip in the
-   accent, hops dimmed a step. Inferred keeps its own dashed chip beside it. */
 .rec-derived { color: var(--accent); border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: 0 var(--sp-2); }
 .rec-path.derived .rec-path-hops { color: var(--base-50); }
+.rec-net-row {
+  display: flex; align-items: baseline; gap: var(--sp-4);
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); min-width: 0;
+}
+.rec-net-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rec-net-name { font-size: var(--fs-md); color: var(--base-100); }
+.rec-net-target { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; font-size: var(--fs-md); color: var(--accent); text-align: left; }
+.rec-net-target:hover { text-decoration: underline; }
 
 .rec-next { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; font-size: var(--fs-sm); color: var(--base-80); }
-/* the armed state is .aion-insp-del.armed from 92-aion.css (accent text on
-   the --over fill) — no override here, or the text goes danger-on-danger */
-.rec-archive { display: block; margin-top: var(--sp-7); }
 
-/* the rail's sync box: the mirror button(s) and the last-synced stamp */
-.rec-sync { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); }
+/* role view — the search console */
+.rec-role-head { display: flex; align-items: baseline; gap: var(--sp-4); padding-bottom: var(--sp-4); }
+.rec-role-title { font-family: var(--sans); font-size: var(--fs-xl); color: var(--base-100); }
+.rec-facts { display: flex; flex-wrap: wrap; gap: var(--sp-6); padding: var(--sp-3) 0 var(--sp-5); border-bottom: 1px solid var(--base-20); }
+.rec-fact { display: flex; align-items: baseline; gap: var(--sp-2); }
+.rec-fact-v { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-80); }
+.rec-crit-row { display: grid; grid-template-columns: minmax(0, auto) 1fr min-content; gap: var(--sp-2); align-items: center; padding: var(--sp-1) 0; }
+.rec-crit-class { font-family: var(--mono); font-size: var(--fs-2xs); }
+.rec-crit-text { min-width: 0; }
+.rec-crit-x { opacity: 0.5; }
+.rec-crit-row:hover .rec-crit-x { opacity: 1; }
+.rec-gate-rule { padding: var(--sp-4) 0; font-size: var(--fs-xs); color: var(--base-50); font-style: italic; }
 
-/* sources — the scout-run panel (Phase 3a). One adapter over one explicit
-   scope, one draft accepted at a time: there is no accept-all button because
-   there is no accept-all route. Sits between the quick-add and the board. */
-.rec-sources { margin: 0 0 var(--sp-6); border: 1px solid var(--base-20); border-radius: var(--radius); min-width: 0; }
-.rec-sources-head {
-  display: flex; align-items: baseline; gap: var(--sp-3); width: 100%;
-  border: 0; background: none; padding: var(--sp-3) var(--sp-4);
-  color: var(--base-60); cursor: pointer; text-align: left;
-}
-.rec-sources-head:hover { background: var(--base-05); }
+/* sources view */
 .rec-run-form {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line-soft);
+  padding: var(--sp-3) 0 var(--sp-5); border-bottom: 1px solid var(--base-20);
 }
 .rec-run-source, .rec-run-role { flex: 0 1 auto; min-width: 0; }
 .rec-run-q { flex: 1 1 100%; min-width: 0; }
@@ -150,10 +254,10 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-run-dry { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
 .rec-run-btn { margin-left: auto; }
 
-.rec-run-list { display: flex; flex-direction: column; border-top: 1px solid var(--line-soft); }
-.rec-run { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line-soft); min-width: 0; }
+.rec-run-list { display: flex; flex-direction: column; }
+.rec-run { padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); min-width: 0; }
 .rec-run:last-child { border-bottom: 0; }
-.rec-run.pinned { box-shadow: inset 2px 0 0 var(--accent); }
+.rec-run.pinned { box-shadow: inset 2px 0 0 var(--accent); padding-left: var(--sp-3); }
 .rec-run-head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
 .rec-run-toggle {
   flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2);
@@ -169,17 +273,17 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-run-count.has { color: var(--base-70); }
 .rec-run-expiry { margin-left: auto; }
 
-/* the draft queue — a draft is a search result with its citation, not a
-   record; its status chip says which way it went */
+/* the draft queue — accepted reads accent (it reached the board), rejected
+   and duplicate read muted. No hues. */
 .rec-draft-list { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); }
 .rec-draft { padding: var(--sp-3); border: 1px solid var(--line-soft); border-radius: var(--radius); min-width: 0; }
-.rec-draft.accepted { border-color: var(--good); }
+.rec-draft.accepted { border-color: var(--accent-soft); }
 .rec-draft.rejected, .rec-draft.duplicate { opacity: 0.7; }
 .rec-draft-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .rec-draft-status { border: 1px solid var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); color: var(--base-50); }
-.rec-draft-status.accepted { border-color: var(--good); color: var(--good); }
-.rec-draft-status.rejected { border-color: var(--danger); color: var(--danger); }
-.rec-draft-status.duplicate { border-color: var(--warn); color: var(--warn); }
+.rec-draft-status.accepted { border-color: var(--accent); color: var(--accent); }
+.rec-draft-status.rejected { border-color: var(--base-100); color: var(--base-100); }
+.rec-draft-status.duplicate { border-color: var(--base-30); color: var(--base-40); }
 .rec-draft-name { font-size: var(--fs-md); color: var(--base-100); }
 .rec-draft-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .rec-draft-note { padding-top: var(--sp-1); font-size: var(--fs-sm); color: var(--base-60); }
@@ -190,8 +294,8 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-draft-on:hover { text-decoration: underline; }
 .rec-draft-hint { padding-top: var(--sp-2); font-size: var(--fs-xs); color: var(--base-40); }
 .rec-draft-actions { display: flex; gap: var(--sp-2); padding-top: var(--sp-3); }
-.rec-draft-accept { color: var(--good); }
-.rec-draft-reject { color: var(--danger); }
+.rec-draft-accept { color: var(--accent); }
+.rec-draft-reject { color: var(--base-70); }
 
 @media (max-width: 1100px) {
   .rec-rail { width: 150px; }

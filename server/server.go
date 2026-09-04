@@ -433,6 +433,7 @@ func (s *Server) Handler() http.Handler {
 				mux.HandleFunc("GET /api/aion/recruiting/ashby/probe", s.handleRecruitingAshbyProbe)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/probe", s.handleRecruitingAshbyProbe)
 				mux.HandleFunc("GET /api/aion/recruiting/ashby/state", s.handleRecruitingAshbyState)
+				mux.HandleFunc("GET /api/aion/recruiting/ashby/reasons", s.handleRecruitingAshbyReasons)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/preflight/{id...}", s.handleRecruitingAshbyPreflight)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/push/{id...}", s.handleRecruitingAshbyPush)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/stage/{id...}", s.handleRecruitingAshbyStage)
@@ -444,8 +445,6 @@ func (s *Server) Handler() http.Handler {
 			// only route that reaches Gmail, and only with approve:true
 			mux.HandleFunc("GET /api/aion/recruiting/outreach/probe", s.handleRecruitingOutreachProbe)
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/probe", s.handleRecruitingOutreachProbe)
-			mux.HandleFunc("POST /api/aion/recruiting/outreach/connect", s.handleRecruitingOutreachConnect)
-			mux.HandleFunc("POST /api/aion/recruiting/outreach/connect/finish", s.handleRecruitingOutreachConnectFinish)
 			mux.HandleFunc("GET /api/aion/recruiting/outreach/{id...}", s.handleRecruitingOutreach)
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/draft/{id...}", s.handleRecruitingOutreachDraft)
 			mux.HandleFunc("POST /api/aion/recruiting/outreach/prepare/{id...}", s.handleRecruitingOutreachPrepare)
@@ -457,6 +456,7 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/evidence/{id...}", s.handleRecruitingCandidateEvidence)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/fit/{id...}", s.handleRecruitingCandidateFit)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/override/{id...}", s.handleRecruitingCandidateOverride)
+			mux.HandleFunc("POST /api/aion/recruiting/network/person", s.handleRecruitingNetworkPersonAdd)
 			// SOURCES — scout runs and the per-draft review queue. Accept and
 			// reject name ONE draft each; there is no accept-all route.
 			if s.recruitingRuns != nil {

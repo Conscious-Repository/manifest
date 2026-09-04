@@ -580,6 +580,19 @@ func (c *Ashby) ListSources(ctx context.Context) ([]AshbySource, error) {
 	return out, err
 }
 
+// AshbyArchiveReason is one archiveReason.list row — the reject vocabulary
+// the triage verdict's "archive & reject in ashby" picks from.
+type AshbyArchiveReason struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// ListArchiveReasons is archiveReason.list.
+func (c *Ashby) ListArchiveReasons(ctx context.Context) ([]AshbyArchiveReason, error) {
+	out, _, err := listAll[AshbyArchiveReason](ctx, c, "archiveReason.list", nil, "")
+	return out, err
+}
+
 // ListCandidates is candidate.list (syncToken-capable).
 func (c *Ashby) ListCandidates(ctx context.Context, syncToken string) ([]AshbyCandidate, string, error) {
 	return listAll[AshbyCandidate](ctx, c, "candidate.list", nil, syncToken)
@@ -923,6 +936,14 @@ func (a *AshbySync) UseClient(c *Ashby) {
 
 // Configured mirrors the client.
 func (a *AshbySync) Configured() bool { return a.client.Configured() }
+
+// ArchiveReasons is the reject vocabulary passthrough (archiveReason.list).
+func (a *AshbySync) ArchiveReasons(ctx context.Context) ([]AshbyArchiveReason, error) {
+	if !a.client.Configured() {
+		return nil, ErrAshbyUnconfigured
+	}
+	return a.client.ListArchiveReasons(ctx)
+}
 
 func (a *AshbySync) load() AshbySyncState {
 	st := AshbySyncState{SyncTokens: map[string]string{}, Candidates: map[string]AshbyCandidateState{}, Audit: []AshbyAudit{}}

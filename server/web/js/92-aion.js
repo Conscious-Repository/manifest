@@ -25,16 +25,23 @@ function scheduleAionPoll(delay) {
 
 function showAion(h) {
   const tail = h.startsWith("#/aion/") ? decodeURIComponent(h.slice("#/aion/".length)) : "";
-  aionMode = tail || "backlog";
   // Fundraising lives outside the AionLive revision contract. Force a private
   // no-store reload whenever the owner enters the tab so hand-edited Markdown
   // records are visible without coupling them to the global portal poller.
+  // Recruiting sub-routes (#/aion/recruiting/{board|sources|network|role/x})
+  // are URL-addressable views inside ONE mode — parsed by recApplyRoute.
+  if (tail === "recruiting" || tail.startsWith("recruiting/")) {
+    const entering = aionMode !== "recruiting";
+    aionMode = "recruiting";
+    recApplyRoute(tail.slice("recruiting".length));
+    // entering the tab forces a private no-store reload (candidate PII must
+    // never couple to the global portal poller); moving BETWEEN its views
+    // keeps the cache — the whole point of the sub-routes
+    if (entering) recCache = null;
+  } else {
+    aionMode = tail || "backlog";
+  }
   if (aionMode === "fundraising") frCache = null;
-  // Recruiting lives outside the AionLive revision contract for the same
-  // reason, with higher stakes: these records carry candidate PII and must
-  // never be coupled to the global portal poller. Entering the tab forces a
-  // private no-store reload.
-  if (aionMode === "recruiting") recCache = null;
   els.aionToggle.querySelectorAll(".view-tab").forEach((b) =>
     b.classList.toggle("on", b.dataset.mode === aionMode));
   loadAion();

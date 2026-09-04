@@ -75,6 +75,22 @@ func (s *Server) handleRecruitingAshbyProbe(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, s.ashbySync.Probe(ctx))
 }
 
+// GET …/ashby/reasons → the archiveReason.list vocabulary, for the triage
+// verdict's "archive & reject in ashby" reason picker.
+func (s *Server) handleRecruitingAshbyReasons(w http.ResponseWriter, r *http.Request) {
+	if !s.ashbyReady(w) {
+		return
+	}
+	ctx, cancel := ashbyCtx(r)
+	defer cancel()
+	reasons, err := s.ashbySync.ArchiveReasons(ctx)
+	if err != nil {
+		ashbyError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"reasons": reasons})
+}
+
 // GET …/ashby/state → the derived sync state (dataDir), for the inspector.
 func (s *Server) handleRecruitingAshbyState(w http.ResponseWriter, _ *http.Request) {
 	if !s.ashbyReady(w) {
