@@ -128,6 +128,7 @@ var FieldAuthority = map[string]Authority{
 	"ashby_source_id":      AuthorityAshby,
 	"ashby_pipeline":       AuthorityAshby,
 	"ashby_synced":         AuthorityAshby, // the last push/sync-back date stamp
+	"inbound":              AuthorityAshby, // applied-as-applicant stamp — the sync-back import writes it (untriaged queue)
 
 	// role — shared posting fields, Ashby ids, Manifest criteria
 	"role.title":            AuthorityShared,
