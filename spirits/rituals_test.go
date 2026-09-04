@@ -307,10 +307,15 @@ func TestScaffoldSpiritWith(t *testing.T) {
 		t.Fatalf("ritual path = %q", rel)
 	}
 	rit := read(rel)
-	for _, want := range []string{"ritual: morning-scan\n", "cadence: 0 7 * * 1-5\n", "enabled: false\n", "charge_usd: 0.50\n", ritualPlaceholder} {
+	for _, want := range []string{"ritual: morning-scan\n", "cadence: 0 7 * * 1-5\n", "enabled: false\n", "max_steps: 12\n", ritualPlaceholder} {
 		if !strings.Contains(rit, want) {
 			t.Fatalf("ritual missing %q:\n%s", want, rit)
 		}
+	}
+	// the ceiling inherits: no charge_usd line, so the board reads it as the
+	// chargebook default (what the wizard's review screen promises)
+	if strings.Contains(rit, "charge_usd:") {
+		t.Fatalf("wizard ritual must not pin charge_usd:\n%s", rit)
 	}
 	id := read("spirits/scout/identity.md")
 	if !strings.Contains(id, "available_spellbooks: [web, feed]\n") || !strings.Contains(id, "watches the trade press") {
@@ -321,7 +326,7 @@ func TestScaffoldSpiritWith(t *testing.T) {
 		t.Fatalf("cornerstone:\n%s", corner)
 	}
 	rows := st.Rituals(time.Now())
-	if len(rows) != 1 || rows[0].Spirit != "scout" || rows[0].Ritual != "morning-scan" || rows[0].Enabled || !rows[0].Valid {
+	if len(rows) != 1 || rows[0].Spirit != "scout" || rows[0].Ritual != "morning-scan" || rows[0].Enabled || !rows[0].Valid || !rows[0].CeilingDefault {
 		t.Fatalf("board rows = %+v", rows)
 	}
 

@@ -289,6 +289,7 @@
 .wiz-steps .cadb-chip:disabled { cursor: default; opacity: 0.6; }
 .wiz-body { display: flex; flex-direction: column; gap: var(--sp-4); }
 .wiz-in { max-width: 420px; }
+.wiz-in.wide { max-width: 640px; } /* the one-line purpose / description fields */
 .wiz-ta { min-height: 140px; }
 .wiz-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--sp-5); }
 .wiz-option { text-align: left; background: transparent; border: 1px solid var(--base-25); border-radius: var(--radius); padding: var(--sp-5) var(--sp-6); cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-3); font-family: inherit; color: inherit; }

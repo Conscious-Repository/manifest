@@ -592,6 +592,8 @@ async function renderSettingsHosts(pane) {
   let d = null;
   try { d = await (await fetch("/api/settings/hosts")).json(); } catch (e) {}
   if (!d) { pane.append(emptyRow("config projection unavailable")); return; }
+  // rail label = pane head (plan §3.1) — the other three groups already do this
+  pane.append(el("div", "pp-section-head", "HOSTS & PATHS — config.json as loaded, read-only"));
   const c = d.config || {};
   const file = d.file || "config.json (read-only — edit on metis and restart)";
   const group = (title, rows, note) => {

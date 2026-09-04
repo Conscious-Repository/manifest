@@ -69,14 +69,16 @@ function renderSpirits() {
 }
 
 // The rail's Settings count (`n ●` degraded connections) — derived from the
-// last portal rows on every fetch/action, never stored.
-let spPortalRows = []; // last /api/portals fetch (the rail's Settings count)
+// last connection rows on every fetch/action, never stored. Same source as
+// Settings › Connections (/api/settings/connections: the portal rows plus bank
+// feed, Gmail send, the sheet, Ashby) so the rail and the Settings rail agree.
+let spPortalRows = []; // last connection rows (the rail's Settings count)
 function updateSettingsBadge() {
   const degraded = spPortalRows.filter((p) => p.state === "degraded").length;
   if (typeof railSetCount === "function") railSetCount("settings", degraded ? degraded + " ●" : "", !!degraded);
 }
 async function loadPortalsBadge() {
-  try { spPortalRows = (await (await fetch("/api/portals")).json()).rows || []; } catch (e) { return; }
+  try { spPortalRows = (await (await fetch("/api/settings/connections")).json()).rows || []; } catch (e) { return; }
   updateSettingsBadge();
 }
 

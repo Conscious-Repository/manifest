@@ -110,8 +110,7 @@ function wizName(body, host) {
   const nameHint = el("span", "cad-raw", "");
   box.append(wizRow("name", name), nameHint);
   const purpose = inputEl("one line — what it is for, e.g. \"watches the trade press for AION-relevant moves\"");
-  purpose.classList.add("wiz-in");
-  purpose.style.maxWidth = "640px";
+  purpose.classList.add("wiz-in", "wide");
   purpose.value = wiz.purpose;
   box.append(wizRow("purpose", purpose));
   body.append(box);
@@ -247,8 +246,7 @@ function wizProfileDetails(body, host) {
   clone.onchange = () => { wiz.cloneFrom = clone.selectedIndex > 0 ? clone.value : ""; };
   box.append(wizRow("clone from", clone));
   const desc = inputEl("one or two sentences on what this profile is good at (kanban routing)");
-  desc.classList.add("wiz-in");
-  desc.style.maxWidth = "640px";
+  desc.classList.add("wiz-in", "wide");
   desc.value = wiz.description;
   desc.addEventListener("input", () => { wiz.description = desc.value; });
   box.append(wizRow("description", desc, "--description"));

@@ -295,7 +295,10 @@ func (s *Server) handleProfileCreate(w http.ResponseWriter, r *http.Request) {
 		"path": path, "wrapper": wrapper, "target": "-p " + in.Name,
 	}
 	if wrapper != "" {
-		out["alias"] = in.Name + " chat"
+		// the wrapper script is named after the profile: `<name> chat` is how
+		// it's invoked, so alias is the bare name (the client appends the verb)
+		out["alias"] = in.Name
+		out["aliasPath"] = wrapper
 	}
 	writeJSON(w, out)
 }
@@ -362,7 +365,8 @@ func (s *Server) handleProfileExport(w http.ResponseWriter, r *http.Request) {
 	if s.hosts != nil && strings.TrimSpace(s.hosts.Data.DataDir) != "" {
 		dir = filepath.Join(s.hosts.Data.DataDir, "profile-exports")
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// the archive carries the profile's .env (its keys) — owner-only directory
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		http.Error(w, "export dir: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

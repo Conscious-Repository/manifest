@@ -133,9 +133,12 @@ function schedDur(ms) {
   if (h < 48) return h + "h";
   return Math.round(h / 24) + "d";
 }
-// outcomeClass — the strip's dot vocabulary (completed / error / stopped /
+// stripDotClass — the strip's dot vocabulary (completed / error / stopped /
 // running / other), folding "error (protocol)" and stopped-charge/-steps.
-function outcomeClass(outcome) {
+// (Not `outcomeClass` — 42-agents-runs.js owns that name for the chip
+// classes, and a same-named global in a later file silently replaced this
+// one, leaving every strip dot with an `od-oc-…` class no CSS styles.)
+function stripDotClass(outcome) {
   const o = outcome || "";
   if (o === "completed" || o === "running") return o;
   if (o.startsWith("error")) return "error";
@@ -179,7 +182,7 @@ function renderSpiritRituals(rows) {
     empty: "No sink-driven rituals.",
   });
   schedGroup(host, "paused", "PAUSED", groups.paused, {
-    empty: "Nothing paused. domain scouting moved to Alfred (Hermes cron 0 7 * * *) on 2026-08-24.",
+    empty: "Nothing paused.",
   });
   if (typeof renderSpiritIndex === "function") renderSpiritIndex(); // counts derive from these rows
   if (typeof updateSpiritsCrumb === "function") updateSpiritsCrumb();
@@ -293,10 +296,10 @@ function hermesJobRow(j) {
   }
   cad.append(el("span", "cad-raw", j.scheduleKind === "cron" ? j.schedule : (j.scheduleKind || "schedule") + (j.repeatTimes != null ? " · " + (j.repeatCompleted || 0) + "/" + j.repeatTimes : "")));
   row.append(cad);
-  // next fire
+  // next fire — clock (+ weekday when not today), never the date-only past form
   const next = el("span", "ritual-next");
   if (!paused && j.nextRunAt) {
-    next.append(document.createTextNode(fmtWhen(j.nextRunAt) + " "));
+    next.append(document.createTextNode(nextUpWhen(j.nextRunAt) + " "));
     next.append(el("span", "next-rel", relPhrase(j.nextRunAt)));
   } else {
     next.textContent = "—";
@@ -336,10 +339,14 @@ function hermesJobRow(j) {
   run.title = hermesCmd(j, "run") + " — fires on the next scheduler tick";
   run.onclick = (e) => { e.stopPropagation(); hermesJobAction(j, "run"); };
   acts.append(run);
-  const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
-  tog.title = hermesCmd(j, paused ? "resume" : "pause");
-  tog.onclick = (e) => { e.stopPropagation(); hermesJobAction(j, paused ? "resume" : "pause"); };
-  acts.append(tog);
+  // a finished one-shot (state completed, repeat done) is not paused — there
+  // is nothing to resume, so the toggle stays off that row
+  if (j.state !== "completed") {
+    const tog = el("button", "sprt-quiet", paused ? "resume" : "pause");
+    tog.title = hermesCmd(j, paused ? "resume" : "pause");
+    tog.onclick = (e) => { e.stopPropagation(); hermesJobAction(j, paused ? "resume" : "pause"); };
+    acts.append(tog);
+  }
   row.append(acts);
   if (paused && (j.pausedReason || j.state === "completed")) {
     row.append(el("div", "ritual-note", j.pausedReason || ("completed — ran " + (j.repeatCompleted || 0) + " of " + (j.repeatTimes != null ? j.repeatTimes : "∞"))));
@@ -399,10 +406,12 @@ function ritualRow(r) {
     cad.append(el("span", "cad-raw", r.cadence));
   }
   row.append(cad);
-  // next fire — absolute + quiet relative suffix
+  // next fire — clock (+ weekday when not today) + quiet relative suffix.
+  // fmtWhen is for PAST stamps (today → time, else date only): a fire due
+  // tomorrow morning read as a bare "Sep 5" with no hour.
   const next = el("span", "ritual-next");
   if (r.valid && r.nextFire) {
-    next.append(document.createTextNode(fmtWhen(r.nextFire) + " "));
+    next.append(document.createTextNode(nextUpWhen(r.nextFire) + " "));
     next.append(el("span", "next-rel", relPhrase(r.nextFire)));
   } else {
     next.textContent = "—";
@@ -475,7 +484,7 @@ function outcomeStrip(runs) {
     const items = x.outcome === "completed" && (x.itemsWritten != null || !x.runtime)
       ? " · " + (x.itemsWritten || 0) + " item" + (x.itemsWritten === 1 ? "" : "s") : "";
     const d = statusDot(false, x.outcome + " · " + fmtWhen(x.started) + items);
-    d.classList.add("od-" + outcomeClass(x.outcome));
+    d.classList.add("od-" + stripDotClass(x.outcome));
     d.onclick = (e) => { e.stopPropagation(); if (x.runtime === "alfred") openHermesOnRuns(); else openRunOnRuns(x.id); };
     strip.append(d);
   });

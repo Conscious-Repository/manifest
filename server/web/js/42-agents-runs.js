@@ -452,10 +452,10 @@ async function hermesFireTrace(r) {
   pre.textContent = cut >= 0 ? body.slice(cut) : body;
   box.append(pre);
   if (cut > 0) {
-    const promptBtn = pillLight("Show prompt", () => {
+    const promptBtn = pillLight("show prompt", () => {
       const showing = pre.textContent.length === body.length;
       pre.textContent = showing ? body.slice(cut) : body;
-      promptBtn.textContent = showing ? "Show prompt" : "Hide prompt";
+      promptBtn.textContent = showing ? "show prompt" : "hide prompt";
     });
     box.append(promptBtn);
   }

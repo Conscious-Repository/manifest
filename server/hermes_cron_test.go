@@ -383,3 +383,43 @@ func TestHermesJobActionValidation(t *testing.T) {
 		t.Fatal("jobs.json must never be edited by manifest")
 	}
 }
+
+// The gateway stamps output stems in UTC (live: 2026-09-03_09-00-49.md ↔ usage
+// ts 2026-09-03T09:00:49Z) while manifest runs under TZ=America/Chicago. Read
+// as local time the stem sat 5h from its usage line, the ±3 min join missed,
+// and every fire showed twice on RUNS. The UTC reading joins; a gateway that
+// stamps in local time still joins through the fallback reading.
+func TestHermesRunsStemClockJoin(t *testing.T) {
+	saved := time.Local
+	time.Local = time.FixedZone("CDT", -5*3600)
+	defer func() { time.Local = saved }()
+	for _, tc := range []struct {
+		name string
+		loc  *time.Location
+	}{{"utc-stem", time.UTC}, {"local-stem", time.Local}} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			cron := filepath.Join(home, "cron")
+			out := filepath.Join(cron, "output", "18bd7812832e")
+			if err := os.MkdirAll(out, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			at := time.Now().Add(-2 * time.Hour)
+			if err := os.WriteFile(filepath.Join(out, at.In(tc.loc).Format("2006-01-02_15-04-05")+".md"), []byte("# Cron Job: j\n\n## Response\n\nok\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			line := `{"ts": "` + at.UTC().Format(time.RFC3339Nano) + `", "job_id": "18bd7812832e", "fire_id": "f1", "total_tokens": 77, "model": "m", "duration_ms": 10, "error": null}` + "\n"
+			if err := os.WriteFile(filepath.Join(cron, "usage_audit.jsonl"), []byte(line), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			s := hermesTestServer(t, home)
+			fires, _ := s.hermesFiresIn(home, hermesSince("7d"), map[string]hermesJob{}, false)
+			if len(fires) != 1 || fires[0].Source != "usage+output" || fires[0].Tokens == nil || *fires[0].Tokens != 77 {
+				t.Fatalf("stem + usage line must join into ONE fire, got %+v", fires)
+			}
+			if fires[0].Started != at.UTC().Truncate(time.Second).Format(time.RFC3339) {
+				t.Fatalf("started = %s, want %s", fires[0].Started, at.UTC().Format(time.RFC3339))
+			}
+		})
+	}
+}

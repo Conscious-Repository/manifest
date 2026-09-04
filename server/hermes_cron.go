@@ -367,7 +367,7 @@ func parseHermesCronList(text string) []hermesJob {
 				cur.ScheduleKind = "cron"
 			}
 		case "next run":
-			if val != "—" && val != "-" {
+			if val != "—" && val != "-" && val != "None" { // the CLI prints None for a job with no next fire
 				cur.NextRunAt = val
 			}
 		case "deliver":
@@ -457,7 +457,8 @@ func (s *Server) hermesFiresIn(home string, since time.Time, jobsByID map[string
 	// 1. the output files — one per fire, the durable narration
 	type outFile struct {
 		job, stem string
-		at        time.Time
+		at        time.Time // the stem read as UTC (the gateway's clock on this box)
+		atLocal   time.Time // the same stem read as local time — the fallback reading
 	}
 	var outs []outFile
 	if ents, err := os.ReadDir(filepath.Join(cronDir, "output")); err == nil {
@@ -474,11 +475,24 @@ func (s *Server) hermesFiresIn(home string, since time.Time, jobsByID map[string
 				if f.IsDir() || !strings.HasSuffix(f.Name(), ".md") || !hermesFileStem.MatchString(stem) {
 					continue
 				}
-				at, perr := time.ParseInLocation("2006-01-02_15-04-05", stem, time.Local)
-				if perr != nil || (!since.IsZero() && at.Before(since)) {
+				// The stem is the fire's wall clock as the Hermes gateway saw it.
+				// On this box that is UTC (stem 09-00-49 ↔ usage ts 09:00:49Z)
+				// while manifest itself runs under TZ=America/Chicago — parsing
+				// as time.Local put every fire 5h off, so the ±3 min join to
+				// usage_audit never matched and each fire showed twice on RUNS
+				// (one row with tokens, one with the narration). UTC is the
+				// primary reading; the local reading stays as a fallback for a
+				// gateway that stamps in local time (resolved against the usage
+				// lines below).
+				at, perr := time.ParseInLocation("2006-01-02_15-04-05", stem, time.UTC)
+				if perr != nil {
 					continue
 				}
-				outs = append(outs, outFile{job: e.Name(), stem: stem, at: at})
+				atLocal, _ := time.ParseInLocation("2006-01-02_15-04-05", stem, time.Local)
+				if !since.IsZero() && at.Before(since) && atLocal.Before(since) {
+					continue
+				}
+				outs = append(outs, outFile{job: e.Name(), stem: stem, at: at, atLocal: atLocal})
 			}
 		}
 	} else {
@@ -533,6 +547,14 @@ func (s *Server) hermesFiresIn(home string, since time.Time, jobsByID map[string
 	}
 
 	for _, o := range outs {
+		// resolve the stem's clock against the audit: UTC first, local only when
+		// that is the reading a usage line actually sits next to
+		ui := findUsage(o.job, o.at)
+		if ui < 0 && !o.atLocal.Equal(o.at) {
+			if li := findUsage(o.job, o.atLocal); li >= 0 {
+				ui, o.at = li, o.atLocal
+			}
+		}
 		fire := hermesFire{
 			ID: o.job + "/" + o.stem, Runtime: "alfred", Job: o.job, JobName: jobsByID[o.job].Name,
 			Started: o.at.UTC().Format(time.RFC3339), File: o.stem, Source: "output", Outcome: "unknown",
@@ -547,7 +569,7 @@ func (s *Server) hermesFiresIn(home string, since time.Time, jobsByID map[string
 			}
 			fire.Outcome, fire.Why = outcome, why
 		}
-		if i := findUsage(o.job, o.at); i >= 0 {
+		if i := ui; i >= 0 {
 			usedLine[i] = true
 			s.applyUsage(&fire, usage[i])
 			fire.Source = "usage+output"

@@ -358,7 +358,11 @@ func (s *Store) ScaffoldSpiritWith(o SpiritScaffold) (string, error) {
 				fm.WriteString("enabled: false\n") // no instructions ⇒ never fires until someone writes them
 			}
 		}
-		fm.WriteString(fmt.Sprintf("charge_usd: %.2f\nmax_steps: 12\n---\n# %s\n\n", s.chargebookDefault(), rn))
+		// no charge_usd line: the ceiling INHERITS the chargebook default (the
+		// wizard's review promises exactly that, and the editor's "chargebook
+		// default" figure means the key is absent — a copied number would pin
+		// today's default forever and read as a ritual-set ceiling on the board)
+		fm.WriteString(fmt.Sprintf("max_steps: 12\n---\n# %s\n\n", rn))
 		if instructions == "" {
 			fm.WriteString(ritualPlaceholder)
 		} else {
