@@ -102,6 +102,12 @@ func (s *Store) AddItem(it *BacklogItem) error {
 	doc := s.LoadBacklog()
 	for _, have := range doc.AllItems() {
 		if have.Kind == it.Kind && strings.EqualFold(strings.TrimSpace(have.Text), strings.TrimSpace(it.Text)) {
+			// only an OPEN twin blocks — recurring work legitimately re-adds a
+			// title whose earlier task is done/decided (owner report 2026-09-04:
+			// "error adding tasks" against a completed namesake)
+			if have.Status == StatusDone || have.Status == "decided" {
+				continue
+			}
 			return fmt.Errorf("already in backlog: %q", it.Text)
 		}
 	}

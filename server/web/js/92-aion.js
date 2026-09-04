@@ -72,6 +72,21 @@ function renderAion() {
   else renderAionBacklog(host);
 }
 
+// aionAddTask — the work surface's quick-add: create with title+owner, then
+// OPEN THE INSPECTOR on the new task so the rock/milestone tether, due date
+// and the rest are filled right there (owner ask 2026-09-04 — the bare add
+// left every new task unanchored with no next step in sight).
+async function aionAddTask(title, owner) {
+  try {
+    const body = { kind: "task", title };
+    if (owner) body.owner = owner;
+    const res = await postJSONOk("/api/aion/backlog/item", body);
+    showToast(owner ? "Task added → " + owner + " — anchor it to a rock in the inspector" : "Task added");
+    aionSelId = res.id;
+    await loadAion();
+  } catch (e) { showToast("Couldn't add — " + String(e.message || e).slice(0, 120), null, "error"); }
+}
+
 async function aionPost(url, body, okMsg) {
   try {
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
@@ -252,13 +267,11 @@ function renderAionBacklog(host) {
     g.append(gh);
     groups[key].forEach((it) => g.append(aionTaskRow(it)));
     if (key !== "—") {
-      g.append(ghostInput("＋ task for " + key, "aion-add", (v) =>
-        aionPost("/api/aion/backlog/item", { kind: "task", title: v, owner: key }, "Task added → " + key)));
+      g.append(ghostInput("＋ task for " + key, "aion-add", (v) => aionAddTask(v, key)));
     }
     list.append(g);
   });
-  list.append(ghostInput("＋ task", "aion-add", (v) =>
-    aionPost("/api/aion/backlog/item", { kind: "task", title: v }, "Task added")));
+  list.append(ghostInput("＋ task", "aion-add", (v) => aionAddTask(v, "")));
 
   // -- done tasks, one quiet collapsible --
   if (doneTasks.length) {
@@ -711,11 +724,17 @@ function aionOwnerSuggest(q, add, ta) {
 }
 
 function aionRockSuggest(q, add, ta, onPick) {
+  // the ladder is the whole goals tree \u2014 rocks AND their open child stages
+  // (milestones): a task tethers at either depth (owner ask 2026-09-04).
+  // The hint names the level so a milestone pick is a visible choice.
   aionRockLadder()
     .filter((r) => !r.checked)
     .filter((r) => !q || r.label.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
-    .slice(0, 8)
-    .forEach((r) => add(r.label, "", () => { ta.commit(r.text); onPick(r.id, r.text); }));
+    .slice(0, 12)
+    .forEach((r) => {
+      const depth = (r.id.match(/\//g) || []).length; // aion/<rock> = 1, milestone = 2+
+      add(r.label, depth > 1 ? "milestone" : "rock", () => { ta.commit(r.text); onPick(r.id, r.text); });
+    });
   add("\u2715 no rock (unanchored)", "create", () => { ta.commit(""); onPick("", ""); });
 }
 
