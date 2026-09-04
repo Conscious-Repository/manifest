@@ -16,8 +16,13 @@ import (
 // stores wired (aion team store included).
 func panelFixture(t *testing.T) (*Server, string) {
 	t.Helper()
-	vault := t.TempDir()
-	dataDir := t.TempDir()
+	return panelFixtureAt(t, t.TempDir(), t.TempDir())
+}
+
+// panelFixtureAt is panelFixture over caller-owned directories — a second
+// call on the same dirs is a fresh process over the same files (a restart).
+func panelFixtureAt(t *testing.T, vault, dataDir string) (*Server, string) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Join(vault, "system"), 0o755); err != nil {
 		t.Fatal(err)
 	}

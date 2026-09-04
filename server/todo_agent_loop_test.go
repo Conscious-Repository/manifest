@@ -17,14 +17,24 @@ import (
 // files only — exactly what the engine leaves behind).
 func loopFixture(t *testing.T) *Server {
 	t.Helper()
-	srv, _ := panelFixture(t)
-	dir := t.TempDir()
-	st := tasks.NewStore(dir, "to do.md", testWriteAbs)
-	if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] research zoning [added:: 2026-08-14]\n"), 0o644); err != nil {
-		t.Fatal(err)
+	return loopFixtureAt(t, loopDirs{t.TempDir(), t.TempDir(), t.TempDir(), t.TempDir()})
+}
+
+// loopDirs are the on-disk roots a loop fixture is built over; building a
+// second server on the same set is a process restart over the same files.
+type loopDirs struct{ vault, data, tasks, spirits string }
+
+func loopFixtureAt(t *testing.T, d loopDirs) *Server {
+	t.Helper()
+	srv, _ := panelFixtureAt(t, d.vault, d.data)
+	st := tasks.NewStore(d.tasks, "to do.md", testWriteAbs)
+	if _, err := os.Stat(st.Path()); err != nil { // keep an existing board on a restart
+		if err := os.WriteFile(st.Path(), []byte("# To Do\n\n## Inbox\n- [ ] research zoning [added:: 2026-08-14]\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	srv.tasksStore = st
-	hermes := spirits.NewStore(t.TempDir())
+	hermes := spirits.NewStore(d.spirits)
 	srv.UseHarnesses([]Harness{{Name: "excalibur"}, {Name: "hermes", Spirits: hermes}})
 	return srv
 }

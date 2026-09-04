@@ -309,7 +309,7 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 		if agent == "" {
 			agent = rec.Assignee
 		}
-		return s.startHermesTurn(taskID, agent, phase, intent, b.String())
+		return s.startHermesTurn(taskID, agent, phase, intent, extra, b.String())
 	}
 	spirit, ritual := delegateTargetFor(harness)
 	return harness.Spirits.SpoolRunNow(spirit, ritual, b.String(), "")
@@ -547,6 +547,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		s.markerAddMeta(id, threads.ActPlan, d.RunID, map[string]any{"ctx": s.planCtxHash(id)})
 	}
 	s.relaySweep(index)
+	s.hermesTurnSweep() // owed do-bot turns the process died on (hermes_delegate.go)
 	s.replanSweep(index)
 }
 

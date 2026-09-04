@@ -89,7 +89,12 @@ func (s *Server) hermesRealHarness() bool {
 // agent:<profile> (`hermes -p <profile>`); "" means Alfred. A busy todo returns
 // an error wrapping spirits.ErrAlreadyActive — the same signal the harness
 // spool gives, so relays and fire treat both transports alike.
-func (s *Server) startHermesTurn(taskID, agent, phase, intent, prompt string) error {
+//
+// extra is the owner's raw input the work order was composed from (the ask
+// text, or the approved plan on a go phase) — it rides the durable turn-open
+// marker so a turn the process dies on can be re-composed and re-dispatched
+// by the sweep (hermesTurnSweep); the composed prompt itself is not stored.
+func (s *Server) startHermesTurn(taskID, agent, phase, intent, extra, prompt string) error {
 	if agent == "" || s.hermesProfileOf(agent) == "" {
 		agent = "agent:" + alfredAgent
 	}
@@ -100,6 +105,10 @@ func (s *Server) startHermesTurn(taskID, agent, phase, intent, prompt string) er
 	}
 	s.hermes.running[taskID] = hermesTurn{Phase: phase, Agent: agent, Since: time.Now()}
 	s.hermes.mu.Unlock()
+	// the durable "owed" record — written BEFORE the goroutine exists, so a
+	// turn that completes instantly can never close before it opened.
+	s.hermesTurnMark(taskID, actTurnOpen, map[string]any{
+		"agent": agent, "phase": phase, "intent": intent, "text": extra})
 	// let the do-bot SEE what the owner attached on the thread — text files
 	// inlined, images handed their path (vision reads them; already in scope).
 	if att := s.hermesAttachments(taskID); att != "" {
@@ -141,12 +150,13 @@ claiming it is done. Everything else in your reply is the RESULT brief.
 `
 
 // runHermesTurn invokes the CLI and materializes the reply. Always clears the
-// in-flight marker.
+// in-flight marker (in memory) and closes the durable turn-open marker.
 func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
 	defer func() {
 		s.hermes.mu.Lock()
 		delete(s.hermes.running, taskID)
 		s.hermes.mu.Unlock()
+		s.hermesTurnMark(taskID, actTurnClosed, map[string]any{"agent": agent, "phase": phase})
 	}()
 	who := agentTokenIdentity(agent)
 	// Every turn is a fresh Hermes session (hermes -z has no working resume —
@@ -499,6 +509,112 @@ func isImageExt(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".heic":
 		return true
+	}
+	return false
+}
+
+// --- turn durability (2026-09-04: an Ask at 17:45:25 vanished because manifest
+// restarted at 17:45:55 — the accepted turn lived only in hermes.running) ------
+//
+// A do-bot turn is accepted in memory and run by a goroutine; a restart kills
+// both, and nothing on disk said a reply was owed (relay-pending only covers a
+// relay REFUSED while busy). So every accepted turn leaves a private turn-open
+// marker (agent/phase/intent/the owner's text) and its completion — success
+// or failure — leaves a turn-closed marker. The sweep re-dispatches an open
+// marker with no close, no in-flight turn, and no agent reply after it.
+const (
+	actTurnOpen   = "turn-open"   // an accepted do-bot turn (owed)
+	actTurnClosed = "turn-closed" // the turn finished — success or ⚠ failure
+	// hermesTurnRetries caps re-dispatches of one owed turn (opens without a
+	// close) — a turn that outlives every deploy window must not loop forever.
+	hermesTurnRetries = 3
+)
+
+// hermesTurnMark writes a turn marker into the private store; a server with
+// no thread store (feed digs, chat) has nothing durable to record and no-ops.
+func (s *Server) hermesTurnMark(taskID, action string, extra map[string]any) {
+	if s.threads == nil || s.threads.private == nil {
+		return
+	}
+	s.markerAddMeta(taskID, action, "", extra)
+}
+
+// hermesTurnSweep re-drives owed do-bot turns the process died on. Runs inside
+// agentLoopSweep (the one 60s scheduler — never a third). Idempotent: a turn
+// that already answered (reply comment after the open) is closed in place
+// rather than re-sent, so a crash between "reply posted" and "marker closed"
+// cannot double-post.
+func (s *Server) hermesTurnSweep() {
+	if s.hermes == nil || s.threads == nil || s.threads.private == nil {
+		return
+	}
+	priv := s.threads.private
+	for _, id := range priv.TaskIDs() {
+		var opens []threads.Comment
+		var lastClosed time.Time
+		for _, c := range priv.Thread(id) {
+			switch c.Action {
+			case actTurnOpen:
+				opens = append(opens, c)
+			case actTurnClosed:
+				if c.At.After(lastClosed) {
+					lastClosed = c.At
+				}
+			}
+		}
+		// the owed chain: every open since the last close (attempts so far)
+		var owed []threads.Comment
+		for _, c := range opens {
+			if c.At.After(lastClosed) {
+				owed = append(owed, c)
+			}
+		}
+		if len(owed) == 0 {
+			continue
+		}
+		s.hermes.mu.Lock()
+		_, inFlight := s.hermes.running[id]
+		s.hermes.mu.Unlock()
+		if inFlight {
+			continue // this process is still on it
+		}
+		open := owed[len(owed)-1]
+		agent, _ := open.Meta["agent"].(string)
+		phase, _ := open.Meta["phase"].(string)
+		intent, _ := open.Meta["intent"].(string)
+		text, _ := open.Meta["text"].(string)
+		who := agentTokenIdentity(agent)
+		// the turn finished but its close was lost with the process: the
+		// reply is on the thread, so close the record — never re-send
+		if s.hermesTurnAnswered(id, who.ID, open.At) {
+			s.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": agent, "phase": phase, "repaired": true})
+			continue
+		}
+		h := s.findHarness(s.agentHarness(agent))
+		if len(owed) >= hermesTurnRetries || !s.hermesForked(h) {
+			log.Printf("hermes turn %s (%s): giving up after %d attempt(s)", id, phase, len(owed))
+			_, _ = s.addThreadEntry(who, id, threads.ActComment,
+				"⚠ "+who.Name+" couldn't finish that — the turn was interrupted "+
+					fmt.Sprintf("%d time(s); ask again to retry", len(owed)), nil, nil, map[string]any{"hermes": true})
+			s.hermesTurnMark(id, actTurnClosed, map[string]any{"agent": agent, "phase": phase, "abandoned": true})
+			continue
+		}
+		log.Printf("hermes turn %s (%s): re-dispatching an interrupted turn (attempt %d)", id, phase, len(owed)+1)
+		// re-compose from the durable inputs — the fresh order writes its
+		// own turn-open marker, extending the owed chain
+		if err := s.spoolTaskWorkOrderAs(h, agent, id, phase, text, intent); err != nil {
+			log.Printf("hermes turn %s (%s): re-dispatch: %v", id, phase, err)
+		}
+	}
+}
+
+// hermesTurnAnswered reports whether the agent posted anything visible on the
+// thread after the turn opened — the reply itself, or the ⚠ failure note.
+func (s *Server) hermesTurnAnswered(taskID, agentID string, since time.Time) bool {
+	for _, c := range s.listThread(taskID) {
+		if c.Author == agentID && c.At.After(since) {
+			return true
+		}
 	}
 	return false
 }
