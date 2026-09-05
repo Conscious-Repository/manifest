@@ -48,7 +48,10 @@ const RG_GRAVITY = 0.010;
 // up the way you like and then have to set up again is not your graph.
 const RG_DEFAULTS = {
   hops: 2, center: 1, repel: 1, link: 1, dist: 1,
-  nodeSize: 1, linkWidth: 1, fade: 1.15, open: "forces",
+  // fade 2.0: at the zoom a fitted graph lands on (~1.2) the strangers stay
+  // quiet and only the people you have a relationship with are named. Pull the
+  // slider down and the whole crowd introduces itself.
+  nodeSize: 1, linkWidth: 1, fade: 2, open: "forces",
 };
 let rgOpts = null;
 
