@@ -251,14 +251,17 @@ func (s *Server) handleRecruitingSourceUnreject(w http.ResponseWriter, r *http.R
 		return
 	}
 	runID, draftID := r.PathValue("run"), r.PathValue("draft")
-	run, err := s.recruitingRuns.Unreject(runID, draftID, time.Now())
+	run, changed, err := s.recruitingRuns.UnrejectChanged(runID, draftID, time.Now())
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	s.draftEvent("recruiting.draft.unpassed", "undid the pass on", runID, draftID, run)
+	if changed {
+		s.draftEvent("recruiting.draft.unpassed", "undid the pass on", runID, draftID, run)
+	}
 	out := s.runsPayload(false)
 	out["run"] = run
+	out["no_change"] = !changed
 	writeJSON(w, out)
 }
 

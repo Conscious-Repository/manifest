@@ -107,7 +107,7 @@ func TestAllToolsOverMCPAndNoVaultEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 13 {
+	if len(list.Tools) != 21 {
 		t.Fatalf("got %d tools", len(list.Tools))
 	}
 	person := Ref{"graph", "manifest", "person", "ada"}

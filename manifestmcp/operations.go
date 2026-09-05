@@ -32,6 +32,7 @@ type Transition struct {
 }
 
 type OperationRecord struct {
+	CacheFiles      map[string]string `json:"cacheFiles,omitempty"`
 	BeforeFiles     map[string]string `json:"beforeFiles,omitempty"`
 	Input           json.RawMessage   `json:"input,omitempty"`
 	History         []Transition      `json:"history"`
@@ -247,12 +248,18 @@ func (a *Adapter) persist(out Object, args any, preparedSnapshot ...map[string]s
 	argBytes, _ := json.Marshal(p)
 	payloadBytes, _ := json.Marshal(payload)
 	o := &OperationRecord{BeforeFiles: beforeFiles, Input: inputBytes, ID: id, RequestKey: context.IdempotencyKey, RequestRevision: revision(args), SchemaVersion: 1, ToolVersion: Version, Tool: payload["tool"].(string), Agent: "agent:alfred", Conversation: context.Conversation, Turn: context.Turn, Arguments: argBytes, Payload: payloadBytes, Policy: out["policy"].(string), Status: "pending_approval", CreatedAt: time.Now().UTC(), Expected: expected, Files: files}
+	if p["cacheFiles"] != nil {
+		if err = decode(p["cacheFiles"], &o.CacheFiles); err != nil {
+			return nil, err
+		}
+	}
 	if o.Policy == "standing_authorization" {
 		o.Status = "prepared"
 	}
 	if o.Policy == "no_change" {
 		o.Status = "succeeded"
 		o.Result = p
+		o.Result["no_change"] = true
 	}
 	if err = a.saveOperation(o); err != nil {
 		return nil, err
@@ -331,7 +338,7 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 		o.Error = "execution interrupted; reconciled files below; owner takeover required (no automatic retry)"
 		a.reconcile(o)
 		o.Status = "failed"
-		if len(o.Applied) > 0 {
+		if len(o.Applied) > 0 || len(o.Result["confirmedCacheFiles"].([]string)) > 0 {
 			o.Status = "partial"
 		}
 		if err = a.saveOperation(o); err != nil {
@@ -359,6 +366,9 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 		return nil, err
 	}
 	var p struct {
+		Pinned      bool                       `json:"pinned"`
+		GraphEntity graph.Entity               `json:"graphEntity"`
+		Seed        recruiting.Seed            `json:"seed"`
 		Request     recruiting.RunRequest      `json:"request"`
 		RunID       string                     `json:"runId"`
 		DraftID     string                     `json:"draftId"`
@@ -427,9 +437,11 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 		switch o.Tool {
 		case "source_run.prepare":
 			var run recruiting.Run
-			run, err = a.Runs.Execute(ctx, p.Request, o.CreatedAt)
+			run, err = a.Runs.ExecuteTracked(ctx, p.Request, o.CreatedAt, func(id string) error { o.Result["intendedRunId"] = id; return a.saveOperation(o) })
 			if run.ID != "" {
 				o.Result, _ = a.runGet(RunInput{run.ID})
+				o.Result["intendedRunId"] = run.ID
+				o.Result["no_change"] = run.Counts.Fetched == 0
 			}
 		case "candidate_accept.prepare":
 			_, _, err = runs.Accept(p.RunID, p.DraftID, p.AsOf)
@@ -447,6 +459,26 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 					o.Result["knowledge"] = knowledge
 				}
 			}
+		case "candidate_unreject.prepare":
+			_, err = runs.Unreject(p.RunID, p.DraftID, p.AsOf)
+		case "source_run.pin.prepare":
+			_, err = a.Runs.Pin(p.RunID, p.Pinned)
+		case "candidate_lookup.prepare":
+			var run recruiting.Run
+			var lookup recruiting.LookupResult
+			run, lookup, err = a.Runs.Lookup(ctx, p.RunID, p.DraftID, p.AsOf)
+			if err == nil {
+				o.Result["run"] = run
+				o.Result["lookup"] = lookup
+				o.Result["no_change"] = lookup.Links == 0 && lookup.Cites == 0 && len(lookup.Filled) == 0
+				if len(lookup.Failed) > 0 {
+					err = fmt.Errorf("lookup sources failed: %v", lookup.Failed)
+				}
+			}
+		case "graph_entity.add.prepare":
+			_, _, err = g.AddEntity(p.GraphEntity)
+		case "seed.prepare":
+			_, err = records.AddSeed(p.Seed, p.AsOf)
 		case "candidate_reject.prepare":
 			_, err = runs.Reject(p.RunID, p.DraftID, p.Suppression.Reason, p.AsOf)
 		case "network_person.prepare":
@@ -463,13 +495,13 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 	}
 	a.reconcile(o)
 	o.Status = "succeeded"
-	if err == nil && len(o.Applied) != len(o.Files) {
+	if err == nil && (len(o.Applied) != len(o.Files) || len(o.Result["unconfirmedCacheFiles"].([]string)) > 0) {
 		err = fmt.Errorf("durable files do not match approved effect; takeover required")
 	}
 	if err != nil {
 		o.Error = err.Error()
 		o.Status = "failed"
-		if len(o.Applied) > 0 {
+		if len(o.Applied) > 0 || len(o.Result["confirmedCacheFiles"].([]string)) > 0 {
 			o.Status = "partial"
 		}
 	}
@@ -491,7 +523,64 @@ func (a *Adapter) reconcile(o *OperationRecord) {
 		o.Result = Object{}
 	}
 	o.Result["confirmedFiles"] = o.Applied
+	confirmedCache := []string{}
+	unconfirmedCache := []string{}
+	for rel, want := range o.CacheFiles {
+		b, err := os.ReadFile(filepath.Join(a.Data, rel))
+		if err == nil && string(b) == want {
+			confirmedCache = append(confirmedCache, rel)
+		} else {
+			unconfirmedCache = append(unconfirmedCache, rel)
+		}
+	}
+	sort.Strings(confirmedCache)
+	sort.Strings(unconfirmedCache)
+	o.Result["confirmedCacheFiles"] = confirmedCache
+	o.Result["unconfirmedCacheFiles"] = unconfirmedCache
+
 	refs := []Ref{}
+	if id, ok := o.Result["intendedRunId"].(string); ok && id != "" {
+		if run, err := a.Runs.Get(id); err == nil {
+			o.Result["runId"] = id
+			o.Result["currentRun"] = run
+			o.Result["confirmedCacheFiles"] = []string{filepath.Join("recruiting/runs", id, "run.json")}
+			refs = append(refs, Ref{"recruiting", "manifest", "run", id})
+		}
+	}
+
+	var target struct {
+		RunID       string          `json:"runId"`
+		DraftID     string          `json:"draftId"`
+		GraphEntity graph.Entity    `json:"graphEntity"`
+		Seed        recruiting.Seed `json:"seed"`
+	}
+	_ = json.Unmarshal(o.Arguments, &target)
+	if target.RunID != "" {
+		if run, err := a.Runs.Get(target.RunID); err == nil {
+			o.Result["currentRun"] = run
+			if o.Tool == "candidate_lookup.prepare" {
+				var p struct {
+					AsOf time.Time `json:"asOf"`
+				}
+				_ = json.Unmarshal(o.Arguments, &p)
+				for _, d := range run.Drafts {
+					if d.ID == target.DraftID && d.LookedUpAt.Equal(p.AsOf) {
+						o.Result["confirmedCacheFiles"] = []string{filepath.Join("recruiting/runs", run.ID, "drafts.json")}
+					}
+				}
+			}
+
+		}
+		o.Result["runId"] = target.RunID
+		o.Result["draftId"] = target.DraftID
+		if len(o.Result["confirmedCacheFiles"].([]string)) > 0 {
+			refs = append(refs, Ref{"recruiting", "manifest", "run", target.RunID})
+			if target.DraftID != "" {
+				refs = append(refs, Ref{"recruiting", "manifest", "draft", target.RunID + "/" + target.DraftID})
+			}
+		}
+	}
+
 	for _, rel := range o.Applied {
 		if strings.HasPrefix(rel, a.Root+"/candidates/") {
 			slug := strings.TrimSuffix(filepath.Base(rel), ".md")
@@ -509,6 +598,12 @@ func (a *Adapter) reconcile(o *OperationRecord) {
 	for _, rel := range o.Applied {
 		if rel == a.Records.Rel("network/people.md") {
 			refs = append(refs, Ref{"recruiting", "manifest", "person", payload.Preview.Person.ID})
+		}
+		if rel == a.Records.Rel("seeds.md") && target.Seed.ID != "" {
+			refs = append(refs, Ref{"recruiting", "manifest", "seed", target.Seed.ID})
+		}
+		if rel == a.Graph.Rel(graph.EntitiesFile) && target.GraphEntity.ID != "" {
+			refs = append(refs, Ref{"graph", "manifest", target.GraphEntity.Kind, target.GraphEntity.ID})
 		}
 		if rel == a.Graph.Rel(graph.EntitiesFile) && payload.Preview.Claims.Person.ID != "" {
 			refs = append(refs, Ref{"graph", "manifest", "person", payload.Preview.Claims.Person.ID})

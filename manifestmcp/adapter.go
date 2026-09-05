@@ -14,10 +14,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"manifest/approvals"
 	"manifest/graph"
+	"manifest/record"
 	"manifest/recruiting"
 )
 
-const Version = "2.0.0"
+const Version = "2.1.0"
 
 type Object map[string]any
 type Adapter struct {
@@ -57,6 +58,7 @@ type Entity struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Value   any    `json:"value"`
+	Match   string `json:"match,omitempty"`
 }
 
 func entity(domain, kind, id, name string, v any) Entity {
@@ -90,13 +92,40 @@ type ResolveInput struct {
 }
 
 func (a *Adapter) resolve(q ResolveInput) []Entity {
-	out := []Entity{}
+	exact, partial := []Entity{}, []Entity{}
+	query := strings.ToLower(strings.TrimSpace(q.Query))
+	if query == "" {
+		return exact
+	}
 	for _, e := range a.entities() {
-		if (q.Domain == "" || q.Domain == e.Ref.Domain) && (q.Kind == "" || q.Kind == e.Ref.Kind) && (strings.EqualFold(strings.TrimSpace(q.Query), e.Name) || q.Query == e.Ref.ID || q.Query == e.Ref.Kind+":"+e.Ref.ID) {
-			out = append(out, e)
+		if (q.Domain != "" && q.Domain != e.Ref.Domain) || (q.Kind != "" && q.Kind != e.Ref.Kind) {
+			continue
+		}
+		slug := record.Slug(e.Name, 120)
+		switch v := e.Value.(type) {
+		case recruiting.Candidate:
+			slug = v.Slug
+		case recruiting.Role:
+			slug = v.Slug
+		}
+		if query == strings.ToLower(e.Name) {
+			e.Match = "exact_title"
+		} else if query == strings.ToLower(e.Ref.ID) || query == strings.ToLower(e.Ref.Kind+":"+e.Ref.ID) {
+			e.Match = "canonical_id"
+		} else if query == slug {
+			e.Match = "slug"
+		}
+		if e.Match != "" {
+			exact = append(exact, e)
+		} else if strings.Contains(strings.ToLower(e.Name), query) || strings.Contains(strings.ToLower(e.Ref.ID), query) || strings.Contains(slug, query) {
+			e.Match = "partial_title_id_or_slug"
+			partial = append(partial, e)
 		}
 	}
-	return out
+	if len(exact) > 0 {
+		return exact
+	}
+	return partial
 }
 func (a *Adapter) get(r Ref) (Entity, error) {
 	if r.Namespace != "manifest" {
@@ -115,7 +144,7 @@ func (a *Adapter) Server() *mcp.Server {
 	add(a, s, "capabilities.list", "Read the versioned tools, generated input schemas, domain vocabulary and source scopes.", func(_ struct{}) (Object, error) {
 		return Object{"tools": a.Tools, "version": Version, "sources": a.Runs.Sources(), "vocabulary": a.Graph.Vocabulary()}, nil
 	})
-	add(a, s, "entity.resolve", "Resolve exact name or ID across recruiting people, seeds/labs, roles and registered graph entities. Multiple matches require an explicit choice; never guess.", func(q ResolveInput) (Object, error) {
+	add(a, s, "entity.resolve", "Resolve title, canonical ID or slug, then partial title/ID/slug with match provenance across recruiting people, seeds/labs, roles and registered graph entities. Multiple matches require an explicit choice; never guess.", func(q ResolveInput) (Object, error) {
 		if strings.TrimSpace(q.Query) == "" {
 			return nil, fmt.Errorf("query required")
 		}
@@ -126,7 +155,7 @@ func (a *Adapter) Server() *mcp.Server {
 		} else if len(matches) > 1 {
 			status = "ambiguous"
 		}
-		return Object{"status": status, "matches": matches}, nil
+		return Object{"status": status, "matches": matches, "requiresChoice": len(matches) > 1}, nil
 	})
 	add(a, s, "entity.get", "Read a canonical entity, evidence/provenance and content revision.", func(q Ref) (Object, error) { e, err := a.get(q); return Object{"entity": e}, err })
 	add(a, s, "sources.list", "Read the application's shared adapter registry and scope fields; no fetch or cache sweep.", func(_ struct{}) (Object, error) {
@@ -139,6 +168,34 @@ func (a *Adapter) Server() *mcp.Server {
 	add(a, s, "candidate_reject.prepare", "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, false) })
 	add(a, s, "network_person.prepare", "Resolve a canonical person; check existing network identity and preview PeopleDoc.Add with the shared domain payload and validation.", a.personPrepare)
 	add(a, s, "graph_edge.prepare", "Resolve both registered general-graph endpoints and preview a typed claim with shared graph validation and duplicate detection.", a.edgePrepare)
+	add(a, s, "candidate_unreject.prepare", "Human approval: reverse a pass through shared Unreject, including passed.md. Already new returns no_change.", a.unrejectPrepare)
+	add(a, s, "candidate_lookup.prepare", "Standing authorization: bounded shared Lookup enriches cached draft evidence. External results are execution-time; interrupted calls require takeover.", a.lookupPrepare)
+	add(a, s, "source_run.pin.prepare", "Standing authorization: set/unset cache retention pin, no vault records. Already pinned/unpinned returns no_change.", a.pinPrepare)
+	addContext(a, s, "source_run.pin", "Standing authorization: prepare and execute cache retention pin; durable receipt and idempotency key. No vault writes.", func(ctx context.Context, q PinInput) (Object, error) {
+		if a.Conversation != "" {
+			q.Conversation, q.Turn = a.Conversation, a.Turn
+		}
+		if old, err := a.previousRequest("source_run.pin.prepare", q); err != nil {
+			return nil, err
+		} else if old != nil {
+			return a.Execute(ctx, old.ID)
+		}
+		out, err := a.pinPrepare(q)
+		if err != nil {
+			return nil, err
+		}
+		saved, err := a.persist(out, q)
+		if err != nil {
+			return nil, err
+		}
+		return a.Execute(ctx, saved["operationId"].(string))
+	})
+	add(a, s, "graph_entity.add.prepare", "Human approval: add a registered general graph entity through shared AddEntity validation and duplicate detection. Separate from recruiting ego view.", a.graphEntityPrepare)
+	add(a, s, "seed.prepare", "Human approval: add a recruiting seed/lab using shared AddSeed; preserves agent origin and exact preview bytes.", a.seedPrepare)
+	for _, name := range []string{"candidate_unreject", "candidate_lookup"} {
+		tool := name + ".prepare"
+		addContext(a, s, name+".execute", "Execute only this verb's saved operationId; approval and terminal-receipt rules are identical to operation.execute.", func(ctx context.Context, q OperationInput) (Object, error) { return a.executeTool(ctx, q, tool) })
+	}
 	add(a, s, "operation.get", "Read a durable operation, approval and execution receipt.", func(q OperationInput) (Object, error) { return a.Operation(q.OperationID) })
 	addContext(a, s, "operation.execute", "Execute the saved payload. Source runs have standing authorization; world changes require an owner decision outside MCP. Terminal receipts are idempotent; incomplete effects require takeover.", func(ctx context.Context, q OperationInput) (Object, error) { return a.Execute(ctx, q.OperationID) })
 	return s
@@ -151,7 +208,7 @@ func addContext[I any](a *Adapter, s *mcp.Server, name, description string, f fu
 	if err != nil {
 		panic(err)
 	}
-	t := &mcp.Tool{Name: name, Description: description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: !strings.HasSuffix(name, ".prepare") && name != "operation.execute"}}
+	t := &mcp.Tool{Name: name, Description: description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: !strings.HasSuffix(name, ".prepare") && !strings.HasSuffix(name, ".execute") && name != "source_run.pin"}}
 	a.Tools = append(a.Tools, t)
 	mcp.AddTool(s, t, func(ctx context.Context, req *mcp.CallToolRequest, in I) (*mcp.CallToolResult, any, error) {
 		var before map[string]string
@@ -227,7 +284,7 @@ func (a *Adapter) neighbors(q NeighborsInput) (Object, error) {
 		return nil, err
 	}
 	if e.Ref.Domain != "graph" {
-		return nil, fmt.Errorf("graph context requires graph-domain ref")
+		return nil, fmt.Errorf("relationship is outside the recruiting ego view; use the stored general graph view with an explicitly resolved graph-domain ref (entity.resolve domain=graph); identities are not implicitly mapped")
 	}
 	n := q.Limit
 	if n <= 0 {

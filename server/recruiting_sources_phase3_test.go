@@ -196,9 +196,9 @@ func TestRecruitingSourceUnrejectRoute(t *testing.T) {
 	run := startRun(t, mux, topicalRunBody)
 	obj := run.ID + "/d1"
 
-	// undo before any pass is refused
-	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/unreject/"+run.ID+"/d1", ""); w.Code == http.StatusOK {
-		t.Fatalf("un-passed a draft that was never passed: %s", w.Body.String())
+	// Undo before a pass is a no-op, with no action event.
+	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/unreject/"+run.ID+"/d1", ""); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"no_change":true`) {
+		t.Fatalf("expected no-op: %s", w.Body.String())
 	}
 	passed := decodeSources(t, sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/reject/"+run.ID+"/d1", ""))
 	if passed.Run.Drafts[0].Status != recruiting.DraftRejected || passed.Run.ExpiresAt.IsZero() {

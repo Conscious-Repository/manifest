@@ -210,7 +210,7 @@
         "idempotentHint": false,
         "readOnlyHint": true
       },
-      "description": "Resolve exact name or ID across recruiting people, seeds/labs, roles and registered graph entities. Multiple matches require an explicit choice; never guess.",
+      "description": "Resolve title, canonical ID or slug, then partial title/ID/slug with match provenance across recruiting people, seeds/labs, roles and registered graph entities. Multiple matches require an explicit choice; never guess.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -841,6 +841,349 @@
     {
       "annotations": {
         "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Human approval: reverse a pass through shared Unreject, including passed.md. Already new returns no_change.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "draftId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "draftId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_unreject.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Standing authorization: bounded shared Lookup enriches cached draft evidence. External results are execution-time; interrupted calls require takeover.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "draftId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "draftId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_lookup.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Standing authorization: set/unset cache retention pin, no vault records. Already pinned/unpinned returns no_change.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runId",
+          "pinned"
+        ],
+        "additionalProperties": false
+      },
+      "name": "source_run.pin.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Standing authorization: prepare and execute cache retention pin; durable receipt and idempotency key. No vault writes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "runId",
+          "pinned"
+        ],
+        "additionalProperties": false
+      },
+      "name": "source_run.pin"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Human approval: add a registered general graph entity through shared AddEntity validation and duplicate detection. Separate from recruiting ego view.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "entity": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "added": {
+                "type": "string"
+              },
+              "links": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "unknown": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "entity"
+        ],
+        "additionalProperties": false
+      },
+      "name": "graph_entity.add.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Human approval: add a recruiting seed/lab using shared AddSeed; preserves agent origin and exact preview bytes.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "class": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "org": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "added": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "consent": {
+                "type": "string"
+              },
+              "unknown": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "class",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "seed"
+        ],
+        "additionalProperties": false
+      },
+      "name": "seed.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Execute only this verb's saved operationId; approval and terminal-receipt rules are identical to operation.execute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_unreject.execute"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Execute only this verb's saved operationId; approval and terminal-receipt rules are identical to operation.execute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_lookup.execute"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
         "readOnlyHint": true
       },
       "description": "Read a durable operation, approval and execution receipt.",
@@ -879,7 +1222,7 @@
       "name": "operation.execute"
     }
   ],
-  "version": "2.0.0",
+  "version": "2.1.0",
   "vocabulary": {
     "entityKinds": [
       "task",

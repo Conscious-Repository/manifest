@@ -138,8 +138,8 @@ func TestUnrejectRestoresADraftAndTheClock(t *testing.T) {
 	if gone := rs.Sweep(testNow.Add(2 * RunTTL)); len(gone) != 0 {
 		t.Errorf("an un-passed run was swept: %v", gone)
 	}
-	// only a pass can be undone
-	if _, err := rs.Unreject(run.ID, "d1", testNow); err == nil || !strings.Contains(err.Error(), "not passed") {
+	// Repeating an undo is a no-op.
+	if _, err := rs.Unreject(run.ID, "d1", testNow); err != nil {
 		t.Errorf("undoing a new draft: %v", err)
 	}
 	if _, err := rs.Unreject(run.ID, "d9", testNow); err == nil {

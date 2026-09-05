@@ -29,7 +29,7 @@ func README() ([]byte, error) {
 		return nil, err
 	}
 	a.Server()
-	text := `# Manifest local MCP — Phase 2
+	text := `# Manifest local MCP — Phase 4
 
 Local Go stdio MCP adapter over Manifest's recruiting and graph services. Uses
  the official MCP Go SDK for protocol handling and Go-type schema generation.
@@ -73,13 +73,20 @@ source scope fields and graph vocabulary are in [catalog.json](catalog.json).
 ## Preparation contract and limitations
 
 Results are structured objects with canonical namespace/domain/kind/ID refs,
-content revisions and operationId. Ambiguous exact names return all matches;
+content revisions and operationId. Ambiguous titles, IDs, slugs or partial matches return all matches;
 callers must choose a ref. Recruiting and general graph identities stay separate.
+All refs use namespace manifest. Recruiting seed (including class lab) and role
+are distinct from graph org and graph task; no title/URL-based mapping is implied.
+Candidate knowledge preserves its canonical person ID in the general graph, but
+call entity.resolve with domain=graph and that ID to confirm registration before
+using it. A recruiting person ref never silently becomes a general graph ref.
+Relationships written in the general graph are not promised in the recruiting
+ego projection; use the general graph view and graph.neighbors to inspect them.
 Graph context covers stored general-graph claims, not server-only task, calendar,
 contact or note projections. Unregistered external endpoints cannot be prepared.
 
 Prepare returns persisted=true and a content-addressed operationId. Human changes
-start pending_approval; source runs start prepared and executable. Duplicate
+start pending_approval; source runs, lookup and cache pin changes start prepared and executable. Duplicate
 no-change proposals finish succeeded. The receipt records versioned normalized
 arguments, target/evidence previews, expected file revisions, agent:alfred,
 optional conversation/turn and idempotencyKey, owner decision, confirmed files and object refs.
@@ -112,13 +119,13 @@ rejected. Supply a new key to request another source run with the same scope;
 retain it when retrying preparation. Partial candidate/graph writes report confirmed and unconfirmed
 files, intended knowledge claims and confirmed object refs. Restart reconciles
 interrupted vault writes, marks partial/failed and requires owner takeover;
-it does not blindly retry. Source interruption can leave a cache queue without
-a recorded runId: inspect source runs before starting a new operation. No
+it does not blindly retry. Source execution saves its allocated run ID before fetching; recovery inspects
+that exact cache identity and reports confirmed cache files without repeating the fetch. No
 exactly-once guarantee across external systems is made.
 
 Receipts survive source cache expiry. Canonical evidence stays in domain records;
-operation payloads retain evidence for recovery. No shared-ledger projection or
-UI is added yet. Undo, queue repair and continuation remain manual. File checks
+operation payloads retain evidence for recovery. Human approvals appear inline in chat and in FEED with takeover. Unreject reverses
+a pass with human approval. Queue repair after interrupted execution remains manual. File checks
 are conservative across both domain trees. They detect edits before execution
 and before each write, but do not atomically lock out Obsidian or owner HTTP
 writes between check and write; that requires a shared cross-client transaction

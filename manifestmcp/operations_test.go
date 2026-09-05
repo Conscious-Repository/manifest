@@ -154,8 +154,13 @@ func TestPartialAndInterruptedReconcile(t *testing.T) {
 	if len(o.Applied) != 1 || len(a.Records.CandidateSlugs()) != 1 {
 		t.Fatalf("candidate missing: %+v", o)
 	}
-	if len(o.Result["objectRefs"].([]Ref)) != 1 || !strings.Contains(o.Error, "graph failure") {
+	if len(o.Result["objectRefs"].([]Ref)) != 3 || !strings.Contains(o.Error, "graph failure") {
 		t.Fatal("dishonest partial result")
+	}
+	for _, ref := range o.Result["objectRefs"].([]Ref) {
+		if ref.Domain == "graph" {
+			t.Fatal("unconfirmed graph ref reported as confirmed")
+		}
 	}
 	prior := calls
 	execute(t, a, id, "partial")

@@ -245,6 +245,12 @@ func (r *RunStore) prepareScope(req RunRequest) (sources.Adapter, sources.Scope,
 // a run only ever produces a queue, which is why a preview and a live run are
 // the same thing and `DryRun` now gates nothing (see Accept).
 func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (Run, error) {
+	return r.ExecuteTracked(ctx, req, now, nil)
+}
+
+// ExecuteTracked records the allocated run identity before fetching external data.
+// A recovery caller can inspect that exact cache identity without rerunning Search.
+func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.Time, before func(string) error) (Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -253,6 +259,12 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 		return Run{}, err
 	}
 	max, role := scope.Max, scope.Role
+	runID := newRunID(adapter.ID(), now)
+	if before != nil {
+		if err := before(runID); err != nil {
+			return Run{}, err
+		}
+	}
 
 	drafts, err := adapter.Search(ctx, scope)
 	if err != nil {
@@ -267,7 +279,7 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 	raw := append([]sources.CandidateDraft(nil), drafts...)
 
 	run := Run{RunState: RunState{
-		ID: newRunID(adapter.ID(), now), Source: adapter.ID(), Scope: scope, StartedAt: now.UTC(),
+		ID: runID, Source: adapter.ID(), Scope: scope, StartedAt: now.UTC(),
 	}}
 	run.Counts.Fetched = len(drafts)
 	existing := r.store.candidateIndex()
@@ -432,7 +444,7 @@ func (r *RunStore) Accept(runID, draftID string, now time.Time) (Run, Candidate,
 	return r.project(run, nil), c, nil
 }
 
-// Reject marks one draft rejected. Nothing is written to the vault.
+// Reject marks one draft rejected and writes durable passed suppression.
 func (r *RunStore) Reject(runID, draftID, reason string, now time.Time) (Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -505,36 +517,67 @@ func (run *Run) decide(i int, status, candidateID string, now time.Time) {
 // it was before the decision — no decided-at, the rejected count back down,
 // and the run's D14 expiry clock cleared, since a queue with a `new` draft
 // in it is not triaged. Only a rejected draft can come back: an accepted one
-// is a record now, and a duplicate never left. Nothing touches the vault.
-func (r *RunStore) Unreject(runID, draftID string, now time.Time) (Run, error) {
+// is a record now, and a duplicate never left. The passed tombstone is removed.
+// PreviewUnreject uses the same transition as Unreject without writing state.
+func (r *RunStore) PreviewUnreject(runID, draftID string) (Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	run, err := r.load(runID)
 	if err != nil {
 		return Run{}, err
 	}
+	_, err = run.unreject(draftID)
+	return run, err
+}
+func (run *Run) unreject(draftID string) (bool, error) {
 	i, err := run.find(draftID)
 	if err != nil {
-		return Run{}, err
+		return false, err
 	}
 	d := &run.Drafts[i]
+	if d.Status == DraftNew {
+		return false, nil
+	}
 	if d.Status != DraftRejected {
-		return Run{}, errf("draft %s is %s, not passed — only a pass can be undone", draftID, d.Status)
+		return false, errf("draft %s is %s, not passed — only a pass can be undone", draftID, d.Status)
 	}
 	d.Status, d.DecidedAt, d.Reason = DraftNew, time.Time{}, ""
 	if run.Counts.Rejected > 0 {
 		run.Counts.Rejected--
 	}
-	// undoing a pass lifts the tombstone too, or the next sweep would
-	// re-suppress the person the owner just brought back
-	if err := r.store.RemovePassed(PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name)); err != nil {
-		return Run{}, err
-	}
 	run.TriagedAt, run.ExpiresAt = time.Time{}, time.Time{}
-	if err := r.writeRun(run, nil); err != nil {
-		return Run{}, err
+	return true, nil
+}
+func (r *RunStore) Unreject(runID, draftID string, now time.Time) (Run, error) {
+	run, _, err := r.UnrejectChanged(runID, draftID, now)
+	return run, err
+}
+
+// UnrejectChanged reports whether a pass was reversed, so owner handlers do not
+// emit a second action event for a repeated no-op.
+func (r *RunStore) UnrejectChanged(runID, draftID string, now time.Time) (Run, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, err := r.load(runID)
+	if err != nil {
+		return Run{}, false, err
 	}
-	return r.project(run, nil), nil
+	changed, err := run.unreject(draftID)
+	if err != nil {
+		return Run{}, false, err
+	}
+	if !changed {
+		return r.project(run, nil), false, nil
+	}
+	i, _ := run.find(draftID)
+	d := run.Drafts[i]
+	if err := r.store.RemovePassed(PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name)); err != nil {
+		return Run{}, false, err
+	}
+	if err := r.writeRun(run, nil); err != nil {
+		return Run{}, false, err
+	}
+	return r.project(run, nil), true, nil
 }
 
 // Pin exempts a run's cache from the sweep (D14), or puts it back.
@@ -544,6 +587,9 @@ func (r *RunStore) Pin(runID string, pinned bool) (Run, error) {
 	run, err := r.load(runID)
 	if err != nil {
 		return Run{}, err
+	}
+	if run.Pinned == pinned {
+		return r.project(run, nil), nil
 	}
 	run.Pinned = pinned
 	if err := r.writeRun(run, nil); err != nil {
