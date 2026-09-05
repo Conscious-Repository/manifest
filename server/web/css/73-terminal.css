@@ -158,7 +158,9 @@
   .term-shell { flex-direction: column; height: auto; padding-left: 0; padding-right: 0; }
   .term-rail { width: auto; border-right: 0; padding-right: 0; flex-direction: column-reverse; }
   .term-tabbar { border-top: 0; border-bottom: 1px solid var(--line); padding: 0 0 var(--sp-5); margin: 0 0 var(--sp-6); }
-  .term-rail-scroll { overflow: visible; }
+  /* overflow is visible here, so the desktop scroller's -2px focus-ring bleed
+     only widened the page (394px in a 390 viewport) */
+  .term-rail-scroll { overflow: visible; margin: 0; padding: 0; }
   #termSessionRows { display: flex; gap: var(--sp-3); overflow-x: auto; padding-bottom: var(--sp-2); }
   #termSessionRows .term-sess { flex: none; max-width: 46vw; margin-top: 0; }
   #termSessionRows .term-sess + .term-sess { margin-top: 0; }

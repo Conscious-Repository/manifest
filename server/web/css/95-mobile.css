@@ -3,7 +3,10 @@
    @media (max-width: 860px) or @media (hover: none) blocks, except the
    default-hides right below (which only affect nodes 98-mobile.js creates).
    ≥861px renders byte-identically to a build without this file.
-   860–1100 tablet band deliberately untouched (owner decision 2026-08-10). */
+   860–1100 tablet band deliberately untouched (owner decision 2026-08-10).
+   Rev 5 (2026-09-05, hardening pass): the touch tokens below + the last
+   block — page-header wrap, touch floors, per-surface fixes measured at
+   360/390/412 (findings: /tmp/mobile_audit_findings.md of that pass). */
 
 /* mono-label group (ui-conventions.md §labels): the invariant recipe once;
    each selector below keeps only its own size/color/structure. */
@@ -23,6 +26,16 @@
 
 /* ================= PHONE ================= */
 @media (max-width: 860px) {
+
+  /* ---- touch tokens (phone band only — desktop never sees them) ----
+     --touch: the hit box of a primary glyph/button (Apple HIG 44pt);
+     --touch-sm: the floor for the shared small controls (pills, ghosts,
+     inputs) that read too dense at 44. Sized off the body baseline so a
+     future desktop type-scale change moves them with it. */
+  :root {
+    --touch: clamp(40px, calc(var(--fs-xl) * 2.75), 48px);
+    --touch-sm: clamp(32px, calc(var(--fs-xl) * 2.25), 40px);
+  }
 
   /* ---- chrome ---- */
   .app-shell { height: 100dvh; min-height: 100dvh; }   /* not 100vh — iOS toolbars */
@@ -72,15 +85,15 @@
   /* ---- mobile top bar: ☰ · title/meta · ⌕ · ＋ ---- */
   .crumb-bar {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+    grid-template-columns: var(--touch) minmax(0, 1fr) var(--touch) var(--touch);
     grid-auto-rows: auto;
     align-items: center; gap: 0 var(--sp-3);
-    padding: calc(4px + env(safe-area-inset-top)) 10px 4px;
+    padding: calc(var(--sp-2) + env(safe-area-inset-top)) var(--sp-5) var(--sp-2);
   }
   #crumbBack, #crumbFwd { display: none; } /* drawer + OS gesture cover it */
   .mf-topbar-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 44px; height: 44px; padding: 0;
+    width: var(--touch); height: var(--touch); padding: 0;
     background: none; border: none; cursor: pointer;
     font-size: var(--fs-2xl); color: var(--base-70);
   }
@@ -426,4 +439,98 @@
   .re-decision { min-height: 52px; }
   .re-set-tabs { display: flex; overflow-x: auto; scrollbar-width: none; width: auto; }
   .re-assump-row { grid-template-columns: 1fr 82px; min-height: 48px; align-items: center; }
+}
+
+/* ================= PHONE — hardening pass (Rev 5, 2026-09-05) =================
+   Every rule here answers a measurement at 360/390/412 (headless Chromium,
+   getComputedStyle + scrollWidth) — nothing speculative. Loads last, so an
+   equal-specificity rule here wins over the surface file. */
+@media (max-width: 860px) {
+
+  /* ---- shared page header (.agent-head): title · tabs/chips · meta · actions.
+     The actions box had no min-width:0, so a tab bar or chip strip that could
+     not fit pushed the row past the viewport and the WHOLE content column
+     panned sideways — measured scrollWidth 497 (TASKS), 698 (AION), 705
+     (REAL ESTATE), 564 (CONTACTS) in a 390 viewport. Shape now: the title
+     stays one line; tabs/chips/search take the rest of the row and scroll in
+     place; meta + trailing buttons wrap to a second, right-aligned line. ---- */
+  .agent-head { row-gap: var(--sp-3); }
+  .agent-title { white-space: nowrap; flex: none; }
+  .agent-actions {
+    flex: 1 1 auto; min-width: 0; flex-wrap: wrap; justify-content: flex-end;
+    row-gap: var(--sp-3);
+  }
+  .agent-actions > .view-tabs, .agent-actions > .feed-filters { flex: 1 1 100%; min-width: 0; }
+  .agent-actions > .view-tabs { margin-bottom: 0; }
+  /* CONTACTS: the search shares the title line (its 220px floor lifts so it
+     can shrink beside the title); the three pills wrap beneath */
+  .agent-actions > .contact-search { flex: 1 1 auto; min-width: 0; width: auto; }
+  .agent-actions > .panel-meta { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+
+  /* ---- touch floors for the shared small controls (measured 28px pills,
+     25px ghost buttons, 26–28px inputs/selects, a 22×16 inspector close) ---- */
+  button.pill, a.pill { height: auto; min-height: var(--touch-sm); white-space: nowrap; }
+  .o-ghost { min-height: var(--touch-sm); line-height: 20px; padding: var(--sp-3) var(--sp-6); white-space: nowrap; }
+  select.pp-in, input.pp-in { min-height: var(--touch-sm); }
+  .aion-insp-x {
+    min-width: var(--touch); min-height: var(--touch); padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin: calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1) 0;
+  }
+
+  /* ---- TASKS rows: the trailing controls were 10–12px glyphs (⧗ › ✕);
+     each gets a 30×44 box. ⇢ delegate folds away — its 10px target was
+     untappable and the panel's DO chip is the same action. ---- */
+  .tdo-right { align-items: center; gap: 0; }
+  .tdo-right .tdo-age { margin-right: var(--sp-2); }
+  .tdo-right .uw-x, .tdo-right .tdo-tether, .tdo-right .tdo-open-chevron {
+    min-width: 30px; min-height: var(--touch); padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .tdo-right .tdo-delegate { display: none; }
+  /* "⇅ drag to rank" is false here (the handle is hidden above) and pushed
+     the section label past 360px */
+  .tdo-sec-hint { display: none; }
+
+  /* ---- TASK panel (93-todo-panel's own <1100 sheet): dvh + home indicator;
+     priority chips (36×20) and the ＋ add links to touch height ---- */
+  .tdo-panel { max-height: 82dvh; padding-bottom: calc(var(--sp-7) + env(safe-area-inset-bottom)); }
+  .tdo-p-mode { min-height: var(--touch-sm); padding: 0 var(--sp-5); }
+  .tdo-p-linky { min-height: 32px; }
+
+  /* ---- AION task rows: the 18px check column (18×19 button) → 40px touch
+     column; the 200px title floor gave the rock column nothing at 360 ---- */
+  .aion-task-row { grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto); align-items: center; }
+  .aion-check { min-width: 40px; min-height: var(--touch); }
+  /* V/TO two-field rows (DATE · GOAL): two 76px keys + two 90px inputs + ✕
+     summed to 382px in a 342px row. The key keeps its 76px column but may
+     shrink when a row overflows; one-field rows are untouched. */
+  .aion-vto-key { width: 76px; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .aion-mini { min-width: 32px; min-height: 32px; }
+
+  /* ---- SETTINGS connections: the five-column portal grid (name · state ·
+     crossing · key · actions) overflowed at 390 (actions clipped at 514px).
+     Name + state on one line, crossing/key beneath, actions on their own row. ---- */
+  .portal-row.portal-head { display: none; }
+  .portal-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--sp-2); }
+  .portal-cross, .portal-key { grid-column: 1 / -1; overflow-wrap: anywhere; }
+  .portal-acts { grid-column: 1 / -1; justify-self: start; }
+
+  /* ---- AGENTS runs head: the nowrap spend line (550px measured) wraps under the title ---- */
+  .sprt-head { flex-wrap: wrap; }
+  .sprt-head-meta { flex: 1 1 100%; margin-left: 0; white-space: normal; min-width: 0; }
+
+  /* ---- CONTACT page: four fact cells at 84px each overlapped their labels → 2×2 ---- */
+  .cp-facts { flex-wrap: wrap; }
+  .cp-fact { flex: 1 1 45%; }
+
+  /* ---- REAL ESTATE money/portfolio: rows already restack above, but the
+     table kept fundraising's 760px scroller floor — the stacked rows scrolled
+     sideways for nothing. (Fundraising keeps its floor: its four columns are
+     meant to scroll.) The accountant hand-off row wrapped its pill into three
+     lines: name + pill on one line, the owned/acquiring meta beneath. ---- */
+  .properties-view .fr-table { min-width: 0; }
+  .re-handoff-row { flex-wrap: wrap; align-items: center; row-gap: var(--sp-1); }
+  .re-handoff-name { flex: 1 1 0; min-width: 0; }
+  .re-handoff-meta { flex: 1 1 100%; order: 3; }
 }
