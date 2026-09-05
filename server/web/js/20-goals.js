@@ -541,8 +541,10 @@ function moveGoalPicker(g, areaName) {
 
 // goTaskRow — one substrate task line inside the outline: live checkbox,
 // click-to-edit text, age.
-function goTaskRow(t, areaName) {
-  const row = el("div", "go-task");
+function goTaskRow(t, areaName, nested) {
+  // nested = the row sits under a milestone, so it indents to the child
+  // depth goal-tasks use; a loose rock-level task keeps the shallow indent
+  const row = el("div", "go-task" + (nested ? " in-stage" : ""));
   const tc = el("button", "go-check", "○");
   tc.title = "done";
   tc.onclick = async (e) => {
@@ -606,7 +608,7 @@ function goGoalTaskRow(c, areaName, stage) {
     (v) => goalsApi("PATCH", "/api/goals/item", { id: c.id, owner: v }), ownerRegistryFor(areaName));
   row.append(ownerNode);
   const x = el("button", "go-task-x", "✕");
-  x.title = "remove this goal task";
+  x.title = "remove this task from the ladder";
   x.onclick = (e) => {
     e.stopPropagation();
     if (!x.classList.contains("armed")) {
@@ -681,20 +683,30 @@ function rockOutline(g, areaName) {
 
     // tasks whose [stage::] names this milestone nest here; each milestone
     // has its own composer (add work anywhere, any time)
-    (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t, areaName)));
+    (byStage[st.id] || []).forEach((t) => wrap.append(goTaskRow(t, areaName, true)));
     // live goal tasks — the milestone's own children in goals.md (depth 3,
     // the task level). Distinct from substrate todos above: these ARE goal
     // lines with ids, so they render as goal rows with checkbox + owner.
     (st.children || []).forEach((c) => wrap.append(goGoalTaskRow(c, areaName, st)));
     if (!g.checked && !st.checked) {
-      wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
-        try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
-        loadGoals();
-      }, "what advances " + st.text + "…"));
-      wrap.append(ghostInput("＋ goal task", "go-task-ghost", async (v) => {
+      // ⚠ THE CASCADE NAMES ITS OWN LEVELS: goals → milestones → tasks, so
+      // "＋ task" is the ladder's third level — a goals.md line with a
+      // checkbox and an owner, the thing the AION board and the portal
+      // project. The personal capture comes second and says where it lands;
+      // "task vs goal task" answered nothing (owner call 2026-09-05), and
+      // both composers indent under the milestone they feed.
+      const ladder = ghostInput("＋ task", "go-task-ghost in-stage", async (v) => {
         try { await goalsApi("POST", "/api/goals/item", { area: areaName, parentId: st.id, text: v, owner: "me" }); } catch (err) {}
         loadGoals();
-      }, "a goals.md task under " + st.text + "…"));
+      }, "task under “" + st.text + "” — the shared ladder, checkbox + owner…");
+      ladder.title = "a goals.md task under this milestone — the team sees it";
+      wrap.append(ladder);
+      const mine = ghostInput("＋ my task", "go-task-ghost in-stage", async (v) => {
+        try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id, stage: st.text }); } catch (err) {}
+        loadGoals();
+      }, "on your TASKS page, tethered to “" + st.text + "”…");
+      mine.title = "a personal task on the TASKS page, linked back to this milestone";
+      wrap.append(mine);
     }
     // frozen pre-split history — collapsed, muted, read-only
     if ((st.frozen || []).length) {
@@ -716,10 +728,12 @@ function rockOutline(g, areaName) {
   // last milestone read as a confusing duplicate (owner call 2026-08-14).
   looseTasks.forEach((t) => wrap.append(goTaskRow(t, areaName)));
   if (!g.checked && stages.length === 0) {
-    wrap.append(ghostInput("＋ task", "go-task-ghost", async (v) => {
+    const mine = ghostInput("＋ my task", "go-task-ghost", async (v) => {
       try { await postJSONOk("/api/tasks/item", { text: v, domain: areaName, rock: g.id }); } catch (err) {}
       loadGoals();
-    }, "what advances this rock…"));
+    }, "on your TASKS page, tethered to this goal…");
+    mine.title = "a personal task on the TASKS page, linked back to this goal";
+    wrap.append(mine);
   }
   wrap.append(ghostInput("＋ milestone", "go-stage-ghost", (v) =>
     goalsApi("POST", "/api/goals/item", { parentId: g.id, text: v, owner: "me" }),

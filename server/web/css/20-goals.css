@@ -210,7 +210,9 @@
 .go-open-count { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); white-space: nowrap; }
 
 /* stages */
-.go-stage { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0 var(--sp-1) var(--sp-6); }
+/* margin-top: each milestone block gets a breath of separation, so it never
+   reads as the tail of the previous milestone's composer row */
+.go-stage { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0 var(--sp-1) var(--sp-6); margin-top: var(--sp-3); }
 .go-stage-text { font-family: var(--sans); font-size: var(--fs-md); }
 .go-stage.done .go-stage-text { color: var(--base-40); text-decoration: line-through; }
 .go-stage-cur { font-family: var(--mono); font-size: var(--fs-sm); color: var(--accent); flex: none; }
@@ -222,12 +224,21 @@
 
 /* tasks under the current stage */
 .go-task { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0 var(--sp-1) 34px; }
+/* ONE child depth under a milestone: a ladder task and a tethered TASKS-page
+   task are siblings there, and two different indents read as two different
+   levels that do not exist (owner call 2026-09-05) */
+.go-task.in-stage { padding-left: 50px; }
 .go-goal-task { display: flex; align-items: baseline; gap: var(--sp-4); padding: var(--sp-1) 0 var(--sp-1) 50px; }
 .go-goal-task.done .go-task-text { color: var(--base-40); text-decoration: line-through; }
 .go-task-text { font-family: var(--sans); font-size: var(--fs-md); min-width: 0; }
 .go-task-age { margin-left: auto; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
 .go-task-ghost { margin-left: 34px; font-size: var(--fs-xs); }
-.go-stage-ghost { margin-left: var(--sp-6); font-size: var(--fs-xs); }
+/* the milestone's composers indent WITH its children — an add button sits at
+   the depth of the thing it creates */
+.go-task-ghost.in-stage { margin-left: 50px; }
+/* ＋ milestone is the GOAL's composer, never the tail of the last milestone's
+   row: its own line, at milestone depth, with air above it */
+.go-stage-ghost { display: block; width: fit-content; margin: var(--sp-4) 0 0 var(--sp-6); font-size: var(--fs-xs); }
 
 /* quiet rock actions — hover-revealed */
 .go-rock-acts { display: flex; align-items: baseline; gap: var(--sp-6); margin-top: var(--sp-4); visibility: hidden; }
