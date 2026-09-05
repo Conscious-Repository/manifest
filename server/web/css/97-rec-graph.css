@@ -42,7 +42,9 @@
 .rg-edge.inferred { stroke-dasharray: calc(3 / var(--rg-zoom)) calc(3 / var(--rg-zoom)); opacity: 0.7; }
 .rg-edge.lit { stroke: var(--accent); stroke-width: calc(2.2 / var(--rg-zoom)); opacity: 1; }
 
-.rg-node { cursor: pointer; }
+.rg-node { cursor: pointer; transition: opacity 110ms linear; }
+.rg-hit { fill: transparent; pointer-events: all; }
+.rg-canvas.rg-dragging .rg-node { cursor: grabbing; }
 .rg-dot { stroke: var(--base-00, #fff); stroke-width: calc(1.5 / var(--rg-zoom)); fill: var(--base-40); }
 .rg-node.rg-you .rg-dot { fill: var(--accent); }
 .rg-node.rg-connector .rg-dot { fill: var(--ok, #2f855a); }
@@ -65,6 +67,7 @@
   stroke-width: calc(3px / var(--rg-zoom));
   stroke-linejoin: round;
   opacity: var(--rg-label);
+  transition: opacity 110ms linear;
 }
 /* the people you have a relationship WITH are legible sooner than the
    strangers around them: a ring of 60 names is the hairball arriving through
@@ -79,7 +82,8 @@
    touch goes quiet, so one hover answers "who does this reach" without a
    click, a panel or a redraw. */
 .rg-canvas.rg-hovering .rg-node { opacity: 0.13; transition: opacity 110ms linear; }
-.rg-canvas.rg-hovering .rg-node.near { opacity: 1; }
+.rg-canvas.rg-hovering .rg-node.near,
+.rg-canvas.rg-hovering .rg-node.sel { opacity: 1; }
 .rg-canvas.rg-hovering .rg-edge { opacity: 0.05; }
 .rg-canvas.rg-hovering .rg-edge.near { opacity: 1; stroke: var(--accent); }
 /* a selected route reads the same way: the path stands, the rest recedes */
@@ -127,7 +131,7 @@
 .rg-controls {
   top: var(--sp-4); left: var(--sp-4);
   width: 232px;
-  max-height: calc(100% - var(--sp-8));
+  max-height: calc(100% - 80px);
   overflow-y: auto;
   padding: var(--sp-3);
   display: flex; flex-direction: column; gap: var(--sp-2);
@@ -171,14 +175,15 @@
 .rg-panel {
   right: var(--sp-4); top: var(--sp-4);
   width: min(320px, calc(100% - 264px - 3 * var(--sp-4)));
-  max-height: calc(100% - var(--sp-8));
+  max-height: calc(100% - 80px);
   overflow-y: auto;
   padding: var(--sp-4);
   display: flex; flex-direction: column; gap: var(--sp-3);
 }
 .rg-panel-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
 .rg-panel-name { font-size: var(--fs-md); color: var(--base-100); overflow-wrap: anywhere; }
-.rg-panel-x { all: unset; cursor: pointer; color: var(--base-50); font-size: var(--fs-md); line-height: 1; }
+.rg-panel-x { all: unset; cursor: pointer; color: var(--base-50); font-size: var(--fs-md); line-height: 1; min-width: 28px; min-height: 28px; text-align: center; }
+.rg-panel-x:focus-visible, .rg-sec-head:focus-visible, .rg-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rg-panel-x:hover { color: var(--base-100); }
 .rg-panel-hint { font-size: var(--fs-xs); color: var(--base-50); }
 .rg-why { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line-soft); }
@@ -216,9 +221,10 @@
    controls floating over a 360px canvas is not a floating card, it is a wall */
 @media (max-width: 860px) {
   .rg-stage { height: min(62vh, 520px); }
-  .rg-controls { width: calc(100% - 2 * var(--sp-3)); left: var(--sp-3); top: var(--sp-3); max-height: 44%; }
-  .rg-panel { width: calc(100% - 2 * var(--sp-3)); right: var(--sp-3); top: auto; bottom: var(--sp-3); max-height: 46%; }
-  .rg-viewport { display: none; }
+  .rg-controls { width: calc(100% - 2 * var(--sp-3)); left: var(--sp-3); top: var(--sp-3); max-height: 35%; }
+  .rg-panel { width: calc(100% - 2 * var(--sp-3)); right: var(--sp-3); top: auto; bottom: 56px; max-height: 35%; }
+  .rg-viewport { left: var(--sp-3); bottom: var(--sp-3); }
+  .rg-viewport .rg-note { display: none; }
 }
 
 .rg-empty {
@@ -236,3 +242,22 @@
 @media (prefers-reduced-motion: reduce) {
   .rg-canvas .rg-node, .rg-canvas .rg-edge, .rg-label { transition: none !important; }
 }
+
+.rg-status {
+  position: absolute; z-index: 3;
+  left: 50%; top: var(--sp-4); transform: translateX(-50%);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--base-00); color: var(--base-60);
+  border-radius: var(--radius); font-size: var(--fs-xs);
+  pointer-events: none;
+}
+/* With no canvas, recovery controls belong in the document flow. */
+.rg-stage-empty {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  height: auto; min-height: 0; padding: var(--sp-4);
+}
+.rg-stage-empty > .rg-controls, .rg-stage-empty > .rg-panel,
+.rg-stage-empty > .rg-viewport {
+  position: static; width: auto; max-width: none; max-height: none;
+}
+.rg-stage-empty > .rg-cog { position: static; }

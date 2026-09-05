@@ -94,13 +94,15 @@ function rgSVG(tag, cls, attrs) {
   return n;
 }
 
-// rgLoad is the ONE fetch. Hops and edge-kind filters are query parameters
+// rgLoad fetches the drawn graph. Hops and edge-kind filters are query parameters
 // rather than client-side filters because the whole point of a bounded view is
 // that the unbounded answer is never sent.
 async function rgLoad() {
   const st = rgInit();
+  const request = st.loadRequest = (st.loadRequest || 0) + 1;
   st.busy = true;
   st.err = "";
+  if (st.data && recPaint) recPaint();
   try {
     const q = new URLSearchParams();
     if (st.center) q.set("center", st.center);
@@ -109,10 +111,13 @@ async function rgLoad() {
     if (st.q.trim()) q.set("q", st.q.trim());
     const r = await fetch("/api/aion/recruiting/graph?" + q.toString());
     if (!r.ok) throw new Error(await r.text());
-    st.data = await r.json();
+    const data = await r.json();
+    if (request !== st.loadRequest) return;
+    st.data = data;
     st.matches = st.data.search || [];
     if (st.sel && !(st.data.nodes || []).some((n) => n.id === st.sel)) st.sel = "";
   } catch (e) {
+    if (request !== st.loadRequest) return;
     st.err = String(e.message || e).slice(0, 200);
   }
   st.busy = false;
@@ -330,6 +335,7 @@ function rgSizes() {
   }
   st.svgEl.style.setProperty("--rg-link-w", String(rgOpts.linkWidth));
   rgFade();
+  rgHitSizes();
 }
 
 // ---- THE TEXT FADE. Obsidian's "text fade threshold": labels are not on or
@@ -341,12 +347,16 @@ function rgFade() {
   if (!st.svgEl) return;
   const k = st.view.k;
   const t = rgOpts.fade;
-  const op = Math.max(0, Math.min(1, (k - t * 0.55) / (t * 0.75)));
+  const curve = (start, span) => {
+    const x = Math.max(0, Math.min(1, (k / t - start) / span));
+    return x * x * (3 - 2 * x);
+  };
+  const op = curve(0.55, 0.75);
   st.svgEl.style.setProperty("--rg-label", op.toFixed(3));
   // the people you have a relationship WITH are legible sooner than the
   // strangers around them — a ring of 60 names is the hairball arriving
   // through labels rather than through edges
-  st.svgEl.style.setProperty("--rg-label-named", Math.max(op, 0.85).toFixed(3));
+  st.svgEl.style.setProperty("--rg-label-named", curve(0.15, 0.75).toFixed(3));
 }
 
 // rgFit frames everything the body settled into, with a margin. Once per
@@ -368,13 +378,7 @@ function rgFit() {
   // of it and the detail card over the right, so fitting to the whole element
   // parks the body under a panel and leaves the empty half on show. The frame
   // is the part you can actually see.
-  const box = st.svgEl.getBoundingClientRect();
-  const wide = box.width > 700;
-  const leftPx = wide && rgOpts.panel ? 264 : 0;
-  const rightPx = wide && st.sel ? 352 : 0;
-  const botPx = wide ? 52 : 0;
-  const usableW = Math.max(120, box.width - leftPx - rightPx);
-  const usableH = Math.max(120, box.height - botPx);
+  const { box, leftPx, topPx, usableW, usableH } = rgVisibleArea();
 
   const k = Math.max(0.3, Math.min(3.2,
     Math.min((RG_W * usableW / box.width) / w, (RG_H * usableH / box.height) / h)));
@@ -385,10 +389,70 @@ function rgFit() {
     st.fitScale = scale;
     rgSizes();
   }
-  const cxPx = leftPx + usableW / 2, cyPx = usableH / 2;
+  const cxPx = leftPx + usableW / 2, cyPx = topPx + usableH / 2;
   st.view.x = (x0 + x1) / 2 - (cxPx / box.width) * (RG_W / k);
   st.view.y = (y0 + y1) / 2 - (cyPx / box.height) * (RG_H / k);
   rgApplyView();
+}
+
+// Measure the cards that are actually present, including the phone stack.
+function rgVisibleArea() {
+  const svg = rgInit().svgEl;
+  const box = svg.getBoundingClientRect();
+  let leftPx = 0, rightPx = 0, topPx = 0, botPx = 0;
+  const phone = window.matchMedia("(max-width: 860px)").matches;
+  svg.parentElement.querySelectorAll(".rg-controls, .rg-panel, .rg-viewport").forEach((card) => {
+    const r = card.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    if (card.classList.contains("rg-viewport") || (phone && card.classList.contains("rg-panel"))) {
+      botPx = Math.max(botPx, box.bottom - r.top + 12);
+    } else if (phone) topPx = Math.max(topPx, r.bottom - box.top + 12);
+    else if (card.classList.contains("rg-controls")) leftPx = r.right - box.left + 12;
+    else rightPx = box.right - r.left + 12;
+  });
+  return { box, leftPx, topPx, usableW: Math.max(60, box.width - leftPx - rightPx),
+    usableH: Math.max(60, box.height - topPx - botPx) };
+}
+
+function rgReveal(id, center) {
+  const st = rgInit();
+  const n = st.sim && st.sim.byId[id];
+  if (!n || !st.svgEl || !st.svgEl.isConnected) return;
+  const { box, leftPx, topPx, usableW, usableH } = rgVisibleArea();
+  const sx = box.width * st.view.k / RG_W, sy = box.height * st.view.k / RG_H;
+  const px = (n.x - st.view.x) * sx, py = (n.y - st.view.y) * sy;
+  const margin = Math.min(36, usableW / 4, usableH / 4);
+  const x = center ? leftPx + usableW / 2 : Math.max(leftPx + margin, Math.min(leftPx + usableW - margin, px));
+  const y = center ? topPx + usableH / 2 : Math.max(topPx + margin, Math.min(topPx + usableH - margin, py));
+  st.view.x += (px - x) / sx;
+  st.view.y += (py - y) / sy;
+  rgApplyView();
+}
+
+function rgSelect(id, center = false) {
+  const st = rgInit();
+  st.sel = id;
+  if (st.sim) st.sim.fitted = true;
+  rgHoverSet("");
+  if (recPaint) recPaint();
+  if (id) rgReveal(id, center);
+  if (st.svgEl) st.svgEl.focus({ preventScroll: true });
+}
+
+function rgResetView() {
+  rgCloseMenu();
+  rgSelect("");
+  rgFit();
+}
+
+// Hit areas stay at least 24 CSS pixels across, independently of dot size.
+function rgHitSizes() {
+  const st = rgInit();
+  if (!st.sim || !st.svgEl) return;
+  const box = st.svgEl.getBoundingClientRect();
+  if (!box.width) return;
+  const radius = 12 * RG_W / (box.width * st.view.k);
+  for (const n of st.sim.nodes) n.hit.setAttribute("r", Math.max(n.r, radius));
 }
 
 function rgApplyView() {
@@ -401,6 +465,7 @@ function rgApplyView() {
   // zooming spreads the names apart instead of magnifying them into each other
   st.svgEl.style.setProperty("--rg-zoom", String(v.k));
   rgFade();
+  rgHitSizes();
 }
 
 // rgMeasure matches the simulation's coordinate space to the element's real
@@ -503,6 +568,8 @@ function rgCanvas(data) {
       (a.kind === "stranger" ? 0 : 1) - (b.kind === "stranger" ? 0 : 1));
     order.forEach((n) => {
       const g = rgSVG("g", "rg-node rg-" + n.kind, {});
+      n.hit = rgSVG("circle", "rg-hit", { r: String(n.r) });
+      g.appendChild(n.hit);
       n.dot = rgSVG("circle", "rg-dot", { r: String(n.r) });
       g.appendChild(n.dot);
       n.text = rgSVG("text", "rg-label", { y: String(n.r + 11), "text-anchor": "middle" });
@@ -525,6 +592,12 @@ function rgCanvas(data) {
     rgApplyView();
     rgDraw();
     rgRun();
+    if (st.reveal === st.sel && st.sel) {
+      sim.fitted = true;
+      rgReveal(st.sel, true);
+      st.reveal = "";
+      svg.focus({ preventScroll: true });
+    }
   });
   return svg;
 }
@@ -544,23 +617,27 @@ function rgWirePointer(svg, sim, data) {
   let drag = null;
 
   svg.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || drag) return;
+    sim.fitted = true;
     rgCloseMenu();
     svg.focus({ preventScroll: true });
     const g = ev.target.closest ? ev.target.closest(".rg-node") : null;
     const node = g ? sim.nodes.find((n) => n.el === g) : null;
-    drag = { node, moved: 0, at: rgPoint(ev) };
+    drag = { node, pointerId: ev.pointerId, moved: 0, startX: ev.clientX, startY: ev.clientY, at: rgPoint(ev) };
+    drag.offsetX = node ? drag.at.x - node.x : 0;
+    drag.offsetY = node ? drag.at.y - node.y : 0;
     if (node && node.id !== data.center) { node.fx = node.x; node.fy = node.y; rgHeat(0.5); }
     try { svg.setPointerCapture(ev.pointerId); } catch (e) {}
     svg.classList.add("rg-dragging");
   });
 
   svg.addEventListener("pointermove", (ev) => {
-    if (!drag) return;
+    if (!drag || ev.pointerId !== drag.pointerId) return;
     const at = rgPoint(ev);
-    drag.moved += Math.abs(at.x - drag.at.x) + Math.abs(at.y - drag.at.y);
+    drag.moved = Math.max(drag.moved, Math.hypot(ev.clientX - drag.startX, ev.clientY - drag.startY));
+    if (drag.moved < 4) return;
     if (drag.node && drag.node.id !== data.center) {
-      drag.node.fx = at.x; drag.node.fy = at.y;
+      drag.node.fx = at.x - drag.offsetX; drag.node.fy = at.y - drag.offsetY;
       rgHeat(0.35);
     } else if (!drag.node) {
       st.view.x -= at.x - drag.at.x;
@@ -572,27 +649,30 @@ function rgWirePointer(svg, sim, data) {
   });
 
   const end = (ev) => {
-    if (!drag) return;
+    if (!drag || ev.pointerId !== drag.pointerId) return;
+    const cancelled = ev.type !== "pointerup";
     svg.classList.remove("rg-dragging");
     try { svg.releasePointerCapture(ev.pointerId); } catch (e) {}
     if (drag.node) {
       // released nodes rejoin the body — a graph you can only pin apart stops
       // telling you anything about how it hangs together
       if (drag.node.id !== data.center) { drag.node.fx = null; drag.node.fy = null; }
-      if (drag.moved < 4) { st.sel = st.sel === drag.node.id ? "" : drag.node.id; if (recPaint) recPaint(); }
+      if (!cancelled && drag.moved < 4) rgSelect(st.sel === drag.node.id ? "" : drag.node.id);
       rgHeat(0.3);
-    } else if (drag.moved < 4 && st.sel) {
-      st.sel = "";
-      if (recPaint) recPaint();
+    } else if (!cancelled && drag.moved < 4 && st.sel) {
+      rgSelect("");
     }
     drag = null;
   };
   svg.addEventListener("pointerup", end);
   svg.addEventListener("pointercancel", end);
+  svg.addEventListener("lostpointercapture", end);
 
   svg.addEventListener("wheel", (ev) => {
     ev.preventDefault();
-    rgZoomBy(ev.deltaY < 0 ? 1.12 : 1 / 1.12, rgPoint(ev));
+    sim.fitted = true;
+    const pixels = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? svg.clientHeight : 1);
+    rgZoomBy(Math.exp(-Math.max(-100, Math.min(100, pixels)) * 0.002), rgPoint(ev));
   }, { passive: false });
 
   svg.addEventListener("contextmenu", (ev) => { ev.preventDefault(); rgCloseMenu(); });
@@ -600,6 +680,7 @@ function rgWirePointer(svg, sim, data) {
   // KEYBOARD, the way Obsidian does it: +/- zoom, arrows pan, shift is faster.
   svg.setAttribute("tabindex", "0");
   svg.addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const step = (ev.shiftKey ? 160 : 60) / st.view.k;
     let hit = true;
     switch (ev.key) {
@@ -609,11 +690,17 @@ function rgWirePointer(svg, sim, data) {
       case "ArrowRight": st.view.x += step; rgApplyView(); break;
       case "ArrowUp": st.view.y -= step; rgApplyView(); break;
       case "ArrowDown": st.view.y += step; rgApplyView(); break;
-      case "0": rgFit(); break;
-      case "Escape": rgCloseMenu(); if (st.sel) { st.sel = ""; if (recPaint) recPaint(); } break;
+      case "/":
+        rgOpts.panel = true;
+        rgSaveOpts();
+        if (recPaint) recPaint();
+        document.querySelector(".rg-search")?.focus();
+        break;
+      case "0": rgResetView(); break;
+      case "Escape": rgCloseMenu(); rgSelect(""); break;
       default: hit = false;
     }
-    if (hit) ev.preventDefault();
+    if (hit) { sim.fitted = true; ev.preventDefault(); ev.stopPropagation(); }
   });
 
   // a pane that changes width must not distort what is drawn in it
@@ -648,7 +735,7 @@ function rgMenu(id, ev) {
     menu.append(b);
   };
   item("stand here", () => rgStand(id));
-  item("why connected", () => { st.sel = id; if (recPaint) recPaint(); });
+  item("why connected", () => rgSelect(id));
   if (node.kind === "considering") item("open the record", () => { recSel = id; recNav("board"); });
   if (node.kind === "stranger" || node.kind === "considering") {
     item("someone I'd ask", async () => {
@@ -756,14 +843,42 @@ function rgControls(data) {
   search.type = "search";
   search.placeholder = "find a person…";
   search.value = st.q;
+  search.setAttribute("aria-label", "Find a person");
+  const results = el("div", "rg-search-results");
+  results.setAttribute("aria-live", "polite");
   let t = null;
   search.oninput = () => {
     st.q = search.value;
     clearTimeout(t);
-    t = setTimeout(() => rgLoad(), 220);
+    const request = st.searchRequest = (st.searchRequest || 0) + 1;
+    results.replaceChildren();
+    st.matches = [];
+    if (!st.q.trim()) return;
+    results.textContent = "searching…";
+    t = setTimeout(async () => {
+      try {
+        const q = new URLSearchParams({ q: st.q.trim(), degree: String(rgOpts.hops) });
+        if (st.center) q.set("center", st.center);
+        const response = await fetch("/api/aion/recruiting/graph?" + q);
+        if (!response.ok) throw new Error("search unavailable — try again");
+        const answer = await response.json();
+        if (request !== st.searchRequest || !search.isConnected) return;
+        st.matches = answer.search || [];
+        results.replaceChildren(st.matches.length ? rgMatches(st.matches) : el("span", "rg-note", "no people found"));
+      } catch (e) {
+        if (request === st.searchRequest && search.isConnected) results.textContent = e.message;
+      }
+    }, 220);
   };
-  card.append(search);
-  if (st.matches && st.matches.length) card.append(rgMatches(st.matches));
+  search.onkeydown = (ev) => {
+    if (ev.key === "Escape") { ev.stopPropagation(); rgSelect(""); }
+    if (ev.key === "ArrowDown" || ev.key === "Enter") {
+      const first = results.querySelector("button");
+      if (first) { ev.preventDefault(); if (ev.key === "Enter") first.click(); else first.focus(); }
+    }
+  };
+  card.append(search, results);
+  if (st.q.trim() && st.matches.length) results.append(rgMatches(st.matches));
 
   card.append(rgSection("filters", "filters", (body) => {
     body.append(rgSlider("hops from you", "hops", 1, 3, 1, () => { rgSaveOpts(); rgLoad(); },
@@ -835,11 +950,13 @@ function rgViewport(data) {
     back.onclick = () => { st.center = ""; st.sel = ""; rgLoad(); };
     bar.append(back);
   }
-  const fit = el("button", "linkish", "fit");
-  fit.title = "frame the whole graph again (0)";
-  fit.onclick = () => rgFit();
-  bar.append(fit);
-  bar.append(el("span", "rg-note", "drag · scroll to zoom · hover to light a neighbourhood · right-click for actions"));
+  if ((data.edges || []).length) {
+    const fit = el("button", "linkish", "fit");
+    fit.title = "frame the whole graph again (0)";
+    fit.onclick = () => rgResetView();
+    bar.append(fit);
+    bar.append(el("span", "rg-note", "drag · scroll to zoom · / search · esc deselect"));
+  }
   return bar;
 }
 
@@ -848,8 +965,16 @@ function rgMatches(matches) {
   const row = el("div", "rg-matches");
   matches.slice(0, 8).forEach((m) => {
     const b = el("button", "filter-chip rg-" + m.kind, m.label);
-    b.title = "stand on " + m.label;
-    b.onclick = () => { st.center = m.id; st.sel = ""; st.q = ""; rgLoad(); };
+    b.title = "show " + m.label + " in the graph";
+    b.onclick = () => {
+      st.q = "";
+      st.matches = [];
+      st.searchRequest = (st.searchRequest || 0) + 1;
+      // Existing nodes keep their neighbourhood; only fetch a new bounded
+      // view when the result is outside the currently drawn graph.
+      if (st.sim && st.sim.byId[m.id]) rgSelect(m.id, true);
+      else { st.center = m.id; st.sel = m.id; st.reveal = m.id; rgLoad(); }
+    };
     row.append(b);
   });
   return row;
@@ -867,8 +992,13 @@ function rgView(main) {
   const nodes = data.nodes || [];
   if (!nodes.length || !(data.edges || []).length) {
     st.svgEl = null;
+    st.sim = null;
     st.key = "";
-    main.append(rgEmpty(data));
+    const stage = el("div", "rg-stage rg-stage-empty");
+    stage.append(rgEmpty(data), rgControls(data), rgViewport(data));
+    const panel = rgPanel(data);
+    if (panel) stage.append(panel);
+    main.append(stage);
     main.append(rgFold(data));
     return;
   }
@@ -877,6 +1007,12 @@ function rgView(main) {
   // top of it. That is the whole difference between a diagram in a page and a
   // place you are standing in.
   const stage = el("div", "rg-stage");
+  stage.setAttribute("aria-busy", String(st.busy));
+  if (st.busy) {
+    const status = el("div", "rg-status", "updating graph…");
+    status.setAttribute("role", "status");
+    stage.append(status);
+  }
   stage.append(rgCanvas(data));
   stage.append(rgControls(data));
   stage.append(rgViewport(data));
@@ -899,7 +1035,8 @@ function rgPanel(data) {
   head.append(el("div", "rg-panel-name", node.label));
   const close = el("button", "rg-panel-x", "\u00d7");
   close.title = "close (esc)";
-  close.onclick = () => { st.sel = ""; if (recPaint) recPaint(); };
+  close.setAttribute("aria-label", "Deselect person (Escape)");
+  close.onclick = () => rgSelect("");
   head.append(close);
   box.append(head);
   const meta = [node.kind === "considering" ? "on the board" : node.kind === "connector" ? "someone you'd ask"
@@ -931,8 +1068,10 @@ function rgPanel(data) {
       why.append(el("div", "rg-weak", "weakest hop: " + weak.e.confidence + " · " + (weak.e.kind || "").replace(/_/g, " ")));
     }
     box.append(why);
-  } else if (node.kind !== "you") {
-    box.append(el("div", "rg-panel-hint", "no route from you inside " + st.degree + " hops"));
+  } else if (node.id === data.center) {
+    box.append(el("div", "rg-panel-hint", "This is the center of the current view."));
+  } else {
+    box.append(el("div", "rg-panel-hint", "no route from " + rgLabel(data, data.center) + " inside " + data.degree + " hops"));
   }
 
   const acts = el("div", "rg-acts");
@@ -952,7 +1091,7 @@ function rgPanel(data) {
     acts.append(ask);
   }
   const here = el("button", "pill light", "stand here");
-  here.onclick = () => { st.center = node.id; st.sel = ""; rgLoad(); };
+  here.onclick = () => rgStand(node.id);
   acts.append(here);
   box.append(acts);
   return box;
@@ -962,7 +1101,7 @@ function rgEmpty(data) {
   const box = el("div", "rg-empty");
   const totals = data.totals || {};
   box.append(el("div", "rg-empty-head",
-    totals.edges ? "nothing to draw from here" : "the graph has no edges yet"));
+    rgInit().busy ? "updating graph…" : totals.edges ? "nothing to draw from here" : "the graph has no edges yet"));
   (data.missing || []).forEach((m) => box.append(el("div", "rg-empty-do", m)));
   const acts = el("div", "rg-acts");
   const people = el("button", "pill light", "open PEOPLE →");
@@ -993,3 +1132,18 @@ function rgFold(data) {
   };
   return box;
 }
+
+// The graph owns slash while visible, before the app-wide command search.
+// Text fields and modified shortcuts retain their usual meaning.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "/" || ev.ctrlKey || ev.metaKey || ev.altKey || ev.defaultPrevented) return;
+  if (ev.target.closest && ev.target.closest("input, textarea, select, [contenteditable=true]")) return;
+  const stage = document.querySelector(".rg-stage");
+  if (!stage || !stage.getClientRects().length) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  rgOpts.panel = true;
+  rgSaveOpts();
+  if (recPaint) recPaint();
+  document.querySelector(".rg-search")?.focus();
+}, true);
