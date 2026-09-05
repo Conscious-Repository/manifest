@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"manifest/approvals"
 	"manifest/graph"
 	"manifest/recruiting"
 )
@@ -20,13 +21,15 @@ const Version = "2.0.0"
 
 type Object map[string]any
 type Adapter struct {
-	Vault, Root   string
-	Data, System  string
-	writeApproved func(string, []byte) error
-	Records       *recruiting.Store
-	Runs          *recruiting.RunStore
-	Graph         *graph.Store
-	Tools         []*mcp.Tool
+	Conversation, Turn string // trusted per-process chat context from the runner
+	Approvals          *approvals.Store
+	Vault, Root        string
+	Data, System       string
+	writeApproved      func(string, []byte) error
+	Records            *recruiting.Store
+	Runs               *recruiting.RunStore
+	Graph              *graph.Store
+	Tools              []*mcp.Tool
 }
 
 func New(vault, data, system string) (*Adapter, error) {
@@ -153,6 +156,16 @@ func addContext[I any](a *Adapter, s *mcp.Server, name, description string, f fu
 	mcp.AddTool(s, t, func(ctx context.Context, req *mcp.CallToolRequest, in I) (*mcp.CallToolResult, any, error) {
 		var before map[string]string
 		if strings.HasSuffix(name, ".prepare") {
+			if a.Conversation != "" {
+				var bound Object
+				if err := decode(in, &bound); err != nil {
+					return nil, nil, err
+				}
+				bound["conversation"], bound["turn"] = a.Conversation, a.Turn
+				if err := decode(bound, &in); err != nil {
+					return nil, nil, err
+				}
+			}
 			if previous, err := a.previousRequest(name, in); err != nil {
 				return nil, nil, err
 			} else if previous != nil {

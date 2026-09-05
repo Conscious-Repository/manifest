@@ -47,6 +47,7 @@ function apprPaintSel() {
 // per-type guards, current-vs-proposed diff, and Confirm/Reject inline
 // (approvals-move-to-feed plan; formerly the SPIRITS approvals panel card).
 function approvalCardEl(a) {
+  if (a.type === "manifest-operation") return manifestOperationCard({ proposal: a, record: a.operation || { status: "unavailable" } });
   const actionable = !!a.applyPath;
   const isResolve = a.type === "aion-resolve" || a.type === "re-resolve"; // closed-loop: flip one backlog line
   const isRe = a.type === "re-backlog" || a.type === "re-resolve"; // the real-estate domain twins (````re fence)
@@ -1163,6 +1164,7 @@ async function postApprovalDecision(id, kind, body) {
     setSaveState("error");
     showToast("Couldn't reach the server — " + String(e.message || e).slice(0, 100), null, "error");
   }
+  if (typeof chatOpenId !== "undefined" && chatOpenId && chatAgent) refetchChatSession(chatOpenId);
   loadFeed(); // approvals live in FEED — the decided card resolves in place
 }
 
@@ -1638,4 +1640,73 @@ function buildGoalsEditor(a) {
     wrap.append(collapsibleBlock(diff, diff.childElementCount));
   }
   return wrap;
+}
+
+// Both chat and FEED render this projection and dispatch to the same inbox.
+function manifestOperationCard(item) {
+  const o = item.record, a = item.proposal;
+  const p = o.arguments || {}, result = o.result || {};
+  const target = (p.candidate || p.person || p.suppression || {}).name || (p.draft && p.draft.draft && p.draft.draft.name) || "";
+  const card = el("article", "feed-card chat-operation");
+  card.dataset.approvalId = a.id;
+  card.append(el("strong", "", a.action + (target ? " · " + target : "") + " · " + o.status));
+  card.append(el("p", "", o.policy === "standing_authorization" ? "Standing authorization · no approval needed" : "Human approval · shared with FEED"));
+  if (p.edge) {
+    const edge = p.edge;
+    card.append(el("p", "", (edge.from.kind + ":" + edge.from.id) + " → " + edge.kind + " → " + (edge.to.kind + ":" + edge.to.id)));
+    card.append(el("p", "", (edge.inferred ? "Inferred" : "Observed") + " · " + (edge.basis || edge.evidence || "")));
+  }
+  const detail = el("details", "");
+  detail.append(el("summary", "", "Exact action, evidence and proposed content"));
+  detail.append(renderMarkdown(a.body || "", "", { readOnly: true }));
+  card.append(detail);
+  Object.entries(o.vaultFiles || {}).forEach(([path, content]) => {
+    const file = el("details", ""); file.append(el("summary", "", path));
+    if (o.beforeFiles && Object.hasOwn(o.beforeFiles, path)) file.append(renderLineDiff(o.beforeFiles[path], content));
+    else file.append(el("pre", "", content));
+    card.append(file);
+  });
+  if (o.error) card.append(el("p", "", o.error));
+  const nav = (label, act) => { const b = el("button", "pill light", label); b.onclick = act; card.append(b); };
+  if (p.runId || result.runId) nav("Inspect draft / take over", () => {
+    const run = result.runId || p.runId, draft = result.draftId || p.draftId;
+    recRunOpen[run] = true; recShowCleared = true;
+    if (draft) recDraftOpen[run + "#" + draft] = true;
+    manifestRevealTarget = draft ? run + "#" + draft : run;
+    recCache = null; recNav("sources");
+  });
+  if (p.candidate && (result.objectRefs || []).some(ref => ref.domain === "recruiting" && ref.id === p.candidate.id)) nav("Open candidate", () => { recSel = p.candidate.id; recCache = null; recNav("board"); });
+  if (p.person && p.person.id) nav("Open network person", () => {
+    const st = rgInit(); st.center = p.person.id; st.sel = p.person.id; st.data = null;
+    recCache = null; recNav("network");
+  });
+  // General graph edges have no dedicated router view. Reveal their canonical
+  // document using the existing note route; never map them into the ego graph.
+  if (p.edge) Object.keys(o.vaultFiles || {}).forEach((path) => {
+    nav("Open graph edge document", () => { location.hash = "#/note/" + encodeURIComponent(path); });
+  });
+  if (o.status === "pending_approval") {
+    [ ["Approve", "confirm"], ["Reject", "reject"] ].forEach(([label, action]) => {
+      nav(label, async () => { card.querySelectorAll("button").forEach(b => b.disabled = true); await postApprovalDecision(a.id, action, {}); });
+    });
+  }
+  if (o.status === "stale") nav("Regenerate preview", async () => {
+    try {
+      const r = await fetch("/api/manifest/operations/" + encodeURIComponent(o.operationId) + "/regenerate", { method: "POST" });
+      if (!r.ok) showToast(await r.text(), null, "error");
+    } catch (e) { showToast("Couldn't regenerate — " + e.message, null, "error"); }
+    if (chatOpenId && chatAgent) refetchChatSession(chatOpenId);
+    loadFeed();
+  });
+  if (o.result) {
+    const receipt = el("details", ""); receipt.append(el("summary", "", "Result · " + o.status));
+    receipt.append(el("pre", "", JSON.stringify(o.result, null, 2))); card.append(receipt);
+  }
+  return card;
+}
+let manifestRevealTarget = "";
+function manifestRevealElement(node, id) {
+  if (manifestRevealTarget !== id) return;
+  manifestRevealTarget = "";
+  requestAnimationFrame(() => { node.scrollIntoView({ block: "center" }); node.tabIndex = -1; node.focus({ preventScroll: true }); });
 }

@@ -38,6 +38,7 @@ import (
 	"manifest/goals"
 	"manifest/graph"
 	"manifest/ledger"
+	"manifest/manifestmcp"
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
@@ -65,9 +66,11 @@ type Server struct {
 	// mints/validates the token the headless engine reads. Nilable.
 	gmail *gmailauth.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
-	approvals *approvals.Store // the PRIMARY inbox (harness federation: first entry)
-	vault     *vaultwriter.Writer
-	spirits   *spirits.Store // the PRIMARY harness (write surfaces live here)
+	manifestOperations *manifestmcp.Adapter
+	operationMu        sync.Mutex
+	approvals          *approvals.Store // the PRIMARY inbox (harness federation: first entry)
+	vault              *vaultwriter.Writer
+	spirits            *spirits.Store // the PRIMARY harness (write surfaces live here)
 	// harnessList is the federation (big-change Phase 4), primary first —
 	// runs/queued/feed/approvals merge across it, tagged by name.
 	harnessList []Harness
@@ -829,6 +832,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/deals", s.handleDealCreate)
 	// pass 5: the page-side measurables editor (frontmatter stays the record)
 	mux.HandleFunc("POST /api/properties/{slug}/measurables", s.handlePropertyMeasurables)
+	mux.HandleFunc("POST /api/manifest/operations/{id}/regenerate", s.handleOperationRegenerate)
 	mux.HandleFunc("POST /api/spirits/approvals/{id}/recontract", s.handleApprovalReContract)
 	mux.HandleFunc("POST /api/properties/{slug}/receipt", s.handleReceiptUpload)
 	mux.HandleFunc("POST /api/deals/{slug}/export-underwrite", s.handleDealExportUnderwrite)

@@ -1735,6 +1735,7 @@ function recRunCard(run) {
   const c = run.counts || {};
   const open = !!recRunOpen[run.id];
   const card = el("article", "rec-run" + (run.pinned ? " pinned" : ""));
+  manifestRevealElement(card, run.id);
 
   const head = el("div", "rec-run-head");
   const toggle = el("button", "rec-run-toggle");
@@ -2145,6 +2146,7 @@ function recDraftCard(run, d) {
   const open = !!recDraftOpen[key];
   const later = d.status === "new" && !!recDraftLater[key];
   const card = el("div", "rec-draft " + d.status + (later ? " later" : ""));
+  manifestRevealElement(card, key);
 
   // 1 · identity
   const head = el("div", "rec-draft-head");

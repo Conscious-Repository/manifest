@@ -6,8 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"manifest/approvals"
 	"manifest/manifestmcp"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -37,7 +39,10 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	var c struct{ VaultPath, DataDir, SystemRoot string }
+	var c struct {
+		VaultPath, DataDir, SystemRoot, ExcaliburPath string
+		Harnesses                                     []struct{ Path string }
+	}
 	if err = json.Unmarshal(b, &c); err != nil {
 		fail(err)
 	}
@@ -50,6 +55,14 @@ func main() {
 	a, err := manifestmcp.New(c.VaultPath, c.DataDir, c.SystemRoot)
 	if err != nil {
 		fail(err)
+	}
+	a.Conversation, a.Turn = os.Getenv("MANIFEST_CONVERSATION"), os.Getenv("MANIFEST_TURN")
+	harness := c.ExcaliburPath
+	if len(c.Harnesses) > 0 {
+		harness = c.Harnesses[0].Path
+	}
+	if harness != "" {
+		a.Approvals = approvals.NewStore(filepath.Join(harness, "artifacts"))
 	}
 	if *decide != "" {
 		result, err := a.Decide(*decide, *decision, "owner:local")

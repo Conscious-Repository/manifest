@@ -32,6 +32,8 @@ type Transition struct {
 }
 
 type OperationRecord struct {
+	BeforeFiles     map[string]string `json:"beforeFiles,omitempty"`
+	Input           json.RawMessage   `json:"input,omitempty"`
 	History         []Transition      `json:"history"`
 	DecisionActor   string            `json:"decisionActor,omitempty"`
 	RequestKey      string            `json:"idempotencyKey,omitempty"`
@@ -230,9 +232,21 @@ func (a *Adapter) persist(out Object, args any, preparedSnapshot ...map[string]s
 	if file, ok := p["file"].(string); ok {
 		files[file] = p["content"].(string)
 	}
+	beforeFiles := map[string]string{}
+	for rel := range files {
+		b, e := os.ReadFile(filepath.Join(a.Vault, rel))
+		if e != nil && !os.IsNotExist(e) {
+			return nil, e
+		}
+		if want, exists := expected[rel]; exists && revision(string(b)) != want {
+			return nil, fmt.Errorf("target changed before preview capture")
+		}
+		beforeFiles[rel] = string(b)
+	}
+	inputBytes, _ := json.Marshal(args)
 	argBytes, _ := json.Marshal(p)
 	payloadBytes, _ := json.Marshal(payload)
-	o := &OperationRecord{ID: id, RequestKey: context.IdempotencyKey, RequestRevision: revision(args), SchemaVersion: 1, ToolVersion: Version, Tool: payload["tool"].(string), Agent: "agent:alfred", Conversation: context.Conversation, Turn: context.Turn, Arguments: argBytes, Payload: payloadBytes, Policy: out["policy"].(string), Status: "pending_approval", CreatedAt: time.Now().UTC(), Expected: expected, Files: files}
+	o := &OperationRecord{BeforeFiles: beforeFiles, Input: inputBytes, ID: id, RequestKey: context.IdempotencyKey, RequestRevision: revision(args), SchemaVersion: 1, ToolVersion: Version, Tool: payload["tool"].(string), Agent: "agent:alfred", Conversation: context.Conversation, Turn: context.Turn, Arguments: argBytes, Payload: payloadBytes, Policy: out["policy"].(string), Status: "pending_approval", CreatedAt: time.Now().UTC(), Expected: expected, Files: files}
 	if o.Policy == "standing_authorization" {
 		o.Status = "prepared"
 	}
@@ -241,6 +255,9 @@ func (a *Adapter) persist(out Object, args any, preparedSnapshot ...map[string]s
 		o.Result = p
 	}
 	if err = a.saveOperation(o); err != nil {
+		return nil, err
+	}
+	if err = a.FileProposal(o); err != nil {
 		return nil, err
 	}
 	r := receipt(o)

@@ -267,3 +267,19 @@ printf 'PLAN\n1. do it'
 		t.Errorf("session id not captured: %q", res.SessionID)
 	}
 }
+
+func TestManifestTurnContextIsBoundToChild(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "hermes")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s/%s' \"$MANIFEST_CONVERSATION\" \"$MANIFEST_TURN\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(Config{Enabled: true, Bin: bin})
+	result, err := r.Run(context.Background(), Request{Prompt: "hi", ManifestConversation: "chat-1", ManifestTurn: "3"})
+	if err != nil || result.Reply != "chat-1/3" {
+		t.Fatalf("bound context: %+v %v", result, err)
+	}
+	result, err = r.Run(context.Background(), Request{Prompt: "another turn"})
+	if err != nil || result.Reply != "/" {
+		t.Fatalf("context leaked into unrelated turn: %+v %v", result, err)
+	}
+}

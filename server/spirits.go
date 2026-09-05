@@ -102,6 +102,7 @@ func (s *Server) handleSpiritsRunPrompt(w http.ResponseWriter, r *http.Request) 
 // apply-path is inside the type's allow-list (Confirm disabled otherwise) and
 // the target's CURRENT content for the current-vs-proposed diff.
 type approvalRow struct {
+	Operation any `json:"operation,omitempty"`
 	approvals.Proposal
 	Allowed bool   `json:"allowed"`
 	Current string `json:"current"`
@@ -138,6 +139,7 @@ type approvalRow struct {
 // approvalRows returns the enriched pending approvals, skipping any types in
 // exclude. Shared by the SPIRITS endpoint and the FEED (the approvals inbox).
 func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
+	s.syncManifestOperations()
 	rows := []approvalRow{}
 	for _, h := range s.eachHarness() {
 		if h.Approvals == nil {
@@ -160,6 +162,15 @@ func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []appro
 		rr := approvalRow{Proposal: p, Harness: s.harnessTag(h.Name)}
 		if p.ApplyPath != "" {
 			switch p.Type {
+			case approvals.TypeManifestOperation:
+				rr.Allowed = s.manifestOperations != nil
+				if s.manifestOperations != nil {
+					if out, err := s.manifestOperations.Operation(p.ApplyPath); err == nil {
+						rr.Operation = out["record"]
+					} else {
+						rr.Allowed = false
+					}
+				}
 			case approvals.TypeCreateVaultNote:
 				// A new vault-root note: allowed by its own path rule, no current
 				// content (the diff renders as an all-added new file).

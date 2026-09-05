@@ -112,9 +112,12 @@ func (r *Runner) Enabled() bool { return r != nil && r.cfg.Enabled && r.cfg.Bin 
 // `-z` turn is always a fresh Hermes session (see the package comment), so the
 // caller composes whatever context the turn needs into Prompt.
 type Request struct {
-	Prompt   string // the composed work-order / message text
-	Model    string // -m override for this turn; "" → the runner default
-	Toolsets string // -t override for this turn; "" → the runner default
+	// Bound locally for child Manifest MCP processes; never model-selected.
+	ManifestConversation string
+	ManifestTurn         string
+	Prompt               string // the composed work-order / message text
+	Model                string // -m override for this turn; "" → the runner default
+	Toolsets             string // -t override for this turn; "" → the runner default
 	// Skills the turn must load before it starts (comma-separated skill names,
 	// e.g. a cron job's `skills`). `-z` has no preload flag, so the runner
 	// names them at the top of the prompt and Hermes loads them on demand.
@@ -223,6 +226,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, r.cfg.Bin, r.buildArgs(req, usageFile)...)
+	cmd.Env = append(os.Environ(), "MANIFEST_CONVERSATION="+req.ManifestConversation, "MANIFEST_TURN="+req.ManifestTurn)
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb

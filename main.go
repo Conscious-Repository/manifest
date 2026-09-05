@@ -41,6 +41,7 @@ import (
 	"manifest/graph"
 	"manifest/hermes"
 	"manifest/ledger"
+	"manifest/manifestmcp"
 	"manifest/portals"
 	"manifest/reading"
 	"manifest/realestate"
@@ -795,6 +796,11 @@ func main() {
 			hs = append(hs, server.Harness{Name: ref.Name, Surface: ref.Surface, Spirits: sp, Approvals: ap})
 		}
 		srv.UseHarnesses(hs) // sets the primary spirits+approvals fields too
+		if adapter, err := manifestmcp.New(cfg.VaultPath, cfg.DataDir, cfg.SystemRoot); err != nil {
+			log.Fatalf("manifest operations: %v", err)
+		} else {
+			srv.UseManifestOperations(adapter)
+		}
 		// Agents chat (agent-chat plan Phase 1, Q7): Alfred/profile sessions
 		// live in the PRIMARY harness tree beside the spirit sessions so they
 		// sync across devices — artifacts/chats/<agent>/<id>.md.

@@ -67,6 +67,9 @@ const TypeCreateVaultNote = "create-vault-note"
 // errands the day it does.
 const TypeRunErrand = "run-errand"
 
+// TypeManifestOperation dispatches a durable MCP operation through the owner executor.
+const TypeManifestOperation = "manifest-operation"
+
 var statuses = []string{"pending", "approved", "rejected"}
 
 // vaultNoteRe is the ONLY apply-path shape a create-vault-note may write:
@@ -78,14 +81,15 @@ var vaultNoteRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} [^/\\]+\.md$`)
 // vaultRoot is where "create-vault-note" proposals write. "" disables the
 // respective applies.
 type Store struct {
-	dir       string
-	root      string
-	vaultRoot string
-	vw        *vaultwriter.Writer // for guarded vault record writes (aion/re appends); nil disables them
-	aionCap   string              // approved-proposal capability for aion applies; "" disables them
-	reCap     string              // approved-proposal capability for real-estate applies; "" disables them
-	goalsCap  string              // approved-proposal capability for goals placements; "" disables them
-	noteCap   string              // approved-proposal capability for log/ dated-note creates + appends; "" refuses them once vw is wired
+	operationDecision func(string, string) error
+	dir               string
+	root              string
+	vaultRoot         string
+	vw                *vaultwriter.Writer // for guarded vault record writes (aion/re appends); nil disables them
+	aionCap           string              // approved-proposal capability for aion applies; "" disables them
+	reCap             string              // approved-proposal capability for real-estate applies; "" disables them
+	goalsCap          string              // approved-proposal capability for goals placements; "" disables them
+	noteCap           string              // approved-proposal capability for log/ dated-note creates + appends; "" refuses them once vw is wired
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -368,6 +372,15 @@ func (s *Store) confirm(id string, e ConfirmEdits) error {
 	if err != nil {
 		return err
 	}
+	if p.Type == TypeManifestOperation {
+		if s.operationDecision == nil {
+			return errors.New("operation executor unavailable")
+		}
+		if err := s.operationDecision(p.ApplyPath, "approved"); err != nil {
+			return err
+		}
+		return s.Settle(id, "approved")
+	}
 	if e.EditAttendees && p.Type == TypeCreateVaultNote {
 		p.Proposed = replaceAttendeeLine(p.Proposed, e.Attendees)
 		p.Body = rebuildProposedBody(p.Body, p.Proposed)
@@ -639,9 +652,29 @@ func rawFrontmatter(content string) string {
 	return content[4:idx]
 }
 
-// Reject records rejection (with an optional reason appended): pending → rejected.
-// It applies NOTHING — an actionable proposal's target file is left untouched.
-func (s *Store) Reject(id, reason string) error { return s.move(id, "rejected", reason) }
+// WithOperationDecision wires the owner-only in-process operation dispatcher.
+// Without it, operation decisions fail closed and never enter file application.
+func (s *Store) WithOperationDecision(f func(string, string) error) *Store {
+	s.operationDecision = f
+	return s
+}
+
+// Reject records rejection without applying domain content.
+func (s *Store) Reject(id, reason string) error {
+	p, err := s.LoadPending(id)
+	if err != nil {
+		return err
+	}
+	if p.Type == TypeManifestOperation {
+		if s.operationDecision == nil {
+			return errors.New("operation executor unavailable")
+		}
+		if err := s.operationDecision(p.ApplyPath, "rejected"); err != nil {
+			return err
+		}
+	}
+	return s.move(id, "rejected", reason)
+}
 
 // Settle archives a pending card whose question was answered SOMEWHERE ELSE —
 // a portal proposal the target decided before the owner clicked. The card was

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -338,7 +339,7 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 	if queued == nil {
 		queued = []string{}
 	}
-	writeJSON(w, map[string]any{"session": sess, "body": body, "queued": queued})
+	writeJSON(w, map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID)})
 }
 
 // POST /api/agents/chat/{agent}/sessions/{id}/messages {text, files?} — starts
@@ -485,10 +486,12 @@ func (s *Server) runAgentChatTurn(agent, id string) {
 	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
 	prompt := s.composeAgentChatPrompt(agent, sess, body)
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
-		Prompt:   prompt,
-		Model:    sess.Model,
-		Toolsets: s.hermes.readTools, // chat turns are read-only (vault gate, §3.6)
-		Profile:  sess.Profile,
+		ManifestConversation: id,
+		ManifestTurn:         fmt.Sprint(sess.Turns),
+		Prompt:               prompt,
+		Model:                sess.Model,
+		Toolsets:             s.hermes.readTools, // chat turns are read-only (vault gate, §3.6)
+		Profile:              sess.Profile,
 	})
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
@@ -544,6 +547,11 @@ func (s *Server) composeAgentChatPrompt(agent string, sess agentchat.Session, bo
 	b.WriteString("Reply ONLY to the last user message, as yourself, in plain markdown. Do not repeat or quote the transcript, do not prefix your reply with a role label.\n")
 	if start > 0 {
 		fmt.Fprintf(&b, "(%d earlier turn(s) omitted for length.)\n", start)
+	}
+	fmt.Fprintf(&b, "\nManifest MCP: use conversation=%q and turn=%q in every prepare call. Source runs have standing authorization: call operation.execute after preparing. True world changes require owner approval via the shared inline/FEED card. Never claim completion before a succeeded receipt.\n", sess.ID, fmt.Sprint(sess.Turns))
+	if s.manifestOperations != nil {
+		current, _ := json.Marshal(s.operationContext(sess.ID))
+		fmt.Fprintf(&b, "Current operation receipts (re-read targets before continuing; stale operations require fresh preparation): %s\n", current)
 	}
 	b.WriteString("\nCONVERSATION:\n")
 	for _, t := range kept {

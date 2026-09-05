@@ -1100,6 +1100,7 @@ function chatPaintTurns(host, turns, ctx) {
     }
     const wrap = el("div", "chat-turn chat-spirit");
     chatTurnBlocks(t).forEach((b) => wrap.append(chatBlockEl(b)));
+    if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
     const foot = el("div", "chat-turn-foot");
     // when the turn landed — a conversation with no times reads as stalled
     // while Alfred's turn takes minutes
@@ -1119,19 +1120,23 @@ function chatPaintTurns(host, turns, ctx) {
 function renderChatTranscript(d) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
+  const keepPosition = chatCurSession && chatCurSession.id === d.session.id && !chatStick;
+  const previousY = host.scrollTop;
   bindChatScroll();
   chatTermLeave();
   host.innerHTML = "";
   const s = d.session;
   chatCurSession = s;
-  chatLastUpdated = s.updated + "|" + s.status + "|" + (d.queued || []).length;
+  chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();
   host.append(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, parseChatTurns(d.body || ""), chatAgent ? { who, promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  chatPaintTurns(host, parseChatTurns(d.body || ""), chatAgent ? { who, operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
+  const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
+  (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
   (d.queued || []).forEach((q) => {
     const b = chatUserTurn(q);
     b.classList.add("chat-queued");
@@ -1146,7 +1151,8 @@ function renderChatTranscript(d) {
   if (s.status === "thinking" && !chatLive) {
     area.append(el("div", "chat-thinking", portal ? "✦ order spooled — " + who + " answers when its run lands…" : "✦ thinking…"));
   }
-  chatStick = true;
+  chatStick = !keepPosition;
+  if (keepPosition) host.scrollTop = previousY;
   chatPin();
 }
 
@@ -1358,8 +1364,11 @@ function renderChatComposer(session) {
 // Portal sections poll slower (4s, the portals' own cadence): every read
 // there runs the server's chatSweep over the agent's run reports.
 
+function chatTranscriptSignature(d) {
+  return d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result]));
+}
 function ensureChatPoll(session, queued) {
-  const active = session && (session.status === "thinking" || queued > 0);
+  const active = session && (session.status === "thinking" || queued > 0 || (chatAgent && !chatIsPortal()));
   if (!active) { if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; } return; }
   if (chatPollTimer) return;
   const every = chatIsPortal() ? 4000 : 1500;
@@ -1373,13 +1382,13 @@ function ensureChatPoll(session, queued) {
       if (!res.ok) return;
       d = await res.json();
     } catch (e) { return; }
-    const sig = d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length;
+    const sig = chatTranscriptSignature(d);
     if (sig !== chatLastUpdated) {
       renderChatTranscript(d);
       renderChatComposer(d.session);
       loadChatSessions().then(renderChatRail);
     }
-    if (d.session.status !== "thinking" && !(d.queued || []).length) {
+    if (d.session.status !== "thinking" && !(d.queued || []).length && !(chatAgent && !chatIsPortal())) {
       clearInterval(chatPollTimer); chatPollTimer = null;
     }
   }, every);
