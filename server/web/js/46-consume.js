@@ -218,6 +218,7 @@ function renderConsume() {
   if (!consumeIsActiveView()) return; // the chip is off — FEED owns the list now
   const host = els.feedList; host.innerHTML = "";
   els.feedSignals.innerHTML = "";
+  renderApprovalInspector(); // release the proposal column/sheet after replacing its cards
 
   host.append(consumeHeader());
   if (consumeManageOpen) host.append(consumeManagePanel());

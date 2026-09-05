@@ -164,6 +164,7 @@ function buildRail() {
       a.className = "rail-item";
       a.href = it.hash;
       a.title = it.label;
+      a.setAttribute("aria-label", it.label);
       const count = el("span", "rail-count");
       a.append(el("span", "rail-glyph", it.glyph), el("span", "rail-label", it.label), count);
       if (it.key === "feed") { count.id = "feedNavBadge"; count.hidden = true; els.feedNavBadge = count; }
@@ -176,11 +177,19 @@ function buildRail() {
 
 function setRailActive() {
   const active = sectionOf(_curHash);
-  Object.entries(railItems).forEach(([key, r]) => r.a.classList.toggle("active", key === active));
+  Object.entries(railItems).forEach(([key, r]) => {
+    r.a.classList.toggle("active", key === active);
+    if (key === active) r.a.setAttribute("aria-current", "page");
+    else r.a.removeAttribute("aria-current");
+  });
   // chat lives BEHIND THE LOGO (todo-panel plan D7): the brand is its only
   // nav entry, so it alone lights up on #/chat — no rail item does.
   const brand = document.getElementById("railBrand");
-  if (brand) brand.classList.toggle("brand-active", active === "chat");
+  if (brand) {
+    brand.classList.toggle("brand-active", active === "chat");
+    if (active === "chat") brand.setAttribute("aria-current", "page");
+    else brand.removeAttribute("aria-current");
+  }
 }
 
 function railSetCount(key, n, attn) {
@@ -292,6 +301,9 @@ function setRailCollapsed(on, persist) {
   els.appShell.classList.toggle("rail-collapsed", on);
   els.railCollapse.textContent = on ? "››" : "‹‹";
   els.railCollapse.title = on ? "Expand the rail" : "Collapse the rail";
+  els.railCollapse.setAttribute("aria-label", els.railCollapse.title);
+  els.railCollapse.setAttribute("aria-expanded", String(!on));
+  els.railCollapse.setAttribute("aria-controls", "railGroups");
   if (persist) localStorage.setItem("manifest.rail.collapsed", on ? "1" : "0");
 }
 function railPref() { return localStorage.getItem("manifest.rail.collapsed") === "1"; }

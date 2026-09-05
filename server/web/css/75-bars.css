@@ -10,11 +10,12 @@
 .cmdbar { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-start; justify-content: center; }
 .cmdbar-backdrop { position: absolute; inset: 0; background: var(--scrim); }
 .cmdbar-card { position: relative; margin-top: 12vh; width: 560px; max-width: 92vw; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); overflow: hidden; }
-.cmdbar-input { width: 100%; border: none; border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: var(--fs-xl); padding: var(--sp-7) var(--sp-7); outline: none; color: var(--text); box-sizing: border-box; }
+.cmdbar-input { background: var(--bg); width: 100%; border: none; border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: var(--fs-xl); padding: var(--sp-7) 48px var(--sp-7) var(--sp-7); outline: none; color: var(--text); box-sizing: border-box; }
 .cmdbar-results { max-height: 320px; overflow-y: auto; }
 .cmd-result { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-6); padding: var(--sp-5) var(--sp-7); cursor: pointer; }
-.cmd-result.sel, .cmd-result:hover { background: var(--hover); }
-.cmd-name { font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
+.cmd-result:hover { background: var(--hover); }
+.cmd-result.sel { background: var(--base-20); box-shadow: inset 2px 0 var(--accent); }
+.cmd-name { min-width: 0; overflow-wrap: anywhere; font-family: var(--sans); font-size: var(--fs-lg); color: var(--text); }
 .cmd-refs { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
 .cmdbar-cardview { border-top: 1px solid var(--line); padding: var(--sp-7) var(--sp-7); }
 
@@ -26,7 +27,7 @@
 .cast-desc { font-family: var(--sans); font-size: var(--fs-xs); color: var(--muted); flex: 1 1 auto; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .castbar-arg { border-top: 1px solid var(--line); padding: var(--sp-6) var(--sp-7); }
 .castbar-arg-label { font-family: var(--sans); font-size: var(--fs-md); font-weight: 500; color: var(--text); margin-bottom: var(--sp-4); }
-.castbar-arg-input { width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
+.castbar-arg-input { background: var(--bg); width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
 .castbar-arg-input:focus { border-color: var(--blue); }
 .castbar-arg-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-6); margin-top: var(--sp-5); }
 .castbar-arg-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
@@ -56,6 +57,7 @@
 .rawbar-close { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
 .rawbar-close:hover { color: var(--base-100); }
 .rawbar-area {
+  background: var(--bg);
   flex: 1; min-height: 0; width: 100%; box-sizing: border-box;
   border: none; outline: none; resize: none;
   font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.7;
@@ -88,3 +90,6 @@
 .mic-btn:hover { color: var(--base-100); border-color: var(--base-40); }
 .mic-btn.recording { color: var(--danger); border-color: var(--danger); animation: mic-pulse 1.2s ease-in-out infinite; }
 @keyframes mic-pulse { 50% { opacity: 0.45; } }
+
+.palette-close { position: absolute; top: var(--sp-5); right: var(--sp-5); min-width: var(--control-height); min-height: var(--control-height); border: 0; background: none; color: var(--base-60); font-size: var(--fs-xl); cursor: pointer; }
+:root[data-theme="jarvis"] .pill.castbar-cast-btn:hover { color: var(--on-accent); border-color: var(--blue); }

@@ -97,14 +97,15 @@ a.portal-line-text:hover { color: var(--blue); text-decoration: underline; }
    with its inspector docked right (92-aion.css .aion-backlog is the source of
    this geometry — same widths, same sticky, same 1100px cut-off) */
 .feed-split { display: flex; align-items: flex-start; gap: 0; }
-.feed-col { flex: 1; min-width: 0; padding-right: var(--sp-8); }
+.feed-col { flex: 1; min-width: 0; }
+.feed-split.has-inspector > .feed-col { padding-right: var(--sp-8); }
 .feed-inspector {
   width: 300px; flex: none;
   border-left: 1px solid var(--base-25); background: var(--base-05);
   position: sticky; top: 0; align-self: flex-start;
   padding: var(--sp-6) var(--sp-7); min-height: 220px;
 }
-@media (max-width: 1100px) { .feed-inspector { display: none; } .feed-col { padding-right: 0; } }
+@media (max-width: 1100px) { .feed-inspector { display: none; } .feed-split.has-inspector > .feed-col { padding-right: 0; } }
 
 /* every proposed record is clickable — it opens in the rail to be corrected
    before Confirm writes it */

@@ -1,8 +1,8 @@
 # Manifest UI Conventions
 
 The dashboard's design contract. This file is the source of truth for the look
-and feel — with no linter or CI, it *is* the enforcement surface: what review
-checks against and what the next tab is built from. AION portal excluded (it
+and feel. Review checks this contract alongside the existing Go UI guard
+tests and browser checks; the tests do not replace visual or keyboard review. AION portal excluded (it
 keeps its own conventions in `server/web/portal/`).
 
 Doctrine (ARCHITECTURE.md §1): **manifest-quiet everywhere** — mono labels,
@@ -15,11 +15,12 @@ first.**
 
 ## The one rule
 
-**No raw hex or raw px in a tab's CSS.** Every color, size, and space comes from
-a token defined in `css/00-core.css`. The token file is the *only* place literals
-live. If you need a value the scale doesn't have, add it to the scale — don't
-inline it. (Exceptions: `box-shadow` offsets, and a color sitting on an accent
-fill or a photo.)
+**Use shared tokens for color, typography, spacing, control sizing, and panel roles.**
+The token file is `css/00-core.css`. Introduce reusable values there before
+using them across surfaces. Literal geometry is allowed for borders, breakpoints,
+viewport constraints, and a component's unique layout; it must not create an
+alternative spacing/type/color scale. Existing literals are migration debt,
+not precedent. Accent fills always pair with `--on-accent`, including hover.
 
 ---
 
@@ -35,6 +36,11 @@ fill or a photo.)
   `--good` (green), and `--over` (money-over-budget red — its own token). These
   are the *only* non-neutral, non-accent colors allowed. Reach for a status token,
   never a fresh hex.
+
+The values above describe the default theme. Jarvis overrides these **same roles**
+under `:root[data-theme="jarvis"]`: navy surfaces, cyan active states, the existing
+grid, hairlines, and restrained glow. A new feature gets both themes through the
+roles; it must not embed its own dark palette or replace the Jarvis treatment.
 
 ### Type — `--fs-*` scale
 `--fs-3xs 8 · --fs-2xs 10 · --fs-xs 11 · --fs-sm 12 · --fs-md 13 · --fs-lg 14 ·
@@ -234,3 +240,75 @@ Two corollaries from the same pass:
 *This contract systematizes discipline, not a frozen look. The tokens are the
 vocabulary; the aesthetic they express stays open to refinement. When you change
 a token value, you restyle the whole platform at once — which is the point.*
+
+
+## Interaction contract (audit, 2026-09-05)
+
+- **Native controls first.** Actions are buttons; destinations are links. Do not
+  make a clickable `div` when a button works. Shared `collapsibleSection` supplies
+  Enter/Space behavior, `aria-expanded`, and an associated body. Icon-only and
+  collapsed-rail controls retain explicit accessible names; navigation exposes
+  `aria-current="page"`.
+- **Focus is visible.** The shared inset accent outline appears for keyboard
+  focus, including inside clipped panels. Do not remove it in tab CSS. Selection
+  uses a neutral surface plus a shape/border cue where appropriate; color alone
+  must not carry essential state.
+- **Dense does not mean tiny targets.** `--control-min` is 24px for desktop
+  controls; `--control-height` is 28px for normal compact controls. Phone controls
+  inherit the existing `--touch` / `--touch-sm` rules in `95-mobile.css`. Small
+  text is acceptable for secondary metadata; essential instructions need readable
+  body text. This is a design target, not a claim that every legacy control passes.
+- **Modal lifecycle is shared.** Search and Cast use `containDialogFocus` to
+  contain Tab/Shift+Tab, make the underlying page inert, and return focus on close.
+  Include an accessible title, visible close button, and Escape behavior. Nested
+  stages may use Escape to go back first. Clean up before hiding/removing; do not
+  attach a modal lifecycle to an ordinary inspector or persistent workspace pane.
+- **Palette results are one interaction model.** Arrow keys reach every listed
+  command, including task capture; selected results stay in view and expose their
+  state to assistive technology. Enter acts on the marked row. Opening/closing a
+  palette must not let a late request overwrite the next session.
+- **Report actual state.** Distinguish loading, failed loading, an empty collection,
+  and no matches. Preserve the current query when data arrives. Use a concrete
+  recovery action. Never show success until the operation is acknowledged.
+- **Respect reduced motion.** Essential progress remains readable without animation.
+  Shared CSS suppresses nonessential motion when the system requests it.
+
+## Panels and future workspaces
+
+Keep the existing shell, header, tokens, ghost controls, and shared card anatomy.
+Write / Investigate / Build / Decide are task-scoped working modes within that
+language. They do not each need a new visual system.
+
+1. One dominant work region; subordinate evidence, tools, and agent commentary.
+   An inspector appears only when the current content supports it. Avoid a
+   permanent instruction panel that consumes space but offers no action.
+2. Separate pane navigation from document controls and from external commitments.
+   Keep the next action near its evidence, with precise verbs (e.g. Draft email,
+   Review changes, Send). Preserve distinct meanings of Dismiss, Reject, Delete.
+3. Use `--page-max` / `--page-gutter` for normal pages, `--measure` for readable
+   prose, and `--inspector-w` for side inspection. Existing cockpit layouts may
+   use the available width. A multi-pane workspace must explicitly define its
+   own collapse order and scroll ownership before implementation.
+4. At narrower widths, wrap metadata and actions before compressing the main
+   content. The mobile Feed puts the title below its badges. Reuse the phone
+   sheet pattern for inspectors; do not squeeze a writing canvas between rails.
+5. Agent comments in the proposed writing panel belong to anchored annotations
+   in a subordinate margin. References open to inspectable sources; suggestions
+   are explicit accepts/dismissals. Human-authored text must remain human-authored.
+6. Review new surfaces at desktop, tablet, and phone sizes in both themes. Check
+   keyboard-only operation, long titles, loading/error/empty states, scroll and
+   focus restoration, and edits during refresh. A screenshot alone is insufficient.
+
+### Research grounding
+
+[Cantina Creative's Iron Man 3 work](https://www.cantinacreative.com/film/iron-man-3)
+is a visual reference for the Jarvis direction, not evidence of usable software.
+Our interpretation is to retain layered panels, fine geometry, and restrained
+illumination while giving the actual work the strongest hierarchy. Film HUD
+animation and ornamental telemetry should not become routine interaction costs.
+
+Behavior follows [WAI's modal dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/)
+and [WCAG's target-size guidance](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html).
+The latter specifies a 24×24 CSS-pixel minimum with exceptions including adequate
+spacing and inline links. It does not require inflating every desktop control to
+44px. See [the audit record](ui-ux-audit-2026-09-05.md) for scope and remaining debt.

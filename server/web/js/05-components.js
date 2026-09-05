@@ -246,22 +246,56 @@ function ghostInput(label, cls, onSubmit, placeholder) {
 }
 
 // ---- collapsible section: pp-section-head with a caret + collapsed summary ----
+let sectionSequence = 0;
 function collapsibleSection(host, title, summary, open) {
-  const head = el("div", "pp-section-head toggle");
+  const head = el("button", "pp-section-head toggle");
+  head.type = "button";
   const caret = el("span", "sec-caret", open ? "▾" : "▸");
+  caret.setAttribute("aria-hidden", "true");
   head.append(caret, el("span", "", title));
   const sum = el("span", "sec-summary", summary || "");
   head.append(sum);
   const body = el("div", "sec-body");
+  body.id = "section-" + (++sectionSequence);
+  head.setAttribute("aria-controls", body.id);
+  head.setAttribute("aria-expanded", String(!!open));
   body.hidden = !open;
   sum.hidden = open;
   head.onclick = () => {
     body.hidden = !body.hidden;
+    head.setAttribute("aria-expanded", String(!body.hidden));
     caret.textContent = body.hidden ? "▸" : "▾";
     sum.hidden = !body.hidden;
   };
   host.append(head, body);
   return body;
+}
+
+// Shared modal lifecycle. Keep keyboard focus inside, make the background
+// inert, and restore the invoking control without changing its scroll position.
+// Call the returned cleanup before hiding/removing the dialog.
+function containDialogFocus(root, initial) {
+  const previous = document.activeElement;
+  const siblings = [...document.body.children].filter(n => n !== root && !n.contains(root));
+  const inertBefore = siblings.map(n => n.inert);
+  siblings.forEach(n => { n.inert = true; });
+  const trap = (ev) => {
+    if (ev.key !== "Tab") return;
+    const targets = [...root.querySelectorAll('a[href], button, input, textarea, select, [tabindex]')]
+      .filter(n => !n.disabled && n.tabIndex >= 0 && n.getClientRects().length && !n.closest('[inert]'));
+    const first = targets[0], last = targets[targets.length - 1];
+    if (!first) { ev.preventDefault(); return; }
+    if (!root.contains(document.activeElement) || (ev.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+      ev.preventDefault(); (ev.shiftKey ? last : first).focus();
+    }
+  };
+  root.addEventListener("keydown", trap);
+  initial.focus();
+  return () => {
+    root.removeEventListener("keydown", trap);
+    siblings.forEach((n, i) => { n.inert = inertBefore[i]; });
+    if (previous && previous.isConnected && previous.getClientRects().length) previous.focus({ preventScroll: true });
+  };
 }
 
 // ---- money display (§11 family #6) ----

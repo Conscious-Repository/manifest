@@ -119,9 +119,9 @@
 /* ---- .cp-clickable — generic clickable-row utility (cross-tab: Contacts, FEED). */
 .cp-clickable { cursor: pointer; border-radius: var(--radius); }
 .cp-clickable:hover { background: var(--hover); }
-.filter-chip { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; color: var(--base-50); background: var(--base-00); border: 1px solid var(--base-25); border-radius: 12px; padding: var(--sp-1) var(--sp-6); cursor: pointer; text-decoration: none; }
+.filter-chip { min-height: var(--control-min); min-width: var(--control-min); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.3px; color: var(--base-50); background: var(--base-00); border: 1px solid var(--base-25); border-radius: 12px; padding: var(--sp-1) var(--sp-6); cursor: pointer; text-decoration: none; }
 .filter-chip:hover { border-color: var(--accent-soft); color: var(--accent); }
-.filter-chip.on { background: var(--base-00); border-color: var(--accent); color: var(--accent); }
+.filter-chip.on { background: var(--base-20); border-color: var(--accent); color: var(--accent); }
 .pill:disabled, .pill.disabled { opacity: 0.4; cursor: not-allowed; }
 .pill:disabled:hover { color: var(--pill-ink); }
 /* ---- reusable picker modal ---- */
@@ -164,7 +164,7 @@
 .toast-x:hover { color: var(--on-accent); }
 .toast-error { background: var(--status-danger-deep); }
 .toast-digest { background: var(--blue); }
-.pp-section-head.toggle { cursor: pointer; display: flex; align-items: baseline; gap: var(--sp-4); }
+.pp-section-head.toggle { width: 100%; border: 0; padding: 0; background: none; text-align: left; cursor: pointer; display: flex; align-items: baseline; gap: var(--sp-4); }
 .sec-caret { color: var(--icon); font-size: var(--fs-3xs); }
 .sec-summary { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); text-transform: none; letter-spacing: 0; }
 .sec-body { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-5); }
@@ -179,9 +179,9 @@
 /* ---- .agent-head / .agent-title / .agent-actions — the shared page header
    (ui-conventions.md §page). Moved here 2026-08-31 from 60-contacts.css, which
    is where every other tab picked it up from by coincidence of load order. */
-.agent-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-6); padding: var(--sp-6) 0 var(--sp-5); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
+.agent-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--sp-6); padding: var(--sp-6) 0 var(--sp-5); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-6); }
 .agent-title { font-family: var(--mono); font-size: var(--fs-md); letter-spacing: 0.08em; color: var(--ink); }
-.agent-actions { display: flex; gap: var(--sp-4); align-items: center; }
+.agent-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); align-items: center; }
 
 /* ---- linkish — the third button variant: tertiary / navigation. Text-weight,
    no chrome. Absorbs .pill-solid (moved here 2026-08-31 from 40-spirits.css,
@@ -249,3 +249,15 @@
   max-height: calc(100vh - 120px); overflow-y: auto;
 }
 @media (max-width: 1100px) { .inspector { display: none; } }
+
+/* A keyboard focus ring is a live state, not permanent panel decoration.
+   Inset keeps it visible inside clipped rows and editor panels. */
+:root :is(a, button, input, textarea, select, summary, [tabindex]):not(.xterm-helper-textarea):focus-visible {
+  outline: var(--focus-width) solid var(--accent); outline-offset: calc(-1 * var(--focus-width));
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important;
+  }
+}

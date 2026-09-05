@@ -56,17 +56,26 @@ function attachInlineLinks(input) {
 }
 
 // ---- quick-lookup command bar (⌘K / Ctrl-K anywhere) ----
-let cmdSel = -1, cmdResults = [];
+let cmdSel = -1, cmdResults = [], cmdSearchVersion = 0;
+let releaseCmdFocus = null, releaseCastFocus = null;
 function openCmdbar() {
+  if (!els.cmdbar.hidden) return;
+  if (els.castbar && !els.castbar.hidden) closeCastbar();
   els.cmdbar.hidden = false;
   els.cmdbarInput.value = "";
+  els.cmdbarInput.removeAttribute("aria-activedescendant");
   els.cmdbarResults.innerHTML = "";
   els.cmdbarCard.hidden = true;
   cmdSel = -1; cmdResults = [];
-  els.cmdbarInput.focus();
+  releaseCmdFocus = containDialogFocus(els.cmdbar, els.cmdbarInput);
   cmdSearch(""); // destinations show before a query is typed
 }
-function closeCmdbar() { els.cmdbar.hidden = true; }
+function closeCmdbar() {
+  ++cmdSearchVersion;
+  clearTimeout(cmdTimer);
+  if (releaseCmdFocus) { releaseCmdFocus(); releaseCmdFocus = null; }
+  els.cmdbar.hidden = true;
+}
 
 let cmdTimer;
 if (els.cmdbarInput) {
@@ -80,16 +89,23 @@ if (els.cmdbarInput) {
     if (e.key === "ArrowDown") { e.preventDefault(); cmdMove(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); cmdMove(-1); }
     else if (e.key === "Enter") { e.preventDefault(); if (cmdResults[cmdSel]) cmdResults[cmdSel].act(); }
-    else if (e.key === "Escape") { closeCmdbar(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeCmdbar(); }
   });
 }
 if (els.cmdbarBackdrop) els.cmdbarBackdrop.addEventListener("click", closeCmdbar);
 window.addEventListener("keydown", (e) => {
+  // A modal owns the keyboard until it closes. Do not open an unrelated
+  // floating surface behind its inert backdrop via a global shortcut.
+  if ((!els.cmdbar.hidden || (els.castbar && !els.castbar.hidden)) &&
+      (e.metaKey || e.ctrlKey) && ["j", "i", "/"].includes(e.key.toLowerCase())) {
+    e.preventDefault(); return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); }
   else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") { e.preventDefault(); toggleQuickChat(); }
   else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") { e.preventDefault(); toggleSticky(); }
   else if ((e.metaKey || e.ctrlKey) && e.key === "/") { e.preventDefault(); toggleRawOverlay(); }
-  else if (e.key === "Escape" && rawOpen) { closeRawOverlay(); }
+  else if (e.key === "Escape" && !e.defaultPrevented && els.castbar && !els.castbar.hidden) { closeCastbar(); }
+  else if (e.key === "Escape" && !e.defaultPrevented && rawOpen) { closeRawOverlay(); }
   else if (e.key === "Escape" && !els.cmdbar.hidden) { closeCmdbar(); }
   else if (e.key === "/" && els.castbar && els.castbar.hidden && !typingInField(e.target)) { e.preventDefault(); openCastbar(); }
   else if (e.key === "t" && !e.metaKey && !e.ctrlKey && !e.altKey && !typingInField(e.target) &&
@@ -110,23 +126,51 @@ function typingInField(t) {
   return tag === "input" || tag === "textarea" || tag === "select" || t.isContentEditable;
 }
 
+let castLoadVersion = 0, castLoadState = "ready";
 async function openCastbar() {
+  if (!els.castbar.hidden) return;
+  if (!els.cmdbar.hidden) closeCmdbar();
+  const version = ++castLoadVersion;
   els.castbar.hidden = false;
   els.castbarInput.value = "";
   els.castbarResults.innerHTML = "";
   els.castbarArg.hidden = true;
   castSel = -1; castChosen = null; castFiltered = [];
-  els.castbarInput.focus();
-  try {
-    const d = await (await fetch("/api/spirits/castables")).json();
-    castItems = d.data || [];
-  } catch (e) { castItems = []; }
+  releaseCastFocus = containDialogFocus(els.castbar, els.castbarInput);
+  castLoadState = "loading";
   renderCastResults("");
+  try {
+    const res = await fetch("/api/spirits/castables");
+    if (!res.ok) throw new Error("Could not load skills");
+    const d = await res.json();
+    if (version !== castLoadVersion || els.castbar.hidden) return;
+    castItems = d.data || [];
+    castLoadState = "ready";
+  } catch (e) {
+    if (version !== castLoadVersion || els.castbar.hidden) return;
+    castItems = []; castLoadState = "error";
+  }
+  renderCastResults(els.castbarInput.value);
 }
-function closeCastbar() { els.castbar.hidden = true; }
+function closeCastbar() {
+  ++castLoadVersion;
+  if (releaseCastFocus) { releaseCastFocus(); releaseCastFocus = null; }
+  els.castbar.hidden = true;
+}
+document.querySelectorAll("[data-close-palette]").forEach(button => {
+  button.onclick = button.dataset.closePalette === "cmdbar" ? closeCmdbar : closeCastbar;
+});
 
 function renderCastResults(q) {
+  els.castbarInput.setAttribute("aria-expanded", "true");
   const host = els.castbarResults; host.innerHTML = ""; castSel = -1;
+  els.castbarInput.removeAttribute("aria-activedescendant");
+  if (castLoadState !== "ready") {
+    castFiltered = [];
+    host.append(el("div", "cmd-empty", castLoadState === "loading"
+      ? "Loading skills and rituals…" : "Couldn't load skills. Close and reopen to retry."));
+    return;
+  }
   const needle = q.trim().toLowerCase();
   castFiltered = castItems.filter(c =>
     !needle || c.label.toLowerCase().includes(needle) || (c.description || "").toLowerCase().includes(needle)
@@ -135,8 +179,10 @@ function renderCastResults(q) {
     host.append(el("div", "cmd-empty", "No castable skills or rituals found."));
     return;
   }
+  if (!castFiltered.length) host.append(el("div", "cmd-empty", "No skills or rituals match your search."));
   castFiltered.forEach((c, i) => {
     const row = el("div", "cmd-result");
+    row.id = "cast-option-" + i; row.setAttribute("role", "option");
     const kind = el("span", "cast-kind cast-kind-" + c.kind, c.kind === "skill" ? "skill" : "ritual");
     const name = el("span", "cmd-name", c.label);
     row.append(kind, name);
@@ -148,15 +194,22 @@ function renderCastResults(q) {
   if (castFiltered.length) { castSel = 0; paintCastSel(); }
 }
 function paintCastSel() {
-  [...els.castbarResults.children].forEach((c, i) => c.classList.toggle("sel", i === castSel));
+  [...els.castbarResults.children].forEach((c, i) => {
+    c.classList.toggle("sel", i === castSel);
+    c.setAttribute("aria-selected", String(i === castSel));
+  });
+  els.castbarInput.setAttribute("aria-activedescendant", "cast-option-" + castSel);
 }
 function castMove(d) {
   if (!castFiltered.length) return;
   castSel = (castSel + d + castFiltered.length) % castFiltered.length;
   paintCastSel();
+  els.castbarResults.children[castSel]?.scrollIntoView({ block: "nearest" });
 }
 function castChoose(c) {
   castChosen = c;
+  els.castbarInput.setAttribute("aria-expanded", "false");
+  els.castbarInput.removeAttribute("aria-activedescendant");
   els.castbarResults.innerHTML = "";
   els.castbarArg.hidden = false;
   els.castbarArgLabel.textContent = (c.kind === "skill" ? "Cast skill: " : "Run ritual: ") + c.label;
@@ -198,7 +251,7 @@ if (els.castbarInput) {
     if (e.key === "ArrowDown") { e.preventDefault(); castMove(1); }
     else if (e.key === "ArrowUp") { e.preventDefault(); castMove(-1); }
     else if (e.key === "Enter") { e.preventDefault(); if (castFiltered[castSel]) castChoose(castFiltered[castSel]); }
-    else if (e.key === "Escape") { e.preventDefault(); closeCastbar(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeCastbar(); }
   });
 }
 if (els.castbarArgInput) {
@@ -308,19 +361,14 @@ async function castOpenWith(c) {
 }
 
 async function cmdSearch(q) {
+  const version = ++cmdSearchVersion;
   const host = els.cmdbarResults;
   const needle = q.toLowerCase();
   const lists = await Promise.all(cmdRegistry.providers.map((p) =>
     Promise.resolve().then(() => p(q)).catch(() => [])));
-  if (q !== els.cmdbarInput.value.trim()) return; // a newer keystroke owns the list
+  if (version !== cmdSearchVersion || els.cmdbar.hidden || q !== els.cmdbarInput.value.trim()) return; // a newer keystroke owns the list
   host.innerHTML = ""; cmdSel = -1; cmdResults = [];
-  if (q) {
-    // quick-add lives here too: first row turns the query into a todo
-    const addRow = el("div", "cmd-result");
-    addRow.append(el("span", "cmd-name", "＋ task “" + q + "”"), el("span", "cmd-refs", "capture"));
-    addRow.onclick = () => { closeCmdbar(); openTodoQuickAdd(q); };
-    host.append(addRow);
-  }
+  els.cmdbarInput.removeAttribute("aria-activedescendant");
   let items = lists.flat().filter(Boolean);
   const recents = cmdRecents();
   const recIdx = new Map(recents.map((id, i) => [id, i]));
@@ -341,20 +389,33 @@ async function cmdSearch(q) {
     ...r,
     act: () => { cmdRecordRecent(r.id); r.act(); },
   }));
+  // Keep the best search match selected initially; ↑ reaches capture.
+  const initialSelection = q && cmdResults.length ? 1 : 0;
+  if (q) cmdResults.unshift({ name: "＋ task “" + q + "”", hint: "capture",
+    act: () => { closeCmdbar(); openTodoQuickAdd(q); } });
   cmdResults.forEach((r, i) => {
     const row = el("div", "cmd-result");
+    row.id = "cmd-option-" + i; row.setAttribute("role", "option");
     row.append(el("span", "cmd-name", r.name), el("span", "cmd-refs", r.hint));
     row.onclick = r.act;
     row.onmouseenter = () => { cmdSel = i; paintCmdSel(); };
     host.append(row);
   });
-  if (cmdResults.length) { cmdSel = 0; paintCmdSel(); }
+  if (cmdResults.length) { cmdSel = initialSelection; paintCmdSel(); }
 }
-function cmdMove(d) { if (!cmdResults.length) return; cmdSel = (cmdSel + d + cmdResults.length) % cmdResults.length; paintCmdSel(); }
+function cmdMove(d) {
+  if (!cmdResults.length) return;
+  cmdSel = (cmdSel + d + cmdResults.length) % cmdResults.length;
+  paintCmdSel();
+  els.cmdbarResults.children[cmdSel]?.scrollIntoView({ block: "nearest" });
+}
 function paintCmdSel() {
   const kids = [...els.cmdbarResults.children];
-  const offset = kids.length - cmdResults.length; // non-result rows (the ＋todo row) sit on top
-  kids.forEach((c, i) => c.classList.toggle("sel", i - offset === cmdSel));
+  kids.forEach((c, i) => {
+    c.classList.toggle("sel", i === cmdSel);
+    c.setAttribute("aria-selected", String(i === cmdSel));
+  });
+  els.cmdbarInput.setAttribute("aria-activedescendant", "cmd-option-" + cmdSel);
 }
 
 async function cmdShowCard(key) {

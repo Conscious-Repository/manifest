@@ -21,7 +21,7 @@
   display: flex; flex-direction: column;
 }
 .rail-head { display: flex; align-items: center; justify-content: space-between; padding: var(--sp-6) var(--sp-6) var(--sp-6) var(--sp-6); }
-.rail-brand { display: inline-flex; align-items: center; gap: var(--sp-4); min-width: 0; cursor: pointer; }
+.rail-brand { text-decoration: none; min-height: var(--control-min); display: inline-flex; align-items: center; gap: var(--sp-4); min-width: 0; cursor: pointer; }
 .rail-brand:hover .rail-glyph-box { background: var(--accent); }
 .rail-brand.brand-active .rail-glyph-box { background: var(--accent); }
 .rail-brand.brand-active .rail-brand-name { color: var(--accent); }
@@ -31,7 +31,7 @@
   display: inline-flex; align-items: center; justify-content: center;
 }
 .rail-brand-name { font-family: var(--mono); font-size: var(--fs-sm); letter-spacing: 0.5px; color: var(--base-100); }
-.rail-collapse { background: none; border: none; color: var(--base-40); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-1) var(--sp-2); }
+.rail-collapse { min-height: var(--control-min); min-width: var(--control-min); background: none; border: none; color: var(--base-40); font-size: var(--fs-sm); cursor: pointer; padding: var(--sp-1) var(--sp-2); }
 .rail-collapse:hover { color: var(--base-70); }
 
 .rail-search {

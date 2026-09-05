@@ -1176,10 +1176,16 @@ if (els.feedAskBtn) els.feedAskBtn.addEventListener("click", spiritAskScout);
 // before it is written. Edits land in the draft and save as you go (see
 // apprScheduleSave), so Confirm always applies what is on screen.
 function renderApprovalInspector() {
+  // Only reserve a desktop editing column when this feed has editable proposals.
+  const hasProposals = [...apprCards.values()].some(card => card.box.isConnected);
+  if (els.feedInspector) {
+    els.feedInspector.hidden = !hasProposals;
+    els.feedInspector.parentElement.classList.toggle("has-inspector", hasProposals);
+  }
   // phone: the rail is display:none — the same builder fills a bottom sheet.
   // Keyed open re-fills in place, so the 3s feed poll never re-animates it.
   if (window.mf && window.mf.phone() && window.mfSheet) {
-    if (apprSel) {
+    if (apprSel && hasProposals) {
       window.mfSheet.open((b) => apprInspectorInto(b), {
         key: "appr",
         onClose: () => { if (apprSel) { apprSel = null; apprPaintSel(); } },

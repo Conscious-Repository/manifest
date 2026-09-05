@@ -570,3 +570,11 @@
   .re-handoff-name { flex: 1 1 0; min-width: 0; }
   .re-handoff-meta { flex: 1 1 100%; order: 3; }
 }
+
+/* Feed metadata must not squeeze the title into a narrow vertical strip. */
+@media (max-width: 860px) {
+  .feed-top { flex-wrap: wrap; }
+  .feed-top > .type-chip, .feed-top > .portal-change-chip { flex: none; }
+  .feed-top > .feed-title { flex: 1 0 100%; order: 1; overflow-wrap: anywhere; }
+  .palette-close { min-height: var(--touch); min-width: var(--touch); top: var(--sp-2); right: var(--sp-2); }
+}

@@ -57,10 +57,10 @@
   <!-- LEFT RAIL — persistent nav (redesign §2). Groups render from NAV_SECTIONS in 99-boot.js. -->
   <nav id="rail" class="rail">
     <div class="rail-head">
-      <span class="rail-brand" id="railBrand" title="Chat with your agents"><span class="rail-glyph-box">◆</span><span class="rail-brand-name">MANIFEST</span></span>
+      <a class="rail-brand" id="railBrand" href="#/chat" aria-label="Chat with your agents" title="Chat with your agents"><span class="rail-glyph-box" aria-hidden="true">◆</span><span class="rail-brand-name">MANIFEST</span></a>
       <button id="railCollapse" class="rail-collapse" title="Collapse the rail" aria-label="Collapse">‹‹</button>
     </div>
-    <button id="railSearch" class="rail-search" title="Search (⌘K)">
+    <button id="railSearch" aria-label="Search (⌘K)" class="rail-search" title="Search (⌘K)">
       <span class="rail-search-glyph">⌕</span><span class="rail-search-label">Search</span><span class="rail-search-kbd">⌘K</span>
     </button>
     <div class="rail-groups" id="railGroups"></div>
@@ -207,7 +207,7 @@
         <div id="feedSignals" class="feed-signals"></div>
         <div id="feedList" class="feed-list"></div>
       </div>
-      <aside class="feed-inspector" id="feedInspector"></aside>
+      <aside class="feed-inspector" id="feedInspector" hidden></aside>
     </div>
   </section>
 
@@ -502,24 +502,26 @@
   </div><!-- /appShell -->
 
   <!-- Quick-lookup command bar (⌘K / Ctrl-K from anywhere) -->
-  <div id="cmdbar" class="cmdbar" hidden>
+  <div id="cmdbar" class="cmdbar" role="dialog" aria-modal="true" aria-label="Search Manifest" hidden>
     <div class="cmdbar-backdrop" id="cmdbarBackdrop"></div>
     <div class="cmdbar-card">
-      <input id="cmdbarInput" class="cmdbar-input" type="text" placeholder="Go to a view, property, or contact…" autocomplete="off" />
-      <div id="cmdbarResults" class="cmdbar-results"></div>
+      <button type="button" class="palette-close" data-close-palette="cmdbar" aria-label="Close search manifest" title="Close (Esc)">×</button>
+      <input aria-label="Search Manifest" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="cmdbarResults" id="cmdbarInput" class="cmdbar-input" type="text" placeholder="Go to a view, property, or contact…" autocomplete="off" />
+      <div role="listbox" aria-label="Results" id="cmdbarResults" class="cmdbar-results"></div>
       <div id="cmdbarCard" class="cmdbar-cardview" hidden></div>
     </div>
   </div>
 
   <!-- Cast command bar (press / from anywhere): run a skill or on-demand ritual -->
-  <div id="castbar" class="cmdbar" hidden>
+  <div id="castbar" class="cmdbar" role="dialog" aria-modal="true" aria-label="Cast a skill or ritual" hidden>
     <div class="cmdbar-backdrop" id="castbarBackdrop"></div>
     <div class="cmdbar-card">
-      <input id="castbarInput" class="cmdbar-input" type="text" placeholder="/ cast a skill or ritual…" autocomplete="off" />
-      <div id="castbarResults" class="cmdbar-results"></div>
+      <button type="button" class="palette-close" data-close-palette="castbar" aria-label="Close cast a skill or ritual" title="Close (Esc)">×</button>
+      <input aria-label="Cast a skill or ritual" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="castbarResults" id="castbarInput" class="cmdbar-input" type="text" placeholder="/ cast a skill or ritual…" autocomplete="off" />
+      <div role="listbox" aria-label="Results" id="castbarResults" class="cmdbar-results"></div>
       <div id="castbarArg" class="castbar-arg" hidden>
         <div id="castbarArgLabel" class="castbar-arg-label"></div>
-        <textarea id="castbarArgInput" class="castbar-arg-input" rows="3" placeholder="Context / argument (⌘↵ to cast, esc to go back)"></textarea>
+        <textarea aria-labelledby="castbarArgLabel" id="castbarArgInput" class="castbar-arg-input" rows="3" placeholder="Context / argument (⌘↵ to cast, esc to go back)"></textarea>
         <div class="castbar-arg-actions">
           <span id="castbarArgHint" class="castbar-arg-hint"></span>
           <button id="castbarCast" class="pill castbar-cast-btn">Cast →</button>
