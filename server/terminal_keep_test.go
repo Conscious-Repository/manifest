@@ -36,9 +36,14 @@ func TestExecLaunchToolGuard(t *testing.T) {
 	if s := c.execLaunch(); !strings.Contains(s, "command -v claude") || !strings.Contains(s, "exec bash -l") {
 		t.Fatalf("claude launch lacks the tool guard: %s", s)
 	}
+	// every session, tool or shell, gets a TMPDIR that survives a manifest
+	// restart — the private-tmp trap that killed surviving sessions
 	sh := termSession{Kind: "shell"}
-	if s := sh.execLaunch(); s != "exec bash -l" {
+	if s := sh.execLaunch(); !strings.HasSuffix(s, "exec bash -l") || !strings.Contains(s, `TMPDIR="$HOME/.cache/manifest/term-tmp"`) {
 		t.Fatalf("shell launch = %q", s)
+	}
+	if s := c.execLaunch(); !strings.Contains(s, `mkdir -p "$TMPDIR"`) {
+		t.Fatalf("a tool session needs the durable tmp too: %q", s)
 	}
 }
 

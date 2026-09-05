@@ -39,7 +39,16 @@ RestartSec=5
 # covered by the /home/benjamin line below. ReadWritePaths takes precedence
 # over ProtectHome.
 NoNewPrivileges=true
-PrivateTmp=true
+# ⚠ PrivateTmp is OFF on purpose (2026-09-04). It gave the service a private
+# tmpfs that systemd DELETES when the unit stops — and the terminal cockpit's
+# tmux sessions, which now outlive a restart by design, kept that deleted
+# directory as their /tmp. Every temp write in a surviving session then failed
+# with ENOENT: Claude Code exited instantly on `mkdir '/tmp/claude-1001'`, and
+# `go build` would have gone the same way. The sessions ARE the point of this
+# unit's terminal surface, so /tmp is the real one. (The tool also exports a
+# durable TMPDIR of its own — belt and braces, and it covers boxes whose unit
+# still sets this.)
+# PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/benjamin/.config/manifest

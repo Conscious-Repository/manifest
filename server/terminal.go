@@ -242,12 +242,25 @@ func (c *termCfg) shortName(kind string) string {
 func (s termSession) execLaunch() string {
 	tool := map[string]string{"claude": "claude", "codex": "codex"}[s.Kind]
 	if tool == "" {
-		return "exec " + s.launchCmd()
+		return termTmpExport + "exec " + s.launchCmd()
 	}
-	return `export PATH="$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:$PATH"; ` +
+	return termTmpExport +
+		`export PATH="$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:$PATH"; ` +
 		"command -v " + tool + " >/dev/null 2>&1 || { printf '\\xe2\\x9c\\x97 " + tool +
 		" is not installed here - dropping to a shell\\n'; exec bash -l; }; exec " + s.launchCmd()
 }
+
+// termTmpExport gives a session a TMPDIR that outlives a manifest restart.
+//
+// ⚠ Under systemd's PrivateTmp the service's /tmp is a private tmpfs that
+// systemd DELETES when the unit stops. Sessions now survive a restart by
+// design, and a survivor keeps the OLD namespace — whose /tmp is a deleted
+// directory, so every temp write in it fails with ENOENT. Claude Code dies on
+// that at startup (`mkdir '/tmp/claude-<uid>'`, exit 1, no output — a pane
+// that is simply dead), and `go build` would too. The unit no longer sets
+// PrivateTmp; this covers the case anyway, on any box, for any tool that
+// honours TMPDIR.
+const termTmpExport = `export TMPDIR="$HOME/.cache/manifest/term-tmp"; mkdir -p "$TMPDIR" 2>/dev/null; `
 
 // cdGuard prefixes the cd with a visible miss instead of silently landing in
 // $HOME (cmd-ctr's no-such-directory guard).
