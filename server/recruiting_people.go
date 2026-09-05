@@ -49,8 +49,8 @@ const coAttendanceCap = 8
 const coAttendanceConfidence = 0.7
 
 // coMentionCap / coMentionConfidence — a note that links more people than the
-// cap is a roster, not a room. Being written about together is the weakest
-// signal here and says so in its confidence.
+// cap is a roster, not a room. Sharing a meeting transcript is a weak
+// relationship signal and says so in its confidence.
 const (
 	coMentionCap        = 6
 	coMentionConfidence = 0.4
@@ -329,11 +329,9 @@ func (s *Server) coAttendanceEdges() []recruiting.Edge {
 	return out
 }
 
-// coMentionEdges reads the owner's notes: two people linked from one note were
-// written about together. The weakest signal here, and the one to be most
-// sceptical of — a planning note naming two people is not a relationship
-// between them — so it carries the lowest confidence, says which note in its
-// basis, and is capped hard (vaultindex.CoMentions).
+// coMentionEdges reads only owner-confirmed meeting transcripts under log/.
+// Co-presence in a transcript is inferred meeting evidence, not necessarily a
+// working relationship, so it retains the low confidence and per-note cap.
 func (s *Server) coMentionEdges() []recruiting.Edge {
 	if s.index == nil {
 		return nil
@@ -346,6 +344,11 @@ func (s *Server) coMentionEdges() []recruiting.Edge {
 	var out []recruiting.Edge
 	seen := map[string]bool{}
 	for _, m := range pairs {
+		// Scope before pair deduplication: a newer journal mention must not
+		// suppress an older meeting transcript. Other index callers stay broad.
+		if !strings.HasPrefix(m.Path, "log/") {
+			continue
+		}
 		a, b := idx.byKey[m.A], idx.byKey[m.B]
 		if a == "" || b == "" || a == b {
 			continue
@@ -358,15 +361,11 @@ func (s *Server) coMentionEdges() []recruiting.Edge {
 			continue
 		}
 		seen[key] = true
-		where := strings.TrimSpace(m.Name)
-		if where == "" {
-			where = m.Path
-		}
 		out = append(out, recruiting.Edge{
 			From: a, To: b, Kind: string(sources.EdgeCoMentioned),
-			Basis:      idx.display(a) + " and " + idx.display(b) + " are written about together in “" + where + "”",
+			Basis:      idx.display(a) + " and " + idx.display(b) + " are in the same meeting transcript “" + m.Path + "”",
 			Confidence: recruiting.FormatConfidence(coMentionConfidence),
-			Inferred:   true, Source: "notes", Evidence: m.Path, Observed: m.Date,
+			Inferred:   true, Source: "log", Evidence: m.Path, Observed: m.Date,
 		})
 	}
 	return out

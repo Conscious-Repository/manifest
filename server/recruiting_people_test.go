@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"manifest/contacts"
 	"manifest/recruiting"
+	"manifest/vaultindex"
 )
 
 func readFile(t *testing.T, path string) string {
@@ -144,4 +146,103 @@ func TestMarkingAKnownPersonWritesOneConnector(t *testing.T) {
 	if n := len(s.recruiting.Connectors()); n != before {
 		t.Fatalf("marking twice wrote %d rows", n-before+1)
 	}
+}
+
+// Exercise the real index and both derivations, including a newer journal
+// mention of the same pair that must not hide the older transcript.
+func TestCoMentionEdgesOnlyFromMeetingLogs(t *testing.T) {
+	s, vw, vault, dataDir := testRecruitingServer(t)
+	for path, body := range map[string]string{
+		"Alice.md":                 "---\ncategories: [people]\nemail: alice@example.test\n---\n",
+		"Bob.md":                   "---\ncategories: [people]\nemail: bob@example.test\n---\n",
+		"Carol.md":                 "---\ncategories: [people]\n---\n",
+		"log/2026-08-07 weekly.md": "[[Alice]] [[Bob]]\n",
+		"2026-08-08.md":            "[[Alice]] [[Bob]] [[Carol]]\n",
+		"journal/2026-08-09.md":    "[[Alice]] [[Carol]]\n",
+		"logs/2026-08-10.md":       "[[Bob]] [[Carol]]\n",
+	} {
+		abs := filepath.Join(vault, path)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ix, err := vaultindex.Open(vaultindex.Config{VaultRoot: vault})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ix.Close() })
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+	s.index = ix
+	// The general knowledge index must still include non-log co-mentions.
+	pairs, err := ix.CoMentions(coMentionCap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pairs) != 6 {
+		t.Fatalf("general co-mentions changed: %+v", pairs)
+	}
+	cs, err := contacts.NewStore(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.contacts = contacts.New(ix, cs, vw, recruitingMeetingCalendar{}, nil)
+	s.wireRecruitingDerivedEdges()
+	edges := s.recruiting.NetworkEdges()
+	if len(edges) != 4 {
+		t.Fatalf("want one transcript and three calendar edges (including owner): %+v", edges)
+	}
+	for _, e := range edges {
+		if !e.Inferred || !e.Derived {
+			t.Fatalf("unexpected identity or provenance: %+v", e)
+		}
+		switch e.Kind {
+		case "co_mentioned":
+			if e.From != "contact/alice" || e.To != "contact/bob" {
+				t.Fatalf("unexpected transcript pair: %+v", e)
+			}
+			if e.Source != "log" || e.Confidence != "0.40" || e.Evidence != "log/2026-08-07 weekly.md" || e.Observed != "2026-08-07" || !strings.Contains(e.Basis, "are in the same meeting transcript “log/2026-08-07 weekly.md”") {
+				t.Fatalf("incorrect transcript evidence: %+v", e)
+			}
+		case "same_meeting":
+			if e.Source != "calendar" || e.Confidence != "0.70" || e.Observed != "2026-08-06" || !strings.Contains(e.Basis, "Calendar sync") {
+				t.Fatalf("calendar evidence changed: %+v", e)
+			}
+		default:
+			t.Fatalf("unexpected edge: %+v", e)
+		}
+	}
+	// A fresh view must remove the derived claim when its transcript is gone,
+	// even though the same people are still linked from the newer journal.
+	if err := os.Remove(filepath.Join(vault, "log/2026-08-07 weekly.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ix.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+	edges = s.recruiting.NetworkEdges()
+	if len(edges) != 3 {
+		t.Fatalf("stale transcript or journal edge: %+v", edges)
+	}
+	for _, e := range edges {
+		if e.Kind != "same_meeting" {
+			t.Fatalf("non-calendar edge after transcript removal: %+v", e)
+		}
+	}
+	raw := readFile(t, filepath.Join(vault, "system/aion/recruiting/network/edges.md"))
+	if strings.Contains(raw, "co_mentioned") || strings.Contains(raw, "same_meeting") {
+		t.Fatalf("derived evidence persisted: %s", raw)
+	}
+}
+
+type recruitingMeetingCalendar struct{}
+
+func (recruitingMeetingCalendar) Upcoming(time.Time, int) []contacts.Event { return nil }
+func (recruitingMeetingCalendar) PastMeetings(time.Time, int) []contacts.Event {
+	return []contacts.Event{{Start: time.Date(2026, 8, 6, 10, 0, 0, 0, time.UTC), Title: "Calendar sync",
+		Attendees: []contacts.Attendee{{Email: "alice@example.test"}, {Email: "bob@example.test"}}}}
 }
