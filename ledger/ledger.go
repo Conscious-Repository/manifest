@@ -234,14 +234,14 @@ func (s *Store) readDay(date string) ([]Entry, error) {
 // entry seen re-reads exactly from it). Limit > 0 keeps the LAST n matches —
 // the most recent — still in file order.
 type Query struct {
-	Kinds      []string  // any of these exact kinds
-	Source     string    // "thread" | "chat" | "run" | "plan"
-	Actor      string    // exact actor id
-	Object     string    // object id — explicit tag or legacy task/session/run ref
-	ObjectKind string    // narrows Object to one kind; "" matches any kind
-	Since      time.Time // zero = open
-	Until      time.Time // zero = open
-	Limit      int
+	Kinds      []string  `json:"kinds,omitempty"`      // any of these exact kinds
+	Source     string    `json:"source,omitempty"`     // "thread" | "chat" | "run" | "plan"
+	Actor      string    `json:"actor,omitempty"`      // exact actor id
+	Object     string    `json:"object,omitempty"`     // object id — explicit tag or legacy task/session/run ref
+	ObjectKind string    `json:"objectKind,omitempty"` // narrows Object to one kind; "" matches any kind
+	Since      time.Time `json:"since,omitzero"`       // zero = open
+	Until      time.Time `json:"until,omitzero"`       // zero = open
+	Limit      int       `json:"limit,omitempty"`
 }
 
 func (q Query) matches(e Entry) bool {
