@@ -3,57 +3,60 @@
    layout — the picture is a function of the data, the theme is a function of
    the stylesheet, and the simulation touches neither. */
 
-/* ⚠ a CONTAINER query, not a media query. The graph lives inside a column
-   whose width has nothing to do with the viewport's — at 1500px wide the
-   column here is 634px, so a viewport rule put a 900px picture in a 284px
-   box and called it two columns. */
-.rg-host { container-type: inline-size; }
-.rg-wrap {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--inspector-w, 300px);
-  gap: var(--sp-5);
-  align-items: start;
-}
-/* the panel sits beside the picture only when there is room for both; below
-   that the picture keeps the width and the panel drops under it, because a
-   280px graph is a smudge */
-@container (max-width: 980px) {
-  .rg-wrap { grid-template-columns: minmax(0, 1fr); }
+/* ---- THE STAGE. Obsidian's graph fills its pane; the settings float on top
+   of it. The previous cut was a bordered 890x620 box with a sidebar beside
+   it, which reads as a diagram embedded in a page — a thing you glance at
+   rather than a place you are standing in. */
+.rg-stage {
+  position: relative;
+  width: 100%;
+  height: min(76vh, 860px);
+  min-height: 420px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--base-02, transparent);
 }
 
 .rg-canvas {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg);
-  background: var(--base-02, transparent);
   cursor: grab;
-  touch-action: none; /* the pointer belongs to the graph, not to the scroller */
+  touch-action: none; /* the pointer belongs to the graph, not the scroller */
   user-select: none;
+  outline: none;
   --rg-zoom: 1;
+  --rg-label: 1;
+  --rg-label-named: 1;
+  --rg-link-w: 1;
 }
 .rg-canvas.rg-dragging { cursor: grabbing; }
+.rg-canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 
-.rg-edge { stroke: var(--line); stroke-width: 1; }
+.rg-edge { stroke: var(--line); stroke-width: calc(var(--rg-link-w) / var(--rg-zoom)); }
 /* an inferred edge is dashed everywhere it is drawn — the derivation is a
    claim, and a claim should not look like a fact */
-.rg-edge.inferred { stroke-dasharray: 3 3; opacity: 0.7; }
-.rg-edge.lit { stroke: var(--accent); stroke-width: 2; opacity: 1; }
+.rg-edge.inferred { stroke-dasharray: calc(3 / var(--rg-zoom)) calc(3 / var(--rg-zoom)); opacity: 0.7; }
+.rg-edge.lit { stroke: var(--accent); stroke-width: calc(2.2 / var(--rg-zoom)); opacity: 1; }
 
 .rg-node { cursor: pointer; }
-.rg-dot { stroke: var(--base-00, #fff); stroke-width: 1.5; fill: var(--base-40); }
+.rg-dot { stroke: var(--base-00, #fff); stroke-width: calc(1.5 / var(--rg-zoom)); fill: var(--base-40); }
 .rg-node.rg-you .rg-dot { fill: var(--accent); }
 .rg-node.rg-connector .rg-dot { fill: var(--ok, #2f855a); }
 .rg-node.rg-considering .rg-dot { fill: var(--base-100); }
 .rg-node.rg-stranger .rg-dot { fill: var(--base-30); }
-.rg-node.sel .rg-dot { stroke: var(--accent); stroke-width: 3; }
+.rg-node.sel .rg-dot { stroke: var(--accent); stroke-width: calc(3 / var(--rg-zoom)); }
 .rg-node:hover .rg-dot { stroke: var(--accent); }
 
+/* ---- LABELS. They keep their size on screen however far you zoom, so
+   zooming spreads names apart instead of magnifying them into each other, and
+   they come up on a CURVE (--rg-label, set from zoom against the owner's fade
+   threshold) rather than snapping on at some level I picked. */
 .rg-label {
   font-family: var(--mono);
-  /* the label keeps its size on screen as you zoom, so zooming spreads the
-     names apart instead of magnifying them into each other */
   font-size: calc(10px / var(--rg-zoom));
   fill: var(--base-60);
   pointer-events: none;
@@ -61,50 +64,135 @@
   stroke: var(--base-00, #fff);
   stroke-width: calc(3px / var(--rg-zoom));
   stroke-linejoin: round;
+  opacity: var(--rg-label);
 }
-.rg-node.rg-you .rg-label, .rg-node.sel .rg-label { fill: var(--base-100); }
+/* the people you have a relationship WITH are legible sooner than the
+   strangers around them: a ring of 60 names is the hairball arriving through
+   labels rather than through edges */
+.rg-node.rg-you .rg-label,
+.rg-node.rg-connector .rg-label,
+.rg-node.rg-considering .rg-label { opacity: var(--rg-label-named); fill: var(--base-100); }
+.rg-node:hover .rg-label, .rg-node.sel .rg-label,
+.rg-node.near .rg-label { opacity: 1; fill: var(--base-100); }
 
-/* ⚠ LABEL DENSITY. A ring of 60 people writes 60 names into one band and the
-   band is unreadable — the hairball arriving through labels rather than
-   through edges. So only the people you have a relationship WITH are named at
-   arm's length: you, the ones you would ask, the ones on the board. A stranger
-   is a dot until you hover it, select it, or ZOOM IN far enough that there is
-   room for the name. */
-.rg-node.rg-stranger .rg-label { opacity: 0; transition: opacity 90ms linear; }
-.rg-canvas.rg-near .rg-node.rg-stranger .rg-label,
-.rg-node.rg-stranger:hover .rg-label,
-.rg-node.rg-stranger.near .rg-label,
-.rg-node.rg-stranger.sel .rg-label { opacity: 1; }
-.rg-node.rg-stranger:hover .rg-label { fill: var(--base-100); }
-
-/* HOVER = the neighbourhood. Everything this person does not touch goes
-   quiet, so one hover answers "who does this reach" without a click, a panel
-   or a redraw. This is the interaction that makes a dense graph readable. */
-.rg-canvas.rg-hovering .rg-node { opacity: 0.14; transition: opacity 110ms linear; }
+/* HOVER = the neighbourhood. Everything the person under the cursor does not
+   touch goes quiet, so one hover answers "who does this reach" without a
+   click, a panel or a redraw. */
+.rg-canvas.rg-hovering .rg-node { opacity: 0.13; transition: opacity 110ms linear; }
 .rg-canvas.rg-hovering .rg-node.near { opacity: 1; }
-.rg-canvas.rg-hovering .rg-edge { opacity: 0.06; }
+.rg-canvas.rg-hovering .rg-edge { opacity: 0.05; }
 .rg-canvas.rg-hovering .rg-edge.near { opacity: 1; stroke: var(--accent); }
-
 /* a selected route reads the same way: the path stands, the rest recedes */
-.rg-canvas.rg-routing .rg-edge:not(.lit) { opacity: 0.09; }
+.rg-canvas.rg-routing .rg-edge:not(.lit) { opacity: 0.08; }
 
-.rg-degree { display: inline-flex; align-items: center; gap: var(--sp-2); }
-.rg-matches { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; }
-.rg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-4) 0; }
-.rg-omitted, .rg-howto { font-size: var(--fs-xs); color: var(--base-50); }
+/* ---- THE FLOATING CARDS. Controls top-left, viewport strip bottom-left,
+   the detail card bottom-right — all over the picture, none of them stealing
+   its width. */
+.rg-controls, .rg-viewport, .rg-panel {
+  position: absolute;
+  z-index: 2;
+  background: color-mix(in srgb, var(--base-00, #fff) 92%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(6px);
+}
+
+.rg-controls {
+  top: var(--sp-4); left: var(--sp-4);
+  width: 232px;
+  max-height: calc(100% - var(--sp-8));
+  overflow-y: auto;
+  padding: var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.rg-search { width: 100%; }
+
+.rg-sec { display: flex; flex-direction: column; }
+.rg-sec-head {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--mono); font-size: var(--fs-2xs);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--base-50);
+  padding: var(--sp-2) 0;
+  display: flex; align-items: center; gap: var(--sp-2);
+}
+.rg-sec-head::before { content: "\25B8"; font-size: 9px; }
+.rg-sec.open > .rg-sec-head::before { content: "\25BE"; }
+.rg-sec.open > .rg-sec-head { color: var(--base-100); }
+.rg-sec-body { display: flex; flex-direction: column; gap: var(--sp-3); padding: 0 0 var(--sp-3); }
+
+.rg-slider { display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.rg-slider-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2); }
+.rg-slider-label { font-size: var(--fs-xs); color: var(--base-60); }
+.rg-slider-val { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
+.rg-range { width: 100%; accent-color: var(--accent); cursor: pointer; }
+
+.rg-chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.rg-matches { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.rg-note { font-size: var(--fs-2xs); color: var(--base-50); line-height: 1.4; }
+
+.rg-viewport {
+  left: var(--sp-4); bottom: var(--sp-4);
+  max-width: calc(100% - 2 * var(--sp-4));
+  padding: var(--sp-2) var(--sp-3);
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3);
+  font-size: var(--fs-xs);
+}
+.rg-standing { color: var(--base-100); }
 
 .rg-panel {
+  right: var(--sp-4); top: var(--sp-4);
+  width: min(320px, calc(100% - 264px - 3 * var(--sp-4)));
+  max-height: calc(100% - var(--sp-8));
+  overflow-y: auto;
+  padding: var(--sp-4);
   display: flex; flex-direction: column; gap: var(--sp-3);
-  padding: var(--sp-4); border: 1px solid var(--line-soft);
-  border-radius: var(--radius-lg); background: var(--base-05);
 }
+.rg-panel-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
 .rg-panel-name { font-size: var(--fs-md); color: var(--base-100); overflow-wrap: anywhere; }
+.rg-panel-x { all: unset; cursor: pointer; color: var(--base-50); font-size: var(--fs-md); line-height: 1; }
+.rg-panel-x:hover { color: var(--base-100); }
 .rg-panel-hint { font-size: var(--fs-xs); color: var(--base-50); }
 .rg-why { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line-soft); }
 .rg-hop { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-xs); }
 .rg-hop-name { color: var(--base-100); overflow-wrap: anywhere; }
 .rg-weak { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
-.rg-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); }
+.rg-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-2); }
+
+/* the right-click menu: the actions where a person expects to find them */
+.rg-menu {
+  position: fixed; z-index: 60;
+  min-width: 168px;
+  padding: var(--sp-2);
+  background: var(--base-00, #fff);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  display: flex; flex-direction: column;
+}
+.rg-menu-head {
+  font-family: var(--mono); font-size: var(--fs-2xs);
+  color: var(--base-50); padding: var(--sp-2);
+  border-bottom: 1px solid var(--line-soft); margin-bottom: var(--sp-2);
+  overflow-wrap: anywhere;
+}
+.rg-menu-item {
+  all: unset; cursor: pointer;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-xs); color: var(--base-100);
+}
+.rg-menu-item:hover { background: var(--base-05); }
+
+/* the phone band: the cards stack rather than overlap, because 232px of
+   controls floating over a 360px canvas is not a floating card, it is a wall */
+@media (max-width: 860px) {
+  .rg-stage { height: min(62vh, 520px); }
+  .rg-controls { width: calc(100% - 2 * var(--sp-3)); left: var(--sp-3); top: var(--sp-3); max-height: 44%; }
+  .rg-panel { width: calc(100% - 2 * var(--sp-3)); right: var(--sp-3); top: auto; bottom: var(--sp-3); max-height: 46%; }
+  .rg-viewport { display: none; }
+}
 
 .rg-empty {
   display: flex; flex-direction: column; gap: var(--sp-3);
