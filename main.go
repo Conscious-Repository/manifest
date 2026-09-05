@@ -223,6 +223,15 @@ func main() {
 			// daily notes: the exact YYYY-MM-DD.md shape, wherever they live
 			vaultwriter.Capability{Name: "daily", Zone: record.ZoneKnowledge,
 				Pattern: "????-??-??.md", Actor: vaultwriter.ActorUserAction},
+			// log/ dated notes ("log/YYYY-MM-DD <title>.md" and nothing else): the
+			// approvals store's create-vault-note (owner-confirmed transcript /
+			// thread notes) and append-vault-note (auto-applied under a confirmed
+			// thread's standing consent) land through here — the second
+			// knowledge-zone approved-proposal lane after goals-approved. The
+			// store's own path guards pin the shape further (bare dated
+			// filename, never overwrite).
+			vaultwriter.Capability{Name: "vault-note-approved", Zone: record.ZoneKnowledge,
+				Pattern: "log/????-??-?? *.md", Actor: vaultwriter.ActorApprovedProposal},
 			// AION — system/aion/** records; two actors, one subtree. The
 			// approved-proposal capability is the §4 lane: ONLY the approvals
 			// store's accept path writes under it (first live wiring of
@@ -786,7 +795,8 @@ func main() {
 				sp = spirits.NewStore(ref.Path).WithSkillsRoot(filepath.Join(cfg.VaultPath, "skills"))
 			}
 			ap := approvals.NewStore(filepath.Join(ref.Path, "artifacts")).
-				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved")
+				WithVaultRoot(cfg.VaultPath).WithVaultWriter(vw).WithAionCapability("aion-approved").WithReCapability("realestate-approved").
+				WithVaultNoteCapability("vault-note-approved")
 			if goalsWritable {
 				ap = ap.WithGoalsCapability("goals-approved")
 			}

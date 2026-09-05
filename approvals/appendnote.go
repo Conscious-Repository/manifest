@@ -46,7 +46,9 @@ func AppendVaultNotePathAllowed(rel string) bool {
 // note's frontmatter. When the proposal carries rename-to (the thread's date
 // range extended), the grown note lands under the NEW name and the old file is
 // removed — the start date and the owner's title are preserved by the engine,
-// which only ever extends the end date.
+// which only ever extends the end date. With a writer wired, the grown bytes
+// land through the vault-note capability and a rename is a capability move
+// (both audited); the raw write/remove below is only the writer-less fallback.
 func (s *Store) applyAppendVaultNote(p Proposal) error {
 	if !AppendVaultNotePathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is not a log/ dated note (log/YYYY-MM-DD <title>.md)", p.ApplyPath)
@@ -64,6 +66,10 @@ func (s *Store) applyAppendVaultNote(p Proposal) error {
 	if s.vaultRoot == "" {
 		return errors.New("apply refused: no vault root configured for append-vault-note")
 	}
+	lane, err := s.noteLane("append-vault-note")
+	if err != nil {
+		return err
+	}
 	logDir := filepath.Join(s.vaultRoot, "log")
 	logAbs, _ := filepath.Abs(logDir)
 	target := filepath.Join(s.vaultRoot, filepath.FromSlash(p.ApplyPath))
@@ -71,12 +77,12 @@ func (s *Store) applyAppendVaultNote(p Proposal) error {
 	if filepath.Dir(tgtAbs) != logAbs {
 		return fmt.Errorf("apply refused: %q escapes log/", p.ApplyPath)
 	}
-	final := target
+	final, finalRel := target, p.ApplyPath
 	if rt := strings.TrimSpace(p.RenameTo); rt != "" && rt != p.ApplyPath {
 		if !AppendVaultNotePathAllowed(rt) {
 			return fmt.Errorf("apply refused: rename target %q is not a log/ dated note", rt)
 		}
-		final = filepath.Join(s.vaultRoot, filepath.FromSlash(rt))
+		final, finalRel = filepath.Join(s.vaultRoot, filepath.FromSlash(rt)), rt
 		finAbs, _ := filepath.Abs(final)
 		if filepath.Dir(finAbs) != logAbs {
 			return fmt.Errorf("apply refused: rename target %q escapes log/", rt)
@@ -98,6 +104,23 @@ func (s *Store) applyAppendVaultNote(p Proposal) error {
 		body += "\n"
 	}
 	body += "\n" + payload + "\n"
+	if lane {
+		// Move first, then grow in place: the note is never doubled, and a
+		// failed write leaves the ORIGINAL bytes under the new name (moved back
+		// below), never a half-applied copy beside the old one.
+		if final != target {
+			if err := s.vw.RenameCap(s.noteCap, p.ApplyPath, finalRel); err != nil {
+				return fmt.Errorf("apply refused: rename: %w", err)
+			}
+		}
+		if err := s.vw.WriteCap(s.noteCap, finalRel, []byte(body)); err != nil {
+			if final != target {
+				_ = s.vw.RenameCap(s.noteCap, finalRel, p.ApplyPath) // roll the move back
+			}
+			return err
+		}
+		return nil
+	}
 	if err := os.WriteFile(final, []byte(body), 0o644); err != nil {
 		return err
 	}

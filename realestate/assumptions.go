@@ -76,7 +76,8 @@ var assumptionLineRe = regexp.MustCompile(`^- \[([a-z_]+):: ([0-9.]+)\]\s*$`)
 // emission is a fixpoint (prose/unknown lines survive untouched, in place).
 type Assumptions struct {
 	Values map[string]float64 `json:"values"`
-	lines  []string           // full file, verbatim
+	lines  []string           // full file, verbatim (the EOF newline run split off into tail)
+	tail   string             // the file's trailing newline run, verbatim ("" = no final newline)
 }
 
 // ParseAssumptions reads the record. Missing file/keys fall back to defaults
@@ -84,7 +85,9 @@ type Assumptions struct {
 func ParseAssumptions(raw string) Assumptions {
 	a := Assumptions{Values: map[string]float64{}}
 	if raw != "" {
-		a.lines = strings.Split(strings.TrimRight(raw, "\n"), "\n")
+		body := strings.TrimRight(raw, "\n")
+		a.lines = strings.Split(body, "\n")
+		a.tail = raw[len(body):]
 	}
 	for _, ln := range a.lines {
 		if m := assumptionLineRe.FindStringSubmatch(ln); m != nil {
@@ -101,21 +104,28 @@ func ParseAssumptions(raw string) Assumptions {
 	return a
 }
 
-// EmitAssumptions re-serializes: known-key lines are rebuilt from Values (so
-// an edit lands), everything else passes through verbatim. Parse→Emit with no
-// edits is byte-identical.
+// EmitAssumptions re-serializes: a known-key line is rebuilt from Values ONLY
+// when its value actually changed (so an edit lands in canonical form); a line
+// whose literal still equals the value keeps its exact bytes (0.0500 stays
+// 0.0500, trailing whitespace stays), everything else passes through verbatim,
+// and the file's EOF shape (one newline, two, none) is the one it had.
+// Parse→Emit with no edits is byte-identical — the ARCHITECTURE §3 fixpoint.
 func EmitAssumptions(a Assumptions) string {
 	var out []string
 	for _, ln := range a.lines {
 		if m := assumptionLineRe.FindStringSubmatch(ln); m != nil {
 			if v, ok := a.Values[m[1]]; ok {
+				if cur, err := strconv.ParseFloat(m[2], 64); err == nil && cur == v {
+					out = append(out, ln) // numerically equal — keep the exact literal
+					continue
+				}
 				out = append(out, "- ["+m[1]+":: "+trimFloat(v)+"]")
 				continue
 			}
 		}
 		out = append(out, ln)
 	}
-	return strings.Join(out, "\n") + "\n"
+	return strings.Join(out, "\n") + a.tail
 }
 
 // SetAssumption updates one value in place (adding a line only if the key has
@@ -138,6 +148,9 @@ func (a *Assumptions) SetAssumption(key string, v float64) error {
 		}
 	}
 	a.lines = append(a.lines, "- ["+key+":: "+trimFloat(v)+"]")
+	if a.tail == "" {
+		a.tail = "\n" // a real edit on a newline-less (or empty) doc terminates it
+	}
 	return nil
 }
 

@@ -25,6 +25,9 @@ type Writer struct {
 	caps      map[string]Capability // declared write-capabilities (§A3)
 	auditPath string                // append-only write-audit.log ("" = no log)
 	auditMu   sync.Mutex
+
+	auditFailures int   // writes that landed without an audit line (see traced)
+	lastAuditErr  error // the most recent such failure
 }
 
 // New builds a writer for the given vault path ("" disables saving).

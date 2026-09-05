@@ -3,6 +3,7 @@ package vaultwriter
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -125,7 +126,7 @@ func (w *Writer) WriteCap(capName, rel string, data []byte) error {
 	if err := os.WriteFile(full, data, 0o644); err != nil {
 		return err
 	}
-	w.audit(clean, c.Name, string(c.Actor), int64(len(data))-oldLen)
+	w.traced(w.audit(clean, c.Name, string(c.Actor), int64(len(data))-oldLen))
 	return nil
 }
 
@@ -150,7 +151,7 @@ func (w *Writer) RenameCap(capName, relOld, relNew string) error {
 		filepath.Join(w.vault, filepath.FromSlash(cleanNew))); err != nil {
 		return err
 	}
-	w.audit(cleanOld+" -> "+cleanNew, c.Name, string(c.Actor)+" (rename)", 0)
+	w.traced(w.audit(cleanOld+" -> "+cleanNew, c.Name, string(c.Actor)+" (rename)", 0))
 	return nil
 }
 
@@ -169,20 +170,50 @@ func (w *Writer) BindAbs(capName string) func(absPath string, data []byte) error
 }
 
 // audit appends one line per vault write: time, path, capability, actor, byte
-// delta. Append-only by construction; no UI reads it yet — it accrues.
-func (w *Writer) audit(rel, capName, actor string, delta int64) {
+// delta. Append-only by construction; no UI reads it yet — it accrues. The
+// returned error is the open/append failure, or nil; every write tail hands
+// it to traced so a landed write with no trace is never silent.
+func (w *Writer) audit(rel, capName, actor string, delta int64) error {
 	if w.auditPath == "" {
-		return
+		return nil
 	}
 	w.auditMu.Lock()
 	defer w.auditMu.Unlock()
 	f, err := os.OpenFile(w.auditPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
-		return // auditing never blocks the owner's write
+		return fmt.Errorf("write-audit: %s: open %s: %w", rel, w.auditPath, err)
 	}
 	defer f.Close()
-	fmt.Fprintf(f, "%s\t%s\t%s\t%s\t%+d\n",
-		time.Now().UTC().Format(time.RFC3339), rel, capName, actor, delta)
+	if _, err := fmt.Fprintf(f, "%s\t%s\t%s\t%s\t%+d\n",
+		time.Now().UTC().Format(time.RFC3339), rel, capName, actor, delta); err != nil {
+		return fmt.Errorf("write-audit: %s: append %s: %w", rel, w.auditPath, err)
+	}
+	return nil
+}
+
+// traced is the write tails' handling of an audit failure. Auditing never
+// blocks the owner's write — by the time it runs the bytes have landed, and
+// failing the call would make callers treat a landed write as lost — but a
+// missing trace is a real defect (traces-not-commands), so it is never
+// swallowed: it is logged loudly and kept on the writer, where AuditFailure
+// exposes the count and the last error to health checks and tests.
+func (w *Writer) traced(err error) {
+	if err == nil {
+		return
+	}
+	log.Printf("vaultwriter: WRITE LANDED WITHOUT AUDIT TRACE: %v", err)
+	w.auditMu.Lock()
+	w.auditFailures++
+	w.lastAuditErr = err
+	w.auditMu.Unlock()
+}
+
+// AuditFailure reports how many vault writes landed without an audit line
+// since construction, and the most recent failure (nil when there was none).
+func (w *Writer) AuditFailure() (int, error) {
+	w.auditMu.Lock()
+	defer w.auditMu.Unlock()
+	return w.auditFailures, w.lastAuditErr
 }
 
 // commit is the shared tail for the writer's own guarded methods (contacts,
@@ -203,6 +234,6 @@ func (w *Writer) commit(full, label string, data []byte) error {
 	if r, err := filepath.Rel(w.vault, full); err == nil {
 		rel = filepath.ToSlash(r)
 	}
-	w.audit(rel, label, string(ActorUserAction), int64(len(data))-oldLen)
+	w.traced(w.audit(rel, label, string(ActorUserAction), int64(len(data))-oldLen))
 	return nil
 }

@@ -58,7 +58,7 @@ func (w *Writer) AppendLedgerRowAs(rel string, header, row []string, actor Actor
 	// §A3: appends audit like every other vault write (updates/deletes already
 	// did via commit; the O_APPEND fast path needs its own line). Delta is the
 	// appended byte count by construction.
-	w.audit(filepath.ToSlash(rel), "re-ledger-append", string(actor), int64(buf.Len()))
+	w.traced(w.audit(filepath.ToSlash(rel), "re-ledger-append", string(actor), int64(buf.Len())))
 	return nil
 }
 

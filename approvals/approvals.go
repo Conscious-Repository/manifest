@@ -85,6 +85,7 @@ type Store struct {
 	aionCap   string              // approved-proposal capability for aion applies; "" disables them
 	reCap     string              // approved-proposal capability for real-estate applies; "" disables them
 	goalsCap  string              // approved-proposal capability for goals placements; "" disables them
+	noteCap   string              // approved-proposal capability for log/ dated-note creates + appends; "" refuses them once vw is wired
 }
 
 // NewStore roots the store at <agentsDir>/approvals and creates its subfolders.
@@ -110,6 +111,31 @@ func (s *Store) WithVaultRoot(vaultRoot string) *Store {
 func (s *Store) WithVaultWriter(vw *vaultwriter.Writer) *Store {
 	s.vw = vw
 	return s
+}
+
+// WithVaultNoteCapability names the vaultwriter capability the two dated-note
+// applies (create-vault-note, append-vault-note) write log/ notes under. Once a
+// writer is wired, the applies route EVERY byte through it (check + audit); a
+// wired writer with no capability refuses (the lane is dark, never partial).
+// With no writer at all the applies fall back to the pre-lane raw write.
+func (s *Store) WithVaultNoteCapability(name string) *Store {
+	s.noteCap = name
+	return s
+}
+
+// noteLane reports whether log/ note applies go through the capability lane,
+// refusing loudly when a writer is wired but no capability was granted.
+func (s *Store) noteLane(kind string) (bool, error) {
+	if s.vw == nil {
+		return false, nil
+	}
+	if !s.vw.Enabled() {
+		return false, errors.New("apply refused: vault writer has no vault configured for " + kind)
+	}
+	if s.noteCap == "" {
+		return false, errors.New("apply refused: no vault-note capability granted for " + kind)
+	}
+	return true, nil
 }
 
 // CreateVaultNotePathAllowed is the hard allow-list for create-vault-note
@@ -549,7 +575,9 @@ func (s *Store) apply(p Proposal) error {
 // under the vault's log/ folder (the dated-note home since 2026-07-30). It still
 // refuses anything but a bare dated filename (the unchanged apply-path contract),
 // refuses when the note already exists (never overwrite), and refuses if no vault
-// root is configured. This is the ONLY way an approval writes outside the harness.
+// root is configured. The bytes land through the vault-note capability (check +
+// write-audit line) whenever a writer is wired — the raw write below is only the
+// writer-less fallback. This is the ONLY way an approval writes outside the harness.
 func (s *Store) applyCreateVaultNote(p Proposal) error {
 	if !CreateVaultNotePathAllowed(p.ApplyPath) {
 		return fmt.Errorf("apply refused: %q is not a vault-root dated note (YYYY-MM-DD <title>.md)", p.ApplyPath)
@@ -559,6 +587,10 @@ func (s *Store) applyCreateVaultNote(p Proposal) error {
 	}
 	if s.vaultRoot == "" {
 		return errors.New("apply refused: no vault root configured for create-vault-note")
+	}
+	lane, err := s.noteLane("create-vault-note")
+	if err != nil {
+		return err
 	}
 	// Lowercase the filename to match the vault convention (the engine may
 	// propose a title-cased "2026-07-08 Some Meeting.md"; save it lowercase).
@@ -586,6 +618,9 @@ func (s *Store) applyCreateVaultNote(p Proposal) error {
 	body := p.Proposed
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
+	}
+	if lane {
+		return s.vw.WriteCap(s.noteCap, "log/"+rel, []byte(body))
 	}
 	return os.WriteFile(target, []byte(body), 0o644)
 }
