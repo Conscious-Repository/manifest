@@ -11,12 +11,12 @@ func TestPathIsUnder(t *testing.T) {
 		path, root string
 		want       bool
 	}{
-		{"/home/u/.config/manifest", "/home/u/vault", false},            // external — fine
-		{"/home/u/vault/Manifest/cache", "/home/u/vault", true},         // nested — forbidden
+		{"/home/u/.config/manifest", "/home/u/vault", false},             // external — fine
+		{"/home/u/vault/Manifest/cache", "/home/u/vault", true},          // nested — forbidden
 		{"/home/u/vault/intrinsic/2026-06-30.md", "/home/u/vault", true}, // nested file
-		{"/home/u/vault", "/home/u/vault", true},                        // root itself
-		{"/home/u/vault-2", "/home/u/vault", false},                     // sibling prefix, not nested
-		{"/home/u", "/home/u/vault", false},                             // parent, not nested
+		{"/home/u/vault", "/home/u/vault", true},                         // root itself
+		{"/home/u/vault-2", "/home/u/vault", false},                      // sibling prefix, not nested
+		{"/home/u", "/home/u/vault", false},                              // parent, not nested
 		{"", "/home/u/vault", false},
 		{"/x", "", false},
 	}

@@ -32,17 +32,17 @@ type Identity struct {
 // "set-field" (an item field patch) or "replace-section" (a plan/description
 // section swap). State transitions pending → applied|discarded.
 type Proposal struct {
-	Verb    string `json:"verb"`             // human label: "set due", "replace ## plan"
-	Type    string `json:"type"`             // set-field | replace-section
-	ItemID  string `json:"item"`             // aion item id the change targets
-	Target  string `json:"target,omitempty"` // display target (item id / plan file path)
-	Section string `json:"section,omitempty"`
-	Field   string `json:"field,omitempty"`
-	Value   string `json:"value,omitempty"`
-	Body    string `json:"body,omitempty"` // full proposed section body
-	Was     string `json:"was,omitempty"`  // prior state, for the diff line
-	State   string `json:"state"`          // pending | applied | discarded
-	By      string `json:"by,omitempty"`   // who decided
+	Verb    string    `json:"verb"`             // human label: "set due", "replace ## plan"
+	Type    string    `json:"type"`             // set-field | replace-section
+	ItemID  string    `json:"item"`             // aion item id the change targets
+	Target  string    `json:"target,omitempty"` // display target (item id / plan file path)
+	Section string    `json:"section,omitempty"`
+	Field   string    `json:"field,omitempty"`
+	Value   string    `json:"value,omitempty"`
+	Body    string    `json:"body,omitempty"` // full proposed section body
+	Was     string    `json:"was,omitempty"`  // prior state, for the diff line
+	State   string    `json:"state"`          // pending | applied | discarded
+	By      string    `json:"by,omitempty"`   // who decided
 	At      time.Time `json:"at,omitempty"`
 }
 

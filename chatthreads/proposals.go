@@ -89,7 +89,7 @@ func toProposal(typ, item, field, value, section, body string) (Proposal, string
 		}
 		return Proposal{
 			Verb: "replace ## " + section, Type: "replace-section", ItemID: item,
-			Target: "system/todo-plans/" + planSlug("aion:"+item) + ".md",
+			Target:  "system/todo-plans/" + planSlug("aion:"+item) + ".md",
 			Section: section, Body: body, State: "pending",
 		}, ""
 	default:

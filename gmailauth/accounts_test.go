@@ -8,9 +8,9 @@ import (
 
 func TestAccountSlug(t *testing.T) {
 	for in, want := range map[string]string{
-		"Ben@ooda.group":            "ben-ooda-group",
-		"me@benjaminbanderson.com":  "me-benjaminbanderson-com",
-		"  A.B+c@X.io ":             "a-b-c-x-io",
+		"Ben@ooda.group":           "ben-ooda-group",
+		"me@benjaminbanderson.com": "me-benjaminbanderson-com",
+		"  A.B+c@X.io ":            "a-b-c-x-io",
 	} {
 		if got := accountSlug(in); got != want {
 			t.Errorf("accountSlug(%q) = %q, want %q", in, got, want)
