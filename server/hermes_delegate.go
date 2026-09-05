@@ -149,8 +149,36 @@ confirms, so file the change and reference it in your brief rather than
 claiming it is done. Everything else in your reply is the RESULT brief.
 `
 
+// hermesExecTurnSeconds is the per-turn budget for a WORK-ORDER turn — the
+// `plan` phase (what the composer's DO tab and `@agent::plan` dispatch: Hermes
+// reads the task, researches with its tool loop, and drafts the plan) and the
+// `go` phase (execute the approved plan, verify, emit proposals). Both are
+// multi-step tool loops on real work and routinely outrun the runner's
+// quick-ask default (2026-09-05: a DO on personal/new-themes — a theme
+// switcher — died "timed out after 8m0s" while still working, not hung). An
+// ask/comment turn is one read-and-reply and keeps the default, so this
+// budget never widens the cap for everyone.
+const hermesExecTurnSeconds = 30 * 60
+
+// hermesTurnBudget maps a work-order phase to its Request.TimeoutSeconds: the
+// long execution budget for plan/go, 0 (→ the runner's configured default)
+// for comment/ask turns and anything unrecognized. Pure.
+func hermesTurnBudget(phase string) int {
+	switch phase {
+	case "plan", "go":
+		return hermesExecTurnSeconds
+	}
+	return 0
+}
+
 // runHermesTurn invokes the CLI and materializes the reply. Always clears the
 // in-flight marker (in memory) and closes the durable turn-open marker.
+//
+// A turn that hits its budget lands as a visible "⚠ … couldn't finish that —
+// hermes turn timed out after …" comment and CLOSES its turn-open marker, so
+// hermesTurnSweep treats it as answered and does NOT re-dispatch it: the
+// owner re-asks to retry (deliberate — a budget overrun is not a lost turn,
+// and an automatic re-run would double the spend before anyone looked).
 func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
 	defer func() {
 		s.hermes.mu.Lock()
@@ -162,9 +190,10 @@ func (s *Server) runHermesTurn(taskID, agent, phase, intent, prompt string) {
 	// Every turn is a fresh Hermes session (hermes -z has no working resume —
 	// see package hermes); the prompt itself carries the thread's context.
 	res, err := s.hermes.runner.Run(context.Background(), hermes.Request{
-		Prompt:   prompt,
-		Toolsets: s.hermes.readTools, // read-only scope until Phase 2's gated execution
-		Profile:  s.hermesProfileOf(agent),
+		Prompt:         prompt,
+		Toolsets:       s.hermes.readTools, // read-only scope until Phase 2's gated execution
+		Profile:        s.hermesProfileOf(agent),
+		TimeoutSeconds: hermesTurnBudget(phase), // plan/go get the execution budget; asks keep the default
 	})
 	if err != nil {
 		log.Printf("hermes turn %s (%s): %v", taskID, phase, err)

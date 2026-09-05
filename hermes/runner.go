@@ -58,10 +58,19 @@ type Config struct {
 	Bin      string // hermes binary path or name on $PATH (default "hermes")
 	Model    string // default -m model override ("" → the CLI's configured model)
 	Toolsets string // default -t toolset scope ("" → the CLI's configured toolsets)
-	// TimeoutSeconds bounds a single agent turn; 0 → a sane default. An agent
-	// turn can be long (tool loop), so this is generous.
+	// TimeoutSeconds is the DEFAULT bound on one agent turn (config
+	// `hosts.hermes.timeoutSeconds`); 0 → DefaultTimeout. It governs only the
+	// turns that don't ask for their own budget: a Request.TimeoutSeconds > 0
+	// overrides it per turn (an execution turn — plan + tool loop + verify —
+	// asks for a longer one; see server.hermesTurnBudget). Raising this raises
+	// the fallback for every budget-less turn, asks included.
 	TimeoutSeconds int
 }
+
+// DefaultTimeout bounds a turn when neither the config nor the Request sets a
+// budget. Sized for a quick ask/comment turn; multi-step execution turns are
+// expected to carry their own Request.TimeoutSeconds.
+const DefaultTimeout = 8 * time.Minute
 
 // Runner invokes the Hermes CLI. Safe for concurrent use (each Run is its own
 // process and its own fresh Hermes session).
@@ -77,9 +86,18 @@ func NewRunner(cfg Config) *Runner {
 	}
 	to := time.Duration(cfg.TimeoutSeconds) * time.Second
 	if to <= 0 {
-		to = 8 * time.Minute
+		to = DefaultTimeout
 	}
 	return &Runner{cfg: cfg, timeout: to}
+}
+
+// turnTimeout is the effective bound for one turn: the Request's own budget
+// when it sets one, else the runner's configured default. Pure.
+func (r *Runner) turnTimeout(req Request) time.Duration {
+	if req.TimeoutSeconds > 0 {
+		return time.Duration(req.TimeoutSeconds) * time.Second
+	}
+	return r.timeout
 }
 
 // Enabled reports whether Run will attempt an invocation.
@@ -102,6 +120,13 @@ type Request struct {
 	// state — its model, keys, SOUL.md, skills, sessions. "" → the default
 	// profile, argv unchanged.
 	Profile string
+	// TimeoutSeconds bounds THIS turn, overriding the runner's configured
+	// default (Config.TimeoutSeconds / DefaultTimeout) when > 0. The one cap
+	// used to apply to every turn alike, so an execution turn that legitimately
+	// runs a long tool loop was killed at the quick-ask bound (2026-09-05: a
+	// DO on a real implementation task died "timed out after 8m0s"). Callers
+	// that know the turn is multi-step set a longer budget here; 0 → default.
+	TimeoutSeconds int
 }
 
 // Result is a completed turn.
@@ -180,7 +205,8 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	if strings.TrimSpace(req.Prompt) == "" {
 		return Result{}, errors.New("empty prompt")
 	}
-	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	timeout := r.turnTimeout(req)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// usage report → a temp file the CLI writes JSON into after the run.
@@ -197,7 +223,7 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return Result{}, fmt.Errorf("hermes turn timed out after %s", r.timeout)
+			return Result{}, fmt.Errorf("hermes turn timed out after %s", timeout)
 		}
 		// surface a trimmed stderr tail — the CLI's error is the useful part
 		return Result{}, fmt.Errorf("hermes: %v: %s", err, tail(errb.String(), 300))

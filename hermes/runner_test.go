@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildArgs(t *testing.T) {
@@ -130,6 +131,78 @@ func TestParseUsage(t *testing.T) {
 	}
 	if u := parseUsage(filepath.Join(dir, "missing.json")); u != (usageReport{}) {
 		t.Errorf("missing → zero report, got %+v", u)
+	}
+}
+
+// TestTurnTimeout pins the per-turn budget selection (2026-09-05: the one
+// runner cap killed a legitimate execution turn at 8m). A Request that sets
+// TimeoutSeconds gets exactly that; unset falls back to the runner default —
+// which is DefaultTimeout (8m) when the config is silent, or the configured
+// Config.TimeoutSeconds when set. The regression half: the unset path is
+// byte-identical to before the field existed.
+func TestTurnTimeout(t *testing.T) {
+	def := NewRunner(Config{Enabled: true})
+	if DefaultTimeout != 8*time.Minute {
+		t.Fatalf("DefaultTimeout = %s, the quick-ask default must stay 8m0s", DefaultTimeout)
+	}
+	if got := def.turnTimeout(Request{Prompt: "ask"}); got != DefaultTimeout {
+		t.Errorf("unset request on default config → %s, want 8m0s", got)
+	}
+	if got := def.turnTimeout(Request{Prompt: "go", TimeoutSeconds: 30 * 60}); got != 30*time.Minute {
+		t.Errorf("request budget 1800s → %s, want 30m0s", got)
+	}
+	if got := def.turnTimeout(Request{Prompt: "go", TimeoutSeconds: -5}); got != DefaultTimeout {
+		t.Errorf("a non-positive request budget must fall back to the default, got %s", got)
+	}
+	cfg := NewRunner(Config{Enabled: true, TimeoutSeconds: 480})
+	if got := cfg.turnTimeout(Request{Prompt: "ask"}); got != 8*time.Minute {
+		t.Errorf("configured 480s, unset request → %s, want 8m0s", got)
+	}
+	cfg2 := NewRunner(Config{Enabled: true, TimeoutSeconds: 120})
+	if got := cfg2.turnTimeout(Request{Prompt: "ask"}); got != 2*time.Minute {
+		t.Errorf("configured 120s, unset request → %s, want 2m0s", got)
+	}
+	// the per-turn budget is the primary mechanism: it wins over the config
+	// default in both directions, never widening the cap for budget-less turns
+	if got := cfg2.turnTimeout(Request{Prompt: "go", TimeoutSeconds: 1500}); got != 25*time.Minute {
+		t.Errorf("request 1500s over configured 120s → %s, want 25m0s", got)
+	}
+	if got := cfg2.turnTimeout(Request{Prompt: "quick", TimeoutSeconds: 30}); got != 30*time.Second {
+		t.Errorf("request 30s under configured 120s → %s, want 30s", got)
+	}
+}
+
+// TestRunTimeoutEnforced proves the Request budget is what the deadline runs
+// on, not just what turnTimeout reports: a stub that sleeps past a 1s request
+// budget is killed and the error names the EFFECTIVE budget, while the same
+// stub inside a generous budget completes.
+func TestRunTimeoutEnforced(t *testing.T) {
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "hermes-slow")
+	// `exec` so the sleep IS the killed process: a forked child would inherit
+	// the stdout pipe and hold Run's Wait open past the deadline (the same
+	// holds for a real CLI that leaves tool subprocesses behind — the error is
+	// still the timed-out one, it just surfaces once the pipe closes).
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexec sleep 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := NewRunner(Config{Enabled: true, Bin: stub})
+	start := time.Now()
+	_, err := r.Run(context.Background(), Request{Prompt: "slow", TimeoutSeconds: 1})
+	if err == nil || !strings.Contains(err.Error(), "hermes turn timed out after 1s") {
+		t.Fatalf("1s budget on a 3s turn: err = %v, want the timed-out error naming 1s", err)
+	}
+	if el := time.Since(start); el > 2500*time.Millisecond {
+		t.Errorf("the 1s request budget was not the deadline (took %s)", el)
+	}
+	// the same wait inside a generous budget completes normally
+	quick := filepath.Join(dir, "hermes-quick")
+	if err := os.WriteFile(quick, []byte("#!/bin/sh\nsleep 1\nprintf done\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	res, err := NewRunner(Config{Enabled: true, Bin: quick}).Run(context.Background(), Request{Prompt: "ok", TimeoutSeconds: 20})
+	if err != nil || res.Reply != "done" {
+		t.Fatalf("20s budget on a 1s turn: res=%q err=%v, want done/nil", res.Reply, err)
 	}
 }
 

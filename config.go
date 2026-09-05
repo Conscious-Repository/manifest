@@ -166,7 +166,10 @@ type Config struct {
 
 // HermesConfig configures the local Hermes Agent CLI runner (see the hermes
 // package). Bin defaults to "hermes" on $PATH; Model/Toolsets are optional
-// per-invocation overrides (-m / -t); TimeoutSeconds bounds one agent turn.
+// per-invocation overrides (-m / -t). TimeoutSeconds is the DEFAULT bound on
+// one agent turn (0 → hermes.DefaultTimeout, 8m): it governs ask/comment,
+// chat, dig and scaffold turns. Work-order turns (plan/go) carry their own
+// longer per-turn budget (server.hermesTurnBudget) and ignore this value.
 type HermesConfig struct {
 	Enabled bool   `json:"enabled"`
 	Bin     string `json:"bin"`
