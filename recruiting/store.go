@@ -685,7 +685,7 @@ func (s *Store) candidateView(slug string, doc *CandidateDoc) Candidate {
 // from the owner-consent people) after the record's hand-authored `## network`
 // rows. Hand-written rows are owner evidence and pass through untouched.
 func withDerivedPaths(c Candidate, net NetworkView) Candidate {
-	derived := DerivePaths(net.People, net.Edges, c.ID, nil, DefaultTopPaths)
+	derived := DerivePaths(net.People, PathEdges(net.Edges), c.ID, nil, DefaultTopPaths)
 	c.Paths = MergePaths(c.Paths, derived)
 	return c
 }

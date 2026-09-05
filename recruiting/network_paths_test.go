@@ -265,3 +265,40 @@ func TestStoreViewCarriesDerivedPaths(t *testing.T) {
 		t.Fatalf("derived path leaked into the record:\n%s", raw)
 	}
 }
+
+// A ROUTE AND A CONTEXT ARE DIFFERENT THINGS. Every claim the graph can make
+// honestly belongs in the view; only the ones strong enough to ask through
+// belong in a path. Walking the weak ones made the live board take seven
+// seconds and offered routes nobody would use.
+func TestOnlyStrongEnoughEdgesAreWalked(t *testing.T) {
+	all := []Edge{
+		{From: "me", To: "a", Kind: "same_meeting", Basis: "both on a call", Source: "calendar", Confidence: "0.70"},
+		{From: "a", To: "target", Kind: "coauthor", Basis: "same paper", Source: "openalex", Confidence: "0.55"},
+		{From: "me", To: "b", Kind: "co_mentioned", Basis: "one note names both", Source: "notes", Confidence: "0.40"},
+		{From: "b", To: "target", Kind: "co_mentioned", Basis: "one note names both", Source: "notes", Confidence: "0.40"},
+		{From: "c", To: "target", Kind: "direct_known", Basis: "the owner says so", Source: "owner"},
+	}
+	walkable := PathEdges(all)
+	if len(walkable) != 3 {
+		t.Fatalf("walkable edges: %d — the 0.40 hops must be context, not routes", len(walkable))
+	}
+	for _, e := range walkable {
+		if e.Kind == "co_mentioned" {
+			t.Fatal("a co-mention became a route")
+		}
+	}
+	// an edge with NO stated confidence is walkable: unstated is 0.5, which is
+	// the floor, and refusing it would drop every hand-written row
+	if len(PathEdges([]Edge{{From: "x", To: "y", Kind: "direct_known", Basis: "b", Source: "owner"}})) != 1 {
+		t.Fatal("an unstated confidence must still be walkable")
+	}
+
+	people := []NetworkPerson{{ID: "me", Name: "Me", Consent: "owner"}}
+	got := DerivePaths(people, PathEdges(all), "target", nil, DefaultTopPaths)
+	if len(got) != 1 {
+		t.Fatalf("one route (me > a > target): %+v", got)
+	}
+	if got[0].Path != "me"+pathSep+"a"+pathSep+"target" {
+		t.Fatalf("the route must go through the meeting, not the note: %q", got[0].Path)
+	}
+}

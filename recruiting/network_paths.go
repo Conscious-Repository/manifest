@@ -2,6 +2,7 @@ package recruiting
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"manifest/graph"
@@ -38,6 +39,40 @@ const (
 
 	pathSep = " > "
 )
+
+// MinPathConfidence is the floor for an edge to be part of a ROUTE.
+//
+// ⚠ A ROUTE AND A CONTEXT ARE DIFFERENT THINGS. The graph carries every claim
+// it can honestly make, including the weak ones — two people written about in
+// one note (`co_mentioned`, 0.40) is worth seeing on the network view. It is
+// not worth walking through: "ask Ben, who mentioned Dana in a note beside
+// Kai, who…" is not an introduction, and treating it as one made the board
+// take SEVEN SECONDS to load on the live vault (1,010 such edges, four hops,
+// through a hub node the owner sits on).
+//
+// So the floor is the line between the two, and it is drawn where the
+// derivations themselves put it: a stated coauthorship (0.55), a shared grant
+// or repo (0.60), a shared meeting (0.70) and the owner's own word (0.95) are
+// routes. Anything softer is context, and shows in the view without being
+// walked.
+const MinPathConfidence = 0.5
+
+// PathEdges is the subgraph an intro path may traverse.
+func PathEdges(all []Edge) []Edge {
+	out := make([]Edge, 0, len(all))
+	for _, e := range all {
+		conf := UnstatedEdgeConfidence
+		if c := strings.TrimSpace(e.Confidence); c != "" {
+			if v, err := strconv.ParseFloat(c, 64); err == nil {
+				conf = v
+			}
+		}
+		if conf >= MinPathConfidence {
+			out = append(out, e)
+		}
+	}
+	return out
+}
 
 // OwnerSeeds is the v1 default seed set: everyone whose consent is `owner`
 // (the founders). It is explicit and small on purpose — an intro path that
