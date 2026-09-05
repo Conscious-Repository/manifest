@@ -674,8 +674,24 @@ function renderSettingsDisplay(pane) {
   rc.append(pillLight("clear", () => { drop("manifest.cmd.recents"); showToast("Command-bar recents cleared"); renderSettings(); }));
   row("manifest.cmd.recents", rc);
 
+  // 5. theme (manifest.theme) — default | jarvis, a segmented pill pair;
+  //    setTheme in 99-boot applies + persists; no vault write (device-local).
+  const th = el("span", "set-kv-val");
+  const cur = typeof themePref === "function" ? themePref() : (store("manifest.theme") || "default");
+  const names = typeof THEMES !== "undefined" ? THEMES : ["default", "jarvis"];
+  const btns = names.map((name) => {
+    const b = pillLight(name, () => {
+      if (typeof setTheme === "function") setTheme(name, true);
+      btns.forEach((x) => x.classList.toggle("on", x.textContent === name));
+      showToast("Theme: " + name);
+    });
+    if (name === cur) b.classList.add("on");
+    return b;
+  });
+  th.append(...btns, el("span", "set-kv-val dim", "this browser only"));
+  row("manifest.theme", th);
+
   pane.append(g);
-  pane.append(el("div", "portal-note", "Theme: not built — the portal SPA has its own."));
 }
 
 // The chargebook form (Settings › Agents › Budget): the default every keyless

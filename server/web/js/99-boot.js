@@ -295,6 +295,26 @@ function setRailCollapsed(on, persist) {
   if (persist) localStorage.setItem("manifest.rail.collapsed", on ? "1" : "0");
 }
 function railPref() { return localStorage.getItem("manifest.rail.collapsed") === "1"; }
+
+// ---- theme (persisted; this browser's preference, never the vault) ----
+// Two themes only: "default" (the :root tokens, no attribute) and "jarvis"
+// (the data-theme override block in 00-core.css). An inline head script in
+// index.html applies the stored value before first paint; this pair owns it
+// after — Settings › Display is the sanctioned control.
+const THEMES = ["default", "jarvis"];
+function setTheme(name, persist) {
+  const t = THEMES.includes(name) ? name : "default";
+  if (t === "default") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", t);
+  if (persist) {
+    try { if (t === "default") localStorage.removeItem("manifest.theme"); else localStorage.setItem("manifest.theme", t); } catch (e) {}
+  }
+}
+function themePref() {
+  let t = "";
+  try { t = localStorage.getItem("manifest.theme") || ""; } catch (e) {}
+  return THEMES.includes(t) ? t : "default";
+}
 function applyRailWidth() {
   // Phone band (Rev 4): the drawer CSS in 95-mobile.css owns the rail — the
   // icon-strip collapsed mode must not be reachable there. matchMedia (not
@@ -417,6 +437,7 @@ window.addEventListener("hashchange", route);
 
 // ---- shell wiring ----
 buildRail();
+setTheme(themePref(), false); // re-assert what the head script applied (no-op on default)
 applyRailWidth();
 els.railCollapse.addEventListener("click", () => {
   const on = !els.appShell.classList.contains("rail-collapsed");

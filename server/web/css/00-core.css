@@ -139,6 +139,122 @@
   --sp-9: 24px;
 }
 
+/* ── JARVIS — the one alternate theme: a dark translucent holographic HUD.
+   A TOKEN-OVERRIDE SET, not a re-theme: every surface reads the same role
+   tokens, so this block cascades app-wide with no per-file edits. The neutral
+   ramp is INVERTED (base-00 = near-black navy page, base-100 = cool-white ink);
+   --accent turns holographic cyan; status colors go amber/red/green; --on-accent
+   flips dark because white on cyan is 1.7:1. Applied only when <html> carries
+   data-theme="jarvis" (99-boot setTheme ← localStorage manifest.theme; the
+   inline head script in index.html sets it before first paint). With no
+   attribute the :root block above renders byte-for-byte as before.
+   Contrast on #03080D: text 18.5 · highlight 16.2 · base-70 12.8 · base-60 10.7
+   · base-50 7.8 · base-40 5.9 · cyan 11.7 · blue 5.9 · orange 8.5 · amber 12.5
+   · red 5.9 · green 12.7 (all ≥ AA 4.5). Direction: cyan ≈80% of illuminated
+   UI; orange/amber/red only for armed commands, warnings, critical. */
+:root[data-theme="jarvis"] {
+  color-scheme: dark; /* native select/checkbox/scrollbar chrome follows */
+
+  /* neutral ramp — inverted: surfaces climb from near-black navy to steel blue,
+     text descends from cool white through desaturated blue */
+  --base-00: #03080D;   /* page + panel surface — near-black navy */
+  --base-05: #071521;   /* raised row, inspector, hover — primary surface */
+  --base-08: #091B2A;
+  --base-10: #0B2233;   /* left rail — elevated surface, dark steel blue */
+  --base-15: #0F2B3F;
+  --base-20: #12364C;   /* selected row / active nav item */
+  --base-25: #17465E;   /* hairlines, borders — muted cyan-blue grid */
+  --base-30: #2F6B88;   /* icons, empty checkboxes, disabled chevrons */
+  --base-40: #5E93A8;   /* muted labels, meta (5.9:1) */
+  --base-50: #78A9BA;   /* secondary text — desaturated blue */
+  --base-60: #9DC3D2;   /* body sub-text */
+  --base-70: #A9D5E4;   /* nav item text */
+  --base-80: #BDEFFF;   /* dense row text — bright highlight ice blue */
+  --base-100: #E6F9FF;  /* ink: primary text — cool white */
+
+  /* the single accent — LIVE is holographic cyan */
+  --accent: #00D8FF;
+  --accent-soft: #0F6A85; /* the quiet tint: hover borders, soft fills — dim cyan on dark */
+
+  --over: #FF453A;      /* money over budget ONLY — reactor red */
+
+  --ink: #E6F9FF;
+  --line-soft: #0F2B3F;
+  --pill-bg: #0B2233;
+  --pill-bd: #17465E;
+  --pill-ink: #BDEFFF;
+  --streak-bg: #0B2233;
+  --streak-bd: #17465E;
+  --streak-ink: #BDEFFF;
+
+  /* status — amber / reactor red / diagnostic green */
+  --danger: #FF453A;
+  --warn:   #FFC247;
+  --good:   #38E8A0;
+  --status-danger-bg:     rgba(255, 69, 58, 0.14);
+  --status-danger-deep:   #6E1A15;
+  --status-danger-border: rgba(255, 69, 58, 0.45);
+  --status-warn-bg:       rgba(255, 194, 71, 0.12);
+  --status-info:          #168BFF; /* secondary UI — electric blue */
+  --status-info-bg:       rgba(22, 139, 255, 0.12);
+  --status-info-border:   rgba(22, 139, 255, 0.40);
+
+  /* on-accent — the fill is bright cyan now, so the ink on it goes dark (11.7:1) */
+  --on-accent: #03080D;
+  --on-accent-dim: rgba(3, 8, 13, 0.6);
+
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  /* terminal chrome — the cockpit's dark subsystem joins the HUD palette */
+  --term-bg:    #03080D;
+  --term-line:  #17465E;
+  --term-muted: #2F6B88;
+  --term-dim:   #78A9BA;
+  --term-ink:   #E6F9FF;
+
+  /* shadows read as depth on dark only with a hairline of grid light */
+  --shadow-1: 0 1px 3px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--jarvis-grid-line);
+  --shadow-2: 0 4px 16px rgba(0, 0, 0, 0.6), 0 0 0 1px var(--jarvis-grid-line);
+  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--jarvis-grid-line);
+
+  /* JARVIS-only tokens — gradients, glow, translucency, grid */
+  --jarvis-blue: #168BFF;        /* secondary UI */
+  --jarvis-highlight: #BDEFFF;   /* bright highlight ice blue */
+  --jarvis-active: #FF8A24;      /* selected/active command — stark orange (rare) */
+  --jarvis-hologram: linear-gradient(135deg, #00D8FF 0%, #168BFF 100%);
+  --jarvis-active-grad: linear-gradient(135deg, #FFC247 0%, #FF6534 100%);
+  --jarvis-surface: linear-gradient(180deg, #0B2233 0%, #03080D 100%);
+  --jarvis-panel: rgba(7, 21, 33, 0.82);
+  --jarvis-cyan-glow: 0 0 18px rgba(0, 216, 255, 0.55);
+  --jarvis-orange-glow: 0 0 18px rgba(255, 138, 36, 0.55);
+  --jarvis-grid-line: rgba(0, 216, 255, 0.16);
+  --jarvis-grid-ground: rgba(0, 216, 255, 0.045); /* the page-wide grid — a whisper, text crosses it */
+}
+/* The HUD ground: surface gradient + a faint cyan grid behind everything that
+   does not paint its own panel (the content column is transparent, so list
+   rows sit on it — hence the whisper alpha). Opaque surfaces (rail, panels)
+   sit on top unchanged. */
+:root[data-theme="jarvis"] body {
+  background:
+    repeating-linear-gradient(0deg, var(--jarvis-grid-ground) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, var(--jarvis-grid-ground) 0 1px, transparent 1px 48px),
+    var(--jarvis-surface);
+  background-color: var(--base-00);
+  background-attachment: fixed;
+}
+/* Three places where the inverted ramp flips a pairing's meaning:
+   the solid pill brightened on hover via base-30 (now the DIMMER step) — use
+   the highlight; the armed pill is the one "active command" — orange, glowing;
+   the LIVE rail item earns the hologram's glow. Everything else cascades. */
+:root[data-theme="jarvis"] .pill:hover { color: var(--jarvis-highlight); border-color: var(--accent-soft); }
+:root[data-theme="jarvis"] .pill.armed { background: var(--jarvis-active-grad); border-color: var(--jarvis-active); box-shadow: var(--jarvis-orange-glow); }
+:root[data-theme="jarvis"] .toast { background: var(--base-10); color: var(--base-100); border: 1px solid var(--base-25); box-shadow: var(--shadow-2), var(--jarvis-cyan-glow); }
+:root[data-theme="jarvis"] .toast-x { color: var(--base-50); }
+:root[data-theme="jarvis"] .toast-x:hover { color: var(--base-100); }
+:root[data-theme="jarvis"] .toast-error { background: var(--status-danger-deep); color: var(--base-100); box-shadow: var(--shadow-2); }
+:root[data-theme="jarvis"] .toast-digest { background: var(--accent); color: var(--on-accent); }
+:root[data-theme="jarvis"] .rail-item.active { text-shadow: 0 0 10px rgba(0, 216, 255, 0.45); }
+
 * { box-sizing: border-box; }
 [hidden] { display: none !important; } /* beat .pill/.grid/.flex display rules */
 
