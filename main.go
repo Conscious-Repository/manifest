@@ -37,6 +37,7 @@ import (
 	"manifest/gmailsend"
 	"manifest/gmailsync"
 	"manifest/goals"
+	"manifest/graph"
 	"manifest/hermes"
 	"manifest/ledger"
 	"manifest/portals"
@@ -262,6 +263,14 @@ func main() {
 			vaultwriter.Capability{Name: "aion-recruiting", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "aion", "recruiting")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			// THE ENTITY/EDGE GRAPH (manifest P2 Phase 1) — system/graph/
+			// {entities,edges}.md: relationship CLAIMS across every domain (a
+			// task depends on a decision, a heuristic supports it, a task
+			// produced an artifact). Owner-stated only; derived edges are
+			// never written. User-action only, like recruiting's network.
+			vaultwriter.Capability{Name: "graph", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "graph")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
 			// PRIVATE FUNDRAISING CRM — explicitly separate from AION's public
 			// live/export contract. Opportunity records and the shared note-less
 			// contact registry have separately bounded capabilities.
@@ -444,6 +453,13 @@ func main() {
 	srv.UseGeocoder(geocode.New(cfg.DataDir))
 	srv.UseFundraising(frStore)
 	srv.UseRecruiting(recStore)
+	// P2 graph: the general entity/edge record store. Same shape as the
+	// recruiting network files (record.ParseRows fixpoint), one narrow grant.
+	graphStore := graph.NewStore(cfg.VaultPath, filepath.ToSlash(filepath.Join(cfg.SystemRoot, "graph")), vw.BindAbs("graph"))
+	if err := graphStore.Ensure(); err != nil {
+		log.Printf("graph records: %v", err)
+	}
+	srv.UseGraph(graphStore)
 	if recRuns != nil {
 		srv.UseRecruitingRuns(recRuns)
 	}

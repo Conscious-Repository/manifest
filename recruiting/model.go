@@ -27,13 +27,10 @@ import (
 // Field is the kernel's inline-field pair.
 type Field = record.Field
 
-// DocFM is the shared frontmatter carrier: raw block lines (nil = no block)
+// DocFM is the shared frontmatter carrier (record.DocFM): raw block lines
 // plus whether a blank line separated the fence from the body — preserved so
 // parse→emit stays byte-identical.
-type DocFM struct {
-	FM      []string `json:"-"`
-	FMBlank bool     `json:"-"`
-}
+type DocFM = record.DocFM
 
 // ---- closed sets ----
 
@@ -368,15 +365,7 @@ func emitBool(b bool) string {
 
 // unknownFields collects the fields of a row outside a recognized vocabulary,
 // so a hand-added `[foo:: bar]` survives a load → mutate → save.
-func unknownFields(r *Row, known ...string) []Field {
-	var out []Field
-	for _, f := range r.Fields {
-		if !inSetFold(known, f.Key) {
-			out = append(out, f)
-		}
-	}
-	return out
-}
+func unknownFields(r *Row, known ...string) []Field { return r.UnknownFields(known...) }
 
 func inSetFold(set []string, s string) bool {
 	for _, v := range set {

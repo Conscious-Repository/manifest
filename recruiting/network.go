@@ -1,9 +1,9 @@
 package recruiting
 
 import (
-	"strconv"
 	"strings"
 
+	"manifest/graph"
 	"manifest/record"
 )
 
@@ -122,24 +122,11 @@ func (d *EdgesDoc) Edges() []Edge {
 
 // ValidateEdge is the "no claim without a basis" rule. An edge with no
 // [basis::] is a bug: we would be asserting a relationship we cannot explain.
+// The rule itself lives in graph.Validate (P2 lifted it out of here
+// verbatim); this runs it over the recruiting vocabulary.
 func ValidateEdge(e Edge) error {
-	if strings.TrimSpace(e.From) == "" || strings.TrimSpace(e.To) == "" {
-		return errf("an edge needs both endpoints")
-	}
-	if !ValidEdgeKind(e.Kind) {
-		return errf("edge kind %q is not in the closed set", e.Kind)
-	}
-	if strings.TrimSpace(e.Basis) == "" {
-		return errf("an edge needs a basis — an unexplainable claim is not a claim")
-	}
-	if strings.TrimSpace(e.Source) == "" {
-		return errf("an edge needs the source that supports it")
-	}
-	if c := strings.TrimSpace(e.Confidence); c != "" {
-		v, err := strconv.ParseFloat(c, 64)
-		if err != nil || v < 0 || v > 1 {
-			return errf("edge confidence must be between 0 and 1")
-		}
+	if err := graph.Validate(e.Graph(), EdgeVocabulary()); err != nil {
+		return errf("%s", err.Error())
 	}
 	return nil
 }
@@ -180,4 +167,4 @@ func (d *EdgesDoc) Add(e Edge) (Edge, error) {
 
 // FormatConfidence renders a confidence-table constant the way the records
 // carry it (two decimals, so 0.95 never reads as 0.9500000000000001).
-func FormatConfidence(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
+func FormatConfidence(v float64) string { return graph.FormatConfidence(v) }

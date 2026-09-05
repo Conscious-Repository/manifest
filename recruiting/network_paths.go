@@ -2,8 +2,9 @@ package recruiting
 
 import (
 	"sort"
-	"strconv"
 	"strings"
+
+	"manifest/graph"
 )
 
 // Intro-path derivation (Phase 4). The network is a set of relationship
@@ -12,6 +13,11 @@ import (
 // that passed ValidateEdge, and every node is an endpoint of one of those
 // edges. The search is deterministic — same people + edges → identical
 // output — so two board loads never disagree about the best route in.
+//
+// The walk itself now lives in `graph` (P2 lifted it out of here unchanged:
+// undirected simple paths, bounded depth, seeds never passed through, ranked
+// fewer-hops → higher confidence → path string). This file is the adapter:
+// a recruiting Edge is a graph.Edge whose endpoints are all `person`.
 
 const (
 	// PathKindDerived marks a PathClaim this file computed, as opposed to a
@@ -20,67 +26,18 @@ const (
 
 	// MaxIntroHops bounds the search depth. An intro through four strangers
 	// is not an intro, and the bound is what keeps enumeration cheap.
-	MaxIntroHops = 4
+	MaxIntroHops = graph.DefaultMaxHops
 
 	// DefaultTopPaths is how many ranked paths a view carries per candidate.
-	DefaultTopPaths = 3
+	DefaultTopPaths = graph.DefaultTopPaths
 
 	// UnstatedEdgeConfidence is the weight of an edge whose row carries no
 	// [confidence::]. It is deliberately below any owner-asserted value so a
 	// claim with no stated strength never outranks one that has it.
-	UnstatedEdgeConfidence = 0.5
+	UnstatedEdgeConfidence = graph.UnstatedConfidence
 
 	pathSep = " > "
 )
-
-// pathGraph is the undirected adjacency built from validated edges.
-type pathGraph struct {
-	adj map[string][]pathHop
-}
-
-type pathHop struct {
-	to         string
-	confidence float64
-	inferred   bool
-}
-
-// buildPathGraph keeps only edges that pass the "no claim without a basis"
-// rule, and traverses each in both directions: an intro can flow either way
-// along a relationship, whichever endpoint the row happened to name first.
-func buildPathGraph(edges []Edge) pathGraph {
-	g := pathGraph{adj: map[string][]pathHop{}}
-	for _, e := range edges {
-		if ValidateEdge(e) != nil {
-			continue
-		}
-		from, to := strings.TrimSpace(e.From), strings.TrimSpace(e.To)
-		if from == to {
-			continue
-		}
-		conf := UnstatedEdgeConfidence
-		if c := strings.TrimSpace(e.Confidence); c != "" {
-			conf, _ = strconv.ParseFloat(c, 64) // ValidateEdge already bounded it
-		}
-		g.adj[from] = append(g.adj[from], pathHop{to: to, confidence: conf, inferred: e.Inferred})
-		g.adj[to] = append(g.adj[to], pathHop{to: from, confidence: conf, inferred: e.Inferred})
-	}
-	// Sorted adjacency is what makes the enumeration order — and therefore
-	// the tie-break among equal-scoring paths — a function of the input
-	// rather than of map iteration.
-	for k := range g.adj {
-		hops := g.adj[k]
-		sort.SliceStable(hops, func(i, j int) bool {
-			if hops[i].to != hops[j].to {
-				return hops[i].to < hops[j].to
-			}
-			if hops[i].confidence != hops[j].confidence {
-				return hops[i].confidence > hops[j].confidence
-			}
-			return !hops[i].inferred && hops[j].inferred
-		})
-	}
-	return g
-}
 
 // OwnerSeeds is the v1 default seed set: everyone whose consent is `owner`
 // (the founders). It is explicit and small on purpose — an intro path that
@@ -95,18 +52,6 @@ func OwnerSeeds(people []NetworkPerson) []string {
 	sort.Strings(out)
 	return out
 }
-
-// derivedPath is a candidate route under consideration, before it is
-// projected onto a PathClaim.
-type derivedPath struct {
-	nodes      []string
-	confidence float64
-	inferred   bool
-}
-
-func (p derivedPath) hops() int { return len(p.nodes) - 1 }
-
-func (p derivedPath) String() string { return strings.Join(p.nodes, pathSep) }
 
 // DerivePaths returns the top-N ranked intro paths from the seed set to
 // `target`, as PathClaims. `seeds` empty means OwnerSeeds(people). Ranking:
@@ -126,86 +71,26 @@ func DerivePaths(people []NetworkPerson, edges []Edge, target string, seeds []st
 	if len(seeds) == 0 {
 		seeds = OwnerSeeds(people)
 	}
-	g := buildPathGraph(edges)
-	if len(g.adj[target]) == 0 {
-		return out
-	}
-	seedSet := map[string]bool{}
-	var seedList []string
+	g := graph.Build(GraphEdges(edges), EdgeVocabulary())
+	var starts []graph.Ref
 	for _, s := range seeds {
-		s = strings.TrimSpace(s)
-		if s == "" || s == target || seedSet[s] {
-			continue
+		if s = strings.TrimSpace(s); s != "" {
+			starts = append(starts, PersonRef(s))
 		}
-		seedSet[s] = true
-		seedList = append(seedList, s)
 	}
-	sort.Strings(seedList)
-
-	var found []derivedPath
-	for _, seed := range seedList {
-		if len(g.adj[seed]) == 0 {
-			continue
-		}
-		walk(g, seed, target, seedSet, derivedPath{nodes: []string{seed}, confidence: 1}, &found)
-	}
-	sort.SliceStable(found, func(i, j int) bool {
-		if found[i].hops() != found[j].hops() {
-			return found[i].hops() < found[j].hops()
-		}
-		if found[i].confidence != found[j].confidence {
-			return found[i].confidence > found[j].confidence
-		}
-		return found[i].String() < found[j].String()
-	})
-	for i, p := range found {
-		if i >= topN {
-			break
+	for _, p := range g.Paths(starts, PersonRef(target), graph.PathOptions{MaxHops: MaxIntroHops, TopN: topN}) {
+		ids := make([]string, 0, len(p.Nodes))
+		for _, n := range p.Nodes {
+			ids = append(ids, n.ID)
 		}
 		out = append(out, PathClaim{
-			Path:       p.String(),
+			Path:       strings.Join(ids, pathSep),
 			Kind:       PathKindDerived,
-			Confidence: FormatConfidence(p.confidence),
-			Inferred:   p.inferred,
+			Confidence: FormatConfidence(p.Confidence),
+			Inferred:   p.Inferred,
 		})
 	}
 	return out
-}
-
-// walk enumerates simple paths from the current tail to target, bounded by
-// MaxIntroHops. It does not pass THROUGH another seed: the route from that
-// seed onward is strictly shorter and is enumerated on its own.
-func walk(g pathGraph, cur, target string, seeds map[string]bool, p derivedPath, found *[]derivedPath) {
-	if p.hops() >= MaxIntroHops {
-		return
-	}
-	for _, h := range g.adj[cur] {
-		if contains(p.nodes, h.to) {
-			continue
-		}
-		next := derivedPath{
-			nodes:      append(append([]string(nil), p.nodes...), h.to),
-			confidence: p.confidence * h.confidence,
-			inferred:   p.inferred || h.inferred,
-		}
-		if h.to == target {
-			*found = append(*found, next)
-			continue
-		}
-		if seeds[h.to] {
-			continue
-		}
-		walk(g, h.to, target, seeds, next, found)
-	}
-}
-
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 // MergePaths lays derived paths after the hand-authored ones. A hand-written

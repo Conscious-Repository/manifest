@@ -1644,7 +1644,7 @@ func appendAshbyAudit(doc *CandidateDoc, lines []AshbyAudit) {
 		if l.Detail != "" {
 			r.Set("detail", l.Detail)
 		}
-		raw := r.emitLines()
+		raw := r.EmitLines()
 		at := len(sec.Lines)
 		for at > 0 && sec.Lines[at-1].Row == nil && strings.TrimSpace(sec.Lines[at-1].Raw) == "" {
 			at--

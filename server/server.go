@@ -35,6 +35,7 @@ import (
 	"manifest/gmailsend"
 	"manifest/gmailsync"
 	"manifest/goals"
+	"manifest/graph"
 	"manifest/ledger"
 	"manifest/portals"
 	"manifest/reading"
@@ -218,6 +219,10 @@ type Server struct {
 	// artifactReg: the first-class artifact object store beside the pool —
 	// versioned, content-addressed, task-bound (artifact_objects.go). Nilable.
 	artifactReg *artifacts.Registry
+	// graphStore: the entity/edge record store (P2 graph) — system/graph/
+	// entities.md + edges.md, written through the `graph` capability. Nilable:
+	// reads still answer over derived edges; writes answer 503.
+	graphStore *graph.Store
 	// oodaChat: the OODA portal's own chat store (zeck's threads). Nilable.
 	oodaChat *chatthreads.Store
 	// oodaEmail/oodaGmail: the portal email lane — pending candidates from
@@ -348,7 +353,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/artifacts/get", s.handleArtifactGet)        // ?id=&content=1&rev=
 	mux.HandleFunc("POST /api/artifacts/create", s.handleArtifactCreate) // {kind,title,ref|content,task,run,…}
 	mux.HandleFunc("POST /api/artifacts/revise", s.handleArtifactRevise) // {id, content|ref, note}
-	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)    // RE assignee registry
+	// P2 graph: the entity/edge graph over stored claims + derived edges (graph.go)
+	mux.HandleFunc("GET /api/graph", s.handleGraph)                    // vocabulary + counts
+	mux.HandleFunc("GET /api/graph/edges", s.handleGraphEdges)         // ?ref=kind:id&kind=
+	mux.HandleFunc("GET /api/graph/neighbors", s.handleGraphNeighbors) // ?ref=&dir=&kind=&nodeKind=&facts=1
+	mux.HandleFunc("GET /api/graph/paths", s.handleGraphPaths)         // ?from=&to=&max=&top=&directed=1&kind=
+	mux.HandleFunc("GET /api/graph/bridges", s.handleGraphBridges)     // ?a=&b=&directed=1
+	mux.HandleFunc("GET /api/graph/deps", s.handleGraphDeps)           // ?ref=&dir=up|down&kind=&depth=
+	mux.HandleFunc("POST /api/graph/edges", s.handleGraphEdgeAdd)      // {from,to,kind,basis,…}
+	mux.HandleFunc("POST /api/graph/entities", s.handleGraphEntityAdd) // {id,kind,title,ref,source}
+	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)  // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
 	mux.HandleFunc("POST /api/tasks/drop", s.handleTaskDrop)
 	mux.HandleFunc("/api/tasks/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)

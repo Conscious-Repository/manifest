@@ -110,7 +110,7 @@ func (d *RoleDoc) Posting() string {
 	var out []string
 	for _, ln := range sec.Lines {
 		if ln.Row != nil {
-			out = append(out, ln.Row.emitLines()...)
+			out = append(out, ln.Row.EmitLines()...)
 		} else {
 			out = append(out, ln.Raw)
 		}
