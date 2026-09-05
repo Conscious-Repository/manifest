@@ -96,11 +96,7 @@ async function loadRecruitingSources() {
 // route that wrote a record (accept) adds the board view.
 async function recSourcesPost(url, body, okMsg) {
   try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
+    const r = await fetchJSONRetry("POST", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     const out = await r.json();
     if (out.runs) recRuns = out.runs;
@@ -113,11 +109,7 @@ async function recSourcesPost(url, body, okMsg) {
 
 async function recPost(url, body, okMsg) {
   try {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
+    const r = await fetchJSONRetry("POST", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     recCache = await r.json();
     if (okMsg) showToast(okMsg);
@@ -1638,11 +1630,7 @@ function paintRoleView(main) {
 // recPut mirrors recPost for PUT routes (the criteria editor).
 async function recPut(url, body, okMsg) {
   try {
-    const r = await fetch(url, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
+    const r = await fetchJSONRetry("PUT", url, body || {}); // survives a deploy-window 502
     if (!r.ok) throw new Error(await r.text());
     recCache = await r.json();
     if (okMsg) showToast(okMsg);
@@ -2142,7 +2130,7 @@ async function recOutreachLoadLog(id) {
 }
 
 async function recOutreachCall(url, body) {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const r = await fetchJSONRetry("POST", url, body || {}); // survives a deploy-window 502
   const text = await r.text();
   let out = {};
   try { out = JSON.parse(text); } catch (_) { out = { error: text }; }
@@ -2334,7 +2322,7 @@ async function recAshbyLoadProbe(quiet) {
 }
 
 async function recAshbyCall(url, body) {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  const r = await fetchJSONRetry("POST", url, body || {}); // survives a deploy-window 502
   const text = await r.text();
   let out = {};
   try { out = JSON.parse(text); } catch (_) { out = { error: text }; }
