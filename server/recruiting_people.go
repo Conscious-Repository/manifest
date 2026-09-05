@@ -248,6 +248,24 @@ func (s *Server) personIndex() personIndex {
 	return idx
 }
 
+// ownerNode is the connector row that represents the person whose calendar
+// this is — the one node every meeting on it implies. "" when the owner has
+// not been marked as someone to route through, in which case co-attendance
+// still records who met whom, just never a route from you.
+func (i personIndex) ownerNode(store *recruiting.Store) string {
+	want := strings.ToLower(strings.TrimSpace(store.Owner()))
+	for _, p := range store.Connectors() {
+		if p.Archived != "" || p.Consent != "owner" {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(p.Name))
+		if want != "" && (strings.Contains(name, want) || strings.EqualFold(p.Ref, want)) {
+			return p.ID
+		}
+	}
+	return ""
+}
+
 func (i personIndex) display(id string) string {
 	if n := i.name[id]; n != "" {
 		return n
@@ -265,17 +283,27 @@ func (s *Server) coAttendanceEdges() []recruiting.Edge {
 		return nil
 	}
 	idx := s.personIndex()
+	// ⚠ THE OWNER IS AT EVERY MEETING ON HIS OWN CALENDAR, and Google's
+	// attendee list excludes self — so without this every derived edge joined
+	// two other people and NOTHING started from the one node paths begin at.
+	// 1,072 edges, 0 usable routes, until the obvious party was added back.
+	me := idx.ownerNode(s.recruiting)
 	var out []recruiting.Edge
 	seen := map[string]bool{}
 	for _, m := range s.contacts.PastMeetingParties(time.Now()) {
-		if len(m.Emails) < 2 || len(m.Emails) > coAttendanceCap {
-			continue // one person is not a room; fourteen is not a relationship
+		// the owner counts as a party, so a 1:1 IS a meeting: one other
+		// attendee plus you is the most common and most useful shape there is
+		if len(m.Emails) < 1 || len(m.Emails) > coAttendanceCap {
+			continue // fourteen people on an invite is not a relationship
 		}
 		ids := make([]string, 0, len(m.Emails))
 		for _, em := range m.Emails {
 			if id := idx.byEmail[em]; id != "" && !containsString(ids, id) {
 				ids = append(ids, id)
 			}
+		}
+		if me != "" {
+			ids = append([]string{me}, ids...)
 		}
 		for a := 0; a < len(ids); a++ {
 			for b := a + 1; b < len(ids); b++ {
