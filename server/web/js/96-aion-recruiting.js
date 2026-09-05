@@ -38,6 +38,9 @@ let recSources = null;      // {sources, defaultMax, maxMax, ttlDays} | {unavail
 let recRuns = [];           // every run, newest first, each with its draft queue
 let recRunOpen = {};        // run id → queue expanded
 let recDraftOpen = {};      // "<run>#<draft>" → that draft's citations expanded
+let recDraftTopicOpen = {}; // "<run>#<draft>#<topic>" → that chip's evidence expanded
+let recDraftMore = {};      // "<run>#<draft>" → every expertise chip shown, not just four
+let recDraftLater = {};     // "<run>#<draft>" → set aside for this sitting (view state only)
 let recRunning = false;     // a run is in flight
 const recRunForm = { source: "manual", role: "", query: "", max: "", fields: {} };
 const REC_RUN_COMMON_FIELDS = ["role", "query", "max"];
@@ -1237,7 +1240,7 @@ function recRunCard(run) {
   card.append(head);
 
   const counts = el("div", "rec-run-counts");
-  [["fetched", c.fetched], ["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["rejected", c.rejected]]
+  [["fetched", c.fetched], ["new", c.new], ["dup", c.duplicate], ["accepted", c.accepted], ["passed", c.rejected]]
     .forEach(([k, n]) => counts.append(el("span", "rec-run-count" + (n ? " has" : ""), (n || 0) + " " + k)));
   counts.append(el("span", "rec-run-when", fmtWhen(run.startedAt)));
   let expiry = "kept until triaged";
@@ -1276,6 +1279,220 @@ async function recDraftLookup(run, d) {
       ((r.failed || []).length ? " (" + r.failed.join(", ") + " unreachable)" : ""));
 }
 
+// ---- the decision card (enrichment Phase 2) ----
+// Reading order follows the research's card table: identity → labelled
+// presence → inferred expertise → why surfaced → path coverage → evidence →
+// action. Every line below is DERIVED from the run JSON Phase 1 wrote
+// (homepage/linkedin/github/orcid/site + topics + evidence); nothing here
+// scores, ranks, or guesses.
+
+// recDraftContacts — the classified presence strip. Four labelled classes
+// (O3) plus `site` standing in for a homepage the classifier would not call
+// one. Each is the URL verbatim; the value shown is the part a reader can
+// recognize (a handle, an id, a host), never a manufactured one.
+function recDraftContacts(dr) {
+  const out = [];
+  const tail = (u, marker) => {
+    const s = (u || "").trim().replace(/\/+$/, "");
+    const i = s.toLowerCase().indexOf(marker);
+    return i < 0 ? recHost(s) : s.slice(i + marker.length).split("/")[0] || recHost(s);
+  };
+  if (dr.homepage) out.push({ label: "homepage", value: recHost(dr.homepage), url: dr.homepage });
+  else if (dr.site) out.push({ label: "site", value: recHost(dr.site), url: dr.site });
+  if (dr.linkedin) out.push({ label: "linkedin", value: "in/" + tail(dr.linkedin, "/in/"), url: dr.linkedin });
+  if (dr.github) out.push({ label: "github", value: "@" + tail(dr.github, "github.com/"), url: dr.github });
+  if (dr.orcid) out.push({ label: "orcid", value: tail(dr.orcid, "orcid.org/"), url: dr.orcid });
+  return out;
+}
+
+// recExtKey mirrors recruiting.ExtKeyFromURL: the durable graph key an
+// identity link names (`ext/orcid/…`, `ext/openalex/A…`, `ext/github/…`), or
+// "" for a page that identifies nobody. Same rules, same spelling, so a
+// draft can be matched against network/edges.md endpoints client-side.
+function recExtKey(raw) {
+  const u = (raw || "").trim().toLowerCase();
+  if (!u) return "";
+  for (const [host, kind] of [["orcid.org/", "orcid"], ["openalex.org/", "openalex"], ["github.com/", "github"]]) {
+    const i = u.indexOf(host);
+    if (i < 0) continue;
+    let id = u.slice(i + host.length).replace(/^\/+|\/+$/g, "");
+    if (!id || (id.includes("/") && kind !== "github")) continue;
+    if (kind === "github") { id = id.split("/")[0]; if (!id) continue; }
+    if (kind === "openalex") { id = id.toUpperCase(); if (!id.startsWith("A")) continue; }
+    return "ext/" + kind + "/" + id;
+  }
+  return "";
+}
+
+// recDraftExtKeys — every graph key this draft answers to (source ref +
+// identity links), the same set edges_identity.go repoints on accept.
+function recDraftExtKeys(dr) {
+  const keys = [];
+  const src = (dr.sourceId || "").toLowerCase(), ext = (dr.externalId || "").trim();
+  if (ext && (src === "openalex" || src === "orcid")) keys.push("ext/" + src + "/" + ext);
+  else if (ext && src === "github") keys.push("ext/github/" + ext.toLowerCase());
+  [dr.orcid, dr.github].concat(dr.links || []).forEach((u) => { const k = recExtKey(u); if (k) keys.push(k); });
+  return keys.filter((k, i, all) => all.indexOf(k) === i);
+}
+
+// recDraftWhy — ONE sentence: which source surfaced them, for what query,
+// and what that source said (its own snippet, verbatim and clipped). No
+// paraphrase: when the source quoted nothing, the sentence says so.
+function recDraftWhy(run, dr) {
+  const scope = run.scope || {};
+  const q = scope.query || ((scope.fields || {}).seed_url || "");
+  const ev = dr.evidence || [];
+  const said = ev.find((e) => e.sourceId === run.source && (e.snippet || "").trim())
+    || ev.find((e) => (e.snippet || "").trim());
+  let s = run.source + (q ? " returned them for “" + q + "”" : " returned them");
+  if (said) s += " — " + said.snippet.trim();
+  else if (dr.note && dr.note !== dr.name) s += " — " + dr.note.trim();
+  else s += " — with no quoted evidence";
+  return s;
+}
+
+// recTopicEvidence — the rows behind one chip: evidence whose verbatim
+// snippet names the topic, else the source's publication row (the author
+// record the topic came from, O4). Empty means the chip stands on the
+// source's word alone — the drill-down says exactly that.
+function recTopicEvidence(dr, topic) {
+  const t = topic.toLowerCase();
+  const ev = dr.evidence || [];
+  const named = ev.filter((e) => (e.snippet || "").toLowerCase().includes(t));
+  return named.length ? named : ev.filter((e) => e.kind === "publication");
+}
+
+// recDraftPathLine — the RELATIONSHIP line, framed as coverage: what this
+// network has recorded about the person, never a claim about the world.
+//   on the board   → the candidate's ranked paths (server-derived, Phase 4)
+//   in the graph   → edges name their external id; the path derives on accept
+//   nothing        → "no known path" — nobody here is recorded as linked yet
+// TODO(Phase 3): expose recruiting.DerivePaths for a DRAFT (by ext key) so a
+// queued person can show the same ranked route a board candidate does.
+function recDraftPathLine(d, dr) {
+  const row = el("div", "rec-draft-path");
+  row.append(el("span", "micro-label", "path"));
+  const cand = d.candidateId && ((recCache || {}).candidates || []).find((c) => c.id === d.candidateId);
+  const paths = (cand && cand.paths) || [];
+  if (paths.length) {
+    const best = paths[0];
+    if (best.kind === REC_PATH_KIND_DERIVED) {
+      const chip = el("span", "micro-label rec-derived", "derived");
+      chip.title = "computed from the network graph — not owner-confirmed";
+      row.append(chip);
+    }
+    if (best.inferred) row.append(el("span", "micro-label rec-inferred", "inferred"));
+    row.append(el("span", "rec-path-hops", best.path));
+    if (best.confidence) row.append(el("span", "rec-path-conf", best.confidence));
+    if (paths.length > 1) row.append(el("span", "rec-path-conf", "+" + (paths.length - 1) + " more"));
+    return row;
+  }
+  const keys = recDraftExtKeys(dr);
+  const net = (recCache || {}).network || {};
+  const edges = (net.edges || []).filter((e) => keys.includes((e.from || "").trim()) || keys.includes((e.to || "").trim()));
+  if (edges.length) {
+    const kinds = edges.map((e) => e.kind).filter((k, i, all) => k && all.indexOf(k) === i);
+    row.append(el("span", "rec-draft-path-text",
+      edges.length + " edge" + (edges.length === 1 ? "" : "s") + " in the network name them" +
+      (kinds.length ? " (" + kinds.join(", ") + ")" : "") + " · an intro route derives once they are on the board"));
+    const go = el("button", "rec-linkish", "open network view →");
+    go.onclick = () => { recNetQuery = dr.name || ""; recNav("network"); };
+    row.append(go);
+    return row;
+  }
+  row.classList.add("none");
+  row.append(el("span", "rec-draft-path-text", "no known path — nobody in your network is recorded as linked to them yet"));
+  return row;
+}
+
+// recDraftTopics — the expertise chips. Every chip says `inferred` in words
+// (not a hover), opens its own evidence + date, and four is the default
+// depth (O2); the rest sit behind "more". No topics is a sentence, not a
+// blank: the source named none, which is not the same as having none.
+function recDraftTopics(run, d, dr, key) {
+  const wrap = el("div", "rec-draft-topics");
+  wrap.append(el("span", "micro-label", "expertise"));
+  const topics = (dr.topics || []).map((t) => (t || "").trim()).filter(Boolean);
+  if (!topics.length) {
+    const none = el("span", "rec-draft-topics-none", "no evidenced expertise yet");
+    none.title = "the source named no topics for this author record — missing, not absent";
+    wrap.append(none);
+    return [wrap];
+  }
+  const showAll = !!recDraftMore[key];
+  const shown = showAll ? topics : topics.slice(0, 4);
+  const out = [wrap];
+  shown.forEach((t) => {
+    const tkey = key + "#" + t;
+    const on = !!recDraftTopicOpen[tkey];
+    const chip = el("button", "rec-topic-chip" + (on ? " on" : ""));
+    chip.append(el("span", "rec-topic-name", t));
+    chip.append(el("span", "micro-label rec-topic-mark", "inferred"));
+    chip.title = "named by " + run.source + " from this author's own works — open for the evidence and date";
+    chip.setAttribute("aria-expanded", on ? "true" : "false");
+    chip.onclick = () => { recDraftTopicOpen[tkey] = !on; if (recPaint) recPaint(); };
+    wrap.append(chip);
+    if (!on) return;
+    const body = el("div", "rec-topic-ev");
+    const rows = recTopicEvidence(dr, t);
+    const src = rows.find((e) => e.sourceId) || {};
+    body.append(el("div", "rec-draft-sub",
+      "“" + t + "” · reported by " + (src.sourceId || run.source) + " · inferred from attributed works, not confirmed"));
+    rows.forEach((e) => {
+      const row = el("div", "rec-ev-row");
+      const et = el("div", "rec-ev-top");
+      if (e.kind) et.append(el("span", "micro-label rec-ev-kind", e.kind));
+      if (e.urlOrFile) {
+        const a = linkEl(recHost(e.urlOrFile) + " ↗", e.urlOrFile);
+        a.className = "rec-draft-link";
+        a.title = e.urlOrFile;
+        et.append(a);
+      }
+      if (e.retrievedAt) et.append(el("span", "rec-ev-when", "retrieved " + fmtWhen(e.retrievedAt)));
+      row.append(et);
+      if (e.snippet) row.append(el("blockquote", "rec-ev-quote", e.snippet));
+      body.append(row);
+    });
+    if (!rows.length) body.append(el("div", "rec-draft-sub", "no attributable work listed for this topic yet — the chip stands on the source's word alone"));
+    out.push(body);
+  });
+  if (topics.length > 4) {
+    const more = el("button", "rec-topic-more", showAll ? "fewer" : "+" + (topics.length - 4) + " more");
+    more.onclick = () => { recDraftMore[key] = !showAll; if (recPaint) recPaint(); };
+    wrap.append(more);
+  }
+  return out;
+}
+
+// recDraftPass — Pass is a decision about THIS SEARCH: arm-then-confirm (no
+// native dialog), and the confirm names the scope so a pass never reads as a
+// verdict on the person. The draft stays in the run cache; nothing is
+// deleted and no record is touched.
+// TODO: a server-side un-pass does not exist yet (Reject is final for the
+// draft); undo today is the disarm window before confirm.
+function recDraftPass(run, d) {
+  const pass = el("button", "pill light rec-draft-reject", "pass");
+  pass.title = "pass on this person for this search — stays in the run cache, nothing is deleted";
+  pass.onclick = () => {
+    const armed = el("button", "pill light armed rec-draft-reject", "pass on this search?");
+    armed.title = "confirms the pass — irrelevant here, too little evidence, or the wrong person";
+    const cancel = el("button", "pill light", "keep");
+    let timer = setTimeout(() => { armed.replaceWith(pass); cancel.remove(); }, 4000);
+    cancel.onclick = () => { clearTimeout(timer); armed.replaceWith(pass); cancel.remove(); };
+    armed.onclick = () => {
+      clearTimeout(timer);
+      armed.disabled = true;
+      cancel.remove();
+      recSourcesPost("/api/aion/recruiting/sources/reject/" + run.id + "/" + d.id, {},
+        "passed on " + ((d.draft || {}).name || "this draft") + " for this search · still in the run cache");
+    };
+    pass.replaceWith(armed);
+    armed.after(cancel);
+    armed.focus();
+  };
+  return pass;
+}
+
 // ⚠ ONE DRAFT IS ONE CARD. This queue used to render every citation's full
 // abstract inline, with each raw URL appended bare to the card — which made
 // adjacent links run together into one unreadable string and buried the two
@@ -1286,17 +1503,31 @@ function recDraftCard(run, d) {
   const dr = d.draft || {};
   const key = run.id + "#" + d.id;
   const open = !!recDraftOpen[key];
-  const card = el("div", "rec-draft " + d.status);
+  const later = d.status === "new" && !!recDraftLater[key];
+  const card = el("div", "rec-draft " + d.status + (later ? " later" : ""));
 
+  // 1 · identity
   const head = el("div", "rec-draft-head");
-  head.append(el("span", "micro-label rec-draft-status " + d.status, d.status));
+  head.append(el("span", "micro-label rec-draft-status " + d.status, d.status === "rejected" ? "passed" : d.status));
   head.append(el("span", "rec-draft-name", dr.name || "(unnamed)"));
+  if (later) head.append(el("span", "micro-label rec-draft-later-mark", "later"));
   if (d.lookedUpAt) head.append(el("span", "rec-draft-flag", "looked up"));
   card.append(head);
 
+  if (later) {
+    // set aside for this sitting: one line, and the way back
+    const back = el("button", "rec-linkish", "bring back");
+    back.onclick = () => { delete recDraftLater[key]; if (recPaint) recPaint(); };
+    card.append(back);
+    return card;
+  }
+
   const sub = [dr.title, dr.org, dr.location].filter(Boolean).join(" · ");
   if (sub) card.append(el("div", "rec-draft-sub", sub));
-  if (dr.note && dr.note !== dr.name) card.append(el("div", "rec-draft-note", dr.note));
+  else card.append(el("div", "rec-draft-sub", dr.role ? dr.role + " · no title or affiliation on record" : "no title or affiliation on record"));
+  // the note is human context; when it only restates the chips, the chips win
+  const noteIsTopics = /^topics:/i.test(dr.note || "") && (dr.topics || []).length;
+  if (dr.note && dr.note !== dr.name && !noteIsTopics) card.append(el("div", "rec-draft-note", dr.note));
 
   if (d.candidateId) {
     const on = el("button", "rec-draft-on", "on the board as " + d.candidateId + (d.reason ? " · " + d.reason : ""));
@@ -1304,7 +1535,39 @@ function recDraftCard(run, d) {
     card.append(on);
   }
 
-  // citations, deduped by address — the same project listed twice is one fact
+  // 2 · classified presence — each class labelled, none folded into a count
+  const contacts = recDraftContacts(dr);
+  const contactURLs = {};
+  if (contacts.length) {
+    const strip = el("div", "rec-draft-contacts");
+    contacts.forEach((c) => {
+      contactURLs[c.url.trim()] = true;
+      const a = linkEl("", c.url);
+      a.className = "rec-draft-contact";
+      a.title = c.url;
+      a.append(el("span", "micro-label", c.label), el("span", "rec-draft-contact-val", c.value + " ↗"));
+      strip.append(a);
+    });
+    card.append(strip);
+  }
+
+  // 3 · expertise
+  recDraftTopics(run, d, dr, key).forEach((n) => card.append(n));
+
+  // 4 · why surfaced
+  const why = el("div", "rec-draft-why");
+  why.append(el("span", "micro-label", "why"));
+  const whyText = recDraftWhy(run, dr);
+  const whySpan = el("span", "rec-draft-why-text", whyText.length > 180 ? whyText.slice(0, 177) + "…" : whyText);
+  whySpan.title = whyText;
+  why.append(whySpan);
+  card.append(why);
+
+  // 5 · path (coverage)
+  card.append(recDraftPathLine(d, dr));
+
+  // 6 · evidence — citations, deduped by address; the same project listed
+  // twice is one fact. Links already on the presence strip are not repeated.
   const cites = [];
   const seen = {};
   (dr.evidence || []).forEach((e) => {
@@ -1314,50 +1577,58 @@ function recDraftCard(run, d) {
     cites.push(e);
   });
   const extra = (dr.links || []).map((u) => (u || "").trim())
-    .filter((u, i, all) => u && !seen[u] && all.indexOf(u) === i);
+    .filter((u, i, all) => u && !seen[u] && !contactURLs[u] && all.indexOf(u) === i);
 
-  if (cites.length || extra.length) {
+  if (!cites.length && !extra.length) {
+    // missing is a fact worth a line, not a blank
+    card.append(el("div", "rec-draft-cites none", "no citations — nothing on this card is backed yet"));
+  } else {
     const bar = el("button", "rec-draft-cites");
     bar.append(el("span", "sec-caret", open ? "▾" : "▸"));
     const n = cites.length;
     bar.append(el("span", "", n ? n + " citation" + (n === 1 ? "" : "s") : "no citations"));
-    if (extra.length) bar.append(el("span", "rec-draft-sub", "· " + extra.length + " more link" + (extra.length === 1 ? "" : "s")));
+    if (extra.length) bar.append(el("span", "rec-draft-sub", "· " + extra.length + " other link" + (extra.length === 1 ? "" : "s")));
+    bar.setAttribute("aria-expanded", open ? "true" : "false");
     bar.onclick = () => { recDraftOpen[key] = !open; if (recPaint) recPaint(); };
     card.append(bar);
-    if (open) {
-      const body = el("div", "rec-draft-cite-body");
-      cites.forEach((e) => {
-        const row = el("div", "rec-ev-row");
-        const et = el("div", "rec-ev-top");
-        if (e.kind) et.append(el("span", "micro-label rec-ev-kind", e.kind));
-        if (e.trust) et.append(el("span", "micro-label rec-ev-kind", e.trust));
-        if (e.urlOrFile) {
-          const a = linkEl(recHost(e.urlOrFile) + " ↗", e.urlOrFile);
-          a.className = "rec-draft-link";
-          a.title = e.urlOrFile;
-          et.append(a);
-        }
-        if (e.retrievedAt) et.append(el("span", "rec-ev-when", fmtWhen(e.retrievedAt)));
-        row.append(et);
-        if (e.snippet && e.snippet !== dr.note) row.append(el("blockquote", "rec-ev-quote", e.snippet));
-        body.append(row);
-      });
-      extra.forEach((u) => {
-        const a = linkEl(recHost(u) + " ↗", u);
+  }
+  if (open && (cites.length || extra.length)) {
+    const body = el("div", "rec-draft-cite-body");
+    cites.forEach((e) => {
+      const row = el("div", "rec-ev-row");
+      const et = el("div", "rec-ev-top");
+      if (e.kind) et.append(el("span", "micro-label rec-ev-kind", e.kind));
+      if (e.trust) et.append(el("span", "micro-label rec-ev-kind", e.trust));
+      if (e.sourceId && e.sourceId !== run.source) et.append(el("span", "micro-label rec-ev-kind", "via " + e.sourceId));
+      if (e.urlOrFile) {
+        const a = linkEl(recHost(e.urlOrFile) + " ↗", e.urlOrFile);
         a.className = "rec-draft-link";
-        a.title = u;
-        body.append(a);
-      });
-      card.append(body);
-    }
+        a.title = e.urlOrFile;
+        et.append(a);
+      } else {
+        et.append(el("span", "rec-ev-when", "no address — uncited"));
+      }
+      if (e.retrievedAt) et.append(el("span", "rec-ev-when", fmtWhen(e.retrievedAt)));
+      row.append(et);
+      if (e.snippet && e.snippet !== dr.note) row.append(el("blockquote", "rec-ev-quote", e.snippet));
+      body.append(row);
+    });
+    extra.forEach((u) => {
+      const a = linkEl(recHost(u) + " ↗", u);
+      a.className = "rec-draft-link";
+      a.title = u;
+      body.append(a);
+    });
+    card.append(body);
   }
 
+  // 7 · action — accept / pass / later, each scoped to THIS search
   if (d.status === "new") {
     // ⚠ a preview run accepts too (2026-09-04) — the checkbox never protected
     // anything, so the decision is no longer gated behind an identical re-run
     const acts = el("div", "rec-draft-actions");
     const accept = el("button", "pill light rec-draft-accept", "accept");
-    accept.title = "add this one draft to the board, citation and all";
+    accept.title = "add this one draft to the board for this search, citations and all — accepting is not confirming every inferred chip";
     accept.onclick = () => recSourcesPost(
       "/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
     const look = el("button", "pill light", d.lookedUpAt ? "look up again" : "look up");
@@ -1367,14 +1638,15 @@ function recDraftCard(run, d) {
       look.textContent = "looking up…";
       recDraftLookup(run, d);
     };
-    const reject = el("button", "pill light rec-draft-reject", "reject");
-    reject.title = "leave it in the cache; nothing reaches the board";
-    reject.onclick = () => recSourcesPost(
-      "/api/aion/recruiting/sources/reject/" + run.id + "/" + d.id, {}, "draft rejected");
-    acts.append(accept, look, reject);
+    const laterBtn = el("button", "pill light", "later");
+    laterBtn.title = "set aside for this sitting — stays new, comes back on reload";
+    laterBtn.onclick = () => { recDraftLater[key] = true; if (recPaint) recPaint(); };
+    acts.append(accept, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
-    card.append(el("div", "rec-draft-hint", d.status + " " + fmtWhen(d.decidedAt)));
+    card.append(el("div", "rec-draft-hint", d.status === "rejected"
+      ? "passed " + fmtWhen(d.decidedAt) + " · this search only — nothing was deleted"
+      : d.status + " " + fmtWhen(d.decidedAt)));
   }
   return card;
 }
