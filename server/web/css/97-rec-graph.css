@@ -1,11 +1,11 @@
 /* THE EGO GRAPH (97-rec-graph.js).
    Every colour is a class on the node, never an attribute written by the
-   layout — the picture is a function of the data, and the theme is a function
-   of the stylesheet, so neither has to know about the other. */
+   layout — the picture is a function of the data, the theme is a function of
+   the stylesheet, and the simulation touches neither. */
 
 /* ⚠ a CONTAINER query, not a media query. The graph lives inside a column
    whose width has nothing to do with the viewport's — at 1500px wide the
-   column here is 634px, so a viewport rule put a 760px picture in a 284px
+   column here is 634px, so a viewport rule put a 900px picture in a 284px
    box and called it two columns. */
 .rg-host { container-type: inline-size; }
 .rg-wrap {
@@ -28,47 +28,70 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
   background: var(--base-02, transparent);
+  cursor: grab;
+  touch-action: none; /* the pointer belongs to the graph, not to the scroller */
+  user-select: none;
+  --rg-zoom: 1;
 }
-
-/* the hop rings: "two out" should be something you can see, not something you
-   have to count */
-.rg-ring { fill: none; stroke: var(--line-soft); stroke-width: 1; }
+.rg-canvas.rg-dragging { cursor: grabbing; }
 
 .rg-edge { stroke: var(--line); stroke-width: 1; }
 /* an inferred edge is dashed everywhere it is drawn — the derivation is a
    claim, and a claim should not look like a fact */
-.rg-edge.inferred { stroke-dasharray: 3 3; opacity: 0.75; }
+.rg-edge.inferred { stroke-dasharray: 3 3; opacity: 0.7; }
 .rg-edge.lit { stroke: var(--accent); stroke-width: 2; opacity: 1; }
 
 .rg-node { cursor: pointer; }
 .rg-dot { stroke: var(--base-00, #fff); stroke-width: 1.5; fill: var(--base-40); }
-.rg-node.you .rg-dot { fill: var(--accent); }
-.rg-node.connector .rg-dot { fill: var(--ok, #2f855a); }
-.rg-node.considering .rg-dot { fill: var(--base-100); }
-.rg-node.stranger .rg-dot { fill: var(--base-30); }
+.rg-node.rg-you .rg-dot { fill: var(--accent); }
+.rg-node.rg-connector .rg-dot { fill: var(--ok, #2f855a); }
+.rg-node.rg-considering .rg-dot { fill: var(--base-100); }
+.rg-node.rg-stranger .rg-dot { fill: var(--base-30); }
 .rg-node.sel .rg-dot { stroke: var(--accent); stroke-width: 3; }
 .rg-node:hover .rg-dot { stroke: var(--accent); }
+
 .rg-label {
-  font-family: var(--mono); font-size: 9px;
-  fill: var(--base-60); pointer-events: none;
+  font-family: var(--mono);
+  /* the label keeps its size on screen as you zoom, so zooming spreads the
+     names apart instead of magnifying them into each other */
+  font-size: calc(10px / var(--rg-zoom));
+  fill: var(--base-60);
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--base-00, #fff);
+  stroke-width: calc(3px / var(--rg-zoom));
+  stroke-linejoin: round;
 }
-.rg-node.you .rg-label, .rg-node.sel .rg-label { fill: var(--base-100); }
+.rg-node.rg-you .rg-label, .rg-node.sel .rg-label { fill: var(--base-100); }
 
 /* ⚠ LABEL DENSITY. A ring of 60 people writes 60 names into one band and the
    band is unreadable — the hairball arriving through labels rather than
-   through edges. So only the people you have a relationship WITH are named on
-   the face: you, the ones you would ask, the ones on the board, and whatever
-   is selected. A stranger is a dot until you hover it or click it, and the
-   way you find a specific one is the search box. */
-.rg-node.rg-stranger .rg-label { opacity: 0; }
+   through edges. So only the people you have a relationship WITH are named at
+   arm's length: you, the ones you would ask, the ones on the board. A stranger
+   is a dot until you hover it, select it, or ZOOM IN far enough that there is
+   room for the name. */
+.rg-node.rg-stranger .rg-label { opacity: 0; transition: opacity 90ms linear; }
+.rg-canvas.rg-near .rg-node.rg-stranger .rg-label,
 .rg-node.rg-stranger:hover .rg-label,
+.rg-node.rg-stranger.near .rg-label,
 .rg-node.rg-stranger.sel .rg-label { opacity: 1; }
 .rg-node.rg-stranger:hover .rg-label { fill: var(--base-100); }
+
+/* HOVER = the neighbourhood. Everything this person does not touch goes
+   quiet, so one hover answers "who does this reach" without a click, a panel
+   or a redraw. This is the interaction that makes a dense graph readable. */
+.rg-canvas.rg-hovering .rg-node { opacity: 0.14; transition: opacity 110ms linear; }
+.rg-canvas.rg-hovering .rg-node.near { opacity: 1; }
+.rg-canvas.rg-hovering .rg-edge { opacity: 0.06; }
+.rg-canvas.rg-hovering .rg-edge.near { opacity: 1; stroke: var(--accent); }
+
+/* a selected route reads the same way: the path stands, the rest recedes */
+.rg-canvas.rg-routing .rg-edge:not(.lit) { opacity: 0.09; }
 
 .rg-degree { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .rg-matches { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; }
 .rg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-4) 0; }
-.rg-omitted { font-size: var(--fs-xs); color: var(--base-50); }
+.rg-omitted, .rg-howto { font-size: var(--fs-xs); color: var(--base-50); }
 
 .rg-panel {
   display: flex; flex-direction: column; gap: var(--sp-3);
@@ -91,3 +114,10 @@
 .rg-empty-head { color: var(--base-100); }
 .rg-empty-do { font-size: var(--fs-xs); color: var(--base-60); }
 .rg-fold { margin-top: var(--sp-5); }
+
+/* motion is the point of this view, but it is not worth making somebody ill
+   over: with reduced motion asked for the fades go, and the simulation still
+   settles — just without anything easing while it does */
+@media (prefers-reduced-motion: reduce) {
+  .rg-canvas .rg-node, .rg-canvas .rg-edge, .rg-label { transition: none !important; }
+}
