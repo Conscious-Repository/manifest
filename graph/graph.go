@@ -55,11 +55,17 @@ const (
 	KindPaper     = "paper"     // a work: ext/openalex/W…, a DOI
 	KindRepo      = "repo"      // ext/github/owner/name
 	KindProperty  = "property"  // realestate property slug
+	// KindTopic is a knowledge concept — the KNOWLEDGE overlay's node
+	// (recruiting enrichment Phase 3). Its id is the controlled normalization
+	// of the term as a source said it (record.SlugSpaces); the title keeps
+	// the source's wording. A topic is never a person's tag: a person is tied
+	// to it by an `expertise` edge that carries the works that justify it.
+	KindTopic = "topic"
 )
 
 // EntityKinds is the default closed set, in declaration order.
 var EntityKinds = []string{KindTask, KindDecision, KindHeuristic, KindArtifact,
-	KindPerson, KindOrg, KindProject, KindPaper, KindRepo, KindProperty}
+	KindPerson, KindOrg, KindProject, KindPaper, KindRepo, KindProperty, KindTopic}
 
 // Edge kinds — the cross-domain vocabulary. The recruiting relationship set
 // (coauthor, same_lab, …) is included verbatim so a person↔person claim means
@@ -82,6 +88,11 @@ const (
 	EdgeAuthored    = "authored"    // person → paper | repo | artifact
 	EdgeReferences  = "references"  // any → any: a citation / wikilink
 	EdgeRelated     = "related"     // any → any: the weakest stated tie
+	// EdgeExpertise is the KNOWLEDGE overlay: person → topic membership,
+	// DERIVED from the person's attributable works (always Inferred, basis =
+	// the works, evidence = their URLs). Typed apart from every social kind so
+	// "who knows X" never reads as "who knows whom".
+	EdgeExpertise = "expertise"
 
 	// the recruiting relationship set (recruiting/sources.EdgeTypes), verbatim
 	EdgeDirectKnown           = "direct_known"
@@ -103,7 +114,7 @@ const (
 var EdgeKinds = []string{
 	EdgeDependsOn, EdgeBlocks, EdgeProduced, EdgeConsumes, EdgeSupports, EdgeContradicts,
 	EdgeInforms, EdgeDecidedBy, EdgeOwnedBy, EdgeAbout, EdgeMemberOf, EdgeAuthored,
-	EdgeReferences, EdgeRelated,
+	EdgeReferences, EdgeRelated, EdgeExpertise,
 	EdgeDirectKnown, EdgeOwnerSaid, EdgeCoauthor, EdgeCoinventor, EdgeCoworker,
 	EdgeSameLab, EdgeSameGrant, EdgeSameRepo, EdgeSameConference, EdgeSameCompany,
 	EdgeAdvisor, EdgeReferralPathCandidate, EdgeImportedExport,
@@ -211,14 +222,23 @@ func ParseRef(s string) Ref {
 // need not be registered: the ref IS the identity, and an edge naming an
 // entity no store has yet is still a claim (recruiting's ext/… keys).
 type Entity struct {
-	ID      string         `json:"id"`
-	Kind    string         `json:"kind"`
-	Title   string         `json:"title,omitempty"`
-	Ref     string         `json:"ref,omitempty"`    // where it lives: vault path, URL, harness ref
-	Source  string         `json:"source,omitempty"` // who registered it
-	Added   string         `json:"added,omitempty"`  // date
-	Unknown []record.Field `json:"unknown,omitempty"`
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Title  string `json:"title,omitempty"`
+	Ref    string `json:"ref,omitempty"`    // where it lives: vault path, URL, harness ref
+	Source string `json:"source,omitempty"` // who registered it
+	Added  string `json:"added,omitempty"`  // date
+	// Links are the entity's classified presence — for a person, the
+	// homepage / linkedin / github / orcid a source classified (never a
+	// guessed handle). Keys are LinkKeys; each is one row field ([github:: …])
+	// so the row reads as prose and a hand edit round-trips.
+	Links   map[string]string `json:"links,omitempty"`
+	Unknown []record.Field    `json:"unknown,omitempty"`
 }
+
+// LinkKeys is the closed set of Entity.Links keys a row carries, in emit
+// order. A key outside it is not a link; it stays an unknown field.
+var LinkKeys = []string{"homepage", "linkedin", "github", "orcid", "site"}
 
 // Ref is the entity's endpoint form.
 func (e Entity) AsRef() Ref { return Ref{Kind: e.Kind, ID: e.ID} }

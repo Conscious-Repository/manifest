@@ -1367,16 +1367,20 @@ function recTopicEvidence(dr, topic) {
 
 // recDraftPathLine — the RELATIONSHIP line, framed as coverage: what this
 // network has recorded about the person, never a claim about the world.
-//   on the board   → the candidate's ranked paths (server-derived, Phase 4)
-//   in the graph   → edges name their external id; the path derives on accept
-//   nothing        → "no known path" — nobody here is recorded as linked yet
-// TODO(Phase 3): expose recruiting.DerivePaths for a DRAFT (by ext key) so a
-// queued person can show the same ranked route a board candidate does.
+//   queued or on the board → the draft's ranked paths (server-derived on
+//                            every read, Phase 3: to the record once
+//                            accepted, to the external keys while queued),
+//                            with the hop the route rests on and how old
+//                            its oldest edge is
+//   in the graph           → edges name their external id but no seed
+//                            reaches them yet
+//   nothing                → "no known path" — nobody here is recorded as
+//                            linked yet
 function recDraftPathLine(d, dr) {
   const row = el("div", "rec-draft-path");
   row.append(el("span", "micro-label", "path"));
   const cand = d.candidateId && ((recCache || {}).candidates || []).find((c) => c.id === d.candidateId);
-  const paths = (cand && cand.paths) || [];
+  const paths = (d.paths || []).length ? d.paths : ((cand && cand.paths) || []);
   if (paths.length) {
     const best = paths[0];
     if (best.kind === REC_PATH_KIND_DERIVED) {
@@ -1388,6 +1392,15 @@ function recDraftPathLine(d, dr) {
     row.append(el("span", "rec-path-hops", best.path));
     if (best.confidence) row.append(el("span", "rec-path-conf", best.confidence));
     if (paths.length > 1) row.append(el("span", "rec-path-conf", "+" + (paths.length - 1) + " more"));
+    if (best.weakest || best.observed) {
+      // the route is only as good as its weakest hop, and only as fresh as
+      // its oldest one — both in words, so a strong-looking route never
+      // hides a stale or inferred link
+      const weak = el("div", "rec-draft-path-weak");
+      if (best.weakest) weak.append(el("span", "", "rests on " + best.weakest));
+      if (best.observed) weak.append(el("span", "rec-ev-when", "oldest edge seen " + fmtWhen(best.observed)));
+      row.append(weak);
+    }
     return row;
   }
   const keys = recDraftExtKeys(dr);
@@ -1397,7 +1410,7 @@ function recDraftPathLine(d, dr) {
     const kinds = edges.map((e) => e.kind).filter((k, i, all) => k && all.indexOf(k) === i);
     row.append(el("span", "rec-draft-path-text",
       edges.length + " edge" + (edges.length === 1 ? " in the network names them" : "s in the network name them") +
-      (kinds.length ? " (" + kinds.join(", ") + ")" : "") + " · an intro route derives once they are on the board"));
+      (kinds.length ? " (" + kinds.join(", ") + ")" : "") + " · but no route from you reaches those edges yet"));
     const go = el("button", "rec-linkish", "open network view →");
     go.onclick = () => { recNetQuery = dr.name || ""; recNav("network"); };
     row.append(go);
@@ -1470,9 +1483,10 @@ function recDraftTopics(run, d, dr, key) {
 // recDraftPass — Pass is a decision about THIS SEARCH: arm-then-confirm (no
 // native dialog), and the confirm names the scope so a pass never reads as a
 // verdict on the person. The draft stays in the run cache; nothing is
-// deleted and no record is touched.
-// TODO: a server-side un-pass does not exist yet (Reject is final for the
-// draft); undo today is the disarm window before confirm.
+// deleted and no record is touched. A confirmed pass is reversible too: the
+// passed card carries "undo pass" (recDraftUnpass), which returns the draft
+// to `new` exactly as it was (Phase 3) — so the disarm window is a courtesy,
+// not the only way back.
 function recDraftPass(run, d) {
   const pass = el("button", "pill light rec-draft-reject", "pass");
   pass.title = "pass on this person for this search — stays in the run cache, nothing is deleted";
@@ -1495,6 +1509,21 @@ function recDraftPass(run, d) {
     armed.focus();
   };
   return pass;
+}
+
+// recDraftUnpass — the way back from a confirmed pass: the draft returns to
+// `new` as it was (undecided, the run's expiry clock cleared), the reversal
+// is ledgered beside the pass, and nothing touches the vault. A misjudged
+// pass costs one click, not a re-run of someone else's API.
+function recDraftUnpass(run, d) {
+  const undo = el("button", "rec-linkish", "undo pass");
+  undo.title = "bring this draft back to new for this search — the pass is reversed, nothing was ever deleted";
+  undo.onclick = () => {
+    undo.disabled = true;
+    recSourcesPost("/api/aion/recruiting/sources/unreject/" + run.id + "/" + d.id, {},
+      "pass undone · " + ((d.draft || {}).name || "the draft") + " is back in the queue");
+  };
+  return undo;
 }
 
 // ⚠ ONE DRAFT IS ONE CARD. This queue used to render every citation's full
@@ -1652,9 +1681,11 @@ function recDraftCard(run, d) {
     acts.append(accept, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
-    card.append(el("div", "rec-draft-hint", d.status === "rejected"
+    const hint = el("div", "rec-draft-hint", d.status === "rejected"
       ? "passed " + fmtWhen(d.decidedAt) + " · this search only — nothing was deleted"
-      : d.status + " " + fmtWhen(d.decidedAt)));
+      : d.status + " " + fmtWhen(d.decidedAt));
+    if (d.status === "rejected") hint.append(" · ", recDraftUnpass(run, d));
+    card.append(hint);
   }
   return card;
 }

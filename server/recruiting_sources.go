@@ -2,10 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"manifest/graph"
+	"manifest/ledger"
 	"manifest/recruiting"
 )
 
@@ -108,11 +111,20 @@ func (s *Server) handleRecruitingSourceRun(w http.ResponseWriter, r *http.Reques
 // POST /api/aion/recruiting/sources/accept/{run}/{draft} — promote exactly
 // one draft into a candidate record. The board view rides along because a
 // record was written.
+//
+// Accept is also where the KNOWLEDGE overlay is derived (enrichment Phase
+// 3): the draft's topics become person → topic expertise edges in the
+// general graph, the person is registered with the links a source
+// classified, and every claim that landed is ledgered under the candidate.
+// The record is the truth and lands first; a graph write that fails is
+// reported in the payload, never a reason to refuse the accept.
 func (s *Server) handleRecruitingSourceAccept(w http.ResponseWriter, r *http.Request) {
 	if !s.recruitingRunsReady(w) {
 		return
 	}
-	run, c, err := s.recruitingRuns.Accept(r.PathValue("run"), r.PathValue("draft"), time.Now())
+	now := time.Now()
+	runID, draftID := r.PathValue("run"), r.PathValue("draft")
+	run, c, err := s.recruitingRuns.Accept(runID, draftID, now)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -120,7 +132,68 @@ func (s *Server) handleRecruitingSourceAccept(w http.ResponseWriter, r *http.Req
 	out := s.runsPayload(true)
 	out["run"] = run
 	out["candidate"] = c
+	var draft recruiting.Draft
+	for _, d := range run.Drafts {
+		if d.ID == draftID {
+			draft = d
+		}
+	}
+	knowledge, kerr := s.deriveRecruitingKnowledge(draft, c, now)
+	out["knowledge"] = knowledge
+	if kerr != nil {
+		out["knowledgeError"] = kerr.Error()
+	}
+	meta := map[string]any{
+		"run": runID, "draft": draftID, "source": run.Source, "name": c.Name,
+		"topics": len(knowledge.Claims.Edges), "edgesAdded": len(knowledge.AddedEdges),
+		"entitiesAdded": len(knowledge.AddedEntities), "paths": len(c.Paths),
+	}
+	if len(c.Paths) > 0 {
+		meta["path"] = c.Paths[0].Path
+	}
+	if kerr != nil {
+		meta["knowledgeError"] = kerr.Error()
+	}
+	s.ledger(ledger.Entry{Source: "recruiting", Kind: "recruiting.draft.accepted", Actor: "owner",
+		Object: ledger.Object{Kind: graph.KindPerson, ID: c.ID},
+		Text:   ledger.Snip(c.Name+" accepted from "+run.Source+" ("+runID+"/"+draftID+")", 280), Meta: meta})
 	writeJSON(w, out)
+}
+
+// deriveRecruitingKnowledge applies the draft's knowledge claims to the
+// graph store and mirrors each added claim into the ledger (entity under
+// itself, edge under the person, kind `graph.edge.derived`). Without a graph
+// store it derives nothing and says so.
+func (s *Server) deriveRecruitingKnowledge(d recruiting.Draft, c recruiting.Candidate, now time.Time) (recruiting.KnowledgeResult, error) {
+	claims := recruiting.DeriveKnowledge(d.Draft, c.ID, s.recruiting.Rel("candidates/"+c.Slug+".md"), now)
+	if s.graphStore == nil {
+		return recruiting.KnowledgeResult{Claims: claims, AddedEntities: []graph.Entity{}, AddedEdges: []graph.Edge{}},
+			errors.New("the graph store is not configured — no knowledge edges derived")
+	}
+	res, err := recruiting.ApplyKnowledge(s.graphStore, claims)
+	for _, e := range res.AddedEntities {
+		s.graphEntityEvent(e, "recruiting")
+	}
+	for _, e := range res.AddedEdges {
+		s.graphEdgeEventKind(e, "recruiting", "graph.edge.derived")
+	}
+	return res, err
+}
+
+// draftEvent ledgers a decision about one queued draft under the draft
+// itself (a queued person has no record yet): recruiting.draft.passed and
+// its reversal, so a pass and its undo read as a pair in the history.
+func (s *Server) draftEvent(kind, verb, runID, draftID string, run recruiting.Run) {
+	name := ""
+	for _, d := range run.Drafts {
+		if d.ID == draftID {
+			name = d.Draft.Name
+		}
+	}
+	s.ledger(ledger.Entry{Source: "recruiting", Kind: kind, Actor: "owner",
+		Object: ledger.Object{Kind: "draft", ID: runID + "/" + draftID},
+		Text:   ledger.Snip(verb+" "+orStr(name, draftID)+" for "+run.Source+" run "+runID, 280),
+		Meta:   map[string]any{"run": runID, "draft": draftID, "source": run.Source, "name": name}})
 }
 
 // POST /api/aion/recruiting/sources/lookup/{run}/{draft} — ask the other
@@ -150,11 +223,32 @@ func (s *Server) handleRecruitingSourceReject(w http.ResponseWriter, r *http.Req
 	if !s.recruitingRunsReady(w) {
 		return
 	}
-	run, err := s.recruitingRuns.Reject(r.PathValue("run"), r.PathValue("draft"), time.Now())
+	runID, draftID := r.PathValue("run"), r.PathValue("draft")
+	run, err := s.recruitingRuns.Reject(runID, draftID, time.Now())
 	if err != nil {
 		httpError(w, err)
 		return
 	}
+	s.draftEvent("recruiting.draft.passed", "passed on", runID, draftID, run)
+	out := s.runsPayload(false)
+	out["run"] = run
+	writeJSON(w, out)
+}
+
+// POST /api/aion/recruiting/sources/unreject/{run}/{draft} — undo a pass
+// (Phase 3). The draft returns to `new` exactly as it was; the reversal is
+// ledgered beside the pass. Nothing reaches the vault.
+func (s *Server) handleRecruitingSourceUnreject(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingRunsReady(w) {
+		return
+	}
+	runID, draftID := r.PathValue("run"), r.PathValue("draft")
+	run, err := s.recruitingRuns.Unreject(runID, draftID, time.Now())
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	s.draftEvent("recruiting.draft.unpassed", "undid the pass on", runID, draftID, run)
 	out := s.runsPayload(false)
 	out["run"] = run
 	writeJSON(w, out)

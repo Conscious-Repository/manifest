@@ -193,6 +193,12 @@ type PathClaim struct {
 	Kind       string `json:"kind"`
 	Confidence string `json:"confidence,omitempty"`
 	Inferred   bool   `json:"inferred"`
+	// Weakest names the hop a derived path rests on — the lowest-confidence
+	// edge, as "a > b · kind · 0.60 · inferred" — and Observed is the OLDEST
+	// date any hop on it was seen (its freshness bound). Both are derived-only
+	// (DerivePaths); a hand-authored `## network` row carries neither.
+	Weakest  string `json:"weakest,omitempty"`
+	Observed string `json:"observed,omitempty"`
 }
 
 // NextAction is one `## next` row.

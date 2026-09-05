@@ -203,7 +203,7 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, LookupResult{}, err
 	}
-	return run, res, nil
+	return r.project(run, nil), res, nil
 }
 
 // topicKey is the controlled topic normalizer (O1): the same rule that names

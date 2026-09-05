@@ -152,6 +152,14 @@ type graphHopView struct {
 // endpoint; a task on either end rides as the related ref so the task's
 // history carries the edge too.
 func (s *Server) graphEdgeEvent(e graph.Edge, actor string) {
+	s.graphEdgeEventKind(e, actor, "graph.edge.added")
+}
+
+// graphEdgeEventKind is graphEdgeEvent with the event kind chosen by the
+// writer: `graph.edge.derived` for a claim a projection wrote (recruiting's
+// knowledge overlay), so a stated claim and a derived one read apart in the
+// history.
+func (s *Server) graphEdgeEventKind(e graph.Edge, actor, kind string) {
 	meta := map[string]any{
 		"from": e.From.String(), "to": e.To.String(), "edgeKind": e.Kind, "basis": e.Basis,
 		"inferred": e.Inferred, "source": e.Source,
@@ -162,7 +170,7 @@ func (s *Server) graphEdgeEvent(e graph.Edge, actor string) {
 	if e.Evidence != "" {
 		meta["evidence"] = e.Evidence
 	}
-	entry := ledger.Entry{Source: "graph", Kind: "graph.edge.added", Actor: orStr(actor, "owner"),
+	entry := ledger.Entry{Source: "graph", Kind: orStr(kind, "graph.edge.added"), Actor: orStr(actor, "owner"),
 		Object: ledger.Object{Kind: e.From.Kind, ID: e.From.ID},
 		Text:   ledger.Snip(e.From.String()+" "+e.Kind+" "+e.To.String()+" — "+e.Basis, 280), Meta: meta}
 	for _, r := range []graph.Ref{e.From, e.To} {

@@ -94,6 +94,11 @@ type Draft struct {
 	// press is a deliberate refresh rather than an accident.
 	LookedUpAt time.Time              `json:"lookedUpAt,omitzero"`
 	Draft      sources.CandidateDraft `json:"draft"`
+	// Paths are the ranked intro routes from the owner seeds to this person
+	// over the network's claims (Phase 3): to the record once accepted, to
+	// the draft's external keys while it is still queued. DERIVED on every
+	// read and never written to drafts.json — the network edges own the fact.
+	Paths []PathClaim `json:"paths,omitempty"`
 }
 
 // Run is the full projection of one run: state plus queue.
@@ -266,7 +271,32 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 	if err := r.writeRun(run, raw); err != nil {
 		return Run{}, err
 	}
-	return run, nil
+	return r.project(run, nil), nil
+}
+
+// project decorates a run for the wire: every draft carries the intro paths
+// the network currently derives for it (Draft.Paths). A finder built by the
+// caller is reused across runs; nil builds one. Nothing here is stored.
+func (r *RunStore) project(run Run, f *PathFinder) Run {
+	if f == nil {
+		f = r.pathFinder()
+	}
+	for i := range run.Drafts {
+		d := &run.Drafts[i]
+		targets := []string{d.CandidateID}
+		if d.CandidateID == "" {
+			targets = extKeysOfDraft(d.Draft)
+		}
+		d.Paths = f.Paths(targets, nil, DefaultTopPaths)
+		if len(d.Paths) == 0 {
+			d.Paths = nil
+		}
+	}
+	return run
+}
+
+func (r *RunStore) pathFinder() *PathFinder {
+	return NewPathFinder(r.store.LoadNetworkPeople().People(), r.store.LoadEdges().Edges())
 }
 
 // triage stamps the D14 clock once nothing is left to decide — for every run
@@ -326,7 +356,7 @@ func (r *RunStore) Accept(runID, draftID string, now time.Time) (Run, Candidate,
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, Candidate{}, err
 	}
-	return run, c, nil
+	return r.project(run, nil), c, nil
 }
 
 // Reject marks one draft rejected. Nothing is written to the vault.
@@ -351,7 +381,38 @@ func (r *RunStore) Reject(runID, draftID string, now time.Time) (Run, error) {
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, err
 	}
-	return run, nil
+	return r.project(run, nil), nil
+}
+
+// Unreject reverses a pass (Phase 3): the draft returns to `new` exactly as
+// it was before the decision — no decided-at, the rejected count back down,
+// and the run's D14 expiry clock cleared, since a queue with a `new` draft
+// in it is not triaged. Only a rejected draft can come back: an accepted one
+// is a record now, and a duplicate never left. Nothing touches the vault.
+func (r *RunStore) Unreject(runID, draftID string, now time.Time) (Run, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, err := r.load(runID)
+	if err != nil {
+		return Run{}, err
+	}
+	i, err := run.find(draftID)
+	if err != nil {
+		return Run{}, err
+	}
+	d := &run.Drafts[i]
+	if d.Status != DraftRejected {
+		return Run{}, errf("draft %s is %s, not passed — only a pass can be undone", draftID, d.Status)
+	}
+	d.Status, d.DecidedAt, d.Reason = DraftNew, time.Time{}, ""
+	if run.Counts.Rejected > 0 {
+		run.Counts.Rejected--
+	}
+	run.TriagedAt, run.ExpiresAt = time.Time{}, time.Time{}
+	if err := r.writeRun(run, nil); err != nil {
+		return Run{}, err
+	}
+	return r.project(run, nil), nil
 }
 
 // Pin exempts a run's cache from the sweep (D14), or puts it back.
@@ -366,14 +427,18 @@ func (r *RunStore) Pin(runID string, pinned bool) (Run, error) {
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, err
 	}
-	return run, nil
+	return r.project(run, nil), nil
 }
 
 // Get loads one run.
 func (r *RunStore) Get(runID string) (Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.load(runID)
+	run, err := r.load(runID)
+	if err != nil {
+		return Run{}, err
+	}
+	return r.project(run, nil), nil
 }
 
 // Runs lists every run newest-first, sweeping expired ones on the way: the
@@ -383,12 +448,14 @@ func (r *RunStore) Runs(now time.Time) []Run {
 	defer r.mu.Unlock()
 	r.sweep(now)
 	out := []Run{}
+	// one network graph for the whole listing, not one per draft
+	finder := r.pathFinder()
 	for _, id := range r.ids() {
 		run, err := r.load(id)
 		if err != nil {
 			continue
 		}
-		out = append(out, run)
+		out = append(out, r.project(run, finder))
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if !out[i].StartedAt.Equal(out[j].StartedAt) {
@@ -506,7 +573,14 @@ func (r *RunStore) writeRun(run Run, raw []sources.CandidateDraft) error {
 			return err
 		}
 	}
-	if err := writeJSON0600(filepath.Join(dir, "drafts.json"), run.Drafts); err != nil {
+	// derived paths never reach the cache: the network edges own that fact,
+	// and a stale route on disk would outlive the edge it came from
+	drafts := make([]Draft, len(run.Drafts))
+	for i, d := range run.Drafts {
+		d.Paths = nil
+		drafts[i] = d
+	}
+	if err := writeJSON0600(filepath.Join(dir, "drafts.json"), drafts); err != nil {
 		return err
 	}
 	return writeJSON0600(filepath.Join(dir, "run.json"), run.RunState)

@@ -47,10 +47,20 @@ func SerializeEntities(d *EntitiesDoc) string { return record.SerializeRows(d.Do
 func (d *EntitiesDoc) Entities() []Entity {
 	out := []Entity{}
 	for _, r := range record.Rows(d.Lines) {
-		out = append(out, Entity{
+		e := Entity{
 			ID: r.Get("id"), Kind: r.Get("kind"), Title: r.Get("title"), Ref: r.Get("ref"),
-			Source: r.Get("source"), Added: r.Get("added"), Unknown: r.UnknownFields(entityKeys...),
-		})
+			Source: r.Get("source"), Added: r.Get("added"),
+			Unknown: r.UnknownFields(append(append([]string(nil), entityKeys...), LinkKeys...)...),
+		}
+		for _, k := range LinkKeys {
+			if v := strings.TrimSpace(r.Get(k)); v != "" {
+				if e.Links == nil {
+					e.Links = map[string]string{}
+				}
+				e.Links[k] = v
+			}
+		}
+		out = append(out, e)
 	}
 	return out
 }
@@ -79,6 +89,11 @@ func (d *EntitiesDoc) Add(e Entity, v Vocabulary) (Entity, error) {
 	for _, kv := range [][2]string{{"title", e.Title}, {"ref", e.Ref}, {"source", e.Source}, {"added", e.Added}} {
 		if strings.TrimSpace(kv[1]) != "" {
 			r.Set(kv[0], strings.TrimSpace(kv[1]))
+		}
+	}
+	for _, k := range LinkKeys {
+		if v := strings.TrimSpace(e.Links[k]); v != "" {
+			r.Set(k, v)
 		}
 	}
 	for _, f := range e.Unknown {

@@ -60,37 +60,105 @@ func OwnerSeeds(people []NetworkPerson) []string {
 // A path is Inferred when ANY hop on it is an inferred edge. No path from the
 // seed set yields an empty (non-nil) slice.
 func DerivePaths(people []NetworkPerson, edges []Edge, target string, seeds []string, topN int) []PathClaim {
-	target = strings.TrimSpace(target)
+	return NewPathFinder(people, edges).Paths([]string{target}, seeds, topN)
+}
+
+// PathFinder is the network graph built once, so a listing that asks about
+// many people (every draft in every run) does not rebuild the adjacency per
+// question. Same edges → identical answers as DerivePaths.
+type PathFinder struct {
+	people []NetworkPerson
+	g      *graph.Graph
+}
+
+// NewPathFinder builds the traversal graph over the network's claims.
+func NewPathFinder(people []NetworkPerson, edges []Edge) *PathFinder {
+	return &PathFinder{people: people, g: graph.Build(GraphEdges(edges), EdgeVocabulary())}
+}
+
+// Paths is DerivePaths for one person who may be known under several ids —
+// a queued draft is reachable only by its external keys (ext/orcid/…,
+// ext/openalex/…) until accept repoints those onto its record. Routes to
+// every target are ranked together; the top-N wins.
+func (f *PathFinder) Paths(targets []string, seeds []string, topN int) []PathClaim {
 	if topN <= 0 {
 		topN = DefaultTopPaths
 	}
 	out := []PathClaim{}
-	if target == "" {
+	if f == nil || f.g == nil {
 		return out
 	}
 	if len(seeds) == 0 {
-		seeds = OwnerSeeds(people)
+		seeds = OwnerSeeds(f.people)
 	}
-	g := graph.Build(GraphEdges(edges), EdgeVocabulary())
 	var starts []graph.Ref
 	for _, s := range seeds {
 		if s = strings.TrimSpace(s); s != "" {
 			starts = append(starts, PersonRef(s))
 		}
 	}
-	for _, p := range g.Paths(starts, PersonRef(target), graph.PathOptions{MaxHops: MaxIntroHops, TopN: topN}) {
-		ids := make([]string, 0, len(p.Nodes))
-		for _, n := range p.Nodes {
-			ids = append(ids, n.ID)
+	var found []graph.Path
+	seenTarget := map[string]bool{}
+	for _, t := range targets {
+		t = strings.TrimSpace(t)
+		if t == "" || seenTarget[t] {
+			continue
 		}
-		out = append(out, PathClaim{
-			Path:       strings.Join(ids, pathSep),
-			Kind:       PathKindDerived,
-			Confidence: FormatConfidence(p.Confidence),
-			Inferred:   p.Inferred,
-		})
+		seenTarget[t] = true
+		// every target's own top-N, then re-ranked together: a route to an
+		// external key is as real as one to the record id
+		found = append(found, f.g.Paths(starts, PersonRef(t), graph.PathOptions{MaxHops: MaxIntroHops, TopN: topN})...)
+	}
+	sort.SliceStable(found, func(i, j int) bool {
+		if found[i].Hops() != found[j].Hops() {
+			return found[i].Hops() < found[j].Hops()
+		}
+		if found[i].Confidence != found[j].Confidence {
+			return found[i].Confidence > found[j].Confidence
+		}
+		return found[i].String() < found[j].String()
+	})
+	for i, p := range found {
+		if i >= topN {
+			break
+		}
+		out = append(out, pathClaim(p))
 	}
 	return out
+}
+
+// pathClaim renders one graph path as the record-shaped claim, naming the
+// hop it rests on and the oldest date any hop was seen.
+func pathClaim(p graph.Path) PathClaim {
+	ids := make([]string, 0, len(p.Nodes))
+	for _, n := range p.Nodes {
+		ids = append(ids, n.ID)
+	}
+	c := PathClaim{
+		Path:       strings.Join(ids, pathSep),
+		Kind:       PathKindDerived,
+		Confidence: FormatConfidence(p.Confidence),
+		Inferred:   p.Inferred,
+	}
+	weakest, oldest := -1, ""
+	for i, e := range p.Edges {
+		if weakest < 0 || e.Weight() < p.Edges[weakest].Weight() {
+			weakest = i
+		}
+		if o := strings.TrimSpace(e.Observed); o != "" && (oldest == "" || o < oldest) {
+			oldest = o
+		}
+	}
+	if weakest >= 0 {
+		e := p.Edges[weakest]
+		parts := []string{e.From.ID + pathSep + e.To.ID, e.Kind, FormatConfidence(e.Weight())}
+		if e.Inferred {
+			parts = append(parts, "inferred")
+		}
+		c.Weakest = strings.Join(parts, " · ")
+	}
+	c.Observed = oldest
+	return c
 }
 
 // MergePaths lays derived paths after the hand-authored ones. A hand-written

@@ -394,7 +394,8 @@ func TestRecruitingSourcesUnavailableWithoutRuns(t *testing.T) {
 	handlers := func(s *Server) []http.HandlerFunc {
 		return []http.HandlerFunc{
 			s.handleRecruitingSources, s.handleRecruitingSourceRuns, s.handleRecruitingSourceRun,
-			s.handleRecruitingSourceAccept, s.handleRecruitingSourceReject, s.handleRecruitingSourcePin,
+			s.handleRecruitingSourceAccept, s.handleRecruitingSourceReject, s.handleRecruitingSourceUnreject,
+			s.handleRecruitingSourcePin,
 		}
 	}
 	// a board with no run cache
@@ -417,6 +418,7 @@ func TestRecruitingSourcesUnavailableWithoutRuns(t *testing.T) {
 		{http.MethodPost, "/api/aion/recruiting/sources/run"},
 		{http.MethodPost, "/api/aion/recruiting/sources/accept/r/d1"},
 		{http.MethodPost, "/api/aion/recruiting/sources/reject/r/d1"},
+		{http.MethodPost, "/api/aion/recruiting/sources/unreject/r/d1"},
 		{http.MethodPost, "/api/aion/recruiting/sources/pin/r"},
 	} {
 		w := sourcesDo(t, mux, tc.method, tc.path, "")

@@ -30,12 +30,45 @@ func pathFixture() ([]NetworkPerson, []Edge) {
 func TestDerivePathsRanksShortestThenConfidence(t *testing.T) {
 	people, edges := pathFixture()
 	got := DerivePaths(people, edges, "cand/avery-quill", nil, 5)
+	// each derived path names the hop it rests on (the lowest-confidence
+	// edge, as the edge's own direction) — Phase 3's "weakest link"
 	want := []PathClaim{
-		{Path: "aion-net/ben-anderson > aion-net/dana-advisor > cand/avery-quill", Kind: PathKindDerived, Confidence: "0.85", Inferred: false},
-		{Path: "aion-net/ben-anderson > aion-net/kim-collab > cand/avery-quill", Kind: PathKindDerived, Confidence: "0.48", Inferred: true},
+		{Path: "aion-net/ben-anderson > aion-net/dana-advisor > cand/avery-quill", Kind: PathKindDerived, Confidence: "0.85", Inferred: false,
+			Weakest: "aion-net/dana-advisor > cand/avery-quill · advisor · 0.90"},
+		{Path: "aion-net/ben-anderson > aion-net/kim-collab > cand/avery-quill", Kind: PathKindDerived, Confidence: "0.48", Inferred: true,
+			Weakest: "cand/avery-quill > aion-net/kim-collab · same_lab · 0.60 · inferred"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("paths:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+// A path's freshness is the OLDEST date any hop was observed, and a draft
+// known only by external keys gets the same ranked route once the finder is
+// asked about every key it answers to.
+func TestPathFinderFreshnessAndExternalKeys(t *testing.T) {
+	people, edges := pathFixture()
+	edges[0].Observed = "2026-08-01"
+	edges[1].Observed = "2025-01-15"
+	edges = append(edges, Edge{From: "aion-net/dana-advisor", To: "ext/orcid/0000-0001-2345-6789", Kind: "coauthor",
+		Basis: "paper 2024", Confidence: "0.70", Source: "openalex", Observed: "2026-06-01"})
+	f := NewPathFinder(people, edges)
+	got := f.Paths([]string{"cand/avery-quill"}, nil, 5)
+	if len(got) != 2 || got[0].Observed != "2025-01-15" {
+		t.Fatalf("freshness should be the oldest hop: %+v", got)
+	}
+	if got[1].Observed != "" {
+		t.Errorf("a path with no dated hop has no freshness bound: %+v", got[1])
+	}
+	ext := f.Paths([]string{"ext/openalex/A1", "ext/orcid/0000-0001-2345-6789"}, nil, 5)
+	if len(ext) == 0 || ext[0].Path != "aion-net/ben-anderson > aion-net/dana-advisor > ext/orcid/0000-0001-2345-6789" || ext[0].Observed != "2026-06-01" {
+		t.Fatalf("route to an external key: %+v", ext)
+	}
+	if f.Paths(nil, nil, 5) == nil || len(f.Paths([]string{""}, nil, 5)) != 0 {
+		t.Error("no target → empty, non-nil")
+	}
+	if (*PathFinder)(nil).Paths([]string{"cand/avery-quill"}, nil, 5) == nil {
+		t.Error("a nil finder answers empty, not a panic")
 	}
 }
 
