@@ -46,7 +46,6 @@ import (
 	"manifest/realestate"
 	"manifest/record"
 	"manifest/recruiting"
-	"manifest/recruiting/sources"
 	"manifest/server"
 	"manifest/signals"
 	"manifest/spirits"
@@ -433,14 +432,7 @@ func main() {
 	if rs, err := recruiting.NewRunStore(filepath.Join(cfg.DataDir, "recruiting", "runs"), recStore); err != nil {
 		log.Printf("recruiting source runs unavailable: %v", err)
 	} else {
-		rs.Register(sources.Manual{Owner: recStore.Owner()})
-		rs.Register(sources.OpenAlex{Client: http.Client{Timeout: 20 * time.Second}})
-		rs.Register(sources.ORCID{Client: http.Client{Timeout: 20 * time.Second}})
-		rs.Register(sources.GitHub{Client: http.Client{Timeout: 20 * time.Second}})
-		rs.Register(sources.PubMed{Client: http.Client{Timeout: 20 * time.Second}})
-		rs.Register(sources.NIHRePORTER{Client: http.Client{Timeout: 20 * time.Second}})
-		rs.Register(sources.Web{Client: http.Client{Timeout: 20 * time.Second}})
-		rs.Register(sources.Feed{Client: http.Client{Timeout: 20 * time.Second}})
+		rs.RegisterDefaults()
 		recRuns = rs
 	}
 	// The real-estate decision log reuses the aion store/grammar pointed at

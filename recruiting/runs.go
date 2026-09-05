@@ -188,21 +188,21 @@ func (r *RunStore) Root() string { return r.root }
 
 // ---- run ----
 
-// Execute runs one adapter over one scope, writes the run under the cache
-// root, and dedupes every draft against the vault. It never writes a record:
-// a run only ever produces a queue, which is why a preview and a live run are
-// the same thing and `DryRun` now gates nothing (see Accept).
-func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (Run, error) {
+// PrepareScope is Execute's side-effect-free scope normalization and validation.
+func (r *RunStore) PrepareScope(req RunRequest) (sources.Adapter, sources.Scope, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.prepareScope(req)
+}
 
+func (r *RunStore) prepareScope(req RunRequest) (sources.Adapter, sources.Scope, error) {
 	adapter, ok := r.adapters[strings.TrimSpace(req.Source)]
 	if !ok {
-		return Run{}, errf("unknown source %q", req.Source)
+		return nil, sources.Scope{}, errf("unknown source %q", req.Source)
 	}
 	role := strings.TrimSpace(req.Role)
 	if role != "" && !r.store.roleExists(role) {
-		return Run{}, errf("unknown role %q", role)
+		return nil, sources.Scope{}, errf("unknown role %q", role)
 	}
 	max := req.Max
 	if max <= 0 {
@@ -225,8 +225,34 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 	// and a stricter rule here refused exactly those runs ("a run needs a
 	// query" on a DOI). The adapter still refuses a scope IT cannot use.
 	if scope.Query == "" && len(scope.Fields) == 0 {
-		return Run{}, errf("a run needs a query, or one thing to scope it to")
+		return nil, sources.Scope{}, errf("a run needs a query, or one thing to scope it to")
 	}
+
+	if validator, ok := adapter.(interface {
+		PrepareScope(sources.Scope) (sources.Scope, error)
+	}); ok {
+		var err error
+		scope, err = validator.PrepareScope(scope)
+		if err != nil {
+			return nil, sources.Scope{}, err
+		}
+	}
+	return adapter, scope, nil
+}
+
+// Execute runs one adapter over one scope, writes the run under the cache
+// root, and dedupes every draft against the vault. It never writes a record:
+// a run only ever produces a queue, which is why a preview and a live run are
+// the same thing and `DryRun` now gates nothing (see Accept).
+func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (Run, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	adapter, scope, err := r.prepareScope(req)
+	if err != nil {
+		return Run{}, err
+	}
+	max, role := scope.Max, scope.Role
 
 	drafts, err := adapter.Search(ctx, scope)
 	if err != nil {
@@ -399,9 +425,7 @@ func (r *RunStore) Accept(runID, draftID string, now time.Time) (Run, Candidate,
 	if err != nil {
 		return Run{}, Candidate{}, err
 	}
-	d.Status, d.CandidateID, d.DecidedAt = DraftAccepted, c.ID, now.UTC()
-	run.Counts.Accepted++
-	run.triage(now)
+	run.decide(i, DraftAccepted, c.ID, now)
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, Candidate{}, err
 	}
@@ -424,8 +448,7 @@ func (r *RunStore) Reject(runID, draftID, reason string, now time.Time) (Run, er
 	if d.Status != DraftNew {
 		return Run{}, errf("draft %s is already %s", draftID, d.Status)
 	}
-	d.Status, d.DecidedAt = DraftRejected, now.UTC()
-	run.Counts.Rejected++
+	run.decide(i, DraftRejected, "", now)
 	// the decision outlives this run's cache
 	if err := r.store.AddPassed(Passed{
 		Key:    PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name),
@@ -440,6 +463,42 @@ func (r *RunStore) Reject(runID, draftID, reason string, now time.Time) (Run, er
 		return Run{}, err
 	}
 	return r.project(run, nil), nil
+}
+
+// PreviewDecision resolves exactly one pending draft and projects the same queue
+// transition Accept/Reject persist. It never writes or sweeps the cache.
+func (r *RunStore) PreviewDecision(runID, draftID, status, candidateID string, now time.Time) (Run, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	run, err := r.load(runID)
+	if err != nil {
+		return Run{}, err
+	}
+	i, err := run.find(draftID)
+	if err != nil {
+		return Run{}, err
+	}
+	if run.Drafts[i].Status != DraftNew {
+		return Run{}, errf("draft %s is already %s", draftID, run.Drafts[i].Status)
+	}
+	if status != DraftAccepted && status != DraftRejected {
+		return Run{}, errf("unsupported decision %q", status)
+	}
+	run.decide(i, status, candidateID, now)
+	return run, nil
+}
+
+func (run *Run) decide(i int, status, candidateID string, now time.Time) {
+	d := &run.Drafts[i]
+	d.Status = status
+	d.DecidedAt = now.UTC()
+	if status == DraftAccepted {
+		d.CandidateID = candidateID
+		run.Counts.Accepted++
+	} else {
+		run.Counts.Rejected++
+	}
+	run.triage(now)
 }
 
 // Unreject reverses a pass (Phase 3): the draft returns to `new` exactly as

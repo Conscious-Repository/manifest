@@ -1,0 +1,843 @@
+{
+  "sources": [
+    {
+      "id": "manual",
+      "kind": "manual",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role",
+          "required": true
+        },
+        {
+          "key": "query",
+          "label": "candidate url, name, or note",
+          "required": true
+        },
+        {
+          "key": "org",
+          "label": "org"
+        }
+      ]
+    },
+    {
+      "id": "openalex",
+      "kind": "scholarly",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "author name or keyword",
+          "placeholder": "e.g. diffusion MRI reconstruction"
+        },
+        {
+          "key": "work",
+          "label": "or one paper",
+          "placeholder": "DOI, OpenAlex id, or link"
+        },
+        {
+          "key": "max",
+          "label": "max results",
+          "placeholder": "25"
+        }
+      ]
+    },
+    {
+      "id": "orcid",
+      "kind": "scholarly",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "name, keyword or affiliation",
+          "placeholder": "e.g. diffusion MRI reconstruction",
+          "required": true
+        },
+        {
+          "key": "max",
+          "label": "max results",
+          "placeholder": "25"
+        }
+      ]
+    },
+    {
+      "id": "github",
+      "kind": "code",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "GitHub user search",
+          "placeholder": "e.g. location:boston language:python mri"
+        },
+        {
+          "key": "repo",
+          "label": "or one repo",
+          "placeholder": "owner/repo, or its link"
+        },
+        {
+          "key": "max",
+          "label": "max results",
+          "placeholder": "25"
+        }
+      ]
+    },
+    {
+      "id": "pubmed",
+      "kind": "scholarly",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "PubMed search",
+          "placeholder": "e.g. diffusion MRI reconstruction[Title]",
+          "required": true
+        },
+        {
+          "key": "max",
+          "label": "max results",
+          "placeholder": "25"
+        }
+      ]
+    },
+    {
+      "id": "nihreporter",
+      "kind": "grant",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "RePORTER search",
+          "placeholder": "e.g. diffusion MRI reconstruction",
+          "required": true
+        },
+        {
+          "key": "max",
+          "label": "max results",
+          "placeholder": "25"
+        }
+      ]
+    },
+    {
+      "id": "web",
+      "kind": "web",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "query",
+          "label": "relevance terms",
+          "placeholder": "e.g. mri pulse sequence postdoc",
+          "required": true
+        },
+        {
+          "key": "seed_url",
+          "label": "seed URL",
+          "placeholder": "https://lab.example.edu/people",
+          "required": true
+        },
+        {
+          "key": "max_pages",
+          "label": "max pages",
+          "placeholder": "25 (cap 50)"
+        },
+        {
+          "key": "depth",
+          "label": "depth",
+          "placeholder": "3 (max 3)"
+        }
+      ]
+    },
+    {
+      "id": "feed",
+      "kind": "web",
+      "fields": [
+        {
+          "key": "role",
+          "label": "role"
+        },
+        {
+          "key": "feed_url",
+          "label": "feed URL",
+          "placeholder": "the show or blog's RSS",
+          "required": true
+        },
+        {
+          "key": "query",
+          "label": "only episodes mentioning",
+          "placeholder": "optional filter"
+        },
+        {
+          "key": "max",
+          "label": "max results",
+          "placeholder": "25"
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read the versioned tools, generated input schemas, domain vocabulary and source scopes.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "name": "capabilities.list"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Resolve exact name or ID across recruiting people, seeds/labs, roles and registered graph entities. Multiple matches require an explicit choice; never guess.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "name": "entity.resolve"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read a canonical entity, evidence/provenance and content revision.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "namespace",
+          "kind",
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "name": "entity.get"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read the application's shared adapter registry and scope fields; no fetch or cache sweep.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "name": "sources.list"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read one run and review queue using RunStore.Get; counts include previously passed drafts separately.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "source_run.get"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Bounded stored general-graph neighbors and optional paths (at most 3 hops, 10 paths). Server-only task/calendar derivations are not included.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "to": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "name": "graph.neighbors"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch/cache write. Standing authorization applies in Phase 2; network/robots validation remains execution-time.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "query": {
+                "type": "string"
+              },
+              "max": {
+                "type": "integer"
+              },
+              "dryRun": {
+                "type": "boolean"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "source",
+              "role",
+              "query",
+              "max",
+              "dryRun"
+            ],
+            "additionalProperties": false
+          },
+          "seed": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "role": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "request"
+        ],
+        "additionalProperties": false
+      },
+      "name": "source_run.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. No file is written.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "draftId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "draftId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_accept.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "runId": {
+            "type": "string"
+          },
+          "draftId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runId",
+          "draftId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_reject.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Resolve a canonical person; check existing network identity and preview PeopleDoc.Add with the shared domain payload and validation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "person": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "linkedin": {
+                "type": "string"
+              },
+              "github": {
+                "type": "string"
+              },
+              "org": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "consent": {
+                "type": "string"
+              },
+              "added": {
+                "type": "string"
+              },
+              "archived": {
+                "type": "string"
+              },
+              "ref": {
+                "type": "string"
+              },
+              "unknown": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "ref",
+          "person"
+        ],
+        "additionalProperties": false
+      },
+      "name": "network_person.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Resolve both registered general-graph endpoints and preview a typed claim with shared graph validation and duplicate detection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "to": {
+            "type": "object",
+            "properties": {
+              "domain": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "domain",
+              "namespace",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "edge": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "to": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "kind": {
+                "type": "string"
+              },
+              "basis": {
+                "type": "string"
+              },
+              "confidence": {
+                "type": "string"
+              },
+              "inferred": {
+                "type": "boolean"
+              },
+              "source": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "string"
+              },
+              "observed": {
+                "type": "string"
+              },
+              "unknown": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "key": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "key",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "from",
+              "to",
+              "kind",
+              "basis",
+              "inferred"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "edge"
+        ],
+        "additionalProperties": false
+      },
+      "name": "graph_edge.prepare"
+    }
+  ],
+  "version": "1.0.0",
+  "vocabulary": {
+    "entityKinds": [
+      "task",
+      "decision",
+      "heuristic",
+      "artifact",
+      "person",
+      "org",
+      "project",
+      "paper",
+      "repo",
+      "property",
+      "topic"
+    ],
+    "edgeKinds": [
+      "depends_on",
+      "blocks",
+      "produced",
+      "consumes",
+      "supports",
+      "contradicts",
+      "informs",
+      "decided_by",
+      "owned_by",
+      "about",
+      "member_of",
+      "authored",
+      "references",
+      "related",
+      "expertise",
+      "direct_known",
+      "owner_said",
+      "coauthor",
+      "coinventor",
+      "coworker",
+      "same_lab",
+      "same_grant",
+      "same_repo",
+      "same_conference",
+      "same_company",
+      "advisor",
+      "referral_path_candidate",
+      "imported_export"
+    ]
+  }
+}

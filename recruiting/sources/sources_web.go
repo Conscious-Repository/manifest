@@ -294,34 +294,67 @@ type webFrontierItem struct {
 // breadth-first until the depth ceiling or the page budget stops it. Every
 // URL passes the same filters whether it is the seed, same-domain or a
 // cross-domain linkout. Requests are strictly sequential.
-func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+type webScopePlan struct {
+	terms                         []string
+	seed                          *url.URL
+	maxPages, maxDepth, maxDrafts int
+}
+
+func prepareWebScope(s Scope) (webScopePlan, error) {
 	terms := webTerms(s.Query)
 	if len(terms) == 0 {
-		return nil, errors.New("web: a run needs relevance terms in the query")
+		return webScopePlan{}, errors.New("web: a run needs relevance terms in the query")
 	}
 	rawSeed := strings.TrimSpace(s.Fields[webFieldSeed])
 	if rawSeed == "" {
-		return nil, errors.New("web: a run needs a seed_url")
+		return webScopePlan{}, errors.New("web: a run needs a seed_url")
 	}
 	seed, err := url.Parse(rawSeed)
 	if err != nil || seed.Host == "" || (seed.Scheme != "http" && seed.Scheme != "https") {
-		return nil, fmt.Errorf("web: seed_url %q is not an http(s) URL", rawSeed)
+		return webScopePlan{}, fmt.Errorf("web: seed_url %q is not an http(s) URL", rawSeed)
 	}
 	if why := webRefuse(seed); why != "" {
-		return nil, fmt.Errorf("web: seed_url refused: %s", why)
+		return webScopePlan{}, fmt.Errorf("web: seed_url refused: %s", why)
 	}
 	maxPages, err := webBound(s.Fields[webFieldPages], webDefaultPages, 1, webMaxPages, webFieldPages)
 	if err != nil {
-		return nil, err
+		return webScopePlan{}, err
 	}
 	maxDepth, err := webBound(s.Fields[webFieldDepth], webMaxDepth, 0, webMaxDepth, webFieldDepth)
 	if err != nil {
-		return nil, err
+		return webScopePlan{}, err
 	}
 	maxDrafts := s.Max
 	if maxDrafts <= 0 {
 		maxDrafts = webDefaultPages
 	}
+
+	return webScopePlan{terms, seed, maxPages, maxDepth, maxDrafts}, nil
+}
+
+// PrepareScope validates and resolves the crawler's exact bounds without fetching.
+func (Web) PrepareScope(s Scope) (Scope, error) {
+	p, err := prepareWebScope(s)
+	if err != nil {
+		return Scope{}, err
+	}
+	fields := map[string]string{}
+	for k, v := range s.Fields {
+		fields[k] = v
+	}
+	fields[webFieldSeed] = p.seed.String()
+	fields[webFieldPages] = strconv.Itoa(p.maxPages)
+	fields[webFieldDepth] = strconv.Itoa(p.maxDepth)
+	s.Fields = fields
+	return s, nil
+}
+
+func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
+	p, err := prepareWebScope(s)
+	if err != nil {
+		return nil, err
+	}
+	terms, seed, maxPages, maxDepth, maxDrafts := p.terms, p.seed, p.maxPages, p.maxDepth, p.maxDrafts
 
 	seed.Fragment = ""
 	frontier := []webFrontierItem{{url: seed, depth: 0, from: "seed"}}

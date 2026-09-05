@@ -188,7 +188,7 @@ type HermesConfig struct {
 
 // DefaultHermesReadToolsets is the read-only scope for plan/comment turns —
 // research + memory only, no world-changing tools.
-const DefaultHermesReadToolsets = "web,session_search,memory,x_search,skills,clarify,context_engine,vision"
+const DefaultHermesReadToolsets = "web,session_search,memory,x_search,skills,clarify,context_engine,vision,mcp-manifest"
 
 // HarnessRef names one harness tree (federation, big-change Phase 4).
 // Surface scopes where the harness's agent identity is offered (kairos plan):
