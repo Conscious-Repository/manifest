@@ -27,6 +27,7 @@ let recPeopleFacet = "considering"; // considering | known | everyone — the RO
 // never stored: the same rule the run head prints as `cleared`.
 function recRunCleared(run) { return !(run.drafts || []).some((d) => d.status === "new"); }
 let recShowCleared = false;         // the SOURCES list includes finished runs
+let recAdvancedOpen = false;        // the hand-built run form is unfolded
 let recKnownOpen = false;   // the contacts picker is open
 let recKnown = null;        // its last fetch ({people, available} | {error})
 let recKnownQuery = "";
@@ -410,8 +411,11 @@ function recLoadRun(target) {
   recRunForm.query = target.query || "";
   recRunForm.fields = Object.assign({}, target.fields || {});
   recRunForm.role = recRoleId();
+  recAdvancedOpen = false; // the pending card is the whole story; the form is not
   recNav("sources");
-  showToast("scoped to the " + target.source + " source — run it when you're ready");
+  // the card at the top of SOURCES says what will be read and by whom, so the
+  // toast does not have to teach the next gesture twice
+  showToast("ready to sweep — press sweep to run it");
 }
 
 function recIntakeReset() { recIntake = null; }
@@ -1450,12 +1454,14 @@ function paintSourcesView(main) {
     main.append(emptyRow("sources unavailable"));
     return;
   }
-  main.append(recRunFormEl());
-  // the rules of this console, stated once under its controls rather than
-  // hidden in six tooltips — what a run may fetch, and what a dry run cannot do
-  main.append(el("div", "rec-run-rule",
-    "max " + (recSources.maxMax || 100) + " · one record per accept, no accept-all · " +
-    "look up asks the other indexes about one name"));
+  // YOU POINT AT A THING; THE SOURCE FOLLOWS FROM IT (owner, 2026-09-05:
+  // "adding a new source isn't intuitive yet"). The front door is the intake
+  // above and the `sweep →` on any place or person — both land here as a
+  // PENDING SWEEP, one card naming what will be read and by whom. The form
+  // that makes you choose an adapter is still here, one fold down, for the
+  // day you want to hand-build a query. Two levels, and no more.
+  const pending = recPendingSweep();
+  if (pending) main.append(recPendingSweepCard(pending));
   const list = el("div", "rec-run-list");
   // A RUN WITH NOTHING LEFT TO DECIDE is done, and a done run in the way of a
   // live one is the silt the owner asked to be rid of. `cleared` folds them
@@ -1466,11 +1472,12 @@ function paintSourcesView(main) {
   live.forEach((run) => list.append(recRunCard(run)));
   if (recShowCleared) decided.forEach((run) => list.append(recRunCard(run)));
   if (!recRuns.length) {
-    list.append(emptyRow("nothing swept yet — point at a place and sweep it"));
+    list.append(emptyRow("nothing swept yet — paste a link above, or open PLACES and sweep one"));
   } else if (!live.length && !recShowCleared) {
     list.append(emptyRow("nothing left to review — every run is triaged"));
   }
   main.append(list);
+  main.append(recAdvancedRun());
   if (decided.length) {
     const foot = el("div", "rec-foot");
     const t = el("button", "rec-linkish", recShowCleared
@@ -1481,6 +1488,86 @@ function paintSourcesView(main) {
     foot.append(t);
     main.append(foot);
   }
+}
+
+// recPendingSweep — the sweep that has been loaded and not yet run. Derived
+// from the run form, so pointing at a place, a person or a pasted link all
+// arrive the same way and nothing has to remember which gesture set it.
+function recPendingSweep() {
+  const f = recRunForm.fields || {};
+  const target = (recRunForm.query || f.seed_url || f.work || f.repo || f.feed_url || "").trim();
+  if (!target) return null;
+  return { source: recRunForm.source, target, role: recRunForm.role || recRoleId() };
+}
+
+// recPendingSweepCard — what is about to be read, by whom, and one button.
+// The adapter is named but not offered: it FOLLOWED from the thing you
+// pointed at, and changing it is the advanced case.
+function recPendingSweepCard(p) {
+  const card = el("div", "rec-pending");
+  const head = el("div", "rec-pending-head");
+  head.append(el("span", "micro-label", "ready to sweep"));
+  head.append(el("span", "rec-pending-src", p.source));
+  card.append(head);
+  const what = el("div", "rec-pending-what", p.target.length > 140 ? p.target.slice(0, 137) + "…" : p.target);
+  what.title = p.target;
+  card.append(what);
+
+  const acts = el("div", "rec-pending-acts");
+  const go = el("button", "pill rec-primary", recRunning ? "sweeping…" : "sweep");
+  go.disabled = !!recRunning;
+  go.onclick = () => recRunSource();
+  acts.append(go);
+
+  // the role this sweep files its results under — the one choice worth making
+  // before a sweep, because it decides which rubric the drafts are read against
+  const roles = recCache.roles || [];
+  if (roles.length) {
+    const sel = el("select", "pp-in rec-pending-role");
+    const none = el("option", "", "no role");
+    none.value = "";
+    sel.append(none);
+    roles.forEach((r) => {
+      const id = r.id || "role/" + r.slug;
+      const o = el("option", "", r.title || r.slug);
+      o.value = id;
+      if (p.role === id) o.selected = true;
+      sel.append(o);
+    });
+    sel.onchange = () => { recRunForm.role = sel.value; };
+    acts.append(sel);
+  }
+  const adv = el("button", "rec-linkish", "change…");
+  adv.title = "pick a different source, or edit the query by hand";
+  adv.onclick = () => { recAdvancedOpen = true; if (recPaint) recPaint(); };
+  acts.append(adv);
+  const clear = el("button", "rec-linkish", "cancel");
+  clear.onclick = () => {
+    recRunForm.query = "";
+    recRunForm.fields = {};
+    if (recPaint) recPaint();
+  };
+  acts.append(clear);
+  card.append(acts);
+  return card;
+}
+
+// recAdvancedRun — the hand-built run, one fold down. This WAS the front door
+// (an adapter select, a role select, a query box and one free-text input per
+// adapter field), which is why adding a source did not feel like anything: it
+// asked you to know the tool before you could name the thing.
+function recAdvancedRun() {
+  const wrap = el("div", "rec-advanced");
+  const head = el("button", "rec-linkish", recAdvancedOpen ? "▾ advanced — build a run by hand" : "▸ advanced — build a run by hand");
+  head.onclick = () => { recAdvancedOpen = !recAdvancedOpen; if (recPaint) recPaint(); };
+  wrap.append(head);
+  if (!recAdvancedOpen) return wrap;
+  wrap.append(recRunFormEl());
+  // the rules of this console, stated once under the controls they govern
+  wrap.append(el("div", "rec-run-rule",
+    "max " + (recSources.maxMax || 100) + " · one record per accept, no accept-all · " +
+    "look up asks the other indexes about one name"));
+  return wrap;
 }
 
 function recRunFormEl() {

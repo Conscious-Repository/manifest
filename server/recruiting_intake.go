@@ -26,29 +26,9 @@ import (
 // except the owner typing one, and no adapter runs — a commit stores what the
 // owner saw and approved.
 
-// POST /api/aion/recruiting/intake/resolve {text}
-func (s *Server) handleRecruitingIntakeResolve(w http.ResponseWriter, r *http.Request) {
-	if !s.recruitingReady(w) {
-		return
-	}
-	var b struct {
-		Text string `json:"text"`
-	}
-	if err := decode(r, &b); err != nil {
-		httpError(w, errBadRequest("paste a link or a name"))
-		return
-	}
-	res := recruiting.ResolveIntake(b.Text)
-	if strings.TrimSpace(res.Text) == "" {
-		httpError(w, errBadRequest("paste a link or a name"))
-		return
-	}
-	writeJSON(w, map[string]any{
-		"resolution": res,
-		"classes":    recruiting.SeedClasses,
-		"people":     s.recruiting.View().Network.People,
-	})
-}
+// The old POST /intake/resolve is GONE (2026-09-05): /intake/preview answers
+// with the same resolution AND looks the thing up, so keeping a second route
+// that returns half the answer was a way to get a different one.
 
 // intakePreviewTimeout bounds the one or two GETs a preview costs. It is well
 // under the request's own patience: a preview that has to be waited on is a

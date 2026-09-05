@@ -446,7 +446,6 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/seed", s.handleRecruitingSeedAdd)
 			// the one front door: resolve a paste, then commit the resolution
 			// the owner corrected (recruiting_intake.go)
-			mux.HandleFunc("POST /api/aion/recruiting/intake/resolve", s.handleRecruitingIntakeResolve)
 			mux.HandleFunc("POST /api/aion/recruiting/intake/preview", s.handleRecruitingIntakePreview)
 			// the model's pass over what the sources fetched, and its poll
 			mux.HandleFunc("POST /api/aion/recruiting/intake/ask", s.handleRecruitingScaffoldAsk)
@@ -505,7 +504,6 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/evidence/{id...}", s.handleRecruitingCandidateEvidence)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/fit/{id...}", s.handleRecruitingCandidateFit)
 			mux.HandleFunc("POST /api/aion/recruiting/candidate/override/{id...}", s.handleRecruitingCandidateOverride)
-			mux.HandleFunc("POST /api/aion/recruiting/network/person", s.handleRecruitingNetworkPersonAdd)
 			// SOURCES — scout runs and the per-draft review queue. Accept and
 			// reject name ONE draft each; there is no accept-all route.
 			if s.recruitingRuns != nil {

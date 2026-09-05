@@ -37,7 +37,13 @@ func (Manual) Scope() []ScopeField {
 		{Key: "role", Label: "role", Required: true},
 		{Key: "query", Label: "candidate url, name, or note", Required: true},
 		{Key: "org", Label: "org"},
-		{Key: "known", Label: "owner knows this person"},
+		// ⚠ `known` is NOT offered here, and was never usable: it is a boolean
+		// the form rendered as a text box, and the field that gives it meaning
+		// — knownVia, the person asserting the acquaintance — was read by
+		// Search but never declared, so every run that set it failed with "a
+		// known-person entry needs the network node asserting it". The working
+		// path is the intake's "I know them · via …", which names the asserter
+		// because an owner edge is worth exactly as much as who is making it.
 	}
 }
 

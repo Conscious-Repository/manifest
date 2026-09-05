@@ -201,35 +201,11 @@ func (s *Server) handleRecruitingCandidateArchive(w http.ResponseWriter, r *http
 	writeJSON(w, s.recruiting.View())
 }
 
-// handleRecruitingNetworkPersonAdd — "＋ someone I know": one curated network
-// node in network/people.md. Email is hand-typed only (D15 lives upstream:
-// adapters can never reach this route's fields).
-func (s *Server) handleRecruitingNetworkPersonAdd(w http.ResponseWriter, r *http.Request) {
-	if !s.recruitingReady(w) {
-		return
-	}
-	var b struct {
-		Name  string `json:"name"`
-		Email string `json:"email"`
-		Org   string `json:"org"`
-		Title string `json:"title"`
-		Type  string `json:"type"`
-	}
-	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Name) == "" {
-		httpError(w, errBadRequest("a network person needs a name"))
-		return
-	}
-	if err := s.recruiting.AddNetworkPerson(recruiting.NetworkPerson{
-		Name: strings.TrimSpace(b.Name), Email: strings.TrimSpace(b.Email),
-		Org: strings.TrimSpace(b.Org), Title: strings.TrimSpace(b.Title),
-		Type: strings.TrimSpace(b.Type), Source: "owner",
-		Added: time.Now().UTC().Format("2006-01-02"),
-	}); err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, s.recruiting.View())
-}
+// The old POST /network/person is GONE (2026-09-05). It wrote a connector
+// WITHOUT `consent: owner`, so anyone added through it could never be a path
+// origin — a row that looked right and did nothing. Marking a vault contact
+// (recruiting_people.go) and the intake's dest:"network" are the two ways in,
+// and both set consent.
 
 func (s *Server) handleRecruitingCandidateEvidence(w http.ResponseWriter, r *http.Request) {
 	if !s.recruitingReady(w) {

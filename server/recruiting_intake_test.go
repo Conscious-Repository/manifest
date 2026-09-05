@@ -65,9 +65,11 @@ func intakeJSON(t *testing.T, mux http.Handler, path, body string) map[string]js
 	return out
 }
 
+// The resolution rides on /intake/preview — one route that says what the
+// paste is AND looks it up, rather than two that can answer differently.
 func TestIntakeResolveSaysWhatAPasteIs(t *testing.T) {
 	_, mux := testIntakeServer(t, nil)
-	got := intakeJSON(t, mux, "/api/aion/recruiting/intake/resolve",
+	got := intakeJSON(t, mux, "/api/aion/recruiting/intake/preview",
 		`{"text":"https://github.com/numpy/numpy"}`)
 	var res recruiting.Resolution
 	if err := json.Unmarshal(got["resolution"], &res); err != nil {
@@ -76,12 +78,10 @@ func TestIntakeResolveSaysWhatAPasteIs(t *testing.T) {
 	if res.Kind != "github-repo" || res.Class != recruiting.SeedRepo || res.Dest != recruiting.DestSeed {
 		t.Fatalf("resolution: %+v", res)
 	}
-	// the network people ride along, because "I know them · via …" needs them
-	if got["people"] == nil {
-		t.Fatal("the known-via picker needs the people list")
-	}
-	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/intake/resolve", `{"text":"  "}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("an empty paste is refused: %d", w.Code)
+	// the "I know them · via …" picker reads its connectors from the view, not
+	// from here — the old /resolve echoed them back and the client never looked
+	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/intake/preview", `{"text":"  "}`); w.Code != http.StatusOK {
+		t.Fatalf("an empty paste resolves to nothing rather than erroring: %d", w.Code)
 	}
 }
 
