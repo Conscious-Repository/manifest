@@ -154,6 +154,10 @@ func parseTask(checked bool, rest string) *Task {
 			}
 		case "depends":
 			t.Depends = append(t.Depends, splitDepends(val)...)
+		case "outputs":
+			t.Outputs = append(t.Outputs, splitIDs(val)...)
+		case "inputs":
+			t.Inputs = append(t.Inputs, splitIDs(val)...)
 		default:
 			unknown = append(unknown, Field{Key: sm[1], Value: val})
 		}
@@ -161,6 +165,8 @@ func parseTask(checked bool, rest string) *Task {
 	})
 	t.Fields = unknown
 	t.Depends = cleanDepends(t.Depends) // two [depends::] fields merge, duplicates drop
+	t.Outputs = cleanIDs(t.Outputs)     // same rule for the artifact fields
+	t.Inputs = cleanIDs(t.Inputs)
 	t.Text = strings.Join(strings.Fields(clean), " ")
 	return t
 }

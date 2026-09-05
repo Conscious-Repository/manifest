@@ -82,6 +82,9 @@ type unifiedRow struct {
 	BlockedBy  []string `json:"blockedBy,omitempty"`  // the open dependencies
 	Unresolved []string `json:"unresolved,omitempty"` // dependencies no source knows
 	Dependents []string `json:"dependents,omitempty"` // open rows that depend on this one
+	// Artifact binding (P1 artifacts): the bound ids ride the row by reference.
+	Outputs []string `json:"outputs,omitempty"` // [outputs:: id, id]
+	Inputs  []string `json:"inputs,omitempty"`  // [inputs:: id, id]
 }
 
 type outstandingGroup struct {
@@ -110,6 +113,7 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 					Added: t.Added, Rock: t.Rock, Source: "personal",
 					Container: c, AgeDays: t.AgeDays(now), Waiting: t.Waiting,
 					Priority: t.Priority, Depends: t.Depends,
+					Outputs: t.Outputs, Inputs: t.Inputs,
 				})
 			})
 			for _, is := range dom.Issues { // a task may wait on a decision
@@ -132,6 +136,7 @@ func (s *Server) unifiedRows(doc *tasks.Doc, now time.Time) []unifiedRow {
 						Rank: t.RankN(), Added: t.Added, Source: "property",
 						Container: c, AgeDays: t.AgeDays(now),
 						Priority: t.Priority, Depends: t.Depends,
+						Outputs: t.Outputs, Inputs: t.Inputs,
 					})
 				}
 			}

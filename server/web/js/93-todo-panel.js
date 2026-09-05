@@ -116,6 +116,10 @@ async function renderTodoPanel(refetch) {
   // --- coordination (P1 Phase 1): priority · depends on · blocks ---
   host.append(todoCoordSection(d, row));
 
+  // --- artifacts (P1 artifacts): what this task produced · consumes ---
+  const artSec = todoArtifactsSection(d);
+  if (artSec) host.append(artSec);
+
   // --- description (plan D2, agent-chat plan gap D): the owner's context.
   // Rides every work order and the plan-context hash; click to edit in place.
   const desc = el("div", "tdo-p-sec");
@@ -281,6 +285,48 @@ function todoInflightEntry(f) {
   e.append(el("span", null, (f.name || "agent") + " is working…" +
     (hm ? " since " + hm : "") + (f.phase ? " (" + f.phase + ")" : "")));
   return e;
+}
+
+// todoArtifactsSection — the task's artifacts (P1 artifacts), read-only:
+// "produced" lists what the task emitted (bound [outputs::] ids plus every
+// registered artifact whose provenance names this task), "consumes" its
+// [inputs::]. A chip opens the artifact's CURRENT bytes through the one
+// harness read path (openResult → /api/spirits/file) or the note view; an
+// id the registry doesn't know renders dashed. Nothing to show → no section.
+function todoArtifactsSection(d) {
+  const arts = (d && d.artifacts) || {};
+  const outputs = arts.outputs || [], inputs = arts.inputs || [];
+  if (!outputs.length && !inputs.length) return null;
+  const sec = el("div", "tdo-p-sec tdo-p-artifacts");
+  const chipFor = (a) => {
+    const chip = el("span", "tdo-p-chip art" + (a.unknown ? " unresolved" : ""));
+    const name = el("span", "tdo-p-dep-name", a.unknown ? a.id : (a.title || a.ref || a.id));
+    const rev = a.revisions ? a.revisions.length : 0;
+    const at = rev ? a.revisions[rev - 1].at : "";
+    name.title = a.unknown
+      ? a.id + " — not in this registry"
+      : a.id + " · " + (a.kind || "file") + (rev ? " · v" + rev : "") + (at ? " · " + fmtWhen(at) : "");
+    if (a.open && (a.open.path || a.open.note)) {
+      name.classList.add("linky");
+      name.onclick = () => {
+        if (a.open.note && typeof openArtifact === "function") openArtifact(a.open.note);
+        else if (typeof openResult === "function") openResult({ artifactRef: a.open.path, harness: a.open.harness || "" }, a.title || a.ref);
+      };
+    }
+    chip.append(name);
+    if (rev > 1) chip.append(el("span", "tdo-p-art-v", "v" + rev));
+    return chip;
+  };
+  const lane = (label, list) => {
+    if (!list.length) return;
+    sec.append(el("div", "tdo-p-sec-label", label));
+    const chips = el("div", "tdo-p-chips");
+    list.forEach((a) => chips.append(chipFor(a)));
+    sec.append(chips);
+  };
+  lane("produced", outputs);
+  lane("consumes", inputs);
+  return sec;
 }
 
 // todoCoordSection — the coordination state (P1 Phase 1). Priority is the

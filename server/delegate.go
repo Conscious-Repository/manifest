@@ -52,6 +52,9 @@ type delegationView struct {
 	// the result, ready to open: exactly one of these is ever set (§8 two media)
 	ArtifactRef  string `json:"artifactRef,omitempty"`  // harness-relative → /api/spirits/file
 	ArtifactPath string `json:"artifactPath,omitempty"` // vault-relative → the note view
+	// ArtifactID names the deliverable's registered object (P1 artifacts)
+	// when the registry knows the ref; a row without one still opens as before.
+	ArtifactID string `json:"artifactId,omitempty"`
 	// Started is when the run began, used to prefer the newest run when two
 	// completed runs share the same todo id. Server-side only: `-` keeps it off
 	// the wire entirely (omitempty would not — encoding/json never treats a
@@ -99,6 +102,7 @@ func (s *Server) delegationIndex() map[string]delegationView {
 		}
 		return base, phase
 	}
+	refIndex := s.artifactRefIndex() // registered deliverables, one registry read
 	for _, h := range s.eachHarness() {
 		if h.Spirits != nil {
 			lib := harnessLibrary(h) // one library read per harness, at most
@@ -179,6 +183,9 @@ func (s *Server) delegationIndex() map[string]delegationView {
 					ref = libraryRefForToken(taskID, lib)
 				}
 				d.ArtifactPath, d.ArtifactRef = s.artifactRefSplit(h, ref)
+				if d.ArtifactPath != "" || d.ArtifactRef != "" {
+					d.ArtifactID = refIndex[h.Name+"\n"+ref]
+				}
 				set(taskID, d)
 			}
 		}

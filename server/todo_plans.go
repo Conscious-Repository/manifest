@@ -163,6 +163,9 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	if c := s.taskCoord(id); c != nil {
 		out["coord"] = c
 	}
+	// artifacts (P1): what this task produced / consumes — bound ids plus
+	// every registered artifact whose provenance names it
+	out["artifacts"] = s.taskArtifactsView(id)
 	if d, ok := s.delegationIndex()[id]; ok {
 		out["delegation"] = d
 		// presence (agent-chat plan §3.4d): derived from the live index, never

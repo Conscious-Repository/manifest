@@ -79,6 +79,18 @@ func (s *Server) ledgerSweep() {
 			e.Task = strings.TrimSpace(m[1])
 		}
 		s.ledger(e)
+		// P1 artifacts: a completed delegated run's brief becomes a registered
+		// artifact with provenance {run, task} — idempotent, so a re-sweep of
+		// the same run is a no-op (artifact_objects.go)
+		if kind == "run.completed" && e.Task != "" && s.artifactReg != nil {
+			if h := s.findHarness(e.Harness); h != nil {
+				at := started
+				if fin, err := time.Parse(time.RFC3339, r.Finished); err == nil {
+					at = fin
+				}
+				_, _ = s.registerRunBrief(h, r.ID, e.Task, r.Spirit, at)
+			}
+		}
 		dirty = true
 		if started.After(maxStarted) {
 			maxStarted = started

@@ -8,7 +8,9 @@
 // Kind vocabulary (closed for now): thread.comment, thread.assign,
 // thread.plan, thread.fire, thread.result, thread.questions, chat.user,
 // chat.assistant, run.completed, run.failed, plan.materialized,
-// plan.replanned. Hidden thread markers are never ledgered.
+// plan.replanned, artifact.created, artifact.revised, artifact.bound,
+// artifact.unbound (P1 artifacts, source "artifact"). Hidden thread markers
+// are never ledgered.
 //
 // Object scoping (P0 Phase 1): every entry is ABOUT one entity — a task, a
 // chat session, a run, later a decision or an artifact. Writers tag it as
@@ -40,7 +42,7 @@ const (
 	ObjFeed     = "feed"     // feed card id (digs)
 	ObjJob      = "job"      // a transient server job (recruiting scaffold)
 	ObjDecision = "decision" // reserved: decision ledger (P3)
-	ObjArtifact = "artifact" // reserved: artifact model (P1)
+	ObjArtifact = "artifact" // registered artifact id (P1 artifacts, artifacts.Artifact.ID)
 )
 
 // Object is the entity an entry is about.

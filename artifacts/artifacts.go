@@ -29,7 +29,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -40,10 +39,20 @@ import (
 // realestate.MaxCASSize — one number for "a file a person attaches".
 const MaxBlobSize = 25 << 20
 
-var hashRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
-// domainRe keeps a domain name usable as a filename with no traversal.
-var domainRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
+// validDomain keeps a domain name usable as a filename with no traversal:
+// [a-z0-9][a-z0-9-]{0,30}, spelled out (the package carries no regex).
+func validDomain(s string) bool {
+	if s == "" || len(s) > 31 || s[0] == '-' {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-') {
+			return false
+		}
+	}
+	return true
+}
 
 // Ref is one attachment as a MESSAGE sees it: the pooled bytes plus this
 // sender's own name for them.
@@ -129,7 +138,7 @@ func SafeExt(name string) string {
 // BlobPath resolves a hash to its file ("" when absent or malformed). It does
 // NOT check domain ownership — callers serving bytes must ask Owns first.
 func (s *Store) BlobPath(hash string) string {
-	if !hashRe.MatchString(hash) {
+	if !ValidHash(hash) {
 		return ""
 	}
 	matches, _ := filepath.Glob(filepath.Join(s.dir, "blobs", hash[:2], hash+"*"))
@@ -144,7 +153,7 @@ func (s *Store) BlobPath(hash string) string {
 // ExtractPath is where a blob's extracted text lives. Content-addressed like
 // the blob, so re-uploading the same document never re-extracts it.
 func (s *Store) ExtractPath(hash string) string {
-	if !hashRe.MatchString(hash) {
+	if !ValidHash(hash) {
 		return ""
 	}
 	return filepath.Join(s.dir, "extracts", hash+".md")
@@ -187,10 +196,10 @@ func (s *Store) indexPath(domain string) string {
 // sender): re-attaching the same file to the same thread does not grow the
 // index, but the same file in a DIFFERENT thread is a separate artifact.
 func (s *Store) Add(domain string, e Entry) error {
-	if !domainRe.MatchString(domain) {
+	if !validDomain(domain) {
 		return fmt.Errorf("bad domain %q", domain)
 	}
-	if !hashRe.MatchString(e.Hash) {
+	if !ValidHash(e.Hash) {
 		return fmt.Errorf("bad hash")
 	}
 	s.mu.Lock()
@@ -208,7 +217,7 @@ func (s *Store) Add(domain string, e Entry) error {
 // Owns reports whether a domain may read this hash — the access check that
 // makes one pool safe for two businesses.
 func (s *Store) Owns(domain, hash string) bool {
-	if !domainRe.MatchString(domain) || !hashRe.MatchString(hash) {
+	if !validDomain(domain) || !ValidHash(hash) {
 		return false
 	}
 	s.mu.Lock()

@@ -215,6 +215,9 @@ type Server struct {
 	// BOTH portals — one blob store, a per-domain index that doubles as the
 	// access list (artifacts/artifacts.go). Nilable.
 	artifacts *artifacts.Store
+	// artifactReg: the first-class artifact object store beside the pool —
+	// versioned, content-addressed, task-bound (artifact_objects.go). Nilable.
+	artifactReg *artifacts.Registry
 	// oodaChat: the OODA portal's own chat store (zeck's threads). Nilable.
 	oodaChat *chatthreads.Store
 	// oodaEmail/oodaGmail: the portal email lane — pending candidates from
@@ -336,10 +339,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/item", s.handleTaskAdd)
 	mux.HandleFunc("POST /api/tasks/check", s.handleTaskCheck)
 	mux.HandleFunc("POST /api/tasks/update", s.handleTaskUpdate)
-	mux.HandleFunc("POST /api/tasks/rank", s.handleTasksRank)         // unified drag-to-rank (stage 4)
-	mux.HandleFunc("POST /api/tasks/priority", s.handleTaskPriority)  // coordination state (P1 Phase 1)
-	mux.HandleFunc("POST /api/tasks/depends", s.handleTaskDepends)    // set/add/remove [depends::] ids
-	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet) // RE assignee registry
+	mux.HandleFunc("POST /api/tasks/rank", s.handleTasksRank)          // unified drag-to-rank (stage 4)
+	mux.HandleFunc("POST /api/tasks/priority", s.handleTaskPriority)   // coordination state (P1 Phase 1)
+	mux.HandleFunc("POST /api/tasks/depends", s.handleTaskDepends)     // set/add/remove [depends::] ids
+	mux.HandleFunc("POST /api/tasks/artifacts", s.handleTaskArtifacts) // [outputs::] / [inputs::] artifact ids (P1 artifacts)
+	// P1 artifacts: the first-class artifact registry (artifact_objects.go)
+	mux.HandleFunc("GET /api/artifacts", s.handleArtifactsList)          // ?kind=&task=&run=&harness=&ref=
+	mux.HandleFunc("GET /api/artifacts/get", s.handleArtifactGet)        // ?id=&content=1&rev=
+	mux.HandleFunc("POST /api/artifacts/create", s.handleArtifactCreate) // {kind,title,ref|content,task,run,…}
+	mux.HandleFunc("POST /api/artifacts/revise", s.handleArtifactRevise) // {id, content|ref, note}
+	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)    // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
 	mux.HandleFunc("POST /api/tasks/drop", s.handleTaskDrop)
 	mux.HandleFunc("/api/tasks/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)

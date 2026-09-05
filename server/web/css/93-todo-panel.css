@@ -148,6 +148,10 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-dep-x:hover, .tdo-p-dep-x.arm { color: var(--base-100); }
 .tdo-p-dependent { font-size: var(--fs-sm); color: var(--base-70); cursor: pointer; }
 .tdo-p-dependent:hover { color: var(--accent); }
+/* artifacts (P1): produced / consumes chips; unknown ids read dashed */
+.tdo-p-chip.art { display: inline-flex; align-items: baseline; gap: var(--sp-2); }
+.tdo-p-chip.art.unresolved { border-style: dashed; color: var(--base-40); }
+.tdo-p-art-v { color: var(--base-40); font-size: var(--fs-2xs); }
 .tdo-p-deps-add:empty { display: none; }
 .tdo-p-deps-add .ta-wrap { width: 100%; }
 .tdo-p-deps-add .ta-in { width: 100%; font-size: var(--fs-sm); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-4); background: var(--bg); }

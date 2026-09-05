@@ -42,7 +42,12 @@ type Task struct {
 	// priority is HOW MUCH it matters; depends names what must finish first
 	Priority string   `json:"priority,omitempty"` // [priority:: high|med|low] — closed set
 	Depends  []string `json:"depends,omitempty"`  // [depends:: id, id] — open ones derive `blocked`
-	Fields   []Field  `json:"fields,omitempty"`   // unrecognized fields, verbatim
+	// artifact binding (manifest P1 artifacts, binding.go): what this task
+	// produced and what it consumed — artifact IDS by reference, never the
+	// bytes (the registry holds those; "artifacts over chats")
+	Outputs []string `json:"outputs,omitempty"` // [outputs:: id, id] — artifacts this task produced
+	Inputs  []string `json:"inputs,omitempty"`  // [inputs:: id, id] — artifacts it consumed
+	Fields  []Field  `json:"fields,omitempty"`  // unrecognized fields, verbatim
 }
 
 // Bucket is a standing task grouping that is NOT a goal (partnerships,
@@ -259,6 +264,9 @@ type TaskView struct {
 	BlockedBy  []string `json:"blockedBy,omitempty"`  // open dependencies (state == blocked)
 	Unresolved []string `json:"unresolved,omitempty"` // dependencies this file cannot see
 	Dependents []string `json:"dependents,omitempty"` // open tasks that depend on this one
+	// artifact binding (P1 artifacts): the stored ids, by reference
+	Outputs []string `json:"outputs,omitempty"`
+	Inputs  []string `json:"inputs,omitempty"`
 }
 
 // View projects the doc for the client (done items included until the sweep
@@ -286,6 +294,7 @@ func (d *Doc) View(now time.Time) View {
 			AgeDays:  t.AgeDays(now),
 			Priority: t.Priority, Depends: t.Depends,
 			BlockedBy: blockedBy, Unresolved: unresolved, Dependents: dependents[t.ID],
+			Outputs: t.Outputs, Inputs: t.Inputs,
 		}
 	}
 	for _, dom := range d.Domains {

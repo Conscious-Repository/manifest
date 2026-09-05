@@ -910,6 +910,13 @@ func main() {
 		} else {
 			srv.UseArtifacts(arts)
 			log.Printf("chat attachments: pool at %s", filepath.Join(cfg.DataDir, "artifacts"))
+			// P1 artifacts: the versioned object registry beside the pool
+			// (objects/<id>.json; every revision's bytes in the same pool)
+			if reg, err := artifacts.NewRegistry(arts); err != nil {
+				log.Printf("artifact registry disabled: %v", err)
+			} else {
+				srv.UseArtifactRegistry(reg)
+			}
 		}
 		private, err := threads.New(filepath.Join(cfg.DataDir, "todo-threads"))
 		if err != nil {
