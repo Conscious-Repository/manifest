@@ -192,20 +192,24 @@ func TestDryRunLeavesTheVaultByteIdentical(t *testing.T) {
 	if run.Counts.Fetched != 2 || run.Counts.New != 2 || len(run.Drafts) != 2 {
 		t.Fatalf("counts %+v drafts %d", run.Counts, len(run.Drafts))
 	}
-	if run.TriagedAt.IsZero() || !run.ExpiresAt.Equal(testNow.Add(RunTTL)) {
-		t.Fatalf("a dry run should be triaged at once with a %s expiry: triaged=%v expires=%v", RunTTL, run.TriagedAt, run.ExpiresAt)
+	// ⚠ a preview holds a real queue: it is NOT triaged while drafts pend,
+	// because those drafts can be accepted (owner decision 2026-09-04)
+	if !run.TriagedAt.IsZero() {
+		t.Fatalf("a run with pending drafts started its expiry clock: triaged=%v", run.TriagedAt)
 	}
 
-	if _, _, err := rs.Accept(run.ID, "d1", testNow); err == nil {
-		t.Fatal("accept succeeded on a dry run")
+	// and accepting from a preview WORKS — the checkbox never protected
+	// anything Execute wasn't already doing (it writes no record either way),
+	// while accept stays a deliberate one-record gesture
+	if _, _, err := rs.Accept(run.ID, "d1", testNow); err != nil {
+		t.Fatalf("accept from a preview run: %v", err)
 	}
-	assertIdentical(t, "after accept on a dry run", before, snapshot(t, vault))
 	got, err := rs.Get(run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Drafts[0].Status != DraftNew || got.Counts.Accepted != 0 {
-		t.Fatalf("a refused accept still moved the queue: %+v", got.Drafts[0])
+	if got.Drafts[0].Status != DraftAccepted || got.Counts.Accepted != 1 {
+		t.Fatalf("accept did not move the queue: %+v", got.Drafts[0])
 	}
 }
 

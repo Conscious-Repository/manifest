@@ -123,6 +123,27 @@ func (s *Server) handleRecruitingSourceAccept(w http.ResponseWriter, r *http.Req
 	writeJSON(w, out)
 }
 
+// POST /api/aion/recruiting/sources/lookup/{run}/{draft} — ask the other
+// public indexes what they hold under this exact name and merge what matches
+// into the draft. No board view rides along: a lookup enriches the QUEUE, and
+// writes no record (recruiting/lookup.go).
+func (s *Server) handleRecruitingSourceLookup(w http.ResponseWriter, r *http.Request) {
+	if !s.recruitingRunsReady(w) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	run, res, err := s.recruitingRuns.Lookup(ctx, r.PathValue("run"), r.PathValue("draft"), time.Now())
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	out := s.runsPayload(false)
+	out["run"] = run
+	out["lookup"] = res
+	writeJSON(w, out)
+}
+
 // POST /api/aion/recruiting/sources/reject/{run}/{draft} — mark one draft
 // rejected. Nothing reaches the vault.
 func (s *Server) handleRecruitingSourceReject(w http.ResponseWriter, r *http.Request) {

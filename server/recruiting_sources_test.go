@@ -135,8 +135,10 @@ func TestRecruitingSourceRunDefaultsToDryRun(t *testing.T) {
 	if p.Run.Counts.Fetched != 1 || p.Run.Counts.New != 1 || len(p.Run.Drafts) != 1 {
 		t.Fatalf("manual run counts: %+v", p.Run.Counts)
 	}
-	if p.Run.TriagedAt.IsZero() || p.Run.ExpiresAt.IsZero() {
-		t.Errorf("a dry run is triaged at once and carries its expiry: %+v", p.Run.RunState)
+	// a preview holds a real queue now, so its expiry clock waits for the
+	// triage like any other run's (owner decision 2026-09-04)
+	if !p.Run.TriagedAt.IsZero() || !p.Run.ExpiresAt.IsZero() {
+		t.Errorf("a run with a pending draft started its expiry clock: %+v", p.Run.RunState)
 	}
 	if len(p.Runs) != 1 || p.Runs[0].ID != p.Run.ID {
 		t.Fatalf("runs payload should carry the run just made: %+v", p.Runs)
@@ -244,14 +246,17 @@ func TestRecruitingSourceAcceptPromotesOneDraft(t *testing.T) {
 	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/accept/nope/d1", ""); w.Code != http.StatusBadRequest {
 		t.Errorf("accept on an unknown run answered %d", w.Code)
 	}
-	// a dry run has nothing to accept — that is what the checkbox meant
+	// ⚠ a preview run ACCEPTS (owner decision 2026-09-04). The checkbox never
+	// protected anything — a run writes no record either way — so it no longer
+	// forces an identical second call to someone else's API before a person
+	// already on screen can be kept.
 	dry := startRun(t, mux, `{"source":"manual","role":"role/mri-engineer","query":"Sam Okafor"}`)
 	w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/accept/"+dry.ID+"/d1", "")
-	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "dry run") {
-		t.Errorf("accept on a dry run answered %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Errorf("accept from a preview run answered %d: %s", w.Code, w.Body.String())
 	}
-	if n := len(boardCandidates(t, mux)); n != 1 {
-		t.Errorf("the refused accepts changed the board: %d candidate(s)", n)
+	if n := len(boardCandidates(t, mux)); n != 2 {
+		t.Errorf("the accept did not reach the board: %d candidate(s)", n)
 	}
 
 	// a second run of the same person is a duplicate, and a duplicate cannot
@@ -264,7 +269,7 @@ func TestRecruitingSourceAcceptPromotesOneDraft(t *testing.T) {
 	if w := sourcesDo(t, mux, http.MethodPost, "/api/aion/recruiting/sources/accept/"+again.ID+"/d1", ""); w.Code != http.StatusBadRequest {
 		t.Errorf("accepting a duplicate answered %d", w.Code)
 	}
-	if n := len(boardCandidates(t, mux)); n != 1 {
+	if n := len(boardCandidates(t, mux)); n != 2 {
 		t.Errorf("a duplicate reached the board: %d candidate(s)", n)
 	}
 }

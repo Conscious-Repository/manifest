@@ -166,7 +166,7 @@ func (f *fakeAshby) serve(w http.ResponseWriter, r *http.Request) {
 	case "application.create":
 		id := f.id("app")
 		app := map[string]any{"id": id, "status": "Active", "candidate": map[string]any{"id": str("candidateId")},
-			"job": map[string]any{"id": str("jobId")},
+			"job":                   map[string]any{"id": str("jobId")},
 			"currentInterviewStage": map[string]any{"id": "st_1", "title": "Application Review", "interviewPlanId": "plan_1"}}
 		f.apps[id] = app
 		f.ok(w, app, nil)

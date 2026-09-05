@@ -74,8 +74,8 @@ type RunState struct {
 	Counts    RunCounts     `json:"counts"`
 	Cursor    string        `json:"cursor,omitempty"`
 	Pinned    bool          `json:"pinned"`
-	// TriagedAt is set once nothing in the queue is still `new` (or at once
-	// for a dry run, which has nothing to decide). It starts the D14 clock.
+	// TriagedAt is set once nothing in the queue is still `new` — for every
+	// run alike, since a preview's drafts accept too. It starts the D14 clock.
 	TriagedAt time.Time `json:"triagedAt,omitzero"`
 	ExpiresAt time.Time `json:"expiresAt,omitzero"`
 }
@@ -84,12 +84,16 @@ type RunState struct {
 // decided about it. CandidateID is the vault record it became (accepted) or
 // matched (duplicate).
 type Draft struct {
-	ID          string                 `json:"id"`
-	Status      string                 `json:"status"`
-	Reason      string                 `json:"reason,omitempty"`
-	CandidateID string                 `json:"candidateId,omitempty"`
-	DecidedAt   time.Time              `json:"decidedAt,omitzero"`
-	Draft       sources.CandidateDraft `json:"draft"`
+	ID          string    `json:"id"`
+	Status      string    `json:"status"`
+	Reason      string    `json:"reason,omitempty"`
+	CandidateID string    `json:"candidateId,omitempty"`
+	DecidedAt   time.Time `json:"decidedAt,omitzero"`
+	// LookedUpAt stamps the deterministic cross-source pass (lookup.go), so
+	// the queue shows which drafts have already been asked about and a second
+	// press is a deliberate refresh rather than an accident.
+	LookedUpAt time.Time              `json:"lookedUpAt,omitzero"`
+	Draft      sources.CandidateDraft `json:"draft"`
 }
 
 // Run is the full projection of one run: state plus queue.
@@ -181,8 +185,8 @@ func (r *RunStore) Root() string { return r.root }
 
 // Execute runs one adapter over one scope, writes the run under the cache
 // root, and dedupes every draft against the vault. It never writes a record:
-// dry or not, a run only ever produces a queue. `DryRun` is remembered on the
-// run so accept can refuse it later.
+// a run only ever produces a queue, which is why a preview and a live run are
+// the same thing and `DryRun` now gates nothing (see Accept).
 func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -261,17 +265,17 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 	return run, nil
 }
 
-// triage stamps the D14 clock once nothing is left to decide. A dry run is
-// triaged at once: it is a preview, and there is nothing in it to accept.
+// triage stamps the D14 clock once nothing is left to decide — for every run
+// alike, since a preview's drafts are acceptable too.
 func (run *Run) triage(now time.Time) {
 	if !run.TriagedAt.IsZero() {
 		return
 	}
-	if !run.Scope.DryRun {
-		for _, d := range run.Drafts {
-			if d.Status == DraftNew {
-				return
-			}
+	// every run holds a queue worth triaging now that a preview accepts too,
+	// so none of them starts its expiry clock with drafts still pending
+	for _, d := range run.Drafts {
+		if d.Status == DraftNew {
+			return
 		}
 	}
 	run.TriagedAt = now.UTC()
@@ -279,8 +283,16 @@ func (run *Run) triage(now time.Time) {
 }
 
 // Accept promotes exactly ONE draft into a candidate record through the same
-// converter path QuickAdd takes. A dry run cannot accept — that is what the
-// checkbox meant — and a draft leaves `new` exactly once.
+// converter path QuickAdd takes, and a draft leaves `new` exactly once.
+//
+// ⚠ A PREVIEW RUN IS NOT A LESSER RUN (owner decision 2026-09-04). This used
+// to refuse when Scope.DryRun was set — "that is what the checkbox meant" —
+// but the checkbox never protected anything: Execute writes no record either
+// way, the drafts are identical, and accept is already a deliberate,
+// one-at-a-time gesture with no accept-all behind it. All the gate did was
+// force an identical second call to someone else's API before the owner could
+// keep a person he was already looking at. The safety that matters — nothing
+// reaches the vault without a per-record click — is unchanged.
 func (r *RunStore) Accept(runID, draftID string, now time.Time) (Run, Candidate, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -293,9 +305,6 @@ func (r *RunStore) Accept(runID, draftID string, now time.Time) (Run, Candidate,
 		return Run{}, Candidate{}, err
 	}
 	d := &run.Drafts[i]
-	if run.Scope.DryRun {
-		return Run{}, Candidate{}, errf("run %s was a dry run — run it again without dry run to accept", runID)
-	}
 	switch d.Status {
 	case DraftNew:
 	case DraftDuplicate:

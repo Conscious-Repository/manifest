@@ -37,8 +37,9 @@ let recIntake = null; // {at, text, res, name, org, class, dest, known, knownVia
 let recSources = null;      // {sources, defaultMax, maxMax, ttlDays} | {unavailable: true}
 let recRuns = [];           // every run, newest first, each with its draft queue
 let recRunOpen = {};        // run id → queue expanded
+let recDraftOpen = {};      // "<run>#<draft>" → that draft's citations expanded
 let recRunning = false;     // a run is in flight
-const recRunForm = { source: "manual", role: "", query: "", max: "", dryRun: true, fields: {} };
+const recRunForm = { source: "manual", role: "", query: "", max: "", fields: {} };
 const REC_RUN_COMMON_FIELDS = ["role", "query", "max"];
 
 // ---- routing (#/aion/recruiting/{board|sources|network|role/<slug>}) ----
@@ -159,7 +160,6 @@ function recUntriagedCount() {
 }
 function recPendingDrafts() {
   return recRuns.reduce((n, run) => {
-    if ((run.scope || {}).dryRun) return n;
     return n + (run.drafts || []).filter((d) => d.status === "new").length;
   }, 0);
 }
@@ -1081,8 +1081,8 @@ function paintSourcesView(main) {
   // the rules of this console, stated once under its controls rather than
   // hidden in six tooltips — what a run may fetch, and what a dry run cannot do
   main.append(el("div", "rec-run-rule",
-    "max " + (recSources.maxMax || 100) + " · dry runs show drafts but cannot accept · " +
-    "one record per accept, no accept-all"));
+    "max " + (recSources.maxMax || 100) + " · one record per accept, no accept-all · " +
+    "look up asks the other indexes about one name"));
   const list = el("div", "rec-run-list");
   recRuns.forEach((run) => list.append(recRunCard(run)));
   if (!recRuns.length) list.append(emptyRow("no runs yet — a run is a dry run until you say otherwise"));
@@ -1149,15 +1149,6 @@ function recRunFormEl() {
     form.append(input);
   });
 
-  const dry = el("label", "rec-run-dry");
-  const box = el("input", "");
-  box.type = "checkbox";
-  box.checked = !!recRunForm.dryRun;
-  box.onchange = () => { recRunForm.dryRun = box.checked; };
-  dry.append(box, el("span", "", "dry run"));
-  dry.title = "preview the queue without anything to accept";
-  form.append(dry);
-
   const run = el("button", "pill light rec-run-btn", recRunning ? "running…" : "run source");
   run.disabled = recRunning;
   run.onclick = () => recRunSource();
@@ -1181,7 +1172,6 @@ async function recRunSource() {
     source: recRunForm.source,
     role: recRunForm.role || recRoleId(),
     query,
-    dryRun: !!recRunForm.dryRun,
   };
   const max = parseInt(recRunForm.max, 10);
   if (max > 0) body.max = max;
@@ -1200,7 +1190,7 @@ async function recRunSource() {
     if (out.run) recRunOpen[out.run.id] = true;
     recRunForm.query = "";
     const c = (out.run || {}).counts || {};
-    showToast((body.dryRun ? "dry run: " : "run: ") + (c.fetched || 0) + " fetched · " +
+    showToast("run: " + (c.fetched || 0) + " fetched · " +
       (c.new || 0) + " new · " + (c.duplicate || 0) + " duplicate");
   } catch (e) {
     showToast(String(e.message || e).slice(0, 140), null, "error");
@@ -1231,19 +1221,15 @@ function recRunCard(run) {
   const toggle = el("button", "rec-run-toggle");
   toggle.append(el("span", "sec-caret", open ? "▾" : "▸"));
   toggle.append(el("span", "rec-run-src", run.source));
-  if (scope.dryRun) toggle.append(el("span", "rec-run-chip", "dry run"));
   if (run.pinned) toggle.append(el("span", "rec-run-chip pinned", "pinned"));
   toggle.append(el("span", "rec-run-scope", scope.query || ((scope.fields || {}).seed_url || "")));
   const role = (recCache.roles || []).find((r) => (r.id || "role/" + r.slug) === scope.role);
   if (role) toggle.append(el("span", "rec-draft-sub", role.title || role.slug));
   toggle.onclick = () => { recRunOpen[run.id] = !open; renderAion(); };
   head.append(toggle);
-  // what this run still WANTS: the one thing worth reading across nine rows.
-  // A dry run has nothing to accept, so it reports its draft count instead.
+  // what this run still WANTS: the one thing worth reading across nine rows
   const waiting = (run.drafts || []).filter((d) => d.status === "new").length;
-  if (scope.dryRun) {
-    head.append(el("span", "rec-run-status", waiting ? waiting + " draft" + (waiting === 1 ? "" : "s") : "nothing"));
-  } else if (waiting) {
+  if (waiting) {
     head.append(el("span", "rec-run-status attn", waiting + " to review"));
   } else {
     head.append(el("span", "rec-run-status", "cleared"));
@@ -1275,54 +1261,125 @@ function recRunCard(run) {
   return card;
 }
 
+// hostname — a citation's ADDRESS is worth reading; the full URL is not. Six
+// grant URLs at full length were what turned this queue into a wall of text.
+function recHost(u) {
+  try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; }
+}
+
+// recDraftLookup asks the other public indexes about this exact person and
+// reports what came back — including nothing, which is an answer.
+async function recDraftLookup(run, d) {
+  const out = await recSourcesPost("/api/aion/recruiting/sources/lookup/" + run.id + "/" + d.id, {});
+  if (!out) return;
+  const r = out.lookup || {};
+  const bits = [];
+  if (r.cites) bits.push(r.cites + " citation" + (r.cites === 1 ? "" : "s"));
+  if (r.links) bits.push(r.links + " link" + (r.links === 1 ? "" : "s"));
+  if ((r.filled || []).length) bits.push("filled " + r.filled.join(" + "));
+  const where = (r.matched || []).length ? " from " + r.matched.join(", ") : "";
+  showToast(bits.length
+    ? "looked up " + r.name + ": " + bits.join(" · ") + where
+    : "looked up " + r.name + " — nothing new under that exact name" +
+      ((r.failed || []).length ? " (" + r.failed.join(", ") + " unreachable)" : ""));
+}
+
+// ⚠ ONE DRAFT IS ONE CARD. This queue used to render every citation's full
+// abstract inline, with each raw URL appended bare to the card — which made
+// adjacent links run together into one unreadable string and buried the two
+// facts that decide anything (who they are, what backs it) under a page of
+// duplicated grant text. Now: the person leads, what backs them is a count
+// you open, and the decision is always in reach.
 function recDraftCard(run, d) {
   const dr = d.draft || {};
+  const key = run.id + "#" + d.id;
+  const open = !!recDraftOpen[key];
   const card = el("div", "rec-draft " + d.status);
-  const top = el("div", "rec-draft-top");
-  top.append(el("span", "micro-label rec-draft-status " + d.status, d.status));
-  top.append(el("span", "rec-draft-name", dr.name || "(unnamed)"));
+
+  const head = el("div", "rec-draft-head");
+  head.append(el("span", "micro-label rec-draft-status " + d.status, d.status));
+  head.append(el("span", "rec-draft-name", dr.name || "(unnamed)"));
+  if (d.lookedUpAt) head.append(el("span", "rec-draft-flag", "looked up"));
+  card.append(head);
+
   const sub = [dr.title, dr.org, dr.location].filter(Boolean).join(" · ");
-  if (sub) top.append(el("span", "rec-draft-sub", sub));
-  card.append(top);
+  if (sub) card.append(el("div", "rec-draft-sub", sub));
+  if (dr.note && dr.note !== dr.name) card.append(el("div", "rec-draft-note", dr.note));
 
   if (d.candidateId) {
     const on = el("button", "rec-draft-on", "on the board as " + d.candidateId + (d.reason ? " · " + d.reason : ""));
     on.onclick = () => { recSel = d.candidateId; recNav("board"); };
     card.append(on);
   }
-  if (dr.note && dr.note !== dr.name) card.append(el("div", "rec-draft-note", dr.note));
-  (dr.links || []).forEach((u) => {
-    const a = linkEl(u, u);
-    a.className = "rec-ev-url";
-    card.append(a);
-  });
+
+  // citations, deduped by address — the same project listed twice is one fact
+  const cites = [];
+  const seen = {};
   (dr.evidence || []).forEach((e) => {
-    const row = el("div", "rec-ev-row");
-    const et = el("div", "rec-ev-top");
-    if (e.kind) et.append(el("span", "micro-label rec-ev-kind", e.kind));
-    if (e.trust) et.append(el("span", "micro-label rec-ev-kind", e.trust));
-    if (e.urlOrFile) { const a = linkEl(e.urlOrFile, e.urlOrFile); a.className = "rec-ev-url"; et.append(a); }
-    if (e.retrievedAt) et.append(el("span", "rec-ev-when", fmtWhen(e.retrievedAt)));
-    row.append(et);
-    if (e.snippet && e.snippet !== dr.note) row.append(el("blockquote", "rec-ev-quote", e.snippet));
-    card.append(row);
+    const u = (e.urlOrFile || "").trim();
+    if (u && seen[u]) return;
+    if (u) seen[u] = true;
+    cites.push(e);
   });
+  const extra = (dr.links || []).map((u) => (u || "").trim())
+    .filter((u, i, all) => u && !seen[u] && all.indexOf(u) === i);
+
+  if (cites.length || extra.length) {
+    const bar = el("button", "rec-draft-cites");
+    bar.append(el("span", "sec-caret", open ? "▾" : "▸"));
+    const n = cites.length;
+    bar.append(el("span", "", n ? n + " citation" + (n === 1 ? "" : "s") : "no citations"));
+    if (extra.length) bar.append(el("span", "rec-draft-sub", "· " + extra.length + " more link" + (extra.length === 1 ? "" : "s")));
+    bar.onclick = () => { recDraftOpen[key] = !open; if (recPaint) recPaint(); };
+    card.append(bar);
+    if (open) {
+      const body = el("div", "rec-draft-cite-body");
+      cites.forEach((e) => {
+        const row = el("div", "rec-ev-row");
+        const et = el("div", "rec-ev-top");
+        if (e.kind) et.append(el("span", "micro-label rec-ev-kind", e.kind));
+        if (e.trust) et.append(el("span", "micro-label rec-ev-kind", e.trust));
+        if (e.urlOrFile) {
+          const a = linkEl(recHost(e.urlOrFile) + " ↗", e.urlOrFile);
+          a.className = "rec-draft-link";
+          a.title = e.urlOrFile;
+          et.append(a);
+        }
+        if (e.retrievedAt) et.append(el("span", "rec-ev-when", fmtWhen(e.retrievedAt)));
+        row.append(et);
+        if (e.snippet && e.snippet !== dr.note) row.append(el("blockquote", "rec-ev-quote", e.snippet));
+        body.append(row);
+      });
+      extra.forEach((u) => {
+        const a = linkEl(recHost(u) + " ↗", u);
+        a.className = "rec-draft-link";
+        a.title = u;
+        body.append(a);
+      });
+      card.append(body);
+    }
+  }
 
   if (d.status === "new") {
-    if ((run.scope || {}).dryRun) {
-      card.append(el("div", "rec-draft-hint", "dry run — run again without dry run to accept"));
-      return card;
-    }
+    // ⚠ a preview run accepts too (2026-09-04) — the checkbox never protected
+    // anything, so the decision is no longer gated behind an identical re-run
     const acts = el("div", "rec-draft-actions");
     const accept = el("button", "pill light rec-draft-accept", "accept");
     accept.title = "add this one draft to the board, citation and all";
     accept.onclick = () => recSourcesPost(
       "/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
+    const look = el("button", "pill light", d.lookedUpAt ? "look up again" : "look up");
+    look.title = "ask the other public indexes (openalex, orcid, github, pubmed) about this exact name";
+    look.onclick = () => {
+      look.disabled = true;
+      look.textContent = "looking up…";
+      recDraftLookup(run, d);
+    };
     const reject = el("button", "pill light rec-draft-reject", "reject");
     reject.title = "leave it in the cache; nothing reaches the board";
     reject.onclick = () => recSourcesPost(
       "/api/aion/recruiting/sources/reject/" + run.id + "/" + d.id, {}, "draft rejected");
-    acts.append(accept, reject);
+    acts.append(accept, look, reject);
     card.append(acts);
   } else if (d.decidedAt) {
     card.append(el("div", "rec-draft-hint", d.status + " " + fmtWhen(d.decidedAt)));

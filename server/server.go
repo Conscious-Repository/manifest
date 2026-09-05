@@ -476,6 +476,8 @@ func (s *Server) Handler() http.Handler {
 				mux.HandleFunc("POST /api/aion/recruiting/sources/accept/{run}/{draft}", s.handleRecruitingSourceAccept)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/reject/{run}/{draft}", s.handleRecruitingSourceReject)
 				mux.HandleFunc("POST /api/aion/recruiting/sources/pin/{run}", s.handleRecruitingSourcePin)
+				// ask the other public indexes about this exact name (lookup.go)
+				mux.HandleFunc("POST /api/aion/recruiting/sources/lookup/{run}/{draft}", s.handleRecruitingSourceLookup)
 			}
 		}
 	}
