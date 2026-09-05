@@ -22,7 +22,15 @@ let recOriginSet = false;  // the default follows the data until the owner picks
 let recCut = "open";      // open | archived | all
 let recSel = null;        // inspector selection (candidate id)
 let recQuery = "";        // board search
-let recSeedsOpen = false; // seeds rail expanded
+let recPeopleFacet = "considering"; // considering | known | everyone — the ROLE a person plays
+// recRunCleared — a run with no draft still waiting on a decision. Derived,
+// never stored: the same rule the run head prints as `cleared`.
+function recRunCleared(run) { return !(run.drafts || []).some((d) => d.status === "new"); }
+let recShowCleared = false;         // the SOURCES list includes finished runs
+let recPeopleShowArchived = false;  // `who I'd ask` includes the set-aside
+let recPersonEdit = null; // the connector id whose row is in edit mode
+let recPlaceQuery = "";   // PLACES search
+let recPlaceEdit = null;  // the place id whose row is in edit mode
 let recNetQuery = "";     // network view search
 let recNetTab = "paths";  // paths | people | edges
 let recInspOpen = { details: false, evidence: false, network: false, activity: false, ashby: false };
@@ -51,7 +59,7 @@ const REC_RUN_COMMON_FIELDS = ["role", "query", "max"];
 function recApplyRoute(sub) {
   sub = (sub || "").replace(/^\//, "");
   if (sub.startsWith("role/")) { recView = "role"; recRoleView = sub.slice(5); }
-  else if (sub === "sources" || sub === "network" || sub === "board") { recView = sub; }
+  else if (sub === "sources" || sub === "network" || sub === "board" || sub === "places") { recView = sub; }
   else recView = "board";
 }
 
@@ -174,6 +182,11 @@ function recHeaderMeta() {
   switch (recView) {
     case "sources":
       return recRuns.length + " runs · " + recPendingDrafts() + " to review · no poller";
+    case "places": {
+      const places = (recCache.seeds || []).filter((p) => p.class !== "person");
+      const sweepable = places.filter(recPlaceSweepable).length;
+      return places.length + " places · " + sweepable + " sweepable";
+    }
     case "network":
       return (net.people || []).length + " people · " + (net.edges || []).length + " edges";
     case "role": {
@@ -246,9 +259,15 @@ let recPaint = null;
 function paintRail(rail) {
   rail.innerHTML = "";
 
+  // FOUR VIEWS, named for what they hold (owner, 2026-09-05: "what is the
+  // difference between the board, my people and seed?"). They were three
+  // ROLES with names that hid them — someone you are DECIDING about, someone
+  // you would ROUTE an intro through, and a place you SWEEP FROM. People is
+  // one list carrying the role; Places is the sweepable things.
   rail.append(el("div", "micro-label rec-rail-label", "VIEWS"));
   const views = [
-    ["board", "Board", recUntriagedCount() || ""],
+    ["board", "People", recUntriagedCount() || ""],
+    ["places", "Places", ""],
     ["sources", "Sources", recPendingDrafts() || ""],
     ["network", "Network", ""],
   ];
@@ -293,7 +312,6 @@ function paintRail(rail) {
     rail.append(edit);
   }
 
-  rail.append(paintSeeds());
   rail.append(paintSyncFooter(roles));
 }
 
@@ -784,61 +802,306 @@ function recIntakeBox() {
   return box;
 }
 
-function paintSeeds() {
-  const seeds = recCache.seeds || [];
-  const box = el("section", "rec-seeds");
-  const head = el("button", "rec-seeds-head");
-  head.append(el("span", "sec-caret", recSeedsOpen ? "▾" : "▸"));
-  head.append(el("span", "micro-label", "SEEDS"));
-  head.append(el("span", "rec-role-count", String(seeds.length)));
-  head.onclick = () => { recSeedsOpen = !recSeedsOpen; if (recPaint) recPaint(); };
-  box.append(head);
-  if (!recSeedsOpen) return box;
+// ---- WHO I'D ASK — the people an introduction can start from ----
+//
+// This is the ONLY place a derived intro path can begin (OwnerSeeds selects
+// `consent: owner`), which is what makes it a different list from the board
+// rather than a second copy of it. It had no editor at all: the add box
+// promised "org and email are yours to fill in" and there was nowhere to fill
+// them in, and no way to remove a duplicate.
 
-  const list = el("div", "rec-seed-list");
-  (recCache.seedClasses || []).forEach((cls) => {
-    const inClass = seeds.filter((s) => s.class === cls);
-    if (!inClass.length) return;
-    list.append(el("div", "micro-label rec-seed-class", cls));
-    inClass.forEach((s) => {
-      const row = el("div", "rec-seed");
-      if (s.url) {
-        const a = linkEl(s.name, s.url);
-        a.className = "rec-seed-name";
-        row.append(a);
-      } else {
-        row.append(el("span", "rec-seed-name", s.name));
-      }
-      if (s.org) row.append(el("span", "rec-seed-sub", s.org));
-      // a seed is something we sweep FROM: one click loads the run that does
-      // it. Before this, a seed row was a dead end — the thing it existed for
-      // was three clicks away in a form it never touched.
-      const target = recSeedSweep(s);
-      if (target) {
-        const go = el("button", "rec-linkish rec-seed-sweep", "sweep →");
-        go.title = "load the " + target.source + " run scoped to this seed";
-        go.onclick = () => recLoadRun(target);
-        row.append(go);
-      }
-      list.append(row);
-    });
-  });
-  if (!seeds.length) list.append(emptyRow("nothing seeded yet — paste a lab, a paper or a show above"));
-  box.append(list);
+function paintConnectors(board, foot) {
+  const people = ((recCache.network || {}).people || [])
+    .filter((p) => recPeopleShowArchived || !p.archived);
+  const q = recQuery.trim().toLowerCase();
+  const rows = people.filter((p) => !q || [p.name, p.org, p.title, p.email].join(" ").toLowerCase().includes(q));
 
-  // the rail is 190px: too narrow for a scaffold, so the add gesture LIVES in
-  // the main column and this is the way to it
-  const add = el("button", "rec-linkish rec-seed-add", "＋ add");
-  add.title = "the intake at the top of the view — paste a link or a name";
-  add.onclick = () => {
-    if (recView === "role") recNav("board");
-    setTimeout(() => {
-      const input = document.querySelector(".rec-intake-in");
-      if (input) { input.focus(); input.scrollIntoView({ block: "center" }); }
-    }, 30);
+  if (!rows.length) {
+    board.append(emptyRow(q
+      ? "nobody here matches — clear the search"
+      : "nobody yet — the people you'd ask for an introduction go here, and every intro path starts from one of them"));
+  }
+  rows.forEach((p) => board.append(recConnectorRow(p)));
+
+  board.append(ghostInput("＋ someone I know", "aion-add", async (raw) => {
+    const name = raw.trim();
+    if (!name) return;
+    if (await recWrite("/api/aion/recruiting/intake", { dest: "network", name }, "POST", name + " added")) renderAion();
+  }, "their name — org, title and email are editable on the row"));
+
+  if (!foot) return;
+  const archived = ((recCache.network || {}).people || []).filter((p) => p.archived).length;
+  foot.textContent = rows.length + " of " + people.length +
+    " · an intro path can only start from someone here";
+  const toggle = el("button", "rec-linkish", recPeopleShowArchived ? "hide archived" : "show archived");
+  toggle.onclick = () => { recPeopleShowArchived = !recPeopleShowArchived; if (recPaint) recPaint(); };
+  if (archived || recPeopleShowArchived) foot.append(" · ", toggle);
+}
+
+function recConnectorRow(p) {
+  const row = el("div", "rec-net-row" + (p.archived ? " archived" : ""));
+  if (recPersonEdit === p.id) return recConnectorEditor(p, row);
+
+  const main = el("div", "rec-net-main");
+  main.append(el("span", "rec-net-name", p.name));
+  const sub = [p.title, p.org].filter(Boolean).join(" · ");
+  if (sub) main.append(el("span", "rec-draft-sub", sub));
+  if (p.archived) main.append(el("span", "micro-label", "archived " + p.archived));
+  row.append(main);
+
+  const reach = recReachCount(p);
+  if (reach) row.append(el("span", "rec-role-count", "reaches " + reach));
+  if (p.email) row.append(el("span", "rec-ev-when", p.email));
+
+  const acts = el("div", "rec-place-acts");
+  const edit = el("button", "rec-linkish", "edit");
+  edit.onclick = () => { recPersonEdit = p.id; if (recPaint) recPaint(); };
+  acts.append(edit);
+  // a person ARCHIVES — the row is the history of a judgment (owner's rule)
+  const arch = el("button", "rec-linkish", p.archived ? "restore" : "archive");
+  arch.title = p.archived ? "bring them back as somewhere an intro can start"
+    : "set aside — their edges stand, but no new path starts from them";
+  arch.onclick = async () => {
+    const at = p.archived ? "" : new Date().toISOString().slice(0, 10);
+    if (await recWrite("/api/aion/recruiting/network/person/" + encodeURIComponent(p.id),
+      { archived: at }, "POST", p.name + (at ? " archived" : " restored"))) renderAion();
   };
-  box.append(add);
-  return box;
+  acts.append(arch);
+  acts.append(armedDelete("delete", "delete — sure?", async () => {
+    if (await recWrite("/api/aion/recruiting/network/person/" + encodeURIComponent(p.id), null, "DELETE")) {
+      renderAion();
+      showToast(p.name + " deleted — their edges still stand", null, "info");
+    }
+  }));
+  row.append(acts);
+  return row;
+}
+
+function recConnectorEditor(p, row) {
+  row.classList.add("editing");
+  const draft = { name: p.name || "", title: p.title || "", org: p.org || "", email: p.email || "", type: p.type || "" };
+  const grid = el("div", "rec-place-fields");
+  const field = (label, key, hint) => {
+    const wrap = el("label", "rec-place-field");
+    wrap.append(el("span", "micro-label", label));
+    const inp = el("input", "pp-in");
+    inp.type = "text";
+    inp.value = draft[key];
+    if (hint) inp.placeholder = hint;
+    inp.oninput = () => { draft[key] = inp.value; };
+    inp.onkeydown = (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); };
+    wrap.append(inp);
+    return wrap;
+  };
+  grid.append(field("name", "name"));
+  grid.append(field("title", "title"));
+  grid.append(field("org", "org"));
+  // D15 lives upstream: no ADAPTER may ever write an address. This is the
+  // owner typing one, which is the only way one was ever meant to arrive.
+  grid.append(field("email", "email", "typed by you — no source may fill this"));
+  row.append(grid);
+
+  const cancel = () => { recPersonEdit = null; if (recPaint) recPaint(); };
+  const save = async () => {
+    const body = {};
+    ["name", "title", "org", "email"].forEach((k) => { if (draft[k] !== (p[k] || "")) body[k] = draft[k]; });
+    if (!Object.keys(body).length) { cancel(); return; }
+    if (await recWrite("/api/aion/recruiting/network/person/" + encodeURIComponent(p.id), body, "POST", draft.name + " saved")) {
+      recPersonEdit = null;
+      renderAion();
+    }
+  };
+  const acts = el("div", "rec-place-acts");
+  const ok = el("button", "pill light", "save");
+  ok.onclick = save;
+  const no = el("button", "rec-linkish", "cancel");
+  no.onclick = cancel;
+  acts.append(ok, no);
+  row.append(acts);
+  return row;
+}
+
+// ---- PLACES — the things you sweep FROM ----
+//
+// This was a collapsed accordion in a 190px rail, which is why the owner
+// could not tell it apart from the board or from "my people": the three
+// lists are three ROLES — deciding about, routing through, sweeping from —
+// and only the last one is a place. As a view it has room to say what each
+// row is FOR, and room for the gestures it never had: edit and delete.
+//
+// `seed/person` is gone from here on purpose. A person you want to sweep
+// from is a person; a bare name already resolves to a candidate, and any
+// candidate already carries "more like this".
+
+function recPlaceSweepable(p) { return !!recSeedSweep(p); }
+
+function paintPlacesView(main) {
+  const bar = el("div", "rec-toolbar");
+  const search = el("input", "pp-in rec-search");
+  search.type = "search";
+  search.placeholder = "search places…";
+  search.value = recPlaceQuery;
+  search.oninput = () => { recPlaceQuery = search.value; body(); };
+  bar.append(search);
+  main.append(bar);
+
+  const host = el("div", "rec-board");
+  main.append(host);
+
+  const body = () => {
+    host.innerHTML = "";
+    const q = recPlaceQuery.trim().toLowerCase();
+    const all = (recCache.seeds || []).filter((p) => p.class !== "person")
+      .filter((p) => !q || [p.name, p.org, p.url, p.class].join(" ").toLowerCase().includes(q));
+    if (!all.length) {
+      host.append(emptyRow(q
+        ? "no place matches — clear the search to see them all"
+        : "nowhere to look yet — paste a lab, a paper, a repo or a show above"));
+      return;
+    }
+    (recCache.seedClasses || []).forEach((cls) => {
+      if (cls === "person") return;
+      const inClass = all.filter((p) => p.class === cls);
+      if (!inClass.length) return;
+      host.append(el("div", "micro-label rec-place-class", cls));
+      inClass.forEach((p) => host.append(recPlaceRow(p)));
+    });
+  };
+  body();
+}
+
+function recPlaceRow(p) {
+  const row = el("div", "rec-place");
+  if (recPlaceEdit === p.id) return recPlaceEditor(p, row);
+
+  const top = el("div", "rec-place-top");
+  if (p.url) {
+    const a = linkEl(p.name, p.url);
+    a.className = "rec-place-name";
+    a.title = p.url;
+    top.append(a);
+  } else {
+    top.append(el("span", "rec-place-name", p.name));
+  }
+  if (p.org) top.append(el("span", "rec-place-sub", p.org));
+  row.append(top);
+
+  const acts = el("div", "rec-place-acts");
+  const target = recSeedSweep(p);
+  if (target) {
+    const go = el("button", "rec-linkish", "sweep →");
+    go.title = "load the " + target.source + " run scoped to this place";
+    go.onclick = () => recLoadRun(target);
+    acts.append(go);
+  } else {
+    // a place that cannot be swept says WHY and what would fix it, instead of
+    // quietly rendering without the button it exists for
+    const need = p.class === "media" ? "a feed or a link" : "a link";
+    const fix = el("button", "rec-linkish rec-place-need", "needs " + need + " to sweep");
+    fix.title = "add one and this place becomes sweepable";
+    fix.onclick = () => { recPlaceEdit = p.id; if (recPaint) recPaint(); };
+    acts.append(fix);
+  }
+  const edit = el("button", "rec-linkish", "edit");
+  edit.onclick = () => { recPlaceEdit = p.id; if (recPaint) recPaint(); };
+  acts.append(edit);
+  acts.append(armedDelete("delete", "delete — sure?", () => recPlaceDelete(p)));
+  row.append(acts);
+  return row;
+}
+
+function recPlaceEditor(p, row) {
+  row.classList.add("editing");
+  const draft = { name: p.name || "", org: p.org || "", url: p.url || "", class: p.class || "" };
+  const feedNow = ((p.unknown || []).find((f) => f.key === "feed") || {}).value || "";
+  draft.feed = feedNow;
+
+  const grid = el("div", "rec-place-fields");
+  const field = (label, key, hint) => {
+    const wrap = el("label", "rec-place-field");
+    wrap.append(el("span", "micro-label", label));
+    const inp = el("input", "pp-in");
+    inp.type = "text";
+    inp.value = draft[key];
+    if (hint) inp.placeholder = hint;
+    inp.oninput = () => { draft[key] = inp.value; };
+    inp.onkeydown = (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") cancel(); };
+    wrap.append(inp);
+    return wrap;
+  };
+  grid.append(field("name", "name"));
+  grid.append(field("org", "org"));
+  grid.append(field("link", "url", "https://…"));
+  if (p.class === "media") grid.append(field("feed", "feed", "the RSS this show publishes"));
+  row.append(grid);
+
+  const classes = el("div", "rec-scaffold-classes");
+  classes.append(el("span", "micro-label", "is a"));
+  (recCache.seedClasses || []).filter((c) => c !== "person").forEach((cls) => {
+    const b = el("button", "filter-chip" + (draft.class === cls ? " on" : ""), cls);
+    b.onclick = () => { draft.class = cls; if (recPaint) recPaint(); recPlaceEdit = p.id; };
+    classes.append(b);
+  });
+  row.append(classes);
+
+  const cancel = () => { recPlaceEdit = null; if (recPaint) recPaint(); };
+  const save = async () => {
+    const body = {};
+    ["name", "org", "url", "class"].forEach((k) => { if (draft[k] !== (p[k] || "")) body[k] = draft[k]; });
+    if (p.class === "media" && draft.feed !== feedNow) body.feed = draft.feed;
+    if (!Object.keys(body).length) { cancel(); return; }
+    await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), body, "POST", draft.name + " saved");
+    recPlaceEdit = null;
+    renderAion();
+  };
+
+  const acts = el("div", "rec-place-acts");
+  const ok = el("button", "pill light", "save");
+  ok.onclick = save;
+  const no = el("button", "rec-linkish", "cancel");
+  no.onclick = cancel;
+  acts.append(ok, no);
+  row.append(acts);
+  return row;
+}
+
+// recPlaceDelete — a cut with an undo, the house idiom (consume's dismiss):
+// the row goes at once, and the toast carries the way back because a place is
+// three fields and re-adding it by hand is not an undo.
+async function recPlaceDelete(p) {
+  const feed = ((p.unknown || []).find((f) => f.key === "feed") || {}).value || "";
+  if (!await recWrite("/api/aion/recruiting/place/" + encodeURIComponent(p.id), null, "DELETE")) return;
+  renderAion();
+  showToast(p.name + " deleted · undo", async () => {
+    const body = { dest: "seed", class: p.class, name: p.name, org: p.org, url: p.url, text: p.name };
+    if (feed) body.feed = feed;
+    await recWrite("/api/aion/recruiting/intake", body, "POST", p.name + " is back");
+    renderAion();
+  }, "info");
+}
+
+// recWrite — one write path for the edit/delete gestures: it checks r.ok (a
+// fetch does not reject on 4xx), refreshes the cache from the response when
+// the server sent a view, and says what refused. Returns false on failure so
+// a caller can leave the row alone.
+async function recWrite(url, body, method, okMsg) {
+  try {
+    const opt = { method: method || "POST" };
+    if (body) {
+      opt.headers = { "Content-Type": "application/json" };
+      opt.body = JSON.stringify(body);
+    }
+    const r = await fetch(url, opt);
+    if (!r.ok) throw new Error((await r.text()).slice(0, 160));
+    const d = await r.json().catch(() => null);
+    if (d && (d.candidates || d.seeds)) recCache = d;
+    else if (d && d.view) recCache = d.view;
+    if (okMsg) showToast(okMsg);
+    return true;
+  } catch (e) {
+    showToast(String(e.message || e).slice(0, 160), null, "error");
+    return false;
+  }
 }
 
 // ---- the main column, per view ----
@@ -849,6 +1112,7 @@ function paintMain(main) {
   // not care which tab you are standing on. The role console is the exception:
   // it is a rubric editor, not a place things arrive.
   if (recView !== "role") main.append(recIntakeBox());
+  if (recView === "places") { paintPlacesView(main); return; }
   if (recView === "sources") { paintSourcesView(main); return; }
   if (recView === "network") { paintNetworkView(main); return; }
   if (recView === "role") { paintRoleView(main); return; }
@@ -878,18 +1142,42 @@ function paintBoardView(main) {
     b.onclick = () => { recOrigin = key; recOriginSet = true; if (recPaint) recPaint(); };
     seg.append(b);
   });
-  bar.append(seg);
+  // the origin cut belongs to the people you are DECIDING about; on any other
+  // facet it is a control that does nothing, which is the noise this pass is
+  // here to remove
+  if (recPeopleFacet === "considering") bar.append(seg);
   main.append(bar);
+
+  // WHO these people are to you. The board and "my people" were two lists of
+  // humans in two places with no way to see that one person can be both; the
+  // role is a facet on ONE list now (owner, 2026-09-05). `considering` keeps
+  // the stages, the gate and the inspector exactly as they were.
+  const facets = el("div", "rec-cuts rec-facets");
+  const connectors = ((recCache.network || {}).people || []).filter((p) => !p.archived);
+  [["considering", "considering", (recCache.candidates || []).filter((c) => c.stage !== "archived").length],
+   ["known", "who I'd ask", connectors.length],
+   ["everyone", "everyone", 0]].forEach(([key, label, n]) => {
+    const b = el("button", "filter-chip" + (recPeopleFacet === key ? " on" : ""), label);
+    if (n) b.append(el("span", "rec-role-count", " " + n));
+    b.title = key === "considering" ? "people you are deciding about — scored, gated, sendable"
+      : key === "known" ? "people who could make an introduction — the only place an intro path starts"
+      : "everyone this surface knows about";
+    b.onclick = () => { recPeopleFacet = key; if (recPaint) recPaint(); };
+    facets.append(b);
+  });
+  main.append(facets);
 
   // row 2: the stage cuts. OPEN excludes archived — the old ALL/ACTIVE pair
   // was functionally identical (problem 1), so three cuts, not four.
-  const cuts = el("div", "rec-cuts");
-  [["open", "OPEN"], ["archived", "ARCHIVED"], ["all", "ALL"]].forEach(([key, label]) => {
-    const b = el("button", "filter-chip" + (recCut === key ? " on" : ""), label);
-    b.onclick = () => { recCut = key; if (recPaint) recPaint(); };
-    cuts.append(b);
-  });
-  main.append(cuts);
+  if (recPeopleFacet === "considering") {
+    const cuts = el("div", "rec-cuts");
+    [["open", "OPEN"], ["archived", "ARCHIVED"], ["all", "ALL"]].forEach(([key, label]) => {
+      const b = el("button", "filter-chip" + (recCut === key ? " on" : ""), label);
+      b.onclick = () => { recCut = key; if (recPaint) recPaint(); };
+      cuts.append(b);
+    });
+    main.append(cuts);
+  }
 
   // (the paste field that used to sit here is the intake now — one front
   // door, mounted by paintMain above the toolbar of every view)
@@ -908,6 +1196,10 @@ function paintBoardBody() {
   const foot = document.getElementById("recBoardFoot");
   if (!board) return;
   board.innerHTML = "";
+  // the `who I'd ask` facet is a different list of humans, so it renders its
+  // own rows and returns — the connectors are not candidates and must not
+  // borrow the gate, the stages or the origin cut
+  if (recPeopleFacet === "known") { paintConnectors(board, foot); return; }
   const all = recCache.candidates || [];
   const rows = all.filter(recVisible);
 
@@ -1086,9 +1378,30 @@ function paintSourcesView(main) {
     "max " + (recSources.maxMax || 100) + " · one record per accept, no accept-all · " +
     "look up asks the other indexes about one name"));
   const list = el("div", "rec-run-list");
-  recRuns.forEach((run) => list.append(recRunCard(run)));
-  if (!recRuns.length) list.append(emptyRow("no runs yet — a run is a dry run until you say otherwise"));
+  // A RUN WITH NOTHING LEFT TO DECIDE is done, and a done run in the way of a
+  // live one is the silt the owner asked to be rid of. `cleared` folds them
+  // away by default; the toggle says how many, so nothing disappears without
+  // saying so.
+  const decided = recRuns.filter(recRunCleared);
+  const live = recRuns.filter((r) => !recRunCleared(r));
+  live.forEach((run) => list.append(recRunCard(run)));
+  if (recShowCleared) decided.forEach((run) => list.append(recRunCard(run)));
+  if (!recRuns.length) {
+    list.append(emptyRow("nothing swept yet — point at a place and sweep it"));
+  } else if (!live.length && !recShowCleared) {
+    list.append(emptyRow("nothing left to review — every run is triaged"));
+  }
   main.append(list);
+  if (decided.length) {
+    const foot = el("div", "rec-foot");
+    const t = el("button", "rec-linkish", recShowCleared
+      ? "hide the " + decided.length + " cleared run" + (decided.length === 1 ? "" : "s")
+      : "show " + decided.length + " cleared run" + (decided.length === 1 ? "" : "s"));
+    t.title = "runs with nothing left to decide — kept until they expire, and pinned ones kept past that";
+    t.onclick = () => { recShowCleared = !recShowCleared; if (recPaint) recPaint(); };
+    foot.append(t);
+    main.append(foot);
+  }
 }
 
 function recRunFormEl() {

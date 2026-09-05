@@ -532,3 +532,29 @@ a.rec-seed-name:hover { text-decoration: underline; }
 /* the model's pass, and what it said that nothing supports */
 .rec-scaffold-ask { display: flex; flex-direction: column; gap: var(--sp-2); border-top: 1px solid var(--line-soft); padding-top: var(--sp-4); }
 .rec-scaffold-dropped { font-size: var(--fs-xs); color: var(--base-40); overflow-wrap: anywhere; }
+
+/* PLACES — the things you sweep FROM, promoted out of a 190px rail accordion
+   into a view with room to say what a row is for (owner, 2026-09-05: the
+   three lists were three roles with names that hid them). */
+.rec-place-class { color: var(--base-40); padding: var(--sp-5) 0 var(--sp-2); }
+.rec-place {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4);
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--line-soft); min-width: 0;
+}
+.rec-place.editing { flex-direction: column; align-items: stretch; gap: var(--sp-3); padding-bottom: var(--sp-5); }
+.rec-place-top { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-3); min-width: 0; }
+.rec-place-name { font-size: var(--fs-md); color: var(--base-100); overflow-wrap: anywhere; }
+a.rec-place-name { color: var(--accent); text-decoration: none; }
+a.rec-place-name:hover { text-decoration: underline; }
+.rec-place-sub { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); }
+.rec-place-acts { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-4); flex: none; }
+.rec-place-acts .rec-linkish { padding: 0; }
+/* a place that cannot be swept says WHY, in the slot where the sweep would be */
+.rec-place-need { color: var(--base-40); }
+.rec-place-need:hover { color: var(--base-100); }
+.rec-place-fields { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.rec-place-field { display: flex; flex-direction: column; gap: var(--sp-1); flex: 1 1 180px; min-width: 0; }
+/* the role facets on PEOPLE — one list, the role on the row */
+.rec-facets { border-bottom: 0; padding-bottom: var(--sp-3); }
+.rec-net-row.archived { opacity: 0.55; }
+.rec-net-row.editing { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
