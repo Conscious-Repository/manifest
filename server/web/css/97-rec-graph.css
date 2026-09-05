@@ -97,6 +97,33 @@
   backdrop-filter: blur(6px);
 }
 
+/* the collapsed state: one button in the corner, same footprint as the card's
+   own header, so opening and closing does not make the canvas jump */
+.rg-cog {
+  position: absolute;
+  z-index: 2;
+  top: var(--sp-4); left: var(--sp-4);
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 14px; line-height: 1;
+  color: var(--base-60);
+  background: color-mix(in srgb, var(--base-00, #fff) 92%, transparent);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(6px);
+}
+.rg-cog:hover { color: var(--base-100); border-color: var(--line); }
+
+.rg-controls-top {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-2); padding-bottom: var(--sp-1, 2px);
+}
+.rg-controls-title {
+  font-family: var(--mono); font-size: var(--fs-2xs);
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--base-50);
+}
+
 .rg-controls {
   top: var(--sp-4); left: var(--sp-4);
   width: 232px;

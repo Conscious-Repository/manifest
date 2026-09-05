@@ -46,12 +46,15 @@ const RG_GRAVITY = 0.010;
 
 // rgOpts is what the owner has tuned, and it persists — a graph you have set
 // up the way you like and then have to set up again is not your graph.
+// The owner's own settings, taken off his screen and made the defaults: a
+// weak centre and a strong repel so the body opens out, a slack link force
+// with a long rest length so clusters breathe rather than clump, small dots
+// and hairline links, and a fade threshold that keeps the crowd quiet until
+// you lean in. `panel: false` — the controls start out of the way, because
+// the picture is the view and the settings are something you pull over it.
 const RG_DEFAULTS = {
-  hops: 2, center: 1, repel: 1, link: 1, dist: 1,
-  // fade 2.0: at the zoom a fitted graph lands on (~1.2) the strangers stay
-  // quiet and only the people you have a relationship with are named. Pull the
-  // slider down and the whole crowd introduces itself.
-  nodeSize: 1, linkWidth: 1, fade: 2, open: "forces",
+  hops: 2, center: 0.4, repel: 2.5, link: 0.2, dist: 1.4,
+  nodeSize: 0.8, linkWidth: 0.5, fade: 1.2, open: "forces", panel: false,
 };
 let rgOpts = null;
 
@@ -367,7 +370,7 @@ function rgFit() {
   // is the part you can actually see.
   const box = st.svgEl.getBoundingClientRect();
   const wide = box.width > 700;
-  const leftPx = wide ? 264 : 0;
+  const leftPx = wide && rgOpts.panel ? 264 : 0;
   const rightPx = wide && st.sel ? 352 : 0;
   const botPx = wide ? 52 : 0;
   const usableW = Math.max(120, box.width - leftPx - rightPx);
@@ -729,7 +732,25 @@ function rgSection(name, title, build) {
 
 function rgControls(data) {
   const st = rgInit();
+
+  // COLLAPSED: one button, and the canvas gets its corner back. A settings
+  // card that is always open is a settings card you are always looking past.
+  if (!rgOpts.panel) {
+    const open = el("button", "rg-cog", "\u2699");
+    open.title = "graph settings";
+    open.setAttribute("aria-label", "graph settings");
+    open.onclick = () => { rgOpts.panel = true; rgSaveOpts(); if (recPaint) recPaint(); };
+    return open;
+  }
+
   const card = el("div", "rg-controls");
+  const top = el("div", "rg-controls-top");
+  top.append(el("span", "rg-controls-title", "graph"));
+  const shut = el("button", "rg-panel-x", "\u00d7");
+  shut.title = "hide the settings";
+  shut.onclick = () => { rgOpts.panel = false; rgSaveOpts(); if (recPaint) recPaint(); };
+  top.append(shut);
+  card.append(top);
 
   const search = el("input", "pp-in rg-search");
   search.type = "search";
@@ -786,7 +807,7 @@ function rgControls(data) {
     const acts = el("div", "rg-acts");
     const reset = el("button", "linkish", "defaults");
     reset.onclick = () => {
-      Object.assign(rgOpts, RG_DEFAULTS, { open: rgOpts.open, hops: rgOpts.hops });
+      Object.assign(rgOpts, RG_DEFAULTS, { open: rgOpts.open, hops: rgOpts.hops, panel: rgOpts.panel });
       rgSaveOpts();
       rgSizes();
       rgHeat(0.8);
