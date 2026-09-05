@@ -204,6 +204,31 @@ black/ink fill); attention counts are ink `● N` (the alarm idiom, dot
 first); breadcrumbs inside a tab's content are not used — the tab bar plus
 the header meta carry location.
 
+## An absence shows only when it changes the call (2026-09-05)
+
+Honest UI names what is missing — but a line that reports the same absence on
+every row teaches nothing and costs the reader four lines per item. The
+recruiting source cards printed "no evidenced expertise yet", "no known path"
+and "no title or affiliation on record" on nearly every draft; the owner's
+verdict was that the card had become unreadable for the decision it exists to
+support.
+
+The rule: **render an absence when it would change what the reader does, and
+otherwise let the row not exist.** "No citations — nothing here is backed" is
+kept and stays loud, because accepting that record is the mistake it prevents.
+"No path" is dropped, because a stranger off a crawl having no path is the
+default, and the absence is visible in the row simply not being there.
+
+Two corollaries from the same pass:
+
+- **A repeated fact belongs to the container, not the item.** When every card
+  in a list restates its query, its paper or its source, hoist it into the
+  list's header once and leave each card only what differs.
+- **Provenance on a card face is a HOST, never an address.** Full URLs and the
+  trail that found them live in the disclosure and the `title`; a URL is
+  reference material, and reference material wraps over three lines and pushes
+  the deciding content off the screen.
+
 ---
 
 *This contract systematizes discipline, not a frozen look. The tokens are the
