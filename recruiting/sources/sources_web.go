@@ -213,6 +213,27 @@ var webFunctionWords = map[string]bool{
 	"all": true, "more": true, "us": true, "with": true, "by": true, "from": true,
 }
 
+// webPlaceholderWords are FORM TEMPLATE words. A donation or application
+// form ships its labels as text — "Student's Name", "Student's Anticipated
+// Degree/Year", "Your Name", "First Last" — and every one of them is
+// name-shaped: two capitalised words, letters only. They passed every other
+// test here and arrived in the queue as people to triage (owner, 2026-09-05:
+// "Student's Name" beside a real professor, same card, same weight).
+//
+// The rule is narrow on purpose: these are words that appear in a FORM LABEL
+// and essentially never in a person's printed name. A possessive anywhere in
+// the string is decisive on its own — "Student's Name" is a label, and no one
+// is introduced with an apostrophe-s in the middle of their name.
+var webPlaceholderWords = map[string]bool{
+	"name": true, "names": true, "firstname": true, "lastname": true,
+	"fullname": true, "surname": true, "student": true, "donor": true,
+	"honoree": true, "recipient": true, "anticipated": true, "degree": true,
+	"title": true, "prefix": true, "suffix": true, "middle": true,
+	"first": true, "last": true, "optional": true, "required": true,
+	"example": true, "sample": true, "placeholder": true, "unknown": true,
+	"anonymous": true, "guest": true, "member": true, "user": true,
+}
+
 // webGenericSuffixes end nouns, never names: "Publications", "Admission",
 // "Radiology", "Physics", "Software", "Facilities". Applied to tokens of at
 // least webSuffixMinRunes so a short name ("Sion") is untouched.
@@ -1100,6 +1121,11 @@ func webPersonName(s string) bool {
 	if s == "" || len([]rune(s)) > webMaxNameRunes {
 		return false
 	}
+	// a possessive is a label's grammar, not a name's ("Student's Name",
+	// "Donor's Message") — nobody's printed name carries one
+	if strings.Contains(s, "'s ") || strings.Contains(s, "\u2019s ") {
+		return false
+	}
 	words := strings.Fields(s)
 	if len(words) < 2 || len(words) > 4 {
 		return false
@@ -1119,6 +1145,10 @@ func webPersonName(s string) bool {
 		lower := strings.ToLower(clean)
 		// a stop, org, nav, chrome or function word is never part of a name
 		if webNameStop[lower] || webOrgCues[lower] || webChromeWords[lower] || webFunctionWords[lower] {
+			return false
+		}
+		// a form-template label is not a person (webPlaceholderWords)
+		if webPlaceholderWords[strings.TrimSuffix(strings.TrimSuffix(lower, "'s"), "\u2019s")] {
 			return false
 		}
 		// a role word is not either, except as the surname of an

@@ -359,7 +359,9 @@ func TestWebRespectsPageCap(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		p := "/p" + strings.Repeat("x", i%3) + "/" + strings.ToLower(string(rune('a'+i%26))) + strings.Repeat("y", i/26)
 		links = append(links, `<a href="`+p+`">page</a>`)
-		pages[p] = `<html><body><h1>Person Name</h1><p>MRI Engineer</p></body></html>`
+		// a real-shaped name: "Person Name" now reads as a form template, which
+		// is the point of TestWebPersonNameRefusesFormTemplates
+		pages[p] = `<html><body><h1>Dana Reyes</h1><p>MRI Engineer</p></body></html>`
 	}
 	pages["/"] = `<html><head><title>mri index</title></head><body>` + strings.Join(links, " ") + `</body></html>`
 	fresh := func() *webNet { return newWebNet().site("big.example", pages) }
@@ -1012,5 +1014,45 @@ func TestWebRefusesLocalAndPrivateHosts(t *testing.T) {
 	defer srv.Close()
 	if _, _, _, err := (Web{Delay: -1}).get(context.Background(), srv.URL+"/", 1024); err == nil || !strings.Contains(err.Error(), "refused dial") {
 		t.Errorf("loopback dial through the default transport: %v", err)
+	}
+}
+
+// FORM TEMPLATES ARE NOT PEOPLE. A donation or application form ships its
+// labels as page text, and every one of them is name-shaped: two capitalised
+// words, letters only. They reached the queue as candidates to triage,
+// carrying the same weight as a real professor on the same page (owner,
+// 2026-09-05).
+func TestWebPersonNameRefusesFormTemplates(t *testing.T) {
+	for _, s := range []string{
+		"Student's Name",
+		"Student’s Name",          // the curly apostrophe a CMS emits
+		"Student's Anticipated Degree",
+		"Your Name",
+		"First Last",
+		"Full Name",
+		"Donor Name",
+		"Middle Initial",
+		"Example Name",
+	} {
+		if webPersonName(s) {
+			t.Errorf("%q is a form label, not a person", s)
+		}
+	}
+}
+
+// The filter must stay narrow: real names that happen to brush a template
+// word still pass.
+func TestWebPersonNameKeepsRealPeople(t *testing.T) {
+	for _, s := range []string{
+		"Dana M. Reyes",
+		"Kai Okonkwo",
+		"Priya Natarajan",
+		"Stéfan van der Walt",
+		"J. Nathan Kutz",
+		"Michael S. Avidan",
+	} {
+		if !webPersonName(s) {
+			t.Errorf("%q is a person and must survive the template filter", s)
+		}
 	}
 }

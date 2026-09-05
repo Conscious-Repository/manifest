@@ -1224,7 +1224,18 @@ function recRunCard(run) {
   toggle.append(el("span", "sec-caret", open ? "▾" : "▸"));
   toggle.append(el("span", "rec-run-src", run.source));
   if (run.pinned) toggle.append(el("span", "rec-run-chip pinned", "pinned"));
-  toggle.append(el("span", "rec-run-scope", scope.query || ((scope.fields || {}).seed_url || "")));
+  // what this run was scoped to, in ONE place. A works/repo/feed run is
+  // scoped by a FIELD, and the header used to show nothing for those — which
+  // is why every card had to repeat the paper's citation to be readable
+  // (owner, 2026-09-05). The subject is the drafts' own shared line when they
+  // have one, else the query, else the reference that was named.
+  const f = scope.fields || {};
+  const scopeText = recRunSubject(run) || scope.query || f.seed_url || f.work || f.repo || f.feed_url || "";
+  if (scopeText) {
+    const sc = el("span", "rec-run-scope", scopeText.length > 120 ? scopeText.slice(0, 117) + "…" : scopeText);
+    sc.title = scopeText;
+    toggle.append(sc);
+  }
   const role = (recCache.roles || []).find((r) => (r.id || "role/" + r.slug) === scope.role);
   if (role) toggle.append(el("span", "rec-draft-sub", role.title || role.slug));
   toggle.onclick = () => { recRunOpen[run.id] = !open; renderAion(); };
@@ -1348,29 +1359,85 @@ function recDraftExtKeys(dr) {
   return keys.filter((k, i, all) => all.indexOf(k) === i);
 }
 
-// recDraftWhy — ONE sentence: which source surfaced them, for what query,
-// and what that source said (its own snippet, verbatim and clipped). No
-// paraphrase: when the source quoted nothing, the sentence says so.
+// recDraftWhy — what the source SAID about them, verbatim, and nothing else.
+//
+// It used to open with "<source> returned them for “<the run's query>”" on
+// every card in the run — a sentence the run header above already says, once,
+// for all of them. What survives is the only part that differs per person and
+// the only part a go/no-go rests on: their own quoted line. "" when the source
+// quoted nothing; the citations line then carries that fact.
 function recDraftWhy(run, dr) {
-  const scope = run.scope || {};
-  const q = scope.query || ((scope.fields || {}).seed_url || "");
+  const quote = recDraftQuote(run, dr);
+  if (!quote) return "";
+  const subject = recRunSubject(run);
+  if (!subject || !quote.startsWith(subject)) return quote;
+  // the run header carries the shared head; the card keeps what differs
+  return quote.slice(subject.length).replace(/^\s*[·,—-]\s*/, "").trim() || quote;
+}
+
+// recDraftQuote is the raw verbatim line, before the run's shared subject is
+// taken off it (recRunSubject reads these to find that head).
+function recDraftQuote(run, dr) {
   const ev = (dr.evidence || []).filter((e) => (e.snippet || "").trim());
   // what they DID outranks where they sit: the works/repo/grant row first,
   // the affiliation row only when nothing else was quoted
   const rank = { publication: 0, repo: 1, grant: 2, conference: 3, page: 4 };
   const byKind = (a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
   const said = ev.filter((e) => e.sourceId === run.source).sort(byKind)[0] || ev.slice().sort(byKind)[0];
-  let s = run.source + (q ? " returned them for “" + q + "”" : " returned them");
-  if (said) {
-    let quote = said.snippet.trim();
-    // an author record's "· topics: a; b; c" tail is the chip strip above,
-    // already rendered — the sentence keeps the counts and drops the repeat
-    if ((dr.topics || []).length) quote = quote.replace(/\s*·\s*topics:.*$/i, "").trim() || quote;
-    s += " — " + quote;
+  if (!said) return recDraftTrail(dr) ? "" : (dr.note || "").trim();
+  let quote = said.snippet.trim();
+  // an author record's "· topics: a; b; c" tail is the chip strip above,
+  // already rendered — the quote keeps the counts and drops the repeat
+  if ((dr.topics || []).length) quote = quote.replace(/\s*·\s*topics:.*$/i, "").trim() || quote;
+  return quote;
+}
+
+// recRunSubject — what EVERY draft in a run says identically.
+//
+// A works run quotes the same paper on all 26 author cards; a repo run quotes
+// the same repository on every contributor. That shared head is the RUN's
+// subject, not a fact about any one person, and repeating it per card buries
+// the two words that actually differ (their position, their institution). It
+// is hoisted into the run header and stripped from the cards.
+//
+// Derived per paint from the drafts themselves, so a run whose drafts share
+// nothing keeps every quote whole.
+const recRunSubjectMemo = {};
+function recRunSubject(run) {
+  const drafts = run.drafts || [];
+  const memoKey = run.id + "#" + drafts.length;
+  if (recRunSubjectMemo[memoKey] !== undefined) return recRunSubjectMemo[memoKey];
+  let out = "";
+  const quotes = drafts.map((d) => recDraftQuote(run, d.draft || {})).filter(Boolean);
+  if (quotes.length >= 2) {
+    let p = quotes[0];
+    for (const q of quotes.slice(1)) {
+      let i = 0;
+      while (i < p.length && i < q.length && p[i] === q[i]) i++;
+      p = p.slice(0, i);
+      if (!p) break;
+    }
+    // cut back to a separator so the shared head ends on a phrase, never
+    // mid-word ("…, 2016, 10.1073/pnas.15" is not a subject)
+    const cut = Math.max(p.lastIndexOf(" · "), p.lastIndexOf(", "), p.lastIndexOf(" — "));
+    if (cut > 20) out = p.slice(0, cut).trim();
   }
-  else if (dr.note && dr.note !== dr.name) s += " — " + dr.note.trim();
-  else s += " — with no quoted evidence";
-  return s;
+  recRunSubjectMemo[memoKey] = out;
+  return out;
+}
+
+// recDraftTrail reads the web crawler's traversal note — "found on <url> ·
+// discovered from <url> · depth N" — into its parts, or null for any other
+// note. That string is PROVENANCE, not prose: printed as-is it put two full
+// URLs, wrapping over three lines, above the only content that decides
+// anything. The card shows its hosts and keeps the addresses in the fold.
+function recDraftTrail(dr) {
+  const note = (dr.note || "").trim();
+  if (!/^found on\s+https?:\/\//i.test(note)) return null;
+  const found = (note.match(/found on\s+(\S+)/i) || [])[1] || "";
+  const from = (note.match(/discovered from\s+(\S+)/i) || [])[1] || "";
+  const depth = (note.match(/depth\s+(\d+)/i) || [])[1] || "";
+  return { found: found.replace(/[·,]$/, ""), from: from.replace(/[·,]$/, ""), depth };
 }
 
 // recTopicEvidence — the rows behind one chip: evidence whose verbatim
@@ -1435,9 +1502,11 @@ function recDraftPathLine(d, dr) {
     row.append(go);
     return row;
   }
-  row.classList.add("none");
-  row.append(el("span", "rec-draft-path-text", "no known path — nobody in your network is recorded as linked to them yet"));
-  return row;
+  // No route and no edge naming them — the ordinary case for a stranger off
+  // a crawl, and a sentence saying so on every card is noise, not coverage
+  // (owner, 2026-09-05). The absence shows as the row not being there; the
+  // NETWORK view is where "who can reach whom" is actually read.
+  return null;
 }
 
 // recDraftTopics — the expertise chips. Every chip says `inferred` in words
@@ -1449,10 +1518,12 @@ function recDraftTopics(run, d, dr, key) {
   wrap.append(el("span", "micro-label", "expertise"));
   const topics = (dr.topics || []).map((t) => (t || "").trim()).filter(Boolean);
   if (!topics.length) {
-    const none = el("span", "rec-draft-topics-none", "no evidenced expertise yet · the source named none");
-    none.title = "no topics on this author record from any source asked so far — missing, not absent; look up asks the other indexes";
-    wrap.append(none);
-    return [wrap];
+    // NOTHING. An absence that appears on nearly every card teaches nothing
+    // and costs four lines of reading (owner, 2026-09-05): the row is simply
+    // not there, and `look up` — right below — is what asks the other
+    // indexes. The exception that stays loud is "no citations", because
+    // that one changes the decision.
+    return [];
   }
   const showAll = !!recDraftMore[key];
   const shown = showAll ? topics : topics.slice(0, 4);
@@ -1579,18 +1650,30 @@ function recDraftCard(run, d) {
 
   const sub = [dr.title, dr.org, dr.location].filter(Boolean).join(" · ");
   if (sub) card.append(el("div", "rec-draft-sub", sub));
-  else card.append(el("div", "rec-draft-sub", dr.role ? dr.role + " · no title or affiliation on record" : "no title or affiliation on record"));
-  // the note is human context; when it only restates the chips, the chips win
-  const noteIsTopics = /^topics:/i.test(dr.note || "") && (dr.topics || []).length;
-  if (dr.note && dr.note !== dr.name && !noteIsTopics) card.append(el("div", "rec-draft-note", dr.note));
 
   if (d.candidateId) {
-    const on = el("button", "rec-draft-on", "on the board as " + d.candidateId + (d.reason ? " · " + d.reason : ""));
+    // the MATCH matters ("same name" vs "external id" is the difference
+    // between a guess and a proof); the id it matched on does not
+    const why = (d.reason || "").replace(/\s+\S*:\S+$/, "").trim();
+    const on = el("button", "rec-draft-on", "already on the board" + (why ? " · matched by " + why : ""));
     on.onclick = () => { recSel = d.candidateId; recNav("board"); };
     card.append(on);
   }
 
-  // 2 · classified presence — each class labelled, none folded into a count
+  // 2 · what they have worked on, and what the source said about them —
+  // the two things a go/no-go rests on, so they come before presence,
+  // provenance and path (owner, 2026-09-05).
+  recDraftTopics(run, d, dr, key).forEach((n) => card.append(n));
+
+  const whyText = recDraftWhy(run, dr);
+  if (whyText) {
+    const why = el("blockquote", "rec-draft-said");
+    why.textContent = whyText.length > 220 ? whyText.slice(0, 217) + "…" : whyText;
+    why.title = whyText;
+    card.append(why);
+  }
+
+  // 3 · classified presence — each class labelled, none folded into a count
   const contacts = recDraftContacts(dr);
   const contactURLs = {};
   if (contacts.length) {
@@ -1606,20 +1689,9 @@ function recDraftCard(run, d) {
     card.append(strip);
   }
 
-  // 3 · expertise
-  recDraftTopics(run, d, dr, key).forEach((n) => card.append(n));
-
-  // 4 · why surfaced
-  const why = el("div", "rec-draft-why");
-  why.append(el("span", "micro-label", "why"));
-  const whyText = recDraftWhy(run, dr);
-  const whySpan = el("span", "rec-draft-why-text", whyText.length > 180 ? whyText.slice(0, 177) + "…" : whyText);
-  whySpan.title = whyText;
-  why.append(whySpan);
-  card.append(why);
-
-  // 5 · path (coverage)
-  card.append(recDraftPathLine(d, dr));
+  // 4 · path — ONLY when this network actually records something about them
+  const path = recDraftPathLine(d, dr);
+  if (path) card.append(path);
 
   // 6 · evidence — citations, deduped by address AND kind: the same grant
   // listed twice is one fact, but an author record's affiliation row and its
@@ -1639,20 +1711,52 @@ function recDraftCard(run, d) {
     .filter((u, i, all) => u && !seen[u] && !contactURLs[u] && all.indexOf(u) === i);
 
   if (!cites.length && !extra.length) {
-    // missing is a fact worth a line, not a blank
+    // THE absence that stays loud: accepting this would put an unbacked
+    // record on the board, which is the one thing the fold cannot fix
     card.append(el("div", "rec-draft-cites none", "no citations — nothing on this card is backed yet"));
   } else {
+    // provenance rides the SAME line as the count, as a host — the full
+    // addresses are one click away in the fold, and on hover
     const bar = el("button", "rec-draft-cites");
     bar.append(el("span", "sec-caret", open ? "▾" : "▸"));
+    const trail = recDraftTrail(dr);
+    const where = (trail && trail.found) || (cites.find((e) => (e.urlOrFile || "").trim()) || {}).urlOrFile || "";
+    if (where) {
+      const host = el("span", "rec-draft-prov", recHost(where));
+      host.title = trail
+        ? "found on " + trail.found + (trail.from ? "\ndiscovered from " + trail.from : "") +
+          (trail.depth ? "\n" + trail.depth + " hop" + (trail.depth === "1" ? "" : "s") + " from the seed" : "")
+        : where;
+      bar.append(host);
+    }
     const n = cites.length;
-    bar.append(el("span", "", n ? n + " citation" + (n === 1 ? "" : "s") : "no citations"));
-    if (extra.length) bar.append(el("span", "rec-draft-sub", "· " + extra.length + " other link" + (extra.length === 1 ? "" : "s")));
+    bar.append(el("span", "rec-draft-sub", (where ? "· " : "") + (n ? n + " citation" + (n === 1 ? "" : "s") : "no citations") +
+      (extra.length ? " · " + extra.length + " other link" + (extra.length === 1 ? "" : "s") : "")));
     bar.setAttribute("aria-expanded", open ? "true" : "false");
     bar.onclick = () => { recDraftOpen[key] = !open; if (recPaint) recPaint(); };
     card.append(bar);
   }
   if (open && (cites.length || extra.length)) {
     const body = el("div", "rec-draft-cite-body");
+    // the crawl trail lives HERE, in full, where somebody auditing a claim
+    // wants it — not on the face, where it was three wrapped lines of URL
+    const trail = recDraftTrail(dr);
+    if (trail) {
+      const row = el("div", "rec-ev-row");
+      row.append(el("span", "micro-label rec-ev-kind", "found on"));
+      const a = linkEl(trail.found, trail.found);
+      a.className = "rec-draft-link";
+      row.append(a);
+      if (trail.from) {
+        row.append(el("span", "rec-ev-when", "discovered from"));
+        const b = linkEl(recHost(trail.from) + " ↗", trail.from);
+        b.className = "rec-draft-link";
+        b.title = trail.from;
+        row.append(b);
+      }
+      if (trail.depth) row.append(el("span", "rec-ev-when", trail.depth + " hop" + (trail.depth === "1" ? "" : "s") + " from the seed"));
+      body.append(row);
+    }
     cites.forEach((e) => {
       const row = el("div", "rec-ev-row");
       const et = el("div", "rec-ev-top");
@@ -1705,9 +1809,9 @@ function recDraftCard(run, d) {
     acts.append(accept, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
-    const hint = el("div", "rec-draft-hint", d.status === "rejected"
-      ? "passed " + fmtWhen(d.decidedAt) + " · this search only — nothing was deleted"
-      : d.status + " " + fmtWhen(d.decidedAt));
+    // the reassurance ("this search only — nothing was deleted") is the
+    // undo's tooltip, not a line on every settled card
+    const hint = el("div", "rec-draft-hint", (d.status === "rejected" ? "passed " : d.status + " ") + fmtWhen(d.decidedAt));
     if (d.status === "rejected") hint.append(" · ", recDraftUnpass(run, d));
     card.append(hint);
   }
