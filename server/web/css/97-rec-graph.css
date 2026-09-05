@@ -54,6 +54,17 @@
 }
 .rg-node.you .rg-label, .rg-node.sel .rg-label { fill: var(--base-100); }
 
+/* ⚠ LABEL DENSITY. A ring of 60 people writes 60 names into one band and the
+   band is unreadable — the hairball arriving through labels rather than
+   through edges. So only the people you have a relationship WITH are named on
+   the face: you, the ones you would ask, the ones on the board, and whatever
+   is selected. A stranger is a dot until you hover it or click it, and the
+   way you find a specific one is the search box. */
+.rg-node.rg-stranger .rg-label { opacity: 0; }
+.rg-node.rg-stranger:hover .rg-label,
+.rg-node.rg-stranger.sel .rg-label { opacity: 1; }
+.rg-node.rg-stranger:hover .rg-label { fill: var(--base-100); }
+
 .rg-degree { display: inline-flex; align-items: center; gap: var(--sp-2); }
 .rg-matches { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; }
 .rg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-4) 0; }

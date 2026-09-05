@@ -263,7 +263,11 @@ function rgCanvas(data) {
     svg.appendChild(line);
   });
 
-  nodes.forEach((n) => {
+  // named nodes are drawn LAST so their labels sit over the anonymous ring
+  // rather than under it
+  const drawOrder = nodes.slice().sort((a, b) =>
+    (a.kind === "stranger" ? 0 : 1) - (b.kind === "stranger" ? 0 : 1));
+  drawOrder.forEach((n) => {
     const p = pos[n.id];
     if (!p) return;
     const g = rgSVG("g", "rg-node rg-" + n.kind + (st.sel === n.id ? " sel" : ""), {
