@@ -324,6 +324,13 @@
   }
   .contact-name { font-size: var(--fs-xl); }
   .contact-row-right { align-items: flex-end; }
+  /* the nearby place input was 13px — touch floor + 16px so iOS doesn't auto-zoom
+     the page on focus (same defect the reading shelf had; 2026-09-05) */
+  .nearby-form .contact-search, .nearby-radius {
+    min-height: var(--touch-sm); font-size: var(--fs-xl);
+  }
+  .nearby-form .contact-search { flex: 1 1 100%; min-width: 0; width: auto; }
+  .nearby-form .nearby-radius-wrap { flex: 1 1 100%; }
 
   /* ---- SPIRITS: rituals = name over next fire · outcome; runs/charge = desktop ---- */
   .ritual-row {
