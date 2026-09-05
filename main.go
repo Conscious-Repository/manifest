@@ -30,6 +30,7 @@ import (
 	"manifest/consume"
 	"manifest/contacts"
 	"manifest/daily"
+	"manifest/decisions"
 	"manifest/errands"
 	"manifest/fundraising"
 	"manifest/geocode"
@@ -271,6 +272,13 @@ func main() {
 			vaultwriter.Capability{Name: "graph", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "graph")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			// THE DECISION LEDGER (manifest P3 Phase 1) — system/decisions/
+			// <id>.md: one note per decision (why / evidence / alternatives /
+			// expected + actual outcome / downstream / sources). The backlog's
+			// decision lines stay under `aion`; this grant is the ledger's only.
+			vaultwriter.Capability{Name: "decisions", Zone: record.ZoneSystem,
+				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "decisions")) + "/**",
+				Actor:   vaultwriter.ActorUserAction},
 			// PRIVATE FUNDRAISING CRM — explicitly separate from AION's public
 			// live/export contract. Opportunity records and the shared note-less
 			// contact registry have separately bounded capabilities.
@@ -460,6 +468,10 @@ func main() {
 		log.Printf("graph records: %v", err)
 	}
 	srv.UseGraph(graphStore)
+	// P3 decisions: the dedicated decision ledger, one note per decision,
+	// its own narrow grant; the backlog's decision items are projected
+	// read-only beside it (aion adapter) until a migration pass.
+	srv.UseDecisions(decisions.NewStore(cfg.VaultPath, filepath.ToSlash(filepath.Join(cfg.SystemRoot, "decisions")), vw.BindAbs("decisions")))
 	if recRuns != nil {
 		srv.UseRecruitingRuns(recRuns)
 	}

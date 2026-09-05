@@ -449,6 +449,13 @@ func (s *Server) handleAionBacklogDecide(w http.ResponseWriter, r *http.Request)
 		httpError(w, err)
 		return
 	}
+	// the backlog decision's lifecycle rides the same ledger object as the
+	// decision ledger's (P3): decision.decided under decision:aion-bl/<id>
+	if it := s.aion.LoadBacklog().Find(r.PathValue("id")); it != nil {
+		if d, ok := it.AsDecision(); ok {
+			s.decisionEvent("decision.decided", d, "owner", d.Title+" — "+d.Outcome, map[string]any{"outcome": d.Outcome})
+		}
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

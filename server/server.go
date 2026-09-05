@@ -28,6 +28,7 @@ import (
 	"manifest/consume"
 	"manifest/contacts"
 	"manifest/daily"
+	"manifest/decisions"
 	"manifest/errands"
 	"manifest/fundraising"
 	"manifest/geocode"
@@ -223,6 +224,10 @@ type Server struct {
 	// entities.md + edges.md, written through the `graph` capability. Nilable:
 	// reads still answer over derived edges; writes answer 503.
 	graphStore *graph.Store
+	// decisionStore: the decision ledger (P3) — system/decisions/<id>.md notes,
+	// written through the `decisions` capability. Nilable: reads still list
+	// the backlog's decisions; writes answer 503.
+	decisionStore *decisions.Store
 	// oodaChat: the OODA portal's own chat store (zeck's threads). Nilable.
 	oodaChat *chatthreads.Store
 	// oodaEmail/oodaGmail: the portal email lane — pending candidates from
@@ -362,7 +367,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/graph/deps", s.handleGraphDeps)           // ?ref=&dir=up|down&kind=&depth=
 	mux.HandleFunc("POST /api/graph/edges", s.handleGraphEdgeAdd)      // {from,to,kind,basis,…}
 	mux.HandleFunc("POST /api/graph/entities", s.handleGraphEntityAdd) // {id,kind,title,ref,source}
-	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)  // RE assignee registry
+	// THE DECISION LEDGER (manifest P3 Phase 1, decisions.go)
+	mux.HandleFunc("GET /api/decisions", s.handleDecisions)              // ?status=&owner=&source=ledger|aion
+	mux.HandleFunc("GET /api/decisions/get", s.handleDecisionGet)        // ?id= → view (history + graph)
+	mux.HandleFunc("POST /api/decisions/create", s.handleDecisionCreate) // {title,owner,why,evidence,…}
+	mux.HandleFunc("POST /api/decisions/update", s.handleDecisionUpdate) // {id, …partial}
+	mux.HandleFunc("GET /api/properties/people", s.handleRePeopleGet)    // RE assignee registry
 	mux.HandleFunc("PUT /api/properties/people", s.handleRePeopleSave)
 	mux.HandleFunc("POST /api/tasks/drop", s.handleTaskDrop)
 	mux.HandleFunc("/api/tasks/split", s.handleTasksSplit) // GET preview · POST commit (one task substrate)

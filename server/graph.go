@@ -12,8 +12,10 @@ package server
 // DERIVED edges the other primitives already imply and nobody should have to
 // re-state: a task line's [depends::] is a `depends_on` edge, its
 // [outputs::]/[inputs::] are `produced`/`consumes` edges to artifacts (the
-// P1 binding, as edges), and an artifact's provenance task is a `produced`
-// edge. A stored claim with the same key wins over a derived one. Derived
+// P1 binding, as edges), an artifact's provenance task is a `produced`
+// edge, and a decision note's evidence / downstream refs are `informs` /
+// `supports` / `depends_on` / `produced` edges (P3). A stored claim with the
+// same key wins over a derived one. Derived
 // edges are never written to the file — they are recomputed from the objects
 // on every read (file-as-truth stays with the objects that own the fact).
 //
@@ -98,6 +100,8 @@ func (s *Server) derivedGraphEdges() []graph.Edge {
 			}
 		}
 	}
+	// the decision ledger's evidence / downstream refs (P3, decisions.go)
+	s.decisionGraphEdges(add)
 	return out
 }
 
