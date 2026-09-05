@@ -65,10 +65,10 @@ func TestXDGRuntimeDirDerivesFromTheUID(t *testing.T) {
 // THE TRUST DIALOG. Verified on metis: a Claude Code session opening a folder
 // it has not seen draws
 //
-//	 Security guide
-//	 ❯ No, exit
-//	   Yes, I trust this folder
-//	 Enter to confirm · Esc to cancel
+//	Security guide
+//	❯ No, exit
+//	  Yes, I trust this folder
+//	Enter to confirm · Esc to cancel
 //
 // The old detector matched `❯` by prefix and called that a prompt, so the
 // relaunch typed the owner's message into a menu and pressed Enter on "No,
