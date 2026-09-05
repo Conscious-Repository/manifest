@@ -304,17 +304,17 @@ type SeedsDoc struct {
 
 // NetworkPerson is one network/people.md row.
 type NetworkPerson struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Type     string  `json:"type,omitempty"`
-	Email    string  `json:"email,omitempty"`
-	LinkedIn string  `json:"linkedin,omitempty"`
-	GitHub   string  `json:"github,omitempty"`
-	Org      string  `json:"org,omitempty"`
-	Title    string  `json:"title,omitempty"`
-	Source   string  `json:"source,omitempty"`
-	Consent  string  `json:"consent,omitempty"`
-	Added    string  `json:"added,omitempty"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type,omitempty"`
+	Email    string `json:"email,omitempty"`
+	LinkedIn string `json:"linkedin,omitempty"`
+	GitHub   string `json:"github,omitempty"`
+	Org      string `json:"org,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Consent  string `json:"consent,omitempty"`
+	Added    string `json:"added,omitempty"`
 	// Archived is the date this connector was set aside. A person is ARCHIVED,
 	// never deleted (owner's rule, 2026-09-05): the row carries a judgment, and
 	// judgments keep their history. An archived connector stops being a path
@@ -336,16 +336,23 @@ type PeopleDoc struct {
 // truth. `inferred` is mandatory and stored, because the UI's visual
 // distinction has to key off a fact rather than a rendering habit.
 type Edge struct {
-	From       string  `json:"from"`
-	To         string  `json:"to"`
-	Kind       string  `json:"kind"`
-	Basis      string  `json:"basis"`
-	Confidence string  `json:"confidence,omitempty"`
-	Inferred   bool    `json:"inferred"`
-	Source     string  `json:"source,omitempty"`
-	Evidence   string  `json:"evidence,omitempty"`
-	Observed   string  `json:"observed,omitempty"`
-	Unknown    []Field `json:"unknown,omitempty"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Kind       string `json:"kind"`
+	Basis      string `json:"basis"`
+	Confidence string `json:"confidence,omitempty"`
+	Inferred   bool   `json:"inferred"`
+	Source     string `json:"source,omitempty"`
+	Evidence   string `json:"evidence,omitempty"`
+	Observed   string `json:"observed,omitempty"`
+	// Derived marks an edge this package did not read from edges.md — it was
+	// computed from something outside the recruiting root (the owner's own
+	// calendar, their notes) and is recomputed on every read. It is a Go/JSON
+	// field only: nothing derived is ever serialized into the vault, because a
+	// derivation that gets written becomes a fact nobody can correct at the
+	// source.
+	Derived bool    `json:"derived,omitempty"`
+	Unknown []Field `json:"unknown,omitempty"`
 }
 
 // EdgesDoc is network/edges.md.

@@ -29,7 +29,40 @@ type Store struct {
 	// Owner is the person quick-adds are attributed to; it becomes the
 	// candidate's [owner::] and the manual adapter's evidence source.
 	owner string
-	mu    sync.Mutex
+	// derivedEdges yields relationship claims computed OUTSIDE this package —
+	// the owner's calendar co-attendance, their notes' co-mentions — injected
+	// by the server, which is the only layer that can see those stores.
+	// Recomputed on every read and never saved: LoadEdges/SaveEdges only ever
+	// touch the file, so a derivation cannot leak into the vault.
+	derivedEdges func() []Edge
+	mu           sync.Mutex
+}
+
+// UseDerivedEdges injects the outside-the-vault edge source (see the field).
+func (s *Store) UseDerivedEdges(fn func() []Edge) { s.derivedEdges = fn }
+
+// networkEdges is the graph the VIEW reads: what is on file, plus what was
+// derived, with the file winning any claim they both make. Nothing else in
+// this package uses it — every write path reads LoadEdges directly.
+func (s *Store) networkEdges() []Edge {
+	stored := s.LoadEdges().Edges()
+	if s.derivedEdges == nil {
+		return stored
+	}
+	have := map[string]bool{}
+	for _, e := range stored {
+		have[edgeKey(e.From, e.To, e.Kind)] = true
+	}
+	out := stored
+	for _, e := range s.derivedEdges() {
+		if ValidateEdge(e) != nil || have[edgeKey(e.From, e.To, e.Kind)] {
+			continue
+		}
+		have[edgeKey(e.From, e.To, e.Kind)] = true
+		e.Derived = true
+		out = append(out, e)
+	}
+	return out
 }
 
 // NewStore builds the record store. A nil writer is not silently tolerated:
@@ -187,7 +220,7 @@ func (s *Store) View() View {
 	// The network is loaded ONCE and every candidate's intro paths derive
 	// from that same graph — the inspector cannot show a route the network
 	// pane does not.
-	v.Network = NetworkView{People: s.LoadNetworkPeople().People(), Edges: s.LoadEdges().Edges()}
+	v.Network = NetworkView{People: s.LoadNetworkPeople().People(), Edges: s.networkEdges()}
 	for _, slug := range s.CandidateSlugs() {
 		d := s.LoadCandidate(slug)
 		c := d.View(slug, roleDocs[roleKey(d.Get("role"))])
@@ -860,3 +893,35 @@ func (s *Store) AddSeed(seed Seed, now time.Time) (Seed, error) {
 	}
 	return stored, nil
 }
+
+// PersonIdentity is one candidate as the graph needs to name them: the record
+// id, the display name, and the address that might match a calendar invite.
+type PersonIdentity struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email,omitempty"`
+}
+
+// Identities is the cheap read behind edge derivation: who is on the board and
+// what they answer to.
+//
+// ⚠ It must NEVER call View(). View derives paths from networkEdges(), which
+// asks the injected derivation, which asks who is on the board — so a View()
+// here is an infinite recursion that takes the process down on the first page
+// load. This reads the records directly, which is also all the caller needs.
+func (s *Store) Identities() []PersonIdentity {
+	out := []PersonIdentity{}
+	for _, slug := range s.CandidateSlugs() {
+		d := s.LoadCandidate(slug)
+		id := d.Get("id")
+		if id == "" {
+			id = CandidateID(slug)
+		}
+		out = append(out, PersonIdentity{ID: id, Name: d.Get("name"), Email: d.Profile()["email"]})
+	}
+	return out
+}
+
+// Connectors is the same cheap read for network/people.md — the rows a path
+// can start from — without deriving anything.
+func (s *Store) Connectors() []NetworkPerson { return s.LoadNetworkPeople().People() }

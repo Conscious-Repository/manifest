@@ -27,6 +27,9 @@ let recPeopleFacet = "considering"; // considering | known | everyone — the RO
 // never stored: the same rule the run head prints as `cleared`.
 function recRunCleared(run) { return !(run.drafts || []).some((d) => d.status === "new"); }
 let recShowCleared = false;         // the SOURCES list includes finished runs
+let recKnownOpen = false;   // the contacts picker is open
+let recKnown = null;        // its last fetch ({people, available} | {error})
+let recKnownQuery = "";
 let recPeopleShowArchived = false;  // `who I'd ask` includes the set-aside
 let recPersonEdit = null; // the connector id whose row is in edit mode
 let recPlaceQuery = "";   // PLACES search
@@ -823,7 +826,12 @@ function paintConnectors(board, foot) {
   }
   rows.forEach((p) => board.append(recConnectorRow(p)));
 
-  board.append(ghostInput("＋ someone I know", "aion-add", async (raw) => {
+  // THE PEOPLE YOU ALREADY KNOW. This list was hand-typed and two rows long
+  // while the app already knew 227 people from your own notes and calendar —
+  // which is why no intro path has ever had anywhere to start. Marking is a
+  // click on a name you already have, not a name retyped (owner, 2026-09-05).
+  board.append(recKnownPicker());
+  board.append(ghostInput("＋ someone not in your notes", "aion-add", async (raw) => {
     const name = raw.trim();
     if (!name) return;
     if (await recWrite("/api/aion/recruiting/intake", { dest: "network", name }, "POST", name + " added")) renderAion();
@@ -919,6 +927,77 @@ function recConnectorEditor(p, row) {
   acts.append(ok, no);
   row.append(acts);
   return row;
+}
+
+// recKnownPicker — the contacts you have not marked yet. Lazy: the list is
+// only fetched when you open it, because it is a read of 227 people and the
+// connectors list is useful without it.
+function recKnownPicker() {
+  const wrap = el("div", "rec-known");
+  const head = el("button", "rec-linkish", recKnownOpen ? "▾ from your contacts" : "▸ mark someone from your contacts");
+  head.onclick = () => {
+    recKnownOpen = !recKnownOpen;
+    if (recKnownOpen && recKnown === null) recLoadKnown();
+    else if (recPaint) recPaint();
+  };
+  wrap.append(head);
+  if (!recKnownOpen) return wrap;
+
+  if (recKnown === null) { wrap.append(el("div", "rec-foot", "reading your contacts…")); return wrap; }
+  if (recKnown.error) { wrap.append(el("div", "rec-scaffold-err", recKnown.error)); return wrap; }
+  if (!recKnown.available) {
+    wrap.append(el("div", "rec-foot", recKnown.note || "no contacts layer here"));
+    return wrap;
+  }
+
+  const find = el("input", "pp-in rec-known-find");
+  find.type = "search";
+  find.placeholder = "search your " + (recKnown.count || 0) + " contacts…";
+  find.value = recKnownQuery;
+  find.oninput = () => { recKnownQuery = find.value; if (recPaint) recPaint(); };
+  wrap.append(find);
+
+  const q = recKnownQuery.trim().toLowerCase();
+  const rows = (recKnown.people || [])
+    .filter((p) => !p.marked)
+    .filter((p) => !q || (p.name || "").toLowerCase().includes(q))
+    .slice(0, q ? 40 : 12);
+  const list = el("div", "rec-known-list");
+  rows.forEach((p) => {
+    const b = el("button", "rec-known-row");
+    b.append(el("span", "rec-known-name", p.name));
+    // last-met is the honest sort key and the honest label: the calendar
+    // verified it, and a contact with none says so rather than looking stale
+    b.append(el("span", "rec-known-when", p.lastMet ? "met " + p.lastMet : "no meeting on record"));
+    b.title = "mark " + p.name + " as someone you'd ask — an intro path can then start from them";
+    b.onclick = async () => {
+      b.disabled = true;
+      if (await recWrite("/api/aion/recruiting/network/mark", { key: p.key, name: p.name }, "POST", p.name + " is someone you'd ask")) {
+        recKnown = null;
+        renderAion();
+      } else { b.disabled = false; }
+    };
+    list.append(b);
+  });
+  if (!rows.length) list.append(emptyRow(q ? "nobody matches" : "everyone in your contacts is already marked"));
+  wrap.append(list);
+  if (!q && (recKnown.people || []).filter((p) => !p.marked).length > rows.length) {
+    wrap.append(el("div", "rec-foot", "the " + rows.length + " you saw most recently — search for anyone else"));
+  }
+  return wrap;
+}
+
+async function recLoadKnown() {
+  recKnown = null;
+  if (recPaint) recPaint();
+  try {
+    const r = await fetch("/api/aion/recruiting/people/known");
+    if (!r.ok) throw new Error((await r.text()).slice(0, 140));
+    recKnown = await r.json();
+  } catch (e) {
+    recKnown = { error: "couldn't read your contacts — " + (e.message || "error") };
+  }
+  if (recPaint) recPaint();
 }
 
 // ---- PLACES — the things you sweep FROM ----

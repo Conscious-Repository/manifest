@@ -116,7 +116,20 @@ type upcomingIndex struct {
 // attendee email, so a 24-month calendar pull is not repeated per render.
 type meetingIndex struct {
 	byEmail map[string][]meetingRef // email-lower → its meetings (deduped by date)
+	// parties is the same pull seen the other way round: one entry per
+	// meeting with the addresses that were on it. Built in the SAME pass, so
+	// asking "who else was in the room" costs no extra calendar call.
+	parties []MeetingParty
 	builtAt time.Time
+}
+
+// MeetingParty is one past meeting and who was on it — the shape a
+// co-attendance derivation needs. Emails only: a name on an invite is not an
+// identity, and the caller resolves addresses to people itself.
+type MeetingParty struct {
+	Date   string   `json:"date"`
+	Title  string   `json:"title"`
+	Emails []string `json:"emails"`
 }
 
 // meetingRef is one past calendar meeting (date + title) for the Meetings section.
@@ -1239,9 +1252,19 @@ func (s *Service) meetingsByEmail(now time.Time) map[string][]meetingRef {
 		return m.byEmail
 	}
 	byEmail := map[string][]meetingRef{}
+	var parties []MeetingParty
 	seen := map[string]map[string]bool{} // email → date → already recorded
 	for _, ev := range s.cal.PastMeetings(now, pastMeetingWindowDays) {
 		date := ev.Start.Format("2006-01-02")
+		party := MeetingParty{Date: date, Title: ev.Title}
+		for _, a := range ev.Attendees {
+			if em := strings.ToLower(strings.TrimSpace(a.Email)); em != "" {
+				party.Emails = append(party.Emails, em)
+			}
+		}
+		if len(party.Emails) > 0 {
+			parties = append(parties, party)
+		}
 		for _, a := range ev.Attendees {
 			em := strings.ToLower(strings.TrimSpace(a.Email))
 			if em == "" {
@@ -1257,8 +1280,21 @@ func (s *Service) meetingsByEmail(now time.Time) map[string][]meetingRef {
 			byEmail[em] = append(byEmail[em], meetingRef{Date: date, Title: ev.Title})
 		}
 	}
-	s.meetings = &meetingIndex{byEmail: byEmail, builtAt: now}
+	s.meetings = &meetingIndex{byEmail: byEmail, parties: parties, builtAt: now}
 	return byEmail
+}
+
+// PastMeetingParties is every past meeting with the addresses on it, from the
+// same TTL-cached pull "last met" already does. Empty when no calendar is
+// connected — a caller must treat that as "unknown", never as "never met".
+func (s *Service) PastMeetingParties(now time.Time) []MeetingParty {
+	s.meetingsByEmail(now) // builds (or refreshes) both projections
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.meetings == nil {
+		return nil
+	}
+	return append([]MeetingParty(nil), s.meetings.parties...)
 }
 
 // invalidateMeetings forces the next meeting lookup to rebuild (after an email

@@ -460,6 +460,11 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/network/person/{id...}", s.handleRecruitingPersonUpdate)
 			mux.HandleFunc("DELETE /api/aion/recruiting/network/person/{id...}", s.handleRecruitingPersonDelete)
 			mux.HandleFunc("DELETE /api/aion/recruiting/network/edge", s.handleRecruitingEdgeDelete)
+			// the people you already know (recruiting_people.go): the picker
+			// over the vault's contacts, and the mark that makes one of them a
+			// path origin
+			mux.HandleFunc("GET /api/aion/recruiting/people/known", s.handleRecruitingKnownPeople)
+			mux.HandleFunc("POST /api/aion/recruiting/network/mark", s.handleRecruitingMarkKnown)
 			mux.HandleFunc("GET /api/aion/recruiting/passed", s.handleRecruitingPassedList)
 			mux.HandleFunc("DELETE /api/aion/recruiting/passed/{key...}", s.handleRecruitingPassedDelete)
 			// the applicant's own submitted file, by artifact hash. `{hash...}`

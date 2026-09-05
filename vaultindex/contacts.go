@@ -448,3 +448,90 @@ func (ix *Index) NoteZone(rel string) string {
 // VaultRoot exposes the indexed vault root (the contacts service reads note
 // bodies directly for the raw-markdown editor).
 func (ix *Index) VaultRoot() string { return ix.cfg.VaultRoot }
+
+// PeopleByEmail is the REVERSE of Emails: every address the vault knows,
+// lowercased, mapped to the person entity it belongs to. One query instead of
+// 227, because the caller that needs it — "who else was in that meeting" —
+// asks about every attendee of every meeting at once.
+//
+// Knowledge zone only, same as PeopleNotes: a system-zone record can never be
+// a person here.
+func (ix *Index) PeopleByEmail() (map[string]string, error) {
+	rows, err := ix.db.Query(`
+		SELECT em.email_lower, e.key FROM note_emails em
+		JOIN entities e ON e.note_path = em.path
+		JOIN notes n ON n.path = e.note_path
+		WHERE e.is_person = 1 AND ` + knowledgeSrcSQL)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var email, key string
+		if rows.Scan(&email, &key) == nil {
+			if email = strings.ToLower(strings.TrimSpace(email)); email != "" {
+				out[email] = key
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
+// CoMention is one note that links two or more people: the pair, and the note
+// that names them together.
+type CoMention struct {
+	A, B         string // person entity keys, A < B (the pair is unordered)
+	Path         string // the note that mentions both
+	Name         string
+	Date         string // "" when the note carries none
+	PeopleOnNote int    // how many people that note links — a roster is not a meeting
+}
+
+// CoMentions returns every pair of people mentioned together in one note,
+// newest note first, skipping notes that link more than `maxPeople`.
+//
+// ⚠ THE CAP IS THE WHOLE DESIGN. A note listing a department names thirty
+// people and would emit four hundred "pairs" that mean nothing; the same
+// guardrail the coauthor derivation uses (a 26-author paper claims no
+// relationship) applies here for the same reason. Above the cap the note is
+// a roster and contributes nothing.
+//
+// This says people were WRITTEN ABOUT TOGETHER — the weakest honest signal in
+// the system, and the caller marks every edge it builds from it as inferred.
+func (ix *Index) CoMentions(maxPeople int) ([]CoMention, error) {
+	if maxPeople < 2 {
+		maxPeople = 2
+	}
+	rows, err := ix.db.Query(`
+		WITH people_links AS (
+		  SELECT DISTINCT l.src_path, l.target_key
+		  FROM links l
+		  JOIN entities e ON e.key = l.target_key AND e.is_person = 1
+		  JOIN notes n ON n.path = l.src_path
+		  WHERE `+knowledgeSrcSQL+`
+		),
+		counted AS (
+		  SELECT src_path, COUNT(*) AS n FROM people_links GROUP BY src_path
+		)
+		SELECT a.target_key, b.target_key, n.path, n.name, n.date, c.n
+		FROM people_links a
+		JOIN people_links b ON a.src_path = b.src_path AND a.target_key < b.target_key
+		JOIN counted c ON c.src_path = a.src_path
+		JOIN notes n ON n.path = a.src_path
+		WHERE c.n <= ?
+		ORDER BY (n.date = '') ASC, n.date DESC, n.path ASC`, maxPeople)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CoMention
+	for rows.Next() {
+		var m CoMention
+		if err := rows.Scan(&m.A, &m.B, &m.Path, &m.Name, &m.Date, &m.PeopleOnNote); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

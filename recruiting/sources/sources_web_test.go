@@ -1025,7 +1025,7 @@ func TestWebRefusesLocalAndPrivateHosts(t *testing.T) {
 func TestWebPersonNameRefusesFormTemplates(t *testing.T) {
 	for _, s := range []string{
 		"Student's Name",
-		"Student’s Name",          // the curly apostrophe a CMS emits
+		"Student’s Name", // the curly apostrophe a CMS emits
 		"Student's Anticipated Degree",
 		"Your Name",
 		"First Last",

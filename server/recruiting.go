@@ -19,7 +19,12 @@ import (
 // express (server/aion_recruiting_leak_test.go pins that).
 
 // UseRecruiting wires the private scout records (beside UseFundraising).
-func (s *Server) UseRecruiting(r *recruiting.Store) { s.recruiting = r }
+func (s *Server) UseRecruiting(r *recruiting.Store) {
+	s.recruiting = r
+	// the record store cannot see the calendar or the note index; this hands
+	// it the claims only this layer can compute (recruiting_people.go)
+	s.wireRecruitingDerivedEdges()
+}
 
 // recruitingReady reports the service, answering 503 when it is absent so a
 // cockpit built without a vault degrades instead of panicking.

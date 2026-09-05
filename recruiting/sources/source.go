@@ -57,6 +57,22 @@ const (
 	EdgeAdvisor               EdgeType = "advisor"
 	EdgeReferralPathCandidate EdgeType = "referral_path_candidate"
 	EdgeImportedExport        EdgeType = "imported_export"
+
+	// Two kinds added 2026-09-05 for the derivations that read the owner's own
+	// life rather than a public index. Both are deliberate widenings of a
+	// closed set, and both exist because the alternative was to file them
+	// under a label that means something else — `owner_said` would claim the
+	// owner asserted a relationship he never asserted.
+	//
+	// EdgeSameMeeting: both people were on the same calendar invite, on a
+	// date. It claims they were in one room; it does NOT claim either would
+	// take the other's call.
+	EdgeSameMeeting EdgeType = "same_meeting"
+	// EdgeCoMentioned: one note links both people. The weakest claim in the
+	// set — a planning note naming two people is not a relationship between
+	// them — and the reason every edge built from it is inferred, low
+	// confidence, and names the note it came from.
+	EdgeCoMentioned EdgeType = "co_mentioned"
 )
 
 // EdgeTypes is the closed set, in the plan's declaration order.
@@ -64,6 +80,7 @@ var EdgeTypes = []EdgeType{
 	EdgeDirectKnown, EdgeOwnerSaid, EdgeCoauthor, EdgeCoinventor, EdgeCoworker,
 	EdgeSameLab, EdgeSameGrant, EdgeSameRepo, EdgeSameConference, EdgeSameCompany,
 	EdgeAdvisor, EdgeReferralPathCandidate, EdgeImportedExport,
+	EdgeSameMeeting, EdgeCoMentioned,
 }
 
 func ValidEdgeType(t EdgeType) bool {

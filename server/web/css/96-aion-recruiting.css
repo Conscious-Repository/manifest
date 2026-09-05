@@ -558,3 +558,20 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-facets { border-bottom: 0; padding-bottom: var(--sp-3); }
 .rec-net-row.archived { opacity: 0.55; }
 .rec-net-row.editing { flex-direction: column; align-items: stretch; gap: var(--sp-3); }
+
+/* the contacts picker — marking someone you already know, rather than
+   retyping a name the vault has held all along */
+.rec-known { padding: var(--sp-5) 0 var(--sp-3); }
+.rec-known .rec-linkish { padding: 0; }
+.rec-known-find { width: 100%; max-width: 420px; margin-top: var(--sp-3); }
+.rec-known-list { display: flex; flex-direction: column; gap: 0; margin-top: var(--sp-2); }
+.rec-known-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4);
+  width: 100%; max-width: 520px; text-align: left; cursor: pointer;
+  border: 0; border-bottom: 1px solid var(--line-soft); background: none;
+  padding: var(--sp-2) var(--sp-2); font: inherit; font-size: var(--fs-sm); color: var(--base-80);
+}
+.rec-known-row:hover { background: var(--base-05); color: var(--base-100); }
+.rec-known-row:disabled { opacity: 0.5; cursor: default; }
+.rec-known-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-known-when { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); flex: none; }
