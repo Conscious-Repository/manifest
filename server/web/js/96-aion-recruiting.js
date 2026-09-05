@@ -1341,9 +1341,12 @@ function recDraftExtKeys(dr) {
 function recDraftWhy(run, dr) {
   const scope = run.scope || {};
   const q = scope.query || ((scope.fields || {}).seed_url || "");
-  const ev = dr.evidence || [];
-  const said = ev.find((e) => e.sourceId === run.source && (e.snippet || "").trim())
-    || ev.find((e) => (e.snippet || "").trim());
+  const ev = (dr.evidence || []).filter((e) => (e.snippet || "").trim());
+  // what they DID outranks where they sit: the works/repo/grant row first,
+  // the affiliation row only when nothing else was quoted
+  const rank = { publication: 0, repo: 1, grant: 2, conference: 3, page: 4 };
+  const byKind = (a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
+  const said = ev.filter((e) => e.sourceId === run.source).sort(byKind)[0] || ev.slice().sort(byKind)[0];
   let s = run.source + (q ? " returned them for “" + q + "”" : " returned them");
   if (said) s += " — " + said.snippet.trim();
   else if (dr.note && dr.note !== dr.name) s += " — " + dr.note.trim();
@@ -1393,7 +1396,7 @@ function recDraftPathLine(d, dr) {
   if (edges.length) {
     const kinds = edges.map((e) => e.kind).filter((k, i, all) => k && all.indexOf(k) === i);
     row.append(el("span", "rec-draft-path-text",
-      edges.length + " edge" + (edges.length === 1 ? "" : "s") + " in the network name them" +
+      edges.length + " edge" + (edges.length === 1 ? " in the network names them" : "s in the network name them") +
       (kinds.length ? " (" + kinds.join(", ") + ")" : "") + " · an intro route derives once they are on the board"));
     const go = el("button", "rec-linkish", "open network view →");
     go.onclick = () => { recNetQuery = dr.name || ""; recNav("network"); };
@@ -1474,7 +1477,8 @@ function recDraftPass(run, d) {
   const pass = el("button", "pill light rec-draft-reject", "pass");
   pass.title = "pass on this person for this search — stays in the run cache, nothing is deleted";
   pass.onclick = () => {
-    const armed = el("button", "pill light armed rec-draft-reject", "pass on this search?");
+    // ink, not the red .pill.armed: a pass is reversible in spirit and deletes nothing
+    const armed = el("button", "pill light rec-draft-reject rec-draft-armed", "pass on this search?");
     armed.title = "confirms the pass — irrelevant here, too little evidence, or the wrong person";
     const cancel = el("button", "pill light", "keep");
     let timer = setTimeout(() => { armed.replaceWith(pass); cancel.remove(); }, 4000);
@@ -1566,14 +1570,18 @@ function recDraftCard(run, d) {
   // 5 · path (coverage)
   card.append(recDraftPathLine(d, dr));
 
-  // 6 · evidence — citations, deduped by address; the same project listed
-  // twice is one fact. Links already on the presence strip are not repeated.
+  // 6 · evidence — citations, deduped by address AND kind: the same grant
+  // listed twice is one fact, but an author record's affiliation row and its
+  // works row share one URL and are two. Links already on the presence strip
+  // are not repeated.
   const cites = [];
   const seen = {};
+  const seenKind = {};
   (dr.evidence || []).forEach((e) => {
     const u = (e.urlOrFile || "").trim();
-    if (u && seen[u]) return;
-    if (u) seen[u] = true;
+    const k = u + " " + (e.kind || "");
+    if (u && seenKind[k]) return;
+    if (u) { seen[u] = true; seenKind[k] = true; }
     cites.push(e);
   });
   const extra = (dr.links || []).map((u) => (u || "").trim())

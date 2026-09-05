@@ -440,9 +440,61 @@ a.rec-seed-name:hover { text-decoration: underline; }
 }
 .rec-draft-on:hover { text-decoration: underline; }
 .rec-draft-hint { padding-top: var(--sp-2); font-size: var(--fs-xs); color: var(--base-40); }
-.rec-draft-actions { display: flex; gap: var(--sp-2); padding-top: var(--sp-3); }
+.rec-draft-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); }
 .rec-draft-accept { color: var(--accent); }
 .rec-draft-reject { color: var(--base-70); }
+.rec-draft-cites.none { cursor: default; color: var(--base-40); }
+/* arm-then-confirm for pass — ink, like .rec-quiet-btn.armed; never the red
+   .pill.armed, because a pass deletes nothing */
+.pill.light.rec-draft-armed { border-color: var(--base-100); color: var(--base-100); font-weight: 600; }
+
+/* the decision card (enrichment Phase 2) — reading order: identity, labelled
+   presence, inferred expertise, why, path coverage, evidence, action. Every
+   claim that was inferred says so in words (dashed border = .rec-inferred
+   idiom); nothing on the card is a score. */
+.rec-draft.later { padding: var(--sp-2) var(--sp-5); opacity: 0.7; display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+.rec-draft.later .rec-draft-head { flex: 1; }
+.rec-draft.later .rec-draft-name { font-size: var(--fs-sm); }
+.rec-draft-later-mark { border: 1px dashed var(--base-30); border-radius: var(--radius); padding: 0 var(--sp-2); }
+/* presence strip — one labelled chip per class, the value a reader can
+   recognize (a host, a handle, an id), never a count of links */
+.rec-draft-contacts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-2); }
+.rec-draft-contact {
+  display: inline-flex; align-items: baseline; gap: var(--sp-2); max-width: 100%;
+  border: 1px solid var(--base-25); border-radius: var(--radius); padding: 0 var(--sp-2);
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--accent); text-decoration: none;
+}
+.rec-draft-contact:hover { border-color: var(--accent-soft); text-decoration: underline; }
+.rec-draft-contact .micro-label { color: var(--base-40); }
+.rec-draft-contact-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* expertise chips — a button each; `inferred` printed, not hovered */
+.rec-draft-topics { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); padding-top: var(--sp-2); }
+.rec-topic-chip {
+  display: inline-flex; align-items: baseline; gap: var(--sp-2); cursor: pointer;
+  border: 1px dashed var(--base-30); border-radius: var(--radius); background: none; padding: 0 var(--sp-2);
+  font: inherit; font-size: var(--fs-xs); color: var(--base-70); text-align: left;
+}
+.rec-topic-chip:hover { border-color: var(--base-70); color: var(--base-100); }
+.rec-topic-chip.on { border-style: solid; border-color: var(--base-70); color: var(--base-100); }
+.rec-topic-mark { color: var(--base-40); }
+.rec-topic-more, .rec-draft-topics-none {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50);
+}
+.rec-topic-more:hover { color: var(--base-100); text-decoration: underline; }
+.rec-draft-topics-none { cursor: default; color: var(--base-40); }
+/* a chip's evidence — the same citation rows, indented under the strip */
+.rec-topic-ev { margin-top: var(--sp-2); padding-left: var(--sp-4); border-left: 2px solid var(--base-25); }
+.rec-topic-ev .rec-ev-row:last-child { border-bottom: 0; }
+/* why + path — one sentence each, a micro-label in front */
+.rec-draft-why, .rec-draft-path {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2);
+  padding-top: var(--sp-2); font-size: var(--fs-xs); color: var(--base-60); min-width: 0;
+}
+.rec-draft-why-text, .rec-draft-path-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.rec-draft-path .rec-path-hops { flex: 0 1 auto; word-break: normal; overflow-wrap: anywhere; }
+.rec-draft-path.none { color: var(--base-40); }
+.rec-draft-path .rec-linkish { flex: none; padding: 0; }
 
 @media (max-width: 1100px) {
   .rec-rail { width: 150px; }
