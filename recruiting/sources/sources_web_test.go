@@ -811,7 +811,8 @@ func TestWebRefusesChromeAndServiceLabels(t *testing.T) {
 	if _, err := n.adapter().Search(context.Background(), webScope("https://martinos.example/research/", map[string]string{"depth": "1", "max_pages": "3"})); err != nil {
 		t.Fatal(err)
 	}
-	if !n.requested("https://martinos.example/impact/") {
+	// With an empty seed, people sections take the limited page budget.
+	if !n.requested("https://martinos.example/faculty/") || !n.requested("https://martinos.example/administrative-staff/") {
 		t.Errorf("chrome links not traversed: %v", n.pages())
 	}
 
@@ -1054,5 +1055,104 @@ func TestWebPersonNameKeepsRealPeople(t *testing.T) {
 		if !webPersonName(s) {
 			t.Errorf("%q is a person and must survive the template filter", s)
 		}
+	}
+}
+
+// An irrelevant home page must not spend its small budget on unrelated
+// navigation before the section that actually names people.
+func TestWebEmptySeedPrefersSection(t *testing.T) {
+	for _, link := range []string{
+		`<a href="/people">Meet us</a>`,
+		`<a href="/directory">Our Team</a>`,
+		`<a href="/directory" title="The Lab">Explore</a>`,
+		`<a href="/directory">Personnel</a>`,
+	} {
+		t.Run(link, func(t *testing.T) {
+			for _, tc := range []struct {
+				seedPerson   bool
+				depth, pages string
+				wantSection  bool
+			}{
+				{false, "1", "2", true},
+				{false, "0", "2", false},
+				{false, "1", "1", false},
+				{true, "1", "2", false},
+			} {
+				home := `<a href="/news">Updates</a>` + link
+				if strings.Contains(link, `"/people"`) {
+					home = `<a href="/news">Lab's New Directions</a>` + link
+				}
+				if tc.seedPerson {
+					home += `<h1>People</h1><h2>Dana Reyes</h2><p>Professor</p>`
+				}
+				card := `<h2>Michael Levin</h2><p>Principal Investigator</p>`
+				n := newWebNet().site("seed.example", map[string]string{
+					"/": home, "/news": "Updates", "/people": card, "/directory": card,
+				})
+				got, err := n.adapter().Search(context.Background(), webScope("https://seed.example/", map[string]string{"depth": tc.depth, "max_pages": tc.pages}))
+				if err != nil {
+					t.Fatal(err)
+				}
+				visited := n.requested("https://seed.example/people") || n.requested("https://seed.example/directory")
+				if visited != tc.wantSection {
+					t.Fatalf("%+v: pages=%v", tc, n.pages())
+				}
+				if tc.wantSection && (len(got) != 1 || got[0].Name != "Michael Levin") {
+					t.Fatalf("section candidates: %+v", got)
+				}
+				if tc.seedPerson && (len(got) != 1 || got[0].Name != "Dana Reyes" || !n.requested("https://seed.example/news")) {
+					t.Fatalf("populated seed changed: %+v, %v", got, n.pages())
+				}
+			}
+		})
+	}
+	for _, label := range []string{"steam", "collaborations"} {
+		if webLabSection(webLink{url: mustURL(t, "https://seed.example/"+label), text: label}) {
+			t.Errorf("spurious section: %s", label)
+		}
+	}
+}
+
+func TestWebJournalIsNotPerson(t *testing.T) {
+	names := []string{"Michael Levin", "Sherry Aw", "Brook Chernet", "Fallon Durant", "Gizem Gumuskaya", "Maria Lobikin"}
+	body := "<h1>People</h1>"
+	for _, name := range append(append([]string{}, names...), "Collective Intelligence", "Cell", "Nature", "Neuron", "Biological Journal", "Annual Conference") {
+		body += "<h2>" + name + "</h2><p>Founding Associate Editor</p>"
+	}
+	n := newWebNet().site("seed.example", map[string]string{"/people": body})
+	got, err := n.adapter().Search(context.Background(), webScope("https://seed.example/people", map[string]string{"depth": "0"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(names) {
+		t.Fatalf("drafts: %+v", got)
+	}
+	for i, name := range names {
+		if got[i].Name != name || got[i].Title != "Founding Associate Editor" {
+			t.Errorf("real editor lost: %+v", got[i])
+		}
+	}
+	// Do not reject a surname just because it can name a journal.
+	if !webPersonName("Alex Nature") || !webPersonName("Dana Cell") {
+		t.Fatal("overbroad journal filter")
+	}
+}
+
+func TestWebSectionRedirectToQueuedURL(t *testing.T) {
+	n := newWebNet().handler("seed.example", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		switch r.URL.Path {
+		case "/robots.txt":
+		case "/":
+			_, _ = w.Write([]byte(`<a href="/people">People</a><a href="/people/">People</a>`))
+		case "/people":
+			http.Redirect(w, r, "/people/", http.StatusMovedPermanently)
+		case "/people/":
+			_, _ = w.Write([]byte(`<h1>People</h1><h2>Michael Levin</h2><p>Professor</p>`))
+		}
+	}))
+	got, err := n.adapter().Search(context.Background(), webScope("https://seed.example/", map[string]string{"depth": "1", "max_pages": "2"}))
+	if err != nil || len(got) != 1 || got[0].Name != "Michael Levin" {
+		t.Fatalf("queued redirect lost people: %+v, %v; %v", got, err, n.pages())
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -136,7 +137,7 @@ var webSkipExt = map[string]bool{
 // matches it.
 var webLabSignals = []string{
 	"people", "team", "lab ", "laboratory", "faculty", "members", "staff",
-	"postdoc", "phd", "researcher", "research group", "our group",
+	"postdoc", "phd", "researcher", "research group", "our group", "roster", "personnel",
 }
 
 // webTitleCues are the words that make a line read as a title or role.
@@ -259,6 +260,10 @@ var webNameStop = map[string]bool{
 	"facebook": true, "twitter": true, "instagram": true, "linkedin": true, "github": true,
 	"youtube": true, "google": true, "email": true, "phone": true, "tel": true, "web": true,
 	"website": true, "cv": true, "resume": true, "bio": true, "profile": true,
+	"journal": true, "journals": true,
+	// Whole labels are checked separately; do not blacklist their individual
+	// words, which could also appear in a real printed name.
+	"collective intelligence": true,
 }
 
 // webNameParticles may appear lower-cased in the middle of a name.
@@ -284,9 +289,11 @@ func (Web) Scope() []ScopeField {
 // webFrontierItem is one URL waiting its turn, with where it came from.
 // The slice it lives in is local to Search.
 type webFrontierItem struct {
-	url   *url.URL
-	depth int
-	from  string
+	url         *url.URL
+	depth       int
+	from        string
+	section     bool
+	sectionPath bool
 }
 
 // Search performs the bounded traversal and returns the drafts it could
@@ -360,9 +367,12 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 	frontier := []webFrontierItem{{url: seed, depth: 0, from: "seed"}}
 	visited := map[string]bool{seed.String(): true}
 	robots := map[string]*webRobots{}
+	processed := map[string]bool{} // queued URLs are not yet processed pages
 	var out []CandidateDraft
 	seen := map[string]bool{} // page URL + name, so a card quoted twice is one draft
 	fetched := 0
+	emptySeed := false
+	seedHost := seed.Hostname()
 
 	for len(frontier) > 0 && fetched < maxPages && len(out) < maxDrafts {
 		if err := ctx.Err(); err != nil {
@@ -371,6 +381,9 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 		item := frontier[0]
 		frontier = frontier[1:]
 
+		if processed[item.url.String()] {
+			continue
+		}
 		if !w.allowedByRobots(ctx, robots, item.url) {
 			continue
 		}
@@ -384,16 +397,16 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 			// skipped, the budget is spent, the run goes on
 			continue
 		}
-		if page.url.String() != item.url.String() {
-			// a redirect landed somewhere else — that is the page we hold
-			key := page.url.String()
-			if visited[key] {
-				continue
-			}
-			visited[key] = true
+		// A redirect may land on a URL already queued (e.g. /people →
+		// /people/). Only a page actually processed can be skipped.
+		key := page.url.String()
+		if processed[key] {
+			continue
 		}
+		processed[key] = true
+		visited[key] = true
 
-		relevant := page.relevant(terms)
+		relevant := page.relevant(terms) || item.section
 		if relevant {
 			for _, d := range w.drafts(page, item, s.Role) {
 				k := page.url.String() + "\x00" + strings.ToLower(d.Name)
@@ -406,6 +419,11 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 					break
 				}
 			}
+		}
+
+		if item.depth == 0 {
+			emptySeed = len(out) == 0
+			seedHost = page.url.Hostname()
 		}
 
 		if item.depth >= maxDepth {
@@ -425,10 +443,41 @@ func (w Web) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
 				continue
 			}
 			visited[key] = true
-			frontier = append(frontier, webFrontierItem{url: l.url, depth: item.depth + 1, from: page.url.String()})
+			section := emptySeed && len(out) == 0 &&
+				strings.EqualFold(page.url.Hostname(), seedHost) &&
+				strings.EqualFold(l.url.Hostname(), seedHost) && webLabSection(l)
+			frontier = append(frontier, webFrontierItem{url: l.url, depth: item.depth + 1, from: page.url.String(), section: section, sectionPath: section && webLabSection(webLink{url: l.url})})
+		}
+		if emptySeed && len(out) == 0 {
+			// Prefer section links within each breadth-first depth, preserving
+			// discovery order otherwise. No extra hops or page budget.
+			sort.SliceStable(frontier, func(i, j int) bool {
+				if frontier[i].depth != frontier[j].depth {
+					return frontier[i].depth < frontier[j].depth
+				}
+				if frontier[i].sectionPath != frontier[j].sectionPath {
+					return frontier[i].sectionPath
+				}
+				return frontier[i].section && !frontier[j].section
+			})
 		}
 	}
 	return out, nil
+}
+
+// webLabSection matches whole words in a link's path, text or title, so
+// "collaborations" and "steam" do not accidentally become lab/team links.
+func webLabSection(l webLink) bool {
+	words := strings.FieldsFunc(strings.ToLower(l.url.Path+" "+l.text+" "+l.title), func(r rune) bool {
+		return !unicode.IsLetter(r)
+	})
+	text := " " + strings.Join(words, " ") + " "
+	for _, signal := range webLabSignals {
+		if strings.Contains(text, " "+strings.TrimSpace(signal)+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 // Enrich is a no-op: the traversal already read everything it is allowed
@@ -735,8 +784,9 @@ type webLine struct {
 }
 
 type webLink struct {
-	url  *url.URL
-	text string
+	url   *url.URL
+	text  string
+	title string
 }
 
 // fetch GETs one URL, refuses to follow a redirect anywhere the filters
@@ -932,7 +982,7 @@ func (p *webPage) extract(doc *html.Node) {
 		if tag == "a" {
 			if href := p.resolve(webAttr(n, "href")); href != nil {
 				curLinks = append(curLinks, href.String())
-				p.links = append(p.links, webLink{url: href, text: strings.Join(strings.Fields(webText(n)), " ")})
+				p.links = append(p.links, webLink{url: href, text: strings.Join(strings.Fields(webText(n)), " "), title: webAttr(n, "title")})
 			}
 			inAnchor = true
 		}
@@ -1151,7 +1201,7 @@ func webSplitInline(text string) []string {
 // a role word may close a name that carries an initial and three or more
 // tokens ("Jane Q. Researcher"), since no menu label is written that way.
 func webPersonName(s string) bool {
-	if s == "" || len([]rune(s)) > webMaxNameRunes {
+	if s == "" || len([]rune(s)) > webMaxNameRunes || webNameStop[strings.ToLower(strings.Join(strings.Fields(s), " "))] {
 		return false
 	}
 	// a possessive is a label's grammar, not a name's ("Student's Name",

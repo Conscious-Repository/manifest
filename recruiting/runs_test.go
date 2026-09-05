@@ -6,7 +6,9 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -860,5 +862,28 @@ func TestSourcesPackageStaysWriteless(t *testing.T) {
 				return true
 			})
 		}
+	}
+}
+
+type emptyWebTransport struct{}
+
+func (emptyWebTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body := "<html><p>Welcome to our website.</p></html>"
+	if req.URL.Path == "/robots.txt" {
+		body = "User-agent: *\nAllow: /\n"
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"text/html"}}, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+}
+
+func TestEmptyWebRunPersistsHonestNote(t *testing.T) {
+	rs, _, _ := testRunStore(t, nil)
+	rs.Register(sources.Web{Client: http.Client{Transport: emptyWebTransport{}}, Delay: -1})
+	run := mustRun(t, rs, RunRequest{Source: "web", Query: "bioelectricity", Fields: map[string]string{"seed_url": "https://seed.example/"}})
+	if run.Counts.Fetched != 0 || len(run.Drafts) != 0 || !strings.Contains(run.Note, "/people") || !strings.Contains(run.Note, "crawl limits") {
+		t.Fatalf("empty run lacks honest signal: %+v", run)
+	}
+	saved, err := rs.Get(run.ID)
+	if err != nil || saved.Note != run.Note {
+		t.Fatalf("note not persisted: %+v, %v", saved, err)
 	}
 }

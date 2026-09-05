@@ -74,6 +74,7 @@ type RunState struct {
 	Counts    RunCounts     `json:"counts"`
 	Cursor    string        `json:"cursor,omitempty"`
 	Pinned    bool          `json:"pinned"`
+	Note      string        `json:"note,omitempty"`
 	// TriagedAt is set once nothing in the queue is still `new` — for every
 	// run alike, since a preview's drafts accept too. It starts the D14 clock.
 	TriagedAt time.Time `json:"triagedAt,omitzero"`
@@ -282,6 +283,9 @@ func (r *RunStore) ExecuteTracked(ctx context.Context, req RunRequest, now time.
 		ID: runID, Source: adapter.ID(), Scope: scope, StartedAt: now.UTC(),
 	}}
 	run.Counts.Fetched = len(drafts)
+	if adapter.ID() == "web" && len(drafts) == 0 {
+		run.Note = "No person-shaped content with a supported role was accepted from this web seed within the crawl limits. Consider seeding the /people, /members or /lab page directly; pages may also have been unavailable or blocked."
+	}
 	existing := r.store.candidateIndex()
 	// a person already declined does not come back as `new`. Suppression is a
 	// SEARCH-TIME filter, not a folder (LinkedIn's hidden candidates,
