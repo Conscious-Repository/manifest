@@ -30,6 +30,75 @@ import (
 // with the same resolution AND looks the thing up, so keeping a second route
 // that returns half the answer was a way to get a different one.
 
+// ---- the fetched half of the typing cascade (surface plan §4) ----
+
+// The two questions a fetch can settle, as the smallest interfaces that ask
+// them. The adapters implement these (sources.Web.ProbeTypes,
+// sources.GitHub.AccountType); naming them here keeps the handler testable
+// with a stub and keeps the server from importing an adapter by name.
+type typeProber interface {
+	ProbeTypes(ctx context.Context, url string) (sources.PageTypes, error)
+}
+
+type accountProber interface {
+	AccountType(ctx context.Context, login string) (string, error)
+}
+
+// intakeProbeTimeout bounds the ONE extra GET a typing probe costs. It is
+// deliberately shorter than the preview's own budget: a probe that has to be
+// waited on has already failed at its job, which is to answer before the
+// owner has finished reading the scaffold.
+const intakeProbeTimeout = 8 * time.Second
+
+// refineIntake runs rungs 3–5 when — and only when — the pure rungs left the
+// question open. A resolution that already knows what it is (a DOI, an ORCID
+// iD, a repo) costs nothing: no request is made at all.
+//
+// Every failure is silent by design. A probe is an ADDITION to an answer we
+// already have; a lab site that 404s, blocks robots or ships broken JSON-LD
+// leaves the owner exactly the scaffold they would have had, rather than an
+// error about a request they did not ask for.
+func (s *Server) refineIntake(ctx context.Context, res recruiting.Resolution) recruiting.Resolution {
+	if s.recruitingRuns == nil || res.Certain() {
+		return res
+	}
+	ctx, cancel := context.WithTimeout(ctx, intakeProbeTimeout)
+	defer cancel()
+
+	// rung 4 — github.com/<login>: the one ambiguity a URL genuinely cannot
+	// settle, and GitHub answers it in one call
+	if res.Kind == "github-user" && res.Handle != "" {
+		if a, ok := s.recruitingRuns.Adapter("github"); ok {
+			if p, ok := a.(accountProber); ok {
+				if kind, err := p.AccountType(ctx, res.Handle); err == nil {
+					return recruiting.RefineWithAccount(res, kind)
+				}
+			}
+		}
+		return res
+	}
+
+	// rungs 3 and 5 — ask the page what it is. Only pages: a LinkOnly
+	// resolution is one nothing here may fetch (D12), and a resolution with
+	// no URL has no page to ask.
+	if res.URL == "" || res.LinkOnly {
+		return res
+	}
+	a, ok := s.recruitingRuns.Adapter("web")
+	if !ok {
+		return res
+	}
+	p, ok := a.(typeProber)
+	if !ok {
+		return res
+	}
+	types, err := p.ProbeTypes(ctx, res.URL)
+	if err != nil {
+		return res
+	}
+	return recruiting.RefineWithPage(res, types)
+}
+
 // intakePreviewTimeout bounds the one or two GETs a preview costs. It is well
 // under the request's own patience: a preview that has to be waited on is a
 // run, and runs have a queue.
@@ -54,8 +123,11 @@ func (s *Server) handleRecruitingIntakePreview(w http.ResponseWriter, r *http.Re
 		httpError(w, errBadRequest("paste a link or a name"))
 		return
 	}
-	res := recruiting.ResolveIntake(b.Text)
-	out := map[string]any{"resolution": res}
+	res := s.refineIntake(r.Context(), recruiting.ResolveIntake(b.Text))
+	// `certain` rides beside the resolution rather than being recomputed in
+	// the client: one fact, one spelling. It is what decides whether the
+	// scaffold presents an answer or a question.
+	out := map[string]any{"resolution": res, "certain": res.Certain()}
 	if s.recruitingRuns == nil {
 		out["note"] = "the source adapters are not wired here — nothing to look up"
 		writeJSON(w, out)
@@ -105,8 +177,14 @@ func intakePreviewTarget(res recruiting.Resolution) (id, ref string) {
 			return "openalex", res.DOI
 		}
 		return "openalex", res.URL
+	case "arxiv":
+		// an arXiv id IS a DOI in the 10.48550 prefix, so the paper is looked
+		// up the same way every other paper is
+		return "openalex", res.DOI
 	case "openalex":
 		return "openalex", res.URL
+	case "ror":
+		return "web", res.URL
 	case "orcid":
 		if res.ORCID != "" {
 			return "openalex", res.ORCID

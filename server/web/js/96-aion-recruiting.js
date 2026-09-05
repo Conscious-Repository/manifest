@@ -444,6 +444,8 @@ async function recIntakeLook(text) {
       feed: (p && p.feed) || "",
       class: res.class || "",
       dest: res.dest || "seed",
+      certain: !!d.certain,
+      allClasses: false,
       role: recRoleId(),
       known: false, knownVia: "",
       profileField: recIntakeProfileField(res),
@@ -610,6 +612,41 @@ function recScaffoldPoll(id, forText) {
   setTimeout(tick, 2500);
 }
 
+// recScaffoldClassChips paints the class choice the way the server RANKED it:
+// what it decided, then the alternatives it named, then everything else behind
+// `other…`. Six equal chips asked the owner to redo the ranking the cascade
+// had already done — and made a certain answer look as doubtful as a guess.
+function recScaffoldClassChips(res) {
+  const all = recCache.seedClasses || [];
+  const lead = [];
+  const push = (c) => { if (c && all.indexOf(c) >= 0 && lead.indexOf(c) < 0) lead.push(c); };
+  push(res.class);
+  (res.suggest || []).forEach(push);
+  if (!lead.length) all.forEach(push);
+  const rest = all.filter((c) => lead.indexOf(c) < 0);
+
+  const row = el("div", "rec-scaffold-classes");
+  row.append(el("span", "micro-label", res.class ? "IS A" : "IS IT A"));
+  const chip = (cls) => {
+    const b = el("button", "filter-chip" + (recIntake.class === cls ? " on" : ""), cls);
+    b.onclick = () => {
+      recIntake.class = cls;
+      recIntake.dest = cls === "person" ? "candidate" : "seed";
+      if (recPaint) recPaint();
+    };
+    return b;
+  };
+  lead.forEach((c) => row.append(chip(c)));
+  if (rest.length && !recIntake.allClasses) {
+    const more = el("button", "linkish rec-scaffold-more", "other\u2026");
+    more.onclick = () => { recIntake.allClasses = true; if (recPaint) recPaint(); };
+    row.append(more);
+  } else {
+    rest.forEach((c) => row.append(chip(c)));
+  }
+  return row;
+}
+
 function recIntakeBox() {
   const box = el("section", "rec-intake");
   const input = el("input", "pp-in rec-intake-in");
@@ -642,27 +679,24 @@ function recIntakeBox() {
   }
   const res = recIntake.res || {};
 
-  // what it decided, and why — never a toast telling you to retype
+  // what it decided, why, and WHICH RUNG decided — a guess you can see the
+  // basis of is one you can correct; a guess you cannot is one you must catch
   const why = el("div", "rec-scaffold-why");
   why.append(el("span", "rec-scaffold-paste", recIntake.text));
   why.append(el("span", "", res.why || ""));
+  // NOT a badge repeating the rung: `why` already names its own basis ("a
+  // DOI…", "the page says…", "GitHub says…", "reads as a lab"). The one thing
+  // that sentence cannot carry is whether you have to check it, so that is
+  // the only thing the marker says — and it says nothing when the answer is
+  // settled (docs/ui-conventions.md: an absence shows only when it changes
+  // the call).
+  if (res.class && !recIntake.certain) why.append(el("span", "rec-rung", "best guess"));
+  else if (!res.class) why.append(el("span", "rec-rung", "pick one"));
   card.append(why);
   if (recIntake.err) card.append(el("div", "rec-scaffold-err", recIntake.err));
   else if (recIntake.note) card.append(el("div", "rec-scaffold-note", recIntake.note));
 
-  // class — the resolved one is on; every other class is one click away
-  const classes = el("div", "rec-scaffold-classes");
-  classes.append(el("span", "micro-label", "IS A"));
-  (recCache.seedClasses || []).forEach((cls) => {
-    const b = el("button", "filter-chip" + (recIntake.class === cls ? " on" : ""), cls);
-    b.onclick = () => {
-      recIntake.class = cls;
-      recIntake.dest = cls === "person" ? "candidate" : "seed";
-      if (recPaint) recPaint();
-    };
-    classes.append(b);
-  });
-  card.append(classes);
+  card.append(recScaffoldClassChips(res));
 
   // where it lands. Only a person has a choice to make.
   if (recIntake.class === "person") {

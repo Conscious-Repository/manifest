@@ -592,3 +592,16 @@ a.rec-place-name:hover { text-decoration: underline; }
 /* the hand-built run, one fold down */
 .rec-advanced { padding-top: var(--sp-6); border-top: 1px solid var(--line-soft); margin-top: var(--sp-6); }
 .rec-advanced .rec-linkish { padding: 0; }
+
+/* the cascade's confidence line: WHICH rung decided. A derived answer that
+   cannot show its basis reads exactly like a guess, so the basis is on the
+   face — quiet when it is a guess, and quieter still when it is not. */
+.rec-rung {
+  font-family: var(--mono); font-size: var(--fs-2xs);
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--base-50); border: 1px solid var(--line-soft);
+  border-radius: var(--radius); padding: 0 var(--sp-2);
+  white-space: nowrap;
+}
+
+.rec-scaffold-more { font-size: 11px; }

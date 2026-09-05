@@ -209,6 +209,27 @@ func (g GitHub) profile(ctx context.Context, login string) (githubUser, error) {
 	return u, nil
 }
 
+// AccountType answers rung 4 of the intake cascade: github.com/<login> is a
+// person or an organisation, and only GitHub knows which. It is the one place
+// in the cascade where a single cheap API call settles an ambiguity the URL
+// genuinely cannot — github.com/numpy and github.com/torvalds are the same
+// shape. Returns "User", "Organization", or whatever GitHub said; an error is
+// the caller's cue to keep the guess it already had.
+func (g GitHub) AccountType(ctx context.Context, login string) (string, error) {
+	login = strings.TrimSpace(login)
+	if login == "" {
+		return "", fmt.Errorf("github: no login to look up")
+	}
+	u, err := g.profile(ctx, login)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(u.Type) == "" {
+		return "", fmt.Errorf("github: %s carries no account type", login)
+	}
+	return strings.TrimSpace(u.Type), nil
+}
+
 // draft converts one (possibly profile-enriched) hit into a draft. Every
 // draft is cited: the profile page is the URL, and the one row quotes
 // exactly the fields GitHub returned.
