@@ -72,6 +72,11 @@ type Config struct {
 // expected to carry their own Request.TimeoutSeconds.
 const DefaultTimeout = 8 * time.Minute
 
+// pipeGrace is how long Run waits, after the deadline has killed the CLI (or
+// the CLI has exited), for its stdout/stderr pipes to close before closing
+// them itself (exec.Cmd.WaitDelay). A variable so the test can shorten it.
+var pipeGrace = 5 * time.Second
+
 // Runner invokes the Hermes CLI. Safe for concurrent use (each Run is its own
 // process and its own fresh Hermes session).
 type Runner struct {
@@ -221,6 +226,14 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
+	// The deadline kills the CLI, but Run's Wait also waits for the stdout /
+	// stderr pipes to close — and a tool subprocess the CLI left behind (a
+	// shell, a watcher) inherits them. Without a grace bound, a timed-out turn
+	// whose grandchild lingers holds the turn "running" for as long as that
+	// grandchild lives: no ⚠ comment, the turn-open marker never closes, the
+	// todo refuses the next turn as busy. After the grace the pipes are
+	// closed and Wait returns; the error is still the timed-out one.
+	cmd.WaitDelay = pipeGrace
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			return Result{}, fmt.Errorf("hermes turn timed out after %s", timeout)

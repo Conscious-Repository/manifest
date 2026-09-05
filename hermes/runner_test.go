@@ -206,6 +206,30 @@ func TestRunTimeoutEnforced(t *testing.T) {
 	}
 }
 
+// TestRunTimeoutSurvivesAnOrphanHoldingStdout pins the pipe grace: a stub
+// that forks a background child (a tool subprocess the CLI leaves behind)
+// and then outlives its 1s budget is killed at the deadline, and Run returns
+// within the grace — not when the orphan lets go of stdout 30s later.
+func TestRunTimeoutSurvivesAnOrphanHoldingStdout(t *testing.T) {
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "hermes-orphan")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nsleep 30 &\nsleep 30\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	was := pipeGrace
+	pipeGrace = 500 * time.Millisecond
+	defer func() { pipeGrace = was }()
+	r := NewRunner(Config{Enabled: true, Bin: stub})
+	start := time.Now()
+	_, err := r.Run(context.Background(), Request{Prompt: "orphan", TimeoutSeconds: 1})
+	if err == nil || !strings.Contains(err.Error(), "hermes turn timed out after 1s") {
+		t.Fatalf("err = %v, want the timed-out error", err)
+	}
+	if el := time.Since(start); el > 4*time.Second {
+		t.Errorf("Run waited on the orphan's stdout (took %s) — the pipe grace did not bound Wait", el)
+	}
+}
+
 // TestRunWithStub points the runner at a stub that mimics `hermes -z`: it prints
 // a reply on stdout and writes a usage report to the --usage-file path — so we
 // exercise exec, stdout capture, and usage parsing (cost, model, session id)

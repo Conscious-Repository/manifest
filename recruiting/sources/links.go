@@ -102,11 +102,23 @@ func ClassifyLink(raw string) (LinkKind, string) {
 	if host == "" {
 		return "", raw
 	}
+	segs := pathSegments(u.Path)
 	switch {
 	case hostIs(host, "linkedin.com"):
-		return LinkLinkedIn, raw
+		// a PROFILE is /in/<handle> (or the older /pub/<handle>/…); a company,
+		// school, job or post page on the same host is a page about something
+		// else and is `site` — never printed as the person's LinkedIn
+		if len(segs) >= 2 && (segs[0] == "in" || segs[0] == "pub") {
+			return LinkLinkedIn, raw
+		}
+		return LinkSite, raw
 	case host == "github.com":
-		return LinkGitHub, raw
+		// a profile is github.com/<login>; github.com/<owner>/<repo> names a
+		// repo (an org's, as often as not) and is `site`
+		if len(segs) == 1 {
+			return LinkGitHub, raw
+		}
+		return LinkSite, raw
 	case host == "orcid.org":
 		return LinkORCID, raw
 	}
@@ -121,16 +133,21 @@ func ClassifyLink(raw string) (LinkKind, string) {
 	if strings.Contains(host, "~") || strings.Contains(u.Path, "~") {
 		return LinkSite, raw
 	}
-	depth := 0
-	for _, seg := range strings.Split(strings.Trim(u.Path, "/"), "/") {
-		if seg != "" {
-			depth++
-		}
-	}
-	if depth > linkPathDepthHomepage {
+	if len(segs) > linkPathDepthHomepage {
 		return LinkSite, raw
 	}
 	return LinkHomepage, raw
+}
+
+// pathSegments is the non-empty, lower-cased segments of a URL path.
+func pathSegments(p string) []string {
+	var out []string
+	for _, seg := range strings.Split(strings.Trim(p, "/"), "/") {
+		if seg != "" {
+			out = append(out, strings.ToLower(seg))
+		}
+	}
+	return out
 }
 
 // hostIs reports whether host is domain or a subdomain of it.

@@ -15,7 +15,22 @@ func TestClassifyLinkSortsByHostAndNeverGuesses(t *testing.T) {
 		{"https://linkedin.com/in/dana-reyes/", LinkLinkedIn},
 		{"https://uk.linkedin.com/in/dana-reyes", LinkLinkedIn},
 		{"https://github.com/dreyes", LinkGitHub},
+		{"https://github.com/dreyes/", LinkGitHub},
+		{"https://github.com/dreyes?tab=repositories", LinkGitHub},
 		{"https://orcid.org/0000-0002-1825-0097", LinkORCID},
+
+		// the same hosts, but not a person's profile: a company page, a job
+		// post, an org's repo — real pages, `site`, never the contact strip
+		{"https://www.linkedin.com/company/acme-labs", LinkSite},
+		{"https://www.linkedin.com/school/mit", LinkSite},
+		{"https://www.linkedin.com/jobs/view/123", LinkSite},
+		{"https://www.linkedin.com/posts/dana-reyes_mri-activity-1", LinkSite},
+		{"https://www.linkedin.com/", LinkSite},
+		{"https://www.linkedin.com/in/", LinkSite},
+		{"https://www.linkedin.com/pub/dana-reyes/1/2/3", LinkLinkedIn},
+		{"https://github.com/acme/tool", LinkSite},
+		{"https://github.com/acme/tool/issues/4", LinkSite},
+		{"https://github.com/", LinkSite},
 		{"https://ORCID.org/0000-0002-1825-0097", LinkORCID},
 
 		// a bare personal domain, shallow path → homepage

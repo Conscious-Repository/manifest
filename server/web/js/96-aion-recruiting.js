@@ -107,7 +107,14 @@ async function recSourcesPost(url, body, okMsg) {
     if (okMsg) showToast(okMsg);
     renderAion();
     return out;
-  } catch (e) { showToast(String(e.message || e).slice(0, 140), null, "error"); return null; }
+  } catch (e) {
+    showToast(String(e.message || e).slice(0, 140), null, "error");
+    // repaint from the state we still hold: a button the caller disabled
+    // while the request was out ("looking up…", the armed pass, "undo pass")
+    // must not stay dead on a card whose facts did not change
+    renderAion();
+    return null;
+  }
 }
 
 async function recPost(url, body, okMsg) {
@@ -1299,7 +1306,13 @@ function recDraftContacts(dr) {
   };
   if (dr.homepage) out.push({ label: "homepage", value: recHost(dr.homepage), url: dr.homepage });
   else if (dr.site) out.push({ label: "site", value: recHost(dr.site), url: dr.site });
-  if (dr.linkedin) out.push({ label: "linkedin", value: "in/" + tail(dr.linkedin, "/in/"), url: dr.linkedin });
+  if (dr.linkedin) {
+    // the profile path as LinkedIn spells it (in/…, pub/…): never "in/" glued
+    // onto a host when the URL is not a profile
+    let v = "";
+    try { v = new URL(dr.linkedin.trim()).pathname.replace(/^\/+|\/+$/g, ""); } catch (e) { v = ""; }
+    out.push({ label: "linkedin", value: v || recHost(dr.linkedin), url: dr.linkedin });
+  }
   if (dr.github) out.push({ label: "github", value: "@" + tail(dr.github, "github.com/"), url: dr.github });
   if (dr.orcid) out.push({ label: "orcid", value: tail(dr.orcid, "orcid.org/"), url: dr.orcid });
   return out;
@@ -1348,7 +1361,13 @@ function recDraftWhy(run, dr) {
   const byKind = (a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
   const said = ev.filter((e) => e.sourceId === run.source).sort(byKind)[0] || ev.slice().sort(byKind)[0];
   let s = run.source + (q ? " returned them for “" + q + "”" : " returned them");
-  if (said) s += " — " + said.snippet.trim();
+  if (said) {
+    let quote = said.snippet.trim();
+    // an author record's "· topics: a; b; c" tail is the chip strip above,
+    // already rendered — the sentence keeps the counts and drops the repeat
+    if ((dr.topics || []).length) quote = quote.replace(/\s*·\s*topics:.*$/i, "").trim() || quote;
+    s += " — " + quote;
+  }
   else if (dr.note && dr.note !== dr.name) s += " — " + dr.note.trim();
   else s += " — with no quoted evidence";
   return s;
@@ -1430,8 +1449,8 @@ function recDraftTopics(run, d, dr, key) {
   wrap.append(el("span", "micro-label", "expertise"));
   const topics = (dr.topics || []).map((t) => (t || "").trim()).filter(Boolean);
   if (!topics.length) {
-    const none = el("span", "rec-draft-topics-none", "no evidenced expertise yet");
-    none.title = "the source named no topics for this author record — missing, not absent";
+    const none = el("span", "rec-draft-topics-none", "no evidenced expertise yet · the source named none");
+    none.title = "no topics on this author record from any source asked so far — missing, not absent; look up asks the other indexes";
     wrap.append(none);
     return [wrap];
   }
@@ -1548,7 +1567,10 @@ function recDraftCard(run, d) {
   card.append(head);
 
   if (later) {
-    // set aside for this sitting: one line, and the way back
+    // set aside for this sitting: one line that says it is NOT a decision
+    // (the status chip still reads `new`; a reload brings it back), and the
+    // way back
+    head.append(el("span", "rec-draft-flag", "this sitting only · still new, not a decision"));
     const back = el("button", "rec-linkish", "bring back");
     back.onclick = () => { delete recDraftLater[key]; if (recPaint) recPaint(); };
     card.append(back);
@@ -1608,7 +1630,7 @@ function recDraftCard(run, d) {
   const seenKind = {};
   (dr.evidence || []).forEach((e) => {
     const u = (e.urlOrFile || "").trim();
-    const k = u + " " + (e.kind || "");
+    const k = u + "\u0000" + (e.kind || "");
     if (u && seenKind[k]) return;
     if (u) { seen[u] = true; seenKind[k] = true; }
     cites.push(e);
@@ -1666,8 +1688,10 @@ function recDraftCard(run, d) {
     const acts = el("div", "rec-draft-actions");
     const accept = el("button", "pill light rec-draft-accept", "accept");
     accept.title = "add this one draft to the board for this search, citations and all — accepting is not confirming every inferred chip";
-    accept.onclick = () => recSourcesPost(
-      "/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
+    accept.onclick = () => {
+      accept.disabled = true; // one record per press: a double-click is not two accepts
+      recSourcesPost("/api/aion/recruiting/sources/accept/" + run.id + "/" + d.id, {}, "candidate added from " + run.source);
+    };
     const look = el("button", "pill light", d.lookedUpAt ? "look up again" : "look up");
     look.title = "ask the other public indexes (openalex, orcid, github, pubmed) about this exact name";
     look.onclick = () => {

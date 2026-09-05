@@ -291,8 +291,44 @@ func (r *RunStore) project(run Run, f *PathFinder) Run {
 		if len(d.Paths) == 0 {
 			d.Paths = nil
 		}
+		// a queue looked up before Topics existed (Phase 1) holds the chips
+		// only inside its author-record snippet; read them back out so the
+		// card (and an accept's knowledge claims) see what the evidence says
+		if len(d.Draft.Topics) == 0 {
+			d.Draft.Topics = topicsFromEvidence(d.Draft)
+		}
 	}
 	return run
+}
+
+// topicsFromEvidence recovers a draft's topics from its publication rows'
+// verbatim "topics: a; b; c" segment (the OpenAlex author record — the same
+// author-canonical provenance Phase 1 stores in Topics), deduped by topicKey
+// and capped like a lookup. Nil when no row names any. Pure.
+func topicsFromEvidence(d sources.CandidateDraft) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, ev := range d.Evidence {
+		if ev.Kind != sources.EvidencePublication {
+			continue
+		}
+		for _, part := range strings.Split(ev.Snippet, " · ") {
+			part = strings.TrimSpace(part)
+			if len(part) < len("topics:") || !strings.EqualFold(part[:len("topics:")], "topics:") {
+				continue
+			}
+			for _, t := range strings.Split(part[len("topics:"):], ";") {
+				t = strings.TrimSpace(t)
+				key := topicKey(t)
+				if key == "" || seen[key] || len(out) >= lookupTopicsMax {
+					continue
+				}
+				seen[key] = true
+				out = append(out, t)
+			}
+		}
+	}
+	return out
 }
 
 func (r *RunStore) pathFinder() *PathFinder {

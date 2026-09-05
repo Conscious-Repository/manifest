@@ -466,13 +466,16 @@ a.rec-seed-name:hover { text-decoration: underline; }
 }
 .rec-draft-contact:hover { border-color: var(--accent-soft); text-decoration: underline; }
 .rec-draft-contact .micro-label { color: var(--base-40); }
-.rec-draft-contact-val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* min-width: 0 — a flex item's auto minimum is its content, so without it
+   the ellipsis never fires and a long handle pushes the chip past the card */
+.rec-draft-contact-val { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* expertise chips — a button each; `inferred` printed, not hovered */
 .rec-draft-topics { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); padding-top: var(--sp-2); }
 .rec-topic-chip {
   display: inline-flex; align-items: baseline; gap: var(--sp-2); cursor: pointer;
   border: 1px dashed var(--base-30); border-radius: var(--radius); background: none; padding: 0 var(--sp-2);
   font: inherit; font-size: var(--fs-xs); color: var(--base-70); text-align: left;
+  max-width: 100%; min-width: 0; overflow-wrap: anywhere; /* a long provider term wraps inside its chip */
 }
 .rec-topic-chip:hover { border-color: var(--base-70); color: var(--base-100); }
 .rec-topic-chip.on { border-style: solid; border-color: var(--base-70); color: var(--base-100); }

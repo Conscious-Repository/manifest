@@ -153,3 +153,53 @@ func TestUnrejectRestoresADraftAndTheClock(t *testing.T) {
 		t.Error("an accepted draft cannot be un-passed")
 	}
 }
+
+// TestProjectRecoversTopicsFromALegacySnippet: a queue looked up before
+// Topics existed carries the chips only inside its OpenAlex author-record
+// snippet. The projection reads them back out (deduped by topicKey, in
+// order) so the card and an accept's knowledge claims see them; a draft
+// that already has Topics is left exactly as stored; nothing is written.
+func TestProjectRecoversTopicsFromALegacySnippet(t *testing.T) {
+	legacy := citedDraft("Joseph Ackerman", "A1")
+	legacy.Evidence = append(legacy.Evidence, sources.Evidence{
+		SourceID: "openalex", URLOrFile: "https://openalex.org/A1", RetrievedAt: testNow,
+		Snippet: "works_count: 1 · cited_by_count: 1 · h_index: 1 · topics: Gyrotron Research; Superconducting Materials; gyrotron research",
+		Kind:    sources.EvidencePublication, Trust: sources.TrustMedium,
+	})
+	stored := citedDraft("Kept As Is", "A2")
+	stored.Topics = []string{"Coil Design"}
+	stored.Evidence[0].Snippet = "works_count: 3 · topics: Something Else"
+	fake := &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{legacy, stored}}
+	rs, _, _ := testRunStore(t, fake)
+	run, err := rs.Execute(context.Background(), RunRequest{Source: "fake", Query: "mri"}, testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Execute stores the drafts' Topics as the adapter gave them (legacy: none)
+	raw, err := os.ReadFile(filepath.Join(rs.dir(run.ID), "drafts.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk []Draft
+	if err := json.Unmarshal(raw, &onDisk); err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk[0].Draft.Topics) != 0 {
+		t.Fatalf("the legacy draft's Topics reached the cache: %v", onDisk[0].Draft.Topics)
+	}
+	got := strings.Join(run.Drafts[0].Draft.Topics, "|")
+	if got != "Gyrotron Research|Superconducting Materials" {
+		t.Errorf("recovered topics = %q, want the snippet's two distinct terms in order", got)
+	}
+	if strings.Join(run.Drafts[1].Draft.Topics, "|") != "Coil Design" {
+		t.Errorf("a stored Topics list was touched: %v", run.Drafts[1].Draft.Topics)
+	}
+	// the same answer on every read
+	again, err := rs.Get(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(again.Drafts[0].Draft.Topics, "|") != got {
+		t.Errorf("Get projected %v, Execute projected %q", again.Drafts[0].Draft.Topics, got)
+	}
+}
