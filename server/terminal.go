@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -525,13 +528,14 @@ func (s *Server) termLaunchArgs(se termSession, attach bool) ([]string, error) {
 	return append(append(append([]string{}, tmuxPreludeArgs...), ns...), tmuxSessionOptArgs(tn)...), nil
 }
 
-// spawnTermTmux boots a session's tmux detached (no browser, no PTY).
+// spawnTermTmux boots a session's tmux detached (no browser, no PTY), in a
+// cgroup manifest's own restart cannot reach (see tmuxSpawn).
 func (s *Server) spawnTermTmux(se termSession) error {
 	args, err := s.termLaunchArgs(se, false)
 	if err != nil {
 		return err
 	}
-	return s.terminal.tmux(args...)
+	return s.terminal.tmuxSpawn(args...)
 }
 
 // handleTermAgentCreate (POST /api/terminal/agent-session) accepts
@@ -784,6 +788,83 @@ func (c *termCfg) tmux(args ...string) error {
 	return err
 }
 
+// SESSION LIFETIME — why a spawn is not an ordinary exec.
+//
+// A tmux server started by manifest inherits manifest's cgroup, and this unit
+// has no KillMode, so systemd's default (control-group) applies: on `systemctl
+// restart manifest` — which the autodeploy timer does on EVERY push — systemd
+// SIGTERMs every process in that cgroup. The tmux servers went with it, and
+// with them every Claude Code session the cockpit had started, mid-turn.
+// Verified on metis: a running session's tmux read
+// `0::/system.slice/manifest.service`.
+//
+// So the server is born in a transient systemd USER scope instead
+// (`user@<uid>.service/app.slice/run-*.scope`) — a cgroup manifest's own
+// restart does not touch. tmux keeps ONE server per socket, so only the first
+// spawn actually creates it; later spawns are short-lived clients whose scope
+// is collected immediately. The browser's PTY attach must therefore never be
+// the first launch (handleTermWS spawns detached first), or the server would
+// be born inside the request's cgroup again.
+//
+// Where systemd-run is unavailable (a dev Mac, a box with no user manager,
+// the tests' injected runner) the spawn falls back to a plain exec and says so
+// once: the sessions work, they just do not survive a restart.
+var tmuxScopeOnce sync.Once
+
+// tmuxSpawn runs a tmux command that may CREATE the server.
+func (c *termCfg) tmuxSpawn(args ...string) error {
+	if c.run != nil { // injected runner (tests) — no systemd in the loop
+		return c.tmux(args...)
+	}
+	if !tmuxScopeAvailable() {
+		return c.tmux(args...)
+	}
+	scoped := append([]string{"--user", "--scope", "--collect", "--quiet",
+		"--description=manifest terminal session",
+		"--setenv=TMUX_TMPDIR=" + c.tmuxTmp, "--", "tmux"}, args...)
+	cmd := exec.Command("systemd-run", scoped...)
+	cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+c.tmuxTmp,
+		"XDG_RUNTIME_DIR="+xdgRuntimeDir())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		// a scope that will not start must not cost the session: fall back to
+		// the plain spawn, which works and only loses restart survival
+		log.Printf("terminal: systemd scope spawn failed (%v: %s) — falling back; "+
+			"this session will not survive a manifest restart", err, strings.TrimSpace(string(out)))
+		return c.tmux(args...)
+	}
+	return nil
+}
+
+// xdgRuntimeDir is where the user manager's bus lives. The systemd unit does
+// not set it (a service is not a login session), so it is derived.
+func xdgRuntimeDir() string {
+	if d := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); d != "" {
+		return d
+	}
+	return "/run/user/" + strconv.Itoa(os.Getuid())
+}
+
+// tmuxScopeAvailable reports whether transient user scopes can be started
+// here, probed once: systemd-run on PATH and a user manager listening.
+var tmuxScopeOK bool
+
+func tmuxScopeAvailable() bool {
+	tmuxScopeOnce.Do(func() {
+		if runtime.GOOS != "linux" {
+			return
+		}
+		if _, err := exec.LookPath("systemd-run"); err != nil {
+			return
+		}
+		if _, err := os.Stat(xdgRuntimeDir() + "/systemd/private"); err != nil {
+			log.Printf("terminal: no user systemd manager at %s — sessions will not survive a manifest restart", xdgRuntimeDir())
+			return
+		}
+		tmuxScopeOK = true
+	})
+	return tmuxScopeOK
+}
+
 // liveSet returns which tmux sessions currently exist.
 func (c *termCfg) liveSet() map[string]bool {
 	out := map[string]bool{}
@@ -828,6 +909,16 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	defer c.CloseNow()
 	ctx := r.Context()
 
+	// The PTY below is manifest's own child, so a tmux SERVER first started by
+	// it would live in manifest's cgroup and die at the next restart. Give the
+	// session a scoped home first (idempotent: `new-session -A` then attaches
+	// to what this created), and only then attach.
+	if !s.terminal.liveSet()[tmuxName(se.ID)] {
+		if err := s.spawnTermTmux(se); err != nil {
+			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
+			return
+		}
+	}
 	// the tmux create-or-attach command — the shared definition (termLaunchArgs)
 	full, err := s.termLaunchArgs(se, true)
 	if err != nil {

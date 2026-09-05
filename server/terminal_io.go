@@ -167,6 +167,11 @@ func (s *Server) termEnsureLive(se termSession) (bool, error) {
 		if !live {
 			return true, fmt.Errorf("relaunch: tmux exited before the prompt")
 		}
+		// A dialog is never waited out: it does not become a prompt, and
+		// sending into it is destructive (see termBlockingDialog).
+		if why := termBlockingDialog(lines); why != "" {
+			return true, fmt.Errorf("relaunch: %s", why)
+		}
 		if termPromptShowing(lines) {
 			break
 		}
@@ -175,18 +180,54 @@ func (s *Server) termEnsureLive(se termSession) (bool, error) {
 	return true, nil
 }
 
-// termPromptShowing spots the CLI's input line among the screen tail:
-// Claude Code draws `> ` / `❯ `, codex `› `, a dropped shell `$ `.
+// termPromptShowing spots the CLI's INPUT LINE among the screen tail.
+//
+// ⚠ A MARKER IS NOT A PROMPT. Claude Code draws `❯ ` for its input box AND
+// for the highlighted row of every menu — including the trust dialog a new
+// folder opens with, whose default row is `❯ No, exit`. The old prefix match
+// read that as "ready", so a relaunch in a folder Claude had not seen fired
+// the owner's message into a menu: the text went nowhere and the Enter after
+// it chose "No, exit", so the CLI quit, the tmux died, and the message was
+// lost. That is what "the session won't relaunch" looked like from the chat.
+//
+// So an input line is a marker with NOTHING after it. A shell prompt keeps
+// the prefix rule (`user@host:~$ `) — a shell has no menus to confuse it.
 func termPromptShowing(lines []string) bool {
+	last := ""
 	for i := len(lines) - 1; i >= 0; i-- {
-		ln := strings.TrimLeft(lines[i], " │┃|")
-		for _, p := range []string{">", "❯", "›", "$"} {
-			if strings.HasPrefix(ln, p) {
+		ln := strings.TrimSpace(strings.TrimLeft(lines[i], " │┃|"))
+		if ln == "" {
+			continue
+		}
+		if last == "" {
+			last = ln
+		}
+		// the CLI's input box: a marker with nothing typed after it. It is not
+		// the bottom line — the mode footer sits below it — so this scans.
+		for _, p := range []string{">", "❯", "›"} {
+			if ln == p {
 				return true
 			}
 		}
 	}
-	return false
+	// a shell: the BOTTOM line ends in its prompt character
+	return strings.HasSuffix(last, "$") || strings.HasSuffix(last, "#")
+}
+
+// termBlockingDialog names the modal the pane is sitting on, or "" when it is
+// not sitting on one. These are questions only a person can answer, and the
+// answer is one keystroke in the Terminal tab — so the send refuses in words
+// rather than pressing Enter on the owner's behalf.
+func termBlockingDialog(lines []string) string {
+	joined := strings.ToLower(strings.Join(lines, "\n"))
+	switch {
+	case strings.Contains(joined, "do you trust the files in this folder") ||
+		strings.Contains(joined, "yes, i trust this folder"):
+		return "Claude Code is asking whether this folder is trusted — open the session in TERMINAL once and answer it; nothing was sent"
+	case strings.Contains(joined, "enter to confirm") && strings.Contains(joined, "esc to cancel"):
+		return "the session is waiting on a dialog — open it in TERMINAL and answer it; nothing was sent"
+	}
+	return ""
 }
 
 // sendText delivers a message and presses Enter. One line → send-keys -l;
