@@ -351,6 +351,35 @@
   .bk-authors { grid-column: 1; grid-row: 2; }
   .bk-rating { grid-column: 2; grid-row: 1 / 3; }
   .bk-year, .bk-date { display: none; }
+  /* 2026-09-05 note/read/reading pass (measured 360/390/412; findings:
+     /tmp/note_read_audit_findings.md). The shelf row above is unchanged. */
+  /* the search was 31px tall at 13px — the touch floor, and 16px so iOS does
+     not zoom the page on focus */
+  .reading-view .contact-search { min-height: var(--touch-sm); font-size: var(--fs-xl); }
+  /* …and at 16px its intrinsic width (≈260px) no longer left room for + book
+     beside it; a zero basis lets it fill what the pill leaves (179px at 390,
+     the same width it had at 13px). Specificity beats the Rev 5 rule below. */
+  .reading-view .agent-actions > .contact-search { flex: 1 1 0; }
+  /* currently-reading cards kept their 220–300px desktop bracket and stacked
+     ragged; one card per line at the phone's width */
+  .reading-card { min-width: 0; max-width: none; flex: 1 1 100%; }
+  /* the title IS the tap (opens the note): 18–21px text → a 36px box */
+  .reading-card-title, .bk-title.cp-clickable {
+    display: flex; align-items: center; min-height: var(--touch-sm);
+  }
+  /* rating: five 12×13 glyphs on a 14px pitch; each star gets a 24×36 box
+     (120px for the column, so the title column keeps 164px at 360 — a 28px
+     box left it 144px and long titles ran to five lines) */
+  .bk-rating { gap: 0; }
+  .bk-star {
+    font-size: var(--fs-xl); min-width: 24px; min-height: var(--touch-sm);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* + book picker: 16px field, touch-height candidate rows with the
+     catalogue meta beneath the title instead of squeezed beside it */
+  .book-add-input { font-size: var(--fs-xl); min-height: var(--touch-sm); }
+  .book-cand { min-height: var(--touch); align-items: center; flex-wrap: wrap; row-gap: var(--sp-1); }
+  .book-cand-meta { margin-left: 0; text-align: left; flex-basis: 100%; }
 }
 
 /* ================= TOUCH (any width) ================= */

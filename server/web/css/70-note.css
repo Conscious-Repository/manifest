@@ -70,3 +70,46 @@ h1.md-h { font-size: var(--fs-2xl); } h2.md-h { font-size: var(--fs-2xl); } h3.m
 .inline-overlay.done, .inline-overlay.done .inline-link { text-decoration: line-through; } /* a done task with a [[wikilink]] still reads as struck */
 .inline-overlay .inline-link:hover { background: var(--hover); }
 input.inline-hidden { color: transparent !important; }
+
+/* ===== phone (<860, the mobile-pass band) — 2026-09-05 note/read/reading pass.
+   Every rule answers a measurement at 360/390/412 (headless Chromium,
+   getComputedStyle + scrollWidth; findings: /tmp/note_read_audit_findings.md
+   of that pass). Covers the three .note-view surfaces: the note view, the
+   artifact reader and the READ page (#/read/<id>), which share this chrome.
+   ≥861px renders byte-identically to a build without this block. ===== */
+@media (max-width: 860px) {
+  /* ---- head: ‹ Back · title on the first line, actions on a right-aligned
+     second line. The Rev 5 page-header rule keys on .agent-title, which this
+     head does not use, so the actions box took the row and the title was
+     squeezed to its narrowest word ("ps / aging / 2023", "Bits / In, / Bits /
+     Out" — a 101px-tall head at 390). ---- */
+  .note-view .agent-head { flex-wrap: wrap; row-gap: var(--sp-3); }
+  .note-title { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+  .note-view .agent-actions { flex: 1 1 100%; justify-content: flex-end; }
+  /* Back · Obsidian · Edit raw · Copy · ← → measured 36px tall, the arrows
+     30px wide: primary navigation gets the full touch box */
+  .note-view .agent-head .pill { height: auto; min-height: var(--touch); }
+  .read-view .agent-actions .pill { min-width: var(--touch); }
+
+  /* ---- reader typography: a long URL or path token panned the WHOLE content
+     column (measured scrollWidth 726 / 1127 / 396 in a 390 viewport — the
+     page, not a scroller). Wrap anywhere in prose; tables keep their natural
+     column widths and go on scrolling inside .md-table-wrap, and <pre> keeps
+     its own scroller (white-space: pre has no wrap opportunities). ---- */
+  .note-rendered { overflow-wrap: anywhere; }
+  .note-rendered .md-table { overflow-wrap: normal; }
+  .note-rendered .md-li > span:last-child, .note-rendered .md-task-text { min-width: 0; }
+
+  /* ---- task rows: the <label> is the target — 23px tall on one line, over a
+     13px native box ---- */
+  .note-rendered .md-task { min-height: var(--touch); align-items: center; margin: 0; }
+  .note-rendered .md-task input { margin-top: 0; width: 20px; height: 20px; flex: none; }
+
+  /* ---- backlink rows (tap = open): 25px → touch; the name may wrap ---- */
+  .note-bl-row { min-height: var(--touch); align-items: center; }
+  .note-bl-name { min-width: 0; }
+
+  /* ---- raw editor: 13px mono makes iOS zoom the page on focus (and leave it
+     zoomed, i.e. panning); 16px is the no-zoom floor ---- */
+  .note-raw { font-size: var(--fs-xl); }
+}

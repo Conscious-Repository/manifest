@@ -149,6 +149,10 @@
   .consume-sub-acts { margin-left: 0; width: 100%; }
   .consume-add-input, .consume-add-list { flex-basis: 100%; }
   .consume-search { max-width: 100%; flex-basis: 100%; }
+  /* the READ page's curate note (2026-09-05 note/read/reading pass): a bare
+     input measured 254×21 at 13.3px — the touch floor, 16px so iOS does not
+     zoom on focus, and its own line over the curate / cancel pills */
+  .consume-note-input { flex-basis: 100%; min-height: var(--touch-sm); font-size: var(--fs-xl); padding: var(--sp-2) var(--sp-3); }
 }
 
 /* curated platform link: the private side's player, built from an allowlisted
