@@ -369,12 +369,21 @@
     {
       "annotations": {
         "idempotentHint": false,
-        "readOnlyHint": true
+        "readOnlyHint": false
       },
-      "description": "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch/cache write. Standing authorization applies in Phase 2; network/robots validation remains execution-time.",
+      "description": "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
           "request": {
             "type": "object",
             "properties": {
@@ -474,12 +483,21 @@
     {
       "annotations": {
         "idempotentHint": false,
-        "readOnlyHint": true
+        "readOnlyHint": false
       },
-      "description": "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. No file is written.",
+      "description": "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. Persists an operation outside the vault.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
           "runId": {
             "type": "string"
           },
@@ -501,12 +519,21 @@
     {
       "annotations": {
         "idempotentHint": false,
-        "readOnlyHint": true
+        "readOnlyHint": false
       },
       "description": "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
           "runId": {
             "type": "string"
           },
@@ -528,12 +555,21 @@
     {
       "annotations": {
         "idempotentHint": false,
-        "readOnlyHint": true
+        "readOnlyHint": false
       },
       "description": "Resolve a canonical person; check existing network identity and preview PeopleDoc.Add with the shared domain payload and validation.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
           "ref": {
             "type": "object",
             "properties": {
@@ -641,12 +677,21 @@
     {
       "annotations": {
         "idempotentHint": false,
-        "readOnlyHint": true
+        "readOnlyHint": false
       },
       "description": "Resolve both registered general-graph endpoints and preview a typed claim with shared graph validation and duplicate detection.",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
           "from": {
             "type": "object",
             "properties": {
@@ -792,9 +837,49 @@
         "additionalProperties": false
       },
       "name": "graph_edge.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read a durable operation, approval and execution receipt.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "operation.get"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
+      "description": "Execute the saved payload. Source runs have standing authorization; world changes require an owner decision outside MCP. Terminal receipts are idempotent; incomplete effects require takeover.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "additionalProperties": false
+      },
+      "name": "operation.execute"
     }
   ],
-  "version": "1.0.0",
+  "version": "2.0.0",
   "vocabulary": {
     "entityKinds": [
       "task",

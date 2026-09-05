@@ -87,9 +87,9 @@ func snapshot(t *testing.T, root string) map[string]string {
 	}
 	return out
 }
-func TestAllToolsOverMCPAndNoEffects(t *testing.T) {
-	a, run, base := fixture(t)
-	before := revision(snapshot(t, base))
+func TestAllToolsOverMCPAndNoVaultEffects(t *testing.T) {
+	a, run, _ := fixture(t)
+	before := revision(snapshot(t, a.Vault))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	st, ct := mcp.NewInMemoryTransports()
@@ -107,7 +107,7 @@ func TestAllToolsOverMCPAndNoEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 11 {
+	if len(list.Tools) != 13 {
 		t.Fatalf("got %d tools", len(list.Tools))
 	}
 	person := Ref{"graph", "manifest", "person", "ada"}
@@ -132,21 +132,21 @@ func TestAllToolsOverMCPAndNoEffects(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.HasSuffix(name, ".prepare") && !bytes.Contains(b, []byte(`"pending_approval"`)) {
+			if strings.HasSuffix(name, ".prepare") && name != "source_run.prepare" && !bytes.Contains(b, []byte(`"pending_approval"`)) {
 				t.Fatalf("not pending: %s", b)
 			}
-			if strings.HasSuffix(name, ".prepare") && (!bytes.Contains(b, []byte(`"persisted":false`)) || !bytes.Contains(b, []byte(`"executable":false`))) {
+			if strings.HasSuffix(name, ".prepare") && (!bytes.Contains(b, []byte(`"persisted":true`)) || name != "source_run.prepare" && !bytes.Contains(b, []byte(`"executable":false`))) {
 				t.Fatalf("unsafe contract: %s", b)
 			}
 		})
 	}
-	if after := revision(snapshot(t, base)); after != before {
-		t.Fatal("read/prepare changed fixture files")
+	if after := revision(snapshot(t, a.Vault)); after != before {
+		t.Fatal("read/prepare changed vault files")
 	}
 	// Protocol errors must never become a route to execution.
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "source_run.execute", Arguments: Object{}})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "operation.decide", Arguments: Object{}})
 	if err == nil && !res.IsError {
-		t.Fatal("unknown execution tool succeeded")
+		t.Fatal("agent decision tool succeeded")
 	}
 	res, err = cs.CallTool(ctx, &mcp.CallToolParams{Name: "entity.get", Arguments: Object{"namespace": "manifest", "domain": "graph", "kind": "person", "id": "ada", "unexpected": true}})
 	if err == nil && !res.IsError {

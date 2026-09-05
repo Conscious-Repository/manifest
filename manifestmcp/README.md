@@ -1,10 +1,12 @@
-# Manifest local MCP — Phase 1
+# Manifest local MCP — Phase 2
 
 Local Go stdio MCP adapter over Manifest's recruiting and graph services. Uses
  the official MCP Go SDK for protocol handling and Go-type schema generation.
-No portal token or HTTP owner endpoint is used. Stores have no live vault writer;
-acceptance uses a capture writer that retains proposed file content in memory.
-No source execution, lookup, sweep, approval, or write tool is exposed.
+No portal token or HTTP owner endpoint is used. Preparation persists an immutable
+operation under dataDir/operations. Source execution has bounded standing
+authorization. True world changes require a separate owner decision, then
+operation.execute applies the saved payload through shared domain services and
+narrow approved-proposal vaultwriter capabilities.
 
 Build and run from the repository root:
 
@@ -45,11 +47,13 @@ source scope fields and graph vocabulary are in [catalog.json](catalog.json).
 | `sources.list` | Read the application's shared adapter registry and scope fields; no fetch or cache sweep. |
 | `source_run.get` | Read one run and review queue using RunStore.Get; counts include previously passed drafts separately. |
 | `graph.neighbors` | Bounded stored general-graph neighbors and optional paths (at most 3 hops, 10 paths). Server-only task/calendar derivations are not included. |
-| `source_run.prepare` | Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch/cache write. Standing authorization applies in Phase 2; network/robots validation remains execution-time. |
-| `candidate_accept.prepare` | Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. No file is written. |
+| `source_run.prepare` | Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time. |
+| `candidate_accept.prepare` | Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. Persists an operation outside the vault. |
 | `candidate_reject.prepare` | Resolve one new draft and preview durable passed.md suppression plus queue and audit effects. |
 | `network_person.prepare` | Resolve a canonical person; check existing network identity and preview PeopleDoc.Add with the shared domain payload and validation. |
 | `graph_edge.prepare` | Resolve both registered general-graph endpoints and preview a typed claim with shared graph validation and duplicate detection. |
+| `operation.get` | Read a durable operation, approval and execution receipt. |
+| `operation.execute` | Execute the saved payload. Source runs have standing authorization; world changes require an owner decision outside MCP. Terminal receipts are idempotent; incomplete effects require takeover. |
 
 ## Preparation contract and limitations
 
@@ -59,22 +63,56 @@ callers must choose a ref. Recruiting and general graph identities stay separate
 Graph context covers stored general-graph claims, not server-only task, calendar,
 contact or note projections. Unregistered external endpoints cannot be prepared.
 
-Prepare returns pending_approval, persisted=false and executable=false. The ID is
-a content hash, not an approval token or durable operation record. Previews name
-one draft and exact proposed vault files, knowledge additions, suppression,
-queue transitions and ledger effects. Generated dates are frozen at preparation;
-Phase 2 must bind time and revisions or regenerate the preview. Source scopes
-resolve supported fields and web bounds with shared services; external network,
-robots and response validation cannot be done without retrieval. Manual source
-has no network effect. Source execution is standing_authorization; true changes,
-including rejection's durable tombstone, are human_approval.
+Prepare returns persisted=true and a content-addressed operationId. Human changes
+start pending_approval; source runs start prepared and executable. Duplicate
+no-change proposals finish succeeded. The receipt records versioned normalized
+arguments, target/evidence previews, expected file revisions, agent:alfred,
+optional conversation/turn and idempotencyKey, owner decision, confirmed files and object refs.
+Dates and claims are frozen at preparation. Rejection writes a suppression
+record and therefore also requires human approval.
 
-HTTP acceptance and graph handlers currently stamp owner audit/default source;
-the people marking handler also assumes owner consent. This adapter does not
-assert owner consent automatically. Phase 2 needs actor-aware authorization,
-durable operations, stale-state checks over every affected file, approval-bound
-payloads, idempotency, queue persistence/recovery, ledger receipts, partial
-knowledge outcomes and undo/takeover. No approval or execution is implemented here.
+A reproducible headless demo builds no UI and touches only a temporary vault:
+
+```sh
+go build -o /tmp/manifest-mcp-phase2 ./cmd/manifest-mcp
+python3 integrations/manifest-mcp/exercise_loop.py /tmp/manifest-mcp-phase2
+```
+
+The owner reviews operation.get and decides outside the agent toolset:
+
+```sh
+manifest-mcp --config config.json --decide 'sha256:…' --decision approved
+```
+
+The owner CLI also accepts rejected and cancelled. MCP exposes no decision tool,
+actor field, approval token or replacement payload. operation.execute accepts
+only operationId. Approval is not completion: inspect status and confirmed
+objectRefs. The local owner CLI fixes approvalActor=owner:local; vault audit
+uses aion-recruiting-approved / graph-approved and approved-proposal. Protect
+the CLI and dataDir from agent shell access: MCP tool separation is not OS
+isolation, and a process running as the owner can bypass that boundary.
+
+Execution serializes operation processes with a dataDir lock, saves intent
+before effects, checks target revisions and compares every shared-service write
+against the exact approved bytes and preimage. Stale proposals require fresh
+preparation and approval. Idempotency is per operationId; terminal receipts
+never reapply. An explicit idempotencyKey binds one tool input and returns its
+existing receipt even after the draft leaves the queue; conflicting input is
+rejected. Supply a new key to request another source run with the same scope;
+retain it when retrying preparation. Partial candidate/graph writes report confirmed and unconfirmed
+files, intended knowledge claims and confirmed object refs. Restart reconciles
+interrupted vault writes, marks partial/failed and requires owner takeover;
+it does not blindly retry. Source interruption can leave a cache queue without
+a recorded runId: inspect source runs before starting a new operation. No
+exactly-once guarantee across external systems is made.
+
+Receipts survive source cache expiry. Canonical evidence stays in domain records;
+operation payloads retain evidence for recovery. No shared-ledger projection or
+UI is added yet. Undo, queue repair and continuation remain manual. File checks
+are conservative across both domain trees. They detect edits before execution
+and before each write, but do not atomically lock out Obsidian or owner HTTP
+writes between check and write; that requires a shared cross-client transaction
+boundary in a later hardening phase.
 
 ## Alfred / Hermes
 
@@ -90,6 +128,6 @@ python3 integrations/manifest-mcp/check_hermes.py
 ```
 
 The check uses the installed Hermes virtualenv to discover this server and asserts
-all eleven tools survive Alfred's configured toolset filter, without an LLM call.
+all catalog tools survive Alfred's configured toolset filter, without an LLM call.
 Restart the running Manifest process after deploying a build/config change and
 start a new Alfred turn. Discovery does not establish an in-gateway conversation.

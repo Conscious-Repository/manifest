@@ -14,6 +14,8 @@ func main() {
 	config := flag.String("config", "config.json", "Manifest configuration path (read only)")
 	catalog := flag.Bool("catalog", false, "emit generated catalog without reading config or domain files")
 	readme := flag.Bool("readme", false, "emit generated README")
+	decide := flag.String("decide", "", "OWNER ONLY: operation ID to decide; never expose this CLI to agent shell")
+	decision := flag.String("decision", "approved", "owner decision: approved, rejected, cancelled")
 	flag.Parse()
 	if *readme {
 		b, err := manifestmcp.README()
@@ -48,6 +50,16 @@ func main() {
 	a, err := manifestmcp.New(c.VaultPath, c.DataDir, c.SystemRoot)
 	if err != nil {
 		fail(err)
+	}
+	if *decide != "" {
+		result, err := a.Decide(*decide, *decision, "owner:local")
+		if err != nil {
+			fail(err)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+			fail(err)
+		}
+		return
 	}
 	if err = a.Server().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		fail(err)

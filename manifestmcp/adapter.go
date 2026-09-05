@@ -1,5 +1,4 @@
-// Package manifestmcp adapts domain services to local read/prepare MCP tools.
-// No live writer, HTTP client call, cache sweeper or execution tool is exposed.
+// Package manifestmcp exposes versioned domain operations with durable approval receipts.
 package manifestmcp
 
 import (
@@ -17,15 +16,17 @@ import (
 	"manifest/recruiting"
 )
 
-const Version = "1.0.0"
+const Version = "2.0.0"
 
 type Object map[string]any
 type Adapter struct {
-	Vault, Root string
-	Records     *recruiting.Store
-	Runs        *recruiting.RunStore
-	Graph       *graph.Store
-	Tools       []*mcp.Tool
+	Vault, Root   string
+	Data, System  string
+	writeApproved func(string, []byte) error
+	Records       *recruiting.Store
+	Runs          *recruiting.RunStore
+	Graph         *graph.Store
+	Tools         []*mcp.Tool
 }
 
 func New(vault, data, system string) (*Adapter, error) {
@@ -35,7 +36,7 @@ func New(vault, data, system string) (*Adapter, error) {
 		return nil, err
 	}
 	runs.RegisterDefaults()
-	return &Adapter{Vault: vault, Root: r.Root(), Records: r, Runs: runs, Graph: graph.NewStore(vault, filepath.Join(system, "graph"), nil)}, nil
+	return &Adapter{Vault: vault, Root: r.Root(), Data: data, System: system, Records: r, Runs: runs, Graph: graph.NewStore(vault, filepath.Join(system, "graph"), nil)}, nil
 }
 func revision(v any) string {
 	b, _ := json.Marshal(v)
@@ -130,22 +131,50 @@ func (a *Adapter) Server() *mcp.Server {
 	})
 	add(a, s, "source_run.get", "Read one run and review queue using RunStore.Get; counts include previously passed drafts separately.", a.runGet)
 	add(a, s, "graph.neighbors", "Bounded stored general-graph neighbors and optional paths (at most 3 hops, 10 paths). Server-only task/calendar derivations are not included.", a.neighbors)
-	add(a, s, "source_run.prepare", "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch/cache write. Standing authorization applies in Phase 2; network/robots validation remains execution-time.", a.sourcePrepare)
-	add(a, s, "candidate_accept.prepare", "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. No file is written.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, true) })
+	add(a, s, "source_run.prepare", "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.", a.sourcePrepare)
+	add(a, s, "candidate_accept.prepare", "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. Persists an operation outside the vault.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, true) })
 	add(a, s, "candidate_reject.prepare", "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, false) })
 	add(a, s, "network_person.prepare", "Resolve a canonical person; check existing network identity and preview PeopleDoc.Add with the shared domain payload and validation.", a.personPrepare)
 	add(a, s, "graph_edge.prepare", "Resolve both registered general-graph endpoints and preview a typed claim with shared graph validation and duplicate detection.", a.edgePrepare)
+	add(a, s, "operation.get", "Read a durable operation, approval and execution receipt.", func(q OperationInput) (Object, error) { return a.Operation(q.OperationID) })
+	addContext(a, s, "operation.execute", "Execute the saved payload. Source runs have standing authorization; world changes require an owner decision outside MCP. Terminal receipts are idempotent; incomplete effects require takeover.", func(ctx context.Context, q OperationInput) (Object, error) { return a.Execute(ctx, q.OperationID) })
 	return s
 }
 func add[I any](a *Adapter, s *mcp.Server, name, description string, f func(I) (Object, error)) {
+	addContext(a, s, name, description, func(_ context.Context, in I) (Object, error) { return f(in) })
+}
+func addContext[I any](a *Adapter, s *mcp.Server, name, description string, f func(context.Context, I) (Object, error)) {
 	schema, err := jsonschema.For[I](nil)
 	if err != nil {
 		panic(err)
 	}
-	t := &mcp.Tool{Name: name, Description: description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}
+	t := &mcp.Tool{Name: name, Description: description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: !strings.HasSuffix(name, ".prepare") && name != "operation.execute"}}
 	a.Tools = append(a.Tools, t)
 	mcp.AddTool(s, t, func(ctx context.Context, req *mcp.CallToolRequest, in I) (*mcp.CallToolResult, any, error) {
-		out, err := f(in)
+		var before map[string]string
+		if strings.HasSuffix(name, ".prepare") {
+			if previous, err := a.previousRequest(name, in); err != nil {
+				return nil, nil, err
+			} else if previous != nil {
+				return nil, receipt(previous), nil
+			}
+			var err error
+			before, err = a.snapshot()
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		out, err := f(ctx, in)
+		if err == nil && strings.HasSuffix(name, ".prepare") {
+			after, e := a.snapshot()
+			if e != nil {
+				return nil, nil, e
+			}
+			if revision(before) != revision(after) {
+				return nil, nil, fmt.Errorf("targets changed during preparation; retry")
+			}
+			out, err = a.persist(out, in, before)
+		}
 		return nil, out, err
 	})
 }
@@ -216,9 +245,12 @@ func (a *Adapter) neighbors(q NeighborsInput) (Object, error) {
 }
 
 type SourceInput struct {
-	Request recruiting.RunRequest `json:"request"`
-	Seed    *Ref                  `json:"seed,omitempty"`
-	Role    *Ref                  `json:"role,omitempty"`
+	IdempotencyKey string                `json:"idempotencyKey,omitempty"`
+	Conversation   string                `json:"conversation,omitempty"`
+	Turn           string                `json:"turn,omitempty"`
+	Request        recruiting.RunRequest `json:"request"`
+	Seed           *Ref                  `json:"seed,omitempty"`
+	Role           *Ref                  `json:"role,omitempty"`
 }
 
 func (a *Adapter) sourcePrepare(q SourceInput) (Object, error) {
@@ -283,13 +315,16 @@ func (a *Adapter) sourcePrepare(q SourceInput) (Object, error) {
 		return nil, err
 	}
 	refs = append(refs, entity("recruiting", "source", adapter.ID(), adapter.ID(), adapter.Scope()))
-	return prepared("source_run.prepare", "standing_authorization", Object{"source": adapter.ID(), "scope": scope, "scopeFields": adapter.Scope(), "network": adapter.ID() != "manual", "cacheEffects": []string{"create run.json, response.json, drafts.json under dataDir/recruiting/runs", "dedupe candidates and apply passed.md suppression"}, "vaultEffects": []string{}, "validation": "shared scope and adapter preparation validated; network/robots/response validation deferred"}, refs...), nil
+	return prepared("source_run.prepare", "standing_authorization", Object{"source": adapter.ID(), "scope": scope, "request": recruiting.RunRequest{Source: adapter.ID(), Role: scope.Role, Query: scope.Query, Max: scope.Max, DryRun: scope.DryRun, Fields: scope.Fields}, "scopeFields": adapter.Scope(), "network": adapter.ID() != "manual", "cacheEffects": []string{"create run.json, response.json, drafts.json under dataDir/recruiting/runs", "dedupe candidates and apply passed.md suppression"}, "vaultEffects": []string{}, "validation": "shared scope and adapter preparation validated; network/robots/response validation deferred"}, refs...), nil
 }
 
 type DraftInput struct {
-	RunID   string `json:"runId"`
-	DraftID string `json:"draftId"`
-	Reason  string `json:"reason,omitempty"`
+	IdempotencyKey string `json:"idempotencyKey,omitempty"`
+	Conversation   string `json:"conversation,omitempty"`
+	Turn           string `json:"turn,omitempty"`
+	RunID          string `json:"runId"`
+	DraftID        string `json:"draftId"`
+	Reason         string `json:"reason,omitempty"`
 }
 
 func (a *Adapter) draftPrepare(q DraftInput, accept bool) (Object, error) {
@@ -332,6 +367,7 @@ func (a *Adapter) draftPrepare(q DraftInput, accept bool) (Object, error) {
 			return nil, err
 		}
 		preview["knowledge"] = knowledge
+		preview["claims"] = claims
 		if len(knowledge.AddedEntities) > 0 {
 			writes[a.Graph.Rel(graph.EntitiesFile)] = graph.SerializeEntities(memory.entities)
 		}
@@ -339,7 +375,7 @@ func (a *Adapter) draftPrepare(q DraftInput, accept bool) (Object, error) {
 			writes[a.Graph.Rel(graph.EdgesFile)] = graph.SerializeEdges(memory.edges)
 		}
 
-		preview["effects"] = []string{"mark this draft accepted and set candidateId/decidedAt; increment accepted count; triage/expiry if complete", "apply knowledge via graph AddEntity/AddEdge: existing keys retained; ledger each added claim", "ledger recruiting.draft.accepted; owner audit in HTTP must become approved actor in Phase 2", "passed.md unchanged"}
+		preview["effects"] = []string{"mark this draft accepted and set candidateId/decidedAt; increment accepted count; triage/expiry if complete", "apply saved knowledge through shared graph validators: existing keys retained; receipt identifies confirmed claims", "operation receipt for recruiting.draft.accepted; approved-proposal vault audit; receipt records approving owner", "passed.md unchanged"}
 	} else {
 		p := recruiting.Passed{Key: recruiting.PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name), Name: d.Draft.Name, Reason: strings.TrimSpace(q.Reason), Source: d.Draft.SourceID}
 		p.At = now.Format("2006-01-02")
@@ -349,7 +385,7 @@ func (a *Adapter) draftPrepare(q DraftInput, accept bool) (Object, error) {
 		}
 		preview["vaultFiles"] = writes
 		preview["suppression"] = p
-		preview["effects"] = []string{"AddPassed in passed.md; suppress same source/externalId/name in future runs", "mark this draft rejected; set decidedAt; increment rejected count; triage/expiry if complete", "ledger recruiting.draft.passed with approved actor in Phase 2"}
+		preview["effects"] = []string{"AddPassed in passed.md; suppress same source/externalId/name in future runs", "mark this draft rejected; set decidedAt; increment rejected count; triage/expiry if complete", "operation receipt for recruiting.draft.passed with approved-proposal actor"}
 	}
 	after, err := a.Runs.PreviewDecision(q.RunID, q.DraftID, decision, candidateID, now)
 	if err != nil {
@@ -372,8 +408,11 @@ func (a *Adapter) draftPrepare(q DraftInput, accept bool) (Object, error) {
 }
 
 type PersonInput struct {
-	Ref    Ref                      `json:"ref"`
-	Person recruiting.NetworkPerson `json:"person"`
+	IdempotencyKey string                   `json:"idempotencyKey,omitempty"`
+	Conversation   string                   `json:"conversation,omitempty"`
+	Turn           string                   `json:"turn,omitempty"`
+	Ref            Ref                      `json:"ref"`
+	Person         recruiting.NetworkPerson `json:"person"`
 }
 
 func (a *Adapter) personPrepare(q PersonInput) (Object, error) {
@@ -403,9 +442,12 @@ func (a *Adapter) personPrepare(q PersonInput) (Object, error) {
 }
 
 type EdgeInput struct {
-	From Ref        `json:"from"`
-	To   Ref        `json:"to"`
-	Edge graph.Edge `json:"edge"`
+	IdempotencyKey string     `json:"idempotencyKey,omitempty"`
+	Conversation   string     `json:"conversation,omitempty"`
+	Turn           string     `json:"turn,omitempty"`
+	From           Ref        `json:"from"`
+	To             Ref        `json:"to"`
+	Edge           graph.Edge `json:"edge"`
 }
 
 func (a *Adapter) edgePrepare(q EdgeInput) (Object, error) {
@@ -434,7 +476,7 @@ func (a *Adapter) edgePrepare(q EdgeInput) (Object, error) {
 	if _, err := doc.Add(e, a.Graph.Vocabulary()); err != nil {
 		return nil, err
 	}
-	return prepared("graph_edge.prepare", "human_approval", Object{"edge": e, "file": a.Graph.Rel(graph.EdgesFile), "content": graph.SerializeEdges(doc), "expectedVersion": before, "auditEffect": "graph.edge.added; Phase 2 must attribute approved actor"}, from, to), nil
+	return prepared("graph_edge.prepare", "human_approval", Object{"edge": e, "file": a.Graph.Rel(graph.EdgesFile), "content": graph.SerializeEdges(doc), "expectedVersion": before, "auditEffect": "graph.edge.added; approved-proposal actor"}, from, to), nil
 }
 
 func (a *Adapter) capture() (map[string]string, *recruiting.Store) {
