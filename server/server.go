@@ -463,6 +463,7 @@ func (s *Server) Handler() http.Handler {
 			// over the vault's contacts, and the mark that makes one of them a
 			// path origin
 			mux.HandleFunc("GET /api/aion/recruiting/people/known", s.handleRecruitingKnownPeople)
+			mux.HandleFunc("GET /api/aion/recruiting/graph", s.handleRecruitingGraph)
 			mux.HandleFunc("POST /api/aion/recruiting/network/mark", s.handleRecruitingMarkKnown)
 			mux.HandleFunc("GET /api/aion/recruiting/passed", s.handleRecruitingPassedList)
 			mux.HandleFunc("DELETE /api/aion/recruiting/passed/{key...}", s.handleRecruitingPassedDelete)

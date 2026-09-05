@@ -184,6 +184,8 @@ a.rec-seed-name:hover { text-decoration: underline; }
 
 /* inspector */
 .rec-inspector { overflow-y: auto; max-height: 100vh; }
+/* a view that has nothing to inspect gives its width back to the content */
+.rec-shell.rec-wide .rec-inspector { display: none; }
 .rec-insp-field { align-items: flex-start; }
 .rec-insp-field .aion-insp-flabel { padding-top: var(--sp-3); }
 .rec-in { flex: 1; min-width: 0; }

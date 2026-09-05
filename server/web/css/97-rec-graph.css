@@ -1,0 +1,82 @@
+/* THE EGO GRAPH (97-rec-graph.js).
+   Every colour is a class on the node, never an attribute written by the
+   layout — the picture is a function of the data, and the theme is a function
+   of the stylesheet, so neither has to know about the other. */
+
+/* ⚠ a CONTAINER query, not a media query. The graph lives inside a column
+   whose width has nothing to do with the viewport's — at 1500px wide the
+   column here is 634px, so a viewport rule put a 760px picture in a 284px
+   box and called it two columns. */
+.rg-host { container-type: inline-size; }
+.rg-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--inspector-w, 300px);
+  gap: var(--sp-5);
+  align-items: start;
+}
+/* the panel sits beside the picture only when there is room for both; below
+   that the picture keeps the width and the panel drops under it, because a
+   280px graph is a smudge */
+@container (max-width: 980px) {
+  .rg-wrap { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rg-canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: var(--base-02, transparent);
+}
+
+/* the hop rings: "two out" should be something you can see, not something you
+   have to count */
+.rg-ring { fill: none; stroke: var(--line-soft); stroke-width: 1; }
+
+.rg-edge { stroke: var(--line); stroke-width: 1; }
+/* an inferred edge is dashed everywhere it is drawn — the derivation is a
+   claim, and a claim should not look like a fact */
+.rg-edge.inferred { stroke-dasharray: 3 3; opacity: 0.75; }
+.rg-edge.lit { stroke: var(--accent); stroke-width: 2; opacity: 1; }
+
+.rg-node { cursor: pointer; }
+.rg-dot { stroke: var(--base-00, #fff); stroke-width: 1.5; fill: var(--base-40); }
+.rg-node.you .rg-dot { fill: var(--accent); }
+.rg-node.connector .rg-dot { fill: var(--ok, #2f855a); }
+.rg-node.considering .rg-dot { fill: var(--base-100); }
+.rg-node.stranger .rg-dot { fill: var(--base-30); }
+.rg-node.sel .rg-dot { stroke: var(--accent); stroke-width: 3; }
+.rg-node:hover .rg-dot { stroke: var(--accent); }
+.rg-label {
+  font-family: var(--mono); font-size: 9px;
+  fill: var(--base-60); pointer-events: none;
+}
+.rg-node.you .rg-label, .rg-node.sel .rg-label { fill: var(--base-100); }
+
+.rg-degree { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.rg-matches { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) 0; }
+.rg-legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-4) 0; }
+.rg-omitted { font-size: var(--fs-xs); color: var(--base-50); }
+
+.rg-panel {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-4); border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg); background: var(--base-05);
+}
+.rg-panel-name { font-size: var(--fs-md); color: var(--base-100); overflow-wrap: anywhere; }
+.rg-panel-hint { font-size: var(--fs-xs); color: var(--base-50); }
+.rg-why { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line-soft); }
+.rg-hop { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-xs); }
+.rg-hop-name { color: var(--base-100); overflow-wrap: anywhere; }
+.rg-weak { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-50); }
+.rg-acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding-top: var(--sp-3); }
+
+.rg-empty {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-6); border: 1px dashed var(--line);
+  border-radius: var(--radius-lg);
+}
+.rg-empty-head { color: var(--base-100); }
+.rg-empty-do { font-size: var(--fs-xs); color: var(--base-60); }
+.rg-fold { margin-top: var(--sp-5); }

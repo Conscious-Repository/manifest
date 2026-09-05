@@ -233,6 +233,10 @@ async function renderAionRecruiting(host) {
   const paint = () => {
     paintRail(rail);
     paintMain(main);
+    // NETWORK is a picture, and a picture needs the width. The candidate
+    // inspector has nothing to say about a graph, so the view that does not
+    // use it does not reserve it.
+    wrap.classList.toggle("rec-wide", recView === "network");
     // the AION header's LIVE meta + dot describe the backlog engine —
     // RECRUITING overwrites them with its own derived meta (problem 13)
     if (els.aionMeta) els.aionMeta.textContent = recHeaderMeta();
@@ -2336,7 +2340,14 @@ function recDraftCard(run, d) {
 // actually knows, each carrying how many targets they reach; derived paths
 // route through them. Paths only show the route — no intro tracking.
 
-function paintNetworkView(main) {
+// NETWORK is the ego graph now (97-rec-graph.js). It was three lists of node
+// ids, and the owner's verdict on it was "really unclear to me how to use this
+// rn" — so the picture leads and the lists are folded underneath it, where
+// they answer "show me everything" once you know what you are looking at.
+function paintNetworkView(main) { rgView(main); }
+
+// recNetLists paints those three lists into a host the fold owns.
+function recNetLists(outer) {
   const bar = el("div", "rec-toolbar");
   const search = el("input", "pp-in rec-search");
   search.type = "search";
@@ -2346,13 +2357,13 @@ function paintNetworkView(main) {
   bar.append(search);
   [["paths", "PATHS"], ["people", "MY PEOPLE"], ["edges", "ALL EDGES"]].forEach(([key, label]) => {
     const b = el("button", "filter-chip" + (recNetTab === key ? " on" : ""), label);
-    b.onclick = () => { recNetTab = key; if (recPaint) recPaint(); };
+    b.onclick = () => { recNetTab = key; bar.querySelectorAll(".filter-chip").forEach((c) => c.classList.toggle("on", c.textContent === label)); body(); };
     bar.append(b);
   });
-  main.append(bar);
+  outer.append(bar);
 
   const host = el("div", "rec-board");
-  main.append(host);
+  outer.append(host);
   const body = () => {
     host.innerHTML = "";
     const q = recNetQuery.trim().toLowerCase();

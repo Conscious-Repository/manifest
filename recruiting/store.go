@@ -65,6 +65,11 @@ func (s *Store) networkEdges() []Edge {
 	return out
 }
 
+// NetworkEdges is networkEdges for callers outside the package — the ego
+// graph asks for the edges alone, and paying View()'s path derivation to draw
+// a picture of the edges the derivation was built from is a full circle.
+func (s *Store) NetworkEdges() []Edge { return s.networkEdges() }
+
 // NewStore builds the record store. A nil writer is not silently tolerated:
 // every save fails loudly with the boundary it violated.
 func NewStore(vaultRoot, root string, write func(string, []byte) error) *Store {
@@ -918,6 +923,24 @@ func (s *Store) Identities() []PersonIdentity {
 			id = CandidateID(slug)
 		}
 		out = append(out, PersonIdentity{ID: id, Name: d.Get("name"), Email: d.Profile()["email"]})
+	}
+	return out
+}
+
+// BoardState is the cheap read of what is happening to each candidate —
+// stage and role, no paths derived. The graph needs it so a node encodes what
+// you are DOING about a person rather than how many lines touch them, and
+// paying View()'s path derivation for two fields would make the picture cost
+// more than the board it draws.
+func (s *Store) BoardState() map[string][2]string {
+	out := map[string][2]string{}
+	for _, slug := range s.CandidateSlugs() {
+		d := s.LoadCandidate(slug)
+		id := d.Get("id")
+		if id == "" {
+			id = CandidateID(slug)
+		}
+		out[id] = [2]string{d.Get("stage"), d.Get("role")}
 	}
 	return out
 }
