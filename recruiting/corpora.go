@@ -17,13 +17,14 @@ var Corpora = map[string]func(raw string) string{
 	"seeds.md":          func(raw string) string { return SerializeSeeds(ParseSeeds(raw)) },
 	"network/people.md": func(raw string) string { return SerializeNetworkPeople(ParseNetworkPeople(raw)) },
 	"network/edges.md":  func(raw string) string { return SerializeEdges(ParseEdges(raw)) },
+	"passed.md":         func(raw string) string { return SerializePassed(ParsePassed(raw)) },
 	"roles/*.md":        func(raw string) string { return SerializeRole(ParseRole(raw)) },
 	"candidates/*.md":   func(raw string) string { return SerializeCandidate(ParseCandidate(raw)) },
 	"outreach/*.md":     func(raw string) string { return SerializeOutreach(ParseOutreach(raw)) },
 }
 
 // Files are the fixed, non-glob records — the ones Ensure seeds by name.
-var Files = []string{"seeds.md", "network/people.md", "network/edges.md"}
+var Files = []string{"seeds.md", "network/people.md", "network/edges.md", "passed.md"}
 
 // RoundTrip resolves a recruiting-root-relative path (slash form) to its
 // declared round-trip, or nil when the path is not part of this domain.

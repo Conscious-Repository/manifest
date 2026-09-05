@@ -452,6 +452,16 @@ func (s *Server) Handler() http.Handler {
 			mux.HandleFunc("POST /api/aion/recruiting/intake/ask", s.handleRecruitingScaffoldAsk)
 			mux.HandleFunc("GET /api/aion/recruiting/intake/ask/{id}", s.handleRecruitingScaffoldPoll)
 			mux.HandleFunc("POST /api/aion/recruiting/intake", s.handleRecruitingIntake)
+			// edit and clear (recruiting_edit.go): a place and an edge CUT, a
+			// person ARCHIVES. {id...} is a multi-segment wildcard because a
+			// seed id carries a slash (seed/lab-…), as candidate ids do.
+			mux.HandleFunc("POST /api/aion/recruiting/place/{id...}", s.handleRecruitingPlaceUpdate)
+			mux.HandleFunc("DELETE /api/aion/recruiting/place/{id...}", s.handleRecruitingPlaceDelete)
+			mux.HandleFunc("POST /api/aion/recruiting/network/person/{id...}", s.handleRecruitingPersonUpdate)
+			mux.HandleFunc("DELETE /api/aion/recruiting/network/person/{id...}", s.handleRecruitingPersonDelete)
+			mux.HandleFunc("DELETE /api/aion/recruiting/network/edge", s.handleRecruitingEdgeDelete)
+			mux.HandleFunc("GET /api/aion/recruiting/passed", s.handleRecruitingPassedList)
+			mux.HandleFunc("DELETE /api/aion/recruiting/passed/{key...}", s.handleRecruitingPassedDelete)
 			// the applicant's own submitted file, by artifact hash. `{hash...}`
 			// is a wildcard so ".../{hash}/text" reaches the same handler.
 			mux.HandleFunc("GET /api/aion/recruiting/resume/{hash...}", s.handleRecruitingResume)

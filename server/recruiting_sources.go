@@ -217,14 +217,22 @@ func (s *Server) handleRecruitingSourceLookup(w http.ResponseWriter, r *http.Req
 	writeJSON(w, out)
 }
 
-// POST /api/aion/recruiting/sources/reject/{run}/{draft} — mark one draft
-// rejected. Nothing reaches the vault.
+// POST /api/aion/recruiting/sources/reject/{run}/{draft} {reason?} — mark one
+// draft passed. No RECORD reaches the vault; a tombstone does (passed.md), so
+// the next sweep of the same place does not re-ask a question already
+// answered. The reason is optional and free text — Ashby's lesson is that the
+// reason is what separates "I judged this person" from "this went stale", and
+// an unlabelled pass is still a pass.
 func (s *Server) handleRecruitingSourceReject(w http.ResponseWriter, r *http.Request) {
 	if !s.recruitingRunsReady(w) {
 		return
 	}
+	var b struct {
+		Reason string `json:"reason"`
+	}
+	_ = decode(r, &b) // a bare POST is a pass with no reason, not an error
 	runID, draftID := r.PathValue("run"), r.PathValue("draft")
-	run, err := s.recruitingRuns.Reject(runID, draftID, time.Now())
+	run, err := s.recruitingRuns.Reject(runID, draftID, strings.TrimSpace(b.Reason), time.Now())
 	if err != nil {
 		httpError(w, err)
 		return

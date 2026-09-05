@@ -29,20 +29,25 @@ func (d *SeedsDoc) Seeds() []Seed {
 		if ln.Row == nil {
 			continue
 		}
-		r := ln.Row
-		out = append(out, Seed{
-			ID:      r.Get("id"),
-			Class:   strings.ToLower(strings.TrimSpace(r.Get("class"))),
-			Name:    r.Get("name"),
-			Org:     r.Get("org"),
-			URL:     r.Get("url"),
-			Added:   r.Get("added"),
-			Source:  r.Get("source"),
-			Consent: r.Get("consent"),
-			Unknown: unknownFields(r, seedKeys...),
-		})
+		out = append(out, seedOf(ln.Row))
 	}
 	return out
+}
+
+// seedOf is THE projection of one row — read by Seeds() and by the editor in
+// mutate.go, so a field added here reaches both without a second copy.
+func seedOf(r *Row) Seed {
+	return Seed{
+		ID:      r.Get("id"),
+		Class:   strings.ToLower(strings.TrimSpace(r.Get("class"))),
+		Name:    r.Get("name"),
+		Org:     r.Get("org"),
+		URL:     r.Get("url"),
+		Added:   r.Get("added"),
+		Source:  r.Get("source"),
+		Consent: r.Get("consent"),
+		Unknown: unknownFields(r, seedKeys...),
+	}
 }
 
 // Add appends one seed, refusing a duplicate id and anything outside the

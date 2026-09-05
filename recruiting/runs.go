@@ -245,6 +245,11 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 	}}
 	run.Counts.Fetched = len(drafts)
 	existing := r.store.candidateIndex()
+	// a person already declined does not come back as `new`. Suppression is a
+	// SEARCH-TIME filter, not a folder (LinkedIn's hidden candidates,
+	// SeekOut's hidden filters): re-sweeping a lab must not re-ask a question
+	// that was already answered.
+	suppressed := r.store.PassedSet()
 	for i, d := range drafts {
 		d.SourceID = adapter.ID()
 		if d.Role == "" {
@@ -255,7 +260,15 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 		// view, whichever adapter produced it
 		d = sources.ClassifyLinks(d)
 		entry := Draft{ID: "d" + strconv.Itoa(i+1), Status: DraftNew, Draft: d}
-		if id, why := existing.match(d); id != "" {
+		if p, ok := suppressed[PassedKey(d.SourceID, d.ExternalID, d.Name)]; ok {
+			entry.Status = DraftRejected
+			entry.Reason = "passed " + p.At
+			if p.Reason != "" {
+				entry.Reason += " — " + p.Reason
+			}
+			entry.DecidedAt = now.UTC()
+			run.Counts.Rejected++
+		} else if id, why := existing.match(d); id != "" {
 			entry.Status, entry.CandidateID, entry.Reason = DraftDuplicate, id, why
 			entry.Draft.Dedupe = sources.DedupeHint{CandidateID: id, Reason: why}
 			run.Counts.Duplicate++
@@ -396,7 +409,7 @@ func (r *RunStore) Accept(runID, draftID string, now time.Time) (Run, Candidate,
 }
 
 // Reject marks one draft rejected. Nothing is written to the vault.
-func (r *RunStore) Reject(runID, draftID string, now time.Time) (Run, error) {
+func (r *RunStore) Reject(runID, draftID, reason string, now time.Time) (Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	run, err := r.load(runID)
@@ -413,6 +426,15 @@ func (r *RunStore) Reject(runID, draftID string, now time.Time) (Run, error) {
 	}
 	d.Status, d.DecidedAt = DraftRejected, now.UTC()
 	run.Counts.Rejected++
+	// the decision outlives this run's cache
+	if err := r.store.AddPassed(Passed{
+		Key:    PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name),
+		Name:   d.Draft.Name,
+		Reason: reason,
+		Source: d.Draft.SourceID,
+	}, now); err != nil {
+		return Run{}, err
+	}
 	run.triage(now)
 	if err := r.writeRun(run, nil); err != nil {
 		return Run{}, err
@@ -443,6 +465,11 @@ func (r *RunStore) Unreject(runID, draftID string, now time.Time) (Run, error) {
 	d.Status, d.DecidedAt, d.Reason = DraftNew, time.Time{}, ""
 	if run.Counts.Rejected > 0 {
 		run.Counts.Rejected--
+	}
+	// undoing a pass lifts the tombstone too, or the next sweep would
+	// re-suppress the person the owner just brought back
+	if err := r.store.RemovePassed(PassedKey(d.Draft.SourceID, d.Draft.ExternalID, d.Draft.Name)); err != nil {
+		return Run{}, err
 	}
 	run.TriagedAt, run.ExpiresAt = time.Time{}, time.Time{}
 	if err := r.writeRun(run, nil); err != nil {

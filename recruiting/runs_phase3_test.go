@@ -107,7 +107,7 @@ func TestUnrejectRestoresADraftAndTheClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	// a pass on the only draft triages the run and starts the expiry clock
-	passed, err := rs.Reject(run.ID, "d1", testNow)
+	passed, err := rs.Reject(run.ID, "d1", "", testNow)
 	if err != nil {
 		t.Fatal(err)
 	}

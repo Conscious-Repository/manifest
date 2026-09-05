@@ -315,7 +315,15 @@ type NetworkPerson struct {
 	Source   string  `json:"source,omitempty"`
 	Consent  string  `json:"consent,omitempty"`
 	Added    string  `json:"added,omitempty"`
-	Unknown  []Field `json:"unknown,omitempty"`
+	// Archived is the date this connector was set aside. A person is ARCHIVED,
+	// never deleted (owner's rule, 2026-09-05): the row carries a judgment, and
+	// judgments keep their history. An archived connector stops being a path
+	// origin but its edges stand.
+	Archived string `json:"archived,omitempty"`
+	// Ref is where this person came from when they are not hand-typed — the
+	// vault contact key, so the same human is not a second record here.
+	Ref     string  `json:"ref,omitempty"`
+	Unknown []Field `json:"unknown,omitempty"`
 }
 
 // PeopleDoc is network/people.md.

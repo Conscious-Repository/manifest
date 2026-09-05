@@ -132,6 +132,44 @@ func assertIdentical(t *testing.T, what string, before, after map[string]string)
 	}
 }
 
+// assertOnlyChanged is assertIdentical with an allowance: exactly the named
+// files may appear or change, everything else must be byte-identical. It
+// exists because a pass now leaves ONE mark in the vault — the tombstone that
+// makes the decision outlive its run — and the invariant worth guarding is
+// still "and nothing else", not "nothing at all".
+func assertOnlyChanged(t *testing.T, what string, before, after map[string]string, allowed ...string) {
+	t.Helper()
+	ok := map[string]bool{}
+	for _, a := range allowed {
+		ok[a] = true
+	}
+	allow := func(p string) bool {
+		for a := range ok {
+			if p == a || strings.HasSuffix(p, "/"+a) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, p := range added(before, after) {
+		if !allow(p) {
+			t.Fatalf("%s: %s changed and was not allowed to", what, p)
+		}
+	}
+	for p, b := range before {
+		if allow(p) {
+			continue
+		}
+		a, okAfter := after[p]
+		if !okAfter {
+			t.Fatalf("%s: %s vanished", what, p)
+		}
+		if a != b {
+			t.Fatalf("%s: %s changed:\n%s", what, p, firstDiff(b, a))
+		}
+	}
+}
+
 // added returns the paths present after but not before, or changed.
 func added(before, after map[string]string) []string {
 	var out []string
@@ -268,7 +306,7 @@ func TestAcceptWritesExactlyOneCandidateRecord(t *testing.T) {
 	if _, _, err := rs.Accept(run.ID, "d2", testNow); err == nil {
 		t.Error("accepting an accepted draft succeeded")
 	}
-	if _, err := rs.Reject(run.ID, "d2", testNow); err == nil {
+	if _, err := rs.Reject(run.ID, "d2", "", testNow); err == nil {
 		t.Error("rejecting an accepted draft succeeded")
 	}
 	assertIdentical(t, "after the refused re-accept", after, snapshot(t, vault))
@@ -280,13 +318,22 @@ func TestRejectWritesNoCandidateRecord(t *testing.T) {
 	before := snapshot(t, vault)
 
 	run := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
-	got, err := rs.Reject(run.ID, "d1", testNow)
+	got, err := rs.Reject(run.ID, "d1", "not this role", testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertIdentical(t, "after reject", before, snapshot(t, vault))
+	// A pass writes ONE thing to the vault and it is not a record: the
+	// tombstone that stops the next sweep re-asking (passed.md — an id, a
+	// name key, a reason and a date). Every other file is untouched, and no
+	// candidate exists.
+	assertOnlyChanged(t, "after reject", before, snapshot(t, vault), "passed.md")
 	if len(store.CandidateSlugs()) != 0 {
 		t.Fatal("reject produced a candidate")
+	}
+	// the key is the EXTERNAL id when the source gave one — the same rule the
+	// duplicate check uses, so suppression and dedupe cannot drift
+	if p, ok := store.PassedSet()[PassedKey("fake", "A1", "Dana Reyes")]; !ok || p.Reason != "not this role" {
+		t.Fatalf("the pass left no tombstone: %+v", store.PassedSet())
 	}
 	if got.Drafts[0].Status != DraftRejected || got.Counts.Rejected != 1 || got.Drafts[0].DecidedAt.IsZero() {
 		t.Fatalf("draft after reject: %+v", got.Drafts[0])
@@ -295,13 +342,13 @@ func TestRejectWritesNoCandidateRecord(t *testing.T) {
 	if got.TriagedAt.IsZero() || !got.ExpiresAt.Equal(testNow.Add(RunTTL)) {
 		t.Fatalf("rejecting the last new draft did not triage the run: %+v", got.RunState)
 	}
-	if _, err := rs.Reject(run.ID, "d1", testNow); err == nil {
+	if _, err := rs.Reject(run.ID, "d1", "", testNow); err == nil {
 		t.Error("rejecting a rejected draft succeeded")
 	}
 	if _, _, err := rs.Accept(run.ID, "d1", testNow); err == nil {
 		t.Error("accepting a rejected draft succeeded")
 	}
-	if _, err := rs.Reject(run.ID, "d9", testNow); err == nil {
+	if _, err := rs.Reject(run.ID, "d9", "", testNow); err == nil {
 		t.Error("rejecting a draft that does not exist succeeded")
 	}
 }
@@ -440,13 +487,15 @@ func TestRunCacheIsPrivateAndOutsideTheVault(t *testing.T) {
 	rs, _, vault := testRunStore(t, fake)
 	before := snapshot(t, vault)
 	run := mustRun(t, rs, RunRequest{Source: "fake", Query: "coil"})
-	if _, err := rs.Reject(run.ID, "d1", testNow); err != nil {
+	if _, err := rs.Reject(run.ID, "d1", "", testNow); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := rs.Pin(run.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	assertIdentical(t, "the vault after a run, a reject and a pin", before, snapshot(t, vault))
+	// the run cache itself never touches the vault; the pass's tombstone does,
+	// and only that
+	assertOnlyChanged(t, "the vault after a run, a reject and a pin", before, snapshot(t, vault), "passed.md")
 
 	root := rs.Root()
 	if rel, err := filepath.Rel(vault, root); err == nil && !strings.HasPrefix(rel, "..") {
@@ -514,7 +563,7 @@ func TestTriagedUnpinnedRunExpiresPinnedDoesNot(t *testing.T) {
 	triaged := mustRun(t, rs, RunRequest{Source: "fake", Query: "decided"})
 	pinned := mustRun(t, rs, RunRequest{Source: "fake", Query: "kept"})
 	for _, id := range []string{triaged.ID, pinned.ID} {
-		if _, err := rs.Reject(id, "d1", testNow); err != nil {
+		if _, err := rs.Reject(id, "d1", "", testNow); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -9,7 +9,10 @@ import (
 
 var (
 	networkPersonKeys = []string{"id", "name", "type", "email", "linkedin", "github",
-		"org", "title", "source", "consent", "added"}
+		"org", "title", "source", "consent", "added",
+		// archived: a connector is ARCHIVED, never deleted (the owner's rule,
+		// 2026-09-05) · ref: the vault contact this person came from
+		"archived", "ref"}
 	edgeKeys = []string{"from", "to", "kind", "basis", "confidence", "inferred",
 		"source", "evidence", "observed"}
 )
@@ -35,15 +38,22 @@ func (d *PeopleDoc) People() []NetworkPerson {
 			continue
 		}
 		r := ln.Row
-		out = append(out, NetworkPerson{
-			ID: r.Get("id"), Name: r.Get("name"), Type: r.Get("type"),
-			Email: r.Get("email"), LinkedIn: r.Get("linkedin"), GitHub: r.Get("github"),
-			Org: r.Get("org"), Title: r.Get("title"), Source: r.Get("source"),
-			Consent: r.Get("consent"), Added: r.Get("added"),
-			Unknown: unknownFields(r, networkPersonKeys...),
-		})
+		out = append(out, personOf(r))
 	}
 	return out
+}
+
+// personOf is THE projection of one row — read by People() and by the editor
+// in mutate.go, so a field added here reaches both without a second copy.
+func personOf(r *Row) NetworkPerson {
+	return NetworkPerson{
+		ID: r.Get("id"), Name: r.Get("name"), Type: r.Get("type"),
+		Email: r.Get("email"), LinkedIn: r.Get("linkedin"), GitHub: r.Get("github"),
+		Org: r.Get("org"), Title: r.Get("title"), Source: r.Get("source"),
+		Consent: r.Get("consent"), Added: r.Get("added"),
+		Archived: r.Get("archived"), Ref: r.Get("ref"),
+		Unknown: unknownFields(r, networkPersonKeys...),
+	}
 }
 
 // Add appends one network node. `email` is only ever filled in by hand (D15);
@@ -75,7 +85,7 @@ func (d *PeopleDoc) Add(p NetworkPerson) (NetworkPerson, error) {
 	r := newRow("id", p.ID, "name", p.Name)
 	for _, kv := range [][2]string{{"type", p.Type}, {"email", p.Email}, {"linkedin", p.LinkedIn},
 		{"github", p.GitHub}, {"org", p.Org}, {"title", p.Title}, {"source", p.Source},
-		{"consent", p.Consent}, {"added", p.Added}} {
+		{"consent", p.Consent}, {"added", p.Added}, {"ref", p.Ref}} {
 		if kv[1] != "" {
 			r.Set(kv[0], kv[1])
 		}

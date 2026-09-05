@@ -55,6 +55,14 @@ fifty entries, entered by hand. A seed is not a candidate.
 Relationship CLAIMS, never assumed truth. Every row carries the source that
 supports it, the basis in prose, and whether it was inferred.
 `,
+
+	"passed.md": `# AION recruiting — passed
+
+People already looked at and declined, so a second sweep of the same place
+does not ask the same question twice. Each row is a TOMBSTONE, not a record:
+the key a search matches on, the name, the reason if one was given, and the
+date. Delete a row to let that person be offered again.
+`,
 }
 
 // ownerCriteria is the criteria section a role ships with when its
@@ -103,4 +111,5 @@ var SeedOrder = []string{
 	"seeds.md",
 	"network/people.md",
 	"network/edges.md",
+	"passed.md",
 }
