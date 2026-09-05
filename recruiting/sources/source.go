@@ -165,6 +165,24 @@ type CandidateDraft struct {
 	Role       string   `json:"role,omitempty"`
 	Note       string   `json:"note,omitempty"`
 
+	// Classified presence (enrichment Phase 1, O3). Each is ONE URL taken
+	// verbatim from Links, sorted there by host (links.go), never derived
+	// from a name. Links stays the raw union; these are the labelled view a
+	// card can print. Site is the fallback: a real page that is not a
+	// platform's and that this code will not call a homepage. All omitempty,
+	// so a queue written before they existed reads back unchanged.
+	Homepage string `json:"homepage,omitempty"`
+	LinkedIn string `json:"linkedin,omitempty"`
+	Github   string `json:"github,omitempty"`
+	Orcid    string `json:"orcid,omitempty"`
+	Site     string `json:"site,omitempty"`
+
+	// Topics are the person's knowledge chips, carried AS the provider said
+	// them (O1) from their OWN author record only (O4) — never inferred from
+	// what a co-author works on. Empty means the source named none, not that
+	// the person has none. The `topics:` evidence snippet is the provenance.
+	Topics []string `json:"topics,omitempty"`
+
 	// Contact exists so D15 is TESTABLE rather than merely unimplemented: an
 	// adapter that sets an email or phone here has it DROPPED by the
 	// converter. A published address must arrive as an Evidence row of kind

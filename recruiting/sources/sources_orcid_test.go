@@ -78,6 +78,9 @@ func TestORCIDParsesFixtureIntoCitedDrafts(t *testing.T) {
 	if len(d.Links) != 1 || d.Links[0] != "https://orcid.org/0000-0002-1825-0097" {
 		t.Errorf("links: %v", d.Links)
 	}
+	if d.Orcid != "https://orcid.org/0000-0002-1825-0097" || d.Homepage != "" || d.Site != "" {
+		t.Errorf("the registry's own page is the orcid field and nothing else: %+v", d)
+	}
 	if !strings.Contains(d.Note, "D. Reyes") {
 		t.Errorf("note lost the other names: %q", d.Note)
 	}

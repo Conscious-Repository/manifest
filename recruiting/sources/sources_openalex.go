@@ -184,8 +184,12 @@ func (oa OpenAlex) draft(a openAlexAuthor, role string, retrieved time.Time) (Ca
 	}
 	if orcid := openAlexORCIDURL(a.ORCID); orcid != "" {
 		d.Links = append(d.Links, orcid)
+		d.Orcid = orcid
 	}
 
+	// The author record's own topics (OpenAlex derives them from the works
+	// it attributes to THIS author id) — author-canonical, so they may ride
+	// the structured field as well as the note (O1/O4).
 	topics := make([]string, 0, openAlexTopics)
 	for _, t := range a.Topics {
 		if len(topics) >= openAlexTopics {
@@ -197,6 +201,7 @@ func (oa OpenAlex) draft(a openAlexAuthor, role string, retrieved time.Time) (Ca
 	}
 	if len(topics) > 0 {
 		d.Note = "topics: " + strings.Join(topics, "; ")
+		d.Topics = append([]string(nil), topics...)
 	}
 
 	// The affiliation row exists only when the record names an institution;

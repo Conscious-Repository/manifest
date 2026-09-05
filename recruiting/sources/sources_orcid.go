@@ -169,6 +169,7 @@ func (o ORCID) draft(r orcidResult, role string, retrieved time.Time) (Candidate
 		Name:       name,
 		Role:       strings.TrimSpace(role),
 		Links:      []string{profileURL},
+		Orcid:      profileURL,
 	}
 	if len(insts) > 0 {
 		d.Org = insts[0]

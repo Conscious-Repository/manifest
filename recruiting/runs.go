@@ -245,6 +245,10 @@ func (r *RunStore) Execute(ctx context.Context, req RunRequest, now time.Time) (
 		if d.Role == "" {
 			d.Role = role
 		}
+		// a source that knows what its link IS has already said so; this
+		// sorts the rest by host so every queue entry carries the labelled
+		// view, whichever adapter produced it
+		d = sources.ClassifyLinks(d)
 		entry := Draft{ID: "d" + strconv.Itoa(i+1), Status: DraftNew, Draft: d}
 		if id, why := existing.match(d); id != "" {
 			entry.Status, entry.CandidateID, entry.Reason = DraftDuplicate, id, why

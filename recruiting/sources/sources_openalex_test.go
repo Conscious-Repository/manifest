@@ -82,6 +82,18 @@ func TestOpenAlexParsesFixtureIntoCitedDrafts(t *testing.T) {
 	if !strings.Contains(d.Note, "Diffusion MRI Reconstruction") {
 		t.Errorf("note lost the topics: %q", d.Note)
 	}
+	// the author record's topics ride the structured field too, as said,
+	// capped, and the ORCID it names is the orcid field (Phase 1 enrichment)
+	if strings.Join(d.Topics, "|") != "Diffusion MRI Reconstruction|Compressed Sensing|Pulse Sequence Design" {
+		t.Errorf("topics: %v", d.Topics)
+	}
+	if d.Orcid != "https://orcid.org/0000-0002-1825-0097" || d.Homepage != "" || d.Site != "" {
+		t.Errorf("classified links: %+v", d)
+	}
+	// an author record naming no topics carries none: missing is not absent
+	if len(got[2].Topics) != 0 {
+		t.Errorf("topics invented for a record that named none: %v", got[2].Topics)
+	}
 	if len(d.Evidence) != 2 {
 		t.Fatalf("evidence rows: %+v", d.Evidence)
 	}

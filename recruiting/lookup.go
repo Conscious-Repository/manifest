@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode"
 
+	"manifest/record"
 	"manifest/recruiting/sources"
 )
 
@@ -43,6 +44,10 @@ var lookupSources = []string{"openalex", "orcid", "github", "pubmed"}
 // lookupMax bounds each source's answer. A name lookup wants the few rows that
 // carry that exact name, not a survey.
 const lookupMax = 8
+
+// lookupTopicsMax caps the knowledge chips a draft accumulates across sources.
+// Each source already caps its own; the union stays small enough to read.
+const lookupTopicsMax = 10
 
 // LookupResult reports what one pass actually found — per source, so a silent
 // zero is legible as "they are not in these indexes" rather than "it broke".
@@ -93,6 +98,10 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	for _, e := range d.Draft.Evidence {
 		haveCite[strings.TrimSpace(e.URLOrFile)] = true
 	}
+	haveTopic := map[string]bool{}
+	for _, t := range d.Draft.Topics {
+		haveTopic[topicKey(t)] = true
+	}
 
 	for _, id := range lookupSources {
 		adapter, ok := r.adapters[id]
@@ -129,6 +138,9 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 				d.Draft.Evidence = append(d.Draft.Evidence, e)
 				res.Cites++
 			}
+			// a hit that named its links outright keeps those names; the rest
+			// are sorted by host before they are offered to the draft
+			h = sources.ClassifyLinks(h)
 			// fill only what the draft left blank
 			for _, f := range []struct {
 				key  string
@@ -138,15 +150,50 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 				{"title", &d.Draft.Title, h.Title},
 				{"org", &d.Draft.Org, h.Org},
 				{"location", &d.Draft.Location, h.Location},
+				{"homepage", &d.Draft.Homepage, h.Homepage},
+				{"linkedin", &d.Draft.LinkedIn, h.LinkedIn},
+				{"github", &d.Draft.Github, h.Github},
+				{"orcid", &d.Draft.Orcid, h.Orcid},
+				{"site", &d.Draft.Site, h.Site},
 			} {
 				if strings.TrimSpace(*f.dst) == "" && strings.TrimSpace(f.from) != "" {
 					*f.dst = strings.TrimSpace(f.from)
 					res.Filled = append(res.Filled, f.key)
 				}
 			}
+			// topics union: the hit's own chips (author-canonical by the
+			// adapter's contract), added as said, deduped by controlled
+			// normalization — a near-miss spelling is a second chip, not a
+			// merge, because guessing two terms are one is how a vocabulary
+			// quietly becomes wrong
+			for _, t := range h.Topics {
+				t = strings.TrimSpace(t)
+				key := topicKey(t)
+				if key == "" || haveTopic[key] || len(d.Draft.Topics) >= lookupTopicsMax {
+					continue
+				}
+				haveTopic[key] = true
+				d.Draft.Topics = append(d.Draft.Topics, t)
+				res.Filled = append(res.Filled, "topics")
+			}
 		}
 		if matched {
 			res.Matched = append(res.Matched, id)
+		}
+	}
+	// whatever the union of links now holds that no source labelled, label by
+	// host — the same fallback Execute applies to a fresh queue
+	before := d.Draft
+	d.Draft = sources.ClassifyLinks(d.Draft)
+	for _, f := range []struct{ key, was, now string }{
+		{"homepage", before.Homepage, d.Draft.Homepage},
+		{"linkedin", before.LinkedIn, d.Draft.LinkedIn},
+		{"github", before.Github, d.Draft.Github},
+		{"orcid", before.Orcid, d.Draft.Orcid},
+		{"site", before.Site, d.Draft.Site},
+	} {
+		if f.was == "" && f.now != "" {
+			res.Filled = append(res.Filled, f.key)
 		}
 	}
 	sort.Strings(res.Filled)
@@ -158,6 +205,12 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	}
 	return run, res, nil
 }
+
+// topicKey is the controlled topic normalizer (O1): the same rule that names
+// a vault note, so "Diffusion MRI Reconstruction" and "diffusion-mri
+// reconstruction" are ONE chip and "diffusion MRI" is another. Used for
+// equality only — the chip itself is stored as the provider said it.
+func topicKey(t string) string { return record.SlugSpaces(t, 0) }
 
 // nameKey folds a person's name to what two indexes can agree on: lowercase,
 // letters and digits only, single-spaced. Deliberately blunt — it is only ever

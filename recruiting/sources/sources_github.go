@@ -229,6 +229,7 @@ func (g GitHub) draft(u githubUser, role string, retrieved time.Time) CandidateD
 		Name:       name,
 		Role:       strings.TrimSpace(role),
 		Links:      []string{pageURL},
+		Github:     pageURL,
 	}
 	if c := strings.TrimSpace(u.Company); c != "" && !containsAddress(c) {
 		d.Org = c
@@ -237,7 +238,10 @@ func (g GitHub) draft(u githubUser, role string, retrieved time.Time) CandidateD
 		d.Location = l
 	}
 	if blog := httpURL(u.Blog); blog != "" {
+		// the profile's "blog" is whatever the person typed: a personal domain,
+		// a LinkedIn, a lab page. The host decides which field it is.
 		d.Links = append(d.Links, blog)
+		d = ClassifyLinks(d)
 	}
 	// The bio is quoted only when it carries no address (D15): a profile
 	// that publishes an email in its bio keeps it on GitHub, not here.

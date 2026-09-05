@@ -125,6 +125,12 @@ func TestGitHubParsesFixtureIntoCitedDrafts(t *testing.T) {
 	if len(d.Links) != 2 || d.Links[0] != "https://github.com/dreyes" || d.Links[1] != "https://dreyes.example.org" {
 		t.Errorf("links: %v", d.Links)
 	}
+	// the source knows what its links are: the profile IS the github field,
+	// and the blog — a bare personal domain — is the homepage
+	if d.Github != "https://github.com/dreyes" || d.Homepage != "https://dreyes.example.org" ||
+		d.Site != "" || d.LinkedIn != "" || d.Orcid != "" {
+		t.Errorf("classified links: %+v", d)
+	}
 	if !strings.Contains(d.Note, "diffusion models") {
 		t.Errorf("note lost the bio: %q", d.Note)
 	}
@@ -163,6 +169,10 @@ func TestGitHubParsesFixtureIntoCitedDrafts(t *testing.T) {
 	if got[2].Name != "Priya Natarajan" || got[2].Org != "Northern Imaging Lab" || len(got[2].Links) != 1 ||
 		got[2].Links[0] != "https://github.com/pnatarajan" {
 		t.Errorf("third draft: %+v", got[2])
+	}
+	if got[1].Github != "https://github.com/sokafor" || got[1].Homepage != "" ||
+		got[2].Github != "https://github.com/pnatarajan" || got[2].Homepage != "" || got[2].Site != "" {
+		t.Errorf("a blog that is not a page reached a profile field: %+v / %+v", got[1], got[2])
 	}
 	if sn := got[2].Evidence[0].Snippet; !strings.Contains(sn, "public_repos: 0") || !strings.Contains(sn, "followers: 0") {
 		t.Errorf("third snippet: %q", sn)

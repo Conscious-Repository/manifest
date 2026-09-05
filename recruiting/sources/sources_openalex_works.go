@@ -168,7 +168,10 @@ func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]Candi
 		}
 		if orcid := openAlexORCIDURL(a.Author.ORCID); orcid != "" {
 			d.Links = append(d.Links, orcid)
+			d.Orcid = orcid
 		}
+		// no Topics here on purpose (O4): a work's topics belong to the work,
+		// and stamping them on each of its authors would be co-author inference
 		if d.Links == nil && workURL != "" {
 			d.Links = append(d.Links, workURL)
 		}
