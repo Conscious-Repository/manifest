@@ -28,6 +28,10 @@ import (
 // dropped, not ranked — the cost of a miss is one empty result, the cost of a
 // wrong merge is a corrupted citation.
 //
+// OpenAlex may also resolve a PubMed first author through that exact paper's
+// raw byline and durable author ID. It returns the original name with cited
+// identity evidence, so the same merge and validation path still applies.
+//
 // ⚠ IT ADDS, IT NEVER OVERWRITES. Links and citations are unioned; a profile
 // field is filled ONLY where the draft left it empty. The source that found
 // the person first keeps the last word on what it said.
@@ -54,7 +58,7 @@ const lookupTopicsMax = 10
 type LookupResult struct {
 	Name string `json:"name"`
 	// Asked and Matched are source ids: everything consulted, and everything
-	// that answered with this exact name.
+	// that answered with this exact name or a cited paper-to-author resolution.
 	Asked   []string `json:"asked"`
 	Matched []string `json:"matched"`
 	// Failed are sources that errored — reported, never fatal: one index being
@@ -96,7 +100,7 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	}
 	haveCite := map[string]bool{}
 	for _, e := range d.Draft.Evidence {
-		haveCite[strings.TrimSpace(e.URLOrFile)] = true
+		haveCite[lookupCitationKey(e)] = true
 	}
 	haveTopic := map[string]bool{}
 	for _, t := range d.Draft.Topics {
@@ -109,9 +113,15 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 			continue
 		}
 		res.Asked = append(res.Asked, id)
-		hits, err := adapter.Search(ctx, sources.Scope{
-			Role: run.Scope.Role, Query: name, Max: lookupMax,
-		})
+		scope := sources.Scope{Role: run.Scope.Role, Query: name, Max: lookupMax}
+		var hits []sources.CandidateDraft
+		if lookup, ok := adapter.(interface {
+			LookupCandidate(context.Context, sources.CandidateDraft, sources.Scope) ([]sources.CandidateDraft, error)
+		}); ok {
+			hits, err = lookup.LookupCandidate(ctx, d.Draft, scope)
+		} else {
+			hits, err = adapter.Search(ctx, scope)
+		}
 		if err != nil {
 			res.Failed = append(res.Failed, id)
 			continue
@@ -131,10 +141,11 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 			}
 			for _, e := range h.Evidence {
 				u := strings.TrimSpace(e.URLOrFile)
-				if u == "" || haveCite[u] {
+				key := lookupCitationKey(e)
+				if u == "" || haveCite[key] {
 					continue
 				}
-				haveCite[u] = true
+				haveCite[key] = true
 				d.Draft.Evidence = append(d.Draft.Evidence, e)
 				res.Cites++
 			}
@@ -226,4 +237,11 @@ func nameKey(raw string) string {
 		}
 	}
 	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// A profile URL can support both affiliation and publication facts. Retain
+// distinct rows, including the topic-bearing row, across idempotent lookups.
+// Retrieval time is not identity: fetching the same fact again adds no row.
+func lookupCitationKey(e sources.Evidence) string {
+	return strings.Join([]string{strings.TrimSpace(e.SourceID), strings.TrimSpace(e.URLOrFile), e.Kind, e.Snippet}, "\x00")
 }

@@ -77,6 +77,7 @@ type openAlexLocation struct {
 // institution is read.
 type openAlexAuthorsh struct {
 	AuthorPosition string                `json:"author_position"`
+	RawAuthorName  string                `json:"raw_author_name"`
 	Author         openAlexWorkAuthor    `json:"author"`
 	Institutions   []openAlexInstitution `json:"institutions"`
 }
