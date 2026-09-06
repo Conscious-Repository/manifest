@@ -204,6 +204,7 @@ func TestORCIDRefusesEmptyQuery(t *testing.T) {
 // Server and shape failures each produce an error that says what happened,
 // and never a partial draft list.
 func TestORCIDErrorsAreClear(t *testing.T) {
+	fastScholarlyRetries(t)
 	cases := map[string]struct {
 		status int
 		body   string

@@ -107,7 +107,7 @@ func TestAllToolsOverMCPAndNoVaultEffects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Tools) != 21 {
+	if len(list.Tools) != 22 {
 		t.Fatalf("got %d tools", len(list.Tools))
 	}
 	person := Ref{"graph", "manifest", "person", "ada"}
@@ -116,8 +116,9 @@ func TestAllToolsOverMCPAndNoVaultEffects(t *testing.T) {
 		"capabilities.list": Object{}, "entity.resolve": ResolveInput{Query: "Ada Example"}, "entity.get": person, "sources.list": Object{}, "source_run.get": RunInput{run.ID}, "graph.neighbors": NeighborsInput{Ref: person, To: &lab},
 		"source_run.prepare":       SourceInput{Request: recruiting.RunRequest{Source: "web", Query: "imaging", Max: 999}, Seed: &lab},
 		"candidate_accept.prepare": DraftInput{RunID: run.ID, DraftID: "d1"}, "candidate_reject.prepare": DraftInput{RunID: run.ID, DraftID: "d1", Reason: "not this role"},
-		"network_person.prepare": PersonInput{Ref: person, Person: recruiting.NetworkPerson{Source: "test"}},
-		"graph_edge.prepare":     EdgeInput{From: person, To: lab, Edge: graph.Edge{Kind: "member_of", Basis: "lab page", Source: "test", Confidence: "0.8", Inferred: true}},
+		"candidate_accept_batch.prepare": BatchAcceptInput{RunID: run.ID, DraftIDs: []string{"d1"}},
+		"network_person.prepare":         PersonInput{Ref: person, Person: recruiting.NetworkPerson{Source: "test"}},
+		"graph_edge.prepare":             EdgeInput{From: person, To: lab, Edge: graph.Edge{Kind: "member_of", Basis: "lab page", Source: "test", Confidence: "0.8", Inferred: true}},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {

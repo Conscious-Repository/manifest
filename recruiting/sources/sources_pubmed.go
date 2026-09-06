@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -132,8 +131,8 @@ type pubmedSummary struct {
 
 // Search runs one bounded GET esearch.fcgi?db=pubmed&term=…&retmax=… and,
 // when it names any PMID, one GET esummary.fcgi?db=pubmed&id=… for at most
-// the scope's Max of them. Total calls are therefore at most 2. It never
-// paginates: the scope's Max is both the retmax it asks for and the most
+// the scope's Max of them. There are at most 2 logical fetches, each with
+// at most 4 attempts. It never paginates: the scope's Max is both the retmax it asks for and the most
 // PMIDs it will summarize, whatever the server sent. A search that finds
 // nothing returns an empty slice, not an error.
 func (p PubMed) Search(ctx context.Context, s Scope) ([]CandidateDraft, error) {
@@ -312,19 +311,20 @@ func (PubMed) GraphEdges(_ context.Context, d CandidateDraft) ([]EdgeClaim, erro
 	return d.Edges, nil
 }
 
-// get performs one GET against the E-utilities root with the polite
-// User-Agent, a bounded read, and turns any non-200 into an error that
-// names the status.
+// get preserves the polite headers and body bound, retrying transient
+// statuses before returning an error that names the final status.
 func (p PubMed) get(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	base := strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 	if base == "" {
 		base = PubMedBaseURL
 	}
-	if p.Client.Timeout == 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, pubmedTimeout)
-		defer cancel()
+	timeout := p.Client.Timeout
+	if timeout == 0 {
+		timeout = pubmedTimeout
 	}
+	// Bound the entire fetch, including Retry-After waits.
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	target := base + path
 	if len(params) > 0 {
 		target += "?" + params.Encode()
@@ -336,24 +336,5 @@ func (p PubMed) get(ctx context.Context, path string, params url.Values) ([]byte
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", PubMedUserAgent)
 
-	resp, err := p.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("pubmed: GET %s: %v", path, err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, pubmedMaxBody))
-	if err != nil {
-		return nil, fmt.Errorf("pubmed: reading GET %s: %v", path, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		msg := fmt.Sprintf("pubmed: GET %s returned HTTP %d", path, resp.StatusCode)
-		if excerpt := strings.Join(strings.Fields(string(body)), " "); excerpt != "" {
-			if len(excerpt) > 200 {
-				excerpt = excerpt[:200] + "…"
-			}
-			msg += ": " + excerpt
-		}
-		return nil, errors.New(msg)
-	}
-	return body, nil
+	return scholarlyGet(p.Client, req, "pubmed", path, pubmedMaxBody)
 }

@@ -18,7 +18,7 @@ import (
 	"manifest/recruiting"
 )
 
-const Version = "2.1.0"
+const Version = "2.2.0"
 
 type Object map[string]any
 type Adapter struct {
@@ -165,6 +165,7 @@ func (a *Adapter) Server() *mcp.Server {
 	add(a, s, "graph.neighbors", "Bounded stored general-graph neighbors and optional paths (at most 3 hops, 10 paths). Server-only task/calendar derivations are not included.", a.neighbors)
 	add(a, s, "source_run.prepare", "Normalize a source scope using Execute's shared PrepareScope. Resolve optional seed and role refs. No fetch or source-cache write; persists an operation. Standing authorization applies; network/robots validation remains execution-time.", a.sourcePrepare)
 	add(a, s, "candidate_accept.prepare", "Preview exactly one new draft through AcceptDraft with an in-memory capture writer, plus derived knowledge and decision effects. Persists an operation outside the vault.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, true) })
+	add(a, s, "candidate_accept_batch.prepare", "Preview acceptance of 1–100 explicitly selected draft IDs from one run, in order, with one approval and exact intermediate and final effects. Execute with operation.execute.", a.batchAcceptPrepare)
 	add(a, s, "candidate_reject.prepare", "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.", func(q DraftInput) (Object, error) { return a.draftPrepare(q, false) })
 	add(a, s, "network_person.prepare", "Resolve a canonical person; check existing network identity and preview PeopleDoc.Add with the shared domain payload and validation.", a.personPrepare)
 	add(a, s, "graph_edge.prepare", "Resolve both registered general-graph endpoints and preview a typed claim with shared graph validation and duplicate detection.", a.edgePrepare)

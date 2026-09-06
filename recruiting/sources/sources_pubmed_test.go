@@ -274,6 +274,7 @@ func TestPubMedNoResultsIsEmpty(t *testing.T) {
 // Server and shape failures on either call each produce an error that says
 // what happened, and never a partial draft list.
 func TestPubMedErrorsAreClear(t *testing.T) {
+	fastScholarlyRetries(t)
 	okSearch := pubmedFixture(t, "pubmed-esearch.json")
 	okSummary := pubmedFixture(t, "pubmed-esummary.json")
 	cases := map[string]struct {
@@ -283,7 +284,7 @@ func TestPubMedErrorsAreClear(t *testing.T) {
 		requests                    int
 	}{
 		"search http 500":     {500, 200, `<html>Internal Server Error</html>`, okSummary, "HTTP 500", 1},
-		"search http 429":     {429, 200, `{"error":"API rate limit exceeded"}`, okSummary, "HTTP 429", 1},
+		"search http 429":     {429, 200, `{"error":"API rate limit exceeded"}`, okSummary, "HTTP 429", scholarlyAttempts},
 		"search malformed":    {200, 200, `{"esearchresult":{"idlist":["1",`, okSummary, "malformed", 1},
 		"search not json":     {200, 200, `<html>maintenance</html>`, okSummary, "malformed", 1},
 		"search no result":    {200, 200, `{"header":{"type":"esearch"}}`, okSummary, "no esearchresult", 1},

@@ -61,6 +61,15 @@ stale file. Review generated changes and bump Version when semantics change;
 types cannot automatically detect a changed semantic contract. The full schemas,
 source scope fields and graph vocabulary are in [catalog.json](catalog.json).
 
+For several drafts from one run, call candidate_accept_batch.prepare with runId
+and an explicit draftIds list (1–100 unique IDs), review and approve that one
+operation, then call operation.execute. Preparation rehearses the ordered accepts
+on a private snapshot through the same domain services. Approval covers each
+intermediate write and the final vault/queue contents. External changes still
+invalidate the snapshot. A failure reports partial completion and confirmed
+files/drafts; execution never automatically replays a partial batch. Independently
+prepared single accepts retain their strict snapshot checks.
+
 ## Tools
 
 | Tool | Contract |

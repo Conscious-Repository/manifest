@@ -521,6 +521,45 @@
         "idempotentHint": false,
         "readOnlyHint": false
       },
+      "description": "Preview acceptance of 1–100 explicitly selected draft IDs from one run, in order, with one approval and exact intermediate and final effects. Execute with operation.execute.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string"
+          },
+          "conversation": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "draftIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "runId",
+          "draftIds"
+        ],
+        "additionalProperties": false
+      },
+      "name": "candidate_accept_batch.prepare"
+    },
+    {
+      "annotations": {
+        "idempotentHint": false,
+        "readOnlyHint": false
+      },
       "description": "Resolve one new draft and preview durable passed.md suppression plus queue and audit effects.",
       "inputSchema": {
         "type": "object",
@@ -1222,7 +1261,7 @@
       "name": "operation.execute"
     }
   ],
-  "version": "2.1.0",
+  "version": "2.2.0",
   "vocabulary": {
     "entityKinds": [
       "task",

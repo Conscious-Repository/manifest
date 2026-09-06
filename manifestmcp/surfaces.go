@@ -125,6 +125,12 @@ func (a *Adapter) Regenerate(id string) (Object, error) {
 		if err == nil {
 			out, err = a.draftPrepare(q, o.Tool == "candidate_accept.prepare")
 		}
+	case "candidate_accept_batch.prepare":
+		var q BatchAcceptInput
+		err = decode(input, &q)
+		if err == nil {
+			out, err = a.batchAcceptPrepare(q)
+		}
 	case "network_person.prepare":
 		var q PersonInput
 		err = decode(input, &q)

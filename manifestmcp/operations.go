@@ -366,6 +366,7 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 		return nil, err
 	}
 	var p struct {
+		Steps       []acceptStep               `json:"steps"`
 		Pinned      bool                       `json:"pinned"`
 		GraphEntity graph.Entity               `json:"graphEntity"`
 		Seed        recruiting.Seed            `json:"seed"`
@@ -398,6 +399,9 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 	}
 	o.Status = "executing"
 	o.Result = Object{"runId": p.RunID, "draftId": p.DraftID, "intendedCandidate": p.Candidate, "intendedPerson": p.Person, "intendedEdge": p.Edge, "knowledgeClaims": p.Claims, "confirmedFiles": []string{}}
+	if len(p.Steps) > 0 {
+		o.Result["intendedAccepts"] = p.Steps
+	}
 	if p.Candidate.ID != "" {
 		o.Result["intendedObjectRefs"] = []Ref{{"recruiting", "manifest", "person", p.Candidate.ID}, {"graph", "manifest", "person", p.Candidate.ID}}
 	}
@@ -405,12 +409,17 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 		return nil, err
 	} // intent before any effect
 	write := a.approvedWriter()
+	approvedFiles := o.Files
+	writeExpected := make(map[string]string, len(o.Expected))
+	for rel, rev := range o.Expected {
+		writeExpected[rel] = rev
+	}
 	guarded := func(abs string, b []byte) error {
 		rel, e := filepath.Rel(a.Vault, abs)
 		if e != nil {
 			return e
 		}
-		want, ok := o.Files[rel]
+		want, ok := approvedFiles[rel]
 		if !ok || want != string(b) {
 			return fmt.Errorf("shared service differs from approved bytes: %s", rel)
 		}
@@ -418,13 +427,14 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 		if e != nil && !os.IsNotExist(e) {
 			return e
 		}
-		expected, exists := o.Expected[rel]
+		expected, exists := writeExpected[rel]
 		if exists && revision(string(old)) != expected || !exists && !os.IsNotExist(e) {
 			return fmt.Errorf("target changed before write: %s", rel)
 		}
 		if e = write(rel, b); e != nil {
 			return e
 		}
+		writeExpected[rel] = revision(string(b))
 		o.Applied = append(o.Applied, rel)
 		return a.saveOperation(o)
 	}
@@ -444,19 +454,50 @@ func (a *Adapter) Execute(ctx context.Context, id string) (Object, error) {
 				o.Result["no_change"] = run.Counts.Fetched == 0
 			}
 		case "candidate_accept.prepare":
-			_, _, err = runs.Accept(p.RunID, p.DraftID, p.AsOf)
-			if err == nil { // Apply the saved claims through the same validators, then flush final previewed documents.
-				memory := &knowledgeMemory{entities: g.LoadEntities(), edges: g.LoadEdges(), vocab: g.Vocabulary()}
+			var knowledge recruiting.KnowledgeResult
+			knowledge, err = applyAccept(runs, g, p.RunID, acceptStep{DraftID: p.DraftID, AsOf: p.AsOf, Claims: p.Claims})
+			if err == nil {
+				o.Result["knowledge"] = knowledge
+			}
+		case "candidate_accept_batch.prepare":
+			results := []Object{}
+			for _, step := range p.Steps {
+				if err = ctx.Err(); err != nil {
+					break
+				}
+				var currentRun recruiting.Run
+				currentRun, err = runs.Get(p.RunID)
+				if err != nil {
+					break
+				}
+				if revision(currentRun) != step.RunVersion {
+					err = fmt.Errorf("run changed before batch draft %s", step.DraftID)
+					break
+				}
+				approvedFiles = step.Files
 				var knowledge recruiting.KnowledgeResult
-				knowledge, err = recruiting.ApplyKnowledge(memory, p.Claims)
-				if err == nil && len(knowledge.AddedEntities) > 0 {
-					err = g.SaveEntities(memory.entities)
+				knowledge, err = applyAccept(runs, g, p.RunID, step)
+				if err != nil {
+					break
 				}
-				if err == nil && len(knowledge.AddedEdges) > 0 {
-					err = g.SaveEdges(memory.edges)
+				for rel, want := range step.Files {
+					var b []byte
+					b, err = os.ReadFile(filepath.Join(a.Vault, rel))
+					if err != nil {
+						break
+					}
+					if string(b) != want {
+						err = fmt.Errorf("batch step differs from approved effect: %s", rel)
+						break
+					}
 				}
-				if err == nil {
-					o.Result["knowledge"] = knowledge
+				if err != nil {
+					break
+				}
+				results = append(results, Object{"draftId": step.DraftID, "candidate": step.Candidate, "knowledge": knowledge})
+				o.Result["accepted"] = results
+				if err = a.saveOperation(o); err != nil {
+					break
 				}
 			}
 		case "candidate_unreject.prepare":
@@ -549,6 +590,7 @@ func (a *Adapter) reconcile(o *OperationRecord) {
 	}
 
 	var target struct {
+		Steps       []acceptStep    `json:"steps"`
 		RunID       string          `json:"runId"`
 		DraftID     string          `json:"draftId"`
 		GraphEntity graph.Entity    `json:"graphEntity"`
@@ -558,6 +600,18 @@ func (a *Adapter) reconcile(o *OperationRecord) {
 	if target.RunID != "" {
 		if run, err := a.Runs.Get(target.RunID); err == nil {
 			o.Result["currentRun"] = run
+			if o.Tool == "candidate_accept_batch.prepare" {
+				confirmed := []string{}
+				for _, step := range target.Steps {
+					for _, d := range run.Drafts {
+						if d.ID == step.DraftID && d.Status == recruiting.DraftAccepted && d.CandidateID == step.Candidate.ID && d.DecidedAt.Equal(step.AsOf) {
+							confirmed = append(confirmed, d.ID)
+							refs = append(refs, Ref{"recruiting", "manifest", "draft", run.ID + "/" + d.ID})
+						}
+					}
+				}
+				o.Result["confirmedDrafts"] = confirmed
+			}
 			if o.Tool == "candidate_lookup.prepare" {
 				var p struct {
 					AsOf time.Time `json:"asOf"`

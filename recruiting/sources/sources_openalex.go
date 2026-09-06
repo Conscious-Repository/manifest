@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -263,18 +262,20 @@ func (OpenAlex) GraphEdges(_ context.Context, d CandidateDraft) ([]EdgeClaim, er
 	return d.Edges, nil
 }
 
-// get performs one GET against the API root with the polite headers and a
-// bounded read, and turns any non-200 into an error that names the status.
+// get preserves the polite headers and body bound, retrying transient
+// statuses before returning an error that names the final status.
 func (oa OpenAlex) get(ctx context.Context, path string, params url.Values) ([]byte, error) {
 	base := strings.TrimRight(strings.TrimSpace(oa.BaseURL), "/")
 	if base == "" {
 		base = OpenAlexBaseURL
 	}
-	if oa.Client.Timeout == 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, openAlexTimeout)
-		defer cancel()
+	timeout := oa.Client.Timeout
+	if timeout == 0 {
+		timeout = openAlexTimeout
 	}
+	// Bound the entire fetch, including Retry-After waits.
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path+"?"+params.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("openalex: %v", err)
@@ -282,26 +283,7 @@ func (oa OpenAlex) get(ctx context.Context, path string, params url.Values) ([]b
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", OpenAlexUserAgent)
 
-	resp, err := oa.Client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("openalex: GET %s: %v", path, err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, openAlexMaxBody))
-	if err != nil {
-		return nil, fmt.Errorf("openalex: reading GET %s: %v", path, err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		msg := fmt.Sprintf("openalex: GET %s returned HTTP %d", path, resp.StatusCode)
-		if excerpt := strings.Join(strings.Fields(string(body)), " "); excerpt != "" {
-			if len(excerpt) > 200 {
-				excerpt = excerpt[:200] + "…"
-			}
-			msg += ": " + excerpt
-		}
-		return nil, errors.New(msg)
-	}
-	return body, nil
+	return scholarlyGet(oa.Client, req, "openalex", path, openAlexMaxBody)
 }
 
 // openAlexAuthorURL normalises an author id — the API returns it as the full

@@ -215,6 +215,7 @@ func TestOpenAlexRefusesEmptyQuery(t *testing.T) {
 // Server and shape failures each produce an error that says what happened,
 // and never a partial draft list.
 func TestOpenAlexErrorsAreClear(t *testing.T) {
+	fastScholarlyRetries(t)
 	cases := map[string]struct {
 		status int
 		body   string
