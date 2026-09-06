@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// personaFixture: loopFixture + the three seed personas materialized under
+// personaFixture: loopFixture + the seed personas materialized under
 // <vault>/system/agents/personas and wired via UsePersonas.
 func personaFixture(t *testing.T) *Server {
 	t.Helper()
@@ -31,7 +31,7 @@ func seedPersonasInto(t *testing.T, srv *Server) *Server {
 func TestPersonasParseAndLint(t *testing.T) {
 	srv := personaFixture(t)
 	all := srv.personas()
-	for _, intent := range []string{"brief", "info", "plan"} {
+	for _, intent := range []string{"comment", "brief", "info", "plan"} {
 		p, ok := all[intent]
 		if !ok || !p.Enabled || p.Prompt == "" || p.Rel != "system/agents/personas/"+intent+".md" {
 			t.Fatalf("%s: %+v", intent, p)
@@ -115,7 +115,7 @@ func TestSpoolPersonaRequestShape(t *testing.T) {
 		_ = os.Remove(f)
 	}
 
-	// empty intent: today's request exactly — no persona traces
+	// Empty intent gets baseline brevity and the reply protocol.
 	if err := srv.spoolTaskWorkOrder(h, id, "comment", "plain relay", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -124,8 +124,8 @@ func TestSpoolPersonaRequestShape(t *testing.T) {
 	if strings.Contains(req, "PERSONA") || strings.Contains(req, "[persona::") {
 		t.Fatalf("empty intent must not mention personas:\n%s", req)
 	}
-	if !strings.Contains(req, "PROTOCOL: your library brief must be exactly ONE of") {
-		t.Fatalf("empty intent keeps the classic protocol:\n%s", req)
+	if !strings.Contains(req, "TASK-COMMENT BREVITY") || !strings.Contains(req, "reply in ONE library brief that IS your answer") {
+		t.Fatalf("empty intent needs baseline brevity and reply protocol:\n%s", req)
 	}
 }
 

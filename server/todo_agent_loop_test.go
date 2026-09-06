@@ -145,15 +145,15 @@ func TestTaskAgentReplySignalTracksNewestUnansweredReply(t *testing.T) {
 	}
 }
 
-func TestCommentPhasePlanMaterializes(t *testing.T) {
+func TestPlanPhasePlanMaterializes(t *testing.T) {
 	srv := loopFixture(t)
 	id := "inbox/research-zoning"
-	// the owner's exact bug: a PLAN arriving via a comment-phase run
-	fakeRun(t, srv, "r2", id, "comment", "# Plan\n\n1. Pull the zoning map.\n2. Draft the memo.")
+	// Complete plan artifacts are produced on explicit plan turns.
+	fakeRun(t, srv, "r2", id, "plan", "# Plan\n\n1. Pull the zoning map.\n2. Draft the memo.")
 	sweep(srv)
 	rec := srv.readPlanRecord(id)
 	if !strings.Contains(rec.Plan, "Pull the zoning map") {
-		t.Fatalf("comment-phase plan must materialize: %+v", rec)
+		t.Fatalf("plan-phase plan must materialize: %+v", rec)
 	}
 	th := srv.listThread(id)
 	if len(th) != 1 || !strings.Contains(th[0].Text, "plan attached") {
@@ -162,7 +162,7 @@ func TestCommentPhasePlanMaterializes(t *testing.T) {
 	if r, _ := th[0].Meta["artifactRef"].(string); r == "" {
 		t.Fatalf("brief must be linked on the comment: %+v", th[0].Meta)
 	}
-	// plan-ready signal pages (state was done+comment, not plan-ready)
+	// The plan-ready signal still pages.
 	sigs, _ := planReadyEmitter{srv}.Emit(time.Now())
 	found := false
 	for _, sg := range sigs {

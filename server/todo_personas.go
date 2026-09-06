@@ -16,6 +16,7 @@ package server
 // between them is a later decision; nothing here depends on it.
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -54,6 +55,27 @@ var personaIntentRe = regexp.MustCompile(`^[a-z0-9-]{1,16}$`)
 // maxPersonaPrompt keeps a persona preamble from crowding the task text out
 // of a work order — over-long prompts are truncated at load, with a log line.
 const maxPersonaPrompt = 2000
+
+// Task comments share a baseline even without an intent. The record overrides
+// the wording; the defensive word ceiling remains a single code constant.
+const taskCommentMaxWords = 280
+const taskCommentBrevity = `You are replying to the owner in a task-comment thread. Reply in plain markdown.
+Lead with the answer. Keep it to about 3 short sentences and at most %d words.
+No preamble, don't restate the question, don't recap. Expand only if the answer
+genuinely needs a list, quote, or code block; the word ceiling still applies.`
+
+func isTaskCommentPhase(phase string) bool { return phase != "plan" && phase != "go" }
+
+func (s *Server) taskCommentPrompt(phase string) string {
+	if !isTaskCommentPhase(phase) {
+		return ""
+	}
+	prompt := fmt.Sprintf(taskCommentBrevity, taskCommentMaxWords)
+	if p, ok := s.persona("comment"); ok && p.Prompt != "" {
+		prompt = p.Prompt
+	}
+	return "TASK-COMMENT BREVITY (baseline):\n" + prompt + "\n"
+}
 
 // personas loads every enabled-or-not persona record, keyed by intent.
 // Lint at load: the intent field must match the filename stem and the slug
@@ -132,9 +154,10 @@ func splitAgentToken(tok string) (base, intent string) {
 	return tok, ""
 }
 
-// SeedPersonas — the three seeded intents (owner's Q1 set), write-once via
+// SeedPersonas — seeded intents and the default comment baseline, write-once via
 // vaultwriter.CreateRecord; editing afterwards is Obsidian or the note view.
 var SeedPersonas = map[string]string{
+	"comment": "---\nintent: comment\nmodel:\nenabled: true\n---\n" + fmt.Sprintf(taskCommentBrevity, taskCommentMaxWords) + "\n",
 	"brief": `---
 intent: brief
 model:

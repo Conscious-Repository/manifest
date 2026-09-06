@@ -269,11 +269,12 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 	// it the reply protocol still replaces the plan protocol and the
 	// [persona::] token still rides, so ingestion posts the answer as a
 	// comment and never writes ## plan (the Ask contract, agent-chat plan
-	// §3.4a). An empty intent is today's request byte-for-byte.
-	reply := intent != "" && intent != "plan"
+	// §3.4a). Untagged comment turns use the same reply protocol.
+	reply := isTaskCommentPhase(phase) || (intent != "" && intent != "plan")
 	text, _ := s.openTaskText(taskID)
 	rec := s.readPlanRecord(taskID)
 	var b strings.Builder
+	b.WriteString(s.taskCommentPrompt(phase))
 	if hasPersona {
 		b.WriteString("PERSONA (how to respond — this governs your reply's shape and length):\n" + p.Prompt + "\n")
 	}
@@ -294,7 +295,7 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 	case "go":
 		b.WriteString("EXECUTE the approved plan below. The owner reviewed and fired it — do the work and " +
 			"write the result as your library brief.\nAPPROVED PLAN:\n" + extra + "\n")
-	case "comment":
+	default:
 		if pl := strings.TrimSpace(rec.Plan); pl != "" {
 			b.WriteString("CURRENT PLAN (the canon plan on the record — the owner may have edited it):\n" + pl + "\n")
 		}
@@ -307,7 +308,7 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 		b.WriteString(protocol)
 	}
 	b.WriteString("For this todo: [todo:: " + taskID + "] [phase:: " + phase + "]")
-	if hasPersona || reply {
+	if hasPersona || (intent != "" && reply) {
 		b.WriteString(" [persona:: " + intent + "]")
 	}
 	// Hermes runs on the owner's real do-bot (the Hermes Agent CLI), not the
@@ -448,7 +449,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		switch {
 		case d.State == "plan-ready":
 			mode = "brief"
-		case d.State == "done" && d.Phase == "comment":
+		case d.State == "done" && isTaskCommentPhase(d.Phase):
 			mode = "brief"
 		case d.State == "done" && d.Phase == "go":
 			mode = "result"
@@ -512,13 +513,21 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		if d.Persona != "" {
 			meta["persona"] = d.Persona
 		}
-		// persona-gated direct answers (brief/info/…): the WHOLE brief is the
-		// reply — post it as a thread comment, never touch the plan.
-		if d.Persona != "" && d.Persona != "plan" {
+		// Comment turns are direct answers, including untagged asks.
+		if isTaskCommentPhase(d.Phase) || (d.Persona != "" && d.Persona != "plan") {
+			// Preserve the existing questions signal for untagged dialog.
+			marker := threads.ActReply
+			if d.Persona == "" || d.Persona == "plan" {
+				if questions, only := briefQuestions(brief); only && questions != "" {
+					brief = questions
+					marker = threads.ActQuestions
+				}
+			}
+			brief = capTaskComment(d.Phase, brief)
 			if _, err := s.addThreadEntry(hermes, id, threads.ActComment, brief, nil, nil, meta); err != nil {
 				continue
 			}
-			s.markerAdd(id, threads.ActReply, d.RunID)
+			s.markerAdd(id, marker, d.RunID)
 			continue
 		}
 		hadPlan := strings.TrimSpace(rec.Plan) != ""

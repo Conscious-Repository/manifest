@@ -150,10 +150,10 @@ func TestSplitBriefHardCutOnRuneBoundary(t *testing.T) {
 	}
 }
 
-// An ask answer LONGER than the thread store's comment cap must land whole,
+// An uncapped deliverable LONGER than the thread store's comment cap must land whole,
 // chunked across numbered comments — never silently dropped (the 2026-09-04
 // vance-ai-task ask: run.completed in the ledger, nothing in the thread).
-func TestLongAskAnswerChunksIntoThread(t *testing.T) {
+func TestLongDeliverableChunksIntoThread(t *testing.T) {
 	srv, _ := panelFixture(t)
 	taskID := "inbox/long-answer"
 	para := strings.Repeat("insight sentence with real words in it. ", 40) // ~1.6k
@@ -161,7 +161,7 @@ func TestLongAskAnswerChunksIntoThread(t *testing.T) {
 	for i := 0; i < 8; i++ { // ~13k, over the 8000 cap
 		brief += "## section " + string(rune('a'+i)) + "\n" + para + "\n\n"
 	}
-	srv.materializeHermesBrief(taskID, "", "comment", "info", brief)
+	srv.postAgentBrief(agentTokenIdentity("agent:hermes"), taskID, brief, nil)
 
 	th := srv.listThread(taskID)
 	var joined string

@@ -337,9 +337,9 @@ func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief str
 		s.postAgentBrief(who, taskID, text, meta)
 		return
 	}
-	// non-plan persona (brief/info/…) → the whole reply IS the answer.
-	if persona != "" && persona != "plan" {
-		s.postAgentBrief(who, taskID, brief, meta)
+	// Comment turns answer in the thread, even without a tagged persona.
+	if isTaskCommentPhase(phase) || (persona != "" && persona != "plan") {
+		s.postAgentBrief(who, taskID, capTaskComment(phase, brief), meta)
 		return
 	}
 	// questions-only → post them as dialog, leave the plan untouched.
