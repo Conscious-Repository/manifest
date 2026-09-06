@@ -2134,6 +2134,28 @@ function recDraftUnpass(run, d) {
   return undo;
 }
 
+// Evidence is source context, never a derived role or affiliation.
+function recDraftSubtitle(dr) {
+  const identity = [dr.title, dr.org, dr.location].filter((v) => v && v.trim()).join(" · ");
+  if (identity) return identity;
+  for (const e of dr.evidence || []) {
+    const snippet = (e.snippet || "").replace(/\s+/g, " ").trim();
+    if (!snippet) continue;
+    const source = e.sourceId || dr.sourceId || "";
+    let label = snippet;
+    if (source === "pubmed") {
+      // PubMed separates labeled fields with middle dots; titles can contain dots too.
+      const field = (name) => ((snippet.match(new RegExp("(?:^| · )" + name +
+        ":(.*?)(?= · (?:author|title|journal|pubdate|pmid|doi):|$)")) || [])[1] || "").trim();
+      label = [field("title"), field("journal")].filter(Boolean).join(" · ") || snippet;
+    }
+    const short = Array.from(label);
+    label = short.length > 160 ? short.slice(0, 159).join("").trimEnd() + "…" : label;
+    return label + (source === "pubmed" ? " (from PubMed)" : " (from source evidence)");
+  }
+  return "";
+}
+
 // ⚠ ONE DRAFT IS ONE CARD. This queue used to render every citation's full
 // abstract inline, with each raw URL appended bare to the card — which made
 // adjacent links run together into one unreadable string and buried the two
@@ -2167,7 +2189,7 @@ function recDraftCard(run, d) {
     return card;
   }
 
-  const sub = [dr.title, dr.org, dr.location].filter(Boolean).join(" · ");
+  const sub = recDraftSubtitle(dr);
   if (sub) card.append(el("div", "rec-draft-sub", sub));
 
   if (d.candidateId) {
