@@ -401,8 +401,9 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := b.Kind
-	if kind != "claude" && kind != "codex" {
-		kind = "shell"
+	if kind != "shell" && kind != "claude" && kind != "codex" {
+		httpError(w, errBadRequest("kind must be one of shell|claude|codex"))
+		return
 	}
 	device := strings.TrimSpace(b.Device)
 	if device != "" {

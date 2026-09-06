@@ -146,7 +146,7 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		Text, Domain, Rock, Issue, Bucket, Owner string
 		Stage                                    string // milestone/stage placement (goals rocks + property stages)
-		Container                                struct{ Kind, Slug string }
+		Container                                struct{ Kind, Slug, Name string }
 	}
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.Text) == "" {
 		httpError(w, errBadRequest("text is required"))
@@ -177,6 +177,24 @@ func (s *Server) handleTaskAdd(w http.ResponseWriter, r *http.Request) {
 		return extra
 	}
 	switch b.Container.Kind {
+	case "domain":
+		if name := strings.TrimSpace(b.Container.Name); name != "" {
+			if domain := strings.TrimSpace(b.Domain); domain != "" && !strings.EqualFold(domain, name) {
+				httpError(w, errBadRequest("domain and container.name must match"))
+				return
+			}
+			doc, err := s.tasksStore.Load()
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			dom := doc.Domain(name)
+			if dom == nil {
+				httpError(w, errBadRequest("unknown domain: "+name))
+				return
+			}
+			b.Domain = dom.Name
+		}
 	case "property":
 		lineText := ""
 		if s.propTaskMutate(w, b.Container.Slug, func(list *realestate.PropertyTaskList) (bool, error) {
