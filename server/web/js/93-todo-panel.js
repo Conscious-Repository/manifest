@@ -6,6 +6,8 @@
 // Comment / Ask ✦ / Do ✦ composer, @-mentions and content-addressed
 // attachments. Under 1100px the panel becomes a sheet.
 
+const todoComposerDrafts = new Map();
+let todoPanelOrigin = null;
 let todoSelId = null;      // selected todo id ("" = none)
 let todoPanelData = null;  // last /api/tasks/panel payload
 let todoDeepLink = null;   // #/tasks/<id> → open after load
@@ -20,19 +22,31 @@ let todoComposerPreset = null;
 // changed, and never while the owner is typing in the panel.
 function ensureTodoPanelPoll() {
   if (todoPanelTimer) return;
+  let refreshing = false;
   todoPanelTimer = setInterval(async () => {
-    if (!todoSelId || document.hidden || !els.todosView || els.todosView.hidden) return;
-    const host = document.getElementById("todoPanel");
-    if (host && host.contains(document.activeElement) &&
-        /^(input|textarea)$/i.test(document.activeElement.tagName)) return;
+    if (refreshing || document.hidden || !els.todosView || els.todosView.hidden || _dragId) return;
+    if (els.todosView.contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) return;
+    refreshing = true;
     try {
-      const fresh = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(todoSelId))).json();
+      const response = await fetch("/api/tasks");
+      if (!response.ok) throw new Error("Task refresh failed");
+      const tasks = await response.json();
+      if (_dragId || (els.todosView.contains(document.activeElement) && document.activeElement.matches("input, textarea, select"))) return;
+      if (JSON.stringify(tasks) !== JSON.stringify(todosCache) || todosLoadError) {
+        todosCache = tasks; todosLoadError = ""; renderTodos();
+      }
+      if (!todoSelId) return;
+      const panelResponse = await fetch("/api/tasks/panel?id=" + encodeURIComponent(todoSelId));
+      if (!panelResponse.ok) return;
+      const fresh = await panelResponse.json();
       if (fresh.id !== todoSelId) return;
       if (JSON.stringify(fresh) !== JSON.stringify(todoPanelData)) {
         todoPanelData = fresh;
         renderTodoPanel(false);
       }
-    } catch (e) {}
+    } catch (e) {
+      if (!todosLoadError) { todosLoadError = "Couldn't refresh tasks. Showing the last loaded tasks."; renderTodos(); }
+    } finally { refreshing = false; }
   }, 8000);
 }
 
@@ -41,6 +55,7 @@ function ensureTodoPanelPoll() {
 // lands the caret on the agent picker.
 function openTodoPanel(rOrId, opts) {
   const id = typeof rOrId === "string" ? rOrId : rOrId.id;
+  if (!todoSelId) todoPanelOrigin = document.activeElement;
   todoSelId = id;
   todoComposerPreset = opts && opts.mode ? opts : null;
   const suffix = "#/tasks/" + encodeURIComponent(id);
@@ -49,6 +64,7 @@ function openTodoPanel(rOrId, opts) {
   }
   ensureTodoPanelPoll();
   renderTodoPanel(true);
+  document.querySelectorAll(".tdo-row, .tdo-card").forEach((node) => node.classList.toggle("panel-sel", node.dataset.id === id));
 }
 
 function closeTodoPanel() {
@@ -56,6 +72,8 @@ function closeTodoPanel() {
   todoPanelData = null;
   try { history.replaceState(null, "", "#/tasks"); } catch (e) {}
   renderTodoPanel(false);
+  document.querySelectorAll(".panel-sel").forEach((node) => node.classList.remove("panel-sel"));
+  if (todoPanelOrigin && todoPanelOrigin.isConnected) todoPanelOrigin.focus();
 }
 
 // todoRowInfo — the row's live projection (text/container/owner), if visible.
@@ -74,21 +92,33 @@ async function renderTodoPanel(refetch) {
   }
   host.hidden = false;
   document.body.classList.add("tdo-panel-open");
+  const requestedID = todoSelId;
+  if (!todoPanelData || todoPanelData.id !== todoSelId) host.replaceChildren(el("div", "tdo-p-empty", "Loading task…"));
   if (refetch || !todoPanelData || todoPanelData.id !== todoSelId) {
     try {
-      todoPanelData = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(todoSelId))).json();
-    } catch (e) { todoPanelData = { id: todoSelId, record: {}, thread: [] }; }
+      const response = await fetch("/api/tasks/panel?id=" + encodeURIComponent(requestedID));
+      if (!response.ok) throw new Error("Task unavailable");
+      const fresh = await response.json();
+      if (todoSelId !== requestedID) return;
+      todoPanelData = fresh;
+    } catch (e) {
+      if (todoSelId !== requestedID) return;
+      host.replaceChildren(el("div", "tdo-p-empty", "Couldn't load this task."), pillLight("Retry", () => renderTodoPanel(true)), pillLight("Close", closeTodoPanel));
+      return;
+    }
   }
   if (todoPanelData.id !== todoSelId) return; // raced a newer selection
   host.innerHTML = "";
   const d = todoPanelData;
   const rec = d.record || {};
-  const row = todoRowInfo(todoSelId);
+  const panelID = todoSelId;
+  const row = todoRowInfo(panelID) || (typeof todosCompletedRow === "function" ? todosCompletedRow(panelID) : null);
 
   // --- head: title + container + close ---
   const head = el("div", "tdo-p-head");
   const titleWrap = el("div", "tdo-p-titlewrap");
-  titleWrap.append(el("div", "tdo-p-title", row ? row.text : todoSelId));
+  const taskTitle = el("div", "tdo-p-title", row ? row.text : rec.Title || rec.title || todoSelId);
+  titleWrap.append(taskTitle);
   const metaBits = [];
   if (row && row.container && row.container.name) metaBits.push(row.container.name);
   if (rec.State) metaBits.push(rec.State);
@@ -96,29 +126,50 @@ async function renderTodoPanel(refetch) {
   if (metaBits.length) titleWrap.append(el("div", "tdo-p-meta", metaBits.join(" · ")));
   head.append(titleWrap);
   const x = el("button", "aion-insp-x", "✕");
+  x.setAttribute("aria-label", "Close task");
   x.onclick = closeTodoPanel;
   head.append(x);
   host.append(head);
+  host.setAttribute("aria-label", "Task workspace");
+  host.onkeydown = (ev) => { if (ev.key === "Escape" && !ev.target.matches("input, textarea")) closeTodoPanel(); };
+  if (row) {
+    const actions = el("div", "tdo-p-task-actions");
+    actions.append(pillLight("Rename", () => inlineRename(taskTitle, row.text, async (text) => {
+      await todosApi("/api/tasks/update", { id: panelID, text });
+      if (todoSelId === panelID) renderTodoPanel(true);
+    })));
+    actions.append(pillLight("＋ Follow-up task", () => openTodoQuickAdd("", { domain: row.container.name, property: row.container.kind === "property" ? row.container.slug : "" })));
+    actions.append(pillLight(row.done ? "Reopen task" : "Mark done", async () => {
+      await todosApi("/api/tasks/check", { id: panelID, checked: !row.done });
+      if (todoSelId === panelID) renderTodoPanel(true);
+    }));
+    host.append(actions);
+  }
+  const workAnchor = el("div", "tdo-p-work");
+  host.append(workAnchor);
+  const details = el("div", "tdo-p-details");
+  const detailBody = collapsibleSection(details, "Task details", [row && row.container && row.container.name, rec.Description || rec.description ? "context saved" : "", rec.Plan || rec.plan ? "plan saved" : ""].filter(Boolean).join(" · "), false);
+  host.append(details);
 
   // --- delegation state, when the todo is out with an agent ---
   if (d.delegation && typeof delegationChip === "function") {
     const dg = el("div", "tdo-p-deleg");
-    dg.append(delegationChip(d.delegation));
-    host.append(dg);
+    dg.append(delegationChip(d.delegation, false, panelID));
+    workAnchor.append(dg);
   }
 
   // --- assignee row: the roster picker ---
   const asg = el("div", "tdo-p-sec");
   asg.append(el("div", "tdo-p-sec-label", "assignee"));
   asg.append(todoAssigneeControl(d, row));
-  host.append(asg);
+  detailBody.append(asg);
 
   // --- coordination (P1 Phase 1): priority · depends on · blocks ---
-  host.append(todoCoordSection(d, row));
+  detailBody.append(todoCoordSection(d, row));
 
   // --- artifacts (P1 artifacts): what this task produced · consumes ---
   const artSec = todoArtifactsSection(d);
-  if (artSec) host.append(artSec);
+  if (artSec) workAnchor.append(artSec);
 
   // --- description (plan D2, agent-chat plan gap D): the owner's context.
   // Rides every work order and the plan-context hash; click to edit in place.
@@ -148,7 +199,7 @@ async function renderTodoPanel(refetch) {
     ta.focus();
   };
   desc.append(descBody);
-  host.append(desc);
+  detailBody.append(desc);
 
   const writingLink = pillLight(rec.document ? 'resume writing →' : 'open writing…', async () => {
     const id = todoSelId;
@@ -163,7 +214,7 @@ async function renderTodoPanel(refetch) {
       closeTodoPanel();writeNavigate(p);
     } catch(e) { showToast(e.message,null,'error'); }
   });
-  host.append(writingLink);
+  detailBody.append(writingLink);
 
   // --- plan: rendered preview + ONE action. "open →" goes to the full-page
   // record (which carries its own Edit raw / Obsidian toggles); inline
@@ -196,7 +247,7 @@ async function renderTodoPanel(refetch) {
     planBody.title = "open the plan full-page";
     planBody.onclick = (ev) => { if (!ev.target.closest("a")) openPlan(); };
   } else {
-    planBody.append(el("div", "tdo-p-empty", "no plan yet — write one, or assign an agent to draft it"));
+    planBody.append(el("div", "tdo-p-empty", "No plan yet. Ask an agent for a plan when the work needs one."));
   }
   plan.append(planBody);
   // fire — the explicit go (§12: the plan lane never executes on its own).
@@ -237,13 +288,14 @@ async function renderTodoPanel(refetch) {
       ta.focus();
     };
   }
-  host.append(plan);
+  if (st === "plan-ready") workAnchor.append(plan);
+  else detailBody.append(plan);
 
   // --- thread ---
   const th = el("div", "tdo-p-sec tdo-p-threadsec");
   const thHead = el("div", "tdo-p-sec-label");
   const kindTag = { aion: "team-visible", re: "shared · RE", private: "private" };
-  thHead.append(document.createTextNode("thread"));
+  thHead.append(document.createTextNode("Conversation"));
   const thActs = el("span", "tdo-p-sec-acts");
   // "open conversation" is one gesture: when the task came from chat, land
   // directly in that exact transcript; otherwise land in its agent section.
@@ -265,28 +317,14 @@ async function renderTodoPanel(refetch) {
   thActs.append(el("span", "tdo-p-thread-kind", kindTag[d.threadKind] || ""));
   thHead.append(thActs);
   th.append(thHead);
-  // ⚑ proposals in place (§3.4e): the agent's changes wait in FEED — this is
-  // a pointer to those cards, never a second approvals surface
-  const props = d.proposals || [];
-  if (props.length) {
-    const n = props.length;
-    const link = el("button", "tdo-p-linky tdo-p-proposals",
-      "⚑ " + n + (n === 1 ? " change" : " changes") + " proposed — review");
-    link.title = "open the approval cards for this task in FEED";
-    link.onclick = () => {
-      if (typeof pendingApprovalFocus !== "undefined") pendingApprovalFocus = props[0].id;
-      if (typeof state !== "undefined") state.feedFilter = "proposal";
-      location.hash = "#/feed";
-    };
-    th.append(link);
-  }
   const list = el("div", "tdo-p-thread");
   (d.thread || []).forEach((c) => list.append(todoThreadEntry(c, todoSelId)));
   if (d.inflight) list.append(todoInflightEntry(d.inflight));
-  if (!(d.thread || []).length && !d.inflight) list.append(el("div", "tdo-p-empty", "no comments yet"));
+  if (!(d.thread || []).length && !d.inflight) list.append(el("div", "tdo-p-empty", "Add context, ask a question, or tell an agent what to do."));
   th.append(list);
+  appendTaskApprovals(th, d);
   th.append(todoComposer(d, { taskID: todoSelId }));
-  host.append(th);
+  workAnchor.append(th);
   list.scrollTop = list.scrollHeight;
 }
 
@@ -530,8 +568,8 @@ function todoThreadEntry(c, taskID) {
 }
 
 // The composer (agent-chat plan §3.4a): a MODE — Comment (record only, never
-// a turn) · Ask ✦ agent (one turn, answered here) · Do ✦ agent (assign → plan
-// → fire) — defaulting to the last-used one, plus @-mentions (roster
+// a turn without mentions) · Ask ✦ agent (one turn, answered here) · Do ✦ agent
+// (assign work using the agent’s existing execution policy) — defaulting to the last-used one, plus @-mentions (roster
 // typeahead, or typed `@alfred` in the text — the server reads both) and
 // attachments (upload first, refs ride the comment POST). Every mode posts
 // the text as a thread comment: the thread stays the record.
@@ -540,21 +578,24 @@ function todoComposer(d, opts) {
   opts = opts || {};
   const taskID = opts.taskID || todoSelId;
   const box = el("div", "tdo-p-composer");
-  const pendingFiles = [];
-  const mentions = [];
+  const draft = todoComposerDrafts.get(taskID) || { text: "", files: [], mentions: [] };
+  const pendingFiles = draft.files;
+  const mentions = draft.mentions;
   const chips = el("div", "tdo-p-chips");
   const ta = document.createElement("textarea");
   ta.className = "tdo-p-textarea composer";
-  ta.rows = 2;
+  ta.rows = 3;
+  ta.value = draft.text;
+  ta.setAttribute("aria-label", "Task message");
 
   // --- mode + agent ---
   const rec = (d && d.record) || {};
-  const row = todoRowInfo(todoSelId);
+  const row = todoRowInfo(taskID);
   const assignee = (row && row.owner) || rec.Assignee || rec.assignee || "";
   const agents = todoRoster().filter((p) => p.kind === "agent" && !p.id.includes("::"));
   const preset = todoComposerPreset;
   todoComposerPreset = null;
-  let mode = (preset && preset.mode) || localStorage.getItem("todoComposerMode") || "comment";
+  let mode = (preset && preset.mode) || draft.mode || localStorage.getItem("todoComposerMode") || "comment";
   if (!agents.length || !TODO_COMPOSER_MODES.some(([v]) => v === mode)) mode = "comment";
   // the picker defaults to the task's assignee, else Alfred, else the first
   const defAgent = agents.find((a) => a.id === assignee) ||
@@ -568,6 +609,11 @@ function todoComposer(d, opts) {
     agentSel.append(o);
   });
   if (defAgent) agentSel.value = defAgent.id;
+  if (draft.agent && agents.some((a) => a.id === draft.agent)) agentSel.value = draft.agent;
+  agentSel.setAttribute("aria-label", "Agent for this message");
+  const remember = () => todoComposerDrafts.set(taskID, { text: ta.value, files: pendingFiles, mentions, mode, agent: agentSel.value });
+  pendingFiles.forEach((ref) => chips.append(el("span", "tdo-p-chip", "⤓ " + ref.name)));
+  mentions.forEach((id) => chips.append(el("span", "tdo-p-chip mention", "@" + id.replace(/^agent:/, ""))));
   const seg = el("div", "tdo-p-modes");
   const modeBar = el("div", "tdo-p-modebar");
   const agentName = () => (agentSel.selectedOptions[0] ? agentSel.selectedOptions[0].textContent.replace(/^✦ /, "") : "the agent");
@@ -586,27 +632,27 @@ function todoComposer(d, opts) {
     suggest.onclick = () => { agentSel.value = hit.id; paint(); ta.focus(); };
   };
   const paint = () => {
-    seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+    seg.querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.mode === mode); b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); });
     agentSel.hidden = mode === "comment";
     agentTip();
     ta.placeholder = mode === "ask" ? "ask " + agentName() + " — one turn, answered in this thread…"
-      : mode === "do" ? "tell " + agentName() + " what to do — it assigns, drafts the plan; you fire…"
-      : "comment… (@ to mention · @alfred asks · @alfred::plan delegates)";
+      : mode === "do" ? "tell " + agentName() + " the outcome you want…"
+      : "add a note, or @mention an agent to request a turn…";
     send.textContent = mode === "ask" ? "ask" : mode === "do" ? "do" : "comment";
     paintSuggest();
   };
-  ta.addEventListener("input", paintSuggest);
+  ta.addEventListener("input", () => { remember(); paintSuggest(); });
   TODO_COMPOSER_MODES.forEach(([val, label]) => {
     const b = el("button", "tdo-p-mode", label);
     b.dataset.mode = val;
-    b.title = val === "comment" ? "record only — never spends a turn"
+    b.title = val === "comment" ? "Save a note; @mentions request an agent turn"
       : val === "ask" ? "one turn — the answer lands in this thread"
-      : "the lifecycle — assign → plan → fire";
+      : "Assign work to the selected agent; results return here";
     if (val !== "comment" && !agents.length) b.disabled = true;
-    b.onclick = () => { mode = val; localStorage.setItem("todoComposerMode", mode); paint(); if (val !== "comment") agentSel.focus(); };
+    b.onclick = () => { mode = val; localStorage.setItem("todoComposerMode", mode); paint(); remember(); if (val !== "comment") agentSel.focus(); };
     seg.append(b);
   });
-  agentSel.onchange = paint;
+  agentSel.onchange = () => { remember(); paint(); };
   modeBar.append(seg, agentSel, suggest);
   // "replying to Alfred" — the cue that the last word was the agent's
   const th = (d && d.thread) || [];
@@ -626,7 +672,7 @@ function todoComposer(d, opts) {
           "&name=" + encodeURIComponent(f.name), { method: "POST", body: f });
         if (!res.ok) throw new Error((await res.text()).slice(0, 120));
         const ref = (await res.json()).file;
-        pendingFiles.push(ref);
+        pendingFiles.push(ref); remember();
         chips.append(el("span", "tdo-p-chip", "⤓ " + ref.name));
       } catch (e) { showToast("Upload failed — " + (e.message || "error")); }
     }
@@ -644,7 +690,7 @@ function todoComposer(d, opts) {
         todoRoster().forEach((p) => {
           if (!q || p.name.toLowerCase().includes(q.toLowerCase()) || p.id.toLowerCase().includes(q.toLowerCase())) {
             add(p.name, p.kind.toUpperCase(), () => {
-              mentions.push(p.id);
+              mentions.push(p.id); remember();
               chips.append(el("span", "tdo-p-chip mention", "@" + p.name));
               taRef.el.remove();
             });
@@ -660,10 +706,12 @@ function todoComposer(d, opts) {
     if (!text && !pendingFiles.length) return;
     if (mode !== "comment" && !text) { showToast("Say what you want " + agentName() + " to do"); return; }
     const agent = mode === "comment" ? "" : agentSel.value;
+    send.disabled = true;
     try {
       await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent });
       if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
-      else if (mode === "do") showToast(agentName() + " is drafting the plan — fire it when it's right", null, "info");
+      else if (mode === "do") showToast(agentName() + " received your instructions — follow progress here", null, "info");
+      todoComposerDrafts.delete(taskID);
       ta.value = "";
       pendingFiles.length = 0;
       mentions.length = 0;
@@ -672,6 +720,7 @@ function todoComposer(d, opts) {
       if (opts.onPosted) opts.onPosted();
       else renderTodoPanel(true);
     } catch (e) { showToast("Couldn't " + (mode === "comment" ? "comment" : mode) + " — " + (e.message || "error")); }
+    finally { send.disabled = false; }
   });
   ta.onkeydown = (ev) => {
     if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) send.click();
@@ -727,4 +776,20 @@ function todoSuggestAgent(text, agents) {
   if (!scored.length || scored[0].n < 2) return null;
   if (scored.length > 1 && scored[1].n === scored[0].n) return null; // a tie is not a hint
   return scored[0].a;
+}
+
+// One approval record, one renderer, one decision endpoint across task and Feed.
+function appendTaskApprovals(host, data) {
+  if (!(data.proposals || []).length) return;
+  const section = el("div", "tdo-task-approvals");
+  section.append(el("div", "micro-label", "Approval needed · also in Feed"));
+  (data.proposals || []).forEach((proposal) => {
+    // Older servers provide only a pointer; do not invent an actionable preview.
+    if (!proposal.type) {
+      section.append(pillLight(proposal.action + " · review in Feed", () => {
+        pendingApprovalFocus = proposal.id; state.feedFilter = "proposal"; location.hash = "#/feed";
+      }));
+    } else section.append(approvalCardEl(proposal));
+  });
+  host.append(section);
 }

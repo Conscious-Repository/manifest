@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -51,8 +52,23 @@ func read(t *testing.T, path string) string {
 func TestCorpusGoals(t *testing.T) {
 	dir := corpusDir(t)
 	raw := read(t, filepath.Join(dir, "goals.md"))
-	if out := goals.Serialize(goals.Parse(raw)); out != raw {
+	out := goals.Serialize(goals.Parse(raw))
+	// Old personal snapshots may predate the explicit retirement of finish-line
+	// fields. Permit only their removal, line by line; unchanged frozen history
+	// stays byte-identical. The goals package separately tests live vs frozen
+	// migration semantics. Never normalize arbitrary parser output into expected.
+	retired := regexp.MustCompile(` (?i:\[(?:until|verify|kpi)::[^\]\n]*\])`)
+	before, after := strings.Split(raw, "\n"), strings.Split(out, "\n")
+	if len(before) != len(after) {
 		t.Fatalf("goals.md round-trip diverged:\n%s", firstDiff(raw, out))
+	}
+	for i := range before {
+		if before[i] != after[i] && retired.ReplaceAllString(before[i], "") != after[i] {
+			t.Fatalf("goals.md round-trip diverged beyond retired fields:\n%s", firstDiff(raw, out))
+		}
+	}
+	if twice := goals.Serialize(goals.Parse(out)); twice != out {
+		t.Fatalf("migrated goals.md is not stable:\n%s", firstDiff(out, twice))
 	}
 }
 

@@ -578,3 +578,15 @@
   .feed-top > .feed-title { flex: 1 0 100%; order: 1; overflow-wrap: anywhere; }
   .palette-close { min-height: var(--touch); min-width: var(--touch); top: var(--sp-2); right: var(--sp-2); }
 }
+
+@media (max-width: 860px) {
+  .tdo-toolbar { align-items: stretch; }
+  .tdo-lenses { width: 100%; }
+  #todosSearch { flex: 1; width: 100%; min-width: 0; }
+  .tdo-board { grid-template-columns: minmax(0, 1fr); }
+  .tdo-card-acts .pill, .tdo-work-action { min-height: var(--touch-sm); }
+  .tdo-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+  .tdo-row > .tdo-task-title { flex-basis: calc(100% - 60px); }
+  .tdo-right { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
+  .tdo-panel { width: auto; }
+}

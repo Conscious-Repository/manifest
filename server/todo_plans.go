@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"manifest/approvals"
 	"manifest/mdfm"
 	"manifest/record"
 )
@@ -217,39 +216,33 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// taskProposal is one pending approval filed against a todo — the panel's
-// "⚑ N changes proposed — review" link deep-links to these FEED cards.
-type taskProposal struct {
-	ID     string `json:"id"`
-	Action string `json:"action"`
-}
-
-// taskProposals lists the PENDING approvals carrying this todo's token,
-// across every harness inbox (the do-bot files into the primary's). FEED
-// stays the one approvals surface — this is a pointer, not a second inbox.
-func (s *Server) taskProposals(id string) []taskProposal {
-	out := []taskProposal{}
+// taskProposals projects the same enriched pending records and guards as Feed.
+// Task linkage is explicit; a related name or domain never confers membership.
+func (s *Server) taskProposals(id string) []approvalRow {
+	out := []approvalRow{}
 	seen := map[string]bool{}
-	scan := func(st interface {
-		List(status string) []approvals.Proposal
-	}) {
-		for _, p := range st.List("pending") {
-			if seen[p.ID] {
+	harnesses := s.eachHarness()
+	primaryIncluded := false
+	for _, h := range harnesses {
+		if h.Approvals == s.approvals {
+			primaryIncluded = true
+		}
+	}
+	if s.approvals != nil && !primaryIncluded {
+		harnesses = append(harnesses, Harness{Name: s.primaryHarnessName(), Approvals: s.approvals, Spirits: s.spirits})
+	}
+	for _, h := range harnesses {
+		if h.Approvals == nil {
+			continue
+		}
+		for _, row := range s.harnessApprovalRows(h, nil, id) {
+			if seen[row.ID] {
 				continue
 			}
-			if m := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body); m != nil && strings.TrimSpace(m[1]) == id {
-				seen[p.ID] = true
-				out = append(out, taskProposal{ID: p.ID, Action: strings.TrimSpace(todoTokenRe.ReplaceAllString(p.Action, ""))})
-			}
+			seen[row.ID] = true
+			row.Action = strings.TrimSpace(todoTokenRe.ReplaceAllString(row.Action, ""))
+			out = append(out, row)
 		}
-	}
-	for _, h := range s.eachHarness() {
-		if h.Approvals != nil {
-			scan(h.Approvals)
-		}
-	}
-	if s.approvals != nil {
-		scan(s.approvals)
 	}
 	return out
 }

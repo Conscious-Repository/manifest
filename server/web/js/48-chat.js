@@ -240,6 +240,7 @@ async function renderTaskChat(taskID, refetch) {
   if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
   composer.innerHTML = "";
   composer.dataset.built = "";
+  appendTaskApprovals(host, d);
   composer.classList.add("task-composer");
   composer.append(todoComposer(d, { taskID, onPosted: () => renderTaskChat(taskID, true) }));
   if (!chatTaskPollTimer) {

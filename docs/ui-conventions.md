@@ -312,3 +312,13 @@ and [WCAG's target-size guidance](https://www.w3.org/WAI/WCAG22/Understanding/ta
 The latter specifies a 24×24 CSS-pixel minimum with exceptions including adequate
 spacing and inline links. It does not require inflating every desktop control to
 44px. See [the audit record](ui-ux-audit-2026-09-05.md) for scope and remaining debt.
+
+### Task workspace application (2026-09-07)
+
+Tasks separate domain, attention filter, and List/Board layout. Title buttons open
+the work surface; the shared inline rename remains an explicit action. Conversation
+and actionable evidence precede a shared disclosure for task details. Completed
+work folds away. Task-specific Chat and task panels reuse `approvalCardEl`, including
+its guarded decision controls, while Feed retains the same pending records. No
+second approval state or frontend framework is introduced. Unsent message drafts
+survive panel repaint and task switching for the current page session.

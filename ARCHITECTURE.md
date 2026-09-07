@@ -448,3 +448,15 @@ an append-only capability; they do not mutate owner prose. A displayed exact
 mechanics suggestion may become an audited owner edit only on explicit acceptance.
 No automatic application, unsolicited continuation, general agent knowledge-write
 lane, or Send functionality is authorized by this change.
+
+**2026-09-07 — task workspaces and contextual approvals.** Owner decision
+(task UI audit): Next actions is the default work view; List and Board remain
+projections of the same ranked tasks. Completed work may fold below active work.
+Short reminders can grow through conversation and produce separate follow-up
+tasks; this does not require a parent/child task schema. Task-linked approvals
+appear with their evidence and existing decision controls in the task workspace,
+the task-specific Chat conversation, and Feed. These are projections of the same
+approval records and use the same guarded endpoints, never separate inbox stores.
+This supersedes the earlier UI-only restriction that tasks show an approval link
+rather than inline controls. Approving work does not by itself imply that a queued
+external effect completed; execution receipts remain the evidence of completion.

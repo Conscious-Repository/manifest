@@ -5,17 +5,28 @@
 // row and [rank:: n] lands in the owning file. No waiting surface, no
 // parallel lists; every counter derives from the same rows.
 let todosCache = null;
-let todosTab = "focus"; // focus | aion | realestate | manifest | personal
+let todosTab = localStorage.getItem("todosTab") || "focus"; // focus | aion | realestate | manifest | personal
 let todosMode = localStorage.getItem("todosMode") || "list"; // list (default) | board (Phase 8)
+let todosLens = localStorage.getItem("todosLens") || "next"; // all | next | agents | attention
+let todosQuery = "";
+let todosLoadError = "";
 let todosQuiet = {};    // ideas / done expanded
 // the regret window: a row checked this session stays IN PLACE, struck and
 // unmarkable, instead of vanishing into the quiet Done row. id → {row, idx}
 let todosFreshDone = {};
 
 async function loadTodos() {
-  try { todosCache = await (await fetch("/api/tasks")).json(); }
-  catch (e) { todosCache = { rows: [], domains: [], areas: [], counts: {} }; }
+  try {
+    const res = await fetch("/api/tasks");
+    if (!res.ok) throw new Error("Tasks could not be loaded");
+    todosCache = await res.json();
+    todosLoadError = "";
+  } catch (e) {
+    todosLoadError = "Couldn't refresh tasks. " + (todosCache ? "Showing the last loaded tasks." : "Try again to load your tasks.");
+    if (!todosCache) todosCache = { rows: [], domains: [], areas: [], counts: {} };
+  }
   renderTodos();
+  ensureTodoPanelPoll();
   // deep link #/tasks/<id> → open the panel once the rows are here
   if (typeof todoDeepLink !== "undefined" && todoDeepLink) {
     const id = todoDeepLink;
@@ -36,17 +47,80 @@ async function todosApi(path, body) {
 // tabOf buckets a row into the FOCUS sub-tabs by its container.
 function tabOf(r) {
   if (r.source === "aion" || r.container.name === "Aion") return "aion";
-  if (r.source === "property" || /real estate/i.test(r.container.name || "")) return "realestate";
+  if (r.source === "property" || r.source === "realestate" || /real estate/i.test(r.container.name || "")) return "realestate";
   if (/^manifest$/i.test(r.container.name || "")) return "manifest";
   return "personal";
 }
 function issueTabOf(domainName) {
   if (/^aion$/i.test(domainName)) return "aion";
   if (/real estate/i.test(domainName)) return "realestate";
+  if (/^manifest$/i.test(domainName)) return "manifest";
   return "personal";
 }
 
-const TODOS_TABS = [["focus", "FOCUS"], ["aion", "AION"], ["realestate", "REAL ESTATE"], ["manifest", "MANIFEST"], ["personal", "PERSONAL"]];
+const TODOS_TABS = [["focus", "ALL DOMAINS"], ["aion", "AION"], ["realestate", "REAL ESTATE"], ["manifest", "MANIFEST"], ["personal", "PERSONAL"]];
+
+// Derived attention and execution are views over the existing task record.
+function todoWorkState(r) {
+  const d = r.delegation || {};
+  const agent = (r.owner || "").startsWith("agent:");
+  const labels = { "plan-ready": "Plan ready", done: "Result ready", proposed: "Approval needed", failed: "Run failed", "plan-failed": "Plan failed", running: "Working", "plan-running": "Planning", queued: "Queued", "go-queued": "Queued", "plan-queued": "Plan queued" };
+  const review = ["done", "proposed", "plan-ready"].includes(d.state);
+  const blocked = r.state === "blocked" || (r.blockedBy || []).length > 0;
+  const waiting = r.state === "waiting" || !!r.waiting;
+  const attention = review || /failed|error|cancel/.test(d.state || "") || blocked || waiting;
+  return { column: review ? "review" : r.delegation || agent ? "delegated" : "open",
+    agents: !!r.delegation || agent, attention,
+    next: !r.delegation && !agent && !blocked && !waiting,
+    label: labels[d.state] || d.state || (blocked ? "Blocked" : waiting ? "Waiting" : agent ? "Assigned · no active run" : "Ready") };
+}
+function todoSearchMatches(r) {
+  return !todosQuery.trim() || [r.text, r.container && r.container.name, r.owner, r.rock].filter(Boolean).join(" ").toLowerCase().includes(todosQuery.trim().toLowerCase());
+}
+function todoMatches(r, lens = todosLens) {
+  if (todosTab !== "focus" && tabOf(r) !== todosTab) return false;
+  if (!todoSearchMatches(r)) return false;
+  const st = todoWorkState(r);
+  return lens === "all" || !!st[lens];
+}
+function renderTodosToolbar() {
+  const tabs = document.getElementById("todosTabs");
+  if (tabs) {
+    tabs.innerHTML = "";
+    TODOS_TABS.forEach(([val, label]) => {
+      const b = el("button", "filter-chip" + (todosTab === val ? " on" : ""), label);
+      b.setAttribute("aria-pressed", String(todosTab === val));
+      b.onclick = () => { todosTab = val; localStorage.setItem("todosTab", val); renderTodos(); };
+      tabs.append(b);
+    });
+  }
+  const bar = document.getElementById("todosToolbar");
+  if (!bar) return;
+  const searchFocused = document.activeElement && document.activeElement.id === "todosSearch";
+  const caret = searchFocused ? document.activeElement.selectionStart : null;
+  bar.innerHTML = "";
+  const lenses = el("div", "tdo-lenses");
+  [["all", "All active"], ["next", "Next actions"], ["agents", "With agents"], ["attention", "Needs attention"]].forEach(([value, label]) => {
+    const n = (todosCache.rows || []).filter((r) => todoMatches(r, value)).length;
+    const b = el("button", "filter-chip" + (todosLens === value ? " on" : ""), label + " · " + n);
+    b.setAttribute("aria-pressed", String(todosLens === value));
+    b.onclick = () => { todosLens = value; localStorage.setItem("todosLens", value); renderTodos(); };
+    lenses.append(b);
+  });
+  const search = inputEl("Find a task…");
+  search.id = "todosSearch"; search.type = "search"; search.value = todosQuery;
+  search.setAttribute("aria-label", "Search tasks");
+  search.oninput = () => { todosQuery = search.value; renderTodos(); };
+  const modes = el("div", "tdo-layouts");
+  ["list", "board"].forEach((value) => {
+    const b = el("button", "filter-chip" + (todosMode === value ? " on" : ""), value === "list" ? "List" : "Board");
+    b.setAttribute("aria-pressed", String(todosMode === value));
+    b.onclick = () => { todosMode = value; localStorage.setItem("todosMode", value); renderTodos(); };
+    modes.append(b);
+  });
+  bar.append(lenses, search, modes, pillLight("＋ Add task", () => openTodoQuickAdd()));
+  if (searchFocused) { search.focus(); if (caret !== null) search.setSelectionRange(caret, caret); }
+}
 
 function renderTodos() {
   const host = els.todosRows; host.innerHTML = "";
@@ -57,26 +131,13 @@ function renderTodos() {
   }
   if (typeof railSetCount === "function") railSetCount("tasks", counts.tasks || 0);
 
-  // tab chips + the list/board mode toggle (Phase 8 — List stays the default)
-  const tabsHost = document.getElementById("todosTabs");
-  if (tabsHost) {
-    tabsHost.innerHTML = "";
-    TODOS_TABS.forEach(([val, label]) => {
-      const b = el("button", "filter-chip" + (todosTab === val ? " on" : ""), label);
-      b.onclick = () => { todosTab = val; renderTodos(); };
-      tabsHost.append(b);
-    });
-    const mode = el("button", "tdo-mode-toggle", todosMode === "board" ? "☰ list" : "▦ board");
-    mode.title = todosMode === "board" ? "back to the ranked list" : "the board: Open · Delegated · Review · Done";
-    mode.onclick = () => {
-      todosMode = todosMode === "board" ? "list" : "board";
-      localStorage.setItem("todosMode", todosMode);
-      renderTodos();
-    };
-    tabsHost.append(mode);
+  renderTodosToolbar();
+  if (todosLoadError) {
+    const error = el("div", "tdo-load-error", todosLoadError);
+    error.setAttribute("role", "status");
+    error.append(pillLight("Retry", loadTodos));
+    host.append(error);
   }
-  if (todosMode === "board") { renderTodosBoard(host); return; }
-
   // 1. decisions lane — always visible, never collapsed
   const issues = [];
   (todosCache.domains || []).forEach((dom) => (dom.issues || []).forEach((is) => {
@@ -94,23 +155,25 @@ function renderTodos() {
     host.append(lane);
   }
 
+  if (todosMode === "board") { renderTodosBoard(host); return; }
+
   // 2. the ranked list (+ this session's freshly-done rows held in place)
   const rows = todosCache.rows || [];
   const liveIds = new Set(rows.map((r) => r.id));
   Object.keys(todosFreshDone).forEach((id) => { if (liveIds.has(id)) delete todosFreshDone[id]; }); // unmarked → live again
-  let visible = todosTab === "focus" ? rows.slice() : rows.filter((r) => tabOf(r) === todosTab);
+  let visible = rows.filter((r) => todoMatches(r));
   Object.values(todosFreshDone).forEach(({ row, idx }) => {
-    if (todosTab !== "focus" && tabOf(row) !== todosTab) return;
+    if (!todoMatches(row)) return;
     visible.splice(Math.min(idx, visible.length), 0, { ...row, _freshDone: true });
   });
   const sec = el("div", "tdo-main");
   const head = el("div", "tdo-sec-label");
-  head.append(el("span", "tdo-sec-title", "Everything you've committed to"),
+  head.append(el("span", "tdo-sec-title", ({ all: "All active tasks", next: "Next actions · in your order", agents: "Work with agents", attention: "Needs your attention" })[todosLens]),
     el("span", "tdo-sec-count", String(visible.length)),
     el("span", "tdo-sec-hint", "⇅ drag to rank"));
   sec.append(head);
   visible.forEach((r, i) => sec.append(rankedRow(r, i)));
-  if (!visible.length) sec.append(el("div", "pp-empty", "Nothing here — press t anywhere to capture."));
+  if (!visible.length) sec.append(el("div", "pp-empty", todosQuery || todosLens !== "all" ? "No tasks match these filters. Change the view or clear your search." : "Nothing here — add a task to get started."));
   const capture = el("button", "tdo-capture", "＋ capture · t");
   capture.onclick = () => openTodoQuickAdd();
   sec.append(capture);
@@ -118,14 +181,15 @@ function renderTodos() {
 
   // 3. quiet rows — what used to be collapsed footers
   const ideas = [];
-  (todosCache.domains || []).forEach((dom) => (dom.backlog || []).forEach((ln) =>
+  (todosCache.domains || []).forEach((dom) => (dom.backlog || []).filter(() => todosTab === "focus" || issueTabOf(dom.name) === todosTab).filter((ln) => !todosQuery || ln.toLowerCase().includes(todosQuery.toLowerCase())).forEach((ln) =>
     ideas.push({ domain: dom.name, line: ln })));
   const dones = [];
   (todosCache.domains || []).forEach((dom) => {
+    if (todosTab !== "focus" && issueTabOf(dom.name) !== todosTab) return;
     // freshly-done rows are still standing in the list above — no double entry
-    (dom.tasks || []).forEach((t) => { if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name }); });
+    (dom.tasks || []).forEach((t) => { if (t.state === "done" && !todosFreshDone[t.id] && todoSearchMatches(t)) dones.push({ t, domain: dom.name }); });
     (dom.buckets || []).forEach((bk) => (bk.tasks || []).forEach((t) => {
-      if (t.state === "done" && !todosFreshDone[t.id]) dones.push({ t, domain: dom.name });
+      if (t.state === "done" && !todosFreshDone[t.id] && todoSearchMatches(t)) dones.push({ t, domain: dom.name });
     }));
   });
   const quiet = el("div", "tdo-quiet-row");
@@ -135,7 +199,7 @@ function renderTodos() {
     return b;
   };
   if (ideas.length) quiet.append(quietBtnEl("ideas", "◌ Ideas & backlog", ideas.length));
-  if (dones.length) quiet.append(quietBtnEl("done", "✓ Done this week", dones.length));
+  if (dones.length) quiet.append(quietBtnEl("done", "✓ Recently completed", dones.length));
   if (quiet.children.length) host.append(quiet);
   if (todosQuiet.ideas && ideas.length) {
     const box = el("div", "tdo-quiet-box");
@@ -226,7 +290,7 @@ function rankedRow(r, idx) {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", r.id);
   });
-  row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; });
+  row.addEventListener("dragend", () => { row.classList.remove("dragging"); row.draggable = false; _dragId = null; });
   row.addEventListener("dragover", (e) => {
     if (!_dragId || _dragId === r.id) return;
     e.preventDefault();
@@ -250,17 +314,9 @@ function rankedRow(r, idx) {
   };
   row.append(check);
 
-  const label = el("span", "tdo-text", r.text);
-  label.title = "click to edit";
-  label.onclick = () => {
-    const input = inputEl(""); input.value = r.text; input.classList.add("work-edit");
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/tasks/update", { id: r.id, text: input.value });
-      else if (ev.key === "Escape") input.replaceWith(label);
-    });
-    input.addEventListener("blur", () => { if (input.parentNode) input.replaceWith(label); });
-    label.replaceWith(input); input.focus();
-  };
+  const label = el("button", "tdo-text tdo-task-title", r.text);
+  label.title = "Open task and conversation";
+  label.onclick = () => openTodoPanel(r);
   row.append(label);
 
   const pill = containerPill(r.container.name);
@@ -275,6 +331,7 @@ function rankedRow(r, idx) {
   if (r.owner && r.owner.startsWith("agent:")) {
     row.append(el("span", "tdo-agent-chip", "✦ " + r.owner.slice(6)));
   }
+  if (!r.delegation && todoWorkState(r).label !== "Ready") row.append(el("span", "tdo-status micro-label", todoWorkState(r).label));
   // coordination (P1 Phase 1): the priority word + the derived blocked chip
   if (r.priority) row.append(prioMark(r.priority));
   const bc = blockedChip(r);
@@ -299,8 +356,8 @@ function rankedRow(r, idx) {
   if (r.delegation) {
     right.append(delegationChip(r.delegation, false, r.id));
   } else {
-    const dg = el("button", "uw-x tdo-delegate", "⇢");
-    dg.title = "delegate to a harness…";
+    const dg = el("button", "tdo-work-action", "Work →");
+    dg.title = "Open task to work with an agent";
     dg.onclick = () => openDelegatePicker(r);
     right.append(dg);
   }
@@ -400,7 +457,7 @@ function delegationChip(d, asSpan, taskId) {
     : d.runId ? "view the result (run report)" : "delegated work — click for the runs board";
   chip.onclick = (e) => {
     e.stopPropagation();
-    if (planState && taskId && typeof openTodoPanel === "function") { openTodoPanel(taskId); return; }
+    if (taskId && typeof openTodoPanel === "function") { openTodoPanel(taskId); return; }
     if (d.state === "proposed") { location.hash = "#/feed"; return; }
     if (hasResult) { openResult(d); return; }
     location.hash = "#/agents";
@@ -425,7 +482,7 @@ function delegationFor(id) {
 // steer, and it lands in the thread as the record before the re-plan.
 function openDelegatePicker(r, redelegate) {
   openTodoPanel(r, { mode: "do", focusAgent: true });
-  if (redelegate) showToast("Tell the agent what to change — Do sends it back out as a fresh plan", null, "info");
+  if (redelegate) showToast("Tell the agent what to change — Do sends your instructions to the agent", null, "info");
 }
 
 // Shared by the TODOS rows (⧗) and the GOALS unanchored foot. Picking writes
@@ -490,7 +547,7 @@ function personInput(onSet, onCancel) {
 
 // ================= THE BOARD (big-change Phase 8) =================
 // Pure projection over the SAME /api/tasks payload the list renders — four
-// columns: Open · Delegated · Review · Done (owner call 2026-08-12: Waiting is
+// active columns: Open · Delegated · Review, with Done folded below. Waiting is
 // gone — it was never used, and delegated work already IS waiting). Every drag
 // maps to an EXISTING endpoint (check / delegate); no new state anywhere.
 //
@@ -499,19 +556,15 @@ function personInput(onSet, onCancel) {
 // the agent finishes — the same condition the FEED's delegation-done card
 // keys on. From Review: drag → Done checks it; drag → Delegated sends it back
 // out with an owner comment.
-const DELEG_REVIEW = { done: true, proposed: true }; // result ready → Review
 function renderTodosBoard(host) {
-  const rows = (todosCache.rows || []).filter((r) => todosTab === "focus" || tabOf(r) === todosTab);
+  const rows = (todosCache.rows || []).filter((r) => todoMatches(r));
   const cols = { open: [], delegated: [], review: [], done: [] };
-  rows.forEach((r) => {
-    if (r.delegation) (DELEG_REVIEW[r.delegation.state] ? cols.review : cols.delegated).push(r);
-    else cols.open.push(r);
-  });
+  rows.forEach((r) => cols[todoWorkState(r).column].push(r));
   // Done: personal todos completed but not yet swept (the domains view keeps
   // them until the weekly sweep) — read-only history plus a drag target.
   (todosCache.domains || []).forEach((dom) => {
     const scan = (list) => (list || []).forEach((t) => {
-      if (t.state === "done" && (todosTab === "focus" || issueTabOf(dom.name) === todosTab)) {
+      if (t.state === "done" && todoSearchMatches(t) && (todosTab === "focus" || issueTabOf(dom.name) === todosTab)) {
         cols.done.push({ id: t.id, text: t.text, container: { name: dom.name }, source: "personal", done: true });
       }
     });
@@ -522,17 +575,21 @@ function renderTodosBoard(host) {
   const board = el("div", "tdo-board");
   const defs = [
     ["open", "OPEN", "drop here to reopen"],
-    ["delegated", "DELEGATED", "drop here to dispatch to a harness"],
+    ["delegated", "DELEGATED", "Assigned work · open a task to steer the agent"],
     ["review", "REVIEW", "delegated work that came back — read it, then Done or send it back out"],
-    ["done", "DONE", "drop here to complete"],
   ];
-  defs.forEach(([key, label, hint]) => {
+  const shown = defs.filter(([key]) => (todosLens === "all" && !todosQuery.trim()) || cols[key].length);
+  board.style.setProperty("--task-columns", String(Math.max(1, shown.length)));
+  if (!shown.length) board.append(emptyRow("No tasks match this view. Change your filters or search."));
+  shown.forEach(([key, label, hint]) => {
     const col = el("div", "tdo-col");
     col.dataset.col = key;
     const head = el("div", "tdo-col-head");
     head.append(el("span", "tdo-sec-title", label), el("span", "tdo-sec-count", String(cols[key].length)));
     col.append(head);
+    if (!cols[key].length) col.append(el("div", "tdo-col-empty", { open: "No open tasks in this view", delegated: "Agent assignments appear here", review: "Results appear here when ready" }[key]));
     cols[key].forEach((r) => col.append(boardCard(r, key)));
+    if (key === "open") col.append(pillLight("＋ Add task", () => openTodoQuickAdd()));
     col.title = hint;
     col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("dragging-over"); });
     col.addEventListener("dragleave", () => col.classList.remove("dragging-over"));
@@ -546,39 +603,33 @@ function renderTodosBoard(host) {
     board.append(col);
   });
   host.append(board);
+  if (cols.done.length) {
+    const done = collapsibleSection(host, "Recently completed", String(cols.done.length), !!todosQuiet.done);
+    done.previousElementSibling.addEventListener("click", () => { todosQuiet.done = !done.hidden; });
+    cols.done.forEach((r) => done.append(boardCard(r, "done")));
+  }
 }
 
 function boardCard(r, colKey) {
   const card = el("div", "tdo-card" + (r.done ? " done" : "") +
     (typeof todoSelId !== "undefined" && todoSelId === r.id ? " panel-sel" : ""));
+  card.dataset.id = r.id;
   card.onclick = (e) => {
     // card background opens the panel; text/buttons keep their own handlers
     if (e.target !== card && !e.target.classList.contains("tdo-card-meta")) return;
     openTodoPanel(r);
   };
   card.draggable = true;
+  card.addEventListener("dragend", () => { _dragId = null; });
   card.addEventListener("dragstart", (e) => {
+    _dragId = r.id;
     e.dataTransfer.setData("text/todo-id", r.id);
     e.dataTransfer.setData("text/todo-col", colKey);
     e.dataTransfer.effectAllowed = "move";
   });
-  // text — click to edit in place (mirrors the list's rankedRow); dragging is
-  // suspended while the input is open so text selection doesn't start a drag.
-  const textEl = el("div", "tdo-card-text", r.text);
-  textEl.title = "click to edit";
-  textEl.onclick = (e) => {
-    e.stopPropagation();
-    const input = inputEl(""); input.value = r.text; input.className = "work-edit tdo-card-edit";
-    const restore = () => { if (input.parentNode) input.replaceWith(textEl); card.draggable = true; };
-    card.draggable = false;
-    input.addEventListener("mousedown", (ev) => ev.stopPropagation());
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter" && input.value.trim()) todosApi("/api/tasks/update", { id: r.id, text: input.value });
-      else if (ev.key === "Escape") restore();
-    });
-    input.addEventListener("blur", restore);
-    textEl.replaceWith(input); input.focus();
-  };
+  const textEl = el("button", "tdo-card-text tdo-task-title", r.text);
+  textEl.title = "Open task and conversation";
+  textEl.onclick = (e) => { e.stopPropagation(); openTodoPanel(r); };
   card.append(textEl);
   const meta = el("div", "tdo-card-meta");
   meta.append(el("span", "", r.container && r.container.name || ""));
@@ -588,7 +639,8 @@ function boardCard(r, colKey) {
   if (r.waiting) meta.append(el("span", "tdo-card-wait", "⧗ " + r.waiting));
   // delegation: inline for open cards, looked up by id for the Done column
   const dg = r.delegation || delegationFor(r.id);
-  if (dg) meta.append(delegationChip(dg, true, r.id));
+  if (dg) meta.append(delegationChip(dg, false, r.id));
+  if (!dg && !r.done && todoWorkState(r).label !== "Ready") meta.append(el("span", "tdo-status", todoWorkState(r).label));
   if (r.rock) meta.append(el("span", "tdo-card-rock", "⧗ " + r.rock.split("/").pop()));
   const open = el("button", "tdo-open-chevron", "›");
   open.title = "open — plan, thread";
@@ -596,14 +648,21 @@ function boardCard(r, colKey) {
   open.onmousedown = (e) => e.stopPropagation();
   meta.append(open);
   card.append(meta);
-  // REVIEW cards carry the result up front — reading it IS the column's job
-  if (colKey === "review" && dg) {
-    const acts = el("div", "tdo-card-acts");
-    const read = pillLight("read the result →", () => openResult(dg, r.text));
-    read.onmousedown = (e) => e.stopPropagation();
-    acts.append(read);
-    card.append(acts);
+  const acts = el("div", "tdo-card-acts");
+  const action = (label, fn) => {
+    const b = pillLight(label, (e) => { fn(); });
+    b.addEventListener("click", (e) => e.stopPropagation());
+    acts.append(b);
+  };
+  if (r.done) action("Reopen", () => todosApi("/api/tasks/check", { id: r.id, checked: false }));
+  else {
+    if (colKey === "review" && dg) {
+      action(dg.state === "plan-ready" ? "Review plan" : dg.state === "proposed" ? "Review approval" : "Read result", () => dg.state !== "done" || !(dg.artifactRef || dg.artifactPath || dg.runId) ? openTodoPanel(r) : openResult(dg, r.text));
+      action("Continue with agent", () => openDelegatePicker(r, true));
+    } else action(colKey === "delegated" ? "Open conversation →" : "Work with agent →", () => colKey === "delegated" ? openTodoPanel(r) : openDelegatePicker(r));
+    action("Done", () => todosApi("/api/tasks/check", { id: r.id, checked: true }));
   }
+  card.append(acts);
   return card;
 }
 
@@ -617,7 +676,7 @@ function boardMove(id, from, to) {
       return;
     case "open":
       if (from === "done") { todosApi("/api/tasks/check", { id, checked: false }); return; }
-      if (from === "delegated") { showToast("Still out with the harness — it lands in REVIEW when it comes back"); return; }
+      if (from === "delegated") { showToast(row && !row.delegation ? "Change the assignee in Task details to bring this work back to you." : "Still out with the agent — it lands in REVIEW when it comes back"); return; }
       if (from === "review") { showToast("Read the result first — then Done, or drag back to DELEGATED to send it out again"); return; }
       return;
     case "review":
@@ -630,4 +689,14 @@ function boardMove(id, from, to) {
       if (row) openDelegatePicker(row, from === "review");
       return;
   }
+}
+
+// Completed tasks still open with a human title, including Manifest history.
+function todosCompletedRow(id) {
+  for (const dom of (todosCache && todosCache.domains) || []) {
+    const tasks = [...(dom.tasks || []), ...(dom.buckets || []).flatMap((b) => b.tasks || [])];
+    const t = tasks.find((r) => r.id === id);
+    if (t) return { ...t, done: t.state === "done", container: { name: dom.name }, source: "personal" };
+  }
+  return null;
 }

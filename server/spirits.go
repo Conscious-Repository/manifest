@@ -152,10 +152,16 @@ func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 
 // harnessApprovalRows enriches ONE harness's pending proposals; the apply
 // allow-lists + current-content reads run against that harness's store.
-func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool) []approvalRow {
+func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool, taskID ...string) []approvalRow {
 	rows := []approvalRow{}
 	store := h.Approvals
 	for _, p := range store.List("pending") {
+		if len(taskID) > 0 {
+			match := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body)
+			if match == nil || strings.TrimSpace(match[1]) != taskID[0] {
+				continue
+			}
+		}
 		if exclude[p.Type] {
 			continue
 		}
@@ -374,6 +380,9 @@ func (s *Server) handleSpiritsApprovalConfirm(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
+	if loadErr == nil {
+		s.recordTaskApprovalDecision(pending, "Approved")
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
@@ -441,6 +450,9 @@ func (s *Server) handleSpiritsApprovalReject(w http.ResponseWriter, r *http.Requ
 		if err := s.decidePortalProposal(pending, false); err != nil {
 			log.Printf("portal proposal reject: card closed but the store did not: %v", err)
 		}
+	}
+	if loadErr == nil {
+		s.recordTaskApprovalDecision(pending, "Rejected")
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
@@ -788,4 +800,16 @@ func (s *Server) handleSpiritsDeleteSpirit(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// The decision is a trace on the task, never a claim that a queued effect finished.
+func (s *Server) recordTaskApprovalDecision(p approvals.Proposal, decision string) {
+	match := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body)
+	if match == nil || s.threads == nil {
+		return
+	}
+	text := decision + ": " + strings.TrimSpace(todoTokenRe.ReplaceAllString(p.Action, ""))
+	if _, err := s.addThreadEntry(s.ownerIdentity(), strings.TrimSpace(match[1]), "approval", text, nil, nil, map[string]any{"approvalId": p.ID}); err != nil {
+		log.Printf("task approval decision %s: %v", p.ID, err)
+	}
 }

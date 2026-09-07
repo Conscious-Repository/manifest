@@ -1,5 +1,6 @@
 // ---- global quick-add: press t anywhere (or via Cmd+K) — one line + domain, ≤2s ----
-function openTodoQuickAdd(prefill) {
+function openTodoQuickAdd(prefill, options) {
+  options = options || {};
   if (document.getElementById("todoQuickAdd")) return;
   const overlay = el("div", "cmdbar");
   overlay.id = "todoQuickAdd";
@@ -11,10 +12,11 @@ function openTodoQuickAdd(prefill) {
   input.className = "cmdbar-input";
   if (prefill) input.value = prefill;
   const chips = el("div", "tdo-qa-chips");
-  let domain = "";
-  const names = ["Inbox", ...(todosCache && todosCache.areas ? todosCache.areas : ["Aion", "Real Estate", "Home", "Personal"])];
+  const activeDomain = !els.todosView.hidden ? ({ aion: "Aion", realestate: "Real Estate", manifest: "manifest", personal: "Personal" })[todosTab] || "" : "";
+  let domain = options.property ? "" : options.domain || activeDomain;
+  const names = [...new Set(["Inbox", ...(todosCache && todosCache.areas ? todosCache.areas : ["Aion", "Real Estate", "Home", "Personal"]), "manifest", ...(domain ? [domain] : [])])];
   names.forEach((n, i) => {
-    const c = el("button", "filter-chip" + (i === 0 ? " on" : ""), n.toUpperCase());
+    const c = el("button", "filter-chip" + ((n === "Inbox" ? "" : n) === domain ? " on" : ""), n.toUpperCase());
     c.onclick = () => {
       domain = n === "Inbox" ? "" : n;
       chips.querySelectorAll(".filter-chip").forEach((b) => b.classList.remove("on"));
@@ -55,6 +57,7 @@ function openTodoQuickAdd(prefill) {
     ((todosCache && todosCache.containers) || []).filter((c) => c.kind === "property")
       .forEach((c) => opt(c.slug, "⌂ " + c.name));
   }
+  if (options.property) propSel.value = options.property;
   const close = () => overlay.remove();
   const submit = async () => {
     const text = input.value.trim();
@@ -70,7 +73,7 @@ function openTodoQuickAdd(prefill) {
       const disp = res && res.dispatched;
       const where = propSel.value ? propSel.selectedOptions[0].textContent : (domain || "Inbox");
       if (disp) {
-        showToast("Captured → " + where + " · " + (disp.mode === "do" ? disp.name + " is drafting the plan" : "asked " + disp.name), null, "info");
+        showToast("Captured → " + where + " · " + (disp.mode === "do" ? disp.name + " received your instructions" : "asked " + disp.name), null, "info");
       } else if (res && res.dispatchError) {
         showToast("Captured → " + where + " — but the agent wasn't reached: " + res.dispatchError, null, "error");
       } else {
@@ -272,7 +275,7 @@ function renderCrumbs(h) {
     // "properties" so hash/counts/routing are untouched)
     const secLabel = (sec === "properties" ? "real estate" : sec).toUpperCase();
     parts.push({ label: secLabel, hash: sec === "day" ? "#/" : "#/" + sec });
-    if (sec !== "day") {
+    if (sec !== "day" && sec !== "tasks") {
       h.replace(/^#\//, "").split("/").filter(Boolean).slice(1)
         .forEach((s) => parts.push({ label: decodeURIComponent(s) }));
     }

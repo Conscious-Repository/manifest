@@ -1140,11 +1140,9 @@ function spiritApprovalAct(id, kind, edits) {
   postApprovalDecision(id, kind, body);
 }
 async function postApprovalDecision(id, kind, body) {
-  // optimistic: the card leaves the moment you decide — the pending/ move
-  // follows; loadFeed() converges to truth either way (a refused decision
-  // brings the card back).
-  const card = document.querySelector(`[data-approval-id="${CSS.escape(id)}"]`);
-  if (card) card.remove();
+  // Keep the evidence visible until the shared decision endpoint acknowledges it.
+  const cards = [...document.querySelectorAll(`[data-approval-id="${CSS.escape(id)}"]`)];
+  cards.forEach((card) => card.querySelectorAll("button").forEach((b) => { b.dataset.wasDisabled = String(b.disabled); b.disabled = true; }));
   setSaveState("saving");
   try {
     const r = await fetch(`/api/spirits/approvals/${encodeURIComponent(id)}/${kind}`,
@@ -1154,18 +1152,23 @@ async function postApprovalDecision(id, kind, body) {
     // optimistically, loadFeed brought it back, and the reason was thrown
     // away. The owner saw a card blink and nothing land.
     if (!r.ok) {
-      const why = (await r.text().catch(() => "")).trim();
+      const detail = (await r.text().catch(() => "")).trim();
+      const why = /text\/html/i.test(r.headers.get("Content-Type") || "") ? "Server returned HTTP " + r.status + ". Try again." : detail;
       setSaveState("error");
       showToast("Not applied — " + (why.replace(/^apply refused:\s*/i, "") || ("HTTP " + r.status)).slice(0, 160), null, "error");
     } else {
       setSaveState("saved");
+      cards.forEach((card) => card.remove());
     }
   } catch (e) {
     setSaveState("error");
     showToast("Couldn't reach the server — " + String(e.message || e).slice(0, 100), null, "error");
   }
+  cards.forEach((card) => card.querySelectorAll("button").forEach((b) => { b.disabled = b.dataset.wasDisabled === "true"; }));
   if (typeof chatOpenId !== "undefined" && chatOpenId && chatAgent) refetchChatSession(chatOpenId);
-  loadFeed(); // approvals live in FEED — the decided card resolves in place
+  if (typeof chatTaskID !== "undefined" && chatTaskID) renderTaskChat(chatTaskID, true);
+  if (typeof loadTodos === "function") loadTodos();
+  loadFeed(); // each surface converges to the same decision
 }
 
 if (els.feedRunNowBtn) els.feedRunNowBtn.addEventListener("click", spiritRunNow);

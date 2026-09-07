@@ -8,14 +8,7 @@
 .tdo-shell { display: flex; align-items: flex-start; gap: 0; }
 .tdo-shell > #todosRows { flex: 1; min-width: 0; }
 body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
-.tdo-panel {
-  width: 340px; flex: none;
-  border-left: 1px solid var(--base-25); background: var(--base-05);
-  position: sticky; top: 0; align-self: flex-start;
-  padding: var(--sp-6) var(--sp-7) var(--sp-7); min-height: 260px;
-  max-height: calc(100vh - 120px); overflow-y: auto;
-  display: flex; flex-direction: column; gap: var(--sp-7);
-}
+.tdo-panel { width: min(48%, 560px); flex: none; border-left: 1px solid var(--base-25); background: var(--bg); position: sticky; top: 0; align-self: flex-start; padding: var(--sp-6) var(--sp-7) var(--sp-7); min-height: 260px; max-height: calc(100vh - 120px); overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-7); }
 
 .tdo-p-head { display: flex; align-items: flex-start; gap: var(--sp-4); }
 .tdo-p-titlewrap { flex: 1; min-width: 0; }
@@ -45,7 +38,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-assignee { font-size: var(--fs-md); color: var(--base-70); }
 
 .tdo-p-threadsec { border-top: 1px solid var(--base-25); padding-top: var(--sp-6); }
-.tdo-p-thread { display: flex; flex-direction: column; gap: var(--sp-5); max-height: 320px; overflow-y: auto; }
+.tdo-p-thread { display: flex; flex-direction: column; gap: var(--sp-5); max-height: 42vh; overflow-y: auto; }
 .tdo-p-comment { background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-4) var(--sp-5); }
 .tdo-p-comment.structural { background: none; border: 0; padding: var(--sp-1) 0; }
 .tdo-p-c-head { display: flex; align-items: baseline; gap: var(--sp-3); }
@@ -64,7 +57,7 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-c-file { display: inline-block; font-family: var(--mono); font-size: var(--fs-xs); color: var(--accent); text-decoration: none; margin-top: var(--sp-2); margin-right: var(--sp-4); }
 .tdo-p-c-file:hover { text-decoration: underline; }
 
-.tdo-p-composer { display: flex; flex-direction: column; gap: var(--sp-3); }
+.tdo-p-composer { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-5); }
 .tdo-p-chips { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .tdo-p-chips:empty { display: none; }
 .tdo-p-chip { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-70); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-1) var(--sp-3); background: var(--bg); }
@@ -155,3 +148,16 @@ body.tdo-panel-open .tdo-shell > #todosRows { padding-right: var(--sp-8); }
 .tdo-p-deps-add:empty { display: none; }
 .tdo-p-deps-add .ta-wrap { width: 100%; }
 .tdo-p-deps-add .ta-in { width: 100%; font-size: var(--fs-sm); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-2) var(--sp-4); background: var(--bg); }
+
+/* Conversation is the work region; reference fields remain one disclosure. */
+
+.tdo-p-work { display: flex; flex-direction: column; gap: var(--sp-6); }
+.tdo-p-task-actions { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.tdo-p-details { border-top: 1px solid var(--line); }
+.tdo-p-details > .sec-body { display: flex; flex-direction: column; gap: var(--sp-7); }
+
+
+@media (max-width: 1100px) {
+  .tdo-panel { width: auto; }
+  body.tdo-panel-open .tdo-shell > #todosRows { padding-right: 0; }
+}

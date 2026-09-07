@@ -622,8 +622,8 @@ function goGoalTaskRow(c, areaName, stage) {
   return row;
 }
 
-// rockOutline (Rev 2): the whole rock inline — name (15px/500) with UNTIL as
-// a quiet tag and the ● lint meta on the rock's own line, the stage trail
+// rockOutline (Rev 2): the whole rock inline — name (15px/500) with
+// the ● lint meta on the rock's own line, the stage trail
 // (→ marks current), and the current stage's tasks from the substrate. Left
 // rule: ink when stalled · accent when tasked · accent-soft otherwise.
 function rockOutline(g, areaName) {
@@ -647,7 +647,7 @@ function rockOutline(g, areaName) {
   const wrap = el("div", "go-rock " + rule + (g.checked ? " done" : ""));
   wrap.dataset.goalId = g.id;
 
-  // line 1 — name · UNTIL tag · lint meta · open-task count right
+  // line 1 — name · lint meta · open-task count right
   const line = el("div", "go-rock-line");
   const name = el("span", "go-rock-name" + (g.checked ? " done" : ""), g.text);
   clickToEdit(name, () => g.text, (v) => goalsApi("PATCH", "/api/goals/item", { id: g.id, text: v }));

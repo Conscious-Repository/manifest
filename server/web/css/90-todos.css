@@ -30,10 +30,7 @@
 
 /* 2 — the ranked list */
 .tdo-main { margin-bottom: var(--sp-7); }
-.tdo-row {
-  display: flex; align-items: baseline; gap: var(--sp-5);
-  padding: var(--sp-2) var(--sp-4); border-top: 1px solid var(--line-soft);
-}
+.tdo-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-4); border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
 .tdo-row:hover { background: var(--base-05); }
 .tdo-row.dragging { opacity: 0.4; }
 .tdo-row.drag-over { border-top: 2px solid var(--accent); }
@@ -47,7 +44,7 @@
 .tdo-pill { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); border: 1px solid var(--base-25); border-radius: var(--radius-lg); padding: 0 var(--sp-3); white-space: nowrap; flex: none; }
 .tdo-pill.linky { cursor: pointer; }
 .tdo-pill.linky:hover { color: var(--accent); border-color: var(--accent-soft); }
-.tdo-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: var(--sp-4); white-space: nowrap; }
+.tdo-right { margin-left: auto; display: inline-flex; align-items: baseline; gap: var(--sp-4); white-space: nowrap; flex-wrap: wrap; }
 .tdo-age { font-family: var(--mono); font-size: var(--fs-xs); color: var(--base-40); min-width: 28px; text-align: right; }
 .tdo-age.stale { color: var(--base-100); }
 .tdo-right .uw-x { color: var(--base-30); visibility: hidden; background: none; border: none; cursor: pointer; padding: 0; }
@@ -110,17 +107,39 @@
    Open · Delegated · Review · Done (Waiting retired 2026-08-12) ---- */
 .tdo-mode-toggle { margin-left: auto; background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; }
 .tdo-mode-toggle:hover { color: var(--accent); }
-.tdo-board { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-6); align-items: start; margin-top: var(--sp-5); }
-.tdo-col { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-4); min-height: 220px; display: flex; flex-direction: column; gap: var(--sp-3); }
+.tdo-board { display: grid; grid-template-columns: repeat(var(--task-columns, 3), minmax(0, 1fr)); gap: var(--sp-6); align-items: start; margin-top: var(--sp-5); }
+.tdo-col { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-4); min-height: 220px; display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
 .tdo-col.dragging-over { border-color: var(--accent); background: var(--base-05); }
 .tdo-col-head { display: flex; align-items: baseline; gap: var(--sp-3); padding: 0 var(--sp-1) var(--sp-3); border-bottom: 1px solid var(--base-20); }
-.tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); background: var(--bg); cursor: grab; }
+.tdo-card { border: 1px solid var(--base-20); border-radius: var(--radius); padding: var(--sp-6); background: var(--bg); cursor: grab; }
 .tdo-card:active { cursor: grabbing; }
 .tdo-card.done .tdo-card-text { text-decoration: line-through; color: var(--base-40); }
-.tdo-card-text { font-family: var(--sans); font-size: var(--fs-md); line-height: 1.35; cursor: text; }
+.tdo-card-text { font-family: var(--sans); font-size: var(--fs-lg); line-height: 1.5; cursor: text; width: 100%; }
 .tdo-card-edit { width: 100%; box-sizing: border-box; font-size: var(--fs-md); }
 .tdo-card-meta { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-2); font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); align-items: baseline; }
 .tdo-card-wait, .tdo-card-rock { color: var(--base-50); }
 /* REVIEW: the result is the point of the column — one quiet read affordance */
-.tdo-card-acts { margin-top: var(--sp-3); }
+.tdo-card-acts { margin-top: var(--sp-3); display: flex; flex-wrap: wrap; gap: var(--sp-4); padding-top: var(--sp-3); }
 .tdo-card-acts .pill { font-family: var(--mono); font-size: var(--fs-2xs); }
+
+/* Domain, attention, and layout are independent controls over one task set. */
+.tdo-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); padding: var(--sp-5) 0 var(--sp-7); }
+.tdo-lenses, .tdo-layouts { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.tdo-layouts { margin-left: auto; }
+#todosSearch { width: 180px; min-height: var(--control-height); }
+.tdo-load-error { display: flex; align-items: center; gap: var(--sp-7); padding: var(--sp-7); border: 1px solid var(--line); }
+.tdo-task-title { background: none; border: 0; padding: 0; color: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.tdo-task-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.tdo-row > .tdo-task-title { flex: 1 1 240px; }
+
+.tdo-work-action { background: none; border: 0; color: var(--base-70); font-family: var(--mono); font-size: var(--fs-xs); cursor: pointer; }
+.tdo-status { color: var(--base-50); }
+.tdo-row:focus-within .uw-x, .tdo-row:focus-within .tdo-tether { visibility: visible; }
+
+
+.tdo-col-empty { padding: var(--sp-7) var(--sp-2); font-size: var(--fs-sm); color: var(--base-50); }
+
+
+
+body.tdo-panel-open .tdo-board { grid-template-columns: minmax(0, 1fr); }
