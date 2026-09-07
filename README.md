@@ -1,4 +1,5 @@
 # Manifest
+<!-- QA: board-agent README comment check. -->
 
 > *A local-first operating system for one person's work — a dashboard that lives
 > on top of your notes, not in spite of them.*
