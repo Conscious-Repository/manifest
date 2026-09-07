@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"manifest/mdfm"
+	"manifest/record"
 )
 
 // Writer targets a single vault root.
@@ -31,7 +32,13 @@ type Writer struct {
 }
 
 // New builds a writer for the given vault path ("" disables saving).
-func New(vaultPath string) *Writer { return &Writer{vault: vaultPath} }
+func New(vaultPath string) *Writer {
+	w := &Writer{vault: vaultPath}
+	for _, zone := range []string{record.ZoneKnowledge, record.ZoneSystem, record.ZoneExtrinsic} {
+		w.Grant(Capability{Name: "note-editor-" + zone, Zone: zone, Pattern: "*.md", Actor: ActorUserAction})
+	}
+	return w
+}
 
 // Enabled reports whether a vault is configured.
 func (w *Writer) Enabled() bool { return w.vault != "" }

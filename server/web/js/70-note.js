@@ -26,7 +26,7 @@ async function loadNote(path) {
   // quiet zone badge: system-zone notes are app-managed markdown
   if (_note.zone === "system") els.noteTitle.append(el("span", "note-zone-badge", "SYSTEM"));
   // engine-owned notes are read-only (the write guard refuses them) — hide edit
-  els.noteRawToggle.hidden = !!_note.readOnly;
+  els.noteRawToggle.hidden = !!_note.readOnly || writeEOL(_note.raw).mixed;
   els.noteObsidian.href = "obsidian://open?vault=" + encodeURIComponent(_note.vault) +
     "&file=" + encodeURIComponent(_note.path.replace(/\.md$/, ""));
   renderNoteBody();
@@ -66,11 +66,11 @@ async function resolveWikilink(target) {
 
 async function toggleNoteTask(line, want, box) {
   try {
-    const res = await fetch("/api/note/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: _note.path, line, want }) });
+    const res = await fetch("/api/note/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: _note.path, line, want, ifRevision: _note.revision }) });
     if (!res.ok) throw new Error(await res.text());
     // refresh raw so subsequent toggles use correct line state
     const g = await (await fetch("/api/note?path=" + encodeURIComponent(_note.path))).json();
-    _note.raw = g.raw; _note.backlinks = g.backlinks;
+    _note.raw = g.raw; _note.revision = g.revision; _note.backlinks = g.backlinks;
   } catch (e) { box.checked = !want; els.noteSaved.textContent = "toggle failed — reload"; }
 }
 
@@ -87,13 +87,17 @@ if (els.noteRawToggle) els.noteRawToggle.addEventListener("click", () => {
   }
 });
 if (els.noteSaveBtn) els.noteSaveBtn.addEventListener("click", async () => {
+  if (_note.saving) return;
+  const doc = _note, text = els.noteRaw.value; doc.saving = true;
   els.noteSaved.textContent = "saving…";
   try {
-    const res = await fetch("/api/note", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: _note.path, body: els.noteRaw.value }) });
-    if (!res.ok) throw new Error(await res.text());
-    els.noteSaved.textContent = "saved";
-    await loadNote(_note.path); // reindex happened server-side; re-render fresh
-  } catch (e) { els.noteSaved.textContent = "save failed"; }
+    const res = await fetch("/api/note", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: doc.path, body: writeEOL(doc.raw).eol === "\r\n" ? text.replace(/\n/g,"\r\n") : text, ifRevision: doc.revision }) });
+    if (!res.ok) throw new Error(res.status === 409 ? "file changed — your text is retained; open Writing to reconcile" : await res.text());
+    const result = await res.json(); doc.revision = result.revision;
+    doc.raw = writeEOL(doc.raw).eol === "\r\n" ? text.replace(/\n/g,"\r\n") : text;
+    if (_note === doc) els.noteSaved.textContent = els.noteRaw.value === text ? "saved" : "unsaved changes";
+  } catch (e) { if (_note === doc) els.noteSaved.textContent = "save failed — " + e.message; }
+  finally { doc.saving = false; }
 });
 if (els.noteBackBtn) els.noteBackBtn.addEventListener("click", () => { location.hash = _noteReturn || "#/contacts"; });
 

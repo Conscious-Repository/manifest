@@ -131,6 +131,7 @@
   // inspector repopulates via its surface re-render).
   mqPhone.addEventListener("change", (e) => {
     closeDrawer();
+    if (sheetKey === "writing-comments") return; // Writing uses the wider 1100px sheet breakpoint.
     const restore = sheetReopen;
     mfSheet.close({ silent: true, keepReopen: false });
     if (!e.matches && restore) restore();

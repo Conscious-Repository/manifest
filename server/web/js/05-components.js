@@ -523,3 +523,66 @@ function fuzzyScore(needle, hay) {
   }
   return -1;
 }
+
+// Searchable file/folder picker: shared keyboard and focus lifecycle. Entries
+// are data, never HTML. The caller owns the action after a selection.
+function choosePath({title, placeholder, items, createLabel}) {
+  return new Promise(resolve => {
+    const root = el('div', 'cmdbar');
+    const back = el('div', 'cmdbar-backdrop');
+    const card = el('div', 'cmdbar-card'); card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true'); card.setAttribute('aria-label', title);
+    const heading = el('div', 'path-picker-heading');
+    const close = pill('close', () => finish(null));
+    heading.append(el('span', 'micro-label', title), close);
+    const input = inputEl(placeholder || 'type to search…'); input.className = 'cmdbar-input';
+    input.setAttribute('aria-label', title); input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-expanded', 'true'); input.setAttribute('aria-autocomplete', 'list');
+    const list = el('div', 'path-picker-list'); list.id = 'path-picker-' + Math.random().toString(36).slice(2);
+    list.setAttribute('role', 'listbox'); input.setAttribute('aria-controls', list.id);
+    const hint = el('div', 'path-picker-hint', '↑↓ to navigate · enter to choose · esc to dismiss');
+    card.append(heading, input, list, hint); root.append(back, card); document.body.append(root);
+    let filtered = [], selected = 0, settled = false;
+    const release = containDialogFocus(root, input);
+    function finish(value) { if(settled)return;settled=true;release();root.remove();resolve(value); }
+    function paint() {
+      const q = input.value.trim().toLowerCase();
+      filtered = items.filter(i => (i.label + ' ' + (i.detail || '')).toLowerCase().includes(q)).slice(0, 100);
+      if(createLabel && input.value.trim()) filtered.unshift({label:createLabel + ' “' + input.value.trim() + '”', value:input.value.trim(), create:true});
+      selected = Math.max(0, Math.min(selected, filtered.length - 1)); list.replaceChildren();
+      filtered.forEach((item, i) => {
+        const row = el('div', 'path-picker-row' + (i===selected?' on':'')); row.id=list.id+'-'+i;
+        row.setAttribute('role','option');row.setAttribute('aria-selected',String(i===selected));
+        row.append(el('span','',item.label));if(item.detail)row.append(el('span','path-picker-detail',item.detail));
+        row.onmousedown=e=>e.preventDefault();row.onclick=()=>finish(item);
+        list.append(row);
+      });
+      if(!filtered.length)list.append(el('div','path-picker-hint','no matching files or folders'));
+      input.setAttribute('aria-activedescendant',filtered.length?list.id+'-'+selected:'');
+      list.children[selected]?.scrollIntoView({block:'nearest'});
+    }
+    input.oninput=()=>{selected=0;paint()};
+    card.onkeydown=e=>{
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(null)}
+      else if(e.target===input&&['ArrowDown','ArrowUp','Enter'].includes(e.key)){
+        e.preventDefault();e.stopPropagation();
+        if(e.key==='Enter'){if(filtered[selected])finish(filtered[selected]);return}
+        selected=(selected+(e.key==='ArrowDown'?1:-1)+filtered.length)%Math.max(1,filtered.length);paint();
+      }
+    };
+    back.onclick=()=>finish(null);paint();
+  });
+}
+
+function chooseActionMenu(trigger, items) {
+  return new Promise(resolve=>{
+    const root=el('div','action-menu-layer'),back=el('div','action-menu-backdrop'),menu=el('div','action-menu');
+    menu.setAttribute('role','menu');menu.setAttribute('aria-label','Document actions');
+    const rect=trigger.getBoundingClientRect();menu.style.right=Math.max(8,window.innerWidth-rect.right)+'px';menu.style.top=Math.min(rect.bottom+6,window.innerHeight-260)+'px';
+    let release,closed=false;
+    const close=value=>{if(closed)return;closed=true;release?.();root.remove();resolve(value)};
+    items.forEach(item=>{const button=el('button','action-menu-item',item.label);button.setAttribute('role','menuitem');button.onclick=()=>close(item);menu.append(button)});
+    root.append(back,menu);document.body.append(root);release=containDialogFocus(root,menu.firstElementChild);
+    back.onclick=()=>close(null);menu.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(null)}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const buttons=[...menu.children];const i=buttons.indexOf(document.activeElement);buttons[(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus()}};
+  });
+}

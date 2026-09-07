@@ -35,3 +35,6 @@ aion-adopt
 re-rocks-migrate
 re-contracts-migrate
 kairos-runner
+
+# Reproducible editor build dependencies
+/tools/writing-editor/node_modules/

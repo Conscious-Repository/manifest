@@ -53,6 +53,8 @@ func (w *Writer) CreatePersonNote(name string, aliases []string, body string) (s
 // ReplaceBody rewrites an existing note's body while preserving its frontmatter
 // block verbatim — the note-pane "save" on a contact that already has a note.
 func (w *Writer) ReplaceBody(rel, body string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	full, err := w.resolve(rel)
 	if err != nil {
 		return err
@@ -69,13 +71,15 @@ func (w *Writer) ReplaceBody(rel, body string) error {
 	if b := strings.TrimSpace(body); b != "" {
 		out += b + "\n"
 	}
-	return w.commit(full, "contact-body", []byte(out))
+	return w.commitHeld(full, "contact-body", []byte(out))
 }
 
 // AddFrontmatterValue adds value to a frontmatter list key (creating the block or
 // the key when absent), idempotently. Used to record an alias on bind (§5) and an
 // email on confirm (§6). Returns nil (no-op) when the value is already present.
 func (w *Writer) AddFrontmatterValue(rel, key, value string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return errors.New("empty value")
@@ -92,13 +96,15 @@ func (w *Writer) AddFrontmatterValue(rel, key, value string) error {
 	if !changed {
 		return nil
 	}
-	return w.commit(full, "contact-frontmatter", []byte(next))
+	return w.commitHeld(full, "contact-frontmatter", []byte(next))
 }
 
 // SetContactLocation atomically replaces the standardized locality and optional
 // private street address on a person note. Empty location clears both fields;
 // an address can never exist without a queryable locality.
 func (w *Writer) SetContactLocation(rel, location, address string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	location = strings.TrimSpace(location)
 	address = strings.TrimSpace(address)
 	if location == "" && address != "" {
@@ -133,7 +139,7 @@ func (w *Writer) SetContactLocation(rel, location, address string) error {
 	if next == string(raw) {
 		return nil
 	}
-	return w.commit(full, "contact-location", []byte(next))
+	return w.commitHeld(full, "contact-location", []byte(next))
 }
 
 // removeFMField removes one top-level field and any indented continuation rows,
@@ -182,6 +188,8 @@ func removeFMField(raw, want string) string {
 // WriteNote overwrites a note with the exact raw content the user typed in the
 // note view's raw-markdown editor (frontmatter + body verbatim). A user write.
 func (w *Writer) WriteNote(rel, raw string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	full, err := w.resolve(rel)
 	if err != nil {
 		return err
@@ -192,7 +200,7 @@ func (w *Writer) WriteNote(rel, raw string) error {
 	if !strings.HasSuffix(raw, "\n") {
 		raw += "\n"
 	}
-	return w.commit(full, "note-write", []byte(raw))
+	return w.commitHeld(full, "note-write", []byte(raw))
 }
 
 var taskMarkRe = regexp.MustCompile(`^(\s*[-*]\s+\[)[ xX](\].*)$`)
@@ -201,6 +209,8 @@ var taskMarkRe = regexp.MustCompile(`^(\s*[-*]\s+\[)[ xX](\].*)$`)
 // (checked/unchecked) — the "check it off from the dashboard" write. It verifies
 // the line is actually a checkbox (optimistic-concurrency guard against drift).
 func (w *Writer) ToggleTask(rel string, line int, want bool) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	full, err := w.resolve(rel)
 	if err != nil {
 		return err
@@ -221,7 +231,7 @@ func (w *Writer) ToggleTask(rel string, line int, want bool) error {
 		mark = "x"
 	}
 	lines[line] = taskMarkRe.ReplaceAllString(strings.TrimRight(lines[line], "\r"), "${1}"+mark+"${2}")
-	return w.commit(full, "task-toggle", []byte(strings.Join(lines, "\n")))
+	return w.commitHeld(full, "task-toggle", []byte(strings.Join(lines, "\n")))
 }
 
 // resolve maps a vault-relative path to an absolute one, running the write

@@ -2,6 +2,7 @@ package record
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 )
@@ -101,4 +102,46 @@ func FrontmatterScalar(path, key string) string {
 		}
 	}
 	return ""
+}
+
+// SetScalar changes one top-level frontmatter scalar, preserving other fields,
+// comments, ordering, line endings and body bytes. Values must be one line.
+func SetScalar(raw, key, value string) (string, error) {
+	if strings.ContainsAny(key+value, "\r\n") || strings.Contains(key, ":") {
+		return "", fmt.Errorf("invalid scalar")
+	}
+	eol := "\n"
+	if strings.HasPrefix(raw, "---\r\n") {
+		eol = "\r\n"
+	}
+	if !strings.HasPrefix(raw, "---"+eol) {
+		return "---" + eol + key + ": " + value + eol + "---" + eol + raw, nil
+	}
+	lines := strings.Split(raw, eol)
+	end := -1
+	found := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" || lines[i] == "..." {
+			end = i
+			break
+		}
+		if !strings.HasPrefix(lines[i], " ") && !strings.HasPrefix(lines[i], "\t") {
+			k, _, ok := strings.Cut(lines[i], ":")
+			if ok && k == key {
+				if found >= 0 {
+					return "", fmt.Errorf("duplicate scalar %s", key)
+				}
+				found = i
+			}
+		}
+	}
+	if end < 0 {
+		return "", fmt.Errorf("unterminated frontmatter")
+	}
+	if found >= 0 {
+		lines[found] = key + ": " + value
+	} else {
+		lines = append(lines[:end], append([]string{key + ": " + value}, lines[end:]...)...)
+	}
+	return strings.Join(lines, eol), nil
 }

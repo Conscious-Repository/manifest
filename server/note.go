@@ -1,10 +1,13 @@
 package server
 
 import (
+	"errors"
+	"manifest/vaultwriter"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // UNIVERSAL NOTE VIEW (plans contacts power-pass §1). Read any vault note, save
@@ -52,9 +55,9 @@ func (s *Server) handleNoteGet(w http.ResponseWriter, r *http.Request) {
 	}
 	// engine-owned notes (system/excalibur, system/agents) are read-only — the
 	// write guard refuses them, so the UI hides the edit affordance.
-	readOnly := s.vault != nil && !s.vault.CanUserWrite(filepath.ToSlash(rel))
+	readOnly := s.vault == nil || !s.vault.CanUserWrite(filepath.ToSlash(rel)) || !utf8.Valid(raw) || len(raw) > 4<<20
 	writeJSON(w, map[string]any{
-		"path": filepath.ToSlash(rel), "name": name, "raw": string(raw),
+		"path": filepath.ToSlash(rel), "name": name, "raw": string(raw), "revision": vaultwriter.Revision(raw), "vaultID": vaultwriter.Revision([]byte(s.index.VaultRoot())),
 		"backlinks": backlinks, "isPerson": isPerson,
 		"zone":     s.index.NoteZone(filepath.ToSlash(rel)), // "system" → quiet SYSTEM badge
 		"readOnly": readOnly,
@@ -63,24 +66,31 @@ func (s *Server) handleNoteGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleNotePut(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)
 	if s.index == nil || s.vault == nil {
 		http.Error(w, "not available", http.StatusServiceUnavailable)
 		return
 	}
 	var b struct {
-		Path string `json:"path"`
-		Body string `json:"body"`
+		Path       string `json:"path"`
+		Body       string `json:"body"`
+		IfRevision string `json:"ifRevision"`
 	}
 	if err := decode(r, &b); err != nil || b.Path == "" {
 		httpError(w, errBadRequest("path is required"))
 		return
 	}
-	if err := s.vault.WriteNote(b.Path, b.Body); err != nil {
-		httpError(w, err)
+	if b.IfRevision == "" {
+		http.Error(w, "ifRevision is required", http.StatusPreconditionRequired)
+		return
+	}
+	revision, err := s.vault.WriteNoteIfRevision(b.Path, b.Body, b.IfRevision)
+	if err != nil {
+		noteWriteError(w, err)
 		return
 	}
 	_ = s.index.ReindexPaths([]string{b.Path})
-	writeJSON(w, map[string]bool{"ok": true})
+	writeJSON(w, map[string]any{"ok": true, "revision": revision})
 }
 
 func (s *Server) handleNoteTask(w http.ResponseWriter, r *http.Request) {
@@ -89,16 +99,21 @@ func (s *Server) handleNoteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Path string `json:"path"`
-		Line int    `json:"line"`
-		Want bool   `json:"want"`
+		Path       string `json:"path"`
+		Line       int    `json:"line"`
+		Want       bool   `json:"want"`
+		IfRevision string `json:"ifRevision"`
 	}
 	if err := decode(r, &b); err != nil || b.Path == "" {
 		httpError(w, errBadRequest("path and line are required"))
 		return
 	}
-	if err := s.vault.ToggleTask(b.Path, b.Line, b.Want); err != nil {
-		httpError(w, err)
+	if b.IfRevision == "" {
+		http.Error(w, "ifRevision is required", http.StatusPreconditionRequired)
+		return
+	}
+	if _, err := s.vault.ToggleTaskIfRevision(b.Path, b.Line, b.Want, b.IfRevision); err != nil {
+		noteWriteError(w, err)
 		return
 	}
 	_ = s.index.ReindexPaths([]string{b.Path})
@@ -144,10 +159,28 @@ func safeVaultPath(root, rel string) (string, bool) {
 	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return "", false
 	}
-	full := filepath.Join(root, clean)
+	full, pathErr := vaultwriter.SafePath(root, clean)
+	if pathErr != nil {
+		return "", false
+	}
 	relCheck, err := filepath.Rel(root, full)
 	if err != nil || strings.HasPrefix(relCheck, "..") {
 		return "", false
 	}
 	return full, true
+}
+
+func noteWriteError(w http.ResponseWriter, err error) {
+	var conflict *vaultwriter.Conflict
+	if errors.As(err, &conflict) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		writeJSON(w, conflict)
+		return
+	}
+	if os.IsExist(err) {
+		http.Error(w, "a file already exists at that path", http.StatusConflict)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadRequest)
 }

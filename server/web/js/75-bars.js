@@ -535,7 +535,8 @@ async function openRawOverlay(explicitPath) {
   }
   if (!d) { ui.note.textContent = "note not found — nothing to edit yet"; ui.save.disabled = true; return; }
   ui.area.value = d.raw || "";
-  ui.save.disabled = !!d.readOnly;
+  ui.revision = d.revision; ui.eol = writeEOL(d.raw || "");
+  ui.save.disabled = !!d.readOnly || ui.eol.mixed;
   if (d.readOnly) ui.note.textContent = "read-only — engine-owned note";
   // phone: the raw editor is a viewer (Rev 4 — batch text editing is
   // desktop-only; a soft keyboard over a full-height textarea is a trap)
@@ -556,10 +557,12 @@ function closeRawOverlay() {
 
 async function saveRawOverlay() {
   const ui = buildRawOverlay();
-  const p = ui.path.textContent;
+  const p = ui.path.textContent, text = ui.area.value;
   ui.save.disabled = true;
   try {
-    await putJSON("/api/note", { path: p, body: ui.area.value });
+    const result = await putJSON("/api/note", { path: p, body: ui.eol.eol === "\r\n" ? text.replace(/\n/g, "\r\n") : text, ifRevision: ui.revision });
+    ui.revision = result.revision;
+    if (ui.path.textContent !== p || ui.area.value !== text) { ui.save.disabled=false;ui.note.textContent="unsaved changes";return; }
     showToast("Saved — " + p);
     closeRawOverlay();
     route(); // re-dispatch the current loader so the surface reflects the edit

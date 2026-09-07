@@ -150,6 +150,21 @@ async function renderTodoPanel(refetch) {
   desc.append(descBody);
   host.append(desc);
 
+  const writingLink = pillLight(rec.document ? 'resume writing →' : 'open writing…', async () => {
+    const id = todoSelId;
+    try {
+      let p = rec.document;
+      if (!p) {
+        const files = await writeFetch('/api/writing/files');
+        const selected = await choosePath({title:'Choose a document for this task',items:files.files.filter(f=>!f.readOnly).map(f=>({label:f.name,detail:f.path,value:f.path}))});
+        if(!selected)return;p=selected.value;
+        await writeFetch('/api/writing/bind',{id,document:p});
+      }
+      closeTodoPanel();writeNavigate(p);
+    } catch(e) { showToast(e.message,null,'error'); }
+  });
+  host.append(writingLink);
+
   // --- plan: rendered preview + ONE action. "open →" goes to the full-page
   // record (which carries its own Edit raw / Obsidian toggles); inline
   // writing exists only while there is no plan yet.

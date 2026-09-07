@@ -1,9 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"manifest/approvals"
@@ -47,6 +50,8 @@ type planRecord struct {
 	Plan        string `json:"plan"`
 	Assignee    string `json:"assignee,omitempty"`
 	State       string `json:"state,omitempty"`
+	Document    string `json:"document,omitempty"`
+	Mode        string `json:"mode,omitempty"`
 	Rel         string `json:"rel"` // vault-relative path (the "plan file →" link)
 }
 
@@ -93,6 +98,8 @@ func (s *Server) readPlanRecord(id string) planRecord {
 	out.Plan = sectionBody(body, "plan")
 	out.Assignee = fm["assignee"]
 	out.State = fm["state"]
+	out.Document = record.Unquote(fm["document"])
+	out.Mode = record.Unquote(fm["mode"])
 	return out
 }
 
@@ -103,8 +110,14 @@ func (s *Server) ensurePlanRecord(id, assignee string) error {
 		return errBadRequest("todo plans not configured")
 	}
 	rel := s.todoPlans.rel(id)
-	if _, err := s.vault.ReadVaultFile(rel); err == nil {
-		return nil // already a record
+	if raw, err := s.vault.ReadVaultFile(rel); err == nil {
+		fm, _ := mdfm.Split(string(raw))
+		if record.Unquote(fm["todo"]) != id {
+			return fmt.Errorf("task plan identity collision")
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
 	}
 	w := (&mdfm.Writer{}).Set("todo", id).Set("assignee", assignee).SetRaw("state", "open")
 	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## description\n\n## plan\n")))
@@ -117,13 +130,14 @@ func (s *Server) setPlanAssignee(id, assignee string) error {
 		return err
 	}
 	rel := s.todoPlans.rel(id)
-	raw, err := s.vault.ReadVaultFile(rel)
-	if err != nil {
-		return err
-	}
-	fm, body := mdfm.Split(string(raw))
-	w := (&mdfm.Writer{}).Set("todo", fm["todo"]).Set("assignee", assignee).SetRaw("state", orStr(fm["state"], "open"))
-	return s.vault.WriteCap("todo-plans", rel, []byte(w.String(strings.TrimLeft(body, "\n"))))
+	return s.vault.UpdateCap("todo-plans", rel, func(raw []byte) ([]byte, error) {
+		fm, _ := mdfm.Split(string(raw))
+		if record.Unquote(fm["todo"]) != id {
+			return nil, fmt.Errorf("task plan identity collision")
+		}
+		next, err := record.SetScalar(string(raw), "assignee", assignee)
+		return []byte(next), err
+	})
 }
 
 // writePlanSection swaps one section under the given capability.
@@ -254,4 +268,101 @@ func (s *Server) handlePlanSectionWrite(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, map[string]any{"ok": true, "record": s.readPlanRecord(id)})
+}
+
+// A workspace binding is optional and uses the task's existing record.
+func (s *Server) handleWritingBinding(w http.ResponseWriter, r *http.Request) {
+	if s.vault == nil || s.todoPlans == nil {
+		http.Error(w, "task workspaces unavailable", 503)
+		return
+	}
+	var b struct {
+		ID       string `json:"id"`
+		Document string `json:"document"`
+	}
+	if err := decode(r, &b); err != nil {
+		httpError(w, err)
+		return
+	}
+	id, ok := s.pinTaskID(b.ID)
+	if !ok {
+		http.Error(w, "task not found", 404)
+		return
+	}
+	if b.Document != "" {
+		if _, ok = safeVaultPath(s.vault.VaultRoot(), b.Document); !ok || !s.vault.CanUserWrite(b.Document) {
+			http.Error(w, "note is not writable", 400)
+			return
+		}
+		if _, err := s.vault.ReadVaultFile(b.Document); err != nil {
+			http.Error(w, "note not found", 404)
+			return
+		}
+	}
+	if err := s.ensurePlanRecord(id, ""); err != nil {
+		httpError(w, err)
+		return
+	}
+	err := s.vault.UpdateCap("todo-plans", s.todoPlans.rel(id), func(raw []byte) ([]byte, error) {
+		fm, _ := mdfm.Split(string(raw))
+		if record.Unquote(fm["todo"]) != id {
+			return nil, fmt.Errorf("task plan identity collision")
+		}
+		next, err := record.SetScalar(string(raw), "document", strconv.Quote(b.Document))
+		if err != nil {
+			return nil, err
+		}
+		mode := ""
+		if b.Document != "" {
+			mode = "write"
+		}
+		next, err = record.SetScalar(next, "mode", strconv.Quote(mode))
+		return []byte(next), err
+	})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"id": id, "document": b.Document})
+}
+
+// Relink only explicit task document pointers after an owner move. Other
+// frontmatter and plan bytes are preserved; failures are reported after the move.
+func (s *Server) relinkWritingTasks(from, to string) error {
+	if s.todoPlans == nil || s.vault == nil {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(s.vault.VaultRoot(), filepath.FromSlash(s.todoPlans.root)))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		rel := path.Join(s.todoPlans.root, entry.Name())
+		raw, err := s.vault.ReadVaultFile(rel)
+		if err != nil {
+			return err
+		}
+		fm, _ := mdfm.Split(string(raw))
+		if record.Unquote(fm["document"]) != from {
+			continue
+		}
+		err = s.vault.UpdateCap("todo-plans", rel, func(current []byte) ([]byte, error) {
+			fm, _ := mdfm.Split(string(current))
+			if record.Unquote(fm["document"]) != from {
+				return current, nil
+			}
+			next, err := record.SetScalar(string(current), "document", strconv.Quote(to))
+			return []byte(next), err
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -68,3 +68,18 @@ func TestFrontmatterScalar(t *testing.T) {
 		t.Fatalf("expected empty type, got %q", got)
 	}
 }
+
+func TestSetScalarPreservesWorkspaceAndUnknownBytes(t *testing.T) {
+	raw := "---\r\ntodo: task-1\r\n# hand edited\r\nassignee: agent:alfred\r\ndocument: \"drafts/one.md\"\r\ncustom: [a, b]\r\n---\r\n\r\n## plan\r\nunchanged 🌿"
+	next, err := SetScalar(raw, "assignee", "agent:codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next != strings.Replace(raw, "assignee: agent:alfred", "assignee: agent:codex", 1) {
+		t.Fatal("unrelated bytes changed")
+	}
+	next, err = SetScalar(raw, "mode", "write")
+	if err != nil || !strings.Contains(next, "mode: write\r\n---\r\n") {
+		t.Fatal(next, err)
+	}
+}

@@ -437,3 +437,14 @@ deleted; `fmtMoney`/`fmtPct`/`moneyInput` stay, they have live callers. In its
 place, the UI-conventions pass (`plans/manifest-ui-conventions.md` C2) adds
 `cardShell`/`cardActions`, the one factory every FEED-rendered card (findings,
 signals, portal notices, receipts, approvals) now builds through.
+
+
+**2026-09-07 — owner-directed Writing workspace.** Benjamin authorized a
+WORK → Writing surface with task-optional vault note creation (root default),
+editing and move/rename. Owner-triggered passage questions include bounded
+surrounding context. Attributed agent replies, including explicitly requested
+alternative phrasings, persist separately under `<systemRoot>/writing/` through
+an append-only capability; they do not mutate owner prose. A displayed exact
+mechanics suggestion may become an audited owner edit only on explicit acceptance.
+No automatic application, unsolicited continuation, general agent knowledge-write
+lane, or Send functionality is authorized by this change.

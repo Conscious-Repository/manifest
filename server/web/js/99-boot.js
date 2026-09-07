@@ -114,6 +114,7 @@ const NAV_SECTIONS = [
     { key: "tasks", label: "Tasks", glyph: "✓", hash: "#/tasks", counted: true },
   ]},
   { label: "WORK", items: [
+    { key: "write", label: "Writing", glyph: "✎", hash: "#/write" },
     { key: "aion", label: "Aion", glyph: "◆", hash: "#/aion", counted: true },
     { key: "properties", label: "Real Estate", glyph: "⌂", hash: "#/properties", counted: true },
   ]},
@@ -147,7 +148,7 @@ function sectionOf(h) {
   if (h.startsWith("#/read/")) return "feed"; // the reader belongs to FEED in the rail
   const seg = h.replace(/^#\//, "").split("/")[0];
   if (seg === "spirits") return "agents"; // legacy hash (redirected in route)
-  return ["goals","tasks","calendar","feed","chat","terminal","agents","settings","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
+  return ["write","goals","tasks","calendar","feed","chat","terminal","agents","settings","contacts","reading","properties","aion"].includes(seg) ? seg : "day";
 }
 
 function buildRail() {
@@ -389,10 +390,13 @@ function route() {
   const reading = h === "#/reading" || h.startsWith("#/reading/");
   const properties = h === "#/properties" || h.startsWith("#/properties/");
   const aionTab = h === "#/aion" || h.startsWith("#/aion/");
+  const writing = h === "#/write" || h.startsWith("#/write/");
+  document.getElementById("writeView").hidden = !writing;
+  if (!writing && window.mfSheet) mfSheet.closeIf("writing-comments");
   const note = h.startsWith("#/note/");
   const artifact = h.startsWith("#/artifact/");
   const read = h.startsWith("#/read/"); // one article, full page (CONSUME)
-  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !settings && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read;
+  const day = !goals && !todosTab && !cal && !fd && !chat && !terminalTab && !sp && !settings && !contacts && !reading && !properties && !aionTab && !note && !artifact && !read && !writing;
   els.dayView.hidden = !day;
   els.goalsView.hidden = !goals;
   els.todosView.hidden = !todosTab;
@@ -440,6 +444,7 @@ function route() {
   else if (reading) loadReading(); // book shelf over the extrinsic zone
   else if (properties) showProperties(h); // real-estate cockpit: board / property page
   else if (aionTab) showAion(h); // aion program cockpit: backlog / heuristics / vto / …
+  else if (writing) showWriting(h.startsWith("#/write/") ? decodeURIComponent(h.slice("#/write/".length)) : "");
   else if (note) showNote(decodeURIComponent(h.slice("#/note/".length))); // universal note view
   else if (artifact) showArtifact(h.slice("#/artifact/".length));
   else if (read) showRead(decodeURIComponent(h.slice("#/read/".length))); // full-page agent-artifact reader

@@ -108,6 +108,8 @@ func (w *Writer) checkCap(capName, rel string) (Capability, string, error) {
 
 // WriteCap is the capability-checked vault write: check, mkdir, write, audit.
 func (w *Writer) WriteCap(capName, rel string, data []byte) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	if !w.Enabled() {
 		return errors.New("no vault configured")
 	}
@@ -120,10 +122,12 @@ func (w *Writer) WriteCap(capName, rel string, data []byte) error {
 		return err
 	}
 	var oldLen int64
+	mode := os.FileMode(0644)
 	if fi, err := os.Stat(full); err == nil {
 		oldLen = fi.Size()
+		mode = fi.Mode()
 	}
-	if err := os.WriteFile(full, data, 0o644); err != nil {
+	if err := atomicBytes(full, data, mode); err != nil {
 		return err
 	}
 	w.traced(w.audit(clean, c.Name, string(c.Actor), int64(len(data))-oldLen))
@@ -135,6 +139,8 @@ func (w *Writer) WriteCap(capName, rel string, data []byte) error {
 // guard (traversal + engine-owned) — a user-invoked move may relocate a
 // knowledge-zone note into a structured zone (goodreads re-filing books).
 func (w *Writer) RenameCap(capName, relOld, relNew string) error {
+	editMu.Lock()
+	defer editMu.Unlock()
 	if !w.Enabled() {
 		return errors.New("no vault configured")
 	}
@@ -220,14 +226,22 @@ func (w *Writer) AuditFailure() (int, error) {
 // records, ledgers, queue, xposts, extrinsic saves): mkdir, write, audit.
 // full is absolute (under the vault); label names the entry point.
 func (w *Writer) commit(full, label string, data []byte) error {
+	editMu.Lock()
+	defer editMu.Unlock()
+	return w.commitHeld(full, label, data)
+}
+
+func (w *Writer) commitHeld(full, label string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
 	var oldLen int64
+	mode := os.FileMode(0644)
 	if fi, err := os.Stat(full); err == nil {
 		oldLen = fi.Size()
+		mode = fi.Mode()
 	}
-	if err := os.WriteFile(full, data, 0o644); err != nil {
+	if err := atomicBytes(full, data, mode); err != nil {
 		return err
 	}
 	rel := full

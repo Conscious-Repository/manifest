@@ -49,6 +49,7 @@ import (
 	"manifest/teamportal"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
+	"manifest/writing"
 )
 
 //go:embed web
@@ -205,6 +206,7 @@ type Server struct {
 	teamBridges []*teamportal.Bridge
 	// todoPlans: the todo-panel plan-record layer (system/todo-plans). Nilable.
 	todoPlans *todoPlansCfg
+	writing   *writing.Store
 	// threads: the todo-panel comment stores (private/RE-shared/aion). Nilable.
 	threads *threadsCfg
 	// ledgerStore: the daily shared thread — a tier-3 JSONL projection of
@@ -861,6 +863,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/reading/rating", s.handleReadingRating)
 
 	// Universal note view + edits (contacts power-pass §1).
+	mux.HandleFunc("POST /api/writing/bind", s.handleWritingBinding)
+	mux.HandleFunc("GET /api/writing/sources", s.handleWritingSources)
+	mux.HandleFunc("PUT /api/writing/sources", s.handleWritingSources)
+	mux.HandleFunc("POST /api/writing/passages", s.handleWritingPassages)
+	mux.HandleFunc("GET /api/writing/comments", s.handleWritingComments)
+	mux.HandleFunc("POST /api/writing/comments", s.handleWritingComment)
+	mux.HandleFunc("GET /api/writing/files", s.handleWritingFiles)
+	mux.HandleFunc("POST /api/writing/note", s.handleWritingCreate)
+	mux.HandleFunc("POST /api/writing/move", s.handleWritingMove)
 	mux.HandleFunc("GET /api/note", s.handleNoteGet)
 	mux.HandleFunc("PUT /api/note", s.handleNotePut)
 	mux.HandleFunc("POST /api/note/task", s.handleNoteTask)

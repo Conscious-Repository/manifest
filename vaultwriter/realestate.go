@@ -364,18 +364,12 @@ func (w *Writer) ReplaceSection(rel, section, body string) error {
 // capability (redesign stage 4 — new section writes must not ship on the
 // legacy guard path). Check, splice, write, capability audit.
 func (w *Writer) ReplaceSectionCap(capName, rel, section, body string) error {
-	if !w.Enabled() {
-		return errors.New("no vault configured")
-	}
-	_, clean, err := w.checkCap(capName, rel)
-	if err != nil {
-		return err
-	}
-	raw, err := os.ReadFile(filepath.Join(w.vault, filepath.FromSlash(clean)))
-	if err != nil {
-		return err
-	}
-	return w.WriteCap(capName, clean, []byte(spliceSection(string(raw), section, body)))
+	return w.UpdateCap(capName, rel, func(raw []byte) ([]byte, error) {
+		if raw == nil {
+			return nil, os.ErrNotExist
+		}
+		return []byte(spliceSection(string(raw), section, body)), nil
+	})
 }
 
 // spliceSection swaps one `## section` body inside raw (creating the section

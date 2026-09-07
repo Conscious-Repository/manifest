@@ -333,6 +333,8 @@ func main() {
 			vaultwriter.Capability{Name: "todo-plans", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
 				Actor:   vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "writing", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")) + "/**", Actor: vaultwriter.ActorUserAction},
+			vaultwriter.Capability{Name: "writing-agent", Zone: record.ZoneSystem, Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")) + "/**", Actor: vaultwriter.ActorApprovedProposal},
 			vaultwriter.Capability{Name: "todo-plans-agent", Zone: record.ZoneSystem,
 				Pattern: filepath.ToSlash(filepath.Join(cfg.SystemRoot, "todo-plans")) + "/**",
 				Actor:   vaultwriter.ActorApprovedProposal},
@@ -938,6 +940,7 @@ func main() {
 	// aion todos comment through the portal's own team store (+ a blob-only
 	// threads.Store rooted at the same shared dir for attachments).
 	srv.UseTaskPlans(filepath.Join(cfg.SystemRoot, "todo-plans"))
+	srv.UseWriting(filepath.ToSlash(filepath.Join(cfg.SystemRoot, "writing")), cfg.NewDailyDir, cfg.DailyNoteDir)
 	{
 		// the shared attachment pool for BOTH portal chats — one set of blobs
 		// under DataDir (never the vault), a per-domain index that is also the
