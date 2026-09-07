@@ -1016,6 +1016,10 @@ func (s *Server) handleTaskDrop(w http.ResponseWriter, r *http.Request) {
 		if s.propTaskMutate(w, slug, func(list *realestate.PropertyTaskList) (bool, error) {
 			return list.Remove(lineID), nil
 		}) {
+			if err := s.removePlanRecord(b.ID); err != nil {
+				httpError(w, err)
+				return
+			}
 			writeJSON(w, s.tasksView())
 		}
 		return
@@ -1032,10 +1036,18 @@ func (s *Server) handleTaskDrop(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
+		if err := s.removePlanRecord(b.ID); err != nil {
+			httpError(w, err)
+			return
+		}
 		writeJSON(w, s.tasksView())
 		return
 	}
 	if err := s.tasksStore.Drop(b.ID, time.Now()); err != nil {
+		httpError(w, err)
+		return
+	}
+	if err := s.removePlanRecord(b.ID); err != nil {
 		httpError(w, err)
 		return
 	}

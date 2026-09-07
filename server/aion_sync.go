@@ -230,6 +230,9 @@ func (l *AionLive) recoverJournal() error {
 		if err := team.Archive(actor, j.Snapshot, now); err != nil {
 			return err
 		}
+		if err := l.s.removePlanRecord("aion:" + j.Item); err != nil {
+			return err
+		}
 	}
 	l.clearJournal()
 	return nil

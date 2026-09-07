@@ -123,6 +123,21 @@ func (s *Server) ensurePlanRecord(id, assignee string) error {
 	return s.vault.WriteCap("todo-plans", rel, []byte(w.String("## description\n\n## plan\n")))
 }
 
+// removePlanRecord removes both owner context and the agent plan after a
+// successful drop. Unconfigured plans and absent records need no cleanup.
+func (s *Server) removePlanRecord(id string) error {
+	if s.todoPlans == nil || s.vault == nil {
+		return nil
+	}
+	return s.vault.RemoveCap("todo-plans", s.todoPlans.rel(id), func(raw []byte) error {
+		fm, _ := mdfm.Split(string(raw))
+		if record.Unquote(fm["todo"]) != id {
+			return fmt.Errorf("task plan identity collision")
+		}
+		return nil
+	})
+}
+
 // setPlanAssignee rewrites the record's frontmatter assignee (creating the
 // record when absent), preserving both section bodies byte-for-byte.
 func (s *Server) setPlanAssignee(id, assignee string) error {

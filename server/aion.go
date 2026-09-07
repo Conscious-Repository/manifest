@@ -428,6 +428,10 @@ func (s *Server) handleAionBacklogDelete(w http.ResponseWriter, r *http.Request)
 		httpError(w, err)
 		return
 	}
+	if err := s.removePlanRecord("aion:" + r.PathValue("id")); err != nil {
+		httpError(w, err)
+		return
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

@@ -134,6 +134,48 @@ func (w *Writer) WriteCap(capName, rel string, data []byte) error {
 	return nil
 }
 
+// RemoveCap removes a file under the capability and audits its byte delta.
+// Missing files are a no-op. validate checks the latest bytes while holding
+// the same lock as writes, so callers can protect a record's identity.
+func (w *Writer) RemoveCap(capName, rel string, validate func([]byte) error) error {
+	editMu.Lock()
+	defer editMu.Unlock()
+	if !w.Enabled() {
+		return errors.New("no vault configured")
+	}
+	c, clean, err := w.checkCap(capName, rel)
+	if err != nil {
+		return err
+	}
+	full, err := SafePath(w.vault, clean)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(full)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if validate != nil {
+		if err := validate(raw); err != nil {
+			return err
+		}
+	}
+	if _, err := checkRevision(full, Revision(raw)); err != nil {
+		return err
+	}
+	if err := os.Remove(full); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	w.traced(w.audit(clean, c.Name, string(c.Actor)+" (remove)", -int64(len(raw))))
+	return nil
+}
+
 // RenameCap is a capability-checked move: the DESTINATION must satisfy the
 // capability (that's where content lands); the source only passes the base
 // guard (traversal + engine-owned) — a user-invoked move may relocate a

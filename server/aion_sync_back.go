@@ -120,7 +120,17 @@ func (s *Server) syncPortalToVault(now time.Time) {
 		}
 	}
 
+	// Archived rows no longer have a live task panel. Run even on a clean
+	// backlog so a failed cleanup is retried on the next reconciliation.
+	cleanupPlans := func() {
+		for _, a := range ext.Archives {
+			if err := s.removePlanRecord("aion:" + a.ID); err != nil {
+				log.Printf("portal→vault sync: remove archived task plan %s: %v", a.ID, err)
+			}
+		}
+	}
 	if !dirty && len(synced) == 0 {
+		cleanupPlans()
 		return
 	}
 	if dirty {
@@ -148,6 +158,7 @@ func (s *Server) syncPortalToVault(now time.Time) {
 			return // nothing below runs — the store keeps everything, unharmed
 		}
 	}
+	cleanupPlans()
 	// Only now does the store let go. The vault record is the thing that must
 	// exist first: crash between the two and the reconciler simply re-runs.
 	for teamID, vaultID := range promote {
