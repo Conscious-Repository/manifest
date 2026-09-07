@@ -342,7 +342,7 @@ func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, file
 	agent = strings.TrimSpace(agent)
 	if mode == "comment" {
 		agent = "" // a comment addresses nobody unless its text does (the reply guard)
-	} else if agent != "" && s.agentHarness(agent) == "" {
+	} else if base, _ := splitAgentToken(agent); agent != "" && s.agentHarness(base) == "" {
 		return threads.Comment{}, errBadRequest("unknown agent " + agent + " — pick one from the roster")
 	}
 	mentions = mergeMentions(mentions, s.textMentions(text))
@@ -379,10 +379,10 @@ func (s *Server) threadDialogHook(taskID string, mentions []string, text string)
 	s.dispatchRelay(taskID, plan, text)
 }
 
-// textMentionRe finds `@name` / `@name::intent` in free text (the portal's
-// chatIntent grammar, widened to the bare form). Names are matched against
+// textMentionRe finds @name with optional ::intent and ::model:slug segments.
+// See docs/board-model-selection.md. Names are matched against
 // the roster; anything unknown stays prose (fail closed — Buzz identity rule).
-var textMentionRe = regexp.MustCompile(`(?:^|[^\w@])@([a-z0-9-]+)(?:::([a-z0-9-]+))?`)
+var textMentionRe = regexp.MustCompile(`(?:^|[^\w@])@([a-z0-9-]+)((?:::[a-z0-9_.:-]*)*)`)
 
 // textMentions parses the roster mentions typed into a comment, as
 // structural tokens (`agent:alfred`, `agent:alfred::plan`).
@@ -394,7 +394,7 @@ func (s *Server) textMentions(text string) []string {
 			continue
 		}
 		if m[2] != "" {
-			tok += "::" + m[2]
+			tok += strings.TrimRight(m[2], ".")
 		}
 		out = append(out, tok)
 	}
@@ -424,6 +424,7 @@ func mergeMentions(structural, typed []string) []string {
 type dispatchPlan struct {
 	Agent  string // roster token (agent:alfred | agent:<profile> | agent:kairos …)
 	Mode   string // ask | do
+	Model  string // requested coding model; empty means best
 	Intent string // persona intent (info / brief / … for ask; plan for do)
 	Assign string // "" = keep the assignment; else the reason the agent takes the todo
 }
@@ -439,12 +440,12 @@ type dispatchPlan struct {
 //   - do: the agent is assigned if it doesn't hold the todo, then takes the
 //     plan-phase turn with the text as the opening brief; fire stays explicit.
 func (s *Server) resolveDispatch(taskID, mode, agent string, mentions []string) *dispatchPlan {
-	intent := ""
+	agent, intent, model := parseAgentToken(agent)
 	if mode == "comment" {
 		for _, m := range mentions {
-			base, in := splitAgentToken(m)
+			base, in, requested := parseAgentToken(m)
 			if s.agentHarness(base) != "" {
-				agent, intent = base, in
+				agent, intent, model = base, in, requested
 				break
 			}
 		}
@@ -467,7 +468,27 @@ func (s *Server) resolveDispatch(taskID, mode, agent string, mentions []string) 
 	if s.agentHarness(agent) == "" {
 		return nil
 	}
-	p := &dispatchPlan{Agent: agent, Mode: mode, Intent: intent}
+	// Ask/Do may carry the override in their selected agent or a matching mention.
+	if mode != "comment" && model == "" {
+		for _, m := range mentions {
+			base, in, requested := parseAgentToken(m)
+			if base == agent {
+				if requested != "" {
+					model = requested
+				}
+				if intent == "" && in != "" {
+					intent = in
+				}
+				if requested != "" {
+					break
+				}
+			}
+		}
+	}
+	if intent == "plan" {
+		mode = "do"
+	}
+	p := &dispatchPlan{Agent: agent, Mode: mode, Intent: intent, Model: model}
 	switch mode {
 	case "do":
 		p.Intent = "plan"
@@ -507,7 +528,7 @@ func (s *Server) dispatchRelay(taskID string, p *dispatchPlan, text string) {
 	if p == nil {
 		return
 	}
-	s.relayToAgent(taskID, p.Agent, text, p.Intent)
+	s.relayToAgent(taskID, p.Agent, text, p.Intent, p.Model)
 }
 
 // actRelayPending is the private marker a refused relay leaves (agent busy):
@@ -517,12 +538,12 @@ const actRelayPending = "relay-pending"
 // relay spools one turn for an agent token: comment-phase (or plan-phase
 // on the `plan` intent) with the owner's text, and writes the ActRelay
 // marker on success. Errors surface to the caller.
-func (s *Server) relay(taskID, agent, text, intent string) error {
+func (s *Server) relay(taskID, agent, text, intent string, model ...string) error {
 	harness := s.agentHarness(agent)
 	if harness == "" {
 		return errBadRequest("unknown agent " + agent)
 	}
-	err := s.spoolTaskWorkOrderAs(s.findHarness(harness), agent, taskID, personaPhase(intent), text, intent)
+	err := s.spoolTaskWorkOrderAs(s.findHarness(harness), agent, taskID, personaPhase(intent), text, intent, model...)
 	if err == nil {
 		s.markerAdd(taskID, threads.ActRelay, "")
 	}
@@ -532,12 +553,12 @@ func (s *Server) relay(taskID, agent, text, intent string) error {
 // relayToAgent is relay for the request path: a busy agent (ErrAlreadyActive
 // on either transport) parks the ask as a relay-pending marker the sweep
 // retries; other failures are logged (the comment is still on record).
-func (s *Server) relayToAgent(taskID, agent, text, intent string) {
-	err := s.relay(taskID, agent, text, intent)
+func (s *Server) relayToAgent(taskID, agent, text, intent string, model ...string) {
+	err := s.relay(taskID, agent, text, intent, model...)
 	switch {
 	case err == nil:
 	case errors.Is(err, spirits.ErrAlreadyActive):
-		s.markerAddMeta(taskID, actRelayPending, "", map[string]any{"agent": agent, "intent": intent, "text": text})
+		s.markerAddMeta(taskID, actRelayPending, "", map[string]any{"agent": agent, "intent": intent, "text": text, "model": firstModel(model)})
 	default:
 		log.Printf("todo relay %s → %s: %v", taskID, agent, err)
 		if isCodingAgent(s.agentHarness(agent)) {

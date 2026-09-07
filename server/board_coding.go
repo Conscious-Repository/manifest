@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"manifest/spirits"
+	"manifest/threads"
 )
 
 func isCodingAgent(name string) bool { return name == "claude" || name == "codex" }
@@ -66,7 +67,7 @@ func boardArtifact(h *Harness, run, body string) error {
 	return boardWrite(filepath.Join(h.Spirits.Root(), "artifacts", "library", run+".md"), []byte(raw))
 }
 
-func (s *Server) startCodingTask(h *Harness, task, phase, extra, intent string) error {
+func (s *Server) startCodingTask(h *Harness, task, phase, extra, intent string, models ...string) error {
 	c := s.terminal
 	if c == nil || c.codingRepo == "" || h.Spirits == nil {
 		return errBadRequest("coding checkout is not configured (boardRepo)")
@@ -98,6 +99,7 @@ func (s *Server) startCodingTask(h *Harness, task, phase, extra, intent string) 
 	if !ok {
 		return errBadRequest("todo not found")
 	}
+	model, modelNote := codingModel(h.Name, firstModel(models))
 	rec := s.readPlanRecord(task)
 	run, started := boardRunID(), time.Now()
 	dir := filepath.Join(h.Spirits.Root(), "work", run)
@@ -132,13 +134,14 @@ RESULT CONTRACT: As your LAST action, atomically write %s (write a temporary fil
 {"status":"completed|blocked","summary":"markdown deliverable: changes, validation, limitations; complete plan for plan turns","artifactURL":"https://... pushed commit, diff or PR; empty for plan/no-change results"}.
 Use status completed only when the requested work is complete and any changes were committed AND pushed. Failures, unanswered questions and unfinished work must use blocked. Never claim a push or test you did not perform. The board reads this durable file even after your pane closes; terminal output alone cannot complete the task.
 `, h.Name, cwd, instruction, text, rec.Description, rec.Plan, s.threadTail(task, len(s.listThread(task))), extra, s.hermesAttachments(task), resultPath)
+	prompt = "MODEL: " + model + "\n" + modelNote + "\n\n" + prompt
 	if err := boardWrite(briefPath, []byte(prompt)); err != nil {
 		return err
 	}
 	if err := boardReport(h, run, task, phase, "", "running", "Reading durable work order: "+briefPath, started); err != nil {
 		return err
 	}
-	se, _, err := s.createAgentTermSession(h.Name, cwd, h.Name+" · "+text, briefPath)
+	se, _, err := s.createAgentTermSession(h.Name, cwd, h.Name+" · "+text, briefPath, model)
 	if err == nil {
 		err = boardWrite(filepath.Join(dir, "session"), []byte(se.ID))
 	}
@@ -146,6 +149,7 @@ Use status completed only when the requested work is complete and any changes we
 		_ = boardReport(h, run, task, phase, "", "failed", err.Error(), started)
 		return err
 	}
+	_, _ = s.addThreadEntry(agentTokenIdentity("agent:"+h.Name), task, threads.ActComment, "Started with model `"+model+"`. "+modelNote, nil, nil, map[string]any{"model": model, "run": run})
 	return nil
 }
 
@@ -153,9 +157,9 @@ Use status completed only when the requested work is complete and any changes we
 // as the terminal rail. Reopening uses normal resume, never replays this order.
 func (se termSession) boardLaunch() string {
 	prompt := shQuote("Read the complete work order at " + se.BoardBrief + " and carry it through. Write the durable result as instructed there.")
-	command := "codex exec --json --yolo " + prompt + " | tee " + shQuote(filepath.Join(filepath.Dir(se.BoardBrief), "events.jsonl"))
+	command := "codex exec --json --yolo -m " + shQuote(se.boardModel()) + " " + prompt + " | tee " + shQuote(filepath.Join(filepath.Dir(se.BoardBrief), "events.jsonl"))
 	if se.Kind == "claude" {
-		command = "claude --print --dangerously-skip-permissions --session-id " + shQuote(se.ResumeID) + " " + prompt
+		command = "claude --print --dangerously-skip-permissions --session-id " + shQuote(se.ResumeID) + " --model " + shQuote(se.boardModel()) + " " + prompt
 	}
 	exitPath := filepath.Join(filepath.Dir(se.BoardBrief), "exit")
 	return termTmpExport + `umask 077; set -o pipefail; export PATH="$HOME/.local/bin:$HOME/.bun/bin:/opt/homebrew/bin:$PATH"; ` + command + "; board_exit=$?; printf '%s' \"$board_exit\" > " + shQuote(exitPath+".tmp") + "; mv " + shQuote(exitPath+".tmp") + " " + shQuote(exitPath)

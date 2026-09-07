@@ -45,6 +45,7 @@ type termSession struct {
 	Started    bool   `json:"started,omitempty"`  // first attach happened → reopen resumes
 	CreatedAt  string `json:"createdAt"`
 	LastUsed   string `json:"lastUsed"`
+	Model      string `json:"model,omitempty"`      // pinned coding work-order model
 	BoardBrief string `json:"boardBrief,omitempty"` // durable board handoff; first launch only
 	Pinned     bool   `json:"pinned,omitempty"`
 	// Keep = caffeinated (cmd-ctr ☕): a REMOTE session also runs inside a
@@ -328,6 +329,18 @@ func remoteInner(se termSession) string {
 
 // launchCmd resolves the inner command a fresh/resumed session runs.
 func (s termSession) launchCmd() string {
+	command := s.baseLaunchCmd()
+	if s.BoardBrief != "" && isCodingAgent(s.Kind) {
+		flag := " -m "
+		if s.Kind == "claude" {
+			flag = " --model "
+		}
+		command += flag + shQuote(s.boardModel())
+	}
+	return command
+}
+
+func (s termSession) baseLaunchCmd() string {
 	switch s.Kind {
 	case "claude":
 		// cmd-ctr semantics: the FIRST run CREATES the conversation under the
@@ -484,6 +497,11 @@ func (s *Server) createAgentTermSession(kind, cwd, name string, brief ...string)
 	}
 	if len(brief) > 0 {
 		se.BoardBrief = brief[0]
+		if len(brief) > 1 {
+			se.Model = brief[1]
+		} else {
+			se.Model = se.boardModel()
+		}
 	}
 	// Persist the resume posture before spawning: a process restart between
 	// spawn and the final upsert must never replay a board work order.

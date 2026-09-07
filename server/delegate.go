@@ -273,12 +273,12 @@ func (s *Server) spoolTaskWorkOrder(harness *Harness, taskID, phase, extra, inte
 // turn runs as (agent:alfred → default, agent:<profile> → `-p`); "" falls
 // back to the record's assignee. Harness spools ignore it — the harness IS
 // the agent there.
-func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, extra, intent string) error {
+func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, extra, intent string, model ...string) error {
 	if harness == nil {
 		return errBadRequest("harness not available")
 	}
 	if isCodingAgent(harness.Name) {
-		return s.startCodingTask(harness, taskID, phase, extra, intent)
+		return s.startCodingTask(harness, taskID, phase, extra, intent, model...)
 	}
 	// the virtual Hermes (runner-backed) has no Spirits — the fork handles it.
 	if !s.hermesForked(harness) && harness.Spirits == nil {
@@ -708,7 +708,8 @@ func (s *Server) relaySweep(index map[string]delegationView) {
 		if s.agentHarness(agent) == "" {
 			continue
 		}
-		_ = s.relay(id, agent, text, intent) // success writes the closing ActRelay marker
+		model, _ := pending.Meta["model"].(string)
+		_ = s.relay(id, agent, text, intent, model) // success writes the closing ActRelay marker
 	}
 }
 

@@ -145,13 +145,8 @@ func personaPhase(intent string) string {
 // "agent:hermes" → ("agent:hermes", ""). Non-agent tokens pass through with
 // no intent. The bare token stays the ONLY form [owner::] ever holds.
 func splitAgentToken(tok string) (base, intent string) {
-	if !strings.HasPrefix(tok, "agent:") {
-		return tok, ""
-	}
-	if i := strings.Index(tok, "::"); i >= 0 {
-		return tok[:i], strings.TrimSpace(tok[i+2:])
-	}
-	return tok, ""
+	base, intent, _ = parseAgentToken(tok)
+	return base, intent
 }
 
 // SeedPersonas — seeded intents and the default comment baseline, write-once via
