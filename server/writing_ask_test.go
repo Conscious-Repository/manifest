@@ -99,3 +99,26 @@ func TestWritingAskDurableAnswerAndDeduplication(t *testing.T) {
 		t.Fatal(w.Body.String())
 	}
 }
+
+func TestWritingPacketRetainsContextWhenNeighborsChange(t *testing.T) {
+	root := t.TempDir()
+	path := "draft.md"
+	s := New(nil, nil, nil)
+	s.UseVault(vaultwriter.New(root))
+	s.UseWriting("system/writing")
+	thread := writing.Thread{Anchor: writing.Anchor{Revision: "old", Quote: "selected passage", Prefix: "old prefix ", Suffix: " old suffix"}}
+	for _, tc := range []struct {
+		raw     string
+		context bool
+	}{{"new prefix selected passage new suffix", true}, {"selected passage repeated selected passage", false}} {
+		os.WriteFile(filepath.Join(root, path), []byte(tc.raw), 0600)
+		p, err := s.writingPacket(path, thread, "question")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := p.(map[string]any)["surroundingText"].(string)
+		if (got != "") != tc.context {
+			t.Fatalf("context %q for %q", got, tc.raw)
+		}
+	}
+}

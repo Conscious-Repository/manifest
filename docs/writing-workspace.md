@@ -162,3 +162,23 @@ uses quiet unboxed toolbar controls, hides save while clean, and exposes source
 mode/live preview in the document menu. A small word count replaces the generic
 Markdown footer label. New comments remain readable without immediately opening
 an empty reply form. Manifest's existing theme tokens and shared menu remain.
+
+### Response-limit fix — 2026-09-07
+
+A real question reproduced a V4 response with `finish_reason: length`, exactly
+2,400 completion tokens and no visible content after 80 seconds. The short
+writing budget had been consumed before an answer was emitted. For custom
+DeepSeek V4 providers, writing requests now explicitly disable template thinking
+using both `thinking: false` and `enable_thinking: false` (the installed template
+recognizes the former with precedence). This is scoped to writing completions;
+other agent settings are unchanged. The same packet returned a complete answer
+in 323 output tokens under the corrected settings.
+
+The helper classifies response-limit, timeout, HTTP and malformed-response errors.
+Only whitelisted codes pass to logs/records; no provider bodies, credentials or
+reasoning content are surfaced. Truncated answers are never reported as complete.
+The thread displays a useful error instead of an undifferentiated failure.
+
+Separately, edits around a unique unchanged quotation no longer detach its
+comment or remove surrounding context from Ask. Repeated quotations remain
+unattached when their context cannot identify one occurrence.

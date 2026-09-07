@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"manifest/hermes"
 	"manifest/vaultindex"
 	"manifest/vaultwriter"
 	"manifest/writing"
@@ -70,6 +71,12 @@ func (s *Server) writingPacket(path string, t writing.Thread, question string) (
 	// An exact original revision can resolve a repeated passage without guessing.
 	if t.Anchor.Revision == vaultwriter.Revision(raw) && t.Anchor.Start >= 0 && t.Anchor.End <= len(raw) && t.Anchor.End > t.Anchor.Start && string(raw[t.Anchor.Start:t.Anchor.End]) == t.Anchor.Quote {
 		start = t.Anchor.Start
+	}
+	if start < 0 && t.Anchor.Quote != "" {
+		pos := strings.Index(text, t.Anchor.Quote)
+		if pos >= 0 && !strings.Contains(text[pos+1:], t.Anchor.Quote) {
+			start = pos
+		}
 	}
 	surrounding := ""
 	if start >= 0 {
@@ -219,7 +226,13 @@ func (s *Server) handleWritingAsk(w http.ResponseWriter, r *http.Request) {
 		var reply *writing.Reply
 		if runErr != nil {
 			turn.State = "failed"
-			turn.Error = "Could not get an answer. Try again."
+			turn.Error = "The model could not complete this request. Please retry."
+			var failure *hermes.AnnotationError
+			if errors.As(runErr, &failure) {
+				turn.Error = failure.UserMessage()
+				turn.ErrorCode = failure.Code
+			}
+			log.Printf("writing ask %s failed: %v", b.ID, runErr)
 		} else {
 			a := writing.NewReply(b.ID+"-answer", "alfred", result.Reply)
 			reply = &a

@@ -185,6 +185,8 @@ function writeLocate(d,anchor){
   const raw=writeBytes(d);let start=-1;
   if(d.revision===anchor.revision&&raw===d.base&&raw.slice(0).length){const bytes=new TextEncoder().encode(raw);if(new TextDecoder().decode(bytes.slice(anchor.start,anchor.end))===anchor.quote)start=new TextDecoder().decode(bytes.slice(0,anchor.start)).length}
   if(start<0){const pattern=anchor.prefix+anchor.quote+anchor.suffix;const pos=raw.indexOf(pattern);if(pos>=0&&raw.indexOf(pattern,pos+1)<0)start=pos+anchor.prefix.length}
+  // Nearby edits do not detach an unchanged, uniquely identifiable passage.
+  if(start<0&&anchor.quote){const pos=raw.indexOf(anchor.quote);if(pos>=0&&raw.indexOf(anchor.quote,pos+1)<0)start=pos}
   if(start<0)return null;
   return {from:raw.slice(0,start).replace(/\r\n/g,'\n').length,to:raw.slice(0,start+anchor.quote.length).replace(/\r\n/g,'\n').length};
 }

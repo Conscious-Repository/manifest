@@ -39,6 +39,7 @@ type Turn struct {
 	Question     string `json:"question"`
 	State        string `json:"state"`
 	Error        string `json:"error,omitempty"`
+	ErrorCode    string `json:"errorCode,omitempty"`
 	Model        string `json:"model,omitempty"`
 	InputTokens  int    `json:"inputTokens,omitempty"`
 	OutputTokens int    `json:"outputTokens,omitempty"`
