@@ -4,6 +4,7 @@ package server
 // durable result, never pane output/liveness, is the authority for completion.
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -180,7 +181,14 @@ func (s *Server) codingResultSweep() {
 		}
 		for _, r := range h.Spirits.Runs() {
 			if r.Outcome != "running" {
-				continue
+				// Only our interrupted contract failures remain eligible for a late
+				// result; explicit blocked results and launch failures stay final.
+				if r.Outcome != "failed" {
+					continue
+				}
+				if _, err := os.Stat(filepath.Join(h.Spirits.Root(), "work", r.ID, "recovery.md")); err != nil {
+					continue
+				}
 			}
 			tm := todoTokenRe.FindStringSubmatch(r.Request)
 			pm := phaseTokenRe.FindStringSubmatch(r.Request)
@@ -218,7 +226,12 @@ func (s *Server) codingResultSweep() {
 				if result.Status == "blocked" {
 					outcome = "failed"
 				}
-				_ = boardReport(h, r.ID, tm[1], pm[1], "", outcome, body, started)
+				if err := boardReport(h, r.ID, tm[1], pm[1], "", outcome, body, started); err == nil {
+					_ = os.Remove(filepath.Join(dir, "recovery.md"))
+				}
+				continue
+			}
+			if r.Outcome != "running" {
 				continue
 			}
 			// A crashed/closed pane is a failed run, never a successful result. The
@@ -233,7 +246,14 @@ func (s *Server) codingResultSweep() {
 				dead = err != nil
 			}
 			if exitErr == nil || dead {
-				_ = boardReport(h, r.ID, tm[1], pm[1], "", "failed", "The coding session stopped without a valid durable result. Reopen the session or send the task back with a comment.", started)
+				body := s.codingRecovery(dir, string(session))
+				if err := boardWrite(filepath.Join(dir, "recovery.md"), []byte(body)); err != nil {
+					continue
+				}
+				if err := boardArtifact(h, r.ID, body); err != nil {
+					continue
+				}
+				_ = boardReport(h, r.ID, tm[1], pm[1], "", "failed", body, started)
 			}
 		}
 	}
@@ -267,4 +287,35 @@ func (s *Server) codingResume(dir string) {
 			return
 		}
 	}
+}
+
+// Surface the checkout without claiming its changes belong to this run or
+// committing another writer's work. The artifact is a durable recovery handoff.
+func (s *Server) codingRecovery(dir, session string) string {
+	cwd := s.terminal.codingRepo
+	if se, ok := s.terminal.find(session); ok && se.Cwd != "" {
+		cwd = se.Cwd
+	}
+	body := "The coding session stopped without a valid durable result. Completion is unverified; local work may still need validation, commit and push.\n\n"
+	body += "Reopen the coding session and ask it to finish the work order at " + filepath.Join(dir, "brief.md") +
+		". Inspect existing changes, preserve unrelated work, follow the work order's validation and commit/push requirements, then atomically write result.json as instructed. A valid late result will update this run.\n\n"
+	body += "Checkout: " + cwd + "\n\n"
+	if cwd == "" {
+		return body + "Checkout inspection unavailable: no checkout path is recorded."
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", cwd, "status", "--short", "--untracked-files=all").Output()
+	if err != nil {
+		return body + "Checkout inspection failed: " + err.Error() + ". Inspect the checkout manually."
+	}
+	if len(out) == 0 {
+		return body + "No uncommitted files found. This does not establish that commits were pushed or that the task is complete."
+	}
+	body += "Uncommitted work found (checkout-wide; may include pre-existing or unrelated changes):\n\n"
+	// Indent Git's quoted paths as code so filenames cannot become Markdown.
+	for _, line := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
+		body += "    " + line + "\n"
+	}
+	return body
 }

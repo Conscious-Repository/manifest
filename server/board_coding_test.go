@@ -315,3 +315,84 @@ func TestCodingOwnersStayPersonal(t *testing.T) {
 		}
 	}
 }
+
+func TestCodingInterruptedWorkRecovery(t *testing.T) {
+	for _, stopped := range []string{"exit", "closed", "invalid-result"} {
+		t.Run(stopped, func(t *testing.T) {
+			s := codingFixture(t)
+			task := "inbox/wire-the-fence"
+			h := s.findHarness("codex")
+			if err := s.startCodingTask(h, task, "go", "", "execute"); err != nil {
+				t.Fatal(err)
+			}
+			r := h.Spirits.Runs()[0]
+			se := s.terminal.load()[0]
+			dir := filepath.Dir(se.BoardBrief)
+			if err := os.WriteFile(filepath.Join(se.Cwd, "unfinished.js"), []byte("fix remains here"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := boardReport(h, r.ID, task, "go", "", "running", "", time.Now().Add(-2*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if stopped == "exit" {
+				if err := boardWrite(filepath.Join(dir, "exit"), []byte("0")); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				s.terminal.run = func(args ...string) ([]byte, error) { return nil, errors.New("pane gone") }
+			}
+			if stopped == "invalid-result" {
+				if err := boardWrite(filepath.Join(dir, "result.json"), []byte(`{"status":"completed"}`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			index := s.delegationIndex()
+			if d := index[task]; d.State != "failed" || d.ArtifactRef == "" {
+				t.Fatalf("missing recovery artifact: %+v", d)
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, "recovery.md"))
+			if err != nil || !strings.Contains(string(raw), "unfinished.js") || !strings.Contains(string(raw), "Uncommitted work found") {
+				t.Fatalf("missing checkout evidence: %s (%v)", raw, err)
+			}
+			s.agentLoopSweep(index)
+			s.agentLoopSweep(s.delegationIndex())
+			count := 0
+			for _, c := range s.listThread(task) {
+				if strings.Contains(c.Text, "Uncommitted work found") {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatalf("recovery comments = %d", count)
+			}
+			// A late result survives a server restart and replaces the failure.
+			s.UseTerminal(s.terminal.regPath, s.terminal.tmuxTmp, s.terminal.defaultWd)
+			body, _ := json.Marshal(codingResult{Status: "completed", Summary: "Validated, committed and pushed.", ArtifactURL: "https://example.com/commit/123"})
+			if err := boardWrite(filepath.Join(dir, "result.json"), body); err != nil {
+				t.Fatal(err)
+			}
+			index = s.delegationIndex()
+			if index[task].State != "done" {
+				t.Fatalf("late result not recovered: %+v", index[task])
+			}
+			s.agentLoopSweep(index)
+			if !s.threads.private.HasAction(task, threads.ActResult, r.ID) {
+				t.Fatal("recovery comment suppressed the final result")
+			}
+			if raw, err := os.ReadFile(filepath.Join(se.Cwd, "unfinished.js")); err != nil || string(raw) != "fix remains here" {
+				t.Fatal("recovery changed local work")
+			}
+		})
+	}
+}
+
+func TestCodingRecoveryInspection(t *testing.T) {
+	s := codingFixture(t)
+	if body := s.codingRecovery(t.TempDir(), ""); !strings.Contains(body, "No uncommitted files") {
+		t.Fatal(body)
+	}
+	s.UseCodingRepo(t.TempDir())
+	if body := s.codingRecovery(t.TempDir(), ""); !strings.Contains(body, "Checkout inspection failed") {
+		t.Fatal(body)
+	}
+}

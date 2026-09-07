@@ -474,6 +474,8 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		}
 		var mode string // "brief" (plan|questions) or "result"
 		switch {
+		case d.State == "failed" && isCodingAgent(d.Harness) && d.ArtifactRef != "":
+			mode = "recovery"
 		case d.State == "plan-ready":
 			mode = "brief"
 		case d.State == "done" && isTaskCommentPhase(d.Phase):
@@ -494,6 +496,21 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 		meta := map[string]any{"run": d.RunID, "harness": d.Harness}
 		if d.ArtifactRef != "" {
 			meta["artifactRef"] = d.ArtifactRef
+		}
+		if mode == "recovery" {
+			marker := d.RunID + ":recovery"
+			if priv.HasAction(id, threads.ActReply, marker) {
+				continue
+			}
+			doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
+			if !ok || strings.TrimSpace(doc.Body) == "" {
+				continue
+			}
+			if _, err := s.addThreadEntry(hermes, id, threads.ActComment, ledger.Snip(doc.Body, 3600), nil, nil, meta); err != nil {
+				continue
+			}
+			s.markerAdd(id, threads.ActReply, marker)
+			continue
 		}
 		if mode == "result" {
 			if priv.HasAction(id, threads.ActResult, d.RunID) {
