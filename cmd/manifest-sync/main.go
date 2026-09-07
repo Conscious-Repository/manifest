@@ -97,9 +97,10 @@ type syncer struct {
 	debounce time.Duration
 	interval time.Duration
 
-	mu     sync.Mutex // serializes cycles
-	kick   chan struct{}
-	parked bool
+	mu         sync.Mutex // serializes cycles
+	kick       chan struct{}
+	parked     bool
+	watchStart func(context.Context) // optional test seam for slow platform registration
 }
 
 func main() {
@@ -152,22 +153,15 @@ func main() {
 // run wires the watcher (events → debounce timer) and the steady ticker into
 // serialized cycles. A failed watcher degrades to interval-only syncing.
 func (s *syncer) run(ctx context.Context) {
+	startWatch := s.watchStart
+	if startWatch == nil {
+		startWatch = s.watch
+	}
+	// macOS can block inside kqueue registration before Start returns. Pulls
+	// must still run, and stopping the daemon must not wait for that syscall.
+	go startWatch(ctx)
 	timer := time.NewTimer(s.debounce) // first cycle shortly after start
 	defer timer.Stop()
-	if w, err := record.NewWatch(s.spec.Path, []string{".git", "vessel", "node_modules"}); err == nil {
-		w.Subscribe(func(record.Event) {
-			select {
-			case s.kick <- struct{}{}:
-			default:
-			}
-		})
-		if err := w.Start(ctx); err != nil {
-			log.Printf("%s: watch start failed (interval-only): %v", s.spec.Name, err)
-		}
-		defer w.Close()
-	} else {
-		log.Printf("%s: watch unavailable (interval-only): %v", s.spec.Name, err)
-	}
 	tick := time.NewTicker(s.interval)
 	defer tick.Stop()
 	for {
@@ -181,6 +175,25 @@ func (s *syncer) run(ctx context.Context) {
 		case <-tick.C:
 			s.cycle()
 		}
+	}
+}
+
+func (s *syncer) watch(ctx context.Context) {
+	if w, err := record.NewWatch(s.spec.Path, []string{".git", "vessel", "node_modules"}); err == nil {
+		defer w.Close()
+		w.Subscribe(func(record.Event) {
+			select {
+			case s.kick <- struct{}{}:
+			default:
+			}
+		})
+		if err := w.Start(ctx); err != nil {
+			log.Printf("%s: watch start failed (interval-only): %v", s.spec.Name, err)
+			return
+		}
+		<-ctx.Done()
+	} else {
+		log.Printf("%s: watch unavailable (interval-only): %v", s.spec.Name, err)
 	}
 }
 
@@ -202,7 +215,12 @@ func (s *syncer) cycle() {
 	if s.rebaseInProgress() {
 		return
 	}
-	if out, err := s.git("diff", "--name-only", "--diff-filter=U"); err != nil || strings.TrimSpace(out) != "" {
+	out, err := s.git("diff", "--name-only", "--diff-filter=U")
+	if err != nil {
+		log.Printf("%s: checking conflicts: %v — %s (will retry)", s.spec.Name, err, firstLine(out))
+		return
+	}
+	if strings.TrimSpace(out) != "" {
 		return
 	}
 	// stage + commit local changes (everything: this medium's commits are the

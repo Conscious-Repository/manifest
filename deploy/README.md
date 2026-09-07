@@ -21,3 +21,7 @@ on both machines, configured with per-root overrides in the two sync units.
 Harness roots retain the default 15-second debounce and 60-second interval.
 After changing sync flags, install the updated units and restart `manifest-sync`
 on both machines; rebuilding the binary alone does not reload a running daemon.
+On macOS, replacing an ad-hoc-signed executable can leave its existing Documents
+permission stale. If file access stalls after an upgrade, refresh the existing
+`manifest-sync` Documents Folder toggle in Privacy & Security → Files & Folders,
+then restart the launch agent. Watch registration cannot block interval sync.

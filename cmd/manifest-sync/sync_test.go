@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -192,5 +193,36 @@ func TestSyncPropagatesMovesAndDeletes(t *testing.T) {
 	a.cycle()
 	if _, err := os.Stat(filepath.Join(a.spec.Path, "renamed.md")); !os.IsNotExist(err) {
 		t.Fatal("deleted test note resurrected")
+	}
+}
+
+func TestSlowWatcherDoesNotBlockSyncOrShutdown(t *testing.T) {
+	a, b := rig(t)
+	b.watchStart = func(ctx context.Context) { <-ctx.Done() }
+	b.debounce = 10 * time.Millisecond
+	b.interval = 20 * time.Millisecond
+	if err := os.WriteFile(filepath.Join(a.spec.Path, "note.md"), []byte("remote edit\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { defer close(done); b.run(ctx) }()
+	deadline := time.After(5 * time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for read(t, filepath.Join(b.spec.Path, "note.md")) != "remote edit\n" {
+		select {
+		case <-deadline:
+			t.Fatal("watch registration blocked remote sync")
+		case <-tick.C:
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch registration blocked shutdown")
 	}
 }

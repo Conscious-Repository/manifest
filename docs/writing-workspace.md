@@ -208,6 +208,11 @@ This remains Git-based eventual convergence, not character-level collaboration;
 network time and an unresolved Git conflict can delay it. A parked conflict now
 resumes only once upstream is actually incorporated, preventing repeated aborts
 on each fast tick. Existing unrelated rebase/conflict resolution is left alone.
+Watcher registration runs separately from the sync timer: a blocked macOS
+kqueue open cannot suppress interval pulls or prevent shutdown. Preflight Git
+errors are logged instead of silently skipping a cycle. On this laptop the
+rebuilt executable needed its already-enabled Documents-folder permission
+refreshed in macOS Files & Folders; no Full Disk Access grant was added.
 
 Automated regression cases cover autosave timing, in-flight typing, joined saves,
 offline retry, lost acknowledgements, external refresh, stale responses,
