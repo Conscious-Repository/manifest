@@ -27,6 +27,7 @@ let recPeopleFacet = "considering"; // considering | known | everyone — the RO
 // never stored: the same rule the run head prints as `cleared`.
 function recRunCleared(run) { return !(run.drafts || []).some((d) => d.status === "new"); }
 let recSourceRunFocus = "";
+let recSourceRunFilter = "";
 let recSourceLayout = "review"; // review queue first; search history remains available
 let recSourceQuery = "";
 let recSourceRole = "";
@@ -217,7 +218,8 @@ function recHeaderMeta() {
 
 // ---- entry ----
 
-async function renderAionRecruiting(host) {
+async function renderAionRecruiting(host, focusNav = "") {
+  let restoreNav = document.activeElement?.dataset?.recNav || focusNav;
   host.innerHTML = "";
   if (!recCache) {
     host.append(emptyRow("loading…"));
@@ -238,6 +240,8 @@ async function renderAionRecruiting(host) {
   // filter (problem 8), and the search caret survives between keystrokes.
   if (!recOriginSet) recOrigin = recUntriagedCount() > 0 ? "inbound" : "both";
   const paint = () => {
+    const focusedNav = document.activeElement?.dataset?.recNav || restoreNav;
+    restoreNav = "";
     paintRail(rail);
     paintMain(main);
     // NETWORK is a picture, and a picture needs the width. The candidate
@@ -264,6 +268,10 @@ async function renderAionRecruiting(host) {
       paintInspector(inspector);
     } else {
       inspector.innerHTML = "";
+    }
+    if (focusedNav && inspecting) {
+      const buttons = [...document.querySelectorAll("[data-rec-nav]")].filter((b) => b.getClientRects().length && !b.disabled);
+      (buttons.find((b) => b.dataset.recNav === focusedNav) || buttons[0])?.focus({preventScroll: true});
     }
   };
   recPaint = paint;
@@ -302,11 +310,12 @@ function paintRail(rail) {
   const roleHost = el("div", "rec-role-controls");
   roleHost.append(el("div", "micro-label rec-rail-label", "ROLES"));
   const roles = recCache.roles || [];
-  const all = el("button", "rec-role" + (recView === "board" && !recRole ? " on" : ""));
+  const all = el("button", "rec-role" + ((recView === "board" && !recRole) || (recView === "sources" && !recSourceRole && !recSourceRunFilter) ? " on" : ""));
   all.append(el("span", "rec-role-name", "all roles"));
-  all.append(el("span", "rec-role-count", String(roles.reduce((n, r) => n + (r.openCount || 0), 0))));
+  all.append(el("span", "rec-role-count", String(recView === "sources" ? recPendingDrafts() : roles.reduce((n, r) => n + (r.openCount || 0), 0))));
   all.onclick = () => {
     recRole = null;
+    if (recView === "sources") { recClearSourceFilters(); recSourceLayout = "review"; if (recPaint) recPaint(); return; }
     recPeopleFacet = "considering";
     if (recView !== "board") recNav("board");
     else if (recPaint) recPaint();
@@ -314,11 +323,19 @@ function paintRail(rail) {
   roleHost.append(all);
 
   roles.forEach((role) => {
-    const on = (recView === "board" && recRole === role.slug) || (recView === "role" && recRoleView === role.slug);
+    const roleId = role.id || "role/" + role.slug;
+    const on = (recView === "board" && recRole === role.slug) || (recView === "role" && recRoleView === role.slug) ||
+      (recView === "sources" && recSourceRole === roleId);
     const b = el("button", "rec-role" + (on ? " on" : ""));
     b.append(el("span", "rec-role-name", role.title || role.slug));
-    b.append(el("span", "rec-role-count", String(role.openCount || 0)));
+    const count = recView === "sources" ? recPendingSourceRole(roleId) : role.openCount || 0;
+    b.append(el("span", "rec-role-count", String(count)));
+    b.title = recView === "sources" ? "Review search results for this role" : "View candidates for this role";
     b.onclick = () => {
+      if (recView === "sources") {
+        recClearSourceFilters(); recSourceRole = roleId; recRole = role.slug; recSourceLayout = "review";
+        if (recPaint) recPaint(); return;
+      }
       // second click on the already-selected lane opens the role console
       if (recView === "board" && recRole === role.slug) { recNav("role/" + role.slug); return; }
       recRole = role.slug;
@@ -2421,9 +2438,17 @@ function recDraftCard(run, d) {
       look.textContent = "looking up…";
       recDraftLookup(run, d);
     };
-    const laterBtn = el("button", "pill light", "later");
+    const laterBtn = el("button", "pill light", "Later this session");
     laterBtn.title = "set aside for this sitting — stays new, comes back on reload";
-    laterBtn.onclick = () => { recDraftLater[key] = true; if (recPaint) recPaint(); };
+    laterBtn.onclick = () => {
+      recDraftLater[key] = true;
+      if (recPaint) recPaint();
+      showToast("Set aside for this session · view Later to return", () => {
+        recSourceLayout = "review"; recSourceStatus = "later";
+        recSourceQuery = ""; recSourceRole = ""; recSourceRunFilter = "";
+        recNav("sources");
+      });
+    };
     acts.append(accept, look, recDraftPass(run, d), laterBtn);
     card.append(acts);
   } else if (d.decidedAt) {
@@ -2739,7 +2764,7 @@ function paintInspector(host) {
     a.title = "the full Ashby profile — application form answers live there";
     right.append(a);
   }
-  const x = el("button", "aion-insp-x", "✕");
+  const x = el("button", "aion-insp-x rec-linkish", "Back to People");
   x.setAttribute("aria-label", "Close candidate review");
   x.onclick = () => { recSel = null; if (recPaint) recPaint(); };
   right.append(x);
@@ -2750,11 +2775,15 @@ function paintInspector(host) {
   const nav = el("div", "rec-toolbar");
   [[-1, "Previous"], [1, "Next"]].forEach(([step, label]) => {
     const b = el("button", "pill light", label);
+    b.dataset.recNav = label;
     b.disabled = !queue[index + step];
     b.onclick = () => { recSel = queue[index + step].id; if (recPaint) recPaint(); };
     nav.append(b);
   });
-  nav.append(el("span", "micro-label", (index + 1) + " of " + queue.length));
+  const position = el("span", "micro-label", (index + 1) + " of " + queue.length);
+  position.setAttribute("role", "status");
+  position.setAttribute("aria-label", c.name + ", candidate " + (index + 1) + " of " + queue.length);
+  nav.append(position);
   host.append(nav);
 
   const patch = (set) => recPost("/api/aion/recruiting/candidate/update/" + c.id, set);
@@ -3735,6 +3764,7 @@ function recSourceEntries() {
   const q = recSourceQuery.trim().toLowerCase();
   return recRuns.slice().sort((a,b) => (b.startedAt || "").localeCompare(a.startedAt || "")).flatMap((run) => (run.drafts || []).map((draft) => ({run, draft}))).filter(({run, draft}) => {
     const d = draft.draft || {}, scope = run.scope || {};
+    if (recSourceRunFilter && run.id !== recSourceRunFilter) return false;
     if (recSourceRole && (d.role || scope.role || "") !== recSourceRole) return false;
     const later = !!recDraftLater[run.id + "#" + draft.id];
     if (recSourceStatus === "new" && (draft.status !== "new" || later)) return false;
@@ -3749,14 +3779,33 @@ function recSourceEntries() {
 
 function recOpenSourceRun(run) {
   recSourceRunFocus = run.id;
-  recSourceLayout = "runs";
-  recShowCleared = recRunCleared(run);
+  recSourceRunFilter = run.id;
+  recSourceLayout = "review";
+  recSourceQuery = "";
+  recSourceRole = "";
+  recSourceStatus = recRunCleared(run) ? "all" : "new";
+  recSourceLimit = 20;
   recRunOpen = { [run.id]: true };
   recNav("sources");
 }
 
+function recClearSourceFilters() {
+  recSourceQuery = ""; recSourceRole = ""; recSourceRunFilter = "";
+  recSourceStatus = "new"; recSourceLimit = 20;
+}
+
 function paintSourceReview(main) {
   main.append(el("p", "rec-view-purpose", "Read the background, check its sources, then add the person for further review. Each decision applies to this search result."));
+  const selectedRun = recRuns.find((r) => r.id === recSourceRunFilter);
+  if (selectedRun) {
+    const scope = selectedRun.scope || {}, fields = scope.fields || {};
+    const context = el("div", "rec-search-context");
+    context.append(el("span", "micro-label", "Results from this search"),
+      el("div", "rec-background-text", scope.query || fields.seed_url || fields.work || fields.repo || fields.feed_url || selectedRun.source));
+    const allSearches = el("button", "rec-linkish", "All search results");
+    allSearches.onclick = () => { recClearSourceFilters(); if (recPaint) recPaint(); };
+    context.append(allSearches); main.append(context);
+  }
   const bar = el("div", "rec-toolbar");
   const search = el("input", "pp-in rec-search");
   search.type = "search";
@@ -3775,11 +3824,14 @@ function paintSourceReview(main) {
   [["new", "To review"], ["later", "Later this session"], ["decided", "Decided"], ["all", "All results"]].forEach(([value, label]) => {
     const o = el("option", "", label); o.value = value; o.selected = value === recSourceStatus; state.append(o);
   });
-  bar.append(search, role, state); main.append(bar);
+  const reset = el("button", "rec-linkish", "Reset filters");
+  reset.onclick = () => { recClearSourceFilters(); if (recPaint) recPaint(); };
+  bar.append(search, role, state, reset); main.append(bar);
   const list = el("div", "rec-review-list"); main.append(list);
   const paint = () => {
     list.innerHTML = "";
     const entries = recSourceEntries();
+    reset.hidden = !recSourceQuery && !recSourceRole && !recSourceRunFilter && recSourceStatus === "new";
     list.append(el("div", "micro-label rec-review-count", entries.length + (entries.length === 1 ? " result" : " results") + " · newest search first"));
     entries.slice(0, recSourceLimit).forEach(({run, draft}) => {
       const wrap = el("article", "rec-review-result");
@@ -3795,7 +3847,10 @@ function paintSourceReview(main) {
     }
   };
   search.oninput = () => { recSourceQuery = search.value; recSourceLimit = 20; paint(); };
-  role.onchange = () => { recSourceRole = role.value; recSourceLimit = 20; paint(); };
+  role.onchange = () => {
+    recSourceRole = role.value; recSourceLimit = 20; paint();
+    const rail = document.querySelector(".rec-rail"); if (rail) paintRail(rail);
+  };
   state.onchange = () => { recSourceStatus = state.value; recSourceLimit = 20; paint(); };
   paint();
 }
@@ -3836,4 +3891,10 @@ function recReviewCandidates() {
   }
   const stages = recCache.stages || [];
   return rows.sort((a,b) => stages.indexOf(a.stage) - stages.indexOf(b.stage));
+}
+
+
+function recPendingSourceRole(roleId) {
+  return recRuns.reduce((count, run) => count + (run.drafts || []).filter((d) =>
+    d.status === "new" && ((d.draft || {}).role || (run.scope || {}).role || "") === roleId).length, 0);
 }

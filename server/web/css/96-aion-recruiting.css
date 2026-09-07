@@ -131,7 +131,7 @@ a.rec-seed-name:hover { text-decoration: underline; }
 /* board — one lane per stage in use; the INBOUND cut is one triage queue */
 .rec-board { display: flex; flex-direction: column; gap: var(--sp-7); }
 .rec-lane { min-width: 0; }
-.rec-card { cursor: pointer; }
+.rec-card { cursor: pointer; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--sp-6) var(--sp-4); box-shadow: none; background: transparent; }
 .rec-card.sel { box-shadow: inset 2px 0 0 var(--accent); background: var(--base-05); }
 .rec-state { font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-60); white-space: nowrap; }
 .rec-state.alarm { color: var(--base-100); font-weight: 500; }
@@ -268,8 +268,8 @@ a.rec-seed-name:hover { text-decoration: underline; }
    display (recResumeDisplay) while the STORED text stays verbatim. */
 .rec-resume-text {
   margin: 0; max-height: 46vh; overflow: auto;
-  padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line-soft); border-radius: var(--radius);
-  background: var(--base-05); color: var(--base-80);
+  padding: var(--sp-4) 0; border: 0; border-radius: 0;
+  background: transparent; color: var(--base-80);
   font-family: var(--sans); font-size: var(--fs-md); line-height: 1.55;
   white-space: pre-wrap; overflow-wrap: break-word;
 }
@@ -354,12 +354,11 @@ a.rec-seed-name:hover { text-decoration: underline; }
   padding-bottom: var(--sp-5); border-bottom: 1px solid var(--base-20);
 }
 
-/* run cards — a run is an object with a lifetime (it expires, it holds a
-   queue), so it reads as a card, not as a row in a ledger. */
+/* Search history and people share quiet divider rows (owner preference). */
 .rec-run-list { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-5); }
 .rec-run {
-  min-width: 0; padding: var(--sp-4) var(--sp-5);
-  border: 1px solid var(--base-25); border-radius: var(--radius);
+  min-width: 0; padding: var(--sp-6) 0;
+  border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
 }
 .rec-run.pinned { box-shadow: inset 2px 0 0 var(--accent); }
 .rec-run-head { display: flex; align-items: baseline; gap: var(--sp-3); min-width: 0; }
@@ -403,7 +402,7 @@ a.rec-seed-name:hover { text-decoration: underline; }
 /* the draft queue — accepted reads accent (it reached the board), rejected
    and duplicate read muted. No hues. */
 .rec-draft-list { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-3); }
-.rec-draft { padding: var(--sp-4) var(--sp-5); border: 1px solid var(--base-25); border-radius: var(--radius); min-width: 0; }
+.rec-draft { padding: var(--sp-6) 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; min-width: 0; }
 .rec-draft.accepted { border-color: var(--accent-soft); }
 .rec-draft.rejected, .rec-draft.duplicate { opacity: 0.7; }
 /* ⚠ ONE DRAFT IS ONE CARD. The person leads on their own line, what backs
@@ -610,9 +609,10 @@ a.rec-place-name:hover { text-decoration: underline; }
 
 /* Review uses the same evidence and decisions as search history. */
 .rec-view-purpose { font-size: var(--fs-md); color: var(--muted); line-height: 1.6; margin: 0 0 var(--sp-7); }
-.rec-review-list { display: flex; flex-direction: column; gap: var(--sp-7); }
+.rec-review-list { display: flex; flex-direction: column; gap: var(--sp-6); }
 .rec-review-count { padding: var(--sp-3) 0; }
-.rec-review-result { min-width: 0; }
+.rec-review-result { min-width: 0; border-bottom: 1px solid var(--line); padding: var(--sp-4) 0 var(--sp-6); }
+.rec-review-result .rec-draft { border: 0; padding-bottom: 0; }
 .rec-review-context { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-3); overflow-wrap: anywhere; }
 .rec-background { display: flex; flex-direction: column; gap: var(--sp-6); padding: var(--sp-6) 0; }
 .rec-background-text { font-size: var(--fs-md); line-height: 1.6; overflow-wrap: anywhere; color: var(--text); }
@@ -622,3 +622,7 @@ a.rec-place-name:hover { text-decoration: underline; }
 
 .rec-resume-section { border-top: 1px solid var(--line); margin-top: var(--sp-6); padding-top: var(--sp-4); }
 .rec-resume-section summary { cursor: pointer; color: var(--text); }
+
+.rec-search-context { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-6) 0; margin-bottom: var(--sp-6); border-bottom: 1px solid var(--line); }
+
+.rec-resume-outline .rec-resume-text { max-height: none; overflow: visible; }

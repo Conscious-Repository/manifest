@@ -134,6 +134,9 @@
     if (sheetKey === "writing-comments") return; // Writing uses the wider 1100px sheet breakpoint.
     const restore = sheetReopen;
     mfSheet.close({ silent: true, keepReopen: false });
-    if (!e.matches && restore) restore();
+    if (typeof recPaint === "function" && typeof aionMode !== "undefined" &&
+        aionMode === "recruiting" && !els.aionView.hidden) {
+      recPaint(); // adapt recruiting navigation and selected candidate in both directions
+    } else if (!e.matches && restore) restore();
   });
 })();

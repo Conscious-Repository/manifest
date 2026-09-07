@@ -68,10 +68,11 @@ function renderAion() {
   renderAionRail();
   if (typeof railSetCount === "function") railSetCount("aion", aionOpenCount());
   const host = els.aionBody;
+  const recruitingFocus = document.activeElement?.dataset?.recNav || "";
   host.innerHTML = "";
   if (!aionCache) { host.append(emptyRow("aion unavailable")); return; }
   if (aionMode === "fundraising") renderAionFundraising(host);
-  else if (aionMode === "recruiting") renderAionRecruiting(host);
+  else if (aionMode === "recruiting") renderAionRecruiting(host, recruitingFocus);
   else if (aionMode === "heuristics") renderAionHeuristics(host);
   else if (aionMode === "vto") renderAionVTO(host);
   else if (aionMode === "goals") renderAionGoals(host);

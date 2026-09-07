@@ -334,3 +334,8 @@ content pane, and on phones it uses the shared sheet. Mobile recruiting navigati
 keeps its four views visible and folds roles/sync. Full resumes retain their source
 text with a deterministic outline of standalone headings. Model-generated briefs
 are a separate planned feature; current excerpts must not be labeled AI summaries.
+
+Recruiting visual preference (owner, 2026-09-07): use clean divider rows for people,
+search results and search history, and unboxed resume text. Preserve visible action
+controls and a quiet selected-row marker. Search-result links open the review queue
+scoped to that search; Search history remains available as a separate mode.

@@ -61,3 +61,23 @@ test('next candidate order matches visible stage groups and inbound application 
   vm.runInContext('recOrigin="inbound";',c);
   assert.equal(c.recReviewCandidates().map(x=>x.id).join(','),'c,d');
 });
+test('opening search results clears stale filters and shows only undecided results from that search', () => {
+  const c=context();
+  c.run={id:'chosen',source:'web',scope:{role:'role/mri'},drafts:[
+    {id:'passed',status:'rejected',draft:{name:'Earlier decision'}},
+    {id:'new',status:'new',draft:{name:'To review'}}]};
+  c.other={id:'other',drafts:[{id:'foreign',status:'new',draft:{name:'Other person'}}]};
+  vm.runInContext('recNav=()=>{};recRuns=[run,other];recSourceQuery="stale";recSourceRole="role/other";recSourceStatus="decided";recOpenSourceRun(run);',c);
+  assert.equal(vm.runInContext('recSourceLayout',c),'review');
+  assert.equal(c.recSourceEntries().map(x=>x.draft.id).join(','),'new');
+  assert.equal(c.recPendingSourceRole('role/mri'),1);
+  c.recClearSourceFilters();
+  assert.equal(c.recSourceEntries().length,2);
+});
+test('a fully reviewed search opens its decisions instead of appearing empty', () => {
+  const c=context();
+  c.run={id:'done',drafts:[{id:'d',status:'accepted',draft:{name:'Accepted'}}]};
+  vm.runInContext('recNav=()=>{};recRuns=[run];recOpenSourceRun(run);',c);
+  assert.equal(vm.runInContext('recSourceStatus',c),'all');
+  assert.equal(c.recSourceEntries().length,1);
+});
