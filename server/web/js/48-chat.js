@@ -368,7 +368,7 @@ function renderChatRail() {
   if (a && a.classList.contains("inline-rename") && host.contains(a)) return;
   host.innerHTML = "";
   const alfred = chatRosterEntry("alfred");
-  const profiles = chatRoster.filter((a) => a.backend !== "portal" && a.name !== "alfred");
+  const profiles = chatRoster.filter((a) => a.backend === "hermes" && a.name !== "alfred");
   const portals = chatRoster.filter((a) => a.backend === "portal");
   if (alfred) host.append(chatRailSection(alfred.name, alfred.label, alfred));
   if (profiles.length) {

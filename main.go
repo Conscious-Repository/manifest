@@ -509,6 +509,7 @@ func main() {
 	{
 		home, _ := os.UserHomeDir()
 		srv.UseTerminal(filepath.Join(cfg.DataDir, "terminals.json"), filepath.Join(cfg.DataDir, "tmux"), home)
+		srv.UseCodingRepo(cfg.BoardRepo)
 		// the cockpit's ssh fleet (device selector); self = this box's hostname
 		devs := make([]server.TermDevice, 0, len(cfg.TerminalDevices))
 		for _, d := range cfg.TerminalDevices {

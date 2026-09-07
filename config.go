@@ -107,6 +107,8 @@ type Config struct {
 	// secret lives at <dataDir>/agent_master (auto-created 0600).
 	FilesRoots  []string     `json:"filesRoots"`
 	FilesAgents []FilesAgent `json:"filesAgents"`
+	// BoardRepo is the coding-owner checkout (SSH origin); defaults to ~/src/manifest.
+	BoardRepo string `json:"boardRepo"`
 	// TerminalDevices are the ssh boxes the terminal cockpit's device selector
 	// offers beyond metis itself (see TerminalDevice).
 	TerminalDevices []TerminalDevice `json:"terminalDevices"`
@@ -274,6 +276,7 @@ type OodaConfig struct {
 func defaultConfig() Config {
 	return Config{
 		VaultPath:       "",
+		BoardRepo:       "~/src/manifest",
 		NewDailyDir:     "intrinsic",
 		DailyNoteDir:    "Daily",
 		DailyNoteFormat: "2006-01-02",
@@ -393,6 +396,7 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.SystemRoot == cfg.ExtrinsicRoot {
 		return cfg, errors.New("systemRoot and extrinsicRoot must differ")
 	}
+	cfg.BoardRepo = expandHome(cfg.BoardRepo)
 	cfg.VaultPath = expandHome(cfg.VaultPath)
 	cfg.DataDir = expandHome(cfg.DataDir)
 	cfg.ExcaliburPath = expandHome(cfg.ExcaliburPath)

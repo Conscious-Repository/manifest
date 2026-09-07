@@ -370,6 +370,11 @@ func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, file
 // the dashboard composer's Comment mode.
 func (s *Server) threadDialogHook(taskID string, mentions []string, text string) {
 	plan := s.resolveDispatch(taskID, "comment", "", mergeMentions(mentions, s.textMentions(text)))
+	// This hook is the team-portal entry; coding execution is authorized by
+	// Benjamin's personal board, whose composer uses postAndDispatch directly.
+	if plan != nil && isCodingAgent(s.agentHarness(plan.Agent)) {
+		return
+	}
 	s.dispatchAssign(taskID, plan)
 	s.dispatchRelay(taskID, plan, text)
 }
@@ -466,6 +471,9 @@ func (s *Server) resolveDispatch(taskID, mode, agent string, mentions []string) 
 	switch mode {
 	case "do":
 		p.Intent = "plan"
+		if isCodingAgent(s.agentHarness(agent)) && intent != "plan" {
+			p.Intent = "execute"
+		}
 		if rec.Assignee != agent {
 			p.Assign = "do"
 		}
@@ -532,17 +540,26 @@ func (s *Server) relayToAgent(taskID, agent, text, intent string) {
 		s.markerAddMeta(taskID, actRelayPending, "", map[string]any{"agent": agent, "intent": intent, "text": text})
 	default:
 		log.Printf("todo relay %s → %s: %v", taskID, agent, err)
+		if isCodingAgent(s.agentHarness(agent)) {
+			_, _ = s.addThreadEntry(agentTokenIdentity(agent), taskID, threads.ActComment,
+				"couldn't start the coding task — "+err.Error(), nil, nil, nil)
+		}
 	}
 }
 
-// assignAgentHook: an explicit assignment (no comment) spools the PLAN-phase
-// work order — the §12 lane's entry point. Assignment IS the draft-plan
-// intent, so the `plan` persona rides along when seeded and enabled (the
-// spool degrades to today's request when it isn't). Execution waits for fire.
+// assignAgentHook dispatches an explicit assignment. Coding owners execute
+// directly (2026-09-06); other owners retain the existing plan/fire lane.
 func (s *Server) assignAgentHook(taskID, harness string) error {
-	err := s.spoolTaskWorkOrder(s.findHarness(harness), taskID, "plan", "", "plan")
+	phase, intent := "plan", "plan"
+	if isCodingAgent(harness) {
+		phase, intent = "go", "execute"
+	}
+	err := s.spoolTaskWorkOrder(s.findHarness(harness), taskID, phase, "", intent)
 	if errors.Is(err, spirits.ErrAlreadyActive) {
-		return nil // already out planning — the state chip says so
+		if isCodingAgent(harness) {
+			s.markerAddMeta(taskID, actRelayPending, "", map[string]any{"agent": "agent:" + harness, "intent": intent, "text": "Execute the assigned task."})
+		}
+		return nil // busy dispatches use the existing pending-relay retry
 	}
 	return err
 }

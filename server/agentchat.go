@@ -208,7 +208,7 @@ func (s *Server) agentChatRoster(ctx context.Context) []agentChatRosterEntry {
 			}
 			continue
 		}
-		if !agentchat.ValidAgent(name) {
+		if !agentchat.ValidAgent(name) || isCodingAgent(name) {
 			continue
 		}
 		out = append(out, agentChatRosterEntry{Name: name, Label: name, Backend: "hermes", Profile: name,
@@ -262,6 +262,11 @@ func (s *Server) handleAgentChatRoster(w http.ResponseWriter, r *http.Request) {
 		agents = append(agents, s.agentChatRoster(r.Context())...)
 	}
 	agents = append(agents, s.portalChatRoster()...)
+	if s.terminal != nil {
+		for _, name := range []string{"claude", "codex"} {
+			agents = append(agents, agentChatRosterEntry{Name: name, Label: agentDisplayName("agent:" + name), Backend: "terminal", Enabled: s.terminal.codingRepo != "", Description: "Direct coding task owner; commits and pushes, then returns work for review", Personas: []string{"plan"}})
+		}
+	}
 	writeJSON(w, map[string]any{"agents": agents})
 }
 

@@ -12,6 +12,7 @@
   "scheduleStart": 8,
   "scheduleEnd": 18,
   "port": 7777,
+  "boardRepo": "~/src/manifest",
   "systemRoot": "system",
   "extrinsicRoot": "extrinsic",
   "excaliburPath": "~/Documents/index.ben/system/excalibur",

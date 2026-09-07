@@ -67,6 +67,7 @@ type delegationView struct {
 // Precedence: proposed > running > queued > failed > done — a returned
 // proposal is the thing awaiting the human; a live run beats history.
 func (s *Server) delegationIndex() map[string]delegationView {
+	s.codingResultSweep()
 	rank := map[string]int{
 		"done": 1, "plan-ready": 1, "failed": 2,
 		"queued": 3, "plan-queued": 3, "go-queued": 3,
@@ -78,7 +79,11 @@ func (s *Server) delegationIndex() map[string]delegationView {
 		if id == "" {
 			return
 		}
-		if cur, ok := out[id]; !ok || rank[d.State] > rank[cur.State] ||
+		if cur, ok := out[id]; ok && isCodingAgent(d.Harness) && isCodingAgent(cur.Harness) {
+			if d.Started.After(cur.Started) {
+				out[id] = d
+			}
+		} else if !ok || rank[d.State] > rank[cur.State] ||
 			(rank[d.State] == rank[cur.State] && d.Started.After(cur.Started)) {
 			out[id] = d
 		}
@@ -169,9 +174,25 @@ func (s *Server) delegationIndex() map[string]delegationView {
 					phaseSrc += "\n" + doc.Title + "\n" + doc.Body
 				}
 				st, ph := phased(state, phaseSrc)
+				tier := ""
+				if h.Name == "hermes" && isTaskCommentPhase(ph) && state == "done" {
+					tier, _ = alfredTier(doc.Body)
+					if tier == "executed" {
+						st, ph = "done", "go"
+					}
+					if tier == "plan" {
+						st, ph = "plan-ready", "plan"
+					}
+				}
 				d := delegationView{State: st, Phase: ph, Harness: h.Name, RunID: r.ID}
 				if pm := personaTokenRe.FindStringSubmatch(phaseSrc); pm != nil {
 					d.Persona = pm[1]
+				}
+				if tier == "executed" {
+					d.Persona = "auto"
+				}
+				if tier == "plan" {
+					d.Persona = "plan"
 				}
 				if ts, err := time.Parse(time.RFC3339, r.Started); err == nil {
 					d.Started = ts
@@ -256,6 +277,9 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 	if harness == nil {
 		return errBadRequest("harness not available")
 	}
+	if isCodingAgent(harness.Name) {
+		return s.startCodingTask(harness, taskID, phase, extra, intent)
+	}
 	// the virtual Hermes (runner-backed) has no Spirits — the fork handles it.
 	if !s.hermesForked(harness) && harness.Spirits == nil {
 		return errBadRequest("harness not available")
@@ -304,6 +328,9 @@ func (s *Server) spoolTaskWorkOrderAs(harness *Harness, agent, taskID, phase, ex
 		}
 		if extra != "" {
 			b.WriteString("NEW OWNER COMMENT (respond to this):\n" + extra + "\n")
+		}
+		if harness.Name == "hermes" && (agent == "" || agent == "agent:alfred" || agent == "agent:hermes") {
+			protocol = alfredTierProtocol
 		}
 		b.WriteString(protocol)
 	}
@@ -461,6 +488,9 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			continue
 		}
 		hermes := agentIdentity(d.Harness)
+		if d.Harness == "hermes" && d.Persona == "auto" {
+			hermes = agentTokenIdentity("agent:alfred")
+		}
 		meta := map[string]any{"run": d.RunID, "harness": d.Harness}
 		if d.ArtifactRef != "" {
 			meta["artifactRef"] = d.ArtifactRef
@@ -473,7 +503,7 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			// closed loop (kairos plan Phase D): on team-visible items the
 			// deliverable itself posts into the thread — portal members read
 			// the result where they fired it, not behind a dashboard link.
-			if s.threadKind(id) == "aion" {
+			if s.threadKind(id) == "aion" || isCodingAgent(d.Harness) || d.Persona == "auto" {
 				doc, ok := libraryDocForRun(*h, d.RunID, harnessLibrary(*h))
 				body := strings.TrimSpace(doc.Body)
 				if !ok || body == "" {
@@ -482,11 +512,20 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 					}
 				}
 				if body != "" {
+					if d.Persona == "auto" {
+						_, body = alfredTier(body)
+						body = capTierOneSummary(body)
+					}
 					text = ledger.Snip(body, 3600) +
 						"\n\n— result delivered; review it, then close the item or send it back with a comment"
 				}
 			}
-			_, _ = s.addThreadEntry(hermes, id, threads.ActComment, text, nil, nil, meta)
+			if d.Persona == "auto" {
+				text = capTaskComment("comment", text)
+			}
+			if _, err := s.addThreadEntry(hermes, id, threads.ActComment, text, nil, nil, meta); err != nil {
+				continue
+			}
 			s.markerAdd(id, threads.ActResult, d.RunID)
 			continue
 		}
@@ -500,6 +539,9 @@ func (s *Server) agentLoopSweep(index map[string]delegationView) {
 			if _, body, ok2 := h.Spirits.Run(d.RunID); ok2 {
 				brief = strings.TrimSpace(body)
 			}
+		}
+		if d.Harness == "hermes" {
+			_, brief = alfredTier(brief)
 		}
 		if brief == "" {
 			continue
@@ -744,6 +786,9 @@ func (s *Server) replanSweep(index map[string]delegationView) {
 		if !lastOwner.IsZero() && time.Since(lastOwner) < 5*time.Minute {
 			continue
 		}
+		if isCodingAgent(harness) {
+			continue
+		}
 		replanExtra := "REPLAN — the task context changed since your current plan was written. CURRENT PLAN:\n" +
 			rec.Plan + "\nRe-read the task and description above; REPLACE the plan if the change matters, " +
 			"or return it unchanged with a one-line note if it doesn't."
@@ -880,6 +925,23 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 	}
 	if target == nil || target.Spirits == nil {
 		httpError(w, errBadRequest("unknown harness "+b.Harness))
+		return
+	}
+	if isCodingAgent(target.Name) {
+		id, ok := s.pinTaskID(b.ID)
+		if !ok {
+			http.Error(w, "todo not found", http.StatusNotFound)
+			return
+		}
+		extra := strings.TrimSpace(b.Brief)
+		if b.Comment != "" {
+			extra += "\nOWNER COMMENT (on the previous result): " + b.Comment
+		}
+		if _, err := s.postAndDispatch(id, "do", "agent:"+target.Name, nil, nil, extra); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "queued": true})
 		return
 	}
 	// the request line: brief + ALWAYS the todo's own text + the durable token.

@@ -471,7 +471,7 @@ func (s *Server) hermesProfileNames() []string {
 	var out []string
 	for _, p := range profiles {
 		name := strings.ToLower(strings.TrimSpace(p.Name))
-		if name == "" || name == "default" || name == alfredAgent || name == "hermes" {
+		if name == "" || name == "default" || name == alfredAgent || name == "hermes" || isCodingAgent(name) {
 			continue
 		}
 		if !agentchat.ValidAgent(name) {
@@ -544,6 +544,9 @@ func (s *Server) agentHarness(owner string) string {
 	want := strings.TrimPrefix(owner, "agent:")
 	if want == "" || strings.Contains(want, "::") {
 		return ""
+	}
+	if isCodingAgent(want) && s.terminal != nil {
+		return want
 	}
 	// Alfred is the do-bot (alias of hermes); profiles run on the same runner.
 	if want == alfredAgent || s.hermesProfileOf(owner) != "" {

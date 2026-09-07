@@ -204,6 +204,21 @@ This file changes only by deliberate owner decision, recorded with a date.
 Passes that discover a conflict between code and this file fix the code or
 propose an amendment — never silently diverge.
 
+**2026-09-06 — direct coding owners and Alfred task tiers.** Owner decision
+(`system/workbench/plans/2026-09-06-board-direct-assign.md`): on the personal
+board, assigning Claude Code or Codex authorizes direct work in the configured
+manifest checkout, including committing and pushing over its SSH remote.
+Explicit plan requests still produce complete plans; ordinary coding assignments,
+Do, Ask, and mentions execute. Existing terminal sessions carry durable work-order
+files; only a durable result can complete the existing run-report/artifact contract
+and enter Review. Closing a pane is not completion. No new scheduler or review lane.
+For Alfred comment/ask turns, low-ambiguity, low-stakes operational asks execute
+under existing standing authorization and return a summary of at most three
+sentences/280 words plus an artifact link. Consequential or ambiguous work keeps
+the plan/fire and human-approval gates; inquiries answer only. This amends the
+2026-08-15 assignment-means-plan rule for these personal-board cases only.
+Vault capabilities and team-portal authorization are unchanged.
+
 **2026-08-17 — AION is one live composed model, not a publish artifact.**
 The Manifest process owns the projection rendered by both the private AION
 cockpit and the team portal: owner-authored vault records form the base;

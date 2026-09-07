@@ -113,6 +113,9 @@ func (s *Server) AionFileBlob(hash string) string {
 // AionAssign assigns an agent on a portal item, attributed to the member.
 // The team activity trail records it (→ the owner's FEED via the bridge).
 func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error {
+	if isCodingAgent(s.agentHarness(owner)) {
+		return errBadRequest("coding owners are assigned from the personal board")
+	}
 	_, err := s.assignTask(threads.Identity{ID: memberEmail, Name: memberName}, s.aionTodoID(itemID), owner)
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},
@@ -125,6 +128,9 @@ func (s *Server) AionAssign(itemID, owner, memberEmail, memberName string) error
 // member. spirits.ErrAlreadyActive passes through for the 409; a successful
 // fire lands in the team activity trail (→ the owner's FEED notice).
 func (s *Server) AionFire(itemID, memberEmail, memberName string) error {
+	if isCodingAgent(s.agentHarness(s.readPlanRecord(s.aionTodoID(itemID)).Assignee)) {
+		return errBadRequest("coding work is fired from the personal board")
+	}
 	err := s.fireTask(threads.Identity{ID: memberEmail, Name: memberName}, s.aionTodoID(itemID))
 	if err == nil && s.threads != nil && s.threads.aion != nil {
 		_ = s.threads.aion.LogAction(teamportal.Identity{Email: memberEmail, Name: memberName},

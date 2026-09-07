@@ -10,6 +10,7 @@ package server
 // a muted source chip for non-primary rows.
 
 import (
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -39,15 +40,32 @@ func (s *Server) UseHarnesses(list []Harness) {
 
 // eachHarness returns the federation, primary first — synthesized from the
 // legacy single-store wiring when UseHarnesses was never called (tests, old
-// callers), so composition code has exactly one shape to walk.
+// callers), so composition code has exactly one shape to walk. Terminal-backed
+// owners expose the same report/library contract in dataDir; no engine consumes
+// their work orders. A virtual Hermes tree holds its Tier-1 result artifacts.
 func (s *Server) eachHarness() []Harness {
-	if len(s.harnessList) > 0 {
-		return s.harnessList
+	hs := append([]Harness(nil), s.harnessList...)
+	if len(hs) == 0 && (s.spirits != nil || s.approvals != nil || s.terminal != nil) {
+		hs = []Harness{{Name: "excalibur", Spirits: s.spirits, Approvals: s.approvals}}
 	}
-	if s.spirits != nil || s.approvals != nil {
-		return []Harness{{Name: "excalibur", Spirits: s.spirits, Approvals: s.approvals}}
+	if s.terminal != nil {
+		names := []string{"claude", "codex"}
+		if s.hermesEnabled() {
+			names = append([]string{"hermes"}, names...)
+		}
+		for _, name := range names {
+			found := false
+			for _, h := range hs {
+				if h.Name == name {
+					found = true
+				}
+			}
+			if !found {
+				hs = append(hs, Harness{Name: name, Spirits: spirits.NewStore(filepath.Join(filepath.Dir(s.terminal.regPath), "board-agents", name))})
+			}
+		}
 	}
-	return nil
+	return hs
 }
 
 // primaryHarnessName is the tag the UI treats as home (no chip shown).

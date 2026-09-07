@@ -337,6 +337,21 @@ func (s *Server) materializeHermesBrief(taskID, agent, phase, persona, brief str
 		s.postAgentBrief(who, taskID, text, meta)
 		return
 	}
+	if isTaskCommentPhase(phase) && (agent == "agent:alfred" || agent == "agent:hermes") {
+		tier, body := alfredTier(brief)
+		switch tier {
+		case "executed":
+			if s.materializeAlfredAuto(taskID, body) {
+				return
+			}
+			s.postAgentBrief(who, taskID, capTierOneSummary(body), meta)
+			return
+		case "plan":
+			phase, persona, brief = "plan", "plan", body
+		case "answer":
+			brief = body
+		}
+	}
 	// Comment turns answer in the thread, even without a tagged persona.
 	if isTaskCommentPhase(phase) || (persona != "" && persona != "plan") {
 		s.postAgentBrief(who, taskID, capTaskComment(phase, brief), meta)

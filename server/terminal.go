@@ -35,17 +35,18 @@ import (
 
 // termSession is one registry row (<dataDir>/terminals.json).
 type termSession struct {
-	ID        string `json:"id"`
-	Kind      string `json:"kind"`             // shell | claude | codex
-	Device    string `json:"device,omitempty"` // "" = this box; else a fleet name
-	Cwd       string `json:"cwd"`
-	Name      string `json:"name"`
-	ResumeID  string `json:"resumeId,omitempty"` // claude --session-id / --resume handle
-	Resume    bool   `json:"resume,omitempty"`   // launched via the interactive resume picker
-	Started   bool   `json:"started,omitempty"`  // first attach happened → reopen resumes
-	CreatedAt string `json:"createdAt"`
-	LastUsed  string `json:"lastUsed"`
-	Pinned    bool   `json:"pinned,omitempty"`
+	ID         string `json:"id"`
+	Kind       string `json:"kind"`             // shell | claude | codex
+	Device     string `json:"device,omitempty"` // "" = this box; else a fleet name
+	Cwd        string `json:"cwd"`
+	Name       string `json:"name"`
+	ResumeID   string `json:"resumeId,omitempty"` // claude --session-id / --resume handle
+	Resume     bool   `json:"resume,omitempty"`   // launched via the interactive resume picker
+	Started    bool   `json:"started,omitempty"`  // first attach happened → reopen resumes
+	CreatedAt  string `json:"createdAt"`
+	LastUsed   string `json:"lastUsed"`
+	BoardBrief string `json:"boardBrief,omitempty"` // durable board handoff; first launch only
+	Pinned     bool   `json:"pinned,omitempty"`
 	// Keep = caffeinated (cmd-ctr ☕): a REMOTE session also runs inside a
 	// tmux on the target box, so it survives ssh drops and metis restarts —
 	// the metis-side tmux alone only survives browser disconnects. Local
@@ -54,10 +55,12 @@ type termSession struct {
 }
 
 type termCfg struct {
-	regPath   string // <dataDir>/terminals.json
-	tmuxTmp   string // TMUX_TMPDIR (writable under the systemd sandbox)
-	defaultWd string
-	mu        sync.Mutex
+	regPath    string // <dataDir>/terminals.json
+	tmuxTmp    string // TMUX_TMPDIR (writable under the systemd sandbox)
+	defaultWd  string
+	codingRepo string
+	boardMu    sync.Mutex
+	mu         sync.Mutex
 
 	// remote-keep liveness cache: whether a kept session's tmux still runs on
 	// its device (cmd-ctr's kept snapshot). Refreshed async — the sessions
@@ -240,6 +243,9 @@ func (c *termCfg) shortName(kind string) string {
 // ✗ instead of an instant-exit loop when claude/codex isn't installed there
 // (cmd-ctr's tool guard).
 func (s termSession) execLaunch() string {
+	if s.BoardBrief != "" && !s.Started {
+		return s.boardLaunch()
+	}
 	tool := map[string]string{"claude": "claude", "codex": "codex"}[s.Kind]
 	if tool == "" {
 		return termTmpExport + "exec " + s.launchCmd()
@@ -451,7 +457,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 // The spawn mirrors the WS attach path exactly (same socket dir via c.tmux,
 // same tmux name, same option order), so a later browser attach's
 // `new-session -A` lands on this same session.
-func (s *Server) createAgentTermSession(kind, cwd, name string) (termSession, string, error) {
+func (s *Server) createAgentTermSession(kind, cwd, name string, brief ...string) (termSession, string, error) {
 	if s.terminal == nil {
 		return termSession{}, "", fmt.Errorf("terminal disabled")
 	}
@@ -476,7 +482,16 @@ func (s *Server) createAgentTermSession(kind, cwd, name string) (termSession, st
 		_, _ = rand.Read(u)
 		se.ResumeID = fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
 	}
-	s.terminal.upsert(se)
+	if len(brief) > 0 {
+		se.BoardBrief = brief[0]
+	}
+	// Persist the resume posture before spawning: a process restart between
+	// spawn and the final upsert must never replay a board work order.
+	stored := se
+	if se.BoardBrief != "" {
+		stored.Started = true
+	}
+	s.terminal.upsert(stored)
 
 	tn := tmuxName(se.ID)
 	if err := s.spawnTermTmux(se); err != nil {
