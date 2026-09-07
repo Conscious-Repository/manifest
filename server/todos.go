@@ -366,8 +366,8 @@ func (s *Server) propTaskIDByText(slug, text string) string {
 }
 
 // captureAddressRe matches an agent address in a capture line: `@name`,
-// `@name::intent`, or the `!do` shorthand (word-bounded, anywhere).
-var captureAddressRe = regexp.MustCompile(`(?i)(?:^|\s)(@([a-z0-9-]+)(?:::([a-z0-9-]+))?|!do)\b`)
+// `@name::intent::model:slug`, or the `!do` shorthand.
+var captureAddressRe = regexp.MustCompile(`(?i)(?:^|\s)(@([a-z0-9-]+)((?:::[a-z0-9_.:-]*)*)|!do\b)`)
 
 // captureDispatch splits a capture line into the todo text and its dispatch:
 // agent token + mode ("" when the line addresses nobody). Unknown @names stay
@@ -375,7 +375,7 @@ var captureAddressRe = regexp.MustCompile(`(?i)(?:^|\s)(@([a-z0-9-]+)(?:::([a-z0
 func (s *Server) captureDispatch(text string) (clean, agent, mode string) {
 	clean = text
 	for _, m := range captureAddressRe.FindAllStringSubmatch(text, -1) {
-		whole, name, intent := m[1], strings.ToLower(m[2]), strings.ToLower(m[3])
+		whole, name := m[1], strings.ToLower(m[2])
 		if strings.EqualFold(whole, "!do") {
 			mode = "do"
 		} else {
@@ -383,6 +383,8 @@ func (s *Server) captureDispatch(text string) (clean, agent, mode string) {
 			if s.agentHarness(tok) == "" {
 				continue // prose, not an address
 			}
+			tok += strings.TrimRight(strings.ToLower(m[3]), ".")
+			_, intent, _ := parseAgentToken(tok)
 			if agent == "" {
 				agent = tok
 			}

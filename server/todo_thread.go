@@ -441,6 +441,21 @@ type dispatchPlan struct {
 //     plan-phase turn with the text as the opening brief; fire stays explicit.
 func (s *Server) resolveDispatch(taskID, mode, agent string, mentions []string) *dispatchPlan {
 	agent, intent, model := parseAgentToken(agent)
+	// An explicit address takes precedence over the Ask/Do picker's default.
+	// Keep an explicitly model-qualified agent field authoritative; otherwise
+	// resolve the recipient before looking for that recipient's model options.
+	if mode != "comment" && model == "" {
+		for _, m := range mentions {
+			base, in, requested := parseAgentToken(m)
+			if s.agentHarness(base) != "" {
+				agent, model = base, requested
+				if intent == "" {
+					intent = in
+				}
+				break
+			}
+		}
+	}
 	if mode == "comment" {
 		for _, m := range mentions {
 			base, in, requested := parseAgentToken(m)

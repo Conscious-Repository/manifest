@@ -143,7 +143,7 @@ func TestCaptureDispatch(t *testing.T) {
 
 	cases := []struct{ in, text, agent, mode string }{
 		{"find me 10 gutter contractor options @alfred", "find me 10 gutter contractor options", "agent:alfred", "ask"},
-		{"find lenders for the 4848 and 4852 deals @alfred::plan", "find lenders for the 4848 and 4852 deals", "agent:alfred", "do"},
+		{"find lenders for the 4848 and 4852 deals @alfred::plan", "find lenders for the 4848 and 4852 deals", "agent:alfred::plan", "do"},
 		{"shortlist movers !do", "shortlist movers", "agent:alfred", "do"},
 		{"email @bob about the fence", "email @bob about the fence", "", ""},
 		{"plain capture", "plain capture", "", ""},

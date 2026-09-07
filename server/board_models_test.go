@@ -1,12 +1,83 @@
 package server
 
 import (
+	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCodingModelAskDoMentionOverridesDefault(t *testing.T) {
+	for _, mode := range []string{"ask", "do"} {
+		for _, agent := range []string{"", "agent:alfred", "agent:codex"} {
+			t.Run(mode+"/"+agent, func(t *testing.T) {
+				s := codingFixture(t)
+				if _, err := s.postAndDispatch("inbox/wire-the-fence", mode, agent,
+					[]string{"agent:codex"}, nil, "@codex::model:gpt-5.5 fix the fence"); err != nil {
+					t.Fatal(err)
+				}
+				sessions := s.terminal.load()
+				if len(sessions) != 1 || sessions[0].Kind != "codex" || sessions[0].Model != "gpt-5.5" {
+					t.Fatalf("mention did not reach coding launch: %+v", sessions)
+				}
+				if !strings.Contains(sessions[0].boardLaunch(), " -m "+shQuote("gpt-5.5")) {
+					t.Fatal(sessions[0].boardLaunch())
+				}
+			})
+		}
+	}
+}
+
+func TestCodingModelDispatchPrecedence(t *testing.T) {
+	s := codingFixture(t)
+	for _, tc := range []struct {
+		agent, mention, wantAgent, wantModel, wantIntent string
+	}{
+		{"agent:codex::model:best", "agent:claude::model:opus", "agent:codex", "best", "info"},
+		{"agent:codex::plan", "agent:codex::model:gpt-5.5", "agent:codex", "gpt-5.5", "plan"},
+		{"agent:codex", "agent:nobody::model:opus", "agent:codex", "", "info"},
+		{"agent:codex", "", "agent:codex", "", "info"},
+	} {
+		p := s.resolveDispatch("inbox/wire-the-fence", "ask", tc.agent, []string{tc.mention})
+		if p == nil || p.Agent != tc.wantAgent || p.Model != tc.wantModel || p.Intent != tc.wantIntent {
+			t.Errorf("agent %q, mention %q: %+v", tc.agent, tc.mention, p)
+		}
+	}
+}
+
+func TestCodingModelTaskCreate(t *testing.T) {
+	for _, suffix := range []string{"", " !do", "::plan", "::plan !do"} {
+		t.Run(suffix, func(t *testing.T) {
+			s := codingFixture(t)
+			body, err := json.Marshal(map[string]string{"text": "repair the gate @codex::model:gpt-5.5" + suffix})
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			s.handleTaskAdd(w, httptest.NewRequest("POST", "/api/tasks/item", strings.NewReader(string(body))))
+			if w.Code != 200 || strings.Contains(w.Body.String(), "dispatchError") {
+				t.Fatalf("create: %d %s", w.Code, w.Body.String())
+			}
+			sessions := s.terminal.load()
+			if len(sessions) != 1 || sessions[0].Model != "gpt-5.5" ||
+				!strings.Contains(sessions[0].boardLaunch(), " -m "+shQuote("gpt-5.5")) {
+				t.Fatalf("capture lost model: %+v", sessions)
+			}
+			brief, err := os.ReadFile(sessions[0].BoardBrief)
+			if err != nil || !strings.Contains(string(brief), "MODEL: gpt-5.5") ||
+				strings.Contains(string(brief), "Do not implement") != strings.Contains(suffix, "::plan") {
+				t.Fatalf("capture lost model or intent: %v\n%s", err, brief)
+			}
+			raw, err := os.ReadFile(s.tasksStore.Path())
+			if err != nil || strings.Contains(string(raw), "gpt-5.5") || strings.Contains(string(raw), "@codex") {
+				t.Fatalf("address leaked into task: %v\n%s", err, raw)
+			}
+		})
+	}
+}
 
 func TestCodingModelGrammar(t *testing.T) {
 	for _, tc := range []struct {

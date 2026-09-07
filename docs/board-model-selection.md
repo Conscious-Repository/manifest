@@ -21,10 +21,13 @@ insensitive; a trailing sentence period is punctuation. Structural API tokens
 use `agent:name` in place of `@name`, including the Ask/Do `agent` field.
 
 Comment still dispatches at most one turn, to the first recognized agent;
-comments without mentions remain record-only. Ask/Do use their selected agent
-(or existing assignee/default), taking options from a matching mention when
-not supplied in the selected agent token. A bare autocomplete mention does not
-hide options typed for that same agent. Owner fields always store the bare token.
+comments without mentions remain record-only. On Ask/Do, the first recognized
+mention overrides the selected agent (or existing assignee/default), unless
+the selected agent token already supplies a model. Options come from matching
+mentions when absent from that token. A bare autocomplete mention does not
+hide options typed for that same agent. Task capture preserves model and intent
+options through Ask/Do dispatch while stripping the address from the task text.
+Owner fields always store the bare token.
 
 Accepted overrides: Codex `gpt-6-astra`, `gpt-5.5`; Claude `fable`, `opus`,
 `sonnet`. `best` explicitly selects the owner's default. Unknown names, empty
