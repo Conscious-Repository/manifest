@@ -610,3 +610,7 @@
   .rec-rail-options { padding: var(--sp-4); }
   .rec-rail-options summary { cursor: pointer; }
 }
+
+@media (max-width: 860px) {
+  .rec-rail { position: static; max-height: none; overflow-y: visible; }
+}
