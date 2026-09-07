@@ -5,7 +5,7 @@
 // row and [rank:: n] lands in the owning file. No waiting surface, no
 // parallel lists; every counter derives from the same rows.
 let todosCache = null;
-let todosTab = "focus"; // focus | aion | realestate | personal
+let todosTab = "focus"; // focus | aion | realestate | manifest | personal
 let todosMode = localStorage.getItem("todosMode") || "list"; // list (default) | board (Phase 8)
 let todosQuiet = {};    // ideas / done expanded
 // the regret window: a row checked this session stays IN PLACE, struck and
@@ -37,6 +37,7 @@ async function todosApi(path, body) {
 function tabOf(r) {
   if (r.source === "aion" || r.container.name === "Aion") return "aion";
   if (r.source === "property" || /real estate/i.test(r.container.name || "")) return "realestate";
+  if (/^manifest$/i.test(r.container.name || "")) return "manifest";
   return "personal";
 }
 function issueTabOf(domainName) {
@@ -45,7 +46,7 @@ function issueTabOf(domainName) {
   return "personal";
 }
 
-const TODOS_TABS = [["focus", "FOCUS"], ["aion", "AION"], ["realestate", "REAL ESTATE"], ["personal", "PERSONAL"]];
+const TODOS_TABS = [["focus", "FOCUS"], ["aion", "AION"], ["realestate", "REAL ESTATE"], ["manifest", "MANIFEST"], ["personal", "PERSONAL"]];
 
 function renderTodos() {
   const host = els.todosRows; host.innerHTML = "";
