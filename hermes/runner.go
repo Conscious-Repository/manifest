@@ -54,10 +54,11 @@ var ErrNotEnabled = errors.New("hermes runner not enabled")
 
 // Config is the resolved runner configuration (from manifest config.json).
 type Config struct {
-	Enabled  bool   // master switch — off by default so this lands dark
-	Bin      string // hermes binary path or name on $PATH (default "hermes")
-	Model    string // default -m model override ("" → the CLI's configured model)
-	Toolsets string // default -t toolset scope ("" → the CLI's configured toolsets)
+	AnnotationPython string // optional interpreter for bounded, tool-free writing completions
+	Enabled          bool   // master switch — off by default so this lands dark
+	Bin              string // hermes binary path or name on $PATH (default "hermes")
+	Model            string // default -m model override ("" → the CLI's configured model)
+	Toolsets         string // default -t toolset scope ("" → the CLI's configured toolsets)
 	// TimeoutSeconds is the DEFAULT bound on one agent turn (config
 	// `hosts.hermes.timeoutSeconds`); 0 → DefaultTimeout. It governs only the
 	// turns that don't ask for their own budget: a Request.TimeoutSeconds > 0

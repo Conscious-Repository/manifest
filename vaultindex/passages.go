@@ -133,3 +133,73 @@ func (ix *Index) Passages(text, current string, allowed, excluded []string) ([]P
 	}
 	return out, rows.Err()
 }
+
+// LinkedPassage resolves an explicit wikilink to one current knowledge note.
+// Unlike FTS excerpts, it also works when the person's name occurs only in the
+// filename. Ambiguous basenames never silently choose another note.
+func (ix *Index) LinkedPassage(target, current string, excluded []string) (*Passage, error) {
+	target = strings.TrimSpace(strings.Split(strings.Split(target, "|")[0], "#")[0])
+	if target == "" {
+		return nil, nil
+	}
+	target = strings.TrimSuffix(target, ".md")
+	rows, err := ix.db.Query(`SELECT path,name,date FROM notes WHERE path=? OR lower(name)=lower(?) LIMIT 10`, target+".md", target)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var candidates []Passage
+	for rows.Next() {
+		var p Passage
+		if err = rows.Scan(&p.Path, &p.Name, &p.Date); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, p)
+	}
+	var found *Passage
+	for i := range candidates {
+		if candidates[i].Path == target+".md" {
+			found = &candidates[i]
+			break
+		}
+	}
+	if found == nil && len(candidates) == 1 {
+		found = &candidates[0]
+	}
+	if found == nil || found.Path == current || ix.cfg.zoneOf(found.Path) != "knowledge" {
+		return nil, nil
+	}
+	for _, folder := range excluded {
+		if folder != "" && pathInFolder(found.Path, folder) {
+			return nil, nil
+		}
+	}
+	full, err := vaultwriter.SafePath(ix.cfg.VaultRoot, found.Path)
+	if err != nil {
+		return nil, nil
+	}
+	fi, err := os.Stat(full)
+	if err != nil || fi.Size() > 4<<20 {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(full)
+	if err != nil || !utf8.Valid(raw) {
+		return nil, nil
+	}
+	note := ParseNote(found.Path, raw, 0, ix.cfg.aiRegions())
+	if note.AIAuthored {
+		return nil, nil
+	}
+	end := len(raw)
+	if end > 4000 {
+		end = 4000
+		for end > 0 && !utf8.RuneStart(raw[end]) {
+			end--
+		}
+	}
+	found.Start = 0
+	found.End = end
+	found.Quote = string(raw[:end])
+	found.Revision = vaultwriter.Revision(raw)
+	return found, nil
+}

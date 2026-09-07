@@ -816,7 +816,7 @@ func main() {
 		// legacy harness path is unchanged.
 		if cfg.Hermes.Enabled {
 			srv.UseHermes(hermes.NewRunner(hermes.Config{
-				Enabled: true, Bin: cfg.Hermes.Bin, Model: cfg.Hermes.Model,
+				Enabled: true, Bin: cfg.Hermes.Bin, Model: cfg.Hermes.Model, AnnotationPython: cfg.Hermes.AnnotationPython,
 				Toolsets: cfg.Hermes.Toolsets, TimeoutSeconds: cfg.Hermes.TimeoutSeconds,
 			}), orDefault(cfg.Hermes.ReadToolsets, DefaultHermesReadToolsets))
 		}

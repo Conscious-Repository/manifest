@@ -25,24 +25,38 @@ assignment preserves unrelated fields, ordering and body bytes.
 The owner clarified on 2026-09-07 that there is no separate source collection.
 Reference retrieval now searches the existing vault automatically, retaining
 knowledge-zone, daily-folder and AI-region filters. The API returns exact current
-excerpts, hashes and byte spans; integration into agent answers is still pending.
+excerpts, hashes and byte spans, supplied to Ask as bounded context. Explicit wikilinks resolve by filename as well as text search.
 The writing UI exposes only comment and ask, with no reference-specific controls.
 
-## Agent feature boundary — not enabled
+## Agent questions
 
-`ask` preserves the question and reports “Ask is not connected yet.” only when invoked. Routine UI contains no runtime/isolation explanations. The installed Hermes runtime was not reachable:
-SSH to `benjamin@metis.tail8f89de.ts.net` returned `Permission denied (publickey)`;
-there is no local Hermes executable. A read-labelled toolset is not enough to
-establish isolation, so this implementation does not route passage questions
-through the generic execution-capable runner.
+Ask uses the installed Hermes provider configuration through a fixed completion
+helper, not `hermes -z`. The audited one-shot runtime enables tools, hooks and
+unattended approvals; the writing helper imports only config/provider resolution
+and sends a bounded chat-completion request with no tools. It has no dispatch
+loop and rejects tool-call responses. The supplied packet includes selected text,
+up to 6 KB of surrounding text, recent discussion, filtered FTS excerpts and up
+to four explicitly linked vault notes. The existing knowledge/daily/AI-region
+boundaries apply to both retrieval paths. No automatic web search is claimed.
 
-Still to implement and verify: bounded automatic surrounding-context packets,
-no-tool model turn/usage/cancellation, durable turn-bound answer ingestion and
-thread continuation, requested alternate phrasings, evidence-backed accuracy
-checks, and the exact mechanics-acceptance/recovery/undo flow. The `writing-agent`
-capability and append-only store API exist and have denial tests; no live model
-turn or acceptance is claimed. The owner has already authorized the bounded
-annotation lane and surrounding context; another blanket approval is not needed.
+Questions, running turns, answers/failures, model and reported token usage are
+append-only events in the writing record. Request IDs deduplicate uncertain POST
+retries; requests interrupted by a restart become retryable failures. The server
+saves only Alfred's reply through the annotation capability, never editor bytes.
+A running answer prevents a file move; editing remains available. The UI polls
+pending turns and preserves the discussion across navigation and reload.
+
+Runtime defaults to `~/.hermes/hermes-agent/venv/bin/python`, overrideable with
+`hermes.annotationPython`. The current Metis runtime resolves a custom local
+chat-completions provider. Unsupported provider modes fail without falling back
+to an execution-capable agent. Completion time is capped at 160 seconds and
+output at 2,400 tokens; there is no daily dollar-cap claim. Cancellation UI,
+web-backed fact checking and mechanics acceptance/undo remain future work.
+
+SSH access uses `ssh -i ~/.ssh/aion_cluster_ed25519 -o IdentitiesOnly=yes
+benjamin@metis.tail8f89de.ts.net`. The key needed unlocking from macOS Keychain via
+`ssh-add --apple-use-keychain ~/.ssh/aion_cluster_ed25519`; the server already
+accepted it. No new credential or expanded permission was needed.
 
 ## Editor choice and build
 
@@ -119,7 +133,7 @@ retired `until`/`verify` fields in the local golden corpus. The identical failur
 was reproduced in a clean `git archive HEAD` checkout. The implementation does
 not change those goals parsers or mutate the owner's golden corpus to mask it.
 
-No commit, push, metis deployment, live model request or email send was performed.
+At the initial UI checkpoint, no commit, push, deployment or live model request had been performed. Subsequent integration is recorded above.
 
 ## UI refinement and regression pass — 2026-09-07
 

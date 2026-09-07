@@ -111,6 +111,14 @@ func (s *Server) handleWritingMove(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	s.writingAskMu.Lock()
+	defer s.writingAskMu.Unlock()
+	for key := range s.writingAsks {
+		if strings.HasPrefix(key, b.Path+"\x00") {
+			http.Error(w, "Wait for the answer before moving this note.", 409)
+			return
+		}
+	}
 	var moveErr error
 	if s.writing != nil {
 		before, after, err := s.writing.RelocatedRecord(b.Path, b.To)
@@ -151,12 +159,12 @@ func (s *Server) handleWritingComments(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid note path", 400)
 		return
 	}
-	d, err := s.writing.Read(p)
+	d, err := s.writingReadRecover(p)
 	if err != nil {
 		http.Error(w, err.Error(), 409)
 		return
 	}
-	writeJSON(w, map[string]any{"document": d, "agentAvailable": false})
+	writeJSON(w, map[string]any{"document": d, "agentAvailable": s.writingComplete != nil})
 }
 func (s *Server) handleWritingComment(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 5<<20)

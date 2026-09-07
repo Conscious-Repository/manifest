@@ -55,6 +55,9 @@ func (s *Server) UseHermes(r *hermes.Runner, readTools string) {
 	if r == nil || !r.Enabled() {
 		return
 	}
+	if r.AnnotationEnabled() {
+		s.writingComplete = r.Annotate
+	}
 	s.hermes = &hermesCfg{runner: r, readTools: readTools, running: map[string]hermesTurn{}, digging: map[string]bool{}}
 	s.agentChatRecover() // the chat store may have been wired first (main.go order)
 }

@@ -33,7 +33,18 @@ type Thread struct {
 	State   string  `json:"state"`
 	Replies []Reply `json:"replies"`
 }
+type Turn struct {
+	ID           string `json:"id"`
+	Thread       string `json:"thread"`
+	Question     string `json:"question"`
+	State        string `json:"state"`
+	Error        string `json:"error,omitempty"`
+	Model        string `json:"model,omitempty"`
+	InputTokens  int    `json:"inputTokens,omitempty"`
+	OutputTokens int    `json:"outputTokens,omitempty"`
+}
 type Event struct {
+	Turn     *Turn   `json:"turn,omitempty"`
 	Type     string  `json:"type"`
 	ID       string  `json:"id"`
 	Thread   string  `json:"thread,omitempty"`
@@ -43,6 +54,7 @@ type Event struct {
 	State    string  `json:"state,omitempty"`
 }
 type Document struct {
+	Turns    []Turn   `json:"turns,omitempty"`
 	Path     string   `json:"path"`
 	Revision string   `json:"revision"`
 	Threads  []Thread `json:"threads"`
@@ -107,6 +119,48 @@ func Parse(raw, p string) (Document, error) {
 			if !found {
 				return out, errors.New("missing thread")
 			}
+		case "ask":
+			if e.Turn == nil || e.Turn.ID != e.ID || e.Turn.State != "running" {
+				return out, errors.New("invalid ask")
+			}
+			valid := false
+			for _, t := range out.Threads {
+				if t.ID == e.Turn.Thread {
+					for _, r := range t.Replies {
+						if r.ID == e.Turn.Question && r.Author == "owner" {
+							valid = true
+						}
+					}
+				}
+			}
+			if !valid {
+				return out, errors.New("ask requires an owner question")
+			}
+			out.Turns = append(out.Turns, *e.Turn)
+		case "ask_result":
+			if e.Turn == nil || (e.Turn.State != "complete" && e.Turn.State != "failed") {
+				return out, errors.New("invalid ask result")
+			}
+			found := false
+			for i, t := range out.Turns {
+				if t.ID == e.Turn.ID && t.Thread == e.Turn.Thread && t.Question == e.Turn.Question && t.State == "running" {
+					out.Turns[i] = *e.Turn
+					found = true
+					if e.Turn.State == "complete" {
+						if e.Reply == nil || e.Reply.Author != "alfred" {
+							return out, errors.New("missing answer")
+						}
+						for j := range out.Threads {
+							if out.Threads[j].ID == t.Thread {
+								out.Threads[j].Replies = append(out.Threads[j].Replies, *e.Reply)
+							}
+						}
+					}
+				}
+			}
+			if !found {
+				return out, errors.New("missing active ask")
+			}
 		default: // Future events remain opaque and byte-preserved.
 		}
 	}
@@ -158,7 +212,7 @@ func (s *Store) Append(p, expected string, e Event, agent bool) (Document, error
 	capName := "writing"
 	if agent {
 		capName = "writing-agent"
-		if e.Type != "reply" || e.Reply == nil || e.Reply.Author != "alfred" {
+		if !((e.Type == "reply" && e.Reply != nil && e.Reply.Author == "alfred") || (e.Type == "ask_result" && e.Turn != nil && (e.Reply == nil || e.Reply.Author == "alfred"))) {
 			return out, errors.New("agent may append replies only")
 		}
 	}

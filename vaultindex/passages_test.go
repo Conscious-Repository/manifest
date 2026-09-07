@@ -47,3 +47,23 @@ func TestPassagesScopeAndRawAnchors(t *testing.T) {
 		t.Fatal("stale index returned an irrelevant passage", err, results)
 	}
 }
+
+func TestLinkedPassageUsesFilenameAndExcludesAgentNotes(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "max example.md"), []byte("An investor interested in longevity."), 0644)
+	os.WriteFile(filepath.Join(root, "agent example.md"), []byte("---\nai-authored: true\n---\nNot owner knowledge."), 0644)
+	ix, err := Open(Config{VaultRoot: root, AIRegions: []string{"agent example.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Close()
+	ix.Rebuild()
+	p, err := ix.LinkedPassage("max example|Max", "draft.md", nil)
+	if err != nil || p == nil || p.Quote != "An investor interested in longevity." {
+		t.Fatal(p, err)
+	}
+	p, err = ix.LinkedPassage("agent example", "draft.md", nil)
+	if err != nil || p != nil {
+		t.Fatal("agent context leaked", p, err)
+	}
+}

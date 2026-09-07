@@ -38,3 +38,5 @@ kairos-runner
 
 # Reproducible editor build dependencies
 /tools/writing-editor/node_modules/
+
+**/__pycache__/

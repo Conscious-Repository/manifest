@@ -179,7 +179,7 @@ function writeSelection(d,range){
 }
 async function writeLoadComments(d){
   const path=d.path,request=d.commentRequest=(d.commentRequest||0)+1;
-  try{const data=await writeFetch('/api/writing/comments?path='+encodeURIComponent(path));if(path!==d.path||request!==d.commentRequest)return;d.comments=data.document;d.agentAvailable=data.agentAvailable;d.commentError='';writeRenderComments(d);writeMark(d)}catch(e){if(path!==d.path||request!==d.commentRequest)return;d.commentError='Could not load comments.';writeRenderComments(d)}
+  try{const data=await writeFetch('/api/writing/comments?path='+encodeURIComponent(path));if(path!==d.path||request!==d.commentRequest)return;d.comments=data.document;d.agentAvailable=data.agentAvailable;d.commentError='';writeRenderComments(d);writeMark(d);writePollComments(d)}catch(e){if(path!==d.path||request!==d.commentRequest)return;d.commentError='Could not load comments.';writeRenderComments(d)}
 }
 function writeLocate(d,anchor){
   const raw=writeBytes(d);let start=-1;
@@ -228,7 +228,7 @@ function writeRenderComments(d){
     const input=writeInput(d,'new',d.pendingBody,value=>{d.pendingBody=value;d.askError=''});
     const actions=el('div','write-actions');
     const comment=pillLight('comment',()=>writePost(d,{body:input.value,anchor:d.pending}));
-    const ask=pillLight('ask',()=>{d.askError='Ask is not connected yet.';writeRenderComments(d);writingUI.margin.querySelector('textarea')?.focus()});
+    const ask=pillLight('ask',()=>writeAsk(d,{body:input.value,anchor:d.pending}));
     comment.disabled=ask.disabled=d.posting||!input.value.trim();actions.append(comment,ask);draft.append(input,actions);
     if(d.askError){const error=el('p','write-comment-note',d.askError);error.setAttribute('role','status');draft.append(error)}margin.append(draft);
   }
@@ -242,10 +242,15 @@ function writeRenderComments(d){
     const more=writeIcon('···','Comment actions',async()=>{const choice=await chooseActionMenu(more,[{label:t.state==='open'?'resolve':'reopen',value:t.state==='open'?'resolved':'open'},{label:'dismiss',value:'dismissed'}]);if(choice)writePost(d,{thread:t.id,state:choice.value})});top.append(quote,more);card.append(top);
     if(!range)card.append(el('span','write-comment-note','Passage changed'));
     if(t.state!=='open')card.append(el('span','write-comment-note',t.state));
+    const turns=(d.comments?.turns||[]).filter(turn=>turn.thread===t.id);
+    const latest=turns.at(-1);
+    if(latest?.state==='running'){const progress=el('p','write-comment-note','Thinking…');progress.setAttribute('role','status');card.append(progress)}
+    if(latest?.state==='failed'){card.append(el('p','write-comment-note',latest.error||'Could not get an answer.'),pillLight('retry',()=>writeAskTurn(d,t.id,latest.question)))}
+    if(d.askRetry?.thread===t.id&&latest?.state!=='running')card.append(pillLight('retry ask',()=>writeAskTurn(d,t.id,d.askRetry.question)));
     t.replies.forEach(reply=>{const row=el('div','write-reply');row.append(el('span','write-comment-meta',(reply.author==='owner'?'you':reply.author)+' · '+fmtWhen(reply.at)),el('div','write-reply-body',reply.body));card.append(row)});
     if(d.expanded===t.id||d.replyDrafts?.[t.id]){
       const input=writeInput(d,t.id,d.replyDrafts?.[t.id],value=>{(d.replyDrafts||={})[t.id]=value});
-      const actions=el('div','write-actions');const reply=pillLight('comment',()=>writePost(d,{thread:t.id,body:input.value}));const ask=pillLight('ask',()=>showToast('Ask is not connected yet.',null,'info'));reply.disabled=ask.disabled=d.posting||!input.value.trim();actions.append(reply,ask);card.append(input,actions);
+      const actions=el('div','write-actions');const reply=pillLight('comment',()=>writePost(d,{thread:t.id,body:input.value}));const ask=pillLight('ask',()=>writeAsk(d,{thread:t.id,body:input.value}));reply.disabled=ask.disabled=d.posting||!input.value.trim();actions.append(reply,ask);card.append(input,actions);
     }else card.append(pillLight('reply',()=>{d.expanded=t.id;writeRenderComments(d);margin.querySelectorAll('textarea').forEach(input=>{if(input.dataset.draft===t.id)input.focus()})}));
     margin.append(card);
   });
@@ -261,8 +266,33 @@ async function writePost(d,payload){
     d.commentRequest=(d.commentRequest||0)+1;d.comments=doc;
     if(!payload.thread){if(d.pending===pending&&d.pendingBody===payload.body){d.pending=null;d.pendingBody=''}d.expanded=null}
     else if(payload.body&&d.replyDrafts?.[payload.thread]===payload.body)delete d.replyDrafts[payload.thread];
-    writeMark(d);
+    writeMark(d);return doc;
   }catch(e){showToast(e.message,null,'error');if(e.status===409)await writeLoadComments(d)}finally{d.posting=false;writeRenderComments(d)}
+}
+async function writeAsk(d,payload){
+  if(d.posting||d.askSubmitting||!payload.body?.trim())return;
+  if(!d.agentAvailable){d.askError='Ask is unavailable on this host.';writeRenderComments(d);return}
+  if(d.comments?.turns?.some(t=>t.state==='running')){showToast('An answer is already in progress.',null,'info');return}
+  d.askSubmitting=true;
+  try{
+    const doc=await writePost(d,payload);if(!doc)return;
+    const thread=payload.thread?doc.threads.find(t=>t.id===payload.thread):doc.threads.at(-1);
+    const question=thread?.replies.at(-1);if(!question)return;
+    await writeAskTurn(d,thread.id,question.id);
+  }finally{d.askSubmitting=false}
+}
+async function writeAskTurn(d,thread,question){
+  // Keep this ID for network retries, including an uncertain POST response.
+  const key=thread+':'+question;
+  const attempt=(d.askAttempts||={})[key]||=((crypto.randomUUID()));
+  try{const doc=await writeFetch('/api/writing/ask',{path:d.path,thread,question,id:attempt});d.commentRequest=(d.commentRequest||0)+1;d.comments=doc;d.expanded=null;d.askError='';d.askRetry=null;writeRenderComments(d);writePollComments(d)}
+  catch(e){d.askError=e.message;d.askRetry={thread,question};showToast(e.message,null,'error');await writeLoadComments(d)}
+}
+function writePollComments(d){
+  clearTimeout(d.commentPoll);
+  const turns=d.comments?.turns||[];
+  for(const turn of turns){if(turn.state==='failed'&&d.askAttempts)delete d.askAttempts[turn.thread+':'+turn.question]}
+  if(turns.some(t=>t.state==='running'))d.commentPoll=setTimeout(()=>{if(writingUI.documents.has(d.path))writeLoadComments(d)},1500);
 }
 window.addEventListener('beforeunload',e=>{if([...writingUI.documents.values()].some(d=>writeDirty(d)||d.pendingBody?.trim()||Object.values(d.replyDrafts||{}).some(v=>v.trim()))){e.preventDefault();e.returnValue=''}});
 window.addEventListener('storage',e=>{const d=writingUI.active;if(d&&e.key?.startsWith('manifest.writing.draft.'+writingUI.vaultID+'.'+encodeURIComponent(d.path)+'.')&&e.key!==writeRecoveryKey(d)){d.recoveryError='This note is also open in another tab. Saves still check the file revision.';writeStatus(d)}});

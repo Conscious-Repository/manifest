@@ -173,9 +173,10 @@ type Config struct {
 // chat, dig and scaffold turns. Work-order turns (plan/go) carry their own
 // longer per-turn budget (server.hermesTurnBudget) and ignore this value.
 type HermesConfig struct {
-	Enabled bool   `json:"enabled"`
-	Bin     string `json:"bin"`
-	Model   string `json:"model"`
+	AnnotationPython string `json:"annotationPython"`
+	Enabled          bool   `json:"enabled"`
+	Bin              string `json:"bin"`
+	Model            string `json:"model"`
 	// Toolsets is the general -t scope (used by the go phase in Phase 2).
 	Toolsets string `json:"toolsets"`
 	// ReadToolsets is the read-only -t scope applied to plan/comment turns so a

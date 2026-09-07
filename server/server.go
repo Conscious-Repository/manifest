@@ -2,6 +2,7 @@ package server
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
@@ -37,6 +38,7 @@ import (
 	"manifest/gmailsync"
 	"manifest/goals"
 	"manifest/graph"
+	"manifest/hermes"
 	"manifest/ledger"
 	"manifest/manifestmcp"
 	"manifest/portals"
@@ -78,7 +80,10 @@ type Server struct {
 	// hermes routes @hermes off the excalibur harness onto the owner's real
 	// do-bot (the local Hermes Agent CLI). Nil → the legacy harness path. Its
 	// type + logic live in hermes_delegate.go.
-	hermes *hermesCfg
+	hermes          *hermesCfg
+	writingAskMu    sync.Mutex
+	writingAsks     map[string]bool
+	writingComplete func(context.Context, any) (hermes.AnnotationResult, error)
 	// deepseekStatePath: the last explicit portal test's result (dataDir,
 	// per-machine) — the DegradedPortal feed signal reads it (Phase 7).
 	deepseekStatePath string
@@ -869,6 +874,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/writing/passages", s.handleWritingPassages)
 	mux.HandleFunc("GET /api/writing/comments", s.handleWritingComments)
 	mux.HandleFunc("POST /api/writing/comments", s.handleWritingComment)
+	mux.HandleFunc("POST /api/writing/ask", s.handleWritingAsk)
 	mux.HandleFunc("GET /api/writing/files", s.handleWritingFiles)
 	mux.HandleFunc("POST /api/writing/note", s.handleWritingCreate)
 	mux.HandleFunc("POST /api/writing/move", s.handleWritingMove)
