@@ -183,7 +183,7 @@ a.rec-seed-name:hover { text-decoration: underline; }
 .rec-reject-reason { width: 100%; margin-top: var(--sp-3); }
 
 /* inspector */
-.rec-inspector { overflow-y: auto; max-height: 100vh; }
+.rec-inspector { display: block; width: 44%; max-width: 520px; overflow-y: auto; max-height: 100vh; }
 /* a view that has nothing to inspect gives its width back to the content */
 .rec-shell.rec-wide .rec-inspector { display: none; }
 .rec-insp-field { align-items: flex-start; }
@@ -607,3 +607,18 @@ a.rec-place-name:hover { text-decoration: underline; }
 }
 
 .rec-scaffold-more { font-size: 11px; }
+
+/* Review uses the same evidence and decisions as search history. */
+.rec-view-purpose { font-size: var(--fs-md); color: var(--muted); line-height: 1.6; margin: 0 0 var(--sp-7); }
+.rec-review-list { display: flex; flex-direction: column; gap: var(--sp-7); }
+.rec-review-count { padding: var(--sp-3) 0; }
+.rec-review-result { min-width: 0; }
+.rec-review-context { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-3); overflow-wrap: anywhere; }
+.rec-background { display: flex; flex-direction: column; gap: var(--sp-6); padding: var(--sp-6) 0; }
+.rec-background-text { font-size: var(--fs-md); line-height: 1.6; overflow-wrap: anywhere; color: var(--text); }
+.rec-background-item a { font-size: var(--fs-sm); display: inline-block; margin-top: var(--sp-3); }
+.rec-card-coverage { font-size: var(--fs-xs); color: var(--muted); padding-top: var(--sp-3); line-height: 1.5; }
+.rec-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.rec-resume-section { border-top: 1px solid var(--line); margin-top: var(--sp-6); padding-top: var(--sp-4); }
+.rec-resume-section summary { cursor: pointer; color: var(--text); }

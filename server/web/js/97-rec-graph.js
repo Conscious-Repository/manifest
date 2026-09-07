@@ -1103,6 +1103,10 @@ function rgEmpty(data) {
   box.append(el("div", "rg-empty-head",
     rgInit().busy ? "updating graph…" : totals.edges ? "nothing to draw from here" : "the graph has no edges yet"));
   (data.missing || []).forEach((m) => box.append(el("div", "rg-empty-do", m)));
+  box.append(el("div", "rg-empty-do", "This view shows recorded connections from the selected person. A disconnected graph does not mean there is no possible introduction."));
+  const review = el("button", "pill light", "Review search results →");
+  review.onclick = () => { recSourceLayout = "review"; recNav("sources"); };
+  box.append(review);
   const acts = el("div", "rg-acts");
   const people = el("button", "pill light", "open PEOPLE →");
   people.onclick = () => recNav("board");

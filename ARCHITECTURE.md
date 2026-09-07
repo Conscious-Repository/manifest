@@ -170,6 +170,16 @@ promotion from harness to vault crosses only through the human gates
 syncs. Deployment is a repo artifact (`deploy/`, `make deploy`),
 operator-owned.
 
+**Owner workflow, 2026-09-07:** for completed, tested Manifest changes, the
+normal delivery flow is commit → push to `main` → `make deploy` to Metis →
+verify the live surface, then let Benjamin test at his usual link. This is
+standing authorization for that delivery flow; do not stop at a local preview
+or ask again for routine deployment. Benjamin is the only user and explicitly
+prefers live production iteration ("we can play in prod"). This authorizes the
+normal build/deploy/UI test loop; candidate decisions and outbound messages still
+follow the specific task's authorization. A task-specific instruction to stay local,
+plan only, or defer deployment takes precedence.
+
 ## 9. Identity doctrine
 
 Every named thing is a note; its kind is a category; references are

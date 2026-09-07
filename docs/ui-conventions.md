@@ -322,3 +322,15 @@ work folds away. Task-specific Chat and task panels reuse `approvalCardEl`, incl
 its guarded decision controls, while Feed retains the same pending records. No
 second approval state or frontend framework is introduced. Unsent message drafts
 survive panel repaint and task switching for the current page session.
+
+
+### Recruiting review (2026-09-07)
+
+Sources opens a review queue; search history is an alternate view. Factual excerpts
+keep their source links and missing fields explicit. A listed publication is not
+an inferred skill. Candidate inspectors belong only to the visible People queue;
+previous/next follows that queue. On tablets the selected candidate takes the
+content pane, and on phones it uses the shared sheet. Mobile recruiting navigation
+keeps its four views visible and folds roles/sync. Full resumes retain their source
+text with a deterministic outline of standalone headings. Model-generated briefs
+are a separate planned feature; current excerpts must not be labeled AI summaries.
