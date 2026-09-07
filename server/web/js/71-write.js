@@ -10,7 +10,7 @@ function writeEOL(raw) {
 function writeBytes(d,text=d.editor.text()){return d.eol==='\r\n'?text.replace(/\n/g,'\r\n'):text}
 function writeDirty(d){return writeBytes(d)!==d.base}
 async function writeFetch(url,body,method='POST'){
-  const r=await fetch(url,body===undefined?undefined:{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r=await fetch(url,{signal:AbortSignal.timeout(30000),...(body===undefined?{}:{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})});
   if(!r.ok){const text=await r.text();let detail;try{detail=JSON.parse(text)}catch(e){}const error=new Error(detail?.missing?'This file was deleted or moved outside Manifest.':detail?.revision?'This file changed outside this editor.':text);error.status=r.status;error.detail=detail;throw error}
   return r.json();
 }
@@ -24,10 +24,10 @@ function writeRecover(d){
 }
 function writeStatus(d){
   if(writingUI.active!==d)return;
-  writingUI.status.textContent=d.saving?'saving…':d.error||d.recoveryError||(d.readOnly?'read only':writeDirty(d)?'unsaved changes':'saved');
+  writingUI.status.textContent=d.saving?'saving…':d.error||d.recoveryError||(d.readOnly?'read only':writeDirty(d)?'saving…':'saved');
   writingUI.save.disabled=d.saving||d.readOnly||!writeDirty(d);
   writingUI.title.textContent=d.path.replace(/^.*\//,'').replace(/\.md$/i,'');
-  writingUI.title.hidden=true;writingUI.path.textContent=d.path.replace(/\.md$/i,'').split('/').join(' / ');writingUI.path.title=d.path;writingUI.documentActions?.forEach(b=>b.hidden=false);writingUI.save.hidden=!writeDirty(d)&&!d.saving;
+  writingUI.title.hidden=true;writingUI.path.textContent=d.path.replace(/\.md$/i,'').split('/').join(' / ');writingUI.path.title=d.path;writingUI.documentActions?.forEach(b=>b.hidden=false);writingUI.save.hidden=!writeDirty(d)||!d.error||d.saving;
   const count=(d.editor.text().replace(/^---\n[\s\S]*?\n---(?:\n|$)/,'').match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)||[]).length;writingUI.count.textContent=count+' '+(count===1?'word':'words');writeTabs();
 }
 function writeBuild(){
@@ -80,7 +80,8 @@ async function writeOpen(p){
     const eol=writeEOL(note.raw),d={path:note.path,base:note.raw,revision:note.revision,eol:eol.eol,readOnly:note.readOnly||eol.mixed,source:false,comments:null,error:eol.mixed?'Mixed line endings: read only to preserve exact bytes.':'',pending:null};
     writingUI.vaultID=note.vaultID;
     const host=el('div','write-editor');
-    d.editor=ManifestEditor.create(host,{text:eol.text,readOnly:d.readOnly,files:()=>writingUI.files,openComment:id=>{d.expanded=id;writeRenderComments(d);writingUI.margin.hidden=false;if(window.innerWidth<=1100&&window.mfSheet)writeMarginSheet()},openLink:target=>{const p=target.split("#")[0];const found=writingUI.files.find(f=>f.path.replace(/\.md$/i,"").toLowerCase()===p.toLowerCase()||f.name.toLowerCase()===p.toLowerCase());if(found)writeNavigate(found.path);else showToast("Linked note not found",null,"info")},save:()=>writeSave(d),comment:()=>writeCompose(),change:()=>{d.error='';writeRecover(d);writeStatus(d);queueMicrotask(()=>{if(writingUI.documents.has(d.path))writeMark(d)})},selection:range=>writeSelection(d,range)});
+    d.recovering=true;
+    d.editor=ManifestEditor.create(host,{text:eol.text,readOnly:d.readOnly,files:()=>writingUI.files,openComment:id=>{d.expanded=id;writeRenderComments(d);writingUI.margin.hidden=false;if(window.innerWidth<=1100&&window.mfSheet)writeMarginSheet()},openLink:target=>{const p=target.split("#")[0];const found=writingUI.files.find(f=>f.path.replace(/\.md$/i,"").toLowerCase()===p.toLowerCase()||f.name.toLowerCase()===p.toLowerCase());if(found)writeNavigate(found.path);else showToast("Linked note not found",null,"info")},save:()=>writeSave(d),comment:()=>writeCompose(),change:()=>writeChanged(d),selection:range=>writeSelection(d,range)});
     d.host=host;writingUI.documents.set(p,d);
     try{const pref=JSON.parse(localStorage.getItem(writePreferenceKey(d))||'null');if(pref){d.source=!!pref.source;d.editor.setSource(d.source);d.expanded=pref.expanded;if(pref.revision===d.revision){d.scroll=pref.scroll;d.editor.restore(pref.anchor||0,pref.head||0)}}}catch(e){}
     d.editor.view.scrollDOM.addEventListener('scroll',()=>{if(writingUI.active===d)writingUI.selection.hidden=true});
@@ -91,14 +92,16 @@ async function writeOpen(p){
       const choice=await choosePath({title:'Recover unsaved writing?',items:recoveries.sort((a,b)=>b.at-a.at).map(x=>({label:'recover draft',detail:new Date(x.at).toLocaleString()+(x.window!==writingWindow?' · another tab':''),value:x})).concat([{label:'keep the saved version; retain recovery copies',value:null}])});
       if(choice?.value){const x=choice.value;d.base=x.base;d.revision=x.revision;d.editor.setText(x.text);writeRecover(d);writeStatus(d)}
     }
+    d.recovering=false;writeQueueSave(d);writeRefresh(d);writeStartRefresh();
   }catch(e){writingUI.status.textContent=e.message}
 }
 function writeMount(d){
-  const old=writingUI.active;if(old)old.scroll=old.editor.view.scrollDOM.scrollTop;
+  const old=writingUI.active;if(old){old.scroll=old.editor.view.scrollDOM.scrollTop;if(old!==d)writeFlush(old)}
   writingUI.active=d;writingUI.editorHost.replaceChildren(d.host);
   d.editor.view.requestMeasure();if(d.scroll!==undefined)d.editor.view.scrollDOM.scrollTop=d.scroll;
   writingUI.notice.hidden=!d.conflict; if(d.conflict)writeConflict(d);
   writingUI.selection.hidden=true;writeStatus(d);writeRenderComments(d);writeMark(d);
+  writeRefresh(d);
 }
 function writeTabs(){
   const signature=JSON.stringify([...writingUI.documents.values()].map(d=>[d.path,writeDirty(d),d===writingUI.active]));
@@ -113,18 +116,71 @@ function writeTabs(){
 }
 function writeIcon(text,label,action){const b=el('button','write-icon',text);b.setAttribute('aria-label',label);b.title=label;b.onclick=action;return b}
 async function writeClose(d){
-  if(d.posting||d.saving)return;
+  if(d.posting||d.moving)return;
   if(d.pendingBody?.trim()||Object.values(d.replyDrafts||{}).some(v=>v.trim())){const choice=await choosePath({title:'Unsent comment',items:[{label:'keep writing',value:'keep'},{label:'discard comment and close',value:'close'}]});if(choice?.value!=='close')return}
-  if(writeDirty(d)){const choice=await choosePath({title:'Unsaved changes',items:[{label:'save and close',value:'save'},{label:'keep writing',value:'cancel'},{label:'close; retain a local recovery copy',value:'close'}]});if(!choice||choice.value==='cancel')return;if(choice.value==='save'&&!await writeSave(d))return;writeRecover(d)}
+  if(d.saving||writeDirty(d))await writeSave(d);
+  if(writeDirty(d)){const choice=await choosePath({title:'Unsaved changes',items:[{label:'keep writing',value:'cancel'},{label:'close; retain a local recovery copy',value:'close'}]});if(choice?.value!=='close')return;writeRecover(d)}
   const docs=[...writingUI.documents.values()],index=docs.indexOf(d),adjacent=docs[index+1]||docs[index-1];
-  writingUI.documents.delete(d.path);d.editor.destroy();if(writingUI.active===d){writingUI.active=null;const next=adjacent;if(next)writeNavigate(next.path);else{location.hash='#/write';showWriting('')}}else writeTabs();
+  d.closed=true;writeClearSaveTimers(d);clearTimeout(d.commentPoll);writingUI.documents.delete(d.path);d.editor.destroy();if(writingUI.active===d){writingUI.active=null;const next=adjacent;if(next)writeNavigate(next.path);else{location.hash='#/write';showWriting('')}}else writeTabs();
 }
 async function writeSave(d){
-  if(!d||d.saving||d.readOnly)return false;if(!writeDirty(d))return true;
-  const raw=writeBytes(d);d.saving=true;d.error='';writeRecover(d);writeStatus(d);
-  try{const result=await writeFetch('/api/note',{path:d.path,body:raw,ifRevision:d.revision},'PUT');d.base=raw;d.revision=result.revision;d.conflict=null;if(writingUI.active===d)writingUI.notice.hidden=true;writeRecover(d);return true}
-  catch(e){d.error=e.message;if(e.status===409&&e.detail){d.conflict=e.detail;writeConflict(d)}return false}
-  finally{d.saving=false;writeStatus(d)}
+  if(!d||d.closed||d.readOnly||d.recovering||d.moving||d.conflict)return false;
+  if(d.savePromise){if(!await d.savePromise)return false;return writeSave(d)}
+  if(!writeDirty(d))return true;
+  writeClearSaveTimers(d);
+  const raw=writeBytes(d);d.saving=true;d.saveEpoch=(d.saveEpoch||0)+1;d.error='';writeRecover(d);writeStatus(d);
+  d.savePromise=(async()=>{
+    try{const result=await writeFetch('/api/note',{path:d.path,body:raw,ifRevision:d.revision},'PUT');d.base=raw;d.revision=result.revision;d.retryDelay=0;d.conflict=null;if(writingUI.active===d)writingUI.notice.hidden=true;writeRecover(d);return true}
+    catch(e){d.error=e.status?e.message:'Could not save. Retrying…';if(e.status===409&&e.detail){
+      // A lost acknowledgement is safe to accept when the server has exactly
+      // the bytes we submitted. Never overwrite a different external version.
+      if(e.detail.raw===raw&&!e.detail.missing){d.base=raw;d.revision=e.detail.revision;d.error='';writeRecover(d);return true}
+      d.conflict=e.detail;writeConflict(d);
+    }else if(!e.status||e.status>=500)d.retryDelay=Math.min((d.retryDelay||1000)*2,30000);return false}
+    finally{d.saving=false;d.savePromise=null;writeStatus(d);if(!d.error||d.retryDelay)writeQueueSave(d,d.retryDelay||800)}
+  })();
+  return d.savePromise;
+}
+
+function writeClearSaveTimers(d){clearTimeout(d.saveTimer);clearTimeout(d.saveMaxTimer);d.saveTimer=d.saveMaxTimer=null}
+function writeQueueSave(d,delay=800){
+  if(d.closed||d.readOnly||d.recovering||d.applying||d.moving||d.posting||d.conflict||!writeDirty(d))return;
+  clearTimeout(d.saveTimer);d.saveTimer=setTimeout(()=>writeFlush(d),delay);
+  if(!d.saveMaxTimer)d.saveMaxTimer=setTimeout(()=>writeFlush(d),Math.max(5000,delay));
+}
+function writeFlush(d){if(!d||d.closed||d.conflict||d.recovering||d.moving||d.posting)return;writeClearSaveTimers(d);if(d.editor.view?.composing){writeQueueSave(d);return}if(!d.saving)void writeSave(d)}
+function writeChanged(d){
+  if(d.applying)return;
+  d.editEpoch=(d.editEpoch||0)+1;if(!d.conflict)d.error='';writeRecover(d);writeStatus(d);writeQueueSave(d);
+  queueMicrotask(()=>{if(!d.closed&&writingUI.documents.has(d.path))writeMark(d)});
+}
+function writeApplySaved(d,note){
+  const eol=writeEOL(note.raw);d.applying=true;
+  try{d.base=note.raw;d.revision=note.revision;d.eol=eol.eol;d.readOnly=!!note.readOnly||eol.mixed;d.editor.syncText(eol.text);d.editor.setReadOnly(d.readOnly)}finally{d.applying=false}
+  d.conflict=null;d.error=eol.mixed?'Mixed line endings: read only to preserve exact bytes.':'';d.retryDelay=0;d.selection=null;
+  if(writingUI.active===d){writingUI.notice.hidden=true;writingUI.selection.hidden=true}
+  writeRecover(d);writeStatus(d);writeMark(d);
+}
+async function writeRefresh(d){
+  if(!d||d.closed||d.refreshing||d.saving||d.recovering||d.moving||d.posting||d.editor.view?.composing)return;
+  const path=d.path,revision=d.revision,saveEpoch=d.saveEpoch,editEpoch=d.editEpoch;d.refreshing=true;
+  try{
+    const r=await fetch('/api/note?path='+encodeURIComponent(path),{headers:d.conflict?{}:{'If-None-Match':'"'+revision+'"'},cache:'no-store',signal:AbortSignal.timeout(10000)});
+    if(r.status===304)return;
+    const note=r.ok?await r.json():null;
+    if(d.closed||path!==d.path||d.moving||d.saving||d.recovering||d.posting||d.editor.view?.composing||revision!==d.revision||saveEpoch!==d.saveEpoch||editEpoch!==d.editEpoch)return;
+    if(r.status===404){d.conflict={missing:true};d.error='This file was deleted or moved outside Manifest.';writeClearSaveTimers(d);writeConflict(d);writeStatus(d);return}
+    if(!note)return;
+    if(note.revision===d.revision){if(d.conflict){d.conflict=null;d.error='';if(writingUI.active===d)writingUI.notice.hidden=true;writeStatus(d);writeQueueSave(d)}return}
+    if(writeDirty(d)&&note.raw!==writeBytes(d)){d.conflict={raw:note.raw,revision:note.revision};d.error='This file changed outside this editor.';writeClearSaveTimers(d);writeConflict(d);writeStatus(d);return}
+    writeApplySaved(d,note);
+  }catch(e){/* Keep the editor and its recovery draft usable while offline. */}
+  finally{d.refreshing=false}
+}
+function writeStartRefresh(){
+  if(writingUI.refreshTimer)return;
+  const tick=()=>{writingUI.refreshTimer=null;if(!writingUI.documents.size)return;if(!document.hidden&&!writingUI.view.hidden)writeRefresh(writingUI.active);writingUI.refreshTimer=setTimeout(tick,2000)};
+  writingUI.refreshTimer=setTimeout(tick,2000);
 }
 function writeConflict(d){
   if(writingUI.active!==d)return;
@@ -132,7 +188,7 @@ function writeConflict(d){
   box.append(el('strong','','The saved file changed. Your writing is still here.'));
   const other=el('details','write-compare');other.append(el('summary','','compare with the current file'));const pre=el('pre','',d.conflict.missing?'The file was deleted or moved.':d.conflict.raw);other.append(pre);box.append(other);
   const actions=el('div','write-actions');actions.append(pillLight('export my draft',()=>writeExport(d)));
-  if(!d.conflict.missing){actions.append(pillLight('save mine over this version',async()=>{d.revision=d.conflict.revision;await writeSave(d)}),pillLight('use this saved version',()=>{const c=d.conflict;d.base=c.raw;d.revision=c.revision;d.eol=writeEOL(c.raw).eol;d.editor.setText(writeEOL(c.raw).text);if(writeEOL(c.raw).mixed){d.readOnly=true;d.editor.setReadOnly(true)}d.conflict=null;d.error='';box.hidden=true;writeRecover(d);writeStatus(d)}))}
+  if(!d.conflict.missing){actions.append(pillLight('save mine over this version',async()=>{d.revision=d.conflict.revision;d.conflict=null;await writeSave(d)}),pillLight('use this saved version',()=>writeApplySaved(d,d.conflict)))}
   box.append(actions);
 }
 async function writeOpenPicker(){
@@ -151,7 +207,6 @@ async function writeMenu(){
   if(choice.value==='export'){writeExport(d);return}
   if(choice.value==='find'){d.editor.find();return}
   if(d.readOnly){showToast('This file is read only.',null,'error');return}
-  if(writeDirty(d)){showToast('Save your changes before moving or renaming this file.',null,'info');return}
   let to;
   if(choice.value==='rename'){
     const name=await choosePath({title:'Rename file',placeholder:d.path.replace(/^.*\//,''),items:[],createLabel:'rename to'});if(!name)return;
@@ -161,15 +216,17 @@ async function writeMenu(){
     const data=await writeFetch('/api/writing/files');const folder=await choosePath({title:'Move file to…',placeholder:'type a folder…',items:data.folders.map(p=>({label:p||'/',value:p}))});if(!folder)return;
     to=(folder.value?folder.value+'/':'')+d.path.replace(/^.*\//,'');
   }
+  if(!await writeSave(d)||writeDirty(d))return;
+  d.moving=true;d.editor.setReadOnly(true);writeClearSaveTimers(d);
   try{
     const result=await writeFetch('/api/writing/move',{path:d.path,to,ifRevision:d.revision});
     const old=d.path;writingUI.documents.delete(old);d.path=result.path;writingUI.documents.set(d.path,d);writeNavigate(d.path);writeLoadComments(d);
     if(result.warning)showToast(result.warning,null,'error');
-  }catch(e){showToast(e.message,null,'error')}
+  }catch(e){showToast(e.message,null,'error')}finally{d.moving=false;d.editor.setReadOnly(d.readOnly);writeQueueSave(d)}
 }
 function writeExport(d){const url=URL.createObjectURL(new Blob([writeBytes(d)],{type:'text/markdown;charset=utf-8'}));const a=el('a');a.href=url;a.download=d.path.replace(/^.*\//,'');a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function writeSelection(d,range){
-  if(writingUI.active!==d||writingUI.view.hidden)return;
+  if(d.applying||writingUI.active!==d||writingUI.view.hidden)return;
   writeRemember(d);
   const popup=writingUI.selection;
   if(range.empty||d.readOnly){d.selection=null;popup.hidden=true;return}
@@ -263,13 +320,21 @@ function writeRenderComments(d){
 async function writePost(d,payload){
   if(d.posting||!d.comments||(!payload.state&&!payload.body?.trim()))return;d.posting=true;writeRenderComments(d);
   const path=d.path,pending=d.pending;
-  try{const doc=await writeFetch('/api/writing/comments',{path,revision:d.comments.revision,id:crypto.randomUUID(),...payload});
+  try{
+    if(payload.anchor&&d.editor){
+      if(!await writeSave(d)||writeDirty(d))return;
+      const range=writeLocate(d,payload.anchor);
+      if(!range)throw new Error('The selected passage changed. Select it again; your comment is still here.');
+      const text=d.editor.text(),start=new TextEncoder().encode(writeBytes(d,text.slice(0,range.from))).length,end=new TextEncoder().encode(writeBytes(d,text.slice(0,range.to))).length;
+      payload={...payload,anchor:{...payload.anchor,revision:d.revision,start,end}};
+    }
+    const doc=await writeFetch('/api/writing/comments',{path,revision:d.comments.revision,id:crypto.randomUUID(),...payload});
     if(d.path!==path)return;
     d.commentRequest=(d.commentRequest||0)+1;d.comments=doc;
     if(!payload.thread){if(d.pending===pending&&d.pendingBody===payload.body){d.pending=null;d.pendingBody=''}d.expanded=null}
     else if(payload.body&&d.replyDrafts?.[payload.thread]===payload.body)delete d.replyDrafts[payload.thread];
     writeMark(d);return doc;
-  }catch(e){showToast(e.message,null,'error');if(e.status===409)await writeLoadComments(d)}finally{d.posting=false;writeRenderComments(d)}
+  }catch(e){showToast(e.message,null,'error');if(e.status===409)await writeLoadComments(d)}finally{d.posting=false;writeRenderComments(d);if(d.editor)writeQueueSave(d)}
 }
 async function writeAsk(d,payload){
   if(d.posting||d.askSubmitting||!payload.body?.trim())return;
@@ -297,7 +362,11 @@ function writePollComments(d){
   if(turns.some(t=>t.state==='running'))d.commentPoll=setTimeout(()=>{if(writingUI.documents.has(d.path))writeLoadComments(d)},1500);
 }
 window.addEventListener('beforeunload',e=>{if([...writingUI.documents.values()].some(d=>writeDirty(d)||d.pendingBody?.trim()||Object.values(d.replyDrafts||{}).some(v=>v.trim()))){e.preventDefault();e.returnValue=''}});
-window.addEventListener('storage',e=>{const d=writingUI.active;if(d&&e.key?.startsWith('manifest.writing.draft.'+writingUI.vaultID+'.'+encodeURIComponent(d.path)+'.')&&e.key!==writeRecoveryKey(d)){d.recoveryError='This note is also open in another tab. Saves still check the file revision.';writeStatus(d)}});
+window.addEventListener('storage',e=>{const d=writingUI.active;if(d&&e.key?.startsWith('manifest.writing.draft.'+writingUI.vaultID+'.'+encodeURIComponent(d.path)+'.')&&e.key!==writeRecoveryKey(d))writeRefresh(d)});
+window.addEventListener('blur',()=>{for(const d of writingUI.documents.values())writeFlush(d)});
+window.addEventListener('focus',()=>writeRefresh(writingUI.active));
+window.addEventListener('online',()=>{for(const d of writingUI.documents.values())writeFlush(d);writeRefresh(writingUI.active)});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){for(const d of writingUI.documents.values())writeFlush(d)}else writeRefresh(writingUI.active)});
 
 function writeMarginSheet(){
  const margin=writingUI.margin;if(margin.closest('.mf-sheet-wrap'))return; margin.hidden=false;let release;

@@ -204,6 +204,7 @@ func main() {
 	vw := vaultwriter.New(cfg.VaultPath).
 		WithZoneRoots(cfg.SystemRoot, cfg.ExtrinsicRoot).
 		WithAudit(cfg.DataDir).
+		WithHistory(cfg.DataDir).
 		Grant(
 			// goals.md + "goals <quarter>.md" archives/reviews + .pre-* backups
 			vaultwriter.Capability{Name: "goals", Zone: record.ZoneKnowledge,

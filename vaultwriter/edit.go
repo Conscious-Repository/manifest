@@ -163,8 +163,16 @@ func (w *Writer) WriteNoteIfRevision(rel, raw, expected string) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	// Content-addressed sibling history is independent of the derived index.
+	// Preserve every observed version without creating a sibling per autosave
+	// in the owner's vault. Legacy standalone writers retain sibling history.
 	backup := full + ".pre-write-" + Revision(before)
+	if w.historyDir != "" {
+		dir := filepath.Join(w.historyDir, Revision([]byte(filepath.ToSlash(filepath.Clean(rel)))))
+		if err = os.MkdirAll(dir, 0o700); err != nil {
+			return "", fmt.Errorf("could not create previous-version history: %w", err)
+		}
+		backup = filepath.Join(dir, Revision(before)+".md")
+	}
 	if err = exclusiveBytes(backup, before); err != nil {
 		if !os.IsExist(err) {
 			return "", fmt.Errorf("could not preserve previous version: %w", err)

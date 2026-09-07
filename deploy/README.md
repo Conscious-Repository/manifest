@@ -15,3 +15,9 @@ The metis deployment as repo artifacts (big-change Phase 3a + auto-deploy).
 - `make deploy` / `engine-deploy` / `units-deploy` — immediate operator runs
   (unit-file changes always go through `units-deploy`; the timer only
   rebuilds binaries).
+
+The writing vault uses a 2-second change debounce and a 5-second pull interval
+on both machines, configured with per-root overrides in the two sync units.
+Harness roots retain the default 15-second debounce and 60-second interval.
+After changing sync flags, install the updated units and restart `manifest-sync`
+on both machines; rebuilding the binary alone does not reload a running daemon.

@@ -117,6 +117,9 @@ func TestConflictParksAndResumes(t *testing.T) {
 	if !b.parked {
 		t.Fatal("parked root must stay parked until resolved")
 	}
+	if got := read(t, b.conflictFile()); got != st {
+		t.Fatal("parked cycle retried the same conflict and replaced its marker")
+	}
 
 	// the human resolves REBASE-STYLE (the doctrine's flow: pull --rebase →
 	// fix the file → add → rebase --continue). Mid-rebase, cycles stay parked.
@@ -148,5 +151,46 @@ func TestConflictParksAndResumes(t *testing.T) {
 	a.cycle()
 	if got := read(t, filepath.Join(a.spec.Path, "note.md")); got != "B version\n" {
 		t.Fatalf("post-resolution content did not converge to a: %q", got)
+	}
+}
+
+func TestRootTimingOverrides(t *testing.T) {
+	var d rootDurations
+	if err := d.Set("vault=2s"); err != nil {
+		t.Fatal(err)
+	}
+	if d["vault"] != 2*time.Second {
+		t.Fatal(d)
+	}
+	if _, ok := d["harnesses"]; ok {
+		t.Fatal("unrelated root got override")
+	}
+	for _, bad := range []string{"vault=0s", "vault=-1s", "=2s", "vault=no", "2s"} {
+		if d.Set(bad) == nil {
+			t.Fatalf("accepted %q", bad)
+		}
+	}
+}
+
+func TestSyncPropagatesMovesAndDeletes(t *testing.T) {
+	a, b := rig(t)
+	if err := os.Rename(filepath.Join(a.spec.Path, "note.md"), filepath.Join(a.spec.Path, "renamed.md")); err != nil {
+		t.Fatal(err)
+	}
+	a.cycle()
+	b.cycle()
+	if read(t, filepath.Join(b.spec.Path, "renamed.md")) != "hello\n" {
+		t.Fatal("move lost content")
+	}
+	if _, err := os.Stat(filepath.Join(b.spec.Path, "note.md")); !os.IsNotExist(err) {
+		t.Fatal("old path survived move")
+	}
+	if err := os.Remove(filepath.Join(b.spec.Path, "renamed.md")); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	a.cycle()
+	if _, err := os.Stat(filepath.Join(a.spec.Path, "renamed.md")); !os.IsNotExist(err) {
+		t.Fatal("deleted test note resurrected")
 	}
 }

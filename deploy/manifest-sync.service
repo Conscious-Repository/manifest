@@ -18,6 +18,8 @@ Group=benjamin
 ExecStart=/home/benjamin/.local/bin/manifest-sync \
   -root vault=/private/consciousrepo \
   -root harnesses=/private/harnesses \
+  -root-debounce vault=2s \
+  -root-interval vault=5s \
   -state /home/benjamin/.config/manifest/sync
 Restart=on-failure
 RestartSec=30

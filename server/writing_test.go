@@ -117,3 +117,48 @@ func TestWritingReferencesUseVaultWithoutCollectionSetup(t *testing.T) {
 		t.Fatalf("vault references: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestNoteRefreshUsesExactCurrentBytes(t *testing.T) {
+	root := t.TempDir()
+	ix, err := vaultindex.Open(vaultindex.Config{VaultRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Close()
+	s := New(nil, nil, nil)
+	s.UseIndex(ix)
+	s.UseVault(vaultwriter.New(root))
+	get := func(tag string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", "/api/note?path=note.md", nil)
+		r.Header.Set("If-None-Match", tag)
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		return w
+	}
+	file := filepath.Join(root, "note.md")
+	if err := os.WriteFile(file, []byte("original\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	first := get("")
+	tag := first.Header().Get("ETag")
+	if first.Code != 200 || tag != `"`+vaultwriter.Revision([]byte("original\r\n"))+`"` {
+		t.Fatal(first.Code, tag)
+	}
+	if w := get(tag); w.Code != 304 || w.Body.Len() != 0 {
+		t.Fatal("unchanged note should be empty 304", w.Code)
+	}
+	// External writers bypass the index. Refresh must see their exact bytes now.
+	if err := os.WriteFile(file, []byte("external 🌿"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	changed := get(tag)
+	if changed.Code != 200 || changed.Header().Get("ETag") == tag || !strings.Contains(changed.Body.String(), "external 🌿") {
+		t.Fatal(changed.Code, changed.Body.String())
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if w := get(changed.Header().Get("ETag")); w.Code != 404 {
+		t.Fatal("deleted note hidden by cache", w.Code)
+	}
+}

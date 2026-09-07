@@ -23,9 +23,10 @@ type Writer struct {
 	systemRoot    string // vault-relative system-zone folder for the write guard ("" → "system")
 	extrinsicRoot string // vault-relative extrinsic-zone folder (books/articles) ("" → "extrinsic")
 
-	caps      map[string]Capability // declared write-capabilities (§A3)
-	auditPath string                // append-only write-audit.log ("" = no log)
-	auditMu   sync.Mutex
+	caps       map[string]Capability // declared write-capabilities (§A3)
+	auditPath  string                // append-only write-audit.log ("" = no log)
+	historyDir string                // prior editor bytes, outside the vault when configured
+	auditMu    sync.Mutex
 
 	auditFailures int   // writes that landed without an audit line (see traced)
 	lastAuditErr  error // the most recent such failure
@@ -46,6 +47,16 @@ func (w *Writer) Enabled() bool { return w.vault != "" }
 // VaultRoot returns the configured vault path (for callers that need to read a
 // vault file; writes still go through the guarded methods).
 func (w *Writer) VaultRoot() string { return w.vault }
+
+// WithHistory keeps autosave history out of the notes tree. Hashes isolate vaults
+// and canonical note paths; original bytes remain content addressed and durable.
+// Configure before serving writes. An omitted path retains the legacy backup.
+func (w *Writer) WithHistory(dataDir string) *Writer {
+	if strings.TrimSpace(dataDir) != "" {
+		w.historyDir = filepath.Join(dataDir, "writing-history", Revision([]byte(filepath.Clean(w.vault))))
+	}
+	return w
+}
 
 // ReadVaultFile reads a vault-relative file (read-only, traversal-guarded).
 func (w *Writer) ReadVaultFile(rel string) ([]byte, error) {

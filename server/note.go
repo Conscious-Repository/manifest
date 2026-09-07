@@ -38,6 +38,14 @@ func (s *Server) handleNoteGet(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "note not found", http.StatusNotFound)
 		return
 	}
+	revision := vaultwriter.Revision(raw)
+	etag := `"` + revision + `"`
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	name := strings.TrimSuffix(filepath.Base(rel), ".md")
 	// backlinks to THIS note's name (dated first), AI-authored excluded
 	var backlinks []noteBacklink
@@ -57,7 +65,7 @@ func (s *Server) handleNoteGet(w http.ResponseWriter, r *http.Request) {
 	// write guard refuses them, so the UI hides the edit affordance.
 	readOnly := s.vault == nil || !s.vault.CanUserWrite(filepath.ToSlash(rel)) || !utf8.Valid(raw) || len(raw) > 4<<20
 	writeJSON(w, map[string]any{
-		"path": filepath.ToSlash(rel), "name": name, "raw": string(raw), "revision": vaultwriter.Revision(raw), "vaultID": vaultwriter.Revision([]byte(s.index.VaultRoot())),
+		"path": filepath.ToSlash(rel), "name": name, "raw": string(raw), "revision": revision, "vaultID": vaultwriter.Revision([]byte(s.index.VaultRoot())),
 		"backlinks": backlinks, "isPerson": isPerson,
 		"zone":     s.index.NoteZone(filepath.ToSlash(rel)), // "system" → quiet SYSTEM badge
 		"readOnly": readOnly,

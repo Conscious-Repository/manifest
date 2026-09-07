@@ -15,6 +15,8 @@
     <string>/Users/benjamin/.local/libexec/manifest-sync</string>
     <string>-root</string><string>vault=/Users/benjamin/Documents/index.ben</string>
     <string>-root</string><string>harnesses=/Users/benjamin/harnesses</string>
+    <string>-root-debounce</string><string>vault=2s</string>
+    <string>-root-interval</string><string>vault=5s</string>
     <string>-state</string><string>/Users/benjamin/.config/manifest/sync</string>
   </array>
   <key>RunAtLoad</key><true/>

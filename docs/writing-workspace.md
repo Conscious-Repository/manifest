@@ -87,10 +87,11 @@ completion of the plan's touch/IME and long-document pilot gates.
   transform. Domain stores with previously captured whole-record snapshots still
   have their own concurrency contracts; this is not a repository-wide storage
   transaction migration.
-- Prior observed note bytes are preserved in content-addressed sibling files
-  `<note>.md.pre-write-<SHA256>`. They are durable history, not indexed Markdown.
-  They currently have no pruning UI; retention/backup policy needs owner review
-  before sustained deployment.
+- Prior observed note bytes are preserved under
+  `<dataDir>/writing-history/<vault-hash>/<path-hash>/<revision>.md` in the
+  deployed app. Autosave does not create backup siblings in the vault. History
+  is local to the writing host and has no pruning UI. Standalone Writer callers
+  without a configured history directory retain the legacy sibling fallback.
 - External Obsidian/sync writers do not share Manifest's in-process mutex. There
   remains a check/rename race. The observed prior file is backed up and the
   submitted buffer is retained until acknowledgment; zero-loss filesystem CAS
@@ -182,3 +183,35 @@ The thread displays a useful error instead of an undifferentiated failure.
 Separately, edits around a unique unchanged quotation no longer detach its
 comment or remove surrounding context from Ask. Repeated quotations remain
 unattached when their context cannot identify one occurrence.
+
+### Autosave and live refresh — 2026-09-07
+
+Writing saves after 800 ms of quiet, with a five-second maximum wait during
+continuous typing. Focus loss and tab changes flush pending edits. Save calls
+serialize and keep newer typing dirty until acknowledged. Network failures
+retain recovery drafts and retry with backoff; an uncertain save response is
+accepted on retry only when the saved bytes exactly match the submitted bytes.
+Read-only notes, IME composition, pending recovery choices, moves and unresolved
+conflicts pause automatic writes. Moving or closing a file first flushes its save.
+
+Visible writing tabs check their note every two seconds and on focus. Conditional
+GETs return 304 without running backlink queries when bytes are unchanged. Clean
+buffers accept external edits with a minimal CodeMirror transaction that maps
+caret/selection and undo history without adding an undoable remote edit. Stale
+responses cannot roll back newer typing or saves. Competing unsaved edits retain
+both versions for explicit review. Comment creation refreshes its exact anchor
+after autosave; a deleted/ambiguous passage retains the unsent comment.
+
+The laptop and Metis sync units set `-root-debounce vault=2s` and
+`-root-interval vault=5s`. Harness roots retain their existing 15s/60s defaults.
+This remains Git-based eventual convergence, not character-level collaboration;
+network time and an unresolved Git conflict can delay it. A parked conflict now
+resumes only once upstream is actually incorporated, preventing repeated aborts
+on each fast tick. Existing unrelated rebase/conflict resolution is left alone.
+
+Automated regression cases cover autosave timing, in-flight typing, joined saves,
+offline retry, lost acknowledgements, external refresh, stale responses,
+conflicts/deletions, recovery/IME gating, comment reattachment, exact-byte ETags,
+history outside the vault and two-clone move/delete convergence. Disposable-vault
+browser checks verify save without clicking, live external refresh, undo retaining
+external edits, and comment drafts surviving and submitting after refresh.

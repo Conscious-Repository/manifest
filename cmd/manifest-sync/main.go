@@ -43,6 +43,24 @@ type rootSpec struct {
 
 type rootList []rootSpec
 
+// Optional per-root timing keeps the writing vault responsive without making
+// harness repositories poll at the same frequency.
+type rootDurations map[string]time.Duration
+
+func (r *rootDurations) String() string { return fmt.Sprint(map[string]time.Duration(*r)) }
+func (r *rootDurations) Set(v string) error {
+	name, raw, ok := strings.Cut(v, "=")
+	d, err := time.ParseDuration(raw)
+	if !ok || strings.TrimSpace(name) == "" || err != nil || d <= 0 {
+		return fmt.Errorf("want name=positive-duration, got %q", v)
+	}
+	if *r == nil {
+		*r = rootDurations{}
+	}
+	(*r)[strings.TrimSpace(name)] = d
+	return nil
+}
+
 func (r *rootList) String() string { return fmt.Sprint(*r) }
 func (r *rootList) Set(v string) error {
 	name, path, ok := strings.Cut(v, "=")
@@ -86,11 +104,17 @@ type syncer struct {
 
 func main() {
 	var roots rootList
+	var rootDebounce, rootInterval rootDurations
 	stateDir := flag.String("state", expand("~/.config/manifest/sync"), "conflict/state dir (per-machine, never synced)")
 	debounce := flag.Duration("debounce", 15*time.Second, "quiet period after a change before a sync cycle")
 	interval := flag.Duration("interval", 60*time.Second, "steady pull interval (remote-only changes)")
 	flag.Var(&roots, "root", "name=path of a git root to sync (repeatable)")
+	flag.Var(&rootDebounce, "root-debounce", "name=duration override for a root's quiet period (repeatable)")
+	flag.Var(&rootInterval, "root-interval", "name=duration override for a root's pull interval (repeatable)")
 	flag.Parse()
+	if *debounce <= 0 || *interval <= 0 {
+		log.Fatal("debounce and interval must be positive")
+	}
 	if len(roots) == 0 {
 		log.Fatal("no roots — pass at least one -root name=path")
 	}
@@ -110,11 +134,17 @@ func main() {
 		}
 		s := &syncer{spec: spec, stateDir: *stateDir, host: host,
 			debounce: *debounce, interval: *interval, kick: make(chan struct{}, 1)}
+		if d, ok := rootDebounce[spec.Name]; ok {
+			s.debounce = d
+		}
+		if d, ok := rootInterval[spec.Name]; ok {
+			s.interval = d
+		}
 		s.parked = s.conflictFileExists()
 		wg.Add(1)
 		go func() { defer wg.Done(); s.run(ctx) }()
 		log.Printf("%s: syncing %s (debounce %s, interval %s)%s",
-			spec.Name, spec.Path, *debounce, *interval, map[bool]string{true: " [PARKED on prior conflict]"}[s.parked])
+			spec.Name, spec.Path, s.debounce, s.interval, map[bool]string{true: " [PARKED on prior conflict]"}[s.parked])
 	}
 	wg.Wait()
 }
@@ -122,13 +152,14 @@ func main() {
 // run wires the watcher (events → debounce timer) and the steady ticker into
 // serialized cycles. A failed watcher degrades to interval-only syncing.
 func (s *syncer) run(ctx context.Context) {
-	var timerMu sync.Mutex
 	timer := time.NewTimer(s.debounce) // first cycle shortly after start
+	defer timer.Stop()
 	if w, err := record.NewWatch(s.spec.Path, []string{".git", "vessel", "node_modules"}); err == nil {
 		w.Subscribe(func(record.Event) {
-			timerMu.Lock()
-			timer.Reset(s.debounce)
-			timerMu.Unlock()
+			select {
+			case s.kick <- struct{}{}:
+			default:
+			}
 		})
 		if err := w.Start(ctx); err != nil {
 			log.Printf("%s: watch start failed (interval-only): %v", s.spec.Name, err)
@@ -143,6 +174,8 @@ func (s *syncer) run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.kick:
+			timer.Reset(s.debounce)
 		case <-timer.C:
 			s.cycle()
 		case <-tick.C:
@@ -163,6 +196,14 @@ func (s *syncer) cycle() {
 		}
 		s.clearConflict()
 		log.Printf("%s: conflict resolved by hand — resuming", s.spec.Name)
+	}
+	// A person may be resolving a rebase even without a daemon park marker.
+	// Do not stage, commit, or abort their in-progress resolution.
+	if s.rebaseInProgress() {
+		return
+	}
+	if out, err := s.git("diff", "--name-only", "--diff-filter=U"); err != nil || strings.TrimSpace(out) != "" {
+		return
 	}
 	// stage + commit local changes (everything: this medium's commits are the
 	// sync record, not authored checkpoints)
@@ -223,13 +264,18 @@ func (s *syncer) park(gitOut string) {
 		s.spec.Name, len(paths), strings.Join(paths, ", "))
 }
 
-// canResume: the human finished — no rebase in progress, no unmerged paths.
+// An aborted rebase ALSO has no unmerged paths. Resume only once the upstream
+// is actually incorporated, otherwise a fast interval repeats the same conflict.
 func (s *syncer) canResume() bool {
 	if s.rebaseInProgress() {
 		return false
 	}
 	out, err := s.git("diff", "--name-only", "--diff-filter=U")
-	return err == nil && strings.TrimSpace(out) == ""
+	if err != nil || strings.TrimSpace(out) != "" {
+		return false
+	}
+	_, err = s.git("merge-base", "--is-ancestor", "@{u}", "HEAD")
+	return err == nil
 }
 
 func (s *syncer) rebaseInProgress() bool {
@@ -254,7 +300,9 @@ func (s *syncer) clearConflict() {
 }
 
 func (s *syncer) git(args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", s.spec.Path}, args...)...)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", s.spec.Path}, args...)...)
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0") // never hang on an auth prompt
 	out, err := cmd.CombinedOutput()
 	return string(out), err

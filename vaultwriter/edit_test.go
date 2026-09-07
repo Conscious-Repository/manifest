@@ -43,6 +43,48 @@ func TestEditorExactBytesAndConflicts(t *testing.T) {
 		}
 	}
 }
+
+func TestEditorHistoryOutsideVault(t *testing.T) {
+	root, data := t.TempDir(), t.TempDir()
+	w := New(root).WithHistory(data)
+	rev, err := w.CreateNote("note.md", "original 🌿\r\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.WriteNoteIfRevision("note.md", "next", rev); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(w.historyDir, Revision([]byte("note.md")), rev+".md")
+	if b, err := os.ReadFile(backup); err != nil || string(b) != "original 🌿\r\n" {
+		t.Fatal("history lost original bytes", err)
+	}
+	entries, _ := os.ReadDir(root)
+	if len(entries) != 1 || entries[0].Name() != "note.md" {
+		t.Fatal("autosave littered vault", entries)
+	}
+	// Another vault with the same filename must not share its history namespace.
+	other := New(t.TempDir()).WithHistory(data)
+	if other.historyDir == w.historyDir {
+		t.Fatal("vault histories collide")
+	}
+	// A broken history store must fail before overwriting the note.
+	if err := os.Remove(backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "note.md"), backup); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "note.md"), []byte("original 🌿\r\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteNoteIfRevision("note.md", "must not land", rev); err == nil {
+		t.Fatal("unsafe history accepted")
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "note.md"))
+	if string(b) != "original 🌿\r\n" {
+		t.Fatal("failed preservation overwrote note")
+	}
+}
 func TestEditorBoundariesAndMove(t *testing.T) {
 	w := New(t.TempDir())
 	rev, err := w.CreateNote("one.md", "🌿")

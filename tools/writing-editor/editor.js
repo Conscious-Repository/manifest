@@ -1,4 +1,4 @@
-import {EditorState, StateEffect, StateField, Compartment} from '@codemirror/state';
+import {EditorState, StateEffect, StateField, Compartment, Transaction} from '@codemirror/state';
 import {EditorView, Decoration, keymap, WidgetType} from '@codemirror/view';
 import {defaultKeymap, history, historyKeymap, indentWithTab} from '@codemirror/commands';
 import {markdown, markdownKeymap} from '@codemirror/lang-markdown';
@@ -76,6 +76,9 @@ window.ManifestEditor = {
    find:()=>openSearchPanel(view),
    restore:(anchor,head)=>view.dispatch({selection:{anchor:Math.min(anchor,view.state.doc.length),head:Math.min(head,view.state.doc.length)}}),
    setText:text=>view.dispatch({changes:{from:0,to:view.state.doc.length,insert:text}}),
+   // A remote update maps the existing caret, selection, anchors and undo stack
+   // through only the changed span. It is never an undoable local edit.
+   syncText:text=>{const before=view.state.doc.toString();if(before===text)return;let from=0,end=before.length,nextEnd=text.length;while(from<end&&from<nextEnd&&before[from]===text[from])from++;while(end>from&&nextEnd>from&&before[end-1]===text[nextEnd-1]){end--;nextEnd--}view.dispatch({changes:{from,to:end,insert:text.slice(from,nextEnd)},annotations:Transaction.addToHistory.of(false)})},
    setSource:source=>view.dispatch({effects:mode.reconfigure(source?[]:livePreview)}),
    setReadOnly:value=>view.dispatch({effects:readOnly.reconfigure(EditorState.readOnly.of(value))}),
    mark:items=>view.dispatch({effects:setAnchors.of(items)}),
