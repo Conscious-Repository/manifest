@@ -160,12 +160,28 @@ function recRoleCandidates(c) {
   return c.role === want;
 }
 
+// Role navigation always opens the active candidate pipeline, across origins.
+function recOpenCandidateRole(slug) {
+  recRole = slug;
+  recOrigin = "both"; recOriginSet = true;
+  recCut = "open"; recQuery = ""; recSel = null;
+  recPeopleFacet = "considering";
+  recNav("board");
+}
+
+function recCandidateCount(roleId, origin = "both", cut = "open") {
+  return (recCache.candidates || []).filter((c) =>
+    (!roleId || c.role === roleId) &&
+    (cut === "all" || (cut === "archived" ? c.stage === "archived" : c.stage !== "archived")) &&
+    (origin === "both" || (origin === "inbound" ? !!c.inbound : !c.inbound))).length;
+}
+
 function recVisible(c) {
   const everyone = recPeopleFacet === "everyone";
   if (!everyone && !recRoleCandidates(c)) return false;
-  const un = recUntriaged(c);
-  if (!everyone && recOrigin === "inbound" && !un) return false;
-  if (!everyone && recOrigin === "sourced" && un) return false;
+  const applied = !!c.inbound;
+  if (!everyone && recOrigin === "inbound" && !applied) return false;
+  if (!everyone && recOrigin === "sourced" && applied) return false;
   const archived = c.stage === "archived";
   if ((everyone || recCut === "open") && archived) return false;
   if (!everyone && recCut === "archived" && !archived) return false;
@@ -310,39 +326,21 @@ function paintRail(rail) {
   const roleHost = el("div", "rec-role-controls");
   roleHost.append(el("div", "micro-label rec-rail-label", "ROLES"));
   const roles = recCache.roles || [];
-  const all = el("button", "rec-role" + ((recView === "board" && !recRole) || (recView === "sources" && !recSourceRole && !recSourceRunFilter) ? " on" : ""));
+  const all = el("button", "rec-role" + (recView === "board" && !recRole ? " on" : ""));
   all.append(el("span", "rec-role-name", "all roles"));
-  all.append(el("span", "rec-role-count", String(recView === "sources" ? recPendingDrafts() : roles.reduce((n, r) => n + (r.openCount || 0), 0))));
-  all.onclick = () => {
-    recRole = null;
-    if (recView === "sources") { recClearSourceFilters(); recSourceLayout = "review"; if (recPaint) recPaint(); return; }
-    recPeopleFacet = "considering";
-    if (recView !== "board") recNav("board");
-    else if (recPaint) recPaint();
-  };
+  all.append(el("span", "rec-role-count", String(recCandidateCount())));
+  all.title = "Active candidates across Applied and Recruiting";
+  all.onclick = () => recOpenCandidateRole(null);
   roleHost.append(all);
 
   roles.forEach((role) => {
     const roleId = role.id || "role/" + role.slug;
-    const on = (recView === "board" && recRole === role.slug) || (recView === "role" && recRoleView === role.slug) ||
-      (recView === "sources" && recSourceRole === roleId);
+    const on = (recView === "board" && recRole === role.slug) || (recView === "role" && recRoleView === role.slug);
     const b = el("button", "rec-role" + (on ? " on" : ""));
     b.append(el("span", "rec-role-name", role.title || role.slug));
-    const count = recView === "sources" ? recPendingSourceRole(roleId) : role.openCount || 0;
-    b.append(el("span", "rec-role-count", String(count)));
-    b.title = recView === "sources" ? "Review search results for this role" : "View candidates for this role";
-    b.onclick = () => {
-      if (recView === "sources") {
-        recClearSourceFilters(); recSourceRole = roleId; recRole = role.slug; recSourceLayout = "review";
-        if (recPaint) recPaint(); return;
-      }
-      // second click on the already-selected lane opens the role console
-      if (recView === "board" && recRole === role.slug) { recNav("role/" + role.slug); return; }
-      recRole = role.slug;
-      recPeopleFacet = "considering";
-      if (recView !== "board") recNav("board");
-      else if (recPaint) recPaint();
-    };
+    b.append(el("span", "rec-role-count", String(recCandidateCount(roleId))));
+    b.title = "View active candidates across Applied and Recruiting";
+    b.onclick = () => recOpenCandidateRole(role.slug);
     roleHost.append(b);
   });
   if (!roles.length) roleHost.append(emptyRow("no roles yet"));
@@ -1304,13 +1302,13 @@ function paintBoardView(main) {
   search.oninput = () => { recQuery = search.value; paintBoardBody(); };
   bar.append(search);
   const seg = el("div", "rec-seg");
-  [["inbound", "INBOUND"], ["sourced", "SOURCED"], ["both", "BOTH"]].forEach(([key, label]) => {
+  [["both", "All candidates"], ["inbound", "Applied"], ["sourced", "Recruiting"]].forEach(([key, label]) => {
     const b = el("button", "rec-seg-btn" + (recOrigin === key ? " on" : ""));
     b.append(document.createTextNode(label));
-    if (key === "inbound") {
-      const n = recUntriagedCount();
-      if (n) b.append(el("span", "rec-seg-count", String(n)));
-    }
+    const selectedRole = (recCache.roles || []).find((r) => r.slug === recRole);
+    const roleId = selectedRole ? selectedRole.id || "role/" + selectedRole.slug : recRole;
+    b.append(el("span", "rec-seg-count", String(recCandidateCount(roleId, key, recCut))));
+    b.setAttribute("aria-pressed", String(recOrigin === key));
     b.onclick = () => { recOrigin = key; recOriginSet = true; if (recPaint) recPaint(); };
     seg.append(b);
   });
@@ -1326,7 +1324,7 @@ function paintBoardView(main) {
   // the stages, the gate and the inspector exactly as they were.
   const facets = el("div", "rec-cuts rec-facets");
   const connectors = ((recCache.network || {}).people || []).filter((p) => !p.archived);
-  [["considering", "considering", (recCache.candidates || []).filter((c) => c.stage !== "archived").length],
+  [["considering", "considering", (recCache.candidates || []).filter((c) => recRoleCandidates(c) && c.stage !== "archived").length],
    ["known", "who I'd ask", connectors.length],
    ["everyone", "everyone", 0]].forEach(([key, label, n]) => {
     const b = el("button", "filter-chip" + (recPeopleFacet === key ? " on" : ""), label);
@@ -1391,9 +1389,9 @@ function paintBoardBody() {
     board.append(emptyRow(!all.length
       ? "no candidates yet — paste a link above, or run a source"
       : recOrigin === "inbound"
-        ? "no applicants waiting to triage — SOURCED and BOTH show the pipeline"
+        ? "No applicants match this view. Check Recruiting or All candidates."
         : "No candidate matches — the pipeline itself is fine."));
-  } else if (recPeopleFacet === "considering" && recOrigin === "inbound") {
+  } else if (recPeopleFacet === "considering" && recOrigin === "inbound" && rows.every(recUntriaged)) {
     // the triage queue: every row is an untriaged applicant at stage `ashby`,
     // so stage lanes carry no signal — one queue, oldest application first
     const lane = el("section", "rec-lane");

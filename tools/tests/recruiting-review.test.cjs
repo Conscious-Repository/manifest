@@ -81,3 +81,24 @@ test('a fully reviewed search opens its decisions instead of appearing empty', (
   assert.equal(vm.runInContext('recSourceStatus',c),'all');
   assert.equal(c.recSourceEntries().length,1);
 });
+test('role counts include active applicants and recruits, never raw search results', () => {
+  const c=context();
+  c.fixture={roles:[{slug:'mri',id:'role/mri'}],candidates:[
+    {id:'a',role:'role/mri',stage:'ashby',inbound:'2026-09-01'},
+    {id:'b',role:'role/mri',stage:'reviewing',inbound:'2026-09-02'},
+    {id:'c',role:'role/mri',stage:'new'},
+    {id:'d',role:'role/me',stage:'new'},
+    {id:'e',role:'role/mri',stage:'archived',inbound:'2026-09-03'}]};
+  vm.runInContext('recCache=fixture;recRuns=[{drafts:Array(129).fill({status:"new"})}];',c);
+  assert.equal(c.recCandidateCount(),4);
+  assert.equal(c.recCandidateCount('role/mri'),3);
+  assert.equal(c.recCandidateCount('role/mri','inbound'),2);
+  assert.equal(c.recCandidateCount('role/mri','sourced'),1);
+  vm.runInContext('recNav=(path)=>{destination=path};recView="sources";recQuery="stale";recCut="archived";recOpenCandidateRole("mri");',c);
+  assert.equal(c.destination,'board');
+  assert.equal(c.recReviewCandidates().map(x=>x.id).sort().join(','),'a,b,c');
+  vm.runInContext('recOrigin="inbound";',c);
+  assert.equal(c.recReviewCandidates().map(x=>x.id).sort().join(','),'a,b');
+  vm.runInContext('recOrigin="sourced";',c);
+  assert.equal(c.recReviewCandidates().map(x=>x.id).join(','),'c');
+});
