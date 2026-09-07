@@ -628,3 +628,10 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-search-context { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-6) 0; margin-bottom: var(--sp-6); border-bottom: 1px solid var(--line); }
 
 .rec-resume-outline .rec-resume-text { max-height: none; overflow: visible; }
+
+/* Search groups retain a quiet divider and a native keyboard-accessible fold. */
+.rec-review-run { border-top: 1px solid var(--base-25); }
+.rec-review-run-heading { cursor: pointer; padding: var(--sp-6) 0; }
+.rec-review-run-heading .rec-background-text { display: inline; }
+.rec-review-run-heading .micro-label { display: block; margin-top: var(--sp-2); }
+.rec-review-run-heading:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

@@ -3831,18 +3831,49 @@ function paintSourceReview(main) {
     const entries = recSourceEntries();
     reset.hidden = !recSourceQuery && !recSourceRole && !recSourceRunFilter && recSourceStatus === "new";
     list.append(el("div", "micro-label rec-review-count", entries.length + (entries.length === 1 ? " result" : " results") + " · newest search first"));
-    entries.slice(0, recSourceLimit).forEach(({run, draft}) => {
-      const wrap = el("article", "rec-review-result");
-      const scope = run.scope || {};
-      wrap.append(el("div", "rec-review-context", [recRoleTitle((draft.draft || {}).role || scope.role), run.source,
-        scope.query || ((scope.fields || {}).seed_url || ""), fmtWhen(run.startedAt)].filter(Boolean).join(" · ")));
-      wrap.append(recDraftCard(run, draft)); list.append(wrap);
+    const groups = new Map();
+    entries.forEach((entry) => {
+      if (!groups.has(entry.run.id)) groups.set(entry.run.id, []);
+      groups.get(entry.run.id).push(entry);
+    });
+    if (groups.size) {
+      const controls = el("div", "rec-cuts");
+      [["Collapse all", false], ["Expand all", true]].forEach(([label, open]) => {
+        const button = el("button", "rec-linkish", label);
+        button.onclick = () => {
+          groups.forEach((_, id) => { recRunOpen[id] = open; });
+          list.querySelectorAll(".rec-review-run").forEach((group) => { group.open = open; });
+        };
+        controls.append(button);
+      });
+      list.append(controls);
+    }
+    groups.forEach((items, id) => {
+      const run = items[0].run, scope = run.scope || {}, fields = scope.fields || {};
+      const group = el("details", "rec-review-run");
+      group.open = recRunOpen[id] === undefined ? id === entries[0].run.id : !!recRunOpen[id];
+      group.ontoggle = () => { recRunOpen[id] = group.open; };
+      const summary = el("summary", "rec-review-run-heading");
+      summary.append(el("span", "rec-background-text", scope.query || fields.seed_url || fields.work || fields.repo || fields.feed_url || run.source));
+      summary.append(el("span", "micro-label", [run.source, fmtWhen(run.startedAt), items.length + (items.length === 1 ? " result" : " results")].filter(Boolean).join(" · ")));
+      group.append(summary);
+      const body = el("div", "rec-review-run-body");
+      let limit = 20;
+      const paintItems = () => {
+        body.innerHTML = "";
+        items.slice(0, limit).forEach(({draft}) => {
+          const wrap = el("article", "rec-review-result");
+          wrap.append(el("div", "rec-review-context", recRoleTitle((draft.draft || {}).role || scope.role)));
+          wrap.append(recDraftCard(run, draft)); body.append(wrap);
+        });
+        if (items.length > limit) {
+          const more = el("button", "pill light", "Show next 20");
+          more.onclick = () => { limit += 20; paintItems(); }; body.append(more);
+        }
+      };
+      paintItems(); group.append(body); list.append(group);
     });
     if (!entries.length) list.append(emptyRow(recRuns.length ? "No results in this view. Change the filters or check search history." : "No searches yet. Paste a person, lab or paper above to start."));
-    if (entries.length > recSourceLimit) {
-      const more = el("button", "pill light", "Show next 20");
-      more.onclick = () => { recSourceLimit += 20; paint(); }; list.append(more);
-    }
   };
   search.oninput = () => { recSourceQuery = search.value; recSourceLimit = 20; paint(); };
   role.onchange = () => {
