@@ -143,10 +143,19 @@ func (s *Server) handleRecruitingSourceAccept(w http.ResponseWriter, r *http.Req
 	if kerr != nil {
 		out["knowledgeError"] = kerr.Error()
 	}
+	topics, ties := 0, 0
+	for _, e := range knowledge.Claims.Edges {
+		switch {
+		case e.Kind == graph.EdgeExpertise:
+			topics++
+		case e.From.Kind == graph.KindPerson && e.To.Kind == graph.KindPerson:
+			ties++
+		}
+	}
 	meta := map[string]any{
 		"run": runID, "draft": draftID, "source": run.Source, "name": c.Name,
-		"topics": len(knowledge.Claims.Edges), "edgesAdded": len(knowledge.AddedEdges),
-		"entitiesAdded": len(knowledge.AddedEntities), "paths": len(c.Paths),
+		"topics": topics, "ties": ties, "papers": len(knowledge.Claims.Papers), "tiesSkipped": len(knowledge.Claims.Skipped),
+		"edgesAdded": len(knowledge.AddedEdges), "entitiesAdded": len(knowledge.AddedEntities), "paths": len(c.Paths),
 	}
 	if len(c.Paths) > 0 {
 		meta["path"] = c.Paths[0].Path
@@ -160,12 +169,17 @@ func (s *Server) handleRecruitingSourceAccept(w http.ResponseWriter, r *http.Req
 	writeJSON(w, out)
 }
 
-// deriveRecruitingKnowledge applies the draft's knowledge claims to the
-// graph store and mirrors each added claim into the ledger (entity under
-// itself, edge under the person, kind `graph.edge.derived`). Without a graph
-// store it derives nothing and says so.
+// deriveRecruitingKnowledge applies the draft's knowledge claims — and its
+// social ties (recruiting/ties.go: the works it cites, and the coauthor /
+// affiliation rows network/edges.md now holds between this person and people
+// already on the board) — to the graph store, and mirrors each added claim
+// into the ledger (entity under itself, edge under the person, kind
+// `graph.edge.derived`). Without a graph store it derives nothing and says
+// so. The network rows were written by the accept itself (store.AcceptDraft →
+// saveDraftEdges), so the read here sees the resolved endpoints.
 func (s *Server) deriveRecruitingKnowledge(d recruiting.Draft, c recruiting.Candidate, now time.Time) (recruiting.KnowledgeResult, error) {
 	claims := recruiting.DeriveKnowledge(d.Draft, c.ID, s.recruiting.Rel("candidates/"+c.Slug+".md"), now)
+	claims = claims.WithTies(recruiting.DeriveTies(d.Draft, c.ID, s.recruiting.LoadEdges().Edges(), s.recruiting.PersonResolver(), now))
 	if s.graphStore == nil {
 		return recruiting.KnowledgeResult{Claims: claims, AddedEntities: []graph.Entity{}, AddedEdges: []graph.Edge{}},
 			errors.New("the graph store is not configured — no knowledge edges derived")

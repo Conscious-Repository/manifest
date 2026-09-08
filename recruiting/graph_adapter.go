@@ -41,11 +41,36 @@ func (e Edge) Graph() graph.Edge {
 	}
 }
 
+// Weight is the row's confidence as a number (graph.Edge.Weight: the stated
+// value, or UnstatedConfidence when the row carries none).
+func (e Edge) Weight() float64 { return e.Graph().Weight() }
+
 // GraphEdges projects a document's rows.
 func GraphEdges(edges []Edge) []graph.Edge {
 	out := make([]graph.Edge, 0, len(edges))
 	for _, e := range edges {
 		out = append(out, e.Graph())
+	}
+	return out
+}
+
+// PersonTies is the projection the other way: the general graph's person ↔
+// person relationship claims (the recruiting kinds it carries verbatim) as
+// network rows, so a read that ranks people can walk the ties on file in
+// system/graph beside the ones in network/edges.md. Knowledge (expertise),
+// authorship and every non-person endpoint are left out — "who knows whom"
+// never mixes with "who knows what".
+func PersonTies(edges []graph.Edge) []Edge {
+	kinds := EdgeVocabulary()
+	out := []Edge{}
+	for _, e := range edges {
+		if e.From.Kind != graph.KindPerson || e.To.Kind != graph.KindPerson || !kinds.ValidEdgeKind(e.Kind) {
+			continue
+		}
+		out = append(out, Edge{
+			From: e.From.ID, To: e.To.ID, Kind: e.Kind, Basis: e.Basis, Confidence: e.Confidence,
+			Inferred: e.Inferred, Source: e.Source, Evidence: e.Evidence, Observed: e.Observed,
+		})
 	}
 	return out
 }

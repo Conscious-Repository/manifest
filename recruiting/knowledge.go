@@ -55,6 +55,11 @@ type KnowledgeClaims struct {
 	Person graph.Entity   `json:"person"`
 	Topics []graph.Entity `json:"topics"`
 	Edges  []graph.Edge   `json:"edges"`
+	// Papers are the works the person is a cited author on (ties.go); their
+	// `authored` edges and the person ↔ person ties ride in Edges after the
+	// expertise edges. Skipped names every tie the never-guess gate refused.
+	Papers  []graph.Entity `json:"papers,omitempty"`
+	Skipped []TieSkip      `json:"skipped,omitempty"`
 }
 
 // DeriveKnowledge projects a draft onto graph claims for the candidate it
@@ -209,7 +214,8 @@ func ApplyKnowledge(w KnowledgeWriter, k KnowledgeClaims) (KnowledgeResult, erro
 	if w == nil || strings.TrimSpace(k.Person.ID) == "" {
 		return res, nil
 	}
-	for _, e := range append([]graph.Entity{k.Person}, k.Topics...) {
+	entities := append([]graph.Entity{k.Person}, k.Topics...)
+	for _, e := range append(entities, k.Papers...) {
 		got, added, err := w.AddEntity(e)
 		if err != nil {
 			return res, err

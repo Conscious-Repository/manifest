@@ -474,6 +474,9 @@ func (s *Server) Handler() http.Handler {
 			// path origin
 			mux.HandleFunc("GET /api/aion/recruiting/people/known", s.handleRecruitingKnownPeople)
 			mux.HandleFunc("GET /api/aion/recruiting/graph", s.handleRecruitingGraph)
+			// who has the most leverage in a domain: expertise × ties, every
+			// component visible (recruiting_leverage.go). A read.
+			mux.HandleFunc("GET /api/aion/recruiting/leverage", s.handleRecruitingLeverage)
 			mux.HandleFunc("POST /api/aion/recruiting/network/mark", s.handleRecruitingMarkKnown)
 			mux.HandleFunc("GET /api/aion/recruiting/passed", s.handleRecruitingPassedList)
 			mux.HandleFunc("DELETE /api/aion/recruiting/passed/{key...}", s.handleRecruitingPassedDelete)

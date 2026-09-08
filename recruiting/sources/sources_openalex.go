@@ -89,8 +89,26 @@ type openAlexAuthor struct {
 }
 
 type openAlexInstitution struct {
+	// ID is the registry's durable institution key (https://openalex.org/I…).
+	// It is what makes "same affiliation" a resolvable claim rather than a
+	// string match: two authors share an institution when their IDs agree,
+	// never when their display names happen to.
+	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
 	CountryCode string `json:"country_code"`
+}
+
+// key is the institution id without the registry root ("I134446601"), or ""
+// when the record carries none.
+func (i openAlexInstitution) key() string {
+	id := strings.TrimSpace(i.ID)
+	if j := strings.LastIndex(id, "/"); j >= 0 {
+		id = id[j+1:]
+	}
+	if !strings.HasPrefix(strings.ToUpper(id), "I") {
+		return ""
+	}
+	return strings.ToUpper(id)
 }
 
 type openAlexSummaryStats struct {

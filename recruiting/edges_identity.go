@@ -53,6 +53,42 @@ func (s *Store) extIndex() map[string]string {
 	return out
 }
 
+// PersonResolver answers "is this endpoint someone we KNOW, and by which
+// id" — the never-guess gate for a tie in the general graph (ties.go). A
+// record id (a candidate, a connector) resolves to itself; an external key
+// the vault has already matched to a record (extIndex) resolves to that
+// record; anything else — a stranger's ORCID, a display name, a contact key
+// this store does not carry — resolves to nobody, and no tie is written to
+// them. Built once per call over the records (the corpus is small); the
+// returned func is pure.
+func (s *Store) PersonResolver() func(id string) (string, bool) {
+	known := map[string]bool{}
+	for _, c := range s.Identities() {
+		if c.ID != "" {
+			known[c.ID] = true
+		}
+	}
+	for _, p := range s.LoadNetworkPeople().People() {
+		if p.ID != "" {
+			known[p.ID] = true
+		}
+	}
+	index := s.extIndex()
+	return func(id string) (string, bool) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return "", false
+		}
+		if known[id] {
+			return id, true
+		}
+		if rec, ok := index[id]; ok && known[rec] {
+			return rec, true
+		}
+		return "", false
+	}
+}
+
 // extKeysOfRecord derives every external key a record answers to: its
 // adapter source_ref, plus any identifying profile link it carries.
 func extKeysOfRecord(sourceRef string, profile map[string]string) []string {
@@ -177,6 +213,11 @@ func edgeKey(from, to, kind string) string {
 	}
 	return a + "\x00" + b + "\x00" + strings.TrimSpace(kind)
 }
+
+// TieKey is edgeKey for callers outside the package — the undirected
+// identity of a relationship claim, so two edge sets can be unioned without
+// counting the same tie twice.
+func TieKey(e Edge) string { return edgeKey(e.From, e.To, e.Kind) }
 
 func dedupeStrings(in []string) []string {
 	seen := map[string]bool{}

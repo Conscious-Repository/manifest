@@ -160,6 +160,19 @@ type EdgeClaim struct {
 	Basis      string   `json:"basis"`
 	Confidence float64  `json:"confidence"`
 	Inferred   bool     `json:"inferred"`
+	// Evidence is what the claim can be pointed at later — the work's URL for
+	// a coauthorship, the paper the shared affiliation was read from. Optional
+	// (a queue written before it existed reads back unchanged); an adapter
+	// that knows the URL should set it, because a tie without a citation is
+	// only as good as its basis prose.
+	Evidence string `json:"evidence,omitempty"`
+}
+
+// Key is the identity of a claim for dedupe: the same far endpoint, the same
+// near endpoint (empty until accept), the same kind. Two sources that both
+// saw the same paper make one claim, not two.
+func (e EdgeClaim) Key() string {
+	return strings.TrimSpace(e.From) + "\x00" + strings.TrimSpace(e.To) + "\x00" + string(e.Type)
 }
 
 // DedupeHint records whether a draft matched an existing vault candidate, and

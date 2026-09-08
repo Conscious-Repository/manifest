@@ -398,7 +398,7 @@ func (s *Store) saveDraftEdges(d sources.CandidateDraft, candidateID string) err
 			if _, err := edges.Add(Edge{
 				From: from, To: to, Kind: string(e.Type), Basis: e.Basis,
 				Confidence: FormatConfidence(e.Confidence), Inferred: e.Inferred,
-				Source: e.SourceID,
+				Source: e.SourceID, Evidence: strings.TrimSpace(e.Evidence),
 			}); err != nil {
 				return err
 			}

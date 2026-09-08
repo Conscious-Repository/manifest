@@ -432,6 +432,21 @@ func (a *Adapter) draftPrepare(q DraftInput, accept bool) (Object, error) {
 		decision, candidateID = recruiting.DraftAccepted, c.ID
 		preview["vaultFiles"] = writes
 		claims := recruiting.DeriveKnowledge(d.Draft, c.ID, a.Records.Rel("candidates/"+c.Slug+".md"), now)
+		// the ties read network/edges.md AS THE ACCEPT WOULD LEAVE IT — the
+		// captured write when the accept touched it, the file otherwise — and
+		// resolve endpoints against the records on disk plus the person this
+		// very accept creates (not on disk yet; known by construction)
+		network := a.Records.LoadEdges().Edges()
+		if raw, ok := writes[a.Records.Rel("network/edges.md")]; ok {
+			network = recruiting.ParseEdges(raw).Edges()
+		}
+		resolve := a.Records.PersonResolver()
+		claims = claims.WithTies(recruiting.DeriveTies(d.Draft, c.ID, network, func(id string) (string, bool) {
+			if id == c.ID {
+				return id, true
+			}
+			return resolve(id)
+		}, now))
 		memory := &knowledgeMemory{entities: a.Graph.LoadEntities(), edges: a.Graph.LoadEdges(), vocab: a.Graph.Vocabulary()}
 		knowledge, err := recruiting.ApplyKnowledge(memory, claims)
 		if err != nil {

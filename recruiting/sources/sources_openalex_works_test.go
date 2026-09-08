@@ -118,13 +118,12 @@ func TestOpenAlexWorkEmitsCoauthorEdges(t *testing.T) {
 			}
 		}
 	}
-	if len(withORCID.Edges) == 0 {
-		t.Fatal("an author with an ORCID should carry coauthor edges")
-	}
+	coauthors := 0
 	for _, e := range withORCID.Edges {
 		if e.Type != EdgeCoauthor {
-			t.Fatalf("kind: %q", e.Type)
+			continue // the affiliation overlap is its own claim, tested below
 		}
+		coauthors++
 		if !strings.HasPrefix(e.From, ExtNodePrefix) {
 			t.Fatalf("an endpoint is a durable key, never a display name: %q", e.From)
 		}
@@ -136,6 +135,75 @@ func TestOpenAlexWorkEmitsCoauthorEdges(t *testing.T) {
 		}
 		if !strings.Contains(e.Basis, "Array programming with NumPy") {
 			t.Fatalf("the basis names the paper: %q", e.Basis)
+		}
+		if e.Evidence != "https://doi.org/10.1038/s41586-020-2649-2" {
+			t.Fatalf("a claim carries the work it can be pointed at: %q", e.Evidence)
+		}
+	}
+	if coauthors == 0 {
+		t.Fatal("an author with an ORCID should carry coauthor edges")
+	}
+}
+
+// A shared institution ID on one paper is a second, weaker, INFERRED claim:
+// Millman and van der Walt both list Berkeley College (I134446601); Gommers
+// lists Quansight alone and shares an affiliation with nobody. The match is
+// the registry's id, never the display name.
+func TestOpenAlexWorkEmitsSameLabOnSharedInstitutionID(t *testing.T) {
+	s := newOpenAlexServer(t, 200, openAlexFixture(t, "openalex-work.json"))
+	got, _ := s.adapter().Search(context.Background(), Scope{Max: 25,
+		Fields: map[string]string{"work": "10.1038/s41586-020-2649-2"}})
+	byName := map[string]CandidateDraft{}
+	for _, d := range got {
+		byName[d.Name] = d
+	}
+	sameLab := func(d CandidateDraft) []EdgeClaim {
+		var out []EdgeClaim
+		for _, e := range d.Edges {
+			if e.Type == EdgeSameLab {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	millman := sameLab(byName["K. Jarrod Millman"])
+	if len(millman) != 1 {
+		t.Fatalf("one same_lab claim per shared pair: %+v", millman)
+	}
+	e := millman[0]
+	if e.From != "ext/orcid/0000-0001-9276-1891" || !e.Inferred || e.Confidence != openAlexSameLabConfidence || e.SourceID != "openalex" {
+		t.Fatalf("same_lab shape: %+v", e)
+	}
+	if !strings.Contains(e.Basis, "Berkeley College") || !strings.Contains(e.Basis, "https://openalex.org/I134446601") || !strings.Contains(e.Basis, "Array programming with NumPy") {
+		t.Fatalf("the basis names the institution, its id and the paper: %q", e.Basis)
+	}
+	if e.Evidence != "https://doi.org/10.1038/s41586-020-2649-2" {
+		t.Fatalf("evidence: %q", e.Evidence)
+	}
+	if got := sameLab(byName["Stéfan J. van der Walt"]); len(got) != 1 || got[0].From != "ext/orcid/0000-0002-5263-5070" {
+		t.Fatalf("the claim reads the same from the other side: %+v", got)
+	}
+	if got := sameLab(byName["Ralf Gommers"]); len(got) != 0 {
+		t.Fatalf("no shared institution, no claim: %+v", got)
+	}
+	// a keyless author shares nothing anyone could point at later
+	for _, d := range got {
+		for _, e := range d.Edges {
+			if strings.Contains(e.From, "Harris") {
+				t.Fatalf("a keyless author is never a far endpoint: %+v", e)
+			}
+		}
+	}
+}
+
+// Institution ids match on the id, whatever the record spells it as.
+func TestOpenAlexInstitutionKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://openalex.org/I134446601": "I134446601", "I134446601": "I134446601", "i95457486": "I95457486",
+		"": "", "https://openalex.org/A1": "", "Berkeley": "",
+	} {
+		if got := (openAlexInstitution{ID: in}).key(); got != want {
+			t.Errorf("key(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

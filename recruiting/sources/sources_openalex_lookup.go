@@ -47,13 +47,14 @@ func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scop
 		return nil, fmt.Errorf("openalex: %s returned no work", path)
 	}
 	var first *openAlexAuthorsh
+	firstIndex := -1
 	for i := range w.Authorships {
 		a := &w.Authorships[i]
 		if a.AuthorPosition == "first" {
 			if first != nil {
 				return nil, nil
 			}
-			first = a
+			first, firstIndex = a, i
 		}
 	}
 	// Compare the printed name, never an initial expansion or a fuzzy match.
@@ -85,6 +86,17 @@ func (oa OpenAlex) LookupCandidate(ctx context.Context, d CandidateDraft, s Scop
 		Snippet: w.citation() + " · first author: " + first.RawAuthorName + " · resolved author: " + hit.Name + " (" + openAlexAuthorURL(authorID) + ")",
 		Kind:    EvidencePublication, Trust: TrustMedium,
 	})
+	// The work's own byline is what makes the first author's coauthors
+	// nameable: the same durable-key claims a work sweep would emit, plus the
+	// affiliation the paper printed for them (structured institution only).
+	hit.Edges = append(hit.Edges, oa.workEdges(w, firstIndex)...)
+	if org := first.org(); org != "" {
+		hit.Evidence = append(hit.Evidence, Evidence{
+			SourceID: oa.ID(), URLOrFile: w.url(), RetrievedAt: now,
+			Snippet: "affiliation on " + w.citation() + ": " + org,
+			Kind:    EvidenceAffiliation, Trust: TrustMedium,
+		})
+	}
 	// Keep the finder's wording; the canonical name and the identity bridge
 	// remain in the evidence. All fields use Lookup's existing merge path.
 	hit.Name = d.Name

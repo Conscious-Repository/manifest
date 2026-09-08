@@ -70,6 +70,10 @@ type LookupResult struct {
 	Failed []string `json:"failed,omitempty"`
 	Links  int      `json:"links"`
 	Cites  int      `json:"cites"`
+	// Edges counts the relationship claims a hit carried onto the draft — a
+	// paper's coauthors, a shared affiliation — keyed by durable external id,
+	// never by name. They become rows only when the draft is accepted.
+	Edges int `json:"edges,omitempty"`
 	// Filled names the profile fields this pass supplied, e.g. ["org"].
 	Filled []string `json:"filled,omitempty"`
 }
@@ -109,6 +113,10 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	haveTopic := map[string]bool{}
 	for _, t := range d.Draft.Topics {
 		haveTopic[topicKey(t)] = true
+	}
+	haveEdge := map[string]bool{}
+	for _, e := range d.Draft.Edges {
+		haveEdge[e.Key()] = true
 	}
 
 	for _, id := range lookupSources {
@@ -203,6 +211,19 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 					}
 				}
 				res.Filled = append(res.Filled, "topics")
+			}
+			// relationship claims union: a hit that resolved the person's
+			// paper names who they wrote it with, by durable key. The same
+			// claim seen twice (a second lookup, a second source on the same
+			// paper) is one row; a claim with no basis or no far endpoint is
+			// not a claim and is dropped here rather than refused at accept
+			for _, e := range h.Edges {
+				if strings.TrimSpace(e.From) == "" || strings.TrimSpace(e.Basis) == "" || !sources.ValidEdgeType(e.Type) || haveEdge[e.Key()] {
+					continue
+				}
+				haveEdge[e.Key()] = true
+				d.Draft.Edges = append(d.Draft.Edges, e)
+				res.Edges++
 			}
 		}
 		if matched {

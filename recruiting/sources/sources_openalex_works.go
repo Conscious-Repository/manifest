@@ -47,6 +47,13 @@ const (
 	// sits well below OwnerConfidence: the registry proves they were on a
 	// paper together, not that either would take the call.
 	openAlexCoauthorConfidence = 0.55
+	// openAlexSameLabConfidence is the weight of a shared institution on one
+	// paper. Below the coauthorship it rides with: two people at one
+	// university may never have met, and the claim is derived from an
+	// overlap, so it is also marked inferred.
+	openAlexSameLabConfidence = 0.45
+	// openAlexInstitutionRoot is the registry's institution namespace.
+	openAlexInstitutionRoot = "https://openalex.org/"
 	// ExtNodePrefix namespaces a person who is not (yet) a record here.
 	ExtNodePrefix = "ext/"
 )
@@ -155,7 +162,6 @@ func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]Candi
 		if name == "" {
 			continue
 		}
-		key := ExtNodeKey(a.Author.ORCID, a.Author.ID)
 		d := CandidateDraft{
 			SourceID:   oa.ID(),
 			ExternalID: strings.TrimPrefix(openAlexAuthorURL(a.Author.ID), openAlexAuthorRoot),
@@ -199,32 +205,96 @@ func (oa OpenAlex) searchWork(ctx context.Context, ref string, s Scope) ([]Candi
 			})
 		}
 
-		if edgesAllowed {
-			for j, other := range w.Authorships {
-				if i == j {
-					continue
-				}
-				otherName := strings.TrimSpace(other.Author.DisplayName)
-				otherKey := ExtNodeKey(other.Author.ORCID, other.Author.ID)
-				if otherName == "" || otherKey == "" || otherKey == key {
-					continue
-				}
-				d.Edges = append(d.Edges, EdgeClaim{
-					From:       otherKey,
-					Type:       EdgeCoauthor,
-					SourceID:   oa.ID(),
-					Basis:      otherName + " and " + name + " are both authors on " + cite,
-					Confidence: openAlexCoauthorConfidence,
-					Inferred:   false,
-				})
-			}
-		}
+		d.Edges = append(d.Edges, oa.workEdges(w, i)...)
 		out = append(out, d)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("openalex: %s names no authors", cite)
 	}
 	return out, nil
+}
+
+// workEdges is what ONE authorship on a work lets us claim about the others
+// (the far endpoint of every claim; the near endpoint is filled at accept
+// time with the record id). Shared by the work sweep and by the PubMed
+// lookup that resolves a first author through the same work object, so a
+// person reached either way carries the same ties.
+//
+//   - coauthor: stated, openAlexCoauthorConfidence, the paper as basis.
+//   - same_lab: INFERRED, openAlexSameLabConfidence, when the two
+//     authorships list the same institution ID on this paper. The id, not the
+//     display name, is the match: "Berkeley College" and "UC Berkeley" are two
+//     records, and two spellings of one institution are one id. It says they
+//     were affiliated with the same place at the time of the paper — not that
+//     they share a lab bench — and the basis says exactly that.
+//
+// Both obey the author cap: past openAlexMaxEdgeAuthors nothing is claimed.
+// A far author the registry gives no durable key takes part in no edge.
+// Every claim carries the work URL as evidence so the row that lands can be
+// pointed at later.
+func (oa OpenAlex) workEdges(w openAlexWork, i int) []EdgeClaim {
+	if i < 0 || i >= len(w.Authorships) || len(w.Authorships) > openAlexMaxEdgeAuthors {
+		return nil
+	}
+	me := w.Authorships[i]
+	name := strings.TrimSpace(me.Author.DisplayName)
+	if name == "" {
+		name = strings.Join(strings.Fields(me.RawAuthorName), " ")
+	}
+	key := ExtNodeKey(me.Author.ORCID, me.Author.ID)
+	cite, workURL := w.citation(), w.url()
+	mine := map[string]string{}
+	for _, inst := range me.Institutions {
+		if k := inst.key(); k != "" {
+			mine[k] = strings.TrimSpace(inst.DisplayName)
+		}
+	}
+	var out []EdgeClaim
+	for j, other := range w.Authorships {
+		if i == j {
+			continue
+		}
+		otherName := strings.TrimSpace(other.Author.DisplayName)
+		otherKey := ExtNodeKey(other.Author.ORCID, other.Author.ID)
+		if otherName == "" || otherKey == "" || otherKey == key {
+			continue
+		}
+		out = append(out, EdgeClaim{
+			From:       otherKey,
+			Type:       EdgeCoauthor,
+			SourceID:   oa.ID(),
+			Basis:      otherName + " and " + name + " are both authors on " + cite,
+			Confidence: openAlexCoauthorConfidence,
+			Inferred:   false,
+			Evidence:   workURL,
+		})
+		// one same_lab claim per pair, on the FIRST shared institution in the
+		// other author's listed order — a second shared id is the same claim
+		for _, inst := range other.Institutions {
+			k := inst.key()
+			if k == "" {
+				continue
+			}
+			label, shared := mine[k]
+			if !shared {
+				continue
+			}
+			if label == "" {
+				label = strings.TrimSpace(inst.DisplayName)
+			}
+			out = append(out, EdgeClaim{
+				From:       otherKey,
+				Type:       EdgeSameLab,
+				SourceID:   oa.ID(),
+				Basis:      otherName + " and " + name + " both list " + label + " (" + openAlexInstitutionRoot + k + ") as affiliation on " + cite,
+				Confidence: openAlexSameLabConfidence,
+				Inferred:   true,
+				Evidence:   workURL,
+			})
+			break
+		}
+	}
+	return out
 }
 
 // ExtNodeKey is the durable graph key for a person who is not a record here:
