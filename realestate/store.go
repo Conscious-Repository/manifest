@@ -197,6 +197,7 @@ func sourceUnits(path string) int {
 // Deal is one deal-bundle record (categories: [deal]) — a group of parcels that
 // underwrites together. Pass 1 surfaces them as a quiet Board lane + map groups.
 type Deal struct {
+	Aliases    []string `json:"aliases,omitempty"`
 	Path       string   `json:"path"`
 	Slug       string   `json:"slug"`
 	Name       string   `json:"name"`       // first `# ` heading, else the slug
@@ -219,6 +220,12 @@ func (s *Service) Deals() ([]Deal, error) {
 		fm, body := mdfm.Split(string(raw))
 		d := Deal{Path: r.Path, Slug: r.Name, Name: r.Name,
 			Status: strings.ToLower(strings.TrimSpace(fm["status"]))}
+		// A canonical route name can change without moving the note/sidecars.
+		// The original filename remains an alias for existing links and shares.
+		if slug := strings.TrimSpace(fm["slug"]); regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(slug) && slug != d.Slug {
+			d.Aliases = []string{d.Slug}
+			d.Slug = slug
+		}
 		for _, ln := range strings.Split(body, "\n") {
 			if strings.HasPrefix(ln, "# ") {
 				d.Name = strings.TrimSpace(ln[2:])

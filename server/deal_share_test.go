@@ -125,6 +125,17 @@ func TestLenderShareAccessScopeAndRevocation(t *testing.T) {
 	if w = do(pub, "GET", other.Path+"underwriting", "", c); w.Code != 401 {
 		t.Fatal("cross-link session")
 	}
+	write("deals/duo.md", "---\ncategories: [deal]\nslug: renamed-deal\n---\n# Renamed Deal\n")
+	write("properties/one.md", "---\ncategories: [property]\naddress: One\ndeal: '[[renamed-deal]]'\n---\n")
+	if _, err := f.srv.index.Rebuild(); err != nil {
+		t.Fatal(err)
+	}
+	if w = do(pub, "GET", endpoint, "", c); w.Code != 200 || !strings.Contains(w.Body.String(), "Renamed Deal") {
+		t.Fatal("renamed deal broke existing share", w.Code, w.Body)
+	}
+	if w = do(private, "GET", "/api/deals/renamed-deal/shares", "", nil); w.Code != 200 || !strings.Contains(w.Body.String(), result.Share.ID) {
+		t.Fatal("renamed deal lost share management", w.Code, w.Body)
+	}
 	if w = do(private, "DELETE", "/api/deals/elsewhere/shares/"+result.Share.ID, "", nil); w.Code != 404 {
 		t.Fatal("cross-deal revoke")
 	}

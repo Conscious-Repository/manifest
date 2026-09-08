@@ -131,7 +131,7 @@ function PropertyDetail({ slug, onClose, proposals }) {
         <button className="ooda-x" onClick={onClose}>✕</button>
       </div>
       <div className="ooda-detail-meta">
-        {[orDash(p.entity), statusLabel(p.status), orDash(p.kind), p.deal ? "deal: " + p.deal : null]
+        {[orDash(p.entity), statusLabel(p.status), orDash(p.kind), p.deal ? "deal: " + p.deal.split("-").map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ") : null]
           .filter(Boolean).join(" · ")}
       </div>
       {p.deal && <p><a href={"#/deal/"+encodeURIComponent(p.deal)+"/underwriting"}>Deal underwriting →</a></p>}

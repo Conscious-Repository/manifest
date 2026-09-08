@@ -55,7 +55,7 @@ function reRockSuggest(q, add, ta, onPick) {
     .filter((p) => !q || (p.address || "").toLowerCase().includes(q) ||
       (p.slug || "").includes(q) || (p.deal || "").toLowerCase().includes(q))
     .slice(0, 8)
-    .forEach((p) => add(rePropLabel(p) + (p.deal ? "  · " + p.deal : ""), "property",
+    .forEach((p) => add(rePropLabel(p) + (p.deal ? "  · " + (dealCache.find(d=>d.slug===p.deal)?.name || p.deal) : ""), "property",
       () => { ta.commit(rePropLabel(p)); onPick("property/" + p.slug); }));
 }
 
@@ -2018,8 +2018,9 @@ function moneyFooter() {
 async function renderDealPage(slug) {
   const host = els.propertyBoard;
   host.innerHTML = "";
-  const deal = dealCache.find((d) => d.slug === slug);
+  const deal = dealCache.find((d) => d.slug === slug || (d.aliases || []).includes(slug));
   if (!deal) { host.append(el("div", "pp-empty", "No deal record named " + slug + ".")); return; }
+  slug = deal.slug;
   if (!reAssumptionsCache) await loadReAssumptions();
   const head = el("div", "re-deal-head");
   const title = el("h2", "pp3-title", deal.name || deal.slug);

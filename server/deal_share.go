@@ -103,16 +103,19 @@ func (s *Server) handleDealShares(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slug := r.PathValue("slug")
-	if _, ok := s.dealBySlug(slug); !ok {
+	deal, ok := s.dealBySlug(slug)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
+	slug = deal.Slug
+	matches := func(old string) bool { d, ok := s.dealBySlug(old); return ok && d.Slug == slug }
 	if r.Method == "GET" {
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		items := []dealShare{}
 		for _, sh := range st.shares {
-			if sh.Slug == slug {
+			if matches(sh.Slug) {
 				sh.PasswordHash = ""
 				items = append(items, sh)
 			}
@@ -129,7 +132,7 @@ func (s *Server) handleDealShares(w http.ResponseWriter, r *http.Request) {
 		defer st.mu.Unlock()
 		id := r.PathValue("id")
 		old, ok := st.shares[id]
-		if !ok || old.Slug != slug {
+		if !ok || !matches(old.Slug) {
 			http.NotFound(w, r)
 			return
 		}

@@ -1300,6 +1300,11 @@ func (s *Server) serveSource(w http.ResponseWriter, r *http.Request, mdRel strin
 func (s *Server) dealBySlug(slug string) (realestate.Deal, bool) {
 	deals, _ := s.realestate.Deals()
 	for _, d := range deals {
+		for _, alias := range d.Aliases {
+			if strings.EqualFold(alias, slug) {
+				return d, true
+			}
+		}
 		if strings.EqualFold(d.Slug, slug) {
 			return d, true
 		}
