@@ -432,6 +432,8 @@ function buildAgencyField(root, model) {
 function AgencyField({ data, goalsIndex, onSelect, selection }) {
   const rootRef = React.useRef(null);
   const apiRef = React.useRef(null);
+  const onSelectRef = React.useRef(onSelect);
+  onSelectRef.current = onSelect;
   const model = React.useMemo(() => buildAgencyModel(data, goalsIndex), [data, goalsIndex]);
 
   React.useEffect(() => {
@@ -439,14 +441,14 @@ function AgencyField({ data, goalsIndex, onSelect, selection }) {
     if (!root || !model) return;
     const api = buildAgencyField(root, model);
     apiRef.current = api;
-    const handler = e => { if (onSelect) onSelect(e.detail); };
+    const handler = e => { if (onSelectRef.current) onSelectRef.current(e.detail); };
     root.addEventListener('aion-agency-select', handler);
     return () => {
       root.removeEventListener('aion-agency-select', handler);
       apiRef.current = null;
       api.cleanup();
     };
-  }, [model, onSelect]);
+  }, [model]);
 
   // pane-side clears (Esc, ✕) un-dim the cone without re-emitting
   React.useEffect(() => {
