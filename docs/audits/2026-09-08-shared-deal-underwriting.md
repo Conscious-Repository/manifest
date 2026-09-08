@@ -65,3 +65,20 @@ vacancy/expense assumptions and deal-specific reserves, hold period, growth
 and disposition inputs. Multi-year cash flow, IRR and equity multiples remain
 incomplete until those values and distribution terms are established. No
 reference-PDF defaults, market rents or loan approval have been invented.
+
+## Presentation revision
+
+Owner clarified that this is lender-agnostic presentation/diligence, not a
+financing-negotiation preview. The shared rendering now leads with property
+schedule, the owner-confirmed $1,258,500 acquisition/hard/soft-cost subtotal,
+and annual/monthly unlevered operating cash flow. Per-property details, live
+ledger entries, and work status are expandable. The baseline budget is stable;
+expenses and operating inputs remain live. Negotiation terms, correspondence
+attribution, arithmetic corrections, and internal reconciliation commentary
+are not rendered. Existing source records are retained unchanged.
+
+The owner requested an illustrative financing scenario and will specify its
+terms. No previous lender-specific terms are reused in the meantime. Missing
+replacement reserves remain explicitly unknown, preventing a false cash-flow
+after-reserves result. Regression coverage renders a fixture containing private
+negotiation notes and verifies that they do not enter the presentation.

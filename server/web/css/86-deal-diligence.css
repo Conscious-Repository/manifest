@@ -18,7 +18,7 @@
 .diligence-metrics strong { display: block; font-size: var(--fs-xl); font-weight: 500; }
 @media (max-width: 700px) { .diligence-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 
-.diligence-preview { --text: var(--base-100); --muted: var(--base-50); --hover: var(--base-05); --fs-md: 13px; --fs-lg: 14px; --fs-xl: 18px; --sp-9: 24px; min-width: 0; }
+.diligence-preview { --text: var(--base-100); --muted: var(--base-50); --hover: var(--base-05); --fs-md: 13px; --fs-lg: 14px; --fs-xl: 18px; --sp-9: 24px; min-width: 0; max-width: 1180px; margin: 0 auto; }
 .diligence-preview h2 { font-size: var(--fs-xl); margin: var(--sp-7) 0; }
 .diligence-preview button { cursor: pointer; }
 .diligence-preview label { display: inline-flex; gap: var(--sp-4); align-items: center; margin: var(--sp-6); font-size: var(--fs-md); }
@@ -26,3 +26,13 @@
 .diligence-preview a { color: var(--accent); }
 .diligence-preview [data-live-status] { color: var(--muted); font-size: var(--fs-sm); }
 @media print { .diligence-nav, .diligence-preview button { display: none; } .diligence-table-wrap { overflow: visible; } .diligence-table { font-size: 9px; } .diligence-table th,.diligence-table td { min-width: 0; padding: 4px; } }
+
+.diligence-preview .pp3-title { font-size: clamp(24px,3vw,36px); line-height: 1.2; max-width: 30ch; }
+.diligence-eyebrow { margin-top: 28px; font: 11px var(--mono); letter-spacing: .12em; color: var(--muted); }
+.diligence-lead { font-size: 18px !important; }
+.diligence-table td:not(:first-child) { font-variant-numeric: tabular-nums; }
+#diligence-budget > .diligence-table-wrap tbody tr:last-child,
+#diligence-operations > .diligence-table-wrap:first-of-type tbody tr:nth-child(5) { font-weight: 600; border-top: 2px solid var(--line); }
+.diligence-property > .diligence-table-wrap { margin-bottom: 16px; }
+.diligence-table-wrap:focus-visible, .diligence-property summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 700px) { .diligence-nav { gap: 2px; } .diligence-nav button { padding: 8px; } .diligence-metrics strong { font-size: 20px; } }

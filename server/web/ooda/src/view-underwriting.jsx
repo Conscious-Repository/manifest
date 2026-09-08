@@ -3,6 +3,7 @@
 function ViewUnderwriting({slug}) {
   const host=React.useRef(null);
   React.useEffect(()=>renderDealDiligence(host.current,slug,{
+    backLabel:'← Deals',
     endpoint:'/api/ooda/deal/'+encodeURIComponent(slug)+'/underwriting',
     onBack:()=>{window.location.hash='#/dashboard';}
   }),[slug]);
