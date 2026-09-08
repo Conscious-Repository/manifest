@@ -464,11 +464,6 @@ function AgencyField({ data, goalsIndex, onSelect, selection }) {
   return (
     <div className="agency-block">
       <div className="aaf-reading-key"><span>FUTURE · shared goals</span><span>NOW · people &amp; shared responsibility</span><span>PAST · completed goals &amp; decisions</span></div>
-      <div className="aaf-focus-controls">
-        <select className="v2-input" aria-label="Focus a goal" value="" onChange={e => apiRef.current?.focus('goal', e.target.value)}><option value="">Focus a goal…</option>{model.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}</select>
-        <select className="v2-input" aria-label="Find a person" value="" onChange={e => apiRef.current?.focus('person', e.target.value)}><option value="">Find a person…</option>{model.people.map(p => <option key={p.id} value={p.id}>{p.name} · {p.id}</option>)}</select>
-        <button className="v2-btn" onClick={() => apiRef.current?.reset()}>Clear focus</button>
-      </div>
       <section className="aaf" ref={rootRef} aria-label="AION collective agency field">
         <svg className="aaf__svg" viewBox="30 26 980 690" preserveAspectRatio="xMidYMid meet" role="group" aria-label="AION collective agency field. Select a person, goal, completed rock, or decision to reveal its relationships.">
           <defs>
