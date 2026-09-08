@@ -78,6 +78,32 @@ revision-checked note changes. Records remain in system/realestate.
 6. Execution phasing 751 → 753 → 760 → 748 is the email plan; existing
    automatic stage dates do not verify the actual construction sequence.
 
+## Current screening budget reconciliation
+
+Verified from production records and the shared `reScreen` calculation on
+September 8. Source-side historical contingencies above do not control the
+current screening calculation: its global contingency is 5%. Soft costs use
+15% of hard costs because these properties have no entered carrying budget.
+
+| Property | Acquisition | Closing | Hard before contingency | Screening contingency | Screening soft | Screening TDC | Difference from email |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 751 | 18,000 | 2,000 | 244,500 | 12,225 | 36,675 | 313,400 | +24,400 |
+| 753 | 18,000 | 2,000 | 270,000 | 13,500 | 40,500 | 344,000 | +34,000 |
+| 760 | 18,000 | 2,000 | 270,000 | 13,500 | 40,500 | 344,000 | +27,000 |
+| 748 | 35,000 | 1,500 | 255,000 | 12,750 | 38,250 | 342,500 | 0 |
+
+751 and 748 use work-stage estimates; 753 and 760 fall back to source budgets.
+748's equal total masks different cost allocations and is not proof of a
+reconciled line-item budget. Aggregate screening is $85,400 above the proposed
+email baseline. These differences are model assumptions, not documented
+change orders or extra cash spent. The expandable budget comparison in the
+preview explains each component without overwriting operational estimates.
+
+Verified recorded expenses: 9 entries totaling $137,311.52. Five distinct
+contract file links responded successfully. Plans/title/appraisal evidence is
+still missing from the member-property document folders; the owner has been
+asked for their location. No missing document is represented as complete.
+
 ## Lender view and future gated links
 
 Private preview lives on the deal workspace under “Lender view”. Sections:

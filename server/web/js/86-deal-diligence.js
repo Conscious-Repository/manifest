@@ -101,6 +101,29 @@ async function renderDealDiligence(host, slug) {
   const sources=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/source')));
   table(underwriting,['Property','Current modeled TDC','Current modeled NOI','Current modeled DSCR','Baseline development costs'],members.map((p,i)=>{if(!assumptions || sources[i].status!=='fulfilled')return [p.short,'Unavailable','Unavailable','Unavailable',''];const source=sources[i].value.source||{};const uw=reScreen(p,source,assumptions);const row=baseline.find(r=>r.slug===p.slug);return [p.short,money(uw.tdc),money(uw.noi),uw.dscr?uw.dscr.toFixed(2):'Not available',row?money(diligenceStack(row,basis).development):'Not recorded'];}));
 
+  const reconciliation=el('details','diligence-property');
+  reconciliation.append(el('summary','','Explain budget differences'));
+  paragraph(reconciliation,'The email is the proposed financing baseline. The current screening model uses work estimates where available, a separate contingency, and a soft-cost approximation when no carrying budget is entered. Neither column is cash spent.');
+  baseline.forEach(row=>{
+    const index=members.findIndex(p=>p.slug===row.slug), p=members[index];
+    if(!p || !assumptions || sources[index]?.status!=='fulfilled') return;
+    const uw=reScreen(p,sources[index].value.source||{},assumptions);
+    if(!uw.complete) return;
+    const total=diligenceStack(row,basis).development;
+    const sub=el('div','diligence-doc-group');sub.append(el('h4','',p.short));
+    table(sub,['Cost component','Email baseline','Current screening'],[
+      ['Acquisition',money(row.acquisition),money(uw.purchase)],
+      ['Closing costs','A2P closing/legal excluded; amount pending',money(uw.closing)],
+      ['Hard costs including contingency',money(row.hardCostsIncludingContingency),money(uw.hard+uw.contingency)],
+      ['Soft costs',money(row.softCosts),money(uw.soft)],
+      ['Total development costs',money(total),money(uw.tdc)],
+      ['Difference from email baseline','—',money(uw.tdc-total)]
+    ]);
+    paragraph(sub,'Current hard costs: '+money(uw.hard)+' from '+(uw.hardFromWork?'work-stage estimates':'the source budget')+' + '+money(uw.contingency)+' contingency ('+(assumptions.contingency_pct*100).toFixed(1)+'%). Soft costs use '+(reSrcNum(sources[index].value.source||{},'carry_cost')>0?'the recorded carrying budget.':'the screening allowance of 15% of hard costs; this is not a detailed soft-cost budget.'));
+    reconciliation.append(sub);
+  });
+  underwriting.append(reconciliation);
+
   paragraph(underwriting,'Email-baseline refinance scenario · proposed rents and loan-plus-reserve repayment, using the current vacancy, operating expense ratio and cap-rate assumptions below. This scenario is not an appraisal or a lending commitment.');
   const refinance=baseline.map(row=>diligenceRefinance(row,basis,assumptions));
   table(underwriting,['Property','Annual gross rent','Vacancy allowance','Operating expenses','NOI','Debt service on full request','DSCR on full request'],baseline.map((row,i)=>{const r=refinance[i];return r?[memberById[row.slug]?.short||row.slug,money(r.gross),money(r.vacancy),money(r.expenses),money(r.noi),money(r.debt),r.dscr.toFixed(2)]:[row.slug,'Missing operating assumptions','','','','',''];}));
