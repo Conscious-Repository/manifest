@@ -21,10 +21,10 @@ function diligenceRefinance(row, basis, assumptions) {
   return {gross,vacancy,expenses,noi,value,low,high,repayment,debt,dscr:debt?noi/debt:0,gap:Math.max(0,repayment-high)};
 }
 function diligenceOperating(p, source, assumptions, configuration = {}) {
-  if(!assumptions || !['vacancy_rate','opex_rate'].every(k=>Number.isFinite(assumptions[k])))return null;
+  if(!assumptions || !['vacancy_rate','opex_rate'].every(k=>Number.isFinite(assumptions[k])&&assumptions[k]>=0&&assumptions[k]<1))return null;
   const u=reScreen(p,source,assumptions);if(!u.complete)return null;
   const units=(p.unitMix||[]).length||p.units||reSrcNum(source,'total_units');
-  const reserve=Number.isFinite(configuration.replacementReservePerUnitYear)?configuration.replacementReservePerUnitYear*units:null;
+  const reserve=Number.isFinite(configuration.replacementReservePerUnitYear)&&configuration.replacementReservePerUnitYear>=0?configuration.replacementReservePerUnitYear*units:null;
   return {...u,units,reserve,ncf:reserve===null?null:u.noi-reserve};
 }
 function renderDealDiligence(host, slug, options = {}) {
@@ -83,20 +83,21 @@ async function drawDealUnderwriting(host, slug, options) {
   const total=key=>operating.length&&operating.every(p=>p&&Number.isFinite(p[key]))?operating.reduce((n,p)=>n+p[key],0):null;
   const expenseRows=members.flatMap(p=>(p.ledger||[]).filter(r=>r.type==='expense').map(r=>({...r,property:p.short,propertySlug:p.slug}))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   const paid=expenseRows.reduce((n,r)=>n+r.amount,0);
-  const units=total('units');
-  host.append(el('p','diligence-eyebrow','OODA GROUP · REAL ESTATE'),el('h2','pp3-title',basis.title||data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
+  const counts=members.map(p=>(p.unitMix||[]).length||p.units||reSrcNum(data.sources[p.slug]||{},'total_units'));
+  const units=counts.length&&counts.every(n=>Number.isFinite(n)&&n>0)?counts.reduce((n,x)=>n+x,0):null;
+  host.append(el('p','diligence-eyebrow','OODA GROUP · REAL ESTATE'),el('h2','pp3-title',data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
   const live=el('p','re-foot-note','Live · checked '+new Date().toLocaleTimeString());live.dataset.liveStatus='';live.setAttribute('role','status');host.append(live);
   const nav=el('nav','diligence-nav');nav.setAttribute('aria-label','Diligence sections');
-  [['summary','Summary'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['progress','Live project records'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
+  [['summary','Summary'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['progress','Live project records'],['evidence','Diligence evidence'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
   const summary=section('summary','Project overview');
   const entities=[...new Set(members.map(p=>p.entity).filter(Boolean))];
   paragraph(summary,members.length+' properties'+(units?' · '+units+' planned residences':'')+(entities.length?' · '+entities.join(', '):''),'diligence-lead');
-  paragraph(summary,'A property-level view of development costs, proposed rental income, and execution progress. Operating projections use the current property records; supporting plans, contracts, and recorded expenditures are available below.');
+  paragraph(summary,members.map(p=>p.address||p.short).join(' · '),'re-foot-note');
   const metrics=el('div','diligence-metrics');
   [['Properties / residences',members.length+' / '+(units||'—')],['Proposed monthly rent',money(total('gross')===null?null:total('gross')/12)],['Stabilized annual NOI',money(total('noi'))],['Recorded expenditures',money(paid)]].forEach(([label,value])=>{const m=el('div');m.append(el('span','',label),el('strong','',value));metrics.append(m);});summary.append(metrics);
   const properties=section('properties','Property schedule');
   table(properties,['Property','Ownership entity','Current stage','Residences','Proposed rent / month'],members.map((p,i)=>[p.short,p.entity||'—',(p.status||'—').replaceAll('_',' '),operating[i]?.units||'—',money(operating[i]?operating[i].gross/12:null)]));
-  baseline.forEach(row=>{const d=detail(properties,memberById[row.slug]?.short||row.slug);table(d,['Proposed unit','Approx. area (SF)','Monthly asking rent'],(row.units||[]).map(u=>[u.label,u.sqft||'—',money(u.rent)]));paragraph(d,'Unit areas and asking rents are proposed. See attached plans for the documented building areas.','re-foot-note');});
+  members.forEach(p=>{const d=detail(properties,p.short+' · proposed unit mix');table(d,['Unit','Beds / baths','Proposed area (SF)','Monthly asking rent'],(p.unitMix||[]).map(u=>[u.label,[u.beds??'—',u.baths??'—'].join(' / '),u.sqft||'—',money(u.rent)]));paragraph(d,'Source: current property unit schedule. Proposed areas; permitted unit count and net rentable area require supporting plans.','re-foot-note');});
   const budget=section('budget','Development budget');
   const budgetRows=baseline.map(r=>({name:memberById[r.slug]?.short||r.slug,acquisition:r.acquisition,hard:r.hardCostsIncludingContingency,soft:r.softCosts,total:r.acquisition+r.hardCostsIncludingContingency+r.softCosts}));
   const budgetTotal=k=>budgetRows.length===members.length&&budgetRows.length&&budgetRows.every(r=>Number.isFinite(r[k]))?budgetRows.reduce((n,r)=>n+r[k],0):null;
@@ -121,15 +122,15 @@ async function drawDealUnderwriting(host, slug, options) {
       const rows=baseline.map(r=>({...r,baseLoan:Math.round((r.acquisition+r.hardCostsIncludingContingency+r.softCosts)*config.constructionLtc*100)/100}));
       const stacks=rows.map(r=>diligenceStack(r,terms));
       const sum=k=>stacks.reduce((n,r)=>n+r[k],0),baseLoan=rows.reduce((n,r)=>n+r.baseLoan,0);
-      table(financing,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal']]);
+      table(financing,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal'],['Total loan / development subtotal',(sum('request')/budgetTotal('total')*100).toFixed(2)+'% · includes financed reserve'],['Total loan / identified uses',(sum('request')/(budgetTotal('total')+sum('reserve'))*100).toFixed(2)+'%']]);
       table(financing,['Sources','Amount','Uses','Amount'],[['Construction principal',money(baseLoan),'Development subtotal',money(budgetTotal('total'))],['Financed interest reserve',money(sum('reserve')),'Interest reserve',money(sum('reserve'))],['Sponsor / partner equity',money(sum('equity')),'',''],['Total capital',money(sum('request')+sum('equity')),'Total identified uses',money(budgetTotal('total')+sum('reserve'))]]);
       paragraph(financing,'Illustrative sizing; subject to underwriting. Closing costs are not included. Interest carry is modeled on full base principal; actual interest depends on draws.','re-foot-note');
       const perProperty=detail(financing,'Capital requirements by property');
       table(perProperty,['Property','Base loan','Interest reserve','Total loan','Equity'],rows.map((r,i)=>[memberById[r.slug]?.short||r.slug,money(r.baseLoan),exactMoney(stacks[i].reserve),exactMoney(stacks[i].request),money(stacks[i].equity)]));
       const refinance=detail(financing,'Stabilized refinance illustration');
       table(refinance,['Refinance assumptions','Input'],[['Interest rate',(config.refinanceRate*100).toFixed(2)+'%'],['Amortization',config.refinanceAmortYears+' years'],['Loan-to-value',(config.refinanceLtvLow*100).toFixed(0)+'–'+(config.refinanceLtvHigh*100).toFixed(0)+'%'],['Capitalization rate',Number.isFinite(assumptions.exit_cap_rate)?(assumptions.exit_cap_rate*100).toFixed(2)+'%':'Not established']]);
-      table(refinance,['Property','Income-based value','Upper LTV capacity','Annual debt service¹','NOI coverage¹'],rows.map(r=>{const u=operating[members.findIndex(p=>p.slug===r.slug)];const x=u?diligenceRefinance({...r,units:[{rent:u.gross/12}]},terms,assumptions):null;return [memberById[r.slug]?.short||r.slug,money(x?.value),money(x?.high),money(x?.debt),x?.debt?(x.noi/x.debt).toFixed(2)+'×':'—'];}));
-      paragraph(refinance,'¹ Debt service amortizes the full construction loan including interest reserve. Coverage uses NOI before replacement reserves. Income-based value is NOI divided by the displayed cap rate, not an appraisal. Proceeds remain subject to lender coverage requirements and transaction costs.','re-foot-note');
+      table(refinance,['Property','Income-based value','LTV-only capacity','Annual debt service¹','NOI coverage¹','NCF coverage²'],rows.map(r=>{const u=operating[members.findIndex(p=>p.slug===r.slug)];const x=u?diligenceRefinance({...r,units:[{rent:u.gross/12}]},terms,assumptions):null;return [memberById[r.slug]?.short||r.slug,money(x?.value),money(x?.high),money(x?.debt),x?.debt?(x.noi/x.debt).toFixed(2)+'×':'—',x?.debt&&u?.ncf!==null&&Number.isFinite(u?.ncf)?(u.ncf/x.debt).toFixed(2)+'×':'Not established'];}));
+      paragraph(refinance,'¹ Debt service amortizes the full construction loan including interest reserve. Coverage uses NOI before replacement reserves. Income-based value is NOI divided by the displayed cap rate, not an appraisal. ² NCF coverage deducts replacement reserves. LTV-only capacity is not available proceeds: coverage limits, closing costs, and other payoff obligations are not deducted.','re-foot-note');
     }
   }
   const progress=section('progress','Live project records');
@@ -140,16 +141,43 @@ async function drawDealUnderwriting(host, slug, options) {
   paragraph(expenses,'Recorded ledger entries only. Contracts are commitments and are not added to cash expenditures.','re-foot-note');
   if((basis.unmatchedPayments||[]).length)table(expenses,['Additional reported payments · pending allocation','Amount'],basis.unmatchedPayments.map(p=>[p.description,exactMoney(p.amount)]));
   members.forEach(p=>{const d=detail(progress,p.short+' · work progress');table(d,['Work phase','Status'],(p.work||[]).map(w=>[w.text,w.checked?'Complete'+(w.done?' · '+w.done:''):'Open']));});
+  const evidence=section('evidence','Diligence evidence');
+  const evidenceTypes=[['progressPlans','Progress drawings'],['title','Current title / lien report'],['plans','Approved plans / permitted unit count'],['permits','Construction permits'],['rents','Rent comparables / lease support'],['appraisal','Subject-property appraisal'],['schedule','Dated construction / draw schedule'],['insurance','Insurance evidence']];
+  const required=members.flatMap(p=>evidenceTypes.map(([key,label])=>{
+    const ref=basis.diligenceEvidence?.[p.slug]?.[key];
+    const linked=ref?.path&&(data.docs[p.slug]||[]).some(d=>d.path===ref.path);
+    return [p.short,label,linked?'Document linked · review required':'Not linked in this package'];
+  }));
+  paragraph(evidence,'Linked evidence only; document presence does not establish approval or legal sufficiency.');
+  const evidenceDetail=detail(evidence,'Property evidence · '+required.filter(r=>r[2]==='Not linked in this package').length+' items not linked');
+  table(evidenceDetail,['Property','Evidence','Package status'],required);
+  const integrity=detail(evidence,'Budget and cash reconciliation');
+  table(integrity,['Property','Acquisition budget','Recorded acquisition expenditures','Difference'],members.map(p=>{
+    const b=baseline.find(r=>r.slug===p.slug), actual=(p.ledger||[]).filter(r=>r.type==='expense'&&(r.category||r.cat)==='acquisition').reduce((n,r)=>n+r.amount,0);
+    return [p.short,money(b?.acquisition),exactMoney(actual),exactMoney(b?actual-b.acquisition:null)];
+  }));
+  if(Number.isFinite(data.source?.exit_cap_rate)&&Number.isFinite(assumptions.exit_cap_rate)&&data.source.exit_cap_rate!==assumptions.exit_cap_rate)table(integrity,['Valuation input','Value'],[['Presentation cap rate',(assumptions.exit_cap_rate*100).toFixed(2)+'%'],['Deal source cap rate',(data.source.exit_cap_rate*100).toFixed(2)+'%'],['Reconciliation','Unconfirmed']]);
+  paragraph(integrity,'Difference = recorded acquisition expenditures minus acquisition budget. The difference is not classified as an overrun or closing cost without transaction allocation.','re-foot-note');
+  const requirements=detail(evidence,'Additional underwriting inputs');
+  table(requirements,['Input','Recorded package status'],[
+    ['Replacement reserves',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?'Configured':'Not established'],
+    ['Closing / legal / financing fees','Excluded from identified uses'],
+    ['Operating costs','Aggregate allowance; detailed budget not established'],
+    ['Sponsor financials / liquidity / experience','Not linked'],
+    ['Equity contributions / existing obligations','Reconciliation not established'],
+    ['Construction draw and lease-up forecast','Not established'],
+    ['Hold-period cash flow / sale proceeds / returns','Not presented; assumptions require confirmation']
+  ]);
   const documents=section('documents','Plans and documents');
   paragraph(documents,'Plans, authorizations, and reference material. Draft plans do not establish permit approval; reference appraisals apply only to the property identified.');
   const docResults=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/docs')));
-  members.forEach((p,i)=>{const sub=el('div','diligence-doc-group');sub.append(el('h4','',p.short));const result=docResults[i];if(result.status==='rejected'){paragraph(sub,'Documents could not be loaded. Return to the workspace and retry; this is not an empty document inventory.');}else {const docs=result.value.docs||[];if(!docs.length)paragraph(sub,'Documents not yet available.');docs.forEach(d=>{const a=el('a','',d.name);a.href=docLink(d.path);a.target='_blank';a.rel='noopener';sub.append(a);});}documents.append(sub);});
+  members.forEach((p,i)=>{const sub=el('div','diligence-doc-group');sub.append(el('h4','',p.short));const result=docResults[i];if(result.status==='rejected'){paragraph(sub,'Documents could not be loaded. Return to the workspace and retry; this is not an empty document inventory.');}else {const docs=result.value.docs||[];if(!docs.length)paragraph(sub,'Documents not yet available.');docs.forEach(d=>{const a=el('a','',d.name);a.href=docLink(d.path);a.target='_blank';a.rel='noopener';sub.append(a);const f=basis.documentFacts?.[d.path];if(f){const facts=detail(sub,'Document facts · '+d.name);table(facts,['Recorded fact','Value'],[['Issue type',f.type],['Sheet date',f.sheetDate],['PDF sheets',f.sheetCount],['Existing / proposed dwellings',[f.existingUnits,f.proposedUnits].join(' / ')],['Gross above-grade area (SF)',f.grossAboveGradeSF],['Gross basement area (SF)',f.grossBasementSF],['Indexed sheets not included',(f.indexedSheetsNotIncluded||[]).join(', ')],['Source sheets',f.sourceSheets],['Drafter designation',f.drafterDesignation]].filter(r=>r[1]!==undefined));}});}documents.append(sub);});
 
   if((basis.supportingDocuments||[]).length){
     const refs=el('div','diligence-doc-group');refs.append(el('h4','','Deal reference documents'));
     (basis.supportingDocuments||[]).forEach(d=>{
       if(!d.path?.startsWith('system/realestate/docs/')) return;
-      const a=el('a','',d.title);a.href=docLink(d.path);a.target='_blank';a.rel='noopener';refs.append(a);paragraph(refs,d.note||'');
+      const a=el('a','',d.title);a.href=docLink(d.path);a.target='_blank';a.rel='noopener';refs.append(a);paragraph(refs,members.some(p=>d.path.includes('/'+p.slug+'/'))?'Member property document':'Reference property outside this deal','re-foot-note');
     });documents.append(refs);
   }
   // Contract attachments are a separate store from property-folder files.

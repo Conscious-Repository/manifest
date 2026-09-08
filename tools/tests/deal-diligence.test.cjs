@@ -27,6 +27,8 @@ test('live operating forecast preserves missing reserves and follows current ren
  assert.equal(configured.reserve,1050);assert.equal(Math.round(configured.ncf*100)/100,32677.2);
  assert.ok(c.diligenceOperating({...p,rentMonthly:4800},{},a).noi>initial.noi);
  assert.equal(c.diligenceOperating(p,{},{}),null);
+ assert.equal(c.diligenceOperating(p,{},a,{replacementReservePerUnitYear:-350}).reserve,null);
+ assert.equal(c.diligenceOperating(p,{}, {...a,vacancy_rate:1.2}),null);
 });
 
 test('presentation renders operating facts and budget without negotiation history',async()=>{
@@ -43,15 +45,15 @@ test('presentation renders operating facts and budget without negotiation histor
  const host=new Element('div');
  const options={endpoint:'/test',bundle:{
   deal:{name:'Rehab'},source:{deal_underwriting:{title:'Rehabilitation portfolio',lender:'SECRET LENDER',source:'PRIVATE EMAIL',openItems:['INTERNAL FOLLOWUP'],corrections:['PRIVATE CORRECTION'],constructionRate:.0625,termMonths:36,contingencyPct:.2,properties:[{slug:'one',acquisition:18000,hardCostsIncludingContingency:256000,softCosts:15000,baseLoan:202300,units:[{label:'A',rent:4700}]}]}},
-  members:[{slug:'one',short:'One',units:3,rentMonthly:4700,ledger:[{type:'expense',amount:1234.56,date:'2026-09-08'}]}],sources:{one:{}},docs:{one:[]},contracts:[],assumptions:{vacancy_rate:.08,opex_rate:.35}
+  members:[{slug:'one',short:'One',unitMix:[{label:'Live unit label',rent:4700}],units:3,rentMonthly:4700,ledger:[{type:'expense',amount:1234.56,date:'2026-09-08'}]}],sources:{one:{}},docs:{one:[]},contracts:[],assumptions:{vacancy_rate:.08,opex_rate:.35}
  }};
  await c.drawDealUnderwriting(host,'test',options);
  const text=host.text().replace(/\s+/g,' ');
- assert.match(text,/\$289,000/);assert.match(text,/\$1,234.56/);assert.match(text,/\$33,727/);
+ assert.match(text,/Live unit label/);assert.match(text,/\$289,000/);assert.match(text,/\$1,234.56/);assert.match(text,/\$33,727/);
  assert.match(text,/Net cash flow before financing Not established/);
  for(const forbidden of ['SECRET LENDER','PRIVATE EMAIL','INTERNAL FOLLOWUP','PRIVATE CORRECTION','interest-only','Loan + reserve','DSCR'])assert.ok(!text.includes(forbidden),forbidden);
  options.bundle.source.deal_underwriting.presentationFinancing={enabled:true,constructionLtc:.7,constructionRate:.0625,reserveMonths:12,termMonths:36,refinanceRate:.07,refinanceAmortYears:25,refinanceLtvLow:.7,refinanceLtvHigh:.75};
  options.bundle.assumptions.exit_cap_rate=.0725;
  await c.drawDealUnderwriting(host,'test',options);
- const financed=host.text();assert.match(financed,/Illustrative financing/);assert.match(financed,/70% of development subtotal/);assert.match(financed,/\$214,943.75/);assert.ok(!financed.includes('SECRET LENDER'));assert.ok(!financed.includes('PRIVATE EMAIL'));
+ const financed=host.text();assert.match(financed,/Illustrative financing/);assert.match(financed,/70% of development subtotal/);assert.match(financed,/74.38%/);assert.match(financed,/NCF coverage²/);assert.match(financed,/\$214,943.75/);assert.ok(!financed.includes('SECRET LENDER'));assert.ok(!financed.includes('PRIVATE EMAIL'));
 });

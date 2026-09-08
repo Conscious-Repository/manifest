@@ -108,8 +108,7 @@ func (s *Server) buildDealUnderwriting(slug string) (*dealUnderwriting, error) {
 	}
 	var refs struct {
 		SupportingDocuments []struct {
-			Path string `json:"path"
- "path/filepath"`
+			Path string `json:"path"`
 		} `json:"supportingDocuments"`
 	}
 	_ = json.Unmarshal(basis, &refs)
