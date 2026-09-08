@@ -120,7 +120,13 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	}
 
 	for _, id := range lookupSources {
-		if id == "deepseek" && len(res.Matched) > 0 {
+		// DeepSeek is the evidence-reasoning fallback for gaps the deterministic
+		// sources can't fill. It runs when NO source matched, OR when sources
+		// matched but produced no topics (the pubmed case: an ORCID/org match
+		// fills org but the initials can't be OpenAlex-disambiguated, so topics
+		// are still missing). Skip it only when a source already carried topics
+		// — reasoning over empty gaps is the whole point, not a redundant call.
+		if id == "deepseek" && len(res.Matched) > 0 && len(d.Draft.Topics) > 0 {
 			continue
 		}
 		adapter, ok := r.adapters[id]

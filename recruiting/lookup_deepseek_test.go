@@ -14,20 +14,20 @@ import (
 
 func TestLookupDeepSeekFallbackOrderAndKnowledge(t *testing.T) {
 	for _, exact := range []bool{false, true} {
-		t.Run(map[bool]string{false: "near miss", true: "exact"}[exact], func(t *testing.T) {
+		t.Run(map[bool]string{false: "near miss", true: "exact-no-topics"}[exact], func(t *testing.T) {
 			draft := sources.CandidateDraft{SourceID: "fake", Name: "Yu G", Evidence: []sources.Evidence{{SourceID: "pubmed", Kind: sources.EvidencePublication, URLOrFile: "https://pubmed.ncbi.nlm.nih.gov/123/", Snippet: "Guang Yu (Yu G), Example University. Diffusion MRI reconstruction."}}}
 			rs, _, _ := testRunStore(t, &fakeAdapter{id: "fake", drafts: []sources.CandidateDraft{draft}})
 			name := "Different Person"
 			if exact {
 				name = "Yu G"
 			}
+			// Exact match that fills org but NOT topics (the pubmed initials
+			// case) must still trigger DeepSeek reasoning for the missing
+			// knowledge chips. That is a real gap, not a redundant call.
 			rs.Register(&fakeAdapter{id: "openalex", drafts: []sources.CandidateDraft{{Name: name, Org: "Deterministic University"}}})
 			calls := 0
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if exact {
-					t.Error("reasoning ran despite exact deterministic match")
-				}
 				if r.Method == http.MethodGet {
 					io.WriteString(w, `{"data":[]}`)
 					return
@@ -46,8 +46,14 @@ func TestLookupDeepSeekFallbackOrderAndKnowledge(t *testing.T) {
 				t.Fatal(err)
 			}
 			if exact {
-				if calls != 0 || strings.Join(res.Asked, ",") != "openalex" || run.Drafts[0].Draft.Org != "Deterministic University" {
-					t.Fatalf("%+v", res)
+				// The exact deterministic match filled org; DeepSeek still runs
+				// to fill the missing topics (the pubmed gap), and must NOT
+				// overwrite the org that was already filled.
+				if strings.Join(res.Asked, ",") != "openalex,deepseek" || run.Drafts[0].Draft.Org != "Deterministic University" {
+					t.Fatalf("%+v %+v", res, run.Drafts)
+				}
+				if len(run.Drafts[0].Draft.Topics) == 0 {
+					t.Fatalf("DeepSeek did not fill topics for a match that lacked them: %+v", run.Drafts[0].Draft.Topics)
 				}
 				return
 			}
