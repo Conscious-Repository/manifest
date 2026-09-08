@@ -62,6 +62,10 @@ async function renderDealDiligence(host, slug) {
   const expenseRows=members.flatMap(p=>(p.ledger||[]).filter(r=>r.type==='expense').map(r=>({...r,property:p.short}))).sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   paragraph(expenses,'Recorded expense total: '+money(expenseRows.reduce((n,r)=>n+r.amount,0))+' · '+expenseRows.length+' entries · loaded '+new Date().toLocaleDateString());
   table(expenses,['Date','Property','Payee / description','Category','Amount','Evidence'],expenseRows.map(r=>[r.date,r.property,[r.contractor||r.vendor,r.note].filter(Boolean).join(' · '),r.category||r.cat||'Unclassified',money(r.amount),r.doc?'Receipt linked':r.stmt?'Statement reference; receipt not linked':'No receipt linked']));
+  if((basis.unmatchedPayments||[]).length){
+    expenses.append(el('h4','','Paid · awaiting transaction matching'));
+    table(expenses,['Payment','Amount','Reconciliation status'],basis.unmatchedPayments.map(p=>[p.description,money(p.amount),p.status]));
+  }
   const documents=section('documents','Plans and documents');
   paragraph(documents,'Permit-ready plans were targeted for early October. A drawing or an email assertion is not permit approval. Documents below are attached to this deal’s member properties.');
   const docResults=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/docs')));

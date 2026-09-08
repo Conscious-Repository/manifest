@@ -196,3 +196,8 @@ Sources:
 - https://docs.google.com/spreadsheets/d/1iTDkkhZvudlp-AtO0tapbJHKZlro0NwYnmR__eSIwVQ/edit
 - https://docs.google.com/spreadsheets/d/1zceijOcAMRJyj6orACDV6Jw8XqdhFsVQPRP19oMBEJc/edit
 - https://docs.google.com/spreadsheets/d/1rjntEygljJIYJk2U5UOuSgAFEqDMbISNk8o8Mx2PFmA/edit
+
+Owner subsequently confirmed the $1,387.20 management fee was paid and will
+provide transaction details. Lender preview now identifies this as a confirmed
+payment awaiting matching/allocation, separately from recorded ledger totals.
+No invented posting date or equal property split has been entered.
