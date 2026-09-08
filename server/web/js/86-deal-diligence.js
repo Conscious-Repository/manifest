@@ -9,7 +9,7 @@ function diligenceStack(row, basis) {
     monthlyRent: row.units.reduce((n,u)=>n+u.rent,0)};
 }
 function diligenceRefinance(row, basis, assumptions) {
-  if (![assumptions.vacancy_rate, assumptions.opex_rate, assumptions.exit_cap_rate].every(Number.isFinite) || assumptions.exit_cap_rate <= 0) return null;
+  if (!assumptions || ![assumptions.vacancy_rate, assumptions.opex_rate, assumptions.exit_cap_rate].every(Number.isFinite) || assumptions.exit_cap_rate <= 0) return null;
   const gross=row.units.reduce((n,u)=>n+u.rent,0)*12;
   const vacancy=gross*assumptions.vacancy_rate;
   const expenses=(gross-vacancy)*assumptions.opex_rate;
@@ -89,16 +89,24 @@ async function renderDealDiligence(host, slug) {
   const underwriting=section('underwriting','Underwriting and repayment');
   paragraph(underwriting,basis.repayment);
   paragraph(underwriting,'Email refinance assumptions: 7.0% interest · 25-year amortization · 70–75% LTV. Values below are the current screening model, not the financing baseline or an appraisal.');
-  if(!reAssumptionsCache)await loadReAssumptions();
+  let assumptions=null;
+  try {
+    const result=await read('/api/realestate/assumptions');
+    const needed=['vacancy_rate','opex_rate','exit_cap_rate','perm_interest_rate','perm_amort_years','perm_ltv','contingency_pct','construction_loan_ltc'];
+    if (!needed.every(key=>Number.isFinite(result.values?.[key]))) throw Error('Incomplete underwriting assumptions');
+    assumptions=result.values;
+  } catch(e) { paragraph(underwriting,'Underwriting unavailable: '+e.message+'. No zero-rate defaults have been substituted.');
+    const retry=el('button','','Reload diligence data');retry.onclick=()=>renderDealDiligence(host,slug);underwriting.append(retry);
+  }
   const sources=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/source')));
-  table(underwriting,['Property','Current modeled TDC','Current modeled NOI','Current modeled DSCR','Baseline development costs'],members.map((p,i)=>{if(sources[i].status!=='fulfilled')return [p.short,'Unavailable','Unavailable','Unavailable',''];const source=sources[i].value.source||{};const uw=reScreen(p,source,reAssumptions());const row=baseline.find(r=>r.slug===p.slug);return [p.short,money(uw.tdc),money(uw.noi),uw.dscr?uw.dscr.toFixed(2):'Not available',row?money(diligenceStack(row,basis).development):'Not recorded'];}));
-  const assumptions=reAssumptions();
+  table(underwriting,['Property','Current modeled TDC','Current modeled NOI','Current modeled DSCR','Baseline development costs'],members.map((p,i)=>{if(!assumptions || sources[i].status!=='fulfilled')return [p.short,'Unavailable','Unavailable','Unavailable',''];const source=sources[i].value.source||{};const uw=reScreen(p,source,assumptions);const row=baseline.find(r=>r.slug===p.slug);return [p.short,money(uw.tdc),money(uw.noi),uw.dscr?uw.dscr.toFixed(2):'Not available',row?money(diligenceStack(row,basis).development):'Not recorded'];}));
+
   paragraph(underwriting,'Email-baseline refinance scenario · proposed rents and loan-plus-reserve repayment, using the current vacancy, operating expense ratio and cap-rate assumptions below. This scenario is not an appraisal or a lending commitment.');
   const refinance=baseline.map(row=>diligenceRefinance(row,basis,assumptions));
   table(underwriting,['Property','Annual gross rent','Vacancy allowance','Operating expenses','NOI','Debt service on full request','DSCR on full request'],baseline.map((row,i)=>{const r=refinance[i];return r?[memberById[row.slug]?.short||row.slug,money(r.gross),money(r.vacancy),money(r.expenses),money(r.noi),money(r.debt),r.dscr.toFixed(2)]:[row.slug,'Missing operating assumptions','','','','',''];}));
   table(underwriting,['Property','Income-based value','70% LTV capacity','75% LTV capacity','Loan + reserve to repay','Shortfall at 75%'],baseline.map((row,i)=>{const r=refinance[i];return r?[memberById[row.slug]?.short||row.slug,money(r.value),money(r.low),money(r.high),money(r.repayment),money(r.gap)]:[row.slug,'Unavailable','','','',''];}));
   paragraph(underwriting,'Repayment stress assumes the entire reserve is consumed. Refinance proceeds exclude transaction costs and lender-specific debt-service constraints. Unused reserve could reduce the amount to repay.');
-  table(underwriting,['Current screening input','Value'],[['Vacancy',((assumptions.vacancy_rate||0)*100).toFixed(1)+'%'],['Operating expense ratio',((assumptions.opex_rate||0)*100).toFixed(1)+'%'],['Exit cap rate',((assumptions.exit_cap_rate||0)*100).toFixed(2)+'%'],['Permanent rate',((assumptions.perm_interest_rate||0)*100).toFixed(2)+'%'],['Permanent amortization',assumptions.perm_amort_years+' years'],['Permanent LTV',((assumptions.perm_ltv||0)*100).toFixed(1)+'%'],['Current model contingency',((assumptions.contingency_pct||0)*100).toFixed(1)+'%'],['Current model construction LTC',((assumptions.construction_loan_ltc||0)*100).toFixed(1)+'%']]);
+  if (assumptions) table(underwriting,['Current screening input','Value'],[['Vacancy',((assumptions.vacancy_rate||0)*100).toFixed(1)+'%'],['Operating expense ratio',((assumptions.opex_rate||0)*100).toFixed(1)+'%'],['Exit cap rate',((assumptions.exit_cap_rate||0)*100).toFixed(2)+'%'],['Permanent rate',((assumptions.perm_interest_rate||0)*100).toFixed(2)+'%'],['Permanent amortization',assumptions.perm_amort_years+' years'],['Permanent LTV',((assumptions.perm_ltv||0)*100).toFixed(1)+'%'],['Current model contingency',((assumptions.contingency_pct||0)*100).toFixed(1)+'%'],['Current model construction LTC',((assumptions.construction_loan_ltc||0)*100).toFixed(1)+'%']]);
   paragraph(underwriting,'NOI = proposed annual rent × (1 − vacancy) × (1 − operating expense ratio). Screening value = NOI ÷ cap rate. Debt service uses the screening takeout loan and the displayed permanent loan terms. These are simplified screening calculations; detailed tax, insurance, reserve and draw schedules still require reconciliation.');
   paragraph(underwriting,'The original locked underwriting remains a separate dated record. Current expense totals and the financing baseline do not overwrite that history.');
 
