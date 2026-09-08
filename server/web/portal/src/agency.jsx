@@ -229,7 +229,7 @@ function buildAgencyField(root, model) {
     group.append(make('circle', { class: 'aaf-goal__button', cx: goal.x, cy: goal.y, r: 9 }));
     group.append(make('circle', { class: 'aaf-goal__core', cx: goal.x, cy: goal.y, r: 2 }));
     const title = make('text', { class: 'aaf-goal__title', x: goal.labelX, y: goal.labelY, 'text-anchor': 'middle' });
-    goal.lines.forEach((line, index) => title.append(make('tspan', { x: goal.labelX, dy: index ? 11 : 0 }, line)));
+    goal.lines.forEach((line, index) => title.append(make('tspan', { x: goal.labelX, dy: index ? 14 : 0 }, line)));
     group.append(title);
     group.append(make('text', { class: 'aaf-goal__horizon', x: goal.labelX, y: goal.metaY, 'text-anchor': 'middle' }, goal.horizon));
     group.append(make('title', {}, `${goal.title} · ${goal.horizon}. Select to see people and recorded history linked to this goal.`));
@@ -316,7 +316,7 @@ function buildAgencyField(root, model) {
   const emit = (type, id, item) => root.dispatchEvent(new CustomEvent('aion-agency-select', { bubbles: true, detail: { type, id, item } }));
   const reset = (notify = true) => {
     root.querySelectorAll('.is-hot,.is-dim,.is-visible,.is-focus').forEach(node => node.classList.remove('is-hot', 'is-dim', 'is-visible', 'is-focus'));
-    status.textContent = 'Selection cleared';
+    status.textContent = 'Select a goal or person to trace their connections. Hover or focus a marker for its full name.';
     if (notify) emit('clear', null, null);
   };
   const showRelations = tokens => {
@@ -404,10 +404,12 @@ function buildAgencyField(root, model) {
   const nodeListeners = [];
   root.querySelectorAll('[data-kind]').forEach(node => {
     const onClick = event => { event.stopPropagation(); activate(node); };
+    const onPreview = () => { status.textContent = node.getAttribute('aria-label') || ''; };
+    node.addEventListener('pointerenter', onPreview); node.addEventListener('focus', onPreview);
     const onKey = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(node); } };
     node.addEventListener('click', onClick);
     node.addEventListener('keydown', onKey);
-    nodeListeners.push([node, onClick, onKey]);
+    nodeListeners.push([node, onClick, onKey, onPreview]);
   });
   const onRootClick = event => { if (event.target === root || event.target === root.querySelector('.aaf__svg')) reset(); };
   root.addEventListener('click', onRootClick);
@@ -415,13 +417,15 @@ function buildAgencyField(root, model) {
   return {
     cleanup: () => {
       root.removeEventListener('click', onRootClick);
-      nodeListeners.forEach(([node, onClick, onKey]) => {
+      nodeListeners.forEach(([node, onClick, onKey, onPreview]) => {
+        node.removeEventListener('pointerenter', onPreview); node.removeEventListener('focus', onPreview);
         node.removeEventListener('click', onClick);
         node.removeEventListener('keydown', onKey);
       });
       layers.forEach(l => { l.innerHTML = ''; });
     },
-    reset
+    reset,
+    focus: (kind, id) => { const node = [...root.querySelectorAll('[data-kind]')].find(n => n.dataset.kind === kind && n.dataset.id === id); if (node) activate(node); }
   };
 }
 
@@ -458,6 +462,11 @@ function AgencyField({ data, goalsIndex, onSelect, selection }) {
   return (
     <div className="agency-block">
       <div className="aaf-reading-key"><span>FUTURE · shared goals</span><span>NOW · people &amp; shared responsibility</span><span>PAST · completed goals &amp; decisions</span></div>
+      <div className="aaf-focus-controls">
+        <select className="v2-input" aria-label="Focus a goal" value="" onChange={e => apiRef.current?.focus('goal', e.target.value)}><option value="">Focus a goal…</option>{model.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}</select>
+        <select className="v2-input" aria-label="Find a person" value="" onChange={e => apiRef.current?.focus('person', e.target.value)}><option value="">Find a person…</option>{model.people.map(p => <option key={p.id} value={p.id}>{p.name} · {p.id}</option>)}</select>
+        <button className="v2-btn" onClick={() => apiRef.current?.reset()}>Clear focus</button>
+      </div>
       <section className="aaf" ref={rootRef} aria-label="AION collective agency field">
         <svg className="aaf__svg" viewBox="30 26 980 690" preserveAspectRatio="xMidYMid meet" role="group" aria-label="AION collective agency field. Select a person, goal, completed rock, or decision to reveal its relationships.">
           <defs>
@@ -479,7 +488,7 @@ function AgencyField({ data, goalsIndex, onSelect, selection }) {
           <g data-aaf-decisions></g>
           <g data-aaf-people></g>
         </svg>
-        <span className="aaf__status" data-aaf-status aria-live="polite"></span>
+        <span className="aaf__status" data-aaf-status aria-live="polite">Select a goal or person to trace their connections. Hover or focus a marker for its full name.</span>
       </section>
       <details className="aaf-guide"><summary>Read this field · {model.goals.length} goals · {model.people.length} people</summary>
         <p>AION’s outer cone holds overlapping areas of work. Above the present are shared goals; below are recorded milestones and the {model.decisions.length} most recent decisions. Select a person or goal to trace the recorded connections.</p>
