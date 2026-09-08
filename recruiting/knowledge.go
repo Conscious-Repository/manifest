@@ -2,6 +2,7 @@ package recruiting
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,13 +105,21 @@ func DeriveKnowledge(d sources.CandidateDraft, candidateID, recordRef string, no
 			continue
 		}
 		seen[id] = true
+		edgeSource, edgeBasis, edgeConfidence, edgeEvidence := topicSource, basis, KnowledgeConfidence, strings.Join(works, ", ")
+		for _, inference := range d.TopicInferences {
+			if TopicID(inference.Topic) == id && inference.Source == "deepseek" && inference.Basis != "" && inference.URL != "" && inference.Confidence > 0 && inference.Confidence <= 0.5 {
+				edgeSource, edgeBasis, edgeEvidence = inference.Source, inference.Basis, inference.URL
+				edgeConfidence = strconv.FormatFloat(inference.Confidence, 'f', 2, 64)
+				break
+			}
+		}
 		k.Topics = append(k.Topics, graph.Entity{
-			ID: id, Kind: graph.KindTopic, Title: title, Source: topicSource, Added: date,
+			ID: id, Kind: graph.KindTopic, Title: title, Source: edgeSource, Added: date,
 		})
 		k.Edges = append(k.Edges, graph.Edge{
 			From: k.Person.AsRef(), To: graph.R(graph.KindTopic, id), Kind: graph.EdgeExpertise,
-			Basis: basis, Confidence: KnowledgeConfidence, Inferred: true, Source: topicSource,
-			Evidence: strings.Join(works, ", "), Observed: date,
+			Basis: edgeBasis, Confidence: edgeConfidence, Inferred: true, Source: edgeSource,
+			Evidence: edgeEvidence, Observed: date,
 		})
 	}
 	return k

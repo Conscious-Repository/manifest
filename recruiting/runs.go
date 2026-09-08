@@ -175,6 +175,9 @@ func (r *RunStore) Sources() []SourceInfo {
 	out := make([]SourceInfo, 0, len(r.order))
 	for _, id := range r.order {
 		a := r.adapters[id]
+		if lookup, ok := a.(interface{ LookupOnly() bool }); ok && lookup.LookupOnly() {
+			continue
+		}
 		fields := a.Scope()
 		if fields == nil {
 			fields = []sources.ScopeField{}
@@ -200,6 +203,9 @@ func (r *RunStore) prepareScope(req RunRequest) (sources.Adapter, sources.Scope,
 	adapter, ok := r.adapters[strings.TrimSpace(req.Source)]
 	if !ok {
 		return nil, sources.Scope{}, errf("unknown source %q", req.Source)
+	}
+	if lookup, ok := adapter.(interface{ LookupOnly() bool }); ok && lookup.LookupOnly() {
+		return nil, sources.Scope{}, errf("source %q enriches existing drafts only", req.Source)
 	}
 	role := strings.TrimSpace(req.Role)
 	if role != "" && !r.store.roleExists(role) {

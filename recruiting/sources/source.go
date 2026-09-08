@@ -171,7 +171,21 @@ type DedupeHint struct {
 
 // CandidateDraft is what an adapter emits. It is NOT a record: nothing here
 // has touched the vault, and nothing does until the owner accepts it.
+// TopicInference is a model-derived chip, with the exact input quote as basis.
+// It remains separate from verbatim source Evidence and is projected on accept.
+type TopicInference struct {
+	Topic      string  `json:"topic"`
+	Confidence float64 `json:"confidence"`
+	Source     string  `json:"source"`
+	Basis      string  `json:"basis"`
+	URL        string  `json:"url"`
+}
+
 type CandidateDraft struct {
+	// CanonicalName is a supported lookup trace, never a replacement for Name.
+	CanonicalName   string           `json:"canonicalName,omitempty"`
+	TopicInferences []TopicInference `json:"topicInferences,omitempty"`
+
 	SourceID   string   `json:"sourceId"`
 	ExternalID string   `json:"externalId,omitempty"`
 	Name       string   `json:"name"`
@@ -196,7 +210,8 @@ type CandidateDraft struct {
 
 	// Topics are the person's knowledge chips, carried AS the provider said
 	// them (O1) from their OWN author record only (O4) — never inferred from
-	// what a co-author works on. Empty means the source named none, not that
+	// what a co-author works on. Explicit lookup may also extract chips from
+	// attributed publications, recorded in TopicInferences. Empty means the source named none, not that
 	// the person has none. The `topics:` evidence snippet is the provenance.
 	Topics []string `json:"topics,omitempty"`
 

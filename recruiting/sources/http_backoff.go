@@ -49,25 +49,38 @@ func scholarlyDelay(header string, attempt int, now time.Time) time.Duration {
 // scholarlyGet retries only explicit transient statuses. The adapter supplies its
 // headers, context deadline and body bound; each response closes before waiting.
 func scholarlyGet(client http.Client, req *http.Request, source, path string, maxBody int64) ([]byte, error) {
+	return scholarlyRequest(client, req, source, path, maxBody)
+}
+
+// scholarlyRequest also supports replayable POST bodies under the same retry budget.
+func scholarlyRequest(client http.Client, req *http.Request, source, path string, maxBody int64) ([]byte, error) {
 	for attempt := 0; attempt < scholarlyAttempts; attempt++ {
-		resp, err := client.Do(req.Clone(req.Context()))
+		next := req.Clone(req.Context())
+		if req.GetBody != nil {
+			body, err := req.GetBody()
+			if err != nil {
+				return nil, err
+			}
+			next.Body = body
+		}
+		resp, err := client.Do(next)
 		if err != nil {
-			return nil, fmt.Errorf("%s: GET %s: %w", source, path, err)
+			return nil, fmt.Errorf("%s: %s %s: %w", source, req.Method, path, err)
 		}
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 		resp.Body.Close()
 		transient := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable
 		if transient && attempt+1 < scholarlyAttempts {
 			if err := scholarlyWait(req.Context(), scholarlyDelay(resp.Header.Get("Retry-After"), attempt, time.Now())); err != nil {
-				return nil, fmt.Errorf("%s: retry GET %s: %w", source, path, err)
+				return nil, fmt.Errorf("%s: retry %s %s: %w", source, req.Method, path, err)
 			}
 			continue
 		}
 		if readErr != nil {
-			return nil, fmt.Errorf("%s: reading GET %s: %w", source, path, readErr)
+			return nil, fmt.Errorf("%s: reading %s %s: %w", source, req.Method, path, readErr)
 		}
 		if resp.StatusCode != http.StatusOK {
-			msg := fmt.Sprintf("%s: GET %s returned HTTP %d", source, path, resp.StatusCode)
+			msg := fmt.Sprintf("%s: %s %s returned HTTP %d", source, req.Method, path, resp.StatusCode)
 			if excerpt := strings.Join(strings.Fields(string(body)), " "); excerpt != "" {
 				if len(excerpt) > 200 {
 					excerpt = excerpt[:200] + "…"

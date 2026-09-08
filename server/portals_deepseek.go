@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"manifest/internal/labmodel"
 	"manifest/portals"
 	"manifest/signals"
 )
@@ -22,26 +23,17 @@ import (
 // rather than "via engine" faith. The row reports the DISCOVERED model id
 // (the notes and reality have disagreed before; never hardcode it). A
 // degraded row is the "tell RJ" indicator — the serving stack is his; a
-// careless restart can OOM the Sparks. No poller, no cards, no LLM in
-// manifest's loop (portals doctrine intact); the ENGINE consumes the same
-// URL file as its conduit base (Phase 5b).
+// careless restart can OOM the Sparks. No poller; recruiting can reason on
+// an explicitly requested lookup. The ENGINE consumes the same URL file as
+// its conduit base (Phase 5b).
 
 const deepseekID = "deepseek-local"
 
 // deepseekURLPath is the one source of truth per machine for the endpoint —
 // manifest tests it, the engine's conduit reads it. LAB_MODEL_URL env wins.
-func deepseekURLPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "excalibur", "lab_model_url")
-}
+func deepseekURLPath() string { return labmodel.URLPath() }
 
-func deepseekBaseURL() string {
-	if v := strings.TrimSpace(os.Getenv("LAB_MODEL_URL")); v != "" {
-		return strings.TrimRight(v, "/")
-	}
-	b, _ := os.ReadFile(deepseekURLPath())
-	return strings.TrimRight(strings.TrimSpace(string(b)), "/")
-}
+func deepseekBaseURL() string { return labmodel.BaseURL() }
 
 // deepseekPortalRow assembles the row from the URL file alone — state beyond
 // sealed is decided by an explicit test (no background pings, per doctrine).

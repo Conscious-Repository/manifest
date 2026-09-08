@@ -2,6 +2,7 @@ package recruiting
 
 import (
 	"context"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -27,6 +28,9 @@ import (
 // onto someone's record where they will read as fact forever. A near miss is
 // dropped, not ranked — the cost of a miss is one empty result, the cost of a
 // wrong merge is a corrupted citation.
+// If all deterministic sources miss, DeepSeek may reason over cited draft
+// evidence. It returns the original byline and separately supported claims;
+// it cannot fuzzy-merge an external search hit.
 //
 // OpenAlex may also resolve a PubMed first author through that exact paper's
 // raw byline and durable author ID. It returns the original name with cited
@@ -43,7 +47,7 @@ import (
 // order their answers are merged. A source is skipped when it is the one that
 // produced the draft (it has already said what it knows) and when it is not
 // registered on this box.
-var lookupSources = []string{"openalex", "orcid", "github", "pubmed"}
+var lookupSources = []string{"openalex", "orcid", "github", "pubmed", "deepseek"}
 
 // lookupMax bounds each source's answer. A name lookup wants the few rows that
 // carry that exact name, not a survey.
@@ -108,6 +112,9 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 	}
 
 	for _, id := range lookupSources {
+		if id == "deepseek" && len(res.Matched) > 0 {
+			continue
+		}
 		adapter, ok := r.adapters[id]
 		if !ok || id == d.Draft.SourceID {
 			continue
@@ -124,6 +131,9 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 		}
 		if err != nil {
 			res.Failed = append(res.Failed, id)
+			if id == "deepseek" {
+				log.Printf("recruiting lookup: DeepSeek skipped: %v", err)
+			}
 			continue
 		}
 		matched := false
@@ -158,6 +168,7 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 				dst  *string
 				from string
 			}{
+				{"canonicalName", &d.Draft.CanonicalName, h.CanonicalName},
 				{"title", &d.Draft.Title, h.Title},
 				{"org", &d.Draft.Org, h.Org},
 				{"location", &d.Draft.Location, h.Location},
@@ -185,6 +196,12 @@ func (r *RunStore) Lookup(ctx context.Context, runID, draftID string, now time.T
 				}
 				haveTopic[key] = true
 				d.Draft.Topics = append(d.Draft.Topics, t)
+				for _, inference := range h.TopicInferences {
+					if topicKey(inference.Topic) == key {
+						d.Draft.TopicInferences = append(d.Draft.TopicInferences, inference)
+						break
+					}
+				}
 				res.Filled = append(res.Filled, "topics")
 			}
 		}
