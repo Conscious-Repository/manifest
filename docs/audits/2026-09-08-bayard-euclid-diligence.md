@@ -140,3 +140,25 @@ folder now contains its draft; other member-property plan folders remain empty.
 The similarly named 736 Euclid.pdf is a 2024 settlement statement, not the
 appraisal. Building Permit.pdf concerns 4848 Fountain, not these properties;
 neither was attached as proof for this deal.
+
+## Acquisition authorization and member funding follow-up
+
+Uploaded the unchanged 748 member consent PDF, with signatures dated July 28
+from Benjamin Anderson, Brian Fromal and Stephen Matic. It authorizes $35,000
+to acquire from H & H; it is not proof of closing or debt-free title. The local
+Bayard special warranty deed is an unsigned template with blank legal exhibit.
+The inspected ALTA commitment is for 736 and was not attached as deal title.
+
+Connected Drive revealed the July 10 $54,000 Fromal Organization member loan
+to OODA Development Fund I LP, split $18,000 per Bayard acquisition. The note
+states it is unsecured, not capital, and repaid at project capitalization less
+a GP commitment holdback. No current payoff evidence has been established.
+This does not by itself contradict the owner's property-lien statement, but
+it requires reconciliation of available equity and capitalization proceeds.
+Owner asked whether repaid or still outstanding. No extra expense or financing
+request has been booked based on the original note alone.
+
+Source: https://drive.google.com/file/d/1y_ZYwNnNJrvcP7sk53-ZBmyGfr8VMd5M/view
+
+Drive also contains the 751/753/760 project budget trackers and Garden SPE GL
+ledger; these are the next sources for checking recorded expenses and funding.
