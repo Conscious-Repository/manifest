@@ -20,10 +20,18 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   const [editRock, setEditRock] = React.useState('');
   const [err, setErr] = React.useState('');
   const seq = React.useRef(0);
+  const loadSeq = React.useRef(0);
+  const sendingRef = React.useRef(false);
+  const drafts = React.useRef({});
+  const [sending, setSending] = React.useState(false);
+  const [loadError, setLoadError] = React.useState('');
 
   const load = React.useCallback(() => {
-    window.TEAM_API.get('api/chat/threads').then(r => {
-      if (!r.ok || !r.value) return;
+    const request = ++loadSeq.current;
+    return window.TEAM_API.get('api/chat/threads').then(r => {
+      if (request !== loadSeq.current) return;
+      if (!r.ok || !r.value) { setLoadError(r.error || 'Could not load conversations.'); return; }
+      setLoadError('');
       setThreads(r.value.threads || []);
       setMsgs(r.value.messages || {});
       setEngine(r.value.engine || null);
@@ -44,8 +52,8 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   // pending → poll fast; report the pending-proposal count to the rail
   const pendingRun = engine && (engine.active || (engine.pending && engine.pending.length));
   React.useEffect(() => {
-    if (!pendingRun) return;
-    const t = setInterval(load, 3500);
+    const tick = () => { if (document.visibilityState === 'visible') load(); };
+    const t = setInterval(tick, pendingRun ? 3500 : 20000);
     return () => clearInterval(t);
   }, [pendingRun, load]);
   React.useEffect(() => {
@@ -61,9 +69,9 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   const threadMsgs = thread ? (msgs[thread.id] || []) : [];
   const admin = !!(me && me.admin);
   const canAct = !!(me && (me.admin || me.canFire));
-  const busy = !!(engine && (engine.active || (engine.pending && engine.pending.length)));
+  const busy = sending || !!(engine && (engine.active || (engine.pending && engine.pending.length)));
 
-  const rockChoices = [{ id: '', label: 'no rock · whole vault' }].concat(
+  const rockChoices = [{ id: '', label: 'No goal selected · team context' }].concat(
     goalsIndex ? goalsIndex.goals.filter(g => g.horizon === 'rock' && g.status !== 'done')
       .map(g => ({ id: g.id, label: g.title })) : []);
   const rockTitle = id => { const g = goalsIndex && goalsIndex.get(id); return g ? g.title : id; };
@@ -72,13 +80,19 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   const patchThread = (op, extra) => post('api/chat/thread', Object.assign({ op: op, id: thread.id }, extra || {})).then(load);
 
   const newThread = () => {
+    if (sendingRef.current) return;
     seq.current += 1;
     const id = 'th/new-' + Date.now();
-    post('api/chat/thread', { op: 'create', id: id, title: 'untitled' }).then(() => {
-      setShowArch(false); setActive(id); setThreadEdit(true); setEditName(''); setEditRock(''); setCtx([]); load();
+    post('api/chat/thread', { op: 'create', id: id, title: 'untitled' }).then(r => {
+      if (!r.ok) return;
+      if (thread) drafts.current[thread.id] = draft;
+      setDraft(''); setShowArch(false); setActive(id); setThreadEdit(true); setEditName(''); setEditRock(''); setCtx([]); load();
     });
   };
   const switchThread = id => {
+    if (sendingRef.current) return;
+    if (thread) drafts.current[thread.id] = draft;
+    setDraft(drafts.current[id] || "");
     if (thread && thread.id !== id) post('api/chat/thread', { op: 'prune', id: '' }); // discard empty untitled
     setActive(id); setThreadEdit(false); setCtx([]); setRunSel(null); setPropOpen(null);
   };
@@ -88,10 +102,12 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
   // reads it); it never gates the buttons.
   const send = (key) => {
     const rt = window.CHAT_ACTIONS.ritualOf(key);
-    if (!thread || !draft.trim() || busy) return;
+    if (!thread || !draft.trim() || busy || sendingRef.current) return;
+    sendingRef.current = true; setSending(true);
+    const sentDraft = draft;
     setErr(''); setLastRitual(rt);
     post('api/chat/ask', { thread: thread.id, text: draft.trim(), ritual: rt, context: ctx.slice() })
-      .then(r => { if (r.ok) { setDraft(''); load(); } });
+      .then(r => { if (r.ok) { setDraft(current => current === sentDraft ? '' : current); setCtx([]); load(); } }).finally(() => { sendingRef.current = false; setSending(false); });
   };
 
   const decide = (m, idx, apply) =>
@@ -152,17 +168,19 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
       gap: '0 26px', alignItems: 'start' }}>
       {/* ── thread column ── */}
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 150px)', minWidth: 0 }}>
+        {loadError && <div role="alert" className="portal-load-error">{loadError} <button className="v2-btn" onClick={load}>Retry conversations</button></div>}
+        <button className="v2-btn portal-chat-jump" onClick={() => { const input = document.getElementById('aion-chat-message'); if (input) { input.scrollIntoView({block:'center'}); input.focus(); } }}>Write a message ↓</button>
         {/* thread strip */}
         <div style={{ display: 'flex', borderBottom: '1px solid var(--line,#3a3a3a)', padding: '10px 0 0', flexWrap: 'wrap' }}>
           {pool.map(t => (
-            <button key={t.id} className="v2-bare v2-hoverink" onClick={() => switchThread(t.id)}
+            <button key={t.id} className="v2-bare v2-hoverink" disabled={sending} onClick={() => switchThread(t.id)}
               style={{ borderBottom: '2px solid ' + (thread && t.id === thread.id ? 'var(--accent,#0091ea)' : 'transparent'),
                 color: thread && t.id === thread.id ? 'var(--ink,#d4d4d4)' : 'var(--ink-faint,#888)', padding: '5px 14px 7px', fontSize: 12 }}>
               {t.title || 'untitled'} <span style={{ color: 'var(--ink-mute,#666)', fontSize: 11 }}>{(msgs[t.id] || []).length || ''}</span>
             </button>
           ))}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button className="v2-bare v2-hoverink" onClick={() => { setShowArch(a => !a); setActive(null); }}
+            <button className="v2-bare v2-hoverink" disabled={sending} onClick={() => { if (thread) drafts.current[thread.id] = draft; setDraft(''); setCtx([]); setShowArch(a => !a); setActive(null); }}
               style={{ color: 'var(--ink-mute,#666)', fontSize: 11 }}>
               {showArch ? '← live threads' : 'archived ' + threads.filter(t => t.archived).length}
             </button>
@@ -185,7 +203,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 <button className="v2-bare v2-underlink v2-hoverink"
                   onClick={() => { setThreadEdit(true); setEditName(thread.title === 'untitled' ? '' : thread.title); setEditRock(thread.rock || ''); }}
                   style={{ fontSize: 12, color: thread.rock ? 'var(--ink-faint,#888)' : 'var(--accent,#0091ea)' }}>
-                  {thread.rock ? 'scoped to ' + rockTitle(thread.rock) : 'no rock scope · name it and pick one'}
+                  {thread.rock ? 'scoped to ' + rockTitle(thread.rock) : 'Name this conversation or link a goal'}
                 </button>
               ) : (
                 <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -203,8 +221,6 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                     }}>done</button>
                 </div>
               )}
-              <span title="chat build marker (temporary diagnostic)"
-                style={{ marginLeft: 'auto', color: 'var(--ink-mute,#555)', fontSize: 10, letterSpacing: '.12em' }}>BUILD 19</span>
               <button className="v2-bare v2-hoverink" style={{ color: 'var(--ink-mute,#666)', fontSize: 11 }}
                 onClick={() => patchThread(thread.archived ? 'reopen' : 'archive')}>
                 {thread.archived ? 'reopen thread' : 'archive thread'}
@@ -356,7 +372,7 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
                 </div>
               )}
               <div style={{ position: 'relative', marginTop: 9 }}>
-                <textarea className="v2-input" value={draft} rows={3}
+                <textarea id="aion-chat-message" aria-label="Message Kairos" className="v2-input" value={draft} rows={3}
                   placeholder={window.CHAT_ACTIONS.placeholder + ' · @ to tag an intent'}
                   onChange={e => setDraft(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(e.shiftKey ? 'delegate' : 'ask'); } }}

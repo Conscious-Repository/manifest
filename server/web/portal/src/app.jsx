@@ -65,7 +65,7 @@ function decodeHashID(raw) {
 }
 
 function parseHash() {
-  const h = (location.hash || '').replace('#', '');
+  const h = (location.hash || '').replace(/^#\/?/, '');
   // #item/<id> is the shareable deep link to one item. Item ids carry slashes
   // (aion-bl/x), so everything after the prefix is the id.
   if (/^item\//.test(h)) return { view: 'work', anchor: null, itemId: decodeHashID(h.slice(5)) };
@@ -167,6 +167,15 @@ function PortalApp() {
     });
   }, []);
 
+  React.useEffect(() => {
+    const navigate = () => {
+      const route = parseHash(); if (!route) return;
+      setView(route.view); setSel(null); setDeepItem(route.itemId || null);
+    };
+    window.addEventListener('hashchange', navigate);
+    return () => window.removeEventListener('hashchange', navigate);
+  }, []);
+
   // resize (8px threshold to avoid thrash)
   React.useEffect(() => {
     let last = window.innerWidth;
@@ -182,12 +191,12 @@ function PortalApp() {
   // view — #item/<id> must not outlive the item being on screen.
   const select = React.useCallback((kind, id) => {
     setSel({ kind: kind, id: id });
-    if (kind === 'item') history.replaceState(null, '', '#item/' + id);
+    if (kind === 'item') history.pushState(null, '', '#item/' + encodeURIComponent(id));
   }, []);
   const clearSel = React.useCallback((toView) => {
     setSel(null);
     setDeepItem(null);
-    if (/^#item\//.test(location.hash)) history.replaceState(null, '', '#' + (toView || view));
+    if (/^#\/?item\//.test(location.hash)) history.replaceState(null, '', '#' + (toView || view));
   }, [view]);
 
   // Esc: close modal first, else clear selection
@@ -209,7 +218,7 @@ function PortalApp() {
     if (tab) setLibTab(tab);
     const hash = anchorId === 'sec-timeline' ? '#timeline'
       : anchorId === 'sec-proposals' ? '#proposals' : '#' + toView;
-    history.replaceState(null, '', hash);
+    history.pushState(null, '', hash);
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!anchorId) { window.scrollTo({ top: 0 }); return; }
       const el = document.getElementById(anchorId);
@@ -262,7 +271,7 @@ function PortalApp() {
   let main;
   if (selItem) {
     const ItemView = safe('ItemView');
-    main = <ItemView item={selItem} me={me} team={data.team} teamOn={teamOn}
+    main = <ItemView key={selItem.id} item={selItem} me={me} team={data.team} teamOn={teamOn}
       goalsIndex={goalsIndex} filter={filter} onBack={() => { clearSel('work'); setView('work'); }}
       pin={pin} reloadTeam={reloadTeam} onDiscuss={onDiscuss} />;
   } else if (view === 'field') {

@@ -11,6 +11,8 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
   const today = U.todayISO();
 
   const [panel, setPanel] = React.useState(null);
+  const [loadError, setLoadError] = React.useState('');
+  const loadSeq = React.useRef(0);
   const [activity, setActivity] = React.useState([]);
   const [saveNote, setSaveNote] = React.useState('');
   const [planOpen, setPlanOpen] = React.useState(false);
@@ -32,10 +34,15 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
   }, [item.id]);
 
   const loadAll = React.useCallback(() => {
-    PT.loadPanel(item.id).then(r => setPanel(r.ok ? r.value : null));
-    PT.loadActivity(item.id).then(r => setActivity(r.ok && r.value ? (r.value.activity || []) : []));
+    const seq = ++loadSeq.current;
+    return Promise.all([PT.loadPanel(item.id), PT.loadActivity(item.id)]).then(([record, events]) => {
+      if (seq !== loadSeq.current) return;
+      setLoadError(!record.ok ? record.error : !events.ok ? events.error : '');
+      if (record.ok) setPanel(record.value);
+      if (events.ok) setActivity((events.value && events.value.activity) || []);
+    });
   }, [item.id]);
-  React.useEffect(() => { loadAll(); }, [loadAll]);
+  React.useEffect(() => { setPanel(null); setActivity([]); loadAll(); return () => { loadSeq.current++; }; }, [loadAll]);
 
   const deleg = (panel && panel.delegation) || null;
   const delegState = deleg ? deleg.state : '';
@@ -62,7 +69,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
 
   const patch = fields => {
     TEAM_API.post('api/team/item/' + item.id, fields, 'PATCH').then(r => {
-      setSaveNote(r.ok ? 'PATCH /api/team/item/' + item.id.split('/').pop() + ' · applied' : r.error);
+      setSaveNote(r.ok ? 'Changes saved' : r.error);
       if (r.ok) { reloadTeam(); loadAll(); }
     });
   };
@@ -101,7 +108,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
     if (!names.length) { setSaveNote('no section changed'); return; }
     PT.savePlanSections(item.id, sections).then(r => {
       if (r.ok) {
-        setSaveNote('POST /api/team/plan · ' + names.join(' + ') + ' · section swap applied');
+        setSaveNote('Plan saved');
         setPlanDraft(null);
         loadAll();
       } else setSaveNote(r.error);
@@ -142,7 +149,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
       runNote: 'writes and attachments need one click',
       run: () => {
         TEAM_API.post('api/team/fire', { item: item.id }).then(r => {
-          setSaveNote(r.ok ? 'POST /api/team/fire · queued' : r.error);
+          setSaveNote(r.ok ? 'Agent work queued' : r.error);
           loadAll(); reloadTeam();
         });
       },
@@ -189,7 +196,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
   const primaryAgent = agents.length ? '@' + agents[0].harness : '@…';
   const composerHint = asksAgent
     ? (/\?/.test(composer) ? 'a question is answered from the context it has — no run needed' : 'it will post a plan; running it is one click')
-    : 'plain comment lands on the record';
+    : 'Visible to your team';
 
   const itemSub = [
     item.owner ? U.personName(item.owner) : 'unowned',
@@ -201,6 +208,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
 
   return (
     <div style={{ maxWidth: 920 }}>
+      {loadError && <div role="alert" className="portal-load-error">{loadError} <button className="v2-btn" onClick={loadAll}>Retry loading task</button></div>}
       <button className="v2-bare v2-hoverink" onClick={onBack}
         style={{ color: 'var(--ink-faint,#888)', fontSize: 11, padding: '10px 0 0' }}>← work</button>
 
@@ -273,7 +281,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
       {!canEdit && teamOn && (
         <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)', borderTop: '1px solid var(--line,#3a3a3a)',
           borderBottom: '1px solid var(--line,#3a3a3a)', padding: '10px 0', marginTop: 14 }}>
-          fields are assignee-only · {U.personName(item.owner)} holds this one
+          Only the assignee can edit · {U.personName(item.owner)} holds this one
         </div>
       )}
 
@@ -282,12 +290,10 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
           <span className="v2-label">PLAN</span>
           <button className="v2-bare v2-hoverink" onClick={() => { setPlanOpen(!planOpen); setPlanDraft(null); }}
             style={{ color: 'var(--ink-dim,#aaa)', fontSize: 11.5 }}>
-            {planOpen ? '[-] collapse' : (recExists ? '[+] open plan file' : '[+] start a plan file')}
+            {planOpen ? '[-] collapse' : (recExists ? '[+] View plan' : '[+] Add a plan')}
           </button>
           <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{planSummary}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-mute,#666)' }}>
-            {'system/todo-plans/' + PT.planSlug('aion:' + item.id) + '.md'}
-          </span>
+
         </div>
         {planOpen && (
           <div style={{ border: '1px solid var(--line,#3a3a3a)', background: 'var(--bg-1,#1e1e1e)', padding: 12, marginTop: 10 }}>
@@ -309,7 +315,7 @@ function ItemView({ item, me, team, teamOn, goalsIndex, filter, onBack, pin, rel
               style={{ width: '100%', marginTop: 5, fontSize: 12, lineHeight: 1.7, padding: 8, resize: 'vertical' }} />
             {planEditable ? (
               <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
-                <button className="v2-btn v2-accentfill" onClick={savePlan}
+                <button className="v2-btn v2-accentfill" onClick={savePlan} disabled={!panel || !!loadError}
                   style={{ borderColor: 'var(--accent,#0091ea)', color: 'var(--accent,#0091ea)', padding: '3px 11px' }}>save sections</button>
                 <button className="v2-btn v2-hoverline" onClick={() => setPlanDraft(null)}
                   style={{ color: 'var(--ink-faint,#888)', padding: '3px 11px' }}>revert</button>

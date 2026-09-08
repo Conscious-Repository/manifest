@@ -56,7 +56,7 @@ function WorkAddForm({ me, goalsIndex, onDone, reloadTeam }) {
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 9, flexWrap: 'wrap' }}>
         <button className="v2-btn v2-accentfill" onClick={submit}
           style={{ borderColor: 'var(--accent,#0091ea)', color: 'var(--accent,#0091ea)', padding: '4px 13px' }}>
-          {mode === 'me' ? 'add → POST /items' : 'propose → POST /proposals'}
+          {mode === 'me' ? 'Add task' : 'Send proposal'}
         </button>
         <span style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>
           {note || (mode === 'me' ? 'owned by you, lands immediately' : 'pending until the target or an admin decides')}
@@ -109,12 +109,15 @@ function WorkView({ data, items, goalsIndex, me, team, filter, addOpen, onToggle
   const D = window.PORTAL_DERIVE;
   const U = window.PORTAL_UTIL;
   const teamOn = !!(team && me && !me.anon);
-  const work = D.workSections(items, goalsIndex, filter, me ? me.initials : '',
+  const [query, setQuery] = React.useState('');
+  const matching = items.filter(item => !query.trim() || [item.title, item.owner, item.rock, U.personName(item.owner)].join(' ').toLowerCase().includes(query.trim().toLowerCase()));
+  const work = D.workSections(matching, goalsIndex, filter, me ? me.initials : '',
     teamOn ? team : null, U.todayISO(), onSelect, pin);
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0 10px',
         borderBottom: '1px solid var(--line,#3a3a3a)', flexWrap: 'wrap' }}>
+        <input className="v2-input portal-work-search" type="search" aria-label="Search work" placeholder="Search tasks, decisions or people…" value={query} onChange={event => setQuery(event.target.value)} />
         <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{work.countLine}</div>
         {teamOn && (
           <button className="v2-btn v2-hoveraccent" onClick={onToggleAdd}
@@ -130,6 +133,7 @@ function WorkView({ data, items, goalsIndex, me, team, filter, addOpen, onToggle
 
       {teamOn && <WorkProposals me={me} team={team} reloadTeam={reloadTeam} />}
 
+      {!work.sections.length && <div className="no-data">{query ? 'No work matches your search.' : 'No open work in this view.'}</div>}
       {work.sections.map(g => (
         <section key={g.key} style={{ padding: '18px 0 4px' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, borderBottom: '1px solid var(--line,#3a3a3a)', paddingBottom: 5 }}>
@@ -140,7 +144,7 @@ function WorkView({ data, items, goalsIndex, me, team, filter, addOpen, onToggle
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {g.rows.map((r, i) => (
-              <button key={r.id || i} className="v2-bare v2-hoverbg" onClick={r.open}
+              <button key={r.id || i} className="v2-bare v2-hoverbg portal-work-row" onClick={r.open}
                 style={{ display: 'grid', gridTemplateColumns: '18px minmax(0,1fr) 108px 46px 84px', gap: 12,
                   alignItems: 'baseline', textAlign: 'left', borderBottom: '1px solid var(--line-soft,#2a2a2a)',
                   padding: '7px 4px', color: 'var(--ink,#d4d4d4)' }}>

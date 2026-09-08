@@ -358,7 +358,7 @@ function Thread({ itemID, title }) {
 
   const load = React.useCallback(() => {
     teamAPI.state()
-      .then((st) => setItems(teamComments(st, itemID)))
+      .then((st) => { setErr(""); setItems(teamComments(st, itemID)); })
       .catch((e) => setErr(String(e.message || e)));
   }, [itemID]);
   React.useEffect(() => { setItems(null); setErr(""); load(); }, [load]);
@@ -377,7 +377,8 @@ function Thread({ itemID, title }) {
 
   return (
     <Section title="THREAD" count={items ? items.length : null}>
-      {err ? <div className="ooda-err">{err}</div> : null}
+      {err ? <div className="ooda-err" role="alert">{err} <button className="ooda-ghost" onClick={load}>Retry comments</button></div> : null}
+      {!items && !err ? <Empty>Loading comments…</Empty> : null}
       {items && !items.length ? <Empty>no comments yet</Empty> : null}
       {(items || []).map((c) => (
         <div key={c.id} className="ooda-comment">

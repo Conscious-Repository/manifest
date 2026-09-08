@@ -8,7 +8,7 @@
 // and the sign-in gate is the boundary. So the scoping happens here, in the
 // browser, off `me.initials` and the work groups the page already fetched.
 // Nothing new crosses the wire and no doctrine moves.
-function YoursBlock({ data, me, go }) {
+function YoursBlock({ data, me, go, openItem }) {
   const groups = (data.work && data.work.groups) || [];
   const mine = ((me && me.initials) || "").toUpperCase();
 
@@ -60,7 +60,7 @@ function YoursBlock({ data, me, go }) {
       {!rows.length ? <Empty>nothing is waiting on you</Empty> : null}
       {shown.map((it) => (
         <div className="ooda-row cols-yours click" key={it.id}
-          onClick={() => go("work")} role="button">
+          onClick={() => openItem(it.id)} tabIndex={0} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openItem(it.id); } }} role="button">
           <span className={"ooda-lane-tag" + (it.lane === "DECIDE" ? " decide" : "")}>{it.lane}</span>
           <span className="ooda-stack">
             <b>{it.title}</b>
@@ -80,12 +80,12 @@ function YoursBlock({ data, me, go }) {
   );
 }
 
-function ViewDashboard({ data, me, go }) {
+function ViewDashboard({ data, me, go, openItem }) {
   const d = data.dashboard || {};
   const k = d.kpis || {};
   return (
     <>
-      <YoursBlock data={data} me={me} go={go} />
+      <YoursBlock data={data} me={me} go={go} openItem={openItem} />
       <div className="ooda-tiles">
         <Tile label="COMMITTED" value={money(k.committed)}
           sub="owned budgets + cost to close" onClick={() => go("portfolio")} />
@@ -172,7 +172,7 @@ function ViewDashboard({ data, me, go }) {
         {!(d.week || []).length ? <Empty>nothing due in the next seven days</Empty> : null}
         {(d.week || []).slice(0, 12).map((it) => (
           <div className="ooda-row cols-week click" key={it.id}
-            onClick={() => go("work")} role="button">
+            onClick={() => openItem(it.id)} tabIndex={0} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openItem(it.id); } }} role="button">
             <span className="ooda-stack">
               <b>{it.title}</b>
               <em>{[it.container, it.rock].filter(Boolean).join(" · ") || DASH}</em>

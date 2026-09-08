@@ -187,7 +187,7 @@ textarea.v2-input { line-height: 1.6; }
 /* chat markdown (CHAT_MD.render) — kairos replies carry structure. This
    page's palette is its own (v2 tokens), so the rules are local, not copied
    from ooda.css. */
-.md-body { min-width: 0; }
+.md-body { min-width: 0; overflow-wrap: anywhere; }
 .md-p { line-height: 1.65; }
 .md-gap { height: 8px; }
 .md-h1, .md-h2, .md-h3, .md-h4 { font-weight: 600; margin-top: 8px; color: var(--ink, #d4d4d4); }
@@ -198,3 +198,16 @@ textarea.v2-input { line-height: 1.6; }
 .md-code { font-family: ui-monospace, monospace; font-size: 11.5px; background: var(--bg-2, #1a1a1a); border-radius: 3px; padding: 0 4px; }
 .md-pre { font-family: ui-monospace, monospace; font-size: 11.5px; background: var(--bg-2, #1a1a1a); border-radius: 3px; padding: 8px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .md-link { color: var(--accent, #0091ea); overflow-wrap: anywhere; }
+
+/* Work and conversation controls retain room at narrow widths. */
+.portal-load-error { padding: 12px; border: 1px solid var(--warn, #a44); margin: 10px 0; line-height: 1.6; }
+.portal-work-search { width: min(100%, 480px); min-height: 38px; padding: 8px 10px; }
+.portal-chat-jump { min-height: 36px; }
+@media (max-width: 700px) {
+  .portal-work-search { width: 100%; }
+  .portal-work-row { grid-template-columns: 18px minmax(0,1fr) auto !important; gap: 6px 8px !important; padding: 12px 4px !important; }
+  .portal-work-row > :nth-child(3) { grid-column: 2; grid-row: 2; }
+  .portal-work-row > :nth-child(4) { grid-column: 3; grid-row: 2; }
+  .portal-work-row > :nth-child(5) { grid-column: 3; grid-row: 1; }
+  .v2-main input, .v2-main textarea, .v2-main select { font-size: 16px !important; max-width: 100%; }
+}

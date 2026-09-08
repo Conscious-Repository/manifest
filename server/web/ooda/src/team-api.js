@@ -3,32 +3,13 @@
 // lock, same admin rules, one copy — except the bid, which is OODA's own.
 
 async function postJSON(path, body) {
-  const res = await fetch(path, {
-    method: "POST", credentials: "same-origin",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body || {}),
-  });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
-  return res.json().catch(() => ({}));
+  return portalRequest(path, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body || {}) });
 }
-
 async function patchJSON(path, body) {
-  const res = await fetch(path, {
-    method: "PATCH", credentials: "same-origin",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify(body || {}),
-  });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
-  return res.json().catch(() => ({}));
+  return portalRequest(path, { method: "PATCH", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body || {}) });
 }
-
 async function deleteJSON(path) {
-  const res = await fetch(path, {
-    method: "DELETE", credentials: "same-origin",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error((await res.text().catch(() => "")).trim() || ("HTTP " + res.status));
-  return res.json().catch(() => ({}));
+  return portalRequest(path, { method: "DELETE", headers: { Accept: "application/json" } });
 }
 
 const teamAPI = {

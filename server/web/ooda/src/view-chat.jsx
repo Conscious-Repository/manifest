@@ -21,7 +21,11 @@ function ViewChat({ data }) {
   const [attaching, setAttaching] = React.useState("");
   const [ctx, setCtx] = React.useState([]);
   const [err, setErr] = React.useState("");
+  const [loadError, setLoadError] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const loadSeq = React.useRef(0);
+  const sending = React.useRef(false);
+  const drafts = React.useRef({});
   // the surface's agent roster ({harness, personas}) feeds the @-mention list
   // — @zeck::brief is parsed server-side (chatIntent); this is the UI the
   // AION portal always had and this one lacked (agent-chat plan §1.1)
@@ -31,12 +35,14 @@ function ViewChat({ data }) {
   }, []);
 
   const load = React.useCallback(() => {
-    getJSON("/api/chat/threads")
+    const request = ++loadSeq.current;
+    return getJSON("/api/chat/threads")
       .then((d) => {
-        setState(d);
-        setSel((cur) => cur || ((d.threads || [])[0] || {}).id || "");
+        if (request !== loadSeq.current) return;
+        setLoadError(""); setState(d);
+        setSel((cur) => (d.threads || []).some(t => t.id === cur) ? cur : ((d.threads || [])[0] || {}).id || "");
       })
-      .catch((e) => setErr(String(e.message || e)));
+      .catch((e) => { if (request === loadSeq.current) setLoadError(String(e.message || e)); });
   }, []);
   React.useEffect(() => { load(); }, [load]);
   // a spooled run finishes out of band — poll fast (5s) while a turn is in
@@ -58,7 +64,7 @@ function ViewChat({ data }) {
   // construction: any thread switch or creation starts from nothing grounded.
   React.useEffect(() => { setCtx([]); }, [sel]);
 
-  if (err && !state) return <Empty>{err}</Empty>;
+  if (loadError && !state) return <div role="alert" className="ooda-err">{loadError} <button className="ooda-send" onClick={load}>Retry conversations</button></div>;
   if (!state) return <Empty>loading…</Empty>;
 
   const threads = (state.threads || []).filter((t) => !t.archived);
@@ -67,18 +73,22 @@ function ViewChat({ data }) {
   const noAgent = !engine.harness;
 
   const newThread = async () => {
+    if (sending.current) return;
     const title = (prompt("thread title") || "").trim();
     if (!title) return;
     try {
-      const d = await postJSON("/api/chat/thread", { op: "create", id: "t" + Date.now(), title });
-      setState(d); setSel(((d.threads || [])[0] || {}).id || "");
+      const id = "t" + Date.now();
+      const d = await postJSON("/api/chat/thread", { op: "create", id, title });
+      drafts.current[sel] = text; setText("");
+      setState(d); setSel(id);
     } catch (e) { setErr(String(e.message || e)); }
   };
 
   // send(key) — labelled by OUTPUT; ritualOf maps to the wire value.
   const send = async (key) => {
     const body = text.trim();
-    if (!body || !sel || busy) return;
+    if (!body || !sel || busy || sending.current) return;
+    sending.current = true;
     const ritual = window.CHAT_ACTIONS.ritualOf(key);
     setBusy(true); setErr("");
     try {
@@ -86,9 +96,9 @@ function ViewChat({ data }) {
       // the grounding chips belonged to THAT message — the next one starts
       // clean, or asking again silently re-attaches a property the user no
       // longer sees themselves holding
-      setText(""); setCtx([]); load();
+      setText(current => current.trim() === body ? "" : current); setCtx([]); load();
     } catch (e) { setErr(String(e.message || e)); }
-    setBusy(false);
+    sending.current = false; setBusy(false);
   };
 
   // mention list from the roster (@zeck + persona variants) — the AION
@@ -143,13 +153,15 @@ function ViewChat({ data }) {
           <div className="ooda-stale">zeck is not configured on this box yet — threads still work</div>
         ) : null}
         <div className="ooda-sec-head">
-          <span className="ooda-sec-title">THREADS</span>
+          <span className="ooda-sec-title">CONVERSATIONS</span>
+          {sel && <button className="ooda-ghost" onClick={() => { const input = document.getElementById('ooda-chat-message'); if (input) { input.scrollIntoView({block:'center'}); input.focus(); } }}>Write a message ↓</button>}
+          {loadError && <div role="alert" className="ooda-err">{loadError} <button onClick={load}>Retry conversations</button></div>}
           <button className="ooda-ghost" onClick={newThread}>＋ thread</button>
         </div>
         {!threads.length ? <Empty>no threads yet</Empty> : null}
         {threads.map((t) => (
           <div key={t.id} className={"ooda-row cols-thread click" + (sel === t.id ? " sel" : "")}
-            onClick={() => setSel(t.id)} role="button">
+            onClick={() => { if (sending.current) return; drafts.current[sel] = text; setText(drafts.current[t.id] || ""); setSel(t.id); }} role="button" tabIndex={0} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.click(); }}>
             <span>{t.title || t.id}</span>
             <span className="r ooda-sub">{((state.messages || {})[t.id] || []).length}</span>
           </div>
@@ -239,7 +251,7 @@ function ViewChat({ data }) {
                 ))}
               </div>
               <div className="ooda-compose">
-                <textarea className="ooda-textarea" rows={2} value={text}
+                <textarea id="ooda-chat-message" aria-label="Message Zeck" className="ooda-textarea" rows={2} value={text}
                   placeholder={window.CHAT_ACTIONS.placeholder + (mentions.length ? " · @ to tag an intent" : "")}
                   onChange={(e) => setText(e.target.value)}
                   onKeyDown={(e) => {

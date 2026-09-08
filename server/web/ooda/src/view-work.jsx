@@ -4,10 +4,19 @@
 
 function ViewWork({ data, me, openItem, onOpenItem }) {
   const onOpen = onOpenItem || function () {};
-  const groups = (data.work && data.work.groups) || [];
+  const [query, setQuery] = React.useState("");
+  const sourceGroups = (data.work && data.work.groups) || [];
+  const groups = sourceGroups.map(group => {
+    const next = {...group};
+    ["overdue", "dueThisWeek", "open", "decisions", "waiting"].forEach(lane => {
+      next[lane] = (group[lane] || []).filter(item => item.id === openItem || !query.trim() || [item.title, item.container, item.rock, group.owner, group.name].join(" ").toLowerCase().includes(query.trim().toLowerCase()));
+    });
+    return next;
+  });
   const mine = ((me && me.initials) || "").toUpperCase();
   const [open, setOpen] = React.useState({});
   const [onlyMine, setOnlyMine] = React.useState(false);
+  React.useEffect(() => { if (openItem) setOnlyMine(false); }, [openItem]);
   if (!groups.length) return <Empty>no open work</Empty>;
 
   const count = (g) => g.overdue.length + g.dueThisWeek.length + g.open.length +
@@ -30,6 +39,7 @@ function ViewWork({ data, me, openItem, onOpenItem }) {
 
   return (
     <>
+      <div className="ooda-toolbar"><input className="ooda-input portal-work-search" type="search" aria-label="Search work" placeholder="Search tasks, properties or people…" value={query} onChange={event => setQuery(event.target.value)} /></div>
       {/* the shape of the whole board before anyone scrolls: what is late,
           what lands this week, and what nobody holds */}
       <div className="ooda-worksum">
@@ -53,16 +63,17 @@ function ViewWork({ data, me, openItem, onOpenItem }) {
           {onlyMine ? <span className="ooda-sub">showing only work you hold</span> : null}
         </div>
       ) : null}
-      {!shown.length ? <Empty>nothing is assigned to you right now</Empty> : null}
+      {!shown.some(g => count(g)) ? <Empty>{query.trim() ? "No work matches your search." : "Nothing is assigned to you right now."}</Empty> : null}
       {shown.map((g, i) => {
         const total = count(g);
         const key = g.owner || "_unassigned";
-        const isOpen = open[key] !== false; // sections start open
+        const isOpen = open[key] !== false || [g.overdue, g.dueThisWeek, g.open, g.decisions, g.waiting].some(lane => (lane || []).some(it => it.id === openItem)); // sections start open
         const isMe = isMine(g);
+        if (!total) return null;
         return (
           <section key={i} className={"ooda-sec" + (g.owner ? "" : " unassigned")}>
             <div className="ooda-sec-head click"
-              onClick={() => setOpen({ ...open, [key]: !isOpen })} role="button">
+              onClick={() => setOpen({ ...open, [key]: !isOpen })} tabIndex={0} aria-expanded={isOpen} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen({ ...open, [key]: !isOpen }); } }} role="button">
               <span className="ooda-sec-title">
                 {g.owner || "— UNASSIGNED —"}
                 {g.name ? <em className="ooda-sec-name">{g.name}</em> : null}
@@ -173,6 +184,7 @@ function WorkRow({ it, tone, isMine, linked, onOpen }) {
   const rowRef = React.useRef(null);
 
   React.useEffect(() => {
+    if (linked) setOpen(true);
     if (linked && rowRef.current) rowRef.current.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [linked]);
 

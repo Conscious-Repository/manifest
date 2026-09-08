@@ -77,25 +77,28 @@ function App() {
   const [route] = React.useState(parseOodaHash);   // read once, at mount
   const [view, setView] = React.useState(route.view);
   const [openItem, setOpenItem] = React.useState(route.item);
-  const [data] = useOodaData();
+  const [data, reload] = useOodaData();
 
-  // One writer for the hash: an open item owns the URL, otherwise the tab
-  // does. replaceState keeps expanding a row out of the back button.
   React.useEffect(() => {
-    const h = openItem ? "#/item/" + openItem : "#/" + view;
-    if (window.location.hash !== h) history.replaceState(null, "", h);
-  }, [view, openItem]);
-
-  // leaving work drops the open item, so its link cannot outlive the view
-  const go = React.useCallback((v) => { setOpenItem(null); setView(v); }, []);
+    const navigate = () => { const next = parseOodaHash(); setView(next.view); setOpenItem(next.item); };
+    window.addEventListener("hashchange", navigate);
+    return () => window.removeEventListener("hashchange", navigate);
+  }, []);
+  const go = React.useCallback((v) => {
+    setOpenItem(null); setView(v); window.location.hash = "#/" + v;
+  }, []);
+  const openWorkItem = React.useCallback((id) => {
+    setOpenItem(id); setView("work");
+    window.location.hash = id ? "#/item/" + encodeURIComponent(id) : "#/work";
+  }, []);
 
   let body;
   if (data.loading) body = <Empty>loading the portfolio…</Empty>;
-  else if (data.error) body = <Empty>{"could not load: " + data.error}</Empty>;
-  else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={go} />;
+  else if (data.error) body = <div role="alert" className="ooda-broken">Could not load this view. <button className="ooda-send" onClick={reload}>Retry</button></div>;
+  else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={go} openItem={openWorkItem} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
   else if (view === "map") body = <ViewMap />;
-  else if (view === "work") body = <ViewWork data={data} me={data.me} openItem={openItem} onOpenItem={setOpenItem} />;
+  else if (view === "work") body = <ViewWork data={data} me={data.me} openItem={openItem} onOpenItem={openWorkItem} />;
   else if (view === "feed") body = <ViewFeed />;
   else if (view === "archive") body = <ViewArchive />;
   else body = <ViewChat data={data} />;

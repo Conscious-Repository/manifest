@@ -561,7 +561,7 @@ a.ooda-archive-title:hover { text-decoration: underline; }
 }
 
 /* ---- chat markdown (CHAT_MD.render) — agent replies carry structure ---- */
-.md-body { min-width: 0; }
+.md-body { min-width: 0; overflow-wrap: anywhere; }
 .md-p { line-height: 1.6; }
 .md-gap { height: var(--sp-4); }
 .md-h1, .md-h2, .md-h3, .md-h4 { font-weight: 600; margin-top: var(--sp-4); line-height: 1.5; }
@@ -582,3 +582,10 @@ a.ooda-archive-title:hover { text-decoration: underline; }
 
 /* the feed section's what-does-this-do line */
 .ooda-sec-note { margin-bottom: var(--sp-4); line-height: 1.5; }
+
+.portal-work-search { width: min(100%, 480px); min-height: 40px; }
+.portal-chat-jump { min-height: 36px; }
+@media (max-width: 700px) {
+  .portal-work-search { width: 100%; }
+  input, textarea, select { font-size: 16px !important; max-width: 100%; }
+}

@@ -3,25 +3,21 @@
    write surface survives a broken view file. All GETs bypass
    PORTAL_UTIL.fetchJSON (its blind '?t=' cache-bust corrupts query strings). */
 (function () {
+  async function request(path, options) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(path, Object.assign({ credentials: 'same-origin', signal: controller.signal }, options));
+      if (response.status === 401 || response.redirected) return { ok: false, error: 'Your session expired. Sign in again, then retry.' };
+      if (!response.ok) return { ok: false, error: 'Could not complete the request (' + response.status + '). Please try again.' };
+      return { ok: true, value: response.status === 204 ? {} : await response.json() };
+    } catch (error) {
+      return { ok: false, error: error.name === 'AbortError' ? 'The request timed out. Check the latest state before trying again.' : 'Connection interrupted. Your draft is still here; try again when connected.' };
+    } finally { clearTimeout(timer); }
+  }
   const TEAM_API = {
-    post: function (path, body, method) {
-      return fetch(path, {
-        method: method || 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {})
-      }).then(function (r) {
-        return r.ok
-          ? r.json().then(function (v) { return { ok: true, value: v }; })
-          : r.text().then(function (t) { return { ok: false, error: (t || '').trim() || ('HTTP ' + r.status) }; });
-      });
-    },
-    get: function (path) {
-      return fetch(path, { cache: 'no-store' }).then(function (r) {
-        return r.ok
-          ? r.json().then(function (v) { return { ok: true, value: v }; })
-          : r.text().then(function (t) { return { ok: false, error: (t || '').trim() || ('HTTP ' + r.status) }; });
-      });
-    }
+    post: function (path, body, method) { return request(path, {method: method || 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})}); },
+    get: function (path) { return request(path, {cache: 'no-store'}); }
   };
 
   /* The taggable-agent roster — fetched once per session; a 404 from an older

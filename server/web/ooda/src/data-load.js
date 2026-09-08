@@ -4,15 +4,23 @@
 
 const OODA_POLL_MS = 20000;
 
+async function portalRequest(path, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(path, { credentials: "same-origin", signal: controller.signal, ...options });
+    if (res.status === 401 || res.redirected) throw new Error("Your session expired. Sign in again, then retry.");
+    if (!res.ok) throw new Error("Could not complete the request (" + res.status + "). Please try again.");
+    if (res.status === 204) return {};
+    return await res.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("The request timed out. Check the latest state before trying again.");
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+
 async function getJSON(path) {
-  const res = await fetch(path, { credentials: "same-origin", headers: { Accept: "application/json" } });
-  if (res.status === 401) {
-    // the session lapsed mid-session — send them back through the gate
-    window.location.href = "/oauth2/login";
-    throw new Error("signed out");
-  }
-  if (!res.ok) throw new Error(path + " → " + res.status);
-  return res.json();
+  return portalRequest(path, { cache: "no-store", headers: { Accept: "application/json" } });
 }
 
 // useOodaData — one hook the shell owns: loads every surface's payload, then
