@@ -614,3 +614,39 @@
 @media (max-width: 860px) {
   .rec-rail { position: static; max-height: none; overflow-y: visible; }
 }
+
+.mf-chat-toggle { display: none; }
+@media (max-width: 860px) {
+  /* Keep search readable instead of squeezing it between three actions. */
+  #todosSearch { flex: 1 0 100%; }
+  .tdo-row > .tdo-task-title { flex-basis: calc(100% - 46px); }
+  .tdo-row > .tdo-pill { margin-left: 46px; }
+  .tdo-row > .tdo-right { width: auto; margin-left: auto; }
+
+  /* Fold the directory so conversations, not navigation, own the screen. */
+  .chat-shell { gap: var(--sp-4); padding: 0 var(--sp-6) env(safe-area-inset-bottom); min-height: 0; }
+  .mf-chat-toggle { display: block; flex: none; min-height: var(--touch); text-align: left; }
+  .chat-shell .chat-rail { display: none; }
+  .chat-shell.mf-chat-nav-open .chat-rail { display: flex; max-height: 40dvh; overflow-y: auto; flex: 0 1 auto; }
+  .chat-rail-row { display: block; max-width: none; }
+  .chat-rail-row, .chat-rail-task, .chat-rail-section-head { min-height: var(--touch); }
+  .chat-main.landing .chat-transcript { flex: 1; overflow-y: auto; }
+  .chat-transcript, .chat-turn { overflow-wrap: anywhere; }
+  .chat-head-acts { flex-wrap: wrap; }
+  .chat-composer .chat-input { min-width: 0; font-size: var(--fs-xl); }
+  .chat-composer button { min-width: var(--touch-sm); min-height: var(--touch-sm); }
+
+  /* Shared form text remains legible on narrow screens. */
+  input.pp-in, select.pp-in, textarea.pp-in, .tdo-p-textarea, .contact-search, #todosSearch { font-size: var(--fs-xl); max-width: 100%; }
+  .crumb-datenav .pill.arrow { min-width: var(--touch); min-height: var(--touch); }
+  .view-tab { min-height: var(--touch-sm); display: inline-flex; align-items: center; }
+  .rec-seg { display: flex; flex-wrap: wrap; max-width: 100%; }
+  .rec-seg-btn { min-height: var(--touch-sm); }
+  .rec-review-run-heading { min-height: var(--touch); overflow-wrap: anywhere; }
+  .rec-toolbar > select { min-width: 0; max-width: 100%; }
+}
+
+@media (max-width: 860px) {
+  .rec-linkish, .rec-rail-options summary { min-height: var(--touch-sm); }
+  .rec-rail-options summary { align-content: center; }
+}

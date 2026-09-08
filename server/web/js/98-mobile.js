@@ -16,6 +16,31 @@
   // ---- public namespace ----
   window.mf = { phone: () => mqPhone.matches };
 
+  // A phone conversation gets the viewport; its directory is an explicit fold.
+  const chatShell = document.querySelector(".chat-shell");
+  const chatRail = document.getElementById("chatRail");
+  if (chatShell && chatRail) {
+    const toggle = document.createElement("button");
+    toggle.className = "mf-chat-toggle rec-linkish";
+    toggle.setAttribute("aria-label", "Conversations");
+    toggle.setAttribute("aria-controls", "chatRail");
+    const setOpen = (open) => {
+      chatShell.classList.toggle("mf-chat-nav-open", open);
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.textContent = (open ? "▾ " : "▸ ") + "Conversations";
+    };
+    setOpen(false);
+    toggle.onclick = () => setOpen(!chatShell.classList.contains("mf-chat-nav-open"));
+    chatShell.prepend(toggle);
+    window.addEventListener("hashchange", () => { if (mqPhone.matches) setOpen(false); });
+    chatRail.addEventListener("click", (event) => {
+      if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new")) setOpen(false);
+    });
+    window.visualViewport?.addEventListener("resize", () => {
+      if (mqPhone.matches && typeof chatFitShell === "function") chatFitShell();
+    });
+  }
+
   // ---- scrim (shared by the drawer; the sheet has its own) ----
   const scrim = document.createElement("div");
   scrim.className = "mf-scrim";

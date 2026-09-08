@@ -293,9 +293,10 @@ let chatFitBound = false;
 function chatFitShell() {
   const shell = document.querySelector(".chat-shell");
   if (!shell || els.chatView.hidden) return;
-  if (window.innerWidth <= 860) { shell.style.height = ""; return; } // mobile stacks
   const top = shell.getBoundingClientRect().top;
-  shell.style.height = Math.max(320, window.innerHeight - top - 14) + "px";
+  const phone = window.mf && window.mf.phone();
+  const height = phone && window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  shell.style.height = Math.max(phone ? 180 : 320, height - top - 14) + "px";
 }
 
 async function loadChatRoster() {
