@@ -36,3 +36,11 @@
 .diligence-property > .diligence-table-wrap { margin-bottom: 16px; }
 .diligence-table-wrap:focus-visible, .diligence-property summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (max-width: 700px) { .diligence-nav { gap: 2px; } .diligence-nav button { padding: 8px; } .diligence-metrics strong { font-size: 20px; } }
+
+.diligence-assumptions-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; margin: 20px 0; }
+.diligence-preview .diligence-assumptions-form label { display: flex; flex-direction: column; align-items: stretch; margin: 0; gap: 6px; }
+.diligence-preview .diligence-assumptions-form input { max-width: none; width: 100%; box-sizing: border-box; padding: 10px; }
+.diligence-assumptions-form small { color: var(--muted); }
+.diligence-assumptions-form p { grid-column: 1 / -1; }
+@media (max-width: 700px) { .diligence-assumptions-form { grid-template-columns: 1fr; } }
+@media print { .diligence-assumptions-form { display: none; } }

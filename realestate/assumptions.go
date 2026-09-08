@@ -22,7 +22,7 @@ import (
 // defaults.js so the published module diffs cleanly.
 var AssumptionKeys = []string{
 	"vacancy_rate", "opex_rate", "rent_growth", "opex_growth",
-	"capex_per_unit_year", "construction_period_months", "hold_years",
+	"capex_per_unit_year", "reserve_years_one_three", "reserve_years_four_six", "reserve_years_seven_eight", "reserve_years_nine_plus", "construction_period_months", "hold_years",
 	"exit_cap_rate", "perm_interest_rate", "perm_amort_years", "perm_ltv",
 	"construction_interest_rate", "construction_loan_ltc",
 	"selling_cost_pct", "contingency_pct",
@@ -31,11 +31,16 @@ var AssumptionKeys = []string{
 // DefaultAssumptions seeds assumptions.md from the portal's live defaults
 // (re-portal src/engine/defaults.js, verified 2026-08-12).
 var DefaultAssumptions = map[string]float64{
-	"vacancy_rate":               0.08,
-	"opex_rate":                  0.35,
-	"rent_growth":                0.04,
-	"opex_growth":                0.02,
-	"capex_per_unit_year":        350,
+	"vacancy_rate":              0.08,
+	"opex_rate":                 0.35,
+	"rent_growth":               0.04,
+	"opex_growth":               0.02,
+	"capex_per_unit_year":       250,
+	"reserve_years_one_three":   250,
+	"reserve_years_four_six":    500,
+	"reserve_years_seven_eight": 750,
+	"reserve_years_nine_plus":   1000,
+
 	"construction_period_months": 10,
 	"hold_years":                 5,
 	"exit_cap_rate":              0.0725,
@@ -50,11 +55,16 @@ var DefaultAssumptions = map[string]float64{
 
 // AssumptionLabels are the human names the Settings panel shows.
 var AssumptionLabels = map[string]string{
-	"vacancy_rate":               "Vacancy",
-	"opex_rate":                  "Operating expenses (% EGI)",
-	"rent_growth":                "Rent growth /yr",
-	"opex_growth":                "OpEx growth /yr",
-	"capex_per_unit_year":        "CapEx reserve $/unit/yr",
+	"vacancy_rate":              "Vacancy",
+	"opex_rate":                 "Operating expenses (% EGI)",
+	"rent_growth":               "Rent growth /yr",
+	"opex_growth":               "OpEx growth /yr",
+	"capex_per_unit_year":       "Legacy flat reserve $/unit/yr",
+	"reserve_years_one_three":   "Capital reserve $/unit/yr · years 1–3",
+	"reserve_years_four_six":    "Capital reserve $/unit/yr · years 4–6",
+	"reserve_years_seven_eight": "Capital reserve $/unit/yr · years 7–8",
+	"reserve_years_nine_plus":   "Capital reserve $/unit/yr · years 9+",
+
 	"construction_period_months": "Construction period (months)",
 	"hold_years":                 "Hold period (years)",
 	"exit_cap_rate":              "Exit cap rate",

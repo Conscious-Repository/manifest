@@ -57,3 +57,23 @@ test('presentation renders operating facts and budget without negotiation histor
  await c.drawDealUnderwriting(host,'test',options);
  const financed=host.text();assert.match(financed,/Illustrative financing/);assert.match(financed,/70% of development subtotal/);assert.match(financed,/74.38%/);assert.match(financed,/NCF coverage²/);assert.match(financed,/\$214,943.75/);assert.ok(!financed.includes('SECRET LENDER'));assert.ok(!financed.includes('PRIVATE EMAIL'));
 });
+
+test('growth projection uses independent expense growth and exact reserve boundaries',()=>{
+ const v={rent_growth:.03,opex_growth:.02,hold_years:10,vacancy_rate:.08,reserve_years_one_three:250,reserve_years_four_six:500,reserve_years_seven_eight:750,reserve_years_nine_plus:1000};
+ const rows=c.diligenceProjection(213600,127732.8,11,v);
+ assert.equal(rows.length,11);assert.equal(rows[0].reserve,2750);assert.equal(rows[2].reserve,2750);assert.equal(rows[3].reserve,5500);assert.equal(rows[5].reserve,5500);assert.equal(rows[6].reserve,8250);assert.equal(rows[7].reserve,8250);assert.equal(rows[8].reserve,11000);
+ assert.ok(Math.abs(rows[1].gross-213600*1.03)<.001);assert.ok(Math.abs(rows[1].opex-(213600*.92-127732.8)*1.02)<.001);
+ assert.equal(c.diligenceProjection(100,50,1,{}).length,0);
+});
+
+test('package nulls override inherited values and scopes do not mutate globals',()=>{
+ const data={source:{rent_growth:.03,deal_underwriting:{packageAssumptions:{values:{exit_cap_rate:null,rent_growth:.02}}}},assumptions:{exit_cap_rate:.0725}};
+ const resolved=c.diligencePackageInputs(data);assert.equal(resolved.exit_cap_rate.value,null);assert.equal(resolved.rent_growth.value,.02);assert.equal(data.assumptions.exit_cap_rate,.0725);
+});
+
+test('construction spending totals balance and financed contingency is not counted twice',()=>{
+ const rows=c.diligenceSpendingPlan('2026-08-01','2027-03-01',1169500);
+ assert.equal(rows.length,7);assert.equal(rows[0].month,'2026-08');assert.equal(rows[6].month,'2027-02');assert.ok(Math.abs(rows.reduce((n,r)=>n+r.amount,0)-1169500)<.001);
+ const u=c.reScreen({units:3,rentMonthly:4700,work:[{estTotal:277000}]},{purchase_price:18000,carry_cost:15000,phase_costs_include_contingency:true},{vacancy_rate:.08,opex_rate:.35,contingency_pct:.05});assert.equal(u.tdc,310000);assert.equal(u.contingency,0);
+ assert.equal(c.diligencePhaseCost({estTotal:0,fields:[{key:'soft-budget',value:'15000'}]}),15000);
+});

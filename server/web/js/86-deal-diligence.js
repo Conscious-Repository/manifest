@@ -27,22 +27,43 @@ function diligenceOperating(p, source, assumptions, configuration = {}) {
   const reserve=Number.isFinite(configuration.replacementReservePerUnitYear)&&configuration.replacementReservePerUnitYear>=0?configuration.replacementReservePerUnitYear*units:null;
   return {...u,units,reserve,ncf:reserve===null?null:u.noi-reserve};
 }
+const diligencePackageFields=[
+ ['lease_up_days','Lease-up duration','days',0,3650],
+ ['vacancy_rate','Vacancy / credit loss','%',0,99],['opex_rate','Operating expense allowance','%',0,99],['reserve_years_one_three','Reserve / unit / year · years 1–3','$',0,100000],['reserve_years_four_six','Reserve / unit / year · years 4–6','$',0,100000],['reserve_years_seven_eight','Reserve / unit / year · years 7–8','$',0,100000],['reserve_years_nine_plus','Reserve / unit / year · years 9+','$',0,100000],
+ ['rent_growth','Annual rent growth','%',-99,100],['opex_growth','Annual expense growth','%',-99,100],['hold_years','Hold period / projection years','years',1,50],['selling_cost_pct','Selling costs','%',0,100],['exit_cap_rate','Valuation / exit cap rate','%',.1,100],
+ ['closing_costs','Additional closing / financing costs','$',0,100000000],['construction_ltc','Base construction loan-to-cost','%',0,100],['construction_rate','Construction interest rate','%',0,100],['term_months','Construction loan term','months',1,600],['reserve_months','Financed interest reserve','months',0,600],['refinance_rate','Refinance interest rate','%',0,100],['refinance_years','Refinance amortization','years',1,50],['refinance_ltv','Refinance upper LTV','%',0,100]
+];
+function diligencePackageInputs(data){
+ const b=data.source?.deal_underwriting||data.source?.lender_diligence||{}, f=b.presentationFinancing||{}, saved=b.packageAssumptions?.values;
+ const prior={lease_up_days:null,vacancy_rate:data.assumptions?.vacancy_rate,opex_rate:data.assumptions?.opex_rate,exit_cap_rate:data.assumptions?.exit_cap_rate,replacement_reserve:b.operating?.replacementReservePerUnitYear,rent_growth:data.source?.rent_growth??data.assumptions?.rent_growth,opex_growth:data.source?.opex_growth??data.assumptions?.opex_growth,hold_years:data.source?.hold_years??data.assumptions?.hold_years,selling_cost_pct:data.source?.selling_cost_pct??data.assumptions?.selling_cost_pct,reserve_years_one_three:data.assumptions?.reserve_years_one_three,reserve_years_four_six:data.assumptions?.reserve_years_four_six,reserve_years_seven_eight:data.assumptions?.reserve_years_seven_eight,reserve_years_nine_plus:data.assumptions?.reserve_years_nine_plus,closing_costs:null,construction_ltc:f.constructionLtc,construction_rate:f.constructionRate,term_months:f.termMonths,reserve_months:f.reserveMonths,refinance_rate:f.refinanceRate,refinance_years:f.refinanceAmortYears,refinance_ltv:f.refinanceLtvHigh};
+ return Object.fromEntries(diligencePackageFields.map(([key])=>[key,{value:saved? saved[key]??null:prior[key]??null,origin:saved?'This lender ask':key.startsWith('reserve_years_')?'Portfolio reserve ladder':['rent_growth','opex_growth','hold_years','selling_cost_pct'].includes(key)?(Number.isFinite(data.source?.[key])?'Existing deal record':'Portfolio setting'):['vacancy_rate','opex_rate','exit_cap_rate'].includes(key)?'Portfolio setting':'Existing package'}]));
+}
+function diligencePhaseCost(w){return (w.estTotal||0)+(Number((w.fields||[]).find(f=>f.key==='soft-budget')?.value)||0);}
+function diligenceSpendingPlan(start,end,total){
+ const a=Date.parse(start+'T00:00:00Z'),b=Date.parse(end+'T00:00:00Z');if(!Number.isFinite(a)||!Number.isFinite(b)||b<=a||!Number.isFinite(total))return [];
+ const rows=[];let at=a,allocated=0;while(at<b){const d=new Date(at),next=Math.min(b,Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,1));const amount=next===b?Math.round((total-allocated)*100)/100:Math.round(total*(next-at)/(b-a)*100)/100;rows.push({month:new Date(at).toISOString().slice(0,7),amount});allocated+=amount;at=next;}return rows;
+}
+function diligenceProjection(gross,noi,units,v){
+ if(![gross,noi,units,v.rent_growth,v.opex_growth,v.hold_years,v.vacancy_rate].every(Number.isFinite))return [];
+ const expenses=gross*(1-v.vacancy_rate)-noi;
+ return Array.from({length:v.hold_years+1},(_,i)=>{const rent=gross*Math.pow(1+v.rent_growth,i),egi=rent*(1-v.vacancy_rate),opex=expenses*Math.pow(1+v.opex_growth,i),income=egi-opex,reserveRate=v[i<3?'reserve_years_one_three':i<6?'reserve_years_four_six':i<8?'reserve_years_seven_eight':'reserve_years_nine_plus'],reserve=Number.isFinite(reserveRate)?units*reserveRate:null;return {year:i+1,gross:rent,egi,opex,noi:income,reserve,ncf:reserve===null?null:income-reserve};});
+}
 function renderDealDiligence(host, slug, options = {}) {
   const mount=document.createElement('div');host.replaceChildren(mount);
   const endpoint=options.endpoint||('/api/deals/'+encodeURIComponent(slug)+'/underwriting');
   let stopped=false,busy=false,revision='',controller;
   const dispose=()=>{stopped=true;clearInterval(timer);controller?.abort();document.removeEventListener('visibilitychange',visible);};
   const load=async()=>{
-    if(stopped||busy)return;if(!mount.isConnected){dispose();return;}busy=true;
+    if(stopped||busy||mount.querySelector('form[data-dirty]'))return;if(!mount.isConnected){dispose();return;}busy=true;
     controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),20000);
     try{
       const response=await fetch(endpoint,{cache:'no-store',credentials:'same-origin',signal:controller.signal,headers:revision?{'If-None-Match':'"'+revision+'"'}:{}});
       if(response.status===304){mount.querySelector('[data-live-status]')?.replaceChildren(document.createTextNode('Live · checked '+new Date().toLocaleTimeString()));return;}
       if(!response.ok||response.redirected)throw Error('Could not refresh underwriting ('+response.status+').');
-      const bundle=await response.json();if(stopped||!mount.isConnected)return;
+      const bundle=await response.json();if(stopped||!mount.isConnected||mount.querySelector('form[data-dirty]'))return;
       const open=Array.from(mount.querySelectorAll('details[open]')).map(d=>d.querySelector('summary')?.textContent);
       const scroll=window.scrollY;
-      await drawDealUnderwriting(mount,slug,{...options,endpoint,bundle,reload:load});
+      await drawDealUnderwriting(mount,slug,{...options,endpoint,bundle,reload:()=>{revision='';return load();}});
       mount.querySelectorAll('details').forEach(d=>{if(open.includes(d.querySelector('summary')?.textContent))d.open=true;});
       if(revision)window.scrollTo({top:scroll});revision=bundle.revision;
     }catch(error){if(stopped)return;let status=mount.querySelector('[data-live-status]');if(!status){status=document.createElement('p');status.dataset.liveStatus='';mount.append(status);}status.setAttribute('role','status');status.textContent=(revision?'Showing last loaded data. ':'')+error.message+' Retrying automatically.';}
@@ -69,8 +90,11 @@ async function drawDealUnderwriting(host, slug, options) {
   };
   const docLink=ref=>options.endpoint+'/document?ref='+encodeURIComponent(ref);
   loading.remove();
-  const basis=data.source?.deal_underwriting||data.source?.lender_diligence||{};
-  const members=data.members||[], assumptions=data.assumptions||{};
+  const original=data.source?.deal_underwriting||data.source?.lender_diligence||{};
+  const inputs=diligencePackageInputs(data),v=Object.fromEntries(Object.entries(inputs).map(([k,x])=>[k,x.value]));
+  const saved=original.packageAssumptions;
+  const basis={...original,operating:{...original.operating,replacementReservePerUnitYear:v.reserve_years_one_three},presentationFinancing:{...original.presentationFinancing,...(saved?{enabled:true,constructionLtc:v.construction_ltc,constructionRate:v.construction_rate,termMonths:v.term_months,reserveMonths:v.reserve_months,refinanceRate:v.refinance_rate,refinanceAmortYears:v.refinance_years,refinanceLtvHigh:v.refinance_ltv,refinanceLtvLow:Math.min(original.presentationFinancing?.refinanceLtvLow??v.refinance_ltv,v.refinance_ltv)}:{})}};
+  const members=data.members||[], assumptions={...data.assumptions,vacancy_rate:v.vacancy_rate,opex_rate:v.opex_rate,exit_cap_rate:v.exit_cap_rate};
   const baseline=(basis.properties||[]).filter(r=>members.some(p=>p.slug===r.slug));
   const memberById=Object.fromEntries(members.map(p=>[p.slug,p]));
   const money=n=>Number.isFinite(n)?n.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0}):'—';
@@ -88,13 +112,33 @@ async function drawDealUnderwriting(host, slug, options) {
   host.append(el('p','diligence-eyebrow','OODA GROUP · REAL ESTATE'),el('h2','pp3-title',data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
   const live=el('p','re-foot-note','Live · checked '+new Date().toLocaleTimeString());live.dataset.liveStatus='';live.setAttribute('role','status');host.append(live);
   const nav=el('nav','diligence-nav');nav.setAttribute('aria-label','Diligence sections');
-  [['summary','Summary'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['progress','Live project records'],['evidence','Diligence evidence'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
+  [['summary','Summary'],['assumptions','Assumptions'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['planning','Draw planning'],['progress','Live project records'],['evidence','Diligence evidence'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
   const summary=section('summary','Project overview');
   const entities=[...new Set(members.map(p=>p.entity).filter(Boolean))];
   paragraph(summary,members.length+' properties'+(units?' · '+units+' planned residences':'')+(entities.length?' · '+entities.join(', '):''),'diligence-lead');
   paragraph(summary,members.map(p=>p.address||p.short).join(' · '),'re-foot-note');
   const metrics=el('div','diligence-metrics');
   [['Properties / residences',members.length+' / '+(units||'—')],['Proposed monthly rent',money(total('gross')===null?null:total('gross')/12)],['Stabilized annual NOI',money(total('noi'))],['Recorded expenditures',money(paid)]].forEach(([label,value])=>{const m=el('div');m.append(el('span','',label),el('strong','',value));metrics.append(m);});summary.append(metrics);
+  const assumptionsSection=section('assumptions','Lender ask assumptions');
+  paragraph(assumptionsSection,saved?.name||'Current package');
+  const timeline=saved?.dates||{},end=timeline.completion_target&&Number.isFinite(v.lease_up_days)?new Date(Date.parse(timeline.completion_target+'T00:00:00Z')+v.lease_up_days*86400000).toISOString().slice(0,10):null;
+  table(assumptionsSection,['Milestone','Date / duration'],[['Construction start',timeline.construction_start||'Not established'],['Completion target',timeline.completion_target||'Not established'],['Lease-up',v.lease_up_days===null?'Not established':v.lease_up_days+' days'],['Stabilization target',end||'Not established']]);
+  const assumptionDetails=detail(assumptionsSection,'Assumption schedule');
+  table(assumptionDetails,['Input','Value','Source'],diligencePackageFields.map(([k,label,unit])=>[label,v[k]===null?'Not established':unit==='%'?(v[k]*100).toFixed(2)+'%':unit==='$'?money(v[k]):v[k]+' '+unit,inputs[k].origin]));
+  if(saved?.valuationBasis?.selectedRate===v.exit_cap_rate){paragraph(assumptionDetails,'Cap-rate status: '+saved.valuationBasis.status);(saved.valuationBasis.sources||[]).forEach(ref=>{if(/^https:\/\//.test(ref.url)){const a=el('a','',ref.title);a.href=ref.url;a.target='_blank';a.rel='noopener';assumptionDetails.append(a,el('br'));}});}
+  if(options.endpoint.startsWith('/api/deals/')){
+    const edit=detail(assumptionsSection,'Edit this lender ask');
+    paragraph(edit,'Saved values apply only to this deal package. Blank fields remain unestablished. Existing deal values are starting inputs; review before saving.');
+    const form=el('form','diligence-assumptions-form'),nameLabel=el('label','','Ask name'),name=el('input');name.type='text';name.required=true;name.maxLength=120;name.value=saved?.name||data.deal.name;nameLabel.append(name);form.append(nameLabel);
+    const dateControls={};[['construction_start','Construction start'],['completion_target','Completion target']].forEach(([key,label])=>{const l=el('label','',label),i=el('input');i.type='date';i.value=saved?.dates?.[key]||'';l.append(i);form.append(l);dateControls[key]=i;});
+    const controls={};
+    diligencePackageFields.forEach(([key,label,unit,min,max])=>{const l=el('label','',label+' ('+unit+')'),input=el('input');input.type='number';input.min=min;input.max=max;input.step=unit==='years'||unit==='months'||unit==='days'?'1':'any';input.value=v[key]===null?'':String(unit==='%'?Number((v[key]*100).toFixed(6)):v[key]);l.append(input,el('small','',inputs[key].origin));form.append(l);controls[key]=input;});
+    const status=el('p');status.setAttribute('role','status');
+    const save=el('button','','Save assumptions'),cancel=el('button','','Discard edits / reload');cancel.type='button';cancel.onclick=()=>{delete form.dataset.dirty;options.reload();};
+    form.oninput=()=>{form.dataset.dirty='true';status.textContent='Unsaved changes · live refresh paused';};
+    form.onsubmit=async event=>{event.preventDefault();if(!form.reportValidity())return;save.disabled=true;form.dataset.dirty='true';const values={};diligencePackageFields.forEach(([key,,unit])=>{const value=controls[key].value;values[key]=value===''?null:Number(value)/(unit==='%'?100:1);});try{const r=await fetch(options.endpoint+'/assumptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:data.revision,name:name.value,values,dates:Object.fromEntries(Object.entries(dateControls).map(([key,i])=>[key,i.value]))})});if(!r.ok)throw Error(await r.text());delete form.dataset.dirty;await options.reload();}catch(e){status.textContent=e.message;}finally{save.disabled=false;}};
+    form.append(save,cancel,status);edit.append(form);
+  }
   const properties=section('properties','Property schedule');
   table(properties,['Property','Ownership entity','Current stage','Residences','Proposed rent / month'],members.map((p,i)=>[p.short,p.entity||'—',(p.status||'—').replaceAll('_',' '),operating[i]?.units||'—',money(operating[i]?operating[i].gross/12:null)]));
   members.forEach(p=>{const d=detail(properties,p.short+' · proposed unit mix');table(d,['Unit','Beds / baths','Proposed area (SF)','Monthly asking rent'],(p.unitMix||[]).map(u=>[u.label,[u.beds??'—',u.baths??'—'].join(' / '),u.sqft||'—',money(u.rent)]));paragraph(d,'Source: current property unit schedule. Proposed areas; permitted unit count and net rentable area require supporting plans.','re-foot-note');});
@@ -108,10 +152,20 @@ async function drawDealUnderwriting(host, slug, options) {
   paragraph(operations,'Annual and monthly operating projections at the current proposed rents.');
   const gross=total('gross'),egi=total('egi'),noi=total('noi'),reserve=total('reserve'),ncf=total('ncf');
   table(operations,['Operating cash flow','Annual','Monthly'],[['Gross potential rent',gross],['Less: vacancy / credit loss',gross===null||egi===null?null:gross-egi],['Effective gross income',egi],['Less: operating expenses',egi===null||noi===null?null:egi-noi],['Net operating income',noi],['Replacement reserves',reserve],['Net cash flow before financing',ncf]].map(([label,value])=>[label,value===null?'Not established':money(value),value===null?'—':money(value/12)]));
-  table(operations,['Operating assumption','Current input'],[['Vacancy / credit loss',Number.isFinite(assumptions.vacancy_rate)?(assumptions.vacancy_rate*100).toFixed(1)+'% of gross rent':'Not established'],['Operating expense allowance',Number.isFinite(assumptions.opex_rate)?(assumptions.opex_rate*100).toFixed(1)+'% of effective gross income':'Not established'],['Replacement reserves',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?money(basis.operating.replacementReservePerUnitYear)+' / residence / year':'Not established']]);
+  table(operations,['Operating assumption','Current input'],[['Vacancy / credit loss',Number.isFinite(assumptions.vacancy_rate)?(assumptions.vacancy_rate*100).toFixed(1)+'% of gross rent':'Not established'],['Operating expense allowance',Number.isFinite(assumptions.opex_rate)?(assumptions.opex_rate*100).toFixed(1)+'% of effective gross income':'Not established'],['Replacement reserves · years 1–3',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?money(basis.operating.replacementReservePerUnitYear)+' / residence / year':'Not established']]);
   paragraph(operations,'Proposed rents are not collected income. NOI is before replacement reserves and debt service. Expenses use an aggregate allowance; a detailed operating budget is not yet established.','re-foot-note');
   const operatingDetail=detail(operations,'Operating proforma by property');
   table(operatingDetail,['Property','Annual gross rent','Vacancy','Operating expenses','Annual NOI'],members.map((p,i)=>{const u=operating[i];return [p.short,money(u?.gross),money(u?u.gross-u.egi:null),money(u?u.egi-u.noi:null),money(u?.noi)];}));
+  const projections=detail(operations,'Growth projection and disposition');
+  const forecast=saved?diligenceProjection(gross,noi,units,v):[];
+  if(!forecast.length)paragraph(projections,'Save the deal growth rates, hold period, and operating assumptions to calculate this schedule.');
+  else {
+    table(projections,['Projection year','Gross rent','Operating expenses','NOI','Replacement reserve','NCF before debt'],forecast.slice(0,-1).map(r=>[r.year,money(r.gross),money(r.opex),money(r.noi),r.reserve===null?'Not established':money(r.reserve),r.ncf===null?'Not established':money(r.ncf)]));
+    paragraph(projections,'Year 1 uses stabilized rents. Rent and operating costs grow independently. Replacement reserves follow the entered age ladder. Development timing, draws and lease-up are excluded; this is not the project investment cash flow.','re-foot-note');
+    const exit=forecast.at(-1),value=Number.isFinite(v.exit_cap_rate)&&v.exit_cap_rate>0?exit.noi/v.exit_cap_rate:null,cost=value!==null&&Number.isFinite(v.selling_cost_pct)?value*v.selling_cost_pct:null;
+    table(projections,['Disposition calculation','Amount'],[['Forward-year NOI',money(exit.noi)],['Value at selected cap rate',money(value)],['Selling costs',cost===null?'Not established':money(cost)],['Proceeds before loan payoff',cost===null?'Not established':money(value-cost)]]);
+    paragraph(projections,'Loan payoff, equity proceeds, IRR, and equity multiple require the dated financing and investment cash flows.','re-foot-note');
+  }
   if(basis.presentationFinancing?.enabled && budgetRows.length===members.length){
     const config=basis.presentationFinancing;
     const terms={...basis,constructionRate:config.constructionRate,reserveMonths:config.reserveMonths,refinanceRate:config.refinanceRate,refinanceAmortYears:config.refinanceAmortYears,refinanceLtvLow:config.refinanceLtvLow,refinanceLtvHigh:config.refinanceLtvHigh};
@@ -122,9 +176,9 @@ async function drawDealUnderwriting(host, slug, options) {
       const rows=baseline.map(r=>({...r,baseLoan:Math.round((r.acquisition+r.hardCostsIncludingContingency+r.softCosts)*config.constructionLtc*100)/100}));
       const stacks=rows.map(r=>diligenceStack(r,terms));
       const sum=k=>stacks.reduce((n,r)=>n+r[k],0),baseLoan=rows.reduce((n,r)=>n+r.baseLoan,0);
-      table(financing,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal'],['Total loan / development subtotal',(sum('request')/budgetTotal('total')*100).toFixed(2)+'% · includes financed reserve'],['Total loan / identified uses',(sum('request')/(budgetTotal('total')+sum('reserve'))*100).toFixed(2)+'%']]);
-      table(financing,['Sources','Amount','Uses','Amount'],[['Construction principal',money(baseLoan),'Development subtotal',money(budgetTotal('total'))],['Financed interest reserve',money(sum('reserve')),'Interest reserve',money(sum('reserve'))],['Sponsor / partner equity',money(sum('equity')),'',''],['Total capital',money(sum('request')+sum('equity')),'Total identified uses',money(budgetTotal('total')+sum('reserve'))]]);
-      paragraph(financing,'Illustrative sizing; subject to underwriting. Closing costs are not included. Interest carry is modeled on full base principal; actual interest depends on draws.','re-foot-note');
+      table(financing,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal'],['Total loan / development subtotal',(sum('request')/budgetTotal('total')*100).toFixed(2)+'% · includes financed reserve'],['Total loan / identified uses',(sum('request')/(budgetTotal('total')+sum('reserve')+(v.closing_costs??0))*100).toFixed(2)+'%']]);
+      table(financing,['Sources','Amount','Uses','Amount'],[['Construction principal',money(baseLoan),'Development subtotal',money(budgetTotal('total'))],['Financed interest reserve',money(sum('reserve')),'Interest reserve',money(sum('reserve'))],['Sponsor / partner equity',money(sum('equity')+(v.closing_costs??0)),'Additional closing / financing costs',v.closing_costs===null?'Not established':money(v.closing_costs)],['Total capital',money(sum('request')+sum('equity')+(v.closing_costs??0)),'Total identified uses',money(budgetTotal('total')+sum('reserve')+(v.closing_costs??0))]]);
+      paragraph(financing,'Illustrative sizing. '+(v.closing_costs===null?'Closing costs are unquantified and excluded.':'Additional closing costs are funded by equity.')+' Interest carry uses full base principal; actual interest depends on draws.','re-foot-note');
       const perProperty=detail(financing,'Capital requirements by property');
       table(perProperty,['Property','Base loan','Interest reserve','Total loan','Equity'],rows.map((r,i)=>[memberById[r.slug]?.short||r.slug,money(r.baseLoan),exactMoney(stacks[i].reserve),exactMoney(stacks[i].request),money(stacks[i].equity)]));
       const refinance=detail(financing,'Stabilized refinance illustration');
@@ -133,6 +187,19 @@ async function drawDealUnderwriting(host, slug, options) {
       paragraph(refinance,'¹ Debt service amortizes the full construction loan including interest reserve. Coverage uses NOI before replacement reserves. Income-based value is NOI divided by the displayed cap rate, not an appraisal. ² NCF coverage deducts replacement reserves. LTV-only capacity is not available proceeds: coverage limits, closing costs, and other payoff obligations are not deducted.','re-foot-note');
     }
   }
+  const planning=section('planning','Construction and draw planning');
+  table(planning,['Property','Phases with cost estimates','Phases with durations','Current phase estimate total'],members.map(p=>[p.short,(p.work||[]).filter(w=>diligencePhaseCost(w)>0).length+' / '+(p.work||[]).length,(p.work||[]).filter(w=>w.weeks>0).length+' / '+(p.work||[]).length,money((p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0))]));
+  const phases=detail(planning,'Phase-level planning inputs');
+  members.forEach(p=>{phases.append(el('h4','',p.short));table(phases,['Phase','Current estimate','Duration','Status'],(p.work||[]).map(w=>[w.text,diligencePhaseCost(w)>0?money(diligencePhaseCost(w)):'Not estimated',w.weeks>0?Number(w.weeks.toFixed(2))+' weeks':'Not entered',w.checked?'Complete':'Open']));});
+  const spending=diligenceSpendingPlan(timeline.construction_start,timeline.completion_target,budgetTotal('hard')===null||budgetTotal('soft')===null?null:budgetTotal('hard')+budgetTotal('soft'));
+  if(spending.length){
+    const schedule=detail(planning,'Monthly construction spending illustration');
+    table(schedule,['Month','Planned hard + soft costs','Recorded non-acquisition expenses'],spending.map(r=>{const entries=expenseRows.filter(e=>e.date?.startsWith(r.month)&&(e.category||e.cat)!=='acquisition');return [r.month,money(r.amount),entries.length?exactMoney(entries.reduce((n,e)=>n+e.amount,0)):'No entries'];}));
+    paragraph(schedule,'Cost-weighted phase durations distribute the confirmed hard/soft budget across the construction period. This produces a constant daily spending illustration. It excludes acquisition, financing costs and retainage; it is not an approved draw schedule or actual funding history.','re-foot-note');
+  }
+  const allocation=detail(planning,'Phase allocation and budget check');
+  table(allocation,['Property','Current phase estimates','Approved hard + soft budget','Difference'],members.map(p=>{const r=baseline.find(b=>b.slug===p.slug),amount=(p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0),target=r?r.hardCostsIncludingContingency+r.softCosts:null;return [p.short,money(amount),money(target),target===null?'—':money(amount-target)];}));
+  paragraph(planning,'Forecast costs require phase amounts and durations. Lender advances also require funding history, eligible-cost rules, inspection evidence and any agreed retainage.','re-foot-note');
   const progress=section('progress','Live project records');
   paragraph(progress,'Recorded expenditures: '+exactMoney(paid)+'. Updated from the property ledgers as entries are added.');
   table(progress,['Property','Recorded expenditures','Work phases complete'],members.map(p=>[p.short,exactMoney((p.ledger||[]).filter(r=>r.type==='expense').reduce((n,r)=>n+r.amount,0)),(p.work||[]).filter(w=>w.checked).length+' / '+(p.work||[]).length]));
@@ -161,7 +228,7 @@ async function drawDealUnderwriting(host, slug, options) {
   const requirements=detail(evidence,'Additional underwriting inputs');
   table(requirements,['Input','Recorded package status'],[
     ['Replacement reserves',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?'Configured':'Not established'],
-    ['Closing / legal / financing fees','Excluded from identified uses'],
+    ['Closing / legal / financing fees',v.closing_costs===null?'Unquantified; excluded':money(v.closing_costs)+' · equity funded'],
     ['Operating costs','Aggregate allowance; detailed budget not established'],
     ['Sponsor financials / liquidity / experience','Not linked'],
     ['Equity contributions / existing obligations','Reconciliation not established'],

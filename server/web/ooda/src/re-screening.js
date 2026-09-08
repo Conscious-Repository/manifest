@@ -55,7 +55,7 @@
     const noi = egi * (1 - (a.opex_rate || 0));
     const carry = reSrcNum(src, 'carry_cost');
     const soft = carry > 0 ? carry : hard * 0.15; // budget's soft plan, else the screening approximation
-    const contingency = hard * (a.contingency_pct || 0);
+    const contingency = src.phase_costs_include_contingency === true ? 0 : hard * (a.contingency_pct || 0);
     const tdc = purchase + closing + hard + soft + contingency;
     const arv = a.exit_cap_rate ? noi / a.exit_cap_rate : 0;
     // Loan sizing (owner report 2026-08-18 "DSCR is ALWAYS 1.22"): at the

@@ -143,6 +143,22 @@ func (w *Writer) SaveDoc(relDir, filename string, data []byte) (string, error) {
 // surface, not a write-once record). Callers must round-trip the FULL object —
 // unknown fields are never dropped (the fidelity contract).
 func (w *Writer) WriteSourceJSON(rel string, data []byte) error {
+	editMu.Lock()
+	defer editMu.Unlock()
+	return w.writeSourceJSON(rel, data, "")
+}
+
+// WriteSourceJSONIfRevision protects package edits from concurrent source changes.
+// Revision(nil) permits creation only when the source is still absent.
+func (w *Writer) WriteSourceJSONIfRevision(rel string, data []byte, expected string) error {
+	if expected == "" {
+		return errors.New("source revision required")
+	}
+	editMu.Lock()
+	defer editMu.Unlock()
+	return w.writeSourceJSON(rel, data, expected)
+}
+func (w *Writer) writeSourceJSON(rel string, data []byte, expected string) error {
 	if !w.Enabled() {
 		return errors.New("no vault configured")
 	}
@@ -163,7 +179,16 @@ func (w *Writer) WriteSourceJSON(rel string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
-	return w.commit(full, "re-source", data)
+	if expected != "" {
+		before, err := os.ReadFile(full)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if Revision(before) != expected {
+			return &Conflict{Raw: string(before), Revision: Revision(before), Missing: os.IsNotExist(err)}
+		}
+	}
+	return w.commitHeld(full, "re-source", data)
 }
 
 // WriteUnderwriteJSON writes a property's estimate-vintage lock snapshot

@@ -50,7 +50,7 @@ func rePublishFixture(t *testing.T) (*Server, string, string) {
 	}
 	defaults := "export const defaults = {\n" +
 		"  vacancy_rate: 0.08,\n  opex_rate: 0.35,\n  rent_growth: 0.04,\n  opex_growth: 0.02,\n" +
-		"  capex_per_unit_year: 350,\n  construction_period_months: 10,\n  hold_years: 5,\n" +
+		"  capex_per_unit_year: 250,\n  reserve_years_one_three: 250,\n  reserve_years_four_six: 500,\n  reserve_years_seven_eight: 750,\n  reserve_years_nine_plus: 1000,\n  construction_period_months: 10,\n  hold_years: 5,\n" +
 		"  exit_cap_rate: 0.0725,\n  perm_interest_rate: 0.0625,\n  perm_amort_years: 25,\n  perm_ltv: 0.75,\n" +
 		"  construction_interest_rate: 0.10,\n  construction_loan_ltc: 0.70,\n  selling_cost_pct: 0.015,\n  contingency_pct: 0.05,\n" +
 		"};\n\nexport const default_opex_items = {\n  property_tax_rate: 0.10,\n};\n"

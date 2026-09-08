@@ -10,8 +10,10 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"manifest/realestate"
+	"manifest/vaultwriter"
 )
 
 // A single live, deal-scoped projection serves the owner and signed-in OODA
@@ -191,4 +193,106 @@ func (a *oodaAPI) underwritingDoc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.live.server().handleDealUnderwritingDoc(w, r)
+}
+
+// Private package editor: writes only the current deal's assumptions, preserving
+// its records and historical financing. A changed projection requires reload.
+func (s *Server) handleDealPackageAssumptions(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Dates    map[string]string   `json:"dates"`
+		Revision string              `json:"revision"`
+		Name     string              `json:"name"`
+		Values   map[string]*float64 `json:"values"`
+	}
+	if err := decode(r, &input); err != nil {
+		httpError(w, err)
+		return
+	}
+	ranges := map[string][2]float64{
+		"lease_up_days":           {0, 3650},
+		"reserve_years_one_three": {0, 100000}, "reserve_years_four_six": {0, 100000}, "reserve_years_seven_eight": {0, 100000}, "reserve_years_nine_plus": {0, 100000},
+		"vacancy_rate": {0, .99}, "opex_rate": {0, .99}, "exit_cap_rate": {.001, 1},
+		"rent_growth": {-.99, 1}, "opex_growth": {-.99, 1}, "hold_years": {1, 50}, "selling_cost_pct": {0, 1},
+		"replacement_reserve": {0, 100000}, "closing_costs": {0, 100000000},
+		"construction_ltc": {0, 1}, "construction_rate": {0, 1}, "term_months": {1, 600}, "reserve_months": {0, 600},
+		"refinance_rate": {0, 1}, "refinance_years": {1, 50}, "refinance_ltv": {0, 1},
+	}
+	for k, v := range input.Values {
+		bounds, ok := ranges[k]
+		if !ok || (v != nil && (*v < bounds[0] || *v > bounds[1])) {
+			http.Error(w, "Invalid assumption: "+k, 400)
+			return
+		}
+		if v != nil && (k == "lease_up_days" || k == "hold_years" || k == "term_months" || k == "reserve_months" || k == "refinance_years") && *v != float64(int(*v)) {
+			http.Error(w, "Whole number required: "+k, 400)
+			return
+		}
+	}
+	if len(strings.TrimSpace(input.Name)) == 0 || len(input.Name) > 120 {
+		http.Error(w, "Package name required (maximum 120 characters)", 400)
+		return
+	}
+	for key, value := range input.Dates {
+		if key != "construction_start" && key != "completion_target" {
+			http.Error(w, "Invalid date key", 400)
+			return
+		}
+		if value != "" {
+			if _, err := time.Parse("2006-01-02", value); err != nil {
+				http.Error(w, "Invalid date", 400)
+				return
+			}
+		}
+	}
+	if input.Dates["construction_start"] != "" && input.Dates["completion_target"] != "" && input.Dates["completion_target"] < input.Dates["construction_start"] {
+		http.Error(w, "Completion must follow construction start", 400)
+		return
+	}
+	current, err := s.buildDealUnderwriting(r.PathValue("slug"))
+	if err != nil {
+		http.Error(w, "Deal unavailable", 404)
+		return
+	}
+	if input.Revision == "" || input.Revision != current.Revision {
+		http.Error(w, "Deal changed. Reload before saving assumptions.", 409)
+		return
+	}
+	sourceBytes, sourceExists := s.realestate.Source(current.Deal.Path)
+	if !sourceExists {
+		sourceBytes = nil
+	}
+	if sourceExists && string(sourceBytes) != string(current.Source) {
+		http.Error(w, "Deal changed. Reload before saving.", 409)
+		return
+	}
+	var source map[string]any
+	if json.Unmarshal(current.Source, &source) != nil {
+		http.Error(w, "Source unavailable", 500)
+		return
+	}
+	basis, _ := source["deal_underwriting"].(map[string]any)
+	if basis == nil {
+		basis = map[string]any{}
+		source["deal_underwriting"] = basis
+	}
+	pkg, _ := basis["packageAssumptions"].(map[string]any)
+	if pkg == nil {
+		pkg = map[string]any{}
+	}
+	pkg["name"] = strings.TrimSpace(input.Name)
+	pkg["values"] = input.Values
+	if input.Dates != nil {
+		pkg["dates"] = input.Dates
+	}
+	basis["packageAssumptions"] = pkg
+	raw, err := json.MarshalIndent(source, "", "  ")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if err = s.vault.WriteSourceJSONIfRevision(realestate.SourceRel(current.Deal.Path), raw, vaultwriter.Revision(sourceBytes)); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
