@@ -70,6 +70,7 @@ type Server struct {
 	gmail *gmailauth.Client
 	// Excalibur harness (SPIRITS tab) + the surfaces it drives. All nilable.
 	manifestOperations *manifestmcp.Adapter
+	dealShares         *dealShareStore
 	operationMu        sync.Mutex
 	approvals          *approvals.Store // the PRIMARY inbox (harness federation: first entry)
 	vault              *vaultwriter.Writer
@@ -803,6 +804,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/properties/{slug}/source", s.handlePropertySource) // GET+PUT
 	mux.HandleFunc("GET /api/deals/{slug}", s.handleDealPage)
 	mux.HandleFunc("GET /api/deals/{slug}/underwriting", s.handleDealUnderwriting)
+	mux.HandleFunc("GET /api/deals/{slug}/shares", s.handleDealShares)
+	mux.HandleFunc("POST /api/deals/{slug}/shares", s.handleDealShares)
+	mux.HandleFunc("DELETE /api/deals/{slug}/shares/{id}", s.handleDealShares)
 	mux.HandleFunc("POST /api/deals/{slug}/underwriting/assumptions", s.handleDealPackageAssumptions)
 	mux.HandleFunc("GET /api/deals/{slug}/underwriting/document", s.handleDealUnderwritingDoc)
 	mux.HandleFunc("/api/deals/{slug}/source", s.handleDealSource) // GET+PUT

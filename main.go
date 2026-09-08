@@ -1171,13 +1171,16 @@ func main() {
 				oodaOpts.ChatAttachGet = srv.OodaChatAttachGet
 				log.Printf("ooda chat: enabled (writes → %s)", filepath.Join(cfg.Ooda.TeamDir, "chat"))
 			}
+			if err := srv.UseDealShares(cfg.DataDir); err != nil {
+				log.Printf("deal sharing disabled: %v", err)
+			}
 			oodaAddr := fmt.Sprintf("127.0.0.1:%d", cfg.Ooda.Port)
 			if h, err := server.PortalHandler(oodaOpts); err != nil {
 				log.Printf("ooda portal disabled: %v", err)
 			} else {
 				go func() {
 					fmt.Printf("ooda portal → http://%s\n", oodaAddr)
-					if err := http.ListenAndServe(oodaAddr, server.Gzip(h)); err != nil {
+					if err := http.ListenAndServe(oodaAddr, server.Gzip(srv.DealShareHandler(h))); err != nil {
 						log.Printf("ooda portal listener stopped: %v", err)
 					}
 				}()

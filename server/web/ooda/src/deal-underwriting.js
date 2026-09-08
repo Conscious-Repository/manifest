@@ -127,6 +127,7 @@ async function drawDealUnderwriting(host, slug, options) {
   table(assumptionDetails,['Input','Value','Source'],diligencePackageFields.map(([k,label,unit])=>[label,v[k]===null?'Not established':unit==='%'?(v[k]*100).toFixed(2)+'%':unit==='$'?money(v[k]):v[k]+' '+unit,inputs[k].origin]));
   if(saved?.valuationBasis?.selectedRate===v.exit_cap_rate){paragraph(assumptionDetails,'Cap-rate status: '+saved.valuationBasis.status);(saved.valuationBasis.sources||[]).forEach(ref=>{if(/^https:\/\//.test(ref.url)){const a=el('a','',ref.title);a.href=ref.url;a.target='_blank';a.rel='noopener';assumptionDetails.append(a,el('br'));}});}
   if(options.endpoint.startsWith('/api/deals/')){
+    const sharing=el('button','','Lender links');sharing.onclick=()=>openDealSharing(slug);assumptionsSection.append(sharing);
     const edit=detail(assumptionsSection,'Edit this lender ask');
     paragraph(edit,'Saved values apply only to this deal package. Blank fields remain unestablished. Existing deal values are starting inputs; review before saving.');
     const form=el('form','diligence-assumptions-form'),nameLabel=el('label','','Ask name'),name=el('input');name.type='text';name.required=true;name.maxLength=120;name.value=saved?.name||data.deal.name;nameLabel.append(name);form.append(nameLabel);
@@ -275,4 +276,21 @@ async function drawDealUnderwriting(host, slug, options) {
     paragraph(documents,'Accepted contract allocations: '+money(committed.reduce((n,c)=>n+(c.allocations||[]).filter(a=>memberById[a.property]).reduce((k,a)=>k+a.amount,0),0))+'. Contract amounts are commitments, not additional expenses.');
   } catch(e) { paragraph(documents,'Contract inventory could not be loaded: '+e.message); }
 
+}
+
+function openDealSharing(slug){
+ const dialog=document.createElement('dialog');dialog.className='diligence-share-dialog';
+ const node=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n;};
+ const title=node('h2','Lender links'),intro=node('p','Each password-gated link opens only this deal, with live expenses, underwriting, work progress and linked plans. Internal correspondence and task chats are excluded. New linked documents and expenses appear automatically.');
+ const form=node('form'),label=node('input');label.placeholder='Lender or purpose';label.required=true;label.maxLength=120;label.setAttribute('aria-label','Link label');
+ const days=node('input');days.type='number';days.min=1;days.max=365;days.value=90;days.required=true;days.setAttribute('aria-label','Expires in days');
+ const daysLabel=node('label','Expires in days ');daysLabel.append(days);
+ const create=node('button','Create password-gated link');create.type='submit';form.append(label,daysLabel,create);
+ const result=node('div'),status=node('p'),list=node('div'),close=node('button','Done');status.setAttribute('role','status');close.onclick=()=>dialog.close();dialog.addEventListener('close',()=>dialog.remove());
+ dialog.append(title,intro,form,result,status,list,close);document.body.append(dialog);dialog.showModal();
+ const endpoint='/api/deals/'+encodeURIComponent(slug)+'/shares';
+ async function refresh(){const r=await fetch(endpoint,{cache:'no-store'});if(!r.ok)throw Error(await r.text());const data=await r.json();list.replaceChildren();(data.shares||[]).sort((a,b)=>b.created.localeCompare(a.created)).forEach(sh=>{const row=node('div'),expired=new Date(sh.expires)<=new Date();row.className='diligence-share-row';const text=node('span',sh.label+' · '+(sh.revoked?'Revoked':expired?'Expired':'Expires '+new Date(sh.expires).toLocaleDateString()));row.append(text);if(!sh.revoked&&!expired){const link=node('a','Open');link.href='https://portal.ooda.group/lender/'+sh.id+'/';link.target='_blank';link.rel='noopener';const revoke=node('button','Revoke');revoke.onclick=async()=>{revoke.disabled=true;try{const r=await fetch(endpoint+'/'+encodeURIComponent(sh.id),{method:'DELETE'});if(!r.ok)throw Error(await r.text());await refresh();}catch(e){status.textContent=e.message;revoke.disabled=false;}};row.append(link,revoke);}list.append(row);});}
+ form.onsubmit=async e=>{e.preventDefault();create.disabled=true;status.textContent='';try{const r=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:label.value,days:Number(days.value)})});if(!r.ok)throw Error(await r.text());const x=await r.json();result.replaceChildren(node('h3','Save this password now'),node('p','The password is shown once. Send it separately from the link.'));
+ for(const [name,value] of [['Link','https://portal.ooda.group'+x.path],['Password',x.password]]){const field=node('label',name+' '),input=node('input');input.value=value;input.readOnly=true;input.setAttribute('aria-label',name);input.onclick=()=>input.select();field.append(input);result.append(field);}await refresh();}catch(e){status.textContent=e.message;}finally{create.disabled=false;}};
+ refresh().catch(e=>status.textContent=e.message);
 }

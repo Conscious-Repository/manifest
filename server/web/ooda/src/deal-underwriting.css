@@ -44,3 +44,12 @@
 .diligence-assumptions-form p { grid-column: 1 / -1; }
 @media (max-width: 700px) { .diligence-assumptions-form { grid-template-columns: 1fr; } }
 @media print { .diligence-assumptions-form { display: none; } }
+
+.diligence-share-dialog {width:min(680px,94vw);max-height:90vh;overflow:auto;padding:24px;background:var(--base-00);color:var(--base-100);border:1px solid var(--line)}
+.diligence-share-dialog::backdrop {background:#0008}
+.diligence-share-dialog p {line-height:1.6}
+.diligence-share-dialog form,.diligence-share-dialog label {display:grid;gap:8px;margin:12px 0}
+.diligence-share-dialog input {box-sizing:border-box;width:100%;min-width:0;padding:10px;color:inherit;background:var(--base-00);border:1px solid var(--line);font:inherit}
+.diligence-share-dialog button {padding:8px 12px;cursor:pointer}
+.diligence-share-row {display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);padding:12px 0}
+.diligence-share-row span {flex:1;overflow-wrap:anywhere}
