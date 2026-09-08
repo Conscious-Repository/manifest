@@ -91,3 +91,24 @@ test('property record overrides outrank defaults without changing a named lender
  const ask={...defaults,exit_cap_rate:.09};
  assert.equal(c.reScreen(property,source,ask).arv,c.reScreen(property,{},ask).arv);
 });
+
+test('section navigation supports keyboard, full reading, and refresh retention',()=>{
+ class Node {
+  constructor(tag,cls,text){this.tag=tag;this.className=cls;this.textContent=text;this.children=[];this.attrs={};}
+  append(...nodes){this.children.push(...nodes);}
+  setAttribute(k,v){this.attrs[k]=v;}
+  focus(){this.focused=true;}
+ }
+ const el=(...args)=>new Node(...args),host=el('div'),state={tab:'overview',all:false};
+ let panels=c.diligenceNavigation(host,el,state);
+ const visible=()=>Object.keys(panels).filter(k=>k!=='activate'&&!panels[k].hidden);
+ assert.deepEqual(visible(),['overview']);
+ const [nav,actions]=host.children[0].children;
+ nav.children[2].onclick();assert.deepEqual(visible(),['financials']);
+ nav.children[2].onkeydown({key:'ArrowRight',preventDefault(){}});
+ assert.deepEqual(visible(),['execution']);assert.equal(nav.children[3].focused,true);
+ actions.children[0].onclick();assert.equal(visible().length,5);
+ panels=c.diligenceNavigation(el('div'),el,state);assert.equal(visible().length,5);
+ panels.activate('documents');assert.deepEqual(visible(),['documents']);
+ panels=c.diligenceNavigation(el('div'),el,state);assert.deepEqual(visible(),['documents']);
+});

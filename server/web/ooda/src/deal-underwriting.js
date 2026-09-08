@@ -51,19 +51,22 @@ function diligenceProjection(gross,noi,units,v){
 function renderDealDiligence(host, slug, options = {}) {
   const mount=document.createElement('div');host.replaceChildren(mount);
   const endpoint=options.endpoint||('/api/deals/'+encodeURIComponent(slug)+'/underwriting');
-  let stopped=false,busy=false,revision='',controller;
-  const dispose=()=>{stopped=true;clearInterval(timer);controller?.abort();document.removeEventListener('visibilitychange',visible);};
+  const viewState={tab:'overview',all:false};
+  let stopped=false,busy=false,printing=false,revision='',controller;
+  let printClosed=[];const beforePrint=()=>{printing=true;printClosed=Array.from(mount.querySelectorAll('details:not([open])'));printClosed.forEach(d=>d.open=true);};const afterPrint=()=>{printClosed.forEach(d=>d.open=false);printClosed=[];printing=false;};
+  window.addEventListener('beforeprint',beforePrint);window.addEventListener('afterprint',afterPrint);
+  const dispose=()=>{window.removeEventListener('beforeprint',beforePrint);window.removeEventListener('afterprint',afterPrint);stopped=true;clearInterval(timer);controller?.abort();document.removeEventListener('visibilitychange',visible);};
   const load=async()=>{
-    if(stopped||busy||mount.querySelector('form[data-dirty]'))return;if(!mount.isConnected){dispose();return;}busy=true;
+    if(stopped||busy||printing||mount.querySelector('form[data-dirty]'))return;if(!mount.isConnected){dispose();return;}busy=true;
     controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),20000);
     try{
       const response=await fetch(endpoint,{cache:'no-store',credentials:'same-origin',signal:controller.signal,headers:revision?{'If-None-Match':'"'+revision+'"'}:{}});
       if(response.status===304){mount.querySelector('[data-live-status]')?.replaceChildren(document.createTextNode('Live · checked '+new Date().toLocaleTimeString()));return;}
       if(!response.ok||response.redirected)throw Error('Could not refresh underwriting ('+response.status+').');
-      const bundle=await response.json();if(stopped||!mount.isConnected||mount.querySelector('form[data-dirty]'))return;
+      const bundle=await response.json();if(stopped||printing||!mount.isConnected||mount.querySelector('form[data-dirty]'))return;
       const open=Array.from(mount.querySelectorAll('details[open]')).map(d=>d.querySelector('summary')?.textContent);
       const scroll=window.scrollY;
-      await drawDealUnderwriting(mount,slug,{...options,endpoint,bundle,reload:()=>{revision='';return load();}});
+      await drawDealUnderwriting(mount,slug,{...options,viewState,endpoint,bundle,reload:()=>{revision='';return load();}});
       mount.querySelectorAll('details').forEach(d=>{if(open.includes(d.querySelector('summary')?.textContent))d.open=true;});
       if(revision)window.scrollTo({top:scroll});revision=bundle.revision;
     }catch(error){if(stopped)return;let status=mount.querySelector('[data-live-status]');if(!status){status=document.createElement('p');status.dataset.liveStatus='';mount.append(status);}status.setAttribute('role','status');status.textContent=(revision?'Showing last loaded data. ':'')+error.message+' Retrying automatically.';}
@@ -73,6 +76,20 @@ function renderDealDiligence(host, slug, options = {}) {
   const timer=setInterval(()=>{if(!mount.isConnected){dispose();return;}if(document.visibilityState==='visible')load();},5000);
   document.addEventListener('visibilitychange',visible);load();return dispose;
 }
+
+// One reading topic at a time; the complete document remains available.
+function diligenceNavigation(host,el,state){
+ const topics=[['overview','Overview'],['properties','Properties'],['financials','Financials'],['execution','Execution'],['documents','Documents']];
+ if(!topics.some(([id])=>id===state.tab))state.tab='overview';
+ const toolbar=el('div','diligence-toolbar'),nav=el('div','diligence-nav'),actions=el('div','diligence-actions');nav.setAttribute('role','tablist');nav.setAttribute('aria-label','Deal sections');toolbar.append(nav,actions);host.append(toolbar);
+ const panels={},buttons={};
+ function activate(id){state.tab=id;state.all=false;update();}
+ function update(){topics.forEach(([id])=>{const selected=state.tab===id;buttons[id].setAttribute('aria-selected',String(selected&&!state.all));buttons[id].tabIndex=selected?0:-1;panels[id].hidden=!state.all&&!selected;panels[id].setAttribute('role',state.all?'region':'tabpanel');});all.textContent=state.all?'Section view':'Read all';all.setAttribute('aria-pressed',String(state.all));}
+ topics.forEach(([id,label],index)=>{const button=el('button','',label);button.id='diligence-tab-'+id;button.setAttribute('role','tab');button.setAttribute('aria-controls','diligence-panel-'+id);button.onclick=()=>activate(id);button.onkeydown=e=>{let next;if(e.key==='ArrowRight')next=(index+1)%topics.length;else if(e.key==='ArrowLeft')next=(index+topics.length-1)%topics.length;else if(e.key==='Home')next=0;else if(e.key==='End')next=topics.length-1;else return;e.preventDefault();activate(topics[next][0]);buttons[topics[next][0]].focus();};nav.append(button);buttons[id]=button;const panel=el('div','diligence-panel');panel.id='diligence-panel-'+id;panel.setAttribute('aria-labelledby',button.id);panel.tabIndex=0;panels[id]=panel;host.append(panel);});
+ const all=el('button','','Read all');all.onclick=()=>{state.all=!state.all;update();};
+ const print=el('button','','Print / PDF');print.onclick=()=>window.print();actions.append(all,print);update();panels.activate=activate;return panels;
+}
+
 async function drawDealUnderwriting(host, slug, options) {
   const el=(tag,cls='',text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const preview=el('div','diligence-preview');
@@ -100,8 +117,10 @@ async function drawDealUnderwriting(host, slug, options) {
   const money=n=>Number.isFinite(n)?n.toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0}):'—';
   const exactMoney=n=>Number.isFinite(n)?n.toLocaleString('en-US',{style:'currency',currency:'USD'}):'—';
   const paragraph=(parent,text,cls='')=>parent.append(el('p',cls,text));
-  const section=(id,title)=>{const s=el('section','diligence-section');s.id='diligence-'+id;s.append(el('h3','',title));host.append(s);return s;};
-  const table=(parent,headers,rows)=>{const wrap=el('div','diligence-table-wrap');wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label',headers.join(', '));const t=el('table','diligence-table');const head=el('thead'),tr=el('tr');headers.forEach(h=>{const th=el('th','',h);th.scope='col';tr.append(th);});head.append(tr);t.append(head);const body=el('tbody');rows.forEach(row=>{const r=el('tr');row.forEach(v=>r.append(el('td','',String(v))));body.append(r);});t.append(body);wrap.append(t);parent.append(wrap);};
+  const sections={};let panels;
+  const groups={summary:'overview',properties:'properties',budget:'financials',financing:'financials',operations:'financials',assumptions:'financials',planning:'execution',progress:'execution',documents:'documents'};
+  const section=(id,title)=>{const s=el('section','diligence-section');s.id='diligence-'+id;s.append(el('h3','',title));panels[groups[id]].append(s);sections[id]=s;return s;};
+  const table=(parent,headers,rows)=>{const wrap=el('div','diligence-table-wrap');wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label',headers.join(', '));const t=el('table','diligence-table');const head=el('thead'),tr=el('tr');headers.forEach(h=>{const th=el('th','',h);th.scope='col';tr.append(th);});head.append(tr);t.append(head);const body=el('tbody');rows.forEach(row=>{const r=el('tr');if(/^(Total|Development subtotal|Net operating income|Net cash flow)/.test(String(row[0])))r.className='diligence-total';row.forEach((v,i)=>{const cell=el(i===0?'th':'td','',String(v));if(i===0)cell.scope='row';if(i>0&&(/^[$\d]/.test(String(v))||/^[-−]\$/.test(String(v))))cell.className='diligence-number';r.append(cell);});body.append(r);});t.append(body);wrap.append(t);parent.append(wrap);};
   const detail=(parent,title)=>{const d=el('details','diligence-property');d.append(el('summary','',title));parent.append(d);return d;};
   const operating=members.map(p=>diligenceOperating(p,data.sources[p.slug]||{},assumptions,basis.operating||{}));
   const total=key=>operating.length&&operating.every(p=>p&&Number.isFinite(p[key]))?operating.reduce((n,p)=>n+p[key],0):null;
@@ -111,18 +130,27 @@ async function drawDealUnderwriting(host, slug, options) {
   const units=counts.length&&counts.every(n=>Number.isFinite(n)&&n>0)?counts.reduce((n,x)=>n+x,0):null;
   host.append(el('p','diligence-eyebrow','OODA GROUP · REAL ESTATE'),el('h2','pp3-title',data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
   const live=el('p','re-foot-note','Live · checked '+new Date().toLocaleTimeString());live.dataset.liveStatus='';live.setAttribute('role','status');host.append(live);
-  const nav=el('nav','diligence-nav');nav.setAttribute('aria-label','Diligence sections');
-  [['summary','Summary'],['assumptions','Assumptions'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['planning','Draw planning'],['progress','Live project records'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
+  panels=diligenceNavigation(host,el,options.viewState||(options.viewState={tab:'overview',all:false}));
   const summary=section('summary','Project overview');
   const entities=[...new Set(members.map(p=>p.entity).filter(Boolean))];
   paragraph(summary,members.length+' properties'+(units?' · '+units+' planned residences':'')+(entities.length?' · '+entities.join(', '):''),'diligence-lead');
-  paragraph(summary,members.map(p=>p.address||p.short).join(' · '),'re-foot-note');
+
   const metrics=el('div','diligence-metrics');
-  [['Properties / residences',members.length+' / '+(units||'—')],['Proposed monthly rent',money(total('gross')===null?null:total('gross')/12)],['Stabilized annual NOI',money(total('noi'))],['Recorded expenditures',money(paid)]].forEach(([label,value])=>{const m=el('div');m.append(el('span','',label),el('strong','',value));metrics.append(m);});summary.append(metrics);
+  const overviewBudget=baseline.length===members.length&&baseline.length?baseline.reduce((n,r)=>n+r.acquisition+r.hardCostsIncludingContingency+r.softCosts,0):null;
+  const overviewTerms=basis.presentationFinancing;
+  const overviewLoan=overviewBudget!==null&&overviewTerms?.enabled&&['constructionLtc','constructionRate','reserveMonths'].every(k=>Number.isFinite(overviewTerms[k]))?baseline.reduce((n,r)=>{const principal=Math.round((r.acquisition+r.hardCostsIncludingContingency+r.softCosts)*overviewTerms.constructionLtc*100)/100;return n+principal+Math.round(principal*overviewTerms.constructionRate*overviewTerms.reserveMonths/12*100)/100;},0):null;
+  [['Development budget',money(overviewBudget)],['Illustrative loan · incl. reserve',exactMoney(overviewLoan)],['Proposed monthly rent',money(total('gross')===null?null:total('gross')/12)],['Stabilized annual NOI',money(total('noi'))]].forEach(([label,value])=>{const m=el('div');m.append(el('span','',label),el('strong','',value));metrics.append(m);});summary.append(metrics);
+  if(overviewLoan!==null){paragraph(summary,(overviewTerms.constructionRate*100).toFixed(2)+'% interest only · '+overviewTerms.termMonths+' months · '+(overviewTerms.constructionLtc*100).toFixed(0)+'% base loan-to-cost','diligence-terms');paragraph(summary,'Development budget includes hard-cost contingency; additional closing and financing fees '+(v.closing_costs===null?'are unquantified.':'total '+money(v.closing_costs)+'.'),'re-foot-note');}
   const assumptionsSection=section('assumptions','Lender ask assumptions');
   paragraph(assumptionsSection,saved?.name||'Current package');
   const timeline=saved?.dates||{},end=timeline.completion_target&&Number.isFinite(v.lease_up_days)?new Date(Date.parse(timeline.completion_target+'T00:00:00Z')+v.lease_up_days*86400000).toISOString().slice(0,10):null;
-  table(assumptionsSection,['Milestone','Date / duration'],[['Construction start',timeline.construction_start||'Not established'],['Completion target',timeline.completion_target||'Not established'],['Lease-up',v.lease_up_days===null?'Not established':v.lease_up_days+' days'],['Lease-up target',end||'Not established']]);
+  const milestones=el('dl','diligence-timeline');
+  const displayDate=value=>value?new Date(value+'T00:00:00Z').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric',timeZone:'UTC'}):'Not established';
+  [['Construction started',displayDate(timeline.construction_start)],['Completion target',displayDate(timeline.completion_target)],['Lease-up target',displayDate(end)]].forEach(([label,value])=>{const item=el('div');item.append(el('dt','',label),el('dd','',value));milestones.append(item);});summary.append(el('h4','','Execution targets'),milestones);
+  paragraph(summary,'Lease-up allowance: '+(v.lease_up_days===null?'Not established':v.lease_up_days+' days')+'.','re-foot-note');
+  if(basis.repayment)paragraph(summary,basis.repayment,'re-foot-note');
+  const explore=el('div','diligence-overview-links');
+  [['properties','Properties & unit rents'],['financials','Budget, financing & cash flow'],['execution','Schedule & recorded spending'],['documents','Plans & supporting documents']].forEach(([id,label])=>{const button=el('button','',label+' →');button.onclick=()=>panels.activate(id);explore.append(button);});summary.append(explore);
   const assumptionDetails=detail(assumptionsSection,'Assumption schedule');
   table(assumptionDetails,['Input','Value','Source'],diligencePackageFields.map(([k,label,unit])=>[label,v[k]===null?'Not established':unit==='%'?(v[k]*100).toFixed(2)+'%':unit==='$'?money(v[k]):v[k]+' '+unit,inputs[k].origin]));
   if(saved?.valuationBasis?.selectedRate===v.exit_cap_rate){paragraph(assumptionDetails,'Cap-rate status: '+saved.valuationBasis.status);(saved.valuationBasis.sources||[]).forEach(ref=>{if(/^https:\/\//.test(ref.url)){const a=el('a','',ref.title);a.href=ref.url;a.target='_blank';a.rel='noopener';assumptionDetails.append(a,el('br'));}});}
@@ -153,8 +181,9 @@ async function drawDealUnderwriting(host, slug, options) {
   paragraph(operations,'Annual and monthly operating projections at the current proposed rents.');
   const gross=total('gross'),egi=total('egi'),noi=total('noi'),reserve=total('reserve'),ncf=total('ncf');
   table(operations,['Operating cash flow','Annual','Monthly'],[['Gross potential rent',gross],['Less: vacancy / credit loss',gross===null||egi===null?null:gross-egi],['Effective gross income',egi],['Less: operating expenses',egi===null||noi===null?null:egi-noi],['Net operating income',noi],['Replacement reserves',reserve],['Net cash flow before financing',ncf]].map(([label,value])=>[label,value===null?'Not established':money(value),value===null?'—':money(value/12)]));
-  table(operations,['Operating assumption','Current input'],[['Vacancy / credit loss',Number.isFinite(assumptions.vacancy_rate)?(assumptions.vacancy_rate*100).toFixed(1)+'% of gross rent':'Not established'],['Operating expense allowance',Number.isFinite(assumptions.opex_rate)?(assumptions.opex_rate*100).toFixed(1)+'% of effective gross income':'Not established'],['Replacement reserves · years 1–3',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?money(basis.operating.replacementReservePerUnitYear)+' / residence / year':'Not established']]);
-  paragraph(operations,'Proposed rents are not collected income. NOI is before replacement reserves and debt service. Expenses use an aggregate allowance; a detailed operating budget is not yet established.','re-foot-note');
+  const operatingBasis=detail(operations,'Operating assumptions & calculation basis');
+  table(operatingBasis,['Operating assumption','Current input'],[['Vacancy / credit loss',Number.isFinite(assumptions.vacancy_rate)?(assumptions.vacancy_rate*100).toFixed(1)+'% of gross rent':'Not established'],['Operating expense allowance',Number.isFinite(assumptions.opex_rate)?(assumptions.opex_rate*100).toFixed(1)+'% of effective gross income':'Not established'],['Replacement reserves · years 1–3',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?money(basis.operating.replacementReservePerUnitYear)+' / residence / year':'Not established']]);
+  paragraph(operatingBasis,'Proposed rents are not collected income. NOI is before replacement reserves and debt service. Expenses use an aggregate allowance; a detailed operating budget is not yet established.','re-foot-note');
   const operatingDetail=detail(operations,'Operating proforma by property');
   table(operatingDetail,['Property','Annual gross rent','Vacancy','Operating expenses','Annual NOI'],members.map((p,i)=>{const u=operating[i];return [p.short,money(u?.gross),money(u?u.gross-u.egi:null),money(u?u.egi-u.noi:null),money(u?.noi)];}));
   const projections=detail(operations,'Growth projection and disposition');
@@ -173,11 +202,12 @@ async function drawDealUnderwriting(host, slug, options) {
     const valid=['constructionLtc','constructionRate','reserveMonths','termMonths','refinanceRate','refinanceAmortYears','refinanceLtvLow','refinanceLtvHigh'].every(k=>Number.isFinite(config[k]));
     if(valid){
       const financing=section('financing','Illustrative financing');
-      const navButton=el('button','','Financing');navButton.onclick=()=>financing.scrollIntoView({block:'start',behavior:'smooth'});nav.insertBefore(navButton,nav.children[4]);
+
       const rows=baseline.map(r=>({...r,baseLoan:Math.round((r.acquisition+r.hardCostsIncludingContingency+r.softCosts)*config.constructionLtc*100)/100}));
       const stacks=rows.map(r=>diligenceStack(r,terms));
       const sum=k=>stacks.reduce((n,r)=>n+r[k],0),baseLoan=rows.reduce((n,r)=>n+r.baseLoan,0);
-      table(financing,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal'],['Total loan / development subtotal',(sum('request')/budgetTotal('total')*100).toFixed(2)+'% · includes financed reserve'],['Total loan / identified uses',(sum('request')/(budgetTotal('total')+sum('reserve')+(v.closing_costs??0))*100).toFixed(2)+'%']]);
+      const loanBasis=detail(financing,'Loan terms & leverage calculations');
+      table(loanBasis,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal'],['Total loan / development subtotal',(sum('request')/budgetTotal('total')*100).toFixed(2)+'% · includes financed reserve'],['Total loan / identified uses',(sum('request')/(budgetTotal('total')+sum('reserve')+(v.closing_costs??0))*100).toFixed(2)+'%']]);
       table(financing,['Sources','Amount','Uses','Amount'],[['Construction principal',money(baseLoan),'Development subtotal',money(budgetTotal('total'))],['Financed interest reserve',money(sum('reserve')),'Interest reserve',money(sum('reserve'))],['Sponsor / partner equity',money(sum('equity')+(v.closing_costs??0)),'Additional closing / financing costs',v.closing_costs===null?'Not established':money(v.closing_costs)],['Total capital',money(sum('request')+sum('equity')+(v.closing_costs??0)),'Total identified uses',money(budgetTotal('total')+sum('reserve')+(v.closing_costs??0))]]);
       paragraph(financing,'Illustrative sizing. '+(v.closing_costs===null?'Closing costs are unquantified and excluded.':'Additional closing costs are funded by equity.')+' Interest carry uses full base principal; actual interest depends on draws.','re-foot-note');
       if(basis.structure)paragraph(financing,basis.structure,'re-foot-note');
@@ -196,7 +226,8 @@ async function drawDealUnderwriting(host, slug, options) {
     }
   }
   const planning=section('planning','Construction and draw planning');
-  table(planning,['Property','Phases with cost estimates','Phases with durations','Current phase estimate total'],members.map(p=>[p.short,(p.work||[]).filter(w=>diligencePhaseCost(w)>0).length+' / '+(p.work||[]).length,(p.work||[]).filter(w=>w.weeks>0).length+' / '+(p.work||[]).length,money((p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0))]));
+  const coverage=detail(planning,'Phase estimate coverage');
+  table(coverage,['Property','Phases with cost estimates','Phases with durations','Current phase estimate total'],members.map(p=>[p.short,(p.work||[]).filter(w=>diligencePhaseCost(w)>0).length+' / '+(p.work||[]).length,(p.work||[]).filter(w=>w.weeks>0).length+' / '+(p.work||[]).length,money((p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0))]));
   const phases=detail(planning,'Phase-level planning inputs');
   members.forEach(p=>{phases.append(el('h4','',p.short));table(phases,['Phase','Current estimate','Duration','Status'],(p.work||[]).map(w=>[w.text,diligencePhaseCost(w)>0?money(diligencePhaseCost(w)):'Not estimated',w.weeks>0?Number(w.weeks.toFixed(2))+' weeks':'Not entered',w.checked?'Complete':'Open']));});
   const spending=diligenceSpendingPlan(timeline.construction_start,timeline.completion_target,budgetTotal('hard')===null||budgetTotal('soft')===null?null:budgetTotal('hard')+budgetTotal('soft'));
@@ -232,7 +263,8 @@ async function drawDealUnderwriting(host, slug, options) {
     const contracts = (await read('/api/realestate/contracts')).contracts || [];
     const linked = contracts.filter(c => (c.allocations || []).some(a => memberById[a.property]));
     const committed = linked.filter(c => c.status === 'accepted');
-    table(documents,['Contract','Status','Allocated to this deal','Document'],linked.map(c => [c.name,c.status,money((c.allocations||[]).filter(a=>memberById[a.property]).reduce((n,a)=>n+a.amount,0)),c.doc?'Linked below':'No file attached']));
+    const contractDetails=detail(documents,'Contracts & receipts · '+linked.length+' contracts');
+    table(contractDetails,['Contract','Status','Allocated to this deal','Document'],linked.map(c => [c.name,c.status,money((c.allocations||[]).filter(a=>memberById[a.property]).reduce((n,a)=>n+a.amount,0)),c.doc?'Linked below':'No file attached']));
     const seen = new Set();
     const addDocument = (ref,label) => {
       if (!ref || seen.has(ref)) return; seen.add(ref);
@@ -241,12 +273,14 @@ async function drawDealUnderwriting(host, slug, options) {
       else if (/^https?:\/\//.test(ref)) href=ref;
       else if (ref.startsWith('system/realestate/docs/')) href=docLink(ref);
       if (!href) return;
-      const a=el('a','',label);a.href=href;a.target='_blank';a.rel='noopener';documents.append(a,el('br'));
+      const a=el('a','',label);a.href=href;a.target='_blank';a.rel='noopener';contractDetails.append(a,el('br'));
     };
     linked.forEach(c=>addDocument(c.doc,c.name+' · '+c.status));
     expenseRows.forEach(r=>addDocument(r.doc && !r.doc.includes('/') && !r.doc.startsWith('sha256:')?'system/realestate/docs/'+r.propertySlug+'/'+r.doc:r.doc,r.property+' · '+r.date+' · receipt'));
-    paragraph(documents,'Accepted contract allocations: '+money(committed.reduce((n,c)=>n+(c.allocations||[]).filter(a=>memberById[a.property]).reduce((k,a)=>k+a.amount,0),0))+'. Contract amounts are commitments, not additional expenses.');
+    paragraph(contractDetails,'Accepted contract allocations: '+money(committed.reduce((n,c)=>n+(c.allocations||[]).filter(a=>memberById[a.property]).reduce((k,a)=>k+a.amount,0),0))+'. Contract amounts are commitments, not additional expenses.');
   } catch(e) { paragraph(documents,'Contract inventory could not be loaded: '+e.message); }
+  ['budget','financing','operations','assumptions'].forEach(id=>{if(sections[id])panels.financials.append(sections[id]);});
+  panels.execution.append(progress,planning);
 
 }
 
