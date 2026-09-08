@@ -66,6 +66,8 @@ function parseOodaHash() {
   const h = (window.location.hash || "").replace(/^#\/?/, "");
   const deal=/^deal\/([^/]+)(?:\/underwriting)?$/.exec(h);
   if(deal){let slug=deal[1];try{slug=decodeURIComponent(slug);}catch(e){}return {view:'underwriting',item:null,deal:slug};}
+  const thread = /^thread\/(.+)$/.exec(h);
+  if(thread){let id=thread[1];try{id=decodeURIComponent(id);}catch(e){}return {view:"thread",item:id};}
   const m = /^item\/(.+)$/.exec(h);
   if (m) {
     let id = m[1];
@@ -102,13 +104,14 @@ function App() {
   else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={go} openItem={openWorkItem} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
   else if (view === "map") body = <ViewMap />;
+  else if (view === "thread") body = <ViewThread key={openItem} itemID={openItem} data={data} />;
   else if (view === "work") body = <ViewWork data={data} me={data.me} openItem={openItem} onOpenItem={openWorkItem} />;
   else if (view === "feed") body = <ViewFeed />;
   else if (view === "archive") body = <ViewArchive />;
   else body = <ViewChat data={data} />;
 
   return (
-    <Shell view={view==="underwriting"?"portfolio":view} setView={go} me={data.me} sync={data.sync}>
+    <Shell view={view==="underwriting"?"portfolio":view==="thread"?"work":view} setView={go} me={data.me} sync={data.sync}>
       <ViewBoundary viewKey={view+":"+(openDeal||"")}>{body}</ViewBoundary>
     </Shell>
   );

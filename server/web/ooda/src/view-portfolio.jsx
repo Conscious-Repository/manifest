@@ -378,6 +378,7 @@ function Thread({ itemID, title }) {
 
   return (
     <Section title="THREAD" count={items ? items.length : null}>
+      <ThreadLink itemID={itemID} />
       {err ? <div className="ooda-err" role="alert">{err} <button className="ooda-ghost" onClick={load}>Retry comments</button></div> : null}
       {!items && !err ? <Empty>Loading comments…</Empty> : null}
       {items && !items.length ? <Empty>no comments yet</Empty> : null}
@@ -643,4 +644,23 @@ function OwnerCard({ p, f }) {
       ) : null}
     </Section>
   );
+}
+
+
+function ThreadLink({itemID}) {
+ const [status,setStatus]=React.useState('');
+ const href=location.origin+'/#/thread/'+encodeURIComponent(itemID);
+ return <div className="ooda-toolbar"><a href={href}>Link to thread</a><button className="ooda-ghost" onClick={async()=>{try{await navigator.clipboard.writeText(href);setStatus('Link copied');}catch(e){setStatus('Use the thread link to open or copy its address.');}}}>Copy link</button><span role="status" className="ooda-sub">{status}</span></div>;
+}
+
+function ViewThread({itemID,data}) {
+ const [state,setState]=React.useState(null),[error,setError]=React.useState('');
+ React.useEffect(()=>{let cancelled=false;teamAPI.state().then(s=>{if(!cancelled)setState(s);}).catch(e=>{if(!cancelled)setError(e.message);});return ()=>{cancelled=true;};},[itemID]);
+ if(error)return <div role="alert">{error} <button className="ooda-ghost" onClick={()=>location.reload()}>Retry</button></div>;
+ if(!state)return <Empty>Loading thread…</Empty>;
+ let id=itemID;const seen=new Set();while(state.id_migrations?.[id]&&!seen.has(id)){seen.add(id);id=state.id_migrations[id];}
+ const work=(data.work?.groups||[]).flatMap(g=>['overdue','dueThisWeek','open','decisions','waiting'].flatMap(k=>g[k]||[]));
+ const item=[...work,...(state.items||[]),...(state.archives||[])].find(i=>i.id===id);
+ const title=item?.title||id;
+ return <><div className="ooda-toolbar"><a href="#/work">← Work</a></div><h2>{title}</h2>{item?<p className="ooda-sub">{[item.container,item.status].filter(Boolean).join(' · ')}</p>:<p className="ooda-sub">Discussion history · item is not in the active work list</p>}<Thread key={id} itemID={id} title={title} /></>;
 }

@@ -3,6 +3,7 @@ package teamportal
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -128,12 +129,24 @@ func (b *Bridge) Cards(now time.Time) []portals.Card {
 		cards = append(cards, portals.Card{
 			ID: id, Type: "portal-item", Portal: b.name,
 			Title: title, Detail: detail, Change: e.Action, Actor: e.Actor,
-			URL:  b.link,
+			URL:  b.noticeURL(e),
 			Date: e.TS.Format(time.RFC3339),
 		})
 	}
 	sort.Slice(cards, func(i, j int) bool { return cards[i].Date > cards[j].Date })
 	return cards
+}
+
+// Thread URLs retain the complete opaque id, including property/work separators.
+func (b *Bridge) noticeURL(e Entry) string {
+	if b.name != "ooda-portal" {
+		return b.link
+	}
+	id, _ := e.Payload["item"].(string)
+	if id == "" {
+		return b.link
+	}
+	return strings.SplitN(b.link, "#", 2)[0] + "#/thread/" + url.PathEscape(id)
 }
 
 // describe renders one activity entry as a card title + detail — script-built

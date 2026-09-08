@@ -44,3 +44,13 @@ test('task routes accept encoded slashes and either hash convention', () => {
     assert.equal(vm.runInContext('parseOodaHash().item',c),'aion-bl/task');
   }
 });
+
+test('OODA discussion deep links preserve complete opaque ids',()=>{
+ const c=context(()=>{});c.window.location={hash:''};
+ const source=fs.readFileSync(`${root}/ooda/src/app.jsx`,'utf8');
+ vm.runInContext(source.slice(source.indexOf('const OODA_VIEWS'),source.indexOf('function App()')),c);
+ for(const id of ['5ea3a00d','prop/748-n-euclid#shell/roof','team/a b?c']){
+  c.window.location.hash='#/thread/'+encodeURIComponent(id);
+  const route=vm.runInContext('parseOodaHash()',c);assert.equal(route.view,'thread');assert.equal(route.item,id);
+ }
+});
