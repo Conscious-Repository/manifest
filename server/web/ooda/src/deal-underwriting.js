@@ -112,7 +112,7 @@ async function drawDealUnderwriting(host, slug, options) {
   host.append(el('p','diligence-eyebrow','OODA GROUP · REAL ESTATE'),el('h2','pp3-title',data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
   const live=el('p','re-foot-note','Live · checked '+new Date().toLocaleTimeString());live.dataset.liveStatus='';live.setAttribute('role','status');host.append(live);
   const nav=el('nav','diligence-nav');nav.setAttribute('aria-label','Diligence sections');
-  [['summary','Summary'],['assumptions','Assumptions'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['planning','Draw planning'],['progress','Live project records'],['evidence','Diligence evidence'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
+  [['summary','Summary'],['assumptions','Assumptions'],['properties','Properties'],['budget','Development budget'],['operations','Operating proforma'],['planning','Draw planning'],['progress','Live project records'],['documents','Documents']].forEach(([id,label])=>{const b=el('button','',label);b.onclick=()=>host.querySelector('#diligence-'+id)?.scrollIntoView({block:'start',behavior:'smooth'});nav.append(b);});host.append(nav);
   const summary=section('summary','Project overview');
   const entities=[...new Set(members.map(p=>p.entity).filter(Boolean))];
   paragraph(summary,members.length+' properties'+(units?' · '+units+' planned residences':'')+(entities.length?' · '+entities.join(', '):''),'diligence-lead');
@@ -215,38 +215,10 @@ async function drawDealUnderwriting(host, slug, options) {
   table(expenses,['Date','Property','Payee / description','Category','Amount'],expenseRows.map(r=>[r.date,r.property,[r.contractor||r.vendor,r.note].filter(Boolean).join(' · '),r.category||r.cat||'—',exactMoney(r.amount)]));
   paragraph(expenses,'Recorded ledger entries only. Contracts are commitments and are not added to cash expenditures.','re-foot-note');
   if((basis.unmatchedPayments||[]).length)table(expenses,['Additional reported payments · pending allocation','Amount'],basis.unmatchedPayments.map(p=>[p.description,exactMoney(p.amount)]));
-  members.forEach(p=>{const d=detail(progress,p.short+' · work progress');table(d,['Work phase','Status'],(p.work||[]).map(w=>[w.text,w.checked?'Complete'+(w.done?' · '+w.done:''):'Open']));});
-  const evidence=section('evidence','Diligence evidence');
-  const evidenceTypes=[['progressPlans','Progress drawings'],['title','Current title / lien report'],['plans','Approved plans / permitted unit count'],['permits','Construction permits'],['rents','Rent comparables / lease support'],['appraisal','Subject-property appraisal'],['schedule','Dated construction / draw schedule'],['insurance','Insurance evidence']];
-  const required=members.flatMap(p=>evidenceTypes.map(([key,label])=>{
-    const ref=basis.diligenceEvidence?.[p.slug]?.[key];
-    const linked=ref?.path&&(data.docs[p.slug]||[]).some(d=>d.path===ref.path);
-    return [p.short,label,linked?'Document linked · review required':'Not linked in this package'];
-  }));
-  paragraph(evidence,'Linked evidence only; document presence does not establish approval or legal sufficiency.');
-  const evidenceDetail=detail(evidence,'Property evidence · '+required.filter(r=>r[2]==='Not linked in this package').length+' items not linked');
-  table(evidenceDetail,['Property','Evidence','Package status'],required);
-  const integrity=detail(evidence,'Budget and cash reconciliation');
-  table(integrity,['Property','Acquisition budget','Recorded acquisition expenditures','Difference'],members.map(p=>{
-    const b=baseline.find(r=>r.slug===p.slug), actual=(p.ledger||[]).filter(r=>r.type==='expense'&&(r.category||r.cat)==='acquisition').reduce((n,r)=>n+r.amount,0);
-    return [p.short,money(b?.acquisition),exactMoney(actual),exactMoney(b?actual-b.acquisition:null)];
-  }));
-  if(Number.isFinite(data.source?.exit_cap_rate)&&Number.isFinite(assumptions.exit_cap_rate)&&data.source.exit_cap_rate!==assumptions.exit_cap_rate)table(integrity,['Valuation input','Value'],[['Presentation cap rate',(assumptions.exit_cap_rate*100).toFixed(2)+'%'],['Deal source cap rate',(data.source.exit_cap_rate*100).toFixed(2)+'%'],['Reconciliation','Unconfirmed']]);
-  paragraph(integrity,'Difference = recorded acquisition expenditures minus acquisition budget. The difference is not classified as an overrun or closing cost without transaction allocation.','re-foot-note');
-  const requirements=detail(evidence,'Additional underwriting inputs');
-  table(requirements,['Input','Recorded package status'],[
-    ['Replacement reserves',Number.isFinite(basis.operating?.replacementReservePerUnitYear)?'Configured':'Not established'],
-    ['Closing / legal / financing fees',v.closing_costs===null?'Unquantified; excluded':money(v.closing_costs)+' · equity funded'],
-    ['Operating costs','Aggregate allowance; detailed budget not established'],
-    ['Sponsor financials / liquidity / experience','Not linked'],
-    ['Equity contributions / existing obligations','Reconciliation not established'],
-    ['Construction draw and lease-up forecast','Spending illustration and lease-up target shown; lender draw terms not established'],
-    ['Hold-period cash flow / sale proceeds / returns','Stabilized operating projection and disposition before loan payoff shown; investment returns require dated project cash flows']
-  ]);
   const documents=section('documents','Plans and documents');
   paragraph(documents,'Plans, authorizations, and reference material. Draft plans do not establish permit approval; reference appraisals apply only to the property identified.');
   const docResults=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/docs')));
-  members.forEach((p,i)=>{const sub=el('div','diligence-doc-group');sub.append(el('h4','',p.short));const result=docResults[i];if(result.status==='rejected'){paragraph(sub,'Documents could not be loaded. Return to the workspace and retry; this is not an empty document inventory.');}else {const docs=result.value.docs||[];if(!docs.length)paragraph(sub,'Documents not yet available.');docs.forEach(d=>{const a=el('a','',d.name);a.href=docLink(d.path);a.target='_blank';a.rel='noopener';sub.append(a);const f=basis.documentFacts?.[d.path];if(f){const facts=detail(sub,'Document facts · '+d.name);table(facts,['Recorded fact','Value'],[['Issue type',f.type],['Sheet date',f.sheetDate],['PDF sheets',f.sheetCount],['Existing / proposed dwellings',[f.existingUnits,f.proposedUnits].join(' / ')],['Gross above-grade area (SF)',f.grossAboveGradeSF],['Gross basement area (SF)',f.grossBasementSF],['Indexed sheets not included',(f.indexedSheetsNotIncluded||[]).join(', ')],['Source sheets',f.sourceSheets],['Drafter designation',f.drafterDesignation]].filter(r=>r[1]!==undefined));}});}documents.append(sub);});
+  members.forEach((p,i)=>{const sub=el('div','diligence-doc-group');sub.append(el('h4','',p.short));const result=docResults[i];if(result.status==='rejected'){paragraph(sub,'Documents could not be loaded. Return to the workspace and retry; this is not an empty document inventory.');}else {const docs=result.value.docs||[];if(!docs.length)paragraph(sub,'Documents not yet available.');docs.forEach(d=>{const a=el('a','',d.name);a.href=docLink(d.path);a.target='_blank';a.rel='noopener';sub.append(a);});}documents.append(sub);});
 
   if((basis.supportingDocuments||[]).length){
     const refs=el('div','diligence-doc-group');refs.append(el('h4','','Deal reference documents'));
