@@ -6,7 +6,7 @@
   const r=await fetch(endpoint,{cache:'no-store'});
   if(!r.ok){if(r.status===401)return false;throw Error(await r.text());}
   await r.json();gate.hidden=true;host.hidden=false;
-  dispose=renderDealDiligence(host,'',{endpoint,backLabel:'Lock deal',onBack:async()=>{await fetch(base+'logout',{method:'POST'});location.reload();}});return true;
+  dispose=renderDealDiligence(host,'',{endpoint,hideBack:true});return true;
  }
  form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('button');button.disabled=true;status.textContent='Opening…';try{const r=await fetch(base+'unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:form.password.value})});if(!r.ok)throw Error(await r.text());form.reset();await open();status.textContent='';}catch(e){status.textContent=e.message;}finally{button.disabled=false;}};
  open().catch(e=>status.textContent=e.message);

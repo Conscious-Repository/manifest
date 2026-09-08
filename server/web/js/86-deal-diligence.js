@@ -94,8 +94,10 @@ async function drawDealUnderwriting(host, slug, options) {
   const el=(tag,cls='',text)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n;};
   const preview=el('div','diligence-preview');
   host.replaceChildren(preview); host=preview;
-  const back = el('button','pp3-note',options.backLabel||'← Deal workspace');
-  back.onclick=()=>options.onBack?options.onBack():renderDealPage(slug); host.append(back);
+  if(!options.hideBack){
+    const back = el('button','pp3-note',options.backLabel||'← Deal workspace');
+    back.onclick=()=>options.onBack?options.onBack():renderDealPage(slug); host.append(back);
+  }
   const loading=el('p','','Loading deal records…');host.append(loading);
   const data=options.bundle;
   const read=async path=>{
