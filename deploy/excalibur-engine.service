@@ -16,6 +16,8 @@ Type=simple
 User=benjamin
 Group=benjamin
 Environment=PATH=/home/benjamin/.local/bin:/usr/local/bin:/usr/bin:/bin
+# metis is UTC; cadences are meant in the owner's clock (Chicago)
+Environment=TZ=America/Chicago
 ExecStart=/home/benjamin/.local/bin/excalibur-engine serve \
   -root /private/harnesses/excalibur \
   -vault /private/consciousrepo
