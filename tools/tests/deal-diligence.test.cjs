@@ -10,3 +10,10 @@ test('email financing baseline includes contingency once and corrected reserve',
  assert.equal(rows[0].partners,8670);
  assert.equal(rows.reduce((n,r)=>n+r.monthlyRent,0),17800);
 });
+test('refinance scenario uses full request, email rate, and identifies a shortfall',()=>{
+ const row={acquisition:18000,hardCostsIncludingContingency:256000,softCosts:15000,baseLoan:202300,units:[{rent:1750},{rent:1750},{rent:1200}]};
+ const b={constructionRate:.0625,reserveMonths:12,fundEquityShare:.9,partnerEquityShare:.1,refinanceLtvLow:.7,refinanceLtvHigh:.75,refinanceRate:.07,refinanceAmortYears:25};
+ const r=c.diligenceRefinance(row,b,{vacancy_rate:.08,opex_rate:.35,exit_cap_rate:.15});
+ assert.equal(r.repayment,214943.75);assert.equal(r.gross,56400);assert.equal(r.noi,33727.2);
+ assert.ok(r.gap>0);assert.ok(r.dscr>0);assert.equal(c.diligenceRefinance(row,b,{}),null);
+});

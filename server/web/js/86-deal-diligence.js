@@ -8,6 +8,18 @@ function diligenceStack(row, basis) {
     fund: equity * basis.fundEquityShare, partners: equity * basis.partnerEquityShare,
     monthlyRent: row.units.reduce((n,u)=>n+u.rent,0)};
 }
+function diligenceRefinance(row, basis, assumptions) {
+  if (![assumptions.vacancy_rate, assumptions.opex_rate, assumptions.exit_cap_rate].every(Number.isFinite) || assumptions.exit_cap_rate <= 0) return null;
+  const gross=row.units.reduce((n,u)=>n+u.rent,0)*12;
+  const vacancy=gross*assumptions.vacancy_rate;
+  const expenses=(gross-vacancy)*assumptions.opex_rate;
+  const noi=gross-vacancy-expenses, value=noi/assumptions.exit_cap_rate;
+  const repayment=diligenceStack(row,basis).request;
+  const low=value*basis.refinanceLtvLow, high=value*basis.refinanceLtvHigh;
+  const rate=basis.refinanceRate/12, months=basis.refinanceAmortYears*12;
+  const debt=months>0 ? (rate ? repayment*rate/(1-Math.pow(1+rate,-months))*12 : repayment/months*12) : 0;
+  return {gross,vacancy,expenses,noi,value,low,high,repayment,debt,dscr:debt?noi/debt:0,gap:Math.max(0,repayment-high)};
+}
 async function renderDealDiligence(host, slug) {
   const preview=el('div','diligence-preview');
   host.replaceChildren(preview); host=preview;
@@ -36,7 +48,8 @@ async function renderDealDiligence(host, slug) {
   const overview=section('overview','Financing request');
   paragraph(overview,basis.status+' · '+basis.lender+' · communicated '+basis.basisDate);
   paragraph(overview,basis.structure);
-  table(overview,['Base construction loans','12-month reserve','Total proposed request','Development equity'],[[money(baseline.reduce((n,r)=>n+r.baseLoan,0)),money(sum('reserve')),money(sum('request')),money(sum('equity'))]]);
+  const metrics=el('div','diligence-metrics');
+  [['Base construction loans',baseline.reduce((n,r)=>n+r.baseLoan,0)],['12-month reserve',sum('reserve')],['Total proposed request',sum('request')],['Development equity',sum('equity')]].forEach(([label,value])=>{const metric=el('div');metric.append(el('span','',label),el('strong','',money(value)));metrics.append(metric);});overview.append(metrics);
   paragraph(overview,basis.termMonths+' months · '+(basis.constructionRate*100).toFixed(2)+'% interest-only. Reserve assumes full deployment for '+basis.reserveMonths+' months; actual interest is expected on deployed balances. Financing fees remain to be quantified.');
   paragraph(overview,basis.source,'re-foot-note');
   const properties=section('properties',baseline.length+' properties · scope and proposed uses');
@@ -80,6 +93,11 @@ async function renderDealDiligence(host, slug) {
   const sources=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/source')));
   table(underwriting,['Property','Current modeled TDC','Current modeled NOI','Current modeled DSCR','Baseline development costs'],members.map((p,i)=>{if(sources[i].status!=='fulfilled')return [p.short,'Unavailable','Unavailable','Unavailable',''];const source=sources[i].value.source||{};const uw=reScreen(p,source,reAssumptions());const row=baseline.find(r=>r.slug===p.slug);return [p.short,money(uw.tdc),money(uw.noi),uw.dscr?uw.dscr.toFixed(2):'Not available',row?money(diligenceStack(row,basis).development):'Not recorded'];}));
   const assumptions=reAssumptions();
+  paragraph(underwriting,'Email-baseline refinance scenario · proposed rents and loan-plus-reserve repayment, using the current vacancy, operating expense ratio and cap-rate assumptions below. This scenario is not an appraisal or a lending commitment.');
+  const refinance=baseline.map(row=>diligenceRefinance(row,basis,assumptions));
+  table(underwriting,['Property','Annual gross rent','Vacancy allowance','Operating expenses','NOI','Debt service on full request','DSCR on full request'],baseline.map((row,i)=>{const r=refinance[i];return r?[memberById[row.slug]?.short||row.slug,money(r.gross),money(r.vacancy),money(r.expenses),money(r.noi),money(r.debt),r.dscr.toFixed(2)]:[row.slug,'Missing operating assumptions','','','','',''];}));
+  table(underwriting,['Property','Income-based value','70% LTV capacity','75% LTV capacity','Loan + reserve to repay','Shortfall at 75%'],baseline.map((row,i)=>{const r=refinance[i];return r?[memberById[row.slug]?.short||row.slug,money(r.value),money(r.low),money(r.high),money(r.repayment),money(r.gap)]:[row.slug,'Unavailable','','','',''];}));
+  paragraph(underwriting,'Repayment stress assumes the entire reserve is consumed. Refinance proceeds exclude transaction costs and lender-specific debt-service constraints. Unused reserve could reduce the amount to repay.');
   table(underwriting,['Current screening input','Value'],[['Vacancy',((assumptions.vacancy_rate||0)*100).toFixed(1)+'%'],['Operating expense ratio',((assumptions.opex_rate||0)*100).toFixed(1)+'%'],['Exit cap rate',((assumptions.exit_cap_rate||0)*100).toFixed(2)+'%'],['Permanent rate',((assumptions.perm_interest_rate||0)*100).toFixed(2)+'%'],['Permanent amortization',assumptions.perm_amort_years+' years'],['Permanent LTV',((assumptions.perm_ltv||0)*100).toFixed(1)+'%'],['Current model contingency',((assumptions.contingency_pct||0)*100).toFixed(1)+'%'],['Current model construction LTC',((assumptions.construction_loan_ltc||0)*100).toFixed(1)+'%']]);
   paragraph(underwriting,'NOI = proposed annual rent × (1 − vacancy) × (1 − operating expense ratio). Screening value = NOI ÷ cap rate. Debt service uses the screening takeout loan and the displayed permanent loan terms. These are simplified screening calculations; detailed tax, insurance, reserve and draw schedules still require reconciliation.');
   paragraph(underwriting,'The original locked underwriting remains a separate dated record. Current expense totals and the financing baseline do not overwrite that history.');
