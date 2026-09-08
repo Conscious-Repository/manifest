@@ -241,8 +241,6 @@ async function drawDealUnderwriting(host, slug, options) {
     }
   }
   const planning=section('planning','Construction and draw planning');
-  const coverage=detail(planning,'Phase estimate coverage');
-  table(coverage,['Property','Phases with cost estimates','Phases with durations','Current phase estimate total'],members.map(p=>[p.short,(p.work||[]).filter(w=>diligencePhaseCost(w)>0).length+' / '+(p.work||[]).length,(p.work||[]).filter(w=>w.weeks>0).length+' / '+(p.work||[]).length,money((p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0))]));
   const phases=detail(planning,'Phase-level planning inputs');
   members.forEach(p=>{phases.append(el('h4','',p.short));table(phases,['Phase','Current estimate','Duration','Status'],(p.work||[]).map(w=>[w.text,diligencePhaseCost(w)>0?money(diligencePhaseCost(w)):'Not estimated',w.weeks>0?Number(w.weeks.toFixed(2))+' weeks':'Not entered',w.checked?'Complete':'Open']));});
   const spending=diligenceSpendingPlan(timeline.construction_start,timeline.completion_target,budgetTotal('hard')===null||budgetTotal('soft')===null?null:budgetTotal('hard')+budgetTotal('soft'));
