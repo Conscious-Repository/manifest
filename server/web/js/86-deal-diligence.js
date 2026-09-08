@@ -152,7 +152,22 @@ async function drawDealUnderwriting(host, slug, options) {
   const explore=el('div','diligence-overview-links');
   [['properties','Properties & unit rents'],['financials','Budget, financing & cash flow'],['execution','Schedule & recorded spending'],['documents','Plans & supporting documents']].forEach(([id,label])=>{const button=el('button','',label+' →');button.onclick=()=>panels.activate(id);explore.append(button);});summary.append(explore);
   const assumptionDetails=detail(assumptionsSection,'Assumption schedule');
-  table(assumptionDetails,['Input','Value','Source'],diligencePackageFields.map(([k,label,unit])=>[label,v[k]===null?'Not established':unit==='%'?(v[k]*100).toFixed(2)+'%':unit==='$'?money(v[k]):v[k]+' '+unit,inputs[k].origin]));
+  const assumptionGroups=[
+    ['Leasing & operations',['lease_up_days','vacancy_rate','opex_rate','rent_growth','opex_growth']],
+    ['Capital reserves · per residence / year',['reserve_years_one_three','reserve_years_four_six','reserve_years_seven_eight','reserve_years_nine_plus']],
+    ['Hold & disposition',['hold_years','selling_cost_pct','exit_cap_rate']],
+    ['Construction financing',['construction_ltc','construction_rate','term_months','reserve_months','closing_costs']],
+    ['Refinance',['refinance_rate','refinance_years','refinance_ltv']]
+  ];
+  const assumptionGrid=el('div','diligence-assumption-groups');assumptionDetails.append(assumptionGrid);
+  assumptionGroups.forEach(([title,keys])=>{
+    const group=el('div');group.append(el('h4','',title));
+    table(group,['Assumption','Value'],keys.map(k=>{
+      const [,label,unit]=diligencePackageFields.find(f=>f[0]===k);
+      const displayLabel=k.startsWith('reserve_years_')?label.split(' · ')[1]:label;
+      return [displayLabel,v[k]===null?'Not established':unit==='%'?Number((v[k]*100).toFixed(2))+'%':unit==='$'?money(v[k]):v[k]+' '+unit];
+    }));assumptionGrid.append(group);
+  });
   if(saved?.valuationBasis?.selectedRate===v.exit_cap_rate){paragraph(assumptionDetails,'Cap-rate status: '+saved.valuationBasis.status);(saved.valuationBasis.sources||[]).forEach(ref=>{if(/^https:\/\//.test(ref.url)){const a=el('a','',ref.title);a.href=ref.url;a.target='_blank';a.rel='noopener';assumptionDetails.append(a,el('br'));}});}
   if(options.endpoint.startsWith('/api/deals/')){
     const sharing=el('button','','Lender links');sharing.onclick=()=>openDealSharing(slug);assumptionsSection.append(sharing);
