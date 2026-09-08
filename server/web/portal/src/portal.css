@@ -149,9 +149,9 @@ textarea.v2-input { line-height: 1.6; }
 .aaf-quarter { fill: var(--ink-faint, #888); font-size: 7px; letter-spacing: .14em; opacity: .42; }
 
 .aaf-relation { fill: none; stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: 0; transition: opacity 160ms ease; pointer-events: none; }
-.aaf-relation--goal { stroke: var(--accent-bright, #5ec8f5); stroke-width: 1.15; }
+.aaf-relation--goal { opacity: .16; stroke: var(--accent-bright, #5ec8f5); stroke-width: 1.15; }
 .aaf-relation--decision { stroke: var(--m3, #b0b0b0); stroke-width: 1; stroke-dasharray: 2 6; }
-.aaf-relation--peer { stroke: var(--m6, #a8a8a8); stroke-width: .75; }
+.aaf-relation--peer { opacity: .12; stroke: var(--m6, #a8a8a8); stroke-width: .75; }
 .aaf-relation.is-visible { opacity: .74; }
 .aaf-relation--peer.is-visible { opacity: .34; }
 .aaf-relation--spine { stroke: var(--m8, #6a6a6a); stroke-width: .8; opacity: .16; }
@@ -211,3 +211,8 @@ textarea.v2-input { line-height: 1.6; }
   .portal-work-row > :nth-child(5) { grid-column: 3; grid-row: 1; }
   .v2-main input, .v2-main textarea, .v2-main select { font-size: 16px !important; max-width: 100%; }
 }
+
+.aaf-reading-key { display: flex; flex-wrap: wrap; gap: 8px 24px; color: var(--ink-faint,#888); font: 10px/1.6 var(--font-mono,monospace); }
+.aaf-guide { color: var(--ink-faint,#888); font-size: 12px; line-height: 1.6; border-top: 1px solid var(--line,#505050); padding-top: 10px; }
+.aaf-guide summary { cursor: pointer; }
+.aaf-guide p { max-width: 760px; }

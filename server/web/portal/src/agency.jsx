@@ -3,7 +3,7 @@
    The upper cone holds hand-tuned goal/person slots; the past (lower) cone
    is data-driven: completed rocks banded by quarter, recent decided
    decisions clustered around the rock they fed, threaded by a chronological
-   spine and rock→goal relations. Emits `aion-agency-select` on the root
+   rock→goal relations. Emits `aion-agency-select` on the root
    section: detail = { type: 'person'|'goal'|'decision'|'rock'|'clear', id, item }. */
 
 /* Hand-tuned geometry slots from the handoff component — display lines stay
@@ -55,10 +55,22 @@ function buildAgencyModel(data, goalsIndex) {
   const goals = AAF_GOAL_SLOTS
     .map(s => {
       const g = goalsIndex.get(s.portal);
-      if (!g) return null;
+      if (!g || g.status === 'done') return null;
       return { ...s, id: s.portal, title: g.title, horizon: horizonLabel(g.horizon), portal: g };
     })
     .filter(Boolean);
+  // Keep the familiar anchors, but include every current annual goal.
+  goalsIndex.goals.filter(g => g.horizon === '1yr' && g.status !== 'done' && !goals.some(x => x.id === g.id)).forEach(g => {
+    const words = g.title.toUpperCase().split(/\s+/);
+    const lines = []; let line = '';
+    words.forEach(word => { if ((line + ' ' + word).trim().length > 20 && line) { lines.push(line); line = word; } else line = (line + ' ' + word).trim(); });
+    if (line) lines.push(line);
+    goals.push({ id: g.id, title: g.title, horizon: horizonLabel(g.horizon), portal: g,
+      lines: g.id === 'aion/write-candidate' ? ['PHASE 1', 'WRITE CANDIDATE'] : lines.slice(0, 2),
+      x: 520, y: 150, cx: 520, cy: 367, rx: 80, ry: 28, bottom: 510, labelX: 520, labelY: 113, metaY: 100 });
+  });
+  const annual = goals.filter(g => g.portal.horizon === '1yr').sort((a,b) => a.id.localeCompare(b.id));
+  annual.forEach((g,i) => { const x = 455 + i * (195 / Math.max(1, annual.length - 1)); Object.assign(g, {x, cx:x, labelX:x, y:160, labelY:123, metaY:110}); });
   if (!goals.length) return null;
 
   const items = (data.backlog && data.backlog.items) || [];
@@ -66,10 +78,12 @@ function buildAgencyModel(data, goalsIndex) {
   const inSub = (gid, fieldId) => !!gid && goalsIndex.inFilter(gid, fieldId);
 
   const peopleData = (data.people && data.people.people) || [];
-  const people = AAF_PERSON_SLOTS.map(s => {
+  const slots = AAF_PERSON_SLOTS.filter(s => peopleData.some(p => s.aliases.includes(p.initials)));
+  peopleData.filter(p => !slots.some(s => s.aliases.includes(p.initials))).forEach((p,i) => slots.push({aliases:[p.initials], x:300+i*40, y:435, authority:1}));
+  const people = slots.map(s => {
     const rec = peopleData.find(p => s.aliases.includes(p.initials));
     const goalIds = goals.filter(F =>
-      goalsIndex.goals.some(g => s.aliases.includes(g.owner) && inSub(g.id, F.id)) ||
+      goalsIndex.goals.some(g => g.status !== 'done' && s.aliases.includes(g.owner) && inSub(g.id, F.id)) ||
       openTasks.some(t => s.aliases.includes(t.owner) && inSub(goalsIndex.matchRock(t.rock), F.id))
     ).map(F => F.id);
     return {
@@ -85,13 +99,14 @@ function buildAgencyModel(data, goalsIndex) {
      three spread across the cone width at that depth */
   const coneIds = new Set(AAF_GOAL_SLOTS.map(s => s.portal));
   const doneRocks = goalsIndex.goals.filter(g =>
-    g.horizon === 'rock' && g.status === 'done' && g.closed && g.quarter && !coneIds.has(g.id));
-  const quarters = [...new Set(doneRocks.map(g => g.quarter))].sort().reverse();
+    g.horizon === 'rock' && g.status === 'done' && g.closed && !coneIds.has(g.id));
+  const closedQuarter = g => g.closed.slice(0,4) + '-Q' + Math.ceil(Number(g.closed.slice(5,7)) / 3);
+  const quarters = [...new Set(doneRocks.map(closedQuarter))].sort().reverse();
   const rocks = [];
   const bands = [];
   let yCursor = AAF_PAST_ZONE.top;
   quarters.forEach(q => {
-    const members = doneRocks.filter(g => g.quarter === q)
+    const members = doneRocks.filter(g => closedQuarter(g) === q)
       .sort((a, b) => a.closed === b.closed ? (a.id < b.id ? -1 : 1) : (a.closed < b.closed ? 1 : -1));
     const bandTop = yCursor;
     for (let r = 0; r * 3 < members.length; r++) {
@@ -116,6 +131,13 @@ function buildAgencyModel(data, goalsIndex) {
     bands.push({ quarter: q, top: bandTop, bottom: yCursor });
     yCursor += 14;
   });
+  // Fit growing history inside its boundary, preserving order and quarters.
+  if (yCursor > AAF_PAST_ZONE.bottom) {
+    const scale = (AAF_PAST_ZONE.bottom - AAF_PAST_ZONE.top - 14) / (yCursor - AAF_PAST_ZONE.top);
+    const fit = y => AAF_PAST_ZONE.top + (y - AAF_PAST_ZONE.top) * scale;
+    rocks.forEach(r => { r.y = fit(r.y); r.x = aafClampX(r.x, r.y, 20); });
+    bands.forEach(b => { b.top = fit(b.top); b.bottom = fit(b.bottom); });
+  }
   const rockById = Object.fromEntries(rocks.map(r => [r.id, r]));
 
   /* recent decided decisions — clustered around the rock they fed (or below
@@ -171,19 +193,13 @@ function buildAgencyModel(data, goalsIndex) {
       .map(q => q.id);
   });
 
-  /* chronological spine — oldest/deepest rock first, ending under NOW */
-  const spine = rocks.slice()
-    .sort((a, b) => a.closed === b.closed ? (a.id < b.id ? -1 : 1) : (a.closed < b.closed ? -1 : 1))
-    .map(r => ({ x: r.x, y: r.y }));
-  if (spine.length) spine.push({ x: 520, y: 470 });
-
-  return { goals, people, rocks, decisions, spine, bands };
+  return { goals, people, rocks, decisions, bands };
 }
 
 /* The handoff component's builder: operates on a passed root + model and
    returns a cleanup function for React. */
 function buildAgencyField(root, model) {
-  const { goals, people, rocks, decisions, spine, bands } = model;
+  const { goals, people, rocks, decisions, bands } = model;
   const NS = 'http://www.w3.org/2000/svg';
   const make = (tag, attrs = {}, text = '') => {
     const node = document.createElementNS(NS, tag);
@@ -203,6 +219,13 @@ function buildAgencyField(root, model) {
   const goalById = Object.fromEntries(goals.map(item => [item.id, item]));
   const personById = Object.fromEntries(people.map(item => [item.id, item]));
   const decisionById = Object.fromEntries(decisions.map(item => [item.id, item]));
+  // Fit growing history inside its boundary, preserving order and quarters.
+  if (yCursor > AAF_PAST_ZONE.bottom) {
+    const scale = (AAF_PAST_ZONE.bottom - AAF_PAST_ZONE.top - 14) / (yCursor - AAF_PAST_ZONE.top);
+    const fit = y => AAF_PAST_ZONE.top + (y - AAF_PAST_ZONE.top) * scale;
+    rocks.forEach(r => { r.y = fit(r.y); r.x = aafClampX(r.x, r.y, 20); });
+    bands.forEach(b => { b.top = fit(b.top); b.bottom = fit(b.bottom); });
+  }
   const rockById = Object.fromEntries(rocks.map(item => [item.id, item]));
 
   const addGoal = goal => {
@@ -216,6 +239,7 @@ function buildAgencyField(root, model) {
     goal.lines.forEach((line, index) => title.append(make('tspan', { x: goal.labelX, dy: index ? 11 : 0 }, line)));
     group.append(title);
     group.append(make('text', { class: 'aaf-goal__horizon', x: goal.labelX, y: goal.metaY, 'text-anchor': 'middle' }, goal.horizon));
+    group.append(make('title', {}, `${goal.title} · ${goal.horizon}. Select to see people and recorded history linked to this goal.`));
     goalLayer.append(group);
   };
 
@@ -227,6 +251,7 @@ function buildAgencyField(root, model) {
     group.append(make('ellipse', { class: 'aaf-person__waist', cx: person.x, cy: person.y, rx: size.r, ry: Math.max(3.5, size.r * .34) }));
     group.append(make('circle', { class: 'aaf-person__core', cx: person.x, cy: person.y, r: 1.8 }));
     group.append(make('text', { class: 'aaf-person__label', x: person.x + size.r + 5, y: person.y + 3 }, person.id));
+    group.append(make('title', {}, `${person.name} · ${person.goals.length} linked goals. Peer lines indicate shared goals, not measured communication.`));
     personLayer.append(group);
   };
 
@@ -263,16 +288,6 @@ function buildAgencyField(root, model) {
   });
   decisions.forEach(addDecision);
   people.forEach(addPerson);
-
-  /* chronological spine — always-on faint thread, deepest first */
-  if (spine.length > 1) {
-    let d = `M${spine[0].x} ${spine[0].y}`;
-    for (let i = 1; i < spine.length; i++) {
-      const a = spine[i - 1], b = spine[i];
-      d += ` C${a.x} ${a.y - 22} ${b.x} ${b.y + 22} ${b.x} ${b.y}`;
-    }
-    addPath('spine', d, 'spine');
-  }
 
   /* rock → live goal — always-on faint, with ambient particles feeding the
      present; brightens (and speeds up) when either end is selected */
@@ -312,8 +327,8 @@ function buildAgencyField(root, model) {
     if (notify) emit('clear', null, null);
   };
   const showRelations = tokens => {
-    root.querySelectorAll('[data-rel]').forEach(node => { if (tokens.some(token => (node.dataset.rel || '').includes(token))) node.classList.add('is-visible'); });
-    root.querySelectorAll('[data-flow]').forEach(node => { if (tokens.some(token => (node.dataset.flow || '').includes(token))) node.classList.add('is-visible'); });
+    root.querySelectorAll('[data-rel]').forEach(node => { if (tokens.some(token => (node.dataset.rel || '').split('|').includes(token))) node.classList.add('is-visible'); });
+    root.querySelectorAll('[data-flow]').forEach(node => { if (tokens.some(token => (node.dataset.flow || '').split('|').includes(token))) node.classList.add('is-visible'); });
   };
   const hotDim = (selector, isHot) => {
     root.querySelectorAll(selector).forEach(node => {
@@ -449,6 +464,7 @@ function AgencyField({ data, goalsIndex, onSelect, selection }) {
      Safari hard-fails) — translucency rides stopOpacity/fill-opacity. */
   return (
     <div className="agency-block">
+      <div className="aaf-reading-key"><span>FUTURE · shared goals</span><span>NOW · people &amp; shared responsibility</span><span>PAST · completed goals &amp; decisions</span></div>
       <section className="aaf" ref={rootRef} aria-label="AION collective agency field">
         <svg className="aaf__svg" viewBox="30 26 980 690" preserveAspectRatio="xMidYMid meet" role="group" aria-label="AION collective agency field. Select a person, goal, completed rock, or decision to reveal its relationships.">
           <defs>
@@ -472,6 +488,10 @@ function AgencyField({ data, goalsIndex, onSelect, selection }) {
         </svg>
         <span className="aaf__status" data-aaf-status aria-live="polite"></span>
       </section>
+      <details className="aaf-guide"><summary>Read this field · {model.goals.length} goals · {model.people.length} people</summary>
+        <p>AION’s outer cone holds overlapping areas of work. Above the present are shared goals; below are recorded milestones and the {model.decisions.length} most recent decisions. Select a person or goal to trace the recorded connections.</p>
+        <p>Height distinguishes planning horizons; horizontal placement separates areas of work. History is grouped by completion quarter, with decisions near their linked goals. Lines show shared goals and ownership, not measured communication or proof that one outcome caused another.</p>
+      </details>
     </div>
   );
 }
