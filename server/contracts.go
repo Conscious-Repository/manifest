@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -636,4 +638,38 @@ func (s *Server) handleContractorPage(w http.ResponseWriter, r *http.Request) {
 		"committed": committed, "drawn": drawn, "remaining": committed - drawn,
 		"properties": properties, "owned": owned,
 	})
+}
+
+// handleContractDelete removes an unused duplicate without touching attachments or cash records.
+func (s *Server) handleContractDelete(w http.ResponseWriter, r *http.Request) {
+	if s.realestate == nil || s.vault == nil {
+		http.Error(w, "not available", http.StatusServiceUnavailable)
+		return
+	}
+	c, ok := s.realestate.GetContract(r.PathValue("slug"))
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	if c.Status == "accepted" || len(s.contractDraws()[strings.ToLower(c.Slug)]) > 0 {
+		http.Error(w, "contract has commitments or payments; reconcile before removing", http.StatusConflict)
+		return
+	}
+	raw, err := os.ReadFile(filepath.Join(s.index.VaultRoot(), filepath.FromSlash(c.Path)))
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	err = s.vault.RemoveCap("re-contracts", c.Path, func(current []byte) error {
+		if !bytes.Equal(raw, current) {
+			return errors.New("contract changed; reload before removing")
+		}
+		return nil
+	})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	_ = s.index.ReindexPaths([]string{c.Path})
+	writeJSON(w, map[string]any{"ok": true})
 }
