@@ -198,7 +198,7 @@ async function drawDealUnderwriting(host, slug, options) {
     paragraph(schedule,'Cost-weighted phase durations distribute the confirmed hard/soft budget across the construction period. This produces a constant daily spending illustration. It excludes acquisition, financing costs and retainage; it is not an approved draw schedule or actual funding history.','re-foot-note');
   }
   const allocation=detail(planning,'Phase allocation and budget check');
-  table(allocation,['Property','Current phase estimates','Approved hard + soft budget','Difference'],members.map(p=>{const r=baseline.find(b=>b.slug===p.slug),amount=(p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0),target=r?r.hardCostsIncludingContingency+r.softCosts:null;return [p.short,money(amount),money(target),target===null?'—':money(amount-target)];}));
+  table(allocation,['Property','Current phase estimates','Confirmed hard + soft budget','Difference'],members.map(p=>{const r=baseline.find(b=>b.slug===p.slug),amount=(p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0),target=r?r.hardCostsIncludingContingency+r.softCosts:null;return [p.short,money(amount),money(target),target===null?'—':money(amount-target)];}));
   paragraph(planning,'Forecast costs require phase amounts and durations. Lender advances also require funding history, eligible-cost rules, inspection evidence and any agreed retainage.','re-foot-note');
   const progress=section('progress','Live project records');
   paragraph(progress,'Recorded expenditures: '+exactMoney(paid)+'. Updated from the property ledgers as entries are added.');
@@ -232,8 +232,8 @@ async function drawDealUnderwriting(host, slug, options) {
     ['Operating costs','Aggregate allowance; detailed budget not established'],
     ['Sponsor financials / liquidity / experience','Not linked'],
     ['Equity contributions / existing obligations','Reconciliation not established'],
-    ['Construction draw and lease-up forecast','Not established'],
-    ['Hold-period cash flow / sale proceeds / returns','Not presented; assumptions require confirmation']
+    ['Construction draw and lease-up forecast','Spending illustration and lease-up target shown; lender draw terms not established'],
+    ['Hold-period cash flow / sale proceeds / returns','Stabilized operating projection and disposition before loan payoff shown; investment returns require dated project cash flows']
   ]);
   const documents=section('documents','Plans and documents');
   paragraph(documents,'Plans, authorizations, and reference material. Draft plans do not establish permit approval; reference appraisals apply only to the property identified.');
