@@ -652,9 +652,6 @@
 }
 
 @media (max-width: 860px) {
-  .re-property-switch { flex-wrap: wrap; gap: var(--sp-2); }
-  .re-property-switch select { width: 100%; min-height: var(--touch); }
-  .re-property-switch label { flex-basis: 100%; }
   .pf-edit { min-height: var(--touch-sm); }
 }
 

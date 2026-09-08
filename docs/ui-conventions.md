@@ -345,4 +345,5 @@ scoped to that search; Search history remains available as a separate mode.
 Preserve the owner's Backlog layout. Property destinations open the property work
 page directly; metadata editing is an explicit secondary action. Use
 `rePropertyLink` inside selectable rows so navigation does not also select or edit
-the row. Every Real Estate view exposes the shared sticky property switcher.
+the row. Do not add a persistent property switcher: the owner prefers the extra
+navigation click to this additional page chrome (2026-09-07).

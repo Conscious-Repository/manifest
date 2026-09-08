@@ -631,8 +631,6 @@
 .re-uw-frombudget:hover { color: var(--accent); }
 
 /* Property access is shared by every RE view; metadata editing stays explicit. */
-.re-property-switch { position: sticky; top: 0; z-index: 20; background: var(--bg); padding: var(--sp-4) 0; display: flex; align-items: center; gap: var(--sp-6); margin: 0 0 var(--sp-7); }
-.re-property-switch select { width: min(100%, 420px); min-width: 0; }
 .re-property-link { color: var(--accent); text-decoration: none; }
 .re-property-link:hover, .re-property-link:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .pf-edit { align-self: flex-end; }
