@@ -162,3 +162,37 @@ Source: https://drive.google.com/file/d/1y_ZYwNnNJrvcP7sk53-ZBmyGfr8VMd5M/view
 
 Drive also contains the 751/753/760 project budget trackers and Garden SPE GL
 ledger; these are the next sources for checking recorded expenses and funding.
+
+## External spreadsheet reconciliation
+
+Read the three project trackers (Budget Tracker A1:N55 and A56:J85), Garden
+SPE Ledger A1:N55 and A56:H150, and Fund I Ledger A1:J70 on September 8.
+No spreadsheet edits or inferred cash transactions were made.
+
+- The three trackers each calculate $231,200 plus $46,240 contingency =
+  $277,440. Their footer still cites a different $263,340 template total.
+- 760's workbook title identifies 760 but its content says 753 and three units.
+  It is stale template material, not evidence for changing the two-unit plan.
+- Tracker demo actuals for 753/760 are $10,500/$12,000; Manifest, Garden GL,
+  and Fund GL agree on $12,000/$10,500. Preserve recorded cash allocations.
+- 751's tracker and GL confirm $9,000 demo, but the GL check reference is 1008
+  while Manifest's statement reference is also 1008 and posting dates differ.
+  Receipt evidence remains useful for definitive contract reconciliation.
+- Garden GL row 43 lists a $1,387.20 August 31 construction-management fee
+  to OpCo for the three Bayard properties. No matching Manifest payment was
+  found. Owner asked whether paid or accrued and how allocated; not booked.
+- The Garden GL reports $33,602.80 out of balance; Fund GL reports $47,296.70.
+  These are spreadsheet accounting imbalances, not inferred missing cash.
+- Fund GL records the July $54,000 member loan and includes a question about
+  its relationship to a June $50,000 Garden deposit. No repayment is shown
+  in the inspected rows; outstanding status still requires confirmation.
+- July 23 Bayard acquisition total $54,893.53 agrees with Manifest's three
+  allocations, including the remainder penny. Intercompany transfers are
+  funding, not additional expenses, and were not imported as costs.
+
+Sources:
+- https://docs.google.com/spreadsheets/d/1S8--OhLiUzRMlVWU0iTXt8oA7CQ-O4sj1mkztU_QG_A/edit
+- https://docs.google.com/spreadsheets/d/1QI1Y02j9Qb3SVDNCgMP1rBaD2SHiTgD4DqXCZukygT4/edit
+- https://docs.google.com/spreadsheets/d/1iTDkkhZvudlp-AtO0tapbJHKZlro0NwYnmR__eSIwVQ/edit
+- https://docs.google.com/spreadsheets/d/1zceijOcAMRJyj6orACDV6Jw8XqdhFsVQPRP19oMBEJc/edit
+- https://docs.google.com/spreadsheets/d/1rjntEygljJIYJk2U5UOuSgAFEqDMbISNk8o8Mx2PFmA/edit
