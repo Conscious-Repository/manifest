@@ -120,7 +120,7 @@ async function drawDealUnderwriting(host, slug, options) {
   const sections={};let panels;
   const groups={summary:'overview',properties:'properties',budget:'financials',financing:'financials',operations:'financials',assumptions:'financials',planning:'execution',progress:'execution',documents:'documents'};
   const section=(id,title)=>{const s=el('section','diligence-section');s.id='diligence-'+id;s.append(el('h3','',title));panels[groups[id]].append(s);sections[id]=s;return s;};
-  const table=(parent,headers,rows)=>{const wrap=el('div','diligence-table-wrap');wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label',headers.join(', '));const t=el('table','diligence-table');const head=el('thead'),tr=el('tr');headers.forEach(h=>{const th=el('th','',h);th.scope='col';tr.append(th);});head.append(tr);t.append(head);const body=el('tbody');rows.forEach(row=>{const r=el('tr');if(/^(Total|Development subtotal|Net operating income|Net cash flow)/.test(String(row[0])))r.className='diligence-total';row.forEach((v,i)=>{const cell=el(i===0?'th':'td','',String(v));if(i===0)cell.scope='row';if(i>0&&(/^[$\d]/.test(String(v))||/^[-−]\$/.test(String(v))))cell.className='diligence-number';r.append(cell);});body.append(r);});t.append(body);wrap.append(t);parent.append(wrap);};
+  const table=(parent,headers,rows)=>{const wrap=el('div','diligence-table-wrap');wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label',headers.join(', '));const t=el('table','diligence-table');const head=el('thead'),tr=el('tr');headers.forEach(h=>{const th=el('th','',h);th.scope='col';tr.append(th);});head.append(tr);t.append(head);const body=el('tbody');rows.forEach(row=>{const r=el('tr');if(/^(Total|Development subtotal|Net operating income|Net cash flow)/.test(String(row[0])))r.className='diligence-total';row.forEach((v,i)=>{const cell=el(i===0?'th':'td','',String(v));if(i===0)cell.scope='row';if(i>0&&(/^[$\d]/.test(String(v))||/^[-−]\$/.test(String(v))))cell.className='diligence-number';r.append(cell);});body.append(r);});t.append(body);wrap.append(t);parent.append(wrap);return body;};
   const detail=(parent,title)=>{const d=el('details','diligence-property');d.append(el('summary','',title));parent.append(d);return d;};
   const operating=members.map(p=>diligenceOperating(p,data.sources[p.slug]||{},assumptions,basis.operating||{}));
   const total=key=>operating.length&&operating.every(p=>p&&Number.isFinite(p[key]))?operating.reduce((n,p)=>n+p[key],0):null;
@@ -264,18 +264,23 @@ async function drawDealUnderwriting(host, slug, options) {
     const linked = contracts.filter(c => (c.allocations || []).some(a => memberById[a.property]));
     const committed = linked.filter(c => c.status === 'accepted');
     const contractDetails=detail(documents,'Contracts & receipts · '+linked.length+' contracts');
-    table(contractDetails,['Contract','Status','Allocated to this deal','Document'],linked.map(c => [c.name,c.status,money((c.allocations||[]).filter(a=>memberById[a.property]).reduce((n,a)=>n+a.amount,0)),c.doc?'Linked below':'No file attached']));
-    const seen = new Set();
-    const addDocument = (ref,label) => {
-      if (!ref || seen.has(ref)) return; seen.add(ref);
+    const attachmentLink = (ref,label) => {
+      if (!ref) return null;
       let href='';
       if (/^sha256:[a-f0-9]{64}$/.test(ref)) href=docLink(ref);
       else if (/^https?:\/\//.test(ref)) href=ref;
       else if (ref.startsWith('system/realestate/docs/')) href=docLink(ref);
-      if (!href) return;
-      const a=el('a','',label);a.href=href;a.target='_blank';a.rel='noopener';contractDetails.append(a,el('br'));
+      if (!href) return null;
+      const a=el('a','',label);a.href=href;a.target='_blank';a.rel='noopener';return a;
     };
-    linked.forEach(c=>addDocument(c.doc,c.name+' · '+c.status));
+    const contractRows=table(contractDetails,['Contract','Status','Allocated to this deal','Document'],linked.map(c => [c.name,c.status,money((c.allocations||[]).filter(a=>memberById[a.property]).reduce((n,a)=>n+a.amount,0)),c.doc?'Document unavailable':'No file attached']));
+    const seen = new Set();
+    linked.forEach((c,i)=>{const a=attachmentLink(c.doc,'View document ↗');if(a){a.setAttribute('aria-label','View document for '+c.name+' (opens in a new tab)');contractRows.children[i].children[3].replaceChildren(a);seen.add(c.doc);}});
+    const addDocument = (ref,label) => {
+      if (!ref || seen.has(ref)) return;
+      const a=attachmentLink(ref,label);if(!a)return;
+      seen.add(ref);contractDetails.append(a,el('br'));
+    };
     expenseRows.forEach(r=>addDocument(r.doc && !r.doc.includes('/') && !r.doc.startsWith('sha256:')?'system/realestate/docs/'+r.propertySlug+'/'+r.doc:r.doc,r.property+' · '+r.date+' · receipt'));
     paragraph(contractDetails,'Accepted contract allocations: '+money(committed.reduce((n,c)=>n+(c.allocations||[]).filter(a=>memberById[a.property]).reduce((k,a)=>k+a.amount,0),0))+'. Contract amounts are commitments, not additional expenses.');
   } catch(e) { paragraph(documents,'Contract inventory could not be loaded: '+e.message); }
