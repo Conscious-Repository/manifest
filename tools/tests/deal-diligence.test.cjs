@@ -78,3 +78,16 @@ test('construction spending totals balance and financed contingency is not count
  const u=c.reScreen({units:3,rentMonthly:4700,work:[{estTotal:277000}]},{purchase_price:18000,carry_cost:15000,phase_costs_include_contingency:true},{vacancy_rate:.08,opex_rate:.35,contingency_pct:.05});assert.equal(u.tdc,310000);assert.equal(u.contingency,0);
  assert.equal(c.diligencePhaseCost({estTotal:0,fields:[{key:'soft-budget',value:'15000'}]}),15000);
 });
+
+
+test('property record overrides outrank defaults without changing a named lender scenario',()=>{
+ const defaults={construction_interest_rate:.1,construction_loan_ltc:.679,perm_interest_rate:.0625,perm_amort_years:25,perm_ltv:.75,exit_cap_rate:.0725,vacancy_rate:.08,opex_rate:.35};
+ const source={construction_interest_rate:.0625,construction_loan_ltc:.7,perm_interest_rate:.07,exit_cap_rate:.085};
+ const effective=c.reScreeningAssumptions(defaults,source);
+ assert.equal(effective.construction_interest_rate,.0625);assert.equal(effective.construction_loan_ltc,.7);assert.equal(effective.perm_interest_rate,.07);assert.equal(effective.exit_cap_rate,.085);
+ assert.equal(defaults.perm_interest_rate,.0625);
+ const property={units:3,rentMonthly:4700};
+ assert.notEqual(c.reScreen(property,source,effective).dscr,c.reScreen(property,source,defaults).dscr);
+ const ask={...defaults,exit_cap_rate:.09};
+ assert.equal(c.reScreen(property,source,ask).arv,c.reScreen(property,{},ask).arv);
+});

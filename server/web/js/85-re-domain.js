@@ -2142,7 +2142,7 @@ async function loadReAssumptions() {
 // a second implementation that would drift (see that file's header).
 // reSrcNum and reDebtService are globals from there too.
 function reScreeningCalc(p) {
-  return reScreen(p, p.__source || {}, reAssumptions());
+  return reScreen(p, p.__source || {}, reScreeningAssumptions(reAssumptions(), p.__source || {}));
 }
 
 // ---- PUBLISH → oodagroup — the portal export effector (RE spec §4) ----

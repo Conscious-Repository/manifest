@@ -77,6 +77,16 @@
     };
   }
 
+  // Property screening resolves record overrides before portfolio defaults.
+  // Named lender asks pass their own resolved scenario directly to reScreen.
+  function reScreeningAssumptions(defaults, source) {
+    const effective = {...(defaults || {})};
+    for (const key of Object.keys(effective)) {
+      if (Number.isFinite(source?.[key])) effective[key] = source[key];
+    }
+    return effective;
+  }
+  window.reScreeningAssumptions = reScreeningAssumptions;
   window.reSrcNum = reSrcNum;
   window.reDebtService = reDebtService;
   window.reScreen = reScreen;

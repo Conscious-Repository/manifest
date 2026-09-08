@@ -485,7 +485,7 @@ function BidForm({ slug, property, onFiled, note }) {
 // identical to the cockpit's copy), so these numbers cannot drift from the
 // ones Benjamin reads.
 function Underwriting({ p, source, assumptions }) {
-  const a = (assumptions && assumptions.values) || {};
+  const a = reScreeningAssumptions((assumptions && assumptions.values) || {}, source || {});
   const labels = (assumptions && assumptions.labels) || {};
   const keys = (assumptions && assumptions.keys) || [];
   const src = source || {};
