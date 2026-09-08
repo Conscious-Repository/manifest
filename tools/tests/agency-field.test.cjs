@@ -30,3 +30,13 @@ test('growing history stays within the past cone and uses completion quarters',(
  for(const r of m.rocks){assert.ok(r.y>=468&&r.y<=672);assert.ok(Math.abs(r.x-520)<=382*(1-(r.y-374)/330));}
  assert.ok(m.rocks.filter(r=>r.id.startsWith('past/')).every(r=>r.quarter==='2026-Q3'));
 });
+test('the SVG builder renders the model without model-local variables leaking',()=>{
+ const x=setup();
+ class Node { constructor(){this.children=[];} setAttribute(){} append(n){this.children.push(n);} addEventListener(){} removeEventListener(){} }
+ x.c.document={createElementNS:()=>new Node()};
+ const layers=new Map();
+ const root={querySelector:key=>{if(!layers.has(key))layers.set(key,new Node());return layers.get(key);},querySelectorAll:()=>[],addEventListener(){},removeEventListener(){}};
+ const api=x.c.buildAgencyField(root,x.build());
+ assert.equal(layers.get('[data-aaf-goals]').children.length,x.build().goals.length);
+ api.cleanup();
+});
