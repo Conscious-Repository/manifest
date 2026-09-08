@@ -238,6 +238,12 @@ func (s *Server) handleLender(w http.ResponseWriter, r *http.Request) {
 	// All API-like operations require an exact path, not the trailing-slash fallback.
 	if r.URL.Path == base {
 		b, _ := webFiles.ReadFile("web/lender/index.html")
+		hash := sha256.New()
+		for _, asset := range []string{"web/ooda/src/re-screening.js", "web/ooda/src/deal-underwriting.js", "web/ooda/src/deal-underwriting.css", "web/ooda/src/ooda.css", "web/lender/app.js", "web/lender/shell.css"} {
+			bytes, _ := webFiles.ReadFile(asset)
+			hash.Write(bytes)
+		}
+		b = []byte(strings.ReplaceAll(string(b), "__BUILD__", hex.EncodeToString(hash.Sum(nil))[:16]))
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
 		w.Write(b)
