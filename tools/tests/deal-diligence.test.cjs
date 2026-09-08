@@ -53,9 +53,10 @@ test('presentation renders operating facts and budget without negotiation histor
  assert.match(text,/Net cash flow before financing Not established/);
  for(const forbidden of ['SECRET LENDER','PRIVATE EMAIL','INTERNAL FOLLOWUP','PRIVATE CORRECTION','interest-only','Loan + reserve','DSCR'])assert.ok(!text.includes(forbidden),forbidden);
  options.bundle.source.deal_underwriting.presentationFinancing={enabled:true,constructionLtc:.7,constructionRate:.0625,reserveMonths:12,termMonths:36,refinanceRate:.07,refinanceAmortYears:25,refinanceLtvLow:.7,refinanceLtvHigh:.75};
+ options.bundle.source.deal_underwriting.fundEquityShare=.9; options.bundle.source.deal_underwriting.partnerEquityShare=.1; options.bundle.source.deal_underwriting.repayment='90 days at 90%+ occupancy'; options.bundle.source.deal_underwriting.properties[0].phase=1;
  options.bundle.assumptions.exit_cap_rate=.0725;
  await c.drawDealUnderwriting(host,'test',options);
- const financed=host.text();assert.match(financed,/Illustrative financing/);assert.match(financed,/70% of development subtotal/);assert.match(financed,/74.38%/);assert.match(financed,/NCF coverage²/);assert.match(financed,/\$214,943.75/);assert.ok(!financed.includes('SECRET LENDER'));assert.ok(!financed.includes('PRIVATE EMAIL'));
+ const financed=host.text();assert.match(financed,/Illustrative financing/);assert.match(financed,/70% of development subtotal/);assert.match(financed,/74.38%/);assert.match(financed,/NCF coverage²/);assert.match(financed,/\$214,943.75/);assert.ok(!financed.includes('SECRET LENDER'));assert.ok(!financed.includes('PRIVATE EMAIL'));assert.match(financed,/Equity funding sources/);assert.match(financed,/\$78,030.00/);assert.match(financed,/\$8,670.00/);assert.match(financed,/90 days at 90%\+ occupancy/);assert.match(financed,/Rehab order/);
 });
 
 test('growth projection uses independent expense growth and exact reserve boundaries',()=>{

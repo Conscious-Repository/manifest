@@ -103,3 +103,13 @@ The first email reports Will's access failure and changed email address. This au
 4. Preserve later owner-approved assumptions as explicitly current modeling inputs rather than retroactively attributing them to this email.
 
 Numerical audit revision: `872bd9404e12d2a9831b6ebd5eed378ef3b6ee1edffed9b5bcc8d82ef1aded06`.
+
+## Follow-up implementation
+
+The shared Manifest/OODA renderer now shows recorded rehab order, the valid
+90/10 equity funding split with per-property and aggregate dollar amounts,
+and stored loan structure/repayment terms. The derived April 15 milestone is
+labeled “Lease-up target,” with an explicit distinction from the refinance
+occupancy requirement. These changes expose existing records; they do not
+alter financing assumptions or establish actual occupancy/approved lending.
+General-record scenario alignment remains pending the owner's response.
