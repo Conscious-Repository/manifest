@@ -219,13 +219,6 @@ function buildAgencyField(root, model) {
   const goalById = Object.fromEntries(goals.map(item => [item.id, item]));
   const personById = Object.fromEntries(people.map(item => [item.id, item]));
   const decisionById = Object.fromEntries(decisions.map(item => [item.id, item]));
-  // Fit growing history inside its boundary, preserving order and quarters.
-  if (yCursor > AAF_PAST_ZONE.bottom) {
-    const scale = (AAF_PAST_ZONE.bottom - AAF_PAST_ZONE.top - 14) / (yCursor - AAF_PAST_ZONE.top);
-    const fit = y => AAF_PAST_ZONE.top + (y - AAF_PAST_ZONE.top) * scale;
-    rocks.forEach(r => { r.y = fit(r.y); r.x = aafClampX(r.x, r.y, 20); });
-    bands.forEach(b => { b.top = fit(b.top); b.bottom = fit(b.bottom); });
-  }
   const rockById = Object.fromEntries(rocks.map(item => [item.id, item]));
 
   const addGoal = goal => {
