@@ -416,7 +416,7 @@ button { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line-soft); }
 .ooda-archive-date { font-family: var(--mono); font-size: 10px; color: var(--base-40);
   min-width: 78px; }
-.ooda-archive-title { font-size: 12px; color: inherit; }
+.ooda-archive-title { font-size: 12px; color: inherit; min-width: 0; overflow-wrap: anywhere; }
 a.ooda-archive-title { color: var(--accent); text-decoration: none; }
 a.ooda-archive-title:hover { text-decoration: underline; }
 .ooda-archive-row .ooda-sub { margin-left: auto; text-align: right; }
@@ -588,4 +588,14 @@ a.ooda-archive-title:hover { text-decoration: underline; }
 @media (max-width: 700px) {
   .portal-work-search { width: 100%; }
   input, textarea, select { font-size: 16px !important; max-width: 100%; }
+}
+
+@media (max-width: 700px) {
+  .ooda-row.cols-work { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; padding: 12px 4px; }
+  .ooda-row.cols-work > :first-child { grid-column: 1; grid-row: 1; }
+  .ooda-row.cols-work > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; }
+  .ooda-row.cols-work > :last-child { grid-column: 2; grid-row: 1; }
+  .ooda-archive-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; padding: 12px 2px; }
+  .ooda-archive-title { grid-column: 1 / -1; }
+  .ooda-archive-row .ooda-sub { grid-column: 1 / -1; margin-left: 0; text-align: left; overflow-wrap: anywhere; }
 }

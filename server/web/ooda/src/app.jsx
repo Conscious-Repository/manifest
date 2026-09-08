@@ -85,7 +85,7 @@ function App() {
     return () => window.removeEventListener("hashchange", navigate);
   }, []);
   const go = React.useCallback((v) => {
-    setOpenItem(null); setView(v); window.location.hash = "#/" + v;
+    setOpenItem(null); setView(v); window.location.hash = "#/" + v; window.scrollTo({top:0});
   }, []);
   const openWorkItem = React.useCallback((id) => {
     setOpenItem(id); setView("work");

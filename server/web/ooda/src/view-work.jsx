@@ -268,7 +268,7 @@ function WorkRow({ it, tone, isMine, linked, onOpen }) {
   return (
     <>
       <div ref={rowRef} className={"ooda-row cols-work click" + (linked ? " sel" : "")}
-        onClick={toggle} role="button">
+        onClick={toggle} role="button" tabIndex={0} aria-expanded={open} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); } }}>
         <span className="ooda-stack">
           <b>{it.title}</b>
           {it.kind === "decision" ? <em>decision</em> : null}
