@@ -31,3 +31,9 @@ The map change follows the [OpenStreetMap tile usage policy](https://operations.
 - Contractors already exposes direct property links and working/bidding filters. Goals has useful property grouping; improved link semantics without changing the hierarchy.
 - Settings contains financial assumptions and registry writes. Reviewed the presentation without changing values.
 - Property work pages remain long. A future pass could add section navigation and folds for completed work, informed by use of the now-direct property paths.
+
+## Portfolio follow-up
+
+Owner rejected the persistent property switcher; removed it in 01dcdb8. Direct property links remain.
+
+The next Portfolio pass balances column widths, moves Edit to a compact action column, puts the result count above the list, separates Active/All/Needs attention from the phase selector, and adds Reset filters. Header counts distinguish portfolio records from research parcels. Work summaries describe parallel unfinished rocks instead of implying the first unfinished rock is the single current one. Attention now checks every unfinished rock for overdue dates; search includes every rock name. Two regression tests cover those rules. Verified combined filters, reset, metadata editing, and a 390px layout without page-wide overflow; server tests pass.

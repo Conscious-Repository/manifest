@@ -73,7 +73,7 @@ function renderRePublishRail() {
   if (els.propertiesView.hidden) return;
   const pub = (reBacklogCache && reBacklogCache.publish) || {};
   if (els.reMeta) {
-    els.reMeta.textContent = activePortfolio().length + " active · " + propertyCache.length + " tracked";
+    els.reMeta.textContent = activePortfolio().length + " in portfolio · " + propertyCache.filter((p) => !p.hidden && !(p.control === "owned" || p.entity)).length + " research";
   }
   if (!pub.configured) return;
   const btn = el("button", "aion-publish-btn re-publish-btn", "PUBLISH");

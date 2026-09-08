@@ -13,6 +13,7 @@ const PROPERTY_KINDS = ["rehab", "new-construction", "mixed", "hold"];
 // the grouping — no phase sections, no progress bars, no status column.
 let pfQuery = "";
 let pfCut = "open"; // open | all | attention | construction | pre-dev | pipeline | stabilized
+let pfPhase = ""; // independent phase filter
 let pfSel = null;   // selected property slug (inspector)
 
 // the 8 statuses collapse to 5 phases; settled phases leave OPEN + attention
@@ -34,6 +35,8 @@ function pfFacts(p) {
   const m = projMoney(p);
   return {
     cur,
+    unfinished: stages.filter((st) => !st.checked),
+    overdue: stages.filter((st) => !st.checked && st.doneBy && st.doneBy < pfToday()),
     doneBy: cur ? (cur.doneBy || "") : "",
     open: openTodoCount(p),
     pctDone: stages.length ? (done / stages.length) * 100 : 0,
@@ -54,7 +57,7 @@ function pfAttention(p) {
   // over-plan tests the ACCRUAL and the contracts, not cash: a project is over
   // budget the moment it signs for more than it planned, not when it pays
   const over = f.plan > 0 && (f.recognized > f.plan || f.committed > f.plan);
-  const late = !!f.doneBy && f.doneBy < pfToday();
+  const late = f.overdue.length > 0;
   // stalled needs a WORK PLAN to be stalled against — a pipeline parcel with
   // no rocks yet isn't "nothing queued", it's "not started" (without this,
   // every under-contract lot lit the filter — the noise it exists to cut)
@@ -67,10 +70,10 @@ function pfVisible(p) {
   const f = pfFacts(p);
   if (pfCut === "open" && PF_SETTLED.includes(f.phase)) return false;
   if (pfCut === "attention" && !pfAttention(p)) return false;
-  if (["construction", "pre-dev", "pipeline", "stabilized"].includes(pfCut) && f.phase !== pfCut) return false;
+  if (pfPhase && f.phase !== pfPhase) return false;
   const q = pfQuery.trim().toLowerCase();
   if (!q) return true;
-  return [p.address, p.short, p.entity, p.deal, p.status, p.kind, f.cur ? f.cur.text : ""]
+  return [p.address, p.short, p.entity, p.deal, p.status, p.kind, ...(p.work || []).map((st) => st.text)]
     .join(" ").toLowerCase().includes(q);
 }
 
@@ -101,7 +104,7 @@ function pfSwap(fresh) {
 function renderPortfolio() {
   const host = els.propertyBoard;
   host.innerHTML = "";
-  const wrap = el("div", "aion-backlog fr-shell");
+  const wrap = el("div", "aion-backlog fr-shell pf-shell");
   const main = el("div", "aion-list fr-main");
   const inspector = el("aside", "aion-inspector fr-inspector");
   wrap.append(main, inspector);
@@ -118,19 +121,25 @@ function renderPortfolio() {
   search.value = pfQuery;
   search.oninput = () => { pfQuery = search.value; paint(); };
   bar.append(search);
-  const attn = activePortfolio().filter(pfAttention).length;
-  const cuts = [["open", "OPEN"], ["all", "ALL"]];
-  if (attn) cuts.push(["attention", "ATTENTION " + attn]);
-  cuts.push(["construction", "CONSTRUCTION"], ["pre-dev", "PRE-DEV"], ["pipeline", "PIPELINE"], ["stabilized", "HELD"]);
+  const cuts = [["open", "Active"], ["all", "All properties"], ["attention", "Needs attention"]];
   const chips = {};
   cuts.forEach(([key, label]) => {
     const b = el("button", "filter-chip", label);
     b.onclick = () => { pfCut = key; paint(); };
-    chips[key] = b;
-    bar.append(b);
+    chips[key] = b; bar.append(b);
   });
-  main.append(bar);
-  main.append(propertyComposer());
+  const phase = el("select", "pp-in"); phase.setAttribute("aria-label", "Filter portfolio by phase");
+  [["", "All phases"], ["construction", "Construction"], ["pre-dev", "Pre-development"], ["pipeline", "Pipeline"], ["stabilized", "Held / completed"], ["closed", "Sold"]].forEach(([value,label]) => {
+    const option = el("option", "", label); option.value = value; phase.append(option);
+  });
+  phase.value = pfPhase;
+  phase.onchange = () => { pfPhase = phase.value; if (pfPhase === "stabilized" || pfPhase === "closed") pfCut = "all"; paint(); };
+  const reset = el("button", "rec-linkish", "Reset filters");
+  reset.onclick = () => { pfQuery = ""; search.value = ""; pfCut = "open"; pfPhase = ""; phase.value = ""; paint(); };
+  bar.append(phase, reset); main.append(bar);
+  const summary = el("div", "pf-summary");
+  const count = el("span", "micro-label");
+  summary.append(count, propertyComposer()); main.append(summary);
 
   // durable containers — paint() only wipes their contents
   const table = el("div", "fr-table");
@@ -140,14 +149,16 @@ function renderPortfolio() {
   main.append(table, foot, dealsSec);
 
   const paint = () => {
-    Object.keys(chips).forEach((k) => chips[k].classList.toggle("on", pfCut === k));
+    Object.keys(chips).forEach((k) => { chips[k].classList.toggle("on", pfCut === k); chips[k].setAttribute("aria-pressed", String(pfCut === k)); });
+    reset.hidden = !pfQuery && !pfPhase && pfCut === "open";
 
     // the table — four columns, fr-stack cells, no bars, no sections
     const all = activePortfolio();
     const rows = all.filter(pfVisible);
+    count.textContent = rows.length + " of " + all.length + " portfolio properties";
     table.innerHTML = "";
     const head = el("div", "fr-row fr-head pf4-grid");
-    ["PROPERTY", "ROCK", "OPEN", "SPENT"].forEach((h, i) =>
+    ["PROPERTY", "WORK", "TASKS", "SPENT / BUDGET", ""].forEach((h, i) =>
       head.append(el("span", "micro-label" + (i >= 2 ? " pf4-r" : ""), h)));
     table.append(head);
     if (!rows.length) table.append(emptyRow("No properties match."));
@@ -208,25 +219,24 @@ function pfRow(p, paint) {
   row.append(c1);
   // ROCK: current rock over its schedule state
   const c2 = el("span", "fr-stack");
-  c2.append(el("span", "pf4-rock", f.cur ? f.cur.text : (f.hasStages ? "done" : "—")));
-  let sub = "—";
-  if (f.cur && f.doneBy && f.doneBy < pfToday()) sub = "● late — was due " + f.doneBy.slice(5);
-  else if (f.cur && f.open === 0 && !PF_SETTLED.includes(f.phase) && p.status !== "negotiating") sub = "● no open task";
-  else if (f.cur && f.doneBy) sub = "by " + f.doneBy.slice(5);
-  c2.append(el("span", "fr-sub" + (sub.startsWith("●") ? " pf4-ink" : ""), sub));
+  c2.append(el("span", "pf4-rock", f.unfinished.length ? f.unfinished.length + " unfinished rock" + (f.unfinished.length === 1 ? "" : "s") : (f.hasStages ? "Work complete" : "No work plan")));
+  const notes = [];
+  if (f.plan > 0 && (f.recognized > f.plan || f.committed > f.plan)) notes.push("Over budget");
+  if (f.overdue.length) notes.push(f.overdue.length + " overdue rock" + (f.overdue.length === 1 ? "" : "s"));
+  if (f.unfinished.length && f.open === 0 && !PF_SETTLED.includes(f.phase) && p.status !== "negotiating") notes.push("No open tasks");
+  if (notes.length) c2.append(el("span", "fr-sub pf4-ink", notes.join(" · ")));
   row.append(c2);
   // OPEN
-  row.append(el("span", "pf4-num", f.open ? String(f.open) : "—"));
+  row.append(el("span", "pf4-num", String(f.open)));
   // SPENT: paid over "of plan"
   const c4 = el("span", "fr-stack pf4-money");
   c4.append(el("span", "pf4-num pf-spent" + (f.plan > 0 && f.paid > f.plan ? " over" : ""),
-    f.paid ? fmtMoneyShort(f.paid) : "—"));
-  c4.append(el("span", "fr-sub", f.plan ? "of " + fmtMoneyShort(f.plan) : "no plan"));
-  const edit = el("button", "rec-linkish pf-edit", "Edit details");
+    fmtMoneyShort(f.paid)));
+  c4.append(el("span", "fr-sub", f.plan ? "budget " + fmtMoneyShort(f.plan) : "no plan"));
+  const edit = el("button", "rec-linkish pf-edit", "Edit");
   edit.setAttribute("aria-label", "Edit details for " + (p.short || p.address || p.slug));
   edit.onclick = (event) => { event.stopPropagation(); pfSel = pfSel === p.slug ? null : p.slug; paint(); };
-  c4.append(edit);
-  row.append(c4);
+  row.append(c4, edit);
   row.onclick = () => {
     location.hash = "#/properties/" + encodeURIComponent(p.slug);
   };

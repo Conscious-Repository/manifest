@@ -240,7 +240,7 @@
 /* portfolio: property · stage bar · open · spent */
 /* PORTFOLIO — the fundraising shape (PORTFOLIO-LIST handoff 2026-08-19):
    four columns, fr-stack cells, no bars, no phase sections. */
-.fr-row.pf4-grid, .fr-head.pf4-grid { grid-template-columns: minmax(0, 2.3fr) minmax(0, 1.1fr) 52px 96px; }
+.fr-row.pf4-grid, .fr-head.pf4-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 52px 120px 40px; }
 .pf4-addr { font-size: var(--fs-lg); font-weight: 500; }
 .pf4-rock { font-size: var(--fs-lg); color: var(--base-70); }
 .pf4-num { font-family: var(--mono); font-size: var(--fs-md); text-align: right; color: var(--base-100); }
@@ -634,3 +634,9 @@
 .re-property-link { color: var(--accent); text-decoration: none; }
 .re-property-link:hover, .re-property-link:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .pf-edit { align-self: flex-end; }
+
+.pf-shell .fr-toolbar { flex-wrap: wrap; }
+.pf-shell .fr-search { flex: 1 1 260px; min-width: 180px; }
+.pf-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-6); margin-bottom: var(--sp-4); }
+.pf-summary .fr-add { margin: 0; }
+.pf4-grid > .pf-edit { align-self: center; justify-self: end; color: var(--base-60); }

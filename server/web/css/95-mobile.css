@@ -667,3 +667,12 @@
   .re-unitmix-rows { max-width: 100%; overflow-x: auto; padding-bottom: var(--sp-4); }
   .re-unitmix-cols, .re-unitmix-row { min-width: 552px; }
 }
+
+@media (max-width: 860px) {
+  .pf-shell .fr-search { flex-basis: 100%; min-width: 0; }
+  .fr-row.pf4-grid > .pf-edit { grid-column: 2; grid-row: 3; }
+  .pf-summary { flex-wrap: wrap; }
+}
+@media (max-width: 860px) {
+  .pf4-grid > .pf4-num::after { content: " tasks"; font-size: var(--fs-2xs); color: var(--base-50); }
+}
