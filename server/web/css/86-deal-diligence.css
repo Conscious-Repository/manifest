@@ -1,0 +1,14 @@
+.diligence-nav { display: flex; flex-wrap: wrap; gap: var(--sp-4); padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); }
+.diligence-nav button { background: transparent; color: var(--text); border: 0; padding: var(--sp-4) var(--sp-6); cursor: pointer; }
+.diligence-nav button:hover { background: var(--hover); }
+.diligence-section { border-bottom: 1px solid var(--line); padding: var(--sp-9) 0; scroll-margin-top: var(--sp-9); }
+.diligence-section h3 { font-size: var(--fs-xl); margin: 0 0 var(--sp-7); }
+.diligence-section p, .diligence-section li { font-size: var(--fs-lg); line-height: 1.6; max-width: 90ch; }
+.diligence-table-wrap { max-width: 100%; overflow-x: auto; margin: var(--sp-7) 0; }
+.diligence-table { border-collapse: collapse; width: 100%; font-size: var(--fs-md); }
+.diligence-table th { text-align: left; color: var(--muted); font-family: var(--mono); font-size: var(--fs-xs); font-weight: normal; }
+.diligence-table th, .diligence-table td { border-bottom: 1px solid var(--line); padding: var(--sp-6); vertical-align: top; min-width: 110px; }
+.diligence-property { border-top: 1px solid var(--line); padding: var(--sp-7) 0; }
+.diligence-property summary { cursor: pointer; font-size: var(--fs-lg); }
+.diligence-doc-group { padding: var(--sp-6) 0; }
+.diligence-doc-group a { display: block; overflow-wrap: anywhere; margin: var(--sp-4) 0; }
