@@ -77,8 +77,12 @@ expenses and operating inputs remain live. Negotiation terms, correspondence
 attribution, arithmetic corrections, and internal reconciliation commentary
 are not rendered. Existing source records are retained unchanged.
 
-The owner requested an illustrative financing scenario and will specify its
-terms. No previous lender-specific terms are reused in the meantime. Missing
+The owner subsequently authorized using the email terms for a lender-neutral
+illustration: 70% LTC, 6.25% interest-only construction debt, 36 months, a
+12-month financed interest reserve, and 7% / 25-year refinance at 70–75% LTV.
+These are explicitly configured under presentationFinancing; lender identity
+and correspondence remain excluded. The refinance uses live operating inputs
+and the displayed current cap rate. Missing
 replacement reserves remain explicitly unknown, preventing a false cash-flow
 after-reserves result. Regression coverage renders a fixture containing private
 negotiation notes and verifies that they do not enter the presentation.

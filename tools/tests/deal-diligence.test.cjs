@@ -35,17 +35,23 @@ test('presentation renders operating facts and budget without negotiation histor
   append(...nodes){this.children.push(...nodes);}
   replaceChildren(...nodes){this.children=nodes;}
   setAttribute(){}
+  insertBefore(node,before){this.children.splice(this.children.indexOf(before),0,node);}
   remove(){}
   text(){return this.textContent+' '+this.children.map(n=>typeof n==='string'?n:n.text()).join(' ');}
  }
  c.document={createElement:tag=>new Element(tag)};
  const host=new Element('div');
- await c.drawDealUnderwriting(host,'test',{endpoint:'/test',bundle:{
+ const options={endpoint:'/test',bundle:{
   deal:{name:'Rehab'},source:{deal_underwriting:{title:'Rehabilitation portfolio',lender:'SECRET LENDER',source:'PRIVATE EMAIL',openItems:['INTERNAL FOLLOWUP'],corrections:['PRIVATE CORRECTION'],constructionRate:.0625,termMonths:36,contingencyPct:.2,properties:[{slug:'one',acquisition:18000,hardCostsIncludingContingency:256000,softCosts:15000,baseLoan:202300,units:[{label:'A',rent:4700}]}]}},
   members:[{slug:'one',short:'One',units:3,rentMonthly:4700,ledger:[{type:'expense',amount:1234.56,date:'2026-09-08'}]}],sources:{one:{}},docs:{one:[]},contracts:[],assumptions:{vacancy_rate:.08,opex_rate:.35}
- }});
+ }};
+ await c.drawDealUnderwriting(host,'test',options);
  const text=host.text().replace(/\s+/g,' ');
  assert.match(text,/\$289,000/);assert.match(text,/\$1,234.56/);assert.match(text,/\$33,727/);
  assert.match(text,/Net cash flow before financing Not established/);
  for(const forbidden of ['SECRET LENDER','PRIVATE EMAIL','INTERNAL FOLLOWUP','PRIVATE CORRECTION','interest-only','Loan + reserve','DSCR'])assert.ok(!text.includes(forbidden),forbidden);
+ options.bundle.source.deal_underwriting.presentationFinancing={enabled:true,constructionLtc:.7,constructionRate:.0625,reserveMonths:12,termMonths:36,refinanceRate:.07,refinanceAmortYears:25,refinanceLtvLow:.7,refinanceLtvHigh:.75};
+ options.bundle.assumptions.exit_cap_rate=.0725;
+ await c.drawDealUnderwriting(host,'test',options);
+ const financed=host.text();assert.match(financed,/Illustrative financing/);assert.match(financed,/70% of development subtotal/);assert.match(financed,/\$214,943.75/);assert.ok(!financed.includes('SECRET LENDER'));assert.ok(!financed.includes('PRIVATE EMAIL'));
 });

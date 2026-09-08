@@ -111,6 +111,27 @@ async function drawDealUnderwriting(host, slug, options) {
   paragraph(operations,'Proposed rents are not collected income. NOI is before replacement reserves and debt service. Expenses use an aggregate allowance; a detailed operating budget is not yet established.','re-foot-note');
   const operatingDetail=detail(operations,'Operating proforma by property');
   table(operatingDetail,['Property','Annual gross rent','Vacancy','Operating expenses','Annual NOI'],members.map((p,i)=>{const u=operating[i];return [p.short,money(u?.gross),money(u?u.gross-u.egi:null),money(u?u.egi-u.noi:null),money(u?.noi)];}));
+  if(basis.presentationFinancing?.enabled && budgetRows.length===members.length){
+    const config=basis.presentationFinancing;
+    const terms={...basis,constructionRate:config.constructionRate,reserveMonths:config.reserveMonths,refinanceRate:config.refinanceRate,refinanceAmortYears:config.refinanceAmortYears,refinanceLtvLow:config.refinanceLtvLow,refinanceLtvHigh:config.refinanceLtvHigh};
+    const valid=['constructionLtc','constructionRate','reserveMonths','termMonths','refinanceRate','refinanceAmortYears','refinanceLtvLow','refinanceLtvHigh'].every(k=>Number.isFinite(config[k]));
+    if(valid){
+      const financing=section('financing','Illustrative financing');
+      const navButton=el('button','','Financing');navButton.onclick=()=>financing.scrollIntoView({block:'start',behavior:'smooth'});nav.insertBefore(navButton,nav.children[4]);
+      const rows=baseline.map(r=>({...r,baseLoan:Math.round((r.acquisition+r.hardCostsIncludingContingency+r.softCosts)*config.constructionLtc*100)/100}));
+      const stacks=rows.map(r=>diligenceStack(r,terms));
+      const sum=k=>stacks.reduce((n,r)=>n+r[k],0),baseLoan=rows.reduce((n,r)=>n+r.baseLoan,0);
+      table(financing,['Construction assumptions','Illustrative input'],[['Loan-to-cost',(config.constructionLtc*100).toFixed(0)+'% of development subtotal'],['Interest rate',(config.constructionRate*100).toFixed(2)+'% · interest only'],['Term',config.termMonths+' months'],['Interest reserve',config.reserveMonths+' months on base construction principal']]);
+      table(financing,['Sources','Amount','Uses','Amount'],[['Construction principal',money(baseLoan),'Development subtotal',money(budgetTotal('total'))],['Financed interest reserve',money(sum('reserve')),'Interest reserve',money(sum('reserve'))],['Sponsor / partner equity',money(sum('equity')),'',''],['Total capital',money(sum('request')+sum('equity')),'Total identified uses',money(budgetTotal('total')+sum('reserve'))]]);
+      paragraph(financing,'Illustrative sizing; subject to underwriting. Closing costs are not included. Interest carry is modeled on full base principal; actual interest depends on draws.','re-foot-note');
+      const perProperty=detail(financing,'Capital requirements by property');
+      table(perProperty,['Property','Base loan','Interest reserve','Total loan','Equity'],rows.map((r,i)=>[memberById[r.slug]?.short||r.slug,money(r.baseLoan),exactMoney(stacks[i].reserve),exactMoney(stacks[i].request),money(stacks[i].equity)]));
+      const refinance=detail(financing,'Stabilized refinance illustration');
+      table(refinance,['Refinance assumptions','Input'],[['Interest rate',(config.refinanceRate*100).toFixed(2)+'%'],['Amortization',config.refinanceAmortYears+' years'],['Loan-to-value',(config.refinanceLtvLow*100).toFixed(0)+'–'+(config.refinanceLtvHigh*100).toFixed(0)+'%'],['Capitalization rate',Number.isFinite(assumptions.exit_cap_rate)?(assumptions.exit_cap_rate*100).toFixed(2)+'%':'Not established']]);
+      table(refinance,['Property','Income-based value','Upper LTV capacity','Annual debt service¹','NOI coverage¹'],rows.map(r=>{const u=operating[members.findIndex(p=>p.slug===r.slug)];const x=u?diligenceRefinance({...r,units:[{rent:u.gross/12}]},terms,assumptions):null;return [memberById[r.slug]?.short||r.slug,money(x?.value),money(x?.high),money(x?.debt),x?.debt?(x.noi/x.debt).toFixed(2)+'×':'—'];}));
+      paragraph(refinance,'¹ Debt service amortizes the full construction loan including interest reserve. Coverage uses NOI before replacement reserves. Income-based value is NOI divided by the displayed cap rate, not an appraisal. Proceeds remain subject to lender coverage requirements and transaction costs.','re-foot-note');
+    }
+  }
   const progress=section('progress','Live project records');
   paragraph(progress,'Recorded expenditures: '+exactMoney(paid)+'. Updated from the property ledgers as entries are added.');
   table(progress,['Property','Recorded expenditures','Work phases complete'],members.map(p=>[p.short,exactMoney((p.ledger||[]).filter(r=>r.type==='expense').reduce((n,r)=>n+r.amount,0)),(p.work||[]).filter(w=>w.checked).length+' / '+(p.work||[]).length]));
