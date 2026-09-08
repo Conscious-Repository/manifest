@@ -66,6 +66,14 @@ async function renderDealDiligence(host, slug) {
   paragraph(documents,'Permit-ready plans were targeted for early October. A drawing or an email assertion is not permit approval. Documents below are attached to this deal’s member properties.');
   const docResults=await Promise.allSettled(members.map(p=>read('/api/properties/'+encodeURIComponent(p.slug)+'/docs')));
   members.forEach((p,i)=>{const sub=el('div','diligence-doc-group');sub.append(el('h4','',p.short));const result=docResults[i];if(result.status==='rejected'){paragraph(sub,'Documents could not be loaded. Return to the workspace and retry; this is not an empty document inventory.');}else {const docs=result.value.docs||[];if(!docs.length)paragraph(sub,'No files attached in the property document folder.');docs.forEach(d=>{const a=el('a','',d.name);a.href='/api/realestate/doc?path='+encodeURIComponent(d.path);a.target='_blank';a.rel='noopener';sub.append(a);});}documents.append(sub);});
+  (basis.documentNotes||[]).forEach(note=>paragraph(documents,note));
+  if((basis.supportingDocuments||[]).length){
+    const refs=el('div','diligence-doc-group');refs.append(el('h4','','Deal reference documents'));
+    (basis.supportingDocuments||[]).forEach(d=>{
+      if(!d.path?.startsWith('system/realestate/docs/')) return;
+      const a=el('a','',d.title);a.href='/api/realestate/doc?path='+encodeURIComponent(d.path);a.target='_blank';a.rel='noopener';refs.append(a);paragraph(refs,d.note||'');
+    });documents.append(refs);
+  }
   // Contract attachments are a separate store from property-folder files.
   try {
     const contracts = (await read('/api/realestate/contracts')).contracts || [];

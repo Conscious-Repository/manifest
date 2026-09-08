@@ -121,3 +121,22 @@ membership/explicit inclusion policy. Never send the entire portfolio to the
 browser and filter there. Preview the exact included documents and shared
 contract allocations before enabling a link. Passwords never enter URLs.
 Publishing infrastructure and live external links are deferred by the owner.
+
+## September 8 document follow-up
+
+Located and inspected the August 24 751 draft options V1–V3 in Downloads;
+uploaded the unchanged PDF through the property document API. Its cover
+specifies three units and is marked DRAFT. It lists 2,680 SF plus 1,340 SF
+basement, which must be reconciled to the email's approximate net unit areas.
+The email selects option 2; this is not evidence of permit approval.
+
+Located Premier Appraisal Group report 26R-249 for 736 N Euclid. Inspected
+the signed letter: $430,000 as of May 26, 2026, signed May 29 for West
+Community Credit Union. Uploaded unchanged to 736's document folder and
+explicitly included as a deal reference document, not collateral appraisal.
+This resolves the earlier missing comparable appraisal finding. The 751
+folder now contains its draft; other member-property plan folders remain empty.
+
+The similarly named 736 Euclid.pdf is a 2024 settlement statement, not the
+appraisal. Building Permit.pdf concerns 4848 Fountain, not these properties;
+neither was attached as proof for this deal.
