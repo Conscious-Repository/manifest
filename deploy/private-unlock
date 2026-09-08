@@ -1,0 +1,15 @@
+#!/bin/bash
+# Unlock and mount the LUKS volume that holds the vault, then wake the engine
+# room. Installed at /usr/local/bin/private-unlock (root, 755); the passphrase
+# is the owner's alone and is never stored anywhere on this box.
+#
+# The last line is the part that matters after a reboot: engine-room.target is
+# deliberately cold until now, and `restart` re-queues its Wants even if
+# something has already poked it — see deploy/engine-room.target for why the
+# path unit alone was not enough.
+set -e
+[ -e /dev/mapper/private ] || cryptsetup open /dev/sdb private
+mountpoint -q /private || { mkdir -p /private; mount /dev/mapper/private /private; }
+echo "/private unlocked: $(df -h /private | tail -1 | awk '{print $4}') free"
+systemctl restart engine-room.target
+echo "engine room: $(systemctl is-active manifest manifest-sync excalibur-engine zeck-runner | paste -sd' ')"

@@ -3,7 +3,7 @@
 The metis deployment as repo artifacts (big-change Phase 3a + auto-deploy).
 
 - `manifest.service` · `manifest-sync.service` · `excalibur-engine.service` —
-  the systemd units; `engine-room.target` + `private-ready.path` self-start
+  the systemd units; `engine-room.target` + `private-ready.path` + `private-unlock` self-start
   the room after reboot + `private-unlock`.
 - `manifest-autodeploy.{sh,service,timer}` — **push = deploy**: every minute
   metis pulls origin/main (ff-only), rebuilds what moved (dashboard, sync

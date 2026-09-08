@@ -1,12 +1,19 @@
 # The engine room as one unit (big-change Phase 3d): everything that should
-# run once /private is unlocked. Started by private-ready.path when the
-# mount appears after a reboot + manual `private-unlock`; each member keeps
-# its own ConditionPathExists guard as a belt to this suspender.
+# run once /private is unlocked. Each member keeps its own ConditionPathExists
+# guard as a belt to this suspender.
+#
+# ⚠ NOT enabled, and deliberately has no [Install]. It used to be
+# WantedBy=multi-user.target, which made it "reach" at BOOT — before the LUKS
+# volume existed — and a target that is already active makes every later
+# `systemctl start` of it a no-op. So private-ready.path fired into a wall and
+# the room never came back on its own (found 2026-09-08, after a reboot left
+# the site down for twenty minutes past the unlock). It is started two ways
+# now, both from a cold target: private-ready.path when the mount is seen,
+# and `private-unlock` itself, which RESTARTS it after mounting — the explicit
+# kick that does not depend on inotify noticing a new mount.
 #   sudo cp deploy/engine-room.target deploy/private-ready.path /etc/systemd/system/
-#   sudo systemctl daemon-reload && sudo systemctl enable private-ready.path engine-room.target
+#   sudo cp deploy/private-unlock /usr/local/bin/
+#   sudo systemctl daemon-reload && sudo systemctl disable engine-room.target && sudo systemctl enable private-ready.path
 [Unit]
 Description=engine room - everything that runs once /private is unlocked
 Wants=manifest.service manifest-sync.service excalibur-engine.service zeck-runner.service
-
-[Install]
-WantedBy=multi-user.target
