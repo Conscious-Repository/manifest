@@ -130,7 +130,7 @@ async function drawDealUnderwriting(host, slug, options) {
   const paid=expenseRows.reduce((n,r)=>n+r.amount,0);
   const counts=members.map(p=>(p.unitMix||[]).length||p.units||reSrcNum(data.sources[p.slug]||{},'total_units'));
   const units=counts.length&&counts.every(n=>Number.isFinite(n)&&n>0)?counts.reduce((n,x)=>n+x,0):null;
-  host.append(el('p','diligence-eyebrow','OODA GROUP · REAL ESTATE'),el('h2','pp3-title',data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
+  host.append(el('p','diligence-eyebrow','OODA GROUP'),el('h2','pp3-title',data.deal.name),el('p','re-foot-note','Development overview & due diligence'));
   const live=el('p','re-foot-note','Live · checked '+new Date().toLocaleTimeString());live.dataset.liveStatus='';live.setAttribute('role','status');host.append(live);
   panels=diligenceNavigation(host,el,options.viewState||(options.viewState={tab:'overview',all:false}));
   const summary=section('summary','Project overview');
