@@ -40,3 +40,12 @@ Remaining broader objective items: owner decision on general-record budget
 alignment versus separate scenarios, and supporting funding/title/permit/rent
 reconciliations identified in the email audit. A password link supplies access;
 it does not certify that these underlying diligence gaps are resolved.
+
+Final requirement check: live membership includes 748 N Euclid plus all three
+Bayard properties, display name is Rehab Quartet, and the communicated package
+budget remains $1,258,500. The generic deal rate still reads 10% versus the
+named ask's 6.25%; this is the pending scenario decision, not a completed
+reconciliation. Shared document responses now sandbox active HTML/SVG content
+so a linked attachment cannot execute scripts in the portal origin; a regression
+test checks the served attachment policy. Full completion is not claimed while
+financial-record alignment decisions remain outstanding.

@@ -36,6 +36,7 @@ func TestLenderShareAccessScopeAndRevocation(t *testing.T) {
 	write("properties/one.md", "---\ncategories: [property]\naddress: One\ndeal: '[[duo]]'\n---\n")
 	write("properties/other.md", "---\ncategories: [property]\naddress: Other\ndeal: '[[elsewhere]]'\n---\n")
 	write("docs/one/plan.pdf", "member plan")
+	write("docs/one/attachment.html", "<script>document.body.textContent=\"unsafe\"</script>")
 	write("docs/other/secret.pdf", "other deal secret")
 	if _, err := f.srv.index.Rebuild(); err != nil {
 		t.Fatal(err)
@@ -106,6 +107,9 @@ func TestLenderShareAccessScopeAndRevocation(t *testing.T) {
 	}
 	if w = do(pub, "GET", endpoint+"/document?ref=system/realestate/docs/one/plan.pdf", "", c); w.Code != 200 || w.Body.String() != "member plan" {
 		t.Fatal("member document", w.Code, w.Body)
+	}
+	if w = do(pub, "GET", endpoint+"/document?ref=system/realestate/docs/one/attachment.html", "", c); w.Code != 200 || w.Header().Get("Content-Security-Policy") != "sandbox allow-downloads; default-src 'none'" {
+		t.Fatal("active attachment not sandboxed", w.Code, w.Header())
 	}
 	if w = do(pub, "GET", endpoint+"/document?ref=system/realestate/docs/other/secret.pdf", "", c); w.Code != 404 {
 		t.Fatal("cross-deal document")

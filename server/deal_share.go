@@ -322,6 +322,8 @@ func (s *Server) handleLender(w http.ResponseWriter, r *http.Request) {
 	}
 	r.SetPathValue("slug", sh.Slug)
 	if r.URL.Path == base+"underwriting/document" {
+		// Even a linked HTML/SVG attachment must not execute in the portal origin.
+		w.Header().Set("Content-Security-Policy", "sandbox allow-downloads; default-src 'none'")
 		s.handleDealUnderwritingDoc(w, r)
 		return
 	}
