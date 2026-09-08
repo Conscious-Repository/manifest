@@ -802,6 +802,8 @@ func (s *Server) Handler() http.Handler {
 	// inline; the statement workbench replaces per-property csv import.
 	mux.HandleFunc("/api/properties/{slug}/source", s.handlePropertySource) // GET+PUT
 	mux.HandleFunc("GET /api/deals/{slug}", s.handleDealPage)
+	mux.HandleFunc("GET /api/deals/{slug}/underwriting", s.handleDealUnderwriting)
+	mux.HandleFunc("GET /api/deals/{slug}/underwriting/document", s.handleDealUnderwritingDoc)
 	mux.HandleFunc("/api/deals/{slug}/source", s.handleDealSource) // GET+PUT
 	mux.HandleFunc("POST /api/deals/{slug}/field", s.handleDealField)
 	mux.HandleFunc("POST /api/properties/{slug}/ledger/mutate", s.handleLedgerMutate)

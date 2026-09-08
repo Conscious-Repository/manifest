@@ -41,6 +41,8 @@ func OodaReadRoutes(live *OodaLive) func(*http.ServeMux, PortalOptions) {
 		mux.HandleFunc("GET /api/ooda/revision", api.revision)
 		mux.HandleFunc("GET /api/ooda/dashboard", api.dashboard)
 		mux.HandleFunc("GET /api/ooda/portfolio", api.portfolio)
+		mux.HandleFunc("GET /api/ooda/deal/{slug}/underwriting", api.underwriting)
+		mux.HandleFunc("GET /api/ooda/deal/{slug}/underwriting/document", api.underwritingDoc)
 		mux.HandleFunc("GET /api/ooda/property/{slug}", api.property)
 		mux.HandleFunc("GET /api/ooda/work", api.work)
 		mux.HandleFunc("GET /api/ooda/people", api.people)

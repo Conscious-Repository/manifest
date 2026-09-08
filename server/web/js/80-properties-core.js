@@ -32,7 +32,8 @@ function showProperties(h) {
   propSlug = "";
   propDealSlug = "";
   const VIEWS = ["backlog", "portfolio", "goals", "money", "contractors", "settings", "map"];
-  if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
+  if (tail.startsWith("deal/") && tail.endsWith("/underwriting")) { propMode = "underwriting"; propDealSlug = tail.slice(5,-13); }
+  else if (tail.startsWith("deal/")) { propMode = "deal"; propDealSlug = tail.slice(5); }
   else if (tail === "contract-new") { propMode = "contract-new"; }
   else if (tail.startsWith("contract/")) { propMode = "contract"; propSlug = tail.slice(9); }
   else if (tail.startsWith("contractor/")) { propMode = "contractor"; propSlug = tail.slice(11); }
@@ -118,6 +119,7 @@ async function renderProperties() {
   if (propMode === "map") { els.propertyMapWrap.hidden = false; renderPropertyMap(); }
   else if (propMode === "settings") renderREsettings();
   else if (propMode === "page") { els.propertyPage.hidden = false; renderPropertyPage(propSlug); }
+  else if (propMode === "underwriting") { els.propertyBoard.hidden = false; renderDealDiligence(els.propertyBoard, propDealSlug, {onBack:()=>{location.hash="#/properties/deal/"+encodeURIComponent(propDealSlug);}}); }
   else if (propMode === "deal") { els.propertyBoard.hidden = false; renderDealPage(propDealSlug); }
   else if (propMode === "contract") { els.propertyBoard.hidden = false; renderContractPage(propSlug); }
   else if (propMode === "contract-new") { els.propertyBoard.hidden = false; renderContractForm(); }

@@ -236,7 +236,7 @@ function ViewDashboard({ data, me, go, openItem }) {
       <Section title="DEALS" count={(d.deals || []).length}>
         {(d.deals || []).map((x) => (
           <div className="ooda-row cols-deal" key={x.slug}>
-            <span>{x.name}</span>
+            <a href={"#/deal/"+encodeURIComponent(x.slug)+"/underwriting"}>{x.name} →</a>
             <span className="ooda-sub">{statusLabel(x.status)}</span>
             <span className="r">{x.members} propert{x.members === 1 ? "y" : "ies"}</span>
             <span className="r">{money(x.committed)}</span>

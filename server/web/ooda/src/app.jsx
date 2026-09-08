@@ -15,7 +15,7 @@
 // is the right place to notice. One cache-busted reload, then stop and let the
 // boundary explain rather than loop.
 (function healStaleShell() {
-  if (window.CHAT_ACTIONS) return;
+  if (window.CHAT_ACTIONS && typeof renderDealDiligence === "function") return;
   const u = new URL(window.location.href);
   if (u.searchParams.get("stale") === "1") return;
   u.searchParams.set("stale", "1");
@@ -64,6 +64,8 @@ const OODA_VIEWS = ["dashboard", "portfolio", "map", "work", "feed", "archive", 
 // slashes (aion-bl/x), so everything past the prefix is the id.
 function parseOodaHash() {
   const h = (window.location.hash || "").replace(/^#\/?/, "");
+  const deal=/^deal\/([^/]+)(?:\/underwriting)?$/.exec(h);
+  if(deal){let slug=deal[1];try{slug=decodeURIComponent(slug);}catch(e){}return {view:'underwriting',item:null,deal:slug};}
   const m = /^item\/(.+)$/.exec(h);
   if (m) {
     let id = m[1];
@@ -77,10 +79,11 @@ function App() {
   const [route] = React.useState(parseOodaHash);   // read once, at mount
   const [view, setView] = React.useState(route.view);
   const [openItem, setOpenItem] = React.useState(route.item);
+  const [openDeal,setOpenDeal]=React.useState(route.deal);
   const [data, reload] = useOodaData();
 
   React.useEffect(() => {
-    const navigate = () => { const next = parseOodaHash(); setView(next.view); setOpenItem(next.item); };
+    const navigate = () => { const next = parseOodaHash(); setView(next.view); setOpenItem(next.item); setOpenDeal(next.deal); };
     window.addEventListener("hashchange", navigate);
     return () => window.removeEventListener("hashchange", navigate);
   }, []);
@@ -95,6 +98,7 @@ function App() {
   let body;
   if (data.loading) body = <Empty>loading the portfolio…</Empty>;
   else if (data.error) body = <div role="alert" className="ooda-broken">Could not load this view. <button className="ooda-send" onClick={reload}>Retry</button></div>;
+  else if (view === "underwriting") body = <ViewUnderwriting slug={openDeal} />;
   else if (view === "dashboard") body = <ViewDashboard data={data} me={data.me} go={go} openItem={openWorkItem} />;
   else if (view === "portfolio") body = <ViewPortfolio data={data} />;
   else if (view === "map") body = <ViewMap />;
@@ -104,8 +108,8 @@ function App() {
   else body = <ViewChat data={data} />;
 
   return (
-    <Shell view={view} setView={go} me={data.me} sync={data.sync}>
-      <ViewBoundary viewKey={view}>{body}</ViewBoundary>
+    <Shell view={view==="underwriting"?"portfolio":view} setView={go} me={data.me} sync={data.sync}>
+      <ViewBoundary viewKey={view+":"+(openDeal||"")}>{body}</ViewBoundary>
     </Shell>
   );
 }

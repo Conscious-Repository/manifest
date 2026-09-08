@@ -134,6 +134,7 @@ function PropertyDetail({ slug, onClose, proposals }) {
         {[orDash(p.entity), statusLabel(p.status), orDash(p.kind), p.deal ? "deal: " + p.deal : null]
           .filter(Boolean).join(" · ")}
       </div>
+      {p.deal && <p><a href={"#/deal/"+encodeURIComponent(p.deal)+"/underwriting"}>Deal underwriting →</a></p>}
       <div className="ooda-money">
         <span><em>PLAN</em><b>{money(f.plan)}</b></span>
         <span><em>CONTRACTED</em><b>{money(f.committed)}</b></span>

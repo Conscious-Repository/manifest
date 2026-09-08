@@ -2027,8 +2027,8 @@ async function renderDealPage(slug) {
   const open = el("button", "pp3-note", "open note →");
   open.onclick = () => { location.hash = "#/note/" + encodeURIComponent(deal.path); };
   head.append(open);
-  const lender = el("button", "pp3-note", "Lender view →");
-  lender.onclick = () => renderDealDiligence(host, slug);
+  const lender = el("button", "pp3-note", "Deal underwriting →");
+  lender.onclick = () => { location.hash = "#/properties/deal/" + encodeURIComponent(slug) + "/underwriting"; };
   head.append(lender);
   host.append(head);
 
