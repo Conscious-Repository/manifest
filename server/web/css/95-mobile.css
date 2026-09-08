@@ -650,3 +650,23 @@
   .rec-linkish, .rec-rail-options summary { min-height: var(--touch-sm); }
   .rec-rail-options summary { align-content: center; }
 }
+
+@media (max-width: 860px) {
+  .re-property-switch { flex-wrap: wrap; gap: var(--sp-2); }
+  .re-property-switch select { width: 100%; min-height: var(--touch); }
+  .re-property-switch label { flex-basis: 100%; }
+  .pf-edit { min-height: var(--touch-sm); }
+}
+
+@media (max-width: 860px) {
+  .property-page .pp3-head { flex-wrap: wrap; }
+  .property-page .pp3-title { flex: 1 0 100%; }
+  .property-page .go-rock-line, .property-page .go-stage-line, .property-page .go-stage { flex-wrap: wrap; }
+  .property-page .go-task { flex-wrap: wrap; padding-left: var(--sp-7); gap: var(--sp-2) var(--sp-4); }
+  .property-page .go-task.deep { padding-left: var(--sp-9); }
+  .property-page .go-task-text { flex: 1 1 calc(100% - 52px); overflow-wrap: anywhere; }
+  .property-page .go-stage-owner { max-width: 100%; white-space: normal; }
+  .property-page .re-node-contract { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .re-unitmix-rows { max-width: 100%; overflow-x: auto; padding-bottom: var(--sp-4); }
+  .re-unitmix-cols, .re-unitmix-row { min-width: 552px; }
+}

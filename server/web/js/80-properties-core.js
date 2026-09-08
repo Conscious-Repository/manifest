@@ -56,6 +56,36 @@ function renderReToggle() {
     b.classList.toggle("on", b.dataset.mode === active));
 }
 
+// Property destinations are links everywhere, including inside selectable rows.
+function rePropertyLink(slug, label, cls = "") {
+  const link = el("a", "re-property-link " + cls, label);
+  link.href = "#/properties/" + encodeURIComponent(slug);
+  link.onclick = (event) => event.stopPropagation();
+  return link;
+}
+
+function renderRePropertySwitch() {
+  let host = document.getElementById("rePropertySwitch");
+  if (!host) {
+    host = el("div", "re-property-switch"); host.id = "rePropertySwitch";
+    els.propertiesView.querySelector(".agent-head").after(host);
+  }
+  host.innerHTML = "";
+  const label = el("label", "micro-label", "Property"); label.htmlFor = "rePropertySelect";
+  const select = el("select", "pp-in"); select.id = "rePropertySelect";
+  select.setAttribute("aria-label", "Open a property");
+  const placeholder = el("option", "", "Open a property…"); placeholder.value = ""; select.append(placeholder);
+  propertyCache.filter((p) => !p.hidden).slice().sort((a,b) =>
+    (a.short || a.address || a.slug).localeCompare(b.short || b.address || b.slug, undefined, {numeric:true})
+  ).forEach((p) => {
+    const option = el("option", "", (p.short || p.address || p.slug) + (p.entity ? " · " + p.entity : ""));
+    option.value = p.slug; select.append(option);
+  });
+  select.value = propMode === "page" ? propSlug : "";
+  select.onchange = () => { if (select.value) location.hash = "#/properties/" + encodeURIComponent(select.value); };
+  host.append(label, select);
+}
+
 // renderRePublishRail — mirror renderAionRail: the deals.json PUBLISH badge in
 // the page header actions (next to the tabs), plus the header's status meta.
 function renderRePublishRail() {
@@ -103,6 +133,7 @@ async function loadPropTodosMeta() {
 async function renderProperties() {
   await Promise.all([loadProperties(), loadPropTodosMeta(), loadReBacklog()]);
   renderReToggle();
+  renderRePropertySwitch();
   renderRePublishRail();
   // the WORK rail counts WORK — open tasks + open decisions, the same
   // derivation the BACKLOG page renders from (reOpenCount in 85-re-domain.js)

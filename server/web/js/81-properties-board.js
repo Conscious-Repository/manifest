@@ -177,6 +177,7 @@ function renderPortfolio() {
     // inspector — the fundraising contract: select a row, edits save as you go
     const selected = all.find((p) => p.slug === pfSel);
     inspector.innerHTML = "";
+    inspector.hidden = !selected;
     if (window.mf && window.mf.phone()) {
       if (selected) {
         window.mfSheet.open((body) => renderPortfolioInspector(body, selected, paint), {
@@ -201,7 +202,7 @@ function pfRow(p, paint) {
   const row = el("div", "fr-row pf4-grid" + (pfSel === p.slug ? " sel" : ""));
   // PROPERTY: address over entity · status
   const c1 = el("span", "fr-stack");
-  c1.append(el("span", "pf4-addr", p.short || p.address || p.slug));
+  c1.append(rePropertyLink(p.slug, p.short || p.address || p.slug, "pf4-addr"));
   c1.append(el("span", "fr-sub",
     (p.entity || "—") + " · " + ((p.status || "").replace(/_/g, " ") || "—")));
   row.append(c1);
@@ -221,10 +222,13 @@ function pfRow(p, paint) {
   c4.append(el("span", "pf4-num pf-spent" + (f.plan > 0 && f.paid > f.plan ? " over" : ""),
     f.paid ? fmtMoneyShort(f.paid) : "—"));
   c4.append(el("span", "fr-sub", f.plan ? "of " + fmtMoneyShort(f.plan) : "no plan"));
+  const edit = el("button", "rec-linkish pf-edit", "Edit details");
+  edit.setAttribute("aria-label", "Edit details for " + (p.short || p.address || p.slug));
+  edit.onclick = (event) => { event.stopPropagation(); pfSel = pfSel === p.slug ? null : p.slug; paint(); };
+  c4.append(edit);
   row.append(c4);
   row.onclick = () => {
-    pfSel = pfSel === p.slug ? null : p.slug;
-    paint();
+    location.hash = "#/properties/" + encodeURIComponent(p.slug);
   };
   return row;
 }
@@ -276,8 +280,9 @@ function renderPortfolioInspector(host, p, paint) {
   entSel.className = "pp-in fr-in";
   const eopt = (v, l, on) => { const o = document.createElement("option"); o.value = v; o.textContent = l; if (on) o.selected = true; entSel.append(o); };
   eopt("", "—", !p.entity);
+  if (p.entity) eopt(p.entity, p.entity, true);
   ensureEntities().then((es) => {
-    (es.entities || []).forEach((x) => eopt(x.name, x.name, x.name === p.entity));
+    (es.entities || []).filter((x) => x.name !== p.entity).forEach((x) => eopt(x.name, x.name, false));
   });
   entSel.onchange = () => pfPatch(p, "entity", entSel.value);
   field("entity", entSel);
@@ -385,8 +390,7 @@ function renderREPropertyRocks(host) {
     const wrap = el("div", "re-rock re-proprock");
     const line = el("div", "re-rock-line");
     line.append(el("span", "re-rock-dot"));
-    const name = el("span", "re-rock-name", p.short || p.address || p.slug);
-    name.onclick = () => { location.hash = "#/properties/" + encodeURIComponent(p.slug); };
+    const name = rePropertyLink(p.slug, p.short || p.address || p.slug, "re-rock-name");
     line.append(name);
     const openN = openTodoCount(p);
     if (openN) line.append(el("span", "aion-sec-count", openN + " open"));

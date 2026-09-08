@@ -437,12 +437,15 @@ async function mountParcelThumb(slot, features) {
   slot.replaceWith(box);
   if (_thumbMap) { try { _thumbMap.remove(); } catch (e) {} _thumbMap = null; }
   const map = L.map(box, {
-    zoomControl: false, attributionControl: false, dragging: false,
+    zoomControl: false, attributionControl: true, dragging: false,
     scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false,
     keyboard: false, touchZoom: false,
   });
   _thumbMap = map;
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(map);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
   const layer = L.geoJSON({ type: "FeatureCollection", features }, {
     style: { color: "#265ACC", weight: 2, fillColor: "#265ACC", fillOpacity: 0.2 },
   }).addTo(map);

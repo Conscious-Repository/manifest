@@ -269,11 +269,14 @@ function rePropDecRow(d) {
   row.append(el("span", "aion-dec-glyph", "◇"));
   const main = el("div", "aion-main");
   main.append(el("div", "aion-dec-text", n.text));
-  const bits = [rePropLabel(d.property)];
+  const bits = [];
   if (d.rock && d.rock.text) bits.push(d.rock.text);
   if (n.owner) bits.push("@" + String(assigneeName(n.owner)).replace(/\s*\(.*\)$/, ""));
   if (decided && n.resolution) bits.push("→ " + n.resolution);
-  main.append(el("div", "aion-item-meta", bits.join(" · ")));
+  const meta = el("div", "aion-item-meta");
+  meta.append(rePropertyLink(d.property.slug, rePropLabel(d.property)));
+  if (bits.length) meta.append(document.createTextNode(" · " + bits.join(" · ")));
+  main.append(meta);
   row.append(main);
   row.append(el("span", "aion-status " + (decided ? "closed" : "open"), decided ? "DECIDED" : "OPEN"));
   row.onclick = () => reBacklogSelect("propdec", n.id);
@@ -320,7 +323,9 @@ function reBacklogTaskRow(it) {
   main.append(el("div", "aion-item-meta", bits.join(" · ")));
   row.append(main);
   const stale = it.rock && !reRockResolved(it.rock);
-  const tag = el("span", "aion-rock-tag" + (stale ? " stale" : ""), it.rock ? reRockLabel(it.rock) : "");
+  const property = it.rock ? rePropBySlug(it.rock.replace(/^property\//, "")) : null;
+  const tag = property ? rePropertyLink(property.slug, rePropLabel(property), "aion-rock-tag") :
+    el("span", "aion-rock-tag" + (stale ? " stale" : ""), it.rock ? reRockLabel(it.rock) : "");
   if (stale) tag.title = "closed/historic rock — reattach to a live rock";
   row.append(tag);
   row.onclick = () => reBacklogSelect("re", it.id);
@@ -341,7 +346,7 @@ function rePropTodoRow(t) {
   main.append(el("div", "aion-title", t.text));
   main.append(el("div", "aion-item-meta", "property task"));
   row.append(main);
-  row.append(el("span", "aion-rock-tag", t.container ? (t.container.name || t.container.slug || "") : ""));
+  if (t.container && t.container.slug) row.append(rePropertyLink(t.container.slug, t.container.name || t.container.slug, "aion-rock-tag"));
   row.onclick = () => reBacklogSelect("prop", t.id);
   return row;
 }
