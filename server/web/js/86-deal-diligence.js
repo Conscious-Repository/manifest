@@ -27,7 +27,58 @@ function diligenceOperating(p, source, assumptions, configuration = {}) {
   const reserve=Number.isFinite(configuration.replacementReservePerUnitYear)&&configuration.replacementReservePerUnitYear>=0?configuration.replacementReservePerUnitYear*units:null;
   return {...u,units,reserve,ncf:reserve===null?null:u.noi-reserve};
 }
+// Deterministic new-facility bridge. Actual ledger rows are comparison evidence,
+// never treated as proof of loan disbursement. Each property has its own reserve.
+function diligenceCarry(p, budget, v, dates, months) {
+ const required=['construction_ltc','construction_rate','reserve_months','term_months','lease_up_days','vacancy_rate','opex_rate','reserve_years_one_three','reserve_years_four_six','reserve_years_seven_eight','reserve_years_nine_plus','refinance_rate','refinance_years','refinance_ltv','exit_cap_rate','carry_per_unit_month','reimburse_prior_costs','minimum_dscr'];
+ const missing=required.filter(k=>!Number.isFinite(v[k]));
+ for(const k of ['financing_start','completion_target'])if(!dates[k])missing.push(k);
+ if(!Number.isInteger(months)||months<1)missing.push('refinance timing');
+ if(missing.length)return {missing};
+ const day=86400000,start=Date.parse(dates.financing_start+'T00:00:00Z'),finish=Date.parse(dates.completion_target+'T00:00:00Z');
+ const endDate=new Date(start);const targetDay=endDate.getUTCDate();endDate.setUTCDate(1);endDate.setUTCMonth(endDate.getUTCMonth()+months);const last=new Date(Date.UTC(endDate.getUTCFullYear(),endDate.getUTCMonth()+1,0)).getUTCDate();endDate.setUTCDate(Math.min(targetDay,last));const end=+endDate;
+ if(!Number.isFinite(start)||!Number.isFinite(finish)||finish<=start||months>v.term_months||end<=finish)return {missing:['Loan closing must precede completion; refinance must follow completion and fall within the loan term.']};
+ const units=p.unitMix?.length||0,rent=(p.unitMix||[]).reduce((n,u)=>n+u.rent,0),cost=budget.acquisition+budget.hardCostsIncludingContingency+budget.softCosts;
+ if(!units||!Number.isFinite(rent)||!Number.isFinite(cost))return {missing:['Unit rents and development budget']};
+ const expenses=(p.ledger||[]).filter(r=>r.type==='expense');
+ const prior=expenses.filter(r=>r.date<dates.financing_start).reduce((n,r)=>n+r.amount,0);
+ if(prior<0||prior>cost)return {missing:['Recorded pre-closing costs exceed the development budget; reconcile eligibility and budget first.']};
+ const cents=n=>Math.round(n*100)/100,baseLimit=cents(cost*v.construction_ltc),reserveLimit=cents(baseLimit*v.construction_rate*v.reserve_months/12);
+ const openingReimbursement=cents(prior*v.construction_ltc*v.reimburse_prior_costs);
+ let principal=openingReimbursement,reserveUsed=0,spent=0,baseDrawn=openingReimbursement,interestTotal=0,cash=0,equity=prior-openingReimbursement,depleted=null;
+ const rows=new Map();
+ for(let at=start;at<end;at+=day){
+  const date=new Date(at),key=date.toISOString().slice(0,7),daysInYear=(Date.UTC(date.getUTCFullYear()+1,0,1)-Date.UTC(date.getUTCFullYear(),0,1))/day;
+  if(!rows.has(key))rows.set(key,{month:key,cost:0,draw:0,equity:0,rent:0,opex:0,replacement:0,interest:0,reserveDraw:0,balance:0,reserveRemaining:0,cash:0,actual:expenses.filter(r=>r.date?.startsWith(key)).reduce((n,r)=>n+r.amount,0)});
+  const row=rows.get(key);
+  let spend=0,draw=0;
+  if(at<finish){spend=at+day>=finish?cents(cost-prior-spent):cents((cost-prior)/((finish-start)/day));spent=cents(spent+spend);draw=Math.min(cents(spend*v.construction_ltc),cents(baseLimit-baseDrawn));if(at+day>=finish)draw=cents((cost-prior)*v.construction_ltc)-(baseDrawn-openingReimbursement);baseDrawn=cents(baseDrawn+draw);principal+=draw;}
+  const occupancy=at<finish?0:v.lease_up_days===0?1:Math.min(1,Math.max(0,((at-finish)/day+.5)/v.lease_up_days));
+  const income=rent*12*(1-v.vacancy_rate)*occupancy/daysInYear;
+  const operating=Math.max(v.carry_per_unit_month*units*12,rent*12*(1-v.vacancy_rate)*v.opex_rate*occupancy)/daysInYear;
+  const age=(at-finish)/day/365.25;const reserveRate=v[age<3?'reserve_years_one_three':age<6?'reserve_years_four_six':age<8?'reserve_years_seven_eight':'reserve_years_nine_plus'];
+  const replacement=at>=finish?units*reserveRate/daysInYear:0;
+  const interest=principal*v.construction_rate/365;interestTotal+=interest;
+  cash+=income-operating-replacement;
+  let contribution=spend-draw;
+  if(cash<0){contribution-=cash;cash=0;}
+  const paidInterest=Math.min(cash,interest);cash-=paidInterest;
+  const reserveDraw=Math.min(Math.max(0,reserveLimit-reserveUsed),interest-paidInterest);reserveUsed+=reserveDraw;principal+=reserveDraw;
+  const uncovered=Math.max(0,interest-paidInterest-reserveDraw);contribution+=uncovered;if(uncovered>.005&&!depleted)depleted=date.toISOString().slice(0,10);
+  equity+=contribution;
+  for(const [k,n] of Object.entries({cost:spend,draw,equity:contribution,rent:income,opex:operating,replacement,interest,reserveDraw}))row[k]+=n;
+  Object.assign(row,{balance:principal,reserveRemaining:Math.max(0,reserveLimit-reserveUsed),cash});
+ }
+ const stabilized=rent*12*(1-v.vacancy_rate),noi=stabilized-Math.max(v.carry_per_unit_month*units*12,stabilized*v.opex_rate),age=(end-finish)/day/365.25;
+ const rr=v[age<3?'reserve_years_one_three':age<6?'reserve_years_four_six':age<8?'reserve_years_seven_eight':'reserve_years_nine_plus'],ncf=noi-units*rr;
+ const rate=v.refinance_rate/12,n=v.refinance_years*12,factor=rate?rate/(1-Math.pow(1+rate,-n))*12:12/n;
+ const value=noi/v.exit_cap_rate,capacity=Math.max(0,Math.min(value*v.refinance_ltv,ncf/v.minimum_dscr/factor));
+ const fees=Number.isFinite(v.refinance_costs)?v.refinance_costs:null;
+ return {rows:[...rows.values()],prior,openingReimbursement,openingEquity:prior-openingReimbursement,equity,interest:interestTotal,reserveLimit,reserveUsed,depleted,balance:principal,cash,value,capacity,fees,gap:Math.max(0,principal+(fees??0)-capacity),netGap:Math.max(0,principal+(fees??0)-capacity-cash),end:new Date(end).toISOString().slice(0,10),leaseUpComplete:end>=finish+v.lease_up_days*day};
+}
+
 const diligencePackageFields=[
+ ['carry_per_unit_month','Minimum monthly carrying cost / residence','$',0,100000],['reimburse_prior_costs','Reimburse eligible pre-closing costs: 0 = no, 1 = pro rata','flag',0,1],['refinance_months_base','Base refinance timing from loan closing','months',1,120],['refinance_months_delay','Delayed refinance timing from loan closing','months',1,120],['minimum_dscr','Minimum refinance NCF coverage','ratio',1,5],['refinance_costs','Refinance fees / property','$',0,10000000],
  ['lease_up_days','Lease-up duration','days',0,3650],
  ['vacancy_rate','Vacancy / credit loss','%',0,99],['opex_rate','Operating expense allowance','%',0,99],['reserve_years_one_three','Reserve / unit / year · years 1–3','$',0,100000],['reserve_years_four_six','Reserve / unit / year · years 4–6','$',0,100000],['reserve_years_seven_eight','Reserve / unit / year · years 7–8','$',0,100000],['reserve_years_nine_plus','Reserve / unit / year · years 9+','$',0,100000],
  ['rent_growth','Annual rent growth','%',-99,100],['opex_growth','Annual expense growth','%',-99,100],['hold_years','Hold period / projection years','years',1,50],['selling_cost_pct','Selling costs','%',0,100],['exit_cap_rate','Valuation / exit cap rate','%',.1,100],
@@ -159,6 +210,7 @@ async function drawDealUnderwriting(host, slug, options) {
     ['Capital reserves · per residence / year',['reserve_years_one_three','reserve_years_four_six','reserve_years_seven_eight','reserve_years_nine_plus']],
     ['Hold & disposition',['hold_years','selling_cost_pct','exit_cap_rate']],
     ['Construction financing',['construction_ltc','construction_rate','term_months','reserve_months','closing_costs']],
+    ['Cash-flow bridge',['carry_per_unit_month','reimburse_prior_costs','refinance_months_base','refinance_months_delay','minimum_dscr','refinance_costs']],
     ['Refinance',['refinance_rate','refinance_years','refinance_ltv']]
   ];
   const assumptionGrid=el('div','diligence-assumption-groups');assumptionDetails.append(assumptionGrid);
@@ -176,7 +228,7 @@ async function drawDealUnderwriting(host, slug, options) {
     const edit=detail(assumptionsSection,'Edit this lender ask');
     paragraph(edit,'Saved values apply only to this deal package. Blank fields remain unestablished. Existing deal values are starting inputs; review before saving.');
     const form=el('form','diligence-assumptions-form'),nameLabel=el('label','','Ask name'),name=el('input');name.type='text';name.required=true;name.maxLength=120;name.value=saved?.name||data.deal.name;nameLabel.append(name);form.append(nameLabel);
-    const dateControls={};[['construction_start','Construction start'],['completion_target','Completion target']].forEach(([key,label])=>{const l=el('label','',label),i=el('input');i.type='date';i.value=saved?.dates?.[key]||'';l.append(i);form.append(l);dateControls[key]=i;});
+    const dateControls={};[['construction_start','Construction start'],['completion_target','Completion target'],['financing_start','Construction-loan closing (scenario)']].forEach(([key,label])=>{const l=el('label','',label),i=el('input');i.type='date';i.value=saved?.dates?.[key]||'';l.append(i);form.append(l);dateControls[key]=i;});
     const controls={};
     diligencePackageFields.forEach(([key,label,unit,min,max])=>{const l=el('label','',label+' ('+unit+')'),input=el('input');input.type='number';input.min=min;input.max=max;input.step=unit==='years'||unit==='months'||unit==='days'?'1':'any';input.value=v[key]===null?'':String(unit==='%'?Number((v[key]*100).toFixed(6)):v[key]);l.append(input,el('small','',inputs[key].origin));form.append(l);controls[key]=input;});
     const status=el('p');status.setAttribute('role','status');
@@ -251,6 +303,19 @@ async function drawDealUnderwriting(host, slug, options) {
     table(schedule,['Month','Planned hard + soft costs','Recorded non-acquisition expenses'],spending.map(r=>{const entries=expenseRows.filter(e=>e.date?.startsWith(r.month)&&(e.category||e.cat)!=='acquisition');return [r.month,money(r.amount),entries.length?exactMoney(entries.reduce((n,e)=>n+e.amount,0)):'No entries'];}));
     paragraph(schedule,'Cost-weighted phase durations distribute the confirmed hard/soft budget across the construction period. This produces a constant daily spending illustration. It excludes acquisition, financing costs and retainage; it is not an approved draw schedule or actual funding history.','re-foot-note');
   }
+  const bridge=detail(planning,'Monthly funding & refinance scenarios');
+  paragraph(bridge,'Draft new-loan illustration, calculated separately for each property. Actual expenses remain separate from modeled draws. Configure the bridge in Financials → Edit this lender ask.','re-foot-note');
+  const conventions=detail(bridge,'Calculation conventions & limitations');
+  paragraph(conventions,'Conventions: recorded expenses before closing are assumed eligible; optional reimbursement uses the loan-to-cost ratio. Remaining development costs are spread evenly from closing to completion and funded pro rata. Rent ramps linearly over lease-up, with vacancy applied once. Operating costs are the greater of the entered minimum carry or the expense allowance on collected rent. Replacement reserves start at completion. Retained rental cash pays interest before the financed reserve; exhausted reserves require equity. Interest uses actual/365 on drawn principal, including previously financed interest. No rent growth, cash distributions, existing debt, or other payoff obligations are assumed in this new-facility scenario.','re-foot-note');
+  for(const [label,months] of [['Base',v.refinance_months_base],['Delayed',v.refinance_months_delay]]){
+    const results=members.map(p=>{const b=baseline.find(r=>r.slug===p.slug);return {p,result:b?diligenceCarry(p,b,v,timeline,months):{missing:['Development budget']}};});
+    const missing=[...new Set(results.flatMap(x=>x.result.missing||[]))];
+    if(missing.length){paragraph(bridge,label+' scenario pending: '+missing.map(k=>diligencePackageFields.find(f=>f[0]===k)?.[1]||k.replaceAll('_',' ')).join('; ')+'.','re-foot-note');continue;}
+    bridge.append(el('h4','',label+' · '+months+' months after loan closing'));
+    table(bridge,['Property','Total modeled equity²','Interest accrued','Reserve used / available','Modeled payoff','Refinance capacity','Cash needed at refinance¹'],results.map(({p,result:r})=>[p.short,money(r.equity),money(r.interest),money(r.reserveUsed)+' / '+money(r.reserveLimit),money(r.balance),money(r.capacity),money(r.netGap)]));
+    results.forEach(({p,result:r})=>{const d=detail(bridge,p.short+' · '+label.toLowerCase()+' monthly schedule');paragraph(d,'Opening eligible costs '+money(r.prior)+'; reimbursement '+money(r.openingReimbursement)+'; prior equity retained '+money(r.openingEquity)+'. Refinance '+r.end+'. '+(r.depleted?'Reserve insufficient beginning '+r.depleted+'. ':'')+(!r.leaseUpComplete?'Refinance precedes modeled lease-up completion; stabilized capacity is conditional. ':''),'re-foot-note');table(d,['Month','Planned costs','Base loan draws','Additional equity','Collected rent','Operating costs','Replacement reserves','Interest','Reserve draw','Loan balance','Reserve remaining','Retained cash','Recorded expenses²'],r.rows.map(m=>[m.month,...['cost','draw','equity','rent','opex','replacement','interest','reserveDraw','balance','reserveRemaining','cash','actual'].map(k=>money(m[k]))]));});
+  }
+  paragraph(bridge,'¹ Capacity is limited by both LTV and NCF coverage, using stabilized income. Cash needed deducts modeled retained cash. '+(v.refinance_costs===null?'Refinance fees are unquantified and excluded. ':'Entered refinance fees are applied per property. ')+'Additional construction closing costs and existing debt payoffs are excluded. ² Modeled equity includes eligible pre-closing costs less reimbursement, subsequent cost contributions and operating/interest deficits; it is not proof of contributed capital. Recorded expenses are a comparison column, not additional modeled costs or verified loan draws. This is a fixed loan-closing scenario; new pre-closing expenses update its opening costs, later expenses update the comparison only.','re-foot-note');
   const allocation=detail(planning,'Phase allocation and budget check');
   table(allocation,['Property','Current phase estimates','Confirmed hard + soft budget','Difference'],members.map(p=>{const r=baseline.find(b=>b.slug===p.slug),amount=(p.work||[]).reduce((n,w)=>n+diligencePhaseCost(w),0),target=r?r.hardCostsIncludingContingency+r.softCosts:null;return [p.short,money(amount),money(target),target===null?'—':money(amount-target)];}));
   paragraph(planning,'Forecast costs require phase amounts and durations. Lender advances also require funding history, eligible-cost rules, inspection evidence and any agreed retainage.','re-foot-note');

@@ -112,3 +112,24 @@ test('section navigation supports keyboard, full reading, and refresh retention'
  panels.activate('documents');assert.deepEqual(visible(),['documents']);
  panels=c.diligenceNavigation(el('div'),el,state);assert.deepEqual(visible(),['documents']);
 });
+
+test('carry bridge balances costs, debt and equity without treating actuals as draws',()=>{
+ const v={construction_ltc:.7,construction_rate:.0625,reserve_months:12,term_months:36,lease_up_days:45,vacancy_rate:.08,opex_rate:.35,reserve_years_one_three:250,reserve_years_four_six:500,reserve_years_seven_eight:750,reserve_years_nine_plus:1000,refinance_rate:.07,refinance_years:25,refinance_ltv:.75,exit_cap_rate:.085,carry_per_unit_month:100,reimburse_prior_costs:1,minimum_dscr:1.25};
+ const p={unitMix:[{rent:1750},{rent:1750},{rent:1200}],ledger:[{type:'expense',date:'2026-07-01',amount:30000},{type:'expense',date:'2026-09-01',amount:5000}]};
+ const budget={acquisition:30000,hardCostsIncludingContingency:255000,softCosts:15000};
+ const dates={financing_start:'2026-08-01',completion_target:'2027-03-01'};
+ const r=c.diligenceCarry(p,budget,v,dates,18);assert.ok(!r.missing);
+ const sum=k=>r.rows.reduce((n,m)=>n+m[k],0);
+ assert.ok(Math.abs(sum('cost')+r.prior-300000)<.01);
+ assert.ok(Math.abs(sum('draw')+r.openingReimbursement-210000)<.01);
+ assert.ok(Math.abs(sum('draw')+r.openingReimbursement+r.reserveUsed-r.balance)<.01);
+ assert.ok(Math.abs(r.openingEquity+sum('equity')+sum('draw')+r.openingReimbursement+r.reserveUsed+sum('rent')-300000-sum('opex')-sum('replacement')-sum('interest')-r.cash)<.01);
+ assert.ok(r.reserveUsed<=r.reserveLimit);assert.equal(r.end,'2028-02-01');assert.equal(r.fees,null);
+ const extra=c.diligenceCarry({...p,ledger:[...p.ledger,{type:'expense',date:'2026-09-02',amount:5000}]},budget,v,dates,18);
+ assert.equal(extra.balance,r.balance);assert.equal(extra.rows[1].actual,r.rows[1].actual+5000);
+ const delay=c.diligenceCarry(p,budget,v,dates,24);assert.ok(delay.interest>r.interest);
+ const noReimburse=c.diligenceCarry(p,budget,{...v,reimburse_prior_costs:0},dates,18);assert.equal(noReimburse.openingReimbursement,0);assert.ok(noReimburse.balance<r.balance);
+ const noRent=c.diligenceCarry({...p,unitMix:[{rent:0},{rent:0},{rent:0}]},budget,{...v,reserve_months:1},dates,24);assert.ok(noRent.depleted);assert.ok(noRent.equity>r.equity);assert.ok(noRent.reserveUsed<=noRent.reserveLimit+.001);
+ assert.ok(c.diligenceCarry(p,budget,{...v,carry_per_unit_month:null},dates,18).missing.includes('carry_per_unit_month'));
+ assert.ok(c.diligenceCarry(p,budget,v,dates,40).missing);
+});

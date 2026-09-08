@@ -209,6 +209,7 @@ func (s *Server) handleDealPackageAssumptions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	ranges := map[string][2]float64{
+		"carry_per_unit_month": {0, 100000}, "reimburse_prior_costs": {0, 1}, "refinance_months_base": {1, 120}, "refinance_months_delay": {1, 120}, "minimum_dscr": {1, 5}, "refinance_costs": {0, 10000000},
 		"lease_up_days":           {0, 3650},
 		"reserve_years_one_three": {0, 100000}, "reserve_years_four_six": {0, 100000}, "reserve_years_seven_eight": {0, 100000}, "reserve_years_nine_plus": {0, 100000},
 		"vacancy_rate": {0, .99}, "opex_rate": {0, .99}, "exit_cap_rate": {.001, 1},
@@ -223,7 +224,7 @@ func (s *Server) handleDealPackageAssumptions(w http.ResponseWriter, r *http.Req
 			http.Error(w, "Invalid assumption: "+k, 400)
 			return
 		}
-		if v != nil && (k == "lease_up_days" || k == "hold_years" || k == "term_months" || k == "reserve_months" || k == "refinance_years") && *v != float64(int(*v)) {
+		if v != nil && (k == "reimburse_prior_costs" || k == "refinance_months_base" || k == "refinance_months_delay" || k == "lease_up_days" || k == "hold_years" || k == "term_months" || k == "reserve_months" || k == "refinance_years") && *v != float64(int(*v)) {
 			http.Error(w, "Whole number required: "+k, 400)
 			return
 		}
@@ -233,7 +234,7 @@ func (s *Server) handleDealPackageAssumptions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	for key, value := range input.Dates {
-		if key != "construction_start" && key != "completion_target" {
+		if key != "construction_start" && key != "completion_target" && key != "financing_start" {
 			http.Error(w, "Invalid date key", 400)
 			return
 		}
