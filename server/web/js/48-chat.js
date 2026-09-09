@@ -320,7 +320,7 @@ async function loadChatRoster() {
 
 // Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
-  const agents = chatRoster.map(a => a.name);
+  const agents = chatRoster.filter(a => !chatIsTerm(a.name)).map(a => a.name);
   await Promise.all(["", ...agents].map(async agent => {
     try {
       const res = await fetch(chatBaseFor(agent));
@@ -348,7 +348,7 @@ function renderChatHeadActions() {
   if (!host || host.dataset.built) return;
   host.dataset.built = "1";
   const add = el("button", "sprt-ghost", "＋ new");
-  add.title = "new conversation in the open section";
+  add.title = "Start a conversation with an agent";
   add.textContent = "New chat";
   add.onclick = () => {
     const existing = host.querySelector(".chat-new-picker");
@@ -356,7 +356,7 @@ function renderChatHeadActions() {
     const picker = document.createElement("select");
     picker.className = "chat-new-picker"; picker.setAttribute("aria-label", "Choose an agent for a new chat");
     const prompt = el("option", "", "Choose an agent…"); prompt.value = "pick"; picker.append(prompt);
-    [...chatRoster.map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
+    [...chatRoster.filter(a => !chatIsTerm(a.name)).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
       const option = el("option", "", label); option.value = value; picker.append(option);
     });
     picker.onchange = () => { if (picker.value === "pick") return; location.hash = picker.value ? "#/chat/a/" + encodeURIComponent(picker.value) + "/new" : "#/chat/new"; picker.remove(); };
@@ -372,7 +372,7 @@ let chatSearchQuery = "";
 let chatInboxFilter = "all";
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
-  chatRoster.forEach(agent => (chatAgentSessions[agent.name] || []).forEach(session => entries.push({agent: agent.name, session})));
+  chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).forEach(session => entries.push({agent: agent.name, session})));
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
   return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter)
@@ -411,7 +411,7 @@ function renderChatRail() {
     search.oninput = () => { chatSearchQuery = search.value; renderChatInboxRows(); };
     const select = document.createElement("select");
     select.className = "chat-inbox-filter"; select.setAttribute("aria-label", "Filter chats by agent");
-    [["all", "All chats"], ...chatRoster.map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
+    [["all", "All chats"], ...chatRoster.filter(a => !chatIsTerm(a.name)).map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
       const option = el("option", "", label); option.value = value; select.append(option);
     });
     select.value = chatInboxFilter;
