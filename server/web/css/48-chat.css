@@ -29,7 +29,7 @@
 .chat-transcript { flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-7) var(--sp-1); min-height: 0; overscroll-behavior: contain; }
 /* thread head — the .sprt-head anatomy (title · sub · meta · actions); the
    title is user prose, so it keeps the sans face over .sprt-title's mono */
-.chat-head { border-bottom: 1px solid var(--line); margin-bottom: var(--sp-7); padding-top: var(--sp-1); position: sticky; top: 0; z-index: 3; background: var(--bg); padding: var(--sp-6) var(--sp-3); align-items: center; }
+.chat-head { border-bottom: 1px solid var(--line); margin-bottom: 0; padding-top: var(--sp-1); position: relative; z-index: 3; background: var(--bg); padding: var(--sp-6) var(--sp-3); align-items: center; }
 .chat-head-title { font-family: var(--sans); font-size: var(--fs-xl); font-weight: 600; text-transform: none; letter-spacing: 0; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chat-head .inline-rename { font-size: var(--fs-md); font-weight: 600; }
 .chat-head-meta { font-variant-numeric: tabular-nums; font-size: var(--fs-xs); }
@@ -341,4 +341,22 @@
   .chat-shell.mf-chat-nav-open #chatRail { max-height: none; flex: 1; }
   .chat-shell.mf-chat-nav-open .chat-inbox-rows { flex: 1; }
   .chat-head { top: 0; }
+}
+
+/* Header is outside the scrolling transcript, including CLI and task chats. */
+.chat-thread-header { flex: none; min-width: 0; background: var(--bg); }
+.chat-thread-header .chat-head { margin: 0; padding: var(--sp-6); display: flex; flex-wrap: wrap; gap: var(--sp-4) var(--sp-6); }
+.chat-thread-header .chat-head-title { flex: 1 1 45%; white-space: normal; overflow-wrap: anywhere; max-height: 3.2em; overflow-y: auto; }
+.chat-thread-header .chat-head-sub { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.chat-thread-header .chat-details[open] { max-height: 30vh; overflow: auto; overflow-wrap: anywhere; }
+.chat-main.term #chatTranscript { padding-top: var(--sp-5); border-radius: 0; }
+.chat-main.term .chat-term-strip { flex: none; max-height: 34%; overflow: auto; padding: var(--sp-4) var(--sp-6); }
+.chat-term-strip .chat-term-key { min-width: 40px; min-height: 40px; }
+.chat-term-strip .chat-term-screen { overscroll-behavior: contain; }
+@media (max-width: 860px) {
+  .chat-thread-header .chat-head-title { flex-basis: 100%; font-size: var(--fs-lg); }
+  .chat-term-strip-head .chat-landing-hint { display: none; }
+  .chat-main.term .chat-term-strip { max-height: 30%; }
+  .chat-term-keys { flex-wrap: nowrap; overflow-x: auto; }
+  .chat-term-key { flex: none; }
 }

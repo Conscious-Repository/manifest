@@ -89,7 +89,32 @@ function chatRouteSegments(h) {
   return raw.split("/").map((s) => { try { return decodeURIComponent(s); } catch (e) { return s; } });
 }
 
+// Headers occupy their own flex row; output never scrolls behind them.
+function chatMountHeader(head) {
+  const transcript = document.getElementById("chatTranscript");
+  if (!transcript) return;
+  let slot = document.getElementById("chatThreadHeader");
+  if (!slot) { slot = el("div", "chat-thread-header"); slot.id = "chatThreadHeader"; transcript.before(slot); }
+  if (head && !head.querySelector(".chat-latest")) {
+    const latest = el("button", "sprt-quiet chat-latest", "Latest ↓");
+    latest.title = "Return to the latest output";
+    latest.onclick = () => { chatStick = true; chatPin(); };
+    head.append(latest);
+  }
+  slot.replaceChildren(...(head ? [head] : []));
+  slot.hidden = !head;
+}
+const chatDrafts = new Map();
+let chatDraftKey = "";
+function chatSaveDraft() {
+  const input = document.querySelector("#chatComposer textarea");
+  if (chatDraftKey && input) chatDrafts.set(chatDraftKey, {text: input.value, files: chatPendingFiles.slice()});
+}
 function showChat(h) {
+  chatSaveDraft();
+  chatDraftKey = "";
+  chatPendingFiles = [];
+  chatMountHeader(null);
   const routeVersion = ++chatRouteVersion;
   if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
   const seg = chatRouteSegments(h);
@@ -242,7 +267,7 @@ async function renderTaskChat(taskID, refetch) {
   back.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(taskID); };
   acts.append(back);
   head.append(acts);
-  host.append(head);
+  chatMountHeader(head);
   (d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
   if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
   if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
@@ -1076,8 +1101,8 @@ function chatHead(s) {
 // chatRepaintHead swaps the open head in place (after a rename) — the
 // transcript and its scroll position stay.
 function chatRepaintHead() {
-  const cur = document.querySelector("#chatTranscript .chat-head");
-  if (cur && chatCurSession && !chatHeadRenaming(cur)) cur.replaceWith(chatHead(chatCurSession));
+  const cur = document.querySelector("#chatThreadHeader .chat-head");
+  if (cur && chatCurSession && !chatHeadRenaming(cur)) chatMountHeader(chatHead(chatCurSession));
 }
 
 // chatHeadRenaming — the head's title is mid-rename (the inline input has
@@ -1183,7 +1208,7 @@ function renderChatTranscript(d) {
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
   const portal = chatIsPortal();
-  host.append(chatHead(s));
+  chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
   chatPaintTurns(host, parseChatTurns(d.body || ""), chatAgent ? { who, operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
@@ -1232,6 +1257,7 @@ function chatMentionOptions(prefix) {
 function renderChatComposer(session) {
   const host = document.getElementById("chatComposer");
   if (!host) return;
+  const draftKey = (chatAgent || "spirits") + "/" + (chatOpenId || "new");
   const syncAttach = () => {
     const btn = host.querySelector(".chat-attach");
     if (btn) btn.hidden = !chatAgent || chatIsTerm(); // a tmux takes keys, not files
@@ -1282,12 +1308,17 @@ function renderChatComposer(session) {
   const ta = document.createElement("textarea");
   ta.className = "chat-input";
   ta.rows = 1;
+  chatDraftKey = draftKey;
+  const draft = chatDrafts.get(draftKey);
+  ta.value = draft ? draft.text : "";
+  chatPendingFiles = draft ? draft.files.slice() : [];
   ta.placeholder = placeholder();
   ta.setAttribute("aria-label", "Message");
   // auto-grow with content (target feel): reset then snap to scrollHeight,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
   const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + "px"; };
   ta.addEventListener("input", grow);
+  ta.addEventListener("input", chatSaveDraft);
   // @-mention typeahead (portal sections): the word at the caret starting
   // with @ opens the list; click/Tab/Enter inserts, Escape closes.
   const mention = el("div", "chat-mention");
@@ -1366,6 +1397,7 @@ function renderChatComposer(session) {
     if (!text && !files.length) return;
     if (send.disabled || chatSending) return;
     chatSending = true;
+    chatDrafts.delete(draftKey);
     send.disabled = true;
     ta.value = "";
     grow();
@@ -1376,7 +1408,10 @@ function renderChatComposer(session) {
     if (chatIsTerm()) {
       // claude/codex: tmux send-keys (relaunching a dead session first); a
       // landing send creates the registry row, then delivers
-      try { if (!await chatTermSend(text)) { ta.value = text; grow(); } }
+      try { if (!await chatTermSend(text)) {
+        chatDrafts.set(draftKey, {text, files});
+        if (chatDraftKey === draftKey) { ta.value = text; grow(); }
+      } }
       finally { chatSending = false; renderChatComposer(chatCurSession); }
       return;
     }
@@ -1402,7 +1437,11 @@ function renderChatComposer(session) {
       }
       loadChatSession(chatOpenId);
       loadChatSessions().then(renderChatRail);
-    } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
+    } catch (e) {
+      showToast("Send failed — " + (e.message || "error"));
+      chatDrafts.set(draftKey, {text, files});
+      if (chatDraftKey === draftKey) { ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
+    }
     finally { chatSending = false; renderChatComposer(chatCurSession); }
   };
   ta.addEventListener("keydown", (e) => {
@@ -1416,6 +1455,7 @@ function renderChatComposer(session) {
   });
   send.onclick = submit;
   host.append(chips, mention, ta, fi, attach, ritual, send);
+  grow();
   syncAttach();
 }
 
@@ -1734,7 +1774,7 @@ async function chatTermEnd(se) {
 function chatTermOpenInTerminal(se) {
   try { localStorage.setItem("manifest.termStage", "term"); } catch (e) {}
   if (typeof termOpenId !== "undefined") termOpenId = se.id;
-  location.hash = "#/terminal";
+  location.hash = "#/terminal/" + encodeURIComponent(se.id);
 }
 
 // ---- the open thread ----
@@ -1835,10 +1875,13 @@ function chatTermHead(o) {
   const sub = [chatTermKinds[se.kind], se.cwd || "~"];
   sub.push(se.backend === "herdr" ? "agent " + terminalStateLabel(se) : (o.live ? "process running" : (se.resumeId || se.started ? "resumable" : "not started")));
   head.append(terminalStateDot(se));
-  head.append(el("span", "sprt-sub chat-head-sub", sub.join(" · ")));
+  const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
+  status.title = sub.join(" · ");
+  head.append(status);
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
-  head.append(el("span", "sprt-head-meta chat-head-meta", meta.join(" · ")));
+  const details = el("details", "chat-details");
+  details.append(el("summary", "", "Details"), el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
   const acts = el("span", "chat-head-acts");
   const ren = el("button", "sprt-quiet", "✎");
   ren.title = "rename";
@@ -1847,16 +1890,17 @@ function chatTermHead(o) {
   const raw = el("button", "sprt-quiet", "open in terminal ↗");
   raw.title = "the raw pane (xterm) in the Terminal tab";
   raw.onclick = () => chatTermOpenInTerminal(se);
-  acts.append(raw);
+  head.append(raw);
   const kill = chatTermEndIsKill(se);
   if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
-  head.append(acts);
+  details.append(acts);
+  head.append(details);
   return head;
 }
 
 function chatTermRepaintHead() {
-  const cur = document.querySelector("#chatTranscript .chat-head");
-  if (cur && chatTermOpen && !chatHeadRenaming(cur)) cur.replaceWith(chatTermHead(chatTermOpen));
+  const cur = document.querySelector("#chatThreadHeader .chat-head");
+  if (cur && chatTermOpen && !chatHeadRenaming(cur)) chatMountHeader(chatTermHead(chatTermOpen));
 }
 
 function renderChatTermTranscript() {
@@ -1865,7 +1909,7 @@ function renderChatTermTranscript() {
   if (!host || !o) return;
   bindChatScroll();
   host.innerHTML = "";
-  host.append(chatTermHead(o));
+  chatMountHeader(chatTermHead(o));
   const body = el("div", "chat-term-turns");
   body.id = "chatTermTurns";
   host.append(body);
@@ -1975,7 +2019,7 @@ function chatTermBlockEl(b) {
 // Mounted once between the transcript and the composer (so it stays in view
 // while the transcript scrolls); shown only while the tmux is live. This is
 // how a permission prompt or a menu becomes visible and answerable.
-const chatTermQuickKeys = ["y", "n", "enter", "esc", "ctrl-c", "↑", "↓"];
+const chatTermQuickKeys = ["enter", "esc", "tab", "shift-tab", "↑", "↓", "←", "→", "ctrl-c"];
 
 function chatTermStripEl() {
   let strip = document.getElementById("chatTermStrip");
@@ -1987,8 +2031,8 @@ function chatTermStripEl() {
   strip.id = "chatTermStrip";
   strip.hidden = true;
   const head = el("div", "chat-term-strip-head");
-  head.append(el("span", "micro-label", "screen"));
-  head.append(el("span", "chat-landing-hint", "the pane's last lines — prompts and menus answer with the keys"));
+  head.append(el("span", "micro-label", "Live terminal"));
+  head.append(el("span", "chat-landing-hint", "Use the keys to respond to the prompt shown below"));
   const screen = el("pre", "chat-term-screen");
   const keys = el("div", "chat-term-keys");
   chatTermQuickKeys.forEach((label) => {
@@ -2013,8 +2057,10 @@ function chatTermPaintStrip() {
   if (!o || !o.live) { strip.hidden = true; return; }
   strip.hidden = false;
   const screen = strip.querySelector(".chat-term-screen");
+  const follow = screen.scrollHeight - screen.clientHeight - screen.scrollTop < 24;
+  const previous = screen.scrollTop;
   screen.textContent = o.screen.length ? o.screen.join("\n") : "…";
-  screen.scrollTop = screen.scrollHeight;
+  screen.scrollTop = follow ? screen.scrollHeight : previous;
 }
 
 async function chatTermScreenFetch() {

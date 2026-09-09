@@ -384,7 +384,7 @@ function route() {
     location.hash = "#/terminal";
     return;
   }
-  const terminalTab = h === "#/terminal";
+  const terminalTab = h === "#/terminal" || h.startsWith("#/terminal/");
   if (h === "#/agents/approvals") { location.hash = "#/feed"; return; } // approvals live in FEED now
   if (h === "#/agents/settings" || h.startsWith("#/agents/settings/")) { location.hash = "#/settings/agents"; return; } // the chip is gone (Phase 6) — the app-wide tab is the home
   const sp = h === "#/agents" || h.startsWith("#/agents/");

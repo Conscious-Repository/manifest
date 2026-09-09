@@ -20,13 +20,18 @@ const TERM_STAGES = [
   { stage: "activity", glyph: "∿", label: "activity" },
 ];
 function showTerminal() {
+  if (location.hash.startsWith("#/terminal/")) {
+    try { termOpenId = decodeURIComponent(location.hash.slice("#/terminal/".length)); termStage = "term"; } catch (e) {}
+  }
   try { termStage = localStorage.getItem("manifest.termStage") || termStage; } catch (e) {}
   if (!TERM_STAGES.some((s) => s.stage === termStage)) termStage = "term";
+  if (location.hash.startsWith("#/terminal/")) termStage = "term";
   renderTermTabbar(); termApplyStage(); termFitShell();
   if (typeof ensureTerminalEvents === "function") ensureTerminalEvents();
   if (!termListenersReady) {
     termListenersReady = true;
     window.addEventListener("resize", termFitShell);
+    window.visualViewport?.addEventListener("resize", termFitShell);
     window.addEventListener("manifest-terminal-state", () => {
       if (els.terminalView && !els.terminalView.hidden && !document.hidden) loadTermSessions(true);
     });
@@ -36,10 +41,45 @@ function showTerminal() {
   }
   loadTermSessions();
 }
+function termRenderControls() {
+  const pane = document.getElementById("termStageTerm");
+  if (!pane) return;
+  let toolbar = document.getElementById("termControls");
+  if (!toolbar) {
+    toolbar = el("div", "term-controls"); toolbar.id = "termControls";
+    const sessions = document.createElement("select"); sessions.id = "termSessionSelect";
+    sessions.setAttribute("aria-label", "Switch running session");
+    sessions.onchange = () => { termOpenId = sessions.value; attachTerm(termOpenId); renderTermSessions(true); history.replaceState(null, "", "#/terminal/" + encodeURIComponent(termOpenId)); };
+    const launcher = el("button", "term-key", "New / sessions");
+    launcher.onclick = () => { document.querySelector(".term-shell").classList.toggle("term-nav-open"); termFitShell(); };
+    const keyboard = el("button", "term-key", "Keyboard");
+    keyboard.onclick = () => { if (termInst) termInst.term.focus(); };
+    const latest = el("button", "term-key", "Latest ↓");
+    latest.onclick = () => { if (termInst) termInst.term.scrollToBottom(); };
+    const reconnect = el("button", "term-key", "Reconnect");
+    reconnect.onclick = async () => { detachTerm(); await loadTermSessions(); };
+    const separate = el("a", "term-key", "New tab ↗"); separate.id = "termSeparate"; separate.target = "_blank"; separate.rel = "noopener";
+    toolbar.append(sessions, launcher, keyboard, latest, reconnect, separate);
+    pane.prepend(toolbar);
+  }
+  const select = toolbar.querySelector("select");
+  select.replaceChildren();
+  if (!termSessions.length) select.append(el("option", "", "No running sessions"));
+  termSessions.forEach(session => { const option = el("option", "", session.name || session.kind); option.value = session.id; select.append(option); });
+  select.value = termOpenId;
+  const separate = document.getElementById("termSeparate");
+  separate.href = "#/terminal/" + encodeURIComponent(termOpenId);
+  separate.hidden = !termOpenId;
+}
 function termFitShell() {
   const shell = document.querySelector("#terminalView .term-shell");
   if (!shell || els.terminalView.hidden) return;
-  if (window.innerWidth <= 860) { shell.style.height = ""; return; }
+  if (window.innerWidth <= 860) {
+    const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    shell.style.height = Math.max(200, height - shell.getBoundingClientRect().top - 8) + "px";
+    if (termInst) { try { termInst.fit.fit(); sendTermResize(); } catch (e) {} }
+    return;
+  }
   shell.style.height = Math.max(320, window.innerHeight - shell.getBoundingClientRect().top - 14) + "px";
   if (termInst) { try { termInst.fit.fit(); sendTermResize(); } catch (e) {} }
 }
@@ -92,6 +132,7 @@ async function loadTermSessions(quiet) {
   }
 }
 function renderTermSessions(enabled) {
+  termRenderControls();
   const host = document.getElementById("termSessionRows"); if (!host) return;
   host.replaceChildren();
   const status = document.getElementById("termRuntimeStatus");
@@ -111,7 +152,10 @@ function termSessionRow(se) {
   if (se.keep) { const keep = el("span", "term-badge", "kept"); keep.title = "survives remote connection loss"; row.append(keep); }
   const end = armedDelete("✕", "end — sure?", () => termKill(se));
   end.className = "term-x"; end.title = "end this process"; row.append(end);
-  row.onclick = () => { termOpenId = se.id; termSetStage("term"); renderTermSessions(true); attachTerm(se.id); };
+  row.onclick = () => {
+    termOpenId = se.id; termSetStage("term"); renderTermSessions(true); attachTerm(se.id);
+    history.replaceState(null, "", "#/terminal/" + encodeURIComponent(se.id));
+  };
   if (row.onclick) {
     row.tabIndex = 0;
     row.setAttribute("role", "link");
@@ -246,6 +290,10 @@ function attachTerm(id) {
   if (typeof Terminal === "undefined") { showToast("terminal library not loaded"); return; }
   if (termInst && termInst.id === id && termInst.runtimeKey === runtimeKey && termInst.ws.readyState === 1) return;
   detachTerm();
+  const shell = document.querySelector(".term-shell");
+  if (shell) { shell.classList.add("term-session-active"); shell.classList.remove("term-nav-open"); }
+  termFitShell();
+  termRenderControls();
   const host = document.getElementById("termScreen");
   if (!host) return;
   host.innerHTML = "";
@@ -335,7 +383,7 @@ function attachTerm(id) {
     }
   }
   buildTermKeys();
-  term.focus();
+  if (window.innerWidth > 860) term.focus();
 }
 
 function sendTermResize() {
@@ -347,7 +395,7 @@ function sendTermResize() {
 // below and the chat surface's live-strip quick keys (48-chat.js, Stage S)
 // send the same codes, one definition.
 const TERM_KEY_CODES = {
-  esc: "\x1b", tab: "\t", enter: "\r", "ctrl-c": "\x03", "ctrl-d": "\x04",
+  esc: "\x1b", tab: "\t", enter: "\r", "ctrl-c": "\x03", "ctrl-d": "\x04", "shift-tab": "\x1b[Z",
   "↑": "\x1b[A", "↓": "\x1b[B", "←": "\x1b[D", "→": "\x1b[C",
 };
 
@@ -362,7 +410,7 @@ function buildTermKeys() {
     if (termInst && termInst.ws.readyState === 1) termInst.ws.send(JSON.stringify({ t: "i", d }));
   };
   const keys = [
-    ["esc", TERM_KEY_CODES.esc], ["tab", TERM_KEY_CODES.tab], ["ctrl-c", TERM_KEY_CODES["ctrl-c"]], ["ctrl-d", TERM_KEY_CODES["ctrl-d"]],
+    ["enter", TERM_KEY_CODES.enter], ["esc", TERM_KEY_CODES.esc], ["tab", TERM_KEY_CODES.tab], ["shift-tab", TERM_KEY_CODES["shift-tab"]], ["ctrl-c", TERM_KEY_CODES["ctrl-c"]], ["ctrl-d", TERM_KEY_CODES["ctrl-d"]],
     ["↑", TERM_KEY_CODES["↑"]], ["↓", TERM_KEY_CODES["↓"]], ["←", TERM_KEY_CODES["←"]], ["→", TERM_KEY_CODES["→"]],
     ["|", "|"], ["~", "~"], ["/", "/"],
   ];

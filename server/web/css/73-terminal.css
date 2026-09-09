@@ -84,3 +84,19 @@
   #termSessionRows .term-sess { max-width: min(80vw, 340px); min-height: 44px; }
 }
 @media (hover: none) { .term-x { opacity: 1; min-width: 32px; min-height: 32px; } }
+
+/* A persistent control row keeps the exact running session visible. */
+.term-controls { flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-3); padding-bottom: var(--sp-4); align-items: center; }
+.term-controls select { flex: 1 1 180px; min-width: 0; color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); font: inherit; padding: var(--sp-4); }
+.term-controls .term-key { text-decoration: none; }
+@media (max-width: 860px) {
+  .term-shell { min-height: 0; gap: var(--sp-4); }
+  .term-shell .term-rail { flex: none; max-height: 45%; overflow: auto; }
+  .term-shell.term-session-active:not(.term-nav-open) .term-rail { display: none; }
+  .term-shell .term-stage { flex: 1; min-height: 0; }
+  .term-shell .term-screen { height: auto; flex: 1; min-height: 80px; }
+  .term-controls select { font-size: var(--fs-xl); min-height: 44px; }
+  .term-controls .term-key, .term-keys .term-key { min-height: 40px; }
+  .term-keys { flex-wrap: nowrap; overflow-x: auto; }
+  .term-keys .term-key { flex: none; }
+}

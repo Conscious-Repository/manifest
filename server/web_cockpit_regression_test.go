@@ -86,3 +86,25 @@ chatInboxFilter='all';chatSearchQuery='missing';assert.equal(chatInboxEntries().
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
+
+func TestChatDraftsStayWithTheirConversation(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	script := `
+const assert=require('node:assert/strict');
+global.cmdRegistry={register(){}};global.window={addEventListener(){}};
+let input={value:'Draft for first session'};
+global.document={addEventListener(){},querySelector(){return input;},getElementById(){return null;}};
+` + readWebJS(t, "web/js/48-chat.js") + `
+chatDraftKey='codex/one';chatPendingFiles=[{hash:'first'}];chatSaveDraft();
+chatDraftKey='claude/two';input.value='Draft for second session';chatPendingFiles=[];chatSaveDraft();
+assert.equal(chatDrafts.get('codex/one').text,'Draft for first session');
+assert.equal(chatDrafts.get('claude/two').text,'Draft for second session');
+assert.equal(chatDrafts.get('codex/one').files[0].hash,'first');
+`
+	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
