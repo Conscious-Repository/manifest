@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"manifest/agentchat"
@@ -31,14 +32,25 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+	se, tr, ob, live := s.projectTerminalTranscript(r.Context(), se, after)
+	writeJSON(w, map[string]any{
+		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
+		"conversation": s.terminalConversation(se),
+		"origin":       se.Origin, "draft": se.isDraft(),
+		"related": s.terminalRelatedChats(se),
+		"live":    live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
+	})
+}
+
+func (s *Server) projectTerminalTranscript(ctx context.Context, se termSession, after int64) (termSession, termTranscript, terminalObservation, bool) {
 	live := false
 	ob := terminalUnknown(se.Runtime)
 	if se.backend() == "herdr" {
-		ob, _ = s.observeTerm(r.Context(), se)
+		ob, _ = s.observeTerm(ctx, se)
 		live = ob.Process == "running"
 		se = s.captureObservedTermIdentity(se, ob)
 		if se.Kind == "codex" && se.ResumeID == "" && live && s.terminal.herdr != nil {
-			if id, err := s.terminal.herdr.codexProcessRollout(r.Context(), se); err == nil && id != "" {
+			if id, err := s.terminal.herdr.codexProcessRollout(ctx, se); err == nil && id != "" {
 				se = s.captureTermResumeID(se, id)
 			}
 		}
@@ -52,13 +64,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 			tr = got
 		}
 	}
-	writeJSON(w, map[string]any{
-		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
-		"conversation": s.terminalConversation(se),
-		"origin":       se.Origin, "draft": se.isDraft(),
-		"related": s.terminalRelatedChats(se),
-		"live":    live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
-	})
+	return se, tr, ob, live
 }
 
 // termScreenLines is how many trailing screen lines the live strip shows.

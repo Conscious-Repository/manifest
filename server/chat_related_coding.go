@@ -26,6 +26,11 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		httpError(w, errBadRequest("invalid related coding chat request"))
 		return
 	}
+	if b.Mode != "" && (b.Mode != "continue" || origin.Backend != "") {
+		httpError(w, errBadRequest("coding continuation requires a private planning conversation"))
+		return
+	}
+	origin.Mode = b.Mode
 	raw, _ := json.Marshal(struct {
 		Agent, Title, Model, Cwd string
 		Origin                   agentchat.Origin
@@ -50,7 +55,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 		reply(found)
 		return
 	}
-	source, _, _, ok := s.agentChat.store.Get(origin.Agent, origin.ID)
+	source, sourceBody, _, ok := s.agentChat.store.Get(origin.Agent, origin.ID)
 	if origin.Backend == "terminal" {
 		ok = false
 		if parent, found := s.terminal.find(origin.ID); found && parent.Kind == origin.Agent && parent.Device == "" {
@@ -66,6 +71,9 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+	if origin.Mode == "continue" {
+		origin.Context, origin.HistoryOmitted = codingContinuationContext(source, sourceBody)
 	}
 	if origin.Task != "" && origin.Task != source.Task {
 		link := s.taskChatLink(origin.Task, s.listThread(origin.Task), "")

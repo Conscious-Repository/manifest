@@ -9,7 +9,7 @@ import (
 
 type relatedChatRequest struct {
 	Agent, Model, Title, RequestID, Prompt, Task string
-	Backend, Cwd                                 string
+	Backend, Cwd, Mode                           string
 	Artifacts                                    []agentchat.ArtifactReference
 }
 
@@ -35,7 +35,7 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		s.handleRelatedCodingChat(w, r, b, origin)
 		return
 	}
-	if b.Backend != "" {
+	if b.Backend != "" || b.Mode != "" {
 		httpError(w, errBadRequest("unsupported related chat backend"))
 		return
 	}
