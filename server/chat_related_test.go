@@ -94,6 +94,23 @@ func TestRelatedChatArtifactHandoffKeepsReviewedRevision(t *testing.T) {
 	if child.Origin == nil || len(child.Origin.Artifacts) != 1 || child.Origin.Artifacts[0].Revision != first.Head {
 		t.Fatal("lost reviewed context", child)
 	}
+	if err = st.SetTask("alfred", parent, "inbox/reassigned"); err != nil {
+		t.Fatal(err)
+	}
+	if err = st.Rename("alfred", outID, "Renamed after creation"); err != nil {
+		t.Fatal(err)
+	}
+	relatedPath := "/api/agents/chat/alfred/sessions/" + parent + "/related"
+	code, raw = agentChatJSON(t, s, "POST", relatedPath, payload)
+	if code != 200 || raw["id"] != outID {
+		t.Fatalf("accepted creation lost after source reassignment: %d %v", code, raw)
+	}
+	payload["requestId"] = "related-artifact-new"
+	code, _ = agentChatJSON(t, s, "POST", relatedPath, payload)
+	if code != 400 {
+		t.Fatalf("new unlinked handoff accepted: %d", code)
+	}
+	payload["requestId"] = "related-artifact-001"
 	code, raw = agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions/"+outID+"/messages", map[string]any{"text": child.Origin.Prompt, "requestId": "related-artifact-send", "task": task, "artifacts": child.Origin.Artifacts})
 	if code != 200 {
 		t.Fatalf("send: %d %v", code, raw)
@@ -106,5 +123,17 @@ func TestRelatedChatArtifactHandoffKeepsReviewedRevision(t *testing.T) {
 	after, remaining, _, _ := st.Get("alfred", parent)
 	if after.Turns != before.Turns || remaining != original {
 		t.Fatal("handoff changed source")
+	}
+	if err = st.Delete("alfred", parent); err != nil {
+		t.Fatal(err)
+	}
+	code, raw = agentChatJSON(t, s, "POST", relatedPath, payload)
+	if code != 200 || raw["id"] != outID {
+		t.Fatalf("accepted child lost after source deletion: %d %v", code, raw)
+	}
+	payload["prompt"] = "Different intent with the same request"
+	code, _ = agentChatJSON(t, s, "POST", relatedPath, payload)
+	if code != 409 {
+		t.Fatalf("changed intent retry accepted: %d", code)
 	}
 }

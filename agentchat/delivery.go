@@ -241,6 +241,35 @@ func (s *Store) CreateRelatedOnce(agent, profile, title, model, requestID string
 	}
 	return s.createOnce(agent, profile, title, model, requestID, &origin)
 }
+
+// RecoverRelatedCreation checks accepted intent without consulting today's
+// source links or runner configuration. It never creates or dispatches work.
+func (s *Store) RecoverRelatedCreation(agent, title, model, requestID string, origin Origin) (Session, bool, error) {
+	if !ValidAgent(agent) || !ValidRequestID(requestID) || !ValidAgent(origin.Agent) || !ValidID(origin.ID) {
+		return Session{}, false, errors.New("invalid related conversation request")
+	}
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
+	for _, sess := range s.List(agent) {
+		if sess.CreateRequest != requestID {
+			continue
+		}
+		if sess.CreateSignature != creationSignature(sess.Profile, title, model, &origin) {
+			return Session{}, true, ErrRequestConflict
+		}
+		return sess, true, nil
+	}
+	return Session{}, false, nil
+}
+
+func creationSignature(profile, title, model string, origin *Origin) string {
+	text := profile + "\x00" + title + "\x00" + model
+	if origin != nil {
+		text += "\x00" + originJSON(origin)
+	}
+	return fingerprint(text)
+}
+
 func (s *Store) createOnce(agent, profile, title, model, requestID string, origin *Origin) (string, error) {
 	if requestID == "" {
 		return s.create(agent, profile, title, model, "", "", origin)
@@ -250,11 +279,7 @@ func (s *Store) createOnce(agent, profile, title, model, requestID string, origi
 	}
 	s.createMu.Lock()
 	defer s.createMu.Unlock()
-	signatureText := profile + "\x00" + title + "\x00" + model
-	if origin != nil {
-		signatureText += "\x00" + originJSON(origin)
-	}
-	signature := fingerprint(signatureText)
+	signature := creationSignature(profile, title, model, origin)
 	for _, sess := range s.List(agent) {
 		if sess.CreateRequest == requestID {
 			if sess.CreateSignature != signature {

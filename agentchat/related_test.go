@@ -36,7 +36,17 @@ func TestRelatedCreationKeepsSourceAndRetryIdentity(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("source rewritten")
 	}
+	recovered, found, err := fresh.RecoverRelatedCreation("alfred", "Related", "", "related-request-001", origin)
+	if err != nil || !found || recovered.ID != id {
+		t.Fatal("could not recover accepted creation after reopening store", recovered, found, err)
+	}
+	if _, found, err = fresh.RecoverRelatedCreation("alfred", "Related", "", "not-yet-accepted", origin); err != nil || found {
+		t.Fatal("unaccepted request reported as recovered", found, err)
+	}
 	origin.Prompt = "Changed handoff"
+	if _, found, err = fresh.RecoverRelatedCreation("alfred", "Related", "", "related-request-001", origin); !found || !errors.Is(err, ErrRequestConflict) {
+		t.Fatal("changed retry was not a conflict", found, err)
+	}
 	if _, err = fresh.CreateRelatedOnce("alfred", "", "Related", "", "related-request-001", origin); !errors.Is(err, ErrRequestConflict) {
 		t.Fatal(err)
 	}

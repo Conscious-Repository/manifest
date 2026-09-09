@@ -13,11 +13,6 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	if !s.agentChatReady(w) {
 		return
 	}
-	source, _, _, ok := s.agentChat.store.Get(r.PathValue("agent"), r.PathValue("id"))
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
 	var b struct {
 		Agent, Model, Title, RequestID, Prompt, Task string
 		Artifacts                                    []agentchat.ArtifactReference
@@ -30,12 +25,31 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		httpError(w, errBadRequest("handoff is too long"))
 		return
 	}
+	task := strings.TrimSpace(b.Task)
+	origin := agentchat.Origin{Agent: r.PathValue("agent"), ID: r.PathValue("id"), Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts}
+	accepted, found, recoverErr := s.agentChat.store.RecoverRelatedCreation(b.Agent, b.Title, b.Model, b.RequestID, origin)
+	if recoverErr != nil {
+		if errors.Is(recoverErr, agentchat.ErrRequestConflict) {
+			http.Error(w, recoverErr.Error(), http.StatusConflict)
+		} else {
+			httpError(w, errBadRequest(recoverErr.Error()))
+		}
+		return
+	}
+	if found {
+		writeJSON(w, map[string]any{"id": accepted.ID, "agent": accepted.Agent, "conversation": sessionConversation(accepted)})
+		return
+	}
+	source, _, _, ok := s.agentChat.store.Get(origin.Agent, origin.ID)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 	profile, err := s.resolveAgentChat(r.Context(), b.Agent)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	task := strings.TrimSpace(b.Task)
 	if task != "" && task != source.Task {
 		link := s.taskChatLink(task, s.listThread(task), "")
 		if link == nil || link.Agent != source.Agent || link.ID != source.ID {
@@ -51,7 +65,6 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	origin := agentchat.Origin{Agent: source.Agent, ID: source.ID, Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts}
 	id, err := s.agentChat.store.CreateRelatedOnce(b.Agent, profile, b.Title, b.Model, b.RequestID, origin)
 	if errors.Is(err, agentchat.ErrRequestConflict) {
 		http.Error(w, err.Error(), http.StatusConflict)
