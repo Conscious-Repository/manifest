@@ -48,7 +48,9 @@ func (h *terminalEventHub) snapshotLocked() terminalEventSnapshot {
 	for _, se := range h.server.terminal.load() {
 		ob := terminalUnknown(se.Runtime)
 		ob.Identity.ManifestID = se.ID
-		if se.backend() == "herdr" && h.connected {
+		if se.isDraft() {
+			ob.AgentState, ob.Connectivity, ob.Process = "not-started", "not-started", "not-started"
+		} else if se.backend() == "herdr" && h.connected {
 			// Reachability is known even when this saved occupant is absent.
 			// Keep its process and agent state unknown rather than adopting another.
 			ob.Connectivity = "connected"

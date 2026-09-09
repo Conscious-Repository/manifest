@@ -166,6 +166,9 @@ func (s *Server) runtimeFor(se termSession) (terminalRuntime, error) {
 	}
 }
 func (s *Server) observeTerm(ctx context.Context, se termSession) (terminalObservation, error) {
+	if se.isDraft() {
+		return terminalObservation{Identity: se.Runtime, AgentState: "not-started", Connectivity: "not-started", Process: "not-started", ObservedAt: time.Now().UTC()}, nil
+	}
 	id := se.Runtime
 	if se.backend() == "tmux" {
 		id.Backend = "tmux"
@@ -268,6 +271,10 @@ func (s *Server) ensureHerdrInput(ctx context.Context, se termSession) (termSess
 	return s.ensureHerdrInputLocked(ctx, current)
 }
 func (s *Server) ensureHerdrInputLocked(ctx context.Context, se termSession) (termSession, bool, error) {
+	if se.isDraft() {
+		started, err := s.launchHerdrLocked(ctx, se)
+		return started, err == nil, err
+	}
 	// The shared ID lock in handleTermInput guards explicit stopped-session resume.
 	if se.LaunchPhase != "active" {
 		return se, false, fmt.Errorf("launch %s is unresolved; open the exact pane to inspect, no input sent", se.LaunchPhase)
@@ -292,6 +299,9 @@ func (s *Server) ensureHerdrInputLocked(ctx context.Context, se termSession) (te
 	return resumed, true, err
 }
 func (s *Server) closeTerm(ctx context.Context, se termSession) error {
+	if se.isDraft() {
+		return nil
+	}
 	if se.backend() == "tmux" {
 		err := s.terminal.tmux("kill-session", "-t", tmuxName(se.ID))
 		s.killRemoteKeep(se)

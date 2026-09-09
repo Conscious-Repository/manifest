@@ -1889,6 +1889,7 @@ function terminalEventsUnavailable() {
 }
 
 function terminalStateLabel(ob) {
+  if (ob?.process === "not-started") return "draft";
   if (!ob || ob.connectivity !== "connected") return "unavailable";
   if (ob.process === "stopped") return "stopped";
   return ["working", "blocked", "idle", "done"].includes(ob.agentState) ? ob.agentState : "unknown";
@@ -1905,6 +1906,7 @@ function terminalStateDot(ob) {
 function chatTermApplyState(se) {
   if (se.backend !== "herdr") return se;
   const ob = terminalStates.get(se.id);
+  if (!ob && se.process === "not-started") return se;
   return Object.assign({}, se, {
     live: !!(ob && ob.connectivity === "connected" && ob.process === "running"),
     agentState: ob ? ob.agentState : "unknown", connectivity: ob ? ob.connectivity : "unavailable",
@@ -2046,7 +2048,7 @@ function chatTermRename(nameEl, se) {
 
 // chatTermEnd — live: POST …/kill (the row survives, resumable); history:
 // DELETE (forget). Both reached through an armed ✕.
-function chatTermEndIsKill(se) { return se.backend === "herdr" ? se.process !== "stopped" : !!se.live; }
+function chatTermEndIsKill(se) { return se.backend === "herdr" ? !["stopped", "not-started"].includes(se.process) : !!se.live; }
 async function chatTermEnd(se) {
   const kill = chatTermEndIsKill(se);
   try {
@@ -2133,6 +2135,7 @@ function chatTermComposerSession() {
 // the prompt line's hint reads like a shell's, lowercase
 function chatTermPlaceholder() {
   if (chatTermSending) return "sending…";
+  if (chatTermOpen?.se.process === "not-started") return "enter starts this session and sends · shift+enter for a new line";
   if (!chatOpenId) return "enter starts a new " + chatTermKinds[chatAgent] + " session there and sends";
   if (chatTermOpen && chatTermOpen.se.backend === "herdr" && chatTermOpen.se.connectivity !== "connected") return "runtime unavailable · open in terminal to inspect";
   if (chatTermOpen && chatTermOpen.live) return "enter sends to the live session · shift+enter for a new line";
@@ -2514,8 +2517,8 @@ function chatTermPairResult(turns, b) {
 // ---- send ----
 
 // chatTermSend — POST …/input {text}. On the landing the registry row is
-// created first (kind + the folder typed there); the server relaunches a
-// dead tmux, waits for the CLI's prompt, then delivers. Returns false when
+// saved as a draft first (kind + the folder typed there); input starts the
+// draft or resumes an existing CLI, waits for its prompt, then delivers. Returns false when
 // the text should go back into the composer.
 async function chatTermSend(text) {
   if (!text) return true;
@@ -2524,9 +2527,10 @@ async function chatTermSend(text) {
   renderChatComposer(chatTermComposerSession());
   try {
     let id = chatOpenId, created = false;
+    const wasDraft = chatTermFind(id)?.launchPhase === "draft";
     if (!id) {
       const cwd = chatRecall("manifest.chatTermCwd." + chatAgent);
-      const se = await postJSONOk("/api/terminal/session", { kind: chatAgent, cwd });
+      const se = await postJSONOk("/api/terminal/session", { kind: chatAgent, cwd, draft: true });
       chatTermSessions.unshift(Object.assign({ live: false }, se));
       chatOpenId = id = se.id;
       chatLanding = false;
@@ -2538,7 +2542,7 @@ async function chatTermSend(text) {
     }
     const r = await postJSONOk(chatTermBase(id) + "/input", { text });
     // a virgin row's first send boots its tmux — that is a start, not a relaunch
-    if (r.relaunched && !created) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
+    if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
     if (chatTermOpen && chatTermOpen.id === id) {
       if (chatTermOpen.se.backend !== "herdr" && !chatTermOpen.live) { chatTermOpen.live = true; chatTermRepaintHead(); }

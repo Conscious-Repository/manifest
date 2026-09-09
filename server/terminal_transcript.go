@@ -472,6 +472,9 @@ func claudeProjectDir(cwd string) string {
 // transcriptPath resolves the session file for a registry row; "" when the
 // kind has no discoverable exact conversation identity.
 func (c *termCfg) transcriptPath(se termSession) string {
+	if se.isDraft() {
+		return ""
+	}
 	if se.Device != "" {
 		return ""
 	}

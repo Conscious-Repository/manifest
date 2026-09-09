@@ -69,6 +69,10 @@ func (s *Server) handleTermScreen(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if se.isDraft() {
+		writeJSON(w, map[string]any{"live": false, "lines": []string{}, "agentState": "not-started", "connectivity": "not-started", "process": "not-started"})
+		return
+	}
 	if se.backend() == "herdr" {
 		rt, err := s.runtimeFor(se)
 		if err != nil {
@@ -163,6 +167,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		se = current
+		if se.isDraft() && (b.Key != "" || strings.TrimSpace(b.Text) == "") {
+			http.Error(w, "send a message to start this draft; keys cannot start it", http.StatusConflict)
+			return
+		}
 		var relaunched bool
 		var err error
 		se, relaunched, err = s.ensureHerdrInputLocked(r.Context(), se)

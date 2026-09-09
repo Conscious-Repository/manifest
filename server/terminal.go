@@ -59,6 +59,14 @@ type termSession struct {
 	Keep bool `json:"keep,omitempty"`
 }
 
+// Only a persisted, never-allocated coding session is safe to launch on its
+// first message. Unresolved launch intents must never be mistaken for drafts.
+func (se termSession) isDraft() bool {
+	return se.Backend == "herdr" && se.LaunchPhase == "draft" &&
+		isCodingAgent(se.Kind) && se.Device == "" && se.BoardBrief == "" &&
+		!se.Started && !se.Resume && se.Runtime == (terminalIdentity{})
+}
+
 type termCfg struct {
 	eventMu       sync.Mutex
 	events        *terminalEventHub
@@ -406,6 +414,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		ResumePicker bool   `json:"resumePicker"`
 		Keep         bool   `json:"keep"`
 		Model        string `json:"model"`
+		Draft        bool   `json:"draft"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -414,6 +423,10 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	kind := b.Kind
 	if kind != "shell" && kind != "claude" && kind != "codex" {
 		httpError(w, errBadRequest("kind must be one of shell|claude|codex"))
+		return
+	}
+	if b.Draft && (!isCodingAgent(kind) || b.ResumePicker || b.Device != "" || b.Keep) {
+		httpError(w, errBadRequest("drafts require a new local coding session"))
 		return
 	}
 	device := strings.TrimSpace(b.Device)
@@ -454,7 +467,18 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	if isCodingAgent(kind) {
 		se.Model, _ = codingModel(kind, se.Model)
 	}
-	if device == "" {
+	if b.Draft {
+		cwd, err := resolveTerminalCwd(se.Cwd, s.terminal.defaultWd)
+		if err != nil {
+			http.Error(w, err.Error(), terminalLaunchStatus(err))
+			return
+		}
+		se.Cwd, se.Backend, se.LaunchPhase = cwd, "herdr", "draft"
+		if err := s.terminal.upsertChecked(se); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else if device == "" {
 		var err error
 		se, err = s.launchHerdr(r.Context(), se)
 		if err != nil {
@@ -1025,6 +1049,10 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cols, rows := clampDim(r.URL.Query().Get("c"), 120), clampDim(r.URL.Query().Get("r"), 32)
+	if se.isDraft() {
+		http.Error(w, "send the first message from chat to start this draft", http.StatusConflict)
+		return
+	}
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
