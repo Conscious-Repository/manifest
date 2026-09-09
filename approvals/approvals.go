@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"manifest/mdfm"
@@ -81,6 +82,7 @@ var vaultNoteRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} [^/\\]+\.md$`)
 // vaultRoot is where "create-vault-note" proposals write. "" disables the
 // respective applies.
 type Store struct {
+	decisionMu        sync.Mutex // serialize pending → decided within this owner process
 	operationDecision func(string, string) error
 	dir               string
 	root              string
@@ -381,6 +383,15 @@ func (s *Store) confirm(id string, e ConfirmEdits) error {
 		}
 		return s.Settle(id, "approved")
 	}
+	s.decisionMu.Lock()
+	defer s.decisionMu.Unlock()
+	// Another surface may have decided while we were waiting. Re-read before
+	// applying anything. Operation callbacks above own their durable decision
+	// lock and must never run while holding this file-store lock.
+	p, err = s.parse(src)
+	if err != nil {
+		return err
+	}
 	if e.EditAttendees && p.Type == TypeCreateVaultNote {
 		p.Proposed = replaceAttendeeLine(p.Proposed, e.Attendees)
 		p.Body = rebuildProposedBody(p.Body, p.Proposed)
@@ -673,6 +684,8 @@ func (s *Store) Reject(id, reason string) error {
 			return err
 		}
 	}
+	s.decisionMu.Lock()
+	defer s.decisionMu.Unlock()
 	return s.move(id, "rejected", reason)
 }
 
@@ -684,6 +697,8 @@ func (s *Store) Settle(id, status string) error {
 	if status != "approved" && status != "rejected" {
 		return fmt.Errorf("settle status must be approved or rejected, not %q", status)
 	}
+	s.decisionMu.Lock()
+	defer s.decisionMu.Unlock()
 	return s.move(id, status, "")
 }
 

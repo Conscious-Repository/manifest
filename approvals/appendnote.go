@@ -150,6 +150,7 @@ func AppendFinalPath(p Proposal) string {
 // re-mine the grown notes. Refusals are left pending — they surface as
 // ordinary human cards with a diff. Returns (applied, refused) counts.
 func (s *Store) AutoApplyAppends(notify func(paths []string)) (int, int) {
+	s.decisionMu.Lock()
 	applied, refused := 0, 0
 	var paths []string
 	for _, p := range s.List("pending") {
@@ -170,6 +171,7 @@ func (s *Store) AutoApplyAppends(notify func(paths []string)) (int, int) {
 		applied++
 		paths = append(paths, AppendFinalPath(p))
 	}
+	s.decisionMu.Unlock()
 	if len(paths) > 0 && notify != nil {
 		notify(paths)
 	}
