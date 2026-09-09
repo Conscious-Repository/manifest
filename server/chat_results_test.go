@@ -2,10 +2,82 @@ package server
 
 import (
 	"manifest/agentchat"
+	"manifest/artifacts"
 	"manifest/threads"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestCodingResultSnapshotPinsDiscussedBytes(t *testing.T) {
+	s := codingFixture(t)
+	chats := agentchat.New(filepath.Join(t.TempDir(), "chats"))
+	s.UseAgentChat(chats)
+	id, err := chats.Create("alfred", "", "Planning", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = chats.SetTask("alfred", id, "inbox/current"); err != nil {
+		t.Fatal(err)
+	}
+	pool, err := artifacts.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg, err := artifacts.NewRegistry(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.UseArtifactRegistry(reg)
+	h := s.findHarness("codex")
+	run := boardRunID()
+	write := func(body string) {
+		t.Helper()
+		if err := boardReport(h, run, "inbox/current", "go", "", "completed", body, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("Original deliverable")
+	sess, _, _, _ := chats.Get("alfred", id)
+	result := s.chatCodingResults(sess)[0]
+	endpoint := "/api/agents/chat/alfred/sessions/" + id + "/coding-result"
+	capture := func(hash string) (int, map[string]any) {
+		return agentChatJSON(t, s, "POST", endpoint, map[string]any{"agent": "codex", "run": run, "hash": hash})
+	}
+	code, ref := capture(result.Hash)
+	if code != 200 {
+		t.Fatal(code, ref)
+	}
+	refs := []artifactContextRef{{ID: ref["id"].(string), Revision: ref["revision"].(string)}}
+	text, err := s.taskArtifactContext("inbox/current", refs)
+	if err != nil || !strings.Contains(text, "Original deliverable") {
+		t.Fatal(text, err)
+	}
+	write("Revised deliverable")
+	if code, _ = capture(result.Hash); code != 409 {
+		t.Fatal("silently captured newer bytes", code)
+	}
+	newResult := s.chatCodingResults(sess)[0]
+	code, newRef := capture(newResult.Hash)
+	if code != 200 || newRef["revision"] == ref["revision"] {
+		t.Fatal(code, newRef)
+	}
+	text, err = s.taskArtifactContext("inbox/current", refs)
+	if err != nil || !strings.Contains(text, "Original deliverable") || strings.Contains(text, "Revised deliverable") {
+		t.Fatal("old context changed", text, err)
+	}
+	if err = chats.SetTask("alfred", id, "inbox/unrelated"); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ = capture(newResult.Hash); code != 404 {
+		t.Fatal("unrelated result accessible", code)
+	}
+	_, body, _, _ := chats.Get("alfred", id)
+	if strings.Contains(body, "deliverable") {
+		t.Fatal("snapshot wrote transcript")
+	}
+}
 
 func TestCodingResultsReturnOnlyToExplicitOrigin(t *testing.T) {
 	s := codingFixture(t)

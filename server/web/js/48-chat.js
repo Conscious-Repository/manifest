@@ -1390,6 +1390,7 @@ function chatPaintTurns(host, turns, ctx) {
 }
 
 function chatPaintCodingResults(host,results) {
+  const sourceAgent=chatAgent,sourceID=chatOpenId,route=chatRouteVersion;
   for(const result of results||[]) {
     const row=el("div","chat-turn chat-spirit");
     row.dataset.chatReadTurn="run:"+result.agent+":"+result.id;
@@ -1397,6 +1398,17 @@ function chatPaintCodingResults(host,results) {
     heading.append(el("span","chat-turn-author",chatAgentLabel(result.agent)+" · "+(result.outcome==="completed"?"Coding result":"Coding work needs attention")));
     const task=el("a","sprt-quiet",result.task);task.href=chatTaskThreadHash(result.task);heading.append(task);
     row.append(heading);
+    const open=el("button","sprt-quiet","Open result / discuss");
+    open.onclick=async()=>{
+      open.disabled=true;
+      try {
+        const ref=await postJSONOk(chatBaseFor(sourceAgent)+"/"+encodeURIComponent(sourceID)+"/coding-result",{agent:result.agent,run:result.id,hash:result.hash});
+        if(route!==chatRouteVersion || chatAgent!==sourceAgent || chatOpenId!==sourceID)return;
+        chatOpenWorkingArtifact({...ref,selectionKey:"chat:"+sourceAgent+"/"+sourceID});
+      }catch(e){showToast(e.message||"Could not open this result.");}
+      finally{open.disabled=false;}
+    };
+    row.append(open);
     try {row.append(renderMarkdown(result.body||"","",{readOnly:true}));}catch(e){row.append(el("pre","",result.body||""));}
     host.append(row);
   }

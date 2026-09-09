@@ -31,5 +31,19 @@ vm.runInContext(source.slice(source.indexOf('async function loadChatSession(id)'
  idle.codingResults=[{id:'run',agent:'codex',body:'Delivered',outcome:'completed'}];
  const resultSig=ctx.chatTranscriptSignature(idle);assert.notEqual(before,resultSig,'coding result must refresh idle planning chat');
  idle.codingResults[0].body='Corrected deliverable';assert.notEqual(resultSig,ctx.chatTranscriptSignature(idle));
+ // An opened coding result keeps the source and hash even if navigation occurs
+ // while the immutable snapshot is being retained.
+ const node=(tag,cls,text)=>({tag,cls,text,dataset:{},children:[],append(...items){this.children.push(...items);}});
+ let finishSnapshot,opened=0,captured;
+ Object.assign(ctx,{chatAgent:'alfred',chatOpenId:'source',chatRouteVersion:1,el:node,chatAgentLabel:x=>x,
+  chatTaskThreadHash:x=>'#/chat/task/'+x,chatBaseFor:x=>'/agents/'+x,
+  renderMarkdown:x=>node('markdown','',x),postJSONOk:async(url,payload)=>{captured={url,payload};return new Promise(r=>finishSnapshot=r);},
+  chatOpenWorkingArtifact:()=>opened++,showToast:message=>{throw Error(message);}});
+ vm.runInContext(source.slice(source.indexOf('function chatPaintCodingResults('),source.indexOf('function renderChatTranscript(')),ctx);
+ const host=node('div','','');ctx.chatPaintCodingResults(host,[{id:'run-1',agent:'codex',task:'task-1',hash:'original-hash',body:'Original'}]);
+ const button=host.children[0].children.find(x=>x.tag==='button');const opening=button.onclick();
+ assert.equal(captured.payload.hash,'original-hash');assert.equal(captured.url,'/agents/alfred/source/coding-result');
+ ctx.chatRouteVersion=2;ctx.chatOpenId='other';finishSnapshot({id:'artifact',revision:'original-hash',task:'task-1'});await opening;
+ assert.equal(opened,0,'snapshot completion opened in unrelated chat');
  console.log('Artifact handoff navigation race passed');
 })().catch(e=>{console.error(e);process.exitCode=1});
