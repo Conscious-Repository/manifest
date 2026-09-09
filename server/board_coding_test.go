@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -28,8 +29,19 @@ func codingFixture(t *testing.T) *Server {
 		t.Fatalf("git init: %v %s", err, out)
 	}
 	s.UseCodingRepo(repo)
-	// Exercise actual argv/session registration, but never launch an agent.
+	// Exercise the real socket adapter and persisted launch journal without an agent.
 	s.terminal.run = func(args ...string) ([]byte, error) { return nil, nil }
+	s.terminal.herdr = herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+		switch r.Method {
+		case "session.snapshot":
+			herdrFixtureSnapshot(c, "working", 1)
+		case "workspace.create":
+			herdrFixtureReply(c, map[string]any{"root_pane": herdrFixturePane("unknown", 1)})
+		default:
+			herdrFixtureReply(c, map[string]any{})
+		}
+	})
+	s.terminal.herdr.server = s
 	return s
 }
 
@@ -173,7 +185,7 @@ func TestCodingFailureAndBusy(t *testing.T) {
 	if err := boardReport(h, r.ID, task, "go", "", "running", "", time.Now().Add(-2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	s.terminal.run = func(args ...string) ([]byte, error) { return nil, errors.New("pane gone") }
+	codingFixtureStopped(t, s)
 	if d := s.delegationIndex()[task]; d.State != "failed" {
 		t.Fatalf("closed pane counted as completion %+v", d)
 	}
@@ -339,7 +351,7 @@ func TestCodingInterruptedWorkRecovery(t *testing.T) {
 					t.Fatal(err)
 				}
 			} else {
-				s.terminal.run = func(args ...string) ([]byte, error) { return nil, errors.New("pane gone") }
+				codingFixtureStopped(t, s)
 			}
 			if stopped == "invalid-result" {
 				if err := boardWrite(filepath.Join(dir, "result.json"), []byte(`{"status":"completed"}`)); err != nil {
@@ -395,4 +407,17 @@ func TestCodingRecoveryInspection(t *testing.T) {
 	if body := s.codingRecovery(t.TempDir(), ""); !strings.Contains(body, "Checkout inspection failed") {
 		t.Fatal(body)
 	}
+}
+
+// Confirm death through a successful inventory, never a socket/command error.
+func codingFixtureStopped(t *testing.T, s *Server) {
+	t.Helper()
+	// Keep the persisted generation: replace only the fixture snapshot response
+	// by a legacy backend inventory to exercise legacy confirmed-absence semantics.
+	for _, se := range s.terminal.load() {
+		se.Backend = "tmux"
+		se.Runtime = terminalIdentity{}
+		s.terminal.upsert(se)
+	}
+	s.terminal.run = func(args ...string) ([]byte, error) { return []byte(""), nil }
 }

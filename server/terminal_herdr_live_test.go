@@ -227,3 +227,62 @@ func TestHerdrLiveStateSubscription(t *testing.T) {
 		}
 	}
 }
+
+func TestHerdrLiveBoardJournalAndSocketOutage(t *testing.T) {
+	session := os.Getenv("MANIFEST_HERDR_TEST_SESSION")
+	if session == "" {
+		t.Skip("requires isolated live daemon and authenticated Codex")
+	}
+	if !strings.HasPrefix(session, "manifest-migration-") {
+		t.Fatal("socket outage test requires a manifest-migration-* scratch daemon")
+	}
+	cwd := os.Getenv("MANIFEST_HERDR_TEST_CWD")
+	home, _ := os.UserHomeDir()
+	host, _ := os.Hostname()
+	dir := t.TempDir()
+	s := &Server{terminal: &termCfg{defaultWd: cwd, regPath: filepath.Join(dir, "terminals.json")}}
+	h := &herdrTerminalRuntime{server: s, Host: host, Session: session, Socket: filepath.Join(home, ".config", "herdr", "sessions", session, "herdr.sock")}
+	s.terminal.herdr = h
+	brief := filepath.Join(dir, "work", "run-probe", "brief.md")
+	if err := boardWrite(brief, []byte("Runtime journal probe only: reply BOARD_JOURNAL_OK; do not change repository files or commit. No result file is requested.")); err != nil {
+		t.Fatal(err)
+	}
+	se, err := s.createBoardHerdrSession("codex", cwd, "migration-board-journal", brief, "gpt-6-astra")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.closeTerm(context.Background(), se)
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(brief), "session"))
+	if err != nil || string(raw) != se.ID || se.LaunchPhase != "active" {
+		t.Fatal("board journal incomplete")
+	}
+	moved := h.Socket + ".outage"
+	if err = os.Rename(h.Socket, moved); err != nil {
+		t.Fatal(err)
+	}
+	ob, inspectErr := s.observeTerm(context.Background(), se)
+	restoreErr := os.Rename(moved, h.Socket)
+	if restoreErr != nil {
+		t.Fatal(restoreErr)
+	}
+	if inspectErr == nil || ob.Process != "unknown" || ob.AgentState != "unknown" {
+		t.Fatal("socket outage classified process death")
+	}
+	ob, err = s.observeTerm(context.Background(), se)
+	if err != nil || ob.Process != "running" {
+		t.Fatalf("process did not survive API outage: %+v %v", ob, err)
+	}
+	t.Log("live process survived socket outage; unavailable observation remained unknown")
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(filepath.Join(filepath.Dir(brief), "exit")); err == nil {
+			if string(b) != "0" {
+				t.Fatalf("exit %s", b)
+			}
+			t.Log("board helper durable exit=0")
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatal("board helper did not exit")
+}

@@ -95,7 +95,7 @@ func TestTermCreateKind(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			cfg := &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json")}
 			srv := &Server{terminal: cfg}
-			if kind == "claude" || kind == "codex" {
+			if kind == "shell" || kind == "claude" || kind == "codex" {
 				mappingFixtureHerdr(t, srv)
 			}
 			body, err := json.Marshal(map[string]string{"kind": kind})

@@ -448,7 +448,7 @@ function commitRank(draggedId, targetId) {
 function delegationChip(d, asSpan, taskId) {
   const chip = el(asSpan ? "span" : "button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
   chip.style.cursor = "pointer";
-  if (typeof terminalRunBadge === "function") { const runtimeBadge = terminalRunBadge(d); if (runtimeBadge) chip.append(runtimeBadge); }
+  const runtimeBadge = typeof terminalRunBadge === "function" ? terminalRunBadge(d) : null;
   const hasResult = !!(d.artifactRef || d.artifactPath || d.runId);
   const planState = (d.state || "").startsWith("plan");
   chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"
@@ -463,6 +463,7 @@ function delegationChip(d, asSpan, taskId) {
     if (hasResult) { openResult(d); return; }
     location.hash = "#/agents";
   };
+  if (runtimeBadge) { const wrap = el("span", "delegation-runtime"); wrap.append(chip, runtimeBadge); return wrap; }
   return chip;
 }
 

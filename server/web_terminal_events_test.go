@@ -48,7 +48,9 @@ global.document = { hidden: false, querySelectorAll: () => badges, getElementByI
 global.els = { chatView: { hidden: false } };
 global.fmtWhen = value => value;
 global.cmdRegistry = {register(){}};
-global.el = (tag, cls, text) => ({ textContent: text || '', children: [], dataset: {}, classList: {add(){}}, setAttribute(){}, replaceChildren(...nodes){this.children=nodes;} });
+global.window = {dispatchEvent(){}};
+global.CustomEvent = class { constructor(name,init){this.type=name;this.detail=init.detail;} };
+global.el = (tag, cls, text) => ({ textContent: text || '', children: [], dataset: {}, classList: {add(){}}, setAttribute(){}, replaceChildren(...nodes){this.children=nodes;}, append(...nodes){this.children.push(...nodes);} });
 global.statusDot = (on, title) => Object.assign(el('span', '', ''), {on, title});
 global.fetch = async (url) => { if (url.includes('/transcript')) reads++; return { json: async () => ({ live: true, lines: [], turns: [], offset: 0 }) }; };
 ` + src + `
@@ -64,13 +66,15 @@ chatTermPaintTurns = () => {};
  const emit = (state, process='running', connected=true) => terminalEvents.listeners.state({data:JSON.stringify({connected,sessions:[{manifestId:'s',runId:'r',identity:{backend:'herdr',pane:'p',occupant:'t'},agentState:state,connectivity:'connected',process,observedAt:'2026-09-09T01:00:00Z'}]})});
  emit('working');
  assert.equal(chatTermSessions[0].agentState,'working'); assert.equal(chatTermSessions[0].live,true);
+ let openedPaneSession; chatTermOpenInTerminal = se => { openedPaneSession = se.id; };
  const badge = terminalRunBadge({harness:'codex',runId:'r'}); badges.push(badge);
+ badge.children[2].onclick({preventDefault(){},stopPropagation(){}}); assert.equal(openedPaneSession,'s');
  assert.equal(sourceCount,1); assert.equal(badge.children[1].textContent,'agent working');
  chatAgent='codex'; chatOpenId='s';
  const o = chatTermOpen = {id:'s',se:chatTermSessions[0],live:true,offset:0,turns:[],screen:[],screenSig:''};
  terminalEvents.onerror();
  assert.equal(chatTermSessions[0].agentState,'unknown'); assert.equal(o.live,false);
- assert.equal(badge.children[1].textContent,'agent unavailable');
+ assert.equal(badge.children[1].textContent,'agent unavailable'); assert.equal(badge.children.length,2,'unavailable pane must not offer attach');
  await new Promise(setImmediate);
  // A late pre-disconnect response cannot resurrect working/process liveness.
  await chatTermTail(o); await chatTermScreenFetch();

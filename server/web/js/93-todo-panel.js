@@ -536,7 +536,7 @@ function todoThreadEntry(c, taskID) {
   if (c.meta && c.meta.persona) head.append(el("span", "tdo-p-c-persona", c.meta.persona));
   // an entry copied in by "→ task" (§3.4f) says so
   if (c.meta && c.meta.from === "chat") { const f = el("span", "tdo-p-c-persona", "from chat"); f.title = "copied from the conversation this task was promoted from"; head.append(f); }
-  head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
+  head.append(el("span", "tdo-p-c-when", fmtWhen(c.at)));
   e.append(head);
   if (c.text) {
     const body = el("div", "tdo-p-c-text");

@@ -45,6 +45,9 @@ type terminalIdentity struct {
 }
 
 type terminalObservation struct {
+	Kind         string           `json:"kind,omitempty"`
+	Cwd          string           `json:"cwd,omitempty"`
+	Label        string           `json:"label,omitempty"`
 	Identity     terminalIdentity `json:"identity"`
 	AgentState   string           `json:"agentState"`
 	Connectivity string           `json:"connectivity"`

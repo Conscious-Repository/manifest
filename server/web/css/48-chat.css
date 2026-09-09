@@ -297,3 +297,5 @@
 .terminal-state-dot { display: inline-block; align-self: center; }
 .terminal-state-dot[data-agent-state="blocked"] { background: var(--warn); }
 .terminal-state-dot[data-agent-state="unavailable"], .terminal-state-dot[data-agent-state="unknown"] { background: var(--icon); }
+
+.delegation-runtime { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }

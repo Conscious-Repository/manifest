@@ -470,3 +470,12 @@ approval records and use the same guarded endpoints, never separate inbox stores
 This supersedes the earlier UI-only restriction that tasks show an approval link
 rather than inline controls. Approving work does not by itself imply that a queued
 external effect completed; execution receipts remain the evidence of completion.
+
+**2026-09-09 — terminal runtime and history ownership.** Owner-directed staged
+migration: coding Chats and board launches use the herdr runtime seam; runtime
+labels remain advisory and never complete a run or release the checkout writer
+lane. Terminal is a compact live launcher/attachment surface with Files/stats.
+Conversation history belongs in Chats and run history in the board/ledger;
+Terminal history, pin UI and registry-based default naming are removed. Existing
+tmux/remote Keep compatibility remains until its live sessions and callers drain.
+No new scheduler, attention kind, approval lane or vault writer is introduced.

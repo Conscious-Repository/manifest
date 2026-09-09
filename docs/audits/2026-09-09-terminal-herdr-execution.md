@@ -136,4 +136,74 @@ Validation:
 
 The normal autodeployer applied B; live rows carry backend/version fields and
 the original production registry has a mode-0600 backup. Browser verification of
-C follows deployment before D implementation. D is not yet implemented.
+C followed deployment before D implementation; results below.
+
+
+### Gate C deployed browser verification
+
+Production Chromium check passed: actual Codex assistant JSONL remains visible
+following process stop; zero registry requests over six seconds; stopping the
+Manifest service invalidated the SSE connection and stale working indicators.
+No page errors. Screenshot /tmp/jarvis_herdr_C_browser.png. The successful probe's
+first cleanup request raced service startup; cleanup was retried successfully,
+and zero probe rows remained. No offline-toggle result is claimed as proof.
+
+## Gate D — verified board adapter and live Terminal surface
+
+Board launches persist the stable session/work-order link before allocation,
+then use the same herdr launch journal and pinned model builders as Chats.
+Socket errors and incomplete launches remain unresolved/running and retain the
+shared checkout writer lock. The reconciliation sweep reads valid result files
+before and after stop inspection; labels cannot complete or release a run.
+The independent 60-second file reconciliation sweep remains in place.
+
+Terminal now contains a compact open launcher (shell/agent, cwd, host), live
+runtime panes, and exact-pane xterm/WebSocket attachment. Files/stats and remote
+Keep remain. Unassociated daemon panes use qualified opaque identity handles.
+Dead history, pin history, rename and registry default-name accounting were
+removed from Terminal. Chat/task actions select exact stable session IDs.
+The existing agent-session response keeps its tmux meaning by default; explicit
+backend:herdr returns a qualified handle and omits the tmux field.
+
+Validation:
+- go build ./... and go test -count=1 ./server/... ./... passed after the final
+  executable-discovery fix; /tmp/jarvis_herdr_D_{build,tests}.log.
+- Race-enabled focused runtime/board/frontend suite passed;
+  /tmp/jarvis_herdr_D_race.log. Node behavioral fixtures and syntax passed.
+- Fixtures cover restart at intent/allocated/submitted/active boundaries,
+  unavailable daemon while retaining writer exclusion, labels and malformed
+  results never releasing the writer, confirmed death without result, blocked
+  and late results, valid result after lost events, and final result arriving
+  during stop observation. Exact resume/model tests remain green.
+- LIVE production board helper launched harmless Codex work, persisted its
+  link, observed unknown while the scratch socket was temporarily renamed,
+  and observed the still-running process when restored. Durable exit 0:
+  TestHerdrLiveBoardJournalAndSocketOutage passed (8.039s),
+  /tmp/jarvis_herdr_D_board_live.log. Scratch daemon stopped/deleted.
+- LIVE browser check passed compact launcher, mapped shell attachment,
+  unassociated exact-pane attachment, PTY resize, detach survival, Files/stats,
+  and zero page errors. /tmp/jarvis_herdr_D_browser.log and .png.
+  This caught Manifest's service PATH omitting ~/.local/bin; attach now resolves
+  the standard user installation if PATH lookup fails, with a regression test.
+  Required full checks were repeated after the fix. All probe panes removed.
+
+Retained dependencies and honest limits:
+- No real legacy session was killed or bulk-relaunched. tmux helpers and history
+  APIs with remaining Chat/skill/remote Keep callers are retained until drained,
+  per the requested deletion condition. Caller inventory and migration request
+  format are in docs/audits/terminal-herdr-operations.md. Remote Keep is covered
+  by fixtures/existing wrappers, not a new live remote-host probe.
+- Board restart/result permutations are fixture-driven; the actual board helper,
+  CLI, socket outage, attachment, SSE and transcript tests above used live daemons.
+- herdr 0.9.0 may omit agent_session; supervised adapter sends refuse unresolved
+  occupants. Atomic prompt+wait was proven live at protocol level; resolved
+  adapter identity checks use fixtures. There is no expected-occupant CAS in
+  this protocol, and no daemon crash/reboot survival promise. Unknown stays
+  unknown; no result contract was weakened.
+- make deploy encountered an existing SSH public-key failure. Authorized local
+  build/service restart and the installed autodeployer provide deployment.
+
+Gate commits pushed before D: A b108b20; B 7734603 plus test correction c6b3b91;
+C fed5e97. B's extra correction is the documented one-commit-per-gate deviation.
+D commit contains this report; its final hash/deployment stamp is recorded in
+/tmp/jarvis_herdr_exec_findings.md after committing.

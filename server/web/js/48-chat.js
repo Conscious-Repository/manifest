@@ -1530,8 +1530,14 @@ function terminalPaintRunBadge(badge) {
   const ob = terminalRunStates.get(badge.dataset.terminalRun);
   badge.replaceChildren(terminalStateDot(ob), el("span", "", "agent " + terminalStateLabel(ob)));
   badge.title = "runtime observation; the run report determines task status";
+  if (ob && ob.manifestId && ob.connectivity === "connected" && ob.process === "running") {
+    const open = el("button", "sprt-quiet", "open in terminal");
+    open.onclick = (event) => { event.preventDefault(); event.stopPropagation(); chatTermOpenInTerminal({ id: ob.manifestId }); };
+    badge.append(open);
+  }
 }
 function terminalStateRepaint() {
+  window.dispatchEvent(new CustomEvent("manifest-terminal-state", { detail: { connected: terminalEventsConnected } }));
   chatTermSessions = chatTermSessions.map(chatTermApplyState);
   document.querySelectorAll("[data-terminal-run]").forEach(terminalPaintRunBadge);
   renderChatRail();

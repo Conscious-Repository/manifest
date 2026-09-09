@@ -217,23 +217,6 @@ func (c *termCfg) removeChecked(id string) error {
 // tmuxName is the session's tmux identity.
 func tmuxName(id string) string { return "manifest_" + id }
 
-// shortName mints cmd-ctr-style default names: sh1, cc2, cdx1 … (next free
-// number for the kind's prefix across the registry).
-func (c *termCfg) shortName(kind string) string {
-	prefix := map[string]string{"claude": "cc", "codex": "cdx"}[kind]
-	if prefix == "" {
-		prefix = "sh"
-	}
-	max := 0
-	for _, se := range c.load() {
-		var n int
-		if _, err := fmt.Sscanf(se.Name, prefix+"%d", &n); err == nil && n > max {
-			max = n
-		}
-	}
-	return fmt.Sprintf("%s%d", prefix, max+1)
-}
-
 // execLaunch is the "…; exec <tool>" tail every session runs: a PATH export
 // (bash -lc is non-interactive — ~/.bashrc returns early, so ~/.local/bin
 // never lands on PATH) and a tool guard that drops to a shell with a visible
@@ -457,7 +440,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: now, LastUsed: now, Model: strings.TrimSpace(b.Model),
 	}
 	if se.Name == "" {
-		se.Name = s.terminal.shortName(kind)
+		se.Name = kind
 	}
 	// mint claude's resume handle up front → `claude --resume` works forever.
 	// (Not when resuming via the picker — the id would shadow the choice.)
@@ -471,16 +454,29 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 	if isCodingAgent(kind) {
 		se.Model, _ = codingModel(kind, se.Model)
 	}
-	if device == "" && isCodingAgent(kind) {
+	if device == "" {
 		var err error
 		se, err = s.launchHerdr(r.Context(), se)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-	} else if err := s.terminal.upsertChecked(se); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	} else {
+		host, _ := os.Hostname()
+		se.Runtime = terminalIdentity{ManifestID: se.ID, Backend: "tmux", Host: host, Session: tmuxName(se.ID)}
+		if err := s.terminal.upsertChecked(se); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if err := s.spawnTermTmux(se); err != nil {
+			http.Error(w, err.Error(), 502)
+			return
+		}
+		se.Started = true
+		if err := s.terminal.upsertChecked(se); err != nil {
+			http.Error(w, "launched but mapping update failed: "+err.Error(), 500)
+			return
+		}
 	}
 	writeJSON(w, se)
 }
@@ -510,7 +506,7 @@ func (s *Server) createAgentTermSession(kind, cwd, name string, brief ...string)
 		CreatedAt: now, LastUsed: now,
 	}
 	if se.Name == "" {
-		se.Name = s.terminal.shortName(kind)
+		se.Name = kind
 	}
 	// mint claude's resume handle up front, same as handleTermCreate — the
 	// caller drives the conversation via `claude --resume <id>`.
@@ -622,9 +618,11 @@ func (s *Server) handleTermAgentCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Kind string `json:"kind"`
-		Cwd  string `json:"cwd"`
-		Name string `json:"name"`
+		Kind    string `json:"kind"`
+		Cwd     string `json:"cwd"`
+		Name    string `json:"name"`
+		Backend string `json:"backend"`
+		Model   string `json:"model"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -634,16 +632,16 @@ func (s *Server) handleTermAgentCreate(w http.ResponseWriter, r *http.Request) {
 	if kind == "" {
 		kind = "claude"
 	}
-	se, tn, err := s.createAgentTermSession(kind, b.Cwd, b.Name)
+	se, tn, err := s.createAgentWithBackend(r.Context(), kind, b.Cwd, b.Name, b.Model, b.Backend)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, struct {
 		termSession
-		Tmux   string `json:"tmux"`
+		Tmux   string `json:"tmux,omitempty"`
 		Handle string `json:"handle"`
-	}{se, tn, "tmux:" + tn})
+	}{se, tn, agentSessionHandle(se, tn)})
 }
 
 func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
@@ -994,8 +992,20 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.URL.Query().Get("id")
 	se, ok := s.terminal.find(id)
-	if !ok || !termIDRe.MatchString(id) {
-		http.Error(w, "no such session", http.StatusNotFound)
+	if raw := r.URL.Query().Get("handle"); raw != "" {
+		runtime, e := parseTerminalHandle(raw)
+		if e != nil || s.terminal.herdr == nil {
+			http.Error(w, "invalid runtime handle", 400)
+			return
+		}
+		if e = s.terminal.herdr.checked(r.Context(), runtime); e != nil {
+			http.Error(w, e.Error(), 502)
+			return
+		}
+		se = termSession{Backend: "herdr", Runtime: runtime}
+		ok = true
+	} else if !ok || !termIDRe.MatchString(id) {
+		http.Error(w, "no such session", 404)
 		return
 	}
 	if se.backend() != "tmux" && se.backend() != "herdr" {
@@ -1049,16 +1059,18 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 		c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] failed to start terminal: "+err.Error()+"\r\n"))
 		return
 	}
-	defer func() { _ = ptmx.Close(); _ = cmd.Process.Kill() }()
+	defer func() { _ = ptmx.Close(); _ = cmd.Process.Kill(); _ = cmd.Wait() }()
 
 	// touch lastUsed; the session has now run once → future reopens resume
 	se.LastUsed = time.Now().Format(time.RFC3339)
 	se.Started = true
-	if _, err := s.terminal.updateTermMetadata(se.ID, func(row *termSession) { row.LastUsed = se.LastUsed; row.Started = true }); err != nil {
-		c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] metadata update failed: "+err.Error()+"\r\n"))
-		return
-	}
+	if se.ID != "" {
+		if _, err := s.terminal.updateTermMetadata(se.ID, func(row *termSession) { row.LastUsed = se.LastUsed; row.Started = true }); err != nil {
+			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] metadata update failed: "+err.Error()+"\r\n"))
+			return
+		}
 
+	}
 	// PTY → browser (binary frames)
 	go func() {
 		buf := make([]byte, 32*1024)

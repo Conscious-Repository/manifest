@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -38,6 +39,9 @@ func (a *herdrAgentSession) identity() string {
 }
 
 type herdrPane struct {
+	Cwd          string             `json:"cwd"`
+	Label        string             `json:"label"`
+	Title        string             `json:"title"`
 	Revision     uint64             `json:"revision"`
 	AgentSession *herdrAgentSession `json:"agent_session"`
 	Pane         string             `json:"pane_id"`
@@ -140,6 +144,12 @@ func (h *herdrTerminalRuntime) callGeneration(ctx context.Context, method string
 func (h *herdrTerminalRuntime) observation(p herdrPane, gen string) terminalObservation {
 	ob := terminalUnknown(terminalIdentity{Backend: "herdr", Host: h.Host, Session: h.Session, Generation: gen, Workspace: p.Workspace, Pane: p.Pane, Occupant: p.Terminal, AgentSession: p.AgentSession.identity()})
 	ob.Revision = p.Revision
+	ob.Kind = p.Agent
+	ob.Cwd = p.Cwd
+	ob.Label = p.Label
+	if ob.Label == "" {
+		ob.Label = p.Title
+	}
 	ob.Connectivity = "connected"
 	ob.Process = "running"
 	if p.Agent != "" {
@@ -268,7 +278,24 @@ func (h *herdrTerminalRuntime) Attach(ctx context.Context, id terminalIdentity) 
 	}
 	// This client renders the exact terminal over a PTY; it does not focus a pane
 	// in a shared workspace or resolve display labels. PTY resize drives SIGWINCH.
-	return exec.CommandContext(ctx, "herdr", "--session", h.Session, "terminal", "attach", id.Occupant), nil
+	binary, err := herdrExecutable()
+	if err != nil {
+		return nil, err
+	}
+	return exec.CommandContext(ctx, binary, "--session", h.Session, "terminal", "attach", id.Occupant), nil
+}
+
+// User services may omit ~/.local/bin even though the independently supervised
+// daemon uses the standard user installation there.
+func herdrExecutable() (string, error) {
+	if binary, err := exec.LookPath("herdr"); err == nil {
+		return binary, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return exec.LookPath(filepath.Join(home, ".local", "bin", "herdr"))
 }
 func (h *herdrTerminalRuntime) Screen(ctx context.Context, id terminalIdentity) ([]string, error) {
 	if err := h.checked(ctx, id); err != nil {
@@ -474,7 +501,7 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 				}
 				next[ob.Identity.Pane] = ob
 				prev, exists := known[ob.Identity.Pane]
-				if !exists || prev.Identity != ob.Identity || prev.AgentState != ob.AgentState || prev.Process != ob.Process || prev.Connectivity != ob.Connectivity {
+				if !exists || prev.Identity != ob.Identity || prev.AgentState != ob.AgentState || prev.Process != ob.Process || prev.Connectivity != ob.Connectivity || prev.Label != ob.Label || prev.Cwd != ob.Cwd || prev.Kind != ob.Kind {
 					changed = append(changed, ob)
 				}
 			}

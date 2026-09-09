@@ -35,3 +35,30 @@ new sessions on Linux, the exact pane's foreground Codex process supplies an
 open rollout file descriptor; its inode, root, cwd and metadata must match.
 If no exact identity is available, the screen remains available and transcript
 identity stays unresolved. Never select a newest rollout by cwd.
+
+Terminal's live inventory uses `/api/terminal/live`, not the conversation
+registry. Unassociated panes carry an explicit `herdr:<base64url identity>`
+handle; attach and close validate host, daemon generation and occupant. New local
+shells use herdr too; confirmed-absent local shell mappings can be retired,
+while conversation and board associations remain durable.
+
+External agent callers can migrate explicitly:
+
+```json
+{"kind":"codex","backend":"herdr","cwd":"/path/to/checkout","model":"gpt-6-astra"}
+```
+
+POST that to `/api/terminal/agent-session`. Use the returned `handle`, or the
+stable Manifest `id` with the input/transcript endpoints. Herdr responses omit
+`tmux`; they never pretend that the handle is a tmux session name. Omitting
+`backend` retains the old tmux behavior for compatibility callers.
+
+Caller inventory at migration: Chats uses `/api/terminal/session` and stable IDs;
+board uses `createBoardHerdrSession`; Terminal uses live inventory plus exact
+handle/stable-ID attachment. The `/api/terminal/agent-session` compatibility
+handler and local Manifest skill references still serve legacy tmux callers.
+Rename/forget APIs still have Chat consumers. Remote Keep still needs the tmux
+helpers on both hosts. Therefore those helpers/endpoints remain until their real
+sessions and callers have drained; no live legacy session was killed to satisfy
+cleanup. The removed Terminal history/pin/default-name UI is not the board ledger
+or conversation history, both of which remain in their existing surfaces.

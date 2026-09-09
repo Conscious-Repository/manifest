@@ -141,19 +141,18 @@ Use status completed only when the requested work is complete and any changes we
 	if err := boardReport(h, run, task, phase, "", "running", "Reading durable work order: "+briefPath, started); err != nil {
 		return err
 	}
-	se, _, err := s.createAgentTermSession(h.Name, cwd, h.Name+" · "+text, briefPath, model)
-	if err == nil {
-		err = boardWrite(filepath.Join(dir, "session"), []byte(se.ID))
-	}
+	_, err = s.createBoardHerdrSession(h.Name, cwd, h.Name+" · "+text, briefPath, model)
 	if err != nil {
-		_ = boardReport(h, run, task, phase, "", "failed", err.Error(), started)
+		// A lost socket reply may conceal a running checkout writer. Keep the
+		// durable running report and exact launch journal until reconciled.
+		_ = boardReport(h, run, task, phase, "", "running", "Launch unresolved: "+err.Error(), started)
 		return err
 	}
 	_, _ = s.addThreadEntry(agentTokenIdentity("agent:"+h.Name), task, threads.ActComment, "Started with model `"+model+"`. "+modelNote, nil, nil, map[string]any{"model": model, "run": run})
 	return nil
 }
 
-// The noninteractive CLI runs inside the same detached, resumable tmux session
+// The noninteractive CLI runs inside the same detached, resumable runtime pane
 // as the terminal rail. Reopening uses normal resume, never replays this order.
 func (se termSession) boardLaunch() string {
 	prompt := shQuote("Read the complete work order at " + se.BoardBrief + " and carry it through. Write the durable result as instructed there.")
@@ -216,23 +215,29 @@ func (s *Server) codingResultSweep() {
 			if name == "codex" {
 				s.codingResume(dir)
 			}
-			raw, readErr := os.ReadFile(filepath.Join(dir, "result.json"))
-			var result codingResult
-			if readErr == nil && json.Unmarshal(raw, &result) == nil && strings.TrimSpace(result.Summary) != "" && (result.Status == "completed" || result.Status == "blocked") {
-				body := result.Summary
-				if result.ArtifactURL != "" {
-					body += "\n\n[review changes](" + result.ArtifactURL + ")"
+			ingestResult := func() bool {
+				raw, readErr := os.ReadFile(filepath.Join(dir, "result.json"))
+				var result codingResult
+				if readErr == nil && json.Unmarshal(raw, &result) == nil && strings.TrimSpace(result.Summary) != "" && (result.Status == "completed" || result.Status == "blocked") {
+					body := result.Summary
+					if result.ArtifactURL != "" {
+						body += "\n\n[review changes](" + result.ArtifactURL + ")"
+					}
+					if err := boardArtifact(h, r.ID, body); err != nil {
+						return false
+					}
+					outcome := "completed"
+					if result.Status == "blocked" {
+						outcome = "failed"
+					}
+					if err := boardReport(h, r.ID, tm[1], pm[1], "", outcome, body, started); err == nil {
+						_ = os.Remove(filepath.Join(dir, "recovery.md"))
+					}
+					return true
 				}
-				if err := boardArtifact(h, r.ID, body); err != nil {
-					continue
-				}
-				outcome := "completed"
-				if result.Status == "blocked" {
-					outcome = "failed"
-				}
-				if err := boardReport(h, r.ID, tm[1], pm[1], "", outcome, body, started); err == nil {
-					_ = os.Remove(filepath.Join(dir, "recovery.md"))
-				}
+				return false
+			}
+			if ingestResult() {
 				continue
 			}
 			if r.Outcome != "running" {
@@ -244,12 +249,27 @@ func (s *Server) codingResultSweep() {
 				continue
 			}
 			_, exitErr := os.Stat(filepath.Join(dir, "exit"))
-			dead := !termIDRe.Match(session)
-			if termIDRe.Match(session) {
-				_, err := c.tmuxOut("has-session", "-t", tmuxName(string(session)))
-				dead = err != nil
+			dead := false
+			if se, ok := c.find(string(session)); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ob, err := s.observeTerm(ctx, se)
+				cancel()
+				// An incomplete launch or an unavailable daemon is unresolved, not
+				// evidence of death. Agent labels never release the writer lane.
+				dead = err == nil && ob.Connectivity == "connected" && ob.Process == "stopped"
+				if se.backend() == "herdr" && se.LaunchPhase != "active" {
+					dead = false
+				}
 			}
 			if exitErr == nil || dead {
+				// Observe final durable writes after stop confirmation as well:
+				// exit and result may have landed during the runtime request.
+				if name == "codex" {
+					s.codingResume(dir)
+				}
+				if ingestResult() {
+					continue
+				}
 				body := s.codingRecovery(dir, string(session))
 				if err := boardWrite(filepath.Join(dir, "recovery.md"), []byte(body)); err != nil {
 					continue
@@ -286,8 +306,7 @@ func (s *Server) codingResume(dir string) {
 			ThreadID string `json:"thread_id"`
 		}
 		if json.Unmarshal(scan.Bytes(), &event) == nil && event.Type == "thread.started" && resumeIDRe.MatchString(event.ThreadID) {
-			se.ResumeID = event.ThreadID
-			s.terminal.upsert(se)
+			s.captureTermResumeID(se, event.ThreadID)
 			return
 		}
 	}

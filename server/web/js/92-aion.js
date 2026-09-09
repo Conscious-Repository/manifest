@@ -644,7 +644,7 @@ function aionThreadEntry(c, taskID) {
   const head = el("div", "tdo-p-c-head");
   head.append(el("span", "tdo-p-c-author", c.author_name || c.authorName || c.author || "?"));
   if (c.action && c.action !== "comment") head.append(el("span", "tdo-p-c-act", c.action));
-  head.append(el("span", "tdo-p-c-when", typeof termRelTime === "function" ? termRelTime(c.at) : (c.at || "").slice(0, 10)));
+  head.append(el("span", "tdo-p-c-when", fmtWhen(c.at)));
   e.append(head);
   if (c.text) e.append(el("div", "tdo-p-c-text", c.text));
   (c.files || []).forEach((f) => {

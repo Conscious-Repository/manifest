@@ -221,10 +221,8 @@
        + week spend live in the breadcrumb meta; app settings are their own tab. -->
   <section id="writeView" class="write-view" hidden aria-label="Writing workspace"></section>
 
-  <!-- TERMINAL — the cockpit (cmd-ctr terminal-module parity): a rail of
-       SESSIONS / NEW SESSION / HISTORY with an icon tab bar at its foot, and a
-       stage that swaps Terminal (PTY over metis tmux) / Files (fleet browser,
-       absorbed from the old top-level tab) / Activity (fleet stats). -->
+  <!-- TERMINAL — a compact launcher and live process attachments;
+       conversation history stays in Chat, Files and stats retain their stages. -->
   <section class="term-page" id="terminalView" hidden>
     <div class="agent-head cockpit-head term-head">
       <span class="agent-title">TERMINAL</span>
@@ -233,12 +231,10 @@
     <div class="term-shell">
       <aside class="term-rail">
         <div class="term-rail-scroll">
-          <div class="rail-sec"><div class="rail-sec-label">Sessions</div>
-            <div id="termSessionRows"></div></div>
-          <div class="rail-sec"><div class="rail-sec-label">New session</div>
+          <div class="rail-sec"><div class="rail-sec-label">open</div>
             <div id="termLauncher"></div></div>
-          <div class="rail-sec"><div class="rail-sec-label" id="termHistLabel">History</div>
-            <div id="termHistoryRows"></div></div>
+          <div class="rail-sec"><div class="rail-sec-label">live panes <span id="termRuntimeStatus"></span></div>
+            <div id="termSessionRows"></div></div>
         </div>
         <nav class="term-tabbar" id="termTabbar"></nav>
       </aside>
