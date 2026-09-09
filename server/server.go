@@ -25,6 +25,7 @@ import (
 	"manifest/books"
 	"manifest/calendar"
 	"manifest/capture"
+	"manifest/chatstate"
 	"manifest/chatthreads"
 	"manifest/consume"
 	"manifest/contacts"
@@ -58,6 +59,7 @@ import (
 var webFiles embed.FS
 
 type Server struct {
+	chatState  *chatstate.Store
 	svc        *daily.Service
 	goals      *goals.Store
 	tasksStore *tasks.Store // the third surface — vault-root `tasks.md` (nilable)
@@ -577,6 +579,8 @@ func (s *Server) Handler() http.Handler {
 	// route is the bridge/SSE seam (resumable via ?after=seq).
 	mux.HandleFunc("GET /api/chat/spirits", s.handleChatSpirits)
 	mux.HandleFunc("GET /api/chat/sessions", s.handleChatSessions)
+	mux.HandleFunc("GET /api/chat/state/{key}/{slot}", s.handleChatState)
+	mux.HandleFunc("PUT /api/chat/state/{key}/{slot}", s.handleChatState)
 	mux.HandleFunc("POST /api/chat/sessions", s.handleChatSessionCreate)
 	mux.HandleFunc("GET /api/chat/sessions/{id}", s.handleChatSession)
 	mux.HandleFunc("POST /api/chat/sessions/{id}/messages", s.handleChatMessage)

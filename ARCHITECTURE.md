@@ -518,3 +518,14 @@ until an explicit reconciliation, and conflicting source links are not resolved
 by choosing the first one. A linked source with a retained task plan cannot be
 deleted through the chat API. One chat can reference several tasks; an explicitly
 selected task is checked against its source link before context is accepted.
+
+**2026-09-09 — cross-device pending chat state.** The approved chat plan's
+cross-device continuity requires retained, owner-only pending content. Chat draft
+snapshots under `dataDir/chat-state` are an explicit exception to the disposable
+cache rule: preserve this directory in backups alongside conversation stores.
+They are private operational records, never published to a team portal or fed to
+an agent until Send. Browser local recovery complements server persistence; it is
+not its sole copy. Revision checks prevent one device from silently replacing
+another's unsent work. Clearing after acceptance is itself revision-checked and
+must not erase newer typing. Draft saves cannot invoke execution or change a
+source transcript. Reading position uses a separate slot from draft content.

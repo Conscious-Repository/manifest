@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const storage=new Map();
+global.chatSyncedDrafts=new Map();
 global.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)};
 global.crypto=require('node:crypto').webcrypto;
 global.chatBaseFor=a=>'/api/agents/chat/'+encodeURIComponent(a)+'/sessions';

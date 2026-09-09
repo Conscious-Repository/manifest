@@ -109,7 +109,51 @@ let chatDraftKey = "";
 function chatSaveDraft() {
   const input = document.querySelector("#chatComposer textarea");
   if (chatDraftKey && input) chatDrafts.set(chatDraftKey, {text: input.value, files: chatPendingFiles.slice()});
+  if(chatDraftKey && input)chatCaptureSyncedDraft(chatDraftKey);
 }
+
+const chatSyncedDrafts=new Map();
+async function chatPrepareDraft(descriptor,key){
+  if(!descriptor?.key || typeof ChatDraftState==="undefined")return;
+  if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();return;}
+  const state=new ChatDraftState(descriptor.key,(current,apply)=>{
+    if(apply)chatApplySyncedDraft(key,current.value);
+    if(chatDraftKey===key)chatRenderDraftNotice(document.getElementById("chatComposer"),key);
+  });
+  chatSyncedDrafts.set(key,state);
+  const local=chatDrafts.get(key);
+  if(local && (local.text || local.files?.length))state.set({...local,selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||""});
+  await state.refresh();
+  chatApplySyncedDraft(key,state.value);
+}
+function chatApplySyncedDraft(key,value){
+  const v=value||{text:"",files:[]};
+  chatDrafts.set(key,{text:typeof v.text==="string"?v.text:"",files:Array.isArray(v.files)?v.files:[]});
+  if(v.selection)chatArtifactSelections.set("chat:"+key,v.selection);else chatArtifactSelections.delete("chat:"+key);
+  if(v.task)chatConversationTasks.set("chat:"+key,v.task);
+  if(chatDraftKey!==key)return;
+  const input=document.querySelector("#chatComposer textarea");
+  if(input){input.value=chatDrafts.get(key).text;chatPendingFiles=chatDrafts.get(key).files.slice();renderChatComposer(chatCurSession);input.style.height="auto";input.style.height=Math.min(input.scrollHeight,Math.max(120,innerHeight*.4))+"px";}
+}
+function chatCaptureSyncedDraft(key){
+  const state=chatSyncedDrafts.get(key),input=document.querySelector("#chatComposer textarea");
+  if(!state || key!==chatDraftKey || !input)return;
+  state.set({text:input.value,files:chatPendingFiles.slice(),selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||chatCurSession?.task||""});
+}
+function chatRenderDraftNotice(host,key){
+  if(!host)return;host.querySelector(".chat-draft-notice")?.remove();
+  const state=chatSyncedDrafts.get(key);if(!state || (!state.conflict&&!state.error))return;
+  const row=el("div","chat-draft-notice");row.setAttribute("role","status");
+  row.append(el("span","",state.conflict?"Draft changed on another device. Choose which to keep.":state.error));
+  if(state.conflict){
+    const saved=el("button","sprt-quiet","Use saved draft"),mine=el("button","sprt-quiet","Keep this draft");
+    saved.onclick=()=>state.resolve(true);mine.onclick=()=>state.resolve(false);row.append(saved,mine);
+  }else{const retry=el("button","sprt-quiet","Retry sync");retry.onclick=()=>state.refresh();row.append(retry);}
+  host.prepend(row);
+}
+window.addEventListener("focus",()=>{if(chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&chatDraftKey)chatSyncedDrafts.get(chatDraftKey)?.refresh();});
+window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatSyncedDrafts.values())if(state.dirty)state.flush();});
 function showChat(h) {
   chatCloseWorkspace();
   chatSaveDraft();
@@ -851,6 +895,8 @@ async function loadChatSession(id) {
     return;
   }
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
+  await chatPrepareDraft(d.conversation,(chatAgent||"spirits")+"/"+id);
+  if (id !== chatOpenId || base !== chatBase()) return;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
   chatRemember(chatAgent || "spirits", id);
@@ -1321,7 +1367,7 @@ function renderChatComposer(session) {
         const chip = el("span", "chat-attach-chip", "⤓ " + f.name);
         const x = el("button", "chat-attach-x", "✕");
         x.title = "drop this attachment";
-        x.onclick = () => { chatPendingFiles.splice(i, 1); syncAttach(); };
+        x.onclick = () => { chatPendingFiles.splice(i, 1); syncAttach(); chatSaveDraft(); };
         chip.append(x);
         chips.append(chip);
       });
@@ -1350,6 +1396,7 @@ function renderChatComposer(session) {
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);
     chatRenderArtifactContext(session?.task,"chat:"+draftKey);
+    chatRenderDraftNotice(host,draftKey);
     return;
   }
   host.dataset.built = "1";
@@ -1384,6 +1431,7 @@ function renderChatComposer(session) {
     ta.selectionStart = ta.selectionEnd = head.length;
     mention.hidden = true;
     grow();
+    chatSaveDraft();
     ta.focus();
   };
   const syncMention = () => {
@@ -1420,6 +1468,7 @@ function renderChatComposer(session) {
     }
     fi.value = "";
     syncAttach();
+    chatSaveDraft();
   };
   const attach = el("button", "chat-attach", "＋");
   attach.title = "attach a file";
@@ -1444,16 +1493,23 @@ function renderChatComposer(session) {
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
     if (send.disabled || chatSending) return;
+    chatCaptureSyncedDraft(draftKey);
+    const draftState=chatSyncedDrafts.get(draftKey),sentDraft=draftState?.value;
+    if(draftState?.conflict){showToast("Resolve the draft conflict before sending.");return;}
     const sendAgent=chatAgent, sendSession=chatOpenId, sendRoute=chatRouteVersion;
     const durable=!!chatRosterEntry(sendAgent)?.durableSend;
     chatSending = true;
-    chatDrafts.delete(draftKey);
     send.disabled = true;
-    ta.value = "";
-    grow();
-    mention.hidden = true;
-    chatPendingFiles = [];
-    syncAttach();
+    // Keep the submitted draft visible until acceptance. Navigation or a lost
+    // acknowledgement must not save an empty replacement on another device.
+    const acceptedDraft=()=>{
+      if(sentDraft)draftState.clearSent(sentDraft);
+      const current=chatDrafts.get(draftKey);
+      if(current?.text.trim()===text && chatStateEqual(current.files,files))chatDrafts.delete(draftKey);
+      if(chatDraftKey===draftKey && ta.value.trim()===text && chatStateEqual(chatPendingFiles,files)){
+        ta.value="";chatPendingFiles=[];grow();mention.hidden=true;syncAttach();
+      }
+    };
     const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
     if(durable){
@@ -1464,9 +1520,8 @@ function renderChatComposer(session) {
       // claude/codex: tmux send-keys (relaunching a dead session first); a
       // landing send creates the registry row, then delivers
       try { if (!await chatTermSend(text)) {
-        chatDrafts.set(draftKey, {text, files});
-        if (chatDraftKey === draftKey) { ta.value = text; grow(); }
-      } }
+        showToast("Send not confirmed. Your draft is retained.");
+      }else acceptedDraft(); }
       finally { chatSending = false; renderChatComposer(chatCurSession); }
       return;
     }
@@ -1477,9 +1532,11 @@ function renderChatComposer(session) {
       if (sendSession) {
         if(remembered)await chatDeliverRemembered(remembered);
         else await postJSONOk(endpoint, sendAgent ? payload : { text });
+        acceptedDraft();
       } else if (sendAgent) {
         // Lazy creation uses the same request ID when its response is lost.
         const r = remembered ? await chatDeliverRemembered(remembered) : await postJSONOk(endpoint, payload);
+        acceptedDraft();
         if(sendRoute!==chatRouteVersion)return;
         chatOpenId = r.id;
         chatLanding = false;
@@ -1490,6 +1547,8 @@ function renderChatComposer(session) {
         const r = await postJSONOk("/api/chat/sessions", {
           spirit: chatPendingSpirit || "concierge", model: chatPendingModel || "", text,
         });
+        acceptedDraft();
+        if(sendRoute!==chatRouteVersion)return;
         chatOpenId = r.id;
         chatLanding = false;
         location.hash = chatHash(r.id);
@@ -1503,8 +1562,7 @@ function renderChatComposer(session) {
       } else {
         if(remembered)chatForgetDelivery(remembered);
         showToast("Send failed — " + (e.message || "error"));
-        chatDrafts.set(draftKey, {text, files});
-        if (chatDraftKey === draftKey) { ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
+        // The submitted text remains in the composer; preserve any newer edits.
       }
     }
     finally { chatSending = false; renderChatComposer(chatCurSession); }
@@ -1522,6 +1580,7 @@ function renderChatComposer(session) {
   host.append(chips, mention, ta, fi, attach, ritual, send);
   chatRenderDeliveryNotice(host,draftKey);
   chatRenderArtifactContext(session?.task,"chat:"+draftKey);
+  chatRenderDraftNotice(host,draftKey);
   grow();
   syncAttach();
 }
@@ -1856,6 +1915,8 @@ async function loadChatTermSession(id) {
     d = await res.json();
   } catch (e) { return; }
   if (id !== chatOpenId || !chatIsTerm()) return; // navigated away mid-fetch
+  await chatPrepareDraft(d.conversation,chatAgent+"/"+id);
+  if (id !== chatOpenId || !chatIsTerm()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
   // the other backends' channels have nothing to say here
   if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
@@ -2413,6 +2474,7 @@ function chatOpenWorkingArtifact(spec) {
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
     onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend) ? ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID}); chatRenderArtifactContext(taskID,key);
+      if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
       if(window.matchMedia("(max-width: 900px)").matches)chatCloseWorkspace();
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
@@ -2428,7 +2490,7 @@ function chatRenderArtifactContext(taskID,key){
  const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
  open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID,selectionKey:key});
  const clear=el("button","sprt-quiet","×");clear.setAttribute("aria-label","Remove artifact context");
- clear.onclick=()=>{chatArtifactSelections.delete(key);row.remove();};
+ clear.onclick=()=>{chatArtifactSelections.delete(key);row.remove();if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));};
  row.append(open,clear);composer.prepend(row);
 }
 function chatArtifactActions(data){
@@ -2462,7 +2524,7 @@ function chatRememberDelivery(scope,agent,url,payload){
  const items=chatReadDeliveryOutbox(), signature=JSON.stringify(payload);
  const old=items.find(x=>x.scope===scope&&x.url===url&&x.signature===signature);
  if(old)return old;
- const item={scope,agent,url,signature,payload:{...payload,requestId:crypto.randomUUID()},at:new Date().toISOString()};
+ const item={scope,agent,url,signature,payload:{...payload,requestId:crypto.randomUUID()},draft:chatSyncedDrafts.get(scope)?.value||null,at:new Date().toISOString()};
  items.push(item);chatWriteDeliveryOutbox(items);return item;
 }
 function chatForgetDelivery(item){chatWriteDeliveryOutbox(chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId));}
@@ -2471,7 +2533,7 @@ async function chatDeliverRemembered(item){
  if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);throw error;}
  const result=await res.json();
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
- chatForgetDelivery(item);return result;
+ chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.scope)?.clearSent(item.draft);return result;
 }
 function chatRenderDeliveryNotice(host,scope){
  host.querySelector(".chat-delivery-notice")?.remove();
@@ -2492,7 +2554,7 @@ function chatRenderDeliveryNotice(host,scope){
     const r=await fetch("/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery?request="+encodeURIComponent(item.payload.requestId));
     if(r.status===404){label.textContent="Not recorded yet. Retry the same send to deliver it.";return;}
     if(!r.ok)throw new Error(await r.text());
-    const d=await r.json();chatForgetDelivery(item);row.remove();navigate(d);
+    const d=await r.json();chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.scope)?.clearSent(item.draft);row.remove();navigate(d);
     showToast("Message "+d.delivery.state,null,"info");
    }catch(e){label.textContent="Still unable to confirm delivery. Your message is saved here.";}
    finally{check.disabled=false;}
