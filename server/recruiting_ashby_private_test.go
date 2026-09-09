@@ -48,7 +48,7 @@ func (f *privateAshby) serve(w http.ResponseWriter, r *http.Request) {
 	switch method {
 	case "apiKey.info":
 		ok(map[string]any{"title": "route-key", "permissions": []string{"candidatesWrite"}})
-	case "candidate.search", "source.list", "jobPosting.list", "candidate.list", "application.list":
+	case "candidate.search", "source.list", "job.list", "jobPosting.list", "candidate.list", "application.list":
 		ok([]map[string]any{})
 	case "candidate.create", "candidate.info":
 		ok(cand)

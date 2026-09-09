@@ -129,6 +129,7 @@ func (l *AionLive) cachePath() string {
 
 func (l *AionLive) sourceRevision() string {
 	h := sha256.New()
+	h.Write(l.s.aionRecruitingHiringMD())
 	if l.s.aion != nil {
 		for _, name := range aion.Files {
 			h.Write([]byte(name))

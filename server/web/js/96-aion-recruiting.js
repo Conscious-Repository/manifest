@@ -151,13 +151,37 @@ async function recPost(url, body, okMsg) {
 // An applicant is INBOUND until it is triaged: the sync-back import stamps
 // `inbound` and lands the record in the `ashby` column; the triage verdict
 // (advance / archive) moves it, and from then on it is an ordinary candidate.
-function recUntriaged(c) { return !!c.inbound && c.stage === "ashby"; }
+let recApplicationChoice = {};
+function recApplicationActive(a) { return !["hired", "archived"].includes(String(a.status || a.stage || "").toLowerCase()); }
+function recCandidateContext(c, roleId) {
+  const apps = c.applications || [];
+  if (!apps.length) {
+    const status = String(c.ashbyStatus || c.ashbyStage || "").toLowerCase();
+    return c.ashbyApplicationId && ["hired", "archived"].includes(status) ? {...c, stage:status} : c;
+  }
+  const scoped = roleId ? apps.filter(a => a.role === roleId) : apps;
+  const a = scoped.find(a => a.id === recApplicationChoice[c.id]) || scoped.find(recApplicationActive) || scoped[0];
+  if (!a) return c;
+  const terminal = !recApplicationActive(a);
+  return {...c, role:a.role, ashbyApplicationId:a.id, ashbyStage:a.stage, ashbyStatus:a.status,
+    resume:a.resume && a.resume.hash ? a.resume : (a.id===c.ashbyApplicationId ? c.resume : {}),
+    stage:terminal ? String(a.status || a.stage).toLowerCase() : "ashby"};
+}
+function recCurrentRoleID() {
+  const r=(recCache.roles || []).find(r=>r.slug===recRole);
+  return recRole ? (r ? r.id || "role/"+r.slug : "role/"+recRole) : null;
+}
+function recCandidateActive(c) {
+  if ((c.applications || []).length) return c.applications.some(a => (!recCurrentRoleID() || a.role===recCurrentRoleID()) && recApplicationActive(a));
+  return !["hired","archived"].includes(recCandidateContext(c).stage);
+}
+function recUntriaged(c) { c=recCandidateContext(c,recCurrentRoleID()); return !!c.inbound && c.stage === "ashby" && /^(application review|new lead|new|)$/i.test(c.ashbyStage || ""); }
 
 function recRoleCandidates(c) {
   if (!recRole) return true;
   const role = (recCache.roles || []).find((r) => r.slug === recRole);
   const want = role ? role.id || "role/" + role.slug : recRole;
-  return c.role === want;
+  return (c.applications || []).length ? c.applications.some(a => a.role === want) : c.role === want;
 }
 
 // Role navigation always opens the active candidate pipeline, across origins.
@@ -170,10 +194,13 @@ function recOpenCandidateRole(slug) {
 }
 
 function recCandidateCount(roleId, origin = "both", cut = "open") {
-  return (recCache.candidates || []).filter((c) =>
-    (!roleId || c.role === roleId) &&
-    (cut === "all" || (cut === "archived" ? c.stage === "archived" : c.stage !== "archived")) &&
-    (origin === "both" || (origin === "inbound" ? !!c.inbound : !c.inbound))).length;
+  return (recCache.candidates || []).filter(c => {
+    const apps=(c.applications || []).filter(a=>!roleId || a.role===roleId);
+    if (roleId && ((c.applications || []).length ? !apps.length : c.role!==roleId)) return false;
+    const active=apps.length ? apps.some(recApplicationActive) : !["hired","archived"].includes(recCandidateContext(c).stage);
+    return (cut==="all" || (cut==="archived" ? !active : active)) &&
+      (origin==="both" || (origin==="inbound" ? !!c.inbound : !c.inbound));
+  }).length;
 }
 
 function recVisible(c) {
@@ -182,7 +209,7 @@ function recVisible(c) {
   const applied = !!c.inbound;
   if (!everyone && recOrigin === "inbound" && !applied) return false;
   if (!everyone && recOrigin === "sourced" && applied) return false;
-  const archived = c.stage === "archived";
+  const archived = !recCandidateActive(c);
   if ((everyone || recCut === "open") && archived) return false;
   if (!everyone && recCut === "archived" && !archived) return false;
   const q = recQuery.trim().toLowerCase();
@@ -223,7 +250,7 @@ function recHeaderMeta() {
       return crit.length + " criteria · " + crit.filter((x) => x.class === "must").length + " musts";
     }
     default: {
-      const open = cs.filter((c) => c.stage !== "archived").length;
+      const open = recCandidateCount();
       const tri = recUntriagedCount();
       const drafts = recPendingDrafts();
       return (tri ? tri + " to triage · " : "") + open + " candidates" +
@@ -333,6 +360,8 @@ function paintRail(rail) {
   all.onclick = () => recOpenCandidateRole(null);
   roleHost.append(all);
 
+  const closedRoles=el("details","rec-advanced");
+  closedRoles.append(el("summary","micro-label","Closed roles"));
   roles.forEach((role) => {
     const roleId = role.id || "role/" + role.slug;
     const on = (recView === "board" && recRole === role.slug) || (recView === "role" && recRoleView === role.slug);
@@ -341,8 +370,9 @@ function paintRail(rail) {
     b.append(el("span", "rec-role-count", String(recCandidateCount(roleId))));
     b.title = "View active candidates across Applied and Recruiting";
     b.onclick = () => recOpenCandidateRole(role.slug);
-    roleHost.append(b);
+    (role.status === "open" || !role.status ? roleHost : closedRoles).append(b);
   });
+  if (closedRoles.children.length>1) roleHost.append(closedRoles);
   if (!roles.length) roleHost.append(emptyRow("no roles yet"));
   if (recRole) {
     const edit = el("button", "rec-linkish", "edit criteria →");
@@ -1324,7 +1354,7 @@ function paintBoardView(main) {
   // the stages, the gate and the inspector exactly as they were.
   const facets = el("div", "rec-cuts rec-facets");
   const connectors = ((recCache.network || {}).people || []).filter((p) => !p.archived);
-  [["considering", "considering", (recCache.candidates || []).filter((c) => recRoleCandidates(c) && c.stage !== "archived").length],
+  [["considering", "considering", (recCache.candidates || []).filter((c) => recRoleCandidates(c) && recCandidateActive(c)).length],
    ["known", "who I'd ask", connectors.length],
    ["everyone", "everyone", 0]].forEach(([key, label, n]) => {
     const b = el("button", "filter-chip" + (recPeopleFacet === key ? " on" : ""), label);
@@ -1341,7 +1371,7 @@ function paintBoardView(main) {
   // was functionally identical (problem 1), so three cuts, not four.
   if (recPeopleFacet === "considering") {
     const cuts = el("div", "rec-cuts");
-    [["open", "OPEN"], ["archived", "ARCHIVED"], ["all", "ALL"]].forEach(([key, label]) => {
+    [["open", "OPEN"], ["archived", "HISTORY"], ["all", "ALL"]].forEach(([key, label]) => {
       const b = el("button", "filter-chip" + (recCut === key ? " on" : ""), label);
       b.onclick = () => { recCut = key; if (recPaint) recPaint(); };
       cuts.append(b);
@@ -1403,11 +1433,11 @@ function paintBoardBody() {
       .forEach((c) => lane.append(recCard(c)));
     board.append(lane);
   } else {
-    const stages = (recCache.stages || []).filter((st) => rows.some((c) => c.stage === st));
+    const stages = [...new Set([...(recCache.stages || []), "hired", ...rows.map(c=>c.stage)])].filter((st) => rows.some((c) => c.stage === st));
     stages.forEach((stage) => {
       const lane = el("section", "rec-lane");
       const head = el("div", "aion-sec-label");
-      head.append(el("span", "aion-sec-title", stage));
+      head.append(el("span", "aion-sec-title", stage === "ashby" ? "Applications" : stage));
       head.append(el("span", "aion-sec-count", String(rows.filter((c) => c.stage === stage).length)));
       lane.append(head);
       rows.filter((c) => c.stage === stage).forEach((c) => lane.append(recCard(c)));
@@ -1490,6 +1520,7 @@ function recCard(c) {
 // confirmed disqualifier is clearable only by a recorded override, never by
 // scoring.
 function recGateTable(c) {
+  if (c.ashbyApplicationId) return {key:"application",chipLabel:c.ashbyStage || c.ashbyStatus || "Application",chipCls:"muted",summary:"Stage managed in Ashby",reason:""};
   const g = c.gate || {};
   const out = { reason: g.reason || "" };
   if (c.stage === "archived") {
@@ -2745,7 +2776,8 @@ function paintInspector(host) {
   host.innerHTML = "";
   // selection is scoped to the VISIBLE rows — never offer consequential
   // verdicts on a record the current cut has hidden
-  const c = (recCache.candidates || []).find((x) => x.id === recSel && recVisible(x)) || null;
+  const found = (recCache.candidates || []).find((x) => x.id === recSel && recVisible(x));
+  const c = found ? recCandidateContext(found,recCurrentRoleID()) : null;
   if (!c) {
     host.append(el("div", "aion-insp-empty", "select a candidate — edits save as you go"));
     return;
@@ -2811,8 +2843,21 @@ function paintInspector(host) {
   });
   stage.disabled = c.stage === "archived";
   stage.onchange = () => recPost("/api/aion/recruiting/candidate/stage/" + c.id, { stage: stage.value }, "stage saved");
-  pair.append(role, stage);
+  if (c.ashbyApplicationId) {
+    const application = el("select", "pp-in rec-in");
+    application.setAttribute("aria-label", "Application and role");
+    const apps=c.applications && c.applications.length ? c.applications : [{id:c.ashbyApplicationId,title:role.selectedOptions[0]?.textContent,stage:c.ashbyStage}];
+    apps.forEach(a=>{const o=el("option","",(a.title || (recCache.roles || []).find(r=>r.id===a.role)?.title || "Application")+" · "+(a.stage || a.status || ""));o.value=a.id;o.selected=a.id===c.ashbyApplicationId;application.append(o);});
+    application.onchange=()=>{recApplicationChoice[c.id]=application.value;recRole=null;if(recPaint)recPaint();};
+    pair.append(application);
+    host.append(el("div","micro-label","Application · managed in Ashby"));
+  } else {
+    role.setAttribute("aria-label","Manifest role");stage.setAttribute("aria-label","Manifest stage");
+    pair.append(role,stage);
+    host.append(el("div","micro-label","Role and stage · managed in Manifest"));
+  }
   host.append(pair);
+  if (c.ashbyApplicationId) host.append(recApplicationControls(c));
 
   // PROFILE — on the face
   const p = c.profile || {};
@@ -2847,7 +2892,9 @@ function paintInspector(host) {
   // ONE primary action — it reads the same table the chip does. While an
   // applicant is untriaged the verdict row IS the action, so the gate
   // primary is withheld, not demoted beneath it.
-  if (untriaged) {
+  if (c.ashbyApplicationId) {
+    // Official stage controls above own application actions.
+  } else if (untriaged) {
     host.append(recTriageBlock(c));
   } else if (gate.primary) {
     const primary = el("button", "rec-primary", gate.primary.label);
@@ -2880,7 +2927,7 @@ function paintInspector(host) {
   // archive — a quiet bordered button, arm-then-confirm; withheld while the
   // verdict block owns the decision, and while archived (restore is the
   // primary then)
-  if (!untriaged && c.stage !== "archived") {
+  if (!c.ashbyApplicationId && !untriaged && c.stage !== "archived") {
     const archive = el("button", "rec-quiet-btn rec-archive-btn", "archive…");
     archive.onclick = () => {
       const armed = el("button", "rec-quiet-btn rec-archive-btn armed", "confirm archive?");
@@ -3458,15 +3505,15 @@ let recAshbyPulling = {}; // candidate id → a pull ran (or is running) this se
 // is asked for. Once per candidate per session; the stored artifact serves
 // every later open without touching Ashby.
 async function recAutoPull(c) {
-  if (recAshbyPulling[c.id]) return;
-  recAshbyPulling[c.id] = true;
+  if (recAshbyPulling[c.ashbyApplicationId || c.id]) return;
+  recAshbyPulling[c.ashbyApplicationId || c.id] = true;
   try {
-    const out = await recAshbyCall("/api/aion/recruiting/ashby/detail/" + c.id, {});
-    recAshbyDetail[c.id] = out.detail || {};
-    if (out.resumeError) recAshbyDetail[c.id].resumeError = out.resumeError;
+    const out = await recAshbyCall("/api/aion/recruiting/ashby/detail/" + c.id, {applicationId:c.ashbyApplicationId});
+    recAshbyDetail[c.ashbyApplicationId || c.id] = out.detail || {};
+    if (out.resumeError) recAshbyDetail[c.ashbyApplicationId || c.id].resumeError = out.resumeError;
     if (out.view) recCache = out.view;
   } catch (e) {
-    recAshbyDetail[c.id] = { error: String(e.message || e) };
+    recAshbyDetail[c.ashbyApplicationId || c.id] = { error: String(e.message || e) };
   }
   renderAion();
 }
@@ -3502,7 +3549,7 @@ async function recLoadResumeText(hash) {
 function recSubmissionSection(c) {
   const sec = el("section", "rec-insp-sec");
   const r = c.resume || {};
-  const det = recAshbyDetail[c.id];
+  const det = recAshbyDetail[c.ashbyApplicationId || c.id];
 
   const label = el("div", "aion-sec-label");
   label.append(el("span", "aion-sec-title", "resume"));
@@ -3512,7 +3559,7 @@ function recSubmissionSection(c) {
   }
   const re = el("button", "rec-linkish rec-repull", "↻");
   re.title = "re-pull this application from Ashby";
-  re.onclick = () => { delete recAshbyDetail[c.id]; delete recAshbyPulling[c.id]; recAutoPull(c); };
+  re.onclick = () => { delete recAshbyDetail[c.ashbyApplicationId || c.id]; delete recAshbyPulling[c.ashbyApplicationId || c.id]; recAutoPull(c); };
   label.append(re);
   sec.append(label);
 
@@ -3590,7 +3637,7 @@ function recAshbySection(c) {
     return sec;
   }
   if (recAshbyProbe.error) { sec.append(emptyRow("ashby key rejected: " + recAshbyProbe.error.slice(0, 120))); return sec; }
-  if (c.stage === "archived") return sec;
+  if (c.ashbyApplicationId || c.stage === "archived") return sec;
 
   const choice = recAshbyChoice[c.id] || (recAshbyChoice[c.id] = { handoff: "", decision: "", ashbyCandidateId: "", note: "", includeContact: false });
   const prop = recAshbyProposal[c.id];
@@ -3914,7 +3961,7 @@ function recResumeOutline(raw) {
 
 
 function recReviewCandidates() {
-  const rows = (recCache.candidates || []).filter(recVisible);
+  const rows = (recCache.candidates || []).filter(recVisible).map(c=>recCandidateContext(c,recCurrentRoleID()));
   if (recPeopleFacet === "considering" && recOrigin === "inbound") {
     return rows.sort((a,b) => (a.inbound || "").localeCompare(b.inbound || ""));
   }
@@ -3926,4 +3973,46 @@ function recReviewCandidates() {
 function recPendingSourceRole(roleId) {
   return recRuns.reduce((count, run) => count + (run.drafts || []).filter((d) =>
     d.status === "new" && ((d.draft || {}).role || (run.scope || {}).role || "") === roleId).length, 0);
+}
+
+// An application action always targets an explicit application, never the
+// person's incidental primary role. No implicit local advance or archive.
+function recApplicationControls(c) {
+  const box=el("section","rec-triage");
+  box.append(el("div","rec-draft-sub",c.ashbyStage || c.ashbyStatus || "Stage not loaded"));
+  const load=el("button","rec-quiet-btn","Change stage in Ashby…");
+  box.append(load);
+  load.onclick=async()=>{
+    load.disabled=true;
+    try {
+      const r=await fetch("/api/aion/recruiting/ashby/stages/"+c.id+"?applicationId="+encodeURIComponent(c.ashbyApplicationId),{cache:"no-store"});
+      const out=await r.json();if(!r.ok)throw new Error(out.error || "Could not load stages");
+      const select=el("select","pp-in rec-in");select.setAttribute("aria-label","Destination Ashby stage");
+      const placeholder=el("option","","Choose a stage…");placeholder.value="";select.append(placeholder);
+      (out.stages || []).sort((a,b)=>a.orderInInterviewPlan-b.orderInInterviewPlan).forEach(st=>{const o=el("option","",st.title);o.value=st.id;o.dataset.kind=st.type;select.append(o);});
+      const reason=el("select","pp-in rec-in");reason.setAttribute("aria-label","Archive reason");reason.hidden=true;
+      const hint=el("option","","Choose archive reason…");hint.value="";reason.append(hint);
+      const save=el("button","rec-primary","Update Ashby");save.disabled=true;
+      select.onchange=async()=>{
+        reason.hidden=select.selectedOptions[0]?.dataset.kind!=="Archived";
+        save.disabled=!select.value || (!reason.hidden && !reason.value);
+        if(!reason.hidden && reason.options.length===1){
+          try {const rr=await fetch("/api/aion/recruiting/ashby/reasons");const data=await rr.json();if(!rr.ok)throw new Error(data.error || "Could not load reasons");(data.reasons || []).forEach(x=>{const o=el("option","",x.text || x.title);o.value=x.id;reason.append(o);});}
+          catch(e){showToast(e.message,null,"error");}
+        }
+      };
+      reason.onchange=()=>{save.disabled=!select.value || (!reason.hidden && !reason.value);};
+      save.onclick=async()=>{
+        save.disabled=true;select.disabled=true;reason.disabled=true;save.textContent="Updating Ashby…";
+        try {
+          // Do not automatically replay a stage mutation after an uncertain response.
+          const r=await fetch("/api/aion/recruiting/ashby/stage/"+c.id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({applicationId:c.ashbyApplicationId,interviewStageId:select.value,archiveReasonId:reason.hidden ? "" : reason.value})});
+          const out=await r.json();if(!r.ok)throw new Error(out.error || "Stage update could not be verified. Refresh before retrying.");
+          recCache=out.view;recAshbyDetail={};showToast("Ashby stage updated");if(recPaint)recPaint();
+        } catch(e){showToast(e.message,null,"error");save.textContent="Refresh to verify stage";}
+      };
+      load.remove();box.append(select,reason,save);
+    }catch(e){load.disabled=false;showToast(e.message,null,"error");}
+  };
+  return box;
 }

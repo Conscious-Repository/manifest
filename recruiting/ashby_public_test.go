@@ -224,8 +224,11 @@ an old posting body that must go
 		}
 		// every frontmatter line the mirror does not own is untouched, in place
 		wasFM, nowFM := ParseRole(was).FM, ParseRole(now).FM
-		if len(wasFM) != len(nowFM) {
-			t.Fatalf("%s: frontmatter grew from %d to %d lines", slug, len(wasFM), len(nowFM))
+		for _, line := range nowFM[len(wasFM):] {
+			key, _, _ := strings.Cut(line, ":")
+			if !inSetFold(ashbyPostingKeys, strings.TrimSpace(key)) {
+				t.Fatalf("unexpected new frontmatter: %s", line)
+			}
 		}
 		for i := range wasFM {
 			key, _, _ := strings.Cut(wasFM[i], ":")

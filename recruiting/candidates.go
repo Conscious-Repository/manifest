@@ -399,6 +399,8 @@ func (d *CandidateDoc) View(slug string, role *RoleDoc) Candidate {
 		AshbyApplicationID: d.Get("ashby_application_id"),
 		SourceRef:          d.Get("source_ref"),
 		AshbyStage:         d.Get("ashby_stage"),
+		AshbyStatus:        d.Get("ashby_status"),
+		Applications:       d.Applications(),
 		Inbound:            d.Get("inbound"),
 		Created:            d.Get("created"),
 		Archived:           d.Get("archived"),

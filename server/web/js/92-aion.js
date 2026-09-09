@@ -1026,7 +1026,7 @@ function renderAionOrg(host) {
 
   rail.append(el("div", "aion-org-label", "Registries"));
   [["people", "People", (aionCache.people || []).length],
-   ["hiring", "Hiring", (aionCache.hiring || []).length],
+   ["hiring", "Roles", (aionCache.recruitingRoles || []).filter(r=>r.status==="open").length],
    ["references", "References", (aionCache.references || []).length],
    ["finances", "Finances", null]].forEach(([key, label, n]) => {
     const b = el("button", "aion-org-item" + (aionOrgSel === key ? " active" : ""));
@@ -1042,7 +1042,7 @@ function renderAionOrg(host) {
   const rawBtn = el("button", "aion-org-raw", "⌘/ edit raw");
   rawBtn.onclick = () => openRawOverlay(rel);
   fileBox.append(rawBtn);
-  rail.append(fileBox);
+  if (aionOrgSel !== "hiring") rail.append(fileBox);
 
   if (aionOrgSel === "people") {
     // rows whose name matches a person note in the vault link out to it —
@@ -1057,14 +1057,15 @@ function renderAionOrg(host) {
       noteLink: (row) => idx[(row.name || "").toLowerCase()] || null,
     }));
   } else if (aionOrgSel === "hiring") {
-    aionTableEditor(pane, {
-      title: "HIRING", rel: "system/aion/hiring.md",
-      colsClass: "cols-aion-hiring",
-      cols: [{ key: "role", label: "ROLE" }, { key: "candidate", label: "CANDIDATE" },
-        { key: "stage", label: "STAGE" }, { key: "priority", label: "PRI" }],
-      rows: aionCache.hiring || [],
-      put: "/api/aion/hiring", payloadKey: "items",
-      addLabel: "role", newRow: (v) => ({ role: v, candidate: "", stage: "", priority: "" }),
+    pane.append(el("div", "pp-section-head", "ROLES"));
+    pane.append(el("p", "micro-label", "Synced from Ashby · the same roles used in Recruiting"));
+    (aionCache.recruitingRoles || []).forEach(r=>{
+      const row=el("div","aion-table-row");
+      const title=el("button","rec-linkish",r.title);
+      title.onclick=()=>{aionMode="recruiting";recNav("role/"+r.slug);};
+      row.append(title,el("span","micro-label",r.status || "Unknown"));
+      if(r.ashbyJobId) {const a=linkEl("Edit in Ashby ↗","https://app.ashbyhq.com/jobs/"+encodeURIComponent(r.ashbyJobId));row.append(a);}
+      pane.append(row);
     });
   } else if (aionOrgSel === "references") {
     aionTableEditor(pane, {

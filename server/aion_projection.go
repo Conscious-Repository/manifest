@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ func (s *Server) aionExportInput(generatedAt string) aion.ExportInput {
 	return aion.ExportInput{
 		People: s.aion.LoadPeople(), VTO: s.aion.LoadVTO(), Backlog: s.aion.LoadBacklog(),
 		Heuristics: s.aion.LoadHeuristics(), Finances: s.aion.LoadFinances(),
-		HiringMD: []byte(s.aion.RawFile("hiring.md")), ReferencesMD: []byte(s.aion.RawFile("references.md")),
+		HiringMD: s.aionRecruitingHiringMD(), ReferencesMD: []byte(s.aion.RawFile("references.md")),
 		Goals: s.aionExportGoals(), PublishedAt: generatedAt,
 	}
 }
@@ -118,4 +119,30 @@ func nextQuarter(q string) string {
 	default:
 		return fmt.Sprintf("%d-Q1", year+1)
 	}
+}
+
+// Only public opening metadata crosses into the team portal. Never project
+// the recruiting View (which contains private candidates and evidence).
+func (s *Server) aionRecruitingHiringMD() []byte {
+	var lines []string
+	lines = append(lines, "# Open roles")
+	if s.recruiting != nil {
+		for _, slug := range s.recruiting.RoleSlugs() {
+			r := s.recruiting.LoadRole(slug)
+			if r.Get("status") != "open" || r.Get("published") != "true" {
+				continue
+			}
+			link := r.Get("job_url")
+			if link == "" {
+				link = r.Get("apply_url")
+			}
+			u, err := url.Parse(link)
+			if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+				continue
+			}
+			row := record.NewRow("role", r.Get("title"), "url", link, "stage", "open")
+			lines = append(lines, row.EmitLines()...)
+		}
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
 }

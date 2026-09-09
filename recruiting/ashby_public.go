@@ -37,7 +37,7 @@ const SourceAshbyPublic = "ashby-public"
 // order they are (re)written. `ashby_job_id` is NOT here: the public API has
 // no job id, only a posting id, and a key this file cannot fill it must not
 // touch.
-var ashbyPostingKeys = []string{"title", "location", "employment", "ashby_posting_id", "source", "synced"}
+var ashbyPostingKeys = []string{"title", "location", "employment", "ashby_posting_id", "source", "synced", "job_url", "apply_url", "published"}
 
 // AshbyPosting is one public job-board posting, reduced to what a role record
 // mirrors plus the public identity fields the sync report shows.
@@ -279,6 +279,9 @@ func (d *RoleDoc) ApplyAshbyPosting(p AshbyPosting, now time.Time) {
 			d.Set(key, now.UTC().Format("2006-01-02"))
 		}
 	}
+	d.Set("job_url", p.JobURL)
+	d.Set("apply_url", p.ApplyURL)
+	d.Set("published", fmt.Sprint(p.Listed))
 	d.SetPosting(p.Description)
 }
 
@@ -363,6 +366,13 @@ func (s *Store) SyncAshbyPostings(postings []AshbyPosting, now time.Time) (Ashby
 	for _, slug := range slugs {
 		if !claimed[slug] {
 			res.Unlisted = append(res.Unlisted, slug)
+			doc := s.LoadRole(slug)
+			if doc.Get("ashby_posting_id") != "" {
+				doc.Set("published", "false")
+				if err := s.SaveRole(slug, doc); err != nil {
+					return res, err
+				}
+			}
 		}
 	}
 	sort.Strings(res.Unlisted)

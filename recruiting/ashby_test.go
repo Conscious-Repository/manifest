@@ -39,6 +39,7 @@ type fakeAshby struct {
 	searchHits []map[string]any
 	sources    []map[string]any
 	postings   []map[string]any
+	jobs       []map[string]any
 	failWith   string // every call answers 401 with this text
 	denyAdd    bool   // candidate.addProject answers 404
 	nextID     int
@@ -249,7 +250,9 @@ func (f *fakeAshby) serve(w http.ResponseWriter, r *http.Request) {
 			all = []map[string]any{}
 		}
 		f.ok(w, all, map[string]any{"moreDataAvailable": false, "syncToken": "at_1"})
-	case "job.list", "project.list":
+	case "job.list":
+		f.ok(w, f.jobs, map[string]any{"moreDataAvailable": false})
+	case "project.list":
 		f.ok(w, []map[string]any{}, map[string]any{"moreDataAvailable": false})
 	default:
 		f.fail(w, http.StatusNotFound, "unknown method "+call.Method)
@@ -1390,7 +1393,7 @@ func TestAshbyPushKeepsAConcurrentEdit(t *testing.T) {
 	if _, err := h.sync.applyToCandidate(CandidateSlug(h.cand.ID), ashbyRecordPatch{set: map[string]string{"title": "x"}}); err == nil {
 		t.Fatal("applyToCandidate accepted a shared field")
 	}
-	if err := h.sync.applyToRole("mri-engineer", map[string]string{"title": "x"}); err == nil {
+	if err := h.sync.applyToRole("mri-engineer", map[string]string{"location": "x"}); err == nil {
 		t.Fatal("applyToRole accepted a shared field")
 	}
 }

@@ -44,7 +44,16 @@ func (s *Server) handleRecruitingAshbyDetail(w http.ResponseWriter, r *http.Requ
 	ctx, cancel := ashbyCtx(r)
 	defer cancel()
 
-	detail, err := s.ashbySync.Detail(ctx, id)
+	var b struct {
+		ApplicationID string `json:"applicationId"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		if err := decode(r, &b); err != nil {
+			httpError(w, errBadRequest("invalid application request"))
+			return
+		}
+	}
+	detail, err := s.ashbySync.Detail(ctx, id, b.ApplicationID)
 	if err != nil {
 		ashbyError(w, err)
 		return
@@ -57,7 +66,7 @@ func (s *Server) handleRecruitingAshbyDetail(w http.ResponseWriter, r *http.Requ
 			// names itself beside them rather than replacing them
 			out["resumeError"] = err.Error()
 		} else {
-			if err := s.ashbySync.RecordResume(id, ref.Name, ref.Hash, time.Now()); err != nil {
+			if err := s.ashbySync.RecordApplicationResume(id, detail.ApplicationID, ref.Name, ref.Hash, time.Now()); err != nil {
 				httpError(w, err)
 				return
 			}

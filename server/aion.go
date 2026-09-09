@@ -106,17 +106,18 @@ func (s *Server) handleAion(w http.ResponseWriter, r *http.Request) {
 		syncStatus = s.aionLive.Status()
 	}
 	resp := map[string]any{
-		"people":        peopleView(people),
-		"vto":           vtoView(vto),
-		"backlog":       effectiveBacklog,
-		"collaboration": collaboration,
-		"sync":          syncStatus,
-		"heuristics":    nonNilHeur(heur.LiveEntries()),
-		"retired":       retiredView(heur),
-		"hiring":        hiringView(s.aion.LoadHiring()),
-		"references":    referencesView(s.aion.LoadReferences()),
-		"finances":      finances,
-		"goalsArea":     s.aionGoalsArea(),
+		"people":          peopleView(people),
+		"vto":             vtoView(vto),
+		"backlog":         effectiveBacklog,
+		"collaboration":   collaboration,
+		"sync":            syncStatus,
+		"heuristics":      nonNilHeur(heur.LiveEntries()),
+		"retired":         retiredView(heur),
+		"hiring":          hiringView(s.aion.LoadHiring()),
+		"recruitingRoles": s.aionRecruitingRoles(),
+		"references":      referencesView(s.aion.LoadReferences()),
+		"finances":        finances,
+		"goalsArea":       s.aionGoalsArea(),
 	}
 	writeJSON(w, resp)
 }
@@ -550,4 +551,16 @@ func (s *Server) handleAionHeuristicsReorder(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) aionRecruitingRoles() []map[string]string {
+	out := []map[string]string{}
+	if s.recruiting == nil {
+		return out
+	}
+	for _, slug := range s.recruiting.RoleSlugs() {
+		r := s.recruiting.LoadRole(slug)
+		out = append(out, map[string]string{"slug": slug, "title": r.Get("title"), "status": r.Get("status"), "jobUrl": r.Get("job_url"), "ashbyJobId": r.Get("ashby_job_id")})
+	}
+	return out
 }

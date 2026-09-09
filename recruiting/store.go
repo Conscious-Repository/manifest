@@ -238,7 +238,15 @@ func (s *Store) View() View {
 	// items (92-aion.js:38).
 	open := map[string]int{}
 	for _, c := range v.Candidates {
-		if IsActive(c) {
+		if len(c.Applications) > 0 {
+			seen := map[string]bool{}
+			for _, a := range c.Applications {
+				if applicationActive(a.Status, a.Stage) && !seen[a.Role] {
+					open[roleKey(a.Role)]++
+					seen[a.Role] = true
+				}
+			}
+		} else if IsActive(c) {
 			open[roleKey(c.Role)]++
 		}
 	}
@@ -263,7 +271,20 @@ func (s *Store) View() View {
 
 // IsActive is THE "on the board" predicate: an archived candidate is retained
 // but excluded from active views and counts (D7).
-func IsActive(c Candidate) bool { return c.Stage != StageArchived }
+func IsActive(c Candidate) bool {
+	if len(c.Applications) > 0 {
+		for _, a := range c.Applications {
+			if applicationActive(a.Status, a.Stage) {
+				return true
+			}
+		}
+		return false
+	}
+	if c.AshbyApplicationID != "" && !applicationActive(c.AshbyStatus, c.AshbyStage) {
+		return false
+	}
+	return c.Stage != StageArchived
+}
 
 // roleKey reduces a role id or slug to the one lookup key both forms share.
 func roleKey(role string) string { return strings.TrimPrefix(strings.TrimSpace(role), "role/") }

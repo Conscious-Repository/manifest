@@ -139,6 +139,7 @@ func (d *RoleDoc) View(slug string, openCount int) Role {
 		Criteria:       d.Criteria(),
 		Terms:          d.Terms(),
 		Posting:        d.Posting(),
-		OpenCount:      openCount,
+		JobURL:         d.Get("job_url"), ApplyURL: d.Get("apply_url"), Published: d.Get("published") == "true",
+		OpenCount: openCount,
 	}
 }

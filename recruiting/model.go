@@ -152,6 +152,9 @@ type Role struct {
 	Criteria       []Criterion `json:"criteria"`
 	Terms          []string    `json:"terms"`
 	Posting        string      `json:"posting"`
+	JobURL         string      `json:"jobUrl,omitempty"`
+	ApplyURL       string      `json:"applyUrl,omitempty"`
+	Published      bool        `json:"published"`
 	OpenCount      int         `json:"openCount"`
 }
 
@@ -242,6 +245,8 @@ type Candidate struct {
 	AshbyCandidateID   string            `json:"ashbyCandidateId,omitempty"`
 	AshbyApplicationID string            `json:"ashbyApplicationId,omitempty"`
 	SourceRef          string            `json:"sourceRef,omitempty"`
+	Applications       []Application     `json:"applications,omitempty"`
+	AshbyStatus        string            `json:"ashbyStatus,omitempty"`
 	AshbyStage         string            `json:"ashbyStage,omitempty"` // Ashby-authoritative official stage
 	Inbound            string            `json:"inbound,omitempty"`    // date this record arrived AS AN APPLICANT (sync-back import); untriaged while stage is still `ashby`
 	Created            string            `json:"created"`

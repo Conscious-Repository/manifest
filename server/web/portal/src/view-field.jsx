@@ -160,7 +160,7 @@ function FieldView({ data, items, goalsIndex, me, filter, sel, w, onSelect, onCl
 
   const fin = data.finances || {};
   const hiring = U.parseFieldFile(data.hiring || '').map(r => ({
-    role: r.fields.role || r.rest, stage: r.fields.stage || '', priority: parseInt(r.fields.priority || '9', 10)
+    role: r.fields.role || r.rest, url: r.fields.url || '', stage: r.fields.stage || '', priority: parseInt(r.fields.priority || '9', 10)
   })).filter(h => h.role).sort((a, b) => a.priority - b.priority);
   const refs = D.paperEntries(data.references || '');
 
@@ -237,9 +237,7 @@ function FieldView({ data, items, goalsIndex, me, filter, sel, w, onSelect, onCl
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 9 }}>
             {hiring.map((h, i) => (
               <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12 }}>
-                <span style={{ color: 'var(--ink-mute,#555)', fontSize: 11 }}>{'p' + h.priority}</span>
-                <span>{h.role}</span>
-                <span style={{ marginLeft: 'auto', color: 'var(--ink-faint,#777)', fontSize: 11 }}>{h.stage}</span>
+                {/^https:\/\//i.test(h.url) ? <a href={h.url} target="_blank" rel="noopener noreferrer" style={{color:'inherit'}}>{h.role} ↗</a> : <span>{h.role}</span>}
               </div>
             ))}
           </div>

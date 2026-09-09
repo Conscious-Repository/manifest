@@ -124,6 +124,8 @@ var FieldAuthority = map[string]Authority{
 	// Ashby-authoritative after handoff
 	"ashby_candidate_id":   AuthorityAshby,
 	"ashby_application_id": AuthorityAshby,
+	"ashby_applications":   AuthorityAshby,
+	"ashby_status":         AuthorityAshby,
 	"ashby_stage":          AuthorityAshby, // official application stage
 	"ashby_source_id":      AuthorityAshby,
 	"ashby_pipeline":       AuthorityAshby,
@@ -133,7 +135,10 @@ var FieldAuthority = map[string]Authority{
 	"inbound":              AuthorityAshby, // applied-as-applicant stamp — the sync-back import writes it (untriaged queue)
 
 	// role — shared posting fields, Ashby ids, Manifest criteria
-	"role.title":            AuthorityShared,
+	"role.title":            AuthorityAshby,
+	"role.status":           AuthorityAshby,
+	"role.published":        AuthorityAshby,
+	"role.synced":           AuthorityAshby,
 	"role.location":         AuthorityShared,
 	"role.employment":       AuthorityShared,
 	"role.posting":          AuthorityShared,
@@ -1060,6 +1065,7 @@ const (
 // record store (ids and audit lines land on records through the same
 // capability-bound writer) and the private client.
 type AshbySync struct {
+	public *AshbyPublic
 	store  *Store
 	client *Ashby
 	path   string
@@ -1686,7 +1692,7 @@ func (s *Section) linesOrNil() []Line {
 // ChangeStage moves a linked candidate's application on the ATS side —
 // advance by interview stage id, or archive by reason id — then re-fetches
 // and mirrors the official stage onto the record's `ashby_stage`.
-func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID, archiveReasonID, actor string, now time.Time) (AshbyApplication, error) {
+func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID, archiveReasonID, actor string, now time.Time, applicationIDs ...string) (AshbyApplication, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.client.Configured() {
@@ -1697,6 +1703,12 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 		return AshbyApplication{}, err
 	}
 	appID := strings.TrimSpace(doc.Get("ashby_application_id"))
+	if len(applicationIDs) > 0 && applicationIDs[0] != "" {
+		appID = applicationIDs[0]
+		if !doc.HasApplication(appID) {
+			return AshbyApplication{}, errf("application does not belong to this candidate")
+		}
+	}
 	if appID == "" {
 		return AshbyApplication{}, errf("%s has no Ashby application to move", candidate)
 	}
@@ -1726,7 +1738,10 @@ func (a *AshbySync) ChangeStage(ctx context.Context, candidate, interviewStageID
 	}
 	line := AshbyAudit{At: now.UTC().Format(time.RFC3339), Actor: actor, Candidate: doc.Get("id"),
 		Method: "application.changeStage", AshbyID: appID, Detail: detail}
-	if _, err := a.applyToCandidate(slug, ashbyRecordPatch{set: map[string]string{"ashby_stage": ashbyStageOf(app)}, audit: []AshbyAudit{line}}); err != nil {
+	if err := a.mirrorApplication(slug, app, now); err != nil {
+		return app, err
+	}
+	if _, err := a.applyToCandidate(slug, ashbyRecordPatch{audit: []AshbyAudit{line}}); err != nil {
 		return app, err
 	}
 	st := a.load()
@@ -1755,7 +1770,7 @@ type AshbyDetail struct {
 // Detail reads one linked candidate's application in full. The resume handle
 // is traded for a download URL here and nowhere else, because the URL expires:
 // whoever wants the bytes must fetch them now.
-func (a *AshbySync) Detail(ctx context.Context, candidate string) (AshbyDetail, error) {
+func (a *AshbySync) Detail(ctx context.Context, candidate string, applicationIDs ...string) (AshbyDetail, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.client.Configured() {
@@ -1767,6 +1782,12 @@ func (a *AshbySync) Detail(ctx context.Context, candidate string) (AshbyDetail, 
 	}
 	out := AshbyDetail{FormsUnavailable: true}
 	appID := strings.TrimSpace(doc.Get("ashby_application_id"))
+	if len(applicationIDs) > 0 && applicationIDs[0] != "" {
+		appID = applicationIDs[0]
+		if !doc.HasApplication(appID) {
+			return out, errf("application does not belong to this candidate")
+		}
+	}
 	candID := strings.TrimSpace(doc.Get("ashby_candidate_id"))
 	if appID == "" && candID == "" {
 		return out, errf("%s is not linked to Ashby", candidate)
@@ -1939,6 +1960,16 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		return st.SyncTokens[method]
 	}
 
+	if a.public != nil {
+		publicPostings, err := a.public.Fetch(ctx)
+		if err != nil {
+			return res, err
+		}
+		if _, err := a.store.SyncAshbyPostings(publicPostings, now); err != nil {
+			return res, err
+		}
+	}
+
 	// roles: posting id → job id
 	postings, err := a.client.ListJobPostings(ctx, false)
 	if err != nil {
@@ -1959,6 +1990,26 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 			return res, err
 		}
 		res.RolesLinked = append(res.RolesLinked, slug)
+	}
+
+	jobs, jtoken, err := a.client.ListJobs(ctx, token("job.list"))
+	if err != nil {
+		return res, err
+	}
+	for _, job := range jobs {
+		for _, slug := range a.store.RoleSlugs() {
+			r := a.store.LoadRole(slug)
+			if r.Get("ashby_job_id") != job.ID {
+				continue
+			}
+			set := map[string]string{"title": job.Title, "synced": now.UTC().Format("2006-01-02")}
+			if job.Status != "" {
+				set["status"] = strings.ToLower(job.Status)
+			}
+			if err := a.applyToRole(slug, set); err != nil {
+				return res, err
+			}
+		}
 	}
 
 	// linked candidates, by Ashby id
@@ -2030,6 +2081,9 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 			continue
 		}
 		doc := docs[slug]
+		if err := a.mirrorApplication(slug, app, now); err != nil {
+			return res, err
+		}
 		have := strings.TrimSpace(doc.Get("ashby_application_id"))
 		if have != "" && have != app.ID {
 			continue // a different application of the same person; not ours
@@ -2117,7 +2171,10 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		candByID[c.ID] = c
 	}
 	for _, app := range apps {
-		if _, ok := linked[app.CandidateID]; ok {
+		if slug, ok := linked[app.CandidateID]; ok {
+			if err := a.mirrorApplication(slug, app, now); err != nil {
+				return res, err
+			}
 			continue
 		}
 		if strings.EqualFold(app.Status, "Archived") {
@@ -2156,11 +2213,24 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		// a second application of the same person later in the list is
 		// "not ours", same as the linked loop above
 		linked[app.CandidateID] = CandidateSlug(id)
+		if err := a.mirrorApplication(CandidateSlug(id), app, now); err != nil {
+			return res, err
+		}
 		st.Candidates[id] = AshbyCandidateState{AshbyID: c.ID, Base: ashbySide(c), SyncedAt: res.Synced}
 		if created {
 			res.Imported = append(res.Imported, id)
 		} else {
 			res.Adopted = append(res.Adopted, id)
+		}
+	}
+
+	// An archived application may precede the live application that caused a
+	// person to be imported. Capture it in the same pass, independent of order.
+	for _, app := range apps {
+		if slug, ok := linked[app.CandidateID]; ok {
+			if err := a.mirrorApplication(slug, app, now); err != nil {
+				return res, err
+			}
 		}
 	}
 
@@ -2174,6 +2244,9 @@ func (a *AshbySync) syncBack(ctx context.Context, st *AshbySyncState, full bool,
 		res.SkippedJobs = skippedJobs
 	}
 
+	if jtoken != "" {
+		st.SyncTokens["job.list"] = jtoken
+	}
 	if ctoken != "" {
 		st.SyncTokens["candidate.list"] = ctoken
 	}
@@ -2230,3 +2303,6 @@ func (a *AshbySync) HandleWebhook(ctx context.Context, key, action string, now t
 	st.Webhooks = append(st.Webhooks, key)
 	return res, a.save(st)
 }
+
+// UsePublic wires the public posting feed before serving requests.
+func (a *AshbySync) UsePublic(p *AshbyPublic) { a.public = p }

@@ -489,6 +489,7 @@ func main() {
 	if as, err := recruiting.NewAshbySync(filepath.Join(cfg.DataDir, "recruiting", "ashby.json"), recStore, ashbyClient); err != nil {
 		log.Printf("recruiting ashby sync unavailable: %v", err)
 	} else {
+		as.UsePublic(recruiting.NewAshbyPublic("", nil))
 		srv.UseAshbySync(as)
 	}
 	// The webhook receiver's signing secret (Phase 7): same ONE-source rule,

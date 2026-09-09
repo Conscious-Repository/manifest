@@ -170,6 +170,7 @@ func (s *Server) handleRecruitingAshbyStage(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var b struct {
+		ApplicationID    string `json:"applicationId"`
 		InterviewStageID string `json:"interviewStageId"`
 		ArchiveReasonID  string `json:"archiveReasonId"`
 		Actor            string `json:"actor"`
@@ -181,7 +182,7 @@ func (s *Server) handleRecruitingAshbyStage(w http.ResponseWriter, r *http.Reque
 	ctx, cancel := ashbyCtx(r)
 	defer cancel()
 	app, err := s.ashbySync.ChangeStage(ctx, strings.TrimSpace(r.PathValue("id")),
-		strings.TrimSpace(b.InterviewStageID), strings.TrimSpace(b.ArchiveReasonID), strings.TrimSpace(b.Actor), time.Now())
+		strings.TrimSpace(b.InterviewStageID), strings.TrimSpace(b.ArchiveReasonID), strings.TrimSpace(b.Actor), time.Now(), strings.TrimSpace(b.ApplicationID))
 	if err != nil {
 		ashbyError(w, err)
 		return
@@ -209,4 +210,18 @@ func (s *Server) handleRecruitingAshbySync(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, map[string]any{"sync": res, "view": s.recruiting.View()})
+}
+
+func (s *Server) handleRecruitingAshbyStages(w http.ResponseWriter, r *http.Request) {
+	if !s.ashbyReady(w) {
+		return
+	}
+	ctx, cancel := ashbyCtx(r)
+	defer cancel()
+	stages, err := s.ashbySync.ApplicationStages(ctx, r.PathValue("id"), r.URL.Query().Get("applicationId"))
+	if err != nil {
+		ashbyError(w, err)
+		return
+	}
+	writeJSON(w, map[string]any{"stages": stages})
 }

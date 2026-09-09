@@ -499,6 +499,7 @@ func (s *Server) Handler() http.Handler {
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/preflight/{id...}", s.handleRecruitingAshbyPreflight)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/push/{id...}", s.handleRecruitingAshbyPush)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/stage/{id...}", s.handleRecruitingAshbyStage)
+				mux.HandleFunc("GET /api/aion/recruiting/ashby/stages/{id...}", s.handleRecruitingAshbyStages)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/detail/{id...}", s.handleRecruitingAshbyDetail)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/sync", s.handleRecruitingAshbySync)
 				mux.HandleFunc("POST /api/aion/recruiting/ashby/webhook", s.handleRecruitingAshbyWebhook)
