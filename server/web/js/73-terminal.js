@@ -83,7 +83,7 @@ async function loadTermSessions(quiet) {
       // A known stopped pane is never reopened from Terminal history.
       detachTerm();
       renderTermEmpty("pane ended · resume conversations in Chats");
-    } else if (selected && termStage === "term" && (!quiet || !termInst)) attachTerm(selected.id);
+    } else if (!els.terminalView.hidden && selected && termStage === "term" && (!quiet || !termInst)) attachTerm(selected.id);
     else if (!quiet && termStage === "term") renderTermEmpty();
   })();
   try { await termInventoryRequest; } finally {
