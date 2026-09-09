@@ -458,7 +458,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		var err error
 		se, err = s.launchHerdr(r.Context(), se)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			http.Error(w, err.Error(), terminalLaunchStatus(err))
 			return
 		}
 	} else {
@@ -634,7 +634,7 @@ func (s *Server) handleTermAgentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	se, tn, err := s.createAgentWithBackend(r.Context(), kind, b.Cwd, b.Name, b.Model, b.Backend)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
+		http.Error(w, err.Error(), terminalLaunchStatus(err))
 		return
 	}
 	writeJSON(w, struct {
@@ -755,7 +755,14 @@ func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	se, ok := s.terminal.find(id)
+	mu := s.termInputMutex(id)
+	mu.Lock()
+	defer mu.Unlock()
+	se, ok, err := s.terminal.findChecked(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	if !ok {
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
@@ -764,9 +771,14 @@ func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "work-order session links belong to board history and cannot be forgotten", http.StatusConflict)
 		return
 	}
-	if err := s.closeTerm(r.Context(), se); err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+	// Explicit metadata forget identifies and kills no runtime process. A lost
+	// allocation reply may have left an unassociated pane in the live inventory.
+	orphan := se.Backend == "herdr" && se.LaunchPhase == "intent" && !se.Started && se.Runtime == (terminalIdentity{})
+	if !orphan {
+		if err := s.closeTerm(r.Context(), se); err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 	if err := s.terminal.removeChecked(id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

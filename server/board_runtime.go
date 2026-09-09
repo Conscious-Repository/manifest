@@ -12,6 +12,10 @@ import (
 // Persist the board link before any request capable of creating a process. A
 // restart at any launch boundary retains both the writer lane and the same ID.
 func (s *Server) createBoardHerdrSession(kind, cwd, name, brief, model string) (termSession, error) {
+	cwd, err := resolveTerminalCwd(cwd, s.terminal.defaultWd)
+	if err != nil {
+		return termSession{}, err
+	}
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return termSession{}, err
@@ -26,6 +30,9 @@ func (s *Server) createBoardHerdrSession(kind, cwd, name, brief, model string) (
 		b[8] = b[8]&0x3f | 0x80
 		se.ResumeID = fmt.Sprintf("%x-%x-%x-%x-%x", b[:4], b[4:6], b[6:8], b[8:10], b[10:])
 	}
+	mu := s.termInputMutex(se.ID)
+	mu.Lock()
+	defer mu.Unlock()
 	if err := s.terminal.upsertChecked(se); err != nil {
 		return se, err
 	}
@@ -34,5 +41,5 @@ func (s *Server) createBoardHerdrSession(kind, cwd, name, brief, model string) (
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return s.launchHerdr(ctx, se)
+	return s.launchHerdrLocked(ctx, se)
 }

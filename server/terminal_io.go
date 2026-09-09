@@ -151,7 +151,11 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		mu := s.termInputMutex(se.ID)
 		mu.Lock()
 		defer mu.Unlock()
-		current, exists := s.terminal.find(se.ID)
+		current, exists, readErr := s.terminal.findChecked(se.ID)
+		if readErr != nil {
+			http.Error(w, readErr.Error(), http.StatusInternalServerError)
+			return
+		}
 		if !exists {
 			http.Error(w, "no such session", http.StatusNotFound)
 			return
@@ -159,9 +163,9 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		se = current
 		var relaunched bool
 		var err error
-		se, relaunched, err = s.ensureHerdrInput(r.Context(), se)
+		se, relaunched, err = s.ensureHerdrInputLocked(r.Context(), se)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			http.Error(w, err.Error(), terminalLaunchStatus(err))
 			return
 		}
 		if b.Key != "" {
@@ -184,7 +188,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil {
-			http.Error(w, "send outcome: "+err.Error()+"; no automatic retry", http.StatusBadGateway)
+			http.Error(w, "send outcome: "+err.Error()+"; no automatic retry", terminalLaunchStatus(err))
 			return
 		}
 		se.LastUsed = time.Now().Format(time.RFC3339)

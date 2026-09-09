@@ -62,3 +62,32 @@ helpers on both hosts. Therefore those helpers/endpoints remain until their real
 sessions and callers have drained; no live legacy session was killed to satisfy
 cleanup. The removed Terminal history/pin/default-name UI is not the board ledger
 or conversation history, both of which remain in their existing surfaces.
+
+Local working directories are validated before saving a launch intent or a board
+session marker. An invalid cwd returns 400 from session creation, explicit herdr
+agent-session creation, or stopped-conversation resume. Blank uses the launcher's
+default directory; `~` and `~/` use that same home/default. Other relative paths
+are rejected. No shell expressions or environment variables are expanded.
+Directories and symlinks to directories are accepted; the selected absolute path
+spelling is preserved. Remote tmux/Keep and legacy agent-session tmux behavior
+are unchanged. A rejected resume preserves the original conversation mapping.
+
+The adapter checks again immediately before `workspace.create`. If the directory
+disappeared and no allocation request was attempted, checked persistence removes
+only a fresh ordinary intent or restores the prior conversation row. Board links
+and markers remain for the existing board error flow. A failed rollback returns
+500 with the retained row ID and original cause. Stat cannot guarantee a later
+chdir: after a mutating request may have been sent, errors and lost replies retain
+the conservative intent/allocated/submitted posture and return 502. Never replay
+or allocate a replacement automatically.
+
+DELETE has one explicit metadata-forget exception: a non-board herdr row with
+`launchPhase=intent`, `Started=false`, and an entirely empty runtime identity.
+It removes the row without inspecting or closing a runtime. This does **not**
+claim a process was stopped: historical intents can also represent lost allocation
+replies. Any unassociated pane must be inspected and closed separately using its
+exact handle in Terminal's live inventory, never matched by label or cwd. `/kill`
+remains strict. Board-linked rows remain protected with 409; partially populated
+identities and later launch phases require the existing exact-identity close.
+Launch, resume, and DELETE serialize on the same stable session ID so forgetting
+cannot race an allocation into recreating its row. No startup/list cleanup is added.

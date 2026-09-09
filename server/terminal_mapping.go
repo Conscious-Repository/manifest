@@ -184,32 +184,65 @@ func (s *Server) observeTerm(ctx context.Context, se termSession) (terminalObser
 // Allocation can itself succeed with a lost reply; a label is not enough evidence
 // to recover that identity and therefore cannot authorize a second allocation.
 func (s *Server) launchHerdr(ctx context.Context, se termSession) (termSession, error) {
+	mu := s.termInputMutex(se.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	return s.launchHerdrLocked(ctx, se)
+}
+
+// Caller holds the stable session ID lock across persistence and daemon I/O.
+func (s *Server) launchHerdrLocked(ctx context.Context, se termSession) (termSession, error) {
+	cwd, err := resolveTerminalCwd(se.Cwd, s.terminal.defaultWd)
+	if err != nil {
+		return se, err
+	}
 	if s.terminal.herdr == nil {
 		return se, errors.New("herdr daemon is not configured; no fallback launch")
 	}
+	prior, existed, err := s.terminal.findChecked(se.ID)
+	if err != nil {
+		return se, &terminalServerError{err}
+	}
+	se.Cwd = cwd
 	se.Version = terminalRowVersion
 	se.Backend = "herdr"
 	se.LaunchPhase = "intent"
-	if se.Cwd == "" {
-		se.Cwd = s.terminal.defaultWd
-	}
 	if err := s.terminal.upsertChecked(se); err != nil {
-		return se, err
+		return se, &terminalServerError{err}
 	}
 	id, err := s.terminal.herdr.allocate(ctx, se)
 	if err != nil {
+		var notAttempted *terminalAllocationNotAttempted
+		if errors.As(err, &notAttempted) {
+			if se.BoardBrief != "" {
+				return se, fmt.Errorf("allocation not attempted; board session %s retained: %w", se.ID, err)
+			}
+			var rollbackErr error
+			if existed {
+				rollbackErr = s.terminal.upsertChecked(prior)
+			} else {
+				rollbackErr = s.terminal.removeChecked(se.ID)
+			}
+			if rollbackErr != nil {
+				return se, &terminalServerError{fmt.Errorf("terminal %s rollback failed (%v); original allocation rejection: %w", se.ID, rollbackErr, err)}
+			}
+			if existed {
+				se = prior
+			}
+			return se, err
+		}
 		return se, fmt.Errorf("launch allocation unobserved; do not retry automatically: %w", err)
 	}
 	se.Runtime = id
 	se.LaunchPhase = "allocated"
 	if err = s.terminal.upsertChecked(se); err != nil {
-		return se, fmt.Errorf("allocated pane identity could not be persisted; nothing launched: %w", err)
+		return se, &terminalServerError{fmt.Errorf("allocated pane identity could not be persisted; nothing launched: %w", err)}
 	}
 	launch := se
 	se.LaunchPhase = "submitted"
 	se.Started = true
 	if err = s.terminal.upsertChecked(se); err != nil {
-		return se, fmt.Errorf("launch submission posture could not be persisted; nothing launched: %w", err)
+		return se, &terminalServerError{fmt.Errorf("launch submission posture could not be persisted; nothing launched: %w", err)}
 	}
 	if err = s.terminal.herdr.launch(ctx, id, launch); err != nil {
 		return se, fmt.Errorf("launch outcome unobserved; do not replay: %w", err)
@@ -217,11 +250,24 @@ func (s *Server) launchHerdr(ctx context.Context, se termSession) (termSession, 
 	se.LaunchPhase = "active"
 	se.LastUsed = time.Now().Format(time.RFC3339)
 	if err = s.terminal.upsertChecked(se); err != nil {
-		return se, fmt.Errorf("process launched but mapping finalization failed; do not replay: %w", err)
+		return se, &terminalServerError{fmt.Errorf("process launched but mapping finalization failed; do not replay: %w", err)}
 	}
 	return se, nil
 }
 func (s *Server) ensureHerdrInput(ctx context.Context, se termSession) (termSession, bool, error) {
+	mu := s.termInputMutex(se.ID)
+	mu.Lock()
+	defer mu.Unlock()
+	current, ok, err := s.terminal.findChecked(se.ID)
+	if err != nil {
+		return se, false, &terminalServerError{err}
+	}
+	if !ok {
+		return se, false, errors.New("terminal session no longer exists")
+	}
+	return s.ensureHerdrInputLocked(ctx, current)
+}
+func (s *Server) ensureHerdrInputLocked(ctx context.Context, se termSession) (termSession, bool, error) {
 	// The shared ID lock in handleTermInput guards explicit stopped-session resume.
 	if se.LaunchPhase != "active" {
 		return se, false, fmt.Errorf("launch %s is unresolved; open the exact pane to inspect, no input sent", se.LaunchPhase)
@@ -242,7 +288,7 @@ func (s *Server) ensureHerdrInput(ctx context.Context, se termSession) (termSess
 	// An explicit owner send may resume an exactly identified, confirmed-absent
 	// conversation. Started stays true so a board's first command is never replayed.
 	se.Started = true
-	resumed, err := s.launchHerdr(ctx, se)
+	resumed, err := s.launchHerdrLocked(ctx, se)
 	return resumed, true, err
 }
 func (s *Server) closeTerm(ctx context.Context, se termSession) error {
@@ -403,4 +449,19 @@ func (c *termCfg) updateTermMetadata(id string, edit func(*termSession)) (termSe
 		}
 	}
 	return termSession{}, errors.New("terminal session no longer exists")
+}
+
+func (c *termCfg) findChecked(id string) (termSession, bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	rows, err := c.loadChecked()
+	if err != nil {
+		return termSession{}, false, err
+	}
+	for _, se := range rows {
+		if se.ID == id {
+			return se, true, nil
+		}
+	}
+	return termSession{}, false, nil
 }

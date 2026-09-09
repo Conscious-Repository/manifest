@@ -238,16 +238,13 @@ func (h *herdrTerminalRuntime) allocate(ctx context.Context, se termSession) (te
 	if _, err := h.List(ctx); err != nil {
 		return terminalIdentity{}, err
 	}
-	cwd := se.Cwd
-	if cwd == "" {
-		cwd = h.server.terminal.defaultWd
-	}
-	if st, err := os.Stat(cwd); err != nil || !st.IsDir() {
-		return terminalIdentity{}, errors.New("terminal cwd does not exist")
-	}
 	gen, err := h.generation()
 	if err != nil {
 		return terminalIdentity{}, err
+	}
+	cwd, err := resolveTerminalCwd(se.Cwd, h.server.terminal.defaultWd)
+	if err != nil {
+		return terminalIdentity{}, &terminalAllocationNotAttempted{err}
 	}
 	r, err := h.callGeneration(ctx, "workspace.create", map[string]any{"cwd": cwd, "label": se.Name}, gen)
 	if err != nil {
