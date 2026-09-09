@@ -98,7 +98,7 @@ function chatMountHeader(head) {
   if (head && !head.querySelector(".chat-latest")) {
     const latest = el("button", "sprt-quiet chat-latest", "Latest ↓");
     latest.title = "Return to the latest output";
-    latest.onclick = () => { chatStick = true; chatPin(); };
+    latest.onclick = () => { chatStick = true; chatPin(); chatSaveReadingPosition(); };
     head.append(latest);
   }
   slot.replaceChildren(...(head ? [head] : []));
@@ -165,6 +165,9 @@ window.addEventListener("pagehide",()=>{chatSaveDraft();for(const state of chatS
 function showChat(h) {
   chatCloseWorkspace();
   chatSaveDraft();
+  const readingHost = document.getElementById("chatTranscript");
+  if (readingHost) readingHost.dataset.readKey = "";
+  chatReadingGestureUntil = 0;
   chatDraftKey = "";
   chatPendingFiles = [];
   chatMountHeader(null);
@@ -911,6 +914,7 @@ async function loadChatSession(id) {
   }
   if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
   await chatPrepareDraft(d.conversation,(agent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null);
+  await chatPrepareReadingPosition(d.conversation);
   if (id !== chatOpenId || base !== chatBase()) return;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
@@ -1063,16 +1067,62 @@ function renderChatLive() {
 
 // ---- stick-to-bottom (cmd-ctr rules: release on scroll-up, re-arm ≤24px) ----
 let chatStick = true, chatLastY = 0, chatScrollBound = false;
+const chatReadingStates = new Map();
+let chatReadingGestureUntil = 0;
+async function chatPrepareReadingPosition(descriptor) {
+  if (!descriptor?.key || typeof ChatDraftState === "undefined") return;
+  if (chatReadingStates.has(descriptor.key)) { await chatReadingStates.get(descriptor.key).refresh(); return; }
+  const saved = new ChatDraftState(descriptor.key, state => {
+    // Reading position is a convenience bookmark, not an editable document.
+    // A competing device's accepted bookmark wins without moving this viewport.
+    if (state.conflict) state.resolve(true);
+  }, "view");
+  chatReadingStates.set(descriptor.key, saved);
+  await saved.refresh();
+}
+function chatReadingAnchor(host) {
+  if (host.scrollHeight - host.scrollTop - host.clientHeight <= 24) return {following:true};
+  const top = host.getBoundingClientRect().top;
+  for (const row of host.querySelectorAll("[data-chat-read-turn]")) {
+    const rect = row.getBoundingClientRect();
+    if (rect.bottom > top && rect.height > 0) return {following:false,turn:row.dataset.chatReadTurn,fraction:Math.max(0,Math.min(1,(top-rect.top)/rect.height))};
+  }
+  return null;
+}
+function chatSaveReadingPosition() {
+  const host = document.getElementById("chatTranscript");
+  if (!host || els.chatView.hidden || chatIsTerm() || chatTaskID) return;
+  const saved = chatReadingStates.get(host.dataset.readKey);
+  const value = chatReadingAnchor(host);
+  if (saved && value) saved.set(value);
+}
+function chatRestoreReadingPosition(host, value) {
+  if (!value || value.following !== false || typeof value.turn !== "string") return false;
+  const row = [...host.querySelectorAll("[data-chat-read-turn]")].find(x => x.dataset.chatReadTurn === value.turn);
+  if (!row) return false;
+  const fraction = Number.isFinite(value.fraction) ? Math.max(0,Math.min(1,value.fraction)) : 0;
+  host.scrollTop += row.getBoundingClientRect().top - host.getBoundingClientRect().top + row.getBoundingClientRect().height * fraction;
+  chatLastY = host.scrollTop;
+  chatStick = false;
+  return true;
+}
+window.addEventListener("pagehide",()=>{for(const saved of chatReadingStates.values())if(saved.dirty)saved.flush();});
 function bindChatScroll() {
   if (chatScrollBound) return;
   const host = document.getElementById("chatTranscript");
   if (!host) return;
   chatScrollBound = true;
+  const readingGesture = () => { chatReadingGestureUntil = Date.now() + 1500; };
+  host.addEventListener("wheel", readingGesture, {passive:true});
+  host.addEventListener("touchmove", readingGesture, {passive:true});
+  host.addEventListener("pointerdown", readingGesture, {passive:true});
+  host.addEventListener("keydown", e => { if (["ArrowUp","ArrowDown","PageUp","PageDown","Home","End"," "].includes(e.key)) readingGesture(); });
   host.addEventListener("scroll", () => {
     const y = host.scrollTop;
     if (y < chatLastY - 1) chatStick = false;
     if (host.scrollHeight - y - host.clientHeight <= 24) chatStick = true;
     chatLastY = y;
+    if (Date.now() < chatReadingGestureUntil) chatSaveReadingPosition();
   });
 }
 function chatPin() {
@@ -1274,6 +1324,7 @@ function chatPaintTurns(host, turns, ctx) {
   turns.forEach((t) => {
     if (t.who === "user") {
       const row=chatUserTurn(t.text);
+      row.dataset.chatReadTurn=String(t.n);
       const receipt=ctx?.deliveries?.find(d=>d.userTurn===t.n);
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient;
@@ -1290,11 +1341,13 @@ function chatPaintTurns(host, turns, ctx) {
     }
     if (t.who === "system") {
       const b = el("div", "chat-turn chat-system");
+      b.dataset.chatReadTurn=String(t.n);
       b.textContent = t.text;
       host.append(b);
       return;
     }
     const wrap = el("div", "chat-turn chat-spirit");
+    wrap.dataset.chatReadTurn=String(t.n);
     chatTurnBlocks(t).forEach((b) => wrap.append(chatBlockEl(b)));
     if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
     const foot = el("div", "chat-turn-foot");
@@ -1317,11 +1370,15 @@ function chatPaintTurns(host, turns, ctx) {
 function renderChatTranscript(d) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
-  const keepPosition = chatCurSession && chatCurSession.id === d.session.id && !chatStick;
+  const readKey = d.conversation?.key || "";
+  const changedConversation = host.dataset.readKey !== readKey;
+  const keepPosition = !changedConversation && chatCurSession && chatCurSession.id === d.session.id && !chatStick;
   const previousY = host.scrollTop;
   bindChatScroll();
   chatTermLeave();
   host.innerHTML = "";
+  host.dataset.readKey = readKey;
+  if (changedConversation) chatReadingGestureUntil = 0;
   const s = d.session;
   const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
   if(activeTask)s.task=activeTask;
@@ -1355,6 +1412,7 @@ function renderChatTranscript(d) {
   chatStick = !keepPosition;
   if (keepPosition) host.scrollTop = previousY;
   chatPin();
+  if (changedConversation) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
 }
 
 // ---- composer ----

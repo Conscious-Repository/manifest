@@ -34,3 +34,13 @@ func TestChatArtifactLoadNavigationRace(t *testing.T) {
 		t.Fatalf("artifact load: %v\n%s", err, out)
 	}
 }
+
+func TestChatReadingPositionUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/chat-reading.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("reading position: %v\n%s", err, out)
+	}
+}
