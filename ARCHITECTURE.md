@@ -529,3 +529,13 @@ not its sole copy. Revision checks prevent one device from silently replacing
 another's unsent work. Clearing after acceptance is itself revision-checked and
 must not erase newer typing. Draft saves cannot invoke execution or change a
 source transcript. Reading position uses a separate slot from draft content.
+
+**2026-09-09 — explicit related conversations.** A related chat retains an
+immutable native origin reference and the owner-reviewed opening handoff in its
+own session record. Creation is idempotent and does not invoke an agent. The
+handoff appears as an unsent owner draft; only Send delivers its text and selected
+artifact versions. Backlinks derive from origin metadata. Original transcripts,
+authors, running work and task ownership are untouched. This is a separate linked
+conversation, not a shared history or a Continue-here handoff. Related metadata
+does not grant team access. Current creation support is limited to Hermes-backed
+private conversations; other adapters must supply equivalent contracts first.

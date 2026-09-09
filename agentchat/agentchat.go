@@ -64,7 +64,24 @@ func ValidID(id string) bool { return idRe.MatchString(id) }
 
 // Session is a parsed session frontmatter row (the JSON shape mirrors
 // spirits.ChatSessionSummary so the rail/transcript code needs no branches).
+type Origin struct {
+	Agent     string              `json:"agent"`
+	ID        string              `json:"id"`
+	Task      string              `json:"task,omitempty"`
+	Prompt    string              `json:"prompt,omitempty"`
+	Artifacts []ArtifactReference `json:"artifacts,omitempty"`
+}
+
+func originJSON(o *Origin) string {
+	if o == nil {
+		return ""
+	}
+	b, _ := json.Marshal(o)
+	return string(b)
+}
+
 type Session struct {
+	Origin          *Origin    `json:"origin,omitempty"`
 	Deliveries      []Delivery `json:"deliveries,omitempty"`
 	CreateRequest   string     `json:"-"`
 	CreateSignature string     `json:"-"`
@@ -144,6 +161,7 @@ func parse(content string) (Session, string) {
 		Model: fm["model"], HermesSession: fm["hermes_session"], Task: fm["task"],
 	}
 	_ = json.Unmarshal([]byte(fm["deliveries"]), &sess.Deliveries)
+	_ = json.Unmarshal([]byte(fm["origin"]), &sess.Origin)
 	sess.CreateRequest = fm["create_request"]
 	sess.CreateSignature = fm["create_signature"]
 	sess.Turns, _ = strconv.Atoi(fm["turns"])
@@ -157,6 +175,7 @@ func parse(content string) (Session, string) {
 func render(sess Session, body string) string {
 	return (&mdfm.Writer{}).
 		Set("session", sess.ID).
+		Set("origin", originJSON(sess.Origin)).
 		Set("create_request", sess.CreateRequest).
 		Set("create_signature", sess.CreateSignature).
 		Set("deliveries", deliveryJSON(sess.Deliveries)).
@@ -337,7 +356,7 @@ func (s *Store) Create(agent, profile, title, model string) (string, error) {
 	return s.CreateOnce(agent, profile, title, model, "")
 }
 
-func (s *Store) create(agent, profile, title, model, requestID, signature string) (string, error) {
+func (s *Store) create(agent, profile, title, model, requestID, signature string, origin *Origin) (string, error) {
 	if !ValidAgent(agent) {
 		return "", errors.New("bad agent name")
 	}
@@ -353,7 +372,10 @@ func (s *Store) create(agent, profile, title, model, requestID, signature string
 	}
 	ts := now()
 	sess := Session{ID: id, Agent: agent, Profile: profile, Title: title, Created: ts, Updated: ts,
-		Status: StatusIdle, Model: strings.TrimSpace(model), CreateRequest: requestID, CreateSignature: signature}
+		Origin: origin, Status: StatusIdle, Model: strings.TrimSpace(model), CreateRequest: requestID, CreateSignature: signature}
+	if origin != nil {
+		sess.Task = origin.Task
+	}
 	m := s.lock(agent, id)
 	m.Lock()
 	defer m.Unlock()

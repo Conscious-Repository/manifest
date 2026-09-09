@@ -724,3 +724,15 @@ function artifactWorkspace(mount, options) {
   (async () => { try { const a = await opts.load(); await show(a,opts.revision || a.head); } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } })();
   return {element:pane, close:()=>close.click(), isEditing:()=>editing};
 }
+
+// A compact, keyboard-accessible review surface for explicit user actions.
+function reviewDialog(title,build){
+  const dialog=document.createElement("dialog");dialog.className="review-dialog";
+  const heading=el("h2","",title);dialog.setAttribute("aria-label",title);
+  const body=el("div","review-dialog-body"),actions=el("div","review-dialog-actions");
+  const close=()=>{dialog.close();dialog.remove();};
+  dialog.append(heading,body,actions);document.body.append(dialog);
+  dialog.addEventListener("cancel",()=>dialog.remove());
+  build({body,actions,close});dialog.showModal();
+  return dialog;
+}

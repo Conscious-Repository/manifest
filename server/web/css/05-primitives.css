@@ -294,3 +294,11 @@
 }
 .artifact-edit-recovery:empty { display: none; }
 .artifact-edit-recovery .chat-draft-notice button { min-height:44px; font-size:var(--fs-md); }
+.review-dialog { width:min(38rem,calc(100vw - 2rem)); max-height:calc(100dvh - 2rem); overflow:auto; color:var(--text); background:var(--bg); border:1px solid var(--line); padding:var(--sp-16); }
+.review-dialog::backdrop { background:var(--scrim); }
+.review-dialog h2 { font-size:var(--fs-xl); }
+.review-dialog-body { display:grid; gap:var(--sp-8); }
+.review-dialog-body textarea { width:100%; min-height:12rem; resize:vertical; }
+.review-dialog-body label { display:grid; gap:var(--sp-4); }
+.review-dialog-actions { display:flex; gap:var(--sp-8); flex-wrap:wrap; margin-top:var(--sp-16); }
+.review-dialog-actions button { min-height:44px; }

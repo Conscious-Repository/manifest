@@ -113,7 +113,7 @@ function chatSaveDraft() {
 }
 
 const chatSyncedDrafts=new Map();
-async function chatPrepareDraft(descriptor,key){
+async function chatPrepareDraft(descriptor,key,initial){
   if(!descriptor?.key || typeof ChatDraftState==="undefined")return;
   if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();return;}
   const state=new ChatDraftState(descriptor.key,(current,apply)=>{
@@ -124,6 +124,7 @@ async function chatPrepareDraft(descriptor,key){
   const local=chatDrafts.get(key);
   if(local && (local.text || local.files?.length))state.set({...local,selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||""});
   await state.refresh();
+  if(initial&&state.revision===0&&state.value===null&&!state.error){state.set(initial);}
   chatApplySyncedDraft(key,state.value);
 }
 function chatApplySyncedDraft(key,value){
@@ -902,7 +903,13 @@ async function loadChatSession(id) {
     return;
   }
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
-  await chatPrepareDraft(d.conversation,(chatAgent||"spirits")+"/"+id);
+  let originSelection=null;
+  const originRef=d.session.origin?.artifacts?.[0];
+  if(originRef && d.session.turns===0){
+    originSelection={...originRef,task:d.session.origin.task,title:"Artifact",version:"?"};
+    try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(originRef.id));if(r.ok){const a=await r.json();originSelection.title=a.title||"Artifact";originSelection.version=a.revisions.find(v=>v.hash===originRef.revision)?.n||"?";}}catch(e){}
+  }
+  await chatPrepareDraft(d.conversation,(chatAgent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null);
   if (id !== chatOpenId || base !== chatBase()) return;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
@@ -1160,6 +1167,10 @@ function chatHead(s) {
   if (!agent && s.status === "thinking") { ren.disabled = true; ren.title = "rename after the turn finishes"; }
   ren.onclick = () => chatRename(title, s, agent);
   acts.append(ren);
+  if(chatRosterEntry(agent)?.durableSend){
+    const related=el("button","sprt-quiet","Start related chat");related.onclick=()=>chatStartRelated(s);acts.append(related);
+  }
+  for(const item of s.related||[]){const link=el("a","sprt-quiet",(item.relation==="origin"?"From: ":"Related: ")+item.title);link.href=item.route;acts.append(link);}
   // the task this conversation became (§3.4f) — into its conversation, here
   if (s.task) {
     const plan = el("button", "sprt-quiet", "Plan");
@@ -1303,6 +1314,7 @@ function renderChatTranscript(d) {
   const s = d.session;
   const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
   if(activeTask)s.task=activeTask;
+  s.related=d.related||[];s.handoffBody=d.body||"";
   chatCurSession = s;
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
@@ -2578,4 +2590,41 @@ function chatRenderDeliveryNotice(host,scope){
   row.append(label,check,retry);notice.append(row);
  });
  host.prepend(notice);
+}
+
+function chatStartRelated(source){
+  const originAgent=source.agent,originID=source.id;
+  const storageKey="manifest.relatedDraft.v1."+originAgent+"/"+originID;
+  let remembered=null;try{remembered=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
+  const selected=chatArtifactSelections.get("chat:"+originAgent+"/"+originID);
+  const excerpt=parseChatTurns(source.handoffBody||"").slice(-2).map(t=>t.who+":\n"+t.text.slice(0,2000)+(t.text.length>2000?"\n[excerpt shortened]":"")).join("\n\n");
+  reviewDialog("Start related chat",({body,actions,close})=>{
+    const agents=chatRoster.filter(a=>a.enabled&&a.durableSend);
+    const pick=document.createElement("select");pick.className="pp-in";
+    agents.forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label;pick.append(o);});
+    pick.value=remembered?.agent||originAgent;pick.setAttribute("aria-label","Agent for related chat");
+    const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||source.title;title.setAttribute("aria-label","Related chat title");
+    const prompt=document.createElement("textarea");prompt.className="pp-in";prompt.setAttribute("aria-label","Handoff draft");
+    prompt.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
+    body.append(el("p","","This creates a separate linked chat. Review the handoff there before sending; current work keeps running."),pick,title,prompt);
+    const ref=remembered?.artifacts?.[0]||selected;
+    if(ref)body.append(el("p","","Includes the selected artifact version as context for the next send."));
+    const status=el("p","");status.setAttribute("role","status");body.append(status);
+    const cancel=el("button","sprt-quiet","Cancel"),create=el("button","sprt-quiet","Create related chat");cancel.onclick=close;
+    create.onclick=async()=>{
+      const payload={agent:pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",artifacts:ref?[{id:ref.id,revision:ref.revision}]:[]};
+      const signature=JSON.stringify(payload);
+      const requestId=remembered?.signature===signature?remembered.requestId:crypto.randomUUID();
+      remembered={...payload,signature,requestId};
+      try{
+        localStorage.setItem(storageKey,JSON.stringify(remembered));create.disabled=true;
+        const result=await postJSONOk(chatBaseFor(originAgent)+"/"+encodeURIComponent(originID)+"/related",{...payload,requestId});
+        if(!result.id)throw new Error("Creation was not confirmed. Retry to check the same request.");
+        localStorage.removeItem(storageKey);close();
+        location.hash="#/chat/a/"+encodeURIComponent(result.agent)+"/"+encodeURIComponent(result.id);
+      }catch(e){status.textContent=e.message||"Could not create the related chat. Retry safely.";}
+      finally{create.disabled=false;}
+    };
+    actions.append(cancel,create);
+  });
 }

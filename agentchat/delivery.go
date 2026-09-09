@@ -224,15 +224,28 @@ func (s *Store) Receipt(agent, id, requestID string) (Delivery, bool) {
 // CreateOnce deduplicates lost responses to New chat, not just later sends.
 // The original signature is retained even if the conversation is later renamed.
 func (s *Store) CreateOnce(agent, profile, title, model, requestID string) (string, error) {
+	return s.createOnce(agent, profile, title, model, requestID, nil)
+}
+func (s *Store) CreateRelatedOnce(agent, profile, title, model, requestID string, origin Origin) (string, error) {
+	if requestID == "" || !ValidAgent(origin.Agent) || !ValidID(origin.ID) {
+		return "", errors.New("invalid related conversation")
+	}
+	return s.createOnce(agent, profile, title, model, requestID, &origin)
+}
+func (s *Store) createOnce(agent, profile, title, model, requestID string, origin *Origin) (string, error) {
 	if requestID == "" {
-		return s.create(agent, profile, title, model, "", "")
+		return s.create(agent, profile, title, model, "", "", origin)
 	}
 	if !ValidRequestID(requestID) {
 		return "", errors.New("invalid request ID")
 	}
 	s.createMu.Lock()
 	defer s.createMu.Unlock()
-	signature := fingerprint(profile + "\x00" + title + "\x00" + model)
+	signatureText := profile + "\x00" + title + "\x00" + model
+	if origin != nil {
+		signatureText += "\x00" + originJSON(origin)
+	}
+	signature := fingerprint(signatureText)
 	for _, sess := range s.List(agent) {
 		if sess.CreateRequest == requestID {
 			if sess.CreateSignature != signature {
@@ -241,5 +254,5 @@ func (s *Store) CreateOnce(agent, profile, title, model, requestID string) (stri
 			return sess.ID, nil
 		}
 	}
-	return s.create(agent, profile, title, model, requestID, signature)
+	return s.create(agent, profile, title, model, requestID, signature, origin)
 }
