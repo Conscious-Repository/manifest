@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -261,7 +262,7 @@ func (s *Server) handleTaskDescription(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlanSectionWrite(w http.ResponseWriter, r *http.Request, section string) {
-	var b struct{ ID, Text string }
+	var b struct{ ID, Text, ExpectedRevision string }
 	if err := decode(r, &b); err != nil || strings.TrimSpace(b.ID) == "" {
 		httpError(w, errBadRequest("id is required"))
 		return
@@ -271,7 +272,17 @@ func (s *Server) handlePlanSectionWrite(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return
 	}
-	if err := s.writePlanSection("todo-plans", id, section, strings.TrimRight(b.Text, "\n")); err != nil {
+	var err error
+	if section == "plan" && b.ExpectedRevision != "" {
+		err = s.saveTaskPlanVersion(id, b.Text, b.ExpectedRevision)
+	} else {
+		err = s.writePlanSection("todo-plans", id, section, strings.TrimRight(b.Text, "\n"))
+	}
+	if errors.Is(err, errPlanRevision) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err != nil {
 		httpError(w, err)
 		return
 	}

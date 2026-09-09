@@ -111,6 +111,7 @@ function chatSaveDraft() {
   if (chatDraftKey && input) chatDrafts.set(chatDraftKey, {text: input.value, files: chatPendingFiles.slice()});
 }
 function showChat(h) {
+  chatCloseWorkspace();
   chatSaveDraft();
   chatDraftKey = "";
   chatPendingFiles = [];
@@ -191,6 +192,8 @@ let chatTaskPollTimer = null;
 let chatTaskRailKey = "";
 
 function leaveTaskChat() {
+  const transcript = document.getElementById("chatTranscript");
+  if (transcript) delete transcript.dataset.task;
   chatTaskID = "";
   chatTaskData = null;
   chatTaskRailKey = "";
@@ -250,6 +253,10 @@ async function renderTaskChat(taskID, refetch) {
   const d = chatTaskData;
   await renderTaskChatRail(d);
   if (chatTaskID !== taskID) return;
+  const sameThread = host.dataset.task === taskID;
+  const oldScroll = host.scrollTop;
+  const following = !sameThread || host.scrollHeight - host.scrollTop - host.clientHeight < 80;
+  host.dataset.task = taskID;
   host.innerHTML = "";
   const rec = d.record || {};
   // Keep the task context in the normal thread-head anatomy: title, agent
@@ -267,19 +274,24 @@ async function renderTaskChat(taskID, refetch) {
   back.onclick = () => { location.hash = "#/tasks/" + encodeURIComponent(taskID); };
   acts.append(back);
   head.append(acts);
+  head.append(chatArtifactActions(d));
   chatMountHeader(head);
   (d.thread || []).forEach((c) => host.append(chatTaskThreadEntry(c, taskID)));
   if (d.inflight) host.append(el("div", "chat-thinking", "✦ " + (d.inflight.name || "agent") + " is working…"));
   if (!(d.thread || []).length && !d.inflight) host.append(emptyRow("no comments yet"));
-  composer.innerHTML = "";
-  composer.dataset.built = "";
   appendTaskApprovals(host, d);
-  composer.classList.add("task-composer");
-  composer.append(todoComposer(d, { taskID, onPosted: () => renderTaskChat(taskID, true) }));
+  if (composer.dataset.task !== taskID || !composer.querySelector("textarea")) {
+    composer.innerHTML = "";
+    composer.dataset.task = taskID;
+    composer.classList.add("task-composer");
+    composer.append(todoComposer(d, { taskID,
+      context: () => { const ref=chatArtifactSelections.get("task:"+taskID);return ref ? [{id:ref.id,revision:ref.revision}] : []; },
+      onPosted: () => renderTaskChat(taskID, true) }));
+    chatRenderArtifactContext(taskID);
+  }
   if (!chatTaskPollTimer) {
     chatTaskPollTimer = setInterval(async () => {
       if (document.hidden || chatTaskID !== taskID || !location.hash.startsWith("#/chat/task/")) return;
-      if (composer.contains(document.activeElement)) return;
       try {
         const fresh = await (await fetch("/api/tasks/panel?id=" + encodeURIComponent(taskID))).json();
         if (chatTaskID === taskID && JSON.stringify(fresh) !== JSON.stringify(chatTaskData)) {
@@ -289,7 +301,8 @@ async function renderTaskChat(taskID, refetch) {
       } catch (e) {}
     }, 2000);
   }
-  host.scrollTop = host.scrollHeight;
+  host.scrollTop = following ? host.scrollHeight : oldScroll;
+  if (chatPendingWorkspace?.task === taskID) { const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec); }
 }
 
 function chatTaskThreadEntry(c, taskID) {
@@ -312,6 +325,11 @@ function chatTaskThreadEntry(c, taskID) {
     a.target = "_blank";
     wrap.append(a);
   });
+  for (const ref of c.meta?.context || []) {
+    const link=el("button","chat-attach-chip","Referenced version ↗");
+    link.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID});
+    wrap.append(link);
+  }
   const foot = el("div", "chat-turn-foot");
   foot.append(el("span", "chat-turn-when", (c.author_name || c.authorName || c.author || "?") + " · " + fmtWhen(c.at)));
   if (c.action && c.action !== "comment") foot.append(el("span", "chat-turn-usd", c.action));
@@ -2324,3 +2342,53 @@ cmdRegistry.register(() => [{
   keywords: "chat talk converse ask concierge spirit",
   act: () => { closeCmdbar(); chatCompose("concierge", ""); },
 }]);
+
+// Artifact selection belongs to a conversation, never to the global recipient.
+const chatArtifactSelections = new Map();
+let chatWorkspace = null;
+let chatPendingWorkspace = null;
+function chatCloseWorkspace() { if (chatWorkspace) { const w=chatWorkspace; chatWorkspace=null; w.close(); } }
+function chatOpenWorkingArtifact(spec) {
+  chatCloseWorkspace();
+  const taskID = spec.task || chatTaskID;
+  const key = taskID ? "task:"+taskID : location.hash;
+  const shell = document.querySelector(".chat-shell");
+  shell.classList.add("has-artifact");
+  const load = async () => {
+    const path = spec.plan ? "/api/tasks/plan/workspace?id="+encodeURIComponent(taskID) : "/api/artifacts/get?id="+encodeURIComponent(spec.id);
+    const r=await fetch(path); if(!r.ok)throw new Error(await r.text());return r.json();
+  };
+  chatWorkspace=artifactWorkspace(shell,{
+    load, revision:spec.revision,
+    save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
+    onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
+    onDiscuss: taskID ? ref=>{
+      chatArtifactSelections.set(key,ref); chatRenderArtifactContext(taskID);
+      if(window.matchMedia("(max-width: 900px)").matches)chatCloseWorkspace();
+      document.querySelector("#chatComposer textarea")?.focus();
+    }:null
+  });
+}
+function chatRenderArtifactContext(taskID){
+ const composer=document.getElementById("chatComposer");if(!composer)return;
+ composer.querySelector(".chat-artifact-context")?.remove();
+ const ref=chatArtifactSelections.get("task:"+taskID);if(!ref)return;
+ const row=el("div","chat-artifact-context");
+ const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
+ open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID});
+ const clear=el("button","sprt-quiet","×");clear.setAttribute("aria-label","Remove artifact context");
+ clear.onclick=()=>{chatArtifactSelections.delete("task:"+taskID);row.remove();};
+ row.append(open,clear);composer.prepend(row);
+}
+function chatArtifactActions(data){
+ const row=el("div","chat-artifact-actions");
+ if(data.record?.plan){const b=el("button","sprt-quiet","Plan");b.onclick=()=>chatOpenWorkingArtifact({plan:true,task:data.id});row.append(b);}
+ const seen=new Set();
+ for(const a of [...(data.artifacts?.outputs||[]),...(data.artifacts?.inputs||[])]){
+  if(seen.has(a.id)||a.provenance?.source==="task-plan")continue;seen.add(a.id);
+  const b=el("button","sprt-quiet",a.title||a.ref||"Artifact");b.disabled=!!a.unknown;
+  if(a.unknown)b.title="Artifact unavailable in this registry";
+  b.onclick=()=>chatOpenWorkingArtifact({id:a.id,task:data.id});row.append(b);
+ }
+ return row;
+}

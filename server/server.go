@@ -365,7 +365,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks/depends", s.handleTaskDepends)     // set/add/remove [depends::] ids
 	mux.HandleFunc("POST /api/tasks/artifacts", s.handleTaskArtifacts) // [outputs::] / [inputs::] artifact ids (P1 artifacts)
 	// P1 artifacts: the first-class artifact registry (artifact_objects.go)
-	mux.HandleFunc("GET /api/artifacts", s.handleArtifactsList)          // ?kind=&task=&run=&harness=&ref=
+	mux.HandleFunc("GET /api/artifacts", s.handleArtifactsList) // ?kind=&task=&run=&harness=&ref=
+	mux.HandleFunc("GET /api/artifacts/content", s.handleArtifactContent)
+	mux.HandleFunc("GET /api/tasks/plan/workspace", s.handleTaskPlanWorkspace)
 	mux.HandleFunc("GET /api/artifacts/get", s.handleArtifactGet)        // ?id=&content=1&rev=
 	mux.HandleFunc("POST /api/artifacts/create", s.handleArtifactCreate) // {kind,title,ref|content,task,run,…}
 	mux.HandleFunc("POST /api/artifacts/revise", s.handleArtifactRevise) // {id, content|ref, note}

@@ -360,3 +360,11 @@
   .chat-term-keys { flex-wrap: nowrap; overflow-x: auto; }
   .chat-term-key { flex: none; }
 }
+
+.chat-artifact-actions, .chat-artifact-context { display: flex; flex-wrap: wrap; gap: var(--sp-6); padding: var(--sp-4) 0; border-bottom: 1px solid var(--line); }
+.chat-shell.has-artifact .chat-rail { display: none; }
+.chat-shell.has-artifact .chat-main { flex: 1; }
+@media (max-width: 900px) {
+ .chat-shell.has-artifact .chat-main { display: none; }
+ .chat-shell.has-artifact .artifact-workspace { border-left: 0; padding: 0 var(--sp-6); width: 100%; }
+}

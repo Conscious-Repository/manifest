@@ -491,3 +491,19 @@ identity checks remain: absent or replaced saved occupants have unknown process
 and agent state, independently of observed daemon connectivity. The
 stopped/done/blocked result-sweep hints remain advisory;
 validated result files still establish task completion.
+
+**2026-09-09 — chat workspaces, first implementation.** The owner authorized the
+chat-workstreams-ontology plan. Ordinary chats remain first-class, and optional
+work-oriented grouping supersedes mandatory agent-first organization as the
+intended direction. Agents, native conversations, execution sessions, and tasks
+retain separate identities; source histories must not be silently merged.
+
+Task plans can be read beside their task conversation. The vault plan section
+remains authoritative; its snapshots use the existing artifact registry with
+`harness: vault` and a `#plan` section ref. Version-aware saves compare the live
+section under the vault writer lock and retain the previous bytes. Restore saves
+a new revision. A selected artifact reference carries an exact hash and is
+resolved before dispatch; preview alone sends nothing. Team comments retain only
+version references, never inline private artifact bytes. Private artifact endpoints
+are not registered on the public team listener. No new scheduler or execution
+trigger is introduced by a plan save.

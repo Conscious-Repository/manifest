@@ -124,7 +124,7 @@ func (s *Server) listThread(taskID string) []threads.Comment {
 			out = append(out, threads.Comment{
 				ID: c.ID, TaskID: taskID, Action: threads.ActComment,
 				Author: c.Author, AuthorName: c.AuthorName,
-				Text: c.Text, Files: files, At: c.At,
+				Text: c.Text, Files: files, At: c.At, Meta: portalCommentContext(c),
 			})
 		}
 		if s.threads.private != nil {
@@ -156,14 +156,20 @@ func (s *Server) addThreadEntry(author threads.Identity, taskID, action, text st
 		if strings.HasPrefix(author.ID, "agent:") {
 			actor = teamportal.Identity{Email: author.ID, Name: author.Name}
 		}
-		c, err := s.threads.aion.AddCommentWithFiles(actor, strings.TrimPrefix(taskID, "aion:"), text, pf, now)
+		var context []teamportal.ArtifactReference
+		if refs, ok := meta["context"].([]artifactContextRef); ok {
+			for _, ref := range refs {
+				context = append(context, teamportal.ArtifactReference{ID: ref.ID, Revision: ref.Revision})
+			}
+		}
+		c, err := s.threads.aion.AddCommentWithContext(actor, strings.TrimPrefix(taskID, "aion:"), text, pf, mentions, context, now)
 		if err != nil {
 			return threads.Comment{}, err
 		}
 		s.ledger(ledger.Entry{TS: now, Source: "thread", Kind: "thread." + action,
 			Actor: author.ID, Object: ledger.Object{Kind: ledger.ObjTask, ID: taskID}, Task: taskID, Text: ledger.Snip(text, 280)})
 		return threads.Comment{ID: c.ID, TaskID: taskID, Action: threads.ActComment,
-			Author: c.Author, AuthorName: c.AuthorName, Text: c.Text, Files: files, At: c.At}, nil
+			Author: c.Author, AuthorName: c.AuthorName, Text: c.Text, Files: files, At: c.At, Meta: portalCommentContext(c)}, nil
 	}
 	kind := s.threadKind(taskID)
 	if kind == "aion" {
@@ -309,6 +315,7 @@ func (s *Server) handleTaskThreadGet(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		ID, Text string
+		Context  []artifactContextRef
 		Mentions []string
 		Files    []threads.FileRef
 		Mode     string
@@ -323,7 +330,12 @@ func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "todo not found", http.StatusNotFound)
 		return
 	}
-	c, err := s.postAndDispatch(id, b.Mode, b.Agent, b.Mentions, b.Files, b.Text)
+	contextText, err := s.taskArtifactContext(id, b.Context)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	c, err := s.postAndDispatchContext(id, b.Mode, b.Agent, b.Mentions, b.Files, b.Text, b.Context, contextText)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -335,6 +347,10 @@ func (s *Server) handleTaskThreadPost(w http.ResponseWriter, r *http.Request) {
 // with meta.mode/agent on Ask/Do) and then resolves the mode into at most
 // one turn. Shared by the panel composer and the capture bar.
 func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, files []threads.FileRef, text string) (threads.Comment, error) {
+	return s.postAndDispatchContext(id, mode, agent, mentions, files, text, nil, "")
+}
+
+func (s *Server) postAndDispatchContext(id, mode, agent string, mentions []string, files []threads.FileRef, text string, refs []artifactContextRef, contextText string) (threads.Comment, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode != "ask" && mode != "do" {
 		mode = "comment"
@@ -355,12 +371,18 @@ func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, file
 	if plan != nil {
 		meta = map[string]any{"mode": plan.Mode, "agent": plan.Agent}
 	}
+	if len(refs) > 0 {
+		if meta == nil {
+			meta = map[string]any{}
+		}
+		meta["context"] = refs
+	}
 	s.dispatchAssign(id, plan)
 	c, err := s.addThreadEntry(s.ownerIdentity(), id, threads.ActComment, text, mentions, files, meta)
 	if err != nil {
 		return c, err
 	}
-	s.dispatchRelay(id, plan, text)
+	s.dispatchRelay(id, plan, text+contextText)
 	return c, nil
 }
 
@@ -651,4 +673,11 @@ func (s *Server) handleTaskThreadBlob(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", "attachment")
 	}
 	http.ServeFile(w, r, p)
+}
+
+func portalCommentContext(c teamportal.Comment) map[string]any {
+	if len(c.Context) == 0 {
+		return nil
+	}
+	return map[string]any{"context": c.Context}
 }

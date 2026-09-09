@@ -273,3 +273,16 @@
 .action-menu { position:absolute; min-width:210px; padding:var(--sp-4); background:var(--surface-overlay); color:var(--text); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-2); }
 .action-menu-item { display:block; width:100%; padding:var(--sp-6) var(--sp-7); text-align:left; border:0; border-radius:var(--radius); background:transparent; color:inherit; font:inherit; font-size:var(--fs-sm); cursor:pointer; }
 .action-menu-item:hover,.action-menu-item:focus-visible { background:var(--hover); outline:1px solid var(--line); }
+
+/* Shared artifact workspace: restrained split pane; one surface on phones. */
+.artifact-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; border-left: 1px solid var(--line); padding-left: var(--sp-7); background: var(--panel-bg, var(--bg)); }
+.artifact-workspace-head, .artifact-workspace-controls { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-6); padding: var(--sp-6) 0; border-bottom: 1px solid var(--line); }
+.artifact-workspace-title { flex: 1; font-size: var(--fs-xl); overflow-wrap: anywhere; }
+.artifact-workspace-controls select { min-width: 0; max-width: 100%; flex: 1; }
+.artifact-workspace-body { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-7) var(--sp-4); overflow-wrap: anywhere; }
+.artifact-workspace-body pre { overflow: auto; }
+.artifact-workspace-body img { max-width: 100%; }
+.artifact-workspace-body iframe { width: 100%; height: 100%; min-height: 320px; border: 0; }
+.artifact-workspace-editor { box-sizing: border-box; width: 100%; height: 100%; min-height: 240px; resize: vertical; font: var(--fs-md)/1.6 var(--mono); }
+.artifact-workspace-notice { font-size: var(--fs-sm); padding: var(--sp-4) 0; }
+.artifact-workspace-notice:empty { display: none; }

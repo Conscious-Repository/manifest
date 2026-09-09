@@ -389,9 +389,21 @@ func (w *Writer) ReplaceSection(rel, section, body string) error {
 // capability (redesign stage 4 — new section writes must not ship on the
 // legacy guard path). Check, splice, write, capability audit.
 func (w *Writer) ReplaceSectionCap(capName, rel, section, body string) error {
+	return w.ReplaceSectionCapChecked(capName, rel, section, body, nil)
+}
+
+// ReplaceSectionCapChecked checks the latest bytes inside the same serialized
+// transform as the edit. Callers can validate a base revision and retain it
+// before changing a section without a read/write race.
+func (w *Writer) ReplaceSectionCapChecked(capName, rel, section, body string, check func([]byte) error) error {
 	return w.UpdateCap(capName, rel, func(raw []byte) ([]byte, error) {
 		if raw == nil {
 			return nil, os.ErrNotExist
+		}
+		if check != nil {
+			if err := check(raw); err != nil {
+				return nil, err
+			}
 		}
 		return []byte(spliceSection(string(raw), section, body)), nil
 	})

@@ -57,15 +57,22 @@ func (s *Store) emailsPath() string { return filepath.Join(s.dir, "emails.json")
 // files/ tree; Mentions (kairos plan Phase C) are structural roster tokens
 // (`agent:kairos`, optionally intent-tagged `agent:kairos::brief`) — both
 // additive JSON; older portal clients simply ignore the fields.
+// ArtifactReference names a version; it grants no access to its bytes.
+type ArtifactReference struct {
+	ID       string `json:"id"`
+	Revision string `json:"revision"`
+}
+
 type Comment struct {
-	ID         string    `json:"id"`
-	Item       string    `json:"item"`
-	Author     string    `json:"author"`      // email
-	AuthorName string    `json:"author_name"` // display name from Google
-	Text       string    `json:"text"`
-	Mentions   []string  `json:"mentions,omitempty"`
-	Files      []FileRef `json:"files,omitempty"`
-	At         time.Time `json:"at"`
+	Context    []ArtifactReference `json:"context,omitempty"`
+	ID         string              `json:"id"`
+	Item       string              `json:"item"`
+	Author     string              `json:"author"`      // email
+	AuthorName string              `json:"author_name"` // display name from Google
+	Text       string              `json:"text"`
+	Mentions   []string            `json:"mentions,omitempty"`
+	Files      []FileRef           `json:"files,omitempty"`
+	At         time.Time           `json:"at"`
 }
 
 // FileRef is one content-addressed attachment (sha256 blob in files/).
@@ -707,6 +714,10 @@ func (s *Store) AddCommentWithFiles(actor Identity, itemID, text string, files [
 // AddCommentFull is the real writer: attachments + structural mentions
 // (kairos plan Phase C — the portal composer records agent tokens here).
 func (s *Store) AddCommentFull(actor Identity, itemID, text string, files []FileRef, mentions []string, now time.Time) (Comment, error) {
+	return s.AddCommentWithContext(actor, itemID, text, files, mentions, nil, now)
+}
+
+func (s *Store) AddCommentWithContext(actor Identity, itemID, text string, files []FileRef, mentions []string, context []ArtifactReference, now time.Time) (Comment, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
 		return Comment{}, errors.New("empty comment")
@@ -720,7 +731,7 @@ func (s *Store) AddCommentFull(actor Identity, itemID, text string, files []File
 	c := Comment{
 		ID:   fmt.Sprintf("c-%d", now.UnixNano()),
 		Item: itemID, Author: actor.Email, AuthorName: actor.Name,
-		Text: text, Mentions: mentions, Files: files, At: now.UTC(),
+		Text: text, Mentions: mentions, Files: files, At: now.UTC(), Context: context,
 	}
 	ext.Comments[itemID] = append(ext.Comments[itemID], c)
 	err := s.writeExt(ext, Entry{TS: now.UTC(), Actor: actor.Email, Action: ActComment,

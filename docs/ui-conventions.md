@@ -357,3 +357,12 @@ Chat uses one searchable, recent-first conversation directory across agents, wit
 Use `--surface-header` for in-flow structural headers, `--surface-field` for editable controls/composers, `--surface-panel` for grouped content, and `--surface-overlay` for menus/modals/sticky elements that cover scrolled content. Defaults retain the original white surfaces. Jarvis uses restrained navy/blue fills; in-flow headers can be transparent. Never use transparent backing where text scrolls underneath. Dedicated PTY content continues to use `--term-bg`.
 
 Prefer whitespace and hairlines before adding another filled container. Keep the grid on the page, retain visible control affordances and keyboard focus, and reserve color/motion for meaningful state. See [blueprint research and audit](audits/2026-09-09-blueprint-surfaces.md) for rationale and the reusable review checklist.
+
+### Working artifacts in conversation
+
+Use the shared `artifactWorkspace` for plans and versioned files. Keep conversation
+visible beside the document on desktop; switch to a single document surface with
+“Back to chat” on phone. Opening a preview does not attach it. “Discuss this version”
+explicitly selects immutable context, and “Save new version” remains separate from
+execution. Use the existing registry for revision bytes and the existing vault
+writer for editable plan sections; never make a second editable plan store.

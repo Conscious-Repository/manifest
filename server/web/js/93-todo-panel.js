@@ -224,11 +224,11 @@ async function renderTodoPanel(refetch) {
   planHead.append(document.createTextNode("plan"));
   const planActs = el("span", "tdo-p-sec-acts");
   const planText = rec.Plan || rec.plan || "";
-  const openPlan = () => { location.hash = "#/note/" + encodeURIComponent(rec.Rel || rec.rel); };
+  const openPlan = () => { location.hash = "#/chat/task/" + encodeURIComponent(todoSelId); chatPendingWorkspace = {plan:true,task:todoSelId}; };
   let editBtn = null;
   if (planText) {
     const open = el("button", "tdo-p-linky", "open →");
-    open.title = "open the plan full-page (edit there)";
+    open.title = "read and revise the plan beside its conversation";
     open.onclick = openPlan;
     planActs.append(open);
   } else {
@@ -244,7 +244,7 @@ async function renderTodoPanel(refetch) {
     try { planBody.append(renderMarkdown(planText, null, { readOnly: true })); }
     catch (e) { planBody.textContent = planText; }
     planBody.classList.add("clickable");
-    planBody.title = "open the plan full-page";
+    planBody.title = "read the plan beside its conversation";
     planBody.onclick = (ev) => { if (!ev.target.closest("a")) openPlan(); };
   } else {
     planBody.append(el("div", "tdo-p-empty", "No plan yet. Ask an agent for a plan when the work needs one."));
@@ -359,11 +359,11 @@ function todoArtifactsSection(d) {
     name.title = a.unknown
       ? a.id + " — not in this registry"
       : a.id + " · " + (a.kind || "file") + (rev ? " · v" + rev : "") + (at ? " · " + fmtWhen(at) : "");
-    if (a.open && (a.open.path || a.open.note)) {
+    if (!a.unknown) {
       name.classList.add("linky");
       name.onclick = () => {
-        if (a.open.note && typeof openArtifact === "function") openArtifact(a.open.note);
-        else if (typeof openResult === "function") openResult({ artifactRef: a.open.path, harness: a.open.harness || "" }, a.title || a.ref);
+        chatPendingWorkspace = {id:a.id,task:todoSelId};
+        location.hash = "#/chat/task/" + encodeURIComponent(todoSelId);
       };
     }
     chip.append(name);
@@ -708,7 +708,7 @@ function todoComposer(d, opts) {
     const agent = mode === "comment" ? "" : agentSel.value;
     send.disabled = true;
     try {
-      await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent });
+      await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent, context: opts.context ? opts.context() : [] });
       if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
       else if (mode === "do") showToast(agentName() + " received your instructions — follow progress here", null, "info");
       todoComposerDrafts.delete(taskID);

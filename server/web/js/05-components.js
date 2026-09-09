@@ -586,3 +586,101 @@ function chooseActionMenu(trigger, items) {
     back.onclick=()=>close(null);menu.onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(null)}else if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();const buttons=[...menu.children];const i=buttons.indexOf(document.activeElement);buttons[(i+(e.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus()}};
   });
 }
+
+// A shared, version-aware workspace. The caller owns placement and discussion
+// context; opening it never navigates, edits a file, or starts an agent.
+function artifactWorkspace(mount, options) {
+  const opts = options || {};
+  const pane = el("aside", "artifact-workspace");
+  pane.setAttribute("aria-label", "Artifact workspace");
+  const header = el("div", "artifact-workspace-head");
+  const title = el("strong", "artifact-workspace-title", "Loading…");
+  const close = el("button", "sprt-quiet", "Back to chat");
+  close.onclick = () => { pane.remove(); if (opts.onClose) opts.onClose(); };
+  header.append(title, close);
+  const controls = el("div", "artifact-workspace-controls");
+  const body = el("div", "artifact-workspace-body");
+  body.tabIndex = 0;
+  const notice = el("div", "artifact-workspace-notice");
+  notice.setAttribute("role", "status");
+  pane.append(header, controls, notice, body);
+  mount.append(pane);
+  let current, selected, selectedNumber, generation = 0, editing = false;
+  const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&content=1&rev="+encodeURIComponent(hash);
+  const fetchJSON = async (path) => { const r = await fetch(path); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+  async function show(a, hash, number) {
+    const ticket = ++generation;
+    try {
+      const mediaRef = /\.(pdf|png|jpe?g|gif|webp)$/i.test(a.ref || "");
+      const d = await fetchJSON(mediaRef ? "/api/artifacts/get?id="+encodeURIComponent(a.id) : url(a, hash || a.head));
+      if (ticket !== generation || !pane.isConnected) return;
+      current = d; selected = hash || d.head; selectedNumber = number || [...d.revisions].reverse().find(r=>r.hash===selected)?.n; editing = false;
+      render();
+    } catch (e) { notice.textContent = "Could not open this version: " + e.message; }
+  }
+  function render() {
+    editing = false;
+    title.textContent = current.title || current.ref || "Artifact";
+    controls.replaceChildren(); body.replaceChildren(); notice.textContent = "";
+    const versions = document.createElement("select");
+    versions.setAttribute("aria-label", "Artifact version");
+    [...current.revisions].reverse().forEach(r => {
+      const o = document.createElement("option"); o.value = String(r.n);
+      o.textContent = "Version " + r.n + (r.n === current.revisions.length ? " · latest" : "") + (r.note ? " · " + r.note : "");
+      versions.append(o);
+    });
+    versions.value = String(selectedNumber); versions.onchange = () => { const r=current.revisions.find(r=>String(r.n)===versions.value); show(current,r.hash,r.n); };
+    controls.append(versions);
+    const ext = (current.ref || "").split(".").pop().toLowerCase();
+    const contentURL = "/api/artifacts/content?id="+encodeURIComponent(current.id)+"&rev="+encodeURIComponent(selected);
+    const binary = ["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(ext);
+    if (binary) {
+      const media = document.createElement(ext === "pdf" ? "iframe" : "img");
+      media.src = contentURL; media.title = title.textContent; media.alt = title.textContent;
+      body.append(media);
+      notice.textContent = "Preview only. This file has not been sent to the agent.";
+    } else {
+      try { body.append(renderMarkdown(current.content || "", "", {readOnly:true})); }
+      catch(e) { body.textContent = current.content || ""; }
+    }
+    const download = el("a", "sprt-quiet", "Open file ↗");
+    download.href = contentURL; download.target = "_blank"; download.rel = "noopener";
+    controls.append(download);
+    if (opts.onDiscuss && !binary) {
+      const discuss = el("button", "sprt-quiet", "Discuss this version");
+      discuss.onclick = () => {
+        opts.onDiscuss({id:current.id, revision:selected, title:current.title || "Artifact", version:selectedNumber});
+      };
+      controls.append(discuss);
+    }
+    if (opts.save && !binary) {
+      const edit = el("button", "sprt-quiet", selected === current.head ? "Edit" : "Restore this version");
+      edit.onclick = () => editVersion(selected !== current.head);
+      controls.append(edit);
+    }
+  }
+  function editVersion(restore) {
+    editing = true;
+    const original = current.content || "";
+    const input = document.createElement("textarea");
+    input.className = "artifact-workspace-editor"; input.value = original;
+    input.setAttribute("aria-label", "Plan content");
+    body.replaceChildren(input);
+    controls.replaceChildren();
+    const save = el("button", "sprt-quiet", restore ? "Save restored version" : "Save new version");
+    const cancel = el("button", "sprt-quiet", "Cancel"); cancel.onclick = render;
+    save.onclick = async () => {
+      save.disabled = true;
+      try {
+        await opts.save(input.value, current.head);
+        const a = await opts.load();
+        await show(a,a.head);
+        notice.textContent = "New version saved. Execution has not started.";
+      } catch(e) { notice.textContent = e.message; }
+      finally { save.disabled = false; }
+    };
+    controls.append(save,cancel); input.focus();
+  }
+  (async () => { try { const a = await opts.load(); await show(a,opts.revision || a.head); } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } })();
+  return {element:pane, close:()=>close.click(), isEditing:()=>editing};
+}
