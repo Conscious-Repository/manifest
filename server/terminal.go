@@ -35,19 +35,23 @@ import (
 
 // termSession is one registry row (<dataDir>/terminals.json).
 type termSession struct {
-	ID         string `json:"id"`
-	Kind       string `json:"kind"`             // shell | claude | codex
-	Device     string `json:"device,omitempty"` // "" = this box; else a fleet name
-	Cwd        string `json:"cwd"`
-	Name       string `json:"name"`
-	ResumeID   string `json:"resumeId,omitempty"` // claude --session-id / --resume handle
-	Resume     bool   `json:"resume,omitempty"`   // launched via the interactive resume picker
-	Started    bool   `json:"started,omitempty"`  // first attach happened → reopen resumes
-	CreatedAt  string `json:"createdAt"`
-	LastUsed   string `json:"lastUsed"`
-	Model      string `json:"model,omitempty"`      // pinned coding work-order model
-	BoardBrief string `json:"boardBrief,omitempty"` // durable board handoff; first launch only
-	Pinned     bool   `json:"pinned,omitempty"`
+	Version     int              `json:"version,omitempty"`
+	Backend     string           `json:"backend,omitempty"`
+	Runtime     terminalIdentity `json:"runtime,omitempty"`
+	LaunchPhase string           `json:"launchPhase,omitempty"`
+	ID          string           `json:"id"`
+	Kind        string           `json:"kind"`             // shell | claude | codex
+	Device      string           `json:"device,omitempty"` // "" = this box; else a fleet name
+	Cwd         string           `json:"cwd"`
+	Name        string           `json:"name"`
+	ResumeID    string           `json:"resumeId,omitempty"` // claude --session-id / --resume handle
+	Resume      bool             `json:"resume,omitempty"`   // launched via the interactive resume picker
+	Started     bool             `json:"started,omitempty"`  // first attach happened → reopen resumes
+	CreatedAt   string           `json:"createdAt"`
+	LastUsed    string           `json:"lastUsed"`
+	Model       string           `json:"model,omitempty"`      // pinned coding work-order model
+	BoardBrief  string           `json:"boardBrief,omitempty"` // durable board handoff; first launch only
+	Pinned      bool             `json:"pinned,omitempty"`
 	// Keep = caffeinated (cmd-ctr ☕): a REMOTE session also runs inside a
 	// tmux on the target box, so it survives ssh drops and metis restarts —
 	// the metis-side tmux alone only survives browser disconnects. Local
@@ -56,12 +60,14 @@ type termSession struct {
 }
 
 type termCfg struct {
-	regPath    string // <dataDir>/terminals.json
-	tmuxTmp    string // TMUX_TMPDIR (writable under the systemd sandbox)
-	defaultWd  string
-	codingRepo string
-	boardMu    sync.Mutex
-	mu         sync.Mutex
+	herdr         *herdrTerminalRuntime
+	codexSessions string
+	regPath       string // <dataDir>/terminals.json
+	tmuxTmp       string // TMUX_TMPDIR (writable under the systemd sandbox)
+	defaultWd     string
+	codingRepo    string
+	boardMu       sync.Mutex
+	mu            sync.Mutex
 
 	// remote-keep liveness cache: whether a kept session's tmux still runs on
 	// its device (cmd-ctr's kept snapshot). Refreshed async — the sessions
@@ -112,6 +118,10 @@ func (s *Server) UseTerminal(regPath, tmuxTmp, defaultWd string) {
 	_ = os.MkdirAll(tmuxTmp, 0o700)
 	s.terminal = &termCfg{regPath: regPath, tmuxTmp: tmuxTmp, defaultWd: defaultWd,
 		rlive: map[string]remoteLiveEnt{}, rlFly: map[string]bool{}}
+	s.configureHerdr()
+	if err := s.terminal.importLegacy(); err != nil {
+		log.Printf("terminal metadata import: %v", err)
+	}
 }
 
 // remoteKeepLive answers "does this kept session's tmux still run on its
@@ -152,70 +162,54 @@ func (s *Server) probeRemoteKeep(se termSession) bool {
 }
 
 func (c *termCfg) load() []termSession {
-	var out []termSession
-	if b, err := os.ReadFile(c.regPath); err == nil {
-		_ = json.Unmarshal(b, &out)
+	rows, err := c.loadChecked()
+	if err != nil {
+		log.Printf("terminal registry: %v", err)
 	}
-	return out
+	return rows
 }
-
-func (c *termCfg) save(list []termSession) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.saveLocked(list)
-}
-
+func (c *termCfg) save(list []termSession) { c.mu.Lock(); defer c.mu.Unlock(); c.saveLocked(list) }
 func (c *termCfg) saveLocked(list []termSession) {
-	b, _ := json.MarshalIndent(list, "", "  ")
-	tmp := c.regPath + ".tmp"
-	if os.WriteFile(tmp, b, 0o644) == nil {
-		_ = os.Rename(tmp, c.regPath)
+	if _, err := c.loadChecked(); err != nil {
+		log.Printf("terminal save refused: %v", err)
+		return
+	}
+	if err := c.writeRowsLocked(list); err != nil {
+		log.Printf("terminal save: %v", err)
 	}
 }
-
 func (c *termCfg) find(id string) (termSession, bool) {
-	for _, s := range c.load() {
-		if s.ID == id {
-			return s, true
+	for _, se := range c.load() {
+		if se.ID == id {
+			return se, true
 		}
 	}
 	return termSession{}, false
 }
-
-// upsert is a read-modify-write of the whole registry: it holds the lock
-// across the load too, so two handlers landing together (a chat send touching
-// lastUsed while the WS attach marks Started, an autoName PUT beside a kill)
-// cannot each rewrite the file from a stale copy and drop the other's row.
-func (c *termCfg) upsert(s termSession) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	list := c.load()
-	found := false
-	for i := range list {
-		if list[i].ID == s.ID {
-			list[i] = s
-			found = true
-			break
-		}
+func (c *termCfg) upsert(se termSession) {
+	if err := c.upsertChecked(se); err != nil {
+		log.Printf("terminal mapping: %v", err)
 	}
-	if !found {
-		list = append([]termSession{s}, list...)
-	}
-	c.saveLocked(list)
 }
-
-// remove forgets a row (history's ✕), under the same lock as upsert.
 func (c *termCfg) remove(id string) {
+	if err := c.removeChecked(id); err != nil {
+		log.Printf("terminal forget: %v", err)
+	}
+}
+func (c *termCfg) removeChecked(id string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	list := c.load()
+	list, err := c.loadChecked()
+	if err != nil {
+		return err
+	}
 	out := list[:0]
 	for _, se := range list {
 		if se.ID != id {
 			out = append(out, se)
 		}
 	}
-	c.saveLocked(out)
+	return c.writeRowsLocked(out)
 }
 
 // tmuxName is the session's tmux identity.
@@ -330,7 +324,7 @@ func remoteInner(se termSession) string {
 // launchCmd resolves the inner command a fresh/resumed session runs.
 func (s termSession) launchCmd() string {
 	command := s.baseLaunchCmd()
-	if s.BoardBrief != "" && isCodingAgent(s.Kind) {
+	if (s.BoardBrief != "" || s.Model != "") && isCodingAgent(s.Kind) {
 		flag := " -m "
 		if s.Kind == "claude" {
 			flag = " --model "
@@ -381,7 +375,10 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 	live := s.terminal.liveSet()
 	type row struct {
 		termSession
-		Live bool `json:"live"`
+		Live         bool   `json:"live"`
+		AgentState   string `json:"agentState"`
+		Connectivity string `json:"connectivity"`
+		Process      string `json:"process"`
 	}
 	out := make([]row, 0, len(list))
 	for _, se := range list {
@@ -391,7 +388,16 @@ func (s *Server) handleTermSessions(w http.ResponseWriter, r *http.Request) {
 		if !l && se.Keep && se.Device != "" {
 			l = s.remoteKeepLive(se)
 		}
-		out = append(out, row{se, l})
+		ob := terminalUnknown(se.Runtime)
+		if l {
+			ob.Connectivity = "connected"
+			ob.Process = "running"
+		}
+		if se.backend() == "herdr" {
+			ob, _ = s.observeTerm(r.Context(), se)
+			l = ob.Process == "running"
+		}
+		out = append(out, row{se, l, ob.AgentState, ob.Connectivity, ob.Process})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Pinned != out[j].Pinned {
@@ -414,6 +420,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		Name         string `json:"name"`
 		ResumePicker bool   `json:"resumePicker"`
 		Keep         bool   `json:"keep"`
+		Model        string `json:"model"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -445,7 +452,7 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		Cwd: strings.TrimSpace(b.Cwd), Name: strings.TrimSpace(b.Name),
 		Resume:    b.ResumePicker,
 		Keep:      b.Keep && device != "", // local sessions are inherently kept
-		CreatedAt: now, LastUsed: now,
+		CreatedAt: now, LastUsed: now, Model: strings.TrimSpace(b.Model),
 	}
 	if se.Name == "" {
 		se.Name = s.terminal.shortName(kind)
@@ -457,7 +464,22 @@ func (s *Server) handleTermCreate(w http.ResponseWriter, r *http.Request) {
 		_, _ = rand.Read(u)
 		se.ResumeID = fmt.Sprintf("%x-%x-%x-%x-%x", u[0:4], u[4:6], u[6:8], u[8:10], u[10:16])
 	}
-	s.terminal.upsert(se)
+	se.Version = terminalRowVersion
+	se.Backend = "tmux"
+	if isCodingAgent(kind) {
+		se.Model, _ = codingModel(kind, se.Model)
+	}
+	if device == "" && isCodingAgent(kind) {
+		var err error
+		se, err = s.launchHerdr(r.Context(), se)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+	} else if err := s.terminal.upsertChecked(se); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, se)
 }
 
@@ -481,7 +503,7 @@ func (s *Server) createAgentTermSession(kind, cwd, name string, brief ...string)
 	_, _ = rand.Read(idb)
 	now := time.Now().Format(time.RFC3339)
 	se := termSession{
-		ID: hex.EncodeToString(idb), Kind: kind,
+		ID: hex.EncodeToString(idb), Kind: kind, Version: terminalRowVersion, Backend: "tmux",
 		Cwd: strings.TrimSpace(cwd), Name: strings.TrimSpace(name),
 		CreatedAt: now, LastUsed: now,
 	}
@@ -509,7 +531,9 @@ func (s *Server) createAgentTermSession(kind, cwd, name string, brief ...string)
 	if se.BoardBrief != "" {
 		stored.Started = true
 	}
-	s.terminal.upsert(stored)
+	if err := s.terminal.upsertChecked(stored); err != nil {
+		return se, tmuxName(se.ID), err
+	}
 
 	tn := tmuxName(se.ID)
 	if err := s.spawnTermTmux(se); err != nil {
@@ -520,7 +544,9 @@ func (s *Server) createAgentTermSession(kind, cwd, name string, brief ...string)
 	// claude has now booted under --session-id → future reopens must --resume.
 	se.Started = true
 	se.LastUsed = time.Now().Format(time.RFC3339)
-	s.terminal.upsert(se)
+	if err := s.terminal.upsertChecked(se); err != nil {
+		return se, tn, err
+	}
 	return se, tn, nil
 }
 
@@ -613,8 +639,9 @@ func (s *Server) handleTermAgentCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, struct {
 		termSession
-		Tmux string `json:"tmux"`
-	}{se, tn})
+		Tmux   string `json:"tmux"`
+		Handle string `json:"handle"`
+	}{se, tn, "tmux:" + tn})
 }
 
 func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
@@ -636,21 +663,27 @@ func (s *Server) handleTermUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	if b.Name != nil && strings.TrimSpace(*b.Name) != "" {
-		se.Name = strings.TrimSpace(*b.Name)
-	}
-	// autoName (cmd-ctr): the CLI's own OSC title names the row — but ONLY
-	// while it still wears a minted placeholder (sh1/cc2/…). A name the owner
-	// typed is frozen forever; junk titles (the bare tool name) are refused.
-	if b.AutoName != nil && termPlaceholderRe.MatchString(se.Name) {
-		if n := cleanAutoName(*b.AutoName); n != "" {
-			se.Name = n
+	var err error
+	se, err = s.terminal.updateTermMetadata(se.ID, func(row *termSession) {
+		if b.Name != nil && strings.TrimSpace(*b.Name) != "" {
+			row.Name = strings.TrimSpace(*b.Name)
 		}
+		// autoName (cmd-ctr): the CLI's own OSC title names the row — but ONLY
+		// while it still wears a minted placeholder (sh1/cc2/…). A name the owner
+		// typed is frozen forever; junk titles (the bare tool name) are refused.
+		if b.AutoName != nil && termPlaceholderRe.MatchString(row.Name) {
+			if n := cleanAutoName(*b.AutoName); n != "" {
+				row.Name = n
+			}
+		}
+		if b.Pinned != nil {
+			row.Pinned = *b.Pinned
+		}
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	if b.Pinned != nil {
-		se.Pinned = *b.Pinned
-	}
-	s.terminal.upsert(se)
 	writeJSON(w, se)
 }
 
@@ -683,10 +716,15 @@ func (s *Server) handleTermKill(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
-	s.terminal.tmux("kill-session", "-t", tmuxName(id))
-	s.killRemoteKeep(se)
+	if err := s.closeTerm(r.Context(), se); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
 	se.LastUsed = time.Now().Format(time.RFC3339)
-	s.terminal.upsert(se)
+	if _, err := s.terminal.updateTermMetadata(se.ID, func(row *termSession) { row.LastUsed = se.LastUsed }); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
@@ -717,12 +755,23 @@ func (s *Server) handleTermDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	// kill the tmux session (both ends for a kept remote), then forget the row
-	s.terminal.tmux("kill-session", "-t", tmuxName(id))
-	if se, ok := s.terminal.find(id); ok {
-		s.killRemoteKeep(se)
+	se, ok := s.terminal.find(id)
+	if !ok {
+		http.Error(w, "no such session", http.StatusNotFound)
+		return
 	}
-	s.terminal.remove(id)
+	if se.BoardBrief != "" {
+		http.Error(w, "work-order session links belong to board history and cannot be forgotten", http.StatusConflict)
+		return
+	}
+	if err := s.closeTerm(r.Context(), se); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := s.terminal.removeChecked(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
@@ -947,6 +996,10 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
+	if se.backend() != "tmux" && se.backend() != "herdr" {
+		http.Error(w, "unsupported terminal backend", http.StatusServiceUnavailable)
+		return
+	}
 	cols, rows := clampDim(r.URL.Query().Get("c"), 120), clampDim(r.URL.Query().Get("r"), 32)
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
@@ -956,25 +1009,39 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	defer c.CloseNow()
 	ctx := r.Context()
 
-	// The PTY below is manifest's own child, so a tmux SERVER first started by
-	// it would live in manifest's cgroup and die at the next restart. Give the
-	// session a scoped home first (idempotent: `new-session -A` then attaches
-	// to what this created), and only then attach.
-	if !s.terminal.liveSet()[tmuxName(se.ID)] {
-		if err := s.spawnTermTmux(se); err != nil {
+	var cmd *exec.Cmd
+	if se.backend() == "herdr" {
+		rt, e := s.runtimeFor(se)
+		if e != nil {
+			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+e.Error()+"\r\n"))
+			return
+		}
+		cmd, err = rt.Attach(ctx, se.Runtime)
+		if err != nil {
 			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
 			return
 		}
-	}
-	// the tmux create-or-attach command — the shared definition (termLaunchArgs)
-	full, err := s.termLaunchArgs(se, true)
-	if err != nil {
-		c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
-		return
-	}
+	} else {
+		// The PTY below is manifest's own child, so a tmux SERVER first started by
+		// it would live in manifest's cgroup and die at the next restart. Give the
+		// session a scoped home first (idempotent: `new-session -A` then attaches
+		// to what this created), and only then attach.
+		if !s.terminal.liveSet()[tmuxName(se.ID)] {
+			if err := s.spawnTermTmux(se); err != nil {
+				c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
+				return
+			}
+		}
+		// the tmux create-or-attach command — the shared definition (termLaunchArgs)
+		full, err := s.termLaunchArgs(se, true)
+		if err != nil {
+			c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] "+err.Error()+"\r\n"))
+			return
+		}
 
-	cmd := exec.CommandContext(ctx, "tmux", full...)
-	cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+s.terminal.tmuxTmp, "TERM=xterm-256color")
+		cmd = exec.CommandContext(ctx, "tmux", full...)
+		cmd.Env = append(os.Environ(), "TMUX_TMPDIR="+s.terminal.tmuxTmp, "TERM=xterm-256color")
+	}
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
 	if err != nil {
 		c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] failed to start terminal: "+err.Error()+"\r\n"))
@@ -985,7 +1052,10 @@ func (s *Server) handleTermWS(w http.ResponseWriter, r *http.Request) {
 	// touch lastUsed; the session has now run once → future reopens resume
 	se.LastUsed = time.Now().Format(time.RFC3339)
 	se.Started = true
-	s.terminal.upsert(se)
+	if _, err := s.terminal.updateTermMetadata(se.ID, func(row *termSession) { row.LastUsed = se.LastUsed; row.Started = true }); err != nil {
+		c.Write(ctx, websocket.MessageBinary, []byte("\r\n[manifest] metadata update failed: "+err.Error()+"\r\n"))
+		return
+	}
 
 	// PTY → browser (binary frames)
 	go func() {

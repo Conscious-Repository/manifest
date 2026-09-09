@@ -1,0 +1,14 @@
+# User service: install in ~/.config/systemd/user/, independent of manifest.service.
+[Unit]
+Description=Manifest herdr terminal runtime
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/herdr --session manifest server
+Restart=on-failure
+RestartSec=3
+UMask=0077
+Environment=TERM=xterm-256color
+
+[Install]
+WantedBy=default.target

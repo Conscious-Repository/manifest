@@ -50,3 +50,45 @@ passed (manifest/server 7.531s); 17 focused runtime tests also passed with -race
 gofmt and git diff --check passed. Full logs /tmp/jarvis_herdr_A_{build,tests}.log.
 
 B/C/D: not started; no migration completion claim.
+
+## Gate B — verified new-chat routing and persistent associations
+
+New local coding chats use herdr; missing backend remains tmux. Versioned rows
+retain stable IDs, URLs, host/runtime/pane/occupant and conversation identities,
+cwd/model and BoardBrief/run association. Legacy import makes a one-time backup
+and changes metadata only. Registry parse/write failures prevent new launches.
+Launch intent, allocated identity and submitted posture are fsynced before each
+side effect; unresolved steps never auto-replay. Ended exact herdr conversations
+can resume under the same Manifest ID. Existing tmux rows still use tmux; no
+opportunistic legacy process migration or bulk relaunch was performed.
+
+Backend-aware screen, transcript, input, attach and teardown are wired. Work-order
+rows cannot be forgotten. Agent-session's tmux field retains its meaning and an
+additive backend-qualified handle is provided. Codex exact transcript discovery
+validates CLI metadata; new conversations can be identified from the exact
+foreground Codex process's open rollout descriptor (Linux), never newest-by-cwd.
+
+Validation:
+- go build ./... and go test -count=1 ./server/... ./... both passed.
+  Logs: /tmp/jarvis_herdr_B_build.log, /tmp/jarvis_herdr_B_tests.log.
+- Live Codex open-file identity + exact rollout resolution passed.
+  /tmp/jarvis_herdr_B_codex_live.log.
+- Live HTTP create/input/transcript, reconstructed Manifest server, same persisted
+  runtime identity, explicit stopped-conversation resume with exact ID/model
+  passed (5.414s): /tmp/jarvis_herdr_B_chat_live.log.
+- Initial live test exposed placeholder-prompt readiness failure; corrected to
+  detected agent + dialog guard and reran successfully. No uncertain send retry.
+- Fixtures cover legacy backup/import idempotence, corruption, each persisted
+  launch boundary, restart unresolved phases, socket outage/no fallback, failed
+  persistence/no launch, lost reply/no resend, work-order forget protection,
+  shell readiness refusal, multiple Codex sessions/cwd, wrong/missing IDs,
+  ambiguous copies and descriptor/path inode mismatch.
+- gofmt and git diff --check passed.
+
+Operational setup: installed/enabled the independent user service
+manifest-herdr.service with named daemon manifest; verified active, 0.9.0/22,
+empty snapshot. Existing legacy sessions untouched. All three scratch daemons
+were stopped and their stopped scratch session records deleted. No Manifest
+production restart has yet been performed. Browser UI verification remains C/D.
+
+C/D: not started; board execution is still on its legacy tmux path.

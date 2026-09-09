@@ -456,12 +456,14 @@ func claudeProjectDir(cwd string) string {
 }
 
 // transcriptPath resolves the session file for a registry row; "" when the
-// kind has no discoverable file (codex rows mint no id yet — §7 Q8).
+// kind has no discoverable exact conversation identity.
 func (c *termCfg) transcriptPath(se termSession) string {
 	if se.Device != "" {
 		return ""
 	}
 	switch se.Kind {
+	case "codex":
+		return c.codexTranscriptPath(se)
 	case "claude":
 		if se.ResumeID == "" || !resumeIDRe.MatchString(se.ResumeID) {
 			return ""

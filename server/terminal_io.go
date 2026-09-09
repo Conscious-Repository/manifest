@@ -29,7 +29,20 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
-	live := s.terminal.liveSet()[tmuxName(se.ID)]
+	live := false
+	ob := terminalUnknown(se.Runtime)
+	if se.backend() == "herdr" {
+		ob, _ = s.observeTerm(r.Context(), se)
+		live = ob.Process == "running"
+		se = s.captureObservedTermIdentity(se, ob)
+		if se.Kind == "codex" && se.ResumeID == "" && live && s.terminal.herdr != nil {
+			if id, err := s.terminal.herdr.codexProcessRollout(r.Context(), se); err == nil && id != "" {
+				se = s.captureTermResumeID(se, id)
+			}
+		}
+	} else {
+		live = s.terminal.liveSet()[tmuxName(se.ID)]
+	}
 	path := s.terminal.transcriptPath(se)
 	tr := termTranscript{Turns: []termTurn{}}
 	if path != "" {
@@ -39,7 +52,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
-		"live": live, "offset": tr.Offset, "kind": se.Kind,
+		"live": live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
 }
 
@@ -52,6 +65,24 @@ const termScreenLines = 12
 func (s *Server) handleTermScreen(w http.ResponseWriter, r *http.Request) {
 	se, ok := s.termRow(w, r)
 	if !ok {
+		return
+	}
+	if se.backend() == "herdr" {
+		rt, err := s.runtimeFor(se)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		ob, _ := rt.Inspect(r.Context(), se.Runtime)
+		lines := []string{}
+		if ob.Process == "running" {
+			if screen, e := rt.Screen(r.Context(), se.Runtime); e == nil {
+				lines = screen
+			} else {
+				ob = terminalUnknown(se.Runtime)
+			}
+		}
+		writeJSON(w, map[string]any{"live": ob.Process == "running", "lines": lines, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process})
 		return
 	}
 	lines, live := s.terminal.screenTail(se.ID)
@@ -108,6 +139,43 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 	}
 	if b.Text == "" && b.Key == "" {
 		http.Error(w, "nothing to send", http.StatusBadRequest)
+		return
+	}
+	if se.backend() == "herdr" {
+		mu := s.termInputMutex(se.ID)
+		mu.Lock()
+		defer mu.Unlock()
+		current, exists := s.terminal.find(se.ID)
+		if !exists {
+			http.Error(w, "no such session", http.StatusNotFound)
+			return
+		}
+		se = current
+		var relaunched bool
+		var err error
+		se, relaunched, err = s.ensureHerdrInput(r.Context(), se)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		if b.Key != "" {
+			err = s.terminal.herdr.SendKey(r.Context(), se.Runtime, b.Key)
+		} else {
+			err = s.herdrPromptReady(r.Context(), se)
+			if err == nil {
+				err = s.terminal.herdr.SendText(r.Context(), se.Runtime, b.Text)
+			}
+		}
+		if err != nil {
+			http.Error(w, "send outcome: "+err.Error()+"; no automatic retry", http.StatusBadGateway)
+			return
+		}
+		se.LastUsed = time.Now().Format(time.RFC3339)
+		if _, err = s.terminal.updateTermMetadata(se.ID, func(row *termSession) { row.LastUsed = se.LastUsed }); err != nil {
+			http.Error(w, "input sent but metadata update failed; do not resend: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "relaunched": relaunched})
 		return
 	}
 	relaunched, err := s.termEnsureLive(se)
@@ -280,6 +348,10 @@ func (s *Server) termRow(w http.ResponseWriter, r *http.Request) (termSession, b
 	se, ok := s.terminal.find(id)
 	if !ok || !termIDRe.MatchString(id) {
 		http.Error(w, "no such session", http.StatusNotFound)
+		return termSession{}, false
+	}
+	if se.backend() != "tmux" && se.backend() != "herdr" {
+		http.Error(w, "unsupported terminal backend", http.StatusServiceUnavailable)
 		return termSession{}, false
 	}
 	return se, true

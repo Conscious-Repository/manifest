@@ -47,6 +47,12 @@ type herdrPane struct {
 	Agent        string             `json:"agent"`
 }
 type herdrResult struct {
+	ProcessInfo struct {
+		Processes []struct {
+			PID  int    `json:"pid"`
+			Name string `json:"name"`
+		} `json:"foreground_processes"`
+	} `json:"process_info"`
 	Type  string    `json:"type"`
 	Root  herdrPane `json:"root_pane"`
 	Pane  herdrPane `json:"pane"`
@@ -209,6 +215,13 @@ func (h *herdrTerminalRuntime) checked(ctx context.Context, id terminalIdentity)
 	return nil
 }
 func (h *herdrTerminalRuntime) Create(ctx context.Context, se termSession) (terminalIdentity, error) {
+	id, err := h.allocate(ctx, se)
+	if err != nil {
+		return id, err
+	}
+	return id, h.launch(ctx, id, se)
+}
+func (h *herdrTerminalRuntime) allocate(ctx context.Context, se termSession) (terminalIdentity, error) {
 	if se.Device != "" {
 		return terminalIdentity{}, errors.New("remote herdr launch is not supported")
 	}
@@ -232,15 +245,23 @@ func (h *herdrTerminalRuntime) Create(ctx context.Context, se termSession) (term
 	}
 	id := h.observation(r.Root, gen).Identity
 	id.ManifestID = se.ID
-	// Return allocated identity even if sending fails. The caller must persist it
-	// and reconcile, never retry Create or replay the command on an unknown send.
+	if id.Pane == "" || id.Occupant == "" || id.Workspace == "" {
+		return terminalIdentity{}, errors.New("herdr allocation omitted exact identity; outcome unknown")
+	}
+	return id, nil
+}
+func (h *herdrTerminalRuntime) launch(ctx context.Context, id terminalIdentity, se termSession) error {
+	if err := h.checked(ctx, id); err != nil {
+		return err
+	}
 	inner, ok := h.server.termInner(se)
 	if !ok {
-		return id, errors.New("terminal launch configuration invalid")
+		return errors.New("terminal launch configuration invalid")
 	}
-	_, err = h.callGeneration(ctx, "pane.send_input", map[string]any{"pane_id": id.Pane, "text": "stty cols 120 rows 32; exec bash -lc " + shQuote(inner), "keys": []string{"enter"}}, id.Generation)
-	return id, err
+	_, err := h.callGeneration(ctx, "pane.send_input", map[string]any{"pane_id": id.Pane, "text": "stty cols 120 rows 32; exec bash -lc " + shQuote(inner), "keys": []string{"enter"}}, id.Generation)
+	return err
 }
+
 func (h *herdrTerminalRuntime) Attach(ctx context.Context, id terminalIdentity) (*exec.Cmd, error) {
 	if err := h.checked(ctx, id); err != nil {
 		return nil, err
