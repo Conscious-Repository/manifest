@@ -49,7 +49,7 @@
 .term-screen { flex: 1; min-height: 0; border-radius: var(--radius-lg); background: var(--term-bg); overflow: hidden; padding: var(--sp-5) var(--sp-4) var(--sp-5) var(--sp-6); }
 .term-mount { width: 100%; height: 100%; }
 .term-blank { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-7); }
-.term-blank-line { font-family: var(--mono); font-size: var(--fs-sm); color: var(--term-muted); }
+.term-blank-line { font-family: var(--mono); font-size: var(--fs-sm); color: var(--term-muted); color: var(--term-dim); text-align: center; }
 .term-keys { display: none; gap: var(--sp-2); flex-wrap: wrap; padding: var(--sp-4) 0 var(--sp-1); flex: none; }
 .term-key { font: inherit; font-size: var(--fs-sm); color: var(--base-70); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--sp-3) var(--sp-5); cursor: pointer; }
 .term-key:active { background: var(--hover); }
@@ -75,7 +75,7 @@
 .term-sess:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .term-sess:focus-within .term-x { opacity: 1; }
 .term-none, .rail-sec-label, .term-sess-host { color: var(--base-60); }
-.term-blank-line { color: var(--term-dim); text-align: center; }
+
 @media (max-width: 860px) {
   .term-shell { padding: 0 var(--sp-6); }
   .term-cwd, .term-device-select { font-size: var(--fs-xl); height: 44px; }

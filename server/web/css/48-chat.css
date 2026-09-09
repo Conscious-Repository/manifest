@@ -26,18 +26,18 @@
 .chat-rail-row .inline-rename { font-size: var(--fs-md); }
 
 .chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-.chat-transcript { flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-7) var(--sp-1); }
+.chat-transcript { flex: 1; overflow-y: auto; padding: var(--sp-3) var(--sp-4) var(--sp-7) var(--sp-1); min-height: 0; overscroll-behavior: contain; }
 /* thread head — the .sprt-head anatomy (title · sub · meta · actions); the
    title is user prose, so it keeps the sans face over .sprt-title's mono */
 .chat-head { border-bottom: 1px solid var(--line); margin-bottom: var(--sp-7); padding-top: var(--sp-1); }
 .chat-head-title { font-family: var(--sans); font-size: var(--fs-md); font-weight: 600; text-transform: none; letter-spacing: 0; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .chat-head .inline-rename { font-size: var(--fs-md); font-weight: 600; }
 .chat-head-meta { font-variant-numeric: tabular-nums; }
-.chat-head-acts { display: inline-flex; gap: var(--sp-5); align-items: baseline; flex: none; }
+.chat-head-acts { display: inline-flex; gap: var(--sp-5); align-items: baseline; flex: none; flex-wrap: wrap; }
 .chat-head .sprt-quiet { flex: none; }
 .chat-head .sprt-quiet:disabled { opacity: 0.4; cursor: default; }
 
-.chat-turn { margin: var(--sp-5) 0; max-width: 72ch; }
+.chat-turn { margin: var(--sp-5) 0; max-width: 72ch; overflow-wrap: anywhere; }
 .chat-user { margin-left: auto; background: var(--hover); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-4) var(--sp-6); white-space: pre-wrap; font-size: var(--fs-md); }
 .chat-user.chat-queued { opacity: 0.55; }
 .chat-system { font-size: var(--fs-sm); color: var(--base-40); font-style: italic; }
@@ -94,7 +94,7 @@
 .chat-main.landing { justify-content: center; }
 .chat-main.landing .chat-transcript { flex: 0 1 auto; overflow: visible; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: var(--sp-6); }
 .chat-greeting { font-size: var(--fs-2xl); font-weight: 600; color: var(--base-100); }
-.chat-landing-hint { font-size: var(--fs-xs); color: var(--base-30); }
+.chat-landing-hint { font-size: var(--fs-xs); color: var(--base-30); font-size: var(--fs-sm); }
 /* a NAMED thread that refused to load: said out loud above the landing, so a
    failed open never reads as "nothing happened" */
 .chat-load-error {
@@ -122,7 +122,7 @@
    (JS-applied); these classes add only structure/state. */
 .chat-rail-group { padding: var(--sp-5) var(--sp-6) var(--sp-1); }
 .chat-rail-section { flex: none; padding-bottom: var(--sp-3); }
-.chat-rail-section-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-6); border-radius: var(--radius-lg); cursor: pointer; }
+.chat-rail-section-head { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-4) var(--sp-6); border-radius: var(--radius-lg); cursor: pointer; width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; font: inherit; color: inherit; }
 .chat-rail-section-head:hover { background: var(--base-10); }
 .chat-rail-section.open > .chat-rail-section-head { cursor: default; }
 .chat-rail-section-name { font-weight: 600; color: var(--base-100); }
@@ -301,13 +301,20 @@
 .delegation-runtime { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
 
 /* Clear navigation and readable secondary copy in either theme. */
-.chat-rail-section-head { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; font: inherit; color: inherit; }
+
 .chat-rail-row:focus-visible, .chat-rail-section-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .chat-rail-row:focus-within .chat-rail-x { opacity: 1; }
 .chat-rail-meta, .chat-landing-desc, .chat-landing-hint { color: var(--base-60); }
-.chat-landing-hint { font-size: var(--fs-sm); }
-.chat-head-acts { flex-wrap: wrap; }
-.chat-turn { overflow-wrap: anywhere; }
-.chat-transcript { min-height: 0; overscroll-behavior: contain; }
+
+
+
+
 .chat-composer .chat-input::placeholder { color: var(--base-60); }
 @media (hover: none) { .chat-rail-x { opacity: 1; min-width: 32px; min-height: 32px; } }
+
+@media (max-width: 860px) {
+  .chat-composer .chat-input { flex: 1 0 100%; width: 100%; box-sizing: border-box; order: 0; }
+  .chat-composer .mic-btn { order: 2; }
+  .chat-composer .chat-send { margin-left: auto; }
+  .chat-main.term .chat-composer::before { display: none; }
+}
