@@ -377,7 +377,7 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 		queued = []string{}
 	}
 	writeJSON(w, map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID),
-		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess), "codingResults":s.chatCodingResults(sess)})
+		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess), "codingResults": s.chatCodingResults(sess)})
 }
 
 // POST /api/agents/chat/{agent}/sessions/{id}/messages {text, files?} — starts
@@ -634,7 +634,7 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	})
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
-		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), 0)
+		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), res.SpentUSD, res.SessionID)
 		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Object: obj, Session: id, Harness: "hermes",
 			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile}})
 		return saveErr

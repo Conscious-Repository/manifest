@@ -251,6 +251,12 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	if usageFile != "" {
 		u := parseUsage(usageFile)
 		res.SpentUSD, res.Model, res.SessionID = u.usd(), u.Model, strings.TrimSpace(u.SessionID)
+		if u.Failed {
+			return res, errors.New("hermes reported that the turn failed")
+		}
+		if u.Completed != nil && !*u.Completed {
+			return res, errors.New("hermes reported an incomplete turn")
+		}
 	}
 	return res, nil
 }
@@ -264,6 +270,8 @@ type usageReport struct {
 	EstimatedCost float64 `json:"estimated_cost_usd"`
 	Model         string  `json:"model"`
 	SessionID     string  `json:"session_id"`
+	Failed        bool    `json:"failed"`
+	Completed     *bool   `json:"completed"`
 }
 
 // usd picks the reported cost: an exact figure wins over the estimate.

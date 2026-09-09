@@ -285,6 +285,37 @@ fi
 	}
 }
 
+func TestAgentChatStructuredFailureIsNotAnAssistantSuccess(t *testing.T) {
+	script := `#!/bin/sh
+if [ "$1" = profile ]; then exit 0; fi
+while [ $# -gt 0 ]; do
+ if [ "$1" = --usage-file ]; then usage="$2"; shift 2; else shift; fi
+done
+printf '%s' '{"failed":true,"completed":false,"session_id":"failed-native-session","cost_usd":0.1}' > "$usage"
+printf 'HTTP 404: model unavailable'
+`
+	s, st, _ := agentChatFixture(t, script)
+	id, err := st.Create("alfred", "", "Failure QA", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.agentChatSendTo("alfred", id, "failure-request-001", "say hello", nil, "", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitIdle(t, st, "alfred", id)
+	sess, body, _, _ := st.Get("alfred", id)
+	if len(sess.Deliveries) != 1 || sess.Deliveries[0].State != agentchat.DeliveryFailed {
+		t.Fatal(sess.Deliveries)
+	}
+	turns := agentchat.ParseTurns(body)
+	if len(turns) != 2 || turns[1].Who != "system" || !strings.Contains(turns[1].Text, "couldn't finish") {
+		t.Fatal(body)
+	}
+	if strings.Contains(body, "HTTP 404") {
+		t.Fatal("raw provider failure projected as answer")
+	}
+}
+
 // Audit 2026-09-04: with the runner off, a first send is refused BEFORE the
 // session file exists (no empty "new conversation" in the rail), and the
 // startup repair never runs — the store syncs across devices, so a box that

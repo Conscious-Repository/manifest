@@ -268,6 +268,41 @@ printf 'PLAN\n1. do it'
 	}
 }
 
+func TestRunHonorsStructuredOutcomeDespiteZeroExit(t *testing.T) {
+	for _, tc := range []struct {
+		name, flags string
+		wantError   bool
+	}{
+		{"failed", `"failed":true,"completed":false`, true},
+		{"failed-wins", `"failed":true,"completed":true`, true},
+		{"incomplete", `"failed":false,"completed":false`, true},
+		{"success", `"failed":false,"completed":true`, false},
+		{"legacy", `"failed":false`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stub := filepath.Join(t.TempDir(), "hermes")
+			script := `#!/bin/sh
+while [ $# -gt 0 ]; do
+ if [ "$1" = --usage-file ]; then usage="$2"; shift 2; else shift; fi
+done
+printf '%s' '{"model":"test-model","session_id":"native-session","cost_usd":0.25,` + tc.flags + `}' > "$usage"
+printf 'Example output mentions HTTP 404; text alone does not establish failure.'
+exit 0
+`
+			if err := os.WriteFile(stub, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			result, err := NewRunner(Config{Enabled: true, Bin: stub}).Run(context.Background(), Request{Prompt: "test"})
+			if (err != nil) != tc.wantError {
+				t.Fatal(result, err)
+			}
+			if result.SessionID != "native-session" || result.SpentUSD != .25 {
+				t.Fatal("lost failure metadata", result)
+			}
+		})
+	}
+}
+
 func TestManifestTurnContextIsBoundToChild(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "hermes")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s/%s' \"$MANIFEST_CONVERSATION\" \"$MANIFEST_TURN\"\n"), 0700); err != nil {
