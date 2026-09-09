@@ -44,6 +44,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -219,12 +220,12 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 	defer cancel()
 
 	// usage report → a temp file the CLI writes JSON into after the run.
-	usageFile := ""
-	if f, err := os.CreateTemp("", "hermes-usage-*.json"); err == nil {
-		usageFile = f.Name()
-		f.Close()
-		defer os.Remove(usageFile)
+	cacheRoot, _ := os.UserCacheDir()
+	usageFile, err := createUsageFile(os.TempDir(), cacheRoot)
+	if err != nil {
+		return Result{}, fmt.Errorf("cannot prepare Hermes outcome report: %w", err)
 	}
+	defer os.Remove(usageFile)
 
 	cmd := exec.CommandContext(ctx, r.cfg.Bin, r.buildArgs(req, usageFile)...)
 	cmd.Env = append(os.Environ(), "MANIFEST_CONVERSATION="+req.ManifestConversation, "MANIFEST_TURN="+req.ManifestTurn)
@@ -259,6 +260,28 @@ func (r *Runner) Run(ctx context.Context, req Request) (Result, error) {
 		}
 	}
 	return res, nil
+}
+
+// Hardened services may have a read-only /tmp while the user's cache remains
+// writable. Never silently omit the report that carries failure and usage data.
+func createUsageFile(tempRoot, cacheRoot string) (string, error) {
+	f, err := os.CreateTemp(tempRoot, "hermes-usage-*.json")
+	if err != nil && cacheRoot != "" {
+		dir := filepath.Join(cacheRoot, "manifest", "hermes-outcomes")
+		if mkdirErr := os.MkdirAll(dir, 0700); mkdirErr != nil {
+			return "", mkdirErr
+		}
+		f, err = os.CreateTemp(dir, "usage-*.json")
+	}
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	if err = f.Close(); err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }
 
 // usageReport is the tolerant view of --usage-file JSON; unknown fields ignored,

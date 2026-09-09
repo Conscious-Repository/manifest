@@ -303,6 +303,29 @@ exit 0
 	}
 }
 
+func TestUsageReportFallsBackFromUnavailableTemp(t *testing.T) {
+	unavailable := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(unavailable, []byte("not a directory"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	path, err := createUsageFile(unavailable, cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	if !strings.HasPrefix(path, filepath.Join(cache, "manifest", "hermes-outcomes")) {
+		t.Fatal(path)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal(info, err)
+	}
+	if _, err = createUsageFile(unavailable, unavailable); err == nil {
+		t.Fatal("silently omitted report when neither location works")
+	}
+}
+
 func TestManifestTurnContextIsBoundToChild(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "hermes")
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s/%s' \"$MANIFEST_CONVERSATION\" \"$MANIFEST_TURN\"\n"), 0700); err != nil {
