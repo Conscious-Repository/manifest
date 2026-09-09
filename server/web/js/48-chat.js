@@ -133,7 +133,7 @@ function chatApplySyncedDraft(key,value){
   chatDrafts.set(key,{text:typeof v.text==="string"?v.text:"",files:Array.isArray(v.files)?v.files:[]});
   if(v.selection)chatArtifactSelections.set("chat:"+key,v.selection);else chatArtifactSelections.delete("chat:"+key);
   if(v.task)chatConversationTasks.set("chat:"+key,v.task);
-  if(v.recipient)chatRecipients.set(key,v.recipient);
+  if(v.recipient)chatRecipients.set(key,v.recipient);else chatRecipients.delete(key);
   if(chatDraftKey!==key)return;
   const input=document.querySelector("#chatComposer textarea");
   if(input){if(typeof chatRepaintHead==="function")chatRepaintHead();input.value=chatDrafts.get(key).text;chatPendingFiles=chatDrafts.get(key).files.slice();renderChatComposer(chatCurSession);input.style.height="auto";input.style.height=Math.min(input.scrollHeight,Math.max(120,innerHeight*.4))+"px";}
@@ -1159,7 +1159,8 @@ function chatHead(s) {
   if (portal && s.busy) sub.push("✦ running");
   if(chatRosterEntry(agent)?.durableSend){
     const recipient=chatRecipients.get(agent+"/"+s.id)||{agent,model:s.model||""};
-    const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient.agent));
+    const model=recipient.model||chatRosterEntry(recipient.agent)?.model||"";
+    const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient.agent)+(model?" · "+shortModel(model):""));
     to.title="Choose who receives your next message";to.onclick=()=>chatChooseRecipient(s);head.append(to);
   }else head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
   // portal runs are metered in the agent's own ledger, not per thread
