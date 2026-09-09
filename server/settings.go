@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -492,7 +493,26 @@ func hermesProfiles(ctx context.Context, bin string, env []string) ([]hermesProf
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
-	return parseHermesProfiles(buf.String()), nil
+	profiles := parseHermesProfiles(buf.String())
+	for i := range profiles {
+		// The list table truncates model IDs. Its display cell must never be
+		// used as the model passed to a runtime invocation.
+		text, err := hermesProfileCmd(ctx, bin, env, 8*time.Second, "show", profiles[i].Name)
+		if err != nil {
+			return nil, err
+		}
+		full := parseHermesProfileShow(text)
+		if full.Name != profiles[i].Name {
+			return nil, fmt.Errorf("profile identity mismatch for %s", profiles[i].Name)
+		}
+		model := full.Model
+		// Show appends the provider for display; it is not part of the ID.
+		if suffix := strings.LastIndex(model, " ("); suffix >= 0 && strings.HasSuffix(model, ")") {
+			model = model[:suffix]
+		}
+		profiles[i].Model = model
+	}
+	return profiles, nil
 }
 
 func parseHermesProfiles(text string) []hermesProfile {

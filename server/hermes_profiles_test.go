@@ -1,11 +1,40 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestHermesProfilesResolveUntruncatedModel(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "hermes")
+	script := `#!/bin/sh
+if [ "$2" = list ]; then
+  echo '◆default  deepseek-v4-flash-vision-e  running  —  —'
+else
+  printf 'Profile: default\nModel: deepseek-v4-flash-vision-exp (custom)\n'
+fi
+`
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := hermesProfiles(context.Background(), bin, os.Environ())
+	if err != nil || len(profiles) != 1 || profiles[0].Model != "deepseek-v4-flash-vision-exp" {
+		t.Fatal(profiles, err)
+	}
+	// Never fall back to the shortened table cell when full resolution fails.
+	script = strings.Replace(script, "printf 'Profile: default\\nModel: deepseek-v4-flash-vision-exp (custom)\\n'", "exit 1", 1)
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = hermesProfiles(context.Background(), bin, os.Environ()); err == nil {
+		t.Fatal("accepted truncated model on failed show")
+	}
+}
 
 func TestHermesProfileNameRule(t *testing.T) {
 	ok := []string{"default", "scratch", "a-b", "x1", "recruiter2"}

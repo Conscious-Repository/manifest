@@ -240,6 +240,11 @@ func TestAgentChatProfileTargetsDashP(t *testing.T) {
 	// the stub also answers `profile list` so the roster/resolve see "scout"
 	script := `#!/bin/sh
 if [ "$1" = "profile" ]; then
+ if [ "$2" = "show" ]; then
+   model=claude-x; [ "$3" = "scout" ] && model=gpt-5
+   printf 'Profile: %s\nModel: %s (custom)\n' "$3" "$model"
+   exit 0
+ fi
   printf 'Profile   Model   Gateway   Alias   Distribution\n'
   printf '◆ default   claude-x   —   —   —\n'
   printf 'scout   gpt-5   —   scout   —\n'
