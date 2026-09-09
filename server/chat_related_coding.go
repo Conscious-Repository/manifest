@@ -38,7 +38,7 @@ func (s *Server) handleRelatedCodingChat(w http.ResponseWriter, r *http.Request,
 	sum := sha256.Sum256(raw)
 	signature := hex.EncodeToString(sum[:])
 	reply := func(se termSession) {
-		writeJSON(w, map[string]any{"id": se.ID, "agent": se.Kind, "conversation": s.terminalConversation(se)})
+		writeJSON(w, map[string]any{"id": se.ID, "agent": se.Kind, "model": se.Model, "cwd": se.Cwd, "conversation": s.terminalConversation(se)})
 	}
 	fail := func(err error) {
 		if errors.Is(err, agentchat.ErrRequestConflict) {

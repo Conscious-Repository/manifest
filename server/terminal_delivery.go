@@ -13,13 +13,15 @@ import (
 )
 
 type terminalInput struct {
-	Text      string               `json:"text"`
-	Key       string               `json:"key"`
-	Supervise bool                 `json:"supervise"`
-	TimeoutMS int                  `json:"timeoutMs"`
-	Task      string               `json:"task"`
-	Artifacts []artifactContextRef `json:"artifacts"`
-	RequestID string               `json:"requestId"`
+	Text              string               `json:"text"`
+	Key               string               `json:"key"`
+	Supervise         bool                 `json:"supervise"`
+	TimeoutMS         int                  `json:"timeoutMs"`
+	Task              string               `json:"task"`
+	Artifacts         []artifactContextRef `json:"artifacts"`
+	RequestID         string               `json:"requestId"`
+	ConversationAgent string               `json:"conversationAgent,omitempty"`
+	ConversationID    string               `json:"conversationId,omitempty"`
 }
 
 func (b terminalInput) fingerprint() string {
@@ -33,13 +35,45 @@ func (b terminalInput) fingerprint() string {
 // agent completed work. Persist unconfirmed BEFORE crossing the runtime boundary.
 // A lost reply/crash leaves uncertainty that must never authorize replay.
 type terminalInputReceipt struct {
-	ID          string               `json:"id"`
-	Fingerprint string               `json:"fingerprint"`
-	State       string               `json:"state"` // unconfirmed | sent
-	Updated     string               `json:"updated"`
-	Runtime     terminalIdentity     `json:"runtime"`
-	Task        string               `json:"task,omitempty"`
-	Artifacts   []artifactContextRef `json:"artifacts,omitempty"`
+	ID             string               `json:"id"`
+	Fingerprint    string               `json:"fingerprint"`
+	State          string               `json:"state"` // unconfirmed | sent
+	Updated        string               `json:"updated"`
+	Runtime        terminalIdentity     `json:"runtime"`
+	Task           string               `json:"task,omitempty"`
+	Artifacts      []artifactContextRef `json:"artifacts,omitempty"`
+	Text           string               `json:"text,omitempty"`
+	SubmittedHash  string               `json:"submittedHash,omitempty"`
+	ContextSource  string               `json:"contextSource,omitempty"`
+	ContextHash    string               `json:"contextHash,omitempty"`
+	HistoryOmitted int                  `json:"historyOmitted,omitempty"`
+}
+
+func hashTerminalText(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+func (c *termCfg) continuationReceipts(id, source string) map[string]terminalInputReceipt {
+	out := map[string]terminalInputReceipt{}
+	entries, err := os.ReadDir(filepath.Join(c.regPath+".inputs", id))
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		request := e.Name()[:len(e.Name())-5]
+		if !agentchat.ValidRequestID(request) {
+			continue
+		}
+		r, err := c.readInputReceipt(id, request)
+		if err == nil && r.ContextSource == source && len(r.SubmittedHash) == 64 {
+			out[r.SubmittedHash] = r
+		}
+	}
+	return out
 }
 
 func (c *termCfg) inputReceiptPath(id, request string) string {

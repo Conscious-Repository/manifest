@@ -297,7 +297,31 @@ func (s *Server) handleAgentChatSessions(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "bad agent name", http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, map[string]any{"agent": agent, "sessions": s.agentChat.store.List(agent)})
+	rows := s.agentChat.store.List(agent)
+	if s.terminal != nil {
+		for _, se := range s.terminal.load() {
+			o := se.Origin
+			if o == nil || o.Mode != "continue" || o.Backend != "" || o.Agent != agent {
+				continue
+			}
+			latest := se.LastUsed
+			if path := s.terminal.transcriptPath(se); path != "" {
+				if tr, ok := readTranscript(se.Kind, path, 0); ok {
+					for _, turn := range tr.Turns {
+						if laterConversationTimestamp(turn.TS, latest) {
+							latest = turn.TS
+						}
+					}
+				}
+			}
+			for i := range rows {
+				if rows[i].ID == o.ID && laterConversationTimestamp(latest, rows[i].Updated) {
+					rows[i].Updated = latest
+				}
+			}
+		}
+	}
+	writeJSON(w, map[string]any{"agent": agent, "sessions": rows})
 }
 
 // POST /api/agents/chat/{agent}/sessions {title?, model?, text?} — create, and
@@ -376,8 +400,13 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 	if queued == nil {
 		queued = []string{}
 	}
-	writeJSON(w, map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID),
-		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess), "codingResults": s.chatCodingResults(sess), "continuations": s.codingContinuations(r.Context(), sess)})
+	views := s.codingContinuations(r.Context(), sess)
+	out := map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID),
+		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess), "codingResults": s.chatCodingResults(sess), "continuations": views}
+	if len(views) > 0 {
+		out["timeline"] = conversationTimeline(sess, body, views)
+	}
+	writeJSON(w, out)
 }
 
 // POST /api/agents/chat/{agent}/sessions/{id}/messages {text, files?} — starts
@@ -610,11 +639,10 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	executionSession.Model = recipient.Model
 	who := "agent:" + recipient.Agent
 	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
-	_, omitted := agentChatWindow(body)
+	prompt, omitted := s.composeAgentChatPromptWindow(recipient.Agent, executionSession, body)
 	if err := st.RecordHistoryOmission(agent, id, requestID, omitted); err != nil {
 		return err
 	}
-	prompt := s.composeAgentChatPrompt(recipient.Agent, executionSession, body)
 	if receipt, ok := st.Receipt(agent, id, requestID); ok && receipt.Context != nil {
 		selected, err := s.retainedArtifactContext(receipt.Context.Artifacts)
 		if err != nil {
@@ -662,16 +690,28 @@ const agentChatWindowChars = 32000
 // owner's attachments on the latest message, and the reply instruction. Pure
 // apart from attachment reads.
 func (s *Server) composeAgentChatPrompt(agent string, sess agentchat.Session, body string) string {
+	prompt, _ := s.composeAgentChatPromptWindow(agent, sess, body)
+	return prompt
+}
+func (s *Server) composeAgentChatPromptWindow(agent string, sess agentchat.Session, body string) (string, int) {
 	name := "Alfred"
 	if agent != alfredAgent {
 		name = agent
 	}
 	kept, start := agentChatWindow(body)
+	logical := ""
+	if views := s.codingContinuations(context.Background(), sess); len(views) > 0 {
+		logical, start = logicalContinuationContext(sess, body, views)
+	}
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %s, the owner's personal agent, in a chat thread titled %q inside his Manifest cockpit. ", name, sess.Title)
 	b.WriteString("This is a continuing conversation; the transcript so far is below (oldest first). ")
-	b.WriteString("Reply ONLY to the last user message, as yourself, in plain markdown. Do not repeat or quote the transcript, do not prefix your reply with a role label.\n")
+	if logical != "" {
+		b.WriteString("Reply ONLY to the current owner instruction below, as yourself, in plain markdown. Do not repeat or quote the transcript, do not prefix your reply with a role label.\n")
+	} else {
+		b.WriteString("Reply ONLY to the last user message, as yourself, in plain markdown. Do not repeat or quote the transcript, do not prefix your reply with a role label.\n")
+	}
 	if start > 0 {
 		fmt.Fprintf(&b, "(%d earlier turn(s) omitted for length.)\n", start)
 	}
@@ -681,34 +721,41 @@ func (s *Server) composeAgentChatPrompt(agent string, sess agentchat.Session, bo
 		fmt.Fprintf(&b, "Current operation receipts (re-read targets before continuing; stale operations require fresh preparation): %s\n", current)
 	}
 	b.WriteString("\nCONVERSATION:\n")
-	for _, t := range kept {
-		label := t.Who
-		switch t.Who {
-		case "user":
-			label = "owner"
-		case agent:
-			label = name
-		}
-		text := t.Text
-		if t.Who != "user" && t.Who != "system" {
-			text = agentchat.SayBody(text)
-		}
-		text = fileTokenRe.ReplaceAllString(text, "(attached: $2)")
-		for _, delivery := range sess.Deliveries {
-			if delivery.UserTurn == t.N && delivery.Context != nil {
-				manifest, _ := json.Marshal(delivery.Context)
-				fmt.Fprintf(&b, "\nExplicit message context: %s\n", manifest)
+	if logical != "" {
+		b.WriteString(logical)
+	} else {
+		for _, t := range kept {
+			label := t.Who
+			switch t.Who {
+			case "user":
+				label = "owner"
+			case agent:
+				label = name
 			}
+			text := t.Text
+			if t.Who != "user" && t.Who != "system" {
+				text = agentchat.SayBody(text)
+			}
+			text = fileTokenRe.ReplaceAllString(text, "(attached: $2)")
+			for _, delivery := range sess.Deliveries {
+				if delivery.UserTurn == t.N && delivery.Context != nil {
+					manifest, _ := json.Marshal(delivery.Context)
+					fmt.Fprintf(&b, "\nExplicit message context: %s\n", manifest)
+				}
+			}
+			fmt.Fprintf(&b, "\n[%s]\n%s\n", label, strings.TrimSpace(text))
 		}
-		fmt.Fprintf(&b, "\n[%s]\n%s\n", label, strings.TrimSpace(text))
 	}
 	if len(kept) > 0 {
+		if logical != "" {
+			fmt.Fprintf(&b, "\nCurrent owner instruction:\n%s\n", fileTokenRe.ReplaceAllString(kept[len(kept)-1].Text, "(attached: $2)"))
+		}
 		if att := s.agentChatAttachments(kept[len(kept)-1]); att != "" {
 			b.WriteString("\n" + att)
 		}
 	}
 	b.WriteString("\nYour reply:")
-	return b.String()
+	return b.String(), start
 }
 
 // agentChatAttachments renders the [file::] tokens on a user turn into the

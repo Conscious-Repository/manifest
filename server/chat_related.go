@@ -154,7 +154,11 @@ func (s *Server) relatedChats(sess agentchat.Session) []relatedChatView {
 	if s.terminal != nil {
 		for _, child := range s.terminal.load() {
 			if o := child.Origin; o != nil && o.Backend == "" && o.Agent == sess.Agent && o.ID == sess.ID {
-				out = append(out, relatedChatView{child.Kind, child.ID, child.Name, "related", terminalConversation(child).Route})
+				relation := "related"
+				if o.Mode == "continue" {
+					relation = "continuation"
+				}
+				out = append(out, relatedChatView{child.Kind, child.ID, child.Name, relation, terminalConversation(child).Route})
 			}
 		}
 	}

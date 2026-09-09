@@ -55,3 +55,19 @@ const turns=[{id:'first-record',who:'assistant',blocks:[{t:'say',text:'Starting'
 ctx.chatTermMerge(turns,[{id:'later-record',who:'assistant',blocks:[{t:'say',text:'Finished'}]}]);
 assert.equal(turns.length,1);assert.equal(turns[0].id,'first-record');assert.equal(turns[0].blocks.length,2);
 console.log('Reading anchors, terminal tail position, and Latest are safe');
+// Continued native turns retain stable bookmarks and trigger source-chat polls.
+taskView.querySelectorAll()[0].dataset.chatReadTurn='terminal:session:record';
+assert.equal(ctx.chatRestoreReadingPosition(taskView,{following:false,turn:'terminal:session:record',fraction:.5}),true);
+assert.equal(taskView.scrollTop,2000);
+for(const name of ['chatTranscriptSignature','chatHasCanonicalParent']){
+ const start=src.indexOf('function '+name+'(');
+ vm.runInContext(src.slice(start,src.indexOf('\n}',start)+2),ctx);
+}
+const transcript={session:{updated:'unchanged',status:'idle'},continuations:[{id:'native',turns:[]}]};
+const beforeNative=ctx.chatTranscriptSignature(transcript);
+transcript.continuations[0].turns.push({id:'reply',text:'New coding reply'});
+assert.notEqual(ctx.chatTranscriptSignature(transcript),beforeNative);
+ctx.chatAgentSessions={alfred:[{id:'parent'}]};
+assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',id:'parent'}}),true);
+assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'related',agent:'alfred',id:'parent'}}),false);
+assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',id:'missing'}}),false);

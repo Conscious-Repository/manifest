@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"manifest/agentchat"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCodingContinuationSnapshotRetainsAuthorsAndDisclosesOmission(t *testing.T) {
@@ -24,6 +27,92 @@ func TestCodingContinuationSnapshotRetainsAuthorsAndDisclosesOmission(t *testing
 	text, omitted = codingContinuationContext(source, long)
 	if omitted != 1 || len(text) > agentChatWindowChars {
 		t.Fatal("unbounded context or silent truncation", omitted, len(text))
+	}
+}
+
+func TestCodingContinuationRoundTripContextAndNativeTimeline(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}
+	id, _ := st.Create("alfred", "", "One ongoing conversation", "")
+	st.AppendTurn("alfred", id, "user", "SOURCE_FACT_ALPHA", 0)
+	code, out := agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions/"+id+"/related", map[string]any{"backend": "terminal", "mode": "continue", "agent": "claude", "requestId": "continue-create-001"})
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	childID := out["id"].(string)
+	var prompts []string
+	h := herdrFixture(t, func(c net.Conn, r herdrFixtureRequest) {
+		switch r.Method {
+		case "session.snapshot":
+			herdrFixtureSnapshot(c, "idle", 2)
+		case "workspace.create":
+			herdrFixtureReply(c, map[string]any{"root_pane": herdrFixturePane("unknown", 1)})
+		case "pane.send_input":
+			herdrFixtureReply(c, map[string]any{})
+		case "pane.read":
+			herdrFixtureReply(c, map[string]any{"read": map[string]any{"text": "❯"}})
+		case "agent.prompt":
+			prompt := r.Params["text"].(string)
+			prompts = append(prompts, prompt)
+			se, _ := s.terminal.find(childID)
+			path := s.terminal.transcriptPath(se)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Error(err)
+			}
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			enc := json.NewEncoder(f)
+			enc.Encode(map[string]any{"type": "user", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "message": map[string]any{"role": "user", "content": prompt}})
+			enc.Encode(map[string]any{"type": "assistant", "timestamp": time.Now().UTC().Format(time.RFC3339Nano), "message": map[string]any{"role": "assistant", "content": []map[string]any{{"type": "text", "text": "CODING_REPLY_BETA"}}}})
+			f.Close()
+			herdrFixtureReply(c, map[string]any{})
+		default:
+			t.Errorf("unexpected %s", r.Method)
+		}
+	})
+	h.server, s.terminal.herdr = s, h
+	payload := map[string]any{"text": "MY_CODING_QUESTION", "requestId": "continue-input-001", "conversationAgent": "alfred", "conversationId": "wrong"}
+	input := "/api/terminal/session/" + childID + "/input"
+	if code, _ := agentChatJSON(t, s, "POST", input, payload); code != 400 {
+		t.Fatal("wrong canonical source accepted", code)
+	}
+	payload["conversationId"] = id
+	if code, out := agentChatJSON(t, s, "POST", input, payload); code != 200 {
+		t.Fatal(code, out)
+	}
+	if len(prompts) != 1 || !strings.Contains(prompts[0], "SOURCE_FACT_ALPHA") || !strings.Contains(prompts[0], "MY_CODING_QUESTION") {
+		t.Fatal(prompts)
+	}
+	source, body, _, _ := st.Get("alfred", id)
+	views := s.codingContinuations(context.Background(), source)
+	if source.Turns != 1 || len(views) != 1 || len(views[0].Turns) != 2 || views[0].Turns[0].Text != "MY_CODING_QUESTION" {
+		t.Fatalf("source or projection changed: %+v %+v", source, views)
+	}
+	se, _ := s.terminal.find(childID)
+	native, _ := readTranscript("claude", s.terminal.transcriptPath(se), 0)
+	if !strings.Contains(native.Turns[0].Text, "SOURCE_FACT_ALPHA") {
+		t.Fatal("projection overwrote native cache")
+	}
+	timeline := conversationTimeline(source, body, views)
+	if len(timeline) != 3 || timeline[0].N != 1 || timeline[2].Who != "agent:claude" || timeline[1].Submission == nil || timeline[1].Submission.ContextHash == "" {
+		t.Fatalf("bad timeline: %+v", timeline)
+	}
+	st.AppendTurn("alfred", id, "user", "RETURN_TO_PLANNING", 0)
+	source, body, _, _ = st.Get("alfred", id)
+	planning := s.composeAgentChatPrompt("alfred", source, body)
+	if !strings.Contains(planning, "CODING_REPLY_BETA") || !strings.Contains(planning, `author "agent:claude"`) || !strings.Contains(planning, "Current owner instruction:\nRETURN_TO_PLANNING") {
+		t.Fatal(planning)
+	}
+	payload["requestId"] = "continue-input-002"
+	payload["text"] = "CONTINUE_CODING"
+	if code, out := agentChatJSON(t, s, "POST", input, payload); code != 200 {
+		t.Fatal(code, out)
+	}
+	if len(prompts) != 2 || !strings.Contains(prompts[1], "RETURN_TO_PLANNING") || !strings.Contains(prompts[1], "CODING_REPLY_BETA") {
+		t.Fatal(prompts)
 	}
 }
 

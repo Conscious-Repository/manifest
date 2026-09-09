@@ -179,7 +179,13 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		se = current
+		if (b.ConversationAgent != "" || b.ConversationID != "") && (se.Origin == nil || se.Origin.Mode != "continue" || se.Origin.Agent != b.ConversationAgent || se.Origin.ID != b.ConversationID) {
+			httpError(w, errBadRequest("coding session does not continue this conversation"))
+			return
+		}
 		fingerprint := b.fingerprint()
+		ownerText := b.Text
+		var continuationContext *terminalInputReceipt
 		if b.RequestID != "" {
 			receipt, err := s.terminal.readInputReceipt(se.ID, b.RequestID)
 			if err == nil {
@@ -194,6 +200,24 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+		}
+		if se.Origin != nil && se.Origin.Mode == "continue" && b.Key == "" {
+			if b.RequestID == "" {
+				httpError(w, errBadRequest("continuation messages require a request ID"))
+				return
+			}
+			if s.agentChat == nil {
+				httpError(w, errBadRequest("source conversation unavailable"))
+				return
+			}
+			source, body, _, ok := s.agentChat.store.Get(se.Origin.Agent, se.Origin.ID)
+			if !ok {
+				httpError(w, errBadRequest("source conversation unavailable"))
+				return
+			}
+			context, omitted := logicalContinuationContext(source, body, s.codingContinuations(r.Context(), source))
+			continuationContext = &terminalInputReceipt{Text: ownerText, ContextSource: sessionConversation(source).Key, ContextHash: hashTerminalText(context), HistoryOmitted: omitted}
+			b.Text = context + "\n\nCurrent owner instruction (submission " + b.RequestID + "):\n" + ownerText
 		}
 		if len(b.Artifacts) > 0 {
 			linked := false
@@ -232,6 +256,13 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				if b.RequestID != "" {
 					receipt = &terminalInputReceipt{ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts}
+					if continuationContext != nil {
+						receipt.Text = continuationContext.Text
+						receipt.ContextSource = continuationContext.ContextSource
+						receipt.ContextHash = continuationContext.ContextHash
+						receipt.HistoryOmitted = continuationContext.HistoryOmitted
+						receipt.SubmittedHash = hashTerminalText(b.Text)
+					}
 					if err = s.terminal.writeInputReceipt(se.ID, *receipt); err != nil {
 						http.Error(w, "input receipt could not be persisted; nothing sent: "+err.Error(), http.StatusInternalServerError)
 						return

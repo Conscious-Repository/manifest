@@ -500,7 +500,7 @@ let chatInboxFilter = "all";
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
   chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).forEach(session => entries.push({agent: agent.name, session})));
-  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).forEach(session => entries.push({agent, session, terminal: true})));
+  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
   return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter)
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
@@ -1233,6 +1233,7 @@ function chatHead(s) {
     const model=recipient.model||chatRosterEntry(recipient.agent)?.model||"";
     const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient.agent)+(model?" · "+shortModel(model):""));
     to.title="Choose who receives your next message";to.onclick=()=>chatChooseRecipient(s);head.append(to);
+    if(recipient.backend==="terminal"){const native=(s.continuations||[]).find(v=>v.id===recipient.id);if(native)head.append(terminalStateDot(native));}
   }else head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
   // portal runs are metered in the agent's own ledger, not per thread
   const meta = [fmtWhen(s.updated || s.created)];
@@ -1248,7 +1249,7 @@ function chatHead(s) {
   if(chatRosterEntry(agent)?.durableSend){
     const related=el("button","sprt-quiet","Start related chat");related.onclick=()=>chatStartRelated(s);acts.append(related);
   }
-  for(const item of s.related||[]){const link=el("a","sprt-quiet",(item.relation==="origin"?"From: ":"Related: ")+item.title);link.href=item.route;acts.append(link);}
+  for(const item of s.related||[]){const link=el("a","sprt-quiet",(item.relation==="origin"?"From: ":item.relation==="continuation"?"Coding session: ":"Related: ")+item.title);link.href=item.route;acts.append(link);}
   // the task this conversation became (§3.4f) — into its conversation, here
   if (s.task) {
     const plan = el("button", "sprt-quiet", "Plan");
@@ -1347,7 +1348,7 @@ function chatPaintTurns(host, turns, ctx) {
     if (t.who === "user") {
       const row=chatUserTurn(t.text);
       row.dataset.chatReadTurn=String(t.n);
-      const receipt=ctx?.deliveries?.find(d=>d.userTurn===t.n);
+      const receipt=t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n);
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient;
         row.append(el("div","chat-context-attribution","To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"")+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
@@ -1378,7 +1379,8 @@ function chatPaintTurns(host, turns, ctx) {
     // while Alfred's turn takes minutes
     if (t.ts) foot.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
     if (t.usd) foot.append(el("span", "chat-turn-usd", "$" + t.usd));
-    if (ctx && ctx.promote) {
+    if(t.native){const native=el("a","chat-turn-act","Native chat ↗");native.href=t.native.route;foot.append(native);}
+    if (ctx && ctx.promote && !t.native) {
       const promote = el("button", "chat-turn-act", "→ task");
       promote.title = "make a task from this conversation (up to this turn) — " + ctx.who + " takes it";
       promote.onclick = () => ctx.promote(t);
@@ -1429,7 +1431,7 @@ function renderChatTranscript(d) {
   const s = d.session;
   const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
   if(activeTask)s.task=activeTask;
-  s.related=d.related||[];s.handoffBody=d.body||"";
+  s.related=d.related||[];s.handoffBody=d.body||"";s.continuations=d.continuations||[];
   chatCurSession = s;
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
@@ -1437,7 +1439,7 @@ function renderChatTranscript(d) {
   chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, parseChatTurns(d.body || ""), chatAgent ? { who, deliveries:s.deliveries||[], operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  chatPaintTurns(host, d.timeline||parseChatTurns(d.body || ""), chatAgent ? { who, deliveries:s.deliveries||[], operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
@@ -1681,6 +1683,18 @@ function renderChatComposer(session) {
     };
     const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
+    const chosenRecipient=chatRecipients.get(draftKey);
+    if(chosenRecipient?.backend==="terminal"){
+      try{
+        if(files.length)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
+        const url=chatTermBase(chosenRecipient.id)+"/input";
+        const item=chatRememberDelivery(draftKey,chosenRecipient.agent,url,{text,conversationAgent:sendAgent,conversationId:sendSession,task:selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]});
+        await chatDeliverRemembered(item);acceptedDraft();
+        if(sendRoute===chatRouteVersion)await refetchChatSession(sendSession);
+      }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
+      finally{chatSending=false;renderChatComposer(chatCurSession);}
+      return;
+    }
     if(durable){
       payload.recipient=chatRecipients.get(draftKey)||{agent:sendAgent,model:session?.model||""};
       payload.task=selected?.task||chatConversationTasks.get("chat:"+draftKey)||session?.task||"";
@@ -1760,7 +1774,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || []);
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || [])+"|"+JSON.stringify(d.continuations||[]);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || queued > 0 || (chatAgent && !chatIsPortal()));
@@ -1828,6 +1842,7 @@ let chatTermFast = null;
 // chatTermList — the section's rows: this box only (the jsonl and the tmux are
 // local; remote rows stay the Terminal tab's).
 function chatTermList(kind) { return chatTermSessions.filter((s) => s.kind === kind && !s.device); }
+function chatHasCanonicalParent(session){const o=session.origin;return o?.mode==="continue"&&!o.backend&&(chatAgentSessions[o.agent]||[]).some(s=>s.id===o.id);}
 
 // chatTermOrder — live first, then most recently used (§7 Q2).
 function chatTermOrder(list) {
@@ -2849,17 +2864,44 @@ function chatStartRelated(source,targetAgent){
 function chatChooseRecipient(source){
   const key=source.agent+"/"+source.id;
   const current=chatRecipients.get(key)||{agent:source.agent,model:source.model||""};
+  const route=chatRouteVersion;
   reviewDialog("Choose agent",({body,actions,close})=>{
     const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
-    chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(o);});pick.value=current.agent;
+    chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(o);});
+    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([kind,label])=>{const o=document.createElement("option");o.value="terminal:"+kind;o.textContent=label;pick.append(o);});
+    pick.value=(current.backend==="terminal"?"terminal:":"")+current.agent;
     body.append(el("p","","Continue in this conversation or open a separate linked chat. Already accepted work keeps its recipient."),pick,
       el("p","","Continuing sends recent conversation history and your selected artifact versions with the next message. Older history may be omitted to fit the model; replies retain their authors."));
+    const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Continuation working folder");cwd.placeholder="Default home folder";
+    const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Continuation coding model");model.placeholder="Installed default";
+    const fields=el("div","");const folderLabel=el("label","","Working folder on metis"),modelLabel=el("label","","Model (optional)");folderLabel.append(cwd);modelLabel.append(model);fields.append(folderLabel,modelLabel);body.append(fields);
+    const sync=()=>{fields.hidden=!pick.value.startsWith("terminal:");const existing=(source.continuations||[]).filter(v=>v.agent===pick.value.slice(9)).at(-1);cwd.value=existing?.cwd||"";model.value=existing?.model||"";};pick.onchange=sync;sync();
+    const status=el("p","");status.setAttribute("role","status");body.append(status);
     const cancel=el("button","sprt-quiet","Cancel"),here=el("button","sprt-quiet","Continue here"),related=el("button","sprt-quiet","Start related chat");
     cancel.onclick=close;
-    here.onclick=()=>{
-      const chosen=pick.value,entry=chatRosterEntry(chosen);
-      chatRecipients.set(key,{agent:chosen,model:chosen===current.agent?current.model:(entry?.model||"")});
-      chatCaptureSyncedDraft(key);close();chatRepaintHead();
+    here.onclick=async()=>{
+      here.disabled=true;
+      try{
+        const chosen=pick.value;let recipient;
+        if(chosen.startsWith("terminal:")){
+          const kind=chosen.slice(9);
+          let existing=(source.continuations||[]).filter(v=>v.agent===kind&&(!model.value||v.model===model.value)&&(!cwd.value||v.cwd===cwd.value)).at(-1);
+          if(!existing){
+            const payload={backend:"terminal",mode:"continue",agent:kind,title:source.title,model:model.value,cwd:cwd.value,task:source.task||""};
+            const storageKey="manifest.continueDraft.v1."+key,signature=JSON.stringify(payload);
+            let saved=null;try{saved=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
+            const requestId=saved?.signature===signature?saved.requestId:crypto.randomUUID();
+            localStorage.setItem(storageKey,JSON.stringify({signature,requestId}));
+            existing=await postJSONOk(chatBaseFor(source.agent)+"/"+encodeURIComponent(source.id)+"/related",{...payload,requestId});
+            localStorage.removeItem(storageKey);
+          }
+          recipient={backend:"terminal",agent:kind,id:existing.id,model:existing.model};
+        }else{const entry=chatRosterEntry(chosen);recipient={agent:chosen,model:chosen===current.agent?current.model:(entry?.model||"")};}
+        chatRecipients.set(key,recipient);
+        if(route===chatRouteVersion&&chatDraftKey===key){chatCaptureSyncedDraft(key);close();chatRepaintHead();await refetchChatSession(source.id);}
+        else {const state=chatSyncedDrafts.get(key);if(state)state.set({...state.value,recipient});close();}
+      }catch(e){status.textContent=e.message||"Could not select this recipient.";}
+      finally{here.disabled=false;}
     };
     related.onclick=()=>{const chosen=pick.value;close();chatStartRelated(source,chosen);};
     actions.append(cancel,here,related);
