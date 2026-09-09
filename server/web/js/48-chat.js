@@ -2208,7 +2208,7 @@ function chatTermHead(o) {
       handoffExcerpt:o.turns.slice(-2).map(t=>t.who+":\n"+(t.text||(t.blocks||[]).filter(b=>b.t==="say").map(b=>b.text||"").join("\n")).slice(0,2000)).join("\n\n")});
     details.append(related);
   }
-  for(const item of o.related||[]) {const link=el("a","sprt-quiet","Related: "+item.title);link.href=item.route;details.append(link);}
+  for(const item of o.related||[]) {const link=el("a","sprt-quiet",(item.relation==="origin"?"From: ":"Related: ")+item.title);link.href=item.route;details.append(link);}
   const acts = el("span", "chat-head-acts");
   const ren = el("button", "sprt-quiet", "✎");
   ren.title = "rename";
@@ -2217,7 +2217,7 @@ function chatTermHead(o) {
   const raw = el("button", "sprt-quiet", "open in terminal ↗");
   raw.title = "the raw pane (xterm) in the Terminal tab";
   raw.onclick = () => chatTermOpenInTerminal(se);
-  head.append(raw);
+  if(se.launchPhase!=="draft")head.append(raw);
   const kill = chatTermEndIsKill(se);
   if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
   details.append(acts);
@@ -2260,7 +2260,9 @@ function chatTermPaintTurns() {
   body.innerHTML = "";
   chatTermPaintLines(body, o.turns);
   if (!o.turns.length) {
-    body.append(el("div", "chat-term-line chat-term-sys", o.se.kind === "codex"
+    body.append(el("div", "chat-term-line chat-term-sys", o.se.launchPhase === "draft"
+      ? "Review your draft below. Sending starts the coding session."
+      : o.se.kind === "codex"
       ? "codex keeps its rollout under ~/.codex/sessions — not wired to this row yet; the screen below is the session"
       : (o.live ? "no turns in the session file yet" : "nothing in the session file — a send starts it")));
   }
@@ -2801,7 +2803,7 @@ function chatStartRelated(source,targetAgent){
     agents.forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label;pick.append(o);});
     const desired=remembered?.agent?(remembered.backend==="terminal"?"terminal:":"")+remembered.agent:targetAgent||originAgent;
     pick.value=agents.some(a=>a.name===desired)?desired:agents[0]?.name||"";pick.setAttribute("aria-label","Agent for related chat");
-    const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||("Related: "+source.title).slice(0,240);title.setAttribute("aria-label","Related chat title");
+    const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||(source.title||"Related chat").slice(0,240);title.setAttribute("aria-label","Related chat title");
     const prompt=document.createElement("textarea");prompt.className="pp-in";prompt.setAttribute("aria-label","Handoff draft");
     prompt.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
     const field=(name,input)=>{const label=el("label","",name);label.append(input);return label;};
