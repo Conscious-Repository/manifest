@@ -1374,7 +1374,7 @@ function chatPaintTurns(host, turns, ctx) {
     chatTurnBlocks(t).forEach((b) => wrap.append(chatBlockEl(b)));
     if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
     const foot = el("div", "chat-turn-foot");
-    foot.append(el("span","chat-turn-author",chatAgentLabel(t.who)));
+    foot.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
     // when the turn landed — a conversation with no times reads as stalled
     // while Alfred's turn takes minutes
     if (t.ts) foot.append(el("span", "chat-turn-when", fmtWhen(t.ts)));
