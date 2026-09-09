@@ -193,11 +193,12 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 	rec := s.readPlanRecord(id)
 	thread := s.listThread(id)
 	out := map[string]any{
-		"id":         id,
-		"record":     rec,
-		"thread":     thread,
-		"threadKind": s.threadKind(id),
-		"proposals":  s.taskProposals(id),
+		"id":           id,
+		"record":       rec,
+		"thread":       thread,
+		"conversation": s.taskConversation(id, thread),
+		"threadKind":   s.threadKind(id),
+		"proposals":    s.taskProposals(id),
 	}
 	// "open in chat" (§3.4f): the conversation this task came from, else the
 	// assignee's rail section

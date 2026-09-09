@@ -85,6 +85,7 @@ type taskChatLink struct {
 // tagged meta.chat (the promote copy), else — when an agent holds the task —
 // the agent's section with no session.
 func (s *Server) taskChatLink(id string, thread []threads.Comment, assignee string) *taskChatLink {
+	var found *taskChatLink
 	for _, c := range thread {
 		m, _ := c.Meta["chat"].(map[string]any)
 		if m == nil {
@@ -96,7 +97,15 @@ func (s *Server) taskChatLink(id string, thread []threads.Comment, assignee stri
 		}
 		sid, _ := m["id"].(string)
 		title, _ := m["title"].(string)
-		return &taskChatLink{Agent: agent, Label: agentDisplayName("agent:" + agent), ID: sid, Title: title}
+		if found != nil && (found.Agent != agent || found.ID != sid) {
+			// Preserve the explicit origins in the descriptor's review list;
+			// never pick one arbitrarily as the task's conversation.
+			return nil
+		}
+		found = &taskChatLink{Agent: agent, Label: agentDisplayName("agent:" + agent), ID: sid, Title: title}
+	}
+	if found != nil {
+		return found
 	}
 	if slug := chatSlugFor(assignee); slug != "" && s.agentHarness(assignee) != "" {
 		return &taskChatLink{Agent: slug, Label: agentDisplayName(assignee)}

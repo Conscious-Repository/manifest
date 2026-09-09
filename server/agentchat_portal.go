@@ -375,9 +375,10 @@ func (s *Server) handlePortalChatSession(ag *chatAgent, w http.ResponseWriter, r
 	msgs := ag.Store.Messages(t.ID)
 	self, _ := s.portalChatIdentity()
 	writeJSON(w, map[string]any{
-		"session": s.portalChatSessionOf(ag, t, msgs, portalChatPending(ag), s.chatBusy(ag)),
-		"body":    portalChatBody(ag, msgs, self),
-		"queued":  []string{},
+		"session":      s.portalChatSessionOf(ag, t, msgs, portalChatPending(ag), s.chatBusy(ag)),
+		"conversation": agentConversation("portal", ag.Name, t.ID, "team:"+ag.Domain, ""),
+		"body":         portalChatBody(ag, msgs, self),
+		"queued":       []string{},
 	})
 }
 

@@ -82,7 +82,8 @@ func (s *Server) handleChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"session": sum, "body": body,
-		"queued": s.spirits.QueuedChatMessages(sum.ID),
+		"conversation": describeConversation("spirit", "primary", sum.ID, "private", "#/chat/"+sum.ID),
+		"queued":       s.spirits.QueuedChatMessages(sum.ID),
 	})
 }
 
