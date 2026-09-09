@@ -21,7 +21,12 @@ type herdrFixtureRequest struct {
 
 func herdrFixture(t *testing.T, handle func(net.Conn, herdrFixtureRequest)) *herdrTerminalRuntime {
 	t.Helper()
-	socket := filepath.Join(t.TempDir(), "h.sock")
+	socketDir, err := os.MkdirTemp("/tmp", "manifest-herdr-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+	socket := filepath.Join(socketDir, "h.sock")
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)

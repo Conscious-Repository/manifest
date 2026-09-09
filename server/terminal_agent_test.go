@@ -9,7 +9,11 @@ import (
 
 func agentTermServer(t *testing.T) *Server {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("/tmp", "manifest-term-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	tmuxTmp := filepath.Join(dir, "tmux")
 	if err := os.MkdirAll(tmuxTmp, 0o700); err != nil {
 		t.Fatal(err)
@@ -66,7 +70,10 @@ func TestAgentTermSessionClaudeMintsResume(t *testing.T) {
 		os.Symlink(bashPath, filepath.Join(bin, "bash")) != nil {
 		t.Skip("cannot symlink")
 	}
-	t.Setenv("PATH", bin)
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	s := agentTermServer(t)
 	se, _, err := s.createAgentTermSession("claude", "", "")
