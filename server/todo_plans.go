@@ -58,6 +58,14 @@ type planRecord struct {
 // sectionBody extracts one `## name` body from a markdown body — the read
 // twin of vaultwriter.spliceSection's rules (## heading, until the next ##).
 func sectionBody(body, name string) string {
+	return sectionBodyWithin(body, name, nil)
+}
+
+func planRecordSection(body, name string) string {
+	return sectionBodyWithin(body, name, []string{"description", "plan"})
+}
+
+func sectionBodyWithin(body, name string, peers []string) string {
 	lines := strings.Split(body, "\n")
 	start := -1
 	for i, ln := range lines {
@@ -74,6 +82,15 @@ func sectionBody(body, name string) string {
 	for i := start + 1; i < len(lines); i++ {
 		t := strings.TrimRight(lines[i], " \t")
 		if strings.HasPrefix(t, "## ") && !strings.HasPrefix(t, "### ") {
+			boundary := len(peers) == 0
+			for _, peer := range peers {
+				if strings.EqualFold(t, "## "+peer) {
+					boundary = true
+				}
+			}
+			if !boundary {
+				continue
+			}
 			end = i
 			break
 		}
@@ -94,8 +111,8 @@ func (s *Server) readPlanRecord(id string) planRecord {
 	}
 	fm, body := mdfm.Split(string(raw))
 	out.Exists = true
-	out.Description = sectionBody(body, "description")
-	out.Plan = sectionBody(body, "plan")
+	out.Description = planRecordSection(body, "description")
+	out.Plan = planRecordSection(body, "plan")
 	out.Assignee = fm["assignee"]
 	out.State = fm["state"]
 	out.Document = record.Unquote(fm["document"])
@@ -160,7 +177,7 @@ func (s *Server) writePlanSection(capName, id, section, body string) error {
 	if err := s.ensurePlanRecord(id, ""); err != nil {
 		return err
 	}
-	return s.vault.ReplaceSectionCap(capName, s.todoPlans.rel(id), section, body)
+	return s.vault.ReplaceSectionCapChecked(capName, s.todoPlans.rel(id), section, body, nil, "description", "plan")
 }
 
 // --- endpoints ---------------------------------------------------------------

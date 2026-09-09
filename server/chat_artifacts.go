@@ -42,7 +42,7 @@ func (s *Server) handleTaskPlanWorkspace(w http.ResponseWriter, r *http.Request)
 			return nil, errors.New("plan not found")
 		}
 		var err error
-		a, err = s.snapshotTaskPlan(id, sectionBody(body, "plan"), "Observed working plan")
+		a, err = s.snapshotTaskPlan(id, planRecordSection(body, "plan"), "Observed working plan")
 		return raw, err
 	})
 	if err != nil {
@@ -73,13 +73,13 @@ func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
 		if record.Unquote(fm["todo"]) != id {
 			return errors.New("plan identity mismatch")
 		}
-		old := sectionBody(body, "plan")
+		old := planRecordSection(body, "plan")
 		if artifacts.Hash([]byte(strings.TrimSpace(old)+"\n")) != expected {
 			return errPlanRevision
 		}
 		_, err := s.snapshotTaskPlan(id, old, "Before edit")
 		return err
-	})
+	}, "description", "plan")
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
 			return nil, err
 		}
 		_, body := mdfm.Split(string(raw))
-		_, err := s.snapshotTaskPlan(id, sectionBody(body, "plan"), "Observed working plan")
+		_, err := s.snapshotTaskPlan(id, planRecordSection(body, "plan"), "Observed working plan")
 		return raw, err
 	})
 }

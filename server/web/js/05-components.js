@@ -623,6 +623,7 @@ function artifactWorkspace(mount, options) {
     title.textContent = current.title || current.ref || "Artifact";
     controls.replaceChildren(); body.replaceChildren(); notice.textContent = "";
     const versions = document.createElement("select");
+    versions.className = "pp-in";
     versions.setAttribute("aria-label", "Artifact version");
     [...current.revisions].reverse().forEach(r => {
       const o = document.createElement("option"); o.value = String(r.n);

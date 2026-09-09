@@ -142,3 +142,32 @@ func TestPortalCannotReadPrivateArtifactWorkspace(t *testing.T) {
 		}
 	}
 }
+
+func TestFullPlanHeadingsSurviveReadingAndReplacing(t *testing.T) {
+	s, _ := workspaceFixture(t)
+	id := "inbox/complete-plan"
+	plan := "# Research\n\n## Scope\nScope body\n\n## Steps\n1. Build\n\n## Verification\nCheck it"
+	if err := s.writePlanSection("todo-plans", id, "description", "Owner context"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.writePlanSection("todo-plans-agent", id, "plan", plan); err != nil {
+		t.Fatal(err)
+	}
+	a := observePlan(t, s, id)
+	if a.Content != plan+"\n" {
+		t.Fatalf("truncated plan: %q", a.Content)
+	}
+	if err := s.saveTaskPlanVersion(id, "# Replacement\n\n## Steps\nNew steps", a.Head); err != nil {
+		t.Fatal(err)
+	}
+	rec := s.readPlanRecord(id)
+	if strings.Contains(rec.Plan, "Check it") || !strings.Contains(rec.Plan, "New steps") || rec.Description != "Owner context" {
+		t.Fatalf("bad replacement: %+v", rec)
+	}
+	if err := s.writePlanSection("todo-plans", id, "description", "Updated context"); err != nil {
+		t.Fatal(err)
+	}
+	if s.readPlanRecord(id).Plan != rec.Plan {
+		t.Fatal("description edit damaged plan")
+	}
+}

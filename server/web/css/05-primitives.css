@@ -286,3 +286,9 @@
 .artifact-workspace-editor { box-sizing: border-box; width: 100%; height: 100%; min-height: 240px; resize: vertical; font: var(--fs-md)/1.6 var(--mono); }
 .artifact-workspace-notice { font-size: var(--fs-sm); padding: var(--sp-4) 0; }
 .artifact-workspace-notice:empty { display: none; }
+.artifact-workspace-head button, .artifact-workspace-controls .sprt-quiet { min-height: 32px; }
+@media (max-width: 900px) {
+ .artifact-workspace-head button, .artifact-workspace-controls .sprt-quiet { min-height: 44px; font-size: var(--fs-lg); }
+ .artifact-workspace-controls select { flex-basis: 100%; width: 100%; min-height: 44px; }
+ .artifact-workspace-controls { gap: var(--sp-4) var(--sp-7); }
+}

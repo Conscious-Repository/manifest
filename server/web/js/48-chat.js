@@ -225,7 +225,9 @@ async function renderTaskChatRail(data) {
   chatTermSurface(false); // a task thread is a chat, whichever section it hangs under
   await loadChatRoster();
   if (chatTaskID === "") return;
-  await Promise.all([loadChatSessions(), loadChatTermSessions(false)]);
+  await Promise.all([loadChatSessions(), loadChatTermSessions(false), (async()=>{
+    if (!todosCache) { const r=await fetch("/api/tasks"); if(r.ok)todosCache=await r.json(); }
+  })()]);
   if (chatTaskID !== "") renderChatRail();
 }
 
@@ -262,7 +264,7 @@ async function renderTaskChat(taskID, refetch) {
   // Keep the task context in the normal thread-head anatomy: title, agent
   // context and task id, then the task-specific return action.
   const head = el("div", "sprt-head chat-head");
-  head.append(el("span", "sprt-title chat-head-title", rec.Title || rec.title || taskID));
+  head.append(el("span", "sprt-title chat-head-title", rec.Title || rec.title || todoRowInfo(taskID)?.text || taskID));
   const agent = taskChatAgent(d);
   head.append(el("span", "sprt-sub chat-head-sub", ["task conversation", agent ? chatAgentLabel(agent) : "unassigned"].join(" · ")));
   head.append(el("span", "sprt-head-meta chat-head-meta", taskID));

@@ -395,7 +395,7 @@ func (w *Writer) ReplaceSectionCap(capName, rel, section, body string) error {
 // ReplaceSectionCapChecked checks the latest bytes inside the same serialized
 // transform as the edit. Callers can validate a base revision and retain it
 // before changing a section without a read/write race.
-func (w *Writer) ReplaceSectionCapChecked(capName, rel, section, body string, check func([]byte) error) error {
+func (w *Writer) ReplaceSectionCapChecked(capName, rel, section, body string, check func([]byte) error, peers ...string) error {
 	return w.UpdateCap(capName, rel, func(raw []byte) ([]byte, error) {
 		if raw == nil {
 			return nil, os.ErrNotExist
@@ -405,13 +405,17 @@ func (w *Writer) ReplaceSectionCapChecked(capName, rel, section, body string, ch
 				return nil, err
 			}
 		}
-		return []byte(spliceSection(string(raw), section, body)), nil
+		return []byte(spliceSectionWithin(string(raw), section, body, peers)), nil
 	})
 }
 
 // spliceSection swaps one `## section` body inside raw (creating the section
 // at EOF when absent), preserving every byte outside the section span.
 func spliceSection(raw, section, body string) string {
+	return spliceSectionWithin(raw, section, body, nil)
+}
+
+func spliceSectionWithin(raw, section, body string, peers []string) string {
 	lines := strings.Split(raw, "\n")
 	start := -1
 	for i, ln := range lines {
@@ -437,6 +441,15 @@ func spliceSection(raw, section, body string) string {
 		for i := start + 1; i < len(lines); i++ {
 			t := strings.TrimRight(lines[i], " \t")
 			if strings.HasPrefix(t, "## ") && !strings.HasPrefix(t, "### ") {
+				boundary := len(peers) == 0
+				for _, peer := range peers {
+					if strings.EqualFold(t, "## "+peer) {
+						boundary = true
+					}
+				}
+				if !boundary {
+					continue
+				}
 				end = i
 				break
 			}
