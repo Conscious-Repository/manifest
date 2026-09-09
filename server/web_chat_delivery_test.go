@@ -54,3 +54,13 @@ func TestChatUploadNavigationRace(t *testing.T) {
 		t.Fatalf("upload navigation: %v\n%s", err, out)
 	}
 }
+
+func TestChatLandingDraftUI(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/chat-landing.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("landing draft: %v\n%s", err, out)
+	}
+}

@@ -12,6 +12,33 @@ import (
 
 const testKey = "conversation-0123456789abcdef0123456789abcdef"
 
+func TestLandingDraftIsPrivateStateWithoutConversation(t *testing.T) {
+	root := t.TempDir()
+	s := New(root)
+	key := "landing-0123456789abcdef0123456789abcdef"
+	saved, err := s.Write(key, "draft", 0, json.RawMessage(`{"text":"unsent idea","files":[{"hash":"file"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(root).Read(key, "draft")
+	if err != nil || !bytes.Equal(saved.Value, reopened.Value) {
+		t.Fatal(reopened, err)
+	}
+	conversation, err := s.Read(testKey, "draft")
+	if err != nil || conversation.Revision != 0 {
+		t.Fatal("landing polluted conversation", conversation, err)
+	}
+	if _, err = s.Read(key, "view"); !errors.Is(err, ErrInvalid) {
+		t.Fatal("landing has no transcript", err)
+	}
+	if _, err = s.Write(key, "draft", saved.Revision, json.RawMessage(`null`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Write(key, "draft", saved.Revision, saved.Value); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale landing resurrected sent draft", err)
+	}
+}
+
 func TestDraftConcurrentSaveRestartAndClear(t *testing.T) {
 	root := t.TempDir()
 	s := New(root)

@@ -114,6 +114,15 @@ function chatSaveDraft() {
 
 const chatSyncedDrafts=new Map();
 const chatRecipients=new Map();
+async function chatPrepareLandingDraft(agent) {
+  // A private composer slot, not a conversation: no session is created here.
+  const key=(agent||"spirits")+"/new";
+  try {
+    const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(key));
+    const id=Array.from(new Uint8Array(digest).slice(0,16),b=>b.toString(16).padStart(2,"0")).join("");
+    await chatPrepareDraft({key:"landing-"+id},key);
+  } catch(e) { showToast("New-chat draft sync is unavailable; keep this tab open."); }
+}
 async function chatPrepareDraft(descriptor,key,initial){
   if(!descriptor?.key || typeof ChatDraftState==="undefined")return;
   if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();return;}
@@ -703,6 +712,9 @@ function chatGreeting() {
 }
 
 async function renderChatLanding() {
+  const route=chatRouteVersion,agent=chatAgent;
+  if(!chatOpenId)await chatPrepareLandingDraft(agent);
+  if(route!==chatRouteVersion || agent!==chatAgent || els.chatView.hidden)return;
   const host = document.getElementById("chatTranscript");
   const main = document.querySelector(".chat-main");
   if (!host) return;
