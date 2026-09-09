@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
+	"manifest/agentchat"
 	"manifest/artifacts"
 	"manifest/mdfm"
 	"manifest/record"
@@ -95,10 +97,7 @@ func (s *Server) saveTaskPlanVersion(id, text, expected string) error {
 	})
 }
 
-type artifactContextRef struct {
-	ID       string `json:"id"`
-	Revision string `json:"revision"`
-}
+type artifactContextRef = agentchat.ArtifactReference
 
 // Resolve exact, explicitly selected versions before accepting a message. No
 // basename matching, implicit directory attachment, or silent truncation.
@@ -120,11 +119,28 @@ func (s *Server) taskArtifactContext(taskID string, refs []artifactContextRef) (
 	for _, id := range append(outputs, inputs...) {
 		allowed[id] = true
 	}
+	for _, ref := range refs {
+		if !allowed[ref.ID] {
+			return "", errBadRequest("artifact is not linked to this task")
+		}
+	}
+	return s.retainedArtifactContext(refs)
+}
+
+// Only called after task-scoped acceptance, using the persisted references.
+// Later task reassignment cannot change the bytes an accepted instruction uses.
+func (s *Server) retainedArtifactContext(refs []artifactContextRef) (string, error) {
+	if len(refs) == 0 {
+		return "", nil
+	}
+	if len(refs) > 8 || s.artifactReg == nil {
+		return "", errBadRequest("artifact context unavailable")
+	}
 	var out strings.Builder
 	for _, ref := range refs {
 		a, ok := s.artifactReg.Get(ref.ID)
-		if !ok || !allowed[ref.ID] {
-			return "", errBadRequest("artifact is not linked to this task")
+		if !ok {
+			return "", errBadRequest("artifact unavailable")
 		}
 		rev, ok := a.Revision(ref.Revision)
 		if !ok {
@@ -137,7 +153,8 @@ func (s *Server) taskArtifactContext(taskID string, refs []artifactContextRef) (
 		if len(b) > 64000 || out.Len()+len(b) > 96000 {
 			return "", errBadRequest("selected artifact is too large; select a smaller document")
 		}
-		if strings.IndexByte(string(b), 0) >= 0 {
+		mime := http.DetectContentType(b)
+		if strings.IndexByte(string(b), 0) >= 0 || !utf8.Valid(b) || (!strings.HasPrefix(mime, "text/") && mime != "application/json") {
 			return "", errBadRequest("this artifact needs a supported text extraction before discussing it")
 		}
 		fmt.Fprintf(&out, "\n\n<referenced-artifact id=%q revision=%q version=%q>\n%s\n</referenced-artifact>", ref.ID, ref.Revision, fmt.Sprint(rev.N), string(b))

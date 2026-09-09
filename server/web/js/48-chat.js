@@ -1096,9 +1096,12 @@ function chatHead(s) {
   acts.append(ren);
   // the task this conversation became (§3.4f) — into its conversation, here
   if (s.task) {
-    const task = el("button", "sprt-quiet chat-head-task", "open task thread ↗");
-    task.title = "open this task's conversation";
-    task.onclick = () => { location.hash = chatTaskThreadHash(s.task); };
+    const plan = el("button", "sprt-quiet", "Plan");
+    plan.onclick = () => chatOpenWorkingArtifact({plan:true,task:s.task,selectionKey:"chat:"+agent+"/"+s.id});
+    head.append(plan);
+    const task = el("button", "sprt-quiet chat-head-task", "Task ↗");
+    task.title = "open the associated task";
+    task.onclick = () => { location.hash = "#/tasks/"+encodeURIComponent(s.task); };
     acts.append(task);
   }
   // a portal thread is a shared team object: the cockpit's delete ARCHIVES it
@@ -1187,7 +1190,15 @@ function chatBlockEl(b) {
 function chatPaintTurns(host, turns, ctx) {
   turns.forEach((t) => {
     if (t.who === "user") {
-      host.append(chatUserTurn(t.text));
+      const row=chatUserTurn(t.text);
+      const receipt=ctx?.deliveries?.find(d=>d.userTurn===t.n);
+      for(const ref of receipt?.context?.artifacts||[]){
+        const open=el("button","sprt-quiet","Referenced plan / file");
+        open.title="Open the exact version discussed in this message";
+        open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:receipt.context.task,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});
+        row.append(open);
+      }
+      host.append(row);
       return;
     }
     if (t.who === "system") {
@@ -1231,7 +1242,7 @@ function renderChatTranscript(d) {
   chatMountHeader(chatHead(s));
 
   // → task (§3.4f): every agent turn in an agent section can become work
-  chatPaintTurns(host, parseChatTurns(d.body || ""), chatAgent ? { who, operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
+  chatPaintTurns(host, parseChatTurns(d.body || ""), chatAgent ? { who, deliveries:s.deliveries||[], operations: d.operations || [], promote: (t) => chatPromoteTurn(s, t.n) } : null);
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
@@ -1323,6 +1334,7 @@ function renderChatComposer(session) {
     if (send) { send.disabled = busy; send.textContent = chatIsTerm() ? "↵" : "↑"; } // a prompt line ends in enter
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);
+    chatRenderArtifactContext(session?.task,"chat:"+draftKey);
     return;
   }
   host.dataset.built = "1";
@@ -1428,6 +1440,8 @@ function renderChatComposer(session) {
     chatPendingFiles = [];
     syncAttach();
     const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
+    const selected=chatArtifactSelections.get("chat:"+draftKey);
+    if(durable && selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
     if (chatIsTerm()) {
       // claude/codex: tmux send-keys (relaunching a dead session first); a
       // landing send creates the registry row, then delivers
@@ -1489,6 +1503,7 @@ function renderChatComposer(session) {
   send.onclick = submit;
   host.append(chips, mention, ta, fi, attach, ritual, send);
   chatRenderDeliveryNotice(host,draftKey);
+  chatRenderArtifactContext(session?.task,"chat:"+draftKey);
   grow();
   syncAttach();
 }
@@ -2367,7 +2382,7 @@ function chatCloseWorkspace() { if (chatWorkspace) { const w=chatWorkspace; chat
 function chatOpenWorkingArtifact(spec) {
   chatCloseWorkspace();
   const taskID = spec.task || chatTaskID;
-  const key = taskID ? "task:"+taskID : location.hash;
+  const key = spec.selectionKey || (taskID ? "task:"+taskID : location.hash);
   const shell = document.querySelector(".chat-shell");
   shell.classList.add("has-artifact");
   const load = async () => {
@@ -2379,21 +2394,22 @@ function chatOpenWorkingArtifact(spec) {
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
     onDiscuss: taskID ? ref=>{
-      chatArtifactSelections.set(key,ref); chatRenderArtifactContext(taskID);
+      chatArtifactSelections.set(key,ref); chatRenderArtifactContext(taskID,key);
       if(window.matchMedia("(max-width: 900px)").matches)chatCloseWorkspace();
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
   });
 }
-function chatRenderArtifactContext(taskID){
+function chatRenderArtifactContext(taskID,key){
+ key=key||"task:"+taskID;
  const composer=document.getElementById("chatComposer");if(!composer)return;
  composer.querySelector(".chat-artifact-context")?.remove();
- const ref=chatArtifactSelections.get("task:"+taskID);if(!ref)return;
+ const ref=chatArtifactSelections.get(key);if(!ref)return;
  const row=el("div","chat-artifact-context");
  const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
- open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID});
+ open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID,selectionKey:key});
  const clear=el("button","sprt-quiet","×");clear.setAttribute("aria-label","Remove artifact context");
- clear.onclick=()=>{chatArtifactSelections.delete("task:"+taskID);row.remove();};
+ clear.onclick=()=>{chatArtifactSelections.delete(key);row.remove();};
  row.append(open,clear);composer.prepend(row);
 }
 function chatArtifactActions(data){

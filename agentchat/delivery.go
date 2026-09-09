@@ -34,16 +34,41 @@ func NewRequestID() string {
 }
 
 type Delivery struct {
-	ID          string `json:"id"`
-	Text        string `json:"text,omitempty"`
-	Fingerprint string `json:"fingerprint"`
-	State       string `json:"state"`
-	Accepted    string `json:"accepted"`
-	Updated     string `json:"updated"`
-	UserTurn    int    `json:"userTurn,omitempty"`
-	ReplyTurn   int    `json:"replyTurn,omitempty"`
-	Error       string `json:"error,omitempty"`
+	ID          string          `json:"id"`
+	Text        string          `json:"text,omitempty"`
+	Fingerprint string          `json:"fingerprint"`
+	State       string          `json:"state"`
+	Accepted    string          `json:"accepted"`
+	Updated     string          `json:"updated"`
+	UserTurn    int             `json:"userTurn,omitempty"`
+	ReplyTurn   int             `json:"replyTurn,omitempty"`
+	Error       string          `json:"error,omitempty"`
+	Context     *MessageContext `json:"context,omitempty"`
 }
+
+type ArtifactReference struct {
+	ID       string `json:"id"`
+	Revision string `json:"revision"`
+}
+
+type MessageContext struct {
+	Conversation string              `json:"conversation"`
+	Task         string              `json:"task,omitempty"`
+	Agent        string              `json:"agent"`
+	Artifacts    []ArtifactReference `json:"artifacts,omitempty"`
+}
+
+func deliveryFingerprint(text string, context *MessageContext) string {
+	if context == nil {
+		return fingerprint(text)
+	}
+	b, _ := json.Marshal(struct {
+		Text    string
+		Context *MessageContext
+	}{text, context})
+	return fingerprint(string(b))
+}
+
 type Acceptance struct {
 	Delivery Delivery `json:"delivery"`
 	New      bool     `json:"new"`
@@ -63,7 +88,11 @@ func deliveryJSON(ds []Delivery) string {
 
 // Accept persists the instruction BEFORE acknowledging it. Matching retries
 // recover the existing receipt regardless of its current lifecycle state.
-func (s *Store) Accept(agent, id, requestID, text string) (Acceptance, error) {
+func (s *Store) Accept(agent, id, requestID, text string, contexts ...*MessageContext) (Acceptance, error) {
+	var ctx *MessageContext
+	if len(contexts) > 0 {
+		ctx = contexts[0]
+	}
 	if requestID == "" {
 		requestID = NewRequestID()
 	}
@@ -77,14 +106,14 @@ func (s *Store) Accept(agent, id, requestID, text string) (Acceptance, error) {
 	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
 		for _, d := range sess.Deliveries {
 			if d.ID == requestID {
-				if d.Fingerprint != fingerprint(text) {
+				if d.Fingerprint != deliveryFingerprint(text, ctx) {
 					return ErrRequestConflict
 				}
 				out.Delivery = d
 				return nil
 			}
 		}
-		d := Delivery{ID: requestID, Text: text, Fingerprint: fingerprint(text), State: DeliveryQueued, Accepted: now(), Updated: now()}
+		d := Delivery{ID: requestID, Text: text, Fingerprint: deliveryFingerprint(text, ctx), Context: ctx, State: DeliveryQueued, Accepted: now(), Updated: now()}
 		sess.Deliveries = append(sess.Deliveries, d)
 		sess.Status = StatusThinking
 		out = Acceptance{Delivery: d, New: true}
