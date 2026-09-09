@@ -393,6 +393,7 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 		Files     []threads.FileRef    `json:"files"`
 		Artifacts []artifactContextRef `json:"artifacts"`
 		Task      string               `json:"task"`
+		Recipient *agentchat.Recipient `json:"recipient"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -402,7 +403,7 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
-	receipt, err := s.agentChatSendRequestForTask(agent, id, b.RequestID, b.Text, b.Files, b.Task, b.Artifacts)
+	receipt, err := s.agentChatSendTo(agent, id, b.RequestID, b.Text, b.Files, b.Task, b.Artifacts, b.Recipient)
 	if err != nil {
 		if errors.Is(err, agentchat.ErrRequestConflict) {
 			http.Error(w, err.Error(), http.StatusConflict)
@@ -478,6 +479,9 @@ func (s *Server) agentChatSendRequest(agent, id, requestID, text string, files [
 }
 
 func (s *Server) agentChatSendRequestForTask(agent, id, requestID, text string, files []threads.FileRef, selectedTask string, refs []artifactContextRef) (agentchat.Delivery, error) {
+	return s.agentChatSendTo(agent, id, requestID, text, files, selectedTask, refs, nil)
+}
+func (s *Server) agentChatSendTo(agent, id, requestID, text string, files []threads.FileRef, selectedTask string, refs []artifactContextRef, target *agentchat.Recipient) (agentchat.Delivery, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
 		return agentchat.Delivery{}, errBadRequest("empty message")
@@ -503,6 +507,16 @@ func (s *Server) agentChatSendRequestForTask(agent, id, requestID, text string, 
 		ctx.Task = selectedTask
 	}
 	if prior, found := s.agentChat.store.Receipt(agent, id, requestID); found {
+		if prior.Context != nil && prior.Context.Recipient != nil {
+			retained := *prior.Context.Recipient
+			if target != nil && (target.Agent != retained.Agent || target.Model != retained.RequestedModel) {
+				return agentchat.Delivery{}, agentchat.ErrRequestConflict
+			}
+			ctx.Recipient = &retained
+			ctx.Agent = retained.Agent
+		} else if target != nil {
+			return agentchat.Delivery{}, agentchat.ErrRequestConflict
+		}
 		// Reconstruct the original context for retry comparison; changing the
 		// selected versions still conflicts, while later task edits do not.
 		if prior.Context != nil && selectedTask == "" {
@@ -511,6 +525,26 @@ func (s *Server) agentChatSendRequestForTask(agent, id, requestID, text string, 
 			ctx = nil
 		}
 	} else {
+		recipient := agentchat.Recipient{Agent: agent, Profile: sess.Profile, Model: sess.Model}
+		if target != nil {
+			profile, err := s.resolveAgentChat(context.Background(), target.Agent)
+			if err != nil {
+				return agentchat.Delivery{}, err
+			}
+			recipient = agentchat.Recipient{Agent: target.Agent, Profile: profile, Model: target.Model}
+		}
+		recipient.RequestedModel = recipient.Model
+		if recipient.Model == "" {
+			profiles, _ := s.hermesProfilesCached(context.Background())
+			for _, p := range profiles {
+				if (recipient.Profile == "" && p.Name == "default") || p.Name == recipient.Profile {
+					recipient.Model = p.Model
+					break
+				}
+			}
+		}
+		ctx.Recipient = &recipient
+		ctx.Agent = recipient.Agent
 		if selectedTask != "" && selectedTask != sess.Task {
 			link := s.taskChatLink(selectedTask, s.listThread(selectedTask), "")
 			if link == nil || link.Agent != agent || link.ID != id {
@@ -567,9 +601,20 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	if !ok {
 		return errors.New("conversation unavailable")
 	}
-	who := "agent:" + agent
+	recipient := agentchat.Recipient{Agent: agent, Profile: sess.Profile, Model: sess.Model}
+	if receipt, ok := st.Receipt(agent, id, requestID); ok && receipt.Context != nil && receipt.Context.Recipient != nil {
+		recipient = *receipt.Context.Recipient
+	}
+	executionSession := sess
+	executionSession.Profile = recipient.Profile
+	executionSession.Model = recipient.Model
+	who := "agent:" + recipient.Agent
 	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
-	prompt := s.composeAgentChatPrompt(agent, sess, body)
+	_, omitted := agentChatWindow(body)
+	if err := st.RecordHistoryOmission(agent, id, requestID, omitted); err != nil {
+		return err
+	}
+	prompt := s.composeAgentChatPrompt(recipient.Agent, executionSession, body)
 	if receipt, ok := st.Receipt(agent, id, requestID); ok && receipt.Context != nil {
 		selected, err := s.retainedArtifactContext(receipt.Context.Artifacts)
 		if err != nil {
@@ -583,28 +628,28 @@ func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 		ManifestConversation: id,
 		ManifestTurn:         fmt.Sprint(sess.Turns),
 		Prompt:               prompt,
-		Model:                sess.Model,
+		Model:                recipient.Model,
 		Toolsets:             s.hermes.readTools, // chat turns are read-only (vault gate, §3.6)
-		Profile:              sess.Profile,
+		Profile:              recipient.Profile,
 	})
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
-		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), 0)
+		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+recipient.Agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), 0)
 		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Object: obj, Session: id, Harness: "hermes",
-			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": agent, "profile": sess.Profile}})
+			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile}})
 		return saveErr
 	}
 	reply := strings.TrimSpace(res.Reply)
 	if reply == "" {
 		reply = "(no reply)"
 	}
-	if err := st.Finish(agent, id, requestID, agent, "### Step 1 — say\n\n"+reply, agentchat.DeliveryCompleted, "", res.SpentUSD, res.SessionID); err != nil {
+	if err := st.Finish(agent, id, requestID, recipient.Agent, "### Step 1 — say\n\n"+reply, agentchat.DeliveryCompleted, "", res.SpentUSD, res.SessionID); err != nil {
 		return err
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Object: obj, Session: id, Harness: "hermes",
 		Text: ledger.Snip(reply, 280),
-		Meta: map[string]any{"agent": agent, "profile": sess.Profile, "sessionId": res.SessionID,
-			"spentUsd": res.SpentUSD, "model": firstNonEmpty(res.Model, sess.Model)}})
+		Meta: map[string]any{"agent": recipient.Agent, "sourceAgent": agent, "profile": recipient.Profile, "sessionId": res.SessionID,
+			"spentUsd": res.SpentUSD, "model": firstNonEmpty(res.Model, recipient.Model)}})
 	return nil
 }
 
@@ -621,19 +666,7 @@ func (s *Server) composeAgentChatPrompt(agent string, sess agentchat.Session, bo
 	if agent != alfredAgent {
 		name = agent
 	}
-	turns := agentchat.ParseTurns(body)
-	// keep the newest turns that fit; the last turn is the user's message
-	kept := turns
-	total := 0
-	start := len(turns)
-	for i := len(turns) - 1; i >= 0; i-- {
-		total += len(turns[i].Text) + 24
-		if total > agentChatWindowChars && i < len(turns)-1 {
-			break
-		}
-		start = i
-	}
-	kept = turns[start:]
+	kept, start := agentChatWindow(body)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are %s, the owner's personal agent, in a chat thread titled %q inside his Manifest cockpit. ", name, sess.Title)
@@ -725,4 +758,20 @@ func (s *Server) handleAgentChatDelivery(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	http.NotFound(w, r)
+}
+
+func agentChatWindow(body string) ([]agentchat.Turn, int) {
+	turns := agentchat.ParseTurns(body)
+	// keep the newest turns that fit; the last turn is the user's message
+	total := 0
+	start := len(turns)
+	for i := len(turns) - 1; i >= 0; i-- {
+		total += len(turns[i].Text) + 24
+		if total > agentChatWindowChars && i < len(turns)-1 {
+			break
+		}
+		start = i
+	}
+	return turns[start:], start
+
 }

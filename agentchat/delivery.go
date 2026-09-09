@@ -34,16 +34,17 @@ func NewRequestID() string {
 }
 
 type Delivery struct {
-	ID          string          `json:"id"`
-	Text        string          `json:"text,omitempty"`
-	Fingerprint string          `json:"fingerprint"`
-	State       string          `json:"state"`
-	Accepted    string          `json:"accepted"`
-	Updated     string          `json:"updated"`
-	UserTurn    int             `json:"userTurn,omitempty"`
-	ReplyTurn   int             `json:"replyTurn,omitempty"`
-	Error       string          `json:"error,omitempty"`
-	Context     *MessageContext `json:"context,omitempty"`
+	ID             string          `json:"id"`
+	HistoryOmitted int             `json:"historyOmitted,omitempty"`
+	Text           string          `json:"text,omitempty"`
+	Fingerprint    string          `json:"fingerprint"`
+	State          string          `json:"state"`
+	Accepted       string          `json:"accepted"`
+	Updated        string          `json:"updated"`
+	UserTurn       int             `json:"userTurn,omitempty"`
+	ReplyTurn      int             `json:"replyTurn,omitempty"`
+	Error          string          `json:"error,omitempty"`
+	Context        *MessageContext `json:"context,omitempty"`
 }
 
 type ArtifactReference struct {
@@ -51,7 +52,15 @@ type ArtifactReference struct {
 	Revision string `json:"revision"`
 }
 
+type Recipient struct {
+	RequestedModel string `json:"requestedModel,omitempty"`
+	Agent          string `json:"agent"`
+	Profile        string `json:"profile,omitempty"`
+	Model          string `json:"model,omitempty"`
+}
+
 type MessageContext struct {
+	Recipient    *Recipient          `json:"recipient,omitempty"`
 	Conversation string              `json:"conversation"`
 	Task         string              `json:"task,omitempty"`
 	Agent        string              `json:"agent"`
@@ -255,4 +264,18 @@ func (s *Store) createOnce(agent, profile, title, model, requestID string, origi
 		}
 	}
 	return s.create(agent, profile, title, model, requestID, signature, origin)
+}
+
+// Record the actual window used for this invocation without changing request identity.
+func (s *Store) RecordHistoryOmission(agent, id, requestID string, count int) error {
+	_, err := s.update(agent, id, func(sess *Session, _ *string) error {
+		for i := range sess.Deliveries {
+			if sess.Deliveries[i].ID == requestID {
+				sess.Deliveries[i].HistoryOmitted = count
+				return nil
+			}
+		}
+		return errors.New("delivery not found")
+	})
+	return err
 }

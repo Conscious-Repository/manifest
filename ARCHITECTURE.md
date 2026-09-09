@@ -539,3 +539,14 @@ authors, running work and task ownership are untouched. This is a separate linke
 conversation, not a shared history or a Continue-here handoff. Related metadata
 does not grant team access. Current creation support is limited to Hermes-backed
 private conversations; other adapters must supply equivalent contracts first.
+
+**2026-09-09 — Continue here within Hermes conversations.** The native storage
+identity remains stable when the owner chooses another supported Hermes agent
+for the next message. Each accepted delivery records the addressed agent, resolved
+profile and model where the profile reports one. Queue dispatch uses that snapshot,
+not a later composer selection. Retries compare recipient intent and retain the
+accepted resolution. Replies carry their actual agent author; source history is
+not rewritten. An invocation records how many earlier turns its bounded context
+omitted, and the UI shows that limitation. The composer recipient is private draft
+state; choosing it alone starts nothing and changes no task assignment. This is
+not yet a cross-runtime handoff to portal agents or terminal CLIs.
