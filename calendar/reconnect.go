@@ -173,7 +173,7 @@ func (c *Client) revalidate() {
 			continue
 		} else {
 			var re *oauth2.RetrieveError
-			if errors.As(err, &re) {
+			if errors.As(err, &re) && re.ErrorCode == "invalid_grant" {
 				fresh[a.email] = acctCheck{needsReauth: true, detail: "sign-in expired (" + reauthReason(re) + ")"}
 				continue
 			}

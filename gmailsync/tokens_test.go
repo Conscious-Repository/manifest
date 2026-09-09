@@ -49,3 +49,42 @@ func TestTokensLifecycle(t *testing.T) {
 		t.Fatal("needs-reauth account must not yield a token source")
 	}
 }
+
+type refreshFailure struct{ err error }
+
+func (f refreshFailure) Token() (*oauth2.Token, error) { return nil, f.err }
+
+func TestTransientRefreshDoesNotDisableSync(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    error
+		reauth bool
+	}{
+		{"network", errors.New("network timeout"), false},
+		{"google outage", &oauth2.RetrieveError{ErrorCode: "server_error"}, false},
+		{"rate limit", &oauth2.RetrieveError{ErrorCode: "temporarily_unavailable"}, false},
+		{"client configuration", &oauth2.RetrieveError{ErrorCode: "invalid_client"}, false},
+		{"revoked grant", &oauth2.RetrieveError{ErrorCode: "invalid_grant"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st, err := NewTokens(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Put("a@b.com", &oauth2.Token{AccessToken: "a", RefreshToken: "r"}); err != nil {
+				t.Fatal(err)
+			}
+			p := persistingSource{tokens: st, email: "a@b.com", base: refreshFailure{tc.err}}
+			if _, err := p.Token(); err == nil {
+				t.Fatal("failure not surfaced")
+			}
+			a, _ := st.Status("a@b.com")
+			if a.NeedsReauth != tc.reauth {
+				t.Fatalf("reauth=%v", a.NeedsReauth)
+			}
+			if _, ok := st.Source("a@b.com", &oauth2.Config{}); ok == tc.reauth {
+				t.Fatal("unexpected retry availability")
+			}
+		})
+	}
+}

@@ -10,6 +10,7 @@ package gmailsync
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -210,10 +211,12 @@ type persistingSource struct {
 func (p *persistingSource) Token() (*oauth2.Token, error) {
 	tok, err := p.base.Token()
 	if err != nil {
-		// A refresh failure here is almost always a revoked grant
-		// (invalid_grant); transient network errors also land the account in
-		// needs-reauth, which a fresh sign-in clears — fail safe, not silent.
-		p.tokens.MarkNeedsReauth(p.email, err)
+		// Only a revoked/expired grant needs human consent. Network failures,
+		// rate limits and Google outages must remain retryable on the next sync.
+		var re *oauth2.RetrieveError
+		if errors.As(err, &re) && re.ErrorCode == "invalid_grant" {
+			p.tokens.MarkNeedsReauth(p.email, err)
+		}
 		return nil, err
 	}
 	p.tokens.touch(p.email, tok, time.Now())

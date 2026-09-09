@@ -197,7 +197,7 @@ func (c *Client) validate(ctx context.Context) State {
 	fresh, err := cfg.TokenSource(ctx, tok.Token).Token()
 	if err != nil {
 		var re *oauth2.RetrieveError
-		if errors.As(err, &re) {
+		if errors.As(err, &re) && re.ErrorCode == "invalid_grant" {
 			st.NeedsReauth = true
 			st.Detail = "sign-in expired (" + reauthReason(re) + ")"
 			return st
@@ -219,9 +219,16 @@ func (c *Client) validate(ctx context.Context) State {
 		}
 		st.Detail = ""
 	} else {
-		// token refreshed but the API rejected it — treat as reauth needed
-		st.NeedsReauth = true
-		st.Detail = "sign-in rejected by Gmail"
+		var apiErr profileHTTPError
+		if errors.As(err, &apiErr) && int(apiErr) == http.StatusUnauthorized {
+			st.NeedsReauth = true
+			st.Detail = "sign-in rejected by Gmail"
+		} else {
+			c.mu.Lock()
+			st.Connected = c.cached.Connected
+			c.mu.Unlock()
+			st.Detail = "Gmail check failed; will retry (" + err.Error() + ")"
+		}
 	}
 	return st
 }
@@ -233,6 +240,10 @@ func reauthReason(re *oauth2.RetrieveError) string {
 	return "invalid_grant"
 }
 
+type profileHTTPError int
+
+func (e profileHTTPError) Error() string { return fmt.Sprintf("HTTP %d", int(e)) }
+
 // fetchProfileEmail hits users/me/profile — the cheapest authenticated Gmail call.
 func fetchProfileEmail(ctx context.Context, hc *http.Client) (string, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
@@ -243,15 +254,17 @@ func fetchProfileEmail(ctx context.Context, hc *http.Client) (string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+		return "", profileHTTPError(resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %d", resp.StatusCode)
+		return "", profileHTTPError(resp.StatusCode)
 	}
 	var body struct {
 		EmailAddress string `json:"emailAddress"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&body)
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
 	return body.EmailAddress, nil
 }
 
