@@ -17,6 +17,7 @@ import (
 var ErrConflict = errors.New("conversation state changed on another device")
 var ErrInvalid = errors.New("invalid conversation state")
 var keyRE = regexp.MustCompile(`^conversation-[0-9a-f]{32}$`)
+var artifactKeyRE = regexp.MustCompile(`^artifact-[0-9a-f]{16}$`)
 
 type Snapshot struct {
 	Key      string          `json:"key"`
@@ -33,7 +34,7 @@ type Store struct {
 
 func New(root string) *Store { return &Store{root: root} }
 func valid(key, slot string) bool {
-	return keyRE.MatchString(key) && (slot == "draft" || slot == "view")
+	return (keyRE.MatchString(key) && (slot == "draft" || slot == "view")) || (artifactKeyRE.MatchString(key) && slot == "edit")
 }
 func (s *Store) path(key, slot string) string { return filepath.Join(s.root, key+"-"+slot+".json") }
 

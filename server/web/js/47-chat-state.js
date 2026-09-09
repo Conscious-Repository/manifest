@@ -4,24 +4,25 @@ function chatStateEqual(a,b) {
   return JSON.stringify(stable(a))===JSON.stringify(stable(b));
 }
 class ChatDraftState {
-  constructor(key,changed) {
+  constructor(key,changed,slot="draft") {
+    this.slot=slot;this.storageKey="manifest.chatDraft.v1."+key+(slot==="draft"?"":"."+slot);
     this.key=key;this.changed=changed;this.revision=0;this.base=null;this.value=null;
     this.dirty=false;this.loaded=false;this.conflict=null;this.error="";this.pending=null;this.timer=null;
     try {
-      const saved=JSON.parse(localStorage.getItem("manifest.chatDraft.v1."+key)||"null");
+      const saved=JSON.parse(localStorage.getItem(this.storageKey)||"null");
       if(saved && Number.isSafeInteger(saved.revision) && saved.revision>=0){
         this.revision=saved.revision;this.base=saved.base;this.value=saved.value;this.dirty=!chatStateEqual(this.value,this.base);
       }
     } catch(e) {}
   }
-  url(){return "/api/chat/state/"+encodeURIComponent(this.key)+"/draft";}
+  url(){return "/api/chat/state/"+encodeURIComponent(this.key)+"/"+encodeURIComponent(this.slot);}
   publish(apply=false){
-    try { localStorage.setItem("manifest.chatDraft.v1."+this.key,JSON.stringify({revision:this.revision,base:this.base,value:this.value})); }
+    try { localStorage.setItem(this.storageKey,JSON.stringify({revision:this.revision,base:this.base,value:this.value})); }
     catch(e){this.error="Local draft recovery is unavailable. Keep this tab open until the draft is saved.";}
     this.changed?.(this,apply);
   }
   snapshot(v){
-    if(!v || v.key!==this.key || v.slot!=="draft" || !Number.isSafeInteger(v.revision) || v.revision<0 || !(v.value===null || (typeof v.value==="object"&&!Array.isArray(v.value))))throw new Error("Invalid draft response");
+    if(!v || v.key!==this.key || v.slot!==this.slot || !Number.isSafeInteger(v.revision) || v.revision<0 || !(v.value===null || (typeof v.value==="object"&&!Array.isArray(v.value))))throw new Error("Invalid draft response");
     return v;
   }
   async refresh(){

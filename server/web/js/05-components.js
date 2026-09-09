@@ -589,6 +589,8 @@ function chooseActionMenu(trigger, items) {
 
 // A shared, version-aware workspace. The caller owns placement and discussion
 // context; opening it never navigates, edits a file, or starts an agent.
+const artifactEditDrafts = new Map();
+window.addEventListener("pagehide",()=>{for(const state of artifactEditDrafts.values())if(state.dirty)state.flush();});
 function artifactWorkspace(mount, options) {
   const opts = options || {};
   const pane = el("aside", "artifact-workspace");
@@ -596,7 +598,7 @@ function artifactWorkspace(mount, options) {
   const header = el("div", "artifact-workspace-head");
   const title = el("strong", "artifact-workspace-title", "Loading…");
   const close = el("button", "sprt-quiet", "Back to chat");
-  close.onclick = () => { pane.remove(); if (opts.onClose) opts.onClose(); };
+  close.onclick = () => { if(editState?.dirty)editState.flush(); pane.remove(); if (opts.onClose) opts.onClose(); };
   header.append(title, close);
   const controls = el("div", "artifact-workspace-controls");
   const body = el("div", "artifact-workspace-body");
@@ -605,7 +607,23 @@ function artifactWorkspace(mount, options) {
   notice.setAttribute("role", "status");
   pane.append(header, controls, notice, body);
   mount.append(pane);
-  let current, selected, selectedNumber, generation = 0, editing = false;
+  let current, selected, selectedNumber, generation = 0, editing = false, editState, editor;
+  const recovery = el("div", "artifact-edit-recovery");
+  pane.insertBefore(recovery,body);
+  async function prepareEditState(id){
+    if(!opts.save || typeof ChatDraftState==="undefined")return;
+    if(!artifactEditDrafts.has(id))artifactEditDrafts.set(id,new ChatDraftState("artifact-"+id,null,"edit"));
+    editState=artifactEditDrafts.get(id);
+    editState.changed=(state,apply)=>{
+      if(!pane.isConnected)return;
+      if(apply&&editing&&editor){
+        if(state.value){editor.value=state.value.text||"";}
+        else {render();return;}
+      }
+      chatRenderStateNotice(recovery,state);
+    };
+    await editState.refresh();
+  }
   const url = (a, hash) => "/api/artifacts/get?id="+encodeURIComponent(a.id)+"&content=1&rev="+encodeURIComponent(hash);
   const fetchJSON = async (path) => { const r = await fetch(path); if (!r.ok) throw new Error(await r.text()); return r.json(); };
   async function show(a, hash, number) {
@@ -615,6 +633,8 @@ function artifactWorkspace(mount, options) {
       const d = await fetchJSON(mediaRef ? "/api/artifacts/get?id="+encodeURIComponent(a.id) : url(a, hash || a.head));
       if (ticket !== generation || !pane.isConnected) return;
       current = d; selected = hash || d.head; selectedNumber = number || [...d.revisions].reverse().find(r=>r.hash===selected)?.n; editing = false;
+      await prepareEditState(current.id);
+      if(ticket!==generation || !pane.isConnected)return;
       render();
     } catch (e) { notice.textContent = "Could not open this version: " + e.message; }
   }
@@ -657,30 +677,48 @@ function artifactWorkspace(mount, options) {
     if (opts.save && !binary) {
       const edit = el("button", "sprt-quiet", selected === current.head ? "Edit" : "Restore this version");
       edit.onclick = () => editVersion(selected !== current.head);
+      if(editState?.value){
+        edit.textContent="Resume draft";
+        edit.onclick=()=>editVersion(!!editState.value.restore,true);
+        notice.textContent="An unfinished edit is saved. The published version is unchanged.";
+      }
       controls.append(edit);
     }
   }
-  function editVersion(restore) {
+  function editVersion(restore,resume=false) {
     editing = true;
     const original = current.content || "";
+    const started=resume&&editState?.value ? editState.value : {text:original,artifact:current.id,baseRevision:current.head,sourceRevision:selected,restore};
+    if(editState&&!resume)editState.set(started);
     const input = document.createElement("textarea");
-    input.className = "artifact-workspace-editor"; input.value = original;
+    input.className = "artifact-workspace-editor"; input.value = started.text; editor=input;
     input.setAttribute("aria-label", "Plan content");
     body.replaceChildren(input);
     controls.replaceChildren();
     const save = el("button", "sprt-quiet", restore ? "Save restored version" : "Save new version");
-    const cancel = el("button", "sprt-quiet", "Cancel"); cancel.onclick = render;
+    const remember=()=>editState?.set({...editState.value||started,text:input.value});
+    input.addEventListener("input",remember);
+    const cancel = el("button", "sprt-quiet", "Back to preview"); cancel.onclick = ()=>{remember();render();};
+    const discard=el("button","sprt-quiet","Discard draft");
+    discard.onclick=async()=>{
+      if(editState?.conflict){notice.textContent="Resolve the draft conflict before discarding.";return;}
+      if(editState){editState.set(null);await editState.flush();}render();
+    };
     save.onclick = async () => {
-      save.disabled = true;
+      remember();
+      if(editState?.conflict){notice.textContent="Resolve the draft conflict before saving a version.";return;}
+      const submitted=editState?.value||{...started,text:input.value};
+      save.disabled = true;input.disabled=true;discard.disabled=true;
       try {
-        await opts.save(input.value, current.head);
+        await opts.save(submitted.text, submitted.baseRevision);
+        if(editState&&chatStateEqual(editState.value,submitted)){editState.set(null);await editState.flush();}
         const a = await opts.load();
         await show(a,a.head);
         notice.textContent = "New version saved. Execution has not started.";
       } catch(e) { notice.textContent = e.message; }
-      finally { save.disabled = false; }
+      finally { save.disabled = false;input.disabled=false;discard.disabled=false; }
     };
-    controls.append(save,cancel); input.focus();
+    controls.append(save,cancel,discard); chatRenderStateNotice(recovery,editState);input.focus();
   }
   (async () => { try { const a = await opts.load(); await show(a,opts.revision || a.head); } catch(e) { notice.textContent=e.message; title.textContent="Artifact unavailable"; } })();
   return {element:pane, close:()=>close.click(), isEditing:()=>editing};

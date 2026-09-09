@@ -43,6 +43,16 @@ function device(storage=new Map()){
  const taskSnapshot=task.value;task.clearSent(taskSnapshot);await task.flush();
  assert.equal(task.value.mode,'ask');assert.equal(task.value.agent,'agent:alfred');assert.equal(task.value.mentions.length,0);assert.equal(task.value.files.length,0);
  const taskAgain=device();await taskAgain.refresh();assert.equal(taskAgain.value.text,'');assert.equal(taskAgain.value.mode,'ask');
+ // Artifact edit slots preserve the original save precondition across reload.
+ const edits=new Map();let editRemote={key:'artifact-0123456789abcdef',slot:'edit',revision:0,value:null};
+ const editContext=vm.createContext({fetch:async(url,opts={})=>{
+  assert.equal(url,'/api/chat/state/artifact-0123456789abcdef/edit');
+  if(opts.method==='PUT'){const b=JSON.parse(opts.body);editRemote={...editRemote,revision:editRemote.revision+1,value:b.value};}
+  return {ok:true,json:async()=>clone(editRemote)};
+ },localStorage:{getItem:k=>edits.get(k),setItem:(k,v)=>edits.set(k,v)},setTimeout:()=>1,clearTimeout(){}});
+ vm.runInContext(code+';globalThis.Draft=ChatDraftState;',editContext);
+ const edit=new editContext.Draft(editRemote.key,null,'edit');await edit.refresh();edit.set({text:'revision in progress',baseRevision:'old-head',sourceRevision:'older-version'});await edit.flush();
+ const reopen=new editContext.Draft(editRemote.key,null,'edit');await reopen.refresh();assert.equal(reopen.value.baseRevision,'old-head');assert.equal(reopen.value.text,'revision in progress');
  // Malformed responses must not replace the draft or count as saved.
  const ctx=vm.createContext({fetch:async()=>({ok:true,json:async()=>({revision:999,value:null})}),localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){}});
  vm.runInContext(code+';globalThis.Draft=ChatDraftState;',ctx);const bad=new ctx.Draft(key);bad.set({text:'keep'});assert.equal(await bad.flush(),false);assert.equal(bad.value.text,'keep');assert.equal(bad.revision,0);

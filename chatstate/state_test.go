@@ -1,6 +1,7 @@
 package chatstate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -80,5 +81,34 @@ func TestStateRejectsTraversalMalformedAndFailedWrites(t *testing.T) {
 	}
 	if _, err := New(root).Write(testKey, "draft", 0, json.RawMessage(`{"text":"pending"}`)); err == nil {
 		t.Fatal("acknowledged failed persistence")
+	}
+}
+
+func TestArtifactEditsKeepTheirBaseAndStaySeparateFromChat(t *testing.T) {
+	s := New(t.TempDir())
+	key := "artifact-0123456789abcdef"
+	original := json.RawMessage(`{"text":"unfinished revision","baseRevision":"original-hash","sourceRevision":"older-hash","restore":true}`)
+	saved, err := s.Write(key, "edit", 0, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := s.Read(key, "edit")
+	if err != nil || !bytes.Equal(reopened.Value, saved.Value) {
+		t.Fatal(reopened, err)
+	}
+	// A different device cannot replace either the text or its base revision.
+	if _, err = s.Write(key, "edit", 0, json.RawMessage(`{"text":"other","baseRevision":"new-head"}`)); !errors.Is(err, ErrConflict) {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{key, "draft"}, {testKey, "edit"}, {"artifact-../../outside", "edit"}} {
+		if _, err = s.Read(pair[0], pair[1]); !errors.Is(err, ErrInvalid) {
+			t.Fatal(pair, err)
+		}
+	}
+	if _, err = s.Write(key, "edit", saved.Revision, json.RawMessage(`null`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Write(key, "edit", saved.Revision, original); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale editor restored discarded draft", err)
 	}
 }

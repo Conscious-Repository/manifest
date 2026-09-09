@@ -292,3 +292,5 @@
  .artifact-workspace-controls select { flex-basis: 100%; width: 100%; min-height: 44px; }
  .artifact-workspace-controls { gap: var(--sp-4) var(--sp-7); }
 }
+.artifact-edit-recovery:empty { display: none; }
+.artifact-edit-recovery .chat-draft-notice button { min-height:44px; font-size:var(--fs-md); }
