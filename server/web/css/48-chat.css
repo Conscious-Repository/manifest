@@ -291,3 +291,9 @@
 .chat-main.term .chat-composer .mic-btn:hover { color: var(--term-ink); border-color: var(--term-dim); }
 /* the landing keeps the light greeting; its composer is already the prompt */
 .chat-main.term.landing .chat-composer { border-radius: var(--radius-lg); }
+
+/* Shared runtime observations stay quieter than the durable task status. */
+.terminal-run-state { display: inline-flex; align-items: center; gap: var(--sp-2); margin-left: var(--sp-3); font-size: var(--fs-xs); color: var(--base-50); }
+.terminal-state-dot { display: inline-block; align-self: center; }
+.terminal-state-dot[data-agent-state="blocked"] { background: var(--warn); }
+.terminal-state-dot[data-agent-state="unavailable"], .terminal-state-dot[data-agent-state="unknown"] { background: var(--icon); }

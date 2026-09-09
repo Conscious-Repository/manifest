@@ -98,3 +98,42 @@ suite, and its literal shell-quote assertion failed. Corrected that assertion
 without changing production code, then reran the required build and full suite
 successfully. B therefore has a small follow-up test commit, a deviation from the
 requested one-commit gate shape; published main was not rewritten.
+
+## Gate C — verified event-driven state and bounded supervision
+
+Added GET /api/terminal/events, one shared daemon subscription, bounded/coalesced
+consumer projections, unknown/unavailable invalidation, resubscription and fresh
+snapshots. The last consumer cancels its socket/reconnect resources. Payloads
+include Manifest ID, runtime/occupant/generation, agent state, connectivity,
+process, observation time and BoardBrief-derived run ID. Labels only wake the
+existing result-file reconciliation; they never establish durable task truth.
+
+Coding Chat rail/header and task-thread/run badges share one EventSource. Removed
+the coding rail's 5-second state poll. The separate 1.5-second JSONL file tail
+continues after stop, including final reads when hidden or a read is in flight.
+HTTP screen/transcript responses cannot restore stale herdr indicators after
+SSE disconnect. The independent 60-second AgentLoopTicker remains unchanged.
+
+Authorized API input may request supervise:true with timeoutMs bounded to 30s.
+It uses atomic agent.prompt+wait for settled states; unresolved conversation
+identity refuses before submission, timeout is completion unobserved, no resend.
+Legacy supervision explicitly refuses rather than silently performing a send.
+
+Validation:
+- Required build + full Go suite passed; /tmp/jarvis_herdr_C_{build,tests}.log.
+- Race-enabled event/runtime/frontend focused tests passed (2.102s).
+- Node behavior fixtures verify one EventSource/no state interval, disconnect
+  invalidation, stale HTTP reply refusal, task sharing, hidden/in-flight final
+  file reads. JavaScript syntax checks passed. gofmt/diff checks passed.
+- LIVE adapter subscription observed Codex idle → working → idle (7.563s):
+  /tmp/jarvis_herdr_C_events_live.log. Scratch daemon stopped/deleted.
+- Live evidence caught protocol details missed by initial fixtures: general
+  events use underscore names; filtered status events use dotted names and
+  require explicit pane subscriptions. Corrected both before this gate commit.
+  A preliminary pane enumeration builds the subscription; authoritative bootstrap
+  still occurs after ACK. Pane topology changes force resubscription, with no
+  simultaneous daemon subscriptions. No wildcard state support is assumed.
+
+The normal autodeployer applied B; live rows carry backend/version fields and
+the original production registry has a mode-0600 backup. Browser verification of
+C follows deployment before D implementation. D is not yet implemented.

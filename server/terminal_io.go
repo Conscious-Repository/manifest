@@ -130,8 +130,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Text string `json:"text"`
-		Key  string `json:"key"`
+		Text      string `json:"text"`
+		Key       string `json:"key"`
+		Supervise bool   `json:"supervise"`
+		TimeoutMS int    `json:"timeoutMs"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -139,6 +141,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 	}
 	if b.Text == "" && b.Key == "" {
 		http.Error(w, "nothing to send", http.StatusBadRequest)
+		return
+	}
+	if b.Supervise && se.backend() != "herdr" {
+		http.Error(w, "supervision unavailable for this backend; nothing sent", http.StatusBadRequest)
 		return
 	}
 	if se.backend() == "herdr" {
@@ -163,7 +169,18 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		} else {
 			err = s.herdrPromptReady(r.Context(), se)
 			if err == nil {
-				err = s.terminal.herdr.SendText(r.Context(), se.Runtime, b.Text)
+				if b.Supervise {
+					wait := time.Duration(b.TimeoutMS) * time.Millisecond
+					if wait <= 0 {
+						wait = 30 * time.Second
+					}
+					_, err = s.terminal.herdr.Prompt(r.Context(), se.Runtime, b.Text, terminalWait{State: "settled", Timeout: wait})
+					if err == nil {
+						s.codingResultSweep()
+					}
+				} else {
+					err = s.terminal.herdr.SendText(r.Context(), se.Runtime, b.Text)
+				}
 			}
 		}
 		if err != nil {

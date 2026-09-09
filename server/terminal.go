@@ -60,6 +60,8 @@ type termSession struct {
 }
 
 type termCfg struct {
+	eventMu       sync.Mutex
+	events        *terminalEventHub
 	herdr         *herdrTerminalRuntime
 	codexSessions string
 	regPath       string // <dataDir>/terminals.json

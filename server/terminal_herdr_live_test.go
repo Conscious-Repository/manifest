@@ -173,3 +173,57 @@ func TestHerdrLiveChatRestart(t *testing.T) {
 	}
 	se = resumed
 }
+
+func TestHerdrLiveStateSubscription(t *testing.T) {
+	session := os.Getenv("MANIFEST_HERDR_TEST_SESSION")
+	if session == "" {
+		t.Skip("requires isolated live daemon and authenticated Codex")
+	}
+	cwd := os.Getenv("MANIFEST_HERDR_TEST_CWD")
+	if cwd == "" {
+		t.Fatal("set trusted scratch cwd")
+	}
+	home, _ := os.UserHomeDir()
+	host, _ := os.Hostname()
+	s := &Server{terminal: &termCfg{defaultWd: cwd, regPath: filepath.Join(t.TempDir(), "terminals.json")}}
+	h := &herdrTerminalRuntime{server: s, Host: host, Session: session, Socket: filepath.Join(home, ".config", "herdr", "sessions", session, "herdr.sock")}
+	s.terminal.herdr = h
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	se := termSession{ID: "abcdef12", Kind: "codex", Cwd: cwd, Model: "gpt-6-astra", Name: "migration-event-probe"}
+	id, err := h.Create(ctx, se)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close(context.Background(), id)
+	se.Runtime = id
+	se.Backend = "herdr"
+	if err = s.herdrPromptReady(ctx, se); err != nil {
+		t.Fatal(err)
+	}
+	stream, err := h.Subscribe(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = h.SendText(ctx, id, "Reply only EVENTS_PROBE_OK. Do not use tools or change any files."); err != nil {
+		t.Fatal(err)
+	}
+	working := false
+	for {
+		select {
+		case ob, ok := <-stream:
+			if !ok {
+				t.Fatal("subscription closed unexpectedly")
+			}
+			t.Logf("observed %s", ob.AgentState)
+			if ob.AgentState == "working" {
+				working = true
+			}
+			if working && (ob.AgentState == "idle" || ob.AgentState == "done") {
+				return
+			}
+		case <-ctx.Done():
+			t.Fatal("did not observe actual working and settled transition")
+		}
+	}
+}

@@ -321,7 +321,7 @@ func (h *herdrTerminalRuntime) wait(ctx context.Context, id terminalIdentity, te
 	if w.Timeout <= 0 || w.Timeout > 30*time.Second {
 		return ob, errors.New("wait must be bounded to 0–30 seconds")
 	}
-	if w.State != "idle" && w.State != "done" && w.State != "blocked" && w.State != "working" {
+	if w.State != "idle" && w.State != "done" && w.State != "blocked" && w.State != "working" && w.State != "settled" {
 		return ob, errors.New("invalid wait state")
 	}
 	initial, err := h.Inspect(ctx, id)
@@ -332,14 +332,18 @@ func (h *herdrTerminalRuntime) wait(ctx context.Context, id terminalIdentity, te
 		return ob, errors.New("supervised wait requires a running, identified agent session; nothing sent")
 	}
 	id.AgentSession = initial.Identity.AgentSession
-	params := map[string]any{"target": id.Pane, "until": []string{w.State}, "timeout_ms": w.Timeout.Milliseconds()}
+	until := []string{w.State}
+	if w.State == "settled" {
+		until = []string{"idle", "done", "blocked"}
+	}
+	params := map[string]any{"target": id.Pane, "until": until, "timeout_ms": w.Timeout.Milliseconds()}
 	method := "agent.wait"
 	if text != nil {
 		if err := h.guardPrompt(ctx, id); err != nil {
 			return ob, err
 		}
 		method = "agent.prompt"
-		params = map[string]any{"target": id.Pane, "text": *text, "wait": map[string]any{"until": []string{w.State}, "timeout_ms": w.Timeout.Milliseconds()}}
+		params = map[string]any{"target": id.Pane, "text": *text, "wait": map[string]any{"until": until, "timeout_ms": w.Timeout.Milliseconds()}}
 	}
 	r, err := h.callGeneration(ctx, method, params, id.Generation)
 	if err != nil {
@@ -377,9 +381,20 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	fail := func() { stop(); c.Close() }
 	_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+	// Enumeration only: the authoritative bootstrap still follows subscription ACK.
+	preliminary, err := h.List(ctx)
+	if err != nil {
+		fail()
+		return nil, err
+	}
+	subscribed := map[string]bool{}
 	subs := []map[string]string{}
 	for _, s := range []string{"pane.created", "pane.updated", "pane.closed", "pane.exited"} {
 		subs = append(subs, map[string]string{"type": s})
+	}
+	for _, ob := range preliminary {
+		subscribed[ob.Identity.Pane] = true
+		subs = append(subs, map[string]string{"type": "pane.agent_status_changed", "pane_id": ob.Identity.Pane})
 	}
 	if err = herdrRequest(c, "events.subscribe", map[string]any{"subscriptions": subs}); err != nil {
 		fail()
@@ -404,6 +419,12 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 	if err != nil {
 		fail()
 		return nil, err
+	}
+	for _, ob := range all {
+		if !subscribed[ob.Identity.Pane] {
+			fail()
+			return nil, errors.New("pane set changed during subscribe; resubscribe required")
+		}
 	}
 	currentGeneration, err := h.generation()
 	if err != nil || currentGeneration != generation {
@@ -430,7 +451,7 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 				return
 			}
 			switch ev.Event {
-			case "pane.created", "pane.updated", "pane.closed", "pane.exited":
+			case "pane_created", "pane_updated", "pane_closed", "pane_exited", "pane.agent_status_changed":
 			default:
 				continue
 			}
@@ -465,6 +486,14 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 					changed = append(changed, prev)
 				}
 			}
+			// 0.9.0 has no wildcard state subscription. Reconnect after topology
+			// changes to include new panes, retaining one active subscription.
+			topologyChanged := len(next) != len(subscribed)
+			for pane := range next {
+				if !subscribed[pane] {
+					topologyChanged = true
+				}
+			}
 			known = next
 			for _, ob := range changed {
 				select {
@@ -474,6 +503,9 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 				default:
 					return
 				}
+			}
+			if topologyChanged {
+				return
 			}
 		}
 	}()

@@ -178,11 +178,12 @@ func TestHerdrRuntimeSubscribeBootstrapsAndReconnects(t *testing.T) {
 			subscribed.Store(true)
 			herdrFixtureReply(c, map[string]any{"type": "subscription_started"})
 		case "session.snapshot":
-			if !subscribed.Load() {
-				t.Error("snapshot before subscription ack")
-			}
 			snapshots.Add(1)
-			herdrFixtureSnapshot(c, "working", 2)
+			if !subscribed.Swap(false) {
+				herdrFixtureSnapshot(c, "idle", 1)
+			} else {
+				herdrFixtureSnapshot(c, "working", 2)
+			}
 		default:
 			t.Errorf("unexpected method %s", r.Method)
 		}
@@ -209,7 +210,7 @@ func TestHerdrRuntimeSubscribeBootstrapsAndReconnects(t *testing.T) {
 		}
 		cancel()
 	}
-	if snapshots.Load() != 2 {
+	if snapshots.Load() != 4 {
 		t.Fatalf("reconnect did not resnapshot: %d", snapshots.Load())
 	}
 }
@@ -223,11 +224,11 @@ func TestHerdrRuntimeBootstrapDiscardsStaleEventsAndAcceptsSameRevisionState(t *
 		case "events.subscribe":
 			herdrFixtureReply(c, map[string]any{"type": "subscription_started"})
 			enc := json.NewEncoder(c)
-			_ = enc.Encode(map[string]any{"event": "pane.updated", "data": map[string]any{"pane": herdrFixturePane("idle", 1)}})
-			_ = enc.Encode(map[string]any{"event": "pane.updated", "data": map[string]any{"pane": herdrFixturePane("blocked", 2)}})
+			_ = enc.Encode(map[string]any{"event": "pane_updated", "data": map[string]any{"pane": herdrFixturePane("idle", 1)}})
+			_ = enc.Encode(map[string]any{"event": "pane_updated", "data": map[string]any{"pane": herdrFixturePane("blocked", 2)}})
 			<-release
 		case "session.snapshot":
-			if snapshots.Add(1) == 1 {
+			if snapshots.Add(1) <= 2 {
 				herdrFixtureSnapshot(c, "working", 2)
 			} else {
 				herdrFixtureSnapshot(c, "blocked", 2)
@@ -302,7 +303,7 @@ func TestHerdrRuntimeSubscriptionDoesNotRelabelOldStream(t *testing.T) {
 		case "events.subscribe":
 			herdrFixtureReply(c, map[string]any{"type": "subscription_started"})
 			<-release
-			_ = json.NewEncoder(c).Encode(map[string]any{"event": "pane.updated", "data": map[string]any{"pane": herdrFixturePane("idle", 3)}})
+			_ = json.NewEncoder(c).Encode(map[string]any{"event": "pane_updated", "data": map[string]any{"pane": herdrFixturePane("idle", 3)}})
 		case "session.snapshot":
 			herdrFixtureSnapshot(c, "working", 2)
 		}

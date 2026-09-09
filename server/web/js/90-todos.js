@@ -448,6 +448,7 @@ function commitRank(draggedId, targetId) {
 function delegationChip(d, asSpan, taskId) {
   const chip = el(asSpan ? "span" : "button", "delegation-chip dstate-" + d.state, "⇢ " + d.harness + " · " + d.state);
   chip.style.cursor = "pointer";
+  if (typeof terminalRunBadge === "function") { const runtimeBadge = terminalRunBadge(d); if (runtimeBadge) chip.append(runtimeBadge); }
   const hasResult = !!(d.artifactRef || d.artifactPath || d.runId);
   const planState = (d.state || "").startsWith("plan");
   chip.title = d.state === "proposed" ? "a proposal is waiting in the FEED inbox"

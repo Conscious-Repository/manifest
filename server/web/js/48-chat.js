@@ -137,7 +137,7 @@ function showChat(h) {
     // the terminal registry feeds the CLAUDE CODE / CODEX section heads
     // whatever section is open, so it loads alongside the section's own list
     await Promise.all([loadChatSessions(), loadChatTermSessions(false)]);
-    ensureChatTermPoll();
+    ensureTerminalEvents();
     const list = chatCurrentSessions();
     if (restore) {
       const last = chatRecall("manifest.chatLast." + (chatAgent || "spirits"));
@@ -228,6 +228,8 @@ async function renderTaskChat(taskID, refetch) {
   const agent = taskChatAgent(d);
   head.append(el("span", "sprt-sub chat-head-sub", ["task conversation", agent ? chatAgentLabel(agent) : "unassigned"].join(" · ")));
   head.append(el("span", "sprt-head-meta chat-head-meta", taskID));
+  const runtimeBadge = terminalRunBadge(d.delegation);
+  if (runtimeBadge) head.append(runtimeBadge);
   const acts = el("span", "chat-head-acts");
   const back = el("button", "sprt-quiet", "open task ↗");
   back.title = "open this task in TASKS";
@@ -1398,17 +1400,10 @@ function ensureChatPoll(session, queued) {
 
 function loadChat() { showChat(location.hash); }
 
-// ---- CLAUDE CODE · CODEX sections (agent-chat plan §3, Stage S) ----
-// The terminal registry (GET /api/terminal/sessions — the same rows the
-// Terminal rail and Alfred's agent-sessions write) is the section list; the
-// CLI's own session file, projected by GET …/transcript, is the thread; the
-// tmux pane tail (GET …/screen) + quick keys answer prompts and menus without
-// xterm; the composer is POST …/input (send-keys; a dead session is relaunched
-// first). Manifest writes none of it but the registry — one writer per file.
-// No push channel: the rail polls the registry on the terminal's 5 s cadence
-// while the view is visible, the open thread tails transcript+screen at the
-// chat's 1.5 s while its tmux is live. Codex rows render kind-agnostic; their
-// rollout file is discovered once one exists (§7 Q8).
+// ---- CLAUDE CODE · CODEX sections ----
+// Operational associations supply conversation identity and cwd. CLI JSONL is
+// the transcript; the shared terminal SSE supplies advisory runtime state.
+// The 1.5 s file tail continues after process stop to ingest final records.
 
 const chatTermKinds = { claude: "claude code", codex: "codex" };
 function chatIsTerm(name) {
@@ -1420,7 +1415,13 @@ function chatTermBase(id) { return "/api/terminal/session/" + encodeURIComponent
 let chatTermSessions = [];   // last /api/terminal/sessions (every kind)
 let chatTermEnabled = true;  // the terminal feature is on for this server
 let chatTermPayload = "";    // change detection (the termLastPayload idiom)
-let chatTermPollTimer = null;
+// One browser stream serves Chat and task badges. Agent state is advisory;
+// transcript JSONL and board run reports retain their own rendering paths.
+let terminalEvents = null;
+let terminalEventsConnected = false;
+let terminalStates = new Map();
+let terminalRunStates = new Map();
+let terminalMetadataRefresh = null;
 let chatTermHistOpen = {};   // kind → the folded history is unfolded
 let chatTermSending = false; // one send in flight (a relaunch waits for the prompt)
 const chatTermRecent = 10;   // rows shown before "history" folds the rest (§7 Q2)
@@ -1445,12 +1446,13 @@ function chatTermOrder(list) {
 
 function chatTermFind(id) { return chatTermSessions.find((s) => s.id === id) || null; }
 
-// loadChatTermSessions — the registry poll. quiet=true (the 5 s tick) repaints
-// only when the payload changed and syncs the open thread's liveness.
+// Metadata loads on navigation, explicit actions, and new event associations.
+// Herdr observations always come from the shared event stream.
 async function loadChatTermSessions(quiet) {
+  ensureTerminalEvents();
   let d;
   try { d = await (await fetch("/api/terminal/sessions")).json(); } catch (e) { return false; }
-  chatTermSessions = d.sessions || [];
+  chatTermSessions = (d.sessions || []).map(chatTermApplyState);
   chatTermEnabled = d.enabled !== false;
   const payload = JSON.stringify(chatTermSessions) + "|" + chatTermEnabled;
   const changed = payload !== chatTermPayload;
@@ -1459,12 +1461,81 @@ async function loadChatTermSessions(quiet) {
   return changed;
 }
 
-function ensureChatTermPoll() {
-  if (chatTermPollTimer) return;
-  chatTermPollTimer = setInterval(() => {
-    if (!els.chatView || els.chatView.hidden || document.hidden) return;
-    loadChatTermSessions(true);
-  }, 5000);
+function ensureTerminalEvents() {
+  if (terminalEvents || typeof EventSource === "undefined") return;
+  const source = new EventSource("/api/terminal/events");
+  terminalEvents = source;
+  source.addEventListener("state", (event) => {
+    if (terminalEvents !== source) return;
+    let data;
+    try { data = JSON.parse(event.data); } catch (e) { terminalEventsUnavailable(); return; }
+    terminalEventsConnected = data.connected === true;
+    const next = new Map(), runs = new Map();
+    (data.sessions || []).forEach((ob) => {
+      if (!ob.manifestId) return;
+      if (!terminalEventsConnected) ob = Object.assign({}, ob, { agentState: "unknown", connectivity: "unavailable", process: "unknown" });
+      next.set(ob.manifestId, ob);
+      if (ob.runId) runs.set(ob.runId, ob);
+    });
+    terminalStates = next;
+    terminalRunStates = runs;
+    terminalStateRepaint();
+    // Events discover new associations; metadata supplies names/cwd only.
+    if (([...next.keys()].some((id) => !chatTermFind(id)) || chatTermSessions.some((se) => se.backend === "herdr" && !next.has(se.id))) && !terminalMetadataRefresh) {
+      terminalMetadataRefresh = loadChatTermSessions(true).finally(() => { terminalMetadataRefresh = null; });
+    }
+  });
+  source.onerror = () => { if (terminalEvents === source) terminalEventsUnavailable(); };
+}
+
+function terminalEventsUnavailable() {
+  terminalEventsConnected = false;
+  terminalStates = new Map([...terminalStates].map(([id, ob]) => [id, Object.assign({}, ob, { agentState: "unknown", connectivity: "unavailable", process: "unknown" })]));
+  terminalRunStates = new Map([...terminalRunStates].map(([id, ob]) => [id, Object.assign({}, ob, { agentState: "unknown", connectivity: "unavailable", process: "unknown" })]));
+  terminalStateRepaint();
+}
+
+function terminalStateLabel(ob) {
+  if (!ob || ob.connectivity !== "connected") return "unavailable";
+  if (ob.process === "stopped") return "stopped";
+  return ["working", "blocked", "idle", "done"].includes(ob.agentState) ? ob.agentState : "unknown";
+}
+function terminalStateDot(ob) {
+  const label = terminalStateLabel(ob);
+  const title = "agent " + label + (ob && ob.observedAt ? " · " + fmtWhen(ob.observedAt) : "");
+  const dot = statusDot(label === "working" || label === "blocked", title);
+  dot.classList.add("terminal-state-dot");
+  dot.dataset.agentState = label;
+  dot.setAttribute("aria-label", title);
+  return dot;
+}
+function chatTermApplyState(se) {
+  if (se.backend !== "herdr") return se;
+  const ob = terminalStates.get(se.id);
+  return Object.assign({}, se, {
+    live: !!(ob && ob.connectivity === "connected" && ob.process === "running"),
+    agentState: ob ? ob.agentState : "unknown", connectivity: ob ? ob.connectivity : "unavailable",
+    process: ob ? ob.process : "unknown", observedAt: ob ? ob.observedAt : "",
+  });
+}
+function terminalRunBadge(dg) {
+  if (!dg || !dg.runId || !["claude", "codex"].includes((dg.harness || "").replace(/^agent:/, ""))) return null;
+  ensureTerminalEvents();
+  const badge = el("span", "terminal-run-state");
+  badge.dataset.terminalRun = dg.runId;
+  terminalPaintRunBadge(badge);
+  return badge;
+}
+function terminalPaintRunBadge(badge) {
+  const ob = terminalRunStates.get(badge.dataset.terminalRun);
+  badge.replaceChildren(terminalStateDot(ob), el("span", "", "agent " + terminalStateLabel(ob)));
+  badge.title = "runtime observation; the run report determines task status";
+}
+function terminalStateRepaint() {
+  chatTermSessions = chatTermSessions.map(chatTermApplyState);
+  document.querySelectorAll("[data-terminal-run]").forEach(terminalPaintRunBadge);
+  renderChatRail();
+  chatTermSyncOpen();
 }
 
 // chatTermSection — one section head (name · ✦ while any tmux is live ·
@@ -1477,8 +1548,9 @@ function chatTermSection(kind) {
   head.append(el("span", "micro-label chat-rail-section-name", chatTermKinds[kind]));
   const list = chatTermOrder(chatTermList(kind));
   const live = list.filter((s) => s.live).length;
-  if (live) head.append(el("span", "chat-rail-live", "✦"));
-  head.append(statusDot(true, "tmux on metis"));
+  const working = list.find((se) => se.agentState === "working" && se.connectivity === "connected");
+  const blocked = list.find((se) => se.agentState === "blocked" && se.connectivity === "connected");
+  head.append(terminalStateDot(working || blocked || list.find((se) => se.connectivity === "connected")));
   if (list.length) head.append(el("span", "aion-org-count", String(list.length)));
   head.title = kind === "claude" ? "Claude Code sessions — the Terminal tab's rows, read as conversations" : "Codex sessions";
   if (list.length) head.title += " · " + live + " live · " + (list.length - live) + " resumable";
@@ -1521,14 +1593,16 @@ function chatTermRow(se) {
   title.title = (se.cwd || "~") + " · double-click to rename";
   title.ondblclick = (e) => { e.stopPropagation(); chatTermRename(title, se); };
   top.append(title);
-  if (se.live) top.append(el("span", "chat-rail-live", "✦"));
-  else if (se.resumeId || se.started) { const r = el("span", "chat-rail-resume", "⟳"); r.title = "resumable — a send relaunches it"; top.append(r); }
+  top.append(terminalStateDot(se));
+  if (!se.live && (se.backend !== "herdr" || se.process === "stopped") && (se.resumeId || se.started)) { const r = el("span", "chat-rail-resume", "⟳"); r.title = "resumable — a send relaunches it"; top.append(r); }
   const pen = el("button", "chat-rail-x", "✎");
   pen.title = "rename";
   pen.onclick = (e) => { e.stopPropagation(); chatTermRename(title, se); };
-  const x = armedDelete("✕", se.live ? "end — sure?" : "forget — sure?", () => chatTermEnd(se));
+  const kill = chatTermEndIsKill(se);
+  const x = armedDelete("✕", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se));
   x.className = "chat-rail-x";
-  x.title = se.live ? "end the session (kills the tmux) — it stays here, resumable" : "forget this session (leaves nothing running)";
+  x.title = kill ? "end the process and keep the conversation" : "forget this conversation association";
+  if (se.boardBrief && !kill) { x.disabled = true; x.title = "work-order history stays linked to its task"; }
   top.append(pen, x);
   row.append(top);
   const rm = el("div", "chat-rail-meta");
@@ -1565,14 +1639,16 @@ function chatTermRename(nameEl, se) {
 
 // chatTermEnd — live: POST …/kill (the row survives, resumable); history:
 // DELETE (forget). Both reached through an armed ✕.
+function chatTermEndIsKill(se) { return se.backend === "herdr" ? se.process !== "stopped" : !!se.live; }
 async function chatTermEnd(se) {
+  const kill = chatTermEndIsKill(se);
   try {
-    const res = se.live
+    const res = kill
       ? await fetch(chatTermBase(se.id) + "/kill", { method: "POST" })
       : await fetch(chatTermBase(se.id), { method: "DELETE" });
     if (!res.ok) throw new Error((await res.text()).slice(0, 120));
-  } catch (e) { showToast((se.live ? "end" : "forget") + " failed — " + (e.message || "error")); renderChatRail(); return; }
-  if (!se.live && chatOpenId === se.id) {
+  } catch (e) { showToast((kill ? "end" : "forget") + " failed — " + (e.message || "error")); renderChatRail(); return; }
+  if (!kill && chatOpenId === se.id) {
     chatOpenId = "";
     chatRemember(chatAgent, "");
     location.hash = chatSectionHash(chatAgent);
@@ -1593,7 +1669,7 @@ function chatTermOpenInTerminal(se) {
 // ---- the open thread ----
 
 async function loadChatTermSession(id) {
-  const se = chatTermFind(id);
+  let se = chatTermFind(id);
   if (!se) { chatOpenId = ""; chatLanding = true; renderChatLanding(); return; }
   let d;
   try {
@@ -1602,6 +1678,7 @@ async function loadChatTermSession(id) {
     d = await res.json();
   } catch (e) { return; }
   if (id !== chatOpenId || !chatIsTerm()) return; // navigated away mid-fetch
+  se = chatTermApplyState(chatTermFind(id) || se);
   // the other backends' channels have nothing to say here
   if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
   if (chatES) { chatES.close(); chatES = null; chatESFor = ""; }
@@ -1612,7 +1689,7 @@ async function loadChatTermSession(id) {
   chatRemember(chatAgent, id);
   chatTermOpen = {
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
-    live: !!d.live, screen: [], screenSig: "",
+    live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
   };
   renderChatTermTranscript();
   renderChatComposer(chatTermComposerSession());
@@ -1643,13 +1720,14 @@ function chatTermComposerSession() {
 
 // the prompt line's hint reads like a shell's, lowercase
 function chatTermPlaceholder() {
-  if (chatTermSending) return "✦ sending" + (chatTermOpen && !chatTermOpen.live ? " — relaunching the session first…" : "…");
+  if (chatTermSending) return "sending…";
   if (!chatOpenId) return "enter starts a new " + chatTermKinds[chatAgent] + " session there and sends";
+  if (chatTermOpen && chatTermOpen.se.backend === "herdr" && chatTermOpen.se.connectivity !== "connected") return "runtime unavailable · open in terminal to inspect";
   if (chatTermOpen && chatTermOpen.live) return "enter sends to the live session · shift+enter for a new line";
   return "enter resumes the session, then sends";
 }
 
-// chatTermSyncOpen — after a registry poll: the open row's liveness/name may
+// chatTermSyncOpen — after metadata loads or an event: the open row's liveness/name may
 // have moved under us (ended in the Terminal tab, relaunched by Alfred, …).
 function chatTermSyncOpen() {
   const o = chatTermOpen;
@@ -1661,7 +1739,7 @@ function chatTermSyncOpen() {
     location.hash = chatSectionHash(chatAgent);
     return;
   }
-  const wasLive = o.live;
+  const wasLive = o.live, wasProcess = o.se.process;
   o.se = se;
   o.live = !!se.live;
   chatTermRepaintHead();
@@ -1669,7 +1747,8 @@ function chatTermSyncOpen() {
   if (o.live !== wasLive) {
     chatTermPaintStrip();
     if (o.live) chatTermScreenFetch();
-  }
+    else chatTermRequestFinalTail(o);
+  } else if (se.process === "stopped" && wasProcess !== "stopped") chatTermRequestFinalTail(o);
 }
 
 // chatTermHead — the .sprt-head anatomy: name (inline rename) · kind · folder
@@ -1683,7 +1762,8 @@ function chatTermHead(o) {
   title.ondblclick = () => chatTermRename(title, se);
   head.append(title);
   const sub = [chatTermKinds[se.kind], se.cwd || "~"];
-  sub.push(o.live ? "✦ live" : (se.resumeId || se.started ? "resumable" : "not started"));
+  sub.push(se.backend === "herdr" ? "agent " + terminalStateLabel(se) : (o.live ? "process running" : (se.resumeId || se.started ? "resumable" : "not started")));
+  head.append(terminalStateDot(se));
   head.append(el("span", "sprt-sub chat-head-sub", sub.join(" · ")));
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
@@ -1697,7 +1777,8 @@ function chatTermHead(o) {
   raw.title = "the raw pane (xterm) in the Terminal tab";
   raw.onclick = () => chatTermOpenInTerminal(se);
   acts.append(raw);
-  acts.append(armedDelete(o.live ? "✕ end" : "forget", o.live ? "end — sure?" : "forget — sure?", () => chatTermEnd(Object.assign({}, se, { live: o.live }))));
+  const kill = chatTermEndIsKill(se);
+  if (!se.boardBrief || kill) acts.append(armedDelete(kill ? "✕ end" : "forget", kill ? "end — sure?" : "forget — sure?", () => chatTermEnd(se)));
   head.append(acts);
   return head;
 }
@@ -1875,7 +1956,7 @@ async function chatTermScreenFetch() {
   try { d = await (await fetch(chatTermBase(o.id) + "/screen")).json(); } catch (e) { return; }
   if (chatTermOpen !== o || seq !== o.screenSeq) return;
   const sig = JSON.stringify(d.lines || []);
-  const flipped = !!d.live !== o.live;
+  const flipped = o.se.backend !== "herdr" && !!d.live !== o.live;
   if (sig === o.screenSig && !flipped) return;
   o.screen = d.lines || [];
   o.screenSig = sig;
@@ -1918,9 +1999,24 @@ let chatTermTailing = false;
 async function chatTermTick() {
   const o = chatTermOpen;
   if (!o || !chatIsTerm() || chatOpenId !== o.id) { chatTermLeave(); return; }
-  if (!els.chatView || els.chatView.hidden || document.hidden || !o.live || chatTermTailing) return; // the 5 s registry poll flips live back on
+  if (!els.chatView || els.chatView.hidden || document.hidden || chatTermTailing) return; // file reconciliation also reads the final records after stop
   chatTermTailing = true;
-  try { await chatTermTail(o); } finally { chatTermTailing = false; }
+  try { await chatTermTail(o); } finally {
+    chatTermTailing = false;
+    if (o.finalTailPending) { o.finalTailPending = false; chatTermRequestFinalTail(o); }
+  }
+}
+
+// Serialize the stop-triggered final read with any in-flight file tail. A stop
+// during an older read cannot hide the final records behind a live-only gate.
+async function chatTermRequestFinalTail(o) {
+  if (chatTermOpen !== o) return;
+  if (chatTermTailing) { o.finalTailPending = true; return; }
+  chatTermTailing = true;
+  try { await chatTermTail(o); } finally {
+    chatTermTailing = false;
+    if (o.finalTailPending) { o.finalTailPending = false; chatTermRequestFinalTail(o); }
+  }
 }
 
 async function chatTermTail(o) {
@@ -1942,7 +2038,7 @@ async function chatTermTail(o) {
   let headDirty = false;
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
-  if (!!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
+  if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
   if (headDirty) chatTermRepaintHead();
   if (o.live) chatTermScreenFetch();
 }
@@ -2003,7 +2099,7 @@ async function chatTermSend(text) {
     if (r.relaunched && !created) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
     if (chatTermOpen && chatTermOpen.id === id) {
-      if (!chatTermOpen.live) { chatTermOpen.live = true; chatTermRepaintHead(); }
+      if (chatTermOpen.se.backend !== "herdr" && !chatTermOpen.live) { chatTermOpen.live = true; chatTermRepaintHead(); }
       chatTermScreenFetch();
     }
     return true;
