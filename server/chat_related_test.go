@@ -4,9 +4,60 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestTerminalRelatedChatPreservesNativeSessionAndUnsentHandoff(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	dir := t.TempDir()
+	s.UseTerminal(filepath.Join(dir, "terminals.json"), filepath.Join(dir, "tmux"), dir)
+	se := termSession{ID: "abcdef123456", Kind: "codex", Name: "Coding source", Cwd: dir}
+	s.terminal.upsert(se)
+	if _, ok := s.terminal.find(se.ID); !ok {
+		t.Fatal("fixture session unavailable")
+	}
+	endpoint := "/api/terminal/codex/session/" + se.ID + "/related"
+	payload := map[string]any{"agent": "alfred", "title": "Research alongside coding", "prompt": "Reviewed excerpt only", "requestId": "terminal-related-001"}
+	code, out := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 {
+		t.Fatal(code, out)
+	}
+	id := out["id"].(string)
+	child, body, q, ok := st.Get("alfred", id)
+	if !ok || body != "" || len(q) != 0 || child.Turns != 0 || child.Status != "idle" || child.Origin.Backend != "terminal" || child.Origin.ID != se.ID {
+		t.Fatal(child, body)
+	}
+	if got := s.relatedChats(child); len(got) != 1 || got[0].Route != "#/chat/a/codex/"+se.ID {
+		t.Fatal(got)
+	}
+	if got := s.terminalRelatedChats(se); len(got) != 1 || got[0].ID != id {
+		t.Fatal(got)
+	}
+	if current, _ := s.terminal.find(se.ID); current.Started {
+		t.Fatal("handoff started source runtime")
+	}
+	// A lost creation reply remains recoverable even after the source is gone.
+	s.terminal.remove(se.ID)
+	code, retry := agentChatJSON(t, s, "POST", endpoint, payload)
+	if code != 200 || retry["id"] != id {
+		t.Fatal(code, retry)
+	}
+	payload["prompt"] = "changed"
+	if code, _ = agentChatJSON(t, s, "POST", endpoint, payload); code != 409 {
+		t.Fatal(code)
+	}
+	payload["requestId"] = "terminal-related-002"
+	if code, _ = agentChatJSON(t, s, "POST", endpoint, payload); code != 404 {
+		t.Fatal(code)
+	}
+	s.terminal.upsert(se)
+	payload["task"] = "inbox/unrelated"
+	if code, _ = agentChatJSON(t, s, "POST", endpoint, payload); code != 400 {
+		t.Fatal("unverified task allowed", code)
+	}
+}
 
 func TestRelatedChatCreatesUnsentDraftAndBidirectionalLinks(t *testing.T) {
 	s, st, _ := agentChatFixture(t, echoStub)

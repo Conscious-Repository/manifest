@@ -2099,6 +2099,7 @@ async function loadChatTermSession(id) {
   chatRemember(chatAgent, id);
   chatTermOpen = {
     conversation:d.conversation,
+    related:d.related||[],
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
   };
@@ -2190,6 +2191,13 @@ function chatTermHead(o) {
     head.append(task);
   }
   for(const warning of o.conversation?.warnings||[])details.append(el("div","chat-head-meta",warning));
+  if(chatRoster.some(a=>a.enabled&&a.durableSend)) {
+    const related=el("button","sprt-quiet","Start related chat");
+    related.onclick=()=>chatStartRelated({backend:"terminal",agent:se.kind,id:se.id,title:se.name||se.kind,task:taskLinks.length===1?taskLinks[0].id:"",
+      handoffExcerpt:o.turns.slice(-2).map(t=>t.who+":\n"+(t.text||(t.blocks||[]).filter(b=>b.t==="say").map(b=>b.text||"").join("\n")).slice(0,2000)).join("\n\n")});
+    details.append(related);
+  }
+  for(const item of o.related||[]) {const link=el("a","sprt-quiet","Related: "+item.title);link.href=item.route;details.append(link);}
   const acts = el("span", "chat-head-acts");
   const ren = el("button", "sprt-quiet", "✎");
   ren.title = "rename";
@@ -2770,15 +2778,16 @@ function chatRenderDeliveryNotice(host,scope){
 
 function chatStartRelated(source,targetAgent){
   const originAgent=source.agent,originID=source.id;
-  const storageKey="manifest.relatedDraft.v1."+originAgent+"/"+originID;
+  const storageKey="manifest.relatedDraft.v1."+(source.backend?source.backend+"/":"")+originAgent+"/"+originID;
   let remembered=null;try{remembered=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
   const selected=chatArtifactSelections.get("chat:"+originAgent+"/"+originID);
-  const excerpt=parseChatTurns(source.handoffBody||"").slice(-2).map(t=>t.who+":\n"+t.text.slice(0,2000)+(t.text.length>2000?"\n[excerpt shortened]":"")).join("\n\n");
+  const excerpt=source.handoffExcerpt??parseChatTurns(source.handoffBody||"").slice(-2).map(t=>t.who+":\n"+t.text.slice(0,2000)+(t.text.length>2000?"\n[excerpt shortened]":"")).join("\n\n");
   reviewDialog("Start related chat",({body,actions,close})=>{
     const agents=chatRoster.filter(a=>a.enabled&&a.durableSend);
     const pick=document.createElement("select");pick.className="pp-in";
     agents.forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label;pick.append(o);});
-    pick.value=remembered?.agent||targetAgent||originAgent;pick.setAttribute("aria-label","Agent for related chat");
+    const desired=remembered?.agent||targetAgent||originAgent;
+    pick.value=agents.some(a=>a.name===desired)?desired:agents[0]?.name||"";pick.setAttribute("aria-label","Agent for related chat");
     const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||("Related: "+source.title).slice(0,240);title.setAttribute("aria-label","Related chat title");
     const prompt=document.createElement("textarea");prompt.className="pp-in";prompt.setAttribute("aria-label","Handoff draft");
     prompt.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
@@ -2795,7 +2804,8 @@ function chatStartRelated(source,targetAgent){
       remembered={...payload,signature,requestId};
       try{
         localStorage.setItem(storageKey,JSON.stringify(remembered));create.disabled=true;
-        const result=await postJSONOk(chatBaseFor(originAgent)+"/"+encodeURIComponent(originID)+"/related",{...payload,requestId});
+        const endpoint=source.backend==="terminal"?"/api/terminal/"+encodeURIComponent(originAgent)+"/session/"+encodeURIComponent(originID)+"/related":chatBaseFor(originAgent)+"/"+encodeURIComponent(originID)+"/related";
+        const result=await postJSONOk(endpoint,{...payload,requestId});
         if(!result.id)throw new Error("Creation was not confirmed. Retry to check the same request.");
         localStorage.removeItem(storageKey);close();
         location.hash="#/chat/a/"+encodeURIComponent(result.agent)+"/"+encodeURIComponent(result.id);

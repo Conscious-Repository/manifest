@@ -53,6 +53,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
 		"conversation": s.terminalConversation(se),
+		"related":      s.terminalRelatedChats(se),
 		"live":         live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
 }

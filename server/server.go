@@ -598,6 +598,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agents/chat/{agent}/delivery", s.handleAgentChatDelivery)
 	mux.HandleFunc("GET /api/agents/chat/{agent}/sessions/{id}", s.portalChatRoute(s.handlePortalChatSession, s.handleAgentChatSession))
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/related", s.handleChatRelated)
+	mux.HandleFunc("POST /api/terminal/{agent}/session/{id}/related", s.handleTerminalChatRelated)
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/coding-result", s.handleChatCodingResult)
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/messages", s.portalChatRoute(s.handlePortalChatMessage, s.handleAgentChatMessage))
 	mux.HandleFunc("POST /api/agents/chat/{agent}/sessions/{id}/rename", s.portalChatRoute(s.handlePortalChatRename, s.handleAgentChatRename))

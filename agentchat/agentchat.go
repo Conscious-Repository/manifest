@@ -65,11 +65,27 @@ func ValidID(id string) bool { return idRe.MatchString(id) }
 // Session is a parsed session frontmatter row (the JSON shape mirrors
 // spirits.ChatSessionSummary so the rail/transcript code needs no branches).
 type Origin struct {
+	Backend   string              `json:"backend,omitempty"`
 	Agent     string              `json:"agent"`
 	ID        string              `json:"id"`
 	Task      string              `json:"task,omitempty"`
 	Prompt    string              `json:"prompt,omitempty"`
 	Artifacts []ArtifactReference `json:"artifacts,omitempty"`
+}
+
+func validOrigin(o Origin) bool {
+	if o.Backend == "" {
+		return ValidAgent(o.Agent) && ValidID(o.ID)
+	}
+	if o.Backend != "terminal" || (o.Agent != "claude" && o.Agent != "codex") || len(o.ID) < 8 || len(o.ID) > 32 {
+		return false
+	}
+	for _, c := range o.ID {
+		if !strings.ContainsRune("0123456789abcdef", c) {
+			return false
+		}
+	}
+	return true
 }
 
 func originJSON(o *Origin) string {

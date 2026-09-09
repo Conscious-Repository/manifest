@@ -236,7 +236,7 @@ func (s *Store) CreateOnce(agent, profile, title, model, requestID string) (stri
 	return s.createOnce(agent, profile, title, model, requestID, nil)
 }
 func (s *Store) CreateRelatedOnce(agent, profile, title, model, requestID string, origin Origin) (string, error) {
-	if requestID == "" || !ValidAgent(origin.Agent) || !ValidID(origin.ID) {
+	if requestID == "" || !validOrigin(origin) {
 		return "", errors.New("invalid related conversation")
 	}
 	return s.createOnce(agent, profile, title, model, requestID, &origin)
@@ -245,7 +245,7 @@ func (s *Store) CreateRelatedOnce(agent, profile, title, model, requestID string
 // RecoverRelatedCreation checks accepted intent without consulting today's
 // source links or runner configuration. It never creates or dispatches work.
 func (s *Store) RecoverRelatedCreation(agent, title, model, requestID string, origin Origin) (Session, bool, error) {
-	if !ValidAgent(agent) || !ValidRequestID(requestID) || !ValidAgent(origin.Agent) || !ValidID(origin.ID) {
+	if !ValidAgent(agent) || !ValidRequestID(requestID) || !validOrigin(origin) {
 		return Session{}, false, errors.New("invalid related conversation request")
 	}
 	s.createMu.Lock()
