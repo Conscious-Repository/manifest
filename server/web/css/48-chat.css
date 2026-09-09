@@ -9,8 +9,8 @@
 .chat-rail { width: var(--rail-w); flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); padding-right: var(--sp-7); }
 .chat-new { width: 100%; height: auto; padding: var(--sp-4) 0; border-radius: var(--radius-lg); margin-bottom: var(--sp-6); flex: none; }
 .chat-spirit-pick { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-5); }
-/* session rows — soft filled cards, no hairlines (terminal .term-sess idiom) */
-.chat-rail-row { padding: var(--sp-5) var(--sp-6); border-radius: var(--radius-lg); cursor: pointer; background: var(--base-05); }
+/* Quiet, separated conversation rows, matching the app lists. */
+.chat-rail-row { padding: var(--sp-5) var(--sp-6); border-radius: 0; border-bottom: 1px solid var(--line); cursor: pointer; background: transparent; }
 .chat-rail-row + .chat-rail-row { margin-top: var(--sp-3); }
 .chat-rail-row:hover { background: var(--base-10); }
 .chat-rail-row.open { background: var(--base-10); box-shadow: inset 2px 0 0 var(--accent); }
@@ -299,3 +299,15 @@
 .terminal-state-dot[data-agent-state="unavailable"], .terminal-state-dot[data-agent-state="unknown"] { background: var(--icon); }
 
 .delegation-runtime { display: inline-flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* Clear navigation and readable secondary copy in either theme. */
+.chat-rail-section-head { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; font: inherit; color: inherit; }
+.chat-rail-row:focus-visible, .chat-rail-section-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chat-rail-row:focus-within .chat-rail-x { opacity: 1; }
+.chat-rail-meta, .chat-landing-desc, .chat-landing-hint { color: var(--base-60); }
+.chat-landing-hint { font-size: var(--fs-sm); }
+.chat-head-acts { flex-wrap: wrap; }
+.chat-turn { overflow-wrap: anywhere; }
+.chat-transcript { min-height: 0; overscroll-behavior: contain; }
+.chat-composer .chat-input::placeholder { color: var(--base-60); }
+@media (hover: none) { .chat-rail-x { opacity: 1; min-width: 32px; min-height: 32px; } }

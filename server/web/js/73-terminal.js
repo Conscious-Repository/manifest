@@ -15,9 +15,9 @@ let termListenersReady = false;
 try { termKeepPref = localStorage.getItem("manifest.termKeep") !== "0"; } catch (e) {}
 
 const TERM_STAGES = [
-  { stage: "term", glyph: "❯", label: "term" },
+  { stage: "term", glyph: "❯", label: "terminal" },
   { stage: "files", glyph: "▤", label: "files" },
-  { stage: "activity", glyph: "∿", label: "stats" },
+  { stage: "activity", glyph: "∿", label: "activity" },
 ];
 function showTerminal() {
   try { termStage = localStorage.getItem("manifest.termStage") || termStage; } catch (e) {}
@@ -112,6 +112,13 @@ function termSessionRow(se) {
   const end = armedDelete("✕", "end — sure?", () => termKill(se));
   end.className = "term-x"; end.title = "end this process"; row.append(end);
   row.onclick = () => { termOpenId = se.id; termSetStage("term"); renderTermSessions(true); attachTerm(se.id); };
+  if (row.onclick) {
+    row.tabIndex = 0;
+    row.setAttribute("role", "link");
+    row.addEventListener("keydown", event => {
+      if (event.target === row && event.key === "Enter") { event.preventDefault(); row.click(); }
+    });
+  }
   return row;
 }
 function termRuntimeKey(se) {
@@ -145,7 +152,7 @@ function renderTermLauncher(enabled) {
   host.append(seg);
   const cwd = document.createElement("input");
   cwd.id = "termCwdInput"; cwd.className = "term-cwd"; cwd.spellcheck = false;
-  cwd.placeholder = "cwd · home by default"; cwd.value = termLaunch.cwd;
+  cwd.placeholder = "Working folder · home by default"; cwd.value = termLaunch.cwd;
   cwd.setAttribute("aria-label", "working directory");
   cwd.oninput = () => { termLaunch.cwd = cwd.value.trim(); };
   cwd.onkeydown = (event) => { if (event.key === "Enter") { event.preventDefault(); termCreate(termLaunch.kind); } };
@@ -176,7 +183,7 @@ function termSelectedDevice() {
 function renderTermDevices() {
   const select = document.getElementById("termDeviceSelect"); if (!select) return;
   select.replaceChildren();
-  const devices = termDevices.length ? termDevices : [{ name: "local", self: true }];
+  const devices = termDevices.length ? termDevices : [{ name: "This server", self: true }];
   devices.forEach((d) => {
     const option = el("option", "", d.name + (d.self ? " · local" : d.status !== "ok" ? " · " + d.status : ""));
     option.value = d.self ? "" : d.name; select.append(option);
@@ -195,11 +202,16 @@ function termSyncLauncher() {
   }
   const open = document.getElementById("termOpenButton");
   if (open) {
-    open.disabled = remote ? selected.status !== "ok" : termConnectivity !== "connected";
+    open.disabled = termCreating || (remote ? selected.status !== "ok" : termConnectivity !== "connected");
+    open.textContent = termCreating ? "Opening…" : "Open terminal";
     open.title = open.disabled ? "host unavailable" : "open a new process";
   }
 }
+let termCreating = false;
 async function termCreate(kind) {
+  if (termCreating) return;
+  termCreating = true;
+  termSyncLauncher();
   try {
     const selected = termSelectedDevice();
     const body = { kind, cwd: termLaunch.cwd, device: termLaunch.device };
@@ -207,12 +219,13 @@ async function termCreate(kind) {
     const session = await postJSONOk("/api/terminal/session", body);
     termOpenId = session.id; termSetStage("term"); await loadTermSessions();
   } catch (e) { showToast("open failed — " + (e.message || "error")); }
+  finally { termCreating = false; termSyncLauncher(); }
 }
 function renderTermEmpty(message) {
   const host = document.getElementById("termScreen"); if (!host || termInst) return;
   host.replaceChildren();
   const blank = el("div", "term-blank");
-  blank.append(el("div", "term-blank-line", message || "open a process or attach to a live pane")); host.append(blank);
+  blank.append(el("div", "term-blank-line", message || "Open a terminal or select a running session")); host.append(blank);
 }
 
 // --- the PTY attach (unchanged core) ---
@@ -293,9 +306,10 @@ function attachTerm(id) {
     // A browser socket closing says nothing about the process. Reattach only
     // after fresh live inventory proves the exact same pane still exists.
     setTimeout(async () => {
+      if (els.terminalView.hidden || termStage !== "term" || !termInst || termInst.ws !== ws) return;
       await loadTermSessions(true);
       const current = termSessions.find((se) => se.id === id && se.live);
-      if (termOpenId === id && termInst && termInst.ws === ws && current && termRuntimeKey(current) === runtimeKey) attachTerm(id);
+      if (!els.terminalView.hidden && termStage === "term" && termOpenId === id && termInst && termInst.ws === ws && current && termRuntimeKey(current) === runtimeKey) attachTerm(id);
     }, 1200);
   };
   term.onData((d) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: "i", d })); });

@@ -23,6 +23,8 @@ let chatSessions = [];      // last /api/chat/sessions fetch (spirits)
 let chatOpenId = "";        // the open session id ("" = none)
 let chatSpiritsCache = null;
 let chatPollTimer = null;
+let chatRouteVersion = 0;
+let chatSending = false;
 let chatLastUpdated = "";   // change-detection for transcript re-render
 
 let chatLanding = false;            // ＋new → lazy landing (session created on first send)
@@ -88,6 +90,8 @@ function chatRouteSegments(h) {
 }
 
 function showChat(h) {
+  const routeVersion = ++chatRouteVersion;
+  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = null; }
   const seg = chatRouteSegments(h);
   const head = seg[0] || "";
   const rest = seg.slice(1).join("/"); // one id, whether it was encoded or raw
@@ -125,6 +129,7 @@ function showChat(h) {
   else { restore = true; chatOpenId = ""; chatLanding = false; }
   renderChatHeadActions();
   loadChatRoster().then(async () => {
+    if (routeVersion !== chatRouteVersion || els.chatView.hidden) return;
     if (restore) {
       // bare #/chat → the remembered section, else ALFRED when it can take a
       // turn, else spirits (the pre-Phase-1 behaviour)
@@ -137,6 +142,7 @@ function showChat(h) {
     // the terminal registry feeds the CLAUDE CODE / CODEX section heads
     // whatever section is open, so it loads alongside the section's own list
     await Promise.all([loadChatSessions(), loadChatTermSessions(false)]);
+    if (routeVersion !== chatRouteVersion || els.chatView.hidden) return;
     ensureTerminalEvents();
     const list = chatCurrentSessions();
     if (restore) {
@@ -350,15 +356,7 @@ function renderChatHeadActions() {
   add.title = "new conversation in the open section";
   add.onclick = () => { location.hash = chatNewHash(); };
   host.append(add);
-  if (typeof micButton === "function") {
-    host.append(micButton((text) => {
-      const ta = document.querySelector("#chatComposer textarea");
-      if (!ta) return;
-      ta.value = (ta.value ? ta.value.replace(/\s*$/, " ") : "") + text;
-      ta.dispatchEvent(new Event("input"));
-      ta.focus();
-    }));
-  }
+
 }
 
 // ---- rail: agent sections ----
@@ -397,7 +395,8 @@ function shortModel(m) { return (m || "").replace(/^claude-/, ""); }
 function chatRailSection(agent, label, info) {
   const open = agent === chatAgent;
   const sec = el("div", "chat-rail-section" + (open ? " open" : ""));
-  const head = el("div", "chat-rail-section-head");
+  const head = el("button", "chat-rail-section-head");
+  head.setAttribute("aria-expanded", String(open));
   head.append(el("span", "micro-label chat-rail-section-name", label));
   const sessions = agent ? (chatAgentSessions[agent] || []) : chatSessions;
   // ✦ = a turn is running here (a thread thinking, or a portal order out)
@@ -454,6 +453,13 @@ function chatRailRow(s, agent) {
   rm.append(el("span", "chat-rail-when", fmtWhen(s.updated || s.created)));
   row.append(rm);
   row.onclick = () => { location.hash = chatHash(s.id); };
+  if (row.onclick) {
+    row.tabIndex = 0;
+    row.setAttribute("role", "link");
+    row.addEventListener("keydown", event => {
+      if (event.target === row && event.key === "Enter") { event.preventDefault(); row.click(); }
+    });
+  }
   return row;
 }
 
@@ -1220,7 +1226,7 @@ function renderChatComposer(session) {
   // the button says so instead (the placeholder already says why)
   // a claude/codex send may relaunch the tmux and wait for its prompt (~10 s):
   // one in flight at a time
-  const busy = !!(session && session.busy) || (chatIsTerm() && chatTermSending);
+  const busy = chatSending || !!(session && session.busy) || (chatIsTerm() && chatTermSending);
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
@@ -1234,6 +1240,7 @@ function renderChatComposer(session) {
   ta.className = "chat-input";
   ta.rows = 1;
   ta.placeholder = placeholder();
+  ta.setAttribute("aria-label", "Message");
   // auto-grow with content (target feel): reset then snap to scrollHeight,
   // clamped so a long paste scrolls inside instead of shoving the transcript.
   const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, window.innerHeight * 0.4) + "px"; };
@@ -1314,7 +1321,9 @@ function renderChatComposer(session) {
     const text = ta.value.trim();
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
-    if (send.disabled) return;
+    if (send.disabled || chatSending) return;
+    chatSending = true;
+    send.disabled = true;
     ta.value = "";
     grow();
     mention.hidden = true;
@@ -1324,7 +1333,8 @@ function renderChatComposer(session) {
     if (chatIsTerm()) {
       // claude/codex: tmux send-keys (relaunching a dead session first); a
       // landing send creates the registry row, then delivers
-      if (!await chatTermSend(text)) { ta.value = text; grow(); }
+      try { if (!await chatTermSend(text)) { ta.value = text; grow(); } }
+      finally { chatSending = false; renderChatComposer(chatCurSession); }
       return;
     }
     try {
@@ -1350,8 +1360,10 @@ function renderChatComposer(session) {
       loadChatSession(chatOpenId);
       loadChatSessions().then(renderChatRail);
     } catch (e) { showToast("Send failed — " + (e.message || "error")); ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
+    finally { chatSending = false; renderChatComposer(chatCurSession); }
   };
   ta.addEventListener("keydown", (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
     if (!mention.hidden && (e.key === "Escape")) { e.preventDefault(); mention.hidden = true; return; }
     if (!mention.hidden && (e.key === "Tab" || e.key === "Enter")) {
       const first = mention.querySelector(".chat-mention-tok");
@@ -1380,12 +1392,14 @@ function ensureChatPoll(session, queued) {
     if (els.chatView.hidden || !chatOpenId) {
       clearInterval(chatPollTimer); chatPollTimer = null; return;
     }
+    const id = chatOpenId, base = chatBase(), routeVersion = chatRouteVersion;
     let d;
     try {
-      const res = await fetch(chatBase() + "/" + encodeURIComponent(chatOpenId));
+      const res = await fetch(base + "/" + encodeURIComponent(id));
       if (!res.ok) return;
       d = await res.json();
     } catch (e) { return; }
+    if (routeVersion !== chatRouteVersion || id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
     const sig = chatTranscriptSignature(d);
     if (sig !== chatLastUpdated) {
       renderChatTranscript(d);
@@ -1550,7 +1564,8 @@ function terminalStateRepaint() {
 function chatTermSection(kind) {
   const open = kind === chatAgent;
   const sec = el("div", "chat-rail-section" + (open ? " open" : ""));
-  const head = el("div", "chat-rail-section-head");
+  const head = el("button", "chat-rail-section-head");
+  head.setAttribute("aria-expanded", String(open));
   head.append(el("span", "micro-label chat-rail-section-name", chatTermKinds[kind]));
   const list = chatTermOrder(chatTermList(kind));
   const live = list.filter((s) => s.live).length;
@@ -1616,6 +1631,13 @@ function chatTermRow(se) {
   rm.append(el("span", "chat-rail-when", fmtWhen(se.lastUsed)));
   row.append(rm);
   row.onclick = () => { location.hash = chatHash(se.id); };
+  if (row.onclick) {
+    row.tabIndex = 0;
+    row.setAttribute("role", "link");
+    row.addEventListener("keydown", event => {
+      if (event.target === row && event.key === "Enter") { event.preventDefault(); row.click(); }
+    });
+  }
   return row;
 }
 

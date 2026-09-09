@@ -32,7 +32,10 @@
     setOpen(false);
     toggle.onclick = () => setOpen(!chatShell.classList.contains("mf-chat-nav-open"));
     chatShell.prepend(toggle);
-    window.addEventListener("hashchange", () => { if (mqPhone.matches) setOpen(false); });
+    window.addEventListener("hashchange", () => {
+      const section = /^#\/chat\/a\/[^/]+$/.test(location.hash) || location.hash === "#/chat/spirits";
+      if (mqPhone.matches && !section) setOpen(false);
+    });
     chatRail.addEventListener("click", (event) => {
       if (mqPhone.matches && event.target.closest(".chat-rail-row, .chat-rail-task, .chat-rail-new")) setOpen(false);
     });
