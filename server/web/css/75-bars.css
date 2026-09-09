@@ -9,8 +9,8 @@
 /* ===== quick-lookup command bar (⌘K) ===== */
 .cmdbar { position: fixed; inset: 0; z-index: 200; display: flex; align-items: flex-start; justify-content: center; }
 .cmdbar-backdrop { position: absolute; inset: 0; background: var(--scrim); }
-.cmdbar-card { position: relative; margin-top: 12vh; width: 560px; max-width: 92vw; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); overflow: hidden; }
-.cmdbar-input { background: var(--bg); width: 100%; border: none; border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: var(--fs-xl); padding: var(--sp-7) 48px var(--sp-7) var(--sp-7); outline: none; color: var(--text); box-sizing: border-box; }
+.cmdbar-card { position: relative; margin-top: 12vh; width: 560px; max-width: 92vw; background: var(--surface-overlay); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); overflow: hidden; }
+.cmdbar-input { background: var(--surface-field); width: 100%; border: none; border-bottom: 1px solid var(--line); font-family: var(--sans); font-size: var(--fs-xl); padding: var(--sp-7) 48px var(--sp-7) var(--sp-7); outline: none; color: var(--text); box-sizing: border-box; }
 .cmdbar-results { max-height: 320px; overflow-y: auto; }
 .cmd-result { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-6); padding: var(--sp-5) var(--sp-7); cursor: pointer; }
 .cmd-result:hover { background: var(--hover); }
@@ -27,7 +27,7 @@
 .cast-desc { font-family: var(--sans); font-size: var(--fs-xs); color: var(--muted); flex: 1 1 auto; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .castbar-arg { border-top: 1px solid var(--line); padding: var(--sp-6) var(--sp-7); }
 .castbar-arg-label { font-family: var(--sans); font-size: var(--fs-md); font-weight: 500; color: var(--text); margin-bottom: var(--sp-4); }
-.castbar-arg-input { background: var(--bg); width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
+.castbar-arg-input { background: var(--surface-field); width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: var(--fs-lg); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius); outline: none; resize: vertical; color: var(--text); }
 .castbar-arg-input:focus { border-color: var(--blue); }
 .castbar-arg-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-6); margin-top: var(--sp-5); }
 .castbar-arg-hint { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
@@ -57,7 +57,7 @@
 .rawbar-close { background: none; border: none; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--base-40); cursor: pointer; padding: 0; }
 .rawbar-close:hover { color: var(--base-100); }
 .rawbar-area {
-  background: var(--bg);
+  background: var(--surface-field);
   flex: 1; min-height: 0; width: 100%; box-sizing: border-box;
   border: none; outline: none; resize: none;
   font-family: var(--mono); font-size: var(--fs-sm); line-height: 1.7;
@@ -69,7 +69,7 @@
 .rawbar-save:disabled { opacity: 0.5; cursor: default; }
 
 /* floating windows — ⌘J quick-chat · ⌘I sticky (cmd-ctr import P4) */
-.float-win { position: fixed; z-index: 340; width: 400px; height: 380px; min-width: 280px; min-height: 220px; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); resize: both; overflow: hidden; }
+.float-win { position: fixed; z-index: 340; width: 400px; height: 380px; min-width: 280px; min-height: 220px; display: flex; flex-direction: column; background: var(--surface-overlay); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-2); resize: both; overflow: hidden; }
 .float-head { display: flex; align-items: center; padding: var(--sp-4) var(--sp-5); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; }
 .float-title { font-size: var(--fs-xs); letter-spacing: 0.5px; text-transform: uppercase; color: var(--base-40); flex: 1; }
 .float-close { border: 0; background: none; color: var(--base-40); cursor: pointer; font-size: var(--fs-sm); }
@@ -82,7 +82,7 @@
 .float-chat-say { margin: var(--sp-3) 0; font-size: var(--fs-sm); line-height: 1.5; }
 .float-chat-say .md-p { margin: var(--sp-2) 0; }
 .float-chat-row { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--line); }
-.float-chat-input { flex: 1; resize: none; font: inherit; font-size: var(--fs-sm); color: var(--base-100); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); }
+.float-chat-input { flex: 1; resize: none; font: inherit; font-size: var(--fs-sm); color: var(--base-100); background: var(--surface-field); border: 1px solid var(--line); border-radius: var(--radius); padding: var(--sp-3) var(--sp-4); }
 .float-chat-input:focus { outline: none; border-color: var(--accent-soft, var(--accent)); }
 
 /* mic dictation button (cmd-ctr import P6) */

@@ -35,6 +35,11 @@
 
   /* legacy aliases — pre-redesign names; same values, so Day view is untouched */
   --bg: var(--base-00);
+  /* Surface roles: in-flow structure, editable fields, cards, occluding UI. */
+  --surface-header: var(--bg);
+  --surface-field: var(--bg);
+  --surface-panel: var(--bg);
+  --surface-overlay: var(--bg);
   --ink: #000000;        /* time labels, section titles (Day view keeps pure black) */
   --text: var(--base-100);
   --blue: var(--accent);
@@ -158,11 +163,16 @@
    · red 5.9 · green 12.7 (all ≥ AA 4.5). Direction: cyan ≈80% of illuminated
    UI; orange/amber/red only for armed commands, warnings, critical. */
 :root[data-theme="jarvis"] {
-  color-scheme: dark; /* native select/checkbox/scrollbar chrome follows */
+  color-scheme: dark;
+  --surface-header: transparent;
+  --surface-field: #0D2638;
+  --surface-panel: #0B2233;
+  --surface-overlay: #102A3C;
+ /* native select/checkbox/scrollbar chrome follows */
 
   /* neutral ramp — inverted: surfaces climb from near-black navy to steel blue,
      text descends from cool white through desaturated blue */
-  --base-00: #03080D;   /* page + panel surface — near-black navy */
+  --base-00: #091B2A;   /* legacy surface — blueprint navy */
   --base-05: #071521;   /* raised row, inspector, hover — primary surface */
   --base-08: #091B2A;
   --base-10: #0B2233;   /* left rail — elevated surface, dark steel blue */
@@ -228,7 +238,7 @@
   --jarvis-active: #FF8A24;      /* selected/active command — stark orange (rare) */
   --jarvis-hologram: linear-gradient(135deg, #00D8FF 0%, #168BFF 100%);
   --jarvis-active-grad: linear-gradient(135deg, #FFC247 0%, #FF6534 100%);
-  --jarvis-surface: linear-gradient(180deg, #0B2233 0%, #03080D 100%);
+  --jarvis-surface: linear-gradient(180deg, #0B2233 0%, #071521 100%);
   --jarvis-panel: rgba(7, 21, 33, 0.82);
   --jarvis-cyan-glow: 0 0 18px rgba(0, 216, 255, 0.55);
   --jarvis-orange-glow: 0 0 18px rgba(255, 138, 36, 0.55);
@@ -284,3 +294,8 @@ body.booting::after {
   font-family: var(--mono); font-size: var(--fs-xs); text-transform: uppercase;
   letter-spacing: 0.4px; color: var(--base-40); pointer-events: none;
 }
+
+/* Blueprint controls retain familiar affordances without near-black cutouts. */
+:root[data-theme="jarvis"] :is(input, textarea)::placeholder { color: var(--base-60); opacity: 1; }
+:root[data-theme="jarvis"] :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:root[data-theme="jarvis"] select option { background: var(--surface-overlay); color: var(--base-100); }

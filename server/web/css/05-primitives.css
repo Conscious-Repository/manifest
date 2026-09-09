@@ -86,7 +86,7 @@
   padding: var(--sp-2) var(--sp-5); margin-top: var(--sp-4); text-align: left;
 }
 .o-ghost:hover { color: var(--text); border-color: var(--muted); }
-.pill.light { background: var(--bg); border-color: var(--line); color: var(--streak-ink); }
+.pill.light { background: var(--surface-field); border-color: var(--line); color: var(--streak-ink); }
 .pill.light:hover { border-color: var(--blue-soft); color: var(--blue); }
 .pill.light:disabled { opacity: 0.5; cursor: default; }
 .pill.light.on { background: var(--streak-bg); color: var(--ink); }
@@ -106,7 +106,7 @@
 /* ---- .inline-rename — the input inlineRename() swaps in for a name node
    (terminal rail, files rail, chat head/rows). font: inherit so it takes the
    row's own size; a tab may set font-size only. */
-.inline-rename { font: inherit; flex: 1; min-width: 0; border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); color: var(--base-100); background: var(--bg); }
+.inline-rename { font: inherit; flex: 1; min-width: 0; border: 1px solid var(--accent-soft); border-radius: var(--radius); padding: var(--sp-1) var(--sp-3); color: var(--base-100); background: var(--surface-field); }
 .inline-rename:focus { outline: none; }
 
 /* ---- .cockpit-head — the .agent-head of a full-height cockpit (TERMINAL,
@@ -128,7 +128,7 @@
 .modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; }
 .modal-backdrop { position: absolute; inset: 0; background: var(--scrim); }
 .modal-card {
-  position: relative; background: var(--bg); border: 1px solid var(--line);
+  position: relative; background: var(--surface-overlay); border: 1px solid var(--line);
   border-radius: var(--radius); width: min(440px, 92vw); max-height: 76vh;
   display: flex; flex-direction: column; box-shadow: var(--shadow-2);
 }
@@ -169,7 +169,7 @@
 .sec-summary { margin-left: auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); text-transform: none; letter-spacing: 0; }
 .sec-body { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-2) 0 var(--sp-5); }
 .ta-wrap { position: relative; display: inline-block; }
-.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); min-width: 240px; max-height: 220px; overflow-y: auto; }
+.ta-drop { position: absolute; top: 100%; left: 0; z-index: 60; background: var(--surface-overlay); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-1); min-width: 240px; max-height: 220px; overflow-y: auto; }
 .ta-item { padding: var(--sp-3) var(--sp-5); font-size: var(--fs-sm); cursor: pointer; }
 .ta-item:hover { background: var(--hover); color: var(--blue); }
 .ta-create { color: var(--blue); font-style: italic; }
@@ -270,6 +270,6 @@
 .path-picker-hint { padding:var(--sp-6) var(--sp-8); }
 .action-menu-layer { position:fixed; inset:0; z-index:150; }
 .action-menu-backdrop { position:absolute; inset:0; }
-.action-menu { position:absolute; min-width:210px; padding:var(--sp-4); background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-2); }
+.action-menu { position:absolute; min-width:210px; padding:var(--sp-4); background:var(--surface-overlay); color:var(--text); border:1px solid var(--line); border-radius:var(--radius-lg); box-shadow:var(--shadow-2); }
 .action-menu-item { display:block; width:100%; padding:var(--sp-6) var(--sp-7); text-align:left; border:0; border-radius:var(--radius); background:transparent; color:inherit; font:inherit; font-size:var(--fs-sm); cursor:pointer; }
 .action-menu-item:hover,.action-menu-item:focus-visible { background:var(--hover); outline:1px solid var(--line); }

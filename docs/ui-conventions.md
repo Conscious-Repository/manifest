@@ -351,3 +351,9 @@ navigation click to this additional page chrome (2026-09-07).
 ### Chat conversation layout
 
 Chat uses one searchable, recent-first conversation directory across agents, with an optional agent filter. New chat chooses the recipient. Incoming and outgoing messages use the shared message radius and neutral surface tokens; the conversation header stays visible, and secondary management details fold under Details. On phones, the directory and conversation occupy separate panes. Terminal retains its dedicated PTY styling.
+
+### Blueprint surface roles
+
+Use `--surface-header` for in-flow structural headers, `--surface-field` for editable controls/composers, `--surface-panel` for grouped content, and `--surface-overlay` for menus/modals/sticky elements that cover scrolled content. Defaults retain the original white surfaces. Jarvis uses restrained navy/blue fills; in-flow headers can be transparent. Never use transparent backing where text scrolls underneath. Dedicated PTY content continues to use `--term-bg`.
+
+Prefer whitespace and hairlines before adding another filled container. Keep the grid on the page, retain visible control affordances and keyboard focus, and reserve color/motion for meaningful state. See [blueprint research and audit](audits/2026-09-09-blueprint-surfaces.md) for rationale and the reusable review checklist.
