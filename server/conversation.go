@@ -105,6 +105,16 @@ func terminalConversation(se termSession) conversationDescriptor {
 	// The registry is the source of the execution link. A runtime handle is
 	// not the conversation identity and can change when execution resumes.
 	d.Links = append(d.Links, conversationLink{"execution", se.ID, "terminal.registry"})
+	if o := se.Origin; o != nil {
+		origin := agentConversation("hermes", o.Agent, o.ID, "private", o.Task)
+		if o.Backend == "terminal" {
+			origin = terminalConversation(termSession{ID: o.ID, Kind: o.Agent})
+		}
+		d.Links = append(d.Links, conversationLink{"related-conversation", origin.Key, "terminal.origin"})
+		if o.Task != "" {
+			d.Links = append(d.Links, conversationLink{"task", o.Task, "terminal.origin"})
+		}
+	}
 	if se.ResumeID != "" {
 		d.Links = append(d.Links, conversationLink{"native-session", se.ResumeID, "terminal.resumeId"})
 	}

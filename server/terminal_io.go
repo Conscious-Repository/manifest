@@ -53,8 +53,9 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
 		"conversation": s.terminalConversation(se),
-		"related":      s.terminalRelatedChats(se),
-		"live":         live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
+		"origin":       se.Origin, "draft": se.isDraft(),
+		"related": s.terminalRelatedChats(se),
+		"live":    live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
 }
 
@@ -136,10 +137,12 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var b struct {
-		Text      string `json:"text"`
-		Key       string `json:"key"`
-		Supervise bool   `json:"supervise"`
-		TimeoutMS int    `json:"timeoutMs"`
+		Text      string               `json:"text"`
+		Key       string               `json:"key"`
+		Supervise bool                 `json:"supervise"`
+		TimeoutMS int                  `json:"timeoutMs"`
+		Task      string               `json:"task"`
+		Artifacts []artifactContextRef `json:"artifacts"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -151,6 +154,10 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 	}
 	if b.Supervise && se.backend() != "herdr" {
 		http.Error(w, "supervision unavailable for this backend; nothing sent", http.StatusBadRequest)
+		return
+	}
+	if len(b.Artifacts) > 0 && se.backend() != "herdr" {
+		httpError(w, errBadRequest("artifact context is unavailable for this terminal backend; nothing sent"))
 		return
 	}
 	if se.backend() == "herdr" {
@@ -167,6 +174,24 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		se = current
+		if len(b.Artifacts) > 0 {
+			linked := false
+			for _, link := range s.terminalConversation(se).Links {
+				if link.Kind == "task" && link.ID == b.Task && b.Task != "" {
+					linked = true
+				}
+			}
+			if !linked || b.Key != "" {
+				httpError(w, errBadRequest("artifact context requires a message and this coding chat's linked task"))
+				return
+			}
+			context, err := s.taskArtifactContext(b.Task, b.Artifacts)
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			b.Text += context
+		}
 		if se.isDraft() && (b.Key != "" || strings.TrimSpace(b.Text) == "") {
 			http.Error(w, "send a message to start this draft; keys cannot start it", http.StatusConflict)
 			return

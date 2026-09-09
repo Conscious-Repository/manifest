@@ -1689,7 +1689,7 @@ function renderChatComposer(session) {
     if (chatIsTerm()) {
       // claude/codex: tmux send-keys (relaunching a dead session first); a
       // landing send creates the registry row, then delivers
-      try { if (!await chatTermSend(text)) {
+      try { if (!await chatTermSend(text,selected?{task:selected.task,artifacts:[{id:selected.id,revision:selected.revision}]}:{})) {
         showToast("Send not confirmed. Your draft is retained.");
       }else acceptedDraft(); }
       finally { chatSending = false; renderChatComposer(chatCurSession); }
@@ -2087,7 +2087,13 @@ async function loadChatTermSession(id) {
     d = await res.json();
   } catch (e) { return; }
   if (id !== chatOpenId || !chatIsTerm()) return; // navigated away mid-fetch
-  await chatPrepareDraft(d.conversation,chatAgent+"/"+id);
+  const ref=d.draft&&d.origin?.artifacts?.[0];
+  const selection=ref?{...ref,task:d.origin.task,title:"Artifact",version:"?"}:null;
+  if(selection){
+    try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(ref.id));if(r.ok){const a=await r.json();selection.title=a.title||"Artifact";selection.version=a.revisions.find(v=>v.hash===ref.revision)?.n||"?";}}catch(e){}
+  }
+  if (id !== chatOpenId || !chatIsTerm()) return;
+  await chatPrepareDraft(d.conversation,chatAgent+"/"+id,d.draft&&d.origin?{text:d.origin.prompt||"",files:[],task:d.origin.task||"",selection}:null);
   await chatPrepareReadingPosition(d.conversation);
   if (id !== chatOpenId || !chatIsTerm()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
@@ -2129,7 +2135,8 @@ function chatTermLeave() {
 }
 
 function chatTermComposerSession() {
-  return { busy: chatTermSending, live: !!(chatTermOpen && chatTermOpen.live) };
+  const tasks=(chatTermOpen?.conversation?.links||[]).filter(l=>l.kind==="task");
+  return { busy: chatTermSending, live: !!(chatTermOpen && chatTermOpen.live), task:tasks.length===1?tasks[0].id:"" };
 }
 
 // the prompt line's hint reads like a shell's, lowercase
@@ -2177,6 +2184,7 @@ function chatTermHead(o) {
   title.ondblclick = () => chatTermRename(title, se);
   head.append(title);
   const sub = [chatTermKinds[se.kind], se.cwd || "~"];
+  if(se.model)sub.push(se.model);
   sub.push(se.backend === "herdr" ? "agent " + terminalStateLabel(se) : (o.live ? "process running" : (se.resumeId || se.started ? "resumable" : "not started")));
   head.append(terminalStateDot(se));
   const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
@@ -2520,7 +2528,7 @@ function chatTermPairResult(turns, b) {
 // saved as a draft first (kind + the folder typed there); input starts the
 // draft or resumes an existing CLI, waits for its prompt, then delivers. Returns false when
 // the text should go back into the composer.
-async function chatTermSend(text) {
+async function chatTermSend(text,context={}) {
   if (!text) return true;
   if (chatTermSending) return false;
   chatTermSending = true;
@@ -2540,7 +2548,7 @@ async function chatTermSend(text) {
       // not a landing with a hidden open id
       location.hash = chatHash(id);
     }
-    const r = await postJSONOk(chatTermBase(id) + "/input", { text });
+    const r = await postJSONOk(chatTermBase(id) + "/input", { text, ...context });
     // a virgin row's first send boots its tmux — that is a start, not a relaunch
     if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
@@ -2673,7 +2681,7 @@ function chatOpenWorkingArtifact(spec) {
     load, revision:spec.revision,
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
-    onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend) ? ref=>{
+    onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend || chatIsTerm()) ? ref=>{
       chatArtifactSelections.set(key,{...ref,task:taskID});
       if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
@@ -2788,21 +2796,28 @@ function chatStartRelated(source,targetAgent){
   const excerpt=source.handoffExcerpt??parseChatTurns(source.handoffBody||"").slice(-2).map(t=>t.who+":\n"+t.text.slice(0,2000)+(t.text.length>2000?"\n[excerpt shortened]":"")).join("\n\n");
   reviewDialog("Start related chat",({body,actions,close})=>{
     const agents=chatRoster.filter(a=>a.enabled&&a.durableSend);
+    if(chatTermEnabled)Object.entries(chatTermKinds).forEach(([name,label])=>agents.push({name:"terminal:"+name,label}));
     const pick=document.createElement("select");pick.className="pp-in";
     agents.forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label;pick.append(o);});
-    const desired=remembered?.agent||targetAgent||originAgent;
+    const desired=remembered?.agent?(remembered.backend==="terminal"?"terminal:":"")+remembered.agent:targetAgent||originAgent;
     pick.value=agents.some(a=>a.name===desired)?desired:agents[0]?.name||"";pick.setAttribute("aria-label","Agent for related chat");
     const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||("Related: "+source.title).slice(0,240);title.setAttribute("aria-label","Related chat title");
     const prompt=document.createElement("textarea");prompt.className="pp-in";prompt.setAttribute("aria-label","Handoff draft");
     prompt.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
     const field=(name,input)=>{const label=el("label","",name);label.append(input);return label;};
     body.append(el("p","","This creates a separate linked chat. Review the handoff there before sending; current work keeps running."),field("Agent",pick),field("Title",title),field("Handoff draft",prompt));
+    const cwd=document.createElement("input");cwd.className="pp-in";cwd.setAttribute("aria-label","Coding working folder");cwd.placeholder="Default home folder";
+    cwd.value=remembered?.cwd||"";
+    const model=document.createElement("input");model.className="pp-in";model.setAttribute("aria-label","Coding model");model.placeholder="Installed default";model.value=remembered?.model||"";
+    const codingFields=el("div","");codingFields.append(field("Working folder on metis",cwd),field("Model (optional)",model));body.append(codingFields);
+    const syncCoding=()=>{codingFields.hidden=!pick.value.startsWith("terminal:");if(!codingFields.hidden&&!cwd.value)cwd.value=chatRecall("manifest.chatTermCwd."+pick.value.slice(9))||"";};pick.onchange=syncCoding;syncCoding();
     const ref=remembered?.artifacts?.[0]||selected;
     if(ref)body.append(el("p","","Includes the selected artifact version as context for the next send."));
     const status=el("p","");status.setAttribute("role","status");body.append(status);
     const cancel=el("button","sprt-quiet","Cancel"),create=el("button","sprt-quiet","Create related chat");cancel.onclick=close;
     create.onclick=async()=>{
-      const payload={agent:pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",artifacts:ref?[{id:ref.id,revision:ref.revision}]:[]};
+      const coding=pick.value.startsWith("terminal:");
+      const payload={agent:coding?pick.value.slice(9):pick.value,title:title.value,prompt:prompt.value,task:remembered?.task||selected?.task||source.task||"",artifacts:ref?[{id:ref.id,revision:ref.revision}]:[],...(coding?{backend:"terminal",cwd:cwd.value,model:model.value}:{})};
       const signature=JSON.stringify(payload);
       const requestId=remembered?.signature===signature?remembered.requestId:crypto.randomUUID();
       remembered={...payload,signature,requestId};
@@ -2812,7 +2827,7 @@ function chatStartRelated(source,targetAgent){
         const result=await postJSONOk(endpoint,{...payload,requestId});
         if(!result.id)throw new Error("Creation was not confirmed. Retry to check the same request.");
         localStorage.removeItem(storageKey);close();
-        location.hash="#/chat/a/"+encodeURIComponent(result.agent)+"/"+encodeURIComponent(result.id);
+        location.hash=result.conversation?.route||"#/chat/a/"+encodeURIComponent(result.agent)+"/"+encodeURIComponent(result.id);
       }catch(e){status.textContent=e.message||"Could not create the related chat. Retry safely.";}
       finally{create.disabled=false;}
     };

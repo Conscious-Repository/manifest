@@ -7,16 +7,19 @@ import (
 	"strings"
 )
 
+type relatedChatRequest struct {
+	Agent, Model, Title, RequestID, Prompt, Task string
+	Backend, Cwd                                 string
+	Artifacts                                    []agentchat.ArtifactReference
+}
+
 // A related conversation is a separate native source. Creation does not send,
 // interrupt, reassign a task, or copy transcript turns into another history.
 func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	if !s.agentChatReady(w) {
 		return
 	}
-	var b struct {
-		Agent, Model, Title, RequestID, Prompt, Task string
-		Artifacts                                    []agentchat.ArtifactReference
-	}
+	var b relatedChatRequest
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
@@ -28,6 +31,14 @@ func (s *Server) handleChatRelated(w http.ResponseWriter, r *http.Request) {
 	task := strings.TrimSpace(b.Task)
 	origin := agentchat.Origin{Agent: r.PathValue("agent"), ID: r.PathValue("id"), Task: task, Prompt: b.Prompt, Artifacts: b.Artifacts}
 	origin.Backend = r.PathValue("originBackend")
+	if b.Backend == "terminal" {
+		s.handleRelatedCodingChat(w, r, b, origin)
+		return
+	}
+	if b.Backend != "" {
+		httpError(w, errBadRequest("unsupported related chat backend"))
+		return
+	}
 	accepted, found, recoverErr := s.agentChat.store.RecoverRelatedCreation(b.Agent, b.Title, b.Model, b.RequestID, origin)
 	if recoverErr != nil {
 		if errors.Is(recoverErr, agentchat.ErrRequestConflict) {
@@ -114,6 +125,20 @@ func (s *Server) terminalRelatedChats(se termSession) []relatedChatView {
 	if s.agentChat == nil {
 		return out
 	}
+	if o := se.Origin; o != nil {
+		if o.Backend == "terminal" {
+			if parent, ok := s.terminal.find(o.ID); ok && parent.Kind == o.Agent {
+				out = append(out, relatedChatView{parent.Kind, parent.ID, parent.Name, "origin", terminalConversation(parent).Route})
+			}
+		} else if parent, _, _, ok := s.agentChat.store.Get(o.Agent, o.ID); ok {
+			out = append(out, relatedChatView{parent.Agent, parent.ID, parent.Title, "origin", sessionConversation(parent).Route})
+		}
+	}
+	for _, child := range s.terminal.load() {
+		if o := child.Origin; o != nil && o.Backend == "terminal" && o.Agent == se.Kind && o.ID == se.ID {
+			out = append(out, relatedChatView{child.Kind, child.ID, child.Name, "related", terminalConversation(child).Route})
+		}
+	}
 	for _, agent := range s.agentChat.store.Agents() {
 		for _, candidate := range s.agentChat.store.List(agent) {
 			if o := candidate.Origin; o != nil && o.Backend == "terminal" && o.Agent == se.Kind && o.ID == se.ID {
@@ -126,6 +151,13 @@ func (s *Server) terminalRelatedChats(se termSession) []relatedChatView {
 
 func (s *Server) relatedChats(sess agentchat.Session) []relatedChatView {
 	out := []relatedChatView{}
+	if s.terminal != nil {
+		for _, child := range s.terminal.load() {
+			if o := child.Origin; o != nil && o.Backend == "" && o.Agent == sess.Agent && o.ID == sess.ID {
+				out = append(out, relatedChatView{child.Kind, child.ID, child.Name, "related", terminalConversation(child).Route})
+			}
+		}
+	}
 	add := func(agent, id, relation string) {
 		target, _, _, ok := s.agentChat.store.Get(agent, id)
 		if !ok {

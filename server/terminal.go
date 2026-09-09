@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"manifest/agentchat"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,23 +36,26 @@ import (
 
 // termSession is one registry row (<dataDir>/terminals.json).
 type termSession struct {
-	Version     int              `json:"version,omitempty"`
-	Backend     string           `json:"backend,omitempty"`
-	Runtime     terminalIdentity `json:"runtime,omitempty"`
-	LaunchPhase string           `json:"launchPhase,omitempty"`
-	ID          string           `json:"id"`
-	Kind        string           `json:"kind"`             // shell | claude | codex
-	Device      string           `json:"device,omitempty"` // "" = this box; else a fleet name
-	Cwd         string           `json:"cwd"`
-	Name        string           `json:"name"`
-	ResumeID    string           `json:"resumeId,omitempty"` // claude --session-id / --resume handle
-	Resume      bool             `json:"resume,omitempty"`   // launched via the interactive resume picker
-	Started     bool             `json:"started,omitempty"`  // first attach happened → reopen resumes
-	CreatedAt   string           `json:"createdAt"`
-	LastUsed    string           `json:"lastUsed"`
-	Model       string           `json:"model,omitempty"`      // pinned coding work-order model
-	BoardBrief  string           `json:"boardBrief,omitempty"` // durable board handoff; first launch only
-	Pinned      bool             `json:"pinned,omitempty"`
+	Version         int               `json:"version,omitempty"`
+	Backend         string            `json:"backend,omitempty"`
+	Runtime         terminalIdentity  `json:"runtime,omitempty"`
+	LaunchPhase     string            `json:"launchPhase,omitempty"`
+	ID              string            `json:"id"`
+	Kind            string            `json:"kind"`             // shell | claude | codex
+	Device          string            `json:"device,omitempty"` // "" = this box; else a fleet name
+	Cwd             string            `json:"cwd"`
+	Name            string            `json:"name"`
+	ResumeID        string            `json:"resumeId,omitempty"` // claude --session-id / --resume handle
+	Resume          bool              `json:"resume,omitempty"`   // launched via the interactive resume picker
+	Started         bool              `json:"started,omitempty"`  // first attach happened → reopen resumes
+	CreatedAt       string            `json:"createdAt"`
+	LastUsed        string            `json:"lastUsed"`
+	Model           string            `json:"model,omitempty"`      // pinned coding work-order model
+	BoardBrief      string            `json:"boardBrief,omitempty"` // durable board handoff; first launch only
+	Pinned          bool              `json:"pinned,omitempty"`
+	Origin          *agentchat.Origin `json:"origin,omitempty"`
+	CreateRequest   string            `json:"createRequest,omitempty"`
+	CreateSignature string            `json:"createSignature,omitempty"`
 	// Keep = caffeinated (cmd-ctr ☕): a REMOTE session also runs inside a
 	// tmux on the target box, so it survives ssh drops and metis restarts —
 	// the metis-side tmux alone only survives browser disconnects. Local
