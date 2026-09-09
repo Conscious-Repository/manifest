@@ -708,6 +708,7 @@ function artifactWorkspace(mount, options) {
       remember();
       if(editState?.conflict){notice.textContent="Resolve the draft conflict before saving a version.";return;}
       const submitted=editState?.value||{...started,text:input.value};
+      if(submitted.artifact!==current.id || !/^[0-9a-f]{64}$/.test(submitted.baseRevision||"")){notice.textContent="This draft has no valid starting revision. Keep its text and review the latest version before saving.";return;}
       save.disabled = true;input.disabled=true;discard.disabled=true;
       try {
         await opts.save(submitted.text, submitted.baseRevision);
