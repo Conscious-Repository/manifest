@@ -3971,13 +3971,10 @@ function recResumeOutline(raw) {
 
 function recReviewCandidates() {
   const rows = (recCache.candidates || []).filter(recVisible).map(c=>recCandidateContext(c,recCurrentRoleID()));
-  if (recPeopleFacet === "considering" && recOrigin === "inbound") {
-    return rows.sort((a,b) => (a.inbound || "").localeCompare(b.inbound || ""));
-  }
   const stages = ["New Lead", "Reached Out", "Replied", "Application Review", "Initial Screen", "First Round", "Second Round", "Offer", "Hired"];
   return rows.sort((a,b) => {
     const ai=stages.indexOf(recPipelineStage(a)),bi=stages.indexOf(recPipelineStage(b));
-    return (ai<0 ? stages.length : ai)-(bi<0 ? stages.length : bi);
+    return (ai<0 ? stages.length : ai)-(bi<0 ? stages.length : bi) || (a.inbound || "").localeCompare(b.inbound || "");
   });
 }
 
