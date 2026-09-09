@@ -2156,6 +2156,14 @@ function chatTermHead(o) {
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
   const details = el("details", "chat-details");
   details.append(el("summary", "", "Details"), el("div", "chat-head-meta", sub.join(" · ") + " · " + meta.join(" · ")));
+  const taskLinks=(o.conversation?.links||[]).filter(link=>link.kind==="task");
+  if(taskLinks.length===1) {
+    const task=el("a","sprt-quiet","Task ↗");
+    task.href=chatTaskThreadHash(taskLinks[0].id);
+    task.title="Open the task for this coding session";
+    head.append(task);
+  }
+  for(const warning of o.conversation?.warnings||[])details.append(el("div","chat-head-meta",warning));
   const acts = el("span", "chat-head-acts");
   const ren = el("button", "sprt-quiet", "✎");
   ren.title = "rename";

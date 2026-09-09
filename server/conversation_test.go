@@ -5,10 +5,51 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"manifest/agentchat"
 	"manifest/threads"
 )
+
+func TestCodingConversationResolvesOnlyVerifiedWorkOrder(t *testing.T) {
+	s := codingFixture(t)
+	h := s.findHarness("codex")
+	run := boardRunID()
+	se := termSession{ID: "session", Kind: "codex", BoardBrief: filepath.Join(h.Spirits.Root(), "work", run, "brief.md")}
+	base := terminalConversation(se)
+	check := func(wantTask string, warn bool) {
+		t.Helper()
+		d := s.terminalConversation(se)
+		if d.Key != base.Key || d.Route != base.Route || d.Scope != "private" {
+			t.Fatal("link changed source identity", d)
+		}
+		got := ""
+		for _, link := range d.Links {
+			if link.Kind == "task" {
+				got = link.ID
+			}
+		}
+		if got != wantTask || (len(d.Warnings) > 0) != warn {
+			t.Fatalf("task=%q warnings=%v", got, d.Warnings)
+		}
+	}
+	check("", true)
+	write := func(task string) {
+		t.Helper()
+		if err := boardReport(h, run, task, "go", "", "running", "", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("inbox/wire-the-fence")
+	check("inbox/wire-the-fence", false)
+	se.BoardBrief = filepath.Join(t.TempDir(), run, "brief.md")
+	check("", true)
+	se.BoardBrief = filepath.Join(h.Spirits.Root(), "work", run, "brief.md")
+	write("inbox/one] [todo:: inbox/two")
+	check("", true)
+	se.BoardBrief = ""
+	check("", false)
+}
 
 func TestConversationIdentityUsesNativeSource(t *testing.T) {
 	a := agentConversation("hermes", "alfred", "same-id", "private", "")

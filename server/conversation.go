@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/url"
+	"path/filepath"
 
 	"manifest/threads"
 )
@@ -106,6 +107,45 @@ func terminalConversation(se termSession) conversationDescriptor {
 	d.Links = append(d.Links, conversationLink{"execution", se.ID, "terminal.registry"})
 	if se.ResumeID != "" {
 		d.Links = append(d.Links, conversationLink{"native-session", se.ResumeID, "terminal.resumeId"})
+	}
+	return d
+}
+
+// Resolve the exact board work order through its harness report. The filename
+// alone, a similar title, or a CLI resume handle is not task-link evidence.
+func (s *Server) terminalConversation(se termSession) conversationDescriptor {
+	d := terminalConversation(se)
+	if se.BoardBrief == "" {
+		return d
+	}
+	unresolved := func() conversationDescriptor {
+		d.Warnings = append(d.Warnings, "The coding work order has no verified task link.")
+		return d
+	}
+	h := s.findHarness(se.Kind)
+	if h == nil || h.Spirits == nil {
+		return unresolved()
+	}
+	run := filepath.Base(filepath.Dir(se.BoardBrief))
+	expected := filepath.Join(h.Spirits.Root(), "work", run, "brief.md")
+	if filepath.Clean(se.BoardBrief) != filepath.Clean(expected) {
+		return unresolved()
+	}
+	report, _, ok := h.Spirits.Run(run)
+	if !ok || report.Run != run || report.Spirit != se.Kind {
+		return unresolved()
+	}
+	d.Links = append(d.Links, conversationLink{"run", run, "terminal.boardBrief + harness.run"})
+	matches := todoTokenRe.FindAllStringSubmatch(report.Request, -1)
+	tasks := map[string]bool{}
+	for _, match := range matches {
+		tasks[match[1]] = true
+	}
+	if len(tasks) != 1 {
+		return unresolved()
+	}
+	for task := range tasks {
+		d.Links = append(d.Links, conversationLink{"task", task, "harness.run.request"})
 	}
 	return d
 }
