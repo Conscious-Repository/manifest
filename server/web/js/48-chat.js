@@ -2603,10 +2603,11 @@ function chatStartRelated(source){
     const pick=document.createElement("select");pick.className="pp-in";
     agents.forEach(a=>{const o=document.createElement("option");o.value=a.name;o.textContent=a.label;pick.append(o);});
     pick.value=remembered?.agent||originAgent;pick.setAttribute("aria-label","Agent for related chat");
-    const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||source.title;title.setAttribute("aria-label","Related chat title");
+    const title=document.createElement("input");title.className="pp-in";title.value=remembered?.title||("Related: "+source.title).slice(0,240);title.setAttribute("aria-label","Related chat title");
     const prompt=document.createElement("textarea");prompt.className="pp-in";prompt.setAttribute("aria-label","Handoff draft");
     prompt.value=remembered?.prompt??("Continue work related to “"+source.title+"”.\n\nRecent excerpt from "+chatAgentLabel(originAgent)+" (not the full history):\n\n"+excerpt);
-    body.append(el("p","","This creates a separate linked chat. Review the handoff there before sending; current work keeps running."),pick,title,prompt);
+    const field=(name,input)=>{const label=el("label","",name);label.append(input);return label;};
+    body.append(el("p","","This creates a separate linked chat. Review the handoff there before sending; current work keeps running."),field("Agent",pick),field("Title",title),field("Handoff draft",prompt));
     const ref=remembered?.artifacts?.[0]||selected;
     if(ref)body.append(el("p","","Includes the selected artifact version as context for the next send."));
     const status=el("p","");status.setAttribute("role","status");body.append(status);

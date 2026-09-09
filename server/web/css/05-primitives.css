@@ -301,4 +301,4 @@
 .review-dialog-body textarea { width:100%; min-height:12rem; resize:vertical; }
 .review-dialog-body label { display:grid; gap:var(--sp-4); }
 .review-dialog-actions { display:flex; gap:var(--sp-8); flex-wrap:wrap; margin-top:var(--sp-16); }
-.review-dialog-actions button { min-height:44px; }
+.review-dialog .review-dialog-actions button { min-height:44px; font-size:var(--fs-md); padding:var(--sp-4) var(--sp-8); }
