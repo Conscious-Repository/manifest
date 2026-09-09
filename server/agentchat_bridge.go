@@ -11,29 +11,10 @@ import (
 	"manifest/threads"
 )
 
-// AGENT CHAT ↔ TASK BOARD — the two bridges (agent-chat plan Phase 4, §3.4f).
-//
-// "→ task" promotes a conversation into a todo: the line is created through
-// the capture path (Inbox, or a named personal domain), its id is pinned, the
-// conversation window is copied into the todo's thread as the opening entries
-// (the owner's turns as the owner, the agent's as the agent, every entry
-// tagged meta.from=chat and the first one carrying meta.chat = {agent, id,
-// title}), and the agent is assigned. The assignment is RECORD-ONLY — no turn
-// is spent (the reply guard, Q6): the thread already holds the context, and
-// Ask ✦ / Do ✦ in the panel is the explicit next word. Hermes-family sessions
-// remember the task in their frontmatter (`task:`) so the transcript head
-// links back; portal threads have no field for it, so their link lives on the
-// task side only.
-//
-// "open in chat" is the reverse: the panel payload names the chat behind a
-// task (the promoted entries' meta.chat, else the assignee's rail section),
-// and an agent's rail section lists the open todos it holds.
-
-// chatPromoteWindow bounds the turns copied into the thread (newest kept).
-const chatPromoteWindow = 12
-
-// chatPromoteTextMax caps one copied entry (under threads.maxCommentLen).
-const chatPromoteTextMax = 7800
+// Promotion associates work with an existing conversation. The original
+// transcript remains authoritative; the task stores a typed link and the source
+// turn, never a copied or truncated conversational history. Legacy copied
+// entries remain readable and do not opt into canonical routing automatically.
 
 // chatTurnsFor reads one session on either backend into the shared turn
 // grammar: the Hermes-family store directly, a portal thread through its
@@ -75,10 +56,11 @@ func chatSlugFor(token string) string {
 
 // taskChatLink is the panel's pointer from a task to its conversation.
 type taskChatLink struct {
-	Agent string `json:"agent"`           // rail section slug
-	Label string `json:"label"`           // display name
-	ID    string `json:"id,omitempty"`    // the promoted session ("" = the section only)
-	Title string `json:"title,omitempty"` // that session's title
+	Canonical bool   `json:"canonical,omitempty"`
+	Agent     string `json:"agent"`           // rail section slug
+	Label     string `json:"label"`           // display name
+	ID        string `json:"id,omitempty"`    // the promoted session ("" = the section only)
+	Title     string `json:"title,omitempty"` // that session's title
 }
 
 // taskChatLink finds the chat a task came from: the first thread entry
@@ -102,7 +84,11 @@ func (s *Server) taskChatLink(id string, thread []threads.Comment, assignee stri
 			// never pick one arbitrarily as the task's conversation.
 			return nil
 		}
-		found = &taskChatLink{Agent: agent, Label: agentDisplayName("agent:" + agent), ID: sid, Title: title}
+		canonical, _ := m["canonical"].(bool)
+		if found != nil {
+			canonical = canonical || found.Canonical
+		}
+		found = &taskChatLink{Agent: agent, Label: agentDisplayName("agent:" + agent), ID: sid, Title: title, Canonical: canonical}
 	}
 	if found != nil {
 		return found
@@ -144,6 +130,19 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 		httpError(w, errBadRequest("nothing to promote yet — say something first"))
 		return
 	}
+	if b.Turn > 0 {
+		valid := false
+		for _, turn := range turns {
+			if turn.N == b.Turn {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			httpError(w, errBadRequest("source turn not found"))
+			return
+		}
+	}
 	taskID, err := s.addPersonalTask(personalTaskAdd{Domain: b.Domain, Text: text})
 	if err != nil {
 		httpError(w, err)
@@ -157,51 +156,12 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 		taskID = pinned
 	}
 
-	// the window: up to the pressed turn, newest chatPromoteWindow turns
-	if b.Turn > 0 {
-		for i, t := range turns {
-			if t.N == b.Turn {
-				turns = turns[:i+1]
-				break
-			}
-		}
-	}
-	if len(turns) > chatPromoteWindow {
-		turns = turns[len(turns)-chatPromoteWindow:]
-	}
 	token := "agent:" + agent
-	copied := 0
-	for _, t := range turns {
-		if t.Who == "system" {
-			continue
-		}
-		author := s.ownerIdentity()
-		body := t.Text
-		var files []threads.FileRef
-		if t.Who == "user" {
-			body, files = s.chatTurnFiles(agent, body)
-		} else {
-			// the same author id the agent's live turns post under (Alfred's
-			// canonical thread id is agent:hermes) — one identity per thread
-			author = agentTokenIdentity(token)
-			body = agentchat.SayBody(body)
-		}
-		body = strings.TrimSpace(body)
-		if body == "" && len(files) == 0 {
-			continue
-		}
-		if len(body) > chatPromoteTextMax {
-			body = body[:chatPromoteTextMax] + "…"
-		}
-		meta := map[string]any{"from": "chat", "turn": t.N}
-		if copied == 0 {
-			meta["chat"] = map[string]any{"agent": agent, "id": id, "title": title}
-		}
-		if _, err := s.addThreadEntry(author, taskID, threads.ActComment, body, nil, files, meta); err != nil {
-			httpError(w, err)
-			return
-		}
-		copied++
+	meta := map[string]any{"from": "chat-link", "turn": b.Turn,
+		"chat": map[string]any{"agent": agent, "id": id, "title": title, "canonical": true}}
+	if _, err := s.addThreadEntry(s.ownerIdentity(), taskID, threads.ActComment, "Linked conversation: "+title, nil, nil, meta); err != nil {
+		httpError(w, err)
+		return
 	}
 
 	// assign — record only, the dispatchAssign shape without a relay
@@ -224,29 +184,8 @@ func (s *Server) handleAgentChatPromote(w http.ResponseWriter, r *http.Request) 
 	// the related ref, so both histories carry it
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.promoted", Actor: "owner",
 		Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Task: taskID,
-		Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent, "copied": copied, "assigned": assigned}})
-	writeJSON(w, map[string]any{"created": taskID, "agent": token, "name": label, "assigned": assigned, "copied": copied})
-}
-
-// chatTurnFiles lifts the [file::] tokens off a user turn into thread refs
-// when the blob lives in the private thread store (Hermes-family uploads);
-// otherwise (portal pool) the name stays in the text as "(attached: name)".
-func (s *Server) chatTurnFiles(agent, text string) (string, []threads.FileRef) {
-	var files []threads.FileRef
-	blobs := s.threads != nil && s.threads.private != nil
-	_, isPortal := s.portalChatAgent(agent)
-	out := fileTokenRe.ReplaceAllStringFunc(text, func(tok string) string {
-		m := fileTokenRe.FindStringSubmatch(tok)
-		if m == nil {
-			return tok
-		}
-		if !isPortal && blobs && s.threads.private.BlobPath(m[1]) != "" {
-			files = append(files, threads.FileRef{Hash: m[1], Name: m[2]})
-			return ""
-		}
-		return "(attached: " + m[2] + ")"
-	})
-	return strings.TrimSpace(out), files
+		Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent, "copied": 0, "linked": true, "assigned": assigned}})
+	writeJSON(w, map[string]any{"created": taskID, "agent": token, "name": label, "assigned": assigned, "copied": 0, "linked": true})
 }
 
 // agentChatTask is one open todo an agent holds, for its rail section.

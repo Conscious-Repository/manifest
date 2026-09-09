@@ -392,6 +392,7 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 		Text      string               `json:"text"`
 		Files     []threads.FileRef    `json:"files"`
 		Artifacts []artifactContextRef `json:"artifacts"`
+		Task      string               `json:"task"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -401,7 +402,7 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
-	receipt, err := s.agentChatSendRequest(agent, id, b.RequestID, b.Text, b.Files, b.Artifacts)
+	receipt, err := s.agentChatSendRequestForTask(agent, id, b.RequestID, b.Text, b.Files, b.Task, b.Artifacts)
 	if err != nil {
 		if errors.Is(err, agentchat.ErrRequestConflict) {
 			http.Error(w, err.Error(), http.StatusConflict)
@@ -439,6 +440,12 @@ func (s *Server) handleAgentChatDelete(w http.ResponseWriter, r *http.Request) {
 	if !s.agentChatReady(w) {
 		return
 	}
+	if sess, _, _, ok := s.agentChat.store.Get(r.PathValue("agent"), r.PathValue("id")); ok && sess.Task != "" && s.readPlanRecord(sess.Task).Exists {
+		if link := s.taskChatLink(sess.Task, s.listThread(sess.Task), ""); link != nil && link.Canonical && link.ID == sess.ID && link.Agent == sess.Agent {
+			http.Error(w, "This conversation is linked to a task; preserve it as the task's history.", http.StatusConflict)
+			return
+		}
+	}
 	if err := s.agentChat.store.Delete(r.PathValue("agent"), r.PathValue("id")); err != nil {
 		httpError(w, errBadRequest(err.Error()))
 		return
@@ -463,6 +470,14 @@ func (s *Server) agentChatSend(agent, id, text string, files []threads.FileRef) 
 	return err
 }
 func (s *Server) agentChatSendRequest(agent, id, requestID, text string, files []threads.FileRef, selections ...[]artifactContextRef) (agentchat.Delivery, error) {
+	var refs []artifactContextRef
+	if len(selections) > 0 {
+		refs = selections[0]
+	}
+	return s.agentChatSendRequestForTask(agent, id, requestID, text, files, "", refs)
+}
+
+func (s *Server) agentChatSendRequestForTask(agent, id, requestID, text string, files []threads.FileRef, selectedTask string, refs []artifactContextRef) (agentchat.Delivery, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
 		return agentchat.Delivery{}, errBadRequest("empty message")
@@ -479,28 +494,33 @@ func (s *Server) agentChatSendRequest(agent, id, requestID, text string, files [
 	if !s.hermesEnabled() {
 		return agentchat.Delivery{}, errBadRequest("the Hermes runner is not enabled here")
 	}
-	var refs []artifactContextRef
-	if len(selections) > 0 {
-		refs = selections[0]
-	}
 	sess, _, _, ok := s.agentChat.store.Get(agent, id)
 	if !ok {
 		return agentchat.Delivery{}, errBadRequest("conversation unavailable")
 	}
 	ctx := &agentchat.MessageContext{Conversation: agentConversation("hermes", agent, id, "private", "").Key, Task: sess.Task, Agent: agent, Artifacts: refs}
+	if selectedTask != "" {
+		ctx.Task = selectedTask
+	}
 	if prior, found := s.agentChat.store.Receipt(agent, id, requestID); found {
 		// Reconstruct the original context for retry comparison; changing the
 		// selected versions still conflicts, while later task edits do not.
-		if prior.Context != nil {
+		if prior.Context != nil && selectedTask == "" {
 			ctx.Task = prior.Context.Task
-		} else if len(refs) == 0 {
+		} else if prior.Context == nil && len(refs) == 0 && selectedTask == "" {
 			ctx = nil
 		}
-	} else if len(refs) > 0 {
-		if sess.Task == "" {
+	} else {
+		if selectedTask != "" && selectedTask != sess.Task {
+			link := s.taskChatLink(selectedTask, s.listThread(selectedTask), "")
+			if link == nil || link.Agent != agent || link.ID != id {
+				return agentchat.Delivery{}, errBadRequest("task is not linked to this conversation")
+			}
+		}
+		if len(refs) > 0 && ctx.Task == "" {
 			return agentchat.Delivery{}, errBadRequest("associate a task before selecting its artifacts")
 		}
-		if _, err := s.taskArtifactContext(sess.Task, refs); err != nil {
+		if _, err := s.taskArtifactContext(ctx.Task, refs); err != nil {
 			return agentchat.Delivery{}, err
 		}
 	}

@@ -308,7 +308,7 @@ async function renderTodoPanel(refetch) {
       // Promoted conversations retain their exact source session. Native task
       // threads have no session, so their dedicated CHAT route renders the
       // task thread itself in the full panel.
-      location.hash = d.chat.id
+      location.hash = d.chat.canonical ? "#/chat/task/"+encodeURIComponent(todoSelId) : d.chat.id
         ? "#/chat/a/" + encodeURIComponent(d.chat.agent) + "/" + encodeURIComponent(d.chat.id)
         : "#/chat/task/" + encodeURIComponent(todoSelId);
     };
@@ -578,6 +578,11 @@ function todoComposer(d, opts) {
   opts = opts || {};
   const taskID = opts.taskID || todoSelId;
   const box = el("div", "tdo-p-composer");
+  if(d.chat?.canonical && d.chat.id){
+    const open=el("button","sprt-quiet","Continue conversation →");
+    open.onclick=()=>{ closeTodoPanel(); location.hash="#/chat/task/"+encodeURIComponent(taskID); };
+    box.append(open);return box;
+  }
   const draft = todoComposerDrafts.get(taskID) || { text: "", files: [], mentions: [] };
   const pendingFiles = draft.files;
   const mentions = draft.mentions;

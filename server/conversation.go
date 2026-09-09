@@ -69,7 +69,11 @@ func (s *Server) taskConversation(id string, comments []threads.Comment) convers
 	if len(seen) > 1 {
 		d.Warnings = append(d.Warnings, "Multiple source conversations; no canonical destination has been selected.")
 	} else if len(seen) == 1 {
-		d.Warnings = append(d.Warnings, "Promoted history and source conversation remain separate write destinations.")
+		if link := s.taskChatLink(id, comments, ""); link != nil && link.Canonical {
+			d.Route = "#/chat/a/" + url.PathEscape(link.Agent) + "/" + url.PathEscape(link.ID)
+		} else {
+			d.Warnings = append(d.Warnings, "Promoted history and source conversation remain separate write destinations.")
+		}
 	}
 	return d
 }

@@ -6,6 +6,7 @@ import (
 
 	"manifest/agentchat"
 	"manifest/artifacts"
+	"manifest/threads"
 )
 
 func TestAgentChatRetainsSelectedPlanVersionAndRejectsUnlinkedContext(t *testing.T) {
@@ -65,6 +66,21 @@ func TestAgentChatRetainsSelectedPlanVersionAndRejectsUnlinkedContext(t *testing
 	final, _, _, _ := st.Get("alfred", id)
 	if final.Turns != 2 {
 		t.Fatalf("retry executed again: %d", final.Turns)
+	}
+	// One conversation can produce several tasks. An explicitly linked older
+	// task remains selectable even after the session's default pointer changes.
+	s.threads = loopFixture(t).threads
+	if _, err := s.addThreadEntry(s.ownerIdentity(), task, threads.ActComment, "Linked conversation", nil, nil, map[string]any{"chat": map[string]any{"agent": "alfred", "id": id, "canonical": true}}); err != nil {
+		t.Fatal(err)
+	}
+	payload["task"] = task
+	code, _ = agentChatJSON(t, s, "POST", path, payload)
+	if code != 200 {
+		t.Fatalf("explicit related task refused: %d", code)
+	}
+	final = waitIdle(t, st, "alfred", id)
+	if final.Turns != 4 || final.Deliveries[1].Context.Task != task {
+		t.Fatalf("wrong task context: %+v", final.Deliveries)
 	}
 }
 

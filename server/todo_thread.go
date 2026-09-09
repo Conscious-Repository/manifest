@@ -351,6 +351,9 @@ func (s *Server) postAndDispatch(id, mode, agent string, mentions []string, file
 }
 
 func (s *Server) postAndDispatchContext(id, mode, agent string, mentions []string, files []threads.FileRef, text string, refs []artifactContextRef, contextText string) (threads.Comment, error) {
+	if link := s.taskChatLink(id, s.listThread(id), ""); link != nil && link.Canonical {
+		return threads.Comment{}, errBadRequest("continue in the task's linked conversation")
+	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode != "ask" && mode != "do" {
 		mode = "comment"

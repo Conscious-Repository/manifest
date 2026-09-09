@@ -507,3 +507,14 @@ resolved before dispatch; preview alone sends nothing. Team comments retain only
 version references, never inline private artifact bytes. Private artifact endpoints
 are not registered on the public team listener. No new scheduler or execution
 trigger is introduced by a plan save.
+
+**2026-09-09 — canonical chat promotion amendment.** New promotions supersede
+the transcript-copy bridge described above: the task records `meta.chat` with
+`canonical: true` and the source turn. No source messages are copied or rewritten.
+Task-chat routes and task composers return to that source conversation; direct
+task conversational posts are rejected for these links. Operational task events
+continue in the task record. Legacy copied threads retain their existing behavior
+until an explicit reconciliation, and conflicting source links are not resolved
+by choosing the first one. A linked source with a retained task plan cannot be
+deleted through the chat API. One chat can reference several tasks; an explicitly
+selected task is checked against its source link before context is accepted.

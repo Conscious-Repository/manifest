@@ -34,12 +34,13 @@ func TestPromoteChatToTask(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mustTurn("user", "find me 10 gutter contractor options")
+	mustTurn("user", "find me 10 gutter contractor options\n"+strings.Repeat("Complete source context. ", 500))
 	mustTurn("alfred", "### Step 1 — say\n\nHere are three to start: A, B, C.")
 	mustTurn("user", "later — not part of the task")
+	_, bodyBefore, _, _ := st.Get("alfred", id)
 
 	// → task on turn 2: the todo is created through the capture path (Inbox,
-	// title as the line), pinned, the window UP TO turn 2 copied, the agent
+	// title as the line), pinned, linked to source turn 2, the agent
 	// assigned — and NO turn spent
 	req := httptest.NewRequest("POST", "/api/agents/chat/alfred/sessions/"+id+"/promote", strings.NewReader(`{"turn":2}`))
 	req.SetPathValue("agent", "alfred")
@@ -54,7 +55,7 @@ func TestPromoteChatToTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	taskID, _ := res["created"].(string)
-	if taskID != "inbox/gutter-contractors" || res["assigned"] != true || res["copied"] != float64(2) || res["name"] != "Alfred" {
+	if taskID != "inbox/gutter-contractors" || res["assigned"] != true || res["copied"] != float64(0) || res["linked"] != true || res["name"] != "Alfred" {
 		t.Fatalf("promote response: %+v", res)
 	}
 	raw, _ := os.ReadFile(srv.tasksStore.Path())
@@ -69,30 +70,31 @@ func TestPromoteChatToTask(t *testing.T) {
 	}
 
 	th := srv.listThread(taskID)
-	if len(th) != 3 {
-		t.Fatalf("thread: want 2 copied entries + assign, got %d: %+v", len(th), th)
+	if len(th) != 2 {
+		t.Fatalf("want link + assignment, got %+v", th)
 	}
-	first, second, third := th[0], th[1], th[2]
-	if first.Author == "agent:alfred" || first.Text != "find me 10 gutter contractor options" || first.Meta["from"] != "chat" {
-		t.Fatalf("first entry must be the owner's turn: %+v", first)
-	}
+	first, second := th[0], th[1]
 	link, _ := first.Meta["chat"].(map[string]any)
-	if link == nil || link["agent"] != "alfred" || link["id"] != id || link["title"] != "gutter contractors" {
-		t.Fatalf("first entry must carry the chat link: %+v", first.Meta)
+	if first.Meta["from"] != "chat-link" || link["agent"] != "alfred" || link["id"] != id || link["canonical"] != true || first.Meta["turn"] != float64(2) {
+		t.Fatalf("missing canonical source reference: %+v", first)
 	}
-	// the agent's turn posts under the id its LIVE replies use (agent:hermes
-	// is Alfred's canonical thread id, agentTokenIdentity), so one thread never
-	// shows the same agent under two ids
-	if second.Author != "agent:hermes" || second.AuthorName != "Alfred" || second.Text != "Here are three to start: A, B, C." {
-		t.Fatalf("second entry must be the agent's say body, as the agent: %+v", second)
+	if second.Action != threads.ActAssign {
+		t.Fatal(second)
 	}
-	if third.Action != threads.ActAssign || third.Meta["assignee"] != "agent:alfred" {
-		t.Fatalf("third entry must be the assignment: %+v", third)
+	_, original, _, _ := st.Get("alfred", id)
+	if original != bodyBefore {
+		t.Fatal("promotion rewrote source bytes")
+	}
+	if got := agentchat.ParseTurns(original); len(got) != 3 || got[0].Who != "user" || got[1].Who != "alfred" || !strings.Contains(original, "later — not part of the task") {
+		t.Fatalf("source history changed: %s", original)
 	}
 	for _, c := range th {
-		if strings.Contains(c.Text, "later — not part of the task") {
-			t.Fatalf("turns after the pressed one must not be copied: %+v", c)
+		if strings.Contains(c.Text, "find me 10") || strings.Contains(c.Text, "Here are three") {
+			t.Fatal("history copied", c)
 		}
+	}
+	if _, err := srv.postAndDispatch(taskID, "comment", "", nil, nil, "follow up"); err == nil {
+		t.Fatal("second conversation writer accepted")
 	}
 
 	// the session remembers its task
@@ -114,6 +116,21 @@ func TestPromoteChatToTask(t *testing.T) {
 	chat, _ := panel["chat"].(map[string]any)
 	if chat == nil || chat["agent"] != "alfred" || chat["id"] != id || chat["label"] != "Alfred" || chat["title"] != "gutter contractors" {
 		t.Fatalf("panel chat link: %+v", panel["chat"])
+	}
+	if chat["canonical"] != true {
+		t.Fatal("canonical destination absent", chat)
+	}
+	descriptor := srv.taskConversation(taskID, th)
+	if descriptor.Route != "#/chat/a/alfred/"+id || len(descriptor.Warnings) > 0 {
+		t.Fatalf("wrong canonical route: %+v", descriptor)
+	}
+	dw := httptest.NewRecorder()
+	dr := httptest.NewRequest("DELETE", "/api/agents/chat/alfred/sessions/"+id, nil)
+	dr.SetPathValue("agent", "alfred")
+	dr.SetPathValue("id", id)
+	srv.handleAgentChatDelete(dw, dr)
+	if dw.Code != 409 {
+		t.Fatal("linked source history could be deleted", dw.Code)
 	}
 
 	// the reverse list: the agent's rail section sees the task, with its chat
@@ -152,8 +169,8 @@ func TestPromoteChatToTask(t *testing.T) {
 }
 
 // The portal backend promotes through the same handler: the thread is read
-// through the shared transcript grammar, the agent speaks as itself in the
-// todo thread, and — with no field on a portal thread — the link lives on
+// through the shared transcript grammar. No team messages are copied into
+// the private task; with no task field on a portal thread, the link lives on
 // the task side only.
 func TestPromotePortalChatToTask(t *testing.T) {
 	srv := loopFixture(t)
@@ -189,14 +206,17 @@ func TestPromotePortalChatToTask(t *testing.T) {
 	var res map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &res)
 	taskID, _ := res["created"].(string)
-	if taskID != "inbox/confirm-the-pig-site-setback-with-the-county" || res["assigned"] != true || res["name"] != "Kairos" || res["copied"] != float64(2) {
+	if taskID != "inbox/confirm-the-pig-site-setback-with-the-county" || res["assigned"] != true || res["name"] != "Kairos" || res["copied"] != float64(0) || res["linked"] != true {
 		t.Fatalf("promote response: %+v", res)
 	}
 	th := srv.listThread(taskID)
-	if len(th) != 3 || th[1].Author != "agent:kairos" || th[1].AuthorName != "Kairos" ||
-		th[1].Text != "Fifty feet from the lot line per the zoning memo." {
+	if len(th) != 2 || th[0].Meta["from"] != "chat-link" {
 		t.Fatalf("thread: %+v", th)
 	}
+	if len(store.Messages("t1")) != 2 {
+		t.Fatal("portal history changed")
+	}
+
 	link, _ := th[0].Meta["chat"].(map[string]any)
 	if link == nil || link["agent"] != "kairos" || link["id"] != "t1" {
 		t.Fatalf("chat link: %+v", th[0].Meta)

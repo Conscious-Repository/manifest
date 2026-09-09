@@ -190,6 +190,7 @@ let chatTaskID = "";
 let chatTaskData = null;
 let chatTaskPollTimer = null;
 let chatTaskRailKey = "";
+const chatConversationTasks = new Map();
 
 function leaveTaskChat() {
   const transcript = document.getElementById("chatTranscript");
@@ -253,6 +254,13 @@ async function renderTaskChat(taskID, refetch) {
     }
   }
   const d = chatTaskData;
+  if(d.chat?.canonical && d.chat.id){
+    const key="chat:"+d.chat.agent+"/"+d.chat.id;
+    chatConversationTasks.set(key,taskID);
+    if(chatPendingWorkspace?.task===taskID)chatPendingWorkspace={...chatPendingWorkspace,selectionKey:key};
+    location.replace("#/chat/a/"+encodeURIComponent(d.chat.agent)+"/"+encodeURIComponent(d.chat.id));
+    return;
+  }
   await renderTaskChatRail(d);
   if (chatTaskID !== taskID) return;
   const sameThread = host.dataset.task === taskID;
@@ -599,18 +607,18 @@ function chatRailTasks(agent) {
 
 // chatPromoteTurn — "→ task" (§3.4f): the todo line is asked for (the title
 // is the default), then the server creates it through the capture path,
-// copies the conversation up to this turn into its thread and assigns the
-// agent — record-only, no turn spent.
+// links its source turn and assigns the agent. Discussion stays here.
 function chatPromoteTurn(session, turnN) {
   const agent = chatAgent;
   if (!agent) return;
   const title = session.title || "";
   askText("Task from this conversation — " + chatAgentLabel(agent) + " takes it", title ? "the todo line · empty = “" + title + "”" : "the todo line…", async (t) => {
     try {
-      const r = await postJSONOk(chatBase() + "/" + encodeURIComponent(session.id) + "/promote", { turn: turnN, text: (t || "").trim() });
-      const where = chatTaskThreadHash(r.created);
+      const r = await postJSONOk(chatBaseFor(agent) + "/" + encodeURIComponent(session.id) + "/promote", { turn: turnN, text: (t || "").trim() });
+      const where = "#/tasks/"+encodeURIComponent(r.created);
+      chatConversationTasks.set("chat:"+agent+"/"+session.id,r.created);
       showToast("Task created" + (r.assigned ? " — " + (r.name || chatAgentLabel(agent)) + " holds it" : "") + " · open", () => { location.hash = where; }, "info");
-      if (chatOpenId === session.id) { refetchChatSession(session.id); loadChatSessions().then(renderChatRail); }
+      if (chatOpenId === session.id && chatAgent===agent) { refetchChatSession(session.id); loadChatSessions().then(renderChatRail); }
     } catch (e) { showToast("Couldn't create the task — " + (e.message || "error")); }
   });
 }
@@ -846,8 +854,13 @@ async function loadChatSession(id) {
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
   chatRemember(chatAgent || "spirits", id);
+  const taskContext=chatConversationTasks.get("chat:"+chatAgent+"/"+id);
+  if(taskContext)d.session.task=taskContext;
   renderChatTranscript(d);
   renderChatComposer(d.session);
+  if(chatPendingWorkspace?.selectionKey === "chat:"+chatAgent+"/"+id){
+    const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec);
+  }
   ensureChatStream(d.session);
   if ((d.queued || []).length || d.session.status === "thinking") ensureChatPoll(d.session, (d.queued || []).length);
 }
@@ -1235,6 +1248,8 @@ function renderChatTranscript(d) {
   chatTermLeave();
   host.innerHTML = "";
   const s = d.session;
+  const activeTask=chatConversationTasks.get("chat:"+chatAgent+"/"+s.id);
+  if(activeTask)s.task=activeTask;
   chatCurSession = s;
   chatLastUpdated = chatTranscriptSignature(d);
   const who = s.spirit || (s.agent ? chatAgentLabel(s.agent) : "");
@@ -1441,7 +1456,10 @@ function renderChatComposer(session) {
     syncAttach();
     const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
-    if(durable && selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
+    if(durable){
+      payload.task=selected?.task||chatConversationTasks.get("chat:"+draftKey)||session?.task||"";
+      if(selected)payload.artifacts=[{id:selected.id,revision:selected.revision}];
+    }
     if (chatIsTerm()) {
       // claude/codex: tmux send-keys (relaunching a dead session first); a
       // landing send creates the registry row, then delivers
@@ -2393,8 +2411,8 @@ function chatOpenWorkingArtifact(spec) {
     load, revision:spec.revision,
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
-    onDiscuss: taskID ? ref=>{
-      chatArtifactSelections.set(key,ref); chatRenderArtifactContext(taskID,key);
+    onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend) ? ref=>{
+      chatArtifactSelections.set(key,{...ref,task:taskID}); chatRenderArtifactContext(taskID,key);
       if(window.matchMedia("(max-width: 900px)").matches)chatCloseWorkspace();
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
@@ -2405,6 +2423,7 @@ function chatRenderArtifactContext(taskID,key){
  const composer=document.getElementById("chatComposer");if(!composer)return;
  composer.querySelector(".chat-artifact-context")?.remove();
  const ref=chatArtifactSelections.get(key);if(!ref)return;
+ taskID=ref.task||taskID;
  const row=el("div","chat-artifact-context");
  const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
  open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID,selectionKey:key});
