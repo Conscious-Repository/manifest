@@ -222,7 +222,8 @@ func termBlockingDialog(lines []string) string {
 	joined := strings.ToLower(strings.Join(lines, "\n"))
 	switch {
 	case strings.Contains(joined, "do you trust the files in this folder") ||
-		strings.Contains(joined, "yes, i trust this folder"):
+		strings.Contains(joined, "yes, i trust this folder") ||
+		strings.Contains(joined, "do you trust the contents of this directory"):
 		return "Claude Code is asking whether this folder is trusted — open the session in TERMINAL once and answer it; nothing was sent"
 	case strings.Contains(joined, "enter to confirm") && strings.Contains(joined, "esc to cancel"):
 		return "the session is waiting on a dialog — open it in TERMINAL and answer it; nothing was sent"
