@@ -23,4 +23,12 @@ assert.equal(ctx.chatRestoreReadingPosition(phone,{following:false,turn:'7',frac
 assert.equal(phone.scrollTop,900);
 phone.scrollTop=2500;assert.equal(ctx.chatReadingAnchor(phone).following,true);
 assert.equal(ctx.chatRestoreReadingPosition(phone,{following:true}),false);
+// Rendering/autopin scrolls do not overwrite a stored bookmark. A user gesture
+// arms capture only for the ensuing scroll events.
+const listeners={},scrollHost={scrollTop:100,scrollHeight:2000,clientHeight:500,addEventListener:(name,fn)=>listeners[name]=fn};
+let saves=0;
+Object.assign(ctx,{document:{getElementById:()=>scrollHost},chatScrollBound:false,chatReadingGestureUntil:0,chatSaveReadingPosition:()=>saves++,Date:{now:()=>10000}});
+vm.runInContext(src.slice(src.indexOf('function bindChatScroll()'),src.indexOf('function chatPin()')),ctx);
+ctx.bindChatScroll();listeners.scroll();assert.equal(saves,0);
+listeners.wheel();scrollHost.scrollTop=75;listeners.scroll();assert.equal(saves,1);
 console.log('Reading anchors survive viewport changes; missing anchors and Latest are safe');
