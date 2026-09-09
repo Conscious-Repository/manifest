@@ -100,3 +100,5 @@
   .term-keys { flex-wrap: nowrap; overflow-x: auto; }
   .term-keys .term-key { flex: none; }
 }
+
+.term-connection { font-size: var(--fs-xs); color: var(--base-60); margin-left: auto; }

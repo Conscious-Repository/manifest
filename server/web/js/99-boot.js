@@ -275,7 +275,7 @@ function renderCrumbs(h) {
     // "properties" so hash/counts/routing are untouched)
     const secLabel = (sec === "properties" ? "real estate" : sec).toUpperCase();
     parts.push({ label: secLabel, hash: sec === "day" ? "#/" : "#/" + sec });
-    if (sec !== "day" && sec !== "tasks") {
+    if (!["day", "tasks", "chat", "terminal"].includes(sec)) {
       h.replace(/^#\//, "").split("/").filter(Boolean).slice(1)
         .forEach((s) => parts.push({ label: decodeURIComponent(s) }));
     }

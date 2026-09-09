@@ -59,7 +59,8 @@ function termRenderControls() {
     const reconnect = el("button", "term-key", "Reconnect");
     reconnect.onclick = async () => { detachTerm(); await loadTermSessions(); };
     const separate = el("a", "term-key", "New tab ↗"); separate.id = "termSeparate"; separate.target = "_blank"; separate.rel = "noopener";
-    toolbar.append(sessions, launcher, keyboard, latest, reconnect, separate);
+    const status = el("span", "term-connection", "Select a session"); status.id = "termConnection"; status.setAttribute("role", "status");
+    toolbar.append(sessions, launcher, keyboard, latest, reconnect, separate, status);
     pane.prepend(toolbar);
   }
   const select = toolbar.querySelector("select");
@@ -297,6 +298,8 @@ function attachTerm(id) {
   const host = document.getElementById("termScreen");
   if (!host) return;
   host.innerHTML = "";
+  const connection = document.getElementById("termConnection");
+  if (connection) connection.textContent = "Connecting…";
   const mount = el("div", "term-mount");
   host.append(mount);
 
@@ -343,13 +346,17 @@ function attachTerm(id) {
   ws.binaryType = "arraybuffer";
   termInst = { term, fit, ws, id, runtimeKey };
 
-  ws.onopen = () => { sendTermResize(); };
+  ws.onopen = () => {
+    if (termInst && termInst.ws === ws && connection) connection.textContent = "Connected";
+    sendTermResize();
+  };
   ws.onmessage = (ev) => {
     if (typeof ev.data === "string") term.write(ev.data);
     else term.write(new Uint8Array(ev.data));
   };
   ws.onclose = () => {
     if (!(termInst && termInst.ws === ws && !els.terminalView.hidden)) return;
+    if (connection) connection.textContent = "Disconnected · retrying";
     term.write("\r\n\x1b[2m[attachment disconnected]\x1b[0m\r\n");
     // A browser socket closing says nothing about the process. Reattach only
     // after fresh live inventory proves the exact same pane still exists.
