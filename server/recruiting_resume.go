@@ -66,7 +66,13 @@ func (s *Server) handleRecruitingAshbyDetail(w http.ResponseWriter, r *http.Requ
 			// names itself beside them rather than replacing them
 			out["resumeError"] = err.Error()
 		} else {
-			if err := s.ashbySync.RecordApplicationResume(id, detail.ApplicationID, ref.Name, ref.Hash, time.Now()); err != nil {
+			var recordErr error
+			if detail.ApplicationID == "" {
+				recordErr = s.ashbySync.RecordResume(id, ref.Name, ref.Hash, time.Now())
+			} else {
+				recordErr = s.ashbySync.RecordApplicationResume(id, detail.ApplicationID, ref.Name, ref.Hash, time.Now())
+			}
+			if err := recordErr; err != nil {
 				httpError(w, err)
 				return
 			}
