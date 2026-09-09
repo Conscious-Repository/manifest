@@ -148,6 +148,7 @@ function renderAionRail() {
 async function pollAionLive() {
   if (document.hidden || !els.aionView || els.aionView.hidden) { scheduleAionPoll(3000); return; }
   try {
+    if (aionMode === "recruiting" && typeof recPollLive === "function") await recPollLive();
     const r = await fetch("/api/aion/revision", { cache: "no-cache", headers: aionRevisionETag ? { "If-None-Match": aionRevisionETag } : {} });
     if (r.status === 304) { aionPollDelay = 3000; scheduleAionPoll(aionPollDelay); return; }
     if (!r.ok) throw new Error("revision " + r.status);

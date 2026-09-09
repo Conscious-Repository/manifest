@@ -19,3 +19,7 @@ const rows=recReviewCandidates();assert.equal(rows.length,1);assert.equal(rows[0
 assert.equal(rows[0].stage,'ashby');assert.equal(recUntriaged(rows[0]),false);
 assert.equal(recGateTable(rows[0]).chipLabel,'Initial Screen');
 console.log('Application role filters, history, counts and stage labels passed');
+assert.equal(recPipelineStage(rows[0]),'Initial Screen');
+vm.runInThisContext(`recCache.candidates[0].applications[1].stage='Second Round'`);
+assert.equal(recPipelineStage(recReviewCandidates()[0]),'Second Round');
+assert.equal(recUntriaged(recReviewCandidates()[0]),false);

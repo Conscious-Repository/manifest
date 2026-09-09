@@ -167,6 +167,10 @@ function recCandidateContext(c, roleId) {
     resume:a.resume && a.resume.hash ? a.resume : (a.id===c.ashbyApplicationId ? c.resume : {}),
     stage:terminal ? String(a.status || a.stage).toLowerCase() : "ashby"};
 }
+// Group by the actual ATS stage, not the legacy local scout column.
+function recPipelineStage(c) {
+  return c.ashbyApplicationId ? (c.ashbyStage || c.ashbyStatus || "Stage unavailable") : c.stage;
+}
 function recCurrentRoleID() {
   const r=(recCache.roles || []).find(r=>r.slug===recRole);
   return recRole ? (r ? r.id || "role/"+r.slug : "role/"+recRole) : null;
@@ -1438,14 +1442,14 @@ function paintBoardBody() {
       .forEach((c) => lane.append(recCard(c)));
     board.append(lane);
   } else {
-    const stages = [...new Set([...(recCache.stages || []), "hired", ...rows.map(c=>c.stage)])].filter((st) => rows.some((c) => c.stage === st));
+    const stages = [...new Set(rows.map(recPipelineStage))];
     stages.forEach((stage) => {
       const lane = el("section", "rec-lane");
       const head = el("div", "aion-sec-label");
-      head.append(el("span", "aion-sec-title", stage === "ashby" ? "Applications" : stage));
-      head.append(el("span", "aion-sec-count", String(rows.filter((c) => c.stage === stage).length)));
+      head.append(el("span", "aion-sec-title", stage));
+      head.append(el("span", "aion-sec-count", String(rows.filter((c) => recPipelineStage(c) === stage).length)));
       lane.append(head);
-      rows.filter((c) => c.stage === stage).forEach((c) => lane.append(recCard(c)));
+      rows.filter((c) => recPipelineStage(c) === stage).forEach((c) => lane.append(recCard(c)));
       board.append(lane);
     });
   }
@@ -3970,8 +3974,11 @@ function recReviewCandidates() {
   if (recPeopleFacet === "considering" && recOrigin === "inbound") {
     return rows.sort((a,b) => (a.inbound || "").localeCompare(b.inbound || ""));
   }
-  const stages = recCache.stages || [];
-  return rows.sort((a,b) => stages.indexOf(a.stage) - stages.indexOf(b.stage));
+  const stages = ["New Lead", "Reached Out", "Replied", "Application Review", "Initial Screen", "First Round", "Second Round", "Offer", "Hired"];
+  return rows.sort((a,b) => {
+    const ai=stages.indexOf(recPipelineStage(a)),bi=stages.indexOf(recPipelineStage(b));
+    return (ai<0 ? stages.length : ai)-(bi<0 ? stages.length : bi);
+  });
 }
 
 
@@ -4020,4 +4027,29 @@ function recApplicationControls(c) {
     }catch(e){load.disabled=false;showToast(e.message,null,"error");}
   };
   return box;
+}
+
+// Refresh the private recruiting projection through the existing AION UI
+// poll, independently of the public portal revision (which excludes people).
+let recLastLiveRead=0;
+let recLiveReading=false;
+async function recPollLive() {
+  if(aionMode!=="recruiting" || !recCache || recLiveReading || Date.now()-recLastLiveRead<15000 || document.querySelector(".rec-triage select")) return;
+  const focused=document.activeElement;
+  if(els.aionView.contains(focused) && /INPUT|TEXTAREA|SELECT/.test(focused.tagName)) return;
+  recLiveReading=true;recLastLiveRead=Date.now();
+  try {
+    const r=await fetch("/api/aion/recruiting",{cache:"no-store"});
+    if(!r.ok) throw new Error("Recruiting refresh failed");
+    const next=await r.json();
+    if(aionMode!=="recruiting" || (els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))return;
+    if(JSON.stringify(next)!==JSON.stringify(recCache)){
+      const selectors=[".rec-inspector",".rec-board",".rec-role-controls"];
+      const scrolls=selectors.map(sel=>document.querySelector(sel)?.scrollTop || 0);
+      recCache=next;
+      if(recPaint)recPaint();
+      selectors.forEach((sel,i)=>{const n=document.querySelector(sel);if(n)n.scrollTop=scrolls[i];});
+    }
+  }catch(_){ /* Preserve the last readable view; the next poll retries. */ }
+  finally{recLiveReading=false;}
 }

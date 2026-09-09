@@ -1929,10 +1929,9 @@ type AshbySyncBackResult struct {
 //     distributes.
 //
 // `full` ignores stored syncTokens; otherwise the incremental tokens from
-// the last run are used where the endpoint returned one. There is no timer
-// calling this — it runs when the owner hits the route, or when a verified
-// webhook delivery lands (HandleWebhook), which is the same reconciliation
-// with a dedupe key recorded beside it.
+// the last run are used where the endpoint returned one. The explicit route,
+// verified webhooks, and the app's catch-up poller use the same reconciliation.
+// Webhook deduplication is recorded alongside its successful checkpoint.
 func (a *AshbySync) SyncBack(ctx context.Context, full bool, now time.Time) (AshbySyncBackResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

@@ -71,3 +71,40 @@ func TestApplicationLifecycleAcrossRoles(t *testing.T) {
 		t.Fatal("identity lost")
 	}
 }
+
+func TestAshbyCatchUpAdvancesAndDoesNotRepollFreshState(t *testing.T) {
+	h := newAshbyHarness(t)
+	h.fake.candidates["catchup"] = wireCandidate("catchup", "Catchup Applicant", "catchup@example.test", "")
+	h.fake.apps["catchup_app"] = map[string]any{"id": "catchup_app", "candidate": map[string]any{"id": "catchup"}, "job": map[string]any{"id": "job_mri"}, "status": "Active", "currentInterviewStage": map[string]any{"id": "screen", "title": "Initial Screen", "interviewPlanId": "plan_1"}}
+	if err := h.sync.SyncIfStale(context.Background(), time.Minute, testNow); err != nil {
+		t.Fatal(err)
+	}
+	h.fake.mu.Lock()
+	calls := len(h.fake.calls)
+	h.fake.mu.Unlock()
+	if err := h.sync.SyncIfStale(context.Background(), time.Minute, testNow.Add(30*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	h.fake.mu.Lock()
+	after := len(h.fake.calls)
+	h.fake.mu.Unlock()
+	if after != calls {
+		t.Fatal("fresh state repolled")
+	}
+	h.fake.apps["catchup_app"]["currentInterviewStage"] = map[string]any{"id": "round2", "title": "Second Round", "interviewPlanId": "plan_1"}
+	if err := h.sync.SyncIfStale(context.Background(), time.Minute, testNow.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	d := h.store.LoadCandidate("catchup-applicant")
+	if d.Get("ashby_stage") != "Second Round" || len(d.Applications()) != 1 || d.Applications()[0].Stage != "Second Round" {
+		t.Fatalf("advancement not mirrored: %+v", d.Applications())
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := h.sync.SyncIfStale(ctx, time.Minute, testNow.Add(4*time.Minute)); err == nil {
+		t.Fatal("canceled refresh succeeded")
+	}
+	if got := h.sync.State().LastSync; got != testNow.Add(2*time.Minute).UTC().Format(time.RFC3339) {
+		t.Fatal("failed refresh advanced checkpoint", got)
+	}
+}

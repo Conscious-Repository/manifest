@@ -491,6 +491,7 @@ func main() {
 	} else {
 		as.UsePublic(recruiting.NewAshbyPublic("", nil))
 		srv.UseAshbySync(as)
+		go as.Poll(ctx, time.Minute)
 	}
 	// The webhook receiver's signing secret (Phase 7): same ONE-source rule,
 	// ASHBY_WEBHOOK_SECRET in the environment. Absent, the receiver fails
