@@ -730,16 +730,15 @@ async function renderCompare(ids) {
 
 // ---- transcript ----
 
-// A thread the hash NAMED but the backend would not give back is an error,
-// not an empty stage (error ≠ empty, conventions §"three list states"): the
-// landing still greets, with the refusal said out loud above it. Painting the
-// bare landing is what hid the split-id routing bug — a click looked like it
-// did nothing.
-async function renderChatEmpty(note) {
-  await renderChatLanding();
-  if (!note) return;
+// Keep failed thread loads distinct from a new conversation.
+function renderChatEmpty(note) {
   const host = document.getElementById("chatTranscript");
-  if (host) host.prepend(el("div", "chat-load-error", note));
+  if (!host) return;
+  host.replaceChildren(el("div", "chat-load-error", note || "Conversation unavailable"));
+  const retry = el("button", "sprt-quiet", "Retry");
+  retry.onclick = () => { retry.disabled = true; loadChatSession(chatOpenId); };
+  host.append(retry);
+  renderChatComposer({ busy: true });
 }
 
 async function loadChatSession(id) {
@@ -748,6 +747,7 @@ async function loadChatSession(id) {
   const base = chatBase();
   try {
     const res = await fetch(base + "/" + encodeURIComponent(id));
+    if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
     if (!res.ok) {
       renderChatEmpty(res.status === 404
         ? "that conversation is no longer here — it may have been deleted or archived"
@@ -755,7 +755,10 @@ async function loadChatSession(id) {
       return;
     }
     d = await res.json();
-  } catch (e) { renderChatEmpty("that conversation didn't load — no answer from the server"); return; }
+  } catch (e) {
+    if (id === chatOpenId && base === chatBase() && !els.chatView.hidden) renderChatEmpty("Conversation could not load. Check your connection and retry.");
+    return;
+  }
   if (id !== chatOpenId || base !== chatBase()) return; // navigated away mid-fetch
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");
