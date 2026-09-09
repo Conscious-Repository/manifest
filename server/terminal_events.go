@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -20,15 +21,16 @@ type terminalEventSnapshot struct {
 	Connected bool            `json:"connected"`
 }
 
-// One daemon stream is shared by all browser consumers. Queues contain only the
-// newest projection; events wake observations, never establish task completion.
-// The final consumer cancels the daemon socket and any reconnect backoff.
+// One snapshot poller and best-effort daemon stream serve all browser consumers.
+// Only List establishes connectivity; events wake observations, never establish
+// task completion. The final consumer cancels polling and subscription retries.
 type terminalEventHub struct {
 	mu          sync.Mutex
 	server      *Server
 	subscribers map[chan terminalEventSnapshot]struct{}
 	latest      map[string]terminalObservation
 	connected   bool
+	ready       bool
 	cancel      context.CancelFunc
 }
 
@@ -47,6 +49,9 @@ func (h *terminalEventHub) snapshotLocked() terminalEventSnapshot {
 		ob := terminalUnknown(se.Runtime)
 		ob.Identity.ManifestID = se.ID
 		if se.backend() == "herdr" && h.connected {
+			// Reachability is known even when this saved occupant is absent.
+			// Keep its process and agent state unknown rather than adopting another.
+			ob.Connectivity = "connected"
 			if got, ok := h.latest[se.Runtime.Pane]; ok && got.Identity.Generation == se.Runtime.Generation && got.Identity.Occupant == se.Runtime.Occupant && got.Identity.Session == se.Runtime.Session && got.Identity.Host == se.Runtime.Host && (se.Runtime.AgentSession == "" || se.Runtime.AgentSession == got.Identity.AgentSession) {
 				ob = got
 				ob.Identity.ManifestID = se.ID
@@ -91,7 +96,9 @@ func (h *terminalEventHub) join() (chan terminalEventSnapshot, func()) {
 		h.cancel = cancel
 		go h.run(ctx)
 	}
-	ch <- h.snapshotLocked()
+	if h.ready {
+		ch <- h.snapshotLocked()
+	}
 	return ch, func() {
 		h.mu.Lock()
 		defer h.mu.Unlock()
@@ -100,70 +107,69 @@ func (h *terminalEventHub) join() (chan terminalEventSnapshot, func()) {
 			h.cancel()
 			h.cancel = nil
 			h.connected = false
+			h.ready = false
 			h.latest = map[string]terminalObservation{}
 		}
 	}
 }
-func (h *terminalEventHub) run(ctx context.Context) {
+
+// wakeOnEvents cannot change hub state or block its authoritative poll loop.
+func (h *terminalEventHub) wakeOnEvents(ctx context.Context, wake chan<- struct{}) {
+	rt := h.server.terminal.herdr
+	if rt == nil {
+		return
+	}
 	for ctx.Err() == nil {
-		rt := h.server.terminal.herdr
-		var stream <-chan terminalObservation
-		var err error
-		if rt != nil {
-			stream, err = rt.Subscribe(ctx)
-		} else {
-			err = errTerminalUnsupported
-		}
+		stream, err := rt.Subscribe(ctx)
 		if err == nil {
-			h.mu.Lock()
-			if ctx.Err() != nil {
-				h.mu.Unlock()
-				return
-			}
-			h.connected = true
-			h.latest = map[string]terminalObservation{}
-			h.publishLocked()
-			h.mu.Unlock()
-			for ob := range stream {
-				h.mu.Lock()
-				if ctx.Err() != nil {
-					h.mu.Unlock()
-					return
-				}
-				h.latest[ob.Identity.Pane] = ob
-				h.publishLocked()
-				h.mu.Unlock()
-				if ob.Process == "stopped" || ob.AgentState == "done" || ob.AgentState == "blocked" {
-					h.server.codingResultSweep()
-				}
-			}
-			// The subscription stream ended. Do NOT immediately declare the
-			// daemon unreachable: the stream can drop while the daemon stays
-			// reachable (a lost pane event / socket hiccup). Verify with an
-			// authoritative List() snapshot. If it succeeds, the daemon is up —
-			// refresh state from it and stay 'connected'; only report
-			// unavailable if List() itself fails.
-			if obs, lerr := rt.List(ctx); lerr == nil {
-				h.mu.Lock()
-				if ctx.Err() != nil {
-					h.mu.Unlock()
-					return
-				}
-				h.latest = map[string]terminalObservation{}
-				h.connected = true
-				for _, ob := range obs {
-					h.latest[ob.Identity.Pane] = ob
-				}
-				h.publishLocked()
-				h.mu.Unlock()
-				rtimer := time.NewTimer(150 * time.Millisecond)
+		reading:
+			for {
 				select {
 				case <-ctx.Done():
-					rtimer.Stop()
 					return
-				case <-rtimer.C:
+				case ob, ok := <-stream:
+					if !ok {
+						break reading
+					}
+					select {
+					case wake <- struct{}{}:
+					default:
+					}
+					// Preserve removal/stopped hints that may no longer appear in List.
+					if ob.Process == "stopped" || ob.AgentState == "done" || ob.AgentState == "blocked" {
+						h.server.codingResultSweep()
+					}
 				}
-				continue // daemon reachable — re-subscribe, don't report unavailable
+			}
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (h *terminalEventHub) run(ctx context.Context) {
+	wake := make(chan struct{}, 1)
+	go h.wakeOnEvents(ctx, wake)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	var previous terminalEventSnapshot
+	for ctx.Err() == nil {
+		var obs []terminalObservation
+		err := errTerminalUnsupported
+		if rt := h.server.terminal.herdr; rt != nil {
+			obs, err = rt.List(ctx)
+		}
+		latest := make(map[string]terminalObservation, len(obs))
+		sweep := false
+		if err == nil {
+			for _, ob := range obs {
+				latest[ob.Identity.Pane] = ob
+				sweep = sweep || ob.Process == "stopped" || ob.AgentState == "done" || ob.AgentState == "blocked"
 			}
 		}
 		h.mu.Lock()
@@ -171,16 +177,28 @@ func (h *terminalEventHub) run(ctx context.Context) {
 			h.mu.Unlock()
 			return
 		}
-		h.connected = false
-		h.latest = map[string]terminalObservation{}
-		h.publishLocked()
+		h.connected = err == nil
+		h.latest = latest
+		// Compare the projected state, including registry changes, without letting
+		// observation timestamps cause an identical snapshot every two seconds.
+		comparable := h.snapshotLocked()
+		for i := range comparable.Sessions {
+			comparable.Sessions[i].ObservedAt = time.Time{}
+		}
+		if !h.ready || !reflect.DeepEqual(previous, comparable) {
+			h.publishLocked()
+		}
+		previous = comparable
+		h.ready = true
 		h.mu.Unlock()
-		timer := time.NewTimer(time.Second)
+		if sweep {
+			h.server.codingResultSweep()
+		}
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return
-		case <-timer.C:
+		case <-ticker.C:
+		case <-wake:
 		}
 	}
 }

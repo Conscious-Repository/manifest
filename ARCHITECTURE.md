@@ -479,3 +479,15 @@ Conversation history belongs in Chats and run history in the board/ledger;
 Terminal history, pin UI and registry-based default naming are removed. Existing
 tmux/remote Keep compatibility remains until its live sessions and callers drain.
 No new scheduler, attention kind, approval lane or vault writer is introduced.
+
+**2026-09-09 — truthful terminal SSE snapshots.** The shared terminal event hub
+reads herdr `List()` immediately and every two seconds. Only a failed snapshot
+read marks daemon connectivity unavailable and clears observations. Subscription
+ACK failures, stalls, and socket drops cannot invalidate state or delay polling;
+the separately retried stream only accelerates snapshot reads. New consumers
+wait for the first authoritative observation. State projections publish on change
+(ignoring observation timestamps), with SSE keepalives for quiet periods. Existing
+identity checks remain: absent or replaced saved occupants have unknown process
+and agent state, independently of observed daemon connectivity. The
+stopped/done/blocked result-sweep hints remain advisory;
+validated result files still establish task completion.
