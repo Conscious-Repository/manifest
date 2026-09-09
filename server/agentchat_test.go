@@ -336,3 +336,59 @@ func TestAgentChatRunnerFailureLandsSystemTurn(t *testing.T) {
 		t.Errorf("turns = %+v", turns)
 	}
 }
+
+func TestAgentChatRequestRetriesDoNotDuplicateExecution(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	body := map[string]any{"text": "exactly one first send", "requestId": "create-delivery-one"}
+	code, r := agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions", body)
+	if code != 200 {
+		t.Fatal(code, r)
+	}
+	id := r["id"].(string)
+	code, r = agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions", body)
+	if code != 200 || r["id"] != id {
+		t.Fatal(code, r)
+	}
+	waitIdle(t, st, "alfred", id)
+	code, r = agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions/"+id+"/messages", body)
+	if code != 200 {
+		t.Fatal(code, r)
+	}
+	if sess := waitIdle(t, st, "alfred", id); sess.Turns != 2 {
+		t.Fatal("duplicate model invocation", sess.Turns)
+	}
+	code, r = agentChatJSON(t, s, "GET", "/api/agents/chat/alfred/delivery?request=create-delivery-one", nil)
+	if code != 200 || r["id"] != id || r["delivery"].(map[string]any)["state"] != "completed" {
+		t.Fatal(code, r)
+	}
+	code, _ = agentChatJSON(t, s, "POST", "/api/agents/chat/alfred/sessions/"+id+"/messages", map[string]any{"text": "changed", "requestId": "create-delivery-one"})
+	if code != 409 {
+		t.Fatal("changed payload not rejected", code)
+	}
+}
+
+func TestAgentChatStartupDrainsOnlyUnstartedMessages(t *testing.T) {
+	s, st, _ := agentChatFixture(t, echoStub)
+	id, _ := st.Create("alfred", "", "recovery", "")
+	if _, err := st.Accept("alfred", id, "before-restart", "possibly delivered"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := st.Claim("alfred", id); err != nil || !ok {
+		t.Fatal(err)
+	}
+	if _, err := st.Accept("alfred", id, "waiting-restart", "waiting instruction"); err != nil {
+		t.Fatal(err)
+	}
+	fresh := agentchat.New(st.Root())
+	s.UseAgentChat(fresh)
+	s.ResumeAgentChats()
+	sess := waitIdle(t, fresh, "alfred", id)
+	if sess.Turns != 4 {
+		t.Fatal("startup replayed or lost message", sess.Turns)
+	}
+	first, _ := fresh.Receipt("alfred", id, "before-restart")
+	next, _ := fresh.Receipt("alfred", id, "waiting-restart")
+	if first.State != agentchat.DeliveryInterrupted || next.State != agentchat.DeliveryCompleted {
+		t.Fatal(first, next)
+	}
+}

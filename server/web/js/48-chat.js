@@ -1322,6 +1322,7 @@ function renderChatComposer(session) {
     if (ta) ta.placeholder = placeholder();
     if (send) { send.disabled = busy; send.textContent = chatIsTerm() ? "↵" : "↑"; } // a prompt line ends in enter
     syncAttach();
+    chatRenderDeliveryNotice(host,draftKey);
     return;
   }
   host.dataset.built = "1";
@@ -1416,6 +1417,8 @@ function renderChatComposer(session) {
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
     if (send.disabled || chatSending) return;
+    const sendAgent=chatAgent, sendSession=chatOpenId, sendRoute=chatRouteVersion;
+    const durable=!!chatRosterEntry(sendAgent)?.durableSend;
     chatSending = true;
     chatDrafts.delete(draftKey);
     send.disabled = true;
@@ -1435,12 +1438,17 @@ function renderChatComposer(session) {
       finally { chatSending = false; renderChatComposer(chatCurSession); }
       return;
     }
+    let remembered=null;
     try {
-      if (chatOpenId) {
-        await postJSONOk(chatBase() + "/" + encodeURIComponent(chatOpenId) + "/messages", chatAgent ? payload : { text });
-      } else if (chatAgent) {
-        // lazy create under the open agent section: the first send creates
-        const r = await postJSONOk(chatBase(), payload);
+      const endpoint=chatBaseFor(sendAgent)+(sendSession?"/"+encodeURIComponent(sendSession)+"/messages":"");
+      if(durable)remembered=chatRememberDelivery(draftKey,sendAgent,endpoint,payload);
+      if (sendSession) {
+        if(remembered)await chatDeliverRemembered(remembered);
+        else await postJSONOk(endpoint, sendAgent ? payload : { text });
+      } else if (sendAgent) {
+        // Lazy creation uses the same request ID when its response is lost.
+        const r = remembered ? await chatDeliverRemembered(remembered) : await postJSONOk(endpoint, payload);
+        if(sendRoute!==chatRouteVersion)return;
         chatOpenId = r.id;
         chatLanding = false;
         location.hash = chatHash(r.id);
@@ -1455,12 +1463,17 @@ function renderChatComposer(session) {
         location.hash = chatHash(r.id);
         return;
       }
-      loadChatSession(chatOpenId);
-      loadChatSessions().then(renderChatRail);
+      if(sendRoute===chatRouteVersion){loadChatSession(sendSession);loadChatSessions().then(renderChatRail);}
     } catch (e) {
-      showToast("Send failed — " + (e.message || "error"));
-      chatDrafts.set(draftKey, {text, files});
-      if (chatDraftKey === draftKey) { ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
+      if(remembered && !e.rejected){
+        showToast("Delivery is unconfirmed. Check status or retry the saved send.",null,"info");
+        if(chatDraftKey===draftKey)chatRenderDeliveryNotice(host,draftKey);
+      } else {
+        if(remembered)chatForgetDelivery(remembered);
+        showToast("Send failed — " + (e.message || "error"));
+        chatDrafts.set(draftKey, {text, files});
+        if (chatDraftKey === draftKey) { ta.value = text; chatPendingFiles = files; grow(); syncAttach(); }
+      }
     }
     finally { chatSending = false; renderChatComposer(chatCurSession); }
   };
@@ -1475,6 +1488,7 @@ function renderChatComposer(session) {
   });
   send.onclick = submit;
   host.append(chips, mention, ta, fi, attach, ritual, send);
+  chatRenderDeliveryNotice(host,draftKey);
   grow();
   syncAttach();
 }
@@ -1484,7 +1498,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result]));
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result]));
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || queued > 0 || (chatAgent && !chatIsPortal()));
@@ -2393,4 +2407,71 @@ function chatArtifactActions(data){
   b.onclick=()=>chatOpenWorkingArtifact({id:a.id,task:data.id});row.append(b);
  }
  return row;
+}
+
+// Persist uncertain Hermes sends before transport. A retry reuses the exact
+// request ID and payload, including New chat; it never recreates user intent.
+const chatDeliveryStorageKey = "manifest.chatDeliveryOutbox.v1";
+function chatReadDeliveryOutbox(){
+ try {
+  const x=JSON.parse(localStorage.getItem(chatDeliveryStorageKey)||"[]");
+  return Array.isArray(x)?x.filter(v=>{
+   if(!v || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(v.agent) || !/^[a-zA-Z0-9_-]{8,128}$/.test(v.payload?.requestId) || typeof v.url!=="string")return false;
+   const base=chatBaseFor(v.agent);
+   return v.url===base || (v.url.startsWith(base) && /^\/[0-9]{8}-[0-9]{6}-[0-9a-z]{2,8}\/messages$/.test(v.url.slice(base.length)));
+  }):[];
+ }catch(e){return [];}
+}
+function chatWriteDeliveryOutbox(items){localStorage.setItem(chatDeliveryStorageKey,JSON.stringify(items));}
+function chatRememberDelivery(scope,agent,url,payload){
+ const items=chatReadDeliveryOutbox(), signature=JSON.stringify(payload);
+ const old=items.find(x=>x.scope===scope&&x.url===url&&x.signature===signature);
+ if(old)return old;
+ const item={scope,agent,url,signature,payload:{...payload,requestId:crypto.randomUUID()},at:new Date().toISOString()};
+ items.push(item);chatWriteDeliveryOutbox(items);return item;
+}
+function chatForgetDelivery(item){chatWriteDeliveryOutbox(chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId));}
+async function chatDeliverRemembered(item){
+ const res=await fetchJSONRetry("POST",item.url,item.payload);
+ if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);throw error;}
+ const result=await res.json();
+ if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
+ chatForgetDelivery(item);return result;
+}
+function chatRenderDeliveryNotice(host,scope){
+ host.querySelector(".chat-delivery-notice")?.remove();
+ const pending=chatReadDeliveryOutbox().filter(x=>x.scope===scope);if(!pending.length)return;
+ const notice=el("div","chat-delivery-notice");notice.setAttribute("role","status");
+ pending.forEach(item=>{
+  const row=el("div","chat-delivery-row");
+  const label=el("span","","Send not confirmed: "+String(item.payload.text||"Attachment").slice(0,90));
+  const check=el("button","sprt-quiet","Check status");
+  const retry=el("button","sprt-quiet","Retry same send");
+  const navigate=result=>{
+   if(result.id&&chatDraftKey===scope&&!chatOpenId)location.hash="#/chat/a/"+encodeURIComponent(item.agent)+"/"+encodeURIComponent(result.id);
+   else if(chatDraftKey===scope&&chatOpenId)loadChatSession(chatOpenId);
+  };
+  check.onclick=async()=>{
+   check.disabled=true;
+   try{
+    const r=await fetch("/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery?request="+encodeURIComponent(item.payload.requestId));
+    if(r.status===404){label.textContent="Not recorded yet. Retry the same send to deliver it.";return;}
+    if(!r.ok)throw new Error(await r.text());
+    const d=await r.json();chatForgetDelivery(item);row.remove();navigate(d);
+    showToast("Message "+d.delivery.state,null,"info");
+   }catch(e){label.textContent="Still unable to confirm delivery. Your message is saved here.";}
+   finally{check.disabled=false;}
+  };
+  retry.onclick=async()=>{
+   retry.disabled=true;
+   try{const d=await chatDeliverRemembered(item);row.remove();navigate(d);}
+   catch(e){
+    if(e.rejected){label.textContent="Send rejected: "+e.message+". Your original message remains saved here.";}
+    else label.textContent="Delivery remains unconfirmed. Retrying this send is safe.";
+   }
+   finally{retry.disabled=false;}
+  };
+  row.append(label,check,retry);notice.append(row);
+ });
+ host.prepend(notice);
 }

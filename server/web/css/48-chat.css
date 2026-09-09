@@ -368,3 +368,8 @@
  .chat-shell.has-artifact .chat-main { display: none; }
  .chat-shell.has-artifact .artifact-workspace { border-left: 0; padding: 0 var(--sp-6); width: 100%; }
 }
+
+.chat-delivery-notice { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding: var(--sp-6); }
+.chat-delivery-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); font-size: var(--fs-md); }
+.chat-delivery-row > span { flex: 1 1 100%; overflow-wrap: anywhere; }
+.chat-delivery-row button { min-height: 44px; }

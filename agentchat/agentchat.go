@@ -21,17 +21,15 @@
 // Writer discipline: MANIFEST is the single writer (unlike spirit sessions,
 // which the engine rewrites). Every write is tmp+rename under a per-thread
 // mutex. While a turn is in flight the file carries `status: thinking`; a
-// second send during that window is QUEUED in memory (the spirit contract's
-// `queued` list, which for spirits is the spool) and drained by the same
-// goroutine when the turn lands, so at most one Hermes turn per thread runs at
-// a time. Queued text that has not yet been appended is lost on a restart —
-// the same exposure the spool has, and the user turn is echoed to the UI as
-// queued until it becomes a real turn.
+// second send during that window is retained in the same session file. Request
+// receipts deduplicate retries, and recovery resumes only messages that had not
+// started. Interrupted provider calls are never silently replayed.
 package agentchat
 
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -67,16 +65,19 @@ func ValidID(id string) bool { return idRe.MatchString(id) }
 // Session is a parsed session frontmatter row (the JSON shape mirrors
 // spirits.ChatSessionSummary so the rail/transcript code needs no branches).
 type Session struct {
-	ID       string  `json:"id"`
-	Agent    string  `json:"agent"`
-	Profile  string  `json:"profile"` // "" = the default Hermes profile
-	Title    string  `json:"title"`
-	Created  string  `json:"created"`
-	Updated  string  `json:"updated"`
-	Status   string  `json:"status"` // idle | thinking
-	Turns    int     `json:"turns"`
-	SpentUSD float64 `json:"spentUsd"`
-	Model    string  `json:"model"`
+	Deliveries      []Delivery `json:"deliveries,omitempty"`
+	CreateRequest   string     `json:"-"`
+	CreateSignature string     `json:"-"`
+	ID              string     `json:"id"`
+	Agent           string     `json:"agent"`
+	Profile         string     `json:"profile"` // "" = the default Hermes profile
+	Title           string     `json:"title"`
+	Created         string     `json:"created"`
+	Updated         string     `json:"updated"`
+	Status          string     `json:"status"` // idle | thinking
+	Turns           int        `json:"turns"`
+	SpentUSD        float64    `json:"spentUsd"`
+	Model           string     `json:"model"`
 	// HermesSession is the Hermes-side session id of the LAST turn (usage
 	// report session_id) — a pointer for `hermes sessions search`, never fed
 	// back in (see package hermes).
@@ -100,16 +101,15 @@ type Turn struct {
 type Store struct {
 	root string
 
-	mu       sync.Mutex             // guards locks, inflight, queued
-	locks    map[string]*sync.Mutex // per-thread file mutex
-	inflight map[string]bool        // thread key → a turn goroutine owns it
-	queued   map[string][]string    // thread key → sends waiting for the goroutine
+	mu       sync.Mutex // guards per-thread lock map
+	createMu sync.Mutex // serializes idempotent conversation creation
+	locks    map[string]*sync.Mutex
 }
 
 // New opens a store rooted at dir (e.g. <harness>/artifacts/chats). The
 // directory is created lazily on the first write.
 func New(dir string) *Store {
-	return &Store{root: dir, locks: map[string]*sync.Mutex{}, inflight: map[string]bool{}, queued: map[string][]string{}}
+	return &Store{root: dir, locks: map[string]*sync.Mutex{}}
 }
 
 // Root returns the chats root.
@@ -143,6 +143,9 @@ func parse(content string) (Session, string) {
 		Created: fm["created"], Updated: fm["updated"], Status: fm["status"],
 		Model: fm["model"], HermesSession: fm["hermes_session"], Task: fm["task"],
 	}
+	_ = json.Unmarshal([]byte(fm["deliveries"]), &sess.Deliveries)
+	sess.CreateRequest = fm["create_request"]
+	sess.CreateSignature = fm["create_signature"]
 	sess.Turns, _ = strconv.Atoi(fm["turns"])
 	sess.SpentUSD, _ = strconv.ParseFloat(fm["charge_spent_usd"], 64)
 	if sess.Status == "" {
@@ -154,6 +157,9 @@ func parse(content string) (Session, string) {
 func render(sess Session, body string) string {
 	return (&mdfm.Writer{}).
 		Set("session", sess.ID).
+		Set("create_request", sess.CreateRequest).
+		Set("create_signature", sess.CreateSignature).
+		Set("deliveries", deliveryJSON(sess.Deliveries)).
 		Set("agent", sess.Agent).
 		Set("profile", sess.Profile).
 		Set("title", sess.Title).
@@ -215,6 +221,13 @@ func (s *Store) read(agent, id string) (Session, string, error) {
 	b, err := os.ReadFile(s.path(agent, id))
 	if err != nil {
 		return Session{}, "", err
+	}
+	fm, _ := mdfm.Split(string(b))
+	if raw := fm["deliveries"]; raw != "" {
+		var ds []Delivery
+		if err := json.Unmarshal([]byte(raw), &ds); err != nil {
+			return Session{}, "", errors.New("invalid delivery journal")
+		}
 	}
 	sess, body := parse(string(b))
 	if sess.ID == "" {
@@ -307,7 +320,7 @@ func (s *Store) Agents() []string {
 	return out
 }
 
-// Get returns one session, its raw turn body, and the in-memory queue.
+// Get returns one session, its raw turn body, and the persisted queue.
 func (s *Store) Get(agent, id string) (Session, string, []string, bool) {
 	if !ValidAgent(agent) || !ValidID(id) {
 		return Session{}, "", nil, false
@@ -321,6 +334,10 @@ func (s *Store) Get(agent, id string) (Session, string, []string, bool) {
 
 // Create writes a fresh session skeleton and returns its id.
 func (s *Store) Create(agent, profile, title, model string) (string, error) {
+	return s.CreateOnce(agent, profile, title, model, "")
+}
+
+func (s *Store) create(agent, profile, title, model, requestID, signature string) (string, error) {
 	if !ValidAgent(agent) {
 		return "", errors.New("bad agent name")
 	}
@@ -336,7 +353,7 @@ func (s *Store) Create(agent, profile, title, model string) (string, error) {
 	}
 	ts := now()
 	sess := Session{ID: id, Agent: agent, Profile: profile, Title: title, Created: ts, Updated: ts,
-		Status: StatusIdle, Model: strings.TrimSpace(model)}
+		Status: StatusIdle, Model: strings.TrimSpace(model), CreateRequest: requestID, CreateSignature: signature}
 	m := s.lock(agent, id)
 	m.Lock()
 	defer m.Unlock()
@@ -415,75 +432,44 @@ func (s *Store) Delete(agent, id string) error {
 	if !ValidAgent(agent) || !ValidID(id) {
 		return errors.New("bad agent/session")
 	}
-	if s.InFlight(agent, id) {
-		return errors.New("session is thinking — try again in a moment")
-	}
 	m := s.lock(agent, id)
 	m.Lock()
 	defer m.Unlock()
+	if s.InFlight(agent, id) {
+		return errors.New("session has pending work — try again in a moment")
+	}
 	if err := os.Remove(s.path(agent, id)); err != nil {
 		return errors.New("no such session")
 	}
 	return nil
 }
 
-// ---- in-flight coordination (one turn per thread; second sends queue) ----
-
-// Submit decides what a send does: if no turn is in flight it CLAIMS the
-// thread and returns started=true (the caller appends the user turn and starts
-// the goroutine); otherwise the text joins the queue and started=false.
-func (s *Store) Submit(agent, id, text string) (started bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	k := key(agent, id)
-	if s.inflight[k] {
-		s.queued[k] = append(s.queued[k], text)
+// InFlight includes accepted work so a pending instruction cannot disappear
+// through deletion while waiting for its worker.
+func (s *Store) InFlight(agent, id string) bool {
+	sess, _, err := s.read(agent, id)
+	if err != nil {
 		return false
 	}
-	s.inflight[k] = true
-	return true
-}
-
-// Next is called by the turn goroutine when a turn lands: it pops the next
-// queued send (still holding the claim) or, with nothing queued, RELEASES the
-// claim atomically — so a send racing the release can never strand a message
-// in the queue.
-func (s *Store) Next(agent, id string) (text string, more bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	k := key(agent, id)
-	if q := s.queued[k]; len(q) > 0 {
-		text = q[0]
-		if len(q) == 1 {
-			delete(s.queued, k)
-		} else {
-			s.queued[k] = q[1:]
+	for _, d := range sess.Deliveries {
+		if d.State == DeliveryRunning || d.State == DeliveryQueued {
+			return true
 		}
-		return text, true
 	}
-	delete(s.inflight, k)
-	return "", false
+	return sess.Status == StatusThinking
 }
-
-// Release drops the claim unconditionally (goroutine defer — a panic guard).
-func (s *Store) Release(agent, id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.inflight, key(agent, id))
-}
-
-// InFlight reports whether a turn goroutine owns the thread.
-func (s *Store) InFlight(agent, id string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.inflight[key(agent, id)]
-}
-
-// Queued returns the sends waiting behind the in-flight turn, oldest first.
 func (s *Store) Queued(agent, id string) []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.queued[key(agent, id)]...)
+	sess, _, err := s.read(agent, id)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, d := range sess.Deliveries {
+		if d.State == DeliveryQueued {
+			out = append(out, d.Text)
+		}
+	}
+	return out
 }
 
 // Recover repairs sessions left `thinking` by a process that died mid-turn:
@@ -496,14 +482,34 @@ func (s *Store) Recover() []string {
 			if sess.Status != StatusThinking {
 				continue
 			}
-			_, _ = s.update(agent, sess.ID, func(x *Session, body *string) error {
+			_, err := s.update(agent, sess.ID, func(x *Session, body *string) error {
+				interrupted := false
+				queued := false
+				for i := range x.Deliveries {
+					d := &x.Deliveries[i]
+					switch d.State {
+					case DeliveryRunning:
+						d.State = DeliveryInterrupted
+						d.Error = "Server restarted; provider delivery is uncertain and was not replayed"
+						d.Updated = now()
+						interrupted = true
+					case DeliveryQueued:
+						queued = true
+					}
+				}
+				// Sessions created by the old transport have no receipt for the active turn.
+				if interrupted || len(x.Deliveries) == 0 {
+					appendTurn(x, body, "system", "The previous turn was interrupted by a restart. It was not replayed; review its result before asking to run it again.", 0)
+				}
 				x.Status = StatusIdle
-				x.Turns++
-				*body += fmt.Sprintf("\n\n## Turn %d — system · %s\n\n⚠ the previous turn was interrupted by a restart — send again", x.Turns, now())
-				*body = strings.TrimSpace(*body)
+				if queued {
+					x.Status = StatusThinking
+				}
 				return nil
 			})
-			fixed = append(fixed, key(agent, sess.ID))
+			if err == nil {
+				fixed = append(fixed, key(agent, sess.ID))
+			}
 		}
 	}
 	return fixed

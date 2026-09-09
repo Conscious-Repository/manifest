@@ -112,40 +112,50 @@ func TestListAgentsRenameDelete(t *testing.T) {
 func TestSubmitQueueDrain(t *testing.T) {
 	st := New(filepath.Join(t.TempDir(), "chats"))
 	id, _ := st.Create("alfred", "", "", "")
-	if !st.Submit("alfred", id, "one") {
-		t.Fatal("first submit must claim")
+	if _, err := st.Accept("alfred", id, "request-one", "one"); err != nil {
+		t.Fatal(err)
 	}
-	if st.Submit("alfred", id, "two") {
-		t.Fatal("second submit must queue")
+	first, claimed, err := st.Claim("alfred", id)
+	if err != nil || !claimed {
+		t.Fatal("first claim", err)
 	}
-	if st.Submit("alfred", id, "three") {
-		t.Fatal("third submit must queue")
+	for _, text := range []string{"two", "three"} {
+		if _, err := st.Accept("alfred", id, "request-"+text, text); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if q := st.Queued("alfred", id); strings.Join(q, ",") != "two,three" {
-		t.Errorf("queued = %v", q)
-	}
-	if !st.InFlight("alfred", id) {
-		t.Error("should be in flight")
+		t.Fatal(q)
 	}
 	if err := st.Delete("alfred", id); err == nil {
-		t.Error("delete while in flight must refuse")
+		t.Fatal("deleted pending work")
 	}
-	if txt, more := st.Next("alfred", id); !more || txt != "two" {
-		t.Errorf("next = %q %v", txt, more)
+	if _, claimed, err := st.Claim("alfred", id); err != nil || claimed {
+		t.Fatal("concurrent claim", err)
 	}
-	if txt, more := st.Next("alfred", id); !more || txt != "three" {
-		t.Errorf("next = %q %v", txt, more)
+	if err := st.Finish("alfred", id, first.ID, "alfred", "done", DeliveryCompleted, "", 0); err != nil {
+		t.Fatal(err)
 	}
-	if _, more := st.Next("alfred", id); more {
-		t.Error("queue should be drained")
+	for _, want := range []string{"two", "three"} {
+		d, claimed, err := st.Claim("alfred", id)
+		if err != nil || !claimed {
+			t.Fatal(err)
+		}
+		_, body, _, _ := st.Get("alfred", id)
+		turns := ParseTurns(body)
+		if turns[len(turns)-1].Text != want {
+			t.Fatal("wrong order")
+		}
+		if err := st.Finish("alfred", id, d.ID, "alfred", "done", DeliveryCompleted, "", 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, claimed, err := st.Claim("alfred", id); err != nil || claimed {
+		t.Fatal("queue not drained", err)
 	}
 	if st.InFlight("alfred", id) {
-		t.Error("claim must release when the queue is empty")
+		t.Fatal("still busy")
 	}
-	if !st.Submit("alfred", id, "four") {
-		t.Error("submit after release must claim again")
-	}
-	st.Release("alfred", id)
 }
 
 func TestRecoverRepairsStaleThinking(t *testing.T) {

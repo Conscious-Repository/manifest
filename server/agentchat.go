@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -150,6 +151,21 @@ func (s *Server) agentChatRecover() {
 	}
 }
 
+// ResumeAgentChats starts only unstarted accepted instructions, after all
+// stores and context providers are wired. It is a startup drain, not a scheduler.
+func (s *Server) ResumeAgentChats() {
+	if s.agentChat == nil || !s.hermesEnabled() {
+		return
+	}
+	for _, agent := range s.agentChat.store.Agents() {
+		for _, sess := range s.agentChat.store.List(agent) {
+			if len(s.agentChat.store.Queued(agent, sess.ID)) > 0 {
+				s.startAgentChatDelivery(agent, sess.ID)
+			}
+		}
+	}
+}
+
 // The rail's default identity is alfredAgent (hermes_dig.go) — an alias of the
 // default Hermes profile (`-p` unset), display "Alfred" (plan §3.5).
 
@@ -163,6 +179,7 @@ type agentChatRosterEntry struct {
 	Description string `json:"description,omitempty"`
 	Enabled     bool   `json:"enabled"` // the runner can take a turn
 	Sessions    int    `json:"sessions"`
+	DurableSend bool   `json:"durableSend,omitempty"`
 	// portal agents only: the artifact/access domain, the one-run gate, and
 	// the persona intents the composer's @-typeahead offers (@kairos::brief)
 	Domain   string   `json:"domain,omitempty"`
@@ -197,7 +214,7 @@ func (s *Server) agentChatRoster(ctx context.Context) []agentChatRosterEntry {
 	if enabled {
 		profiles, _ = s.hermesProfilesCached(ctx)
 	}
-	out := []agentChatRosterEntry{{Name: alfredAgent, Label: "Alfred", Backend: "hermes", Enabled: enabled,
+	out := []agentChatRosterEntry{{Name: alfredAgent, Label: "Alfred", Backend: "hermes", DurableSend: true, Enabled: enabled,
 		Sessions: len(s.agentChat.store.List(alfredAgent)), Description: s.agentDescription("agent:" + alfredAgent)}}
 	descs := s.hermesProfileDescriptions(ctx)
 	for _, p := range profiles {
@@ -211,7 +228,7 @@ func (s *Server) agentChatRoster(ctx context.Context) []agentChatRosterEntry {
 		if !agentchat.ValidAgent(name) || isCodingAgent(name) {
 			continue
 		}
-		out = append(out, agentChatRosterEntry{Name: name, Label: name, Backend: "hermes", Profile: name,
+		out = append(out, agentChatRosterEntry{Name: name, Label: name, Backend: "hermes", DurableSend: true, Profile: name,
 			Model: p.Model, Enabled: enabled, Sessions: len(s.agentChat.store.List(name)), Description: descs[name]})
 	}
 	sort.SliceStable(out[1:], func(i, j int) bool { return out[1+i].Name < out[1+j].Name })
@@ -291,13 +308,18 @@ func (s *Server) handleAgentChatSessionCreate(w http.ResponseWriter, r *http.Req
 	}
 	agent := r.PathValue("agent")
 	var b struct {
-		Title string            `json:"title"`
-		Model string            `json:"model"`
-		Text  string            `json:"text"`
-		Files []threads.FileRef `json:"files"`
+		RequestID string            `json:"requestId"`
+		Title     string            `json:"title"`
+		Model     string            `json:"model"`
+		Text      string            `json:"text"`
+		Files     []threads.FileRef `json:"files"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
+		return
+	}
+	if len(strings.TrimSpace(b.Text)) > agentChatMaxChars {
+		http.Error(w, "message exceeds 24000 characters; shorten it or attach a file", http.StatusBadRequest)
 		return
 	}
 	profile, err := s.resolveAgentChat(r.Context(), agent)
@@ -315,18 +337,28 @@ func (s *Server) handleAgentChatSessionCreate(w http.ResponseWriter, r *http.Req
 	if title == "" && strings.TrimSpace(b.Text) != "" {
 		title = firstLine(b.Text, 60)
 	}
-	id, err := s.agentChat.store.Create(agent, profile, title, b.Model)
+	id, err := s.agentChat.store.CreateOnce(agent, profile, title, b.Model, b.RequestID)
 	if err != nil {
+		if errors.Is(err, agentchat.ErrRequestConflict) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		httpError(w, errBadRequest(err.Error()))
 		return
 	}
 	status := agentchat.StatusIdle
-	if strings.TrimSpace(b.Text) != "" {
-		if err := s.agentChatSend(agent, id, b.Text, b.Files); err != nil {
+	if strings.TrimSpace(b.Text) != "" || len(b.Files) > 0 {
+		if _, err := s.agentChatSendRequest(agent, id, b.RequestID, b.Text, b.Files); err != nil {
+			if errors.Is(err, agentchat.ErrRequestConflict) {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
 			httpError(w, err)
 			return
 		}
-		status = agentchat.StatusThinking
+		if sess, _, _, ok := s.agentChat.store.Get(agent, id); ok {
+			status = sess.Status
+		}
 	}
 	writeJSON(w, map[string]any{"id": id, "status": status})
 }
@@ -355,8 +387,9 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	agent, id := r.PathValue("agent"), r.PathValue("id")
 	var b struct {
-		Text  string            `json:"text"`
-		Files []threads.FileRef `json:"files"`
+		RequestID string            `json:"requestId"`
+		Text      string            `json:"text"`
+		Files     []threads.FileRef `json:"files"`
 	}
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
@@ -366,12 +399,18 @@ func (s *Server) handleAgentChatMessage(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no such session", http.StatusNotFound)
 		return
 	}
-	if err := s.agentChatSend(agent, id, b.Text, b.Files); err != nil {
+	receipt, err := s.agentChatSendRequest(agent, id, b.RequestID, b.Text, b.Files)
+	if err != nil {
+		if errors.Is(err, agentchat.ErrRequestConflict) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
 		httpError(w, err)
 		return
 	}
-	writeJSON(w, map[string]any{"ok": true, "status": agentchat.StatusThinking,
-		"queued": len(s.agentChat.store.Queued(agent, id))})
+	sess, _, _, _ := s.agentChat.store.Get(agent, id)
+	writeJSON(w, map[string]any{"ok": true, "status": sess.Status,
+		"queued": len(s.agentChat.store.Queued(agent, id)), "delivery": receipt})
 }
 
 // POST /api/agents/chat/{agent}/sessions/{id}/rename {title}
@@ -418,74 +457,68 @@ var fileTokenRe = regexp.MustCompile(`(?m)^\[file:: ([0-9a-f]{64}) (.+?)\]$`)
 
 // agentChatSend records the user turn and starts (or queues behind) the turn.
 func (s *Server) agentChatSend(agent, id, text string, files []threads.FileRef) error {
+	_, err := s.agentChatSendRequest(agent, id, "", text, files)
+	return err
+}
+func (s *Server) agentChatSendRequest(agent, id, requestID, text string, files []threads.FileRef) (agentchat.Delivery, error) {
 	text = strings.TrimSpace(text)
 	if text == "" && len(files) == 0 {
-		return errBadRequest("empty message")
+		return agentchat.Delivery{}, errBadRequest("empty message")
 	}
 	if len(text) > agentChatMaxChars {
-		text = text[:agentChatMaxChars]
+		return agentchat.Delivery{}, errBadRequest("message exceeds 24000 characters; shorten it or attach a file")
 	}
 	for _, f := range files {
-		if f.Hash == "" || f.Name == "" {
-			continue
+		if f.Hash != "" && f.Name != "" {
+			text += "\n[file:: " + f.Hash + " " + strings.ReplaceAll(f.Name, "]", ")") + "]"
 		}
-		text += "\n[file:: " + f.Hash + " " + strings.ReplaceAll(f.Name, "]", ")") + "]"
 	}
 	text = strings.TrimSpace(text)
 	if !s.hermesEnabled() {
-		return errBadRequest("the Hermes runner is not enabled here")
+		return agentchat.Delivery{}, errBadRequest("the Hermes runner is not enabled here")
 	}
-	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner",
-		Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Harness: "hermes",
-		Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent}})
-	if !s.agentChat.store.Submit(agent, id, text) {
-		return nil // queued behind the turn in flight; the goroutine drains it
+	accepted, err := s.agentChat.store.Accept(agent, id, requestID, text)
+	if err != nil {
+		return agentchat.Delivery{}, err
 	}
-	if _, err := s.agentChat.store.AppendTurn(agent, id, "user", text, 0); err != nil {
-		s.agentChat.store.Release(agent, id)
-		return err
+	if accepted.New {
+		s.ledger(ledger.Entry{Source: "chat", Kind: "chat.user", Actor: "owner", Object: ledger.Object{Kind: ledger.ObjSession, ID: id}, Session: id, Harness: "hermes", Text: ledger.Snip(text, 280), Meta: map[string]any{"agent": agent, "requestId": accepted.Delivery.ID}})
 	}
-	_ = s.agentChat.store.SetStatus(agent, id, agentchat.StatusThinking)
-	go s.runAgentChatTurns(agent, id)
-	return nil
+	s.startAgentChatDelivery(agent, id)
+	receipt, _ := s.agentChat.store.Receipt(agent, id, accepted.Delivery.ID)
+	return receipt, nil
 }
-
-// runAgentChatTurns runs the in-flight turn and every send queued behind it,
-// one Hermes invocation each, then flips the file back to idle. Always
-// releases the claim.
-//
-// Ordering matters: the file flips to idle WHILE this goroutine still holds
-// the claim, and only then does Next release it. Releasing first would let a
-// send land in between (claim → append → `thinking`) and the stale idle
-// write would then clobber it — the file would say idle for the whole of a
-// live turn and the poll would stop. If a send does arrive between the idle
-// write and Next, Next hands it back and the file flips to thinking again.
-func (s *Server) runAgentChatTurns(agent, id string) {
-	st := s.agentChat.store
-	defer st.Release(agent, id)
+func (s *Server) startAgentChatDelivery(agent, id string) {
+	d, claimed, err := s.agentChat.store.Claim(agent, id)
+	if err != nil {
+		log.Printf("agent chat %s/%s: claim delivery: %v", agent, id, err)
+		return
+	}
+	if claimed {
+		go s.runAgentChatTurns(agent, id, d)
+	}
+}
+func (s *Server) runAgentChatTurns(agent, id string, d agentchat.Delivery) {
 	for {
-		s.runAgentChatTurn(agent, id)
-		if len(st.Queued(agent, id)) == 0 {
-			_ = st.SetStatus(agent, id, agentchat.StatusIdle)
-		}
-		next, more := st.Next(agent, id)
-		if !more {
+		if err := s.runAgentChatTurn(agent, id, d.ID); err != nil {
+			log.Printf("agent chat %s/%s: persist result: %v", agent, id, err)
 			return
 		}
-		_ = st.SetStatus(agent, id, agentchat.StatusThinking)
-		if _, err := st.AppendTurn(agent, id, "user", next, 0); err != nil {
-			log.Printf("agent chat %s/%s: append queued turn: %v", agent, id, err)
+		next, claimed, err := s.agentChat.store.Claim(agent, id)
+		if err != nil || !claimed {
+			return
 		}
+		d = next
 	}
 }
 
 // runAgentChatTurn composes the window, invokes the CLI once, and lands the
 // reply (or the failure) as a turn.
-func (s *Server) runAgentChatTurn(agent, id string) {
+func (s *Server) runAgentChatTurn(agent, id, requestID string) error {
 	st := s.agentChat.store
 	sess, body, _, ok := st.Get(agent, id)
 	if !ok {
-		return
+		return errors.New("conversation unavailable")
 	}
 	who := "agent:" + agent
 	obj := ledger.Object{Kind: ledger.ObjSession, ID: id}
@@ -500,23 +533,23 @@ func (s *Server) runAgentChatTurn(agent, id string) {
 	})
 	if err != nil {
 		log.Printf("agent chat %s/%s: %v", agent, id, err)
-		_, _ = st.AppendTurn(agent, id, "system", "⚠ "+agentDisplayName("agent:"+agent)+" couldn't finish that — "+err.Error(), 0)
+		saveErr := st.Finish(agent, id, requestID, "system", "⚠ "+agentDisplayName("agent:"+agent)+" couldn't finish that — "+err.Error(), agentchat.DeliveryFailed, err.Error(), 0)
 		s.ledger(ledger.Entry{Source: "run", Kind: "run.failed", Actor: who, Object: obj, Session: id, Harness: "hermes",
 			Text: "chat turn failed — " + err.Error(), Meta: map[string]any{"agent": agent, "profile": sess.Profile}})
-		return
+		return saveErr
 	}
 	reply := strings.TrimSpace(res.Reply)
 	if reply == "" {
 		reply = "(no reply)"
 	}
-	_, _ = st.AppendTurn(agent, id, agent, "### Step 1 — say\n\n"+reply, res.SpentUSD)
-	if res.SessionID != "" {
-		_ = st.SetHermesSession(agent, id, res.SessionID)
+	if err := st.Finish(agent, id, requestID, agent, "### Step 1 — say\n\n"+reply, agentchat.DeliveryCompleted, "", res.SpentUSD, res.SessionID); err != nil {
+		return err
 	}
 	s.ledger(ledger.Entry{Source: "chat", Kind: "chat.assistant", Actor: who, Object: obj, Session: id, Harness: "hermes",
 		Text: ledger.Snip(reply, 280),
 		Meta: map[string]any{"agent": agent, "profile": sess.Profile, "sessionId": res.SessionID,
 			"spentUsd": res.SpentUSD, "model": firstNonEmpty(res.Model, sess.Model)}})
+	return nil
 }
 
 // agentChatWindowChars bounds the transcript the prompt carries (oldest turns
@@ -611,4 +644,23 @@ func (s *Server) agentChatAttachments(t agentchat.Turn) string {
 		}
 	}
 	return b.String()
+}
+
+// A receipt lookup is read-only; checking an uncertain send never invokes an agent.
+func (s *Server) handleAgentChatDelivery(w http.ResponseWriter, r *http.Request) {
+	if !s.agentChatReady(w) {
+		return
+	}
+	agent, requestID := r.PathValue("agent"), r.URL.Query().Get("request")
+	if !agentchat.ValidAgent(agent) || !agentchat.ValidRequestID(requestID) {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	for _, sess := range s.agentChat.store.List(agent) {
+		if d, ok := s.agentChat.store.Receipt(agent, sess.ID, requestID); ok {
+			writeJSON(w, map[string]any{"id": sess.ID, "delivery": d})
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
