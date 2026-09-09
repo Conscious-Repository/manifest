@@ -92,3 +92,9 @@ were stopped and their stopped scratch session records deleted. No Manifest
 production restart has yet been performed. Browser UI verification remains C/D.
 
 C/D: not started; board execution is still on its legacy tmux path.
+
+Gate B verification correction: a late fixture edit was staged after the full
+suite, and its literal shell-quote assertion failed. Corrected that assertion
+without changing production code, then reran the required build and full suite
+successfully. B therefore has a small follow-up test commit, a deviation from the
+requested one-commit gate shape; published main was not rewritten.

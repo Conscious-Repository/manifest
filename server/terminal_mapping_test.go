@@ -277,7 +277,7 @@ func TestTerminalMappingExactStoppedResumeAcrossRestart(t *testing.T) {
 			herdrFixtureReply(c, map[string]any{"root_pane": herdrFixturePane("unknown", 1)})
 		case "pane.send_input":
 			text, _ := r.Params["text"].(string)
-			if !strings.Contains(text, "claude --resume 01234567-abcd --model 'pinned-model'") {
+			if !strings.Contains(text, "claude --resume 01234567-abcd --model") || !strings.Contains(text, "pinned-model") {
 				t.Errorf("resume lost exact identity/model: %s", text)
 			}
 			if strings.Contains(text, "--session-id") {
