@@ -68,8 +68,14 @@ func TestTerminalEventsShareSubscriptionAndInvalidateDisconnect(t *testing.T) {
 	// fixture's List() still succeeds). The hub must not lie that the agent is
 	// unavailable — it verifies reachability, stays connected, and re-subscribes.
 	awaitTerminalSnapshot(t, a, working)
-	if subscriptions.Load() != 2 {
-		t.Fatal("did not resubscribe after disconnect")
+	// Re-subscription happens shortly after the reachability check; wait for it
+	// rather than checking synchronously (the 150ms backoff hasn't elapsed yet).
+	deadline := time.Now().Add(4 * time.Second)
+	for subscriptions.Load() != 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("did not resubscribe after disconnect")
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 func TestTerminalEventProjectionDoesNotTrustWrongOccupantOrBoardLabel(t *testing.T) {
