@@ -193,11 +193,15 @@ function recOpenCandidateRole(slug) {
   recNav("board");
 }
 
+function recRoleOpen(id) {
+  const r=(recCache.roles || []).find(r=>(r.id || "role/"+r.slug)===id);
+  return !r || !r.status || r.status==="open";
+}
 function recCandidateCount(roleId, origin = "both", cut = "open") {
   return (recCache.candidates || []).filter(c => {
     const apps=(c.applications || []).filter(a=>!roleId || a.role===roleId);
     if (roleId && ((c.applications || []).length ? !apps.length : c.role!==roleId)) return false;
-    const active=apps.length ? apps.some(recApplicationActive) : !["hired","archived"].includes(recCandidateContext(c).stage);
+    const active=apps.length ? apps.some(a=>recApplicationActive(a) && (roleId || recRoleOpen(a.role))) : !["hired","archived"].includes(recCandidateContext(c).stage) && (roleId || recRoleOpen(c.role));
     return (cut==="all" || (cut==="archived" ? !active : active)) &&
       (origin==="both" || (origin==="inbound" ? !!c.inbound : !c.inbound));
   }).length;
@@ -210,6 +214,7 @@ function recVisible(c) {
   if (!everyone && recOrigin === "inbound" && !applied) return false;
   if (!everyone && recOrigin === "sourced" && applied) return false;
   const archived = !recCandidateActive(c);
+  if (!recRole && recCut==="open" && !(c.applications || []).some(a=>recApplicationActive(a) && recRoleOpen(a.role)) && ((c.applications || []).length || !recRoleOpen(c.role))) return false;
   if ((everyone || recCut === "open") && archived) return false;
   if (!everyone && recCut === "archived" && !archived) return false;
   const q = recQuery.trim().toLowerCase();
@@ -367,9 +372,9 @@ function paintRail(rail) {
     const on = (recView === "board" && recRole === role.slug) || (recView === "role" && recRoleView === role.slug);
     const b = el("button", "rec-role" + (on ? " on" : ""));
     b.append(el("span", "rec-role-name", role.title || role.slug));
-    b.append(el("span", "rec-role-count", String(recCandidateCount(roleId))));
-    b.title = "View active candidates across Applied and Recruiting";
-    b.onclick = () => recOpenCandidateRole(role.slug);
+    b.append(el("span", "rec-role-count", String(recCandidateCount(roleId,"both",role.status && role.status!=="open" ? "all" : "open"))));
+    b.title = role.status && role.status!=="open" ? "Closed role · candidate history" : "View active candidates across Applied and Recruiting";
+    b.onclick = () => {recOpenCandidateRole(role.slug); if(role.status && role.status!=="open"){recCut="all";if(recPaint)recPaint();}};
     (role.status === "open" || !role.status ? roleHost : closedRoles).append(b);
   });
   if (closedRoles.children.length>1) roleHost.append(closedRoles);
