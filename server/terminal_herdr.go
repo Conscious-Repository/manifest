@@ -419,9 +419,14 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 	for _, s := range []string{"pane.created", "pane.updated", "pane.closed", "pane.exited"} {
 		subs = append(subs, map[string]string{"type": s})
 	}
+	// Per-pane agent_status_changed subs are omitted deliberately: a stale
+	// pane_id in such a sub makes the whole events.subscribe ACK an error,
+	// dropping the stream. The generic pane events are wakeups anyway — the
+	// goroutine resnapshots via List() on every event, which carries the real
+	// agent state. So generic-only subscribe reliably returns
+	// subscription_started and keeps the socket stable.
 	for _, ob := range preliminary {
 		subscribed[ob.Identity.Pane] = true
-		subs = append(subs, map[string]string{"type": "pane.agent_status_changed", "pane_id": ob.Identity.Pane})
 	}
 	if err = herdrRequest(c, "events.subscribe", map[string]any{"subscriptions": subs}); err != nil {
 		fail()
