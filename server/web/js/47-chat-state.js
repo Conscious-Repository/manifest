@@ -55,7 +55,8 @@ class ChatDraftState {
     const value=this.value,revision=this.revision;
     const job=Promise.resolve().then(async()=>{
       try {
-        const r=await fetch(this.url(),{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({revision,value})});
+        const body=JSON.stringify({revision,value});
+        const r=await fetch(this.url(),{method:"PUT",headers:{"Content-Type":"application/json"},body,keepalive:body.length<15000});
         if(r.status===409){this.conflict=this.snapshot(await r.json());return false;}
         if(!r.ok)throw new Error("Draft sync unavailable");
         const saved=this.snapshot(await r.json());
@@ -79,6 +80,6 @@ class ChatDraftState {
   }
   clearSent(value){
     if(!chatStateEqual(this.value,value))return false;
-    this.set({...value,text:"",files:[]});return true;
+    this.set({...value,text:"",files:[],...(Array.isArray(value?.mentions)?{mentions:[]}: {})});return true;
   }
 }

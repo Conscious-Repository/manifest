@@ -140,9 +140,10 @@ function chatCaptureSyncedDraft(key){
   if(!state || key!==chatDraftKey || !input)return;
   state.set({text:input.value,files:chatPendingFiles.slice(),selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||chatCurSession?.task||""});
 }
-function chatRenderDraftNotice(host,key){
+function chatRenderDraftNotice(host,key){chatRenderStateNotice(host,chatSyncedDrafts.get(key));}
+function chatRenderStateNotice(host,state){
   if(!host)return;host.querySelector(".chat-draft-notice")?.remove();
-  const state=chatSyncedDrafts.get(key);if(!state || (!state.conflict&&!state.error))return;
+  if(!state || (!state.conflict&&!state.error))return;
   const row=el("div","chat-draft-notice");row.setAttribute("role","status");
   row.append(el("span","",state.conflict?"Draft changed on another device. Choose which to keep.":state.error));
   if(state.conflict){
@@ -309,6 +310,8 @@ async function renderTaskChat(taskID, refetch) {
     location.replace("#/chat/a/"+encodeURIComponent(d.chat.agent)+"/"+encodeURIComponent(d.chat.id));
     return;
   }
+  await todoPrepareDraft(d,taskID);
+  if(chatTaskID!==taskID)return;
   await renderTaskChatRail(d);
   if (chatTaskID !== taskID) return;
   const sameThread = host.dataset.task === taskID;

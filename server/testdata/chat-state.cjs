@@ -37,6 +37,12 @@ function device(storage=new Map()){
  // Local recovery survives offline reload; a failed flush never spins retries.
  const storage=new Map(),c=device(storage);await c.refresh();offline=true;c.set({text:'offline draft',files:[]});const before=puts;await Promise.all([c.flush(),c.flush()]);assert.equal(puts,before);
  const restored=device(storage);await restored.refresh();assert.equal(restored.value.text,'offline draft');offline=false;await restored.refresh();await restored.flush();assert.equal(remote.value.text,'offline draft');
+ // Task drafts retain routing preferences while clearing sent mentions/files.
+ const task=device();await task.refresh();
+ task.set({text:'task ask',files:[{hash:'file',name:'plan.md'}],mentions:['agent:alfred'],mode:'ask',agent:'agent:alfred'});await task.flush();
+ const taskSnapshot=task.value;task.clearSent(taskSnapshot);await task.flush();
+ assert.equal(task.value.mode,'ask');assert.equal(task.value.agent,'agent:alfred');assert.equal(task.value.mentions.length,0);assert.equal(task.value.files.length,0);
+ const taskAgain=device();await taskAgain.refresh();assert.equal(taskAgain.value.text,'');assert.equal(taskAgain.value.mode,'ask');
  // Malformed responses must not replace the draft or count as saved.
  const ctx=vm.createContext({fetch:async()=>({ok:true,json:async()=>({revision:999,value:null})}),localStorage:{getItem:()=>null,setItem(){}},setTimeout:()=>1,clearTimeout(){}});
  vm.runInContext(code+';globalThis.Draft=ChatDraftState;',ctx);const bad=new ctx.Draft(key);bad.set({text:'keep'});assert.equal(await bad.flush(),false);assert.equal(bad.value.text,'keep');assert.equal(bad.revision,0);

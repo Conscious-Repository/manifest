@@ -7,6 +7,27 @@
 // attachments. Under 1100px the panel becomes a sheet.
 
 const todoComposerDrafts = new Map();
+const todoSyncedDrafts = new Map();
+async function todoPrepareDraft(d,taskID){
+  if(d.chat?.canonical || !d.conversation?.key || typeof ChatDraftState==="undefined")return;
+  if(todoSyncedDrafts.has(taskID))return;
+  const state=new ChatDraftState(d.conversation.key,(current,apply)=>{
+    if(apply)todoComposerDrafts.set(taskID,current.value||{text:"",files:[],mentions:[]});
+    for(const view of [...(current.views||[])]){
+      if(!view.box.isConnected){current.views.delete(view);continue;}
+      if(apply)view.apply(current.value);
+      chatRenderStateNotice(view.box,current);
+    }
+  });
+  state.views=new Set();todoSyncedDrafts.set(taskID,state);
+  const local=todoComposerDrafts.get(taskID);if(local)state.set(local);
+  await state.refresh();
+  todoComposerDrafts.set(taskID,state.value||{text:"",files:[],mentions:[]});
+}
+window.addEventListener("focus",()=>{for(const state of todoSyncedDrafts.values())if([...state.views].some(v=>v.box.isConnected))state.refresh();});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)for(const state of todoSyncedDrafts.values())if([...state.views].some(v=>v.box.isConnected))state.refresh();});
+window.addEventListener("pagehide",()=>{for(const state of todoSyncedDrafts.values())if(state.dirty)state.flush();});
+
 let todoPanelOrigin = null;
 let todoSelId = null;      // selected todo id ("" = none)
 let todoPanelData = null;  // last /api/tasks/panel payload
@@ -108,6 +129,8 @@ async function renderTodoPanel(refetch) {
     }
   }
   if (todoPanelData.id !== todoSelId) return; // raced a newer selection
+  await todoPrepareDraft(todoPanelData,requestedID);
+  if(todoSelId!==requestedID)return;
   host.innerHTML = "";
   const d = todoPanelData;
   const rec = d.record || {};
@@ -584,8 +607,9 @@ function todoComposer(d, opts) {
     box.append(open);return box;
   }
   const draft = todoComposerDrafts.get(taskID) || { text: "", files: [], mentions: [] };
-  const pendingFiles = draft.files;
-  const mentions = draft.mentions;
+  const pendingFiles = [...(Array.isArray(draft.files)?draft.files:[])];
+  const mentions = [...(Array.isArray(draft.mentions)?draft.mentions:[])];
+  const draftState=todoSyncedDrafts.get(taskID);
   const chips = el("div", "tdo-p-chips");
   const ta = document.createElement("textarea");
   ta.className = "tdo-p-textarea composer";
@@ -616,7 +640,8 @@ function todoComposer(d, opts) {
   if (defAgent) agentSel.value = defAgent.id;
   if (draft.agent && agents.some((a) => a.id === draft.agent)) agentSel.value = draft.agent;
   agentSel.setAttribute("aria-label", "Agent for this message");
-  const remember = () => todoComposerDrafts.set(taskID, { text: ta.value, files: pendingFiles, mentions, mode, agent: agentSel.value });
+  const snapshot=()=>({text:ta.value,files:pendingFiles.slice(),mentions:mentions.slice(),mode,agent:agentSel.value});
+  const remember = () => {const value=snapshot();todoComposerDrafts.set(taskID,value);draftState?.set(value);};
   pendingFiles.forEach((ref) => chips.append(el("span", "tdo-p-chip", "⤓ " + ref.name)));
   mentions.forEach((id) => chips.append(el("span", "tdo-p-chip mention", "@" + id.replace(/^agent:/, ""))));
   const seg = el("div", "tdo-p-modes");
@@ -634,7 +659,7 @@ function todoComposer(d, opts) {
     if (suggest.hidden) return;
     suggest.textContent = "suggest ✦ " + hit.name;
     suggest.title = "reads like " + hit.name + "'s brief — " + hit.description + " · click to pick (a hint, never automatic)";
-    suggest.onclick = () => { agentSel.value = hit.id; paint(); ta.focus(); };
+    suggest.onclick = () => { agentSel.value = hit.id; paint(); remember(); ta.focus(); };
   };
   const paint = () => {
     seg.querySelectorAll("button").forEach((b) => { b.classList.toggle("on", b.dataset.mode === mode); b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); });
@@ -711,16 +736,21 @@ function todoComposer(d, opts) {
     if (!text && !pendingFiles.length) return;
     if (mode !== "comment" && !text) { showToast("Say what you want " + agentName() + " to do"); return; }
     const agent = mode === "comment" ? "" : agentSel.value;
+    remember();
+    if(draftState?.conflict){showToast("Resolve the draft conflict before sending.");return;}
+    const sent=snapshot();
     send.disabled = true;
     try {
       await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent, context: opts.context ? opts.context() : [] });
       if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
       else if (mode === "do") showToast(agentName() + " received your instructions — follow progress here", null, "info");
-      todoComposerDrafts.delete(taskID);
-      ta.value = "";
-      pendingFiles.length = 0;
-      mentions.length = 0;
-      chips.innerHTML = "";
+      if(chatStateEqual(draftState?.value||snapshot(),sent)){
+        const cleared={...sent,text:"",files:[],mentions:[]};
+        draftState?.clearSent(sent);todoComposerDrafts.set(taskID,cleared);
+      }
+      if(chatStateEqual(snapshot(),sent)){
+        ta.value = "";pendingFiles.length = 0;mentions.length = 0;chips.innerHTML = "";
+      }
       loadTodos(); // Ask/Do may have assigned — rows re-project the owner chip
       if (opts.onPosted) opts.onPosted();
       else renderTodoPanel(true);
@@ -732,6 +762,20 @@ function todoComposer(d, opts) {
   };
   acts.append(attach, mentionBtn, send, fi);
   box.append(modeBar, chips, ta, acts);
+  if(draftState){
+    const apply=value=>{
+      const v=value||{};ta.value=v.text||"";
+      pendingFiles.splice(0,pendingFiles.length,...(Array.isArray(v.files)?v.files:[]));mentions.splice(0,mentions.length,...(Array.isArray(v.mentions)?v.mentions:[]));
+      if(TODO_COMPOSER_MODES.some(([id])=>id===v.mode))mode=v.mode;
+      if(agents.some(a=>a.id===v.agent))agentSel.value=v.agent;
+      chips.replaceChildren();
+      pendingFiles.forEach(f=>chips.append(el("span","tdo-p-chip","⤓ "+f.name)));
+      mentions.forEach(id=>chips.append(el("span","tdo-p-chip mention","@"+id.replace(/^agent:/,""))));
+      paint();
+    };
+    for(const view of [...draftState.views])if(!view.box.isConnected)draftState.views.delete(view);
+    draftState.views.add({box,apply});chatRenderStateNotice(box,draftState);
+  }
   paint();
   if (preset && preset.focusAgent && mode !== "comment") {
     setTimeout(() => { if (agentSel.isConnected) agentSel.focus(); }, 0);
