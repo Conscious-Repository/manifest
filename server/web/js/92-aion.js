@@ -1060,7 +1060,7 @@ function renderAionOrg(host) {
     pane.append(el("div", "pp-section-head", "ROLES"));
     pane.append(el("p", "micro-label", "Synced from Ashby · the same roles used in Recruiting"));
     (aionCache.recruitingRoles || []).forEach(r=>{
-      const row=el("div","aion-table-row");
+      const row=el("div","aion-role-row");
       const title=el("button","rec-linkish",r.title);
       title.onclick=()=>{aionMode="recruiting";recNav("role/"+r.slug);};
       row.append(title,el("span","micro-label",r.status || "Unknown"));

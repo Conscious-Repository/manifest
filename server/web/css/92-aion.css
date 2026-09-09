@@ -265,3 +265,8 @@
 }
 .aion-decide-inline:not(:disabled) { color: var(--accent); cursor: pointer; font-weight: 500; }
 .aion-decide-inline:not(:disabled):hover { text-decoration: underline; }
+
+/* Org roles are the recruiting registry, with restrained row navigation. */
+.aion-role-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.aion-role-row > :first-child { flex: 1 1 220px; text-align: left; }
+.aion-role-row > a { white-space: nowrap; }
