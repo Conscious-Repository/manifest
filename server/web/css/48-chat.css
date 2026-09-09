@@ -366,7 +366,7 @@
 .chat-composer > .chat-delivery-notice,
 .chat-composer > .chat-draft-notice { flex: 1 0 100%; min-width: 0; order: -2; }
 .chat-draft-notice { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-4); }
-.chat-draft-notice button { min-height:44px; }
+.chat-draft-notice button { min-height:44px; font-size:var(--fs-md); padding:var(--sp-4) var(--sp-8); }
 .chat-composer > .chat-artifact-context > button:first-child { white-space: normal; text-align: left; }
 .chat-shell.has-artifact .chat-rail { display: none; }
 .chat-shell.has-artifact .chat-main { flex: 1; }
