@@ -887,7 +887,7 @@ function renderChatEmpty(note) {
 async function loadChatSession(id) {
   if (chatIsTerm()) { loadChatTermSession(id); return; }
   let d;
-  const base = chatBase();
+  const base = chatBase(), agent = chatAgent;
   try {
     const res = await fetch(base + "/" + encodeURIComponent(id));
     if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
@@ -909,7 +909,8 @@ async function loadChatSession(id) {
     originSelection={...originRef,task:d.session.origin.task,title:"Artifact",version:"?"};
     try{const r=await fetch("/api/artifacts/get?id="+encodeURIComponent(originRef.id));if(r.ok){const a=await r.json();originSelection.title=a.title||"Artifact";originSelection.version=a.revisions.find(v=>v.hash===originRef.revision)?.n||"?";}}catch(e){}
   }
-  await chatPrepareDraft(d.conversation,(chatAgent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null);
+  if (id !== chatOpenId || base !== chatBase() || els.chatView.hidden) return;
+  await chatPrepareDraft(d.conversation,(agent||"spirits")+"/"+id,d.session.origin&&d.session.turns===0?{text:d.session.origin.prompt||"",files:[],task:d.session.origin.task||"",selection:originSelection}:null);
   if (id !== chatOpenId || base !== chatBase()) return;
   const main = document.querySelector(".chat-main");
   if (main) main.classList.remove("landing");

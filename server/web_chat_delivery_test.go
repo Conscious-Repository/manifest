@@ -24,3 +24,13 @@ func TestChatDraftRecoveryUI(t *testing.T) {
 		t.Fatalf("draft UI: %v\n%s", err, out)
 	}
 }
+
+func TestChatArtifactLoadNavigationRace(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	if out, err := exec.Command(node, "testdata/chat-load-race.cjs").CombinedOutput(); err != nil {
+		t.Fatalf("artifact load: %v\n%s", err, out)
+	}
+}
