@@ -60,13 +60,15 @@ type DomainSpec struct {
 	Categories []string // frontmatter categories (EqualFold) that trigger extraction
 	Spirit     string
 	Ritual     string
+	Once       bool   // automatically extract each note only once; explicit ritual runs remain available
 	Request    string // spool header line, e.g. "extract aion items from these vault notes:"
 }
 
-// ExtractorDomain is the original aion domain — byte-identical behavior to
-// the pre-parameterization sink, including the cursor path.
+// ExtractorDomain extracts newly categorized notes once. Editing an existing
+// AION note does not trigger another run; use the explicit extractor ritual.
 var ExtractorDomain = DomainSpec{
 	Name:       "aion",
+	Once:       true,
 	Categories: []string{"aion"},
 	Spirit:     ExtractorSpirit,
 	Ritual:     ExtractorRitual,
@@ -113,7 +115,7 @@ func NewExtractSink(spec DomainSpec, vaultRoot, systemRoot, extrinsicRoot, dataD
 	} else {
 		// FRESH cursor: baseline the existing corpus — every current
 		// domain-tagged note is presumed already processed, so only FUTURE
-		// creations/edits trigger extraction. Without this, the first sweep
+		// creations (and edits for repeat-enabled domains) trigger extraction. Without this, the first sweep
 		// over a historic corpus (years of tagged notes) queues everything.
 		// NB: ship the FINAL category list at first boot — a category added
 		// later was never baselined; delete the cursor to re-baseline.
@@ -132,14 +134,14 @@ func (s *ExtractSink) baseline() {
 }
 
 // catchUp queues aion notes created or edited WHILE THE APP WAS DOWN (the
-// watcher only sees live events): any note whose hash differs from the
-// cursor is due for extraction. Runs once at Start, after the initial
+// watcher only sees live events). Once-only domains ignore previously seen
+// notes; other domains compare hashes. Runs once at Start, after the initial
 // baseline exists; batching bounds the run size as usual.
 func (s *ExtractSink) catchUp() {
 	s.mu.Lock()
 	changed := false
 	s.walkAionNotes(func(rel, hash string) {
-		if s.c.Notes[rel].Hash == hash || contains(s.c.Queued, rel) {
+		if (s.spec.Once && s.c.Notes[rel].Hash != "") || s.c.Notes[rel].Hash == hash || contains(s.c.Queued, rel) {
 			return
 		}
 		s.c.Queued = append(s.c.Queued, rel)
@@ -205,7 +207,7 @@ func (s *ExtractSink) Start(ctx context.Context) {
 }
 
 // Notify feeds touched vault-relative paths (the reindex callback's slice).
-// Non-aion paths are cheap to reject; changed aion notes enqueue + flush.
+// Eligible unseen notes enqueue + flush; repeat edits obey the domain policy.
 func (s *ExtractSink) Notify(paths []string) {
 	changed := false
 	s.mu.Lock()
@@ -218,7 +220,7 @@ func (s *ExtractSink) Notify(paths []string) {
 		if !ok {
 			continue // unreadable/deleted — nothing to extract
 		}
-		if s.c.Notes[rel].Hash == h {
+		if (s.spec.Once && s.c.Notes[rel].Hash != "") || s.c.Notes[rel].Hash == h {
 			continue // unchanged since last spool
 		}
 		if !contains(s.c.Queued, rel) {
@@ -238,14 +240,27 @@ func (s *ExtractSink) Notify(paths []string) {
 // Flush spools queued paths when the engine is alive. A busy spirit
 // (double-spool guard) or dead engine leaves the queue intact.
 func (s *ExtractSink) Flush() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Revalidate persisted retries: a note may have lost its category or
+	// already been extracted before the once-only policy was enabled.
+	pending := make([]string, 0, len(s.c.Queued))
+	for _, rel := range s.c.Queued {
+		if !s.isAionNote(rel) || (s.spec.Once && s.c.Notes[rel].Hash != "") {
+			continue
+		}
+		pending = append(pending, rel)
+	}
+	if len(pending) != len(s.c.Queued) {
+		s.c.Queued = pending
+		s.saveLocked()
+	}
 	if s.sp == nil {
 		return
 	}
 	if alive, _ := s.sp.EngineAlive(); !alive {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.c.Queued) == 0 {
 		return
 	}

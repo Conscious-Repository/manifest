@@ -54,8 +54,7 @@ func sinkFixture(t *testing.T) (*ExtractSink, *fakeSpooler, string) {
 }
 
 // TestSinkBaselinesExistingCorpus: a FRESH cursor over a vault that already
-// carries aion notes marks them seen WITHOUT spooling — only later edits
-// trigger (the historic corpus was imported wholesale, not re-extracted).
+// carries aion notes marks them seen WITHOUT spooling, including later edits.
 func TestSinkBaselinesExistingCorpus(t *testing.T) {
 	vault := t.TempDir()
 	dataDir := t.TempDir()
@@ -70,11 +69,11 @@ func TestSinkBaselinesExistingCorpus(t *testing.T) {
 	if len(sp.requests) != 0 || sink.QueuedCount() != 0 {
 		t.Fatalf("baselined note spooled: %d requests, %d queued", len(sp.requests), sink.QueuedCount())
 	}
-	// an EDIT after the baseline triggers as usual
+	// an edit after baseline must not extract historic content
 	_ = os.WriteFile(abs, []byte("---\ncategories: [aion]\n---\nhistoric transcript\n\nnew decision\n"), 0o644)
 	sink.Notify([]string{"log/2026-07-20 aion team sync.md"})
-	if len(sp.requests) != 1 {
-		t.Fatalf("post-baseline edit did not spool: %d", len(sp.requests))
+	if len(sp.requests) != 0 {
+		t.Fatalf("post-baseline edit spooled: %d", len(sp.requests))
 	}
 }
 
@@ -135,13 +134,13 @@ func TestSinkCursorSkipsUnchanged(t *testing.T) {
 	if len(sp.requests) != 1 {
 		t.Fatalf("unchanged note respooled: %d", len(sp.requests))
 	}
-	// edit the note → re-proposes
+	// Editing an already extracted note must not re-propose.
 	abs := filepath.Join(vault, "log", "2026-08-03 aion sync.md")
 	b, _ := os.ReadFile(abs)
 	_ = os.WriteFile(abs, append(b, []byte("\nmore\n")...), 0o644)
 	s.Notify([]string{"log/2026-08-03 aion sync.md"})
-	if len(sp.requests) != 2 {
-		t.Fatalf("changed note not respooled: %d", len(sp.requests))
+	if len(sp.requests) != 1 {
+		t.Fatalf("changed note respooled: %d", len(sp.requests))
 	}
 }
 
@@ -238,4 +237,49 @@ func itoa(n int) string {
 		n /= 10
 	}
 	return string(b)
+}
+
+func TestOncePolicySurvivesRestartAndPrunesOldRetries(t *testing.T) {
+	s, sp, vault := sinkFixture(t)
+	rel := "aion master plan.md"
+	s.Notify([]string{rel})
+	if len(sp.requests) != 1 {
+		t.Fatal("initial extraction missing")
+	}
+	if err := os.WriteFile(filepath.Join(vault, rel), []byte("---\ncategories: [aion]\n---\nrevised investor draft"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a repeat retry persisted by the old edit-triggered policy.
+	s.c.Queued = []string{rel}
+	s.saveLocked()
+	restarted := NewExtractSink(ExtractorDomain, vault, "system", "extrinsic", filepath.Dir(filepath.Dir(s.cursorPath)), sp)
+	// Baseline the other fixture note so catch-up only evaluates our edited note.
+	restarted.c.Notes["log/2026-08-03 aion sync.md"] = noteMark{Hash: "seen", SpooledAt: "baseline"}
+	restarted.catchUp()
+	sp.alive = false
+	restarted.Flush()
+	if restarted.QueuedCount() != 0 {
+		t.Fatal("old repeat retry survived policy migration")
+	}
+	sp.alive = true
+	restarted.Notify([]string{rel})
+	restarted.Flush()
+	if len(sp.requests) != 1 {
+		t.Fatal("edit extracted again after restart")
+	}
+}
+
+func TestQueuedNoteLosingCategoryIsDiscarded(t *testing.T) {
+	s, sp, vault := sinkFixture(t)
+	sp.alive = false
+	rel := "aion master plan.md"
+	s.Notify([]string{rel})
+	if err := os.WriteFile(filepath.Join(vault, rel), []byte("---\ncategories: [projects]\n---\ndraft"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	sp.alive = true
+	s.Flush()
+	if len(sp.requests) != 0 || s.QueuedCount() != 0 {
+		t.Fatal("ineligible queued note extracted")
+	}
 }
