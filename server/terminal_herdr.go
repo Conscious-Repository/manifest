@@ -435,10 +435,21 @@ func (h *herdrTerminalRuntime) Subscribe(ctx context.Context) (<-chan terminalOb
 		return nil, err
 	}
 	if ack.Error != nil {
-		fail()
-		return nil, ack.Error
+		// A stale per-pane agent_status_changed sub (the pane id no longer
+		// exists in the live layout) rejects that one sub, but the GENERIC
+		// pane.created/updated/closed/exited subscription — which carries the
+		// agent state and is what actually drives the stream — is still live.
+		// Treat a benign pane_not_found as "subscription established; that
+		// pane's fine-grained status sub just won't fire." Any other error is
+		// fatal.
+		if ack.Error.Code == "pane_not_found" {
+			// proceed — the generic stream is authoritative for state.
+		} else {
+			fail()
+			return nil, ack.Error
+		}
 	}
-	if ack.ID != "manifest" || ack.Result.Type != "subscription_started" {
+	if ack.ID != "manifest" || (ack.Result.Type != "subscription_started" && ack.Error == nil) {
 		fail()
 		return nil, errors.New("herdr subscription not acknowledged")
 	}
