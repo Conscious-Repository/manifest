@@ -362,6 +362,9 @@
 }
 
 .chat-artifact-actions, .chat-artifact-context { display: flex; flex-wrap: wrap; gap: var(--sp-6); padding: var(--sp-4) 0; border-bottom: 1px solid var(--line); }
+.chat-composer > .chat-artifact-context,
+.chat-composer > .chat-delivery-notice { flex: 1 0 100%; min-width: 0; order: -2; }
+.chat-composer > .chat-artifact-context > button:first-child { white-space: normal; text-align: left; }
 .chat-shell.has-artifact .chat-rail { display: none; }
 .chat-shell.has-artifact .chat-main { flex: 1; }
 @media (max-width: 900px) {
