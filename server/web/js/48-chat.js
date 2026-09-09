@@ -2534,23 +2534,26 @@ async function chatTermSend(text,context={}) {
   if (!text) return true;
   if (chatTermSending) return false;
   chatTermSending = true;
+  const agent=chatAgent,route=chatRouteVersion,sourceScope=chatAgent+"/"+(chatOpenId||"new");
   renderChatComposer(chatTermComposerSession());
   try {
     let id = chatOpenId, created = false;
     const wasDraft = chatTermFind(id)?.launchPhase === "draft";
     if (!id) {
-      const cwd = chatRecall("manifest.chatTermCwd." + chatAgent);
-      const se = await postJSONOk("/api/terminal/session", { kind: chatAgent, cwd, draft: true });
+      const cwd = chatRecall("manifest.chatTermCwd." + agent);
+      const se = await postJSONOk("/api/terminal/session", { kind: agent, cwd, draft: true });
       chatTermSessions.unshift(Object.assign({ live: false }, se));
-      chatOpenId = id = se.id;
-      chatLanding = false;
+      id = se.id;
       created = true;
       // the row exists now whatever the delivery does: route to it first so a
       // failed first send leaves the thread open (text back in the composer),
       // not a landing with a hidden open id
-      location.hash = chatHash(id);
+      if(route===chatRouteVersion){chatOpenId=id;chatLanding=false;location.hash="#/chat/a/"+encodeURIComponent(agent)+"/"+encodeURIComponent(id);}
     }
-    const r = await postJSONOk(chatTermBase(id) + "/input", { text, ...context });
+    const url=chatTermBase(id)+"/input",payload={text,...context};
+    const r = chatTermFind(id)?.backend==="herdr"
+      ? await chatDeliverRemembered(chatRememberDelivery(agent+"/"+id,agent,url,payload,sourceScope))
+      : await postJSONOk(url,payload);
     // a virgin row's first send boots its tmux — that is a start, not a relaunch
     if (r.relaunched && !created && !wasDraft) showToast("Session relaunched — " + ((chatTermFind(id) || {}).name || id), null, "info");
     await loadChatTermSessions(true);
@@ -2726,22 +2729,24 @@ function chatArtifactActions(data){
 // Persist uncertain Hermes sends before transport. A retry reuses the exact
 // request ID and payload, including New chat; it never recreates user intent.
 const chatDeliveryStorageKey = "manifest.chatDeliveryOutbox.v1";
+function chatIsTerminalDelivery(item){return ["claude","codex"].includes(item.agent)&&/^\/api\/terminal\/session\/[a-f0-9]{8,32}\/input$/.test(item.url);}
 function chatReadDeliveryOutbox(){
  try {
   const x=JSON.parse(localStorage.getItem(chatDeliveryStorageKey)||"[]");
   return Array.isArray(x)?x.filter(v=>{
    if(!v || !/^[a-z0-9][a-z0-9-]{0,31}$/.test(v.agent) || !/^[a-zA-Z0-9_-]{8,128}$/.test(v.payload?.requestId) || typeof v.url!=="string")return false;
+   if(chatIsTerminalDelivery(v))return true;
    const base=chatBaseFor(v.agent);
    return v.url===base || (v.url.startsWith(base) && /^\/[0-9]{8}-[0-9]{6}-[0-9a-z]{2,8}\/messages$/.test(v.url.slice(base.length)));
   }):[];
  }catch(e){return [];}
 }
 function chatWriteDeliveryOutbox(items){localStorage.setItem(chatDeliveryStorageKey,JSON.stringify(items));}
-function chatRememberDelivery(scope,agent,url,payload){
+function chatRememberDelivery(scope,agent,url,payload,draftScope=scope){
  const items=chatReadDeliveryOutbox(), signature=JSON.stringify(payload);
  const old=items.find(x=>x.scope===scope&&x.url===url&&x.signature===signature);
  if(old)return old;
- const item={scope,agent,url,signature,payload:{...payload,requestId:crypto.randomUUID()},draft:chatSyncedDrafts.get(scope)?.value||null,at:new Date().toISOString()};
+ const item={scope,agent,url,signature,payload:{...payload,requestId:crypto.randomUUID()},draft:chatSyncedDrafts.get(draftScope)?.value||null,draftScope,at:new Date().toISOString()};
  items.push(item);chatWriteDeliveryOutbox(items);return item;
 }
 function chatForgetDelivery(item){chatWriteDeliveryOutbox(chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId));}
@@ -2749,8 +2754,9 @@ async function chatDeliverRemembered(item){
  const res=await fetchJSONRetry("POST",item.url,item.payload);
  if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);throw error;}
  const result=await res.json();
+ if(chatIsTerminalDelivery(item)&&result.delivery?.state!=="sent")throw new Error("Submission is unconfirmed. Check its status or inspect the native conversation before sending another instruction.");
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
- chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.scope)?.clearSent(item.draft);return result;
+ chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.draftScope||item.scope)?.clearSent(item.draft);return result;
 }
 function chatRenderDeliveryNotice(host,scope){
  host.querySelector(".chat-delivery-notice")?.remove();
@@ -2768,10 +2774,13 @@ function chatRenderDeliveryNotice(host,scope){
   check.onclick=async()=>{
    check.disabled=true;
    try{
-    const r=await fetch("/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery?request="+encodeURIComponent(item.payload.requestId));
+    const path=chatIsTerminalDelivery(item)?item.url.replace(/\/input$/,"/delivery"):"/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery";
+    const r=await fetch(path+"?request="+encodeURIComponent(item.payload.requestId));
     if(r.status===404){label.textContent="Not recorded yet. Retry the same send to deliver it.";return;}
     if(!r.ok)throw new Error(await r.text());
-    const d=await r.json();chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.scope)?.clearSent(item.draft);row.remove();navigate(d);
+    const d=await r.json();
+    if(chatIsTerminalDelivery(item)&&d.delivery?.state!=="sent"){label.textContent="Submission is unconfirmed. Check again or inspect the native conversation; this request will not be replayed.";return;}
+    chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.draftScope||item.scope)?.clearSent(item.draft);row.remove();navigate(d);
     showToast("Message "+d.delivery.state,null,"info");
    }catch(e){label.textContent="Still unable to confirm delivery. Your message is saved here.";}
    finally{check.disabled=false;}

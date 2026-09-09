@@ -32,5 +32,36 @@ global.fetchJSONRetry=async(method,url,payload)=>{
  assert.equal(chatReadDeliveryOutbox().length,1,'malformed acknowledgement must not discard text');
  global.fetchJSONRetry=async()=>({ok:false,status:400,text:async()=>'message too large'});
  await assert.rejects(()=>chatDeliverRemembered(intentional),e=>e.rejected===true);
+ chatForgetDelivery(intentional);
+ let cleared=0;const draft={text:'coding instruction',files:[]};
+ chatSyncedDrafts.set('codex/new',{value:draft,clearSent:value=>{assert.equal(value.text,draft.text);cleared++;}});
+ const codingURL='/api/terminal/session/abcdef123456/input';
+ const coding=chatRememberDelivery('codex/abcdef123456','codex',codingURL,{text:draft.text},'codex/new');
+ assert.equal(chatReadDeliveryOutbox().length,1);
+ assert.equal(chatRememberDelivery('codex/abcdef123456','codex',codingURL,{text:draft.text}).payload.requestId,coding.payload.requestId);
+ global.fetchJSONRetry=async()=>({ok:true,json:async()=>({ok:false,id:'abcdef123456',delivery:{state:'unconfirmed'}})});
+ await assert.rejects(()=>chatDeliverRemembered(coding),/unconfirmed/);
+ assert.equal(chatReadDeliveryOutbox().length,1,'uncertain CLI submission must remain recoverable');
+ assert.equal(cleared,0,'uncertain submission must not erase the draft');
+ global.fetchJSONRetry=async()=>({ok:true,json:async()=>({ok:true,id:'abcdef123456',delivery:{state:'sent'}})});
+ await chatDeliverRemembered(chatReadDeliveryOutbox()[0]);
+ assert.equal(cleared,1,'acknowledgement clears the original landing draft');
+ assert.equal(chatReadDeliveryOutbox().length,0);
+ assert.equal(chatIsTerminalDelivery({...coding,url:'https://example.com/api/terminal/session/abcdef123456/input'}),false);
+ assert.equal(chatIsTerminalDelivery({...coding,url:'/api/terminal/session/../input'}),false);
+ let releaseCreate,enteredCreate;
+ const creating=new Promise(r=>enteredCreate=r),release=new Promise(r=>releaseCreate=r),sent=[];
+ const nav=vm.createContext({chatTermSending:false,chatAgent:'codex',chatOpenId:'',chatRouteVersion:1,chatLanding:true,chatTermSessions:[],chatTermOpen:null,
+  location:{hash:'#/chat/a/codex/new'},renderChatComposer(){},chatTermComposerSession(){return{};},chatRecall(){return '/working/folder';},
+  chatTermFind:id=>nav.chatTermSessions.find(s=>s.id===id),chatTermBase:id=>'/api/terminal/session/'+id,
+  postJSONOk:async()=>{enteredCreate();await release;return{id:'abcdef123456',backend:'herdr'};},
+  chatRememberDelivery:(scope,agent,url,payload,draftScope)=>({scope,agent,url,payload,draftScope}),
+  chatDeliverRemembered:async item=>{sent.push(item);return{ok:true};},loadChatTermSessions:async()=>{},showToast(){}});
+ vm.runInContext(src.slice(src.indexOf('async function chatTermSend('),src.indexOf('// ---- landing: a new session')),nav);
+ const sending=nav.chatTermSend('original coding instruction');await creating;
+ nav.chatAgent='alfred';nav.chatOpenId='other-chat';nav.chatRouteVersion=2;nav.location.hash='#/chat/a/alfred/other-chat';
+ releaseCreate();assert.equal(await sending,true);
+ assert.equal(sent[0].agent,'codex');assert.equal(sent[0].draftScope,'codex/new');assert.equal(sent[0].url,codingURL);
+ assert.equal(nav.chatOpenId,'other-chat');assert.equal(nav.location.hash,'#/chat/a/alfred/other-chat','late creation must not hijack navigation');
  console.log('Lost create response, reload recovery, safe retry, later intentional send and malformed acknowledgement passed');
 })().catch(e=>{console.error(e);process.exitCode=1});

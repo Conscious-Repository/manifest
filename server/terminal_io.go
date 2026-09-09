@@ -1,7 +1,9 @@
 package server
 
 import (
+	"errors"
 	"fmt"
+	"manifest/agentchat"
 	"net/http"
 	"os"
 	"strconv"
@@ -136,20 +138,17 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "input is metis-local only", http.StatusBadRequest)
 		return
 	}
-	var b struct {
-		Text      string               `json:"text"`
-		Key       string               `json:"key"`
-		Supervise bool                 `json:"supervise"`
-		TimeoutMS int                  `json:"timeoutMs"`
-		Task      string               `json:"task"`
-		Artifacts []artifactContextRef `json:"artifacts"`
-	}
+	var b terminalInput
 	if err := decode(r, &b); err != nil {
 		httpError(w, err)
 		return
 	}
 	if b.Text == "" && b.Key == "" {
 		http.Error(w, "nothing to send", http.StatusBadRequest)
+		return
+	}
+	if b.RequestID != "" && (!agentchat.ValidRequestID(b.RequestID) || b.Key != "" || se.backend() != "herdr") {
+		httpError(w, errBadRequest("request IDs require a local herdr text submission"))
 		return
 	}
 	if b.Supervise && se.backend() != "herdr" {
@@ -174,6 +173,22 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		se = current
+		fingerprint := b.fingerprint()
+		if b.RequestID != "" {
+			receipt, err := s.terminal.readInputReceipt(se.ID, b.RequestID)
+			if err == nil {
+				if receipt.Fingerprint != fingerprint {
+					http.Error(w, "request ID was already used for different content", http.StatusConflict)
+					return
+				}
+				writeTerminalInputReceipt(w, se.ID, receipt)
+				return
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 		if len(b.Artifacts) > 0 {
 			linked := false
 			for _, link := range s.terminalConversation(se).Links {
@@ -197,6 +212,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var relaunched bool
+		var receipt *terminalInputReceipt
 		var err error
 		se, relaunched, err = s.ensureHerdrInputLocked(r.Context(), se)
 		if err != nil {
@@ -208,6 +224,13 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 		} else {
 			err = s.herdrPromptReady(r.Context(), se)
 			if err == nil {
+				if b.RequestID != "" {
+					receipt = &terminalInputReceipt{ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts}
+					if err = s.terminal.writeInputReceipt(se.ID, *receipt); err != nil {
+						http.Error(w, "input receipt could not be persisted; nothing sent: "+err.Error(), http.StatusInternalServerError)
+						return
+					}
+				}
 				if b.Supervise {
 					wait := time.Duration(b.TimeoutMS) * time.Millisecond
 					if wait <= 0 {
@@ -223,15 +246,31 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil {
+			if receipt != nil {
+				writeTerminalInputReceipt(w, se.ID, *receipt)
+				return
+			}
 			http.Error(w, "send outcome: "+err.Error()+"; no automatic retry", terminalLaunchStatus(err))
 			return
+		}
+		if receipt != nil {
+			receipt.State = "sent"
+			receipt.Updated = time.Now().UTC().Format(time.RFC3339Nano)
+			if err = s.terminal.writeInputReceipt(se.ID, *receipt); err != nil {
+				http.Error(w, "input submitted but receipt finalization failed; check this request before sending again", http.StatusInternalServerError)
+				return
+			}
 		}
 		se.LastUsed = time.Now().Format(time.RFC3339)
 		if _, err = s.terminal.updateTermMetadata(se.ID, func(row *termSession) { row.LastUsed = se.LastUsed }); err != nil {
 			http.Error(w, "input sent but metadata update failed; do not resend: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"ok": true, "relaunched": relaunched})
+		if receipt != nil {
+			writeTerminalInputReceipt(w, se.ID, *receipt)
+		} else {
+			writeJSON(w, map[string]any{"ok": true, "relaunched": relaunched})
+		}
 		return
 	}
 	relaunched, err := s.termEnsureLive(se)
