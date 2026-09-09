@@ -1433,6 +1433,45 @@ function renderChatTranscript(d) {
 // ask|propose ritual pill and the @-mention typeahead (persona intents).
 
 let chatPendingFiles = [];
+const chatUploads = new Map();
+function chatUploadComposerActive(key) {
+  return chatDraftKey===key && !chatTaskID && !els.chatView.hidden;
+}
+
+// Upload destinations and draft ownership are fixed when the picker submits.
+// Navigation must never retarget an in-flight private/team attachment.
+function chatStoreUploadedFile(key,file) {
+  if(chatUploadComposerActive(key)) {
+    chatPendingFiles.push(file);
+    chatSaveDraft();
+    renderChatComposer(chatCurSession);
+    return;
+  }
+  const state=chatSyncedDrafts.get(key);
+  const draft=state?.value || chatDrafts.get(key) || {text:"",files:[]};
+  const next={...draft,files:[...(draft.files||[]),file]};
+  chatDrafts.set(key,{text:next.text||"",files:next.files});
+  if(state)state.set(next);
+}
+
+async function chatUploadFiles(key,url,files) {
+  chatUploads.set(key,(chatUploads.get(key)||0)+1);
+  if(chatUploadComposerActive(key))renderChatComposer(chatCurSession);
+  try {
+    for(const f of files) {
+      try {
+        const res=await fetch(url+"&name="+encodeURIComponent(f.name),{method:"POST",body:f});
+        if(!res.ok)throw new Error((await res.text()).slice(0,120));
+        const d=await res.json();
+        chatStoreUploadedFile(key,{hash:d.file.hash,name:d.file.name,size:d.file.size});
+      } catch(e) {showToast("Upload failed — "+(e.message||"error"));}
+    }
+  } finally {
+    const remaining=(chatUploads.get(key)||1)-1;
+    if(remaining)chatUploads.set(key,remaining);else chatUploads.delete(key);
+    if(chatUploadComposerActive(key))renderChatComposer(chatCurSession);
+  }
+}
 
 // chatMentionOptions — the tokens the typeahead offers for the open portal
 // agent: @name (it decides how to answer) + @name::intent per persona.
@@ -1486,12 +1525,13 @@ function renderChatComposer(session) {
   // the button says so instead (the placeholder already says why)
   // a claude/codex send may relaunch the tmux and wait for its prompt (~10 s):
   // one in flight at a time
-  const busy = chatSending || !!(session && session.busy) || (chatIsTerm() && chatTermSending);
+  const uploading=!!chatUploads.get(draftKey);
+  const busy = uploading || chatSending || !!(session && session.busy) || (chatIsTerm() && chatTermSending);
   if (host.dataset.built) {
     const ta = host.querySelector("textarea");
     const send = host.querySelector(".chat-send");
     if (ta) ta.placeholder = placeholder();
-    if (send) { send.disabled = busy; send.textContent = chatIsTerm() ? "↵" : "↑"; } // a prompt line ends in enter
+    if (send) { send.disabled = busy; send.textContent = uploading ? "…" : chatIsTerm() ? "↵" : "↑"; send.title=uploading?"Uploading attachments…":"send · Enter (Shift+Enter for a new line)"; } // a prompt line ends in enter
     syncAttach();
     chatRenderDeliveryNotice(host,draftKey);
     chatRenderArtifactContext(session?.task,"chat:"+draftKey);
@@ -1554,20 +1594,12 @@ function renderChatComposer(session) {
   fi.multiple = true;
   fi.hidden = true;
   fi.onchange = async () => {
-    for (const f of [...fi.files]) {
-      try {
-        const url = chatIsPortal()
-          ? chatAttachBase() + "?name=" + encodeURIComponent(f.name) + (chatOpenId ? "&thread=" + encodeURIComponent(chatOpenId) : "")
-          : "/api/tasks/thread/file?id=agentchat&name=" + encodeURIComponent(f.name);
-        const res = await fetch(url, { method: "POST", body: f });
-        if (!res.ok) throw new Error((await res.text()).slice(0, 120));
-        const d = await res.json();
-        chatPendingFiles.push({ hash: d.file.hash, name: d.file.name, size: d.file.size });
-      } catch (e) { showToast("Upload failed — " + (e.message || "error")); }
-    }
+    const files=[...fi.files];
+    const url=chatIsPortal()
+      ? chatAttachBase()+"?"+(chatOpenId?"thread="+encodeURIComponent(chatOpenId):"")
+      : "/api/tasks/thread/file?id=agentchat";
     fi.value = "";
-    syncAttach();
-    chatSaveDraft();
+    await chatUploadFiles(draftKey,url,files);
   };
   const attach = el("button", "chat-attach", "＋");
   attach.title = "attach a file";
@@ -1584,14 +1616,14 @@ function renderChatComposer(session) {
     c.onclick = () => { chatRitual = key; syncAttach(); ta.focus(); };
     ritual.append(c);
   });
-  const send = el("button", "chat-send", chatIsTerm() ? "↵" : "↑");
-  send.title = "send · Enter (Shift+Enter for a new line)";
+  const send = el("button", "chat-send", uploading ? "…" : chatIsTerm() ? "↵" : "↑");
+  send.title = uploading ? "Uploading attachments…" : "send · Enter (Shift+Enter for a new line)";
   send.disabled = busy;
   const submit = async () => {
     const text = ta.value.trim();
     const files = chatPendingFiles.slice();
     if (!text && !files.length) return;
-    if (send.disabled || chatSending) return;
+    if (send.disabled || chatSending || chatUploads.get(draftKey)) return;
     chatCaptureSyncedDraft(draftKey);
     const draftState=chatSyncedDrafts.get(draftKey),sentDraft=draftState?.value;
     if(draftState?.conflict){showToast("Resolve the draft conflict before sending.");return;}
