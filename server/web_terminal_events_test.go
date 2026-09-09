@@ -44,11 +44,11 @@ global.EventSource = class {
  addEventListener(name, cb) { this.listeners[name] = cb; }
 };
 global.setInterval = () => { intervalCount++; return 1; };
-global.document = { hidden: false, querySelectorAll: () => badges, getElementById: () => null, querySelector: () => null };
+global.document = { addEventListener(){}, hidden: false, querySelectorAll: () => badges, getElementById: () => null, querySelector: () => null };
 global.els = { chatView: { hidden: false } };
 global.fmtWhen = value => value;
 global.cmdRegistry = {register(){}};
-global.window = {dispatchEvent(){}};
+global.window = {addEventListener(){},dispatchEvent(){}};
 global.CustomEvent = class { constructor(name,init){this.type=name;this.detail=init.detail;} };
 global.el = (tag, cls, text) => ({ textContent: text || '', children: [], dataset: {}, classList: {add(){}}, setAttribute(){}, replaceChildren(...nodes){this.children=nodes;}, append(...nodes){this.children.push(...nodes);} });
 global.statusDot = (on, title) => Object.assign(el('span', '', ''), {on, title});

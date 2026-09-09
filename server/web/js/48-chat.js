@@ -146,6 +146,10 @@ function chatRenderDraftNotice(host,key){
   const row=el("div","chat-draft-notice");row.setAttribute("role","status");
   row.append(el("span","",state.conflict?"Draft changed on another device. Choose which to keep.":state.error));
   if(state.conflict){
+    const preview=el("details","chat-draft-preview");
+    preview.append(el("summary","","View saved draft"),el("p","",state.conflict.value?.text||"Empty draft"));
+    if(state.conflict.value?.files?.length)preview.append(el("p","",state.conflict.value.files.map(f=>f.name).join(", ")));
+    row.append(preview);
     const saved=el("button","sprt-quiet","Use saved draft"),mine=el("button","sprt-quiet","Keep this draft");
     saved.onclick=()=>state.resolve(true);mine.onclick=()=>state.resolve(false);row.append(saved,mine);
   }else{const retry=el("button","sprt-quiet","Retry sync");retry.onclick=()=>state.refresh();row.append(retry);}

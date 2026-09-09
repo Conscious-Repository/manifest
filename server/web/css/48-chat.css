@@ -379,3 +379,5 @@
 .chat-delivery-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-6); font-size: var(--fs-md); }
 .chat-delivery-row > span { flex: 1 1 100%; overflow-wrap: anywhere; }
 .chat-delivery-row button { min-height: 44px; }
+.chat-draft-preview { flex-basis: 100%; }
+.chat-draft-preview p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 12rem; overflow: auto; }
