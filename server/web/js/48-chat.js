@@ -1101,7 +1101,7 @@ function chatReadingAnchor(host) {
 }
 function chatSaveReadingPosition() {
   const host = document.getElementById("chatTranscript");
-  if (!host || els.chatView.hidden || (chatIsTerm() && !chatTaskID)) return;
+  if (!host || els.chatView.hidden) return;
   const saved = chatReadingStates.get(host.dataset.readKey);
   const value = chatReadingAnchor(host);
   if (saved && value) saved.set(value);
@@ -2016,6 +2016,7 @@ async function loadChatTermSession(id) {
   } catch (e) { return; }
   if (id !== chatOpenId || !chatIsTerm()) return; // navigated away mid-fetch
   await chatPrepareDraft(d.conversation,chatAgent+"/"+id);
+  await chatPrepareReadingPosition(d.conversation);
   if (id !== chatOpenId || !chatIsTerm()) return;
   se = chatTermApplyState(chatTermFind(id) || se);
   // the other backends' channels have nothing to say here
@@ -2027,6 +2028,7 @@ async function loadChatTermSession(id) {
   chatTermSurface(true);
   chatRemember(chatAgent, id);
   chatTermOpen = {
+    conversation:d.conversation,
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
   };
@@ -2135,6 +2137,10 @@ function renderChatTermTranscript() {
   const host = document.getElementById("chatTranscript");
   const o = chatTermOpen;
   if (!host || !o) return;
+  const readKey=o.conversation?.key||"";
+  const restoreReading=host.dataset.readKey!==readKey;
+  host.dataset.readKey=readKey;
+  if(restoreReading)chatReadingGestureUntil=0;
   bindChatScroll();
   host.innerHTML = "";
   chatMountHeader(chatTermHead(o));
@@ -2145,12 +2151,15 @@ function renderChatTermTranscript() {
   chatTermPaintStrip();
   chatStick = true;
   chatPin();
+  if(restoreReading)chatRestoreReadingPosition(host,chatReadingStates.get(readKey)?.value);
 }
 
 function chatTermPaintTurns() {
   const body = document.getElementById("chatTermTurns");
+  const host = document.getElementById("chatTranscript");
   const o = chatTermOpen;
   if (!body || !o) return;
+  const previousScroll=host?.scrollTop||0;
   body.innerHTML = "";
   chatTermPaintLines(body, o.turns);
   if (!o.turns.length) {
@@ -2158,6 +2167,7 @@ function chatTermPaintTurns() {
       ? "codex keeps its rollout under ~/.codex/sessions — not wired to this row yet; the screen below is the session"
       : (o.live ? "no turns in the session file yet" : "nothing in the session file — a send starts it")));
   }
+  if(host&&!chatStick)host.scrollTop=previousScroll;
   chatPin();
 }
 
@@ -2181,12 +2191,13 @@ function chatTermSurface(on) {
 
 function chatTermPaintLines(host, turns) {
   turns.forEach((t) => {
-    if (t.who === "user") { host.append(chatTermCmdLine(t)); return; }
+    if (t.who === "user") { const row=chatTermCmdLine(t);if(t.id)row.dataset.chatReadTurn=t.id;host.append(row); return; }
     if (t.who === "system") {
-      host.append(el("div", "chat-term-line chat-term-sys", t.text || ""));
+      const row=el("div", "chat-term-line chat-term-sys", t.text || "");if(t.id)row.dataset.chatReadTurn=t.id;host.append(row);
       return;
     }
     const out = el("div", "chat-term-out");
+    if(t.id)out.dataset.chatReadTurn=t.id;
     chatTurnBlocks(t).forEach((b) => out.append(chatTermBlockEl(b)));
     const meta = [];
     if (t.ts) meta.push(fmtWhen(t.ts));

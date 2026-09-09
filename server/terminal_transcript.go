@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,7 @@ import (
 // assistant; an assistant turn carries ordered blocks (say / step / think),
 // a user turn carries text.
 type termTurn struct {
+	ID     string      `json:"id"`
 	Who    string      `json:"who"`
 	TS     string      `json:"ts,omitempty"`
 	Text   string      `json:"text,omitempty"`
@@ -100,19 +102,29 @@ type claudeBlock struct {
 // (one API message is often several rows) and pairing tool results with the
 // step that asked for them.
 type transcriptBuilder struct {
-	out termTranscript
+	out      termTranscript
+	recordID string
+}
+
+func (b *transcriptBuilder) record(line []byte, base []int64) {
+	offset := b.out.Offset
+	if len(base) > 0 {
+		offset += base[0]
+	}
+	hash := sha256.Sum256(line)
+	b.recordID = fmt.Sprintf("%x-%x", offset, hash[:8])
 }
 
 func (b *transcriptBuilder) assistant(ts string) *termTurn {
 	if n := len(b.out.Turns); n > 0 && b.out.Turns[n-1].Who == "assistant" {
 		return &b.out.Turns[n-1]
 	}
-	b.out.Turns = append(b.out.Turns, termTurn{Who: "assistant", TS: ts})
+	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "assistant", TS: ts})
 	return &b.out.Turns[len(b.out.Turns)-1]
 }
 
 func (b *transcriptBuilder) user(ts, text string) {
-	b.out.Turns = append(b.out.Turns, termTurn{Who: "user", TS: ts, Text: text})
+	b.out.Turns = append(b.out.Turns, termTurn{ID: b.recordID, Who: "user", TS: ts, Text: text})
 }
 
 func (b *transcriptBuilder) step(ts, id, cast, input string) {
@@ -158,9 +170,10 @@ func (b *transcriptBuilder) text(ts, kind, text string) {
 // record types (attachment, file-history-*, mode, queue-operation, …) are
 // skipped. A user row is either the owner's text (→ user turn) or the
 // tool_result carrier for the previous step.
-func parseClaudeTranscript(r io.Reader) termTranscript {
+func parseClaudeTranscript(r io.Reader, base ...int64) termTranscript {
 	b := &transcriptBuilder{}
 	scanLines(r, &b.out.Offset, func(line []byte) {
+		b.record(line, base)
 		var rec claudeRecord
 		if json.Unmarshal(line, &rec) != nil {
 			return
@@ -321,9 +334,10 @@ type codexRecord struct {
 // custom_tool_call / function_call as steps paired with their _output,
 // reasoning summaries as thinking. event_msg rows duplicate the message
 // rows and are ignored.
-func parseCodexTranscript(r io.Reader) termTranscript {
+func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 	b := &transcriptBuilder{}
 	scanLines(r, &b.out.Offset, func(line []byte) {
+		b.record(line, base)
 		var rec codexRecord
 		if json.Unmarshal(line, &rec) != nil || rec.Type != "response_item" {
 			return
@@ -431,11 +445,11 @@ func clip(s string, max int) string {
 func isRuneStart(b byte) bool { return b&0xC0 != 0x80 }
 
 // parseTranscript dispatches on the session kind.
-func parseTranscript(kind string, r io.Reader) termTranscript {
+func parseTranscript(kind string, r io.Reader, base ...int64) termTranscript {
 	if kind == "codex" {
-		return parseCodexTranscript(r)
+		return parseCodexTranscript(r, base...)
 	}
-	return parseClaudeTranscript(r)
+	return parseClaudeTranscript(r, base...)
 }
 
 // --- locating the file ---
@@ -527,7 +541,7 @@ func readTranscript(kind, path string, after int64) (termTranscript, bool) {
 			_, _ = f.Seek(0, io.SeekStart)
 		}
 	}
-	tr := parseTranscript(kind, f)
+	tr := parseTranscript(kind, f, after)
 	tr.Offset += after
 	if tr.Turns == nil {
 		tr.Turns = []termTurn{}

@@ -33,7 +33,7 @@ let taskSaved;
 taskView.dataset={readKey:'task-conversation'};
 Object.assign(ctx,{document:{getElementById:()=>taskView},els:{chatView:{hidden:false}},chatIsTerm:()=>true,chatTaskID:'task-with-coding-assignee',chatReadingStates:new Map([['task-conversation',{set:v=>taskSaved=v}]])});
 ctx.chatSaveReadingPosition();assert.equal(taskSaved.turn,'comment:stable-id');
-ctx.chatTaskID='';taskSaved=null;ctx.chatSaveReadingPosition();assert.equal(taskSaved,null,'raw terminal must not save a task bookmark');
+ctx.chatTaskID='';ctx.els.chatView.hidden=true;taskSaved=null;ctx.chatSaveReadingPosition();assert.equal(taskSaved,null,'a hidden chat must not save a bookmark from the terminal page');
 // Rendering/autopin scrolls do not overwrite a stored bookmark. A user gesture
 // arms capture only for the ensuing scroll events.
 const listeners={},scrollHost={scrollTop:100,scrollHeight:2000,clientHeight:500,addEventListener:(name,fn)=>listeners[name]=fn};
@@ -42,4 +42,16 @@ Object.assign(ctx,{document:{getElementById:()=>scrollHost},chatScrollBound:fals
 vm.runInContext(src.slice(src.indexOf('function bindChatScroll()'),src.indexOf('function chatPin()')),ctx);
 ctx.bindChatScroll();listeners.scroll();assert.equal(saves,0);
 listeners.wheel();scrollHost.scrollTop=75;listeners.scroll();assert.equal(saves,1);
-console.log('Reading anchors survive viewport changes; missing anchors and Latest are safe');
+// A transcript rebuild temporarily collapses the scrolling container. Preserve
+// the reader's position, while Latest continues to follow appended output.
+const terminalHost={scrollTop:740};
+const terminalBody={set innerHTML(value){terminalHost.scrollTop=0;}};
+Object.assign(ctx,{document:{getElementById:id=>id==='chatTermTurns'?terminalBody:terminalHost},chatTermOpen:{turns:[{id:'record-1',who:'user',text:'hello'}]},chatStick:false,chatTermPaintLines:()=>{},chatPin:()=>{if(ctx.chatStick)terminalHost.scrollTop=2000;}});
+vm.runInContext(src.slice(src.indexOf('function chatTermPaintTurns()'),src.indexOf('\nfunction ',src.indexOf('function chatTermPaintTurns()')+1)),ctx);
+ctx.chatTermPaintTurns();assert.equal(terminalHost.scrollTop,740);
+ctx.chatStick=true;ctx.chatTermPaintTurns();assert.equal(terminalHost.scrollTop,2000);
+vm.runInContext(src.slice(src.indexOf('function chatTermMerge('),src.indexOf('// ---- send ----',src.indexOf('function chatTermMerge('))),ctx);
+const turns=[{id:'first-record',who:'assistant',blocks:[{t:'say',text:'Starting'}]}];
+ctx.chatTermMerge(turns,[{id:'later-record',who:'assistant',blocks:[{t:'say',text:'Finished'}]}]);
+assert.equal(turns.length,1);assert.equal(turns[0].id,'first-record');assert.equal(turns[0].blocks.length,2);
+console.log('Reading anchors, terminal tail position, and Latest are safe');

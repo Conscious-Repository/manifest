@@ -10,6 +10,44 @@ import (
 	"testing"
 )
 
+func TestTerminalTurnIdentitySurvivesTailAndAppend(t *testing.T) {
+	for _, kind := range []string{"claude", "codex"} {
+		t.Run(kind, func(t *testing.T) {
+			line := `{"type":"user","message":{"role":"user","content":"hello"}}` + "\n"
+			if kind == "codex" {
+				line = `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}` + "\n"
+			}
+			path := filepath.Join(t.TempDir(), "session.jsonl")
+			if err := os.WriteFile(path, []byte(line+line), 0600); err != nil {
+				t.Fatal(err)
+			}
+			full, ok := readTranscript(kind, path, 0)
+			if !ok || len(full.Turns) != 2 || full.Turns[0].ID == "" || full.Turns[0].ID == full.Turns[1].ID {
+				t.Fatalf("nonunique identities: %+v", full)
+			}
+			tail, ok := readTranscript(kind, path, int64(len(line)))
+			if !ok || len(tail.Turns) != 1 || tail.Turns[0].ID != full.Turns[1].ID {
+				t.Fatalf("tail identity changed: %+v", tail)
+			}
+			if err := os.WriteFile(path, []byte(line+line+line), 0600); err != nil {
+				t.Fatal(err)
+			}
+			grown, _ := readTranscript(kind, path, 0)
+			if len(grown.Turns) != 3 || grown.Turns[1].ID != full.Turns[1].ID {
+				t.Fatal("append changed existing identity")
+			}
+			changed := strings.ReplaceAll(line, "hello", "other")
+			if err := os.WriteFile(path, []byte(changed+line+line), 0600); err != nil {
+				t.Fatal(err)
+			}
+			replaced, _ := readTranscript(kind, path, 0)
+			if replaced.Turns[0].ID == full.Turns[0].ID {
+				t.Fatal("rewritten record retained stale identity")
+			}
+		})
+	}
+}
+
 // The claude fixture (a real session, redacted) projects into the turn
 // grammar: user text → user turn; assistant text/thinking/tool_use → one
 // assistant turn of ordered blocks; the tool_result carrier row pairs with
