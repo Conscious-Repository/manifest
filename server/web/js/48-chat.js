@@ -1389,6 +1389,19 @@ function chatPaintTurns(host, turns, ctx) {
   });
 }
 
+function chatPaintCodingResults(host,results) {
+  for(const result of results||[]) {
+    const row=el("div","chat-turn chat-spirit");
+    row.dataset.chatReadTurn="run:"+result.agent+":"+result.id;
+    const heading=el("div","chat-turn-foot");
+    heading.append(el("span","chat-turn-author",chatAgentLabel(result.agent)+" · "+(result.outcome==="completed"?"Coding result":"Coding work needs attention")));
+    const task=el("a","sprt-quiet",result.task);task.href=chatTaskThreadHash(result.task);heading.append(task);
+    row.append(heading);
+    try {row.append(renderMarkdown(result.body||"","",{readOnly:true}));}catch(e){row.append(el("pre","",result.body||""));}
+    host.append(row);
+  }
+}
+
 function renderChatTranscript(d) {
   const host = document.getElementById("chatTranscript");
   if (!host) return;
@@ -1417,6 +1430,7 @@ function renderChatTranscript(d) {
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
   appendTaskApprovals(host, d);
+  chatPaintCodingResults(host,d.codingResults);
   (d.queued || []).forEach((q) => {
     const b = chatUserTurn(q);
     b.classList.add("chat-queued");
@@ -1734,7 +1748,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []);
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []) + "|" + JSON.stringify(d.codingResults || []);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || queued > 0 || (chatAgent && !chatIsPortal()));

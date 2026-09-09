@@ -28,5 +28,8 @@ vm.runInContext(source.slice(source.indexOf('async function loadChatSession(id)'
  assert.notEqual(before,pendingSig,'new approval must trigger repaint without a new message');
  idle.proposals[0].body='Updated evidence';assert.notEqual(pendingSig,ctx.chatTranscriptSignature(idle));
  idle.proposals=[];assert.equal(before,ctx.chatTranscriptSignature(idle),'settlement returns to no pending approvals');
+ idle.codingResults=[{id:'run',agent:'codex',body:'Delivered',outcome:'completed'}];
+ const resultSig=ctx.chatTranscriptSignature(idle);assert.notEqual(before,resultSig,'coding result must refresh idle planning chat');
+ idle.codingResults[0].body='Corrected deliverable';assert.notEqual(resultSig,ctx.chatTranscriptSignature(idle));
  console.log('Artifact handoff navigation race passed');
 })().catch(e=>{console.error(e);process.exitCode=1});
