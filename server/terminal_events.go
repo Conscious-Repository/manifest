@@ -137,6 +137,34 @@ func (h *terminalEventHub) run(ctx context.Context) {
 					h.server.codingResultSweep()
 				}
 			}
+			// The subscription stream ended. Do NOT immediately declare the
+			// daemon unreachable: the stream can drop while the daemon stays
+			// reachable (a lost pane event / socket hiccup). Verify with an
+			// authoritative List() snapshot. If it succeeds, the daemon is up —
+			// refresh state from it and stay 'connected'; only report
+			// unavailable if List() itself fails.
+			if obs, lerr := rt.List(ctx); lerr == nil {
+				h.mu.Lock()
+				if ctx.Err() != nil {
+					h.mu.Unlock()
+					return
+				}
+				h.latest = map[string]terminalObservation{}
+				h.connected = true
+				for _, ob := range obs {
+					h.latest[ob.Identity.Pane] = ob
+				}
+				h.publishLocked()
+				h.mu.Unlock()
+				rtimer := time.NewTimer(150 * time.Millisecond)
+				select {
+				case <-ctx.Done():
+					rtimer.Stop()
+					return
+				case <-rtimer.C:
+				}
+				continue // daemon reachable — re-subscribe, don't report unavailable
+			}
 		}
 		h.mu.Lock()
 		if ctx.Err() != nil {
