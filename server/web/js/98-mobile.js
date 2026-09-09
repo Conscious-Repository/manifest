@@ -27,7 +27,7 @@
     const setOpen = (open) => {
       chatShell.classList.toggle("mf-chat-nav-open", open);
       toggle.setAttribute("aria-expanded", String(open));
-      toggle.textContent = (open ? "▾ " : "▸ ") + "Conversations";
+      toggle.textContent = open ? "Close chats" : "‹ Chats";
     };
     setOpen(false);
     toggle.onclick = () => setOpen(!chatShell.classList.contains("mf-chat-nav-open"));

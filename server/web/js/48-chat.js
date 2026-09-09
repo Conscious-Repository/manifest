@@ -318,22 +318,17 @@ async function loadChatRoster() {
   }
 }
 
-// loadChatSessions refreshes the OPEN section's list (spirits or one agent).
+// Load conversation summaries together so the inbox can sort across agents.
 async function loadChatSessions() {
-  if (chatIsTerm()) return; // the registry list loads through loadChatTermSessions
-  if (chatAgent) {
-    const agent = chatAgent;
-    const tasks = fetch("/api/agents/chat/" + encodeURIComponent(agent) + "/tasks")
-      .then((r) => (r.ok ? r.json() : { tasks: [] }))
-      .then((d) => { chatAgentTasks[agent] = d.tasks || []; })
-      .catch(() => { chatAgentTasks[agent] = []; });
-    try { chatAgentSessions[agent] = ((await (await fetch(chatBase())).json()).sessions) || []; }
-    catch (e) { chatAgentSessions[agent] = []; }
-    await tasks;
-    return;
-  }
-  try { chatSessions = ((await (await fetch("/api/chat/sessions")).json()).sessions) || []; }
-  catch (e) { chatSessions = []; }
+  const agents = chatRoster.map(a => a.name);
+  await Promise.all(["", ...agents].map(async agent => {
+    try {
+      const res = await fetch(chatBaseFor(agent));
+      if (!res.ok) return; // retain the last good directory during an outage
+      const rows = (await res.json()).sessions || [];
+      if (agent) chatAgentSessions[agent] = rows; else chatSessions = rows;
+    } catch (e) {}
+  }));
 }
 
 async function chatSpiritList() {
@@ -354,35 +349,78 @@ function renderChatHeadActions() {
   host.dataset.built = "1";
   const add = el("button", "sprt-ghost", "＋ new");
   add.title = "new conversation in the open section";
-  add.onclick = () => { location.hash = chatNewHash(); };
+  add.textContent = "New chat";
+  add.onclick = () => {
+    const existing = host.querySelector(".chat-new-picker");
+    if (existing) { existing.remove(); return; }
+    const picker = document.createElement("select");
+    picker.className = "chat-new-picker"; picker.setAttribute("aria-label", "Choose an agent for a new chat");
+    const prompt = el("option", "", "Choose an agent…"); prompt.value = "pick"; picker.append(prompt);
+    [...chatRoster.map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
+      const option = el("option", "", label); option.value = value; picker.append(option);
+    });
+    picker.onchange = () => { if (picker.value === "pick") return; location.hash = picker.value ? "#/chat/a/" + encodeURIComponent(picker.value) + "/new" : "#/chat/new"; picker.remove(); };
+    host.append(picker); picker.focus();
+  };
   host.append(add);
 
 }
 
 // ---- rail: agent sections ----
 
+let chatSearchQuery = "";
+let chatInboxFilter = "all";
+function chatInboxEntries() {
+  const entries = chatSessions.map(session => ({agent: "", session}));
+  chatRoster.forEach(agent => (chatAgentSessions[agent.name] || []).forEach(session => entries.push({agent: agent.name, session})));
+  if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).forEach(session => entries.push({agent, session, terminal: true})));
+  const query = chatSearchQuery.trim().toLowerCase();
+  return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter)
+    && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
+    .sort((a, b) => {
+      const time = entry => Date.parse(entry.session.updated || entry.session.lastUsed || entry.session.created || "") || 0;
+      return time(b) - time(a);
+    });
+}
+function renderChatInboxRows() {
+  const host = document.getElementById("chatInboxRows");
+  if (!host) return;
+  host.replaceChildren();
+  const entries = chatInboxEntries();
+  if (!entries.length) { host.append(emptyRow(chatSearchQuery ? "No matching conversations" : "No conversations yet")); return; }
+  entries.forEach(entry => {
+    const row = entry.terminal ? chatTermRow(entry.session) : chatRailRow(entry.session, entry.agent);
+    row.classList.toggle("open", entry.agent === chatAgent && entry.session.id === chatOpenId);
+    const meta = row.querySelector(".chat-rail-meta");
+    if (meta) meta.prepend(el("span", "chat-inbox-agent", entry.terminal ? chatTermKinds[entry.agent] : entry.agent ? chatAgentLabel(entry.agent) : entry.session.spirit || "Spirits"));
+    row.onclick = () => { location.hash = entry.agent ? "#/chat/a/" + encodeURIComponent(entry.agent) + "/" + encodeURIComponent(entry.session.id) : "#/chat/" + encodeURIComponent(entry.session.id); };
+    host.append(row);
+  });
+}
 function renderChatRail() {
   const host = document.getElementById("chatRail");
   if (!host) return;
-  // a rename in progress must not be rebuilt from under the user (the
-  // terminal's termRailBusy idiom); chatRename re-paints once it settles
-  const a = document.activeElement;
-  if (a && a.classList.contains("inline-rename") && host.contains(a)) return;
-  host.innerHTML = "";
-  const alfred = chatRosterEntry("alfred");
-  const profiles = chatRoster.filter((a) => a.backend === "hermes" && a.name !== "alfred");
-  const portals = chatRoster.filter((a) => a.backend === "portal");
-  if (alfred) host.append(chatRailSection(alfred.name, alfred.label, alfred));
-  if (profiles.length) {
-    host.append(el("div", "micro-label chat-rail-group", "profiles"));
-    profiles.forEach((p) => host.append(chatRailSection(p.name, p.label, p)));
+  if (host.contains(document.activeElement) && document.activeElement.classList.contains("inline-rename")) return;
+  if (!host.querySelector("#chatInboxRows")) {
+    host.replaceChildren();
+    const controls = el("div", "chat-inbox-controls");
+    const search = document.createElement("input");
+    search.type = "search"; search.className = "chat-inbox-search";
+    search.placeholder = "Search chats"; search.setAttribute("aria-label", "Search chats");
+    search.value = chatSearchQuery;
+    search.oninput = () => { chatSearchQuery = search.value; renderChatInboxRows(); };
+    const select = document.createElement("select");
+    select.className = "chat-inbox-filter"; select.setAttribute("aria-label", "Filter chats by agent");
+    [["all", "All chats"], ...chatRoster.map(a => [a.name, a.label]), ...(chatTermEnabled ? Object.entries(chatTermKinds) : []), ["", "Spirits"]].forEach(([value, label]) => {
+      const option = el("option", "", label); option.value = value; select.append(option);
+    });
+    select.value = chatInboxFilter;
+    select.onchange = () => { chatInboxFilter = select.value; renderChatInboxRows(); };
+    controls.append(search, select);
+    host.append(controls, el("div", "chat-inbox-rows"));
+    host.lastChild.id = "chatInboxRows";
   }
-  // KAIROS · ZECK — their own sections, never the default (Q2/Q5)
-  portals.forEach((p) => host.append(chatRailSection(p.name, p.label, p)));
-  // CLAUDE CODE · CODEX — the terminal registry's claude/codex rows (Stage S);
-  // absent entirely when the terminal is not enabled on this server
-  if (chatTermEnabled) Object.keys(chatTermKinds).forEach((k) => host.append(chatTermSection(k)));
-  host.append(chatRailSection("", "spirits", null));
+  renderChatInboxRows();
 }
 
 // shortModel — one model id shortener for the rail, the head and the landing.
@@ -996,14 +1034,15 @@ function chatHead(s) {
   title.ondblclick = () => chatRename(title, s, agent);
   head.append(title);
   const sub = [who];
-  if (s.model) sub.push(shortModel(s.model));
+  if (s.model) head.title = shortModel(s.model);
   else if (portal) sub.push(s.domain === "ooda" ? "ooda portal" : "aion portal");
   if (portal && s.busy) sub.push("✦ running");
   head.append(el("span", "sprt-sub chat-head-sub", sub.filter(Boolean).join(" · ")));
   // portal runs are metered in the agent's own ledger, not per thread
   const meta = [fmtWhen(s.updated || s.created)];
   if (!portal) meta.push("$" + (s.spentUsd || 0).toFixed(4) + (s.ceilingUsd ? " / $" + s.ceilingUsd.toFixed(2) : ""));
-  head.append(el("span", "sprt-head-meta chat-head-meta", meta.filter(Boolean).join(" · ")));
+  const info = el("details", "chat-details");
+  info.append(el("summary", "", "Details"), el("div", "chat-head-meta", meta.filter(Boolean).join(" · ")));
   const acts = el("span", "chat-head-acts");
   const ren = el("button", "sprt-quiet", "✎");
   ren.title = "rename";
@@ -1029,7 +1068,8 @@ function chatHead(s) {
       loadChat();
     } catch (e) { showToast("delete failed"); }
   }));
-  head.append(acts);
+  info.append(acts);
+  head.append(info);
   return head;
 }
 

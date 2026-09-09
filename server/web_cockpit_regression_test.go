@@ -60,3 +60,29 @@ global.document={getElementById(){return null;},querySelector(){return null;}};
 		t.Fatalf("%v\n%s", err, out)
 	}
 }
+
+func TestChatInboxOrdersAndFiltersAcrossAgents(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	script := `
+const assert=require('node:assert/strict');
+global.cmdRegistry={register(){}};
+global.window={addEventListener(){}};
+global.document={addEventListener(){},getElementById(){return null;},querySelector(){return null;}};
+` + readWebJS(t, "web/js/48-chat.js") + `
+chatRoster=[{name:'alfred',label:'Alfred'},{name:'zeck',label:'Zeck'}];
+chatSessions=[{id:'spirit',title:'Research',created:'2026-09-01'}];
+chatAgentSessions={alfred:[{id:'same',title:'Plan',updated:'2026-09-08'}],zeck:[{id:'same',title:'Property review',updated:'2026-09-09'}]};
+chatTermEnabled=false;
+assert.deepEqual(chatInboxEntries().map(e=>e.agent),['zeck','alfred','']);
+chatSearchQuery='property';assert.deepEqual(chatInboxEntries().map(e=>e.agent),['zeck']);
+chatSearchQuery='';chatInboxFilter='alfred';assert.equal(chatInboxEntries().length,1);
+assert.equal(chatInboxEntries()[0].session.title,'Plan');
+chatInboxFilter='all';chatSearchQuery='missing';assert.equal(chatInboxEntries().length,0);
+`
+	if out, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}

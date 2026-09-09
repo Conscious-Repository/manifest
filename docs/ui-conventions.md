@@ -56,7 +56,7 @@ var(--sp-5)`). Odd values (7, 9) snap to the nearest even step. Gap is where the
 scale is already de-facto followed — extend it to padding/margin.
 
 ### Radius, shadow, fonts
-- `--radius` 4px, `--radius-lg` 6px. Use them; don't draw raw `3/5/6px`.
+- `--radius` 4px, `--radius-lg` 6px, `--radius-message` 16px for conversation bubbles and composers. Use them; don't draw raw `3/5/6px`.
 - `--shadow-1` / `--shadow-2` — the only drop shadows. No hand-rolled `rgba(0,0,0,x)`.
 - `--sans` (Hanken Grotesk) = human prose, **set once on `body`, inherited**.
   `--mono` (Carbon/Spline) = all metadata, labels, chips, counts, timestamps, code.
@@ -347,3 +347,7 @@ page directly; metadata editing is an explicit secondary action. Use
 `rePropertyLink` inside selectable rows so navigation does not also select or edit
 the row. Do not add a persistent property switcher: the owner prefers the extra
 navigation click to this additional page chrome (2026-09-07).
+
+### Chat conversation layout
+
+Chat uses one searchable, recent-first conversation directory across agents, with an optional agent filter. New chat chooses the recipient. Incoming and outgoing messages use the shared message radius and neutral surface tokens; the conversation header stays visible, and secondary management details fold under Details. On phones, the directory and conversation occupy separate panes. Terminal retains its dedicated PTY styling.
