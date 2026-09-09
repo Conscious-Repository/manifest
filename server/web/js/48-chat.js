@@ -318,12 +318,19 @@ async function renderTaskChat(taskID, refetch) {
   }
   await todoPrepareDraft(d,taskID);
   if(chatTaskID!==taskID)return;
+  const readKey = d.conversation?.key || "";
+  const restoreReading = host.dataset.readKey !== readKey;
+  if (restoreReading) await chatPrepareReadingPosition(d.conversation);
+  if(chatTaskID!==taskID)return;
   await renderTaskChatRail(d);
   if (chatTaskID !== taskID) return;
   const sameThread = host.dataset.task === taskID;
   const oldScroll = host.scrollTop;
   const following = !sameThread || host.scrollHeight - host.scrollTop - host.clientHeight < 80;
   host.dataset.task = taskID;
+  host.dataset.readKey = readKey;
+  if (restoreReading) chatReadingGestureUntil = 0;
+  bindChatScroll();
   host.innerHTML = "";
   const rec = d.record || {};
   // Keep the task context in the normal thread-head anatomy: title, agent
@@ -367,12 +374,15 @@ async function renderTaskChat(taskID, refetch) {
     }, 2000);
   }
   host.scrollTop = following ? host.scrollHeight : oldScroll;
+  chatStick = following;
+  if (restoreReading) chatRestoreReadingPosition(host, chatReadingStates.get(readKey)?.value);
   if (chatPendingWorkspace?.task === taskID) { const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec); }
 }
 
 function chatTaskThreadEntry(c, taskID) {
   const mine = !(c.author || "").startsWith("agent:");
   const wrap = el("div", "chat-turn " + (mine ? "chat-user" : "chat-spirit"));
+  if (c.id) wrap.dataset.chatReadTurn = "comment:" + c.id;
   if (c.text) {
     if (mine) wrap.textContent = c.text;
     else {
@@ -1091,7 +1101,7 @@ function chatReadingAnchor(host) {
 }
 function chatSaveReadingPosition() {
   const host = document.getElementById("chatTranscript");
-  if (!host || els.chatView.hidden || chatIsTerm() || chatTaskID) return;
+  if (!host || els.chatView.hidden || (chatIsTerm() && !chatTaskID)) return;
   const saved = chatReadingStates.get(host.dataset.readKey);
   const value = chatReadingAnchor(host);
   if (saved && value) saved.set(value);

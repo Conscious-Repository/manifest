@@ -23,6 +23,17 @@ assert.equal(ctx.chatRestoreReadingPosition(phone,{following:false,turn:'7',frac
 assert.equal(phone.scrollTop,900);
 phone.scrollTop=2500;assert.equal(ctx.chatReadingAnchor(phone).following,true);
 assert.equal(ctx.chatRestoreReadingPosition(phone,{following:true}),false);
+// A native task uses comment identity, not list position; earlier new comments
+// do not change which message the bookmark restores.
+const taskView=viewport(0,1800,400);
+taskView.querySelectorAll()[0].dataset.chatReadTurn='comment:stable-id';
+assert.equal(ctx.chatRestoreReadingPosition(taskView,{following:false,turn:'comment:stable-id',fraction:.25}),true);
+assert.equal(taskView.scrollTop,1900);
+let taskSaved;
+taskView.dataset={readKey:'task-conversation'};
+Object.assign(ctx,{document:{getElementById:()=>taskView},els:{chatView:{hidden:false}},chatIsTerm:()=>true,chatTaskID:'task-with-coding-assignee',chatReadingStates:new Map([['task-conversation',{set:v=>taskSaved=v}]])});
+ctx.chatSaveReadingPosition();assert.equal(taskSaved.turn,'comment:stable-id');
+ctx.chatTaskID='';taskSaved=null;ctx.chatSaveReadingPosition();assert.equal(taskSaved,null,'raw terminal must not save a task bookmark');
 // Rendering/autopin scrolls do not overwrite a stored bookmark. A user gesture
 // arms capture only for the ensuing scroll events.
 const listeners={},scrollHost={scrollTop:100,scrollHeight:2000,clientHeight:500,addEventListener:(name,fn)=>listeners[name]=fn};
