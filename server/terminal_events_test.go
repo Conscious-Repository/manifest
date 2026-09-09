@@ -64,10 +64,9 @@ func TestTerminalEventsShareSubscriptionAndInvalidateDisconnect(t *testing.T) {
 	}
 	c := <-socket
 	c.Close()
-	snap := awaitTerminalSnapshot(t, a, func(s terminalEventSnapshot) bool { return !s.Connected })
-	if snap.Sessions[0].AgentState != "unknown" || snap.Sessions[0].Process != "unknown" || snap.Sessions[0].Connectivity != "unavailable" {
-		t.Fatalf("stale state %+v", snap)
-	}
+	// The event-subscription socket dropped, but the daemon is REACHABLE (the
+	// fixture's List() still succeeds). The hub must not lie that the agent is
+	// unavailable — it verifies reachability, stays connected, and re-subscribes.
 	awaitTerminalSnapshot(t, a, working)
 	if subscriptions.Load() != 2 {
 		t.Fatal("did not resubscribe after disconnect")
