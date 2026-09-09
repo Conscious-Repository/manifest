@@ -39,10 +39,23 @@ function device(storage=new Map()){
  const restored=device(storage);await restored.refresh();assert.equal(restored.value.text,'offline draft');offline=false;await restored.refresh();await restored.flush();assert.equal(remote.value.text,'offline draft');
  // Task drafts retain routing preferences while clearing sent mentions/files.
  const task=device();await task.refresh();
- task.set({text:'task ask',files:[{hash:'file',name:'plan.md'}],mentions:['agent:alfred'],mode:'ask',agent:'agent:alfred'});await task.flush();
+ task.set({text:'task ask',files:[{hash:'file',name:'plan.md'}],mentions:['agent:alfred'],mode:'ask',agent:'agent:alfred',selection:{id:'plan:task',revision:'exact-old-version',version:1}});await task.flush();
  const taskSnapshot=task.value;task.clearSent(taskSnapshot);await task.flush();
  assert.equal(task.value.mode,'ask');assert.equal(task.value.agent,'agent:alfred');assert.equal(task.value.mentions.length,0);assert.equal(task.value.files.length,0);
- const taskAgain=device();await taskAgain.refresh();assert.equal(taskAgain.value.text,'');assert.equal(taskAgain.value.mode,'ask');
+ const taskAgain=device();await taskAgain.refresh();assert.equal(taskAgain.value.text,'');assert.equal(taskAgain.value.mode,'ask');assert.equal(taskAgain.value.selection.revision,'exact-old-version');
+ // The task UI restores/clears exact context independently for each task,
+ // retaining its typed draft when a context chip changes.
+ const selections=new Map(),painted=[];
+ const taskUI=vm.createContext({chatArtifactSelections:selections,chatRenderArtifactContext:(...args)=>painted.push(args)});
+ const panel=fs.readFileSync('web/js/93-todo-panel.js','utf8');
+ vm.runInContext(panel.slice(panel.indexOf('const todoComposerDrafts'),panel.indexOf('window.addEventListener("focus"'))+';globalThis.drafts=todoComposerDrafts;globalThis.states=todoSyncedDrafts;',taskUI);
+ taskUI.drafts.set('one',{text:'still typing',mode:'ask'});
+ taskUI.todoApplyDraftSelection('one',{selection:{id:'old-plan',revision:'v1'}});
+ taskUI.todoApplyDraftSelection('two',{selection:{id:'other-plan',revision:'v3'}});
+ taskUI.todoSaveArtifactSelection('one');
+ assert.equal(taskUI.drafts.get('one').text,'still typing');assert.equal(taskUI.drafts.get('one').selection.revision,'v1');
+ taskUI.todoApplyDraftSelection('one',null);taskUI.todoSaveArtifactSelection('one');
+ assert.equal(taskUI.drafts.get('one').selection,null);assert.equal(selections.get('task:two').revision,'v3');
  // Artifact edit slots preserve the original save precondition across reload.
  const edits=new Map();let editRemote={key:'artifact-0123456789abcdef',slot:'edit',revision:0,value:null};
  const editContext=vm.createContext({fetch:async(url,opts={})=>{

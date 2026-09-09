@@ -12,6 +12,7 @@ async function todoPrepareDraft(d,taskID){
   if(d.chat?.canonical || !d.conversation?.key || typeof ChatDraftState==="undefined")return;
   if(todoSyncedDrafts.has(taskID))return;
   const state=new ChatDraftState(d.conversation.key,(current,apply)=>{
+    if(apply)todoApplyDraftSelection(taskID,current.value);
     if(apply)todoComposerDrafts.set(taskID,current.value||{text:"",files:[],mentions:[]});
     for(const view of [...(current.views||[])]){
       if(!view.box.isConnected){current.views.delete(view);continue;}
@@ -23,6 +24,18 @@ async function todoPrepareDraft(d,taskID){
   const local=todoComposerDrafts.get(taskID);if(local)state.set(local);
   await state.refresh();
   todoComposerDrafts.set(taskID,state.value||{text:"",files:[],mentions:[]});
+  todoApplyDraftSelection(taskID,state.value);
+}
+// The exact selected artifact version travels with the pending task message.
+function todoApplyDraftSelection(taskID,value){
+  const key="task:"+taskID;
+  if(value?.selection)chatArtifactSelections.set(key,value.selection);else chatArtifactSelections.delete(key);
+}
+function todoSaveArtifactSelection(taskID){
+  const state=todoSyncedDrafts.get(taskID);
+  const value={...(state?.value||todoComposerDrafts.get(taskID)||{text:"",files:[],mentions:[]}),selection:chatArtifactSelections.get("task:"+taskID)||null};
+  todoComposerDrafts.set(taskID,value);state?.set(value);
+  for(const view of state?.views||[])if(view.box.isConnected)chatRenderArtifactContext(taskID,"task:"+taskID,view.box);
 }
 window.addEventListener("focus",()=>{for(const state of todoSyncedDrafts.values())if([...state.views].some(v=>v.box.isConnected))state.refresh();});
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)for(const state of todoSyncedDrafts.values())if([...state.views].some(v=>v.box.isConnected))state.refresh();});
@@ -640,7 +653,7 @@ function todoComposer(d, opts) {
   if (defAgent) agentSel.value = defAgent.id;
   if (draft.agent && agents.some((a) => a.id === draft.agent)) agentSel.value = draft.agent;
   agentSel.setAttribute("aria-label", "Agent for this message");
-  const snapshot=()=>({text:ta.value,files:pendingFiles.slice(),mentions:mentions.slice(),mode,agent:agentSel.value});
+  const snapshot=()=>({text:ta.value,files:pendingFiles.slice(),mentions:mentions.slice(),mode,agent:agentSel.value,selection:chatArtifactSelections.get("task:"+taskID)||null});
   const remember = () => {const value=snapshot();todoComposerDrafts.set(taskID,value);draftState?.set(value);};
   pendingFiles.forEach((ref) => chips.append(el("span", "tdo-p-chip", "⤓ " + ref.name)));
   mentions.forEach((id) => chips.append(el("span", "tdo-p-chip mention", "@" + id.replace(/^agent:/, ""))));
@@ -741,7 +754,7 @@ function todoComposer(d, opts) {
     const sent=snapshot();
     send.disabled = true;
     try {
-      await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent, context: opts.context ? opts.context() : [] });
+      await postJSONOk("/api/tasks/thread", { id: taskID, text, mentions, files: pendingFiles, mode, agent, context: sent.selection ? [{id:sent.selection.id,revision:sent.selection.revision}] : [] });
       if (mode === "ask") showToast("Asked " + agentName() + " — the answer lands in this thread", null, "info");
       else if (mode === "do") showToast(agentName() + " received your instructions — follow progress here", null, "info");
       if(chatStateEqual(draftState?.value||snapshot(),sent)){
@@ -762,6 +775,7 @@ function todoComposer(d, opts) {
   };
   acts.append(attach, mentionBtn, send, fi);
   box.append(modeBar, chips, ta, acts);
+  chatRenderArtifactContext(taskID,"task:"+taskID,box);
   if(draftState){
     const apply=value=>{
       const v=value||{};ta.value=v.text||"";
@@ -771,6 +785,7 @@ function todoComposer(d, opts) {
       chips.replaceChildren();
       pendingFiles.forEach(f=>chips.append(el("span","tdo-p-chip","⤓ "+f.name)));
       mentions.forEach(id=>chips.append(el("span","tdo-p-chip mention","@"+id.replace(/^agent:/,""))));
+      chatRenderArtifactContext(taskID,"task:"+taskID,box);
       paint();
     };
     for(const view of [...draftState.views])if(!view.box.isConnected)draftState.views.delete(view);

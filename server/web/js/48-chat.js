@@ -349,9 +349,7 @@ async function renderTaskChat(taskID, refetch) {
     composer.dataset.task = taskID;
     composer.classList.add("task-composer");
     composer.append(todoComposer(d, { taskID,
-      context: () => { const ref=chatArtifactSelections.get("task:"+taskID);return ref ? [{id:ref.id,revision:ref.revision}] : []; },
       onPosted: () => renderTaskChat(taskID, true) }));
-    chatRenderArtifactContext(taskID);
   }
   if (!chatTaskPollTimer) {
     chatTaskPollTimer = setInterval(async () => {
@@ -2505,24 +2503,30 @@ function chatOpenWorkingArtifact(spec) {
     save:spec.plan ? (text,expectedRevision)=>postJSONOk("/api/tasks/plan",{id:taskID,text,expectedRevision}):null,
     onClose:()=>{shell.classList.remove("has-artifact");chatWorkspace=null;},
     onDiscuss: taskID && (key.startsWith("task:") || chatRosterEntry(chatAgent)?.durableSend) ? ref=>{
-      chatArtifactSelections.set(key,{...ref,task:taskID}); chatRenderArtifactContext(taskID,key);
+      chatArtifactSelections.set(key,{...ref,task:taskID});
+      if(key.startsWith("chat:"))chatRenderArtifactContext(taskID,key);
       if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));
+      else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);
       if(window.matchMedia("(max-width: 900px)").matches)chatCloseWorkspace();
       document.querySelector("#chatComposer textarea")?.focus();
     }:null
   });
 }
-function chatRenderArtifactContext(taskID,key){
+function chatRenderArtifactContext(taskID,key,host){
  key=key||"task:"+taskID;
- const composer=document.getElementById("chatComposer");if(!composer)return;
+ const composer=host||document.getElementById("chatComposer");if(!composer)return;
  composer.querySelector(".chat-artifact-context")?.remove();
  const ref=chatArtifactSelections.get(key);if(!ref)return;
  taskID=ref.task||taskID;
  const row=el("div","chat-artifact-context");
  const open=el("button","sprt-quiet","Discussing: "+ref.title+" · v"+ref.version);
- open.onclick=()=>chatOpenWorkingArtifact({id:ref.id,revision:ref.revision,task:taskID,selectionKey:key});
+ open.onclick=()=>{
+   const spec={id:ref.id,revision:ref.revision,task:taskID,selectionKey:key};
+   if(key.startsWith("task:")&&!location.hash.startsWith("#/chat/task/")){chatPendingWorkspace=spec;location.hash=chatTaskThreadHash(taskID);}
+   else chatOpenWorkingArtifact(spec);
+ };
  const clear=el("button","sprt-quiet","×");clear.setAttribute("aria-label","Remove artifact context");
- clear.onclick=()=>{chatArtifactSelections.delete(key);row.remove();if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));};
+ clear.onclick=()=>{chatArtifactSelections.delete(key);row.remove();if(key.startsWith("chat:"))chatCaptureSyncedDraft(key.slice(5));else if(key.startsWith("task:"))todoSaveArtifactSelection(taskID);};
  row.append(open,clear);composer.prepend(row);
 }
 function chatArtifactActions(data){
