@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"manifest/approvals"
 	"manifest/mdfm"
 	"manifest/record"
 )
@@ -238,6 +239,12 @@ func (s *Server) handleTaskPanel(w http.ResponseWriter, r *http.Request) {
 // taskProposals projects the same enriched pending records and guards as Feed.
 // Task linkage is explicit; a related name or domain never confers membership.
 func (s *Server) taskProposals(id string) []approvalRow {
+	return s.linkedTaskProposals(nil, func(task string) bool { return task == id })
+}
+
+// Filter before enriching proposals so a chat only loads guards and content
+// for its explicit task links, rather than projecting the entire Feed.
+func (s *Server) linkedTaskProposals(exclude map[string]bool, matches func(string) bool) []approvalRow {
 	out := []approvalRow{}
 	seen := map[string]bool{}
 	harnesses := s.eachHarness()
@@ -254,7 +261,10 @@ func (s *Server) taskProposals(id string) []approvalRow {
 		if h.Approvals == nil {
 			continue
 		}
-		for _, row := range s.harnessApprovalRows(h, nil, id) {
+		for _, row := range s.harnessApprovalRowsMatching(h, exclude, func(p approvals.Proposal) bool {
+			match := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body)
+			return match != nil && matches(strings.TrimSpace(match[1]))
+		}) {
 			if seen[row.ID] {
 				continue
 			}

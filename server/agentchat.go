@@ -377,7 +377,7 @@ func (s *Server) handleAgentChatSession(w http.ResponseWriter, r *http.Request) 
 		queued = []string{}
 	}
 	writeJSON(w, map[string]any{"session": sess, "body": body, "queued": queued, "operations": s.chatOperations(sess.ID),
-		"conversation": sessionConversation(sess), "related": s.relatedChats(sess)})
+		"conversation": sessionConversation(sess), "related": s.relatedChats(sess), "proposals": s.chatTaskProposals(sess)})
 }
 
 // POST /api/agents/chat/{agent}/sessions/{id}/messages {text, files?} — starts

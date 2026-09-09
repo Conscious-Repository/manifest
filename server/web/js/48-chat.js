@@ -923,7 +923,7 @@ async function loadChatSession(id) {
     const spec=chatPendingWorkspace;chatPendingWorkspace=null;chatOpenWorkingArtifact(spec);
   }
   ensureChatStream(d.session);
-  if ((d.queued || []).length || d.session.status === "thinking") ensureChatPoll(d.session, (d.queued || []).length);
+  ensureChatPoll(d.session, (d.queued || []).length);
 }
 
 // ---- live stream layer (A2): EventSource over the engine's event log ----
@@ -1337,6 +1337,7 @@ function renderChatTranscript(d) {
 
   const turnNumbers = new Set(parseChatTurns(d.body || "").filter(t => t.who !== "user" && t.who !== "system").map(t => t.n));
   (d.operations || []).filter(item => !turnNumbers.has(Number(item.record.turn) + 1)).forEach(item => host.append(manifestOperationCard(item)));
+  appendTaskApprovals(host, d);
   (d.queued || []).forEach((q) => {
     const b = chatUserTurn(q);
     b.classList.add("chat-queued");
@@ -1621,7 +1622,7 @@ function renderChatComposer(session) {
 // there runs the server's chatSweep over the agent's run reports.
 
 function chatTranscriptSignature(d) {
-  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result]));
+  return JSON.stringify((d.session.deliveries || []).map(x=>[x.id,x.state,x.userTurn,x.replyTurn])) + "|" + d.session.updated + "|" + d.session.status + "|" + (d.queued || []).length + "|" + JSON.stringify((d.operations || []).map(x => [x.record.operationId, x.record.status, x.record.result])) + "|" + JSON.stringify(d.proposals || []);
 }
 function ensureChatPoll(session, queued) {
   const active = session && (session.status === "thinking" || queued > 0 || (chatAgent && !chatIsPortal()));

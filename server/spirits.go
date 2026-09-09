@@ -153,16 +153,20 @@ func (s *Server) approvalRows(exclude map[string]bool) []approvalRow {
 // harnessApprovalRows enriches ONE harness's pending proposals; the apply
 // allow-lists + current-content reads run against that harness's store.
 func (s *Server) harnessApprovalRows(h Harness, exclude map[string]bool, taskID ...string) []approvalRow {
+	return s.harnessApprovalRowsMatching(h, exclude, func(p approvals.Proposal) bool {
+		if len(taskID) == 0 {
+			return true
+		}
+		match := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body)
+		return match != nil && strings.TrimSpace(match[1]) == taskID[0]
+	})
+}
+
+func (s *Server) harnessApprovalRowsMatching(h Harness, exclude map[string]bool, matches func(approvals.Proposal) bool) []approvalRow {
 	rows := []approvalRow{}
 	store := h.Approvals
 	for _, p := range store.List("pending") {
-		if len(taskID) > 0 {
-			match := todoTokenRe.FindStringSubmatch(p.Action + "\n" + p.Body)
-			if match == nil || strings.TrimSpace(match[1]) != taskID[0] {
-				continue
-			}
-		}
-		if exclude[p.Type] {
+		if exclude[p.Type] || !matches(p) {
 			continue
 		}
 		rr := approvalRow{Proposal: p, Harness: s.harnessTag(h.Name)}
