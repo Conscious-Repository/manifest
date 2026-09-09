@@ -2853,13 +2853,18 @@ function paintInspector(host) {
   stage.disabled = c.stage === "archived";
   stage.onchange = () => recPost("/api/aion/recruiting/candidate/stage/" + c.id, { stage: stage.value }, "stage saved");
   if (c.ashbyApplicationId) {
-    const application = el("select", "pp-in rec-in");
-    application.setAttribute("aria-label", "Application and role");
-    const apps=c.applications && c.applications.length ? c.applications : [{id:c.ashbyApplicationId,title:role.selectedOptions[0]?.textContent,stage:c.ashbyStage}];
-    apps.forEach(a=>{const o=el("option","",(a.title || (recCache.roles || []).find(r=>r.id===a.role)?.title || "Application")+" · "+(a.stage || a.status || ""));o.value=a.id;o.selected=a.id===c.ashbyApplicationId;application.append(o);});
-    application.onchange=()=>{recApplicationChoice[c.id]=application.value;recRole=null;if(recPaint)recPaint();};
-    pair.append(application);
-    host.append(el("div","micro-label","Application · managed in Ashby"));
+    const apps=c.applications && c.applications.length ? c.applications : [{id:c.ashbyApplicationId,title:role.selectedOptions[0]?.textContent}];
+    const title=a=>a.title || (recCache.roles || []).find(r=>r.id===a.role)?.title || "Application";
+    if (apps.length > 1) {
+      const application=el("select","pp-in rec-in");
+      application.setAttribute("aria-label","Application role");
+      apps.forEach(a=>{const o=el("option","",title(a));o.value=a.id;o.selected=a.id===c.ashbyApplicationId;application.append(o);});
+      application.onchange=()=>{recApplicationChoice[c.id]=application.value;recRole=null;if(recPaint)recPaint();};
+      host.append(el("div","micro-label","Application"));
+      pair.append(application);
+    } else {
+      pair.append(el("div","rec-application-role",title(apps[0])));
+    }
   } else {
     role.setAttribute("aria-label","Manifest role");stage.setAttribute("aria-label","Manifest stage");
     pair.append(role,stage);
@@ -3987,42 +3992,93 @@ function recPendingSourceRole(roleId) {
 // An application action always targets an explicit application, never the
 // person's incidental primary role. No implicit local advance or archive.
 function recApplicationControls(c) {
-  const box=el("section","rec-triage");
-  box.append(el("div","rec-draft-sub",c.ashbyStage || c.ashbyStatus || "Stage not loaded"));
-  const load=el("button","rec-quiet-btn","Change stage in Ashby…");
-  box.append(load);
-  load.onclick=async()=>{
-    load.disabled=true;
+  const box=el("section","rec-stage-control");
+  const label=el("label","micro-label","Stage");
+  const select=el("select","pp-in rec-in");
+  select.id="rec-stage-"+c.ashbyApplicationId;
+  label.htmlFor=select.id;
+  select.setAttribute("aria-label","Candidate stage");
+  select.disabled=true;
+  const current=el("option","",c.ashbyStage || c.ashbyStatus || "Loading stage…");
+  current.value="";select.append(current);
+  const meta=el("span","rec-stage-sync","Syncs with Ashby");
+  const heading=el("div","rec-stage-heading");heading.append(label,meta);
+  const row=el("div","rec-stage-row");row.append(select);
+  const reasonWrap=el("div","rec-stage-reason");reasonWrap.hidden=true;
+  const reasonLabel=el("label","micro-label","Archive reason");
+  const reason=el("select","pp-in rec-in");reason.id=select.id+"-reason";reasonLabel.htmlFor=reason.id;
+  const hint=el("option","","Choose a reason…");hint.value="";reason.append(hint);
+  reasonWrap.append(reasonLabel,reason);
+  const actions=el("div","rec-stage-actions");actions.hidden=true;
+  const save=el("button","rec-primary","Save stage");
+  const cancel=el("button","rec-quiet-btn","Cancel");
+  actions.append(save,cancel);
+  const status=el("div","rec-stage-status");status.setAttribute("role","status");status.setAttribute("aria-live","polite");
+  const retry=el("button","rec-linkish","Retry loading stages");retry.hidden=true;
+  box.append(heading,row,reasonWrap,actions,status,retry);
+  let original="", loadingReasons=false, needsVerification=false;
+  const syncSelection=()=>{
+    const changed=!!select.value && select.value!==original;
+    box.dataset.dirty=String(changed);
+    reasonWrap.hidden=!changed || select.selectedOptions[0]?.dataset.kind!=="Archived";
+    actions.hidden=!changed;
+    save.disabled=!changed || (!reasonWrap.hidden && !reason.value);
+    save.textContent=reasonWrap.hidden ? "Move to "+(select.selectedOptions[0]?.textContent || "stage") : "Archive application";
+    status.textContent="";
+  };
+  const loadReasons=async()=>{
+    if(loadingReasons || reason.options.length>1)return;
+    loadingReasons=true;reason.disabled=true;
+    try {
+      const r=await fetch("/api/aion/recruiting/ashby/reasons",{cache:"no-store"});
+      const out=await r.json();if(!r.ok)throw new Error(out.error || "Could not load archive reasons");
+      (out.reasons || []).forEach(x=>{const o=el("option","",x.text || x.title);o.value=x.id;reason.append(o);});
+      retry.hidden=true;
+    }catch(e){status.textContent=e.message;retry.textContent="Retry loading reasons";retry.hidden=false;retry.onclick=loadReasons;}
+    finally{loadingReasons=false;reason.disabled=false;}
+  };
+  select.onchange=()=>{syncSelection();retry.hidden=true;if(!reasonWrap.hidden)loadReasons();};
+  reason.onchange=syncSelection;
+  cancel.onclick=()=>{select.value=original;reason.value="";syncSelection();retry.hidden=true;};
+  const loadStages=async()=>{
+    retry.hidden=true;select.disabled=true;
     try {
       const r=await fetch("/api/aion/recruiting/ashby/stages/"+c.id+"?applicationId="+encodeURIComponent(c.ashbyApplicationId),{cache:"no-store"});
       const out=await r.json();if(!r.ok)throw new Error(out.error || "Could not load stages");
-      const select=el("select","pp-in rec-in");select.setAttribute("aria-label","Destination Ashby stage");
-      const placeholder=el("option","","Choose a stage…");placeholder.value="";select.append(placeholder);
-      (out.stages || []).sort((a,b)=>a.orderInInterviewPlan-b.orderInInterviewPlan).forEach(st=>{const o=el("option","",st.title);o.value=st.id;o.dataset.kind=st.type;select.append(o);});
-      const reason=el("select","pp-in rec-in");reason.setAttribute("aria-label","Archive reason");reason.hidden=true;
-      const hint=el("option","","Choose archive reason…");hint.value="";reason.append(hint);
-      const save=el("button","rec-primary","Update Ashby");save.disabled=true;
-      select.onchange=async()=>{
-        reason.hidden=select.selectedOptions[0]?.dataset.kind!=="Archived";
-        save.disabled=!select.value || (!reason.hidden && !reason.value);
-        if(!reason.hidden && reason.options.length===1){
-          try {const rr=await fetch("/api/aion/recruiting/ashby/reasons");const data=await rr.json();if(!rr.ok)throw new Error(data.error || "Could not load reasons");(data.reasons || []).forEach(x=>{const o=el("option","",x.text || x.title);o.value=x.id;reason.append(o);});}
-          catch(e){showToast(e.message,null,"error");}
-        }
-      };
-      reason.onchange=()=>{save.disabled=!select.value || (!reason.hidden && !reason.value);};
-      save.onclick=async()=>{
-        save.disabled=true;select.disabled=true;reason.disabled=true;save.textContent="Updating Ashby…";
-        try {
-          // Do not automatically replay a stage mutation after an uncertain response.
-          const r=await fetch("/api/aion/recruiting/ashby/stage/"+c.id,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({applicationId:c.ashbyApplicationId,interviewStageId:select.value,archiveReasonId:reason.hidden ? "" : reason.value})});
-          const out=await r.json();if(!r.ok)throw new Error(out.error || "Stage update could not be verified. Refresh before retrying.");
-          recCache=out.view;recAshbyDetail={};showToast("Ashby stage updated");if(recPaint)recPaint();
-        } catch(e){showToast(e.message,null,"error");save.textContent="Refresh to verify stage";}
-      };
-      load.remove();box.append(select,reason,save);
-    }catch(e){load.disabled=false;showToast(e.message,null,"error");}
+      const stages=(out.stages || []).sort((a,b)=>a.orderInInterviewPlan-b.orderInInterviewPlan);
+      const known=(c.applications || []).find(a=>a.id===c.ashbyApplicationId);
+      const match=stages.find(s=>s.id===known?.stageId) || stages.find(s=>s.title===c.ashbyStage);
+      original=match?.id || "";
+      select.replaceChildren();
+      if(!match){const o=el("option","",c.ashbyStage || "Choose a stage…");o.value="";select.append(o);}
+      stages.forEach(st=>{const o=el("option","",st.title);o.value=st.id;o.dataset.kind=st.type;select.append(o);});
+      select.value=original;select.disabled=!stages.length;
+      status.textContent=stages.length ? "" : "No stages available for this application.";
+    }catch(e){status.textContent=e.message;retry.textContent="Retry loading stages";retry.hidden=false;retry.onclick=loadStages;}
   };
+  save.onclick=async()=>{
+    if(save.disabled)return;
+    save.disabled=true;select.disabled=true;reason.disabled=true;cancel.disabled=true;
+    box.dataset.dirty="true";box.dataset.saving="true";
+    const destination=select.selectedOptions[0]?.textContent || "stage";
+    status.textContent=needsVerification ? "Checking Ashby…" : "Saving to Ashby…";
+    try {
+      // An uncertain mutation is checked by reconciliation, never replayed.
+      const url=needsVerification ? "/api/aion/recruiting/ashby/sync" : "/api/aion/recruiting/ashby/stage/"+c.id;
+      const body=needsVerification ? {full:true} : {applicationId:c.ashbyApplicationId,interviewStageId:select.value,archiveReasonId:reasonWrap.hidden ? "" : reason.value};
+      const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const out=await r.json();if(!r.ok)throw new Error(out.error || "Could not confirm the update.");
+      recCache=out.view;recAshbyDetail={};
+      box.dataset.dirty="false";box.dataset.saving="false";
+      showToast(needsVerification ? "Stage refreshed from Ashby" : "Moved to "+destination);
+      if(recPaint)recPaint();
+    }catch(e){
+      needsVerification=true;status.textContent="Could not confirm the change. Check status before trying again.";
+      save.textContent="Check status";save.disabled=false;
+      box.dataset.saving="false";
+    }
+  };
+  loadStages();
   return box;
 }
 
@@ -4031,7 +4087,7 @@ function recApplicationControls(c) {
 let recLastLiveRead=0;
 let recLiveReading=false;
 async function recPollLive() {
-  if(aionMode!=="recruiting" || !recCache || recLiveReading || Date.now()-recLastLiveRead<15000 || document.querySelector(".rec-triage select")) return;
+  if(aionMode!=="recruiting" || !recCache || recLiveReading || Date.now()-recLastLiveRead<15000 || document.querySelector('.rec-stage-control[data-dirty="true"]')) return;
   const focused=document.activeElement;
   if(els.aionView.contains(focused) && /INPUT|TEXTAREA|SELECT/.test(focused.tagName)) return;
   recLiveReading=true;recLastLiveRead=Date.now();
@@ -4039,7 +4095,7 @@ async function recPollLive() {
     const r=await fetch("/api/aion/recruiting",{cache:"no-store"});
     if(!r.ok) throw new Error("Recruiting refresh failed");
     const next=await r.json();
-    if(aionMode!=="recruiting" || (els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))return;
+    if(aionMode!=="recruiting" || document.querySelector('.rec-stage-control[data-dirty="true"]') || (els.aionView.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)))return;
     if(JSON.stringify(next)!==JSON.stringify(recCache)){
       const selectors=[".rec-inspector",".rec-board",".rec-role-controls"];
       const scrolls=selectors.map(sel=>document.querySelector(sel)?.scrollTop || 0);

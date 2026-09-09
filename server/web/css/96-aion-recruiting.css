@@ -635,3 +635,19 @@ a.rec-place-name:hover { text-decoration: underline; }
 .rec-review-run-heading .rec-background-text { display: inline; }
 .rec-review-run-heading .micro-label { display: block; margin-top: var(--sp-2); }
 .rec-review-run-heading:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* Stage is the editable field; application identity is quiet context. */
+.rec-application-role { color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+.rec-stage-control { padding: var(--sp-3) 0 var(--sp-5); border-bottom: 1px solid var(--line); margin-bottom: var(--sp-4); }
+.rec-stage-heading { display:flex; justify-content:space-between; align-items:baseline; gap:12px; margin-bottom:8px; }
+.rec-stage-sync { color:var(--muted); font-size:var(--fs-xs); }
+.rec-stage-row { display:flex; }
+.rec-stage-row select, .rec-stage-reason select { width:100%; min-height:44px; }
+.rec-stage-reason { margin-top:12px; }
+.rec-stage-reason label { display:block; margin-bottom:8px; }
+.rec-stage-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.rec-stage-actions .rec-primary { width:auto; flex:1 1 160px; margin:0; min-height:44px; white-space:normal; }
+.rec-stage-actions .rec-quiet-btn { min-height:44px; }
+.rec-stage-status { font-size:var(--fs-sm); color:var(--muted); line-height:1.4; }
+.rec-stage-status:not(:empty) { margin-top:8px; }
+.rec-stage-control [hidden] { display:none !important; }
