@@ -82,4 +82,6 @@ assert.equal(ctx.chatHasCanonicalParent({origin:{mode:'continue',agent:'alfred',
  await tail.chatTermRequestFinalTail(root);assert.equal(paints,1);
  response={...response,planningTimeline:[...response.planningTimeline,{n:'chat:alfred:2',text:'Later reply'}]};
  await tail.chatTermRequestFinalTail(root);assert.equal(paints,2);
+ response={...response,planningOperations:[{record:{operationId:'same-decision',status:'rejected'}}]};
+ await tail.chatTermRequestFinalTail(root);assert.equal(paints,3,'decision changes repaint without new native messages');
 })().catch(e=>{console.error(e);process.exitCode=1});

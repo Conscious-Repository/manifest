@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"manifest/agentchat"
 	"sort"
@@ -121,6 +122,7 @@ type conversationTimelineTurn struct {
 	Blocks     []termBlock               `json:"blocks,omitempty"`
 	Native     *continuationNativeSource `json:"native,omitempty"`
 	Submission *terminalInputReceipt     `json:"submission,omitempty"`
+	Delivery   *agentchat.Delivery       `json:"delivery,omitempty"`
 	orderTime  time.Time
 }
 
@@ -134,7 +136,15 @@ func conversationTimeline(source agentchat.Session, body string, views []codingC
 		return t
 	}
 	for _, t := range agentchat.ParseTurns(body) {
-		out = append(out, conversationTimelineTurn{N: t.N, Who: t.Who, TS: t.At, USD: t.USD, Text: t.Text, orderTime: stamp(t.At, source.Created)})
+		item := conversationTimelineTurn{N: t.N, Who: t.Who, TS: t.At, USD: t.USD, Text: t.Text, orderTime: stamp(t.At, source.Created)}
+		for _, delivery := range source.Deliveries {
+			if t.Who == "user" && delivery.UserTurn == t.N {
+				d := delivery
+				item.Delivery = &d
+				break
+			}
+		}
+		out = append(out, item)
 	}
 	for _, v := range views {
 		for _, t := range v.Turns {
@@ -185,11 +195,11 @@ func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession)
 	turns, submissions := s.terminal.projectContinuationTurns(root.ID, s.terminalConversation(root).Key, tr.Turns)
 	timeline := conversationTimeline(agentchat.Session{}, "", []codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: turns, Submissions: submissions}})
 	for _, child := range children {
-		_, body, _, ok := s.agentChat.store.Get(child.Agent, child.ID)
+		fresh, body, _, ok := s.agentChat.store.Get(child.Agent, child.ID)
 		if !ok {
 			continue
 		}
-		for _, turn := range conversationTimeline(child, body, nil) {
+		for _, turn := range conversationTimeline(fresh, body, nil) {
 			turn.N = fmt.Sprintf("chat:%s/%s:%v", child.Agent, child.ID, turn.N)
 			timeline = append(timeline, turn)
 		}
@@ -216,6 +226,10 @@ func timelineContinuationContext(key string, turns []conversationTimelineTurn) (
 			}
 		}
 		text = fileTokenRe.ReplaceAllString(text, "(attachment: $2; content not included)")
+		if t.Delivery != nil && t.Delivery.Context != nil {
+			manifest, _ := json.Marshal(t.Delivery.Context)
+			text = "Recorded message context (references only): " + string(manifest) + "\n" + text
+		}
 		parts[i] = fmt.Sprintf("\n[source-turn %v; author %q; at %q]\n%s\n", t.N, t.Who, t.TS, text)
 	}
 	start, total := len(parts), 0

@@ -3,7 +3,26 @@ package server
 import (
 	"manifest/agentchat"
 	"manifest/approvals"
+	"manifest/manifestmcp"
 )
+
+// Project existing decision records; continuation does not copy or re-key them.
+func (s *Server) terminalPlanningOperations(root termSession) []map[string]any {
+	conversations := map[string]bool{}
+	for _, child := range s.terminalPlanningChildren(root) {
+		conversations[child.ID] = true
+	}
+	out := []map[string]any{}
+	if len(conversations) == 0 {
+		return out
+	}
+	for _, operation := range s.syncManifestOperations() {
+		if conversations[operation.Conversation] {
+			out = append(out, map[string]any{"record": operation, "proposal": manifestmcp.Proposal(operation)})
+		}
+	}
+	return out
+}
 
 // Canonical chat redirects must not hide the approvals for the task that
 // redirected here. Several tasks can explicitly originate in one conversation.

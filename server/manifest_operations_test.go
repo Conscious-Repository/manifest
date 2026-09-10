@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +52,10 @@ func TestManifestOperationSurfacesAndTakeover(t *testing.T) {
 			s.UseManifestOperations(adapter)
 			chats := agentchat.New(filepath.Join(root, "chats"))
 			s.UseAgentChat(chats)
-			conversation, err := chats.Create("alfred", "", "Cohesion", "")
+			nativeRoot := termSession{ID: "abcdef123456", Kind: "codex", Backend: "herdr", LaunchPhase: "draft"}
+			s.UseTerminal(filepath.Join(root, "terminals.json"), filepath.Join(root, "tmux"), root)
+			s.terminal.upsert(nativeRoot)
+			conversation, err := chats.CreateRelatedOnce("alfred", "", "Cohesion", "", "operation-continuation-001", agentchat.Origin{Mode: "continue", Backend: "terminal", Agent: "codex", ID: nativeRoot.ID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,6 +103,9 @@ func TestManifestOperationSurfacesAndTakeover(t *testing.T) {
 			}
 			if len(s.chatOperations("other")) != 0 || len(s.chatOperations(conversation)) != 1 {
 				t.Fatal("conversation association")
+			}
+			if !reflect.DeepEqual(s.terminalPlanningOperations(nativeRoot), s.chatOperations(conversation)) || len(s.terminalPlanningOperations(termSession{ID: "abcdef999999", Kind: "codex"})) != 0 {
+				t.Fatal("native root lost or leaked operation identity")
 			}
 			// Inspection works with no Hermes runner configured.
 			sessionReq := httptest.NewRequest("GET", "/", nil)
@@ -165,6 +172,9 @@ func TestManifestOperationSurfacesAndTakeover(t *testing.T) {
 				}
 			}
 			if mode == "reject" {
+				if !reflect.DeepEqual(s.terminalPlanningOperations(nativeRoot), s.chatOperations(conversation)) {
+					t.Fatal("native projection did not settle with original decision")
+				}
 				standing := call("source_run.prepare", manifestmcp.SourceInput{Conversation: conversation, Turn: "3", Request: recruiting.RunRequest{Source: "manual", Query: "Grace Example", Max: 1}})
 				if standing["policy"] != "standing_authorization" || len(s.feedProposals()) != 0 {
 					t.Fatal("source run acquired an approval gate")

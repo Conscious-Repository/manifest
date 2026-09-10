@@ -41,6 +41,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		"related":            s.terminalRelatedChats(se),
 		"planningTimeline":   planningTimeline,
 		"planningRecipients": s.terminalPlanningChildren(se),
+		"planningOperations": s.terminalPlanningOperations(se),
 		"live":               live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
 }

@@ -31,6 +31,20 @@ func TestCodingContinuationSnapshotRetainsAuthorsAndDisclosesOmission(t *testing
 	}
 }
 
+func TestContinuationRetainsExactDeliveryContext(t *testing.T) {
+	ref := agentchat.ArtifactReference{ID: "plan:example", Revision: strings.Repeat("a", 64)}
+	source := agentchat.Session{Agent: "alfred", ID: "20260909-120000-abcd", Deliveries: []agentchat.Delivery{{ID: "receipt-001", UserTurn: 1, HistoryOmitted: 3, Context: &agentchat.MessageContext{Agent: "alfred", Task: "inbox/example", Recipient: &agentchat.Recipient{Agent: "alfred", Model: "selected-model"}, Artifacts: []agentchat.ArtifactReference{ref}}}}}
+	body := "## Turn 1 — user · 2026-09-09T12:00:00Z\n\nReview this version\n"
+	timeline := conversationTimeline(source, body, nil)
+	if len(timeline) != 1 || timeline[0].Delivery == nil || timeline[0].Delivery.Context.Artifacts[0] != ref || timeline[0].Delivery.HistoryOmitted != 3 {
+		t.Fatal(timeline)
+	}
+	text, _ := timelineContinuationContext("native-root", timeline)
+	if !strings.Contains(text, ref.Revision) || !strings.Contains(text, "selected-model") || !strings.Contains(text, "references only") {
+		t.Fatal(text)
+	}
+}
+
 func TestTerminalRootPlanningContinuationContext(t *testing.T) {
 	s, st, _ := agentChatFixture(t, echoStub)
 	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json"), defaultWd: t.TempDir(), claudeProjects: t.TempDir()}

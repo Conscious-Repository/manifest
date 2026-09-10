@@ -1007,6 +1007,8 @@ function ensureChatStream(session) {
 }
 
 async function refetchChatSession(id) {
+  if(id!==chatOpenId)return;
+  if(chatIsTerm()){if(chatTermOpen?.id===id)await chatTermRequestFinalTail(chatTermOpen);return;}
   try {
     const res = await fetch(chatBase() + "/" + encodeURIComponent(id));
     if (!res.ok || id !== chatOpenId) return;
@@ -1349,7 +1351,7 @@ function chatPaintTurns(host, turns, ctx) {
     if (t.who === "user") {
       const row=chatUserTurn(t.text);
       row.dataset.chatReadTurn=String(t.n);
-      const receipt=t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n);
+      const receipt=t.delivery||(t.submission?{context:{recipient:{agent:t.native.agent,model:t.native.model},task:t.submission.task,artifacts:t.submission.artifacts},historyOmitted:t.submission.historyOmitted}:ctx?.deliveries?.find(d=>d.userTurn===t.n));
       if(receipt?.context?.recipient){
         const target=receipt.context.recipient;
         row.append(el("div","chat-context-attribution","To "+chatAgentLabel(target.agent)+(target.model?" · "+shortModel(target.model):"")+(receipt.historyOmitted?" · "+receipt.historyOmitted+" earlier turns omitted":"")));
@@ -2137,6 +2139,7 @@ async function loadChatTermSession(id) {
     conversation:d.conversation,
     planningTimeline:d.planningTimeline,
     planningRecipients:d.planningRecipients||[],
+    planningOperations:d.planningOperations||[],
     related:d.related||[],
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
@@ -2297,6 +2300,7 @@ function chatTermPaintTurns() {
   body.innerHTML = "";
   if(o.planningTimeline)chatPaintTurns(body,o.planningTimeline,null);
   else chatTermPaintLines(body, o.turns);
+  for(const operation of o.planningOperations||[])body.append(manifestOperationCard(operation));
   if (!(o.planningTimeline||o.turns).length) {
     body.append(el("div", "chat-term-line chat-term-sys", o.se.launchPhase === "draft"
       ? "Review your draft below. Sending starts the coding session."
@@ -2516,8 +2520,9 @@ async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
-  const planningChanged=JSON.stringify(o.planningTimeline)!==JSON.stringify(d.planningTimeline);
+  const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations])!==JSON.stringify([d.planningTimeline,d.planningOperations]);
   o.planningTimeline=d.planningTimeline;
+  o.planningOperations=d.planningOperations;
   const turns = d.turns || [];
   if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;
