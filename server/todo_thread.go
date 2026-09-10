@@ -81,7 +81,9 @@ func (s *Server) ownerIdentity() threads.Identity {
 	if s.threads != nil && s.threads.admin.Name != "" {
 		name = s.threads.admin.Name
 	}
-	return threads.Identity{ID: "owner", Name: name}
+	// the token is teamportal.OwnerActor so the FEED bridge recognises these
+	// writes as his when a thread store shares a portal's team dir
+	return threads.Identity{ID: teamportal.OwnerActor, Name: name}
 }
 
 // isMarker: hidden idempotency/relay entries never render.

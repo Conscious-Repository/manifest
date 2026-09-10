@@ -36,6 +36,27 @@ type Bridge struct {
 
 const noticeRetention = 14 * 24 * time.Hour
 
+// OwnerActor is the cockpit's own author token. The todo-thread store
+// (package threads) writes the owner's panel comments under it — not under his
+// portal email — and when a thread dir and a portal share one team dir (OODA:
+// realEstate.teamDir == ooda.teamDir) those lines land in the very activity
+// log this bridge cards. Portal members always write an email and agents
+// write `agent:<name>`, so the bare token can only ever mean the owner.
+const OwnerActor = "owner"
+
+// isOwner reports whether an activity entry was written by the owner himself,
+// under either identity he writes with: his portal email (any case) or the
+// cockpit token. His own writes must never nag his own feed.
+func (b *Bridge) isOwner(actor string) bool {
+	if actor == "" {
+		return false
+	}
+	if actor == OwnerActor {
+		return true
+	}
+	return b.admin != "" && strings.EqualFold(actor, b.admin)
+}
+
 func NewBridge(store *Store, dataDir, adminEmail string) *Bridge {
 	return NewBridgeNamed(store, dataDir, adminEmail, "aion-portal", "https://portal.aion.bio/#task")
 }
@@ -104,7 +125,7 @@ func (b *Bridge) Cards(now time.Time) []portals.Card {
 	b.mu.Unlock()
 	var cards []portals.Card
 	for _, e := range entries {
-		if b.admin != "" && e.Actor == b.admin {
+		if b.isOwner(e.Actor) {
 			continue
 		}
 		// A proposal now files its own APPROVABLE card in the FEED
