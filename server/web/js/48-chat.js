@@ -500,10 +500,10 @@ let chatSearchQuery = "";
 let chatInboxFilter = "all";
 function chatInboxEntries() {
   const entries = chatSessions.map(session => ({agent: "", session}));
-  chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).forEach(session => entries.push({agent: agent.name, session})));
+  chatRoster.filter(a => !chatIsTerm(a.name)).forEach(agent => (chatAgentSessions[agent.name] || []).filter(session=>!chatHasNativeParent(session)).forEach(session => entries.push({agent: agent.name, session})));
   if (chatTermEnabled) Object.keys(chatTermKinds).forEach(agent => chatTermList(agent).filter(session=>!chatHasCanonicalParent(session)).forEach(session => entries.push({agent, session, terminal: true})));
   const query = chatSearchQuery.trim().toLowerCase();
-  return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter)
+  return entries.filter(entry => (chatInboxFilter === "all" || entry.agent === chatInboxFilter || (entry.terminal&&(chatAgentSessions[chatInboxFilter]||[]).some(s=>s.origin?.mode==="continue"&&s.origin?.backend==="terminal"&&s.origin?.id===entry.session.id&&s.origin?.agent===entry.agent)))
     && [entry.session.title, entry.session.name, entry.session.cwd, chatAgentLabel(entry.agent), entry.session.spirit].filter(Boolean).join(" ").toLowerCase().includes(query))
     .sort((a, b) => {
       const time = entry => Date.parse(entry.session.updated || entry.session.lastUsed || entry.session.created || "") || 0;
@@ -1531,7 +1531,7 @@ function renderChatComposer(session) {
   const draftKey = (chatAgent || "spirits") + "/" + (chatOpenId || "new");
   const syncAttach = () => {
     const btn = host.querySelector(".chat-attach");
-    if (btn) btn.hidden = !chatAgent || chatIsTerm(); // a tmux takes keys, not files
+    if (btn) btn.hidden = !chatAgent || (chatIsTerm()&&chatRecipients.get(draftKey)?.backend!=="hermes");
     const rit = host.querySelector(".chat-ritual");
     if (rit) {
       rit.hidden = !chatIsPortal();
@@ -1554,7 +1554,7 @@ function renderChatComposer(session) {
   };
   const placeholder = () => {
     const a = chatRosterEntry(chatAgent);
-    if (chatIsTerm()) return chatTermPlaceholder();
+    if (chatIsTerm()) return chatRecipients.get(draftKey)?.backend==="hermes"?"Message the selected agent…":chatTermPlaceholder();
     if (chatIsPortal()) {
       if (session && session.busy) return "✦ " + (a ? a.label : chatAgent) + " is running — one order at a time";
       if (session && session.status === "thinking") return "✦ waiting on " + (a ? a.label : chatAgent) + "…";
@@ -1685,6 +1685,17 @@ function renderChatComposer(session) {
     const payload = chatIsPortal() ? { text, files, ritual: chatRitual } : { text, files };
     const selected=chatArtifactSelections.get("chat:"+draftKey);
     const chosenRecipient=chatRecipients.get(draftKey);
+    if(chatIsTerm()&&chosenRecipient?.backend==="hermes"){
+      try{
+        const target=chosenRecipient;
+        const url=chatBaseFor(target.agent)+"/"+encodeURIComponent(target.id)+"/messages";
+        await chatDeliverRemembered(chatRememberDelivery(draftKey,target.agent,url,{text,files,recipient:{agent:target.agent,model:target.model},task:selected?.task||session?.task||"",artifacts:selected?[{id:selected.id,revision:selected.revision}]:[]}));
+        acceptedDraft();
+        if(sendRoute===chatRouteVersion&&chatTermOpen)await chatTermRequestFinalTail(chatTermOpen);
+      }catch(e){showToast(e.message||"Send not confirmed. Your draft is retained.");}
+      finally{chatSending=false;renderChatComposer(chatCurSession);}
+      return;
+    }
     if(chosenRecipient?.backend==="terminal"){
       try{
         if(files.length)throw new Error("File uploads are not supported by this coding continuation yet. Remove the attachment or choose a planning agent.");
@@ -1844,6 +1855,7 @@ let chatTermFast = null;
 // local; remote rows stay the Terminal tab's).
 function chatTermList(kind) { return chatTermSessions.filter((s) => s.kind === kind && !s.device); }
 function chatHasCanonicalParent(session){const o=session.origin;return o?.mode==="continue"&&!o.backend&&(chatAgentSessions[o.agent]||[]).some(s=>s.id===o.id);}
+function chatHasNativeParent(session){const o=session.origin;return o?.mode==="continue"&&o.backend==="terminal"&&chatTermSessions.some(s=>s.id===o.id&&s.kind===o.agent&&!s.device);}
 
 // chatTermOrder — live first, then most recently used (§7 Q2).
 function chatTermOrder(list) {
@@ -2124,6 +2136,7 @@ async function loadChatTermSession(id) {
   chatTermOpen = {
     conversation:d.conversation,
     planningTimeline:d.planningTimeline,
+    planningRecipients:d.planningRecipients||[],
     related:d.related||[],
     id, se, turns: d.turns || [], offset: d.offset || 0, title: d.title || "", cost: d.cost || 0,
     live: se.backend === "herdr" ? !!chatTermApplyState(se).live : !!d.live, screen: [], screenSig: "",
@@ -2207,6 +2220,13 @@ function chatTermHead(o) {
   const status = el("span", "sprt-sub chat-head-sub", chatTermKinds[se.kind] + " · " + (se.backend === "herdr" ? terminalStateLabel(se) : o.live ? "running" : "stopped"));
   status.title = sub.join(" · ");
   head.append(status);
+  if(se.backend==="herdr"&&se.origin?.mode!=="continue"&&chatRoster.some(a=>a.enabled&&a.durableSend)){
+    const recipient=chatRecipients.get(se.kind+"/"+se.id);
+    const to=el("button","sprt-quiet chat-head-sub","To "+chatAgentLabel(recipient?.agent||se.kind));
+    to.onclick=()=>chatChooseTerminalRecipient(o);head.append(to);
+    const planning=(o.planningRecipients||[]).find(p=>p.id===recipient?.id&&p.agent===recipient?.agent);
+    if(planning?.status==="thinking")head.append(el("span","chat-head-sub",chatAgentLabel(planning.agent)+" is working"));
+  }
   const meta = [fmtWhen(se.lastUsed)];
   if (o.cost) meta.push("$" + o.cost.toFixed(2));
   const details = el("details", "chat-details");
@@ -2512,6 +2532,7 @@ async function chatTermTail(o) {
   }
   if(planningChanged)chatTermPaintTurns();
   let headDirty = false;
+  if(JSON.stringify(o.planningRecipients)!==JSON.stringify(d.planningRecipients||[])){o.planningRecipients=d.planningRecipients||[];headDirty=true;}
   if (d.title && d.title !== o.title) { o.title = d.title; headDirty = true; }
   if (d.cost && d.cost !== o.cost) { o.cost = d.cost; headDirty = true; }
   if (o.se.backend !== "herdr" && !!d.live !== o.live) { o.live = !!d.live; headDirty = true; renderChatComposer(chatTermComposerSession()); chatTermPaintStrip(); }
@@ -2888,6 +2909,46 @@ function chatStartRelated(source,targetAgent){
   });
 }
 
+function chatChooseTerminalRecipient(source){
+  const se=source.se,key=se.kind+"/"+se.id,route=chatRouteVersion,current=chatRecipients.get(key);
+  const tasks=(source.conversation?.links||[]).filter(l=>l.kind==="task"),task=tasks.length===1?tasks[0].id:"";
+  reviewDialog("Choose agent",({body,actions,close})=>{
+    const pick=document.createElement("select");pick.className="pp-in";pick.setAttribute("aria-label","Next message recipient");
+    const native=document.createElement("option");native.value="native";native.textContent=chatAgentLabel(se.kind)+(se.model?" · "+shortModel(se.model):"");pick.append(native);
+    chatRoster.filter(a=>a.enabled&&a.durableSend).forEach(a=>{const option=document.createElement("option");option.value=a.name;option.textContent=a.label+(a.model?" · "+shortModel(a.model):"");pick.append(option);});
+    pick.value=current?.backend==="hermes"?current.agent:"native";
+    body.append(el("p","","Continue in this conversation with its attributed history, or start a separate related chat. This does not interrupt work already running."),pick);
+    const status=el("p","");status.setAttribute("role","status");body.append(status);
+    const here=el("button","sprt-quiet","Continue here"),cancel=el("button","sprt-quiet","Cancel"),related=el("button","sprt-quiet","Start related chat");
+    cancel.onclick=close;
+    here.onclick=async()=>{
+      here.disabled=true;
+      try{
+        let recipient=null;
+        if(pick.value!=="native"){
+          const agent=pick.value,entry=chatRosterEntry(agent);
+          let child=(source.planningRecipients||[]).find(p=>p.agent===agent);
+          if(!child){
+            const payload={agent,model:entry?.model||"",mode:"continue",title:se.name||se.kind,task};
+            const storageKey="manifest.nativeContinue.v1."+key,signature=JSON.stringify(payload);
+            let saved;try{saved=JSON.parse(localStorage.getItem(storageKey)||"null");}catch(e){}
+            const requestId=saved?.signature===signature?saved.requestId:crypto.randomUUID();
+            localStorage.setItem(storageKey,JSON.stringify({signature,requestId}));
+            child=await postJSONOk("/api/terminal/"+encodeURIComponent(se.kind)+"/session/"+encodeURIComponent(se.id)+"/related",{...payload,requestId});
+            child.model=payload.model;localStorage.removeItem(storageKey);
+          }
+          recipient={backend:"hermes",agent,id:child.id,model:child.model||entry?.model||""};
+        }
+        if(recipient)chatRecipients.set(key,recipient);else chatRecipients.delete(key);
+        if(route===chatRouteVersion&&chatDraftKey===key){chatCaptureSyncedDraft(key);close();await chatTermRequestFinalTail(source);chatTermRepaintHead();renderChatComposer(chatTermComposerSession());}
+        else{const state=chatSyncedDrafts.get(key);if(state)state.set({...state.value,recipient});close();}
+      }catch(e){status.textContent=e.message||"Could not choose this agent.";}
+      finally{here.disabled=false;}
+    };
+    related.onclick=()=>{const chosen=pick.value;close();chatStartRelated({backend:"terminal",agent:se.kind,id:se.id,title:se.name||se.kind},chosen==="native"?"terminal:"+se.kind:chosen);};
+    actions.append(cancel,here,related);
+  });
+}
 function chatChooseRecipient(source){
   const key=source.agent+"/"+source.id;
   const current=chatRecipients.get(key)||{agent:source.agent,model:source.model||""};

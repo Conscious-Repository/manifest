@@ -160,9 +160,9 @@ func logicalContinuationContext(source agentchat.Session, body string, views []c
 
 // Native-root conversations include only explicit planning continuations. Never
 // turn ordinary related chats or task membership into implicit shared context.
-func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession) ([]conversationTimelineTurn, bool) {
+func (s *Server) terminalPlanningChildren(root termSession) []agentchat.Session {
 	if s.agentChat == nil {
-		return nil, false
+		return nil
 	}
 	var children []agentchat.Session
 	for _, agent := range s.agentChat.store.Agents() {
@@ -173,6 +173,11 @@ func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession)
 			}
 		}
 	}
+	return children
+}
+
+func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession) ([]conversationTimelineTurn, bool) {
+	children := s.terminalPlanningChildren(root)
 	if len(children) == 0 {
 		return nil, false
 	}
