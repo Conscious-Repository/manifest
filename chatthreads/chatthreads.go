@@ -80,12 +80,15 @@ type FileRef struct {
 
 // Thread is a named, rock-scoped, archivable conversation.
 type Thread struct {
-	ID       string    `json:"id"`
-	Title    string    `json:"title"`
-	Rock     string    `json:"rock,omitempty"` // goal/rock id, "" = whole vault
-	Archived bool      `json:"archived,omitempty"`
-	Created  time.Time `json:"created"`
-	By       string    `json:"by,omitempty"`
+	ImportSource      string    `json:"import_source,omitempty"`
+	ImportRevision    string    `json:"import_revision,omitempty"`
+	ImportFingerprint string    `json:"import_fingerprint,omitempty"`
+	ID                string    `json:"id"`
+	Title             string    `json:"title"`
+	Rock              string    `json:"rock,omitempty"` // goal/rock id, "" = whole vault
+	Archived          bool      `json:"archived,omitempty"`
+	Created           time.Time `json:"created"`
+	By                string    `json:"by,omitempty"`
 }
 
 // Pending is an in-flight run — the queue-attribution record, cleared on ingest.

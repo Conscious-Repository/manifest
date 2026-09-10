@@ -103,20 +103,21 @@ func originJSON(o *Origin) string {
 }
 
 type Session struct {
-	Origin          *Origin    `json:"origin,omitempty"`
-	Deliveries      []Delivery `json:"deliveries,omitempty"`
-	CreateRequest   string     `json:"-"`
-	CreateSignature string     `json:"-"`
-	ID              string     `json:"id"`
-	Agent           string     `json:"agent"`
-	Profile         string     `json:"profile"` // "" = the default Hermes profile
-	Title           string     `json:"title"`
-	Created         string     `json:"created"`
-	Updated         string     `json:"updated"`
-	Status          string     `json:"status"` // idle | thinking
-	Turns           int        `json:"turns"`
-	SpentUSD        float64    `json:"spentUsd"`
-	Model           string     `json:"model"`
+	Sharing         *ShareState `json:"sharing,omitempty"`
+	Origin          *Origin     `json:"origin,omitempty"`
+	Deliveries      []Delivery  `json:"deliveries,omitempty"`
+	CreateRequest   string      `json:"-"`
+	CreateSignature string      `json:"-"`
+	ID              string      `json:"id"`
+	Agent           string      `json:"agent"`
+	Profile         string      `json:"profile"` // "" = the default Hermes profile
+	Title           string      `json:"title"`
+	Created         string      `json:"created"`
+	Updated         string      `json:"updated"`
+	Status          string      `json:"status"` // idle | thinking
+	Turns           int         `json:"turns"`
+	SpentUSD        float64     `json:"spentUsd"`
+	Model           string      `json:"model"`
 	// HermesSession is the Hermes-side session id of the LAST turn (usage
 	// report session_id) — a pointer for `hermes sessions search`, never fed
 	// back in (see package hermes).
@@ -184,6 +185,11 @@ func parse(content string) (Session, string) {
 	}
 	_ = json.Unmarshal([]byte(fm["deliveries"]), &sess.Deliveries)
 	_ = json.Unmarshal([]byte(fm["origin"]), &sess.Origin)
+	if fm["sharing"] != "" {
+		if err := json.Unmarshal([]byte(fm["sharing"]), &sess.Sharing); err != nil || sess.Sharing == nil {
+			sess.Sharing = &ShareState{State: "invalid"} // Never reopen a corrupt sharing fence.
+		}
+	}
 	sess.CreateRequest = fm["create_request"]
 	sess.CreateSignature = fm["create_signature"]
 	sess.Turns, _ = strconv.Atoi(fm["turns"])
@@ -198,6 +204,7 @@ func render(sess Session, body string) string {
 	return (&mdfm.Writer{}).
 		Set("session", sess.ID).
 		Set("origin", originJSON(sess.Origin)).
+		Set("sharing", shareJSON(sess.Sharing)).
 		Set("create_request", sess.CreateRequest).
 		Set("create_signature", sess.CreateSignature).
 		Set("deliveries", deliveryJSON(sess.Deliveries)).
@@ -305,8 +312,16 @@ func (s *Store) update(agent, id string, fn func(*Session, *string) error) (Sess
 	if err != nil {
 		return Session{}, errors.New("no such session")
 	}
+	before := render(sess, body)
+	frozen := sess.Sharing != nil
 	if err := fn(&sess, &body); err != nil {
 		return Session{}, err
+	}
+	if frozen {
+		if render(sess, body) != before {
+			return Session{}, ErrShared
+		}
+		return sess, nil
 	}
 	sess.Updated = now()
 	return sess, s.write(agent, id, sess, body)
@@ -479,6 +494,9 @@ func (s *Store) Delete(agent, id string) error {
 	m := s.lock(agent, id)
 	m.Lock()
 	defer m.Unlock()
+	if sess, _, err := s.read(agent, id); err == nil && sess.Sharing != nil {
+		return ErrShared
+	}
 	if s.InFlight(agent, id) {
 		return errors.New("session has pending work — try again in a moment")
 	}
