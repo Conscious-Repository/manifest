@@ -33,6 +33,14 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 	}
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	se, tr, ob, live := s.projectTerminalTranscript(r.Context(), se, after)
+	full := tr
+	if after > 0 {
+		// Include the preceding owner turn when validating a proposal in a tail
+		// response, without observing the runtime a second time.
+		if path := s.terminal.transcriptPath(se); path != "" {
+			full, _ = readTranscript(se.Kind, path, 0)
+		}
+	}
 	planningTimeline, _ := s.terminalPlanningTimeline(r.Context(), se)
 	writeJSON(w, map[string]any{
 		"turns": tr.Turns, "title": tr.Title, "cost": tr.Cost,
@@ -43,6 +51,7 @@ func (s *Server) handleTermTranscript(w http.ResponseWriter, r *http.Request) {
 		"planningRecipients": s.terminalPlanningChildren(se),
 		"codingRecipients":   s.terminalCodingContinuations(r.Context(), se),
 		"planningOperations": s.terminalPlanningOperations(se),
+		"planRevisions":      s.nativePlanRevisions(se, full.Turns),
 		"live":               live, "offset": tr.Offset, "kind": se.Kind, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process,
 	})
 }
@@ -269,6 +278,9 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			b.Text += context
+			if b.RequestID != "" {
+				b.Text += s.planRevisionInstructions(b.Artifacts)
+			}
 		}
 		if se.isDraft() && (b.Key != "" || strings.TrimSpace(b.Text) == "") {
 			http.Error(w, "send a message to start this draft; keys cannot start it", http.StatusConflict)
@@ -289,6 +301,7 @@ func (s *Server) handleTermInput(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				if b.RequestID != "" {
 					receipt = &terminalInputReceipt{ID: b.RequestID, Fingerprint: fingerprint, State: "unconfirmed", Updated: time.Now().UTC().Format(time.RFC3339Nano), Runtime: se.Runtime, Task: b.Task, Artifacts: b.Artifacts}
+					receipt.SubmittedHash = hashTerminalText(b.Text)
 					if continuationContext != nil {
 						receipt.Text = continuationContext.Text
 						receipt.ContextSource = continuationContext.ContextSource

@@ -69,7 +69,7 @@ func (c *termCfg) continuationReceipts(id, source string) map[string]terminalInp
 			continue
 		}
 		r, err := c.readInputReceipt(id, request)
-		if err == nil && r.ContextSource == source && len(r.SubmittedHash) == 64 {
+		if err == nil && (source == "" || r.ContextSource == source) && len(r.SubmittedHash) == 64 {
 			out[r.SubmittedHash] = r
 		}
 	}

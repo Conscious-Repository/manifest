@@ -43,33 +43,77 @@ func (s *Server) chatPlanRevisions(sess agentchat.Session, body string) []chatPl
 		if turn.Who == "user" || turn.Who == "system" {
 			continue
 		}
-		matches := planRevisionFence.FindAllStringSubmatch(agentchat.SayBody(turn.Text), -1)
-		if len(matches) != 1 {
-			continue
-		}
-		var proposal chatPlanRevision
-		if json.Unmarshal([]byte(matches[0][1]), &proposal) != nil || strings.TrimSpace(proposal.Content) == "" || len(proposal.Content) > 64000 {
-			continue
-		}
 		for _, delivery := range sess.Deliveries {
 			if delivery.State != agentchat.DeliveryCompleted || delivery.ReplyTurn != turn.N || delivery.Context == nil || delivery.Context.Task == "" {
 				continue
 			}
-			for _, ref := range delivery.Context.Artifacts {
-				if ref.ID != proposal.ArtifactID || ref.Revision != proposal.BaseRevision {
-					continue
-				}
-				a, ok := s.artifactReg.Get(ref.ID)
-				if !ok || a.Provenance.Source != "task-plan" || a.Provenance.Task != delivery.Context.Task {
-					continue
-				}
-				if _, ok := a.Revision(ref.Revision); !ok {
-					continue
-				}
-				proposal.Task = delivery.Context.Task
+			if proposal := s.validatedPlanRevision(agentchat.SayBody(turn.Text), delivery.Context); proposal != nil {
 				proposal.ReplyTurn = turn.N
-				out = append(out, proposal)
+				out = append(out, *proposal)
 			}
+		}
+	}
+	return out
+}
+
+func (s *Server) validatedPlanRevision(text string, ctx *agentchat.MessageContext) *chatPlanRevision {
+	if s.artifactReg == nil || ctx == nil || ctx.Task == "" {
+		return nil
+	}
+	matches := planRevisionFence.FindAllStringSubmatch(text, -1)
+	if len(matches) != 1 {
+		return nil
+	}
+	var p chatPlanRevision
+	if json.Unmarshal([]byte(matches[0][1]), &p) != nil || strings.TrimSpace(p.Content) == "" || len(p.Content) > 64000 {
+		return nil
+	}
+	for _, ref := range ctx.Artifacts {
+		if ref.ID != p.ArtifactID || ref.Revision != p.BaseRevision {
+			continue
+		}
+		a, ok := s.artifactReg.Get(ref.ID)
+		if !ok || a.Provenance.Source != "task-plan" || a.Provenance.Task != ctx.Task {
+			continue
+		}
+		if _, ok := a.Revision(ref.Revision); !ok {
+			continue
+		}
+		p.Task = ctx.Task
+		p.ReplyTurn = 0
+		return &p
+	}
+	return nil
+}
+
+// Match native proposals only to a sent receipt for the immediately preceding
+// owner turn. Full transcript inspection makes incremental reads safe too.
+func (s *Server) nativePlanRevisions(se termSession, turns []termTurn) map[string]chatPlanRevision {
+	out := map[string]chatPlanRevision{}
+	if s.artifactReg == nil || s.terminal == nil {
+		return out
+	}
+	receipts := s.terminal.continuationReceipts(se.ID, "")
+	var current *terminalInputReceipt
+	for _, turn := range turns {
+		if turn.Who == "user" {
+			current = nil
+			if r, ok := receipts[hashTerminalText(turn.Text)]; ok && r.State == "sent" {
+				current = &r
+			}
+			continue
+		}
+		if turn.Who != "assistant" || current == nil {
+			continue
+		}
+		var text strings.Builder
+		for _, block := range turn.Blocks {
+			if block.T == "say" {
+				text.WriteString(block.Text + "\n")
+			}
+		}
+		if p := s.validatedPlanRevision(text.String(), &agentchat.MessageContext{Task: current.Task, Artifacts: current.Artifacts}); p != nil {
+			out[turn.ID] = *p
 		}
 	}
 	return out

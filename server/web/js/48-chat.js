@@ -1385,6 +1385,11 @@ function chatBlockEl(b) {
 // chatPaintTurns — THE turn renderer, shared by every section: user turns,
 // system notes, agent turns (blocks + a foot with the time, the charge and,
 // when ctx.promote is given, the "→ task" act).
+function chatProposalBlocks(t,proposal){return chatTurnBlocks(t).map(b=>proposal&&b.t==="say"?{...b,text:(b.text||"").replace(/```(?:manifest-plan-revision|json)[ \t]*\r?\n[\s\S]*?\r?\n```/g,"").trim()}:b).filter(b=>b.t!=="say"||b.text);}
+function chatPlanReviewButton(proposal){
+ const review=el("button","sprt-quiet","Review proposed plan revision");
+ review.onclick=()=>chatOpenWorkingArtifact({plan:true,task:proposal.task,revision:proposal.baseRevision,proposal,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});return review;
+}
 function chatPaintTurns(host, turns, ctx) {
   turns.forEach((t) => {
     if (t.who === "user") {
@@ -1414,11 +1419,8 @@ function chatPaintTurns(host, turns, ctx) {
     const wrap = el("div", "chat-turn chat-spirit");
     wrap.dataset.chatReadTurn=String(t.n);
     const planRevision=t.planRevision||ctx?.planRevisions?.find(p=>p.replyTurn===t.n);
-    chatTurnBlocks(t).forEach((b) => {if(planRevision&&b.t==="say")b={...b,text:(b.text||"").replace(/```(?:manifest-plan-revision|json)[ \t]*\r?\n[\s\S]*?\r?\n```/g,"").trim()};if(b.t!=="say"||b.text)wrap.append(chatBlockEl(b));});
-    if(planRevision){
-      const review=el("button","sprt-quiet","Review proposed plan revision");
-      review.onclick=()=>chatOpenWorkingArtifact({plan:true,task:planRevision.task,revision:planRevision.baseRevision,proposal:planRevision,selectionKey:"chat:"+chatAgent+"/"+chatOpenId});wrap.append(review);
-    }
+    chatProposalBlocks(t,planRevision).forEach(b=>wrap.append(chatBlockEl(b)));
+    if(planRevision)wrap.append(chatPlanReviewButton(planRevision));
     if (ctx && ctx.operations) ctx.operations.filter(item => Number(item.record.turn) + 1 === t.n).forEach(item => wrap.append(manifestOperationCard(item)));
     const foot = el("div", "chat-turn-foot");
     foot.append(el("span","chat-turn-author",chatAgentLabel(t.who.replace(/^agent:/,""))));
@@ -2183,6 +2185,7 @@ async function loadChatTermSession(id) {
     conversation:d.conversation,
     planningTimeline:d.planningTimeline,
     planningRecipients:d.planningRecipients||[],
+    planRevisions:d.planRevisions||{},
     codingRecipients:d.codingRecipients||[],
     planningOperations:d.planningOperations||[],
     related:d.related||[],
@@ -2393,7 +2396,9 @@ function chatTermPaintLines(host, turns) {
     }
     const out = el("div", "chat-term-out");
     if(t.id)out.dataset.chatReadTurn=t.id;
-    chatTurnBlocks(t).forEach((b) => out.append(chatTermBlockEl(b)));
+    const proposal=chatTermOpen?.planRevisions?.[t.id];
+    chatProposalBlocks(t,proposal).forEach(b=>out.append(chatTermBlockEl(b)));
+    if(proposal)out.append(chatPlanReviewButton(proposal));
     const meta = [];
     if (t.ts) meta.push(fmtWhen(t.ts));
     if (t.usd) meta.push("$" + t.usd);
@@ -2574,9 +2579,10 @@ async function chatTermTail(o) {
   let d;
   try { d = await (await fetch(chatTermBase(o.id) + "/transcript?after=" + o.offset)).json(); } catch (e) { return; }
   if (chatTermOpen !== o) return;
-  const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations])!==JSON.stringify([d.planningTimeline,d.planningOperations]);
+  const planningChanged=JSON.stringify([o.planningTimeline,o.planningOperations,o.planRevisions||{}])!==JSON.stringify([d.planningTimeline,d.planningOperations,d.planRevisions||{}]);
   o.planningTimeline=d.planningTimeline;
   o.planningOperations=d.planningOperations;
+  o.planRevisions=d.planRevisions||{};
   const turns = d.turns || [];
   if (d.offset < o.offset) { // the file was replaced/truncated: the reply is the whole projection
     o.turns = turns;

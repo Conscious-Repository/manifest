@@ -4,9 +4,52 @@ import (
 	"encoding/json"
 	"fmt"
 	"manifest/agentchat"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestNativePlanRevisionRequiresMatchingSentInput(t *testing.T) {
+	s, _ := workspaceFixture(t)
+	task := "inbox/native-plan"
+	s.terminal = &termCfg{regPath: filepath.Join(t.TempDir(), "terminals.json")}
+	if err := s.writePlanSection("todo-plans", task, "plan", "Original"); err != nil {
+		t.Fatal(err)
+	}
+	a := observePlan(t, s, task)
+	se := termSession{ID: "abcdef123456", Kind: "codex"}
+	r := terminalInputReceipt{ID: "native-plan-001", State: "sent", Fingerprint: strings.Repeat("a", 64), SubmittedHash: hashTerminalText("exact submitted instruction"), Task: task, Artifacts: []artifactContextRef{{ID: a.ID, Revision: a.Head}}}
+	if err := s.terminal.writeInputReceipt(se.ID, r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(chatPlanRevision{ArtifactID: a.ID, BaseRevision: a.Head, Content: "Revised"})
+	reply := termTurn{ID: "native-reply", Who: "assistant", Blocks: []termBlock{{T: "say", Text: "```json\n" + string(b) + "\n```"}}}
+	turns := []termTurn{{ID: "native-user", Who: "user", Text: "exact submitted instruction"}, reply}
+	got := s.nativePlanRevisions(se, turns)
+	if len(got) != 1 || got[reply.ID].Task != task {
+		t.Fatal(got)
+	}
+	projected := conversationTimeline(agentchat.Session{}, "", []codingContinuationView{{ID: se.ID, Agent: se.Kind, Turns: turns, PlanRevisions: got}})
+	if projected[1].PlanRevision == nil || projected[1].Native.ID != se.ID {
+		t.Fatal("native identity lost", projected)
+	}
+	turns[0].Text = "unmatched input"
+	if len(s.nativePlanRevisions(se, turns)) != 0 {
+		t.Fatal("unmatched input accepted")
+	}
+	turns[0].Text = "exact submitted instruction"
+	r.State = "unconfirmed"
+	s.terminal.writeInputReceipt(se.ID, r)
+	if len(s.nativePlanRevisions(se, turns)) != 0 {
+		t.Fatal("unconfirmed input accepted")
+	}
+	r.State = "sent"
+	s.terminal.writeInputReceipt(se.ID, r)
+	turns = append(turns, termTurn{Who: "user", Text: "later input with no context"}, termTurn{ID: "later-reply", Who: "assistant", Blocks: reply.Blocks})
+	if got := s.nativePlanRevisions(se, turns); len(got) != 1 || got["later-reply"].Content != "" {
+		t.Fatal("old context leaked to later input", got)
+	}
+}
 
 func TestPlanRevisionBoundToDeliveredVersion(t *testing.T) {
 	s, _ := workspaceFixture(t)

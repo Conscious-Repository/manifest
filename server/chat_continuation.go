@@ -53,6 +53,7 @@ type codingContinuationView struct {
 	Connectivity   string                          `json:"connectivity"`
 	HistoryOmitted int                             `json:"historyOmitted"`
 	Submissions    map[string]terminalInputReceipt `json:"submissions,omitempty"`
+	PlanRevisions  map[string]chatPlanRevision     `json:"planRevisions,omitempty"`
 }
 
 // Project only explicitly continued native sessions. Neither shared task IDs
@@ -79,7 +80,7 @@ func (s *Server) codingContinuationsFor(ctx context.Context, backend, agent, id,
 		// Never modify the native parser cache. Only an exact submitted-text hash
 		// permits the canonical view to show the owner's text without its envelope.
 		turns, submissions := s.terminal.projectContinuationTurns(se.ID, key, tr.Turns)
-		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, Submissions: submissions})
+		out = append(out, codingContinuationView{ID: se.ID, Agent: se.Kind, Model: se.Model, Cwd: se.Cwd, Created: se.CreatedAt, Conversation: s.terminalConversation(se), Turns: turns, Process: ob.Process, AgentState: ob.AgentState, Connectivity: ob.Connectivity, HistoryOmitted: o.HistoryOmitted, Submissions: submissions, PlanRevisions: s.nativePlanRevisions(se, tr.Turns)})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Created != out[j].Created {
@@ -165,6 +166,9 @@ func conversationTimeline(source agentchat.Session, body string, views []codingC
 			if r, ok := v.Submissions[t.ID]; ok {
 				item.Submission = &r
 			}
+			if p, ok := v.PlanRevisions[t.ID]; ok {
+				item.PlanRevision = &p
+			}
 			out = append(out, item)
 		}
 	}
@@ -207,7 +211,7 @@ func (s *Server) terminalPlanningTimeline(ctx context.Context, root termSession)
 func (s *Server) terminalRootTimeline(ctx context.Context, root termSession, children []agentchat.Session, coding []codingContinuationView) []conversationTimelineTurn {
 	_, tr, _, _ := s.projectTerminalTranscript(ctx, root, 0)
 	turns, submissions := s.terminal.projectContinuationTurns(root.ID, s.terminalConversation(root).Key, tr.Turns)
-	views := append([]codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: turns, Submissions: submissions}}, coding...)
+	views := append([]codingContinuationView{{ID: root.ID, Agent: root.Kind, Model: root.Model, Created: root.CreatedAt, Conversation: s.terminalConversation(root), Turns: turns, Submissions: submissions, PlanRevisions: s.nativePlanRevisions(root, tr.Turns)}}, coding...)
 	timeline := conversationTimeline(agentchat.Session{}, "", views)
 	for _, child := range children {
 		fresh, body, _, ok := s.agentChat.store.Get(child.Agent, child.ID)
