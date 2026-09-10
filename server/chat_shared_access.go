@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"manifest/agentchat"
 	"manifest/artifacts"
 	"net/http"
 	"strconv"
@@ -33,6 +32,10 @@ func (s *Server) sharedConversationReview(ag *chatAgent, threadID string) (chatS
 	if err != nil {
 		return deny()
 	}
+	if !validStoredShareReview(payload) {
+		return deny()
+	}
+
 	p := source.Sharing
 	if p == nil || p.State != "shared" || p.Agent != ag.Name || p.Thread != t.ID {
 		return deny()
@@ -45,19 +48,10 @@ func (s *Server) sharedConversationReview(ag *chatAgent, threadID string) (chatS
 	}
 	if review.Session.Agent != from.Agent || review.Session.ID != from.ID || review.Session.Sharing != nil ||
 		review.TargetAgent != ag.Name || !review.FutureMessages || len(review.Blockers) != 0 ||
-		review.SourceRevision != p.Revision || review.SourceRevision != agentchat.ShareRevision(review.Session, review.Body) ||
+		review.SourceRevision != p.Revision ||
 		t.ImportSource != sessionConversation(review.Session).Key || t.ImportRevision != review.Revision {
 		return deny()
 	}
-	// Check the approved review digest as well as the store's envelope digest.
-	// The latter protects persisted bytes; the former binds the UI confirmation.
-	revision := review.Revision
-	review.Revision = ""
-	b, err := json.Marshal(review)
-	if err != nil || revision == "" || artifacts.Hash(b) != revision {
-		return deny()
-	}
-	review.Revision = revision
 	return review, nil
 }
 
@@ -121,4 +115,48 @@ func (s *Server) sharedTerminal(ag *chatAgent, threadID, terminalID string) (ter
 		return se, nil
 	}
 	return termSession{}, errSharedConversationAccess
+}
+
+// Verify the original compact JSON field order while blanking only the
+// top-level review digest. Schema additions must not revoke older grants.
+func validStoredShareReview(payload []byte) bool {
+	var compact bytes.Buffer
+	if json.Compact(&compact, payload) != nil {
+		return false
+	}
+	raw := compact.Bytes()
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return false
+	}
+	seen := map[string]bool{}
+	revision := ""
+	var unsigned []byte
+	for decoder.More() {
+		token, err = decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok || seen[key] {
+			return false
+		}
+		seen[key] = true
+		start := int(decoder.InputOffset())
+		if start >= len(raw) || raw[start] != ':' {
+			return false
+		}
+		start++
+		var value json.RawMessage
+		if decoder.Decode(&value) != nil {
+			return false
+		}
+		if key == "revision" {
+			if json.Unmarshal(value, &revision) != nil || !artifacts.ValidHash(revision) {
+				return false
+			}
+			unsigned = append(unsigned, raw[:start]...)
+			unsigned = append(unsigned, '"', '"')
+			unsigned = append(unsigned, raw[int(decoder.InputOffset()):]...)
+		}
+	}
+	return revision != "" && artifacts.Hash(unsigned) == revision
 }

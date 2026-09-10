@@ -174,7 +174,7 @@ function ViewChat({ data }) {
               <div key={i} className={"ooda-msg " + (m.kind === "ask" ? "mine" : "agent")}>
                 <div className="ooda-comment-head">
                   <b>{m.author_name || m.author}</b>
-                  <span className="ooda-sub">{String(m.at || "").slice(11, 16)}</span>
+                  <span className="ooda-sub">{m.source && !m.source.timestampKnown ? 'Time not recorded' : String(m.at || "").slice(11, 16)}</span>
                 </div>
                 <div className="ooda-comment-body">
                   {m.kind === "ask" ? m.text : window.CHAT_MD.render(m.text, React)}

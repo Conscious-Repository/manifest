@@ -48,25 +48,36 @@ type Proposal struct {
 
 // Message is one thread entry — a person ask or a kairos turn.
 type Message struct {
-	ID       string     `json:"id"`
-	Thread   string     `json:"thread"`
-	Kind     string     `json:"kind"` // ask | kairos | system
-	Author   string     `json:"author"`
-	AuthName string     `json:"author_name"`
-	Text     string     `json:"text"`
-	Context  []string   `json:"context,omitempty"` // structural ids that rode the order
-	At       time.Time  `json:"at"`
-	Ritual   string     `json:"ritual,omitempty"`  // ask | delegate (kairos turns)
-	Outcome  string     `json:"outcome,omitempty"` // completed | failed
-	Elapsed  string     `json:"elapsed,omitempty"`
-	Run      string     `json:"run,omitempty"`
-	Report   string     `json:"report,omitempty"` // harness-relative report path
-	Brief    string     `json:"brief,omitempty"`  // harness-relative brief path
-	Props    []Proposal `json:"proposals,omitempty"`
+	Source   *MessageSource `json:"source,omitempty"`
+	ID       string         `json:"id"`
+	Thread   string         `json:"thread"`
+	Kind     string         `json:"kind"` // ask | kairos | system
+	Author   string         `json:"author"`
+	AuthName string         `json:"author_name"`
+	Text     string         `json:"text"`
+	Context  []string       `json:"context,omitempty"` // structural ids that rode the order
+	At       time.Time      `json:"at"`
+	Ritual   string         `json:"ritual,omitempty"`  // ask | delegate (kairos turns)
+	Outcome  string         `json:"outcome,omitempty"` // completed | failed
+	Elapsed  string         `json:"elapsed,omitempty"`
+	Run      string         `json:"run,omitempty"`
+	Report   string         `json:"report,omitempty"` // harness-relative report path
+	Brief    string         `json:"brief,omitempty"`  // harness-relative brief path
+	Props    []Proposal     `json:"proposals,omitempty"`
 	// Files are the attachments that rode this message. Refs only — the bytes
 	// live in the artifact pool, and chat.json is rewritten whole on every
 	// message, so nothing large may live here.
 	Files []FileRef `json:"files,omitempty"`
+}
+
+// MessageSource retains the original conversation turn and its full recorded
+// context. Display text may omit tool traces, but import never discards them or
+// invents new approval identities. Unknown original times remain explicit.
+type MessageSource struct {
+	Conversation   string          `json:"conversation"`
+	Turn           string          `json:"turn"`
+	TimestampKnown bool            `json:"timestampKnown"`
+	Record         json.RawMessage `json:"record"`
 }
 
 // FileRef is one attachment as this thread sees it: the pool key plus the name

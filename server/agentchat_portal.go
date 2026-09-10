@@ -195,8 +195,12 @@ func portalChatBody(ag *chatAgent, msgs []chatthreads.Message, self string) stri
 	for i, m := range msgs {
 		ts := m.At.UTC().Format(time.RFC3339)
 		switch m.Kind {
-		case ag.Name:
-			fmt.Fprintf(&b, "## Turn %d — %s · %s\n\n", i+1, ag.Name, ts)
+		case ag.Name, "agent":
+			author := ag.Name
+			if m.Kind == "agent" {
+				author = strings.TrimPrefix(m.Author, "agent:")
+			}
+			fmt.Fprintf(&b, "## Turn %d — %s · %s\n\n", i+1, author, ts)
 			step := 1
 			if m.Ritual != "" || m.Elapsed != "" || m.Report != "" {
 				detail := strings.TrimSpace(strings.Join(nonEmpty(m.Outcome, m.Elapsed, m.Report), " · "))
@@ -205,7 +209,7 @@ func portalChatBody(ag *chatAgent, msgs []chatthreads.Message, self string) stri
 			}
 			text := strings.TrimSpace(m.Text)
 			if m.Outcome == "failed" {
-				text = "⚠ " + ag.Display + "'s run failed — " + orStr(text, "no report body")
+				text = "⚠ " + orStr(m.AuthName, ag.Display) + "'s run failed — " + orStr(text, "no report body")
 			}
 			fmt.Fprintf(&b, "### Step %d — say\n\n%s\n", step, orStr(text, "(no reply)"))
 			if len(m.Props) > 0 {
@@ -227,13 +231,14 @@ func portalChatBody(ag *chatAgent, msgs []chatthreads.Message, self string) stri
 			if m.Author != self && m.Author != "owner" && m.AuthName != "" {
 				text = m.AuthName + " — " + text
 			}
-			for _, f := range m.Files {
-				if f.Hash == "" || f.Name == "" {
-					continue
-				}
-				text += "\n[file:: " + f.Hash + " " + strings.ReplaceAll(f.Name, "]", ")") + "]"
-			}
 			fmt.Fprintf(&b, "## Turn %d — user · %s\n\n%s\n", i+1, ts, text)
+		}
+		for _, f := range m.Files {
+			if f.Hash == "" || f.Name == "" {
+				continue
+			}
+			name := strings.NewReplacer("]", ")", "\n", " ", "\r", " ").Replace(f.Name)
+			fmt.Fprintf(&b, "[file:: %s %s]\n", f.Hash, name)
 		}
 		b.WriteString("\n")
 	}

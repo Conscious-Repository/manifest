@@ -21,6 +21,8 @@ type chatShareReview struct {
 	Audience       string                                     `json:"audience"`
 	TargetAgent    string                                     `json:"targetAgent"`
 	FutureMessages bool                                       `json:"futureMessages"`
+	OwnerEmail     string                                     `json:"ownerEmail,omitempty"`
+	OwnerName      string                                     `json:"ownerName,omitempty"`
 	Session        agentchat.Session                          `json:"session"`
 	Body           string                                     `json:"body"`
 	Timeline       []conversationTimelineTurn                 `json:"timeline"`
@@ -82,6 +84,7 @@ func (s *Server) chatShareReview(ctx context.Context, sess agentchat.Session, bo
 		Operations:     s.chatOperations(sess.ID), Proposals: s.chatTaskProposals(sess),
 		CodingResults: s.chatCodingResults(sess), PlanRevisions: s.chatPlanRevisions(sess, body),
 	}
+	r.OwnerEmail, r.OwnerName = s.portalChatIdentity()
 	blocked := map[string]bool{}
 	block := func(message string) {
 		if !blocked[message] {

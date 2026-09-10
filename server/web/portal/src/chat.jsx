@@ -230,19 +230,19 @@ function ChatView({ me, goalsIndex, items, filter, openItem, w, seed, onSeedUsed
             {/* messages */}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {threadMsgs.map(m => {
-                const isK = m.kind === 'kairos';
+                const isK = m.kind === 'kairos' || m.kind === 'agent';
                 const failed = m.outcome === 'failed';
                 return (
                   <div key={m.id} style={{ display: 'grid', gridTemplateColumns: '70px minmax(0,1fr)', gap: 12,
                     borderBottom: '1px solid var(--line-soft,#2e2e2e)', padding: '11px 2px' }}>
-                    <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{fmtWhen(m.at)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-mute,#666)' }}>{m.source && !m.source.timestampKnown ? 'Time not recorded' : fmtWhen(m.at)}</div>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: 9, alignItems: 'baseline', flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11.5, color: isK ? 'var(--accent-bright,#5ec8f5)' : 'var(--ink,#d4d4d4)' }}>
-                          {isK ? 'kairos' : (m.author_name || m.author)}
+                          {m.kind === 'kairos' ? 'kairos' : (m.author_name || m.author)}
                         </span>
-                        {isK && <span style={{ fontSize: 11, color: failed ? 'var(--warn,#a44)' : 'var(--ink-mute,#666)' }}>
-                          {m.ritual + ' · ' + m.outcome + (m.elapsed ? ' · ' + m.elapsed : '')}
+                        {isK && (m.ritual || m.outcome || m.elapsed) && <span style={{ fontSize: 11, color: failed ? 'var(--warn,#a44)' : 'var(--ink-mute,#666)' }}>
+                          {[m.ritual, m.outcome, m.elapsed].filter(Boolean).join(' · ')}
                         </span>}
                         {isK && m.run && (
                           <button className="v2-bare v2-hoverink" style={{ marginLeft: 'auto', color: 'var(--ink-mute,#666)', fontSize: 11 }}
