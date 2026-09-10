@@ -16,6 +16,7 @@
     const [snapshot,setSnapshot] = React.useState(null), [error,setError] = React.useState('');
     const [recipients,setRecipients] = React.useState({}), [pending,setPending] = React.useState(null), [recovering,setRecovering] = React.useState(false);
     const [selections,setSelections]=React.useState({}),[preview,setPreview]=React.useState(null);
+    const [showScreen,setShowScreen]=React.useState(false),[screen,setScreen]=React.useState(null);
     const generation = React.useRef(0), latest = React.useRef(0), fileRequest=React.useRef(0);
     const storage = 'manifest.shared-input.v1.' + (identity && identity.email || 'member') + '.' + id;
     const refresh = React.useCallback(async () => {
@@ -27,7 +28,7 @@
       } catch(e) {if(scope === generation.current && seq === latest.current)setError(e.message || 'Connection interrupted.');}
     },[id,shared]);
     React.useEffect(() => {
-      generation.current++;setSnapshot(null);setError('');setPending(null);setRecovering(false);setPreview(null);
+      generation.current++;setSnapshot(null);setError('');setPending(null);setRecovering(false);setPreview(null);setShowScreen(false);setScreen(null);
       if (!shared) return;
       try {const value=JSON.parse(localStorage.getItem(storage)||'null');if(value && value.thread===id)setPending(value);}catch(e){setError('Saved delivery could not be read. Do not resend until its status is checked.');}
       refresh();
@@ -38,6 +39,22 @@
     const terminals=value && value.terminals || [];
     const recipient=recipients[id] || (value && !terminals.length ? 'team' : '');
     const native=terminals.find(t=>t.id===recipient);
+    const terminalID=native?.id||'';
+    React.useEffect(()=>{
+      setScreen(null);
+      if(!shared||!showScreen||!terminalID)return;
+      let active=true,timer;
+      async function poll(){
+        if(!active)return;
+        if(document.visibilityState==='visible'){
+          try{const value=await request('/api/chat/threads/'+encodeURIComponent(id)+'/terminals/'+encodeURIComponent(terminalID)+'/screen');if(active)setScreen({thread:id,terminal:terminalID,value});}
+          catch(e){if(active)setScreen({thread:id,terminal:terminalID,error:e.message||'Screen unavailable.'});}
+        }
+        if(active)timer=setTimeout(poll,2000);
+      }
+      poll();return()=>{active=false;clearTimeout(timer);};
+    },[shared,showScreen,id,terminalID]);
+    const currentScreen=screen?.thread===id&&screen?.terminal===terminalID?screen:null;
     const files=value && value.files || [], selected=selections[id]||[];
     const save=value=>{if(value)localStorage.setItem(storage,JSON.stringify(value));else localStorage.removeItem(storage);setPending(value);};
     async function submit(saved) {
@@ -89,7 +106,10 @@
           h('option',{value:'team'},team+' · team agent'),
           ...terminals.map(t=>h('option',{key:t.id,value:t.id},t.agent+(t.model?' · '+t.model:'')+' · '+t.id.slice(-6))))),
         native && h('span',{style:{marginLeft:10,fontSize:12}},native.agentState==='not-started'?'Ready to start':native.process==='running'?'Running':native.process==='stopped'?'Stopped · resumes on send':'Status unavailable'),
-        native && h('details',null,h('summary',null,'Terminal controls'),
+        native && h('details',{key:id+'/'+native.id,open:showScreen,onToggle:e=>setShowScreen(e.currentTarget.open)},h('summary',null,'Terminal controls'),
+          showScreen && (currentScreen?.error?h('p',{role:'status'},currentScreen.error):!currentScreen?h('p',{role:'status'},'Loading screen…'):h('div',null,
+            h('p',{role:'status'},currentScreen.value.process==='not-started'?'Send a message to start this agent.':currentScreen.value.live?'Live terminal screen':currentScreen.value.process==='stopped'?'Terminal stopped. Send a message to resume.':'Terminal is reconnecting…'),
+            currentScreen.value.lines?.length>0&&h('pre',{'aria-label':'Terminal screen',style:{whiteSpace:'pre',overflow:'auto',maxWidth:'100%',maxHeight:'45vh',padding:'10px 0',fontSize:13,lineHeight:1.4}},currentScreen.value.lines.join('\n')))),
           ...[['Escape','\x1b'],['Enter','\r'],['↑','\x1b[A'],['↓','\x1b[B'],['Interrupt','\x03']].map(([label,key])=>h('button',{key,type:'button',disabled:recovering||!!pending,onClick:()=>keypress(key,label),style:{minHeight:44,minWidth:44,margin:4},'aria-label':'Terminal '+label},label))),
         native && files.length>0 && h('details',null,h('summary',null,'Files'+(selected.length?' · '+selected.length+' selected':'')),
           ...files.map(file=>h('div',{key:file.hash,style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap',padding:'6px 0'}},

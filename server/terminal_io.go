@@ -101,30 +101,40 @@ func (s *Server) handleTermScreen(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if se.isDraft() {
-		writeJSON(w, map[string]any{"live": false, "lines": []string{}, "agentState": "not-started", "connectivity": "not-started", "process": "not-started"})
+	state, err := s.terminalScreen(r.Context(), se)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, state)
+}
+
+func (s *Server) terminalScreen(ctx context.Context, se termSession) (map[string]any, error) {
+	if se.isDraft() {
+		return map[string]any{"live": false, "lines": []string{}, "agentState": "not-started", "connectivity": "not-started", "process": "not-started"}, nil
 	}
 	if se.backend() == "herdr" {
 		rt, err := s.runtimeFor(se)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusServiceUnavailable)
-			return
+			return nil, err
 		}
-		ob, _ := rt.Inspect(r.Context(), se.Runtime)
+		ob, err := rt.Inspect(ctx, se.Runtime)
+		if err != nil {
+			ob = terminalUnknown(se.Runtime)
+		}
 		lines := []string{}
 		if ob.Process == "running" {
-			if screen, e := rt.Screen(r.Context(), se.Runtime); e == nil {
-				lines = screen
-			} else {
+			lines, err = rt.Screen(ctx, se.Runtime)
+			if err != nil {
+				lines = []string{}
 				ob = terminalUnknown(se.Runtime)
 			}
 		}
-		writeJSON(w, map[string]any{"live": ob.Process == "running", "lines": lines, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process})
-		return
+		return map[string]any{"live": ob.Process == "running", "lines": lines, "agentState": ob.AgentState, "connectivity": ob.Connectivity, "process": ob.Process}, nil
 	}
 	lines, live := s.terminal.screenTail(se.ID)
-	writeJSON(w, map[string]any{"live": live, "lines": lines})
+	return map[string]any{"live": live, "lines": lines}, nil
 }
 
 // screenTail captures the pane (-J joins wrapped lines, -S -12 reaches 12
