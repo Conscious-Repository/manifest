@@ -357,6 +357,9 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			var parts []string
 			for _, c := range p.Content {
 				if t := strings.TrimSpace(c.Text); t != "" {
+					if p.Role == "user" {
+						t = c.Text // preserve exact owner input for delivery receipts
+					}
 					parts = append(parts, t)
 				}
 			}
@@ -366,7 +369,7 @@ func parseCodexTranscript(r io.Reader, base ...int64) termTranscript {
 			}
 			switch p.Role {
 			case "user":
-				if !strings.HasPrefix(text, "<") { // <recommended_plugins>, <environment_context>, …
+				if !strings.HasPrefix(strings.TrimSpace(text), "<") { // <recommended_plugins>, <environment_context>, …
 					b.user(rec.Timestamp, text)
 				}
 			case "assistant":

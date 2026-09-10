@@ -24,6 +24,18 @@ func TestClaudeOwnerTextPreservesReceiptBytes(t *testing.T) {
 	}
 }
 
+func TestCodexOwnerTextPreservesReceiptBytes(t *testing.T) {
+	text := "  selected plan instruction\n```json\n{}\n```\n"
+	line, err := json.Marshal(map[string]any{"type": "response_item", "payload": map[string]any{"type": "message", "role": "user", "content": []map[string]string{{"type": "input_text", "text": text}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := parseCodexTranscript(strings.NewReader(string(line) + "\n"))
+	if len(tr.Turns) != 1 || tr.Turns[0].Text != text {
+		t.Fatalf("owner receipt bytes changed: %+v", tr.Turns)
+	}
+}
+
 func TestTerminalTurnIdentitySurvivesTailAndAppend(t *testing.T) {
 	for _, kind := range []string{"claude", "codex"} {
 		t.Run(kind, func(t *testing.T) {
