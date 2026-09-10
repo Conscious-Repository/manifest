@@ -125,7 +125,7 @@ async function chatPrepareLandingDraft(agent) {
 }
 async function chatPrepareDraft(descriptor,key,initial){
   if(!descriptor?.key || typeof ChatDraftState==="undefined")return;
-  if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();return;}
+  if(chatSyncedDrafts.has(key)){await chatSyncedDrafts.get(key).refresh();await chatReconcileAcceptedDrafts(key);return;}
   const state=new ChatDraftState(descriptor.key,(current,apply)=>{
     if(apply)chatApplySyncedDraft(key,current.value);
     if(chatDraftKey===key)chatRenderDraftNotice(document.getElementById("chatComposer"),key);
@@ -134,6 +134,7 @@ async function chatPrepareDraft(descriptor,key,initial){
   const local=chatDrafts.get(key);
   if(local && (local.text || local.files?.length))state.set({...local,selection:chatArtifactSelections.get("chat:"+key)||null,task:chatConversationTasks.get("chat:"+key)||""});
   await state.refresh();
+  await chatReconcileAcceptedDrafts(key);
   if(initial&&state.revision===0&&state.value===null&&!state.error){state.set(initial);}
   chatApplySyncedDraft(key,state.value);
 }
@@ -2765,13 +2766,28 @@ function chatRememberDelivery(scope,agent,url,payload,draftScope=scope){
  items.push(item);chatWriteDeliveryOutbox(items);return item;
 }
 function chatForgetDelivery(item){chatWriteDeliveryOutbox(chatReadDeliveryOutbox().filter(x=>x.payload.requestId!==item.payload.requestId));}
+async function chatAcceptDelivery(item,result){
+ const items=chatReadDeliveryOutbox(),saved=items.find(x=>x.payload.requestId===item.payload.requestId);
+ if(saved){saved.accepted=result;chatWriteDeliveryOutbox(items);}
+ // Persist the acknowledgement before touching the draft. Recovery must only
+ // reconcile state, never submit another runtime instruction.
+ if(!item.draft){chatForgetDelivery(item);return result;}
+ const state=chatSyncedDrafts.get(item.draftScope||item.scope);
+ if(state&&await state.reconcileSent(item.draft))chatForgetDelivery(item);
+ return result;
+}
+async function chatReconcileAcceptedDrafts(key){
+ for(const item of chatReadDeliveryOutbox().filter(x=>x.accepted&&(x.draftScope||x.scope)===key))await chatAcceptDelivery(item,item.accepted);
+}
 async function chatDeliverRemembered(item){
+ const accepted=item.accepted||chatReadDeliveryOutbox().find(x=>x.payload.requestId===item.payload.requestId)?.accepted;
+ if(accepted)return chatAcceptDelivery(item,accepted);
  const res=await fetchJSONRetry("POST",item.url,item.payload);
  if(!res.ok){const error=new Error((await res.text()).trim()||"Send failed");error.rejected=[400,413,422].includes(res.status);throw error;}
  const result=await res.json();
  if(chatIsTerminalDelivery(item)&&result.delivery?.state!=="sent")throw new Error("Submission is unconfirmed. Check its status or inspect the native conversation before sending another instruction.");
  if(result.ok!==true && !result.id)throw new Error("Delivery acknowledgement unavailable");
- chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.draftScope||item.scope)?.clearSent(item.draft);return result;
+ return chatAcceptDelivery(item,result);
 }
 function chatRenderDeliveryNotice(host,scope){
  host.querySelector(".chat-delivery-notice")?.remove();
@@ -2779,8 +2795,8 @@ function chatRenderDeliveryNotice(host,scope){
  const notice=el("div","chat-delivery-notice");notice.setAttribute("role","status");
  pending.forEach(item=>{
   const row=el("div","chat-delivery-row");
-  const label=el("span","","Send not confirmed: "+String(item.payload.text||"Attachment").slice(0,90));
-  const check=el("button","sprt-quiet","Check status");
+  const label=el("span","",(item.accepted?"Sent · draft sync pending: ":"Send not confirmed: ")+String(item.payload.text||"Attachment").slice(0,90));
+  const check=el("button","sprt-quiet",item.accepted?"Sync draft":"Check status");
   const retry=el("button","sprt-quiet","Retry same send");
   const navigate=result=>{
    if(result.id&&chatDraftKey===scope&&!chatOpenId)location.hash="#/chat/a/"+encodeURIComponent(item.agent)+"/"+encodeURIComponent(result.id);
@@ -2789,13 +2805,14 @@ function chatRenderDeliveryNotice(host,scope){
   check.onclick=async()=>{
    check.disabled=true;
    try{
+    if(item.accepted){await chatAcceptDelivery(item,item.accepted);chatRenderDeliveryNotice(host,scope);return;}
     const path=chatIsTerminalDelivery(item)?item.url.replace(/\/input$/,"/delivery"):"/api/agents/chat/"+encodeURIComponent(item.agent)+"/delivery";
     const r=await fetch(path+"?request="+encodeURIComponent(item.payload.requestId));
     if(r.status===404){label.textContent="Not recorded yet. Retry the same send to deliver it.";return;}
     if(!r.ok)throw new Error(await r.text());
     const d=await r.json();
     if(chatIsTerminalDelivery(item)&&d.delivery?.state!=="sent"){label.textContent="Submission is unconfirmed. Check again or inspect the native conversation; this request will not be replayed.";return;}
-    chatForgetDelivery(item);if(item.draft)chatSyncedDrafts.get(item.draftScope||item.scope)?.clearSent(item.draft);row.remove();navigate(d);
+    await chatAcceptDelivery(item,d);row.remove();navigate(d);
     showToast("Message "+d.delivery.state,null,"info");
    }catch(e){label.textContent="Still unable to confirm delivery. Your message is saved here.";}
    finally{check.disabled=false;}
@@ -2809,7 +2826,7 @@ function chatRenderDeliveryNotice(host,scope){
    }
    finally{retry.disabled=false;}
   };
-  row.append(label,check,retry);notice.append(row);
+  row.append(label,check);if(!item.accepted)row.append(retry);notice.append(row);
  });
  host.prepend(notice);
 }

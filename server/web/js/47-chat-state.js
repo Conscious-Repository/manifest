@@ -83,4 +83,13 @@ class ChatDraftState {
     if(!chatStateEqual(this.value,value))return false;
     this.set({...value,text:"",files:[],...(Array.isArray(value?.mentions)?{mentions:[]}: {})});return true;
   }
+  async reconcileSent(value){
+    // Never discard an acknowledgement while an older draft write is in flight.
+    if(this.pending)await this.pending;
+    await this.refresh();
+    if(this.error||this.conflict||!this.loaded)return false;
+    this.clearSent(value); // Exact match only: newer typing belongs to the owner.
+    if(this.dirty&&!await this.flush())return false;
+    return !this.error&&!this.conflict&&!chatStateEqual(this.base,value);
+  }
 }

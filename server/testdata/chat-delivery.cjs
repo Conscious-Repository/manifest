@@ -34,7 +34,8 @@ global.fetchJSONRetry=async(method,url,payload)=>{
  await assert.rejects(()=>chatDeliverRemembered(intentional),e=>e.rejected===true);
  chatForgetDelivery(intentional);
  let cleared=0;const draft={text:'coding instruction',files:[]};
- chatSyncedDrafts.set('codex/new',{value:draft,clearSent:value=>{assert.equal(value.text,draft.text);cleared++;}});
+ let synced=false;
+ chatSyncedDrafts.set('codex/new',{value:draft,reconcileSent:async value=>{assert.equal(value.text,draft.text);cleared++;return synced;}});
  const codingURL='/api/terminal/session/abcdef123456/input';
  const coding=chatRememberDelivery('codex/abcdef123456','codex',codingURL,{text:draft.text},'codex/new');
  assert.equal(chatReadDeliveryOutbox().length,1);
@@ -46,6 +47,11 @@ global.fetchJSONRetry=async(method,url,payload)=>{
  global.fetchJSONRetry=async()=>({ok:true,json:async()=>({ok:true,id:'abcdef123456',delivery:{state:'sent'}})});
  await chatDeliverRemembered(chatReadDeliveryOutbox()[0]);
  assert.equal(cleared,1,'acknowledgement clears the original landing draft');
+ assert.equal(chatReadDeliveryOutbox()[0].accepted.delivery.state,'sent','acceptance survives failed draft sync');
+ global.fetchJSONRetry=async()=>{throw Error('accepted message must never be resubmitted');};
+ synced=true;
+ await chatDeliverRemembered(coding); // stale pre-acknowledgement UI object
+ assert.equal(cleared,2,'recovery only reconciles the draft');
  assert.equal(chatReadDeliveryOutbox().length,0);
  assert.equal(chatIsTerminalDelivery({...coding,url:'https://example.com/api/terminal/session/abcdef123456/input'}),false);
  assert.equal(chatIsTerminalDelivery({...coding,url:'/api/terminal/session/../input'}),false);

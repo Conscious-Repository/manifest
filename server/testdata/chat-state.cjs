@@ -34,6 +34,19 @@ function device(storage=new Map()){
  // Accepted old message cannot erase subsequent typing.
  const sent=a.value;a.set({text:'next message',files:[]});assert.equal(a.clearSent(sent),false);await a.flush();
  const current=a.value;assert.equal(a.clearSent(current),true);await a.flush();await b.refresh();assert.equal(b.value.text,'');
+ // Accepted-send recovery clears the exact saved draft, but never a newer
+ // remote edit. Offline recovery must keep the acceptance record pending.
+ a.set({text:'accepted instruction',files:[]});await a.flush();const acceptedDraft=clone(a.value);
+ offline=true;assert.equal(await a.reconcileSent(acceptedDraft),false);offline=false;
+ await b.refresh();b.set({text:'new phone instruction',files:[]});await b.flush();
+ assert.equal(await a.reconcileSent(acceptedDraft),true);assert.equal(remote.value.text,'new phone instruction');
+ a.set(acceptedDraft);await a.flush();
+ assert.equal(await a.reconcileSent(acceptedDraft),true);assert.equal(remote.value.text,'');
+ await a.refresh();await b.refresh();a.set({text:'unsaved desktop edit',files:[]});
+ b.set({text:'saved phone edit',files:[]});await b.flush();
+ assert.equal(await a.reconcileSent(acceptedDraft),false,'a conflict keeps acknowledgement recovery pending');
+ assert.equal(a.value.text,'unsaved desktop edit');assert.equal(remote.value.text,'saved phone edit');
+ await a.resolve(true);
  // Local recovery survives offline reload; a failed flush never spins retries.
  const storage=new Map(),c=device(storage);await c.refresh();offline=true;c.set({text:'offline draft',files:[]});const before=puts;await Promise.all([c.flush(),c.flush()]);assert.equal(puts,before);
  const restored=device(storage);await restored.refresh();assert.equal(restored.value.text,'offline draft');offline=false;await restored.refresh();await restored.flush();assert.equal(remote.value.text,'offline draft');
